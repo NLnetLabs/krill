@@ -5,6 +5,7 @@ authors = ["Tim Bruijnzeels <tim@nlnetlabs.nl>", "Martin Hoffmann <martin@nlnetl
 
 [dependencies]
 hyper = "0.12"
+futures = "0.1"
 
 [features]
 # Panic when a parsing error occurs. This feature is intended for
