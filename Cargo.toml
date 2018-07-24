@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Tim Bruijnzeels <tim@nlnetlabs.nl>", "Martin Hoffmann <martin@nlnetlabs.nl>"]
 
 [dependencies]
+hyper = "0.12"
 
 [features]
 # Panic when a parsing error occurs. This feature is intended for
