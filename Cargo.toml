@@ -4,8 +4,11 @@ version = "0.1.0"
 authors = ["Tim Bruijnzeels <tim@nlnetlabs.nl>", "Martin Hoffmann <martin@nlnetlabs.nl>"]
 
 [dependencies]
+base64 = "^0.9"
 hyper = "0.12"
 futures = "0.1"
+failure = "^0.1"
+xml-rs = "0.8.0"
 
 [features]
 # Panic when a parsing error occurs. This feature is intended for
