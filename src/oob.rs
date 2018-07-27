@@ -29,7 +29,7 @@ impl PublisherRequest {
         let mut r = XmlReader::open(path)?;
         r.start_document()?;
 
-        let att = r.expect_element("publisher_request").unwrap();
+        let att = r.expect_element("publisher_request")?;
 
         match att.get_opt("version") {
             Some(version) => {
