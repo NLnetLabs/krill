@@ -18,33 +18,36 @@ fn service_ok() -> Body {
 
 fn read_static_file(path: &str) -> Body {
     match path {
-        "/static/css/custom.css" => { Body::from(fs::read("static/css/custom.css").unwrap()) },
-        "/static/images/404.png" => { Body::from(fs::read("static/images/404.png").unwrap()) },
-        "/static/html/404.html" => { Body::from(fs::read("static/html/404.html").unwrap()) },
+        "/static/css/custom.css" => {
+            Body::from(fs::read("static/css/custom.css").unwrap()) },
+        "/static/images/404.png" => {
+            Body::from(fs::read("static/images/404.png").unwrap()) },
+        "/static/html/404.html" => {
+            Body::from(fs::read("static/html/404.html").unwrap()) },
         _ => { Body::from("Unknown resource") },
     }
 }
 
 fn request_mapper(req: Request<Body>) -> BoxFut {
 
-    let mut response = Response::new(Body::empty());
+    let mut res = Response::new(Body::empty());
     let path = req.uri().path();
 
     if path.starts_with("/static") {
-        *response.body_mut() = read_static_file(path)
+        *res.body_mut() = read_static_file(path)
     } else {
         match (req.method(), path) {
             (&Method::GET, "/health") => {
-                *response.body_mut() = { service_ok() }
+                *res.body_mut() = { service_ok() }
             },
             _ => {
-                *response.status_mut() = StatusCode::NOT_FOUND;
-                *response.body_mut() = read_static_file("/static/html/404.html")
+                *res.status_mut() = StatusCode::NOT_FOUND;
+                *res.body_mut() = read_static_file("/static/html/404.html")
             },
         };
     }
 
-    Box::new(future::ok(response))
+    Box::new(future::ok(res))
 
 }
 
