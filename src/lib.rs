@@ -3,4 +3,5 @@ extern crate core;
 #[macro_use] extern crate failure;
 extern crate xml;
 
-pub mod out_of_band;
+pub mod oob;
+pub mod xml_support;
