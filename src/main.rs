@@ -3,8 +3,6 @@ extern crate rpki_publication_server;
 extern crate hyper;
 extern crate futures;
 
-use std::fs;
-
 use futures::future;
 use hyper::{Body, Method, Request, Response, Server, StatusCode};
 use hyper::rt::Future;
@@ -12,19 +10,22 @@ use hyper::service::service_fn;
 
 type BoxFut = Box<Future<Item=Response<Body>, Error=hyper::Error> + Send>;
 
+const CSS: &'static [u8]      = include_bytes!("../static/css/custom.css");
+const IMG_404: &'static [u8]  = include_bytes!("../static/images/404.png");
+const HTML_404: &'static [u8] = include_bytes!("../static/html/404.html");
+const UNKNOWN: &'static str   = "Unknown resource";
+const PERFECT: &'static str   = "I am completely operational, and all my circuits are functioning perfectly.";
+
 fn service_ok() -> Body {
-    Body::from("I am completely operational, and all my circuits are functioning perfectly.")
+    Body::from(PERFECT)
 }
 
 fn read_static_file(path: &str) -> Body {
     match path {
-        "/static/css/custom.css" => {
-            Body::from(fs::read("static/css/custom.css").unwrap()) },
-        "/static/images/404.png" => {
-            Body::from(fs::read("static/images/404.png").unwrap()) },
-        "/static/html/404.html" => {
-            Body::from(fs::read("static/html/404.html").unwrap()) },
-        _ => { Body::from("Unknown resource") },
+        "/static/css/custom.css" => { Body::from(CSS) },
+        "/static/images/404.png" => { Body::from(IMG_404) },
+        "/static/html/404.html"  => { Body::from(HTML_404) },
+        _                        => { Body::from(UNKNOWN) },
     }
 }
 
