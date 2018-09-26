@@ -16,49 +16,60 @@ pub struct Publisher {
 }
 
 
-//------------ PublisherListCommand ------------------------------------------
+//------------ Command -------------------------------------------------------
 
 // These are the commands to send to the PublisherList that allow updating the
 // list of Publishers.
 #[derive(Debug)]
-pub enum PublisherListCommand {
-    Add(PublisherRequest)
+pub enum Command {
+    Add(PublisherRequest),
+    Remove(String)
 }
 
 #[derive(Debug)]
-pub struct VersionedPublisherListCommand {
+pub struct VersionedCommand {
     version: usize,
-    command: PublisherListCommand
+    command: Command
 }
 
-impl VersionedPublisherListCommand {
-    pub fn publisher_request(
+impl VersionedCommand {
+    pub fn add_publisher(
         version: usize,
         pr: PublisherRequest
     ) -> Self {
-        VersionedPublisherListCommand {
+        VersionedCommand {
             version,
-            command: PublisherListCommand::Add(pr)
+            command: Command::Add(pr)
+        }
+    }
+
+    pub fn remove_publisher(
+        version: usize,
+        name: String
+    ) -> Self {
+        VersionedCommand {
+            version,
+            command: Command::Remove(name)
         }
     }
 }
 
-//------------ PublisherListEvent --------------------------------------------
+//------------ Event ---------------------------------------------------------
 
 // These are the events that occurred on the PublisherList. Together they
 // form a complete audit trail, and when replayed in order will result in
 // the current state of the PublisherList.
 #[derive(Clone, Debug)]
-pub enum PublisherListEvent {
+pub enum Event {
     Added(PublisherAdded),
     CertUpdated(PublisherIdUpdated),
     Removed(PublisherRemoved)
 }
 
 #[derive(Clone, Debug)]
-pub struct VersionedPublisherListEvent {
+pub struct VersionedEvent {
     version: usize,
-    event: PublisherListEvent
+    event: Event
 }
 
 #[derive(Clone, Debug)]
@@ -97,19 +108,32 @@ impl PublisherList {
         }
     }
 
-    pub fn apply_event(
+    fn apply_event(
         &mut self,
-        event: &VersionedPublisherListEvent
-    ) -> Result<(), PublisherListError> {
+        event: &VersionedEvent
+    ) -> Result<(), Error> {
 
         if self.version != event.version {
-            return Err(PublisherListError::VersionConflict(self.version, event.version))
+            return Err(Error::VersionConflict(self.version, event.version))
         }
 
         let event = event.event.clone();
 
         match event {
-            PublisherListEvent::Added(a) => self.publishers.push(a.0),
+            Event::Added(a)   => {
+                let publisher = a.0;
+                if self.has_publisher(&publisher.name) {
+                    return Err(Error::DuplicatePublisher(publisher.name))
+                }
+                self.publishers.push(publisher)
+            },
+            Event::Removed(r) => {
+                let name = r.0;
+                if ! self.has_publisher(&name) {
+                    return Err(Error::UnknownPublisher(name))
+                }
+                self.publishers.retain(|p| { p.name != name })
+            },
             _ => unimplemented!()
         }
 
@@ -117,31 +141,37 @@ impl PublisherList {
         Ok(())
     }
 
+    fn has_publisher(&self, name: &String) -> bool {
+        self.publishers.iter().find(|p| &p.name == name).is_some()
+    }
+
     pub fn apply_command(
         &mut self,
-        command: VersionedPublisherListCommand
-    ) -> Result<VersionedPublisherListEvent, PublisherListError> {
+        command: VersionedCommand
+    ) -> Result<VersionedEvent, Error> {
 
         if self.version != command.version {
-            return Err(PublisherListError::VersionConflict(self.version, command.version))
+            return Err(
+                Error::VersionConflict(
+                    self.version, command.version))
         }
 
         match command.command {
-            PublisherListCommand::Add(pr) => self
-                .process_publisher_request(pr)
+            Command::Add(pub_req) => self.add_publisher(pub_req),
+            Command::Remove(name) => self.remove_publisher(name)
         }
     }
 
-    fn process_publisher_request(
+    fn add_publisher(
         &mut self,
         pr: PublisherRequest
-    ) -> Result<VersionedPublisherListEvent, PublisherListError> {
+    ) -> Result<VersionedEvent, Error> {
 
         let (_, name, id_cert) = pr.into_parts();
 
         if name.contains("/") {
             return Err(
-                PublisherListError::ForwardSlashInHandle(name))
+                Error::ForwardSlashInHandle(name))
         }
 
         let mut base_uri = self.base_uri.to_string();
@@ -150,13 +180,26 @@ impl PublisherList {
 
         let publisher = Publisher { name, base_uri, id_cert };
 
-        let event = VersionedPublisherListEvent {
+        let event = VersionedEvent {
             version: self.version,
-            event: PublisherListEvent::Added(PublisherAdded(publisher))
+            event: Event::Added(PublisherAdded(publisher))
         };
 
         self.apply_event(&event)?;
 
+        Ok(event)
+    }
+
+    fn remove_publisher(
+        &mut self,
+        name: String
+    ) -> Result<VersionedEvent, Error> {
+        let event = VersionedEvent {
+            version: self.version,
+            event: Event::Removed(PublisherRemoved(name))
+        };
+
+        self.apply_event(&event)?;
         Ok(event)
     }
 
@@ -166,10 +209,10 @@ impl PublisherList {
 //------------ PublisherListError --------------------------------------------
 
 #[derive(Debug, Fail)]
-pub enum PublisherListError {
+pub enum Error {
 
     #[fail(display =
-        "Version conflict. Current version is: {},update has: {}", _0, _1)]
+        "Version conflict. Current version is: {}, update has: {}", _0, _1)]
     VersionConflict(usize, usize),
 
     #[fail(display =
@@ -179,12 +222,18 @@ pub enum PublisherListError {
     ForwardSlashInHandle(String),
 
     #[fail(display = "Error in base URI: {}.", _0)]
-    UriError(uri::Error)
+    UriError(uri::Error),
+
+    #[fail(display = "Duplicate publisher with name: {}.", _0)]
+    DuplicatePublisher(String),
+
+    #[fail(display = "Unknown publisher with name: {}.", _0)]
+    UnknownPublisher(String)
 }
 
-impl From<uri::Error> for PublisherListError {
+impl From<uri::Error> for Error {
     fn from(e: uri::Error) -> Self {
-        PublisherListError::UriError(e)
+        Error::UriError(e)
     }
 }
 
@@ -225,7 +274,7 @@ mod tests {
             "test",
             id_cert.clone());
 
-        let cmd = VersionedPublisherListCommand::publisher_request(0, pr);
+        let cmd = VersionedCommand::add_publisher(0, pr);
         cl.apply_command(cmd).unwrap();
 
         assert_eq!(1, cl.publishers.len());
@@ -240,6 +289,27 @@ mod tests {
     }
 
     #[test]
+    fn should_remove_publisher() {
+        let mut cl = empty_publisher_list();
+        let id_cert = new_id_cert();
+
+        let pr = PublisherRequest::new(
+            Some("test"),
+            "test",
+            id_cert.clone());
+
+        let cmd = VersionedCommand::add_publisher(0, pr);
+        cl.apply_command(cmd).unwrap();
+
+        assert_eq!(1, cl.publishers.len());
+
+        let cmd = VersionedCommand::remove_publisher(1, "test".to_string());
+        cl.apply_command(cmd).unwrap();
+
+        assert_eq!(0, cl.publishers.len());
+    }
+
+    #[test]
     fn should_refuse_slash_in_publisher_handle() {
         let mut cl = empty_publisher_list();
         let id_cert = new_id_cert();
@@ -249,9 +319,9 @@ mod tests {
             "test/below",
             id_cert);
 
-        let cmd = VersionedPublisherListCommand::publisher_request(0, pr);
+        let cmd = VersionedCommand::add_publisher(0, pr);
         match cl.apply_command(cmd) {
-            Err(PublisherListError::ForwardSlashInHandle(_)) => { }, // Ok
+            Err(Error::ForwardSlashInHandle(_)) => { }, // Ok
             _ => panic!("Should have seen error.")
         }
     }
