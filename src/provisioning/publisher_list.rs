@@ -8,7 +8,7 @@ use rpki::uri;
 //------------ Publisher -----------------------------------------------------
 
 /// This type defines Publisher CAs that are allowed to publish.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Publisher {
     name:       String,
     base_uri:   uri::Rsync,
@@ -48,26 +48,26 @@ impl VersionedPublisherListCommand {
 // These are the events that occurred on the PublisherList. Together they
 // form a complete audit trail, and when replayed in order will result in
 // the current state of the PublisherList.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum PublisherListEvent {
     Added(PublisherAdded),
     CertUpdated(PublisherIdUpdated),
     Removed(PublisherRemoved)
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct VersionedPublisherListEvent {
     version: usize,
     event: PublisherListEvent
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct PublisherAdded(Publisher);
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct PublisherIdUpdated(String);
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct PublisherRemoved(String);
 
 
@@ -106,8 +106,14 @@ impl PublisherList {
             return Err(PublisherListError::VersionConflict(self.version, event.version))
         }
 
-        self.version = self.version + 1;
+        let event = event.event.clone();
 
+        match event {
+            PublisherListEvent::Added(a) => self.publishers.push(a.0),
+            _ => unimplemented!()
+        }
+
+        self.version = self.version + 1;
         Ok(())
     }
 
@@ -195,8 +201,6 @@ mod tests {
     use rpki::signing::PublicKeyAlgorithm;
     use rpki::signing::builder::IdCertBuilder;
 
-
-
     fn rsync_uri(s: &str) -> uri::Rsync {
         uri::Rsync::from_str(s).unwrap()
     }
@@ -224,6 +228,8 @@ mod tests {
 
         let cmd = VersionedPublisherListCommand::publisher_request(0, pr);
         cl.apply_command(cmd).unwrap();
+
+        assert_eq!(1, cl.publishers.len());
     }
 
     #[test]
