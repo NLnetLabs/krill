@@ -1,3 +1,4 @@
+extern crate ber;
 extern crate rpki;
 extern crate base64;
 extern crate bytes;
