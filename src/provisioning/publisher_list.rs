@@ -1,5 +1,4 @@
 //! Responsible for storing and retrieving Publisher information.
-use std::str;
 use rpki::oob::exchange::PublisherRequest;
 use rpki::remote::idcert::IdCert;
 use rpki::uri;
@@ -13,62 +12,6 @@ pub struct Publisher {
     name:       String,
     base_uri:   uri::Rsync,
     id_cert:    IdCert
-}
-
-
-//------------ Command -------------------------------------------------------
-
-// These are the commands to send to the PublisherList that allow updating the
-// list of Publishers.
-#[derive(Debug)]
-pub enum Command {
-    /// Add a new Publisher based on the PublisherRequest
-    Add(PublisherRequest),
-
-    /// Remove the Publisher with name matching the String
-    Remove(String),
-
-    /// Update the IdCert for the Publisher with name matching the String
-    UpdateCert(String, IdCert)
-}
-
-#[derive(Debug)]
-pub struct VersionedCommand {
-    version: usize,
-    command: Command
-}
-
-impl VersionedCommand {
-    pub fn add_publisher(
-        version: usize,
-        pr: PublisherRequest
-    ) -> Self {
-        VersionedCommand {
-            version,
-            command: Command::Add(pr)
-        }
-    }
-
-    pub fn remove_publisher(
-        version: usize,
-        name: String
-    ) -> Self {
-        VersionedCommand {
-            version,
-            command: Command::Remove(name)
-        }
-    }
-
-    pub fn update_publisher_id_cert(
-        version: usize,
-        name: String,
-        id_cert: IdCert
-    ) -> Self {
-        VersionedCommand {
-            version,
-            command: Command::UpdateCert(name, id_cert)
-        }
-    }
 }
 
 //------------ Event ---------------------------------------------------------
@@ -173,26 +116,26 @@ impl PublisherList {
         self.publishers.iter().find(|p| &p.name == name).is_some()
     }
 
-    pub fn apply_command(
-        &mut self,
-        command: VersionedCommand
-    ) -> Result<VersionedEvent, Error> {
+//    pub fn apply_command(
+//        &mut self,
+//        command: VersionedCommand
+//    ) -> Result<VersionedEvent, Error> {
+//
+//        if self.version != command.version {
+//            return Err(
+//                Error::VersionConflict(
+//                    self.version, command.version))
+//        }
+//
+//        match command.command {
+//            Command::Add(pub_req) => self.add_publisher(pub_req),
+//            Command::Remove(name) => self.remove_publisher(name),
+//            Command::UpdateCert(name, id_cert) =>
+//                self.update_publisher_cert(name, id_cert)
+//        }
+//    }
 
-        if self.version != command.version {
-            return Err(
-                Error::VersionConflict(
-                    self.version, command.version))
-        }
-
-        match command.command {
-            Command::Add(pub_req) => self.add_publisher(pub_req),
-            Command::Remove(name) => self.remove_publisher(name),
-            Command::UpdateCert(name, id_cert) =>
-                self.update_publisher_cert(name, id_cert)
-        }
-    }
-
-    fn add_publisher(
+    pub fn add_publisher(
         &mut self,
         pr: PublisherRequest
     ) -> Result<VersionedEvent, Error> {
@@ -220,7 +163,7 @@ impl PublisherList {
         Ok(event)
     }
 
-    fn remove_publisher(
+    pub fn remove_publisher(
         &mut self,
         name: String
     ) -> Result<VersionedEvent, Error> {
@@ -233,16 +176,14 @@ impl PublisherList {
         Ok(event)
     }
 
-    fn update_publisher_cert(
+    pub fn update_publisher_cert(
         &mut self,
         name: String,
         id_cert: IdCert
     ) -> Result<VersionedEvent, Error> {
         let event = VersionedEvent {
             version: self.version,
-            event: Event::CertUpdated(
-                PublisherIdUpdated(name, id_cert)
-            )
+            event: Event::CertUpdated(PublisherIdUpdated(name, id_cert))
         };
 
         self.apply_event(&event)?;
@@ -320,8 +261,7 @@ mod tests {
             "test/below",
             id_cert);
 
-        let cmd = VersionedCommand::add_publisher(0, pr);
-        match cl.apply_command(cmd) {
+        match cl.add_publisher(pr) {
             Err(Error::ForwardSlashInHandle(_)) => { }, // Ok
             _ => panic!("Should have seen error.")
         }
@@ -337,8 +277,7 @@ mod tests {
             "test",
             id_cert.clone());
 
-        let cmd = VersionedCommand::add_publisher(0, pr);
-        cl.apply_command(cmd).unwrap();
+        cl.add_publisher(pr).unwrap();
 
         assert_eq!(1, cl.publishers.len());
         let publisher = cl.publishers.get(0).unwrap();
@@ -361,13 +300,11 @@ mod tests {
             "test",
             id_cert.clone());
 
-        let cmd = VersionedCommand::add_publisher(0, pr);
-        cl.apply_command(cmd).unwrap();
+        cl.add_publisher(pr).unwrap();
 
         assert_eq!(1, cl.publishers.len());
 
-        let cmd = VersionedCommand::remove_publisher(1, "test".to_string());
-        cl.apply_command(cmd).unwrap();
+        cl.remove_publisher("test".to_string()).unwrap();
 
         assert_eq!(0, cl.publishers.len());
     }
@@ -382,8 +319,7 @@ mod tests {
             "test",
             id_cert.clone());
 
-        let cmd = VersionedCommand::add_publisher(0, pr);
-        cl.apply_command(cmd).unwrap();
+        cl.add_publisher(pr).unwrap();
 
         assert_eq!(1, cl.publishers.len());
 
@@ -401,13 +337,10 @@ mod tests {
 
         let new_id_cert = new_id_cert();
 
-        let cmd = VersionedCommand::update_publisher_id_cert(
-            1,
+        cl.update_publisher_cert(
             "test".to_string(),
             new_id_cert.clone()
-        );
-
-        cl.apply_command(cmd).unwrap();
+        ).unwrap();
 
         {
             // Check that Publisher is present and uses id_cert
