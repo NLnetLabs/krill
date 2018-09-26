@@ -8,7 +8,7 @@ use rpki::uri;
 //------------ Publisher -----------------------------------------------------
 
 /// This type defines Publisher CAs that are allowed to publish.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Publisher {
     name:       String,
     base_uri:   uri::Rsync,
@@ -145,7 +145,6 @@ impl PublisherList {
         }
 
         let mut base_uri = self.base_uri.to_string();
-        base_uri.push_str("/");
         base_uri.push_str(name.as_ref());
         let base_uri = uri::Rsync::from_string(base_uri)?;
 
@@ -224,12 +223,20 @@ mod tests {
         let pr = PublisherRequest::new(
             Some("test"),
             "test",
-            id_cert);
+            id_cert.clone());
 
         let cmd = VersionedPublisherListCommand::publisher_request(0, pr);
         cl.apply_command(cmd).unwrap();
 
         assert_eq!(1, cl.publishers.len());
+        let publisher = cl.publishers.get(0).unwrap();
+        let expected_publisher = Publisher {
+            name: "test".to_string(),
+            base_uri: rsync_uri("rsync://host/module/test"),
+            id_cert
+        };
+
+        assert_eq!(publisher, &expected_publisher);
     }
 
     #[test]
