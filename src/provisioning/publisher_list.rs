@@ -22,8 +22,14 @@ pub struct Publisher {
 // list of Publishers.
 #[derive(Debug)]
 pub enum Command {
+    /// Add a new Publisher based on the PublisherRequest
     Add(PublisherRequest),
-    Remove(String)
+
+    /// Remove the Publisher with name matching the String
+    Remove(String),
+
+    /// Update the IdCert for the Publisher with name matching the String
+    UpdateCert(String, IdCert)
 }
 
 #[derive(Debug)]
@@ -52,6 +58,17 @@ impl VersionedCommand {
             command: Command::Remove(name)
         }
     }
+
+    pub fn update_publisher_id_cert(
+        version: usize,
+        name: String,
+        id_cert: IdCert
+    ) -> Self {
+        VersionedCommand {
+            version,
+            command: Command::UpdateCert(name, id_cert)
+        }
+    }
 }
 
 //------------ Event ---------------------------------------------------------
@@ -76,7 +93,7 @@ pub struct VersionedEvent {
 pub struct PublisherAdded(Publisher);
 
 #[derive(Clone, Debug)]
-pub struct PublisherIdUpdated(String);
+pub struct PublisherIdUpdated(String, IdCert);
 
 #[derive(Clone, Debug)]
 pub struct PublisherRemoved(String);
@@ -134,7 +151,18 @@ impl PublisherList {
                 }
                 self.publishers.retain(|p| { p.name != name })
             },
-            _ => unimplemented!()
+            Event::CertUpdated(u) => {
+                let name = u.0;
+                let id_cert = u.1;
+
+                match self.publishers.iter().position(|p| p.name == name) {
+                    None => return Err(Error::UnknownPublisher(name)),
+                    Some(i) => {
+                        let mut p = &mut self.publishers[i];
+                        p.id_cert = id_cert;
+                    }
+                }
+            }
         }
 
         self.version = self.version + 1;
@@ -158,7 +186,9 @@ impl PublisherList {
 
         match command.command {
             Command::Add(pub_req) => self.add_publisher(pub_req),
-            Command::Remove(name) => self.remove_publisher(name)
+            Command::Remove(name) => self.remove_publisher(name),
+            Command::UpdateCert(name, id_cert) =>
+                self.update_publisher_cert(name, id_cert)
         }
     }
 
@@ -197,6 +227,22 @@ impl PublisherList {
         let event = VersionedEvent {
             version: self.version,
             event: Event::Removed(PublisherRemoved(name))
+        };
+
+        self.apply_event(&event)?;
+        Ok(event)
+    }
+
+    fn update_publisher_cert(
+        &mut self,
+        name: String,
+        id_cert: IdCert
+    ) -> Result<VersionedEvent, Error> {
+        let event = VersionedEvent {
+            version: self.version,
+            event: Event::CertUpdated(
+                PublisherIdUpdated(name, id_cert)
+            )
         };
 
         self.apply_event(&event)?;
@@ -265,6 +311,23 @@ mod tests {
     }
 
     #[test]
+    fn should_refuse_slash_in_publisher_handle() {
+        let mut cl = empty_publisher_list();
+        let id_cert = new_id_cert();
+
+        let pr = PublisherRequest::new(
+            Some("test"),
+            "test/below",
+            id_cert);
+
+        let cmd = VersionedCommand::add_publisher(0, pr);
+        match cl.apply_command(cmd) {
+            Err(Error::ForwardSlashInHandle(_)) => { }, // Ok
+            _ => panic!("Should have seen error.")
+        }
+    }
+
+    #[test]
     fn should_add_publisher() {
         let mut cl = empty_publisher_list();
         let id_cert = new_id_cert();
@@ -310,19 +373,52 @@ mod tests {
     }
 
     #[test]
-    fn should_refuse_slash_in_publisher_handle() {
+    fn should_update_publisher_id_cert() {
         let mut cl = empty_publisher_list();
         let id_cert = new_id_cert();
 
         let pr = PublisherRequest::new(
             Some("test"),
-            "test/below",
-            id_cert);
+            "test",
+            id_cert.clone());
 
         let cmd = VersionedCommand::add_publisher(0, pr);
-        match cl.apply_command(cmd) {
-            Err(Error::ForwardSlashInHandle(_)) => { }, // Ok
-            _ => panic!("Should have seen error.")
+        cl.apply_command(cmd).unwrap();
+
+        assert_eq!(1, cl.publishers.len());
+
+        {
+            // Check that Publisher is present and uses id_cert
+            // Need to do this in a scope to make the borrow checker happy.
+            let publisher = cl.publishers.get(0).unwrap();
+            let expected_publisher = Publisher {
+                name: "test".to_string(),
+                base_uri: rsync_uri("rsync://host/module/test"),
+                id_cert
+            };
+            assert_eq!(publisher, &expected_publisher);
+        }
+
+        let new_id_cert = new_id_cert();
+
+        let cmd = VersionedCommand::update_publisher_id_cert(
+            1,
+            "test".to_string(),
+            new_id_cert.clone()
+        );
+
+        cl.apply_command(cmd).unwrap();
+
+        {
+            // Check that Publisher is present and uses id_cert
+            // Need to do this in a scope to make the borrow checker happy.
+            let publisher = cl.publishers.get(0).unwrap();
+            let expected_publisher = Publisher {
+                name: "test".to_string(),
+                base_uri: rsync_uri("rsync://host/module/test"),
+                id_cert: new_id_cert
+            };
+            assert_eq!(publisher, &expected_publisher);
         }
     }
 
