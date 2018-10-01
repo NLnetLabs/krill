@@ -116,25 +116,7 @@ impl PublisherList {
         self.publishers.iter().find(|p| &p.name == name).is_some()
     }
 
-//    pub fn apply_command(
-//        &mut self,
-//        command: VersionedCommand
-//    ) -> Result<VersionedEvent, Error> {
-//
-//        if self.version != command.version {
-//            return Err(
-//                Error::VersionConflict(
-//                    self.version, command.version))
-//        }
-//
-//        match command.command {
-//            Command::Add(pub_req) => self.add_publisher(pub_req),
-//            Command::Remove(name) => self.remove_publisher(name),
-//            Command::UpdateCert(name, id_cert) =>
-//                self.update_publisher_cert(name, id_cert)
-//        }
-//    }
-
+    /// Adds a Publisher.
     pub fn add_publisher(
         &mut self,
         pr: PublisherRequest
@@ -163,6 +145,7 @@ impl PublisherList {
         Ok(event)
     }
 
+    /// Removes a Publisher.
     pub fn remove_publisher(
         &mut self,
         name: String
@@ -176,6 +159,7 @@ impl PublisherList {
         Ok(event)
     }
 
+    /// Updates the IdCert for a Publisher.
     pub fn update_publisher_cert(
         &mut self,
         name: String,
@@ -231,10 +215,10 @@ impl From<uri::Error> for Error {
 mod tests {
 
     use super::*;
-    use rpki::signing::signer::Signer;
-    use rpki::signing::softsigner::OpenSslSigner;
     use rpki::signing::PublicKeyAlgorithm;
     use rpki::signing::builder::IdCertBuilder;
+    use rpki::signing::signer::Signer;
+    use rpki::signing::softsigner::OpenSslSigner;
 
     fn rsync_uri(s: &str) -> uri::Rsync {
         uri::Rsync::from_str(s).unwrap()
