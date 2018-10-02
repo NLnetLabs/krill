@@ -71,7 +71,7 @@ pub struct InvalidKey;
 
 pub trait KeyStore {
     /// Stores a key value pair.
-    fn store<V: Serialize + Any>(
+    fn store<V: Any + Clone + Serialize>(
         &mut self,
         key: Key,
         value: V
@@ -121,7 +121,7 @@ impl MemoryKeyStore {
 }
 
 impl KeyStore for MemoryKeyStore {
-    fn store<V: Serialize + Any>(&mut self, key: Key, value: V) -> Result<(), Error> {
+    fn store<V: Any + Clone + Serialize>(&mut self, key: Key, value: V) -> Result<(), Error> {
         let v = Box::new(value);
         self.store.entry(key).or_insert(v);
         Ok(())
@@ -159,7 +159,7 @@ impl DiskKeyStore {
 
 impl KeyStore for DiskKeyStore {
 
-    fn store<V: Serialize + Any>(
+    fn store<V: Any + Clone + Serialize>(
         &mut self,
         key: Key,
         value: V
@@ -200,7 +200,52 @@ impl KeyStore for DiskKeyStore {
     }
 }
 
+#[derive(Debug)]
+pub struct CachingDiskKeyStore {
+    mem_store: MemoryKeyStore,
+    disk_store: DiskKeyStore
+}
 
+impl CachingDiskKeyStore {
+    pub fn new(base_dir: String) -> Result<Self, Error> {
+        let mem_store = MemoryKeyStore::new();
+        let disk_store = DiskKeyStore::new(base_dir)?;
+        Ok(CachingDiskKeyStore{mem_store, disk_store})
+    }
+}
+
+
+impl KeyStore for CachingDiskKeyStore {
+
+    fn store<V: Any + Clone + Serialize>(
+        &mut self,
+        key: Key,
+        value: V
+    ) -> Result<(), Error> {
+        self.mem_store.store(key.clone(), value.clone())?;
+        self.disk_store.store(key, value)
+    }
+
+    /// Retrieves the value from memory if possible, from disk otherwise.
+    ///
+    /// Note: this will NOT cache the value if it's retrieved from disk. Doing
+    /// so would require '&mut self' which seems wrong. For now at least.
+    ///
+    /// In practical terms this should only cause a lookup penalty until a
+    /// value is saved again after a restart.
+    fn retrieve<V: Any + Clone + DeserializeOwned>(
+        &self,
+        key: &Key
+    ) -> Result<Option<Arc<V>>, Error> {
+        let from_mem = self.mem_store.retrieve(key)?;
+        match from_mem {
+            Some(v) => Ok(Some(v)),
+            None => {
+                self.disk_store.retrieve(key)
+            }
+        }
+    }
+}
 
 
 //------------ Tests ---------------------------------------------------------
@@ -230,8 +275,20 @@ mod tests {
 
     #[test]
     fn should_store_and_retrieve_from_disk() {
-        let mut store = DiskKeyStore::new("work/".to_string()).unwrap();
+        let mut store = DiskKeyStore::new("work".to_string()).unwrap();
         let key = Key::new("some/path/file.txt".to_string()).unwrap();
+        let value = TestStruct { v1: "blabla".to_string(), v2: 42 };
+        store.store(key.clone(), value.clone()).unwrap();
+
+        let found: Option<Arc<TestStruct>> = store.retrieve(&key).unwrap();
+
+        assert_eq!(Some(Arc::new(value)), found)
+    }
+
+    #[test]
+    fn should_store_and_retrieve_from_caching_disk() {
+        let mut store = CachingDiskKeyStore::new("work".to_string()).unwrap();
+        let key = Key::new("caching/some/path/file.txt".to_string()).unwrap();
         let value = TestStruct { v1: "blabla".to_string(), v2: 42 };
         store.store(key.clone(), value.clone()).unwrap();
 
