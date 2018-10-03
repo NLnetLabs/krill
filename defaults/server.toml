@@ -1,0 +1,22 @@
+# Specify the ip address and port number that the server will use.
+ip             = "127.0.0.1"
+port           = 3000
+
+# Specify the directory where the publication server will store its data.
+# Note that clustering through a shared data directory is not supported.
+# But, we plan to look into a proper clustering solution later.
+data_dir       = "./data"
+
+# Specify the directory where to read publisher.xml files.
+# Note that 'publisher_handle' must be unique, so verify them before dropping
+# files here. At some point a UI/API will be introduced for this.
+pub_xml_dir    = "./publishers"
+
+# Specify the base rsync repository for this server. Publishers will get
+# a base URI that is based on the 'publisher_handle' in the XML file.
+rsync_base  = "rsync://127.0.0.1/rpki/"
+
+# Specify the notify SIA for this server. This will be reported in the
+# response.xml files to publishers so that they can include the proper SIA
+# in their certificates.
+notify_sia  = "https://127.0.0.1/rpki/notify.xml"

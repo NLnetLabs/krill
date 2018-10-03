@@ -1,8 +1,10 @@
-extern crate rpki_publication_server;
+extern crate rpubd;
 
 extern crate hyper;
 extern crate futures;
+#[macro_use] extern crate lazy_static;
 
+use rpubd::config::Config;
 use futures::future;
 use hyper::{Body, Method, Request, Response, Server, StatusCode};
 use hyper::rt::Future;
@@ -49,13 +51,22 @@ fn request_mapper(req: Request<Body>) -> BoxFut {
     }
 
     Box::new(future::ok(res))
+}
 
+lazy_static! {
+    static ref CONFIG: Config = {
+        match Config::create() {
+            Ok(c)  => c,
+            Err(e) => {
+                eprintln!("{}", e);
+                ::std::process::exit(1);
+            }
+        }
+    };
 }
 
 fn main() {
-    let addr = ([127, 0, 0, 1], 3000).into();
-
-    let server = Server::bind(&addr)
+    let server = Server::bind(&CONFIG.socket_addr())
         .serve(|| service_fn(request_mapper))
         .map_err(|e| eprintln!("server error: {}", e));
 
