@@ -1,4 +1,5 @@
 //! Responsible for storing and retrieving Publisher information.
+use ext_serde;
 use rpki::oob::exchange::PublisherRequest;
 use rpki::remote::idcert::IdCert;
 use rpki::uri;
@@ -7,12 +8,21 @@ use rpki::uri;
 //------------ Publisher -----------------------------------------------------
 
 /// This type defines Publisher CAs that are allowed to publish.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Publisher {
     name:       String,
+
+    #[serde(
+        deserialize_with = "ext_serde::de_rsync_uri",
+        serialize_with = "ext_serde::ser_rsync_uri")]
     base_uri:   uri::Rsync,
+
+    #[serde(
+        deserialize_with = "ext_serde::de_id_cert",
+        serialize_with = "ext_serde::ser_id_cert")]
     id_cert:    IdCert
 }
+
 
 //------------ Event ---------------------------------------------------------
 
@@ -44,13 +54,19 @@ pub struct PublisherRemoved(String);
 
 //------------ PublisherList -------------------------------------------------
 
-#[derive(Debug)]
+/// This type contains all configured Publishers, allowed to publish at this
+/// publication server.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublisherList {
     /// The version of this list. This gets updated with every modification.
     version: usize,
 
     /// The base URI for this repository server. Publishers will get a
     /// directory below this based on their 'publisher_handle'.
+
+    #[serde(
+        deserialize_with = "ext_serde::de_rsync_uri",
+        serialize_with = "ext_serde::ser_rsync_uri")]
     base_uri: uri::Rsync,
 
     /// The current configured publishers.
@@ -110,6 +126,10 @@ impl PublisherList {
 
         self.version = self.version + 1;
         Ok(())
+    }
+
+    pub fn version(&self) -> usize {
+        self.version
     }
 
     fn has_publisher(&self, name: &String) -> bool {

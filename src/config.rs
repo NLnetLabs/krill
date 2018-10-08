@@ -6,10 +6,10 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::str::FromStr;
 use clap::{App, Arg};
+use ext_serde;
 use toml;
 use rpki::uri;
-use serde::{Deserialize, Deserializer};
-use serde::de::Error;
+
 
 /// Global configuration for the RRDP Server.
 ///
@@ -23,35 +23,21 @@ pub struct Config {
     data_dir: PathBuf,
     pub_xml_dir: PathBuf,
 
-    #[serde(deserialize_with = "deserialize_rsync_uri")]
+    #[serde(deserialize_with = "ext_serde::de_rsync_uri")]
     rsync_base: uri::Rsync,
 
-    #[serde(deserialize_with = "deserialize_http_uri")]
+    #[serde(deserialize_with = "ext_serde::de_http_uri")]
     notify_sia: uri::Http
 }
-
-/// # Helpers
-fn deserialize_rsync_uri<'de, D>(d: D) -> Result<uri::Rsync, D::Error>
-   where D: Deserializer<'de> {
-    match String::deserialize(d) {
-        Ok(some) => uri::Rsync::from_string(some).map_err(D::Error::custom),
-        Err(err) => Err(err)
-    }
-}
-
-fn deserialize_http_uri<'de, D>(d: D) -> Result<uri::Http, D::Error>
-    where D: Deserializer<'de> {
-    match String::deserialize(d) {
-        Ok(some) => uri::Http::from_string(some).map_err(D::Error::custom),
-        Err(err) => Err(err)
-    }
-}
-
 
 /// # Accessors
 impl Config {
     pub fn socket_addr(&self) -> SocketAddr {
         SocketAddr::new(self.ip, self.port)
+    }
+
+    pub fn data_dir(&self) -> String {
+        self.data_dir.to_string_lossy().to_string()
     }
 }
 
