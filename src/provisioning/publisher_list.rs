@@ -1,147 +1,65 @@
 //! Responsible for storing and retrieving Publisher information.
-use ext_serde;
-use rpki::oob::exchange::PublisherRequest;
+use std::fs;
+use std::io;
+use std::path::PathBuf;
+use std::sync::RwLock;
+use provisioning::publisher::Publisher;
 use rpki::remote::idcert::IdCert;
 use rpki::uri;
-
-
-//------------ Publisher -----------------------------------------------------
-
-/// This type defines Publisher CAs that are allowed to publish.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct Publisher {
-    name:       String,
-
-    #[serde(
-        deserialize_with = "ext_serde::de_rsync_uri",
-        serialize_with = "ext_serde::ser_rsync_uri")]
-    base_uri:   uri::Rsync,
-
-    #[serde(
-        deserialize_with = "ext_serde::de_id_cert",
-        serialize_with = "ext_serde::ser_id_cert")]
-    id_cert:    IdCert
-}
-
-
-//------------ Event ---------------------------------------------------------
-
-// These are the events that occurred on the PublisherList. Together they
-// form a complete audit trail, and when replayed in order will result in
-// the current state of the PublisherList.
-#[derive(Clone, Debug)]
-pub enum Event {
-    Added(PublisherAdded),
-    CertUpdated(PublisherIdUpdated),
-    Removed(PublisherRemoved)
-}
-
-#[derive(Clone, Debug)]
-pub struct VersionedEvent {
-    version: usize,
-    event: Event
-}
-
-#[derive(Clone, Debug)]
-pub struct PublisherAdded(Publisher);
-
-#[derive(Clone, Debug)]
-pub struct PublisherIdUpdated(String, IdCert);
-
-#[derive(Clone, Debug)]
-pub struct PublisherRemoved(String);
+use rpki::oob::exchange::PublisherRequest;
+use storage::keystore::{self, CachingDiskKeyStore, Info, Key, KeyStore};
+use std::sync::Arc;
 
 
 //------------ PublisherList -------------------------------------------------
 
 /// This type contains all configured Publishers, allowed to publish at this
-/// publication server.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+/// publication server. Essentially this wraps around the storage that
+/// contains all current publishers, and keeps a full audit trail of changes
+/// to this.
+#[derive(Debug)]
 pub struct PublisherList {
-    /// The version of this list. This gets updated with every modification.
-    version: usize,
-
-    /// The base URI for this repository server. Publishers will get a
-    /// directory below this based on their 'publisher_handle'.
-
-    #[serde(
-        deserialize_with = "ext_serde::de_rsync_uri",
-        serialize_with = "ext_serde::ser_rsync_uri")]
+    store: RwLock<CachingDiskKeyStore>,
     base_uri: uri::Rsync,
-
-    /// The current configured publishers.
-    publishers: Vec<Publisher>
 }
 
 
 impl PublisherList {
+    pub fn new(
+        work_dir: String,
+        base_uri: uri::Rsync
+    ) -> Result<Self, Error> {
+        let meta_data = fs::metadata(&work_dir)?;
+        if meta_data.is_dir() {
 
-    pub fn new(base_uri: uri::Rsync) -> Self {
-        PublisherList {
-            version: 0,
-            base_uri,
-            publishers: Vec::new()
-        }
-    }
-
-    fn apply_event(
-        &mut self,
-        event: &VersionedEvent
-    ) -> Result<(), Error> {
-
-        if self.version != event.version {
-            return Err(Error::VersionConflict(self.version, event.version))
-        }
-
-        let event = event.event.clone();
-
-        match event {
-            Event::Added(a)   => {
-                let publisher = a.0;
-                if self.has_publisher(&publisher.name) {
-                    return Err(Error::DuplicatePublisher(publisher.name))
-                }
-                self.publishers.push(publisher)
-            },
-            Event::Removed(r) => {
-                let name = r.0;
-                if ! self.has_publisher(&name) {
-                    return Err(Error::UnknownPublisher(name))
-                }
-                self.publishers.retain(|p| { p.name != name })
-            },
-            Event::CertUpdated(u) => {
-                let name = u.0;
-                let id_cert = u.1;
-
-                match self.publishers.iter().position(|p| p.name == name) {
-                    None => return Err(Error::UnknownPublisher(name)),
-                    Some(i) => {
-                        let mut p = &mut self.publishers[i];
-                        p.id_cert = id_cert;
-                    }
-                }
+            let mut publisher_dir = PathBuf::from(work_dir);
+            publisher_dir.push("publishers");
+            if ! publisher_dir.is_dir() {
+                fs::create_dir_all(&publisher_dir)?;
             }
+
+            Ok(
+                PublisherList {
+                    store: RwLock::new(
+                        CachingDiskKeyStore::new(publisher_dir)?
+                    ),
+                    base_uri
+                }
+            )
+        } else {
+            panic!("Invalid base_dir for DiskKeyStore")
         }
-
-        self.version = self.version + 1;
-        Ok(())
     }
 
-    pub fn version(&self) -> usize {
-        self.version
-    }
-
-    fn has_publisher(&self, name: &String) -> bool {
-        self.publishers.iter().find(|p| &p.name == name).is_some()
-    }
-
-    /// Adds a Publisher.
+    /// Adds a Publisher based on a PublisherRequest (from the RFC 8183 xml).
+    ///
+    /// Will return an error if the publisher already exists! Use
+    /// update_publisher in case you want to update an existing publisher.
     pub fn add_publisher(
-        &mut self,
-        pr: PublisherRequest
-    ) -> Result<VersionedEvent, Error> {
-
+        &self,
+        pr: PublisherRequest,
+        actor: String
+    ) -> Result<(), Error> {
         let (_, name, id_cert) = pr.into_parts();
 
         if name.contains("/") {
@@ -149,62 +67,89 @@ impl PublisherList {
                 Error::ForwardSlashInHandle(name))
         }
 
+        if self.has_publisher(&name) {
+            return Err(
+                Error::DuplicatePublisher(name)
+            )
+        }
+
         let mut base_uri = self.base_uri.to_string();
         base_uri.push_str(name.as_ref());
         let base_uri = uri::Rsync::from_string(base_uri)?;
 
-        let publisher = Publisher { name, base_uri, id_cert };
+        let key = Key::from_str(name.as_ref());
+        let info = Info::now(
+            actor,
+            format!("Added publisher: {}", &name)
+        );
+        let publisher = Publisher::new(name, base_uri, id_cert);
 
-        let event = VersionedEvent {
-            version: self.version,
-            event: Event::Added(PublisherAdded(publisher))
-        };
+        let mut s = self.store.write().unwrap();
+        s.store(key, publisher, info)?;
 
-        self.apply_event(&event)?;
-
-        Ok(event)
+        Ok(())
     }
 
-    /// Removes a Publisher.
-    pub fn remove_publisher(
-        &mut self,
-        name: String
-    ) -> Result<VersionedEvent, Error> {
-        let event = VersionedEvent {
-            version: self.version,
-            event: Event::Removed(PublisherRemoved(name))
-        };
 
-        self.apply_event(&event)?;
-        Ok(event)
+    /// Updates the IdCert for a known publisher.
+    pub fn update_id_cert_publisher(
+        &self,
+        name: &str,
+        id_cert: IdCert,
+        actor: String
+    ) -> Result<(), Error> {
+        let publisher_opt = self.publisher(name)?;
+
+        match publisher_opt {
+            None => Err(Error::UnknownPublisher(name.to_string())),
+            Some(publisher) => {
+                let key = Key::from_str(name);
+                let new_publisher = publisher.with_new_id_cert(id_cert);
+                let info = Info::now(
+                    actor,
+                    "Updated the IdCert".to_string()
+                );
+
+                let mut s = self.store.write().unwrap();
+                s.store(key, new_publisher, info)?;
+
+                Ok(())
+            }
+        }
     }
 
-    /// Updates the IdCert for a Publisher.
-    pub fn update_publisher_cert(
-        &mut self,
-        name: String,
-        id_cert: IdCert
-    ) -> Result<VersionedEvent, Error> {
-        let event = VersionedEvent {
-            version: self.version,
-            event: Event::CertUpdated(PublisherIdUpdated(name, id_cert))
-        };
+    /// Returns whether a publisher exists for this name.
+    pub fn has_publisher(&self, name: &str) -> bool {
+        let key = Key::from_str(name);
+        let r = self.store.read().unwrap();
+        // Checks that a version exists, because it is easy to deserialize.
+        match r.version(&key) {
+            Ok(Some(_)) => true,
+            _ => false
+        }
+    }
 
-        self.apply_event(&event)?;
-        Ok(event)
+    /// Returns an Optional Arc to a publisher for this name.
+    pub fn publisher(
+        &self,
+        name: &str
+    ) -> Result<Option<Arc<Publisher>>, Error> {
+        let key = Key::from_str(name);
+        let r = self.store.read().unwrap();
+        r.current_value(&key).map_err(|e| { Error::KeyStoreError(e)})
     }
 
 }
 
 
-//------------ PublisherListError --------------------------------------------
-
 #[derive(Debug, Fail)]
 pub enum Error {
 
-    #[fail(display =
-        "Version conflict. Current version is: {}, update has: {}", _0, _1)]
-    VersionConflict(usize, usize),
+    #[fail(display="{}", _0)]
+    KeyStoreError(keystore::Error),
+
+    #[fail(display="{}", _0)]
+    IoError(io::Error),
 
     #[fail(display =
         "The '/' in publisher_handle ({}) is not supported - because we \
@@ -212,14 +157,26 @@ pub enum Error {
         behaviour may be updated in future.", _0)]
     ForwardSlashInHandle(String),
 
-    #[fail(display = "Error in base URI: {}.", _0)]
-    UriError(uri::Error),
-
     #[fail(display = "Duplicate publisher with name: {}.", _0)]
     DuplicatePublisher(String),
 
     #[fail(display = "Unknown publisher with name: {}.", _0)]
-    UnknownPublisher(String)
+    UnknownPublisher(String),
+
+    #[fail(display = "Error in base URI: {}.", _0)]
+    UriError(uri::Error),
+}
+
+impl From<keystore::Error> for Error {
+    fn from(e: keystore::Error) -> Self {
+        Error::KeyStoreError(e)
+    }
+}
+
+impl From<io::Error> for Error {
+    fn from(e: io::Error) -> Self {
+        Error::IoError(e)
+    }
 }
 
 impl From<uri::Error> for Error {
@@ -228,13 +185,13 @@ impl From<uri::Error> for Error {
     }
 }
 
-
 //------------ Tests ---------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
 
     use super::*;
+    use test;
     use rpki::signing::PublicKeyAlgorithm;
     use rpki::signing::builder::IdCertBuilder;
     use rpki::signing::signer::Signer;
@@ -244,120 +201,139 @@ mod tests {
         uri::Rsync::from_str(s).unwrap()
     }
 
-    fn empty_publisher_list() -> PublisherList {
-        let base_uri = rsync_uri("rsync://host/module/");
-        PublisherList::new(base_uri)
-    }
-
     fn new_id_cert() -> IdCert {
         let mut s = OpenSslSigner::new();
         let key_id = s.create_key(&PublicKeyAlgorithm::RsaEncryption).unwrap();
         IdCertBuilder::new_ta_id_cert(&key_id, &mut s).unwrap()
     }
 
+    fn new_pl(dir: String) -> PublisherList {
+        let uri = rsync_uri("rsync://host/module/");
+        PublisherList::new(dir, uri).unwrap()
+    }
+
     #[test]
     fn should_refuse_slash_in_publisher_handle() {
-        let mut cl = empty_publisher_list();
-        let id_cert = new_id_cert();
+        test::test_with_tmp_dir(|d| {
+            let pl = new_pl(d);
+            let id_cert = new_id_cert();
 
-        let pr = PublisherRequest::new(
-            Some("test"),
-            "test/below",
-            id_cert);
+            let pr = PublisherRequest::new(
+                Some("test"),
+                "test/below",
+                id_cert);
 
-        match cl.add_publisher(pr) {
-            Err(Error::ForwardSlashInHandle(_)) => { }, // Ok
-            _ => panic!("Should have seen error.")
-        }
+            match pl.add_publisher(pr, "test".to_string()) {
+                Err(Error::ForwardSlashInHandle(_)) => { }, // Ok
+                _ => panic!("Should have seen error.")
+            }
+        })
     }
 
     #[test]
     fn should_add_publisher() {
-        let mut cl = empty_publisher_list();
-        let id_cert = new_id_cert();
+        test::test_with_tmp_dir(|d| {
+            let pl = new_pl(d);
+            let id_cert = new_id_cert();
 
-        let pr = PublisherRequest::new(
-            Some("test"),
-            "test",
-            id_cert.clone());
 
-        cl.add_publisher(pr).unwrap();
+            let pr = PublisherRequest::new(
+                Some("test"),
+                "test",
+                id_cert.clone());
 
-        assert_eq!(1, cl.publishers.len());
-        let publisher = cl.publishers.get(0).unwrap();
-        let expected_publisher = Publisher {
-            name: "test".to_string(),
-            base_uri: rsync_uri("rsync://host/module/test"),
-            id_cert
-        };
+            pl.add_publisher(pr, "test".to_string()).unwrap();
 
-        assert_eq!(publisher, &expected_publisher);
-    }
+            let name = "test".to_string();
+            assert!(pl.has_publisher(&name));
 
-    #[test]
-    fn should_remove_publisher() {
-        let mut cl = empty_publisher_list();
-        let id_cert = new_id_cert();
+            // Get the Arc out of the Result<Option<Arc<Publisher>>, Error>
+            let publisher_found = pl.publisher(&name).unwrap().unwrap();
 
-        let pr = PublisherRequest::new(
-            Some("test"),
-            "test",
-            id_cert.clone());
-
-        cl.add_publisher(pr).unwrap();
-
-        assert_eq!(1, cl.publishers.len());
-
-        cl.remove_publisher("test".to_string()).unwrap();
-
-        assert_eq!(0, cl.publishers.len());
-    }
-
-    #[test]
-    fn should_update_publisher_id_cert() {
-        let mut cl = empty_publisher_list();
-        let id_cert = new_id_cert();
-
-        let pr = PublisherRequest::new(
-            Some("test"),
-            "test",
-            id_cert.clone());
-
-        cl.add_publisher(pr).unwrap();
-
-        assert_eq!(1, cl.publishers.len());
-
-        {
-            // Check that Publisher is present and uses id_cert
-            // Need to do this in a scope to make the borrow checker happy.
-            let publisher = cl.publishers.get(0).unwrap();
-            let expected_publisher = Publisher {
-                name: "test".to_string(),
-                base_uri: rsync_uri("rsync://host/module/test"),
+            let expected_publisher = Publisher::new(
+                "test".to_string(),
+                rsync_uri("rsync://host/module/test"),
                 id_cert
-            };
-            assert_eq!(publisher, &expected_publisher);
-        }
+            );
 
-        let new_id_cert = new_id_cert();
-
-        cl.update_publisher_cert(
-            "test".to_string(),
-            new_id_cert.clone()
-        ).unwrap();
-
-        {
-            // Check that Publisher is present and uses id_cert
-            // Need to do this in a scope to make the borrow checker happy.
-            let publisher = cl.publishers.get(0).unwrap();
-            let expected_publisher = Publisher {
-                name: "test".to_string(),
-                base_uri: rsync_uri("rsync://host/module/test"),
-                id_cert: new_id_cert
-            };
-            assert_eq!(publisher, &expected_publisher);
-        }
+            assert_eq!(publisher_found.as_ref(), &expected_publisher);
+        })
     }
 
+    #[test]
+    fn should_update_id_cert_publisher() {
+        test::test_with_tmp_dir(|d| {
+            let pl = new_pl(d);
+            let id_cert = new_id_cert();
+
+
+            let name = "test";
+            let actor = "test_actor".to_string();
+
+            let pr = PublisherRequest::new(
+                Some("test"),
+                name,
+                id_cert
+            );
+
+            pl.add_publisher(pr, actor.clone()).unwrap();
+
+            let id_cert = new_id_cert();
+
+            pl.update_id_cert_publisher(
+                name,
+                id_cert.clone(),
+                actor.clone()
+            ).unwrap();
+
+            // Get the Arc out of the Result<Option<Arc<Publisher>>, Error>
+            let publisher_found = pl.publisher(&name).unwrap().unwrap();
+
+            let expected_publisher = Publisher::new(
+                "test".to_string(),
+                rsync_uri("rsync://host/module/test"),
+                id_cert
+            );
+
+            assert_eq!(publisher_found.as_ref(), &expected_publisher);
+        })
+    }
 
 }
+
+//    /// Removes a Publisher.
+//    pub fn remove_publisher(
+//        &mut self,
+//        name: String
+//    ) -> Result<VersionedEvent, Error> {
+//        let event = VersionedEvent {
+//            version: self.version,
+//            event: Event::Removed(PublisherRemoved(name))
+//        };
+//
+//        self.apply_event(&event)?;
+//        Ok(event)
+//    }
+//
+//
+//
+//    #[test]
+//    fn should_remove_publisher() {
+//        let mut cl = empty_publisher_list();
+//        let id_cert = new_id_cert();
+//
+//        let pr = PublisherRequest::new(
+//            Some("test"),
+//            "test",
+//            id_cert.clone());
+//
+//        cl.add_publisher(pr).unwrap();
+//
+//        assert_eq!(1, cl.publishers.len());
+//
+//        cl.remove_publisher("test".to_string()).unwrap();
+//
+//        assert_eq!(0, cl.publishers.len());
+//    }
+//
+//}
