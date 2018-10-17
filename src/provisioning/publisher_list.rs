@@ -7,7 +7,8 @@ use provisioning::publisher::Publisher;
 use rpki::remote::idcert::IdCert;
 use rpki::uri;
 use rpki::oob::exchange::PublisherRequest;
-use storage::keystore::{self, CachingDiskKeyStore, Info, Key, KeyStore};
+use storage::keystore::{self, Info, Key, KeyStore};
+use storage::caching_ks::CachingDiskKeyStore;
 use std::sync::Arc;
 
 
