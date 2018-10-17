@@ -48,15 +48,9 @@ impl Key {
         Ok(Self { path })
     }
 
-    /// Creates a new key based on a string. See 'from_path' for restrictions
-    /// on allowed characters.
-    pub fn from_string(path: String) -> Result<Key, InvalidKey> {
-        let path = PathBuf::from(path);
-        Self::from_path(path)
-    }
-
     /// Creates an instance from a static str. Will unwrap, and panic, if
-    /// unsafe characters are used. See 'from_path' for restrictions.
+    /// unsafe characters are used. Use 'from_path' for a method that returns
+    /// a Result instead, and see there for restrictions.
     pub fn from_str(s: &str) -> Key {
         let path = PathBuf::from(s);
         Self::from_path(path).unwrap()
@@ -167,13 +161,9 @@ pub trait KeyStore {
     /// counting starts at 0.
     fn version(&self, key: &Key) -> Result<Option<u32>, Error>;
 
-
-
-
     // XXX TODO:
     // versioned_value()
     // versioned_info()
-
 
     fn key_for_name(&self, key: &Key, name: String) -> Key {
         let mut path = key.path.clone();
@@ -234,7 +224,6 @@ impl From<num::ParseIntError> for Error {
 #[derive(Debug)]
 struct CurrentMemoryEntry {
     version: u32,
-    info: Info,
     value: Arc<Any + Send + Sync>
 }
 
@@ -264,20 +253,17 @@ impl CachingDiskKeyStore {
         &mut self,
         key: Key,
         value: V,
-        info: Info
     ) -> Result<(), Error>{
         let v = Arc::new(value);
 
         if let Some(current) = self.cache.get_mut(&key) {
             current.version += 1;
-            current.info = info;
             current.value = v;
             return Ok(())
         }
 
         let current = CurrentMemoryEntry {
             version: 0,
-            info,
             value: v
         };
 
@@ -322,7 +308,7 @@ impl KeyStore for CachingDiskKeyStore {
         value: V,
         info: Info
     ) -> Result<(), Error> {
-        self.cache(key.clone(), value.clone(), info.clone())?;
+        self.cache(key.clone(), value.clone())?;
         self.disk_store.store(key, value, info)
     }
 
@@ -533,7 +519,7 @@ mod tests {
     fn should_store_and_retrieve_from_disk() {
         test::test_with_tmp_dir(|d| {
             let mut store = DiskKeyStore::new(PathBuf::from(d)).unwrap();
-            let key = Key::from_string("key1".to_string()).unwrap();
+            let key = Key::from_str("key1");
             let value = TestStruct { v1: "blabla".to_string(), v2: 42 };
             let info = Info::new(Utc::now(), "me".to_string(), "A!".to_string());
 
@@ -560,7 +546,7 @@ mod tests {
     fn should_store_and_retrieve_from_caching_disk() {
         test::test_with_tmp_dir(|d| {
             let mut store = CachingDiskKeyStore::new(PathBuf::from(d)).unwrap();
-            let key = Key::from_string("key_name".to_string()).unwrap();
+            let key = Key::from_str("key_name");
             let value = TestStruct { v1: "blabla".to_string(), v2: 42 };
             let info = Info::new(Utc::now(), "me".to_string(), "A!".to_string());
 
@@ -577,7 +563,7 @@ mod tests {
     fn should_report_keys_from_disk_store() {
         test::test_with_tmp_dir(|d| {
             let mut store = DiskKeyStore::new(PathBuf::from(d)).unwrap();
-            let key = Key::from_string("key_name".to_string()).unwrap();
+            let key = Key::from_str("key_name");
             let value = TestStruct { v1: "blabla".to_string(), v2: 42 };
             let info = Info::new(Utc::now(), "me".to_string(), "A!".to_string());
             store.store(key.clone(), value.clone(), info).unwrap();
@@ -592,7 +578,7 @@ mod tests {
     fn should_report_keys_from_caching_disk_store() {
         test::test_with_tmp_dir(|d| {
             let mut store = CachingDiskKeyStore::new(PathBuf::from(d)).unwrap();
-            let key = Key::from_string("key_name".to_string()).unwrap();
+            let key = Key::from_str("key_name");
             let value = TestStruct { v1: "blabla".to_string(), v2: 42 };
             let info = Info::new(Utc::now(), "me".to_string(), "A!".to_string());
             store.store(key.clone(), value.clone(), info).unwrap();
