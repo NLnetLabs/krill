@@ -6,7 +6,6 @@ use std::fs;
 use std::fs::File;
 use std::io;
 use std::io::{Read, Write};
-use std::iter::FromIterator;
 use std::num;
 use std::path::{Component, PathBuf};
 use std::sync::Arc;
@@ -231,16 +230,7 @@ impl From<num::ParseIntError> for Error {
     }
 }
 
-
-#[derive(Debug)]
-/// This type implements an in memory keystore.
-///
-/// Note that this will only keep current Values only, as keeping archived
-/// Values and Info in memory would incur too much memory usage.
-pub struct MemoryKeyStore {
-    store: HashMap<Key, CurrentMemoryEntry>
-}
-
+/// This type is used to store current values in memory for caching.
 #[derive(Debug)]
 struct CurrentMemoryEntry {
     version: u32,
@@ -254,47 +244,31 @@ impl CurrentMemoryEntry {
     }
 }
 
-impl MemoryKeyStore {
-    pub fn new() -> Self {
-        MemoryKeyStore { store: HashMap::new() }
-    }
+
+/// This keystore uses an in memory keystore for caching, and falls back
+/// to a disk based key store.
+#[derive(Debug)]
+pub struct CachingDiskKeyStore {
+    cache: HashMap<Key, CurrentMemoryEntry>,
+    disk_store: DiskKeyStore
 }
 
-pub struct MemKeyIterator {
-    keys: Vec<Key>
-}
-
-impl Iterator for MemKeyIterator {
-
-    type Item = Key;
-
-    fn next(&mut self) -> Option<<Self as Iterator>::Item> {
-        self.keys.pop()
-    }
-}
-
-impl KeyStore for MemoryKeyStore {
-
-    type KeyIter = MemKeyIterator;
-
-    fn keys(&self) -> Self::KeyIter {
-        MemKeyIterator {
-            keys:
-                Vec::from_iter(
-                    self.store.keys().map(|k| { k.clone() })
-                )
-        }
+impl CachingDiskKeyStore {
+    pub fn new(base_dir: PathBuf) -> Result<Self, Error> {
+        let cache = HashMap::new();
+        let disk_store = DiskKeyStore::new(base_dir)?;
+        Ok(CachingDiskKeyStore{cache, disk_store})
     }
 
-    fn store<V: Any + Clone + Serialize + Send + Sync>(
+    fn cache<V: Any + Clone + Serialize + Send + Sync>(
         &mut self,
         key: Key,
         value: V,
         info: Info
-    ) -> Result<(), Error> {
+    ) -> Result<(), Error>{
         let v = Arc::new(value);
 
-        if let Some(current) = self.store.get_mut(&key) {
+        if let Some(current) = self.cache.get_mut(&key) {
             current.version += 1;
             current.info = info;
             current.value = v;
@@ -307,14 +281,15 @@ impl KeyStore for MemoryKeyStore {
             value: v
         };
 
-        self.store.insert(key, current);
+        self.cache.insert(key, current);
         Ok(())
     }
 
-    fn current_value<V: Any + Clone + DeserializeOwned + Send + Sync>(
-        &self, key: &Key
+    fn current_from_cache<V: Any + Clone + DeserializeOwned + Send + Sync>(
+        &self,
+        key: &Key
     ) -> Result<Option<Arc<V>>, Error> {
-        match self.store.get(key) {
+        match self.cache.get(key) {
             None => Ok(None),
             Some(ref v) => {
                 if let Ok(res) = v.value_copy().downcast::<V>() {
@@ -326,10 +301,63 @@ impl KeyStore for MemoryKeyStore {
         }
     }
 
+    fn version_in_cache(&self, key: &Key) -> Result<Option<u32>, Error> {
+        Ok(self.cache.get(key).map(|c| { c.version }))
+    }
+
+}
+
+
+impl KeyStore for CachingDiskKeyStore {
+
+    type KeyIter = DiskKeyIterator;
+
+    fn keys(&self) -> Self::KeyIter {
+        DiskKeyIterator::new(&self.disk_store.base_dir)
+    }
+
+    fn store<V: Any + Clone + Serialize + Send + Sync>(
+        &mut self,
+        key: Key,
+        value: V,
+        info: Info
+    ) -> Result<(), Error> {
+        self.cache(key.clone(), value.clone(), info.clone())?;
+        self.disk_store.store(key, value, info)
+    }
+
+    /// Retrieves the value from memory if possible, from disk otherwise.
+    ///
+    /// Note: this will NOT cache the value if it's retrieved from disk. Doing
+    /// so would require '&mut self' which seems wrong. For now at least.
+    ///
+    /// In practical terms this should only cause a lookup penalty until a
+    /// value is saved again after a restart.
+    fn current_value<V: Any + Clone + DeserializeOwned + Send + Sync>(
+        &self,
+        key: &Key
+    ) -> Result<Option<Arc<V>>, Error> {
+        match self.current_from_cache(key)? {
+            Some(v) => Ok(Some(v)),
+            None => {
+                self.disk_store.current_value(key)
+            }
+        }
+    }
+
+    /// Retrieves the current version from memory if possible, from disk
+    /// otherwise.
     fn version(&self, key: &Key) -> Result<Option<u32>, Error> {
-        Ok(self.store.get(key).map(|c| { c.version }))
+        match self.version_in_cache(key)? {
+            Some(v) => Ok(Some(v)),
+            None => {
+                self.disk_store.version(key)
+            }
+
+        }
     }
 }
+
 
 #[derive(Debug)]
 pub struct DiskKeyStore {
@@ -484,74 +512,7 @@ impl KeyStore for DiskKeyStore {
     }
 }
 
-#[derive(Debug)]
-/// This keystore uses an in memory keystore for caching, and falls back
-/// to a disk based key store.
-pub struct CachingDiskKeyStore {
-    mem_store: MemoryKeyStore,
-    disk_store: DiskKeyStore
-}
 
-impl CachingDiskKeyStore {
-    pub fn new(base_dir: PathBuf) -> Result<Self, Error> {
-        let mem_store = MemoryKeyStore::new();
-        let disk_store = DiskKeyStore::new(base_dir)?;
-        Ok(CachingDiskKeyStore{mem_store, disk_store})
-    }
-}
-
-
-impl KeyStore for CachingDiskKeyStore {
-
-    type KeyIter = DiskKeyIterator;
-
-    fn keys(&self) -> Self::KeyIter {
-        DiskKeyIterator::new(&self.disk_store.base_dir)
-    }
-
-    fn store<V: Any + Clone + Serialize + Send + Sync>(
-        &mut self,
-        key: Key,
-        value: V,
-        info: Info
-    ) -> Result<(), Error> {
-        self.mem_store.store(key.clone(), value.clone(), info.clone())?;
-        self.disk_store.store(key, value, info)
-    }
-
-    /// Retrieves the value from memory if possible, from disk otherwise.
-    ///
-    /// Note: this will NOT cache the value if it's retrieved from disk. Doing
-    /// so would require '&mut self' which seems wrong. For now at least.
-    ///
-    /// In practical terms this should only cause a lookup penalty until a
-    /// value is saved again after a restart.
-    fn current_value<V: Any + Clone + DeserializeOwned + Send + Sync>(
-        &self,
-        key: &Key
-    ) -> Result<Option<Arc<V>>, Error> {
-        let from_mem = self.mem_store.current_value(key)?;
-        match from_mem {
-            Some(v) => Ok(Some(v)),
-            None => {
-                self.disk_store.current_value(key)
-            }
-        }
-    }
-
-    /// Retrieves the current version from memory if possible, from disk
-    /// otherwise.
-    fn version(&self, key: &Key) -> Result<Option<u32>, Error> {
-        let from_mem = self.mem_store.version(key)?;
-        match from_mem {
-            Some(v) => Ok(Some(v)),
-            None => {
-                self.disk_store.version(key)
-            }
-
-        }
-    }
-}
 
 
 //------------ Tests ---------------------------------------------------------
@@ -566,20 +527,6 @@ mod tests {
     struct TestStruct {
         v1: String,
         v2: u128
-    }
-
-    #[test]
-    fn should_store_and_retrieve_in_memory() {
-        let mut store = MemoryKeyStore::new();
-        let key = Key::from_string("key_name".to_string()).unwrap();
-        let value = TestStruct { v1: "blabla".to_string(), v2: 42 };
-        let info = Info::new(Utc::now(), "me".to_string(), "A!".to_string());
-        store.store(key.clone(), value.clone(), info).unwrap();
-
-        let found: Option<Arc<TestStruct>> =
-            store.current_value(&key).unwrap();
-
-        assert_eq!(Some(Arc::new(value)), found)
     }
 
     #[test]
@@ -624,19 +571,6 @@ mod tests {
 
             assert_eq!(Some(Arc::new(value)), found)
         });
-    }
-
-    #[test]
-    fn should_report_keys_from_mem_store() {
-        let mut store = MemoryKeyStore::new();
-        let key = Key::from_string("key_name".to_string()).unwrap();
-        let value = TestStruct { v1: "blabla".to_string(), v2: 42 };
-        let info = Info::new(Utc::now(), "me".to_string(), "A!".to_string());
-        store.store(key.clone(), value.clone(), info).unwrap();
-
-        let stored_keys: Vec<Key> = store.keys().collect();
-        assert!(stored_keys.contains(&key));
-        assert_eq!(1, stored_keys.len());
     }
 
     #[test]
