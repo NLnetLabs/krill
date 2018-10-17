@@ -30,15 +30,13 @@ pub struct Key {
 impl Key {
     /// Creates a new key based on the path.
     ///
-    /// Paths must be relative, must not contain '\' (but '/' will work on
-    /// windows here), must not contain '/..' to avoid escaping the base_dir
-    /// for the DiskKeyStore implementation. And may contain characters
-    /// allowed in the 'hier-part' defined in RFC3896 only, i.e:
+    /// Paths must not contain '/' so that they can be used as a single
+    /// sub-dir when using a disk based key store.
     ///
-    /// path-rootless = segment-nz *( "/" segment )
+    /// Other than this the may contain any character allowed in a
+    /// 'segment' in the 'hier-part' defined in RFC3896 only, i.e:
     ///
     /// segment       = *pchar
-    /// segment-nz    = 1*pchar
     ///
     /// pchar         = unreserved / pct-encoded / sub-delims / ":" / "@"
     ///
@@ -51,13 +49,15 @@ impl Key {
         Ok(Self { path })
     }
 
+    /// Creates a new key based on a string. See 'from_path' for restrictions
+    /// on allowed characters.
     pub fn from_string(path: String) -> Result<Key, InvalidKey> {
         let path = PathBuf::from(path);
         Self::from_path(path)
     }
 
-    /// Creates an instance from a static string. Will unwrap, and panic, if
-    /// unsafe characters are used.
+    /// Creates an instance from a static str. Will unwrap, and panic, if
+    /// unsafe characters are used. See 'from_path' for restrictions.
     pub fn from_str(s: &str) -> Key {
         let path = PathBuf::from(s);
         Self::from_path(path).unwrap()
@@ -68,7 +68,6 @@ impl Key {
             None => { return Err(InvalidKey) },
             Some(s) => {
                 if ! s.bytes().all(|b| {
-                    b == b'/' || // Allow sub-dirs
                         b.is_ascii_alphanumeric() || // ALPHA DIGIT
                         b == b'-' || b == b'.' || b == b'_' || b == b'~' ||
                         b == b'%' || // Not checking against invalid % encoding (e.g. %%)
@@ -89,17 +88,11 @@ impl Key {
 
         Ok(())
     }
-
-
-
-
-
 }
 
-
+/// This type defines the meta-information for changes to a value.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Info {
-
     #[serde(with = "ts_seconds")]
     date_time: DateTime<Utc>,
     actor: String,
@@ -136,6 +129,7 @@ impl Info {
 }
 
 
+/// This type is used to signify any error in key formats.
 #[derive(Debug)]
 pub struct InvalidKey;
 
@@ -393,6 +387,10 @@ impl DiskKeyStore {
     }
 
     fn verify_or_create_dir(&self, key: &Key) -> Result<(), Error> {
+        if key.path.to_string_lossy().contains("/") {
+            return Err(Error::Other("Key cannot contain subdir.".to_string()))
+        }
+
         let mut full_path = PathBuf::new();
         full_path.push(self.base_dir.as_path());
         full_path.push(key.path.as_path());
@@ -573,7 +571,7 @@ mod tests {
     #[test]
     fn should_store_and_retrieve_in_memory() {
         let mut store = MemoryKeyStore::new();
-        let key = Key::from_string("some/path/file.txt".to_string()).unwrap();
+        let key = Key::from_string("key_name".to_string()).unwrap();
         let value = TestStruct { v1: "blabla".to_string(), v2: 42 };
         let info = Info::new(Utc::now(), "me".to_string(), "A!".to_string());
         store.store(key.clone(), value.clone(), info).unwrap();
@@ -615,7 +613,7 @@ mod tests {
     fn should_store_and_retrieve_from_caching_disk() {
         test::test_with_tmp_dir(|d| {
             let mut store = CachingDiskKeyStore::new(PathBuf::from(d)).unwrap();
-            let key = Key::from_string("caching/some/path/file.txt".to_string()).unwrap();
+            let key = Key::from_string("key_name".to_string()).unwrap();
             let value = TestStruct { v1: "blabla".to_string(), v2: 42 };
             let info = Info::new(Utc::now(), "me".to_string(), "A!".to_string());
 
@@ -631,7 +629,7 @@ mod tests {
     #[test]
     fn should_report_keys_from_mem_store() {
         let mut store = MemoryKeyStore::new();
-        let key = Key::from_string("some/path/file.txt".to_string()).unwrap();
+        let key = Key::from_string("key_name".to_string()).unwrap();
         let value = TestStruct { v1: "blabla".to_string(), v2: 42 };
         let info = Info::new(Utc::now(), "me".to_string(), "A!".to_string());
         store.store(key.clone(), value.clone(), info).unwrap();
