@@ -129,7 +129,7 @@ impl PublisherList {
         name: &str
     ) -> Result<Option<Arc<Publisher>>, Error> {
         let key = Key::from_str(name);
-        self.store.current_value(&key).map_err(|e| { Error::KeyStoreError(e)})
+        self.store.get(&key).map_err(|e| { Error::KeyStoreError(e)})
     }
 
 }

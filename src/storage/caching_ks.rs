@@ -236,7 +236,7 @@ impl KeyStore for CachingDiskKeyStore {
     ///
     /// In practical terms this should only cause a lookup penalty until a
     /// value is saved again after a restart.
-    fn current_value<V: Any + Clone + DeserializeOwned + Send + Sync>(
+    fn get<V: Any + Clone + DeserializeOwned + Send + Sync>(
         &self,
         key: &Key
     ) -> Result<Option<Arc<V>>, Error> {
@@ -333,7 +333,7 @@ mod tests {
             store.store(key.clone(), value.clone(), info).unwrap();
 
             let found: Option<Arc<TestStruct>> =
-                store.current_value(&key).unwrap();
+                store.get(&key).unwrap();
 
             assert_eq!(Some(Arc::new(value)), found)
         });
@@ -395,7 +395,7 @@ mod tests {
 
             // But nothing is returned for it
             let found: Option<Arc<TestStruct>> =
-                store.current_value(&key).unwrap();
+                store.get(&key).unwrap();
             assert_eq!(None, found);
 
             // Storing a new value should increment version and give stuff
@@ -407,7 +407,7 @@ mod tests {
 
             assert_eq!(2, store.version(&key).unwrap().unwrap());
             let found: Option<Arc<TestStruct>> =
-                store.current_value(&key).unwrap();
+                store.get(&key).unwrap();
 
             assert_eq!(Some(Arc::new(value)), found)
 

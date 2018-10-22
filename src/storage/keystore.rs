@@ -158,7 +158,7 @@ pub trait KeyStore {
 
     /// Retrieves an optional Arc containing the current value, given the key.
     /// If the value was archived, Ok(None) will be returned.
-    fn current_value<V: Any + Clone + DeserializeOwned + Send + Sync>(
+    fn get<V: Any + Clone + DeserializeOwned + Send + Sync>(
         &self,
         key: &Key
     ) -> Result<Option<Arc<V>>, Error>;
