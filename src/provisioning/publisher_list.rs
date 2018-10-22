@@ -2,7 +2,6 @@
 use std::fs;
 use std::io;
 use std::path::PathBuf;
-use std::sync::RwLock;
 use provisioning::publisher::Publisher;
 use rpki::remote::idcert::IdCert;
 use rpki::uri;
@@ -20,7 +19,7 @@ use std::sync::Arc;
 /// to this.
 #[derive(Debug)]
 pub struct PublisherList {
-    store: RwLock<CachingDiskKeyStore>,
+    store: CachingDiskKeyStore,
     base_uri: uri::Rsync,
 }
 
@@ -41,9 +40,7 @@ impl PublisherList {
 
             Ok(
                 PublisherList {
-                    store: RwLock::new(
-                        CachingDiskKeyStore::new(publisher_dir)?
-                    ),
+                    store: CachingDiskKeyStore::new(publisher_dir)?,
                     base_uri
                 }
             )
@@ -57,7 +54,7 @@ impl PublisherList {
     /// Will return an error if the publisher already exists! Use
     /// update_publisher in case you want to update an existing publisher.
     pub fn add_publisher(
-        &self,
+        &mut self,
         pr: PublisherRequest,
         actor: String
     ) -> Result<(), Error> {
@@ -85,8 +82,7 @@ impl PublisherList {
         );
         let publisher = Publisher::new(name, base_uri, id_cert);
 
-        let mut s = self.store.write().unwrap();
-        s.store(key, publisher, info)?;
+        self.store.store(key, publisher, info)?;
 
         Ok(())
     }
@@ -94,7 +90,7 @@ impl PublisherList {
 
     /// Updates the IdCert for a known publisher.
     pub fn update_id_cert_publisher(
-        &self,
+        &mut self,
         name: &str,
         id_cert: IdCert,
         actor: String
@@ -111,8 +107,7 @@ impl PublisherList {
                     "Updated the IdCert".to_string()
                 );
 
-                let mut s = self.store.write().unwrap();
-                s.store(key, new_publisher, info)?;
+                self.store.store(key, new_publisher, info)?;
 
                 Ok(())
             }
@@ -122,9 +117,7 @@ impl PublisherList {
     /// Returns whether a publisher exists for this name.
     pub fn has_publisher(&self, name: &str) -> bool {
         let key = Key::from_str(name);
-        let r = self.store.read().unwrap();
-        // Checks that a version exists, because it is easy to deserialize.
-        match r.version(&key) {
+        match self.store.version(&key) {
             Ok(Some(_)) => true,
             _ => false
         }
@@ -136,8 +129,7 @@ impl PublisherList {
         name: &str
     ) -> Result<Option<Arc<Publisher>>, Error> {
         let key = Key::from_str(name);
-        let r = self.store.read().unwrap();
-        r.current_value(&key).map_err(|e| { Error::KeyStoreError(e)})
+        self.store.current_value(&key).map_err(|e| { Error::KeyStoreError(e)})
     }
 
 }
@@ -216,7 +208,7 @@ mod tests {
     #[test]
     fn should_refuse_slash_in_publisher_handle() {
         test::test_with_tmp_dir(|d| {
-            let pl = new_pl(d);
+            let mut pl = new_pl(d);
             let id_cert = new_id_cert();
 
             let pr = PublisherRequest::new(
@@ -234,7 +226,7 @@ mod tests {
     #[test]
     fn should_add_publisher() {
         test::test_with_tmp_dir(|d| {
-            let pl = new_pl(d);
+            let mut pl = new_pl(d);
             let id_cert = new_id_cert();
 
 
@@ -264,7 +256,7 @@ mod tests {
     #[test]
     fn should_update_id_cert_publisher() {
         test::test_with_tmp_dir(|d| {
-            let pl = new_pl(d);
+            let mut pl = new_pl(d);
             let id_cert = new_id_cert();
 
 

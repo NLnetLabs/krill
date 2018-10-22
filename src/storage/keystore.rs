@@ -139,6 +139,7 @@ pub trait KeyStore {
 
     type KeyIter: Iterator<Item=Key>;
 
+    /// Returns all keys, present and archived.
     fn keys(&self) -> Self::KeyIter;
 
     /// Stores a key value pair.
@@ -149,15 +150,23 @@ pub trait KeyStore {
         info: Info
     ) -> Result<(), Error>;
 
+    /// Archives the value. The key will be preserved, and if a new value is
+    /// stored for this key the version number will continue from the point
+    /// where this value was archived. However, asking for the current version
+    /// or value for this key will return Ok(None).
+    fn archive(&mut self, key: &Key) -> Result<(), Error>;
+
     /// Retrieves an optional Arc containing the current value, given the key.
+    /// If the value was archived, Ok(None) will be returned.
     fn current_value<V: Any + Clone + DeserializeOwned + Send + Sync>(
         &self,
         key: &Key
     ) -> Result<Option<Arc<V>>, Error>;
 
     /// Returns the current version for this key, if present. Version
-    /// counting starts at 0.
-    fn version(&self, key: &Key) -> Result<Option<u32>, Error>;
+    /// counting starts at 1. If a key was archived a negative will be
+    /// returned.
+    fn version(&self, key: &Key) -> Result<Option<i32>, Error>;
 
     // XXX TODO:
     // versioned_value()
@@ -169,16 +178,29 @@ pub trait KeyStore {
         Key { path }
     }
 
-    fn key_for_value(&self, key: &Key, version: u32) -> Key {
+    fn key_for_value(&self, key: &Key, version: i32) -> Key {
         self.key_for_name(key, format!("v{}", version))
     }
 
-    fn key_for_info(&self, key: &Key, version: u32) -> Key {
+    fn key_for_info(&self, key: &Key, version: i32) -> Key {
         self.key_for_name(key, format!("i{}", version))
     }
 
     fn key_for_version(&self, key: &Key) -> Key {
         self.key_for_name(key, "version".to_string())
+    }
+
+    fn next_version(&self, key: &Key) -> Result<i32, Error> {
+        match self.version(key)? {
+            None => Ok(1),
+            Some(current) => {
+                if current < 0 {
+                    Ok(current * -1 + 1)
+                } else {
+                    Ok(current + 1)
+                }
+            }
+        }
     }
 
 
@@ -198,6 +220,12 @@ pub enum Error {
 
     #[fail(display ="Something went wrong: {}", _0)]
     Other(String)
+}
+
+impl Error {
+    pub fn from_str(s: &str) -> Self {
+        Error::Other(s.to_string())
+    }
 }
 
 impl From<serde_json::Error> for Error {

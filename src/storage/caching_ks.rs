@@ -6,8 +6,8 @@ use std::fs::ReadDir;
 use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::RwLock;
 use std::str::FromStr;
-use chrono::Utc;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json;
@@ -17,7 +17,7 @@ use super::keystore::{Error, Info, Key, KeyStore};
 /// This type is used to store current values in memory for caching.
 #[derive(Debug)]
 struct CurrentMemoryEntry {
-    version: u32,
+    version: i32,
     value: Arc<Any + Send + Sync>
 }
 
@@ -32,7 +32,7 @@ impl CurrentMemoryEntry {
 /// to a disk based key store.
 #[derive(Debug)]
 pub struct CachingDiskKeyStore {
-    cache: HashMap<Key, CurrentMemoryEntry>,
+    cache: RwLock<HashMap<Key, CurrentMemoryEntry>>,
     base_dir: PathBuf
 }
 
@@ -43,7 +43,7 @@ impl CachingDiskKeyStore {
             Err(Error::Other("Invalid base_dir for DiskKeyStore".to_string()))
         } else {
             let cache = HashMap::new();
-            Ok(CachingDiskKeyStore{cache, base_dir})
+            Ok(CachingDiskKeyStore{cache: RwLock::new(cache), base_dir})
         }
     }
 }
@@ -54,21 +54,24 @@ impl CachingDiskKeyStore {
         &mut self,
         key: Key,
         value: V,
+        version: i32
     ) -> Result<(), Error>{
         let v = Arc::new(value);
 
-        if let Some(current) = self.cache.get_mut(&key) {
+        let mut w = self.cache.write()
+            .map_err(|_| Error::from_str("Write Lock error"))?;
+        if let Some(current) = w.get_mut(&key) {
             current.version += 1;
             current.value = v;
             return Ok(())
-        }
 
+        }
         let current = CurrentMemoryEntry {
-            version: 0,
+            version,
             value: v
         };
 
-        self.cache.insert(key, current);
+        w.insert(key, current);
         Ok(())
     }
 
@@ -76,20 +79,24 @@ impl CachingDiskKeyStore {
         &self,
         key: &Key
     ) -> Result<Option<Arc<V>>, Error> {
-        match self.cache.get(key) {
+        let r = self.cache.read().map_err(
+            |_| Error::from_str("Can't get read lock"))?;
+        match r.get(key) {
             None => Ok(None),
             Some(ref v) => {
                 if let Ok(res) = v.value_copy().downcast::<V>() {
                     Ok(Some(res))
                 } else {
-                    Err(Error::Other("Object has the wrong type!".to_string()))
+                    Err(Error::from_str("Object has the wrong type!"))
                 }
             }
         }
     }
 
-    fn cache_get_version(&self, key: &Key) -> Result<Option<u32>, Error> {
-        Ok(self.cache.get(key).map(|c| { c.version }))
+    fn cache_get_version(&self, key: &Key) -> Result<Option<i32>, Error> {
+        let r = self.cache.read().map_err(
+            |_| Error::from_str("Can't get read lock"))?;
+        Ok(r.get(key).map(|c| { c.version }))
     }
 }
 
@@ -98,7 +105,7 @@ impl CachingDiskKeyStore {
 impl CachingDiskKeyStore {
     fn verify_or_create_dir(&self, key: &Key) -> Result<(), Error> {
         if key.path().to_string_lossy().contains("/") {
-            return Err(Error::Other("Key cannot contain subdir.".to_string()))
+            return Err(Error::from_str("Key cannot contain subdir."))
         }
 
         let mut full_path = PathBuf::new();
@@ -109,7 +116,7 @@ impl CachingDiskKeyStore {
             fs::create_dir_all(full_path)?;
         } else {
             if ! full_path.is_dir() {
-                return Err(Error::Other("Key is not a dir".to_string()));
+                return Err(Error::from_str("Key is not a dir"));
             }
         }
 
@@ -126,25 +133,21 @@ impl CachingDiskKeyStore {
         &mut self,
         key: &Key,
         value: &V,
-        info: &Info
+        info: &Info,
+        version: i32
     ) -> Result<(), Error> {
         self.verify_or_create_dir(&key)?;
 
-        let new_version = match self.version(&key)? {
-            None => 0,
-            Some(v) => v + 1
-        };
-
         let version_key = self.key_for_version(&key);
         let mut f = File::create(self.full_path(version_key.path()))?;
-        write!(f, "{}", new_version)?;
+        write!(f, "{}", version)?;
 
-        let value_key = self.key_for_value(&key, new_version);
+        let value_key = self.key_for_value(&key, version);
         let mut f = File::create(self.full_path(value_key.path()))?;
         let v = serde_json::to_string(&value)?;
         f.write(v.as_ref())?;
 
-        let info_key = self.key_for_info(&key, new_version);
+        let info_key = self.key_for_info(&key, version);
         let mut f = File::create(self.full_path(info_key.path()))?;
         let i = serde_json::to_string(&info)?;
         f.write(i.as_ref())?;
@@ -159,24 +162,40 @@ impl CachingDiskKeyStore {
         match self.version(key)? {
             None => Ok(None),
             Some(v) => {
-                let value_key = self.key_for_value(&key, v);
-                let f = File::open(value_key.path())?;
-                let v: V = serde_json::from_reader(f)?;
-                Ok(Some(Arc::new(v)))
+                if v > 0 {
+                    let value_key = self.key_for_value(&key, v);
+                    let f = File::open(self.full_path(value_key.path()))?;
+                    let v: V = serde_json::from_reader(f)?;
+                    Ok(Some(Arc::new(v)))
+                } else {
+                    Ok(None)
+                }
             }
         }
     }
 
-    fn disk_get_version(&self, key: &Key) -> Result<Option<u32>, Error> {
-        let k = self.key_for_version(key);
-        if k.path().exists() {
-            let mut f = File::open(k.path())?;
+    fn disk_get_version(&self, key: &Key) -> Result<Option<i32>, Error> {
+        let k = self.full_path(self.key_for_version(key).path());
+        if k.exists() {
+            let mut f = File::open(k)?;
             let mut s: String = "".to_string();
             f.read_to_string(&mut s)?;
-            Ok(Some(u32::from_str(s.as_ref())?))
+            Ok(Some(i32::from_str(s.as_ref())?))
         } else {
             Ok(None)
         }
+    }
+
+    fn disk_archive_version(&mut self, key: &Key) -> Result<(), Error> {
+        if let Some(v) = self.disk_get_version(key)? {
+            if v > 0 {
+                let version_key = self.key_for_version(key);
+                let mut f = File::create(self.full_path(version_key.path()))?;
+                write!(f, "{}", v * -1)?;
+                return Ok(())
+            }
+        }
+        Err(Error::from_str("No version to archive"))
     }
 
 }
@@ -196,8 +215,18 @@ impl KeyStore for CachingDiskKeyStore {
         value: V,
         info: Info
     ) -> Result<(), Error> {
-        self.disk_store(&key, &value, &info)?;
-        self.cache_store(key, value)
+        let next = self.next_version(&key)?;
+        self.disk_store(&key, &value, &info, next)?;
+        self.cache_store(key, value, next)
+    }
+
+    fn archive(&mut self, key: &Key) -> Result<(), Error> {
+        {
+            let mut w = self.cache.write()
+                .map_err(|_| Error::from_str("Can't get write lock"))?;
+            w.remove_entry(key); // Don't care if it was actually cached.
+        }
+        self.disk_archive_version(key)
     }
 
     /// Retrieves the value from memory if possible, from disk otherwise.
@@ -221,7 +250,7 @@ impl KeyStore for CachingDiskKeyStore {
 
     /// Retrieves the current version from memory if possible, from disk
     /// otherwise.
-    fn version(&self, key: &Key) -> Result<Option<u32>, Error> {
+    fn version(&self, key: &Key) -> Result<Option<i32>, Error> {
         match self.cache_get_version(key)? {
             Some(v) => Ok(Some(v)),
             None => {
@@ -279,12 +308,18 @@ impl Iterator for DiskKeyIterator {
 mod tests {
 
     use super::*;
+    use chrono::Utc;
     use test;
 
     #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
     struct TestStruct {
-        v1: String,
-        v2: u128
+        s: String
+    }
+
+    impl TestStruct {
+        fn from_str(s: &str) -> Self {
+            TestStruct { s: s.to_string() }
+        }
     }
 
     #[test]
@@ -292,7 +327,7 @@ mod tests {
         test::test_with_tmp_dir(|d| {
             let mut store = CachingDiskKeyStore::new(PathBuf::from(d)).unwrap();
             let key = Key::from_str("key_name");
-            let value = TestStruct { v1: "blabla".to_string(), v2: 42 };
+            let value = TestStruct::from_str("foo");
             let info = Info::new(Utc::now(), "me".to_string(), "A!".to_string());
 
             store.store(key.clone(), value.clone(), info).unwrap();
@@ -309,13 +344,73 @@ mod tests {
         test::test_with_tmp_dir(|d| {
             let mut store = CachingDiskKeyStore::new(PathBuf::from(d)).unwrap();
             let key = Key::from_str("key_name");
-            let value = TestStruct { v1: "blabla".to_string(), v2: 42 };
+            let value = TestStruct::from_str("foo");
             let info = Info::new(Utc::now(), "me".to_string(), "A!".to_string());
             store.store(key.clone(), value.clone(), info).unwrap();
 
             let stored_keys: Vec<Key> = store.keys().collect();
             assert!(stored_keys.contains(&key));
             assert_eq!(1, stored_keys.len());
+        });
+    }
+
+    #[test]
+    fn should_read_from_disk() {
+        test::test_with_tmp_dir(|d| {
+            // Store stuff in memory and on disk
+            let mut store = CachingDiskKeyStore::new(PathBuf::from(d.clone()))
+                .unwrap();
+            let key = Key::from_str("key_name");
+            let value = TestStruct::from_str("foo");
+            let info = Info::new(Utc::now(), "me".to_string(), "A!".to_string());
+            store.store(key.clone(), value.clone(), info).unwrap();
+
+            // Initiate a new keystore pointing to the same dir, so it can
+            // read values from there.
+            let store = CachingDiskKeyStore::new(PathBuf::from(d)).unwrap();
+
+            let stored_keys: Vec<Key> = store.keys().collect();
+            assert!(stored_keys.contains(&key));
+            assert_eq!(1, stored_keys.len());
+        });
+    }
+
+    #[test]
+    fn should_archive() {
+        test::test_with_tmp_dir(|d| {
+            // Store stuff in memory and on disk
+            let mut store = CachingDiskKeyStore::new(PathBuf::from(d.clone()))
+                .unwrap();
+            let key = Key::from_str("key_name");
+            let value = TestStruct::from_str("foo");
+            let info = Info::new(Utc::now(), "me".to_string(), "A!".to_string());
+            store.store(key.clone(), value.clone(), info).unwrap();
+
+            store.archive(&key).unwrap();
+
+            // The key should still exist
+            let stored_keys: Vec<Key> = store.keys().collect();
+            assert!(stored_keys.contains(&key));
+            assert_eq!(1, stored_keys.len());
+
+            // But nothing is returned for it
+            let found: Option<Arc<TestStruct>> =
+                store.current_value(&key).unwrap();
+            assert_eq!(None, found);
+
+            // Storing a new value should increment version and give stuff
+            // back again.
+            let value = TestStruct::from_str("bar");
+            let info = Info::new(Utc::now(), "me".to_string(), "B".to_string());
+
+            store.store(key.clone(), value.clone(), info).unwrap();
+
+            assert_eq!(2, store.version(&key).unwrap().unwrap());
+            let found: Option<Arc<TestStruct>> =
+                store.current_value(&key).unwrap();
+
+            assert_eq!(Some(Arc::new(value)), found)
+
         });
     }
 
