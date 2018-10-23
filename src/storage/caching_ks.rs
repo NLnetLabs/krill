@@ -14,6 +14,8 @@ use serde_json;
 use super::keystore::{Error, Info, Key, KeyStore};
 
 
+//------------ CurrentMemoryEntry --------------------------------------------
+
 /// This type is used to store current values in memory for caching.
 #[derive(Debug)]
 struct CurrentMemoryEntry {
@@ -27,6 +29,8 @@ impl CurrentMemoryEntry {
     }
 }
 
+
+//------------ CachingDiskKeyStore -------------------------------------------
 
 /// This keystore uses an in memory keystore for caching, and falls back
 /// to a disk based key store.
@@ -50,6 +54,7 @@ impl CachingDiskKeyStore {
 
 /// # Cache support functions
 impl CachingDiskKeyStore {
+    /// Stores the current value for key into an Arc, for safe sharing.
     fn cache_store<V: Any + Clone + Serialize + Send + Sync>(
         &mut self,
         key: Key,
@@ -75,7 +80,8 @@ impl CachingDiskKeyStore {
         Ok(())
     }
 
-    fn cache_get_current<V: Any + Clone + DeserializeOwned + Send + Sync>(
+    /// Gets the current value for a key, if any.
+    fn cache_get<V: Any + Clone + DeserializeOwned + Send + Sync>(
         &self,
         key: &Key
     ) -> Result<Option<Arc<V>>, Error> {
@@ -93,7 +99,8 @@ impl CachingDiskKeyStore {
         }
     }
 
-    fn cache_get_version(&self, key: &Key) -> Result<Option<i32>, Error> {
+    /// Gets the version for the current value for a key, if any.
+    fn cache_version(&self, key: &Key) -> Result<Option<i32>, Error> {
         let r = self.cache.read().map_err(
             |_| Error::from_str("Can't get read lock"))?;
         Ok(r.get(key).map(|c| { c.version }))
@@ -103,6 +110,7 @@ impl CachingDiskKeyStore {
 
 /// # Store on / retrieve from disk
 impl CachingDiskKeyStore {
+    /// Verifies that the base directory exists, or tries to create it.
     fn verify_or_create_dir(&self, key: &Key) -> Result<(), Error> {
         if key.path().to_string_lossy().contains("/") {
             return Err(Error::from_str("Key cannot contain subdir."))
@@ -123,12 +131,15 @@ impl CachingDiskKeyStore {
         Ok(())
     }
 
+    /// Returns the full path for a file, relative to the basedir of the
+    /// cache.
     fn full_path(&self, path: &PathBuf) -> PathBuf {
         let mut res = self.base_dir.clone();
         res.push(path);
         res
     }
 
+    /// Stores the value, info and version to disk. Serialized to json.
     fn disk_store<V: Any + Clone + Serialize + Send + Sync>(
         &mut self,
         key: &Key,
@@ -155,10 +166,11 @@ impl CachingDiskKeyStore {
         Ok(())
     }
 
-    fn disk_get_current<V: Any + Clone + DeserializeOwned + Send + Sync>(
+    /// Gets the current value from disk, if there is a current version.
+    fn disk_get<V: Any + Clone + DeserializeOwned + Send + Sync>(
         &self,
         key: &Key
-    ) -> Result<Option<Arc<V>>, Error> {
+    ) -> Result<Option<V>, Error> {
         match self.version(key)? {
             None => Ok(None),
             Some(v) => {
@@ -166,7 +178,7 @@ impl CachingDiskKeyStore {
                     let value_key = self.key_for_value(&key, v);
                     let f = File::open(self.full_path(value_key.path()))?;
                     let v: V = serde_json::from_reader(f)?;
-                    Ok(Some(Arc::new(v)))
+                    Ok(Some(v))
                 } else {
                     Ok(None)
                 }
@@ -174,7 +186,9 @@ impl CachingDiskKeyStore {
         }
     }
 
-    fn disk_get_version(&self, key: &Key) -> Result<Option<i32>, Error> {
+    /// Gets the current version for a key. Negative numbers indicate that
+    /// the version was archived.
+    fn disk_version(&self, key: &Key) -> Result<Option<i32>, Error> {
         let k = self.full_path(self.key_for_version(key).path());
         if k.exists() {
             let mut f = File::open(k)?;
@@ -186,8 +200,11 @@ impl CachingDiskKeyStore {
         }
     }
 
-    fn disk_archive_version(&mut self, key: &Key) -> Result<(), Error> {
-        if let Some(v) = self.disk_get_version(key)? {
+    /// Archives the current version for a key, by negating the version
+    /// number. Note that versions can be 'revived' simply by storing a new
+    /// value for a key.
+    fn disk_archive(&mut self, key: &Key) -> Result<(), Error> {
+        if let Some(v) = self.disk_version(key)? {
             if v > 0 {
                 let version_key = self.key_for_version(key);
                 let mut f = File::create(self.full_path(version_key.path()))?;
@@ -201,6 +218,7 @@ impl CachingDiskKeyStore {
 }
 
 
+/// # Implements Keystore methods
 impl KeyStore for CachingDiskKeyStore {
 
     type KeyIter = DiskKeyIterator;
@@ -222,44 +240,52 @@ impl KeyStore for CachingDiskKeyStore {
 
     fn archive(&mut self, key: &Key) -> Result<(), Error> {
         {
-            let mut w = self.cache.write()
-                .map_err(|_| Error::from_str("Can't get write lock"))?;
+            let mut w = self.cache.write().unwrap();
             w.remove_entry(key); // Don't care if it was actually cached.
         }
-        self.disk_archive_version(key)
+        self.disk_archive(key)
     }
 
-    /// Retrieves the value from memory if possible, from disk otherwise.
-    ///
-    /// Note: this will NOT cache the value if it's retrieved from disk. Doing
-    /// so would require '&mut self' which seems wrong. For now at least.
-    ///
-    /// In practical terms this should only cause a lookup penalty until a
-    /// value is saved again after a restart.
     fn get<V: Any + Clone + DeserializeOwned + Send + Sync>(
         &self,
         key: &Key
     ) -> Result<Option<Arc<V>>, Error> {
-        match self.cache_get_current(key)? {
-            Some(v) => Ok(Some(v)),
+        match self.cache_get(key)? {
+            Some(v) => Ok(Some(v)), // return from cache if possible
             None => {
-                self.disk_get_current(key)
+                match self.disk_get(key)? { // try to get from disk
+                    None => Ok(None),
+                    Some(v) => {
+                        // cache for future reference
+                        let version = self.version(key).unwrap().unwrap();
+                        let arc: Arc<V> = Arc::new(v);
+                        let mut w = self.cache.write().unwrap();
+                        let entry = CurrentMemoryEntry {
+                            version,
+                            value: arc.clone()
+                        };
+                        w.insert(key.clone(), entry);
+
+                        // and return
+                        Ok(Some(arc))
+                    }
+                }
             }
         }
     }
 
-    /// Retrieves the current version from memory if possible, from disk
-    /// otherwise.
     fn version(&self, key: &Key) -> Result<Option<i32>, Error> {
-        match self.cache_get_version(key)? {
+        match self.cache_version(key)? {
             Some(v) => Ok(Some(v)),
             None => {
-                self.disk_get_version(key)
+                self.disk_version(key)
             }
-
         }
     }
 }
+
+
+//------------ DiskKeyIterator -----------------------------------------------
 
 /// An KeyIterator for a DiskKeyStorage.
 pub struct DiskKeyIterator {
@@ -372,6 +398,12 @@ mod tests {
             let stored_keys: Vec<Key> = store.keys().collect();
             assert!(stored_keys.contains(&key));
             assert_eq!(1, stored_keys.len());
+
+            let found: Option<Arc<TestStruct>> =
+                store.get(&key).unwrap();
+
+            assert_eq!(Some(Arc::new(value)), found)
+
         });
     }
 
@@ -413,6 +445,4 @@ mod tests {
 
         });
     }
-
-
 }

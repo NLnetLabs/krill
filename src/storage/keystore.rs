@@ -11,10 +11,12 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json;
 
+//------------ Key -----------------------------------------------------------
+
 /// A Key for KeyStores.
 ///
-/// These keys are based 'paths' which are Strings whose values can safely
-/// be used to map keys to file a on disk for storage.
+/// These keys are based 'paths' whose values can safely be used to map
+/// keys to file a on disk for storage.
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub struct Key {
     path: PathBuf
@@ -26,9 +28,29 @@ impl Key {
     /// Paths must not contain '/' so that they can be used as a single
     /// sub-dir when using a disk based key store.
     ///
+    /// See [`verify_path`] for further restrictions.
+    ///
+    /// [`verify_path`]: struct.Key.html#method.verify_path
+    pub fn from_path(path: PathBuf) -> Result<Key, InvalidKey> {
+        Self::verify_path(&path)?;
+        Ok(Self { path })
+    }
+
+    /// Creates an instance from a static str. Will unwrap, and panic, if
+    /// unsafe characters are used. Use [`from_path`] for a method that
+    /// returns a Result instead, and see [`verify_path`] for restrictions.
+    ///
+    /// [`from_path`]: struct.Key.html#method.from_path
+    /// [`verify_path`]: struct.Key.html#method.verify_path
+    pub fn from_str(s: &str) -> Key {
+        let path = PathBuf::from(s);
+        Self::from_path(path).unwrap()
+    }
+
     /// Other than this the may contain any character allowed in a
     /// 'segment' in the 'hier-part' defined in RFC3896 only, i.e:
     ///
+    /// ```text
     /// segment       = *pchar
     ///
     /// pchar         = unreserved / pct-encoded / sub-delims / ":" / "@"
@@ -37,19 +59,7 @@ impl Key {
     /// pct-encoded   = "%" HEXDIG HEXDIG
     /// sub-delims    = "!" / "$" / "&" / "'" / "(" / ")" /
     ///                 "*" / "+" / "," / ";" / "="
-    pub fn from_path(path: PathBuf) -> Result<Key, InvalidKey> {
-        Self::verify_path(&path)?;
-        Ok(Self { path })
-    }
-
-    /// Creates an instance from a static str. Will unwrap, and panic, if
-    /// unsafe characters are used. Use 'from_path' for a method that returns
-    /// a Result instead, and see there for restrictions.
-    pub fn from_str(s: &str) -> Key {
-        let path = PathBuf::from(s);
-        Self::from_path(path).unwrap()
-    }
-
+    /// ```
     fn verify_path(path: &PathBuf) -> Result<(), InvalidKey> {
         match path.to_str() {
             None => { return Err(InvalidKey) },
@@ -81,6 +91,9 @@ impl Key {
     }
 }
 
+
+//------------ Info ----------------------------------------------------------
+
 /// This type defines the meta-information for changes to a value.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Info {
@@ -90,7 +103,9 @@ pub struct Info {
     message: String
 }
 
+
 impl Info {
+    /// Creates a new Info value for a given date_time, actor and message.
     pub fn new(
         date_time: DateTime<Utc>,
         actor: String,
@@ -99,11 +114,13 @@ impl Info {
         Info { date_time, actor, message }
     }
 
+    /// Creates a new Info value for an actor and message, using now for the
+    /// date_time.
     pub fn now(
         actor: String,
         message: String
     ) -> Self {
-        Info { date_time: Utc::now(), actor, message }
+        Self::new(Utc::now(), actor, message)
     }
 
     pub fn date_time(&self) -> &DateTime<Utc> {
@@ -120,9 +137,14 @@ impl Info {
 }
 
 
+//------------ InvalidKey ----------------------------------------------------
+
 /// This type is used to signify any error in key formats.
 #[derive(Debug)]
 pub struct InvalidKey;
+
+
+//------------ KeyStore ------------------------------------------------------
 
 /// A KeyStore stores and archives Values of any type associated with a unique
 /// Key and meta-information in the form of Info.
@@ -130,11 +152,12 @@ pub struct InvalidKey;
 /// Internally it will use keys derived off the base key supplied by the
 /// user of this Trait, to achieve the following:
 ///
-/// Key -->
-///     Values  -> 0, 1, ..
-///     Info    -> 0, 1, ..
-///     Current -> 0 | 1 | ..
-///
+/// ```text
+/// keyname /
+///     v1, v2, ..  (values)
+///     i1, i2, ..  (info)
+///     version     (the current version, negative if archived)
+/// ```
 pub trait KeyStore {
 
     type KeyIter: Iterator<Item=Key>;
@@ -172,24 +195,36 @@ pub trait KeyStore {
     // versioned_value()
     // versioned_info()
 
+    /// Helper method for resolving relative keys. See [`key_for_value`],
+    /// [`key_for_info`] and [`key_for_version`] for methods that you are
+    /// more likely to need.
+    ///
+    /// [`key_for_value`]: trait.KeyStore.html#method.key_for_value
+    /// [`key_for_info`]: trait.KeyStore.html#method.key_for_info
+    /// [`key_for_version`]: trait.KeyStore.html#method.key_for_version
     fn key_for_name(&self, key: &Key, name: String) -> Key {
         let mut path = key.path.clone();
         path.push(name);
         Key { path }
     }
 
+    /// Returns the relative key for a versioned value element for a key.
     fn key_for_value(&self, key: &Key, version: i32) -> Key {
         self.key_for_name(key, format!("v{}", version))
     }
 
+    /// Returns the relative key for a versioned info element for a key.
     fn key_for_info(&self, key: &Key, version: i32) -> Key {
         self.key_for_name(key, format!("i{}", version))
     }
 
+    /// Returns the relative key for the version element for a key.
     fn key_for_version(&self, key: &Key) -> Key {
         self.key_for_name(key, "version".to_string())
     }
 
+    /// Returns the next version for key, taking archived versions into
+    /// consideration. Counting starts at 1.
     fn next_version(&self, key: &Key) -> Result<i32, Error> {
         match self.version(key)? {
             None => Ok(1),
@@ -202,11 +237,11 @@ pub trait KeyStore {
             }
         }
     }
-
-
-
 }
 
+//------------ Error ---------------------------------------------------------
+
+/// This type defines possible Errors for KeyStore
 #[derive(Debug, Fail)]
 pub enum Error {
     #[fail(display ="Json serialization error: {}", _0)]
