@@ -87,6 +87,20 @@ impl PublisherList {
         Ok(())
     }
 
+    /// Removes a publisher with a given name.
+    ///
+    /// Will return an error if ths publisher does not exist.
+    pub fn remove_publisher(&mut self, name: &str) -> Result<(), Error> {
+        match self.publisher(name)? {
+            None => Err(Error::UnknownPublisher(name.to_string())),
+            Some(_p) => {
+                let key = Key::from_str(name);
+                self.store.archive(&key)?;
+                Ok(())
+            }
+        }
+    }
+
 
     /// Updates the IdCert for a known publisher.
     pub fn update_id_cert_publisher(
@@ -132,8 +146,28 @@ impl PublisherList {
         self.store.get(&key).map_err(|e| { Error::KeyStoreError(e)})
     }
 
+    /// Returns all current publishers. Note: using a Vec here is
+    /// relatively expensive, however, it is easy to implement and debug, and
+    /// this method is rarely needed - mainly for tests and to rebuild/update
+    /// the publisher list at start up.
+    pub fn publishers(&self) -> Result<Vec<Arc<Publisher>>, Error> {
+        let mut res = Vec::new();
+
+        for ref k in self.store.keys() {
+            if let Some(arc) = self.store.get(k)? {
+                res.push(arc);
+            }
+        }
+
+        Ok(res)
+    }
+
 }
 
+
+
+
+//------------ Error ---------------------------------------------------------
 
 #[derive(Debug, Fail)]
 pub enum Error {
@@ -259,7 +293,6 @@ mod tests {
             let mut pl = new_pl(d);
             let id_cert = new_id_cert();
 
-
             let name = "test";
             let actor = "test_actor".to_string();
 
@@ -292,41 +325,27 @@ mod tests {
         })
     }
 
-}
+    #[test]
+    fn should_remove_publisher() {
+        test::test_with_tmp_dir(|d| {
+            let mut pl = new_pl(d);
+            let id_cert = new_id_cert();
 
-//    /// Removes a Publisher.
-//    pub fn remove_publisher(
-//        &mut self,
-//        name: String
-//    ) -> Result<VersionedEvent, Error> {
-//        let event = VersionedEvent {
-//            version: self.version,
-//            event: Event::Removed(PublisherRemoved(name))
-//        };
-//
-//        self.apply_event(&event)?;
-//        Ok(event)
-//    }
-//
-//
-//
-//    #[test]
-//    fn should_remove_publisher() {
-//        let mut cl = empty_publisher_list();
-//        let id_cert = new_id_cert();
-//
-//        let pr = PublisherRequest::new(
-//            Some("test"),
-//            "test",
-//            id_cert.clone());
-//
-//        cl.add_publisher(pr).unwrap();
-//
-//        assert_eq!(1, cl.publishers.len());
-//
-//        cl.remove_publisher("test".to_string()).unwrap();
-//
-//        assert_eq!(0, cl.publishers.len());
-//    }
-//
-//}
+            let name = "test";
+            let actor = "test_actor".to_string();
+
+            let pr = PublisherRequest::new(
+                Some("test"),
+                name,
+                id_cert
+            );
+
+            pl.add_publisher(pr, actor.clone()).unwrap();
+            assert_eq!(1, pl.publishers().unwrap(). len());
+
+            pl.remove_publisher(name).unwrap();
+            assert_eq!(0, pl.publishers().unwrap(). len());
+        });
+    }
+
+}
