@@ -156,6 +156,7 @@ pub struct InvalidKey;
 /// keyname /
 ///     v1, v2, ..  (values)
 ///     i1, i2, ..  (info)
+///     a2, ..      (archive info, only for versions that were archived)
 ///     version     (the current version, negative if archived)
 /// ```
 pub trait KeyStore {
@@ -177,7 +178,10 @@ pub trait KeyStore {
     /// stored for this key the version number will continue from the point
     /// where this value was archived. However, asking for the current version
     /// or value for this key will return Ok(None).
-    fn archive(&mut self, key: &Key) -> Result<(), Error>;
+    ///
+    /// The info for this change will be stored using the negative of the
+    /// current version.
+    fn archive(&mut self, key: &Key, info: Info) -> Result<(), Error>;
 
     /// Retrieves an optional Arc containing the current value, given the key.
     /// If the value was archived, Ok(None) will be returned.
@@ -216,6 +220,11 @@ pub trait KeyStore {
     /// Returns the relative key for a versioned info element for a key.
     fn key_for_info(&self, key: &Key, version: i32) -> Key {
         self.key_for_name(key, format!("i{}", version))
+    }
+
+    /// Returns the relative key for a versioned info element for a key.
+    fn key_for_archive_info(&self, key: &Key, version: i32) -> Key {
+        self.key_for_name(key, format!("a{}", version))
     }
 
     /// Returns the relative key for the version element for a key.

@@ -90,12 +90,22 @@ impl PublisherList {
     /// Removes a publisher with a given name.
     ///
     /// Will return an error if ths publisher does not exist.
-    pub fn remove_publisher(&mut self, name: &str) -> Result<(), Error> {
+    pub fn remove_publisher(
+        &mut self,
+        name: &str,
+        actor: String
+    ) -> Result<(), Error> {
         match self.publisher(name)? {
             None => Err(Error::UnknownPublisher(name.to_string())),
             Some(_p) => {
                 let key = Key::from_str(name);
-                self.store.archive(&key)?;
+
+                let info = Info::now(
+                    actor,
+                    format!("Removed publisher: {}", name)
+                );
+
+                self.store.archive(&key, info)?;
                 Ok(())
             }
         }
@@ -343,7 +353,7 @@ mod tests {
             pl.add_publisher(pr, actor.clone()).unwrap();
             assert_eq!(1, pl.publishers().unwrap(). len());
 
-            pl.remove_publisher(name).unwrap();
+            pl.remove_publisher(name, actor).unwrap();
             assert_eq!(0, pl.publishers().unwrap(). len());
         });
     }

@@ -203,12 +203,18 @@ impl CachingDiskKeyStore {
     /// Archives the current version for a key, by negating the version
     /// number. Note that versions can be 'revived' simply by storing a new
     /// value for a key.
-    fn disk_archive(&mut self, key: &Key) -> Result<(), Error> {
+    fn disk_archive(&mut self, key: &Key, info: Info) -> Result<(), Error> {
         if let Some(v) = self.disk_version(key)? {
             if v > 0 {
                 let version_key = self.key_for_version(key);
                 let mut f = File::create(self.full_path(version_key.path()))?;
                 write!(f, "{}", v * -1)?;
+
+                let arch_key = self.key_for_archive_info(&key, v);
+                let mut f = File::create(self.full_path(arch_key.path()))?;
+                let i = serde_json::to_string(&info)?;
+                f.write(i.as_ref())?;
+
                 return Ok(())
             }
         }
@@ -238,12 +244,12 @@ impl KeyStore for CachingDiskKeyStore {
         self.cache_store(key, value, next)
     }
 
-    fn archive(&mut self, key: &Key) -> Result<(), Error> {
+    fn archive(&mut self, key: &Key, info: Info) -> Result<(), Error> {
         {
             let mut w = self.cache.write().unwrap();
             w.remove_entry(key); // Don't care if it was actually cached.
         }
-        self.disk_archive(key)
+        self.disk_archive(key, info)
     }
 
     fn get<V: Any + Clone + DeserializeOwned + Send + Sync>(
@@ -415,10 +421,14 @@ mod tests {
                 .unwrap();
             let key = Key::from_str("key_name");
             let value = TestStruct::from_str("foo");
-            let info = Info::new(Utc::now(), "me".to_string(), "A!".to_string());
+            let actor = "me".to_string();
+            let msg = "created".to_string();
+            let info = Info::new(Utc::now(), actor.clone(), msg);
             store.store(key.clone(), value.clone(), info).unwrap();
 
-            store.archive(&key).unwrap();
+            let msg = "removed".to_string();
+            let info = Info::new(Utc::now(), actor.clone(), msg);
+            store.archive(&key, info).unwrap();
 
             // The key should still exist
             let stored_keys: Vec<Key> = store.keys().collect();
@@ -426,20 +436,19 @@ mod tests {
             assert_eq!(1, stored_keys.len());
 
             // But nothing is returned for it
-            let found: Option<Arc<TestStruct>> =
-                store.get(&key).unwrap();
+            let found: Option<Arc<TestStruct>> = store.get(&key).unwrap();
             assert_eq!(None, found);
 
             // Storing a new value should increment version and give stuff
             // back again.
             let value = TestStruct::from_str("bar");
-            let info = Info::new(Utc::now(), "me".to_string(), "B".to_string());
+            let msg = "re-created!".to_string();
+            let info = Info::new(Utc::now(), actor, msg);
 
             store.store(key.clone(), value.clone(), info).unwrap();
 
             assert_eq!(2, store.version(&key).unwrap().unwrap());
-            let found: Option<Arc<TestStruct>> =
-                store.get(&key).unwrap();
+            let found: Option<Arc<TestStruct>> = store.get(&key).unwrap();
 
             assert_eq!(Some(Arc::new(value)), found)
 
