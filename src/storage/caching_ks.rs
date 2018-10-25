@@ -409,7 +409,6 @@ mod tests {
                 store.get(&key).unwrap();
 
             assert_eq!(Some(Arc::new(value)), found)
-
         });
     }
 
@@ -451,7 +450,6 @@ mod tests {
             let found: Option<Arc<TestStruct>> = store.get(&key).unwrap();
 
             assert_eq!(Some(Arc::new(value)), found)
-
         });
     }
 }

@@ -9,6 +9,10 @@ use rpki::oob::exchange::PublisherRequest;
 use storage::keystore::{self, Info, Key, KeyStore};
 use storage::caching_ks::CachingDiskKeyStore;
 use std::sync::Arc;
+use std::fs::File;
+use std::io::BufReader;
+use std::collections::HashMap;
+use rpki::oob::exchange::PublisherRequestError;
 
 
 //------------ PublisherList -------------------------------------------------
@@ -175,6 +179,85 @@ impl PublisherList {
 }
 
 
+/// # Initialise from disk
+impl PublisherList {
+    /// Synchronizes the list of Publisher based on request XML files on disk.
+    /// Will add new publishers, remove removed publisher, and update the
+    /// id_cert in case it was updated. Returns an error in case duplicate
+    /// handler names are found in XML files in the directory.
+    pub fn sync_from_dir(
+        &mut self,
+        dir: PathBuf,
+        actor: String
+    ) -> Result<(), Error> {
+        // Find all the publisher requests on disk
+        let prs_on_disk = self.prs_on_disk(dir)?;
+        self.process_removed_publishers(&prs_on_disk, &actor)?;
+
+        for (handle, pr) in prs_on_disk {
+            match self.publisher(&handle)? {
+                None => {
+                    self.add_publisher(pr, actor.clone())?;
+                }
+                Some(p) => {
+                    if p.id_cert() != pr.id_cert() {
+                        let (_tag, name, id_cert) = pr.into_parts();
+                        self.update_id_cert_publisher(
+                            &name,
+                            id_cert,
+                            actor.clone()
+                        )?;
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn process_removed_publishers(
+        &mut self,
+        prs_on_disk: &HashMap<String, PublisherRequest>,
+        actor: &String
+    ) -> Result<(), Error> {
+        let current = self.publishers()?;
+        for c in current {
+            if prs_on_disk.get(c.name()).is_none() {
+                self.remove_publisher(c.name(), actor.clone())?;
+            }
+        }
+        Ok(())
+    }
+
+    fn prs_on_disk(
+        &self,
+        dir: PathBuf
+    ) -> Result<HashMap<String, PublisherRequest>, Error> {
+        let mut prs_on_disk = HashMap::new();
+        for e in dir.read_dir()? {
+            let file = e?;
+            if let Some(file_name) = file.file_name().to_str() {
+                if file_name.ends_with(".xml") {
+                    let f = File::open(file.path().display().to_string())?;
+                    let mut r = BufReader::new(f);
+
+                    let pr = PublisherRequest::decode(r)?;
+
+                    let handle = pr.handle().clone();
+                    if prs_on_disk.get(&handle).is_some() {
+                        return Err(Error::DuplicatePublisher(handle))
+                    } else {
+                        prs_on_disk.insert(pr.handle().clone(), pr);
+                    }
+                }
+            }
+        }
+        Ok(prs_on_disk)
+    }
+}
+
+
+
 
 
 //------------ Error ---------------------------------------------------------
@@ -202,6 +285,9 @@ pub enum Error {
 
     #[fail(display = "Error in base URI: {}.", _0)]
     UriError(uri::Error),
+
+    #[fail(display = "Invalide Publisher Request: {}.", _0)]
+    PublisherRequestError(PublisherRequestError)
 }
 
 impl From<keystore::Error> for Error {
@@ -222,6 +308,12 @@ impl From<uri::Error> for Error {
     }
 }
 
+impl From<PublisherRequestError> for Error {
+    fn from(e: PublisherRequestError) -> Self {
+        Error::PublisherRequestError(e)
+    }
+}
+
 //------------ Tests ---------------------------------------------------------
 
 #[cfg(test)]
@@ -229,23 +321,11 @@ mod tests {
 
     use super::*;
     use test;
-    use rpki::signing::PublicKeyAlgorithm;
-    use rpki::signing::builder::IdCertBuilder;
-    use rpki::signing::signer::Signer;
-    use rpki::signing::softsigner::OpenSslSigner;
-
-    fn rsync_uri(s: &str) -> uri::Rsync {
-        uri::Rsync::from_str(s).unwrap()
-    }
-
-    fn new_id_cert() -> IdCert {
-        let mut s = OpenSslSigner::new();
-        let key_id = s.create_key(&PublicKeyAlgorithm::RsaEncryption).unwrap();
-        IdCertBuilder::new_ta_id_cert(&key_id, &mut s).unwrap()
-    }
+    use std::fs::File;
+    use std::io::Write;
 
     fn new_pl(dir: String) -> PublisherList {
-        let uri = rsync_uri("rsync://host/module/");
+        let uri = test::rsync_uri("rsync://host/module/");
         PublisherList::new(dir, uri).unwrap()
     }
 
@@ -253,12 +333,7 @@ mod tests {
     fn should_refuse_slash_in_publisher_handle() {
         test::test_with_tmp_dir(|d| {
             let mut pl = new_pl(d);
-            let id_cert = new_id_cert();
-
-            let pr = PublisherRequest::new(
-                Some("test"),
-                "test/below",
-                id_cert);
+            let pr = test::new_publisher_request("test/below");
 
             match pl.add_publisher(pr, "test".to_string()) {
                 Err(Error::ForwardSlashInHandle(_)) => { }, // Ok
@@ -271,25 +346,21 @@ mod tests {
     fn should_add_publisher() {
         test::test_with_tmp_dir(|d| {
             let mut pl = new_pl(d);
-            let id_cert = new_id_cert();
+            let name = "alice";
+            let pr = test::new_publisher_request(name);
+            let id_cert = pr.id_cert().clone();
+            let actor = "test".to_string();
 
+            pl.add_publisher(pr, actor).unwrap();
 
-            let pr = PublisherRequest::new(
-                Some("test"),
-                "test",
-                id_cert.clone());
-
-            pl.add_publisher(pr, "test".to_string()).unwrap();
-
-            let name = "test".to_string();
             assert!(pl.has_publisher(&name));
 
             // Get the Arc out of the Result<Option<Arc<Publisher>>, Error>
             let publisher_found = pl.publisher(&name).unwrap().unwrap();
 
             let expected_publisher = Publisher::new(
-                "test".to_string(),
-                rsync_uri("rsync://host/module/test"),
+                name.to_string(),
+                test::rsync_uri(&format!("rsync://host/module/{}", name)),
                 id_cert
             );
 
@@ -301,20 +372,15 @@ mod tests {
     fn should_update_id_cert_publisher() {
         test::test_with_tmp_dir(|d| {
             let mut pl = new_pl(d);
-            let id_cert = new_id_cert();
-
-            let name = "test";
-            let actor = "test_actor".to_string();
-
-            let pr = PublisherRequest::new(
-                Some("test"),
-                name,
-                id_cert
-            );
+            let name = "alice";
+            let pr = test::new_publisher_request(name);
+            let actor = "test".to_string();
 
             pl.add_publisher(pr, actor.clone()).unwrap();
 
-            let id_cert = new_id_cert();
+            // Make a new publisher request for alice, using a new cert
+            let pr = test::new_publisher_request(name);
+            let id_cert = pr.id_cert().clone();
 
             pl.update_id_cert_publisher(
                 name,
@@ -326,8 +392,8 @@ mod tests {
             let publisher_found = pl.publisher(&name).unwrap().unwrap();
 
             let expected_publisher = Publisher::new(
-                "test".to_string(),
-                rsync_uri("rsync://host/module/test"),
+                name.to_string(),
+                test::rsync_uri(&format!("rsync://host/module/{}", name)),
                 id_cert
             );
 
@@ -339,16 +405,10 @@ mod tests {
     fn should_remove_publisher() {
         test::test_with_tmp_dir(|d| {
             let mut pl = new_pl(d);
-            let id_cert = new_id_cert();
 
-            let name = "test";
-            let actor = "test_actor".to_string();
-
-            let pr = PublisherRequest::new(
-                Some("test"),
-                name,
-                id_cert
-            );
+            let name = "alice";
+            let actor = "test".to_string();
+            let pr = test::new_publisher_request(name);
 
             pl.add_publisher(pr, actor.clone()).unwrap();
             assert_eq!(1, pl.publishers().unwrap(). len());
@@ -356,6 +416,87 @@ mod tests {
             pl.remove_publisher(name, actor).unwrap();
             assert_eq!(0, pl.publishers().unwrap(). len());
         });
+    }
+
+    fn save_pr(base_dir: &str, file_name: &str, pr: &PublisherRequest) {
+        let full_name = PathBuf::from(format!("{}/{}", base_dir, file_name));
+        let mut f = File::create(full_name).unwrap();
+        let xml = pr.encode_vec();
+        f.write(xml.as_ref()).unwrap();
+    }
+
+    fn find_in_list(
+        name: &str,
+        publishers: &Vec<Arc<Publisher>>
+    ) -> Option<Arc<Publisher>> {
+        publishers.iter().find(|e| {e.name() == name }).map(|e| {e.clone()})
+    }
+
+    #[test]
+    fn should_sync_publisher_requests() {
+        test::test_with_tmp_dir(|d|{
+
+            let pl_dir = test::create_sub_dir(&d);
+            let mut pl = new_pl(pl_dir);
+
+            let actor = "test".to_string();
+
+            //
+            // Start with two PRs for alice and bob
+            let start_sync_dir = test::create_sub_dir(&d);
+            let pr_alice = test::new_publisher_request("alice");
+            let pr_bob   = test::new_publisher_request("bob");
+            save_pr(&start_sync_dir, "alice.xml", &pr_alice);
+            save_pr(&start_sync_dir, "bob.xml", &pr_bob);
+
+            pl.sync_from_dir(
+                PathBuf::from(start_sync_dir),
+                actor.clone()
+            ).unwrap();
+
+            let publishers = pl.publishers().unwrap();
+            assert_eq!(2, publishers.len());
+
+            assert!(find_in_list("alice", &publishers).is_some());
+            assert!(find_in_list("bob", &publishers).is_some());
+
+            //
+            // Now update
+            //  remove alice
+            //  update the id_cert for bob
+            //  add carol
+            let updated_sync_dir = test::create_sub_dir(&d);
+            let pr_bob_2 = test::new_publisher_request("bob");
+            let pr_carol = test::new_publisher_request("carol");
+            save_pr(&updated_sync_dir, "bob.xml", &pr_bob_2);
+            save_pr(&updated_sync_dir, "carol.xml", &pr_carol);
+            pl.sync_from_dir(
+                PathBuf::from(updated_sync_dir),
+                actor.clone()
+            ).unwrap();
+
+            let publishers = pl.publishers().unwrap();
+            assert_eq!(2, publishers.len());
+
+            assert!(find_in_list("alice", &publishers).is_none());
+            assert!(find_in_list("bob", &publishers).is_some());
+            assert_eq!(
+                find_in_list("bob", &publishers).unwrap().id_cert(),
+                pr_bob_2.id_cert()
+            );
+            assert!(find_in_list("carol", &publishers).is_some());
+
+            //
+            // Now do a dir with a duplicate handle, this should
+            // result in an error response
+            let duplicates_sync_dir = test::create_sub_dir(&d);
+            save_pr(&duplicates_sync_dir, "bob.xml", &pr_bob);
+            save_pr(&duplicates_sync_dir, "bob-2.xml", &pr_bob_2);
+            assert!(pl.sync_from_dir(
+                PathBuf::from(duplicates_sync_dir),
+                actor.clone()
+            ).is_err());
+        })
     }
 
 }

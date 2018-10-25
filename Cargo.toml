@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Tim Bruijnzeels <tim@nlnetlabs.nl>", "Martin Hoffmann <martin@nlnetlabs.nl>"]
 
 [dependencies]
-ber          = { git="https://github.com/NLnetLabs/ber-rs.git" }
+bcder        = "^0.1"
 rpki         = { git="https://github.com/NLnetLabs/rpki-rs.git", features = [ "softkeys" ] }
 base64       = "^0.9"
 bytes        = "^0.4"
