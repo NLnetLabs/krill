@@ -39,6 +39,14 @@ impl Config {
     pub fn data_dir(&self) -> String {
         self.data_dir.to_string_lossy().to_string()
     }
+
+    pub fn pub_xml_dir(&self) -> &PathBuf {
+        &self.pub_xml_dir
+    }
+
+    pub fn rsync_base(&self) -> uri::Rsync {
+        self.rsync_base.clone()
+    }
 }
 
 /// # Create

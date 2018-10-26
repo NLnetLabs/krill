@@ -58,7 +58,7 @@ impl PublisherList {
     /// Will return an error if the publisher already exists! Use
     /// update_publisher in case you want to update an existing publisher.
     pub fn add_publisher(
-        &mut self,
+        &self,
         pr: PublisherRequest,
         actor: String
     ) -> Result<(), Error> {
@@ -95,7 +95,7 @@ impl PublisherList {
     ///
     /// Will return an error if ths publisher does not exist.
     pub fn remove_publisher(
-        &mut self,
+        &self,
         name: &str,
         actor: String
     ) -> Result<(), Error> {
@@ -118,7 +118,7 @@ impl PublisherList {
 
     /// Updates the IdCert for a known publisher.
     pub fn update_id_cert_publisher(
-        &mut self,
+        &self,
         name: &str,
         id_cert: IdCert,
         actor: String
@@ -186,7 +186,7 @@ impl PublisherList {
     /// id_cert in case it was updated. Returns an error in case duplicate
     /// handler names are found in XML files in the directory.
     pub fn sync_from_dir(
-        &mut self,
+        &self,
         dir: PathBuf,
         actor: String
     ) -> Result<(), Error> {
@@ -216,7 +216,7 @@ impl PublisherList {
     }
 
     fn process_removed_publishers(
-        &mut self,
+        &self,
         prs_on_disk: &HashMap<String, PublisherRequest>,
         actor: &String
     ) -> Result<(), Error> {

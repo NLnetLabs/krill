@@ -18,4 +18,5 @@ pub mod provisioning;
 pub mod storage;
 pub mod config;
 pub mod ext_serde;
-mod test;
+pub mod server;
+pub mod test;

@@ -2,4 +2,6 @@
 Cargo.lock
 target/
 .cargo
+data
+publishers
 work

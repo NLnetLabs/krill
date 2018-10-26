@@ -56,7 +56,7 @@ impl CachingDiskKeyStore {
 impl CachingDiskKeyStore {
     /// Stores the current value for key into an Arc, for safe sharing.
     fn cache_store<V: Any + Clone + Serialize + Send + Sync>(
-        &mut self,
+        &self,
         key: Key,
         value: V,
         version: i32
@@ -141,7 +141,7 @@ impl CachingDiskKeyStore {
 
     /// Stores the value, info and version to disk. Serialized to json.
     fn disk_store<V: Any + Clone + Serialize + Send + Sync>(
-        &mut self,
+        &self,
         key: &Key,
         value: &V,
         info: &Info,
@@ -203,7 +203,7 @@ impl CachingDiskKeyStore {
     /// Archives the current version for a key, by negating the version
     /// number. Note that versions can be 'revived' simply by storing a new
     /// value for a key.
-    fn disk_archive(&mut self, key: &Key, info: Info) -> Result<(), Error> {
+    fn disk_archive(&self, key: &Key, info: Info) -> Result<(), Error> {
         if let Some(v) = self.disk_version(key)? {
             if v > 0 {
                 let version_key = self.key_for_version(key);
@@ -234,7 +234,7 @@ impl KeyStore for CachingDiskKeyStore {
     }
 
     fn store<V: Any + Clone + Serialize + Send + Sync>(
-        &mut self,
+        &self,
         key: Key,
         value: V,
         info: Info
@@ -244,7 +244,7 @@ impl KeyStore for CachingDiskKeyStore {
         self.cache_store(key, value, next)
     }
 
-    fn archive(&mut self, key: &Key, info: Info) -> Result<(), Error> {
+    fn archive(&self, key: &Key, info: Info) -> Result<(), Error> {
         {
             let mut w = self.cache.write().unwrap();
             w.remove_entry(key); // Don't care if it was actually cached.
