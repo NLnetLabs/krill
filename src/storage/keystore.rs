@@ -168,7 +168,7 @@ pub trait KeyStore {
 
     /// Stores a key value pair.
     fn store<V: Any + Clone + Serialize + Send + Sync>(
-        &self,
+        &mut self,
         key: Key,
         value: V,
         info: Info
@@ -181,7 +181,7 @@ pub trait KeyStore {
     ///
     /// The info for this change will be stored using the negative of the
     /// current version.
-    fn archive(&self, key: &Key, info: Info) -> Result<(), Error>;
+    fn archive(&mut self, key: &Key, info: Info) -> Result<(), Error>;
 
     /// Retrieves an optional Arc containing the current value, given the key.
     /// If the value was archived, Ok(None) will be returned.

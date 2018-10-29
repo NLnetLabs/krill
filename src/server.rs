@@ -5,7 +5,6 @@ use std::net::SocketAddr;
 use self::hyper::{Body, Method, Response, Server, StatusCode};
 use self::hyper::rt::Future;
 use self::hyper::service::service_fn_ok;
-use std::sync::Arc;
 use provisioning::publisher_list::PublisherList;
 
 const CSS: &'static [u8]      = include_bytes!("../static/css/custom.css");
@@ -27,7 +26,7 @@ fn read_static_file(path: &str) -> Body {
     }
 }
 
-fn show_publishers(pl: Arc<PublisherList>) -> Body {
+fn show_publishers(pl: &PublisherList) -> Body {
     Body::from(format!("Configured {} publishers." , pl.publishers().unwrap
     ().len()))
 }
@@ -36,7 +35,7 @@ fn show_publishers(pl: Arc<PublisherList>) -> Body {
 
 pub fn serve(
     addr: &SocketAddr,
-    publisher_list: Arc<PublisherList>) {
+    publisher_list: PublisherList) {
 
     let new_service = move || {
 
@@ -49,7 +48,7 @@ pub fn serve(
             if path.starts_with("/static") {
                 *res.body_mut() = read_static_file(path)
             } else if path == "/publishers/" {
-                *res.body_mut() = { show_publishers(publisher_list.clone()) }
+                *res.body_mut() = { show_publishers(&publisher_list) }
             } else {
                 match (req.method(), path) {
                     (&Method::GET, "/health") => {

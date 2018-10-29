@@ -17,7 +17,7 @@ use super::keystore::{Error, Info, Key, KeyStore};
 //------------ CurrentMemoryEntry --------------------------------------------
 
 /// This type is used to store current values in memory for caching.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 struct CurrentMemoryEntry {
     version: i32,
     value: Arc<Any + Send + Sync>
@@ -34,9 +34,9 @@ impl CurrentMemoryEntry {
 
 /// This keystore uses an in memory keystore for caching, and falls back
 /// to a disk based key store.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct CachingDiskKeyStore {
-    cache: RwLock<HashMap<Key, CurrentMemoryEntry>>,
+    cache: Arc<RwLock<HashMap<Key, CurrentMemoryEntry>>>,
     base_dir: PathBuf
 }
 
@@ -47,7 +47,9 @@ impl CachingDiskKeyStore {
             Err(Error::Other("Invalid base_dir for DiskKeyStore".to_string()))
         } else {
             let cache = HashMap::new();
-            Ok(CachingDiskKeyStore{cache: RwLock::new(cache), base_dir})
+            Ok(CachingDiskKeyStore{
+                cache: Arc::new(RwLock::new(cache)),
+                base_dir})
         }
     }
 }
@@ -234,7 +236,7 @@ impl KeyStore for CachingDiskKeyStore {
     }
 
     fn store<V: Any + Clone + Serialize + Send + Sync>(
-        &self,
+        &mut self,
         key: Key,
         value: V,
         info: Info
@@ -244,7 +246,7 @@ impl KeyStore for CachingDiskKeyStore {
         self.cache_store(key, value, next)
     }
 
-    fn archive(&self, key: &Key, info: Info) -> Result<(), Error> {
+    fn archive(&mut self, key: &Key, info: Info) -> Result<(), Error> {
         {
             let mut w = self.cache.write().unwrap();
             w.remove_entry(key); // Don't care if it was actually cached.

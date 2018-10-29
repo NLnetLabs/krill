@@ -21,7 +21,7 @@ use rpki::oob::exchange::PublisherRequestError;
 /// publication server. Essentially this wraps around the storage that
 /// contains all current publishers, and keeps a full audit trail of changes
 /// to this.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct PublisherList {
     store: CachingDiskKeyStore,
     base_uri: uri::Rsync,
@@ -58,7 +58,7 @@ impl PublisherList {
     /// Will return an error if the publisher already exists! Use
     /// update_publisher in case you want to update an existing publisher.
     pub fn add_publisher(
-        &self,
+        &mut self,
         pr: PublisherRequest,
         actor: String
     ) -> Result<(), Error> {
@@ -95,7 +95,7 @@ impl PublisherList {
     ///
     /// Will return an error if ths publisher does not exist.
     pub fn remove_publisher(
-        &self,
+        &mut self,
         name: &str,
         actor: String
     ) -> Result<(), Error> {
@@ -118,7 +118,7 @@ impl PublisherList {
 
     /// Updates the IdCert for a known publisher.
     pub fn update_id_cert_publisher(
-        &self,
+        &mut self,
         name: &str,
         id_cert: IdCert,
         actor: String
@@ -186,7 +186,7 @@ impl PublisherList {
     /// id_cert in case it was updated. Returns an error in case duplicate
     /// handler names are found in XML files in the directory.
     pub fn sync_from_dir(
-        &self,
+        &mut self,
         dir: PathBuf,
         actor: String
     ) -> Result<(), Error> {
@@ -216,7 +216,7 @@ impl PublisherList {
     }
 
     fn process_removed_publishers(
-        &self,
+        &mut self,
         prs_on_disk: &HashMap<String, PublisherRequest>,
         actor: &String
     ) -> Result<(), Error> {

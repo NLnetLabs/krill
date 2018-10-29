@@ -4,7 +4,6 @@ extern crate rpubd;
 
 use rpubd::config::Config;
 use rpubd::server;
-use std::sync::Arc;
 use rpubd::provisioning::publisher_list::PublisherList;
 
 lazy_static! {
@@ -21,7 +20,7 @@ lazy_static! {
 
 fn main() {
 
-    let list = Arc::new(match PublisherList::new(
+    let mut list = match PublisherList::new(
         CONFIG.data_dir(),
         CONFIG.rsync_base()) {
         Err(e) => {
@@ -29,7 +28,7 @@ fn main() {
             ::std::process::exit(1);
         },
         Ok(list) => list
-    });
+    };
 
     list.sync_from_dir(CONFIG.pub_xml_dir().clone(), "start up syncer".to_string()
     ).unwrap();
