@@ -1,5 +1,4 @@
 extern crate base64;
-extern crate bcder as ber;
 extern crate bytes;
 extern crate chrono;
 extern crate core;
