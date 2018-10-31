@@ -200,7 +200,7 @@ impl PublisherList {
                     self.add_publisher(pr, actor.clone())?;
                 }
                 Some(p) => {
-                    if p.id_cert() != pr.id_cert() {
+                    if p.id_cert().to_bytes() != pr.id_cert().to_bytes() {
                         let (_tag, name, id_cert) = pr.into_parts();
                         self.update_id_cert_publisher(
                             &name,
@@ -481,8 +481,8 @@ mod tests {
             assert!(find_in_list("alice", &publishers).is_none());
             assert!(find_in_list("bob", &publishers).is_some());
             assert_eq!(
-                find_in_list("bob", &publishers).unwrap().id_cert(),
-                pr_bob_2.id_cert()
+                find_in_list("bob", &publishers).unwrap().id_cert().to_bytes(),
+                pr_bob_2.id_cert().to_bytes()
             );
             assert!(find_in_list("carol", &publishers).is_some());
 

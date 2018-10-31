@@ -7,7 +7,7 @@ use rpki::uri;
 //------------ Publisher -----------------------------------------------------
 
 /// This type defines Publisher CAs that are allowed to publish.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Publisher {
     name:       String,
 
@@ -51,3 +51,13 @@ impl Publisher {
         &self.id_cert
     }
 }
+
+impl PartialEq for Publisher {
+    fn eq(&self, other: &Publisher) -> bool {
+            self.name == other.name &&
+            self.base_uri == other.base_uri &&
+            self.id_cert.to_bytes() == other.id_cert.to_bytes()
+    }
+}
+
+impl Eq for Publisher {}
