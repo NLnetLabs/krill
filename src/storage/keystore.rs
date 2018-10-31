@@ -10,6 +10,7 @@ use chrono::serde::ts_seconds;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json;
+use rpki::signing::signer::KeyId;
 
 //------------ Key -----------------------------------------------------------
 
@@ -45,6 +46,11 @@ impl Key {
     pub fn from_str(s: &str) -> Key {
         let path = PathBuf::from(s);
         Self::from_path(path).unwrap()
+    }
+
+    /// Creates an instance from a [`KeyId`] for a [`Signer`].
+    pub fn from_key_id(key_id: &KeyId) -> Key {
+        Self::from_str(key_id.as_str())
     }
 
     /// Other than this the may contain any character allowed in a
@@ -167,7 +173,7 @@ pub trait KeyStore {
     fn keys(&self) -> Self::KeyIter;
 
     /// Stores a key value pair.
-    fn store<V: Any + Clone + Serialize + Send + Sync>(
+    fn store<V: Any + Serialize + Send + Sync>(
         &mut self,
         key: Key,
         value: V,
@@ -185,7 +191,7 @@ pub trait KeyStore {
 
     /// Retrieves an optional Arc containing the current value, given the key.
     /// If the value was archived, Ok(None) will be returned.
-    fn get<V: Any + Clone + DeserializeOwned + Send + Sync>(
+    fn get<V: Any + DeserializeOwned + Send + Sync>(
         &self,
         key: &Key
     ) -> Result<Option<Arc<V>>, Error>;

@@ -57,7 +57,7 @@ impl CachingDiskKeyStore {
 /// # Cache support functions
 impl CachingDiskKeyStore {
     /// Stores the current value for key into an Arc, for safe sharing.
-    fn cache_store<V: Any + Clone + Serialize + Send + Sync>(
+    fn cache_store<V: Any + Serialize + Send + Sync>(
         &self,
         key: Key,
         value: V,
@@ -83,7 +83,7 @@ impl CachingDiskKeyStore {
     }
 
     /// Gets the current value for a key, if any.
-    fn cache_get<V: Any + Clone + DeserializeOwned + Send + Sync>(
+    fn cache_get<V: Any + DeserializeOwned + Send + Sync>(
         &self,
         key: &Key
     ) -> Result<Option<Arc<V>>, Error> {
@@ -142,7 +142,7 @@ impl CachingDiskKeyStore {
     }
 
     /// Stores the value, info and version to disk. Serialized to json.
-    fn disk_store<V: Any + Clone + Serialize + Send + Sync>(
+    fn disk_store<V: Any + Serialize + Send + Sync>(
         &self,
         key: &Key,
         value: &V,
@@ -169,7 +169,7 @@ impl CachingDiskKeyStore {
     }
 
     /// Gets the current value from disk, if there is a current version.
-    fn disk_get<V: Any + Clone + DeserializeOwned + Send + Sync>(
+    fn disk_get<V: Any + DeserializeOwned + Send + Sync>(
         &self,
         key: &Key
     ) -> Result<Option<V>, Error> {
@@ -235,7 +235,7 @@ impl KeyStore for CachingDiskKeyStore {
         DiskKeyIterator::new(&self.base_dir)
     }
 
-    fn store<V: Any + Clone + Serialize + Send + Sync>(
+    fn store<V: Any + Serialize + Send + Sync>(
         &mut self,
         key: Key,
         value: V,
@@ -254,7 +254,7 @@ impl KeyStore for CachingDiskKeyStore {
         self.disk_archive(key, info)
     }
 
-    fn get<V: Any + Clone + DeserializeOwned + Send + Sync>(
+    fn get<V: Any + DeserializeOwned + Send + Sync>(
         &self,
         key: &Key
     ) -> Result<Option<Arc<V>>, Error> {
