@@ -1,13 +1,5 @@
 //! Support for signing things using software keys (through openssl) and
 //! storing them unencrypted on disk.
-
-//! Support using openssl to generate keys and sign things.
-//!
-//! Because this adds a dependency to openssl libs this is disabled by
-//! default and should only be used by implementations that need to use
-//! software keys to sign things, such as an RPKI Certificate Authority or
-//! Publication Server. In particular, this is not required when validating.
-
 use std::fs;
 use std::io;
 use std::path::PathBuf;
@@ -67,7 +59,6 @@ impl OpenSslSigner {
 }
 
 impl OpenSslSigner {
-
     fn sign_with_key<D: AsRef<[u8]> + ?Sized>(
         pkey: &PKeyRef<Private>,
         data: &D
@@ -81,11 +72,9 @@ impl OpenSslSigner {
 
         Ok(Signature::new(Bytes::from(signer.sign_to_vec()?)))
     }
-
 }
 
 impl Signer for OpenSslSigner {
-
     fn create_key(
         &mut self,
         algorithm: &PublicKeyAlgorithm
@@ -205,7 +194,6 @@ impl<'de> Deserialize<'de> for OpenSslKeyPair {
             },
             Err(err) => Err(err)
         }
-
     }
 }
 
