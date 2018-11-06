@@ -54,9 +54,9 @@ impl Publisher {
 
 impl PartialEq for Publisher {
     fn eq(&self, other: &Publisher) -> bool {
-            self.name == other.name &&
-            self.base_uri == other.base_uri &&
-            self.id_cert.to_bytes() == other.id_cert.to_bytes()
+        self.name == other.name &&
+        self.base_uri == other.base_uri &&
+        self.id_cert.to_bytes() == other.id_cert.to_bytes()
     }
 }
 
