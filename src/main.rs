@@ -30,7 +30,9 @@ fn main() {
         Ok(list) => list
     };
 
-    list.sync_from_dir(CONFIG.pub_xml_dir().clone(), "start up syncer".to_string()
+    list.sync_from_dir(
+        CONFIG.pub_xml_dir().clone(),
+        "start up syncer".to_string()
     ).unwrap();
 
     server::serve(&CONFIG.socket_addr(), list);
