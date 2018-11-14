@@ -1,4 +1,5 @@
 extern crate rpubd;
+extern crate tokio;
 
 #[macro_use] extern crate lazy_static;
 
@@ -18,5 +19,25 @@ lazy_static! {
 }
 
 fn main() {
-    server::serve(&CONFIG);
+
+    use tokio::runtime::Runtime;
+    use tokio::prelude::*;
+
+    // Note, using a runtime and spawn here, with another spawn
+    // inside server::serve, in order to allow testing the server
+    // in integration tests, and shutting it down. A 'run' in
+    // server::serve would be simpler, but would not allow for easy
+    // shutdown of thr server in a test.
+    let mut rt = Runtime::new().unwrap();
+
+    rt.spawn(
+        future::lazy(|| {
+            server::serve(&CONFIG);
+            Ok(())
+        })
+    );
+
+    loop {
+        // wait forever
+    }
 }

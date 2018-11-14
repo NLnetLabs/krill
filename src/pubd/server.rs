@@ -60,7 +60,7 @@ pub fn serve(config: &Config) {
         .serve(new_service)
         .map_err(|e| eprintln!("server error: {}", e));
 
-    hyper::rt::run(server)
+    hyper::rt::spawn(server);
 }
 
 
