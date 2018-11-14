@@ -16,9 +16,9 @@ extern crate toml;
 extern crate xml;
 
 pub mod provisioning;
+pub mod pubc;
+pub mod pubd;
 pub mod signing;
 pub mod storage;
-pub mod config;
 pub mod ext_serde;
-pub mod server;
 pub mod test;

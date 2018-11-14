@@ -1,0 +1,7 @@
+# Speficy the directory where the CLI can find its state, i.e. the keypair used
+# for its identity, and the publication server xml response
+state_dir = "./client_state"
+
+# Specify the directory that the client should synchronise to the server. Note
+# that this may be overridden with the "-d" command line option.
+data_dir  = "./client_data"

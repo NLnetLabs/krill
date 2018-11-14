@@ -5,6 +5,24 @@
 //! that this CLI may be triggered to synchronise this state to a publication
 //! server.
 
+extern crate rpubd;
+
+#[macro_use] extern crate lazy_static;
+
+use rpubd::pubc::config::Config;
+
+lazy_static! {
+    static ref CONFIG: Config = {
+        match Config::create() {
+            Ok(c)  => c,
+            Err(e) => {
+                eprintln!("{}", e);
+                ::std::process::exit(1);
+            }
+        }
+    };
+}
+
 fn main() {
-    println!("Hello world");
+    println!("Data dir: {}", CONFIG.data_dir());
 }

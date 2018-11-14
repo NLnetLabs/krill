@@ -1,18 +1,68 @@
 extern crate hyper;
 extern crate futures;
 
-use std::net::SocketAddr;
 use self::hyper::{Body, Method, Response, Server, StatusCode};
 use self::hyper::rt::Future;
 use self::hyper::service::service_fn_ok;
-use provisioning::publisher_list::PublisherList;
-use serde_json;
 use provisioning::publisher_list;
+use provisioning::publisher_list::PublisherList;
+use pubd::config::Config;
+use serde_json;
 use serde::Serialize;
 
-const CSS: &'static [u8]      = include_bytes!("../static/css/custom.css");
-const IMG_404: &'static [u8]  = include_bytes!("../static/images/404.png");
-const HTML_404: &'static [u8] = include_bytes!("../static/html/404.html");
+const CSS: &'static [u8]      = include_bytes!("../../static/css/custom.css");
+const IMG_404: &'static [u8]  = include_bytes!("../../static/images/404.png");
+const HTML_404: &'static [u8] = include_bytes!("../../static/html/404.html");
+
+pub fn serve(config: &Config) {
+    let mut publisher_list = match PublisherList::new(
+        config.data_dir(),
+        config.rsync_base()) {
+        Err(e) => {
+            eprintln!("{}", e);
+            ::std::process::exit(1);
+        },
+        Ok(list) => list
+    };
+
+    publisher_list.sync_from_dir(
+        config.pub_xml_dir().clone(),
+        "start up syncer".to_string()
+    ).unwrap();
+
+    let new_service = move || {
+
+        let publisher_list = publisher_list.clone();
+
+        service_fn_ok(move |req| {
+            let path = req.uri().path();
+
+            if path.starts_with("/static") {
+                render_static(path)
+            } else {
+                match (req.method(), path) {
+                    (&Method::GET, "/health") => {
+                        service_ok()
+                    },
+                    (&Method::GET, "/publishers") => {
+                        show_publishers(&publisher_list)
+                    },
+                    _ => {
+                        page_not_found()
+                    },
+                }
+            }
+        })
+
+    };
+
+    let server = Server::bind(&config.socket_addr())
+        .serve(new_service)
+        .map_err(|e| eprintln!("server error: {}", e));
+
+    hyper::rt::run(server)
+}
+
 
 fn service_ok() -> Response<Body> {
     render_json("I am completely operational, and all my circuits are functioning perfectly.")
@@ -68,42 +118,6 @@ fn show_publishers(pl: &PublisherList) -> Response<Body> {
 }
 
 
-pub fn serve(
-    addr: &SocketAddr,
-    publisher_list: PublisherList) {
-
-    let new_service = move || {
-
-        let publisher_list = publisher_list.clone();
-
-        service_fn_ok(move |req| {
-            let path = req.uri().path();
-
-            if path.starts_with("/static") {
-                render_static(path)
-            } else {
-                match (req.method(), path) {
-                    (&Method::GET, "/health") => {
-                        service_ok()
-                    },
-                    (&Method::GET, "/publishers") => {
-                        show_publishers(&publisher_list)
-                    },
-                    _ => {
-                        page_not_found()
-                    },
-                }
-            }
-        })
-
-    };
-
-    let server = Server::bind(addr)
-        .serve(new_service)
-        .map_err(|e| eprintln!("server error: {}", e));
-
-    hyper::rt::run(server)
-}
 
 #[derive(Debug, Fail)]
 pub enum Error {
