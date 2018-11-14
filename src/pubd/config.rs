@@ -1,8 +1,7 @@
 use std::fs::File;
 use std::io;
 use std::io::Read;
-use std::net::IpAddr;
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::str::FromStr;
 use clap::{App, Arg};
@@ -51,6 +50,33 @@ impl Config {
 
 /// # Create
 impl Config {
+
+    /// Set up a config for use in (integration) testing.
+//    #[cfg(test)]
+    pub fn test(
+        data_dir: String,
+        pub_xml_dir: String,
+    ) -> Self {
+
+        let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));;
+        let port = 3000;
+        let data_dir = PathBuf::from(data_dir);
+        let pub_xml_dir = PathBuf::from(pub_xml_dir);
+        let rsync_base = uri::Rsync::from_str("rsync://127.0.0.1/rpki/")
+            .unwrap();
+        let notify_sia = uri::Http::from_str(
+            "https://127.0.0.1/rpki/notify.xml").unwrap();
+
+        Config {
+            ip,
+            port,
+            data_dir,
+            pub_xml_dir,
+            rsync_base,
+            notify_sia
+        }
+    }
+
     /// Creates the config (at startup). Panics in case of issues.
     pub fn create() -> Result<Self, ConfigError> {
         let matches = App::new("NLnet Labs RRDP Server")
