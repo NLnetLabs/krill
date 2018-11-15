@@ -32,6 +32,7 @@ use storage::caching_ks::CachingDiskKeyStore;
 /// An openssl based signer.
 ///
 /// Keeps the keys in memory (for now).
+#[derive(Clone, Debug)]
 pub struct OpenSslSigner {
     store: CachingDiskKeyStore
 }

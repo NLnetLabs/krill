@@ -6,6 +6,7 @@ use rpki::uri;
 use rpki::remote::idcert::IdCert;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde::de;
+use rpki::signing::signer::KeyId;
 
 pub fn de_rsync_uri<'de, D>(d: D) -> Result<uri::Rsync, D::Error>
     where D: Deserializer<'de> {
@@ -50,4 +51,21 @@ pub fn ser_id_cert<S>(cert: &IdCert, s: S) -> Result<S::Ok, S::Error>
     let bytes = cert.to_bytes();
     let str = base64::encode(&bytes);
     str.serialize(s)
+}
+
+/// Deserializes a KeyStore KeyId.
+pub fn de_key_id<'de, D>(d: D) -> Result<KeyId, D::Error>
+    where D: Deserializer<'de> {
+    match String::deserialize(d) {
+        Ok(s) => {
+            Ok(KeyId::new(s))
+        },
+        Err(err) => Err(err)
+    }
+}
+
+/// Serializes a KeyStore KeyId
+pub fn ser_key_id<S>(key_id: &KeyId, s: S) -> Result<S::Ok, S::Error>
+    where S: Serializer {
+    key_id.as_str().serialize(s)
 }
