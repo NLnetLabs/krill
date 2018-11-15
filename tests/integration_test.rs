@@ -55,9 +55,8 @@ fn testing() {
             })
         );
 
-        // XXX TODO: There must be a better way to know that the server is
-        // ready!
-        thread::sleep(time::Duration::from_secs(1));
+        // XXX TODO: Find a better way to know the server is ready!
+        thread::sleep(time::Duration::from_millis(100));
 
         let url = "http://localhost:3000/publishers".parse().unwrap();
         let client = Client::new();
