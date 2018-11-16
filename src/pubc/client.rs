@@ -113,6 +113,22 @@ impl PubClient {
     }
 }
 
+impl PartialEq for PubClient {
+    fn eq(&self, other: &PubClient) -> bool {
+        if let Ok(Some(my_id)) = self.my_identity() {
+            if let Ok(Some(other_id)) = other.my_identity() {
+                my_id == other_id
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+}
+
+impl Eq for PubClient { }
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 struct MyIdentity {
     name: String,
@@ -127,6 +143,16 @@ struct MyIdentity {
     serialize_with = "ext_serde::ser_key_id")]
     key_id: KeyId
 }
+
+impl PartialEq for MyIdentity {
+    fn eq(&self, other: &MyIdentity) -> bool {
+        self.name == other.name &&
+        self.id_cert.to_bytes() == other.id_cert.to_bytes() &&
+        self.key_id == other.key_id
+    }
+}
+
+impl Eq for MyIdentity {}
 
 
 //------------ Error ---------------------------------------------------------
@@ -184,11 +210,27 @@ mod tests {
     use test;
 
     #[test]
-    fn should_initialise() {
+    fn should_initialise_keep_state_and_reinitialise() {
         test::test_with_tmp_dir(|d| {
-            let mut client = PubClient::new(d).unwrap();
-            client.init("client".to_string()).unwrap();
-            let _pr = client.publisher_request().unwrap();
+            // Set up a new client and initialise
+            let mut client_1 = PubClient::new(d.clone()).unwrap();
+            client_1.init("client".to_string()).unwrap();
+            let pr_1 = client_1.publisher_request().unwrap();
+
+            // Prove that a client starting from an initialised dir
+            // comes up with the same state.
+            let mut client_2 = PubClient::new(d.clone()).unwrap();
+            let pr_2 = client_2.publisher_request().unwrap();
+            assert_eq!(pr_1.handle(), pr_2.handle());
+            assert_eq!(pr_1.id_cert().to_bytes(), pr_2.id_cert().to_bytes());
+            assert_eq!(client_1, client_2);
+
+            // But it can be re-initialised, with a new id cert
+            client_2.init("client".to_string()).unwrap();
+            let pr_2 = client_2.publisher_request().unwrap();
+            assert_eq!(pr_1.handle(), pr_2.handle());
+            assert_ne!(pr_1.id_cert().to_bytes(), pr_2.id_cert().to_bytes());
+            assert_ne!(client_1, client_2);
         });
 
     }
