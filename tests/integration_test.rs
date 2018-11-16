@@ -19,6 +19,7 @@ use std::str;
 use std::{thread, time};
 use tokio::prelude::*;
 use tokio::runtime::Runtime;
+use rpubd::pubc::client::PubClient;
 
 fn save_pr(base_dir: &str, file_name: &str, pr: &PublisherRequest) {
     let full_name = PathBuf::from(format!("{}/{}", base_dir, file_name));
@@ -33,21 +34,23 @@ fn testing() {
 
         // Use a data dir for the storage
         let data_dir = test::create_sub_dir(&d);
-
-        // Start with an xml dir with two PRs for alice and bob
         let xml_dir = test::create_sub_dir(&d);
-        let pr_alice = test::new_publisher_request("alice");
-        let pr_bob = test::new_publisher_request("bob");
-        save_pr(&xml_dir, "alice.xml", &pr_alice);
-        save_pr(&xml_dir, "bob.xml", &pr_bob);
 
-        let config = Config::test(data_dir, xml_dir);
+        // Set up a client
+        let client_dir = test::create_sub_dir(&d);
+        let mut client = PubClient::new(client_dir).unwrap();
+        client.init("client".to_string()).unwrap();
+        let pr = client.publisher_request().unwrap();
+
+        // Add the client's PublisherRequest to the server dir.
+        save_pr(&xml_dir, "client.xml", &pr);
 
         // Start the server
+        let server_conf = Config::test(data_dir, xml_dir);
         let mut rt = Runtime::new().unwrap();
         rt.spawn(
             future::lazy(move || {
-                server::serve(&config);
+                server::serve(&server_conf);
                 Ok(())
             })
         );
@@ -101,7 +104,7 @@ fn testing() {
                 let pl: Vec<Publisher> = serde_json::from_str(
                         str::from_utf8(&body).unwrap()
                 ).unwrap();
-                assert_eq!(2, pl.len());
+                assert_eq!(1, pl.len());
                 Ok(())
             })
             .map_err(|e| {
