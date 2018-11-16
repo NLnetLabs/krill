@@ -5,20 +5,18 @@
 //------------ PubClient -----------------------------------------------------
 
 use std::path::PathBuf;
-use ext_serde;
+use std::sync::Arc;
 use rpki::oob::exchange::PublisherRequest;
 use rpki::signing::PublicKeyAlgorithm;
 use rpki::signing::builder::IdCertBuilder;
 use rpki::signing::signer::CreateKeyError;
-use rpki::signing::signer::KeyId;
 use rpki::signing::signer::KeyUseError;
 use rpki::signing::signer::Signer;
-use rpki::remote::idcert::IdCert;
+use provisioning::identity::MyIdentity;
 use signing::softsigner;
 use signing::softsigner::OpenSslSigner;
 use storage::caching_ks::CachingDiskKeyStore;
 use storage::keystore::{self, Info, Key, KeyStore};
-use std::sync::Arc;
 
 fn actor() -> String {
     "publication client".to_string()
@@ -71,11 +69,7 @@ impl PubClient {
     pub fn init(&mut self, name: String) -> Result<(), Error> {
         let key_id = self.signer.create_key(&PublicKeyAlgorithm::RsaEncryption)?;
         let id_cert = IdCertBuilder::new_ta_id_cert(&key_id, &mut self.signer)?;
-        let my_id = MyIdentity {
-            name,
-            key_id,
-            id_cert
-        };
+        let my_id = MyIdentity::new(name, id_cert, key_id);
 
         let key = my_id_key();
         let inf = Info::now(actor(), my_id_msg());
@@ -100,8 +94,8 @@ impl PubClient {
                 Ok(
                     PublisherRequest::new(
                         None,
-                        arc.name.as_str(),
-                        arc.id_cert.clone()
+                        arc.name(),
+                        arc.id_cert().clone()
                     )
                 )
             }
@@ -124,31 +118,6 @@ impl PartialEq for PubClient {
 }
 
 impl Eq for PubClient { }
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-struct MyIdentity {
-    name: String,
-
-    #[serde(
-    deserialize_with = "ext_serde::de_id_cert",
-    serialize_with = "ext_serde::ser_id_cert")]
-    id_cert: IdCert,
-
-    #[serde(
-    deserialize_with = "ext_serde::de_key_id",
-    serialize_with = "ext_serde::ser_key_id")]
-    key_id: KeyId
-}
-
-impl PartialEq for MyIdentity {
-    fn eq(&self, other: &MyIdentity) -> bool {
-        self.name == other.name &&
-        self.id_cert.to_bytes() == other.id_cert.to_bytes() &&
-        self.key_id == other.key_id
-    }
-}
-
-impl Eq for MyIdentity {}
 
 
 //------------ Error ---------------------------------------------------------
