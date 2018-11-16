@@ -15,6 +15,11 @@ use rpubd::pubd::config::Config;
 use rpubd::pubd::server;
 use rpubd::provisioning::publisher::Publisher;
 
+use std::str;
+use std::{thread, time};
+use tokio::prelude::*;
+use tokio::runtime::Runtime;
+
 fn save_pr(base_dir: &str, file_name: &str, pr: &PublisherRequest) {
     let full_name = PathBuf::from(format!("{}/{}", base_dir, file_name));
     let mut f = File::create(full_name).unwrap();
@@ -22,16 +27,8 @@ fn save_pr(base_dir: &str, file_name: &str, pr: &PublisherRequest) {
     f.write(xml.as_ref()).unwrap();
 }
 
-
 #[test]
 fn testing() {
-
-    use std::str;
-    use std::{thread, time};
-    use tokio::prelude::*;
-    use tokio::runtime::Runtime;
-
-
     test::test_with_tmp_dir(|d| {
 
         // Use a data dir for the storage
@@ -57,6 +54,40 @@ fn testing() {
 
         // XXX TODO: Find a better way to know the server is ready!
         thread::sleep(time::Duration::from_millis(100));
+
+        // XXX TODO: Use a helper to create the futures to check the
+        // XXX TODO: responses.. the compiler insists this crosses threads
+        // XXX TODO: and isn't safe..
+//        fn test<F>(url: &str, test: F) -> impl Future
+//            where F: Fn(&str)-> () + Send {
+//            let url = url.parse().unwrap();
+//            let client = Client::new();
+//
+//            client
+//                .get(url)
+//                .and_then(|res| {
+//                    res.into_body().concat2()
+//                })
+//                .and_then(|body| {
+//                    let s = str::from_utf8(&body).unwrap();
+//                    test(s);
+//                    Ok(())
+//                })
+//                .map_err(|e| {
+//                    println!("{}", e);
+//                })
+//        };
+//
+//        let fut = test(
+//            "http://localhost:3000/publishers",
+//            |s| {
+//                let pl: Vec<Publisher> = serde_json::from_str(s).unwrap();
+//                assert_eq!(2, pl.len());
+//            }
+//        );
+
+        // XXX TODO: Extract some function, or macro?!, see above..
+        // XXX TODO: for now doing this the verbose way for each test.
 
         let url = "http://localhost:3000/publishers".parse().unwrap();
         let client = Client::new();
