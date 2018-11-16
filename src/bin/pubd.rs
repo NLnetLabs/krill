@@ -4,7 +4,7 @@ extern crate tokio;
 #[macro_use] extern crate lazy_static;
 
 use rpubd::pubd::config::Config;
-use rpubd::pubd::server;
+use rpubd::pubd::daemon;
 
 lazy_static! {
     static ref CONFIG: Config = {
@@ -32,7 +32,7 @@ fn main() {
 
     rt.spawn(
         future::lazy(|| {
-            server::serve(&CONFIG);
+            daemon::serve(&CONFIG);
             Ok(())
         })
     );

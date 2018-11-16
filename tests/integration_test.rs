@@ -12,7 +12,7 @@ use hyper::Client;
 use rpki::oob::exchange::PublisherRequest;
 use rpubd::test;
 use rpubd::pubd::config::Config;
-use rpubd::pubd::server;
+use rpubd::pubd::daemon;
 use rpubd::provisioning::publisher::Publisher;
 
 use std::str;
@@ -50,7 +50,7 @@ fn testing() {
         let mut rt = Runtime::new().unwrap();
         rt.spawn(
             future::lazy(move || {
-                server::serve(&server_conf);
+                daemon::serve(&server_conf);
                 Ok(())
             })
         );

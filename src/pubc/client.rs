@@ -40,11 +40,7 @@ pub struct PubClient {
 
     // key value store
     store: CachingDiskKeyStore,
-
-    //   -> my ID
-    //      -> my key id
-    //      -> my name/handle
-    //      -> my certificate
+    //   my_id -> MyIdentity
     //   -> my parent
     //      -> service uri
     //      -> parent id certificate
