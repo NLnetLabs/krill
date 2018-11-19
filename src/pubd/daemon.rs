@@ -4,9 +4,9 @@ extern crate futures;
 use self::hyper::{Body, Method, Response, Server, StatusCode};
 use self::hyper::rt::Future;
 use self::hyper::service::service_fn_ok;
-use provisioning::publisher_list;
-use provisioning::publisher_list::PublisherList;
 use pubd::config::Config;
+use pubd::server;
+use pubd::server::PubServer;
 use serde_json;
 use serde::Serialize;
 
@@ -15,24 +15,27 @@ const IMG_404: &'static [u8]  = include_bytes!("../../static/images/404.png");
 const HTML_404: &'static [u8] = include_bytes!("../../static/html/404.html");
 
 pub fn serve(config: &Config) {
-    let mut publisher_list = match PublisherList::new(
+
+    let mut pub_server = match PubServer::new(
         config.data_dir(),
-        config.rsync_base()) {
+        config.rsync_base(),
+        config.pub_xml_dir().clone()
+    ) {
         Err(e) => {
             eprintln!("{}", e);
             ::std::process::exit(1);
         },
-        Ok(list) => list
+        Ok(server) => server
     };
 
-    publisher_list.sync_from_dir(
-        config.pub_xml_dir().clone(),
-        "start up syncer".to_string()
-    ).unwrap();
+    if let Err(e) = pub_server.init_identity_if_empty() {
+        eprintln!("{}", e);
+        ::std::process::exit(1);
+    }
 
     let new_service = move || {
 
-        let publisher_list = publisher_list.clone();
+        let pub_server = pub_server.clone();
 
         service_fn_ok(move |req| {
             let path = req.uri().path();
@@ -45,7 +48,7 @@ pub fn serve(config: &Config) {
                         service_ok()
                     },
                     (&Method::GET, "/publishers") => {
-                        show_publishers(&publisher_list)
+                        show_publishers(&pub_server)
                     },
                     _ => {
                         page_not_found()
@@ -110,10 +113,10 @@ fn page_not_found() -> Response<Body> {
     res
 }
 
-fn show_publishers(pl: &PublisherList) -> Response<Body> {
-    match pl.publishers() {
+fn show_publishers(pub_server: &PubServer) -> Response<Body> {
+    match pub_server.publishers() {
         Ok(publishers) => render_json(publishers),
-        Err(e)         => render_error(Error::PublisherListError(e))
+        Err(e)         => render_error(Error::ServerError(e))
     }
 }
 
@@ -122,7 +125,7 @@ fn show_publishers(pl: &PublisherList) -> Response<Body> {
 #[derive(Debug, Fail)]
 pub enum Error {
     #[fail(display ="{}", _0)]
-    PublisherListError(publisher_list::Error),
+    ServerError(server::Error),
 
     #[fail(display ="{}", _0)]
     JsonError(serde_json::Error),
