@@ -14,6 +14,7 @@ use signing::softsigner::OpenSslSigner;
 use storage::caching_ks::CachingDiskKeyStore;
 use storage::keystore::{self, Info, Key, KeyStore};
 use provisioning::publisher::Publisher;
+use rpki::oob::exchange::RepositoryResponse;
 
 
 /// # Some constants for naming resources in the keystore for clients.
@@ -42,28 +43,38 @@ pub struct PubServer {
     store: CachingDiskKeyStore,
     //   my_id -> MyIdentity
 
-    publisher_list: PublisherList
+    publisher_list: PublisherList,
+
+    service_uri: uri::Http,
+    notify_sia: uri::Http
 }
 
 impl PubServer {
     /// Creates a new publication server. Note that state is preserved
     /// on disk in the work_dir provided.
     pub fn new(
-        work_dir: String,
+        work_dir: PathBuf,
+        pub_xml_dir: PathBuf,
         base_uri: uri::Rsync,
-        pub_xml_dir: PathBuf
+        service_uri: uri::Http,
+        rrdp_notification_uri: uri::Http
     ) -> Result<Self, Error> {
         let store = CachingDiskKeyStore::new(PathBuf::from(&work_dir))?;
+
         let mut publisher_list = PublisherList::new(
             work_dir.clone(),
             base_uri)?;
         publisher_list.sync_from_dir(pub_xml_dir, actor())?;
+
         let signer = OpenSslSigner::new(work_dir)?;
+
         Ok(
             PubServer {
                 signer,
                 store,
-                publisher_list
+                publisher_list,
+                service_uri,
+                notify_sia: rrdp_notification_uri
             }
         )
     }
@@ -96,6 +107,42 @@ impl PubServer {
             .map_err(|e| { Error::PublisherListError(e) })
     }
 
+    pub fn repository_response(
+        &self,
+        publisher_name: &str
+    ) -> Result<RepositoryResponse, Error> {
+
+        if let Some(my_id) = self.my_identity()? {
+            match self.publishers()?
+                .iter()
+                .find(|p| { p.name() == publisher_name }) {
+                None => Err(Error::UnknownPublisher(publisher_name.to_string())),
+                Some(p) => {
+                    let tag = p.tag();
+                    let publisher_handle = p.name().clone();
+                    let id_cert = my_id.id_cert().clone();
+                    let service_uri = self.service_uri.clone();
+                    let sia_base = p.base_uri().clone();
+                    let rrdp_notification_uri = self.notify_sia.clone();
+
+                    Ok(
+                        RepositoryResponse::new(
+                            tag,
+                            publisher_handle,
+                            id_cert,
+                            service_uri,
+                            sia_base,
+                            rrdp_notification_uri
+                        )
+                    )
+                }
+            }
+        } else {
+            Err(Error::Uninitialised)
+        }
+
+    }
+
 
     fn my_identity(&self) -> Result<Option<Arc<MyIdentity>>, Error> {
         self.store.get(&my_id_key()).map_err(|e| { Error::KeyStoreError(e)})
@@ -123,6 +170,12 @@ pub enum Error {
 
     #[fail(display="{:?}", _0)]
     KeyUseError(KeyUseError),
+
+    #[fail(display="Unknown publisher: {}", _0)]
+    UnknownPublisher(String),
+
+    #[fail(display="Publication server is not initialised.")]
+    Uninitialised,
 }
 
 impl From<keystore::Error> for Error {
@@ -175,16 +228,26 @@ mod tests {
         f.write(xml.as_ref()).unwrap();
     }
 
+    fn test_server(work_dir: &PathBuf, xml_dir: &PathBuf) -> PubServer {
+        // Start up a server
+        let uri = test::rsync_uri("rsync://host/module/");
+        let service = test::http_uri("http://host/publish");
+        let notify = test::http_uri("http://host/notify.xml");
+        PubServer::new(
+            work_dir.clone(),
+            xml_dir.clone(),
+            uri,
+            service,
+            notify
+        ).unwrap()
+    }
+
     #[test]
     fn should_initialise_identity() {
         test::test_with_tmp_dir(|d| {
-            let xml_dir = PathBuf::from(test::create_sub_dir(&d));
-            let uri = test::rsync_uri("rsync://host/module/");
-            let mut server = PubServer::new(
-                d.clone(),
-                uri.clone(),
-                xml_dir.clone()
-            ).unwrap();
+            let xml_dir = test::create_sub_dir(&d);
+
+            let mut server = test_server(&d, &xml_dir);
 
             // A clean publication server has no identity.
             assert_eq!(None, server.my_identity().unwrap());
@@ -195,7 +258,7 @@ mod tests {
             assert_eq!(actor().as_str(), id.name());
 
             // A new server with the same workdir will have the same identity.
-            let server_2 = PubServer::new(d, uri, xml_dir).unwrap();
+            let server_2 = test_server(&d, &xml_dir);
             let id_2 = server_2.my_identity().unwrap().unwrap();
             assert_eq!(id, id_2);
         });
@@ -204,15 +267,16 @@ mod tests {
     #[test]
     fn should_sync_and_resync_publishers_from_disk() {
         test::test_with_tmp_dir(|d| {
-
             // Set up an xml dir with two requests
-            let xml_dir = PathBuf::from(test::create_sub_dir(&d));
+            let xml_dir = test::create_sub_dir(&d);
 
-            let mut alice = PubClient::new(d.clone()).unwrap();
+            let alice_dir = test::create_sub_dir(&d);
+            let mut alice = PubClient::new(alice_dir).unwrap();
             alice.init("alice".to_string()).unwrap();
             let pr_alice = alice.publisher_request().unwrap();
 
-            let mut bob = PubClient::new(d.clone()).unwrap();
+            let bob_dir = test::create_sub_dir(&d);
+            let mut bob = PubClient::new(bob_dir).unwrap();
             bob.init("bob".to_string()).unwrap();
             let pr_bob = bob.publisher_request().unwrap();
 
@@ -220,12 +284,7 @@ mod tests {
             save_pr(&xml_dir, "bob.xml", &pr_bob);
 
             // Start up a server
-            let uri = test::rsync_uri("rsync://host/module/");
-            let server = PubServer::new(
-                d.clone(),
-                uri.clone(),
-                xml_dir.clone()
-            ).unwrap();
+            let server = test_server(&d, &xml_dir);
 
             // The server now has two configured publishers
             let publishers = server.publishers().unwrap();
@@ -236,11 +295,7 @@ mod tests {
             save_pr(&xml_dir, "alice.xml", &pr_alice);
 
             // Start a new server (so that it re-syncs)
-            let server = PubServer::new(
-                d.clone(),
-                uri.clone(),
-                xml_dir.clone()
-            ).unwrap();
+            let server = test_server(&d, &xml_dir);
 
             // Now we expect only one publisher for Alice
             let publishers = server.publishers().unwrap();
@@ -261,18 +316,15 @@ mod tests {
             alice.init("alice".to_string()).unwrap();
             let pr_alice = alice.publisher_request().unwrap();
 
-            let mut carol = PubClient::new(d.clone()).unwrap();
+            let carol_dir = test::create_sub_dir(&d);
+            let mut carol = PubClient::new(carol_dir).unwrap();
             carol.init("carol".to_string()).unwrap();
             let pr_carol = carol.publisher_request().unwrap();
 
             save_pr(&xml_dir, "alice.xml", &pr_alice);
             save_pr(&xml_dir, "carol.xml", &pr_carol);
 
-            let server = PubServer::new(
-                d.clone(),
-                uri.clone(),
-                xml_dir.clone()
-            ).unwrap();
+            let server = test_server(&d, &xml_dir);
 
             // Now we expect a different Alice and Carol
             let publishers = server.publishers().unwrap();
@@ -300,17 +352,60 @@ mod tests {
             // for the same handle results in an error.
             save_pr(&xml_dir, "alice-2.xml", &pr_alice);
 
+            let uri = test::rsync_uri("rsync://host/module/");
+            let service = test::http_uri("http://host/publish");
+            let notify = test::http_uri("http://host/notify.xml");
+
             assert!(
                 PubServer::new(
                     d.clone(),
-                    uri.clone(),
-                    xml_dir.clone()
+                    xml_dir.clone(),
+                    uri,
+                    service,
+                    notify
                 ).is_err()
             );
         });
     }
 
+    #[test]
+    fn should_have_response_for_publisher() {
+        test::test_with_tmp_dir(|d| {
+            let xml_dir = test::create_sub_dir(&d);
 
+            let alice_dir = test::create_sub_dir(&d);
+            let mut alice = PubClient::new(alice_dir).unwrap();
+            alice.init("alice".to_string()).unwrap();
+            let pr_alice = alice.publisher_request().unwrap();
+
+            let bob_dir = test::create_sub_dir(&d);
+            let mut bob = PubClient::new(bob_dir).unwrap();
+            bob.init("bob".to_string()).unwrap();
+            let pr_bob = bob.publisher_request().unwrap();
+
+            save_pr(&xml_dir, "alice.xml", &pr_alice);
+            save_pr(&xml_dir, "bob.xml", &pr_bob);
+
+            let mut server = test_server(&d, &xml_dir);
+            server.init_identity_if_empty().unwrap();
+            let server_id = server.my_identity().unwrap().unwrap();
+
+            let response = server.repository_response("alice").unwrap();
+
+            let expected_sia = test::rsync_uri("rsync://host/module/alice");
+            let expected_service = test::http_uri("http://host/publish");
+            let expected_notify = test::http_uri("http://host/notify.xml");
+
+            assert_eq!(&expected_sia, response.sia_base());
+            assert_eq!(&expected_service, response.service_uri());
+            assert_eq!(&expected_notify, response.rrdp_notification_uri());
+            assert_eq!("alice", response.publisher_handle());
+            assert_eq!(
+                server_id.id_cert().to_bytes(),
+                response.id_cert().to_bytes()
+            );
+        });
+    }
 
 }
 

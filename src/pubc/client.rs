@@ -54,8 +54,8 @@ pub struct PubClient {
 
 impl PubClient {
     /// Creates a new publication client
-    pub fn new(work_dir: String) -> Result<Self, Error> {
-        let store = CachingDiskKeyStore::new(PathBuf::from(&work_dir))?;
+    pub fn new(work_dir: PathBuf) -> Result<Self, Error> {
+        let store = CachingDiskKeyStore::new(work_dir.clone())?;
         let signer = OpenSslSigner::new(work_dir)?;
         Ok(
             PubClient {

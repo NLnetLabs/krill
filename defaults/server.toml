@@ -20,3 +20,6 @@ rsync_base  = "rsync://127.0.0.1/rpki/"
 # response.xml files to publishers so that they can include the proper SIA
 # in their certificates.
 notify_sia  = "https://127.0.0.1/rpki/notify.xml"
+
+# Specify the service URI where publishers can connect.
+service_uri = "https://127.0.0.1/publish/"

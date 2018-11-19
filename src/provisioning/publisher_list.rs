@@ -30,7 +30,7 @@ pub struct PublisherList {
 
 impl PublisherList {
     pub fn new(
-        work_dir: String,
+        work_dir: PathBuf,
         base_uri: uri::Rsync
     ) -> Result<Self, Error> {
         let meta_data = fs::metadata(&work_dir)?;
@@ -62,7 +62,7 @@ impl PublisherList {
         pr: PublisherRequest,
         actor: String
     ) -> Result<(), Error> {
-        let (_, name, id_cert) = pr.into_parts();
+        let (tag, name, id_cert) = pr.into_parts();
 
         if name.contains("/") {
             return Err(
@@ -84,7 +84,7 @@ impl PublisherList {
             actor,
             format!("Added publisher: {}", &name)
         );
-        let publisher = Publisher::new(name, base_uri, id_cert);
+        let publisher = Publisher::new(tag, name, base_uri, id_cert);
 
         self.store.store(key, publisher, info)?;
 
@@ -324,7 +324,7 @@ mod tests {
     use std::fs::File;
     use std::io::Write;
 
-    fn new_pl(dir: String) -> PublisherList {
+    fn new_pl(dir: PathBuf) -> PublisherList {
         let uri = test::rsync_uri("rsync://host/module/");
         PublisherList::new(dir, uri).unwrap()
     }
@@ -359,6 +359,7 @@ mod tests {
             let publisher_found = pl.publisher(&name).unwrap().unwrap();
 
             let expected_publisher = Publisher::new(
+                None,
                 name.to_string(),
                 test::rsync_uri(&format!("rsync://host/module/{}", name)),
                 id_cert
@@ -392,6 +393,7 @@ mod tests {
             let publisher_found = pl.publisher(&name).unwrap().unwrap();
 
             let expected_publisher = Publisher::new(
+                None,
                 name.to_string(),
                 test::rsync_uri(&format!("rsync://host/module/{}", name)),
                 id_cert
@@ -418,8 +420,9 @@ mod tests {
         });
     }
 
-    fn save_pr(base_dir: &str, file_name: &str, pr: &PublisherRequest) {
-        let full_name = PathBuf::from(format!("{}/{}", base_dir, file_name));
+    fn save_pr(base_dir: &PathBuf, file_name: &str, pr: &PublisherRequest) {
+        let mut full_name = base_dir.clone();
+        full_name.push(PathBuf::from(file_name));
         let mut f = File::create(full_name).unwrap();
         let xml = pr.encode_vec();
         f.write(xml.as_ref()).unwrap();

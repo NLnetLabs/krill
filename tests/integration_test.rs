@@ -21,8 +21,10 @@ use tokio::prelude::*;
 use tokio::runtime::Runtime;
 use rpubd::pubc::client::PubClient;
 
-fn save_pr(base_dir: &str, file_name: &str, pr: &PublisherRequest) {
-    let full_name = PathBuf::from(format!("{}/{}", base_dir, file_name));
+fn save_pr(base_dir: &PathBuf, file_name: &str, pr: &PublisherRequest) {
+    let mut full_name = base_dir.clone();
+    full_name.push(PathBuf::from
+        (file_name));
     let mut f = File::create(full_name).unwrap();
     let xml = pr.encode_vec();
     f.write(xml.as_ref()).unwrap();
@@ -46,7 +48,7 @@ fn testing() {
         save_pr(&xml_dir, "client.xml", &pr);
 
         // Start the server
-        let server_conf = Config::test(data_dir, xml_dir);
+        let server_conf = Config::test(&data_dir, &xml_dir);
         let mut rt = Runtime::new().unwrap();
         rt.spawn(
             future::lazy(move || {

@@ -38,7 +38,7 @@ pub struct OpenSslSigner {
 }
 
 impl OpenSslSigner {
-    pub fn new(work_dir: String) -> Result<Self, Error> {
+    pub fn new(work_dir: PathBuf) -> Result<Self, Error> {
         let meta_data = fs::metadata(&work_dir)?;
         if meta_data.is_dir() {
 
@@ -228,8 +228,8 @@ pub enum Error {
     #[fail(display = "Could not decode public key info: {}", _0)]
     DecodeError(decode::Error),
 
-    #[fail(display = "Invalid base path: {}", _0)]
-    InvalidWorkDir(String),
+    #[fail(display = "Invalid base path: {:?}", _0)]
+    InvalidWorkDir(PathBuf),
 
     #[fail(display = "{}", _0)]
     IoError(io::Error),

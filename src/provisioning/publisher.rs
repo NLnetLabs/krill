@@ -9,6 +9,9 @@ use rpki::uri;
 /// This type defines Publisher CAs that are allowed to publish.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Publisher {
+    // The optional tag in the request. None maps to empty string.
+    tag:        String,
+
     name:       String,
 
     #[serde(
@@ -23,14 +26,31 @@ pub struct Publisher {
 }
 
 impl Publisher {
-    pub fn new(name: String, base_uri: uri::Rsync, id_cert: IdCert) -> Self {
-        Publisher { name, base_uri, id_cert }
+    pub fn new(
+        tag: Option<String>,
+        name: String,
+        base_uri: uri::Rsync,
+        id_cert: IdCert
+    ) -> Self {
+
+        let tag = match tag {
+            None => "".to_string(),
+            Some(t) => t
+        };
+
+        Publisher {
+            tag,
+            name,
+            base_uri,
+            id_cert
+        }
     }
 
     /// Returns a new Publisher that is the same as this Publisher, except
     /// that it has an updated IdCert
     pub fn with_new_id_cert(&self, id_cert: IdCert) -> Self {
         Publisher {
+            tag: self.tag.clone(),
             name: self.name.clone(),
             base_uri: self.base_uri.clone(),
             id_cert
@@ -39,6 +59,15 @@ impl Publisher {
 }
 
 impl Publisher {
+    pub fn tag(&self) -> Option<String> {
+        let tag = &self.tag;
+        if tag.is_empty() {
+            None
+        } else {
+            Some(tag.clone())
+        }
+    }
+
     pub fn name(&self) -> &String {
         &self.name
     }

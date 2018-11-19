@@ -26,7 +26,10 @@ pub struct Config {
     rsync_base: uri::Rsync,
 
     #[serde(deserialize_with = "ext_serde::de_http_uri")]
-    notify_sia: uri::Http
+    notify_sia: uri::Http,
+
+    #[serde(deserialize_with = "ext_serde::de_http_uri")]
+    service_uri: uri::Http,
 }
 
 /// # Accessors
@@ -35,8 +38,8 @@ impl Config {
         SocketAddr::new(self.ip, self.port)
     }
 
-    pub fn data_dir(&self) -> String {
-        self.data_dir.to_string_lossy().to_string()
+    pub fn data_dir(&self) -> &PathBuf {
+        &self.data_dir
     }
 
     pub fn pub_xml_dir(&self) -> &PathBuf {
@@ -46,6 +49,14 @@ impl Config {
     pub fn rsync_base(&self) -> uri::Rsync {
         self.rsync_base.clone()
     }
+
+    pub fn service_uri(&self) -> uri::Http {
+        self.service_uri.clone()
+    }
+
+    pub fn notify_sia(&self) -> uri::Http {
+        self.notify_sia.clone()
+    }
 }
 
 /// # Create
@@ -54,18 +65,20 @@ impl Config {
     /// Set up a config for use in (integration) testing.
 //    #[cfg(test)]
     pub fn test(
-        data_dir: String,
-        pub_xml_dir: String,
+        data_dir: &PathBuf,
+        pub_xml_dir: &PathBuf,
     ) -> Self {
 
         let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));;
         let port = 3000;
-        let data_dir = PathBuf::from(data_dir);
-        let pub_xml_dir = PathBuf::from(pub_xml_dir);
+        let data_dir = data_dir.clone();
+        let pub_xml_dir = pub_xml_dir.clone();
         let rsync_base = uri::Rsync::from_str("rsync://127.0.0.1/rpki/")
             .unwrap();
         let notify_sia = uri::Http::from_str(
             "https://127.0.0.1/rpki/notify.xml").unwrap();
+        let service_uri = uri::Http::from_str(
+            "https://127.0.0.1/publishe").unwrap();
 
         Config {
             ip,
@@ -73,7 +86,8 @@ impl Config {
             data_dir,
             pub_xml_dir,
             rsync_base,
-            notify_sia
+            notify_sia,
+            service_uri
         }
     }
 
@@ -120,6 +134,12 @@ impl Config {
                 .long("notify_sia")
                 .value_name("URI")
                 .help("Override the notify URI.")
+                .required(false))
+            .arg(Arg::with_name("service_uri")
+                .short("u")
+                .long("service_uri")
+                .value_name("URI")
+                .help("Override the service URI.")
                 .required(false))
             .get_matches();
 
