@@ -2,22 +2,21 @@
 //! in scenarios where a CA just writes its products to disk, and a separate
 //! process is responsible for synchronising them to the repository.
 
-//------------ PubClient -----------------------------------------------------
 
 use std::path::PathBuf;
 use std::sync::Arc;
 use rpki::oob::exchange::PublisherRequest;
 use rpki::signing::PublicKeyAlgorithm;
 use rpki::signing::builder::IdCertBuilder;
-use rpki::signing::signer::CreateKeyError;
-use rpki::signing::signer::KeyUseError;
-use rpki::signing::signer::Signer;
+use rpki::signing::signer::{CreateKeyError, KeyUseError, Signer};
 use provisioning::identity::MyIdentity;
 use signing::softsigner;
 use signing::softsigner::OpenSslSigner;
 use storage::caching_ks::CachingDiskKeyStore;
 use storage::keystore::{self, Info, Key, KeyStore};
 
+
+/// # Some constants for naming resources in the keystore for clients.
 fn actor() -> String {
     "publication client".to_string()
 }
@@ -29,6 +28,9 @@ fn my_id_key() -> Key {
 fn my_id_msg() -> String {
     "initialised identity".to_string()
 }
+
+
+//------------ PubClient -----------------------------------------------------
 
 #[derive(Clone, Debug)]
 pub struct PubClient {
