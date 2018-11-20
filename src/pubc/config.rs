@@ -12,14 +12,23 @@ use clap::SubCommand;
 /// to override any of the settings in the config file.
 #[derive(Debug, Deserialize)]
 pub struct Config {
+    name: String,
     state_dir: PathBuf,
     mode: RunMode
 }
 
 /// # Accessors
 impl Config {
-    pub fn state_dir(&self) -> String {
-        self.state_dir.to_string_lossy().to_string()
+    pub fn name(&self) -> &String {
+        &self.name
+    }
+
+    pub fn state_dir(&self) -> &PathBuf {
+        &self.state_dir
+    }
+
+    pub fn mode(&self) -> &RunMode {
+        &self.mode
     }
 }
 
@@ -29,9 +38,17 @@ impl Config {
     pub fn create() -> Result<Self, ConfigError> {
         let m = App::new("NLnet Labs RRDP Client")
             .version("0.1b")
-            .arg(Arg::with_name("data")
-                .short("d")
-                .long("data")
+
+            .arg(Arg::with_name("name")
+                .short("n")
+                .long("name")
+                .value_name("NAME")
+                .help("Specify the name for this publication client.")
+                .required(true))
+
+            .arg(Arg::with_name("state")
+                .short("s")
+                .long("state")
                 .value_name("FILE")
                 .help("Specify the directory where this publication client \
                        maintains its state.")
@@ -64,11 +81,14 @@ impl Config {
 
             .subcommand(SubCommand::with_name("sync")
                 .about("Synchronise the directory specified by '-d'.")
-                .arg(Arg::with_name("dir")
+                .arg(Arg::with_name("data")
                     .short("d")
-                    .long("directory")
+                    .long("data")
                     .value_name("FILE")
-                    .help("Override the directory to synchronise.")
+                    .help("The directory that should be synced to the
+                           server. Note that entries here will be relative to
+                           the base rsync directory specified in the
+                           repository response.")
                     .required(true))
             )
 
@@ -128,13 +148,10 @@ impl Config {
             }
         };
 
-        if let Some(data) = m.value_of("data") {
-            let state_dir = PathBuf::from(data);
-            Ok(Config {state_dir, mode})
-        } else {
-            Self::die(m.usage());
-            unreachable!()
-        }
+        let state = m.value_of("state").unwrap(); // safe (required)
+        let state_dir = PathBuf::from(state);
+        let name = m.value_of("name").unwrap().to_string(); // safe (required)
+        Ok(Config {name, state_dir, mode})
     }
 
     fn die(message: &str) {

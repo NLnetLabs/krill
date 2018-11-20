@@ -7,11 +7,12 @@
 
 extern crate rpubd;
 
-use rpubd::pubc::config::Config;
+use rpubd::pubc::config::{ Config, RunMode };
+use rpubd::pubc::client::PubClient;
 
 fn main() {
 
-    let _c = match Config::create() {
+    let config = match Config::create() {
         Ok(c)  => c,
         Err(e) => {
             eprintln!("{}", e);
@@ -19,5 +20,25 @@ fn main() {
         }
     };
 
-    println!("Goodbye cruel world");
+    let mut client = match PubClient::new(config.state_dir().clone()) {
+        Ok(client) => client,
+        Err(e) => {
+            eprintln!("{}", e);
+            ::std::process::exit(1);
+        }
+    };
+
+    let result = match config.mode() {
+        RunMode::Init => client.init(config.name().clone()),
+        _ => {
+            unimplemented!()
+        }
+    };
+    match result {
+        Ok(()) => {}//,
+        Err(e) => {
+            eprintln!("{}", e);
+            ::std::process::exit(1);
+        }
+    }
 }
