@@ -1,12 +1,13 @@
-// Note: suppressing unused imports here, because this is only used with
-#[allow(unused_imports)] use std::path::PathBuf;
-#[allow(unused_imports)] use rpki::oob::exchange::PublisherRequest;
-#[allow(unused_imports)] use rpki::uri;
-#[allow(unused_imports)] use rpki::remote::idcert::IdCert;
-#[allow(unused_imports)] use rpki::signing::builder::IdCertBuilder;
-#[allow(unused_imports)] use rpki::signing::signer::Signer;
-#[allow(unused_imports)] use rpki::signing::softsigner::OpenSslSigner;
-#[allow(unused_imports)] use rpki::signing::PublicKeyAlgorithm;
+use std::fs::File;
+use std::io::Write;
+use std::path::PathBuf;
+use rpki::oob::exchange::PublisherRequest;
+use rpki::uri;
+use rpki::remote::idcert::IdCert;
+use rpki::signing::builder::IdCertBuilder;
+use rpki::signing::signer::Signer;
+use rpki::signing::softsigner::OpenSslSigner;
+use rpki::signing::PublicKeyAlgorithm;
 
 pub fn test_with_tmp_dir<F>(op: F) where F: FnOnce(PathBuf) -> () {
     use std::fs;
@@ -58,4 +59,11 @@ pub fn new_publisher_request(publisher_handle: &str) -> PublisherRequest {
         publisher_handle,
         id_cert
     )
+}
+
+pub fn save_file(base_dir: &PathBuf, file_name: &str, content: &[u8]) {
+    let mut full_name = base_dir.clone();
+    full_name.push(PathBuf::from(file_name));
+    let mut f = File::create(full_name).unwrap();
+    f.write(content).unwrap();
 }

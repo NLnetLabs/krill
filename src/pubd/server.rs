@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use provisioning::identity::MyIdentity;
+use provisioning::info::MyIdentity;
 use provisioning::publisher_list;
 use provisioning::publisher_list::PublisherList;
 use rpki::uri;
@@ -213,20 +213,8 @@ impl From<KeyUseError> for Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs::File;
-    use std::io::Write;
     use test;
     use pubc::client::PubClient;
-    use rpki::oob::exchange::PublisherRequest;
-
-    fn save_pr(base_dir: &PathBuf, file_name: &str, pr: &PublisherRequest) {
-        let mut full_name = base_dir.clone();
-        full_name.push(PathBuf::from
-            (file_name));
-        let mut f = File::create(full_name).unwrap();
-        let xml = pr.encode_vec();
-        f.write(xml.as_ref()).unwrap();
-    }
 
     fn test_server(work_dir: &PathBuf, xml_dir: &PathBuf) -> PubServer {
         // Start up a server
@@ -280,8 +268,8 @@ mod tests {
             bob.init("bob".to_string()).unwrap();
             let pr_bob = bob.publisher_request().unwrap();
 
-            save_pr(&xml_dir, "alice.xml", &pr_alice);
-            save_pr(&xml_dir, "bob.xml", &pr_bob);
+            test::save_file(&xml_dir, "alice.xml", &pr_alice.encode_vec());
+            test::save_file(&xml_dir, "bob.xml", &pr_bob.encode_vec());
 
             // Start up a server
             let server = test_server(&d, &xml_dir);
@@ -292,7 +280,7 @@ mod tests {
 
             // Create a new xml dir with only alice.xml
             let xml_dir = PathBuf::from(test::create_sub_dir(&d));
-            save_pr(&xml_dir, "alice.xml", &pr_alice);
+            test::save_file(&xml_dir, "alice.xml", &pr_alice.encode_vec());
 
             // Start a new server (so that it re-syncs)
             let server = test_server(&d, &xml_dir);
@@ -321,8 +309,8 @@ mod tests {
             carol.init("carol".to_string()).unwrap();
             let pr_carol = carol.publisher_request().unwrap();
 
-            save_pr(&xml_dir, "alice.xml", &pr_alice);
-            save_pr(&xml_dir, "carol.xml", &pr_carol);
+            test::save_file(&xml_dir, "alice.xml", &pr_alice.encode_vec());
+            test::save_file(&xml_dir, "carol.xml", &pr_carol.encode_vec());
 
             let server = test_server(&d, &xml_dir);
 
@@ -350,7 +338,7 @@ mod tests {
 
             // However, initialising the server with two or more xml files
             // for the same handle results in an error.
-            save_pr(&xml_dir, "alice-2.xml", &pr_alice);
+            test::save_file(&xml_dir, "alice-2.xml", &pr_alice.encode_vec());
 
             let uri = test::rsync_uri("rsync://host/module/");
             let service = test::http_uri("http://host/publish");
@@ -383,8 +371,8 @@ mod tests {
             bob.init("bob".to_string()).unwrap();
             let pr_bob = bob.publisher_request().unwrap();
 
-            save_pr(&xml_dir, "alice.xml", &pr_alice);
-            save_pr(&xml_dir, "bob.xml", &pr_bob);
+            test::save_file(&xml_dir, "alice.xml", &pr_alice.encode_vec());
+            test::save_file(&xml_dir, "bob.xml", &pr_bob.encode_vec());
 
             let mut server = test_server(&d, &xml_dir);
             server.init_identity_if_empty().unwrap();

@@ -9,11 +9,14 @@ use rpki::oob::exchange::PublisherRequest;
 use rpki::signing::PublicKeyAlgorithm;
 use rpki::signing::builder::IdCertBuilder;
 use rpki::signing::signer::{CreateKeyError, KeyUseError, Signer};
-use provisioning::identity::MyIdentity;
+use provisioning::info::MyIdentity;
 use signing::softsigner;
 use signing::softsigner::OpenSslSigner;
 use storage::caching_ks::CachingDiskKeyStore;
 use storage::keystore::{self, Info, Key, KeyStore};
+use rpki::oob::exchange::RepositoryResponse;
+use provisioning::info::ParentInfo;
+use provisioning::info::MyRepoInfo;
 
 
 /// # Some constants for naming resources in the keystore for clients.
@@ -25,10 +28,25 @@ fn my_id_key() -> Key {
     Key::from_str("my_id")
 }
 
+fn my_parent_key() -> Key {
+    Key::from_str("my_parent")
+}
+
+fn my_repo_key() -> Key {
+    Key::from_str("my_repo")
+}
+
 fn my_id_msg() -> String {
     "initialised identity".to_string()
 }
 
+fn my_parent_msg() -> String {
+    "updated parent info".to_string()
+}
+
+fn my_repo_msg() -> String {
+    "update repo info".to_string()
+}
 
 //------------ PubClient -----------------------------------------------------
 
@@ -40,11 +58,10 @@ pub struct PubClient {
 
     // key value store
     store: CachingDiskKeyStore,
-    //   my_id -> MyIdentity
-    //   -> my parent
-    //      -> service uri
-    //      -> parent id certificate
-    //      -> my base uri
+    //   my_id     -> MyIdentity
+    //   my_parent -> ParentInfo
+    //   my_repo   -> MyRepoInfo
+
     //   -> my directory of interest
     //      (note: we do not keep this state in client, truth is on disk)
     // archive / log
@@ -85,8 +102,37 @@ impl PubClient {
     }
 
     /// Process the publication server parent response.
-    pub fn process_parent_id(&mut self) -> Result<(), Error> {
-        unimplemented!()
+    pub fn process_repo_response(
+        &mut self,
+        response: RepositoryResponse
+    ) -> Result<(), Error> {
+
+        // Store parent info
+        {
+            let parent_val = ParentInfo::new(
+                response.publisher_handle().clone(),
+                response.id_cert().clone(),
+                response.service_uri().clone()
+            );
+            let parent_info = Info::now(actor(), my_parent_msg());
+            let parent_key = my_parent_key();
+
+            self.store.store(parent_key, parent_val, parent_info)?;
+        }
+
+        // Store repo info
+        {
+            let repo_val = MyRepoInfo::new(
+                response.sia_base().clone(),
+                response.rrdp_notification_uri().clone()
+            );
+            let repo_info = Info::now(actor(), my_repo_msg());
+            let repo_key = my_repo_key();
+
+            self.store.store(repo_key, repo_val, repo_info)?;
+        }
+
+        Ok(())
     }
 
     pub fn publisher_request(&self) -> Result<PublisherRequest, Error> {
@@ -175,6 +221,21 @@ impl From<KeyUseError> for Error {
 mod tests {
     use super::*;
     use test;
+    use pubd::server::PubServer;
+
+    fn test_server(work_dir: &PathBuf, xml_dir: &PathBuf) -> PubServer {
+        // Start up a server
+        let uri = test::rsync_uri("rsync://host/module/");
+        let service = test::http_uri("http://host/publish");
+        let notify = test::http_uri("http://host/notify.xml");
+        PubServer::new(
+            work_dir.clone(),
+            xml_dir.clone(),
+            uri,
+            service,
+            notify
+        ).unwrap()
+    }
 
     #[test]
     fn should_initialise_keep_state_and_reinitialise() {
@@ -199,7 +260,27 @@ mod tests {
             assert_ne!(pr_1.id_cert().to_bytes(), pr_2.id_cert().to_bytes());
             assert_ne!(client_1, client_2);
         });
+    }
 
+    #[test]
+    fn should_process_repo_response() {
+        test::test_with_tmp_dir(|d| {
+            let xml_dir = test::create_sub_dir(&d);
+
+            let alice_dir = test::create_sub_dir(&d);
+            let mut alice = PubClient::new(alice_dir).unwrap();
+            alice.init("alice".to_string()).unwrap();
+            let pr_alice = alice.publisher_request().unwrap();
+
+            test::save_file(&xml_dir, "alice.xml", &pr_alice.encode_vec());
+
+            let mut server = test_server(&d, &xml_dir);
+            server.init_identity_if_empty().unwrap();
+
+            let response = server.repository_response("alice").unwrap();
+
+            alice.process_repo_response(response).unwrap();
+        });
     }
 
 }
