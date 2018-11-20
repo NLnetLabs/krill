@@ -1,6 +1,4 @@
-use std::fs::File;
 use std::io;
-use std::io::Read;
 use std::path::PathBuf;
 use clap::{App, Arg};
 use toml;
@@ -15,14 +13,11 @@ use clap::SubCommand;
 #[derive(Debug, Deserialize)]
 pub struct Config {
     state_dir: PathBuf,
-    data_dir: PathBuf,
+    mode: RunMode
 }
 
 /// # Accessors
 impl Config {
-    pub fn data_dir(&self) -> String {
-        self.data_dir.to_string_lossy().to_string()
-    }
     pub fn state_dir(&self) -> String {
         self.state_dir.to_string_lossy().to_string()
     }
@@ -32,69 +27,128 @@ impl Config {
 impl Config {
     /// Creates the config (at startup). Panics in case of issues.
     pub fn create() -> Result<Self, ConfigError> {
-        let matches = App::new("NLnet Labs RRDP Client")
+        let m = App::new("NLnet Labs RRDP Client")
             .version("0.1b")
-            .arg(Arg::with_name("config")
-                .short("c")
-                .long("config")
+            .arg(Arg::with_name("data")
+                .short("d")
+                .long("data")
                 .value_name("FILE")
-                .help("Specify non-default config file. If no file is \
-                specified './defaults/client.toml' will be used to \
-                determine default values for all settings. Note that you \
-                can use any of the following options to override any of \
-                these values..")
-                .required(false))
-
+                .help("Specify the directory where this publication client \
+                       maintains its state.")
+                .required(true))
 
             .subcommand(SubCommand::with_name("init")
-                .about("Initialise keypair and print client.xml.")
+                .about("(Re-)Initialise the identity certificate and key \
+                        pair.")
             )
 
-            .subcommand(SubCommand::with_name("parent")
-                .about("Process parent response")
+            .subcommand(SubCommand::with_name("request")
+                .about("Generate the publisher request XML")
                 .arg(Arg::with_name("xml")
                     .short("x")
                     .long("xml")
                     .value_name("FILE")
-                    .help("The server's parent.xml response.")
+                    .help("The name of the file to write the request to.")
+                    .required(true))
+            )
+
+            .subcommand(SubCommand::with_name("response")
+                .about("Process the repository response XML")
+                .arg(Arg::with_name("xml")
+                    .short("x")
+                    .long("xml")
+                    .value_name("FILE")
+                    .help("The name of the file containing the response.")
                     .required(true))
             )
 
             .subcommand(SubCommand::with_name("sync")
-                .about("Synchronise the configured directory. Use the '-d' \
-                option to override the value set in the config file.")
+                .about("Synchronise the directory specified by '-d'.")
                 .arg(Arg::with_name("dir")
                     .short("d")
                     .long("directory")
                     .value_name("FILE")
                     .help("Override the directory to synchronise.")
-                    .required(false))
+                    .required(true))
             )
 
             .get_matches();
 
-        let config_file = matches.value_of("config")
-            .unwrap_or("./defaults/client.toml");
-
-        let mut c = Self::read_config(config_file.as_ref())?;
-
-        if let Some(matches) = matches.subcommand_matches("sync") {
-            if let Some(data_dir) = matches.value_of("dir") {
-                c.data_dir = PathBuf::from(data_dir)
+        let mode = match m.subcommand_name() {
+            Some("init") => {
+                RunMode::Init
+            },
+            Some("request") => {
+                if let Some(m) = m.subcommand_matches("request") {
+                    if let Some(xml) = m.value_of("xml") {
+                        let xml = PathBuf::from(xml);
+                        RunMode::PublisherRequest(xml)
+                    } else {
+                        Self::die(m.usage());
+                        unreachable!()
+                    }
+                } else {
+                    Self::die(m.usage());
+                    unreachable!()
+                }
+            },
+            Some("response") => {
+                if let Some(m) = m.subcommand_matches("response") {
+                    if let Some(xml) = m.value_of("xml") {
+                        let xml = PathBuf::from(xml);
+                        RunMode::RepoResponse(xml)
+                    } else {
+                        Self::die(m.usage());
+                        unreachable!()
+                    }
+                } else {
+                    Self::die(m.usage());
+                    unreachable!()
+                }
+            },
+            Some("sync") => {
+                if let Some(m) = m.subcommand_matches("sync") {
+                    if let Some(dir) = m.value_of("dir") {
+                        let dir = PathBuf::from(dir);
+                        RunMode::Sync(dir)
+                    } else {
+                        Self::die(m.usage());
+                        unreachable!()
+                    }
+                } else {
+                    Self::die(m.usage());
+                    unreachable!()
+                }
+            },
+            _ => {
+                Self::die(
+                    "Expected subcommand (init, response, request, sync)"
+                );
+                unreachable!()
             }
+        };
+
+        if let Some(data) = m.value_of("data") {
+            let state_dir = PathBuf::from(data);
+            Ok(Config {state_dir, mode})
+        } else {
+            Self::die(m.usage());
+            unreachable!()
         }
-
-        Ok(c)
     }
 
-    fn read_config(file: &str) -> Result<Self, ConfigError> {
-        let mut v = Vec::new();
-        let mut f = File::open(file)?;
-        f.read_to_end(&mut v)?;
-
-        let c: Config = toml::from_slice(v.as_slice())?;
-        Ok(c)
+    fn die(message: &str) {
+        eprintln!("{}", message);
+        ::std::process::exit(1);
     }
+}
+
+#[derive(Debug, Deserialize)]
+pub enum RunMode {
+    Init,
+    PublisherRequest(PathBuf),
+    RepoResponse(PathBuf),
+    Sync(PathBuf)
 }
 
 #[derive(Debug, Fail)]
@@ -119,19 +173,3 @@ impl From<toml::de::Error> for ConfigError {
     }
 }
 
-
-//------------ Tests ---------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-
-    use super::*;
-
-    #[test]
-    fn should_parse_default_config_file() {
-        let c = Config::read_config("./defaults/client.toml").unwrap();
-        assert_eq!(c.state_dir(), "./client_state".to_string());
-        assert_eq!(c.data_dir(), "./client_data".to_string());
-    }
-
-}
