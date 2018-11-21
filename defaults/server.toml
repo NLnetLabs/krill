@@ -14,12 +14,12 @@ pub_xml_dir    = "./publishers"
 
 # Specify the base rsync repository for this server. Publishers will get
 # a base URI that is based on the 'publisher_handle' in the XML file.
-rsync_base  = "rsync://127.0.0.1/rpki/"
+rsync_base  = "rsync://127.0.0.1/repo/"
 
 # Specify the notify SIA for this server. This will be reported in the
 # response.xml files to publishers so that they can include the proper SIA
 # in their certificates.
-notify_sia  = "https://127.0.0.1/rpki/notify.xml"
+notify_sia  = "https://127.0.0.1/repo/notify.xml"
 
 # Specify the service URI where publishers can connect.
-service_uri = "https://127.0.0.1/publish/"
+service_uri = "https://127.0.0.1/publish"

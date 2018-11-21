@@ -77,6 +77,7 @@ impl PublisherList {
 
         let mut base_uri = self.base_uri.to_string();
         base_uri.push_str(name.as_ref());
+        base_uri.push_str("/");
         let base_uri = uri::Rsync::from_string(base_uri)?;
 
         let key = Key::from_str(name.as_ref());
