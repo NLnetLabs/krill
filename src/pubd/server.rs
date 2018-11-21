@@ -49,6 +49,7 @@ pub struct PubServer {
     notify_sia: uri::Http
 }
 
+/// # Set up and initialisation
 impl PubServer {
     /// Creates a new publication server. Note that state is preserved
     /// on disk in the work_dir provided.
@@ -60,12 +61,10 @@ impl PubServer {
         rrdp_notification_uri: uri::Http
     ) -> Result<Self, Error> {
         let store = CachingDiskKeyStore::new(PathBuf::from(&work_dir))?;
-
-        let mut publisher_list = PublisherList::new(
-            work_dir.clone(),
+        let publisher_list = Self::init_publishers(
+            &work_dir,
+            pub_xml_dir,
             base_uri)?;
-        publisher_list.sync_from_dir(pub_xml_dir, actor())?;
-
         let signer = OpenSslSigner::new(work_dir)?;
 
         Ok(
@@ -79,8 +78,7 @@ impl PubServer {
         )
     }
 
-
-    /// Initialiase the publication server identity, if no identity had
+    /// Initialise the publication server identity, if no identity had
     /// been set up. Does nothing otherwise.
     pub fn init_identity_if_empty(&mut self) -> Result<(), Error> {
         match self.my_identity()? {
@@ -101,12 +99,36 @@ impl PubServer {
         Ok(())
     }
 
+    fn my_identity(&self) -> Result<Option<Arc<MyIdentity>>, Error> {
+        self.store.get(&my_id_key()).map_err(|e| { Error::KeyStoreError(e)})
+    }
+}
+
+/// # Configure publishers
+impl PubServer {
+    /// Synchronize publishers from disk
+    fn init_publishers(
+        work_dir: &PathBuf,
+        pub_xml_dir: PathBuf,
+        base_uri: uri::Rsync
+    ) -> Result<PublisherList, Error> {
+        let mut publisher_list = PublisherList::new(
+            work_dir.clone(),
+            base_uri)?;
+        publisher_list.sync_from_dir(pub_xml_dir, actor())?;
+        Ok(publisher_list)
+    }
+
+    /// Returns all currently configured publishers.
     pub fn publishers(&self) -> Result<Vec<Arc<Publisher>>, Error> {
         self.publisher_list
             .publishers()
             .map_err(|e| { Error::PublisherListError(e) })
     }
 
+    /// Returns a repository response for the given publisher.
+    ///
+    /// Returns an error if the publisher is unknown.
     pub fn repository_response(
         &self,
         publisher_name: &str
@@ -140,12 +162,6 @@ impl PubServer {
         } else {
             Err(Error::Uninitialised)
         }
-
-    }
-
-
-    fn my_identity(&self) -> Result<Option<Arc<MyIdentity>>, Error> {
-        self.store.get(&my_id_key()).map_err(|e| { Error::KeyStoreError(e)})
     }
 }
 

@@ -142,7 +142,7 @@ impl Config {
             },
             _ => {
                 Self::die(
-                    "Expected subcommand (init, response, request, sync)"
+                    "Expected sub-command (init, response, request, sync)"
                 );
                 unreachable!()
             }
