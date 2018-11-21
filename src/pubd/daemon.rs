@@ -44,6 +44,9 @@ pub fn serve(config: &Config) {
 
             if path.starts_with("/static") {
                 render_static(path)
+            } else if path.starts_with("/publishers/") {
+                let handle = path.trim_left_matches("/publishers/");
+                show_repository_response(handle, &pub_server)
             } else {
                 match (req.method(), path) {
                     (&Method::GET, "/health") => {
@@ -119,6 +122,16 @@ fn show_publishers(pub_server: &PubServer) -> Response<Body> {
     match pub_server.publishers() {
         Ok(publishers) => render_json(publishers),
         Err(e)         => render_error(Error::ServerError(e))
+    }
+}
+
+fn show_repository_response(
+    publisher_name: &str,
+    pub_server: &PubServer
+) -> Response<Body> {
+    match pub_server.repository_response(publisher_name) {
+        Ok(response) => Response::new(Body::from(response.encode_vec())),
+        Err(e)       => render_error(Error::ServerError(e))
     }
 }
 
