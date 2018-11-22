@@ -33,24 +33,18 @@ impl PublisherList {
         work_dir: PathBuf,
         base_uri: uri::Rsync
     ) -> Result<Self, Error> {
-        let meta_data = fs::metadata(&work_dir)?;
-        if meta_data.is_dir() {
-
-            let mut publisher_dir = PathBuf::from(work_dir);
-            publisher_dir.push("publishers");
-            if ! publisher_dir.is_dir() {
-                fs::create_dir_all(&publisher_dir)?;
-            }
-
-            Ok(
-                PublisherList {
-                    store: CachingDiskKeyStore::new(publisher_dir)?,
-                    base_uri
-                }
-            )
-        } else {
-            panic!("Invalid base_dir for DiskKeyStore")
+        let mut publisher_dir = PathBuf::from(work_dir);
+        publisher_dir.push("publishers");
+        if ! publisher_dir.is_dir() {
+            fs::create_dir_all(&publisher_dir)?;
         }
+
+        Ok(
+            PublisherList {
+                store: CachingDiskKeyStore::new(publisher_dir)?,
+                base_uri
+            }
+        )
     }
 
     /// Adds a Publisher based on a PublisherRequest (from the RFC 8183 xml).
@@ -322,12 +316,17 @@ mod tests {
 
     use super::*;
     use test;
-    use std::fs::File;
-    use std::io::Write;
 
     fn new_pl(dir: PathBuf) -> PublisherList {
         let uri = test::rsync_uri("rsync://host/module/");
         PublisherList::new(dir, uri).unwrap()
+    }
+
+    fn find_in_list(
+        name: &str,
+        publishers: &Vec<Arc<Publisher>>
+    ) -> Option<Arc<Publisher>> {
+        publishers.iter().find(|e| {e.name() == name }).map(|e| {e.clone()})
     }
 
     #[test]
@@ -362,7 +361,7 @@ mod tests {
             let expected_publisher = Publisher::new(
                 None,
                 name.to_string(),
-                test::rsync_uri(&format!("rsync://host/module/{}", name)),
+                test::rsync_uri(&format!("rsync://host/module/{}/", name)),
                 id_cert
             );
 
@@ -396,7 +395,7 @@ mod tests {
             let expected_publisher = Publisher::new(
                 None,
                 name.to_string(),
-                test::rsync_uri(&format!("rsync://host/module/{}", name)),
+                test::rsync_uri(&format!("rsync://host/module/{}/", name)),
                 id_cert
             );
 
@@ -421,20 +420,6 @@ mod tests {
         });
     }
 
-    fn save_pr(base_dir: &PathBuf, file_name: &str, pr: &PublisherRequest) {
-        let mut full_name = base_dir.clone();
-        full_name.push(PathBuf::from(file_name));
-        let mut f = File::create(full_name).unwrap();
-        let xml = pr.encode_vec();
-        f.write(xml.as_ref()).unwrap();
-    }
-
-    fn find_in_list(
-        name: &str,
-        publishers: &Vec<Arc<Publisher>>
-    ) -> Option<Arc<Publisher>> {
-        publishers.iter().find(|e| {e.name() == name }).map(|e| {e.clone()})
-    }
 
     #[test]
     fn should_sync_publisher_requests() {
@@ -450,8 +435,16 @@ mod tests {
             let start_sync_dir = test::create_sub_dir(&d);
             let pr_alice = test::new_publisher_request("alice");
             let pr_bob   = test::new_publisher_request("bob");
-            save_pr(&start_sync_dir, "alice.xml", &pr_alice);
-            save_pr(&start_sync_dir, "bob.xml", &pr_bob);
+            test::save_file(
+                &start_sync_dir,
+                "alice.xml",
+                &pr_alice.encode_vec()
+            );
+            test::save_file(
+                &start_sync_dir,
+                "bob.xml",
+                &pr_bob.encode_vec()
+            );
 
             pl.sync_from_dir(
                 PathBuf::from(start_sync_dir),
@@ -472,8 +465,16 @@ mod tests {
             let updated_sync_dir = test::create_sub_dir(&d);
             let pr_bob_2 = test::new_publisher_request("bob");
             let pr_carol = test::new_publisher_request("carol");
-            save_pr(&updated_sync_dir, "bob.xml", &pr_bob_2);
-            save_pr(&updated_sync_dir, "carol.xml", &pr_carol);
+            test::save_file(
+                &updated_sync_dir,
+                "bob.xml",
+                &pr_bob_2.encode_vec()
+            );
+            test::save_file(
+                &updated_sync_dir,
+                "carol.xml",
+                &pr_carol.encode_vec()
+            );
             pl.sync_from_dir(
                 PathBuf::from(updated_sync_dir),
                 actor.clone()
@@ -494,8 +495,16 @@ mod tests {
             // Now do a dir with a duplicate handle, this should
             // result in an error response
             let duplicates_sync_dir = test::create_sub_dir(&d);
-            save_pr(&duplicates_sync_dir, "bob.xml", &pr_bob);
-            save_pr(&duplicates_sync_dir, "bob-2.xml", &pr_bob_2);
+            test::save_file(
+                &duplicates_sync_dir,
+                "bob.xml",
+                &pr_bob.encode_vec()
+            );
+            test::save_file(
+                &duplicates_sync_dir,
+                "bob-2.xml",
+                &pr_bob_2.encode_vec()
+            );
             assert!(pl.sync_from_dir(
                 PathBuf::from(duplicates_sync_dir),
                 actor.clone()

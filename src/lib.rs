@@ -19,6 +19,7 @@ extern crate xml;
 pub mod provisioning;
 pub mod pubc;
 pub mod pubd;
+pub mod repo;
 pub mod signing;
 pub mod storage;
 pub mod ext_serde;

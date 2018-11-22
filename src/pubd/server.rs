@@ -17,7 +17,7 @@ use provisioning::publisher::Publisher;
 use rpki::oob::exchange::RepositoryResponse;
 
 
-/// # Some constants for naming resources in the keystore for clients.
+/// # Naming things in the keystore.
 fn actor() -> String {
     "publication server".to_string()
 }
@@ -165,7 +165,10 @@ impl PubServer {
     }
 }
 
+/// # Handle publisher requests
+impl PubServer {
 
+}
 
 //------------ Error ---------------------------------------------------------
 
@@ -396,7 +399,7 @@ mod tests {
 
             let response = server.repository_response("alice").unwrap();
 
-            let expected_sia = test::rsync_uri("rsync://host/module/alice");
+            let expected_sia = test::rsync_uri("rsync://host/module/alice/");
             let expected_service = test::http_uri("http://host/publish");
             let expected_notify = test::http_uri("http://host/notify.xml");
 

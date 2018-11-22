@@ -1,3 +1,4 @@
+use std::fs;
 use std::fs::File;
 use std::io;
 use std::io::Read;
@@ -147,6 +148,18 @@ impl Config {
             .unwrap_or("./defaults/server.toml");
 
         let mut c = Self::read_config(config_file.as_ref())?;
+
+        if ! fs::metadata(&c.data_dir)?.is_dir() {
+            return Err(
+                ConfigError::Other(
+                    format!(
+                        "Invalid data_dir: {}",
+                        c.data_dir.to_string_lossy().as_ref()
+                    )
+                )
+            )
+        }
+
 
         if let Some(ip_arg) = matches.value_of("ip") {
             match IpAddr::from_str(ip_arg) {
