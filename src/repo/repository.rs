@@ -98,7 +98,7 @@ impl Repository {
     }
 }
 
-/// # List / Publish / Withdraw
+/// # Publish / Withdraw
 ///
 impl Repository {
     pub fn publish(
@@ -207,6 +207,17 @@ impl RepoPublisher {
         Ok(())
     }
 
+    fn assert_uri(base: &uri::Rsync, file: &uri::Rsync) -> Result<(), Error> {
+        if base.module() == file.module() &&
+           file.path().starts_with(base.path())
+        {
+            Ok(())
+        } else {
+            Err(Error::OutsideBaseUri)
+        }
+
+    }
+
     /// Returns a new RepoPublisher with an updated list of files.
     ///
     /// Note that RepoPublishers are stored as versioned immutable (Arc)
@@ -219,12 +230,15 @@ impl RepoPublisher {
         for el in query.elements() {
             match el {
                 PublishElement::Publish(p) => {
+                    Self::assert_uri(&self.base_uri, p.uri())?;
                     Self::process_publish(&mut new_list, p)?;
                 },
                 PublishElement::Update(u) => {
+                    Self::assert_uri(&self.base_uri, u.uri())?;
                     Self::process_update(&mut new_list, u)?;
                 },
                 PublishElement::Withdraw(w) => {
+                    Self::assert_uri(&self.base_uri, w.uri())?;
                     Self::process_withdraw(&mut new_list, w)?;
                 },
             }
@@ -331,6 +345,9 @@ pub enum Error {
 
     #[fail(display="File for withdraw exists, but hash does not match")]
     WithdrawWrongHash,
+
+    #[fail(display="Publishing outside of base URI is not allowed.")]
+    OutsideBaseUri,
 }
 
 impl From<io::Error> for Error {
@@ -439,6 +456,37 @@ mod tests {
             let alice = repo.get_publisher("alice").unwrap();
             let files = alice.current_files();
             assert_eq!(0, files.len());
+        });
+    }
+
+    #[test]
+    fn should_not_allow_publishing_or_withdrawing_outside_of_base() {
+        test::test_with_tmp_dir(|d| {
+
+            let mut repo = Repository::new(&d).unwrap();
+            let alice = RepoPublisher::new(
+                "alice".to_string(),
+                test::rsync_uri("rsync://host/module/alice/")
+            );
+
+            repo.add_publisher(alice).unwrap();
+
+            let alice = repo.get_publisher("alice").unwrap();
+            let files = alice.current_files();
+            assert_eq!(0, files.len());
+
+            let file = CurrentFile::new(
+                test::rsync_uri("rsync://host/module/bob/file.txt"),
+                Bytes::from("example content")
+            );
+
+            //--------- Add a single file
+            let mut builder = PublishQuery::build();
+            builder.add(file.clone().as_publish());
+            let message = builder.build_message();
+            let publish = message.as_query().unwrap().as_publish().unwrap();
+
+            assert!(repo.publish("alice", publish.clone()).is_err());
         });
     }
 
