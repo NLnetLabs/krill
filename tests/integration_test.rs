@@ -16,7 +16,7 @@ use rpubd::test;
 use rpubd::pubc::client::PubClient;
 use rpubd::pubd::config::Config;
 use rpubd::pubd::daemon;
-use rpubd::repo::publisher::Publisher;
+use rpubd::provisioning::publisher::Publisher;
 use tokio::prelude::*;
 use tokio::runtime::Runtime;
 

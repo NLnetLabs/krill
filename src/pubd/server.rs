@@ -3,9 +3,9 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use provisioning::info::MyIdentity;
-use repo::publisher::Publisher;
-use repo::publisher_store;
-use repo::publisher_store::PublisherStore;
+use provisioning::publisher::Publisher;
+use provisioning::publisher_store;
+use provisioning::publisher_store::PublisherStore;
 use rpki::uri;
 use rpki::signing::PublicKeyAlgorithm;
 use rpki::signing::builder::IdCertBuilder;

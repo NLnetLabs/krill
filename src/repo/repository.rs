@@ -1,9 +1,7 @@
 use std::path::PathBuf;
+use repo::file_store::{self, FileStore};
 use rpki::uri;
-use repo::publisher_store::PublisherStore;
-use repo::file_store::FileStore;
-use repo::publisher_store;
-use repo::file_store;
+use provisioning::publisher_store::{self, PublisherStore};
 
 
 //------------ Repository ----------------------------------------------------

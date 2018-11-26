@@ -6,7 +6,7 @@ use std::io;
 use std::io::BufReader;
 use std::path::PathBuf;
 use std::sync::Arc;
-use repo::publisher::Publisher;
+use provisioning::publisher::Publisher;
 use rpki::remote::idcert::IdCert;
 use rpki::uri;
 use rpki::oob::exchange::{PublisherRequest, PublisherRequestError};
