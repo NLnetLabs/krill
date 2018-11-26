@@ -6,14 +6,15 @@ use provisioning::info::MyIdentity;
 use provisioning::publisher::Publisher;
 use provisioning::publisher_store;
 use provisioning::publisher_store::PublisherStore;
+use repo::repository::{self, Repository};
 use rpki::uri;
 use rpki::signing::PublicKeyAlgorithm;
 use rpki::signing::builder::IdCertBuilder;
 use rpki::signing::signer::{CreateKeyError, KeyUseError, Signer};
 use rpki::oob::exchange::RepositoryResponse;
+use signing::softsigner::{self, OpenSslSigner};
 use storage::caching_ks::CachingDiskKeyStore;
 use storage::keystore::{self, Info, Key, KeyStore};
-use signing::softsigner::{self, OpenSslSigner};
 
 
 /// # Naming things in the keystore.
@@ -34,18 +35,24 @@ fn my_id_msg() -> String {
 
 #[derive(Clone, Debug)]
 pub struct PubServer {
-    // keys
-    //   -> keys by id
+    // Used for signing responses to publishers
     signer: OpenSslSigner,
 
-    // key value store
+    // key value store for server specific stuff
     store: CachingDiskKeyStore,
     //   my_id -> MyIdentity
 
-    publisher_list: PublisherStore,
+    // The configured publishers
+    publisher_store: PublisherStore,
 
+    // The repository responsible for publishing rsync and rrdp
+    repository: Repository,
+
+    // The URI that publishers need to access to publish (see config)
     service_uri: uri::Http,
-    notify_sia: uri::Http
+
+    // The URI for the notification.xml published by this server (see config)
+    rrdp_notification_uri: uri::Http
 }
 
 /// # Set up and initialisation
@@ -59,20 +66,22 @@ impl PubServer {
         service_uri: uri::Http,
         rrdp_notification_uri: uri::Http
     ) -> Result<Self, Error> {
+        let signer = OpenSslSigner::new(work_dir)?;
         let store = CachingDiskKeyStore::new(PathBuf::from(&work_dir))?;
-        let publisher_list = Self::init_publishers(
+        let publisher_store = Self::init_publishers(
             &work_dir,
             pub_xml_dir,
             base_uri)?;
-        let signer = OpenSslSigner::new(work_dir)?;
+        let repository = Repository::new(work_dir)?;
 
         Ok(
             PubServer {
                 signer,
                 store,
-                publisher_list,
+                repository,
+                publisher_store,
                 service_uri,
-                notify_sia: rrdp_notification_uri
+                rrdp_notification_uri
             }
         )
     }
@@ -120,9 +129,9 @@ impl PubServer {
 
     /// Returns all currently configured publishers.
     pub fn publishers(&self) -> Result<Vec<Arc<Publisher>>, Error> {
-        self.publisher_list
+        self.publisher_store
             .publishers()
-            .map_err(|e| { Error::PublisherListError(e) })
+            .map_err(|e| { Error::PublisherStoreError(e) })
     }
 
     /// Returns a repository response for the given publisher.
@@ -144,7 +153,7 @@ impl PubServer {
                     let id_cert = my_id.id_cert().clone();
                     let service_uri = self.service_uri.clone();
                     let sia_base = p.base_uri().clone();
-                    let rrdp_notification_uri = self.notify_sia.clone();
+                    let rrdp_notification_uri = self.rrdp_notification_uri.clone();
 
                     Ok(
                         RepositoryResponse::new(
@@ -174,14 +183,16 @@ impl PubServer {
 #[derive(Debug, Fail)]
 pub enum Error {
     #[fail(display="{}", _0)]
+    SoftSignerError(softsigner::Error),
+
+    #[fail(display="{}", _0)]
     KeyStoreError(keystore::Error),
 
     #[fail(display="{}", _0)]
-    PublisherListError(publisher_store::Error),
+    RepositoryError(repository::Error),
 
     #[fail(display="{}", _0)]
-    SoftSignerError(softsigner::Error),
-
+    PublisherStoreError(publisher_store::Error),
 
     #[fail(display="{:?}", _0)]
     CreateKeyError(CreateKeyError),
@@ -196,21 +207,27 @@ pub enum Error {
     Uninitialised,
 }
 
+impl From<softsigner::Error> for Error {
+    fn from(e: softsigner::Error) -> Self {
+        Error::SoftSignerError(e)
+    }
+}
+
 impl From<keystore::Error> for Error {
     fn from(e: keystore::Error) -> Self {
         Error::KeyStoreError(e)
     }
 }
 
-impl From<publisher_store::Error> for Error {
-    fn from(e: publisher_store::Error) -> Self {
-        Error::PublisherListError(e)
+impl From<repository::Error> for Error {
+    fn from(e: repository::Error) -> Self {
+        Error::RepositoryError(e)
     }
 }
 
-impl From<softsigner::Error> for Error {
-    fn from(e: softsigner::Error) -> Self {
-        Error::SoftSignerError(e)
+impl From<publisher_store::Error> for Error {
+    fn from(e: publisher_store::Error) -> Self {
+        Error::PublisherStoreError(e)
     }
 }
 
