@@ -47,9 +47,7 @@ impl Config {
         &self.pub_xml_dir
     }
 
-    pub fn rsync_base(&self) -> uri::Rsync {
-        self.rsync_base.clone()
-    }
+    pub fn rsync_base(&self) -> &uri::Rsync { &self.rsync_base }
 
     pub fn service_uri(&self) -> uri::Http {
         self.service_uri.clone()

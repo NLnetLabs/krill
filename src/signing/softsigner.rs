@@ -38,7 +38,7 @@ pub struct OpenSslSigner {
 }
 
 impl OpenSslSigner {
-    pub fn new(work_dir: PathBuf) -> Result<Self, Error> {
+    pub fn new(work_dir: &PathBuf) -> Result<Self, Error> {
         let meta_data = fs::metadata(&work_dir)?;
         if meta_data.is_dir() {
 
@@ -54,7 +54,7 @@ impl OpenSslSigner {
                 }
             )
         } else {
-            Err(Error::InvalidWorkDir(work_dir))
+            Err(Error::InvalidWorkDir(work_dir.clone()))
         }
     }
 }
@@ -274,7 +274,7 @@ pub mod tests {
     #[test]
     fn should_return_subject_public_key_info() {
         test::test_with_tmp_dir(|d| {
-            let mut s = OpenSslSigner::new(d).unwrap();
+            let mut s = OpenSslSigner::new(&d).unwrap();
             let ki = s.create_key(&PublicKeyAlgorithm::RsaEncryption).unwrap();
             s.get_key_info(&ki).unwrap();
             s.destroy_key(&ki).unwrap();

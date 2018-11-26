@@ -3,18 +3,17 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use provisioning::info::MyIdentity;
-use provisioning::publisher_list;
-use provisioning::publisher_list::PublisherList;
+use repo::publisher::Publisher;
+use repo::publisher_store;
+use repo::publisher_store::PublisherStore;
 use rpki::uri;
 use rpki::signing::PublicKeyAlgorithm;
 use rpki::signing::builder::IdCertBuilder;
 use rpki::signing::signer::{CreateKeyError, KeyUseError, Signer};
-use signing::softsigner;
-use signing::softsigner::OpenSslSigner;
+use rpki::oob::exchange::RepositoryResponse;
 use storage::caching_ks::CachingDiskKeyStore;
 use storage::keystore::{self, Info, Key, KeyStore};
-use provisioning::publisher::Publisher;
-use rpki::oob::exchange::RepositoryResponse;
+use signing::softsigner::{self, OpenSslSigner};
 
 
 /// # Naming things in the keystore.
@@ -43,7 +42,7 @@ pub struct PubServer {
     store: CachingDiskKeyStore,
     //   my_id -> MyIdentity
 
-    publisher_list: PublisherList,
+    publisher_list: PublisherStore,
 
     service_uri: uri::Http,
     notify_sia: uri::Http
@@ -54,9 +53,9 @@ impl PubServer {
     /// Creates a new publication server. Note that state is preserved
     /// on disk in the work_dir provided.
     pub fn new(
-        work_dir: PathBuf,
-        pub_xml_dir: PathBuf,
-        base_uri: uri::Rsync,
+        work_dir: &PathBuf,
+        pub_xml_dir: &PathBuf,
+        base_uri: &uri::Rsync,
         service_uri: uri::Http,
         rrdp_notification_uri: uri::Http
     ) -> Result<Self, Error> {
@@ -109,14 +108,14 @@ impl PubServer {
     /// Synchronize publishers from disk
     fn init_publishers(
         work_dir: &PathBuf,
-        pub_xml_dir: PathBuf,
-        base_uri: uri::Rsync
-    ) -> Result<PublisherList, Error> {
-        let mut publisher_list = PublisherList::new(
-            work_dir.clone(),
+        pub_xml_dir: &PathBuf,
+        base_uri: &uri::Rsync
+    ) -> Result<PublisherStore, Error> {
+        let mut publisher_store = PublisherStore::new(
+            work_dir,
             base_uri)?;
-        publisher_list.sync_from_dir(pub_xml_dir, actor())?;
-        Ok(publisher_list)
+        publisher_store.sync_from_dir(pub_xml_dir, actor())?;
+        Ok(publisher_store)
     }
 
     /// Returns all currently configured publishers.
@@ -178,7 +177,7 @@ pub enum Error {
     KeyStoreError(keystore::Error),
 
     #[fail(display="{}", _0)]
-    PublisherListError(publisher_list::Error),
+    PublisherListError(publisher_store::Error),
 
     #[fail(display="{}", _0)]
     SoftSignerError(softsigner::Error),
@@ -203,8 +202,8 @@ impl From<keystore::Error> for Error {
     }
 }
 
-impl From<publisher_list::Error> for Error {
-    fn from(e: publisher_list::Error) -> Self {
+impl From<publisher_store::Error> for Error {
+    fn from(e: publisher_store::Error) -> Self {
         Error::PublisherListError(e)
     }
 }
@@ -241,9 +240,9 @@ mod tests {
         let service = test::http_uri("http://host/publish");
         let notify = test::http_uri("http://host/notify.xml");
         PubServer::new(
-            work_dir.clone(),
-            xml_dir.clone(),
-            uri,
+            work_dir,
+            xml_dir,
+            &uri,
             service,
             notify
         ).unwrap()
@@ -278,12 +277,12 @@ mod tests {
             let xml_dir = test::create_sub_dir(&d);
 
             let alice_dir = test::create_sub_dir(&d);
-            let mut alice = PubClient::new(alice_dir).unwrap();
+            let mut alice = PubClient::new(&alice_dir).unwrap();
             alice.init("alice".to_string()).unwrap();
             let pr_alice = alice.publisher_request().unwrap();
 
             let bob_dir = test::create_sub_dir(&d);
-            let mut bob = PubClient::new(bob_dir).unwrap();
+            let mut bob = PubClient::new(&bob_dir).unwrap();
             bob.init("bob".to_string()).unwrap();
             let pr_bob = bob.publisher_request().unwrap();
 
@@ -324,7 +323,7 @@ mod tests {
             let pr_alice = alice.publisher_request().unwrap();
 
             let carol_dir = test::create_sub_dir(&d);
-            let mut carol = PubClient::new(carol_dir).unwrap();
+            let mut carol = PubClient::new(&carol_dir).unwrap();
             carol.init("carol".to_string()).unwrap();
             let pr_carol = carol.publisher_request().unwrap();
 
@@ -365,9 +364,9 @@ mod tests {
 
             assert!(
                 PubServer::new(
-                    d.clone(),
-                    xml_dir.clone(),
-                    uri,
+                    &d,
+                    &xml_dir,
+                    &uri,
                     service,
                     notify
                 ).is_err()
@@ -381,12 +380,12 @@ mod tests {
             let xml_dir = test::create_sub_dir(&d);
 
             let alice_dir = test::create_sub_dir(&d);
-            let mut alice = PubClient::new(alice_dir).unwrap();
+            let mut alice = PubClient::new(&alice_dir).unwrap();
             alice.init("alice".to_string()).unwrap();
             let pr_alice = alice.publisher_request().unwrap();
 
             let bob_dir = test::create_sub_dir(&d);
-            let mut bob = PubClient::new(bob_dir).unwrap();
+            let mut bob = PubClient::new(&bob_dir).unwrap();
             bob.init("bob".to_string()).unwrap();
             let pr_bob = bob.publisher_request().unwrap();
 

@@ -20,7 +20,7 @@ fn main() {
         }
     };
 
-    let mut client = match PubClient::new(config.state_dir().clone()) {
+    let mut client = match PubClient::new(config.state_dir()) {
         Ok(client) => client,
         Err(e) => {
             eprintln!("{}", e);

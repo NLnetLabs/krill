@@ -71,7 +71,7 @@ pub struct PubClient {
 
 impl PubClient {
     /// Creates a new publication client
-    pub fn new(work_dir: PathBuf) -> Result<Self, Error> {
+    pub fn new(work_dir: &PathBuf) -> Result<Self, Error> {
         let store = CachingDiskKeyStore::new(work_dir.clone())?;
         let signer = OpenSslSigner::new(work_dir)?;
         Ok(
@@ -229,9 +229,9 @@ mod tests {
         let service = test::http_uri("http://host/publish");
         let notify = test::http_uri("http://host/notify.xml");
         PubServer::new(
-            work_dir.clone(),
-            xml_dir.clone(),
-            uri,
+            work_dir,
+            xml_dir,
+            &uri,
             service,
             notify
         ).unwrap()
@@ -241,13 +241,13 @@ mod tests {
     fn should_initialise_keep_state_and_reinitialise() {
         test::test_with_tmp_dir(|d| {
             // Set up a new client and initialise
-            let mut client_1 = PubClient::new(d.clone()).unwrap();
+            let mut client_1 = PubClient::new(&d).unwrap();
             client_1.init("client".to_string()).unwrap();
             let pr_1 = client_1.publisher_request().unwrap();
 
             // Prove that a client starting from an initialised dir
             // comes up with the same state.
-            let mut client_2 = PubClient::new(d.clone()).unwrap();
+            let mut client_2 = PubClient::new(&d).unwrap();
             let pr_2 = client_2.publisher_request().unwrap();
             assert_eq!(pr_1.handle(), pr_2.handle());
             assert_eq!(pr_1.id_cert().to_bytes(), pr_2.id_cert().to_bytes());
@@ -268,7 +268,7 @@ mod tests {
             let xml_dir = test::create_sub_dir(&d);
 
             let alice_dir = test::create_sub_dir(&d);
-            let mut alice = PubClient::new(alice_dir).unwrap();
+            let mut alice = PubClient::new(&alice_dir).unwrap();
             alice.init("alice".to_string()).unwrap();
             let pr_alice = alice.publisher_request().unwrap();
 

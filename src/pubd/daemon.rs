@@ -17,8 +17,8 @@ const HTML_404: &'static [u8] = include_bytes!("../../static/html/404.html");
 pub fn serve(config: &Config) {
 
     let mut pub_server = match PubServer::new(
-        config.data_dir().clone(),
-        config.pub_xml_dir().clone(),
+        config.data_dir(),
+        config.pub_xml_dir(),
         config.rsync_base(),
         config.service_uri(),
         config.notify_sia()

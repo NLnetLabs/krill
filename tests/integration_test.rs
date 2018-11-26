@@ -8,18 +8,17 @@ extern crate tokio;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
+use std::str;
+use std::{thread, time};
 use hyper::Client;
 use rpki::oob::exchange::PublisherRequest;
 use rpubd::test;
+use rpubd::pubc::client::PubClient;
 use rpubd::pubd::config::Config;
 use rpubd::pubd::daemon;
-use rpubd::provisioning::publisher::Publisher;
-
-use std::str;
-use std::{thread, time};
+use rpubd::repo::publisher::Publisher;
 use tokio::prelude::*;
 use tokio::runtime::Runtime;
-use rpubd::pubc::client::PubClient;
 
 fn save_pr(base_dir: &PathBuf, file_name: &str, pr: &PublisherRequest) {
     let mut full_name = base_dir.clone();
@@ -40,7 +39,7 @@ fn testing() {
 
         // Set up a client
         let client_dir = test::create_sub_dir(&d);
-        let mut client = PubClient::new(client_dir).unwrap();
+        let mut client = PubClient::new(&client_dir).unwrap();
         client.init("client".to_string()).unwrap();
         let pr = client.publisher_request().unwrap();
 
@@ -58,7 +57,7 @@ fn testing() {
         );
 
         // XXX TODO: Find a better way to know the server is ready!
-        thread::sleep(time::Duration::from_millis(100));
+        thread::sleep(time::Duration::from_millis(150));
 
         // XXX TODO: Use a helper to create the futures to check the
         // XXX TODO: responses.. the compiler insists this crosses threads

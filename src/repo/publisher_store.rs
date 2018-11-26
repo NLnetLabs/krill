@@ -1,18 +1,17 @@
 //! Responsible for storing and retrieving Publisher information.
+use std::collections::HashMap;
 use std::fs;
+use std::fs::File;
 use std::io;
+use std::io::BufReader;
 use std::path::PathBuf;
-use provisioning::publisher::Publisher;
+use std::sync::Arc;
+use repo::publisher::Publisher;
 use rpki::remote::idcert::IdCert;
 use rpki::uri;
-use rpki::oob::exchange::PublisherRequest;
+use rpki::oob::exchange::{PublisherRequest, PublisherRequestError};
 use storage::keystore::{self, Info, Key, KeyStore};
 use storage::caching_ks::CachingDiskKeyStore;
-use std::sync::Arc;
-use std::fs::File;
-use std::io::BufReader;
-use std::collections::HashMap;
-use rpki::oob::exchange::PublisherRequestError;
 
 
 //------------ PublisherList -------------------------------------------------
@@ -22,16 +21,16 @@ use rpki::oob::exchange::PublisherRequestError;
 /// contains all current publishers, and keeps a full audit trail of changes
 /// to this.
 #[derive(Clone, Debug)]
-pub struct PublisherList {
+pub struct PublisherStore {
     store: CachingDiskKeyStore,
     base_uri: uri::Rsync,
 }
 
 
-impl PublisherList {
+impl PublisherStore {
     pub fn new(
-        work_dir: PathBuf,
-        base_uri: uri::Rsync
+        work_dir: &PathBuf,
+        base_uri: &uri::Rsync
     ) -> Result<Self, Error> {
         let mut publisher_dir = PathBuf::from(work_dir);
         publisher_dir.push("publishers");
@@ -40,9 +39,9 @@ impl PublisherList {
         }
 
         Ok(
-            PublisherList {
+            PublisherStore {
                 store: CachingDiskKeyStore::new(publisher_dir)?,
-                base_uri
+                base_uri: base_uri.clone()
             }
         )
     }
@@ -175,14 +174,14 @@ impl PublisherList {
 
 
 /// # Initialise from disk
-impl PublisherList {
+impl PublisherStore {
     /// Synchronizes the list of Publisher based on request XML files on disk.
     /// Will add new publishers, remove removed publisher, and update the
     /// id_cert in case it was updated. Returns an error in case duplicate
     /// handler names are found in XML files in the directory.
     pub fn sync_from_dir(
         &mut self,
-        dir: PathBuf,
+        dir: &PathBuf,
         actor: String
     ) -> Result<(), Error> {
         // Find all the publisher requests on disk
@@ -226,7 +225,7 @@ impl PublisherList {
 
     fn prs_on_disk(
         &self,
-        dir: PathBuf
+        dir: &PathBuf
     ) -> Result<HashMap<String, PublisherRequest>, Error> {
         let mut prs_on_disk = HashMap::new();
         for e in dir.read_dir()? {
@@ -317,9 +316,9 @@ mod tests {
     use super::*;
     use test;
 
-    fn new_pl(dir: PathBuf) -> PublisherList {
+    fn new_pl(dir: &PathBuf) -> PublisherStore {
         let uri = test::rsync_uri("rsync://host/module/");
-        PublisherList::new(dir, uri).unwrap()
+        PublisherStore::new(dir, &uri).unwrap()
     }
 
     fn find_in_list(
@@ -332,7 +331,7 @@ mod tests {
     #[test]
     fn should_refuse_slash_in_publisher_handle() {
         test::test_with_tmp_dir(|d| {
-            let mut pl = new_pl(d);
+            let mut pl = new_pl(&d);
             let pr = test::new_publisher_request("test/below");
 
             match pl.add_publisher(pr, "test".to_string()) {
@@ -345,7 +344,7 @@ mod tests {
     #[test]
     fn should_add_publisher() {
         test::test_with_tmp_dir(|d| {
-            let mut pl = new_pl(d);
+            let mut pl = new_pl(&d);
             let name = "alice";
             let pr = test::new_publisher_request(name);
             let id_cert = pr.id_cert().clone();
@@ -372,7 +371,7 @@ mod tests {
     #[test]
     fn should_update_id_cert_publisher() {
         test::test_with_tmp_dir(|d| {
-            let mut pl = new_pl(d);
+            let mut pl = new_pl(&d);
             let name = "alice";
             let pr = test::new_publisher_request(name);
             let actor = "test".to_string();
@@ -406,7 +405,7 @@ mod tests {
     #[test]
     fn should_remove_publisher() {
         test::test_with_tmp_dir(|d| {
-            let mut pl = new_pl(d);
+            let mut pl = new_pl(&d);
 
             let name = "alice";
             let actor = "test".to_string();
@@ -426,7 +425,7 @@ mod tests {
         test::test_with_tmp_dir(|d|{
 
             let pl_dir = test::create_sub_dir(&d);
-            let mut pl = new_pl(pl_dir);
+            let mut pl = new_pl(&pl_dir);
 
             let actor = "test".to_string();
 
@@ -447,7 +446,7 @@ mod tests {
             );
 
             pl.sync_from_dir(
-                PathBuf::from(start_sync_dir),
+                &PathBuf::from(start_sync_dir),
                 actor.clone()
             ).unwrap();
 
@@ -476,7 +475,7 @@ mod tests {
                 &pr_carol.encode_vec()
             );
             pl.sync_from_dir(
-                PathBuf::from(updated_sync_dir),
+                &PathBuf::from(updated_sync_dir),
                 actor.clone()
             ).unwrap();
 
@@ -506,7 +505,7 @@ mod tests {
                 &pr_bob_2.encode_vec()
             );
             assert!(pl.sync_from_dir(
-                PathBuf::from(duplicates_sync_dir),
+                &PathBuf::from(duplicates_sync_dir),
                 actor.clone()
             ).is_err());
         })
