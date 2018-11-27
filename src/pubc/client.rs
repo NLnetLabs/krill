@@ -9,7 +9,7 @@ use rpki::oob::exchange::PublisherRequest;
 use rpki::signing::PublicKeyAlgorithm;
 use rpki::signing::builder::IdCertBuilder;
 use rpki::signing::signer::{CreateKeyError, KeyUseError, Signer};
-use provisioning::info::MyIdentity;
+use signing::identity::MyIdentity;
 use signing::softsigner;
 use signing::softsigner::OpenSslSigner;
 use storage::caching_ks::CachingDiskKeyStore;
@@ -274,8 +274,7 @@ mod tests {
 
             test::save_file(&xml_dir, "alice.xml", &pr_alice.encode_vec());
 
-            let mut server = test_server(&d, &xml_dir);
-            server.init_identity_if_empty().unwrap();
+            let server = test_server(&d, &xml_dir);
 
             let response = server.repository_response("alice").unwrap();
 

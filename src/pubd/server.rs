@@ -2,19 +2,14 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use provisioning::info::MyIdentity;
 use provisioning::publisher::Publisher;
 use provisioning::publisher_store;
 use provisioning::publisher_store::PublisherStore;
 use repo::repository::{self, Repository};
 use rpki::uri;
-use rpki::signing::PublicKeyAlgorithm;
-use rpki::signing::builder::IdCertBuilder;
-use rpki::signing::signer::{CreateKeyError, KeyUseError, Signer};
 use rpki::oob::exchange::RepositoryResponse;
-use signing::softsigner::{self, OpenSslSigner};
-use storage::caching_ks::CachingDiskKeyStore;
-use storage::keystore::{self, Info, Key, KeyStore};
+use pubd::responder::Responder;
+use pubd::responder;
 
 
 /// # Naming things in the keystore.
@@ -22,37 +17,19 @@ fn actor() -> String {
     "publication server".to_string()
 }
 
-fn my_id_key() -> Key {
-    Key::from_str("my_id")
-}
-
-fn my_id_msg() -> String {
-    "initialised identity".to_string()
-}
-
 
 //------------ PubServer -----------------------------------------------------
 
 #[derive(Clone, Debug)]
 pub struct PubServer {
-    // Used for signing responses to publishers
-    signer: OpenSslSigner,
-
-    // key value store for server specific stuff
-    store: CachingDiskKeyStore,
-    //   my_id -> MyIdentity
+    // The component that manages server id, and wraps responses to clients
+    responder: Responder,
 
     // The configured publishers
     publisher_store: PublisherStore,
 
     // The repository responsible for publishing rsync and rrdp
     repository: Repository,
-
-    // The URI that publishers need to access to publish (see config)
-    service_uri: uri::Http,
-
-    // The URI for the notification.xml published by this server (see config)
-    rrdp_notification_uri: uri::Http
 }
 
 /// # Set up and initialisation
@@ -66,49 +43,25 @@ impl PubServer {
         service_uri: uri::Http,
         rrdp_notification_uri: uri::Http
     ) -> Result<Self, Error> {
-        let signer = OpenSslSigner::new(work_dir)?;
-        let store = CachingDiskKeyStore::new(PathBuf::from(&work_dir))?;
+        let responder = Responder::init(
+            work_dir,
+            service_uri,
+            rrdp_notification_uri)?;
+
         let publisher_store = Self::init_publishers(
             &work_dir,
             pub_xml_dir,
             base_uri)?;
+
         let repository = Repository::new(work_dir)?;
 
         Ok(
             PubServer {
-                signer,
-                store,
+                responder,
                 repository,
-                publisher_store,
-                service_uri,
-                rrdp_notification_uri
+                publisher_store
             }
         )
-    }
-
-    /// Initialise the publication server identity, if no identity had
-    /// been set up. Does nothing otherwise.
-    pub fn init_identity_if_empty(&mut self) -> Result<(), Error> {
-        match self.my_identity()? {
-            Some(_id) => Ok(()),
-            None => self.init_identity()
-        }
-    }
-
-    /// Initialises the identity of this publication server.
-    pub fn init_identity(&mut self) -> Result<(), Error> {
-        let key_id = self.signer.create_key(&PublicKeyAlgorithm::RsaEncryption)?;
-        let id_cert = IdCertBuilder::new_ta_id_cert(&key_id, &mut self.signer)?;
-        let my_id = MyIdentity::new(actor(), id_cert, key_id);
-
-        let key = my_id_key();
-        let inf = Info::now(actor(), my_id_msg());
-        self.store.store(key, my_id, inf)?;
-        Ok(())
-    }
-
-    fn my_identity(&self) -> Result<Option<Arc<MyIdentity>>, Error> {
-        self.store.get(&my_id_key()).map_err(|e| { Error::KeyStoreError(e)})
     }
 }
 
@@ -141,35 +94,10 @@ impl PubServer {
         &self,
         publisher_name: &str
     ) -> Result<RepositoryResponse, Error> {
-
-        if let Some(my_id) = self.my_identity()? {
-            match self.publishers()?
-                .iter()
-                .find(|p| { p.name() == publisher_name }) {
-                None => Err(Error::UnknownPublisher(publisher_name.to_string())),
-                Some(p) => {
-                    let tag = p.tag();
-                    let publisher_handle = p.name().clone();
-                    let id_cert = my_id.id_cert().clone();
-                    let service_uri = self.service_uri.clone();
-                    let sia_base = p.base_uri().clone();
-                    let rrdp_notification_uri = self.rrdp_notification_uri.clone();
-
-                    Ok(
-                        RepositoryResponse::new(
-                            tag,
-                            publisher_handle,
-                            id_cert,
-                            service_uri,
-                            sia_base,
-                            rrdp_notification_uri
-                        )
-                    )
-                }
-            }
-        } else {
-            Err(Error::Uninitialised)
-        }
+        let publisher = self.publisher_store.get_publisher(publisher_name)?;
+        self.responder
+            .repository_response(publisher)
+            .map_err(|e| Error::ResponderError(e))
     }
 }
 
@@ -183,45 +111,18 @@ impl PubServer {
 #[derive(Debug, Fail)]
 pub enum Error {
     #[fail(display="{}", _0)]
-    SoftSignerError(softsigner::Error),
-
-    #[fail(display="{}", _0)]
-    KeyStoreError(keystore::Error),
-
-    #[fail(display="{}", _0)]
-    RepositoryError(repository::Error),
+    ResponderError(responder::Error),
 
     #[fail(display="{}", _0)]
     PublisherStoreError(publisher_store::Error),
 
-    #[fail(display="{:?}", _0)]
-    CreateKeyError(CreateKeyError),
-
-    #[fail(display="{:?}", _0)]
-    KeyUseError(KeyUseError),
-
-    #[fail(display="Unknown publisher: {}", _0)]
-    UnknownPublisher(String),
-
-    #[fail(display="Publication server is not initialised.")]
-    Uninitialised,
+    #[fail(display="{}", _0)]
+    RepositoryError(repository::Error),
 }
 
-impl From<softsigner::Error> for Error {
-    fn from(e: softsigner::Error) -> Self {
-        Error::SoftSignerError(e)
-    }
-}
-
-impl From<keystore::Error> for Error {
-    fn from(e: keystore::Error) -> Self {
-        Error::KeyStoreError(e)
-    }
-}
-
-impl From<repository::Error> for Error {
-    fn from(e: repository::Error) -> Self {
-        Error::RepositoryError(e)
+impl From<responder::Error> for Error {
+    fn from(e: responder::Error) -> Self {
+        Error::ResponderError(e)
     }
 }
 
@@ -231,15 +132,9 @@ impl From<publisher_store::Error> for Error {
     }
 }
 
-impl From<CreateKeyError> for Error {
-    fn from(e: CreateKeyError) -> Self {
-        Error::CreateKeyError(e)
-    }
-}
-
-impl From<KeyUseError> for Error {
-    fn from(e: KeyUseError) -> Self {
-        Error::KeyUseError(e)
+impl From<repository::Error> for Error {
+    fn from(e: repository::Error) -> Self {
+        Error::RepositoryError(e)
     }
 }
 
@@ -265,27 +160,7 @@ mod tests {
         ).unwrap()
     }
 
-    #[test]
-    fn should_initialise_identity() {
-        test::test_with_tmp_dir(|d| {
-            let xml_dir = test::create_sub_dir(&d);
 
-            let mut server = test_server(&d, &xml_dir);
-
-            // A clean publication server has no identity.
-            assert_eq!(None, server.my_identity().unwrap());
-
-            // Calling init will generate the identity.
-            server.init_identity().unwrap();
-            let id = server.my_identity().unwrap().unwrap();
-            assert_eq!(actor().as_str(), id.name());
-
-            // A new server with the same workdir will have the same identity.
-            let server_2 = test_server(&d, &xml_dir);
-            let id_2 = server_2.my_identity().unwrap().unwrap();
-            assert_eq!(id, id_2);
-        });
-    }
 
     #[test]
     fn should_sync_and_resync_publishers_from_disk() {
@@ -392,7 +267,8 @@ mod tests {
     }
 
     #[test]
-    fn should_have_response_for_publisher() {
+    fn
+    should_initialise_publishers_from_xml_and_have_response() {
         test::test_with_tmp_dir(|d| {
             let xml_dir = test::create_sub_dir(&d);
 
@@ -409,9 +285,7 @@ mod tests {
             test::save_file(&xml_dir, "alice.xml", &pr_alice.encode_vec());
             test::save_file(&xml_dir, "bob.xml", &pr_bob.encode_vec());
 
-            let mut server = test_server(&d, &xml_dir);
-            server.init_identity_if_empty().unwrap();
-            let server_id = server.my_identity().unwrap().unwrap();
+            let server = test_server(&d, &xml_dir);
 
             let response = server.repository_response("alice").unwrap();
 
@@ -423,10 +297,6 @@ mod tests {
             assert_eq!(&expected_service, response.service_uri());
             assert_eq!(&expected_notify, response.rrdp_notification_uri());
             assert_eq!("alice", response.publisher_handle());
-            assert_eq!(
-                server_id.id_cert().to_bytes(),
-                response.id_cert().to_bytes()
-            );
         });
     }
 

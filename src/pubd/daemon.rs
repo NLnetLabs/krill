@@ -16,7 +16,7 @@ const HTML_404: &'static [u8] = include_bytes!("../../static/html/404.html");
 
 pub fn serve(config: &Config) {
 
-    let mut pub_server = match PubServer::new(
+    let pub_server = match PubServer::new(
         config.data_dir(),
         config.pub_xml_dir(),
         config.rsync_base(),
@@ -29,11 +29,6 @@ pub fn serve(config: &Config) {
         },
         Ok(server) => server
     };
-
-    if let Err(e) = pub_server.init_identity_if_empty() {
-        eprintln!("{}", e);
-        ::std::process::exit(1);
-    }
 
     let new_service = move || {
 

@@ -154,6 +154,18 @@ impl PublisherStore {
         self.store.get(&key).map_err(|e| { Error::KeyStoreError(e)})
     }
 
+    /// Returns an Arc to a publisher, and returns an error if the publisher
+    /// does not exist.
+    pub fn get_publisher(
+        &self,
+        name: &str
+    ) -> Result<Arc<Publisher>, Error> {
+        match self.publisher(name)? {
+            None => Err(Error::UnknownPublisher(name.to_string())),
+            Some(p) => Ok(p)
+        }
+    }
+
     /// Returns all current publishers. Note: using a Vec here is
     /// relatively expensive, however, it is easy to implement and debug, and
     /// this method is rarely needed - mainly for tests and to rebuild/update
@@ -316,7 +328,7 @@ mod tests {
     use super::*;
     use test;
 
-    fn new_pl(dir: &PathBuf) -> PublisherStore {
+    fn test_publisher_store(dir: &PathBuf) -> PublisherStore {
         let uri = test::rsync_uri("rsync://host/module/");
         PublisherStore::new(dir, &uri).unwrap()
     }
@@ -331,10 +343,10 @@ mod tests {
     #[test]
     fn should_refuse_slash_in_publisher_handle() {
         test::test_with_tmp_dir(|d| {
-            let mut pl = new_pl(&d);
+            let mut ps = test_publisher_store(&d);
             let pr = test::new_publisher_request("test/below");
 
-            match pl.add_publisher(pr, "test".to_string()) {
+            match ps.add_publisher(pr, "test".to_string()) {
                 Err(Error::ForwardSlashInHandle(_)) => { }, // Ok
                 _ => panic!("Should have seen error.")
             }
@@ -344,18 +356,18 @@ mod tests {
     #[test]
     fn should_add_publisher() {
         test::test_with_tmp_dir(|d| {
-            let mut pl = new_pl(&d);
+            let mut ps = test_publisher_store(&d);
             let name = "alice";
             let pr = test::new_publisher_request(name);
             let id_cert = pr.id_cert().clone();
             let actor = "test".to_string();
 
-            pl.add_publisher(pr, actor).unwrap();
+            ps.add_publisher(pr, actor).unwrap();
 
-            assert!(pl.has_publisher(&name));
+            assert!(ps.has_publisher(&name));
 
             // Get the Arc out of the Result<Option<Arc<Publisher>>, Error>
-            let publisher_found = pl.publisher(&name).unwrap().unwrap();
+            let publisher_found = ps.publisher(&name).unwrap().unwrap();
 
             let expected_publisher = Publisher::new(
                 None,
@@ -371,25 +383,25 @@ mod tests {
     #[test]
     fn should_update_id_cert_publisher() {
         test::test_with_tmp_dir(|d| {
-            let mut pl = new_pl(&d);
+            let mut ps = test_publisher_store(&d);
             let name = "alice";
             let pr = test::new_publisher_request(name);
             let actor = "test".to_string();
 
-            pl.add_publisher(pr, actor.clone()).unwrap();
+            ps.add_publisher(pr, actor.clone()).unwrap();
 
             // Make a new publisher request for alice, using a new cert
             let pr = test::new_publisher_request(name);
             let id_cert = pr.id_cert().clone();
 
-            pl.update_id_cert_publisher(
+            ps.update_id_cert_publisher(
                 name,
                 id_cert.clone(),
                 actor.clone()
             ).unwrap();
 
             // Get the Arc out of the Result<Option<Arc<Publisher>>, Error>
-            let publisher_found = pl.publisher(&name).unwrap().unwrap();
+            let publisher_found = ps.publisher(&name).unwrap().unwrap();
 
             let expected_publisher = Publisher::new(
                 None,
@@ -405,17 +417,17 @@ mod tests {
     #[test]
     fn should_remove_publisher() {
         test::test_with_tmp_dir(|d| {
-            let mut pl = new_pl(&d);
+            let mut ps = test_publisher_store(&d);
 
             let name = "alice";
             let actor = "test".to_string();
             let pr = test::new_publisher_request(name);
 
-            pl.add_publisher(pr, actor.clone()).unwrap();
-            assert_eq!(1, pl.publishers().unwrap(). len());
+            ps.add_publisher(pr, actor.clone()).unwrap();
+            assert_eq!(1, ps.publishers().unwrap(). len());
 
-            pl.remove_publisher(name, actor).unwrap();
-            assert_eq!(0, pl.publishers().unwrap(). len());
+            ps.remove_publisher(name, actor).unwrap();
+            assert_eq!(0, ps.publishers().unwrap(). len());
         });
     }
 
@@ -425,7 +437,7 @@ mod tests {
         test::test_with_tmp_dir(|d|{
 
             let pl_dir = test::create_sub_dir(&d);
-            let mut pl = new_pl(&pl_dir);
+            let mut ps = test_publisher_store(&pl_dir);
 
             let actor = "test".to_string();
 
@@ -445,12 +457,12 @@ mod tests {
                 &pr_bob.encode_vec()
             );
 
-            pl.sync_from_dir(
+            ps.sync_from_dir(
                 &PathBuf::from(start_sync_dir),
                 actor.clone()
             ).unwrap();
 
-            let publishers = pl.publishers().unwrap();
+            let publishers = ps.publishers().unwrap();
             assert_eq!(2, publishers.len());
 
             assert!(find_in_list("alice", &publishers).is_some());
@@ -474,12 +486,12 @@ mod tests {
                 "carol.xml",
                 &pr_carol.encode_vec()
             );
-            pl.sync_from_dir(
+            ps.sync_from_dir(
                 &PathBuf::from(updated_sync_dir),
                 actor.clone()
             ).unwrap();
 
-            let publishers = pl.publishers().unwrap();
+            let publishers = ps.publishers().unwrap();
             assert_eq!(2, publishers.len());
 
             assert!(find_in_list("alice", &publishers).is_none());
@@ -504,7 +516,7 @@ mod tests {
                 "bob-2.xml",
                 &pr_bob_2.encode_vec()
             );
-            assert!(pl.sync_from_dir(
+            assert!(ps.sync_from_dir(
                 &PathBuf::from(duplicates_sync_dir),
                 actor.clone()
             ).is_err());
