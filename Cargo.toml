@@ -4,7 +4,7 @@ version = "0.1.0"
 authors = ["Tim Bruijnzeels <tim@nlnetlabs.nl>", "Martin Hoffmann <martin@nlnetlabs.nl>"]
 
 [dependencies]
-rpki         = { git="https://github.com/NLnetLabs/rpki-rs.git", features = [ "softkeys" ] }
+rpki         = { version="^0.1", features = [ "softkeys" ] }
 base64       = "^0.9"
 bcder        = "^0.1"
 bytes        = "^0.4"
@@ -24,3 +24,5 @@ toml         = "^0.4"
 tokio        = "^0.1"
 xml-rs       = "0.8.0"
 
+[patch.crates-io]
+rpki = { git="https://github.com/NLnetLabs/rpki-rs.git", branch="generate-signed-publication-protocol-messages" }
