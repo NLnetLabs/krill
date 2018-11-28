@@ -31,7 +31,7 @@ impl FileStore {
 ///
 impl FileStore {
     /// Process a PublishQuery update
-    pub fn update(
+    pub fn publish(
         &self,
         update: &PublishQuery,
         base_uri: &uri::Rsync
@@ -85,27 +85,27 @@ impl FileStore {
                 PublishElement::Publish(p) => {
                     Self::assert_uri(base_uri, p.uri())?;
                     if self.get_current_file_opt(p.uri())?.is_some() {
-                        return Err(Error::PublishWrongUri(p.uri().clone()))
+                        return Err(Error::ObjectAlreadyPresent(p.uri().clone()))
                     }
                 },
                 PublishElement::Update(u) => {
                     Self::assert_uri(base_uri, u.uri())?;
                     if let Some(cur) = self.get_current_file_opt(u.uri())? {
                         if cur.hash() != u.hash() {
-                            return Err(Error::UpdateWrongHash)
+                            return Err(Error::NoObjectMatchingHash)
                         }
                     } else {
-                        return Err(Error::UpdateWrongUri(u.uri().clone()))
+                        return Err(Error::NoObjectPresent(u.uri().clone()))
                     }
                 },
                 PublishElement::Withdraw(w) => {
                     Self::assert_uri(base_uri, w.uri())?;
                     if let Some(cur) = self.get_current_file_opt(w.uri())? {
                         if cur.hash() != w.hash() {
-                            return Err(Error::WithdrawWrongHash)
+                            return Err(Error::NoObjectMatchingHash)
                         }
                     } else {
-                        return Err(Error::UpdateWrongUri(w.uri().clone()))
+                        return Err(Error::NoObjectPresent(w.uri().clone()))
                     }
                 },
             }
@@ -235,19 +235,13 @@ pub enum Error {
     UriError(uri::Error),
 
     #[fail(display="File already exists for uri (use update!): {}", _0)]
-    PublishWrongUri(uri::Rsync),
+    ObjectAlreadyPresent(uri::Rsync),
 
-    #[fail(display="File sent for update has no entry for uri: {}", _0)]
-    UpdateWrongUri(uri::Rsync),
+    #[fail(display="Np file present for uri: {}", _0)]
+    NoObjectPresent(uri::Rsync),
 
-    #[fail(display="File for update exists, but hash does not match")]
-    UpdateWrongHash,
-
-    #[fail(display="The withdraw URI is not known: {}", _0)]
-    WithdrawWrongUri(uri::Rsync),
-
-    #[fail(display="File for withdraw exists, but hash does not match")]
-    WithdrawWrongHash,
+    #[fail(display="File does not match hash")]
+    NoObjectMatchingHash,
 
     #[fail(display="Publishing outside of base URI is not allowed.")]
     OutsideBaseUri,
@@ -294,7 +288,7 @@ mod tests {
             let message = builder.build_message();
             let publish = message.as_query().unwrap().as_publish().unwrap();
 
-            file_store.update(&publish, &base_uri).unwrap();
+            file_store.publish(&publish, &base_uri).unwrap();
 
             // See that it's the only one listed
             let files = file_store.list(&base_uri).unwrap();
@@ -311,7 +305,7 @@ mod tests {
             builder.add(file_update.clone().as_update(file.content()));
             let message = builder.build_message();
             let publish = message.as_query().unwrap().as_publish().unwrap();
-            file_store.update(&publish, &base_uri).unwrap();
+            file_store.publish(&publish, &base_uri).unwrap();
 
             // See that it's the only one listed
             let files = file_store.list(&base_uri).unwrap();
@@ -323,7 +317,7 @@ mod tests {
             builder.add(file_update.as_withdraw());
             let message = builder.build_message();
             let publish = message.as_query().unwrap().as_publish().unwrap();
-            file_store.update(&publish, &base_uri).unwrap();
+            file_store.publish(&publish, &base_uri).unwrap();
 
             // See that there are no files listed
             let files = file_store.list(&base_uri).unwrap();
@@ -352,7 +346,7 @@ mod tests {
             let message = builder.build_message();
             let publish = message.as_query().unwrap().as_publish().unwrap();
 
-            match file_store.update(&publish, &base_uri) {
+            match file_store.publish(&publish, &base_uri) {
                 Err(Error::OutsideBaseUri) => {},
                 _ => { panic!("Expected Error::OutsideBaseUri") }
             }

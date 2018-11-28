@@ -2,14 +2,18 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use bcder::Captured;
 use provisioning::publisher::Publisher;
-use provisioning::publisher_store;
-use provisioning::publisher_store::PublisherStore;
+use provisioning::publisher_store::{self, PublisherStore};
+use pubd::responder::{self, Responder};
+use repo::file_store;
 use repo::repository::{self, Repository};
-use rpki::uri;
 use rpki::oob::exchange::RepositoryResponse;
-use pubd::responder::Responder;
-use pubd::responder;
+use rpki::publication::pubmsg::{Message, MessageError, QueryMessage};
+use rpki::publication::reply::{ErrorReply, ReportError, ReportErrorCode};
+use rpki::remote::sigmsg::SignedMessage;
+use rpki::uri;
+use rpki::x509::ValidationError;
 
 
 /// # Naming things in the keystore.
@@ -102,9 +106,92 @@ impl PubServer {
 }
 
 /// # Handle publisher requests
+///
 impl PubServer {
 
+    /// Handles an incoming SignedMessage, verifies it's validly signed by
+    /// a known publisher and process the QueryMessage contained. Returns
+    /// a signed response to the publisher.
+    ///
+    /// Note this returns an error for cases where we do not want to do any
+    /// work in signing, like the publisher does not exist, or the
+    /// signature is invalid. The daemon will need to map these to HTTTP
+    /// codes.
+    ///
+    /// Also note that if garbage is sent to the daemon, this garbage will
+    /// fail to parse as a SignedMessage, and the daemon will just respond
+    /// with an HTTP error response, without invoking any of this.
+    pub fn handle_request(
+        &mut self,
+        sigmsg: SignedMessage,
+        publisher_handle: &str
+    ) -> Result<Captured, Error> {
+        let publisher = self.publisher_store.get_publisher(publisher_handle)?;
+        let base_uri = publisher.base_uri();
+        sigmsg.validate(publisher.id_cert())?;
+
+        let res_msg = match Message::from_signed_message(&sigmsg) {
+            Ok(msg) => {
+                match msg.as_query() {
+                    Ok(query) => self.handle_query(&query, base_uri),
+                    Err(e) => Self::build_error(e)
+                }
+            },
+            Err(e) => {
+                Self::build_error(e)
+            }
+        };
+
+        let sigres = self.responder.sign_msg(res_msg)?;
+        Ok(sigres)
+    }
+
+
+    /// Handles a publish or list query for a publisher. Needs to know the
+    /// base_uri for the publisher to enforce constraints, but can assume
+    /// that the PubServer has already validated the incoming SignedMessage.
+    ///
+    /// Returns the appropriate Success or Error Reply in a Message, ready
+    /// for wrapping into a SignedMessage.
+    fn handle_query(
+        &self,
+        query: &QueryMessage,
+        base_uri: &uri::Rsync
+    ) -> Message {
+        match query {
+            QueryMessage::PublishQuery(publish) => {
+                match self.repository.publish(publish, base_uri) {
+                    Err(e) => {
+                        Self::build_error(e)
+                    },
+                    Ok(success) => success
+                }
+            },
+            QueryMessage::ListQuery(_list) => {
+                match self.repository.list(base_uri) {
+                    Err(e) => {
+                        Self::build_error(e)
+                    },
+                    Ok(success) => success
+                }
+            }
+        }
+    }
+
+    fn build_error(error: impl ToReportErrorCode) -> Message {
+        let mut error_builder = ErrorReply::build();
+        error_builder.add(
+            ReportError::reply(
+                error.to_report_error_code(),
+                None // Finding the specific PDU is too much hard work.
+            )
+        );
+        error_builder.build_message()
+    }
 }
+
+
+
 
 //------------ Error ---------------------------------------------------------
 
@@ -118,6 +205,12 @@ pub enum Error {
 
     #[fail(display="{}", _0)]
     RepositoryError(repository::Error),
+
+    #[fail(display="{}", _0)]
+    MessageError(MessageError),
+
+    #[fail(display="{}", _0)]
+    ValdiationError(ValidationError),
 }
 
 impl From<responder::Error> for Error {
@@ -137,6 +230,58 @@ impl From<repository::Error> for Error {
         Error::RepositoryError(e)
     }
 }
+
+impl From<MessageError> for Error {
+    fn from(e: MessageError) -> Self {
+        Error::MessageError(e)
+    }
+}
+
+impl From<ValidationError> for Error {
+    fn from(e: ValidationError) -> Self {
+        Error::ValdiationError(e)
+    }
+}
+
+
+//------------ ToReportErrorCode ---------------------------------------------
+
+trait ToReportErrorCode {
+    fn to_report_error_code(&self) -> ReportErrorCode;
+}
+
+impl ToReportErrorCode for MessageError {
+    fn to_report_error_code(&self) -> ReportErrorCode {
+        ReportErrorCode::XmlError
+    }
+}
+
+impl ToReportErrorCode for repository::Error {
+    fn to_report_error_code(&self) -> ReportErrorCode {
+        match self {
+            repository::Error::FileStoreError(error) =>
+                error.to_report_error_code()
+        }
+    }
+}
+
+impl ToReportErrorCode for file_store::Error {
+    fn to_report_error_code(&self) -> ReportErrorCode {
+        match self {
+            file_store::Error::ObjectAlreadyPresent(_) =>
+                ReportErrorCode::ObjectAlreadyPresent,
+            file_store::Error::NoObjectPresent(_) =>
+                ReportErrorCode::NoObjectPresent,
+            file_store::Error::NoObjectMatchingHash =>
+                ReportErrorCode::NoObjectMatchingHash,
+            file_store::Error::OutsideBaseUri =>
+                ReportErrorCode::PermissionFailure,
+            _ => ReportErrorCode::OtherError
+        }
+    }
+}
+
+
 
 //------------ Tests ---------------------------------------------------------
 
@@ -267,8 +412,7 @@ mod tests {
     }
 
     #[test]
-    fn
-    should_initialise_publishers_from_xml_and_have_response() {
+    fn should_initialise_publishers_from_xml_and_have_response() {
         test::test_with_tmp_dir(|d| {
             let xml_dir = test::create_sub_dir(&d);
 

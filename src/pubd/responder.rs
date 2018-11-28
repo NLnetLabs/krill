@@ -2,11 +2,19 @@ use std::io;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
+use bcder::encode::Values;
+use bcder::Mode;
+use bcder::Captured;
+use provisioning::publisher::Publisher;
+use rpki::oob::exchange::RepositoryResponse;
+use rpki::publication::pubmsg::Message;
 use rpki::signing::builder::IdCertBuilder;
+use rpki::signing::builder::SignedMessageBuilder;
 use rpki::signing::PublicKeyAlgorithm;
 use rpki::signing::signer::Signer;
 use rpki::signing::signer::CreateKeyError;
 use rpki::signing::signer::KeyUseError;
+use rpki::uri;
 use signing::identity::MyIdentity;
 use signing::softsigner;
 use signing::softsigner::OpenSslSigner;
@@ -15,9 +23,6 @@ use storage::keystore;
 use storage::keystore::Key;
 use storage::keystore::KeyStore;
 use storage::keystore::Info;
-use provisioning::publisher::Publisher;
-use rpki::oob::exchange::RepositoryResponse;
-use rpki::uri;
 
 
 /// # Naming things in the keystore.
@@ -136,6 +141,21 @@ impl Responder {
                     rrdp_notification_uri
                 )
             )
+        } else {
+            Err(Error::Unitialised)
+        }
+    }
+
+    /// Creates an encoded SignedMessage for a contained Message.
+    pub fn sign_msg(&mut self, msg: Message) -> Result<Captured, Error> {
+        if let Some(id) = self.my_identity()? {
+            let builder = SignedMessageBuilder::new(
+                id.key_id(),
+                &mut self.signer,
+                msg
+            )?;
+            let enc = builder.encode().to_captured(Mode::Der);
+            Ok(enc)
         } else {
             Err(Error::Unitialised)
         }

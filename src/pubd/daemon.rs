@@ -2,6 +2,7 @@ extern crate hyper;
 extern crate futures;
 
 use self::hyper::{Body, Method, Response, Server, StatusCode};
+use self::hyper::Request;
 use self::hyper::rt::Future;
 use self::hyper::service::service_fn_ok;
 use pubd::config::Config;
@@ -34,20 +35,24 @@ pub fn serve(config: &Config) {
 
         let pub_server = pub_server.clone();
 
-        service_fn_ok(move |req| {
-            let path = req.uri().path();
+        service_fn_ok(move |req: Request<Body>| {
+            let (parts, _body) = req.into_parts();
+            let path = parts.uri.path();
 
-            if path.starts_with("/static") {
+            if path.starts_with("/rfc8181/") {
+                let _handle = path.trim_left_matches("/publishers/");
+                unimplemented!()
+            } else if path.starts_with("/static") {
                 render_static(path)
             } else if path.starts_with("/publishers/") {
                 let handle = path.trim_left_matches("/publishers/");
                 show_repository_response(handle, &pub_server)
             } else {
-                match (req.method(), path) {
-                    (&Method::GET, "/health") => {
+                match (parts.method, path) {
+                    (Method::GET, "/health") => {
                         service_ok()
                     },
-                    (&Method::GET, "/publishers") => {
+                    (Method::GET, "/publishers") => {
                         show_publishers(&pub_server)
                     },
                     _ => {
@@ -131,6 +136,7 @@ fn show_repository_response(
 }
 
 
+//------------ Error ---------------------------------------------------------
 
 #[derive(Debug, Fail)]
 pub enum Error {
