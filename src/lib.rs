@@ -16,6 +16,7 @@ extern crate tokio;
 extern crate toml;
 extern crate xml;
 
+pub mod file;
 pub mod provisioning;
 pub mod pubc;
 pub mod pubd;

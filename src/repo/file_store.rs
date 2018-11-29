@@ -1,12 +1,7 @@
-use std::io;
-use std::io::{Read, Write};
-use std::fs;
-use std::fs::File;
+use std::{io, fs};
 use std::path::PathBuf;
-use bytes::Bytes;
-use repo::file::CurrentFile;
-use rpki::publication::query::PublishElement;
-use rpki::publication::query::PublishQuery;
+use file::{self, CurrentFile, RecursorError};
+use rpki::publication::query::{PublishElement, PublishQuery};
 use rpki::uri;
 
 #[derive(Clone, Debug)]
@@ -46,32 +41,10 @@ impl FileStore {
         &self,
         base_uri: &uri::Rsync
     ) -> Result<Vec<CurrentFile>, Error> {
-        let path = self.file_path(base_uri);
-        self.recurse_disk(&path)
+        let path = self.path_for_publisher(base_uri);
+        file::recurse_with_rsync_base(&path, base_uri)
+            .map_err(|e| Error::RecursorError(e))
     }
-
-    fn recurse_disk(
-        &self,
-        path: &PathBuf
-    ) -> Result<Vec<CurrentFile>, Error> {
-        let mut res = Vec::new();
-        for entry in fs::read_dir(path)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.is_dir() {
-                let mut other = self.recurse_disk(&path)?;
-                res.append(& mut other);
-            } else {
-                if let Some(file) = self.read_file(&path)? {
-                    res.push(file);
-                }
-            }
-        }
-
-        Ok(res)
-    }
-
-
 
     /// Assert that all updates are confined to the given base_uri; i.e. do
     /// not allow publishers to update things outside of their own jail.
@@ -84,13 +57,13 @@ impl FileStore {
             match q {
                 PublishElement::Publish(p) => {
                     Self::assert_uri(base_uri, p.uri())?;
-                    if self.get_current_file_opt(p.uri())?.is_some() {
+                    if self.get_current_file_opt(p.uri()).is_some() {
                         return Err(Error::ObjectAlreadyPresent(p.uri().clone()))
                     }
                 },
                 PublishElement::Update(u) => {
                     Self::assert_uri(base_uri, u.uri())?;
-                    if let Some(cur) = self.get_current_file_opt(u.uri())? {
+                    if let Some(cur) = self.get_current_file_opt(u.uri()) {
                         if cur.hash() != u.hash() {
                             return Err(Error::NoObjectMatchingHash)
                         }
@@ -100,7 +73,7 @@ impl FileStore {
                 },
                 PublishElement::Withdraw(w) => {
                     Self::assert_uri(base_uri, w.uri())?;
-                    if let Some(cur) = self.get_current_file_opt(w.uri())? {
+                    if let Some(cur) = self.get_current_file_opt(w.uri()) {
                         if cur.hash() != w.hash() {
                             return Err(Error::NoObjectMatchingHash)
                         }
@@ -123,13 +96,24 @@ impl FileStore {
         for q in update.elements() {
             match q {
                 PublishElement::Publish(p) => {
-                    self.save_file(p.uri(), p.object())?;
+                    file::save_with_rsync_uri(
+                        p.object(),
+                        &self.base_dir,
+                        p.uri()
+                    )?;
                 },
                 PublishElement::Update(u) => {
-                    self.save_file(u.uri(), u.object())?;
+                    file::save_with_rsync_uri(
+                        u.object(),
+                        &self.base_dir,
+                        u.uri()
+                    )?;
                 },
                 PublishElement::Withdraw(w) => {
-                    self.delete_file(w.uri())?;
+                    file::delete_with_rsync_uri(
+                        &self.base_dir,
+                        w.uri()
+                    )?;
                 },
             }
         }
@@ -145,81 +129,25 @@ impl FileStore {
         }
     }
 
-    fn file_path(&self, file_uri: &uri::Rsync) -> PathBuf {
+    fn get_current_file_opt(
+        &self,
+        file_uri: &uri::Rsync
+    ) -> Option<CurrentFile> {
+        match file::read_with_rsync_uri(&self.base_dir, file_uri) {
+            Ok(bytes) => Some(CurrentFile::new(file_uri.clone(), bytes)),
+            Err(_) => None
+        }
+    }
+
+    // Returns the relative sub-dir that we should scan for this particular
+    // publisher.
+    fn path_for_publisher(&self, file_uri: &uri::Rsync) -> PathBuf {
         let mut path = self.base_dir.clone();
         let module = file_uri.module();
         path.push(PathBuf::from(module.authority()));
         path.push(PathBuf::from(module.module()));
         path.push(PathBuf::from(file_uri.path()));
         path
-    }
-
-    /// Resolves a path on disk to an rsync uri (i.e. relative to base)
-    fn file_uri(&self, path: &PathBuf) -> Result<uri::Rsync, Error> {
-        let base_string = self.base_dir.to_string_lossy().to_string();
-        let mut path_string = path.to_string_lossy().to_string();
-
-        if path_string.as_str().starts_with(base_string.as_str()) {
-            let rel = path_string.split_off(base_string.len());
-            let uri = format!("rsync:/{}", rel);
-            let uri = uri::Rsync::from_string(uri)?;
-            Ok(uri)
-        } else {
-            panic!("This is a bug: we are looking for a file outside of our\
-             base directory")
-        }
-    }
-
-    fn save_file(
-        &self,
-        file_uri: &uri::Rsync,
-        content: &Bytes
-    ) -> Result<(), Error> {
-        let path = self.file_path(file_uri);
-
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-
-        let mut f = File::create(path)?;
-        f.write(content)?;
-        Ok(())
-    }
-
-    fn delete_file(
-        &self,
-        file_uri: &uri::Rsync
-    ) -> Result<(), Error> {
-        let path = self.file_path(file_uri);
-        fs::remove_file(path)?;
-        Ok(())
-    }
-
-    fn read_file(
-        &self,
-        path: &PathBuf
-    ) -> Result<Option<CurrentFile>, Error> {
-        match File::open(path) {
-            Err(_)  => Ok(None),
-            Ok(mut f) => {
-                let mut bytes = Vec::new();
-                f.read_to_end(&mut bytes)?;
-                let content = Bytes::from(bytes);
-                Ok(Some(
-                    CurrentFile::new(
-                        self.file_uri(path)?,
-                        content
-                )))
-            }
-        }
-    }
-
-    fn get_current_file_opt(
-        &self,
-        file_uri: &uri::Rsync
-    ) -> Result<Option<CurrentFile>, Error> {
-        let path = self.file_path(file_uri);
-        self.read_file(&path)
     }
 }
 
@@ -230,6 +158,9 @@ impl FileStore {
 pub enum Error {
     #[fail(display="{}", _0)]
     IoError(io::Error),
+
+    #[fail(display="{}", _0)]
+    RecursorError(RecursorError),
 
     #[fail(display="{}", _0)]
     UriError(uri::Error),
@@ -258,6 +189,8 @@ impl From<uri::Error> for Error {
         Error::UriError(e)
     }
 }
+
+
 
 //------------ Tests ---------------------------------------------------------
 

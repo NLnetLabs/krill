@@ -151,6 +151,7 @@ impl PubClient {
     }
 }
 
+// Primarily used for testing things
 impl PartialEq for PubClient {
     fn eq(&self, other: &PubClient) -> bool {
         if let Ok(Some(my_id)) = self.my_identity() {
