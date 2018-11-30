@@ -4,6 +4,7 @@ extern crate rpki;
 extern crate rpubd;
 extern crate serde_json;
 extern crate tokio;
+extern crate actix;
 
 use std::fs::File;
 use std::io::Write;
@@ -15,10 +16,11 @@ use rpki::oob::exchange::PublisherRequest;
 use rpubd::test;
 use rpubd::pubc::client::PubClient;
 use rpubd::pubd::config::Config;
-use rpubd::pubd::daemon;
 use rpubd::provisioning::publisher::Publisher;
 use tokio::prelude::*;
 use tokio::runtime::Runtime;
+use rpubd::pubd::http::PubServerApp;
+use actix::System;
 
 fn save_pr(base_dir: &PathBuf, file_name: &str, pr: &PublisherRequest) {
     let mut full_name = base_dir.clone();
@@ -33,29 +35,32 @@ fn save_pr(base_dir: &PathBuf, file_name: &str, pr: &PublisherRequest) {
 fn testing() {
     test::test_with_tmp_dir(|d| {
 
-        // Use a data dir for the storage
-        let data_dir = test::create_sub_dir(&d);
-        let xml_dir = test::create_sub_dir(&d);
+        // Set up a test PubServer Config with a client in it.
+        let server_conf = {
+            // Use a data dir for the storage
+            let data_dir = test::create_sub_dir(&d);
+            let xml_dir = test::create_sub_dir(&d);
 
-        // Set up a client
-        let client_dir = test::create_sub_dir(&d);
-        let mut client = PubClient::new(&client_dir).unwrap();
-        client.init("client".to_string()).unwrap();
-        let pr = client.publisher_request().unwrap();
+            // Set up a client
+            let client_dir = test::create_sub_dir(&d);
+            let mut client = PubClient::new(&client_dir).unwrap();
+            client.init("client".to_string()).unwrap();
+            let pr = client.publisher_request().unwrap();
 
-        // Add the client's PublisherRequest to the server dir.
-        save_pr(&xml_dir, "client.xml", &pr);
+            // Add the client's PublisherRequest to the server dir.
+            save_pr(&xml_dir, "client.xml", &pr);
+            Config::test(&data_dir, &xml_dir)
+        };
 
         // Start the server
-        let server_conf = Config::test(&data_dir, &xml_dir);
-        let mut rt = Runtime::new().unwrap();
-        rt.spawn(
-            future::lazy(move || {
-                daemon::serve(&server_conf);
-                Ok(())
+        thread::spawn(||{
+            System::run(move || {
+                PubServerApp::serve(&server_conf)
             })
-        );
+        });
 
+
+        let mut rt = Runtime::new().unwrap();
         // XXX TODO: Find a better way to know the server is ready!
         thread::sleep(time::Duration::from_millis(150));
 

@@ -4,7 +4,8 @@ version = "0.1.0"
 authors = ["Tim Bruijnzeels <tim@nlnetlabs.nl>", "Martin Hoffmann <martin@nlnetlabs.nl>"]
 
 [dependencies]
-rpki         = { version="^0.1", features = [ "softkeys" ] }
+actix        = "^0.7"
+actix-web    = "^0.7"
 base64       = "^0.9"
 bcder        = "^0.1"
 bytes        = "^0.4"
@@ -17,6 +18,7 @@ lazy_static  = "^1.1"
 openssl      = "^0.10"
 pretty       = "0.5.2"
 rand         = "^0.5"
+rpki         = { version = "^0.2", features = ["softkeys"] }
 serde        = { version = "^1.0", features = ["rc"] }
 serde_derive = "^1.0"
 serde_json   = "^1.0"
@@ -25,4 +27,4 @@ tokio        = "^0.1"
 xml-rs       = "0.8.0"
 
 [patch.crates-io]
-rpki = { git="https://github.com/NLnetLabs/rpki-rs.git", branch="generate-signed-publication-protocol-messages" }
+rpki = { git="https://github.com/NLnetLabs/rpki-rs.git", branch="generate-signed-publication-protocol-messages", features = ["softkeys"]}

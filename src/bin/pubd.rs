@@ -1,10 +1,12 @@
+extern crate actix;
 extern crate rpubd;
-extern crate tokio;
 
 #[macro_use] extern crate lazy_static;
 
+use std::thread;
+use actix::System;
 use rpubd::pubd::config::Config;
-use rpubd::pubd::daemon;
+use rpubd::pubd::http::PubServerApp;
 
 lazy_static! {
     static ref CONFIG: Config = {
@@ -19,23 +21,12 @@ lazy_static! {
 }
 
 fn main() {
-
-    use tokio::runtime::Runtime;
-    use tokio::prelude::*;
-
-    // Note, using a runtime and spawn here, with another spawn
-    // inside server::serve, in order to allow testing the server
-    // in integration tests, and shutting it down. A 'run' in
-    // server::serve would be simpler, but would not allow for easy
-    // shutdown of thr server in a test.
-    let mut rt = Runtime::new().unwrap();
-
-    rt.spawn(
-        future::lazy(|| {
-            daemon::serve(&CONFIG);
-            Ok(())
+    // Start the server
+    thread::spawn(||{
+        System::run(move || {
+            PubServerApp::serve(&CONFIG)
         })
-    );
+    });
 
     loop {
         // wait forever

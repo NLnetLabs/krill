@@ -222,7 +222,7 @@ impl From<KeyUseError> for Error {
 mod tests {
     use super::*;
     use test;
-    use pubd::server::PubServer;
+    use pubd::pubserver::PubServer;
 
     fn test_server(work_dir: &PathBuf, xml_dir: &PathBuf) -> PubServer {
         // Start up a server

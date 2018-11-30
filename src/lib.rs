@@ -1,3 +1,5 @@
+extern crate actix;
+extern crate actix_web;
 extern crate base64;
 extern crate bytes;
 extern crate bcder;
@@ -15,6 +17,7 @@ extern crate serde_json;
 extern crate tokio;
 extern crate toml;
 extern crate xml;
+extern crate hyper;
 
 pub mod file;
 pub mod provisioning;
