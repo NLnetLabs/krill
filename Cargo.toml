@@ -11,13 +11,13 @@ bcder        = "^0.1"
 bytes        = "^0.4"
 chrono       = { version = "^0.4", features = ["serde"] }
 clap         = "^2.32"
-hyper        = "0.12"
 futures      = "0.1"
 failure      = "^0.1"
 lazy_static  = "^1.1"
 openssl      = "^0.10"
 pretty       = "0.5.2"
 rand         = "^0.5"
+reqwest      = "^0.9"
 rpki         = { version = "^0.2", features = ["softkeys"] }
 serde        = { version = "^1.0", features = ["rc"] }
 serde_derive = "^1.0"

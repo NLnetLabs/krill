@@ -69,13 +69,26 @@ impl PubServerApp {
         Arc::new(RwLock::new(pub_server))
     }
 
-    pub fn serve(config: &Config) {
+    /// Used to start the server with an existing executor (e.g. in tests)
+    pub fn start(config: &Config) {
         let ps = PubServerApp::create_server(config);
 
         server::new(move || PubServerApp::new(ps.clone()))
             .bind(config.socket_addr())
             .expect(&format!("Cannot bind to: {}", config.socket_addr()))
+            .shutdown_timeout(0)
             .start();
+    }
+
+    /// Used to run the server in blocking mode, from the main method.
+    pub fn run(config: &Config) {
+        let ps = PubServerApp::create_server(config);
+
+        server::new(move || PubServerApp::new(ps.clone()))
+            .bind(config.socket_addr())
+            .expect(&format!("Cannot bind to: {}", config.socket_addr()))
+            .shutdown_timeout(0)
+            .run();
     }
 
     /// 404 handler
@@ -179,61 +192,4 @@ pub enum Error {
 
 //------------ Tests ---------------------------------------------------------
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use test;
-    use pubc::client::PubClient;
-    use rpki::oob::exchange::PublisherRequest;
-    use std::path::PathBuf;
-    use std::fs::File;
-    use std::io::Write;
-    use std::thread;
-    use actix::System;
-    use std::time;
-
-    fn save_pr(base_dir: &PathBuf, file_name: &str, pr: &PublisherRequest) {
-        let mut full_name = base_dir.clone();
-        full_name.push(PathBuf::from
-            (file_name));
-        let mut f = File::create(full_name).unwrap();
-        let xml = pr.encode_vec();
-        f.write(xml.as_ref()).unwrap();
-    }
-
-    #[test]
-    fn start() {
-        test::test_with_tmp_dir(|d| {
-
-            // Set up a test PubServer Config with a client in it.
-            let server_conf = {
-                // Use a data dir for the storage
-                let data_dir = test::create_sub_dir(&d);
-                let xml_dir = test::create_sub_dir(&d);
-
-                // Set up a client
-                let client_dir = test::create_sub_dir(&d);
-                let mut client = PubClient::new(&client_dir).unwrap();
-                client.init("client".to_string()).unwrap();
-                let pr = client.publisher_request().unwrap();
-
-                // Add the client's PublisherRequest to the server dir.
-                save_pr(&xml_dir, "client.xml", &pr);
-                Config::test(&data_dir, &xml_dir)
-            };
-
-            // Start the server
-            thread::spawn(||{
-                System::run(move || {
-                    PubServerApp::serve(&server_conf)
-                })
-            });
-
-            // Wait for server to boot..
-            thread::sleep(time::Duration::from_secs(10));
-
-
-        });
-    }
-
-}
+// Tested in tests/integration_test.rs
