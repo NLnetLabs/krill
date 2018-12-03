@@ -4,9 +4,9 @@ use base64;
 use bytes::Bytes;
 use rpki::uri;
 use rpki::remote::idcert::IdCert;
+use rpki::signing::signer::KeyId;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde::de;
-use rpki::signing::signer::KeyId;
 
 
 pub fn de_bytes<'de, D>(d: D) -> Result<Bytes, D::Error>

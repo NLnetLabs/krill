@@ -2,7 +2,9 @@
 
 use std::sync::{
     Arc,
-    RwLock
+    RwLock,
+    RwLockReadGuard,
+    RwLockWriteGuard
 };
 use actix_web::{
     pred,
@@ -14,13 +16,14 @@ use actix_web::http::{
     Method,
     StatusCode
 };
-use pubd::config::Config;
-use pubd::pubserver::PubServer;
-use pubd::pubserver;
-use std::sync::RwLockReadGuard;
-use serde::Serialize;
+use bcder::decode;
+use bytes::Bytes;
 use provisioning::publisher_store;
-
+use pubd::config::Config;
+use pubd::pubserver;
+use pubd::pubserver::PubServer;
+use rpki::remote::sigmsg::SignedMessage;
+use serde::Serialize;
 
 const NOT_FOUND: &'static [u8] = include_bytes!("../../static/html/404.html");
 
@@ -31,15 +34,18 @@ pub struct PubServerApp(App<Arc<RwLock<PubServer>>>);
 impl PubServerApp {
     pub fn new(server: Arc<RwLock<PubServer>>) -> Self {
         let app = App::with_state(server)
-            .resource(
-                "/publishers", |r| r.f(Self::publishers)
-            )
-            .resource(
-                "/publishers/{handle}", |r| r.f(Self::repository_response)
-            )
-            .resource(
-                "/health", |r| r.f(Self::service_ok)
-            )
+            .resource("/publishers", |r| {
+                r.f(Self::publishers)
+            })
+            .resource("/publishers/{handle}", |r| {
+                r.f(Self::repository_response)
+            })
+            .resource("/rfc8181/{handle}", |r| {
+                r.method(Method::POST).with(Self::process_publish_request)
+            })
+            .resource("/health", |r| {
+                r.f(Self::service_ok)
+            })
             .default_resource(|r| {
                 // 404 for GET request
                 r.method(Method::GET).f(Self::p404);
@@ -135,6 +141,44 @@ impl PubServerApp {
         }
     }
 
+    fn process_publish_request(
+        req: HttpRequest,
+        body: Bytes
+    ) -> HttpResponse {
+        match SignedMessage::decode(body, true) {
+            Err(e)  => Self::server_error(Error::DecodeError(e)),
+            Ok(msg) => {
+                match req.match_info().get("handle") {
+                    None => Self::server_error(Error::WrongPath),
+                    Some(handle) => {
+                        Self::handle_signed_request(
+                            req.state().write().unwrap(),
+                            msg,
+                            handle
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fn handle_signed_request(
+        mut server: RwLockWriteGuard<PubServer>,
+        msg: SignedMessage,
+        handle: &str
+    ) -> HttpResponse {
+        match server.handle_request(msg, handle) {
+            Ok(captured) => {
+                HttpResponse::build(StatusCode::OK)
+                    .content_type("application/rpki-publication")
+                    .body(captured.into_bytes())
+            }
+            Err(e) => {
+                Self::server_error(Error::ServerError(e))
+            }
+        }
+    }
+
     fn service_ok(_r: &HttpRequest) -> HttpResponse {
         // XXX TODO: do a real check
         HttpResponse::Ok().body("I am completely operational, and all my circuits are functioning perfectly.")
@@ -179,16 +223,18 @@ pub type HttpRequest = actix_web::HttpRequest<Arc<RwLock<PubServer>>>;
 
 #[derive(Debug, Fail)]
 pub enum Error {
-    #[fail(display ="{}", _0)]
+    #[fail(display = "{}", _0)]
     ServerError(pubserver::Error),
 
-    #[fail(display ="{}", _0)]
+    #[fail(display = "{}", _0)]
     JsonError(serde_json::Error),
 
-    #[fail(display ="Unknown resource")]
-    UnknownResource,
-}
+    #[fail(display = "Cannot decode request: {}", _0)]
+    DecodeError(decode::Error),
 
+    #[fail(display = "Wrong path")]
+    WrongPath,
+}
 
 //------------ Tests ---------------------------------------------------------
 
