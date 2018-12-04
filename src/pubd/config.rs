@@ -75,9 +75,9 @@ impl Config {
         let rsync_base = uri::Rsync::from_str("rsync://127.0.0.1/rpki/")
             .unwrap();
         let notify_sia = uri::Http::from_str(
-            "https://127.0.0.1/rpki/notify.xml").unwrap();
+            "http://127.0.0.1:3000/repo/notify.xml").unwrap();
         let service_uri = uri::Http::from_str(
-            "https://127.0.0.1/publishe").unwrap();
+            "http://127.0.0.1:3000/rfc8181/").unwrap();
 
         Config {
             ip,

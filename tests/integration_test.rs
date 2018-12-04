@@ -31,7 +31,7 @@ fn save_pr(base_dir: &PathBuf, file_name: &str, pr: &PublisherRequest) {
 }
 
 #[test]
-fn testing() {
+fn client_publish_at_server() {
     test::test_with_tmp_dir(|d| {
 
         // Set up a client
@@ -58,7 +58,7 @@ fn testing() {
         });
 
         // XXX TODO: Find a better way to know the server is ready!
-        thread::sleep(time::Duration::from_millis(150));
+        thread::sleep(time::Duration::from_millis(500));
 
         // Should see one configured publisher
         let mut res = reqwest::get("http://localhost:3000/publishers").unwrap();
@@ -72,13 +72,9 @@ fn testing() {
         ).unwrap();
         client.process_repo_response(repo_res).unwrap();
 
-
-
-
-
-
-
-
+        // List files at server
+        let list = client.get_server_list().unwrap();
+        assert_eq!(0, list.elements().len());
     });
 }
 

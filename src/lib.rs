@@ -17,6 +17,7 @@ extern crate serde_json;
 extern crate tokio;
 extern crate toml;
 extern crate xml;
+extern crate reqwest;
 
 pub mod file;
 pub mod provisioning;

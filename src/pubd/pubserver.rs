@@ -14,6 +14,7 @@ use rpki::publication::reply::{ErrorReply, ReportError, ReportErrorCode};
 use rpki::remote::sigmsg::SignedMessage;
 use rpki::uri;
 use rpki::x509::ValidationError;
+use std::fmt::Debug;
 
 
 /// # Naming things in the keystore.
@@ -47,15 +48,16 @@ impl PubServer {
         service_uri: uri::Http,
         rrdp_notification_uri: uri::Http
     ) -> Result<Self, Error> {
+        let publisher_store = Self::init_publishers(
+            &work_dir,
+            pub_xml_dir,
+            &service_uri,
+            base_uri)?;
+
         let responder = Responder::init(
             work_dir,
             service_uri,
             rrdp_notification_uri)?;
-
-        let publisher_store = Self::init_publishers(
-            &work_dir,
-            pub_xml_dir,
-            base_uri)?;
 
         let repository = Repository::new(work_dir)?;
 
@@ -75,12 +77,17 @@ impl PubServer {
     fn init_publishers(
         work_dir: &PathBuf,
         pub_xml_dir: &PathBuf,
+        base_service_uri: &uri::Http,
         base_uri: &uri::Rsync
     ) -> Result<PublisherStore, Error> {
         let mut publisher_store = PublisherStore::new(
             work_dir,
             base_uri)?;
-        publisher_store.sync_from_dir(pub_xml_dir, actor())?;
+        publisher_store.sync_from_dir(
+            pub_xml_dir,
+            base_service_uri,
+            actor()
+        )?;
         Ok(publisher_store)
     }
 
@@ -178,7 +185,7 @@ impl PubServer {
         }
     }
 
-    fn build_error(error: impl ToReportErrorCode) -> Message {
+    fn build_error(error: impl ToReportErrorCode + Debug) -> Message {
         let mut error_builder = ErrorReply::build();
         error_builder.add(
             ReportError::reply(
@@ -294,7 +301,7 @@ mod tests {
     fn test_server(work_dir: &PathBuf, xml_dir: &PathBuf) -> PubServer {
         // Start up a server
         let uri = test::rsync_uri("rsync://host/module/");
-        let service = test::http_uri("http://host/publish");
+        let service = test::http_uri("http://host/publish/");
         let notify = test::http_uri("http://host/notify.xml");
         PubServer::new(
             work_dir,
@@ -434,7 +441,8 @@ mod tests {
             let response = server.repository_response("alice").unwrap();
 
             let expected_sia = test::rsync_uri("rsync://host/module/alice/");
-            let expected_service = test::http_uri("http://host/publish");
+            let expected_service = test::http_uri
+                ("http://host/publish/alice");
             let expected_notify = test::http_uri("http://host/notify.xml");
 
             assert_eq!(&expected_sia, response.sia_base());

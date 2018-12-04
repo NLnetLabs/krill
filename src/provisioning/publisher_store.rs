@@ -53,6 +53,7 @@ impl PublisherStore {
     pub fn add_publisher(
         &mut self,
         pr: PublisherRequest,
+        base_service_uri: &uri::Http,
         actor: String
     ) -> Result<(), Error> {
         let (tag, name, id_cert) = pr.into_parts();
@@ -73,12 +74,22 @@ impl PublisherStore {
         base_uri.push_str("/");
         let base_uri = uri::Rsync::from_string(base_uri)?;
 
+        let mut service_uri = base_service_uri.to_string();
+        service_uri.push_str(name.as_ref());
+        let service_uri = uri::Http::from_string(service_uri)?;
+
         let key = Key::from_str(name.as_ref());
         let info = Info::now(
             actor,
             format!("Added publisher: {}", &name)
         );
-        let publisher = Publisher::new(tag, name, base_uri, id_cert);
+        let publisher = Publisher::new(
+            tag,
+            name,
+            base_uri,
+            service_uri,
+            id_cert
+        );
 
         self.store.store(key, publisher, info)?;
 
@@ -194,6 +205,7 @@ impl PublisherStore {
     pub fn sync_from_dir(
         &mut self,
         dir: &PathBuf,
+        base_service_uri: &uri::Http,
         actor: String
     ) -> Result<(), Error> {
         // Find all the publisher requests on disk
@@ -203,7 +215,7 @@ impl PublisherStore {
         for (handle, pr) in prs_on_disk {
             match self.publisher(&handle)? {
                 None => {
-                    self.add_publisher(pr, actor.clone())?;
+                    self.add_publisher(pr, base_service_uri, actor.clone())?;
                 }
                 Some(p) => {
                     if p.id_cert().to_bytes() != pr.id_cert().to_bytes() {
@@ -328,6 +340,10 @@ mod tests {
     use super::*;
     use test;
 
+    fn base_service_uri() -> uri::Http {
+        test::http_uri("http://127.0.0.1:3000/rfc8181/")
+    }
+
     fn test_publisher_store(dir: &PathBuf) -> PublisherStore {
         let uri = test::rsync_uri("rsync://host/module/");
         PublisherStore::new(dir, &uri).unwrap()
@@ -346,7 +362,7 @@ mod tests {
             let mut ps = test_publisher_store(&d);
             let pr = test::new_publisher_request("test/below");
 
-            match ps.add_publisher(pr, "test".to_string()) {
+            match ps.add_publisher(pr, &base_service_uri(), "test".to_string()) {
                 Err(Error::ForwardSlashInHandle(_)) => { }, // Ok
                 _ => panic!("Should have seen error.")
             }
@@ -362,7 +378,7 @@ mod tests {
             let id_cert = pr.id_cert().clone();
             let actor = "test".to_string();
 
-            ps.add_publisher(pr, actor).unwrap();
+            ps.add_publisher(pr, &base_service_uri(), actor).unwrap();
 
             assert!(ps.has_publisher(&name));
 
@@ -373,6 +389,8 @@ mod tests {
                 None,
                 name.to_string(),
                 test::rsync_uri(&format!("rsync://host/module/{}/", name)),
+                test::http_uri(
+                    &format!("http://127.0.0.1:3000/rfc8181/{}",name)),
                 id_cert
             );
 
@@ -388,7 +406,7 @@ mod tests {
             let pr = test::new_publisher_request(name);
             let actor = "test".to_string();
 
-            ps.add_publisher(pr, actor.clone()).unwrap();
+            ps.add_publisher(pr, &base_service_uri(), actor.clone()).unwrap();
 
             // Make a new publisher request for alice, using a new cert
             let pr = test::new_publisher_request(name);
@@ -407,6 +425,8 @@ mod tests {
                 None,
                 name.to_string(),
                 test::rsync_uri(&format!("rsync://host/module/{}/", name)),
+                test::http_uri(
+                    &format!("http://127.0.0.1:3000/rfc8181/{}",name)),
                 id_cert
             );
 
@@ -423,7 +443,7 @@ mod tests {
             let actor = "test".to_string();
             let pr = test::new_publisher_request(name);
 
-            ps.add_publisher(pr, actor.clone()).unwrap();
+            ps.add_publisher(pr, &base_service_uri(), actor.clone()).unwrap();
             assert_eq!(1, ps.publishers().unwrap(). len());
 
             ps.remove_publisher(name, actor).unwrap();
@@ -459,6 +479,7 @@ mod tests {
 
             ps.sync_from_dir(
                 &PathBuf::from(start_sync_dir),
+                &base_service_uri(),
                 actor.clone()
             ).unwrap();
 
@@ -488,6 +509,7 @@ mod tests {
             );
             ps.sync_from_dir(
                 &PathBuf::from(updated_sync_dir),
+                &base_service_uri(),
                 actor.clone()
             ).unwrap();
 
@@ -518,6 +540,7 @@ mod tests {
             );
             assert!(ps.sync_from_dir(
                 &PathBuf::from(duplicates_sync_dir),
+                &base_service_uri(),
                 actor.clone()
             ).is_err());
         })

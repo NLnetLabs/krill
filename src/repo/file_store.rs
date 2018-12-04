@@ -42,8 +42,13 @@ impl FileStore {
         base_uri: &uri::Rsync
     ) -> Result<Vec<CurrentFile>, Error> {
         let path = self.path_for_publisher(base_uri);
-        file::recurse_with_rsync_base(&path, base_uri)
-            .map_err(|e| Error::RecursorError(e))
+
+        if !path.exists() {
+            Ok(Vec::new())
+        } else {
+            file::recurse_with_rsync_base(&path, base_uri)
+                .map_err(|e| Error::RecursorError(e))
+        }
     }
 
     /// Assert that all updates are confined to the given base_uri; i.e. do

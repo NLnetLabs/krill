@@ -10,19 +10,24 @@ use rpki::uri;
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Publisher {
     // The optional tag in the request. None maps to empty string.
-    tag:        String,
+    tag:         String,
 
-    name:       String,
+    name:        String,
 
     #[serde(
     deserialize_with = "ext_serde::de_rsync_uri",
     serialize_with = "ext_serde::ser_rsync_uri")]
-    base_uri:   uri::Rsync,
+    base_uri:    uri::Rsync,
+
+    #[serde(
+    deserialize_with = "ext_serde::de_http_uri",
+    serialize_with = "ext_serde::ser_http_uri")]
+    service_uri: uri::Http,
 
     #[serde(
     deserialize_with = "ext_serde::de_id_cert",
     serialize_with = "ext_serde::ser_id_cert")]
-    id_cert:    IdCert
+    id_cert:     IdCert
 }
 
 impl Publisher {
@@ -30,6 +35,7 @@ impl Publisher {
         tag: Option<String>,
         name: String,
         base_uri: uri::Rsync,
+        service_uri: uri::Http,
         id_cert: IdCert
     ) -> Self {
 
@@ -42,6 +48,7 @@ impl Publisher {
             tag,
             name,
             base_uri,
+            service_uri,
             id_cert
         }
     }
@@ -53,6 +60,7 @@ impl Publisher {
             tag: self.tag.clone(),
             name: self.name.clone(),
             base_uri: self.base_uri.clone(),
+            service_uri: self.service_uri.clone(),
             id_cert
         }
     }
@@ -76,6 +84,10 @@ impl Publisher {
         &self.base_uri
     }
 
+    pub fn service_uri(&self) -> &uri::Http {
+        &self.service_uri
+    }
+
     pub fn id_cert(&self) -> &IdCert {
         &self.id_cert
     }
@@ -85,6 +97,7 @@ impl PartialEq for Publisher {
     fn eq(&self, other: &Publisher) -> bool {
         self.name == other.name &&
         self.base_uri == other.base_uri &&
+        self.service_uri == other.service_uri &&
         self.id_cert.to_bytes() == other.id_cert.to_bytes()
     }
 }

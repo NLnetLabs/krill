@@ -127,7 +127,7 @@ impl Responder {
             let tag = publisher.tag();
             let publisher_handle = publisher.name().clone();
             let id_cert = my_id.id_cert().clone();
-            let service_uri = self.service_uri.clone();
+            let service_uri = publisher.service_uri().clone();
             let sia_base = publisher.base_uri().clone();
             let rrdp_notification_uri = self.rrdp_notification_uri.clone();
 
@@ -242,11 +242,14 @@ mod tests {
             let tag = None;
             let id_cert = pr.id_cert().clone();
             let base_uri = test::rsync_uri("rsync://host/module/alice/");
+            let service_uri = test::http_uri("http://127.0.0\
+            .1:3000/rfc8181/alice");
 
             let publisher = Arc::new(Publisher::new(
                 tag,
                 name,
                 base_uri,
+                service_uri,
                 id_cert
             ));
 
