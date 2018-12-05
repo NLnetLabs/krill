@@ -7,19 +7,23 @@ extern crate serde_json;
 extern crate tokio;
 extern crate bytes;
 
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::str;
 use std::{thread, time};
 use actix::System;
+use bytes::Bytes;
 use rpki::oob::exchange::PublisherRequest;
 use rpki::oob::exchange::RepositoryResponse;
-use rpubd::test;
+use rpubd::file;
+use rpubd::file::CurrentFile;
+use rpubd::provisioning::publisher::Publisher;
 use rpubd::pubc::client::PubClient;
 use rpubd::pubd::config::Config;
-use rpubd::provisioning::publisher::Publisher;
 use rpubd::pubd::http::PubServerApp;
+use rpubd::test;
 
 fn save_pr(base_dir: &PathBuf, file_name: &str, pr: &PublisherRequest) {
     let mut full_name = base_dir.clone();
@@ -28,6 +32,10 @@ fn save_pr(base_dir: &PathBuf, file_name: &str, pr: &PublisherRequest) {
     let mut f = File::create(full_name).unwrap();
     let xml = pr.encode_vec();
     f.write(xml.as_ref()).unwrap();
+}
+
+fn bytes(s: &str) -> Bytes {
+    Bytes::from(s)
 }
 
 #[test]
@@ -75,6 +83,54 @@ fn client_publish_at_server() {
         // List files at server
         let list = client.get_server_list().unwrap();
         assert_eq!(0, list.elements().len());
+
+        // now let's sync something real
+        let sync_dir = test::create_sub_dir(&d);
+        let file_a = CurrentFile::new(
+            test::rsync_uri("rsync://127.0.0.1/rpki/alice/a.txt"),
+            bytes("a")
+        );
+        let file_b = CurrentFile::new(
+            test::rsync_uri("rsync://127.0.0.1/rpki/alice/b.txt"),
+            bytes("b")
+        );
+        let file_c = CurrentFile::new(
+            test::rsync_uri("rsync://127.0.0.1/rpki/alice/c.txt"),
+            bytes("c")
+        );
+
+        file::save_in_dir(file_a.content(), &sync_dir, "a.txt").unwrap();
+        file::save_in_dir(file_b.content(), &sync_dir, "b.txt").unwrap();
+        file::save_in_dir(file_c.content(), &sync_dir, "c.txt").unwrap();
+
+        client.sync_dir(&sync_dir).unwrap();
+
+        // We should now see these files when we list
+        let list_reply = client.get_server_list().unwrap();
+        let returned_elements = list_reply.elements().clone();
+        let returned_set = returned_elements.into_iter()
+            .collect::<HashSet<_>>();
+
+        let expected_elements = vec![
+            file_a.to_list_element(),
+            file_b.to_list_element(),
+            file_c.to_list_element()
+        ];
+        let expected_set: HashSet<_> = expected_elements.into_iter()
+            .collect();
+        assert_eq!(expected_set, returned_set);
+
+        // Now we should be able to delete it all again
+        file::delete_in_dir(&sync_dir, "a.txt").unwrap();
+        file::delete_in_dir(&sync_dir, "b.txt").unwrap();
+        file::delete_in_dir(&sync_dir, "c.txt").unwrap();
+        client.sync_dir(&sync_dir).unwrap();
+
+        // And they should be gone when we list
+        let list_reply = client.get_server_list().unwrap();
+        assert_eq!(0, list_reply.elements().len());
+
+
     });
 }
 

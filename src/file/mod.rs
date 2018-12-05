@@ -1,4 +1,5 @@
 use std::fs;
+use std::fs::File;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use ext_serde;
@@ -6,20 +7,30 @@ use bytes::Bytes;
 use rpki::uri;
 use rpki::publication;
 use rpki::publication::query::{ Publish, PublishElement, Update, Withdraw };
-use std::fs::File;
+use rpki::publication::reply::ListElement;
 
 
 ///-- Some helper functions
 
 /// Saves a file, creating parent dirs as needed
-pub fn save(content: &Bytes, path: &PathBuf) -> Result<(), io::Error> {
-    if let Some(parent) = path.parent() {
+pub fn save(content: &Bytes, full_path: &PathBuf) -> Result<(), io::Error> {
+    if let Some(parent) = full_path.parent() {
         fs::create_dir_all(parent)?;
     }
 
-    let mut f = File::create(path)?;
+    let mut f = File::create(full_path)?;
     f.write(content)?;
     Ok(())
+}
+
+/// Saves a file, creating parent dirs as needed
+pub fn save_in_dir(
+    content: &Bytes,
+    base_path: &PathBuf,
+    name: &str) -> Result<(), io::Error> {
+    let mut full_path = base_path.clone();
+    full_path.push(name);
+    save(content, &full_path)
 }
 
 /// Saves a file under a base directory, using the rsync uri to create
@@ -53,8 +64,20 @@ pub fn delete_with_rsync_uri(
     base_path: &PathBuf,
     uri: &uri::Rsync
 ) -> Result<(), io::Error> {
-    let path = path_with_rsync(base_path, uri);
-    fs::remove_file(path)?;
+    delete(&path_with_rsync(base_path, uri))
+}
+
+pub fn delete_in_dir(
+    base_path: &PathBuf,
+    name: &str
+) -> Result<(), io::Error> {
+    let mut full_path = base_path.clone();
+    full_path.push(name);
+    delete(&full_path)
+}
+
+fn delete(full_path: &PathBuf) -> Result<(), io::Error> {
+    fs::remove_file(full_path)?;
     Ok(())
 }
 
@@ -71,24 +94,24 @@ fn path_with_rsync(base_path: &PathBuf, uri: &uri::Rsync) -> PathBuf {
 /// using the provided rsync_base URI as the rsync prefix.
 /// Allows a publication client to publish the contents below some base
 /// dir, in their own designated rsync URI name space.
-pub fn recurse_with_rsync_base(
+pub fn crawl_incl_rsync_base(
     base_path: &PathBuf,
     rsync_base: &uri::Rsync
 ) -> Result<Vec<CurrentFile>, RecursorError> {
-    recurse_disk(base_path, base_path, Some(rsync_base))
+    crawl_disk(base_path, base_path, Some(rsync_base))
 }
 
 /// Recurses a path on disk and returns all files found as ['CurrentFile'],
 /// deriving the rsync_base URI from the directory structure. This is
 /// useful when reading ['CurrentFile'] instances that were saved in some
 /// base directory as is done by the ['FileStore'].
-pub fn recurse_derive_rsync_base(
+pub fn crawl_derive_rsync_uri(
     base_path: &PathBuf
 ) -> Result<Vec<CurrentFile>, RecursorError> {
-    recurse_disk(base_path, base_path, None)
+    crawl_disk(base_path, base_path, None)
 }
 
-fn recurse_disk(
+fn crawl_disk(
     base_path: &PathBuf,
     path: &PathBuf,
     rsync_base: Option<&uri::Rsync>
@@ -99,7 +122,7 @@ fn recurse_disk(
         let entry = entry?;
         let path = entry.path();
         if path.is_dir() {
-            let mut other = recurse_disk(base_path, &path, rsync_base)?;
+            let mut other = crawl_disk(base_path, &path, rsync_base)?;
             res.append(&mut other);
         } else {
             let uri = derive_uri(base_path, &path, rsync_base)?;
@@ -194,8 +217,17 @@ impl CurrentFile {
         Update::publish(old_content, &self.content, self.uri.clone())
     }
 
+    /// Makes a withdraw element for a known file
+    ///
+    /// Note this is probably only useful for testing, because real files
+    /// to be withdrawn will not be current. Look at Withdraw::publish
+    /// instead which takes a reference to a ListElement from a ListReply.
     pub fn as_withdraw(&self) -> PublishElement {
-        Withdraw::publish(&self.content, self.uri.clone())
+        Withdraw::for_known_file(&self.content, self.uri.clone())
+    }
+
+    pub fn to_list_element(&self) -> ListElement {
+        ListElement::reply(&self.content, self.uri.clone())
     }
 }
 
@@ -273,7 +305,7 @@ mod tests {
             file_3.save(&base_dir).unwrap();
             file_4.save(&base_dir).unwrap();
 
-            let files = recurse_derive_rsync_base(&base_dir).unwrap();
+            let files = crawl_derive_rsync_uri(&base_dir).unwrap();
 
             assert!(files.contains(&file_1));
             assert!(files.contains(&file_2));

@@ -34,6 +34,12 @@ use rpki::publication::pubmsg::ReplyMessage;
 use rpki::publication::reply::ErrorReply;
 use rpki::publication::reply::ListReply;
 use reqwest::Response;
+use file;
+use file::CurrentFile;
+use rpki::publication::query::PublishElement;
+use file::RecursorError;
+use rpki::publication::query::Withdraw;
+use rpki::publication::query::PublishQuery;
 
 
 /// # Some constants for naming resources in the keystore for clients.
@@ -135,6 +141,17 @@ impl PubClient {
         }
     }
 
+    fn my_repo(&self) -> Result<Option<Arc<MyRepoInfo>>, Error> {
+        self.store.get(&repo_key()).map_err(|e| {Error::KeyStoreError(e)})
+    }
+
+    fn get_my_repo(&self) -> Result<Arc<MyRepoInfo>, Error> {
+        match self.my_repo()? {
+            None => Err(Error::Uninitialised),
+            Some(r) => Ok(r)
+        }
+    }
+
     /// Process the publication server parent response.
     pub fn process_repo_response(
         &mut self,
@@ -169,6 +186,7 @@ impl PubClient {
         Ok(())
     }
 
+    /// Makes a publisher request, which can presented as an RFC8183 xml.
     pub fn publisher_request(&mut self) -> Result<PublisherRequest, Error> {
         let id = self.get_my_id()?;
         Ok(
@@ -180,6 +198,8 @@ impl PubClient {
         )
     }
 
+    /// Sends a list query to the server, and expects a list reply, all
+    /// validly signed and all.
     pub fn get_server_list(&mut self) -> Result<ListReply, Error> {
         let query = ListQuery::build_message();
         let signed_request = self.sign_request(query)?;
@@ -192,6 +212,73 @@ impl PubClient {
             ReplyMessage::ListReply(l)    => Ok(l)
         }
     }
+
+
+    /// Synchronises a directory to the configured publication server.
+    /// Returns an error if there are any hick-ups.
+    pub fn sync_dir(&mut self, base_path: &PathBuf) -> Result<(), Error> {
+        let repo = self.get_my_repo()?;
+        let cur = file::crawl_incl_rsync_base(base_path, repo.sia_base())?;
+        let pbl = self.get_server_list()?;
+        let upd = Self::create_update(cur, pbl);
+        let sgn_msg = self.sign_request(upd)?;
+        let reply = self.send_request(sgn_msg)?.as_reply()?;
+
+        match reply {
+            ReplyMessage::ErrorReply(e)   => Err(Error::ErrorReply(e)),
+            ReplyMessage::ListReply(_)    => Err(Error::UnexpectedReply),
+            ReplyMessage::SuccessReply(_) => Ok(())
+        }
+    }
+
+    fn create_update(current: Vec<CurrentFile>, published: ListReply) -> Message {
+        let mut add: Vec<PublishElement> = Vec::new();
+        let mut upd: Vec<PublishElement> = Vec::new();
+        let mut wdr: Vec<PublishElement> = Vec::new();
+
+        let reply_els = published.elements();
+
+        // loop through what the server has and find the ones to withdraw
+        for p in reply_els {
+            if current.iter().find(|c| { c.uri() == p.uri() }).is_none() {
+                wdr.push(Withdraw::publish(p));
+            }
+        }
+
+        // loop through all current files to see what needs to be added,
+        // updated, or what needs no change.
+        for ref f in current {
+            match reply_els.iter().find(|pb| { pb.uri() == f.uri()}) {
+                None => {
+                    add.push(f.as_publish())
+                },
+                Some(pb) => {
+                    if pb.hash() != f.hash() {
+                        upd.push(f.as_update(pb.hash()));
+                    }
+                }
+            }
+        }
+
+        let mut builder = PublishQuery::build_with_capacity(
+            add.len() + upd.len() + wdr.len()
+        );
+
+        for a in add {
+            builder.add(a);
+        }
+        for u in upd {
+            builder.add(u);
+        }
+        for w in wdr {
+            builder.add(w);
+        }
+
+        builder.build_message()
+    }
+
+
+
 
     /// Sends a signed request to the server, and validates and parses the
     /// response.
@@ -311,6 +398,9 @@ pub enum Error {
 
     #[fail(display="Received unexpected reply (list vs success)")]
     UnexpectedReply,
+
+    #[fail(display="Could not crawl directory: {}", _0)]
+    RecursorError(RecursorError),
 }
 
 impl From<softsigner::Error> for Error {
@@ -358,6 +448,12 @@ impl From<decode::Error> for Error {
 impl From<MessageError> for Error {
     fn from(e: MessageError) -> Self {
         Error::MessageError(e)
+    }
+}
+
+impl From<RecursorError> for Error {
+    fn from(e: RecursorError) -> Self {
+        Error::RecursorError(e)
     }
 }
 

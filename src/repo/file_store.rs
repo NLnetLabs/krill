@@ -46,7 +46,7 @@ impl FileStore {
         if !path.exists() {
             Ok(Vec::new())
         } else {
-            file::recurse_with_rsync_base(&path, base_uri)
+            file::crawl_incl_rsync_base(&path, base_uri)
                 .map_err(|e| Error::RecursorError(e))
         }
     }
