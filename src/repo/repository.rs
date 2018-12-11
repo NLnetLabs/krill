@@ -107,12 +107,13 @@ mod tests {
     use bytes::Bytes;
     use file::CurrentFile;
     use test;
+    use repo::rrdp::Notification;
 
     #[test]
     fn should_publish() {
         test::test_with_tmp_dir(|d| {
-            let rrdp_base = test::http_uri("http://localhost:3000/repo/");
-            let mut repo = Repository::new(&rrdp_base, &d).unwrap() ;
+            let rrdp_base_uri = test::http_uri("http://localhost:3000/repo/");
+            let mut repo = Repository::new(&rrdp_base_uri, &d).unwrap() ;
 
             // Publish a file
             let rsync_for_alice =
@@ -128,6 +129,60 @@ mod tests {
             let publish = message.as_query().unwrap().as_publish().unwrap();
 
             repo.publish(&publish, &rsync_for_alice).unwrap();
+
+            // Now publish an update a bunch of times
+            // (overwrite file with same file, strictly speaking allowed,
+            // and convenient here)
+
+            let file_update = file.clone();
+
+            let mut builder = PublishQuery::build();
+            builder.add(file_update.clone().as_update(file.content()));
+            let message = builder.build_message();
+            let update = message.as_query().unwrap().as_publish().unwrap();
+            repo.publish(&update, &rsync_for_alice).unwrap();
+            repo.publish(&update, &rsync_for_alice).unwrap();
+            repo.publish(&update, &rsync_for_alice).unwrap();
+            repo.publish(&update, &rsync_for_alice).unwrap();
+            repo.publish(&update, &rsync_for_alice).unwrap();
+
+            // Now we expect a notification file with serial 6, which only
+            // includes deltas for 5 and 6, because more deltas would
+            // exceed the size of the snapshot.
+
+            let mut rrdp_disk_path = d.clone();
+            rrdp_disk_path.push("rrdp");
+
+            let mut notification_disk_path = rrdp_disk_path.clone();
+            notification_disk_path.push("notification.xml");
+
+            match Notification::derive(
+                &notification_disk_path,
+                &rrdp_base_uri,
+                &rrdp_disk_path
+            ) {
+                Some(notification) => {
+                    let expected_serial: usize = 6;
+                    let expected_prev: usize = 5;
+                    assert_eq!(notification.serial(), &expected_serial);
+
+                    let deltas = notification.deltas();
+                    assert_eq!(2, deltas.len());
+
+                    assert!(
+                        deltas.iter().find(|d| {
+                            d.serial() == &expected_serial}
+                        ).is_some()
+                    );
+
+                    assert!(
+                        deltas.iter().find(|d| {
+                            d.serial() == &expected_prev}
+                        ).is_some()
+                    );
+                },
+                None => panic!("Should have derived notification"),
+            }
         });
     }
 }
