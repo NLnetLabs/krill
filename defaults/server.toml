@@ -14,12 +14,16 @@ pub_xml_dir    = "./publishers"
 
 # Specify the base rsync repository for this server. Publishers will get
 # a base URI that is based on the 'publisher_handle' in the XML file.
-rsync_base  = "rsync://127.0.0.1/repo/"
+#
+# Note, you should set up an rsync daemon to expose $data_dir/rsync to serve
+# this data. The uri defined here should match the module name in your rsync
+# configuration.
+rsync_base     = "rsync://127.0.0.1/repo/"
 
 # Specify the notify SIA for this server. This will be reported in the
 # response.xml files to publishers so that they can include the proper SIA
 # in their certificates.
-notify_sia  = "https://127.0.0.1/repo/notify.xml"
+rrdp_base_uri  = "http://127.0.0.1:3000/rrdp/"
 
 # Specify the base service URI where publishers can connect.
-service_uri = "https://127.0.0.1/rfc8181/"
+service_uri    = "http://127.0.0.1:3000/rfc8181/"

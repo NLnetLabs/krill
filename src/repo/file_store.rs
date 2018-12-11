@@ -4,6 +4,13 @@ use file::{self, CurrentFile, RecursorError};
 use rpki::publication::query::{PublishElement, PublishQuery};
 use rpki::uri;
 
+pub const FS_FOLDER: &'static str = "rsync";
+
+/// This type is responsible for publishing files on disk in a structure so
+/// that an rscynd can be set up to serve this (RPKI) data. Note that the
+/// rsync host name and module are part of the path, so make sure that the
+/// rsyncd modules and paths are setup properly for each supported rsync
+/// base uri used.
 #[derive(Clone, Debug)]
 pub struct FileStore {
     base_dir: PathBuf
@@ -14,7 +21,7 @@ pub struct FileStore {
 impl FileStore {
     pub fn new(work_dir: &PathBuf) -> Result<Self, Error> {
         let mut rsync_dir = PathBuf::from(work_dir);
-        rsync_dir.push("rsync");
+        rsync_dir.push(FS_FOLDER);
         if ! rsync_dir.is_dir() {
             fs::create_dir_all(&rsync_dir)?;
         }
@@ -27,7 +34,7 @@ impl FileStore {
 impl FileStore {
     /// Process a PublishQuery update
     pub fn publish(
-        &self,
+        &mut self,
         update: &PublishQuery,
         base_uri: &uri::Rsync
     ) -> Result<(), Error> {
@@ -208,7 +215,7 @@ mod tests {
     #[test]
     fn should_store_list_withdraw_files() {
         test::test_with_tmp_dir(|d| {
-            let file_store = FileStore { base_dir: d };
+            let mut file_store = FileStore { base_dir: d };
 
             // Using a port here to make sure that it works in mapping
             // the rsync URI to and from disk.
@@ -266,7 +273,7 @@ mod tests {
     #[test]
     fn should_not_allow_publishing_or_withdrawing_outside_of_base() {
         test::test_with_tmp_dir(|d| {
-            let file_store = FileStore { base_dir: d };
+            let mut file_store = FileStore { base_dir: d };
 
             // Using a port here to make sure that it works in mapping
             // the rsync URI to and from disk.

@@ -27,7 +27,7 @@ pub struct Config {
     rsync_base: uri::Rsync,
 
     #[serde(deserialize_with = "ext_serde::de_http_uri")]
-    notify_sia: uri::Http,
+    rrdp_base_uri: uri::Http,
 
     #[serde(deserialize_with = "ext_serde::de_http_uri")]
     service_uri: uri::Http,
@@ -49,12 +49,12 @@ impl Config {
 
     pub fn rsync_base(&self) -> &uri::Rsync { &self.rsync_base }
 
-    pub fn service_uri(&self) -> uri::Http {
-        self.service_uri.clone()
+    pub fn service_uri(&self) -> &uri::Http {
+        &self.service_uri
     }
 
-    pub fn notify_sia(&self) -> uri::Http {
-        self.notify_sia.clone()
+    pub fn rrdp_base_uri(&self) -> &uri::Http {
+        &self.rrdp_base_uri
     }
 }
 
@@ -74,8 +74,8 @@ impl Config {
         let pub_xml_dir = pub_xml_dir.clone();
         let rsync_base = uri::Rsync::from_str("rsync://127.0.0.1/rpki/")
             .unwrap();
-        let notify_sia = uri::Http::from_str(
-            "http://127.0.0.1:3000/repo/notify.xml").unwrap();
+        let rrdp_base_uri = uri::Http::from_str(
+            "http://127.0.0.1:3000/rrdp/").unwrap();
         let service_uri = uri::Http::from_str(
             "http://127.0.0.1:3000/rfc8181/").unwrap();
 
@@ -85,7 +85,7 @@ impl Config {
             data_dir,
             pub_xml_dir,
             rsync_base,
-            notify_sia,
+            rrdp_base_uri,
             service_uri
         }
     }
@@ -128,11 +128,11 @@ impl Config {
                 .value_name("URI")
                 .help("Override rsync base URI.")
                 .required(false))
-            .arg(Arg::with_name("notify_sia")
+            .arg(Arg::with_name("rrdp_base_uri")
                 .short("n")
-                .long("notify_sia")
+                .long("rrdp_base_uri")
                 .value_name("URI")
-                .help("Override the notify URI.")
+                .help("Override the RRDP base URI.")
                 .required(false))
             .arg(Arg::with_name("service_uri")
                 .short("u")
@@ -197,8 +197,8 @@ impl Config {
             c.rsync_base = uri::Rsync::from_str(rsync_base)?;
         }
 
-        if let Some(notify_sia) = matches.value_of("notify_sia") {
-            c.notify_sia = uri::Http::from_str(notify_sia)?;
+        if let Some(rrdp_base_uri) = matches.value_of("rrdp_base_uri") {
+            c.rrdp_base_uri = uri::Http::from_str(rrdp_base_uri)?;
         }
 
         Ok(c)

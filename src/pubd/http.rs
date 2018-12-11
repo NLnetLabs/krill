@@ -64,7 +64,7 @@ impl PubServerApp {
             config.pub_xml_dir(),
             config.rsync_base(),
             config.service_uri(),
-            config.notify_sia()
+            config.rrdp_base_uri()
         ) {
             Err(e) => {
                 eprintln!("{}", e);

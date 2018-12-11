@@ -23,6 +23,7 @@ use storage::keystore;
 use storage::keystore::Key;
 use storage::keystore::KeyStore;
 use storage::keystore::Info;
+use repo::rrdp;
 
 
 /// # Naming things in the keystore.
@@ -67,8 +68,8 @@ pub struct Responder {
 impl Responder {
     pub fn init(
         work_dir: &PathBuf,
-        service_uri: uri::Http,
-        rrdp_notification_uri: uri::Http
+        service_uri: &uri::Http,
+        rrdp_base_uri: &uri::Http
     ) -> Result<Self, Error> {
         let mut responder_dir = PathBuf::from(work_dir);
         responder_dir.push("responder");
@@ -79,10 +80,12 @@ impl Responder {
         let signer = OpenSslSigner::new(&responder_dir)?;
         let store = CachingDiskKeyStore::new(responder_dir)?;
 
+        let rrdp_notification_uri = rrdp::notification_uri(rrdp_base_uri);
+
         let mut responder = Responder {
             signer,
             store,
-            service_uri,
+            service_uri: service_uri.clone(),
             rrdp_notification_uri
         };
         responder.init_identity_if_empty()?;
@@ -230,11 +233,11 @@ mod tests {
         test::test_with_tmp_dir(|d| {
 
             let service_uri = test::http_uri("http://host/publish");
-            let rrdp_uri = test::http_uri("http://host/notify.xml");
+            let rrdp_uri = test::http_uri("http://host/rrdp/");
             let responder = Responder::init(
                 &d,
-                service_uri,
-                rrdp_uri
+                &service_uri,
+                &rrdp_uri
             ).unwrap();
 
             let name = "alice".to_string();

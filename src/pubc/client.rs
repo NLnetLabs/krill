@@ -471,13 +471,13 @@ mod tests {
         // Start up a server
         let uri = test::rsync_uri("rsync://host/module/");
         let service = test::http_uri("http://host/publish");
-        let notify = test::http_uri("http://host/notify.xml");
+        let rrdp_base = test::http_uri("http://host/rrdp/");
         PubServer::new(
             work_dir,
             xml_dir,
             &uri,
-            service,
-            notify
+            &service,
+            &rrdp_base
         ).unwrap()
     }
 

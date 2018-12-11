@@ -12,13 +12,30 @@ use rpki::publication::reply::ListElement;
 
 ///-- Some helper functions
 
+/// Creates a sub dir if needed, return full path to it
+pub fn sub_dir(base: &PathBuf, name: &str) -> Result<PathBuf, io::Error> {
+    let mut full_path = base.clone();
+    full_path.push(name);
+    if ! full_path.is_dir() {
+        // intended to blow up if the full path refers to an existing file.
+        fs::create_dir(&full_path)?;
+    }
+    Ok(full_path)
+}
+
+pub fn create_file_with_path(path: &PathBuf) -> Result<File, io::Error> {
+    if ! path.exists() {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+    }
+    File::create(path)
+}
+
+
 /// Saves a file, creating parent dirs as needed
 pub fn save(content: &Bytes, full_path: &PathBuf) -> Result<(), io::Error> {
-    if let Some(parent) = full_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    let mut f = File::create(full_path)?;
+    let mut f = create_file_with_path(full_path)?;
     f.write(content)?;
     Ok(())
 }

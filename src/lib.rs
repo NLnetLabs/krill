@@ -8,6 +8,7 @@ extern crate clap;
 extern crate core;
 #[macro_use] extern crate failure;
 extern crate futures;
+extern crate hex;
 extern crate openssl;
 extern crate rand;
 extern crate rpki;

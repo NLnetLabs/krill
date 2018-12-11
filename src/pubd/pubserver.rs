@@ -15,6 +15,7 @@ use rpki::remote::sigmsg::SignedMessage;
 use rpki::uri;
 use rpki::x509::ValidationError;
 use std::fmt::Debug;
+use repo::rrdp;
 
 
 /// # Naming things in the keystore.
@@ -45,21 +46,21 @@ impl PubServer {
         work_dir: &PathBuf,
         pub_xml_dir: &PathBuf,
         base_uri: &uri::Rsync,
-        service_uri: uri::Http,
-        rrdp_notification_uri: uri::Http
+        service_uri: &uri::Http,
+        rrdp_base_uri: &uri::Http
     ) -> Result<Self, Error> {
         let publisher_store = Self::init_publishers(
             &work_dir,
             pub_xml_dir,
-            &service_uri,
+            service_uri,
             base_uri)?;
 
         let responder = Responder::init(
             work_dir,
             service_uri,
-            rrdp_notification_uri)?;
+            rrdp_base_uri)?;
 
-        let repository = Repository::new(work_dir)?;
+        let repository = Repository::new(rrdp_base_uri, work_dir)?;
 
         Ok(
             PubServer {
@@ -161,7 +162,7 @@ impl PubServer {
     /// Returns the appropriate Success or Error Reply in a Message, ready
     /// for wrapping into a SignedMessage.
     fn handle_query(
-        &self,
+        &mut self,
         query: &QueryMessage,
         base_uri: &uri::Rsync
     ) -> Message {
@@ -267,6 +268,8 @@ impl ToReportErrorCode for repository::Error {
     fn to_report_error_code(&self) -> ReportErrorCode {
         match self {
             repository::Error::FileStoreError(error) =>
+                error.to_report_error_code(),
+            repository::Error::RrdpError(error) =>
                 error.to_report_error_code()
         }
     }
@@ -288,6 +291,12 @@ impl ToReportErrorCode for file_store::Error {
     }
 }
 
+impl ToReportErrorCode for rrdp::Error {
+    fn to_report_error_code(&self) -> ReportErrorCode {
+        ReportErrorCode::OtherError
+    }
+}
+
 
 
 //------------ Tests ---------------------------------------------------------
@@ -302,13 +311,13 @@ mod tests {
         // Start up a server
         let uri = test::rsync_uri("rsync://host/module/");
         let service = test::http_uri("http://host/publish/");
-        let notify = test::http_uri("http://host/notify.xml");
+        let rrdp_base = test::http_uri("http://host/rrdp/");
         PubServer::new(
             work_dir,
             xml_dir,
             &uri,
-            service,
-            notify
+            &service,
+            &rrdp_base
         ).unwrap()
     }
 
@@ -404,15 +413,15 @@ mod tests {
 
             let uri = test::rsync_uri("rsync://host/module/");
             let service = test::http_uri("http://host/publish");
-            let notify = test::http_uri("http://host/notify.xml");
+            let rrdp_base = test::http_uri("http://host/rrdp");
 
             assert!(
                 PubServer::new(
                     &d,
                     &xml_dir,
                     &uri,
-                    service,
-                    notify
+                    &service,
+                    &rrdp_base
                 ).is_err()
             );
         });
@@ -441,13 +450,13 @@ mod tests {
             let response = server.repository_response("alice").unwrap();
 
             let expected_sia = test::rsync_uri("rsync://host/module/alice/");
-            let expected_service = test::http_uri
-                ("http://host/publish/alice");
-            let expected_notify = test::http_uri("http://host/notify.xml");
+            let expected_service = test::http_uri("http://host/publish/alice");
+            let expected_rrdp = test::http_uri
+                ("http://host/rrdp/notification.xml");
 
             assert_eq!(&expected_sia, response.sia_base());
             assert_eq!(&expected_service, response.service_uri());
-            assert_eq!(&expected_notify, response.rrdp_notification_uri());
+            assert_eq!(&expected_rrdp, response.rrdp_notification_uri());
             assert_eq!("alice", response.publisher_handle());
         });
     }
