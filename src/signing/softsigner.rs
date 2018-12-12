@@ -172,8 +172,10 @@ impl Serialize for OpenSslKeyPair {
         s: S
     ) -> Result<S::Ok, S::Error> where
         S: Serializer {
-        self.pkey.as_ref().private_key_to_der().map_err(ser::Error::custom)?
-            .serialize(s)
+        let bytes: Vec<u8> = self.pkey.as_ref().private_key_to_der()
+            .map_err(ser::Error::custom)?;
+
+        base64::encode(&bytes).serialize(s)
     }
 }
 
@@ -183,8 +185,11 @@ impl<'de> Deserialize<'de> for OpenSslKeyPair {
     ) -> Result<OpenSslKeyPair, D::Error> where
         D: Deserializer<'de> {
         match String::deserialize(d) {
-            Ok(some) => {
-                let pkey = PKey::private_key_from_der(some.as_ref())
+            Ok(base64) => {
+                let bytes = base64::decode(&base64)
+                    .map_err(de::Error::custom)?;
+
+                let pkey = PKey::private_key_from_der(&bytes)
                     .map_err(de::Error::custom)?;
 
                 Ok(
@@ -197,7 +202,6 @@ impl<'de> Deserialize<'de> for OpenSslKeyPair {
         }
     }
 }
-
 
 impl OpenSslKeyPair {
     fn new() -> Result<OpenSslKeyPair, Error> {
@@ -235,7 +239,7 @@ pub enum Error {
     IoError(io::Error),
 
     #[fail(display = "{}", _0)]
-    KeyStoreError(keystore::Error)
+    KeyStoreError(keystore::Error),
 }
 
 impl From<ErrorStack> for Error {
@@ -262,7 +266,6 @@ impl From<keystore::Error> for Error {
     }
 }
 
-
 //------------ Tests ---------------------------------------------------------
 
 #[cfg(test)]
@@ -279,5 +282,18 @@ pub mod tests {
             s.get_key_info(&ki).unwrap();
             s.destroy_key(&ki).unwrap();
         })
+    }
+
+    #[test]
+    fn should_serialize_and_deserialize_key() {
+
+        let key = OpenSslKeyPair::new().unwrap();
+        let json = serde_json::to_string(&key).unwrap();
+        let key_des: OpenSslKeyPair = serde_json::from_str(json.as_str()).unwrap();
+        let json_from_des = serde_json::to_string(&key_des).unwrap();
+
+        // comparing json, because OpenSslKeyPair and its internal friends do
+        // not implement Eq and PartialEq.
+        assert_eq!(json, json_from_des);
     }
 }
