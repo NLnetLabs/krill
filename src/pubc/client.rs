@@ -40,6 +40,7 @@ use rpki::publication::query::PublishElement;
 use file::RecursorError;
 use rpki::publication::query::Withdraw;
 use rpki::publication::query::PublishQuery;
+use std::time::Duration;
 
 
 /// # Some constants for naming resources in the keystore for clients.
@@ -220,18 +221,24 @@ impl PubClient {
         let repo = self.get_my_repo()?;
         let cur = file::crawl_incl_rsync_base(base_path, repo.sia_base())?;
         let pbl = self.get_server_list()?;
-        let upd = Self::create_update(cur, pbl);
-        let sgn_msg = self.sign_request(upd)?;
-        let reply = self.send_request(sgn_msg)?.as_reply()?;
+        if let Some(upd) = Self::create_update(cur, pbl) {
+            let sgn_msg = self.sign_request(upd)?;
+            let reply = self.send_request(sgn_msg)?.as_reply()?;
 
-        match reply {
-            ReplyMessage::ErrorReply(e)   => Err(Error::ErrorReply(e)),
-            ReplyMessage::ListReply(_)    => Err(Error::UnexpectedReply),
-            ReplyMessage::SuccessReply(_) => Ok(())
+            match reply {
+                ReplyMessage::ErrorReply(e)   => Err(Error::ErrorReply(e)),
+                ReplyMessage::ListReply(_)    => Err(Error::UnexpectedReply),
+                ReplyMessage::SuccessReply(_) => Ok(())
+            }
+        } else {
+            Ok(())
         }
     }
 
-    fn create_update(current: Vec<CurrentFile>, published: ListReply) -> Message {
+    fn create_update(
+        current: Vec<CurrentFile>,
+        published: ListReply
+    ) -> Option<Message> {
         let mut add: Vec<PublishElement> = Vec::new();
         let mut upd: Vec<PublishElement> = Vec::new();
         let mut wdr: Vec<PublishElement> = Vec::new();
@@ -260,21 +267,25 @@ impl PubClient {
             }
         }
 
-        let mut builder = PublishQuery::build_with_capacity(
-            add.len() + upd.len() + wdr.len()
-        );
+        let total_length = add.len() + upd.len() + wdr.len();
 
-        for a in add {
-            builder.add(a);
-        }
-        for u in upd {
-            builder.add(u);
-        }
-        for w in wdr {
-            builder.add(w);
-        }
+        if total_length == 0 {
+            None
+        } else {
+            let mut builder = PublishQuery::build_with_capacity(total_length);
 
-        builder.build_message()
+            for a in add {
+                builder.add(a);
+            }
+            for u in upd {
+                builder.add(u);
+            }
+            for w in wdr {
+                builder.add(w);
+            }
+
+            Some(builder.build_message())
+        }
     }
 
 
@@ -295,7 +306,12 @@ impl PubClient {
             HeaderValue::from_str("application/rpki-publication").unwrap()
         );
 
-        let client = Client::new();
+        let client = Client::builder()
+            .gzip(true)
+            // 5 minute timeout is enough to sync the entire RIPE NCC repo.
+            .timeout(Duration::from_secs(300))
+            .build()?;
+
         let res = client.post(&parent.service_uri().to_string())
             .headers(headers)
             .body(req.to_vec())

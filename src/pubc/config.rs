@@ -81,9 +81,9 @@ impl Config {
 
             .subcommand(SubCommand::with_name("sync")
                 .about("Synchronise the directory specified by '-d'.")
-                .arg(Arg::with_name("data")
+                .arg(Arg::with_name("dir")
                     .short("d")
-                    .long("data")
+                    .long("dir")
                     .value_name("FILE")
                     .help("The directory that should be synced to the
                            server. Note that entries here will be relative to

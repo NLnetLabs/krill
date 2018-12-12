@@ -16,6 +16,7 @@ use rpki::uri;
 use rpki::x509::ValidationError;
 use std::fmt::Debug;
 use repo::rrdp;
+use repo::rrdp::RRDP_FOLDER;
 
 
 /// # Naming things in the keystore.
@@ -36,6 +37,8 @@ pub struct PubServer {
 
     // The repository responsible for publishing rsync and rrdp
     repository: Repository,
+
+    work_dir: PathBuf
 }
 
 /// # Set up and initialisation
@@ -66,7 +69,8 @@ impl PubServer {
             PubServer {
                 responder,
                 repository,
-                publisher_store
+                publisher_store,
+                work_dir: work_dir.clone()
             }
         )
     }
@@ -110,6 +114,12 @@ impl PubServer {
         self.responder
             .repository_response(publisher)
             .map_err(|e| Error::ResponderError(e))
+    }
+
+    pub fn rrdp_base_path(&self) -> PathBuf {
+        let mut path = self.work_dir.clone();
+        path.push(RRDP_FOLDER);
+        path
     }
 }
 

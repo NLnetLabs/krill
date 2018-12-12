@@ -17,7 +17,7 @@ use rpki::uri;
 
 const VERSION: &'static str = "1";
 const NS: &'static str = "http://www.ripe.net/rpki/rrdp";
-const RRDP_FOLDER: &'static str = "rrdp";
+pub const RRDP_FOLDER: &'static str = "rrdp";
 
 /// Derives the notification uri based on the RRDP base uri (from config)
 /// Panics in case of (config) issues, and is called during bootstrapping.
@@ -248,27 +248,27 @@ impl RrdpServer {
     }
 
 
-    fn notification_path(&self) -> PathBuf {
+    pub fn notification_path(&self) -> PathBuf {
         let mut path = self.rrdp_base.clone();
         path.push("notification.xml");
         path
     }
 
-    fn delta_path(&self, session_id: &String, serial: usize) -> PathBuf {
-        let mut path = self.serial_path(session_id, serial);
+    pub fn delta_path(&self, session: &str, serial: usize) -> PathBuf {
+        let mut path = self.serial_path(session, serial);
         path.push("delta.xml");
         path
     }
 
-    fn snapshot_path(&self, session_id: &String, serial: usize) -> PathBuf {
-        let mut path = self.serial_path(session_id, serial);
+    pub fn snapshot_path(&self, session: &str, serial: usize) -> PathBuf {
+        let mut path = self.serial_path(session, serial);
         path.push("snapshot.xml");
         path
     }
 
-    fn serial_path(&self, session_id: &String, serial: usize) -> PathBuf {
+    fn serial_path(&self, session: &str, serial: usize) -> PathBuf {
         let mut path = self.rrdp_base.clone();
-        path.push(session_id);
+        path.push(session);
         path.push(format!("{}", serial));
         path
     }

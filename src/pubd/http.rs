@@ -10,20 +10,25 @@ use actix_web::{
     pred,
     server,
     App,
+    FromRequest,
     HttpResponse,
+    ResponseError
 };
+use actix_web::dev::MessageBody;
 use actix_web::http::{
     Method,
     StatusCode
 };
 use bcder::decode;
 use bytes::Bytes;
+use futures::Future;
 use provisioning::publisher_store;
 use pubd::config::Config;
 use pubd::pubserver;
 use pubd::pubserver::PubServer;
 use rpki::remote::sigmsg::SignedMessage;
 use serde::Serialize;
+use std::fs::File;
 
 const NOT_FOUND: &'static [u8] = include_bytes!("../../static/html/404.html");
 
@@ -41,7 +46,12 @@ impl PubServerApp {
                 r.f(Self::repository_response)
             })
             .resource("/rfc8181/{handle}", |r| {
-                r.method(Method::POST).with(Self::process_publish_request)
+                r.method(Method::POST).with(
+                    Self::process_publish_request
+                )
+            })
+            .resource("/rrdp/{path:.*}", |r| {
+                r.f(Self::serve_rrdp_files)
             })
             .resource("/health", |r| {
                 r.f(Self::service_ok)
@@ -143,22 +153,15 @@ impl PubServerApp {
 
     fn process_publish_request(
         req: HttpRequest,
-        body: Bytes
+        pr: PublishRequest
     ) -> HttpResponse {
-        match SignedMessage::decode(body, true) {
+        match SignedMessage::decode(pr.body, true) {
             Err(e)  => Self::server_error(Error::DecodeError(e)),
-            Ok(msg) => {
-                match req.match_info().get("handle") {
-                    None => Self::server_error(Error::WrongPath),
-                    Some(handle) => {
-                        Self::handle_signed_request(
+            Ok(msg) => Self::handle_signed_request(
                             req.state().write().unwrap(),
                             msg,
-                            handle
-                        )
-                    }
-                }
-            }
+                            pr.handle.as_str()
+                       )
         }
     }
 
@@ -179,17 +182,95 @@ impl PubServerApp {
         }
     }
 
+    // XXX TODO: use a better handler that does not load everything into
+    // memory first, and set the correct headers for caching.
+    // See also:
+    // https://github.com/actix/actix-website/blob/master/content/docs/static-files.md
+    // https://www.keycdn.com/blog/http-cache-headers
+    fn serve_rrdp_files(req: &HttpRequest) -> HttpResponse {
+        let server: RwLockReadGuard<PubServer> = req.state().read().unwrap();
+
+        match req.match_info().get("path") {
+            Some(path) => {
+                let mut full_path = server.rrdp_base_path();
+                full_path.push(path);
+                match File::open(full_path) {
+                    Ok(mut file) => {
+                        use std::io::Read;
+                        let mut buffer = Vec::new();
+                        file.read_to_end(&mut buffer).unwrap();
+
+                        HttpResponse::build(StatusCode::OK).body(buffer)
+                    },
+                    _ => {
+                        Self::p404(req)
+                    }
+                }
+            },
+            None => Self::p404(req)
+        }
+    }
+
     fn service_ok(_r: &HttpRequest) -> HttpResponse {
         // XXX TODO: do a real check
         HttpResponse::Ok().body("I am completely operational, and all my circuits are functioning perfectly.")
     }
 
     fn server_error(error: Error) -> HttpResponse {
-        HttpResponse::build(StatusCode::INTERNAL_SERVER_ERROR)
-            .body(format!("I'm afraid I can't do that: {}", error))
+        error.error_response()
     }
 
 }
+
+
+struct PublishRequest {
+    handle: String,
+    body: Bytes
+}
+
+impl<S: 'static> FromRequest<S> for PublishRequest {
+
+    type Config = PublishRequestConfig;
+    type Result = Result<
+        Box<Future<Item = Self, Error = actix_web::Error>>,
+        actix_web::Error
+    >;
+
+    fn from_request(
+        req: &actix_web::HttpRequest<S>,
+        cfg: &Self::Config
+    ) -> Self::Result {
+        if let Some(handle) = req.match_info().get("handle") {
+            let handle = handle.to_string();
+            Ok(Box::new(MessageBody::new(req).limit(cfg.limit())
+                .from_err()
+                .map(|bytes| {
+                    PublishRequest {
+                        handle,
+                        body: bytes
+                    }
+                }))
+            )
+        } else {
+            Err(Error::WrongPath.into())
+        }
+    }
+}
+
+pub struct PublishRequestConfig;
+impl PublishRequestConfig {
+    fn limit(&self) -> usize {
+        255 * 1024 * 1024 // 256 MB
+    }
+}
+
+impl Default for PublishRequestConfig {
+    fn default() -> Self {
+        PublishRequestConfig
+    }
+}
+
+
 
 
 //------------ IntoHttpHandler -----------------------------------------------
@@ -234,6 +315,14 @@ pub enum Error {
 
     #[fail(display = "Wrong path")]
     WrongPath,
+}
+
+
+impl actix_web::ResponseError for Error {
+    fn error_response(&self) -> HttpResponse {
+        HttpResponse::build(StatusCode::INTERNAL_SERVER_ERROR)
+            .body(format!("I'm afraid I can't do that: {}", self))
+    }
 }
 
 //------------ Tests ---------------------------------------------------------
