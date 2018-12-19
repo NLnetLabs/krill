@@ -1,15 +1,11 @@
 use std::io;
 use std::path::PathBuf;
-use clap::{App, Arg};
+use clap::{App, Arg, SubCommand};
 use toml;
-use clap::SubCommand;
 
 
-/// Global configuration for the RRDP Server.
-///
-/// This will parse a default config file ('./defaults/server.toml') unless
-/// another file is explicitly specified. Command line arguments may be used
-/// to override any of the settings in the config file.
+//------------ Config --------------------------------------------------------
+
 #[derive(Debug, Deserialize)]
 pub struct Config {
     name: String,

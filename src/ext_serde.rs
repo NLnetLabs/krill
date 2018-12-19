@@ -7,7 +7,11 @@ use rpki::remote::idcert::IdCert;
 use rpki::signing::signer::KeyId;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde::de;
+use log::LevelFilter;
+use syslog::Facility;
 
+
+//------------ Bytes ---------------------------------------------------------
 
 pub fn de_bytes<'de, D>(d: D) -> Result<Bytes, D::Error>
 where D: Deserializer<'de>
@@ -23,6 +27,9 @@ where S: Serializer
     base64::encode(b).serialize(s)
 }
 
+
+//------------ uri::Rsync ----------------------------------------------------
+
 pub fn de_rsync_uri<'de, D>(d: D) -> Result<uri::Rsync, D::Error>
 where D: Deserializer<'de>
 {
@@ -36,6 +43,9 @@ where S: Serializer
     uri.to_string().serialize(s)
 }
 
+
+//------------ uri::Http -----------------------------------------------------
+
 pub fn de_http_uri<'de, D>(d: D) -> Result<uri::Http, D::Error>
 where D: Deserializer<'de>
 {
@@ -48,6 +58,9 @@ where S: Serializer
 {
     uri.to_string().serialize(s)
 }
+
+
+//------------ IdCert --------------------------------------------------------
 
 pub fn de_id_cert<'de, D>(d: D) -> Result<IdCert, D::Error>
 where D: Deserializer<'de>
@@ -66,6 +79,8 @@ where S: Serializer
     str.serialize(s)
 }
 
+//------------ KeyId ---------------------------------------------------------
+
 pub fn de_key_id<'de, D>(d: D) -> Result<KeyId, D::Error>
 where D: Deserializer<'de>
 {
@@ -77,4 +92,28 @@ pub fn ser_key_id<S>(key_id: &KeyId, s: S) -> Result<S::Ok, S::Error>
 where S: Serializer
 {
     key_id.as_str().serialize(s)
+}
+
+
+//------------ LevelFilter ---------------------------------------------------
+
+pub fn de_level_filter<'de, D>(d: D) -> Result<LevelFilter, D::Error>
+where D: Deserializer<'de>
+{
+    use std::str::FromStr;
+    let string = String::deserialize(d)?;
+    LevelFilter::from_str(&string).map_err(de::Error::custom)
+}
+
+
+//------------ Facility ------------------------------------------------------
+
+pub fn de_facility<'de, D>(d: D) -> Result<Facility, D::Error>
+    where D: Deserializer<'de>
+{
+    use std::str::FromStr;
+    let string = String::deserialize(d)?;
+    Facility::from_str(&string).map_err(
+        |_| { de::Error::custom(
+            format!("Unsupported syslog_facility: \"{}\"", string))})
 }

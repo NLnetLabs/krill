@@ -10,15 +10,17 @@ extern crate core;
 extern crate futures;
 extern crate hex;
 extern crate openssl;
+#[macro_use] extern crate log;
 extern crate rand;
+extern crate reqwest;
 extern crate rpki;
 #[macro_use] extern crate serde_derive;
 extern crate serde;
 extern crate serde_json;
+extern crate syslog;
 extern crate tokio;
 extern crate toml;
 extern crate xml;
-extern crate reqwest;
 
 pub mod file;
 pub mod provisioning;

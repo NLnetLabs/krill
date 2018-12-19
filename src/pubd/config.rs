@@ -1,19 +1,39 @@
-use std::fs;
 use std::fs::File;
 use std::io;
 use std::io::Read;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
-use std::str::FromStr;
 use clap::{App, Arg};
 use ext_serde;
-use toml;
+use log::LevelFilter;
 use rpki::uri;
+use syslog::Facility;
+use serde::de;
+use serde::{Deserialize, Deserializer};
+use toml;
+
+
+const SERVER_NAME: &'static str = "Publication Server";
+
+
+pub struct ConfigDefaults;
+
+impl ConfigDefaults {
+    fn log_level() -> LevelFilter {
+        LevelFilter::Warn
+    }
+    fn log_type() -> LogType {
+        LogType::Syslog
+    }
+    fn syslog_facility() -> Facility {
+        Facility::LOG_DAEMON
+    }
+}
 
 
 /// Global configuration for the RRDP Server.
 ///
-/// This will parse a default config file ('./defaults/server.toml') unless
+/// This will parse a default config file ('./defaults/pubserver.conf') unless
 /// another file is explicitly specified. Command line arguments may be used
 /// to override any of the settings in the config file.
 #[derive(Debug, Deserialize)]
@@ -31,6 +51,23 @@ pub struct Config {
 
     #[serde(deserialize_with = "ext_serde::de_http_uri")]
     service_uri: uri::Http,
+
+    #[serde(
+        default = "ConfigDefaults::log_level",
+        deserialize_with = "ext_serde::de_level_filter"
+    )]
+    log_level: LevelFilter,
+
+    #[serde(default = "ConfigDefaults::log_type")]
+    log_type: LogType,
+
+    #[serde(
+        default = "ConfigDefaults::syslog_facility",
+        deserialize_with = "ext_serde::de_facility"
+    )]
+    syslog_facility: Facility,
+
+    log_file: Option<PathBuf>
 }
 
 /// # Accessors
@@ -39,23 +76,15 @@ impl Config {
         SocketAddr::new(self.ip, self.port)
     }
 
-    pub fn data_dir(&self) -> &PathBuf {
-        &self.data_dir
-    }
+    pub fn data_dir(&self) -> &PathBuf { &self.data_dir }
 
-    pub fn pub_xml_dir(&self) -> &PathBuf {
-        &self.pub_xml_dir
-    }
+    pub fn pub_xml_dir(&self) -> &PathBuf { &self.pub_xml_dir }
 
     pub fn rsync_base(&self) -> &uri::Rsync { &self.rsync_base }
 
-    pub fn service_uri(&self) -> &uri::Http {
-        &self.service_uri
-    }
+    pub fn service_uri(&self) -> &uri::Http { &self.service_uri }
 
-    pub fn rrdp_base_uri(&self) -> &uri::Http {
-        &self.rrdp_base_uri
-    }
+    pub fn rrdp_base_uri(&self) -> &uri::Http { &self.rrdp_base_uri }
 }
 
 /// # Create
@@ -78,6 +107,10 @@ impl Config {
             "http://127.0.0.1:3000/rrdp/").unwrap();
         let service_uri = uri::Http::from_str(
             "http://127.0.0.1:3000/rfc8181/").unwrap();
+        let log_level = ConfigDefaults::log_level();
+        let log_type = ConfigDefaults::log_type();
+        let log_file = None;
+        let syslog_facility = ConfigDefaults::syslog_facility();
 
         Config {
             ip,
@@ -86,7 +119,11 @@ impl Config {
             pub_xml_dir,
             rsync_base,
             rrdp_base_uri,
-            service_uri
+            service_uri,
+            log_level,
+            log_type,
+            log_file,
+            syslog_facility
         }
     }
 
@@ -99,108 +136,18 @@ impl Config {
                 .long("config")
                 .value_name("FILE")
                 .help("Specify non-default config file. If no file is \
-                specified './defaults/server.toml' will be used to \
+                specified './defaults/pubserver.conf' will be used to \
                 determine default values for all settings. Note that you \
                 can use any of the following options to override any of \
                 these values..")
                 .required(false))
-            .arg(Arg::with_name("ip")
-                .short("i")
-                .long("ip")
-                .value_name("IP Address")
-                .help("Override the IP address.")
-                .required(false))
-            .arg(Arg::with_name("port")
-                .short("p")
-                .long("port")
-                .value_name("Port number")
-                .help("Override the port number.")
-                .required(false))
-            .arg(Arg::with_name("pub_xml_dir")
-                .short("x")
-                .long("pub_xml_dir")
-                .value_name("DIR")
-                .help("Override the directory with publisher XML files.")
-                .required(false))
-            .arg(Arg::with_name("rsync_base")
-                .short("r")
-                .long("rsync_base")
-                .value_name("URI")
-                .help("Override rsync base URI.")
-                .required(false))
-            .arg(Arg::with_name("rrdp_base_uri")
-                .short("n")
-                .long("rrdp_base_uri")
-                .value_name("URI")
-                .help("Override the RRDP base URI.")
-                .required(false))
-            .arg(Arg::with_name("service_uri")
-                .short("u")
-                .long("service_uri")
-                .value_name("URI")
-                .help("Override the service URI.")
-                .required(false))
             .get_matches();
 
         let config_file = matches.value_of("config")
-            .unwrap_or("./defaults/server.toml");
+            .unwrap_or("./defaults/pubserver.conf");
 
-        let mut c = Self::read_config(config_file.as_ref())?;
-
-        if ! fs::metadata(&c.data_dir)?.is_dir() {
-            return Err(
-                ConfigError::Other(
-                    format!(
-                        "Invalid data_dir: {}",
-                        c.data_dir.to_string_lossy().as_ref()
-                    )
-                )
-            )
-        }
-
-
-        if let Some(ip_arg) = matches.value_of("ip") {
-            match IpAddr::from_str(ip_arg) {
-                Ok(ip) => c.ip = ip,
-                Err(_) => return Err(
-                    ConfigError::Other(
-                        format!("Invalid IP Address: {}", ip_arg)
-                    ))
-            }
-        }
-
-        if let Some(port_arg) = matches.value_of("port") {
-            match u16::from_str(port_arg) {
-                Ok(p) => {
-                    if p < 1024 {
-                        return Err(
-                            ConfigError::Other(
-                                "Port number must be between 1024 and \
-                                65535".to_string()
-                            )
-                        )
-                    }
-                    c.port = p;
-                }
-                Err(_) => return Err(
-                            ConfigError::Other(
-                                format!("Invalid port: {}", port_arg)))
-            }
-
-        }
-
-        if let Some(xml_arg) = matches.value_of("pub_xml_dir") {
-            c.pub_xml_dir = PathBuf::from(xml_arg)
-        }
-
-        if let Some(rsync_base) = matches.value_of("rsync_base") {
-            c.rsync_base = uri::Rsync::from_str(rsync_base)?;
-        }
-
-        if let Some(rrdp_base_uri) = matches.value_of("rrdp_base_uri") {
-            c.rrdp_base_uri = uri::Http::from_str(rrdp_base_uri)?;
-        }
-
+        let c = Self::read_config(config_file.as_ref())?;
+        c.init_logging()?;
         Ok(c)
     }
 
@@ -212,11 +159,61 @@ impl Config {
         let c: Config = toml::from_slice(v.as_slice())?;
 
         if c.port < 1024 {
-            Err(ConfigError::Other("Port number must be >1024".to_string()))
-        } else {
-            Ok(c)
+            return Err(ConfigError::from_str("Port number must be >1024"))
         }
 
+        if c.log_type == LogType::File && c.log_file == None {
+            return Err(ConfigError::from_str(
+                "Must specify log_file if log_type is 'file'."
+            ))
+        }
+
+        Ok(c)
+    }
+
+    pub fn init_logging(&self) -> Result<(), ConfigError> {
+        match self.log_type {
+
+            LogType::File => {
+                let file = fern::log_file(self.log_file.as_ref().unwrap())?;
+
+                let dispatch = fern::Dispatch::new()
+                    .level(self.log_level)
+                    .chain(file);
+
+                dispatch.apply().map_err(|e| {
+                    ConfigError::Other(
+                        format!("Failed to init file logging: {}", e)
+                    )
+                })?;
+            },
+
+            LogType::Syslog => {
+                syslog::init(
+                    self.syslog_facility,
+                    self.log_level,
+                    Some(SERVER_NAME)
+                ).map_err(|e| {
+                    ConfigError::Other(
+                        format!("Failed to init syslog: {}", e)
+                    )
+                })?;
+            },
+
+            LogType::Stderr => {
+                let dispatch = fern::Dispatch::new()
+                    .level(self.log_level)
+                    .chain(io::stderr());
+
+                dispatch.apply().map_err(|e| {
+                    ConfigError::Other(
+                        format!("Failed to init stderr logging: {}", e)
+                    )
+                })?;
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -234,6 +231,12 @@ pub enum ConfigError {
 
     #[fail(display ="{}", _0)]
     Other(String)
+}
+
+impl ConfigError {
+    pub fn from_str(s: &str) -> ConfigError {
+        ConfigError::Other(s.to_string())
+    }
 }
 
 impl From<io::Error> for ConfigError {
@@ -255,6 +258,48 @@ impl From<uri::Error> for ConfigError {
 }
 
 
+//------------ LogType -------------------------------------------------------
+
+/// The target to log to.
+#[derive(Clone, Debug)]
+pub enum LogType {
+    Syslog,
+    Stderr,
+    File
+}
+
+
+//--- PartialEq and Eq
+
+impl PartialEq for LogType {
+    fn eq(&self, other: &LogType) -> bool {
+        match (self, other) {
+            (&LogType::Syslog, &LogType::Syslog) => true,
+            (&LogType::Stderr, &LogType::Stderr) => true,
+            (&LogType::File, &LogType::File) => true,
+            _ => false
+        }
+    }
+}
+
+impl Eq for LogType { }
+
+impl<'de> Deserialize<'de> for LogType {
+    fn deserialize<D>(d: D) -> Result<LogType, D::Error>
+        where D: Deserializer<'de> {
+        let string = String::deserialize(d)?;
+        match string.as_str() {
+            "stderr" => Ok(LogType::Stderr),
+            "syslog" => Ok(LogType::Syslog),
+            "file" => Ok(LogType::Stderr),
+            _ => Err(
+                    de::Error::custom(
+                        format!("Unsupported log type: {}", string)))
+        }
+    }
+}
+
+
 //------------ Tests ---------------------------------------------------------
 
 #[cfg(test)]
@@ -264,7 +309,7 @@ mod tests {
 
     #[test]
     fn should_parse_default_config_file() {
-        let c = Config::read_config("./defaults/server.toml").unwrap();
+        let c = Config::read_config("./defaults/pubserver.conf").unwrap();
         let expected_socket_addr = ([127, 0, 0, 1], 3000).into();
         assert_eq!(c.socket_addr(), expected_socket_addr);
     }
