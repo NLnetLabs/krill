@@ -2,13 +2,13 @@
 
 use base64;
 use bytes::Bytes;
+use log::LevelFilter;
 use rpki::uri;
-use rpki::remote::idcert::IdCert;
 use rpki::signing::signer::KeyId;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde::de;
-use log::LevelFilter;
 use syslog::Facility;
+use crate::remote::idcert::IdCert;
 
 
 //------------ Bytes ---------------------------------------------------------
@@ -117,3 +117,4 @@ pub fn de_facility<'de, D>(d: D) -> Result<Facility, D::Error>
         |_| { de::Error::custom(
             format!("Unsupported syslog_facility: \"{}\"", string))})
 }
+

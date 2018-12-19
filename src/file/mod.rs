@@ -5,9 +5,11 @@ use std::path::PathBuf;
 use ext_serde;
 use bytes::Bytes;
 use rpki::uri;
-use rpki::publication;
-use rpki::publication::query::{ Publish, PublishElement, Update, Withdraw };
-use rpki::publication::reply::ListElement;
+use crate::remote::publication;
+use crate::remote::publication::query::{
+    Publish, PublishElement, Update, Withdraw
+};
+use crate::remote::publication::reply::ListElement;
 
 
 ///-- Some helper functions

@@ -30,5 +30,9 @@ toml         = "^0.4"
 tokio        = "^0.1"
 xml-rs       = "0.8.0"
 
+# XXX Temporarily
+ring = "^0.13"
+untrusted = "^0.6"
+
 [patch.crates-io]
 rpki = { git="https://github.com/NLnetLabs/rpki-rs.git", branch="generate-signed-publication-protocol-messages", features = ["softkeys"]}

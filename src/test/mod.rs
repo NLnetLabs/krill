@@ -1,13 +1,13 @@
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
-use rpki::oob::exchange::PublisherRequest;
 use rpki::uri;
-use rpki::remote::idcert::IdCert;
-use rpki::signing::builder::IdCertBuilder;
 use rpki::signing::signer::Signer;
 use rpki::signing::softsigner::OpenSslSigner;
 use rpki::signing::PublicKeyAlgorithm;
+use crate::remote::builder::IdCertBuilder;
+use crate::remote::idcert::IdCert;
+use crate::remote::oob::exchange::PublisherRequest;
 
 pub fn test_with_tmp_dir<F>(op: F) where F: FnOnce(PathBuf) -> () {
     use std::fs;
