@@ -1,0 +1,6 @@
+<msg xmlns="http://www.hactrn.net/uris/rpki/publication-spec/" version="4" type="reply">
+  <list hash="eb719b72f0648cf4" uri="rsync://wombat.example/Fee/eb719b72f0648cf4.cer" />
+  <list hash="c7c50a68b7aa50bf" uri="rsync://wombat.example/Fie/c7c50a68b7aa50bf.cer" />
+  <list hash="f222481ded47445d" uri="rsync://wombat.example/Foe/f222481ded47445d.cer" />
+  <list hash="15b94e08713275bc" uri="rsync://wombat.example/Fum/15b94e08713275bc.cer" />
+</msg>

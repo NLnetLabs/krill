@@ -4,16 +4,12 @@ use std::num::ParseIntError;
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::str::FromStr;
-use file;
-use file::RecursorError;
-use repo::file_store::FS_FOLDER;
-use rpki::publication::query::PublishElement;
-use rpki::publication::query::PublishQuery;
-use rpki::remote::xml::AttributesError;
-use rpki::remote::xml::XmlReader;
-use rpki::remote::xml::XmlReaderErr;
-use rpki::remote::xml::XmlWriter;
 use rpki::uri;
+use crate::file;
+use crate::file::RecursorError;
+use crate::remote::publication::query::{PublishElement, PublishQuery};
+use crate::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
+use super::file_store::FS_FOLDER;
 
 const VERSION: &'static str = "1";
 const NS: &'static str = "http://www.ripe.net/rpki/rrdp";
@@ -511,7 +507,7 @@ impl FileInfo {
         let size = bytes.len();
 
         let hash = {
-            use rpki::publication;
+            use crate::remote::publication;
             use bytes::Bytes;
 
             hex::encode(&publication::hash(&Bytes::from(bytes)))

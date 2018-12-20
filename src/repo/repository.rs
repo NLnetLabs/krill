@@ -1,13 +1,11 @@
 use std::path::PathBuf;
-use repo::file_store::{self, FileStore};
-use repo::rrdp::RrdpServer;
-use rpki::publication::pubmsg::Message;
-use rpki::publication::query::PublishQuery;
-use rpki::publication::reply::ListElement;
-use rpki::publication::reply::ListReply;
-use rpki::publication::reply::SuccessReply;
 use rpki::uri;
-use repo::rrdp;
+use crate::remote::publication::pubmsg::Message;
+use crate::remote::publication::query::PublishQuery;
+use crate::remote::publication::reply::{ListElement, ListReply, SuccessReply};
+use super::file_store::{self, FileStore};
+use super::rrdp;
+use super::rrdp::RrdpServer;
 
 
 //------------ Repository ----------------------------------------------------

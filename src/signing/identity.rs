@@ -1,6 +1,6 @@
 use ext_serde;
-use rpki::remote::idcert::IdCert;
 use rpki::signing::signer::KeyId;
+use crate::remote::idcert::IdCert;
 
 
 //------------ MyIdentity ----------------------------------------------------

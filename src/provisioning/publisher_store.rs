@@ -6,12 +6,12 @@ use std::io;
 use std::io::BufReader;
 use std::path::PathBuf;
 use std::sync::Arc;
-use provisioning::publisher::Publisher;
-use rpki::remote::idcert::IdCert;
 use rpki::uri;
-use rpki::oob::exchange::{PublisherRequest, PublisherRequestError};
-use storage::keystore::{self, Info, Key, KeyStore};
-use storage::caching_ks::CachingDiskKeyStore;
+use crate::remote::idcert::IdCert;
+use crate::remote::oob::exchange::{PublisherRequest, PublisherRequestError};
+use crate::provisioning::publisher::Publisher;
+use crate::storage::keystore::{self, Info, Key, KeyStore};
+use crate::storage::caching_ks::CachingDiskKeyStore;
 
 
 //------------ PublisherList -------------------------------------------------
@@ -272,6 +272,7 @@ impl PublisherStore {
                     let mut r = BufReader::new(f);
 
                     let pr = PublisherRequest::decode(r)?;
+                    pr.validate()?;
 
                     let handle = pr.handle().clone();
                     if prs_on_disk.get(&handle).is_some() {

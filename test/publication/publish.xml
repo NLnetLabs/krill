@@ -1,0 +1,7 @@
+<msg xmlns="http://www.hactrn.net/uris/rpki/publication-spec/" version="4" type="query">
+  <publish tag="Alice" uri="rsync://wombat.example/Alice/01a97a70ac477f06.cer">SGVsbG8sIG15IG5hbWUgaXMgQWxpY2U=</publish>
+  <withdraw hash="f46a4198efa3070e" tag="Bob" uri="rsync://wombat.example/Bob/f46a4198efa3070e.cer" />
+  <publish tag="Carol" uri="rsync://wombat.example/Carol/32e0544eeb510ec0.cer">SGVsbG8sIG15IG5hbWUgaXMgQ2Fyb2w=</publish>
+  <withdraw hash="421ee4ac65732d72" tag="Dave" uri="rsync://wombat.example/Dave/421ee4ac65732d72.cer" />
+  <publish tag="Eve" hash="421ee4ac65732d72" uri="rsync://wombat.example/Eve/9dd859b01e5c2ebd.cer">SGVsbG8sIG15IG5hbWUgaXMgRXZl</publish>
+</msg>

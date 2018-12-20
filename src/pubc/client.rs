@@ -2,45 +2,35 @@
 //! in scenarios where a CA just writes its products to disk, and a separate
 //! process is responsible for synchronising them to the repository.
 
+use std::io::Read;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::io::Read;
-use bcder::Captured;
-use bcder::Mode;
+use std::time::Duration;
+use bcder::decode;
+use bcder::{Captured, Mode};
 use bcder::encode::Values;
-use provisioning::info::ParentInfo;
-use provisioning::info::MyRepoInfo;
-use reqwest::Client;
+use reqwest::{Client, Response, StatusCode};
 use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT, CONTENT_TYPE};
-use rpki::oob::exchange::PublisherRequest;
-use rpki::publication::query::ListQuery;
-use rpki::publication::pubmsg::Message;
-use rpki::signing::builder::SignedMessageBuilder;
-use rpki::signing::builder::IdCertBuilder;
 use rpki::signing::PublicKeyAlgorithm;
 use rpki::signing::signer::{CreateKeyError, KeyUseError, Signer};
-use rpki::oob::exchange::RepositoryResponse;
-use signing::identity::MyIdentity;
-use signing::softsigner;
-use signing::softsigner::OpenSslSigner;
-use storage::caching_ks::CachingDiskKeyStore;
-use storage::keystore::{self, Info, Key, KeyStore};
-use reqwest::StatusCode;
-use rpki::remote::sigmsg::SignedMessage;
 use rpki::x509::ValidationError;
-use rpki::publication::pubmsg::MessageError;
-use bcder::decode;
-use rpki::publication::pubmsg::ReplyMessage;
-use rpki::publication::reply::ErrorReply;
-use rpki::publication::reply::ListReply;
-use reqwest::Response;
-use file;
-use file::CurrentFile;
-use rpki::publication::query::PublishElement;
-use file::RecursorError;
-use rpki::publication::query::Withdraw;
-use rpki::publication::query::PublishQuery;
-use std::time::Duration;
+use crate::file;
+use crate::file::{CurrentFile, RecursorError};
+use crate::provisioning::info::ParentInfo;
+use crate::provisioning::info::MyRepoInfo;
+use crate::remote::builder::{IdCertBuilder, SignedMessageBuilder};
+use crate::remote::oob::exchange::{PublisherRequest, RepositoryResponse};
+use crate::remote::publication::pubmsg::{Message, MessageError, ReplyMessage};
+use crate::remote::publication::reply::{ErrorReply, ListReply};
+use crate::remote::publication::query::{
+    ListQuery, PublishElement, PublishQuery, Withdraw
+};
+use crate::remote::sigmsg::SignedMessage;
+use crate::signing::identity::MyIdentity;
+use crate::signing::softsigner;
+use crate::signing::softsigner::OpenSslSigner;
+use crate::storage::caching_ks::CachingDiskKeyStore;
+use crate::storage::keystore::{self, Info, Key, KeyStore};
 
 
 /// # Some constants for naming resources in the keystore for clients.

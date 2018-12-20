@@ -15,8 +15,8 @@ use std::str;
 use std::{thread, time};
 use actix::System;
 use bytes::Bytes;
-use rpki::oob::exchange::PublisherRequest;
-use rpki::oob::exchange::RepositoryResponse;
+use rpubd::remote::oob::exchange::PublisherRequest;
+use rpubd::remote::oob::exchange::RepositoryResponse;
 use rpubd::file;
 use rpubd::file::CurrentFile;
 use rpubd::provisioning::publisher::Publisher;
@@ -78,6 +78,7 @@ fn client_publish_at_server() {
         let repo_res = RepositoryResponse::decode(
             res.text().unwrap().as_bytes()
         ).unwrap();
+        repo_res.validate().unwrap();
         client.process_repo_response(repo_res).unwrap();
 
         // List files at server

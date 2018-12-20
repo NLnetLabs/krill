@@ -1,7 +1,7 @@
 //! Responsible for storing and retrieving Publisher information.
 use ext_serde;
-use rpki::remote::idcert::IdCert;
 use rpki::uri;
+use crate::remote::idcert::IdCert;
 
 
 //------------ Publisher -----------------------------------------------------

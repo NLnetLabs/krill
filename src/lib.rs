@@ -2,7 +2,7 @@ extern crate actix;
 extern crate actix_web;
 extern crate base64;
 extern crate bytes;
-extern crate bcder;
+#[macro_use] extern crate bcder;
 extern crate chrono;
 extern crate clap;
 extern crate core;
@@ -20,14 +20,20 @@ extern crate serde_json;
 extern crate syslog;
 extern crate tokio;
 extern crate toml;
-extern crate xml;
+extern crate xml as xmlrs;
+
+// XXX Temporarily
+extern crate ring;
+extern crate untrusted;
 
 pub mod file;
 pub mod provisioning;
 pub mod pubc;
 pub mod pubd;
 pub mod repo;
+pub mod remote;
 pub mod signing;
 pub mod storage;
 pub mod ext_serde;
 pub mod test;
+pub mod xml;

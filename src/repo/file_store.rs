@@ -1,8 +1,8 @@
 use std::{io, fs};
 use std::path::PathBuf;
-use file::{self, CurrentFile, RecursorError};
-use rpki::publication::query::{PublishElement, PublishQuery};
 use rpki::uri;
+use crate::file::{self, CurrentFile, RecursorError};
+use crate::remote::publication::query::{PublishElement, PublishQuery};
 
 pub const FS_FOLDER: &'static str = "rsync";
 

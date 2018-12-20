@@ -16,8 +16,8 @@ use rpubd::file;
 use rpubd::pubc::config::{ Config, RunMode };
 use rpubd::pubc::client::PubClient;
 use rpubd::pubc::client;
-use rpki::oob::exchange::RepositoryResponse;
-use rpki::oob::exchange::RepositoryResponseError;
+use rpubd::remote::oob::exchange::RepositoryResponse;
+use rpubd::remote::oob::exchange::RepositoryResponseError;
 
 fn main() {
 
@@ -74,6 +74,7 @@ fn process_response(
 ) -> Result<(), Error> {
     let bytes = file::read(path)?;
     let res = RepositoryResponse::decode(bytes.as_ref())?;
+    res.validate()?;
     client.process_repo_response(res)?;
     Ok(())
 }

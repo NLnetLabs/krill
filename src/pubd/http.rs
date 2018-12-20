@@ -1,35 +1,21 @@
 //! Actix-web based HTTP server for the publication server.
 
-use std::sync::{
-    Arc,
-    RwLock,
-    RwLockReadGuard,
-    RwLockWriteGuard
-};
-use actix_web::{
-    pred,
-    server,
-    App,
-    FromRequest,
-    HttpResponse,
-    ResponseError
-};
+use std::fs::File;
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use actix_web::{pred, server};
+use actix_web::{App, FromRequest, HttpResponse, ResponseError};
 use actix_web::dev::MessageBody;
 use actix_web::middleware;
-use actix_web::http::{
-    Method,
-    StatusCode
-};
+use actix_web::http::{Method, StatusCode };
 use bcder::decode;
 use bytes::Bytes;
 use futures::Future;
-use provisioning::publisher_store;
-use pubd::config::Config;
-use pubd::pubserver;
-use pubd::pubserver::PubServer;
-use rpki::remote::sigmsg::SignedMessage;
 use serde::Serialize;
-use std::fs::File;
+use crate::provisioning::publisher_store;
+use crate::pubd::config::Config;
+use crate::pubd::pubserver;
+use crate::pubd::pubserver::PubServer;
+use crate::remote::sigmsg::SignedMessage;
 
 const NOT_FOUND: &'static [u8] = include_bytes!("../../static/html/404.html");
 
