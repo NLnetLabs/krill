@@ -48,6 +48,7 @@ impl Repository {
         update: &PublishQuery,
         base_uri: &uri::Rsync
     ) -> Result<Message, Error> {
+        debug!("Processing update with {} elements", update.elements().len());
         self.fs.publish(update, base_uri)?;
         self.rrdp.publish(update)?;
         Ok(SuccessReply::build_message())
@@ -59,6 +60,7 @@ impl Repository {
         &self,
         base_uri: &uri::Rsync
     ) -> Result<Message, Error> {
+        debug!("Processing list query");
         let files = self.fs.list(base_uri)?;
         let mut builder = ListReply::build();
         for file in files {
@@ -69,6 +71,7 @@ impl Repository {
                 )
             )
         }
+        debug!("Found {} files", builder.len());
         Ok(builder.build_message())
     }
 }

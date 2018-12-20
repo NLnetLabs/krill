@@ -123,6 +123,7 @@ impl RrdpServer {
     ) -> Result<DeltaRef, Error>
     {
         let path = self.delta_path(session_id, serial);
+        debug!("Writing delta: {}", path.to_string_lossy());
         let mut file = file::create_file_with_path(&path)?;
 
         XmlWriter::encode_to_file(& mut file, |w| {
@@ -206,6 +207,7 @@ impl RrdpServer {
         serial: usize
     ) -> Result<SnapshotRef, Error> {
         let path = self.snapshot_path(session_id, serial);
+        debug!("Writing snapshot: {}", path.to_string_lossy());
         let mut file = file::create_file_with_path(&path)?;
         let current_files = file::crawl_derive_rsync_uri(&self.fs_base)?;
 
@@ -379,6 +381,7 @@ impl Notification {
 
     /// Saves a notification file as RFC8182 XML.
     fn save(&self, path: &PathBuf) -> Result<(), Error> {
+        debug!("Writing notification file: {}", path.to_string_lossy());
         let mut file = file::create_file_with_path(&path)?;
 
         XmlWriter::encode_to_file(& mut file, |w| {

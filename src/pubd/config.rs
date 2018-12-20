@@ -89,15 +89,14 @@ impl Config {
 
 /// # Create
 impl Config {
-
     /// Set up a config for use in (integration) testing.
 //    #[cfg(test)]
     pub fn test(
         data_dir: &PathBuf,
         pub_xml_dir: &PathBuf,
     ) -> Self {
-
-        let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));;
+        let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
+        ;
         let port = 3000;
         let data_dir = data_dir.clone();
         let pub_xml_dir = pub_xml_dir.clone();
@@ -173,19 +172,48 @@ impl Config {
 
     pub fn init_logging(&self) -> Result<(), ConfigError> {
         match self.log_type {
-
             LogType::File => {
                 let file = fern::log_file(self.log_file.as_ref().unwrap())?;
 
-                let dispatch = fern::Dispatch::new()
-                    .level(self.log_level)
-                    .chain(file);
+                let mut dispatch = fern::Dispatch::new();
 
-                dispatch.apply().map_err(|e| {
-                    ConfigError::Other(
-                        format!("Failed to init file logging: {}", e)
-                    )
-                })?;
+                dispatch = {
+                    if self.log_level == LevelFilter::Debug {
+                        dispatch.format(|out, message, record| {
+                            out.finish(
+                                format_args!(
+                                    "{} [{}] [{}] {}",
+                                    chrono::Local::now()
+                                        .format("%Y-%m-%d %H:%M:%S"),
+                                    record.target(),
+                                    record.level(),
+                                    message
+                                )
+                            )
+                        })
+                    } else {
+                        dispatch.format(|out, message, record| {
+                            out.finish(
+                                format_args!(
+                                    "{} [{}] {}",
+                                    chrono::Local::now()
+                                        .format("%Y-%m-%d %H:%M:%S"),
+                                    record.level(),
+                                    message
+                                )
+                            )
+                        })
+                    }
+                };
+
+                dispatch.level(self.log_level)
+                    .chain(file)
+                    .apply()
+                    .map_err(|e| {
+                        ConfigError::Other(
+                            format!("Failed to init file logging: {}", e)
+                        )
+                    })?;
             },
 
             LogType::Syslog => {
@@ -291,7 +319,7 @@ impl<'de> Deserialize<'de> for LogType {
         match string.as_str() {
             "stderr" => Ok(LogType::Stderr),
             "syslog" => Ok(LogType::Syslog),
-            "file" => Ok(LogType::Stderr),
+            "file" => Ok(LogType::File),
             _ => Err(
                     de::Error::custom(
                         format!("Unsupported log type: {}", string)))

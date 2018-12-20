@@ -96,6 +96,7 @@ impl FileStore {
             }
         }
 
+        debug!("Update is consistent with current state");
         Ok(())
     }
 
@@ -108,6 +109,7 @@ impl FileStore {
         for q in update.elements() {
             match q {
                 PublishElement::Publish(p) => {
+                    debug!("Saving file for uri: {}", p.uri().to_string());
                     file::save_with_rsync_uri(
                         p.object(),
                         &self.base_dir,
@@ -115,6 +117,7 @@ impl FileStore {
                     )?;
                 },
                 PublishElement::Update(u) => {
+                    debug!("Updating file for uri: {}", u.uri().to_string());
                     file::save_with_rsync_uri(
                         u.object(),
                         &self.base_dir,
@@ -122,6 +125,7 @@ impl FileStore {
                     )?;
                 },
                 PublishElement::Withdraw(w) => {
+                    debug!("Withdrawing file for uri: {}", w.uri().to_string());
                     file::delete_with_rsync_uri(
                         &self.base_dir,
                         w.uri()

@@ -89,8 +89,7 @@ impl Signer for OpenSslSigner {
 
         let key_id = KeyId::from_spki(&kp.subject_public_key_info()?);
         let key = Key::from_key_id(&key_id);
-        let info = Info::now("openssl signer".to_string(),
-                             "created key".to_string());
+        let info = Info::now("openssl signer", "created key");
 
         self.store.store(key, kp, info)?;
 
@@ -114,8 +113,7 @@ impl Signer for OpenSslSigner {
     fn destroy_key(&mut self, id: &KeyId) -> Result<(), KeyUseError> {
 
         let key = Key::from_key_id(id);
-        let info = Info::now("openssl signer".to_string(),
-                             "archived key".to_string());
+        let info = Info::now("openssl signer", "archived key");
 
         self.store.archive(&key, info).map_err(|e| {KeyUseError::from(e)})
     }

@@ -15,10 +15,6 @@ pub struct Config {
 
 /// # Accessors
 impl Config {
-    pub fn name(&self) -> &String {
-        &self.name
-    }
-
     pub fn state_dir(&self) -> &PathBuf {
         &self.state_dir
     }
@@ -35,12 +31,7 @@ impl Config {
         let m = App::new("NLnet Labs RRDP Client")
             .version("0.1b")
 
-            .arg(Arg::with_name("name")
-                .short("n")
-                .long("name")
-                .value_name("NAME")
-                .help("Specify the name for this publication client.")
-                .required(true))
+
 
             .arg(Arg::with_name("state")
                 .short("s")
@@ -53,6 +44,12 @@ impl Config {
             .subcommand(SubCommand::with_name("init")
                 .about("(Re-)Initialise the identity certificate and key \
                         pair.")
+                .arg(Arg::with_name("name")
+                    .short("n")
+                    .long("name")
+                    .value_name("NAME")
+                    .help("Specify the name for this publication client.")
+                    .required(true))
             )
 
             .subcommand(SubCommand::with_name("request")
@@ -90,75 +87,44 @@ impl Config {
 
             .get_matches();
 
-        let mode = match m.subcommand_name() {
-            Some("init") => {
-                RunMode::Init
-            },
-            Some("request") => {
-                if let Some(m) = m.subcommand_matches("request") {
-                    if let Some(xml) = m.value_of("xml") {
-                        let xml = PathBuf::from(xml);
-                        RunMode::PublisherRequest(xml)
-                    } else {
-                        Self::die(m.usage());
-                        unreachable!()
-                    }
-                } else {
-                    Self::die(m.usage());
-                    unreachable!()
-                }
-            },
-            Some("response") => {
-                if let Some(m) = m.subcommand_matches("response") {
-                    if let Some(xml) = m.value_of("xml") {
-                        let xml = PathBuf::from(xml);
-                        RunMode::RepoResponse(xml)
-                    } else {
-                        Self::die(m.usage());
-                        unreachable!()
-                    }
-                } else {
-                    Self::die(m.usage());
-                    unreachable!()
-                }
-            },
-            Some("sync") => {
-                if let Some(m) = m.subcommand_matches("sync") {
-                    if let Some(dir) = m.value_of("dir") {
-                        let dir = PathBuf::from(dir);
-                        RunMode::Sync(dir)
-                    } else {
-                        Self::die(m.usage());
-                        unreachable!()
-                    }
-                } else {
-                    Self::die(m.usage());
-                    unreachable!()
-                }
-            },
-            _ => {
-                Self::die(
-                    "Expected sub-command (init, response, request, sync)"
-                );
-                unreachable!()
+        let mut mode = RunMode::Unset;
+
+        if let Some(m) = m.subcommand_matches("init") {
+            if let Some(name) = m.value_of("name") {
+                mode = RunMode::Init(name.to_string())
             }
-        };
+        }
+
+        if let Some(m) = m.subcommand_matches("request") {
+            if let Some(xml) = m.value_of("xml") {
+                let xml = PathBuf::from(xml);
+                mode = RunMode::PublisherRequest(xml)
+            }
+        }
+        if let Some(m) = m.subcommand_matches("response") {
+            if let Some(xml) = m.value_of("xml") {
+                let xml = PathBuf::from(xml);
+                mode = RunMode::RepoResponse(xml)
+            }
+        }
+        if let Some(m) = m.subcommand_matches("sync") {
+            if let Some(dir) = m.value_of("dir") {
+                let dir = PathBuf::from(dir);
+                mode = RunMode::Sync(dir)
+            }
+        }
 
         let state = m.value_of("state").unwrap(); // safe (required)
         let state_dir = PathBuf::from(state);
         let name = m.value_of("name").unwrap().to_string(); // safe (required)
         Ok(Config {name, state_dir, mode})
     }
-
-    fn die(message: &str) {
-        eprintln!("{}", message);
-        ::std::process::exit(1);
-    }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Eq, PartialEq)]
 pub enum RunMode {
-    Init,
+    Unset,
+    Init(String),
     PublisherRequest(PathBuf),
     RepoResponse(PathBuf),
     Sync(PathBuf)

@@ -44,9 +44,7 @@ use std::time::Duration;
 
 
 /// # Some constants for naming resources in the keystore for clients.
-fn actor() -> String {
-    "publication client".to_string()
-}
+const ACTOR: &'static str = "publication client";
 
 fn id_key() -> Key {
     Key::from_str("my_id")
@@ -60,17 +58,9 @@ fn repo_key() -> Key {
     Key::from_str("my_repo")
 }
 
-fn id_msg() -> String {
-    "initialised identity".to_string()
-}
-
-fn parent_msg() -> String {
-    "updated parent info".to_string()
-}
-
-fn repo_msg() -> String {
-    "update repo info".to_string()
-}
+const ID_MSG: &'static str = "initialised identity";
+const PARENT_MSG: &'static str ="updated parent info";
+const REPO_MSG: &'static str = "update repo info";
 
 //------------ PubClient -----------------------------------------------------
 
@@ -108,13 +98,13 @@ impl PubClient {
 
     /// Initialises a new publication client, using a new key pair, and
     /// returns a publisher request that can be sent to the server.
-    pub fn init(&mut self, name: String) -> Result<(), Error> {
+    pub fn init(&mut self, name: &str) -> Result<(), Error> {
         let key_id = self.signer.create_key(&PublicKeyAlgorithm::RsaEncryption)?;
         let id_cert = IdCertBuilder::new_ta_id_cert(&key_id, &mut self.signer)?;
         let my_id = MyIdentity::new(name, id_cert, key_id);
 
         let key = id_key();
-        let inf = Info::now(actor(), id_msg());
+        let inf = Info::now(ACTOR, ID_MSG);
         self.store.store(key, my_id, inf)?;
 
         Ok(())
@@ -166,7 +156,7 @@ impl PubClient {
                 response.id_cert().clone(),
                 response.service_uri().clone()
             );
-            let parent_info = Info::now(actor(), parent_msg());
+            let parent_info = Info::now(ACTOR, PARENT_MSG);
             let parent_key = parent_key();
 
             self.store.store(parent_key, parent_val, parent_info)?;
@@ -178,7 +168,7 @@ impl PubClient {
                 response.sia_base().clone(),
                 response.rrdp_notification_uri().clone()
             );
-            let repo_info = Info::now(actor(), repo_msg());
+            let repo_info = Info::now(ACTOR, REPO_MSG);
             let repo_key = repo_key();
 
             self.store.store(repo_key, repo_val, repo_info)?;
@@ -502,7 +492,7 @@ mod tests {
         test::test_with_tmp_dir(|d| {
             // Set up a new client and initialise
             let mut client_1 = PubClient::new(&d).unwrap();
-            client_1.init("client".to_string()).unwrap();
+            client_1.init("client").unwrap();
             let pr_1 = client_1.publisher_request().unwrap();
 
             // Prove that a client starting from an initialised dir
@@ -514,7 +504,7 @@ mod tests {
             assert_eq!(client_1, client_2);
 
             // But it can be re-initialised, with a new id cert
-            client_2.init("client".to_string()).unwrap();
+            client_2.init("client").unwrap();
             let pr_2 = client_2.publisher_request().unwrap();
             assert_eq!(pr_1.handle(), pr_2.handle());
             assert_ne!(pr_1.id_cert().to_bytes(), pr_2.id_cert().to_bytes());
@@ -529,7 +519,7 @@ mod tests {
 
             let alice_dir = test::create_sub_dir(&d);
             let mut alice = PubClient::new(&alice_dir).unwrap();
-            alice.init("alice".to_string()).unwrap();
+            alice.init("alice").unwrap();
             let pr_alice = alice.publisher_request().unwrap();
 
             test::save_file(&xml_dir, "alice.xml", &pr_alice.encode_vec());

@@ -26,6 +26,7 @@ pub fn sub_dir(base: &PathBuf, name: &str) -> Result<PathBuf, io::Error> {
 pub fn create_file_with_path(path: &PathBuf) -> Result<File, io::Error> {
     if ! path.exists() {
         if let Some(parent) = path.parent() {
+            trace!("Creating path: {}", parent.to_string_lossy());
             fs::create_dir_all(parent)?;
         }
     }
@@ -37,6 +38,8 @@ pub fn create_file_with_path(path: &PathBuf) -> Result<File, io::Error> {
 pub fn save(content: &Bytes, full_path: &PathBuf) -> Result<(), io::Error> {
     let mut f = create_file_with_path(full_path)?;
     f.write(content)?;
+
+    trace!("Saved file: {}", full_path.to_string_lossy());
     Ok(())
 }
 
@@ -94,6 +97,7 @@ pub fn delete_in_dir(
 }
 
 fn delete(full_path: &PathBuf) -> Result<(), io::Error> {
+    trace!("Removing file: {}", full_path.to_string_lossy());
     fs::remove_file(full_path)?;
     Ok(())
 }

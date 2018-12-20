@@ -54,7 +54,7 @@ impl PublisherStore {
         &mut self,
         pr: PublisherRequest,
         base_service_uri: &uri::Http,
-        actor: String
+        actor: &str
     ) -> Result<(), Error> {
         let (tag, name, id_cert) = pr.into_parts();
 
@@ -81,7 +81,7 @@ impl PublisherStore {
         let key = Key::from_str(name.as_ref());
         let info = Info::now(
             actor,
-            format!("Added publisher: {}", &name)
+            &format!("Added publisher: {}", &name)
         );
         let publisher = Publisher::new(
             tag,
@@ -91,6 +91,7 @@ impl PublisherStore {
             id_cert
         );
 
+        info!("Adding publisher: {}", publisher.name());
         self.store.store(key, publisher, info)?;
 
         Ok(())
@@ -102,7 +103,7 @@ impl PublisherStore {
     pub fn remove_publisher(
         &mut self,
         name: &str,
-        actor: String
+        actor: &str
     ) -> Result<(), Error> {
         match self.publisher(name)? {
             None => Err(Error::UnknownPublisher(name.to_string())),
@@ -111,7 +112,7 @@ impl PublisherStore {
 
                 let info = Info::now(
                     actor,
-                    format!("Removed publisher: {}", name)
+                    &format!("Removed publisher: {}", name)
                 );
 
                 self.store.archive(&key, info)?;
@@ -126,7 +127,7 @@ impl PublisherStore {
         &mut self,
         name: &str,
         id_cert: IdCert,
-        actor: String
+        actor: &str
     ) -> Result<(), Error> {
         let publisher_opt = self.publisher(name)?;
 
@@ -137,9 +138,10 @@ impl PublisherStore {
                 let new_publisher = publisher.with_new_id_cert(id_cert);
                 let info = Info::now(
                     actor,
-                    "Updated the IdCert".to_string()
+                    "Updated the IdCert"
                 );
 
+                info!("Updated Id for publisher: {}", publisher.name());
                 self.store.store(key, new_publisher, info)?;
 
                 Ok(())
@@ -151,7 +153,14 @@ impl PublisherStore {
     pub fn has_publisher(&self, name: &str) -> bool {
         let key = Key::from_str(name);
         match self.store.version(&key) {
-            Ok(Some(_)) => true,
+            Ok(Some(version)) => {
+                if version > 0 {
+                    true
+                } else {
+                    debug!("Publisher {} was archived.", name);
+                    false
+                }
+            },
             _ => false
         }
     }
@@ -206,16 +215,18 @@ impl PublisherStore {
         &mut self,
         dir: &PathBuf,
         base_service_uri: &uri::Http,
-        actor: String
+        actor: &str
     ) -> Result<(), Error> {
+
+        info!("Synchronizing publishers");
         // Find all the publisher requests on disk
         let prs_on_disk = self.prs_on_disk(dir)?;
-        self.process_removed_publishers(&prs_on_disk, &actor)?;
+        self.process_removed_publishers(&prs_on_disk, actor)?;
 
         for (handle, pr) in prs_on_disk {
             match self.publisher(&handle)? {
                 None => {
-                    self.add_publisher(pr, base_service_uri, actor.clone())?;
+                    self.add_publisher(pr, base_service_uri, actor)?;
                 }
                 Some(p) => {
                     if p.id_cert().to_bytes() != pr.id_cert().to_bytes() {
@@ -236,12 +247,13 @@ impl PublisherStore {
     fn process_removed_publishers(
         &mut self,
         prs_on_disk: &HashMap<String, PublisherRequest>,
-        actor: &String
+        actor: &str
     ) -> Result<(), Error> {
         let current = self.publishers()?;
         for c in current {
             if prs_on_disk.get(c.name()).is_none() {
-                self.remove_publisher(c.name(), actor.clone())?;
+                info!("Removing publisher: {}", c.name());
+                self.remove_publisher(c.name(), actor)?;
             }
         }
         Ok(())
@@ -362,7 +374,7 @@ mod tests {
             let mut ps = test_publisher_store(&d);
             let pr = test::new_publisher_request("test/below");
 
-            match ps.add_publisher(pr, &base_service_uri(), "test".to_string()) {
+            match ps.add_publisher(pr, &base_service_uri(), "test") {
                 Err(Error::ForwardSlashInHandle(_)) => { }, // Ok
                 _ => panic!("Should have seen error.")
             }
@@ -376,7 +388,7 @@ mod tests {
             let name = "alice";
             let pr = test::new_publisher_request(name);
             let id_cert = pr.id_cert().clone();
-            let actor = "test".to_string();
+            let actor = "test";
 
             ps.add_publisher(pr, &base_service_uri(), actor).unwrap();
 
@@ -404,9 +416,9 @@ mod tests {
             let mut ps = test_publisher_store(&d);
             let name = "alice";
             let pr = test::new_publisher_request(name);
-            let actor = "test".to_string();
+            let actor = "test";
 
-            ps.add_publisher(pr, &base_service_uri(), actor.clone()).unwrap();
+            ps.add_publisher(pr, &base_service_uri(), actor).unwrap();
 
             // Make a new publisher request for alice, using a new cert
             let pr = test::new_publisher_request(name);
@@ -440,10 +452,10 @@ mod tests {
             let mut ps = test_publisher_store(&d);
 
             let name = "alice";
-            let actor = "test".to_string();
+            let actor = "test";
             let pr = test::new_publisher_request(name);
 
-            ps.add_publisher(pr, &base_service_uri(), actor.clone()).unwrap();
+            ps.add_publisher(pr, &base_service_uri(), actor).unwrap();
             assert_eq!(1, ps.publishers().unwrap(). len());
 
             ps.remove_publisher(name, actor).unwrap();
@@ -459,7 +471,7 @@ mod tests {
             let pl_dir = test::create_sub_dir(&d);
             let mut ps = test_publisher_store(&pl_dir);
 
-            let actor = "test".to_string();
+            let actor = "test";
 
             //
             // Start with two PRs for alice and bob
@@ -510,7 +522,7 @@ mod tests {
             ps.sync_from_dir(
                 &PathBuf::from(updated_sync_dir),
                 &base_service_uri(),
-                actor.clone()
+                actor
             ).unwrap();
 
             let publishers = ps.publishers().unwrap();

@@ -38,10 +38,11 @@ fn main() {
     };
 
     let result = match config.mode() {
-        RunMode::Init                   => init(client, config.name()),
-        RunMode::PublisherRequest(path) => publisher_request(client, &path),
-        RunMode::RepoResponse(path)     => process_response(client, &path),
-        RunMode::Sync(path)             => sync(client, &path)
+        RunMode::Init(name)             => init(client, name),
+        RunMode::PublisherRequest(path) => publisher_request(client, path),
+        RunMode::RepoResponse(path)     => process_response(client, path),
+        RunMode::Sync(path)             => sync(client, path),
+        RunMode::Unset                  => Err(Error::MissingSubcommand)
     };
     match result {
         Ok(()) => {}//,
@@ -52,8 +53,8 @@ fn main() {
     }
 }
 
-fn init(mut client: PubClient, name: &String) -> Result<(), Error> {
-    client.init(name.clone())?;
+fn init(mut client: PubClient, name: &str) -> Result<(), Error> {
+    client.init(name)?;
     Ok(())
 }
 
@@ -92,6 +93,9 @@ pub enum Error {
 
     #[fail(display ="{}", _0)]
     RepositoryResponseError(RepositoryResponseError),
+
+    #[fail(display ="No sub-command given, see --help")]
+    MissingSubcommand,
 
 }
 

@@ -27,17 +27,13 @@ use repo::rrdp;
 
 
 /// # Naming things in the keystore.
-fn actor() -> String {
-    "publication server".to_string()
-}
+const ACTOR: &'static str = "publication server";
 
 fn my_id_key() -> Key {
     Key::from_str("my_id")
 }
 
-fn my_id_msg() -> String {
-    "initialised identity".to_string()
-}
+const MY_ID_MSG: &'static str = "initialised identity";
 
 
 //------------ Responder -----------------------------------------------------
@@ -106,10 +102,10 @@ impl Responder {
     pub fn init_identity(&mut self) -> Result<(), Error> {
         let key_id = self.signer.create_key(&PublicKeyAlgorithm::RsaEncryption)?;
         let id_cert = IdCertBuilder::new_ta_id_cert(&key_id, &mut self.signer)?;
-        let my_id = MyIdentity::new(actor(), id_cert, key_id);
+        let my_id = MyIdentity::new(ACTOR, id_cert, key_id);
 
         let key = my_id_key();
-        let inf = Info::now(actor(), my_id_msg());
+        let inf = Info::now(ACTOR, MY_ID_MSG);
         self.store.store(key, my_id, inf)?;
         Ok(())
     }

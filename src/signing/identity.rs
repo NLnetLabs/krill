@@ -23,9 +23,9 @@ pub struct MyIdentity {
 }
 
 impl MyIdentity {
-    pub fn new(name: String, id_cert: IdCert, key_id: KeyId) -> Self {
+    pub fn new(name: &str, id_cert: IdCert, key_id: KeyId) -> Self {
         MyIdentity {
-            name,
+            name: name.to_string(),
             id_cert,
             key_id
         }

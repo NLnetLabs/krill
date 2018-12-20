@@ -15,6 +15,7 @@ use actix_web::{
     ResponseError
 };
 use actix_web::dev::MessageBody;
+use actix_web::middleware;
 use actix_web::http::{
     Method,
     StatusCode
@@ -39,6 +40,7 @@ pub struct PubServerApp(App<Arc<RwLock<PubServer>>>);
 impl PubServerApp {
     pub fn new(server: Arc<RwLock<PubServer>>) -> Self {
         let app = App::with_state(server)
+            .middleware(middleware::Logger::default())
             .resource("/publishers", |r| {
                 r.f(Self::publishers)
             })
@@ -77,7 +79,7 @@ impl PubServerApp {
             config.rrdp_base_uri()
         ) {
             Err(e) => {
-                eprintln!("{}", e);
+                error!("{}", e);
                 ::std::process::exit(1);
             },
             Ok(server) => server
@@ -155,13 +157,18 @@ impl PubServerApp {
         req: HttpRequest,
         pr: PublishRequest
     ) -> HttpResponse {
+        debug!("Processing publish request");
         match SignedMessage::decode(pr.body, true) {
-            Err(e)  => Self::server_error(Error::DecodeError(e)),
-            Ok(msg) => Self::handle_signed_request(
-                            req.state().write().unwrap(),
-                            msg,
-                            pr.handle.as_str()
-                       )
+            Err(e)  => {
+                Self::server_error(Error::DecodeError(e))
+            },
+            Ok(msg) => {
+                Self::handle_signed_request(
+                    req.state().write().unwrap(),
+                    msg,
+                    pr.handle.as_str()
+                )
+            }
         }
     }
 
@@ -217,6 +224,7 @@ impl PubServerApp {
     }
 
     fn server_error(error: Error) -> HttpResponse {
+        error!("{}", error);
         error.error_response()
     }
 

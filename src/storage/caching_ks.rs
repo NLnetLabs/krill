@@ -362,7 +362,7 @@ mod tests {
             let mut store = CachingDiskKeyStore::new(PathBuf::from(d)).unwrap();
             let key = Key::from_str("key_name");
             let value = TestStruct::from_str("foo");
-            let info = Info::new(Utc::now(), "me".to_string(), "A!".to_string());
+            let info = Info::new(Utc::now(), "me", "A!");
 
             store.store(key.clone(), value.clone(), info).unwrap();
 
@@ -379,7 +379,7 @@ mod tests {
             let mut store = CachingDiskKeyStore::new(PathBuf::from(d)).unwrap();
             let key = Key::from_str("key_name");
             let value = TestStruct::from_str("foo");
-            let info = Info::new(Utc::now(), "me".to_string(), "A!".to_string());
+            let info = Info::new(Utc::now(), "me", "A!");
             store.store(key.clone(), value.clone(), info).unwrap();
 
             let stored_keys: Vec<Key> = store.keys().collect();
@@ -396,7 +396,7 @@ mod tests {
                 .unwrap();
             let key = Key::from_str("key_name");
             let value = TestStruct::from_str("foo");
-            let info = Info::new(Utc::now(), "me".to_string(), "A!".to_string());
+            let info = Info::new(Utc::now(), "me", "A!");
             store.store(key.clone(), value.clone(), info).unwrap();
 
             // Initiate a new keystore pointing to the same dir, so it can
@@ -422,13 +422,13 @@ mod tests {
                 .unwrap();
             let key = Key::from_str("key_name");
             let value = TestStruct::from_str("foo");
-            let actor = "me".to_string();
-            let msg = "created".to_string();
-            let info = Info::new(Utc::now(), actor.clone(), msg);
+            let actor = "me";
+            let msg = "created";
+            let info = Info::new(Utc::now(), actor, msg);
             store.store(key.clone(), value.clone(), info).unwrap();
 
-            let msg = "removed".to_string();
-            let info = Info::new(Utc::now(), actor.clone(), msg);
+            let msg = "removed";
+            let info = Info::new(Utc::now(), actor, msg);
             store.archive(&key, info).unwrap();
 
             // The key should still exist
@@ -443,7 +443,7 @@ mod tests {
             // Storing a new value should increment version and give stuff
             // back again.
             let value = TestStruct::from_str("bar");
-            let msg = "re-created!".to_string();
+            let msg = "re-created!";
             let info = Info::new(Utc::now(), actor, msg);
 
             store.store(key.clone(), value.clone(), info).unwrap();

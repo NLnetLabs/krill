@@ -20,9 +20,7 @@ use repo::rrdp::RRDP_FOLDER;
 
 
 /// # Naming things in the keystore.
-fn actor() -> String {
-    "publication server".to_string()
-}
+const ACTOR: &'static str = "publication server";
 
 
 //------------ PubServer -----------------------------------------------------
@@ -91,7 +89,7 @@ impl PubServer {
         publisher_store.sync_from_dir(
             pub_xml_dir,
             base_service_uri,
-            actor()
+            ACTOR
         )?;
         Ok(publisher_store)
     }
@@ -133,7 +131,7 @@ impl PubServer {
     ///
     /// Note this returns an error for cases where we do not want to do any
     /// work in signing, like the publisher does not exist, or the
-    /// signature is invalid. The daemon will need to map these to HTTTP
+    /// signature is invalid. The daemon will need to map these to HTTP
     /// codes.
     ///
     /// Also note that if garbage is sent to the daemon, this garbage will
@@ -142,14 +140,17 @@ impl PubServer {
     pub fn handle_request(
         &mut self,
         sigmsg: SignedMessage,
-        publisher_handle: &str
+        handle: &str
     ) -> Result<Captured, Error> {
-        let publisher = self.publisher_store.get_publisher(publisher_handle)?;
+        debug!("Handling request for: {}", handle);
+        let publisher = self.publisher_store.get_publisher(handle)?;
         let base_uri = publisher.base_uri();
         sigmsg.validate(publisher.id_cert())?;
+        debug!("Handler is known and request is validly signed");
 
         let res_msg = match Message::from_signed_message(&sigmsg) {
             Ok(msg) => {
+                info!("Handling {} for {}.", msg.message_type(), handle);
                 match msg.as_query() {
                     Ok(query) => self.handle_query(&query, base_uri),
                     Err(e) => Self::build_error(e)
@@ -341,12 +342,12 @@ mod tests {
 
             let alice_dir = test::create_sub_dir(&d);
             let mut alice = PubClient::new(&alice_dir).unwrap();
-            alice.init("alice".to_string()).unwrap();
+            alice.init("alice").unwrap();
             let pr_alice = alice.publisher_request().unwrap();
 
             let bob_dir = test::create_sub_dir(&d);
             let mut bob = PubClient::new(&bob_dir).unwrap();
-            bob.init("bob".to_string()).unwrap();
+            bob.init("bob").unwrap();
             let pr_bob = bob.publisher_request().unwrap();
 
             test::save_file(&xml_dir, "alice.xml", &pr_alice.encode_vec());
@@ -382,12 +383,12 @@ mod tests {
             let p_old_alice = p_alice;
 
             // But we can update Alice's id cert, and add carol
-            alice.init("alice".to_string()).unwrap();
+            alice.init("alice").unwrap();
             let pr_alice = alice.publisher_request().unwrap();
 
             let carol_dir = test::create_sub_dir(&d);
             let mut carol = PubClient::new(&carol_dir).unwrap();
-            carol.init("carol".to_string()).unwrap();
+            carol.init("carol").unwrap();
             let pr_carol = carol.publisher_request().unwrap();
 
             test::save_file(&xml_dir, "alice.xml", &pr_alice.encode_vec());
@@ -444,12 +445,12 @@ mod tests {
 
             let alice_dir = test::create_sub_dir(&d);
             let mut alice = PubClient::new(&alice_dir).unwrap();
-            alice.init("alice".to_string()).unwrap();
+            alice.init("alice").unwrap();
             let pr_alice = alice.publisher_request().unwrap();
 
             let bob_dir = test::create_sub_dir(&d);
             let mut bob = PubClient::new(&bob_dir).unwrap();
-            bob.init("bob".to_string()).unwrap();
+            bob.init("bob").unwrap();
             let pr_bob = bob.publisher_request().unwrap();
 
             test::save_file(&xml_dir, "alice.xml", &pr_alice.encode_vec());

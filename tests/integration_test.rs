@@ -45,7 +45,7 @@ fn client_publish_at_server() {
         // Set up a client
         let client_dir = test::create_sub_dir(&d);
         let mut client = PubClient::new(&client_dir).unwrap();
-        client.init("alice".to_string()).unwrap();
+        client.init("alice").unwrap();
         let pr = client.publisher_request().unwrap();
 
         // Set up a test PubServer Config with a client in it.

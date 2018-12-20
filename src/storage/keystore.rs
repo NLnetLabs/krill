@@ -114,17 +114,21 @@ impl Info {
     /// Creates a new Info value for a given date_time, actor and message.
     pub fn new(
         date_time: DateTime<Utc>,
-        actor: String,
-        message: String
+        actor: &str,
+        message: &str
     ) -> Self {
-        Info { date_time, actor, message }
+        Info {
+            date_time,
+            actor: actor.to_string(),
+            message: message.to_string()
+        }
     }
 
     /// Creates a new Info value for an actor and message, using now for the
     /// date_time.
     pub fn now(
-        actor: String,
-        message: String
+        actor: &str,
+        message: &str
     ) -> Self {
         Self::new(Utc::now(), actor, message)
     }
