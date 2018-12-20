@@ -231,7 +231,22 @@ impl Message {
         }
     }
 
+    pub fn message_type(&self) -> String {
+        match self {
+            Message::QueryMessage(QueryMessage::ListQuery(_)) =>
+                "list query",
+            Message::QueryMessage(QueryMessage::PublishQuery(_)) =>
+                "publish query",
+            Message::ReplyMessage(ReplyMessage::SuccessReply(_)) =>
+                "success reply",
+            Message::ReplyMessage(ReplyMessage::ListReply(_)) =>
+                "list reply",
+            Message::ReplyMessage(ReplyMessage::ErrorReply(_)) =>
+                "error reply",
+        }.to_string()
+    }
 }
+
 
 //------------ PublicationMessageError ---------------------------------------
 
