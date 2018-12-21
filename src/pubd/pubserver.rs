@@ -27,6 +27,11 @@ const ACTOR: &'static str = "publication server";
 
 //------------ PubServer -----------------------------------------------------
 
+/// This is the publication server that is doing the actual RFC8181
+/// protocol work, after some basic checks by done by the HTTP server.
+///
+/// It is responsible for validating and verifying RFC8181 query's and
+/// constructing appropriate reply's.
 #[derive(Clone, Debug)]
 pub struct PubServer {
     // The component that manages server id, and wraps responses to clients

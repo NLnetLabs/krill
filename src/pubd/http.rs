@@ -23,6 +23,8 @@ const NOT_FOUND: &'static [u8] = include_bytes!("../../static/html/404.html");
 
 pub struct PubServerApp(App<Arc<RwLock<PubServer>>>);
 
+/// # Set up methods
+///
 impl PubServerApp {
     pub fn new(server: Arc<RwLock<PubServer>>) -> Self {
         let app = App::with_state(server)
@@ -94,6 +96,12 @@ impl PubServerApp {
             .shutdown_timeout(0)
             .run();
     }
+}
+
+
+/// # Handle requests
+///
+impl PubServerApp {
 
     /// 404 handler
     fn p404(_req: &HttpRequest) -> HttpResponse {
@@ -101,6 +109,7 @@ impl PubServerApp {
             .body(NOT_FOUND)
     }
 
+    /// Returns a json structure with all publishers in it.
     fn publishers(req: &HttpRequest) -> HttpResponse {
         let server: RwLockReadGuard<PubServer> = req.state().read().unwrap();
         match server.publishers() {
@@ -109,15 +118,8 @@ impl PubServerApp {
         }
     }
 
-    fn render_json<O: Serialize>(object: O) -> HttpResponse {
-        match serde_json::to_string(&object){
-            Ok(enc) => {
-                HttpResponse::Ok().body(enc)
-            },
-            Err(e) => Self::server_error(Error::JsonError(e))
-        }
-    }
-
+    /// Shows the server's RFC8183 section 5.2.4 Repository Response XML
+    /// file for a known publisher.
     fn repository_response(req: &HttpRequest) -> HttpResponse {
         let server: RwLockReadGuard<PubServer> = req.state().read().unwrap();
         match req.match_info().get("handle") {
@@ -139,6 +141,13 @@ impl PubServerApp {
         }
     }
 
+    /// Processes an RFC8181 query and returns the appropriate response.
+    ///
+    /// Note this method checks whether the request can be decoded only, and
+    /// if successful delegates to [`handle_signed_request`] for further
+    /// processing.
+    ///
+    /// [`handle_signed_request`]: #method.handle_signed_request
     fn process_publish_request(
         req: HttpRequest,
         pr: PublishRequest
@@ -158,6 +167,9 @@ impl PubServerApp {
         }
     }
 
+    /// Handles a decoded RFC8181 query.
+    ///
+    /// This delegates to `PubServer` to do the actual hard work.
     fn handle_signed_request(
         mut server: RwLockWriteGuard<PubServer>,
         msg: SignedMessage,
@@ -204,19 +216,43 @@ impl PubServerApp {
         }
     }
 
+    /// Helper function to render json output.
+    fn render_json<O: Serialize>(object: O) -> HttpResponse {
+        match serde_json::to_string(&object){
+            Ok(enc) => {
+                HttpResponse::Ok().body(enc)
+            },
+            Err(e) => Self::server_error(Error::JsonError(e))
+        }
+    }
+
+    /// Simple server status response page.
     fn service_ok(_r: &HttpRequest) -> HttpResponse {
         // XXX TODO: do a real check
         HttpResponse::Ok().body("I am completely operational, and all my circuits are functioning perfectly.")
     }
 
+    /// Helper function to render server side errors. Also responsible for
+    /// logging the errors.
     fn server_error(error: Error) -> HttpResponse {
         error!("{}", error);
         error.error_response()
     }
-
 }
 
 
+//------------ PublishRequest --------------------------------------------------
+
+/// This type was introduced so that both the handle for the publisher, and
+/// the body of an RFC8181 request to the publication server, can be derived
+/// from the request by actix.
+///
+/// Furthermore it allows to use a higher limit to the size of these requests,
+/// in this case 256MB (comparison the entire RIPE NCC repository in December
+/// 2018 amounted to roughly 100MB).
+///
+/// We may want to lower this and/or make it configurable, or make it
+/// depend on which publisher is sending data.
 struct PublishRequest {
     handle: String,
     body: Bytes
@@ -263,9 +299,6 @@ impl Default for PublishRequestConfig {
         PublishRequestConfig
     }
 }
-
-
-
 
 //------------ IntoHttpHandler -----------------------------------------------
 

@@ -10,8 +10,8 @@ use super::rrdp::RrdpServer;
 
 //------------ Repository ----------------------------------------------------
 
-/// This type orchestrates publishing in both an RSYNC and RRDP (todo)
-/// friendly format.
+/// This type orchestrates publishing in both an RSYNC and RRDP
+/// (RFC8182) format.
 #[derive(Clone, Debug)]
 pub struct Repository {
     // file_store
