@@ -284,8 +284,8 @@ static PNG: &[u8] = b"image/png";
 
 fn with_statics<S: 'static>(app: App<S>) -> App<S> {
     statics!(app,
-        "css/custom.css" => CSS,
-        "images/404.png" => PNG,
+        "css/custom.css" => CSS => "39e0abcc41c3653600f6d8eadb57b17246f1aca7",
+        "images/404.png" => PNG => "d48f938ae7a05a033d38f55cfa12a08fb3f3f8db",
     )
 }
 
