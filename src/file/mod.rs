@@ -18,11 +18,15 @@ use crate::remote::publication::reply::ListElement;
 pub fn sub_dir(base: &PathBuf, name: &str) -> Result<PathBuf, io::Error> {
     let mut full_path = base.clone();
     full_path.push(name);
-    if ! full_path.is_dir() {
-        // intended to blow up if the full path refers to an existing file.
-        fs::create_dir(&full_path)?;
-    }
+    create_dir(&full_path)?;
     Ok(full_path)
+}
+
+pub fn create_dir(dir: &PathBuf) -> Result<(), io::Error> {
+    if ! dir.is_dir() {
+        fs::create_dir(dir)?;
+    }
+    Ok(())
 }
 
 pub fn create_file_with_path(path: &PathBuf) -> Result<File, io::Error> {
@@ -33,6 +37,13 @@ pub fn create_file_with_path(path: &PathBuf) -> Result<File, io::Error> {
         }
     }
     File::create(path)
+}
+
+/// Derive the path for this file.
+pub fn file_path(base_path: &PathBuf, file_name: &str) -> PathBuf {
+    let mut path = base_path.clone();
+    path.push(file_name);
+    path
 }
 
 

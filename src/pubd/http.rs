@@ -10,9 +10,11 @@ use actix_web::http::{Method, StatusCode };
 use bcder::decode;
 use bytes::Bytes;
 use futures::Future;
+use openssl::ssl::{SslMethod, SslAcceptor, SslAcceptorBuilder, SslFiletype};
 use serde::Serialize;
 use crate::provisioning::publisher_store;
 use crate::pubd::config::Config;
+use crate::pubd::https;
 use crate::pubd::pubserver;
 use crate::pubd::pubserver::PubServer;
 use crate::remote::sigmsg::SignedMessage;
@@ -76,6 +78,8 @@ impl PubServerApp {
     }
 
     /// Used to start the server with an existing executor (e.g. in tests)
+    ///
+    /// Note https is not supported in tests.
     pub fn start(config: &Config) {
         let ps = PubServerApp::create_server(config);
 
@@ -90,12 +94,50 @@ impl PubServerApp {
     pub fn run(config: &Config) {
         let ps = PubServerApp::create_server(config);
 
-        server::new(move || PubServerApp::new(ps.clone()))
-            .bind(config.socket_addr())
-            .expect(&format!("Cannot bind to: {}", config.socket_addr()))
-            .shutdown_timeout(0)
-            .run();
+        let server = server::new(move || PubServerApp::new(ps.clone()));
+
+        if config.use_https() {
+            match Self::https_builder(config) {
+                Ok(https_builder) => {
+                    server.bind_ssl(config.socket_addr(), https_builder)
+                        .expect(&format!("Cannot bind to: {}", config.socket_addr()))
+                        .shutdown_timeout(0)
+                        .run();
+                },
+                Err(e) => {
+                    eprintln!("{}", e);
+                    ::std::process::exit(1);
+                }
+            }
+
+        } else {
+            server.bind(config.socket_addr())
+                .expect(&format!("Cannot bind to: {}", config.socket_addr()))
+                .shutdown_timeout(0)
+                .run();
+        }
     }
+
+    fn https_builder(config: &Config) -> Result<SslAcceptorBuilder, Error> {
+        https::create_key_cert_if_needed(config.data_dir())
+            .map_err(|e| Error::Other(format!("{}", e)))?;
+
+        let mut https_builder = SslAcceptor::mozilla_intermediate(
+            SslMethod::tls()
+        ).map_err(|e| Error::Other(format!("{}", e)))?;
+
+        https_builder.set_private_key_file(
+            config.https_key_file(),
+            SslFiletype::PEM
+        ).map_err(|e| Error::Other(format!("{}", e)))?;
+
+        https_builder.set_certificate_chain_file(
+            config.https_cert_file()
+        ).map_err(|e| Error::Other(format!("{}", e)))?;
+
+        Ok(https_builder)
+    }
+
 }
 
 
@@ -241,7 +283,7 @@ impl PubServerApp {
 }
 
 
-//------------ PublishRequest --------------------------------------------------
+//------------ PublishRequest ------------------------------------------------
 
 /// This type was introduced so that both the handle for the publisher, and
 /// the body of an RFC8181 request to the publication server, can be derived
@@ -342,6 +384,9 @@ pub enum Error {
 
     #[fail(display = "Wrong path")]
     WrongPath,
+
+    #[fail(display = "{}", _0)]
+    Other(String),
 }
 
 

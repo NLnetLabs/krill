@@ -5,7 +5,7 @@ authors = ["Tim Bruijnzeels <tim@nlnetlabs.nl>", "Martin Hoffmann <martin@nlnetl
 
 [dependencies]
 actix        = "^0.7"
-actix-web    = "^0.7"
+actix-web    = { version = "^0.7", features = ["alpn"] }
 base64       = "^0.9"
 bcder        = "^0.1"
 bytes        = "^0.4"
@@ -17,7 +17,7 @@ futures      = "0.1"
 hex          = "^0.3"
 lazy_static  = "^1.1"
 log          = "^0.4"
-openssl      = "^0.10"
+openssl      = { version = "^0.10", features = ["v110"] }
 pretty       = "0.5.2"
 rand         = "^0.5"
 reqwest      = "^0.9"

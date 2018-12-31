@@ -11,6 +11,7 @@ use syslog::Facility;
 use serde::de;
 use serde::{Deserialize, Deserializer};
 use toml;
+use crate::pubd::https;
 
 
 const SERVER_NAME: &'static str = "Publication Server";
@@ -19,15 +20,10 @@ const SERVER_NAME: &'static str = "Publication Server";
 pub struct ConfigDefaults;
 
 impl ConfigDefaults {
-    fn log_level() -> LevelFilter {
-        LevelFilter::Warn
-    }
-    fn log_type() -> LogType {
-        LogType::Syslog
-    }
-    fn syslog_facility() -> Facility {
-        Facility::LOG_DAEMON
-    }
+    fn use_https() -> bool { true }
+    fn log_level() -> LevelFilter { LevelFilter::Warn }
+    fn log_type() -> LogType { LogType::Syslog }
+    fn syslog_facility() -> Facility { Facility::LOG_DAEMON }
 }
 
 
@@ -40,6 +36,10 @@ impl ConfigDefaults {
 pub struct Config {
     ip: IpAddr,
     port: u16,
+
+    #[serde(default="ConfigDefaults::use_https")]
+    use_https: bool,
+
     data_dir: PathBuf,
     pub_xml_dir: PathBuf,
 
@@ -76,6 +76,22 @@ impl Config {
         SocketAddr::new(self.ip, self.port)
     }
 
+    pub fn use_https(&self) -> bool { self.use_https }
+
+    pub fn https_cert_file(&self) -> PathBuf {
+        let mut path = self.data_dir.clone();
+        path.push(https::HTTPS_SUB_DIR);
+        path.push(https::CERT_FILE);
+        path
+    }
+
+    pub fn https_key_file(&self) -> PathBuf {
+        let mut path = self.data_dir.clone();
+        path.push(https::HTTPS_SUB_DIR);
+        path.push(https::KEY_FILE);
+        path
+    }
+
     pub fn data_dir(&self) -> &PathBuf { &self.data_dir }
 
     pub fn pub_xml_dir(&self) -> &PathBuf { &self.pub_xml_dir }
@@ -98,6 +114,7 @@ impl Config {
         let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
         ;
         let port = 3000;
+        let use_https = false;
         let data_dir = data_dir.clone();
         let pub_xml_dir = pub_xml_dir.clone();
         let rsync_base = uri::Rsync::from_str("rsync://127.0.0.1/rpki/")
@@ -114,6 +131,7 @@ impl Config {
         Config {
             ip,
             port,
+            use_https,
             data_dir,
             pub_xml_dir,
             rsync_base,
