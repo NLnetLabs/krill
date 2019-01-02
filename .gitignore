@@ -1,8 +1,9 @@
+.cargo
 .idea/
 Cargo.lock
-target/
-.cargo
 data
 publishers
-work
+pubserver.log
+target/
 tmp
+work
