@@ -69,7 +69,7 @@ fn client_publish_at_server() {
 
         // Should get repository response for alice
         let mut res = reqwest::get
-            ("http://localhost:3000/api/v1/publishers/alice/response-xml")
+            ("http://localhost:3000/api/v1/publishers/alice/response.xml")
             .unwrap();
 
         let repo_res = RepositoryResponse::decode(

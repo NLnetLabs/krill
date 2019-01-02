@@ -44,7 +44,7 @@ impl PubServerApp {
             .resource("/api/v1/publishers/{handle}/id.cer", |r| {
                 r.f(Self::id_cert)
             })
-            .resource("/api/v1/publishers/{handle}/response-xml", |r| {
+            .resource("/api/v1/publishers/{handle}/response.xml", |r| {
                 r.f(Self::repository_response)
             })
             .resource("/rfc8181/{handle}", |r| {
