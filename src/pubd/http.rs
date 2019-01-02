@@ -18,8 +18,12 @@ use crate::pubd::https;
 use crate::pubd::pubserver;
 use crate::pubd::pubserver::PubServer;
 use crate::remote::sigmsg::SignedMessage;
+use api::PublisherList;
+use api::PublisherDetails;
 
 const NOT_FOUND: &'static [u8] = include_bytes!("../../static/html/404.html");
+
+const PATH_PUBLISHERS: &'static str = "/api/v1/publishers";
 
 //------------ PubServerApp --------------------------------------------------
 
@@ -31,8 +35,14 @@ impl PubServerApp {
     pub fn new(server: Arc<RwLock<PubServer>>) -> Self {
         let app = App::with_state(server)
             .middleware(middleware::Logger::default())
-            .resource("/api/v1/publishers", |r| {
+            .resource(PATH_PUBLISHERS, |r| {
                 r.f(Self::publishers)
+            })
+            .resource("/api/v1/publishers/{handle}", |r| {
+                r.f(Self::publisher_details)
+            })
+            .resource("/api/v1/publishers/{handle}/id.cer", |r| {
+                r.f(Self::id_cert)
             })
             .resource("/api/v1/publishers/{handle}/response-xml", |r| {
                 r.f(Self::repository_response)
@@ -156,7 +166,51 @@ impl PubServerApp {
         let server: RwLockReadGuard<PubServer> = req.state().read().unwrap();
         match server.publishers() {
             Err(e) => Self::server_error(Error::ServerError(e)),
-            Ok(publishers) => Self::render_json(publishers)
+            Ok(publishers) => {
+                Self::render_json(
+                    PublisherList::from(&publishers, PATH_PUBLISHERS)
+                )
+            }
+        }
+    }
+
+    /// Returns a json structure with publisher details
+    fn publisher_details(req: &HttpRequest) -> HttpResponse {
+        let server: RwLockReadGuard<PubServer> = req.state().read().unwrap();
+        match req.match_info().get("handle") {
+            None => Self::p404(req),
+            Some(handle) => {
+                match server.publisher(handle) {
+                    Ok(None) => Self::p404(req),
+                    Ok(Some(publisher)) => {
+                        Self::render_json(
+                            PublisherDetails::from(&publisher,
+                                                   PATH_PUBLISHERS)
+                        )
+                    },
+                    Err(e) => Self::server_error(Error::ServerError(e))
+                }
+            }
+        }
+    }
+
+    /// Returns the id.cer for a publisher
+    fn id_cert(req: &HttpRequest) -> HttpResponse {
+        let server: RwLockReadGuard<PubServer> = req.state().read().unwrap();
+        match req.match_info().get("handle") {
+            None => Self::p404(req),
+            Some(handle) => {
+                match server.publisher(handle) {
+                    Ok(None) => Self::p404(req),
+                    Ok(Some(publisher)) => {
+                        let bytes = publisher.id_cert().to_bytes();
+                        HttpResponse::Ok()
+                            .content_type("application/pkix-cert")
+                            .body(bytes)
+                    },
+                    Err(e) => Self::server_error(Error::ServerError(e))
+                }
+            }
         }
     }
 
@@ -169,7 +223,9 @@ impl PubServerApp {
             Some(handle) => {
                 match server.repository_response(handle) {
                     Ok(res) => {
-                        HttpResponse::Ok().body(res.encode_vec())
+                        HttpResponse::Ok()
+                            .content_type("application/xml")
+                            .body(res.encode_vec())
                     },
                     Err(pubserver::Error::PublisherStoreError
                         (publisher_store::Error::UnknownPublisher(_))) => {
@@ -262,7 +318,9 @@ impl PubServerApp {
     fn render_json<O: Serialize>(object: O) -> HttpResponse {
         match serde_json::to_string(&object){
             Ok(enc) => {
-                HttpResponse::Ok().body(enc)
+                HttpResponse::Ok()
+                    .content_type("application/json")
+                    .body(enc)
             },
             Err(e) => Self::server_error(Error::JsonError(e))
         }

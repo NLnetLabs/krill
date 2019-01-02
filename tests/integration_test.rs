@@ -19,7 +19,6 @@ use rpubd::remote::oob::exchange::PublisherRequest;
 use rpubd::remote::oob::exchange::RepositoryResponse;
 use rpubd::file;
 use rpubd::file::CurrentFile;
-use rpubd::provisioning::publisher::Publisher;
 use rpubd::pubc::client::PubClient;
 use rpubd::pubd::config::Config;
 use rpubd::pubd::http::PubServerApp;
@@ -68,13 +67,11 @@ fn client_publish_at_server() {
         // XXX TODO: Find a better way to know the server is ready!
         thread::sleep(time::Duration::from_millis(500));
 
-        // Should see one configured publisher
-        let mut res = reqwest::get("http://localhost:3000/publishers").unwrap();
-        let pl: Vec<Publisher> = serde_json::from_str(&res.text().unwrap()).unwrap();
-        assert_eq!(1, pl.len());
-
         // Should get repository response for alice
-        let mut res = reqwest::get("http://localhost:3000/publishers/alice").unwrap();
+        let mut res = reqwest::get
+            ("http://localhost:3000/api/v1/publishers/alice/response-xml")
+            .unwrap();
+
         let repo_res = RepositoryResponse::decode(
             res.text().unwrap().as_bytes()
         ).unwrap();

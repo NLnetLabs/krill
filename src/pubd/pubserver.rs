@@ -108,6 +108,15 @@ impl PubServer {
             .map_err(|e| { Error::PublisherStoreError(e) })
     }
 
+    /// Returns an option for a publisher.
+    pub fn publisher(
+        &self,
+        publisher_name: &str
+    ) -> Result<Option<Arc<Publisher>>, Error> {
+        self.publisher_store.publisher(publisher_name)
+            .map_err(|e| Error::PublisherStoreError(e))
+    }
+
     /// Returns a repository response for the given publisher.
     ///
     /// Returns an error if the publisher is unknown.

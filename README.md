@@ -59,7 +59,9 @@ Currently we only provide an API for view the current state:
 | Resource                       | Method   | Action                          |
 | ------------------------------ | -------- | ------------------------------- |
 | /publishers                    | Get      | List all current publishers     |
-| /publishers/{number}/response  | Get      | Get [repository response xml](https://tools.ietf.org/html/rfc8183#section-5.2.4)|
+| /publishers/{handle}           | Get      | Get publisher details           |
+| /publishers/{handle}/id.cer    | Get      | Get publisher id certificate    |
+| /publishers/{handle}/response-xml  | Get      | Get [repository response xml](https://tools.ietf.org/html/rfc8183#section-5.2.4)|
  
 
 For the moment publishers are configured by adding the publisher's ['publisher 
@@ -79,7 +81,9 @@ logic wrapping around the API to ensure that things are then synchronised.
 
 ## UI
 
-To add static resources, add to the 'static' folder and include static mapping at the end of src/pubd/httpd.rs. You should be able to get to them if you restart the server.
+To add static resources, add to the 'static' folder and include static 
+mapping at the end of src/pubd/httpd.rs. You should be able to get to them if
+you restart the server.
 
 
 

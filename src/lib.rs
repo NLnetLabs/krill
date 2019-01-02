@@ -26,6 +26,7 @@ extern crate xml as xmlrs;
 extern crate ring;
 extern crate untrusted;
 
+pub mod api;
 pub mod file;
 pub mod provisioning;
 pub mod pubc;
