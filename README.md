@@ -59,10 +59,9 @@ Currently we only provide an API for view the current state:
 | Resource                       | Method   | Action                          |
 | ------------------------------ | -------- | ------------------------------- |
 | /publishers                    | Get      | List all current publishers     |
-| /publishers/{handle}           | Get      | Get publisher details           |
+| /publishers/{handle}           | Get      | Show publisher details           |
 | /publishers/{handle}/id.cer    | Get      | Get publisher id certificate    |
-| /publishers/{handle}/response.xml  | Get      | Get [repository response 
-xml](https://tools.ietf.org/html/rfc8183#section-5.2.4)|
+| /publishers/{handle}/response.xml  | Get      | Get [repository response xml](https://tools.ietf.org/html/rfc8183#section-5.2.4)|
  
 
 For the moment publishers are configured by adding the publisher's ['publisher 
