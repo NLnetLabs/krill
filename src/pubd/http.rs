@@ -31,10 +31,10 @@ impl PubServerApp {
     pub fn new(server: Arc<RwLock<PubServer>>) -> Self {
         let app = App::with_state(server)
             .middleware(middleware::Logger::default())
-            .resource("/publishers", |r| {
+            .resource("/api/v1/publishers", |r| {
                 r.f(Self::publishers)
             })
-            .resource("/publishers/{handle}", |r| {
+            .resource("/api/v1/publishers/{handle}/response-xml", |r| {
                 r.f(Self::repository_response)
             })
             .resource("/rfc8181/{handle}", |r| {
