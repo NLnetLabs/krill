@@ -20,7 +20,7 @@ const SERVER_NAME: &'static str = "Publication Server";
 pub struct ConfigDefaults;
 
 impl ConfigDefaults {
-    fn use_https() -> bool { true }
+    fn use_https() -> bool { false }
     fn log_level() -> LevelFilter { LevelFilter::Warn }
     fn log_type() -> LogType { LogType::Syslog }
     fn syslog_facility() -> Facility { Facility::LOG_DAEMON }
