@@ -68,13 +68,16 @@ fn client_publish_at_server() {
         thread::sleep(time::Duration::from_millis(500));
 
         // Should get repository response for alice
-        let mut res = reqwest::get
-            ("http://localhost:3000/api/v1/publishers/alice/response.xml")
+        let mut res = reqwest::Client::new()
+            .get("http://localhost:3000/api/v1/publishers/alice/response.xml")
+            .header("Authorization", "Bearer secret")
+            .send()
             .unwrap();
 
         let repo_res = RepositoryResponse::decode(
             res.text().unwrap().as_bytes()
         ).unwrap();
+
         repo_res.validate().unwrap();
         client.process_repo_response(repo_res).unwrap();
 

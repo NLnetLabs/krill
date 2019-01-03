@@ -13,13 +13,13 @@ use futures::Future;
 use openssl::ssl::{SslMethod, SslAcceptor, SslAcceptorBuilder, SslFiletype};
 use serde::Serialize;
 use crate::provisioning::publisher_store;
+use crate::pubd::api::auth::{Authorizer, CheckAuthorisation};
+use crate::pubd::api::data::{PublisherDetails, PublisherList};
 use crate::pubd::config::Config;
 use crate::pubd::ssl;
 use crate::pubd::pubserver;
 use crate::pubd::pubserver::PubServer;
 use crate::remote::sigmsg::SignedMessage;
-use api::PublisherList;
-use api::PublisherDetails;
 
 const NOT_FOUND: &'static [u8] = include_bytes!("../../static/html/404.html");
 
@@ -35,6 +35,7 @@ impl PubServerApp {
     pub fn new(server: Arc<RwLock<PubServer>>) -> Self {
         let app = App::with_state(server)
             .middleware(middleware::Logger::default())
+            .middleware(CheckAuthorisation)
             .resource(PATH_PUBLISHERS, |r| {
                 r.f(Self::publishers)
             })
@@ -71,12 +72,14 @@ impl PubServerApp {
     }
 
     pub fn create_server(config: &Config) -> Arc<RwLock<PubServer>> {
+        let authorizer = Authorizer::new(&config.krill_auth_token);
         let pub_server = match PubServer::new(
-            config.data_dir(),
-            config.pub_xml_dir(),
-            config.rsync_base(),
-            config.service_uri(),
-            config.rrdp_base_uri()
+            &config.data_dir,
+            &config.pub_xml_dir,
+            &config.rsync_base,
+            &config.service_uri,
+            &config.rrdp_base_uri,
+            authorizer
         ) {
             Err(e) => {
                 error!("{}", e);
@@ -131,7 +134,7 @@ impl PubServerApp {
     fn https_builder(config: &Config) -> Result<SslAcceptorBuilder, Error> {
 
         if config.test_ssl() {
-            ssl::create_key_cert_if_needed(config.data_dir())
+            ssl::create_key_cert_if_needed(&config.data_dir)
                 .map_err(|e| Error::Other(format!("{}", e)))?;
         }
 

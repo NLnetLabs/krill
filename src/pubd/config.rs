@@ -24,6 +24,18 @@ impl ConfigDefaults {
     fn log_level() -> LevelFilter { LevelFilter::Warn }
     fn log_type() -> LogType { LogType::Syslog }
     fn syslog_facility() -> Facility { Facility::LOG_DAEMON }
+    fn krill_auth_token() -> String {
+        use std::env;
+
+        match env::var("KRILL_AUTH_TOKEN") {
+            Ok(token) => token,
+            Err(_) => {
+                eprintln!("You MUST provide a value for the master API key, either by setting \"krill_auth_token\" in the config file, or by setting the KRILL_AUTH_TOKEN environment variable.");
+                ::std::process::exit(1);
+            }
+
+        }
+    }
 }
 
 
@@ -40,17 +52,17 @@ pub struct Config {
     #[serde(default="ConfigDefaults::use_ssl")]
     use_ssl: SslChoice,
 
-    data_dir: PathBuf,
-    pub_xml_dir: PathBuf,
+    pub data_dir: PathBuf,
+    pub pub_xml_dir: PathBuf,
 
     #[serde(deserialize_with = "ext_serde::de_rsync_uri")]
-    rsync_base: uri::Rsync,
+    pub rsync_base: uri::Rsync,
 
     #[serde(deserialize_with = "ext_serde::de_http_uri")]
-    rrdp_base_uri: uri::Http,
+    pub rrdp_base_uri: uri::Http,
 
     #[serde(deserialize_with = "ext_serde::de_http_uri")]
-    service_uri: uri::Http,
+    pub service_uri: uri::Http,
 
     #[serde(
         default = "ConfigDefaults::log_level",
@@ -67,7 +79,10 @@ pub struct Config {
     )]
     syslog_facility: Facility,
 
-    log_file: Option<PathBuf>
+    log_file: Option<PathBuf>,
+
+    #[serde(default = "ConfigDefaults::krill_auth_token")]
+    pub krill_auth_token: String
 }
 
 /// # Accessors
@@ -97,16 +112,6 @@ impl Config {
         path.push(ssl::KEY_FILE);
         path
     }
-
-    pub fn data_dir(&self) -> &PathBuf { &self.data_dir }
-
-    pub fn pub_xml_dir(&self) -> &PathBuf { &self.pub_xml_dir }
-
-    pub fn rsync_base(&self) -> &uri::Rsync { &self.rsync_base }
-
-    pub fn service_uri(&self) -> &uri::Http { &self.service_uri }
-
-    pub fn rrdp_base_uri(&self) -> &uri::Http { &self.rrdp_base_uri }
 }
 
 /// # Create
@@ -133,6 +138,7 @@ impl Config {
         let log_type = ConfigDefaults::log_type();
         let log_file = None;
         let syslog_facility = ConfigDefaults::syslog_facility();
+        let krill_auth_token = "secret".to_string();
 
         Config {
             ip,
@@ -146,7 +152,8 @@ impl Config {
             log_level,
             log_type,
             log_file,
-            syslog_facility
+            syslog_facility,
+            krill_auth_token
         }
     }
 
@@ -385,6 +392,11 @@ mod tests {
 
     #[test]
     fn should_parse_default_config_file() {
+        // Config for auth token is required! If there is nothing in the conf
+        // file, then an environment variable must be set.
+        use std::env;
+        env::set_var("KRILL_AUTH_TOKEN", "secret");
+
         let c = Config::read_config("./defaults/pubserver.conf").unwrap();
         let expected_socket_addr = ([127, 0, 0, 1], 3000).into();
         assert_eq!(c.socket_addr(), expected_socket_addr);

@@ -462,18 +462,21 @@ mod tests {
     use super::*;
     use test;
     use pubd::pubserver::PubServer;
+    use pubd::api::auth::Authorizer;
 
     fn test_server(work_dir: &PathBuf, xml_dir: &PathBuf) -> PubServer {
         // Start up a server
         let uri = test::rsync_uri("rsync://host/module/");
         let service = test::http_uri("http://host/publish");
         let rrdp_base = test::http_uri("http://host/rrdp/");
+        let authorizer = Authorizer::new("secret");
         PubServer::new(
             work_dir,
             xml_dir,
             &uri,
             &service,
-            &rrdp_base
+            &rrdp_base,
+            authorizer
         ).unwrap()
     }
 

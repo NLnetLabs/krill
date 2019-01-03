@@ -8,6 +8,7 @@ use rpki::uri;
 use rpki::x509::ValidationError;
 use crate::provisioning::publisher::Publisher;
 use crate::provisioning::publisher_store::{self, PublisherStore};
+use crate::pubd::api::auth::Authorizer;
 use crate::pubd::responder::{self, Responder};
 use crate::repo::file_store;
 use crate::repo::repository::{self, Repository};
@@ -43,7 +44,11 @@ pub struct PubServer {
     // The repository responsible for publishing rsync and rrdp
     repository: Repository,
 
-    work_dir: PathBuf
+    // The base working directory, used for various storage
+    work_dir: PathBuf,
+
+    // Component responsible for authorisation checks
+    authorizer: Authorizer
 }
 
 /// # Set up and initialisation
@@ -55,7 +60,8 @@ impl PubServer {
         pub_xml_dir: &PathBuf,
         base_uri: &uri::Rsync,
         service_uri: &uri::Http,
-        rrdp_base_uri: &uri::Http
+        rrdp_base_uri: &uri::Http,
+        authorizer: Authorizer
     ) -> Result<Self, Error> {
         let publisher_store = Self::init_publishers(
             &work_dir,
@@ -75,9 +81,16 @@ impl PubServer {
                 responder,
                 repository,
                 publisher_store,
-                work_dir: work_dir.clone()
+                work_dir: work_dir.clone(),
+                authorizer
             }
         )
+    }
+}
+
+impl PubServer {
+    pub fn authorizer(&self) -> &Authorizer {
+        &self.authorizer
     }
 }
 
@@ -339,16 +352,16 @@ mod tests {
         let uri = test::rsync_uri("rsync://host/module/");
         let service = test::http_uri("http://host/publish/");
         let rrdp_base = test::http_uri("http://host/rrdp/");
+        let authorizer = Authorizer::new("secret");
         PubServer::new(
             work_dir,
             xml_dir,
             &uri,
             &service,
-            &rrdp_base
+            &rrdp_base,
+            authorizer
         ).unwrap()
     }
-
-
 
     #[test]
     fn should_sync_and_resync_publishers_from_disk() {
@@ -441,6 +454,7 @@ mod tests {
             let uri = test::rsync_uri("rsync://host/module/");
             let service = test::http_uri("http://host/publish");
             let rrdp_base = test::http_uri("http://host/rrdp");
+            let authorizer = Authorizer::new("secret");
 
             assert!(
                 PubServer::new(
@@ -448,7 +462,8 @@ mod tests {
                     &xml_dir,
                     &uri,
                     &service,
-                    &rrdp_base
+                    &rrdp_base,
+                    authorizer
                 ).is_err()
             );
         });
