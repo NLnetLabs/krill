@@ -14,7 +14,7 @@ use openssl::ssl::{SslMethod, SslAcceptor, SslAcceptorBuilder, SslFiletype};
 use serde::Serialize;
 use crate::provisioning::publisher_store;
 use crate::pubd::config::Config;
-use crate::pubd::https;
+use crate::pubd::ssl;
 use crate::pubd::pubserver;
 use crate::pubd::pubserver::PubServer;
 use crate::remote::sigmsg::SignedMessage;
@@ -106,7 +106,7 @@ impl PubServerApp {
 
         let server = server::new(move || PubServerApp::new(ps.clone()));
 
-        if config.use_https() {
+        if config.use_ssl() {
             match Self::https_builder(config) {
                 Ok(https_builder) => {
                     server.bind_ssl(config.socket_addr(), https_builder)
@@ -129,8 +129,11 @@ impl PubServerApp {
     }
 
     fn https_builder(config: &Config) -> Result<SslAcceptorBuilder, Error> {
-        https::create_key_cert_if_needed(config.data_dir())
-            .map_err(|e| Error::Other(format!("{}", e)))?;
+
+        if config.test_ssl() {
+            ssl::create_key_cert_if_needed(config.data_dir())
+                .map_err(|e| Error::Other(format!("{}", e)))?;
+        }
 
         let mut https_builder = SslAcceptor::mozilla_intermediate(
             SslMethod::tls()
@@ -147,7 +150,6 @@ impl PubServerApp {
 
         Ok(https_builder)
     }
-
 }
 
 

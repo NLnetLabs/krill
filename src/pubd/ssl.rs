@@ -21,7 +21,7 @@ use openssl::hash::MessageDigest;
 use file;
 
 const KEY_SIZE: u32 = 2048;
-pub const HTTPS_SUB_DIR: &'static str = "https";
+pub const HTTPS_SUB_DIR: &'static str = "ssl";
 pub const KEY_FILE: &'static str = "key.pem";
 pub const CERT_FILE: &'static str = "cert.pem";
 
@@ -200,11 +200,11 @@ mod tests {
         test::test_with_tmp_dir(|d| {
 
             let mut p_key_file_path = d.clone();
-            p_key_file_path.push("https");
+            p_key_file_path.push("ssl");
             p_key_file_path.push("key.pem");
 
             let mut cert_file_path = d.clone();
-            cert_file_path.push("https");
+            cert_file_path.push("ssl");
             cert_file_path.push("cert.pem");
 
             create_key_cert_if_needed(&d).unwrap();

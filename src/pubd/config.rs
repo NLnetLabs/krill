@@ -11,7 +11,7 @@ use syslog::Facility;
 use serde::de;
 use serde::{Deserialize, Deserializer};
 use toml;
-use crate::pubd::https;
+use crate::pubd::ssl;
 
 
 const SERVER_NAME: &'static str = "Publication Server";
@@ -20,7 +20,7 @@ const SERVER_NAME: &'static str = "Publication Server";
 pub struct ConfigDefaults;
 
 impl ConfigDefaults {
-    fn use_https() -> bool { false }
+    fn use_ssl() -> SslChoice { SslChoice::No }
     fn log_level() -> LevelFilter { LevelFilter::Warn }
     fn log_type() -> LogType { LogType::Syslog }
     fn syslog_facility() -> Facility { Facility::LOG_DAEMON }
@@ -37,8 +37,8 @@ pub struct Config {
     ip: IpAddr,
     port: u16,
 
-    #[serde(default="ConfigDefaults::use_https")]
-    use_https: bool,
+    #[serde(default="ConfigDefaults::use_ssl")]
+    use_ssl: SslChoice,
 
     data_dir: PathBuf,
     pub_xml_dir: PathBuf,
@@ -76,19 +76,25 @@ impl Config {
         SocketAddr::new(self.ip, self.port)
     }
 
-    pub fn use_https(&self) -> bool { self.use_https }
+    pub fn use_ssl(&self) -> bool {
+        self.use_ssl != SslChoice::No
+    }
+
+    pub fn test_ssl(&self) -> bool {
+        self.use_ssl == SslChoice::Test
+    }
 
     pub fn https_cert_file(&self) -> PathBuf {
         let mut path = self.data_dir.clone();
-        path.push(https::HTTPS_SUB_DIR);
-        path.push(https::CERT_FILE);
+        path.push(ssl::HTTPS_SUB_DIR);
+        path.push(ssl::CERT_FILE);
         path
     }
 
     pub fn https_key_file(&self) -> PathBuf {
         let mut path = self.data_dir.clone();
-        path.push(https::HTTPS_SUB_DIR);
-        path.push(https::KEY_FILE);
+        path.push(ssl::HTTPS_SUB_DIR);
+        path.push(ssl::KEY_FILE);
         path
     }
 
@@ -114,7 +120,7 @@ impl Config {
         let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
         ;
         let port = 3000;
-        let use_https = false;
+        let use_ssl = SslChoice::No;
         let data_dir = data_dir.clone();
         let pub_xml_dir = pub_xml_dir.clone();
         let rsync_base = uri::Rsync::from_str("rsync://127.0.0.1/rpki/")
@@ -131,7 +137,7 @@ impl Config {
         Config {
             ip,
             port,
-            use_https,
+            use_ssl,
             data_dir,
             pub_xml_dir,
             rsync_base,
@@ -340,7 +346,31 @@ impl<'de> Deserialize<'de> for LogType {
             "file" => Ok(LogType::File),
             _ => Err(
                     de::Error::custom(
-                        format!("Unsupported log type: {}", string)))
+                        format!("expected \"stderr\", \"syslog\", or \
+                        \"file\", found : \"{}\"", string)))
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SslChoice {
+    No,
+    Yes,
+    Test
+}
+
+impl<'de> Deserialize<'de> for SslChoice {
+    fn deserialize<D>(d: D) -> Result<SslChoice, D::Error>
+        where D: Deserializer<'de> {
+        let string = String::deserialize(d)?;
+        match string.as_str() {
+            "no"   => Ok(SslChoice::No),
+            "yes"  => Ok(SslChoice::Yes),
+            "test" => Ok(SslChoice::Test),
+            _ => Err(
+                de::Error::custom(
+                    format!("expected \"yes\", \"no\" or \"test\", \
+                    found: \"{}\"", string)))
         }
     }
 }
