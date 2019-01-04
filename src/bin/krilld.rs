@@ -1,7 +1,7 @@
-extern crate rpubd;
+extern crate krill;
 
-use rpubd::pubd::config::Config;
-use rpubd::pubd::http::PubServerApp;
+use krill::daemon::config::Config;
+use krill::daemon::http::server::PubServerApp;
 
 fn main() {
     match Config::create() {

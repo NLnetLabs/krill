@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::sync::{RwLock, RwLockReadGuard};
 use actix_web::{HttpResponse, HttpRequest, Result};
 use actix_web::middleware::{Middleware, Started};
-use crate::pubd::pubserver::PubServer;
+use crate::publishing::pubserver::PubServer;
 use actix_web::http::HeaderMap;
 
 pub struct CheckAuthorisation;

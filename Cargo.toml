@@ -1,6 +1,6 @@
 [package]
-name = "rpubd"
-version = "0.1.0"
+name = "krill"
+version = "0.2.0"
 authors = ["Tim Bruijnzeels <tim@nlnetlabs.nl>", "Martin Hoffmann <martin@nlnetlabs.nl>"]
 
 [dependencies]

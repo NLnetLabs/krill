@@ -19,9 +19,11 @@ macro_rules! statics {
         $app
         $(
             .resource(concat!("/static/", $path), |r| {
-                static CONTENT: ::pubd::statics::StaticContent
-                                    = ::pubd::statics::StaticContent {
-                    content: include_bytes!(concat!("../../static/", $path)),
+                static CONTENT: ::daemon::http::statics::StaticContent
+                                    = ::daemon::http::statics::StaticContent {
+                    content: include_bytes!(
+                        concat!("../../../static/",$path)
+                    ),
                     etag: $etag,
                     ctype: $mime
                 };

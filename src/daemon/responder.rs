@@ -7,7 +7,7 @@ use bcder::encode::Values;
 use rpki::signing::PublicKeyAlgorithm;
 use rpki::signing::signer::{Signer, CreateKeyError, KeyUseError};
 use rpki::uri;
-use crate::provisioning::publisher::Publisher;
+use crate::publishing::publisher::Publisher;
 use crate::remote::oob::exchange::RepositoryResponse;
 use crate::remote::publication::pubmsg::Message;
 use crate::remote::builder::IdCertBuilder;

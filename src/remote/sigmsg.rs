@@ -1,4 +1,4 @@
-//! CMS structure that is used to encompass publication and provisioning
+//! CMS structure that is used to encompass publication and publishing
 //! messages.
 
 use bcder::decode;

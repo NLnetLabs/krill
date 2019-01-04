@@ -12,16 +12,16 @@ use bytes::Bytes;
 use futures::Future;
 use openssl::ssl::{SslMethod, SslAcceptor, SslAcceptorBuilder, SslFiletype};
 use serde::Serialize;
-use crate::provisioning::publisher_store;
-use crate::pubd::api::auth::{Authorizer, CheckAuthorisation};
-use crate::pubd::api::data::{PublisherDetails, PublisherList};
-use crate::pubd::config::Config;
-use crate::pubd::ssl;
-use crate::pubd::pubserver;
-use crate::pubd::pubserver::PubServer;
+use crate::daemon::api::auth::{Authorizer, CheckAuthorisation};
+use crate::daemon::api::data::{PublisherDetails, PublisherList};
+use crate::daemon::config::Config;
+use crate::daemon::http::ssl;
+use crate::publishing::publisher_store;
+use crate::publishing::pubserver;
+use crate::publishing::pubserver::PubServer;
 use crate::remote::sigmsg::SignedMessage;
 
-const NOT_FOUND: &'static [u8] = include_bytes!("../../static/html/404.html");
+const NOT_FOUND: &'static [u8] = include_bytes!("../../../static/html/404.html");
 
 const PATH_PUBLISHERS: &'static str = "/api/v1/publishers";
 
@@ -72,7 +72,7 @@ impl PubServerApp {
     }
 
     pub fn create_server(config: &Config) -> Arc<RwLock<PubServer>> {
-        let authorizer = Authorizer::new(&config.krill_auth_token);
+        let authorizer = Authorizer::new(&config.auth_token);
         let pub_server = match PubServer::new(
             &config.data_dir,
             &config.pub_xml_dir,

@@ -1,32 +1,85 @@
-# RPKI Publication Server
+# Krill
 
-Publication Server for the RPKI
+Krill is an RPKI daemon that is being developed by NLnet Labs.
 
-See:
+At the moment it only features an RPKI Publication Server, and a 
+publication client, but developing a full fledged RPKI Certificate Authority 
+(CA) is next on the [roadmap](https://nlnetlabs.nl/projects/rpki/project-plan/). 
+We just started with the publication server, because:
+* It's a prerequisite to running an RPKI CA, to have somewhere to publish
+* It's a simpler challenge to start with, and it has a lot of technical 
+overlap which can be leveraged when building the full CA.
+
+Incidentally, Krill is what feeds the world's largest filter feeders. It's also 
+mostly crustaceans. So, it's kind of fitting for a daemon that produces data for BGP 
+filters, which happens to be written in Rust.
+
+## Krill - Publication Server
+
+Krill features a Publication Server for the RPKI, and conforms with IETF 
+standards, most notably:
 * [RFC8181 Publication Protocol](https://tools.ietf.org/html/rfc8181) 
 * [RFC8183 Out-of-Band Setup Protocol](https://tools.ietf.org/html/rfc8183)
 
-## Dev quick start
+## Krill - Certificate Authority
 
-Install RUST:
+Krill will feature an RPKI Certificate Authority which can:
+* Publish using the built-in Publication Server, or a remote server.
+* Operate under multiple parents, using the [provisioning protocol](https://tools.ietf.org/html/rfc6492)
+* Delegate certificates to multiple children, using the [provisioning protocol](https://tools.ietf.org/html/rfc6492)
+* Issue ROAs based on an operators intent to authorise BGP announcements
+
+We hope to have a beta version of all this implemented around the third 
+quarter of 2019. After which we will be looking at more advanced features, 
+and e.g. robustness improvements. 
+
+Please watch the [road map](https://nlnetlabs.nl/projects/rpki/project-plan/)
+, issues and milestones, and feel free to create issues if you have any 
+feature requests!
+
+
+## Quick start
+
+At this point in time, and until a basic Certificate Authority is 
+implemented, running Krill is interesting mostly for developers. So, the 
+following instructions are somewhat developer centric.
+
+That said, anyone who is interested is welcome to play around with this 
+software as we are developing in it. And, yes, in future we will have more 
+operator centric documentation, and we also have easier ways to install that 
+do not require compiling the code (packages and/or docker).
+
+For now though follow these steps:
+
+#### Install RUST:
 ```bash
 curl https://sh.rustup.rs -sSf | sh
 ```
 
-Build the binaries:
+#### Clone the repository
+
+```
+git clone ... 
+```
+
+#### Build the binaries:
 ```bash
 cd $project
 cargo build
 ```
 
+#### Run
+
 To run the publication server with two example clients:
 ```bash
- ./target/debug/pubd
+ ./target/debug/krilld
 ```
 
-The server should start on localhost and port 3000.
+The server should start on localhost and port 3000. If you want to use a 
+different configuration, please review the config file (./defaults/krill
+.conf). Or use the '-c' option to specify another config file.
 
-## API
+### API
 
 This application uses a Json based REST (in the non-religious interpretation)
 API for managing all administrative tasks, such as managing the configured
@@ -65,9 +118,9 @@ Currently we only provide an API for view the current state:
  
 
 For the moment publishers are configured by adding the publisher's ['publisher 
-request' XML file](https://tools.ietf.org/html/rfc8183#section-5.2.3) to the 
+request' XML file'](https://tools.ietf.org/html/rfc8183#section-5.2.3) to the 
 directory defined by the 'pub_xml_dir' setting in the publication server 
-configuration (pubserver.conf). The server will scan this directory at start 
+configuration (krill.conf). The server will scan this directory at start 
 up, and add/remove publishers as needed, or update their identity certificate
 if needed. It is assumed that the 'publisher_handle' in these XML files is 
 unique, and verified.
@@ -78,12 +131,6 @@ function to the CLI for your convenience that will allow you to continue
 dropping these XML files in a directory - the CLI will implement the needed 
 logic wrapping around the API to ensure that things are then synchronised.
 
-
-## UI
-
-To add static resources, add to the 'static' folder and include static 
-mapping at the end of src/pubd/httpd.rs. You should be able to get to them if
-you restart the server.
 
 
 

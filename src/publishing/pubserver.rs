@@ -6,10 +6,10 @@ use std::sync::Arc;
 use bcder::Captured;
 use rpki::uri;
 use rpki::x509::ValidationError;
-use crate::provisioning::publisher::Publisher;
-use crate::provisioning::publisher_store::{self, PublisherStore};
-use crate::pubd::api::auth::Authorizer;
-use crate::pubd::responder::{self, Responder};
+use crate::daemon::api::auth::Authorizer;
+use crate::daemon::responder::{self, Responder};
+use crate::publishing::publisher::Publisher;
+use crate::publishing::publisher_store::{self, PublisherStore};
 use crate::repo::file_store;
 use crate::repo::repository::{self, Repository};
 use crate::repo::rrdp;
@@ -21,9 +21,8 @@ use crate::remote::publication::reply::{
 };
 use crate::remote::sigmsg::SignedMessage;
 
-
 /// # Naming things in the keystore.
-const ACTOR: &'static str = "publication server";
+const ACTOR: &'static str = "krill pubd";
 
 
 //------------ PubServer -----------------------------------------------------

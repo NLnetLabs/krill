@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 use crate::ext_serde;
-use crate::provisioning::publisher::Publisher;
+use crate::publishing::publisher::Publisher;
 use crate::rpki::uri;
 
 //------------ Link ----------------------------------------------------------
@@ -35,8 +35,8 @@ impl<'a> PublisherSummaryInfo<'a> {
         let mut links = Vec::new();
 
         let response_link = Link {
-            rel: "response-xml",
-            link: format!("{}/{}/response-xml", path_publishers, id)
+            rel: "response.xml",
+            link: format!("{}/{}/response.xml", path_publishers, id)
         };
         let self_link = Link {
             rel: "self",
@@ -105,11 +105,11 @@ impl<'a> PublisherDetails<'a> {
 
         let mut links = Vec::new();
         links.push(Link {
-            rel: "response-xml",
-            link: format!("{}/{}/response-xml", path_publishers, name)
+            rel: "response.xml",
+            link: format!("{}/{}/response.xml", path_publishers, name)
         });
         links.push(Link {
-            rel: "id-cert",
+            rel: "id.cer",
             link: format!("{}/{}/id.cer", path_publishers, name)
         });
 

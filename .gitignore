@@ -3,7 +3,7 @@
 Cargo.lock
 data
 publishers
-pubserver.log
+krill.log
 target/
 tmp
 work

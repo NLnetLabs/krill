@@ -26,14 +26,14 @@ extern crate xml as xmlrs;
 extern crate ring;
 extern crate untrusted;
 
-pub mod file;
-pub mod provisioning;
+pub mod daemon;
 pub mod pubc;
-pub mod pubd;
-pub mod repo;
+pub mod publishing;
 pub mod remote;
+pub mod repo;
 pub mod signing;
 pub mod storage;
+pub mod file;
 pub mod ext_serde;
 pub mod test;
 pub mod xml;

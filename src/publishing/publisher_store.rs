@@ -9,7 +9,7 @@ use std::sync::Arc;
 use rpki::uri;
 use crate::remote::idcert::IdCert;
 use crate::remote::oob::exchange::{PublisherRequest, PublisherRequestError};
-use crate::provisioning::publisher::Publisher;
+use crate::publishing::publisher::Publisher;
 use crate::storage::keystore::{self, Info, Key, KeyStore};
 use crate::storage::caching_ks::CachingDiskKeyStore;
 

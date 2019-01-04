@@ -11,11 +11,11 @@ use syslog::Facility;
 use serde::de;
 use serde::{Deserialize, Deserializer};
 use toml;
-use crate::pubd::ssl;
+use crate::daemon::http::ssl;
 
+const SERVER_NAME: &'static str = "Krill";
 
-const SERVER_NAME: &'static str = "Publication Server";
-
+//------------ ConfigDefaults ------------------------------------------------
 
 pub struct ConfigDefaults;
 
@@ -24,13 +24,13 @@ impl ConfigDefaults {
     fn log_level() -> LevelFilter { LevelFilter::Warn }
     fn log_type() -> LogType { LogType::Syslog }
     fn syslog_facility() -> Facility { Facility::LOG_DAEMON }
-    fn krill_auth_token() -> String {
+    fn auth_token() -> String {
         use std::env;
 
         match env::var("KRILL_AUTH_TOKEN") {
             Ok(token) => token,
             Err(_) => {
-                eprintln!("You MUST provide a value for the master API key, either by setting \"krill_auth_token\" in the config file, or by setting the KRILL_AUTH_TOKEN environment variable.");
+                eprintln!("You MUST provide a value for the master API key, either by setting \"auth_token\" in the config file, or by setting the KRILL_AUTH_TOKEN environment variable.");
                 ::std::process::exit(1);
             }
 
@@ -39,9 +39,11 @@ impl ConfigDefaults {
 }
 
 
-/// Global configuration for the RRDP Server.
+//------------ Config --------------------------------------------------------
+
+/// Global configuration for the Krill Server.
 ///
-/// This will parse a default config file ('./defaults/pubserver.conf') unless
+/// This will parse a default config file ('./defaults/krill.conf') unless
 /// another file is explicitly specified. Command line arguments may be used
 /// to override any of the settings in the config file.
 #[derive(Debug, Deserialize)]
@@ -81,8 +83,8 @@ pub struct Config {
 
     log_file: Option<PathBuf>,
 
-    #[serde(default = "ConfigDefaults::krill_auth_token")]
-    pub krill_auth_token: String
+    #[serde(default = "ConfigDefaults::auth_token")]
+    pub auth_token: String
 }
 
 /// # Accessors
@@ -116,8 +118,6 @@ impl Config {
 
 /// # Create
 impl Config {
-    /// Set up a config for use in (integration) testing.
-//    #[cfg(test)]
     pub fn test(
         data_dir: &PathBuf,
         pub_xml_dir: &PathBuf,
@@ -138,7 +138,7 @@ impl Config {
         let log_type = ConfigDefaults::log_type();
         let log_file = None;
         let syslog_facility = ConfigDefaults::syslog_facility();
-        let krill_auth_token = "secret".to_string();
+        let auth_token = "secret".to_string();
 
         Config {
             ip,
@@ -153,7 +153,7 @@ impl Config {
             log_type,
             log_file,
             syslog_facility,
-            krill_auth_token
+            auth_token
         }
     }
 
@@ -166,7 +166,7 @@ impl Config {
                 .long("config")
                 .value_name("FILE")
                 .help("Specify non-default config file. If no file is \
-                specified './defaults/pubserver.conf' will be used to \
+                specified './defaults/krill.conf' will be used to \
                 determine default values for all settings. Note that you \
                 can use any of the following options to override any of \
                 these values..")
@@ -174,7 +174,7 @@ impl Config {
             .get_matches();
 
         let config_file = matches.value_of("config")
-            .unwrap_or("./defaults/pubserver.conf");
+            .unwrap_or("./defaults/krill.conf");
 
         let c = Self::read_config(config_file.as_ref())?;
         c.init_logging()?;
@@ -397,7 +397,7 @@ mod tests {
         use std::env;
         env::set_var("KRILL_AUTH_TOKEN", "secret");
 
-        let c = Config::read_config("./defaults/pubserver.conf").unwrap();
+        let c = Config::read_config("./defaults/krill.conf").unwrap();
         let expected_socket_addr = ([127, 0, 0, 1], 3000).into();
         assert_eq!(c.socket_addr(), expected_socket_addr);
     }

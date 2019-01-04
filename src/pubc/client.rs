@@ -16,8 +16,7 @@ use rpki::signing::signer::{CreateKeyError, KeyUseError, Signer};
 use rpki::x509::ValidationError;
 use crate::file;
 use crate::file::{CurrentFile, RecursorError};
-use crate::provisioning::info::ParentInfo;
-use crate::provisioning::info::MyRepoInfo;
+use crate::publishing::info::{MyRepoInfo, ParentInfo};
 use crate::remote::builder::{IdCertBuilder, SignedMessageBuilder};
 use crate::remote::oob::exchange::{PublisherRequest, RepositoryResponse};
 use crate::remote::publication::pubmsg::{Message, MessageError, ReplyMessage};
@@ -461,8 +460,8 @@ impl From<RecursorError> for Error {
 mod tests {
     use super::*;
     use test;
-    use pubd::pubserver::PubServer;
-    use pubd::api::auth::Authorizer;
+    use publishing::pubserver::PubServer;
+    use daemon::api::auth::Authorizer;
 
     fn test_server(work_dir: &PathBuf, xml_dir: &PathBuf) -> PubServer {
         // Start up a server

@@ -5,19 +5,19 @@
 //! that this CLI may be triggered to synchronise this state to a publication
 //! server.
 
-extern crate rpubd;
+extern crate krill;
 #[macro_use] extern crate failure;
 extern crate rpki;
 
 use std::io::{self, Write};
 use std::path::PathBuf;
 
-use rpubd::file;
-use rpubd::pubc::config::{ Config, RunMode };
-use rpubd::pubc::client::PubClient;
-use rpubd::pubc::client;
-use rpubd::remote::oob::exchange::RepositoryResponse;
-use rpubd::remote::oob::exchange::RepositoryResponseError;
+use krill::file;
+use krill::pubc::config::{ Config, RunMode };
+use krill::pubc::client::PubClient;
+use krill::pubc::client;
+use krill::remote::oob::exchange::RepositoryResponse;
+use krill::remote::oob::exchange::RepositoryResponseError;
 
 fn main() {
 

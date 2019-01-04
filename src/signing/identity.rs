@@ -6,7 +6,7 @@ use crate::remote::idcert::IdCert;
 //------------ MyIdentity ----------------------------------------------------
 
 /// This type stores identity details for a client or server involved in RPKI
-/// provisioning (up-down) or publication.
+/// publishing (up-down) or publication.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct MyIdentity {
     name: String,
