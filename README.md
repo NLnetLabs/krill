@@ -8,8 +8,7 @@ publication client, but developing a full fledged RPKI Certificate Authority
 
 We just started with the publication server, because:
 * It's a prerequisite to running an RPKI CA, to have somewhere to publish
-* It's a simpler challenge to start with, and it has a lot of technical 
-overlap which can be leveraged when building the full CA.
+* It's a simpler challenge to start with, and because of the technical overlap, e.g. certificate signing, signing and validating CMS messages, starting and configuring a daemon and what not, provides a good basis implementing the CA.
 
 Incidentally, Krill is what feeds the world's largest filter feeders. It's also 
 mostly crustaceans. So, it's kind of fitting for a daemon that produces data for BGP 
