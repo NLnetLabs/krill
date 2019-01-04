@@ -3,12 +3,8 @@
 Krill is an RPKI daemon that is being developed by NLnet Labs.
 
 At the moment it only features an RPKI Publication Server, and a 
-publication client, but developing a full fledged RPKI Certificate Authority 
-(CA) is next on the [roadmap](https://nlnetlabs.nl/projects/rpki/project-plan/).
-
-We just started with the publication server, because:
-* It's a prerequisite to running an RPKI CA, to have somewhere to publish
-* It's a simpler challenge to start with, and because of the technical overlap, e.g. certificate signing, signing and validating CMS messages, starting and configuring a daemon and what not, provides a good basis implementing the CA.
+publication client, but we are going full steam ahead with developing
+a full fledged RPKI Certificate Authority (CA).
 
 Incidentally, Krill is what feeds the world's largest filter feeders. It's also 
 mostly crustaceans. So, it's kind of fitting for a daemon that produces data for BGP 
