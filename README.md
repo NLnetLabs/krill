@@ -4,7 +4,8 @@ Krill is an RPKI daemon that is being developed by NLnet Labs.
 
 At the moment it only features an RPKI Publication Server, and a 
 publication client, but developing a full fledged RPKI Certificate Authority 
-(CA) is next on the [roadmap](https://nlnetlabs.nl/projects/rpki/project-plan/). 
+(CA) is next on the [roadmap](https://nlnetlabs.nl/projects/rpki/project-plan/).
+
 We just started with the publication server, because:
 * It's a prerequisite to running an RPKI CA, to have somewhere to publish
 * It's a simpler challenge to start with, and it has a lot of technical 
@@ -34,8 +35,15 @@ quarter of 2019. After which we will be looking at more advanced features,
 and e.g. robustness improvements. 
 
 Please watch the [road map](https://nlnetlabs.nl/projects/rpki/project-plan/)
-, issues and milestones, and feel free to create issues if you have any 
-feature requests!
+, [issues](https://github.com/NLnetLabs/krill/issues) and 
+[milestones](https://github.com/NLnetLabs/krill/milestones?direction=asc&sort=due_date&state=open),
+and feel free to create issues if you have any feature requests!
+
+Please keep in mind that neither the road map, nor the milestones are cast in
+stone. They give an indication to the planned work, and some idea of when 
+thins will be delivered, but features may still be added, or removed and 
+priorities may change. We plan to update the information if and when this 
+happens.
 
 
 ## Quick start
@@ -59,7 +67,7 @@ curl https://sh.rustup.rs -sSf | sh
 #### Clone the repository
 
 ```
-git clone ... 
+git clone git@github.com:NLnetLabs/krill.git
 ```
 
 #### Build the binaries:
