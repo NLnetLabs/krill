@@ -20,10 +20,24 @@ const SERVER_NAME: &'static str = "Krill";
 pub struct ConfigDefaults;
 
 impl ConfigDefaults {
+    fn ip() -> IpAddr { IpAddr::V4(Ipv4Addr::new(127,0,0,1))}
+    fn port() -> u16 { 3000 }
     fn use_ssl() -> SslChoice { SslChoice::No }
+    fn data_dir() -> PathBuf { PathBuf::from("./data")}
+    fn pub_xml_dir() -> PathBuf { PathBuf::from("./publishers")}
+    fn rsync_base() -> uri::Rsync {
+        uri::Rsync::from_str("rsync://127.0.0.1/repo/").unwrap()
+    }
+    fn rrdp_base_uri() -> uri::Http {
+        uri::Http::from_str("http://127.0.0.1:3000/rrdp/").unwrap()
+    }
+    fn service_uri() -> uri::Http {
+        uri::Http::from_str("http://127.0.0.1:3000/rfc8181/").unwrap()
+    }
     fn log_level() -> LevelFilter { LevelFilter::Warn }
     fn log_type() -> LogType { LogType::Syslog }
     fn syslog_facility() -> Facility { Facility::LOG_DAEMON }
+    fn log_file() -> PathBuf { PathBuf::from("./krill.log")}
     fn auth_token() -> String {
         use std::env;
 
@@ -48,22 +62,38 @@ impl ConfigDefaults {
 /// to override any of the settings in the config file.
 #[derive(Debug, Deserialize)]
 pub struct Config {
+
+    #[serde(default="ConfigDefaults::ip")]
     ip: IpAddr,
+
+    #[serde(default="ConfigDefaults::port")]
     port: u16,
 
     #[serde(default="ConfigDefaults::use_ssl")]
     use_ssl: SslChoice,
 
+    #[serde(default="ConfigDefaults::data_dir")]
     pub data_dir: PathBuf,
+
+    #[serde(default="ConfigDefaults::pub_xml_dir")]
     pub pub_xml_dir: PathBuf,
 
-    #[serde(deserialize_with = "ext_serde::de_rsync_uri")]
+    #[serde(
+        default = "ConfigDefaults::rsync_base",
+        deserialize_with = "ext_serde::de_rsync_uri"
+    )]
     pub rsync_base: uri::Rsync,
 
-    #[serde(deserialize_with = "ext_serde::de_http_uri")]
+    #[serde(
+        default = "ConfigDefaults::rrdp_base_uri",
+        deserialize_with = "ext_serde::de_http_uri"
+    )]
     pub rrdp_base_uri: uri::Http,
 
-    #[serde(deserialize_with = "ext_serde::de_http_uri")]
+    #[serde(
+        default = "ConfigDefaults::service_uri",
+        deserialize_with = "ext_serde::de_http_uri"
+    )]
     pub service_uri: uri::Http,
 
     #[serde(
@@ -81,7 +111,8 @@ pub struct Config {
     )]
     syslog_facility: Facility,
 
-    log_file: Option<PathBuf>,
+    #[serde(default = "ConfigDefaults::log_file")]
+    log_file: PathBuf,
 
     #[serde(default = "ConfigDefaults::auth_token")]
     pub auth_token: String
@@ -122,21 +153,17 @@ impl Config {
         data_dir: &PathBuf,
         pub_xml_dir: &PathBuf,
     ) -> Self {
-        let ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1));
-        ;
-        let port = 3000;
+        let ip = ConfigDefaults::ip();
+        let port = ConfigDefaults::port();
         let use_ssl = SslChoice::No;
         let data_dir = data_dir.clone();
         let pub_xml_dir = pub_xml_dir.clone();
-        let rsync_base = uri::Rsync::from_str("rsync://127.0.0.1/rpki/")
-            .unwrap();
-        let rrdp_base_uri = uri::Http::from_str(
-            "http://127.0.0.1:3000/rrdp/").unwrap();
-        let service_uri = uri::Http::from_str(
-            "http://127.0.0.1:3000/rfc8181/").unwrap();
+        let rsync_base = ConfigDefaults::rsync_base();
+        let rrdp_base_uri = ConfigDefaults::rrdp_base_uri();
+        let service_uri = ConfigDefaults::service_uri();
         let log_level = ConfigDefaults::log_level();
         let log_type = ConfigDefaults::log_type();
-        let log_file = None;
+        let log_file = ConfigDefaults::log_file();
         let syslog_facility = ConfigDefaults::syslog_facility();
         let auth_token = "secret".to_string();
 
@@ -192,19 +219,13 @@ impl Config {
             return Err(ConfigError::from_str("Port number must be >1024"))
         }
 
-        if c.log_type == LogType::File && c.log_file == None {
-            return Err(ConfigError::from_str(
-                "Must specify log_file if log_type is 'file'."
-            ))
-        }
-
         Ok(c)
     }
 
     pub fn init_logging(&self) -> Result<(), ConfigError> {
         match self.log_type {
             LogType::File => {
-                let file = fern::log_file(self.log_file.as_ref().unwrap())?;
+                let file = fern::log_file(&self.log_file)?;
 
                 let mut dispatch = fern::Dispatch::new();
 

@@ -33,7 +33,7 @@ pub fn create_sub_dir(base_dir: &PathBuf) -> PathBuf {
     dir.push(PathBuf::from(format!("{}", rnd)));
 
     let full_path = PathBuf::from(&dir);
-    fs::create_dir(&full_path).unwrap();
+    fs::create_dir_all(&full_path).unwrap();
 
     full_path
 }

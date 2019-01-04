@@ -75,11 +75,24 @@ cd $project
 cargo build
 ```
 
+#### Make work directory and configure
+
+```bash
+mkdir data
+mkdir publishers
+cp default/krill.conf ./data
+```
+
+Then edit your 'krill.conf' file and, at least, set a secret token for the 
+'auth_token' key, at the end of the file -- or -- set the KRILL_AUTH_TOKEN 
+environment variable when you start 'krilld'. Other than that the defaults 
+should be okay for local testing.
+
 #### Run
 
 To run the publication server with two example clients:
 ```bash
- ./target/debug/krilld
+ ./target/debug/krilld -c ./data/krill.conf
 ```
 
 The server should start on localhost and port 3000. If you want to use a 
@@ -106,6 +119,11 @@ when using this API.
 The base uri for the API is:
 http://localhost:3000/api/v1/
 
+NOTE: Calls to the API have to include the api token as an [OAuth 2.0 
+Bearer token](https://tools.ietf.org/html/rfc6750#section-2.1) as a header, e.g.:
+
+    Authorization: Bearer "your-secret"
+
 ### Publishers
 
 Publishers are entities who are allowed to publish content using this 
@@ -123,6 +141,11 @@ Currently we only provide an API for view the current state:
 | /publishers/{handle}/id.cer    | Get      | Get publisher id certificate    |
 | /publishers/{handle}/response.xml  | Get      | Get [repository response xml](https://tools.ietf.org/html/rfc8183#section-5.2.4)|
  
+Example call:
+```bash
+curl -H "Authorization: Bearer secret" http://localhost:3000/api/v1/publishers
+```
+
 
 For the moment publishers are configured by adding the publisher's ['publisher 
 request' XML file'](https://tools.ietf.org/html/rfc8183#section-5.2.3) to the 

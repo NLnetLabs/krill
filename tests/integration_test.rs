@@ -88,15 +88,15 @@ fn client_publish_at_server() {
         // now let's sync something real
         let sync_dir = test::create_sub_dir(&d);
         let file_a = CurrentFile::new(
-            test::rsync_uri("rsync://127.0.0.1/rpki/alice/a.txt"),
+            test::rsync_uri("rsync://127.0.0.1/repo/alice/a.txt"),
             bytes("a")
         );
         let file_b = CurrentFile::new(
-            test::rsync_uri("rsync://127.0.0.1/rpki/alice/b.txt"),
+            test::rsync_uri("rsync://127.0.0.1/repo/alice/b.txt"),
             bytes("b")
         );
         let file_c = CurrentFile::new(
-            test::rsync_uri("rsync://127.0.0.1/rpki/alice/c.txt"),
+            test::rsync_uri("rsync://127.0.0.1/repo/alice/c.txt"),
             bytes("c")
         );
 
