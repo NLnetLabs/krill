@@ -1,7 +1,7 @@
 # Krill
 
 Krill is a Resource Public Key Infrastructure (RPKI) daemon, featuring 
-a Certificate Authority and Publication Server. 
+a Certificate Authority and Publication Server, written in Rust. 
 
 If you want to know more about the project planning, please have a look at the
 high level [roadmap](https://nlnetlabs.nl/projects/rpki/project-plan/) on
@@ -45,13 +45,13 @@ Krill will feature an RPKI Certificate Authority which can:
 
 We plan to have an initial version implemented around the third 
 quarter of 2019. After this we look at more advanced features, 
-robustness improvements and more...
+robustness improvements, and more...
 
 
 ## Quick start
 
 At this point in time, and until a basic Certificate Authority is 
-implemented, running Krill is interesting mostly for developers. So, the 
+implemented, running Krill is interesting mostly for developers. This means the 
 following instructions are somewhat developer centric.
 
 We will do proper packaging and a Docker image in the future, but for now you 
@@ -95,8 +95,8 @@ To run the publication server with two example clients:
 ```
 
 The server should start on localhost and port 3000. If you want to use a 
-different configuration, please review the config file (./defaults/krill
-.conf). Or use the `-c` option to specify another config file.
+different configuration, please review the config file (./defaults/krill.conf). 
+Alternatively, you can use the `-c` option to specify another config file.
 
 ### API
 
