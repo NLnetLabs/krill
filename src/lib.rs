@@ -26,8 +26,8 @@ extern crate xml as xmlrs;
 extern crate ring;
 extern crate untrusted;
 
+pub mod client;
 pub mod daemon;
-pub mod pubc;
 pub mod publishing;
 pub mod remote;
 pub mod repo;

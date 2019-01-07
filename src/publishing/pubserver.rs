@@ -344,7 +344,7 @@ impl ToReportErrorCode for rrdp::Error {
 mod tests {
     use super::*;
     use test;
-    use pubc::client::PubClient;
+    use crate::client::pubc::PubClient;
 
     fn test_server(work_dir: &PathBuf, xml_dir: &PathBuf) -> PubServer {
         // Start up a server

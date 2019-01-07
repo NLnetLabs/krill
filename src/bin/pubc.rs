@@ -13,9 +13,7 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 
 use krill::file;
-use krill::pubc::config::{ Config, RunMode };
-use krill::pubc::client::PubClient;
-use krill::pubc::client;
+use krill::client::pubc::{self, Config, RunMode, PubClient };
 use krill::remote::oob::exchange::RepositoryResponse;
 use krill::remote::oob::exchange::RepositoryResponseError;
 
@@ -87,7 +85,7 @@ fn sync(mut client: PubClient, path: &PathBuf) -> Result<(), Error> {
 #[derive(Debug, Fail)]
 pub enum Error {
     #[fail(display ="{}", _0)]
-    ClientError(client::Error),
+    ClientError(pubc::Error),
 
     #[fail(display ="{}", _0)]
     IoError(io::Error),
@@ -100,8 +98,8 @@ pub enum Error {
 
 }
 
-impl From<client::Error> for Error {
-    fn from(e: client::Error) -> Self {
+impl From<pubc::Error> for Error {
+    fn from(e: pubc::Error) -> Self {
         Error::ClientError(e)
     }
 }

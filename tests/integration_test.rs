@@ -21,7 +21,7 @@ use krill::remote::oob::exchange::PublisherRequest;
 use krill::remote::oob::exchange::RepositoryResponse;
 use krill::file;
 use krill::file::CurrentFile;
-use krill::pubc::client::PubClient;
+use krill::client::pubc::PubClient;
 use krill::test;
 
 fn save_pr(base_dir: &PathBuf, file_name: &str, pr: &PublisherRequest) {
