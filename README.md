@@ -2,20 +2,29 @@
 
 Krill is an RPKI daemon that is being developed by NLnet Labs.
 
-At the moment it only features an RPKI Publication Server, and a 
-publication client, but we are going full steam ahead with developing
-a full fledged RPKI Certificate Authority (CA).
+If you want to know more about the project planning, have a look at the
+high level [roadmap](https://nlnetlabs.nl/projects/rpki/project-plan/) on
+our website, or get at a more detailed overview of
+[milestones](https://github.com/NLnetLabs/krill/milestones?direction=asc&sort=due_date&state=open)
+here on GitHub. If you have any questions, comments or ideas, you are welcome
+ to discuss them
+on the [mailing list](https://nlnetlabs.nl/mailman/listinfo/rpki), or feel 
+free to create an issue right here on GitHub.
 
-Incidentally, Krill is what feeds the world's largest filter feeders. It's also 
-mostly crustaceans. So, it's kind of fitting for a daemon that produces data for BGP 
-filters, which happens to be written in Rust.
 
 ## Krill - Publication Server
 
-Krill features a Publication Server for the RPKI, and conforms with IETF 
-standards, most notably:
+Krill features a Publication Server for the RPKI, allowing RPKI Certificate 
+Authorities to publish their signed data, so that it can be retrieved and 
+validated by RPKI Validators, such as [routinator](https://github.com/nlnetlabs/routinator). 
+
+The publication server is functional and conforms with the IETF standards, 
+most notably:
 * [RFC8181 Publication Protocol](https://tools.ietf.org/html/rfc8181) 
 * [RFC8183 Out-of-Band Setup Protocol](https://tools.ietf.org/html/rfc8183)
+
+This project also includes a publication client utility that can be used to 
+synchronise the contents of any directory with a publication server.
 
 ## Krill - Certificate Authority
 
@@ -29,17 +38,6 @@ We hope to have a beta version of all this implemented around the third
 quarter of 2019. After which we will be looking at more advanced features, 
 and e.g. robustness improvements. 
 
-Please watch the [road map](https://nlnetlabs.nl/projects/rpki/project-plan/)
-, [issues](https://github.com/NLnetLabs/krill/issues) and 
-[milestones](https://github.com/NLnetLabs/krill/milestones?direction=asc&sort=due_date&state=open),
-and feel free to create issues if you have any feature requests!
-
-Please keep in mind that neither the road map, nor the milestones are cast in
-stone. They give an indication to the planned work, and some idea of when 
-thins will be delivered, but features may still be added, or removed and 
-priorities may change. We plan to update the information if and when this 
-happens.
-
 
 ## Quick start
 
@@ -47,12 +45,8 @@ At this point in time, and until a basic Certificate Authority is
 implemented, running Krill is interesting mostly for developers. So, the 
 following instructions are somewhat developer centric.
 
-That said, anyone who is interested is welcome to play around with this 
-software as we are developing in it. And, yes, in future we will have more 
-operator centric documentation, and we also have easier ways to install that 
-do not require compiling the code (packages and/or docker).
-
-For now though follow these steps:
+We will do proper packaging, and a docker image, in future, but for now you 
+will need to check out the (Rust) source code and compile a binary locally:
 
 #### Install RUST:
 ```bash
@@ -76,7 +70,7 @@ cargo build
 ```bash
 mkdir data
 mkdir publishers
-cp default/krill.conf ./data
+cp defaults/krill.conf ./data
 ```
 
 Then edit your 'krill.conf' file and, at least, set a secret token for the 
@@ -118,7 +112,7 @@ http://localhost:3000/api/v1/
 NOTE: Calls to the API have to include the api token as an [OAuth 2.0 
 Bearer token](https://tools.ietf.org/html/rfc6750#section-2.1) as a header, e.g.:
 
-    Authorization: Bearer "your-secret"
+    Authorization: Bearer "secret"
 
 ### Publishers
 
@@ -133,7 +127,7 @@ Currently we only provide an API for view the current state:
 | Resource                       | Method   | Action                          |
 | ------------------------------ | -------- | ------------------------------- |
 | /publishers                    | Get      | List all current publishers     |
-| /publishers/{handle}           | Get      | Show publisher details           |
+| /publishers/{handle}           | Get      | Show publisher details          |
 | /publishers/{handle}/id.cer    | Get      | Get publisher id certificate    |
 | /publishers/{handle}/response.xml  | Get      | Get [repository response xml](https://tools.ietf.org/html/rfc8183#section-5.2.4)|
  
