@@ -112,7 +112,7 @@ http://localhost:3000/api/v1/
 NOTE: Calls to the API have to include the api token as an [OAuth 2.0 
 Bearer token](https://tools.ietf.org/html/rfc6750#section-2.1) as a header, e.g.:
 
-    Authorization: Bearer "secret"
+    Authorization: Bearer secret
 
 ### Publishers
 
