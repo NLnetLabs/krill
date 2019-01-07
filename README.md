@@ -1,8 +1,7 @@
 # Krill
 
-Krill is an RPKI daemon that is being developed by NLnet Labs, allowing 
-organisations to run an RPKI Certificate Authority to generate and 
-publish Route Origin Authorisations.
+Krill is a Resource Public Key Infrastructure (RPKI) daemon, featuring 
+a Certificate Authority and Publication Server, written in Rust. 
 
 If you want to know more about the project planning, please have a look at the
 high level [roadmap](https://nlnetlabs.nl/projects/rpki/project-plan/) on
@@ -10,15 +9,23 @@ our website, or get at a more detailed overview of the
 [milestones](https://github.com/NLnetLabs/krill/milestones?direction=asc&sort=due_date&state=open)
 here on GitHub. If you have any questions, comments or ideas, you are welcome
  to discuss them
-on the [mailing list](https://nlnetlabs.nl/mailman/listinfo/rpki), or feel 
+on our [RPKI mailing list](https://nlnetlabs.nl/mailman/listinfo/rpki), or feel 
 free to create an issue right here on GitHub.
 
+## RPKI
+
+The Resource Public Key Infrastructure provides cryptographically signed
+statements about the association of Internet routing resources. In
+particular, it allows the holder of an IP address prefix to publish which
+AS number will be the origin of BGP route announcements for it. 
+
+For more information on this technology, please refer to our [RPKI FAQ](https://github.com/NLnetLabs/rpki-faq).
 
 ## Krill - Publication Server
 
 Krill features a Publication Server for the RPKI, allowing RPKI Certificate 
 Authorities to publish their signed data, so that it can be retrieved and 
-validated by RPKI Validators, such as [Routinator](https://github.com/nlnetlabs/routinator). 
+validated by RPKI Validators, such as the [Routinator](https://github.com/nlnetlabs/routinator). 
 
 The publication server is functional and conforms with the IETF standards, 
 most notably:
@@ -36,15 +43,15 @@ Krill will feature an RPKI Certificate Authority which can:
 * Delegate certificates to multiple children, using the [provisioning protocol](https://tools.ietf.org/html/rfc6492)
 * Issue ROAs based on an operators intent to authorise BGP announcements
 
-We plan to have an initial version of all this implemented around the third 
-quarter of 2019. After this we will be looking at more advanced features, 
-robustness improvements and more.
+We plan to have an initial version implemented around the third 
+quarter of 2019. After this we look at more advanced features, 
+robustness improvements, and more...
 
 
 ## Quick start
 
 At this point in time, and until a basic Certificate Authority is 
-implemented, running Krill is interesting mostly for developers. So, the 
+implemented, running Krill is interesting mostly for developers. This means the 
 following instructions are somewhat developer centric.
 
 We will do proper packaging and a Docker image in the future, but for now you 
@@ -76,8 +83,8 @@ cp defaults/krill.conf ./data
 ```
 
 After these steps, edit your `krill.conf` file and, at least, set a secret 
-token for the `auth_token` key, at the end of the file -- or -- set the 
-KRILL_AUTH_TOKEN environment variable when you start 'krilld'. Other than 
+token for the `auth_token` key, at the end of the file — or — set the 
+KRILL_AUTH_TOKEN environment variable when you start `krilld`. Other than 
 that the defaults should be okay for local testing.
 
 #### Run
@@ -88,8 +95,8 @@ To run the publication server with two example clients:
 ```
 
 The server should start on localhost and port 3000. If you want to use a 
-different configuration, please review the config file (./defaults/krill
-.conf). Or use the `-c` option to specify another config file.
+different configuration, please review the config file (./defaults/krill.conf). 
+Alternatively, you can use the `-c` option to specify another config file.
 
 ### API
 
@@ -111,7 +118,7 @@ when using this API.
 The base uri for the API is:
 http://localhost:3000/api/v1/
 
-NOTE: Calls to the API have to include the api token as an [OAuth 2.0 
+*NOTE:* Calls to the API have to include the api token as an [OAuth 2.0 
 Bearer token](https://tools.ietf.org/html/rfc6750#section-2.1) as a header, e.g.:
 
     Authorization: Bearer secret
