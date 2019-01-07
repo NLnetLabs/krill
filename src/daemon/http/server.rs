@@ -48,6 +48,9 @@ impl PubServerApp {
             .resource("/api/v1/publishers/{handle}/response.xml", |r| {
                 r.f(Self::repository_response)
             })
+            .resource("/api/v1/health", |r| {
+                r.f(Self::api_ok)
+            })
             .resource("/rfc8181/{handle}", |r| {
                 r.method(Method::POST).with(
                     Self::process_publish_request
@@ -331,7 +334,12 @@ impl PubServerApp {
         }
     }
 
-    /// Simple server status response page.
+    /// API health check, expect that caller authenticates.
+    fn api_ok(_r: &HttpRequest) -> HttpResponse {
+        HttpResponse::Ok().body("")
+    }
+
+    /// Simple human server status response page.
     fn service_ok(_r: &HttpRequest) -> HttpResponse {
         // XXX TODO: do a real check
         HttpResponse::Ok().body("I am completely operational, and all my circuits are functioning perfectly.")

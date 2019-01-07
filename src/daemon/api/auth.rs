@@ -46,7 +46,7 @@ impl Authorizer {
     }
 
     pub fn allowed(&self, path: &str, headers: &HeaderMap) -> bool {
-        if path.starts_with("/api/v1/publishers") {
+        if path.starts_with("/api/v1") {
             if let Some(header) = headers.get("Authorization") {
                 if let Ok(str_header) = header.to_str() {
                     let str_header = str_header.to_lowercase();
