@@ -1,10 +1,12 @@
 # Krill
 
-Krill is an RPKI daemon that is being developed by NLnet Labs.
+Krill is an RPKI daemon that is being developed by NLnet Labs, allowing 
+organisations to run an RPKI Certificate Authority to generate and 
+publish Route Origin Authorisations.
 
-If you want to know more about the project planning, have a look at the
+If you want to know more about the project planning, please have a look at the
 high level [roadmap](https://nlnetlabs.nl/projects/rpki/project-plan/) on
-our website, or get at a more detailed overview of
+our website, or get at a more detailed overview of the 
 [milestones](https://github.com/NLnetLabs/krill/milestones?direction=asc&sort=due_date&state=open)
 here on GitHub. If you have any questions, comments or ideas, you are welcome
  to discuss them
@@ -16,7 +18,7 @@ free to create an issue right here on GitHub.
 
 Krill features a Publication Server for the RPKI, allowing RPKI Certificate 
 Authorities to publish their signed data, so that it can be retrieved and 
-validated by RPKI Validators, such as [routinator](https://github.com/nlnetlabs/routinator). 
+validated by RPKI Validators, such as [Routinator](https://github.com/nlnetlabs/routinator). 
 
 The publication server is functional and conforms with the IETF standards, 
 most notably:
@@ -34,9 +36,9 @@ Krill will feature an RPKI Certificate Authority which can:
 * Delegate certificates to multiple children, using the [provisioning protocol](https://tools.ietf.org/html/rfc6492)
 * Issue ROAs based on an operators intent to authorise BGP announcements
 
-We hope to have a beta version of all this implemented around the third 
-quarter of 2019. After which we will be looking at more advanced features, 
-and e.g. robustness improvements. 
+We plan to have an initial version of all this implemented around the third 
+quarter of 2019. After this we will be looking at more advanced features, 
+robustness improvements and more.
 
 
 ## Quick start
@@ -45,7 +47,7 @@ At this point in time, and until a basic Certificate Authority is
 implemented, running Krill is interesting mostly for developers. So, the 
 following instructions are somewhat developer centric.
 
-We will do proper packaging, and a docker image, in future, but for now you 
+We will do proper packaging and a Docker image in the future, but for now you 
 will need to check out the (Rust) source code and compile a binary locally:
 
 #### Install RUST:
@@ -73,10 +75,10 @@ mkdir publishers
 cp defaults/krill.conf ./data
 ```
 
-Then edit your 'krill.conf' file and, at least, set a secret token for the 
-'auth_token' key, at the end of the file -- or -- set the KRILL_AUTH_TOKEN 
-environment variable when you start 'krilld'. Other than that the defaults 
-should be okay for local testing.
+After these steps, edit your `krill.conf` file and, at least, set a secret 
+token for the `auth_token` key, at the end of the file -- or -- set the 
+KRILL_AUTH_TOKEN environment variable when you start 'krilld'. Other than 
+that the defaults should be okay for local testing.
 
 #### Run
 
@@ -87,11 +89,11 @@ To run the publication server with two example clients:
 
 The server should start on localhost and port 3000. If you want to use a 
 different configuration, please review the config file (./defaults/krill
-.conf). Or use the '-c' option to specify another config file.
+.conf). Or use the `-c` option to specify another config file.
 
 ### API
 
-This application uses a Json based REST (in the non-religious interpretation)
+This application uses a JSON based REST (in the non-religious interpretation)
 API for managing all administrative tasks, such as managing the configured
 publishers.
 
@@ -118,7 +120,7 @@ Bearer token](https://tools.ietf.org/html/rfc6750#section-2.1) as a header, e.g.
 
 Publishers are entities who are allowed to publish content using this 
 publication server, as described in RFC 8181. Typically publishers will be 
-RPKI Certificate  Authorities, however we also include a 'pubc' binary that can
+RPKI Certificate  Authorities, however we also include a `pubc` binary that can
 act as a publisher, and that can synchronise any arbitrary directory with the
 publication server.
 
@@ -139,10 +141,10 @@ curl -H "Authorization: Bearer secret" http://localhost:3000/api/v1/publishers
 
 For the moment publishers are configured by adding the publisher's ['publisher 
 request' XML file'](https://tools.ietf.org/html/rfc8183#section-5.2.3) to the 
-directory defined by the 'pub_xml_dir' setting in the publication server 
+directory defined by the `pub_xml_dir` setting in the publication server 
 configuration (krill.conf). The server will scan this directory at start 
 up, and add/remove publishers as needed, or update their identity certificate
-if needed. It is assumed that the 'publisher_handle' in these XML files is 
+if needed. It is assumed that the `publisher_handle` in these XML files is 
 unique, and verified.
 
 However, we plan to change this behaviour in the coming weeks in favor of using
