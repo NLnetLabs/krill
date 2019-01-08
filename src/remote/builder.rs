@@ -16,8 +16,8 @@ use rpki::signing::SignatureAlgorithm;
 use rpki::signing::signer::{KeyId, KeyUseError, OneOffSignature, Signer};
 use rpki::sigobj;
 use rpki::x509::{Name, Time};
+use crate::remote::id::{IdCert, IdExtensions};
 use crate::remote::publication::pubmsg::Message;
-use crate::remote::idcert::{IdCert, IdExtensions};
 
 
 //------------ TbsCertificate ------------------------------------------------

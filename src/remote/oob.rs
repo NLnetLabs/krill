@@ -10,7 +10,7 @@ use bcder::decode;
 use rpki::uri;
 use rpki::x509;
 use rpki::x509::Time;
-use crate::remote::idcert::IdCert;
+use crate::remote::id::IdCert;
 use crate::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
 
 
@@ -478,7 +478,7 @@ mod tests {
 
     #[test]
     fn should_generate_publisher_request() {
-        let cert = ::remote::idcert::tests::test_id_certificate();
+        let cert = ::remote::id::tests::test_id_certificate();
 
         let pr = PublisherRequest {
             tag: Some("tag".to_string()),
@@ -495,7 +495,7 @@ mod tests {
 
     #[test]
     fn should_generate_repository_response() {
-        let cert = ::remote::idcert::tests::test_id_certificate();
+        let cert = ::remote::id::tests::test_id_certificate();
 
         let pr = RepositoryResponse {
             tag: Some("tag".to_string()),

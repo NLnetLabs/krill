@@ -17,6 +17,7 @@ use crate::file;
 use crate::file::{CurrentFile, RecursorError};
 use crate::publishing::info::{MyRepoInfo, ParentInfo};
 use crate::remote::builder::{IdCertBuilder, SignedMessageBuilder};
+use crate::remote::id::MyIdentity;
 use crate::remote::oob::{PublisherRequest, RepositoryResponse};
 use crate::remote::publication::pubmsg::{Message, MessageError, ReplyMessage};
 use crate::remote::publication::reply::{ErrorReply, ListReply};
@@ -24,7 +25,6 @@ use crate::remote::publication::query::{
     ListQuery, PublishElement, PublishQuery, Withdraw
 };
 use crate::remote::sigmsg::SignedMessage;
-use crate::signing::identity::MyIdentity;
 use crate::signing::softsigner;
 use crate::signing::softsigner::OpenSslSigner;
 use crate::storage::caching_ks::CachingDiskKeyStore;

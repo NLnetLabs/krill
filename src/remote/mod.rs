@@ -6,6 +6,6 @@
 //! RFC6492 Provisioning => Sign certificates to children, get from parent
 pub mod publication;
 pub mod builder;
-pub mod idcert;
+pub mod id;
 pub mod oob;
 pub mod sigmsg;

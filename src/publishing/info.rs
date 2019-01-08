@@ -1,6 +1,6 @@
 use ext_serde;
 use rpki::uri;
-use crate::remote::idcert::IdCert;
+use crate::remote::id::IdCert;
 
 
 //------------ ParentInfo ----------------------------------------------------

@@ -8,7 +8,7 @@ use rpki::signing::signer::KeyId;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde::de;
 use syslog::Facility;
-use crate::remote::idcert::IdCert;
+use crate::remote::id::IdCert;
 
 
 //------------ Bytes ---------------------------------------------------------

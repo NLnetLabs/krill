@@ -10,7 +10,7 @@ use rpki::signing::DigestAlgorithm;
 use rpki::sigobj::oid;
 use rpki::sigobj::{SignedObject, SignerInfo};
 use rpki::x509::{Time, ValidationError};
-use super::idcert::IdCert;
+use super::id::IdCert;
 
 use untrusted::Input;
 use ring::digest;
