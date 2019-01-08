@@ -2,9 +2,10 @@
 //! in case they are not provided
 
 use std::io::Write;
-use std::path::PathBuf;
 use std::fs::File;
+use std::path::PathBuf;
 use bytes::Bytes;
+use openssl::hash::MessageDigest;
 use openssl::pkey::{PKey, Private};
 use openssl::rsa::Rsa;
 use rpki::cert::SubjectPublicKeyInfo;
@@ -16,9 +17,8 @@ use rpki::signing::signer::{
     OneOffSignature,
     Signature,
     Signer};
-use remote::builder::IdCertBuilder;
-use openssl::hash::MessageDigest;
-use file;
+use crate::remote::builder::IdCertBuilder;
+use crate::util::file;
 
 const KEY_SIZE: u32 = 2048;
 pub const HTTPS_SUB_DIR: &'static str = "ssl";
@@ -189,11 +189,10 @@ impl From<KeyUseError> for Error {
 mod tests {
 
     use super::*;
-    use test;
-
     use actix_web::*;
-    use openssl::ssl::{SslMethod, SslAcceptor, SslFiletype};
     use actix_web::server::HttpServer;
+    use openssl::ssl::{SslMethod, SslAcceptor, SslFiletype};
+    use crate::util::test;
 
     #[test]
     fn should_create_key_and_cert_and_start_server() {

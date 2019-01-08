@@ -12,7 +12,7 @@ use actix::System;
 use krill::daemon::config::Config;
 use krill::daemon::http::server::PubServerApp;
 use krill::client::krillc::{KrillClient, Options, RunMode};
-use krill::test;
+use krill::util::test;
 
 /// Tests that the server can be started and a health check can be done
 /// through the CLI

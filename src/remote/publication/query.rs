@@ -5,12 +5,14 @@ use std::io;
 use bytes::Bytes;
 use hex;
 use rpki::uri;
-use super::pubmsg::MessageError;
-use crate::xml::{Attributes, XmlReader, XmlWriter};
-use super::hash;
-use super::pubmsg::Message;
-use super::pubmsg::QueryMessage;
-use super::reply::ListElement;
+use crate::remote::publication::hash;
+use crate::remote::publication::pubmsg::{
+    Message,
+    MessageError,
+    QueryMessage
+};
+use crate::remote::publication::reply::ListElement;
+use crate::util::xml::{Attributes, XmlReader, XmlWriter};
 
 
 //------------ ListQuery -----------------------------------------------------

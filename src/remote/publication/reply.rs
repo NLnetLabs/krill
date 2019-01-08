@@ -7,10 +7,10 @@ use std::io;
 use bytes::Bytes;
 use hex;
 use rpki::uri;
-use crate::xml::{XmlReader, XmlWriter};
-use super::hash;
-use super::pubmsg::{Message, MessageError, ReplyMessage};
-use super::query::PublishElement;
+use crate::remote::publication::hash;
+use crate::remote::publication::pubmsg::{Message, MessageError, ReplyMessage};
+use crate::remote::publication::query::PublishElement;
+use crate::util::xml::{XmlReader, XmlWriter};
 
 
 /// This type represents the success reply as described in

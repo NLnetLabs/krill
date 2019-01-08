@@ -6,7 +6,7 @@ use rpki::uri;
 use super::query::{ListQuery, PublishQuery};
 use super::reply::{ErrorReply, ListReply, SuccessReply};
 use crate::remote::sigmsg::SignedMessage;
-use crate::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
+use crate::util::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
 
 pub const VERSION: &'static str = "4";
 pub const NS: &'static str = "http://www.hactrn.net/uris/rpki/publication-spec/";

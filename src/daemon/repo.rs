@@ -5,11 +5,11 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::str::FromStr;
 use rpki::uri;
-use crate::file::{self, CurrentFile, RecursorError};
 use crate::remote::publication::pubmsg::Message;
 use crate::remote::publication::query::{PublishElement, PublishQuery};
 use crate::remote::publication::reply::{ListElement, ListReply, SuccessReply};
-use crate::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
+use crate::util::file::{self, CurrentFile, RecursorError};
+use crate::util::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
 
 const VERSION: &'static str = "1";
 const NS: &'static str = "http://www.ripe.net/rpki/rrdp";
@@ -953,8 +953,8 @@ mod tests {
     use super::*;
     use bytes::Bytes;
     use crate::daemon::repo::Notification;
-    use crate::file::CurrentFile;
-    use crate::test;
+    use crate::util::file::CurrentFile;
+    use crate::util::test;
 
     #[test]
     fn should_publish() {

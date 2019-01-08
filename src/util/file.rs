@@ -2,7 +2,6 @@ use std::fs;
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
-use ext_serde;
 use bytes::Bytes;
 use rpki::uri;
 use crate::remote::publication;
@@ -10,6 +9,7 @@ use crate::remote::publication::query::{
     Publish, PublishElement, Update, Withdraw
 };
 use crate::remote::publication::reply::ListElement;
+use crate::util::ext_serde;
 
 
 ///-- Some helper functions
@@ -310,7 +310,7 @@ impl From<uri::Error> for RecursorError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use test;
+    use crate::util::test;
 
     #[test]
     fn should_scan_disk() {

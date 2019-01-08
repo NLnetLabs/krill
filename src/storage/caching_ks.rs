@@ -1,3 +1,5 @@
+//! A keystore implementation using local storage and caching.
+
 use std::any::Any;
 use std::collections::HashMap;
 use std::fs;
@@ -343,7 +345,7 @@ mod tests {
 
     use super::*;
     use chrono::Utc;
-    use test;
+    use crate::util::test;
 
     #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
     struct TestStruct {

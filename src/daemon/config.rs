@@ -4,7 +4,6 @@ use std::io::Read;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use clap::{App, Arg};
-use ext_serde;
 use log::LevelFilter;
 use rpki::uri;
 use syslog::Facility;
@@ -12,6 +11,7 @@ use serde::de;
 use serde::{Deserialize, Deserializer};
 use toml;
 use crate::daemon::http::ssl;
+use crate::util::ext_serde;
 
 const SERVER_NAME: &'static str = "Krill";
 

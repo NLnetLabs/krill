@@ -11,7 +11,7 @@ use rpki::uri;
 use rpki::x509;
 use rpki::x509::Time;
 use crate::remote::id::IdCert;
-use crate::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
+use crate::util::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
 
 
 //------------ PublisherRequest ----------------------------------------------

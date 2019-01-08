@@ -8,11 +8,11 @@ use std::io::BufReader;
 use std::path::PathBuf;
 use std::sync::Arc;
 use rpki::uri;
-use crate::ext_serde;
 use crate::remote::id::IdCert;
 use crate::remote::oob::{PublisherRequest, PublisherRequestError};
 use crate::storage::keystore::{self, Info, Key, KeyStore};
 use crate::storage::caching_ks::CachingDiskKeyStore;
+use crate::util::ext_serde;
 
 //------------ Publisher -----------------------------------------------------
 
@@ -452,7 +452,7 @@ impl From<PublisherRequestError> for Error {
 mod tests {
 
     use super::*;
-    use test;
+    use crate::util::test;
 
     fn base_service_uri() -> uri::Http {
         test::http_uri("http://127.0.0.1:3000/rfc8181/")

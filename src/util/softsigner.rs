@@ -270,7 +270,7 @@ impl From<keystore::Error> for Error {
 pub mod tests {
 
     use super::*;
-    use test;
+    use crate::util::test;
 
     #[test]
     fn should_return_subject_public_key_info() {

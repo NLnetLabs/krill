@@ -9,16 +9,13 @@ use rpki::signing::signer::{Signer, CreateKeyError, KeyUseError};
 use rpki::uri;
 use crate::daemon::publishers::Publisher;
 use crate::daemon::repo;
+use crate::remote::builder::{IdCertBuilder, SignedMessageBuilder};
 use crate::remote::id::MyIdentity;
 use crate::remote::oob::RepositoryResponse;
 use crate::remote::publication::pubmsg::Message;
-use crate::remote::builder::IdCertBuilder;
-use crate::remote::builder::SignedMessageBuilder;
-use crate::signing::softsigner;
-use crate::signing::softsigner::OpenSslSigner;
 use crate::storage::caching_ks::CachingDiskKeyStore;
-use crate::storage::keystore;
-use crate::storage::keystore::{Info, Key, KeyStore};
+use crate::storage::keystore::{self, Info, Key, KeyStore};
+use crate::util::softsigner::{self, OpenSslSigner};
 
 
 /// # Naming things in the keystore.
@@ -213,8 +210,7 @@ impl From<KeyUseError> for Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use test;
-
+    use crate::util::test;
 
     #[test]
     fn should_have_response_for_publisher() {

@@ -15,13 +15,12 @@ use std::str;
 use std::{thread, time};
 use actix::System;
 use bytes::Bytes;
+use krill::client::pubc::PubClient;
 use krill::daemon::config::Config;
 use krill::daemon::http::server::PubServerApp;
 use krill::remote::oob::{PublisherRequest, RepositoryResponse};
-use krill::file;
-use krill::file::CurrentFile;
-use krill::client::pubc::PubClient;
-use krill::test;
+use krill::util::file::{self, CurrentFile};
+use krill::util::test;
 
 fn save_pr(base_dir: &PathBuf, file_name: &str, pr: &PublisherRequest) {
     let mut full_name = base_dir.clone();

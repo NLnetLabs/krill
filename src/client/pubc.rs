@@ -13,8 +13,6 @@ use rpki::signing::PublicKeyAlgorithm;
 use rpki::signing::signer::{CreateKeyError, KeyUseError, Signer};
 use rpki::x509::ValidationError;
 use toml;
-use crate::file;
-use crate::file::{CurrentFile, RecursorError};
 use crate::remote::builder::{IdCertBuilder, SignedMessageBuilder};
 use crate::remote::id::{MyIdentity, MyRepoInfo, ParentInfo};
 use crate::remote::oob::{PublisherRequest, RepositoryResponse};
@@ -24,10 +22,10 @@ use crate::remote::publication::query::{
     ListQuery, PublishElement, PublishQuery, Withdraw
 };
 use crate::remote::sigmsg::SignedMessage;
-use crate::signing::softsigner;
-use crate::signing::softsigner::OpenSslSigner;
 use crate::storage::caching_ks::CachingDiskKeyStore;
 use crate::storage::keystore::{self, Info, Key, KeyStore};
+use crate::util::softsigner::{self, OpenSslSigner};
+use crate::util::file::{self, CurrentFile, RecursorError};
 
 
 /// # Some constants for naming resources in the keystore for clients.
@@ -608,9 +606,9 @@ impl From<RecursorError> for Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use test;
     use crate::daemon::api::auth::Authorizer;
     use crate::daemon::pubserver::PubServer;
+    use crate::util::test;
 
     fn test_server(work_dir: &PathBuf, xml_dir: &PathBuf) -> PubServer {
         // Start up a server

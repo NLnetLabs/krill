@@ -9,7 +9,7 @@ use rpki::signing::SignatureAlgorithm;
 use rpki::signing::signer::KeyId;
 use rpki::uri;
 use rpki::x509::{Name, SignedData, Time, ValidationError};
-use crate::ext_serde;
+use crate::util::ext_serde;
 
 
 //------------ MyIdentity ----------------------------------------------------

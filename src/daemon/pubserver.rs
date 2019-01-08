@@ -321,8 +321,8 @@ impl ToReportErrorCode for repo::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use test;
     use crate::client::pubc::PubClient;
+    use crate::util::test;
 
     fn test_server(work_dir: &PathBuf, xml_dir: &PathBuf) -> PubServer {
         // Start up a server
