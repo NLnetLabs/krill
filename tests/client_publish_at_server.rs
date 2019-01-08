@@ -25,8 +25,7 @@ use krill::test;
 
 fn save_pr(base_dir: &PathBuf, file_name: &str, pr: &PublisherRequest) {
     let mut full_name = base_dir.clone();
-    full_name.push(PathBuf::from
-        (file_name));
+    full_name.push(PathBuf::from(file_name));
     let mut f = File::create(full_name).unwrap();
     let xml = pr.encode_vec();
     f.write(xml.as_ref()).unwrap();
