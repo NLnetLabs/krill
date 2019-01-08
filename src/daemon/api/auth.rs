@@ -1,11 +1,10 @@
 //! Authorization for the API
 
-use std::sync::Arc;
-use std::sync::{RwLock, RwLockReadGuard};
+use std::sync::{Arc, RwLock, RwLockReadGuard};
 use actix_web::{HttpResponse, HttpRequest, Result};
-use actix_web::middleware::{Middleware, Started};
-use crate::publishing::pubserver::PubServer;
 use actix_web::http::HeaderMap;
+use actix_web::middleware::{Middleware, Started};
+use crate::daemon::pubserver::PubServer;
 
 pub struct CheckAuthorisation;
 

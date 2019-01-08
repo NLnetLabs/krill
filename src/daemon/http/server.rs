@@ -16,9 +16,9 @@ use crate::daemon::api::auth::{Authorizer, CheckAuthorisation};
 use crate::daemon::api::data::{PublisherDetails, PublisherList};
 use crate::daemon::config::Config;
 use crate::daemon::http::ssl;
-use crate::publishing::publisher_store;
-use crate::publishing::pubserver;
-use crate::publishing::pubserver::PubServer;
+use crate::daemon::publishers;
+use crate::daemon::pubserver;
+use crate::daemon::pubserver::PubServer;
 use crate::remote::sigmsg::SignedMessage;
 
 const NOT_FOUND: &'static [u8] = include_bytes!("../../../static/html/404.html");
@@ -236,7 +236,7 @@ impl PubServerApp {
                             .body(res.encode_vec())
                     },
                     Err(pubserver::Error::PublisherStoreError
-                        (publisher_store::Error::UnknownPublisher(_))) => {
+                        (publishers::Error::UnknownPublisher(_))) => {
                         Self::p404(req)
                     },
                     Err(e) => {

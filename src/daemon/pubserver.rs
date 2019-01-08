@@ -8,8 +8,7 @@ use rpki::uri;
 use rpki::x509::ValidationError;
 use crate::daemon::api::auth::Authorizer;
 use crate::daemon::responder::{self, Responder};
-use crate::publishing::publisher::Publisher;
-use crate::publishing::publisher_store::{self, PublisherStore};
+use crate::daemon::publishers::{self, Publisher, PublisherStore};
 use crate::repo::file_store;
 use crate::repo::repository::{self, Repository};
 use crate::repo::rrdp;
@@ -248,7 +247,7 @@ pub enum Error {
     ResponderError(responder::Error),
 
     #[fail(display="{}", _0)]
-    PublisherStoreError(publisher_store::Error),
+    PublisherStoreError(publishers::Error),
 
     #[fail(display="{}", _0)]
     RepositoryError(repository::Error),
@@ -266,8 +265,8 @@ impl From<responder::Error> for Error {
     }
 }
 
-impl From<publisher_store::Error> for Error {
-    fn from(e: publisher_store::Error) -> Self {
+impl From<publishers::Error> for Error {
+    fn from(e: publishers::Error) -> Self {
         Error::PublisherStoreError(e)
     }
 }

@@ -1,8 +1,8 @@
 //! Support for the Json API
 
 use std::sync::Arc;
+use crate::daemon::publishers::Publisher;
 use crate::ext_serde;
-use crate::publishing::publisher::Publisher;
 use crate::rpki::uri;
 
 //------------ Link ----------------------------------------------------------

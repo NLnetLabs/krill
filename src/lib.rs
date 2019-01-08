@@ -28,7 +28,6 @@ extern crate untrusted;
 
 pub mod client;
 pub mod daemon;
-pub mod publishing;
 pub mod remote;
 pub mod repo;
 pub mod signing;

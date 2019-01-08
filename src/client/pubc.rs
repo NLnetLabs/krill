@@ -15,9 +15,8 @@ use rpki::x509::ValidationError;
 use toml;
 use crate::file;
 use crate::file::{CurrentFile, RecursorError};
-use crate::publishing::info::{MyRepoInfo, ParentInfo};
 use crate::remote::builder::{IdCertBuilder, SignedMessageBuilder};
-use crate::remote::id::MyIdentity;
+use crate::remote::id::{MyIdentity, MyRepoInfo, ParentInfo};
 use crate::remote::oob::{PublisherRequest, RepositoryResponse};
 use crate::remote::publication::pubmsg::{Message, MessageError, ReplyMessage};
 use crate::remote::publication::reply::{ErrorReply, ListReply};
@@ -610,8 +609,8 @@ impl From<RecursorError> for Error {
 mod tests {
     use super::*;
     use test;
-    use publishing::pubserver::PubServer;
-    use daemon::api::auth::Authorizer;
+    use crate::daemon::api::auth::Authorizer;
+    use crate::daemon::pubserver::PubServer;
 
     fn test_server(work_dir: &PathBuf, xml_dir: &PathBuf) -> PubServer {
         // Start up a server

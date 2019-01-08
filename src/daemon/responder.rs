@@ -7,7 +7,7 @@ use bcder::encode::Values;
 use rpki::signing::PublicKeyAlgorithm;
 use rpki::signing::signer::{Signer, CreateKeyError, KeyUseError};
 use rpki::uri;
-use crate::publishing::publisher::Publisher;
+use crate::daemon::publishers::Publisher;
 use crate::remote::id::MyIdentity;
 use crate::remote::oob::RepositoryResponse;
 use crate::remote::publication::pubmsg::Message;
@@ -42,9 +42,6 @@ pub struct Responder {
 
     // key value store for server specific stuff
     store: CachingDiskKeyStore,
-
-
-    // TODO: Store in keystore?
 
     // The URI that publishers need to access to publish (see config)
     service_uri: uri::Http,
