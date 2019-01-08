@@ -9,10 +9,7 @@ use rpki::x509::ValidationError;
 use crate::daemon::api::auth::Authorizer;
 use crate::daemon::responder::{self, Responder};
 use crate::daemon::publishers::{self, Publisher, PublisherStore};
-use crate::repo::file_store;
-use crate::repo::repository::{self, Repository};
-use crate::repo::rrdp;
-use crate::repo::rrdp::RRDP_FOLDER;
+use crate::daemon::repo::{self, Repository, RRDP_FOLDER};
 use crate::remote::oob::RepositoryResponse;
 use crate::remote::publication::pubmsg::{Message, MessageError, QueryMessage};
 use crate::remote::publication::reply::{
@@ -250,7 +247,7 @@ pub enum Error {
     PublisherStoreError(publishers::Error),
 
     #[fail(display="{}", _0)]
-    RepositoryError(repository::Error),
+    RepositoryError(repo::Error),
 
     #[fail(display="{}", _0)]
     MessageError(MessageError),
@@ -271,8 +268,8 @@ impl From<publishers::Error> for Error {
     }
 }
 
-impl From<repository::Error> for Error {
-    fn from(e: repository::Error) -> Self {
+impl From<repo::Error> for Error {
+    fn from(e: repo::Error) -> Self {
         Error::RepositoryError(e)
     }
 }
@@ -302,39 +299,21 @@ impl ToReportErrorCode for MessageError {
     }
 }
 
-impl ToReportErrorCode for repository::Error {
+impl ToReportErrorCode for repo::Error {
     fn to_report_error_code(&self) -> ReportErrorCode {
         match self {
-            repository::Error::FileStoreError(error) =>
-                error.to_report_error_code(),
-            repository::Error::RrdpError(error) =>
-                error.to_report_error_code()
-        }
-    }
-}
-
-impl ToReportErrorCode for file_store::Error {
-    fn to_report_error_code(&self) -> ReportErrorCode {
-        match self {
-            file_store::Error::ObjectAlreadyPresent(_) =>
+            repo::Error::ObjectAlreadyPresent(_) =>
                 ReportErrorCode::ObjectAlreadyPresent,
-            file_store::Error::NoObjectPresent(_) =>
+            repo::Error::NoObjectPresent(_) =>
                 ReportErrorCode::NoObjectPresent,
-            file_store::Error::NoObjectMatchingHash =>
+            repo::Error::NoObjectMatchingHash =>
                 ReportErrorCode::NoObjectMatchingHash,
-            file_store::Error::OutsideBaseUri =>
+            repo::Error::OutsideBaseUri =>
                 ReportErrorCode::PermissionFailure,
             _ => ReportErrorCode::OtherError
         }
     }
 }
-
-impl ToReportErrorCode for rrdp::Error {
-    fn to_report_error_code(&self) -> ReportErrorCode {
-        ReportErrorCode::OtherError
-    }
-}
-
 
 
 //------------ Tests ---------------------------------------------------------

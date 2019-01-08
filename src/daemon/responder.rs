@@ -8,6 +8,7 @@ use rpki::signing::PublicKeyAlgorithm;
 use rpki::signing::signer::{Signer, CreateKeyError, KeyUseError};
 use rpki::uri;
 use crate::daemon::publishers::Publisher;
+use crate::daemon::repo;
 use crate::remote::id::MyIdentity;
 use crate::remote::oob::RepositoryResponse;
 use crate::remote::publication::pubmsg::Message;
@@ -18,7 +19,6 @@ use crate::signing::softsigner::OpenSslSigner;
 use crate::storage::caching_ks::CachingDiskKeyStore;
 use crate::storage::keystore;
 use crate::storage::keystore::{Info, Key, KeyStore};
-use crate::repo::rrdp;
 
 
 /// # Naming things in the keystore.
@@ -68,7 +68,7 @@ impl Responder {
         let signer = OpenSslSigner::new(&responder_dir)?;
         let store = CachingDiskKeyStore::new(responder_dir)?;
 
-        let rrdp_notification_uri = rrdp::notification_uri(rrdp_base_uri);
+        let rrdp_notification_uri = repo::notification_uri(rrdp_base_uri);
 
         let mut responder = Responder {
             signer,

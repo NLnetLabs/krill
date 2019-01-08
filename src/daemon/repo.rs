@@ -1,18 +1,19 @@
+use std::{io, fs};
 use std::fs::File;
-use std::io;
 use std::num::ParseIntError;
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::str::FromStr;
 use rpki::uri;
-use crate::file;
-use crate::file::RecursorError;
+use crate::file::{self, CurrentFile, RecursorError};
+use crate::remote::publication::pubmsg::Message;
 use crate::remote::publication::query::{PublishElement, PublishQuery};
+use crate::remote::publication::reply::{ListElement, ListReply, SuccessReply};
 use crate::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
-use super::file_store::FS_FOLDER;
 
 const VERSION: &'static str = "1";
 const NS: &'static str = "http://www.ripe.net/rpki/rrdp";
+const FS_FOLDER: &'static str = "rsync";
 pub const RRDP_FOLDER: &'static str = "rrdp";
 
 /// Derives the notification uri based on the RRDP base uri (from config)
@@ -26,6 +27,238 @@ pub fn notification_uri(base: &uri::Http) -> uri::Http {
         format!("{}notification.xml", base.to_string())
     ).unwrap() // Can only fail at startup if mis-configured.
 }
+
+
+//------------ Repository ----------------------------------------------------
+
+/// This type orchestrates publishing in both an RSYNC and RRDP
+/// (RFC8182) format.
+#[derive(Clone, Debug)]
+pub struct Repository {
+    // file_store
+    fs: FileStore,
+
+    // RRDP
+    rrdp: RrdpServer
+}
+
+/// # Construct
+///
+impl Repository {
+    pub fn new(
+        rrdp_base_uri: &uri::Http,
+        work_dir: &PathBuf
+    ) -> Result<Self, Error>
+    {
+        let fs = FileStore::new(work_dir)?;
+        let rrdp = RrdpServer::new(rrdp_base_uri, work_dir)?;
+        Ok( Repository { fs, rrdp } )
+    }
+}
+
+/// # Publish / List
+///
+impl Repository {
+    /// Publishes an publish query and returns a success reply embedded in
+    /// a message. Throws an error in case of issues. The PubServer needs
+    /// to wrap such errors in a response message to the publisher.
+    pub fn publish(
+        &mut self,
+        update: &PublishQuery,
+        base_uri: &uri::Rsync
+    ) -> Result<Message, Error> {
+        debug!("Processing update with {} elements", update.elements().len());
+        self.fs.publish(update, base_uri)?;
+        self.rrdp.publish(update)?;
+        Ok(SuccessReply::build_message())
+    }
+
+    /// Lists the objects for a base_uri, presumably all for the same
+    /// publisher.
+    pub fn list(
+        &self,
+        base_uri: &uri::Rsync
+    ) -> Result<Message, Error> {
+        debug!("Processing list query");
+        let files = self.fs.list(base_uri)?;
+        let mut builder = ListReply::build();
+        for file in files {
+            builder.add(
+                ListElement::reply(
+                    file.content(),
+                    file.uri().clone()
+                )
+            )
+        }
+        debug!("Found {} files", builder.len());
+        Ok(builder.build_message())
+    }
+}
+
+
+//------------ FileStore -----------------------------------------------------
+
+/// This type is responsible for publishing files on disk in a structure so
+/// that an rscynd can be set up to serve this (RPKI) data. Note that the
+/// rsync host name and module are part of the path, so make sure that the
+/// rsyncd modules and paths are setup properly for each supported rsync
+/// base uri used.
+#[derive(Clone, Debug)]
+pub struct FileStore {
+    base_dir: PathBuf
+}
+
+/// # Construct
+///
+impl FileStore {
+    pub fn new(work_dir: &PathBuf) -> Result<Self, Error> {
+        let mut rsync_dir = PathBuf::from(work_dir);
+        rsync_dir.push(FS_FOLDER);
+        if ! rsync_dir.is_dir() {
+            fs::create_dir_all(&rsync_dir)?;
+        }
+        Ok ( FileStore { base_dir: rsync_dir } )
+    }
+}
+
+/// # Publishing
+///
+impl FileStore {
+    /// Process a PublishQuery update
+    pub fn publish(
+        &mut self,
+        update: &PublishQuery,
+        base_uri: &uri::Rsync
+    ) -> Result<(), Error> {
+        self.verify_query(update, base_uri)?;
+        self.update_files(update)?;
+
+        Ok(())
+    }
+
+    pub fn list(
+        &self,
+        base_uri: &uri::Rsync
+    ) -> Result<Vec<CurrentFile>, Error> {
+        let path = self.path_for_publisher(base_uri);
+
+        if !path.exists() {
+            Ok(Vec::new())
+        } else {
+            file::crawl_incl_rsync_base(&path, base_uri)
+                .map_err(|e| Error::RecursorError(e))
+        }
+    }
+
+    /// Assert that all updates are confined to the given base_uri; i.e. do
+    /// not allow publishers to update things outside of their own jail.
+    fn verify_query(
+        &self,
+        update: &PublishQuery,
+        base_uri: &uri::Rsync
+    ) -> Result<(), Error> {
+        for q in update.elements() {
+            match q {
+                PublishElement::Publish(p) => {
+                    Self::assert_uri(base_uri, p.uri())?;
+                    if self.get_current_file_opt(p.uri()).is_some() {
+                        return Err(Error::ObjectAlreadyPresent(p.uri().clone()))
+                    }
+                },
+                PublishElement::Update(u) => {
+                    Self::assert_uri(base_uri, u.uri())?;
+                    if let Some(cur) = self.get_current_file_opt(u.uri()) {
+                        if cur.hash() != u.hash() {
+                            return Err(Error::NoObjectMatchingHash)
+                        }
+                    } else {
+                        return Err(Error::NoObjectPresent(u.uri().clone()))
+                    }
+                },
+                PublishElement::Withdraw(w) => {
+                    Self::assert_uri(base_uri, w.uri())?;
+                    if let Some(cur) = self.get_current_file_opt(w.uri()) {
+                        if cur.hash() != w.hash() {
+                            return Err(Error::NoObjectMatchingHash)
+                        }
+                    } else {
+                        return Err(Error::NoObjectPresent(w.uri().clone()))
+                    }
+                },
+            }
+        }
+
+        debug!("Update is consistent with current state");
+        Ok(())
+    }
+
+    /// Perform the actual updates on disk. This assumes that the updates
+    /// have been verified.
+    fn update_files(
+        &self,
+        update: &PublishQuery
+    ) -> Result<(), Error> {
+        for q in update.elements() {
+            match q {
+                PublishElement::Publish(p) => {
+                    debug!("Saving file for uri: {}", p.uri().to_string());
+                    file::save_with_rsync_uri(
+                        p.object(),
+                        &self.base_dir,
+                        p.uri()
+                    )?;
+                },
+                PublishElement::Update(u) => {
+                    debug!("Updating file for uri: {}", u.uri().to_string());
+                    file::save_with_rsync_uri(
+                        u.object(),
+                        &self.base_dir,
+                        u.uri()
+                    )?;
+                },
+                PublishElement::Withdraw(w) => {
+                    debug!("Withdrawing file for uri: {}", w.uri().to_string());
+                    file::delete_with_rsync_uri(
+                        &self.base_dir,
+                        w.uri()
+                    )?;
+                },
+            }
+        }
+        Ok(())
+    }
+
+    fn assert_uri(base: &uri::Rsync, file: &uri::Rsync) -> Result<(), Error> {
+        if base.module() == file.module() &&
+            file.path().starts_with(base.path()) {
+            Ok(())
+        } else {
+            Err(Error::OutsideBaseUri)
+        }
+    }
+
+    fn get_current_file_opt(
+        &self,
+        file_uri: &uri::Rsync
+    ) -> Option<CurrentFile> {
+        match file::read_with_rsync_uri(&self.base_dir, file_uri) {
+            Ok(bytes) => Some(CurrentFile::new(file_uri.clone(), bytes)),
+            Err(_) => None
+        }
+    }
+
+    // Returns the relative sub-dir that we should scan for this particular
+    // publisher.
+    fn path_for_publisher(&self, file_uri: &uri::Rsync) -> PathBuf {
+        let mut path = self.base_dir.clone();
+        let module = file_uri.module();
+        path.push(PathBuf::from(module.authority()));
+        path.push(PathBuf::from(module.module()));
+        path.push(PathBuf::from(file_uri.path()));
+        path
+    }
+}
+
 
 /// This type publishes RRDP notifications, snapshots and deltas so that they
 /// can be served to relying parties.
@@ -182,8 +415,8 @@ impl RrdpServer {
                             },
                         };
                     }
-               Ok(())
-           })
+                    Ok(())
+                })
         })?;
 
         let file_info = FileInfo::for_path(
@@ -631,8 +864,6 @@ impl NotificationBuilder {
             deltas: self.deltas
         }
     }
-
-
 }
 
 
@@ -645,6 +876,21 @@ pub enum Error {
 
     #[fail(display="{}", _0)]
     RecursorError(RecursorError),
+
+    #[fail(display="{}", _0)]
+    UriError(uri::Error),
+
+    #[fail(display="File already exists for uri (use update!): {}", _0)]
+    ObjectAlreadyPresent(uri::Rsync),
+
+    #[fail(display="Np file present for uri: {}", _0)]
+    NoObjectPresent(uri::Rsync),
+
+    #[fail(display="File does not match hash")]
+    NoObjectMatchingHash,
+
+    #[fail(display="Publishing outside of base URI is not allowed.")]
+    OutsideBaseUri,
 
     #[fail(display="Issue deriving RRDP URI, check config!")]
     UriConfigError,
@@ -659,15 +905,18 @@ pub enum Error {
     AttributesError(AttributesError),
 
     #[fail(display="{}", _0)]
-    UriError(uri::Error),
-
-    #[fail(display="{}", _0)]
     ParseIntError(ParseIntError)
 }
 
 impl From<io::Error> for Error {
     fn from(e: io::Error) -> Self {
         Error::IoError(e)
+    }
+}
+
+impl From<uri::Error> for Error {
+    fn from(e: uri::Error) -> Self {
+        Error::UriError(e)
     }
 }
 
@@ -689,12 +938,6 @@ impl From<AttributesError> for Error {
     }
 }
 
-impl From<uri::Error> for Error {
-    fn from(e: uri::Error) -> Self {
-        Error::UriError(e)
-    }
-}
-
 impl From<ParseIntError> for Error {
     fn from(e: ParseIntError) -> Self {
         Error::ParseIntError(e)
@@ -702,4 +945,179 @@ impl From<ParseIntError> for Error {
 }
 
 
-// Tested through repository.rs
+//------------ Tests ---------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use bytes::Bytes;
+    use crate::daemon::repo::Notification;
+    use crate::file::CurrentFile;
+    use crate::test;
+
+    #[test]
+    fn should_publish() {
+        test::test_with_tmp_dir(|d| {
+            let rrdp_base_uri = test::http_uri("http://localhost:3000/repo/");
+            let mut repo = Repository::new(&rrdp_base_uri, &d).unwrap() ;
+
+            // Publish a file
+            let rsync_for_alice =
+                test::rsync_uri("rsync://host:10873/module/alice");
+            let file = CurrentFile::new(
+                test::rsync_uri("rsync://host:10873/module/alice/file.txt"),
+                Bytes::from("example content")
+            );
+
+            let mut builder = PublishQuery::build();
+            builder.add(file.clone().as_publish());
+            let message = builder.build_message();
+            let publish = message.as_query().unwrap().as_publish().unwrap();
+
+            repo.publish(&publish, &rsync_for_alice).unwrap();
+
+            // Now publish an update a bunch of times
+            // (overwrite file with same file, strictly speaking allowed,
+            // and convenient here)
+
+            let file_update = file.clone();
+
+            let mut builder = PublishQuery::build();
+            builder.add(file_update.clone().as_update(file.content()));
+            let message = builder.build_message();
+            let update = message.as_query().unwrap().as_publish().unwrap();
+            repo.publish(&update, &rsync_for_alice).unwrap();
+            repo.publish(&update, &rsync_for_alice).unwrap();
+            repo.publish(&update, &rsync_for_alice).unwrap();
+            repo.publish(&update, &rsync_for_alice).unwrap();
+            repo.publish(&update, &rsync_for_alice).unwrap();
+
+            // Now we expect a notification file with serial 6, which only
+            // includes deltas for 5 and 6, because more deltas would
+            // exceed the size of the snapshot.
+
+            let mut rrdp_disk_path = d.clone();
+            rrdp_disk_path.push("rrdp");
+
+            let mut notification_disk_path = rrdp_disk_path.clone();
+            notification_disk_path.push("notification.xml");
+
+            match Notification::derive(
+                &notification_disk_path,
+                &rrdp_base_uri,
+                &rrdp_disk_path
+            ) {
+                Some(notification) => {
+                    let expected_serial: usize = 6;
+                    let expected_prev: usize = 5;
+                    assert_eq!(notification.serial(), &expected_serial);
+
+                    let deltas = notification.deltas();
+                    assert_eq!(2, deltas.len());
+
+                    assert!(
+                        deltas.iter().find(|d| {
+                            d.serial() == &expected_serial}
+                        ).is_some()
+                    );
+
+                    assert!(
+                        deltas.iter().find(|d| {
+                            d.serial() == &expected_prev}
+                        ).is_some()
+                    );
+                },
+                None => panic!("Should have derived notification"),
+            }
+        });
+    }
+
+    #[test]
+    fn should_store_list_withdraw_files() {
+        test::test_with_tmp_dir(|d| {
+            let mut file_store = FileStore { base_dir: d };
+
+            // Using a port here to make sure that it works in mapping
+            // the rsync URI to and from disk.
+            let base_uri = test::rsync_uri
+                ("rsync://host:10873/module/alice/");
+
+            // Publish a file
+            let file = CurrentFile::new(
+                test::rsync_uri("rsync://host:10873/module/alice/file.txt"),
+                Bytes::from("example content")
+            );
+
+            let mut builder = PublishQuery::build();
+            builder.add(file.clone().as_publish());
+            let message = builder.build_message();
+            let publish = message.as_query().unwrap().as_publish().unwrap();
+
+            file_store.publish(&publish, &base_uri).unwrap();
+
+            // See that it's the only one listed
+            let files = file_store.list(&base_uri).unwrap();
+            assert_eq!(1, files.len());
+            assert!(files.contains(&file));
+
+            // Update a file
+            let file_update = CurrentFile::new(
+                file.uri().clone(),
+                Bytes::from("example updated content")
+            );
+
+            let mut builder = PublishQuery::build();
+            builder.add(file_update.clone().as_update(file.content()));
+            let message = builder.build_message();
+            let publish = message.as_query().unwrap().as_publish().unwrap();
+            file_store.publish(&publish, &base_uri).unwrap();
+
+            // See that it's the only one listed
+            let files = file_store.list(&base_uri).unwrap();
+            assert_eq!(1, files.len());
+            assert!(files.contains(&file_update));
+
+            // Withdraw a file
+            let mut builder = PublishQuery::build();
+            builder.add(file_update.as_withdraw());
+            let message = builder.build_message();
+            let publish = message.as_query().unwrap().as_publish().unwrap();
+            file_store.publish(&publish, &base_uri).unwrap();
+
+            // See that there are no files listed
+            let files = file_store.list(&base_uri).unwrap();
+            assert_eq!(0, files.len());
+        });
+    }
+
+    #[test]
+    fn should_not_allow_publishing_or_withdrawing_outside_of_base() {
+        test::test_with_tmp_dir(|d| {
+            let mut file_store = FileStore { base_dir: d };
+
+            // Using a port here to make sure that it works in mapping
+            // the rsync URI to and from disk.
+            let base_uri = test::rsync_uri
+                ("rsync://host:10873/module/alice/");
+
+            // Publish a file
+            let file = CurrentFile::new(
+                test::rsync_uri("rsync://host:10873/module/bob/file.txt"),
+                Bytes::from("example content")
+            );
+
+            let mut builder = PublishQuery::build();
+            builder.add(file.clone().as_publish());
+            let message = builder.build_message();
+            let publish = message.as_query().unwrap().as_publish().unwrap();
+
+            match file_store.publish(&publish, &base_uri) {
+                Err(Error::OutsideBaseUri) => {},
+                _ => { panic!("Expected Error::OutsideBaseUri") }
+            }
+        });
+    }
+}
+
+
