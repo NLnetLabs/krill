@@ -455,7 +455,7 @@ mod tests {
 
     #[test]
     fn should_parse_publisher_request() {
-        let xml = include_str!("../../../test/oob/publisher_request.xml");
+        let xml = include_str!("../../test/oob/publisher_request.xml");
         let pr = PublisherRequest::decode(xml.as_bytes()).unwrap();
         assert_eq!("Bob".to_string(), pr.publisher_handle);
         assert_eq!(Some("A0001".to_string()), pr.tag);
@@ -465,9 +465,7 @@ mod tests {
 
     #[test]
     fn should_parse_repository_response() {
-        let xml = include_str!(
-            "../../../test/oob/repository_response.xml"
-        );
+        let xml = include_str!("../../test/oob/repository_response.xml");
         let rr = RepositoryResponse::decode(xml.as_bytes()).unwrap();
         assert_eq!(Some("A0001".to_string()), rr.tag);
         assert_eq!("Alice/Bob-42".to_string(), rr.publisher_handle);

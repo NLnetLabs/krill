@@ -17,7 +17,7 @@ use crate::file;
 use crate::file::{CurrentFile, RecursorError};
 use crate::publishing::info::{MyRepoInfo, ParentInfo};
 use crate::remote::builder::{IdCertBuilder, SignedMessageBuilder};
-use crate::remote::oob::exchange::{PublisherRequest, RepositoryResponse};
+use crate::remote::oob::{PublisherRequest, RepositoryResponse};
 use crate::remote::publication::pubmsg::{Message, MessageError, ReplyMessage};
 use crate::remote::publication::reply::{ErrorReply, ListReply};
 use crate::remote::publication::query::{

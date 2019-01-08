@@ -14,7 +14,7 @@ use crate::repo::file_store;
 use crate::repo::repository::{self, Repository};
 use crate::repo::rrdp;
 use crate::repo::rrdp::RRDP_FOLDER;
-use crate::remote::oob::exchange::RepositoryResponse;
+use crate::remote::oob::RepositoryResponse;
 use crate::remote::publication::pubmsg::{Message, MessageError, QueryMessage};
 use crate::remote::publication::reply::{
     ErrorReply, ReportError, ReportErrorCode

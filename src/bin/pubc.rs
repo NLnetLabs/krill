@@ -14,8 +14,7 @@ use std::path::PathBuf;
 
 use krill::file;
 use krill::client::pubc::{self, Config, RunMode, PubClient };
-use krill::remote::oob::exchange::RepositoryResponse;
-use krill::remote::oob::exchange::RepositoryResponseError;
+use krill::remote::oob::{RepositoryResponse, RepositoryResponseError};
 
 fn main() {
 

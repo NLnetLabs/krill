@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use rpki::uri;
 use crate::remote::idcert::IdCert;
-use crate::remote::oob::exchange::{PublisherRequest, PublisherRequestError};
+use crate::remote::oob::{PublisherRequest, PublisherRequestError};
 use crate::publishing::publisher::Publisher;
 use crate::storage::keystore::{self, Info, Key, KeyStore};
 use crate::storage::caching_ks::CachingDiskKeyStore;

@@ -19,7 +19,7 @@ use rpki::x509::{Name, SignedData, Time, ValidationError};
 /// Identity Certificates are used in the provisioning and publication
 /// protocol. Initially the parent and child CAs and/or the publishing CA
 /// and publication server exchange self-signed Identity Certificates, wrapped
-/// in XML messages defined in the 'exchange.rs' module.
+/// in XML messages defined in the 'oob.rs' module.
 ///
 /// The private keys corresponding to the subject public keys in these
 /// certificates are then used to sign identity EE certificates used to sign
