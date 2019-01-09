@@ -144,7 +144,7 @@ SUBCOMMANDS:
 ./target/debug krillc --server http://localhost:3000/ --token secret health
 ```
 
-#### Manage Publishers
+##### Manage Publishers
 
 List current publishers, using the default (in this case json) output:
 ```bash
