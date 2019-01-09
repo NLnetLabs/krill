@@ -8,7 +8,8 @@ use std::fmt::Write;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ApiResponse {
     Health,
-    PublisherList(PublisherList)
+    PublisherList(PublisherList),
+    PostOk
 }
 
 impl ApiResponse {
@@ -27,8 +28,10 @@ impl ApiResponse {
                         Err(ReportError::UnsupportedFormat)
                     }
                 },
-                ApiResponse::PublisherList(list) =>
+                ApiResponse::PublisherList(list) => {
                     Ok(Some(list.report(fmt)?))
+                },
+                ApiResponse::PostOk => Ok(None)
             }
         }
     }

@@ -27,19 +27,11 @@ use krill::util::test;
 #[test]
 fn manage_publishers() {
     test::test_with_tmp_dir(|d| {
-
-        // Set up a client
-        let client_dir = test::create_sub_dir(&d);
-        let mut client = PubClient::new(&client_dir).unwrap();
-        client.init("alice").unwrap();
-        let pr = client.publisher_request().unwrap();
-
         // Set up a test PubServer Config with a client in it.
         let server_conf = {
             // Use a data dir for the storage
             let data_dir = test::create_sub_dir(&d);
             let xml_dir = test::create_sub_dir(&d);
-            test::save_pr(&xml_dir, "alice.xml", &pr);
             Config::test(&data_dir, &xml_dir)
         };
 
@@ -52,6 +44,24 @@ fn manage_publishers() {
 
         // XXX TODO: Find a better way to know the server is ready!
         thread::sleep(time::Duration::from_millis(500));
+
+        // Set up a client
+        let client_dir = test::create_sub_dir(&d);
+        let mut client = PubClient::new(&client_dir).unwrap();
+        client.init("alice").unwrap();
+        let pr = client.publisher_request().unwrap();
+        test::save_pr(&d, "alice.xml", &pr);
+
+        let mut alice_path = d.clone();
+        alice_path.push("alice.xml");
+
+        let krillc_opts = Options::new(
+            test::http_uri("http://localhost:3000/"),
+            "secret",
+            ReportFormat::Default,
+            Command::Publishers(PublishersCommand::Add(alice_path))
+        );
+        let _res = KrillClient::process(krillc_opts);
 
         let krillc_opts = Options::new(
             test::http_uri("http://localhost:3000/"),

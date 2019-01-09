@@ -16,6 +16,7 @@ use crate::remote::publication::reply::{
     ErrorReply, ReportError, ReportErrorCode
 };
 use crate::remote::sigmsg::SignedMessage;
+use remote::oob::PublisherRequest;
 
 /// # Naming things in the keystore.
 const ACTOR: &'static str = "krill pubd";
@@ -114,6 +115,18 @@ impl PubServer {
         self.publisher_store
             .publishers()
             .map_err(|e| { Error::PublisherStoreError(e) })
+    }
+
+    pub fn add_publisher(
+        &mut self,
+        req: PublisherRequest
+    ) -> Result<(), Error> {
+        self.publisher_store.add_publisher(
+            req,
+            self.responder.base_service_uri(),
+            ACTOR
+        )?;
+        Ok(())
     }
 
     /// Returns an option for a publisher.
@@ -232,8 +245,6 @@ impl PubServer {
         error_builder.build_message()
     }
 }
-
-
 
 
 //------------ Error ---------------------------------------------------------

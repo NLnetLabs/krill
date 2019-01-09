@@ -148,7 +148,13 @@ impl Responder {
             Err(Error::Unitialised)
         }
     }
+}
 
+/// # Access
+impl Responder {
+    pub fn base_service_uri(&self) -> &uri::Http {
+        &self.service_uri
+    }
 }
 
 

@@ -1,4 +1,7 @@
+use std::io;
 use std::time::Duration;
+use std::path::PathBuf;
+use bytes::Bytes;
 use clap::{App, Arg, SubCommand};
 use rpki::uri;
 use reqwest::{Client, StatusCode};
@@ -9,6 +12,7 @@ use crate::client::data::{
     ReportError,
     ReportFormat,
 };
+use crate::util::file;
 
 /// Command line tool for Krill admin tasks
 pub struct KrillClient {
@@ -48,7 +52,7 @@ impl KrillClient {
 
     /// Calls: api/v1/health
     fn health(&self) -> Result<ApiResponse, Error> {
-        Self::get(&self.server, &self.token, "api/v1/health")?;
+        self.get("api/v1/health")?;
         Ok(ApiResponse::Health)
     }
 
@@ -59,15 +63,51 @@ impl KrillClient {
     ) -> Result<ApiResponse, Error> {
         match command {
             PublishersCommand::List => {
-                let res = Self::get(
-                    &self.server,
-                    &self.token,
-                    "api/v1/publishers")?;
-
+                let res = self.get("api/v1/publishers")?;
                 let list: PublisherList = serde_json::from_str(&res)?;
 
                 Ok(ApiResponse::PublisherList(list))
+            },
+            PublishersCommand::Add(path) => {
+                let xml_bytes = file::read(&path)?;
+                self.post("api/v1/publishers", xml_bytes)?;
+                Ok(ApiResponse::PostOk)
             }
+        }
+    }
+
+    fn headers(&self) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            USER_AGENT,
+            HeaderValue::from_str("krillc").unwrap()
+        );
+        headers.insert(
+            "Authorization",
+            HeaderValue::from_str(&format!("Bearer {}", &self.token)).unwrap()
+        );
+        headers
+    }
+
+    fn post(&self, rel_path: &str, bytes: Bytes) -> Result<(), Error> {
+        let headers = self.headers();
+
+        let client = Client::builder()
+            .gzip(true)
+            .timeout(Duration::from_secs(30))
+            .build()?;
+
+        let uri = format!("{}{}", &self.server.to_string(), rel_path);
+        let res = client.post(&uri)
+            .headers(headers)
+            .body(bytes.to_vec())
+            .send()?;
+
+        match res.status() {
+            StatusCode::OK => {
+                Ok(())
+            },
+            bad => Err(Error::BadStatus(bad))
         }
     }
 
@@ -76,27 +116,17 @@ impl KrillClient {
     /// Note that the server uri ends with a '/', so leave out the '/'
     /// from the start of the rel_path when calling this function.
     fn get(
-        server: &uri::Http,
-        token: &String,
+        &self,
         rel_path: &str
     ) -> Result<String, Error> {
-
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            USER_AGENT,
-            HeaderValue::from_str("krillc").unwrap()
-        );
-        headers.insert(
-            "Authorization",
-            HeaderValue::from_str(&format!("Bearer {}", token)).unwrap()
-        );
+        let headers = self.headers();
 
         let client = Client::builder()
             .gzip(true)
             .timeout(Duration::from_secs(30))
             .build()?;
 
-        let uri = format!("{}{}", server.to_string(), rel_path);
+        let uri = format!("{}{}", &self.server.to_string(), rel_path);
         let mut res = client.get(&uri).headers(headers).send()?;
 
         match res.status() {
@@ -172,6 +202,19 @@ impl Options {
                 .subcommand(SubCommand::with_name("list")
                     .about("List all current publishers")
                 )
+                .subcommand(SubCommand::with_name("add")
+                    .about("Add a publisher. Note: the server will insist \
+                    that no publisher with that publisher_handle currently \
+                    exists.")
+                    .arg(Arg::with_name("xml")
+                        .short("x")
+                        .long("xml")
+                        .value_name("FILE")
+                        .help("Specify a file containing an RFC8183 \
+                        publisher request. (See: https://tools.ietf.org/html/rfc8183#section-5.2.3)")
+                        .required(true)
+                    )
+                )
             )
 
             .get_matches();
@@ -185,6 +228,11 @@ impl Options {
         if let Some(m) = matches.subcommand_matches("publishers") {
             if let Some(_m) = m.subcommand_matches("list") {
                 command = Command::Publishers(PublishersCommand::List)
+            }
+            if let Some(m) = m.subcommand_matches("add") {
+                let xml_file = m.value_of("xml").unwrap(); // required
+                let add = PublishersCommand::Add(PathBuf::from(xml_file));
+                command = Command::Publishers(add);
             }
         }
 
@@ -213,6 +261,7 @@ pub enum Command {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PublishersCommand {
+    Add(PathBuf),
     List
 }
 
@@ -241,6 +290,9 @@ pub enum Error {
 
     #[fail(display="{}", _0)]
     ReportError(ReportError),
+
+    #[fail(display="Can't read file: {}", _0)]
+    IoError(io::Error),
 }
 
 impl From<reqwest::Error> for Error {
@@ -258,6 +310,12 @@ impl From<serde_json::Error> for Error {
 impl From<ReportError> for Error {
     fn from(e: ReportError) -> Self {
         Error::ReportError(e)
+    }
+}
+
+impl From<io::Error> for Error {
+    fn from(e: io::Error) -> Self {
+        Error::IoError(e)
     }
 }
 

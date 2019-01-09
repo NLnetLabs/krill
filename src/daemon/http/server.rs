@@ -11,19 +11,15 @@ use bcder::decode;
 use bytes::Bytes;
 use futures::Future;
 use openssl::ssl::{SslMethod, SslAcceptor, SslAcceptorBuilder, SslFiletype};
-use serde::Serialize;
+use crate::daemon::api::admin::PublisherAdmin;
 use crate::daemon::api::auth::{Authorizer, CheckAuthorisation};
-use crate::daemon::api::data::{PublisherDetails, PublisherList};
 use crate::daemon::config::Config;
 use crate::daemon::http::ssl;
-use crate::daemon::publishers;
 use crate::daemon::pubserver;
 use crate::daemon::pubserver::PubServer;
 use crate::remote::sigmsg::SignedMessage;
 
 const NOT_FOUND: &'static [u8] = include_bytes!("../../../static/html/404.html");
-
-const PATH_PUBLISHERS: &'static str = "/api/v1/publishers";
 
 //------------ PubServerApp --------------------------------------------------
 
@@ -36,17 +32,18 @@ impl PubServerApp {
         let app = App::with_state(server)
             .middleware(middleware::Logger::default())
             .middleware(CheckAuthorisation)
-            .resource(PATH_PUBLISHERS, |r| {
-                r.f(Self::publishers)
+            .resource("/api/v1/publishers", |r| {
+                r.method(Method::GET).f(PublisherAdmin::publishers);
+                r.method(Method::POST).with(PublisherAdmin::add_publisher);
             })
             .resource("/api/v1/publishers/{handle}", |r| {
-                r.f(Self::publisher_details)
+                r.f(PublisherAdmin::publisher_details)
             })
             .resource("/api/v1/publishers/{handle}/id.cer", |r| {
-                r.f(Self::id_cert)
+                r.f(PublisherAdmin::id_cert)
             })
             .resource("/api/v1/publishers/{handle}/response.xml", |r| {
-                r.f(Self::repository_response)
+                r.f(PublisherAdmin::repository_response)
             })
             .resource("/api/v1/health", |r| {
                 r.f(Self::api_ok)
@@ -169,84 +166,6 @@ impl PubServerApp {
             .body(NOT_FOUND)
     }
 
-    /// Returns a json structure with all publishers in it.
-    fn publishers(req: &HttpRequest) -> HttpResponse {
-        let server: RwLockReadGuard<PubServer> = req.state().read().unwrap();
-        match server.publishers() {
-            Err(e) => Self::server_error(Error::ServerError(e)),
-            Ok(publishers) => {
-                Self::render_json(
-                    PublisherList::from(&publishers, PATH_PUBLISHERS)
-                )
-            }
-        }
-    }
-
-    /// Returns a json structure with publisher details
-    fn publisher_details(req: &HttpRequest) -> HttpResponse {
-        let server: RwLockReadGuard<PubServer> = req.state().read().unwrap();
-        match req.match_info().get("handle") {
-            None => Self::p404(req),
-            Some(handle) => {
-                match server.publisher(handle) {
-                    Ok(None) => Self::p404(req),
-                    Ok(Some(publisher)) => {
-                        Self::render_json(
-                            PublisherDetails::from(&publisher,
-                                                   PATH_PUBLISHERS)
-                        )
-                    },
-                    Err(e) => Self::server_error(Error::ServerError(e))
-                }
-            }
-        }
-    }
-
-    /// Returns the id.cer for a publisher
-    fn id_cert(req: &HttpRequest) -> HttpResponse {
-        let server: RwLockReadGuard<PubServer> = req.state().read().unwrap();
-        match req.match_info().get("handle") {
-            None => Self::p404(req),
-            Some(handle) => {
-                match server.publisher(handle) {
-                    Ok(None) => Self::p404(req),
-                    Ok(Some(publisher)) => {
-                        let bytes = publisher.id_cert().to_bytes();
-                        HttpResponse::Ok()
-                            .content_type("application/pkix-cert")
-                            .body(bytes)
-                    },
-                    Err(e) => Self::server_error(Error::ServerError(e))
-                }
-            }
-        }
-    }
-
-    /// Shows the server's RFC8183 section 5.2.4 Repository Response XML
-    /// file for a known publisher.
-    fn repository_response(req: &HttpRequest) -> HttpResponse {
-        let server: RwLockReadGuard<PubServer> = req.state().read().unwrap();
-        match req.match_info().get("handle") {
-            None => Self::p404(req),
-            Some(handle) => {
-                match server.repository_response(handle) {
-                    Ok(res) => {
-                        HttpResponse::Ok()
-                            .content_type("application/xml")
-                            .body(res.encode_vec())
-                    },
-                    Err(pubserver::Error::PublisherStoreError
-                        (publishers::Error::UnknownPublisher(_))) => {
-                        Self::p404(req)
-                    },
-                    Err(e) => {
-                        Self::server_error(Error::ServerError(e))
-                    }
-                }
-            }
-        }
-    }
-
     /// Processes an RFC8181 query and returns the appropriate response.
     ///
     /// Note this method checks whether the request can be decoded only, and
@@ -319,18 +238,6 @@ impl PubServerApp {
                 }
             },
             None => Self::p404(req)
-        }
-    }
-
-    /// Helper function to render json output.
-    fn render_json<O: Serialize>(object: O) -> HttpResponse {
-        match serde_json::to_string(&object){
-            Ok(enc) => {
-                HttpResponse::Ok()
-                    .content_type("application/json")
-                    .body(enc)
-            },
-            Err(e) => Self::server_error(Error::JsonError(e))
         }
     }
 
