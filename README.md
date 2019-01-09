@@ -98,16 +98,74 @@ The server should start on localhost and port 3000. If you want to use a
 different configuration, please review the config file (./defaults/krill.conf). 
 Alternatively, you can use the `-c` option to specify another config file.
 
+
+## Krill - Command Line Interface
+
+There is a command line interface shipping with Krill for Krill admin tasks. 
+The binary is built as part of the normal 'cargo build' process, and can be 
+used by running:
+```bash
+./target/debug krillc
+```
+
+To get an overview of all supported options run:
+```bash
+./target/debug krillc --help
+```
+
+Which will print something like this:
+```bash
+Krill admin client 0.2.0
+
+USAGE:
+    krillc [OPTIONS] --server <URI> --token <token-string> [SUBCOMMAND]
+
+FLAGS:
+    -h, --help       Prints help information
+    -V, --version    Prints version information
+
+OPTIONS:
+    -f, --format <type>           Specify the report format (none|json|text|xml). If left unspecified the format will
+                                  match the corresponding server api response type.
+    -s, --server <URI>            Specify the full URI to the krill server.
+    -t, --token <token-string>    Specify the value of an admin token.
+
+SUBCOMMANDS:
+    health        Perform a health check. Exits with exit code 0 if all is well, exit code 1 in case of any issues
+    help          Prints this message or the help of the given subcommand(s)
+    publishers    Manage publishers
+
+```
+
+#### CLI Examples
+
+##### Health Check
+```bash
+./target/debug krillc --server http://localhost:3000/ --token secret health
+```
+
+#### Manage Publishers
+
+List current publishers, using the default (in this case json) output:
+```bash
+./target/debug krillc --server http://localhost:3000/ --token secret publishers list
+```
+
+List current publishers, using text output:
+```bash
+./target/debug krillc --server http://localhost:3000/ --token secret --format text publishers list
+```
+
+
 ### API
 
 This application uses a JSON based REST (in the non-religious interpretation)
 API for managing all administrative tasks, such as managing the configured
 publishers.
 
-The UI and CLI (to be) included with this application (will) use this API 
-exclusively, i.e. there are no back doors being used. You can, of course, use
-this API directly from your own applications, or wrap things in your own UI 
-if you want.
+The UI (to be) and CLI use this API exclusively, i.e. there are no back doors
+being used. You can, of course, use this API directly from your own 
+applications, or wrap things in your own UI if you want.
 
 The API path includes a version. The idea is that we may add functionality, but
 will not introduce breaking changes to existing functionality. You may expect
