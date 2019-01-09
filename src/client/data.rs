@@ -1,6 +1,6 @@
 //! Data types to wrap the API responses, and support reporting on them in
 //! various formats (where applicable).
-
+use std::fmt::Write;
 
 //------------ ApiResponse ---------------------------------------------------
 
@@ -112,6 +112,21 @@ impl Report for PublisherList {
         match format {
             ReportFormat::Default | ReportFormat::Json => {
                 Ok(serde_json::to_string(self).unwrap())
+            },
+            ReportFormat::Text => {
+                let mut res = String::new();
+
+                write!(&mut res, "Publishers: ");
+                let mut first = true;
+                for p in &self.publishers {
+                    if ! first {
+                        write!(&mut res, ", ");
+                    } else {
+                        first = false;
+                    }
+                    write!(&mut res, "{}", p.id());
+                }
+                Ok(res)
             },
             _ => Err(ReportError::UnsupportedFormat)
         }
