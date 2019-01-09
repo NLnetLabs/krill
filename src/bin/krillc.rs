@@ -10,7 +10,7 @@ fn error(error: Error) {
 fn main() {
     match Options::from_args() {
         Ok(options) => {
-            match KrillClient::run(options) {
+            match KrillClient::report(options) {
                 Ok(()) => {} //,
                 Err(e) => error(e)
             }

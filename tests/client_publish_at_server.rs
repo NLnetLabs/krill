@@ -8,31 +8,14 @@ extern crate tokio;
 extern crate bytes;
 
 use std::collections::HashSet;
-use std::fs::File;
-use std::io::Write;
-use std::path::PathBuf;
-use std::str;
 use std::{thread, time};
 use actix::System;
-use bytes::Bytes;
 use krill::client::pubc::PubClient;
 use krill::daemon::config::Config;
 use krill::daemon::http::server::PubServerApp;
-use krill::remote::oob::{PublisherRequest, RepositoryResponse};
+use krill::remote::oob::RepositoryResponse;
 use krill::util::file::{self, CurrentFile};
 use krill::util::test;
-
-fn save_pr(base_dir: &PathBuf, file_name: &str, pr: &PublisherRequest) {
-    let mut full_name = base_dir.clone();
-    full_name.push(PathBuf::from(file_name));
-    let mut f = File::create(full_name).unwrap();
-    let xml = pr.encode_vec();
-    f.write(xml.as_ref()).unwrap();
-}
-
-fn bytes(s: &str) -> Bytes {
-    Bytes::from(s)
-}
 
 #[test]
 fn client_publish_at_server() {
@@ -50,7 +33,7 @@ fn client_publish_at_server() {
             let data_dir = test::create_sub_dir(&d);
             let xml_dir = test::create_sub_dir(&d);
             // Add the client's PublisherRequest to the server dir.
-            save_pr(&xml_dir, "alice.xml", &pr);
+            test::save_pr(&xml_dir, "alice.xml", &pr);
             Config::test(&data_dir, &xml_dir)
         };
 
@@ -86,15 +69,15 @@ fn client_publish_at_server() {
         let sync_dir = test::create_sub_dir(&d);
         let file_a = CurrentFile::new(
             test::rsync_uri("rsync://127.0.0.1/repo/alice/a.txt"),
-            bytes("a")
+            test::as_bytes("a")
         );
         let file_b = CurrentFile::new(
             test::rsync_uri("rsync://127.0.0.1/repo/alice/b.txt"),
-            bytes("b")
+            test::as_bytes("b")
         );
         let file_c = CurrentFile::new(
             test::rsync_uri("rsync://127.0.0.1/repo/alice/c.txt"),
-            bytes("c")
+            test::as_bytes("c")
         );
 
         file::save_in_dir(file_a.content(), &sync_dir, "a.txt").unwrap();

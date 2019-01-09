@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
+use bytes::Bytes;
 use rpki::uri;
 use rpki::signing::signer::Signer;
 use rpki::signing::softsigner::OpenSslSigner;
@@ -46,6 +47,8 @@ pub fn http_uri(s: &str) -> uri::Http {
     uri::Http::from_str(s).unwrap()
 }
 
+pub fn as_bytes(s: &str) -> Bytes { Bytes::from(s) }
+
 pub fn new_id_cert() -> IdCert {
     let mut s = OpenSslSigner::new();
     let key_id = s.create_key(&PublicKeyAlgorithm::RsaEncryption).unwrap();
@@ -66,4 +69,12 @@ pub fn save_file(base_dir: &PathBuf, file_name: &str, content: &[u8]) {
     full_name.push(PathBuf::from(file_name));
     let mut f = File::create(full_name).unwrap();
     f.write(content).unwrap();
+}
+
+pub fn save_pr(base_dir: &PathBuf, file_name: &str, pr: &PublisherRequest) {
+    let mut full_name = base_dir.clone();
+    full_name.push(PathBuf::from(file_name));
+    let mut f = File::create(full_name).unwrap();
+    let xml = pr.encode_vec();
+    f.write(xml.as_ref()).unwrap();
 }
