@@ -15,13 +15,15 @@ use krill::client::data::{
     ApiResponse,
     ReportFormat
 };
-use krill::client::krillc::{
+use krill::client::krillc::KrillClient;
+use krill::client::options::{
     Command,
-    KrillClient,
     Options,
-    PublishersCommand};
+    PublishersCommand
+};
 use krill::client::pubc::PubClient;
 use krill::util::test;
+use krill::remote::oob::RepositoryResponse;
 
 /// Tests that we can list publishers through the API
 #[test]
@@ -107,11 +109,9 @@ fn manage_publishers() {
                 Command::Publishers(PublishersCommand::Details("alice".to_string()))
             );
 
-            let res = KrillClient::process(krillc_opts);
-            assert!(res.is_ok());
-            let api_response = res.unwrap();
+            let res = KrillClient::process(krillc_opts).unwrap();
 
-            match api_response {
+            match res {
                 ApiResponse::PublisherDetails(details) => {
                     assert_eq!(
                         details.publisher_handle(),
@@ -120,6 +120,34 @@ fn manage_publishers() {
                 }
                 _ => assert!(false) // Fail!
             }
+        }
+
+        // Get repository response for "alice"
+        {
+            let krillc_opts = Options::new(
+                test::http_uri("http://localhost:3000/"),
+                token,
+                ReportFormat::Default,
+                Command::Publishers(
+                    PublishersCommand::RepositoryResponseXml(
+                        "alice".to_string(),
+                        None
+                    )
+                )
+            );
+
+            let res = KrillClient::process(krillc_opts).unwrap();
+
+            match res {
+                ApiResponse::GenericBody(xml) => {
+                    // Assert that the response is a valid response.xml
+                    let xml = RepositoryResponse::decode(xml.as_bytes()).unwrap();
+                    assert_eq!(xml.publisher_handle(), "alice")
+                }
+                _ => assert!(false) // Fail!
+            }
+
+
         }
 
     });

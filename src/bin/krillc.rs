@@ -1,12 +1,8 @@
 extern crate krill;
 
-use krill::client::krillc::{KrillClient, Options, Error};
+use krill::client::krillc::KrillClient;
+use krill::client::options::Options;
 use krill::client::data::ReportFormat;
-
-fn error(error: Error) {
-    eprintln!("{}", error);
-    ::std::process::exit(1);
-}
 
 fn main() {
     match Options::from_args() {
@@ -16,13 +12,15 @@ fn main() {
                 Ok(()) => {} //,
                 Err(e) => {
                     if format != ReportFormat::None {
-                        error(e)
+                        eprintln!("{}", e);
                     }
+                    ::std::process::exit(1);
                 }
             }
         },
         Err(e) => {
-            error(e)
+            eprintln!("{}", e);
+            ::std::process::exit(1);
         }
     }
 }

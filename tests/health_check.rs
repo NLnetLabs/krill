@@ -11,7 +11,11 @@ use std::{thread, time};
 use actix::System;
 use krill::daemon::config::Config;
 use krill::daemon::http::server::PubServerApp;
-use krill::client::krillc::{KrillClient, Options, Command};
+use krill::client::krillc::KrillClient;
+use krill::client::options::{
+    Command,
+    Options
+};
 use krill::client::data::{
     ApiResponse,
     ReportFormat
