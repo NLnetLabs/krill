@@ -86,7 +86,7 @@ impl<'a> PublisherList<'a> {
 
 #[derive(Clone, Debug, Serialize)]
 pub struct PublisherDetails<'a> {
-    name: &'a str,
+    publisher_handle: &'a str,
     #[serde(serialize_with = "ext_serde::ser_rsync_uri")]
     base_uri: &'a uri::Rsync,
     #[serde(serialize_with = "ext_serde::ser_http_uri")]
@@ -99,22 +99,22 @@ impl<'a> PublisherDetails<'a> {
         publisher: &'a Arc<Publisher>,
         path_publishers: &'a str
     ) -> PublisherDetails<'a> {
-        let name = publisher.name().as_str();
+        let handle = publisher.name().as_str();
         let base_uri = publisher.base_uri();
         let service_uri = publisher.service_uri();
 
         let mut links = Vec::new();
         links.push(Link {
             rel: "response.xml",
-            link: format!("{}/{}/response.xml", path_publishers, name)
+            link: format!("{}/{}/response.xml", path_publishers, handle)
         });
         links.push(Link {
             rel: "id.cer",
-            link: format!("{}/{}/id.cer", path_publishers, name)
+            link: format!("{}/{}/id.cer", path_publishers, handle)
         });
 
         PublisherDetails {
-            name,
+            publisher_handle: handle,
             base_uri,
             service_uri,
             links

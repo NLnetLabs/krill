@@ -1,6 +1,9 @@
 //! Data types to wrap the API responses, and support reporting on them in
 //! various formats (where applicable).
 use std::fmt::Write;
+use rpki::uri;
+
+use crate::util::ext_serde;
 
 //------------ ApiResponse ---------------------------------------------------
 
@@ -8,6 +11,7 @@ use std::fmt::Write;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ApiResponse {
     Health,
+    PublisherDetails(PublisherDetails),
     PublisherList(PublisherList),
     Empty, // Typically a successful post just gets an empty 200 response
     GenericBody(String) // For when the server echos Json to a successful post
@@ -32,6 +36,9 @@ impl ApiResponse {
                 ApiResponse::PublisherList(list) => {
                     Ok(Some(list.report(fmt)?))
                 },
+                ApiResponse::PublisherDetails(details) => {
+                    Ok(Some(details.report(fmt)?))
+                }
                 ApiResponse::GenericBody(body) => {
                     Ok(Some(body.clone()))
                 }
@@ -154,5 +161,65 @@ pub struct PublisherSummary {
 impl PublisherSummary {
     pub fn id(&self) -> &String {
         &self.id
+    }
+}
+
+//------------ PublisherDetails ----------------------------------------------
+
+/// This type defines the publisher details fro:
+/// /api/v1/publishers/{handle}
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PublisherDetails {
+    publisher_handle: String,
+
+    #[serde(
+        deserialize_with = "ext_serde::de_rsync_uri",
+        serialize_with = "ext_serde::ser_rsync_uri"
+    )]
+    base_uri: uri::Rsync,
+
+    #[serde(
+        deserialize_with = "ext_serde::de_http_uri",
+        serialize_with = "ext_serde::ser_http_uri"
+    )]
+    service_uri: uri::Http,
+
+    links: Vec<Link>
+}
+
+impl PublisherDetails {
+    pub fn publisher_handle(&self) -> &str {
+        &self.publisher_handle
+    }
+}
+
+impl PartialEq for PublisherDetails {
+    fn eq(&self, other: &PublisherDetails) -> bool {
+        match (serde_json::to_string(self), serde_json::to_string(other)) {
+            (Ok(ser_self), Ok(ser_other)) => ser_self == ser_other,
+            _ => false
+        }
+    }
+}
+
+impl Eq for PublisherDetails {}
+
+impl Report for PublisherDetails {
+    fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
+        match format {
+            ReportFormat::Default | ReportFormat::Json => {
+                Ok(serde_json::to_string(self).unwrap())
+            },
+            ReportFormat::Text => {
+                let mut res = String::new();
+
+                write!(&mut res, "publisher_handle: {}\n", self.publisher_handle);
+                write!(&mut res, "base uri: {}\n", self.base_uri);
+                write!(&mut res, "service_uri: {}\n", self.service_uri);
+
+                Ok(res)
+            },
+            _ => Err(ReportError::UnsupportedFormat)
+        }
     }
 }

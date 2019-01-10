@@ -27,6 +27,9 @@ use krill::util::test;
 #[test]
 fn manage_publishers() {
     test::test_with_tmp_dir(|d| {
+
+        let token = "secret";
+
         // Set up a test PubServer Config with a client in it.
         let server_conf = {
             // Use a data dir for the storage
@@ -45,46 +48,80 @@ fn manage_publishers() {
         // XXX TODO: Find a better way to know the server is ready!
         thread::sleep(time::Duration::from_millis(500));
 
-        // Set up a client
-        let client_dir = test::create_sub_dir(&d);
-        let mut client = PubClient::new(&client_dir).unwrap();
-        client.init("alice").unwrap();
-        let pr = client.publisher_request().unwrap();
-        test::save_pr(&d, "alice.xml", &pr);
+        // Set up a client "alice"
+        {
+            let client_dir = test::create_sub_dir(&d);
+            let mut client = PubClient::new(&client_dir).unwrap();
+            client.init("alice").unwrap();
+            let pr = client.publisher_request().unwrap();
+            test::save_pr(&d, "alice.xml", &pr);
 
-        let mut alice_path = d.clone();
-        alice_path.push("alice.xml");
-
-        let krillc_opts = Options::new(
-            test::http_uri("http://localhost:3000/"),
-            "secret",
-            ReportFormat::Default,
-            Command::Publishers(PublishersCommand::Add(alice_path))
-        );
-        let _res = KrillClient::process(krillc_opts);
-
-        let krillc_opts = Options::new(
-            test::http_uri("http://localhost:3000/"),
-            "secret",
-            ReportFormat::Default,
-            Command::Publishers(PublishersCommand::List)
-        );
-
-        let res = KrillClient::process(krillc_opts);
-        assert!(res.is_ok());
-        let api_response = res.unwrap();
-
-        match api_response {
-            ApiResponse::PublisherList(list) => {
-                assert!(
-                    list.publishers()
-                        .into_iter()
-                        .find(|p| p.id().as_str() == "alice")
-                        .is_some()
-                );
-            }
-            _ => assert!(false) // Fail!
         }
+
+        // Add client "alice"
+        {
+            let mut alice_path = d.clone();
+            alice_path.push("alice.xml");
+            let krillc_opts = Options::new(
+                test::http_uri("http://localhost:3000/"),
+                token,
+                ReportFormat::Default,
+                Command::Publishers(PublishersCommand::Add(alice_path))
+            );
+            let res = KrillClient::process(krillc_opts);
+            assert!(res.is_ok())
+        }
+
+        // Find "alice" in the list
+        {
+            let krillc_opts = Options::new(
+                test::http_uri("http://localhost:3000/"),
+                token,
+                ReportFormat::Default,
+                Command::Publishers(PublishersCommand::List)
+            );
+
+            let res = KrillClient::process(krillc_opts);
+            assert!(res.is_ok());
+            let api_response = res.unwrap();
+
+            match api_response {
+                ApiResponse::PublisherList(list) => {
+                    assert!(
+                        list.publishers()
+                            .into_iter()
+                            .find(|p| p.id().as_str() == "alice")
+                            .is_some()
+                    );
+                }
+                _ => assert!(false) // Fail!
+            }
+        }
+
+        // Find details for "alice"
+        {
+            let krillc_opts = Options::new(
+                test::http_uri("http://localhost:3000/"),
+                token,
+                ReportFormat::Default,
+                Command::Publishers(PublishersCommand::Details("alice".to_string()))
+            );
+
+            let res = KrillClient::process(krillc_opts);
+            assert!(res.is_ok());
+            let api_response = res.unwrap();
+
+            match api_response {
+                ApiResponse::PublisherDetails(details) => {
+                    assert_eq!(
+                        details.publisher_handle(),
+                        "alice"
+                    );
+                }
+                _ => assert!(false) // Fail!
+            }
+        }
+
     });
 }
 

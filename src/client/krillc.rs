@@ -8,6 +8,7 @@ use reqwest::{Client, StatusCode};
 use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
 use crate::client::data::{
     ApiResponse,
+    PublisherDetails,
     PublisherList,
     ReportError,
     ReportFormat,
@@ -50,13 +51,11 @@ impl KrillClient {
         }
     }
 
-    /// Calls: api/v1/health
     fn health(&self) -> Result<ApiResponse, Error> {
         self.get("api/v1/health")?;
         Ok(ApiResponse::Health)
     }
 
-    /// Calls: api/v1/publishers
     fn publishers(
         &self,
         command: PublishersCommand,
@@ -65,7 +64,6 @@ impl KrillClient {
             PublishersCommand::List => {
                 let res = self.get("api/v1/publishers")?;
                 let list: PublisherList = serde_json::from_str(&res)?;
-
                 Ok(ApiResponse::PublisherList(list))
             },
             PublishersCommand::Add(path) => {
@@ -80,6 +78,12 @@ impl KrillClient {
                     },
                     None => Ok(ApiResponse::Empty)
                 }
+            },
+            PublishersCommand::Details(handle) => {
+                let uri = format!("api/v1/publishers/{}", handle);
+                let res = self.get(uri.as_str())?;
+                let details: PublisherDetails = serde_json::from_str(&res)?;
+                Ok(ApiResponse::PublisherDetails(details))
             }
         }
     }
@@ -184,6 +188,10 @@ pub struct Options {
 }
 
 impl Options {
+    pub fn format(&self) -> &ReportFormat {
+        &self.format
+    }
+
     /// Creates a new Options explicitly (useful for testing)
     pub fn new(
         server: uri::Http,
@@ -243,8 +251,17 @@ impl Options {
                         .required(true)
                     )
                 )
+                .subcommand(SubCommand::with_name("details")
+                    .about("Show details for a publisher.")
+                    .arg(Arg::with_name("handle")
+                        .short("h")
+                        .long("handle")
+                        .value_name("publisher handle")
+                        .help("The publisher handle from RFC8181")
+                        .required(true)
+                    )
+                )
             )
-
             .get_matches();
 
         let mut command = Command::NotSet;
@@ -261,6 +278,11 @@ impl Options {
                 let xml_file = m.value_of("xml").unwrap(); // required
                 let add = PublishersCommand::Add(PathBuf::from(xml_file));
                 command = Command::Publishers(add);
+            }
+            if let Some(m) = m.subcommand_matches("details") {
+                let handle = m.value_of("handle").unwrap();
+                let details = PublishersCommand::Details(handle.to_string());
+                command = Command::Publishers(details);
             }
         }
 
@@ -290,6 +312,7 @@ pub enum Command {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PublishersCommand {
     Add(PathBuf),
+    Details(String),
     List
 }
 
