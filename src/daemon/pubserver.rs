@@ -264,7 +264,7 @@ pub enum Error {
     MessageError(MessageError),
 
     #[fail(display="{}", _0)]
-    ValdiationError(ValidationError),
+    ValidationError(ValidationError),
 }
 
 impl From<responder::Error> for Error {
@@ -293,7 +293,7 @@ impl From<MessageError> for Error {
 
 impl From<ValidationError> for Error {
     fn from(e: ValidationError) -> Self {
-        Error::ValdiationError(e)
+        Error::ValidationError(e)
     }
 }
 

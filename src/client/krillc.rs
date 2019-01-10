@@ -70,8 +70,16 @@ impl KrillClient {
             },
             PublishersCommand::Add(path) => {
                 let xml_bytes = file::read(&path)?;
-                self.post("api/v1/publishers", xml_bytes)?;
-                Ok(ApiResponse::PostOk)
+                match self.post("api/v1/publishers", xml_bytes)? {
+                    Some(body) => {
+                        if body.is_empty() {
+                            Ok(ApiResponse::Empty)
+                        } else {
+                            Ok(ApiResponse::GenericBody(body))
+                        }
+                    },
+                    None => Ok(ApiResponse::Empty)
+                }
             }
         }
     }
@@ -89,7 +97,7 @@ impl KrillClient {
         headers
     }
 
-    fn post(&self, rel_path: &str, bytes: Bytes) -> Result<(), Error> {
+    fn post(&self, rel: &str, bytes: Bytes) -> Result<Option<String>, Error> {
         let headers = self.headers();
 
         let client = Client::builder()
@@ -97,17 +105,28 @@ impl KrillClient {
             .timeout(Duration::from_secs(30))
             .build()?;
 
-        let uri = format!("{}{}", &self.server.to_string(), rel_path);
-        let res = client.post(&uri)
+        let uri = format!("{}{}", &self.server.to_string(), rel);
+        let mut res = client.post(&uri)
             .headers(headers)
             .body(bytes.to_vec())
             .send()?;
 
         match res.status() {
             StatusCode::OK => {
-                Ok(())
+                Ok(res.text().ok())
             },
-            bad => Err(Error::BadStatus(bad))
+            status => {
+                match res.text() {
+                    Ok(body) => {
+                        if body.is_empty() {
+                            Err(Error::BadStatus(status))
+                        } else {
+                            Err(Error::ErrorWithBody(body))
+                        }
+                    },
+                    _ => Err(Error::BadStatus(status))
+                }
+            }
         }
     }
 
@@ -134,8 +153,17 @@ impl KrillClient {
                 let txt = res.text()?;
                 Ok(txt)
             },
-            bad => {
-                Err(Error::BadStatus(bad))
+            status => {
+                match res.text() {
+                    Ok(body) => {
+                        if body.is_empty() {
+                            Err(Error::BadStatus(status))
+                        } else {
+                            Err(Error::ErrorWithBody(body))
+                        }
+                    },
+                    _ => Err(Error::BadStatus(status))
+                }
             }
         }
 
@@ -284,6 +312,9 @@ pub enum Error {
 
     #[fail(display="Received bad status: {}", _0)]
     BadStatus(StatusCode),
+
+    #[fail(display="{}", _0)]
+    ErrorWithBody(String),
 
     #[fail(display="Received invalid json response: {}", _0)]
     JsonError(serde_json::Error),

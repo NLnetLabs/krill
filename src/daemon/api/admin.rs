@@ -136,8 +136,6 @@ impl PublisherAdmin {
             }
         }
     }
-
-
 }
 
 //------------ Error ---------------------------------------------------------
@@ -154,10 +152,105 @@ pub enum Error {
     PublisherRequestError
 }
 
+/// Translate an error to an HTTP Status Code
+trait ErrorToStatus {
+    fn status(&self) -> StatusCode;
+}
+
+/// Translate an error to an error code to include in a json response.
+trait ErrorToCode {
+    fn code(&self) -> usize;
+}
+
+impl ErrorToStatus for Error {
+    fn status(&self) -> StatusCode {
+        match self {
+            Error::ServerError(e) => e.status(),
+            Error::JsonError(_) => StatusCode::BAD_REQUEST,
+            Error::PublisherRequestError => StatusCode::BAD_REQUEST,
+        }
+    }
+}
+
+impl ErrorToCode for Error {
+    fn code(&self) -> usize {
+        match self {
+            Error::ServerError(e) => e.code(),
+            Error::JsonError(_) => 1001,
+            Error::PublisherRequestError => 1002,
+        }
+    }
+}
+
+impl ErrorToStatus for pubserver::Error {
+    fn status(&self) -> StatusCode {
+        match self {
+            pubserver::Error::ValidationError(_) => StatusCode::FORBIDDEN,
+            pubserver::Error::PublisherStoreError(e) => e.status(),
+            pubserver::Error::MessageError(_) => StatusCode::BAD_REQUEST,
+            pubserver::Error::RepositoryError(_) => StatusCode::BAD_REQUEST,
+            pubserver::Error::ResponderError(_) => StatusCode::BAD_REQUEST,
+        }
+    }
+}
+
+impl ErrorToCode for pubserver::Error {
+    fn code(&self) -> usize {
+        match self {
+            pubserver::Error::ValidationError(_) => 2001,
+            pubserver::Error::PublisherStoreError(e) => e.code(),
+            pubserver::Error::MessageError(_) => 1003,
+            pubserver::Error::RepositoryError(_) => 3002,
+            pubserver::Error::ResponderError(_) => 3003,
+        }
+    }
+}
+
+impl ErrorToCode for publishers::Error {
+    fn code(&self) -> usize {
+        match self {
+            publishers::Error::ForwardSlashInHandle(_) => 1004,
+            publishers::Error::DuplicatePublisher(_)   => 1005,
+            publishers::Error::UnknownPublisher(_)     => 1006,
+            _ => 3001
+        }
+    }
+}
+
+impl ErrorToStatus for publishers::Error {
+    fn status(&self) -> StatusCode {
+        match self {
+            publishers::Error::ForwardSlashInHandle(_) =>
+                StatusCode::BAD_REQUEST,
+            publishers::Error::DuplicatePublisher(_) =>
+                StatusCode::BAD_REQUEST,
+            publishers::Error::UnknownPublisher(_) =>
+                StatusCode::BAD_REQUEST,
+            _ => StatusCode::INTERNAL_SERVER_ERROR
+        }
+    }
+}
+
+
+#[derive(Debug, Serialize)]
+struct ErrorResponse {
+    code: usize,
+    msg: String
+}
+
+impl Error {
+    fn to_error_response(&self) -> ErrorResponse {
+        ErrorResponse {
+            code: self.code(),
+            msg: format!("{}", self)
+        }
+    }
+}
+
 
 impl actix_web::ResponseError for Error {
     fn error_response(&self) -> HttpResponse {
-        HttpResponse::build(StatusCode::INTERNAL_SERVER_ERROR)
-            .body(format!("I'm afraid I can't do that: {}", self))
+        HttpResponse::build(self.status())
+            .body(serde_json::to_string(&self.to_error_response()).unwrap())
     }
 }

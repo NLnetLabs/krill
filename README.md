@@ -99,9 +99,68 @@ different configuration, please review the config file (./defaults/krill.conf).
 Alternatively, you can use the `-c` option to specify another config file.
 
 
+
+# API
+
+This application uses a JSON based REST (in the non-religious interpretation)
+API for managing all administrative tasks, such as managing the configured
+publishers.
+
+## General
+
+The UI (to be) and CLI use this API exclusively, i.e. there are no back doors
+being used. You can, of course, use this API directly from your own 
+applications, or wrap things in your own UI if you want.
+
+The API path includes a version. The idea is that we may add functionality, but
+will not introduce breaking changes to existing functionality. You may expect
+additional resources, and you may see additional data (json members) within 
+resources. So, please make sure that you ignore what you don't understand 
+when using this API.
+
+The base uri for the API is:
+http://localhost:3000/api/v1/
+
+*NOTE:* Calls to the API have to include the api token as an [OAuth 2.0 
+Bearer token](https://tools.ietf.org/html/rfc6750#section-2.1) as a header, e.g.:
+```
+Authorization: Bearer secret
+```
+
+## Error Responses
+
+The API may have to return errors. When this happens the generic response 
+will have an HTTP status code, and include a json message with the following 
+generic structure:
+```
+{ "code": <int>, "msg": "Specific error message"}
+```
+
+There are three categories of errors, each with their own HTTP status code, 
+and range of error codes:
+
+| Category      | Code Range | HTTP  |
+| ------------- | --------- | ----- |
+| User Input    | 1000-1999 | 400   |
+| Authorisation | 2000-2999 | 403   |
+| Server Error  | 3000-3999 | 500   |
+
+Note however that this applies only the "admin" API. The [publication 
+procotol](https://tools.ietf.org/html/rfc8183), and (in future) [provisioning 
+protocol](https://tools.ietf.org/html/rfc6492), have their own defined ways 
+of dealing with errors. 
+
+We will discuss all the API calls below, and we will mention which errors may
+be expected for each.
+
 ## Krill - Command Line Interface
 
-There is a command line interface shipping with Krill for Krill admin tasks. 
+There is a command line interface (CLI) shipping with Krill for Krill admin 
+tasks. This CLI provides a simple wrapper around the API. It does not use any
+back doors. It may be more convenient that calling the API directly from your
+favourite scripting language, but maybe even more importantly: it allows us 
+to set up integration and regression testing when building this software.  
+ 
 The binary is built as part of the normal 'cargo build' process, and can be 
 used by running:
 ```bash
@@ -137,49 +196,37 @@ SUBCOMMANDS:
 
 ```
 
-#### CLI Examples
+We will include an example CLI call wherever we document an API end-point.
 
-##### Health Check
-```bash
-./target/debug krillc --server http://localhost:3000/ --token secret health
+## API End Points
+
+### Health Check
+
+#### Path
+
+```
+/api/v1/health
 ```
 
-##### Manage Publishers
+#### Success Reply
 
-List current publishers, using the default (in this case json) output:
+HTTP code 200, empty body
+
+#### Possible Error Replies
+
+| http | body | description  |
+| -----| ---- | ------------ |
+| 403  | -    | Forbidden (wrong token) |
+| 500  | json | Some server issue       |    
+
+#### CLI Example
+
 ```bash
-./target/debug krillc --server http://localhost:3000/ --token secret publishers list
+krillc --server http://localhost:3000/ --token secret health
 ```
 
-List current publishers, using text output:
-```bash
-./target/debug krillc --server http://localhost:3000/ --token secret --format text publishers list
-```
-
-
-### API
-
-This application uses a JSON based REST (in the non-religious interpretation)
-API for managing all administrative tasks, such as managing the configured
-publishers.
-
-The UI (to be) and CLI use this API exclusively, i.e. there are no back doors
-being used. You can, of course, use this API directly from your own 
-applications, or wrap things in your own UI if you want.
-
-The API path includes a version. The idea is that we may add functionality, but
-will not introduce breaking changes to existing functionality. You may expect
-additional resources, and you may see additional data (json members) within 
-resources. So, please make sure that you ignore what you don't understand 
-when using this API.
-
-The base uri for the API is:
-http://localhost:3000/api/v1/
-
-*NOTE:* Calls to the API have to include the api token as an [OAuth 2.0 
-Bearer token](https://tools.ietf.org/html/rfc6750#section-2.1) as a header, e.g.:
-
-    Authorization: Bearer secret
+The exit code will be 0 if everything is okay, or 1 otherwise. There is no 
+text output, except when errors occur.
 
 ### Publishers
 
@@ -189,38 +236,204 @@ RPKI Certificate  Authorities, however we also include a `pubc` binary that can
 act as a publisher, and that can synchronise any arbitrary directory with the
 publication server.
 
-Currently we only provide an API for view the current state:
+The following 'publishers' end points are defined:
 
 | Resource                       | Method   | Action                          |
 | ------------------------------ | -------- | ------------------------------- |
-| /publishers                    | Get      | List all current publishers     |
-| /publishers/{handle}           | Get      | Show publisher details          |
-| /publishers/{handle}/id.cer    | Get      | Get publisher id certificate    |
-| /publishers/{handle}/response.xml  | Get      | Get [repository response xml](https://tools.ietf.org/html/rfc8183#section-5.2.4)|
- 
-Example call:
-```bash
-curl -H "Authorization: Bearer secret" http://localhost:3000/api/v1/publishers
+| /api/v1/publishers             | GET  | List all current publishers |
+| /api/v1/publishers                    | POST | Submit a new [publisher request](https://tools.ietf.org/html/rfc8183#section-5.2.3)| 
+| /api/v1/publishers/{handle}           | GET  | Show publisher details   |
+| /api/v1//publishers/{handle}/id.cer    | GET  | Get publisher id certificate |
+| /api/v1//publishers/{handle}/response.xml  | GET | Get [repository response.xml](https://tools.ietf.org/html/rfc8183#section-5.2.4)|
+
+#### List Publishers
+
+##### Path
+
+```
+/api/v1/publishers (GET)
 ```
 
+#### Success Reply Example
 
-For the moment publishers are configured by adding the publisher's ['publisher 
-request' XML file'](https://tools.ietf.org/html/rfc8183#section-5.2.3) to the 
-directory defined by the `pub_xml_dir` setting in the publication server 
-configuration (krill.conf). The server will scan this directory at start 
-up, and add/remove publishers as needed, or update their identity certificate
-if needed. It is assumed that the `publisher_handle` in these XML files is 
-unique, and verified.
+```json
+{
+  "publishers": [
+    {
+      "id": "alice",
+      "links": [
+        {
+          "rel": "response.xml",
+          "link": "\/api\/v1\/publishers\/alice\/response.xml"
+        },
+        {
+          "rel": "self",
+          "link": "\/api\/v1\/publishers\/alice"
+        }
+      ]
+    }
+  ]
+}
+```
 
-However, we plan to change this behaviour in the coming weeks in favor of using
-the API for updates as well as displaying current state. We will then add a 
-function to the CLI for your convenience that will allow you to continue
-dropping these XML files in a directory - the CLI will implement the needed 
-logic wrapping around the API to ensure that things are then synchronised.
+#### Possible Error Replies
+
+| http | body | description  |
+| -----| ---- | ------------ |
+| 403  | -    | Forbidden (wrong token) |
+| 500  | json | Some server issue       |
+
+#### CLI Example
+```
+krillc --server http://localhost:3000/ --token secret publishers list
+```
+
+#### Add a Publisher
+
+##### Path
+
+```
+/api/v1/publishers (POST)
+```
+
+Post body: ['publisher request' XML file'](https://tools.ietf.org/html/rfc8183#section-5.2.3)
+
+##### Success Response
+
+200 OK, empty body
+
+##### Possible Error Replies
+
+| http | body | description  |
+| -----| ---- | ------------ |
+| 400  | json | Issue with input        |
+| 403  | -    | Forbidden (wrong token) |
+| 500  | json | Some server issue       |
+
+For the 400 errors you can expect the following error messages:
+
+| Code  | Description                          |  Code Module          |
+| ----- | ------------------------------------ | --------------------- |
+| 1002  | Invalid RFC8183 Publisher Request    | PublisherRequestError |
+| 1004  | Forward slash in publisher handle    | publishers::Error::ForwardSlashInHandle  |
+| 1005  | Duplicate publisher handle           | publishers::Error::DuplicatePublisher  |
+
+##### CLI Example
+
+```
+krillc --server http://localhost:3000/ --token secret publishers add --xml work/tmp/alice.xml
+```
+
+### Publisher Details
+
+#### Path
+```
+/api/v1/publishers/{handle} (GET)  
+```
+
+#### Success Reply Example
+
+TODO
+
+#### Possible Error Replies
+
+| http | body | description  |
+| -----| ---- | ------------ |
+| 403  | -    | Forbidden (wrong token) |
+| 404  | -    | Unknown Publisher       |
+| 500  | json | Some server issue       |
+
+#### CLI Example
+
+TODO
+
+### Publisher Identity Certificate
+
+#### Path
+
+```
+/api/v1//publishers/{handle}/id.cer  (GET)  
+```
+
+#### Success Reply
+
+The X509 Identity Certificate this publisher uses to sign CMS messages used 
+in the publication and provisioning protocol.
+
+#### Possible Error Replies
+
+| http | body | description  |
+| -----| ---- | ------------ |
+| 403  | -    | Forbidden (wrong token) |
+| 404  | -    | Unknown Publisher       |
+| 500  | json | Some server issue       |
+
+#### CLI Example
+
+TODO
+
+### Publisher Response
+
+Gets the [repository response.xml](https://tools.ietf.org/html/rfc8183#section-5.2.4)
+for the specified publisher.
+
+#### Path
+
+```
+/api/v1/publishers/{handle}/response.xml
+```
+
+#### Success Reply Example
+
+TODO
+
+#### Possible Error Replies
+
+| http | body | description  |
+| -----| ---- | ------------ |
+| 403  | -    | Forbidden (wrong token) |
+| 404  | -    | Unknown Publisher       |
+| 500  | json | Some server issue       |
+
+#### CLI Example
+
+TODO
+
+##### Appendix - Overview of API Errors
+
+##### User Input Codes
+
+The following user input errors may be returned:
+
+| Code  | Description                          |  Code Module          |
+| ----- | ------------------------------------ | --------------------- |
+| 1001  | Submitted Json cannot be parsed      | serde_json::Error     |
+| 1002  | Invalid RFC8183 Publisher Request    | PublisherRequestError |
+| 1003  | Issue with submitted publication XML | pubmsg::MessageError  |
+| 1004  | Forward slash in publisher handle    | publishers::Error::ForwardSlashInHandle  |
+| 1005  | Duplicate publisher handle           | publishers::Error::DuplicatePublisher  |
+| 1006  | Unknown publisher                    | publishers::Error::UnknownPublisher  |
+
+##### Authorisation Codes
+
+The following authorisation errors may be returned:
+
+| Code  | Description                                |  Code Module          |
+| ----- | ------------------------------------------ | --------------------- |
+| 2001  | Submitted protocol CMS does not validate   | pubserver::Error::ValidationError     |
 
 
+##### Server Error Codes
 
+The following server errors may be returned. These errors indicate that there
+ is a bug, or operational issue (e.g. a disk cannot be written to) at the 
+ server side.
 
+| Code  | Description                                |  Code Module          |
+| ----- | ------------------------------------------ | --------------------- |
+| 3001  | Issue with storing/retrieving publisher    | pubserver::Error::PublisherStoreError     |
+| 3002  | Issue with updating repository             | pubserver::Error::RepositoryError     |
+| 3003  | Issue with signing response CMS            | pubserver::Error::ResponderError     |
 
 
 

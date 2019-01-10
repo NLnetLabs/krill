@@ -9,7 +9,8 @@ use std::fmt::Write;
 pub enum ApiResponse {
     Health,
     PublisherList(PublisherList),
-    PostOk
+    Empty, // Typically a successful post just gets an empty 200 response
+    GenericBody(String) // For when the server echos Json to a successful post
 }
 
 impl ApiResponse {
@@ -31,7 +32,10 @@ impl ApiResponse {
                 ApiResponse::PublisherList(list) => {
                     Ok(Some(list.report(fmt)?))
                 },
-                ApiResponse::PostOk => Ok(None)
+                ApiResponse::GenericBody(body) => {
+                    Ok(Some(body.clone()))
+                }
+                ApiResponse::Empty => Ok(None)
             }
         }
     }
