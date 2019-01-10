@@ -104,9 +104,25 @@ impl Options {
                         .short("o")
                         .long("out")
                         .value_name("FILE")
-                        .help("Optional file to save to (default print to \
-                        stdout).")
+                        .help("Optional file to save to (default stdout).")
                         .required(false)
+                    )
+                )
+                .subcommand(SubCommand::with_name("idcert")
+                    .about("Get identity certificate known for publisher.")
+                    .arg(Arg::with_name("handle")
+                        .short("h")
+                        .long("handle")
+                        .value_name("publisher handle")
+                        .help("The publisher handle from RFC8181")
+                        .required(true)
+                    )
+                    .arg(Arg::with_name("out")
+                        .short("o")
+                        .long("out")
+                        .value_name("FILE")
+                        .help("File to save to.")
+                        .required(true)
                     )
                 )
             )
@@ -141,6 +157,12 @@ impl Options {
                 );
                 command = Command::Publishers(response);
             }
+            if let Some(m) = m.subcommand_matches("idcert") {
+                let handle = m.value_of("handle").unwrap().to_string();
+                let file = PathBuf::from(m.value_of("out").unwrap());
+                let idcert = PublishersCommand::IdCert(handle, file);
+                command = Command::Publishers(idcert);
+            }
         }
 
         let server = matches.value_of("server").unwrap(); // required
@@ -170,6 +192,7 @@ pub enum PublishersCommand {
     Add(PathBuf),
     Details(String),
     RepositoryResponseXml(String, Option<PathBuf>),
+    IdCert(String, PathBuf),
     List
 }
 

@@ -16,6 +16,7 @@ use crate::client::options::{
     PublishersCommand
 };
 use crate::util::file;
+use reqwest::Response;
 
 /// Command line tool for Krill admin tasks
 pub struct KrillClient {
@@ -99,6 +100,12 @@ impl KrillClient {
                         Ok(ApiResponse::GenericBody(xml))
                     }
                 }
+            },
+            PublishersCommand::IdCert(handle, file) => {
+                let uri = format!("api/v1/publishers/{}/id.cer", handle);
+                let bytes = self.get_binary(uri.as_str())?;
+                file::save(&bytes, &file)?;
+                Ok(ApiResponse::Empty)
             }
         }
     }
@@ -157,6 +164,29 @@ impl KrillClient {
         &self,
         rel_path: &str
     ) -> Result<String, Error> {
+        let mut res = self.get_generic(rel_path)?;
+        let txt = res.text()?;
+        Ok(txt)
+    }
+
+    /// Sends a get request to the server, including the token for
+    /// authorization.
+    /// Note that the server uri ends with a '/', so leave out the '/'
+    /// from the start of the rel_path when calling this function.
+    fn get_binary(
+        &self,
+        rel_path: &str
+    ) -> Result<Bytes, Error> {
+        let mut res = self.get_generic(rel_path)?;
+        let mut bytes: Vec<u8> = vec![];
+        res.copy_to(&mut bytes)?;
+        Ok(Bytes::from(bytes))
+    }
+
+    fn get_generic(
+        &self,
+        rel_path: &str
+    ) -> Result<Response, Error> {
         let headers = self.headers();
 
         let client = Client::builder()
@@ -169,8 +199,7 @@ impl KrillClient {
 
         match res.status() {
             StatusCode::OK => {
-                let txt = res.text()?;
-                Ok(txt)
+                Ok(res)
             },
             status => {
                 match res.text() {
@@ -185,7 +214,6 @@ impl KrillClient {
                 }
             }
         }
-
     }
 
 }
