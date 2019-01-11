@@ -49,9 +49,7 @@ impl PubServerApp {
                 r.f(Self::api_ok)
             })
             .resource("/rfc8181/{handle}", |r| {
-                r.method(Method::POST).with(
-                    Self::process_publish_request
-                )
+                r.method(Method::POST).with(Self::process_publish_request)
             })
             .resource("/rrdp/{path:.*}", |r| {
                 r.f(Self::serve_rrdp_files)
@@ -161,9 +159,12 @@ impl PubServerApp {
 impl PubServerApp {
 
     /// 404 handler
-    fn p404(_req: &HttpRequest) -> HttpResponse {
-        HttpResponse::build(StatusCode::NOT_FOUND)
-            .body(NOT_FOUND)
+    fn p404(req: &HttpRequest) -> HttpResponse {
+        if req.path().starts_with("/api") {
+            HttpResponse::build(StatusCode::NOT_FOUND).finish()
+        } else {
+            HttpResponse::build(StatusCode::NOT_FOUND).body(NOT_FOUND)
+        }
     }
 
     /// Processes an RFC8181 query and returns the appropriate response.
