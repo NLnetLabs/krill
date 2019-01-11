@@ -132,9 +132,9 @@ impl PubServer {
     /// Returns an option for a publisher.
     pub fn publisher(
         &self,
-        publisher_name: &str
+        name: impl AsRef<str>
     ) -> Result<Option<Arc<Publisher>>, Error> {
-        self.publisher_store.publisher(publisher_name)
+        self.publisher_store.publisher(name)
             .map_err(|e| Error::PublisherStoreError(e))
     }
 
@@ -143,9 +143,9 @@ impl PubServer {
     /// Returns an error if the publisher is unknown.
     pub fn repository_response(
         &self,
-        publisher_name: &str
+        name: impl AsRef<str>
     ) -> Result<RepositoryResponse, Error> {
-        let publisher = self.publisher_store.get_publisher(publisher_name)?;
+        let publisher = self.publisher_store.get_publisher(name)?;
         self.responder
             .repository_response(publisher)
             .map_err(|e| Error::ResponderError(e))
@@ -176,7 +176,7 @@ impl PubServer {
     /// with an HTTP error response, without invoking any of this.
     pub fn handle_request(
         &mut self,
-        sigmsg: SignedMessage,
+        sigmsg: &SignedMessage,
         handle: &str
     ) -> Result<Captured, Error> {
         debug!("Handling request for: {}", handle);

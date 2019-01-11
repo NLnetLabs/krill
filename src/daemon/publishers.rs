@@ -269,9 +269,9 @@ impl PublisherStore {
     /// Returns an Optional Arc to a publisher for this name.
     pub fn publisher(
         &self,
-        name: &str
+        name: impl AsRef<str>
     ) -> Result<Option<Arc<Publisher>>, Error> {
-        let key = Key::from_str(name);
+        let key = Key::from_str(name.as_ref());
         self.store.get(&key).map_err(|e| { Error::KeyStoreError(e)})
     }
 
@@ -279,8 +279,9 @@ impl PublisherStore {
     /// does not exist.
     pub fn get_publisher(
         &self,
-        name: &str
+        name: impl AsRef<str>
     ) -> Result<Arc<Publisher>, Error> {
+        let name = name.as_ref();
         match self.publisher(name)? {
             None => Err(Error::UnknownPublisher(name.to_string())),
             Some(p) => Ok(p)

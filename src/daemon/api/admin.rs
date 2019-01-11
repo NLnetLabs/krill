@@ -10,6 +10,7 @@ use crate::daemon::http::server::HttpRequest;
 use crate::daemon::publishers;
 use crate::daemon::pubserver::{self, PubServer};
 use remote::oob::PublisherRequest;
+use daemon::http::server::PublisherHandle;
 
 /// Helper function to render json output.
 fn render_json<O: Serialize>(object: O) -> HttpResponse {
@@ -57,9 +58,13 @@ impl PublisherAdmin {
         }
     }
 
+
     /// Adds a publisher, expects that an RFC8183 section 5.2.3 Publisher
     /// Request XML is posted.
-    pub fn add_publisher(req: HttpRequest, xml: Bytes) -> HttpResponse {
+    pub fn add_publisher(
+        req: HttpRequest,
+        xml: Bytes
+    ) -> HttpResponse {
         let mut server: RwLockWriteGuard<PubServer> = req.state().write().unwrap();
         match PublisherRequest::decode(xml.as_ref()) {
             Ok(req) => {
@@ -72,67 +77,62 @@ impl PublisherAdmin {
         }
     }
 
+
     /// Returns a json structure with publisher details
-    pub fn publisher_details(req: &HttpRequest) -> HttpResponse {
+    pub fn publisher_details(
+        req: HttpRequest,
+        handle: PublisherHandle
+    ) -> HttpResponse {
         let server: RwLockReadGuard<PubServer> = req.state().read().unwrap();
-        match req.match_info().get("handle") {
-            None => api_not_found(),
-            Some(handle) => {
-                match server.publisher(handle) {
-                    Ok(None) => api_not_found(),
-                    Ok(Some(publisher)) => {
-                        render_json(
-                            PublisherDetails::from(&publisher, "/api/v1/publishers")
-                        )
-                    },
-                    Err(e) => server_error(Error::ServerError(e))
-                }
-            }
+        match server.publisher(handle) {
+            Ok(None) => api_not_found(),
+            Ok(Some(publisher)) => {
+                render_json(
+                    PublisherDetails::from(&publisher, "/api/v1/publishers")
+                )
+            },
+            Err(e) => server_error(Error::ServerError(e))
         }
     }
 
 
     /// Returns the id.cer for a publisher
-    pub fn id_cert(req: &HttpRequest) -> HttpResponse {
+    pub fn id_cert(
+        req: HttpRequest,
+        handle: PublisherHandle
+    ) -> HttpResponse {
         let server: RwLockReadGuard<PubServer> = req.state().read().unwrap();
-        match req.match_info().get("handle") {
-            None => api_not_found(),
-            Some(handle) => {
-                match server.publisher(handle) {
-                    Ok(None) => api_not_found(),
-                    Ok(Some(publisher)) => {
-                        let bytes = publisher.id_cert().to_bytes();
-                        HttpResponse::Ok()
-                            .content_type("application/pkix-cert")
-                            .body(bytes)
-                    },
-                    Err(e) => server_error(Error::ServerError(e))
-                }
-            }
+        match server.publisher(handle) {
+            Ok(None) => api_not_found(),
+            Ok(Some(publisher)) => {
+                let bytes = publisher.id_cert().to_bytes();
+                HttpResponse::Ok()
+                    .content_type("application/pkix-cert")
+                    .body(bytes)
+            },
+            Err(e) => server_error(Error::ServerError(e))
         }
     }
 
     /// Shows the server's RFC8183 section 5.2.4 Repository Response XML
     /// file for a known publisher.
-    pub fn repository_response(req: &HttpRequest) -> HttpResponse {
+    pub fn repository_response(
+        req: HttpRequest,
+        handle: PublisherHandle
+    ) -> HttpResponse {
         let server: RwLockReadGuard<PubServer> = req.state().read().unwrap();
-        match req.match_info().get("handle") {
-            None => api_not_found(),
-            Some(handle) => {
-                match server.repository_response(handle) {
-                    Ok(res) => {
-                        HttpResponse::Ok()
-                            .content_type("application/xml")
-                            .body(res.encode_vec())
-                    },
-                    Err(pubserver::Error::PublisherStoreError
-                        (publishers::Error::UnknownPublisher(_))) => {
-                        api_not_found()
-                    },
-                    Err(e) => {
-                        server_error(Error::ServerError(e))
-                    }
-                }
+        match server.repository_response(handle) {
+            Ok(res) => {
+                HttpResponse::Ok()
+                    .content_type("application/xml")
+                    .body(res.encode_vec())
+            },
+            Err(pubserver::Error::PublisherStoreError
+                (publishers::Error::UnknownPublisher(_))) => {
+                api_not_found()
+            },
+            Err(e) => {
+                server_error(Error::ServerError(e))
             }
         }
     }

@@ -8,7 +8,6 @@ use actix_web::dev::MessageBody;
 use actix_web::middleware;
 use actix_web::http::{Method, StatusCode };
 use bcder::decode;
-use bytes::Bytes;
 use futures::Future;
 use openssl::ssl::{SslMethod, SslAcceptor, SslAcceptorBuilder, SslFiletype};
 use crate::daemon::api::admin::PublisherAdmin;
@@ -37,13 +36,13 @@ impl PubServerApp {
                 r.method(Method::POST).with(PublisherAdmin::add_publisher);
             })
             .resource("/api/v1/publishers/{handle}", |r| {
-                r.f(PublisherAdmin::publisher_details)
+                r.with(PublisherAdmin::publisher_details)
             })
             .resource("/api/v1/publishers/{handle}/id.cer", |r| {
-                r.f(PublisherAdmin::id_cert)
+                r.with(PublisherAdmin::id_cert)
             })
             .resource("/api/v1/publishers/{handle}/response.xml", |r| {
-                r.f(PublisherAdmin::repository_response)
+                r.with(PublisherAdmin::repository_response)
             })
             .resource("/api/v1/health", |r| {
                 r.f(Self::api_ok)
@@ -175,21 +174,15 @@ impl PubServerApp {
     /// [`handle_signed_request`]: #method.handle_signed_request
     fn process_publish_request(
         req: HttpRequest,
-        pr: PublishRequest
+        handle: PublisherHandle,
+        msg: SignedMessage
     ) -> HttpResponse {
         debug!("Processing publish request");
-        match SignedMessage::decode(pr.body, true) {
-            Err(e)  => {
-                Self::server_error(Error::DecodeError(e))
-            },
-            Ok(msg) => {
-                Self::handle_signed_request(
-                    req.state().write().unwrap(),
-                    msg,
-                    pr.handle.as_str()
-                )
-            }
-        }
+        Self::handle_signed_request(
+            req.state().write().unwrap(),
+            &msg,
+            handle.0.as_str()
+        )
     }
 
     /// Handles a decoded RFC8181 query.
@@ -197,7 +190,7 @@ impl PubServerApp {
     /// This delegates to `PubServer` to do the actual hard work.
     fn handle_signed_request(
         mut server: RwLockWriteGuard<PubServer>,
-        msg: SignedMessage,
+        msg: &SignedMessage,
         handle: &str
     ) -> HttpResponse {
         match server.handle_request(msg, handle) {
@@ -261,64 +254,80 @@ impl PubServerApp {
 }
 
 
-//------------ PublishRequest ------------------------------------------------
+//------------ SignedMessage -------------------------------------------------
 
-/// This type was introduced so that both the handle for the publisher, and
-/// the body of an RFC8181 request to the publication server, can be derived
-/// from the request by actix.
+/// Support converting requests into SignedMessage.
 ///
-/// Furthermore it allows to use a higher limit to the size of these requests,
-/// in this case 256MB (comparison the entire RIPE NCC repository in December
-/// 2018 amounted to roughly 100MB).
+/// Also allows to use a higher limit to the size of these requests, in this
+/// case 256MB (comparison the entire RIPE NCC repository in December 2018
+/// amounted to roughly 100MB).
 ///
 /// We may want to lower this and/or make it configurable, or make it
 /// depend on which publisher is sending data.
-struct PublishRequest {
-    handle: String,
-    body: Bytes
-}
+/// struct PublishRequest {
+impl<S: 'static> FromRequest<S> for SignedMessage {
 
-impl<S: 'static> FromRequest<S> for PublishRequest {
-
-    type Config = PublishRequestConfig;
-    type Result = Result<
-        Box<Future<Item = Self, Error = actix_web::Error>>,
-        actix_web::Error
-    >;
+    type Config = SignedMessageConvertConfig;
+    type Result = Box<Future<Item=Self, Error=actix_web::Error>>;
 
     fn from_request(
         req: &actix_web::HttpRequest<S>,
         cfg: &Self::Config
     ) -> Self::Result {
+        Box::new(MessageBody::new(req).limit(cfg.limit())
+            .from_err()
+            .and_then(|bytes| {
+                match SignedMessage::decode(bytes, true) {
+                    Ok(message) => Ok(message),
+                    Err(e) => Err(Error::DecodeError(e).into())
+                }
+            }))
+    }
+}
+
+pub struct SignedMessageConvertConfig;
+impl SignedMessageConvertConfig {
+    fn limit(&self) -> usize {
+        255 * 1024 * 1024 // 256 MB
+    }
+}
+
+impl Default for SignedMessageConvertConfig {
+    fn default() -> Self {
+        SignedMessageConvertConfig
+    }
+}
+
+
+//------------ PublisherHandle -----------------------------------------------
+
+/// Defines a publisher_handle in a path, then can be built with FromRequest,
+/// so that we can easily use this as a parameter on server methods.
+pub struct PublisherHandle(pub String);
+
+impl<S> FromRequest<S> for PublisherHandle {
+    type Config = ();
+    type Result = Result<Self, actix_web::Error>;
+
+    fn from_request(
+        req: &actix_web::HttpRequest<S>,
+        _cfg: &Self::Config
+    ) -> Self::Result {
         if let Some(handle) = req.match_info().get("handle") {
             let handle = handle.to_string();
-            Ok(Box::new(MessageBody::new(req).limit(cfg.limit())
-                .from_err()
-                .map(|bytes| {
-                    PublishRequest {
-                        handle,
-                        body: bytes
-                    }
-                }))
-            )
+            Ok(PublisherHandle(handle))
         } else {
             Err(Error::WrongPath.into())
         }
     }
 }
 
-pub struct PublishRequestConfig;
-impl PublishRequestConfig {
-    fn limit(&self) -> usize {
-        255 * 1024 * 1024 // 256 MB
+impl AsRef<str> for PublisherHandle {
+    fn as_ref(&self) -> &str {
+        &self.0
     }
 }
 
-impl Default for PublishRequestConfig {
-    fn default() -> Self {
-        PublishRequestConfig
-    }
-}
 
 //------------ IntoHttpHandler -----------------------------------------------
 
