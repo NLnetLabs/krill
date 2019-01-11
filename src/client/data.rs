@@ -1,6 +1,5 @@
 //! Data types to wrap the API responses, and support reporting on them in
 //! various formats (where applicable).
-use std::fmt::Write;
 use rpki::uri;
 
 use crate::util::ext_serde;
@@ -130,15 +129,15 @@ impl Report for PublisherList {
             ReportFormat::Text => {
                 let mut res = String::new();
 
-                write!(&mut res, "Publishers: ").unwrap();
+                res.push_str("Publishers: ");
                 let mut first = true;
                 for p in &self.publishers {
                     if ! first {
-                        write!(&mut res, ", ").unwrap();
+                        res.push_str(", ");
                     } else {
                         first = false;
                     }
-                    write!(&mut res, "{}", p.id()).unwrap();
+                    res.push_str(p.id());
                 }
                 Ok(res)
             },
@@ -211,11 +210,13 @@ impl Report for PublisherDetails {
                 Ok(serde_json::to_string(self).unwrap())
             },
             ReportFormat::Text => {
-                let mut res = String::new();
 
-                write!(&mut res, "publisher_handle: {}\n", self.publisher_handle);
-                write!(&mut res, "base uri: {}\n", self.base_uri);
-                write!(&mut res, "service_uri: {}\n", self.service_uri);
+                let res = format!(
+                    "publisher_handle: {}\n\
+                     base uri: {}\n\
+                     service_uri: {}",
+                    self.publisher_handle, self.base_uri, self.service_uri
+                );
 
                 Ok(res)
             },
