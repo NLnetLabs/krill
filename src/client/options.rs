@@ -125,6 +125,16 @@ impl Options {
                         .required(true)
                     )
                 )
+                .subcommand(SubCommand::with_name("remove")
+                    .about("Removes a known publisher")
+                    .arg(Arg::with_name("handle")
+                        .short("h")
+                        .long("handle")
+                        .value_name("publisher handle")
+                        .help("The publisher handle from RFC8181")
+                        .required(true)
+                    )
+                )
             )
             .get_matches();
 
@@ -163,6 +173,10 @@ impl Options {
                 let idcert = PublishersCommand::IdCert(handle, file);
                 command = Command::Publishers(idcert);
             }
+            if let Some(m) = m.subcommand_matches("remove") {
+                let handle = m.value_of("handle").unwrap().to_string();
+                command = Command::Publishers(PublishersCommand::Remove(handle))
+            }
         }
 
         let server = matches.value_of("server").unwrap(); // required
@@ -191,6 +205,7 @@ pub enum Command {
 pub enum PublishersCommand {
     Add(PathBuf),
     Details(String),
+    Remove(String),
     RepositoryResponseXml(String, Option<PathBuf>),
     IdCert(String, PathBuf),
     List

@@ -15,6 +15,7 @@ use krill::client::data::{
     ApiResponse,
     ReportFormat
 };
+use krill::client::krillc;
 use krill::client::krillc::KrillClient;
 use krill::client::options::{
     Command,
@@ -24,6 +25,7 @@ use krill::client::options::{
 use krill::client::pubc::PubClient;
 use krill::util::test;
 use krill::remote::oob::RepositoryResponse;
+use reqwest::StatusCode;
 
 /// Tests that we can list publishers through the API
 #[test]
@@ -146,8 +148,38 @@ fn manage_publishers() {
                 }
                 _ => assert!(false) // Fail!
             }
+        }
 
+        // Remove "alice"
+        {
+            let mut alice_path = d.clone();
+            alice_path.push("alice.xml");
+            let krillc_opts = Options::new(
+                test::http_uri("http://localhost:3000/"),
+                token,
+                ReportFormat::Default,
+                Command::Publishers(PublishersCommand::Remove("alice".to_string()))
+            );
+            let res = KrillClient::process(krillc_opts);
+            assert!(res.is_ok());
 
+            let krillc_opts = Options::new(
+                test::http_uri("http://localhost:3000/"),
+                token,
+                ReportFormat::Default,
+                Command::Publishers(PublishersCommand::Details("alice".to_string()))
+            );
+
+            let res = KrillClient::process(krillc_opts);
+
+            match res {
+                Err(krillc::Error::BadStatus(code)) => {
+                    assert_eq!(code, StatusCode::NOT_FOUND);
+                },
+                _ => assert!(false) // should have failed!
+            }
+
+            assert!(res.is_err());
         }
 
     });

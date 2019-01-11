@@ -31,6 +31,16 @@ fn server_error(error: Error) -> HttpResponse {
     error.error_response()
 }
 
+/// Returns a server in a read lock
+fn ro_server(req: &HttpRequest) -> RwLockReadGuard<PubServer> {
+    req.state().read().unwrap()
+}
+
+/// Returns a server in a write lock
+fn rw_server(req: &HttpRequest) -> RwLockWriteGuard<PubServer> {
+    req.state().write().unwrap()
+}
+
 /// A clean 404 result for the API (no content, not for humans)
 fn api_not_found() -> HttpResponse {
     HttpResponse::build(StatusCode::NOT_FOUND).finish()
@@ -47,8 +57,7 @@ pub struct PublisherAdmin;
 impl PublisherAdmin {
     /// Returns a json structure with all publishers in it.
     pub fn publishers(req: &HttpRequest) -> HttpResponse {
-        let server: RwLockReadGuard<PubServer> = req.state().read().unwrap();
-        match server.publishers() {
+        match ro_server(req).publishers() {
             Err(e) => server_error(Error::ServerError(e)),
             Ok(publishers) => {
                 render_json(
@@ -65,7 +74,7 @@ impl PublisherAdmin {
         req: HttpRequest,
         xml: Bytes
     ) -> HttpResponse {
-        let mut server: RwLockWriteGuard<PubServer> = req.state().write().unwrap();
+        let mut server = rw_server(&req);
         match PublisherRequest::decode(xml.as_ref()) {
             Ok(req) => {
                 match server.add_publisher(req) {
@@ -77,14 +86,27 @@ impl PublisherAdmin {
         }
     }
 
+    /// Removes a publisher. Should be idempotent! If if did not exist then
+    /// that's just fine.
+    pub fn remove_publisher(
+        req: HttpRequest,
+        handle: PublisherHandle
+    ) -> HttpResponse {
+        match rw_server(&req).remove_publisher(handle) {
+            Ok(()) => api_ok(),
+            Err(pubserver::Error::PublisherStoreError(
+                    publishers::Error::UnknownPublisher(_))) => api_ok(),
+            Err(e) => server_error(Error::ServerError(e))
+        }
+    }
+
 
     /// Returns a json structure with publisher details
     pub fn publisher_details(
         req: HttpRequest,
         handle: PublisherHandle
     ) -> HttpResponse {
-        let server: RwLockReadGuard<PubServer> = req.state().read().unwrap();
-        match server.publisher(handle) {
+        match ro_server(&req).publisher(handle) {
             Ok(None) => api_not_found(),
             Ok(Some(publisher)) => {
                 render_json(
@@ -101,8 +123,7 @@ impl PublisherAdmin {
         req: HttpRequest,
         handle: PublisherHandle
     ) -> HttpResponse {
-        let server: RwLockReadGuard<PubServer> = req.state().read().unwrap();
-        match server.publisher(handle) {
+        match ro_server(&req).publisher(handle) {
             Ok(None) => api_not_found(),
             Ok(Some(publisher)) => {
                 let bytes = publisher.id_cert().to_bytes();
@@ -120,8 +141,7 @@ impl PublisherAdmin {
         req: HttpRequest,
         handle: PublisherHandle
     ) -> HttpResponse {
-        let server: RwLockReadGuard<PubServer> = req.state().read().unwrap();
-        match server.repository_response(handle) {
+        match ro_server(&req).repository_response(handle) {
             Ok(res) => {
                 HttpResponse::Ok()
                     .content_type("application/xml")

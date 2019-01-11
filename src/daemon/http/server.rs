@@ -36,7 +36,8 @@ impl PubServerApp {
                 r.method(Method::POST).with(PublisherAdmin::add_publisher);
             })
             .resource("/api/v1/publishers/{handle}", |r| {
-                r.with(PublisherAdmin::publisher_details)
+                r.method(Method::GET).with(PublisherAdmin::publisher_details);
+                r.method(Method::DELETE).with(PublisherAdmin::remove_publisher);
             })
             .resource("/api/v1/publishers/{handle}/id.cer", |r| {
                 r.with(PublisherAdmin::id_cert)

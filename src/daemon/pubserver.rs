@@ -117,6 +117,7 @@ impl PubServer {
             .map_err(|e| { Error::PublisherStoreError(e) })
     }
 
+    /// Adds the publishers, blows up if it already existed.
     pub fn add_publisher(
         &mut self,
         req: PublisherRequest
@@ -124,6 +125,18 @@ impl PubServer {
         self.publisher_store.add_publisher(
             req,
             self.responder.base_service_uri(),
+            ACTOR
+        )?;
+        Ok(())
+    }
+
+    /// Removes a publisher, blows up if it didn't exist.
+    pub fn remove_publisher(
+        &mut self,
+        name: impl AsRef<str>
+    ) -> Result<(), Error> {
+        self.publisher_store.remove_publisher(
+            name,
             ACTOR
         )?;
         Ok(())

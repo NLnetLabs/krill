@@ -203,9 +203,10 @@ impl PublisherStore {
     /// Will return an error if ths publisher does not exist.
     pub fn remove_publisher(
         &mut self,
-        name: &str,
+        name: impl AsRef<str>,
         actor: &str
     ) -> Result<(), Error> {
+        let name = name.as_ref();
         match self.publisher(name)? {
             None => Err(Error::UnknownPublisher(name.to_string())),
             Some(_p) => {

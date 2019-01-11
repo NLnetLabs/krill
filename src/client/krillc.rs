@@ -82,6 +82,11 @@ impl KrillClient {
                     None => Ok(ApiResponse::Empty)
                 }
             },
+            PublishersCommand::Remove(handle) => {
+                let uri = format!("api/v1/publishers/{}", handle);
+                self.delete(&uri)?;
+                Ok(ApiResponse::Empty)
+            },
             PublishersCommand::Details(handle) => {
                 let uri = format!("api/v1/publishers/{}", handle);
                 let res = self.get(uri.as_str())?;
@@ -123,16 +128,19 @@ impl KrillClient {
         headers
     }
 
+    fn client(&self) -> Result<Client, Error> {
+        Client::builder()
+            .gzip(true)
+            .timeout(Duration::from_secs(30))
+            .build()
+            .map_err(|e| Error::RequestError(e))
+    }
+
     fn post(&self, rel: &str, bytes: Bytes) -> Result<Option<String>, Error> {
         let headers = self.headers();
 
-        let client = Client::builder()
-            .gzip(true)
-            .timeout(Duration::from_secs(30))
-            .build()?;
-
         let uri = format!("{}{}", &self.server.to_string(), rel);
-        let mut res = client.post(&uri)
+        let mut res = self.client()?.post(&uri)
             .headers(headers)
             .body(bytes.to_vec())
             .send()?;
@@ -187,15 +195,11 @@ impl KrillClient {
         &self,
         rel_path: &str
     ) -> Result<Response, Error> {
-        let headers = self.headers();
-
-        let client = Client::builder()
-            .gzip(true)
-            .timeout(Duration::from_secs(30))
-            .build()?;
-
         let uri = format!("{}{}", &self.server.to_string(), rel_path);
-        let mut res = client.get(&uri).headers(headers).send()?;
+        let mut res = self.client()?
+            .get(&uri)
+            .headers(self.headers())
+            .send()?;
 
         match res.status() {
             StatusCode::OK => {
@@ -213,6 +217,22 @@ impl KrillClient {
                     _ => Err(Error::BadStatus(status))
                 }
             }
+        }
+    }
+
+    fn delete(
+        &self,
+        rel: &str
+    ) -> Result<(), Error> {
+        let uri = format!("{}{}", &self.server.to_string(), rel);
+        let res = self.client()?
+            .delete(&uri)
+            .headers(self.headers())
+            .send()?;
+
+        match res.status() {
+            StatusCode::OK => Ok(()),
+            status         => Err(Error::BadStatus(status))
         }
     }
 
