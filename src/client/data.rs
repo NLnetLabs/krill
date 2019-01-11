@@ -130,15 +130,15 @@ impl Report for PublisherList {
             ReportFormat::Text => {
                 let mut res = String::new();
 
-                write!(&mut res, "Publishers: ");
+                write!(&mut res, "Publishers: ").unwrap();
                 let mut first = true;
                 for p in &self.publishers {
                     if ! first {
-                        write!(&mut res, ", ");
+                        write!(&mut res, ", ").unwrap();
                     } else {
                         first = false;
                     }
-                    write!(&mut res, "{}", p.id());
+                    write!(&mut res, "{}", p.id()).unwrap();
                 }
                 Ok(res)
             },
