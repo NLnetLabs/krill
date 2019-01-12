@@ -1,3 +1,5 @@
+[![Documentation Status](https://readthedocs.org/projects/rpki/badge/?version=latest)](https://rpki.readthedocs.io/en/latest/?badge=latest)
+
 # Krill
 
 Krill is a Resource Public Key Infrastructure (RPKI) daemon, featuring 
