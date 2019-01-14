@@ -80,6 +80,13 @@ impl Options {
                         publisher request. (See: https://tools.ietf.org/html/rfc8183#section-5.2.3)")
                         .required(true)
                     )
+                    .arg(Arg::with_name("handle")
+                        .short("h")
+                        .long("handle")
+                        .value_name("publisher handle")
+                        .help("Override the publisher handle in the request.")
+                        .required(false)
+                    )
                 )
                 .subcommand(SubCommand::with_name("details")
                     .about("Show details for a publisher.")
@@ -150,7 +157,12 @@ impl Options {
             }
             if let Some(m) = m.subcommand_matches("add") {
                 let xml_file = m.value_of("xml").unwrap(); // required
-                let add = PublishersCommand::Add(PathBuf::from(xml_file));
+                let handle_opt = m.value_of("handle").map(|s| s.to_string());
+
+                let add = PublishersCommand::Add(
+                    PathBuf::from(xml_file),
+                    handle_opt
+                );
                 command = Command::Publishers(add);
             }
             if let Some(m) = m.subcommand_matches("details") {
@@ -203,7 +215,8 @@ pub enum Command {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PublishersCommand {
-    Add(PathBuf),
+    // the path to the xml, and an option for a non-default handle
+    Add(PathBuf, Option<String>),
     Details(String),
     Remove(String),
     RepositoryResponseXml(String, Option<PathBuf>),

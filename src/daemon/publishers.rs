@@ -154,45 +154,43 @@ impl PublisherStore {
     pub fn add_publisher(
         &mut self,
         pr: PublisherRequest,
+        handle: &str,
         base_service_uri: &uri::Http,
         actor: &str
     ) -> Result<(), Error> {
-        let (tag, name, id_cert) = pr.into_parts();
+        let (tag, _, id_cert) = pr.into_parts();
 
-        if name.contains("/") {
-            return Err(
-                Error::ForwardSlashInHandle(name))
+        if handle.contains("/") {
+            return Err(Error::ForwardSlashInHandle(handle.to_string()))
         }
 
-        if self.has_publisher(&name) {
-            return Err(
-                Error::DuplicatePublisher(name)
-            )
+        if self.has_publisher(handle) {
+            return Err(Error::DuplicatePublisher(handle.to_string()))
         }
 
         let mut base_uri = self.base_uri.to_string();
-        base_uri.push_str(name.as_ref());
+        base_uri.push_str(handle);
         base_uri.push_str("/");
         let base_uri = uri::Rsync::from_string(base_uri)?;
 
         let mut service_uri = base_service_uri.to_string();
-        service_uri.push_str(name.as_ref());
+        service_uri.push_str(handle);
         let service_uri = uri::Http::from_string(service_uri)?;
 
-        let key = Key::from_str(name.as_ref());
+        let key = Key::from_str(handle);
         let info = Info::now(
             actor,
-            &format!("Added publisher: {}", &name)
+            &format!("Added publisher: {}", handle)
         );
         let publisher = Publisher::new(
             tag,
-            name,
+            handle.to_string(),
             base_uri,
             service_uri,
             id_cert
         );
 
-        info!("Adding publisher: {}", publisher.name());
+        info!("Adding publisher: {}", handle);
         self.store.store(key, publisher, info)?;
 
         Ok(())
@@ -329,7 +327,12 @@ impl PublisherStore {
         for (handle, pr) in prs_on_disk {
             match self.publisher(&handle)? {
                 None => {
-                    self.add_publisher(pr, base_service_uri, actor)?;
+                    let handle = pr.handle().clone();
+                    self.add_publisher(
+                        pr,
+                        &handle,
+                        base_service_uri,
+                        actor)?;
                 }
                 Some(p) => {
                     if p.id_cert().to_bytes() != pr.id_cert().to_bytes() {
@@ -479,7 +482,9 @@ mod tests {
             let mut ps = test_publisher_store(&d);
             let pr = test::new_publisher_request("test/below");
 
-            match ps.add_publisher(pr, &base_service_uri(), "test") {
+            let handle = "test/below";
+
+            match ps.add_publisher(pr, handle, &base_service_uri(), "test") {
                 Err(Error::ForwardSlashInHandle(_)) => { }, // Ok
                 _ => panic!("Should have seen error.")
             }
@@ -495,7 +500,7 @@ mod tests {
             let id_cert = pr.id_cert().clone();
             let actor = "test";
 
-            ps.add_publisher(pr, &base_service_uri(), actor).unwrap();
+            ps.add_publisher(pr, name, &base_service_uri(), actor).unwrap();
 
             assert!(ps.has_publisher(&name));
 
@@ -523,7 +528,7 @@ mod tests {
             let pr = test::new_publisher_request(name);
             let actor = "test";
 
-            ps.add_publisher(pr, &base_service_uri(), actor).unwrap();
+            ps.add_publisher(pr, name, &base_service_uri(), actor).unwrap();
 
             // Make a new publisher request for alice, using a new cert
             let pr = test::new_publisher_request(name);
@@ -560,7 +565,7 @@ mod tests {
             let actor = "test";
             let pr = test::new_publisher_request(name);
 
-            ps.add_publisher(pr, &base_service_uri(), actor).unwrap();
+            ps.add_publisher(pr, name, &base_service_uri(), actor).unwrap();
             assert_eq!(1, ps.publishers().unwrap(). len());
 
             ps.remove_publisher(name, actor).unwrap();

@@ -10,13 +10,15 @@ use actix_web::http::{Method, StatusCode };
 use bcder::decode;
 use futures::Future;
 use openssl::ssl::{SslMethod, SslAcceptor, SslAcceptorBuilder, SslFiletype};
-use crate::daemon::api::admin::PublisherAdmin;
+use crate::daemon::api::admin;
 use crate::daemon::api::auth::{Authorizer, CheckAuthorisation};
 use crate::daemon::config::Config;
 use crate::daemon::http::ssl;
 use crate::daemon::pubserver;
 use crate::daemon::pubserver::PubServer;
 use crate::remote::sigmsg::SignedMessage;
+use remote::oob::PublisherRequest;
+use remote::oob::PublisherRequestError;
 
 const NOT_FOUND: &'static [u8] = include_bytes!("../../../static/html/404.html");
 
@@ -32,30 +34,31 @@ impl PubServerApp {
             .middleware(middleware::Logger::default())
             .middleware(CheckAuthorisation)
             .resource("/api/v1/publishers", |r| {
-                r.method(Method::GET).f(PublisherAdmin::publishers);
-                r.method(Method::POST).with(PublisherAdmin::add_publisher);
+                r.method(Method::GET).f(admin::publishers);
+                r.method(Method::POST).with(admin::add_publisher);
             })
             .resource("/api/v1/publishers/{handle}", |r| {
-                r.method(Method::GET).with(PublisherAdmin::publisher_details);
-                r.method(Method::DELETE).with(PublisherAdmin::remove_publisher);
+                r.method(Method::GET).with(admin::publisher_details);
+                r.method(Method::POST).with(admin::add_named_publisher);
+                r.method(Method::DELETE).with(admin::remove_publisher);
             })
             .resource("/api/v1/publishers/{handle}/id.cer", |r| {
-                r.with(PublisherAdmin::id_cert)
+                r.method(Method::GET).with(admin::id_cert)
             })
             .resource("/api/v1/publishers/{handle}/response.xml", |r| {
-                r.with(PublisherAdmin::repository_response)
+                r.method(Method::GET).with(admin::repository_response)
             })
             .resource("/api/v1/health", |r| {
-                r.f(Self::api_ok)
+                r.method(Method::GET).f(Self::api_ok)
             })
             .resource("/rfc8181/{handle}", |r| {
                 r.method(Method::POST).with(Self::process_publish_request)
             })
             .resource("/rrdp/{path:.*}", |r| {
-                r.f(Self::serve_rrdp_files)
+                r.method(Method::GET).f(Self::serve_rrdp_files)
             })
             .resource("/health", |r| {
-                r.f(Self::service_ok)
+                r.method(Method::GET).f(Self::service_ok)
             })
             .default_resource(|r| {
                 // 404 for GET request
@@ -130,26 +133,24 @@ impl PubServerApp {
     }
 
     fn https_builder(config: &Config) -> Result<SslAcceptorBuilder, Error> {
-
         if config.test_ssl() {
             ssl::create_key_cert_if_needed(&config.data_dir)
                 .map_err(|e| Error::Other(format!("{}", e)))?;
         }
 
-        let mut https_builder = SslAcceptor::mozilla_intermediate(
-            SslMethod::tls()
-        ).map_err(|e| Error::Other(format!("{}", e)))?;
+        let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls())
+            .map_err(|e| Error::Other(format!("{}", e)))?;
 
-        https_builder.set_private_key_file(
+        builder.set_private_key_file(
             config.https_key_file(),
             SslFiletype::PEM
         ).map_err(|e| Error::Other(format!("{}", e)))?;
 
-        https_builder.set_certificate_chain_file(
+        builder.set_certificate_chain_file(
             config.https_cert_file()
         ).map_err(|e| Error::Other(format!("{}", e)))?;
 
-        Ok(https_builder)
+        Ok(builder)
     }
 }
 
@@ -300,6 +301,30 @@ impl Default for SignedMessageConvertConfig {
     }
 }
 
+//------------ PublisherRequest ----------------------------------------------
+
+/// Support converting requests into PublisherRequest
+impl<S: 'static> FromRequest<S> for PublisherRequest {
+    type Config = ();
+    type Result = Box<Future<Item=Self, Error=actix_web::Error>>;
+
+    fn from_request(
+        req: &actix_web::HttpRequest<S>,
+        _cfg: &Self::Config
+    ) -> Self::Result {
+        Box::new(MessageBody::new(req)
+            .from_err()
+            .and_then(|bytes| {
+                match PublisherRequest::decode(bytes.as_ref()) {
+                    Ok(req) => Ok(req),
+                    Err(e) => Err(Error::PublisherRequestError(e).into())
+                }
+            })
+
+        )
+    }
+}
+
 
 //------------ PublisherHandle -----------------------------------------------
 
@@ -370,6 +395,9 @@ pub enum Error {
 
     #[fail(display = "Cannot decode request: {}", _0)]
     DecodeError(decode::Error),
+
+    #[fail(display = "Cannot decode request: {}", _0)]
+    PublisherRequestError(PublisherRequestError),
 
     #[fail(display = "Wrong path")]
     WrongPath,

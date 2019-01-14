@@ -70,7 +70,10 @@ fn manage_publishers() {
                 test::http_uri("http://localhost:3000/"),
                 token,
                 ReportFormat::Default,
-                Command::Publishers(PublishersCommand::Add(alice_path))
+                Command::Publishers(PublishersCommand::Add(
+                    alice_path,
+                    None
+                ))
             );
             let res = KrillClient::process(krillc_opts);
             assert!(res.is_ok())
@@ -180,6 +183,45 @@ fn manage_publishers() {
             }
 
             assert!(res.is_err());
+        }
+
+        // Add a publisher using a non-default name, i.e. not the one the
+        // client included in the publisher request --> Add alice as "bob"
+        {
+            let mut alice_path = d.clone();
+            alice_path.push("alice.xml");
+            let krillc_opts = Options::new(
+                test::http_uri("http://localhost:3000/"),
+                token,
+                ReportFormat::Default,
+                Command::Publishers(PublishersCommand::Add(
+                    alice_path,
+                    Some("bob".to_string())
+                ))
+            );
+            let res = KrillClient::process(krillc_opts);
+            assert!(res.is_ok());
+
+            // Find details for bob
+            let krillc_opts = Options::new(
+                test::http_uri("http://localhost:3000/"),
+                token,
+                ReportFormat::Default,
+                Command::Publishers(PublishersCommand::Details("bob".to_string
+                ()))
+            );
+
+            let res = KrillClient::process(krillc_opts).unwrap();
+
+            match res {
+                ApiResponse::PublisherDetails(details) => {
+                    assert_eq!(
+                        details.publisher_handle(),
+                        "bob"
+                    );
+                }
+                _ => assert!(false) // Fail!
+            }
         }
 
     });

@@ -3,7 +3,6 @@
 use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 use actix_web::{HttpResponse, ResponseError};
 use actix_web::http::StatusCode;
-use bytes::Bytes;
 use serde::Serialize;
 use crate::daemon::api::data::{PublisherDetails, PublisherList};
 use crate::daemon::http::server::HttpRequest;
@@ -51,109 +50,111 @@ fn api_ok() -> HttpResponse {
     HttpResponse::Ok().finish()
 }
 
-/// Type to handle Publisher admin requests
-pub struct PublisherAdmin;
-
-impl PublisherAdmin {
-    /// Returns a json structure with all publishers in it.
-    pub fn publishers(req: &HttpRequest) -> HttpResponse {
-        match ro_server(req).publishers() {
-            Err(e) => server_error(Error::ServerError(e)),
-            Ok(publishers) => {
-                render_json(
-                    PublisherList::from(&publishers, "/api/v1/publishers")
-                )
-            }
+/// Returns a json structure with all publishers in it.
+pub fn publishers(req: &HttpRequest) -> HttpResponse {
+    match ro_server(req).publishers() {
+        Err(e) => server_error(Error::ServerError(e)),
+        Ok(publishers) => {
+            render_json(
+                PublisherList::from(&publishers, "/api/v1/publishers")
+            )
         }
     }
+}
 
-
-    /// Adds a publisher, expects that an RFC8183 section 5.2.3 Publisher
-    /// Request XML is posted.
-    pub fn add_publisher(
-        req: HttpRequest,
-        xml: Bytes
-    ) -> HttpResponse {
-        let mut server = rw_server(&req);
-        match PublisherRequest::decode(xml.as_ref()) {
-            Ok(req) => {
-                match server.add_publisher(req) {
-                    Ok(()) => api_ok(),
-                    Err(e) => server_error(Error::ServerError(e))
-                }
-            },
-            Err(_e) => server_error(Error::PublisherRequestError)
-        }
+/// Adds a publisher, expects that an RFC8183 section 5.2.3 Publisher
+/// Request XML is posted.
+pub fn add_publisher(
+    req: HttpRequest,
+    pr: PublisherRequest
+) -> HttpResponse {
+    let mut server = rw_server(&req);
+    let handle = pr.handle().clone();
+    match server.add_publisher(pr, &handle) {
+        Ok(()) => api_ok(),
+        Err(e) => server_error(Error::ServerError(e))
     }
+}
 
-    /// Removes a publisher. Should be idempotent! If if did not exist then
-    /// that's just fine.
-    pub fn remove_publisher(
-        req: HttpRequest,
-        handle: PublisherHandle
-    ) -> HttpResponse {
-        match rw_server(&req).remove_publisher(handle) {
-            Ok(()) => api_ok(),
-            Err(pubserver::Error::PublisherStoreError(
-                    publishers::Error::UnknownPublisher(_))) => api_ok(),
-            Err(e) => server_error(Error::ServerError(e))
-        }
+pub fn add_named_publisher(
+    req: HttpRequest,
+    pr: PublisherRequest,
+    handle: PublisherHandle
+) -> HttpResponse {
+    let mut server = rw_server(&req);
+    match server.add_publisher(pr, handle.as_ref()) {
+        Ok(()) => api_ok(),
+        Err(e) => server_error(Error::ServerError(e))
     }
+}
 
-
-    /// Returns a json structure with publisher details
-    pub fn publisher_details(
-        req: HttpRequest,
-        handle: PublisherHandle
-    ) -> HttpResponse {
-        match ro_server(&req).publisher(handle) {
-            Ok(None) => api_not_found(),
-            Ok(Some(publisher)) => {
-                render_json(
-                    PublisherDetails::from(&publisher, "/api/v1/publishers")
-                )
-            },
-            Err(e) => server_error(Error::ServerError(e))
-        }
+/// Removes a publisher. Should be idempotent! If if did not exist then
+/// that's just fine.
+pub fn remove_publisher(
+    req: HttpRequest,
+    handle: PublisherHandle
+) -> HttpResponse {
+    match rw_server(&req).remove_publisher(handle) {
+        Ok(()) => api_ok(),
+        Err(pubserver::Error::PublisherStoreError(
+                publishers::Error::UnknownPublisher(_))) => api_ok(),
+        Err(e) => server_error(Error::ServerError(e))
     }
+}
 
 
-    /// Returns the id.cer for a publisher
-    pub fn id_cert(
-        req: HttpRequest,
-        handle: PublisherHandle
-    ) -> HttpResponse {
-        match ro_server(&req).publisher(handle) {
-            Ok(None) => api_not_found(),
-            Ok(Some(publisher)) => {
-                let bytes = publisher.id_cert().to_bytes();
-                HttpResponse::Ok()
-                    .content_type("application/pkix-cert")
-                    .body(bytes)
-            },
-            Err(e) => server_error(Error::ServerError(e))
-        }
+/// Returns a json structure with publisher details
+pub fn publisher_details(
+    req: HttpRequest,
+    handle: PublisherHandle
+) -> HttpResponse {
+    match ro_server(&req).publisher(handle) {
+        Ok(None) => api_not_found(),
+        Ok(Some(publisher)) => {
+            render_json(
+                PublisherDetails::from(&publisher, "/api/v1/publishers")
+            )
+        },
+        Err(e) => server_error(Error::ServerError(e))
     }
+}
 
-    /// Shows the server's RFC8183 section 5.2.4 Repository Response XML
-    /// file for a known publisher.
-    pub fn repository_response(
-        req: HttpRequest,
-        handle: PublisherHandle
-    ) -> HttpResponse {
-        match ro_server(&req).repository_response(handle) {
-            Ok(res) => {
-                HttpResponse::Ok()
-                    .content_type("application/xml")
-                    .body(res.encode_vec())
-            },
-            Err(pubserver::Error::PublisherStoreError
-                (publishers::Error::UnknownPublisher(_))) => {
-                api_not_found()
-            },
-            Err(e) => {
-                server_error(Error::ServerError(e))
-            }
+
+/// Returns the id.cer for a publisher
+pub fn id_cert(
+    req: HttpRequest,
+    handle: PublisherHandle
+) -> HttpResponse {
+    match ro_server(&req).publisher(handle) {
+        Ok(None) => api_not_found(),
+        Ok(Some(publisher)) => {
+            let bytes = publisher.id_cert().to_bytes();
+            HttpResponse::Ok()
+                .content_type("application/pkix-cert")
+                .body(bytes)
+        },
+        Err(e) => server_error(Error::ServerError(e))
+    }
+}
+
+/// Shows the server's RFC8183 section 5.2.4 Repository Response XML
+/// file for a known publisher.
+pub fn repository_response(
+    req: HttpRequest,
+    handle: PublisherHandle
+) -> HttpResponse {
+    match ro_server(&req).repository_response(handle) {
+        Ok(res) => {
+            HttpResponse::Ok()
+                .content_type("application/xml")
+                .body(res.encode_vec())
+        },
+        Err(pubserver::Error::PublisherStoreError
+            (publishers::Error::UnknownPublisher(_))) => {
+            api_not_found()
+        },
+        Err(e) => {
+            server_error(Error::ServerError(e))
         }
     }
 }

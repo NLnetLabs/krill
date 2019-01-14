@@ -69,9 +69,13 @@ impl KrillClient {
                 let list: PublisherList = serde_json::from_str(&res)?;
                 Ok(ApiResponse::PublisherList(list))
             },
-            PublishersCommand::Add(path) => {
+            PublishersCommand::Add(path, handle_opt) => {
                 let xml_bytes = file::read(&path)?;
-                match self.post("api/v1/publishers", xml_bytes)? {
+                let uri = match handle_opt {
+                    None => "api/v1/publishers".to_string(),
+                    Some(handle) => format!("api/v1/publishers/{}", handle)
+                };
+                match self.post(uri.as_str(), xml_bytes)? {
                     Some(body) => {
                         if body.is_empty() {
                             Ok(ApiResponse::Empty)

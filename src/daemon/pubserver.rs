@@ -120,10 +120,12 @@ impl PubServer {
     /// Adds the publishers, blows up if it already existed.
     pub fn add_publisher(
         &mut self,
-        req: PublisherRequest
+        req: PublisherRequest,
+        handle: &str,
     ) -> Result<(), Error> {
         self.publisher_store.add_publisher(
             req,
+            handle,
             self.responder.base_service_uri(),
             ACTOR
         )?;
