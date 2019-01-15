@@ -1,5 +1,6 @@
 //! Support for various admin API methods
 
+use std::error;
 use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 use actix_web::{HttpResponse, ResponseError};
 use actix_web::http::StatusCode;
@@ -161,15 +162,15 @@ pub fn repository_response(
 
 //------------ Error ---------------------------------------------------------
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Display)]
 pub enum Error {
-    #[fail(display = "{}", _0)]
+    #[display(fmt = "{}", _0)]
     ServerError(pubserver::Error),
 
-    #[fail(display = "{}", _0)]
+    #[display(fmt = "{}", _0)]
     JsonError(serde_json::Error),
 
-    #[fail(display = "Invalid publisher request")]
+    #[display(fmt = "Invalid publisher request")]
     PublisherRequestError
 }
 
@@ -181,6 +182,12 @@ trait ErrorToStatus {
 /// Translate an error to an error code to include in a json response.
 trait ErrorToCode {
     fn code(&self) -> usize;
+}
+
+impl error::Error for Error {
+    fn description(&self) -> &str {
+        "Error happened"
+    }
 }
 
 impl ErrorToStatus for Error {

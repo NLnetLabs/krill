@@ -1,5 +1,6 @@
 //! Actix-web based HTTP server for the publication server.
 
+use std::error;
 use std::fs::File;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use actix_web::{pred, server};
@@ -385,27 +386,32 @@ pub type HttpRequest = actix_web::HttpRequest<Arc<RwLock<PubServer>>>;
 
 //------------ Error ---------------------------------------------------------
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Display)]
 pub enum Error {
-    #[fail(display = "{}", _0)]
+    #[display(fmt = "{}", _0)]
     ServerError(pubserver::Error),
 
-    #[fail(display = "{}", _0)]
+    #[display(fmt = "{}", _0)]
     JsonError(serde_json::Error),
 
-    #[fail(display = "Cannot decode request: {}", _0)]
+    #[display(fmt = "Cannot decode request: {}", _0)]
     DecodeError(decode::Error),
 
-    #[fail(display = "Cannot decode request: {}", _0)]
+    #[display(fmt = "Cannot decode request: {}", _0)]
     PublisherRequestError(PublisherRequestError),
 
-    #[fail(display = "Wrong path")]
+    #[display(fmt = "Wrong path")]
     WrongPath,
 
-    #[fail(display = "{}", _0)]
+    #[display(fmt = "{}", _0)]
     Other(String),
 }
 
+impl error::Error for Error {
+    fn description(&self) -> &str {
+        "An error happened"
+    }
+}
 
 impl actix_web::ResponseError for Error {
     fn error_response(&self) -> HttpResponse {

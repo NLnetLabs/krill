@@ -226,12 +226,12 @@ pub enum PublishersCommand {
 
 //------------ Error ---------------------------------------------------------
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Display)]
 pub enum Error {
-    #[fail(display ="Cannot parse server URI.")]
+    #[display(fmt="Cannot parse server URI.")]
     ServerUriError,
 
-    #[fail(display="{}", _0)]
+    #[display(fmt="{}", _0)]
     ReportError(ReportError),
 }
 

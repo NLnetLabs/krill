@@ -281,15 +281,15 @@ impl Eq for CurrentFile {}
 
 //------------ Error ---------------------------------------------------------
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Display)]
 pub enum RecursorError {
-    #[fail(display = "{}", _0)]
+    #[display(fmt = "{}", _0)]
     IoError(io::Error),
     
-    #[fail(display="{}", _0)]
+    #[display(fmt="{}", _0)]
     UriError(uri::Error),
 
-    #[fail(display = "Trying to resolve a path outside of the base path")]
+    #[display(fmt = "Trying to resolve a path outside of the base path")]
     PathOutsideBasePath,
 }
 

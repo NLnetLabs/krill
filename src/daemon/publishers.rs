@@ -399,31 +399,30 @@ impl PublisherStore {
 
 //------------ Error ---------------------------------------------------------
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Display)]
 pub enum Error {
-
-    #[fail(display="{}", _0)]
+    #[display(fmt ="{}", _0)]
     KeyStoreError(keystore::Error),
 
-    #[fail(display="{}", _0)]
+    #[display(fmt ="{}", _0)]
     IoError(io::Error),
 
-    #[fail(display =
+    #[display(fmt =
     "The '/' in publisher_handle ({}) is not supported - because we \
         are deriving the base directory for a publisher from this. This \
         behaviour may be updated in future.", _0)]
     ForwardSlashInHandle(String),
 
-    #[fail(display = "Duplicate publisher with name: {}.", _0)]
+    #[display(fmt = "Duplicate publisher with name: {}.", _0)]
     DuplicatePublisher(String),
 
-    #[fail(display = "Unknown publisher with name: {}.", _0)]
+    #[display(fmt = "Unknown publisher with name: {}.", _0)]
     UnknownPublisher(String),
 
-    #[fail(display = "Error in base URI: {}.", _0)]
+    #[display(fmt = "Error in base URI: {}.", _0)]
     UriError(uri::Error),
 
-    #[fail(display = "Invalide Publisher Request: {}.", _0)]
+    #[display(fmt = "Invalide Publisher Request: {}.", _0)]
     PublisherRequestError(PublisherRequestError)
 }
 
@@ -480,7 +479,7 @@ mod tests {
     fn should_refuse_slash_in_publisher_handle() {
         test::test_with_tmp_dir(|d| {
             let mut ps = test_publisher_store(&d);
-            let pr = test::new_publisher_request("test/below");
+            let pr = test::new_publisher_request("test/below", &d);
 
             let handle = "test/below";
 
@@ -496,7 +495,7 @@ mod tests {
         test::test_with_tmp_dir(|d| {
             let mut ps = test_publisher_store(&d);
             let name = "alice";
-            let pr = test::new_publisher_request(name);
+            let pr = test::new_publisher_request(name, &d);
             let id_cert = pr.id_cert().clone();
             let actor = "test";
 
@@ -525,13 +524,13 @@ mod tests {
         test::test_with_tmp_dir(|d| {
             let mut ps = test_publisher_store(&d);
             let name = "alice";
-            let pr = test::new_publisher_request(name);
+            let pr = test::new_publisher_request(name, &d);
             let actor = "test";
 
             ps.add_publisher(pr, name, &base_service_uri(), actor).unwrap();
 
             // Make a new publisher request for alice, using a new cert
-            let pr = test::new_publisher_request(name);
+            let pr = test::new_publisher_request(name, &d);
             let id_cert = pr.id_cert().clone();
 
             ps.update_id_cert_publisher(
@@ -563,7 +562,7 @@ mod tests {
 
             let name = "alice";
             let actor = "test";
-            let pr = test::new_publisher_request(name);
+            let pr = test::new_publisher_request(name, &d);
 
             ps.add_publisher(pr, name, &base_service_uri(), actor).unwrap();
             assert_eq!(1, ps.publishers().unwrap(). len());
@@ -586,8 +585,8 @@ mod tests {
             //
             // Start with two PRs for alice and bob
             let start_sync_dir = test::create_sub_dir(&d);
-            let pr_alice = test::new_publisher_request("alice");
-            let pr_bob   = test::new_publisher_request("bob");
+            let pr_alice = test::new_publisher_request("alice", &d);
+            let pr_bob   = test::new_publisher_request("bob", &d);
             test::save_file(
                 &start_sync_dir,
                 "alice.xml",
@@ -617,8 +616,8 @@ mod tests {
             //  update the id_cert for bob
             //  add carol
             let updated_sync_dir = test::create_sub_dir(&d);
-            let pr_bob_2 = test::new_publisher_request("bob");
-            let pr_carol = test::new_publisher_request("carol");
+            let pr_bob_2 = test::new_publisher_request("bob", &d);
+            let pr_carol = test::new_publisher_request("carol", &d);
             test::save_file(
                 &updated_sync_dir,
                 "bob.xml",

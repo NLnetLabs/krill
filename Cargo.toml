@@ -7,11 +7,11 @@ authors = ["Tim Bruijnzeels <tim@nlnetlabs.nl>", "Martin Hoffmann <martin@nlnetl
 actix        = "^0.7"
 actix-web    = { version = "^0.7", features = ["alpn"] }
 base64       = "^0.9"
-bcder        = "^0.1"
+bcder        = "^0.2"
 bytes        = "^0.4"
 chrono       = { version = "^0.4", features = ["serde"] }
 clap         = "^2.32"
-failure      = "^0.1"
+derive_more  = "^0.13"
 fern         = "^0.5"
 futures      = "0.1"
 hex          = "^0.3"
@@ -21,7 +21,7 @@ openssl      = { version = "^0.10", features = ["v110"] }
 pretty       = "0.5.2"
 rand         = "^0.5"
 reqwest      = "^0.9"
-rpki         = { version = "^0.2", features = ["softkeys"] }
+rpki         = "^0.3"
 serde        = { version = "^1.0", features = ["rc"] }
 serde_derive = "^1.0"
 serde_json   = "^1.0"
@@ -35,4 +35,5 @@ ring = "^0.13"
 untrusted = "^0.6"
 
 [patch.crates-io]
-rpki = { git="https://github.com/NLnetLabs/rpki-rs.git", branch="generate-signed-publication-protocol-messages", features = ["softkeys"]}
+rpki = { git="https://github.com/NLnetLabs/rpki-rs.git" }
+bcder = { git="https://github.com/NLnetLabs/bcder.git" }

@@ -9,9 +9,9 @@ use bcder::encode::Values;
 use clap::{App, Arg, SubCommand};
 use reqwest::{Client, Response, StatusCode};
 use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT, CONTENT_TYPE};
-use rpki::signing::PublicKeyAlgorithm;
-use rpki::signing::signer::{CreateKeyError, KeyUseError, Signer};
 use rpki::x509::ValidationError;
+use rpki::crypto::PublicKeyFormat;
+use rpki::crypto::Signer;
 use toml;
 use crate::remote::builder::{IdCertBuilder, SignedMessageBuilder};
 use crate::remote::id::{MyIdentity, MyRepoInfo, ParentInfo};
@@ -26,6 +26,7 @@ use crate::storage::caching_ks::CachingDiskKeyStore;
 use crate::storage::keystore::{self, Info, Key, KeyStore};
 use crate::util::softsigner::{self, OpenSslSigner};
 use crate::util::file::{self, CurrentFile, RecursorError};
+use remote::builder;
 
 
 /// # Some constants for naming resources in the keystore for clients.
@@ -88,7 +89,7 @@ impl PubClient {
     /// Initialises a new publication client, using a new key pair, and
     /// returns a publisher request that can be sent to the server.
     pub fn init(&mut self, name: &str) -> Result<(), Error> {
-        let key_id = self.signer.create_key(&PublicKeyAlgorithm::RsaEncryption)?;
+        let key_id = self.signer.create_key(PublicKeyFormat)?;
         let id_cert = IdCertBuilder::new_ta_id_cert(&key_id, &mut self.signer)?;
         let my_id = MyIdentity::new(name, id_cert, key_id);
 
@@ -291,7 +292,7 @@ impl PubClient {
             .timeout(Duration::from_secs(300))
             .build()?;
 
-        let res = client.post(&parent.service_uri().to_string())
+        let mut res = client.post(&parent.service_uri().to_string())
             .headers(headers)
             .body(req.to_vec())
             .send()?;
@@ -300,7 +301,11 @@ impl PubClient {
             StatusCode::OK => {
                 self.parse_res(res)
             },
-            _ => Err(Error::PubServerHttpError(res.status()))
+            _ => {
+                println!("{}", res.text()
+                    .unwrap_or("unspecified error".to_string()));
+                Err(Error::PubServerHttpError(res.status()))
+            }
         }
     }
 
@@ -477,13 +482,13 @@ pub enum RunMode {
     Sync(PathBuf)
 }
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Display)]
 pub enum ConfigError {
 
-    #[fail(display ="{}", _0)]
+    #[display(fmt="{}", _0)]
     IoError(io::Error),
 
-    #[fail(display ="{}", _0)]
+    #[display(fmt="{}", _0)]
     TomlError(toml::de::Error),
 }
 
@@ -500,53 +505,51 @@ impl From<toml::de::Error> for ConfigError {
 }
 
 
+
 //------------ Error ---------------------------------------------------------
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Display)]
 pub enum Error {
 
-    #[fail(display="This client is uninitialised.")]
+    #[display(fmt="This client is uninitialised.")]
     Uninitialised,
 
-    #[fail(display="{}", _0)]
-    SignerError(softsigner::Error),
+    #[display(fmt="{}", _0)]
+    SignerError(softsigner::SignerError),
 
-    #[fail(display="{}", _0)]
+    #[display(fmt="{}", _0)]
     KeyStoreError(keystore::Error),
 
-    #[fail(display="{:?}", _0)]
-    CreateKeyError(CreateKeyError),
-
-    #[fail(display="{:?}", _0)]
-    KeyUseError(KeyUseError),
-
-    #[fail(display="Received bad HTTP status code: {}", _0)]
+    #[display(fmt="Received bad HTTP status code: {}", _0)]
     PubServerHttpError(StatusCode),
 
-    #[fail(display="Request Error: {}", _0)]
+    #[display(fmt="Request Error: {}", _0)]
     RequestError(reqwest::Error),
 
-    #[fail(display="{}", _0)]
+    #[display(fmt="{}", _0)]
     ValidationError(ValidationError),
 
-    #[fail(display="Cannot parse message: {}", _0)]
+    #[display(fmt="Cannot parse message: {}", _0)]
     MessageError(MessageError),
 
-    #[fail(display="Cannot decode reply: {}", _0)]
+    #[display(fmt="Cannot decode reply: {}", _0)]
     DecodeError(decode::Error),
 
-    #[fail(display="Received error from server: {:?}", _0)]
+    #[display(fmt="Received error from server: {:?}", _0)]
     ErrorReply(ErrorReply),
 
-    #[fail(display="Received unexpected reply (list vs success)")]
+    #[display(fmt="Received unexpected reply (list vs success)")]
     UnexpectedReply,
 
-    #[fail(display="Could not crawl directory: {}", _0)]
+    #[display(fmt="Could not crawl directory: {}", _0)]
     RecursorError(RecursorError),
+
+    #[display(fmt="{}", _0)]
+    BuilderError(builder::Error<softsigner::SignerError>)
 }
 
-impl From<softsigner::Error> for Error {
-    fn from(e: softsigner::Error) -> Self {
+impl From<softsigner::SignerError> for Error {
+    fn from(e: softsigner::SignerError) -> Self {
         Error::SignerError(e)
     }
 }
@@ -554,18 +557,6 @@ impl From<softsigner::Error> for Error {
 impl From<keystore::Error> for Error {
     fn from(e: keystore::Error) -> Self {
         Error::KeyStoreError(e)
-    }
-}
-
-impl From<CreateKeyError> for Error {
-    fn from(e: CreateKeyError) -> Self {
-        Error::CreateKeyError(e)
-    }
-}
-
-impl From<KeyUseError> for Error {
-    fn from(e: KeyUseError) -> Self {
-        Error::KeyUseError(e)
     }
 }
 
@@ -599,6 +590,11 @@ impl From<RecursorError> for Error {
     }
 }
 
+impl From<builder::Error<softsigner::SignerError>> for Error {
+    fn from(e: builder::Error<softsigner::SignerError>) -> Self {
+        Error::BuilderError(e)
+    }
+}
 
 
 //------------ Tests ---------------------------------------------------------

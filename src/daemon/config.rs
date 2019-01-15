@@ -162,7 +162,7 @@ impl Config {
         let rrdp_base_uri = ConfigDefaults::rrdp_base_uri();
         let service_uri = ConfigDefaults::service_uri();
         let log_level = ConfigDefaults::log_level();
-        let log_type = ConfigDefaults::log_type();
+        let log_type = LogType::Stderr;
         let log_file = ConfigDefaults::log_file();
         let syslog_facility = ConfigDefaults::syslog_facility();
         let auth_token = "secret".to_string();
@@ -297,19 +297,18 @@ impl Config {
     }
 }
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Display)]
 pub enum ConfigError {
-
-    #[fail(display ="{}", _0)]
+    #[display(fmt ="{}", _0)]
     IoError(io::Error),
 
-    #[fail(display ="{}", _0)]
+    #[display(fmt ="{}", _0)]
     TomlError(toml::de::Error),
 
-    #[fail(display ="{}", _0)]
+    #[display(fmt ="{}", _0)]
     RpkiUriError(uri::Error),
 
-    #[fail(display ="{}", _0)]
+    #[display(fmt ="{}", _0)]
     Other(String)
 }
 

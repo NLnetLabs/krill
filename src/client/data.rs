@@ -75,12 +75,12 @@ impl ReportFormat {
 //------------ ReportError ---------------------------------------------------
 
 /// This type defines possible Errors for KeyStore
-#[derive(Debug, Fail)]
+#[derive(Debug, Display)]
 pub enum ReportError {
-    #[fail(display="This report format is not supported for this data")]
+    #[display(fmt="This report format is not supported for this data")]
     UnsupportedFormat,
 
-    #[fail(display="This report format is not recognised: {}", _0)]
+    #[display(fmt="This report format is not recognised: {}", _0)]
     UnrecognisedFormat(String)
 }
 

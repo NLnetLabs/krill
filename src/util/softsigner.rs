@@ -10,21 +10,33 @@ use openssl::rsa::Rsa;
 use openssl::hash::MessageDigest;
 use openssl::error::ErrorStack;
 use openssl::pkey::{PKey, PKeyRef, Private};
-use rpki::signing::KEY_SIZE;
-use rpki::signing::PublicKeyAlgorithm;
-use rpki::signing::signer::{
-    CreateKeyError,
-    KeyId,
-    KeyUseError,
-    OneOffSignature,
-    Signature,
-    Signer};
-use rpki::cert::SubjectPublicKeyInfo;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde::de;
 use serde::ser;
 use storage::keystore::{self, Info, Key, KeyStore};
 use storage::caching_ks::CachingDiskKeyStore;
+use rpki::crypto::Signer;
+use rpki::crypto::Signature;
+use rpki::crypto::PublicKey;
+use rpki::crypto::SignatureAlgorithm;
+use rpki::crypto::SigningError;
+use rpki::crypto::PublicKeyFormat;
+use rpki::crypto::signer::KeyError;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SignerKeyId(String);
+
+impl SignerKeyId {
+    pub fn new(s: &str) -> Self {
+        SignerKeyId(s.to_string())
+    }
+}
+
+impl AsRef<str> for SignerKeyId {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
 
 
 //------------ OpenSslSigner -------------------------------------------------
@@ -38,7 +50,7 @@ pub struct OpenSslSigner {
 }
 
 impl OpenSslSigner {
-    pub fn new(work_dir: &PathBuf) -> Result<Self, Error> {
+    pub fn new(work_dir: &PathBuf) -> Result<Self, SignerError> {
         let meta_data = fs::metadata(&work_dir)?;
         if meta_data.is_dir() {
 
@@ -54,7 +66,7 @@ impl OpenSslSigner {
                 }
             )
         } else {
-            Err(Error::InvalidWorkDir(work_dir.clone()))
+            Err(SignerError::InvalidWorkDir(work_dir.clone()))
         }
     }
 }
@@ -63,7 +75,7 @@ impl OpenSslSigner {
     fn sign_with_key<D: AsRef<[u8]> + ?Sized>(
         pkey: &PKeyRef<Private>,
         data: &D
-    ) -> Result<Signature, KeyUseError>
+    ) -> Result<Signature, SignerError>
     {
         let mut signer = ::openssl::sign::Signer::new(
             MessageDigest::sha256(),
@@ -71,78 +83,95 @@ impl OpenSslSigner {
         )?;
         signer.update(data.as_ref())?;
 
-        Ok(Signature::new(Bytes::from(signer.sign_to_vec()?)))
+        let signature = Signature::new(
+            SignatureAlgorithm,
+            Bytes::from(signer.sign_to_vec()?));
+
+        Ok(signature)
     }
 }
 
 impl Signer for OpenSslSigner {
+
+    type KeyId = SignerKeyId;
+    type Error = SignerError;
+
     fn create_key(
         &mut self,
-        algorithm: &PublicKeyAlgorithm
-    ) -> Result<KeyId, CreateKeyError> {
-
-        if *algorithm != PublicKeyAlgorithm::RsaEncryption {
-            return Err(CreateKeyError::UnsupportedAlgorithm)
-        }
+        algorithm: PublicKeyFormat
+    ) -> Result<Self::KeyId, Self::Error> {
 
         let kp = OpenSslKeyPair::new()?;
 
-        let key_id = KeyId::from_spki(&kp.subject_public_key_info()?);
-        let key = Key::from_key_id(&key_id);
+        let pk = &kp.subject_public_key_info()?;
+        let hex_hash = hex::encode(pk.key_identifier().as_ref());
+        let key_id = SignerKeyId(hex_hash);
+        let store_key = Key::from_str(key_id.as_ref());
         let info = Info::now("openssl signer", "created key");
 
-        self.store.store(key, kp, info)?;
+        self.store.store(store_key, kp, info)?;
 
         Ok(key_id)
     }
 
-    fn get_key_info(&self, id: &KeyId)
-                    -> Result<SubjectPublicKeyInfo, KeyUseError>
-    {
+    fn get_key_info(
+        &self,
+        key_id: &Self::KeyId
+    ) -> Result<PublicKey, KeyError<Self::Error>> {
+        let store_key = Key::from_str(key_id.as_ref());
 
         let key_pair_option: Option<Arc<OpenSslKeyPair>> =
-            self.store.get(&Key::from_key_id(id))?;
-
+            self.store.get(&store_key)
+                .map_err(|e| {
+                    KeyError::Signer(SignerError::KeyStoreError(e))}
+                )?;
 
         match key_pair_option {
             Some(k) => Ok(k.subject_public_key_info()?),
-            None => Err(KeyUseError::KeyNotFound)
+            None => Err(KeyError::Signer(SignerError::KeyNotFound))
         }
     }
 
-    fn destroy_key(&mut self, id: &KeyId) -> Result<(), KeyUseError> {
+    fn destroy_key(
+        &mut self,
+        key_id: &Self::KeyId
+    ) -> Result<(), KeyError<Self::Error>> {
 
-        let key = Key::from_key_id(id);
+        let store_key = Key::from_str(key_id.as_ref());
         let info = Info::now("openssl signer", "archived key");
 
-        self.store.archive(&key, info).map_err(|e| {KeyUseError::from(e)})
+        self.store.archive(&store_key, info).map_err(|e| {
+            KeyError::Signer(SignerError::from(e))
+        })
     }
 
     fn sign<D: AsRef<[u8]> + ?Sized>(
         &self,
-        id: &KeyId,
+        key_id: &Self::KeyId,
+        algorithm: SignatureAlgorithm,
         data: &D
-    ) -> Result<Signature, KeyUseError> {
-        let key = Key::from_key_id(id);
+    ) -> Result<Signature, SigningError<Self::Error>> {
+        let store_key = Key::from_str(key_id.as_ref());
         let key_pair_option: Option<Arc<OpenSslKeyPair>> =
-            self.store.get(&key)?;
+            self.store.get(&store_key)
+                .map_err(|e| {
+                    KeyError::Signer(SignerError::KeyStoreError(e))}
+                )?;
 
         match key_pair_option {
-            None => Err(KeyUseError::KeyNotFound),
+            None => Err(SigningError::Signer(SignerError::KeyNotFound)),
             Some(k) => {
-                match self.get_key_info(id)?.algorithm() {
-                    PublicKeyAlgorithm::RsaEncryption => {
-                        Self::sign_with_key(k.pkey.as_ref(), data)
-                    }
-                }
+                Self::sign_with_key(k.pkey.as_ref(), data)
+                    .map_err(|e| { SigningError::Signer(e)})
             }
         }
     }
 
     fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
         &self,
+        algorithm: SignatureAlgorithm,
         data: &D
-    ) -> Result<OneOffSignature, KeyUseError> {
+    ) -> Result<(Signature, PublicKey), SignerError> {
         let kp = OpenSslKeyPair::new()?;
 
         let signature = Self::sign_with_key(
@@ -152,7 +181,7 @@ impl Signer for OpenSslSigner {
 
         let key = kp.subject_public_key_info()?;
 
-        Ok(OneOffSignature::new(key, signature))
+        Ok((signature, key))
     }
 }
 
@@ -202,65 +231,67 @@ impl<'de> Deserialize<'de> for OpenSslKeyPair {
 }
 
 impl OpenSslKeyPair {
-    fn new() -> Result<OpenSslKeyPair, Error> {
+    fn new() -> Result<OpenSslKeyPair, SignerError> {
         // Issues unwrapping this indicate a bug in the openssl library.
         // So, there is no way to recover.
-        let rsa = Rsa::generate(KEY_SIZE)?;
+        let rsa = Rsa::generate(2048)?;
         let pkey = PKey::from_rsa(rsa)?;
         Ok(OpenSslKeyPair{ pkey })
     }
 
-    fn subject_public_key_info(&self) -> Result<SubjectPublicKeyInfo, Error> {
+    fn subject_public_key_info(&self) -> Result<PublicKey, SignerError> {
         // Issues unwrapping this indicate a bug in the openssl library.
         // So, there is no way to recover.
         let mut b = Bytes::from(self.pkey.rsa().unwrap().public_key_to_der()?);
-        Ok(SubjectPublicKeyInfo::decode(&mut b)?)
+        Ok(PublicKey::decode(&mut b)?)
     }
 }
 
 
 //------------ OpenSslKeyError -----------------------------------------------
 
-#[derive(Debug, Fail)]
-pub enum Error {
-
-    #[fail(display = "OpenSsl Error: {}", _0)]
+#[derive(Debug, Display)]
+pub enum SignerError {
+    #[display(fmt = "OpenSsl Error: {}", _0)]
     OpenSslError(ErrorStack),
 
-    #[fail(display = "Could not decode public key info: {}", _0)]
+    #[display(fmt = "Could not decode public key info: {}", _0)]
     DecodeError(decode::Error),
 
-    #[fail(display = "Invalid base path: {:?}", _0)]
+    #[display(fmt = "Invalid base path: {:?}", _0)]
     InvalidWorkDir(PathBuf),
 
-    #[fail(display = "{}", _0)]
+    #[display(fmt = "{}", _0)]
     IoError(io::Error),
 
-    #[fail(display = "{}", _0)]
+    #[display(fmt = "{}", _0)]
     KeyStoreError(keystore::Error),
+
+    #[display(fmt = "Could not find key")]
+    KeyNotFound,
 }
 
-impl From<ErrorStack> for Error {
+impl From<ErrorStack> for SignerError {
     fn from(e: ErrorStack) -> Self {
-        Error::OpenSslError(e)
+        SignerError::OpenSslError(e)
     }
 }
 
-impl From<decode::Error> for Error {
+impl From<decode::Error> for SignerError {
     fn from(e: decode::Error) -> Self {
-        Error::DecodeError(e)
+        SignerError::DecodeError(e)
     }
 }
 
-impl From<io::Error> for Error {
+impl From<io::Error> for SignerError {
     fn from(e: io::Error) -> Self {
-        Error::IoError(e)
+        SignerError::IoError(e)
     }
 }
 
-impl From<keystore::Error> for Error {
+impl From<keystore::Error> for SignerError {
     fn from(e: keystore::Error) -> Self {
-        Error::KeyStoreError(e)
+        SignerError::KeyStoreError(e)
     }
 }
 
@@ -276,7 +307,7 @@ pub mod tests {
     fn should_return_subject_public_key_info() {
         test::test_with_tmp_dir(|d| {
             let mut s = OpenSslSigner::new(&d).unwrap();
-            let ki = s.create_key(&PublicKeyAlgorithm::RsaEncryption).unwrap();
+            let ki = s.create_key(PublicKeyFormat).unwrap();
             s.get_key_info(&ki).unwrap();
             s.destroy_key(&ki).unwrap();
         })

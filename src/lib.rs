@@ -6,7 +6,7 @@ extern crate bytes;
 extern crate chrono;
 extern crate clap;
 extern crate core;
-#[macro_use] extern crate failure;
+#[macro_use] extern crate derive_more;
 extern crate futures;
 extern crate hex;
 extern crate openssl;

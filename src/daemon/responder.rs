@@ -4,9 +4,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use bcder::{Captured, Mode};
 use bcder::encode::Values;
-use rpki::signing::PublicKeyAlgorithm;
-use rpki::signing::signer::{Signer, CreateKeyError, KeyUseError};
-use rpki::uri;
 use crate::daemon::publishers::Publisher;
 use crate::daemon::repo;
 use crate::remote::builder::{IdCertBuilder, SignedMessageBuilder};
@@ -16,6 +13,10 @@ use crate::remote::publication::pubmsg::Message;
 use crate::storage::caching_ks::CachingDiskKeyStore;
 use crate::storage::keystore::{self, Info, Key, KeyStore};
 use crate::util::softsigner::{self, OpenSslSigner};
+use rpki::uri;
+use rpki::crypto::PublicKeyFormat;
+use rpki::crypto::Signer;
+use remote::builder;
 
 
 /// # Naming things in the keystore.
@@ -89,7 +90,7 @@ impl Responder {
 
     /// Initialises the identity of this publication server.
     pub fn init_identity(&mut self) -> Result<(), Error> {
-        let key_id = self.signer.create_key(&PublicKeyAlgorithm::RsaEncryption)?;
+        let key_id = self.signer.create_key(PublicKeyFormat)?;
         let id_cert = IdCertBuilder::new_ta_id_cert(&key_id, &mut self.signer)?;
         let my_id = MyIdentity::new(ACTOR, id_cert, key_id);
 
@@ -160,25 +161,22 @@ impl Responder {
 
 //------------ Error ---------------------------------------------------------
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Display)]
 pub enum Error {
-    #[fail(display="{:?}", _0)]
+    #[display(fmt="{:?}", _0)]
     IoError(io::Error),
 
-    #[fail(display="{:?}", _0)]
-    SoftSignerError(softsigner::Error),
+    #[display(fmt="{:?}", _0)]
+    SoftSignerError(softsigner::SignerError),
 
-    #[fail(display="{:?}", _0)]
+    #[display(fmt="{:?}", _0)]
     KeyStoreError(keystore::Error),
 
-    #[fail(display="{:?}", _0)]
-    CreateKeyError(CreateKeyError),
+    #[display(fmt="{:?}", _0)]
+    BuilderError(builder::Error<softsigner::SignerError>),
 
-    #[fail(display="{:?}", _0)]
-    KeyUseError(KeyUseError),
-
-    #[fail(display="Identity of server is not initialised.")]
-    Unitialised
+    #[display(fmt="Identity of server is not initialised.")]
+    Unitialised,
 }
 
 impl From<io::Error> for Error {
@@ -187,8 +185,8 @@ impl From<io::Error> for Error {
     }
 }
 
-impl From<softsigner::Error> for Error {
-    fn from(e: softsigner::Error) -> Self {
+impl From<softsigner::SignerError> for Error {
+    fn from(e: softsigner::SignerError) -> Self {
         Error::SoftSignerError(e)
     }
 }
@@ -199,15 +197,9 @@ impl From<keystore::Error> for Error {
     }
 }
 
-impl From<CreateKeyError> for Error {
-    fn from(e: CreateKeyError) -> Self {
-        Error::CreateKeyError(e)
-    }
-}
-
-impl From<KeyUseError> for Error {
-    fn from(e: KeyUseError) -> Self {
-        Error::KeyUseError(e)
+impl From<builder::Error<softsigner::SignerError>> for Error {
+    fn from(e: builder::Error<softsigner::SignerError>) -> Self {
+        Error::BuilderError(e)
     }
 }
 
@@ -231,7 +223,7 @@ mod tests {
             ).unwrap();
 
             let name = "alice".to_string();
-            let pr = test::new_publisher_request(name.as_str());
+            let pr = test::new_publisher_request(name.as_str(), &d);
             let tag = None;
             let id_cert = pr.id_cert().clone();
             let base_uri = test::rsync_uri("rsync://host/module/alice/");

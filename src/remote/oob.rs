@@ -138,27 +138,27 @@ impl PublisherRequest {
 
 //------------ PublisherRequestError -----------------------------------------
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Display)]
 pub enum PublisherRequestError {
-    #[fail(display = "Invalid XML for Publisher Request")]
+    #[display(fmt = "Invalid XML for Publisher Request")]
     InvalidXml,
 
-    #[fail(display = "Invalid version for Publisher Request")]
+    #[display(fmt = "Invalid version for Publisher Request")]
     InvalidVersion,
 
-    #[fail(display = "Invalid XML file: {}", _0)]
+    #[display(fmt = "Invalid XML file: {}", _0)]
     XmlReadError(XmlReaderErr),
 
-    #[fail(display = "Invalid XML file: {}", _0)]
+    #[display(fmt = "Invalid XML file: {}", _0)]
     XmlAttributesError(AttributesError),
 
-    #[fail(display = "Invalid base64: {}", _0)]
+    #[display(fmt = "Invalid base64: {}", _0)]
     Base64Error(DecodeError),
 
-    #[fail(display = "Cannot parse identity certificate: {}", _0)]
+    #[display(fmt = "Cannot parse identity certificate: {}", _0)]
     CannotParseIdCert(decode::Error),
 
-    #[fail(display = "Invalid identity certificate: {}", _0)]
+    #[display(fmt = "Invalid identity certificate: {}", _0)]
     InvalidIdCert(x509::ValidationError),
 }
 
@@ -365,30 +365,30 @@ impl RepositoryResponse {
 
 //------------ RepositoryResponseError ---------------------------------------
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Display)]
 pub enum RepositoryResponseError {
-    #[fail(display = "Invalid XML for Publisher Request")]
+    #[display(fmt = "Invalid XML for Publisher Request")]
     InvalidXml,
 
-    #[fail(display = "Invalid version for Publisher Request")]
+    #[display(fmt = "Invalid version for Publisher Request")]
     InvalidVersion,
 
-    #[fail(display = "Invalid XML file: {}", _0)]
+    #[display(fmt = "Invalid XML file: {}", _0)]
     XmlReadError(XmlReaderErr),
 
-    #[fail(display = "Invalid XML file: {}", _0)]
+    #[display(fmt = "Invalid XML file: {}", _0)]
     XmlAttributesError(AttributesError),
 
-    #[fail(display = "Invalid base64: {}", _0)]
+    #[display(fmt = "Invalid base64: {}", _0)]
     Base64Error(DecodeError),
 
-    #[fail(display = "Cannot parse identity certificate: {}", _0)]
+    #[display(fmt = "Cannot parse identity certificate: {}", _0)]
     CannotParseIdCert(decode::Error),
 
-    #[fail(display = "Invalid identity certificate: {}", _0)]
+    #[display(fmt = "Invalid identity certificate: {}", _0)]
     InvalidIdCert(x509::ValidationError),
 
-    #[fail(display = "Invalid URI on Repository Response: {}", _0)]
+    #[display(fmt = "Invalid URI on Repository Response: {}", _0)]
     InvalidUri(uri::Error),
 
 }

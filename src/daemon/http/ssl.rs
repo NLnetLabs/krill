@@ -8,17 +8,18 @@ use bytes::Bytes;
 use openssl::hash::MessageDigest;
 use openssl::pkey::{PKey, Private};
 use openssl::rsa::Rsa;
-use rpki::cert::SubjectPublicKeyInfo;
-use rpki::signing::PublicKeyAlgorithm;
-use rpki::signing::signer::{
-    CreateKeyError,
-    KeyId,
-    KeyUseError,
-    OneOffSignature,
-    Signature,
-    Signer};
 use crate::remote::builder::IdCertBuilder;
 use crate::util::file;
+use rpki::crypto::Signer;
+use rpki::crypto::PublicKeyFormat;
+use rpki::crypto::PublicKey;
+use rpki::crypto::SignatureAlgorithm;
+use rpki::crypto::Signature;
+use rpki::crypto::SigningError;
+use util::softsigner::SignerKeyId;
+use remote::builder;
+use rpki::crypto::signer::KeyError;
+use bcder::decode;
 
 const KEY_SIZE: u32 = 2048;
 pub const HTTPS_SUB_DIR: &'static str = "ssl";
@@ -27,7 +28,7 @@ pub const CERT_FILE: &'static str = "cert.pem";
 
 /// Creates a new private key and certificate file if either is found to be
 /// missing in the base_path directory.
-pub fn create_key_cert_if_needed(data_dir: &PathBuf) -> Result<(), Error> {
+pub fn create_key_cert_if_needed(data_dir: &PathBuf) -> Result<(), HttpsSignerError> {
     let mut https_dir = data_dir.clone();
     https_dir.push(HTTPS_SUB_DIR);
 
@@ -44,7 +45,7 @@ pub fn create_key_cert_if_needed(data_dir: &PathBuf) -> Result<(), Error> {
 /// Creates a new private key and certificate to be used when serving HTTPS.
 /// Only call this in case there is no current key and certificate file
 /// present, or have your files ruthlessly overwritten!
-fn create_key_and_cert(https_dir: PathBuf) -> Result<(), Error> {
+fn create_key_and_cert(https_dir: PathBuf) -> Result<(), HttpsSignerError> {
     if ! https_dir.exists() {
         file::create_dir(&https_dir)?;
     }
@@ -66,13 +67,13 @@ struct HttpsSigner {
 }
 
 impl HttpsSigner {
-    fn new() -> Result<Self, Error> {
+    fn new() -> Result<Self, HttpsSignerError> {
         let rsa = Rsa::generate(KEY_SIZE)?;
         let private = PKey::from_rsa(rsa)?;
         Ok(HttpsSigner { private })
     }
 
-    fn save_private_key(&self, https_dir: &PathBuf) -> Result<(), Error> {
+    fn save_private_key(&self, https_dir: &PathBuf) -> Result<(), HttpsSignerError> {
         let path =file::file_path(https_dir, KEY_FILE);
         let mut pem_file = File::create(path)?;
 
@@ -81,11 +82,11 @@ impl HttpsSigner {
         Ok(())
     }
 
-    fn save_certificate(&mut self, https_dir: &PathBuf) -> Result<(), Error> {
+    fn save_certificate(&mut self, https_dir: &PathBuf) -> Result<(), HttpsSignerError> {
         let path = file::file_path(https_dir, CERT_FILE);
         let mut pem_file = File::create(path)?;
 
-        let key_id = KeyId::new("n/a".to_string());
+        let key_id = SignerKeyId::new("n/a");
         let cert = IdCertBuilder::new_ta_id_cert(&key_id, self)?;
 
         let der = cert.to_bytes();
@@ -100,11 +101,16 @@ impl HttpsSigner {
 }
 
 impl Signer for HttpsSigner {
+
+    type KeyId = SignerKeyId;
+    type Error = HttpsSignerError;
+
+
     /// Not implemented. This type only ever has one key.
     fn create_key(
         &mut self,
-        _algorithm: &PublicKeyAlgorithm
-    ) -> Result<KeyId, CreateKeyError> {
+        _algorithm: PublicKeyFormat
+    ) -> Result<Self::KeyId, Self::Error> {
         unimplemented!()
     }
 
@@ -112,38 +118,57 @@ impl Signer for HttpsSigner {
     /// type.
     fn get_key_info(
         &self,
-        _id: &KeyId
-    ) -> Result<SubjectPublicKeyInfo, KeyUseError> {
-        let mut b = Bytes::from(self.private.rsa().unwrap().public_key_to_der()?);
-        Ok(SubjectPublicKeyInfo::decode(&mut b)?)
+        _id: &Self::KeyId
+    ) -> Result<PublicKey, KeyError<Self::Error>> {
+        let mut b = Bytes::from(
+            self.private.rsa().unwrap().public_key_to_der()
+                .map_err(|e| { KeyError::Signer(HttpsSignerError::OpenSslError(e))})?
+        );
+        let pk = PublicKey::decode(&mut b)
+            .map_err(|e| { KeyError::Signer(HttpsSignerError::DecodeError(e))})?;
+        Ok(pk)
     }
 
     /// Not implemented. People can just delete / replace the files on disk.
-    fn destroy_key(&mut self, _id: &KeyId) -> Result<(), KeyUseError> {
+    fn destroy_key(
+        &mut self,
+        _id: &Self::KeyId
+    ) -> Result<(), KeyError<Self::Error>> {
         unimplemented!()
     }
 
     /// Used when the self-signed certificate is made for the HTTPS server.
     fn sign<D: AsRef<[u8]> + ?Sized>(
         &self,
-        _id: &KeyId,
+        _key: &Self::KeyId,
+        algorithm: SignatureAlgorithm,
         data: &D
-    ) -> Result<Signature, KeyUseError> {
+    ) -> Result<Signature, SigningError<Self::Error>> {
 
         let mut signer = ::openssl::sign::Signer::new(
             MessageDigest::sha256(),
             &self.private
-        )?;
-        signer.update(data.as_ref())?;
+        ).map_err(|e| { SigningError::from(HttpsSignerError::OpenSslError(e))})?;
+        signer.update(data.as_ref())
+            .map_err(|e| { SigningError::from(HttpsSignerError::OpenSslError(e))})?;
 
-        Ok(Signature::new(Bytes::from(signer.sign_to_vec()?)))
+        let signature_bytes = signer.sign_to_vec()
+            .map_err(|e| { SigningError::Signer(
+                HttpsSignerError::OpenSslError(e))})?;
+
+        let signature = Signature::new(
+            SignatureAlgorithm,
+            Bytes::from(signature_bytes)
+        );
+        Ok(signature)
     }
 
     /// Not implemented. We won't sign CMS with this.
     fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
         &self,
+        algorithm: SignatureAlgorithm,
         _data: &D
-    ) -> Result<OneOffSignature, KeyUseError> {
+    ) -> Result<(Signature, PublicKey), Self::Error> {
         unimplemented!()
     }
 }
@@ -151,37 +176,38 @@ impl Signer for HttpsSigner {
 
 //------------ Error ---------------------------------------------------------
 
-#[derive(Debug, Fail)]
-pub enum Error {
-    #[fail(display = "IO error: {}", _0)]
+#[derive(Debug, Display)]
+pub enum HttpsSignerError {
+    #[display(fmt = "{}", _0)]
     IoError(std::io::Error),
 
-    #[fail(display = "Key Use Error: {:?}", _0)]
-    KeyUseError(KeyUseError),
-
-    #[fail(display = "OpenSSL error: {}", _0)]
+    #[display(fmt = "{}", _0)]
     OpenSslError(openssl::error::ErrorStack),
 
+    #[display(fmt = "{}", _0)]
+    DecodeError(decode::Error),
+
+    #[display(fmt="Could not make certificate")]
+    BuildError
 }
 
-impl From<openssl::error::ErrorStack> for Error {
+impl From<openssl::error::ErrorStack> for HttpsSignerError {
     fn from(e: openssl::error::ErrorStack) -> Self {
-        Error::OpenSslError(e)
+        HttpsSignerError::OpenSslError(e)
     }
 }
 
-impl From<std::io::Error> for Error {
+impl From<std::io::Error> for HttpsSignerError {
     fn from(e: std::io::Error) -> Self {
-        Error::IoError(e)
+        HttpsSignerError::IoError(e)
     }
 }
 
-impl From<KeyUseError> for Error {
-    fn from(e: KeyUseError) -> Self {
-        Error::KeyUseError(e)
+impl From<builder::Error<HttpsSignerError>> for HttpsSignerError {
+    fn from(_: builder::Error<HttpsSignerError>) -> Self {
+        HttpsSignerError::BuildError
     }
 }
-
 
 //------------ Tests ---------------------------------------------------------
 

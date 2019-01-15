@@ -244,30 +244,30 @@ impl KrillClient {
 
 //------------ Error ---------------------------------------------------------
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Display)]
 pub enum Error {
-    #[fail(display ="No valid command given, see --help")]
+    #[display(fmt="No valid command given, see --help")]
     MissingCommand,
 
-    #[fail(display ="Server is not available.")]
+    #[display(fmt="Server is not available.")]
     ServerDown,
 
-    #[fail(display="Request Error: {}", _0)]
+    #[display(fmt="Request Error: {}", _0)]
     RequestError(reqwest::Error),
 
-    #[fail(display="Received bad status: {}", _0)]
+    #[display(fmt="Received bad status: {}", _0)]
     BadStatus(StatusCode),
 
-    #[fail(display="{}", _0)]
+    #[display(fmt="{}", _0)]
     ErrorWithBody(String),
 
-    #[fail(display="Received invalid json response: {}", _0)]
+    #[display(fmt="Received invalid json response: {}", _0)]
     JsonError(serde_json::Error),
 
-    #[fail(display="{}", _0)]
+    #[display(fmt="{}", _0)]
     ReportError(ReportError),
 
-    #[fail(display="Can't read file: {}", _0)]
+    #[display(fmt="Can't read file: {}", _0)]
     IoError(io::Error),
 }
 

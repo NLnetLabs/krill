@@ -266,36 +266,36 @@ impl XmlReader<fs::File> {
 
 //------------ XmlReaderErr --------------------------------------------------
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Display)]
 pub enum XmlReaderErr {
-    #[fail(display = "Expected Start of Document")]
+    #[display(fmt = "Expected Start of Document")]
     ExpectedStartDocument,
 
-    #[fail(display = "Expected Start Element")]
+    #[display(fmt = "Expected Start Element")]
     ExpectedStart,
 
-    #[fail(display = "Expected Start Element with name: {}", _0)]
+    #[display(fmt = "Expected Start Element with name: {}", _0)]
     ExpectedNamedStart(String),
 
-    #[fail(display = "Expected Characters Element")]
+    #[display(fmt = "Expected Characters Element")]
     ExpectedCharacters,
 
-    #[fail(display = "Expected Close Element with name: {}", _0)]
+    #[display(fmt = "Expected Close Element with name: {}", _0)]
     ExpectedClose(String),
 
-    #[fail(display = "Expected End of Document")]
+    #[display(fmt = "Expected End of Document")]
     ExpectedEnd,
 
-    #[fail(display = "Error reading file: {}", _0)]
+    #[display(fmt = "Error reading file: {}", _0)]
     IoError(io::Error),
 
-    #[fail(display = "Attributes Error: {}", _0)]
+    #[display(fmt = "Attributes Error: {}", _0)]
     AttributesError(AttributesError),
 
-    #[fail(display = "XML Reader Error: {}", _0)]
+    #[display(fmt = "XML Reader Error: {}", _0)]
     ReaderError(reader::Error),
 
-    #[fail(display = "Base64 decoding issue: {}", _0)]
+    #[display(fmt = "Base64 decoding issue: {}", _0)]
     Base64Error(DecodeError)
 }
 
@@ -381,15 +381,15 @@ impl Attributes {
 
 //------------ AttributesError -----------------------------------------------
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Display)]
 pub enum AttributesError {
-    #[fail(display = "Required attribute missing: {}", _0)]
+    #[display(fmt = "Required attribute missing: {}", _0)]
     MissingAttribute(String),
 
-    #[fail(display = "Extra attributes found")]
+    #[display(fmt = "Extra attributes found")]
     ExtraAttributes,
 
-    #[fail(display = "Wrong hex encoding: {}", _0)]
+    #[display(fmt = "Wrong hex encoding: {}", _0)]
     HexError(FromHexError)
 }
 

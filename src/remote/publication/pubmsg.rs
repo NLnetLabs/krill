@@ -250,38 +250,37 @@ impl Message {
 
 //------------ PublicationMessageError ---------------------------------------
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Display)]
 pub enum MessageError {
-    #[fail(display = "Invalid version")]
+    #[display(fmt = "Invalid version")]
     InvalidVersion,
 
-    #[fail(display = "Unknown message type")]
+    #[display(fmt = "Unknown message type")]
     UnknownMessageType,
 
-    #[fail(display = "Unexpected XML Start Tag: {}", _0)]
+    #[display(fmt = "Unexpected XML Start Tag: {}", _0)]
     UnexpectedStart(String),
 
-    #[fail(display = "Expected some XML Start Tag: {}", _0)]
+    #[display(fmt = "Expected some XML Start Tag: {}", _0)]
     ExpectedStart(String),
 
-    #[fail(display = "Missing content in XML: {}", _0)]
+    #[display(fmt = "Missing content in XML: {}", _0)]
     MissingContent(String),
 
-    #[fail(display = "Invalid XML file: {}", _0)]
+    #[display(fmt = "Invalid XML file: {}", _0)]
     XmlReadError(XmlReaderErr),
 
-    #[fail(display = "Invalid use of attributes in XML file: {}", _0)]
+    #[display(fmt = "Invalid use of attributes in XML file: {}", _0)]
     XmlAttributesError(AttributesError),
 
-    #[fail(display = "Invalid URI: {}", _0)]
+    #[display(fmt = "Invalid URI: {}", _0)]
     UriError(uri::Error),
 
-    #[fail(display = "Invalid error code: {}", _0)]
+    #[display(fmt = "Invalid error code: {}", _0)]
     InvalidErrorCode(String),
 
-    #[fail(display = "Wrong message type.")]
+    #[display(fmt = "Wrong message type.")]
     WrongMessageType,
-
 }
 
 impl From<XmlReaderErr> for MessageError {

@@ -264,21 +264,21 @@ impl PubServer {
 
 //------------ Error ---------------------------------------------------------
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Display)]
 pub enum Error {
-    #[fail(display="{}", _0)]
+    #[display(fmt="{}", _0)]
     ResponderError(responder::Error),
 
-    #[fail(display="{}", _0)]
+    #[display(fmt="{}", _0)]
     PublisherStoreError(publishers::Error),
 
-    #[fail(display="{}", _0)]
+    #[display(fmt="{}", _0)]
     RepositoryError(repo::Error),
 
-    #[fail(display="{}", _0)]
+    #[display(fmt="{}", _0)]
     MessageError(MessageError),
 
-    #[fail(display="{}", _0)]
+    #[display(fmt="{}", _0)]
     ValidationError(ValidationError),
 }
 

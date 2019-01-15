@@ -3,12 +3,12 @@ use std::io::Write;
 use std::path::PathBuf;
 use bytes::Bytes;
 use rpki::uri;
-use rpki::signing::signer::Signer;
-use rpki::signing::softsigner::OpenSslSigner;
-use rpki::signing::PublicKeyAlgorithm;
 use crate::remote::builder::IdCertBuilder;
 use crate::remote::id::IdCert;
 use crate::remote::oob::PublisherRequest;
+use util::softsigner::OpenSslSigner;
+use rpki::crypto::PublicKeyFormat;
+use rpki::crypto::Signer;
 
 pub fn test_with_tmp_dir<F>(op: F) where F: FnOnce(PathBuf) -> () {
     use std::fs;
@@ -49,14 +49,17 @@ pub fn http_uri(s: &str) -> uri::Http {
 
 pub fn as_bytes(s: &str) -> Bytes { Bytes::from(s) }
 
-pub fn new_id_cert() -> IdCert {
-    let mut s = OpenSslSigner::new();
-    let key_id = s.create_key(&PublicKeyAlgorithm::RsaEncryption).unwrap();
+pub fn new_id_cert(work_dir: &PathBuf) -> IdCert {
+    let mut s = OpenSslSigner::new(work_dir).unwrap();
+    let key_id = s.create_key(PublicKeyFormat).unwrap();
     IdCertBuilder::new_ta_id_cert(&key_id, &mut s).unwrap()
 }
 
-pub fn new_publisher_request(publisher_handle: &str) -> PublisherRequest {
-    let id_cert = new_id_cert();
+pub fn new_publisher_request(
+    publisher_handle: &str,
+    work_dir: &PathBuf
+) -> PublisherRequest {
+    let id_cert = new_id_cert(work_dir);
     PublisherRequest::new(
         None,
         publisher_handle,

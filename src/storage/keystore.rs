@@ -10,7 +10,6 @@ use chrono::serde::ts_seconds;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json;
-use rpki::signing::signer::KeyId;
 
 //------------ Key -----------------------------------------------------------
 
@@ -46,11 +45,6 @@ impl Key {
     pub fn from_str(s: &str) -> Key {
         let path = PathBuf::from(s);
         Self::from_path(path).unwrap()
-    }
-
-    /// Creates an instance from a [`KeyId`] for a [`Signer`].
-    pub fn from_key_id(key_id: &KeyId) -> Key {
-        Self::from_str(key_id.as_str())
     }
 
     /// Other than this the may contain any character allowed in a
@@ -261,18 +255,18 @@ pub trait KeyStore {
 //------------ Error ---------------------------------------------------------
 
 /// This type defines possible Errors for KeyStore
-#[derive(Debug, Fail)]
+#[derive(Debug, Display)]
 pub enum Error {
-    #[fail(display ="Json serialization error: {}", _0)]
+    #[display(fmt ="Json serialization error: {}", _0)]
     JsonError(serde_json::Error),
 
-    #[fail(display ="Something went wrong: {}", _0)]
+    #[display(fmt ="Something went wrong: {}", _0)]
     IoError(io::Error),
 
-    #[fail(display ="Bad syntax in version: {}", _0)]
+    #[display(fmt ="Bad syntax in version: {}", _0)]
     IntError(num::ParseIntError),
 
-    #[fail(display ="Something went wrong: {}", _0)]
+    #[display(fmt ="Something went wrong: {}", _0)]
     Other(String)
 }
 

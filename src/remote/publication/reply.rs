@@ -404,31 +404,30 @@ impl ReportError {
 //------------ ReportErrorCodes ----------------------------------------------
 
 /// The allowed error codes defined in RFC8181 section 2.5
-#[derive(Debug, Clone, Eq, Fail, PartialEq)]
+#[derive(Clone, Debug, Display, Eq, PartialEq)]
 pub enum ReportErrorCode {
-
-    #[fail(display="xml_error")]
+    #[display(fmt="xml_error")]
     XmlError,
 
-    #[fail(display="permission_failure")]
+    #[display(fmt="permission_failure")]
     PermissionFailure,
 
-    #[fail(display="bad_cms_signature")]
+    #[display(fmt="bad_cms_signature")]
     BadCmsSignature,
 
-    #[fail(display="object_already_present")]
+    #[display(fmt="object_already_present")]
     ObjectAlreadyPresent,
 
-    #[fail(display="no_object_present")]
+    #[display(fmt="no_object_present")]
     NoObjectPresent,
 
-    #[fail(display="no_object_matching_hash")]
+    #[display(fmt="no_object_matching_hash")]
     NoObjectMatchingHash,
 
-    #[fail(display="consistency_problem")]
+    #[display(fmt="consistency_problem")]
     ConsistencyProblem,
 
-    #[fail(display="other_error")]
+    #[display(fmt="other_error")]
     OtherError,
 }
 

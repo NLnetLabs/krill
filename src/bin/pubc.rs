@@ -6,7 +6,7 @@
 //! server.
 
 extern crate krill;
-#[macro_use] extern crate failure;
+#[macro_use] extern crate derive_more;
 extern crate rpki;
 
 use std::io::{self, Write};
@@ -81,18 +81,18 @@ fn sync(mut client: PubClient, path: &PathBuf) -> Result<(), Error> {
     Ok(())
 }
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Display)]
 pub enum Error {
-    #[fail(display ="{}", _0)]
+    #[display(fmt="{}", _0)]
     ClientError(pubc::Error),
 
-    #[fail(display ="{}", _0)]
+    #[display(fmt="{}", _0)]
     IoError(io::Error),
 
-    #[fail(display ="{}", _0)]
+    #[display(fmt="{}", _0)]
     RepositoryResponseError(RepositoryResponseError),
 
-    #[fail(display ="No sub-command given, see --help")]
+    #[display(fmt="No sub-command given, see --help")]
     MissingSubcommand,
 
 }

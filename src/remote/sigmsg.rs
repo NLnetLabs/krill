@@ -6,14 +6,16 @@ use bcder::{Mode, Oid, Tag};
 use bcder::string::OctetString;
 use bytes::Bytes;
 use rpki::crl::Crl;
-use rpki::signing::DigestAlgorithm;
-use rpki::sigobj::oid;
-use rpki::sigobj::{SignedObject, SignerInfo};
-use rpki::x509::{Time, ValidationError};
 use super::id::IdCert;
 
 use untrusted::Input;
 use ring::digest;
+use rpki::x509::ValidationError;
+use rpki::x509::Time;
+use rpki::sigobj::SignerInfo;
+use rpki::sigobj::oid;
+use rpki::crypto::DigestAlgorithm;
+use rpki::sigobj::SignedObject;
 
 
 //------------ Cms -----------------------------------------------------------
@@ -74,8 +76,8 @@ impl SignedMessage {
         cons.take_sequence(|cons| {
             cons.skip_u8_if(3)?; // version -- must be 3
             DigestAlgorithm::skip_set(cons)?; // digestAlgorithms
-            let (content_type, content)
-            = SignedObject::take_encap_content_info(cons)?;
+            let (content_type, content) =
+                SignedObject::take_encap_content_info(cons)?;
 
             if content_type != oid::PROTOCOL_CONTENT_TYPE {
                 return xerr!(Err(decode::Malformed.into()))
@@ -161,7 +163,7 @@ impl SignedMessage {
             &::ring::signature::RSA_PKCS1_2048_8192_SHA256,
             Input::from(self.id_cert.public_key().as_ref()),
             Input::from(&msg),
-            Input::from(self.signer_info.signature_value().to_bytes().as_ref())
+            Input::from(self.signer_info.signature().value().as_ref())
         ).map_err(|_| ValidationError)
     }
 }

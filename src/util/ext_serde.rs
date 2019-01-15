@@ -3,12 +3,12 @@
 use base64;
 use bytes::Bytes;
 use log::LevelFilter;
-use rpki::uri;
-use rpki::signing::signer::KeyId;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde::de;
 use syslog::Facility;
 use crate::remote::id::IdCert;
+use rpki::uri;
+use util::softsigner::SignerKeyId;
 
 
 //------------ Bytes ---------------------------------------------------------
@@ -81,17 +81,17 @@ where S: Serializer
 
 //------------ KeyId ---------------------------------------------------------
 
-pub fn de_key_id<'de, D>(d: D) -> Result<KeyId, D::Error>
+pub fn de_key_id<'de, D>(d: D) -> Result<SignerKeyId, D::Error>
 where D: Deserializer<'de>
 {
     let s = String::deserialize(d)?;
-    Ok(KeyId::new(s))
+    Ok(SignerKeyId::new(&s))
 }
 
-pub fn ser_key_id<S>(key_id: &KeyId, s: S) -> Result<S::Ok, S::Error>
+pub fn ser_key_id<S>(key_id: &SignerKeyId, s: S) -> Result<S::Ok, S::Error>
 where S: Serializer
 {
-    key_id.as_str().serialize(s)
+    key_id.as_ref().serialize(s)
 }
 
 

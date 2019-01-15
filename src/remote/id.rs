@@ -3,13 +3,19 @@ use bcder::{decode, encode};
 use bcder::encode::Values;
 use bcder::encode::Constructed;
 use bytes::Bytes;
-use rpki::cert::{SubjectPublicKeyInfo, Validity};
-use rpki::cert::ext::{AuthorityKeyIdentifier, BasicCa, SubjectKeyIdentifier};
-use rpki::signing::SignatureAlgorithm;
-use rpki::signing::signer::KeyId;
-use rpki::uri;
-use rpki::x509::{Name, SignedData, Time, ValidationError};
 use crate::util::ext_serde;
+use rpki::uri;
+use rpki::x509::Time;
+use rpki::x509::ValidationError;
+use rpki::cert::ext::BasicCa;
+use rpki::cert::ext::SubjectKeyIdentifier;
+use rpki::cert::ext::AuthorityKeyIdentifier;
+use util::softsigner::SignerKeyId;
+use rpki::x509::SignedData;
+use rpki::crypto::SignatureAlgorithm;
+use rpki::x509::Name;
+use rpki::cert::Validity;
+use rpki::crypto::PublicKey;
 
 
 //------------ MyIdentity ----------------------------------------------------
@@ -28,11 +34,11 @@ pub struct MyIdentity {
     #[serde(
     deserialize_with = "ext_serde::de_key_id",
     serialize_with = "ext_serde::ser_key_id")]
-    key_id: KeyId
+    key_id: SignerKeyId
 }
 
 impl MyIdentity {
-    pub fn new(name: &str, id_cert: IdCert, key_id: KeyId) -> Self {
+    pub fn new(name: &str, id_cert: IdCert, key_id: SignerKeyId) -> Self {
         MyIdentity {
             name: name.to_string(),
             id_cert,
@@ -52,7 +58,7 @@ impl MyIdentity {
 
     /// The identifier that the Signer needs to use the key for the identity
     /// certificate.
-    pub fn key_id(&self) -> &KeyId {
+    pub fn key_id(&self) -> &SignerKeyId {
         &self.key_id
     }
 }
@@ -217,7 +223,7 @@ pub struct IdCert {
     subject: Name,
 
     /// Information about the public key of this certificate.
-    subject_public_key_info: SubjectPublicKeyInfo,
+    subject_public_key_info: PublicKey,
 
     /// The certificate extensions.
     extensions: IdExtensions,
@@ -228,8 +234,7 @@ pub struct IdCert {
 impl IdCert {
     /// Returns a reference to the certificate’s public key.
     pub fn public_key(&self) -> &[u8] {
-        self.subject_public_key_info
-            .subject_public_key().octet_slice().unwrap()
+        self.subject_public_key_info.bits()
     }
 
     /// Returns a reference to the subject key identifier.
@@ -238,7 +243,7 @@ impl IdCert {
     }
 
     /// Returns a reference to the entire public key information structure.
-    pub fn subject_public_key_info(&self) -> &SubjectPublicKeyInfo {
+    pub fn subject_public_key_info(&self) -> &PublicKey {
         &self.subject_public_key_info
     }
 
@@ -279,12 +284,11 @@ impl IdCert {
                 Ok(IdCert {
                     signed_data,
                     serial_number: Unsigned::take_from(cons)?,
-                    signature: SignatureAlgorithm::take_from(cons)?,
+                    signature: SignatureAlgorithm::x509_take_from(cons)?,
                     issuer: Name::take_from(cons)?,
                     validity: Validity::take_from(cons)?,
                     subject: Name::take_from(cons)?,
-                    subject_public_key_info:
-                    SubjectPublicKeyInfo::take_from(cons)?,
+                    subject_public_key_info: PublicKey::take_from(cons)?,
                     extensions: cons.take_constructed_if(
                         Tag::CTX_3,
                         IdExtensions::take_from
@@ -535,7 +539,7 @@ impl IdExtensions {
 impl IdExtensions {
 
     /// Creates extensions to be used on a self-signed TA IdCert
-    pub fn for_id_ta_cert(key: &SubjectPublicKeyInfo) -> Self {
+    pub fn for_id_ta_cert(key: &PublicKey) -> Self {
         IdExtensions{
             basic_ca: Some(BasicCa::new(true, true)),
             subject_key_id: SubjectKeyIdentifier::new(key),
@@ -545,8 +549,8 @@ impl IdExtensions {
 
     /// Creates extensions to be used on an EE IdCert in a protocol CMS
     pub fn for_id_ee_cert(
-        subject_key: &SubjectPublicKeyInfo,
-        issuing_key: &SubjectPublicKeyInfo
+        subject_key: &PublicKey,
+        issuing_key: &PublicKey
     ) -> Self {
         IdExtensions{
             basic_ca: None,

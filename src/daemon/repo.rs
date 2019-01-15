@@ -869,42 +869,42 @@ impl NotificationBuilder {
 
 //------------ Error ---------------------------------------------------------
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Display)]
 pub enum Error {
-    #[fail(display="{}", _0)]
+    #[display(fmt="{}", _0)]
     IoError(io::Error),
 
-    #[fail(display="{}", _0)]
+    #[display(fmt="{}", _0)]
     RecursorError(RecursorError),
 
-    #[fail(display="{}", _0)]
+    #[display(fmt="{}", _0)]
     UriError(uri::Error),
 
-    #[fail(display="File already exists for uri (use update!): {}", _0)]
+    #[display(fmt="File already exists for uri (use update!): {}", _0)]
     ObjectAlreadyPresent(uri::Rsync),
 
-    #[fail(display="Np file present for uri: {}", _0)]
+    #[display(fmt="Np file present for uri: {}", _0)]
     NoObjectPresent(uri::Rsync),
 
-    #[fail(display="File does not match hash")]
+    #[display(fmt="File does not match hash")]
     NoObjectMatchingHash,
 
-    #[fail(display="Publishing outside of base URI is not allowed.")]
+    #[display(fmt="Publishing outside of base URI is not allowed.")]
     OutsideBaseUri,
 
-    #[fail(display="Issue deriving RRDP URI, check config!")]
+    #[display(fmt="Issue deriving RRDP URI, check config!")]
     UriConfigError,
 
-    #[fail(display="Error deserializing existing notification.xml")]
+    #[display(fmt="Error deserializing existing notification.xml")]
     NotificationFileError,
 
-    #[fail(display="{}", _0)]
+    #[display(fmt="{}", _0)]
     XmlReaderErr(XmlReaderErr),
 
-    #[fail(display="{}", _0)]
+    #[display(fmt="{}", _0)]
     AttributesError(AttributesError),
 
-    #[fail(display="{}", _0)]
+    #[display(fmt="{}", _0)]
     ParseIntError(ParseIntError)
 }
 
