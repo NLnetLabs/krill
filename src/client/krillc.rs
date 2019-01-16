@@ -110,8 +110,10 @@ impl KrillClient {
                 }
             },
             PublishersCommand::IdCert(handle, file) => {
-                let uri = format!("api/v1/publishers/{}/id.cer", handle);
-                let bytes = self.get_binary(uri.as_str())?;
+                let uri = format!("api/v1/publishers/{}", handle);
+                let res = self.get(uri.as_str())?;
+                let details: PublisherDetails = serde_json::from_str(&res)?;
+                let bytes = details.identity_cert().to_bytes();
                 file::save(&bytes, &file)?;
                 Ok(ApiResponse::Empty)
             }
@@ -184,6 +186,7 @@ impl KrillClient {
     /// authorization.
     /// Note that the server uri ends with a '/', so leave out the '/'
     /// from the start of the rel_path when calling this function.
+    #[allow(dead_code)]
     fn get_binary(
         &self,
         rel_path: &str

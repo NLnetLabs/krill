@@ -50,17 +50,12 @@ impl PubServer {
     /// on disk in the work_dir provided.
     pub fn new(
         work_dir: &PathBuf,
-        pub_xml_dir: &PathBuf,
         base_uri: &uri::Rsync,
         service_uri: &uri::Http,
         rrdp_base_uri: &uri::Http,
         authorizer: Authorizer
     ) -> Result<Self, Error> {
-        let publisher_store = Self::init_publishers(
-            &work_dir,
-            pub_xml_dir,
-            service_uri,
-            base_uri)?;
+        let publisher_store = PublisherStore::new(work_dir, base_uri)?;
 
         let responder = Responder::init(
             work_dir,
@@ -89,24 +84,6 @@ impl PubServer {
 
 /// # Configure publishers
 impl PubServer {
-    /// Synchronize publishers from disk
-    fn init_publishers(
-        work_dir: &PathBuf,
-        pub_xml_dir: &PathBuf,
-        base_service_uri: &uri::Http,
-        base_uri: &uri::Rsync
-    ) -> Result<PublisherStore, Error> {
-        let mut publisher_store = PublisherStore::new(
-            work_dir,
-            base_uri)?;
-        publisher_store.sync_from_dir(
-            pub_xml_dir,
-            base_service_uri,
-            ACTOR
-        )?;
-        Ok(publisher_store)
-    }
-
     /// Returns all currently configured publishers.
     pub fn publishers(&self) -> Result<Vec<Arc<Publisher>>, Error> {
         self.publisher_store
@@ -339,169 +316,4 @@ impl ToReportErrorCode for repo::Error {
 }
 
 
-//------------ Tests ---------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::client::pubc::PubClient;
-    use crate::util::test;
-
-    fn test_server(work_dir: &PathBuf, xml_dir: &PathBuf) -> PubServer {
-        // Start up a server
-        let uri = test::rsync_uri("rsync://host/module/");
-        let service = test::http_uri("http://host/publish/");
-        let rrdp_base = test::http_uri("http://host/rrdp/");
-        let authorizer = Authorizer::new("secret");
-        PubServer::new(
-            work_dir,
-            xml_dir,
-            &uri,
-            &service,
-            &rrdp_base,
-            authorizer
-        ).unwrap()
-    }
-
-    #[test]
-    fn should_sync_and_resync_publishers_from_disk() {
-        test::test_with_tmp_dir(|d| {
-            // Set up an xml dir with two requests
-            let xml_dir = test::create_sub_dir(&d);
-
-            let alice_dir = test::create_sub_dir(&d);
-            let mut alice = PubClient::new(&alice_dir).unwrap();
-            alice.init("alice").unwrap();
-            let pr_alice = alice.publisher_request().unwrap();
-
-            let bob_dir = test::create_sub_dir(&d);
-            let mut bob = PubClient::new(&bob_dir).unwrap();
-            bob.init("bob").unwrap();
-            let pr_bob = bob.publisher_request().unwrap();
-
-            test::save_file(&xml_dir, "alice.xml", &pr_alice.encode_vec());
-            test::save_file(&xml_dir, "bob.xml", &pr_bob.encode_vec());
-
-            // Start up a server
-            let server = test_server(&d, &xml_dir);
-
-            // The server now has two configured publishers
-            let publishers = server.publishers().unwrap();
-            assert_eq!(2, publishers.len());
-
-            // Create a new xml dir with only alice.xml
-            let xml_dir = PathBuf::from(test::create_sub_dir(&d));
-            test::save_file(&xml_dir, "alice.xml", &pr_alice.encode_vec());
-
-            // Start a new server (so that it re-syncs)
-            let server = test_server(&d, &xml_dir);
-
-            // Now we expect only one publisher for Alice
-            let publishers = server.publishers().unwrap();
-            assert_eq!(1, publishers.len());
-            let p_alice = publishers
-                .iter()
-                .find(|p| { p.name() == "alice" })
-                .unwrap();
-
-            assert_eq!(
-                pr_alice.id_cert().to_bytes(),
-                p_alice.id_cert().to_bytes()
-            );
-
-            let p_old_alice = p_alice;
-
-            // But we can update Alice's id cert, and add carol
-            alice.init("alice").unwrap();
-            let pr_alice = alice.publisher_request().unwrap();
-
-            let carol_dir = test::create_sub_dir(&d);
-            let mut carol = PubClient::new(&carol_dir).unwrap();
-            carol.init("carol").unwrap();
-            let pr_carol = carol.publisher_request().unwrap();
-
-            test::save_file(&xml_dir, "alice.xml", &pr_alice.encode_vec());
-            test::save_file(&xml_dir, "carol.xml", &pr_carol.encode_vec());
-
-            let server = test_server(&d, &xml_dir);
-
-            // Now we expect a different Alice and Carol
-            let publishers = server.publishers().unwrap();
-            assert_eq!(2, publishers.len());
-
-            let p_alice = publishers
-                .iter()
-                .find(|p| { p.name() == "alice" })
-                .unwrap();
-
-            assert_eq!(
-                pr_alice.id_cert().to_bytes(),
-                p_alice.id_cert().to_bytes()
-            );
-
-            assert_ne!(
-                p_old_alice.id_cert().to_bytes(),
-                p_alice.id_cert().to_bytes()
-            );
-
-            // Prove that we also have carol
-            publishers.iter().find(|p| { p.name() == "carol" }).unwrap();
-
-            // However, initialising the server with two or more xml files
-            // for the same handle results in an error.
-            test::save_file(&xml_dir, "alice-2.xml", &pr_alice.encode_vec());
-
-            let uri = test::rsync_uri("rsync://host/module/");
-            let service = test::http_uri("http://host/publish");
-            let rrdp_base = test::http_uri("http://host/rrdp");
-            let authorizer = Authorizer::new("secret");
-
-            assert!(
-                PubServer::new(
-                    &d,
-                    &xml_dir,
-                    &uri,
-                    &service,
-                    &rrdp_base,
-                    authorizer
-                ).is_err()
-            );
-        });
-    }
-
-    #[test]
-    fn should_initialise_publishers_from_xml_and_have_response() {
-        test::test_with_tmp_dir(|d| {
-            let xml_dir = test::create_sub_dir(&d);
-
-            let alice_dir = test::create_sub_dir(&d);
-            let mut alice = PubClient::new(&alice_dir).unwrap();
-            alice.init("alice").unwrap();
-            let pr_alice = alice.publisher_request().unwrap();
-
-            let bob_dir = test::create_sub_dir(&d);
-            let mut bob = PubClient::new(&bob_dir).unwrap();
-            bob.init("bob").unwrap();
-            let pr_bob = bob.publisher_request().unwrap();
-
-            test::save_file(&xml_dir, "alice.xml", &pr_alice.encode_vec());
-            test::save_file(&xml_dir, "bob.xml", &pr_bob.encode_vec());
-
-            let server = test_server(&d, &xml_dir);
-
-            let response = server.repository_response("alice").unwrap();
-
-            let expected_sia = test::rsync_uri("rsync://host/module/alice/");
-            let expected_service = test::http_uri("http://host/publish/alice");
-            let expected_rrdp = test::http_uri
-                ("http://host/rrdp/notification.xml");
-
-            assert_eq!(&expected_sia, response.sia_base());
-            assert_eq!(&expected_service, response.service_uri());
-            assert_eq!(&expected_rrdp, response.rrdp_notification_uri());
-            assert_eq!("alice", response.publisher_handle());
-        });
-    }
-
-}
-
+// Tested through integration tests

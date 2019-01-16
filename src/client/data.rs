@@ -2,6 +2,7 @@
 //! various formats (where applicable).
 use rpki::uri;
 use crate::util::ext_serde;
+use remote::id::IdCert;
 
 //------------ ApiResponse ---------------------------------------------------
 
@@ -181,6 +182,11 @@ pub struct PublisherDetails {
         serialize_with = "ext_serde::ser_http_uri"
     )]
     service_uri: uri::Http,
+    #[serde(
+        deserialize_with = "ext_serde::de_id_cert",
+        serialize_with = "ext_serde::ser_id_cert"
+    )]
+    identity_certificate: IdCert,
 
     links: Vec<Link>
 }
@@ -188,6 +194,9 @@ pub struct PublisherDetails {
 impl PublisherDetails {
     pub fn publisher_handle(&self) -> &str {
         &self.publisher_handle
+    }
+    pub fn identity_cert(&self) -> &IdCert {
+        &self.identity_certificate
     }
 }
 

@@ -11,11 +11,16 @@ use std::collections::HashSet;
 use std::{thread, time};
 use actix::System;
 use krill::client::pubc::PubClient;
+use krill::client::data::ReportFormat;
+use krill::client::options::Command;
+use krill::client::options::Options;
+use krill::client::options::PublishersCommand;
+use krill::client::krillc::KrillClient;
 use krill::daemon::config::Config;
 use krill::daemon::http::server::PubServerApp;
-use krill::remote::oob::RepositoryResponse;
 use krill::util::file::{self, CurrentFile};
 use krill::util::test;
+use krill::remote::oob::RepositoryResponse;
 
 #[test]
 fn client_publish_at_server() {
@@ -26,15 +31,13 @@ fn client_publish_at_server() {
         let mut client = PubClient::new(&client_dir).unwrap();
         client.init("alice").unwrap();
         let pr = client.publisher_request().unwrap();
+        test::save_pr(&d, "alice.xml", &pr);
 
-        // Set up a test PubServer Config with a client in it.
+        // Set up a test PubServer Config
         let server_conf = {
             // Use a data dir for the storage
             let data_dir = test::create_sub_dir(&d);
-            let xml_dir = test::create_sub_dir(&d);
-            // Add the client's PublisherRequest to the server dir.
-            test::save_pr(&xml_dir, "alice.xml", &pr);
-            Config::test(&data_dir, &xml_dir)
+            Config::test(&data_dir)
         };
 
         // Start the server
@@ -46,6 +49,23 @@ fn client_publish_at_server() {
 
         // XXX TODO: Find a better way to know the server is ready!
         thread::sleep(time::Duration::from_millis(500));
+
+        // Add client "alice"
+        {
+            let mut alice_path = d.clone();
+            alice_path.push("alice.xml");
+            let krillc_opts = Options::new(
+                test::http_uri("http://localhost:3000/"),
+                "secret",
+                ReportFormat::Default,
+                Command::Publishers(PublishersCommand::Add(
+                    alice_path,
+                    None
+                ))
+            );
+            let res = KrillClient::process(krillc_opts);
+            assert!(res.is_ok())
+        }
 
         // Should get repository response for alice
         let mut res = reqwest::Client::new()

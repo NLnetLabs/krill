@@ -24,7 +24,6 @@ impl ConfigDefaults {
     fn port() -> u16 { 3000 }
     fn use_ssl() -> SslChoice { SslChoice::No }
     fn data_dir() -> PathBuf { PathBuf::from("./data")}
-    fn pub_xml_dir() -> PathBuf { PathBuf::from("./publishers")}
     fn rsync_base() -> uri::Rsync {
         uri::Rsync::from_str("rsync://127.0.0.1/repo/").unwrap()
     }
@@ -74,9 +73,6 @@ pub struct Config {
 
     #[serde(default="ConfigDefaults::data_dir")]
     pub data_dir: PathBuf,
-
-    #[serde(default="ConfigDefaults::pub_xml_dir")]
-    pub pub_xml_dir: PathBuf,
 
     #[serde(
         default = "ConfigDefaults::rsync_base",
@@ -151,13 +147,11 @@ impl Config {
 impl Config {
     pub fn test(
         data_dir: &PathBuf,
-        pub_xml_dir: &PathBuf,
     ) -> Self {
         let ip = ConfigDefaults::ip();
         let port = ConfigDefaults::port();
         let use_ssl = SslChoice::No;
         let data_dir = data_dir.clone();
-        let pub_xml_dir = pub_xml_dir.clone();
         let rsync_base = ConfigDefaults::rsync_base();
         let rrdp_base_uri = ConfigDefaults::rrdp_base_uri();
         let service_uri = ConfigDefaults::service_uri();
@@ -172,7 +166,6 @@ impl Config {
             port,
             use_ssl,
             data_dir,
-            pub_xml_dir,
             rsync_base,
             rrdp_base_uri,
             service_uri,

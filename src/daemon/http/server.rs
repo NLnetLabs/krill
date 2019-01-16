@@ -41,9 +41,6 @@ impl PubServerApp {
                 r.method(Method::POST).with(admin::add_named_publisher);
                 r.method(Method::DELETE).with(admin::remove_publisher);
             })
-            .resource("/api/v1/publishers/{handle}/id.cer", |r| {
-                r.method(Method::GET).with(admin::id_cert)
-            })
             .resource("/api/v1/publishers/{handle}/response.xml", |r| {
                 r.method(Method::GET).with(admin::repository_response)
             })
@@ -82,7 +79,6 @@ impl PubServerApp {
         let authorizer = Authorizer::new(&config.auth_token);
         let pub_server = match PubServer::new(
             &config.data_dir,
-            &config.pub_xml_dir,
             &config.rsync_base,
             &config.service_uri,
             &config.rrdp_base_uri,
@@ -421,7 +417,7 @@ impl error::Error for Error {
 impl actix_web::ResponseError for Error {
     fn error_response(&self) -> HttpResponse {
         HttpResponse::build(StatusCode::INTERNAL_SERVER_ERROR)
-            .body(format!("I'm afraid I can't do that: {}", self))
+            .body(format!("{}", self))
     }
 }
 

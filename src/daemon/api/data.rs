@@ -3,6 +3,7 @@ use std::sync::Arc;
 use rpki::uri;
 use crate::daemon::publishers::Publisher;
 use crate::util::ext_serde;
+use remote::id::IdCert;
 
 //------------ Link ----------------------------------------------------------
 
@@ -86,10 +87,16 @@ impl<'a> PublisherList<'a> {
 #[derive(Clone, Debug, Serialize)]
 pub struct PublisherDetails<'a> {
     publisher_handle: &'a str,
+
     #[serde(serialize_with = "ext_serde::ser_rsync_uri")]
     base_uri: &'a uri::Rsync,
+
     #[serde(serialize_with = "ext_serde::ser_http_uri")]
     service_uri: &'a uri::Http,
+
+    #[serde(serialize_with = "ext_serde::ser_id_cert")]
+    identity_certificate: &'a IdCert,
+
     links: Vec<Link<'a>>
 }
 
@@ -101,21 +108,19 @@ impl<'a> PublisherDetails<'a> {
         let handle = publisher.name().as_str();
         let base_uri = publisher.base_uri();
         let service_uri = publisher.service_uri();
+        let identity_certificate = publisher.id_cert();
 
         let mut links = Vec::new();
         links.push(Link {
             rel: "response.xml",
             link: format!("{}/{}/response.xml", path_publishers, handle)
         });
-        links.push(Link {
-            rel: "id.cer",
-            link: format!("{}/{}/id.cer", path_publishers, handle)
-        });
 
         PublisherDetails {
             publisher_handle: handle,
             base_uri,
             service_uri,
+            identity_certificate,
             links
         }
     }

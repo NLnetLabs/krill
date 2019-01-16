@@ -1,10 +1,7 @@
 //! Types for tracking configured publishers.
 
-use std::collections::HashMap;
 use std::fs;
-use std::fs::File;
 use std::io;
-use std::io::BufReader;
 use std::path::PathBuf;
 use std::sync::Arc;
 use rpki::uri;
@@ -305,98 +302,6 @@ impl PublisherStore {
 
 }
 
-
-/// # Initialise from disk
-impl PublisherStore {
-    /// Synchronizes the list of Publisher based on request XML files on disk.
-    /// Will add new publishers, remove removed publisher, and update the
-    /// id_cert in case it was updated. Returns an error in case duplicate
-    /// handler names are found in XML files in the directory.
-    pub fn sync_from_dir(
-        &mut self,
-        dir: &PathBuf,
-        base_service_uri: &uri::Http,
-        actor: &str
-    ) -> Result<(), Error> {
-
-        info!("Synchronizing publishers");
-        // Find all the publisher requests on disk
-        let prs_on_disk = self.prs_on_disk(dir)?;
-        self.process_removed_publishers(&prs_on_disk, actor)?;
-
-        for (handle, pr) in prs_on_disk {
-            match self.publisher(&handle)? {
-                None => {
-                    let handle = pr.handle().clone();
-                    self.add_publisher(
-                        pr,
-                        &handle,
-                        base_service_uri,
-                        actor)?;
-                }
-                Some(p) => {
-                    if p.id_cert().to_bytes() != pr.id_cert().to_bytes() {
-                        let (_tag, name, id_cert) = pr.into_parts();
-                        self.update_id_cert_publisher(
-                            &name,
-                            id_cert,
-                            actor.clone()
-                        )?;
-                    }
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    fn process_removed_publishers(
-        &mut self,
-        prs_on_disk: &HashMap<String, PublisherRequest>,
-        actor: &str
-    ) -> Result<(), Error> {
-        let current = self.publishers()?;
-        for c in current {
-            if prs_on_disk.get(c.name()).is_none() {
-                info!("Removing publisher: {}", c.name());
-                self.remove_publisher(c.name(), actor)?;
-            }
-        }
-        Ok(())
-    }
-
-    fn prs_on_disk(
-        &self,
-        dir: &PathBuf
-    ) -> Result<HashMap<String, PublisherRequest>, Error> {
-        let mut prs_on_disk = HashMap::new();
-        for e in dir.read_dir()? {
-            let file = e?;
-            if let Some(file_name) = file.file_name().to_str() {
-                if file_name.ends_with(".xml") {
-                    let f = File::open(file.path().display().to_string())?;
-                    let mut r = BufReader::new(f);
-
-                    let pr = PublisherRequest::decode(r)?;
-                    pr.validate()?;
-
-                    let handle = pr.handle().clone();
-                    if prs_on_disk.get(&handle).is_some() {
-                        return Err(Error::DuplicatePublisher(handle))
-                    } else {
-                        prs_on_disk.insert(pr.handle().clone(), pr);
-                    }
-                }
-            }
-        }
-        Ok(prs_on_disk)
-    }
-}
-
-
-
-
-
 //------------ Error ---------------------------------------------------------
 
 #[derive(Debug, Display)]
@@ -520,6 +425,27 @@ mod tests {
     }
 
     #[test]
+    fn should_not_add_publisher_twice() {
+        test::test_with_tmp_dir(|d| {
+            let mut ps = test_publisher_store(&d);
+            let name = "alice";
+            let pr = test::new_publisher_request(name, &d);
+            let id_cert = pr.id_cert().clone();
+            let actor = "test";
+
+            ps.add_publisher(pr, name, &base_service_uri(), actor).unwrap();
+            assert!(ps.has_publisher(&name));
+
+            let pr = test::new_publisher_request(name, &d);
+            match ps.add_publisher(pr, name, &base_service_uri(), actor) {
+                Err(Error::DuplicatePublisher(_)) => { }, // Ok
+                _ => panic!("Should have seen error.")
+            }
+        })
+
+    }
+
+    #[test]
     fn should_update_id_cert_publisher() {
         test::test_with_tmp_dir(|d| {
             let mut ps = test_publisher_store(&d);
@@ -570,101 +496,6 @@ mod tests {
             ps.remove_publisher(name, actor).unwrap();
             assert_eq!(0, ps.publishers().unwrap(). len());
         });
-    }
-
-
-    #[test]
-    fn should_sync_publisher_requests() {
-        test::test_with_tmp_dir(|d|{
-
-            let pl_dir = test::create_sub_dir(&d);
-            let mut ps = test_publisher_store(&pl_dir);
-
-            let actor = "test";
-
-            //
-            // Start with two PRs for alice and bob
-            let start_sync_dir = test::create_sub_dir(&d);
-            let pr_alice = test::new_publisher_request("alice", &d);
-            let pr_bob   = test::new_publisher_request("bob", &d);
-            test::save_file(
-                &start_sync_dir,
-                "alice.xml",
-                &pr_alice.encode_vec()
-            );
-            test::save_file(
-                &start_sync_dir,
-                "bob.xml",
-                &pr_bob.encode_vec()
-            );
-
-            ps.sync_from_dir(
-                &PathBuf::from(start_sync_dir),
-                &base_service_uri(),
-                actor.clone()
-            ).unwrap();
-
-            let publishers = ps.publishers().unwrap();
-            assert_eq!(2, publishers.len());
-
-            assert!(find_in_list("alice", &publishers).is_some());
-            assert!(find_in_list("bob", &publishers).is_some());
-
-            //
-            // Now update
-            //  remove alice
-            //  update the id_cert for bob
-            //  add carol
-            let updated_sync_dir = test::create_sub_dir(&d);
-            let pr_bob_2 = test::new_publisher_request("bob", &d);
-            let pr_carol = test::new_publisher_request("carol", &d);
-            test::save_file(
-                &updated_sync_dir,
-                "bob.xml",
-                &pr_bob_2.encode_vec()
-            );
-            test::save_file(
-                &updated_sync_dir,
-                "carol.xml",
-                &pr_carol.encode_vec()
-            );
-            ps.sync_from_dir(
-                &PathBuf::from(updated_sync_dir),
-                &base_service_uri(),
-                actor
-            ).unwrap();
-
-            let publishers = ps.publishers().unwrap();
-            assert_eq!(2, publishers.len());
-
-            assert!(find_in_list("alice", &publishers).is_none());
-            assert!(find_in_list("bob", &publishers).is_some());
-            assert_eq!(
-                find_in_list("bob", &publishers).unwrap().id_cert().to_bytes(),
-                pr_bob_2.id_cert().to_bytes()
-            );
-            assert!(find_in_list("carol", &publishers).is_some());
-
-            //
-            // Now do a dir with a duplicate handle, this should
-            // result in an error response
-            let duplicates_sync_dir = test::create_sub_dir(&d);
-            test::save_file(
-                &duplicates_sync_dir,
-                "bob.xml",
-                &pr_bob.encode_vec()
-            );
-            test::save_file(
-                &duplicates_sync_dir,
-                "bob-2.xml",
-                &pr_bob_2.encode_vec()
-            );
-            assert!(ps.sync_from_dir(
-                &PathBuf::from(duplicates_sync_dir),
-                &base_service_uri(),
-                actor.clone()
-            ).is_err());
-        })
     }
 }
 

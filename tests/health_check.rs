@@ -31,8 +31,7 @@ fn health_check() {
         let server_conf = {
             // Use a data dir for the storage
             let data_dir = test::create_sub_dir(&d);
-            let xml_dir = test::create_sub_dir(&d);
-            Config::test(&data_dir, &xml_dir)
+            Config::test(&data_dir)
         };
 
         // Start the server
