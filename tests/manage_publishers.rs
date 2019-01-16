@@ -206,8 +206,7 @@ fn manage_publishers() {
                 test::http_uri("http://localhost:3000/"),
                 token,
                 ReportFormat::Default,
-                Command::Publishers(PublishersCommand::Details("bob".to_string
-                ()))
+                Command::Publishers(PublishersCommand::Details("bob".to_string()))
             );
 
             let res = KrillClient::process(krillc_opts).unwrap();

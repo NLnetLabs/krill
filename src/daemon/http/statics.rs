@@ -17,7 +17,7 @@ macro_rules! statics {
     ( $app:expr, $( $path:expr => $mime:expr => $etag:expr, )* ) => {{
         $app
         $(
-            .resource(concat!("/ui/dev/", $path), |r| {
+            .resource(concat!("/ui/", $path), |r| {
                 static CONTENT: ::daemon::http::statics::StaticContent
                                     = ::daemon::http::statics::StaticContent {
                     content: include_bytes!(

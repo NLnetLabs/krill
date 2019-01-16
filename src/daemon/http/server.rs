@@ -29,7 +29,7 @@ pub struct PubServerApp(App<Arc<RwLock<PubServer>>>);
 ///
 impl PubServerApp {
     pub fn new(server: Arc<RwLock<PubServer>>) -> Self {
-        let app = App::with_state(server)
+        let mut app = App::with_state(server)
             .middleware(middleware::Logger::default())
             .middleware(CheckAuthorisation)
             .resource("/api/v1/publishers", |r| {
@@ -40,6 +40,10 @@ impl PubServerApp {
                 r.method(Method::GET).with(admin::publisher_details);
                 r.method(Method::POST).with(admin::add_named_publisher);
                 r.method(Method::DELETE).with(admin::remove_publisher);
+            })
+            // For clients that cannot handle http methods
+            .resource("/api/v1/publishers/{handle}/del", |r| {
+                r.method(Method::POST).with(admin::remove_publisher);
             })
             .resource("/api/v1/publishers/{handle}/response.xml", |r| {
                 r.method(Method::GET).with(admin::repository_response)
@@ -56,13 +60,6 @@ impl PubServerApp {
             .resource("/health", |r| {
                 r.method(Method::GET).f(Self::service_ok)
             })
-            // XXX TODO: Only expose this in 'dev' mode (introduce config|env)
-            .handler(
-                "/ui/dev",
-                fs::StaticFiles::new("./ui/dev")
-                    .unwrap()
-                    .show_files_listing()
-            )
             .default_resource(|r| {
                 // 404 for GET request
                 r.method(Method::GET).f(Self::p404);
@@ -71,6 +68,19 @@ impl PubServerApp {
                 r.route().filter(pred::Not(pred::Get())).f(
                     |_req| HttpResponse::MethodNotAllowed());
             });
+
+        use std::env;
+        match env::var("KRILL_DEV_MODE") {
+            Ok(_) => {
+                app = app.handler(
+                    "/ui/dev",
+                    fs::StaticFiles::new("./ui/dev")
+                        .unwrap()
+                        .show_files_listing()
+                );
+            },
+            _ => {}
+        }
 
         PubServerApp(with_statics(app))
     }
