@@ -1,9 +1,9 @@
-//! Delivery of static content. See also:
+//! Delivery of ui content. See also:
 //! https://github.com/railwayhistory/railsite/blob/master/src/statics.rs
 use actix_web::{Error, HttpRequest, HttpResponse, Responder};
 use actix_web::http::StatusCode;
 
-/// Register static resources at compile time. Specify the app first, and
+/// Register ui resources at compile time. Specify the app first, and
 /// then for each resource:
 /// * the path
 /// * the mime type
@@ -17,11 +17,11 @@ macro_rules! statics {
     ( $app:expr, $( $path:expr => $mime:expr => $etag:expr, )* ) => {{
         $app
         $(
-            .resource(concat!("/static/", $path), |r| {
+            .resource(concat!("/ui/dev/", $path), |r| {
                 static CONTENT: ::daemon::http::statics::StaticContent
                                     = ::daemon::http::statics::StaticContent {
                     content: include_bytes!(
-                        concat!("../../../static/",$path)
+                        concat!("../../../ui/dev/",$path)
                     ),
                     etag: $etag,
                     ctype: $mime

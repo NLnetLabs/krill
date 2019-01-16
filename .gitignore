@@ -6,4 +6,5 @@ publishers
 krill.log
 target/
 tmp
+ui/dist
 work

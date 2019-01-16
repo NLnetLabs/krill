@@ -2,7 +2,7 @@
 use std::error;
 use std::fs::File;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
-use actix_web::{pred, server};
+use actix_web::{pred, fs, server};
 use actix_web::{App, FromRequest, HttpResponse, ResponseError};
 use actix_web::dev::MessageBody;
 use actix_web::middleware;
@@ -19,7 +19,7 @@ use crate::daemon::pubserver::PubServer;
 use crate::remote::oob::{PublisherRequest, PublisherRequestError};
 use crate::remote::sigmsg::SignedMessage;
 
-const NOT_FOUND: &'static [u8] = include_bytes!("../../../static/html/404.html");
+const NOT_FOUND: &'static [u8] = include_bytes!("../../../ui/dev/html/404.html");
 
 //------------ PubServerApp --------------------------------------------------
 
@@ -59,6 +59,13 @@ impl PubServerApp {
             .resource("/health", |r| {
                 r.method(Method::GET).f(Self::service_ok)
             })
+            // XXX TODO: Only expose this in 'dev' mode (introduce config|env)
+            .handler(
+                "/ui/dev",
+                fs::StaticFiles::new("./ui/dev")
+                    .unwrap()
+                    .show_files_listing()
+            )
             .default_resource(|r| {
                 // 404 for GET request
                 r.method(Method::GET).f(Self::p404);

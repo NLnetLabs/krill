@@ -35,7 +35,7 @@ impl Key {
         Ok(Self { path })
     }
 
-    /// Creates an instance from a static str. Will unwrap, and panic, if
+    /// Creates an instance from a ui str. Will unwrap, and panic, if
     /// unsafe characters are used. Use [`from_path`] for a method that
     /// returns a Result instead, and see [`verify_path`] for restrictions.
     ///
