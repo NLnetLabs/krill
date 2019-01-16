@@ -98,7 +98,7 @@ impl Signer for OpenSslSigner {
 
     fn create_key(
         &mut self,
-        algorithm: PublicKeyFormat
+        _algorithm: PublicKeyFormat
     ) -> Result<Self::KeyId, Self::Error> {
 
         let kp = OpenSslKeyPair::new()?;
@@ -148,7 +148,7 @@ impl Signer for OpenSslSigner {
     fn sign<D: AsRef<[u8]> + ?Sized>(
         &self,
         key_id: &Self::KeyId,
-        algorithm: SignatureAlgorithm,
+        _algorithm: SignatureAlgorithm,
         data: &D
     ) -> Result<Signature, SigningError<Self::Error>> {
         let store_key = Key::from_str(key_id.as_ref());
@@ -169,7 +169,7 @@ impl Signer for OpenSslSigner {
 
     fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
         &self,
-        algorithm: SignatureAlgorithm,
+        _algorithm: SignatureAlgorithm,
         data: &D
     ) -> Result<(Signature, PublicKey), SignerError> {
         let kp = OpenSslKeyPair::new()?;

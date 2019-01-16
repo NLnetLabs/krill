@@ -141,7 +141,7 @@ impl Signer for HttpsSigner {
     fn sign<D: AsRef<[u8]> + ?Sized>(
         &self,
         _key: &Self::KeyId,
-        algorithm: SignatureAlgorithm,
+        _algorithm: SignatureAlgorithm,
         data: &D
     ) -> Result<Signature, SigningError<Self::Error>> {
 
@@ -166,7 +166,7 @@ impl Signer for HttpsSigner {
     /// Not implemented. We won't sign CMS with this.
     fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
         &self,
-        algorithm: SignatureAlgorithm,
+        _algorithm: SignatureAlgorithm,
         _data: &D
     ) -> Result<(Signature, PublicKey), Self::Error> {
         unimplemented!()
