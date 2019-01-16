@@ -3,19 +3,18 @@ use bcder::{decode, encode};
 use bcder::encode::Values;
 use bcder::encode::Constructed;
 use bytes::Bytes;
-use crate::util::ext_serde;
 use rpki::uri;
-use rpki::x509::Time;
-use rpki::x509::ValidationError;
-use rpki::cert::ext::BasicCa;
-use rpki::cert::ext::SubjectKeyIdentifier;
-use rpki::cert::ext::AuthorityKeyIdentifier;
-use util::softsigner::SignerKeyId;
-use rpki::x509::SignedData;
-use rpki::crypto::SignatureAlgorithm;
-use rpki::x509::Name;
+use rpki::cert::ext::{
+    AuthorityKeyIdentifier,
+    BasicCa,
+    SubjectKeyIdentifier
+};
 use rpki::cert::Validity;
-use rpki::crypto::PublicKey;
+use rpki::crypto::{PublicKey, SignatureAlgorithm};
+use rpki::x509::{Name, SignedData,Time};
+use rpki::x509::ValidationError;
+use crate::util::ext_serde;
+use crate::util::softsigner::SignerKeyId;
 
 
 //------------ MyIdentity ----------------------------------------------------

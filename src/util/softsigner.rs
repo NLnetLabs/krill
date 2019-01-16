@@ -1,7 +1,6 @@
 //! Support for signing things using software keys (through openssl) and
 //! storing them unencrypted on disk.
-use std::fs;
-use std::io;
+use std::{fs, io};
 use std::path::PathBuf;
 use std::sync::Arc;
 use bcder::decode;
@@ -10,18 +9,22 @@ use openssl::rsa::Rsa;
 use openssl::hash::MessageDigest;
 use openssl::error::ErrorStack;
 use openssl::pkey::{PKey, PKeyRef, Private};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use serde::de;
-use serde::ser;
-use storage::keystore::{self, Info, Key, KeyStore};
-use storage::caching_ks::CachingDiskKeyStore;
-use rpki::crypto::Signer;
-use rpki::crypto::Signature;
-use rpki::crypto::PublicKey;
-use rpki::crypto::SignatureAlgorithm;
-use rpki::crypto::SigningError;
-use rpki::crypto::PublicKeyFormat;
+use rpki::crypto::{
+    Signature,
+    SignatureAlgorithm,
+    Signer,
+    SigningError,
+    PublicKey,
+    PublicKeyFormat
+};
 use rpki::crypto::signer::KeyError;
+use serde::{de, ser};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use crate::storage::keystore::{self, Info, Key, KeyStore};
+use crate::storage::caching_ks::CachingDiskKeyStore;
+
+
+//------------ SignerKeyId ---------------------------------------------------
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SignerKeyId(String);

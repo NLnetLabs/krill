@@ -1,9 +1,9 @@
 use std::io;
 use std::time::Duration;
 use bytes::Bytes;
-use rpki::uri;
-use reqwest::{Client, StatusCode};
+use reqwest::{Client, Response, StatusCode};
 use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
+use rpki::uri;
 use crate::client::data::{
     ApiResponse,
     PublisherDetails,
@@ -16,7 +16,6 @@ use crate::client::options::{
     PublishersCommand
 };
 use crate::util::file;
-use reqwest::Response;
 
 /// Command line tool for Krill admin tasks
 pub struct KrillClient {

@@ -1,21 +1,16 @@
 //! Support for RPKI XML structures.
-
 use std::{fs, io};
+use std::fs::File;
 use std::path::Path;
 use base64;
+use base64::DecodeError;
 use bytes::Bytes;
 use hex;
-use xmlrs::EventReader;
-use xmlrs::ParserConfig;
-use xmlrs::reader;
-use xmlrs::writer;
-use xmlrs::attribute::OwnedAttribute;
-use xmlrs::EventWriter;
-use xmlrs::EmitterConfig;
-use xmlrs::reader::XmlEvent;
-use base64::DecodeError;
 use hex::FromHexError;
-use std::fs::File;
+use xmlrs::{reader, writer};
+use xmlrs::{EmitterConfig, EventReader, EventWriter, ParserConfig};
+use xmlrs::attribute::OwnedAttribute;
+use xmlrs::reader::XmlEvent;
 
 
 //------------ XmlReader -----------------------------------------------------

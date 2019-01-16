@@ -1,6 +1,5 @@
 //! Delivery of static content. See also:
 //! https://github.com/railwayhistory/railsite/blob/master/src/statics.rs
-
 use actix_web::{Error, HttpRequest, HttpResponse, Responder};
 use actix_web::http::StatusCode;
 

@@ -1,6 +1,5 @@
 //! <publish> query support
 //! see: https://tools.ietf.org/html/rfc8181#section-3.1 and further
-
 use std::io;
 use bytes::Bytes;
 use hex;

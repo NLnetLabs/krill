@@ -1,7 +1,6 @@
 //! Data types to wrap the API responses, and support reporting on them in
 //! various formats (where applicable).
 use rpki::uri;
-
 use crate::util::ext_serde;
 
 //------------ ApiResponse ---------------------------------------------------

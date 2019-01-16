@@ -3,12 +3,11 @@ use std::io::Write;
 use std::path::PathBuf;
 use bytes::Bytes;
 use rpki::uri;
+use rpki::crypto::{PublicKeyFormat, Signer};
 use crate::remote::builder::IdCertBuilder;
 use crate::remote::id::IdCert;
 use crate::remote::oob::PublisherRequest;
-use util::softsigner::OpenSslSigner;
-use rpki::crypto::PublicKeyFormat;
-use rpki::crypto::Signer;
+use crate::util::softsigner::OpenSslSigner;
 
 pub fn test_with_tmp_dir<F>(op: F) where F: FnOnce(PathBuf) -> () {
     use std::fs;

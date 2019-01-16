@@ -1,5 +1,4 @@
 //! Support for the Json API
-
 use std::sync::Arc;
 use rpki::uri;
 use crate::daemon::publishers::Publisher;

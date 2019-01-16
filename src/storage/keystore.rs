@@ -1,5 +1,4 @@
 //! The KeyStore trait and some implementations.
-
 use std::any::Any;
 use std::io;
 use std::num;

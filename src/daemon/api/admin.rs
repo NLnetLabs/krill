@@ -1,16 +1,14 @@
 //! Support for various admin API methods
-
 use std::error;
 use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 use actix_web::{HttpResponse, ResponseError};
 use actix_web::http::StatusCode;
 use serde::Serialize;
 use crate::daemon::api::data::{PublisherDetails, PublisherList};
-use crate::daemon::http::server::HttpRequest;
+use crate::daemon::http::server::{HttpRequest, PublisherHandle};
 use crate::daemon::publishers;
 use crate::daemon::pubserver::{self, PubServer};
-use remote::oob::PublisherRequest;
-use daemon::http::server::PublisherHandle;
+use crate::remote::oob::PublisherRequest;
 
 /// Helper function to render json output.
 fn render_json<O: Serialize>(object: O) -> HttpResponse {

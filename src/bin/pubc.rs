@@ -5,13 +5,12 @@
 //! that this CLI may be triggered to synchronise this state to a publication
 //! server.
 
-extern crate krill;
 #[macro_use] extern crate derive_more;
+extern crate krill;
 extern crate rpki;
 
 use std::io::{self, Write};
 use std::path::PathBuf;
-
 use krill::client::pubc::{self, Config, RunMode, PubClient };
 use krill::remote::oob::{RepositoryResponse, RepositoryResponseError};
 use krill::util::file;

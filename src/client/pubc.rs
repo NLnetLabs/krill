@@ -3,16 +3,16 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
-use bcder::decode;
 use bcder::{Captured, Mode};
+use bcder::decode;
 use bcder::encode::Values;
 use clap::{App, Arg, SubCommand};
 use reqwest::{Client, Response, StatusCode};
 use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT, CONTENT_TYPE};
 use rpki::x509::ValidationError;
-use rpki::crypto::PublicKeyFormat;
-use rpki::crypto::Signer;
+use rpki::crypto::{PublicKeyFormat, Signer};
 use toml;
+use crate::remote::builder;
 use crate::remote::builder::{IdCertBuilder, SignedMessageBuilder};
 use crate::remote::id::{MyIdentity, MyRepoInfo, ParentInfo};
 use crate::remote::oob::{PublisherRequest, RepositoryResponse};
@@ -26,7 +26,6 @@ use crate::storage::caching_ks::CachingDiskKeyStore;
 use crate::storage::keystore::{self, Info, Key, KeyStore};
 use crate::util::softsigner::{self, OpenSslSigner};
 use crate::util::file::{self, CurrentFile, RecursorError};
-use remote::builder;
 
 
 /// # Some constants for naming resources in the keystore for clients.

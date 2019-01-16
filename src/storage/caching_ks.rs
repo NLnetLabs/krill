@@ -1,19 +1,16 @@
 //! A keystore implementation using local storage and caching.
-
 use std::any::Any;
 use std::collections::HashMap;
 use std::fs;
-use std::fs::File;
-use std::fs::ReadDir;
+use std::fs::{File, ReadDir};
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::RwLock;
 use std::str::FromStr;
+use std::sync::{Arc, RwLock};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json;
-use super::keystore::{Error, Info, Key, KeyStore};
+use crate::storage::keystore::{Error, Info, Key, KeyStore};
 
 
 //------------ CurrentMemoryEntry --------------------------------------------

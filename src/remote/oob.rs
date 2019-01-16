@@ -3,7 +3,6 @@
 //! Support for the RFC8183 out-of-band setup requests and responses
 //! used to exchange identity and configuration between CAs and their
 //! parent CA and/or RPKI Publication Servers.
-
 use std::io;
 use base64::DecodeError;
 use bcder::decode;

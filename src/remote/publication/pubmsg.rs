@@ -3,8 +3,8 @@
 use std::io;
 use bytes::Bytes;
 use rpki::uri;
-use super::query::{ListQuery, PublishQuery};
-use super::reply::{ErrorReply, ListReply, SuccessReply};
+use crate::remote::publication::query::{ListQuery, PublishQuery};
+use crate::remote::publication::reply::{ErrorReply, ListReply, SuccessReply};
 use crate::remote::sigmsg::SignedMessage;
 use crate::util::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
 

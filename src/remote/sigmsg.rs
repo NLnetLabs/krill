@@ -1,21 +1,20 @@
 //! CMS structure that is used to encompass publication and publishing
 //! messages.
 
+// XXX TODO: Remove these dependencies
+use untrusted::Input;
+use ring::digest;
+
 use bcder::decode;
 use bcder::{Mode, Oid, Tag};
 use bcder::string::OctetString;
 use bytes::Bytes;
 use rpki::crl::Crl;
-use super::id::IdCert;
-
-use untrusted::Input;
-use ring::digest;
+use rpki::crypto::DigestAlgorithm;
+use rpki::sigobj::{oid, SignerInfo, SignedObject};
 use rpki::x509::ValidationError;
 use rpki::x509::Time;
-use rpki::sigobj::SignerInfo;
-use rpki::sigobj::oid;
-use rpki::crypto::DigestAlgorithm;
-use rpki::sigobj::SignedObject;
+use crate::remote::id::IdCert;
 
 
 //------------ Cms -----------------------------------------------------------

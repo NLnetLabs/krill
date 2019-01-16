@@ -1,8 +1,5 @@
 //! <publish> query support
 //! see: https://tools.ietf.org/html/rfc8181#section-3.4 and further
-
-//------------ SuccessReply --------------------------------------------------
-
 use std::io;
 use bytes::Bytes;
 use hex;
@@ -12,6 +9,8 @@ use crate::remote::publication::pubmsg::{Message, MessageError, ReplyMessage};
 use crate::remote::publication::query::PublishElement;
 use crate::util::xml::{XmlReader, XmlWriter};
 
+
+//------------ SuccessReply --------------------------------------------------
 
 /// This type represents the success reply as described in
 /// https://tools.ietf.org/html/rfc8181#section-3.4

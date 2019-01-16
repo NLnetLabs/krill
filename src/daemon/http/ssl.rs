@@ -4,22 +4,24 @@
 use std::io::Write;
 use std::fs::File;
 use std::path::PathBuf;
+use bcder::decode;
 use bytes::Bytes;
 use openssl::hash::MessageDigest;
 use openssl::pkey::{PKey, Private};
 use openssl::rsa::Rsa;
+use rpki::crypto::{
+    PublicKey,
+    PublicKeyFormat,
+    Signature,
+    SignatureAlgorithm,
+    Signer,
+    SigningError
+};
+use rpki::crypto::signer::KeyError;
 use crate::remote::builder::IdCertBuilder;
 use crate::util::file;
-use rpki::crypto::Signer;
-use rpki::crypto::PublicKeyFormat;
-use rpki::crypto::PublicKey;
-use rpki::crypto::SignatureAlgorithm;
-use rpki::crypto::Signature;
-use rpki::crypto::SigningError;
-use util::softsigner::SignerKeyId;
-use remote::builder;
-use rpki::crypto::signer::KeyError;
-use bcder::decode;
+use crate::util::softsigner::SignerKeyId;
+use crate::remote::builder;
 
 const KEY_SIZE: u32 = 2048;
 pub const HTTPS_SUB_DIR: &'static str = "ssl";

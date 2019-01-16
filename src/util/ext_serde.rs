@@ -1,14 +1,13 @@
 //! Defines helper methods for Serializing and Deserializing external types.
-
 use base64;
 use bytes::Bytes;
 use log::LevelFilter;
+use rpki::uri;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde::de;
 use syslog::Facility;
 use crate::remote::id::IdCert;
-use rpki::uri;
-use util::softsigner::SignerKeyId;
+use crate::util::softsigner::SignerKeyId;
 
 
 //------------ Bytes ---------------------------------------------------------

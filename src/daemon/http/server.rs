@@ -1,5 +1,4 @@
 //! Actix-web based HTTP server for the publication server.
-
 use std::error;
 use std::fs::File;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -17,9 +16,8 @@ use crate::daemon::config::Config;
 use crate::daemon::http::ssl;
 use crate::daemon::pubserver;
 use crate::daemon::pubserver::PubServer;
+use crate::remote::oob::{PublisherRequest, PublisherRequestError};
 use crate::remote::sigmsg::SignedMessage;
-use remote::oob::PublisherRequest;
-use remote::oob::PublisherRequestError;
 
 const NOT_FOUND: &'static [u8] = include_bytes!("../../../static/html/404.html");
 
