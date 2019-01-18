@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use rpki::uri;
 use crate::remote::id::IdCert;
-use crate::remote::oob::{PublisherRequest, PublisherRequestError};
+use crate::remote::rfc8183::{PublisherRequest, PublisherRequestError};
 use crate::storage::keystore::{self, Info, Key, KeyStore};
 use crate::storage::caching_ks::CachingDiskKeyStore;
 use crate::util::ext_serde;
@@ -46,10 +46,7 @@ impl Publisher {
         id_cert: IdCert
     ) -> Self {
 
-        let tag = match tag {
-            None => "".to_string(),
-            Some(t) => t
-        };
+        let tag = tag.unwrap_or("".to_string());
 
         Publisher {
             tag,
@@ -373,13 +370,6 @@ mod tests {
         PublisherStore::new(dir, &uri).unwrap()
     }
 
-    fn find_in_list(
-        name: &str,
-        publishers: &Vec<Arc<Publisher>>
-    ) -> Option<Arc<Publisher>> {
-        publishers.iter().find(|e| {e.name() == name }).map(|e| {e.clone()})
-    }
-
     #[test]
     fn should_refuse_slash_in_publisher_handle() {
         test::test_with_tmp_dir(|d| {
@@ -430,7 +420,6 @@ mod tests {
             let mut ps = test_publisher_store(&d);
             let name = "alice";
             let pr = test::new_publisher_request(name, &d);
-            let id_cert = pr.id_cert().clone();
             let actor = "test";
 
             ps.add_publisher(pr, name, &base_service_uri(), actor).unwrap();

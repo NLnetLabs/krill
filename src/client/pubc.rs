@@ -15,12 +15,8 @@ use toml;
 use crate::remote::builder;
 use crate::remote::builder::{IdCertBuilder, SignedMessageBuilder};
 use crate::remote::id::{MyIdentity, MyRepoInfo, ParentInfo};
-use crate::remote::oob::{PublisherRequest, RepositoryResponse};
-use crate::remote::publication::pubmsg::{Message, MessageError, ReplyMessage};
-use crate::remote::publication::reply::{ErrorReply, ListReply};
-use crate::remote::publication::query::{
-    ListQuery, PublishElement, PublishQuery, Withdraw
-};
+use crate::remote::rfc8183;
+use crate::remote::rfc8181;
 use crate::remote::sigmsg::SignedMessage;
 use crate::storage::caching_ks::CachingDiskKeyStore;
 use crate::storage::keystore::{self, Info, Key, KeyStore};
@@ -135,7 +131,7 @@ impl PubClient {
     /// Process the publication server parent response.
     pub fn process_repo_response(
         &mut self,
-        response: RepositoryResponse
+        response: rfc8183::RepositoryResponse
     ) -> Result<(), Error> {
 
         // Store parent info
@@ -167,10 +163,12 @@ impl PubClient {
     }
 
     /// Makes a publisher request, which can presented as an RFC8183 xml.
-    pub fn publisher_request(&mut self) -> Result<PublisherRequest, Error> {
+    pub fn publisher_request(
+        &mut self
+    ) -> Result<rfc8183::PublisherRequest, Error> {
         let id = self.get_my_id()?;
         Ok(
-            PublisherRequest::new(
+            rfc8183::PublisherRequest::new(
                 None,
                 id.name(),
                 id.id_cert().clone()
@@ -180,16 +178,18 @@ impl PubClient {
 
     /// Sends a list query to the server, and expects a list reply, all
     /// validly signed and all.
-    pub fn get_server_list(&mut self) -> Result<ListReply, Error> {
-        let query = ListQuery::build_message();
+    pub fn get_server_list(
+        &mut self
+    ) -> Result<rfc8181::ListReply, Error> {
+        let query = rfc8181::ListQuery::build_message();
         let signed_request = self.sign_request(query)?;
 
         let reply = self.send_request(signed_request)?.as_reply()?;
 
         match reply {
-            ReplyMessage::ErrorReply(e)   => Err(Error::ErrorReply(e)),
-            ReplyMessage::SuccessReply(_) => Err(Error::UnexpectedReply),
-            ReplyMessage::ListReply(l)    => Ok(l)
+            rfc8181::ReplyMessage::ErrorReply(e)   => Err(Error::ErrorReply(e)),
+            rfc8181::ReplyMessage::SuccessReply(_) => Err(Error::UnexpectedReply),
+            rfc8181::ReplyMessage::ListReply(l)    => Ok(l)
         }
     }
 
@@ -205,9 +205,9 @@ impl PubClient {
             let reply = self.send_request(sgn_msg)?.as_reply()?;
 
             match reply {
-                ReplyMessage::ErrorReply(e)   => Err(Error::ErrorReply(e)),
-                ReplyMessage::ListReply(_)    => Err(Error::UnexpectedReply),
-                ReplyMessage::SuccessReply(_) => Ok(())
+                rfc8181::ReplyMessage::ErrorReply(e)   => Err(Error::ErrorReply(e)),
+                rfc8181::ReplyMessage::ListReply(_)    => Err(Error::UnexpectedReply),
+                rfc8181::ReplyMessage::SuccessReply(_) => Ok(())
             }
         } else {
             Ok(())
@@ -216,18 +216,18 @@ impl PubClient {
 
     fn create_update(
         current: Vec<CurrentFile>,
-        published: ListReply
-    ) -> Option<Message> {
-        let mut add: Vec<PublishElement> = Vec::new();
-        let mut upd: Vec<PublishElement> = Vec::new();
-        let mut wdr: Vec<PublishElement> = Vec::new();
+        published: rfc8181::ListReply
+    ) -> Option<rfc8181::Message> {
+        let mut add: Vec<rfc8181::PublishElement> = Vec::new();
+        let mut upd: Vec<rfc8181::PublishElement> = Vec::new();
+        let mut wdr: Vec<rfc8181::PublishElement> = Vec::new();
 
         let reply_els = published.elements();
 
         // loop through what the server has and find the ones to withdraw
         for p in reply_els {
             if current.iter().find(|c| { c.uri() == p.uri() }).is_none() {
-                wdr.push(Withdraw::publish(p));
+                wdr.push(rfc8181::Withdraw::publish(p));
             }
         }
 
@@ -236,11 +236,11 @@ impl PubClient {
         for ref f in current {
             match reply_els.iter().find(|pb| { pb.uri() == f.uri()}) {
                 None => {
-                    add.push(f.as_publish())
+                    add.push(f.as_rfc8181_publish())
                 },
                 Some(pb) => {
                     if pb.hash() != f.hash() {
-                        upd.push(f.as_update(pb.hash()));
+                        upd.push(f.as_rf8181_update(pb.hash()));
                     }
                 }
             }
@@ -251,7 +251,7 @@ impl PubClient {
         if total_length == 0 {
             None
         } else {
-            let mut builder = PublishQuery::build_with_capacity(total_length);
+            let mut builder = rfc8181::PublishQuery::build_with_capacity(total_length);
 
             for a in add {
                 builder.add(a);
@@ -272,7 +272,10 @@ impl PubClient {
 
     /// Sends a signed request to the server, and validates and parses the
     /// response.
-    fn send_request(&mut self, req: Captured) -> Result<Message, Error> {
+    fn send_request(
+        &mut self,
+        req: Captured
+    ) -> Result<rfc8181::Message, Error> {
         let parent = self.get_my_parent()?;
 
         let mut headers = HeaderMap::new();
@@ -308,7 +311,10 @@ impl PubClient {
         }
     }
 
-    fn parse_res(&mut self, mut res: Response) -> Result<Message, Error> {
+    fn parse_res(
+        &mut self,
+        mut res: Response
+    ) -> Result<rfc8181::Message, Error> {
         let parent = self.get_my_parent()?;
 
         let mut bytes: Vec<u8> = vec![];
@@ -317,13 +323,16 @@ impl PubClient {
 
         let signed_msg = SignedMessage::decode(bytes, true)?;
         signed_msg.validate(parent.id_cert())?;
-        Message::from_signed_message(&signed_msg).map_err(|e| {
+        rfc8181::Message::from_signed_message(&signed_msg).map_err(|e| {
             Error::MessageError(e)
         })
     }
 
     /// Sign a request so it can be sent to the publisher.
-    fn sign_request(&mut self, msg: Message) -> Result<Captured, Error> {
+    fn sign_request(
+        &mut self,
+        msg: rfc8181::Message
+    ) -> Result<Captured, Error> {
         let id = self.get_my_id()?;
 
         let builder = SignedMessageBuilder::new(
@@ -529,13 +538,13 @@ pub enum Error {
     ValidationError(ValidationError),
 
     #[display(fmt="Cannot parse message: {}", _0)]
-    MessageError(MessageError),
+    MessageError(rfc8181::MessageError),
 
     #[display(fmt="Cannot decode reply: {}", _0)]
     DecodeError(decode::Error),
 
     #[display(fmt="Received error from server: {:?}", _0)]
-    ErrorReply(ErrorReply),
+    ErrorReply(rfc8181::ErrorReply),
 
     #[display(fmt="Received unexpected reply (list vs success)")]
     UnexpectedReply,
@@ -577,8 +586,8 @@ impl From<decode::Error> for Error {
     }
 }
 
-impl From<MessageError> for Error {
-    fn from(e: MessageError) -> Self {
+impl From<rfc8181::MessageError> for Error {
+    fn from(e: rfc8181::MessageError) -> Self {
         Error::MessageError(e)
     }
 }

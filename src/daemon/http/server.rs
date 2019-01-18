@@ -14,21 +14,21 @@ use crate::daemon::api::admin;
 use crate::daemon::api::auth::{Authorizer, CheckAuthorisation};
 use crate::daemon::config::Config;
 use crate::daemon::http::ssl;
-use crate::daemon::pubserver;
-use crate::daemon::pubserver::PubServer;
-use crate::remote::oob::{PublisherRequest, PublisherRequestError};
+use crate::daemon::krillserver;
+use crate::daemon::krillserver::KrillServer;
+use crate::remote::rfc8183::{PublisherRequest, PublisherRequestError};
 use crate::remote::sigmsg::SignedMessage;
 
 const NOT_FOUND: &'static [u8] = include_bytes!("../../../ui/dev/html/404.html");
 
 //------------ PubServerApp --------------------------------------------------
 
-pub struct PubServerApp(App<Arc<RwLock<PubServer>>>);
+pub struct PubServerApp(App<Arc<RwLock<KrillServer>>>);
 
 /// # Set up methods
 ///
 impl PubServerApp {
-    pub fn new(server: Arc<RwLock<PubServer>>) -> Self {
+    pub fn new(server: Arc<RwLock<KrillServer>>) -> Self {
         let mut app = App::with_state(server)
             .middleware(middleware::Logger::default())
             .middleware(CheckAuthorisation)
@@ -85,9 +85,9 @@ impl PubServerApp {
         PubServerApp(with_statics(app))
     }
 
-    pub fn create_server(config: &Config) -> Arc<RwLock<PubServer>> {
+    pub fn create_server(config: &Config) -> Arc<RwLock<KrillServer>> {
         let authorizer = Authorizer::new(&config.auth_token);
-        let pub_server = match PubServer::new(
+        let pub_server = match KrillServer::new(
             &config.data_dir,
             &config.rsync_base,
             &config.service_uri,
@@ -204,7 +204,7 @@ impl PubServerApp {
     ///
     /// This delegates to `PubServer` to do the actual hard work.
     fn handle_signed_request(
-        mut server: RwLockWriteGuard<PubServer>,
+        mut server: RwLockWriteGuard<KrillServer>,
         msg: &SignedMessage,
         handle: &str
     ) -> HttpResponse {
@@ -226,7 +226,7 @@ impl PubServerApp {
     // https://github.com/actix/actix-website/blob/master/content/docs/static-files.md
     // https://www.keycdn.com/blog/http-cache-headers
     fn serve_rrdp_files(req: &HttpRequest) -> HttpResponse {
-        let server: RwLockReadGuard<PubServer> = req.state().read().unwrap();
+        let server: RwLockReadGuard<KrillServer> = req.state().read().unwrap();
 
         match req.match_info().get("path") {
             Some(path) => {
@@ -371,7 +371,7 @@ impl AsRef<str> for PublisherHandle {
 //------------ IntoHttpHandler -----------------------------------------------
 
 impl server::IntoHttpHandler for PubServerApp {
-    type Handler = <App<Arc<RwLock<PubServer>>> as server::IntoHttpHandler>::Handler;
+    type Handler = <App<Arc<RwLock<KrillServer>>> as server::IntoHttpHandler>::Handler;
 
     fn into_handler(self) -> Self::Handler {
         self.0.into_handler()
@@ -392,7 +392,7 @@ fn with_statics<S: 'static>(app: App<S>) -> App<S> {
 
 //------------ HttpRequest ---------------------------------------------------
 
-pub type HttpRequest = actix_web::HttpRequest<Arc<RwLock<PubServer>>>;
+pub type HttpRequest = actix_web::HttpRequest<Arc<RwLock<KrillServer>>>;
 
 
 //------------ Error ---------------------------------------------------------
@@ -400,7 +400,7 @@ pub type HttpRequest = actix_web::HttpRequest<Arc<RwLock<PubServer>>>;
 #[derive(Debug, Display)]
 pub enum Error {
     #[display(fmt = "{}", _0)]
-    ServerError(pubserver::Error),
+    ServerError(krillserver::Error),
 
     #[display(fmt = "{}", _0)]
     JsonError(serde_json::Error),

@@ -6,7 +6,7 @@ use rpki::uri;
 use rpki::crypto::{PublicKeyFormat, Signer};
 use crate::remote::builder::IdCertBuilder;
 use crate::remote::id::IdCert;
-use crate::remote::oob::PublisherRequest;
+use crate::remote::rfc8183::PublisherRequest;
 use crate::util::softsigner::OpenSslSigner;
 
 pub fn test_with_tmp_dir<F>(op: F) where F: FnOnce(PathBuf) -> () {

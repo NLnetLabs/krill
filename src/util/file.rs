@@ -4,12 +4,10 @@ use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use bytes::Bytes;
 use rpki::uri;
-use crate::remote::publication;
-use crate::remote::publication::query::{
-    Publish, PublishElement, Update, Withdraw
-};
-use crate::remote::publication::reply::ListElement;
+use crate::daemon::api::requests;
+use crate::remote::rfc8181;
 use crate::util::ext_serde;
+use crate::util::hash;
 
 
 ///-- Some helper functions
@@ -221,7 +219,7 @@ pub struct CurrentFile {
 
 impl CurrentFile {
     pub fn new(uri: uri::Rsync, content: Bytes) -> Self {
-        let hash = publication::hash(&content);
+        let hash = hash(&content);
         CurrentFile {uri, content, hash}
     }
 
@@ -243,12 +241,26 @@ impl CurrentFile {
         &self.hash
     }
 
-    pub fn as_publish(&self) -> PublishElement {
-        Publish::publish(&self.content, self.uri.clone())
+    pub fn as_rfc8181_publish(&self) -> rfc8181::PublishElement {
+        rfc8181::Publish::publish(&self.content, self.uri.clone())
     }
 
-    pub fn as_update(&self, old_content: &Bytes) -> PublishElement {
-        Update::publish(old_content, &self.content, self.uri.clone())
+    pub fn as_publish(&self) -> requests::Publish {
+        let tag = hex::encode(&self.hash);
+        requests::Publish::new(tag, self.uri.clone(), self.content.clone())
+    }
+
+    pub fn as_rf8181_update(
+        &self,
+        old_content: &Bytes
+    ) -> rfc8181::PublishElement {
+        rfc8181::Update::publish(old_content, &self.content, self.uri.clone())
+    }
+
+    pub fn as_update(&self, old_content: &Bytes) -> requests::Update {
+        let tag = hex::encode(&self.hash);
+        let hash = hash(old_content);
+        requests::Update::new(tag, self.uri.clone(), self.content.clone(), hash)
     }
 
     /// Makes a withdraw element for a known file
@@ -256,12 +268,18 @@ impl CurrentFile {
     /// Note this is probably only useful for testing, because real files
     /// to be withdrawn will not be current. Look at Withdraw::publish
     /// instead which takes a reference to a ListElement from a ListReply.
-    pub fn as_withdraw(&self) -> PublishElement {
-        Withdraw::for_known_file(&self.content, self.uri.clone())
+    pub fn as_rfc8181_withdraw(&self) -> rfc8181::PublishElement {
+        rfc8181::Withdraw::for_known_file(&self.content, self.uri.clone())
     }
 
-    pub fn to_list_element(&self) -> ListElement {
-        ListElement::reply(&self.content, self.uri.clone())
+    pub fn as_withdraw(&self) -> requests::Withdraw {
+        let tag = hex::encode(&self.hash);
+        let hash = hash(&self.content);
+        requests::Withdraw::new(tag, self.uri.clone(), hash)
+    }
+
+    pub fn to_list_element(&self) -> rfc8181::ListElement {
+        rfc8181::ListElement::reply(&self.content, self.uri.clone())
     }
 }
 

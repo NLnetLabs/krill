@@ -4,15 +4,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use bcder::{Captured, Mode};
 use bcder::encode::Values;
-use rpki::uri;
 use rpki::crypto::{PublicKeyFormat, Signer};
+use rpki::uri;
 use crate::daemon::publishers::Publisher;
-use crate::daemon::repo;
 use crate::remote::builder;
 use crate::remote::builder::{IdCertBuilder, SignedMessageBuilder};
 use crate::remote::id::MyIdentity;
-use crate::remote::oob::RepositoryResponse;
-use crate::remote::publication::pubmsg::Message;
+use crate::remote::rfc8181::Message;
+use crate::remote::rfc8183::RepositoryResponse;
 use crate::storage::caching_ks::CachingDiskKeyStore;
 use crate::storage::keystore::{self, Info, Key, KeyStore};
 use crate::util::softsigner::{self, OpenSslSigner};
@@ -39,12 +38,6 @@ pub struct Responder {
 
     // key value store for server specific stuff
     store: CachingDiskKeyStore,
-
-    // The URI that publishers need to access to publish (see config)
-    service_uri: uri::Http,
-
-    // The URI for the notification.xml published by this server (see config)
-    rrdp_notification_uri: uri::Http
 }
 
 
@@ -53,8 +46,6 @@ pub struct Responder {
 impl Responder {
     pub fn init(
         work_dir: &PathBuf,
-        service_uri: &uri::Http,
-        rrdp_base_uri: &uri::Http
     ) -> Result<Self, Error> {
         let mut responder_dir = PathBuf::from(work_dir);
         responder_dir.push("responder");
@@ -65,13 +56,9 @@ impl Responder {
         let signer = OpenSslSigner::new(&responder_dir)?;
         let store = CachingDiskKeyStore::new(responder_dir)?;
 
-        let rrdp_notification_uri = repo::notification_uri(rrdp_base_uri);
-
         let mut responder = Responder {
             signer,
             store,
-            service_uri: service_uri.clone(),
-            rrdp_notification_uri
         };
         responder.init_identity_if_empty()?;
 
@@ -108,7 +95,8 @@ impl Responder {
 impl Responder {
     pub fn repository_response(
         &self,
-        publisher: Arc<Publisher>
+        publisher: Arc<Publisher>,
+        rrdp_notification_uri: uri::Http
     ) -> Result<RepositoryResponse, Error> {
 
         if let Some(my_id) = self.my_identity()? {
@@ -117,7 +105,6 @@ impl Responder {
             let id_cert = my_id.id_cert().clone();
             let service_uri = publisher.service_uri().clone();
             let sia_base = publisher.base_uri().clone();
-            let rrdp_notification_uri = self.rrdp_notification_uri.clone();
 
             Ok(
                 RepositoryResponse::new(
@@ -147,13 +134,6 @@ impl Responder {
         } else {
             Err(Error::Unitialised)
         }
-    }
-}
-
-/// # Access
-impl Responder {
-    pub fn base_service_uri(&self) -> &uri::Http {
-        &self.service_uri
     }
 }
 
@@ -213,21 +193,14 @@ mod tests {
     fn should_have_response_for_publisher() {
         test::test_with_tmp_dir(|d| {
 
-            let service_uri = test::http_uri("http://host/publish");
-            let rrdp_uri = test::http_uri("http://host/rrdp/");
-            let responder = Responder::init(
-                &d,
-                &service_uri,
-                &rrdp_uri
-            ).unwrap();
+            let responder = Responder::init(&d).unwrap();
 
             let name = "alice".to_string();
             let pr = test::new_publisher_request(name.as_str(), &d);
             let tag = None;
             let id_cert = pr.id_cert().clone();
             let base_uri = test::rsync_uri("rsync://host/module/alice/");
-            let service_uri = test::http_uri("http://127.0.0\
-            .1:3000/rfc8181/alice");
+            let service_uri = test::http_uri("http://127.0.0.1:3000/rfc8181/alice");
 
             let publisher = Arc::new(Publisher::new(
                 tag,
@@ -237,7 +210,9 @@ mod tests {
                 id_cert
             ));
 
-            responder.repository_response(publisher).unwrap();
+            let rrdp_uri = test::http_uri("http://host/rrdp/");
+
+            responder.repository_response(publisher, rrdp_uri).unwrap();
         });
     }
 

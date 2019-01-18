@@ -20,7 +20,7 @@ use krill::daemon::config::Config;
 use krill::daemon::http::server::PubServerApp;
 use krill::util::file::{self, CurrentFile};
 use krill::util::test;
-use krill::remote::oob::RepositoryResponse;
+use krill::remote::rfc8183::RepositoryResponse;
 
 #[test]
 fn client_publish_at_server() {

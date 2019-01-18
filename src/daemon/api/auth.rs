@@ -4,16 +4,16 @@ use std::sync::{Arc, RwLock, RwLockReadGuard};
 use actix_web::{HttpResponse, HttpRequest, Result};
 use actix_web::http::HeaderMap;
 use actix_web::middleware::{Middleware, Started};
-use crate::daemon::pubserver::PubServer;
+use crate::daemon::krillserver::KrillServer;
 
 pub struct CheckAuthorisation;
 
-impl Middleware<Arc<RwLock<PubServer>>> for CheckAuthorisation {
+impl Middleware<Arc<RwLock<KrillServer>>> for CheckAuthorisation {
     fn start(
         &self,
-        req: &HttpRequest<Arc<RwLock<PubServer>>>
+        req: &HttpRequest<Arc<RwLock<KrillServer>>>
     ) -> Result<Started> {
-        let server: RwLockReadGuard<PubServer> = req.state().read().unwrap();
+        let server: RwLockReadGuard<KrillServer> = req.state().read().unwrap();
 
         if server.authorizer().allowed(req.path(), req.headers()) {
             Ok(Started::Done)

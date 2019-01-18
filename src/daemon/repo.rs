@@ -5,9 +5,8 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::str::FromStr;
 use rpki::uri;
-use crate::remote::publication::pubmsg::Message;
-use crate::remote::publication::query::{PublishElement, PublishQuery};
-use crate::remote::publication::reply::{ListElement, ListReply, SuccessReply};
+use crate::daemon::api::responses;
+use crate::daemon::api::requests::PublishDelta;
 use crate::util::file::{self, CurrentFile, RecursorError};
 use crate::util::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
 
@@ -15,18 +14,6 @@ const VERSION: &'static str = "1";
 const NS: &'static str = "http://www.ripe.net/rpki/rrdp";
 const FS_FOLDER: &'static str = "rsync";
 pub const RRDP_FOLDER: &'static str = "rrdp";
-
-/// Derives the notification uri based on the RRDP base uri (from config)
-/// Panics in case of (config) issues, and is called during bootstrapping.
-pub fn notification_uri(base: &uri::Http) -> uri::Http {
-    let base_string = base.to_string();
-    if ! base_string.ends_with("/") {
-        panic!("RRDP base path should end with a '/', got:{}", base_string);
-    }
-    uri::Http::from_string(
-        format!("{}notification.xml", base.to_string())
-    ).unwrap() // Can only fail at startup if mis-configured.
-}
 
 
 //------------ Repository ----------------------------------------------------
@@ -56,6 +43,16 @@ impl Repository {
     }
 }
 
+/// # Access
+///
+impl Repository {
+    /// Returns the RRDP notification URI for inclusion in the
+    /// Repository Response
+    pub fn rrdp_notification_uri(&self) -> uri::Http {
+        self.rrdp.notification_uri().clone()
+    }
+}
+
 /// # Publish / List
 ///
 impl Repository {
@@ -64,13 +61,13 @@ impl Repository {
     /// to wrap such errors in a response message to the publisher.
     pub fn publish(
         &mut self,
-        update: &PublishQuery,
+        delta: &PublishDelta,
         base_uri: &uri::Rsync
-    ) -> Result<Message, Error> {
-        debug!("Processing update with {} elements", update.elements().len());
-        self.fs.publish(update, base_uri)?;
-        self.rrdp.publish(update)?;
-        Ok(SuccessReply::build_message())
+    ) -> Result<responses::PublishReply, Error> {
+        debug!("Processing update with {} elements", delta.len());
+        self.fs.publish(delta, base_uri)?;
+        self.rrdp.publish(delta)?;
+        Ok(responses::PublishReply::Success)
     }
 
     /// Lists the objects for a base_uri, presumably all for the same
@@ -78,20 +75,11 @@ impl Repository {
     pub fn list(
         &self,
         base_uri: &uri::Rsync
-    ) -> Result<Message, Error> {
+    ) -> Result<responses::PublishReply, Error> {
         debug!("Processing list query");
         let files = self.fs.list(base_uri)?;
-        let mut builder = ListReply::build();
-        for file in files {
-            builder.add(
-                ListElement::reply(
-                    file.content(),
-                    file.uri().clone()
-                )
-            )
-        }
-        debug!("Found {} files", builder.len());
-        Ok(builder.build_message())
+        Ok(responses::PublishReply::List(
+                responses::ListReply::new(files)))
     }
 }
 
@@ -127,11 +115,11 @@ impl FileStore {
     /// Process a PublishQuery update
     pub fn publish(
         &mut self,
-        update: &PublishQuery,
+        delta: &PublishDelta,
         base_uri: &uri::Rsync
     ) -> Result<(), Error> {
-        self.verify_query(update, base_uri)?;
-        self.update_files(update)?;
+        self.verify_query(delta, base_uri)?;
+        self.update_files(delta)?;
 
         Ok(())
     }
@@ -152,39 +140,42 @@ impl FileStore {
 
     /// Assert that all updates are confined to the given base_uri; i.e. do
     /// not allow publishers to update things outside of their own jail.
+    ///
+    /// Note this is done as a separate check, because there is a requirement
+    /// that in case of any errors in an update, nothing is published. So,
+    /// checking this first is a good enough form of a poor-man's transaction.
     fn verify_query(
         &self,
-        update: &PublishQuery,
+        delta: &PublishDelta,
         base_uri: &uri::Rsync
     ) -> Result<(), Error> {
-        for q in update.elements() {
-            match q {
-                PublishElement::Publish(p) => {
-                    Self::assert_uri(base_uri, p.uri())?;
-                    if self.get_current_file_opt(p.uri()).is_some() {
-                        return Err(Error::ObjectAlreadyPresent(p.uri().clone()))
-                    }
-                },
-                PublishElement::Update(u) => {
-                    Self::assert_uri(base_uri, u.uri())?;
-                    if let Some(cur) = self.get_current_file_opt(u.uri()) {
-                        if cur.hash() != u.hash() {
-                            return Err(Error::NoObjectMatchingHash)
-                        }
-                    } else {
-                        return Err(Error::NoObjectPresent(u.uri().clone()))
-                    }
-                },
-                PublishElement::Withdraw(w) => {
-                    Self::assert_uri(base_uri, w.uri())?;
-                    if let Some(cur) = self.get_current_file_opt(w.uri()) {
-                        if cur.hash() != w.hash() {
-                            return Err(Error::NoObjectMatchingHash)
-                        }
-                    } else {
-                        return Err(Error::NoObjectPresent(w.uri().clone()))
-                    }
-                },
+
+        for p in delta.publishes() {
+            Self::assert_uri(base_uri, p.uri())?;
+            if self.get_current_file_opt(p.uri()).is_some() {
+                return Err(Error::ObjectAlreadyPresent(p.uri().clone()))
+            }
+        }
+
+        for u in delta.updates() {
+            Self::assert_uri(base_uri, u.uri())?;
+            if let Some(cur) = self.get_current_file_opt(u.uri()) {
+                if cur.hash() != u.hash() {
+                    return Err(Error::NoObjectMatchingHash)
+                }
+            } else {
+                return Err(Error::NoObjectPresent(u.uri().clone()))
+            }
+        }
+
+        for w in delta.withdraws() {
+            Self::assert_uri(base_uri, w.uri())?;
+            if let Some(cur) = self.get_current_file_opt(w.uri()) {
+                if cur.hash() != w.hash() {
+                    return Err(Error::NoObjectMatchingHash)
+                }
+            } else {
+                return Err(Error::NoObjectPresent(w.uri().clone()))
             }
         }
 
@@ -193,38 +184,38 @@ impl FileStore {
     }
 
     /// Perform the actual updates on disk. This assumes that the updates
-    /// have been verified.
+    /// have been verified. This can still blow up if there is an I/O issue
+    /// writing to disk.
     fn update_files(
         &self,
-        update: &PublishQuery
+        delta: &PublishDelta
     ) -> Result<(), Error> {
-        for q in update.elements() {
-            match q {
-                PublishElement::Publish(p) => {
-                    debug!("Saving file for uri: {}", p.uri().to_string());
-                    file::save_with_rsync_uri(
-                        p.object(),
-                        &self.base_dir,
-                        p.uri()
-                    )?;
-                },
-                PublishElement::Update(u) => {
-                    debug!("Updating file for uri: {}", u.uri().to_string());
-                    file::save_with_rsync_uri(
-                        u.object(),
-                        &self.base_dir,
-                        u.uri()
-                    )?;
-                },
-                PublishElement::Withdraw(w) => {
-                    debug!("Withdrawing file for uri: {}", w.uri().to_string());
-                    file::delete_with_rsync_uri(
-                        &self.base_dir,
-                        w.uri()
-                    )?;
-                },
-            }
+        for p in delta.publishes() {
+            debug!("Saving file for uri: {}", p.uri().to_string());
+            file::save_with_rsync_uri(
+                p.content(),
+                &self.base_dir,
+                p.uri()
+            )?;
         }
+
+        for u in delta.updates() {
+            debug!("Updating file for uri: {}", u.uri().to_string());
+            file::save_with_rsync_uri(
+                u.content(),
+                &self.base_dir,
+                u.uri()
+            )?;
+        }
+
+        for w in delta.withdraws() {
+            debug!("Withdrawing file for uri: {}", w.uri().to_string());
+            file::delete_with_rsync_uri(
+                &self.base_dir,
+                w.uri()
+            )?;
+        }
+
         Ok(())
     }
 
@@ -288,6 +279,10 @@ impl RrdpServer {
         work_dir: &PathBuf
     ) -> Result<Self, Error>
     {
+        if ! base_uri.to_string().ends_with("/") {
+          return Err(Error::UriConfigError)
+        }
+
         let rrdp_base = file::sub_dir(work_dir, RRDP_FOLDER)?;
         let fs_base = file::sub_dir(work_dir, FS_FOLDER)?;
         Ok(RrdpServer { base_uri: base_uri.clone(), rrdp_base, fs_base })
@@ -302,8 +297,8 @@ impl RrdpServer {
     /// and notification file. Assumes that this is called *after* the
     /// ['FileStore'] has published, so files should already be saved to
     /// disk and the snapshots can be derived from this.
-    pub fn publish(&mut self, update: &PublishQuery) -> Result<(), Error> {
-        let current_notification = Notification::derive(
+    pub fn publish(&mut self, delta: &PublishDelta) -> Result<(), Error> {
+        let current_notification = Notification::build(
             &self.notification_path(),
             &self.base_uri,
             &self.rrdp_base
@@ -324,7 +319,7 @@ impl RrdpServer {
         };
 
         let snapshot = self.save_snapshot(&session_id, serial)?;
-        let delta = self.save_delta(&session_id, serial, update)?;
+        let delta_file = self.save_delta(&session_id, serial, delta)?;
 
         let mut notif_builder = NotificationBuilder::new();
 
@@ -336,7 +331,7 @@ impl RrdpServer {
             notif_builder.with_deltas(notification.deltas)
         }
 
-        notif_builder.add_delta_to_start(delta);
+        notif_builder.add_delta_to_start(delta_file);
 
         let notification = notif_builder.build();
         notification.save(&self.notification_path())
@@ -348,7 +343,7 @@ impl RrdpServer {
         &mut self,
         session_id: &String,
         serial: usize,
-        update: &PublishQuery
+        delta: &PublishDelta
     ) -> Result<DeltaRef, Error>
     {
         let path = self.delta_path(session_id, serial);
@@ -368,52 +363,50 @@ impl RrdpServer {
                 "delta",
                 Some(&a),
                 |w| {
-                    for el in update.elements() {
-                        match el {
-                            PublishElement::Publish(el) => {
-                                let uri = el.uri().to_string();
-                                let a = [
-                                    ("uri", uri.as_ref())
-                                ];
-                                w.put_element(
-                                    "publish",
-                                    Some(&a),
-                                    |w| {
-                                        w.put_blob(el.object())
-                                    }
-                                )?
-                            },
-                            PublishElement::Update(el) => {
-                                let uri = el.uri().to_string();
-                                let hash = hex::encode(el.hash());
-                                let a = [
-                                    ("uri", uri.as_ref()),
-                                    ("hash", hash.as_ref())
-                                ];
-                                w.put_element(
-                                    "publish",
-                                    Some(&a),
-                                    |w| {
-                                        w.put_blob(el.object())
-                                    }
-                                )?
-                            },
-                            PublishElement::Withdraw(el) => {
-                                let uri = el.uri().to_string();
-                                let hash = hex::encode(el.hash());
-                                let a = [
-                                    ("uri", uri.as_ref()),
-                                    ("hash", hash.as_ref())
-                                ];
-                                w.put_element(
-                                    "withdraw",
-                                    Some(&a),
-                                    |w| {
-                                        w.empty()
-                                    }
-                                )?
-                            },
-                        };
+                    for publish in delta.publishes() {
+                        let uri = publish.uri().to_string();
+                        let a = [
+                            ("uri", uri.as_ref())
+                        ];
+                        w.put_element(
+                            "publish",
+                            Some(&a),
+                            |w| {
+                                w.put_blob(publish.content())
+                            }
+                        )?
+                    }
+
+                    for update in delta.updates() {
+                        let uri = update.uri().to_string();
+                        let hash = hex::encode(update.hash());
+                        let a = [
+                            ("uri", uri.as_ref()),
+                            ("hash", hash.as_ref())
+                        ];
+                        w.put_element(
+                            "publish",
+                            Some(&a),
+                            |w| {
+                                w.put_blob(update.content())
+                            }
+                        )?
+                    }
+
+                    for withdraw in delta.withdraws() {
+                        let uri = withdraw.uri().to_string();
+                        let hash = hex::encode(withdraw.hash());
+                        let a = [
+                            ("uri", uri.as_ref()),
+                            ("hash", hash.as_ref())
+                        ];
+                        w.put_element(
+                            "withdraw",
+                            Some(&a),
+                            |w| {
+                                w.empty()
+                            }
+                        )?
                     }
                     Ok(())
                 })
@@ -478,6 +471,11 @@ impl RrdpServer {
         Ok(SnapshotRef { file_info })
     }
 
+    pub fn notification_uri(&self) -> uri::Http {
+        uri::Http::from_string(
+            format!("{}notification.xml", self.base_uri.to_string())
+        ).unwrap() // Cannot fail. Config checked at startup.
+    }
 
     pub fn notification_path(&self) -> PathBuf {
         let mut path = self.rrdp_base.clone();
@@ -532,7 +530,12 @@ impl Notification {
 ///
 impl Notification {
 
-    pub fn derive(
+    /// Build up the current notification based on what's on disk.
+    /// Note that this will return None, if there is nothing on disk.
+    ///
+    /// Also note that in future we may want to cache things for
+    /// efficiency (but make it work with multi master).
+    pub fn build(
         path: &PathBuf,
         base_uri: &uri::Http,
         rrdp_base: &PathBuf
@@ -740,10 +743,10 @@ impl FileInfo {
         let size = bytes.len();
 
         let hash = {
-            use crate::remote::publication;
+            use crate::util::hash;
             use bytes::Bytes;
 
-            hex::encode(&publication::hash(&Bytes::from(bytes)))
+            hex::encode(&hash(&Bytes::from(bytes)))
         };
 
         Ok(FileInfo::new(uri, hash, size))
@@ -892,7 +895,7 @@ pub enum Error {
     #[display(fmt="Publishing outside of base URI is not allowed.")]
     OutsideBaseUri,
 
-    #[display(fmt="Issue deriving RRDP URI, check config!")]
+    #[display(fmt="Issue deriving RRDP URI, check config. Base URI must end with a '/'!")]
     UriConfigError,
 
     #[display(fmt="Error deserializing existing notification.xml")]
@@ -955,6 +958,7 @@ mod tests {
     use crate::daemon::repo::Notification;
     use crate::util::file::CurrentFile;
     use crate::util::test;
+    use daemon::api::requests::PublishDeltaBuilder;
 
     #[test]
     fn should_publish() {
@@ -970,12 +974,11 @@ mod tests {
                 Bytes::from("example content")
             );
 
-            let mut builder = PublishQuery::build();
-            builder.add(file.clone().as_publish());
-            let message = builder.build_message();
-            let publish = message.as_query().unwrap().as_publish().unwrap();
+            let mut builder = PublishDeltaBuilder::new();
+            builder.add_publish(file.as_publish());
+            let delta = builder.finish();
 
-            repo.publish(&publish, &rsync_for_alice).unwrap();
+            repo.publish(&delta, &rsync_for_alice).unwrap();
 
             // Now publish an update a bunch of times
             // (overwrite file with same file, strictly speaking allowed,
@@ -983,15 +986,15 @@ mod tests {
 
             let file_update = file.clone();
 
-            let mut builder = PublishQuery::build();
-            builder.add(file_update.clone().as_update(file.content()));
-            let message = builder.build_message();
-            let update = message.as_query().unwrap().as_publish().unwrap();
-            repo.publish(&update, &rsync_for_alice).unwrap();
-            repo.publish(&update, &rsync_for_alice).unwrap();
-            repo.publish(&update, &rsync_for_alice).unwrap();
-            repo.publish(&update, &rsync_for_alice).unwrap();
-            repo.publish(&update, &rsync_for_alice).unwrap();
+            let mut builder = PublishDeltaBuilder::new();
+            builder.add_update(file_update.as_update(file.content()));
+            let delta = builder.finish();
+
+            repo.publish(&delta, &rsync_for_alice).unwrap();
+            repo.publish(&delta, &rsync_for_alice).unwrap();
+            repo.publish(&delta, &rsync_for_alice).unwrap();
+            repo.publish(&delta, &rsync_for_alice).unwrap();
+            repo.publish(&delta, &rsync_for_alice).unwrap();
 
             // Now we expect a notification file with serial 6, which only
             // includes deltas for 5 and 6, because more deltas would
@@ -1003,7 +1006,7 @@ mod tests {
             let mut notification_disk_path = rrdp_disk_path.clone();
             notification_disk_path.push("notification.xml");
 
-            match Notification::derive(
+            match Notification::build(
                 &notification_disk_path,
                 &rrdp_base_uri,
                 &rrdp_disk_path
@@ -1049,12 +1052,11 @@ mod tests {
                 Bytes::from("example content")
             );
 
-            let mut builder = PublishQuery::build();
-            builder.add(file.clone().as_publish());
-            let message = builder.build_message();
-            let publish = message.as_query().unwrap().as_publish().unwrap();
+            let mut builder = PublishDeltaBuilder::new();
+            builder.add_publish(file.as_publish());
+            let delta = builder.finish();
 
-            file_store.publish(&publish, &base_uri).unwrap();
+            file_store.publish(&delta, &base_uri).unwrap();
 
             // See that it's the only one listed
             let files = file_store.list(&base_uri).unwrap();
@@ -1067,11 +1069,10 @@ mod tests {
                 Bytes::from("example updated content")
             );
 
-            let mut builder = PublishQuery::build();
-            builder.add(file_update.clone().as_update(file.content()));
-            let message = builder.build_message();
-            let publish = message.as_query().unwrap().as_publish().unwrap();
-            file_store.publish(&publish, &base_uri).unwrap();
+            let mut builder = PublishDeltaBuilder::new();
+            builder.add_update(file_update.as_update(file.content()));
+            let delta = builder.finish();
+            file_store.publish(&delta, &base_uri).unwrap();
 
             // See that it's the only one listed
             let files = file_store.list(&base_uri).unwrap();
@@ -1079,11 +1080,10 @@ mod tests {
             assert!(files.contains(&file_update));
 
             // Withdraw a file
-            let mut builder = PublishQuery::build();
-            builder.add(file_update.as_withdraw());
-            let message = builder.build_message();
-            let publish = message.as_query().unwrap().as_publish().unwrap();
-            file_store.publish(&publish, &base_uri).unwrap();
+            let mut builder = PublishDeltaBuilder::new();
+            builder.add_withdraw(file_update.as_withdraw());
+            let delta = builder.finish();
+            file_store.publish(&delta, &base_uri).unwrap();
 
             // See that there are no files listed
             let files = file_store.list(&base_uri).unwrap();
@@ -1107,12 +1107,11 @@ mod tests {
                 Bytes::from("example content")
             );
 
-            let mut builder = PublishQuery::build();
-            builder.add(file.clone().as_publish());
-            let message = builder.build_message();
-            let publish = message.as_query().unwrap().as_publish().unwrap();
+            let mut builder = PublishDeltaBuilder::new();
+            builder.add_publish(file.as_publish());
+            let delta = builder.finish();
 
-            match file_store.publish(&publish, &base_uri) {
+            match file_store.publish(&delta, &base_uri) {
                 Err(Error::OutsideBaseUri) => {},
                 _ => { panic!("Expected Error::OutsideBaseUri") }
             }

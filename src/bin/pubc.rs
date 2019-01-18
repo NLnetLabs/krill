@@ -12,7 +12,7 @@ extern crate rpki;
 use std::io::{self, Write};
 use std::path::PathBuf;
 use krill::client::pubc::{self, Config, RunMode, PubClient };
-use krill::remote::oob::{RepositoryResponse, RepositoryResponseError};
+use krill::remote::rfc8183::{RepositoryResponse, RepositoryResponseError};
 use krill::util::file;
 
 fn main() {

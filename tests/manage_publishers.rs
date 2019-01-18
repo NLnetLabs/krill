@@ -24,7 +24,7 @@ use krill::client::options::{
 };
 use krill::client::pubc::PubClient;
 use krill::util::test;
-use krill::remote::oob::RepositoryResponse;
+use krill::remote::rfc8183::RepositoryResponse;
 use reqwest::StatusCode;
 
 /// Tests that we can list publishers through the API

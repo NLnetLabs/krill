@@ -4,11 +4,11 @@ use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 use actix_web::{HttpResponse, ResponseError};
 use actix_web::http::StatusCode;
 use serde::Serialize;
-use crate::daemon::api::data::{PublisherDetails, PublisherList};
+use crate::daemon::api::responses::{PublisherDetails, PublisherList};
 use crate::daemon::http::server::{HttpRequest, PublisherHandle};
 use crate::daemon::publishers;
-use crate::daemon::pubserver::{self, PubServer};
-use crate::remote::oob::PublisherRequest;
+use crate::daemon::krillserver::{self, KrillServer};
+use crate::remote::rfc8183::PublisherRequest;
 
 /// Helper function to render json output.
 fn render_json<O: Serialize>(object: O) -> HttpResponse {
@@ -30,12 +30,12 @@ fn server_error(error: Error) -> HttpResponse {
 }
 
 /// Returns a server in a read lock
-fn ro_server(req: &HttpRequest) -> RwLockReadGuard<PubServer> {
+fn ro_server(req: &HttpRequest) -> RwLockReadGuard<KrillServer> {
     req.state().read().unwrap()
 }
 
 /// Returns a server in a write lock
-fn rw_server(req: &HttpRequest) -> RwLockWriteGuard<PubServer> {
+fn rw_server(req: &HttpRequest) -> RwLockWriteGuard<KrillServer> {
     req.state().write().unwrap()
 }
 
@@ -95,7 +95,7 @@ pub fn remove_publisher(
 ) -> HttpResponse {
     match rw_server(&req).remove_publisher(handle) {
         Ok(()) => api_ok(),
-        Err(pubserver::Error::PublisherStoreError(
+        Err(krillserver::Error::PublisherStore(
                 publishers::Error::UnknownPublisher(_))) => api_ok(),
         Err(e) => server_error(Error::ServerError(e))
     }
@@ -148,7 +148,7 @@ pub fn repository_response(
                 .content_type("application/xml")
                 .body(res.encode_vec())
         },
-        Err(pubserver::Error::PublisherStoreError
+        Err(krillserver::Error::PublisherStore
             (publishers::Error::UnknownPublisher(_))) => {
             api_not_found()
         },
@@ -163,7 +163,7 @@ pub fn repository_response(
 #[derive(Debug, Display)]
 pub enum Error {
     #[display(fmt = "{}", _0)]
-    ServerError(pubserver::Error),
+    ServerError(krillserver::Error),
 
     #[display(fmt = "{}", _0)]
     JsonError(serde_json::Error),
@@ -208,26 +208,22 @@ impl ErrorToCode for Error {
     }
 }
 
-impl ErrorToStatus for pubserver::Error {
+impl ErrorToStatus for krillserver::Error {
     fn status(&self) -> StatusCode {
         match self {
-            pubserver::Error::ValidationError(_) => StatusCode::FORBIDDEN,
-            pubserver::Error::PublisherStoreError(e) => e.status(),
-            pubserver::Error::MessageError(_) => StatusCode::BAD_REQUEST,
-            pubserver::Error::RepositoryError(_) => StatusCode::BAD_REQUEST,
-            pubserver::Error::ResponderError(_) => StatusCode::BAD_REQUEST,
+            krillserver::Error::CmsProxy(_) => StatusCode::BAD_REQUEST,
+            krillserver::Error::PublisherStore(e) => e.status(),
+            krillserver::Error::Repository(_) => StatusCode::BAD_REQUEST,
         }
     }
 }
 
-impl ErrorToCode for pubserver::Error {
+impl ErrorToCode for krillserver::Error {
     fn code(&self) -> usize {
         match self {
-            pubserver::Error::ValidationError(_) => 2001,
-            pubserver::Error::PublisherStoreError(e) => e.code(),
-            pubserver::Error::MessageError(_) => 1003,
-            pubserver::Error::RepositoryError(_) => 3002,
-            pubserver::Error::ResponderError(_) => 3003,
+            krillserver::Error::PublisherStore(e) => e.code(),
+            krillserver::Error::Repository(_) => 3002,
+            krillserver::Error::CmsProxy(_) => 3003,
         }
     }
 }

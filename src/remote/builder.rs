@@ -25,7 +25,7 @@ use rpki::crypto::signer::KeyError;
 use rpki::sigobj;
 use rpki::x509::{Name, Time};
 use crate::remote::id::{IdCert, IdExtensions};
-use crate::remote::publication::pubmsg::Message;
+use crate::remote::rfc8181::Message;
 
 
 //------------ TbsCertificate ------------------------------------------------

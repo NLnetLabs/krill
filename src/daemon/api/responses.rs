@@ -1,9 +1,13 @@
-//! Support for the Json API
+//! Support for responses sent by the Json API
+//!
+//! i.e. this is stuff the the server needs to serialize only, so typically
+//! we can work with references here.
 use std::sync::Arc;
 use rpki::uri;
 use crate::daemon::publishers::Publisher;
 use crate::util::ext_serde;
-use remote::id::IdCert;
+use crate::util::file::CurrentFile;
+use crate::remote::id::IdCert;
 
 //------------ Link ----------------------------------------------------------
 
@@ -123,5 +127,25 @@ impl<'a> PublisherDetails<'a> {
             identity_certificate,
             links
         }
+    }
+}
+
+pub enum PublishReply {
+    Success,
+    List(ListReply)
+}
+
+#[derive(Serialize)]
+pub struct ListReply{
+    files: Vec<CurrentFile>
+}
+
+impl ListReply {
+    pub fn new(files: Vec<CurrentFile>) -> Self {
+        ListReply { files }
+    }
+
+    pub fn files(&self) -> &Vec<CurrentFile> {
+        &self.files
     }
 }
