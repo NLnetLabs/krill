@@ -78,7 +78,6 @@ fn client_publish_at_server() {
             res.text().unwrap().as_bytes()
         ).unwrap();
 
-
         repo_res.validate().unwrap();
         client.process_repo_response(repo_res).unwrap();
 

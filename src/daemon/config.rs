@@ -30,9 +30,6 @@ impl ConfigDefaults {
     fn rrdp_base_uri() -> uri::Http {
         uri::Http::from_str("http://127.0.0.1:3000/rrdp/").unwrap()
     }
-    fn service_uri() -> uri::Http {
-        uri::Http::from_str("http://127.0.0.1:3000/rfc8181/").unwrap()
-    }
     fn log_level() -> LevelFilter { LevelFilter::Warn }
     fn log_type() -> LogType { LogType::Syslog }
     fn syslog_facility() -> Facility { Facility::LOG_DAEMON }
@@ -87,12 +84,6 @@ pub struct Config {
     pub rrdp_base_uri: uri::Http,
 
     #[serde(
-        default = "ConfigDefaults::service_uri",
-        deserialize_with = "ext_serde::de_http_uri"
-    )]
-    pub service_uri: uri::Http,
-
-    #[serde(
         default = "ConfigDefaults::log_level",
         deserialize_with = "ext_serde::de_level_filter"
     )]
@@ -141,6 +132,20 @@ impl Config {
         path.push(ssl::KEY_FILE);
         path
     }
+
+    pub fn service_uri(&self) -> uri::Http {
+        let mut uri = String::new();
+        if self.use_ssl() {
+            uri.push_str("https://");
+        } else {
+            uri.push_str("http://");
+        }
+
+        uri.push_str(&self.socket_addr().to_string());
+        uri.push_str("/");
+
+        uri::Http::from_string(uri).unwrap()
+    }
 }
 
 /// # Create
@@ -154,7 +159,6 @@ impl Config {
         let data_dir = data_dir.clone();
         let rsync_base = ConfigDefaults::rsync_base();
         let rrdp_base_uri = ConfigDefaults::rrdp_base_uri();
-        let service_uri = ConfigDefaults::service_uri();
         let log_level = ConfigDefaults::log_level();
         let log_type = LogType::Stderr;
         let log_file = ConfigDefaults::log_file();
@@ -168,7 +172,6 @@ impl Config {
             data_dir,
             rsync_base,
             rrdp_base_uri,
-            service_uri,
             log_level,
             log_type,
             log_file,

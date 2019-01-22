@@ -5,9 +5,9 @@
 use std::sync::Arc;
 use rpki::uri;
 use crate::daemon::publishers::Publisher;
+use crate::remote::id::IdCert;
 use crate::util::ext_serde;
 use crate::util::file::CurrentFile;
-use crate::remote::id::IdCert;
 
 //------------ Link ----------------------------------------------------------
 
@@ -35,7 +35,7 @@ impl<'a> PublisherSummaryInfo<'a> {
         publisher: &'a Publisher,
         path_publishers: &'a str
     ) -> PublisherSummaryInfo<'a> {
-        let id = publisher.name().as_str();
+        let id = publisher.handle().as_str();
         let mut links = Vec::new();
 
         let response_link = Link {
@@ -89,17 +89,23 @@ impl<'a> PublisherList<'a> {
 //------------ PublisherDetails ----------------------------------------------
 
 #[derive(Clone, Debug, Serialize)]
+pub struct Rfc8181Details<'a> {
+    #[serde(serialize_with = "ext_serde::ser_http_uri")]
+    service_uri: uri::Http,
+
+    #[serde(serialize_with = "ext_serde::ser_id_cert")]
+    id_cert: &'a IdCert
+}
+
+
+#[derive(Clone, Debug, Serialize)]
 pub struct PublisherDetails<'a> {
     publisher_handle: &'a str,
 
     #[serde(serialize_with = "ext_serde::ser_rsync_uri")]
     base_uri: &'a uri::Rsync,
 
-    #[serde(serialize_with = "ext_serde::ser_http_uri")]
-    service_uri: &'a uri::Http,
-
-    #[serde(serialize_with = "ext_serde::ser_id_cert")]
-    identity_certificate: &'a IdCert,
+    rfc8181: Option<Rfc8181Details<'a>>,
 
     links: Vec<Link<'a>>
 }
@@ -107,12 +113,25 @@ pub struct PublisherDetails<'a> {
 impl<'a> PublisherDetails<'a> {
     pub fn from(
         publisher: &'a Arc<Publisher>,
-        path_publishers: &'a str
+        path_publishers: &'a str,
+        base_service_uri: &uri::Http
     ) -> PublisherDetails<'a> {
-        let handle = publisher.name().as_str();
+        let handle = publisher.handle().as_str();
         let base_uri = publisher.base_uri();
-        let service_uri = publisher.service_uri();
-        let identity_certificate = publisher.id_cert();
+
+        // Derive the RFC8181 service URI.
+        let service_uri = format!("{}{}", base_service_uri, handle);
+        let service_uri = uri::Http::from_string(service_uri).unwrap();
+
+        let rfc8181 = match publisher.rfc8181() {
+            None => None,
+            Some(details) => Some(
+                Rfc8181Details {
+                    service_uri,
+                    id_cert: details.id_cert()
+                }
+            )
+        };
 
         let mut links = Vec::new();
         links.push(Link {
@@ -123,8 +142,7 @@ impl<'a> PublisherDetails<'a> {
         PublisherDetails {
             publisher_handle: handle,
             base_uri,
-            service_uri,
-            identity_certificate,
+            rfc8181,
             links
         }
     }

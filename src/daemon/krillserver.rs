@@ -10,8 +10,9 @@ use crate::daemon::api::responses;
 use crate::daemon::publishers::{self, Publisher, PublisherStore};
 use crate::daemon::repo::{self, Repository, RRDP_FOLDER};
 use crate::remote::cmsproxy::{self, CmsProxy};
-use crate::remote::rfc8183::{PublisherRequest, RepositoryResponse};
 use crate::remote::sigmsg::SignedMessage;
+use daemon::api::requests::PublisherRequestChoice;
+use remote::rfc8183;
 
 /// # Naming things in the keystore.
 const ACTOR: &'static str = "krill pubd";
@@ -33,6 +34,9 @@ const ACTOR: &'static str = "krill pubd";
 ///    * Updates the RRDP files
 #[derive(Clone, Debug)]
 pub struct KrillServer {
+    // The base URI for this service
+    service_uri: uri::Http,
+
     // The base working directory, used for various storage
     work_dir: PathBuf,
 
@@ -56,16 +60,17 @@ impl KrillServer {
     pub fn new(
         work_dir: &PathBuf,
         base_uri: &uri::Rsync,
-        service_uri: &uri::Http,
+        service_uri: uri::Http,
         rrdp_base_uri: &uri::Http,
         authorizer: Authorizer
     ) -> Result<Self, Error> {
-        let cms_proxy = CmsProxy::new(work_dir, service_uri)?;
+        let cms_proxy = CmsProxy::new(work_dir)?;
         let publisher_store = PublisherStore::new(work_dir, base_uri)?;
         let repository = Repository::new(rrdp_base_uri, work_dir)?;
 
         Ok(
             KrillServer {
+                service_uri,
                 work_dir: work_dir.clone(),
                 authorizer,
                 cms_proxy,
@@ -73,6 +78,10 @@ impl KrillServer {
                 repository,
             }
         )
+    }
+
+    pub fn service_base_uri(&self) -> &uri::Http {
+        &self.service_uri
     }
 }
 
@@ -94,13 +103,12 @@ impl KrillServer {
     /// Adds the publishers, blows up if it already existed.
     pub fn add_publisher(
         &mut self,
-        req: PublisherRequest,
-        handle: &str,
+        prc: PublisherRequestChoice,
+        handle_override: Option<&str>,
     ) -> Result<(), Error> {
         self.publisher_store.add_publisher(
-            req,
-            handle,
-            self.cms_proxy.base_service_uri(),
+            prc,
+            handle_override,
             ACTOR
         )?;
         Ok(())
@@ -133,11 +141,14 @@ impl KrillServer {
     pub fn repository_response(
         &self,
         name: impl AsRef<str>
-    ) -> Result<RepositoryResponse, Error> {
+    ) -> Result<rfc8183::RepositoryResponse, Error> {
         let publisher = self.publisher_store.get_publisher(name)?;
         let rrdp_notification = self.repository.rrdp_notification_uri();
         self.cms_proxy
-            .repository_response(publisher, rrdp_notification)
+            .repository_response(
+                publisher,
+                self.service_base_uri(),
+                rrdp_notification)
             .map_err(|e| Error::CmsProxy(e))
     }
 
@@ -164,7 +175,7 @@ impl KrillServer {
     /// Also note that if garbage is sent to the daemon, this garbage will
     /// fail to parse as a SignedMessage, and the daemon will just respond
     /// with an HTTP error response, without invoking any of this.
-    pub fn handle_request(
+    pub fn handle_rfc8181_request(
         &mut self,
         sigmsg: &SignedMessage,
         handle: &str
@@ -172,15 +183,23 @@ impl KrillServer {
         debug!("Handling request for: {}", handle);
         let publisher = self.publisher_store.get_publisher(handle)?;
 
-        match self.cms_proxy.publish_request(sigmsg, publisher.id_cert()) {
+        let id_cert = match publisher.rfc8181() {
+            Some(details) => details.id_cert(),
+            None => return Err(Error::NoIdCert)
+        };
+
+        match self.cms_proxy.publish_request(sigmsg, id_cert) {
             Err(e)  => self.cms_proxy.wrap_error(e).map_err(|e| Error::CmsProxy(e)),
             Ok(req) => {
                 let reply = match req {
                     PublishRequest::List => {
-                        self.handle_list(handle)
+                        self.handle_list(handle).map(|list|
+                            responses::PublishReply::List(list))
+
                     },
                     PublishRequest::Delta(delta) => {
-                        self.handle_delta(delta, handle)
+                        self.handle_delta(delta, handle).map(|_|
+                            responses::PublishReply::Success)
                     }
                 };
 
@@ -199,7 +218,7 @@ impl KrillServer {
         &mut self,
         delta: PublishDelta,
         handle: &str
-    ) -> Result<responses::PublishReply, Error> {
+    ) -> Result<(), Error> {
         let publisher = self.publisher_store.get_publisher(handle)?;
         let base_uri = publisher.base_uri();
         self.repository.publish(&delta, base_uri)
@@ -208,9 +227,9 @@ impl KrillServer {
 
     /// Handles a list request sent to the API, or.. through the CmsProxy.
     pub fn handle_list(
-        &mut self,
+        &self,
         handle: &str
-    ) -> Result<responses::PublishReply, Error> {
+    ) -> Result<responses::ListReply, Error> {
         let publisher = self.publisher_store.get_publisher(handle)?;
         let base_uri = publisher.base_uri();
         self.repository.list(base_uri).map_err(|e| Error::Repository(e))
@@ -231,6 +250,9 @@ pub enum Error {
 
     #[display(fmt="{}", _0)]
     Repository(repo::Error),
+
+    #[display(fmt="No IdCert known for this publisher")]
+    NoIdCert
 }
 
 impl From<cmsproxy::Error> for Error {

@@ -1,4 +1,4 @@
-//! Support for various admin API methods
+//! Process requests received, delegate, and wrap up the responses.
 use std::error;
 use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 use actix_web::{HttpResponse, ResponseError};
@@ -8,7 +8,22 @@ use crate::daemon::api::responses::{PublisherDetails, PublisherList};
 use crate::daemon::http::server::{HttpRequest, PublisherHandle};
 use crate::daemon::publishers;
 use crate::daemon::krillserver::{self, KrillServer};
-use crate::remote::rfc8183::PublisherRequest;
+use remote::sigmsg::SignedMessage;
+use daemon::api::requests::PublishDelta;
+use daemon::api::requests::PublisherRequestChoice;
+
+
+//------------ Support Functions ---------------------------------------------
+
+/// Returns a server in a read lock
+pub fn ro_server(req: &HttpRequest) -> RwLockReadGuard<KrillServer> {
+    req.state().read().unwrap()
+}
+
+/// Returns a server in a write lock
+pub fn rw_server(req: &HttpRequest) -> RwLockWriteGuard<KrillServer> {
+    req.state().write().unwrap()
+}
 
 /// Helper function to render json output.
 fn render_json<O: Serialize>(object: O) -> HttpResponse {
@@ -29,25 +44,23 @@ fn server_error(error: Error) -> HttpResponse {
     error.error_response()
 }
 
-/// Returns a server in a read lock
-fn ro_server(req: &HttpRequest) -> RwLockReadGuard<KrillServer> {
-    req.state().read().unwrap()
-}
-
-/// Returns a server in a write lock
-fn rw_server(req: &HttpRequest) -> RwLockWriteGuard<KrillServer> {
-    req.state().write().unwrap()
-}
-
 /// A clean 404 result for the API (no content, not for humans)
 fn api_not_found() -> HttpResponse {
     HttpResponse::build(StatusCode::NOT_FOUND).finish()
 }
 
 /// A clean 200 result for the API (no content, not for humans)
-fn api_ok() -> HttpResponse {
+pub fn api_ok() -> HttpResponse {
     HttpResponse::Ok().finish()
 }
+
+/// Returns the server health. XXX TODO: do a real test!
+pub fn health(_r: &HttpRequest) -> HttpResponse {
+    api_ok()
+}
+
+
+//------------ Admin: Publishers ---------------------------------------------
 
 /// Returns a json structure with all publishers in it.
 pub fn publishers(req: &HttpRequest) -> HttpResponse {
@@ -65,23 +78,23 @@ pub fn publishers(req: &HttpRequest) -> HttpResponse {
 /// Request XML is posted.
 pub fn add_publisher(
     req: HttpRequest,
-    pr: PublisherRequest
+    prc: PublisherRequestChoice
 ) -> HttpResponse {
     let mut server = rw_server(&req);
-    let handle = pr.handle().clone();
-    match server.add_publisher(pr, &handle) {
+    match server.add_publisher(prc, None) {
         Ok(()) => api_ok(),
         Err(e) => server_error(Error::ServerError(e))
     }
 }
 
+/// Adds a an explicitly named publisher.
 pub fn add_named_publisher(
     req: HttpRequest,
-    pr: PublisherRequest,
+    prc: PublisherRequestChoice,
     handle: PublisherHandle
 ) -> HttpResponse {
     let mut server = rw_server(&req);
-    match server.add_publisher(pr, handle.as_ref()) {
+    match server.add_publisher(prc, Some(handle.as_ref())) {
         Ok(()) => api_ok(),
         Err(e) => server_error(Error::ServerError(e))
     }
@@ -101,36 +114,21 @@ pub fn remove_publisher(
     }
 }
 
-
 /// Returns a json structure with publisher details
 pub fn publisher_details(
     req: HttpRequest,
     handle: PublisherHandle
 ) -> HttpResponse {
-    match ro_server(&req).publisher(handle) {
+    let server = ro_server(&req);
+    match server.publisher(handle) {
         Ok(None) => api_not_found(),
         Ok(Some(publisher)) => {
             render_json(
-                PublisherDetails::from(&publisher, "/api/v1/publishers")
+                PublisherDetails::from(
+                    &publisher,
+                    "/api/v1/publishers",
+                    server.service_base_uri())
             )
-        },
-        Err(e) => server_error(Error::ServerError(e))
-    }
-}
-
-
-/// Returns the id.cer for a publisher
-pub fn id_cert(
-    req: HttpRequest,
-    handle: PublisherHandle
-) -> HttpResponse {
-    match ro_server(&req).publisher(handle) {
-        Ok(None) => api_not_found(),
-        Ok(Some(publisher)) => {
-            let bytes = publisher.id_cert().to_bytes();
-            HttpResponse::Ok()
-                .content_type("application/pkix-cert")
-                .body(bytes)
         },
         Err(e) => server_error(Error::ServerError(e))
     }
@@ -157,6 +155,55 @@ pub fn repository_response(
         }
     }
 }
+
+
+//------------ Publication ---------------------------------------------------
+
+/// Processes an RFC8181 query and returns the appropriate response.
+pub fn handle_rfc8181_request(
+    req: HttpRequest,
+    msg: SignedMessage,
+    handle: PublisherHandle
+) -> HttpResponse {
+    let mut server: RwLockWriteGuard<KrillServer> = rw_server(&req);
+    match server.handle_rfc8181_request(&msg, handle.as_ref()) {
+        Ok(captured) => {
+            HttpResponse::build(StatusCode::OK)
+                .content_type("application/rpki-publication")
+                .body(captured.into_bytes())
+        }
+        Err(e) => {
+            server_error(Error::ServerError(e))
+        }
+    }
+}
+
+/// Processes a publishdelta request sent to the API.
+pub fn handle_delta(
+    req: HttpRequest,
+    delta: PublishDelta,
+    handle: PublisherHandle
+) -> HttpResponse {
+    match rw_server(&req).handle_delta(delta, handle.as_ref()) {
+        Ok(()) => api_ok(),
+        Err(e) => server_error(Error::ServerError(e))
+    }
+}
+
+/// Processes a list request sent to the API.
+pub fn handle_list(
+    req: HttpRequest,
+    handle: PublisherHandle
+) -> HttpResponse {
+    match ro_server(&req).handle_list(handle.as_ref()) {
+        Ok(list) => render_json(list),
+        Err(e)   => server_error(Error::ServerError(e))
+    }
+}
+
+
+
+
 
 //------------ Error ---------------------------------------------------------
 
@@ -214,6 +261,7 @@ impl ErrorToStatus for krillserver::Error {
             krillserver::Error::CmsProxy(_) => StatusCode::BAD_REQUEST,
             krillserver::Error::PublisherStore(e) => e.status(),
             krillserver::Error::Repository(_) => StatusCode::BAD_REQUEST,
+            krillserver::Error::NoIdCert => StatusCode::FORBIDDEN,
         }
     }
 }
@@ -224,6 +272,8 @@ impl ErrorToCode for krillserver::Error {
             krillserver::Error::PublisherStore(e) => e.code(),
             krillserver::Error::Repository(_) => 3002,
             krillserver::Error::CmsProxy(_) => 3003,
+            krillserver::Error::NoIdCert => 2001,
+
         }
     }
 }
@@ -253,7 +303,6 @@ impl ErrorToStatus for publishers::Error {
     }
 }
 
-
 #[derive(Debug, Serialize)]
 struct ErrorResponse {
     code: usize,
@@ -268,7 +317,6 @@ impl Error {
         }
     }
 }
-
 
 impl actix_web::ResponseError for Error {
     fn error_response(&self) -> HttpResponse {

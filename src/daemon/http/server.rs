@@ -1,29 +1,36 @@
 //! Actix-web based HTTP server for the publication server.
+//!
+//! Here we deal with booting and setup, and once active deal with parsing
+//! arguments and routing of requests, typically handing off to the
+//! daemon::api::endpoints functions for processing and responding.
 use std::error;
 use std::fs::File;
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, RwLock, RwLockReadGuard};
 use actix_web::{pred, fs, server};
-use actix_web::{App, FromRequest, HttpResponse, ResponseError};
+use actix_web::{App, FromRequest, HttpResponse};
 use actix_web::dev::MessageBody;
 use actix_web::middleware;
 use actix_web::http::{Method, StatusCode };
 use bcder::decode;
 use futures::Future;
 use openssl::ssl::{SslMethod, SslAcceptor, SslAcceptorBuilder, SslFiletype};
-use crate::daemon::api::admin;
+use crate::daemon::api::endpoints;
 use crate::daemon::api::auth::{Authorizer, CheckAuthorisation};
+use crate::daemon::api::requests::PublishDelta;
 use crate::daemon::config::Config;
 use crate::daemon::http::ssl;
 use crate::daemon::krillserver;
 use crate::daemon::krillserver::KrillServer;
-use crate::remote::rfc8183::{PublisherRequest, PublisherRequestError};
+use crate::remote::rfc8183;
 use crate::remote::sigmsg::SignedMessage;
+use daemon::api::requests::PublisherRequestChoice;
 
 const NOT_FOUND: &'static [u8] = include_bytes!("../../../ui/dev/html/404.html");
 
 //------------ PubServerApp --------------------------------------------------
 
 pub struct PubServerApp(App<Arc<RwLock<KrillServer>>>);
+
 
 /// # Set up methods
 ///
@@ -33,32 +40,32 @@ impl PubServerApp {
             .middleware(middleware::Logger::default())
             .middleware(CheckAuthorisation)
             .resource("/api/v1/publishers", |r| {
-                r.method(Method::GET).f(admin::publishers);
-                r.method(Method::POST).with(admin::add_publisher);
+                r.method(Method::GET).f(endpoints::publishers);
+                r.method(Method::POST).with(endpoints::add_publisher);
             })
             .resource("/api/v1/publishers/{handle}", |r| {
-                r.method(Method::GET).with(admin::publisher_details);
-                r.method(Method::POST).with(admin::add_named_publisher);
-                r.method(Method::DELETE).with(admin::remove_publisher);
+                r.method(Method::GET).with(endpoints::publisher_details);
+                r.method(Method::POST).with(endpoints::add_named_publisher);
+                r.method(Method::DELETE).with(endpoints::remove_publisher);
             })
             // For clients that cannot handle http methods
             .resource("/api/v1/publishers/{handle}/del", |r| {
-                r.method(Method::POST).with(admin::remove_publisher);
+                r.method(Method::POST).with(endpoints::remove_publisher);
             })
             .resource("/api/v1/publishers/{handle}/response.xml", |r| {
-                r.method(Method::GET).with(admin::repository_response)
-            })
-            .resource("/api/v1/health", |r| {
-                r.method(Method::GET).f(Self::api_ok)
+                r.method(Method::GET).with(endpoints::repository_response)
             })
             .resource("/rfc8181/{handle}", |r| {
-                r.method(Method::POST).with(Self::process_publish_request)
+                r.method(Method::POST).with(endpoints::handle_rfc8181_request)
             })
             .resource("/rrdp/{path:.*}", |r| {
                 r.method(Method::GET).f(Self::serve_rrdp_files)
             })
-            .resource("/health", |r| {
-                r.method(Method::GET).f(Self::service_ok)
+            .resource("/health", |r| { // No authentication required
+                r.method(Method::GET).f(endpoints::health)
+            })
+            .resource("/api/v1/health", |r| { // health with authentication
+                r.method(Method::GET).f(endpoints::health)
             })
             .default_resource(|r| {
                 // 404 for GET request
@@ -90,7 +97,7 @@ impl PubServerApp {
         let pub_server = match KrillServer::new(
             &config.data_dir,
             &config.rsync_base,
-            &config.service_uri,
+            config.service_uri(),
             &config.rrdp_base_uri,
             authorizer
         ) {
@@ -103,7 +110,7 @@ impl PubServerApp {
         Arc::new(RwLock::new(pub_server))
     }
 
-    /// Used to start the server with an existing executor (e.g. in tests)
+    /// Used to start the server with an existing executor (for tests)
     ///
     /// Note https is not supported in tests.
     pub fn start(config: &Config) {
@@ -144,6 +151,8 @@ impl PubServerApp {
         }
     }
 
+    /// Used to set up HTTPS. Creates keypair and self signed certificate
+    /// if config has 'use_ssl=test'.
     fn https_builder(config: &Config) -> Result<SslAcceptorBuilder, Error> {
         if config.test_ssl() {
             ssl::create_key_cert_if_needed(&config.data_dir)
@@ -180,45 +189,6 @@ impl PubServerApp {
         }
     }
 
-    /// Processes an RFC8181 query and returns the appropriate response.
-    ///
-    /// Note this method checks whether the request can be decoded only, and
-    /// if successful delegates to [`handle_signed_request`] for further
-    /// processing.
-    ///
-    /// [`handle_signed_request`]: #method.handle_signed_request
-    fn process_publish_request(
-        req: HttpRequest,
-        handle: PublisherHandle,
-        msg: SignedMessage
-    ) -> HttpResponse {
-        debug!("Processing publish request");
-        Self::handle_signed_request(
-            req.state().write().unwrap(),
-            &msg,
-            handle.0.as_str()
-        )
-    }
-
-    /// Handles a decoded RFC8181 query.
-    ///
-    /// This delegates to `PubServer` to do the actual hard work.
-    fn handle_signed_request(
-        mut server: RwLockWriteGuard<KrillServer>,
-        msg: &SignedMessage,
-        handle: &str
-    ) -> HttpResponse {
-        match server.handle_request(msg, handle) {
-            Ok(captured) => {
-                HttpResponse::build(StatusCode::OK)
-                    .content_type("application/rpki-publication")
-                    .body(captured.into_bytes())
-            }
-            Err(e) => {
-                Self::server_error(Error::ServerError(e))
-            }
-        }
-    }
 
     // XXX TODO: use a better handler that does not load everything into
     // memory first, and set the correct headers for caching.
@@ -247,24 +217,6 @@ impl PubServerApp {
             },
             None => Self::p404(req)
         }
-    }
-
-    /// API health check, expect that caller authenticates.
-    fn api_ok(_r: &HttpRequest) -> HttpResponse {
-        HttpResponse::Ok().body("")
-    }
-
-    /// Simple human server status response page.
-    fn service_ok(_r: &HttpRequest) -> HttpResponse {
-        // XXX TODO: do a real check
-        HttpResponse::Ok().body("I am completely operational, and all my circuits are functioning perfectly.")
-    }
-
-    /// Helper function to render server side errors. Also responsible for
-    /// logging the errors.
-    fn server_error(error: Error) -> HttpResponse {
-        error!("{}", error);
-        error.error_response()
     }
 }
 
@@ -313,10 +265,14 @@ impl Default for SignedMessageConvertConfig {
     }
 }
 
-//------------ PublisherRequest ----------------------------------------------
 
-/// Support converting requests into PublisherRequest
-impl<S: 'static> FromRequest<S> for PublisherRequest {
+//------------ PublisherRequestChoice ----------------------------------------
+
+/// Converts the body sent to 'add publisher' end-points to a
+/// PublisherRequestChoice, which contains either an
+/// rfc8183::PublisherRequest, or an API publisher request (no ID certs and
+/// CMS etc).
+impl<S: 'static> FromRequest<S> for PublisherRequestChoice {
     type Config = ();
     type Result = Box<Future<Item=Self, Error=actix_web::Error>>;
 
@@ -327,12 +283,15 @@ impl<S: 'static> FromRequest<S> for PublisherRequest {
         Box::new(MessageBody::new(req)
             .from_err()
             .and_then(|bytes| {
-                match PublisherRequest::decode(bytes.as_ref()) {
-                    Ok(req) => Ok(req),
-                    Err(e) => Err(Error::PublisherRequestError(e).into())
+                if bytes.starts_with(b"<") { // check content-type instead?
+                    match rfc8183::PublisherRequest::decode(bytes.as_ref()) {
+                        Ok(req) => Ok(PublisherRequestChoice::Rfc8183(req)),
+                        Err(e) => Err(Error::Wrong8183Xml(e).into())
+                    }
+                } else {
+                    unimplemented!()
                 }
             })
-
         )
     }
 }
@@ -364,6 +323,29 @@ impl<S> FromRequest<S> for PublisherHandle {
 impl AsRef<str> for PublisherHandle {
     fn as_ref(&self) -> &str {
         &self.0
+    }
+}
+
+
+//------------ PublishDelta --------------------------------------------------
+/// Support converting request body into PublishDelta
+impl<S: 'static> FromRequest<S> for PublishDelta {
+    type Config = ();
+    type Result = Box<Future<Item=Self, Error=actix_web::Error>>;
+
+    fn from_request(
+        req: &actix_web::HttpRequest<S>,
+        _cfg: &Self::Config
+    ) -> Self::Result {
+        Box::new(MessageBody::new(req)
+            .from_err()
+            .and_then(|bytes| {
+                let delta: PublishDelta =
+                    serde_json::from_reader(bytes.as_ref())
+                    .map_err(|e| Error::JsonError(e))?;
+                Ok(delta)
+            })
+        )
     }
 }
 
@@ -409,7 +391,7 @@ pub enum Error {
     DecodeError(decode::Error),
 
     #[display(fmt = "Cannot decode request: {}", _0)]
-    PublisherRequestError(PublisherRequestError),
+    Wrong8183Xml(rfc8183::PublisherRequestError),
 
     #[display(fmt = "Wrong path")]
     WrongPath,

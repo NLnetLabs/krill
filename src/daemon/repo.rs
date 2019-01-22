@@ -63,11 +63,11 @@ impl Repository {
         &mut self,
         delta: &PublishDelta,
         base_uri: &uri::Rsync
-    ) -> Result<responses::PublishReply, Error> {
+    ) -> Result<(), Error> {
         debug!("Processing update with {} elements", delta.len());
         self.fs.publish(delta, base_uri)?;
         self.rrdp.publish(delta)?;
-        Ok(responses::PublishReply::Success)
+        Ok(())
     }
 
     /// Lists the objects for a base_uri, presumably all for the same
@@ -75,11 +75,10 @@ impl Repository {
     pub fn list(
         &self,
         base_uri: &uri::Rsync
-    ) -> Result<responses::PublishReply, Error> {
+    ) -> Result<responses::ListReply, Error> {
         debug!("Processing list query");
         let files = self.fs.list(base_uri)?;
-        Ok(responses::PublishReply::List(
-                responses::ListReply::new(files)))
+        Ok(responses::ListReply::new(files))
     }
 }
 

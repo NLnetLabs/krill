@@ -29,23 +29,15 @@ use crate::remote::sigmsg::SignedMessage;
 pub struct CmsProxy {
     // The component that manages server id, and wraps responses to clients
     responder: Responder,
-
-    // The URI that publishers need to access to publish (see config)
-    service_uri: uri::Http,
 }
 
 /// # Set up
 impl CmsProxy {
     pub fn new(
-        work_dir: &PathBuf,
-        service_uri: &uri::Http
+        work_dir: &PathBuf
     ) -> Result<Self, Error> {
         let responder = Responder::init(work_dir)?;
-        Ok(CmsProxy { responder, service_uri: service_uri.clone() })
-    }
-
-    pub fn base_service_uri(&self) -> &uri::Http {
-        &self.service_uri
+        Ok(CmsProxy { responder })
     }
 }
 
@@ -107,10 +99,22 @@ impl CmsProxy {
     pub fn repository_response(
         &self,
         publisher: Arc<Publisher>,
+        base_service_uri: &uri::Http,
         rrdp_notification_uri: uri::Http
     ) -> Result<rfc8183::RepositoryResponse, Error> {
+
+        let service_uri = format!(
+            "{}rfc8181/{}",
+            base_service_uri.to_string(),
+            publisher.handle()
+        );
+        let service_uri = uri::Http::from_string(service_uri).unwrap();
+
         self.responder
-            .repository_response(publisher, rrdp_notification_uri)
+            .repository_response(
+                publisher,
+                service_uri,
+                rrdp_notification_uri)
             .map_err(|e| Error::ResponderError(e))
     }
 

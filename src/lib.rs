@@ -20,6 +20,7 @@ extern crate serde_json;
 extern crate syslog;
 extern crate tokio;
 extern crate toml;
+extern crate uuid;
 extern crate xml as xmlrs;
 
 // XXX Temporarily

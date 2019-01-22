@@ -163,6 +163,23 @@ impl PublisherSummary {
     }
 }
 
+
+//------------ Rfc8181Details ------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Rfc8181Details {
+    #[serde(
+        serialize_with = "ext_serde::ser_http_uri",
+        deserialize_with = "ext_serde::de_http_uri")]
+    service_uri: uri::Http,
+
+    #[serde(
+        serialize_with = "ext_serde::ser_id_cert",
+        deserialize_with = "ext_serde::de_id_cert")]
+    id_cert: IdCert
+}
+
+
 //------------ PublisherDetails ----------------------------------------------
 
 /// This type defines the publisher details fro:
@@ -177,16 +194,7 @@ pub struct PublisherDetails {
     )]
     base_uri: uri::Rsync,
 
-    #[serde(
-        deserialize_with = "ext_serde::de_http_uri",
-        serialize_with = "ext_serde::ser_http_uri"
-    )]
-    service_uri: uri::Http,
-    #[serde(
-        deserialize_with = "ext_serde::de_id_cert",
-        serialize_with = "ext_serde::ser_id_cert"
-    )]
-    identity_certificate: IdCert,
+    rfc8181: Option<Rfc8181Details>,
 
     links: Vec<Link>
 }
@@ -195,8 +203,11 @@ impl PublisherDetails {
     pub fn publisher_handle(&self) -> &str {
         &self.publisher_handle
     }
-    pub fn identity_cert(&self) -> &IdCert {
-        &self.identity_certificate
+    pub fn identity_cert(&self) -> Option<&IdCert> {
+        match self.rfc8181 {
+            None => None,
+            Some(ref details) => Some(&details.id_cert)
+        }
     }
 }
 
@@ -219,12 +230,28 @@ impl Report for PublisherDetails {
             },
             ReportFormat::Text => {
 
-                let res = format!(
-                    "publisher_handle: {}\n\
-                     base uri: {}\n\
-                     service_uri: {}",
-                    self.publisher_handle, self.base_uri, self.service_uri
-                );
+                let mut res = String::new();
+
+                res.push_str("handle: ");
+                res.push_str(self.publisher_handle.as_str());
+                res.push_str("\n");
+
+                res.push_str("base uri: ");
+                res.push_str(self.base_uri.to_string().as_str());
+                res.push_str("\n");
+
+                if let Some(ref rfc8181) = self.rfc8181 {
+                    res.push_str("RFC8181 Details:\n");
+                    res.push_str("  service uri: ");
+                    res.push_str(rfc8181.service_uri.to_string().as_str());
+                    res.push_str("\n");
+                    res.push_str("  id cert (base64): ");
+                    res.push_str(
+                        base64::encode(
+                            rfc8181.id_cert.to_bytes().as_ref()
+                        ).as_str());
+                    res.push_str("\n");
+                }
 
                 Ok(res)
             },

@@ -113,9 +113,15 @@ impl KrillClient {
                 let uri = format!("api/v1/publishers/{}", handle);
                 let res = self.get(uri.as_str())?;
                 let details: PublisherDetails = serde_json::from_str(&res)?;
-                let bytes = details.identity_cert().to_bytes();
-                file::save(&bytes, &file)?;
-                Ok(ApiResponse::Empty)
+                match details.identity_cert() {
+                    Some(cert) => {
+                        let bytes = cert.to_bytes();
+                        file::save(&bytes, &file)?;
+                        Ok(ApiResponse::Empty)
+                    },
+                    None => Err(Error::NoIdCert)
+                }
+
             }
         }
     }
@@ -271,6 +277,9 @@ pub enum Error {
 
     #[display(fmt="Can't read file: {}", _0)]
     IoError(io::Error),
+
+    #[display(fmt="There is no known IdCert for this publisher")]
+    NoIdCert
 }
 
 impl From<reqwest::Error> for Error {

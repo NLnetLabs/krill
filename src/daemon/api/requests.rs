@@ -1,17 +1,44 @@
 //! Support for requests sent to the Json API
-//!
-//! So, contrary to the responses, we need to deal with actual values here
-//! when we deserialize things being sent on the wire.
 use bytes::Bytes;
 use rpki::uri;
+use uuid::Uuid;
+use crate::remote::rfc8183;
 use crate::util::ext_serde;
 
+/// Auto-generate a token in case none is supplied.
+pub fn generate_random_token() -> String {
+    Uuid::new_v4().to_string()
+}
 
+#[derive(Deserialize, Serialize)]
+pub struct PublisherRequest {
+    handle: String,
+
+    #[serde(default = "generate_random_token")]
+    token: String,
+}
+
+impl PublisherRequest {
+    pub fn parts(self) -> (String, String) { (self.handle, self.token) }
+}
+
+
+/// This type provides a convenience wrapper so that either XML (rfc81838) or
+/// Json (our CMS-less api) bodies may be sent when a publisher is added.
+/// Dependent on the content the body sent this will be converted into the
+/// right type.
+pub enum PublisherRequestChoice {
+    Api(PublisherRequest),
+    Rfc8183(rfc8183::PublisherRequest)
+}
+
+
+/// This type provides a convenience wrapper to contain the request found
+/// inside of a validated RFC8181 request.
 pub enum PublishRequest {
     List,
     Delta(PublishDelta)
 }
-
 
 /// This type represents the request containing the complete delta of objects
 /// to publish, update, or withdraw.

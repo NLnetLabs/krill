@@ -96,20 +96,26 @@ impl Responder {
     pub fn repository_response(
         &self,
         publisher: Arc<Publisher>,
+        service_uri: uri::Http,
         rrdp_notification_uri: uri::Http
     ) -> Result<RepositoryResponse, Error> {
-
         if let Some(my_id) = self.my_identity()? {
-            let tag = publisher.tag();
-            let publisher_handle = publisher.name().clone();
+
+            let tag = match publisher.rfc8181() {
+                Some(details) => Some(details.tag().clone()),
+                None => return Err(Error::ClientUnitialised)
+            };
+
+
+            let handle = publisher.handle();
             let id_cert = my_id.id_cert().clone();
-            let service_uri = publisher.service_uri().clone();
+
             let sia_base = publisher.base_uri().clone();
 
             Ok(
                 RepositoryResponse::new(
                     tag,
-                    publisher_handle,
+                    handle.clone(),
                     id_cert,
                     service_uri,
                     sia_base,
@@ -156,6 +162,9 @@ pub enum Error {
 
     #[display(fmt="Identity of server is not initialised.")]
     Unitialised,
+
+    #[display(fmt="Identity of client is not initialised.")]
+    ClientUnitialised,
 }
 
 impl From<io::Error> for Error {
@@ -188,6 +197,7 @@ impl From<builder::Error<softsigner::SignerError>> for Error {
 mod tests {
     use super::*;
     use crate::util::test;
+    use daemon::publishers::Rfc8181PublisherDetails;
 
     #[test]
     fn should_have_response_for_publisher() {
@@ -202,17 +212,22 @@ mod tests {
             let base_uri = test::rsync_uri("rsync://host/module/alice/");
             let service_uri = test::http_uri("http://127.0.0.1:3000/rfc8181/alice");
 
+            let rfc8181 = Rfc8181PublisherDetails::new(tag, id_cert);
+
             let publisher = Arc::new(Publisher::new(
-                tag,
                 name,
+                "token".to_string(),
                 base_uri,
-                service_uri,
-                id_cert
+                Some(rfc8181)
             ));
 
             let rrdp_uri = test::http_uri("http://host/rrdp/");
 
-            responder.repository_response(publisher, rrdp_uri).unwrap();
+            responder.repository_response(
+                publisher,
+                service_uri,
+                rrdp_uri
+            ).unwrap();
         });
     }
 
