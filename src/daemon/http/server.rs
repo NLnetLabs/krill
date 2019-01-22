@@ -14,16 +14,16 @@ use actix_web::http::{Method, StatusCode };
 use bcder::decode;
 use futures::Future;
 use openssl::ssl::{SslMethod, SslAcceptor, SslAcceptorBuilder, SslFiletype};
-use crate::daemon::api::endpoints;
-use crate::daemon::api::auth::{Authorizer, CheckAuthorisation};
-use crate::daemon::api::requests::PublishDelta;
+use crate::api::requests::PublishDelta;
+use crate::api::requests::PublisherRequestChoice;
+use crate::daemon::auth::{Authorizer, CheckAuthorisation};
 use crate::daemon::config::Config;
+use crate::daemon::endpoints;
 use crate::daemon::http::ssl;
 use crate::daemon::krillserver;
 use crate::daemon::krillserver::KrillServer;
 use crate::remote::rfc8183;
 use crate::remote::sigmsg::SignedMessage;
-use daemon::api::requests::PublisherRequestChoice;
 
 const NOT_FOUND: &'static [u8] = include_bytes!("../../../ui/dev/html/404.html");
 

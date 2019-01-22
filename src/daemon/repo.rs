@@ -5,8 +5,8 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::str::FromStr;
 use rpki::uri;
-use crate::daemon::api::responses;
-use crate::daemon::api::requests::PublishDelta;
+use crate::api::responses;
+use crate::api::requests::PublishDelta;
 use crate::util::file::{self, CurrentFile, RecursorError};
 use crate::util::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
 
@@ -957,7 +957,7 @@ mod tests {
     use crate::daemon::repo::Notification;
     use crate::util::file::CurrentFile;
     use crate::util::test;
-    use daemon::api::requests::PublishDeltaBuilder;
+    use crate::api::requests::PublishDeltaBuilder;
 
     #[test]
     fn should_publish() {

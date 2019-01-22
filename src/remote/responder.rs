@@ -101,7 +101,7 @@ impl Responder {
     ) -> Result<RepositoryResponse, Error> {
         if let Some(my_id) = self.my_identity()? {
 
-            let tag = match publisher.rfc8181() {
+            let tag = match publisher.cms_auth_data() {
                 Some(details) => Some(details.tag().clone()),
                 None => return Err(Error::ClientUnitialised)
             };
@@ -197,7 +197,7 @@ impl From<builder::Error<softsigner::SignerError>> for Error {
 mod tests {
     use super::*;
     use crate::util::test;
-    use daemon::publishers::Rfc8181PublisherDetails;
+    use daemon::publishers::CmsAuthData;
 
     #[test]
     fn should_have_response_for_publisher() {
@@ -212,7 +212,7 @@ mod tests {
             let base_uri = test::rsync_uri("rsync://host/module/alice/");
             let service_uri = test::http_uri("http://127.0.0.1:3000/rfc8181/alice");
 
-            let rfc8181 = Rfc8181PublisherDetails::new(tag, id_cert);
+            let rfc8181 = CmsAuthData::new(tag, id_cert);
 
             let publisher = Arc::new(Publisher::new(
                 name,

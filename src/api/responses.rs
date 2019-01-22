@@ -123,7 +123,7 @@ impl<'a> PublisherDetails<'a> {
         let service_uri = format!("{}{}", base_service_uri, handle);
         let service_uri = uri::Http::from_string(service_uri).unwrap();
 
-        let rfc8181 = match publisher.rfc8181() {
+        let rfc8181 = match publisher.cms_auth_data() {
             None => None,
             Some(details) => Some(
                 Rfc8181Details {

@@ -4,7 +4,7 @@ use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use bytes::Bytes;
 use rpki::uri;
-use crate::daemon::api::requests;
+use crate::api::requests;
 use crate::remote::rfc8181;
 use crate::util::ext_serde;
 use crate::util::hash;

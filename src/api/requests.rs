@@ -32,6 +32,11 @@ pub enum PublisherRequestChoice {
     Rfc8183(rfc8183::PublisherRequest)
 }
 
+/// This type represents a data structure to send
+pub struct AddPublisher {
+
+}
+
 
 /// This type provides a convenience wrapper to contain the request found
 /// inside of a validated RFC8181 request.

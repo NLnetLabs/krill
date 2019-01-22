@@ -5,8 +5,8 @@ use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
 use rpki::uri;
-use daemon::api::requests;
-use daemon::api::requests::PublisherRequestChoice;
+use crate::api::requests;
+use crate::api::requests::PublisherRequestChoice;
 use crate::remote::id::IdCert;
 use crate::remote::rfc8183;
 use crate::storage::keystore::{self, Info, Key, KeyStore};
@@ -15,7 +15,7 @@ use crate::util::ext_serde;
 
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct Rfc8181PublisherDetails {
+pub struct CmsAuthData {
     // The optional tag in the request. None maps to empty string.
     tag:         String,
 
@@ -25,7 +25,7 @@ pub struct Rfc8181PublisherDetails {
     id_cert:     IdCert
 }
 
-impl Rfc8181PublisherDetails {
+impl CmsAuthData {
     pub fn tag(&self) -> &String {
         &self.tag
     }
@@ -35,21 +35,21 @@ impl Rfc8181PublisherDetails {
     }
 }
 
-impl Rfc8181PublisherDetails {
+impl CmsAuthData {
     pub fn new(tag: Option<String>, id_cert: IdCert) -> Self {
         let tag = tag.unwrap_or("".to_string());
-        Rfc8181PublisherDetails { tag, id_cert }
+        CmsAuthData { tag, id_cert }
     }
 }
 
-impl PartialEq for Rfc8181PublisherDetails {
-    fn eq(&self, other: &Rfc8181PublisherDetails) -> bool {
+impl PartialEq for CmsAuthData {
+    fn eq(&self, other: &CmsAuthData) -> bool {
         self.tag == other.tag &&
         self.id_cert.to_bytes() == other.id_cert.to_bytes()
     }
 }
 
-impl Eq for Rfc8181PublisherDetails {}
+impl Eq for CmsAuthData {}
 
 
 //------------ Publisher -----------------------------------------------------
@@ -67,7 +67,7 @@ pub struct Publisher {
     serialize_with = "ext_serde::ser_rsync_uri")]
     base_uri:    uri::Rsync,
 
-    rfc8181: Option<Rfc8181PublisherDetails>
+    cms_auth_data: Option<CmsAuthData>
 }
 
 impl Publisher {
@@ -75,13 +75,13 @@ impl Publisher {
         handle:   String,
         token:    String,
         base_uri: uri::Rsync,
-        rfc8181:  Option<Rfc8181PublisherDetails>
+        rfc8181:  Option<CmsAuthData>
     ) -> Self {
         Publisher {
             handle,
             token,
             base_uri,
-            rfc8181
+            cms_auth_data: rfc8181
         }
     }
 }
@@ -99,8 +99,8 @@ impl Publisher {
         &self.base_uri
     }
 
-    pub fn rfc8181(&self) -> &Option<Rfc8181PublisherDetails> {
-        &self.rfc8181
+    pub fn cms_auth_data(&self) -> &Option<CmsAuthData> {
+        &self.cms_auth_data
     }
 }
 
@@ -108,7 +108,7 @@ impl PartialEq for Publisher {
     fn eq(&self, other: &Publisher) -> bool {
         self.handle == other.handle &&
         self.base_uri == other.base_uri &&
-        self.rfc8181 == other.rfc8181
+        self.cms_auth_data == other.cms_auth_data
     }
 }
 
@@ -204,7 +204,7 @@ impl PublisherStore {
 
                 self.verify_handle(&handle)?;
                 let base_uri = self.publisher_base_uri(&handle)?;
-                let rfc8181 = Rfc8181PublisherDetails::new(tag, id_cert);
+                let rfc8181 = CmsAuthData::new(tag, id_cert);
 
                 let token = requests::generate_random_token();
 
@@ -416,13 +416,13 @@ mod tests {
             // Get the Arc out of the Result<Option<Arc<Publisher>>, Error>
             let publisher_found = ps.publisher(&name).unwrap().unwrap();
 
-            let expected_rfc8181 = Rfc8181PublisherDetails::new(None, id_cert);
+            let expected_rfc8181 = CmsAuthData::new(None, id_cert);
 
             assert_eq!(publisher_found.handle(), "alice");
             assert_eq!(
                 publisher_found.base_uri().to_string().as_str(),
                 "rsync://host/module/alice/");
-            assert_eq!(publisher_found.rfc8181(), &Some(expected_rfc8181));
+            assert_eq!(publisher_found.cms_auth_data(), &Some(expected_rfc8181));
 
         })
     }

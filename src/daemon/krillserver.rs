@@ -3,16 +3,16 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use bcder::Captured;
 use rpki::uri;
-use crate::daemon::api::auth::Authorizer;
-use crate::daemon::api::requests::PublishDelta;
-use crate::daemon::api::requests::PublishRequest;
-use crate::daemon::api::responses;
+use crate::api::requests::PublishDelta;
+use crate::api::requests::PublishRequest;
+use crate::api::requests::PublisherRequestChoice;
+use crate::api::responses;
+use crate::daemon::auth::Authorizer;
 use crate::daemon::publishers::{self, Publisher, PublisherStore};
 use crate::daemon::repo::{self, Repository, RRDP_FOLDER};
 use crate::remote::cmsproxy::{self, CmsProxy};
+use crate::remote::rfc8183;
 use crate::remote::sigmsg::SignedMessage;
-use daemon::api::requests::PublisherRequestChoice;
-use remote::rfc8183;
 
 /// # Naming things in the keystore.
 const ACTOR: &'static str = "krill pubd";
@@ -183,7 +183,7 @@ impl KrillServer {
         debug!("Handling request for: {}", handle);
         let publisher = self.publisher_store.get_publisher(handle)?;
 
-        let id_cert = match publisher.rfc8181() {
+        let id_cert = match publisher.cms_auth_data() {
             Some(details) => details.id_cert(),
             None => return Err(Error::NoIdCert)
         };
