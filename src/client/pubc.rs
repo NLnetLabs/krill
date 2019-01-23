@@ -370,7 +370,6 @@ impl Eq for PubClient { }
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
-    name: String,
     state_dir: PathBuf,
     mode: RunMode
 }
@@ -476,8 +475,7 @@ impl Config {
 
         let state = m.value_of("state").unwrap(); // safe (required)
         let state_dir = PathBuf::from(state);
-        let name = m.value_of("name").unwrap().to_string(); // safe (required)
-        Ok(Config {name, state_dir, mode})
+        Ok(Config { state_dir, mode})
     }
 }
 
