@@ -22,7 +22,7 @@ use rpki::crypto::{
     PublicKey
 };
 use rpki::crypto::signer::KeyError;
-use rpki::sigobj;
+use rpki::oid;
 use rpki::x509::{Name, Time};
 use crate::remote::id::{IdCert, IdExtensions};
 use crate::remote::rfc8181::Message;
@@ -328,7 +328,7 @@ impl SignedMessageBuilder {
 
         let encap_content_info = encode::sequence(
             (
-                sigobj::oid::PROTOCOL_CONTENT_TYPE.encode(),
+                oid::PROTOCOL_CONTENT_TYPE.encode(),
                 Constructed::new(Tag::CTX_0, self.content.encode())
             )
         );
@@ -347,7 +347,7 @@ impl SignedMessageBuilder {
 
         encode::sequence(
             (
-                sigobj::oid::SIGNED_DATA.encode(),
+                oid::SIGNED_DATA.encode(),
                 Constructed::new(
                     Tag::CTX_0,
                     encode::sequence(
@@ -426,7 +426,7 @@ impl SignedAttributes {
         (
             encode::sequence(
                 (
-                    sigobj::oid::CONTENT_TYPE.encode(),
+                    oid::CONTENT_TYPE.encode(),
                     encode::set(
                         self.content_type.encode()
                     )
@@ -434,7 +434,7 @@ impl SignedAttributes {
             ),
             encode::sequence(
                 (
-                    sigobj::oid::MESSAGE_DIGEST.encode(),
+                    oid::MESSAGE_DIGEST.encode(),
                     encode::set(
                         self.digest.encode()
                     )
@@ -445,7 +445,7 @@ impl SignedAttributes {
                     // This implementation will include a signing-time
                     // attribute using the time that the SignedAttributes
                     // was created.
-                    sigobj::oid::SIGNING_TIME.encode(),
+                    oid::SIGNING_TIME.encode(),
                     encode::set(
                         self.signing_time.encode()
                     )
@@ -552,7 +552,7 @@ impl SignerInfoBuilder {
     ) -> Result<SignedSignerInfo, Error<S::Error>> {
 
         let signed_attributes = SignedAttributes::new(
-            &sigobj::oid::PROTOCOL_CONTENT_TYPE, // XXX TODO: derive from message
+            &oid::PROTOCOL_CONTENT_TYPE, // XXX TODO: derive from message
             message
         );
 
@@ -696,6 +696,7 @@ pub mod tests {
     use publication::query::ListQuery;
     use util::softsigner::OpenSslSigner;
     use remote::publication::query::ListQuery;
+    use remote::rfc8181::ListQuery;
 
     #[test]
     fn should_create_self_signed_ta_id_cert() {
