@@ -167,7 +167,7 @@ impl PublisherSummary {
 //------------ Rfc8181Details ------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct Rfc8181Details {
+pub struct CmsAuthData {
     #[serde(
         serialize_with = "ext_serde::ser_http_uri",
         deserialize_with = "ext_serde::de_http_uri")]
@@ -194,7 +194,7 @@ pub struct PublisherDetails {
     )]
     base_uri: uri::Rsync,
 
-    rfc8181: Option<Rfc8181Details>,
+    cms_auth: Option<CmsAuthData>,
 
     links: Vec<Link>
 }
@@ -204,7 +204,7 @@ impl PublisherDetails {
         &self.publisher_handle
     }
     pub fn identity_cert(&self) -> Option<&IdCert> {
-        match self.rfc8181 {
+        match self.cms_auth {
             None => None,
             Some(ref details) => Some(&details.id_cert)
         }
@@ -240,7 +240,7 @@ impl Report for PublisherDetails {
                 res.push_str(self.base_uri.to_string().as_str());
                 res.push_str("\n");
 
-                if let Some(ref rfc8181) = self.rfc8181 {
+                if let Some(ref rfc8181) = self.cms_auth {
                     res.push_str("RFC8181 Details:\n");
                     res.push_str("  service uri: ");
                     res.push_str(rfc8181.service_uri.to_string().as_str());

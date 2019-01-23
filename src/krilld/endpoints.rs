@@ -4,12 +4,12 @@ use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 use actix_web::{HttpResponse, ResponseError};
 use actix_web::http::StatusCode;
 use serde::Serialize;
-use crate::api::responses::{PublisherDetails, PublisherList};
-use crate::api::requests::PublishDelta;
-use crate::api::requests::PublisherRequestChoice;
-use crate::daemon::http::server::{HttpRequest, PublisherHandle};
-use crate::daemon::publishers;
-use crate::daemon::krillserver::{self, KrillServer};
+use crate::api::data;
+use crate::api::responses;
+use crate::api::requests;
+use crate::krilld::http::server::{HttpRequest, PublisherHandle};
+use crate::krilld::publishers;
+use crate::krilld::krillserver::{self, KrillServer};
 use crate::remote::sigmsg::SignedMessage;
 
 
@@ -68,7 +68,8 @@ pub fn publishers(req: &HttpRequest) -> HttpResponse {
         Err(e) => server_error(Error::ServerError(e)),
         Ok(publishers) => {
             render_json(
-                PublisherList::from(&publishers, "/api/v1/publishers")
+                responses::PublisherList::from(&publishers,
+                                               "/api/v1/publishers")
             )
         }
     }
@@ -78,23 +79,10 @@ pub fn publishers(req: &HttpRequest) -> HttpResponse {
 /// Request XML is posted.
 pub fn add_publisher(
     req: HttpRequest,
-    prc: PublisherRequestChoice
+    pbl: data::Publisher
 ) -> HttpResponse {
     let mut server = rw_server(&req);
-    match server.add_publisher(prc, None) {
-        Ok(()) => api_ok(),
-        Err(e) => server_error(Error::ServerError(e))
-    }
-}
-
-/// Adds a an explicitly named publisher.
-pub fn add_named_publisher(
-    req: HttpRequest,
-    prc: PublisherRequestChoice,
-    handle: PublisherHandle
-) -> HttpResponse {
-    let mut server = rw_server(&req);
-    match server.add_publisher(prc, Some(handle.as_ref())) {
+    match server.add_publisher(pbl) {
         Ok(()) => api_ok(),
         Err(e) => server_error(Error::ServerError(e))
     }
@@ -124,7 +112,7 @@ pub fn publisher_details(
         Ok(None) => api_not_found(),
         Ok(Some(publisher)) => {
             render_json(
-                PublisherDetails::from(
+                responses::PublisherDetails::from(
                     &publisher,
                     "/api/v1/publishers",
                     server.service_base_uri())
@@ -181,7 +169,7 @@ pub fn handle_rfc8181_request(
 /// Processes a publishdelta request sent to the API.
 pub fn handle_delta(
     req: HttpRequest,
-    delta: PublishDelta,
+    delta: requests::PublishDelta,
     handle: PublisherHandle
 ) -> HttpResponse {
     match rw_server(&req).handle_delta(delta, handle.as_ref()) {

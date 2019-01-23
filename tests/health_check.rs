@@ -9,14 +9,14 @@ extern crate bytes;
 
 use std::{thread, time};
 use actix::System;
-use krill::daemon::config::Config;
-use krill::daemon::http::server::PubServerApp;
-use krill::client::krillc::KrillClient;
-use krill::client::options::{
+use krill::krilld::config::Config;
+use krill::krilld::http::server::PubServerApp;
+use krill::krillc::KrillClient;
+use krill::krillc::options::{
     Command,
     Options
 };
-use krill::client::data::{
+use krill::krillc::data::{
     ApiResponse,
     ReportFormat
 };

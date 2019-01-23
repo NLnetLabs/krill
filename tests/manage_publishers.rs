@@ -9,20 +9,21 @@ extern crate bytes;
 
 use std::{thread, time};
 use actix::System;
-use krill::daemon::config::Config;
-use krill::daemon::http::server::PubServerApp;
-use krill::client::data::{
+use krill::krilld::config::Config;
+use krill::krilld::http::server::PubServerApp;
+use krill::krillc::data::{
     ApiResponse,
     ReportFormat
 };
-use krill::client::krillc;
-use krill::client::krillc::KrillClient;
-use krill::client::options::{
+use krill::krillc;
+use krill::krillc::KrillClient;
+use krill::krillc::options::{
+    AddPublisherWithCms,
     Command,
     Options,
     PublishersCommand
 };
-use krill::client::pubc::PubClient;
+use krill::pubc::cmsclient::PubClient;
 use krill::util::test;
 use krill::remote::rfc8183::RepositoryResponse;
 use reqwest::StatusCode;
@@ -69,9 +70,12 @@ fn manage_publishers() {
                 test::http_uri("http://localhost:3000/"),
                 token,
                 ReportFormat::Default,
-                Command::Publishers(PublishersCommand::Add(
-                    alice_path,
-                    None
+                Command::Publishers(PublishersCommand::AddWithCms(
+                    AddPublisherWithCms {
+                        xml: alice_path,
+                        base_uri: test::rsync_uri("rsync://127.0.0.1/repo/alice/"),
+                        token: "secret".to_string()
+                    }
                 ))
             );
             let res = KrillClient::process(krillc_opts);
@@ -182,44 +186,6 @@ fn manage_publishers() {
             }
 
             assert!(res.is_err());
-        }
-
-        // Add a publisher using a non-default name, i.e. not the one the
-        // client included in the publisher request --> Add alice as "bob"
-        {
-            let mut alice_path = d.clone();
-            alice_path.push("alice.xml");
-            let krillc_opts = Options::new(
-                test::http_uri("http://localhost:3000/"),
-                token,
-                ReportFormat::Default,
-                Command::Publishers(PublishersCommand::Add(
-                    alice_path,
-                    Some("bob".to_string())
-                ))
-            );
-            let res = KrillClient::process(krillc_opts);
-            assert!(res.is_ok());
-
-            // Find details for bob
-            let krillc_opts = Options::new(
-                test::http_uri("http://localhost:3000/"),
-                token,
-                ReportFormat::Default,
-                Command::Publishers(PublishersCommand::Details("bob".to_string()))
-            );
-
-            let res = KrillClient::process(krillc_opts).unwrap();
-
-            match res {
-                ApiResponse::PublisherDetails(details) => {
-                    assert_eq!(
-                        details.publisher_handle(),
-                        "bob"
-                    );
-                }
-                _ => assert!(false) // Fail!
-            }
         }
 
     });

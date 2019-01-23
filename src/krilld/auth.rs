@@ -4,7 +4,7 @@ use std::sync::{Arc, RwLock, RwLockReadGuard};
 use actix_web::{HttpResponse, HttpRequest, Result};
 use actix_web::http::HeaderMap;
 use actix_web::middleware::{Middleware, Started};
-use crate::daemon::krillserver::KrillServer;
+use crate::krilld::krillserver::KrillServer;
 
 pub struct CheckAuthorisation;
 

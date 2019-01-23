@@ -281,7 +281,7 @@ impl PubClient {
         let mut headers = HeaderMap::new();
         headers.insert(
             USER_AGENT,
-            HeaderValue::from_str("syncomator").unwrap()
+            HeaderValue::from_str("krill-pubc-cms").unwrap()
         );
         headers.insert(
             CONTENT_TYPE,
@@ -389,7 +389,7 @@ impl Config {
 impl Config {
     /// Creates the config (at startup). Panics in case of issues.
     pub fn create() -> Result<Self, ConfigError> {
-        let m = App::new("NLnet Labs RRDP Client")
+        let m = App::new("NLnet Labs RRDP Client (RFC8181)")
             .version("0.1b")
 
             .arg(Arg::with_name("state")

@@ -954,7 +954,7 @@ mod tests {
 
     use super::*;
     use bytes::Bytes;
-    use crate::daemon::repo::Notification;
+    use crate::krilld::repo::Notification;
     use crate::util::file::CurrentFile;
     use crate::util::test;
     use crate::api::requests::PublishDeltaBuilder;

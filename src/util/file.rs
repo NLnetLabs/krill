@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use bytes::Bytes;
 use rpki::uri;
 use crate::api::requests;
+use crate::api::responses;
 use crate::remote::rfc8181;
 use crate::util::ext_serde;
 use crate::util::hash;
@@ -278,9 +279,14 @@ impl CurrentFile {
         requests::Withdraw::new(tag, self.uri.clone(), hash)
     }
 
-    pub fn to_list_element(&self) -> rfc8181::ListElement {
+    pub fn to_rfc8181_list_element(&self) -> rfc8181::ListElement {
         rfc8181::ListElement::reply(&self.content, self.uri.clone())
     }
+
+    pub fn into_list_element(self) -> responses::ListElement {
+        responses::ListElement::new(self.uri, self.hash)
+    }
+
 }
 
 impl PartialEq for CurrentFile {

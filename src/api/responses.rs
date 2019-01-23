@@ -3,8 +3,9 @@
 //! i.e. this is stuff the the server needs to serialize only, so typically
 //! we can work with references here.
 use std::sync::Arc;
+use bytes::Bytes;
 use rpki::uri;
-use crate::daemon::publishers::Publisher;
+use crate::api::data::Publisher;
 use crate::remote::id::IdCert;
 use crate::util::ext_serde;
 use crate::util::file::CurrentFile;
@@ -153,17 +154,45 @@ pub enum PublishReply {
     List(ListReply)
 }
 
-#[derive(Serialize)]
-pub struct ListReply{
-    files: Vec<CurrentFile>
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ListReply {
+    files: Vec<ListElement>
 }
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ListElement {
+    #[serde(
+    deserialize_with = "ext_serde::de_rsync_uri",
+    serialize_with = "ext_serde::ser_rsync_uri")]
+    uri:     uri::Rsync,
+
+    #[serde(
+    deserialize_with = "ext_serde::de_bytes",
+    serialize_with = "ext_serde::ser_bytes")]
+    /// The sha-256 hash of the file (as is used on the RPKI manifests and
+    /// in the publication protocol for list, update and withdraw). Saving
+    /// this rather than calculating on demand seems a small price for some
+    /// performance gain.
+    hash:    Bytes
+}
+
+impl ListElement {
+    pub fn new(uri: uri::Rsync, hash: Bytes) -> Self {
+        ListElement { uri, hash }
+    }
+
+    pub fn uri(&self) -> &uri::Rsync { &self.uri }
+    pub fn hash(&self) -> &Bytes { &self.hash}
+}
+
 
 impl ListReply {
     pub fn new(files: Vec<CurrentFile>) -> Self {
+        let files = files.into_iter().map(|f| f.into_list_element()).collect();
         ListReply { files }
     }
 
-    pub fn files(&self) -> &Vec<CurrentFile> {
+    pub fn files(&self) -> &Vec<ListElement> {
         &self.files
     }
 }

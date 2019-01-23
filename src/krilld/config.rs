@@ -10,7 +10,7 @@ use syslog::Facility;
 use serde::de;
 use serde::{Deserialize, Deserializer};
 use toml;
-use crate::daemon::http::ssl;
+use crate::krilld::http::ssl;
 use crate::util::ext_serde;
 
 const SERVER_NAME: &'static str = "Krill";

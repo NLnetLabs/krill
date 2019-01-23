@@ -5,114 +5,10 @@ use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
 use rpki::uri;
-use crate::api::requests;
-use crate::api::requests::PublisherRequestChoice;
-use crate::remote::id::IdCert;
+use crate::api::data;
 use crate::remote::rfc8183;
 use crate::storage::keystore::{self, Info, Key, KeyStore};
 use crate::storage::caching_ks::CachingDiskKeyStore;
-use crate::util::ext_serde;
-
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct CmsAuthData {
-    // The optional tag in the request. None maps to empty string.
-    tag:         String,
-
-    #[serde(
-    deserialize_with = "ext_serde::de_id_cert",
-    serialize_with = "ext_serde::ser_id_cert")]
-    id_cert:     IdCert
-}
-
-impl CmsAuthData {
-    pub fn tag(&self) -> &String {
-        &self.tag
-    }
-
-    pub fn id_cert(&self) -> &IdCert {
-        &self.id_cert
-    }
-}
-
-impl CmsAuthData {
-    pub fn new(tag: Option<String>, id_cert: IdCert) -> Self {
-        let tag = tag.unwrap_or("".to_string());
-        CmsAuthData { tag, id_cert }
-    }
-}
-
-impl PartialEq for CmsAuthData {
-    fn eq(&self, other: &CmsAuthData) -> bool {
-        self.tag == other.tag &&
-        self.id_cert.to_bytes() == other.id_cert.to_bytes()
-    }
-}
-
-impl Eq for CmsAuthData {}
-
-
-//------------ Publisher -----------------------------------------------------
-
-/// This type defines Publisher CAs that are allowed to publish.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct Publisher {
-    handle:        String,
-
-    /// The token used by the API
-    token:         String,
-
-    #[serde(
-    deserialize_with = "ext_serde::de_rsync_uri",
-    serialize_with = "ext_serde::ser_rsync_uri")]
-    base_uri:    uri::Rsync,
-
-    cms_auth_data: Option<CmsAuthData>
-}
-
-impl Publisher {
-    pub fn new(
-        handle:   String,
-        token:    String,
-        base_uri: uri::Rsync,
-        rfc8181:  Option<CmsAuthData>
-    ) -> Self {
-        Publisher {
-            handle,
-            token,
-            base_uri,
-            cms_auth_data: rfc8181
-        }
-    }
-}
-
-impl Publisher {
-    pub fn handle(&self) -> &String {
-        &self.handle
-    }
-
-    pub fn token(&self) -> &String {
-        &self.token
-    }
-
-    pub fn base_uri(&self) -> &uri::Rsync {
-        &self.base_uri
-    }
-
-    pub fn cms_auth_data(&self) -> &Option<CmsAuthData> {
-        &self.cms_auth_data
-    }
-}
-
-impl PartialEq for Publisher {
-    fn eq(&self, other: &Publisher) -> bool {
-        self.handle == other.handle &&
-        self.base_uri == other.base_uri &&
-        self.cms_auth_data == other.cms_auth_data
-    }
-}
-
-impl Eq for Publisher {}
 
 
 //------------ PublisherList -------------------------------------------------
@@ -159,10 +55,13 @@ impl PublisherStore {
         Ok(())
     }
 
-    fn publisher_base_uri(&self, handle: &str) -> Result<uri::Rsync, Error> {
-        let base_uri = format!("{}{}/", self.base_uri.to_string(), handle);
-        let base_uri = uri::Rsync::from_string(base_uri)?;
-        Ok(base_uri)
+    fn verify_base_uri(&self, base_uri: &uri::Rsync) -> Result<(), Error> {
+        if base_uri.to_string().as_str().starts_with(
+            self.base_uri.to_string().as_str()) {
+           Ok(())
+        } else {
+            Err(Error::InvalidBaseUri)
+        }
     }
 
     /// Adds a Publisher based on a PublisherRequest (from the RFC 8183 xml).
@@ -171,60 +70,20 @@ impl PublisherStore {
     /// update_publisher in case you want to update an existing publisher.
     pub fn add_publisher(
         &mut self,
-        prc: PublisherRequestChoice,
-        handle_override: Option<&str>,
+        pbl: data::Publisher,
         actor: &str
     ) -> Result<(), Error> {
+        self.verify_handle(pbl.handle())?;
+        self.verify_base_uri(pbl.base_uri())?;
 
-        let publisher = match prc {
-            PublisherRequestChoice::Api(pr) => {
-                if handle_override.is_some() {
-                    return Err(Error::HandleOverrideNotAllowed)
-                }
-                let (handle, token) = pr.parts();
-                self.verify_handle(&handle)?;
-                let base_uri = self.publisher_base_uri(&handle)?;
-
-                Publisher::new(
-                    handle,
-                    token,
-                    base_uri,
-                    None
-                )
-            },
-            PublisherRequestChoice::Rfc8183(pr) => {
-                let (tag, mut handle, id_cert) = pr.into_parts();
-
-                match handle_override {
-                    Some(handle_override) => {
-                        handle = handle_override.to_string()
-                    },
-                    _ => {}
-                }
-
-                self.verify_handle(&handle)?;
-                let base_uri = self.publisher_base_uri(&handle)?;
-                let rfc8181 = CmsAuthData::new(tag, id_cert);
-
-                let token = requests::generate_random_token();
-
-                Publisher::new(
-                    handle,
-                    token,
-                    base_uri,
-                    Some(rfc8181)
-                )
-            }
-        };
-
-        let key = Key::from_str(&publisher.handle);
+        let key = Key::from_str(pbl.handle());
         let info = Info::now(
             actor,
-            &format!("Added publisher: {}", &publisher.handle)
+            &format!("Added publisher: {}", pbl.handle())
         );
 
-        info!("Added publisher: {}", &publisher.handle);
-        self.store.store(key, publisher, info)?;
+        info!("Added publisher: {}", pbl.handle());
+        self.store.store(key, pbl, info)?;
 
         Ok(())
     }
@@ -274,7 +133,7 @@ impl PublisherStore {
     pub fn publisher(
         &self,
         handle: impl AsRef<str>
-    ) -> Result<Option<Arc<Publisher>>, Error> {
+    ) -> Result<Option<Arc<data::Publisher>>, Error> {
         let key = Key::from_str(handle.as_ref());
         self.store.get(&key).map_err(|e| { Error::KeyStoreError(e)})
     }
@@ -284,7 +143,7 @@ impl PublisherStore {
     pub fn get_publisher(
         &self,
         handle: impl AsRef<str>
-    ) -> Result<Arc<Publisher>, Error> {
+    ) -> Result<Arc<data::Publisher>, Error> {
         let name = handle.as_ref();
         match self.publisher(name)? {
             None => Err(Error::UnknownPublisher(name.to_string())),
@@ -296,7 +155,7 @@ impl PublisherStore {
     /// relatively expensive, however, it is easy to implement and debug, and
     /// this method is rarely needed - mainly for tests and to rebuild/update
     /// the publisher list at start up.
-    pub fn publishers(&self) -> Result<Vec<Arc<Publisher>>, Error> {
+    pub fn publishers(&self) -> Result<Vec<Arc<data::Publisher>>, Error> {
         let mut res = Vec::new();
 
         for ref k in self.store.keys() {
@@ -339,7 +198,10 @@ pub enum Error {
     PublisherRequestError(rfc8183::PublisherRequestError),
 
     #[display(fmt = "Cannot override handle using path parameter for json api")]
-    HandleOverrideNotAllowed
+    HandleOverrideNotAllowed,
+
+    #[display(fmt = "Base uri for publisher needs to be folder under base uri for server.")]
+    InvalidBaseUri
 }
 
 impl From<keystore::Error> for Error {
@@ -384,12 +246,16 @@ mod tests {
     fn should_refuse_slash_in_publisher_handle() {
         test::test_with_tmp_dir(|d| {
             let mut ps = test_publisher_store(&d);
-            let pr = test::new_publisher_request("test/below", &d);
-            let prc = PublisherRequestChoice::Rfc8183(pr);
 
-            let handle = "test/below";
+            let name = "alice/bob";
+            let base_uri = test::rsync_uri("rsync://host/module/alice/bob");
+            let token = "secret";
 
-            match ps.add_publisher(prc, Some(handle), "test") {
+            let pr = test::new_publisher_request(name, &d);
+
+            let pbl = pr.into_publisher(token.to_string(), base_uri.clone());
+
+            match ps.add_publisher(pbl, "test") {
                 Err(Error::ForwardSlashInHandle(_)) => { }, // Ok
                 _ => panic!("Should have seen error.")
             }
@@ -400,28 +266,28 @@ mod tests {
     fn should_add_publisher() {
         test::test_with_tmp_dir(|d| {
             let mut ps = test_publisher_store(&d);
+
             let name = "alice";
+            let base_uri = test::rsync_uri("rsync://host/module/alice/");
+            let token = "secret";
 
             let pr = test::new_publisher_request(name, &d);
             let id_cert = pr.id_cert().clone();
 
-            let prc = PublisherRequestChoice::Rfc8183(pr);
+            let pbl = pr.into_publisher(token.to_string(), base_uri.clone());
 
             let actor = "test";
-
-            ps.add_publisher(prc, Some(name), actor).unwrap();
+            ps.add_publisher(pbl, actor).unwrap();
 
             assert!(ps.has_publisher(&name));
 
             // Get the Arc out of the Result<Option<Arc<Publisher>>, Error>
             let publisher_found = ps.publisher(&name).unwrap().unwrap();
 
-            let expected_rfc8181 = CmsAuthData::new(None, id_cert);
+            let expected_rfc8181 = data::CmsAuthData::new(None, id_cert);
 
             assert_eq!(publisher_found.handle(), "alice");
-            assert_eq!(
-                publisher_found.base_uri().to_string().as_str(),
-                "rsync://host/module/alice/");
+            assert_eq!(publisher_found.base_uri(), &base_uri);
             assert_eq!(publisher_found.cms_auth_data(), &Some(expected_rfc8181));
 
         })
@@ -431,17 +297,19 @@ mod tests {
     fn should_not_add_publisher_twice() {
         test::test_with_tmp_dir(|d| {
             let mut ps = test_publisher_store(&d);
-            let name = "alice";
-            let pr = test::new_publisher_request(name, &d);
-            let prc = PublisherRequestChoice::Rfc8183(pr);
-            let actor = "test";
 
-            ps.add_publisher(prc, None, actor).unwrap();
+            let name = "alice";
+            let base_uri = test::rsync_uri("rsync://host/module/alice/");
+            let token = "secret";
+
+            let pr = test::new_publisher_request(name, &d);
+            let pbl = pr.into_publisher(token.to_string(), base_uri.clone());
+
+            let actor = "test";
+            ps.add_publisher(pbl.clone(), actor).unwrap();
             assert!(ps.has_publisher(&name));
 
-            let pr = test::new_publisher_request(name, &d);
-            let prc = PublisherRequestChoice::Rfc8183(pr);
-            match ps.add_publisher(prc, None, actor) {
+            match ps.add_publisher(pbl, actor) {
                 Err(Error::DuplicatePublisher(_)) => { }, // Ok
                 _ => panic!("Should have seen error.")
             }
@@ -455,11 +323,14 @@ mod tests {
             let mut ps = test_publisher_store(&d);
 
             let name = "alice";
-            let actor = "test";
-            let pr = test::new_publisher_request(name, &d);
-            let prc = PublisherRequestChoice::Rfc8183(pr);
+            let base_uri = test::rsync_uri("rsync://host/module/alice/");
+            let token = "secret";
 
-            ps.add_publisher(prc, None, actor).unwrap();
+            let pr = test::new_publisher_request(name, &d);
+            let pbl = pr.into_publisher(token.to_string(), base_uri.clone());
+
+            let actor = "test";
+            ps.add_publisher(pbl, actor).unwrap();
             assert_eq!(1, ps.publishers().unwrap(). len());
 
             ps.remove_publisher(name, actor).unwrap();

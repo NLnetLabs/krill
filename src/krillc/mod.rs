@@ -1,21 +1,27 @@
+pub mod data;
+pub mod options;
+
 use std::io;
 use std::time::Duration;
 use bytes::Bytes;
 use reqwest::{Client, Response, StatusCode};
 use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
 use rpki::uri;
-use crate::client::data::{
+use crate::api::data::Publisher;
+use crate::krillc::data::{
     ApiResponse,
     PublisherDetails,
     PublisherList,
     ReportError
 };
-use crate::client::options::{
+use crate::krillc::options::{
     Options,
     Command,
     PublishersCommand
 };
+use crate::remote::rfc8183;
 use crate::util::file;
+use serde::Serialize;
 
 /// Command line tool for Krill admin tasks
 pub struct KrillClient {
@@ -68,13 +74,31 @@ impl KrillClient {
                 let list: PublisherList = serde_json::from_str(&res)?;
                 Ok(ApiResponse::PublisherList(list))
             },
-            PublishersCommand::Add(path, handle_opt) => {
-                let xml_bytes = file::read(&path)?;
-                let uri = match handle_opt {
-                    None => "api/v1/publishers".to_string(),
-                    Some(handle) => format!("api/v1/publishers/{}", handle)
-                };
-                match self.post(uri.as_str(), xml_bytes)? {
+            PublishersCommand::Add(add) => {
+                let pbl = Publisher::new(
+                    add.handle,
+                    add.token,
+                    add.base_uri,
+                    None
+                );
+                match self.post_json("api/v1/publishers", pbl)? {
+                    Some(body) => {
+                        if body.is_empty() {
+                            Ok(ApiResponse::Empty)
+                        } else {
+                            Ok(ApiResponse::GenericBody(body))
+                        }
+                    },
+                    None => Ok(ApiResponse::Empty)
+                }
+            },
+            PublishersCommand::AddWithCms(add) => {
+                let bytes = file::read(&add.xml)?;
+                let pr = rfc8183::PublisherRequest::decode(bytes.as_ref())?;
+
+                let pbl = pr.into_publisher(add.token, add.base_uri);
+
+                match self.post_json("api/v1/publishers", pbl)? {
                     Some(body) => {
                         if body.is_empty() {
                             Ok(ApiResponse::Empty)
@@ -147,13 +171,18 @@ impl KrillClient {
             .map_err(|e| Error::RequestError(e))
     }
 
-    fn post(&self, rel: &str, bytes: Bytes) -> Result<Option<String>, Error> {
+    fn post_json(
+        &self,
+        rel: &str,
+        data: impl Serialize
+    ) -> Result<Option<String>, Error> {
         let headers = self.headers();
+        let body = serde_json::to_string(&data)?;
 
         let uri = format!("{}{}", &self.server.to_string(), rel);
         let mut res = self.client()?.post(&uri)
             .headers(headers)
-            .body(bytes.to_vec())
+            .body(body)
             .send()?;
 
         match res.status() {
@@ -279,7 +308,10 @@ pub enum Error {
     IoError(io::Error),
 
     #[display(fmt="There is no known IdCert for this publisher")]
-    NoIdCert
+    NoIdCert,
+
+    #[display(fmt="Invalid RFC8183 XML")]
+    InvalidRfc8183
 }
 
 impl From<reqwest::Error> for Error {
@@ -303,6 +335,12 @@ impl From<io::Error> for Error {
 impl From<ReportError> for Error {
     fn from(e: ReportError) -> Self {
         Error::ReportError(e)
+    }
+}
+
+impl From<rfc8183::PublisherRequestError> for Error {
+    fn from(_e: rfc8183::PublisherRequestError) -> Error {
+        Error::InvalidRfc8183
     }
 }
 

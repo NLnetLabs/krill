@@ -6,7 +6,7 @@ use bcder::{Captured, Mode};
 use bcder::encode::Values;
 use rpki::crypto::{PublicKeyFormat, Signer};
 use rpki::uri;
-use crate::daemon::publishers::Publisher;
+use crate::api::data::Publisher;
 use crate::remote::builder;
 use crate::remote::builder::{IdCertBuilder, SignedMessageBuilder};
 use crate::remote::id::MyIdentity;
@@ -197,7 +197,7 @@ impl From<builder::Error<softsigner::SignerError>> for Error {
 mod tests {
     use super::*;
     use crate::util::test;
-    use daemon::publishers::CmsAuthData;
+    use crate::api::data::CmsAuthData;
 
     #[test]
     fn should_have_response_for_publisher() {
@@ -212,13 +212,13 @@ mod tests {
             let base_uri = test::rsync_uri("rsync://host/module/alice/");
             let service_uri = test::http_uri("http://127.0.0.1:3000/rfc8181/alice");
 
-            let rfc8181 = CmsAuthData::new(tag, id_cert);
+            let cms_auth = CmsAuthData::new(tag, id_cert);
 
             let publisher = Arc::new(Publisher::new(
                 name,
                 "token".to_string(),
                 base_uri,
-                Some(rfc8181)
+                Some(cms_auth)
             ));
 
             let rrdp_uri = test::http_uri("http://host/rrdp/");

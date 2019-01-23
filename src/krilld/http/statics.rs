@@ -18,8 +18,8 @@ macro_rules! statics {
         $app
         $(
             .resource(concat!("/ui/", $path), |r| {
-                static CONTENT: ::daemon::http::statics::StaticContent
-                                    = ::daemon::http::statics::StaticContent {
+                static CONTENT: ::krilld::http::statics::StaticContent
+                                    = ::krilld::http::statics::StaticContent {
                     content: include_bytes!(
                         concat!("../../../ui/dev/",$path)
                     ),

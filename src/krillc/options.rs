@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 use clap::{App, Arg, SubCommand};
 use rpki::uri;
-use crate::client::data::{
+use uuid::Uuid;
+use crate::krillc::data::{
     ReportFormat,
     ReportError
 };
@@ -69,9 +70,31 @@ impl Options {
                     .about("List all current publishers")
                 )
                 .subcommand(SubCommand::with_name("add")
-                    .about("Add a publisher. Note: the server will insist \
-                    that no publisher with that publisher_handle currently \
-                    exists.")
+                    .about("Add an API using publisher.")
+                    .arg(Arg::with_name("token")
+                        .short("t")
+                        .long("token")
+                        .value_name("text")
+                        .help("Specify a token string.")
+                        .required(true)
+                    )
+                    .arg(Arg::with_name("uri")
+                        .short("u")
+                        .long("uri")
+                        .value_name("rsync uri")
+                        .help("Rsync base uri for publisher. Must be covered by server, and not overlap with existing publishers.")
+                        .required(true)
+                    )
+                    .arg(Arg::with_name("handle")
+                        .short("h")
+                        .long("handle")
+                        .value_name("name")
+                        .help("A unique name for this publisher. Must be a-Z0-9 without spaces.")
+                        .required(true)
+                    )
+                )
+                .subcommand(SubCommand::with_name("addcms")
+                    .about("Add an RFC8181 publisher.")
                     .arg(Arg::with_name("xml")
                         .short("x")
                         .long("xml")
@@ -80,12 +103,12 @@ impl Options {
                         publisher request. (See: https://tools.ietf.org/html/rfc8183#section-5.2.3)")
                         .required(true)
                     )
-                    .arg(Arg::with_name("handle")
-                        .short("h")
-                        .long("handle")
-                        .value_name("publisher handle")
-                        .help("Override the publisher handle in the request.")
-                        .required(false)
+                    .arg(Arg::with_name("uri")
+                        .short("u")
+                        .long("uri")
+                        .value_name("rsync uri")
+                        .help("Rsync base uri for publisher. Must be covered by server, and not overlap with existing publishers.")
+                        .required(true)
                     )
                 )
                 .subcommand(SubCommand::with_name("details")
@@ -156,14 +179,29 @@ impl Options {
                 command = Command::Publishers(PublishersCommand::List)
             }
             if let Some(m) = m.subcommand_matches("add") {
-                let xml_file = m.value_of("xml").unwrap(); // required
-                let handle_opt = m.value_of("handle").map(|s| s.to_string());
+                let handle = m.value_of("handle").unwrap().to_string();
+                let base_uri = uri::Rsync::from_str(m.value_of("uri").unwrap())?;
+                let token = m.value_of("token").unwrap().to_string();
 
-                let add = PublishersCommand::Add(
-                    PathBuf::from(xml_file),
-                    handle_opt
+                let add = AddPublisher { handle, base_uri, token };
+                command = Command::Publishers(
+                    PublishersCommand::Add(add)
                 );
-                command = Command::Publishers(add);
+            }
+            if let Some(m) = m.subcommand_matches("addcms") {
+                let xml = m.value_of("xml").unwrap(); // required
+                let xml = PathBuf::from(xml);
+
+                let base_uri = uri::Rsync::from_str(
+                    m.value_of("uri").unwrap()
+                )?;
+
+                let token = Uuid::new_v4().to_string();
+
+                let add = AddPublisherWithCms { xml, base_uri, token };
+                command = Command::Publishers(
+                    PublishersCommand::AddWithCms(add)
+                );
             }
             if let Some(m) = m.subcommand_matches("details") {
                 let handle = m.value_of("handle").unwrap();
@@ -193,7 +231,7 @@ impl Options {
 
         let server = matches.value_of("server").unwrap(); // required
         let server = uri::Http::from_str(server)
-            .map_err(|_| Error::ServerUriError)?;
+            .map_err(|_| Error::UriError)?;
 
         let token = matches.value_of("token").unwrap().to_string(); // req.
 
@@ -215,8 +253,8 @@ pub enum Command {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PublishersCommand {
-    // the path to the xml, and an option for a non-default handle
-    Add(PathBuf, Option<String>),
+    Add(AddPublisher),
+    AddWithCms(AddPublisherWithCms),
     Details(String),
     Remove(String),
     RepositoryResponseXml(String, Option<PathBuf>),
@@ -224,15 +262,37 @@ pub enum PublishersCommand {
     List
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AddPublisherWithCms {
+    pub xml: PathBuf,
+    pub base_uri: uri::Rsync,
+    pub token: String
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AddPublisher {
+    pub handle: String,
+    pub base_uri: uri::Rsync,
+    pub token:  String
+}
+
+
+
 //------------ Error ---------------------------------------------------------
 
 #[derive(Debug, Display)]
 pub enum Error {
-    #[display(fmt="Cannot parse server URI.")]
-    ServerUriError,
+    #[display(fmt="Cannot parse URI.")]
+    UriError,
 
     #[display(fmt="{}", _0)]
     ReportError(ReportError),
+}
+
+impl From<uri::Error> for Error {
+    fn from(_e: uri::Error) -> Self {
+        Error::UriError
+    }
 }
 
 impl From<ReportError> for Error {

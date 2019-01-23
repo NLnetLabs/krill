@@ -3,13 +3,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use bcder::Captured;
 use rpki::uri;
-use crate::api::requests::PublishDelta;
-use crate::api::requests::PublishRequest;
-use crate::api::requests::PublisherRequestChoice;
+use crate::api::data;
+use crate::api::requests;
 use crate::api::responses;
-use crate::daemon::auth::Authorizer;
-use crate::daemon::publishers::{self, Publisher, PublisherStore};
-use crate::daemon::repo::{self, Repository, RRDP_FOLDER};
+use crate::krilld::auth::Authorizer;
+use crate::krilld::publishers::{self, PublisherStore};
+use crate::krilld::repo::{self, Repository, RRDP_FOLDER};
 use crate::remote::cmsproxy::{self, CmsProxy};
 use crate::remote::rfc8183;
 use crate::remote::sigmsg::SignedMessage;
@@ -94,7 +93,7 @@ impl KrillServer {
 /// # Configure publishers
 impl KrillServer {
     /// Returns all currently configured publishers.
-    pub fn publishers(&self) -> Result<Vec<Arc<Publisher>>, Error> {
+    pub fn publishers(&self) -> Result<Vec<Arc<data::Publisher>>, Error> {
         self.publisher_store
             .publishers()
             .map_err(|e| { Error::PublisherStore(e) })
@@ -103,12 +102,11 @@ impl KrillServer {
     /// Adds the publishers, blows up if it already existed.
     pub fn add_publisher(
         &mut self,
-        prc: PublisherRequestChoice,
-        handle_override: Option<&str>,
+        pbl: data::Publisher
     ) -> Result<(), Error> {
+
         self.publisher_store.add_publisher(
-            prc,
-            handle_override,
+            pbl,
             ACTOR
         )?;
         Ok(())
@@ -130,7 +128,7 @@ impl KrillServer {
     pub fn publisher(
         &self,
         name: impl AsRef<str>
-    ) -> Result<Option<Arc<Publisher>>, Error> {
+    ) -> Result<Option<Arc<data::Publisher>>, Error> {
         self.publisher_store.publisher(name)
             .map_err(|e| Error::PublisherStore(e))
     }
@@ -192,12 +190,12 @@ impl KrillServer {
             Err(e)  => self.cms_proxy.wrap_error(e).map_err(|e| Error::CmsProxy(e)),
             Ok(req) => {
                 let reply = match req {
-                    PublishRequest::List => {
+                    requests::PublishRequest::List => {
                         self.handle_list(handle).map(|list|
                             responses::PublishReply::List(list))
 
                     },
-                    PublishRequest::Delta(delta) => {
+                    requests::PublishRequest::Delta(delta) => {
                         self.handle_delta(delta, handle).map(|_|
                             responses::PublishReply::Success)
                     }
@@ -216,7 +214,7 @@ impl KrillServer {
     /// the CmsProxy.
     pub fn handle_delta(
         &mut self,
-        delta: PublishDelta,
+        delta: requests::PublishDelta,
         handle: &str
     ) -> Result<(), Error> {
         let publisher = self.publisher_store.get_publisher(handle)?;

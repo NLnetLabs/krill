@@ -1,7 +1,7 @@
 extern crate krill;
 
-use krill::daemon::config::Config;
-use krill::daemon::http::server::PubServerApp;
+use krill::krilld::config::Config;
+use krill::krilld::http::server::PubServerApp;
 
 fn main() {
     match Config::create() {

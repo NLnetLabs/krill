@@ -10,14 +10,17 @@ extern crate bytes;
 use std::collections::HashSet;
 use std::{thread, time};
 use actix::System;
-use krill::client::pubc::PubClient;
-use krill::client::data::ReportFormat;
-use krill::client::options::Command;
-use krill::client::options::Options;
-use krill::client::options::PublishersCommand;
-use krill::client::krillc::KrillClient;
-use krill::daemon::config::Config;
-use krill::daemon::http::server::PubServerApp;
+use krill::pubc::cmsclient::PubClient;
+use krill::krillc::data::ReportFormat;
+use krill::krillc::options::{
+    AddPublisherWithCms,
+    Command,
+    Options,
+    PublishersCommand
+};
+use krill::krillc::KrillClient;
+use krill::krilld::config::Config;
+use krill::krilld::http::server::PubServerApp;
 use krill::util::file::{self, CurrentFile};
 use krill::util::test;
 use krill::remote::rfc8183::RepositoryResponse;
@@ -58,9 +61,12 @@ fn client_publish_at_server() {
                 test::http_uri("http://localhost:3000/"),
                 "secret",
                 ReportFormat::Default,
-                Command::Publishers(PublishersCommand::Add(
-                    alice_path,
-                    None
+                Command::Publishers(PublishersCommand::AddWithCms(
+                    AddPublisherWithCms {
+                        xml: alice_path,
+                        base_uri: test::rsync_uri("rsync://127.0.0.1/repo/alice/"),
+                        token: "secretly".to_string()
+                    }
                 ))
             );
             let res = KrillClient::process(krillc_opts);
@@ -113,9 +119,9 @@ fn client_publish_at_server() {
             .collect::<HashSet<_>>();
 
         let expected_elements = vec![
-            file_a.to_list_element(),
-            file_b.to_list_element(),
-            file_c.to_list_element()
+            file_a.to_rfc8181_list_element(),
+            file_b.to_rfc8181_list_element(),
+            file_c.to_rfc8181_list_element()
         ];
         let expected_set: HashSet<_> = expected_elements.into_iter()
             .collect();

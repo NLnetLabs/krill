@@ -1,5 +1,7 @@
 //! Command line client to the publication server.
 //!
+//! This version uses the XML in CMS as defined in RFC8181 and RFC8183.
+//!
 //! Can be used for testing the publication server, but may also be useful
 //! for setups where a CA simply writes its current state to some disk, so
 //! that this CLI may be triggered to synchronise this state to a publication
@@ -11,7 +13,8 @@ extern crate rpki;
 
 use std::io::{self, Write};
 use std::path::PathBuf;
-use krill::client::pubc::{self, Config, RunMode, PubClient };
+use krill::pubc;
+use krill::pubc::cmsclient::{Config, RunMode, PubClient };
 use krill::remote::rfc8183::{RepositoryResponse, RepositoryResponseError};
 use krill::util::file;
 
@@ -83,7 +86,7 @@ fn sync(mut client: PubClient, path: &PathBuf) -> Result<(), Error> {
 #[derive(Debug, Display)]
 pub enum Error {
     #[display(fmt="{}", _0)]
-    ClientError(pubc::Error),
+    ClientError(pubc::cmsclient::Error),
 
     #[display(fmt="{}", _0)]
     IoError(io::Error),
@@ -96,8 +99,8 @@ pub enum Error {
 
 }
 
-impl From<pubc::Error> for Error {
-    fn from(e: pubc::Error) -> Self {
+impl From<pubc::cmsclient::Error> for Error {
+    fn from(e: pubc::cmsclient::Error) -> Self {
         Error::ClientError(e)
     }
 }

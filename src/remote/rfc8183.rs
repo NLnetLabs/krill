@@ -9,6 +9,7 @@ use bcder::decode;
 use rpki::uri;
 use rpki::x509;
 use rpki::x509::Time;
+use crate::api::data;
 use crate::remote::id::IdCert;
 use crate::util::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
 
@@ -120,17 +121,24 @@ impl PublisherRequest {
         }
     }
 
-    /// Consumes this object so its values can be re-used.
-    pub fn into_parts(self) -> (Option<String>, String, IdCert) {
-        (self.tag, self.publisher_handle, self.id_cert)
-    }
-
     pub fn id_cert(&self) -> &IdCert {
         &self.id_cert
     }
 
-    pub fn handle(&self) -> &String {
-        &self.publisher_handle
+    pub fn into_publisher(
+        self,
+        token: String,
+        base_uri: uri::Rsync
+    ) -> data::Publisher {
+        let cms_data = data::CmsAuthData::new(
+            self.tag, self.id_cert
+        );
+        data::Publisher::new(
+            self.publisher_handle,
+            token,
+            base_uri,
+            Some(cms_data)
+        )
     }
 }
 

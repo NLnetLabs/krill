@@ -28,8 +28,9 @@ extern crate ring;
 extern crate untrusted;
 
 pub mod api;
-pub mod client;
-pub mod daemon;
+pub mod krillc;
+pub mod krilld;
+pub mod pubc;
 pub mod remote;
 pub mod storage;
 pub mod util;

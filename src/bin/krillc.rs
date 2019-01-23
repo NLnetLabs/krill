@@ -1,8 +1,8 @@
 extern crate krill;
 
-use krill::client::data::ReportFormat;
-use krill::client::krillc::KrillClient;
-use krill::client::options::Options;
+use krill::krillc::data::ReportFormat;
+use krill::krillc::KrillClient;
+use krill::krillc::options::Options;
 
 fn main() {
     match Options::from_args() {

@@ -14,14 +14,14 @@ use actix_web::http::{Method, StatusCode };
 use bcder::decode;
 use futures::Future;
 use openssl::ssl::{SslMethod, SslAcceptor, SslAcceptorBuilder, SslFiletype};
-use crate::api::requests::PublishDelta;
-use crate::api::requests::PublisherRequestChoice;
-use crate::daemon::auth::{Authorizer, CheckAuthorisation};
-use crate::daemon::config::Config;
-use crate::daemon::endpoints;
-use crate::daemon::http::ssl;
-use crate::daemon::krillserver;
-use crate::daemon::krillserver::KrillServer;
+use crate::api::data;
+use crate::api::requests;
+use crate::krilld::auth::{Authorizer, CheckAuthorisation};
+use crate::krilld::config::Config;
+use crate::krilld::endpoints;
+use crate::krilld::http::ssl;
+use crate::krilld::krillserver;
+use crate::krilld::krillserver::KrillServer;
 use crate::remote::rfc8183;
 use crate::remote::sigmsg::SignedMessage;
 
@@ -45,7 +45,6 @@ impl PubServerApp {
             })
             .resource("/api/v1/publishers/{handle}", |r| {
                 r.method(Method::GET).with(endpoints::publisher_details);
-                r.method(Method::POST).with(endpoints::add_named_publisher);
                 r.method(Method::DELETE).with(endpoints::remove_publisher);
             })
             // For clients that cannot handle http methods
@@ -57,6 +56,10 @@ impl PubServerApp {
             })
             .resource("/rfc8181/{handle}", |r| {
                 r.method(Method::POST).with(endpoints::handle_rfc8181_request)
+            })
+            .resource("/publication/{handle}", |r| {
+                r.method(Method::GET).with(endpoints::handle_list);
+                r.method(Method::POST).with(endpoints::handle_delta);
             })
             .resource("/rrdp/{path:.*}", |r| {
                 r.method(Method::GET).f(Self::serve_rrdp_files)
@@ -266,13 +269,13 @@ impl Default for SignedMessageConvertConfig {
 }
 
 
-//------------ PublisherRequestChoice ----------------------------------------
+//------------ Publisher ----------------------------------------------------
 
 /// Converts the body sent to 'add publisher' end-points to a
 /// PublisherRequestChoice, which contains either an
 /// rfc8183::PublisherRequest, or an API publisher request (no ID certs and
 /// CMS etc).
-impl<S: 'static> FromRequest<S> for PublisherRequestChoice {
+impl<S: 'static> FromRequest<S> for data::Publisher {
     type Config = ();
     type Result = Box<Future<Item=Self, Error=actix_web::Error>>;
 
@@ -283,14 +286,10 @@ impl<S: 'static> FromRequest<S> for PublisherRequestChoice {
         Box::new(MessageBody::new(req)
             .from_err()
             .and_then(|bytes| {
-                if bytes.starts_with(b"<") { // check content-type instead?
-                    match rfc8183::PublisherRequest::decode(bytes.as_ref()) {
-                        Ok(req) => Ok(PublisherRequestChoice::Rfc8183(req)),
-                        Err(e) => Err(Error::Wrong8183Xml(e).into())
-                    }
-                } else {
-                    unimplemented!()
-                }
+                let p: data::Publisher =
+                    serde_json::from_reader(bytes.as_ref())
+                    .map_err(|e| Error::JsonError(e))?;
+                Ok(p)
             })
         )
     }
@@ -329,7 +328,7 @@ impl AsRef<str> for PublisherHandle {
 
 //------------ PublishDelta --------------------------------------------------
 /// Support converting request body into PublishDelta
-impl<S: 'static> FromRequest<S> for PublishDelta {
+impl<S: 'static> FromRequest<S> for requests::PublishDelta {
     type Config = ();
     type Result = Box<Future<Item=Self, Error=actix_web::Error>>;
 
@@ -340,7 +339,7 @@ impl<S: 'static> FromRequest<S> for PublishDelta {
         Box::new(MessageBody::new(req)
             .from_err()
             .and_then(|bytes| {
-                let delta: PublishDelta =
+                let delta: requests::PublishDelta =
                     serde_json::from_reader(bytes.as_ref())
                     .map_err(|e| Error::JsonError(e))?;
                 Ok(delta)

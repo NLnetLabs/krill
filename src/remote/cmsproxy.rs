@@ -3,10 +3,10 @@ use std::path::PathBuf;
 use bcder::Captured;
 use rpki::uri;
 use rpki::x509::ValidationError;
+use crate::api::data;
+use crate::api::requests;
 use crate::api::responses;
-use crate::api::requests::PublishRequest;
-use crate::daemon::publishers::Publisher;
-use crate::daemon::repo;
+use crate::krilld::repo;
 use crate::remote::id::IdCert;
 use crate::remote::responder;
 use crate::remote::responder::Responder;
@@ -52,7 +52,7 @@ impl CmsProxy {
         &mut self,
         msg: &SignedMessage,
         id_cert: &IdCert,
-    ) -> Result<PublishRequest, Error> {
+    ) -> Result<requests::PublishRequest, Error> {
         debug!("Validating Signed Message");
         msg.validate(id_cert)?;
         let msg = rfc8181::Message::from_signed_message(&msg)?;
@@ -98,7 +98,7 @@ impl CmsProxy {
     /// Returns an RFC8183 Repository Response
     pub fn repository_response(
         &self,
-        publisher: Arc<Publisher>,
+        publisher: Arc<data::Publisher>,
         base_service_uri: &uri::Http,
         rrdp_notification_uri: uri::Http
     ) -> Result<rfc8183::RepositoryResponse, Error> {
