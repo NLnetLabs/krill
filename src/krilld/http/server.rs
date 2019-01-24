@@ -10,7 +10,7 @@ use actix_web::{pred, fs, server};
 use actix_web::{App, FromRequest, HttpResponse};
 use actix_web::dev::MessageBody;
 use actix_web::middleware;
-use actix_web::http::{Method, StatusCode };
+use actix_web::http::{Method, StatusCode};
 use bcder::decode;
 use futures::Future;
 use openssl::ssl::{SslMethod, SslAcceptor, SslAcceptorBuilder, SslFiletype};

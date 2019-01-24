@@ -68,8 +68,7 @@ pub fn publishers(req: &HttpRequest) -> HttpResponse {
         Err(e) => server_error(Error::ServerError(e)),
         Ok(publishers) => {
             render_json(
-                responses::PublisherList::from(&publishers,
-                                               "/api/v1/publishers")
+                responses::PublisherList::from(&publishers, "/api/v1/publishers")
             )
         }
     }

@@ -1,12 +1,9 @@
 //! Publication Client that uses the JSON/Rest API
 use std::path::PathBuf;
 use clap::{App, Arg, SubCommand};
-use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT, CONTENT_TYPE};
-use reqwest::{Client, Response, StatusCode};
 use rpki::uri;
-use serde::Serialize;
-use std::time::Duration;
-use api::responses;
+use crate::api::responses;
+use crate::util::httpclient;
 
 //------------ PubClientOptions ----------------------------------------------
 
@@ -125,15 +122,12 @@ pub fn execute(options: PubClientOptions) -> Result<ApiResponse, Error> {
                 &options.handle
             );
 
-            match get_text(&uri, &options.token) {
-                Err(e) => Err(e),
-                Ok(None) => Err(Error::NoResponse),
-                Ok(Some(text)) => {
-                    let list: responses::ListReply =
-                        serde_json::from_str(&text)?;
-
-                    Ok(ApiResponse::List(list))
-                }
+            match httpclient::get_json::<responses::ListReply>(
+                &uri,
+                Some(&options.token)
+            ) {
+                Err(e) => Err(Error::HttpClientError(e)),
+                Ok(list) => Ok(ApiResponse::List(list))
             }
         },
         Command::Sync(_dir) => {
@@ -141,77 +135,6 @@ pub fn execute(options: PubClientOptions) -> Result<ApiResponse, Error> {
         },
     }
 }
-
-
-fn client() -> Result<Client, Error> {
-    Client::builder()
-        .gzip(true)
-        .timeout(Duration::from_secs(30))
-        .build()
-        .map_err(|e| Error::RequestError(e))
-}
-
-
-fn headers(token: &str) -> HeaderMap {
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        USER_AGENT,
-        HeaderValue::from_str("krill-pubc").unwrap()
-    );
-    headers.insert(
-        CONTENT_TYPE,
-        HeaderValue::from_str("application/json").unwrap()
-    );
-    headers.insert(
-        "Authorization",
-        HeaderValue::from_str(&format!("Bearer {}", token)).unwrap()
-    );
-    headers
-}
-
-fn process_response(mut res: Response) -> Result<Option<String>, Error> {
-    match res.status() {
-        StatusCode::OK => {
-            Ok(res.text().ok())
-        },
-        status => {
-            match res.text() {
-                Ok(body) => {
-                    if body.is_empty() {
-                        Err(Error::BadStatus(status))
-                    } else {
-                        Err(Error::ErrorWithBody(body))
-                    }
-                },
-                _ => Err(Error::BadStatus(status))
-            }
-        }
-    }
-}
-
-fn get_text(
-    uri: &str,
-    token: &str
-) -> Result<Option<String>, Error> {
-    let headers = headers(token);
-    let res = client()?.get(uri).headers(headers).send()?;
-    process_response(res)
-}
-
-#[allow(dead_code)]
-fn post_json(
-    uri: &str,
-    data: impl Serialize,
-    token: &str
-) -> Result<Option<String>, Error> {
-    let headers = headers(token);
-    let body = serde_json::to_string(&data)?;
-    let client = client()?;
-
-    let res = client.post(uri).headers(headers).body(body).send()?;
-    process_response(res)
-}
-
 
 
 //------------ Command -------------------------------------------------------
@@ -252,21 +175,14 @@ pub enum Error {
     #[display(fmt = "Specify an action: list, or sync --dir <dir>")]
     NoCommand,
 
-    #[display(fmt="Request Error: {}", _0)]
-    RequestError(reqwest::Error),
-
-    #[display(fmt="Received bad status: {}", _0)]
-    BadStatus(StatusCode),
-
-    #[display(fmt="{}", _0)]
-    ErrorWithBody(String),
-
     #[display(fmt = "Expected a response body, but got nothing.")]
     NoResponse,
 
+    #[display(fmt="{}", _0)]
+    HttpClientError(httpclient::Error),
+
     #[display(fmt="Received invalid json response: {}", _0)]
     JsonError(serde_json::Error),
-
 }
 
 impl From<uri::Error> for Error {
@@ -275,10 +191,4 @@ impl From<uri::Error> for Error {
 
 impl From<serde_json::Error> for Error {
     fn from(e: serde_json::Error) -> Self { Error::JsonError(e) }
-}
-
-impl From<reqwest::Error> for Error {
-    fn from(e: reqwest::Error) -> Self {
-        Error::RequestError(e)
-    }
 }

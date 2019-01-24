@@ -1,14 +1,10 @@
 use std::io;
-use std::io::Read;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
 use bcder::{Captured, Mode};
 use bcder::decode;
 use bcder::encode::Values;
 use clap::{App, Arg, SubCommand};
-use reqwest::{Client, Response, StatusCode};
-use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT, CONTENT_TYPE};
 use rpki::x509::ValidationError;
 use rpki::crypto::{PublicKeyFormat, Signer};
 use toml;
@@ -20,6 +16,7 @@ use crate::remote::rfc8181;
 use crate::remote::sigmsg::SignedMessage;
 use crate::storage::caching_ks::CachingDiskKeyStore;
 use crate::storage::keystore::{self, Info, Key, KeyStore};
+use crate::util::httpclient;
 use crate::util::softsigner::{self, OpenSslSigner};
 use crate::util::file::{self, CurrentFile, RecursorError};
 
@@ -277,51 +274,15 @@ impl PubClient {
         req: Captured
     ) -> Result<rfc8181::Message, Error> {
         let parent = self.get_my_parent()?;
+        let post_bytes = req.into_bytes();
 
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            USER_AGENT,
-            HeaderValue::from_str("krill-pubc-cms").unwrap()
-        );
-        headers.insert(
-            CONTENT_TYPE,
-            HeaderValue::from_str("application/rpki-publication").unwrap()
-        );
+        let res_bytes = httpclient::post_binary(
+            &parent.service_uri().to_string(),
+            &post_bytes,
+            "application/rpki-publication"
+        )?;
 
-        let client = Client::builder()
-            .gzip(true)
-            // 5 minute timeout is enough to sync the entire RIPE NCC repo.
-            .timeout(Duration::from_secs(300))
-            .build()?;
-
-        let mut res = client.post(&parent.service_uri().to_string())
-            .headers(headers)
-            .body(req.to_vec())
-            .send()?;
-
-        match res.status() {
-            StatusCode::OK => {
-                self.parse_res(res)
-            },
-            _ => {
-                println!("{}", res.text()
-                    .unwrap_or("unspecified error".to_string()));
-                Err(Error::PubServerHttpError(res.status()))
-            }
-        }
-    }
-
-    fn parse_res(
-        &mut self,
-        mut res: Response
-    ) -> Result<rfc8181::Message, Error> {
-        let parent = self.get_my_parent()?;
-
-        let mut bytes: Vec<u8> = vec![];
-        res.read_to_end(&mut bytes).unwrap();
-        let bytes = bytes::Bytes::from(bytes);
-
-        let signed_msg = SignedMessage::decode(bytes, true)?;
+        let signed_msg = SignedMessage::decode(res_bytes, true)?;
         signed_msg.validate(parent.id_cert())?;
         rfc8181::Message::from_signed_message(&signed_msg).map_err(|e| {
             Error::MessageError(e)
@@ -526,12 +487,6 @@ pub enum Error {
     #[display(fmt="{}", _0)]
     KeyStoreError(keystore::Error),
 
-    #[display(fmt="Received bad HTTP status code: {}", _0)]
-    PubServerHttpError(StatusCode),
-
-    #[display(fmt="Request Error: {}", _0)]
-    RequestError(reqwest::Error),
-
     #[display(fmt="{}", _0)]
     ValidationError(ValidationError),
 
@@ -551,7 +506,10 @@ pub enum Error {
     RecursorError(RecursorError),
 
     #[display(fmt="{}", _0)]
-    BuilderError(builder::Error<softsigner::SignerError>)
+    BuilderError(builder::Error<softsigner::SignerError>),
+
+    #[display(fmt="{}", _0)]
+    HttpClientError(httpclient::Error),
 }
 
 impl From<softsigner::SignerError> for Error {
@@ -563,12 +521,6 @@ impl From<softsigner::SignerError> for Error {
 impl From<keystore::Error> for Error {
     fn from(e: keystore::Error) -> Self {
         Error::KeyStoreError(e)
-    }
-}
-
-impl From<reqwest::Error> for Error {
-    fn from(e: reqwest::Error) -> Self {
-        Error::RequestError(e)
     }
 }
 
@@ -600,6 +552,10 @@ impl From<builder::Error<softsigner::SignerError>> for Error {
     fn from(e: builder::Error<softsigner::SignerError>) -> Self {
         Error::BuilderError(e)
     }
+}
+
+impl From<httpclient::Error> for Error {
+    fn from(e: httpclient::Error) -> Self { Error::HttpClientError(e) }
 }
 
 

@@ -25,6 +25,7 @@ use krill::krillc::options::{
 };
 use krill::pubc::cmsclient::PubClient;
 use krill::util::test;
+use krill::util::httpclient;
 use krill::remote::rfc8183::RepositoryResponse;
 use reqwest::StatusCode;
 
@@ -179,7 +180,8 @@ fn manage_publishers() {
             let res = KrillClient::process(krillc_opts);
 
             match res {
-                Err(krillc::Error::BadStatus(code)) => {
+                Err(krillc::Error::HttpClientError(
+                        httpclient::Error::BadStatus(code))) => {
                     assert_eq!(code, StatusCode::NOT_FOUND);
                 },
                 _ => assert!(false) // should have failed!

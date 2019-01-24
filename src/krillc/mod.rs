@@ -2,10 +2,7 @@ pub mod data;
 pub mod options;
 
 use std::io;
-use std::time::Duration;
 use bytes::Bytes;
-use reqwest::{Client, Response, StatusCode};
-use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
 use rpki::uri;
 use crate::api::data::Publisher;
 use crate::krillc::data::{
@@ -21,7 +18,7 @@ use crate::krillc::options::{
 };
 use crate::remote::rfc8183;
 use crate::util::file;
-use serde::Serialize;
+use crate::util::httpclient;
 
 /// Command line tool for Krill admin tasks
 pub struct KrillClient {
@@ -60,7 +57,10 @@ impl KrillClient {
     }
 
     fn health(&self) -> Result<ApiResponse, Error> {
-        self.get("api/v1/health")?;
+        httpclient::get_ok(
+            &self.resolve_uri("api/v1/health"),
+            Some(&self.token)
+        )?;
         Ok(ApiResponse::Health)
     }
 
@@ -70,8 +70,10 @@ impl KrillClient {
     ) -> Result<ApiResponse, Error> {
         match command {
             PublishersCommand::List => {
-                let res = self.get("api/v1/publishers")?;
-                let list: PublisherList = serde_json::from_str(&res)?;
+                let list: PublisherList = httpclient::get_json(
+                    &self.resolve_uri("api/v1/publishers"),
+                    Some(&self.token)
+                )?;
                 Ok(ApiResponse::PublisherList(list))
             },
             PublishersCommand::Add(add) => {
@@ -81,48 +83,41 @@ impl KrillClient {
                     add.base_uri,
                     None
                 );
-                match self.post_json("api/v1/publishers", pbl)? {
-                    Some(body) => {
-                        if body.is_empty() {
-                            Ok(ApiResponse::Empty)
-                        } else {
-                            Ok(ApiResponse::GenericBody(body))
-                        }
-                    },
-                    None => Ok(ApiResponse::Empty)
-                }
+                self.add_publisher(pbl)
             },
             PublishersCommand::AddWithCms(add) => {
                 let bytes = file::read(&add.xml)?;
                 let pr = rfc8183::PublisherRequest::decode(bytes.as_ref())?;
-
                 let pbl = pr.into_publisher(add.token, add.base_uri);
 
-                match self.post_json("api/v1/publishers", pbl)? {
-                    Some(body) => {
-                        if body.is_empty() {
-                            Ok(ApiResponse::Empty)
-                        } else {
-                            Ok(ApiResponse::GenericBody(body))
-                        }
-                    },
-                    None => Ok(ApiResponse::Empty)
-                }
+                self.add_publisher(pbl)
             },
             PublishersCommand::Remove(handle) => {
                 let uri = format!("api/v1/publishers/{}", handle);
-                self.delete(&uri)?;
+                let uri = self.resolve_uri(&uri);
+                httpclient::delete(&uri, Some(&self.token))?;
                 Ok(ApiResponse::Empty)
             },
             PublishersCommand::Details(handle) => {
                 let uri = format!("api/v1/publishers/{}", handle);
-                let res = self.get(uri.as_str())?;
-                let details: PublisherDetails = serde_json::from_str(&res)?;
+                let uri = self.resolve_uri(&uri);
+
+                let details: PublisherDetails = httpclient::get_json(
+                    &uri,
+                    Some(&self.token)
+                )?;
                 Ok(ApiResponse::PublisherDetails(details))
             },
             PublishersCommand::RepositoryResponseXml(handle, file_opt) => {
                 let uri = format!("api/v1/publishers/{}/response.xml", handle);
-                let xml = self.get(uri.as_str())?;
+                let uri = self.resolve_uri(&uri);
+
+                let xml = httpclient::get_text(
+                    &uri,
+                    "application/xml",
+                    Some(&self.token)
+                )?;
+
                 match file_opt {
                     Some(path) => {
                         file::save(&Bytes::from(xml), &path)?;
@@ -135,8 +130,13 @@ impl KrillClient {
             },
             PublishersCommand::IdCert(handle, file) => {
                 let uri = format!("api/v1/publishers/{}", handle);
-                let res = self.get(uri.as_str())?;
-                let details: PublisherDetails = serde_json::from_str(&res)?;
+                let uri = self.resolve_uri(&uri);
+
+                let details: PublisherDetails = httpclient::get_json(
+                    &uri,
+                    Some(&self.token)
+                )?;
+
                 match details.identity_cert() {
                     Some(cert) => {
                         let bytes = cert.to_bytes();
@@ -145,138 +145,23 @@ impl KrillClient {
                     },
                     None => Err(Error::NoIdCert)
                 }
-
             }
         }
     }
 
-    fn headers(&self) -> HeaderMap {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            USER_AGENT,
-            HeaderValue::from_str("krillc").unwrap()
-        );
-        headers.insert(
-            "Authorization",
-            HeaderValue::from_str(&format!("Bearer {}", &self.token)).unwrap()
-        );
-        headers
+    fn add_publisher(&self, pbl: Publisher) -> Result<ApiResponse, Error> {
+        httpclient::post_json(
+            &self.resolve_uri("api/v1/publishers"),
+            pbl,
+            Some(&self.token)
+        )?;
+
+        Ok(ApiResponse::Empty)
     }
 
-    fn client(&self) -> Result<Client, Error> {
-        Client::builder()
-            .gzip(true)
-            .timeout(Duration::from_secs(30))
-            .build()
-            .map_err(|e| Error::RequestError(e))
+    fn resolve_uri(&self, path: &str) -> String {
+        format!("{}{}", &self.server, path)
     }
-
-    fn post_json(
-        &self,
-        rel: &str,
-        data: impl Serialize
-    ) -> Result<Option<String>, Error> {
-        let headers = self.headers();
-        let body = serde_json::to_string(&data)?;
-
-        let uri = format!("{}{}", &self.server.to_string(), rel);
-        let mut res = self.client()?.post(&uri)
-            .headers(headers)
-            .body(body)
-            .send()?;
-
-        match res.status() {
-            StatusCode::OK => {
-                Ok(res.text().ok())
-            },
-            status => {
-                match res.text() {
-                    Ok(body) => {
-                        if body.is_empty() {
-                            Err(Error::BadStatus(status))
-                        } else {
-                            Err(Error::ErrorWithBody(body))
-                        }
-                    },
-                    _ => Err(Error::BadStatus(status))
-                }
-            }
-        }
-    }
-
-    /// Sends a get request to the server, including the token for
-    /// authorization.
-    /// Note that the server uri ends with a '/', so leave out the '/'
-    /// from the start of the rel_path when calling this function.
-    fn get(
-        &self,
-        rel_path: &str
-    ) -> Result<String, Error> {
-        let mut res = self.get_generic(rel_path)?;
-        let txt = res.text()?;
-        Ok(txt)
-    }
-
-    /// Sends a get request to the server, including the token for
-    /// authorization.
-    /// Note that the server uri ends with a '/', so leave out the '/'
-    /// from the start of the rel_path when calling this function.
-    #[allow(dead_code)]
-    fn get_binary(
-        &self,
-        rel_path: &str
-    ) -> Result<Bytes, Error> {
-        let mut res = self.get_generic(rel_path)?;
-        let mut bytes: Vec<u8> = vec![];
-        res.copy_to(&mut bytes)?;
-        Ok(Bytes::from(bytes))
-    }
-
-    fn get_generic(
-        &self,
-        rel_path: &str
-    ) -> Result<Response, Error> {
-        let uri = format!("{}{}", &self.server.to_string(), rel_path);
-        let mut res = self.client()?
-            .get(&uri)
-            .headers(self.headers())
-            .send()?;
-
-        match res.status() {
-            StatusCode::OK => {
-                Ok(res)
-            },
-            status => {
-                match res.text() {
-                    Ok(body) => {
-                        if body.is_empty() {
-                            Err(Error::BadStatus(status))
-                        } else {
-                            Err(Error::ErrorWithBody(body))
-                        }
-                    },
-                    _ => Err(Error::BadStatus(status))
-                }
-            }
-        }
-    }
-
-    fn delete(
-        &self,
-        rel: &str
-    ) -> Result<(), Error> {
-        let uri = format!("{}{}", &self.server.to_string(), rel);
-        let res = self.client()?
-            .delete(&uri)
-            .headers(self.headers())
-            .send()?;
-
-        match res.status() {
-            StatusCode::OK => Ok(()),
-            status         => Err(Error::BadStatus(status))
-        }
-    }
-
 }
 
 //------------ Error ---------------------------------------------------------
@@ -289,14 +174,8 @@ pub enum Error {
     #[display(fmt="Server is not available.")]
     ServerDown,
 
-    #[display(fmt="Request Error: {}", _0)]
-    RequestError(reqwest::Error),
-
-    #[display(fmt="Received bad status: {}", _0)]
-    BadStatus(StatusCode),
-
     #[display(fmt="{}", _0)]
-    ErrorWithBody(String),
+    HttpClientError(httpclient::Error),
 
     #[display(fmt="Received invalid json response: {}", _0)]
     JsonError(serde_json::Error),
@@ -311,13 +190,14 @@ pub enum Error {
     NoIdCert,
 
     #[display(fmt="Invalid RFC8183 XML")]
-    InvalidRfc8183
+    InvalidRfc8183,
+
+    #[display(fmt="Empty response received from server")]
+    EmptyResponse
 }
 
-impl From<reqwest::Error> for Error {
-    fn from(e: reqwest::Error) -> Self {
-        Error::RequestError(e)
-    }
+impl From<httpclient::Error> for Error {
+    fn from(e: httpclient::Error) -> Self { Error::HttpClientError(e) }
 }
 
 impl From<serde_json::Error> for Error {
