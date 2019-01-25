@@ -8,6 +8,7 @@ use clap::{App, Arg, SubCommand};
 use rpki::x509::ValidationError;
 use rpki::crypto::{PublicKeyFormat, Signer};
 use toml;
+use crate::api::responses;
 use crate::remote::builder;
 use crate::remote::builder::{IdCertBuilder, SignedMessageBuilder};
 use crate::remote::id::{MyIdentity, MyRepoInfo, ParentInfo};
@@ -18,7 +19,7 @@ use crate::storage::caching_ks::CachingDiskKeyStore;
 use crate::storage::keystore::{self, Info, Key, KeyStore};
 use crate::util::httpclient;
 use crate::util::softsigner::{self, OpenSslSigner};
-use crate::util::file::{self, CurrentFile, RecursorError};
+use pubc;
 
 
 /// # Some constants for naming resources in the keystore for clients.
@@ -177,16 +178,16 @@ impl PubClient {
     /// validly signed and all.
     pub fn get_server_list(
         &mut self
-    ) -> Result<rfc8181::ListReply, Error> {
-        let query = rfc8181::ListQuery::build_message();
+    ) -> Result<responses::ListReply, Error> {
+        let query = rfc8181::Message::list_query();
         let signed_request = self.sign_request(query)?;
 
         let reply = self.send_request(signed_request)?.as_reply()?;
 
         match reply {
-            rfc8181::ReplyMessage::ErrorReply(e)   => Err(Error::ErrorReply(e)),
-            rfc8181::ReplyMessage::SuccessReply(_) => Err(Error::UnexpectedReply),
-            rfc8181::ReplyMessage::ListReply(l)    => Ok(l)
+            rfc8181::ReplyMessage::ErrorReply(e) => Err(Error::ErrorReply(e)),
+            rfc8181::ReplyMessage::SuccessReply  => Err(Error::UnexpectedReply),
+            rfc8181::ReplyMessage::ListReply(l)  => Ok(l)
         }
     }
 
@@ -195,76 +196,24 @@ impl PubClient {
     /// Returns an error if there are any hick-ups.
     pub fn sync_dir(&mut self, base_path: &PathBuf) -> Result<(), Error> {
         let repo = self.get_my_repo()?;
-        let cur = file::crawl_incl_rsync_base(base_path, repo.sia_base())?;
-        let pbl = self.get_server_list()?;
-        if let Some(upd) = Self::create_update(cur, pbl) {
-            let sgn_msg = self.sign_request(upd)?;
+        let list_reply = self.get_server_list()?;
+
+        let delta = pubc::create_delta(list_reply, base_path, repo.sia_base())?;
+
+        if ! delta.is_empty() {
+            let msg = rfc8181::Message::publish_delta_query(delta);
+            let sgn_msg = self.sign_request(msg)?;
             let reply = self.send_request(sgn_msg)?.as_reply()?;
 
             match reply {
-                rfc8181::ReplyMessage::ErrorReply(e)   => Err(Error::ErrorReply(e)),
-                rfc8181::ReplyMessage::ListReply(_)    => Err(Error::UnexpectedReply),
-                rfc8181::ReplyMessage::SuccessReply(_) => Ok(())
+                rfc8181::ReplyMessage::ErrorReply(e) => Err(Error::ErrorReply(e)),
+                rfc8181::ReplyMessage::ListReply(_)  => Err(Error::UnexpectedReply),
+                rfc8181::ReplyMessage::SuccessReply  => Ok(())
             }
         } else {
             Ok(())
         }
     }
-
-    fn create_update(
-        current: Vec<CurrentFile>,
-        published: rfc8181::ListReply
-    ) -> Option<rfc8181::Message> {
-        let mut add: Vec<rfc8181::PublishElement> = Vec::new();
-        let mut upd: Vec<rfc8181::PublishElement> = Vec::new();
-        let mut wdr: Vec<rfc8181::PublishElement> = Vec::new();
-
-        let reply_els = published.elements();
-
-        // loop through what the server has and find the ones to withdraw
-        for p in reply_els {
-            if current.iter().find(|c| { c.uri() == p.uri() }).is_none() {
-                wdr.push(rfc8181::Withdraw::publish(p));
-            }
-        }
-
-        // loop through all current files to see what needs to be added,
-        // updated, or what needs no change.
-        for ref f in current {
-            match reply_els.iter().find(|pb| { pb.uri() == f.uri()}) {
-                None => {
-                    add.push(f.as_rfc8181_publish())
-                },
-                Some(pb) => {
-                    if pb.hash() != f.hash() {
-                        upd.push(f.as_rf8181_update(pb.hash()));
-                    }
-                }
-            }
-        }
-
-        let total_length = add.len() + upd.len() + wdr.len();
-
-        if total_length == 0 {
-            None
-        } else {
-            let mut builder = rfc8181::PublishQuery::build_with_capacity(total_length);
-
-            for a in add {
-                builder.add(a);
-            }
-            for u in upd {
-                builder.add(u);
-            }
-            for w in wdr {
-                builder.add(w);
-            }
-
-            Some(builder.build_message())
-        }
-    }
-
-
 
 
     /// Sends a signed request to the server, and validates and parses the
@@ -502,14 +451,14 @@ pub enum Error {
     #[display(fmt="Received unexpected reply (list vs success)")]
     UnexpectedReply,
 
-    #[display(fmt="Could not crawl directory: {}", _0)]
-    RecursorError(RecursorError),
-
     #[display(fmt="{}", _0)]
     BuilderError(builder::Error<softsigner::SignerError>),
 
     #[display(fmt="{}", _0)]
     HttpClientError(httpclient::Error),
+
+    #[display(fmt="{}", _0)]
+    PubcError(pubc::Error),
 }
 
 impl From<softsigner::SignerError> for Error {
@@ -542,12 +491,6 @@ impl From<rfc8181::MessageError> for Error {
     }
 }
 
-impl From<RecursorError> for Error {
-    fn from(e: RecursorError) -> Self {
-        Error::RecursorError(e)
-    }
-}
-
 impl From<builder::Error<softsigner::SignerError>> for Error {
     fn from(e: builder::Error<softsigner::SignerError>) -> Self {
         Error::BuilderError(e)
@@ -558,5 +501,8 @@ impl From<httpclient::Error> for Error {
     fn from(e: httpclient::Error) -> Self { Error::HttpClientError(e) }
 }
 
+impl From<pubc::Error> for Error {
+    fn from(e: pubc::Error) -> Self { Error::PubcError(e) }
+}
 
 // Tested in integration tests in tests folder

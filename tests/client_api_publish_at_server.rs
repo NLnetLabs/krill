@@ -77,7 +77,7 @@ fn client_publish_at_server() {
 
         match list {
             ApiResponse::List(list) => {
-                assert_eq!(0, list.files().len());
+                assert_eq!(0, list.elements().len());
             },
             _ => panic!("Expected list")
         }

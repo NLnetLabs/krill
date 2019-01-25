@@ -1,19 +1,20 @@
 //! Support for requests sent to the Json API
 use bytes::Bytes;
 use rpki::uri;
+use crate::api::responses;
 use crate::util::ext_serde;
-
+use crate::util::hash;
 
 /// This type provides a convenience wrapper to contain the request found
 /// inside of a validated RFC8181 request.
 pub enum PublishRequest {
-    List,
+    List, // See https://tools.ietf.org/html/rfc8181#section-2.3
     Delta(PublishDelta)
 }
 
-/// This type represents the request containing the complete delta of objects
-/// to publish, update, or withdraw.
-#[derive(Deserialize, Serialize)]
+/// This type represents a multi element query as described in
+/// https://tools.ietf.org/html/rfc8181#section-3.7
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublishDelta {
     publishes: Vec<Publish>,
     updates: Vec<Update>,
@@ -42,6 +43,8 @@ impl PublishDelta {
     pub fn len(&self) -> usize {
         self.publishes.len() + self.updates.len() + self.withdraws.len()
     }
+
+    pub fn is_empty(&self) -> bool { self.len() == 0 }
 }
 
 pub struct PublishDeltaBuilder {
@@ -85,7 +88,7 @@ impl PublishDeltaBuilder {
 /// Type representing a json equivalent to the publish element, that does not
 /// update any existing object, defined in:
 /// https://tools.ietf.org/html/rfc8181#section-3.1
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Publish {
     tag: String,
 
@@ -101,7 +104,8 @@ pub struct Publish {
 }
 
 impl Publish {
-    pub fn new(tag: String, uri: uri::Rsync, content: Bytes) -> Self {
+    pub fn new(tag: Option<String>, uri: uri::Rsync, content: Bytes) -> Self {
+        let tag = tag.unwrap_or(hex::encode(hash(&content)));
         Publish { tag, uri, content }
     }
 
@@ -114,7 +118,7 @@ impl Publish {
 /// Type representing a json equivalent to the publish element, that updates
 /// an existing object:
 /// https://tools.ietf.org/html/rfc8181#section-3.2
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Update {
     tag: String,
 
@@ -135,8 +139,14 @@ pub struct Update {
 }
 
 impl Update {
-    pub fn new(tag: String, uri: uri::Rsync, content: Bytes, hash: Bytes) -> Self {
-        Update { tag, uri, content, hash }
+    pub fn new(
+        tag: Option<String>,
+        uri: uri::Rsync,
+        content: Bytes,
+        old_hash: Bytes
+    ) -> Self {
+        let tag = tag.unwrap_or(hex::encode(hash(&content)));
+        Update { tag, uri, content, hash: old_hash }
     }
 
     pub fn tag(&self) -> &String { &self.tag }
@@ -164,8 +174,17 @@ pub struct Withdraw {
 }
 
 impl Withdraw {
-    pub fn new(tag: String, uri: uri::Rsync, hash: Bytes) -> Self {
+    pub fn new(tag: Option<String>, uri: uri::Rsync, hash: Bytes) -> Self {
+        let tag = tag.unwrap_or(hex::encode(&hash));
         Withdraw { tag, uri, hash }
+    }
+
+    pub fn from_list_element(el: &responses::ListElement) -> Self {
+        Withdraw {
+            tag: "".to_string(),
+            uri: el.uri().clone(),
+            hash: el.hash().clone()
+        }
     }
 
     pub fn tag(&self) -> &String { &self.tag }

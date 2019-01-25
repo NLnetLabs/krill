@@ -119,9 +119,9 @@ fn client_publish_at_server() {
             .collect::<HashSet<_>>();
 
         let expected_elements = vec![
-            file_a.to_rfc8181_list_element(),
-            file_b.to_rfc8181_list_element(),
-            file_c.to_rfc8181_list_element()
+            file_a.into_list_element(),
+            file_b.into_list_element(),
+            file_c.into_list_element()
         ];
         let expected_set: HashSet<_> = expected_elements.into_iter()
             .collect();

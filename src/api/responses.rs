@@ -150,16 +150,41 @@ impl<'a> PublisherDetails<'a> {
 }
 
 pub enum PublishReply {
-    Success,
+    Success, // See https://tools.ietf.org/html/rfc8181#section-3.4
     List(ListReply)
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+
+//------------ ListReply -----------------------------------------------------
+
+/// This type represents the list reply as described in
+/// https://tools.ietf.org/html/rfc8181#section-2.3
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ListReply {
-    files: Vec<ListElement>
+    elements: Vec<ListElement>
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+impl ListReply {
+    pub fn new(elements: Vec<ListElement>) -> Self {
+        ListReply { elements }
+    }
+
+    pub fn from_files(files: Vec<CurrentFile>) -> Self {
+        let elements = files.into_iter().map(|f| f.into_list_element()).collect();
+        ListReply { elements }
+    }
+
+    pub fn elements(&self) -> &Vec<ListElement> {
+        &self.elements
+    }
+}
+
+
+//------------ ListElement ---------------------------------------------------
+
+/// This type represents a single object that is published at a publication
+/// server.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct ListElement {
     #[serde(
     deserialize_with = "ext_serde::de_rsync_uri",
@@ -186,13 +211,3 @@ impl ListElement {
 }
 
 
-impl ListReply {
-    pub fn new(files: Vec<CurrentFile>) -> Self {
-        let files = files.into_iter().map(|f| f.into_list_element()).collect();
-        ListReply { files }
-    }
-
-    pub fn files(&self) -> &Vec<ListElement> {
-        &self.files
-    }
-}

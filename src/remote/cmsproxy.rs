@@ -68,10 +68,10 @@ impl CmsProxy {
     ) -> Result<Captured, Error> {
         let msg = match reply {
             responses::PublishReply::Success => {
-                rfc8181::SuccessReply::build_message()
+                rfc8181::Message::success_reply()
             },
             responses::PublishReply::List(list) => {
-                rfc8181::ListReply::build(&list)
+                rfc8181::Message::list_reply(list)
             }
         };
 

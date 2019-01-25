@@ -78,7 +78,7 @@ impl Repository {
     ) -> Result<responses::ListReply, Error> {
         debug!("Processing list query");
         let files = self.fs.list(base_uri)?;
-        Ok(responses::ListReply::new(files))
+        Ok(responses::ListReply::from_files(files))
     }
 }
 
@@ -986,7 +986,7 @@ mod tests {
             let file_update = file.clone();
 
             let mut builder = PublishDeltaBuilder::new();
-            builder.add_update(file_update.as_update(file.content()));
+            builder.add_update(file_update.as_update(file.hash()));
             let delta = builder.finish();
 
             repo.publish(&delta, &rsync_for_alice).unwrap();
@@ -1069,7 +1069,7 @@ mod tests {
             );
 
             let mut builder = PublishDeltaBuilder::new();
-            builder.add_update(file_update.as_update(file.content()));
+            builder.add_update(file_update.as_update(file.hash()));
             let delta = builder.finish();
             file_store.publish(&delta, &base_uri).unwrap();
 

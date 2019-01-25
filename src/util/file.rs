@@ -6,7 +6,6 @@ use bytes::Bytes;
 use rpki::uri;
 use crate::api::requests;
 use crate::api::responses;
-use crate::remote::rfc8181;
 use crate::util::ext_serde;
 use crate::util::hash;
 
@@ -242,45 +241,26 @@ impl CurrentFile {
         &self.hash
     }
 
-    pub fn as_rfc8181_publish(&self) -> rfc8181::PublishElement {
-        rfc8181::Publish::publish(&self.content, self.uri.clone())
-    }
-
     pub fn as_publish(&self) -> requests::Publish {
-        let tag = hex::encode(&self.hash);
-        requests::Publish::new(tag, self.uri.clone(), self.content.clone())
+        let tag = Some(hex::encode(&self.hash));
+        let uri = self.uri.clone();
+        let content = self.content.clone();
+        requests::Publish::new(tag, uri, content)
     }
 
-    pub fn as_rf8181_update(
-        &self,
-        old_content: &Bytes
-    ) -> rfc8181::PublishElement {
-        rfc8181::Update::publish(old_content, &self.content, self.uri.clone())
-    }
-
-    pub fn as_update(&self, old_content: &Bytes) -> requests::Update {
-        let tag = hex::encode(&self.hash);
-        let hash = hash(old_content);
-        requests::Update::new(tag, self.uri.clone(), self.content.clone(), hash)
-    }
-
-    /// Makes a withdraw element for a known file
-    ///
-    /// Note this is probably only useful for testing, because real files
-    /// to be withdrawn will not be current. Look at Withdraw::publish
-    /// instead which takes a reference to a ListElement from a ListReply.
-    pub fn as_rfc8181_withdraw(&self) -> rfc8181::PublishElement {
-        rfc8181::Withdraw::for_known_file(&self.content, self.uri.clone())
+    pub fn as_update(&self, old_hash: &Bytes) -> requests::Update {
+        let tag = None;
+        let uri = self.uri.clone();
+        let content = self.content.clone();
+        let hash = old_hash.clone();
+        requests::Update::new(tag, uri, content, hash)
     }
 
     pub fn as_withdraw(&self) -> requests::Withdraw {
-        let tag = hex::encode(&self.hash);
+        let tag = None;
+        let uri = self.uri.clone();
         let hash = hash(&self.content);
-        requests::Withdraw::new(tag, self.uri.clone(), hash)
-    }
-
-    pub fn to_rfc8181_list_element(&self) -> rfc8181::ListElement {
-        rfc8181::ListElement::reply(&self.content, self.uri.clone())
+        requests::Withdraw::new(tag, uri, hash)
     }
 
     pub fn into_list_element(self) -> responses::ListElement {
@@ -292,8 +272,8 @@ impl CurrentFile {
 impl PartialEq for CurrentFile {
     fn eq(&self, other: &CurrentFile) -> bool {
         self.uri == other.uri &&
-            self.hash == other.hash &&
-            self.content == other.content
+        self.hash == other.hash &&
+        self.content == other.content
     }
 }
 
