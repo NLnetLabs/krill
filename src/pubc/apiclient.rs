@@ -3,11 +3,22 @@ use std::path::PathBuf;
 use clap::{App, Arg, SubCommand};
 use rpki::uri;
 use crate::api::responses;
+use crate::pubc;
 use crate::util::httpclient;
 
-//------------ PubClientOptions ----------------------------------------------
 
-pub struct PubClientOptions {
+//------------ Command -------------------------------------------------------
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Command {
+    List,
+    Sync(PathBuf, uri::Rsync)
+}
+
+
+//------------ Connection ---------------------------------------------------
+
+struct Connection {
     // The base URI for the server. Will figure out the path from there.
     server_uri: uri::Http,
 
@@ -16,12 +27,23 @@ pub struct PubClientOptions {
 
     // The token for this particular client handle.
     token: String,
+}
 
-    // The intended action.
+
+//------------ Options ------------------------------------------------------
+
+pub struct Options {
+    connection: Connection,
     cmd: Command
 }
 
-impl PubClientOptions {
+impl Options {
+    fn parts(self) -> (Connection, Command) {
+        (self.connection, self.cmd)
+    }
+}
+
+impl Options {
     pub fn list(
         server_uri: &str,
         handle: &str,
@@ -29,10 +51,12 @@ impl PubClientOptions {
     ) -> Result<Self, Error> {
         let server_uri = uri::Http::from_str(server_uri)?;
 
-        Ok(PubClientOptions {
-            server_uri,
-            handle: handle.to_string(),
-            token: token.to_string(),
+        Ok(Options {
+            connection: Connection {
+                server_uri,
+                handle: handle.to_string(),
+                token: token.to_string()
+            },
             cmd: Command::List
         })
     }
@@ -41,7 +65,8 @@ impl PubClientOptions {
         server_uri: &str,
         handle: &str,
         token: &str,
-        dir: &str
+        dir: &str,
+        rsync_uri: &str
     ) -> Result<Self, Error> {
         let server_uri = uri::Http::from_str(server_uri)?;
 
@@ -50,17 +75,21 @@ impl PubClientOptions {
             return Err(Error::NoDir(dir.to_string_lossy().to_string()))
         }
 
-        Ok(PubClientOptions {
-            server_uri,
-            handle: handle.to_string(),
-            token: token.to_string(),
-            cmd: Command::Sync(dir)
+        let rsync_uri = uri::Rsync::from_str(rsync_uri)?;
+
+        Ok(Options {
+            connection: Connection {
+                server_uri,
+                handle: handle.to_string(),
+                token: token.to_string()
+            },
+            cmd: Command::Sync(dir, rsync_uri)
         })
     }
 }
 
 
-impl PubClientOptions {
+impl Options {
     pub fn create() -> Result<Self, Error> {
         let m = App::new("NLnet Labs RRDP client (API)")
             .version("0.1b")
@@ -94,6 +123,13 @@ impl PubClientOptions {
                     .help("Directory to synchronise.")
                     .required(true)
                 )
+                .arg(Arg::with_name("rsync_base")
+                    .short("r")
+                    .long("rsync_base")
+                    .value_name("uri")
+                    .help("Base rsync URI (name space) for this dir.")
+                    .required(true)
+                )
             )
             .get_matches();
 
@@ -102,10 +138,11 @@ impl PubClientOptions {
         let token      = m.value_of("token").unwrap();
 
         if let Some(_m) = m.subcommand_matches("list") {
-            PubClientOptions::list(server_uri, handle, token)
+            Options::list(server_uri, handle, token)
         } else if let Some(m) = m.subcommand_matches("sync") {
             let dir = m.value_of("dir").unwrap();
-            PubClientOptions::sync(server_uri, handle, token, dir)
+            let rsync_uri = m.value_of("rsync_uri").unwrap();
+            Options::sync(server_uri, handle, token, dir, rsync_uri)
         } else {
             Err(Error::NoCommand)
         }
@@ -113,37 +150,6 @@ impl PubClientOptions {
 }
 
 
-pub fn execute(options: PubClientOptions) -> Result<ApiResponse, Error> {
-    match options.cmd {
-        Command::List => {
-            let uri = format!(
-                "{}publication/{}",
-                &options.server_uri.to_string(),
-                &options.handle
-            );
-
-            match httpclient::get_json::<responses::ListReply>(
-                &uri,
-                Some(&options.token)
-            ) {
-                Err(e) => Err(Error::HttpClientError(e)),
-                Ok(list) => Ok(ApiResponse::List(list))
-            }
-        },
-        Command::Sync(_dir) => {
-            unimplemented!()
-        },
-    }
-}
-
-
-//------------ Command -------------------------------------------------------
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Command {
-    List,
-    Sync(PathBuf)
-}
 
 
 //------------ Output --------------------------------------------------------
@@ -156,11 +162,69 @@ pub enum Output {
 }
 
 
+//------------ ApiResponse ---------------------------------------------------
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ApiResponse {
     Success,
-    List(responses::ListReply)
+    List(responses::ListReply),
 }
 
+
+///--- functions
+
+pub fn execute(options: Options) -> Result<ApiResponse, Error> {
+    let (connection, cmd) = options.parts();
+
+    match cmd {
+        Command::List => {
+            list_query(&connection).map(|l| ApiResponse::List(l))
+        },
+        Command::Sync(dir, rsync_uri) => {
+            sync(&connection, &dir, &rsync_uri)
+        }
+    }
+}
+
+
+fn list_query(connection: &Connection) -> Result<responses::ListReply, Error> {
+    let uri = format!(
+        "{}publication/{}",
+        &connection.server_uri.to_string(),
+        &connection.handle
+    );
+
+    match httpclient::get_json::<responses::ListReply>(
+        &uri,
+        Some(&connection.token)
+    ) {
+        Err(e) => Err(Error::HttpClientError(e)),
+        Ok(list) => Ok(list)
+    }
+}
+
+fn sync(
+    connection: &Connection,
+    dir: &PathBuf,
+    base_rsync: &uri::Rsync
+) -> Result<ApiResponse, Error> {
+    let list_reply = list_query(connection)?;
+    let delta = pubc::create_delta(
+        list_reply,
+        dir,
+        base_rsync
+    )?;
+
+    let uri = format!(
+        "{}publication/{}",
+        &connection.server_uri,
+        &connection.handle
+    );
+
+    httpclient::post_json(&uri, delta, Some(&connection.token))?;
+
+    Ok(ApiResponse::Success)
+}
 
 //------------ Error ---------------------------------------------------------
 
@@ -183,6 +247,9 @@ pub enum Error {
 
     #[display(fmt="Received invalid json response: {}", _0)]
     JsonError(serde_json::Error),
+
+    #[display(fmt="{}", _0)]
+    PubcError(pubc::Error),
 }
 
 impl From<uri::Error> for Error {
@@ -192,3 +259,13 @@ impl From<uri::Error> for Error {
 impl From<serde_json::Error> for Error {
     fn from(e: serde_json::Error) -> Self { Error::JsonError(e) }
 }
+
+impl From<pubc::Error> for Error {
+    fn from(e: pubc::Error) -> Self { Error::PubcError(e) }
+}
+
+impl From<httpclient::Error> for Error {
+    fn from(e: httpclient::Error) -> Self { Error::HttpClientError(e) }
+}
+
+// -- Tested in integration tests.

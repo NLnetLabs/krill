@@ -123,8 +123,7 @@ fn client_publish_at_server() {
             file_b.into_list_element(),
             file_c.into_list_element()
         ];
-        let expected_set: HashSet<_> = expected_elements.into_iter()
-            .collect();
+        let expected_set: HashSet<_> = expected_elements.into_iter().collect();
         assert_eq!(expected_set, returned_set);
 
         // Now we should be able to delete it all again

@@ -191,6 +191,7 @@ fn opt_text_response(mut res: Response) -> Result<Option<String>, Error> {
                 }
             }
         },
+        StatusCode::FORBIDDEN => Err(Error::Forbidden),
         status => {
             match res.text() {
                 Ok(body) => {
@@ -212,6 +213,9 @@ fn opt_text_response(mut res: Response) -> Result<Option<String>, Error> {
 pub enum Error {
     #[display(fmt="Request Error: {}", _0)]
     RequestError(reqwest::Error),
+
+    #[display(fmt="Access Forbidden")]
+    Forbidden,
 
     #[display(fmt="Received bad status: {}", _0)]
     BadStatus(StatusCode),

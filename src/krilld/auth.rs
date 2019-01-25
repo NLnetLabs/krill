@@ -6,6 +6,9 @@ use actix_web::http::HeaderMap;
 use actix_web::middleware::{Middleware, Started};
 use crate::krilld::krillserver::KrillServer;
 
+const ADMIN_API_PATH: &'static str = "/api/";
+const PUBLICATION_API_PATH: &'static str = "/publication/";
+
 pub struct CheckAuthorisation;
 
 impl Middleware<Arc<RwLock<KrillServer>>> for CheckAuthorisation {
@@ -15,14 +18,50 @@ impl Middleware<Arc<RwLock<KrillServer>>> for CheckAuthorisation {
     ) -> Result<Started> {
         let server: RwLockReadGuard<KrillServer> = req.state().read().unwrap();
 
-        if server.authorizer().allowed(req.path(), req.headers()) {
+        let mut allowed = true;
+
+        let token_opt = Self::extract_token(req.headers());
+
+        if req.path().starts_with(ADMIN_API_PATH) {
+            allowed = server.allow_api(token_opt)
+        } else if req.path().starts_with(PUBLICATION_API_PATH) {
+            let handle_opt = Self::extract_publication_handle(req.path());
+            allowed = server.allow_publication_api(handle_opt, token_opt);
+        }
+
+        if allowed {
             Ok(Started::Done)
         } else {
-            Ok(
-                Started::Response(
-                    HttpResponse::Forbidden().finish()
-                )
-            )
+            Ok(Started::Response(HttpResponse::Forbidden().finish()))
+        }
+    }
+}
+
+impl CheckAuthorisation {
+    fn extract_token(headers: &HeaderMap) -> Option<String> {
+        if let Some(header) = headers.get("Authorization") {
+            if let Ok(str_header) = header.to_str() {
+                let str_header = str_header.to_lowercase();
+                if str_header.len() > 6 {
+                    let (bearer, token) = str_header.split_at(6);
+                    let bearer = bearer.trim();
+                    let token = token.trim();
+
+                    if "bearer" == bearer {
+                        return Some(token.to_string())
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn extract_publication_handle(path: &str) -> Option<String> {
+        if path.starts_with(PUBLICATION_API_PATH) {
+            let (_, handle) = path.split_at(PUBLICATION_API_PATH.len());
+            Some(handle.to_string())
+        } else {
+            None
         }
     }
 }
@@ -44,24 +83,10 @@ impl Authorizer {
         }
     }
 
-    pub fn allowed(&self, path: &str, headers: &HeaderMap) -> bool {
-        if path.starts_with("/api/v1") {
-            if let Some(header) = headers.get("Authorization") {
-                if let Ok(str_header) = header.to_str() {
-                    let str_header = str_header.to_lowercase();
-                    if str_header.len() > 6 {
-                        let (bearer, token) = str_header.split_at(6);
-                        let bearer = bearer.trim();
-                        let token = token.trim();
-
-                        return "bearer" == bearer &&
-                        self.krill_auth_token.as_str().to_lowercase() == token
-                    }
-                }
-            }
-            return false
-        } else {
-            true
+    pub fn api_allowed(&self, token_opt: Option<String>) -> bool {
+        match token_opt {
+            None => false,
+            Some(secret) => self.krill_auth_token == secret
         }
     }
 }

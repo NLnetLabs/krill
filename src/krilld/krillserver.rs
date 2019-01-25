@@ -85,9 +85,32 @@ impl KrillServer {
 }
 
 impl KrillServer {
-    pub fn authorizer(&self) -> &Authorizer {
-        &self.authorizer
+    pub fn allow_api(&self, token_opt: Option<String>) -> bool {
+        self.authorizer.api_allowed(token_opt)
     }
+
+    pub fn allow_publication_api(
+        &self,
+        handle_opt: Option<String>,
+        token_opt: Option<String>
+    ) -> bool {
+        match handle_opt {
+            None => false,
+            Some(handle) => {
+                match token_opt {
+                    None => false,
+                    Some(token) => {
+                        if let Ok(Some(pbl)) = self.publisher(&handle) {
+                            pbl.token() == &token
+                        } else {
+                            false
+                        }
+                    }
+                }
+            }
+        }
+    }
+
 }
 
 /// # Configure publishers
