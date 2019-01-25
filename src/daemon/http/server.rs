@@ -2,7 +2,7 @@
 use std::error;
 use std::fs::File;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
-use actix_web::{pred, fs, server};
+use actix_web::{pred, server};
 use actix_web::{App, FromRequest, HttpResponse, ResponseError};
 use actix_web::dev::MessageBody;
 use actix_web::middleware;
@@ -19,7 +19,7 @@ use crate::daemon::krillserver::KrillServer;
 use crate::remote::rfc8183::{PublisherRequest, PublisherRequestError};
 use crate::remote::sigmsg::SignedMessage;
 
-const NOT_FOUND: &'static [u8] = include_bytes!("../../../ui/dev/html/404.html");
+const NOT_FOUND: &'static [u8] = include_bytes!("../../../ui/public/404.html");
 
 //------------ PubServerApp --------------------------------------------------
 
@@ -29,7 +29,7 @@ pub struct PubServerApp(App<Arc<RwLock<KrillServer>>>);
 ///
 impl PubServerApp {
     pub fn new(server: Arc<RwLock<KrillServer>>) -> Self {
-        let mut app = App::with_state(server)
+        let app = App::with_state(server)
             .middleware(middleware::Logger::default())
             .middleware(CheckAuthorisation)
             .resource("/api/v1/publishers", |r| {
@@ -69,20 +69,7 @@ impl PubServerApp {
                     |_req| HttpResponse::MethodNotAllowed());
             });
 
-        use std::env;
-        match env::var("KRILL_DEV_MODE") {
-            Ok(_) => {
-                app = app.handler(
-                    "/ui/dev",
-                    fs::StaticFiles::new("./ui/dev")
-                        .unwrap()
-                        .show_files_listing()
-                );
-            },
-            _ => {}
-        }
-
-        PubServerApp(with_statics(app))
+        PubServerApp(app)
     }
 
     pub fn create_server(config: &Config) -> Arc<RwLock<KrillServer>> {
@@ -378,17 +365,6 @@ impl server::IntoHttpHandler for PubServerApp {
     }
 }
 
-//------------ Definition of Statics -----------------------------------------
-
-static CSS: &[u8] = b"text/css";
-static PNG: &[u8] = b"image/png";
-
-fn with_statics<S: 'static>(app: App<S>) -> App<S> {
-    statics!(app,
-        "css/custom.css" => CSS => "39e0abcc41c3653600f6d8eadb57b17246f1aca7",
-        "images/404.png" => PNG => "d48f938ae7a05a033d38f55cfa12a08fb3f3f8db",
-    )
-}
 
 //------------ HttpRequest ---------------------------------------------------
 
