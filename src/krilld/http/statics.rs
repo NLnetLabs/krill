@@ -13,6 +13,7 @@ use actix_web::http::StatusCode;
 /// 'const fn' are stable. So, be sure to use a value here that is unique
 /// to this resource, and this version of this resource. E.g. calculate its
 /// hash on the command line and use that in a &str.
+#[allow(unused_macros)]
 macro_rules! statics {
     ( $app:expr, $( $path:expr => $mime:expr => $etag:expr, )* ) => {{
         $app
