@@ -237,14 +237,14 @@ impl PubServerApp {
 /// struct PublishRequest {
 impl<S: 'static> FromRequest<S> for SignedMessage {
 
-    type Config = SignedMessageConvertConfig;
+    type Config = ();
     type Result = Box<Future<Item=Self, Error=actix_web::Error>>;
 
     fn from_request(
         req: &actix_web::HttpRequest<S>,
-        cfg: &Self::Config
+        _cfg: &Self::Config
     ) -> Self::Result {
-        Box::new(MessageBody::new(req).limit(cfg.limit())
+        Box::new(MessageBody::new(req).limit(255 * 1024 * 1024) // 256 MB
             .from_err()
             .and_then(|bytes| {
                 match SignedMessage::decode(bytes, true) {
@@ -252,19 +252,6 @@ impl<S: 'static> FromRequest<S> for SignedMessage {
                     Err(e) => Err(Error::DecodeError(e).into())
                 }
             }))
-    }
-}
-
-pub struct SignedMessageConvertConfig;
-impl SignedMessageConvertConfig {
-    fn limit(&self) -> usize {
-        255 * 1024 * 1024 // 256 MB
-    }
-}
-
-impl Default for SignedMessageConvertConfig {
-    fn default() -> Self {
-        SignedMessageConvertConfig
     }
 }
 
@@ -336,7 +323,7 @@ impl<S: 'static> FromRequest<S> for requests::PublishDelta {
         req: &actix_web::HttpRequest<S>,
         _cfg: &Self::Config
     ) -> Self::Result {
-        Box::new(MessageBody::new(req)
+        Box::new(MessageBody::new(req).limit(255 * 1024 * 1024) // up to 256MB
             .from_err()
             .and_then(|bytes| {
                 let delta: requests::PublishDelta =

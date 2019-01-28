@@ -56,9 +56,10 @@ impl PublisherStore {
     }
 
     fn verify_base_uri(&self, base_uri: &uri::Rsync) -> Result<(), Error> {
-        if base_uri.to_string().as_str().starts_with(
-            self.base_uri.to_string().as_str()) {
-           Ok(())
+        let base_uri = base_uri.to_string();
+        if base_uri.starts_with(self.base_uri.to_string().as_str()) &&
+           base_uri.ends_with("/") {
+            Ok(())
         } else {
             Err(Error::InvalidBaseUri)
         }
@@ -200,7 +201,8 @@ pub enum Error {
     #[display(fmt = "Cannot override handle using path parameter for json api")]
     HandleOverrideNotAllowed,
 
-    #[display(fmt = "Base uri for publisher needs to be folder under base uri for server.")]
+    #[display(fmt = "Base uri for publisher needs to be folder under base uri\
+     for server, and must end with a '/'.")]
     InvalidBaseUri
 }
 
@@ -257,6 +259,46 @@ mod tests {
 
             match ps.add_publisher(pbl, "test") {
                 Err(Error::ForwardSlashInHandle(_)) => { }, // Ok
+                _ => panic!("Should have seen error.")
+            }
+        })
+    }
+
+    #[test]
+    fn should_refuse_base_uri_not_ending_with_slash() {
+        test::test_with_tmp_dir(|d| {
+            let mut ps = test_publisher_store(&d);
+
+            let name = "alice";
+            let base_uri = test::rsync_uri("rsync://host/module/alice");
+            let token = "secret";
+
+            let pr = test::new_publisher_request(name, &d);
+
+            let pbl = pr.into_publisher(token.to_string(), base_uri.clone());
+
+            match ps.add_publisher(pbl, "test") {
+                Err(Error::InvalidBaseUri) => { }, // Ok
+                _ => panic!("Should have seen error.")
+            }
+        })
+    }
+
+    #[test]
+    fn should_refuse_base_uri_outside_of_server_base() {
+        test::test_with_tmp_dir(|d| {
+            let mut ps = test_publisher_store(&d);
+
+            let name = "alice";
+            let base_uri = test::rsync_uri("rsync://host/modu/alice/");
+            let token = "secret";
+
+            let pr = test::new_publisher_request(name, &d);
+
+            let pbl = pr.into_publisher(token.to_string(), base_uri.clone());
+
+            match ps.add_publisher(pbl, "test") {
+                Err(Error::InvalidBaseUri) => { }, // Ok
                 _ => panic!("Should have seen error.")
             }
         })

@@ -8,6 +8,7 @@ extern crate tokio;
 extern crate bytes;
 
 use std::{thread, time};
+use std::path::PathBuf;
 use actix::System;
 use krill::krillc::data::ReportFormat;
 use krill::krillc::options::{
@@ -27,6 +28,62 @@ use krill::util::file;
 use std::collections::HashSet;
 use krill::util::httpclient;
 
+fn list(server_uri: &str, handle: &str, token: &str) -> apiclient::Options {
+    let conn = apiclient::Connection::new(server_uri, handle, token).unwrap();
+    let cmd = apiclient::Command::List;
+    let fmt = apiclient::Format::Json;
+
+    apiclient::Options::new(conn, cmd, fmt)
+}
+
+fn sync(
+    server_uri: &str,
+    handle: &str,
+    token: &str,
+    syncdir: &PathBuf,
+    base_uri: &str
+) -> apiclient::Options {
+    let conn = apiclient::Connection::new(server_uri, handle, token).unwrap();
+    let cmd = apiclient::Command::sync(syncdir.to_str().unwrap(), base_uri).unwrap();
+    let fmt = apiclient::Format::Json;
+
+    apiclient::Options::new(conn, cmd, fmt)
+}
+
+fn execute_krillc_command(command: Command) {
+    let krillc_opts = Options::new(
+        test::http_uri("http://localhost:3000/"),
+        "secret",
+        ReportFormat::Default,
+        command
+    );
+    match KrillClient::process(krillc_opts) {
+        Ok(_res) => {}, // ok
+        Err(e) => {
+            panic!("{}", e)
+        }
+    }
+}
+
+fn add_publisher(handle: &str, base_uri: &str, token: &str) {
+    let command = Command::Publishers(PublishersCommand::Add(
+        AddPublisher {
+            handle: handle.to_string(),
+            base_uri: test::rsync_uri(base_uri),
+            token: token.to_string()
+        }
+    ));
+    execute_krillc_command(command);
+}
+
+fn remove_publisher(handle: &str) {
+    let command = Command::Publishers(
+        PublishersCommand::Remove(handle.to_string())
+    );
+
+    execute_krillc_command(command);
+}
+
 #[test]
 fn client_publish_at_server() {
     test::test_with_tmp_dir(|d| {
@@ -35,7 +92,8 @@ fn client_publish_at_server() {
         let server_uri = "http://localhost:3000/";
         let handle = "alice";
         let token = "secret";
-        let base_rsync_uri = "rsync://127.0.0.1/repo/alice/";
+        let base_rsync_uri_alice = "rsync://127.0.0.1/repo/alice/";
+        let base_rsync_uri_bob = "rsync://127.0.0.1/repo/bob/";
 
         // Set up a test PubServer Config
         let server_conf = {
@@ -55,30 +113,15 @@ fn client_publish_at_server() {
         thread::sleep(time::Duration::from_millis(500));
 
         // Add client "alice"
-        {
-            let krillc_opts = Options::new(
-                test::http_uri("http://localhost:3000/"),
-                "secret",
-                ReportFormat::Default,
-                Command::Publishers(PublishersCommand::Add(
-                    AddPublisher {
-                        handle: handle.to_string(),
-                        base_uri: test::rsync_uri(base_rsync_uri),
-                        token: token.to_string()
-                    }
-                ))
-            );
-            let res = KrillClient::process(krillc_opts);
-            assert!(res.is_ok())
-        }
+        add_publisher(handle, base_rsync_uri_alice, token);
 
         // Calls to api should require the correct token
         {
-            let res = apiclient::execute(apiclient::Options::list(
+            let res = apiclient::execute(list(
                 server_uri,
                 handle,
                 "wrong token"
-            ).unwrap());
+            ));
 
             match res {
                 Err(apiclient::Error::HttpClientError
@@ -89,11 +132,11 @@ fn client_publish_at_server() {
 
         // List files at server, expect no files
         {
-            let list = apiclient::execute(apiclient::Options::list(
+            let list = apiclient::execute(list(
                 server_uri,
                 handle,
                 token
-            ).unwrap()).unwrap();
+            )).unwrap();
 
             match list {
                 ApiResponse::List(list) => {
@@ -122,26 +165,41 @@ fn client_publish_at_server() {
         file::save_in_dir(file_b.content(), &sync_dir, "b.txt").unwrap();
         file::save_in_dir(file_c.content(), &sync_dir, "c.txt").unwrap();
 
-        // Sync files
+
+        // Must refuse syncing files outside of publisher base dir
         {
-            let api_res = apiclient::execute(apiclient::Options::sync(
+            let api_res = apiclient::execute(sync(
                 server_uri,
                 handle,
                 token,
-                &sync_dir.to_string_lossy(),
-                base_rsync_uri
-            ).unwrap()).unwrap();
+                &sync_dir,
+                base_rsync_uri_bob
+            ));
+
+            assert!(api_res.is_err())
+        }
+
+
+        // Sync files
+        {
+            let api_res = apiclient::execute(sync(
+                server_uri,
+                handle,
+                token,
+                &sync_dir,
+                base_rsync_uri_alice
+            )).unwrap();
 
             assert_eq!(ApiResponse::Success, api_res);
         }
 
         // We should now see these files when we list
         {
-            let list = apiclient::execute(apiclient::Options::list(
+            let list = apiclient::execute(list(
                 server_uri,
                 handle,
                 token
-            ).unwrap()).unwrap();
+            )).unwrap();
 
             match list {
                 ApiResponse::List(list) => {
@@ -165,6 +223,10 @@ fn client_publish_at_server() {
             }
         }
 
+        // XXX TODO We should also see these files in RRDP
+
+        // XXX TODO Must remove files when removing publisher
+
         // Now we should be able to delete it all again
         file::delete_in_dir(&sync_dir, "a.txt").unwrap();
         file::delete_in_dir(&sync_dir, "b.txt").unwrap();
@@ -172,24 +234,24 @@ fn client_publish_at_server() {
 
         // Sync files
         {
-            let api_res = apiclient::execute(apiclient::Options::sync(
+            let api_res = apiclient::execute(sync(
                 server_uri,
                 handle,
                 token,
-                &sync_dir.to_string_lossy(),
-                base_rsync_uri
-            ).unwrap()).unwrap();
+                &sync_dir,
+                base_rsync_uri_alice
+            )).unwrap();
 
             assert_eq!(ApiResponse::Success, api_res);
         }
 
         // List files at server, expect no files
         {
-            let list = apiclient::execute(apiclient::Options::list(
+            let list = apiclient::execute(list(
                 server_uri,
                 handle,
                 token
-            ).unwrap()).unwrap();
+            )).unwrap();
 
             match list {
                 ApiResponse::List(list) => {
@@ -199,7 +261,11 @@ fn client_publish_at_server() {
             }
         }
 
+        // Remove alice
+        remove_publisher(handle);
 
+        // Re-add publisher
+        add_publisher(handle, base_rsync_uri_alice, token);
     });
 }
 

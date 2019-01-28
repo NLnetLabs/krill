@@ -15,10 +15,26 @@ pub enum Command {
     Sync(PathBuf, uri::Rsync)
 }
 
+impl Command {
+    pub fn list() -> Self {
+        Command::List
+    }
+    pub fn sync(dir: &str, base_uri: &str) -> Result<Self, Error> {
+        let dir = PathBuf::from(dir);
+        if ! base_uri.ends_with("/") {
+            Err(Error::InvalidBaseUri)
+        } else {
+            let uri = uri::Rsync::from_str(base_uri)?;
+            Ok(Command::Sync(dir, uri))
+        }
+    }
+}
+
+
 
 //------------ Connection ---------------------------------------------------
 
-struct Connection {
+pub struct Connection {
     // The base URI for the server. Will figure out the path from there.
     server_uri: uri::Http,
 
@@ -29,13 +45,28 @@ struct Connection {
     token: String,
 }
 
+impl Connection {
+    pub fn new(
+        server_uri: &str,
+        handle: &str,
+        token: &str
+    ) -> Result<Self, Error> {
+        let server_uri = uri::Http::from_str(server_uri)?;
+        let handle     = handle.to_string();
+        let token      = token.to_string();
+        Ok(Connection {server_uri, handle, token })
+    }
+}
+
 
 //------------ Options ------------------------------------------------------
 
 pub struct Options {
     connection: Connection,
-    cmd: Command
+    cmd: Command,
+    format: Format
 }
+
 
 impl Options {
     fn parts(self) -> (Connection, Command) {
@@ -44,48 +75,15 @@ impl Options {
 }
 
 impl Options {
-    pub fn list(
-        server_uri: &str,
-        handle: &str,
-        token: &str
-    ) -> Result<Self, Error> {
-        let server_uri = uri::Http::from_str(server_uri)?;
-
-        Ok(Options {
-            connection: Connection {
-                server_uri,
-                handle: handle.to_string(),
-                token: token.to_string()
-            },
-            cmd: Command::List
-        })
+    pub fn new(
+        connection: Connection,
+        cmd: Command,
+        format: Format
+    ) -> Self {
+        Options { connection, cmd, format }
     }
 
-    pub fn sync(
-        server_uri: &str,
-        handle: &str,
-        token: &str,
-        dir: &str,
-        rsync_uri: &str
-    ) -> Result<Self, Error> {
-        let server_uri = uri::Http::from_str(server_uri)?;
-
-        let dir = PathBuf::from(dir);
-        if ! dir.is_dir() {
-            return Err(Error::NoDir(dir.to_string_lossy().to_string()))
-        }
-
-        let rsync_uri = uri::Rsync::from_str(rsync_uri)?;
-
-        Ok(Options {
-            connection: Connection {
-                server_uri,
-                handle: handle.to_string(),
-                token: token.to_string()
-            },
-            cmd: Command::Sync(dir, rsync_uri)
-        })
-    }
+    pub fn format(&self) -> &Format { &self.format }
 }
 
 
@@ -114,6 +112,13 @@ impl Options {
                 .help("Token for this particular client handle at the server")
                 .required(true)
             )
+            .arg(Arg::with_name("format")
+                .short("f")
+                .long("format")
+                .value_name("text|json|none")
+                .help("Specify the output format. Defaults to 'text'.")
+                .required(false)
+            )
             .subcommand(SubCommand::with_name("list"))
             .subcommand(SubCommand::with_name("sync")
                 .arg(Arg::with_name("dir")
@@ -133,32 +138,50 @@ impl Options {
             )
             .get_matches();
 
-        let server_uri = m.value_of("server").unwrap();
-        let handle     = m.value_of("handle").unwrap();
-        let token      = m.value_of("token").unwrap();
+        let connection = {
+            let server_uri = m.value_of("server").unwrap();
+            let handle     = m.value_of("handle").unwrap();
+            let token      = m.value_of("token").unwrap();
+            Connection::new(server_uri, handle, token)?
+        };
 
-        if let Some(_m) = m.subcommand_matches("list") {
-            Options::list(server_uri, handle, token)
-        } else if let Some(m) = m.subcommand_matches("sync") {
-            let dir = m.value_of("dir").unwrap();
-            let rsync_uri = m.value_of("rsync_uri").unwrap();
-            Options::sync(server_uri, handle, token, dir, rsync_uri)
-        } else {
-            Err(Error::NoCommand)
-        }
+        let command = {
+            if let Some(_m) = m.subcommand_matches("list") {
+                Command::list()
+            } else if let Some(m) = m.subcommand_matches("sync") {
+                let dir = m.value_of("dir").unwrap();
+                let rsync_uri = m.value_of("rsync_base").unwrap();
+                Command::sync(dir, rsync_uri)?
+            } else {
+                return Err(Error::NoCommand)
+            }
+        };
+
+        let format = Format::from(m.value_of("format").unwrap_or("text"))?;
+
+        Ok(Options::new(connection, command, format))
     }
 }
 
 
-
-
-//------------ Output --------------------------------------------------------
+//------------ Format --------------------------------------------------------
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Output {
+pub enum Format {
     Json,
     Text,
     None
+}
+
+impl Format {
+    fn from(s: &str) -> Result<Self, Error> {
+        match s {
+            "text" => Ok(Format::Text),
+            "none" => Ok(Format::None),
+            "json" => Ok(Format::Json),
+            _ => Err(Error::UnsupportedOutputFormat)
+        }
+    }
 }
 
 
@@ -170,6 +193,34 @@ pub enum ApiResponse {
     List(responses::ListReply),
 }
 
+impl ApiResponse {
+    pub fn report(&self, format: Format) {
+        match format {
+            Format::None => {}, // done,
+            Format::Json => {
+                match self {
+                    ApiResponse::Success => {}, // nothing to report
+                    ApiResponse::List(reply) => {
+                        println!("{}", serde_json::to_string(reply).unwrap());
+                    }
+                }
+            },
+            Format::Text => {
+                match self {
+                    ApiResponse::Success => println!("success"),
+                    ApiResponse::List(list) => {
+                        for el in list.elements() {
+                            println!("{} {}",
+                                     hex::encode(el.hash()),
+                                     el.uri().to_string()
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 ///--- functions
 
@@ -250,6 +301,12 @@ pub enum Error {
 
     #[display(fmt="{}", _0)]
     PubcError(pubc::Error),
+
+    #[display(fmt="Unsupported output format. Use text, json or none.")]
+    UnsupportedOutputFormat,
+
+    #[display(fmt="Base URI must end with '/'.")]
+    InvalidBaseUri,
 }
 
 impl From<uri::Error> for Error {
