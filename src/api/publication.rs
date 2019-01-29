@@ -1,9 +1,12 @@
 //! Support for requests sent to the Json API
 use bytes::Bytes;
 use rpki::uri;
-use crate::api::responses;
 use crate::util::ext_serde;
+use crate::util::file::CurrentFile;
 use crate::util::hash;
+
+
+//------------ PublishRequest ------------------------------------------------
 
 /// This type provides a convenience wrapper to contain the request found
 /// inside of a validated RFC8181 request.
@@ -11,6 +14,9 @@ pub enum PublishRequest {
     List, // See https://tools.ietf.org/html/rfc8181#section-2.3
     Delta(PublishDelta)
 }
+
+
+//------------ PublishDelta ------------------------------------------------
 
 /// This type represents a multi element query as described in
 /// https://tools.ietf.org/html/rfc8181#section-3.7
@@ -46,6 +52,9 @@ impl PublishDelta {
 
     pub fn is_empty(&self) -> bool { self.len() == 0 }
 }
+
+
+//------------ PublishDeltaBuilder -------------------------------------------
 
 pub struct PublishDeltaBuilder {
     publishes: Vec<Publish>,
@@ -84,13 +93,14 @@ impl PublishDeltaBuilder {
 }
 
 
+//------------ Publish ------------------------------------------------------
 
 /// Type representing a json equivalent to the publish element, that does not
 /// update any existing object, defined in:
 /// https://tools.ietf.org/html/rfc8181#section-3.1
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Publish {
-    tag: String,
+    tag: Option<String>,
 
     #[serde(
         deserialize_with = "ext_serde::de_rsync_uri",
@@ -105,22 +115,33 @@ pub struct Publish {
 
 impl Publish {
     pub fn new(tag: Option<String>, uri: uri::Rsync, content: Bytes) -> Self {
-        let tag = tag.unwrap_or(hex::encode(hash(&content)));
+        Publish { tag, uri, content }
+    }
+    pub fn with_hash_tag(uri: uri::Rsync, content: Bytes) -> Self {
+        let tag = Some(hex::encode(hash(&content)));
         Publish { tag, uri, content }
     }
 
-    pub fn tag(&self) -> &String { &self.tag }
+    pub fn tag(&self) -> &Option<String> { &self.tag }
+    pub fn tag_for_xml(&self) -> String {
+        match &self.tag {
+            None => "".to_string(),
+            Some(t) => t.clone()
+        }
+    }
     pub fn uri(&self) -> &uri::Rsync{ &self.uri}
     pub fn content(&self) -> &Bytes{ &self.content }
 }
 
+
+//------------ Update --------------------------------------------------------
 
 /// Type representing a json equivalent to the publish element, that updates
 /// an existing object:
 /// https://tools.ietf.org/html/rfc8181#section-3.2
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Update {
-    tag: String,
+    tag: Option<String>,
 
     #[serde(
         deserialize_with = "ext_serde::de_rsync_uri",
@@ -145,22 +166,38 @@ impl Update {
         content: Bytes,
         old_hash: Bytes
     ) -> Self {
-        let tag = tag.unwrap_or(hex::encode(hash(&content)));
+        Update { tag, uri, content, hash: old_hash }
+    }
+    pub fn with_hash_tag(
+        uri: uri::Rsync,
+        content: Bytes,
+        old_hash: Bytes
+    ) -> Self {
+        let tag = Some(hex::encode(hash(&content)));
         Update { tag, uri, content, hash: old_hash }
     }
 
-    pub fn tag(&self) -> &String { &self.tag }
+    pub fn tag(&self) -> &Option<String> { &self.tag }
+    pub fn tag_for_xml(&self) -> String {
+        match &self.tag {
+            Some(t) => t.clone(),
+            None => "".to_string()
+        }
+    }
     pub fn uri(&self) -> &uri::Rsync { &self.uri}
     pub fn content(&self) -> &Bytes { &self.content }
     pub fn hash(&self) -> &Bytes { &self.hash }
 }
+
+
+//------------ Withdraw ------------------------------------------------------
 
 /// Type representing a json equivalent to a withdraw element that removes an
 /// object from the repository:
 /// https://tools.ietf.org/html/rfc8181#section-3.3
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Withdraw {
-    tag: String,
+    tag: Option<String>,
 
     #[serde(
         deserialize_with = "ext_serde::de_rsync_uri",
@@ -175,19 +212,93 @@ pub struct Withdraw {
 
 impl Withdraw {
     pub fn new(tag: Option<String>, uri: uri::Rsync, hash: Bytes) -> Self {
-        let tag = tag.unwrap_or(hex::encode(&hash));
         Withdraw { tag, uri, hash }
     }
 
-    pub fn from_list_element(el: &responses::ListElement) -> Self {
+    pub fn with_hash_tag(uri: uri::Rsync, hash: Bytes) -> Self {
+        let tag = Some(hex::encode(&hash));
+        Withdraw { tag, uri, hash }
+    }
+
+    pub fn from_list_element(el: &ListElement) -> Self {
         Withdraw {
-            tag: "".to_string(),
+            tag: None,
             uri: el.uri().clone(),
             hash: el.hash().clone()
         }
     }
 
-    pub fn tag(&self) -> &String { &self.tag }
+    pub fn tag(&self) -> &Option<String> { &self.tag }
+    pub fn tag_for_xml(&self) -> String {
+        match &self.tag {
+            Some(t) => t.clone(),
+            None => "".to_string()
+        }
+    }
     pub fn uri(&self) -> &uri::Rsync { &self.uri}
     pub fn hash(&self) -> &Bytes { &self.hash }
+}
+
+//------------ PublishReply --------------------------------------------------
+
+/// This type is used to wrap API responses for publication requests.
+pub enum PublishReply {
+    Success, // See https://tools.ietf.org/html/rfc8181#section-3.4
+    List(ListReply)
+}
+
+
+//------------ ListReply -----------------------------------------------------
+
+/// This type represents the list reply as described in
+/// https://tools.ietf.org/html/rfc8181#section-2.3
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ListReply {
+    elements: Vec<ListElement>
+}
+
+impl ListReply {
+    pub fn new(elements: Vec<ListElement>) -> Self {
+        ListReply { elements }
+    }
+
+    pub fn from_files(files: Vec<CurrentFile>) -> Self {
+        let elements = files.into_iter().map(|f| f.into_list_element()).collect();
+        ListReply { elements }
+    }
+
+    pub fn elements(&self) -> &Vec<ListElement> {
+        &self.elements
+    }
+}
+
+
+//------------ ListElement ---------------------------------------------------
+
+/// This type represents a single object that is published at a publication
+/// server.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct ListElement {
+    #[serde(
+    deserialize_with = "ext_serde::de_rsync_uri",
+    serialize_with = "ext_serde::ser_rsync_uri")]
+    uri:     uri::Rsync,
+
+    #[serde(
+    deserialize_with = "ext_serde::de_bytes",
+    serialize_with = "ext_serde::ser_bytes")]
+    /// The sha-256 hash of the file (as is used on the RPKI manifests and
+    /// in the publication protocol for list, update and withdraw). Saving
+    /// this rather than calculating on demand seems a small price for some
+    /// performance gain.
+    hash:    Bytes
+}
+
+impl ListElement {
+    pub fn new(uri: uri::Rsync, hash: Bytes) -> Self {
+        ListElement { uri, hash }
+    }
+
+    pub fn uri(&self) -> &uri::Rsync { &self.uri }
+    pub fn hash(&self) -> &Bytes { &self.hash}
 }

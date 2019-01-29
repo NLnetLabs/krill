@@ -3,12 +3,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use bcder::Captured;
 use rpki::uri;
-use crate::api::data;
-use crate::api::requests;
-use crate::api::responses;
+use crate::api::publication;
+use crate::api::publishers;
 use crate::krilld::auth::Authorizer;
-use crate::krilld::publishers::{self, PublisherStore};
-use crate::krilld::repo::{self, Repository, RRDP_FOLDER};
+use crate::krilld::publisher_store::{self, PublisherStore};
+use crate::krilld::publication::repo::{self, Repository, RRDP_FOLDER};
 use crate::remote::cmsproxy::{self, CmsProxy};
 use crate::remote::rfc8183;
 use crate::remote::sigmsg::SignedMessage;
@@ -116,7 +115,7 @@ impl KrillServer {
 /// # Configure publishers
 impl KrillServer {
     /// Returns all currently configured publishers.
-    pub fn publishers(&self) -> Result<Vec<Arc<data::Publisher>>, Error> {
+    pub fn publishers(&self) -> Result<Vec<Arc<publishers::Publisher>>, Error> {
         self.publisher_store
             .publishers()
             .map_err(|e| { Error::PublisherStore(e) })
@@ -125,7 +124,7 @@ impl KrillServer {
     /// Adds the publishers, blows up if it already existed.
     pub fn add_publisher(
         &mut self,
-        pbl: data::Publisher
+        pbl: publishers::Publisher
     ) -> Result<(), Error> {
 
         self.publisher_store.add_publisher(
@@ -151,7 +150,7 @@ impl KrillServer {
     pub fn publisher(
         &self,
         name: impl AsRef<str>
-    ) -> Result<Option<Arc<data::Publisher>>, Error> {
+    ) -> Result<Option<Arc<publishers::Publisher>>, Error> {
         self.publisher_store.publisher(name)
             .map_err(|e| Error::PublisherStore(e))
     }
@@ -180,7 +179,7 @@ impl KrillServer {
     }
 }
 
-/// # Handle publisher requests
+/// # Handle publication requests
 ///
 impl KrillServer {
 
@@ -213,14 +212,14 @@ impl KrillServer {
             Err(e)  => self.cms_proxy.wrap_error(e).map_err(|e| Error::CmsProxy(e)),
             Ok(req) => {
                 let reply = match req {
-                    requests::PublishRequest::List => {
+                    publication::PublishRequest::List => {
                         self.handle_list(handle).map(|list|
-                            responses::PublishReply::List(list))
+                            publication::PublishReply::List(list))
 
                     },
-                    requests::PublishRequest::Delta(delta) => {
+                    publication::PublishRequest::Delta(delta) => {
                         self.handle_delta(delta, handle).map(|_|
-                            responses::PublishReply::Success)
+                            publication::PublishReply::Success)
                     }
                 };
 
@@ -237,7 +236,7 @@ impl KrillServer {
     /// the CmsProxy.
     pub fn handle_delta(
         &mut self,
-        delta: requests::PublishDelta,
+        delta: publication::PublishDelta,
         handle: &str
     ) -> Result<(), Error> {
         let publisher = self.publisher_store.get_publisher(handle)?;
@@ -250,13 +249,27 @@ impl KrillServer {
     pub fn handle_list(
         &self,
         handle: &str
-    ) -> Result<responses::ListReply, Error> {
+    ) -> Result<publication::ListReply, Error> {
         let publisher = self.publisher_store.get_publisher(handle)?;
         let base_uri = publisher.base_uri();
         self.repository.list(base_uri).map_err(|e| Error::Repository(e))
     }
-
 }
+
+// /// # Serve RRDP files
+// ///
+//impl KrillServer {
+//    /// Gets the current notification
+//    pub fn current_notification(&self) -> Result<repo::Notification, Error> {
+//        unimplemented!()
+//    }
+//
+//    /// Gets the current snapshot
+//    pub fn current_snapshot(&self) -> Result<data::Snapshot, Error> {
+//        unimplemented!()
+//    }
+//
+//}
 
 
 //------------ Error ---------------------------------------------------------
@@ -267,7 +280,7 @@ pub enum Error {
     CmsProxy(cmsproxy::Error),
 
     #[display(fmt="{}", _0)]
-    PublisherStore(publishers::Error),
+    PublisherStore(publisher_store::Error),
 
     #[display(fmt="{}", _0)]
     Repository(repo::Error),
@@ -282,8 +295,8 @@ impl From<cmsproxy::Error> for Error {
     }
 }
 
-impl From<publishers::Error> for Error {
-    fn from(e: publishers::Error) -> Self {
+impl From<publisher_store::Error> for Error {
+    fn from(e: publisher_store::Error) -> Self {
         Error::PublisherStore(e)
     }
 }

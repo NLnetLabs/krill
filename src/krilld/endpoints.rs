@@ -4,11 +4,10 @@ use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 use actix_web::{HttpResponse, ResponseError};
 use actix_web::http::StatusCode;
 use serde::Serialize;
-use crate::api::data;
-use crate::api::responses;
-use crate::api::requests;
+use crate::api::publishers;
+use crate::api::publication;
 use crate::krilld::http::server::{HttpRequest, PublisherHandle};
-use crate::krilld::publishers;
+use crate::krilld::publisher_store;
 use crate::krilld::krillserver::{self, KrillServer};
 use crate::remote::sigmsg::SignedMessage;
 
@@ -68,7 +67,7 @@ pub fn publishers(req: &HttpRequest) -> HttpResponse {
         Err(e) => server_error(Error::ServerError(e)),
         Ok(publishers) => {
             render_json(
-                responses::PublisherList::from(&publishers, "/api/v1/publishers")
+                publishers::PublisherList::from(&publishers, "/api/v1/publishers")
             )
         }
     }
@@ -78,7 +77,7 @@ pub fn publishers(req: &HttpRequest) -> HttpResponse {
 /// Request XML is posted.
 pub fn add_publisher(
     req: HttpRequest,
-    pbl: data::Publisher
+    pbl: publishers::Publisher
 ) -> HttpResponse {
     let mut server = rw_server(&req);
     match server.add_publisher(pbl) {
@@ -96,7 +95,7 @@ pub fn remove_publisher(
     match rw_server(&req).remove_publisher(handle) {
         Ok(()) => api_ok(),
         Err(krillserver::Error::PublisherStore(
-                publishers::Error::UnknownPublisher(_))) => api_ok(),
+                publisher_store::Error::UnknownPublisher(_))) => api_ok(),
         Err(e) => server_error(Error::ServerError(e))
     }
 }
@@ -111,7 +110,7 @@ pub fn publisher_details(
         Ok(None) => api_not_found(),
         Ok(Some(publisher)) => {
             render_json(
-                responses::PublisherDetails::from(
+                publishers::PublisherDetails::from(
                     &publisher,
                     "/api/v1/publishers",
                     server.service_base_uri())
@@ -134,7 +133,7 @@ pub fn repository_response(
                 .body(res.encode_vec())
         },
         Err(krillserver::Error::PublisherStore
-            (publishers::Error::UnknownPublisher(_))) => {
+            (publisher_store::Error::UnknownPublisher(_))) => {
             api_not_found()
         },
         Err(e) => {
@@ -168,7 +167,7 @@ pub fn handle_rfc8181_request(
 /// Processes a publishdelta request sent to the API.
 pub fn handle_delta(
     req: HttpRequest,
-    delta: requests::PublishDelta,
+    delta: publication::PublishDelta,
     handle: PublisherHandle
 ) -> HttpResponse {
     match rw_server(&req).handle_delta(delta, handle.as_ref()) {
@@ -187,6 +186,15 @@ pub fn handle_list(
         Err(e)   => server_error(Error::ServerError(e))
     }
 }
+
+
+//------------ Serving RRDP --------------------------------------------------
+
+pub fn current_snapshot_json(req: &HttpRequest) -> HttpResponse {
+    let _server = ro_server(req);
+    unimplemented!()
+}
+
 
 
 
@@ -263,25 +271,25 @@ impl ErrorToCode for krillserver::Error {
     }
 }
 
-impl ErrorToCode for publishers::Error {
+impl ErrorToCode for publisher_store::Error {
     fn code(&self) -> usize {
         match self {
-            publishers::Error::ForwardSlashInHandle(_) => 1004,
-            publishers::Error::DuplicatePublisher(_)   => 1005,
-            publishers::Error::UnknownPublisher(_)     => 1006,
+            publisher_store::Error::ForwardSlashInHandle(_) => 1004,
+            publisher_store::Error::DuplicatePublisher(_)   => 1005,
+            publisher_store::Error::UnknownPublisher(_)     => 1006,
             _ => 3001
         }
     }
 }
 
-impl ErrorToStatus for publishers::Error {
+impl ErrorToStatus for publisher_store::Error {
     fn status(&self) -> StatusCode {
         match self {
-            publishers::Error::ForwardSlashInHandle(_) =>
+            publisher_store::Error::ForwardSlashInHandle(_) =>
                 StatusCode::BAD_REQUEST,
-            publishers::Error::DuplicatePublisher(_) =>
+            publisher_store::Error::DuplicatePublisher(_) =>
                 StatusCode::BAD_REQUEST,
-            publishers::Error::UnknownPublisher(_) =>
+            publisher_store::Error::UnknownPublisher(_) =>
                 StatusCode::BAD_REQUEST,
             _ => StatusCode::INTERNAL_SERVER_ERROR
         }

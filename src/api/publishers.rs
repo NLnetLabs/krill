@@ -3,22 +3,115 @@
 //! i.e. this is stuff the the server needs to serialize only, so typically
 //! we can work with references here.
 use std::sync::Arc;
-use bytes::Bytes;
 use rpki::uri;
-use crate::api::data::Publisher;
+use crate::api::Link;
 use crate::remote::id::IdCert;
 use crate::util::ext_serde;
-use crate::util::file::CurrentFile;
 
-//------------ Link ----------------------------------------------------------
 
-/// Defines a link element to include as part of a links array in a Json
-/// response.
-#[derive(Clone, Debug, Serialize)]
-pub struct Link<'a> {
-    rel: &'a str,
-    link: String
+//------------ CmsAuthData ---------------------------------------------------
+
+/// This type contains the data needed for handling RFC8183 requests/responses,
+/// as well authorising the CMS in RFC8181 and RFC6492 messages.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct CmsAuthData {
+    // The optional tag in the request. None maps to empty string.
+    tag:         String,
+
+    #[serde(
+    deserialize_with = "ext_serde::de_id_cert",
+    serialize_with = "ext_serde::ser_id_cert")]
+    id_cert:     IdCert
 }
+
+impl CmsAuthData {
+    pub fn tag(&self) -> &String {
+        &self.tag
+    }
+
+    pub fn id_cert(&self) -> &IdCert {
+        &self.id_cert
+    }
+}
+
+impl CmsAuthData {
+    pub fn new(tag: Option<String>, id_cert: IdCert) -> Self {
+        let tag = tag.unwrap_or("".to_string());
+        CmsAuthData { tag, id_cert }
+    }
+}
+
+impl PartialEq for CmsAuthData {
+    fn eq(&self, other: &CmsAuthData) -> bool {
+        self.tag == other.tag &&
+            self.id_cert.to_bytes() == other.id_cert.to_bytes()
+    }
+}
+
+impl Eq for CmsAuthData {}
+
+
+//------------ Publisher -----------------------------------------------------
+
+/// This type defines Publisher CAs that are allowed to publish.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Publisher {
+    handle:        String,
+
+    /// The token used by the API
+    token:         String,
+
+    #[serde(
+    deserialize_with = "ext_serde::de_rsync_uri",
+    serialize_with = "ext_serde::ser_rsync_uri")]
+    base_uri:    uri::Rsync,
+
+    cms_auth_data: Option<CmsAuthData>
+}
+
+impl Publisher {
+    pub fn new(
+        handle:   String,
+        token:    String,
+        base_uri: uri::Rsync,
+        rfc8181:  Option<CmsAuthData>
+    ) -> Self {
+        Publisher {
+            handle,
+            token,
+            base_uri,
+            cms_auth_data: rfc8181
+        }
+    }
+}
+
+impl Publisher {
+    pub fn handle(&self) -> &String {
+        &self.handle
+    }
+
+    pub fn token(&self) -> &String {
+        &self.token
+    }
+
+    pub fn base_uri(&self) -> &uri::Rsync {
+        &self.base_uri
+    }
+
+    pub fn cms_auth_data(&self) -> &Option<CmsAuthData> {
+        &self.cms_auth_data
+    }
+}
+
+impl PartialEq for Publisher {
+    fn eq(&self, other: &Publisher) -> bool {
+        self.handle == other.handle &&
+            self.base_uri == other.base_uri &&
+            self.cms_auth_data == other.cms_auth_data
+    }
+}
+
+impl Eq for Publisher {}
 
 
 //------------ PublisherSummaryInfo ------------------------------------------
@@ -148,66 +241,3 @@ impl<'a> PublisherDetails<'a> {
         }
     }
 }
-
-pub enum PublishReply {
-    Success, // See https://tools.ietf.org/html/rfc8181#section-3.4
-    List(ListReply)
-}
-
-
-//------------ ListReply -----------------------------------------------------
-
-/// This type represents the list reply as described in
-/// https://tools.ietf.org/html/rfc8181#section-2.3
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ListReply {
-    elements: Vec<ListElement>
-}
-
-impl ListReply {
-    pub fn new(elements: Vec<ListElement>) -> Self {
-        ListReply { elements }
-    }
-
-    pub fn from_files(files: Vec<CurrentFile>) -> Self {
-        let elements = files.into_iter().map(|f| f.into_list_element()).collect();
-        ListReply { elements }
-    }
-
-    pub fn elements(&self) -> &Vec<ListElement> {
-        &self.elements
-    }
-}
-
-
-//------------ ListElement ---------------------------------------------------
-
-/// This type represents a single object that is published at a publication
-/// server.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct ListElement {
-    #[serde(
-    deserialize_with = "ext_serde::de_rsync_uri",
-    serialize_with = "ext_serde::ser_rsync_uri")]
-    uri:     uri::Rsync,
-
-    #[serde(
-    deserialize_with = "ext_serde::de_bytes",
-    serialize_with = "ext_serde::ser_bytes")]
-    /// The sha-256 hash of the file (as is used on the RPKI manifests and
-    /// in the publication protocol for list, update and withdraw). Saving
-    /// this rather than calculating on demand seems a small price for some
-    /// performance gain.
-    hash:    Bytes
-}
-
-impl ListElement {
-    pub fn new(uri: uri::Rsync, hash: Bytes) -> Self {
-        ListElement { uri, hash }
-    }
-
-    pub fn uri(&self) -> &uri::Rsync { &self.uri }
-    pub fn hash(&self) -> &Bytes { &self.hash}
-}
-
-

@@ -6,7 +6,7 @@ use bcder::{Captured, Mode};
 use bcder::encode::Values;
 use rpki::crypto::{PublicKeyFormat, Signer};
 use rpki::uri;
-use crate::api::data::Publisher;
+use crate::api::publishers::Publisher;
 use crate::remote::builder;
 use crate::remote::builder::{IdCertBuilder, SignedMessageBuilder};
 use crate::remote::id::MyIdentity;
@@ -197,7 +197,7 @@ impl From<builder::Error<softsigner::SignerError>> for Error {
 mod tests {
     use super::*;
     use crate::util::test;
-    use crate::api::data::CmsAuthData;
+    use crate::api::publishers::CmsAuthData;
 
     #[test]
     fn should_have_response_for_publisher() {

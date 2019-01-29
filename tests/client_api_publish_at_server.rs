@@ -209,7 +209,7 @@ fn client_publish_at_server() {
 
                     let list_el_a = file_a.into_list_element();
                     let list_el_b = file_b.into_list_element();
-                    let list_el_c = file_c.into_list_element();
+                    let list_el_c = file_c.clone().into_list_element();
 
                     let expected_elements = vec![
                         &list_el_a,
@@ -225,12 +225,10 @@ fn client_publish_at_server() {
 
         // XXX TODO We should also see these files in RRDP
 
-        // XXX TODO Must remove files when removing publisher
 
         // Now we should be able to delete it all again
         file::delete_in_dir(&sync_dir, "a.txt").unwrap();
         file::delete_in_dir(&sync_dir, "b.txt").unwrap();
-        file::delete_in_dir(&sync_dir, "c.txt").unwrap();
 
         // Sync files
         {
@@ -245,7 +243,7 @@ fn client_publish_at_server() {
             assert_eq!(ApiResponse::Success, api_res);
         }
 
-        // List files at server, expect no files
+        // List files at server, expect 1 file (c.txt)
         {
             let list = apiclient::execute(list(
                 server_uri,
@@ -255,7 +253,15 @@ fn client_publish_at_server() {
 
             match list {
                 ApiResponse::List(list) => {
-                    assert_eq!(0, list.elements().len());
+                    assert_eq!(1, list.elements().len());
+
+                    let returned_set: HashSet<_>  = list.elements().into_iter().collect();
+
+                    let list_el_c = file_c.into_list_element();
+
+                    let expected_elements = vec![&list_el_c];
+                    let expected_set: HashSet<_> = expected_elements.into_iter().collect();
+                    assert_eq!(expected_set, returned_set);
                 },
                 _ => panic!("Expected list")
             }
@@ -263,6 +269,11 @@ fn client_publish_at_server() {
 
         // Remove alice
         remove_publisher(handle);
+
+        // XXX TODO Must remove files when removing publisher
+        // Expect that c.txt is removed when looking at latest snapshot.
+        file::delete_in_dir(&sync_dir, "c.txt").unwrap();
+
 
         // Re-add publisher
         add_publisher(handle, base_rsync_uri_alice, token);

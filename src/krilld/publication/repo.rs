@@ -5,8 +5,8 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::str::FromStr;
 use rpki::uri;
-use crate::api::responses;
-use crate::api::requests::PublishDelta;
+use crate::api::publication;
+use crate::util::ext_serde;
 use crate::util::file::{self, CurrentFile, RecursorError};
 use crate::util::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
 
@@ -61,7 +61,7 @@ impl Repository {
     /// to wrap such errors in a response message to the publisher.
     pub fn publish(
         &mut self,
-        delta: &PublishDelta,
+        delta: &publication::PublishDelta,
         base_uri: &uri::Rsync
     ) -> Result<(), Error> {
         debug!("Processing update with {} elements", delta.len());
@@ -75,10 +75,10 @@ impl Repository {
     pub fn list(
         &self,
         base_uri: &uri::Rsync
-    ) -> Result<responses::ListReply, Error> {
+    ) -> Result<publication::ListReply, Error> {
         debug!("Processing list query");
         let files = self.fs.list(base_uri)?;
-        Ok(responses::ListReply::from_files(files))
+        Ok(publication::ListReply::from_files(files))
     }
 }
 
@@ -114,7 +114,7 @@ impl FileStore {
     /// Process a PublishQuery update
     pub fn publish(
         &mut self,
-        delta: &PublishDelta,
+        delta: &publication::PublishDelta,
         base_uri: &uri::Rsync
     ) -> Result<(), Error> {
         self.verify_query(delta, base_uri)?;
@@ -145,7 +145,7 @@ impl FileStore {
     /// checking this first is a good enough form of a poor-man's transaction.
     fn verify_query(
         &self,
-        delta: &PublishDelta,
+        delta: &publication::PublishDelta,
         base_uri: &uri::Rsync
     ) -> Result<(), Error> {
 
@@ -187,7 +187,7 @@ impl FileStore {
     /// writing to disk.
     fn update_files(
         &self,
-        delta: &PublishDelta
+        delta: &publication::PublishDelta
     ) -> Result<(), Error> {
         for p in delta.publishes() {
             debug!("Saving file for uri: {}", p.uri().to_string());
@@ -296,7 +296,10 @@ impl RrdpServer {
     /// and notification file. Assumes that this is called *after* the
     /// ['FileStore'] has published, so files should already be saved to
     /// disk and the snapshots can be derived from this.
-    pub fn publish(&mut self, delta: &PublishDelta) -> Result<(), Error> {
+    pub fn publish(
+        &mut self,
+        delta: &publication::PublishDelta
+    ) -> Result<(), Error> {
         let current_notification = Notification::build(
             &self.notification_path(),
             &self.base_uri,
@@ -342,7 +345,7 @@ impl RrdpServer {
         &mut self,
         session_id: &String,
         serial: usize,
-        delta: &PublishDelta
+        delta: &publication::PublishDelta
     ) -> Result<DeltaRef, Error>
     {
         let path = self.delta_path(session_id, serial);
@@ -505,7 +508,7 @@ impl RrdpServer {
 
 //------------ Notification --------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Notification {
     session_id: String,
     serial:     usize,
@@ -674,7 +677,7 @@ impl Notification {
 
 //------------ SnapshotRef ---------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SnapshotRef {
     file_info:  FileInfo
 }
@@ -690,7 +693,7 @@ impl Deref for SnapshotRef {
 
 //------------ DeltaRef ------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct DeltaRef {
     serial:     usize,
     file_info:  FileInfo,
@@ -714,8 +717,11 @@ impl Deref for DeltaRef {
 
 //------------ FileInfo ------------------------------------------------------
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct FileInfo {
+    #[serde(
+    deserialize_with = "ext_serde::de_http_uri",
+    serialize_with = "ext_serde::ser_http_uri")]
     uri:   uri::Http,
     hash:  String,
     size:  usize
@@ -954,10 +960,10 @@ mod tests {
 
     use super::*;
     use bytes::Bytes;
-    use crate::krilld::repo::Notification;
+    use crate::krilld::publication::repo::Notification;
     use crate::util::file::CurrentFile;
     use crate::util::test;
-    use crate::api::requests::PublishDeltaBuilder;
+    use crate::api::publication::PublishDeltaBuilder;
 
     #[test]
     fn should_publish() {

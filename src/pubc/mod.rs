@@ -3,16 +3,15 @@ pub mod cmsclient;
 
 use std::path::PathBuf;
 use rpki::uri;
-use crate::api::responses;
-use crate::api::requests;
+use crate::api::publication;
 use crate::util::file;
 
 pub fn create_delta(
-    list_reply: responses::ListReply,
+    list_reply: publication::ListReply,
     dir: &PathBuf,
     base_rsync: &uri::Rsync
-) -> Result<requests::PublishDelta, Error> {
-    let mut delta_builder = requests::PublishDeltaBuilder::new();
+) -> Result<publication::PublishDelta, Error> {
+    let mut delta_builder = publication::PublishDeltaBuilder::new();
 
     let current = file::crawl_incl_rsync_base(dir, base_rsync)?;
 
@@ -20,7 +19,7 @@ pub fn create_delta(
     for p in list_reply.elements() {
         if current.iter().find(|c| { c.uri() == p.uri() }).is_none() {
             delta_builder.add_withdraw(
-                requests::Withdraw::from_list_element(p)
+                publication::Withdraw::from_list_element(p)
             );
         }
     }

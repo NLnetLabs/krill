@@ -4,8 +4,7 @@ use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use bytes::Bytes;
 use rpki::uri;
-use crate::api::requests;
-use crate::api::responses;
+use crate::api::publication;
 use crate::util::ext_serde;
 use crate::util::hash;
 
@@ -241,30 +240,30 @@ impl CurrentFile {
         &self.hash
     }
 
-    pub fn as_publish(&self) -> requests::Publish {
+    pub fn as_publish(&self) -> publication::Publish {
         let tag = Some(hex::encode(&self.hash));
         let uri = self.uri.clone();
         let content = self.content.clone();
-        requests::Publish::new(tag, uri, content)
+        publication::Publish::new(tag, uri, content)
     }
 
-    pub fn as_update(&self, old_hash: &Bytes) -> requests::Update {
+    pub fn as_update(&self, old_hash: &Bytes) -> publication::Update {
         let tag = None;
         let uri = self.uri.clone();
         let content = self.content.clone();
         let hash = old_hash.clone();
-        requests::Update::new(tag, uri, content, hash)
+        publication::Update::new(tag, uri, content, hash)
     }
 
-    pub fn as_withdraw(&self) -> requests::Withdraw {
+    pub fn as_withdraw(&self) -> publication::Withdraw {
         let tag = None;
         let uri = self.uri.clone();
         let hash = hash(&self.content);
-        requests::Withdraw::new(tag, uri, hash)
+        publication::Withdraw::new(tag, uri, hash)
     }
 
-    pub fn into_list_element(self) -> responses::ListElement {
-        responses::ListElement::new(self.uri, self.hash)
+    pub fn into_list_element(self) -> publication::ListElement {
+        publication::ListElement::new(self.uri, self.hash)
     }
 
 }

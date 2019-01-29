@@ -4,7 +4,7 @@ pub mod options;
 use std::io;
 use bytes::Bytes;
 use rpki::uri;
-use crate::api::data::Publisher;
+use crate::api::publishers::Publisher;
 use crate::krillc::data::{
     ApiResponse,
     PublisherDetails,

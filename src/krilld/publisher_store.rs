@@ -5,7 +5,7 @@ use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
 use rpki::uri;
-use crate::api::data;
+use crate::api::publishers;
 use crate::remote::rfc8183;
 use crate::storage::keystore::{self, Info, Key, KeyStore};
 use crate::storage::caching_ks::CachingDiskKeyStore;
@@ -71,7 +71,7 @@ impl PublisherStore {
     /// update_publisher in case you want to update an existing publisher.
     pub fn add_publisher(
         &mut self,
-        pbl: data::Publisher,
+        pbl: publishers::Publisher,
         actor: &str
     ) -> Result<(), Error> {
         self.verify_handle(pbl.handle())?;
@@ -134,7 +134,7 @@ impl PublisherStore {
     pub fn publisher(
         &self,
         handle: impl AsRef<str>
-    ) -> Result<Option<Arc<data::Publisher>>, Error> {
+    ) -> Result<Option<Arc<publishers::Publisher>>, Error> {
         let key = Key::from_str(handle.as_ref());
         self.store.get(&key).map_err(|e| { Error::KeyStoreError(e)})
     }
@@ -144,7 +144,7 @@ impl PublisherStore {
     pub fn get_publisher(
         &self,
         handle: impl AsRef<str>
-    ) -> Result<Arc<data::Publisher>, Error> {
+    ) -> Result<Arc<publishers::Publisher>, Error> {
         let name = handle.as_ref();
         match self.publisher(name)? {
             None => Err(Error::UnknownPublisher(name.to_string())),
@@ -156,7 +156,7 @@ impl PublisherStore {
     /// relatively expensive, however, it is easy to implement and debug, and
     /// this method is rarely needed - mainly for tests and to rebuild/update
     /// the publisher list at start up.
-    pub fn publishers(&self) -> Result<Vec<Arc<data::Publisher>>, Error> {
+    pub fn publishers(&self) -> Result<Vec<Arc<publishers::Publisher>>, Error> {
         let mut res = Vec::new();
 
         for ref k in self.store.keys() {
@@ -326,7 +326,7 @@ mod tests {
             // Get the Arc out of the Result<Option<Arc<Publisher>>, Error>
             let publisher_found = ps.publisher(&name).unwrap().unwrap();
 
-            let expected_rfc8181 = data::CmsAuthData::new(None, id_cert);
+            let expected_rfc8181 = publishers::CmsAuthData::new(None, id_cert);
 
             assert_eq!(publisher_found.handle(), "alice");
             assert_eq!(publisher_found.base_uri(), &base_uri);

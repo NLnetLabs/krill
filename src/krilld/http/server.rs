@@ -14,8 +14,8 @@ use actix_web::http::{Method, StatusCode};
 use bcder::decode;
 use futures::Future;
 use openssl::ssl::{SslMethod, SslAcceptor, SslAcceptorBuilder, SslFiletype};
-use crate::api::data;
-use crate::api::requests;
+use crate::api::publication;
+use crate::api::publishers;
 use crate::krilld::auth::{Authorizer, CheckAuthorisation};
 use crate::krilld::config::Config;
 use crate::krilld::endpoints;
@@ -262,7 +262,7 @@ impl<S: 'static> FromRequest<S> for SignedMessage {
 /// PublisherRequestChoice, which contains either an
 /// rfc8183::PublisherRequest, or an API publisher request (no ID certs and
 /// CMS etc).
-impl<S: 'static> FromRequest<S> for data::Publisher {
+impl<S: 'static> FromRequest<S> for publishers::Publisher {
     type Config = ();
     type Result = Box<Future<Item=Self, Error=actix_web::Error>>;
 
@@ -273,7 +273,7 @@ impl<S: 'static> FromRequest<S> for data::Publisher {
         Box::new(MessageBody::new(req)
             .from_err()
             .and_then(|bytes| {
-                let p: data::Publisher =
+                let p: publishers::Publisher =
                     serde_json::from_reader(bytes.as_ref())
                     .map_err(|e| Error::JsonError(e))?;
                 Ok(p)
@@ -315,7 +315,7 @@ impl AsRef<str> for PublisherHandle {
 
 //------------ PublishDelta --------------------------------------------------
 /// Support converting request body into PublishDelta
-impl<S: 'static> FromRequest<S> for requests::PublishDelta {
+impl<S: 'static> FromRequest<S> for publication::PublishDelta {
     type Config = ();
     type Result = Box<Future<Item=Self, Error=actix_web::Error>>;
 
@@ -326,7 +326,7 @@ impl<S: 'static> FromRequest<S> for requests::PublishDelta {
         Box::new(MessageBody::new(req).limit(255 * 1024 * 1024) // up to 256MB
             .from_err()
             .and_then(|bytes| {
-                let delta: requests::PublishDelta =
+                let delta: publication::PublishDelta =
                     serde_json::from_reader(bytes.as_ref())
                     .map_err(|e| Error::JsonError(e))?;
                 Ok(delta)
