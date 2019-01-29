@@ -2,9 +2,9 @@ use std::{io, fs};
 use std::path::PathBuf;
 use rpki::uri;
 use crate::api::publication;
+use crate::krilld::pubd::RSYNC_FOLDER;
 use crate::util::file::{self, CurrentFile, RecursorError};
 
-const FS_FOLDER: &'static str = "rsync";
 
 //------------ FileStore -----------------------------------------------------
 
@@ -23,7 +23,7 @@ pub struct FileStore {
 impl FileStore {
     pub fn new(work_dir: &PathBuf) -> Result<Self, Error> {
         let mut rsync_dir = PathBuf::from(work_dir);
-        rsync_dir.push(FS_FOLDER);
+        rsync_dir.push(RSYNC_FOLDER);
         if ! rsync_dir.is_dir() {
             fs::create_dir_all(&rsync_dir)?;
         }
@@ -195,7 +195,6 @@ pub enum Error {
     #[display(fmt="Publishing outside of base URI is not allowed.")]
     OutsideBaseUri,
 }
-
 
 impl From<io::Error> for Error {
     fn from(e: io::Error) -> Self {

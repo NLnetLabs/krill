@@ -7,8 +7,8 @@ use serde::Serialize;
 use crate::api::publishers;
 use crate::api::publication;
 use crate::krilld::http::server::{HttpRequest, PublisherHandle};
-use crate::krilld::publisher_store;
 use crate::krilld::krillserver::{self, KrillServer};
+use crate::krilld::pubd;
 use crate::remote::sigmsg::SignedMessage;
 
 
@@ -95,7 +95,7 @@ pub fn remove_publisher(
     match rw_server(&req).remove_publisher(handle) {
         Ok(()) => api_ok(),
         Err(krillserver::Error::PublisherStore(
-                publisher_store::Error::UnknownPublisher(_))) => api_ok(),
+                pubd::Error::UnknownPublisher(_))) => api_ok(),
         Err(e) => server_error(Error::ServerError(e))
     }
 }
@@ -133,7 +133,7 @@ pub fn repository_response(
                 .body(res.encode_vec())
         },
         Err(krillserver::Error::PublisherStore
-            (publisher_store::Error::UnknownPublisher(_))) => {
+            (pubd::Error::UnknownPublisher(_))) => {
             api_not_found()
         },
         Err(e) => {
@@ -271,25 +271,25 @@ impl ErrorToCode for krillserver::Error {
     }
 }
 
-impl ErrorToCode for publisher_store::Error {
+impl ErrorToCode for pubd::Error {
     fn code(&self) -> usize {
         match self {
-            publisher_store::Error::ForwardSlashInHandle(_) => 1004,
-            publisher_store::Error::DuplicatePublisher(_)   => 1005,
-            publisher_store::Error::UnknownPublisher(_)     => 1006,
+            pubd::Error::ForwardSlashInHandle(_) => 1004,
+            pubd::Error::DuplicatePublisher(_)   => 1005,
+            pubd::Error::UnknownPublisher(_)     => 1006,
             _ => 3001
         }
     }
 }
 
-impl ErrorToStatus for publisher_store::Error {
+impl ErrorToStatus for pubd::Error {
     fn status(&self) -> StatusCode {
         match self {
-            publisher_store::Error::ForwardSlashInHandle(_) =>
+            pubd::Error::ForwardSlashInHandle(_) =>
                 StatusCode::BAD_REQUEST,
-            publisher_store::Error::DuplicatePublisher(_) =>
+            pubd::Error::DuplicatePublisher(_) =>
                 StatusCode::BAD_REQUEST,
-            publisher_store::Error::UnknownPublisher(_) =>
+            pubd::Error::UnknownPublisher(_) =>
                 StatusCode::BAD_REQUEST,
             _ => StatusCode::INTERNAL_SERVER_ERROR
         }

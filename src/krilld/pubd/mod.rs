@@ -1,4 +1,6 @@
-//! Types for tracking configured publishers.
+pub mod repo;
+pub mod rrdpd;
+pub mod rsyncd;
 
 use std::fs;
 use std::io;
@@ -10,8 +12,9 @@ use crate::remote::rfc8183;
 use crate::storage::keystore::{self, Info, Key, KeyStore};
 use crate::storage::caching_ks::CachingDiskKeyStore;
 
+pub const RSYNC_FOLDER: &'static str = "rsync";
 
-//------------ PublisherList -------------------------------------------------
+//------------ PublisherStore -------------------------------------------------
 
 /// This type contains all configured Publishers, allowed to publish at this
 /// publication server. Essentially this wraps around the storage that
@@ -58,7 +61,7 @@ impl PublisherStore {
     fn verify_base_uri(&self, base_uri: &uri::Rsync) -> Result<(), Error> {
         let base_uri = base_uri.to_string();
         if base_uri.starts_with(self.base_uri.to_string().as_str()) &&
-           base_uri.ends_with("/") {
+            base_uri.ends_with("/") {
             Ok(())
         } else {
             Err(Error::InvalidBaseUri)

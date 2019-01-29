@@ -1,9 +1,8 @@
 use std::path::PathBuf;
 use rpki::uri;
 use crate::api::publication;
-use crate::krilld::publication::rsyncd;
-use crate::krilld::publication::rrdpd;
-
+use crate::krilld::pubd::rsyncd;
+use crate::krilld::pubd::rrdpd;
 
 //------------ Repository ----------------------------------------------------
 
@@ -190,8 +189,7 @@ mod tests {
 
             // Using a port here to make sure that it works in mapping
             // the rsync URI to and from disk.
-            let base_uri = test::rsync_uri
-                ("rsync://host:10873/module/alice/");
+            let base_uri = test::rsync_uri("rsync://host:10873/module/alice/");
 
             // Publish a file
             let file = CurrentFile::new(
@@ -245,8 +243,7 @@ mod tests {
 
             // Using a port here to make sure that it works in mapping
             // the rsync URI to and from disk.
-            let base_uri = test::rsync_uri
-                ("rsync://host:10873/module/alice/");
+            let base_uri = test::rsync_uri("rsync://host:10873/module/alice/");
 
             // Publish a file
             let file = CurrentFile::new(

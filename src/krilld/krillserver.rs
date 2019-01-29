@@ -6,8 +6,8 @@ use rpki::uri;
 use crate::api::publication;
 use crate::api::publishers;
 use crate::krilld::auth::Authorizer;
-use crate::krilld::publisher_store::{self, PublisherStore};
-use crate::krilld::publication::repo::{self, Repository};
+use crate::krilld::pubd::{self, PublisherStore};
+use crate::krilld::pubd::repo::{self, Repository};
 use crate::remote::cmsproxy::{self, CmsProxy};
 use crate::remote::rfc8183;
 use crate::remote::sigmsg::SignedMessage;
@@ -280,7 +280,7 @@ pub enum Error {
     CmsProxy(cmsproxy::Error),
 
     #[display(fmt="{}", _0)]
-    PublisherStore(publisher_store::Error),
+    PublisherStore(pubd::Error),
 
     #[display(fmt="{}", _0)]
     Repository(repo::Error),
@@ -295,8 +295,8 @@ impl From<cmsproxy::Error> for Error {
     }
 }
 
-impl From<publisher_store::Error> for Error {
-    fn from(e: publisher_store::Error) -> Self {
+impl From<pubd::Error> for Error {
+    fn from(e: pubd::Error) -> Self {
         Error::PublisherStore(e)
     }
 }
