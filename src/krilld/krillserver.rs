@@ -7,7 +7,7 @@ use crate::api::publication;
 use crate::api::publishers;
 use crate::krilld::auth::Authorizer;
 use crate::krilld::publisher_store::{self, PublisherStore};
-use crate::krilld::publication::repo::{self, Repository, RRDP_FOLDER};
+use crate::krilld::publication::repo::{self, Repository};
 use crate::remote::cmsproxy::{self, CmsProxy};
 use crate::remote::rfc8183;
 use crate::remote::sigmsg::SignedMessage;
@@ -174,7 +174,7 @@ impl KrillServer {
 
     pub fn rrdp_base_path(&self) -> PathBuf {
         let mut path = self.work_dir.clone();
-        path.push(RRDP_FOLDER);
+        path.push("rrdp");
         path
     }
 }

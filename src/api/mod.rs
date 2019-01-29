@@ -1,6 +1,7 @@
 //! Data structures for the API, shared between client and server.
 pub mod publishers;
 pub mod publication;
+pub mod rrdp_data;
 
 //------------ Link ----------------------------------------------------------
 

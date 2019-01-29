@@ -6,6 +6,7 @@ use rpki::x509::ValidationError;
 use crate::api::publishers;
 use crate::api::publication;
 use crate::krilld::publication::repo;
+use crate::krilld::publication::rsyncd;
 use crate::remote::id::IdCert;
 use crate::remote::responder;
 use crate::remote::responder::Responder;
@@ -178,13 +179,17 @@ impl ToReportErrorCode for rfc8181::MessageError {
 impl ToReportErrorCode for repo::Error {
     fn to_report_error_code(&self) -> rfc8181::ReportErrorCode {
         match self {
-            repo::Error::ObjectAlreadyPresent(_) =>
+            repo::Error::Rsyncd(
+                rsyncd::Error::ObjectAlreadyPresent(_)) =>
                 rfc8181::ReportErrorCode::ObjectAlreadyPresent,
-            repo::Error::NoObjectPresent(_) =>
+            repo::Error::Rsyncd(
+                rsyncd::Error::NoObjectPresent(_)) =>
                 rfc8181::ReportErrorCode::NoObjectPresent,
-            repo::Error::NoObjectMatchingHash =>
+            repo::Error::Rsyncd(
+                rsyncd::Error::NoObjectMatchingHash) =>
                 rfc8181::ReportErrorCode::NoObjectMatchingHash,
-            repo::Error::OutsideBaseUri =>
+            repo::Error::Rsyncd(
+                rsyncd::Error::OutsideBaseUri) =>
                 rfc8181::ReportErrorCode::PermissionFailure,
             _ => rfc8181::ReportErrorCode::OtherError
         }

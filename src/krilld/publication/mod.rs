@@ -1,2 +1,3 @@
 pub mod repo;
-pub mod rrdp;
+pub mod rrdpd;
+pub mod rsyncd;
