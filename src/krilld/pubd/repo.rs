@@ -54,7 +54,7 @@ impl Repository {
     ) -> Result<(), Error> {
         debug!("Processing update with {} elements", delta.len());
         self.fs.publish(delta, base_uri)?;
-        self.rrdp.publish(delta)?;
+        self.rrdp.publish(delta, base_uri)?;
         Ok(())
     }
 
@@ -160,7 +160,7 @@ mod tests {
                 Some(notification) => {
                     let expected_serial: usize = 6;
                     let expected_prev: usize = 5;
-                    assert_eq!(notification.serial(), &expected_serial);
+                    assert_eq!(notification.serial(), expected_serial);
 
                     let deltas = notification.deltas();
                     assert_eq!(2, deltas.len());

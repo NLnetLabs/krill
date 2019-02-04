@@ -9,6 +9,6 @@ pub mod softsigner;
 pub mod test;
 pub mod xml;
 
-pub fn hash(object: &Bytes) -> Bytes {
+pub fn sha256(object: &Bytes) -> Bytes {
     Bytes::from(DigestAlgorithm.digest(object.as_ref()).as_ref())
 }

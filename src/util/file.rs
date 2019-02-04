@@ -6,7 +6,7 @@ use bytes::Bytes;
 use rpki::uri;
 use crate::api::publication;
 use crate::util::ext_serde;
-use crate::util::hash;
+use crate::util::sha256;
 
 
 ///-- Some helper functions
@@ -218,7 +218,7 @@ pub struct CurrentFile {
 
 impl CurrentFile {
     pub fn new(uri: uri::Rsync, content: Bytes) -> Self {
-        let hash = hash(&content);
+        let hash = sha256(&content);
         CurrentFile {uri, content, hash}
     }
 
@@ -258,7 +258,7 @@ impl CurrentFile {
     pub fn as_withdraw(&self) -> publication::Withdraw {
         let tag = None;
         let uri = self.uri.clone();
-        let hash = hash(&self.content);
+        let hash = sha256(&self.content);
         publication::Withdraw::new(tag, uri, hash)
     }
 

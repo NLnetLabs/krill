@@ -1,16 +1,104 @@
+use std::collections::HashMap;
 use std::io;
 use std::fs::File;
 use std::num::ParseIntError;
 use std::ops::Deref;
 use std::path::PathBuf;
 use std::str::FromStr;
+use bytes::Bytes;
 use rpki::uri;
 use crate::util::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
 use crate::util::file::{self, RecursorError};
 use crate::util::ext_serde;
+use util::sha256;
 
 const VERSION: &'static str = "1";
 const NS: &'static str = "http://www.ripe.net/rpki/rrdp";
+
+#[derive(Clone, Debug, Deserialize, Eq, Serialize, PartialEq)]
+pub struct PublishedObject {
+    #[serde(
+    deserialize_with = "ext_serde::de_rsync_uri",
+    serialize_with = "ext_serde::ser_rsync_uri")]
+    uri: uri::Rsync,
+
+    #[serde(
+    deserialize_with = "ext_serde::de_bytes",
+    serialize_with = "ext_serde::ser_bytes")]
+    content: Bytes,
+
+    #[serde(
+    deserialize_with = "ext_serde::de_bytes",
+    serialize_with = "ext_serde::ser_bytes")]
+    hash: Bytes
+}
+
+impl PublishedObject {
+    pub fn new(uri: uri::Rsync, content: Bytes) -> Self {
+        let hash = sha256(&content);
+        PublishedObject { uri , content, hash }
+    }
+
+    pub fn uri(&self) -> &uri::Rsync{ &self.uri }
+    pub fn content(&self) -> &Bytes { &self.content }
+    pub fn hash(&self) -> &Bytes { &self.hash }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Snapshot {
+    session: String,
+    serial: usize,
+    objects: HashMap<String, Vec<PublishedObject>>
+}
+
+impl Snapshot {
+    pub fn new(
+        session: String,
+        serial: usize,
+        objects: HashMap<String, Vec<PublishedObject>>
+    ) -> Self {
+        Snapshot { session, serial, objects }
+    }
+
+    pub fn objects(&self) -> &HashMap<String, Vec<PublishedObject>> {
+        &self.objects
+    }
+
+    pub fn to_xml(&self) -> Vec<u8> {
+        XmlWriter::encode_vec(|w| {
+            let a = [
+                ("xmlns", NS),
+                ("version", VERSION),
+                ("session_id", self.session.as_ref()),
+                ("serial", &format!("{}", self.serial)),
+            ];
+
+            w.put_element(
+                "snapshot",
+                Some(&a),
+                |w| {
+                    for uri in self.objects.keys() {
+                        let objects = self.objects.get(uri).unwrap();
+                        for cf in objects {
+                            let uri = cf.uri.to_string();
+                            let a = [ ("uri", uri.as_ref()) ];
+                            w.put_element(
+                                "publish",
+                                Some(&a),
+                                |w| {
+                                    w.put_blob(&cf.content)
+                                }
+                            )?;
+                        }
+                    }
+                    Ok(())
+                }
+            )
+        })
+    }
+}
+
+
 
 //------------ Notification --------------------------------------------------
 
@@ -25,8 +113,8 @@ pub struct Notification {
 /// # Accessors
 ///
 impl Notification {
-    pub fn serial(&self) -> &usize {
-        &self.serial
+    pub fn serial(&self) -> usize {
+        self.serial
     }
     pub fn session_id(&self) -> &String { &self.session_id }
 
@@ -264,10 +352,10 @@ impl FileInfo {
         let size = bytes.len();
 
         let hash = {
-            use crate::util::hash;
+            use crate::util::sha256;
             use bytes::Bytes;
 
-            hex::encode(&hash(&Bytes::from(bytes)))
+            hex::encode(&sha256(&Bytes::from(bytes)))
         };
 
         Ok(FileInfo::new(uri, hash, size))

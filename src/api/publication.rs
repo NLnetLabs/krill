@@ -3,7 +3,7 @@ use bytes::Bytes;
 use rpki::uri;
 use crate::util::ext_serde;
 use crate::util::file::CurrentFile;
-use crate::util::hash;
+use crate::util::sha256;
 
 
 //------------ PublishRequest ------------------------------------------------
@@ -118,7 +118,7 @@ impl Publish {
         Publish { tag, uri, content }
     }
     pub fn with_hash_tag(uri: uri::Rsync, content: Bytes) -> Self {
-        let tag = Some(hex::encode(hash(&content)));
+        let tag = Some(hex::encode(sha256(&content)));
         Publish { tag, uri, content }
     }
 
@@ -173,7 +173,7 @@ impl Update {
         content: Bytes,
         old_hash: Bytes
     ) -> Self {
-        let tag = Some(hex::encode(hash(&content)));
+        let tag = Some(hex::encode(sha256(&content)));
         Update { tag, uri, content, hash: old_hash }
     }
 

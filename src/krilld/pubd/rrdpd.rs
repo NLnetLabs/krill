@@ -1,25 +1,41 @@
 use std::io;
+use std::fs;
 use std::num::ParseIntError;
 use std::path::PathBuf;
+use bytes::Bytes;
 use rpki::uri;
 use crate::api::publication;
-use crate::api::rrdp_data::{self, Notification, NotificationBuilder};
-use crate::api::rrdp_data::FileInfo;
-use crate::api::rrdp_data::DeltaRef;
-use crate::api::rrdp_data::SnapshotRef;
+use crate::api::rrdp_data::{self, Notification};
+use crate::api::rrdp_data::Snapshot;
+use crate::api::rrdp_data::PublishedObject;
 use crate::util::file::{self, RecursorError};
-use crate::util::xml::{XmlWriter};
+use crate::storage::keystore::{self, Key, KeyStore};
+use crate::storage::caching_ks::CachingDiskKeyStore;
+use std::sync::Arc;
+use std::collections::HashMap;
+use storage::keystore::Info;
+use api::rrdp_data::FileInfo;
+use api::rrdp_data::DeltaRef;
+use util::xml::XmlWriter;
+use api::rrdp_data::NotificationBuilder;
+use api::rrdp_data::SnapshotRef;
+
+//const VERSION: &'static str = "1";
+//const NS: &'static str = "http://www.ripe.net/rpki/rrdp";
+const RRDP_FOLDER: &'static str = "rrdp";
+const FS_FOLDER: &'static str = "rsync";
 
 const VERSION: &'static str = "1";
 const NS: &'static str = "http://www.ripe.net/rpki/rrdp";
-const RRDP_FOLDER: &'static str = "rrdp";
-const FS_FOLDER: &'static str = "rsync";
+
 
 
 /// This type publishes RRDP notifications, snapshots and deltas so that they
 /// can be served to relying parties.
 #[derive(Clone, Debug)]
 pub struct RrdpServer {
+    store: CachingDiskKeyStore,
+
     // The base URI path for notification, snapshot and delta files.
     base_uri:  uri::Http,
 
@@ -48,9 +64,74 @@ impl RrdpServer {
             return Err(Error::UriConfigError)
         }
 
+        let mut rrdp_store_dir = PathBuf::from(work_dir);
+        rrdp_store_dir.push("rrdp_store");
+        if ! rrdp_store_dir.is_dir() {
+            fs::create_dir_all(&rrdp_store_dir)?;
+        }
+
+        let store = CachingDiskKeyStore::new(rrdp_store_dir)?;
+
         let rrdp_base = file::sub_dir(work_dir, RRDP_FOLDER)?;
         let fs_base = file::sub_dir(work_dir, FS_FOLDER)?;
-        Ok(RrdpServer { base_uri: base_uri.clone(), rrdp_base, fs_base })
+        Ok(RrdpServer { store, base_uri: base_uri.clone(), rrdp_base, fs_base })
+    }
+}
+
+/// # Storing, Retrieving, and referencing Notification, Snapshot, Deltas
+///
+impl RrdpServer {
+
+//    const REL_NOTIFICATION: &'static str = "notification.xml";
+
+    fn key_notification() -> Key {
+        Key::from_str("notification")
+    }
+
+    fn key_snapshot(session: &String, serial: usize) -> Key {
+        Key::from_str(&format!("{}-{}-snapshot", session, serial))
+    }
+
+    pub fn get_notification(
+        &self
+    ) -> Result<Option<Arc<Notification>>, Error> {
+        let key = Self::key_notification();
+        self.store.get(&key).map_err(|e| Error::Keystore(e) )
+    }
+
+    pub fn get_snapshot(
+        &self,
+        session: &String,
+        serial: usize
+    ) -> Result<Option<Arc<Snapshot>>, Error> {
+        let key = Self::key_snapshot(session, serial);
+        self.store.get(&key).map_err(|e| Error::Keystore(e) )
+    }
+
+    pub fn save_notification(
+        &mut self,
+        notification: Notification
+    ) -> Result<(), Error> {
+        let key = Self::key_notification();
+        self.store.store(
+            key,
+            notification,
+            Info::now("server", "notification")
+        ).map_err(|e| Error::Keystore(e))
+    }
+
+    pub fn save_snapshot(
+        &mut self,
+        session: &String,
+        serial: usize,
+        snapshot: Snapshot
+    ) -> Result<(), Error> {
+        let key = Self::key_snapshot(session, serial);
+        self.store.store(
+            key,
+            snapshot,
+            Info::now("server", "notification")
+        ).map_err(|e| Error::Keystore(e))
     }
 }
 
@@ -58,52 +139,149 @@ impl RrdpServer {
 ///
 impl RrdpServer {
 
+    fn verified_rel(
+        uri: &uri::Rsync,
+        base_uri: &uri::Rsync
+    ) -> Result<String, Error> {
+        match uri.relative_to(base_uri) {
+            Some(rel) => unsafe { // uri ensures characters are safe
+                Ok(std::str::from_utf8_unchecked(rel).to_string())
+            },
+            None => Err(Error::OutsideBaseUri)
+        }
+    }
+
+
     /// Process an update PublishQuery and produce a new delta, snapshot
     /// and notification file. Assumes that this is called *after* the
     /// ['FileStore'] has published, so files should already be saved to
     /// disk and the snapshots can be derived from this.
     pub fn publish(
         &mut self,
-        delta: &publication::PublishDelta
+        delta: &publication::PublishDelta,
+        base_uri: &uri::Rsync
     ) -> Result<(), Error> {
-        let current_notification = Notification::build(
-            &self.notification_path(),
-            &self.base_uri,
-            &self.rrdp_base
-        );
 
-        let session_id = match &current_notification {
-            Some(n) => n.session_id().clone(),
+        let (session, serial, deltas) = match self.get_notification()? {
+            Some(notification) => {
+                (
+                    notification.session_id().clone(),
+                    notification.serial(),
+                    notification.deltas().clone()
+                )
+            },
             None => {
-                use rand::{thread_rng, Rng};
-                let mut rng = thread_rng();
-                let rnd: u32 = rng.gen();
-                format!("{}", rnd)
+                (
+                    {
+                        use rand::{thread_rng, Rng};
+                        let mut rng = thread_rng();
+                        let rnd: u32 = rng.gen();
+                        format!("{}", rnd)
+                    },
+                    0,
+                    Vec::new()
+                )
             }
         };
-        let serial = match &current_notification {
-            Some(n) => n.serial() + 1,
-            None    => 1
+
+        let mut all_objects = match self.get_snapshot(&session, serial)? {
+            Some(snapshot) => snapshot.objects().clone(),
+            None => HashMap::new()
         };
 
-        let snapshot = self.save_snapshot(&session_id, serial)?;
-        let delta_file = self.save_delta(&session_id, serial, delta)?;
+        let mut objects = match all_objects.get(&base_uri.to_string()) {
+            Some(objects) => objects.clone(),
+            None => Vec::new()
+        };
 
-        let mut notif_builder = NotificationBuilder::new();
-
-        notif_builder.with_session_id(session_id);
-        notif_builder.with_serial(serial);
-        notif_builder.with_snapshot(snapshot);
-
-        if let Some(notification) = current_notification {
-            notif_builder.with_deltas(notification.deltas().clone())
+        for p in delta.publishes() {
+            let _rel = Self::verified_rel(p.uri(), base_uri)?;
+            let object = PublishedObject::new(p.uri().clone(), p.content().clone());
+            if objects.contains(&object) {
+                return Err(Error::ObjectAlreadyPresent(p.uri().clone()))
+            }
+            objects.push(object);
         }
 
-        notif_builder.add_delta_to_start(delta_file);
+        for u in delta.updates() {
+            let _rel = Self::verified_rel(u.uri(), base_uri)?;
 
-        let notification = notif_builder.build();
-        notification.save(&self.notification_path())
-            .map_err(|e| Error::RrdpData(e))
+            match objects.iter().position(|cur| {cur.uri() == u.uri()}) {
+                None => return Err(Error::NoObjectPresent(u.uri().clone())),
+                Some(pos) => {
+                    if objects.get(pos).unwrap().hash() != u.hash() {
+                        return Err(Error::NoObjectMatchingHash)
+                    } else {
+                        objects.remove(pos);
+                    }
+                }
+            }
+
+            let object = PublishedObject::new(u.uri().clone(), u.content().clone());
+            objects.push(object);
+        }
+
+        for w in delta.withdraws() {
+            let _rel = Self::verified_rel(w.uri(), base_uri)?;
+            match objects.iter().position(|cur| {cur.uri() == w.uri()}) {
+                None => return Err(Error::NoObjectPresent(w.uri().clone())),
+                Some(pos) => {
+                    if objects.get(pos).unwrap().hash() != w.hash() {
+                        return Err(Error::NoObjectMatchingHash)
+                    } else {
+                        objects.remove(pos);
+                    }
+                }
+            }
+        }
+
+        all_objects.insert(base_uri.to_string(), objects);
+
+        let new_serial = serial + 1;
+
+        // Create new snapshot
+        let snapshot = Snapshot::new(
+            session.clone(),
+            new_serial,
+            all_objects
+        );
+
+        // Save the xml to disk
+        let snapshot_ref = {
+            let xml = snapshot.to_xml();
+            let path = self.snapshot_path(&session, new_serial);
+            file::save(&Bytes::from(xml), &path)?;
+            SnapshotRef::new(
+                FileInfo::for_path_and_uri(
+                    &path, self.snapshot_uri(&session, new_serial)
+                )?
+            )
+        };
+
+        // save to store
+        self.save_snapshot(&session, new_serial, snapshot)?;
+
+        // Create new delta
+        let delta_ref = self.save_delta(&session, new_serial, delta)?;
+
+        // Create new notification file
+        let new_notification = {
+            let mut builder = NotificationBuilder::new();
+            builder.with_session_id(session);
+            builder.with_serial(new_serial);
+            builder.with_deltas(deltas);
+            builder.add_delta_to_start(delta_ref);
+            builder.with_snapshot(snapshot_ref);
+            builder.build()
+        };
+
+
+        let path = self.notification_path();
+        new_notification.save(&path)?;
+
+        self.save_notification(new_notification)?;
+
+        Ok(())
     }
 
 
@@ -189,60 +367,29 @@ impl RrdpServer {
         Ok(DeltaRef::new(serial, file_info))
     }
 
-
-    /// Saves the current snapshot, based on the state of the ['FileStore']
-    /// base directory.
-    fn save_snapshot(
-        &mut self,
-        session_id: &String,
-        serial: usize
-    ) -> Result<SnapshotRef, Error> {
-        let path = self.snapshot_path(session_id, serial);
-        debug!("Writing snapshot: {}", path.to_string_lossy());
-        let mut file = file::create_file_with_path(&path)?;
-        let current_files = file::crawl_derive_rsync_uri(&self.fs_base)?;
-
-        XmlWriter::encode_to_file(& mut file, |w| {
-
-            let a = [
-                ("xmlns", NS),
-                ("version", VERSION),
-                ("session_id", session_id),
-                ("serial", &format!("{}", serial)),
-            ];
-
-            w.put_element(
-                "snapshot",
-                Some(&a),
-                |w| {
-                    for cf in current_files {
-                        let uri = cf.uri().to_string();
-                        let a = [ ("xmlns", uri.as_ref()) ];
-                        w.put_element(
-                            "publish",
-                            Some(&a),
-                            |w| {
-                                w.put_blob(cf.content())
-                            }
-                        )?;
-                    }
-                    Ok(())
-                }
-            )
-        })?;
-
-        let file_info = FileInfo::for_path(
-            &path,
-            &self.base_uri,
-            &self.rrdp_base
-        )?;
-
-        Ok(SnapshotRef::new(file_info))
-    }
-
     pub fn notification_uri(&self) -> uri::Http {
         uri::Http::from_string(
             format!("{}notification.xml", self.base_uri.to_string())
+        ).unwrap() // Cannot fail. Config checked at startup.
+    }
+
+    pub fn snapshot_uri(&self, session: &str, serial: usize) -> uri::Http {
+        uri::Http::from_string(
+            format!("{}{}/{}/snapshot.xml",
+                    self.base_uri.to_string(),
+                    session,
+                    serial
+            )
+        ).unwrap() // Cannot fail. Config checked at startup.
+    }
+
+    pub fn delta_uri(&self, session: &str, serial: usize) -> uri::Http {
+        uri::Http::from_string(
+            format!("{}{}/{}/snapshot.xml",
+                    self.base_uri.to_string(),
+                    session,
+                    serial
+            )
         ).unwrap() // Cannot fail. Config checked at startup.
     }
 
@@ -283,6 +430,9 @@ pub enum Error {
     IoError(io::Error),
 
     #[display(fmt="{}", _0)]
+    Keystore(keystore::Error),
+
+    #[display(fmt="{}", _0)]
     RecursorError(RecursorError),
 
     #[display(fmt="{}", _0)]
@@ -315,6 +465,10 @@ pub enum Error {
 
 impl From<io::Error> for Error {
     fn from(e: io::Error) -> Self { Error::IoError(e) }
+}
+
+impl From<keystore::Error> for Error {
+    fn from(e: keystore::Error) -> Self { Error::Keystore(e) }
 }
 
 impl From<uri::Error> for Error {

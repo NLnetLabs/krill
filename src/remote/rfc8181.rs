@@ -897,7 +897,7 @@ mod tests {
     use super::*;
     use std::str;
     use rpki::uri::Rsync;
-    use crate::util::hash;
+    use crate::util::sha256;
 
     //------------ ListReplyBuilder ----------------------------------------------
 
@@ -913,7 +913,7 @@ mod tests {
         }
 
         pub fn add(&mut self, object: &Bytes, uri: uri::Rsync) {
-            let hash = hash(object);
+            let hash = sha256(object);
             let el = publication::ListElement::new(uri, hash);
             self.elements.push(el);
         }
@@ -1054,7 +1054,7 @@ mod tests {
     fn should_encode_publish_delta() {
         let object = Bytes::from_static(include_bytes!("../../test/remote/cms_ta.cer"));
         let object2 = Bytes::from_static(include_bytes!("../../test/remote/pdu_200.der"));
-        let object_hash = hash(&object);
+        let object_hash = sha256(&object);
 
         let mut builder = publication::PublishDeltaBuilder::new();
 
