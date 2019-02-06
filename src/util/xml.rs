@@ -46,7 +46,7 @@ impl <R: io::Read> XmlReader<R> {
     }
 
     /// Puts an XmlEvent back so that it can be retrieved by 'next'
-    fn cache(&mut self, e: XmlEvent) -> () {
+    fn cache(&mut self, e: XmlEvent) {
         self.cached_event = Some(e);
     }
 }
@@ -61,8 +61,8 @@ impl <R: io::Read> XmlReader<R> {
     /// Takes the next element and expects a start of document.
     fn start_document(&mut self) -> Result<(), XmlReaderErr> {
         match self.next() {
-            Ok(reader::XmlEvent::StartDocument {..}) => { Ok(())},
-            _ => return Err(XmlReaderErr::ExpectedStartDocument)
+            Ok(reader::XmlEvent::StartDocument {..}) => Ok(()),
+            _ => Err(XmlReaderErr::ExpectedStartDocument)
         }
     }
 
@@ -72,7 +72,7 @@ impl <R: io::Read> XmlReader<R> {
             Ok(reader::XmlEvent::StartElement { name, attributes, ..}) => {
                 Ok((Tag{name: name.local_name}, Attributes{attributes}))
             },
-            _ => return Err(XmlReaderErr::ExpectedStart)
+            _ => Err(XmlReaderErr::ExpectedStart)
         }
     }
 
@@ -212,7 +212,7 @@ impl <R: io::Read> XmlReader<R> {
             Ok(reader::XmlEvent::Characters(chars)) => {
                 Ok(chars)
             }
-            _ => return Err(XmlReaderErr::ExpectedCharacters)
+            _ => Err(XmlReaderErr::ExpectedCharacters)
         }
     }
 
@@ -349,7 +349,7 @@ impl Attributes {
     /// Takes a required attribute by name
     pub fn take_req(&mut self, name: &str) -> Result<String, AttributesError> {
         self.take_opt(name)
-            .ok_or(AttributesError::MissingAttribute(name.to_string()))
+            .ok_or_else(|| AttributesError::MissingAttribute(name.to_string()))
     }
 
     /// Takes a required hexencoded attribute and converts it to Bytes
@@ -357,20 +357,19 @@ impl Attributes {
         -> Result<Bytes, AttributesError> {
 
         match hex::decode(self.take_req(name)?) {
-            Err(e) => return Err(AttributesError::HexError(e)),
+            Err(e) => Err(AttributesError::HexError(e)),
             Ok(b)  => Ok(Bytes::from(b))
         }
     }
 
     /// Verifies that there are no more attributes
     pub fn exhausted(&self) -> Result<(), AttributesError> {
-        if self.attributes.len() > 0 {
-            return Err(AttributesError::ExtraAttributes)
+        if self.attributes.is_empty() {
+            Ok(())
+        } else {
+            Err(AttributesError::ExtraAttributes)
         }
-        Ok(())
     }
-
-
 }
 
 

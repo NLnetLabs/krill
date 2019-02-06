@@ -36,7 +36,7 @@ impl CmsAuthData {
 
 impl CmsAuthData {
     pub fn new(tag: Option<String>, id_cert: IdCert) -> Self {
-        let tag = tag.unwrap_or("".to_string());
+        let tag = tag.unwrap_or_else(String::new);
         CmsAuthData { tag, id_cert }
     }
 }
@@ -162,7 +162,7 @@ pub struct PublisherList<'a> {
 
 impl<'a> PublisherList<'a> {
     pub fn from(
-        publishers: &'a Vec<Arc<Publisher>>,
+        publishers: &'a[Arc<Publisher>],
         path_publishers: &'a str
     ) -> PublisherList<'a> {
         let publishers: Vec<PublisherSummaryInfo> = publishers.iter().map(|p|

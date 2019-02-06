@@ -21,7 +21,7 @@ impl Command {
     }
     pub fn sync(dir: &str, base_uri: &str) -> Result<Self, Error> {
         let dir = PathBuf::from(dir);
-        if ! base_uri.ends_with("/") {
+        if ! base_uri.ends_with('/') {
             Err(Error::InvalidBaseUri)
         } else {
             let uri = uri::Rsync::from_str(base_uri)?;
@@ -46,7 +46,7 @@ pub struct Connection {
 }
 
 impl Connection {
-    pub fn new(
+    pub fn build(
         server_uri: &str,
         handle: &str,
         token: &str
@@ -142,7 +142,7 @@ impl Options {
             let server_uri = m.value_of("server").unwrap();
             let handle     = m.value_of("handle").unwrap();
             let token      = m.value_of("token").unwrap();
-            Connection::new(server_uri, handle, token)?
+            Connection::build(server_uri, handle, token)?
         };
 
         let command = {
@@ -194,7 +194,7 @@ pub enum ApiResponse {
 }
 
 impl ApiResponse {
-    pub fn report(&self, format: Format) {
+    pub fn report(&self, format: &Format) {
         match format {
             Format::None => {}, // done,
             Format::Json => {
@@ -229,7 +229,7 @@ pub fn execute(options: Options) -> Result<ApiResponse, Error> {
 
     match cmd {
         Command::List => {
-            list_query(&connection).map(|l| ApiResponse::List(l))
+            list_query(&connection).map(ApiResponse::List)
         },
         Command::Sync(dir, rsync_uri) => {
             sync(&connection, &dir, &rsync_uri)
@@ -261,7 +261,7 @@ fn sync(
 ) -> Result<ApiResponse, Error> {
     let list_reply = list_query(connection)?;
     let delta = pubc::create_delta(
-        list_reply,
+        &list_reply,
         dir,
         base_rsync
     )?;

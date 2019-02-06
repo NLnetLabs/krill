@@ -3,11 +3,13 @@
 use rpki::uri;
 use crate::util::ext_serde;
 use remote::id::IdCert;
+use std::str::FromStr;
 
 //------------ ApiResponse ---------------------------------------------------
 
 /// This type defines all supported responses for the api
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub enum ApiResponse {
     Health,
     PublisherDetails(PublisherDetails),
@@ -59,8 +61,10 @@ pub enum ReportFormat {
     Xml
 }
 
-impl ReportFormat {
-    pub fn from_str(s: &str) -> Result<Self, ReportError> {
+impl FromStr for ReportFormat {
+    type Err = ReportError;
+
+    fn from_str(s: &str) -> Result<Self, ReportError> {
         match s {
             "none" => Ok(ReportFormat::None),
             "json" => Ok(ReportFormat::Json),

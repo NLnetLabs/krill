@@ -16,8 +16,8 @@ use crate::util::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
 
 //------------ PublisherRequest ----------------------------------------------
 
-pub const VERSION: &'static str = "1";
-pub const NS: &'static str = "http://www.hactrn.net/uris/rpki/rpki-setup/";
+pub const VERSION: &str = "1";
+pub const NS: &str = "http://www.hactrn.net/uris/rpki/rpki-setup/";
 
 /// Type representing a <publisher_request/>
 ///
@@ -67,7 +67,7 @@ impl PublisherRequest {
 
                 Ok(PublisherRequest{
                     tag: tag.map(Into::into),
-                    publisher_handle: ph.into(),
+                    publisher_handle: ph,
                     id_cert: IdCert::decode(cert)?
                 })
             })
@@ -79,7 +79,8 @@ impl PublisherRequest {
     }
 
     pub fn validate_at(&self, now: Time) -> Result<(), PublisherRequestError> {
-        Ok(self.id_cert.validate_ta_at(now)?)
+        self.id_cert.validate_ta_at(now)?;
+        Ok(())
     }
 
     /// Encodes a <publisher_request> to a Vec
@@ -281,7 +282,7 @@ impl RepositoryResponse {
 
                 Ok(RepositoryResponse{
                     tag: tag.map(Into::into),
-                    publisher_handle: publisher_handle.into(),
+                    publisher_handle,
                     id_cert: IdCert::decode(id_cert)?,
                     service_uri,
                     sia_base,
@@ -300,7 +301,8 @@ impl RepositoryResponse {
         &self,
         now: Time
     ) -> Result<(), RepositoryResponseError> {
-        Ok(self.id_cert.validate_ta_at(now)?)
+        self.id_cert.validate_ta_at(now)?;
+        Ok(())
     }
 
     /// Encodes the <repository_response/> to a Vec

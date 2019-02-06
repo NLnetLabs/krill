@@ -18,13 +18,13 @@ use crate::util::softsigner::{self, OpenSslSigner};
 
 
 /// # Naming things in the keystore.
-const ACTOR: &'static str = "publication server";
+const ACTOR: &str = "publication server";
 
 fn my_id_key() -> Key {
-    Key::from_str("my_id")
+    Key::new("my_id")
 }
 
-const MY_ID_MSG: &'static str = "initialised identity";
+const MY_ID_MSG: &str = "initialised identity";
 
 
 //------------ Responder -----------------------------------------------------
@@ -53,8 +53,8 @@ impl Responder {
             fs::create_dir_all(&responder_dir)?;
         }
 
-        let signer = OpenSslSigner::new(&responder_dir)?;
-        let store = CachingDiskKeyStore::new(responder_dir)?;
+        let signer = OpenSslSigner::build(&responder_dir)?;
+        let store = CachingDiskKeyStore::build(responder_dir)?;
 
         let mut responder = Responder {
             signer,
@@ -95,7 +95,7 @@ impl Responder {
 impl Responder {
     pub fn repository_response(
         &self,
-        publisher: Arc<Publisher>,
+        publisher: &Arc<Publisher>,
         service_uri: uri::Http,
         rrdp_notification_uri: uri::Http
     ) -> Result<RepositoryResponse, Error> {
@@ -130,7 +130,7 @@ impl Responder {
     /// Creates an encoded SignedMessage for a contained Message.
     pub fn sign_msg(&mut self, msg: Message) -> Result<Captured, Error> {
         if let Some(id) = self.my_identity()? {
-            let builder = SignedMessageBuilder::new(
+            let builder = SignedMessageBuilder::create(
                 id.key_id(),
                 &mut self.signer,
                 msg
@@ -224,7 +224,7 @@ mod tests {
             let rrdp_uri = test::http_uri("http://host/rrdp/");
 
             responder.repository_response(
-                publisher,
+                &publisher,
                 service_uri,
                 rrdp_uri
             ).unwrap();

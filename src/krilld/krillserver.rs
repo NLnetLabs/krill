@@ -13,7 +13,7 @@ use crate::remote::rfc8183;
 use crate::remote::sigmsg::SignedMessage;
 
 /// # Naming things in the keystore.
-const ACTOR: &'static str = "krill pubd";
+const ACTOR: &str = "krill pubd";
 
 
 //------------ KrillServer ---------------------------------------------------
@@ -55,16 +55,16 @@ pub struct KrillServer {
 impl KrillServer {
     /// Creates a new publication server. Note that state is preserved
     /// on disk in the work_dir provided.
-    pub fn new(
+    pub fn build(
         work_dir: &PathBuf,
         base_uri: &uri::Rsync,
         service_uri: uri::Http,
         rrdp_base_uri: &uri::Http,
         authorizer: Authorizer
     ) -> Result<Self, Error> {
-        let cms_proxy = CmsProxy::new(work_dir)?;
-        let publisher_store = PublisherStore::new(work_dir, base_uri)?;
-        let repository = Repository::new(rrdp_base_uri, work_dir)?;
+        let cms_proxy = CmsProxy::build(work_dir)?;
+        let publisher_store = PublisherStore::build(work_dir, base_uri)?;
+        let repository = Repository::build(rrdp_base_uri, work_dir)?;
 
         Ok(
             KrillServer {
@@ -152,7 +152,7 @@ impl KrillServer {
         name: impl AsRef<str>
     ) -> Result<Option<Arc<publishers::Publisher>>, Error> {
         self.publisher_store.publisher(name)
-            .map_err(|e| Error::PublisherStore(e))
+            .map_err(Error::PublisherStore)
     }
 
     /// Returns a repository response for the given publisher.
@@ -166,10 +166,10 @@ impl KrillServer {
         let rrdp_notification = self.repository.rrdp_notification_uri();
         self.cms_proxy
             .repository_response(
-                publisher,
+                &publisher,
                 self.service_base_uri(),
                 rrdp_notification)
-            .map_err(|e| Error::CmsProxy(e))
+            .map_err(Error::CmsProxy)
     }
 
     pub fn rrdp_base_path(&self) -> PathBuf {
@@ -209,23 +209,26 @@ impl KrillServer {
         };
 
         match self.cms_proxy.publish_request(sigmsg, id_cert) {
-            Err(e)  => self.cms_proxy.wrap_error(e).map_err(|e| Error::CmsProxy(e)),
+            Err(e)  => self.cms_proxy.wrap_error(&e).map_err(Error::CmsProxy),
             Ok(req) => {
                 let reply = match req {
                     publication::PublishRequest::List => {
-                        self.handle_list(handle).map(|list|
-                            publication::PublishReply::List(list))
-
+                        self.handle_list(handle)
+                            .map(publication::PublishReply::List)
                     },
                     publication::PublishRequest::Delta(delta) => {
-                        self.handle_delta(delta, handle).map(|_|
-                            publication::PublishReply::Success)
+                        self.handle_delta(delta, handle)
+                            .map(|_| publication::PublishReply::Success)
                     }
                 };
 
                 match reply {
-                    Ok(reply) => self.cms_proxy.wrap_publish_reply(reply).map_err(|e| Error::CmsProxy(e)),
-                    Err(Error::Repository(e)) => self.cms_proxy.wrap_error(e).map_err(|e| Error::CmsProxy(e)),
+                    Ok(reply) => {
+                        self.cms_proxy.wrap_publish_reply(reply).map_err(Error::CmsProxy)
+                    },
+                    Err(Error::Repository(e)) => {
+                        self.cms_proxy.wrap_error(&e).map_err(Error::CmsProxy)
+                    },
                     Err(e) => Err(e)
                 }
             }
@@ -234,6 +237,7 @@ impl KrillServer {
 
     /// Handles a publish delta request sent to the API, or.. through
     /// the CmsProxy.
+    #[allow(clippy::needless_pass_by_value)]
     pub fn handle_delta(
         &mut self,
         delta: publication::PublishDelta,
@@ -241,8 +245,7 @@ impl KrillServer {
     ) -> Result<(), Error> {
         let publisher = self.publisher_store.get_publisher(handle)?;
         let base_uri = publisher.base_uri();
-        self.repository.publish(&delta, base_uri)
-            .map_err(|e| Error::Repository(e))
+        self.repository.publish(&delta, base_uri).map_err(Error::Repository)
     }
 
     /// Handles a list request sent to the API, or.. through the CmsProxy.
@@ -252,7 +255,7 @@ impl KrillServer {
     ) -> Result<publication::ListReply, Error> {
         let publisher = self.publisher_store.get_publisher(handle)?;
         let base_uri = publisher.base_uri();
-        self.repository.list(base_uri).map_err(|e| Error::Repository(e))
+        self.repository.list(base_uri).map_err(Error::Repository)
     }
 }
 

@@ -49,7 +49,7 @@ pub fn http_uri(s: &str) -> uri::Http {
 pub fn as_bytes(s: &str) -> Bytes { Bytes::from(s) }
 
 pub fn new_id_cert(work_dir: &PathBuf) -> IdCert {
-    let mut s = OpenSslSigner::new(work_dir).unwrap();
+    let mut s = OpenSslSigner::build(work_dir).unwrap();
     let key_id = s.create_key(PublicKeyFormat).unwrap();
     IdCertBuilder::new_ta_id_cert(&key_id, &mut s).unwrap()
 }
@@ -70,7 +70,7 @@ pub fn save_file(base_dir: &PathBuf, file_name: &str, content: &[u8]) {
     let mut full_name = base_dir.clone();
     full_name.push(PathBuf::from(file_name));
     let mut f = File::create(full_name).unwrap();
-    f.write(content).unwrap();
+    f.write_all(content).unwrap();
 }
 
 pub fn save_pr(base_dir: &PathBuf, file_name: &str, pr: &PublisherRequest) {
@@ -78,5 +78,5 @@ pub fn save_pr(base_dir: &PathBuf, file_name: &str, pr: &PublisherRequest) {
     full_name.push(PathBuf::from(file_name));
     let mut f = File::create(full_name).unwrap();
     let xml = pr.encode_vec();
-    f.write(xml.as_ref()).unwrap();
+    f.write_all(xml.as_ref()).unwrap();
 }

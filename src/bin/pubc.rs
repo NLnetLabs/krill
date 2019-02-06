@@ -16,7 +16,7 @@ fn main() {
     let format = options.format().clone();
 
     match apiclient::execute(options) {
-        Ok(res) => res.report(format),
+        Ok(res) => res.report(&format),
         Err(e) => {
             eprintln!("{}", e);
             ::std::process::exit(1);

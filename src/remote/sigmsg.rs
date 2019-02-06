@@ -161,7 +161,7 @@ impl SignedMessage {
         let msg = self.signer_info.signed_attrs().encode_verify();
         ::ring::signature::verify(
             &::ring::signature::RSA_PKCS1_2048_8192_SHA256,
-            Input::from(self.id_cert.public_key().as_ref()),
+            Input::from(self.id_cert.public_key()),
             Input::from(&msg),
             Input::from(self.signer_info.signature().value().as_ref())
         ).map_err(|_| ValidationError)

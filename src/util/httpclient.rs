@@ -12,7 +12,7 @@ use reqwest::header::{
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-const JSON_CONTENT: &'static str = "application/json";
+const JSON_CONTENT: &str = "application/json";
 
 
 /// Performs a GET request that expects a json response that can be
@@ -137,7 +137,7 @@ fn client() -> Result<Client, Error> {
         .gzip(true)
         .timeout(Duration::from_secs(30))
         .build()
-        .map_err(|e| Error::RequestError(e))
+        .map_err(Error::RequestError)
 }
 
 fn headers(

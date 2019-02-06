@@ -53,7 +53,7 @@ pub struct OpenSslSigner {
 }
 
 impl OpenSslSigner {
-    pub fn new(work_dir: &PathBuf) -> Result<Self, SignerError> {
+    pub fn build(work_dir: &PathBuf) -> Result<Self, SignerError> {
         let meta_data = fs::metadata(&work_dir)?;
         if meta_data.is_dir() {
 
@@ -65,7 +65,7 @@ impl OpenSslSigner {
 
             Ok(
                 OpenSslSigner {
-                    store: CachingDiskKeyStore::new(keys_dir)?,
+                    store: CachingDiskKeyStore::build(keys_dir)?,
                 }
             )
         } else {
@@ -104,12 +104,12 @@ impl Signer for OpenSslSigner {
         _algorithm: PublicKeyFormat
     ) -> Result<Self::KeyId, Self::Error> {
 
-        let kp = OpenSslKeyPair::new()?;
+        let kp = OpenSslKeyPair::build()?;
 
         let pk = &kp.subject_public_key_info()?;
         let hex_hash = hex::encode(pk.key_identifier().as_ref());
         let key_id = SignerKeyId(hex_hash);
-        let store_key = Key::from_str(key_id.as_ref());
+        let store_key = Key::new(key_id.as_ref());
         let info = Info::now("openssl signer", "created key");
 
         self.store.store(store_key, kp, info)?;
@@ -121,7 +121,7 @@ impl Signer for OpenSslSigner {
         &self,
         key_id: &Self::KeyId
     ) -> Result<PublicKey, KeyError<Self::Error>> {
-        let store_key = Key::from_str(key_id.as_ref());
+        let store_key = Key::new(key_id.as_ref());
 
         let key_pair_option: Option<Arc<OpenSslKeyPair>> =
             self.store.get(&store_key)
@@ -140,7 +140,7 @@ impl Signer for OpenSslSigner {
         key_id: &Self::KeyId
     ) -> Result<(), KeyError<Self::Error>> {
 
-        let store_key = Key::from_str(key_id.as_ref());
+        let store_key = Key::new(key_id.as_ref());
         let info = Info::now("openssl signer", "archived key");
 
         self.store.archive(&store_key, info).map_err(|e| {
@@ -154,7 +154,7 @@ impl Signer for OpenSslSigner {
         _algorithm: SignatureAlgorithm,
         data: &D
     ) -> Result<Signature, SigningError<Self::Error>> {
-        let store_key = Key::from_str(key_id.as_ref());
+        let store_key = Key::new(key_id.as_ref());
         let key_pair_option: Option<Arc<OpenSslKeyPair>> =
             self.store.get(&store_key)
                 .map_err(|e| {
@@ -175,7 +175,7 @@ impl Signer for OpenSslSigner {
         _algorithm: SignatureAlgorithm,
         data: &D
     ) -> Result<(Signature, PublicKey), SignerError> {
-        let kp = OpenSslKeyPair::new()?;
+        let kp = OpenSslKeyPair::build()?;
 
         let signature = Self::sign_with_key(
             kp.pkey.as_ref(),
@@ -234,7 +234,7 @@ impl<'de> Deserialize<'de> for OpenSslKeyPair {
 }
 
 impl OpenSslKeyPair {
-    fn new() -> Result<OpenSslKeyPair, SignerError> {
+    fn build() -> Result<OpenSslKeyPair, SignerError> {
         // Issues unwrapping this indicate a bug in the openssl library.
         // So, there is no way to recover.
         let rsa = Rsa::generate(2048)?;
@@ -309,7 +309,7 @@ pub mod tests {
     #[test]
     fn should_return_subject_public_key_info() {
         test::test_with_tmp_dir(|d| {
-            let mut s = OpenSslSigner::new(&d).unwrap();
+            let mut s = OpenSslSigner::build(&d).unwrap();
             let ki = s.create_key(PublicKeyFormat).unwrap();
             s.get_key_info(&ki).unwrap();
             s.destroy_key(&ki).unwrap();
@@ -319,7 +319,7 @@ pub mod tests {
     #[test]
     fn should_serialize_and_deserialize_key() {
 
-        let key = OpenSslKeyPair::new().unwrap();
+        let key = OpenSslKeyPair::build().unwrap();
         let json = serde_json::to_string(&key).unwrap();
         let key_des: OpenSslKeyPair = serde_json::from_str(json.as_str()).unwrap();
         let json_from_des = serde_json::to_string(&key_des).unwrap();

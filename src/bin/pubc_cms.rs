@@ -28,7 +28,7 @@ fn main() {
         }
     };
 
-    let client = match PubClient::new(config.state_dir()) {
+    let client = match PubClient::build(config.state_dir()) {
         Ok(client) => client,
         Err(e) => {
             eprintln!("{}", e);
@@ -63,7 +63,7 @@ fn publisher_request(
 ) -> Result<(), Error> {
     let req = client.publisher_request()?;
     let mut file = file::create_file_with_path(&path)?;
-    file.write(&req.encode_vec())?;
+    file.write_all(&req.encode_vec())?;
     Ok(())
 }
 
@@ -74,7 +74,7 @@ fn process_response(
     let bytes = file::read(path)?;
     let res = RepositoryResponse::decode(bytes.as_ref())?;
     res.validate()?;
-    client.process_repo_response(res)?;
+    client.process_repo_response(&res)?;
     Ok(())
 }
 

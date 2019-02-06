@@ -32,13 +32,13 @@ fn render_json<O: Serialize>(object: O) -> HttpResponse {
                 .content_type("application/json")
                 .body(enc)
         },
-        Err(e) => server_error(Error::JsonError(e))
+        Err(e) => server_error(&Error::JsonError(e))
     }
 }
 
 /// Helper function to render server side errors. Also responsible for
 /// logging the errors.
-fn server_error(error: Error) -> HttpResponse {
+fn server_error(error: &Error) -> HttpResponse {
     error!("{}", error);
     error.error_response()
 }
@@ -64,7 +64,7 @@ pub fn health(_r: &HttpRequest) -> HttpResponse {
 /// Returns a json structure with all publishers in it.
 pub fn publishers(req: &HttpRequest) -> HttpResponse {
     match ro_server(req).publishers() {
-        Err(e) => server_error(Error::ServerError(e)),
+        Err(e) => server_error(&Error::ServerError(e)),
         Ok(publishers) => {
             render_json(
                 publishers::PublisherList::from(&publishers, "/api/v1/publishers")
@@ -75,6 +75,7 @@ pub fn publishers(req: &HttpRequest) -> HttpResponse {
 
 /// Adds a publisher, expects that an RFC8183 section 5.2.3 Publisher
 /// Request XML is posted.
+#[allow(clippy::needless_pass_by_value)]
 pub fn add_publisher(
     req: HttpRequest,
     pbl: publishers::Publisher
@@ -82,12 +83,13 @@ pub fn add_publisher(
     let mut server = rw_server(&req);
     match server.add_publisher(pbl) {
         Ok(()) => api_ok(),
-        Err(e) => server_error(Error::ServerError(e))
+        Err(e) => server_error(&Error::ServerError(e))
     }
 }
 
 /// Removes a publisher. Should be idempotent! If if did not exist then
 /// that's just fine.
+#[allow(clippy::needless_pass_by_value)]
 pub fn remove_publisher(
     req: HttpRequest,
     handle: PublisherHandle
@@ -96,11 +98,12 @@ pub fn remove_publisher(
         Ok(()) => api_ok(),
         Err(krillserver::Error::PublisherStore(
                 pubd::Error::UnknownPublisher(_))) => api_ok(),
-        Err(e) => server_error(Error::ServerError(e))
+        Err(e) => server_error(&Error::ServerError(e))
     }
 }
 
 /// Returns a json structure with publisher details
+#[allow(clippy::needless_pass_by_value)]
 pub fn publisher_details(
     req: HttpRequest,
     handle: PublisherHandle
@@ -116,12 +119,13 @@ pub fn publisher_details(
                     server.service_base_uri())
             )
         },
-        Err(e) => server_error(Error::ServerError(e))
+        Err(e) => server_error(&Error::ServerError(e))
     }
 }
 
 /// Shows the server's RFC8183 section 5.2.4 Repository Response XML
 /// file for a known publisher.
+#[allow(clippy::needless_pass_by_value)]
 pub fn repository_response(
     req: HttpRequest,
     handle: PublisherHandle
@@ -137,7 +141,7 @@ pub fn repository_response(
             api_not_found()
         },
         Err(e) => {
-            server_error(Error::ServerError(e))
+            server_error(&Error::ServerError(e))
         }
     }
 }
@@ -146,6 +150,7 @@ pub fn repository_response(
 //------------ Publication ---------------------------------------------------
 
 /// Processes an RFC8181 query and returns the appropriate response.
+#[allow(clippy::needless_pass_by_value)]
 pub fn handle_rfc8181_request(
     req: HttpRequest,
     msg: SignedMessage,
@@ -159,12 +164,13 @@ pub fn handle_rfc8181_request(
                 .body(captured.into_bytes())
         }
         Err(e) => {
-            server_error(Error::ServerError(e))
+            server_error(&Error::ServerError(e))
         }
     }
 }
 
 /// Processes a publishdelta request sent to the API.
+#[allow(clippy::needless_pass_by_value)]
 pub fn handle_delta(
     req: HttpRequest,
     delta: publication::PublishDelta,
@@ -172,18 +178,19 @@ pub fn handle_delta(
 ) -> HttpResponse {
     match rw_server(&req).handle_delta(delta, handle.as_ref()) {
         Ok(()) => api_ok(),
-        Err(e) => server_error(Error::ServerError(e))
+        Err(e) => server_error(&Error::ServerError(e))
     }
 }
 
 /// Processes a list request sent to the API.
+#[allow(clippy::needless_pass_by_value)]
 pub fn handle_list(
     req: HttpRequest,
     handle: PublisherHandle
 ) -> HttpResponse {
     match ro_server(&req).handle_list(handle.as_ref()) {
         Ok(list) => render_json(list),
-        Err(e)   => server_error(Error::ServerError(e))
+        Err(e)   => server_error(&Error::ServerError(e))
     }
 }
 

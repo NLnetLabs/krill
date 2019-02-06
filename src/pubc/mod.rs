@@ -7,7 +7,7 @@ use crate::api::publication;
 use crate::util::file;
 
 pub fn create_delta(
-    list_reply: publication::ListReply,
+    list_reply: &publication::ListReply,
     dir: &PathBuf,
     base_rsync: &uri::Rsync
 ) -> Result<publication::PublishDelta, Error> {
@@ -17,7 +17,7 @@ pub fn create_delta(
 
     // loop through what the server has and find the ones to withdraw
     for p in list_reply.elements() {
-        if current.iter().find(|c| { c.uri() == p.uri() }).is_none() {
+        if current.iter().find(|c| c.uri() == p.uri()).is_none() {
             delta_builder.add_withdraw(
                 publication::Withdraw::from_list_element(p)
             );
@@ -28,7 +28,7 @@ pub fn create_delta(
     // to be added to, which need to be updated at, or for which no change is
     // needed at the server.
     for f in current {
-        match list_reply.elements().iter().find(|pbl| { pbl.uri() == f.uri()}) {
+        match list_reply.elements().iter().find(|pbl| pbl.uri() == f.uri()) {
             None => delta_builder.add_publish(f.as_publish()),
             Some(pbl) => {
                 if pbl.hash() != f.hash() {

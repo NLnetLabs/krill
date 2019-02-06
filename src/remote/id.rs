@@ -422,7 +422,7 @@ impl IdCert {
         // 4.8.1. Basic Constraints: For a CA it must be present (RFC6487)
         // und the “cA” flag must be set (RFC5280).
         if let Some(ref ca) = self.extensions.basic_ca {
-            if ca.ca() == true {
+            if ca.ca() {
                 return  Ok(())
             }
         }

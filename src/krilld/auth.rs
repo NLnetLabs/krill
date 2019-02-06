@@ -6,8 +6,8 @@ use actix_web::http::HeaderMap;
 use actix_web::middleware::{Middleware, Started};
 use crate::krilld::krillserver::KrillServer;
 
-const ADMIN_API_PATH: &'static str = "/api/";
-const PUBLICATION_API_PATH: &'static str = "/publication/";
+const ADMIN_API_PATH: &str = "/api/";
+const PUBLICATION_API_PATH: &str = "/publication/";
 
 pub struct CheckAuthorisation;
 

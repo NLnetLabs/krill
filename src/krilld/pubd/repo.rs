@@ -20,13 +20,13 @@ pub struct Repository {
 /// # Construct
 ///
 impl Repository {
-    pub fn new(
+    pub fn build(
         rrdp_base_uri: &uri::Http,
         work_dir: &PathBuf
     ) -> Result<Self, Error>
     {
-        let fs = rsyncd::FileStore::new(work_dir)?;
-        let rrdp = rrdpd::RrdpServer::new(rrdp_base_uri, work_dir)?;
+        let fs = rsyncd::FileStore::build(work_dir)?;
+        let rrdp = rrdpd::RrdpServer::build(rrdp_base_uri, work_dir)?;
         Ok( Repository { fs, rrdp } )
     }
 }
@@ -110,7 +110,7 @@ mod tests {
     fn should_publish() {
         test::test_with_tmp_dir(|d| {
             let rrdp_base_uri = test::http_uri("http://localhost:3000/repo/");
-            let mut repo = Repository::new(&rrdp_base_uri, &d).unwrap() ;
+            let mut repo = Repository::build(&rrdp_base_uri, &d).unwrap() ;
 
             // Publish a file
             let rsync_for_alice =
@@ -185,7 +185,7 @@ mod tests {
     #[test]
     fn should_store_list_withdraw_files() {
         test::test_with_tmp_dir(|d| {
-            let mut file_store = rsyncd::FileStore::new(&d).unwrap();
+            let mut file_store = rsyncd::FileStore::build(&d).unwrap();
 
             // Using a port here to make sure that it works in mapping
             // the rsync URI to and from disk.
@@ -239,7 +239,7 @@ mod tests {
     #[test]
     fn should_not_allow_publishing_or_withdrawing_outside_of_base() {
         test::test_with_tmp_dir(|d| {
-            let mut file_store = rsyncd::FileStore::new(&d).unwrap();
+            let mut file_store = rsyncd::FileStore::build(&d).unwrap();
 
             // Using a port here to make sure that it works in mapping
             // the rsync URI to and from disk.

@@ -56,6 +56,7 @@ impl PublishDelta {
 
 //------------ PublishDeltaBuilder -------------------------------------------
 
+#[derive(Default)]
 pub struct PublishDeltaBuilder {
     publishes: Vec<Publish>,
     updates: Vec<Update>,
@@ -64,11 +65,7 @@ pub struct PublishDeltaBuilder {
 
 impl PublishDeltaBuilder {
     pub fn new() -> Self {
-        PublishDeltaBuilder {
-            publishes: vec![],
-            updates: vec![],
-            withdraws: vec![]
-        }
+        Self::default()
     }
 
     pub fn add_publish(&mut self, publish: Publish) {

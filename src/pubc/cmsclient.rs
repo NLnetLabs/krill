@@ -23,23 +23,23 @@ use pubc;
 
 
 /// # Some constants for naming resources in the keystore for clients.
-const ACTOR: &'static str = "publication client";
+const ACTOR: &str = "publication client";
 
 fn id_key() -> Key {
-    Key::from_str("my_id")
+    Key::new("my_id")
 }
 
 fn parent_key() -> Key {
-    Key::from_str("my_parent")
+    Key::new("my_parent")
 }
 
 fn repo_key() -> Key {
-    Key::from_str("my_repo")
+    Key::new("my_repo")
 }
 
-const ID_MSG: &'static str = "initialised identity";
-const PARENT_MSG: &'static str ="updated parent info";
-const REPO_MSG: &'static str = "update repo info";
+const ID_MSG: &str = "initialised identity";
+const PARENT_MSG: &str ="updated parent info";
+const REPO_MSG: &str = "update repo info";
 
 
 //------------ PubClient -----------------------------------------------------
@@ -68,9 +68,9 @@ pub struct PubClient {
 
 impl PubClient {
     /// Creates a new publication client
-    pub fn new(work_dir: &PathBuf) -> Result<Self, Error> {
-        let store = CachingDiskKeyStore::new(work_dir.clone())?;
-        let signer = OpenSslSigner::new(work_dir)?;
+    pub fn build(work_dir: &PathBuf) -> Result<Self, Error> {
+        let store = CachingDiskKeyStore::build(work_dir.clone())?;
+        let signer = OpenSslSigner::build(work_dir)?;
         Ok(
             PubClient {
                 signer,
@@ -129,7 +129,7 @@ impl PubClient {
     /// Process the publication server parent response.
     pub fn process_repo_response(
         &mut self,
-        response: rfc8183::RepositoryResponse
+        response: &rfc8183::RepositoryResponse
     ) -> Result<(), Error> {
 
         // Store parent info
@@ -182,7 +182,7 @@ impl PubClient {
         let query = rfc8181::Message::list_query();
         let signed_request = self.sign_request(query)?;
 
-        let reply = self.send_request(signed_request)?.as_reply()?;
+        let reply = self.send_request(signed_request)?.into_reply()?;
 
         match reply {
             rfc8181::ReplyMessage::ErrorReply(e) => Err(Error::ErrorReply(e)),
@@ -198,12 +198,13 @@ impl PubClient {
         let repo = self.get_my_repo()?;
         let list_reply = self.get_server_list()?;
 
-        let delta = pubc::create_delta(list_reply, base_path, repo.sia_base())?;
+        let delta = pubc::create_delta(&list_reply, base_path, repo.sia_base
+        ())?;
 
         if ! delta.is_empty() {
             let msg = rfc8181::Message::publish_delta_query(delta);
             let sgn_msg = self.sign_request(msg)?;
-            let reply = self.send_request(sgn_msg)?.as_reply()?;
+            let reply = self.send_request(sgn_msg)?.into_reply()?;
 
             match reply {
                 rfc8181::ReplyMessage::ErrorReply(e) => Err(Error::ErrorReply(e)),
@@ -245,7 +246,7 @@ impl PubClient {
     ) -> Result<Captured, Error> {
         let id = self.get_my_id()?;
 
-        let builder = SignedMessageBuilder::new(
+        let builder = SignedMessageBuilder::create(
             id.key_id(),
             &mut self.signer,
             msg

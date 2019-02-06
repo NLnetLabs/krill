@@ -31,7 +31,7 @@ fn client_publish_at_server() {
 
         // Set up a client
         let client_dir = test::create_sub_dir(&d);
-        let mut client = PubClient::new(&client_dir).unwrap();
+        let mut client = PubClient::build(&client_dir).unwrap();
         client.init("alice").unwrap();
         let pr = client.publisher_request().unwrap();
         test::save_pr(&d, "alice.xml", &pr);
@@ -85,7 +85,7 @@ fn client_publish_at_server() {
         ).unwrap();
 
         repo_res.validate().unwrap();
-        client.process_repo_response(repo_res).unwrap();
+        client.process_repo_response(&repo_res).unwrap();
 
         // List files at server
         let list = client.get_server_list().unwrap();

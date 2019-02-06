@@ -12,8 +12,8 @@ use crate::util::file::{self, RecursorError};
 use crate::util::ext_serde;
 use util::sha256;
 
-const VERSION: &'static str = "1";
-const NS: &'static str = "http://www.ripe.net/rpki/rrdp";
+const VERSION: &str = "1";
+const NS: &str = "http://www.ripe.net/rpki/rrdp";
 
 #[derive(Clone, Debug, Deserialize, Eq, Serialize, PartialEq)]
 pub struct PublishedObject {
@@ -78,7 +78,7 @@ impl Snapshot {
                 Some(&a),
                 |w| {
                     for uri in self.objects.keys() {
-                        let objects = self.objects.get(uri).unwrap();
+                        let objects = &self.objects[uri];
                         for cf in objects {
                             let uri = cf.uri.to_string();
                             let a = [ ("uri", uri.as_ref()) ];
@@ -401,6 +401,7 @@ impl FileInfo {
 
 //------------ NotificationBuilder -------------------------------------------
 
+#[derive(Default)]
 pub struct NotificationBuilder {
     serial: Option<usize>,
     session_id: Option<String>,
@@ -410,12 +411,7 @@ pub struct NotificationBuilder {
 
 impl NotificationBuilder {
     pub fn new() -> Self {
-        NotificationBuilder {
-            serial: None,
-            session_id: None,
-            snapshot: None,
-            deltas: Vec::new()
-        }
+        Self::default()
     }
 
     pub fn with_serial(&mut self, serial: usize) {
@@ -457,8 +453,8 @@ impl NotificationBuilder {
         let mut count = 0;
 
         self.deltas.retain(|d| {
-            count = count + 1;
-            total_deltas = total_deltas + d.size;
+            count += 1;
+            total_deltas += d.size;
             count <= 2 || total_deltas < size_snapshot
         })
 

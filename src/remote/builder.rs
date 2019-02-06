@@ -31,6 +31,7 @@ use crate::remote::rfc8181::Message;
 //------------ TbsCertificate ------------------------------------------------
 
 /// The supported extension types for our RPKI TbsCertificate
+#[allow(clippy::large_enum_variant)]
 pub enum RpkiTbsExtension {
     ResourceExtensions(Extensions),
     IdExtensions(IdExtensions)
@@ -267,14 +268,14 @@ pub struct SignedMessageBuilder {
 }
 
 impl SignedMessageBuilder {
-    pub fn new<S: Signer>(
+    pub fn create<S: Signer>(
         issuing_key: &S::KeyId,
         signer: &mut S,
         message: Message
     ) -> Result<SignedMessageBuilder, Error<S::Error>> {
         let content = OctetString::new(message.into_bytes());
 
-        let signer_info = SignerInfoBuilder::new(
+        let signer_info = SignerInfoBuilder::create(
             signer,
             &content.to_bytes()
         )?;
@@ -285,7 +286,7 @@ impl SignedMessageBuilder {
             signer
         )?;
 
-        let crl = CrlBuilder::new(issuing_key, signer)?;
+        let crl = CrlBuilder::create(issuing_key, signer)?;
 
         Ok(
             SignedMessageBuilder {
@@ -464,7 +465,7 @@ impl SignedAttributes {
         //  encoding, rather an EXPLICIT SET OF tag is used...
         let encode_in_set = encode::set(self.encode()).to_captured(Mode::Der);
         signer.sign_one_off(SignatureAlgorithm, encode_in_set.as_slice())
-            .map_err(|e| Error::SignerError(e))
+            .map_err(Error::SignerError)
     }
 
 }
@@ -546,7 +547,7 @@ impl SignerInfoBuilder {
     ///
     /// A lot of this is pretty well restricted in RFCs 6488 amd 6492. We
     /// really only require some bits.
-    pub fn new<S: Signer>(
+    pub fn create<S: Signer>(
         signer: &mut S,
         message: &Bytes
     ) -> Result<SignedSignerInfo, Error<S::Error>> {
@@ -589,7 +590,7 @@ impl CrlBuilder {
     ///
     /// This will all be changed in future when we implement generating CRLs
     /// for the RPKI CA.
-    pub fn new<S: Signer>(
+    pub fn create<S: Signer>(
         issuing_key: &S::KeyId,
         signer: &mut S
     ) -> Result<Crl, Error<S::Error>>
@@ -701,7 +702,7 @@ pub mod tests {
     #[test]
     fn should_create_self_signed_ta_id_cert() {
         test::test_with_tmp_dir(|d| {
-            let mut s = OpenSslSigner::new(&d);
+            let mut s = OpenSslSigner::build(&d);
             let key_id = s.create_key(&PublicKeyAlgorithm::RsaEncryption).unwrap();
 
             let id_cert = IdCertBuilder::new_ta_id_cert(&key_id, & mut s).unwrap();
@@ -712,11 +713,11 @@ pub mod tests {
     #[test]
     fn should_create_crl_for_protocol() {
         test::test_with_tmp_dir(|d| {
-            let mut s = OpenSslSigner::new(&d);
+            let mut s = OpenSslSigner::build(&d);
             let key_id = s.create_key(&PublicKeyAlgorithm::RsaEncryption).unwrap();
             let key_info = s.get_key_info(&key_id).unwrap();
 
-            let crl = CrlBuilder::new(&key_id, & mut s).unwrap();
+            let crl = CrlBuilder::create(&key_id, & mut s).unwrap();
             crl.validate(&key_info).unwrap();
         })
     }
@@ -724,13 +725,13 @@ pub mod tests {
     #[test]
     fn should_create_signed_publication_message() {
         test::test_with_tmp_dir(|d| {
-            let mut s = OpenSslSigner::new(&d);
+            let mut s = OpenSslSigner::build(&d);
             let key_id = s.create_key(&PublicKeyAlgorithm::RsaEncryption).unwrap();
             let id_cert = IdCertBuilder::new_ta_id_cert(&key_id, & mut s).unwrap();
 
             let message = ListQuery::build_message();
 
-            let builder = SignedMessageBuilder::new(
+            let builder = SignedMessageBuilder::create(
                 &key_id,
                 &mut s,
                 message.clone()

@@ -56,7 +56,7 @@ fn manage_publishers() {
         // Set up a client "alice"
         {
             let client_dir = test::create_sub_dir(&d);
-            let mut client = PubClient::new(&client_dir).unwrap();
+            let mut client = PubClient::build(&client_dir).unwrap();
             client.init("alice").unwrap();
             let pr = client.publisher_request().unwrap();
             test::save_pr(&d, "alice.xml", &pr);

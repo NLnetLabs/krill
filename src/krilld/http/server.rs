@@ -25,7 +25,7 @@ use crate::krilld::krillserver::KrillServer;
 use crate::remote::rfc8183;
 use crate::remote::sigmsg::SignedMessage;
 
-const NOT_FOUND: &'static [u8] = include_bytes!("../../../ui/dev/html/404.html");
+const NOT_FOUND: &[u8] = include_bytes!("../../../ui/dev/html/404.html");
 
 //------------ PubServerApp --------------------------------------------------
 
@@ -80,16 +80,13 @@ impl PubServerApp {
             });
 
         use std::env;
-        match env::var("KRILL_DEV_MODE") {
-            Ok(_) => {
-                app = app.handler(
-                    "/ui/dev",
-                    fs::StaticFiles::new("./ui/dev")
-                        .unwrap()
-                        .show_files_listing()
-                );
-            },
-            _ => {}
+        if env::var("KRILL_DEV_MODE").is_ok() {
+            app = app.handler(
+                "/ui/dev",
+                fs::StaticFiles::new("./ui/dev")
+                    .unwrap()
+                    .show_files_listing()
+            );
         }
 
         PubServerApp(with_statics(app))
@@ -97,7 +94,7 @@ impl PubServerApp {
 
     pub fn create_server(config: &Config) -> Arc<RwLock<KrillServer>> {
         let authorizer = Authorizer::new(&config.auth_token);
-        let pub_server = match KrillServer::new(
+        let pub_server = match KrillServer::build(
             &config.data_dir,
             &config.rsync_base,
             config.service_uri(),
@@ -121,7 +118,7 @@ impl PubServerApp {
 
         server::new(move || PubServerApp::new(ps.clone()))
             .bind(config.socket_addr())
-            .expect(&format!("Cannot bind to: {}", config.socket_addr()))
+            .unwrap_or_else(|_| panic!("Cannot bind to: {}", config.socket_addr()))
             .shutdown_timeout(0)
             .start();
     }
@@ -136,7 +133,7 @@ impl PubServerApp {
             match Self::https_builder(config) {
                 Ok(https_builder) => {
                     server.bind_ssl(config.socket_addr(), https_builder)
-                        .expect(&format!("Cannot bind to: {}", config.socket_addr()))
+                        .unwrap_or_else(|_| panic!("Cannot bind to: {}", config.socket_addr()))
                         .shutdown_timeout(0)
                         .run();
                 },
@@ -148,7 +145,7 @@ impl PubServerApp {
 
         } else {
             server.bind(config.socket_addr())
-                .expect(&format!("Cannot bind to: {}", config.socket_addr()))
+                .unwrap_or_else(|_| panic!("Cannot bind to: {}", config.socket_addr()))
                 .shutdown_timeout(0)
                 .run();
         }
@@ -275,7 +272,7 @@ impl<S: 'static> FromRequest<S> for publishers::Publisher {
             .and_then(|bytes| {
                 let p: publishers::Publisher =
                     serde_json::from_reader(bytes.as_ref())
-                    .map_err(|e| Error::JsonError(e))?;
+                    .map_err(Error::JsonError)?;
                 Ok(p)
             })
         )
@@ -327,8 +324,7 @@ impl<S: 'static> FromRequest<S> for publication::PublishDelta {
             .from_err()
             .and_then(|bytes| {
                 let delta: publication::PublishDelta =
-                    serde_json::from_reader(bytes.as_ref())
-                    .map_err(|e| Error::JsonError(e))?;
+                    serde_json::from_reader(bytes.as_ref())?;
                 Ok(delta)
             })
         )
@@ -384,6 +380,10 @@ pub enum Error {
 
     #[display(fmt = "{}", _0)]
     Other(String),
+}
+
+impl From<serde_json::Error> for Error {
+    fn from(e: serde_json::Error) -> Self { Error::JsonError(e) }
 }
 
 impl error::Error for Error {

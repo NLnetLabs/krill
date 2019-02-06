@@ -29,7 +29,7 @@ use std::collections::HashSet;
 use krill::util::httpclient;
 
 fn list(server_uri: &str, handle: &str, token: &str) -> apiclient::Options {
-    let conn = apiclient::Connection::new(server_uri, handle, token).unwrap();
+    let conn = apiclient::Connection::build(server_uri, handle, token).unwrap();
     let cmd = apiclient::Command::List;
     let fmt = apiclient::Format::Json;
 
@@ -43,7 +43,7 @@ fn sync(
     syncdir: &PathBuf,
     base_uri: &str
 ) -> apiclient::Options {
-    let conn = apiclient::Connection::new(server_uri, handle, token).unwrap();
+    let conn = apiclient::Connection::build(server_uri, handle, token).unwrap();
     let cmd = apiclient::Command::sync(syncdir.to_str().unwrap(), base_uri).unwrap();
     let fmt = apiclient::Format::Json;
 

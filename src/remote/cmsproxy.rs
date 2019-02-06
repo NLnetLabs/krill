@@ -33,7 +33,7 @@ pub struct CmsProxy {
 
 /// # Set up
 impl CmsProxy {
-    pub fn new(
+    pub fn build(
         work_dir: &PathBuf
     ) -> Result<Self, Error> {
         let responder = Responder::init(work_dir)?;
@@ -56,8 +56,8 @@ impl CmsProxy {
         debug!("Validating Signed Message");
         msg.validate(id_cert)?;
         let msg = rfc8181::Message::from_signed_message(&msg)?;
-        let msg = msg.as_query()?;
-        Ok(msg.as_publish_request())
+        let msg = msg.into_query()?;
+        Ok(msg.into_publish_request())
     }
 
     /// Handles a PublishReply, and wraps it in an RFC8181 message
@@ -75,13 +75,13 @@ impl CmsProxy {
             }
         };
 
-        self.responder.sign_msg(msg).map_err(|e| Error::ResponderError(e))
+        self.responder.sign_msg(msg).map_err(Error::ResponderError)
     }
 
     /// Converts an error to an RFC8181 response message
     pub fn wrap_error(
         &mut self,
-        error: impl ToReportErrorCode
+        error: &impl ToReportErrorCode
     ) -> Result<Captured, Error> {
         let mut error_builder = rfc8181::ErrorReply::build();
         error_builder.add(
@@ -92,13 +92,13 @@ impl CmsProxy {
         );
         let msg = error_builder.build_message();
 
-        self.responder.sign_msg(msg).map_err(|e| Error::ResponderError(e))
+        self.responder.sign_msg(msg).map_err(Error::ResponderError)
     }
 
     /// Returns an RFC8183 Repository Response
     pub fn repository_response(
         &self,
-        publisher: Arc<publishers::Publisher>,
+        publisher: &Arc<publishers::Publisher>,
         base_service_uri: &uri::Http,
         rrdp_notification_uri: uri::Http
     ) -> Result<rfc8183::RepositoryResponse, Error> {
@@ -112,10 +112,10 @@ impl CmsProxy {
 
         self.responder
             .repository_response(
-                publisher,
+                &publisher,
                 service_uri,
                 rrdp_notification_uri)
-            .map_err(|e| Error::ResponderError(e))
+            .map_err(Error::ResponderError)
     }
 
 

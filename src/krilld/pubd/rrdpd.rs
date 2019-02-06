@@ -22,11 +22,11 @@ use api::rrdp_data::SnapshotRef;
 
 //const VERSION: &'static str = "1";
 //const NS: &'static str = "http://www.ripe.net/rpki/rrdp";
-const RRDP_FOLDER: &'static str = "rrdp";
-const FS_FOLDER: &'static str = "rsync";
+const RRDP_FOLDER: &str = "rrdp";
+const FS_FOLDER: &str = "rsync";
 
-const VERSION: &'static str = "1";
-const NS: &'static str = "http://www.ripe.net/rpki/rrdp";
+const VERSION: &str = "1";
+const NS: &str = "http://www.ripe.net/rpki/rrdp";
 
 
 
@@ -55,12 +55,12 @@ impl RrdpServer {
     /// present, or initialise a new server with a random session_id,
     /// starting at serial 1, and including a snapshot for everything
     /// currently stored in the rsync file_store.
-    pub fn new(
+    pub fn build(
         base_uri: &uri::Http,
         work_dir: &PathBuf
     ) -> Result<Self, Error>
     {
-        if ! base_uri.to_string().ends_with("/") {
+        if ! base_uri.to_string().ends_with('/') {
             return Err(Error::UriConfigError)
         }
 
@@ -70,7 +70,7 @@ impl RrdpServer {
             fs::create_dir_all(&rrdp_store_dir)?;
         }
 
-        let store = CachingDiskKeyStore::new(rrdp_store_dir)?;
+        let store = CachingDiskKeyStore::build(rrdp_store_dir)?;
 
         let rrdp_base = file::sub_dir(work_dir, RRDP_FOLDER)?;
         let fs_base = file::sub_dir(work_dir, FS_FOLDER)?;
@@ -85,27 +85,27 @@ impl RrdpServer {
 //    const REL_NOTIFICATION: &'static str = "notification.xml";
 
     fn key_notification() -> Key {
-        Key::from_str("notification")
+        Key::new("notification")
     }
 
-    fn key_snapshot(session: &String, serial: usize) -> Key {
-        Key::from_str(&format!("{}-{}-snapshot", session, serial))
+    fn key_snapshot(session: &str, serial: usize) -> Key {
+        Key::new(&format!("{}-{}-snapshot", session, serial))
     }
 
     pub fn get_notification(
         &self
     ) -> Result<Option<Arc<Notification>>, Error> {
         let key = Self::key_notification();
-        self.store.get(&key).map_err(|e| Error::Keystore(e) )
+        self.store.get(&key).map_err(Error::Keystore)
     }
 
     pub fn get_snapshot(
         &self,
-        session: &String,
+        session: &str,
         serial: usize
     ) -> Result<Option<Arc<Snapshot>>, Error> {
         let key = Self::key_snapshot(session, serial);
-        self.store.get(&key).map_err(|e| Error::Keystore(e) )
+        self.store.get(&key).map_err(Error::Keystore )
     }
 
     pub fn save_notification(
@@ -117,12 +117,12 @@ impl RrdpServer {
             key,
             notification,
             Info::now("server", "notification")
-        ).map_err(|e| Error::Keystore(e))
+        ).map_err(Error::Keystore)
     }
 
     pub fn save_snapshot(
         &mut self,
-        session: &String,
+        session: &str,
         serial: usize,
         snapshot: Snapshot
     ) -> Result<(), Error> {
@@ -131,7 +131,7 @@ impl RrdpServer {
             key,
             snapshot,
             Info::now("server", "notification")
-        ).map_err(|e| Error::Keystore(e))
+        ).map_err(Error::Keystore)
     }
 }
 
@@ -209,7 +209,7 @@ impl RrdpServer {
             match objects.iter().position(|cur| {cur.uri() == u.uri()}) {
                 None => return Err(Error::NoObjectPresent(u.uri().clone())),
                 Some(pos) => {
-                    if objects.get(pos).unwrap().hash() != u.hash() {
+                    if objects[pos].hash() != u.hash() {
                         return Err(Error::NoObjectMatchingHash)
                     } else {
                         objects.remove(pos);
@@ -226,7 +226,7 @@ impl RrdpServer {
             match objects.iter().position(|cur| {cur.uri() == w.uri()}) {
                 None => return Err(Error::NoObjectPresent(w.uri().clone())),
                 Some(pos) => {
-                    if objects.get(pos).unwrap().hash() != w.hash() {
+                    if objects[pos].hash() != w.hash() {
                         return Err(Error::NoObjectMatchingHash)
                     } else {
                         objects.remove(pos);
@@ -288,7 +288,7 @@ impl RrdpServer {
     /// Saves the RFC8181 PublishQuery as an RFC8182 delta file.
     fn save_delta(
         &mut self,
-        session_id: &String,
+        session_id: &str,
         serial: usize,
         delta: &publication::PublishDelta
     ) -> Result<DeltaRef, Error>

@@ -26,7 +26,7 @@ impl<T: Serialize + DeserializeOwned + Sized> Storable for T { }
 pub struct AggregateId(String);
 
 impl AggregateId {
-    pub fn from_str(s: &str) -> Self {
+    pub fn new(s: &str) -> Self {
         AggregateId(s.to_string())
     }
 }
@@ -256,9 +256,8 @@ impl<A: 'static + Aggregate, S: 'static + KeyStore> AggregateManager<A, S> {
         if ! has_key {
             let init_key = S::key_for_event(id, 0);
             if let Some(init) = self.store.get::<A::InitEvent>(&init_key)
-                .map_err(|e| AggMgrErr::KeyStoreError(e))? {
-                let mut agg = A::init(init)
-                    .map_err(|e| AggMgrErr::AggregateError(e))?;
+                .map_err(AggMgrErr::KeyStoreError)? {
+                let mut agg = A::init(init).map_err(AggMgrErr::AggregateError)?;
 
                 cache.insert(id.clone(), Arc::new(agg));
                 force = true;
@@ -275,7 +274,7 @@ impl<A: 'static + Aggregate, S: 'static + KeyStore> AggregateManager<A, S> {
                 let ver = agg.version();
                 let key = S::key_for_event(id, ver);
                 if let Some(event) = self.store.get::<A::Event>(&key)
-                    .map_err(|e| AggMgrErr::KeyStoreError(e))? {
+                    .map_err(AggMgrErr::KeyStoreError)? {
                     agg.apply(event)
                 } else {
                     break
@@ -288,6 +287,7 @@ impl<A: 'static + Aggregate, S: 'static + KeyStore> AggregateManager<A, S> {
 
 
     /// Get a reference to the latest version of the aggregate.
+    #[allow(clippy::type_complexity)]
     pub fn get_latest(
         &self,
         id: &AggregateId
@@ -297,6 +297,7 @@ impl<A: 'static + Aggregate, S: 'static + KeyStore> AggregateManager<A, S> {
             .map(|arc| AggregateRef { agg: arc.clone() } ))
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn create(
         &self,
         id: &AggregateId,
@@ -309,11 +310,9 @@ impl<A: 'static + Aggregate, S: 'static + KeyStore> AggregateManager<A, S> {
             Err(AggMgrErr::AggregateAlreadyExists)
         } else {
             let key = S::key_for_event(id, 0);
-            self.store.store(&key, &event)
-                .map_err(|e| AggMgrErr::KeyStoreError(e))?;
+            self.store.store(&key, &event).map_err(AggMgrErr::KeyStoreError)?;
 
-            let agg = A::init(event)
-                .map_err(|e| AggMgrErr::AggregateError(e))?;
+            let agg = A::init(event).map_err(AggMgrErr::AggregateError)?;
 
             cache.insert(id.clone(), Arc::new(agg));
             Ok(())
@@ -322,6 +321,7 @@ impl<A: 'static + Aggregate, S: 'static + KeyStore> AggregateManager<A, S> {
 
     /// Apply a command to the latest aggregate, save the events and return
     /// the updated aggregate.
+    #[allow(clippy::type_complexity)]
     pub fn apply(
         &self,
         command: A::Command
@@ -345,12 +345,11 @@ impl<A: 'static + Aggregate, S: 'static + KeyStore> AggregateManager<A, S> {
                 }
 
                 let events = agg.process_command(command)
-                    .map_err(|e| AggMgrErr::AggregateError(e))?;
+                    .map_err(AggMgrErr::AggregateError)?;
 
                 for e in events {
                     let key = S::key_for_event(&id, e.version());
-                    self.store.store(&key, &e)
-                        .map_err(|e| AggMgrErr::KeyStoreError(e))?;
+                    self.store.store(&key, &e).map_err(AggMgrErr::KeyStoreError)?;
                     agg.apply(e);
                 }
 
@@ -434,7 +433,7 @@ impl KeyStore for DiskKeyStore {
         } else {
             let mut f = file::create_file_with_path(&self.file_path(key))?;
             let json = serde_json::to_string(value)?;
-            f.write(json.as_ref())?;
+            f.write_all(json.as_ref())?;
             Ok(())
         }
     }
@@ -631,7 +630,7 @@ mod tests {
             let storage = DiskKeyStore::new(d.clone());
             let manager = PersonManager::new(storage);
 
-            let id_alice = AggregateId::from_str("alice");
+            let id_alice = AggregateId::new("alice");
             let alice_init = InitPersonEvent::init(&id_alice, "alice smith");
 
             manager.create(&id_alice, alice_init).unwrap();

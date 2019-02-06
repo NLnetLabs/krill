@@ -13,8 +13,8 @@ use crate::util::xml::{
     XmlWriter
 };
 
-pub const VERSION: &'static str = "4";
-pub const NS: &'static str = "http://www.hactrn.net/uris/rpki/publication-spec/";
+pub const VERSION: &str = "4";
+pub const NS: &str = "http://www.hactrn.net/uris/rpki/publication-spec/";
 
 
 //------------ Message -------------------------------------------------------
@@ -51,7 +51,7 @@ impl Message {
                         Ok(Message::ReplyMessage(ReplyMessage::decode(r)?))
                     }
                     _ => {
-                        return Err(MessageError::UnknownMessageType)
+                        Err(MessageError::UnknownMessageType)
                     }
                 }
             })
@@ -104,7 +104,7 @@ impl Message {
 
     /// Consumes this message and returns the contained query, or
     /// an error if you tried this on a reply.
-    pub fn as_query(self) -> Result<QueryMessage, MessageError> {
+    pub fn into_query(self) -> Result<QueryMessage, MessageError> {
         match self {
             Message::QueryMessage(q) => Ok(q),
             _ => Err(MessageError::WrongMessageType)
@@ -113,7 +113,7 @@ impl Message {
 
     /// Consumes this message and returns the contained query, or
     /// an error if you tried this on a reply.
-    pub fn as_reply(self) -> Result<ReplyMessage, MessageError> {
+    pub fn into_reply(self) -> Result<ReplyMessage, MessageError> {
         match self {
             Message::ReplyMessage(r) => Ok(r),
             _ => Err(MessageError::WrongMessageType)
@@ -207,7 +207,7 @@ impl QueryMessage {
     }
 
     /// Consumes this and returns this a PublishRequest for our (json) API
-    pub fn as_publish_request(self) -> publication::PublishRequest {
+    pub fn into_publish_request(self) -> publication::PublishRequest {
         match self {
             QueryMessage::ListQuery       => publication::PublishRequest::List,
             QueryMessage::PublishDelta(d) => publication::PublishRequest::Delta(d)
@@ -321,16 +321,11 @@ impl PublishDeltaXml {
     ) -> Result<publication::PublishDelta, MessageError> {
         let mut bld = publication::PublishDeltaBuilder::new();
 
-        loop {
-            match Self::decode_opt(r)? {
-                Some(pde) => {
-                    match pde {
-                        PublishDeltaElement::Publish(p)  => bld.add_publish(p),
-                        PublishDeltaElement::Update(u)   => bld.add_update(u),
-                        PublishDeltaElement::Withdraw(w) => bld.add_withdraw(w)
-                    }
-                },
-                None => break
+        while let Some(pde) = Self::decode_opt(r)? {
+            match pde {
+                PublishDeltaElement::Publish(p)  => bld.add_publish(p),
+                PublishDeltaElement::Update(u)   => bld.add_update(u),
+                PublishDeltaElement::Withdraw(w) => bld.add_withdraw(w)
             }
         }
 

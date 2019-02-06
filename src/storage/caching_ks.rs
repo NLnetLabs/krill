@@ -41,7 +41,7 @@ pub struct CachingDiskKeyStore {
 
 /// # Creating
 impl CachingDiskKeyStore {
-    pub fn new(base_dir: PathBuf) -> Result<Self, Error> {
+    pub fn build(base_dir: PathBuf) -> Result<Self, Error> {
         if ! base_dir.is_dir() {
             Err(Error::Other("Invalid base_dir for DiskKeyStore".to_string()))
         } else {
@@ -65,7 +65,7 @@ impl CachingDiskKeyStore {
         let v = Arc::new(value);
 
         let mut w = self.cache.write()
-            .map_err(|_| Error::from_str("Write Lock error"))?;
+            .map_err(|_| Error::other("Write Lock error"))?;
         if let Some(current) = w.get_mut(&key) {
             current.version += 1;
             current.value = v;
@@ -87,14 +87,14 @@ impl CachingDiskKeyStore {
         key: &Key
     ) -> Result<Option<Arc<V>>, Error> {
         let r = self.cache.read().map_err(
-            |_| Error::from_str("Can't get read lock"))?;
+            |_| Error::other("Can't get read lock"))?;
         match r.get(key) {
             None => Ok(None),
             Some(ref v) => {
                 if let Ok(res) = v.value_copy().downcast::<V>() {
                     Ok(Some(res))
                 } else {
-                    Err(Error::from_str("Object has the wrong type!"))
+                    Err(Error::other("Object has the wrong type!"))
                 }
             }
         }
@@ -103,7 +103,7 @@ impl CachingDiskKeyStore {
     /// Gets the version for the current value for a key, if any.
     fn cache_version(&self, key: &Key) -> Result<Option<i32>, Error> {
         let r = self.cache.read().map_err(
-            |_| Error::from_str("Can't get read lock"))?;
+            |_| Error::other("Can't get read lock"))?;
         Ok(r.get(key).map(|c| { c.version }))
     }
 }
@@ -113,8 +113,8 @@ impl CachingDiskKeyStore {
 impl CachingDiskKeyStore {
     /// Verifies that the base directory exists, or tries to create it.
     fn verify_or_create_dir(&self, key: &Key) -> Result<(), Error> {
-        if key.path().to_string_lossy().contains("/") {
-            return Err(Error::from_str("Key cannot contain subdir."))
+        if key.path().to_string_lossy().contains('/') {
+            return Err(Error::other("Key cannot contain subdir."))
         }
 
         let mut full_path = PathBuf::new();
@@ -123,10 +123,8 @@ impl CachingDiskKeyStore {
 
         if !full_path.exists() {
             fs::create_dir_all(full_path)?;
-        } else {
-            if ! full_path.is_dir() {
-                return Err(Error::from_str("Key is not a dir"));
-            }
+        } else if ! full_path.is_dir() {
+            return Err(Error::other("Key is not a dir"));
         }
 
         Ok(())
@@ -157,12 +155,12 @@ impl CachingDiskKeyStore {
         let value_key = self.key_for_value(&key, version);
         let mut f = File::create(self.full_path(value_key.path()))?;
         let v = serde_json::to_string(&value)?;
-        f.write(v.as_ref())?;
+        f.write_all(v.as_ref())?;
 
         let info_key = self.key_for_info(&key, version);
         let mut f = File::create(self.full_path(info_key.path()))?;
         let i = serde_json::to_string(&info)?;
-        f.write(i.as_ref())?;
+        f.write_all(i.as_ref())?;
 
         Ok(())
     }
@@ -204,22 +202,22 @@ impl CachingDiskKeyStore {
     /// Archives the current version for a key, by negating the version
     /// number. Note that versions can be 'revived' simply by storing a new
     /// value for a key.
-    fn disk_archive(&self, key: &Key, info: Info) -> Result<(), Error> {
+    fn disk_archive(&self, key: &Key, info: &Info) -> Result<(), Error> {
         if let Some(v) = self.disk_version(key)? {
             if v > 0 {
                 let version_key = self.key_for_version(key);
                 let mut f = File::create(self.full_path(version_key.path()))?;
-                write!(f, "{}", v * -1)?;
+                write!(f, "{}", -v)?;
 
                 let arch_key = self.key_for_archive_info(&key, v);
                 let mut f = File::create(self.full_path(arch_key.path()))?;
                 let i = serde_json::to_string(&info)?;
-                f.write(i.as_ref())?;
+                f.write_all(i.as_ref())?;
 
                 return Ok(())
             }
         }
-        Err(Error::from_str("No version to archive"))
+        Err(Error::other("No version to archive"))
     }
 
 }
@@ -250,7 +248,7 @@ impl KeyStore for CachingDiskKeyStore {
             let mut w = self.cache.write().unwrap();
             w.remove_entry(key); // Don't care if it was actually cached.
         }
-        self.disk_archive(key, info)
+        self.disk_archive(key, &info)
     }
 
     fn get<V: Any + DeserializeOwned + Send + Sync>(
@@ -358,8 +356,8 @@ mod tests {
     #[test]
     fn should_store_and_retrieve_from_caching_disk() {
         test::test_with_tmp_dir(|d| {
-            let mut store = CachingDiskKeyStore::new(PathBuf::from(d)).unwrap();
-            let key = Key::from_str("key_name");
+            let mut store = CachingDiskKeyStore::build(PathBuf::from(d)).unwrap();
+            let key = Key::new("key_name");
             let value = TestStruct::from_str("foo");
             let info = Info::new(Utc::now(), "me", "A!");
 
@@ -375,8 +373,8 @@ mod tests {
     #[test]
     fn should_report_keys_from_caching_disk_store() {
         test::test_with_tmp_dir(|d| {
-            let mut store = CachingDiskKeyStore::new(PathBuf::from(d)).unwrap();
-            let key = Key::from_str("key_name");
+            let mut store = CachingDiskKeyStore::build(PathBuf::from(d)).unwrap();
+            let key = Key::new("key_name");
             let value = TestStruct::from_str("foo");
             let info = Info::new(Utc::now(), "me", "A!");
             store.store(key.clone(), value.clone(), info).unwrap();
@@ -391,16 +389,16 @@ mod tests {
     fn should_read_from_disk() {
         test::test_with_tmp_dir(|d| {
             // Store stuff in memory and on disk
-            let mut store = CachingDiskKeyStore::new(PathBuf::from(d.clone()))
+            let mut store = CachingDiskKeyStore::build(PathBuf::from(d.clone()))
                 .unwrap();
-            let key = Key::from_str("key_name");
+            let key = Key::new("key_name");
             let value = TestStruct::from_str("foo");
             let info = Info::new(Utc::now(), "me", "A!");
             store.store(key.clone(), value.clone(), info).unwrap();
 
             // Initiate a new keystore pointing to the same dir, so it can
             // read values from there.
-            let store = CachingDiskKeyStore::new(PathBuf::from(d)).unwrap();
+            let store = CachingDiskKeyStore::build(PathBuf::from(d)).unwrap();
 
             let stored_keys: Vec<Key> = store.keys().collect();
             assert!(stored_keys.contains(&key));
@@ -417,9 +415,9 @@ mod tests {
     fn should_archive() {
         test::test_with_tmp_dir(|d| {
             // Store stuff in memory and on disk
-            let mut store = CachingDiskKeyStore::new(PathBuf::from(d.clone()))
+            let mut store = CachingDiskKeyStore::build(PathBuf::from(d.clone()))
                 .unwrap();
-            let key = Key::from_str("key_name");
+            let key = Key::new("key_name");
             let value = TestStruct::from_str("foo");
             let actor = "me";
             let msg = "created";

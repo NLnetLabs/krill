@@ -12,7 +12,7 @@ use crate::remote::rfc8183;
 use crate::storage::keystore::{self, Info, Key, KeyStore};
 use crate::storage::caching_ks::CachingDiskKeyStore;
 
-pub const RSYNC_FOLDER: &'static str = "rsync";
+pub const RSYNC_FOLDER: &str = "rsync";
 
 //------------ PublisherStore -------------------------------------------------
 
@@ -28,7 +28,7 @@ pub struct PublisherStore {
 
 
 impl PublisherStore {
-    pub fn new(
+    pub fn build(
         work_dir: &PathBuf,
         base_uri: &uri::Rsync
     ) -> Result<Self, Error> {
@@ -40,14 +40,14 @@ impl PublisherStore {
 
         Ok(
             PublisherStore {
-                store: CachingDiskKeyStore::new(publisher_dir)?,
+                store: CachingDiskKeyStore::build(publisher_dir)?,
                 base_uri: base_uri.clone()
             }
         )
     }
 
     fn verify_handle(&self, handle: &str) -> Result<(), Error> {
-        if handle.contains("/") {
+        if handle.contains('/') {
             return Err(Error::ForwardSlashInHandle(handle.to_string()))
         }
 
@@ -61,7 +61,7 @@ impl PublisherStore {
     fn verify_base_uri(&self, base_uri: &uri::Rsync) -> Result<(), Error> {
         let base_uri = base_uri.to_string();
         if base_uri.starts_with(self.base_uri.to_string().as_str()) &&
-            base_uri.ends_with("/") {
+            base_uri.ends_with('/') {
             Ok(())
         } else {
             Err(Error::InvalidBaseUri)
@@ -80,7 +80,7 @@ impl PublisherStore {
         self.verify_handle(pbl.handle())?;
         self.verify_base_uri(pbl.base_uri())?;
 
-        let key = Key::from_str(pbl.handle());
+        let key = Key::new(pbl.handle());
         let info = Info::now(
             actor,
             &format!("Added publisher: {}", pbl.handle())
@@ -104,7 +104,7 @@ impl PublisherStore {
         match self.publisher(name)? {
             None => Err(Error::UnknownPublisher(name.to_string())),
             Some(_p) => {
-                let key = Key::from_str(name);
+                let key = Key::new(name);
 
                 let info = Info::now(
                     actor,
@@ -119,7 +119,7 @@ impl PublisherStore {
 
     /// Returns whether a publisher exists for this name.
     pub fn has_publisher(&self, handle: &str) -> bool {
-        let key = Key::from_str(handle);
+        let key = Key::new(handle);
         match self.store.version(&key) {
             Ok(Some(version)) => {
                 if version > 0 {
@@ -138,7 +138,7 @@ impl PublisherStore {
         &self,
         handle: impl AsRef<str>
     ) -> Result<Option<Arc<publishers::Publisher>>, Error> {
-        let key = Key::from_str(handle.as_ref());
+        let key = Key::new(handle.as_ref());
         self.store.get(&key).map_err(|e| { Error::KeyStoreError(e)})
     }
 
@@ -162,8 +162,8 @@ impl PublisherStore {
     pub fn publishers(&self) -> Result<Vec<Arc<publishers::Publisher>>, Error> {
         let mut res = Vec::new();
 
-        for ref k in self.store.keys() {
-            if let Some(arc) = self.store.get(k)? {
+        for k in self.store.keys() {
+            if let Some(arc) = self.store.get(&k)? {
                 res.push(arc);
             }
         }
@@ -244,7 +244,7 @@ mod tests {
 
     fn test_publisher_store(dir: &PathBuf) -> PublisherStore {
         let uri = test::rsync_uri("rsync://host/module/");
-        PublisherStore::new(dir, &uri).unwrap()
+        PublisherStore::build(dir, &uri).unwrap()
     }
 
     #[test]

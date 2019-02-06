@@ -22,6 +22,17 @@ pub struct Key {
 }
 
 impl Key {
+    /// Creates an instance from a ui str. Will unwrap, and panic, if
+    /// unsafe characters are used. Use [`from_path`] for a method that
+    /// returns a Result instead, and see [`verify_path`] for restrictions.
+    ///
+    /// [`from_path`]: struct.Key.html#method.from_path
+    /// [`verify_path`]: struct.Key.html#method.verify_path
+    pub fn new(s: &str) -> Key {
+        let path = PathBuf::from(s);
+        Self::from_path(path).unwrap()
+    }
+
     /// Creates a new key based on the path.
     ///
     /// Paths must not contain '/' so that they can be used as a single
@@ -33,17 +44,6 @@ impl Key {
     pub fn from_path(path: PathBuf) -> Result<Key, InvalidKey> {
         Self::verify_path(&path)?;
         Ok(Self { path })
-    }
-
-    /// Creates an instance from a ui str. Will unwrap, and panic, if
-    /// unsafe characters are used. Use [`from_path`] for a method that
-    /// returns a Result instead, and see [`verify_path`] for restrictions.
-    ///
-    /// [`from_path`]: struct.Key.html#method.from_path
-    /// [`verify_path`]: struct.Key.html#method.verify_path
-    pub fn from_str(s: &str) -> Key {
-        let path = PathBuf::from(s);
-        Self::from_path(path).unwrap()
     }
 
     /// Other than this the may contain any character allowed in a
@@ -63,20 +63,20 @@ impl Key {
         match path.to_str() {
             None => { return Err(InvalidKey) },
             Some(s) => {
-                if ! s.bytes().all(|b| {
+                if ! s.bytes().all(|b|
                         b.is_ascii_alphanumeric() || // ALPHA DIGIT
                         b == b'-' || b == b'.' || b == b'_' || b == b'~' ||
                         b == b'%' || // Not checking against invalid % encoding (e.g. %%)
                         b == b'!' || b == b'$' || b == b'&' || b == b'\'' ||
                         b == b'(' || b == b')' || b == b'*' || b == b'+'  ||
                         b == b',' || b == b';' || b == b'='
-                }) {
+                ) {
                     return Err(InvalidKey)
                 }
             }
         }
 
-        if path.components().all(|c| { c == Component::Normal("..".as_ref())})
+        if path.components().all(|c| c == Component::Normal("..".as_ref()))
             || ! path.is_relative()
         {
             return Err(InvalidKey);
@@ -242,7 +242,7 @@ pub trait KeyStore {
             None => Ok(1),
             Some(current) => {
                 if current < 0 {
-                    Ok(current * -1 + 1)
+                    Ok(-current + 1)
                 } else {
                     Ok(current + 1)
                 }
@@ -270,7 +270,7 @@ pub enum Error {
 }
 
 impl Error {
-    pub fn from_str(s: &str) -> Self {
+    pub fn other(s: &str) -> Self {
         Error::Other(s.to_string())
     }
 }

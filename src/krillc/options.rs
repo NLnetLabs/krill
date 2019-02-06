@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::str::FromStr;
 use clap::{App, Arg, SubCommand};
 use rpki::uri;
 use uuid::Uuid;
@@ -210,7 +211,7 @@ impl Options {
             }
             if let Some(m) = m.subcommand_matches("response") {
                 let handle = m.value_of("handle").unwrap();
-                let file = m.value_of("out").map(|s| PathBuf::from(s));
+                let file = m.value_of("out").map(PathBuf::from);
                 let response = PublishersCommand::RepositoryResponseXml(
                     handle.to_string(),
                     file

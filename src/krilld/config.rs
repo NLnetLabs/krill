@@ -13,7 +13,7 @@ use toml;
 use crate::krilld::http::ssl;
 use crate::util::ext_serde;
 
-const SERVER_NAME: &'static str = "Krill";
+const SERVER_NAME: &str = "Krill";
 
 //------------ ConfigDefaults ------------------------------------------------
 
@@ -199,7 +199,7 @@ impl Config {
         let config_file = matches.value_of("config")
             .unwrap_or("./defaults/krill.conf");
 
-        let c = Self::read_config(config_file.as_ref())?;
+        let c = Self::read_config(config_file)?;
         c.init_logging()?;
         Ok(c)
     }
@@ -212,7 +212,7 @@ impl Config {
         let c: Config = toml::from_slice(v.as_slice())?;
 
         if c.port < 1024 {
-            return Err(ConfigError::from_str("Port number must be >1024"))
+            return Err(ConfigError::other("Port number must be >1024"))
         }
 
         Ok(c)
@@ -309,7 +309,7 @@ pub enum ConfigError {
 }
 
 impl ConfigError {
-    pub fn from_str(s: &str) -> ConfigError {
+    pub fn other(s: &str) -> ConfigError {
         ConfigError::Other(s.to_string())
     }
 }

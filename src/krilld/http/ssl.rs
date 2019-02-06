@@ -24,9 +24,9 @@ use crate::util::softsigner::SignerKeyId;
 use crate::remote::builder;
 
 const KEY_SIZE: u32 = 2048;
-pub const HTTPS_SUB_DIR: &'static str = "ssl";
-pub const KEY_FILE: &'static str = "key.pem";
-pub const CERT_FILE: &'static str = "cert.pem";
+pub const HTTPS_SUB_DIR: &str = "ssl";
+pub const KEY_FILE: &str = "key.pem";
+pub const CERT_FILE: &str = "cert.pem";
 
 /// Creates a new private key and certificate file if either is found to be
 /// missing in the base_path directory.
@@ -38,7 +38,7 @@ pub fn create_key_cert_if_needed(data_dir: &PathBuf) -> Result<(), HttpsSignerEr
     let cert_file_path = file::file_path(&https_dir, CERT_FILE);
 
     if ! key_file_path.exists() || ! cert_file_path.exists() {
-        create_key_and_cert(https_dir)
+        create_key_and_cert(&https_dir)
     } else {
         Ok(())
     }
@@ -47,12 +47,12 @@ pub fn create_key_cert_if_needed(data_dir: &PathBuf) -> Result<(), HttpsSignerEr
 /// Creates a new private key and certificate to be used when serving HTTPS.
 /// Only call this in case there is no current key and certificate file
 /// present, or have your files ruthlessly overwritten!
-fn create_key_and_cert(https_dir: PathBuf) -> Result<(), HttpsSignerError> {
+fn create_key_and_cert(https_dir: &PathBuf) -> Result<(), HttpsSignerError> {
     if ! https_dir.exists() {
         file::create_dir(&https_dir)?;
     }
 
-    let mut signer = HttpsSigner::new()?;
+    let mut signer = HttpsSigner::build()?;
     signer.save_private_key(&https_dir)?;
     signer.save_certificate(&https_dir)?;
 
@@ -69,7 +69,7 @@ struct HttpsSigner {
 }
 
 impl HttpsSigner {
-    fn new() -> Result<Self, HttpsSignerError> {
+    fn build() -> Result<Self, HttpsSignerError> {
         let rsa = Rsa::generate(KEY_SIZE)?;
         let private = PKey::from_rsa(rsa)?;
         Ok(HttpsSigner { private })
@@ -80,7 +80,7 @@ impl HttpsSigner {
         let mut pem_file = File::create(path)?;
 
         let pem = self.private.private_key_to_pem_pkcs8()?;
-        pem_file.write(&pem)?;
+        pem_file.write_all(&pem)?;
         Ok(())
     }
 
@@ -94,9 +94,9 @@ impl HttpsSigner {
         let der = cert.to_bytes();
         let cert_pem = base64::encode(&der);
 
-        pem_file.write("-----BEGIN CERTIFICATE-----\n".as_ref())?;
-        pem_file.write(cert_pem.as_bytes())?;
-        pem_file.write("\n-----END CERTIFICATE-----\n".as_ref())?;
+        pem_file.write_all("-----BEGIN CERTIFICATE-----\n".as_ref())?;
+        pem_file.write_all(cert_pem.as_bytes())?;
+        pem_file.write_all("\n-----END CERTIFICATE-----\n".as_ref())?;
 
         Ok(())
     }

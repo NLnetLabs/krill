@@ -21,7 +21,7 @@ pub struct FileStore {
 /// # Construct
 ///
 impl FileStore {
-    pub fn new(work_dir: &PathBuf) -> Result<Self, Error> {
+    pub fn build(work_dir: &PathBuf) -> Result<Self, Error> {
         let mut rsync_dir = PathBuf::from(work_dir);
         rsync_dir.push(RSYNC_FOLDER);
         if ! rsync_dir.is_dir() {
@@ -56,7 +56,7 @@ impl FileStore {
             Ok(Vec::new())
         } else {
             file::crawl_incl_rsync_base(&path, base_uri)
-                .map_err(|e| Error::RecursorError(e))
+                .map_err(Error::RecursorError)
         }
     }
 
