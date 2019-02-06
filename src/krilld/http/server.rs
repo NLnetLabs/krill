@@ -24,8 +24,12 @@ use crate::krilld::krillserver;
 use crate::krilld::krillserver::KrillServer;
 use crate::remote::rfc8183;
 use crate::remote::sigmsg::SignedMessage;
+use actix_web::middleware::identity::IdentityService;
+use actix_web::middleware::identity::CookieIdentityPolicy;
+use krilld::auth;
 
 const NOT_FOUND: &[u8] = include_bytes!("../../../ui/dev/html/404.html");
+const LOGIN: &[u8] = include_bytes!("../../../ui/dev/html/login.html");
 
 //------------ PubServerApp --------------------------------------------------
 
@@ -38,7 +42,17 @@ impl PubServerApp {
     pub fn new(server: Arc<RwLock<KrillServer>>) -> Self {
         let mut app = App::with_state(server)
             .middleware(middleware::Logger::default())
+            .middleware(IdentityService::new(
+                CookieIdentityPolicy::new(&[0; 32])
+                    .name("krilld_login")
+                    .secure(false)
+                )
+            )
             .middleware(CheckAuthorisation)
+            .resource("/login", |r| {
+                r.method(Method::GET).f(Self::login_page);
+                r.method(Method::POST).with(auth::login_page);
+            })
             .resource("/api/v1/publishers", |r| {
                 r.method(Method::GET).f(endpoints::publishers);
                 r.method(Method::POST).with(endpoints::add_publisher);
@@ -189,6 +203,10 @@ impl PubServerApp {
         }
     }
 
+    /// Login page
+    fn login_page(_r: &HttpRequest) -> HttpResponse {
+        HttpResponse::build(StatusCode::NOT_FOUND).body(LOGIN)
+    }
 
     // XXX TODO: use a better handler that does not load everything into
     // memory first, and set the correct headers for caching.

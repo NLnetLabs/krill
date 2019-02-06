@@ -4,7 +4,10 @@ use std::sync::{Arc, RwLock, RwLockReadGuard};
 use actix_web::{HttpResponse, HttpRequest, Result};
 use actix_web::http::HeaderMap;
 use actix_web::middleware::{Middleware, Started};
+use actix_web::middleware::identity::RequestIdentity;
+
 use crate::krilld::krillserver::KrillServer;
+use actix_web::Form;
 
 const ADMIN_API_PATH: &str = "/api/";
 const PUBLICATION_API_PATH: &str = "/publication/";
@@ -16,6 +19,10 @@ impl Middleware<Arc<RwLock<KrillServer>>> for CheckAuthorisation {
         &self,
         req: &HttpRequest<Arc<RwLock<KrillServer>>>
     ) -> Result<Started> {
+        if req.identity() == Some("admin".to_string()) {
+            return Ok(Started::Done)
+        }
+
         let server: RwLockReadGuard<KrillServer> = req.state().read().unwrap();
 
         let mut allowed = true;
@@ -90,3 +97,22 @@ impl Authorizer {
         }
     }
 }
+
+#[derive(Deserialize)]
+pub struct Login {
+    token: String
+}
+
+pub fn login_page(
+    req: HttpRequest<Arc<RwLock<KrillServer>>>,
+    form: Form<Login>
+) -> HttpResponse {
+    let server: RwLockReadGuard<KrillServer> = req.state().read().unwrap();
+    if server.allow_api(Some(form.token.clone())) {
+        req.remember("admin".to_string());
+        HttpResponse::Found().header("location", "/api/v1/publishers").finish()
+    } else {
+        HttpResponse::Forbidden().finish()
+    }
+}
+
