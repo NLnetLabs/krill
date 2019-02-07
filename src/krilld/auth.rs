@@ -103,6 +103,7 @@ pub struct Login {
     token: String
 }
 
+#[allow(clippy::needless_pass_by_value)]
 pub fn login_page(
     req: HttpRequest<Arc<RwLock<KrillServer>>>,
     form: Form<Login>
