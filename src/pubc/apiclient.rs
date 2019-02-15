@@ -1,5 +1,6 @@
 //! Publication Client that uses the JSON/Rest API
 use std::path::PathBuf;
+use std::str::FromStr;
 use clap::{App, Arg, SubCommand};
 use rpki::uri;
 use crate::api::publication_data;

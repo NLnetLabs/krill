@@ -96,7 +96,7 @@ impl RpkiTbsCertificate {
                     (
                         self.validity.encode(),
                         self.subject.encode(),
-                        self.subject_public_key_info.encode(),
+                        self.subject_public_key_info.clone().encode(),
                         id_ext.encode()
                     )
                 ))
@@ -330,7 +330,7 @@ impl SignedMessageBuilder {
         let encap_content_info = encode::sequence(
             (
                 oid::PROTOCOL_CONTENT_TYPE.encode(),
-                Constructed::new(Tag::CTX_0, self.content.encode())
+                Constructed::new(Tag::CTX_0, self.content.clone().encode())
             )
         );
 
@@ -437,7 +437,7 @@ impl SignedAttributes {
                 (
                     oid::MESSAGE_DIGEST.encode(),
                     encode::set(
-                        self.digest.encode()
+                        self.digest.clone().encode()
                     )
                 )
             ),
@@ -501,7 +501,7 @@ impl SignedSignerInfo {
         // We MUST use the SubjectKeyIdentifier from the EE certificate.
         // I.e. the hashed thing in an OctetString, rather than the full
         // X509 Extension.
-        let sid = self.key_id.encode_as(Tag::CTX_0);
+        let sid = self.key_id.clone().encode_as(Tag::CTX_0);
 
         //  digestAlgorithm DigestAlgorithmIdentifier,
         let digest_algo = DigestAlgorithm.encode();
@@ -521,7 +521,7 @@ impl SignedSignerInfo {
                 ),
                 (
                     SignatureAlgorithm.cms_encode(),
-                    self.signature.encode()
+                    self.signature.clone().encode()
                 )
             )
         )

@@ -3,6 +3,7 @@ use std::io;
 use std::io::Read;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
+use std::str::FromStr;
 use clap::{App, Arg};
 use log::LevelFilter;
 use rpki::uri;

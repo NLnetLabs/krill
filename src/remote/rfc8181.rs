@@ -893,6 +893,7 @@ mod tests {
 
     use super::*;
     use std::str;
+    use std::str::FromStr;
     use rpki::uri::Rsync;
     use crate::api::EncodedHash;
 

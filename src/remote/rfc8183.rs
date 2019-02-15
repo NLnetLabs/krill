@@ -444,6 +444,7 @@ impl From<x509::ValidationError> for RepositoryResponseError {
 #[cfg(test)]
 mod tests {
     use std::str;
+    use std::str::FromStr;
     use rpki::x509::Time;
     use super::*;
 

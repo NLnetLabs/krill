@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
+use std::str::FromStr;
 use bytes::Bytes;
 use rpki::uri;
 use rpki::crypto::{PublicKeyFormat, Signer};
