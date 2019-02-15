@@ -2,7 +2,7 @@
 use std::path::PathBuf;
 use clap::{App, Arg, SubCommand};
 use rpki::uri;
-use crate::api::publication;
+use crate::api::publication_data;
 use crate::pubc;
 use crate::util::httpclient;
 
@@ -190,7 +190,7 @@ impl Format {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ApiResponse {
     Success,
-    List(publication::ListReply),
+    List(publication_data::ListReply),
 }
 
 impl ApiResponse {
@@ -211,7 +211,7 @@ impl ApiResponse {
                     ApiResponse::List(list) => {
                         for el in list.elements() {
                             println!("{} {}",
-                                     hex::encode(el.hash()),
+                                     el.hash().to_string(),
                                      el.uri().to_string()
                             );
                         }
@@ -238,14 +238,14 @@ pub fn execute(options: Options) -> Result<ApiResponse, Error> {
 }
 
 
-fn list_query(connection: &Connection) -> Result<publication::ListReply, Error> {
+fn list_query(connection: &Connection) -> Result<publication_data::ListReply, Error> {
     let uri = format!(
         "{}publication/{}",
         &connection.server_uri.to_string(),
         &connection.handle
     );
 
-    match httpclient::get_json::<publication::ListReply>(
+    match httpclient::get_json::<publication_data::ListReply>(
         &uri,
         Some(&connection.token)
     ) {

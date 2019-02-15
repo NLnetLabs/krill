@@ -4,7 +4,7 @@ pub mod options;
 use std::io;
 use bytes::Bytes;
 use rpki::uri;
-use crate::api::publishers::Publisher;
+use crate::api::publisher_data::PublisherRequest;
 use crate::krillc::data::{
     ApiResponse,
     PublisherDetails,
@@ -77,7 +77,7 @@ impl KrillClient {
                 Ok(ApiResponse::PublisherList(list))
             },
             PublishersCommand::Add(add) => {
-                let pbl = Publisher::new(
+                let pbl = PublisherRequest::new(
                     add.handle,
                     add.token,
                     add.base_uri,
@@ -149,7 +149,7 @@ impl KrillClient {
         }
     }
 
-    fn add_publisher(&self, pbl: Publisher) -> Result<ApiResponse, Error> {
+    fn add_publisher(&self, pbl: PublisherRequest) -> Result<ApiResponse, Error> {
         httpclient::post_json(
             &self.resolve_uri("api/v1/publishers"),
             pbl,

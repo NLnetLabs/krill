@@ -28,6 +28,7 @@ extern crate ring;
 extern crate untrusted;
 
 pub mod api;
+pub mod eventsourcing;
 pub mod krillc;
 pub mod krilld;
 pub mod pubc;

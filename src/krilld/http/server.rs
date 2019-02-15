@@ -3,19 +3,24 @@
 //! Here we deal with booting and setup, and once active deal with parsing
 //! arguments and routing of requests, typically handing off to the
 //! daemon::api::endpoints functions for processing and responding.
-use std::error;
+use std::io;
 use std::fs::File;
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 use actix_web::{pred, fs, server};
 use actix_web::{App, FromRequest, HttpResponse};
 use actix_web::dev::MessageBody;
 use actix_web::middleware;
+use actix_web::middleware::identity::CookieIdentityPolicy;
+use actix_web::middleware::identity::IdentityService;
 use actix_web::http::{Method, StatusCode};
 use bcder::decode;
 use futures::Future;
 use openssl::ssl::{SslMethod, SslAcceptor, SslAcceptorBuilder, SslFiletype};
-use crate::api::publication;
-use crate::api::publishers;
+use crate::api::publication_data;
+use crate::api::publisher_data;
+use crate::api::publisher_data::PublisherHandle;
+use crate::eventsourcing::DiskKeyStore;
+use crate::krilld::auth;
 use crate::krilld::auth::{Authorizer, CheckAuthorisation};
 use crate::krilld::config::Config;
 use crate::krilld::endpoints;
@@ -24,22 +29,20 @@ use crate::krilld::krillserver;
 use crate::krilld::krillserver::KrillServer;
 use crate::remote::rfc8183;
 use crate::remote::sigmsg::SignedMessage;
-use actix_web::middleware::identity::IdentityService;
-use actix_web::middleware::identity::CookieIdentityPolicy;
-use krilld::auth;
 
 const NOT_FOUND: &[u8] = include_bytes!("../../../ui/dev/html/404.html");
 const LOGIN: &[u8] = include_bytes!("../../../ui/dev/html/login.html");
 
+
 //------------ PubServerApp --------------------------------------------------
 
-pub struct PubServerApp(App<Arc<RwLock<KrillServer>>>);
+pub struct PubServerApp(App<Arc<RwLock<KrillServer<DiskKeyStore>>>>);
 
 
 /// # Set up methods
 ///
 impl PubServerApp {
-    pub fn new(server: Arc<RwLock<KrillServer>>) -> Self {
+    pub fn new(server: Arc<RwLock<KrillServer<DiskKeyStore>>>) -> Self {
         let mut app = App::with_state(server)
             .middleware(middleware::Logger::default())
             .middleware(IdentityService::new(
@@ -106,29 +109,36 @@ impl PubServerApp {
         PubServerApp(with_statics(app))
     }
 
-    pub fn create_server(config: &Config) -> Arc<RwLock<KrillServer>> {
+    pub fn create_server(
+        config: &Config
+    ) -> Result<Arc<RwLock<KrillServer<DiskKeyStore>>>, Error> {
         let authorizer = Authorizer::new(&config.auth_token);
-        let pub_server = match KrillServer::build(
+
+        let pubserver_store = DiskKeyStore::under_work_dir(&config.data_dir, "pubsrv")?;
+
+        let pub_server = KrillServer::build(
             &config.data_dir,
             &config.rsync_base,
             config.service_uri(),
             &config.rrdp_base_uri,
-            authorizer
-        ) {
-            Err(e) => {
-                error!("{}", e);
-                ::std::process::exit(1);
-            },
-            Ok(server) => server
-        };
-        Arc::new(RwLock::new(pub_server))
+            authorizer,
+            pubserver_store
+        )?;
+
+        Ok(Arc::new(RwLock::new(pub_server)))
     }
 
     /// Used to start the server with an existing executor (for tests)
     ///
     /// Note https is not supported in tests.
     pub fn start(config: &Config) {
-        let ps = PubServerApp::create_server(config);
+        let ps = match PubServerApp::create_server(config) {
+            Ok(server) => server,
+            Err(e) => {
+                eprintln!("{}", e);
+                ::std::process::exit(1);
+            }
+        };
 
         server::new(move || PubServerApp::new(ps.clone()))
             .bind(config.socket_addr())
@@ -139,7 +149,13 @@ impl PubServerApp {
 
     /// Used to run the server in blocking mode, from the main method.
     pub fn run(config: &Config) {
-        let ps = PubServerApp::create_server(config);
+        let ps = match PubServerApp::create_server(config) {
+            Ok(server) => server,
+            Err(e) => {
+                eprintln!("{}", e);
+                ::std::process::exit(1);
+            }
+        };
 
         let server = server::new(move || PubServerApp::new(ps.clone()));
 
@@ -214,7 +230,8 @@ impl PubServerApp {
     // https://github.com/actix/actix-website/blob/master/content/docs/static-files.md
     // https://www.keycdn.com/blog/http-cache-headers
     fn serve_rrdp_files(req: &HttpRequest) -> HttpResponse {
-        let server: RwLockReadGuard<KrillServer> = req.state().read().unwrap();
+        let server: RwLockReadGuard<KrillServer<DiskKeyStore>> = req.state().read()
+            .unwrap();
 
         match req.match_info().get("path") {
             Some(path) => {
@@ -277,7 +294,7 @@ impl<S: 'static> FromRequest<S> for SignedMessage {
 /// PublisherRequestChoice, which contains either an
 /// rfc8183::PublisherRequest, or an API publisher request (no ID certs and
 /// CMS etc).
-impl<S: 'static> FromRequest<S> for publishers::Publisher {
+impl<S: 'static> FromRequest<S> for publisher_data::PublisherRequest {
     type Config = ();
     type Result = Box<Future<Item=Self, Error=actix_web::Error>>;
 
@@ -288,7 +305,7 @@ impl<S: 'static> FromRequest<S> for publishers::Publisher {
         Box::new(MessageBody::new(req)
             .from_err()
             .and_then(|bytes| {
-                let p: publishers::Publisher =
+                let p: publisher_data::PublisherRequest =
                     serde_json::from_reader(bytes.as_ref())
                     .map_err(Error::JsonError)?;
                 Ok(p)
@@ -300,10 +317,6 @@ impl<S: 'static> FromRequest<S> for publishers::Publisher {
 
 //------------ PublisherHandle -----------------------------------------------
 
-/// Defines a publisher_handle in a path, then can be built with FromRequest,
-/// so that we can easily use this as a parameter on server methods.
-pub struct PublisherHandle(pub String);
-
 impl<S> FromRequest<S> for PublisherHandle {
     type Config = ();
     type Result = Result<Self, actix_web::Error>;
@@ -313,24 +326,17 @@ impl<S> FromRequest<S> for PublisherHandle {
         _cfg: &Self::Config
     ) -> Self::Result {
         if let Some(handle) = req.match_info().get("handle") {
-            let handle = handle.to_string();
-            Ok(PublisherHandle(handle))
+            Ok(PublisherHandle::from(handle))
         } else {
             Err(Error::WrongPath.into())
         }
     }
 }
 
-impl AsRef<str> for PublisherHandle {
-    fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
-
 
 //------------ PublishDelta --------------------------------------------------
 /// Support converting request body into PublishDelta
-impl<S: 'static> FromRequest<S> for publication::PublishDelta {
+impl<S: 'static> FromRequest<S> for publication_data::PublishDelta {
     type Config = ();
     type Result = Box<Future<Item=Self, Error=actix_web::Error>>;
 
@@ -341,7 +347,7 @@ impl<S: 'static> FromRequest<S> for publication::PublishDelta {
         Box::new(MessageBody::new(req).limit(255 * 1024 * 1024) // up to 256MB
             .from_err()
             .and_then(|bytes| {
-                let delta: publication::PublishDelta =
+                let delta: publication_data::PublishDelta =
                     serde_json::from_reader(bytes.as_ref())?;
                 Ok(delta)
             })
@@ -353,7 +359,7 @@ impl<S: 'static> FromRequest<S> for publication::PublishDelta {
 //------------ IntoHttpHandler -----------------------------------------------
 
 impl server::IntoHttpHandler for PubServerApp {
-    type Handler = <App<Arc<RwLock<KrillServer>>> as server::IntoHttpHandler>::Handler;
+    type Handler = <App<Arc<RwLock<KrillServer<DiskKeyStore>>>> as server::IntoHttpHandler>::Handler;
 
     fn into_handler(self) -> Self::Handler {
         self.0.into_handler()
@@ -374,12 +380,13 @@ fn with_statics<S: 'static>(app: App<S>) -> App<S> {
 
 //------------ HttpRequest ---------------------------------------------------
 
-pub type HttpRequest = actix_web::HttpRequest<Arc<RwLock<KrillServer>>>;
+pub type HttpRequest = actix_web::HttpRequest<Arc<RwLock<KrillServer<DiskKeyStore>>>>;
 
 
 //------------ Error ---------------------------------------------------------
 
 #[derive(Debug, Display)]
+#[allow(clippy::large_enum_variant)]
 pub enum Error {
     #[display(fmt = "{}", _0)]
     ServerError(krillserver::Error),
@@ -397,6 +404,9 @@ pub enum Error {
     WrongPath,
 
     #[display(fmt = "{}", _0)]
+    IoError(io::Error),
+
+    #[display(fmt = "{}", _0)]
     Other(String),
 }
 
@@ -404,7 +414,15 @@ impl From<serde_json::Error> for Error {
     fn from(e: serde_json::Error) -> Self { Error::JsonError(e) }
 }
 
-impl error::Error for Error {
+impl From<io::Error> for Error {
+    fn from(e: io::Error) -> Self { Error::IoError(e) }
+}
+
+impl From<krillserver::Error> for Error {
+    fn from(e: krillserver::Error) -> Self { Error::ServerError(e) }
+}
+
+impl std::error::Error for Error {
     fn description(&self) -> &str {
         "An error happened"
     }

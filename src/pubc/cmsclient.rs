@@ -8,7 +8,8 @@ use clap::{App, Arg, SubCommand};
 use rpki::x509::ValidationError;
 use rpki::crypto::{PublicKeyFormat, Signer};
 use toml;
-use crate::api::publication;
+use crate::api::publication_data;
+use crate::pubc;
 use crate::remote::builder;
 use crate::remote::builder::{IdCertBuilder, SignedMessageBuilder};
 use crate::remote::id::{MyIdentity, MyRepoInfo, ParentInfo};
@@ -19,7 +20,6 @@ use crate::storage::caching_ks::CachingDiskKeyStore;
 use crate::storage::keystore::{self, Info, Key, KeyStore};
 use crate::util::httpclient;
 use crate::util::softsigner::{self, OpenSslSigner};
-use pubc;
 
 
 /// # Some constants for naming resources in the keystore for clients.
@@ -178,7 +178,7 @@ impl PubClient {
     /// validly signed and all.
     pub fn get_server_list(
         &mut self
-    ) -> Result<publication::ListReply, Error> {
+    ) -> Result<publication_data::ListReply, Error> {
         let query = rfc8181::Message::list_query();
         let signed_request = self.sign_request(query)?;
 

@@ -3,7 +3,8 @@
 use std::io;
 use bytes::Bytes;
 use rpki::uri;
-use crate::api::publication;
+use crate::api::publication_data;
+use crate::api::{Base64, EncodedHash};
 use crate::remote::sigmsg::SignedMessage;
 use crate::util::xml::{
     Attributes,
@@ -125,7 +126,7 @@ impl Message {
 ///
 impl Message {
 
-    pub fn list_reply(reply: publication::ListReply) -> Self {
+    pub fn list_reply(reply: publication_data::ListReply) -> Self {
         Message::ReplyMessage(ReplyMessage::ListReply(reply))
     }
 
@@ -133,7 +134,7 @@ impl Message {
         Message::ReplyMessage(ReplyMessage::SuccessReply)
     }
 
-    pub fn publish_delta_query(delta: publication::PublishDelta) -> Self {
+    pub fn publish_delta_query(delta: publication_data::PublishDelta) -> Self {
         Message::QueryMessage(QueryMessage::PublishDelta(delta))
     }
 
@@ -148,7 +149,7 @@ impl Message {
 /// This type represents query type Publication Messages defined in RFC8181
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum QueryMessage {
-    PublishDelta(publication::PublishDelta),
+    PublishDelta(publication_data::PublishDelta),
     ListQuery
 }
 
@@ -207,10 +208,10 @@ impl QueryMessage {
     }
 
     /// Consumes this and returns this a PublishRequest for our (json) API
-    pub fn into_publish_request(self) -> publication::PublishRequest {
+    pub fn into_publish_request(self) -> publication_data::PublishRequest {
         match self {
-            QueryMessage::ListQuery       => publication::PublishRequest::List,
-            QueryMessage::PublishDelta(d) => publication::PublishRequest::Delta(d)
+            QueryMessage::ListQuery       => publication_data::PublishRequest::List,
+            QueryMessage::PublishDelta(d) => publication_data::PublishRequest::Delta(d)
         }
     }
 }
@@ -224,9 +225,9 @@ pub struct PublishDeltaXml;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PublishDeltaElement {
-    Publish(publication::Publish),
-    Update(publication::Update),
-    Withdraw(publication::Withdraw)
+    Publish(publication_data::Publish),
+    Update(publication_data::Update),
+    Withdraw(publication_data::Withdraw)
 }
 
 impl PublishDeltaElement {
@@ -257,17 +258,19 @@ impl PublishDeltaXml {
 
         let uri = uri::Rsync::from_string(a.take_req("uri")?)?;
         let tag = a.take_req("tag")?;
-        let object = r.take_bytes_characters()?;
+        let base64_string = r.take_chars()?;
+        let base64 = Base64::from(base64_string);
 
-        let res = match a.take_opt_hex("hash") {
-            Some(hash) => {
-                let update = publication::Update::new(
-                    Some(tag), uri, object, hash
+        let res = match a.take_opt("hash") {
+            Some(hash_str) => {
+                let hash = EncodedHash::from(hash_str);
+                let update = publication_data::Update::new(
+                    Some(tag), uri, base64, hash
                 );
                 Ok(PublishDeltaElement::Update(update))
             },
             None => {
-                let publish = publication::Publish::new(Some(tag), uri, object);
+                let publish = publication_data::Publish::new(Some(tag), uri, base64);
                 Ok(PublishDeltaElement::Publish(publish))
             }
         };
@@ -281,13 +284,14 @@ impl PublishDeltaXml {
         a: &mut Attributes
     ) -> Result<PublishDeltaElement, MessageError> {
 
-        let hash = a.take_req_hex("hash")?;
+        let hash_str = a.take_req("hash")?;
+        let hash = EncodedHash::from(hash_str);
         let uri = uri::Rsync::from_string(a.take_req("uri")?)?;
         let tag = a.take_req("tag")?;
 
         a.exhausted()?;
 
-        let withdraw = publication::Withdraw::new(Some(tag), uri, hash);
+        let withdraw = publication_data::Withdraw::new(Some(tag), uri, hash);
         Ok(PublishDeltaElement::Withdraw(withdraw))
     }
 
@@ -318,8 +322,8 @@ impl PublishDeltaXml {
     /// is processed by PublicationMessage::decode
     pub fn decode<R: io::Read>(
         r: &mut XmlReader<R>
-    ) -> Result<publication::PublishDelta, MessageError> {
-        let mut bld = publication::PublishDeltaBuilder::new();
+    ) -> Result<publication_data::PublishDelta, MessageError> {
+        let mut bld = publication_data::PublishDeltaBuilder::new();
 
         while let Some(pde) = Self::decode_opt(r)? {
             match pde {
@@ -339,7 +343,7 @@ impl PublishDeltaXml {
     /// Encodes a PublishDelta to XML in the given writer, for inclusion in an
     /// RFC8181 CMS.
     pub fn encode<W: io::Write>(
-        delta: &publication::PublishDelta,
+        delta: &publication_data::PublishDelta,
         w: &mut XmlWriter<W>
     ) -> Result<(), io::Error> {
         for p in delta.publishes()  { Self::encode_publish(p, w)?; }
@@ -349,12 +353,13 @@ impl PublishDeltaXml {
     }
 
     fn encode_publish<W: io::Write>(
-        publish: &publication::Publish,
+        publish: &publication_data::Publish,
         w: &mut XmlWriter<W>
     ) -> Result<(), io::Error> {
 
         let uri = publish.uri().to_string();
         let tag = publish.tag_for_xml();
+        let content = publish.content().to_string();
 
         let a = [
             ("tag", tag.as_ref()),
@@ -365,23 +370,22 @@ impl PublishDeltaXml {
             "publish",
             Some(&a),
             |w| {
-                w.put_blob(publish.content())
+                w.put_text(content.as_ref())
             }
         )
     }
 
     fn encode_update<W: io::Write>(
-        update: &publication::Update,
+        update: &publication_data::Update,
         w: &mut XmlWriter<W>
     ) -> Result<(), io::Error> {
 
         let uri = update.uri().to_string();
-        let enc = hex::encode(update.hash());
         let tag = update.tag_for_xml();
 
         let a = [
             ("tag", tag.as_ref()),
-            ("hash", enc.as_ref()),
+            ("hash", update.hash().as_ref()),
             ("uri", uri.as_ref())
         ];
 
@@ -389,22 +393,21 @@ impl PublishDeltaXml {
             "publish",
             Some(&a),
             |w| {
-                w.put_blob(update.content())
+                w.put_text(update.content().as_ref())
             }
         )
     }
 
     fn encode_withdraw<W: io::Write>(
-        withdraw: &publication::Withdraw,
+        withdraw: &publication_data::Withdraw,
         w: &mut XmlWriter<W>
     ) -> Result<(), io::Error> {
 
         let uri = withdraw.uri().to_string();
-        let hash = hex::encode(withdraw.hash());
         let tag = withdraw.tag_for_xml();
 
         let a = [
-            ("hash", hash.as_ref()),
+            ("hash", withdraw.hash().as_ref()),
             ("tag", tag.as_ref()),
             ("uri", uri.as_ref())
         ];
@@ -426,7 +429,7 @@ impl PublishDeltaXml {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ReplyMessage {
     SuccessReply,
-    ListReply(publication::ListReply),
+    ListReply(publication_data::ListReply),
     ErrorReply(ErrorReply)
 }
 
@@ -468,7 +471,7 @@ impl ReplyMessage {
     /// Decodes XML to a ListReply.
     fn decode_list_reply<R: io::Read>(
         r: &mut XmlReader<R>
-    ) -> Result<publication::ListReply, MessageError> {
+    ) -> Result<publication_data::ListReply, MessageError> {
 
         let mut elements = vec![];
 
@@ -476,11 +479,11 @@ impl ReplyMessage {
             let e = r.take_opt_element(|t, mut a, _r| {
                 match t.name.as_ref() {
                     "list" => {
-                        let hash = a.take_req_hex("hash")?;
+                        let hash = EncodedHash::from(a.take_req("hash")?);
                         let uri = uri::Rsync::from_string(a.take_req("uri")?)?;
                         a.exhausted()?;
 
-                        Ok(Some(publication::ListElement::new(uri, hash)))
+                        Ok(Some(publication_data::ListElement::new(uri, hash)))
                     },
                     _ => {
                         Err(MessageError::UnexpectedStart(t.name.clone()))
@@ -493,7 +496,7 @@ impl ReplyMessage {
                 None    => break
             }
         }
-        Ok(publication::ListReply::new(elements))
+        Ok(publication_data::ListReply::new(elements))
     }
 
     /// Encodes a ReplyMessage for inclusion in an RFC8181 Protocol CMS.
@@ -512,17 +515,16 @@ impl ReplyMessage {
 
     /// Encodes a ListReply to XML.
     fn encode_list_reply<W: io::Write>(
-        reply: &publication::ListReply,
+        reply: &publication_data::ListReply,
         w: &mut XmlWriter<W>
     ) -> Result<(), io::Error> {
 
         for el in reply.elements() {
-            let hash = hex::encode(&el.hash());
             let uri = el.uri().to_string();
 
             w.put_element(
                 "list",
-                Some(&[("hash", hash.as_ref()), ("uri", uri.as_ref())]),
+                Some(&[("hash", el.hash().as_ref()), ("uri", uri.as_ref())]),
                 |w| { w.empty() }
             )?;
         }
@@ -892,13 +894,13 @@ mod tests {
     use super::*;
     use std::str;
     use rpki::uri::Rsync;
-    use crate::util::sha256;
+    use crate::api::EncodedHash;
 
     //------------ ListReplyBuilder ----------------------------------------------
 
     /// This type is useful for testing
     pub struct ListReplyBuilder {
-        elements: Vec<publication::ListElement>
+        elements: Vec<publication_data::ListElement>
     }
 
     impl ListReplyBuilder {
@@ -908,8 +910,8 @@ mod tests {
         }
 
         pub fn add(&mut self, object: &Bytes, uri: uri::Rsync) {
-            let hash = sha256(object);
-            let el = publication::ListElement::new(uri, hash);
+            let hash = EncodedHash::from_content(object);
+            let el = publication_data::ListElement::new(uri, hash);
             self.elements.push(el);
         }
 
@@ -917,7 +919,7 @@ mod tests {
         /// protocol CMS message.
         pub fn build_message(self) -> Message {
             Message::list_reply(
-                publication::ListReply::new(self.elements)
+                publication_data::ListReply::new(self.elements)
             )
         }
     }
@@ -1013,7 +1015,8 @@ mod tests {
     #[test]
     fn should_create_error_reply() {
         let object = Bytes::from_static(include_bytes!("../../test/remote/cms_ta.cer"));
-        let publish = publication::Publish::with_hash_tag(
+        let object = Base64::from_content(&object);
+        let publish = publication_data::Publish::with_hash_tag(
             rsync_uri("rsync://host/path/cms-ta.cer"),
             object
         );
@@ -1049,26 +1052,28 @@ mod tests {
     fn should_encode_publish_delta() {
         let object = Bytes::from_static(include_bytes!("../../test/remote/cms_ta.cer"));
         let object2 = Bytes::from_static(include_bytes!("../../test/remote/pdu_200.der"));
-        let object_hash = sha256(&object);
+        let object_hash = EncodedHash::from_content(&object);
+        let object = Base64::from_content(&object);
+        let object2 = Base64::from_content(&object2);
 
-        let mut builder = publication::PublishDeltaBuilder::new();
+        let mut builder = publication_data::PublishDeltaBuilder::new();
 
         builder.add_withdraw(
-            publication::Withdraw::with_hash_tag(
+            publication_data::Withdraw::with_hash_tag(
                 rsync_uri("rsync://host/path/cms-ta.cer"),
                 object_hash.clone()
             )
         );
 
         builder.add_publish(
-            publication::Publish::with_hash_tag(
+            publication_data::Publish::with_hash_tag(
                 rsync_uri("rsync://host/path/cms-ta.cer"),
                 object
             )
         );
 
         builder.add_update(
-            publication::Update::with_hash_tag(
+            publication_data::Update::with_hash_tag(
                 rsync_uri("rsync://host/path/cms-ta.cer"),
                 object2,
                 object_hash

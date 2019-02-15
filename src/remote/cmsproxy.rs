@@ -1,12 +1,10 @@
-use std::sync::Arc;
 use std::path::PathBuf;
 use bcder::Captured;
 use rpki::uri;
 use rpki::x509::ValidationError;
-use crate::api::publishers;
-use crate::api::publication;
-use crate::krilld::pubd::repo;
-use crate::krilld::pubd::rsyncd;
+use crate::api::publication_data;
+use crate::krilld::pubd;
+use crate::krilld::pubd::publishers::Publisher;
 use crate::remote::id::IdCert;
 use crate::remote::responder;
 use crate::remote::responder::Responder;
@@ -52,7 +50,7 @@ impl CmsProxy {
         &mut self,
         msg: &SignedMessage,
         id_cert: &IdCert,
-    ) -> Result<publication::PublishRequest, Error> {
+    ) -> Result<publication_data::PublishRequest, Error> {
         debug!("Validating Signed Message");
         msg.validate(id_cert)?;
         let msg = rfc8181::Message::from_signed_message(&msg)?;
@@ -64,13 +62,13 @@ impl CmsProxy {
     /// in signed CMS
     pub fn wrap_publish_reply(
         &mut self,
-        reply: publication::PublishReply
+        reply: publication_data::PublishReply
     ) -> Result<Captured, Error> {
         let msg = match reply {
-            publication::PublishReply::Success => {
+            publication_data::PublishReply::Success => {
                 rfc8181::Message::success_reply()
             },
-            publication::PublishReply::List(list) => {
+            publication_data::PublishReply::List(list) => {
                 rfc8181::Message::list_reply(list)
             }
         };
@@ -98,7 +96,7 @@ impl CmsProxy {
     /// Returns an RFC8183 Repository Response
     pub fn repository_response(
         &self,
-        publisher: &Arc<publishers::Publisher>,
+        publisher: &Publisher,
         base_service_uri: &uri::Http,
         rrdp_notification_uri: uri::Http
     ) -> Result<rfc8183::RepositoryResponse, Error> {
@@ -106,21 +104,19 @@ impl CmsProxy {
         let service_uri = format!(
             "{}rfc8181/{}",
             base_service_uri.to_string(),
-            publisher.handle()
+            publisher.id()
         );
         let service_uri = uri::Http::from_string(service_uri).unwrap();
 
         self.responder
             .repository_response(
-                &publisher,
+                publisher,
                 service_uri,
                 rrdp_notification_uri)
             .map_err(Error::ResponderError)
     }
-
-
-
 }
+
 
 //------------ Error ---------------------------------------------------------
 
@@ -176,22 +172,8 @@ impl ToReportErrorCode for rfc8181::MessageError {
     }
 }
 
-impl ToReportErrorCode for repo::Error {
+impl ToReportErrorCode for pubd::Error {
     fn to_report_error_code(&self) -> rfc8181::ReportErrorCode {
-        match self {
-            repo::Error::Rsyncd(
-                rsyncd::Error::ObjectAlreadyPresent(_)) =>
-                rfc8181::ReportErrorCode::ObjectAlreadyPresent,
-            repo::Error::Rsyncd(
-                rsyncd::Error::NoObjectPresent(_)) =>
-                rfc8181::ReportErrorCode::NoObjectPresent,
-            repo::Error::Rsyncd(
-                rsyncd::Error::NoObjectMatchingHash) =>
-                rfc8181::ReportErrorCode::NoObjectMatchingHash,
-            repo::Error::Rsyncd(
-                rsyncd::Error::OutsideBaseUri) =>
-                rfc8181::ReportErrorCode::PermissionFailure,
-            _ => rfc8181::ReportErrorCode::OtherError
-        }
+        unimplemented!()
     }
 }

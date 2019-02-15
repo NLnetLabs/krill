@@ -1,26 +1,30 @@
 //! Process requests received, delegate, and wrap up the responses.
-use std::error;
 use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 use actix_web::{HttpResponse, ResponseError};
 use actix_web::http::StatusCode;
 use serde::Serialize;
-use crate::api::publishers;
-use crate::api::publication;
-use crate::krilld::http::server::{HttpRequest, PublisherHandle};
+use crate::api::publisher_data;
+use crate::api::publisher_data::PublisherHandle;
+use crate::api::publication_data;
+use crate::eventsourcing::DiskKeyStore;
+use crate::krilld::http::server::HttpRequest;
 use crate::krilld::krillserver::{self, KrillServer};
 use crate::krilld::pubd;
+use crate::krilld::pubd::publishers::PublisherError;
+use crate::krilld::pubd::repo::RrdpServerError;
+use crate::remote::cmsproxy;
 use crate::remote::sigmsg::SignedMessage;
 
 
 //------------ Support Functions ---------------------------------------------
 
 /// Returns a server in a read lock
-pub fn ro_server(req: &HttpRequest) -> RwLockReadGuard<KrillServer> {
+pub fn ro_server(req: &HttpRequest) -> RwLockReadGuard<KrillServer<DiskKeyStore>> {
     req.state().read().unwrap()
 }
 
 /// Returns a server in a write lock
-pub fn rw_server(req: &HttpRequest) -> RwLockWriteGuard<KrillServer> {
+pub fn rw_server(req: &HttpRequest) -> RwLockWriteGuard<KrillServer<DiskKeyStore>> {
     req.state().write().unwrap()
 }
 
@@ -67,7 +71,10 @@ pub fn publishers(req: &HttpRequest) -> HttpResponse {
         Err(e) => server_error(&Error::ServerError(e)),
         Ok(publishers) => {
             render_json(
-                publishers::PublisherList::from(&publishers, "/api/v1/publishers")
+                publisher_data::PublisherList::build(
+                    &publishers,
+                    "/api/v1/publishers"
+                )
             )
         }
     }
@@ -78,7 +85,7 @@ pub fn publishers(req: &HttpRequest) -> HttpResponse {
 #[allow(clippy::needless_pass_by_value)]
 pub fn add_publisher(
     req: HttpRequest,
-    pbl: publishers::Publisher
+    pbl: publisher_data::PublisherRequest
 ) -> HttpResponse {
     let mut server = rw_server(&req);
     match server.add_publisher(pbl) {
@@ -94,10 +101,8 @@ pub fn remove_publisher(
     req: HttpRequest,
     handle: PublisherHandle
 ) -> HttpResponse {
-    match rw_server(&req).remove_publisher(handle) {
+    match rw_server(&req).remove_publisher(&handle) {
         Ok(()) => api_ok(),
-        Err(krillserver::Error::PublisherStore(
-                pubd::Error::UnknownPublisher(_))) => api_ok(),
         Err(e) => server_error(&Error::ServerError(e))
     }
 }
@@ -109,11 +114,11 @@ pub fn publisher_details(
     handle: PublisherHandle
 ) -> HttpResponse {
     let server = ro_server(&req);
-    match server.publisher(handle) {
+    match server.publisher(&handle) {
         Ok(None) => api_not_found(),
         Ok(Some(publisher)) => {
             render_json(
-                publishers::PublisherDetails::from(
+                publisher_data::PublisherDetails::from(
                     &publisher,
                     "/api/v1/publishers",
                     server.service_base_uri())
@@ -130,19 +135,14 @@ pub fn repository_response(
     req: HttpRequest,
     handle: PublisherHandle
 ) -> HttpResponse {
-    match ro_server(&req).repository_response(handle) {
+    match ro_server(&req).repository_response(&handle) {
         Ok(res) => {
             HttpResponse::Ok()
                 .content_type("application/xml")
                 .body(res.encode_vec())
         },
-        Err(krillserver::Error::PublisherStore
-            (pubd::Error::UnknownPublisher(_))) => {
-            api_not_found()
-        },
-        Err(e) => {
-            server_error(&Error::ServerError(e))
-        }
+
+        Err(e) => server_error(&Error::ServerError(e))
     }
 }
 
@@ -156,8 +156,8 @@ pub fn handle_rfc8181_request(
     msg: SignedMessage,
     handle: PublisherHandle
 ) -> HttpResponse {
-    let mut server: RwLockWriteGuard<KrillServer> = rw_server(&req);
-    match server.handle_rfc8181_request(&msg, handle.as_ref()) {
+    let mut server: RwLockWriteGuard<KrillServer<DiskKeyStore>> = rw_server(&req);
+    match server.handle_rfc8181_request(&msg, &handle) {
         Ok(captured) => {
             HttpResponse::build(StatusCode::OK)
                 .content_type("application/rpki-publication")
@@ -173,10 +173,10 @@ pub fn handle_rfc8181_request(
 #[allow(clippy::needless_pass_by_value)]
 pub fn handle_delta(
     req: HttpRequest,
-    delta: publication::PublishDelta,
+    delta: publication_data::PublishDelta,
     handle: PublisherHandle
 ) -> HttpResponse {
-    match rw_server(&req).handle_delta(delta, handle.as_ref()) {
+    match rw_server(&req).handle_delta(delta, &handle) {
         Ok(()) => api_ok(),
         Err(e) => server_error(&Error::ServerError(e))
     }
@@ -188,7 +188,7 @@ pub fn handle_list(
     req: HttpRequest,
     handle: PublisherHandle
 ) -> HttpResponse {
-    match ro_server(&req).handle_list(handle.as_ref()) {
+    match ro_server(&req).handle_list(&handle) {
         Ok(list) => render_json(list),
         Err(e)   => server_error(&Error::ServerError(e))
     }
@@ -208,6 +208,7 @@ pub fn current_snapshot_json(req: &HttpRequest) -> HttpResponse {
 //------------ Error ---------------------------------------------------------
 
 #[derive(Debug, Display)]
+#[allow(clippy::large_enum_variant)]
 pub enum Error {
     #[display(fmt = "{}", _0)]
     ServerError(krillserver::Error),
@@ -229,7 +230,7 @@ trait ErrorToCode {
     fn code(&self) -> usize;
 }
 
-impl error::Error for Error {
+impl std::error::Error for Error {
     fn description(&self) -> &str {
         "Error happened"
     }
@@ -240,17 +241,7 @@ impl ErrorToStatus for Error {
         match self {
             Error::ServerError(e) => e.status(),
             Error::JsonError(_) => StatusCode::BAD_REQUEST,
-            Error::PublisherRequestError => StatusCode::BAD_REQUEST,
-        }
-    }
-}
-
-impl ErrorToCode for Error {
-    fn code(&self) -> usize {
-        match self {
-            Error::ServerError(e) => e.code(),
-            Error::JsonError(_) => 1001,
-            Error::PublisherRequestError => 1002,
+            Error::PublisherRequestError => StatusCode::BAD_REQUEST
         }
     }
 }
@@ -258,33 +249,20 @@ impl ErrorToCode for Error {
 impl ErrorToStatus for krillserver::Error {
     fn status(&self) -> StatusCode {
         match self {
-            krillserver::Error::CmsProxy(_) => StatusCode::BAD_REQUEST,
-            krillserver::Error::PublisherStore(e) => e.status(),
-            krillserver::Error::Repository(_) => StatusCode::BAD_REQUEST,
             krillserver::Error::NoIdCert => StatusCode::FORBIDDEN,
+            krillserver::Error::CmsProxy(e) => e.status(),
+            krillserver::Error::IoError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            krillserver::Error::PubServer(e) => e.status()
         }
     }
 }
 
-impl ErrorToCode for krillserver::Error {
-    fn code(&self) -> usize {
+impl ErrorToStatus for cmsproxy::Error {
+    fn status(&self) -> StatusCode {
         match self {
-            krillserver::Error::PublisherStore(e) => e.code(),
-            krillserver::Error::Repository(_) => 3002,
-            krillserver::Error::CmsProxy(_) => 3003,
-            krillserver::Error::NoIdCert => 2001,
-
-        }
-    }
-}
-
-impl ErrorToCode for pubd::Error {
-    fn code(&self) -> usize {
-        match self {
-            pubd::Error::ForwardSlashInHandle(_) => 1004,
-            pubd::Error::DuplicatePublisher(_)   => 1005,
-            pubd::Error::UnknownPublisher(_)     => 1006,
-            _ => 3001
+            cmsproxy::Error::ValidationError(_) => StatusCode::FORBIDDEN,
+            cmsproxy::Error::MessageError(_) => StatusCode::BAD_REQUEST,
+            cmsproxy::Error::ResponderError(_) => StatusCode::INTERNAL_SERVER_ERROR
         }
     }
 }
@@ -292,16 +270,106 @@ impl ErrorToCode for pubd::Error {
 impl ErrorToStatus for pubd::Error {
     fn status(&self) -> StatusCode {
         match self {
-            pubd::Error::ForwardSlashInHandle(_) =>
-                StatusCode::BAD_REQUEST,
-            pubd::Error::DuplicatePublisher(_) =>
-                StatusCode::BAD_REQUEST,
-            pubd::Error::UnknownPublisher(_) =>
-                StatusCode::BAD_REQUEST,
-            _ => StatusCode::INTERNAL_SERVER_ERROR
+            pubd::Error::IoError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            pubd::Error::InvalidBaseUri => StatusCode::BAD_REQUEST,
+            pubd::Error::InvalidHandle(_) => StatusCode::BAD_REQUEST,
+            pubd::Error::ReservedName(_) => StatusCode::BAD_REQUEST,
+            pubd::Error::DuplicatePublisher(_) => StatusCode::BAD_REQUEST,
+            pubd::Error::UnknownPublisher(_) => StatusCode::FORBIDDEN,
+            pubd::Error::ConcurrentModification(_, _) => StatusCode::BAD_REQUEST,
+            pubd::Error::PublisherError(e) => e.status(),
+            pubd::Error::RrdpServerError(e) => e.status(),
+            pubd::Error::KeyStoreError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+
+}
+
+impl ErrorToStatus for PublisherError {
+    fn status(&self) -> StatusCode {
+        match self {
+            PublisherError::Deactivated => StatusCode::FORBIDDEN,
+            PublisherError::VerificationError(_) => StatusCode::FORBIDDEN,
         }
     }
 }
+
+impl ErrorToStatus for RrdpServerError {
+    fn status(&self) -> StatusCode {
+        match self {
+            RrdpServerError::IoError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
+
+
+
+impl ErrorToCode for Error {
+    fn code(&self) -> usize {
+        match self {
+            Error::ServerError(e) => e.code(),
+            Error::JsonError(_) => 1001,
+            Error::PublisherRequestError => 1002
+        }
+    }
+}
+
+impl ErrorToCode for krillserver::Error {
+    fn code(&self) -> usize {
+        match self {
+            krillserver::Error::NoIdCert => 2001,
+            krillserver::Error::CmsProxy(e) => e.code(),
+            krillserver::Error::IoError(_) => 3001,
+            krillserver::Error::PubServer(e) => e.code()
+        }
+    }
+}
+
+impl ErrorToCode for cmsproxy::Error {
+    fn code(&self) -> usize {
+        match self {
+            cmsproxy::Error::ValidationError(_) => 2001,
+            cmsproxy::Error::MessageError(_) => 1003,
+            cmsproxy::Error::ResponderError(_) => 3003
+        }
+    }
+}
+
+impl ErrorToCode for pubd::Error {
+    fn code(&self) -> usize {
+        match self {
+            pubd::Error::IoError(_) => 3001,
+            pubd::Error::InvalidBaseUri => 2002,
+            pubd::Error::InvalidHandle(_) => 1004,
+            pubd::Error::ReservedName(_) => 1007,
+            pubd::Error::DuplicatePublisher(_) => 1005,
+            pubd::Error::UnknownPublisher(_) => 1006,
+            pubd::Error::ConcurrentModification(_, _) => 2003,
+            pubd::Error::PublisherError(e) => e.code(),
+            pubd::Error::RrdpServerError(e) => e.code(),
+            pubd::Error::KeyStoreError(_) => 3001,
+        }
+    }
+}
+
+impl ErrorToCode for PublisherError {
+    fn code(&self) -> usize {
+        match self {
+            PublisherError::Deactivated => 2004,
+            PublisherError::VerificationError(_) => 2005,
+        }
+    }
+}
+
+impl ErrorToCode for RrdpServerError {
+    fn code(&self) -> usize {
+        match self {
+            RrdpServerError::IoError(_) => 3001
+        }
+    }
+}
+
+
 
 #[derive(Debug, Serialize)]
 struct ErrorResponse {

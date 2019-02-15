@@ -190,7 +190,9 @@ pub struct CmsAuthData {
 /// /api/v1/publishers/{handle}
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PublisherDetails {
-    publisher_handle: String,
+    handle: String,
+
+    retired: bool,
 
     #[serde(
         deserialize_with = "ext_serde::de_rsync_uri",
@@ -204,8 +206,8 @@ pub struct PublisherDetails {
 }
 
 impl PublisherDetails {
-    pub fn publisher_handle(&self) -> &str {
-        &self.publisher_handle
+    pub fn handle(&self) -> &str {
+        &self.handle
     }
     pub fn identity_cert(&self) -> Option<&IdCert> {
         match self.cms_auth {
@@ -213,6 +215,7 @@ impl PublisherDetails {
             Some(ref details) => Some(&details.id_cert)
         }
     }
+    pub fn retired(&self) -> bool { self.retired }
 }
 
 impl PartialEq for PublisherDetails {
@@ -237,7 +240,7 @@ impl Report for PublisherDetails {
                 let mut res = String::new();
 
                 res.push_str("handle: ");
-                res.push_str(self.publisher_handle.as_str());
+                res.push_str(self.handle.as_str());
                 res.push_str("\n");
 
                 res.push_str("base uri: ");

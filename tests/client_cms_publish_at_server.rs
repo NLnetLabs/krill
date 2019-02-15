@@ -95,20 +95,20 @@ fn client_publish_at_server() {
         let sync_dir = test::create_sub_dir(&d);
         let file_a = CurrentFile::new(
             test::rsync_uri("rsync://127.0.0.1/repo/alice/a.txt"),
-            test::as_bytes("a")
+            &test::as_bytes("a")
         );
         let file_b = CurrentFile::new(
             test::rsync_uri("rsync://127.0.0.1/repo/alice/b.txt"),
-            test::as_bytes("b")
+            &test::as_bytes("b")
         );
         let file_c = CurrentFile::new(
             test::rsync_uri("rsync://127.0.0.1/repo/alice/c.txt"),
-            test::as_bytes("c")
+            &test::as_bytes("c")
         );
 
-        file::save_in_dir(file_a.content(), &sync_dir, "a.txt").unwrap();
-        file::save_in_dir(file_b.content(), &sync_dir, "b.txt").unwrap();
-        file::save_in_dir(file_c.content(), &sync_dir, "c.txt").unwrap();
+        file::save_in_dir(&file_a.to_bytes(), &sync_dir, "a.txt").unwrap();
+        file::save_in_dir(&file_b.to_bytes(), &sync_dir, "b.txt").unwrap();
+        file::save_in_dir(&file_c.to_bytes(), &sync_dir, "c.txt").unwrap();
 
         client.sync_dir(&sync_dir).unwrap();
 

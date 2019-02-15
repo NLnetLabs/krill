@@ -9,7 +9,7 @@ use bcder::decode;
 use rpki::uri;
 use rpki::x509;
 use rpki::x509::Time;
-use crate::api::publishers;
+use crate::api::publisher_data;
 use crate::remote::id::IdCert;
 use crate::util::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
 
@@ -130,11 +130,11 @@ impl PublisherRequest {
         self,
         token: String,
         base_uri: uri::Rsync
-    ) -> publishers::Publisher {
-        let cms_data = publishers::CmsAuthData::new(
+    ) -> publisher_data::PublisherRequest {
+        let cms_data = publisher_data::CmsAuthData::new(
             self.tag, self.id_cert
         );
-        publishers::Publisher::new(
+        publisher_data::PublisherRequest::new(
             self.publisher_handle,
             token,
             base_uri,

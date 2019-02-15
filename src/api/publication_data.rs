@@ -1,9 +1,8 @@
 //! Support for requests sent to the Json API
-use bytes::Bytes;
 use rpki::uri;
+use crate::api::{ Base64, EncodedHash };
 use crate::util::ext_serde;
 use crate::util::file::CurrentFile;
-use crate::util::sha256;
 
 
 //------------ PublishRequest ------------------------------------------------
@@ -51,6 +50,10 @@ impl PublishDelta {
     }
 
     pub fn is_empty(&self) -> bool { self.len() == 0 }
+
+    pub fn unwrap(self) -> (Vec<Publish>, Vec<Update>, Vec<Withdraw>) {
+        (self.publishes, self.updates, self.withdraws)
+    }
 }
 
 
@@ -104,18 +107,15 @@ pub struct Publish {
         serialize_with = "ext_serde::ser_rsync_uri")]
     uri: uri::Rsync,
 
-    #[serde(
-        deserialize_with = "ext_serde::de_bytes",
-        serialize_with = "ext_serde::ser_bytes")]
-    content: Bytes
+    content: Base64
 }
 
 impl Publish {
-    pub fn new(tag: Option<String>, uri: uri::Rsync, content: Bytes) -> Self {
+    pub fn new(tag: Option<String>, uri: uri::Rsync, content: Base64) -> Self {
         Publish { tag, uri, content }
     }
-    pub fn with_hash_tag(uri: uri::Rsync, content: Bytes) -> Self {
-        let tag = Some(hex::encode(sha256(&content)));
+    pub fn with_hash_tag(uri: uri::Rsync, content: Base64) -> Self {
+        let tag = Some(content.to_hex_hash());
         Publish { tag, uri, content }
     }
 
@@ -127,7 +127,11 @@ impl Publish {
         }
     }
     pub fn uri(&self) -> &uri::Rsync{ &self.uri}
-    pub fn content(&self) -> &Bytes{ &self.content }
+    pub fn content(&self) -> &Base64{ &self.content }
+
+    pub fn unwrap(self) -> (Option<String>, uri::Rsync, Base64) {
+        (self.tag, self.uri, self.content)
+    }
 }
 
 
@@ -145,32 +149,26 @@ pub struct Update {
         serialize_with = "ext_serde::ser_rsync_uri")]
     uri: uri::Rsync,
 
-    #[serde(
-        deserialize_with = "ext_serde::de_bytes",
-        serialize_with = "ext_serde::ser_bytes")]
-    content: Bytes,
+    content: Base64,
 
-    #[serde(
-        deserialize_with = "ext_serde::de_bytes",
-        serialize_with = "ext_serde::ser_bytes")]
-    hash: Bytes,
+    hash: EncodedHash,
 }
 
 impl Update {
     pub fn new(
         tag: Option<String>,
         uri: uri::Rsync,
-        content: Bytes,
-        old_hash: Bytes
+        content: Base64,
+        old_hash: EncodedHash
     ) -> Self {
         Update { tag, uri, content, hash: old_hash }
     }
     pub fn with_hash_tag(
         uri: uri::Rsync,
-        content: Bytes,
-        old_hash: Bytes
+        content: Base64,
+        old_hash: EncodedHash
     ) -> Self {
-        let tag = Some(hex::encode(sha256(&content)));
+        let tag = Some(content.to_hex_hash());
         Update { tag, uri, content, hash: old_hash }
     }
 
@@ -182,8 +180,12 @@ impl Update {
         }
     }
     pub fn uri(&self) -> &uri::Rsync { &self.uri}
-    pub fn content(&self) -> &Bytes { &self.content }
-    pub fn hash(&self) -> &Bytes { &self.hash }
+    pub fn content(&self) -> &Base64 { &self.content }
+    pub fn hash(&self) -> &EncodedHash { &self.hash }
+
+    pub fn unwrap(self) -> (Option<String>, uri::Rsync, Base64, EncodedHash) {
+        (self.tag, self.uri, self.content, self.hash)
+    }
 }
 
 
@@ -201,19 +203,16 @@ pub struct Withdraw {
         serialize_with = "ext_serde::ser_rsync_uri")]
     uri: uri::Rsync,
 
-    #[serde(
-        deserialize_with = "ext_serde::de_bytes",
-        serialize_with = "ext_serde::ser_bytes")]
-    hash: Bytes,
+    hash: EncodedHash,
 }
 
 impl Withdraw {
-    pub fn new(tag: Option<String>, uri: uri::Rsync, hash: Bytes) -> Self {
+    pub fn new(tag: Option<String>, uri: uri::Rsync, hash: EncodedHash) -> Self {
         Withdraw { tag, uri, hash }
     }
 
-    pub fn with_hash_tag(uri: uri::Rsync, hash: Bytes) -> Self {
-        let tag = Some(hex::encode(&hash));
+    pub fn with_hash_tag(uri: uri::Rsync, hash: EncodedHash) -> Self {
+        let tag = Some(hash.to_string());
         Withdraw { tag, uri, hash }
     }
 
@@ -233,7 +232,11 @@ impl Withdraw {
         }
     }
     pub fn uri(&self) -> &uri::Rsync { &self.uri}
-    pub fn hash(&self) -> &Bytes { &self.hash }
+    pub fn hash(&self) -> &EncodedHash { &self.hash }
+
+    pub fn unwrap(self) -> (Option<String>, uri::Rsync, EncodedHash) {
+        (self.tag, self.uri, self.hash)
+    }
 }
 
 //------------ PublishReply --------------------------------------------------
@@ -281,21 +284,14 @@ pub struct ListElement {
     serialize_with = "ext_serde::ser_rsync_uri")]
     uri:     uri::Rsync,
 
-    #[serde(
-    deserialize_with = "ext_serde::de_bytes",
-    serialize_with = "ext_serde::ser_bytes")]
-    /// The sha-256 hash of the file (as is used on the RPKI manifests and
-    /// in the publication protocol for list, update and withdraw). Saving
-    /// this rather than calculating on demand seems a small price for some
-    /// performance gain.
-    hash:    Bytes
+    hash:    EncodedHash
 }
 
 impl ListElement {
-    pub fn new(uri: uri::Rsync, hash: Bytes) -> Self {
+    pub fn new(uri: uri::Rsync, hash: EncodedHash) -> Self {
         ListElement { uri, hash }
     }
 
     pub fn uri(&self) -> &uri::Rsync { &self.uri }
-    pub fn hash(&self) -> &Bytes { &self.hash}
+    pub fn hash(&self) -> &EncodedHash { &self.hash }
 }

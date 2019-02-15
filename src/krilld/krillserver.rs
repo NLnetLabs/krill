@@ -1,19 +1,20 @@
 //! An RPKI publication protocol server.
+use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
 use bcder::Captured;
 use rpki::uri;
-use crate::api::publication;
-use crate::api::publishers;
+use crate::api::publication_data;
+use crate::api::publisher_data;
+use crate::api::publisher_data::PublisherHandle;
+use crate::eventsourcing::KeyStore;
 use crate::krilld::auth::Authorizer;
-use crate::krilld::pubd::{self, PublisherStore};
-use crate::krilld::pubd::repo::{self, Repository};
+use crate::krilld::pubd::PubServer;
+use crate::krilld::pubd;
+use crate::krilld::pubd::publishers::Publisher;
 use crate::remote::cmsproxy::{self, CmsProxy};
 use crate::remote::rfc8183;
 use crate::remote::sigmsg::SignedMessage;
-
-/// # Naming things in the keystore.
-const ACTOR: &str = "krill pubd";
 
 
 //------------ KrillServer ---------------------------------------------------
@@ -30,8 +31,7 @@ const ACTOR: &str = "krill pubd";
 ///    * Process publish / list requests by known publishers
 ///    * Updates the repository on disk
 ///    * Updates the RRDP files
-#[derive(Clone, Debug)]
-pub struct KrillServer {
+pub struct KrillServer<S: KeyStore> {
     // The base URI for this service
     service_uri: uri::Http,
 
@@ -45,14 +45,11 @@ pub struct KrillServer {
     cms_proxy: CmsProxy,
 
     // The configured publishers
-    publisher_store: PublisherStore,
-
-    // The repository responsible for publishing rsync and rrdp
-    repository: Repository,
+    pubserver: PubServer<S>
 }
 
 /// # Set up and initialisation
-impl KrillServer {
+impl<S: KeyStore> KrillServer<S> {
     /// Creates a new publication server. Note that state is preserved
     /// on disk in the work_dir provided.
     pub fn build(
@@ -60,11 +57,20 @@ impl KrillServer {
         base_uri: &uri::Rsync,
         service_uri: uri::Http,
         rrdp_base_uri: &uri::Http,
-        authorizer: Authorizer
+        authorizer: Authorizer,
+        store: S
     ) -> Result<Self, Error> {
         let cms_proxy = CmsProxy::build(work_dir)?;
-        let publisher_store = PublisherStore::build(work_dir, base_uri)?;
-        let repository = Repository::build(rrdp_base_uri, work_dir)?;
+
+        let mut repo_dir = work_dir.clone();
+        repo_dir.push("repo");
+
+        let pubserver = PubServer::build(
+            base_uri.clone(),
+            rrdp_base_uri.clone(),
+            repo_dir,
+            store
+        ).map_err(Error::PubServer)?;
 
         Ok(
             KrillServer {
@@ -72,8 +78,7 @@ impl KrillServer {
                 work_dir: work_dir.clone(),
                 authorizer,
                 cms_proxy,
-                publisher_store,
-                repository,
+                pubserver
             }
         )
     }
@@ -83,22 +88,23 @@ impl KrillServer {
     }
 }
 
-impl KrillServer {
-    pub fn allow_api(&self, token_opt: Option<String>) -> bool {
-        self.authorizer.api_allowed(token_opt)
+impl<S: KeyStore> KrillServer<S> {
+    pub fn is_api_allowed(&self, token_opt: Option<String>) -> bool {
+        self.authorizer.is_api_allowed(token_opt)
     }
 
-    pub fn allow_publication_api(
+    pub fn is_publication_api_allowed(
         &self,
         handle_opt: Option<String>,
         token_opt: Option<String>
     ) -> bool {
         match handle_opt {
             None => false,
-            Some(handle) => {
+            Some(handle_str) => {
                 match token_opt {
                     None => false,
                     Some(token) => {
+                        let handle = PublisherHandle::from(handle_str);
                         if let Ok(Some(pbl)) = self.publisher(&handle) {
                             pbl.token() == &token
                         } else {
@@ -113,46 +119,37 @@ impl KrillServer {
 }
 
 /// # Configure publishers
-impl KrillServer {
-    /// Returns all currently configured publishers.
-    pub fn publishers(&self) -> Result<Vec<Arc<publishers::Publisher>>, Error> {
-        self.publisher_store
-            .publishers()
-            .map_err(|e| { Error::PublisherStore(e) })
+impl<S: KeyStore> KrillServer<S> {
+
+    /// Returns all currently configured publishers. (excludes deactivated)
+    pub fn publishers(
+        &self
+    ) -> Result<Vec<PublisherHandle>, Error> {
+        self.pubserver.list_publishers().map_err(Error::PubServer)
     }
 
     /// Adds the publishers, blows up if it already existed.
     pub fn add_publisher(
         &mut self,
-        pbl: publishers::Publisher
+        pbl_req: publisher_data::PublisherRequest
     ) -> Result<(), Error> {
-
-        self.publisher_store.add_publisher(
-            pbl,
-            ACTOR
-        )?;
-        Ok(())
+        self.pubserver.create_publisher(pbl_req).map_err(Error::PubServer)
     }
 
     /// Removes a publisher, blows up if it didn't exist.
     pub fn remove_publisher(
         &mut self,
-        name: impl AsRef<str>
+        handle: &PublisherHandle
     ) -> Result<(), Error> {
-        self.publisher_store.remove_publisher(
-            name,
-            ACTOR
-        )?;
-        Ok(())
+        self.pubserver.deactivate_publisher(handle).map_err(Error::PubServer)
     }
 
     /// Returns an option for a publisher.
     pub fn publisher(
         &self,
-        name: impl AsRef<str>
-    ) -> Result<Option<Arc<publishers::Publisher>>, Error> {
-        self.publisher_store.publisher(name)
-            .map_err(Error::PublisherStore)
+        handle: &PublisherHandle
+    ) -> Result<Option<Arc<Publisher>>, Error> {
+        self.pubserver.get_publisher(handle).map_err(Error::PubServer)
     }
 
     /// Returns a repository response for the given publisher.
@@ -160,16 +157,20 @@ impl KrillServer {
     /// Returns an error if the publisher is unknown.
     pub fn repository_response(
         &self,
-        name: impl AsRef<str>
+        handle: &PublisherHandle
     ) -> Result<rfc8183::RepositoryResponse, Error> {
-        let publisher = self.publisher_store.get_publisher(name)?;
-        let rrdp_notification = self.repository.rrdp_notification_uri();
-        self.cms_proxy
-            .repository_response(
-                &publisher,
-                self.service_base_uri(),
-                rrdp_notification)
-            .map_err(Error::CmsProxy)
+        match self.pubserver.get_publisher(handle)? {
+            None => Err(Error::NoIdCert),
+            Some(publisher) => {
+                let rrdp_notify = self.pubserver.rrdp_notification();
+                self.cms_proxy
+                    .repository_response(
+                        &publisher,
+                        self.service_base_uri(),
+                        rrdp_notify)
+                    .map_err(Error::CmsProxy)
+            }
+        }
     }
 
     pub fn rrdp_base_path(&self) -> PathBuf {
@@ -181,7 +182,7 @@ impl KrillServer {
 
 /// # Handle publication requests
 ///
-impl KrillServer {
+impl<S: KeyStore> KrillServer<S> {
 
     /// Handles an incoming SignedMessage, verifies it's validly signed by
     /// a known publisher and process the QueryMessage contained. Returns
@@ -198,13 +199,17 @@ impl KrillServer {
     pub fn handle_rfc8181_request(
         &mut self,
         sigmsg: &SignedMessage,
-        handle: &str
+        handle: &PublisherHandle
     ) -> Result<Captured, Error> {
-        debug!("Handling request for: {}", handle);
-        let publisher = self.publisher_store.get_publisher(handle)?;
+        debug!("Handling request for: {}", handle.to_string());
+
+        let publisher = match self.pubserver.get_publisher(handle)? {
+            Some(publisher) => publisher,
+            None => return Err(Error::NoIdCert)
+        };
 
         let id_cert = match publisher.cms_auth_data() {
-            Some(details) => details.id_cert(),
+            Some(data) => data.id_cert(),
             None => return Err(Error::NoIdCert)
         };
 
@@ -212,13 +217,13 @@ impl KrillServer {
             Err(e)  => self.cms_proxy.wrap_error(&e).map_err(Error::CmsProxy),
             Ok(req) => {
                 let reply = match req {
-                    publication::PublishRequest::List => {
+                    publication_data::PublishRequest::List => {
                         self.handle_list(handle)
-                            .map(publication::PublishReply::List)
+                            .map(publication_data::PublishReply::List)
                     },
-                    publication::PublishRequest::Delta(delta) => {
+                    publication_data::PublishRequest::Delta(delta) => {
                         self.handle_delta(delta, handle)
-                            .map(|_| publication::PublishReply::Success)
+                            .map(|_| publication_data::PublishReply::Success)
                     }
                 };
 
@@ -226,7 +231,7 @@ impl KrillServer {
                     Ok(reply) => {
                         self.cms_proxy.wrap_publish_reply(reply).map_err(Error::CmsProxy)
                     },
-                    Err(Error::Repository(e)) => {
+                    Err(Error::PubServer(e)) => {
                         self.cms_proxy.wrap_error(&e).map_err(Error::CmsProxy)
                     },
                     Err(e) => Err(e)
@@ -240,75 +245,50 @@ impl KrillServer {
     #[allow(clippy::needless_pass_by_value)]
     pub fn handle_delta(
         &mut self,
-        delta: publication::PublishDelta,
-        handle: &str
+        delta: publication_data::PublishDelta,
+        handle: &PublisherHandle
     ) -> Result<(), Error> {
-        let publisher = self.publisher_store.get_publisher(handle)?;
-        let base_uri = publisher.base_uri();
-        self.repository.publish(&delta, base_uri).map_err(Error::Repository)
+        self.pubserver.publish(handle, delta).map_err(Error::PubServer)
     }
 
     /// Handles a list request sent to the API, or.. through the CmsProxy.
     pub fn handle_list(
         &self,
-        handle: &str
-    ) -> Result<publication::ListReply, Error> {
-        let publisher = self.publisher_store.get_publisher(handle)?;
-        let base_uri = publisher.base_uri();
-        self.repository.list(base_uri).map_err(Error::Repository)
+        handle: &PublisherHandle
+    ) -> Result<publication_data::ListReply, Error> {
+        self.pubserver.list(handle).map_err(Error::PubServer)
     }
 }
-
-// /// # Serve RRDP files
-// ///
-//impl KrillServer {
-//    /// Gets the current notification
-//    pub fn current_notification(&self) -> Result<repo::Notification, Error> {
-//        unimplemented!()
-//    }
-//
-//    /// Gets the current snapshot
-//    pub fn current_snapshot(&self) -> Result<data::Snapshot, Error> {
-//        unimplemented!()
-//    }
-//
-//}
 
 
 //------------ Error ---------------------------------------------------------
 
 #[derive(Debug, Display)]
+#[allow(clippy::large_enum_variant)]
 pub enum Error {
+    #[display(fmt="{}", _0)]
+    IoError(io::Error),
+
     #[display(fmt="{}", _0)]
     CmsProxy(cmsproxy::Error),
 
     #[display(fmt="{}", _0)]
-    PublisherStore(pubd::Error),
-
-    #[display(fmt="{}", _0)]
-    Repository(repo::Error),
+    PubServer(pubd::Error),
 
     #[display(fmt="No IdCert known for this publisher")]
     NoIdCert
 }
 
+impl From<io::Error> for Error {
+    fn from(e: io::Error) -> Self { Error::IoError(e) }
+}
+
 impl From<cmsproxy::Error> for Error {
-    fn from(e: cmsproxy::Error) -> Self {
-        Error::CmsProxy(e)
-    }
+    fn from(e: cmsproxy::Error) -> Self { Error::CmsProxy(e) }
 }
 
 impl From<pubd::Error> for Error {
-    fn from(e: pubd::Error) -> Self {
-        Error::PublisherStore(e)
-    }
+    fn from(e: pubd::Error) -> Self { Error::PubServer(e) }
 }
-
-impl From<repo::Error> for Error {
-    fn from(e: repo::Error) -> Self {
-        Error::Repository(e)
-    }
-}
-
 
 // Tested through integration tests

@@ -15,7 +15,6 @@ use krill::krillc::data::{
     ApiResponse,
     ReportFormat
 };
-use krill::krillc;
 use krill::krillc::KrillClient;
 use krill::krillc::options::{
     AddPublisherWithCms,
@@ -25,9 +24,8 @@ use krill::krillc::options::{
 };
 use krill::pubc::cmsclient::PubClient;
 use krill::util::test;
-use krill::util::httpclient;
 use krill::remote::rfc8183::RepositoryResponse;
-use reqwest::StatusCode;
+
 
 /// Tests that we can list publishers through the API
 #[test]
@@ -123,7 +121,7 @@ fn manage_publishers() {
             match res {
                 ApiResponse::PublisherDetails(details) => {
                     assert_eq!(
-                        details.publisher_handle(),
+                        details.handle(),
                         "alice"
                     );
                 }
@@ -177,17 +175,15 @@ fn manage_publishers() {
                 Command::Publishers(PublishersCommand::Details("alice".to_string()))
             );
 
-            let res = KrillClient::process(krillc_opts);
+            let res = KrillClient::process(krillc_opts).unwrap();
 
             match res {
-                Err(krillc::Error::HttpClientError(
-                        httpclient::Error::BadStatus(code))) => {
-                    assert_eq!(code, StatusCode::NOT_FOUND);
-                },
-                _ => assert!(false) // should have failed!
+                ApiResponse::PublisherDetails(details) => {
+                    assert_eq!(details.handle(), "alice");
+                    assert!(details.retired());
+                }
+                _ => panic!("Expected to find alice in retired state")
             }
-
-            assert!(res.is_err());
         }
 
     });

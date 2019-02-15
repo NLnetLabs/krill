@@ -4,12 +4,10 @@ use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use bytes::Bytes;
 use rpki::uri;
-use crate::api::publication;
+use crate::api::{ Base64, EncodedHash };
+use crate::api::publication_data;
 use crate::util::ext_serde;
-use crate::util::sha256;
 
-
-///-- Some helper functions
 
 /// Creates a sub dir if needed, return full path to it
 pub fn sub_dir(base: &PathBuf, name: &str) -> Result<PathBuf, io::Error> {
@@ -106,9 +104,28 @@ pub fn delete_in_dir(
     delete(&full_path)
 }
 
-fn delete(full_path: &PathBuf) -> Result<(), io::Error> {
+pub fn delete(full_path: &PathBuf) -> Result<(), io::Error> {
     trace!("Removing file: {}", full_path.to_string_lossy());
     fs::remove_file(full_path)?;
+    Ok(())
+}
+
+pub fn clean_file_and_path(path: &PathBuf) -> Result<(), io::Error> {
+    if path.exists() {
+        fs::remove_file(&path)?;
+
+        let mut parent_opt = path.parent();
+
+        while parent_opt.is_some() {
+            let parent = parent_opt.unwrap();
+            if parent.read_dir()?.count() == 0 {
+                debug!("Will delete {}", parent.to_string_lossy().to_string());
+                fs::remove_dir(parent)?;
+            }
+
+            parent_opt = parent.parent();
+        }
+    }
     Ok(())
 }
 
@@ -158,7 +175,7 @@ fn crawl_disk(
         } else {
             let uri = derive_uri(base_path, &path, rsync_base)?;
             let content = read(&path)?;
-            let current_file = CurrentFile::new(uri, content);
+            let current_file = CurrentFile::new(uri, &content);
 
             res.push(current_file);
         }
@@ -198,72 +215,71 @@ pub struct CurrentFile {
     serialize_with = "ext_serde::ser_rsync_uri")]
     uri:     uri::Rsync,
 
-    #[serde(
-    deserialize_with = "ext_serde::de_bytes",
-    serialize_with = "ext_serde::ser_bytes")]
     /// The actual file content. Note that we may want to store this
     /// only on disk in future (look up by sha256 hash), to save memory.
-    content: Bytes,
+    content: Base64,
 
-    #[serde(
-    deserialize_with = "ext_serde::de_bytes",
-    serialize_with = "ext_serde::ser_bytes")]
     /// The sha-256 hash of the file (as is used on the RPKI manifests and
     /// in the publication protocol for list, update and withdraw). Saving
     /// this rather than calculating on demand seems a small price for some
     /// performance gain.
-    hash:    Bytes
+    hash:    EncodedHash
 }
 
 
 impl CurrentFile {
-    pub fn new(uri: uri::Rsync, content: Bytes) -> Self {
-        let hash = sha256(&content);
+    pub fn new(uri: uri::Rsync, content: &Bytes) -> Self {
+        let content = Base64::from_content(&content);
+        let hash = content.to_encoded_hash();
         CurrentFile {uri, content, hash}
     }
 
     /// Saves this file under a base directory, based on the (rsync) uri of
     /// this file.
     pub fn save(&self, base_path: &PathBuf) -> Result<(), io::Error> {
-        save_with_rsync_uri(&self.content, &base_path, &self.uri)
+        save_with_rsync_uri(&self.content.to_bytes(), &base_path, &self.uri)
     }
 
     pub fn uri(&self) -> &uri::Rsync {
         &self.uri
     }
 
-    pub fn content(&self) -> &Bytes {
+    pub fn content(&self) -> &Base64 {
         &self.content
     }
 
-    pub fn hash(&self) -> &Bytes {
+    pub fn to_bytes(&self) -> Bytes {
+        self.content.to_bytes()
+    }
+
+    pub fn hash(&self) -> &EncodedHash {
         &self.hash
     }
 
-    pub fn as_publish(&self) -> publication::Publish {
-        let tag = Some(hex::encode(&self.hash));
+    pub fn as_publish(&self) -> publication_data::Publish {
+        let tag = Some(self.hash.to_string());
         let uri = self.uri.clone();
         let content = self.content.clone();
-        publication::Publish::new(tag, uri, content)
+        publication_data::Publish::new(tag, uri, content)
     }
 
-    pub fn as_update(&self, old_hash: &Bytes) -> publication::Update {
+    pub fn as_update(&self, old_hash: &EncodedHash) -> publication_data::Update {
         let tag = None;
         let uri = self.uri.clone();
         let content = self.content.clone();
         let hash = old_hash.clone();
-        publication::Update::new(tag, uri, content, hash)
+        publication_data::Update::new(tag, uri, content, hash)
     }
 
-    pub fn as_withdraw(&self) -> publication::Withdraw {
+    pub fn as_withdraw(&self) -> publication_data::Withdraw {
         let tag = None;
         let uri = self.uri.clone();
-        let hash = sha256(&self.content);
-        publication::Withdraw::new(tag, uri, hash)
+        let hash = self.hash.clone();
+        publication_data::Withdraw::new(tag, uri, hash)
     }
 
-    pub fn into_list_element(self) -> publication::ListElement {
-        publication::ListElement::new(self.uri, self.hash)
+    pub fn into_list_element(self) -> publication_data::ListElement {
+        publication_data::ListElement::new(self.uri, self.hash)
     }
 
 }
@@ -321,20 +337,19 @@ mod tests {
 
             let file_1 = CurrentFile::new(
                 test::rsync_uri("rsync://host:10873/module/alice/file1.txt"),
-                Bytes::from("content 1")
+                &Bytes::from("content 1")
             );
             let file_2 = CurrentFile::new(
                 test::rsync_uri("rsync://host:10873/module/alice/file2.txt"),
-                Bytes::from("content 2")
+                &Bytes::from("content 2")
             );
             let file_3 = CurrentFile::new(
-                test::rsync_uri("rsync://host:10873/module/alice/sub/file1\
-                .txt"),
-                Bytes::from("content sub file")
+                test::rsync_uri("rsync://host:10873/module/alice/sub/file1.txt"),
+                &Bytes::from("content sub file")
             );
             let file_4 = CurrentFile::new(
                 test::rsync_uri("rsync://host:10873/module/bob/file.txt"),
-                Bytes::from("content")
+                &Bytes::from("content")
             );
 
             file_1.save(&base_dir).unwrap();

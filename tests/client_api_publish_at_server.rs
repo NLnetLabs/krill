@@ -8,6 +8,7 @@ extern crate tokio;
 extern crate bytes;
 
 use std::{thread, time};
+use std::collections::HashSet;
 use std::path::PathBuf;
 use actix::System;
 use krill::krillc::data::ReportFormat;
@@ -25,7 +26,6 @@ use krill::pubc::apiclient;
 use krill::pubc::apiclient::ApiResponse;
 use krill::util::file::CurrentFile;
 use krill::util::file;
-use std::collections::HashSet;
 use krill::util::httpclient;
 
 fn list(server_uri: &str, handle: &str, token: &str) -> apiclient::Options {
@@ -126,6 +126,7 @@ fn client_publish_at_server() {
             match res {
                 Err(apiclient::Error::HttpClientError
                     (httpclient::Error::Forbidden)) => {},
+                Err(e) => panic!("Expected forbidden, got: {}", e),
                 _ => panic!("Expected forbidden")
             }
         }
@@ -146,24 +147,25 @@ fn client_publish_at_server() {
             }
         }
 
+
         // Create files on disk to sync
         let sync_dir = test::create_sub_dir(&d);
         let file_a = CurrentFile::new(
             test::rsync_uri("rsync://127.0.0.1/repo/alice/a.txt"),
-            test::as_bytes("a")
+            &test::as_bytes("a")
         );
         let file_b = CurrentFile::new(
             test::rsync_uri("rsync://127.0.0.1/repo/alice/b.txt"),
-            test::as_bytes("b")
+            &test::as_bytes("b")
         );
         let file_c = CurrentFile::new(
             test::rsync_uri("rsync://127.0.0.1/repo/alice/c.txt"),
-            test::as_bytes("c")
+            &test::as_bytes("c")
         );
 
-        file::save_in_dir(file_a.content(), &sync_dir, "a.txt").unwrap();
-        file::save_in_dir(file_b.content(), &sync_dir, "b.txt").unwrap();
-        file::save_in_dir(file_c.content(), &sync_dir, "c.txt").unwrap();
+        file::save_in_dir(&file_a.to_bytes(), &sync_dir, "a.txt").unwrap();
+        file::save_in_dir(&file_b.to_bytes(), &sync_dir, "b.txt").unwrap();
+        file::save_in_dir(&file_c.to_bytes(), &sync_dir, "c.txt").unwrap();
 
 
         // Must refuse syncing files outside of publisher base dir
@@ -273,10 +275,6 @@ fn client_publish_at_server() {
         // XXX TODO Must remove files when removing publisher
         // Expect that c.txt is removed when looking at latest snapshot.
         file::delete_in_dir(&sync_dir, "c.txt").unwrap();
-
-
-        // Re-add publisher
-        add_publisher(handle, base_rsync_uri_alice, token);
     });
 }
 

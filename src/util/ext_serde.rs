@@ -116,4 +116,3 @@ pub fn de_facility<'de, D>(d: D) -> Result<Facility, D::Error>
         |_| { de::Error::custom(
             format!("Unsupported syslog_facility: \"{}\"", string))})
 }
-

@@ -6,7 +6,7 @@ use bcder::{Captured, Mode};
 use bcder::encode::Values;
 use rpki::crypto::{PublicKeyFormat, Signer};
 use rpki::uri;
-use crate::api::publishers::Publisher;
+use crate::krilld::pubd::publishers::Publisher;
 use crate::remote::builder;
 use crate::remote::builder::{IdCertBuilder, SignedMessageBuilder};
 use crate::remote::id::MyIdentity;
@@ -95,7 +95,7 @@ impl Responder {
 impl Responder {
     pub fn repository_response(
         &self,
-        publisher: &Arc<Publisher>,
+        publisher: &Publisher,
         service_uri: uri::Http,
         rrdp_notification_uri: uri::Http
     ) -> Result<RepositoryResponse, Error> {
@@ -107,7 +107,7 @@ impl Responder {
             };
 
 
-            let handle = publisher.handle();
+            let handle = publisher.id();
             let id_cert = my_id.id_cert().clone();
 
             let sia_base = publisher.base_uri().clone();
@@ -115,7 +115,7 @@ impl Responder {
             Ok(
                 RepositoryResponse::new(
                     tag,
-                    handle.clone(),
+                    handle.to_string(),
                     id_cert,
                     service_uri,
                     sia_base,
@@ -196,8 +196,11 @@ impl From<builder::Error<softsigner::SignerError>> for Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::api::publisher_data::CmsAuthData;
+    use crate::api::publisher_data::PublisherRequest;
+    use crate::eventsourcing::Aggregate;
+    use crate::krilld::pubd::publishers::PublisherInit;
     use crate::util::test;
-    use crate::api::publishers::CmsAuthData;
 
     #[test]
     fn should_have_response_for_publisher() {
@@ -214,12 +217,17 @@ mod tests {
 
             let cms_auth = CmsAuthData::new(tag, id_cert);
 
-            let publisher = Arc::new(Publisher::new(
+            let publisher_request = PublisherRequest::new(
                 name,
                 "token".to_string(),
                 base_uri,
                 Some(cms_auth)
-            ));
+            );
+
+            let init = PublisherInit::from(publisher_request);
+
+            let publisher = Publisher::init(init).unwrap();
+
 
             let rrdp_uri = test::http_uri("http://host/rrdp/");
 

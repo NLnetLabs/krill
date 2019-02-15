@@ -1,39 +1,38 @@
 //! Authorization for the API
-
 use std::sync::{Arc, RwLock, RwLockReadGuard};
-use actix_web::{HttpResponse, HttpRequest, Result};
+use actix_web::{Form, HttpResponse, HttpRequest, Result};
 use actix_web::http::HeaderMap;
 use actix_web::middleware::{Middleware, Started};
 use actix_web::middleware::identity::RequestIdentity;
-
 use crate::krilld::krillserver::KrillServer;
-use actix_web::Form;
+use crate::eventsourcing::DiskKeyStore;
+
 
 const ADMIN_API_PATH: &str = "/api/";
 const PUBLICATION_API_PATH: &str = "/publication/";
 
 pub struct CheckAuthorisation;
 
-impl Middleware<Arc<RwLock<KrillServer>>> for CheckAuthorisation {
+impl Middleware<Arc<RwLock<KrillServer<DiskKeyStore>>>> for CheckAuthorisation {
     fn start(
         &self,
-        req: &HttpRequest<Arc<RwLock<KrillServer>>>
+        req: &HttpRequest<Arc<RwLock<KrillServer<DiskKeyStore>>>>
     ) -> Result<Started> {
         if req.identity() == Some("admin".to_string()) {
             return Ok(Started::Done)
         }
 
-        let server: RwLockReadGuard<KrillServer> = req.state().read().unwrap();
+        let server: RwLockReadGuard<KrillServer<DiskKeyStore>> = req.state().read().unwrap();
 
         let mut allowed = true;
 
         let token_opt = Self::extract_token(req.headers());
 
         if req.path().starts_with(ADMIN_API_PATH) {
-            allowed = server.allow_api(token_opt)
+            allowed = server.is_api_allowed(token_opt)
         } else if req.path().starts_with(PUBLICATION_API_PATH) {
             let handle_opt = Self::extract_publication_handle(req.path());
-            allowed = server.allow_publication_api(handle_opt, token_opt);
+            allowed = server.is_publication_api_allowed(handle_opt, token_opt);
         }
 
         if allowed {
@@ -90,7 +89,7 @@ impl Authorizer {
         }
     }
 
-    pub fn api_allowed(&self, token_opt: Option<String>) -> bool {
+    pub fn is_api_allowed(&self, token_opt: Option<String>) -> bool {
         match token_opt {
             None => false,
             Some(secret) => self.krill_auth_token == secret
@@ -105,11 +104,11 @@ pub struct Login {
 
 #[allow(clippy::needless_pass_by_value)]
 pub fn login_page(
-    req: HttpRequest<Arc<RwLock<KrillServer>>>,
+    req: HttpRequest<Arc<RwLock<KrillServer<DiskKeyStore>>>>,
     form: Form<Login>
 ) -> HttpResponse {
-    let server: RwLockReadGuard<KrillServer> = req.state().read().unwrap();
-    if server.allow_api(Some(form.token.clone())) {
+    let server: RwLockReadGuard<KrillServer<DiskKeyStore>> = req.state().read().unwrap();
+    if server.is_api_allowed(Some(form.token.clone())) {
         req.remember("admin".to_string());
         HttpResponse::Found().header("location", "/api/v1/publishers").finish()
     } else {
