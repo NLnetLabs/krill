@@ -1,7 +1,6 @@
 pub mod publishers;
 pub mod repo;
 
-use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
 use std::sync::{
@@ -29,7 +28,6 @@ use crate::krilld::pubd::repo::{
 };
 use crate::eventsourcing::{
     Aggregate,
-    AggregateId,
     Command,
     Event,
     KeyStore,
@@ -51,7 +49,6 @@ use crate::krilld::pubd::publishers::{
 /// commands to them, stores them.. also publishes the combined snapshots and
 /// deltas, and manages the files on disk for rsync.
 pub struct PubServer<S: KeyStore> {
-    cache: RwLock<HashMap<AggregateId, Arc<Publisher>>>,
     rrdp_server: RwLock<RrdpServer>,
     rsyncd_store: RsyncdStore,
     store: S,
@@ -74,15 +71,13 @@ impl<S: KeyStore> PubServer<S> {
         )?;
 
         let pubserver = PubServer {
-            cache: RwLock::new(HashMap::new()),
             rrdp_server,
             rsyncd_store,
             store,
             base_uri
         };
 
-        // Warm up the caches
-        let _ = pubserver.list_publishers()?;
+        // Warm up the rrdp server
         let _ = pubserver.rrdp_updated_writer()?;
 
         Ok(pubserver)
@@ -122,85 +117,27 @@ impl<S: KeyStore> PubServer<S> {
 ///
 impl<S: KeyStore> PubServer<S> {
 
-    fn cache_reader(&self) -> RwLockReadGuard<HashMap<AggregateId, Arc<Publisher>>> {
-        self.cache.read().unwrap()
-    }
-
-    fn cache_writer(&self) -> RwLockWriteGuard<HashMap<AggregateId, Arc<Publisher>>> {
-        self.cache.write().unwrap()
-    }
-
-    fn cache_contains(&self, id: &AggregateId) -> bool {
-        self.cache_reader().contains_key(id)
-    }
-
-    fn cache_insert(&self, id: &AggregateId, pbl: Publisher) {
-        self.cache_writer().insert(id.clone(), Arc::new(pbl));
-    }
-
-    fn update_publisher<F>(&self, id: &AggregateId, op: F) -> Result<(), Error>
-        where F: FnOnce(&mut Publisher) -> Result<(), Error> {
-        let mut writer = self.cache.write().unwrap();
-        self.update_publisher_in_cache(id, &mut writer)?;
-        match writer.get_mut(id) {
-            None => Err(Error::UnknownPublisher(id.to_string())),
-            Some(arc) => {
-                let publisher = Arc::make_mut(arc);
-                op(publisher)
-            }
-        }
-    }
-
-    fn update_publisher_in_cache(
+    fn load_publisher(
         &self,
-        id: &AggregateId,
-        writer: &mut RwLockWriteGuard<HashMap<AggregateId, Arc<Publisher>>>
-    ) -> Result<(), Error> {
-        if ! writer.contains_key(id) {
-            if let Some(event) = self.store_get_init(id)? {
-                let mut pbl = Publisher::init(event)?;
-                writer.insert(id.clone(), Arc::new(pbl));
+        handle: &PublisherHandle
+    ) -> Result<Option<Publisher>, Error> {
+        if let Some(init) = self.store.get_event::<PublisherInit> (
+            "publisher",
+            handle,
+            0
+        )? {
+            let mut publisher = Publisher::init(init)?;
+            while let Some(event) = self.store.get_event::<PublisherEvent>(
+                "publisher",
+                handle,
+                publisher.version()
+            )? {
+                publisher.apply(event);
             }
+            Ok(Some(publisher))
+        } else {
+            Ok(None)
         }
-
-        match writer.get_mut(id) {
-            None => Ok(()), // done updating
-            Some(arc) => {
-                let pbl = Arc::make_mut(arc);
-                while let Some(event) = self.store_get_event(id, pbl.version())? {
-                    pbl.apply(event);
-                }
-                Ok(())
-            }
-        }
-    }
-
-    fn cache_update(&self, id: &AggregateId) -> Result<(), Error> {
-        if ! self.cache_contains(id) {
-            // Check if there is something in the store, and if so add the v1
-            if let Some(event) = self.store_get_init(id)? {
-                let mut pbl = Publisher::init(event)?;
-                self.cache_insert(id, pbl);
-            }
-        }
-
-        let needs_update = {
-            match self.cache_reader().get(id) {
-                None => false,
-                Some(pbl) => self.store_has_event(id, pbl.version())
-            }
-        };
-
-        if needs_update {
-            let mut wrt = self.cache_writer();
-            let arc = wrt.get_mut(id).unwrap();
-            let pbl = Arc::make_mut(arc);
-            while let Some(event) = self.store_get_event(id, pbl.version())? {
-                pbl.apply(event);
-            }
-        }
-
-        Ok(())
     }
 
     fn rrdp_reader(&self) -> RwLockReadGuard<RrdpServer> {
@@ -235,14 +172,6 @@ impl<S: KeyStore> PubServer<S> {
         Ok(())
     }
 
-    fn store_get_init(
-        &self,
-        id: &AggregateId
-    ) -> Result<Option<PublisherInit>, Error> {
-        let key = S::key_for_event(0);
-        self.store.get::<PublisherInit>(id, &key).map_err(Error::KeyStoreError)
-    }
-
     fn store_save_init(
         &self,
         event: &PublisherInit
@@ -250,24 +179,6 @@ impl<S: KeyStore> PubServer<S> {
         let key = S::key_for_event(event.version());
         self.store.store(event.id(), &key, event).map_err(Error::KeyStoreError)?;
         Ok(())
-    }
-
-    fn store_has_event(
-        &self,
-        id: &AggregateId,
-        version: u64
-    ) -> bool {
-        let key = S::key_for_event(version);
-        self.store.has_key(id, &key)
-    }
-
-    fn store_get_event(
-        &self,
-        id: &AggregateId,
-        version: u64
-    ) -> Result<Option<PublisherEvent>, Error> {
-        let key = S::key_for_event(version);
-        self.store.get::<PublisherEvent>(id, &key).map_err(Error::KeyStoreError)
     }
 
     fn store_save_event(
@@ -293,8 +204,10 @@ impl<S: KeyStore> PubServer<S> {
         &self,
         handle: &PublisherHandle
     ) -> Result<Option<Arc<Publisher>>, Error> {
-        self.cache_update(handle)?;
-        Ok(self.cache_reader().get(handle).cloned())
+        match self.load_publisher(handle)? {
+            None => Ok(None),
+            Some(publisher) => Ok(Some(Arc::new(publisher)))
+        }
     }
 
     fn verify_handle(&self, handle: &PublisherHandle) -> Result<(), Error> {
@@ -346,9 +259,7 @@ impl<S: KeyStore> PubServer<S> {
             cms_data
         );
 
-        let pbl = Publisher::init(init.clone())?;
         self.store_save_init(&init)?;
-        self.cache_insert(&handle, pbl);
 
         Ok(())
     }
@@ -388,14 +299,11 @@ impl<S: KeyStore> PubServer<S> {
         command: PublisherCommand
     ) -> Result<Option<DeltaElements>, Error> {
         let handle = command.id().clone();
-        self.cache_update(&handle)?;
 
-        let mut res = None;
-
-        match self.cache_writer().get_mut(&handle) {
+        match self.load_publisher(&handle)? {
             None => Err(Error::UnknownPublisher(handle.to_string())),
-            Some(arc) => {
-                let pbl = Arc::make_mut(arc);
+            Some(mut pbl) => {
+                let mut res = None;
 
                 if let Some(version) = command.version() {
                     if version != pbl.version() {
@@ -431,60 +339,60 @@ impl<S: KeyStore> PubServer<S> {
         delta: publication_data::PublishDelta
     ) -> Result<(), Error> {
 
+        match self.load_publisher(handle)? {
+            None => Err(Error::UnknownPublisher(handle.to_string())),
+            Some(publisher) => {
+                let cmd = PublisherCommand::publish(handle, delta);
 
-        self.update_publisher(handle, |publisher| {
-            let cmd = PublisherCommand::publish(handle, delta);
+                let publisher_events = publisher.process_command(cmd)?;
 
-            let publisher_events = publisher.process_command(cmd)?;
+                for event in &publisher_events {
+                    if let PublisherEventDetails::Published(delta) = event.details() {
+                        let mut rrdp = self.rrdp_updated_writer()?;
+                        let delta = delta.clone();
 
-            for event in &publisher_events {
-                if let PublisherEventDetails::Published(delta) = event.details() {
-                    let mut rrdp = self.rrdp_updated_writer()?;
-                    let delta = delta.clone();
+                        self.rsyncd_store.publish(&delta)?;
 
-                    self.rsyncd_store.publish(&delta)?;
+                        let add_cmd = RrdpCommand::add_delta(delta);
+                        let rrdp_add_delta_events = rrdp.process_command(add_cmd)?;
 
-                    let add_cmd = RrdpCommand::add_delta(delta);
-                    let rrdp_add_delta_events = rrdp.process_command(add_cmd)?;
+                        for e in &rrdp_add_delta_events {
+                            rrdp.apply(e.clone());
+                        }
 
-                    for e in &rrdp_add_delta_events {
-                        rrdp.apply(e.clone());
-                    }
+                        let publish_cmd = RrdpCommand::publish();
+                        let rrdp_publish_events = rrdp.process_command(publish_cmd)?;
 
-                    let publish_cmd = RrdpCommand::publish();
-                    let rrdp_publish_events = rrdp.process_command(publish_cmd)?;
+                        for e in &rrdp_publish_events {
+                            rrdp.apply(e.clone())
+                        }
 
-                    for e in &rrdp_publish_events {
-                        rrdp.apply(e.clone())
-                    }
+                        let retention = RetentionTime::from_secs(0);
+                        let clean_cmd = RrdpCommand::clean_up(retention);
+                        let rrdp_clean_events = rrdp.process_command(clean_cmd)?;
 
-                    let retention = RetentionTime::from_secs(0);
-                    let clean_cmd = RrdpCommand::clean_up(retention);
-                    let rrdp_clean_events = rrdp.process_command(clean_cmd)?;
+                        for e in rrdp_add_delta_events {
+                            self.store_save_rrdp_event(&e)?;
+                        }
 
-                    for e in rrdp_add_delta_events {
-                        self.store_save_rrdp_event(&e)?;
-                    }
+                        for e in rrdp_publish_events {
+                            self.store_save_rrdp_event(&e)?;
+                        }
 
-                    for e in rrdp_publish_events {
-                        self.store_save_rrdp_event(&e)?;
-                    }
-
-                    for e in rrdp_clean_events {
-                        self.store_save_rrdp_event(&e)?;
-                        rrdp.apply(e);
+                        for e in rrdp_clean_events {
+                            self.store_save_rrdp_event(&e)?;
+                            rrdp.apply(e);
+                        }
                     }
                 }
+
+                for e in publisher_events {
+                    self.store_save_event(&e)?;
+                }
+
+                Ok(())
             }
-
-            for e in publisher_events {
-                self.store_save_event(&e)?;
-            }
-
-            Ok(())
-        })?;
-
-        Ok(())
+        }
     }
 
     pub fn list(
@@ -553,6 +461,10 @@ impl From<PublisherError> for Error {
 
 impl From<RrdpServerError> for Error {
     fn from(e: RrdpServerError) -> Self { Error::RrdpServerError(e) }
+}
+
+impl From<KeyStoreError> for Error {
+    fn from(e: KeyStoreError) -> Self { Error::KeyStoreError(e) }
 }
 
 impl std::error::Error for Error {}

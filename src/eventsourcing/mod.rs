@@ -244,6 +244,14 @@ pub trait KeyStore {
         id: &AggregateId,
         key: &Self::Key
     ) -> Result<Option<V>, KeyStoreError>;
+
+    /// Get the value for this key, if any exists.
+    fn get_event<V: Event + Storable>(
+        &self,
+        aggregate_type: &str, // name space for type
+        id: &AggregateId,     // name space for instance
+        version: u64          // version of the event
+    ) -> Result<Option<V>, KeyStoreError>;
 }
 
 
@@ -339,6 +347,24 @@ impl KeyStore for DiskKeyStore {
             Ok(None)
         }
     }
+
+    /// Get the value for this key, if any exists.
+    fn get_event<V: Event + Storable>(
+        &self,
+        _aggregate_type: &str, // name space for type
+        id: &AggregateId,     // name space for instance
+        version: u64          // version of the event
+    ) -> Result<Option<V>, KeyStoreError> {
+        let path = self.path_for_event(_aggregate_type, id, version);
+        match path.exists() {
+            false => Ok(None),
+            true => {
+                let f = File::open(path)?;
+                let v: V = serde_json::from_reader(f)?;
+                Ok(Some(v))
+            }
+        }
+    }
 }
 
 impl DiskKeyStore {
@@ -362,6 +388,19 @@ impl DiskKeyStore {
         let mut file_path = self.dir.clone();
         file_path.push(id.to_string());
         file_path.push(key);
+        file_path
+    }
+
+    fn path_for_event(
+        &self,
+        _aggregate_type: &str,
+        id: &AggregateId,
+        version: u64
+    ) -> PathBuf {
+        let mut file_path = self.dir.clone();
+        // file_path.push(_aggregate_type);
+        file_path.push(id.as_ref());
+        file_path.push(format!("delta-{}.json", version));
         file_path
     }
 }
