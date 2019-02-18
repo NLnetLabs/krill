@@ -30,8 +30,8 @@ use crate::krilld::krillserver::KrillServer;
 use crate::remote::rfc8183;
 use crate::remote::sigmsg::SignedMessage;
 
-const NOT_FOUND: &[u8] = include_bytes!("../../../ui/public/404.html");
 const LOGIN: &[u8] = include_bytes!("../../../ui/dev/html/login.html");
+const NOT_FOUND: &'static [u8] = include_bytes!("../../../ui/public/404.html");
 
 //------------ PubServerApp --------------------------------------------------
 
