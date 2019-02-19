@@ -9,4 +9,3 @@ tmp
 ui/dist
 work
 package-lock.json
-node_modules
