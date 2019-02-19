@@ -87,6 +87,9 @@ impl PubServerApp {
             .resource("/api/v1/health", |r| { // health with authentication
                 r.method(Method::GET).f(endpoints::health)
             })
+            .resource("/ui/is_logged_in", |r| {
+                r.method(Method::GET).f(auth::is_logged_in)
+            })
             .handler("/ui", fs::StaticFiles::new("ui/dist/").unwrap())
             .default_resource(|r| {
                 // 404 for GET request

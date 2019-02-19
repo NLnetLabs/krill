@@ -116,3 +116,13 @@ pub fn login_page(
     }
 }
 
+pub fn is_logged_in(
+    req: &HttpRequest<Arc<RwLock<KrillServer<DiskKeyStore>>>>
+) -> HttpResponse {
+    if req.identity() == Some("admin".to_string()) {
+        HttpResponse::Ok().finish()
+    } else {
+        HttpResponse::Forbidden().finish()
+    }
+}
+
