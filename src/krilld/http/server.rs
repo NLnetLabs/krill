@@ -29,6 +29,7 @@ use crate::krilld::krillserver;
 use crate::krilld::krillserver::KrillServer;
 use crate::remote::rfc8183;
 use crate::remote::sigmsg::SignedMessage;
+use actix_web::fs;
 
 const LOGIN: &[u8] = include_bytes!("../../../ui/dev/html/login.html");
 const NOT_FOUND: &'static [u8] = include_bytes!("../../../ui/public/404.html");
@@ -86,6 +87,7 @@ impl PubServerApp {
             .resource("/api/v1/health", |r| { // health with authentication
                 r.method(Method::GET).f(endpoints::health)
             })
+            .handler("/ui", fs::StaticFiles::new("ui/dist/").unwrap())
             .default_resource(|r| {
                 // 404 for GET request
                 r.method(Method::GET).f(Self::p404);
