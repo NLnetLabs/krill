@@ -30,6 +30,7 @@ use crate::krilld::krillserver::KrillServer;
 use crate::remote::rfc8183;
 use crate::remote::sigmsg::SignedMessage;
 use actix_web::fs;
+use krilld::auth::Credentials;
 
 const LOGIN: &[u8] = include_bytes!("../../../ui/dev/html/login.html");
 const NOT_FOUND: &'static [u8] = include_bytes!("../../../ui/public/404.html");
@@ -89,6 +90,12 @@ impl PubServerApp {
             })
             .resource("/ui/is_logged_in", |r| {
                 r.method(Method::GET).f(auth::is_logged_in)
+            })
+            .resource("/ui/login", |r| {
+                r.method(Method::POST).with(auth::post_login)
+            })
+            .resource("/ui/logout", |r| {
+                r.method(Method::POST).f(auth::post_logout)
             })
             .handler("/ui", fs::StaticFiles::new("ui/dist/").unwrap())
             .default_resource(|r| {
@@ -349,6 +356,27 @@ impl<S: 'static> FromRequest<S> for publication_data::PublishDelta {
     }
 }
 
+//------------ PublishDelta --------------------------------------------------
+
+impl<S: 'static> FromRequest<S> for Credentials {
+    type Config = ();
+    type Result = Box<Future<Item=Self, Error=actix_web::Error>>;
+
+    fn from_request(
+        req: &actix_web::HttpRequest<S>,
+        _c: &Self::Config
+    ) -> Self::Result {
+        Box::new(MessageBody::new(req)
+            .from_err()
+            .and_then(|bytes| {
+                let credentials: Credentials =
+                    serde_json::from_reader(bytes.as_ref())
+                        .map_err(Error::JsonError)?;
+                Ok(credentials)
+            })
+        )
+    }
+}
 
 //------------ IntoHttpHandler -----------------------------------------------
 

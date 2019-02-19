@@ -98,14 +98,35 @@ impl Authorizer {
 }
 
 #[derive(Deserialize)]
-pub struct Login {
+pub struct Credentials {
     token: String
 }
+
+pub fn post_login(
+    req: HttpRequest<Arc<RwLock<KrillServer<DiskKeyStore>>>>,
+    cred: Credentials
+) -> HttpResponse {
+    let server: RwLockReadGuard<KrillServer<DiskKeyStore>> = req.state().read().unwrap();
+    if server.is_api_allowed(Some(cred.token.clone())) {
+        req.remember("admin".to_string());
+        HttpResponse::Ok().finish()
+    } else {
+        HttpResponse::Forbidden().finish()
+    }
+}
+
+pub fn post_logout(
+    req: &HttpRequest<Arc<RwLock<KrillServer<DiskKeyStore>>>>
+) -> HttpResponse {
+    req.forget();
+    HttpResponse::Ok().finish()
+}
+
 
 #[allow(clippy::needless_pass_by_value)]
 pub fn login_page(
     req: HttpRequest<Arc<RwLock<KrillServer<DiskKeyStore>>>>,
-    form: Form<Login>
+    form: Form<Credentials>
 ) -> HttpResponse {
     let server: RwLockReadGuard<KrillServer<DiskKeyStore>> = req.state().read().unwrap();
     if server.is_api_allowed(Some(form.token.clone())) {
