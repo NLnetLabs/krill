@@ -97,6 +97,15 @@ impl PubServerApp {
             .resource("/ui/logout", |r| {
                 r.method(Method::POST).f(auth::post_logout)
             })
+            .resource("/", |r| {
+                r.method(Method::GET).f(
+                    |_r| {
+                        HttpResponse::Found()
+                            .header("location", "/ui/index.html")
+                            .finish()
+                    }
+                )
+            })
             .handler("/ui", fs::StaticFiles::new("ui/dist/").unwrap())
             .default_resource(|r| {
                 // 404 for GET request
