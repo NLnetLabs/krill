@@ -1,5 +1,8 @@
 #!/bin/bash
 
 cd ui
-export PATH="./node_modules/.bin:$PATH"
+if [ ! -d "node_modules" ]; then
+  npm install
+fi
+
 yarn run build
