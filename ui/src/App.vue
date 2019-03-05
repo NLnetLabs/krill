@@ -1,29 +1,83 @@
 <template>
   <div id="app">
-    <div id="nav">
-      <router-link to="/">Home</router-link> |
-      <router-link to="/publishers">Publishers</router-link>
-    </div>
-    <router-view/>
+    <el-container>
+      <el-header>
+        <el-row>
+          <el-col :span="4">
+            <router-link :to="{ name: 'publishers'}">
+            <div class="logo"><img src="@/assets/images/white_logo.svg"/></div>
+            </router-link>
+          </el-col>
+          <el-col :span="20">
+            <div class="toolbar">
+              <font-awesome-icon
+                icon="sign-out-alt"
+                v-if="user"
+                class="logout"
+                @click="logout"
+              />
+            </div>
+          </el-col>
+        </el-row>
+      </el-header>
+
+      <el-main>
+        <router-view v-on:authEvent="loadUser"/>
+      </el-main>
+    </el-container>
   </div>
 </template>
 
-<style lang="scss">
-#app {
-  font-family: 'Avenir', Helvetica, Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-align: center;
-  color: #2c3e50;
+
+
+<style>
+html,
+body {
+  padding: 0;
+  margin: 0;
+  font-family: 'Lato', sans-serif;
 }
-#nav {
-  padding: 30px;
-  a {
-    font-weight: bold;
-    color: #2c3e50;
-    &.router-link-exact-active {
-      color: #42b983;
-    }
-  }
+.el-header {
+  background: linear-gradient(45deg, #de4e00, #f57d1b);
+  line-height: 60px;
+  color: #ffffff;
+}
+.logo img {
+  width: 80px;
+  padding-top: 13px;
+}
+.logout {
+  cursor: pointer;
+}
+
+.toolbar {
+  text-align: right;
 }
 </style>
+
+<script>
+import router from "@/router";
+import APIService from "@/services/APIService.js";
+
+export default {
+  data() {
+    return {
+      user: null
+    };
+  },
+  created() {
+    this.loadUser();
+  },
+  methods: {
+    loadUser() {
+      this.user = JSON.parse(localStorage.getItem("user"));
+    },
+    logout() {
+      return APIService.logout().then(() => {
+        this.user = null;
+        router.push("/login");
+      });
+    }
+  }
+};
+</script>

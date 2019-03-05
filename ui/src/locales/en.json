@@ -1,0 +1,24 @@
+{
+  "login": {
+    "password": "Password",
+    "placeholder": "Your password",
+    "signin": "Sign In"
+  },
+  "publishers": {
+    "loading": "Loading Publishers",
+    "publishers": "Publishers",
+    "search": "Search publishers..."
+  },
+  "publisherDetails": {
+    "loading": "Loading {handle}",
+    "confirm": {
+      "title": "Warning",
+      "message": "This will retire the publisher. Continue?",
+      "ok": "OK",
+      "cancel": "Cancel",
+      "retired": " retired.",
+      "success": "The publisher has been retired successfully."
+    },
+    "nopublisherdata": "No published data found."
+  }
+}
