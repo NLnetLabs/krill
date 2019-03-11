@@ -300,15 +300,17 @@ impl KeyStore for DiskKeyStore {
 
     fn aggregates(&self, type_id: &str) -> Vec<AggregateId> {
         let mut res: Vec<AggregateId> = Vec::new();
-        let dir = self.dir_for_type(type_id);
 
-        for d in fs::read_dir(&dir).unwrap() {
-            let full_path = d.unwrap().path();
-            let path = full_path.file_name().unwrap();
+        if let Ok(dir) = fs::read_dir(&self.dir_for_type(type_id)) {
+            for d in dir {
+                let full_path = d.unwrap().path();
+                let path = full_path.file_name().unwrap();
 
-            let id = AggregateId::new(type_id, path.to_string_lossy().as_ref());
-            res.push(id);
+                let id = AggregateId::new(type_id, path.to_string_lossy().as_ref());
+                res.push(id);
+            }
         }
+
         res
     }
 
