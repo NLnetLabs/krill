@@ -62,11 +62,11 @@ impl PubServerApp {
             })
             .resource("/api/v1/publishers/{handle}", |r| {
                 r.method(Method::GET).with(endpoints::publisher_details);
-                r.method(Method::DELETE).with(endpoints::remove_publisher);
+                r.method(Method::DELETE).with(endpoints::deactivate_publisher);
             })
             // For clients that cannot handle http methods
             .resource("/api/v1/publishers/{handle}/del", |r| {
-                r.method(Method::POST).with(endpoints::remove_publisher);
+                r.method(Method::POST).with(endpoints::deactivate_publisher);
             })
             .resource("/api/v1/publishers/{handle}/response.xml", |r| {
                 r.method(Method::GET).with(endpoints::repository_response)

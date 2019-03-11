@@ -137,7 +137,7 @@ impl<S: KeyStore> KrillServer<S> {
     }
 
     /// Removes a publisher, blows up if it didn't exist.
-    pub fn remove_publisher(
+    pub fn deactivate_publisher(
         &mut self,
         handle: &PublisherHandle
     ) -> Result<(), Error> {

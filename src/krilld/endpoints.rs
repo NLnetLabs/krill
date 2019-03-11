@@ -97,11 +97,11 @@ pub fn add_publisher(
 /// Removes a publisher. Should be idempotent! If if did not exist then
 /// that's just fine.
 #[allow(clippy::needless_pass_by_value)]
-pub fn remove_publisher(
+pub fn deactivate_publisher(
     req: HttpRequest,
     handle: PublisherHandle
 ) -> HttpResponse {
-    match rw_server(&req).remove_publisher(&handle) {
+    match rw_server(&req).deactivate_publisher(&handle) {
         Ok(()) => api_ok(),
         Err(e) => server_error(&Error::ServerError(e))
     }
