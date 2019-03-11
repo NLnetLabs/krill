@@ -95,19 +95,20 @@ impl<S: KeyStore> PubServer<S> {
         let id = rrdp_id();
         let key = S::key_for_event(0);
 
-        // TODO Support snapshots.
-        let init = store.get::<RrdpInit>(&id, &key)
-            .map_err(Error::KeyStoreError)?
-            .unwrap_or(
-                {
-                    let init = RrdpInit::init_new(base_uri, repo_dir);
 
-                    store.store(&id, &key, &init)
-                        .map_err(Error::KeyStoreError)?;
+        let init = match store.get::<RrdpInit>(&id, &key)
+            .map_err(Error::KeyStoreError)? {
 
-                    init
-                }
-            );
+            Some(init) => init,
+            None => {
+                let init = RrdpInit::init_new(base_uri, repo_dir);
+
+                store.store(&id, &key, &init)
+                    .map_err(Error::KeyStoreError)?;
+
+                init
+            }
+        };
 
         let rrdp = RrdpServer::init(init)?;
 
