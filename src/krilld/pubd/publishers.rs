@@ -42,7 +42,7 @@ impl PublisherInit {
         cms_auth_data: Option<CmsAuthData>
     ) -> Self {
         StoredEvent::new(
-            id,
+            id.as_ref(),
             0,
             InitPublisherDetails { token, base_uri, cms_auth_data }
         )
@@ -52,9 +52,9 @@ impl PublisherInit {
 impl From<PublisherRequest> for PublisherInit {
     fn from(req: PublisherRequest) -> Self {
         let (handle, token, base_uri, cms_auth_data) = req.unwrap(); // (self
-        let id = PublisherHandle::from(handle);
+        let handle = PublisherHandle::from(handle);
         let details = InitPublisherDetails { token, base_uri, cms_auth_data };
-        StoredEvent::new(&id, 0, details)
+        StoredEvent::new(handle.as_ref(), 0, details)
     }
 }
 
@@ -71,7 +71,7 @@ pub enum PublisherEventDetails {
 
 impl PublisherEvent {
     pub fn deactivated(id: &PublisherHandle, version: u64) -> Self {
-        PublisherEvent::new(id, version, PublisherEventDetails::Deactivated)
+        PublisherEvent::new(id.as_ref(), version, PublisherEventDetails::Deactivated)
     }
 
     pub fn published(
@@ -79,7 +79,7 @@ impl PublisherEvent {
         version: u64,
         delta: DeltaElements
     ) -> Self {
-        PublisherEvent::new(id, version, PublisherEventDetails::Published(delta))
+        PublisherEvent::new(id.as_ref(), version, PublisherEventDetails::Published(delta))
     }
 }
 
@@ -100,11 +100,11 @@ impl CommandDetails for PublisherCommandDetails {
 
 impl PublisherCommand {
     pub fn deactivate(id: &PublisherHandle) -> Self {
-        PublisherCommand::new(id, None, PublisherCommandDetails::Deactivate)
+        PublisherCommand::new(id.as_ref(), None, PublisherCommandDetails::Deactivate)
     }
 
     pub fn publish(id: &PublisherHandle, delta: publication_data::PublishDelta) -> Self {
-        PublisherCommand::new(id, None, PublisherCommandDetails::Publish(delta))
+        PublisherCommand::new(id.as_ref(), None, PublisherCommandDetails::Publish(delta))
     }
 }
 
@@ -135,9 +135,9 @@ impl std::error::Error for PublisherError {}
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Publisher {
     /// Aggregate house keeping
-    id:        PublisherHandle,
-    version:   u64,
-    retired:   bool,
+    id:          PublisherHandle,
+    version:     u64,
+    deactivated: bool,
 
     /// Publication jail for this publisher
     #[serde(
@@ -161,7 +161,7 @@ impl Publisher {
         &self.id
     }
 
-    pub fn retired(&self) -> bool { self.retired }
+    pub fn is_deactivated(&self) -> bool { self.deactivated }
 
     pub fn token(&self) -> &String {
         &self.token
@@ -183,9 +183,9 @@ impl Publisher {
     fn create(event: PublisherInit) -> Self {
         let (id, _version, init) = event.unwrap();
         Publisher {
-            id,
+            id:              PublisherHandle::from(id),
             version:         1,
-            retired:         false,
+            deactivated:         false,
             token:           init.token,
             base_uri:        init.base_uri,
             cms_auth_data:   init.cms_auth_data,
@@ -194,7 +194,7 @@ impl Publisher {
     }
 
     fn deactivate(&self) -> Result<Vec<PublisherEvent>, PublisherError> {
-        if self.retired {
+        if self.deactivated {
             Err(PublisherError::Deactivated)
         } else {
             let e = PublisherEvent::deactivated(&self.id, self.version);
@@ -251,7 +251,7 @@ impl Aggregate for Publisher {
 
     fn apply(&mut self, event: Self::Event) {
         match event.into_details() {
-            PublisherEventDetails::Deactivated => self.retired = true,
+            PublisherEventDetails::Deactivated => self.deactivated = true,
             PublisherEventDetails::Published(delta) => self.apply_delta(delta)
         }
         self.version += 1;

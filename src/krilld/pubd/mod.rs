@@ -41,6 +41,8 @@ use crate::krilld::pubd::publishers::{
     PublisherEventDetails,
     PublisherInit,
 };
+use krilld::pubd::repo::RRDP_TYPE_ID;
+use api::publisher_data::PUBLISHER_TYPE_ID;
 
 
 //------------ PubServer -----------------------------------------------------
@@ -122,14 +124,12 @@ impl<S: KeyStore> PubServer<S> {
         handle: &PublisherHandle
     ) -> Result<Option<Publisher>, Error> {
         if let Some(init) = self.store.get_event::<PublisherInit> (
-            "publisher",
-            handle,
+            handle.as_ref(),
             0
         )? {
             let mut publisher = Publisher::init(init)?;
             while let Some(event) = self.store.get_event::<PublisherEvent>(
-                "publisher",
-                handle,
+                handle.as_ref(),
                 publisher.version()
             )? {
                 publisher.apply(event);
@@ -211,12 +211,13 @@ impl<S: KeyStore> PubServer<S> {
     }
 
     fn verify_handle(&self, handle: &PublisherHandle) -> Result<(), Error> {
+        let name = handle.name();
 
-        if handle.as_ref() == rrdp_id().as_ref() {
+        if name == RRDP_TYPE_ID {
             return Err(Error::ReservedName(handle.to_string()))
         }
 
-        if ! handle.as_ref().bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+        if ! name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
             return Err(Error::InvalidHandle(handle.to_string()))
         }
 
@@ -264,16 +265,12 @@ impl<S: KeyStore> PubServer<S> {
         Ok(())
     }
 
-    /// Returns a list of publisher handles, excludes retired publishers.
+    /// Returns a list of publisher handles
     pub fn list_publishers(&self) -> Result<Vec<PublisherHandle>, Error> {
         let mut res = vec![];
-        for handle in self.store.aggregates() {
-            if handle.as_ref() == rrdp_id().as_ref() {
-                continue;
-            }
-            if ! self.get_publisher(&handle)?.unwrap().retired() {
-                res.push(handle)
-            }
+        for agg_id in self.store.aggregates(PUBLISHER_TYPE_ID) {
+            let handle = PublisherHandle::from(&agg_id);
+            res.push(handle)
         }
         Ok(res)
     }
@@ -298,7 +295,7 @@ impl<S: KeyStore> PubServer<S> {
         &self,
         command: PublisherCommand
     ) -> Result<Option<DeltaElements>, Error> {
-        let handle = command.id().clone();
+        let handle = PublisherHandle::from(command.id());
 
         match self.load_publisher(&handle)? {
             None => Err(Error::UnknownPublisher(handle.to_string())),
@@ -616,25 +613,29 @@ mod tests {
     #[test]
     fn should_remove_publisher() {
         test::test_with_tmp_dir(|d| {
+            let server = make_server(&d);
+            let handle = PublisherHandle::from("alice");
+
+            // create publisher
             let publisher_req = make_publisher_req(
-                "alice",
+                handle.name(),
                 "rsync://localhost/repo/alice/",
                 &d
             );
-            let handle = PublisherHandle::from("alice");
-
-            let server = make_server(&d);
-
             server.create_publisher(publisher_req).unwrap();
 
+            // expect to see it in the list
             let list = server.list_publishers().unwrap();
             assert_eq!(list, vec![handle.clone()]);
 
-            let retire = PublisherCommand::deactivate(&handle);
+            // deactivate
+            let deactivate = PublisherCommand::deactivate(&handle);
+            server.command_publisher(deactivate).unwrap();
 
-            server.command_publisher(retire).unwrap();
-            let list = server.list_publishers().unwrap();
-            assert!(list.is_empty());
+            // expect that it is now inactive
+            let alice = server.get_publisher(&handle).unwrap().unwrap();
+            assert!(alice.is_deactivated())
+
         })
     }
 

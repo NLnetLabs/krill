@@ -29,8 +29,12 @@ use crate::util::{
 const RRDP_FOLDER: &str = "rrdp";
 const RSYNC_FOLDER: &str = "rsync";
 
+pub const RRDP_TYPE_ID: &str = "rrdp_server";
+
 // Todo: make a const fn once that is stable.
-pub fn rrdp_id() -> AggregateId { AggregateId::from("rrdp_server")}
+pub fn rrdp_id() -> AggregateId {
+    AggregateId::new(RRDP_TYPE_ID, RRDP_TYPE_ID)
+}
 
 
 

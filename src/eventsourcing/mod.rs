@@ -4,8 +4,6 @@ mod es_example; // Example implementation and tests.
 
 use std::any::Any;
 use std::collections::HashMap;
-use std::fmt;
-use std::fmt::Display;
 use std::fs;
 use std::fs::File;
 use std::io;
@@ -28,31 +26,24 @@ impl<T: Clone + Serialize + DeserializeOwned + Sized> Storable for T { }
 //------------ AggregateId ---------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct AggregateId(String);
+pub struct AggregateId {
+    type_id: String,
+    instance_id: String
+}
 
-impl From<&str> for AggregateId {
-    fn from(s: &str) -> Self {
-        AggregateId(s.to_string())
+impl AggregateId {
+    pub fn new(type_id: &str, instance_id: &str) -> Self {
+        AggregateId {
+            type_id: type_id.to_string(),
+            instance_id: instance_id.to_string()
+        }
+    }
+
+    pub fn instance_id(&self) -> &str {
+        &self.instance_id
     }
 }
 
-impl From<String> for AggregateId {
-    fn from(s: String) -> Self {
-        AggregateId(s)
-    }
-}
-
-impl AsRef<str> for AggregateId {
-    fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
-
-impl Display for AggregateId {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
 
 //------------ Aggregate -----------------------------------------------------
 
@@ -228,7 +219,7 @@ pub trait KeyStore {
 
     fn has_aggregate(&self, id: &AggregateId) -> bool;
 
-    fn aggregates(&self) -> Vec<AggregateId>; // Use Iterator?
+    fn aggregates(&self, type_id: &str) -> Vec<AggregateId>; // Use Iterator?
 
     /// Throws an error if the key already exists.
     fn store<V: Any + Serialize>(
@@ -248,9 +239,8 @@ pub trait KeyStore {
     /// Get the value for this key, if any exists.
     fn get_event<V: Event + Storable>(
         &self,
-        aggregate_type: &str, // name space for type
-        id: &AggregateId,     // name space for instance
-        version: u64          // version of the event
+        id: &AggregateId,
+        version: u64
     ) -> Result<Option<V>, KeyStoreError>;
 }
 
@@ -308,12 +298,16 @@ impl KeyStore for DiskKeyStore {
         unimplemented!()
     }
 
-    fn aggregates(&self) -> Vec<AggregateId> {
+    fn aggregates(&self, type_id: &str) -> Vec<AggregateId> {
         let mut res: Vec<AggregateId> = Vec::new();
-        for d in fs::read_dir(&self.dir).unwrap() {
+        let dir = self.dir_for_type(type_id);
+
+        for d in fs::read_dir(&dir).unwrap() {
             let full_path = d.unwrap().path();
             let path = full_path.file_name().unwrap();
-            res.push(AggregateId::from(path.to_string_lossy().as_ref()));
+
+            let id = AggregateId::new(type_id, path.to_string_lossy().as_ref());
+            res.push(id);
         }
         res
     }
@@ -351,18 +345,16 @@ impl KeyStore for DiskKeyStore {
     /// Get the value for this key, if any exists.
     fn get_event<V: Event + Storable>(
         &self,
-        _aggregate_type: &str, // name space for type
-        id: &AggregateId,     // name space for instance
-        version: u64          // version of the event
+        id: &AggregateId,
+        version: u64
     ) -> Result<Option<V>, KeyStoreError> {
-        let path = self.path_for_event(_aggregate_type, id, version);
-        match path.exists() {
-            false => Ok(None),
-            true => {
-                let f = File::open(path)?;
-                let v: V = serde_json::from_reader(f)?;
-                Ok(Some(v))
-            }
+        let path = self.path_for_event(id, version);
+        if path.exists() {
+            let f = File::open(path)?;
+            let v: V = serde_json::from_reader(f)?;
+            Ok(Some(v))
+        } else {
+            Ok(None)
         }
     }
 }
@@ -385,21 +377,29 @@ impl DiskKeyStore {
     }
 
     fn file_path(&self, id: &AggregateId, key: &<Self as KeyStore>::Key) -> PathBuf {
-        let mut file_path = self.dir.clone();
-        file_path.push(id.to_string());
+        let mut file_path = self.dir_for_aggregate(id);
         file_path.push(key);
         file_path
     }
 
+    fn dir_for_type(&self, type_id: &str) -> PathBuf {
+        let mut dir_path = self.dir.clone();
+        dir_path.push(type_id);
+        dir_path
+    }
+
+    fn dir_for_aggregate(&self, id: &AggregateId) -> PathBuf {
+        let mut dir_path = self.dir_for_type(&id.type_id);
+        dir_path.push(&id.instance_id);
+        dir_path
+    }
+
     fn path_for_event(
         &self,
-        _aggregate_type: &str,
         id: &AggregateId,
         version: u64
     ) -> PathBuf {
-        let mut file_path = self.dir.clone();
-        // file_path.push(_aggregate_type);
-        file_path.push(id.as_ref());
+        let mut file_path = self.dir_for_aggregate(id);
         file_path.push(format!("delta-{}.json", version));
         file_path
     }

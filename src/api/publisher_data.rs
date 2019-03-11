@@ -8,13 +8,67 @@ use crate::eventsourcing::AggregateId;
 use crate::krilld::pubd::publishers::Publisher;
 use crate::remote::id::IdCert;
 use crate::util::ext_serde;
+use std::fmt;
+use std::fmt::Display;
 
+
+pub const PUBLISHER_TYPE_ID: &str = "publisher";
 
 //------------ PublisherHandle -----------------------------------------------
 
 /// A type for referring to publishers, both in the api as well as to the
 /// aggregates.
-pub type PublisherHandle = AggregateId;
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct PublisherHandle(AggregateId);
+
+impl PublisherHandle {
+    pub fn name(&self) -> &str {
+        self.0.instance_id()
+    }
+}
+
+impl From<&str> for PublisherHandle {
+    fn from(s: &str) -> Self {
+        PublisherHandle(AggregateId::new(PUBLISHER_TYPE_ID, s))
+    }
+}
+
+impl From<String> for PublisherHandle {
+    fn from(s: String) -> Self {
+        PublisherHandle(AggregateId::new(PUBLISHER_TYPE_ID, &s))
+    }
+}
+
+impl From<&AggregateId> for PublisherHandle {
+    fn from(agg_id: &AggregateId) -> Self {
+        PublisherHandle(agg_id.clone())
+    }
+}
+
+impl From<AggregateId> for PublisherHandle {
+    fn from(agg_id: AggregateId) -> Self {
+        PublisherHandle(agg_id)
+    }
+}
+
+impl AsRef<str> for PublisherHandle {
+    fn as_ref(&self) -> &str {
+        self.name()
+    }
+}
+
+impl AsRef<AggregateId> for PublisherHandle {
+    fn as_ref(&self) -> &AggregateId {
+        &self.0
+    }
+}
+
+impl Display for PublisherHandle {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.name())
+    }
+}
+
 
 
 //------------ CmsAuthData ---------------------------------------------------
@@ -146,7 +200,7 @@ impl PublisherSummaryInfo {
         let mut links = Vec::new();
         let self_link = Link {
             rel: "self".to_string(),
-            link: format!("{}/{}", path_publishers, handle.as_ref())
+            link: format!("{}/{}", path_publishers, handle)
         };
         links.push(self_link);
 
@@ -220,7 +274,7 @@ impl<'a> PublisherDetails<'a> {
     ) -> PublisherDetails<'a> {
         let handle = publisher.id().as_ref();
         let base_uri = publisher.base_uri();
-        let retired = publisher.retired();
+        let retired = publisher.is_deactivated();
 
         // Derive the RFC8181 service URI.
         let service_uri = format!("{}{}", base_service_uri, handle);

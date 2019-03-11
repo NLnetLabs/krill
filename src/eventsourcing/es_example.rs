@@ -381,7 +381,7 @@ mod tests {
             let storage = DiskKeyStore::new(d.clone());
             let manager = PersonManager::new(storage);
 
-            let id_alice = AggregateId::from("alice");
+            let id_alice = AggregateId::new("person", "alice");
             let alice_init = InitPersonEvent::init(&id_alice, "alice smith");
 
             manager.create(&id_alice, alice_init).unwrap();
