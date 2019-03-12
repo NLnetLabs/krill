@@ -27,8 +27,6 @@ use crate::krilld::endpoints;
 use crate::krilld::http::ssl;
 use crate::krilld::krillserver;
 use crate::krilld::krillserver::KrillServer;
-use crate::remote::rfc8183;
-use crate::remote::sigmsg::SignedMessage;
 
 const NOT_FOUND: &[u8] = include_bytes!("../../../ui/dev/html/404.html");
 const LOGIN: &[u8] = include_bytes!("../../../ui/dev/html/login.html");
@@ -67,12 +65,6 @@ impl PubServerApp {
             // For clients that cannot handle http methods
             .resource("/api/v1/publishers/{handle}/del", |r| {
                 r.method(Method::POST).with(endpoints::deactivate_publisher);
-            })
-            .resource("/api/v1/publishers/{handle}/response.xml", |r| {
-                r.method(Method::GET).with(endpoints::repository_response)
-            })
-            .resource("/rfc8181/{handle}", |r| {
-                r.method(Method::POST).with(endpoints::handle_rfc8181_request)
             })
             .resource("/publication/{handle}", |r| {
                 r.method(Method::GET).with(endpoints::handle_list);
@@ -256,38 +248,6 @@ impl PubServerApp {
 }
 
 
-//------------ SignedMessage -------------------------------------------------
-
-/// Support converting requests into SignedMessage.
-///
-/// Also allows to use a higher limit to the size of these requests, in this
-/// case 256MB (comparison the entire RIPE NCC repository in December 2018
-/// amounted to roughly 100MB).
-///
-/// We may want to lower this and/or make it configurable, or make it
-/// depend on which publisher is sending data.
-/// struct PublishRequest {
-impl<S: 'static> FromRequest<S> for SignedMessage {
-
-    type Config = ();
-    type Result = Box<Future<Item=Self, Error=actix_web::Error>>;
-
-    fn from_request(
-        req: &actix_web::HttpRequest<S>,
-        _cfg: &Self::Config
-    ) -> Self::Result {
-        Box::new(MessageBody::new(req).limit(255 * 1024 * 1024) // 256 MB
-            .from_err()
-            .and_then(|bytes| {
-                match SignedMessage::decode(bytes, true) {
-                    Ok(message) => Ok(message),
-                    Err(e) => Err(Error::DecodeError(e).into())
-                }
-            }))
-    }
-}
-
-
 //------------ Publisher ----------------------------------------------------
 
 /// Converts the body sent to 'add publisher' end-points to a
@@ -396,9 +356,6 @@ pub enum Error {
 
     #[display(fmt = "Cannot decode request: {}", _0)]
     DecodeError(decode::Error),
-
-    #[display(fmt = "Cannot decode request: {}", _0)]
-    Wrong8183Xml(rfc8183::PublisherRequestError),
 
     #[display(fmt = "Wrong path")]
     WrongPath,

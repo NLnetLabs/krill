@@ -4,11 +4,6 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use bytes::Bytes;
 use rpki::uri;
-use rpki::crypto::{PublicKeyFormat, Signer};
-use crate::remote::builder::IdCertBuilder;
-use crate::remote::id::IdCert;
-use crate::remote::rfc8183::PublisherRequest;
-use crate::util::softsigner::OpenSslSigner;
 
 pub fn test_with_tmp_dir<F>(op: F) where F: FnOnce(PathBuf) -> () {
     use std::fs;
@@ -49,35 +44,9 @@ pub fn http_uri(s: &str) -> uri::Http {
 
 pub fn as_bytes(s: &str) -> Bytes { Bytes::from(s) }
 
-pub fn new_id_cert(work_dir: &PathBuf) -> IdCert {
-    let mut s = OpenSslSigner::build(work_dir).unwrap();
-    let key_id = s.create_key(PublicKeyFormat).unwrap();
-    IdCertBuilder::new_ta_id_cert(&key_id, &mut s).unwrap()
-}
-
-pub fn new_publisher_request(
-    publisher_handle: &str,
-    work_dir: &PathBuf
-) -> PublisherRequest {
-    let id_cert = new_id_cert(work_dir);
-    PublisherRequest::new(
-        None,
-        publisher_handle,
-        id_cert
-    )
-}
-
 pub fn save_file(base_dir: &PathBuf, file_name: &str, content: &[u8]) {
     let mut full_name = base_dir.clone();
     full_name.push(PathBuf::from(file_name));
     let mut f = File::create(full_name).unwrap();
     f.write_all(content).unwrap();
-}
-
-pub fn save_pr(base_dir: &PathBuf, file_name: &str, pr: &PublisherRequest) {
-    let mut full_name = base_dir.clone();
-    full_name.push(PathBuf::from(file_name));
-    let mut f = File::create(full_name).unwrap();
-    let xml = pr.encode_vec();
-    f.write_all(xml.as_ref()).unwrap();
 }

@@ -1,9 +1,8 @@
 //! Data types to wrap the API responses, and support reporting on them in
 //! various formats (where applicable).
+use std::str::FromStr;
 use rpki::uri;
 use crate::util::ext_serde;
-use remote::id::IdCert;
-use std::str::FromStr;
 
 //------------ ApiResponse ---------------------------------------------------
 
@@ -168,22 +167,6 @@ impl PublisherSummary {
 }
 
 
-//------------ Rfc8181Details ------------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct CmsAuthData {
-    #[serde(
-        serialize_with = "ext_serde::ser_http_uri",
-        deserialize_with = "ext_serde::de_http_uri")]
-    service_uri: uri::Http,
-
-    #[serde(
-        serialize_with = "ext_serde::ser_id_cert",
-        deserialize_with = "ext_serde::de_id_cert")]
-    id_cert: IdCert
-}
-
-
 //------------ PublisherDetails ----------------------------------------------
 
 /// This type defines the publisher details fro:
@@ -192,15 +175,13 @@ pub struct CmsAuthData {
 pub struct PublisherDetails {
     handle: String,
 
-    retired: bool,
+    deactivated: bool,
 
     #[serde(
         deserialize_with = "ext_serde::de_rsync_uri",
         serialize_with = "ext_serde::ser_rsync_uri"
     )]
     base_uri: uri::Rsync,
-
-    cms_auth: Option<CmsAuthData>,
 
     links: Vec<Link>
 }
@@ -209,13 +190,8 @@ impl PublisherDetails {
     pub fn handle(&self) -> &str {
         &self.handle
     }
-    pub fn identity_cert(&self) -> Option<&IdCert> {
-        match self.cms_auth {
-            None => None,
-            Some(ref details) => Some(&details.id_cert)
-        }
-    }
-    pub fn retired(&self) -> bool { self.retired }
+
+    pub fn deactivated(&self) -> bool { self.deactivated }
 }
 
 impl PartialEq for PublisherDetails {
@@ -246,19 +222,6 @@ impl Report for PublisherDetails {
                 res.push_str("base uri: ");
                 res.push_str(self.base_uri.to_string().as_str());
                 res.push_str("\n");
-
-                if let Some(ref rfc8181) = self.cms_auth {
-                    res.push_str("RFC8181 Details:\n");
-                    res.push_str("  service uri: ");
-                    res.push_str(rfc8181.service_uri.to_string().as_str());
-                    res.push_str("\n");
-                    res.push_str("  id cert (base64): ");
-                    res.push_str(
-                        base64::encode(
-                            rfc8181.id_cert.to_bytes().as_ref()
-                        ).as_str());
-                    res.push_str("\n");
-                }
 
                 Ok(res)
             },

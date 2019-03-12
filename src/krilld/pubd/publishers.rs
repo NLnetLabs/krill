@@ -1,7 +1,6 @@
 use rpki::uri;
 use crate::api::publication_data;
 use crate::api::publisher_data::{
-    CmsAuthData,
     PublisherHandle,
     PublisherRequest
 };
@@ -31,7 +30,6 @@ pub struct InitPublisherDetails {
         deserialize_with = "ext_serde::de_rsync_uri",
         serialize_with = "ext_serde::ser_rsync_uri")]
     base_uri: uri::Rsync,
-    cms_auth_data: Option<CmsAuthData>
 }
 
 impl PublisherInit {
@@ -39,21 +37,20 @@ impl PublisherInit {
         id: &PublisherHandle,
         token: String,
         base_uri: uri::Rsync,
-        cms_auth_data: Option<CmsAuthData>
     ) -> Self {
         StoredEvent::new(
             id.as_ref(),
             0,
-            InitPublisherDetails { token, base_uri, cms_auth_data }
+            InitPublisherDetails { token, base_uri }
         )
     }
 }
 
 impl From<PublisherRequest> for PublisherInit {
     fn from(req: PublisherRequest) -> Self {
-        let (handle, token, base_uri, cms_auth_data) = req.unwrap(); // (self
+        let (handle, token, base_uri) = req.unwrap(); // (self
         let handle = PublisherHandle::from(handle);
-        let details = InitPublisherDetails { token, base_uri, cms_auth_data };
+        let details = InitPublisherDetails { token, base_uri };
         StoredEvent::new(handle.as_ref(), 0, details)
     }
 }
@@ -148,9 +145,6 @@ pub struct Publisher {
     /// The token used by the API
     token:         String,
 
-    /// The optional RFC8181 identity, for the RFC8183 pub protocol.
-    cms_auth_data: Option<CmsAuthData>,
-
     /// All objects currently published by this publisher, by hash
     current_objects:  CurrentObjects
 }
@@ -170,10 +164,6 @@ impl Publisher {
     pub fn base_uri(&self) -> &uri::Rsync {
         &self.base_uri
     }
-
-    pub fn cms_auth_data(&self) -> &Option<CmsAuthData> {
-        &self.cms_auth_data
-    }
 }
 
 /// # Life cycle
@@ -188,7 +178,6 @@ impl Publisher {
             deactivated:         false,
             token:           init.token,
             base_uri:        init.base_uri,
-            cms_auth_data:   init.cms_auth_data,
             current_objects: CurrentObjects::default()
         }
     }

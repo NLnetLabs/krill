@@ -13,7 +13,6 @@ use serde::Deserialize;
 pub mod ext_serde;
 pub mod file;
 pub mod httpclient;
-pub mod softsigner;
 pub mod test;
 pub mod xml;
 

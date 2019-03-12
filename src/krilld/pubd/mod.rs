@@ -16,6 +16,7 @@ use crate::api::publisher_data::{
     PublisherRequest
 };
 use crate::api::repo_data::DeltaElements;
+use crate::api::publisher_data::PUBLISHER_TYPE_ID;
 use crate::krilld::pubd::repo::{
     RetentionTime,
     RrdpCommand,
@@ -41,8 +42,7 @@ use crate::krilld::pubd::publishers::{
     PublisherEventDetails,
     PublisherInit,
 };
-use krilld::pubd::repo::RRDP_TYPE_ID;
-use api::publisher_data::PUBLISHER_TYPE_ID;
+use crate::krilld::pubd::repo::RRDP_TYPE_ID;
 
 
 //------------ PubServer -----------------------------------------------------
@@ -249,7 +249,7 @@ impl<S: KeyStore> PubServer<S> {
         &self,
         req: PublisherRequest
     ) -> Result<(), Error> {
-        let (handle, token, uri, cms_data) = req.unwrap();
+        let (handle, token, uri) = req.unwrap();
         let handle = PublisherHandle::from(handle);
         self.verify_handle(&handle)?;
         self.verify_base_uri(&uri)?;
@@ -258,7 +258,6 @@ impl<S: KeyStore> PubServer<S> {
             &handle,
             token,
             uri,
-            cms_data
         );
 
         self.store_save_init(&init)?;
@@ -491,16 +490,13 @@ mod tests {
     }
 
     fn make_publisher_req(
-        name: &str,
+        handle: &str,
         uri: &str,
-        work_dir: &PathBuf
     ) -> PublisherRequest {
         let base_uri = test::rsync_uri(uri);
         let token = "secret";
-        let openssl_dir = test::create_sub_dir(work_dir);
 
-        let pr = test::new_publisher_request(name, &openssl_dir);
-        pr.into_publisher(token.to_string(), base_uri.clone())
+        PublisherRequest::new(handle.to_string(), token.to_string(), base_uri)
     }
 
     fn make_server(work_dir: &PathBuf) -> PubServer<DiskKeyStore> {
@@ -525,7 +521,6 @@ mod tests {
             let publisher_req = make_publisher_req(
                 "alice",
                 "rsync://localhost/repo/alice/",
-                &d
             );
 
             let server = make_server(&d);
@@ -544,7 +539,6 @@ mod tests {
             let publisher_req = make_publisher_req(
                 "alice&",
                 "rsync://localhost/repo/alice/",
-                &d
             );
 
             let server = make_server(&d);
@@ -563,7 +557,6 @@ mod tests {
             let publisher_req = make_publisher_req(
                 "alice",
                 "rsync://localhost/repo/alice",
-                &d
             );
 
             let server = make_server(&d);
@@ -580,7 +573,6 @@ mod tests {
             let publisher_req = make_publisher_req(
                 "alice",
                 "rsync://localhost/outside/alice/",
-                &d
             );
 
             let server = make_server(&d);
@@ -597,7 +589,6 @@ mod tests {
             let publisher_req = make_publisher_req(
                 "alice",
                 "rsync://localhost/repo/alice/",
-                &d
             );
 
             let server = make_server(&d);
@@ -621,7 +612,6 @@ mod tests {
             let publisher_req = make_publisher_req(
                 handle.name(),
                 "rsync://localhost/repo/alice/",
-                &d
             );
             server.create_publisher(publisher_req).unwrap();
 
@@ -646,7 +636,6 @@ mod tests {
             let publisher_req = make_publisher_req(
                 "alice",
                 "rsync://localhost/repo/alice/",
-                &d
             );
             let handle = PublisherHandle::from("alice");
 
@@ -674,7 +663,6 @@ mod tests {
             let publisher_req = make_publisher_req(
                 "alice",
                 "rsync://localhost/repo/alice/",
-                &d
             );
             let handle = PublisherHandle::from("alice");
 

@@ -78,7 +78,7 @@ fn add_publisher(handle: &str, base_uri: &str, token: &str) {
 
 fn remove_publisher(handle: &str) {
     let command = Command::Publishers(
-        PublishersCommand::Remove(handle.to_string())
+        PublishersCommand::Deactivate(handle.to_string())
     );
 
     execute_krillc_command(command);
@@ -87,7 +87,6 @@ fn remove_publisher(handle: &str) {
 #[test]
 fn client_publish_at_server() {
     test::test_with_tmp_dir(|d| {
-
 
         let server_uri = "http://localhost:3000/";
         let handle = "alice";

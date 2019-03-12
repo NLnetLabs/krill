@@ -12,8 +12,6 @@ use crate::krilld::krillserver::{self, KrillServer};
 use crate::krilld::pubd;
 use crate::krilld::pubd::publishers::PublisherError;
 use crate::krilld::pubd::repo::RrdpServerError;
-use crate::remote::cmsproxy;
-use crate::remote::sigmsg::SignedMessage;
 
 
 //------------ Support Functions ---------------------------------------------
@@ -80,8 +78,7 @@ pub fn publishers(req: &HttpRequest) -> HttpResponse {
     }
 }
 
-/// Adds a publisher, expects that an RFC8183 section 5.2.3 Publisher
-/// Request XML is posted.
+/// Adds a publisher
 #[allow(clippy::needless_pass_by_value)]
 pub fn add_publisher(
     req: HttpRequest,
@@ -118,56 +115,15 @@ pub fn publisher_details(
         Ok(None) => api_not_found(),
         Ok(Some(publisher)) => {
             render_json(
-                publisher_data::PublisherDetails::from(
-                    &publisher,
-                    "/api/v1/publishers",
-                    server.service_base_uri())
+                publisher_data::PublisherDetails::from(&publisher)
             )
         },
         Err(e) => server_error(&Error::ServerError(e))
     }
 }
 
-/// Shows the server's RFC8183 section 5.2.4 Repository Response XML
-/// file for a known publisher.
-#[allow(clippy::needless_pass_by_value)]
-pub fn repository_response(
-    req: HttpRequest,
-    handle: PublisherHandle
-) -> HttpResponse {
-    match ro_server(&req).repository_response(&handle) {
-        Ok(res) => {
-            HttpResponse::Ok()
-                .content_type("application/xml")
-                .body(res.encode_vec())
-        },
-
-        Err(e) => server_error(&Error::ServerError(e))
-    }
-}
-
 
 //------------ Publication ---------------------------------------------------
-
-/// Processes an RFC8181 query and returns the appropriate response.
-#[allow(clippy::needless_pass_by_value)]
-pub fn handle_rfc8181_request(
-    req: HttpRequest,
-    msg: SignedMessage,
-    handle: PublisherHandle
-) -> HttpResponse {
-    let mut server: RwLockWriteGuard<KrillServer<DiskKeyStore>> = rw_server(&req);
-    match server.handle_rfc8181_request(&msg, &handle) {
-        Ok(captured) => {
-            HttpResponse::build(StatusCode::OK)
-                .content_type("application/rpki-publication")
-                .body(captured.into_bytes())
-        }
-        Err(e) => {
-            server_error(&Error::ServerError(e))
-        }
-    }
-}
 
 /// Processes a publishdelta request sent to the API.
 #[allow(clippy::needless_pass_by_value)]
@@ -249,20 +205,8 @@ impl ErrorToStatus for Error {
 impl ErrorToStatus for krillserver::Error {
     fn status(&self) -> StatusCode {
         match self {
-            krillserver::Error::NoIdCert => StatusCode::FORBIDDEN,
-            krillserver::Error::CmsProxy(e) => e.status(),
             krillserver::Error::IoError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             krillserver::Error::PubServer(e) => e.status()
-        }
-    }
-}
-
-impl ErrorToStatus for cmsproxy::Error {
-    fn status(&self) -> StatusCode {
-        match self {
-            cmsproxy::Error::ValidationError(_) => StatusCode::FORBIDDEN,
-            cmsproxy::Error::MessageError(_) => StatusCode::BAD_REQUEST,
-            cmsproxy::Error::ResponderError(_) => StatusCode::INTERNAL_SERVER_ERROR
         }
     }
 }
@@ -317,20 +261,8 @@ impl ErrorToCode for Error {
 impl ErrorToCode for krillserver::Error {
     fn code(&self) -> usize {
         match self {
-            krillserver::Error::NoIdCert => 2001,
-            krillserver::Error::CmsProxy(e) => e.code(),
             krillserver::Error::IoError(_) => 3001,
             krillserver::Error::PubServer(e) => e.code()
-        }
-    }
-}
-
-impl ErrorToCode for cmsproxy::Error {
-    fn code(&self) -> usize {
-        match self {
-            cmsproxy::Error::ValidationError(_) => 2001,
-            cmsproxy::Error::MessageError(_) => 1003,
-            cmsproxy::Error::ResponderError(_) => 3003
         }
     }
 }

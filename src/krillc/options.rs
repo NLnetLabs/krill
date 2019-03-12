@@ -1,8 +1,6 @@
-use std::path::PathBuf;
 use std::str::FromStr;
 use clap::{App, Arg, SubCommand};
 use rpki::uri;
-use uuid::Uuid;
 use crate::krillc::data::{
     ReportFormat,
     ReportError
@@ -189,44 +187,14 @@ impl Options {
                     PublishersCommand::Add(add)
                 );
             }
-            if let Some(m) = m.subcommand_matches("addcms") {
-                let xml = m.value_of("xml").unwrap(); // required
-                let xml = PathBuf::from(xml);
-
-                let base_uri = uri::Rsync::from_str(
-                    m.value_of("uri").unwrap()
-                )?;
-
-                let token = Uuid::new_v4().to_string();
-
-                let add = AddPublisherWithCms { xml, base_uri, token };
-                command = Command::Publishers(
-                    PublishersCommand::AddWithCms(add)
-                );
-            }
             if let Some(m) = m.subcommand_matches("details") {
                 let handle = m.value_of("handle").unwrap();
                 let details = PublishersCommand::Details(handle.to_string());
                 command = Command::Publishers(details);
             }
-            if let Some(m) = m.subcommand_matches("response") {
-                let handle = m.value_of("handle").unwrap();
-                let file = m.value_of("out").map(PathBuf::from);
-                let response = PublishersCommand::RepositoryResponseXml(
-                    handle.to_string(),
-                    file
-                );
-                command = Command::Publishers(response);
-            }
-            if let Some(m) = m.subcommand_matches("idcert") {
-                let handle = m.value_of("handle").unwrap().to_string();
-                let file = PathBuf::from(m.value_of("out").unwrap());
-                let idcert = PublishersCommand::IdCert(handle, file);
-                command = Command::Publishers(idcert);
-            }
             if let Some(m) = m.subcommand_matches("remove") {
                 let handle = m.value_of("handle").unwrap().to_string();
-                command = Command::Publishers(PublishersCommand::Remove(handle))
+                command = Command::Publishers(PublishersCommand::Deactivate(handle))
             }
         }
 
@@ -255,19 +223,9 @@ pub enum Command {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PublishersCommand {
     Add(AddPublisher),
-    AddWithCms(AddPublisherWithCms),
     Details(String),
-    Remove(String),
-    RepositoryResponseXml(String, Option<PathBuf>),
-    IdCert(String, PathBuf),
+    Deactivate(String),
     List
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AddPublisherWithCms {
-    pub xml: PathBuf,
-    pub base_uri: uri::Rsync,
-    pub token: String
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

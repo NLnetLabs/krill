@@ -6,8 +6,6 @@ use rpki::uri;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde::de;
 use syslog::Facility;
-use crate::remote::id::IdCert;
-use crate::util::softsigner::SignerKeyId;
 
 
 //------------ Bytes ---------------------------------------------------------
@@ -56,41 +54,6 @@ pub fn ser_http_uri<S>(uri: &uri::Http, s: S) -> Result<S::Ok, S::Error>
 where S: Serializer
 {
     uri.to_string().serialize(s)
-}
-
-
-//------------ IdCert --------------------------------------------------------
-
-pub fn de_id_cert<'de, D>(d: D) -> Result<IdCert, D::Error>
-where D: Deserializer<'de>
-{
-    let some = String::deserialize(d)?;
-    let dec = base64::decode(&some).map_err(de::Error::custom)?;
-    let b = Bytes::from(dec);
-    IdCert::decode(b).map_err(de::Error::custom)
-}
-
-pub fn ser_id_cert<S>(cert: &IdCert, s: S) -> Result<S::Ok, S::Error>
-where S: Serializer
-{
-    let bytes = cert.to_bytes();
-    let str = base64::encode(&bytes);
-    str.serialize(s)
-}
-
-//------------ KeyId ---------------------------------------------------------
-
-pub fn de_key_id<'de, D>(d: D) -> Result<SignerKeyId, D::Error>
-where D: Deserializer<'de>
-{
-    let s = String::deserialize(d)?;
-    Ok(SignerKeyId::new(&s))
-}
-
-pub fn ser_key_id<S>(key_id: &SignerKeyId, s: S) -> Result<S::Ok, S::Error>
-where S: Serializer
-{
-    key_id.as_ref().serialize(s)
 }
 
 
