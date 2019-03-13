@@ -11,8 +11,8 @@ use syslog::Facility;
 use serde::de;
 use serde::{Deserialize, Deserializer};
 use toml;
+use krill_commons::util::ext_serde;
 use crate::krilld::http::ssl;
-use crate::util::ext_serde;
 
 const SERVER_NAME: &str = "Krill";
 

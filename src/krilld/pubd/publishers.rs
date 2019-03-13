@@ -1,22 +1,49 @@
 use rpki::uri;
-use crate::api::publication_data;
-use crate::api::publisher_data::{
+use krill_commons::api::publication;
+use krill_commons::api::publishers::{
+    PublisherDetails,
     PublisherHandle,
-    PublisherRequest
+    PublisherRequest,
 };
-use crate::api::repo_data::{
+use krill_commons::api::rrdp::{
     CurrentObjects,
     DeltaElements,
     VerificationError
 };
-use crate::eventsourcing::{
+use krill_commons::eventsourcing::{
     Aggregate,
     CommandDetails,
     StoredEvent,
     SentCommand
 };
-use crate::util::ext_serde;
+use krill_commons::util::ext_serde;
 
+
+//------------ Convenience Functions -----------------------------------------
+
+pub fn init(id: &PublisherHandle, token: String, base_uri: uri::Rsync) -> PublisherInit {
+    StoredEvent::new(
+        id.as_ref(),
+        0,
+        InitPublisherDetails { token, base_uri }
+    )
+}
+
+pub fn deactivate(id: &PublisherHandle) -> PublisherCommand {
+    PublisherCommand::new(id.as_ref(), None, PublisherCommandDetails::Deactivate)
+}
+
+pub fn deactivated(id: &PublisherHandle, version: u64) -> PublisherEvent {
+    PublisherEvent::new(id.as_ref(), version, PublisherEventDetails::Deactivated)
+}
+
+pub fn publish(id: &PublisherHandle, delta: publication::PublishDelta) -> PublisherCommand {
+    PublisherCommand::new(id.as_ref(), None, PublisherCommandDetails::Publish(delta))
+}
+
+pub fn published(id: &PublisherHandle, version: u64, delta: DeltaElements) -> PublisherEvent {
+    PublisherEvent::new(id.as_ref(), version, PublisherEventDetails::Published(delta))
+}
 
 //------------ PublisherInit -------------------------------------------------
 
@@ -32,22 +59,8 @@ pub struct InitPublisherDetails {
     base_uri: uri::Rsync,
 }
 
-impl PublisherInit {
-    pub fn init(
-        id: &PublisherHandle,
-        token: String,
-        base_uri: uri::Rsync,
-    ) -> Self {
-        StoredEvent::new(
-            id.as_ref(),
-            0,
-            InitPublisherDetails { token, base_uri }
-        )
-    }
-}
-
-impl From<PublisherRequest> for PublisherInit {
-    fn from(req: PublisherRequest) -> Self {
+impl InitPublisherDetails {
+    pub fn for_request(req: PublisherRequest) -> PublisherInit {
         let (handle, token, base_uri) = req.unwrap(); // (self
         let handle = PublisherHandle::from(handle);
         let details = InitPublisherDetails { token, base_uri };
@@ -66,16 +79,12 @@ pub enum PublisherEventDetails {
     Published(DeltaElements)
 }
 
-impl PublisherEvent {
-    pub fn deactivated(id: &PublisherHandle, version: u64) -> Self {
+impl PublisherEventDetails {
+    pub fn deactivated(id: &PublisherHandle, version: u64) -> PublisherEvent {
         PublisherEvent::new(id.as_ref(), version, PublisherEventDetails::Deactivated)
     }
 
-    pub fn published(
-        id: &PublisherHandle,
-        version: u64,
-        delta: DeltaElements
-    ) -> Self {
+    pub fn published(id: &PublisherHandle, version: u64, delta: DeltaElements) -> PublisherEvent {
         PublisherEvent::new(id.as_ref(), version, PublisherEventDetails::Published(delta))
     }
 }
@@ -88,19 +97,19 @@ pub type PublisherCommand = SentCommand<PublisherCommandDetails>;
 #[derive(Clone, Deserialize, Serialize)]
 pub enum PublisherCommandDetails {
     Deactivate,
-    Publish(publication_data::PublishDelta)
+    Publish(publication::PublishDelta)
 }
 
 impl CommandDetails for PublisherCommandDetails {
     type Event = PublisherEvent;
 }
 
-impl PublisherCommand {
-    pub fn deactivate(id: &PublisherHandle) -> Self {
+impl PublisherCommandDetails {
+    pub fn deactivate(id: &PublisherHandle) -> PublisherCommand {
         PublisherCommand::new(id.as_ref(), None, PublisherCommandDetails::Deactivate)
     }
 
-    pub fn publish(id: &PublisherHandle, delta: publication_data::PublishDelta) -> Self {
+    pub fn publish(id: &PublisherHandle, delta: publication::PublishDelta) -> PublisherCommand {
         PublisherCommand::new(id.as_ref(), None, PublisherCommandDetails::Publish(delta))
     }
 }
@@ -164,6 +173,12 @@ impl Publisher {
     pub fn base_uri(&self) -> &uri::Rsync {
         &self.base_uri
     }
+
+    pub fn as_api_details(&self) -> PublisherDetails {
+        PublisherDetails::new(
+            self.id.name(), self.deactivated, &self.base_uri
+        )
+    }
 }
 
 /// # Life cycle
@@ -186,7 +201,7 @@ impl Publisher {
         if self.deactivated {
             Err(PublisherError::Deactivated)
         } else {
-            let e = PublisherEvent::deactivated(&self.id, self.version);
+            let e = PublisherEventDetails::deactivated(&self.id, self.version);
             Ok(vec![e])
         }
     }
@@ -201,7 +216,7 @@ impl Publisher {
     /// the use of Bytes as the underlying structure. Still, it may be good
     /// to change this implementation in future to return a structure that
     /// takes references, and only lives long enough to compose a response.
-    pub fn list_current(&self) -> publication_data::ListReply {
+    pub fn list_current(&self) -> publication::ListReply {
         self.current_objects.to_list_reply()
     }
 
@@ -209,13 +224,13 @@ impl Publisher {
     /// provided that it's legitimate.
     fn process_delta_cmd(
         &self,
-        delta: publication_data::PublishDelta
+        delta: publication::PublishDelta
     ) -> Result<Vec<PublisherEvent>, PublisherError> {
 
         let delta = DeltaElements::from(delta);
         self.current_objects.verify_delta(&delta, &self.base_uri)?;
 
-        Ok(vec![PublisherEvent::published(&self.id, self.version, delta)])
+        Ok(vec![PublisherEventDetails::published(&self.id, self.version, delta)])
     }
 
     fn apply_delta(&mut self, delta: DeltaElements) {

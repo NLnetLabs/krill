@@ -3,10 +3,10 @@ use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 use actix_web::{HttpResponse, ResponseError};
 use actix_web::http::StatusCode;
 use serde::Serialize;
-use crate::api::publisher_data;
-use crate::api::publisher_data::PublisherHandle;
-use crate::api::publication_data;
-use crate::eventsourcing::DiskKeyStore;
+use krill_commons::api::publishers;
+use krill_commons::api::publishers::PublisherHandle;
+use krill_commons::api::publication;
+use krill_commons::eventsourcing::DiskKeyStore;
 use crate::krilld::http::server::HttpRequest;
 use crate::krilld::krillserver::{self, KrillServer};
 use crate::krilld::pubd;
@@ -69,7 +69,7 @@ pub fn publishers(req: &HttpRequest) -> HttpResponse {
         Err(e) => server_error(&Error::ServerError(e)),
         Ok(publishers) => {
             render_json(
-                publisher_data::PublisherList::build(
+                publishers::PublisherList::build(
                     &publishers,
                     "/api/v1/publishers"
                 )
@@ -82,7 +82,7 @@ pub fn publishers(req: &HttpRequest) -> HttpResponse {
 #[allow(clippy::needless_pass_by_value)]
 pub fn add_publisher(
     req: HttpRequest,
-    pbl: publisher_data::PublisherRequest
+    pbl: publishers::PublisherRequest
 ) -> HttpResponse {
     let mut server = rw_server(&req);
     match server.add_publisher(pbl) {
@@ -115,7 +115,7 @@ pub fn publisher_details(
         Ok(None) => api_not_found(),
         Ok(Some(publisher)) => {
             render_json(
-                publisher_data::PublisherDetails::from(&publisher)
+                &publisher.as_api_details()
             )
         },
         Err(e) => server_error(&Error::ServerError(e))
@@ -129,7 +129,7 @@ pub fn publisher_details(
 #[allow(clippy::needless_pass_by_value)]
 pub fn handle_delta(
     req: HttpRequest,
-    delta: publication_data::PublishDelta,
+    delta: publication::PublishDelta,
     handle: PublisherHandle
 ) -> HttpResponse {
     match rw_server(&req).handle_delta(delta, &handle) {

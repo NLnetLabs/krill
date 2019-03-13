@@ -24,7 +24,7 @@ use rpki::cert::ext::AuthorityKeyIdentifier;
 use rpki::crypto::Signature;
 use rpki::crypto::PublicKey;
 use rpki::crypto::SignatureAlgorithm;
-use crate::util::file;
+use krill_commons::util::file;
 
 
 const KEY_SIZE: u32 = 2048;
@@ -309,7 +309,7 @@ mod tests {
     use actix_web::*;
     use actix_web::server::HttpServer;
     use openssl::ssl::{SslMethod, SslAcceptor, SslFiletype};
-    use crate::util::test;
+    use krill_commons::util::test;
 
     #[test]
     fn should_create_key_and_cert_and_start_server() {

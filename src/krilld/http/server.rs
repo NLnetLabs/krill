@@ -7,19 +7,14 @@ use std::io;
 use std::fs::File;
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 use actix_web::{pred, fs, server};
-use actix_web::{App, FromRequest, HttpResponse};
-use actix_web::dev::MessageBody;
+use actix_web::{App, HttpResponse};
 use actix_web::middleware;
 use actix_web::middleware::identity::CookieIdentityPolicy;
 use actix_web::middleware::identity::IdentityService;
 use actix_web::http::{Method, StatusCode};
 use bcder::decode;
-use futures::Future;
 use openssl::ssl::{SslMethod, SslAcceptor, SslAcceptorBuilder, SslFiletype};
-use crate::api::publication_data;
-use crate::api::publisher_data;
-use crate::api::publisher_data::PublisherHandle;
-use crate::eventsourcing::DiskKeyStore;
+use krill_commons::eventsourcing::DiskKeyStore;
 use crate::krilld::auth;
 use crate::krilld::auth::{Authorizer, CheckAuthorisation};
 use crate::krilld::config::Config;
@@ -247,73 +242,6 @@ impl PubServerApp {
     }
 }
 
-
-//------------ Publisher ----------------------------------------------------
-
-/// Converts the body sent to 'add publisher' end-points to a
-/// PublisherRequestChoice, which contains either an
-/// rfc8183::PublisherRequest, or an API publisher request (no ID certs and
-/// CMS etc).
-impl<S: 'static> FromRequest<S> for publisher_data::PublisherRequest {
-    type Config = ();
-    type Result = Box<Future<Item=Self, Error=actix_web::Error>>;
-
-    fn from_request(
-        req: &actix_web::HttpRequest<S>,
-        _cfg: &Self::Config
-    ) -> Self::Result {
-        Box::new(MessageBody::new(req)
-            .from_err()
-            .and_then(|bytes| {
-                let p: publisher_data::PublisherRequest =
-                    serde_json::from_reader(bytes.as_ref())
-                    .map_err(Error::JsonError)?;
-                Ok(p)
-            })
-        )
-    }
-}
-
-
-//------------ PublisherHandle -----------------------------------------------
-
-impl<S> FromRequest<S> for PublisherHandle {
-    type Config = ();
-    type Result = Result<Self, actix_web::Error>;
-
-    fn from_request(
-        req: &actix_web::HttpRequest<S>,
-        _cfg: &Self::Config
-    ) -> Self::Result {
-        if let Some(handle) = req.match_info().get("handle") {
-            Ok(PublisherHandle::from(handle))
-        } else {
-            Err(Error::WrongPath.into())
-        }
-    }
-}
-
-
-//------------ PublishDelta --------------------------------------------------
-/// Support converting request body into PublishDelta
-impl<S: 'static> FromRequest<S> for publication_data::PublishDelta {
-    type Config = ();
-    type Result = Box<Future<Item=Self, Error=actix_web::Error>>;
-
-    fn from_request(
-        req: &actix_web::HttpRequest<S>,
-        _cfg: &Self::Config
-    ) -> Self::Result {
-        Box::new(MessageBody::new(req).limit(255 * 1024 * 1024) // up to 256MB
-            .from_err()
-            .and_then(|bytes| {
-                let delta: publication_data::PublishDelta =
-                    serde_json::from_reader(bytes.as_ref())?;
-                Ok(delta)
-            })
-        )
-    }
-}
 
 
 //------------ IntoHttpHandler -----------------------------------------------

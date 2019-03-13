@@ -3,10 +3,10 @@ use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
 use rpki::uri;
-use crate::api::publication_data;
-use crate::api::publisher_data;
-use crate::api::publisher_data::PublisherHandle;
-use crate::eventsourcing::KeyStore;
+use krill_commons::api::publication;
+use krill_commons::api::publishers;
+use krill_commons::api::publishers::PublisherHandle;
+use krill_commons::eventsourcing::KeyStore;
 use crate::krilld::auth::Authorizer;
 use crate::krilld::pubd::PubServer;
 use crate::krilld::pubd;
@@ -121,7 +121,7 @@ impl<S: KeyStore> KrillServer<S> {
     /// Adds the publishers, blows up if it already existed.
     pub fn add_publisher(
         &mut self,
-        pbl_req: publisher_data::PublisherRequest
+        pbl_req: publishers::PublisherRequest
     ) -> Result<(), Error> {
         self.pubserver.create_publisher(pbl_req).map_err(Error::PubServer)
     }
@@ -157,7 +157,7 @@ impl<S: KeyStore> KrillServer<S> {
     #[allow(clippy::needless_pass_by_value)]
     pub fn handle_delta(
         &mut self,
-        delta: publication_data::PublishDelta,
+        delta: publication::PublishDelta,
         handle: &PublisherHandle
     ) -> Result<(), Error> {
         self.pubserver.publish(handle, delta).map_err(Error::PubServer)
@@ -167,7 +167,7 @@ impl<S: KeyStore> KrillServer<S> {
     pub fn handle_list(
         &self,
         handle: &PublisherHandle
-    ) -> Result<publication_data::ListReply, Error> {
+    ) -> Result<publication::ListReply, Error> {
         self.pubserver.list(handle).map_err(Error::PubServer)
     }
 }

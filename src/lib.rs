@@ -10,6 +10,7 @@ extern crate core;
 extern crate futures;
 extern crate hex;
 extern crate openssl;
+extern crate krill_commons;
 #[macro_use] extern crate log;
 extern crate rand;
 extern crate reqwest;
@@ -23,9 +24,6 @@ extern crate toml;
 extern crate uuid;
 extern crate xml as xmlrs;
 
-pub mod api;
-pub mod eventsourcing;
 pub mod krillc;
 pub mod krilld;
 pub mod pubc;
-pub mod util;

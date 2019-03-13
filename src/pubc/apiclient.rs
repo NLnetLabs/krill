@@ -3,9 +3,9 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use clap::{App, Arg, SubCommand};
 use rpki::uri;
-use crate::api::publication_data;
+use krill_commons::api::publication;
+use krill_commons::util::httpclient;
 use crate::pubc;
-use crate::util::httpclient;
 
 
 //------------ Command -------------------------------------------------------
@@ -191,7 +191,7 @@ impl Format {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ApiResponse {
     Success,
-    List(publication_data::ListReply),
+    List(publication::ListReply),
 }
 
 impl ApiResponse {
@@ -239,14 +239,14 @@ pub fn execute(options: Options) -> Result<ApiResponse, Error> {
 }
 
 
-fn list_query(connection: &Connection) -> Result<publication_data::ListReply, Error> {
+fn list_query(connection: &Connection) -> Result<publication::ListReply, Error> {
     let uri = format!(
         "{}publication/{}",
         &connection.server_uri.to_string(),
         &connection.handle
     );
 
-    match httpclient::get_json::<publication_data::ListReply>(
+    match httpclient::get_json::<publication::ListReply>(
         &uri,
         Some(&connection.token)
     ) {

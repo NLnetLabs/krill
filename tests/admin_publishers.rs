@@ -3,13 +3,13 @@ extern crate futures;
 extern crate reqwest;
 extern crate rpki;
 extern crate krill;
+extern crate krill_commons;
 extern crate serde_json;
 extern crate tokio;
 extern crate bytes;
 
 use std::{thread, time};
 use actix::System;
-use krill::krillc::data::ReportFormat;
 use krill::krillc::options::{
     AddPublisher,
     Command,
@@ -19,8 +19,9 @@ use krill::krillc::options::{
 use krill::krillc::KrillClient;
 use krill::krilld::config::Config;
 use krill::krilld::http::server::PubServerApp;
-use krill::util::test;
-use krill::krillc::data::ApiResponse;
+use krill_commons::api::publishers::ApiResponse;
+use krill_commons::util::test;
+use krill_commons::api::publishers::ReportFormat;
 
 fn execute_krillc_command(command: Command) -> ApiResponse {
     let krillc_opts = Options::new(

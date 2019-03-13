@@ -1,10 +1,10 @@
-pub mod data;
 pub mod options;
 
 use std::io;
 use rpki::uri;
-use crate::api::publisher_data::PublisherRequest;
-use crate::krillc::data::{
+use krill_commons::api::publishers::PublisherRequest;
+use krill_commons::util::httpclient;
+use krill_commons::api::publishers::{
     ApiResponse,
     PublisherDetails,
     PublisherList,
@@ -15,7 +15,6 @@ use crate::krillc::options::{
     Command,
     PublishersCommand
 };
-use crate::util::httpclient;
 
 /// Command line tool for Krill admin tasks
 pub struct KrillClient {

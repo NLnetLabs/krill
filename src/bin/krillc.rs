@@ -1,6 +1,7 @@
 extern crate krill;
+extern crate krill_commons;
 
-use krill::krillc::data::ReportFormat;
+use krill_commons::api::publishers::ReportFormat;
 use krill::krillc::KrillClient;
 use krill::krillc::options::Options;
 

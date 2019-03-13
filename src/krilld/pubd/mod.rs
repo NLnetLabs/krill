@@ -10,29 +10,28 @@ use std::sync::{
     RwLockWriteGuard
 };
 use rpki::uri;
-use crate::api::publication_data;
-use crate::api::publisher_data::{
+use krill_commons::api::publication;
+use krill_commons::api::publishers::{
     PublisherHandle,
-    PublisherRequest
+    PublisherRequest,
+    PUBLISHER_TYPE_ID
 };
-use crate::api::repo_data::DeltaElements;
-use crate::api::publisher_data::PUBLISHER_TYPE_ID;
+use krill_commons::api::rrdp::DeltaElements;
+use krill_commons::eventsourcing::{
+    Aggregate,
+    Command,
+    Event,
+    KeyStore,
+    KeyStoreError,
+};
 use crate::krilld::pubd::repo::{
     RetentionTime,
-    RrdpCommand,
     RrdpEvent,
     RrdpInit,
     RrdpServer,
     RrdpServerError,
     RsyncdStore,
     rrdp_id
-};
-use crate::eventsourcing::{
-    Aggregate,
-    Command,
-    Event,
-    KeyStore,
-    KeyStoreError,
 };
 use crate::krilld::pubd::publishers::{
     Publisher,
@@ -41,8 +40,12 @@ use crate::krilld::pubd::publishers::{
     PublisherEvent,
     PublisherEventDetails,
     PublisherInit,
+    InitPublisherDetails
 };
 use crate::krilld::pubd::repo::RRDP_TYPE_ID;
+use crate::krilld::pubd::repo::RrdpInitDetails;
+use crate::krilld::pubd::publishers::PublisherCommandDetails;
+use crate::krilld::pubd::repo::RrdpCommandDetails;
 
 
 //------------ PubServer -----------------------------------------------------
@@ -101,7 +104,7 @@ impl<S: KeyStore> PubServer<S> {
 
             Some(init) => init,
             None => {
-                let init = RrdpInit::init_new(base_uri, repo_dir);
+                let init = RrdpInitDetails::init_new(base_uri, repo_dir);
 
                 store.store(&id, &key, &init)
                     .map_err(Error::KeyStoreError)?;
@@ -249,16 +252,11 @@ impl<S: KeyStore> PubServer<S> {
         &self,
         req: PublisherRequest
     ) -> Result<(), Error> {
-        let (handle, token, uri) = req.unwrap();
-        let handle = PublisherHandle::from(handle);
+        let handle = PublisherHandle::from(req.handle().as_str());
         self.verify_handle(&handle)?;
-        self.verify_base_uri(&uri)?;
+        self.verify_base_uri(req.base_uri())?;
 
-        let init = PublisherInit::init(
-            &handle,
-            token,
-            uri,
-        );
+        let init = InitPublisherDetails::for_request(req);
 
         self.store_save_init(&init)?;
 
@@ -283,7 +281,7 @@ impl<S: KeyStore> PubServer<S> {
         &self,
         handle: &PublisherHandle
     ) -> Result<(), Error> {
-        let cmd = PublisherCommand::deactivate(handle);
+        let cmd = PublisherCommandDetails::deactivate(handle);
         self.command_publisher(cmd)?;
         Ok(())
     }
@@ -333,13 +331,13 @@ impl<S: KeyStore> PubServer<S> {
     pub fn publish(
         &self,
         handle: &PublisherHandle,
-        delta: publication_data::PublishDelta
+        delta: publication::PublishDelta
     ) -> Result<(), Error> {
 
         match self.load_publisher(handle)? {
             None => Err(Error::UnknownPublisher(handle.to_string())),
             Some(publisher) => {
-                let cmd = PublisherCommand::publish(handle, delta);
+                let cmd = PublisherCommandDetails::publish(handle, delta);
 
                 let publisher_events = publisher.process_command(cmd)?;
 
@@ -350,14 +348,14 @@ impl<S: KeyStore> PubServer<S> {
 
                         self.rsyncd_store.publish(&delta)?;
 
-                        let add_cmd = RrdpCommand::add_delta(delta);
+                        let add_cmd = RrdpCommandDetails::add_delta(delta);
                         let rrdp_add_delta_events = rrdp.process_command(add_cmd)?;
 
                         for e in &rrdp_add_delta_events {
                             rrdp.apply(e.clone());
                         }
 
-                        let publish_cmd = RrdpCommand::publish();
+                        let publish_cmd = RrdpCommandDetails::publish();
                         let rrdp_publish_events = rrdp.process_command(publish_cmd)?;
 
                         for e in &rrdp_publish_events {
@@ -365,7 +363,7 @@ impl<S: KeyStore> PubServer<S> {
                         }
 
                         let retention = RetentionTime::from_secs(0);
-                        let clean_cmd = RrdpCommand::clean_up(retention);
+                        let clean_cmd = RrdpCommandDetails::clean_up(retention);
                         let rrdp_clean_events = rrdp.process_command(clean_cmd)?;
 
                         for e in rrdp_add_delta_events {
@@ -395,7 +393,7 @@ impl<S: KeyStore> PubServer<S> {
     pub fn list(
         &self,
         handle: &PublisherHandle
-    ) -> Result<publication_data::ListReply, Error> {
+    ) -> Result<publication::ListReply, Error> {
         match self.get_publisher(handle)? {
             Some(publisher) => Ok(publisher.list_current()),
             None => Err(Error::UnknownPublisher(handle.to_string()))
@@ -475,11 +473,11 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
     use bytes::Bytes;
-    use crate::api::publication_data::PublishDeltaBuilder;
-    use crate::eventsourcing::DiskKeyStore;
-    use crate::util::file::CurrentFile;
-    use crate::util::test;
-    use api::repo_data::VerificationError;
+    use krill_commons::api::publication::PublishDeltaBuilder;
+    use krill_commons::api::rrdp::VerificationError;
+    use krill_commons::eventsourcing::DiskKeyStore;
+    use krill_commons::util::file::CurrentFile;
+    use krill_commons::util::test;
 
     fn server_base_uri() -> uri::Rsync {
         test::rsync_uri("rsync://localhost/repo/")
@@ -620,7 +618,7 @@ mod tests {
             assert_eq!(list, vec![handle.clone()]);
 
             // deactivate
-            let deactivate = PublisherCommand::deactivate(&handle);
+            let deactivate = PublisherCommandDetails::deactivate(&handle);
             server.command_publisher(deactivate).unwrap();
 
             // expect that it is now inactive
@@ -654,9 +652,9 @@ mod tests {
         test::test_with_tmp_dir(|d| {
             // get the file out of a list_reply
             fn find_in_reply<'a>(
-                reply: &'a publication_data::ListReply,
+                reply: &'a publication::ListReply,
                 uri: &uri::Rsync
-            ) -> Option<&'a publication_data::ListElement> {
+            ) -> Option<&'a publication::ListElement> {
                 reply.elements().iter().find(|e| e.uri() == uri)
             }
 
@@ -789,7 +787,7 @@ mod tests {
             let mut builder = PublishDeltaBuilder::new();
             builder.add_withdraw(file2.as_withdraw());
             let delta = builder.finish();
-            let cmd = PublisherCommand::publish(&handle, delta);
+            let cmd = PublisherCommandDetails::publish(&handle, delta);
 
             match server.command_publisher(cmd) {
                 Err(

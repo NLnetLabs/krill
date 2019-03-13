@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use clap::{App, Arg, SubCommand};
 use rpki::uri;
-use crate::krillc::data::{
+use krill_commons::api::publishers::{
     ReportFormat,
     ReportError
 };

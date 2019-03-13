@@ -3,6 +3,7 @@ extern crate futures;
 extern crate reqwest;
 extern crate rpki;
 extern crate krill;
+extern crate krill_commons;
 extern crate serde_json;
 extern crate tokio;
 extern crate bytes;
@@ -16,11 +17,11 @@ use krill::krillc::options::{
     Command,
     Options
 };
-use krill::krillc::data::{
+use krill_commons::api::publishers::{
     ApiResponse,
     ReportFormat
 };
-use krill::util::test;
+use krill_commons::util::test;
 
 /// Tests that the server can be started and a health check can be done
 /// through the CLI

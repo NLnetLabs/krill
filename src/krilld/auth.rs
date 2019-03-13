@@ -4,8 +4,8 @@ use actix_web::{Form, HttpResponse, HttpRequest, Result};
 use actix_web::http::HeaderMap;
 use actix_web::middleware::{Middleware, Started};
 use actix_web::middleware::identity::RequestIdentity;
+use krill_commons::eventsourcing::DiskKeyStore;
 use crate::krilld::krillserver::KrillServer;
-use crate::eventsourcing::DiskKeyStore;
 
 
 const ADMIN_API_PATH: &str = "/api/";
