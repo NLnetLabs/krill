@@ -6,7 +6,7 @@
           <div class="text item">
             <el-form :inline="true">
               <el-form-item :label="$t('login.password')">
-                <el-input :placeholder="$t('login.placeholder')" v-model="token" clearable></el-input>
+                <el-input type="password" :placeholder="$t('login.placeholder')" v-model="token" clearable></el-input>
               </el-form-item>
               <el-form-item>
                 <el-button type="primary" @click="login">{{ $t("login.signin") }}</el-button>
