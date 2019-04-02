@@ -3,46 +3,34 @@ pub mod repo;
 
 use std::io;
 use std::path::PathBuf;
-use std::sync::{
-    Arc,
-    RwLock,
-    RwLockReadGuard,
-    RwLockWriteGuard
-};
+use std::sync::Arc;
 use rpki::uri;
 use krill_commons::api::publication;
 use krill_commons::api::publishers::{
     PublisherHandle,
     PublisherRequest,
-    PUBLISHER_TYPE_ID
 };
 use krill_commons::api::rrdp::DeltaElements;
 use krill_commons::eventsourcing::{
     Aggregate,
+    AggregateStore,
+    AggregateStoreError,
     Command,
-    Event,
-    KeyStore,
-    KeyStoreError,
+    DiskAggregateStore,
 };
 use crate::krilld::pubd::repo::{
     RetentionTime,
-    RrdpEvent,
-    RrdpInit,
     RrdpServer,
     RrdpServerError,
     RsyncdStore,
-    rrdp_id
 };
 use crate::krilld::pubd::publishers::{
     Publisher,
     PublisherCommand,
     PublisherError,
-    PublisherEvent,
     PublisherEventDetails,
-    PublisherInit,
     InitPublisherDetails
 };
-use crate::krilld::pubd::repo::RRDP_TYPE_ID;
 use crate::krilld::pubd::repo::RrdpInitDetails;
 use crate::krilld::pubd::publishers::PublisherCommandDetails;
 use crate::krilld::pubd::repo::RrdpCommandDetails;
@@ -53,280 +41,50 @@ use crate::krilld::pubd::repo::RrdpCommandDetails;
 /// This server manages all publishers. I.e. finds them, adds them, dispatches
 /// commands to them, stores them.. also publishes the combined snapshots and
 /// deltas, and manages the files on disk for rsync.
-pub struct PubServer<S: KeyStore> {
-    rrdp_server: RwLock<RrdpServer>,
+pub struct PubServer {
+    rrdp_store: Arc<AggregateStore<RrdpServer>>,
     rsyncd_store: RsyncdStore,
-    store: S,
-    base_uri: uri::Rsync // jail for the publishers
+    store: Arc<AggregateStore<Publisher>>,
+    base_rsync_uri: uri::Rsync // jail for the publishers
 }
 
-impl<S: KeyStore> PubServer<S> {
+impl PubServer {
     pub fn build(
-        base_uri: uri::Rsync,
+        base_rsync_uri: uri::Rsync,
         base_http_uri: uri::Http, // for the RRDP files
         repo_dir: PathBuf, // for the RRDP and rsync files
-        store: S
+        work_dir: &PathBuf // for the aggregate stores
     ) -> Result<Self, Error> {
+        let rrdp_store = Arc::new(DiskAggregateStore::<RrdpServer>::new(work_dir, "repo-server")?);
+
         let rsyncd_store = RsyncdStore::build(&repo_dir)?;
 
-        let rrdp_server = Self::get_or_init_rrpd_server(
-            &store,
-            base_http_uri,
-            repo_dir
-        )?;
+        if ! rrdp_store.has(&repo::id()) {
+            let init = RrdpInitDetails::init_new(base_http_uri, repo_dir);
+            rrdp_store.add(&repo::id(), init)?;
+        }
+
+        let store = Arc::new(DiskAggregateStore::<Publisher>::new(work_dir, "publishers")?);
 
         let pubserver = PubServer {
-            rrdp_server,
+            rrdp_store,
             rsyncd_store,
             store,
-            base_uri
+            base_rsync_uri
         };
-
-        // Warm up the rrdp server
-        let _ = pubserver.rrdp_updated_writer()?;
 
         Ok(pubserver)
-    }
-
-    /// Read an existing RRDP server, if that fails initialise a new one, and
-    /// if that also fails blow up miserably!
-    fn get_or_init_rrpd_server(
-        store: &S,
-        base_uri: uri::Http,
-        repo_dir: PathBuf
-    ) -> Result<RwLock<RrdpServer>, Error> {
-        let id = rrdp_id();
-        let key = S::key_for_event(0);
-
-
-        let init = match store.get::<RrdpInit>(&id, &key)
-            .map_err(Error::KeyStoreError)? {
-
-            Some(init) => init,
-            None => {
-                let init = RrdpInitDetails::init_new(base_uri, repo_dir);
-
-                store.store(&id, &key, &init)
-                    .map_err(Error::KeyStoreError)?;
-
-                init
-            }
-        };
-
-        let rrdp = RrdpServer::init(init)?;
-
-        Ok(RwLock::new(rrdp)) // Note server still needs to update.
-    }
-}
-
-/// # Managing the cache, and reading/writing events.
-///
-impl<S: KeyStore> PubServer<S> {
-
-    fn load_publisher(
-        &self,
-        handle: &PublisherHandle
-    ) -> Result<Option<Publisher>, Error> {
-        if let Some(init) = self.store.get_event::<PublisherInit> (
-            handle.as_ref(),
-            0
-        )? {
-            let mut publisher = Publisher::init(init)?;
-            while let Some(event) = self.store.get_event::<PublisherEvent>(
-                handle.as_ref(),
-                publisher.version()
-            )? {
-                publisher.apply(event);
-            }
-            Ok(Some(publisher))
-        } else {
-            Ok(None)
-        }
-    }
-
-    fn rrdp_reader(&self) -> RwLockReadGuard<RrdpServer> {
-        self.rrdp_server.read().unwrap()
-    }
-
-    fn rrdp_updated_writer(
-        &self
-    ) -> Result<RwLockWriteGuard<RrdpServer>, Error> {
-        let mut rrdp_writer = self.rrdp_server.write().unwrap();
-        while let Some(event) = self.store_get_rrdp_event(rrdp_writer.version())? {
-            rrdp_writer.apply(event);
-        }
-        Ok(rrdp_writer)
-    }
-
-    fn store_get_rrdp_event(
-        &self,
-        version: u64
-    ) -> Result<Option<RrdpEvent>, Error> {
-        let key = S::key_for_event(version);
-        let id = rrdp_id();
-        self.store.get::<RrdpEvent>(&id, &key).map_err(Error::KeyStoreError)
-    }
-
-    fn store_save_rrdp_event(
-        &self,
-        event: &RrdpEvent
-    ) -> Result<(), Error> {
-        let key = S::key_for_event(event.version());
-        self.store.store(event.id(), &key, event).map_err(Error::KeyStoreError)?;
-        Ok(())
-    }
-
-    fn store_save_init(
-        &self,
-        event: &PublisherInit
-    ) -> Result<(), Error> {
-        let key = S::key_for_event(event.version());
-        self.store.store(event.id(), &key, event).map_err(Error::KeyStoreError)?;
-        Ok(())
-    }
-
-    fn store_save_event(
-        &self,
-        event: &PublisherEvent
-    ) -> Result<(), Error> {
-        let key = S::key_for_event(event.version());
-        self.store.store(event.id(), &key, event).map_err(Error::KeyStoreError)?;
-        Ok(())
-    }
-}
-
-/// # Add / remove / list publishers
-impl<S: KeyStore> PubServer<S> {
-
-    fn has_publisher(&self, handle: &PublisherHandle) -> Result<bool, Error> {
-        Ok(self.get_publisher(handle)?.is_some())
-    }
-
-    /// Gets an existing publisher. Note, will also return de-activated
-    /// publishers when asked.
-    pub fn get_publisher(
-        &self,
-        handle: &PublisherHandle
-    ) -> Result<Option<Arc<Publisher>>, Error> {
-        match self.load_publisher(handle)? {
-            None => Ok(None),
-            Some(publisher) => Ok(Some(Arc::new(publisher)))
-        }
-    }
-
-    fn verify_handle(&self, handle: &PublisherHandle) -> Result<(), Error> {
-        let name = handle.name();
-
-        if name == RRDP_TYPE_ID {
-            return Err(Error::ReservedName(handle.to_string()))
-        }
-
-        if ! name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
-            return Err(Error::InvalidHandle(handle.to_string()))
-        }
-
-        if self.has_publisher(handle)? {
-            return Err(Error::DuplicatePublisher(handle.to_string()))
-        }
-
-        Ok(())
-    }
-
-    fn verify_base_uri(&self, base_uri: &uri::Rsync) -> Result<(), Error> {
-        if self.base_uri.is_parent_of(base_uri) && base_uri.ends_with("/") {
-            // Note it's allowed for multiple publishers to share the same
-            // base_uri, and for publishers to have a base_uri under another.
-            // Maybe we will want to change this in future, but for the moment
-            // this freedom is given to the admin. There are use cases here,
-            // such as hierarchical rsync, and possibly migrations that appear
-            // as standard key rolls to an RP.
-            Ok(())
-        } else {
-            Err(Error::InvalidBaseUri)
-        }
-    }
-
-    /// Adds a publisher. Will complain if a publisher already exists for this
-    /// handle. Will also verify that the base_uri is allowed.
-    pub fn create_publisher(
-        &self,
-        req: PublisherRequest
-    ) -> Result<(), Error> {
-        let handle = PublisherHandle::from(req.handle().as_str());
-        self.verify_handle(&handle)?;
-        self.verify_base_uri(req.base_uri())?;
-
-        let init = InitPublisherDetails::for_request(req);
-
-        self.store_save_init(&init)?;
-
-        Ok(())
-    }
-
-    /// Returns a list of publisher handles
-    pub fn list_publishers(&self) -> Result<Vec<PublisherHandle>, Error> {
-        let mut res = vec![];
-        for agg_id in self.store.aggregates(PUBLISHER_TYPE_ID) {
-            let handle = PublisherHandle::from(&agg_id);
-            res.push(handle)
-        }
-        Ok(res)
-    }
-
-    /// Deactivates a publisher. For now this is irreversible, but we may add
-    /// re-activation in future. Reason is that we never forget the history
-    /// of the old publisher, and if handles are re-used by different
-    /// entities that would get confusing.
-    pub fn deactivate_publisher(
-        &self,
-        handle: &PublisherHandle
-    ) -> Result<(), Error> {
-        let cmd = PublisherCommandDetails::deactivate(handle);
-        self.command_publisher(cmd)?;
-        Ok(())
-    }
-
-    /// Apply a command to a publisher. If this was a successful publication
-    /// command, then return the delta so that it can be published by the
-    /// RRDP server.
-    fn command_publisher(
-        &self,
-        command: PublisherCommand
-    ) -> Result<Option<DeltaElements>, Error> {
-        let handle = PublisherHandle::from(command.id());
-
-        match self.load_publisher(&handle)? {
-            None => Err(Error::UnknownPublisher(handle.to_string())),
-            Some(mut pbl) => {
-                let mut res = None;
-
-                if let Some(version) = command.version() {
-                    if version != pbl.version() {
-                        return Err(
-                            Error::ConcurrentModification(version, pbl.version())
-                        )
-                    }
-                }
-
-                for event in pbl.process_command(command)? {
-                    if let PublisherEventDetails::Published(delta) = event.details() {
-                        res = Some(delta.clone())
-                    }
-
-                    self.store_save_event(&event)?;
-                    pbl.apply(event);
-                }
-
-                Ok(res)
-            }
-        }
     }
 }
 
 
 /// # Publication Protocol support
 ///
-impl<S: KeyStore> PubServer<S> {
+impl PubServer {
+
+    fn rrdp_server(&self) -> Result<Arc<RrdpServer>, Error> {
+        self.rrdp_store.get_latest(&repo::id()).map_err(Error::AggregateStoreError)
+    }
 
     pub fn publish(
         &self,
@@ -334,60 +92,36 @@ impl<S: KeyStore> PubServer<S> {
         delta: publication::PublishDelta
     ) -> Result<(), Error> {
 
-        match self.load_publisher(handle)? {
-            None => Err(Error::UnknownPublisher(handle.to_string())),
-            Some(publisher) => {
-                let cmd = PublisherCommandDetails::publish(handle, delta);
+        // Publish the delta for the publisher
+        let cmd = PublisherCommandDetails::publish(handle, delta);
+        if let Some(delta) = self.command_publisher(cmd)? {
+            // Apparently the delta was valid, and for a known publisher
 
-                let publisher_events = publisher.process_command(cmd)?;
+            let repo_id = repo::id();
 
-                for event in &publisher_events {
-                    if let PublisherEventDetails::Published(delta) = event.details() {
-                        let mut rrdp = self.rrdp_updated_writer()?;
-                        let delta = delta.clone();
+            // Update rsync repo on disk
+            let delta = delta.clone();
+            self.rsyncd_store.publish(&delta)?;
 
-                        self.rsyncd_store.publish(&delta)?;
+            // Add the delta to the RRDP server
+            let rrdp = self.rrdp_server()?;
+            let add_cmd = RrdpCommandDetails::add_delta(delta);
+            let rrdp_add_delta_events = rrdp.process_command(add_cmd)?;
+            let rrdp = self.rrdp_store.update(&repo_id, rrdp, rrdp_add_delta_events)?;
 
-                        let add_cmd = RrdpCommandDetails::add_delta(delta);
-                        let rrdp_add_delta_events = rrdp.process_command(add_cmd)?;
+            // Trigger publication of the RRDP files
+            let publish_cmd = RrdpCommandDetails::publish();
+            let rrdp_publish_events = rrdp.process_command(publish_cmd)?;
+            let rrdp = self.rrdp_store.update(&repo_id, rrdp, rrdp_publish_events)?;
 
-                        for e in &rrdp_add_delta_events {
-                            rrdp.apply(e.clone());
-                        }
-
-                        let publish_cmd = RrdpCommandDetails::publish();
-                        let rrdp_publish_events = rrdp.process_command(publish_cmd)?;
-
-                        for e in &rrdp_publish_events {
-                            rrdp.apply(e.clone())
-                        }
-
-                        let retention = RetentionTime::from_secs(0);
-                        let clean_cmd = RrdpCommandDetails::clean_up(retention);
-                        let rrdp_clean_events = rrdp.process_command(clean_cmd)?;
-
-                        for e in rrdp_add_delta_events {
-                            self.store_save_rrdp_event(&e)?;
-                        }
-
-                        for e in rrdp_publish_events {
-                            self.store_save_rrdp_event(&e)?;
-                        }
-
-                        for e in rrdp_clean_events {
-                            self.store_save_rrdp_event(&e)?;
-                            rrdp.apply(e);
-                        }
-                    }
-                }
-
-                for e in publisher_events {
-                    self.store_save_event(&e)?;
-                }
-
-                Ok(())
-            }
+            // Clean up old files
+            let retention = RetentionTime::from_secs(0);
+            let clean_cmd = RrdpCommandDetails::clean_up(retention);
+            let rrdp_clean_events = rrdp.process_command(clean_cmd)?;
+            self.rrdp_store.update(&repo_id, rrdp, rrdp_clean_events)?;
         }
+
+        Ok(())
     }
 
     pub fn list(
@@ -404,12 +138,123 @@ impl<S: KeyStore> PubServer<S> {
 
 /// # Publishing
 ///
-impl<S: KeyStore> PubServer<S> {
-    pub fn rrdp_notification(&self) -> uri::Http {
-        self.rrdp_reader().notification_uri()
-    }
-}
+impl PubServer {
 
+    fn verify_handle(&self, handle: &PublisherHandle) -> Result<(), Error> {
+        let name = handle.name();
+
+        if ! name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+            return Err(Error::InvalidHandle(handle.to_string()))
+        }
+
+        if self.store.has(handle.as_ref()) {
+            return Err(Error::DuplicatePublisher(handle.to_string()))
+        }
+
+        Ok(())
+    }
+
+    fn verify_base_uri(&self, base_uri: &uri::Rsync) -> Result<(), Error> {
+        if self.base_rsync_uri.is_parent_of(base_uri) && base_uri.ends_with("/") {
+            // Note it's allowed for multiple publishers to share the same
+            // base_uri, and for publishers to have a base_uri under another.
+            // Maybe we will want to change this in future, but for the moment
+            // this freedom is given to the admin. There are use cases here,
+            // such as hierarchical rsync, and possibly migrations that appear
+            // as standard key rolls to an RP.
+            Ok(())
+        } else {
+            Err(Error::InvalidBaseUri)
+        }
+    }
+
+    pub fn get_publisher(
+        &self,
+        handle: &PublisherHandle
+    ) -> Result<Option<Arc<Publisher>>, Error> {
+        if self.store.has(handle.as_ref()) {
+            self.store.get_latest(handle.as_ref())
+                .map(Some)
+                .map_err(Error::AggregateStoreError)
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Adds a publisher. Will complain if a publisher already exists for this
+    /// handle. Will also verify that the base_uri is allowed.
+    pub fn create_publisher(
+        &self,
+        req: PublisherRequest
+    ) -> Result<(), Error> {
+        let handle = PublisherHandle::from(req.handle().as_str());
+        self.verify_handle(&handle)?;
+        self.verify_base_uri(req.base_uri())?;
+
+        let init = InitPublisherDetails::for_request(req);
+
+        self.store.add(handle.as_ref(), init)?;
+
+        Ok(())
+    }
+
+    /// Returns a list of publisher handles
+    pub fn list_publishers(&self) -> Vec<PublisherHandle> {
+        self.store.list().iter().map(PublisherHandle::from).collect()
+    }
+
+    /// Deactivates a publisher. For now this is irreversible, but we may add
+    /// re-activation in future. Reason is that we never forget the history
+    /// of the old publisher, and if handles are re-used by different
+    /// entities that would get confusing.
+    pub fn deactivate_publisher(
+        &self,
+        handle: &PublisherHandle
+    ) -> Result<(), Error> {
+        let cmd = PublisherCommandDetails::deactivate(handle);
+        self.command_publisher(cmd)?;
+        Ok(())
+    }
+
+
+    /// Apply a command to a publisher. If this was a successful publication
+    /// command, then return the delta so that it can be published by the
+    /// RRDP server.
+    fn command_publisher(
+        &self,
+        command: PublisherCommand
+    ) -> Result<Option<DeltaElements>, Error> {
+        let handle = PublisherHandle::from(command.id());
+
+        match self.get_publisher(&handle)? {
+            None => Err(Error::UnknownPublisher(handle.to_string())),
+            Some(pbl) => {
+                let mut res = None;
+
+                if let Some(version) = command.version() {
+                    if version != pbl.version() {
+                        return Err(
+                            Error::ConcurrentModification(version, pbl.version())
+                        )
+                    }
+                }
+
+                let events = pbl.process_command(command)?;
+
+                for event in &events {
+                    if let PublisherEventDetails::Published(delta) = event.details() {
+                        res = Some(delta.clone())
+                    }
+                }
+
+                self.store.update(handle.as_ref(), pbl, events)?;
+
+                Ok(res)
+            }
+        }
+    }
+
+}
 
 //------------ Error ---------------------------------------------------------
 
@@ -420,9 +265,6 @@ pub enum Error {
 
     #[display(fmt = "The publisher handle may only contain a-ZA-Z0-9 and _. You sent: {}", _0)]
     InvalidHandle(String),
-
-    #[display(fmt = "The publisher handle may not use the reserved name: {}", _0)]
-    ReservedName(String),
 
     #[display(fmt = "Duplicate publisher with name: {} (note: might be de-activated).", _0)]
     DuplicatePublisher(String),
@@ -443,7 +285,7 @@ pub enum Error {
     RrdpServerError(RrdpServerError),
 
     #[display(fmt = "{}", _0)]
-    KeyStoreError(KeyStoreError),
+    AggregateStoreError(AggregateStoreError),
 }
 
 impl From<io::Error> for Error {
@@ -458,8 +300,8 @@ impl From<RrdpServerError> for Error {
     fn from(e: RrdpServerError) -> Self { Error::RrdpServerError(e) }
 }
 
-impl From<KeyStoreError> for Error {
-    fn from(e: KeyStoreError) -> Self { Error::KeyStoreError(e) }
+impl From<AggregateStoreError> for Error {
+    fn from(e: AggregateStoreError) -> Self { Error::AggregateStoreError(e) }
 }
 
 impl std::error::Error for Error {}
@@ -475,7 +317,6 @@ mod tests {
     use bytes::Bytes;
     use krill_commons::api::publication::PublishDeltaBuilder;
     use krill_commons::api::rrdp::VerificationError;
-    use krill_commons::eventsourcing::DiskKeyStore;
     use krill_commons::util::file::CurrentFile;
     use krill_commons::util::test;
 
@@ -497,11 +338,7 @@ mod tests {
         PublisherRequest::new(handle.to_string(), token.to_string(), base_uri)
     }
 
-    fn make_server(work_dir: &PathBuf) -> PubServer<DiskKeyStore> {
-        let mut store_dir = work_dir.clone();
-        store_dir.push("pubserver");
-        let store = DiskKeyStore::new(store_dir);
-
+    fn make_server(work_dir: &PathBuf) -> PubServer {
         let mut base_dir = work_dir.clone();
         base_dir.push("repo");
 
@@ -509,7 +346,7 @@ mod tests {
             server_base_uri(),
             server_base_http_uri(),
             base_dir,
-            store
+            work_dir
         ).unwrap()
     }
 
@@ -614,7 +451,7 @@ mod tests {
             server.create_publisher(publisher_req).unwrap();
 
             // expect to see it in the list
-            let list = server.list_publishers().unwrap();
+            let list = server.list_publishers();
             assert_eq!(list, vec![handle.clone()]);
 
             // deactivate

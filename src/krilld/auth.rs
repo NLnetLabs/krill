@@ -4,7 +4,6 @@ use actix_web::{Form, HttpResponse, HttpRequest, Result};
 use actix_web::http::HeaderMap;
 use actix_web::middleware::{Middleware, Started};
 use actix_web::middleware::identity::RequestIdentity;
-use krill_commons::eventsourcing::DiskKeyStore;
 use crate::krilld::krillserver::KrillServer;
 
 
@@ -13,16 +12,16 @@ const PUBLICATION_API_PATH: &str = "/publication/";
 
 pub struct CheckAuthorisation;
 
-impl Middleware<Arc<RwLock<KrillServer<DiskKeyStore>>>> for CheckAuthorisation {
+impl Middleware<Arc<RwLock<KrillServer>>> for CheckAuthorisation {
     fn start(
         &self,
-        req: &HttpRequest<Arc<RwLock<KrillServer<DiskKeyStore>>>>
+        req: &HttpRequest<Arc<RwLock<KrillServer>>>
     ) -> Result<Started> {
         if req.identity() == Some("admin".to_string()) {
             return Ok(Started::Done)
         }
 
-        let server: RwLockReadGuard<KrillServer<DiskKeyStore>> = req.state().read().unwrap();
+        let server: RwLockReadGuard<KrillServer> = req.state().read().unwrap();
 
         let mut allowed = true;
 
@@ -104,10 +103,10 @@ pub struct Login {
 
 #[allow(clippy::needless_pass_by_value)]
 pub fn login_page(
-    req: HttpRequest<Arc<RwLock<KrillServer<DiskKeyStore>>>>,
+    req: HttpRequest<Arc<RwLock<KrillServer>>>,
     form: Form<Login>
 ) -> HttpResponse {
-    let server: RwLockReadGuard<KrillServer<DiskKeyStore>> = req.state().read().unwrap();
+    let server: RwLockReadGuard<KrillServer> = req.state().read().unwrap();
     if server.is_api_allowed(Some(form.token.clone())) {
         req.remember("admin".to_string());
         HttpResponse::Found().header("location", "/api/v1/publishers").finish()

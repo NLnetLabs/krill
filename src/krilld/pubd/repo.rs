@@ -29,13 +29,10 @@ use krill_commons::util::{
 const RRDP_FOLDER: &str = "rrdp";
 const RSYNC_FOLDER: &str = "rsync";
 
-pub const RRDP_TYPE_ID: &str = "rrdp_server";
-
-// Todo: make a const fn once that is stable.
-pub fn rrdp_id() -> AggregateId {
-    AggregateId::new(RRDP_TYPE_ID, RRDP_TYPE_ID)
+pub const ID: &str = "rrdp_server";
+pub fn id() -> AggregateId {
+    AggregateId::from(ID)
 }
-
 
 
 //------------ RrdpInit ------------------------------------------------------
@@ -62,7 +59,7 @@ impl RrdpInitDetails {
         let session = format!("{}", rnd);
 
         StoredEvent::new(
-            &rrdp_id(),
+            &id(),
             0,
             RrdpInitDetails { session, base_uri, repo_dir }
         )
@@ -125,15 +122,15 @@ impl CommandDetails for RrdpCommandDetails {
 
 impl RrdpCommandDetails {
     pub fn add_delta(delta: DeltaElements) -> RrdpCommand {
-        SentCommand::new(&rrdp_id(), None, RrdpCommandDetails::AddDelta(delta))
+        SentCommand::new(&id(), None, RrdpCommandDetails::AddDelta(delta))
     }
 
     pub fn publish() -> RrdpCommand {
-        SentCommand::new(&rrdp_id(), None, RrdpCommandDetails::Publish)
+        SentCommand::new(&id(), None, RrdpCommandDetails::Publish)
     }
 
     pub fn clean_up(retention: RetentionTime) -> RrdpCommand {
-        SentCommand::new(&rrdp_id(), None, RrdpCommandDetails::Cleanup(retention))
+        SentCommand::new(&id(), None, RrdpCommandDetails::Cleanup(retention))
     }
 }
 
@@ -217,7 +214,7 @@ impl RrdpServer {
         let session = self.session.clone();
         let delta = Delta::new(session, next, elements);
 
-        Ok(vec![RrdpEventDetails::added_delta(&rrdp_id(), self.version, delta)])
+        Ok(vec![RrdpEventDetails::added_delta(&id(), self.version, delta)])
     }
 
     /// Publishes the latest notification, snapshot and delta file to disk.
@@ -256,7 +253,7 @@ impl RrdpServer {
 
         Ok(vec![
             RrdpEventDetails::updated_notification(
-                &rrdp_id(),
+                &id(),
                 self.version,
                 update
             )
@@ -275,7 +272,7 @@ impl RrdpServer {
 
         Ok(vec![
             RrdpEventDetails::cleaned_up(
-                &rrdp_id(),
+                &id(),
                 self.version,
                 cut_off
             )

@@ -14,7 +14,6 @@ use actix_web::middleware::identity::IdentityService;
 use actix_web::http::{Method, StatusCode};
 use bcder::decode;
 use openssl::ssl::{SslMethod, SslAcceptor, SslAcceptorBuilder, SslFiletype};
-use krill_commons::eventsourcing::DiskKeyStore;
 use crate::krilld::auth;
 use crate::krilld::auth::{Authorizer, CheckAuthorisation};
 use crate::krilld::config::Config;
@@ -29,13 +28,13 @@ const LOGIN: &[u8] = include_bytes!("../../../ui/dev/html/login.html");
 
 //------------ PubServerApp --------------------------------------------------
 
-pub struct PubServerApp(App<Arc<RwLock<KrillServer<DiskKeyStore>>>>);
+pub struct PubServerApp(App<Arc<RwLock<KrillServer>>>);
 
 
 /// # Set up methods
 ///
 impl PubServerApp {
-    pub fn new(server: Arc<RwLock<KrillServer<DiskKeyStore>>>) -> Self {
+    pub fn new(server: Arc<RwLock<KrillServer>>) -> Self {
         let mut app = App::with_state(server)
             .middleware(middleware::Logger::default())
             .middleware(IdentityService::new(
@@ -98,10 +97,8 @@ impl PubServerApp {
 
     pub fn create_server(
         config: &Config
-    ) -> Result<Arc<RwLock<KrillServer<DiskKeyStore>>>, Error> {
+    ) -> Result<Arc<RwLock<KrillServer>>, Error> {
         let authorizer = Authorizer::new(&config.auth_token);
-
-        let pubserver_store = DiskKeyStore::under_work_dir(&config.data_dir, "pubsrv")?;
 
         let pub_server = KrillServer::build(
             &config.data_dir,
@@ -109,7 +106,6 @@ impl PubServerApp {
             config.service_uri(),
             &config.rrdp_base_uri,
             authorizer,
-            pubserver_store
         )?;
 
         Ok(Arc::new(RwLock::new(pub_server)))
@@ -217,8 +213,7 @@ impl PubServerApp {
     // https://github.com/actix/actix-website/blob/master/content/docs/static-files.md
     // https://www.keycdn.com/blog/http-cache-headers
     fn serve_rrdp_files(req: &HttpRequest) -> HttpResponse {
-        let server: RwLockReadGuard<KrillServer<DiskKeyStore>> = req.state().read()
-            .unwrap();
+        let server: RwLockReadGuard<KrillServer> = req.state().read().unwrap();
 
         match req.match_info().get("path") {
             Some(path) => {
@@ -247,7 +242,7 @@ impl PubServerApp {
 //------------ IntoHttpHandler -----------------------------------------------
 
 impl server::IntoHttpHandler for PubServerApp {
-    type Handler = <App<Arc<RwLock<KrillServer<DiskKeyStore>>>> as server::IntoHttpHandler>::Handler;
+    type Handler = <App<Arc<RwLock<KrillServer>>> as server::IntoHttpHandler>::Handler;
 
     fn into_handler(self) -> Self::Handler {
         self.0.into_handler()
@@ -268,7 +263,7 @@ fn with_statics<S: 'static>(app: App<S>) -> App<S> {
 
 //------------ HttpRequest ---------------------------------------------------
 
-pub type HttpRequest = actix_web::HttpRequest<Arc<RwLock<KrillServer<DiskKeyStore>>>>;
+pub type HttpRequest = actix_web::HttpRequest<Arc<RwLock<KrillServer>>>;
 
 
 //------------ Error ---------------------------------------------------------

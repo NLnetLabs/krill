@@ -10,40 +10,9 @@ use krill_commons::api::rrdp::{
     DeltaElements,
     VerificationError
 };
-use krill_commons::eventsourcing::{
-    Aggregate,
-    CommandDetails,
-    StoredEvent,
-    SentCommand
-};
+use krill_commons::eventsourcing::{Aggregate, CommandDetails, StoredEvent, SentCommand};
 use krill_commons::util::ext_serde;
 
-
-//------------ Convenience Functions -----------------------------------------
-
-pub fn init(id: &PublisherHandle, token: String, base_uri: uri::Rsync) -> PublisherInit {
-    StoredEvent::new(
-        id.as_ref(),
-        0,
-        InitPublisherDetails { token, base_uri }
-    )
-}
-
-pub fn deactivate(id: &PublisherHandle) -> PublisherCommand {
-    PublisherCommand::new(id.as_ref(), None, PublisherCommandDetails::Deactivate)
-}
-
-pub fn deactivated(id: &PublisherHandle, version: u64) -> PublisherEvent {
-    PublisherEvent::new(id.as_ref(), version, PublisherEventDetails::Deactivated)
-}
-
-pub fn publish(id: &PublisherHandle, delta: publication::PublishDelta) -> PublisherCommand {
-    PublisherCommand::new(id.as_ref(), None, PublisherCommandDetails::Publish(delta))
-}
-
-pub fn published(id: &PublisherHandle, version: u64, delta: DeltaElements) -> PublisherEvent {
-    PublisherEvent::new(id.as_ref(), version, PublisherEventDetails::Published(delta))
-}
 
 //------------ PublisherInit -------------------------------------------------
 

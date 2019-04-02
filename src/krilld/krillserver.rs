@@ -6,7 +6,6 @@ use rpki::uri;
 use krill_commons::api::publication;
 use krill_commons::api::publishers;
 use krill_commons::api::publishers::PublisherHandle;
-use krill_commons::eventsourcing::KeyStore;
 use crate::krilld::auth::Authorizer;
 use crate::krilld::pubd::PubServer;
 use crate::krilld::pubd;
@@ -27,7 +26,7 @@ use crate::krilld::pubd::publishers::Publisher;
 ///    * Process publish / list requests by known publishers
 ///    * Updates the repository on disk
 ///    * Updates the RRDP files
-pub struct KrillServer<S: KeyStore> {
+pub struct KrillServer {
     // The base URI for this service
     service_uri: uri::Http,
 
@@ -38,11 +37,11 @@ pub struct KrillServer<S: KeyStore> {
     authorizer: Authorizer,
 
     // The configured publishers
-    pubserver: PubServer<S>
+    pubserver: PubServer
 }
 
 /// # Set up and initialisation
-impl<S: KeyStore> KrillServer<S> {
+impl KrillServer {
     /// Creates a new publication server. Note that state is preserved
     /// on disk in the work_dir provided.
     pub fn build(
@@ -51,7 +50,6 @@ impl<S: KeyStore> KrillServer<S> {
         service_uri: uri::Http,
         rrdp_base_uri: &uri::Http,
         authorizer: Authorizer,
-        store: S
     ) -> Result<Self, Error> {
         let mut repo_dir = work_dir.clone();
         repo_dir.push("repo");
@@ -60,7 +58,7 @@ impl<S: KeyStore> KrillServer<S> {
             base_uri.clone(),
             rrdp_base_uri.clone(),
             repo_dir,
-            store
+            work_dir
         ).map_err(Error::PubServer)?;
 
         Ok(
@@ -78,7 +76,7 @@ impl<S: KeyStore> KrillServer<S> {
     }
 }
 
-impl<S: KeyStore> KrillServer<S> {
+impl KrillServer {
     pub fn is_api_allowed(&self, token_opt: Option<String>) -> bool {
         self.authorizer.is_api_allowed(token_opt)
     }
@@ -109,13 +107,13 @@ impl<S: KeyStore> KrillServer<S> {
 }
 
 /// # Configure publishers
-impl<S: KeyStore> KrillServer<S> {
+impl KrillServer {
 
     /// Returns all currently configured publishers. (excludes deactivated)
     pub fn publishers(
         &self
-    ) -> Result<Vec<PublisherHandle>, Error> {
-        self.pubserver.list_publishers().map_err(Error::PubServer)
+    ) -> Vec<PublisherHandle> {
+        self.pubserver.list_publishers()
     }
 
     /// Adds the publishers, blows up if it already existed.
@@ -151,7 +149,7 @@ impl<S: KeyStore> KrillServer<S> {
 
 /// # Handle publication requests
 ///
-impl<S: KeyStore> KrillServer<S> {
+impl KrillServer {
     /// Handles a publish delta request sent to the API, or.. through
     /// the CmsProxy.
     #[allow(clippy::needless_pass_by_value)]

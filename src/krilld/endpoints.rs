@@ -6,7 +6,6 @@ use serde::Serialize;
 use krill_commons::api::publishers;
 use krill_commons::api::publishers::PublisherHandle;
 use krill_commons::api::publication;
-use krill_commons::eventsourcing::DiskKeyStore;
 use crate::krilld::http::server::HttpRequest;
 use crate::krilld::krillserver::{self, KrillServer};
 use crate::krilld::pubd;
@@ -17,12 +16,12 @@ use crate::krilld::pubd::repo::RrdpServerError;
 //------------ Support Functions ---------------------------------------------
 
 /// Returns a server in a read lock
-pub fn ro_server(req: &HttpRequest) -> RwLockReadGuard<KrillServer<DiskKeyStore>> {
+pub fn ro_server(req: &HttpRequest) -> RwLockReadGuard<KrillServer> {
     req.state().read().unwrap()
 }
 
 /// Returns a server in a write lock
-pub fn rw_server(req: &HttpRequest) -> RwLockWriteGuard<KrillServer<DiskKeyStore>> {
+pub fn rw_server(req: &HttpRequest) -> RwLockWriteGuard<KrillServer> {
     req.state().write().unwrap()
 }
 
@@ -65,17 +64,8 @@ pub fn health(_r: &HttpRequest) -> HttpResponse {
 
 /// Returns a json structure with all publishers in it.
 pub fn publishers(req: &HttpRequest) -> HttpResponse {
-    match ro_server(req).publishers() {
-        Err(e) => server_error(&Error::ServerError(e)),
-        Ok(publishers) => {
-            render_json(
-                publishers::PublisherList::build(
-                    &publishers,
-                    "/api/v1/publishers"
-                )
-            )
-        }
-    }
+    let publishers = ro_server(req).publishers();
+    render_json(publishers::PublisherList::build(&publishers, "/api/v1/publishers"))
 }
 
 /// Adds a publisher
@@ -217,13 +207,12 @@ impl ErrorToStatus for pubd::Error {
             pubd::Error::IoError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             pubd::Error::InvalidBaseUri => StatusCode::BAD_REQUEST,
             pubd::Error::InvalidHandle(_) => StatusCode::BAD_REQUEST,
-            pubd::Error::ReservedName(_) => StatusCode::BAD_REQUEST,
             pubd::Error::DuplicatePublisher(_) => StatusCode::BAD_REQUEST,
             pubd::Error::UnknownPublisher(_) => StatusCode::FORBIDDEN,
             pubd::Error::ConcurrentModification(_, _) => StatusCode::BAD_REQUEST,
             pubd::Error::PublisherError(e) => e.status(),
             pubd::Error::RrdpServerError(e) => e.status(),
-            pubd::Error::KeyStoreError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            pubd::Error::AggregateStoreError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 
@@ -273,13 +262,12 @@ impl ErrorToCode for pubd::Error {
             pubd::Error::IoError(_) => 3001,
             pubd::Error::InvalidBaseUri => 2002,
             pubd::Error::InvalidHandle(_) => 1004,
-            pubd::Error::ReservedName(_) => 1007,
             pubd::Error::DuplicatePublisher(_) => 1005,
             pubd::Error::UnknownPublisher(_) => 1006,
             pubd::Error::ConcurrentModification(_, _) => 2003,
             pubd::Error::PublisherError(e) => e.code(),
             pubd::Error::RrdpServerError(e) => e.code(),
-            pubd::Error::KeyStoreError(_) => 3001,
+            pubd::Error::AggregateStoreError(_) => 3001,
         }
     }
 }
