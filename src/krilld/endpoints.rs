@@ -3,14 +3,14 @@ use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 use actix_web::{HttpResponse, ResponseError};
 use actix_web::http::StatusCode;
 use serde::Serialize;
-use krill_commons::api::publishers;
+use krill_commons::api::{publishers, publication, ErrorResponse, ErrorCode};
 use krill_commons::api::publishers::PublisherHandle;
-use krill_commons::api::publication;
 use crate::krilld::http::server::HttpRequest;
 use crate::krilld::krillserver::{self, KrillServer};
 use crate::krilld::pubd;
 use crate::krilld::pubd::publishers::PublisherError;
 use crate::krilld::pubd::repo::RrdpServerError;
+use krill_commons::api::rrdp::VerificationError;
 
 
 //------------ Support Functions ---------------------------------------------
@@ -172,8 +172,8 @@ trait ErrorToStatus {
 }
 
 /// Translate an error to an error code to include in a json response.
-trait ErrorToCode {
-    fn code(&self) -> usize;
+trait ToErrorCode {
+    fn code(&self) -> ErrorCode;
 }
 
 impl std::error::Error for Error {
@@ -237,72 +237,71 @@ impl ErrorToStatus for RrdpServerError {
 
 
 
-impl ErrorToCode for Error {
-    fn code(&self) -> usize {
+impl ToErrorCode for Error {
+    fn code(&self) -> ErrorCode {
         match self {
             Error::ServerError(e) => e.code(),
-            Error::JsonError(_) => 1001,
-            Error::PublisherRequestError => 1002
+            Error::JsonError(_) => ErrorCode::InvalidJson,
+            Error::PublisherRequestError => ErrorCode::InvalidPublisherRequest
         }
     }
 }
 
-impl ErrorToCode for krillserver::Error {
-    fn code(&self) -> usize {
+impl ToErrorCode for krillserver::Error {
+    fn code(&self) -> ErrorCode {
         match self {
-            krillserver::Error::IoError(_) => 3001,
+            krillserver::Error::IoError(_) => ErrorCode::Persistence,
             krillserver::Error::PubServer(e) => e.code()
         }
     }
 }
 
-impl ErrorToCode for pubd::Error {
-    fn code(&self) -> usize {
+impl ToErrorCode for pubd::Error {
+    fn code(&self) -> ErrorCode {
         match self {
-            pubd::Error::IoError(_) => 3001,
-            pubd::Error::InvalidBaseUri => 2002,
-            pubd::Error::InvalidHandle(_) => 1004,
-            pubd::Error::DuplicatePublisher(_) => 1005,
-            pubd::Error::UnknownPublisher(_) => 1006,
-            pubd::Error::ConcurrentModification(_, _) => 2003,
+            pubd::Error::IoError(_) => ErrorCode::Persistence,
+            pubd::Error::InvalidBaseUri => ErrorCode::InvalidBaseUri,
+            pubd::Error::InvalidHandle(_) => ErrorCode::InvalidHandle,
+            pubd::Error::DuplicatePublisher(_) => ErrorCode::DuplicateHandle,
+            pubd::Error::UnknownPublisher(_) => ErrorCode::UnknownPublisher,
+            pubd::Error::ConcurrentModification(_, _) => ErrorCode::ConcurrentModification,
             pubd::Error::PublisherError(e) => e.code(),
             pubd::Error::RrdpServerError(e) => e.code(),
-            pubd::Error::AggregateStoreError(_) => 3001,
+            pubd::Error::AggregateStoreError(_) => ErrorCode::Persistence,
         }
     }
 }
 
-impl ErrorToCode for PublisherError {
-    fn code(&self) -> usize {
+impl ToErrorCode for PublisherError {
+    fn code(&self) -> ErrorCode {
         match self {
-            PublisherError::Deactivated => 2004,
-            PublisherError::VerificationError(_) => 2005,
+            PublisherError::Deactivated => ErrorCode::PublisherDeactivated,
+            PublisherError::VerificationError(e) => e.code(),
         }
     }
 }
 
-impl ErrorToCode for RrdpServerError {
-    fn code(&self) -> usize {
+impl ToErrorCode for VerificationError {
+    fn code(&self) -> ErrorCode {
         match self {
-            RrdpServerError::IoError(_) => 3001
+            VerificationError::NoObjectForHashAndOrUri(_) => ErrorCode::NoObjectForHashAndOrUri,
+            VerificationError::ObjectAlreadyPresent(_) => ErrorCode::ObjectAlreadyPresent,
+            VerificationError::UriOutsideJail(_, _) => ErrorCode::UriOutsideJail
         }
     }
 }
 
-
-
-#[derive(Debug, Serialize)]
-struct ErrorResponse {
-    code: usize,
-    msg: String
+impl ToErrorCode for RrdpServerError {
+    fn code(&self) -> ErrorCode {
+        match self {
+            RrdpServerError::IoError(_) => ErrorCode::Persistence
+        }
+    }
 }
 
 impl Error {
     fn to_error_response(&self) -> ErrorResponse {
-        ErrorResponse {
-            code: self.code(),
-            msg: format!("{}", self)
-        }
+        self.clone().code().into()
     }
 }
 
