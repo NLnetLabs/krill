@@ -3,8 +3,8 @@ use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 use actix_web::{HttpResponse, ResponseError};
 use actix_web::http::StatusCode;
 use serde::Serialize;
-use krill_commons::api::{publishers, publication, ErrorResponse, ErrorCode};
-use krill_commons::api::publishers::PublisherHandle;
+use krill_commons::api::{admin, publication, ErrorResponse, ErrorCode};
+use krill_commons::api::admin::PublisherHandle;
 use crate::krilld::http::server::HttpRequest;
 use crate::krilld::krillserver::{self, KrillServer};
 use crate::krilld::pubd;
@@ -65,14 +65,14 @@ pub fn health(_r: &HttpRequest) -> HttpResponse {
 /// Returns a json structure with all publishers in it.
 pub fn publishers(req: &HttpRequest) -> HttpResponse {
     let publishers = ro_server(req).publishers();
-    render_json(publishers::PublisherList::build(&publishers, "/api/v1/publishers"))
+    render_json(admin::PublisherList::build(&publishers, "/api/v1/publishers"))
 }
 
 /// Adds a publisher
 #[allow(clippy::needless_pass_by_value)]
 pub fn add_publisher(
     req: HttpRequest,
-    pbl: publishers::PublisherRequest
+    pbl: admin::PublisherRequest
 ) -> HttpResponse {
     let mut server = rw_server(&req);
     match server.add_publisher(pbl) {
@@ -141,6 +141,16 @@ pub fn handle_list(
 }
 
 
+//------------ Admin: Rfc8181 -----------------------------------------------
+
+pub fn rfc8181_clients(req: &HttpRequest) -> HttpResponse {
+    match ro_server(req).rfc8181_clients() {
+        Ok(clients) => render_json(clients),
+        Err(e) => server_error(&Error::ServerError(e ))
+    }
+}
+
+
 //------------ Serving RRDP --------------------------------------------------
 
 pub fn current_snapshot_json(req: &HttpRequest) -> HttpResponse {
@@ -196,7 +206,8 @@ impl ErrorToStatus for krillserver::Error {
     fn status(&self) -> StatusCode {
         match self {
             krillserver::Error::IoError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            krillserver::Error::PubServer(e) => e.status()
+            krillserver::Error::PubServer(e) => e.status(),
+            krillserver::Error::ProxyServer(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -251,7 +262,8 @@ impl ToErrorCode for krillserver::Error {
     fn code(&self) -> ErrorCode {
         match self {
             krillserver::Error::IoError(_) => ErrorCode::Persistence,
-            krillserver::Error::PubServer(e) => e.code()
+            krillserver::Error::PubServer(e) => e.code(),
+            krillserver::Error::ProxyServer(_) => ErrorCode::ProxyError
         }
     }
 }
@@ -301,7 +313,7 @@ impl ToErrorCode for RrdpServerError {
 
 impl Error {
     fn to_error_response(&self) -> ErrorResponse {
-        self.clone().code().into()
+        self.code().clone().into()
     }
 }
 

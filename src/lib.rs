@@ -23,6 +23,7 @@ extern crate tokio;
 extern crate toml;
 extern crate uuid;
 extern crate xml as xmlrs;
+extern crate krill_cms_proxy;
 
 pub mod krillc;
 pub mod krilld;

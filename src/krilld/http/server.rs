@@ -60,6 +60,11 @@ impl PubServerApp {
             .resource("/api/v1/publishers/{handle}/del", |r| {
                 r.method(Method::POST).with(endpoints::deactivate_publisher);
             })
+
+            .resource("/api/v1/rfc8181/clients", |r| {
+                r.method(Method::GET).f(endpoints::rfc8181_clients);
+            })
+
             .resource("/publication/{handle}", |r| {
                 r.method(Method::GET).with(endpoints::handle_list);
                 r.method(Method::POST).with(endpoints::handle_delta);

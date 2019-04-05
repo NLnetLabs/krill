@@ -10,18 +10,13 @@ extern crate bytes;
 
 use std::{thread, time};
 use actix::System;
-use krill::krillc::options::{
-    AddPublisher,
-    Command,
-    Options,
-    PublishersCommand
-};
+use krill::krillc::options::{AddPublisher, Command, Options, PublishersCommand, Rfc8181Command};
 use krill::krillc::KrillClient;
 use krill::krilld::config::Config;
 use krill::krilld::http::server::PubServerApp;
-use krill_commons::api::publishers::ApiResponse;
+use krill::krillc::report::ApiResponse;
+use krill::krillc::report::ReportFormat;
 use krill_commons::util::test;
-use krill_commons::api::publishers::ReportFormat;
 
 fn execute_krillc_command(command: Command) -> ApiResponse {
     let krillc_opts = Options::new(
@@ -73,6 +68,11 @@ fn details_publisher(handle: &str) -> ApiResponse {
     execute_krillc_command(command)
 }
 
+fn list_rfc8181_clients() -> ApiResponse {
+    let command = Command::Rfc8181(Rfc8181Command::List);
+    execute_krillc_command(command)
+}
+
 #[test]
 fn admin_publishers() {
     test::test_with_tmp_dir(|d| {
@@ -121,6 +121,15 @@ fn admin_publishers() {
                 assert_eq!(false, details.deactivated());
             },
             _ => panic!("Expected details")
+        }
+
+        // List RFC8181 clients
+        let rfc8181_clients_res = list_rfc8181_clients();
+        match rfc8181_clients_res {
+            ApiResponse::Rfc8181ClientList(list) => {
+                assert_eq!(0, list.len())
+            },
+            _ => panic!("Expected a response (with empty list)")
         }
 
         // Remove alice

@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use rpki::uri;
 use krill_commons::api::publication;
-use krill_commons::api::publishers::{
+use krill_commons::api::admin::{
     PublisherHandle,
     PublisherRequest,
 };

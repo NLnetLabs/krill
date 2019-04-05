@@ -23,7 +23,7 @@ use krill::krilld::config::Config;
 use krill::krilld::http::server::PubServerApp;
 use krill::pubc::apiclient;
 use krill::pubc::apiclient::ApiResponse;
-use krill_commons::api::publishers::ReportFormat;
+use krill::krillc::report::ReportFormat;
 use krill_commons::util::file::CurrentFile;
 use krill_commons::util::file;
 use krill_commons::util::httpclient;

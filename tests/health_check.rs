@@ -17,7 +17,7 @@ use krill::krillc::options::{
     Command,
     Options
 };
-use krill_commons::api::publishers::{
+use krill::krillc::report::{
     ApiResponse,
     ReportFormat
 };

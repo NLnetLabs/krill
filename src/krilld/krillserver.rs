@@ -4,12 +4,15 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use rpki::uri;
 use krill_commons::api::publication;
-use krill_commons::api::publishers;
-use krill_commons::api::publishers::PublisherHandle;
+use krill_commons::api::admin;
+use krill_commons::api::admin::PublisherHandle;
 use crate::krilld::auth::Authorizer;
 use crate::krilld::pubd::PubServer;
 use crate::krilld::pubd;
 use crate::krilld::pubd::publishers::Publisher;
+use krill_cms_proxy::proxy::ProxyServer;
+use krill_cms_proxy::proxy;
+use krill_cms_proxy::api::ClientInfo;
 
 
 //------------ KrillServer ---------------------------------------------------
@@ -37,7 +40,10 @@ pub struct KrillServer {
     authorizer: Authorizer,
 
     // The configured publishers
-    pubserver: PubServer
+    pubserver: PubServer,
+
+    // CMS+XML proxy server for non-Krill clients
+    proxy_server: ProxyServer
 }
 
 /// # Set up and initialisation
@@ -61,12 +67,17 @@ impl KrillServer {
             work_dir
         ).map_err(Error::PubServer)?;
 
+        let proxy_server = ProxyServer::init(
+            work_dir, &service_uri
+        )?;
+
         Ok(
             KrillServer {
                 service_uri,
                 work_dir: work_dir.clone(),
                 authorizer,
-                pubserver
+                pubserver,
+                proxy_server
             }
         )
     }
@@ -119,7 +130,7 @@ impl KrillServer {
     /// Adds the publishers, blows up if it already existed.
     pub fn add_publisher(
         &mut self,
-        pbl_req: publishers::PublisherRequest
+        pbl_req: admin::PublisherRequest
     ) -> Result<(), Error> {
         self.pubserver.create_publisher(pbl_req).map_err(Error::PubServer)
     }
@@ -144,6 +155,14 @@ impl KrillServer {
         let mut path = self.work_dir.clone();
         path.push("rrdp");
         path
+    }
+}
+
+/// # Manage RFC8181 clients
+///
+impl KrillServer {
+    pub fn rfc8181_clients(&self) ->Result<Vec<ClientInfo>, Error> {
+        self.proxy_server.list_clients().map_err(Error::ProxyServer)
     }
 }
 
@@ -181,6 +200,9 @@ pub enum Error {
 
     #[display(fmt="{}", _0)]
     PubServer(pubd::Error),
+
+    #[display(fmt="{}", _0)]
+    ProxyServer(proxy::Error),
 }
 
 impl From<io::Error> for Error {
@@ -189,6 +211,10 @@ impl From<io::Error> for Error {
 
 impl From<pubd::Error> for Error {
     fn from(e: pubd::Error) -> Self { Error::PubServer(e) }
+}
+
+impl From<proxy::Error> for Error {
+    fn from(e: proxy::Error) -> Self { Error::ProxyServer(e) }
 }
 
 // Tested through integration tests

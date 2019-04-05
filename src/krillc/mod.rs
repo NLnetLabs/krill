@@ -1,13 +1,16 @@
 pub mod options;
+pub mod report;
 
 use std::io;
 use rpki::uri;
-use krill_commons::api::publishers::PublisherRequest;
 use krill_commons::util::httpclient;
-use krill_commons::api::publishers::{
-    ApiResponse,
+use krill_commons::api::admin::{
     PublisherDetails,
     PublisherList,
+    PublisherRequest
+};
+use crate::krillc::report::{
+    ApiResponse,
     ReportError
 };
 use crate::krillc::options::{
@@ -15,6 +18,8 @@ use crate::krillc::options::{
     Command,
     PublishersCommand
 };
+use krillc::options::Rfc8181Command;
+use krill_cms_proxy::api::ClientInfo;
 
 /// Command line tool for Krill admin tasks
 pub struct KrillClient {
@@ -48,6 +53,7 @@ impl KrillClient {
         match options.command {
             Command::Health => client.health(),
             Command::Publishers(cmd) => client.publishers(cmd),
+            Command::Rfc8181(cmd) => client.rfc8181(cmd),
             Command::NotSet => Err(Error::MissingCommand)
         }
     }
@@ -107,6 +113,20 @@ impl KrillClient {
         )?;
 
         Ok(ApiResponse::Empty)
+    }
+
+    fn rfc8181(&self, command: Rfc8181Command) -> Result<ApiResponse, Error> {
+        match command {
+            Rfc8181Command::List => {
+                let uri = self.resolve_uri("api/v1/rfc8181/clients");
+                let list: Vec<ClientInfo> = httpclient::get_json(
+                    &uri,
+                    Some(&self.token)
+                )?;
+
+                Ok(ApiResponse::Rfc8181ClientList(list))
+            }
+        }
     }
 
     fn resolve_uri(&self, path: &str) -> String {

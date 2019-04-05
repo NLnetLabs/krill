@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use clap::{App, Arg, SubCommand};
 use rpki::uri;
-use krill_commons::api::publishers::{
+use crate::krillc::report::{
     ReportFormat,
     ReportError
 };
@@ -92,24 +92,6 @@ impl Options {
                         .required(true)
                     )
                 )
-                .subcommand(SubCommand::with_name("addcms")
-                    .about("Add an RFC8181 publisher.")
-                    .arg(Arg::with_name("xml")
-                        .short("x")
-                        .long("xml")
-                        .value_name("FILE")
-                        .help("Specify a file containing an RFC8183 \
-                        publisher request. (See: https://tools.ietf.org/html/rfc8183#section-5.2.3)")
-                        .required(true)
-                    )
-                    .arg(Arg::with_name("uri")
-                        .short("u")
-                        .long("uri")
-                        .value_name("rsync uri")
-                        .help("Rsync base uri for publisher. Must be covered by server, and not overlap with existing publishers.")
-                        .required(true)
-                    )
-                )
                 .subcommand(SubCommand::with_name("details")
                     .about("Show details for a publisher.")
                     .arg(Arg::with_name("handle")
@@ -120,41 +102,7 @@ impl Options {
                         .required(true)
                     )
                 )
-                .subcommand(SubCommand::with_name("response")
-                    .about("Get the RFC8181 repository response xml")
-                    .arg(Arg::with_name("handle")
-                        .short("h")
-                        .long("handle")
-                        .value_name("publisher handle")
-                        .help("The publisher handle from RFC8181")
-                        .required(true)
-                    )
-                    .arg(Arg::with_name("out")
-                        .short("o")
-                        .long("out")
-                        .value_name("FILE")
-                        .help("Optional file to save to (default stdout).")
-                        .required(false)
-                    )
-                )
-                .subcommand(SubCommand::with_name("idcert")
-                    .about("Get identity certificate known for publisher.")
-                    .arg(Arg::with_name("handle")
-                        .short("h")
-                        .long("handle")
-                        .value_name("publisher handle")
-                        .help("The publisher handle from RFC8181")
-                        .required(true)
-                    )
-                    .arg(Arg::with_name("out")
-                        .short("o")
-                        .long("out")
-                        .value_name("FILE")
-                        .help("File to save to.")
-                        .required(true)
-                    )
-                )
-                .subcommand(SubCommand::with_name("remove")
+                .subcommand(SubCommand::with_name("deactivate")
                     .about("Removes a known publisher")
                     .arg(Arg::with_name("handle")
                         .short("h")
@@ -163,6 +111,12 @@ impl Options {
                         .help("The publisher handle from RFC8181")
                         .required(true)
                     )
+                )
+            )
+            .subcommand(SubCommand::with_name("rfc8181")
+                .about("Manage RFC8181 clients")
+                .subcommand(SubCommand::with_name("list")
+                    .about("List all current clients with details")
                 )
             )
             .get_matches();
@@ -192,15 +146,20 @@ impl Options {
                 let details = PublishersCommand::Details(handle.to_string());
                 command = Command::Publishers(details);
             }
-            if let Some(m) = m.subcommand_matches("remove") {
+            if let Some(m) = m.subcommand_matches("deactivate") {
                 let handle = m.value_of("handle").unwrap().to_string();
                 command = Command::Publishers(PublishersCommand::Deactivate(handle))
             }
         }
 
+        if let Some(m) = matches.subcommand_matches("rfc8181") {
+            if let Some(_m) = m.subcommand_matches("list") {
+                command = Command::Rfc8181(Rfc8181Command::List)
+            }
+        }
+
         let server = matches.value_of("server").unwrap(); // required
-        let server = uri::Http::from_str(server)
-            .map_err(|_| Error::UriError)?;
+        let server = uri::Http::from_str(server).map_err(|_| Error::UriError)?;
 
         let token = matches.value_of("token").unwrap().to_string(); // req.
 
@@ -217,7 +176,8 @@ impl Options {
 pub enum Command {
     NotSet,
     Health,
-    Publishers(PublishersCommand)
+    Publishers(PublishersCommand),
+    Rfc8181(Rfc8181Command)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -235,7 +195,10 @@ pub struct AddPublisher {
     pub token:  String
 }
 
-
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Rfc8181Command {
+    List
+}
 
 //------------ Error ---------------------------------------------------------
 

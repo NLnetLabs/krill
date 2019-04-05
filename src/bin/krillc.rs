@@ -1,9 +1,9 @@
 extern crate krill;
 extern crate krill_commons;
 
-use krill_commons::api::publishers::ReportFormat;
 use krill::krillc::KrillClient;
 use krill::krillc::options::Options;
+use krill::krillc::report::ReportFormat;
 
 fn main() {
     match Options::from_args() {
