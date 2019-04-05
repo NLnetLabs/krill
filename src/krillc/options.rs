@@ -5,6 +5,7 @@ use crate::krillc::report::{
     ReportFormat,
     ReportError
 };
+use std::path::PathBuf;
 
 /// This type holds all the necessary data to connect to a Krill daemon, and
 /// authenticate, and perform a specific action. Note that this is extracted
@@ -118,6 +119,24 @@ impl Options {
                 .subcommand(SubCommand::with_name("list")
                     .about("List all current clients with details")
                 )
+                .subcommand(SubCommand::with_name("add")
+                    .about("Add TFC8181 client")
+                    .arg(Arg::with_name("token")
+                        .short("t")
+                        .long("token")
+                        .value_name("text")
+                        .help("Specify a token string.")
+                        .required(true)
+                    )
+                    .arg(Arg::with_name("xml")
+                        .short("x")
+                        .long("xml")
+                        .value_name("FILE")
+                        .help("Specify a file containing an RFC8183 \
+                        publisher request. (See: https://tools.ietf.org/html/rfc8183#section-5.2.3)")
+                        .required(true)
+                    )
+                )
             )
             .get_matches();
 
@@ -156,6 +175,14 @@ impl Options {
             if let Some(_m) = m.subcommand_matches("list") {
                 command = Command::Rfc8181(Rfc8181Command::List)
             }
+            if let Some(m) = m.subcommand_matches("add") {
+                let token = m.value_of("token").unwrap().to_string();
+                let xml_path = m.value_of("xml").unwrap();
+                let xml = PathBuf::from(xml_path);
+
+                command = Command::Rfc8181(Rfc8181Command::Add(AddRfc8181Client{ token, xml }))
+            }
+
         }
 
         let server = matches.value_of("server").unwrap(); // required
@@ -197,7 +224,14 @@ pub struct AddPublisher {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Rfc8181Command {
-    List
+    List,
+    Add(AddRfc8181Client),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AddRfc8181Client {
+    pub token: String,
+    pub xml: PathBuf
 }
 
 //------------ Error ---------------------------------------------------------

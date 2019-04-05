@@ -3,6 +3,7 @@ pub mod report;
 
 use std::io;
 use rpki::uri;
+use krill_commons::util::file;
 use krill_commons::util::httpclient;
 use krill_commons::api::admin::{
     PublisherDetails,
@@ -19,7 +20,8 @@ use crate::krillc::options::{
     PublishersCommand
 };
 use krillc::options::Rfc8181Command;
-use krill_cms_proxy::api::ClientInfo;
+use krill_cms_proxy::api::{ClientInfo, Token, ClientAuth};
+use krill_cms_proxy::rfc8183;
 
 /// Command line tool for Krill admin tasks
 pub struct KrillClient {
@@ -125,6 +127,27 @@ impl KrillClient {
                 )?;
 
                 Ok(ApiResponse::Rfc8181ClientList(list))
+            },
+            Rfc8181Command::Add(details) => {
+
+                let xml = file::read(&details.xml)?;
+                let pr = rfc8183::PublisherRequest::decode(xml.as_ref())?;
+
+                let handle = pr.client_handle();
+
+                let id_cert = pr.id_cert().clone();
+                let token = Token::from(details.token);
+                let auth = ClientAuth::new(id_cert, token);
+
+                let info = ClientInfo::new(handle, auth);
+
+                httpclient::post_json(
+                    &self.resolve_uri("api/v1/rfc8181/clients"),
+                    info,
+                    Some(&self.token)
+                )?;
+
+                Ok(ApiResponse::Empty)
             }
         }
     }
@@ -157,7 +180,10 @@ pub enum Error {
     IoError(io::Error),
 
     #[display(fmt="Empty response received from server")]
-    EmptyResponse
+    EmptyResponse,
+
+    #[display(fmt="{}", _0)]
+    PublisherRequestError(rfc8183::PublisherRequestError)
 }
 
 impl From<httpclient::Error> for Error {
@@ -179,6 +205,12 @@ impl From<io::Error> for Error {
 impl From<ReportError> for Error {
     fn from(e: ReportError) -> Self {
         Error::ReportError(e)
+    }
+}
+
+impl From<rfc8183::PublisherRequestError> for Error {
+    fn from(e: rfc8183::PublisherRequestError) -> Error {
+        Error::PublisherRequestError(e)
     }
 }
 

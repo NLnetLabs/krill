@@ -10,13 +10,14 @@ extern crate bytes;
 
 use std::{thread, time};
 use actix::System;
-use krill::krillc::options::{AddPublisher, Command, Options, PublishersCommand, Rfc8181Command};
+use krill::krillc::options::{AddPublisher, Command, Options, PublishersCommand, Rfc8181Command, AddRfc8181Client};
 use krill::krillc::KrillClient;
 use krill::krilld::config::Config;
 use krill::krilld::http::server::PubServerApp;
 use krill::krillc::report::ApiResponse;
 use krill::krillc::report::ReportFormat;
 use krill_commons::util::test;
+use krill::pubc::cmsclient::PubClient;
 
 fn execute_krillc_command(command: Command) -> ApiResponse {
     let krillc_opts = Options::new(
@@ -131,6 +132,36 @@ fn admin_publishers() {
             },
             _ => panic!("Expected a response (with empty list)")
         }
+
+        // Add an RFC8181 client
+        let client_dir = test::create_sub_dir(&d);
+        let mut client = PubClient::build(&client_dir).unwrap();
+        client.init("alice").unwrap();
+        let pr = client.publisher_request().unwrap();
+        let mut pr_path = d.clone();
+        pr_path.push("alice.xml");
+        pr.save(&pr_path).unwrap();
+
+        let command = Command::Rfc8181(
+            Rfc8181Command::Add(
+                AddRfc8181Client { token: "alice".to_string(), xml: pr_path }
+            )
+        );
+        match execute_krillc_command(command) {
+            ApiResponse::Empty => {},
+            _ => panic!("Expect ok")
+        }
+
+        // Now see that it's been added.
+        let rfc8181_clients_res = list_rfc8181_clients();
+        match rfc8181_clients_res {
+            ApiResponse::Rfc8181ClientList(list) => {
+                assert_eq!(1, list.len())
+            },
+            _ => panic!("Expected a response (with 1 entry in the list)")
+        }
+
+
 
         // Remove alice
         deactivate_publisher(handle);

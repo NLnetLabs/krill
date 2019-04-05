@@ -164,6 +164,10 @@ impl KrillServer {
     pub fn rfc8181_clients(&self) ->Result<Vec<ClientInfo>, Error> {
         self.proxy_server.list_clients().map_err(Error::ProxyServer)
     }
+
+    pub fn add_rfc8181_client(&self, client: ClientInfo) -> Result<(), Error> {
+        self.proxy_server.add_client(client).map_err(Error::ProxyServer)
+    }
 }
 
 /// # Handle publication requests

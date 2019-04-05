@@ -1,4 +1,5 @@
 pub mod apiclient;
+pub mod cmsclient;
 
 use std::path::PathBuf;
 use rpki::uri;

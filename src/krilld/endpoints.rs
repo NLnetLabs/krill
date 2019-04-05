@@ -11,6 +11,7 @@ use crate::krilld::pubd;
 use crate::krilld::pubd::publishers::PublisherError;
 use crate::krilld::pubd::repo::RrdpServerError;
 use krill_commons::api::rrdp::VerificationError;
+use krill_cms_proxy::api::ClientInfo;
 
 
 //------------ Support Functions ---------------------------------------------
@@ -147,6 +148,17 @@ pub fn rfc8181_clients(req: &HttpRequest) -> HttpResponse {
     match ro_server(req).rfc8181_clients() {
         Ok(clients) => render_json(clients),
         Err(e) => server_error(&Error::ServerError(e ))
+    }
+}
+
+pub fn add_rfc8181_client(
+    req: HttpRequest,
+    client: ClientInfo
+) -> HttpResponse {
+    let server = ro_server(&req);
+    match server.add_rfc8181_client(client) {
+        Ok(()) => api_ok(),
+        Err(e) => server_error(&Error::ServerError(e))
     }
 }
 

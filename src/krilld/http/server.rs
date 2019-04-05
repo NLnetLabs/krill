@@ -63,6 +63,7 @@ impl PubServerApp {
 
             .resource("/api/v1/rfc8181/clients", |r| {
                 r.method(Method::GET).f(endpoints::rfc8181_clients);
+                r.method(Method::POST).with(endpoints::add_rfc8181_client)
             })
 
             .resource("/publication/{handle}", |r| {
