@@ -2,6 +2,7 @@
 use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
+use bcder::Captured;
 use rpki::uri;
 use krill_commons::api::publication;
 use krill_commons::api::admin;
@@ -10,10 +11,11 @@ use crate::krilld::auth::Authorizer;
 use crate::krilld::pubd::PubServer;
 use crate::krilld::pubd;
 use crate::krilld::pubd::publishers::Publisher;
-use krill_cms_proxy::proxy::ProxyServer;
-use krill_cms_proxy::proxy;
 use krill_cms_proxy::api::{ClientInfo, ClientHandle};
+use krill_cms_proxy::proxy;
+use krill_cms_proxy::proxy::ProxyServer;
 use krill_cms_proxy::rfc8183::RepositoryResponse;
+use krill_cms_proxy::sigmsg::SignedMessage;
 
 
 //------------ KrillServer ---------------------------------------------------
@@ -196,6 +198,14 @@ impl KrillServer {
             sia_base,
             rrdp_notification_uri
         ).map_err(Error::ProxyServer)
+    }
+
+    pub fn handle_rfc8181_req(
+        &self,
+        msg: SignedMessage,
+        handle: ClientHandle
+    ) -> Result<Captured, Error> {
+        self.proxy_server.handle_rfc8181_req(msg, handle).map_err(Error::ProxyServer)
     }
 }
 

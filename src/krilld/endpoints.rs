@@ -3,15 +3,16 @@ use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 use actix_web::{HttpResponse, ResponseError};
 use actix_web::http::StatusCode;
 use serde::Serialize;
+use krill_cms_proxy::api::{ClientInfo, ClientHandle};
+use krill_cms_proxy::sigmsg::SignedMessage;
 use krill_commons::api::{admin, publication, ErrorResponse, ErrorCode};
 use krill_commons::api::admin::PublisherHandle;
+use krill_commons::api::rrdp::VerificationError;
 use crate::krilld::http::server::HttpRequest;
 use crate::krilld::krillserver::{self, KrillServer};
 use crate::krilld::pubd;
 use crate::krilld::pubd::publishers::PublisherError;
 use crate::krilld::pubd::repo::RrdpServerError;
-use krill_commons::api::rrdp::VerificationError;
-use krill_cms_proxy::api::ClientInfo;
 
 
 //------------ Support Functions ---------------------------------------------
@@ -115,6 +116,26 @@ pub fn publisher_details(
 
 
 //------------ Publication ---------------------------------------------------
+
+/// Processes an RFC8181 query and returns the appropriate response.
+#[allow(clippy::needless_pass_by_value)]
+pub fn handle_rfc8181_request(
+    req: HttpRequest,
+    msg: SignedMessage,
+    handle: PublisherHandle
+) -> HttpResponse {
+    let client_handle = ClientHandle::from(handle.as_ref());
+    match ro_server(&req).handle_rfc8181_req(msg, client_handle) {
+        Ok(captured) => {
+            HttpResponse::build(StatusCode::OK)
+                .content_type("application/rpki-publication")
+                .body(captured.into_bytes())
+        }
+        Err(e) => {
+            server_error(&Error::ServerError(e))
+        }
+    }
+}
 
 /// Processes a publishdelta request sent to the API.
 #[allow(clippy::needless_pass_by_value)]

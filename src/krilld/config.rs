@@ -31,8 +31,8 @@ impl ConfigDefaults {
     fn rrdp_base_uri() -> uri::Http {
         uri::Http::from_str("http://127.0.0.1:3000/rrdp/").unwrap()
     }
-    fn log_level() -> LevelFilter { LevelFilter::Warn }
-    fn log_type() -> LogType { LogType::Syslog }
+    fn log_level() -> LevelFilter { LevelFilter::Info }
+    fn log_type() -> LogType { LogType::Stderr }
     fn syslog_facility() -> Facility { Facility::LOG_DAEMON }
     fn log_file() -> PathBuf { PathBuf::from("./krill.log")}
     fn auth_token() -> String {

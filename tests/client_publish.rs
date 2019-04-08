@@ -14,21 +14,22 @@ use std::{thread, time};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use actix::System;
-use krill::krillc::options::{AddPublisher, Command, Options, PublishersCommand, Rfc8181Command, AddRfc8181Client};
 use krill::krillc::KrillClient;
+use krill::krillc::options::{AddPublisher, Command, Options, PublishersCommand, Rfc8181Command, AddRfc8181Client};
+use krill::krillc::report::ReportFormat;
 use krill::krilld::config::Config;
 use krill::krilld::http::server::PubServerApp;
-use krill::pubc::apiclient;
+use krill::pubc;
 use krill::pubc::{ApiResponse, Format};
-use krill::krillc::report::ReportFormat;
+use krill::pubc::apiclient;
+use krill::pubc::cmsclient;
+use krill::pubc::cmsclient::PubClient;
+use krill_cms_proxy::rfc8183::RepositoryResponse;
 use krill_commons::util::file::CurrentFile;
 use krill_commons::util::file;
 use krill_commons::util::httpclient;
 use krill_commons::util::test;
-use krill::pubc::cmsclient;
-use krill::pubc::cmsclient::PubClient;
-use krill_cms_proxy::rfc8183::RepositoryResponse;
-use krill::pubc;
+use krill_commons::api::publication::ListReply;
 
 fn list(server_uri: &str, handle: &str, token: &str) -> apiclient::Options {
     let conn = apiclient::Connection::build(server_uri, handle, token).unwrap();
@@ -88,10 +89,7 @@ fn remove_publisher(handle: &str) {
 
 fn rfc8181_client_init(handle: &str, state_dir: &PathBuf) {
     let command = cmsclient::Command::init(handle);
-    let format = pubc::Format::None;
-    let options = cmsclient::Options::new(state_dir.clone(), command, format);
-
-    PubClient::execute(options).unwrap();
+    rfc8181_client_process_command(command, &state_dir);
 }
 
 fn rfc8181_client_add(token: &str, state_dir: &PathBuf)  {
@@ -99,10 +97,7 @@ fn rfc8181_client_add(token: &str, state_dir: &PathBuf)  {
     pr_path.push("request.xml");
 
     let command = cmsclient::Command::publisher_request(pr_path.clone());
-    let format = pubc::Format::None;
-    let options = cmsclient::Options::new(state_dir.clone(), command, format);
-
-    PubClient::execute(options).unwrap();
+    rfc8181_client_process_command(command, &state_dir);
 
     let command = Command::Rfc8181(
         Rfc8181Command::Add(
@@ -115,10 +110,21 @@ fn rfc8181_client_add(token: &str, state_dir: &PathBuf)  {
 
 fn rfc8181_client_process_response(res_path: &PathBuf, state_dir: &PathBuf) {
     let command = cmsclient::Command::repository_response(res_path.clone());
-    let format = pubc::Format::None;
-    let options = cmsclient::Options::new(state_dir.clone(), command, format);
+    rfc8181_client_process_command(command, &state_dir);
+}
 
-    PubClient::execute(options).unwrap();
+fn rfc8181_client_list(state_dir: &PathBuf) -> ListReply {
+    let command = cmsclient::Command::list();
+    let api_response = rfc8181_client_process_command(command, &state_dir);
+    match api_response {
+        ApiResponse::Success => panic!("Expected list"),
+        ApiResponse::List(list) => list
+    }
+}
+
+fn rfc8181_client_process_command(command: cmsclient::Command, state_dir: &PathBuf) -> ApiResponse {
+    let options = cmsclient::Options::new(state_dir.clone(), command, pubc::Format::None);
+    PubClient::execute(options).unwrap()
 }
 
 fn get_repository_response(handle: &str) -> RepositoryResponse {
@@ -330,9 +336,9 @@ fn client_publish_through_api() {
 pub fn client_publish_through_cms() {
     test::test_with_tmp_dir(|d| {
 //        let server_uri = "http://localhost:3000/";
-        let handle = "alice";
+        let handle = "carol";
         let token = "secret";
-        let base_rsync_uri_alice = "rsync://127.0.0.1/repo/alice/";
+        let base_rsync_uri = "rsync://127.0.0.1/repo/carol/";
 
         // Set up a test PubServer Config
         let server_conf = {
@@ -351,9 +357,8 @@ pub fn client_publish_through_cms() {
         // XXX TODO: Find a better way to know the server is ready!
         thread::sleep(time::Duration::from_millis(500));
 
-        // Add client "alice"
-        add_publisher(handle, base_rsync_uri_alice, token);
-
+        // Add client "carol"
+        add_publisher(handle, base_rsync_uri, token);
 
         let state_dir = test::create_sub_dir(&d);
 
@@ -369,9 +374,10 @@ pub fn client_publish_through_cms() {
         response.save(&response_path).unwrap();
 
         rfc8181_client_process_response(&response_path, &state_dir);
-//        client.process_repo_response(&response).unwrap();
 
-        // Let client list files, expect no files
+        // List the files
+        let list = rfc8181_client_list(&state_dir);
+        assert_eq!(0, list.elements().len());
 
 
     });

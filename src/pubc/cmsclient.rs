@@ -1,15 +1,17 @@
-use krill_commons::util::softsigner::OpenSslSigner;
-use std::path::PathBuf;
-use krill_commons::util::{softsigner, file};
 use std::io;
+use std::path::PathBuf;
 use clap::{App, Arg, SubCommand};
-use krill_cms_proxy::builder::IdCertBuilder;
-use krill_cms_proxy::id::{MyIdentity, ParentInfo, MyRepoInfo};
 use rpki::crypto::PublicKeyFormat;
 use rpki::crypto::Signer;
+use krill_commons::api::publication::ListReply;
+use krill_commons::util::{softsigner, file};
+use krill_commons::util::softsigner::OpenSslSigner;
+use krill_cms_proxy::builder::IdCertBuilder;
 use krill_cms_proxy::rfc8183;
-use pubc::{ApiResponse, Format};
 use krill_cms_proxy::rfc8183::RepositoryResponse;
+use krill_cms_proxy::id::{MyIdentity, ParentInfo, MyRepoInfo};
+use krill_cms_proxy::proxy::{ClientProxy, ClientError};
+use crate::pubc::{ApiResponse, Format};
 
 #[derive(Debug, Deserialize, Eq, PartialEq)]
 pub enum Command {
@@ -32,24 +34,15 @@ impl Command {
     pub fn repository_response(path: PathBuf) -> Command {
         Command::RepoResponse(path)
     }
+
+    pub fn list() -> Command {
+        Command::List
+    }
 }
 
 
 pub struct PubClient {
-    // keys
-    //   -> keys by id
-    signer: OpenSslSigner,
-
-    // key value store
-    work_dir: PathBuf
-    //   id_key     -> MyIdentity
-    //   parent_key -> ParentInfo
-    //   repo_key   -> MyRepoInfo
-
-    //   -> my directory of interest
-    //      (note: we do not keep this state in client, truth is on disk)
-    // archive / log
-    //   -> my exchanges with the server
+    state_dir: PathBuf
 }
 
 impl PubClient {
@@ -73,7 +66,8 @@ impl PubClient {
                 Ok(ApiResponse::Success)
             },
             Command::List => {
-                unimplemented!()
+                let reply = client.list()?;
+                Ok(ApiResponse::List(reply))
             },
             Command::Sync(_dir) => {
                 unimplemented!()
@@ -81,16 +75,17 @@ impl PubClient {
         }
     }
 
-    pub fn build(work_dir: &PathBuf) -> Result<Self, Error> {
-        let signer = OpenSslSigner::build(work_dir)?;
-        Ok(PubClient { signer, work_dir: work_dir.clone() })
+    fn build(state_dir: &PathBuf) -> Result<Self, Error> {
+        Ok(PubClient { state_dir: state_dir.clone() })
     }
 
     /// Initialises a new publication client, using a new key pair, and
     /// returns a publisher request that can be sent to the server.
-    pub fn init(&mut self, name: &str) -> Result<(), Error> {
-        let key_id = self.signer.create_key(PublicKeyFormat)?;
-        let id_cert = IdCertBuilder::new_ta_id_cert(&key_id, &self.signer)?;
+    fn init(&mut self, name: &str) -> Result<(), Error> {
+        let mut signer = OpenSslSigner::build(&self.state_dir)?;
+
+        let key_id = signer.create_key(PublicKeyFormat)?;
+        let id_cert = IdCertBuilder::new_ta_id_cert(&key_id, &signer)?;
         let my_id = MyIdentity::new(name, id_cert, key_id);
 
         file::save_json(&my_id, &self.path_my_id())?;
@@ -98,7 +93,7 @@ impl PubClient {
     }
 
     /// Makes a publisher request, which can presented as an RFC8183 xml.
-    pub fn publisher_request(
+    fn publisher_request(
         &mut self
     ) -> Result<rfc8183::PublisherRequest, Error> {
         let id = self.my_identity()?;
@@ -112,7 +107,7 @@ impl PubClient {
     }
 
     /// Process the publication server parent response.
-    pub fn process_repo_response(
+    fn process_repo_response(
         &mut self,
         response: &rfc8183::RepositoryResponse
     ) -> Result<(), Error> {
@@ -141,20 +136,26 @@ impl PubClient {
         Ok(())
     }
 
+    /// Sends a list request
+    fn list(&self) -> Result<ListReply, Error> {
+        let proxy = self.client_proxy()?;
+        proxy.list().map_err(Error::ClientError)
+    }
+
     fn path_my_id(&self) -> PathBuf {
-        let mut res = self.work_dir.clone();
+        let mut res = self.state_dir.clone();
         res.push("id.json");
         res
     }
 
     fn path_my_parent(&self) -> PathBuf {
-        let mut res = self.work_dir.clone();
+        let mut res = self.state_dir.clone();
         res.push("parent.json");
         res
     }
 
     fn path_my_repo(&self) -> PathBuf {
-        let mut res = self.work_dir.clone();
+        let mut res = self.state_dir.clone();
         res.push("repo.json");
         res
     }
@@ -163,13 +164,20 @@ impl PubClient {
         file::load_json(&self.path_my_id()).map_err(|_| Error::Uninitialised)
     }
 
-//    fn my_parent(&self) -> Result<ParentInfo, Error> {
-//        file::load_json(&self.path_my_parent()).map_err(|_| Error::Uninitialised)
-//    }
+    fn my_parent(&self) -> Result<ParentInfo, Error> {
+        file::load_json(&self.path_my_parent()).map_err(|_| Error::Uninitialised)
+    }
 //
 //    fn my_repo(&self) -> Result<MyRepoInfo, Error> {
 //        file::load_json(&self.path_my_repo()).map_err(|_| Error::Uninitialised)
 //    }
+
+    fn client_proxy(&self) -> Result<ClientProxy, Error> {
+        let id = self.my_identity()?;
+        let parent = self.my_parent()?;
+
+        Ok(ClientProxy::new(id, parent, self.state_dir.clone()))
+    }
 }
 
 
@@ -354,6 +362,9 @@ pub enum Error {
 
     #[display(fmt="{}", _0)]
     ResponseError(rfc8183::RepositoryResponseError),
+
+    #[display(fmt="{}", _0)]
+    ClientError(ClientError),
 }
 
 impl From<softsigner::SignerError> for Error {
@@ -377,6 +388,12 @@ impl From<io::Error> for Error {
 impl From<rfc8183::RepositoryResponseError> for Error {
     fn from(e: rfc8183::RepositoryResponseError) -> Self {
         Error::ResponseError(e)
+    }
+}
+
+impl From<ClientError> for Error {
+    fn from(e: ClientError) -> Self {
+        Error::ClientError(e)
     }
 }
 

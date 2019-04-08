@@ -74,6 +74,11 @@ impl PubServerApp {
                 r.method(Method::GET).with(endpoints::handle_list);
                 r.method(Method::POST).with(endpoints::handle_delta);
             })
+
+            .resource("/rfc8181/{handle}", |r| {
+                r.method(Method::POST).with(endpoints::handle_rfc8181_request)
+            })
+
             .resource("/rrdp/{path:.*}", |r| {
                 r.method(Method::GET).f(Self::serve_rrdp_files)
             })
