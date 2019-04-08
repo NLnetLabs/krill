@@ -6,6 +6,7 @@ use rpki::uri;
 use krill_commons::api::publication;
 use krill_commons::util::httpclient;
 use crate::pubc;
+use pubc::{Format, ApiResponse};
 
 
 //------------ Command -------------------------------------------------------
@@ -158,68 +159,10 @@ impl Options {
             }
         };
 
-        let format = Format::from(m.value_of("format").unwrap_or("text"))?;
+        let format = Format::from(m.value_of("format").unwrap_or("text"))
+            .map_err(|_| Error::UnsupportedOutputFormat)?;
 
         Ok(Options::new(connection, command, format))
-    }
-}
-
-
-//------------ Format --------------------------------------------------------
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Format {
-    Json,
-    Text,
-    None
-}
-
-impl Format {
-    fn from(s: &str) -> Result<Self, Error> {
-        match s {
-            "text" => Ok(Format::Text),
-            "none" => Ok(Format::None),
-            "json" => Ok(Format::Json),
-            _ => Err(Error::UnsupportedOutputFormat)
-        }
-    }
-}
-
-
-//------------ ApiResponse ---------------------------------------------------
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ApiResponse {
-    Success,
-    List(publication::ListReply),
-}
-
-impl ApiResponse {
-    pub fn report(&self, format: &Format) {
-        match format {
-            Format::None => {}, // done,
-            Format::Json => {
-                match self {
-                    ApiResponse::Success => {}, // nothing to report
-                    ApiResponse::List(reply) => {
-                        println!("{}", serde_json::to_string(reply).unwrap());
-                    }
-                }
-            },
-            Format::Text => {
-                match self {
-                    ApiResponse::Success => println!("success"),
-                    ApiResponse::List(list) => {
-                        for el in list.elements() {
-                            println!("{} {}",
-                                     el.hash().to_string(),
-                                     el.uri().to_string()
-                            );
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 

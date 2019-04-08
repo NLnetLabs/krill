@@ -42,6 +42,67 @@ pub fn create_delta(
 }
 
 
+//------------ Format --------------------------------------------------------
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Format {
+    Json,
+    Text,
+    None
+}
+
+impl Format {
+    fn from(s: &str) -> Result<Self, UnsupportedFormat> {
+        match s {
+            "text" => Ok(Format::Text),
+            "none" => Ok(Format::None),
+            "json" => Ok(Format::Json),
+            _ => Err(UnsupportedFormat)
+        }
+    }
+}
+
+pub struct UnsupportedFormat;
+
+
+//------------ ApiResponse ---------------------------------------------------
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ApiResponse {
+    Success,
+    List(publication::ListReply),
+}
+
+impl ApiResponse {
+    pub fn report(&self, format: &Format) {
+        match format {
+            Format::None => {}, // done,
+            Format::Json => {
+                match self {
+                    ApiResponse::Success => {}, // nothing to report
+                    ApiResponse::List(reply) => {
+                        println!("{}", serde_json::to_string(reply).unwrap());
+                    }
+                }
+            },
+            Format::Text => {
+                match self {
+                    ApiResponse::Success => println!("success"),
+                    ApiResponse::List(list) => {
+                        for el in list.elements() {
+                            println!("{} {}",
+                                     el.hash().to_string(),
+                                     el.uri().to_string()
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
 //------------ Error ---------------------------------------------------------
 
 #[derive(Debug, Display)]

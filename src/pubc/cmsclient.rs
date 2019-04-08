@@ -8,6 +8,32 @@ use krill_cms_proxy::id::{MyIdentity, ParentInfo, MyRepoInfo};
 use rpki::crypto::PublicKeyFormat;
 use rpki::crypto::Signer;
 use krill_cms_proxy::rfc8183;
+use pubc::{ApiResponse, Format};
+use krill_cms_proxy::rfc8183::RepositoryResponse;
+
+#[derive(Debug, Deserialize, Eq, PartialEq)]
+pub enum Command {
+    Init(String),
+    PublisherRequest(PathBuf),
+    RepoResponse(PathBuf),
+    List,
+    Sync(PathBuf)
+}
+
+impl Command {
+    pub fn init(name: &str) -> Command {
+        Command::Init(name.to_string())
+    }
+
+    pub fn publisher_request(path: PathBuf) -> Command {
+        Command::PublisherRequest(path)
+    }
+
+    pub fn repository_response(path: PathBuf) -> Command {
+        Command::RepoResponse(path)
+    }
+}
+
 
 pub struct PubClient {
     // keys
@@ -27,6 +53,34 @@ pub struct PubClient {
 }
 
 impl PubClient {
+    pub fn execute(options: Options) -> Result<ApiResponse, Error> {
+        let mut client = Self::build(options.state_dir())?;
+
+        match options.command {
+            Command::PublisherRequest(path) => {
+                let request = client.publisher_request()?;
+                request.save(&path)?;
+                Ok(ApiResponse::Success)
+            },
+            Command::RepoResponse(path) => {
+                let xml = file::read(&path)?;
+                let response = RepositoryResponse::decode(xml.as_ref())?;
+                client.process_repo_response(&response)?;
+                Ok(ApiResponse::Success)
+            },
+            Command::Init(name) => {
+                client.init(&name)?;
+                Ok(ApiResponse::Success)
+            },
+            Command::List => {
+                unimplemented!()
+            },
+            Command::Sync(_dir) => {
+                unimplemented!()
+            }
+        }
+    }
+
     pub fn build(work_dir: &PathBuf) -> Result<Self, Error> {
         let signer = OpenSslSigner::build(work_dir)?;
         Ok(PubClient { signer, work_dir: work_dir.clone() })
@@ -36,7 +90,7 @@ impl PubClient {
     /// returns a publisher request that can be sent to the server.
     pub fn init(&mut self, name: &str) -> Result<(), Error> {
         let key_id = self.signer.create_key(PublicKeyFormat)?;
-        let id_cert = IdCertBuilder::new_ta_id_cert(&key_id, &mut self.signer)?;
+        let id_cert = IdCertBuilder::new_ta_id_cert(&key_id, &self.signer)?;
         let my_id = MyIdentity::new(name, id_cert, key_id);
 
         file::save_json(&my_id, &self.path_my_id())?;
@@ -119,29 +173,35 @@ impl PubClient {
 }
 
 
-//------------ Config --------------------------------------------------------
+//------------ Options --------------------------------------------------------
 
-#[derive(Debug, Deserialize)]
-pub struct Config {
+#[derive(Debug)]
+pub struct Options {
     state_dir: PathBuf,
-    mode: RunMode
+    command: Command,
+    format: Format
 }
 
 /// # Accessors
-impl Config {
+impl Options {
+    pub fn new(state_dir: PathBuf, command: Command, format: Format) -> Self {
+        Options { state_dir, command, format }
+    }
     pub fn state_dir(&self) -> &PathBuf {
         &self.state_dir
     }
 
-    pub fn mode(&self) -> &RunMode {
-        &self.mode
+    pub fn command(&self) -> &Command {
+        &self.command
     }
+
+    pub fn format(&self) -> &Format { &self.format }
 }
 
 /// # Create
-impl Config {
+impl Options {
     /// Creates the config (at startup). Panics in case of issues.
-    pub fn create() -> Result<Self, ConfigError> {
+    pub fn create() -> Result<Self, OptionsError> {
         let m = App::new("NLnet Labs RRDP Client (RFC8181)")
             .version("0.1b")
 
@@ -152,6 +212,14 @@ impl Config {
                 .help("Specify the directory where this publication client \
                        maintains its state.")
                 .required(true))
+
+            .arg(Arg::with_name("format")
+                .short("f")
+                .long("format")
+                .value_name("text|json|none")
+                .help("Specify the output format. Defaults to 'none'.")
+                .required(false)
+            )
 
             .subcommand(SubCommand::with_name("init")
                 .about("(Re-)Initialise the identity certificate and key \
@@ -184,6 +252,8 @@ impl Config {
                     .required(true))
             )
 
+            .subcommand(SubCommand::with_name("list"))
+
             .subcommand(SubCommand::with_name("sync")
                 .about("Synchronise the directory specified by '-d'.")
                 .arg(Arg::with_name("dir")
@@ -199,67 +269,68 @@ impl Config {
 
             .get_matches();
 
-        let mut mode = RunMode::Unset;
+        let state_dir = {
+            let state = m.value_of("state").unwrap(); // safe (required)
+            PathBuf::from(state)
+        };
 
-        if let Some(m) = m.subcommand_matches("init") {
-            if let Some(name) = m.value_of("name") {
-                mode = RunMode::Init(name.to_string())
-            }
-        }
-
-        if let Some(m) = m.subcommand_matches("request") {
-            if let Some(xml) = m.value_of("xml") {
+        let command = {
+            if let Some(m) = m.subcommand_matches("init") {
+                let name = m.value_of("name").unwrap();
+                Command::Init(name.to_string())
+            } else if let Some(m) = m.subcommand_matches("request") {
+                let xml = m.value_of("xml").unwrap();
                 let xml = PathBuf::from(xml);
-                mode = RunMode::PublisherRequest(xml)
-            }
-        }
-        if let Some(m) = m.subcommand_matches("response") {
-            if let Some(xml) = m.value_of("xml") {
+                Command::PublisherRequest(xml)
+            } else if let Some(m) = m.subcommand_matches("response") {
+                let xml = m.value_of("xml").unwrap();
                 let xml = PathBuf::from(xml);
-                mode = RunMode::RepoResponse(xml)
-            }
-        }
-        if let Some(m) = m.subcommand_matches("sync") {
-            if let Some(dir) = m.value_of("dir") {
+                Command::RepoResponse(xml)
+            } else if let Some(_m) = m.subcommand_matches("list") {
+                Command::List
+            } else if let Some(m) = m.subcommand_matches("sync") {
+                let dir = m.value_of("dir").unwrap();
                 let dir = PathBuf::from(dir);
-                mode = RunMode::Sync(dir)
+                Command::Sync(dir)
+            } else {
+                return Err(OptionsError::NoCommand)
             }
-        }
+        };
 
-        let state = m.value_of("state").unwrap(); // safe (required)
-        let state_dir = PathBuf::from(state);
-        Ok(Config { state_dir, mode})
+        let format = Format::from(m.value_of("format").unwrap_or("none"))
+            .map_err(|_| OptionsError::UnsupportedOutputFormat)?;
+
+        Ok(Options { state_dir, command, format })
     }
 }
 
-#[derive(Debug, Deserialize, Eq, PartialEq)]
-pub enum RunMode {
-    Unset,
-    Init(String),
-    PublisherRequest(PathBuf),
-    RepoResponse(PathBuf),
-    Sync(PathBuf)
-}
+
 
 #[derive(Debug, Display)]
-pub enum ConfigError {
+pub enum OptionsError {
+
+    #[display(fmt="Specify a sub-command. See --help")]
+    NoCommand,
 
     #[display(fmt="{}", _0)]
     IoError(io::Error),
 
     #[display(fmt="{}", _0)]
     TomlError(toml::de::Error),
+
+    #[display(fmt="Unsupported output format. Use text, json or none.")]
+    UnsupportedOutputFormat,
 }
 
-impl From<io::Error> for ConfigError {
+impl From<io::Error> for OptionsError {
     fn from(e: io::Error) -> Self {
-        ConfigError::IoError(e)
+        OptionsError::IoError(e)
     }
 }
 
-impl From<toml::de::Error> for ConfigError {
+impl From<toml::de::Error> for OptionsError {
     fn from(e: toml::de::Error) -> Self {
-        ConfigError::TomlError(e)
+        OptionsError::TomlError(e)
     }
 }
 
@@ -280,6 +351,9 @@ pub enum Error {
 
     #[display(fmt="{}", _0)]
     IoError(io::Error),
+
+    #[display(fmt="{}", _0)]
+    ResponseError(rfc8183::RepositoryResponseError),
 }
 
 impl From<softsigner::SignerError> for Error {
@@ -297,6 +371,12 @@ impl From<krill_cms_proxy::builder::Error<softsigner::SignerError>> for Error {
 impl From<io::Error> for Error {
     fn from(e: io::Error) -> Self {
         Error::IoError(e)
+    }
+}
+
+impl From<rfc8183::RepositoryResponseError> for Error {
+    fn from(e: rfc8183::RepositoryResponseError) -> Self {
+        Error::ResponseError(e)
     }
 }
 

@@ -19,19 +19,21 @@ use krill::krillc::KrillClient;
 use krill::krilld::config::Config;
 use krill::krilld::http::server::PubServerApp;
 use krill::pubc::apiclient;
-use krill::pubc::apiclient::ApiResponse;
+use krill::pubc::{ApiResponse, Format};
 use krill::krillc::report::ReportFormat;
 use krill_commons::util::file::CurrentFile;
 use krill_commons::util::file;
 use krill_commons::util::httpclient;
 use krill_commons::util::test;
+use krill::pubc::cmsclient;
 use krill::pubc::cmsclient::PubClient;
 use krill_cms_proxy::rfc8183::RepositoryResponse;
+use krill::pubc;
 
 fn list(server_uri: &str, handle: &str, token: &str) -> apiclient::Options {
     let conn = apiclient::Connection::build(server_uri, handle, token).unwrap();
     let cmd = apiclient::Command::List;
-    let fmt = apiclient::Format::Json;
+    let fmt = Format::Json;
 
     apiclient::Options::new(conn, cmd, fmt)
 }
@@ -45,7 +47,7 @@ fn sync(
 ) -> apiclient::Options {
     let conn = apiclient::Connection::build(server_uri, handle, token).unwrap();
     let cmd = apiclient::Command::sync(syncdir.to_str().unwrap(), base_uri).unwrap();
-    let fmt = apiclient::Format::Json;
+    let fmt = Format::Json;
 
     apiclient::Options::new(conn, cmd, fmt)
 }
@@ -84,14 +86,23 @@ fn remove_publisher(handle: &str) {
     execute_krillc_command(command);
 }
 
-fn add_rfc8181_client(handle: &str, token: &str, base_work_dir: &PathBuf) -> PubClient {
-    let client_dir = test::create_sub_dir(base_work_dir);
-    let mut client = PubClient::build(&client_dir).unwrap();
-    client.init(handle).unwrap();
-    let pr = client.publisher_request().unwrap();
-    let mut pr_path = base_work_dir.clone();
-    pr_path.push(&format!("{}.xml", handle));
-    pr.save(&pr_path).unwrap();
+fn rfc8181_client_init(handle: &str, state_dir: &PathBuf) {
+    let command = cmsclient::Command::init(handle);
+    let format = pubc::Format::None;
+    let options = cmsclient::Options::new(state_dir.clone(), command, format);
+
+    PubClient::execute(options).unwrap();
+}
+
+fn rfc8181_client_add(token: &str, state_dir: &PathBuf)  {
+    let mut pr_path = state_dir.clone();
+    pr_path.push("request.xml");
+
+    let command = cmsclient::Command::publisher_request(pr_path.clone());
+    let format = pubc::Format::None;
+    let options = cmsclient::Options::new(state_dir.clone(), command, format);
+
+    PubClient::execute(options).unwrap();
 
     let command = Command::Rfc8181(
         Rfc8181Command::Add(
@@ -100,8 +111,14 @@ fn add_rfc8181_client(handle: &str, token: &str, base_work_dir: &PathBuf) -> Pub
     );
 
     execute_krillc_command(command);
+}
 
-    client
+fn rfc8181_client_process_response(res_path: &PathBuf, state_dir: &PathBuf) {
+    let command = cmsclient::Command::repository_response(res_path.clone());
+    let format = pubc::Format::None;
+    let options = cmsclient::Options::new(state_dir.clone(), command, format);
+
+    PubClient::execute(options).unwrap();
 }
 
 fn get_repository_response(handle: &str) -> RepositoryResponse {
@@ -337,12 +354,26 @@ pub fn client_publish_through_cms() {
         // Add client "alice"
         add_publisher(handle, base_rsync_uri_alice, token);
 
+
+        let state_dir = test::create_sub_dir(&d);
+
         // Add RFC8181 client for alice
-        let mut client = add_rfc8181_client(handle, token, &d);
+        rfc8181_client_init(handle, &state_dir);
 
+        rfc8181_client_add(token, &state_dir);
+
+        // Get the server response.xml and add it to the client
         let response = get_repository_response(handle);
+        let mut response_path = state_dir.clone();
+        response_path.push("response.xml");
+        response.save(&response_path).unwrap();
 
-        client.process_repo_response(&response).unwrap();
+        rfc8181_client_process_response(&response_path, &state_dir);
+//        client.process_repo_response(&response).unwrap();
+
+        // Let client list files, expect no files
+
+
     });
 
 }
