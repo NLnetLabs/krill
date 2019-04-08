@@ -122,6 +122,11 @@ fn rfc8181_client_list(state_dir: &PathBuf) -> ListReply {
     }
 }
 
+fn rfc8181_client_sync(state_dir: &PathBuf, sync_dir: &PathBuf) {
+    let command = cmsclient::Command::sync(sync_dir.clone());
+    rfc8181_client_process_command(command, state_dir);
+}
+
 fn rfc8181_client_process_command(command: cmsclient::Command, state_dir: &PathBuf) -> ApiResponse {
     let options = cmsclient::Options::new(state_dir.clone(), command, pubc::Format::None);
     PubClient::execute(options).unwrap()
@@ -140,7 +145,7 @@ fn get_repository_response(handle: &str) -> RepositoryResponse {
 }
 
 #[test]
-fn client_publish_through_api() {
+fn client_publish() {
     test::test_with_tmp_dir(|d| {
 
         let server_uri = "http://localhost:3000/";
@@ -329,13 +334,9 @@ fn client_publish_through_api() {
         // XXX TODO Must remove files when removing publisher
         // Expect that c.txt is removed when looking at latest snapshot.
         file::delete_in_dir(&sync_dir, "c.txt").unwrap();
-    });
-}
 
-#[test]
-pub fn client_publish_through_cms() {
-    test::test_with_tmp_dir(|d| {
-//        let server_uri = "http://localhost:3000/";
+        // Now test with CMS proxy
+
         let handle = "carol";
         let token = "secret";
         let base_rsync_uri = "rsync://127.0.0.1/repo/carol/";
@@ -379,7 +380,31 @@ pub fn client_publish_through_cms() {
         let list = rfc8181_client_list(&state_dir);
         assert_eq!(0, list.elements().len());
 
+        // Create files on disk to sync
+        let sync_dir = test::create_sub_dir(&d);
+        let file_a = CurrentFile::new(
+            test::rsync_uri("rsync://127.0.0.1/repo/alice/a.txt"),
+            &test::as_bytes("a")
+        );
+        let file_b = CurrentFile::new(
+            test::rsync_uri("rsync://127.0.0.1/repo/alice/b.txt"),
+            &test::as_bytes("b")
+        );
+        let file_c = CurrentFile::new(
+            test::rsync_uri("rsync://127.0.0.1/repo/alice/c.txt"),
+            &test::as_bytes("c")
+        );
 
+        file::save_in_dir(&file_a.to_bytes(), &sync_dir, "a.txt").unwrap();
+        file::save_in_dir(&file_b.to_bytes(), &sync_dir, "b.txt").unwrap();
+        file::save_in_dir(&file_c.to_bytes(), &sync_dir, "c.txt").unwrap();
+
+        // Sync
+        rfc8181_client_sync(&state_dir, &sync_dir);
+
+        // List the files
+        let list = rfc8181_client_list(&state_dir);
+        assert_eq!(3, list.elements().len());
     });
 
 }

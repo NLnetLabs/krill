@@ -216,7 +216,7 @@ impl KrillServer {
     /// the CmsProxy.
     #[allow(clippy::needless_pass_by_value)]
     pub fn handle_delta(
-        &mut self,
+        &self,
         delta: publication::PublishDelta,
         handle: &PublisherHandle
     ) -> Result<(), Error> {

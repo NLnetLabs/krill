@@ -144,7 +144,7 @@ pub fn handle_delta(
     delta: publication::PublishDelta,
     handle: PublisherHandle
 ) -> HttpResponse {
-    match rw_server(&req).handle_delta(delta, &handle) {
+    match ro_server(&req).handle_delta(delta, &handle) {
         Ok(()) => api_ok(),
         Err(e) => server_error(&Error::ServerError(e))
     }

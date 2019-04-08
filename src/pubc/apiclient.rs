@@ -6,7 +6,7 @@ use rpki::uri;
 use krill_commons::api::publication;
 use krill_commons::util::httpclient;
 use crate::pubc;
-use pubc::{Format, ApiResponse};
+use crate::pubc::{Format, ApiResponse};
 
 
 //------------ Command -------------------------------------------------------

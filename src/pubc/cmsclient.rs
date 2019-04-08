@@ -12,6 +12,7 @@ use krill_cms_proxy::rfc8183::RepositoryResponse;
 use krill_cms_proxy::id::{MyIdentity, ParentInfo, MyRepoInfo};
 use krill_cms_proxy::proxy::{ClientProxy, ClientError};
 use crate::pubc::{ApiResponse, Format};
+use pubc;
 
 #[derive(Debug, Deserialize, Eq, PartialEq)]
 pub enum Command {
@@ -37,6 +38,10 @@ impl Command {
 
     pub fn list() -> Command {
         Command::List
+    }
+
+    pub fn sync(dir: PathBuf) -> Command {
+        Command::Sync(dir)
     }
 }
 
@@ -69,8 +74,9 @@ impl PubClient {
                 let reply = client.list()?;
                 Ok(ApiResponse::List(reply))
             },
-            Command::Sync(_dir) => {
-                unimplemented!()
+            Command::Sync(dir) => {
+                client.sync(&dir)?;
+                Ok(ApiResponse::Success)
             }
         }
     }
@@ -142,6 +148,21 @@ impl PubClient {
         proxy.list().map_err(Error::ClientError)
     }
 
+    /// Synchronises
+    fn sync(&self, dir: &PathBuf) -> Result<(), Error> {
+        let proxy = self.client_proxy()?;
+        let repo = self.my_repo()?;
+
+        let list_reply = self.list()?;
+        let delta = pubc::create_delta(
+            &list_reply,
+            dir,
+            repo.sia_base()
+        )?;
+
+        proxy.delta(delta).map_err(Error::ClientError)
+    }
+
     fn path_my_id(&self) -> PathBuf {
         let mut res = self.state_dir.clone();
         res.push("id.json");
@@ -167,10 +188,10 @@ impl PubClient {
     fn my_parent(&self) -> Result<ParentInfo, Error> {
         file::load_json(&self.path_my_parent()).map_err(|_| Error::Uninitialised)
     }
-//
-//    fn my_repo(&self) -> Result<MyRepoInfo, Error> {
-//        file::load_json(&self.path_my_repo()).map_err(|_| Error::Uninitialised)
-//    }
+
+    fn my_repo(&self) -> Result<MyRepoInfo, Error> {
+        file::load_json(&self.path_my_repo()).map_err(|_| Error::Uninitialised)
+    }
 
     fn client_proxy(&self) -> Result<ClientProxy, Error> {
         let id = self.my_identity()?;
@@ -365,6 +386,9 @@ pub enum Error {
 
     #[display(fmt="{}", _0)]
     ClientError(ClientError),
+
+    #[display(fmt="{}", _0)]
+    PubcError(pubc::Error),
 }
 
 impl From<softsigner::SignerError> for Error {
@@ -395,6 +419,10 @@ impl From<ClientError> for Error {
     fn from(e: ClientError) -> Self {
         Error::ClientError(e)
     }
+}
+
+impl From<pubc::Error> for Error {
+    fn from(e: pubc::Error) -> Self { Error::PubcError(e) }
 }
 
 // For tests see main 'tests' folder
