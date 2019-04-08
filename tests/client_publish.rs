@@ -7,17 +7,14 @@ extern crate krill_commons;
 extern crate serde_json;
 extern crate tokio;
 extern crate bytes;
+extern crate toml;
+extern crate krill_cms_proxy;
 
 use std::{thread, time};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use actix::System;
-use krill::krillc::options::{
-    AddPublisher,
-    Command,
-    Options,
-    PublishersCommand
-};
+use krill::krillc::options::{AddPublisher, Command, Options, PublishersCommand, Rfc8181Command, AddRfc8181Client};
 use krill::krillc::KrillClient;
 use krill::krilld::config::Config;
 use krill::krilld::http::server::PubServerApp;
@@ -28,6 +25,8 @@ use krill_commons::util::file::CurrentFile;
 use krill_commons::util::file;
 use krill_commons::util::httpclient;
 use krill_commons::util::test;
+use krill::pubc::cmsclient::PubClient;
+use krill_cms_proxy::rfc8183::RepositoryResponse;
 
 fn list(server_uri: &str, handle: &str, token: &str) -> apiclient::Options {
     let conn = apiclient::Connection::build(server_uri, handle, token).unwrap();
@@ -85,8 +84,40 @@ fn remove_publisher(handle: &str) {
     execute_krillc_command(command);
 }
 
+fn add_rfc8181_client(handle: &str, token: &str, base_work_dir: &PathBuf) -> PubClient {
+    let client_dir = test::create_sub_dir(base_work_dir);
+    let mut client = PubClient::build(&client_dir).unwrap();
+    client.init(handle).unwrap();
+    let pr = client.publisher_request().unwrap();
+    let mut pr_path = base_work_dir.clone();
+    pr_path.push(&format!("{}.xml", handle));
+    pr.save(&pr_path).unwrap();
+
+    let command = Command::Rfc8181(
+        Rfc8181Command::Add(
+            AddRfc8181Client { token: token.to_string(), xml: pr_path }
+        )
+    );
+
+    execute_krillc_command(command);
+
+    client
+}
+
+fn get_repository_response(handle: &str) -> RepositoryResponse {
+    let uri = format!("http://localhost:3000/api/v1/rfc8181/{}/response.xml", handle);
+    let content_type = "application/xml";
+    let token = Some("secret");
+
+    let xml = httpclient::get_text(
+        &uri, content_type, token
+    ).unwrap();
+
+    RepositoryResponse::decode(xml.as_bytes()).unwrap()
+}
+
 #[test]
-fn client_publish_at_server() {
+fn client_publish_through_api() {
     test::test_with_tmp_dir(|d| {
 
         let server_uri = "http://localhost:3000/";
@@ -278,3 +309,40 @@ fn client_publish_at_server() {
     });
 }
 
+#[test]
+pub fn client_publish_through_cms() {
+    test::test_with_tmp_dir(|d| {
+//        let server_uri = "http://localhost:3000/";
+        let handle = "alice";
+        let token = "secret";
+        let base_rsync_uri_alice = "rsync://127.0.0.1/repo/alice/";
+
+        // Set up a test PubServer Config
+        let server_conf = {
+            // Use a data dir for the storage
+            let data_dir = test::create_sub_dir(&d);
+            Config::test(&data_dir)
+        };
+
+        // Start the server
+        thread::spawn(|| {
+            System::run(move || {
+                PubServerApp::start(&server_conf);
+            })
+        });
+
+        // XXX TODO: Find a better way to know the server is ready!
+        thread::sleep(time::Duration::from_millis(500));
+
+        // Add client "alice"
+        add_publisher(handle, base_rsync_uri_alice, token);
+
+        // Add RFC8181 client for alice
+        let mut client = add_rfc8181_client(handle, token, &d);
+
+        let response = get_repository_response(handle);
+
+        client.process_repo_response(&response).unwrap();
+    });
+
+}

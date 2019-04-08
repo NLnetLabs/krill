@@ -11,7 +11,8 @@ use crate::krilld::pubd;
 use crate::krilld::pubd::publishers::PublisherError;
 use crate::krilld::pubd::repo::RrdpServerError;
 use krill_commons::api::rrdp::VerificationError;
-use krill_cms_proxy::api::ClientInfo;
+use krill_cms_proxy::api::{ClientInfo, ClientHandle};
+use krill_commons::api::publication::PublishDelta;
 
 
 //------------ Support Functions ---------------------------------------------
@@ -158,6 +159,21 @@ pub fn add_rfc8181_client(
     let server = ro_server(&req);
     match server.add_rfc8181_client(client) {
         Ok(()) => api_ok(),
+        Err(e) => server_error(&Error::ServerError(e))
+    }
+}
+
+pub fn repository_response(
+    req: HttpRequest,
+    handle: PublisherHandle
+) -> HttpResponse {
+    match ro_server(&req).repository_response(&handle) {
+        Ok(res) => {
+            HttpResponse::Ok()
+                .content_type("application/xml")
+                .body(res.encode_vec())
+        },
+
         Err(e) => server_error(&Error::ServerError(e))
     }
 }

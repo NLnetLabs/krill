@@ -66,6 +66,10 @@ impl PubServerApp {
                 r.method(Method::POST).with(endpoints::add_rfc8181_client)
             })
 
+            .resource("/api/v1/rfc8181/{handle}/response.xml", |r| {
+                r.method(Method::GET).with(endpoints::repository_response)
+            })
+
             .resource("/publication/{handle}", |r| {
                 r.method(Method::GET).with(endpoints::handle_list);
                 r.method(Method::POST).with(endpoints::handle_delta);

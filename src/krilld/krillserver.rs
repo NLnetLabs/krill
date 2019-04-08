@@ -12,7 +12,8 @@ use crate::krilld::pubd;
 use crate::krilld::pubd::publishers::Publisher;
 use krill_cms_proxy::proxy::ProxyServer;
 use krill_cms_proxy::proxy;
-use krill_cms_proxy::api::ClientInfo;
+use krill_cms_proxy::api::{ClientInfo, ClientHandle};
+use krill_cms_proxy::rfc8183::RepositoryResponse;
 
 
 //------------ KrillServer ---------------------------------------------------
@@ -167,6 +168,34 @@ impl KrillServer {
 
     pub fn add_rfc8181_client(&self, client: ClientInfo) -> Result<(), Error> {
         self.proxy_server.add_client(client).map_err(Error::ProxyServer)
+    }
+
+    pub fn repository_response(&self, handle: &PublisherHandle) -> Result<RepositoryResponse, Error> {
+        let client = ClientHandle::from(handle.as_ref());
+        let publisher = self.publisher(handle)?
+            .ok_or_else(|| Error::ProxyServer(proxy::Error::UnknownClient(client.clone())))?;
+
+        let sia_base = publisher.base_uri().clone();
+
+        let service_uri = format!(
+            "{}rfc8181/{}",
+            self.service_uri.to_string(),
+            &client
+        );
+        let service_uri = uri::Http::from_string(service_uri).unwrap();
+
+        let rrdp_notification_uri = format!(
+            "{}rrdp/notification.xml",
+            self.service_uri.to_string(),
+        );
+        let rrdp_notification_uri = uri::Http::from_string(rrdp_notification_uri).unwrap();
+
+        self.proxy_server.response(
+            &client,
+            service_uri,
+            sia_base,
+            rrdp_notification_uri
+        ).map_err(Error::ProxyServer)
     }
 }
 
