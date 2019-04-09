@@ -14,8 +14,6 @@ use actix_web::middleware::identity::CookieIdentityPolicy;
 use actix_web::middleware::identity::IdentityService;
 use actix_web::http::{Method, StatusCode};
 use bcder::decode;
-use krill_cms_proxy::rfc8183;
-use krill_cms_proxy::sigmsg::SignedMessage;
 use openssl::ssl::{SslMethod, SslAcceptor, SslAcceptorBuilder, SslFiletype};
 use crate::krilld::auth;
 use crate::krilld::auth::{Authorizer, CheckAuthorisation, Credentials};
@@ -27,7 +25,7 @@ use crate::krilld::krillserver::KrillServer;
 use futures::Future;
 
 const LOGIN: &[u8] = include_bytes!("../../../ui/dev/html/login.html");
-const NOT_FOUND: &'static [u8] = include_bytes!("../../../ui/public/404.html");
+const NOT_FOUND: &[u8] = include_bytes!("../../../ui/public/404.html");
 
 //------------ PubServerApp --------------------------------------------------
 
@@ -38,7 +36,7 @@ pub struct PubServerApp(App<Arc<RwLock<KrillServer>>>);
 ///
 impl PubServerApp {
     pub fn new(server: Arc<RwLock<KrillServer>>) -> Self {
-        let mut app = App::with_state(server)
+        let app = App::with_state(server)
             .middleware(middleware::Logger::default())
             .middleware(IdentityService::new(
                 CookieIdentityPolicy::new(&[0; 32])
