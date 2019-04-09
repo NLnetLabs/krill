@@ -1,170 +1,108 @@
 use std::io;
 use std::path::PathBuf;
-use std::sync::Arc;
-use bcder::{Captured, Mode};
-use bcder::decode;
-use bcder::encode::Values;
 use clap::{App, Arg, SubCommand};
-use rpki::x509::ValidationError;
-use rpki::crypto::{PublicKeyFormat, Signer};
-use toml;
-use crate::api::publication_data;
-use crate::pubc;
-use crate::remote::builder;
-use crate::remote::builder::{IdCertBuilder, SignedMessageBuilder};
-use crate::remote::id::{MyIdentity, MyRepoInfo, ParentInfo};
-use crate::remote::rfc8183;
-use crate::remote::rfc8181;
-use crate::remote::sigmsg::SignedMessage;
-use crate::storage::caching_ks::CachingDiskKeyStore;
-use crate::storage::keystore::{self, Info, Key, KeyStore};
-use crate::util::httpclient;
-use crate::util::softsigner::{self, OpenSslSigner};
+use rpki::crypto::PublicKeyFormat;
+use rpki::crypto::Signer;
+use krill_commons::api::publication::ListReply;
+use krill_commons::util::{softsigner, file};
+use krill_commons::util::softsigner::OpenSslSigner;
+use krill_cms_proxy::builder::IdCertBuilder;
+use krill_cms_proxy::rfc8183;
+use krill_cms_proxy::rfc8183::RepositoryResponse;
+use krill_cms_proxy::id::{MyIdentity, ParentInfo, MyRepoInfo};
+use krill_cms_proxy::proxy::{ClientProxy, ClientError};
+use crate::pubc::{ApiResponse, Format};
+use pubc;
 
-
-/// # Some constants for naming resources in the keystore for clients.
-const ACTOR: &str = "publication client";
-
-fn id_key() -> Key {
-    Key::new("my_id")
+#[derive(Debug, Deserialize, Eq, PartialEq)]
+pub enum Command {
+    Init(String),
+    PublisherRequest(PathBuf),
+    RepoResponse(PathBuf),
+    List,
+    Sync(PathBuf)
 }
 
-fn parent_key() -> Key {
-    Key::new("my_parent")
+impl Command {
+    pub fn init(name: &str) -> Command {
+        Command::Init(name.to_string())
+    }
+
+    pub fn publisher_request(path: PathBuf) -> Command {
+        Command::PublisherRequest(path)
+    }
+
+    pub fn repository_response(path: PathBuf) -> Command {
+        Command::RepoResponse(path)
+    }
+
+    pub fn list() -> Command {
+        Command::List
+    }
+
+    pub fn sync(dir: PathBuf) -> Command {
+        Command::Sync(dir)
+    }
 }
 
-fn repo_key() -> Key {
-    Key::new("my_repo")
-}
 
-const ID_MSG: &str = "initialised identity";
-const PARENT_MSG: &str ="updated parent info";
-const REPO_MSG: &str = "update repo info";
-
-
-//------------ PubClient -----------------------------------------------------
-
-/// An RPKI publication protocol (command line) client, useful for testing,
-/// in scenarios where a CA just writes its products to disk, and a separate
-/// process is responsible for synchronising them to the repository.
-#[derive(Clone, Debug)]
 pub struct PubClient {
-    // keys
-    //   -> keys by id
-    signer: OpenSslSigner,
-
-    // key value store
-    store: CachingDiskKeyStore,
-    //   id_key     -> MyIdentity
-    //   parent_key -> ParentInfo
-    //   repo_key   -> MyRepoInfo
-
-    //   -> my directory of interest
-    //      (note: we do not keep this state in client, truth is on disk)
-    // archive / log
-    //   -> my exchanges with the server
+    state_dir: PathBuf
 }
-
 
 impl PubClient {
-    /// Creates a new publication client
-    pub fn build(work_dir: &PathBuf) -> Result<Self, Error> {
-        let store = CachingDiskKeyStore::build(work_dir.clone())?;
-        let signer = OpenSslSigner::build(work_dir)?;
-        Ok(
-            PubClient {
-                signer,
-                store
+    pub fn execute(options: Options) -> Result<ApiResponse, Error> {
+        let mut client = Self::build(options.state_dir())?;
+
+        match options.command {
+            Command::PublisherRequest(path) => {
+                let request = client.publisher_request()?;
+                request.save(&path)?;
+                Ok(ApiResponse::Success)
+            },
+            Command::RepoResponse(path) => {
+                let xml = file::read(&path)?;
+                let response = RepositoryResponse::decode(xml.as_ref())?;
+                client.process_repo_response(&response)?;
+                Ok(ApiResponse::Success)
+            },
+            Command::Init(name) => {
+                client.init(&name)?;
+                Ok(ApiResponse::Success)
+            },
+            Command::List => {
+                let reply = client.list()?;
+                Ok(ApiResponse::List(reply))
+            },
+            Command::Sync(dir) => {
+                client.sync(&dir)?;
+                Ok(ApiResponse::Success)
             }
-        )
+        }
+    }
+
+    fn build(state_dir: &PathBuf) -> Result<Self, Error> {
+        Ok(PubClient { state_dir: state_dir.clone() })
     }
 
     /// Initialises a new publication client, using a new key pair, and
     /// returns a publisher request that can be sent to the server.
-    pub fn init(&mut self, name: &str) -> Result<(), Error> {
-        let key_id = self.signer.create_key(PublicKeyFormat)?;
-        let id_cert = IdCertBuilder::new_ta_id_cert(&key_id, &mut self.signer)?;
+    fn init(&mut self, name: &str) -> Result<(), Error> {
+        let mut signer = OpenSslSigner::build(&self.state_dir)?;
+
+        let key_id = signer.create_key(PublicKeyFormat)?;
+        let id_cert = IdCertBuilder::new_ta_id_cert(&key_id, &signer)?;
         let my_id = MyIdentity::new(name, id_cert, key_id);
 
-        let key = id_key();
-        let inf = Info::now(ACTOR, ID_MSG);
-        self.store.store(key, my_id, inf)?;
-
-        Ok(())
-    }
-
-    fn my_identity(&self) -> Result<Option<Arc<MyIdentity>>, Error> {
-        self.store.get(&id_key()).map_err(|e| { Error::KeyStoreError(e)})
-    }
-
-    fn get_my_id(&self) -> Result<Arc<MyIdentity>, Error> {
-        match self.my_identity()? {
-            None => Err(Error::Uninitialised),
-            Some(id) => Ok(id)
-        }
-    }
-
-    fn my_parent(&self) -> Result<Option<Arc<ParentInfo>>, Error> {
-        self.store.get(&parent_key()).map_err(|e| {Error::KeyStoreError(e) })
-    }
-
-    fn get_my_parent(&self) -> Result<Arc<ParentInfo>, Error> {
-        match self.my_parent()? {
-            None => Err(Error::Uninitialised),
-            Some(p) => Ok(p)
-        }
-    }
-
-    fn my_repo(&self) -> Result<Option<Arc<MyRepoInfo>>, Error> {
-        self.store.get(&repo_key()).map_err(|e| {Error::KeyStoreError(e)})
-    }
-
-    fn get_my_repo(&self) -> Result<Arc<MyRepoInfo>, Error> {
-        match self.my_repo()? {
-            None => Err(Error::Uninitialised),
-            Some(r) => Ok(r)
-        }
-    }
-
-    /// Process the publication server parent response.
-    pub fn process_repo_response(
-        &mut self,
-        response: &rfc8183::RepositoryResponse
-    ) -> Result<(), Error> {
-
-        // Store parent info
-        {
-            let parent_val = ParentInfo::new(
-                response.publisher_handle().clone(),
-                response.id_cert().clone(),
-                response.service_uri().clone()
-            );
-            let parent_info = Info::now(ACTOR, PARENT_MSG);
-            let parent_key = parent_key();
-
-            self.store.store(parent_key, parent_val, parent_info)?;
-        }
-
-        // Store repo info
-        {
-            let repo_val = MyRepoInfo::new(
-                response.sia_base().clone(),
-                response.rrdp_notification_uri().clone()
-            );
-            let repo_info = Info::now(ACTOR, REPO_MSG);
-            let repo_key = repo_key();
-
-            self.store.store(repo_key, repo_val, repo_info)?;
-        }
-
+        file::save_json(&my_id, &self.path_my_id())?;
         Ok(())
     }
 
     /// Makes a publisher request, which can presented as an RFC8183 xml.
-    pub fn publisher_request(
+    fn publisher_request(
         &mut self
     ) -> Result<rfc8183::PublisherRequest, Error> {
-        let id = self.get_my_id()?;
+        let id = self.my_identity()?;
         Ok(
             rfc8183::PublisherRequest::new(
                 None,
@@ -174,132 +112,125 @@ impl PubClient {
         )
     }
 
-    /// Sends a list query to the server, and expects a list reply, all
-    /// validly signed and all.
-    pub fn get_server_list(
-        &mut self
-    ) -> Result<publication_data::ListReply, Error> {
-        let query = rfc8181::Message::list_query();
-        let signed_request = self.sign_request(query)?;
-
-        let reply = self.send_request(signed_request)?.into_reply()?;
-
-        match reply {
-            rfc8181::ReplyMessage::ErrorReply(e) => Err(Error::ErrorReply(e)),
-            rfc8181::ReplyMessage::SuccessReply  => Err(Error::UnexpectedReply),
-            rfc8181::ReplyMessage::ListReply(l)  => Ok(l)
-        }
-    }
-
-
-    /// Synchronises a directory to the configured publication server.
-    /// Returns an error if there are any hick-ups.
-    pub fn sync_dir(&mut self, base_path: &PathBuf) -> Result<(), Error> {
-        let repo = self.get_my_repo()?;
-        let list_reply = self.get_server_list()?;
-
-        let delta = pubc::create_delta(&list_reply, base_path, repo.sia_base
-        ())?;
-
-        if ! delta.is_empty() {
-            let msg = rfc8181::Message::publish_delta_query(delta);
-            let sgn_msg = self.sign_request(msg)?;
-            let reply = self.send_request(sgn_msg)?.into_reply()?;
-
-            match reply {
-                rfc8181::ReplyMessage::ErrorReply(e) => Err(Error::ErrorReply(e)),
-                rfc8181::ReplyMessage::ListReply(_)  => Err(Error::UnexpectedReply),
-                rfc8181::ReplyMessage::SuccessReply  => Ok(())
-            }
-        } else {
-            Ok(())
-        }
-    }
-
-
-    /// Sends a signed request to the server, and validates and parses the
-    /// response.
-    fn send_request(
+    /// Process the publication server parent response.
+    fn process_repo_response(
         &mut self,
-        req: Captured
-    ) -> Result<rfc8181::Message, Error> {
-        let parent = self.get_my_parent()?;
-        let post_bytes = req.into_bytes();
+        response: &rfc8183::RepositoryResponse
+    ) -> Result<(), Error> {
 
-        let res_bytes = httpclient::post_binary(
-            &parent.service_uri().to_string(),
-            &post_bytes,
-            "application/rpki-publication"
+        // Store parent info
+        {
+            let parent_info = ParentInfo::new(
+                response.publisher_handle().clone(),
+                response.id_cert().clone(),
+                response.service_uri().clone()
+            );
+
+            file::save_json(&parent_info, &self.path_my_parent())?;
+        }
+
+        // Store repo info
+        {
+            let repo_info = MyRepoInfo::new(
+                response.sia_base().clone(),
+                response.rrdp_notification_uri().clone()
+            );
+
+            file::save_json(&repo_info, &self.path_my_repo())?;
+        }
+
+        Ok(())
+    }
+
+    /// Sends a list request
+    fn list(&self) -> Result<ListReply, Error> {
+        let proxy = self.client_proxy()?;
+        proxy.list().map_err(Error::ClientError)
+    }
+
+    /// Synchronises
+    fn sync(&self, dir: &PathBuf) -> Result<(), Error> {
+        let proxy = self.client_proxy()?;
+        let repo = self.my_repo()?;
+
+        let list_reply = self.list()?;
+        let delta = pubc::create_delta(
+            &list_reply,
+            dir,
+            repo.sia_base()
         )?;
 
-        let signed_msg = SignedMessage::decode(res_bytes, true)?;
-        signed_msg.validate(parent.id_cert())?;
-        rfc8181::Message::from_signed_message(&signed_msg).map_err(|e| {
-            Error::MessageError(e)
-        })
+        proxy.delta(delta).map_err(Error::ClientError)
     }
 
-    /// Sign a request so it can be sent to the publisher.
-    fn sign_request(
-        &mut self,
-        msg: rfc8181::Message
-    ) -> Result<Captured, Error> {
-        let id = self.get_my_id()?;
-
-        let builder = SignedMessageBuilder::create(
-            id.key_id(),
-            &mut self.signer,
-            msg
-        )?;
-
-        let enc = builder.encode().to_captured(Mode::Der);
-        Ok(enc)
+    fn path_my_id(&self) -> PathBuf {
+        let mut res = self.state_dir.clone();
+        res.push("id.json");
+        res
     }
 
+    fn path_my_parent(&self) -> PathBuf {
+        let mut res = self.state_dir.clone();
+        res.push("parent.json");
+        res
+    }
 
-}
+    fn path_my_repo(&self) -> PathBuf {
+        let mut res = self.state_dir.clone();
+        res.push("repo.json");
+        res
+    }
 
-// Primarily used for testing things
-impl PartialEq for PubClient {
-    fn eq(&self, other: &PubClient) -> bool {
-        if let Ok(Some(my_id)) = self.my_identity() {
-            if let Ok(Some(other_id)) = other.my_identity() {
-                my_id == other_id
-            } else {
-                false
-            }
-        } else {
-            false
-        }
+    fn my_identity(&self) -> Result<MyIdentity, Error> {
+        file::load_json(&self.path_my_id()).map_err(|_| Error::Uninitialised)
+    }
+
+    fn my_parent(&self) -> Result<ParentInfo, Error> {
+        file::load_json(&self.path_my_parent()).map_err(|_| Error::Uninitialised)
+    }
+
+    fn my_repo(&self) -> Result<MyRepoInfo, Error> {
+        file::load_json(&self.path_my_repo()).map_err(|_| Error::Uninitialised)
+    }
+
+    fn client_proxy(&self) -> Result<ClientProxy, Error> {
+        let id = self.my_identity()?;
+        let parent = self.my_parent()?;
+
+        Ok(ClientProxy::new(id, parent, self.state_dir.clone()))
     }
 }
 
-impl Eq for PubClient { }
 
+//------------ Options --------------------------------------------------------
 
-//------------ Config --------------------------------------------------------
-
-#[derive(Debug, Deserialize)]
-pub struct Config {
+#[derive(Debug)]
+pub struct Options {
     state_dir: PathBuf,
-    mode: RunMode
+    command: Command,
+    format: Format
 }
 
 /// # Accessors
-impl Config {
+impl Options {
+    pub fn new(state_dir: PathBuf, command: Command, format: Format) -> Self {
+        Options { state_dir, command, format }
+    }
     pub fn state_dir(&self) -> &PathBuf {
         &self.state_dir
     }
 
-    pub fn mode(&self) -> &RunMode {
-        &self.mode
+    pub fn command(&self) -> &Command {
+        &self.command
     }
+
+    pub fn format(&self) -> &Format { &self.format }
 }
 
 /// # Create
-impl Config {
+impl Options {
     /// Creates the config (at startup). Panics in case of issues.
-    pub fn create() -> Result<Self, ConfigError> {
+    pub fn create() -> Result<Self, OptionsError> {
         let m = App::new("NLnet Labs RRDP Client (RFC8181)")
             .version("0.1b")
 
@@ -310,6 +241,14 @@ impl Config {
                 .help("Specify the directory where this publication client \
                        maintains its state.")
                 .required(true))
+
+            .arg(Arg::with_name("format")
+                .short("f")
+                .long("format")
+                .value_name("text|json|none")
+                .help("Specify the output format. Defaults to 'none'.")
+                .required(false)
+            )
 
             .subcommand(SubCommand::with_name("init")
                 .about("(Re-)Initialise the identity certificate and key \
@@ -342,6 +281,8 @@ impl Config {
                     .required(true))
             )
 
+            .subcommand(SubCommand::with_name("list"))
+
             .subcommand(SubCommand::with_name("sync")
                 .about("Synchronise the directory specified by '-d'.")
                 .arg(Arg::with_name("dir")
@@ -357,70 +298,70 @@ impl Config {
 
             .get_matches();
 
-        let mut mode = RunMode::Unset;
+        let state_dir = {
+            let state = m.value_of("state").unwrap(); // safe (required)
+            PathBuf::from(state)
+        };
 
-        if let Some(m) = m.subcommand_matches("init") {
-            if let Some(name) = m.value_of("name") {
-                mode = RunMode::Init(name.to_string())
-            }
-        }
-
-        if let Some(m) = m.subcommand_matches("request") {
-            if let Some(xml) = m.value_of("xml") {
+        let command = {
+            if let Some(m) = m.subcommand_matches("init") {
+                let name = m.value_of("name").unwrap();
+                Command::Init(name.to_string())
+            } else if let Some(m) = m.subcommand_matches("request") {
+                let xml = m.value_of("xml").unwrap();
                 let xml = PathBuf::from(xml);
-                mode = RunMode::PublisherRequest(xml)
-            }
-        }
-        if let Some(m) = m.subcommand_matches("response") {
-            if let Some(xml) = m.value_of("xml") {
+                Command::PublisherRequest(xml)
+            } else if let Some(m) = m.subcommand_matches("response") {
+                let xml = m.value_of("xml").unwrap();
                 let xml = PathBuf::from(xml);
-                mode = RunMode::RepoResponse(xml)
-            }
-        }
-        if let Some(m) = m.subcommand_matches("sync") {
-            if let Some(dir) = m.value_of("dir") {
+                Command::RepoResponse(xml)
+            } else if let Some(_m) = m.subcommand_matches("list") {
+                Command::List
+            } else if let Some(m) = m.subcommand_matches("sync") {
+                let dir = m.value_of("dir").unwrap();
                 let dir = PathBuf::from(dir);
-                mode = RunMode::Sync(dir)
+                Command::Sync(dir)
+            } else {
+                return Err(OptionsError::NoCommand)
             }
-        }
+        };
 
-        let state = m.value_of("state").unwrap(); // safe (required)
-        let state_dir = PathBuf::from(state);
-        Ok(Config { state_dir, mode})
+        let format = Format::from(m.value_of("format").unwrap_or("none"))
+            .map_err(|_| OptionsError::UnsupportedOutputFormat)?;
+
+        Ok(Options { state_dir, command, format })
     }
 }
 
-#[derive(Debug, Deserialize, Eq, PartialEq)]
-pub enum RunMode {
-    Unset,
-    Init(String),
-    PublisherRequest(PathBuf),
-    RepoResponse(PathBuf),
-    Sync(PathBuf)
-}
+
 
 #[derive(Debug, Display)]
-pub enum ConfigError {
+pub enum OptionsError {
+
+    #[display(fmt="Specify a sub-command. See --help")]
+    NoCommand,
 
     #[display(fmt="{}", _0)]
     IoError(io::Error),
 
     #[display(fmt="{}", _0)]
     TomlError(toml::de::Error),
+
+    #[display(fmt="Unsupported output format. Use text, json or none.")]
+    UnsupportedOutputFormat,
 }
 
-impl From<io::Error> for ConfigError {
+impl From<io::Error> for OptionsError {
     fn from(e: io::Error) -> Self {
-        ConfigError::IoError(e)
+        OptionsError::IoError(e)
     }
 }
 
-impl From<toml::de::Error> for ConfigError {
+impl From<toml::de::Error> for OptionsError {
     fn from(e: toml::de::Error) -> Self {
-        ConfigError::TomlError(e)
+        OptionsError::TomlError(e)
     }
 }
-
 
 
 //------------ Error ---------------------------------------------------------
@@ -435,28 +376,16 @@ pub enum Error {
     SignerError(softsigner::SignerError),
 
     #[display(fmt="{}", _0)]
-    KeyStoreError(keystore::Error),
+    BuilderError(krill_cms_proxy::builder::Error<softsigner::SignerError>),
 
     #[display(fmt="{}", _0)]
-    ValidationError(ValidationError),
-
-    #[display(fmt="Cannot parse message: {}", _0)]
-    MessageError(rfc8181::MessageError),
-
-    #[display(fmt="Cannot decode reply: {}", _0)]
-    DecodeError(decode::Error),
-
-    #[display(fmt="Received error from server: {:?}", _0)]
-    ErrorReply(rfc8181::ErrorReply),
-
-    #[display(fmt="Received unexpected reply (list vs success)")]
-    UnexpectedReply,
+    IoError(io::Error),
 
     #[display(fmt="{}", _0)]
-    BuilderError(builder::Error<softsigner::SignerError>),
+    ResponseError(rfc8183::RepositoryResponseError),
 
     #[display(fmt="{}", _0)]
-    HttpClientError(httpclient::Error),
+    ClientError(ClientError),
 
     #[display(fmt="{}", _0)]
     PubcError(pubc::Error),
@@ -468,42 +397,32 @@ impl From<softsigner::SignerError> for Error {
     }
 }
 
-impl From<keystore::Error> for Error {
-    fn from(e: keystore::Error) -> Self {
-        Error::KeyStoreError(e)
-    }
-}
-
-impl From<ValidationError> for Error {
-    fn from(e: ValidationError) -> Self {
-        Error::ValidationError(e)
-    }
-}
-
-impl From<decode::Error> for Error {
-    fn from(e: decode::Error) -> Self {
-        Error::DecodeError(e)
-    }
-}
-
-impl From<rfc8181::MessageError> for Error {
-    fn from(e: rfc8181::MessageError) -> Self {
-        Error::MessageError(e)
-    }
-}
-
-impl From<builder::Error<softsigner::SignerError>> for Error {
-    fn from(e: builder::Error<softsigner::SignerError>) -> Self {
+impl From<krill_cms_proxy::builder::Error<softsigner::SignerError>> for Error {
+    fn from(e: krill_cms_proxy::builder::Error<softsigner::SignerError>) -> Self {
         Error::BuilderError(e)
     }
 }
 
-impl From<httpclient::Error> for Error {
-    fn from(e: httpclient::Error) -> Self { Error::HttpClientError(e) }
+impl From<io::Error> for Error {
+    fn from(e: io::Error) -> Self {
+        Error::IoError(e)
+    }
+}
+
+impl From<rfc8183::RepositoryResponseError> for Error {
+    fn from(e: rfc8183::RepositoryResponseError) -> Self {
+        Error::ResponseError(e)
+    }
+}
+
+impl From<ClientError> for Error {
+    fn from(e: ClientError) -> Self {
+        Error::ClientError(e)
+    }
 }
 
 impl From<pubc::Error> for Error {
     fn from(e: pubc::Error) -> Self { Error::PubcError(e) }
 }
 
-// Tested in integration tests in tests folder
+// For tests see main 'tests' folder

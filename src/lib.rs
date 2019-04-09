@@ -2,7 +2,7 @@ extern crate actix;
 extern crate actix_web;
 extern crate base64;
 extern crate bytes;
-#[macro_use] extern crate bcder;
+extern crate bcder;
 extern crate chrono;
 extern crate clap;
 extern crate core;
@@ -10,6 +10,7 @@ extern crate core;
 extern crate futures;
 extern crate hex;
 extern crate openssl;
+extern crate krill_commons;
 #[macro_use] extern crate log;
 extern crate rand;
 extern crate reqwest;
@@ -22,16 +23,8 @@ extern crate tokio;
 extern crate toml;
 extern crate uuid;
 extern crate xml as xmlrs;
+extern crate krill_cms_proxy;
 
-// XXX Temporarily
-extern crate ring;
-extern crate untrusted;
-
-pub mod api;
-pub mod eventsourcing;
 pub mod krillc;
 pub mod krilld;
 pub mod pubc;
-pub mod remote;
-pub mod storage;
-pub mod util;

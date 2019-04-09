@@ -6,7 +6,7 @@
 use std::io;
 use std::fs::File;
 use std::sync::{Arc, RwLock, RwLockReadGuard};
-use actix_web::{pred, server};
+use actix_web::{fs, pred, server};
 use actix_web::{App, FromRequest, HttpResponse };
 use actix_web::dev::MessageBody;
 use actix_web::middleware;
@@ -14,37 +14,31 @@ use actix_web::middleware::identity::CookieIdentityPolicy;
 use actix_web::middleware::identity::IdentityService;
 use actix_web::http::{Method, StatusCode};
 use bcder::decode;
-use futures::Future;
+use krill_cms_proxy::rfc8183;
+use krill_cms_proxy::sigmsg::SignedMessage;
 use openssl::ssl::{SslMethod, SslAcceptor, SslAcceptorBuilder, SslFiletype};
-use crate::api::publication_data;
-use crate::api::publisher_data;
-use crate::api::publisher_data::PublisherHandle;
-use crate::eventsourcing::DiskKeyStore;
 use crate::krilld::auth;
-use crate::krilld::auth::{Authorizer, CheckAuthorisation};
+use crate::krilld::auth::{Authorizer, CheckAuthorisation, Credentials};
 use crate::krilld::config::Config;
 use crate::krilld::endpoints;
 use crate::krilld::http::ssl;
 use crate::krilld::krillserver;
 use crate::krilld::krillserver::KrillServer;
-use crate::remote::rfc8183;
-use crate::remote::sigmsg::SignedMessage;
-use actix_web::fs;
-use krilld::auth::Credentials;
+use futures::Future;
 
 const LOGIN: &[u8] = include_bytes!("../../../ui/dev/html/login.html");
 const NOT_FOUND: &'static [u8] = include_bytes!("../../../ui/public/404.html");
 
 //------------ PubServerApp --------------------------------------------------
 
-pub struct PubServerApp(App<Arc<RwLock<KrillServer<DiskKeyStore>>>>);
+pub struct PubServerApp(App<Arc<RwLock<KrillServer>>>);
 
 
 /// # Set up methods
 ///
 impl PubServerApp {
-    pub fn new(server: Arc<RwLock<KrillServer<DiskKeyStore>>>) -> Self {
-        let app = App::with_state(server)
+    pub fn new(server: Arc<RwLock<KrillServer>>) -> Self {
+        let mut app = App::with_state(server)
             .middleware(middleware::Logger::default())
             .middleware(IdentityService::new(
                 CookieIdentityPolicy::new(&[0; 32])
@@ -63,22 +57,31 @@ impl PubServerApp {
             })
             .resource("/api/v1/publishers/{handle}", |r| {
                 r.method(Method::GET).with(endpoints::publisher_details);
-                r.method(Method::DELETE).with(endpoints::remove_publisher);
+                r.method(Method::DELETE).with(endpoints::deactivate_publisher);
             })
             // For clients that cannot handle http methods
             .resource("/api/v1/publishers/{handle}/del", |r| {
-                r.method(Method::POST).with(endpoints::remove_publisher);
+                r.method(Method::POST).with(endpoints::deactivate_publisher);
             })
-            .resource("/api/v1/publishers/{handle}/response.xml", |r| {
+
+            .resource("/api/v1/rfc8181/clients", |r| {
+                r.method(Method::GET).f(endpoints::rfc8181_clients);
+                r.method(Method::POST).with(endpoints::add_rfc8181_client)
+            })
+
+            .resource("/api/v1/rfc8181/{handle}/response.xml", |r| {
                 r.method(Method::GET).with(endpoints::repository_response)
             })
-            .resource("/rfc8181/{handle}", |r| {
-                r.method(Method::POST).with(endpoints::handle_rfc8181_request)
-            })
+
             .resource("/publication/{handle}", |r| {
                 r.method(Method::GET).with(endpoints::handle_list);
                 r.method(Method::POST).with(endpoints::handle_delta);
             })
+
+            .resource("/rfc8181/{handle}", |r| {
+                r.method(Method::POST).with(endpoints::handle_rfc8181_request)
+            })
+
             .resource("/rrdp/{path:.*}", |r| {
                 r.method(Method::GET).f(Self::serve_rrdp_files)
             })
@@ -121,10 +124,8 @@ impl PubServerApp {
 
     pub fn create_server(
         config: &Config
-    ) -> Result<Arc<RwLock<KrillServer<DiskKeyStore>>>, Error> {
+    ) -> Result<Arc<RwLock<KrillServer>>, Error> {
         let authorizer = Authorizer::new(&config.auth_token);
-
-        let pubserver_store = DiskKeyStore::under_work_dir(&config.data_dir, "pubsrv")?;
 
         let pub_server = KrillServer::build(
             &config.data_dir,
@@ -132,7 +133,6 @@ impl PubServerApp {
             config.service_uri(),
             &config.rrdp_base_uri,
             authorizer,
-            pubserver_store
         )?;
 
         Ok(Arc::new(RwLock::new(pub_server)))
@@ -240,8 +240,7 @@ impl PubServerApp {
     // https://github.com/actix/actix-website/blob/master/content/docs/static-files.md
     // https://www.keycdn.com/blog/http-cache-headers
     fn serve_rrdp_files(req: &HttpRequest) -> HttpResponse {
-        let server: RwLockReadGuard<KrillServer<DiskKeyStore>> = req.state().read()
-            .unwrap();
+        let server: RwLockReadGuard<KrillServer> = req.state().read().unwrap();
 
         match req.match_info().get("path") {
             Some(path) => {
@@ -266,106 +265,7 @@ impl PubServerApp {
 }
 
 
-//------------ SignedMessage -------------------------------------------------
-
-/// Support converting requests into SignedMessage.
-///
-/// Also allows to use a higher limit to the size of these requests, in this
-/// case 256MB (comparison the entire RIPE NCC repository in December 2018
-/// amounted to roughly 100MB).
-///
-/// We may want to lower this and/or make it configurable, or make it
-/// depend on which publisher is sending data.
-/// struct PublishRequest {
-impl<S: 'static> FromRequest<S> for SignedMessage {
-
-    type Config = ();
-    type Result = Box<Future<Item=Self, Error=actix_web::Error>>;
-
-    fn from_request(
-        req: &actix_web::HttpRequest<S>,
-        _cfg: &Self::Config
-    ) -> Self::Result {
-        Box::new(MessageBody::new(req).limit(255 * 1024 * 1024) // 256 MB
-            .from_err()
-            .and_then(|bytes| {
-                match SignedMessage::decode(bytes, true) {
-                    Ok(message) => Ok(message),
-                    Err(e) => Err(Error::DecodeError(e).into())
-                }
-            }))
-    }
-}
-
-
-//------------ Publisher ----------------------------------------------------
-
-/// Converts the body sent to 'add publisher' end-points to a
-/// PublisherRequestChoice, which contains either an
-/// rfc8183::PublisherRequest, or an API publisher request (no ID certs and
-/// CMS etc).
-impl<S: 'static> FromRequest<S> for publisher_data::PublisherRequest {
-    type Config = ();
-    type Result = Box<Future<Item=Self, Error=actix_web::Error>>;
-
-    fn from_request(
-        req: &actix_web::HttpRequest<S>,
-        _cfg: &Self::Config
-    ) -> Self::Result {
-        Box::new(MessageBody::new(req)
-            .from_err()
-            .and_then(|bytes| {
-                let p: publisher_data::PublisherRequest =
-                    serde_json::from_reader(bytes.as_ref())
-                    .map_err(Error::JsonError)?;
-                Ok(p)
-            })
-        )
-    }
-}
-
-
-//------------ PublisherHandle -----------------------------------------------
-
-impl<S> FromRequest<S> for PublisherHandle {
-    type Config = ();
-    type Result = Result<Self, actix_web::Error>;
-
-    fn from_request(
-        req: &actix_web::HttpRequest<S>,
-        _cfg: &Self::Config
-    ) -> Self::Result {
-        if let Some(handle) = req.match_info().get("handle") {
-            Ok(PublisherHandle::from(handle))
-        } else {
-            Err(Error::WrongPath.into())
-        }
-    }
-}
-
-
-//------------ PublishDelta --------------------------------------------------
-/// Support converting request body into PublishDelta
-impl<S: 'static> FromRequest<S> for publication_data::PublishDelta {
-    type Config = ();
-    type Result = Box<Future<Item=Self, Error=actix_web::Error>>;
-
-    fn from_request(
-        req: &actix_web::HttpRequest<S>,
-        _cfg: &Self::Config
-    ) -> Self::Result {
-        Box::new(MessageBody::new(req).limit(255 * 1024 * 1024) // up to 256MB
-            .from_err()
-            .and_then(|bytes| {
-                let delta: publication_data::PublishDelta =
-                    serde_json::from_reader(bytes.as_ref())?;
-                Ok(delta)
-            })
-        )
-    }
-}
-
-//------------ PublishDelta --------------------------------------------------
+//------------ Credentials --------------------------------------------------
 
 impl<S: 'static> FromRequest<S> for Credentials {
     type Config = ();
@@ -390,7 +290,7 @@ impl<S: 'static> FromRequest<S> for Credentials {
 //------------ IntoHttpHandler -----------------------------------------------
 
 impl server::IntoHttpHandler for PubServerApp {
-    type Handler = <App<Arc<RwLock<KrillServer<DiskKeyStore>>>> as server::IntoHttpHandler>::Handler;
+    type Handler = <App<Arc<RwLock<KrillServer>>> as server::IntoHttpHandler>::Handler;
 
     fn into_handler(self) -> Self::Handler {
         self.0.into_handler()
@@ -400,7 +300,7 @@ impl server::IntoHttpHandler for PubServerApp {
 
 //------------ HttpRequest ---------------------------------------------------
 
-pub type HttpRequest = actix_web::HttpRequest<Arc<RwLock<KrillServer<DiskKeyStore>>>>;
+pub type HttpRequest = actix_web::HttpRequest<Arc<RwLock<KrillServer>>>;
 
 
 //------------ Error ---------------------------------------------------------
@@ -416,9 +316,6 @@ pub enum Error {
 
     #[display(fmt = "Cannot decode request: {}", _0)]
     DecodeError(decode::Error),
-
-    #[display(fmt = "Cannot decode request: {}", _0)]
-    Wrong8183Xml(rfc8183::PublisherRequestError),
 
     #[display(fmt = "Wrong path")]
     WrongPath,

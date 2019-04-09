@@ -2,7 +2,7 @@ use std::{io, fs};
 use std::path::PathBuf;
 use std::time::Duration;
 use rpki::uri;
-use crate::api::repo_data::{
+use krill_commons::api::rrdp::{
     Delta,
     DeltaElements,
     DeltaRef,
@@ -12,14 +12,14 @@ use crate::api::repo_data::{
     Snapshot,
     SnapshotRef,
 };
-use crate::eventsourcing::{
+use krill_commons::eventsourcing::{
     Aggregate,
     AggregateId,
     CommandDetails,
     StoredEvent,
     SentCommand,
 };
-use crate::util::{
+use krill_commons::util::{
     ext_serde,
     file,
     Time
@@ -29,9 +29,10 @@ use crate::util::{
 const RRDP_FOLDER: &str = "rrdp";
 const RSYNC_FOLDER: &str = "rsync";
 
-// Todo: make a const fn once that is stable.
-pub fn rrdp_id() -> AggregateId { AggregateId::from("rrdp_server")}
-
+pub const ID: &str = "rrdp_server";
+pub fn id() -> AggregateId {
+    AggregateId::from(ID)
+}
 
 
 //------------ RrdpInit ------------------------------------------------------
@@ -50,15 +51,15 @@ pub struct RrdpInitDetails {
     repo_dir: PathBuf
 }
 
-impl RrdpInit {
-    pub fn init_new(base_uri: uri::Http, repo_dir: PathBuf) -> Self {
+impl RrdpInitDetails {
+    pub fn init_new(base_uri: uri::Http, repo_dir: PathBuf) -> RrdpInit {
         use rand::{thread_rng, Rng};
         let mut rng = thread_rng();
         let rnd: u32 = rng.gen();
         let session = format!("{}", rnd);
 
         StoredEvent::new(
-            &rrdp_id(),
+            &id(),
             0,
             RrdpInitDetails { session, base_uri, repo_dir }
         )
@@ -78,8 +79,8 @@ pub enum RrdpEventDetails {
     CleanedUp(Time)
 }
 
-impl RrdpEvent {
-    fn added_delta(id: &AggregateId, ver: u64, delta: Delta) -> Self {
+impl RrdpEventDetails {
+    fn added_delta(id: &AggregateId, ver: u64, delta: Delta) -> RrdpEvent {
         StoredEvent::new(id, ver, RrdpEventDetails::AddedDelta(delta))
     }
 
@@ -87,7 +88,7 @@ impl RrdpEvent {
         id: &AggregateId,
         ver: u64,
         notif: NotificationUpdate
-    ) -> Self {
+    ) -> RrdpEvent {
         StoredEvent::new(id, ver, RrdpEventDetails::UpdatedNotification(notif))
     }
 
@@ -95,7 +96,7 @@ impl RrdpEvent {
         id: &AggregateId,
         ver: u64,
         time: Time
-    ) -> Self {
+    ) -> RrdpEvent {
         StoredEvent::new(id, ver, RrdpEventDetails::CleanedUp(time))
     }
 }
@@ -119,17 +120,17 @@ impl CommandDetails for RrdpCommandDetails {
     type Event = RrdpEvent;
 }
 
-impl RrdpCommand {
-    pub fn add_delta(delta: DeltaElements) -> Self {
-        SentCommand::new(&rrdp_id(), None, RrdpCommandDetails::AddDelta(delta))
+impl RrdpCommandDetails {
+    pub fn add_delta(delta: DeltaElements) -> RrdpCommand {
+        SentCommand::new(&id(), None, RrdpCommandDetails::AddDelta(delta))
     }
 
-    pub fn publish() -> Self {
-        SentCommand::new(&rrdp_id(), None, RrdpCommandDetails::Publish)
+    pub fn publish() -> RrdpCommand {
+        SentCommand::new(&id(), None, RrdpCommandDetails::Publish)
     }
 
-    pub fn clean_up(retention: RetentionTime) -> Self {
-        SentCommand::new(&rrdp_id(), None, RrdpCommandDetails::Cleanup(retention))
+    pub fn clean_up(retention: RetentionTime) -> RrdpCommand {
+        SentCommand::new(&id(), None, RrdpCommandDetails::Cleanup(retention))
     }
 }
 
@@ -213,7 +214,7 @@ impl RrdpServer {
         let session = self.session.clone();
         let delta = Delta::new(session, next, elements);
 
-        Ok(vec![RrdpEvent::added_delta(&rrdp_id(), self.version, delta)])
+        Ok(vec![RrdpEventDetails::added_delta(&id(), self.version, delta)])
     }
 
     /// Publishes the latest notification, snapshot and delta file to disk.
@@ -251,8 +252,8 @@ impl RrdpServer {
         notification.write_xml(&self.notification_path())?;
 
         Ok(vec![
-            RrdpEvent::updated_notification(
-                &rrdp_id(),
+            RrdpEventDetails::updated_notification(
+                &id(),
                 self.version,
                 update
             )
@@ -270,8 +271,8 @@ impl RrdpServer {
         }
 
         Ok(vec![
-            RrdpEvent::cleaned_up(
-                &rrdp_id(),
+            RrdpEventDetails::cleaned_up(
+                &id(),
                 self.version,
                 cut_off
             )

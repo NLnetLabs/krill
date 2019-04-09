@@ -4,17 +4,18 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use bcder::Captured;
 use rpki::uri;
-use crate::api::publication_data;
-use crate::api::publisher_data;
-use crate::api::publisher_data::PublisherHandle;
-use crate::eventsourcing::KeyStore;
+use krill_commons::api::publication;
+use krill_commons::api::admin;
+use krill_commons::api::admin::PublisherHandle;
 use crate::krilld::auth::Authorizer;
 use crate::krilld::pubd::PubServer;
 use crate::krilld::pubd;
 use crate::krilld::pubd::publishers::Publisher;
-use crate::remote::cmsproxy::{self, CmsProxy};
-use crate::remote::rfc8183;
-use crate::remote::sigmsg::SignedMessage;
+use krill_cms_proxy::api::{ClientInfo, ClientHandle};
+use krill_cms_proxy::proxy;
+use krill_cms_proxy::proxy::ProxyServer;
+use krill_cms_proxy::rfc8183::RepositoryResponse;
+use krill_cms_proxy::sigmsg::SignedMessage;
 
 
 //------------ KrillServer ---------------------------------------------------
@@ -31,7 +32,7 @@ use crate::remote::sigmsg::SignedMessage;
 ///    * Process publish / list requests by known publishers
 ///    * Updates the repository on disk
 ///    * Updates the RRDP files
-pub struct KrillServer<S: KeyStore> {
+pub struct KrillServer {
     // The base URI for this service
     service_uri: uri::Http,
 
@@ -41,15 +42,15 @@ pub struct KrillServer<S: KeyStore> {
     // Component responsible for API authorisation checks
     authorizer: Authorizer,
 
-    // Responsible for the RFC CMS decoding and encoding.
-    cms_proxy: CmsProxy,
-
     // The configured publishers
-    pubserver: PubServer<S>
+    pubserver: PubServer,
+
+    // CMS+XML proxy server for non-Krill clients
+    proxy_server: ProxyServer
 }
 
 /// # Set up and initialisation
-impl<S: KeyStore> KrillServer<S> {
+impl KrillServer {
     /// Creates a new publication server. Note that state is preserved
     /// on disk in the work_dir provided.
     pub fn build(
@@ -58,10 +59,7 @@ impl<S: KeyStore> KrillServer<S> {
         service_uri: uri::Http,
         rrdp_base_uri: &uri::Http,
         authorizer: Authorizer,
-        store: S
     ) -> Result<Self, Error> {
-        let cms_proxy = CmsProxy::build(work_dir)?;
-
         let mut repo_dir = work_dir.clone();
         repo_dir.push("repo");
 
@@ -69,16 +67,20 @@ impl<S: KeyStore> KrillServer<S> {
             base_uri.clone(),
             rrdp_base_uri.clone(),
             repo_dir,
-            store
+            work_dir
         ).map_err(Error::PubServer)?;
+
+        let proxy_server = ProxyServer::init(
+            work_dir, &service_uri
+        )?;
 
         Ok(
             KrillServer {
                 service_uri,
                 work_dir: work_dir.clone(),
                 authorizer,
-                cms_proxy,
-                pubserver
+                pubserver,
+                proxy_server
             }
         )
     }
@@ -88,7 +90,7 @@ impl<S: KeyStore> KrillServer<S> {
     }
 }
 
-impl<S: KeyStore> KrillServer<S> {
+impl KrillServer {
     pub fn is_api_allowed(&self, token_opt: Option<String>) -> bool {
         self.authorizer.is_api_allowed(token_opt)
     }
@@ -119,25 +121,25 @@ impl<S: KeyStore> KrillServer<S> {
 }
 
 /// # Configure publishers
-impl<S: KeyStore> KrillServer<S> {
+impl KrillServer {
 
     /// Returns all currently configured publishers. (excludes deactivated)
     pub fn publishers(
         &self
-    ) -> Result<Vec<PublisherHandle>, Error> {
-        self.pubserver.list_publishers().map_err(Error::PubServer)
+    ) -> Vec<PublisherHandle> {
+        self.pubserver.list_publishers()
     }
 
     /// Adds the publishers, blows up if it already existed.
     pub fn add_publisher(
         &mut self,
-        pbl_req: publisher_data::PublisherRequest
+        pbl_req: admin::PublisherRequest
     ) -> Result<(), Error> {
         self.pubserver.create_publisher(pbl_req).map_err(Error::PubServer)
     }
 
     /// Removes a publisher, blows up if it didn't exist.
-    pub fn remove_publisher(
+    pub fn deactivate_publisher(
         &mut self,
         handle: &PublisherHandle
     ) -> Result<(), Error> {
@@ -152,27 +154,6 @@ impl<S: KeyStore> KrillServer<S> {
         self.pubserver.get_publisher(handle).map_err(Error::PubServer)
     }
 
-    /// Returns a repository response for the given publisher.
-    ///
-    /// Returns an error if the publisher is unknown.
-    pub fn repository_response(
-        &self,
-        handle: &PublisherHandle
-    ) -> Result<rfc8183::RepositoryResponse, Error> {
-        match self.pubserver.get_publisher(handle)? {
-            None => Err(Error::NoIdCert),
-            Some(publisher) => {
-                let rrdp_notify = self.pubserver.rrdp_notification();
-                self.cms_proxy
-                    .repository_response(
-                        &publisher,
-                        self.service_base_uri(),
-                        rrdp_notify)
-                    .map_err(Error::CmsProxy)
-            }
-        }
-    }
-
     pub fn rrdp_base_path(&self) -> PathBuf {
         let mut path = self.work_dir.clone();
         path.push("rrdp");
@@ -180,72 +161,63 @@ impl<S: KeyStore> KrillServer<S> {
     }
 }
 
-/// # Handle publication requests
+/// # Manage RFC8181 clients
 ///
-impl<S: KeyStore> KrillServer<S> {
-
-    /// Handles an incoming SignedMessage, verifies it's validly signed by
-    /// a known publisher and process the QueryMessage contained. Returns
-    /// a signed response to the publisher.
-    ///
-    /// Note this returns an error for cases where we do not want to do any
-    /// work in signing, like the publisher does not exist, or the
-    /// signature is invalid. The daemon will need to map these to HTTP
-    /// codes.
-    ///
-    /// Also note that if garbage is sent to the daemon, this garbage will
-    /// fail to parse as a SignedMessage, and the daemon will just respond
-    /// with an HTTP error response, without invoking any of this.
-    pub fn handle_rfc8181_request(
-        &mut self,
-        sigmsg: &SignedMessage,
-        handle: &PublisherHandle
-    ) -> Result<Captured, Error> {
-        debug!("Handling request for: {}", handle.to_string());
-
-        let publisher = match self.pubserver.get_publisher(handle)? {
-            Some(publisher) => publisher,
-            None => return Err(Error::NoIdCert)
-        };
-
-        let id_cert = match publisher.cms_auth_data() {
-            Some(data) => data.id_cert(),
-            None => return Err(Error::NoIdCert)
-        };
-
-        match self.cms_proxy.publish_request(sigmsg, id_cert) {
-            Err(e)  => self.cms_proxy.wrap_error(&e).map_err(Error::CmsProxy),
-            Ok(req) => {
-                let reply = match req {
-                    publication_data::PublishRequest::List => {
-                        self.handle_list(handle)
-                            .map(publication_data::PublishReply::List)
-                    },
-                    publication_data::PublishRequest::Delta(delta) => {
-                        self.handle_delta(delta, handle)
-                            .map(|_| publication_data::PublishReply::Success)
-                    }
-                };
-
-                match reply {
-                    Ok(reply) => {
-                        self.cms_proxy.wrap_publish_reply(reply).map_err(Error::CmsProxy)
-                    },
-                    Err(Error::PubServer(e)) => {
-                        self.cms_proxy.wrap_error(&e).map_err(Error::CmsProxy)
-                    },
-                    Err(e) => Err(e)
-                }
-            }
-        }
+impl KrillServer {
+    pub fn rfc8181_clients(&self) ->Result<Vec<ClientInfo>, Error> {
+        self.proxy_server.list_clients().map_err(Error::ProxyServer)
     }
 
+    pub fn add_rfc8181_client(&self, client: ClientInfo) -> Result<(), Error> {
+        self.proxy_server.add_client(client).map_err(Error::ProxyServer)
+    }
+
+    pub fn repository_response(&self, handle: &PublisherHandle) -> Result<RepositoryResponse, Error> {
+        let client = ClientHandle::from(handle.as_ref());
+        let publisher = self.publisher(handle)?
+            .ok_or_else(|| Error::ProxyServer(proxy::Error::UnknownClient(client.clone())))?;
+
+        let sia_base = publisher.base_uri().clone();
+
+        let service_uri = format!(
+            "{}rfc8181/{}",
+            self.service_uri.to_string(),
+            &client
+        );
+        let service_uri = uri::Http::from_string(service_uri).unwrap();
+
+        let rrdp_notification_uri = format!(
+            "{}rrdp/notification.xml",
+            self.service_uri.to_string(),
+        );
+        let rrdp_notification_uri = uri::Http::from_string(rrdp_notification_uri).unwrap();
+
+        self.proxy_server.response(
+            &client,
+            service_uri,
+            sia_base,
+            rrdp_notification_uri
+        ).map_err(Error::ProxyServer)
+    }
+
+    pub fn handle_rfc8181_req(
+        &self,
+        msg: SignedMessage,
+        handle: ClientHandle
+    ) -> Result<Captured, Error> {
+        self.proxy_server.handle_rfc8181_req(msg, handle).map_err(Error::ProxyServer)
+    }
+}
+
+/// # Handle publication requests
+///
+impl KrillServer {
     /// Handles a publish delta request sent to the API, or.. through
     /// the CmsProxy.
     #[allow(clippy::needless_pass_by_value)]
     pub fn handle_delta(
-        &mut self,
-        delta: publication_data::PublishDelta,
+        &self,
+        delta: publication::PublishDelta,
         handle: &PublisherHandle
     ) -> Result<(), Error> {
         self.pubserver.publish(handle, delta).map_err(Error::PubServer)
@@ -255,7 +227,7 @@ impl<S: KeyStore> KrillServer<S> {
     pub fn handle_list(
         &self,
         handle: &PublisherHandle
-    ) -> Result<publication_data::ListReply, Error> {
+    ) -> Result<publication::ListReply, Error> {
         self.pubserver.list(handle).map_err(Error::PubServer)
     }
 }
@@ -270,25 +242,22 @@ pub enum Error {
     IoError(io::Error),
 
     #[display(fmt="{}", _0)]
-    CmsProxy(cmsproxy::Error),
-
-    #[display(fmt="{}", _0)]
     PubServer(pubd::Error),
 
-    #[display(fmt="No IdCert known for this publisher")]
-    NoIdCert
+    #[display(fmt="{}", _0)]
+    ProxyServer(proxy::Error),
 }
 
 impl From<io::Error> for Error {
     fn from(e: io::Error) -> Self { Error::IoError(e) }
 }
 
-impl From<cmsproxy::Error> for Error {
-    fn from(e: cmsproxy::Error) -> Self { Error::CmsProxy(e) }
-}
-
 impl From<pubd::Error> for Error {
     fn from(e: pubd::Error) -> Self { Error::PubServer(e) }
+}
+
+impl From<proxy::Error> for Error {
+    fn from(e: proxy::Error) -> Self { Error::ProxyServer(e) }
 }
 
 // Tested through integration tests

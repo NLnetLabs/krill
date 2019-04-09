@@ -4,24 +4,27 @@
 use std::io::Write;
 use std::fs::File;
 use std::path::PathBuf;
+use bcder::BitString;
+use bcder::Mode;
+use bcder::Tag;
 use bcder::decode;
+use bcder::encode;
+use bcder::encode::Constructed;
+use bcder::encode::Values;
+use bcder::encode::PrimitiveContent;
 use bytes::Bytes;
-use openssl::hash::MessageDigest;
 use openssl::pkey::{PKey, Private};
 use openssl::rsa::Rsa;
-use rpki::crypto::{
-    PublicKey,
-    PublicKeyFormat,
-    Signature,
-    SignatureAlgorithm,
-    Signer,
-    SigningError
-};
-use rpki::crypto::signer::KeyError;
-use crate::remote::builder::IdCertBuilder;
-use crate::util::file;
-use crate::util::softsigner::SignerKeyId;
-use crate::remote::builder;
+use openssl::hash::MessageDigest;
+use rpki::x509::Name;
+use rpki::cert::Validity;
+use rpki::cert::ext::BasicCa;
+use rpki::cert::ext::SubjectKeyIdentifier;
+use rpki::cert::ext::AuthorityKeyIdentifier;
+use rpki::crypto::Signature;
+use rpki::crypto::PublicKey;
+use rpki::crypto::SignatureAlgorithm;
+use krill_commons::util::file;
 
 
 const KEY_SIZE: u32 = 2048;
@@ -31,7 +34,7 @@ pub const CERT_FILE: &str = "cert.pem";
 
 /// Creates a new private key and certificate file if either is found to be
 /// missing in the base_path directory.
-pub fn create_key_cert_if_needed(data_dir: &PathBuf) -> Result<(), HttpsSignerError> {
+pub fn create_key_cert_if_needed(data_dir: &PathBuf) -> Result<(), Error> {
     let mut https_dir = data_dir.clone();
     https_dir.push(HTTPS_SUB_DIR);
 
@@ -48,7 +51,7 @@ pub fn create_key_cert_if_needed(data_dir: &PathBuf) -> Result<(), HttpsSignerEr
 /// Creates a new private key and certificate to be used when serving HTTPS.
 /// Only call this in case there is no current key and certificate file
 /// present, or have your files ruthlessly overwritten!
-fn create_key_and_cert(https_dir: &PathBuf) -> Result<(), HttpsSignerError> {
+fn create_key_and_cert(https_dir: &PathBuf) -> Result<(), Error> {
     if ! https_dir.exists() {
         file::create_dir(&https_dir)?;
     }
@@ -70,30 +73,76 @@ struct HttpsSigner {
 }
 
 impl HttpsSigner {
-    fn build() -> Result<Self, HttpsSignerError> {
+    fn build() -> Result<Self, Error> {
         let rsa = Rsa::generate(KEY_SIZE)?;
         let private = PKey::from_rsa(rsa)?;
         Ok(HttpsSigner { private })
     }
 
-    fn save_private_key(&self, https_dir: &PathBuf) -> Result<(), HttpsSignerError> {
-        let path =file::file_path(https_dir, KEY_FILE);
-        let mut pem_file = File::create(path)?;
+    /// Saves the private key in PEM format so that actix can use it.
+    fn save_private_key(&self, https_dir: &PathBuf) -> Result<(), Error> {
+        let path = file::file_path(https_dir, KEY_FILE);
+        let mut pkey_file = File::create(path)?;
 
         let pem = self.private.private_key_to_pem_pkcs8()?;
-        pem_file.write_all(&pem)?;
+        pkey_file.write_all(&pem)?;
         Ok(())
     }
 
-    fn save_certificate(&mut self, https_dir: &PathBuf) -> Result<(), HttpsSignerError> {
+    fn public_key_info(&self) -> Result<PublicKey, Error> {
+        let mut b = Bytes::from(
+            self.private.rsa().unwrap().public_key_to_der()
+                .map_err(|e| { Error::OpenSslError(e) })?
+        );
+        let pk = PublicKey::decode(&mut b)
+            .map_err(|e| { Error::DecodeError(e)})?;
+        Ok(pk)
+    }
+
+    fn sign(&self, data: &Bytes) -> Result<Signature, Error> {
+
+        let mut signer = ::openssl::sign::Signer::new(
+            MessageDigest::sha256(),
+            &self.private
+        )?;
+
+        signer.update(data.as_ref())?;
+
+        let signature_bytes = signer.sign_to_vec()?;
+
+        let signature = Signature::new(
+            SignatureAlgorithm,
+            Bytes::from(signature_bytes)
+        );
+        Ok(signature)
+    }
+
+    /// Saves a self-signed certificate so that actix can use it.
+    fn save_certificate(&mut self, https_dir: &PathBuf) -> Result<(), Error> {
+
+        let pub_key = self.public_key_info()?;
+        let tbs_cert = TbsHttpsCertificate::from(&pub_key);
+
+        let encoded_tbs = tbs_cert.encode().to_captured(Mode::Der);
+        let (_, signature) = self.sign(encoded_tbs.as_ref())?.unwrap();
+
+        let signature = BitString::new(
+            0,
+            signature
+        );
+
+        let encoded_cert = encode::sequence(
+            (
+                encoded_tbs,
+                SignatureAlgorithm.x509_encode(),
+                signature.encode()
+            )
+        ).to_captured(Mode::Der);
+
+        let cert_pem = base64::encode(&encoded_cert);
+
         let path = file::file_path(https_dir, CERT_FILE);
         let mut pem_file = File::create(path)?;
-
-        let key_id = SignerKeyId::new("n/a");
-        let cert = IdCertBuilder::new_ta_id_cert(&key_id, self)?;
-
-        let der = cert.to_bytes();
-        let cert_pem = base64::encode(&der);
 
         pem_file.write_all("-----BEGIN CERTIFICATE-----\n".as_ref())?;
         pem_file.write_all(cert_pem.as_bytes())?;
@@ -103,84 +152,129 @@ impl HttpsSigner {
     }
 }
 
-impl Signer for HttpsSigner {
+struct TbsHttpsCertificate {
+    // The General structure is documented in section 4.1 or RFC5280
+    //
+    //    TBSCertificate  ::=  SEQUENCE  {
+    //        version         [0]  EXPLICIT Version DEFAULT v1,
+    //        serialNumber         CertificateSerialNumber,
+    //        signature            AlgorithmIdentifier,
+    //        issuer               Name,
+    //        validity             Validity,
+    //        subject              Name,
+    //        subjectPublicKeyInfo SubjectPublicKeyInfo,
+    //        issuerUniqueID  [1]  IMPLICIT UniqueIdentifier OPTIONAL,
+    //                             -- If present, version MUST be v2 or v3
+    //        subjectUniqueID [2]  IMPLICIT UniqueIdentifier OPTIONAL,
+    //                             -- If present, version MUST be v2 or v3
+    //        extensions      [3]  EXPLICIT Extensions OPTIONAL
+    //                             -- If present, version MUST be v3
+    //        }
 
-    type KeyId = SignerKeyId;
-    type Error = HttpsSignerError;
+    // version is always 3
+    // serial_number is always 1
+    // signature is always Sha256WithRsaEncryption
+    issuer: Name,
+    validity: Validity,
+    subject: Name,
+    subject_public_key_info: PublicKey,
+    // issuerUniqueID is not used
+    // subjectUniqueID is not used
+    extensions: HttpsCertExtensions
+}
 
+impl From<&PublicKey> for TbsHttpsCertificate {
+    fn from(pk: &PublicKey) -> Self {
+        let issuer = Name::from_pub_key(pk);
+        let validity = {
+            let dur = ::chrono::Duration::weeks(52000);
+            Validity::from_duration(dur)
+        };
+        let subject = issuer.clone();
+        let subject_public_key_info = pk.clone();
+        let extensions = HttpsCertExtensions::from(pk);
 
-    /// Not implemented. This type only ever has one key.
-    fn create_key(
-        &mut self,
-        _algorithm: PublicKeyFormat
-    ) -> Result<Self::KeyId, Self::Error> {
-        unimplemented!()
+        TbsHttpsCertificate {
+            issuer, validity, subject, subject_public_key_info, extensions
+        }
     }
+}
 
-    /// Returns the SubjectPublicKeyInfo for the one and only key for this
-    /// type.
-    fn get_key_info(
-        &self,
-        _id: &Self::KeyId
-    ) -> Result<PublicKey, KeyError<Self::Error>> {
-        let mut b = Bytes::from(
-            self.private.rsa().unwrap().public_key_to_der()
-                .map_err(|e| { KeyError::Signer(HttpsSignerError::OpenSslError(e))})?
-        );
-        let pk = PublicKey::decode(&mut b)
-            .map_err(|e| { KeyError::Signer(HttpsSignerError::DecodeError(e))})?;
-        Ok(pk)
-    }
+impl TbsHttpsCertificate {
+    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
 
-    /// Not implemented. People can just delete / replace the files on disk.
-    fn destroy_key(
-        &mut self,
-        _id: &Self::KeyId
-    ) -> Result<(), KeyError<Self::Error>> {
-        unimplemented!()
-    }
-
-    /// Used when the self-signed certificate is made for the HTTPS server.
-    fn sign<D: AsRef<[u8]> + ?Sized>(
-        &self,
-        _key: &Self::KeyId,
-        _algorithm: SignatureAlgorithm,
-        data: &D
-    ) -> Result<Signature, SigningError<Self::Error>> {
-
-        let mut signer = ::openssl::sign::Signer::new(
-            MessageDigest::sha256(),
-            &self.private
-        ).map_err(|e| { SigningError::from(HttpsSignerError::OpenSslError(e))})?;
-        signer.update(data.as_ref())
-            .map_err(|e| { SigningError::from(HttpsSignerError::OpenSslError(e))})?;
-
-        let signature_bytes = signer.sign_to_vec()
-            .map_err(|e| { SigningError::Signer(
-                HttpsSignerError::OpenSslError(e))})?;
-
-        let signature = Signature::new(
-            SignatureAlgorithm,
-            Bytes::from(signature_bytes)
-        );
-        Ok(signature)
-    }
-
-    /// Not implemented. We won't sign CMS with this.
-    fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
-        &self,
-        _algorithm: SignatureAlgorithm,
-        _data: &D
-    ) -> Result<(Signature, PublicKey), Self::Error> {
-        unimplemented!()
+        encode::sequence((
+            (
+                Constructed::new(
+                    Tag::CTX_0,
+                    2_i32.encode() // Version 3 is encoded as 2
+                ),
+                1_i32.encode(),
+                SignatureAlgorithm.x509_encode(),
+                self.issuer.encode()
+            ),
+            (
+                self.validity.encode(),
+                self.subject.encode(),
+                self.subject_public_key_info.clone().encode(),
+                self.extensions.encode()
+            )
+        ))
     }
 }
 
 
+//------------ IdExtensions --------------------------------------------------
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HttpsCertExtensions {
+    /// Basic Constraints.
+    ///
+    /// The field indicates whether the extension is present and, if so,
+    /// whether the "cA" boolean is set. See 4.8.1. of RFC 6487.
+    basic_ca: BasicCa,
+
+    /// Subject Key Identifier.
+    subject_key_id: SubjectKeyIdentifier,
+
+    /// Authority Key Identifier
+    authority_key_id: AuthorityKeyIdentifier,
+}
+
+impl From<&PublicKey> for HttpsCertExtensions {
+    fn from(pk: &PublicKey) -> Self {
+        let basic_ca = BasicCa::new(true, true);
+        let subject_key_id = SubjectKeyIdentifier::new(pk);
+        let authority_key_id = AuthorityKeyIdentifier::new(pk);
+
+        HttpsCertExtensions {
+            basic_ca, subject_key_id, authority_key_id
+        }
+    }
+}
+
+/// # Encoding
+impl HttpsCertExtensions {
+
+    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
+        Constructed::new(
+            Tag::CTX_3,
+            encode::sequence(
+                (
+                    self.basic_ca.encode(),
+                    self.subject_key_id.clone().encode(),
+                    self.authority_key_id.clone().encode()
+                )
+            )
+        )
+    }
+
+}
+
 //------------ Error ---------------------------------------------------------
 
 #[derive(Debug, Display)]
-pub enum HttpsSignerError {
+pub enum Error {
     #[display(fmt = "{}", _0)]
     IoError(std::io::Error),
 
@@ -194,21 +288,15 @@ pub enum HttpsSignerError {
     BuildError
 }
 
-impl From<openssl::error::ErrorStack> for HttpsSignerError {
+impl From<openssl::error::ErrorStack> for Error {
     fn from(e: openssl::error::ErrorStack) -> Self {
-        HttpsSignerError::OpenSslError(e)
+        Error::OpenSslError(e)
     }
 }
 
-impl From<std::io::Error> for HttpsSignerError {
+impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Self {
-        HttpsSignerError::IoError(e)
-    }
-}
-
-impl From<builder::Error<HttpsSignerError>> for HttpsSignerError {
-    fn from(_: builder::Error<HttpsSignerError>) -> Self {
-        HttpsSignerError::BuildError
+        Error::IoError(e)
     }
 }
 
@@ -221,7 +309,7 @@ mod tests {
     use actix_web::*;
     use actix_web::server::HttpServer;
     use openssl::ssl::{SslMethod, SslAcceptor, SslFiletype};
-    use crate::util::test;
+    use krill_commons::util::test;
 
     #[test]
     fn should_create_key_and_cert_and_start_server() {

@@ -1,12 +1,11 @@
-use std::path::PathBuf;
 use std::str::FromStr;
 use clap::{App, Arg, SubCommand};
 use rpki::uri;
-use uuid::Uuid;
-use crate::krillc::data::{
+use crate::krillc::report::{
     ReportFormat,
     ReportError
 };
+use std::path::PathBuf;
 
 /// This type holds all the necessary data to connect to a Krill daemon, and
 /// authenticate, and perform a specific action. Note that this is extracted
@@ -94,24 +93,6 @@ impl Options {
                         .required(true)
                     )
                 )
-                .subcommand(SubCommand::with_name("addcms")
-                    .about("Add an RFC8181 publisher.")
-                    .arg(Arg::with_name("xml")
-                        .short("x")
-                        .long("xml")
-                        .value_name("FILE")
-                        .help("Specify a file containing an RFC8183 \
-                        publisher request. (See: https://tools.ietf.org/html/rfc8183#section-5.2.3)")
-                        .required(true)
-                    )
-                    .arg(Arg::with_name("uri")
-                        .short("u")
-                        .long("uri")
-                        .value_name("rsync uri")
-                        .help("Rsync base uri for publisher. Must be covered by server, and not overlap with existing publishers.")
-                        .required(true)
-                    )
-                )
                 .subcommand(SubCommand::with_name("details")
                     .about("Show details for a publisher.")
                     .arg(Arg::with_name("handle")
@@ -122,47 +103,37 @@ impl Options {
                         .required(true)
                     )
                 )
-                .subcommand(SubCommand::with_name("response")
-                    .about("Get the RFC8181 repository response xml")
-                    .arg(Arg::with_name("handle")
-                        .short("h")
-                        .long("handle")
-                        .value_name("publisher handle")
-                        .help("The publisher handle from RFC8181")
-                        .required(true)
-                    )
-                    .arg(Arg::with_name("out")
-                        .short("o")
-                        .long("out")
-                        .value_name("FILE")
-                        .help("Optional file to save to (default stdout).")
-                        .required(false)
-                    )
-                )
-                .subcommand(SubCommand::with_name("idcert")
-                    .about("Get identity certificate known for publisher.")
-                    .arg(Arg::with_name("handle")
-                        .short("h")
-                        .long("handle")
-                        .value_name("publisher handle")
-                        .help("The publisher handle from RFC8181")
-                        .required(true)
-                    )
-                    .arg(Arg::with_name("out")
-                        .short("o")
-                        .long("out")
-                        .value_name("FILE")
-                        .help("File to save to.")
-                        .required(true)
-                    )
-                )
-                .subcommand(SubCommand::with_name("remove")
+                .subcommand(SubCommand::with_name("deactivate")
                     .about("Removes a known publisher")
                     .arg(Arg::with_name("handle")
                         .short("h")
                         .long("handle")
                         .value_name("publisher handle")
                         .help("The publisher handle from RFC8181")
+                        .required(true)
+                    )
+                )
+            )
+            .subcommand(SubCommand::with_name("rfc8181")
+                .about("Manage RFC8181 clients")
+                .subcommand(SubCommand::with_name("list")
+                    .about("List all current clients with details")
+                )
+                .subcommand(SubCommand::with_name("add")
+                    .about("Add TFC8181 client")
+                    .arg(Arg::with_name("token")
+                        .short("t")
+                        .long("token")
+                        .value_name("text")
+                        .help("Specify a token string.")
+                        .required(true)
+                    )
+                    .arg(Arg::with_name("xml")
+                        .short("x")
+                        .long("xml")
+                        .value_name("FILE")
+                        .help("Specify a file containing an RFC8183 \
+                        publisher request. (See: https://tools.ietf.org/html/rfc8183#section-5.2.3)")
                         .required(true)
                     )
                 )
@@ -189,50 +160,33 @@ impl Options {
                     PublishersCommand::Add(add)
                 );
             }
-            if let Some(m) = m.subcommand_matches("addcms") {
-                let xml = m.value_of("xml").unwrap(); // required
-                let xml = PathBuf::from(xml);
-
-                let base_uri = uri::Rsync::from_str(
-                    m.value_of("uri").unwrap()
-                )?;
-
-                let token = Uuid::new_v4().to_string();
-
-                let add = AddPublisherWithCms { xml, base_uri, token };
-                command = Command::Publishers(
-                    PublishersCommand::AddWithCms(add)
-                );
-            }
             if let Some(m) = m.subcommand_matches("details") {
                 let handle = m.value_of("handle").unwrap();
                 let details = PublishersCommand::Details(handle.to_string());
                 command = Command::Publishers(details);
             }
-            if let Some(m) = m.subcommand_matches("response") {
-                let handle = m.value_of("handle").unwrap();
-                let file = m.value_of("out").map(PathBuf::from);
-                let response = PublishersCommand::RepositoryResponseXml(
-                    handle.to_string(),
-                    file
-                );
-                command = Command::Publishers(response);
-            }
-            if let Some(m) = m.subcommand_matches("idcert") {
+            if let Some(m) = m.subcommand_matches("deactivate") {
                 let handle = m.value_of("handle").unwrap().to_string();
-                let file = PathBuf::from(m.value_of("out").unwrap());
-                let idcert = PublishersCommand::IdCert(handle, file);
-                command = Command::Publishers(idcert);
-            }
-            if let Some(m) = m.subcommand_matches("remove") {
-                let handle = m.value_of("handle").unwrap().to_string();
-                command = Command::Publishers(PublishersCommand::Remove(handle))
+                command = Command::Publishers(PublishersCommand::Deactivate(handle))
             }
         }
 
+        if let Some(m) = matches.subcommand_matches("rfc8181") {
+            if let Some(_m) = m.subcommand_matches("list") {
+                command = Command::Rfc8181(Rfc8181Command::List)
+            }
+            if let Some(m) = m.subcommand_matches("add") {
+                let token = m.value_of("token").unwrap().to_string();
+                let xml_path = m.value_of("xml").unwrap();
+                let xml = PathBuf::from(xml_path);
+
+                command = Command::Rfc8181(Rfc8181Command::Add(AddRfc8181Client{ token, xml }))
+            }
+
+        }
+
         let server = matches.value_of("server").unwrap(); // required
-        let server = uri::Http::from_str(server)
-            .map_err(|_| Error::UriError)?;
+        let server = uri::Http::from_str(server).map_err(|_| Error::UriError)?;
 
         let token = matches.value_of("token").unwrap().to_string(); // req.
 
@@ -249,25 +203,16 @@ impl Options {
 pub enum Command {
     NotSet,
     Health,
-    Publishers(PublishersCommand)
+    Publishers(PublishersCommand),
+    Rfc8181(Rfc8181Command)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PublishersCommand {
     Add(AddPublisher),
-    AddWithCms(AddPublisherWithCms),
     Details(String),
-    Remove(String),
-    RepositoryResponseXml(String, Option<PathBuf>),
-    IdCert(String, PathBuf),
+    Deactivate(String),
     List
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AddPublisherWithCms {
-    pub xml: PathBuf,
-    pub base_uri: uri::Rsync,
-    pub token: String
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -277,7 +222,17 @@ pub struct AddPublisher {
     pub token:  String
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Rfc8181Command {
+    List,
+    Add(AddRfc8181Client),
+}
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AddRfc8181Client {
+    pub token: String,
+    pub xml: PathBuf
+}
 
 //------------ Error ---------------------------------------------------------
 

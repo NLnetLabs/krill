@@ -1,9 +1,7 @@
-//! Data types to wrap the API responses, and support reporting on them in
-//! various formats (where applicable).
-use rpki::uri;
-use crate::util::ext_serde;
-use remote::id::IdCert;
 use std::str::FromStr;
+use krill_commons::api::admin::{PublisherDetails, PublisherList};
+use krill_cms_proxy::api::ClientInfo;
+
 
 //------------ ApiResponse ---------------------------------------------------
 
@@ -14,6 +12,7 @@ pub enum ApiResponse {
     Health,
     PublisherDetails(PublisherDetails),
     PublisherList(PublisherList),
+    Rfc8181ClientList(Vec<ClientInfo>),
     Empty, // Typically a successful post just gets an empty 200 response
     GenericBody(String) // For when the server echos Json to a successful post
 }
@@ -39,6 +38,9 @@ impl ApiResponse {
                 },
                 ApiResponse::PublisherDetails(details) => {
                     Ok(Some(details.report(fmt)?))
+                }
+                ApiResponse::Rfc8181ClientList(list) => {
+                    Ok(Some(list.report(fmt)?))
                 }
                 ApiResponse::GenericBody(body) => {
                     Ok(Some(body.clone()))
@@ -98,32 +100,6 @@ trait Report {
 }
 
 
-//------------ Link ----------------------------------------------------------
-
-/// This type defines a json link item, often included in json responses as
-/// helpful hints for more..
-#[derive(Clone, Debug, Deserialize, Eq, Serialize, PartialEq)]
-pub struct Link {
-    rel: String,
-    link: String
-}
-
-
-//------------ PublisherList -------------------------------------------------
-
-/// This type defines the response for:
-/// /api/v1/publishers
-#[derive(Clone, Debug, Deserialize, Eq, Serialize, PartialEq)]
-pub struct PublisherList {
-    publishers: Vec<PublisherSummary>
-}
-
-impl PublisherList {
-    pub fn publishers(&self) -> &Vec<PublisherSummary> {
-        &self.publishers
-    }
-}
-
 impl Report for PublisherList {
     fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
         match format {
@@ -135,7 +111,7 @@ impl Report for PublisherList {
 
                 res.push_str("Publishers: ");
                 let mut first = true;
-                for p in &self.publishers {
+                for p in self.publishers() {
                     if ! first {
                         res.push_str(", ");
                     } else {
@@ -150,85 +126,6 @@ impl Report for PublisherList {
     }
 }
 
-
-//------------ PublisherSummary ----------------------------------------------
-
-/// This type defines an individual publisher in the response for:
-/// /api/v1/publishers
-#[derive(Clone, Debug, Deserialize, Eq, Serialize, PartialEq)]
-pub struct PublisherSummary {
-    id: String,
-    links: Vec<Link>
-}
-
-impl PublisherSummary {
-    pub fn id(&self) -> &String {
-        &self.id
-    }
-}
-
-
-//------------ Rfc8181Details ------------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct CmsAuthData {
-    #[serde(
-        serialize_with = "ext_serde::ser_http_uri",
-        deserialize_with = "ext_serde::de_http_uri")]
-    service_uri: uri::Http,
-
-    #[serde(
-        serialize_with = "ext_serde::ser_id_cert",
-        deserialize_with = "ext_serde::de_id_cert")]
-    id_cert: IdCert
-}
-
-
-//------------ PublisherDetails ----------------------------------------------
-
-/// This type defines the publisher details fro:
-/// /api/v1/publishers/{handle}
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct PublisherDetails {
-    handle: String,
-
-    retired: bool,
-
-    #[serde(
-        deserialize_with = "ext_serde::de_rsync_uri",
-        serialize_with = "ext_serde::ser_rsync_uri"
-    )]
-    base_uri: uri::Rsync,
-
-    cms_auth: Option<CmsAuthData>,
-
-    links: Vec<Link>
-}
-
-impl PublisherDetails {
-    pub fn handle(&self) -> &str {
-        &self.handle
-    }
-    pub fn identity_cert(&self) -> Option<&IdCert> {
-        match self.cms_auth {
-            None => None,
-            Some(ref details) => Some(&details.id_cert)
-        }
-    }
-    pub fn retired(&self) -> bool { self.retired }
-}
-
-impl PartialEq for PublisherDetails {
-    fn eq(&self, other: &PublisherDetails) -> bool {
-        match (serde_json::to_string(self), serde_json::to_string(other)) {
-            (Ok(ser_self), Ok(ser_other)) => ser_self == ser_other,
-            _ => false
-        }
-    }
-}
-
-impl Eq for PublisherDetails {}
-
 impl Report for PublisherDetails {
     fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
         match format {
@@ -240,26 +137,40 @@ impl Report for PublisherDetails {
                 let mut res = String::new();
 
                 res.push_str("handle: ");
-                res.push_str(self.handle.as_str());
+                res.push_str(self.handle());
                 res.push_str("\n");
 
                 res.push_str("base uri: ");
-                res.push_str(self.base_uri.to_string().as_str());
+                res.push_str(self.base_uri().to_string().as_str());
                 res.push_str("\n");
 
-                if let Some(ref rfc8181) = self.cms_auth {
-                    res.push_str("RFC8181 Details:\n");
-                    res.push_str("  service uri: ");
-                    res.push_str(rfc8181.service_uri.to_string().as_str());
-                    res.push_str("\n");
-                    res.push_str("  id cert (base64): ");
-                    res.push_str(
-                        base64::encode(
-                            rfc8181.id_cert.to_bytes().as_ref()
-                        ).as_str());
-                    res.push_str("\n");
-                }
+                Ok(res)
+            },
+            _ => Err(ReportError::UnsupportedFormat)
+        }
+    }
+}
 
+impl Report for Vec<ClientInfo> {
+    fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
+        match format {
+            ReportFormat::Default | ReportFormat::Json => {
+                Ok(serde_json::to_string(self).unwrap())
+            },
+            ReportFormat::Text => {
+                let mut res = String::new();
+
+                res.push_str("Clients: ");
+                for client in self.iter() {
+                    let handle = client.handle();
+                    let auth = client.auth();
+                    let token = auth.token();
+                    let ski = auth.cert().ski_hex();
+
+                    res.push_str(
+                        &format!("   Handle: {}, Token: {}, Cert (ski): {}\n", handle, token, ski)
+                    );
+                }
                 Ok(res)
             },
             _ => Err(ReportError::UnsupportedFormat)

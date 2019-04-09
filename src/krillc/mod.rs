@@ -1,14 +1,17 @@
-pub mod data;
 pub mod options;
+pub mod report;
 
 use std::io;
-use bytes::Bytes;
 use rpki::uri;
-use crate::api::publisher_data::PublisherRequest;
-use crate::krillc::data::{
-    ApiResponse,
+use krill_commons::util::file;
+use krill_commons::util::httpclient;
+use krill_commons::api::admin::{
     PublisherDetails,
     PublisherList,
+    PublisherRequest
+};
+use crate::krillc::report::{
+    ApiResponse,
     ReportError
 };
 use crate::krillc::options::{
@@ -16,9 +19,9 @@ use crate::krillc::options::{
     Command,
     PublishersCommand
 };
-use crate::remote::rfc8183;
-use crate::util::file;
-use crate::util::httpclient;
+use krillc::options::Rfc8181Command;
+use krill_cms_proxy::api::{ClientInfo, Token, ClientAuth};
+use krill_cms_proxy::rfc8183;
 
 /// Command line tool for Krill admin tasks
 pub struct KrillClient {
@@ -52,6 +55,7 @@ impl KrillClient {
         match options.command {
             Command::Health => client.health(),
             Command::Publishers(cmd) => client.publishers(cmd),
+            Command::Rfc8181(cmd) => client.rfc8181(cmd),
             Command::NotSet => Err(Error::MissingCommand)
         }
     }
@@ -80,19 +84,11 @@ impl KrillClient {
                 let pbl = PublisherRequest::new(
                     add.handle,
                     add.token,
-                    add.base_uri,
-                    None
+                    add.base_uri
                 );
                 self.add_publisher(pbl)
             },
-            PublishersCommand::AddWithCms(add) => {
-                let bytes = file::read(&add.xml)?;
-                let pr = rfc8183::PublisherRequest::decode(bytes.as_ref())?;
-                let pbl = pr.into_publisher(add.token, add.base_uri);
-
-                self.add_publisher(pbl)
-            },
-            PublishersCommand::Remove(handle) => {
+            PublishersCommand::Deactivate(handle) => {
                 let uri = format!("api/v1/publishers/{}", handle);
                 let uri = self.resolve_uri(&uri);
                 httpclient::delete(&uri, Some(&self.token))?;
@@ -108,44 +104,6 @@ impl KrillClient {
                 )?;
                 Ok(ApiResponse::PublisherDetails(details))
             },
-            PublishersCommand::RepositoryResponseXml(handle, file_opt) => {
-                let uri = format!("api/v1/publishers/{}/response.xml", handle);
-                let uri = self.resolve_uri(&uri);
-
-                let xml = httpclient::get_text(
-                    &uri,
-                    "application/xml",
-                    Some(&self.token)
-                )?;
-
-                match file_opt {
-                    Some(path) => {
-                        file::save(&Bytes::from(xml), &path)?;
-                        Ok(ApiResponse::Empty)
-                    },
-                    None => {
-                        Ok(ApiResponse::GenericBody(xml))
-                    }
-                }
-            },
-            PublishersCommand::IdCert(handle, file) => {
-                let uri = format!("api/v1/publishers/{}", handle);
-                let uri = self.resolve_uri(&uri);
-
-                let details: PublisherDetails = httpclient::get_json(
-                    &uri,
-                    Some(&self.token)
-                )?;
-
-                match details.identity_cert() {
-                    Some(cert) => {
-                        let bytes = cert.to_bytes();
-                        file::save(&bytes, &file)?;
-                        Ok(ApiResponse::Empty)
-                    },
-                    None => Err(Error::NoIdCert)
-                }
-            }
         }
     }
 
@@ -157,6 +115,41 @@ impl KrillClient {
         )?;
 
         Ok(ApiResponse::Empty)
+    }
+
+    fn rfc8181(&self, command: Rfc8181Command) -> Result<ApiResponse, Error> {
+        match command {
+            Rfc8181Command::List => {
+                let uri = self.resolve_uri("api/v1/rfc8181/clients");
+                let list: Vec<ClientInfo> = httpclient::get_json(
+                    &uri,
+                    Some(&self.token)
+                )?;
+
+                Ok(ApiResponse::Rfc8181ClientList(list))
+            },
+            Rfc8181Command::Add(details) => {
+
+                let xml = file::read(&details.xml)?;
+                let pr = rfc8183::PublisherRequest::decode(xml.as_ref())?;
+
+                let handle = pr.client_handle();
+
+                let id_cert = pr.id_cert().clone();
+                let token = Token::from(details.token);
+                let auth = ClientAuth::new(id_cert, token);
+
+                let info = ClientInfo::new(handle, auth);
+
+                httpclient::post_json(
+                    &self.resolve_uri("api/v1/rfc8181/clients"),
+                    info,
+                    Some(&self.token)
+                )?;
+
+                Ok(ApiResponse::Empty)
+            }
+        }
     }
 
     fn resolve_uri(&self, path: &str) -> String {
@@ -186,14 +179,11 @@ pub enum Error {
     #[display(fmt="Can't read file: {}", _0)]
     IoError(io::Error),
 
-    #[display(fmt="There is no known IdCert for this publisher")]
-    NoIdCert,
-
-    #[display(fmt="Invalid RFC8183 XML")]
-    InvalidRfc8183,
-
     #[display(fmt="Empty response received from server")]
-    EmptyResponse
+    EmptyResponse,
+
+    #[display(fmt="{}", _0)]
+    PublisherRequestError(rfc8183::PublisherRequestError)
 }
 
 impl From<httpclient::Error> for Error {
@@ -219,8 +209,8 @@ impl From<ReportError> for Error {
 }
 
 impl From<rfc8183::PublisherRequestError> for Error {
-    fn from(_e: rfc8183::PublisherRequestError) -> Error {
-        Error::InvalidRfc8183
+    fn from(e: rfc8183::PublisherRequestError) -> Error {
+        Error::PublisherRequestError(e)
     }
 }
 

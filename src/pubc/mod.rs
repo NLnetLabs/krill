@@ -3,15 +3,15 @@ pub mod cmsclient;
 
 use std::path::PathBuf;
 use rpki::uri;
-use crate::api::publication_data;
-use crate::util::file;
+use krill_commons::api::publication;
+use krill_commons::util::file;
 
 pub fn create_delta(
-    list_reply: &publication_data::ListReply,
+    list_reply: &publication::ListReply,
     dir: &PathBuf,
     base_rsync: &uri::Rsync
-) -> Result<publication_data::PublishDelta, Error> {
-    let mut delta_builder = publication_data::PublishDeltaBuilder::new();
+) -> Result<publication::PublishDelta, Error> {
+    let mut delta_builder = publication::PublishDeltaBuilder::new();
 
     let current = file::crawl_incl_rsync_base(dir, base_rsync)?;
 
@@ -19,7 +19,7 @@ pub fn create_delta(
     for p in list_reply.elements() {
         if current.iter().find(|c| c.uri() == p.uri()).is_none() {
             delta_builder.add_withdraw(
-                publication_data::Withdraw::from_list_element(p)
+                publication::Withdraw::from_list_element(p)
             );
         }
     }
@@ -39,6 +39,67 @@ pub fn create_delta(
     }
 
     Ok(delta_builder.finish())
+}
+
+
+//------------ Format --------------------------------------------------------
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Format {
+    Json,
+    Text,
+    None
+}
+
+impl Format {
+    fn from(s: &str) -> Result<Self, UnsupportedFormat> {
+        match s {
+            "text" => Ok(Format::Text),
+            "none" => Ok(Format::None),
+            "json" => Ok(Format::Json),
+            _ => Err(UnsupportedFormat)
+        }
+    }
+}
+
+pub struct UnsupportedFormat;
+
+
+//------------ ApiResponse ---------------------------------------------------
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ApiResponse {
+    Success,
+    List(publication::ListReply),
+}
+
+impl ApiResponse {
+    pub fn report(&self, format: &Format) {
+        match format {
+            Format::None => {}, // done,
+            Format::Json => {
+                match self {
+                    ApiResponse::Success => {}, // nothing to report
+                    ApiResponse::List(reply) => {
+                        println!("{}", serde_json::to_string(reply).unwrap());
+                    }
+                }
+            },
+            Format::Text => {
+                match self {
+                    ApiResponse::Success => println!("success"),
+                    ApiResponse::List(list) => {
+                        for el in list.elements() {
+                            println!("{} {}",
+                                     el.hash().to_string(),
+                                     el.uri().to_string()
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 

@@ -5,7 +5,6 @@ use actix_web::http::HeaderMap;
 use actix_web::middleware::{Middleware, Started};
 use actix_web::middleware::identity::RequestIdentity;
 use crate::krilld::krillserver::KrillServer;
-use crate::eventsourcing::DiskKeyStore;
 
 
 const ADMIN_API_PATH: &str = "/api/";
@@ -13,16 +12,16 @@ const PUBLICATION_API_PATH: &str = "/publication/";
 
 pub struct CheckAuthorisation;
 
-impl Middleware<Arc<RwLock<KrillServer<DiskKeyStore>>>> for CheckAuthorisation {
+impl Middleware<Arc<RwLock<KrillServer>>> for CheckAuthorisation {
     fn start(
         &self,
-        req: &HttpRequest<Arc<RwLock<KrillServer<DiskKeyStore>>>>
+        req: &HttpRequest<Arc<RwLock<KrillServer>>>
     ) -> Result<Started> {
         if req.identity() == Some("admin".to_string()) {
             return Ok(Started::Done)
         }
 
-        let server: RwLockReadGuard<KrillServer<DiskKeyStore>> = req.state().read().unwrap();
+        let server: RwLockReadGuard<KrillServer> = req.state().read().unwrap();
 
         let mut allowed = true;
 
@@ -103,10 +102,10 @@ pub struct Credentials {
 }
 
 pub fn post_login(
-    req: HttpRequest<Arc<RwLock<KrillServer<DiskKeyStore>>>>,
+    req: HttpRequest<Arc<RwLock<KrillServer>>>,
     cred: Credentials
 ) -> HttpResponse {
-    let server: RwLockReadGuard<KrillServer<DiskKeyStore>> = req.state().read().unwrap();
+    let server: RwLockReadGuard<KrillServer> = req.state().read().unwrap();
     if server.is_api_allowed(Some(cred.token.clone())) {
         req.remember("admin".to_string());
         HttpResponse::Ok().finish()
@@ -116,7 +115,7 @@ pub fn post_login(
 }
 
 pub fn post_logout(
-    req: &HttpRequest<Arc<RwLock<KrillServer<DiskKeyStore>>>>
+    req: &HttpRequest<Arc<RwLock<KrillServer>>>
 ) -> HttpResponse {
     req.forget();
     HttpResponse::Ok().finish()
@@ -125,10 +124,10 @@ pub fn post_logout(
 
 #[allow(clippy::needless_pass_by_value)]
 pub fn login_page(
-    req: HttpRequest<Arc<RwLock<KrillServer<DiskKeyStore>>>>,
+    req: HttpRequest<Arc<RwLock<KrillServer>>>,
     form: Form<Credentials>
 ) -> HttpResponse {
-    let server: RwLockReadGuard<KrillServer<DiskKeyStore>> = req.state().read().unwrap();
+    let server: RwLockReadGuard<KrillServer> = req.state().read().unwrap();
     if server.is_api_allowed(Some(form.token.clone())) {
         req.remember("admin".to_string());
         HttpResponse::Found().header("location", "/api/v1/publishers").finish()
@@ -138,7 +137,7 @@ pub fn login_page(
 }
 
 pub fn is_logged_in(
-    req: &HttpRequest<Arc<RwLock<KrillServer<DiskKeyStore>>>>
+    req: &HttpRequest<Arc<RwLock<KrillServer>>>
 ) -> HttpResponse {
     if req.identity() == Some("admin".to_string()) {
         HttpResponse::Ok().finish()

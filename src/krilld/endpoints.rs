@@ -3,28 +3,27 @@ use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 use actix_web::{HttpResponse, ResponseError};
 use actix_web::http::StatusCode;
 use serde::Serialize;
-use crate::api::publisher_data;
-use crate::api::publisher_data::PublisherHandle;
-use crate::api::publication_data;
-use crate::eventsourcing::DiskKeyStore;
+use krill_cms_proxy::api::{ClientInfo, ClientHandle};
+use krill_cms_proxy::sigmsg::SignedMessage;
+use krill_commons::api::{admin, publication, ErrorResponse, ErrorCode};
+use krill_commons::api::admin::PublisherHandle;
+use krill_commons::api::rrdp::VerificationError;
 use crate::krilld::http::server::HttpRequest;
 use crate::krilld::krillserver::{self, KrillServer};
 use crate::krilld::pubd;
 use crate::krilld::pubd::publishers::PublisherError;
 use crate::krilld::pubd::repo::RrdpServerError;
-use crate::remote::cmsproxy;
-use crate::remote::sigmsg::SignedMessage;
 
 
 //------------ Support Functions ---------------------------------------------
 
 /// Returns a server in a read lock
-pub fn ro_server(req: &HttpRequest) -> RwLockReadGuard<KrillServer<DiskKeyStore>> {
+pub fn ro_server(req: &HttpRequest) -> RwLockReadGuard<KrillServer> {
     req.state().read().unwrap()
 }
 
 /// Returns a server in a write lock
-pub fn rw_server(req: &HttpRequest) -> RwLockWriteGuard<KrillServer<DiskKeyStore>> {
+pub fn rw_server(req: &HttpRequest) -> RwLockWriteGuard<KrillServer> {
     req.state().write().unwrap()
 }
 
@@ -67,25 +66,15 @@ pub fn health(_r: &HttpRequest) -> HttpResponse {
 
 /// Returns a json structure with all publishers in it.
 pub fn publishers(req: &HttpRequest) -> HttpResponse {
-    match ro_server(req).publishers() {
-        Err(e) => server_error(&Error::ServerError(e)),
-        Ok(publishers) => {
-            render_json(
-                publisher_data::PublisherList::build(
-                    &publishers,
-                    "/api/v1/publishers"
-                )
-            )
-        }
-    }
+    let publishers = ro_server(req).publishers();
+    render_json(admin::PublisherList::build(&publishers, "/api/v1/publishers"))
 }
 
-/// Adds a publisher, expects that an RFC8183 section 5.2.3 Publisher
-/// Request XML is posted.
+/// Adds a publisher
 #[allow(clippy::needless_pass_by_value)]
 pub fn add_publisher(
     req: HttpRequest,
-    pbl: publisher_data::PublisherRequest
+    pbl: admin::PublisherRequest
 ) -> HttpResponse {
     let mut server = rw_server(&req);
     match server.add_publisher(pbl) {
@@ -97,11 +86,11 @@ pub fn add_publisher(
 /// Removes a publisher. Should be idempotent! If if did not exist then
 /// that's just fine.
 #[allow(clippy::needless_pass_by_value)]
-pub fn remove_publisher(
+pub fn deactivate_publisher(
     req: HttpRequest,
     handle: PublisherHandle
 ) -> HttpResponse {
-    match rw_server(&req).remove_publisher(&handle) {
+    match rw_server(&req).deactivate_publisher(&handle) {
         Ok(()) => api_ok(),
         Err(e) => server_error(&Error::ServerError(e))
     }
@@ -118,30 +107,9 @@ pub fn publisher_details(
         Ok(None) => api_not_found(),
         Ok(Some(publisher)) => {
             render_json(
-                publisher_data::PublisherDetails::from(
-                    &publisher,
-                    "/api/v1/publishers",
-                    server.service_base_uri())
+                &publisher.as_api_details()
             )
         },
-        Err(e) => server_error(&Error::ServerError(e))
-    }
-}
-
-/// Shows the server's RFC8183 section 5.2.4 Repository Response XML
-/// file for a known publisher.
-#[allow(clippy::needless_pass_by_value)]
-pub fn repository_response(
-    req: HttpRequest,
-    handle: PublisherHandle
-) -> HttpResponse {
-    match ro_server(&req).repository_response(&handle) {
-        Ok(res) => {
-            HttpResponse::Ok()
-                .content_type("application/xml")
-                .body(res.encode_vec())
-        },
-
         Err(e) => server_error(&Error::ServerError(e))
     }
 }
@@ -156,8 +124,8 @@ pub fn handle_rfc8181_request(
     msg: SignedMessage,
     handle: PublisherHandle
 ) -> HttpResponse {
-    let mut server: RwLockWriteGuard<KrillServer<DiskKeyStore>> = rw_server(&req);
-    match server.handle_rfc8181_request(&msg, &handle) {
+    let client_handle = ClientHandle::from(handle.as_ref());
+    match ro_server(&req).handle_rfc8181_req(msg, client_handle) {
         Ok(captured) => {
             HttpResponse::build(StatusCode::OK)
                 .content_type("application/rpki-publication")
@@ -173,10 +141,10 @@ pub fn handle_rfc8181_request(
 #[allow(clippy::needless_pass_by_value)]
 pub fn handle_delta(
     req: HttpRequest,
-    delta: publication_data::PublishDelta,
+    delta: publication::PublishDelta,
     handle: PublisherHandle
 ) -> HttpResponse {
-    match rw_server(&req).handle_delta(delta, &handle) {
+    match ro_server(&req).handle_delta(delta, &handle) {
         Ok(()) => api_ok(),
         Err(e) => server_error(&Error::ServerError(e))
     }
@@ -191,6 +159,42 @@ pub fn handle_list(
     match ro_server(&req).handle_list(&handle) {
         Ok(list) => render_json(list),
         Err(e)   => server_error(&Error::ServerError(e))
+    }
+}
+
+
+//------------ Admin: Rfc8181 -----------------------------------------------
+
+pub fn rfc8181_clients(req: &HttpRequest) -> HttpResponse {
+    match ro_server(req).rfc8181_clients() {
+        Ok(clients) => render_json(clients),
+        Err(e) => server_error(&Error::ServerError(e ))
+    }
+}
+
+pub fn add_rfc8181_client(
+    req: HttpRequest,
+    client: ClientInfo
+) -> HttpResponse {
+    let server = ro_server(&req);
+    match server.add_rfc8181_client(client) {
+        Ok(()) => api_ok(),
+        Err(e) => server_error(&Error::ServerError(e))
+    }
+}
+
+pub fn repository_response(
+    req: HttpRequest,
+    handle: PublisherHandle
+) -> HttpResponse {
+    match ro_server(&req).repository_response(&handle) {
+        Ok(res) => {
+            HttpResponse::Ok()
+                .content_type("application/xml")
+                .body(res.encode_vec())
+        },
+
+        Err(e) => server_error(&Error::ServerError(e))
     }
 }
 
@@ -226,8 +230,8 @@ trait ErrorToStatus {
 }
 
 /// Translate an error to an error code to include in a json response.
-trait ErrorToCode {
-    fn code(&self) -> usize;
+trait ToErrorCode {
+    fn code(&self) -> ErrorCode;
 }
 
 impl std::error::Error for Error {
@@ -249,20 +253,9 @@ impl ErrorToStatus for Error {
 impl ErrorToStatus for krillserver::Error {
     fn status(&self) -> StatusCode {
         match self {
-            krillserver::Error::NoIdCert => StatusCode::FORBIDDEN,
-            krillserver::Error::CmsProxy(e) => e.status(),
             krillserver::Error::IoError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            krillserver::Error::PubServer(e) => e.status()
-        }
-    }
-}
-
-impl ErrorToStatus for cmsproxy::Error {
-    fn status(&self) -> StatusCode {
-        match self {
-            cmsproxy::Error::ValidationError(_) => StatusCode::FORBIDDEN,
-            cmsproxy::Error::MessageError(_) => StatusCode::BAD_REQUEST,
-            cmsproxy::Error::ResponderError(_) => StatusCode::INTERNAL_SERVER_ERROR
+            krillserver::Error::PubServer(e) => e.status(),
+            krillserver::Error::ProxyServer(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -273,13 +266,12 @@ impl ErrorToStatus for pubd::Error {
             pubd::Error::IoError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             pubd::Error::InvalidBaseUri => StatusCode::BAD_REQUEST,
             pubd::Error::InvalidHandle(_) => StatusCode::BAD_REQUEST,
-            pubd::Error::ReservedName(_) => StatusCode::BAD_REQUEST,
             pubd::Error::DuplicatePublisher(_) => StatusCode::BAD_REQUEST,
             pubd::Error::UnknownPublisher(_) => StatusCode::FORBIDDEN,
             pubd::Error::ConcurrentModification(_, _) => StatusCode::BAD_REQUEST,
             pubd::Error::PublisherError(e) => e.status(),
             pubd::Error::RrdpServerError(e) => e.status(),
-            pubd::Error::KeyStoreError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            pubd::Error::AggregateStoreError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 
@@ -304,85 +296,72 @@ impl ErrorToStatus for RrdpServerError {
 
 
 
-impl ErrorToCode for Error {
-    fn code(&self) -> usize {
+impl ToErrorCode for Error {
+    fn code(&self) -> ErrorCode {
         match self {
             Error::ServerError(e) => e.code(),
-            Error::JsonError(_) => 1001,
-            Error::PublisherRequestError => 1002
+            Error::JsonError(_) => ErrorCode::InvalidJson,
+            Error::PublisherRequestError => ErrorCode::InvalidPublisherRequest
         }
     }
 }
 
-impl ErrorToCode for krillserver::Error {
-    fn code(&self) -> usize {
+impl ToErrorCode for krillserver::Error {
+    fn code(&self) -> ErrorCode {
         match self {
-            krillserver::Error::NoIdCert => 2001,
-            krillserver::Error::CmsProxy(e) => e.code(),
-            krillserver::Error::IoError(_) => 3001,
-            krillserver::Error::PubServer(e) => e.code()
+            krillserver::Error::IoError(_) => ErrorCode::Persistence,
+            krillserver::Error::PubServer(e) => e.code(),
+            krillserver::Error::ProxyServer(_) => ErrorCode::ProxyError
         }
     }
 }
 
-impl ErrorToCode for cmsproxy::Error {
-    fn code(&self) -> usize {
+impl ToErrorCode for pubd::Error {
+    fn code(&self) -> ErrorCode {
         match self {
-            cmsproxy::Error::ValidationError(_) => 2001,
-            cmsproxy::Error::MessageError(_) => 1003,
-            cmsproxy::Error::ResponderError(_) => 3003
-        }
-    }
-}
-
-impl ErrorToCode for pubd::Error {
-    fn code(&self) -> usize {
-        match self {
-            pubd::Error::IoError(_) => 3001,
-            pubd::Error::InvalidBaseUri => 2002,
-            pubd::Error::InvalidHandle(_) => 1004,
-            pubd::Error::ReservedName(_) => 1007,
-            pubd::Error::DuplicatePublisher(_) => 1005,
-            pubd::Error::UnknownPublisher(_) => 1006,
-            pubd::Error::ConcurrentModification(_, _) => 2003,
+            pubd::Error::IoError(_) => ErrorCode::Persistence,
+            pubd::Error::InvalidBaseUri => ErrorCode::InvalidBaseUri,
+            pubd::Error::InvalidHandle(_) => ErrorCode::InvalidHandle,
+            pubd::Error::DuplicatePublisher(_) => ErrorCode::DuplicateHandle,
+            pubd::Error::UnknownPublisher(_) => ErrorCode::UnknownPublisher,
+            pubd::Error::ConcurrentModification(_, _) => ErrorCode::ConcurrentModification,
             pubd::Error::PublisherError(e) => e.code(),
             pubd::Error::RrdpServerError(e) => e.code(),
-            pubd::Error::KeyStoreError(_) => 3001,
+            pubd::Error::AggregateStoreError(_) => ErrorCode::Persistence,
         }
     }
 }
 
-impl ErrorToCode for PublisherError {
-    fn code(&self) -> usize {
+impl ToErrorCode for PublisherError {
+    fn code(&self) -> ErrorCode {
         match self {
-            PublisherError::Deactivated => 2004,
-            PublisherError::VerificationError(_) => 2005,
+            PublisherError::Deactivated => ErrorCode::PublisherDeactivated,
+            PublisherError::VerificationError(e) => e.code(),
         }
     }
 }
 
-impl ErrorToCode for RrdpServerError {
-    fn code(&self) -> usize {
+impl ToErrorCode for VerificationError {
+    fn code(&self) -> ErrorCode {
         match self {
-            RrdpServerError::IoError(_) => 3001
+            VerificationError::NoObjectForHashAndOrUri(_) => ErrorCode::NoObjectForHashAndOrUri,
+            VerificationError::ObjectAlreadyPresent(_) => ErrorCode::ObjectAlreadyPresent,
+            VerificationError::UriOutsideJail(_, _) => ErrorCode::UriOutsideJail
         }
     }
 }
 
-
-
-#[derive(Debug, Serialize)]
-struct ErrorResponse {
-    code: usize,
-    msg: String
+impl ToErrorCode for RrdpServerError {
+    fn code(&self) -> ErrorCode {
+        match self {
+            RrdpServerError::IoError(_) => ErrorCode::Persistence
+        }
+    }
 }
 
 impl Error {
     fn to_error_response(&self) -> ErrorResponse {
-        ErrorResponse {
-            code: self.code(),
-            msg: format!("{}", self)
-        }
+        self.code().clone().into()
     }
 }
 

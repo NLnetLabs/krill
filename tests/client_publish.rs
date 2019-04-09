@@ -3,35 +3,38 @@ extern crate futures;
 extern crate reqwest;
 extern crate rpki;
 extern crate krill;
+extern crate krill_commons;
 extern crate serde_json;
 extern crate tokio;
 extern crate bytes;
+extern crate toml;
+extern crate krill_cms_proxy;
 
 use std::{thread, time};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use actix::System;
-use krill::krillc::data::ReportFormat;
-use krill::krillc::options::{
-    AddPublisher,
-    Command,
-    Options,
-    PublishersCommand
-};
 use krill::krillc::KrillClient;
+use krill::krillc::options::{AddPublisher, Command, Options, PublishersCommand, Rfc8181Command, AddRfc8181Client};
+use krill::krillc::report::ReportFormat;
 use krill::krilld::config::Config;
 use krill::krilld::http::server::PubServerApp;
-use krill::util::test;
+use krill::pubc;
+use krill::pubc::{ApiResponse, Format};
 use krill::pubc::apiclient;
-use krill::pubc::apiclient::ApiResponse;
-use krill::util::file::CurrentFile;
-use krill::util::file;
-use krill::util::httpclient;
+use krill::pubc::cmsclient;
+use krill::pubc::cmsclient::PubClient;
+use krill_cms_proxy::rfc8183::RepositoryResponse;
+use krill_commons::util::file::CurrentFile;
+use krill_commons::util::file;
+use krill_commons::util::httpclient;
+use krill_commons::util::test;
+use krill_commons::api::publication::ListReply;
 
 fn list(server_uri: &str, handle: &str, token: &str) -> apiclient::Options {
     let conn = apiclient::Connection::build(server_uri, handle, token).unwrap();
     let cmd = apiclient::Command::List;
-    let fmt = apiclient::Format::Json;
+    let fmt = Format::Json;
 
     apiclient::Options::new(conn, cmd, fmt)
 }
@@ -45,7 +48,7 @@ fn sync(
 ) -> apiclient::Options {
     let conn = apiclient::Connection::build(server_uri, handle, token).unwrap();
     let cmd = apiclient::Command::sync(syncdir.to_str().unwrap(), base_uri).unwrap();
-    let fmt = apiclient::Format::Json;
+    let fmt = Format::Json;
 
     apiclient::Options::new(conn, cmd, fmt)
 }
@@ -78,16 +81,72 @@ fn add_publisher(handle: &str, base_uri: &str, token: &str) {
 
 fn remove_publisher(handle: &str) {
     let command = Command::Publishers(
-        PublishersCommand::Remove(handle.to_string())
+        PublishersCommand::Deactivate(handle.to_string())
     );
 
     execute_krillc_command(command);
 }
 
-#[test]
-fn client_publish_at_server() {
-    test::test_with_tmp_dir(|d| {
+fn rfc8181_client_init(handle: &str, state_dir: &PathBuf) {
+    let command = cmsclient::Command::init(handle);
+    rfc8181_client_process_command(command, &state_dir);
+}
 
+fn rfc8181_client_add(token: &str, state_dir: &PathBuf)  {
+    let mut pr_path = state_dir.clone();
+    pr_path.push("request.xml");
+
+    let command = cmsclient::Command::publisher_request(pr_path.clone());
+    rfc8181_client_process_command(command, &state_dir);
+
+    let command = Command::Rfc8181(
+        Rfc8181Command::Add(
+            AddRfc8181Client { token: token.to_string(), xml: pr_path }
+        )
+    );
+
+    execute_krillc_command(command);
+}
+
+fn rfc8181_client_process_response(res_path: &PathBuf, state_dir: &PathBuf) {
+    let command = cmsclient::Command::repository_response(res_path.clone());
+    rfc8181_client_process_command(command, &state_dir);
+}
+
+fn rfc8181_client_list(state_dir: &PathBuf) -> ListReply {
+    let command = cmsclient::Command::list();
+    let api_response = rfc8181_client_process_command(command, &state_dir);
+    match api_response {
+        ApiResponse::Success => panic!("Expected list"),
+        ApiResponse::List(list) => list
+    }
+}
+
+fn rfc8181_client_sync(state_dir: &PathBuf, sync_dir: &PathBuf) {
+    let command = cmsclient::Command::sync(sync_dir.clone());
+    rfc8181_client_process_command(command, state_dir);
+}
+
+fn rfc8181_client_process_command(command: cmsclient::Command, state_dir: &PathBuf) -> ApiResponse {
+    let options = cmsclient::Options::new(state_dir.clone(), command, pubc::Format::None);
+    PubClient::execute(options).unwrap()
+}
+
+fn get_repository_response(handle: &str) -> RepositoryResponse {
+    let uri = format!("http://localhost:3000/api/v1/rfc8181/{}/response.xml", handle);
+    let content_type = "application/xml";
+    let token = Some("secret");
+
+    let xml = httpclient::get_text(
+        &uri, content_type, token
+    ).unwrap();
+
+    RepositoryResponse::decode(xml.as_bytes()).unwrap()
+}
+
+#[test]
+fn client_publish() {
+    test::test_with_tmp_dir(|d| {
 
         let server_uri = "http://localhost:3000/";
         let handle = "alice";
@@ -275,6 +334,77 @@ fn client_publish_at_server() {
         // XXX TODO Must remove files when removing publisher
         // Expect that c.txt is removed when looking at latest snapshot.
         file::delete_in_dir(&sync_dir, "c.txt").unwrap();
-    });
-}
 
+        // Now test with CMS proxy
+
+        let handle = "carol";
+        let token = "secret";
+        let base_rsync_uri = "rsync://127.0.0.1/repo/carol/";
+
+        // Set up a test PubServer Config
+        let server_conf = {
+            // Use a data dir for the storage
+            let data_dir = test::create_sub_dir(&d);
+            Config::test(&data_dir)
+        };
+
+        // Start the server
+        thread::spawn(|| {
+            System::run(move || {
+                PubServerApp::start(&server_conf);
+            })
+        });
+
+        // XXX TODO: Find a better way to know the server is ready!
+        thread::sleep(time::Duration::from_millis(500));
+
+        // Add client "carol"
+        add_publisher(handle, base_rsync_uri, token);
+
+        let state_dir = test::create_sub_dir(&d);
+
+        // Add RFC8181 client for alice
+        rfc8181_client_init(handle, &state_dir);
+
+        rfc8181_client_add(token, &state_dir);
+
+        // Get the server response.xml and add it to the client
+        let response = get_repository_response(handle);
+        let mut response_path = state_dir.clone();
+        response_path.push("response.xml");
+        response.save(&response_path).unwrap();
+
+        rfc8181_client_process_response(&response_path, &state_dir);
+
+        // List the files
+        let list = rfc8181_client_list(&state_dir);
+        assert_eq!(0, list.elements().len());
+
+        // Create files on disk to sync
+        let sync_dir = test::create_sub_dir(&d);
+        let file_a = CurrentFile::new(
+            test::rsync_uri("rsync://127.0.0.1/repo/alice/a.txt"),
+            &test::as_bytes("a")
+        );
+        let file_b = CurrentFile::new(
+            test::rsync_uri("rsync://127.0.0.1/repo/alice/b.txt"),
+            &test::as_bytes("b")
+        );
+        let file_c = CurrentFile::new(
+            test::rsync_uri("rsync://127.0.0.1/repo/alice/c.txt"),
+            &test::as_bytes("c")
+        );
+
+        file::save_in_dir(&file_a.to_bytes(), &sync_dir, "a.txt").unwrap();
+        file::save_in_dir(&file_b.to_bytes(), &sync_dir, "b.txt").unwrap();
+        file::save_in_dir(&file_c.to_bytes(), &sync_dir, "c.txt").unwrap();
+
+        // Sync
+        rfc8181_client_sync(&state_dir, &sync_dir);
+
+        // List the files
+        let list = rfc8181_client_list(&state_dir);
+        assert_eq!(3, list.elements().len());
+    });
+
+}
