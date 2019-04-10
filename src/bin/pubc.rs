@@ -8,7 +8,7 @@ fn main() {
     let options = match apiclient::Options::create() {
         Ok(o)  => o,
         Err(e) => {
-            eprintln!("{}", e);
+            eprintln!("Error parsing options: {}", e);
             ::std::process::exit(1);
         }
     };

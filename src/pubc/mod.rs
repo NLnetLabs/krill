@@ -10,7 +10,7 @@ pub fn create_delta(
     list_reply: &publication::ListReply,
     dir: &PathBuf,
     base_rsync: &uri::Rsync
-) -> Result<publication::PublishDelta, Error> {
+) -> Result<publication::PublishDelta, file::Error> {
     let mut delta_builder = publication::PublishDeltaBuilder::new();
 
     let current = file::crawl_incl_rsync_base(dir, base_rsync)?;
@@ -99,20 +99,5 @@ impl ApiResponse {
                 }
             }
         }
-    }
-}
-
-
-//------------ Error ---------------------------------------------------------
-
-#[derive(Debug, Display)]
-pub enum Error {
-    #[display(fmt = "{}", _0)]
-    RecursorError(file::RecursorError),
-}
-
-impl From<file::RecursorError> for Error {
-    fn from(e: file::RecursorError) -> Self {
-        Error::RecursorError(e)
     }
 }

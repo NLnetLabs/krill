@@ -388,7 +388,7 @@ pub enum Error {
     ClientError(ClientError),
 
     #[display(fmt="{}", _0)]
-    PubcError(pubc::Error),
+    FileError(file::Error),
 }
 
 impl From<softsigner::SignerError> for Error {
@@ -421,8 +421,8 @@ impl From<ClientError> for Error {
     }
 }
 
-impl From<pubc::Error> for Error {
-    fn from(e: pubc::Error) -> Self { Error::PubcError(e) }
+impl From<file::Error> for Error {
+    fn from(e: file::Error) -> Self { Error::FileError(e) }
 }
 
 // For tests see main 'tests' folder

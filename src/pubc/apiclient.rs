@@ -4,7 +4,7 @@ use std::str::FromStr;
 use clap::{App, Arg, SubCommand};
 use rpki::uri;
 use krill_commons::api::publication;
-use krill_commons::util::httpclient;
+use krill_commons::util::{httpclient, file};
 use crate::pubc;
 use crate::pubc::{Format, ApiResponse};
 
@@ -225,7 +225,7 @@ fn sync(
 
 #[derive(Debug, Display)]
 pub enum Error {
-    #[display(fmt = "{}", _0)]
+    #[display(fmt = "Uri error: {}", _0)]
     UriError(uri::Error),
 
     #[display(fmt = "{} is not a directory", _0)]
@@ -237,14 +237,14 @@ pub enum Error {
     #[display(fmt = "Expected a response body, but got nothing.")]
     NoResponse,
 
-    #[display(fmt="{}", _0)]
+    #[display(fmt="HTTP client error: {}", _0)]
     HttpClientError(httpclient::Error),
 
     #[display(fmt="Received invalid json response: {}", _0)]
     JsonError(serde_json::Error),
 
     #[display(fmt="{}", _0)]
-    PubcError(pubc::Error),
+    FileError(file::Error),
 
     #[display(fmt="Unsupported output format. Use text, json or none.")]
     UnsupportedOutputFormat,
@@ -261,8 +261,8 @@ impl From<serde_json::Error> for Error {
     fn from(e: serde_json::Error) -> Self { Error::JsonError(e) }
 }
 
-impl From<pubc::Error> for Error {
-    fn from(e: pubc::Error) -> Self { Error::PubcError(e) }
+impl From<file::Error> for Error {
+    fn from(e: file::Error) -> Self { Error::FileError(e) }
 }
 
 impl From<httpclient::Error> for Error {
