@@ -97,19 +97,50 @@ impl Authorizer {
 }
 
 #[derive(Deserialize)]
-pub struct Login {
+pub struct Credentials {
     token: String
 }
+
+pub fn post_login(
+    req: HttpRequest<Arc<RwLock<KrillServer>>>,
+    cred: Credentials
+) -> HttpResponse {
+    let server: RwLockReadGuard<KrillServer> = req.state().read().unwrap();
+    if server.is_api_allowed(Some(cred.token.clone())) {
+        req.remember("admin".to_string());
+        HttpResponse::Ok().finish()
+    } else {
+        HttpResponse::Forbidden().finish()
+    }
+}
+
+pub fn post_logout(
+    req: &HttpRequest<Arc<RwLock<KrillServer>>>
+) -> HttpResponse {
+    req.forget();
+    HttpResponse::Ok().finish()
+}
+
 
 #[allow(clippy::needless_pass_by_value)]
 pub fn login_page(
     req: HttpRequest<Arc<RwLock<KrillServer>>>,
-    form: Form<Login>
+    form: Form<Credentials>
 ) -> HttpResponse {
     let server: RwLockReadGuard<KrillServer> = req.state().read().unwrap();
     if server.is_api_allowed(Some(form.token.clone())) {
         req.remember("admin".to_string());
         HttpResponse::Found().header("location", "/api/v1/publishers").finish()
+    } else {
+        HttpResponse::Forbidden().finish()
+    }
+}
+
+pub fn is_logged_in(
+    req: &HttpRequest<Arc<RwLock<KrillServer>>>
+) -> HttpResponse {
+    if req.identity() == Some("admin".to_string()) {
+        HttpResponse::Ok().finish()
     } else {
         HttpResponse::Forbidden().finish()
     }

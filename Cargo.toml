@@ -1,7 +1,8 @@
 [package]
-name = "krill"
+name    = "krill"
 version = "0.2.0"
 authors = ["Tim Bruijnzeels <tim@nlnetlabs.nl>", "Martin Hoffmann <martin@nlnetlabs.nl>"]
+build   = "build.rs"
 
 [dependencies]
 actix           = "^0.7"

@@ -341,23 +341,6 @@ fn client_publish() {
         let token = "secret";
         let base_rsync_uri = "rsync://127.0.0.1/repo/carol/";
 
-        // Set up a test PubServer Config
-        let server_conf = {
-            // Use a data dir for the storage
-            let data_dir = test::create_sub_dir(&d);
-            Config::test(&data_dir)
-        };
-
-        // Start the server
-        thread::spawn(|| {
-            System::run(move || {
-                PubServerApp::start(&server_conf);
-            })
-        });
-
-        // XXX TODO: Find a better way to know the server is ready!
-        thread::sleep(time::Duration::from_millis(500));
-
         // Add client "carol"
         add_publisher(handle, base_rsync_uri, token);
 

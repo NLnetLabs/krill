@@ -6,8 +6,9 @@
 use std::io;
 use std::fs::File;
 use std::sync::{Arc, RwLock, RwLockReadGuard};
-use actix_web::{pred, fs, server};
-use actix_web::{App, HttpResponse};
+use actix_web::{fs, pred, server};
+use actix_web::{App, FromRequest, HttpResponse };
+use actix_web::dev::MessageBody;
 use actix_web::middleware;
 use actix_web::middleware::identity::CookieIdentityPolicy;
 use actix_web::middleware::identity::IdentityService;
@@ -15,16 +16,16 @@ use actix_web::http::{Method, StatusCode};
 use bcder::decode;
 use openssl::ssl::{SslMethod, SslAcceptor, SslAcceptorBuilder, SslFiletype};
 use crate::krilld::auth;
-use crate::krilld::auth::{Authorizer, CheckAuthorisation};
+use crate::krilld::auth::{Authorizer, CheckAuthorisation, Credentials};
 use crate::krilld::config::Config;
 use crate::krilld::endpoints;
 use crate::krilld::http::ssl;
 use crate::krilld::krillserver;
 use crate::krilld::krillserver::KrillServer;
+use futures::Future;
 
-const NOT_FOUND: &[u8] = include_bytes!("../../../ui/dev/html/404.html");
 const LOGIN: &[u8] = include_bytes!("../../../ui/dev/html/login.html");
-
+const NOT_FOUND: &[u8] = include_bytes!("../../../ui/public/404.html");
 
 //------------ PubServerApp --------------------------------------------------
 
@@ -35,7 +36,7 @@ pub struct PubServerApp(App<Arc<RwLock<KrillServer>>>);
 ///
 impl PubServerApp {
     pub fn new(server: Arc<RwLock<KrillServer>>) -> Self {
-        let mut app = App::with_state(server)
+        let app = App::with_state(server)
             .middleware(middleware::Logger::default())
             .middleware(IdentityService::new(
                 CookieIdentityPolicy::new(&[0; 32])
@@ -88,6 +89,25 @@ impl PubServerApp {
             .resource("/api/v1/health", |r| { // health with authentication
                 r.method(Method::GET).f(endpoints::health)
             })
+            .resource("/ui/is_logged_in", |r| {
+                r.method(Method::GET).f(auth::is_logged_in)
+            })
+            .resource("/ui/login", |r| {
+                r.method(Method::POST).with(auth::post_login)
+            })
+            .resource("/ui/logout", |r| {
+                r.method(Method::POST).f(auth::post_logout)
+            })
+            .resource("/", |r| {
+                r.method(Method::GET).f(
+                    |_r| {
+                        HttpResponse::Found()
+                            .header("location", "/ui/index.html")
+                            .finish()
+                    }
+                )
+            })
+            .handler("/ui", fs::StaticFiles::new("ui/dist/").unwrap())
             .default_resource(|r| {
                 // 404 for GET request
                 r.method(Method::GET).f(Self::p404);
@@ -97,17 +117,7 @@ impl PubServerApp {
                     |_req| HttpResponse::MethodNotAllowed());
             });
 
-        use std::env;
-        if env::var("KRILL_DEV_MODE").is_ok() {
-            app = app.handler(
-                "/ui/dev",
-                fs::StaticFiles::new("./ui/dev")
-                    .unwrap()
-                    .show_files_listing()
-            );
-        }
-
-        PubServerApp(with_statics(app))
+        PubServerApp(app)
     }
 
     pub fn create_server(
@@ -253,6 +263,27 @@ impl PubServerApp {
 }
 
 
+//------------ Credentials --------------------------------------------------
+
+impl<S: 'static> FromRequest<S> for Credentials {
+    type Config = ();
+    type Result = Box<Future<Item=Self, Error=actix_web::Error>>;
+
+    fn from_request(
+        req: &actix_web::HttpRequest<S>,
+        _c: &Self::Config
+    ) -> Self::Result {
+        Box::new(MessageBody::new(req)
+            .from_err()
+            .and_then(|bytes| {
+                let credentials: Credentials =
+                    serde_json::from_reader(bytes.as_ref())
+                        .map_err(Error::JsonError)?;
+                Ok(credentials)
+            })
+        )
+    }
+}
 
 //------------ IntoHttpHandler -----------------------------------------------
 
@@ -264,17 +295,6 @@ impl server::IntoHttpHandler for PubServerApp {
     }
 }
 
-//------------ Definition of Statics -----------------------------------------
-
-static CSS: &[u8] = b"text/css";
-static PNG: &[u8] = b"image/png";
-
-fn with_statics<S: 'static>(app: App<S>) -> App<S> {
-    statics!(app,
-        "css/custom.css" => CSS => "39e0abcc41c3653600f6d8eadb57b17246f1aca7",
-        "images/404.png" => PNG => "d48f938ae7a05a033d38f55cfa12a08fb3f3f8db",
-    )
-}
 
 //------------ HttpRequest ---------------------------------------------------
 
