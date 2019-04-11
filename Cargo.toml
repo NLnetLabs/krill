@@ -1,38 +1,5 @@
-[package]
-name    = "krill"
-version = "0.2.0"
-authors = ["Tim Bruijnzeels <tim@nlnetlabs.nl>", "Martin Hoffmann <martin@nlnetlabs.nl>"]
-build   = "build.rs"
-
-[dependencies]
-actix           = "^0.7"
-actix-web       = { version = "^0.7", features = ["alpn"] }
-base64          = "^0.9"
-bcder           = "^0.2"
-bytes           = "^0.4"
-chrono          = { version = "^0.4", features = ["serde"] }
-clap            = "^2.32"
-derive_more     = "^0.13"
-fern            = "^0.5"
-futures         = "0.1"
-hex             = "^0.3"
-krill_commons   = "^0.2"
-krill_cms_proxy = "^0.2"
-lazy_static     = "^1.1"
-log             = "^0.4"
-openssl         = { version = "^0.10", features = ["v110"] }
-pretty          = "0.5.2"
-rand            = "^0.5"
-reqwest         = "^0.9"
-rpki            = "^0.3"
-serde           = { version = "^1.0", features = ["rc"] }
-serde_derive    = "^1.0"
-serde_json      = "^1.0"
-syslog          = "^4.0"
-toml            = "^0.4"
-tokio           = "^0.1"
-uuid            = "0.7"
-xml-rs          = "0.8.0"
+[workspace]
+members = [ "client", "daemon", "pubc", "pubd" ]
 
 [patch.crates-io]
 krill_commons = { git="https://github.com/NLnetLabs/krill-commons.git" }

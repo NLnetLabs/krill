@@ -1,4 +1,0 @@
-<msg xmlns="http://www.hactrn.net/uris/rpki/publication-spec/" version="4" type="reply">
-  <list hash="fae1c03bde9da15e26e90a9585d246ee4db79ee9f0b1db1a6c7deb2fc4e2d093" uri="rsync://host/path/cms-ta.cer" />
-  <list hash="501655fb625a03520741801dcc71b5d3148cba2ef7106ca2762620c292c9f08d" uri="rsync://host/path/pdu.200.der" />
-</msg>

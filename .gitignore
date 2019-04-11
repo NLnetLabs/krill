@@ -6,6 +6,6 @@ publishers
 krill.log
 target/
 tmp
-ui/dist
+daemon/ui/dist
 work
 package-lock.json
