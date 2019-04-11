@@ -1,6 +1,8 @@
 #!/bin/bash
 
-cd ui
+DIR=`dirname $0`
+
+cd $DIR/ui
 if [ ! -d "node_modules" ]; then
   npm install
 fi
