@@ -1,6 +1,7 @@
 .cargo
 .idea/
 Cargo.lock
+.DS_Store
 data
 publishers
 krill.log
