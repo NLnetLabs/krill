@@ -14,4 +14,4 @@ before_install:
   - sudo apt-get install -y yarn
 
 install:
-  - ./build-dist.sh
+  - ./daemon/build-dist.sh
