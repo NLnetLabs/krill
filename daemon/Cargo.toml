@@ -16,7 +16,6 @@ derive_more     = "^0.13"
 fern            = "^0.5"
 futures         = "0.1"
 hex             = "^0.3"
-krill_commons   = "^0.2"
 lazy_static     = "^1.1"
 log             = "^0.4"
 openssl         = { version = "^0.10", features = ["v110"] }
@@ -39,6 +38,10 @@ version = "0.2.0"
 
 [dependencies.krill_cms_proxy]
 path = "../cms_proxy"
+version = "0.2.0"
+
+[dependencies.krill_commons]
+path = "../commons"
 version = "0.2.0"
 
 [dependencies.krill_pubc]
