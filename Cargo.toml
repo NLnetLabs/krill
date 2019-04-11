@@ -1,8 +1,7 @@
 [workspace]
-members = [ "client", "daemon", "pubc", "pubd" ]
+members = [ "client", "cms_proxy", "daemon", "pubc", "pubd" ]
 
 [patch.crates-io]
 krill_commons = { git="https://github.com/NLnetLabs/krill-commons.git" }
-krill_cms_proxy = { git="https://github.com/NLnetLabs/krill-cms-proxy.git"}
 rpki = { git="https://github.com/NLnetLabs/rpki-rs.git" }
 bcder = { git="https://github.com/NLnetLabs/bcder.git" }

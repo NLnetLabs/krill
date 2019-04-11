@@ -17,7 +17,6 @@ fern            = "^0.5"
 futures         = "0.1"
 hex             = "^0.3"
 krill_commons   = "^0.2"
-krill_cms_proxy = "^0.2"
 lazy_static     = "^1.1"
 log             = "^0.4"
 openssl         = { version = "^0.10", features = ["v110"] }
@@ -34,9 +33,12 @@ tokio           = "^0.1"
 uuid            = "0.7"
 xml-rs          = "0.8.0"
 
-
 [dependencies.krill_client]
 path = "../client"
+version = "0.2.0"
+
+[dependencies.krill_cms_proxy]
+path = "../cms_proxy"
 version = "0.2.0"
 
 [dependencies.krill_pubc]

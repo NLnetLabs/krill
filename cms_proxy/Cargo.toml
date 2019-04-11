@@ -1,0 +1,33 @@
+[package]
+name = "krill_cms_proxy"
+version = "0.2.0"
+authors = ["Tim Bruijnzeels <tim@nlnetlabs.nl>", "Martin Hoffmann <martin@nlnetlabs.nl>"]
+
+[dependencies]
+base64        = "^0.9"
+bcder         = "^0.2"
+bytes         = "^0.4"
+chrono        = { version = "^0.4", features = ["serde"] }
+derive_more   = "^0.13"
+hex           = "^0.3"
+krill_commons = "^0.2"
+openssl       = { version = "^0.10", features = ["v110"] }
+rpki          = "^0.3"
+serde         = { version = "^1.0", features = ["rc"] }
+serde_derive  = "^1.0"
+serde_json    = "^1.0"
+xml-rs        = "0.8.0"
+
+# Both needed for logging, setup is done in main project
+fern         = "^0.5"
+log          = "^0.4"
+
+# To support parsing API json in the requests for actix
+actix         = "^0.7"
+actix-web     = "^0.7"
+futures       = "0.1"
+
+# XXX Temporarily
+ring = "^0.13"
+untrusted = "^0.6"
+
