@@ -1,3 +1,5 @@
+const webpack = require('webpack')
+
 module.exports = {
   devServer: {
     proxy: 'http://localhost:3000'
@@ -12,5 +14,19 @@ module.exports = {
       localeDir: 'locales',
       enableInSFC: false
     }
+  },
+
+  filenameHashing: false,
+
+  configureWebpack: {
+    plugins: [
+      new webpack.optimize.LimitChunkCountPlugin({
+        maxChunks: 1
+      })
+    ]
+  },
+  chainWebpack: config => {
+    config.optimization.delete('splitChunks')
   }
+
 }
