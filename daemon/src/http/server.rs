@@ -106,7 +106,7 @@ impl PubServerApp {
                     }
                 )
             })
-            .handler("/ui", fs::StaticFiles::new("ui/dist/").unwrap())
+            .handler("/ui", fs::StaticFiles::new("daemon/ui/dist/").unwrap())
             .default_resource(|r| {
                 // 404 for GET request
                 r.method(Method::GET).f(Self::p404);
