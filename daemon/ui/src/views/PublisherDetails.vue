@@ -11,35 +11,43 @@
           <el-breadcrumb-item :to="{ path: '/' }">{{ $t("publishers.publishers") }}</el-breadcrumb-item>
           <el-breadcrumb-item>{{ handle }}</el-breadcrumb-item>
         </el-breadcrumb>
-        <el-button
-          class="retire"
-          icon="el-icon-delete"
-          type="primary"
-          circle
-          @click="confirmRetirePublisher"
-        ></el-button>
+        <div class="retire">
+          <el-form :inline="true">
+            <el-form-item>
+              <el-button
+                class="retire"
+                icon="el-icon-delete"
+                type="primary"
+                round
+                size="mini"
+                @click="confirmRetirePublisher"
+              >{{ $t("publishers.retire") }}</el-button>
+            </el-form-item>
+          </el-form>
+        </div>
       </div>
       <div class="text item">
-        Base URI:
-        <a :href="publisher.base_uri" target="_blank">{{ publisher.base_uri }}</a>
-        <br>
-        RFC 8181: {{ publisher.rfc8181 }}
-        <br>
-        Retired: {{ publisher.retired }}
-        <br>Links:
-        <ul>
-          <li v-for="link in publisher.links" :key="link.link">
-            <a href="#" @click="getFile(link.link)">{{ link.rel }}</a>
-          </li>
-        </ul>
-        <br>Publisher Data:
+
+        <el-table v-if="!loading && publisher" :data="[publisher]" style="width: 100%">
+          <el-table-column prop="base_uri" label="Base URI"></el-table-column>
+          <el-table-column prop="rfc8181" label="RFC 8181"></el-table-column>
+          <el-table-column label="Deactivated">
+            <template slot-scope="scope">
+              <i class="el-icon-check" v-if="[publisher][scope.$index].deactivated"></i>
+              <i class="el-icon-close" v-if="![publisher][scope.$index].deactivated"></i>
+            </template>
+          </el-table-column>
+        </el-table>
+
         <i class="el-icon-loading" v-if="loading"></i>
-        <ul v-if="!loadingPublisherData && publisherData.elements">
-          <li v-for="element in publisherData.elements" :key="element.hash">
-            <a :href="element.uri" target="_blank">{{ element.uri }}</a>
-            - {{ element.hash }}
-          </li>
-        </ul>
+
+        <div v-if="!loadingPublisherData && publisherData.elements" class="publisher-data">Publisher Data</div>
+
+        <el-table v-if="!loadingPublisherData && publisherData.elements" :data="publisherData.elements" style="width: 100%">
+          <el-table-column prop="uri" label="URI"></el-table-column>
+          <el-table-column prop="hash" label="Hash"></el-table-column>
+        </el-table>
+
         <div
           v-if="!loadingPublisherData && publisherData.elements == null"
         >{{ $t("publisherDetails.nopublisherdata") }}</div>
@@ -117,5 +125,14 @@ a {
 }
 .retire {
   float: right;
+  margin-top: -10px;
+}
+
+.publisher-data {
+  font-size: 14px;
+  margin-top: 3rem;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #F9EADD;
 }
 </style>

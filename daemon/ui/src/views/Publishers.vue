@@ -11,40 +11,92 @@
           <el-breadcrumb-item :to="{ path: '/' }">{{ $t("publishers.publishers") }}</el-breadcrumb-item>
         </el-breadcrumb>
         <div class="search-input">
-          <el-input
-            size="mini"
-            :placeholder="$t('publishers.search')"
-            prefix-icon="el-icon-search"
-            v-model="search"
-            clearable
-          ></el-input>
+          <el-form :inline="true">
+            <el-form-item>
+              <el-input
+                size="mini"
+                :placeholder="$t('publishers.search')"
+                prefix-icon="el-icon-search"
+                v-model="search"
+                clearable
+              ></el-input>
+            </el-form-item>
+
+            <el-form-item>
+              <el-button
+                class="retire"
+                icon="el-icon-plus"
+                type="primary"
+                round
+                size="mini"
+                @click="dialogFormVisible = true"
+              >{{ $t("publishers.add") }}</el-button>
+            </el-form-item>
+          </el-form>
         </div>
       </div>
       <div class="text item">
-         <el-alert v-if="filteredPublishers.length === 0"
-          :title="$t('publishers.empty')"
-          type="info">
-        </el-alert>
-        <ul>
-          <li v-for="publisher in sortPublishers(filteredPublishers)" :key="publisher.handle">
-            <router-link :to="{ name: 'publisherDetails', params: { handle: publisher.id }}">
-              <el-button type="text">{{ publisher.id }}</el-button>
-            </router-link>
-          </li>
-        </ul>
+        <el-table
+          v-if="filteredPublishers"
+          :data="filteredPublishers"
+          @row-click="loadPublisher"
+          style="width: 100%"
+        >
+          <el-table-column label="Handle">
+            <template slot-scope="scope">
+              <router-link
+                :to="{ name: 'publisherDetails', params: { handle: filteredPublishers[scope.$index].id }}"
+              >
+                <el-button type="text">{{ filteredPublishers[scope.$index].id }}</el-button>
+              </router-link>
+            </template>
+          </el-table-column>
+        </el-table>
       </div>
     </el-card>
+
+    <el-dialog :title="$t('publishers.add')" :visible.sync="dialogFormVisible">
+      <el-form :model="form">
+        <el-form-item label="Handle" :label-width="formLabelWidth">
+          <el-input v-model="form.handle" autocomplete="off"></el-input>
+        </el-form-item>
+        <el-form-item label="URI" :label-width="formLabelWidth">
+          <el-input v-model="form.uri" autocomplete="off"></el-input>
+        </el-form-item>
+        <el-form-item label="Token" :label-width="formLabelWidth">
+          <el-input v-model="form.token" autocomplete="off"></el-input>
+        </el-form-item>
+      </el-form>
+      <el-alert type="error" v-if="error" :closable="false">{{error}}</el-alert>
+      <span slot="footer" class="dialog-footer">
+        <el-button @click="dialogFormVisible = false">Cancel</el-button>
+        <el-button
+          type="primary"
+          @click="addPublisher"
+          :disabled="form.handle == '' || form.uri == '' || form.token == ''"
+        >Confirm</el-button>
+      </span>
+    </el-dialog>
   </div>
 </template>
 
 <script>
+import router from "@/router";
 import APIService from "@/services/APIService.js";
 export default {
   data() {
     return {
       loading: false,
       publishers: [],
-      search: ""
+      search: "",
+      dialogFormVisible: false,
+      error: "",
+      form: {
+        handle: "",
+        token: "",
+        uri: ""
+      },
+      formLabelWidth: "120px"
     };
   },
   computed: {
@@ -57,10 +109,7 @@ export default {
   },
   created() {
     this.loading = true;
-    APIService.getPublishers().then(response => {
-      this.loading = false;
-      this.publishers = response.data.publishers;
-    });
+    this.loadPublishers();
   },
   methods: {
     sortPublishers: function(publishers) {
@@ -75,6 +124,26 @@ export default {
         }
         return 0;
       });
+    },
+    loadPublishers: function() {
+      APIService.getPublishers().then(response => {
+        this.loading = false;
+        this.publishers = response.data.publishers;
+      });
+    },
+    loadPublisher: function(row) {
+      router.push("/publishers/" + row.id);
+    },
+    addPublisher: function() {
+      const self = this;
+      APIService.addPublisher(this.form.handle, this.form.uri, this.form.token)
+        .then(response => {
+          this.dialogFormVisible = false;
+          this.loadPublishers();
+        })
+        .catch(function(error) {
+          self.error = error;
+        });
     }
   }
 };
@@ -86,7 +155,6 @@ export default {
 }
 .search-input {
   float: right;
-  width: 200px;
-  margin-top: -20px;
+  margin-top: -27px;
 }
 </style>

@@ -39,5 +39,12 @@ export default {
   },
   getEndpoint(uri) {
     return apiClient.get(uri);
+  },
+  addPublisher(handle, uri, token) {
+    return apiClient.post('/api/v1/publishers', {
+      handle: handle,
+      base_uri: uri,
+      token: token
+    })
   }
 }

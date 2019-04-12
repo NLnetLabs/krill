@@ -18,7 +18,7 @@
     </el-row>
     <el-row type="flex" class="alert-row" justify="center">
       <el-col :span="10">
-        <el-alert type="error" v-if="error">{{error}}</el-alert>
+        <el-alert type="error" v-if="error" :closable="false">{{error}}</el-alert>
       </el-col>
     </el-row>
     <div class="route-left">
