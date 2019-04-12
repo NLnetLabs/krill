@@ -7,7 +7,8 @@
   "publishers": {
     "loading": "Loading Publishers",
     "publishers": "Publishers",
-    "search": "Search publishers..."
+    "search": "Search publishers...",
+    "empty": "There are currently no publishers to display"
   },
   "publisherDetails": {
     "loading": "Loading {handle}",

@@ -5,7 +5,7 @@
         <el-row>
           <el-col :span="4">
             <router-link :to="{ name: 'publishers'}">
-            <div class="logo"><img src="@/assets/images/white_logo.svg"/></div>
+            <div class="logo"><img src="@/assets/images/krill_logo_white.svg"/></div>
             </router-link>
           </el-col>
           <el-col :span="20">
@@ -36,15 +36,17 @@ body {
   padding: 0;
   margin: 0;
   font-family: 'Lato', sans-serif;
+  background-color: #fff;
 }
 .el-header {
-  background: linear-gradient(45deg, #de4e00, #f57d1b);
+  background: linear-gradient(45deg, #F63107, #F63107);
   line-height: 60px;
   color: #ffffff;
+  z-index: 3;
 }
 .logo img {
-  width: 80px;
-  padding-top: 13px;
+  width: 146px;
+  margin-left: -14px;
 }
 .logout {
   cursor: pointer;

@@ -21,6 +21,10 @@
         </div>
       </div>
       <div class="text item">
+         <el-alert v-if="filteredPublishers.length === 0"
+          :title="$t('publishers.empty')"
+          type="info">
+        </el-alert>
         <ul>
           <li v-for="publisher in sortPublishers(filteredPublishers)" :key="publisher.handle">
             <router-link :to="{ name: 'publisherDetails', params: { handle: publisher.id }}">

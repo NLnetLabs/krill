@@ -4,9 +4,9 @@
       <el-col :span="10">
         <el-card class="box-card">
           <div class="text item">
-            <el-form :inline="true">
+            <el-form :inline="true" v-on:submit.prevent="login">
               <el-form-item :label="$t('login.password')">
-                <el-input type="password" :placeholder="$t('login.placeholder')" v-model="token" clearable></el-input>
+                <el-input type="password" :placeholder="$t('login.placeholder')" v-model="token" clearable @keyup.enter.native="login"></el-input>
               </el-form-item>
               <el-form-item>
                 <el-button type="primary" @click="login">{{ $t("login.signin") }}</el-button>
@@ -21,6 +21,12 @@
         <el-alert type="error" v-if="error">{{error}}</el-alert>
       </el-col>
     </el-row>
+    <div class="route-left">
+      <img src="@/assets/images/route_left.svg"/>
+    </div>
+    <div class="route-right">
+      <img src="@/assets/images/route_right.svg"/>
+    </div>
   </div>
 </template>
 
@@ -67,6 +73,9 @@ export default {
 </script>
 
 <style lang="scss" scoped>
+.login {
+  margin-top: 40px;
+}
 .box-card {
   .el-form {
     padding: 2rem;
@@ -78,5 +87,17 @@ export default {
 }
 .alert-row {
   margin-top: 1rem;
+}
+.route-left {
+  position: fixed;
+  left: -100px;
+  bottom: -280px;
+  z-index: 2;
+}
+.route-right {
+  position: fixed;
+  right: -196px;
+  top: 40px;
+  z-index: 2;
 }
 </style>

@@ -107,7 +107,10 @@ export default {
 
 <style lang="scss" scoped>
 a {
-  color: #de4e00;
+  color: #F63107;
+  &:hover {
+    color: #f85a39;
+  }
 }
 .box-card {
   margin: 2rem;
