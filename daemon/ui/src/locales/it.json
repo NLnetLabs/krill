@@ -1,0 +1,28 @@
+{
+  "login": {
+    "password": "Password",
+    "placeholder": "La tua password",
+    "signin": "Login"
+  },
+  "publishers": {
+    "loading": "Caricamento dei Publishers",
+    "publishers": "Publishers",
+    "search": "Cerca publishers...",
+    "add": "Aggiungi Publisher",
+    "retire": "Disattiva Publisher",
+    "cancel": "Annulla",
+    "confirm": "Conferma"
+  },
+  "publisherDetails": {
+    "loading": "Caricamento di {handle}",
+    "confirm": {
+      "title": "Attenzione",
+      "message": "Disattivare un publisher non e' revocabile. Continuare?",
+      "ok": "OK",
+      "cancel": "Annulla",
+      "retired": " disattivato.",
+      "success": "Il publisher e' stato disattivato correttamente."
+    },
+    "nopublisherdata": "Nessun dato trovato."
+  }
+}

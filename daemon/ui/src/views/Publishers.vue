@@ -69,12 +69,12 @@
       </el-form>
       <el-alert type="error" v-if="error" :closable="false">{{error}}</el-alert>
       <span slot="footer" class="dialog-footer">
-        <el-button @click="dialogFormVisible = false">Cancel</el-button>
+        <el-button @click="dialogFormVisible = false">{{ $t('publishers.cancel') }}</el-button>
         <el-button
           type="primary"
           @click="addPublisher"
           :disabled="form.handle == '' || form.uri == '' || form.token == ''"
-        >Confirm</el-button>
+        >{{ $t('publishers.confirm') }}</el-button>
       </span>
     </el-dialog>
   </div>
@@ -137,7 +137,7 @@ export default {
     addPublisher: function() {
       const self = this;
       APIService.addPublisher(this.form.handle, this.form.uri, this.form.token)
-        .then(response => {
+        .then(() => {
           this.dialogFormVisible = false;
           this.loadPublishers();
         })

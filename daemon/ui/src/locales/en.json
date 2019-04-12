@@ -9,17 +9,19 @@
     "publishers": "Publishers",
     "search": "Search publishers...",
     "add": "Add Publisher",
-    "retire": "Retire Publisher"
+    "retire": "Retire Publisher",
+    "cancel": "Cancel",
+    "confirm": "Confirm"
   },
   "publisherDetails": {
     "loading": "Loading {handle}",
     "confirm": {
       "title": "Warning",
-      "message": "This will retire the publisher. Continue?",
+      "message": "This will deactivate the publisher. Continue?",
       "ok": "OK",
       "cancel": "Cancel",
-      "retired": " retired.",
-      "success": "The publisher has been retired successfully."
+      "retired": " deactivated.",
+      "success": "The publisher has been deactivated successfully."
     },
     "nopublisherdata": "No published data found."
   }
