@@ -6,7 +6,7 @@
 use std::io;
 use std::fs::File;
 use std::sync::{Arc, RwLock, RwLockReadGuard};
-use actix_web::{fs, pred, server};
+use actix_web::{pred, server};
 use actix_web::{App, FromRequest, HttpResponse };
 use actix_web::dev::MessageBody;
 use actix_web::middleware;
@@ -23,8 +23,7 @@ use crate::http::ssl;
 use crate::krillserver;
 use crate::krillserver::KrillServer;
 
-const LOGIN: &[u8] = include_bytes!("../../ui/dev/html/login.html");
-const NOT_FOUND: &[u8] = include_bytes!("../../ui/public/404.html");
+const NOT_FOUND: &[u8] = include_bytes!("../../ui/dist/404.html");
 
 //------------ PubServerApp --------------------------------------------------
 
@@ -44,10 +43,6 @@ impl PubServerApp {
                 )
             )
             .middleware(CheckAuthorisation)
-            .resource("/login", |r| {
-                r.method(Method::GET).f(Self::login_page);
-                r.method(Method::POST).with(auth::login_page);
-            })
             .resource("/api/v1/publishers", |r| {
                 r.method(Method::GET).f(endpoints::publishers);
                 r.method(Method::POST).with(endpoints::add_publisher);
@@ -106,7 +101,6 @@ impl PubServerApp {
                     }
                 )
             })
-            .handler("/ui", fs::StaticFiles::new("daemon/ui/dist/").unwrap())
             .default_resource(|r| {
                 // 404 for GET request
                 r.method(Method::GET).f(Self::p404);
@@ -116,8 +110,9 @@ impl PubServerApp {
                     |_req| HttpResponse::MethodNotAllowed());
             });
 
-        PubServerApp(app)
+        PubServerApp(with_statics(app))
     }
+
 
     pub fn create_server(
         config: &Config
@@ -226,11 +221,6 @@ impl PubServerApp {
         }
     }
 
-    /// Login page
-    fn login_page(_r: &HttpRequest) -> HttpResponse {
-        HttpResponse::build(StatusCode::NOT_FOUND).body(LOGIN)
-    }
-
     // XXX TODO: use a better handler that does not load everything into
     // memory first, and set the correct headers for caching.
     // See also:
@@ -292,6 +282,71 @@ impl server::IntoHttpHandler for PubServerApp {
     fn into_handler(self) -> Self::Handler {
         self.0.into_handler()
     }
+}
+
+//------------ Definition of Statics -----------------------------------------
+
+static HTML:  &[u8] = b"text/html";
+static FAV:   &[u8] = b"image/x-icon";
+static JS:    &[u8] = b"application/javascript";
+static CSS:   &[u8] = b"text/css";
+static SVG:   &[u8] = b"image/svg+xml";
+static WOFF:  &[u8] = b"font/woff";
+static WOFF2: &[u8] = b"font/woff2";
+
+fn with_statics<S: 'static>(app: App<S>) -> App<S> {
+    statics!(app,
+        "404.html" => HTML,
+        "index.html" => HTML,
+
+        "favicon.ico" => FAV,
+
+        "js/app.js" => JS,
+        "js/app.js.map" => JS,
+
+        "css/app.css" => CSS,
+
+        "img/krill_logo_white.svg" => SVG,
+        "img/route_left.svg" => SVG,
+        "img/route_right.svg" => SVG,
+
+        "fonts/element-icons.woff" => WOFF,
+        "fonts/lato-latin-100.woff" => WOFF,
+        "fonts/lato-latin-100italic.woff" => WOFF,
+        "fonts/lato-latin-300.woff" => WOFF,
+        "fonts/lato-latin-300italic.woff" => WOFF,
+        "fonts/lato-latin-400.woff" => WOFF,
+        "fonts/lato-latin-400italic.woff" => WOFF,
+        "fonts/lato-latin-700.woff" => WOFF,
+        "fonts/lato-latin-700italic.woff" => WOFF,
+        "fonts/lato-latin-900.woff" => WOFF,
+        "fonts/lato-latin-900italic.woff" => WOFF,
+        "fonts/source-code-pro-latin-200.woff" => WOFF,
+        "fonts/source-code-pro-latin-300.woff" => WOFF,
+        "fonts/source-code-pro-latin-400.woff" => WOFF,
+        "fonts/source-code-pro-latin-500.woff" => WOFF,
+        "fonts/source-code-pro-latin-600.woff" => WOFF,
+        "fonts/source-code-pro-latin-700.woff" => WOFF,
+        "fonts/source-code-pro-latin-900.woff" => WOFF,
+
+        "fonts/lato-latin-100.woff2" => WOFF2,
+        "fonts/lato-latin-100italic.woff2" => WOFF2,
+        "fonts/lato-latin-300.woff2" => WOFF2,
+        "fonts/lato-latin-300italic.woff2" => WOFF2,
+        "fonts/lato-latin-400.woff2" => WOFF2,
+        "fonts/lato-latin-400italic.woff2" => WOFF2,
+        "fonts/lato-latin-700.woff2" => WOFF2,
+        "fonts/lato-latin-700italic.woff2" => WOFF2,
+        "fonts/lato-latin-900.woff2" => WOFF2,
+        "fonts/lato-latin-900italic.woff2" => WOFF2,
+        "fonts/source-code-pro-latin-200.woff2" => WOFF2,
+        "fonts/source-code-pro-latin-300.woff2" => WOFF2,
+        "fonts/source-code-pro-latin-400.woff2" => WOFF2,
+        "fonts/source-code-pro-latin-500.woff2" => WOFF2,
+        "fonts/source-code-pro-latin-600.woff2" => WOFF2,
+        "fonts/source-code-pro-latin-700.woff2" => WOFF2,
+        "fonts/source-code-pro-latin-900.woff2" => WOFF2,
+    )
 }
 
 

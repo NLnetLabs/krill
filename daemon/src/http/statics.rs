@@ -7,24 +7,18 @@ use actix_web::http::StatusCode;
 /// then for each resource:
 /// * the path
 /// * the mime type
-/// * an etag value
 ///
-/// Note the etag cannot be dynamically derived at compile time until
-/// 'const fn' are stable. So, be sure to use a value here that is unique
-/// to this resource, and this version of this resource. E.g. calculate its
-/// hash on the command line and use that in a &str.
 #[allow(unused_macros)]
 macro_rules! statics {
-    ( $app:expr, $( $path:expr => $mime:expr => $etag:expr, )* ) => {{
+    ( $app:expr, $( $path:expr => $mime:expr, )* ) => {{
         $app
         $(
             .resource(concat!("/ui/", $path), |r| {
-                static CONTENT: ::krilld::http::statics::StaticContent
-                                    = ::krilld::http::statics::StaticContent {
+                static CONTENT: ::http::statics::StaticContent
+                                    = ::http::statics::StaticContent {
                     content: include_bytes!(
-                        concat!("../../../ui/dev/",$path)
+                        concat!("../../ui/dist/",$path)
                     ),
-                    etag: $etag,
                     ctype: $mime
                 };
                 r.get().f(|_| &CONTENT)
@@ -38,7 +32,6 @@ macro_rules! statics {
 
 pub struct StaticContent {
     pub content: &'static [u8],
-    pub etag: &'static str,
     pub ctype: &'static [u8],
 }
 
@@ -51,19 +44,9 @@ impl Responder for &'static StaticContent {
         self,
         req: &HttpRequest<S>
     ) -> Result<HttpResponse, Error> {
-
-        if let Some(etag) = req.headers().get("If-None-Match") {
-            if etag == self.etag {
-                return Ok(
-                    req.build_response(StatusCode::NOT_MODIFIED).finish()
-                )
-            }
-        }
-
         Ok(req
             .build_response(StatusCode::OK)
             .content_type(self.ctype)
-            .header("etag", self.etag)
             .header("Cache-Control", "max-age: 86400") // cache for a day
             .body(self.content)
         )
