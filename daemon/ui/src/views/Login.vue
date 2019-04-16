@@ -76,7 +76,6 @@ export default {
         });
     },
     submitForm() {
-      console.log('banana')
       this.$refs["loginForm"].validate(valid => {
         if (valid) {
           this.login();

@@ -1,16 +1,12 @@
 <template>
   <div>
-    <h3 v-if="loading">
-      <i class="el-icon-loading"></i>
-      {{ $t("publishers.loading") }}
-    </h3>
 
-    <el-card class="box-card" v-if="!loading">
+    <el-card class="box-card">
       <div slot="header" class="clearfix">
         <el-breadcrumb separator-class="el-icon-arrow-right">
           <el-breadcrumb-item :to="{ path: '/' }">{{ $t("publishers.publishers") }}</el-breadcrumb-item>
         </el-breadcrumb>
-        <div class="search-input">
+        <div class="search-input" v-if="!loading">
           <el-form :inline="true">
             <el-form-item>
               <el-input
@@ -36,13 +32,17 @@
         </div>
       </div>
       <div class="text item">
+        <span v-if="loading">
+          <i class="el-icon-loading"></i>
+          {{ $t("publishers.loading") }}
+        </span>
         <el-table
           v-if="filteredPublishers"
           :data="filteredPublishers"
           @row-click="loadPublisher"
           style="width: 100%"
         >
-          <el-table-column label="Handle">
+          <el-table-column label="Handle" v-if="!loading">
             <template slot-scope="scope">
               <router-link
                 :to="{ name: 'publisherDetails', params: { handle: filteredPublishers[scope.$index].id }}"

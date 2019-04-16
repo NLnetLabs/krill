@@ -1,17 +1,12 @@
 <template>
   <div>
-    <h3 v-if="loading">
-      <i class="el-icon-loading"></i>
-      <span v-t="{ path: 'publisherDetails.loading', args: { handle: handle } }"></span>
-    </h3>
-
-    <el-card class="box-card" v-if="!loading && publisher.handle">
+    <el-card class="box-card" v-if="publisher.handle">
       <div slot="header" class="clearfix">
         <el-breadcrumb separator-class="el-icon-arrow-right">
           <el-breadcrumb-item :to="{ path: '/' }">{{ $t("publishers.publishers") }}</el-breadcrumb-item>
           <el-breadcrumb-item>{{ handle }}</el-breadcrumb-item>
         </el-breadcrumb>
-        <div class="retire">
+        <div class="retire" v-if="!loading">
           <el-form :inline="true">
             <el-form-item>
               <el-button
@@ -27,7 +22,10 @@
         </div>
       </div>
       <div class="text item">
-
+        <span v-if="loading">
+          <i class="el-icon-loading"></i>
+          <span v-t="{ path: 'publisherDetails.loading', args: { handle: handle } }"></span>
+        </span>
         <el-table v-if="!loading && publisher" :data="[publisher]" style="width: 100%">
           <el-table-column prop="base_uri" label="Base URI"></el-table-column>
           <el-table-column prop="rfc8181" label="RFC 8181"></el-table-column>
@@ -39,9 +37,7 @@
           </el-table-column>
         </el-table>
 
-        <i class="el-icon-loading" v-if="loading"></i>
-
-        <div v-if="!loadingPublisherData && publisherData.elements" class="publisher-data">Publisher Data</div>
+        <div class="publisher-data">Publisher Data <i class="el-icon-loading" v-if="loadingPublisherData"></i></div>
 
         <el-table v-if="!loadingPublisherData && publisherData.elements" :data="publisherData.elements" style="width: 100%">
           <el-table-column prop="uri" label="URI"></el-table-column>
