@@ -1,5 +1,7 @@
 import axios from 'axios';
-import { authHeader } from '../auth-header'
+import {
+  authHeader
+} from '../auth-header'
 
 const apiClient = axios.create({
   withCredentials: false,
@@ -45,6 +47,17 @@ export default {
       handle: handle,
       base_uri: uri,
       token: token
+    }).catch(function(error) {
+      if (error.response && error.response.data) {
+        return Promise.reject({
+          data: error.response.data
+        });
+      }
+      return Promise.reject({
+        data: {
+          code: -1
+        }
+      });
     })
   }
 }

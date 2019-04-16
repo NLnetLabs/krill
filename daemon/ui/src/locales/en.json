@@ -1,4 +1,7 @@
 {
+  "errors": {
+    "2003": "Insert a customized error message here."
+  },
   "login": {
     "password": "Password",
     "placeholder": "Your password",
@@ -18,6 +21,7 @@
   },
   "publisherDetails": {
     "loading": "Loading {handle}",
+    "notretired": "Active",
     "confirm": {
       "title": "Warning",
       "message": "This will deactivate the publisher. Continue?",

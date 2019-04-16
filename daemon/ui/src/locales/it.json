@@ -1,4 +1,7 @@
 {
+  "errors": {
+    "2003": "Inserire un messaggio di errore qui."
+  },
   "login": {
     "password": "Password",
     "placeholder": "La tua password",
@@ -18,6 +21,7 @@
   },
   "publisherDetails": {
     "loading": "Caricamento di {handle}",
+    "notretired": "Attivo",
     "confirm": {
       "title": "Attenzione",
       "message": "Disattivare un publisher non e' revocabile. Continuare?",

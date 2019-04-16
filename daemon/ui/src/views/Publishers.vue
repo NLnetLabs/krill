@@ -55,7 +55,7 @@
       </div>
     </el-card>
 
-    <el-dialog :title="$t('publishers.add')" :visible.sync="dialogFormVisible">
+    <el-dialog :title="$t('publishers.add')" :visible.sync="dialogFormVisible" :close-on-click-modal="false">
       <el-form :model="form" :rules="rules" ref="addPublisherForm">
         <el-form-item label="Handle" prop="handle">
           <el-input v-model="form.handle" autocomplete="off"></el-input>
@@ -67,7 +67,7 @@
           <el-input v-model="form.token" autocomplete="off"></el-input>
         </el-form-item>
         <el-alert type="error" v-if="error" :closable="false">{{error}}</el-alert>
-        <el-row type="flex" class="row-bg" justify="end">
+        <el-row type="flex" class="modal-footer" justify="end">
           <el-form-item>
             <el-button @click="resetForm('addPublisherForm')">{{ $t('publishers.cancel') }}</el-button>
             <el-button
@@ -158,7 +158,11 @@ export default {
           this.loadPublishers();
         })
         .catch(function(error) {
-          self.error = error;
+          let e = self.$t('errors.' + error.data.code);
+          if (e === 'errors.' + error.data.code) {
+            e = error.data.msg;
+          }
+          self.error = e;
         });
     },
     submitForm(formName) {
@@ -185,5 +189,11 @@ export default {
 .search-input {
   float: right;
   margin-top: -27px;
+}
+.modal-footer {
+  margin-top: 30px;
+  .el-form-item {
+    margin-bottom: 0;
+  }
 }
 </style>

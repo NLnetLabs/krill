@@ -28,11 +28,12 @@
         </span>
         <el-table v-if="!loading && publisher" :data="[publisher]" style="width: 100%">
           <el-table-column prop="base_uri" label="Base URI"></el-table-column>
-          <el-table-column prop="rfc8181" label="RFC 8181"></el-table-column>
-          <el-table-column label="Deactivated">
+          <el-table-column :label="$t('publisherDetails.notretired')" width="150" align="center">
             <template slot-scope="scope">
-              <i class="el-icon-check" v-if="[publisher][scope.$index].deactivated"></i>
-              <i class="el-icon-close" v-if="![publisher][scope.$index].deactivated"></i>
+              <strong>
+                <i class="el-icon-check" v-if="![publisher][scope.$index].deactivated"></i>
+                <i class="el-icon-close" v-if="[publisher][scope.$index].deactivated"></i>
+              </strong>
             </template>
           </el-table-column>
         </el-table>
