@@ -2,7 +2,8 @@
   "login": {
     "password": "Password",
     "placeholder": "La tua password",
-    "signin": "Login"
+    "signin": "Login",
+    "required": "Inserire la propria password"
   },
   "publishers": {
     "loading": "Caricamento dei Publishers",
@@ -11,7 +12,9 @@
     "add": "Aggiungi Publisher",
     "retire": "Disattiva Publisher",
     "cancel": "Annulla",
-    "confirm": "Conferma"
+    "confirm": "Conferma",
+    "required": "Campo obbligatorio",
+    "uriFormat": "Valore errato per il campo. Dovrebbe essere rsync://HOST/folder/"
   },
   "publisherDetails": {
     "loading": "Caricamento di {handle}",

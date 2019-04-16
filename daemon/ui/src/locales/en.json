@@ -2,7 +2,8 @@
   "login": {
     "password": "Password",
     "placeholder": "Your password",
-    "signin": "Sign In"
+    "signin": "Sign In",
+    "required": "Please insert your password"
   },
   "publishers": {
     "loading": "Loading Publishers",
@@ -11,7 +12,9 @@
     "add": "Add Publisher",
     "retire": "Retire Publisher",
     "cancel": "Cancel",
-    "confirm": "Confirm"
+    "confirm": "Confirm",
+    "required": "This field is required",
+    "uriFormat": "The URI is not with the correct format rsync://HOST/folder/"
   },
   "publisherDetails": {
     "loading": "Loading {handle}",

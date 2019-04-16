@@ -56,26 +56,27 @@
     </el-card>
 
     <el-dialog :title="$t('publishers.add')" :visible.sync="dialogFormVisible">
-      <el-form :model="form">
-        <el-form-item label="Handle" :label-width="formLabelWidth">
+      <el-form :model="form" :rules="rules" ref="addPublisherForm">
+        <el-form-item label="Handle" prop="handle">
           <el-input v-model="form.handle" autocomplete="off"></el-input>
         </el-form-item>
-        <el-form-item label="URI" :label-width="formLabelWidth">
+        <el-form-item label="URI" placeholder="rsync://HOST/folder/" prop="uri">
           <el-input v-model="form.uri" autocomplete="off"></el-input>
         </el-form-item>
-        <el-form-item label="Token" :label-width="formLabelWidth">
+        <el-form-item label="Token" prop="token">
           <el-input v-model="form.token" autocomplete="off"></el-input>
         </el-form-item>
+        <el-alert type="error" v-if="error" :closable="false">{{error}}</el-alert>
+        <el-row type="flex" class="row-bg" justify="end">
+          <el-form-item>
+            <el-button @click="resetForm('addPublisherForm')">{{ $t('publishers.cancel') }}</el-button>
+            <el-button
+              type="primary"
+              @click="submitForm('addPublisherForm')"
+            >{{ $t('publishers.confirm') }}</el-button>
+          </el-form-item>
+        </el-row>
       </el-form>
-      <el-alert type="error" v-if="error" :closable="false">{{error}}</el-alert>
-      <span slot="footer" class="dialog-footer">
-        <el-button @click="dialogFormVisible = false">{{ $t('publishers.cancel') }}</el-button>
-        <el-button
-          type="primary"
-          @click="addPublisher"
-          :disabled="form.handle == '' || form.uri == '' || form.token == ''"
-        >{{ $t('publishers.confirm') }}</el-button>
-      </span>
     </el-dialog>
   </div>
 </template>
@@ -85,6 +86,17 @@ import router from "@/router";
 import APIService from "@/services/APIService.js";
 export default {
   data() {
+    var checkURI = (rule, value, callback) => {
+      if (value === "") {
+        callback(new Error(this.$t("publishers.required")));
+      } else {
+        if (new RegExp(/rsync:\/\/[^\s]+\//gm).test(value)) {
+          callback();
+        } else {
+          callback(new Error(this.$t("publishers.uriFormat")));
+        }
+      }
+    };
     return {
       loading: false,
       publishers: [],
@@ -96,7 +108,11 @@ export default {
         token: "",
         uri: ""
       },
-      formLabelWidth: "120px"
+      rules: {
+        handle: [{ required: true, message: this.$t("publishers.required") }],
+        uri: [{ validator: checkURI, required: true }],
+        token: [{ required: true, message: this.$t("publishers.required") }]
+      }
     };
   },
   computed: {
@@ -144,6 +160,19 @@ export default {
         .catch(function(error) {
           self.error = error;
         });
+    },
+    submitForm(formName) {
+      this.$refs[formName].validate(valid => {
+        if (valid) {
+          this.addPublisher();
+        } else {
+          return false;
+        }
+      });
+    },
+    resetForm(formName) {
+      this.dialogFormVisible = false;
+      this.$refs[formName].resetFields();
     }
   }
 };

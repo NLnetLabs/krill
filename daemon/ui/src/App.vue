@@ -12,8 +12,8 @@
           </el-col>
           <el-col :span="20">
             <div class="toolbar">
-              <el-select v-model="$i18n.locale" placeholder="Language">
-                <el-option v-for="(lang, i) in langs" :key="`Lang${i}`" :value="lang"></el-option>
+              <el-select v-model="$i18n.locale" placeholder="Language" size="small">
+                <el-option v-for="lang in langs" :key="lang.iso" :value="lang.iso" :label="lang.label"></el-option>
               </el-select>
               <font-awesome-icon icon="sign-out-alt" v-if="user" class="logout" @click="logout"/>
             </div>
@@ -66,7 +66,10 @@ export default {
   data() {
     return {
       user: null,
-      langs: ["it", "en"]
+      langs: [
+        {iso: "it", label: "Italiano"},
+        {iso:"en", label: "English"}
+      ]
     };
   },
   created() {
