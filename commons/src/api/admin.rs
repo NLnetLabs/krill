@@ -7,55 +7,62 @@ use crate::util::ext_serde;
 use std::fmt;
 use std::fmt::Display;
 
+//------------ CaHandle ------------------------------------------------------
+
+pub type CaHandle = AggregateHandle;
 
 //------------ PublisherHandle -----------------------------------------------
+
+pub type PublisherHandle = AggregateHandle;
+
+//------------ AggregateHandle -----------------------------------------------
 
 /// A type for referring to publishers, both in the api as well as to the
 /// aggregates.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct PublisherHandle(AggregateId);
+pub struct AggregateHandle(AggregateId);
 
-impl PublisherHandle {
+impl AggregateHandle {
     pub fn name(&self) -> &str {
         self.0.as_str()
     }
 }
 
-impl From<&str> for PublisherHandle {
+impl From<&str> for AggregateHandle {
     fn from(s: &str) -> Self {
-        PublisherHandle::from(AggregateId::from(s))
+        AggregateHandle::from(AggregateId::from(s))
     }
 }
 
-impl From<String> for PublisherHandle {
-    fn from(s: String) -> Self { PublisherHandle::from(AggregateId::from(s))}
+impl From<String> for AggregateHandle {
+    fn from(s: String) -> Self { AggregateHandle::from(AggregateId::from(s))}
 }
 
-impl From<AggregateId> for PublisherHandle {
+impl From<AggregateId> for AggregateHandle {
     fn from(id: AggregateId) -> Self {
-        PublisherHandle(id)
+        AggregateHandle(id)
     }
 }
 
-impl From<&AggregateId> for PublisherHandle {
+impl From<&AggregateId> for AggregateHandle {
     fn from(id: &AggregateId) -> Self {
-        PublisherHandle(id.clone())
+        AggregateHandle(id.clone())
     }
 }
 
-impl AsRef<str> for PublisherHandle {
+impl AsRef<str> for AggregateHandle {
     fn as_ref(&self) -> &str {
         self.name()
     }
 }
 
-impl AsRef<AggregateId> for PublisherHandle {
+impl AsRef<AggregateId> for AggregateHandle {
     fn as_ref(&self) -> &AggregateId {
         &self.0
     }
 }
 
-impl Display for PublisherHandle {
+impl Display for AggregateHandle {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.name())
     }
