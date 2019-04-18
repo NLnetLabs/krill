@@ -19,6 +19,40 @@ const INHERIT: &str = "inherit";
 #[derive(Clone, Debug)]
 struct AsnSet(ResourcesChoice<AsBlocks>);
 
+impl PartialEq for AsnSet {
+    fn eq(&self, other: &AsnSet) -> bool {
+        match &self.0 {
+            ResourcesChoice::Inherit => {
+                match &other.0 {
+                    ResourcesChoice::Inherit => true,
+                    ResourcesChoice::Blocks(_) => false,
+                }
+            },
+            ResourcesChoice::Blocks(blocks) => {
+                match &other.0 {
+                    ResourcesChoice::Inherit => false,
+                    ResourcesChoice::Blocks(other_blocks) => {
+                        let mut iter_other = other_blocks.iter();
+
+                        for bl in blocks.iter() {
+                            if let Some(other_block) = iter_other.next() {
+                                if bl.min() != other_block.min() || bl.max() != other_block.max() {
+                                    return false
+                                }
+                            } else {
+                                return false
+                            }
+                        }
+                        true
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl Eq for AsnSet {}
+
 impl Serialize for AsnSet {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error> where S: Serializer {
         match &self.0 {
@@ -48,6 +82,35 @@ impl FromStr for AsnSet {
     }
 }
 
+fn ip_blocks_equal(left: &ResourcesChoice<IpBlocks>, right: &ResourcesChoice<IpBlocks>) -> bool {
+    match left {
+        ResourcesChoice::Inherit => {
+            match right {
+                ResourcesChoice::Inherit => true,
+                ResourcesChoice::Blocks(_) => false
+            }
+        },
+        ResourcesChoice::Blocks(left_blocks) => {
+            match right {
+                ResourcesChoice::Inherit => false,
+                ResourcesChoice::Blocks(right_blocks) => {
+                    let mut right_iter = right_blocks.iter();
+                    for left in left_blocks.iter() {
+                        if let Some(right) = right_iter.next() {
+                            if left.min() != right.min() ||left.max() != right.max() {
+                                return false
+                            }
+                        } else {
+                            return false
+                        }
+                    }
+                    true
+                }
+            }
+        }
+    }
+}
+
 /// Defines a Set of IPv4 Blocks
 //
 // This is a wrapper around ResourceChoice<IpBlocks> so that
@@ -68,6 +131,14 @@ impl Serialize for Ipv4Set {
     }
 }
 
+impl PartialEq for Ipv4Set {
+    fn eq(&self, other: &Ipv4Set) -> bool {
+        ip_blocks_equal(&self.0, &other.0)
+    }
+}
+
+impl Eq for Ipv4Set {}
+
 impl<'de> Deserialize<'de> for Ipv4Set {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
         let string = String::deserialize(deserializer)?;
@@ -81,13 +152,11 @@ impl FromStr for Ipv4Set {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s == INHERIT {
             Ok(Ipv4Set(ResourcesChoice::Inherit))
+        } else if s.contains(':') {
+            Err(Error::MixedFamilies)
         } else {
-            if s.contains(':') {
-                Err(Error::MixedFamilies)
-            } else {
-                let blocks = IpBlocks::from_str(s).map_err(|_| Error::Ipv4Parsing)?;
-                Ok(Ipv4Set(ResourcesChoice::Blocks(blocks)))
-            }
+            let blocks = IpBlocks::from_str(s).map_err(|_| Error::Ipv4Parsing)?;
+            Ok(Ipv4Set(ResourcesChoice::Blocks(blocks)))
         }
     }
 }
@@ -113,6 +182,14 @@ impl Serialize for Ipv6Set {
     }
 }
 
+impl PartialEq for Ipv6Set {
+    fn eq(&self, other: &Ipv6Set) -> bool {
+        ip_blocks_equal(&self.0, &other.0)
+    }
+}
+
+impl Eq for Ipv6Set {}
+
 impl<'de> Deserialize<'de> for Ipv6Set {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error> where D: Deserializer<'de> {
         let string = String::deserialize(deserializer)?;
@@ -126,13 +203,11 @@ impl FromStr for Ipv6Set {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if s == INHERIT {
             Ok(Ipv6Set(ResourcesChoice::Inherit))
+        } else if s.contains('.') {
+            Err(Error::MixedFamilies)
         } else {
-            if s.contains('.') {
-                Err(Error::MixedFamilies)
-            } else {
-                let blocks = IpBlocks::from_str(s).map_err(|_| Error::Ipv6Parsing)?;
-                Ok(Ipv6Set(ResourcesChoice::Blocks(blocks)))
-            }
+            let blocks = IpBlocks::from_str(s).map_err(|_| Error::Ipv6Parsing)?;
+            Ok(Ipv6Set(ResourcesChoice::Blocks(blocks)))
         }
     }
 }
@@ -141,7 +216,7 @@ impl FromStr for Ipv6Set {
 ///
 /// This type supports conversions to and from string representations,
 /// and is (de)serializable.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ResourceSet {
     asn: AsnSet,
     v4: Ipv4Set,
@@ -201,9 +276,9 @@ mod test {
         let set = ResourceSet::from_strs(asns, ipv4s, ipv6s).unwrap();
 
         let json = serde_json::to_string(&set).unwrap();
+        let deser_set = serde_json::from_str(&json).unwrap();
 
-        println!("{}", &json);
-
+        assert_eq!(set, deser_set);
     }
 
 
