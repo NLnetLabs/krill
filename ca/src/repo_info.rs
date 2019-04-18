@@ -19,6 +19,10 @@ pub struct RepoInfo {
 }
 
 impl RepoInfo {
+    pub fn new(base_uri: uri::Rsync, rrdp_uri: uri::Http) -> Self {
+        RepoInfo { base_uri, rrdp_uri}
+    }
+
     pub fn signed_objects_uri(&self) -> uri::Rsync {
         self.base_uri.clone()
     }

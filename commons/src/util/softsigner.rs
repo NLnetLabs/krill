@@ -63,7 +63,7 @@ impl<'de> Deserialize<'de> for SignerKeyId {
 /// An openssl based signer.
 ///
 /// Keeps the keys in memory (for now).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct OpenSslSigner {
     keys_dir: PathBuf
 }

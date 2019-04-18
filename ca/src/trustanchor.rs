@@ -1,7 +1,10 @@
 use resources::ResourceSet;
+
 use krill_commons::api::admin::CaHandle;
 use krill_commons::eventsourcing::{StoredEvent, SentCommand, CommandDetails, Aggregate};
 use krill_commons::util::softsigner::SignerKeyId;
+
+use crate::RepoInfo;
 
 #[allow(dead_code)]
 const TA_NS: &str = "trustanchors";
@@ -18,19 +21,24 @@ pub type TrustAnchorInit = StoredEvent<TrustAnchorInitDetails>;
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TrustAnchorInitDetails {
     resources: ResourceSet,
+    repo_info: RepoInfo,
     key: SignerKeyId
 }
 
 impl TrustAnchorInitDetails {
-    pub fn with_all_resources(handle: &CaHandle, key: SignerKeyId) -> TrustAnchorInit {
-        let details = {
+    pub fn with_all_resources(
+        handle: &CaHandle,
+        repo_info: RepoInfo,
+        key: SignerKeyId
+    ) -> TrustAnchorInit {
+        let resources = {
             let asns = "AS0-AS4294967295";
             let v4 = "0.0.0.0/0";
             let v6 = "::/0";
-            let resources = ResourceSet::from_strs(asns, v4, v6).unwrap();
-            TrustAnchorInitDetails { resources, key }
+            ResourceSet::from_strs(asns, v4, v6).unwrap()
         };
 
+        let details = TrustAnchorInitDetails { resources, repo_info, key };
         TrustAnchorInit::new(handle.as_ref(), 0, details)
     }
 }
@@ -64,7 +72,8 @@ pub struct TrustAnchor {
     version: u64,
 
     resources: ResourceSet,
-    key: SignerKeyId
+    repo_info: RepoInfo,
+    key: SignerKeyId,
 }
 
 impl Aggregate for TrustAnchor {
@@ -78,9 +87,10 @@ impl Aggregate for TrustAnchor {
         let id = CaHandle::from(id);
         let version = 1; // after applying init
         let resources = init.resources;
+        let repo_info = init.repo_info;
         let key = init.key;
 
-        Ok(TrustAnchor { id, version, resources, key })
+        Ok(TrustAnchor { id, version, resources, repo_info, key })
     }
 
     fn version(&self) -> u64 {
@@ -132,10 +142,18 @@ mod tests {
             let mut signer = signer(&d);
             let key = signer.create_key(PublicKeyFormat).unwrap();
 
-            let init = TrustAnchorInitDetails::with_all_resources(&handle, key);
+            let base_uri = test::rsync_uri("rsync://localhost/repo/ta/");
+            let rrdp_uri = test::http_uri("https://localhost/repo/notifcation.xml");
+            let repo_info = RepoInfo::new(base_uri, rrdp_uri);
+
+            let init = TrustAnchorInitDetails::with_all_resources(&handle, repo_info, key);
 
             store.add(handle.as_ref(), init).unwrap();
-        });
+            let ta = store.get_latest(handle.as_ref()).unwrap();
+
+            assert_eq!(1, ta.version())
+        })
     }
+
 
 }
