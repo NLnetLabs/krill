@@ -1,5 +1,7 @@
 import axios from 'axios';
-import { authHeader } from '../auth-header'
+import {
+  authHeader
+} from '../auth-header'
 
 const apiClient = axios.create({
   withCredentials: false,
@@ -7,6 +9,9 @@ const apiClient = axios.create({
 })
 
 export default {
+  isLoggedIn() {
+    return apiClient.get('/ui/is_logged_in').then(() => true).catch(() =>  false);
+  },
   login(token) {
     return apiClient.post('/ui/login', {
       token: token
@@ -39,5 +44,23 @@ export default {
   },
   getEndpoint(uri) {
     return apiClient.get(uri);
+  },
+  addPublisher(handle, uri, token) {
+    return apiClient.post('/api/v1/publishers', {
+      handle: handle,
+      base_uri: uri,
+      token: token
+    }).catch((error) => {
+      if (error.response && error.response.data) {
+        return Promise.reject({
+          data: error.response.data
+        });
+      }
+      return Promise.reject({
+        data: {
+          code: -1
+        }
+      });
+    })
   }
 }

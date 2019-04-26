@@ -3,12 +3,12 @@ import Router from 'vue-router'
 import Login from './views/Login.vue'
 import Publishers from './views/Publishers.vue'
 import PublisherDetails from './views/PublisherDetails.vue'
+import APIService from "./services/APIService.js";
 
 Vue.use(Router)
 
 const router = new Router({
-  routes: [
-    {
+  routes: [{
       path: '/',
       name: 'publishers',
       component: Publishers
@@ -27,19 +27,25 @@ const router = new Router({
 });
 
 router.beforeEach((to, from, next) => {
-  // redirect to login page if not logged in and trying to access a restricted page
   const publicPages = ['/login'];
   const authRequired = !publicPages.includes(to.path);
-  const loggedIn = localStorage.getItem('user');
+  const loggedInOnFrontend = localStorage.getItem('user');
 
-  if (authRequired && !loggedIn) {
-    return next({ 
-      path: '/login', 
-      query: { returnUrl: to.path } 
+  if (authRequired) {
+    APIService.isLoggedIn().then(loggedInOnBackend => {
+      if (!loggedInOnFrontend || !loggedInOnBackend) {
+        return next({
+          path: '/login',
+          query: {
+            returnUrl: to.path
+          }
+        });
+      }
+      next();
     });
+  } else {
+    next();
   }
-
-  next();
 });
 
 export default router;

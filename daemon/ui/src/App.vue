@@ -5,17 +5,17 @@
         <el-row>
           <el-col :span="4">
             <router-link :to="{ name: 'publishers'}">
-            <div class="logo"><img src="@/assets/images/krill_logo_white.svg"/></div>
+              <div class="logo">
+                <img src="@/assets/images/krill_logo_white.svg">
+              </div>
             </router-link>
           </el-col>
           <el-col :span="20">
             <div class="toolbar">
-              <font-awesome-icon
-                icon="sign-out-alt"
-                v-if="user"
-                class="logout"
-                @click="logout"
-              />
+              <el-select v-model="$i18n.locale" placeholder="Language" size="small">
+                <el-option v-for="lang in langs" :key="lang.iso" :value="lang.iso" :label="lang.label"></el-option>
+              </el-select>
+              <font-awesome-icon icon="sign-out-alt" v-if="user" class="logout" @click="logout"/>
             </div>
           </el-col>
         </el-row>
@@ -35,11 +35,11 @@ html,
 body {
   padding: 0;
   margin: 0;
-  font-family: 'Lato', sans-serif;
+  font-family: "Lato", sans-serif;
   background-color: #fff;
 }
 .el-header {
-  background: linear-gradient(45deg, #F63107, #F63107);
+  background: linear-gradient(45deg, #f63107, #f63107);
   line-height: 60px;
   color: #ffffff;
   z-index: 3;
@@ -49,6 +49,7 @@ body {
   margin-left: -14px;
 }
 .logout {
+  margin-left: 2rem;
   cursor: pointer;
 }
 
@@ -64,7 +65,11 @@ import APIService from "@/services/APIService.js";
 export default {
   data() {
     return {
-      user: null
+      user: null,
+      langs: [
+        {iso: "it", label: "Italiano"},
+        {iso:"en", label: "English"}
+      ]
     };
   },
   created() {

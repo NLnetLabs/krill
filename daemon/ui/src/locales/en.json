@@ -1,24 +1,34 @@
 {
+  "errors": {
+    "2003": "Insert a customized error message here."
+  },
   "login": {
     "password": "Password",
     "placeholder": "Your password",
-    "signin": "Sign In"
+    "signin": "Sign In",
+    "required": "Please insert your password"
   },
   "publishers": {
     "loading": "Loading Publishers",
     "publishers": "Publishers",
     "search": "Search publishers...",
-    "empty": "There are currently no publishers to display"
+    "add": "Add Publisher",
+    "retire": "Retire Publisher",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "required": "This field is required",
+    "uriFormat": "The URI is not with the correct format rsync://HOST/folder/"
   },
   "publisherDetails": {
     "loading": "Loading {handle}",
+    "notretired": "Active",
     "confirm": {
       "title": "Warning",
-      "message": "This will retire the publisher. Continue?",
+      "message": "This will deactivate the publisher. Continue?",
       "ok": "OK",
       "cancel": "Cancel",
-      "retired": " retired.",
-      "success": "The publisher has been retired successfully."
+      "retired": " deactivated.",
+      "success": "The publisher has been deactivated successfully."
     },
     "nopublisherdata": "No published data found."
   }
