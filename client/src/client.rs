@@ -170,9 +170,6 @@ pub enum Error {
     #[display(fmt="{}", _0)]
     HttpClientError(httpclient::Error),
 
-    #[display(fmt="Received invalid json response: {}", _0)]
-    JsonError(serde_json::Error),
-
     #[display(fmt="{}", _0)]
     ReportError(ReportError),
 
@@ -188,12 +185,6 @@ pub enum Error {
 
 impl From<httpclient::Error> for Error {
     fn from(e: httpclient::Error) -> Self { Error::HttpClientError(e) }
-}
-
-impl From<serde_json::Error> for Error {
-    fn from(e: serde_json::Error) -> Self {
-        Error::JsonError(e)
-    }
 }
 
 impl From<io::Error> for Error {

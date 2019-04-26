@@ -12,8 +12,7 @@ extern crate krill_commons;
 #[macro_use] extern crate log;
 extern crate openssl;
 extern crate rpki;
-#[macro_use] extern crate serde_derive;
-extern crate serde;
+#[macro_use] extern crate serde;
 extern crate serde_json;
 extern crate xml as xmlrs;
 
