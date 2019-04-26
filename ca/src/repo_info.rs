@@ -23,7 +23,7 @@ impl RepoInfo {
         RepoInfo { base_uri, rrdp_uri}
     }
 
-    pub fn signed_objects_uri(&self) -> uri::Rsync {
+    pub fn signed_object(&self) -> uri::Rsync {
         self.base_uri.clone()
     }
 
@@ -38,8 +38,8 @@ impl RepoInfo {
         uri::Rsync::from_string(uri_string).unwrap()
     }
 
-    pub fn rrdp_uri(&self) -> &uri::Http {
-        &self.rrdp_uri
+    pub fn rpki_notify(&self) -> uri::Http {
+        self.rrdp_uri.clone()
     }
 }
 
@@ -68,7 +68,7 @@ mod test {
 
     #[test]
     fn signed_objects_uri() {
-        let signed_objects_uri = info().signed_objects_uri();
+        let signed_objects_uri = info().signed_object();
         assert_eq!(base_uri(), signed_objects_uri)
     }
 

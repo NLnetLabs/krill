@@ -173,7 +173,7 @@ impl<E: Storable + 'static> Event for StoredEvent<E> {
 /// Think of this as the data container for your update API, plus some
 /// meta-data to ensure that the command is sent to the right instance of an
 /// Aggregate, and that concurrency issues are handled.
-pub trait Command: Storable {
+pub trait Command {
     /// Identify the type of event returned by the aggregate that uses this
     /// command. This is needed because we may need to check whether a
     /// command conflicts with recent events.
@@ -204,11 +204,10 @@ pub trait Command: Storable {
 
 /// Convenience wrapper so that implementations can just implement
 /// ['CommandDetails'] and leave the id and version boilerplate.
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone)]
 pub struct SentCommand<C: CommandDetails> {
     id: AggregateId,
     version: Option<u64>,
-    #[serde(deserialize_with = "C::deserialize")]
     details: C
 }
 
@@ -238,7 +237,7 @@ impl<C: CommandDetails> SentCommand<C> {
 
 /// Implement this for an enum with CommandDetails, so you you can reuse the
 /// id and version boilerplate from ['SentCommand'].
-pub trait CommandDetails: Storable + 'static {
+pub trait CommandDetails: 'static {
     type Event: Event;
 }
 

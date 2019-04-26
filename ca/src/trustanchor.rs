@@ -1,10 +1,17 @@
-use resources::ResourceSet;
 
 use krill_commons::api::admin::CaHandle;
 use krill_commons::eventsourcing::{StoredEvent, SentCommand, CommandDetails, Aggregate};
-use krill_commons::util::softsigner::SignerKeyId;
 
 use crate::RepoInfo;
+use crate::ResourceSet;
+use serde::Serialize;
+use rpki::crypto::Signer;
+use std::marker::PhantomData;
+use std::fmt::Debug;
+use std::sync::Arc;
+use ResourceClass;
+use rpki::crypto::signer::KeyError;
+use rpki::cert::{CertBuilder, Validity};
 
 #[allow(dead_code)]
 const TA_NS: &str = "trustanchors";
@@ -14,32 +21,21 @@ pub fn ta_handle() -> CaHandle {
     CaHandle::from(TA_ID)
 }
 
+//------------ AggSigner -----------------------------------------------------
+
+pub trait AggSigner: Signer + Clone + Debug + Serialize + Sized + Sync + Send +'static {}
+impl<T: Signer + Clone + Debug + Serialize + Sized + Sync + Send + 'static > AggSigner for T {}
+
 //------------ TrustAnchorInit -----------------------------------------------
 
 pub type TrustAnchorInit = StoredEvent<TrustAnchorInitDetails>;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct TrustAnchorInitDetails {
-    resources: ResourceSet,
-    repo_info: RepoInfo,
-    key: SignerKeyId
-}
+pub struct TrustAnchorInitDetails;
 
 impl TrustAnchorInitDetails {
-    pub fn with_all_resources(
-        handle: &CaHandle,
-        repo_info: RepoInfo,
-        key: SignerKeyId
-    ) -> TrustAnchorInit {
-        let resources = {
-            let asns = "AS0-AS4294967295";
-            let v4 = "0.0.0.0/0";
-            let v6 = "::/0";
-            ResourceSet::from_strs(asns, v4, v6).unwrap()
-        };
-
-        let details = TrustAnchorInitDetails { resources, repo_info, key };
-        TrustAnchorInit::new(handle.as_ref(), 0, details)
+    pub fn init(handle: &CaHandle) -> TrustAnchorInit {
+        TrustAnchorInit::new(handle.as_ref(), 0, TrustAnchorInitDetails)
     }
 }
 
@@ -49,70 +45,177 @@ impl TrustAnchorInitDetails {
 pub type TrustAnchorEvent = StoredEvent<TrustAnchorEventDetails>;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct TrustAnchorEventDetails;
+pub enum TrustAnchorEventDetails {
+    RepoInfoInitialised(RepoInfo),
+}
 
+
+impl TrustAnchorEventDetails {
+    pub fn repo_info_initialised(ta: &CaHandle, version: u64, info: RepoInfo) -> TrustAnchorEvent {
+        Self::with_details(ta, version, TrustAnchorEventDetails::RepoInfoInitialised(info))
+    }
+
+    fn with_details(ta: &CaHandle, version: u64, details: TrustAnchorEventDetails) -> TrustAnchorEvent {
+        TrustAnchorEvent::new(ta.as_ref(), version, details)
+    }
+}
 
 //------------ TrustAnchorCommand --------------------------------------------
 
-pub type TrustAnchorCommand = SentCommand<TrustAnchorCommandDetails>;
+pub type TrustAnchorCommand<S> = SentCommand<TrustAnchorCommandDetails<S>>;
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct TrustAnchorCommandDetails;
+#[derive(Clone, Debug)]
+pub enum TrustAnchorCommandDetails<S: AggSigner> {
+    InitRepoInfo(RepoInfo),
+    InitResourceClass(S::KeyId, ResourceSet, Arc<S>),
+}
 
-impl CommandDetails for TrustAnchorCommandDetails {
+impl<S: AggSigner> CommandDetails for TrustAnchorCommandDetails<S> {
     type Event = TrustAnchorEvent;
 }
 
+impl<S: AggSigner> TrustAnchorCommandDetails<S> {
+    pub fn init_repo_info(
+        ta: &CaHandle,
+        repo_info: RepoInfo
+    ) -> TrustAnchorCommand<S> {
+        let details = TrustAnchorCommandDetails::InitRepoInfo(repo_info);
+        SentCommand::new(
+            ta.as_ref(),
+            None,
+            details
+        )
+    }
+
+    pub fn init_with_all_resources(
+        ta: &CaHandle,
+        key: S::KeyId,
+        signer: Arc<S>
+    ) -> TrustAnchorCommand<S> {
+
+        let resources = {
+            let asns = "AS0-AS4294967295";
+            let v4 = "0.0.0.0/0";
+            let v6 = "::/0";
+            ResourceSet::from_strs(asns, v4, v6).unwrap()
+        };
+
+        let details = TrustAnchorCommandDetails::InitResourceClass(key, resources, signer);
+        SentCommand::new(ta.as_ref(), None, details)
+    }
+}
 
 //------------ TrustAnchor ---------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct TrustAnchor {
+pub struct TrustAnchor<S: AggSigner> {
     id: CaHandle,
     version: u64,
 
-    resources: ResourceSet,
-    repo_info: RepoInfo,
-    key: SignerKeyId,
+    resource_class: Option<ResourceClass>,
+    repo_info: Option<RepoInfo>,
+
+    phantom_signer: PhantomData<S>
 }
 
-impl Aggregate for TrustAnchor {
-    type Command = TrustAnchorCommand;
+impl<S: AggSigner> Aggregate for TrustAnchor<S> {
+    type Command = TrustAnchorCommand<S>;
     type Event = TrustAnchorEvent;
     type InitEvent = TrustAnchorInit;
-    type Error = Error;
+    type Error = Error<S>;
 
     fn init(event: Self::InitEvent) -> Result<Self, Self::Error> {
-        let (id, _version, init) = event.unwrap();
+        let (id, _version, _init) = event.unwrap();
         let id = CaHandle::from(id);
         let version = 1; // after applying init
-        let resources = init.resources;
-        let repo_info = init.repo_info;
-        let key = init.key;
 
-        Ok(TrustAnchor { id, version, resources, repo_info, key })
+        Ok(
+            TrustAnchor {
+                id,
+                version,
+                resource_class: None,
+                repo_info: None,
+                phantom_signer: PhantomData
+            }
+        )
     }
 
     fn version(&self) -> u64 {
         self.version
     }
 
-    fn apply(&mut self, _event: Self::Event) {
-        unimplemented!()
+    fn apply(&mut self, event: Self::Event) {
+        match event.details() {
+            TrustAnchorEventDetails::RepoInfoInitialised(info) => {
+                self.repo_info = Some(info.clone())
+            }
+        }
+        self.version += 1;
     }
 
-    fn process_command(&self, _command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
-        unimplemented!()
+    fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
+        match command.into_details() {
+            TrustAnchorCommandDetails::InitRepoInfo(repo_info) => {
+                if self.repo_info.is_some() {
+                    Err(Error::RepoInfoAlreadyInitialised)
+                } else {
+                    Ok(vec![TrustAnchorEventDetails::repo_info_initialised(
+                        &self.id,
+                        self.version,
+                        repo_info
+                    )])
+                }
+            },
+            TrustAnchorCommandDetails::InitResourceClass(key, _resources, signer) => {
+                let _repo_info = self.repo_info.as_ref().ok_or_else(|| Error::RepoInfoMissing)?;
+
+                let pub_key = signer.get_key_info(&key)?;
+
+                let mut _builder = CertBuilder::new(
+                    1, // Self-signed TA cert can always use serial 1 - never revoked
+                    pub_key.to_subject_name(),
+                    Validity::from_secs(100 * 365 * 24 * 60 * 60), // slightly less than 100 years
+                    true
+                );
+
+
+
+//                builder.rpki_manifest(repo_info.rpki_manifest(&pub_key))
+//                    .signed_object(repo_info.signed_object())
+//                    .rpki_notify(repo_info.rpki_notify());
+
+
+
+
+
+                unimplemented!()
+            }
+        }
     }
 }
 
 
 
 #[derive(Clone, Debug, Display)]
-#[display(fmt = "Trust Anchor Issue")]
-pub struct Error;
+pub enum Error<S: AggSigner> {
+    #[display(fmt = "{}", _0)]
+    SignerError(S::Error),
 
-impl std::error::Error for Error {}
+    #[display(fmt = "{}", _0)]
+    KeyError(KeyError<S::Error>),
+
+    #[display(fmt = "RepoInfo already was initialised.")]
+    RepoInfoAlreadyInitialised,
+
+    #[display(fmt = "RepoInfo was not initialised.")]
+    RepoInfoMissing,
+}
+
+impl<S: AggSigner> From<KeyError<S::Error>> for Error<S> {
+    fn from(e: KeyError<S::Error>) -> Self { Error::KeyError(e) }
+}
+
+impl<S: AggSigner> std::error::Error for Error<S> {}
 
 //------------ Tests ---------------------------------------------------------
 
@@ -122,6 +225,7 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
     use krill_commons::util::test;
+    use krill_commons::eventsourcing::Aggregate;
     use krill_commons::eventsourcing::AggregateStore;
     use krill_commons::eventsourcing::DiskAggregateStore;
     use krill_commons::util::softsigner::OpenSslSigner;
@@ -134,24 +238,39 @@ mod tests {
     }
 
     #[test]
-    fn should_init_ta() {
+    fn init_ta_with_repo_and_resources() {
         test::test_with_tmp_dir(|d| {
-            let store = DiskAggregateStore::<TrustAnchor>::new(&d, TA_NS).unwrap();
+            let store = DiskAggregateStore::<TrustAnchor<OpenSslSigner>>::new(&d, TA_NS).unwrap();
             let handle = ta_handle();
 
-            let mut signer = signer(&d);
-            let key = signer.create_key(PublicKeyFormat).unwrap();
-
-            let base_uri = test::rsync_uri("rsync://localhost/repo/ta/");
-            let rrdp_uri = test::http_uri("https://localhost/repo/notifcation.xml");
-            let repo_info = RepoInfo::new(base_uri, rrdp_uri);
-
-            let init = TrustAnchorInitDetails::with_all_resources(&handle, repo_info, key);
-
+            let init = TrustAnchorInitDetails::init(&handle);
             store.add(handle.as_ref(), init).unwrap();
             let ta = store.get_latest(handle.as_ref()).unwrap();
 
-            assert_eq!(1, ta.version())
+            let repo_info = {
+                let base_uri = test::rsync_uri("rsync://localhost/repo/ta/");
+                let rrdp_uri = test::http_uri("https://localhost/repo/notifcation.xml");
+                RepoInfo::new(base_uri, rrdp_uri)
+            };
+
+            let init_repo_cmd = TrustAnchorCommandDetails::init_repo_info(&handle, repo_info);
+            let events = ta.process_command(init_repo_cmd).unwrap();
+            let _ta = store.update(handle.as_ref(), ta, events).unwrap();
+
+            let mut signer = signer(&d);
+            let key = signer.create_key(PublicKeyFormat).unwrap();
+            let signer_arc = Arc::new(signer);
+
+            let _init_ta_cert_cmd = TrustAnchorCommandDetails::init_with_all_resources(
+                &handle, key, signer_arc
+            );
+
+//            let events = ta.process_command(init_ta_cert_cmd).unwrap();
+//
+//            let sign_command = TrustAnchorCommandDetails::sign_ta_cert(&handle, signer_arc.clone());
+//
+//            let _events = ta.process_command(sign_command).unwrap();
+
         })
     }
 
