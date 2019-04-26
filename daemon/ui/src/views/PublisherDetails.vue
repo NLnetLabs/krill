@@ -6,7 +6,7 @@
           <el-breadcrumb-item :to="{ path: '/' }">{{ $t("publishers.publishers") }}</el-breadcrumb-item>
           <el-breadcrumb-item>{{ handle }}</el-breadcrumb-item>
         </el-breadcrumb>
-        <div class="retire" v-if="!loading">
+        <div class="retire" v-if="!loading && publisher && !publisher.deactivated">
           <el-form :inline="true">
             <el-form-item>
               <el-button
