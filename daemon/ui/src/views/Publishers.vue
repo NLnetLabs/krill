@@ -175,6 +175,7 @@ export default {
       });
     },
     resetForm(formName) {
+      this.error = '';
       this.dialogFormVisible = false;
       this.$refs[formName].resetFields();
     }
