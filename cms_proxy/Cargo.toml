@@ -5,13 +5,13 @@ authors = ["Tim Bruijnzeels <tim@nlnetlabs.nl>", "Martin Hoffmann <martin@nlnetl
 
 [dependencies]
 base64        = "^0.9"
-bcder         = "^0.2"
+bcder         = "^0.3"
 bytes         = "^0.4"
 chrono        = { version = "^0.4", features = ["serde"] }
 derive_more   = "^0.13"
 hex           = "^0.3"
 openssl       = { version = "^0.10", features = ["v110"] }
-rpki          = "^0.3"
+rpki          = "^0.4"
 serde         = { version = "^1.0", features = ["rc"] }
 serde_derive  = "^1.0"
 serde_json    = "^1.0"
@@ -22,8 +22,8 @@ fern         = "^0.5"
 log          = "^0.4"
 
 # To support parsing API json in the requests for actix
-actix         = "^0.7"
-actix-web     = "^0.7"
+actix         = "0.7.9"
+actix-web     = "0.7.19"
 futures       = "0.1"
 
 # XXX Temporarily
