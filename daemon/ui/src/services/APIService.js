@@ -9,6 +9,9 @@ const apiClient = axios.create({
 })
 
 export default {
+  isLoggedIn() {
+    return apiClient.get('/ui/is_logged_in').then(() => true).catch(() =>  false);
+  },
   login(token) {
     return apiClient.post('/ui/login', {
       token: token
@@ -47,7 +50,7 @@ export default {
       handle: handle,
       base_uri: uri,
       token: token
-    }).catch(function(error) {
+    }).catch((error) => {
       if (error.response && error.response.data) {
         return Promise.reject({
           data: error.response.data
