@@ -67,7 +67,9 @@ impl PubServerApp {
 
             .resource("/publication/{handle}", |r| {
                 r.method(Method::GET).with(endpoints::handle_list);
-                r.method(Method::POST).with(endpoints::handle_delta);
+                r.method(Method::POST).with_config(endpoints::handle_delta, |cfg| {
+                    cfg.1.limit(256 * 1024 * 1024); //up to 256MB;
+                })
             })
 
             .resource("/rfc8181/{handle}", |r| {

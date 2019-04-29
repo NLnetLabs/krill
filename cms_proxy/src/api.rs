@@ -3,6 +3,7 @@ use krill_commons::util::softsigner::SignerKeyId;
 use krill_commons::util::ext_serde;
 use rpki::uri;
 use crate::id::IdCert;
+use krill_commons::api::admin::AggregateHandle;
 
 
 //------------ ClientHandle --------------------------------------------
@@ -14,6 +15,10 @@ impl From<&str> for ClientHandle {
     fn from(s: &str) -> Self {
         ClientHandle(s.to_string())
     }
+}
+
+impl From<&AggregateHandle> for ClientHandle {
+    fn from(handle: &AggregateHandle) -> Self { ClientHandle(handle.name().to_string())}
 }
 
 impl fmt::Display for ClientHandle {

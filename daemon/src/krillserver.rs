@@ -173,7 +173,7 @@ impl KrillServer {
     }
 
     pub fn repository_response(&self, handle: &PublisherHandle) -> Result<RepositoryResponse, Error> {
-        let client = ClientHandle::from(handle.as_ref());
+        let client = ClientHandle::from(handle);
         let publisher = self.publisher(handle)?
             .ok_or_else(|| Error::ProxyServer(proxy::Error::UnknownClient(client.clone())))?;
 

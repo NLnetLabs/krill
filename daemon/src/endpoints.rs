@@ -1,6 +1,6 @@
 //! Process requests received, delegate, and wrap up the responses.
 use std::sync::{RwLockReadGuard, RwLockWriteGuard};
-use actix_web::{HttpResponse, ResponseError};
+use actix_web::{HttpResponse, ResponseError, Json, Path};
 use actix_web::http::StatusCode;
 use serde::Serialize;
 use krill_cms_proxy::api::{ClientInfo, ClientHandle};
@@ -73,10 +73,10 @@ pub fn publishers(req: &HttpRequest) -> HttpResponse {
 #[allow(clippy::needless_pass_by_value)]
 pub fn add_publisher(
     req: HttpRequest,
-    pbl: admin::PublisherRequest
+    pbl: Json<admin::PublisherRequest>
 ) -> HttpResponse {
     let mut server = rw_server(&req);
-    match server.add_publisher(pbl) {
+    match server.add_publisher(pbl.into_inner()) {
         Ok(()) => api_ok(),
         Err(e) => server_error(&Error::ServerError(e))
     }
@@ -87,7 +87,7 @@ pub fn add_publisher(
 #[allow(clippy::needless_pass_by_value)]
 pub fn deactivate_publisher(
     req: HttpRequest,
-    handle: PublisherHandle
+    handle: Path<PublisherHandle>
 ) -> HttpResponse {
     match rw_server(&req).deactivate_publisher(&handle) {
         Ok(()) => api_ok(),
@@ -99,7 +99,7 @@ pub fn deactivate_publisher(
 #[allow(clippy::needless_pass_by_value)]
 pub fn publisher_details(
     req: HttpRequest,
-    handle: PublisherHandle
+    handle: Path<PublisherHandle>
 ) -> HttpResponse {
     let server = ro_server(&req);
     match server.publisher(&handle) {
@@ -121,7 +121,7 @@ pub fn publisher_details(
 pub fn handle_rfc8181_request(
     req: HttpRequest,
     msg: SignedMessage,
-    handle: PublisherHandle
+    handle: Path<PublisherHandle>
 ) -> HttpResponse {
     let client_handle = ClientHandle::from(handle.as_ref());
     match ro_server(&req).handle_rfc8181_req(msg, client_handle) {
@@ -140,10 +140,10 @@ pub fn handle_rfc8181_request(
 #[allow(clippy::needless_pass_by_value)]
 pub fn handle_delta(
     req: HttpRequest,
-    delta: publication::PublishDelta,
-    handle: PublisherHandle
+    delta: Json<publication::PublishDelta>,
+    handle: Path<PublisherHandle>
 ) -> HttpResponse {
-    match ro_server(&req).handle_delta(delta, &handle) {
+    match ro_server(&req).handle_delta(delta.into_inner(), &handle) {
         Ok(()) => api_ok(),
         Err(e) => server_error(&Error::ServerError(e))
     }
@@ -153,7 +153,7 @@ pub fn handle_delta(
 #[allow(clippy::needless_pass_by_value)]
 pub fn handle_list(
     req: HttpRequest,
-    handle: PublisherHandle
+    handle: Path<PublisherHandle>
 ) -> HttpResponse {
     match ro_server(&req).handle_list(&handle) {
         Ok(list) => render_json(list),
@@ -184,7 +184,7 @@ pub fn add_rfc8181_client(
 
 pub fn repository_response(
     req: HttpRequest,
-    handle: PublisherHandle
+    handle: Path<PublisherHandle>
 ) -> HttpResponse {
     match ro_server(&req).repository_response(&handle) {
         Ok(res) => {

@@ -10,7 +10,6 @@ use serde::Serializer;
 use serde::Deserializer;
 use serde::Deserialize;
 
-pub mod actix;
 pub mod ext_serde;
 pub mod file;
 pub mod httpclient;
