@@ -1,4 +1,7 @@
 //! Data structures for the API, shared between client and server.
+
+pub mod ca;
+
 pub mod admin;
 pub mod publication;
 pub mod rrdp;

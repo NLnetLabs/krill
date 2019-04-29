@@ -1,30 +1,27 @@
-
-use krill_commons::api::admin::CaHandle;
-use krill_commons::eventsourcing::{StoredEvent, SentCommand, CommandDetails, Aggregate};
-
-use crate::RepoInfo;
-use crate::ResourceSet;
-use serde::Serialize;
-use rpki::crypto::Signer;
 use std::marker::PhantomData;
 use std::fmt::Debug;
 use std::sync::Arc;
-use ResourceClass;
-use rpki::crypto::signer::KeyError;
-use rpki::cert::{CertBuilder, Validity};
 
-#[allow(dead_code)]
-const TA_NS: &str = "trustanchors";
-const TA_ID: &str = "ta";
+use serde::Serialize;
+
+use rpki::cert::{CertBuilder, Validity};
+use rpki::crypto::Signer;
+
+use krill_commons::api::admin::CaHandle;
+use krill_commons::api::ca::{RepoInfo, ResourceClass, ResourceSet, TrustAnchorInfo};
+use krill_commons::eventsourcing::{StoredEvent, SentCommand, CommandDetails, Aggregate};
+
+pub const TA_NS: &str = "trustanchors";
+pub const TA_ID: &str = "ta";
 
 pub fn ta_handle() -> CaHandle {
     CaHandle::from(TA_ID)
 }
 
-//------------ AggSigner -----------------------------------------------------
+//------------ CaSigner ------------------------------------------------------
 
-pub trait AggSigner: Signer + Clone + Debug + Serialize + Sized + Sync + Send +'static {}
-impl<T: Signer + Clone + Debug + Serialize + Sized + Sync + Send + 'static > AggSigner for T {}
+pub trait CaSigner: Signer + Clone + Debug + Serialize + Sized + Sync + Send +'static {}
+impl<T: Signer + Clone + Debug + Serialize + Sized + Sync + Send + 'static > CaSigner for T {}
 
 //------------ TrustAnchorInit -----------------------------------------------
 
@@ -65,16 +62,16 @@ impl TrustAnchorEventDetails {
 pub type TrustAnchorCommand<S> = SentCommand<TrustAnchorCommandDetails<S>>;
 
 #[derive(Clone, Debug)]
-pub enum TrustAnchorCommandDetails<S: AggSigner> {
+pub enum TrustAnchorCommandDetails<S: CaSigner> {
     InitRepoInfo(RepoInfo),
     InitResourceClass(S::KeyId, ResourceSet, Arc<S>),
 }
 
-impl<S: AggSigner> CommandDetails for TrustAnchorCommandDetails<S> {
+impl<S: CaSigner> CommandDetails for TrustAnchorCommandDetails<S> {
     type Event = TrustAnchorEvent;
 }
 
-impl<S: AggSigner> TrustAnchorCommandDetails<S> {
+impl<S: CaSigner> TrustAnchorCommandDetails<S> {
     pub fn init_repo_info(
         ta: &CaHandle,
         repo_info: RepoInfo
@@ -108,7 +105,7 @@ impl<S: AggSigner> TrustAnchorCommandDetails<S> {
 //------------ TrustAnchor ---------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct TrustAnchor<S: AggSigner> {
+pub struct TrustAnchor<S: CaSigner> {
     id: CaHandle,
     version: u64,
 
@@ -118,11 +115,22 @@ pub struct TrustAnchor<S: AggSigner> {
     phantom_signer: PhantomData<S>
 }
 
-impl<S: AggSigner> Aggregate for TrustAnchor<S> {
+impl<S: CaSigner> TrustAnchor<S> {
+    pub fn as_info(&self) -> Result<TrustAnchorInfo, Error> {
+        let resource_class = self.resource_class.as_ref()
+            .ok_or_else(|| Error::ResourceClassMissing)?;
+        let repo_info = self.repo_info.as_ref()
+            .ok_or_else(|| Error::RepoInfoMissing)?;
+
+        Ok(TrustAnchorInfo::new(resource_class.clone(), repo_info.clone()))
+    }
+}
+
+impl<S: CaSigner> Aggregate for TrustAnchor<S> {
     type Command = TrustAnchorCommand<S>;
     type Event = TrustAnchorEvent;
     type InitEvent = TrustAnchorInit;
-    type Error = Error<S>;
+    type Error = Error;
 
     fn init(event: Self::InitEvent) -> Result<Self, Self::Error> {
         let (id, _version, _init) = event.unwrap();
@@ -169,7 +177,7 @@ impl<S: AggSigner> Aggregate for TrustAnchor<S> {
             TrustAnchorCommandDetails::InitResourceClass(key, _resources, signer) => {
                 let _repo_info = self.repo_info.as_ref().ok_or_else(|| Error::RepoInfoMissing)?;
 
-                let pub_key = signer.get_key_info(&key)?;
+                let pub_key = signer.get_key_info(&key).map_err(|_| Error::MissingKey)?;
 
                 let mut _builder = CertBuilder::new(
                     1, // Self-signed TA cert can always use serial 1 - never revoked
@@ -197,25 +205,24 @@ impl<S: AggSigner> Aggregate for TrustAnchor<S> {
 
 
 #[derive(Clone, Debug, Display)]
-pub enum Error<S: AggSigner> {
-    #[display(fmt = "{}", _0)]
-    SignerError(S::Error),
+pub enum Error {
+    #[display(fmt = "Cannot find key.")]
+    MissingKey,
 
-    #[display(fmt = "{}", _0)]
-    KeyError(KeyError<S::Error>),
+    #[display(fmt = "Error while signing.")]
+    SignerError,
 
     #[display(fmt = "RepoInfo already was initialised.")]
     RepoInfoAlreadyInitialised,
 
-    #[display(fmt = "RepoInfo was not initialised.")]
+    #[display(fmt = "Repository information was not configured.")]
     RepoInfoMissing,
+
+    #[display(fmt = "TrustAnchor key and resources were not initialised.")]
+    ResourceClassMissing,
 }
 
-impl<S: AggSigner> From<KeyError<S::Error>> for Error<S> {
-    fn from(e: KeyError<S::Error>) -> Self { Error::KeyError(e) }
-}
-
-impl<S: AggSigner> std::error::Error for Error<S> {}
+impl std::error::Error for Error {}
 
 //------------ Tests ---------------------------------------------------------
 

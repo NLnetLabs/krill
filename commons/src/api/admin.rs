@@ -6,6 +6,7 @@ use crate::eventsourcing::AggregateId;
 use crate::util::ext_serde;
 use std::fmt;
 use std::fmt::Display;
+use std::ops::Deref;
 
 //------------ CaHandle ------------------------------------------------------
 
@@ -58,6 +59,14 @@ impl AsRef<str> for AggregateHandle {
 
 impl AsRef<AggregateId> for AggregateHandle {
     fn as_ref(&self) -> &AggregateId {
+        &self.0
+    }
+}
+
+impl Deref for AggregateHandle {
+    type Target = AggregateId;
+
+    fn deref(&self) -> &Self::Target {
         &self.0
     }
 }

@@ -7,14 +7,7 @@ extern crate rpki;
 extern crate serde_json;
 extern crate krill_commons;
 
-mod objects;
-pub use objects::Cert;
-
-mod repo_info;
-pub use repo_info::RepoInfo;
-
-mod resource_class;
-pub use resource_class::ResourceClass;
-pub use resource_class::ResourceSet;
+mod caserver;
+pub use caserver::CaServer;
 
 pub mod trustanchor;
