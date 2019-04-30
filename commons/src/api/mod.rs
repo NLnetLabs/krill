@@ -225,6 +225,9 @@ pub enum ErrorCode {
     #[display(fmt="Proxy server error.")]
     ProxyError,
 
+    #[display(fmt="CA Server issue.")]
+    CaServerError,
+
     #[display(fmt="Unrecognised error (this is a bug)")]
     Unknown
 }
@@ -251,6 +254,7 @@ impl From<usize> for ErrorCode {
             3002 => ErrorCode::RepositoryUpdate,
             3003 => ErrorCode::SigningError,
             3004 => ErrorCode::ProxyError,
+            3005 => ErrorCode::CaServerError,
 
             _ => ErrorCode::Unknown
         }
@@ -279,6 +283,7 @@ impl Into<ErrorResponse> for ErrorCode {
             ErrorCode::RepositoryUpdate => 3002,
             ErrorCode::SigningError => 3003,
             ErrorCode::ProxyError => 3004,
+            ErrorCode::CaServerError => 3005,
 
             ErrorCode::Unknown => 65535
         };

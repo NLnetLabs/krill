@@ -4,9 +4,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use bcder::Captured;
 use rpki::uri;
+use krill_ca::{CaServer, CaServerError};
 use krill_commons::api::publication;
 use krill_commons::api::admin;
 use krill_commons::api::admin::PublisherHandle;
+use krill_commons::util::softsigner::{OpenSslSigner, SignerError};
 use krill_cms_proxy::api::{ClientInfo, ClientHandle};
 use krill_cms_proxy::proxy;
 use krill_cms_proxy::proxy::ProxyServer;
@@ -15,6 +17,7 @@ use krill_cms_proxy::sigmsg::SignedMessage;
 use krill_pubd::PubServer;
 use krill_pubd::publishers::Publisher;
 use crate::auth::Authorizer;
+use krill_commons::api::ca::TrustAnchorInfo;
 
 
 //------------ KrillServer ---------------------------------------------------
@@ -43,6 +46,9 @@ pub struct KrillServer {
 
     // The configured publishers
     pubserver: PubServer,
+
+    // The configured publishers
+    caserver: CaServer<OpenSslSigner>,
 
     // CMS+XML proxy server for non-Krill clients
     proxy_server: ProxyServer
@@ -74,12 +80,16 @@ impl KrillServer {
             work_dir, &service_uri
         )?;
 
+        let signer = OpenSslSigner::build(work_dir)?;
+        let caserver = CaServer::build(work_dir, signer)?;
+
         Ok(
             KrillServer {
                 service_uri,
                 work_dir: work_dir.clone(),
                 authorizer,
                 pubserver,
+                caserver,
                 proxy_server
             }
         )
@@ -209,6 +219,14 @@ impl KrillServer {
     }
 }
 
+/// # Admin Trust Anchor
+///
+impl KrillServer {
+    pub fn trust_anchor(&self) ->  Result<Option<TrustAnchorInfo>, Error> {
+        self.caserver.get_trust_anchor().map_err(Error::CaServerError)
+    }
+}
+
 /// # Handle publication requests
 ///
 impl KrillServer {
@@ -246,6 +264,12 @@ pub enum Error {
 
     #[display(fmt="{}", _0)]
     ProxyServer(proxy::Error),
+
+    #[display(fmt="{}", _0)]
+    SignerError(SignerError),
+
+    #[display(fmt="{}", _0)]
+    CaServerError(CaServerError),
 }
 
 impl From<io::Error> for Error {
@@ -258,6 +282,14 @@ impl From<krill_pubd::Error> for Error {
 
 impl From<proxy::Error> for Error {
     fn from(e: proxy::Error) -> Self { Error::ProxyServer(e) }
+}
+
+impl From<SignerError> for Error {
+    fn from(e: SignerError) -> Self { Error::SignerError(e) }
+}
+
+impl From<CaServerError> for Error {
+    fn from(e: CaServerError) -> Self { Error::CaServerError(e) }
 }
 
 // Tested through integration tests

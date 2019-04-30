@@ -62,5 +62,9 @@ export default {
         }
       });
     })
-  }
+  },
+
+  getTrustAnchor() {
+    return apiClient.get('/api/v1/trustanchor');
+  },
 }

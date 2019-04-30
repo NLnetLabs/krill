@@ -9,5 +9,6 @@ extern crate krill_commons;
 
 mod caserver;
 pub use caserver::CaServer;
+pub use caserver::Error as CaServerError;
 
 pub mod trustanchor;

@@ -4,7 +4,7 @@
       <el-header>
         <el-row>
           <el-col :span="4">
-            <router-link :to="{ name: 'publishers'}">
+            <router-link :to="{ name: 'home'}">
               <div class="logo">
                 <img src="@/assets/images/krill_logo_white.svg">
               </div>

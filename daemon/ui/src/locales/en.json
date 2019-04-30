@@ -13,11 +13,7 @@
     "publishers": "Publishers",
     "search": "Search publishers...",
     "add": "Add Publisher",
-    "retire": "Retire Publisher",
-    "cancel": "Cancel",
-    "confirm": "Confirm",
-    "required": "This field is required",
-    "uriFormat": "The URI is not with the correct format rsync://HOST/folder/"
+    "retire": "Retire Publisher"
   },
   "publisherDetails": {
     "loading": "Loading {handle}",
@@ -25,11 +21,21 @@
     "confirm": {
       "title": "Warning",
       "message": "This will deactivate the publisher. Continue?",
-      "ok": "OK",
-      "cancel": "Cancel",
       "retired": " deactivated.",
       "success": "The publisher has been deactivated successfully."
     },
     "nopublisherdata": "No published data found."
+  },
+  "trustanchor": {
+    "absent": "There is no embedded Trust Anchor configured",
+    "present": "Big Bad Dragons!!!",
+    "add": "Initialise Trust Anchor"
+  },
+  "form": {
+    "required": "This field is required",
+    "rsync_uri_format": "Rsync URI must have a format of: rsync://host/module/<path>",
+    "rrdp_uri_format": "RRDP notify URI must have a format of: https://host/<path>",
+    "confirm": "Confirm",
+    "cancel": "Cancel"
   }
 }

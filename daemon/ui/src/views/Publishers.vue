@@ -69,11 +69,11 @@
         <el-alert type="error" v-if="error" :closable="false">{{error}}</el-alert>
         <el-row type="flex" class="modal-footer" justify="end">
           <el-form-item>
-            <el-button @click="resetForm('addPublisherForm')">{{ $t('publishers.cancel') }}</el-button>
+            <el-button @click="resetForm('addPublisherForm')">{{ $t('form.cancel') }}</el-button>
             <el-button
               type="primary"
               @click="submitForm('addPublisherForm')"
-            >{{ $t('publishers.confirm') }}</el-button>
+            >{{ $t('form.confirm') }}</el-button>
           </el-form-item>
         </el-row>
       </el-form>
@@ -86,17 +86,19 @@ import router from "@/router";
 import APIService from "@/services/APIService.js";
 export default {
   data() {
-    var checkURI = (rule, value, callback) => {
+
+    var check_rsync_uri = (rule, value, callback) => {
       if (value === "") {
-        callback(new Error(this.$t("publishers.required")));
+        callback(new Error(this.$t("form.required")));
       } else {
         if (new RegExp(/rsync:\/\/[^\s]+\/[^\s]+\//gm).test(value)) {
           callback();
         } else {
-          callback(new Error(this.$t("publishers.uriFormat")));
+          callback(new Error(this.$t("form.rsync_uri_format")));
         }
       }
     };
+
     return {
       loading: false,
       publishers: [],
@@ -109,9 +111,9 @@ export default {
         uri: ""
       },
       rules: {
-        handle: [{ required: true, message: this.$t("publishers.required") }],
-        uri: [{ validator: checkURI, required: true }],
-        token: [{ required: true, message: this.$t("publishers.required") }]
+        handle: [{ required: true, message: this.$t("form.required") }],
+        uri: [{ validator: check_rsync_uri, required: true }],
+        token: [{ required: true, message: this.$t("form.required") }]
       }
     };
   },

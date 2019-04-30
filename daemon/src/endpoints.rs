@@ -197,6 +197,19 @@ pub fn repository_response(
     }
 }
 
+//------------ Admin: TrustAnchor --------------------------------------------
+
+pub fn trust_anchor(req: &HttpRequest) -> HttpResponse {
+    match ro_server(req).trust_anchor() {
+        Ok(ta_res) => match ta_res {
+            Some(ta) => render_json(ta),
+            None => api_not_found()
+        },
+        Err(e) => server_error(&Error::ServerError(e))
+    }
+}
+
+
 
 //------------ Serving RRDP --------------------------------------------------
 
@@ -255,6 +268,8 @@ impl ErrorToStatus for krillserver::Error {
             krillserver::Error::IoError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             krillserver::Error::PubServer(e) => e.status(),
             krillserver::Error::ProxyServer(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            krillserver::Error::SignerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            krillserver::Error::CaServerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -310,7 +325,9 @@ impl ToErrorCode for krillserver::Error {
         match self {
             krillserver::Error::IoError(_) => ErrorCode::Persistence,
             krillserver::Error::PubServer(e) => e.code(),
-            krillserver::Error::ProxyServer(_) => ErrorCode::ProxyError
+            krillserver::Error::ProxyServer(_) => ErrorCode::ProxyError,
+            krillserver::Error::SignerError(_) => ErrorCode::SigningError,
+            krillserver::Error::CaServerError(_) => ErrorCode::CaServerError
         }
     }
 }

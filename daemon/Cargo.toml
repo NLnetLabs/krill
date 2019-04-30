@@ -31,6 +31,10 @@ tokio           = "^0.1"
 uuid            = "0.7"
 xml-rs          = "0.8.0"
 
+[dependencies.krill_ca]
+path = "../ca"
+version = "0.2.0"
+
 [dependencies.krill_client]
 path = "../client"
 version = "0.2.0"

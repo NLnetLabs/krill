@@ -65,6 +65,10 @@ impl PubServerApp {
                 r.method(Method::GET).with(endpoints::repository_response)
             })
 
+            .resource("/api/v1/trustanchor", |r| {
+                r.method(Method::GET).f(endpoints::trust_anchor)
+            })
+
             .resource("/publication/{handle}", |r| {
                 r.method(Method::GET).with(endpoints::handle_list);
                 r.method(Method::POST).with_config(endpoints::handle_delta, |cfg| {
