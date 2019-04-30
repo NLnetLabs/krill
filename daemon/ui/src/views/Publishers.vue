@@ -90,7 +90,7 @@ export default {
       if (value === "") {
         callback(new Error(this.$t("publishers.required")));
       } else {
-        if (new RegExp(/rsync:\/\/[^\s]+\//gm).test(value)) {
+        if (new RegExp(/rsync:\/\/[^\s]+\/[^\s]+\//gm).test(value)) {
           callback();
         } else {
           callback(new Error(this.$t("publishers.uriFormat")));
