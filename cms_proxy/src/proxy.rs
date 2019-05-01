@@ -95,7 +95,7 @@ impl ProxyServer {
     }
 
     fn new_id(signer: &mut OpenSslSigner) -> Result<MyIdentity, Error> {
-        let key_id = signer.create_key(PublicKeyFormat)?;
+        let key_id = signer.create_key(PublicKeyFormat::default())?;
         let id_cert = IdCertBuilder::new_ta_id_cert(&key_id, signer)?;
         let name = "krill-proxy";
         Ok(MyIdentity::new(name, id_cert, key_id))

@@ -99,7 +99,7 @@ impl OpenSslSigner {
         signer.update(data.as_ref())?;
 
         let signature = Signature::new(
-            SignatureAlgorithm,
+            SignatureAlgorithm::default(),
             Bytes::from(signer.sign_to_vec()?));
 
         Ok(signature)
@@ -312,7 +312,7 @@ pub mod tests {
     fn should_return_subject_public_key_info() {
         test::test_with_tmp_dir(|d| {
             let mut s = OpenSslSigner::build(&d).unwrap();
-            let ki = s.create_key(PublicKeyFormat).unwrap();
+            let ki = s.create_key(PublicKeyFormat::default()).unwrap();
             s.get_key_info(&ki).unwrap();
             s.destroy_key(&ki).unwrap();
         })

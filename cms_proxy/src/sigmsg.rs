@@ -9,7 +9,6 @@ use bcder::decode;
 use bcder::{Mode, Oid, Tag};
 use bcder::string::OctetString;
 use bytes::Bytes;
-use rpki::crl::Crl;
 use rpki::crypto::DigestAlgorithm;
 use rpki::oid;
 use rpki::sigobj::{SignerInfo, SignedObject};
@@ -30,7 +29,6 @@ pub struct SignedMessage {
     content_type: Oid<Bytes>,
     content: OctetString,
     id_cert: IdCert,
-    crl: Crl,
     signer_info: SignerInfo,
 }
 
@@ -79,12 +77,16 @@ impl SignedMessage {
             let (content_type, content) =
                 SignedObject::take_encap_content_info(cons)?;
 
+
             if content_type != oid::PROTOCOL_CONTENT_TYPE {
                 return xerr!(Err(decode::Malformed.into()))
             }
 
             let id_cert = Self::take_certificates(cons)?;
-            let crl = Self::take_crls(cons)?;
+
+            Self::drop_crls(cons)?;
+            eprintln!("still alive");
+
 
             let signer_info = cons.take_set(SignerInfo::take_from)?;
 
@@ -92,7 +94,7 @@ impl SignedMessage {
                 content_type,
                 content,
                 id_cert,
-                crl,
+//                crl,
                 signer_info
             })
         })
@@ -113,12 +115,26 @@ impl SignedMessage {
         })
     }
 
-
-    fn take_crls<S: decode::Source>(
+    // Drop the utterly useless CRL to the floor, if present.
+    //
+    // The ones from DRL don't parse. And even if they did,
+    // are you going to send us a validly signed CMS, with a validly
+    // signed embedded EE cert, AND a validly signed CRL that revokes
+    // that cert?
+    //
+    // These CRLs only really protect if an operator use multi-use
+    // keys for their EE certificates and is given some frequently
+    // re-signed CRL by the CA cert for inclusion.. then if the EE
+    // key is stolen you get a bit of protection.
+    //
+    // But given that this is very far fetched, and every implementation
+    // worth their bytes uses single-use keys which are promptly
+    // forgotten there really isn't all that much here.
+    fn drop_crls<S: decode::Source>(
         cons: &mut decode::Constructed<S>
-    ) -> Result<Crl, S::Err> {
+    ) -> Result<(), S::Err> {
         cons.take_constructed_if(Tag::CTX_1, |cons| {
-            Crl::take_from(cons)
+            cons.skip_all()
         })
     }
 }

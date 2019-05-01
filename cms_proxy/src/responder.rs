@@ -126,7 +126,7 @@ mod tests {
 
     pub fn new_id(work_dir: &PathBuf) -> MyIdentity {
         let mut s = OpenSslSigner::build(work_dir).unwrap();
-        let key_id = s.create_key(PublicKeyFormat).unwrap();
+        let key_id = s.create_key(PublicKeyFormat::default()).unwrap();
         let id_cert = IdCertBuilder::new_ta_id_cert(&key_id, &mut s).unwrap();
         let name = "krill-proxy";
         MyIdentity::new(name, id_cert, key_id)

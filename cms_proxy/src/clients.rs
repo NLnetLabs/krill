@@ -258,7 +258,7 @@ pub mod tests {
 
     pub fn new_id_cert(work_dir: &PathBuf) -> IdCert {
         let mut s = OpenSslSigner::build(work_dir).unwrap();
-        let key_id = s.create_key(PublicKeyFormat).unwrap();
+        let key_id = s.create_key(PublicKeyFormat::default()).unwrap();
         IdCertBuilder::new_ta_id_cert(&key_id, &mut s).unwrap()
     }
 

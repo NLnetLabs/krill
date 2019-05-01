@@ -18,7 +18,7 @@ pub mod test;
 pub mod xml;
 
 pub fn sha256(object: &[u8]) -> Bytes {
-    Bytes::from(DigestAlgorithm.digest(object).as_ref())
+    Bytes::from(DigestAlgorithm::default().digest(object).as_ref())
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

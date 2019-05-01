@@ -111,7 +111,7 @@ impl HttpsSigner {
         let signature_bytes = signer.sign_to_vec()?;
 
         let signature = Signature::new(
-            SignatureAlgorithm,
+            SignatureAlgorithm::default(),
             Bytes::from(signature_bytes)
         );
         Ok(signature)
@@ -134,7 +134,7 @@ impl HttpsSigner {
         let encoded_cert = encode::sequence(
             (
                 encoded_tbs,
-                SignatureAlgorithm.x509_encode(),
+                SignatureAlgorithm::default().x509_encode(),
                 signature.encode()
             )
         ).to_captured(Mode::Der);
@@ -210,12 +210,12 @@ impl TbsHttpsCertificate {
                     2_i32.encode() // Version 3 is encoded as 2
                 ),
                 1_i32.encode(),
-                SignatureAlgorithm.x509_encode(),
-                self.issuer.encode()
+                SignatureAlgorithm::default().x509_encode(),
+                self.issuer.encode_ref()
             ),
             (
                 self.validity.encode(),
-                self.subject.encode(),
+                self.subject.encode_ref(),
                 self.subject_public_key_info.clone().encode(),
                 self.extensions.encode()
             )

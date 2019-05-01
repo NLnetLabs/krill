@@ -89,7 +89,7 @@ impl PubClient {
     fn init(&mut self, name: &str) -> Result<(), Error> {
         let mut signer = OpenSslSigner::build(&self.state_dir)?;
 
-        let key_id = signer.create_key(PublicKeyFormat)?;
+        let key_id = signer.create_key(PublicKeyFormat::default())?;
         let id_cert = IdCertBuilder::new_ta_id_cert(&key_id, &signer)?;
         let my_id = MyIdentity::new(name, id_cert, key_id);
 

@@ -297,7 +297,7 @@ impl IdCert {
     }
 
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
-        self.signed_data.encode()
+        self.signed_data.encode_ref()
     }
 
     pub fn to_bytes(&self) -> Bytes {

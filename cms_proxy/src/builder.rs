@@ -90,12 +90,12 @@ impl RpkiTbsCertificate {
                             2.encode() // Version 3 is encoded as 2
                         ),
                         self.serial_number.encode(),
-                        SignatureAlgorithm.x509_encode(),
-                        self.issuer.encode()
+                        SignatureAlgorithm::default().x509_encode(),
+                        self.issuer.encode_ref()
                     ),
                     (
                         self.validity.encode(),
-                        self.subject.encode(),
+                        self.subject.encode_ref(),
                         self.subject_public_key_info.clone().encode(),
                         id_ext.encode()
                     )
@@ -197,7 +197,7 @@ impl IdCertBuilder {
             0,
             signer.sign(
                 issuing_key,
-                SignatureAlgorithm,
+                SignatureAlgorithm::default(),
                 enc_cert_b
             )?.value().clone()
         );
@@ -205,7 +205,7 @@ impl IdCertBuilder {
         let captured_cert = encode::sequence (
             (
                 enc_cert,
-                SignatureAlgorithm.x509_encode(),
+                SignatureAlgorithm::default().x509_encode(),
                 signature.encode()
             )
         ).to_captured(Mode::Der);
@@ -341,7 +341,7 @@ impl SignedMessageBuilder {
 
         let crls = Constructed::new(
             Tag::CTX_1,
-            self.crl.encode()
+            self.crl.encode_ref()
         );
 
         let signer_infos = encode::set(self.signer_info.encode());
@@ -410,7 +410,7 @@ impl SignedAttributes {
         content: &Bytes
     ) -> Self {
 
-        let content_digest = DigestAlgorithm.digest(content);
+        let content_digest = DigestAlgorithm::default().digest(content);
 
         let digest = Bytes::from(content_digest.as_ref());
         let digest = OctetString::new(digest);
@@ -464,7 +464,7 @@ impl SignedAttributes {
         //  ...The IMPLICIT [0] tag in the signedAttrs is not used for the DER
         //  encoding, rather an EXPLICIT SET OF tag is used...
         let encode_in_set = encode::set(self.encode()).to_captured(Mode::Der);
-        signer.sign_one_off(SignatureAlgorithm, encode_in_set.as_slice())
+        signer.sign_one_off(SignatureAlgorithm::default(), encode_in_set.as_slice())
             .map_err(Error::SignerError)
     }
 
@@ -504,7 +504,7 @@ impl SignedSignerInfo {
         let sid = self.key_id.clone().encode_as(Tag::CTX_0);
 
         //  digestAlgorithm DigestAlgorithmIdentifier,
-        let digest_algo = DigestAlgorithm.encode();
+        let digest_algo = DigestAlgorithm::default().encode();
 
         let signed_attrs = Constructed::new(
             Tag::CTX_0,
@@ -520,7 +520,7 @@ impl SignedSignerInfo {
                     signed_attrs
                 ),
                 (
-                    SignatureAlgorithm.cms_encode(),
+                    SignatureAlgorithm::default().cms_encode(),
                     self.signature.clone().encode()
                 )
             )
@@ -617,8 +617,8 @@ impl CrlBuilder {
             (
                 (
                     1.encode(),
-                    SignatureAlgorithm.x509_encode(),
-                    name.encode()
+                    SignatureAlgorithm::default().x509_encode(),
+                    name.encode_ref()
                 ),
                 (
                     now.encode(),
@@ -633,7 +633,7 @@ impl CrlBuilder {
             0,
             signer.sign(
                 issuing_key,
-                SignatureAlgorithm,
+                SignatureAlgorithm::default(),
                 crl_data.to_captured(Mode::Der).as_slice()
             )?.value().clone()
         );
@@ -641,7 +641,7 @@ impl CrlBuilder {
         let crl_obj = encode::sequence(
             (
                 crl_data,
-                SignatureAlgorithm.x509_encode(),
+                SignatureAlgorithm::default().x509_encode(),
                 signature.encode()
             )
         );
