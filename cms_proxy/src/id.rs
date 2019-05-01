@@ -554,9 +554,9 @@ impl IdExtensions {
             Tag::CTX_3,
             encode::sequence(
                 (
-                    self.basic_ca.as_ref().map(|s| s.encode()),
+                    self.basic_ca.as_ref().map(BasicCa::encode),
                     self.subject_key_id.clone().encode(),
-                    self.authority_key_id.clone().map(|s| s.encode())
+                    self.authority_key_id.clone().map(AuthorityKeyIdentifier::encode)
                 )
             )
         )

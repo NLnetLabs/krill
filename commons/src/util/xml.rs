@@ -242,7 +242,7 @@ impl <R: io::Read> XmlReader<R> {
                     self.next_start_name = None;
                 }
                 self.cache(e);
-                self.next_start_name.as_ref().map(|s| s.as_ref())
+                self.next_start_name.as_ref().map(AsRef::as_ref)
             }
         }
     }

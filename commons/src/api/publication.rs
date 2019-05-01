@@ -264,7 +264,7 @@ impl ListReply {
     }
 
     pub fn from_files(files: Vec<CurrentFile>) -> Self {
-        let elements = files.into_iter().map(|f| f.into_list_element()).collect();
+        let elements = files.into_iter().map(CurrentFile::into_list_element).collect();
         ListReply { elements }
     }
 
