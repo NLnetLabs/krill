@@ -1,7 +1,14 @@
-use std::process::Command;
+extern crate ignore;
 
-#[allow(dead_code)]
+use std::process::Command;
+use ignore::Walk;
+
+//#[allow(dead_code)]
 fn main() {
-    println!("cargo:rerun-if-changed=ui/src");
+    for result in Walk::new("./ui/src") {
+        if let Ok(entry) = result {
+            println!("cargo:rerun-if-changed={}", entry.path().display());
+        }
+    }
     Command::new("./build-dist.sh").status().unwrap();
 }
