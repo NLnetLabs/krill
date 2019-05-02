@@ -3,21 +3,18 @@ use bcder::{decode, encode};
 use bcder::encode::Values;
 use bcder::encode::Constructed;
 use bytes::Bytes;
-use krill_commons::util::softsigner::SignerKeyId;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
 use rpki::uri;
 use rpki::cert::ext::{
     AuthorityKeyIdentifier,
     BasicCa,
     SubjectKeyIdentifier
 };
-use rpki::cert::Validity;
 use rpki::crypto::{PublicKey, SignatureAlgorithm};
-use rpki::x509::{Name, SignedData,Time};
-use rpki::x509::ValidationError;
-use serde::Serialize;
-use serde::Serializer;
-use serde::Deserialize;
-use serde::Deserializer;
+use rpki::x509::{Name, SignedData, Time, ValidationError, Validity};
+
+use krill_commons::util::softsigner::SignerKeyId;
 
 
 //------------ MyIdentity ----------------------------------------------------

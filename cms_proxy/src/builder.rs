@@ -5,7 +5,6 @@ use bcder::{decode, encode};
 use bcder::encode::{Constructed, PrimitiveContent, Values};
 use bytes::Bytes;
 use chrono::Utc;
-use rpki::cert::Validity;
 use rpki::cert::ext::{
     AuthorityKeyIdentifier,
     CrlNumber,
@@ -23,7 +22,7 @@ use rpki::crypto::{
 };
 use rpki::crypto::signer::KeyError;
 use rpki::oid;
-use rpki::x509::{Name, Time};
+use rpki::x509::{Name, Validity, Time};
 use crate::id::{IdCert, IdExtensions};
 use crate::rfc8181::Message;
 

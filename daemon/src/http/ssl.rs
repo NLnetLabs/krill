@@ -4,26 +4,37 @@
 use std::io::Write;
 use std::fs::File;
 use std::path::PathBuf;
-use bcder::BitString;
-use bcder::Mode;
-use bcder::Tag;
-use bcder::decode;
-use bcder::encode;
-use bcder::encode::Constructed;
-use bcder::encode::Values;
-use bcder::encode::PrimitiveContent;
+use bcder::{
+    BitString,
+    Mode,
+    Tag
+};
+use bcder::{decode, encode};
+use bcder::encode::{
+    Constructed,
+    Values,
+    PrimitiveContent
+};
 use bytes::Bytes;
 use openssl::pkey::{PKey, Private};
 use openssl::rsa::Rsa;
 use openssl::hash::MessageDigest;
-use rpki::x509::Name;
-use rpki::cert::Validity;
-use rpki::cert::ext::BasicCa;
-use rpki::cert::ext::SubjectKeyIdentifier;
-use rpki::cert::ext::AuthorityKeyIdentifier;
-use rpki::crypto::Signature;
-use rpki::crypto::PublicKey;
-use rpki::crypto::SignatureAlgorithm;
+
+use rpki::cert::ext::{
+    AuthorityKeyIdentifier,
+    BasicCa,
+    SubjectKeyIdentifier
+};
+use rpki::crypto::{
+    PublicKey,
+    Signature,
+    SignatureAlgorithm
+};
+use rpki::x509::{
+    Name,
+    Validity
+};
+
 use krill_commons::util::file;
 
 
