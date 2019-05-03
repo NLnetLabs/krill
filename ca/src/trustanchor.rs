@@ -7,7 +7,7 @@ use serde::Serialize;
 use rand::Rng;
 
 use rpki::cert::{TbsCert, KeyUsage, Overclaim, Cert};
-use rpki::crypto::{Signer, SignatureAlgorithm};
+use rpki::crypto::Signer;
 use rpki::uri;
 use rpki::x509::{Validity, Serial};
 
@@ -211,7 +211,6 @@ impl<S: CaSigner> TrustAnchor<S> {
 
         let mut cert = TbsCert::new(
             serial,
-            SignatureAlgorithm::default(),
             name.clone(),
             Validity::from_secs(100 * 365 * 24 * 60 * 60), // slightly less than 100 years
             Some(name),
