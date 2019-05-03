@@ -8,6 +8,9 @@ pub mod rrdp;
 
 use bytes::Bytes;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+use rpki::cert::Cert;
+
 use crate::util::sha256;
 
 
@@ -52,6 +55,11 @@ impl From<String> for Base64 {
     }
 }
 
+impl From<Cert> for Base64 {
+    fn from(c: Cert) -> Self {
+        Base64::from_content(&c.to_captured().into_bytes())
+    }
+}
 
 impl ToString for Base64 {
     fn to_string(&self) -> String {
@@ -316,7 +324,7 @@ mod tests {
             test_code(n)
         }
 
-        for n in 3001..3005 {
+        for n in 3001..3006 {
             test_code(n)
         }
 

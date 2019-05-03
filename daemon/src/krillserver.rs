@@ -8,6 +8,7 @@ use krill_ca::{CaServer, CaServerError};
 use krill_commons::api::publication;
 use krill_commons::api::admin;
 use krill_commons::api::admin::PublisherHandle;
+use krill_commons::api::ca::{TrustAnchorInfo};
 use krill_commons::util::softsigner::{OpenSslSigner, SignerError};
 use krill_cms_proxy::api::{ClientInfo, ClientHandle};
 use krill_cms_proxy::proxy;
@@ -17,7 +18,6 @@ use krill_cms_proxy::sigmsg::SignedMessage;
 use krill_pubd::PubServer;
 use krill_pubd::publishers::Publisher;
 use crate::auth::Authorizer;
-use krill_commons::api::ca::TrustAnchorInfo;
 
 
 //------------ KrillServer ---------------------------------------------------
@@ -36,7 +36,7 @@ use krill_commons::api::ca::TrustAnchorInfo;
 ///    * Updates the RRDP files
 pub struct KrillServer {
     // The base URI for this service
-    service_uri: uri::Http,
+    service_uri: uri::Https,
 
     // The base working directory, used for various storage
     work_dir: PathBuf,
@@ -61,8 +61,8 @@ impl KrillServer {
     pub fn build(
         work_dir: &PathBuf,
         base_uri: &uri::Rsync,
-        service_uri: uri::Http,
-        rrdp_base_uri: &uri::Http,
+        service_uri: uri::Https,
+        rrdp_base_uri: &uri::Https,
         authorizer: Authorizer,
     ) -> Result<Self, Error> {
         let mut repo_dir = work_dir.clone();
@@ -95,7 +95,7 @@ impl KrillServer {
         )
     }
 
-    pub fn service_base_uri(&self) -> &uri::Http {
+    pub fn service_base_uri(&self) -> &uri::Https {
         &self.service_uri
     }
 }
@@ -194,13 +194,13 @@ impl KrillServer {
             self.service_uri.to_string(),
             &client
         );
-        let service_uri = uri::Http::from_string(service_uri).unwrap();
+        let service_uri = uri::Https::from_string(service_uri).unwrap();
 
         let rrdp_notification_uri = format!(
             "{}rrdp/notification.xml",
             self.service_uri.to_string(),
         );
-        let rrdp_notification_uri = uri::Http::from_string(rrdp_notification_uri).unwrap();
+        let rrdp_notification_uri = uri::Https::from_string(rrdp_notification_uri).unwrap();
 
         self.proxy_server.response(
             &client,
@@ -222,8 +222,17 @@ impl KrillServer {
 /// # Admin Trust Anchor
 ///
 impl KrillServer {
-    pub fn trust_anchor(&self) ->  Result<Option<TrustAnchorInfo>, Error> {
-        self.caserver.get_trust_anchor().map_err(Error::CaServerError)
+    pub fn trust_anchor(&self) ->  Option<TrustAnchorInfo> {
+        self.caserver.get_trust_anchor_info().ok()
+    }
+
+    pub fn init_trust_anchor(&mut self) -> Result<(), Error> {
+        let repo_info = self.pubserver.repo_info_for(&PublisherHandle::from("ta"))?;
+
+        let ta_uri = format!("{}{}", self.service_uri.to_string(), "ta/ta.cer");
+        let ta_uri = uri::Https::from_string(ta_uri).unwrap();
+
+        self.caserver.init_ta(repo_info, vec![ta_uri]).map_err(Error::CaServerError)
     }
 }
 
@@ -269,7 +278,7 @@ pub enum Error {
     SignerError(SignerError),
 
     #[display(fmt="{}", _0)]
-    CaServerError(CaServerError),
+    CaServerError(CaServerError<OpenSslSigner>),
 }
 
 impl From<io::Error> for Error {
@@ -288,8 +297,8 @@ impl From<SignerError> for Error {
     fn from(e: SignerError) -> Self { Error::SignerError(e) }
 }
 
-impl From<CaServerError> for Error {
-    fn from(e: CaServerError) -> Self { Error::CaServerError(e) }
+impl From<CaServerError<OpenSslSigner>> for Error {
+    fn from(e: CaServerError<OpenSslSigner>) -> Self { Error::CaServerError(e) }
 }
 
 // Tested through integration tests

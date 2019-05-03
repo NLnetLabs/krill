@@ -66,7 +66,8 @@ impl PubServerApp {
             })
 
             .resource("/api/v1/trustanchor", |r| {
-                r.method(Method::GET).f(endpoints::trust_anchor)
+                r.method(Method::GET).f(endpoints::trust_anchor);
+                r.method(Method::POST).f(endpoints::init_trust_anchor);
             })
 
             .resource("/publication/{handle}", |r| {
@@ -167,25 +168,17 @@ impl PubServerApp {
 
         let server = server::new(move || PubServerApp::new(ps.clone()));
 
-        if config.use_ssl() {
-            match Self::https_builder(config) {
-                Ok(https_builder) => {
-                    server.bind_ssl(config.socket_addr(), https_builder)
-                        .unwrap_or_else(|_| panic!("Cannot bind to: {}", config.socket_addr()))
-                        .shutdown_timeout(0)
-                        .run();
-                },
-                Err(e) => {
-                    eprintln!("{}", e);
-                    ::std::process::exit(1);
-                }
+        match Self::https_builder(config) {
+            Ok(https_builder) => {
+                server.bind_ssl(config.socket_addr(), https_builder)
+                    .unwrap_or_else(|_| panic!("Cannot bind to: {}", config.socket_addr()))
+                    .shutdown_timeout(0)
+                    .run();
+            },
+            Err(e) => {
+                eprintln!("{}", e);
+                ::std::process::exit(1);
             }
-
-        } else {
-            server.bind(config.socket_addr())
-                .unwrap_or_else(|_| panic!("Cannot bind to: {}", config.socket_addr()))
-                .shutdown_timeout(0)
-                .run();
         }
     }
 

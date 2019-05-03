@@ -22,8 +22,8 @@ const SNAPSHOT_FREQ: u64 = 5;
 
 //------------ Storable ------------------------------------------------------
 
-pub trait Storable: Clone + Serialize + DeserializeOwned + Sized {}
-impl<T: Clone + Serialize + DeserializeOwned + Sized> Storable for T { }
+pub trait Storable: Clone + Serialize + DeserializeOwned + Sized + 'static {}
+impl<T: Clone + Serialize + DeserializeOwned + Sized + 'static> Storable for T { }
 
 
 //------------ AggregateId ---------------------------------------------------
@@ -672,7 +672,7 @@ impl<A: Aggregate> AggregateStore<A> for DiskAggregateStore<A> {
 
             // Using a lock on the hashmap here to ensure that all updates happen sequentially.
             // It would be better to get a lock only for this specific aggregate. So it may be
-            // worth rethinking the structure.
+            // worth rethinking the stru
             //
             // That said.. saving and applying events is really quick, so this should not hurt
             // performance much.

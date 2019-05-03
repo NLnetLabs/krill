@@ -1,9 +1,11 @@
 use std::fmt;
-use krill_commons::util::softsigner::SignerKeyId;
-use krill_commons::util::ext_serde;
+
 use rpki::uri;
-use crate::id::IdCert;
+
 use krill_commons::api::admin::AggregateHandle;
+use krill_commons::util::softsigner::SignerKeyId;
+
+use crate::id::IdCert;
 
 
 //------------ ClientHandle --------------------------------------------
@@ -109,11 +111,7 @@ pub struct CmsClientInfo {
     handle: ClientHandle,
     server_cert: IdCert,
     key_id: SignerKeyId,
-
-    #[serde(
-        deserialize_with = "ext_serde::de_http_uri",
-        serialize_with = "ext_serde::ser_http_uri")]
-    publication_uri: uri::Http,
+    publication_uri: uri::Https,
 }
 
 impl CmsClientInfo {
@@ -121,7 +119,7 @@ impl CmsClientInfo {
         handle: ClientHandle,
         cert: IdCert,
         key_id: SignerKeyId,
-        publication_uri: uri::Http
+        publication_uri: uri::Https
     ) -> Self {
         CmsClientInfo { handle, server_cert: cert, key_id, publication_uri }
     }
@@ -132,6 +130,6 @@ impl CmsClientInfo {
     pub fn set_server_cert(&mut self, cert: IdCert) { self.server_cert = cert; }
     pub fn key_id(&self) -> &SignerKeyId { &self.key_id }
     pub fn set_key_id(&mut self, key_id: SignerKeyId) { self.key_id = key_id; }
-    pub fn publication_uri(&self) -> &uri::Http { &self.publication_uri }
-    pub fn set_publication_uri(&mut self, uri: uri::Http) { self.publication_uri = uri; }
+    pub fn publication_uri(&self) -> &uri::Https { &self.publication_uri }
+    pub fn set_publication_uri(&mut self, uri: uri::Https) { self.publication_uri = uri; }
 }

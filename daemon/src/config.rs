@@ -23,13 +23,13 @@ pub struct ConfigDefaults;
 impl ConfigDefaults {
     fn ip() -> IpAddr { IpAddr::V4(Ipv4Addr::new(127,0,0,1))}
     fn port() -> u16 { 3000 }
-    fn use_ssl() -> SslChoice { SslChoice::No }
+    fn use_ssl() -> SslChoice { SslChoice::Test }
     fn data_dir() -> PathBuf { PathBuf::from("./data")}
     fn rsync_base() -> uri::Rsync {
         uri::Rsync::from_str("rsync://127.0.0.1/repo/").unwrap()
     }
-    fn rrdp_base_uri() -> uri::Http {
-        uri::Http::from_str("http://127.0.0.1:3000/rrdp/").unwrap()
+    fn rrdp_base_uri() -> uri::Https {
+        uri::Https::from_str("https://127.0.0.1:3000/rrdp/").unwrap()
     }
     fn log_level() -> LevelFilter { LevelFilter::Info }
     fn log_type() -> LogType { LogType::Stderr }
@@ -74,15 +74,13 @@ pub struct Config {
 
     #[serde(
         default = "ConfigDefaults::rsync_base",
-        deserialize_with = "ext_serde::de_rsync_uri"
     )]
     pub rsync_base: uri::Rsync,
 
     #[serde(
         default = "ConfigDefaults::rrdp_base_uri",
-        deserialize_with = "ext_serde::de_http_uri"
     )]
-    pub rrdp_base_uri: uri::Http,
+    pub rrdp_base_uri: uri::Https,
 
     #[serde(
         default = "ConfigDefaults::log_level",
@@ -112,10 +110,6 @@ impl Config {
         SocketAddr::new(self.ip, self.port)
     }
 
-    pub fn use_ssl(&self) -> bool {
-        self.use_ssl != SslChoice::No
-    }
-
     pub fn test_ssl(&self) -> bool {
         self.use_ssl == SslChoice::Test
     }
@@ -134,18 +128,13 @@ impl Config {
         path
     }
 
-    pub fn service_uri(&self) -> uri::Http {
+    pub fn service_uri(&self) -> uri::Https {
         let mut uri = String::new();
-        if self.use_ssl() {
-            uri.push_str("https://");
-        } else {
-            uri.push_str("http://");
-        }
-
+        uri.push_str("https://");
         uri.push_str(&self.socket_addr().to_string());
         uri.push_str("/");
 
-        uri::Http::from_string(uri).unwrap()
+        uri::Https::from_string(uri).unwrap()
     }
 }
 
@@ -156,7 +145,7 @@ impl Config {
     ) -> Self {
         let ip = ConfigDefaults::ip();
         let port = ConfigDefaults::port();
-        let use_ssl = SslChoice::No;
+        let use_ssl = SslChoice::Test;
         let data_dir = data_dir.clone();
         let rsync_base = ConfigDefaults::rsync_base();
         let rrdp_base_uri = ConfigDefaults::rrdp_base_uri();
@@ -378,7 +367,6 @@ impl<'de> Deserialize<'de> for LogType {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SslChoice {
-    No,
     Yes,
     Test
 }
@@ -388,12 +376,11 @@ impl<'de> Deserialize<'de> for SslChoice {
         where D: Deserializer<'de> {
         let string = String::deserialize(d)?;
         match string.as_str() {
-            "no"   => Ok(SslChoice::No),
             "yes"  => Ok(SslChoice::Yes),
             "test" => Ok(SslChoice::Test),
             _ => Err(
                 de::Error::custom(
-                    format!("expected \"yes\", \"no\" or \"test\", \
+                    format!("expected \"yes\", or \"test\", \
                     found: \"{}\"", string)))
         }
     }

@@ -46,9 +46,7 @@ pub fn rsync_uri(s: &str) -> uri::Rsync {
     uri::Rsync::from_str(s).unwrap()
 }
 
-pub fn http_uri(s: &str) -> uri::Http {
-    uri::Http::from_str(s).unwrap()
-}
+pub fn https_uri(s: &str) -> uri::Https {  uri::Https::from_str(s).unwrap() }
 
 pub fn as_bytes(s: &str) -> Bytes { Bytes::from(s) }
 

@@ -25,7 +25,7 @@ use crate::options::{
 
 /// Command line tool for Krill admin tasks
 pub struct KrillClient {
-    server: uri::Http,
+    server: uri::Https,
     token: String
 }
 

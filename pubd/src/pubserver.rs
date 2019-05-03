@@ -32,6 +32,7 @@ use crate::repo::{
     RrdpServerError,
     RsyncdStore,
 };
+use krill_commons::api::ca::RepoInfo;
 
 
 //------------ PubServer -----------------------------------------------------
@@ -49,7 +50,7 @@ pub struct PubServer {
 impl PubServer {
     pub fn build(
         base_rsync_uri: uri::Rsync,
-        base_http_uri: uri::Http, // for the RRDP files
+        base_http_uri: uri::Https, // for the RRDP files
         repo_dir: PathBuf, // for the RRDP and rsync files
         work_dir: &PathBuf // for the aggregate stores
     ) -> Result<Self, Error> {
@@ -72,6 +73,13 @@ impl PubServer {
         };
 
         Ok(pubserver)
+    }
+
+    pub fn repo_info_for(&self, handle: &PublisherHandle) -> Result<RepoInfo, Error> {
+        let rsync_jail = format!("{}{}", self.base_rsync_uri.to_string(), handle);
+        let base_uri = uri::Rsync::from_string(rsync_jail).unwrap();
+        let rpki_notify = self.rrdp_server()?.notification_uri();
+        Ok(RepoInfo::new(base_uri, rpki_notify))
     }
 }
 
@@ -322,8 +330,8 @@ mod tests {
         test::rsync_uri("rsync://localhost/repo/")
     }
 
-    fn server_base_http_uri() -> uri::Http {
-        test::http_uri("http://localhost/rrdp/")
+    fn server_base_http_uri() -> uri::Https {
+        test::https_uri("https://localhost/rrdp/")
     }
 
     fn make_publisher_req(

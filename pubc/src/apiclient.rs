@@ -36,7 +36,7 @@ impl Command {
 
 pub struct Connection {
     // The base URI for the server. Will figure out the path from there.
-    server_uri: uri::Http,
+    server_uri: uri::Https,
 
     // The handle by which this client is known to the server.
     handle: String,
@@ -51,7 +51,7 @@ impl Connection {
         handle: &str,
         token: &str
     ) -> Result<Self, Error> {
-        let server_uri = uri::Http::from_str(server_uri)?;
+        let server_uri = uri::Https::from_str(server_uri)?;
         let handle     = handle.to_string();
         let token      = token.to_string();
         Ok(Connection {server_uri, handle, token })

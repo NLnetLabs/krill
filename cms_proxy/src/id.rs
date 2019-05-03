@@ -74,20 +74,15 @@ impl Eq for MyIdentity {}
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ParentInfo {
     publisher_handle: String,
-
     id_cert: IdCert,
-
-    #[serde(
-    deserialize_with = "krill_commons::util::ext_serde::de_http_uri",
-    serialize_with = "krill_commons::util::ext_serde::ser_http_uri")]
-    service_uri: uri::Http,
+    service_uri: uri::Https,
 }
 
 impl ParentInfo {
     pub fn new(
         publisher_handle: String,
         id_cert: IdCert,
-        service_uri: uri::Http,
+        service_uri: uri::Https,
     ) -> Self {
         ParentInfo {
             publisher_handle,
@@ -102,7 +97,7 @@ impl ParentInfo {
     }
 
     /// The service URI where the client should send requests.
-    pub fn service_uri(&self) -> &uri::Http {
+    pub fn service_uri(&self) -> &uri::Https {
         &self.service_uri
     }
 
@@ -129,21 +124,14 @@ impl Eq for ParentInfo {}
 /// publisher.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct MyRepoInfo {
-    #[serde(
-    deserialize_with = "krill_commons::util::ext_serde::de_rsync_uri",
-    serialize_with = "krill_commons::util::ext_serde::ser_rsync_uri")]
     sia_base: uri::Rsync,
-
-    #[serde(
-    deserialize_with = "krill_commons::util::ext_serde::de_http_uri",
-    serialize_with = "krill_commons::util::ext_serde::ser_http_uri")]
-    notify_sia: uri::Http
+    notify_sia: uri::Https
 }
 
 impl MyRepoInfo {
     pub fn new(
         sia_base: uri::Rsync,
-        notify_sia: uri::Http
+        notify_sia: uri::Https
     ) -> Self {
         MyRepoInfo { sia_base, notify_sia }
     }
@@ -154,7 +142,7 @@ impl MyRepoInfo {
         &self.sia_base
     }
 
-    pub fn notify_sia(&self) -> &uri::Http {
+    pub fn notify_sia(&self) -> &uri::Https {
         &self.notify_sia
     }
 }

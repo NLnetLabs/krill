@@ -64,7 +64,7 @@ pub struct ProxyServer {
     signer: OpenSslSigner,
     clients_store: Arc<AggregateStore<ClientManager>>,
     responder_store: Arc<AggregateStore<Responder>>,
-    krill_uri: uri::Http
+    krill_uri: uri::Https
 }
 
 /// # Server Life Cycle
@@ -74,7 +74,7 @@ impl ProxyServer {
     /// Initialises the Proxy Server. This will re-use the existing clients and
     /// responder (i.e. server certificate and all), if they exist for this work_dir.
     /// If they do not exist, they will be initialised as well.
-    pub fn init(work_dir: &PathBuf, krill_uri: &uri::Http) -> Result<Self, Error> {
+    pub fn init(work_dir: &PathBuf, krill_uri: &uri::Https) -> Result<Self, Error> {
         let mut signer = OpenSslSigner::build(work_dir)?;
         let clients_store = Arc::new(DiskAggregateStore::<ClientManager>::new(work_dir, "proxy")?);
         let responder_store = Arc::new(DiskAggregateStore::<Responder>::new(work_dir, "proxy")?);
@@ -133,9 +133,9 @@ impl ProxyServer {
     pub fn response(
         &self,
         handle: &ClientHandle,
-        service_uri: uri::Http,
+        service_uri: uri::Https,
         sia_base: uri::Rsync,
-        rrdp_notification_uri: uri::Http
+        rrdp_notification_uri: uri::Https
     ) -> Result<RepositoryResponse, Error> {
         let tag = None;
 
@@ -530,7 +530,7 @@ mod tests {
     #[test]
     fn should_init() {
         test::test_with_tmp_dir(|d| {
-            let krill_uri = test::http_uri("http://localhost:3000/");
+            let krill_uri = test::https_uri("https://localhost:3000/");
             let server = ProxyServer::init(&d, &krill_uri).unwrap();
 
             let add_alice = clients::tests::add_client(&d, "alice");

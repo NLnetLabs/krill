@@ -20,7 +20,6 @@ use krill_commons::eventsourcing::{
     SentCommand,
 };
 use krill_commons::util::{
-    ext_serde,
     file,
     Time
 };
@@ -42,17 +41,12 @@ pub type RrdpInit = StoredEvent<RrdpInitDetails>;
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RrdpInitDetails {
     session: String,
-
-    #[serde(
-        deserialize_with = "ext_serde::de_http_uri",
-        serialize_with = "ext_serde::ser_http_uri")]
-    base_uri: uri::Http,
-
+    base_uri: uri::Https,
     repo_dir: PathBuf
 }
 
 impl RrdpInitDetails {
-    pub fn init_new(base_uri: uri::Http, repo_dir: PathBuf) -> RrdpInit {
+    pub fn init_new(base_uri: uri::Https, repo_dir: PathBuf) -> RrdpInit {
         use rand::{thread_rng, Rng};
         let mut rng = thread_rng();
         let rnd: u32 = rng.gen();
@@ -167,10 +161,7 @@ pub struct RrdpServer {
     serial: u64,
 
     /// The base URI for notification, snapshot and delta files.
-    #[serde(
-        deserialize_with = "ext_serde::de_http_uri",
-        serialize_with = "ext_serde::ser_http_uri")]
-    base_uri: uri::Http,
+    base_uri: uri::Https,
 
     /// The base directory where notification, snapshot and deltas will be
     /// published.
@@ -283,8 +274,8 @@ impl RrdpServer {
 /// rrdp paths and uris
 ///
 impl RrdpServer {
-    pub fn notification_uri(&self) -> uri::Http {
-        uri::Http::from_string(
+    pub fn notification_uri(&self) -> uri::Https {
+        uri::Https::from_string(
             format!("{}notifcation.xml", self.base_uri.to_string())
         ).unwrap() // Cannot fail. Config checked at startup.
     }
@@ -309,8 +300,8 @@ impl RrdpServer {
         Self::new_snapshot_path(&self.rrdp_base, &self.session, self.serial)
     }
 
-    fn new_snapshot_uri(base: &uri::Http, session: &str, serial: u64) -> uri::Http {
-        uri::Http::from_string(
+    fn new_snapshot_uri(base: &uri::Https, session: &str, serial: u64) -> uri::Https {
+        uri::Https::from_string(
             format!("{}{}",
                     base.to_string(),
                     Self::snapshot_rel(session, serial)
@@ -318,7 +309,7 @@ impl RrdpServer {
         ).unwrap() // Cannot fail. Config checked at startup.
     }
 
-    fn snapshot_uri(&self) -> uri::Http {
+    fn snapshot_uri(&self) -> uri::Https {
         Self::new_snapshot_uri(&self.base_uri, &self.session, self.serial)
     }
 
@@ -326,8 +317,8 @@ impl RrdpServer {
         format!("{}/{}/delta.xml", session, serial)
     }
 
-    fn delta_uri(&self, serial: u64) -> uri::Http {
-        uri::Http::from_string(
+    fn delta_uri(&self, serial: u64) -> uri::Https {
+        uri::Https::from_string(
             format!("{}{}",
                     self.base_uri.to_string(),
                     Self::delta_rel(&self.session, serial)

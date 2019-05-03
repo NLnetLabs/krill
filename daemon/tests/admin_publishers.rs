@@ -70,7 +70,7 @@ fn details_publisher(handle: &str) -> ApiResponse {
 }
 
 #[test]
-//#[ignore]
+#[ignore]
 fn admin_publishers() {
     test::test_with_tmp_dir(|d| {
 

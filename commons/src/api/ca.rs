@@ -1,37 +1,72 @@
 //! Common data types for Certificate Authorities
 
+use std::fmt;
 use std::str::FromStr;
 
 use bytes::Bytes;
 
+use rpki::cert::Cert;
 use rpki::crypto::PublicKey;
 use rpki::resources::{AsResources, Ipv4Resources, Ipv6Resources};
 use rpki::uri;
 
+use crate::api::Base64;
 use crate::util::ext_serde;
 use crate::util::softsigner::SignerKeyId;
 
-//------------ Cert ----------------------------------------------------------
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct TrustAnchorLocator {
+    uris: Vec<uri::Https>, // We won't create TALs with rsync, this is not for parsing.
 
-#[derive(Clone, Debug, Deserialize,  Eq, PartialEq, Serialize)]
-pub struct Cert {
     #[serde(
-    deserialize_with = "ext_serde::de_bytes",
-    serialize_with = "ext_serde::ser_bytes")]
-    content: Bytes
+        deserialize_with = "ext_serde::de_bytes",
+        serialize_with = "ext_serde::ser_bytes")]
+    encoded_ski: Bytes,
 }
+
+impl TrustAnchorLocator {
+    pub fn new(uris: Vec<uri::Https>, cert: &Cert) -> Self {
+        let encoded_ski = cert.subject_public_key_info().to_info_bytes();
+        TrustAnchorLocator { uris, encoded_ski }
+    }
+}
+
+impl fmt::Display for TrustAnchorLocator {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let base64 = Base64::from_content(&self.encoded_ski).to_string();
+
+        for uri in self.uris.iter() {
+            writeln!(f, "{}", uri)?;
+        }
+        writeln!(f)?;
+
+        let len = base64.len();
+        let wrap = 64;
+
+        for i in 0..=(len / wrap) {
+            if (i * wrap + wrap) < len {
+                writeln!(f, "{}", &base64[i * wrap .. i * wrap + wrap])?;
+            } else {
+                write!(f, "{}", &base64[i * wrap .. ])?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
 
 //------------ RepoInfo ------------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RepoInfo {
     base_uri: uri::Rsync,
-    rrdp_uri: uri::Http
+    rpki_notify: uri::Https
 }
 
 impl RepoInfo {
-    pub fn new(base_uri: uri::Rsync, rrdp_uri: uri::Http) -> Self {
-        RepoInfo { base_uri, rrdp_uri}
+    pub fn new(base_uri: uri::Rsync, rpki_notify: uri::Https) -> Self {
+        RepoInfo { base_uri, rpki_notify }
     }
 
     pub fn signed_object(&self) -> uri::Rsync {
@@ -49,14 +84,14 @@ impl RepoInfo {
         uri::Rsync::from_string(uri_string).unwrap()
     }
 
-    pub fn rpki_notify(&self) -> uri::Http {
-        self.rrdp_uri.clone()
+    pub fn rpki_notify(&self) -> uri::Https {
+        self.rpki_notify.clone()
     }
 }
 
 impl PartialEq for RepoInfo {
     fn eq(&self, other: &RepoInfo) -> bool {
-        self.base_uri == other.base_uri && self.rrdp_uri.as_str() == other.rrdp_uri.as_str()
+        self.base_uri == other.base_uri && self.rpki_notify.as_str() == other.rpki_notify.as_str()
     }
 }
 
@@ -72,8 +107,8 @@ pub struct ResourceClass {
 }
 
 impl ResourceClass {
-    pub fn new(resources: ResourceSet, key: SignerKeyId, cert: Cert) -> Self {
-        let current_key = ActiveKey { key, cert};
+    pub fn new(resources: ResourceSet, key: SignerKeyId) -> Self {
+        let current_key = ActiveKey { key };
         ResourceClass { resources, current_key }
     }
 }
@@ -81,9 +116,14 @@ impl ResourceClass {
 //------------ ActiveKey -----------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize,  Eq, PartialEq, Serialize)]
-struct ActiveKey {
+pub struct ActiveKey {
     key: SignerKeyId,
-    cert: Cert
+}
+
+impl ActiveKey {
+    pub fn new(key: SignerKeyId) -> Self {
+        ActiveKey { key }
+    }
 }
 
 
@@ -122,17 +162,22 @@ impl ResourceSet {
 }
 
 
-//------------ TrustAnchor ---------------------------------------------------
+//------------ TrustAnchorInfo -----------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TrustAnchorInfo {
-    resource_class: ResourceClass,
+    resources: ResourceSet,
     repo_info: RepoInfo,
+    tal: TrustAnchorLocator
 }
 
 impl TrustAnchorInfo {
-    pub fn new(resource_class: ResourceClass, repo_info: RepoInfo) -> Self {
-        TrustAnchorInfo { resource_class, repo_info }
+    pub fn new(
+        resources: ResourceSet,
+        repo_info: RepoInfo,
+        tal: TrustAnchorLocator
+    ) -> Self {
+        TrustAnchorInfo {resources, repo_info, tal }
     }
 }
 
@@ -160,6 +205,8 @@ pub enum ResourceSetError {
 mod test {
 
     use super::*;
+    use bytes::Bytes;
+
     use rpki::crypto::signer::Signer;
     use rpki::crypto::PublicKeyFormat;
     use crate::util::test;
@@ -169,12 +216,12 @@ mod test {
         test::rsync_uri("rsync://localhost/repo/ta/")
     }
 
-    fn rrdp_uri() -> uri::Http {
-        test::http_uri("https://localhost/rrdp/notification.xml")
+    fn rrdp_uri() -> uri::Https {
+        test::https_uri("https://localhost/rrdp/notification.xml")
     }
 
     fn info() -> RepoInfo {
-        RepoInfo { base_uri: base_uri(), rrdp_uri: rrdp_uri() }
+        RepoInfo { base_uri: base_uri(), rpki_notify: rrdp_uri() }
     }
 
     #[test]
@@ -228,7 +275,6 @@ mod test {
         assert_eq!(set, deser_set);
     }
 
-
     #[test]
     fn serialize_deserialize_resource_set() {
         let asns = "inherit";
@@ -241,6 +287,51 @@ mod test {
         let deser_set = serde_json::from_str(&json).unwrap();
 
         assert_eq!(set, deser_set);
+    }
+
+    #[test]
+    fn serialize_deserialize_resource_class() {
+        let asns = "inherit";
+        let ipv4s = "10.0.0.0/8, 192.168.0.0";
+        let ipv6s = "::1, 2001:db8::/32";
+
+        let set = ResourceSet::from_strs(asns, ipv4s, ipv6s).unwrap();
+        let key = SignerKeyId::new("some_key");
+
+        let rc = ResourceClass::new(set, key);
+
+        let json = serde_json::to_string(&rc).unwrap();
+        let deser_rc = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(rc, deser_rc);
+    }
+
+    #[test]
+    fn serialize_deserialise_repo_info() {
+        let info = RepoInfo::new(
+            test::rsync_uri("rsync://some/module/folder/"),
+            test::https_uri("https://host/notification.xml")
+        );
+
+        let json = serde_json::to_string(&info).unwrap();
+        let deser_info = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(info, deser_info);
+    }
+
+    #[test]
+    fn create_and_display_tal() {
+        let der = include_bytes!("../../test-resources/ta.cer");
+        let cert = Cert::decode(Bytes::from_static(der)).unwrap();
+        let uri = test::https_uri("https://localhost/ta.cer");
+
+        let tal = TrustAnchorLocator::new(vec![uri], &cert);
+
+        let expected_tal = include_str!("../../test-resources/test.tal");
+        let found_tal = tal.to_string();
+
+        assert_eq!(expected_tal, &found_tal);
+
     }
 
 

@@ -2,7 +2,7 @@
         xmlns="http://www.hactrn.net/uris/rpki/rpki-setup/"
         version="1"
         tag="A0001"
-        service_uri="http://a.example/publication/Alice/Bob-42"
+        service_uri="https://a.example/publication/Alice/Bob-42"
         publisher_handle="Alice/Bob-42"
         sia_base="rsync://a.example/rpki/Alice/Bob-42/"
         rrdp_notification_uri="https://rpki.example/rrdp/notify.xml">

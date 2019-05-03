@@ -219,13 +219,13 @@ pub struct RepositoryResponse {
     id_cert: IdCert,
 
     /// The URI where the CA needs to send its publication messages
-    service_uri: uri::Http,
+    service_uri: uri::Https,
 
     /// The Rsync base directory for objects published by the CA
     sia_base: uri::Rsync,
 
     /// The HTTPS notification URI that the CA can use
-    rrdp_notification_uri: uri::Http
+    rrdp_notification_uri: uri::Https
 }
 
 impl RepositoryResponse {
@@ -235,9 +235,9 @@ impl RepositoryResponse {
         tag: Option<String>,
         publisher_handle: String,
         id_cert: IdCert,
-        service_uri: uri::Http,
+        service_uri: uri::Https,
         sia_base: uri::Rsync,
-        rrdp_notification_uri: uri::Http
+        rrdp_notification_uri: uri::Https
     ) -> Self {
         RepositoryResponse {
             tag,
@@ -264,11 +264,11 @@ impl RepositoryResponse {
 
                 let tag = a.take_opt("tag");
                 let publisher_handle = a.take_req("publisher_handle")?;
-                let service_uri = uri::Http::from_string(
+                let service_uri = uri::Https::from_string(
                     a.take_req("service_uri")?)?;
                 let sia_base = uri::Rsync::from_string(
                     a.take_req("sia_base")?)?;
-                let rrdp_notification_uri = uri::Http::from_string(
+                let rrdp_notification_uri = uri::Https::from_string(
                     a.take_req("rrdp_notification_uri")?)?;
 
                 a.exhausted()?;
@@ -365,7 +365,7 @@ impl RepositoryResponse {
         &self.id_cert
     }
 
-    pub fn service_uri(&self) -> &uri::Http {
+    pub fn service_uri(&self) -> &uri::Https {
         &self.service_uri
     }
 
@@ -373,7 +373,7 @@ impl RepositoryResponse {
         &self.sia_base
     }
 
-    pub fn rrdp_notification_uri(&self) -> &uri::Http {
+    pub fn rrdp_notification_uri(&self) -> &uri::Https {
         &self.rrdp_notification_uri
     }
 }
@@ -455,8 +455,8 @@ mod tests {
     use rpki::x509::Time;
     use super::*;
 
-    fn example_rrdp_uri() -> uri::Http {
-        uri::Http::from_str(
+    fn example_rrdp_uri() -> uri::Https {
+        uri::Https::from_str(
             "https://rpki.example/rrdp/notify.xml").unwrap()
     }
 
@@ -465,9 +465,9 @@ mod tests {
             "rsync://a.example/rpki/Alice/Bob-42/").unwrap()
     }
 
-    fn example_service_uri() -> uri::Http {
-        uri::Http::from_str(
-            "http://a.example/publication/Alice/Bob-42").unwrap()
+    fn example_service_uri() -> uri::Https {
+        uri::Https::from_str(
+            "https://a.example/publication/Alice/Bob-42").unwrap()
     }
 
     #[test]

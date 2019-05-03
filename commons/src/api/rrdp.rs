@@ -267,19 +267,16 @@ impl Notification {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct FileRef {
-    #[serde(
-    deserialize_with = "ext_serde::de_http_uri",
-    serialize_with = "ext_serde::ser_http_uri")]
-    uri:   uri::Http,
+    uri:   uri::Https,
     path:  PathBuf,
     hash:  EncodedHash,
 }
 
 impl FileRef {
-    pub fn new(uri: uri::Http, path: PathBuf, hash: EncodedHash) -> Self {
+    pub fn new(uri: uri::Https, path: PathBuf, hash: EncodedHash) -> Self {
         FileRef { uri, path, hash }
     }
-    pub fn uri(&self) -> &uri::Http { &self.uri }
+    pub fn uri(&self) -> &uri::Https { &self.uri }
     pub fn path(&self) -> &PathBuf { &self.path }
     pub fn hash(&self) -> &EncodedHash { &self.hash }
 }

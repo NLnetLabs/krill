@@ -28,7 +28,8 @@
   },
   "trustanchor": {
     "absent": "There is no embedded Trust Anchor configured",
-    "present": "Big Bad Dragons!!!",
+    "sure" : "Are you sure? You typically only need this in test and development situations.",
+    "present": "Embedded Trust Anchor Details",
     "add": "Initialise Trust Anchor"
   },
   "form": {

@@ -67,4 +67,8 @@ export default {
   getTrustAnchor() {
     return apiClient.get('/api/v1/trustanchor');
   },
+
+  initTrustAnchor() {
+    return apiClient.post('/api/v1/trustanchor')
+  }
 }

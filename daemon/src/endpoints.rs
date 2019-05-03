@@ -27,6 +27,8 @@ pub fn rw_server(req: &HttpRequest) -> RwLockWriteGuard<KrillServer> {
 }
 
 /// Helper function to render json output.
+///
+/// XXX TODO: Use actix Json<> when returning values
 fn render_json<O: Serialize>(object: O) -> HttpResponse {
     match serde_json::to_string(&object){
         Ok(enc) => {
@@ -44,6 +46,15 @@ fn server_error(error: &Error) -> HttpResponse {
     error!("{}", error);
     error.error_response()
 }
+
+
+fn render_empty_res(res: Result<(), krillserver::Error>) -> HttpResponse {
+    match res {
+        Ok(()) => api_ok(),
+        Err(e) => server_error(&Error::ServerError(e))
+    }
+}
+
 
 /// A clean 404 result for the API (no content, not for humans)
 fn api_not_found() -> HttpResponse {
@@ -76,10 +87,7 @@ pub fn add_publisher(
     pbl: Json<admin::PublisherRequest>
 ) -> HttpResponse {
     let mut server = rw_server(&req);
-    match server.add_publisher(pbl.into_inner()) {
-        Ok(()) => api_ok(),
-        Err(e) => server_error(&Error::ServerError(e))
-    }
+    render_empty_res(server.add_publisher(pbl.into_inner()))
 }
 
 /// Removes a publisher. Should be idempotent! If if did not exist then
@@ -89,10 +97,7 @@ pub fn deactivate_publisher(
     req: HttpRequest,
     handle: Path<PublisherHandle>
 ) -> HttpResponse {
-    match rw_server(&req).deactivate_publisher(&handle) {
-        Ok(()) => api_ok(),
-        Err(e) => server_error(&Error::ServerError(e))
-    }
+    render_empty_res(rw_server(&req).deactivate_publisher(&handle))
 }
 
 /// Returns a json structure with publisher details
@@ -143,10 +148,7 @@ pub fn handle_delta(
     delta: Json<publication::PublishDelta>,
     handle: Path<PublisherHandle>
 ) -> HttpResponse {
-    match ro_server(&req).handle_delta(delta.into_inner(), &handle) {
-        Ok(()) => api_ok(),
-        Err(e) => server_error(&Error::ServerError(e))
-    }
+    render_empty_res(ro_server(&req).handle_delta(delta.into_inner(), &handle))
 }
 
 /// Processes a list request sent to the API.
@@ -176,10 +178,7 @@ pub fn add_rfc8181_client(
     client: ClientInfo
 ) -> HttpResponse {
     let server = ro_server(&req);
-    match server.add_rfc8181_client(client) {
-        Ok(()) => api_ok(),
-        Err(e) => server_error(&Error::ServerError(e))
-    }
+    render_empty_res(server.add_rfc8181_client(client))
 }
 
 pub fn repository_response(
@@ -201,12 +200,13 @@ pub fn repository_response(
 
 pub fn trust_anchor(req: &HttpRequest) -> HttpResponse {
     match ro_server(req).trust_anchor() {
-        Ok(ta_res) => match ta_res {
-            Some(ta) => render_json(ta),
-            None => api_not_found()
-        },
-        Err(e) => server_error(&Error::ServerError(e))
+        Some(ta) => render_json(ta),
+        None => api_not_found()
     }
+}
+
+pub fn init_trust_anchor(req: &HttpRequest) -> HttpResponse {
+    render_empty_res(rw_server(&req).init_trust_anchor())
 }
 
 

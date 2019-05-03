@@ -12,7 +12,7 @@ use crate::report::{
 /// from the bin/krillc.rs, so that we can use this in integration testing
 /// more easily.
 pub struct Options {
-    pub server: uri::Http,
+    pub server: uri::Https,
     pub token: String,
     pub format: ReportFormat,
     pub command: Command
@@ -25,7 +25,7 @@ impl Options {
 
     /// Creates a new Options explicitly (useful for testing)
     pub fn new(
-        server: uri::Http,
+        server: uri::Https,
         token: &str,
         format: ReportFormat,
         command: Command
@@ -186,7 +186,7 @@ impl Options {
         }
 
         let server = matches.value_of("server").unwrap(); // required
-        let server = uri::Http::from_str(server).map_err(|_| Error::UriError)?;
+        let server = uri::Https::from_str(server).map_err(|_| Error::UriError)?;
 
         let token = matches.value_of("token").unwrap().to_string(); // req.
 

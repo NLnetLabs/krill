@@ -41,22 +41,6 @@ where S: Serializer
 }
 
 
-//------------ uri::Http -----------------------------------------------------
-
-pub fn de_http_uri<'de, D>(d: D) -> Result<uri::Http, D::Error>
-where D: Deserializer<'de>
-{
-    let some = String::deserialize(d)?;
-    uri::Http::from_string(some).map_err(de::Error::custom)
-}
-
-pub fn ser_http_uri<S>(uri: &uri::Http, s: S) -> Result<S::Ok, S::Error>
-where S: Serializer
-{
-    uri.to_string().serialize(s)
-}
-
-
 //------------ LevelFilter ---------------------------------------------------
 
 pub fn de_level_filter<'de, D>(d: D) -> Result<LevelFilter, D::Error>
