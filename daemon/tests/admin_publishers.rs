@@ -21,7 +21,7 @@ use krill_daemon::http::server::PubServerApp;
 
 fn execute_krillc_command(command: Command) -> ApiResponse {
     let krillc_opts = Options::new(
-        test::http_uri("http://localhost:3000/"),
+        test::https_uri("https://localhost:3000/"),
         "secret",
         ReportFormat::Json,
         command
@@ -70,6 +70,7 @@ fn details_publisher(handle: &str) -> ApiResponse {
 }
 
 #[test]
+//#[ignore]
 fn admin_publishers() {
     test::test_with_tmp_dir(|d| {
 

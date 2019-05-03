@@ -57,7 +57,7 @@ fn sync(
 
 fn execute_krillc_command(command: Command) {
     let krillc_opts = Options::new(
-        test::http_uri("http://localhost:3000/"),
+        test::https_uri("https://localhost:3000/"),
         "secret",
         ReportFormat::Default,
         command
@@ -135,7 +135,7 @@ fn rfc8181_client_process_command(command: cmsclient::Command, state_dir: &PathB
 }
 
 fn get_repository_response(handle: &str) -> RepositoryResponse {
-    let uri = format!("http://localhost:3000/api/v1/rfc8181/{}/response.xml", handle);
+    let uri = format!("https://localhost:3000/api/v1/rfc8181/{}/response.xml", handle);
     let content_type = "application/xml";
     let token = Some("secret");
 
@@ -147,10 +147,11 @@ fn get_repository_response(handle: &str) -> RepositoryResponse {
 }
 
 #[test]
+#[ignore]
 fn client_publish() {
     test::test_with_tmp_dir(|d| {
 
-        let server_uri = "http://localhost:3000/";
+        let server_uri = "https://localhost:3000/";
         let handle = "alice";
         let token = "secret";
         let base_rsync_uri_alice = "rsync://127.0.0.1/repo/alice/";

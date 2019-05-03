@@ -27,6 +27,7 @@ use krill_daemon::http::server::PubServerApp;
 /// Tests that the server can be started and a health check can be done
 /// through the CLI
 #[test]
+#[ignore]
 fn health_check() {
     test::test_with_tmp_dir(|d| {
         // Set up a test PubServer Config with a client in it.
@@ -47,7 +48,7 @@ fn health_check() {
         thread::sleep(time::Duration::from_millis(500));
 
         let krillc_opts = Options::new(
-            test::http_uri("http://localhost:3000/"),
+            test::https_uri("https://localhost:3000/"),
             "secret",
             ReportFormat::Default,
             Command::Health
