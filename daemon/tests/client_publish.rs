@@ -154,8 +154,8 @@ fn client_publish() {
         let server_uri = "https://localhost:3000/";
         let handle = "alice";
         let token = "secret";
-        let base_rsync_uri_alice = "rsync://127.0.0.1/repo/alice/";
-        let base_rsync_uri_bob = "rsync://127.0.0.1/repo/bob/";
+        let base_rsync_uri_alice = "rsync://localhost/repo/alice/";
+        let base_rsync_uri_bob = "rsync://localhost/repo/bob/";
 
         // Set up a test PubServer Config
         let server_conf = {
@@ -213,15 +213,15 @@ fn client_publish() {
         // Create files on disk to sync
         let sync_dir = test::create_sub_dir(&d);
         let file_a = CurrentFile::new(
-            test::rsync_uri("rsync://127.0.0.1/repo/alice/a.txt"),
+            test::rsync_uri("rsync://localhost/repo/alice/a.txt"),
             &test::as_bytes("a")
         );
         let file_b = CurrentFile::new(
-            test::rsync_uri("rsync://127.0.0.1/repo/alice/b.txt"),
+            test::rsync_uri("rsync://localhost/repo/alice/b.txt"),
             &test::as_bytes("b")
         );
         let file_c = CurrentFile::new(
-            test::rsync_uri("rsync://127.0.0.1/repo/alice/c.txt"),
+            test::rsync_uri("rsync://localhost/repo/alice/c.txt"),
             &test::as_bytes("c")
         );
 
@@ -342,7 +342,7 @@ fn client_publish() {
 
         let handle = "carol";
         let token = "secret";
-        let base_rsync_uri = "rsync://127.0.0.1/repo/carol/";
+        let base_rsync_uri = "rsync://localhost/repo/carol/";
 
         // Add client "carol"
         add_publisher(handle, base_rsync_uri, token);
@@ -369,15 +369,15 @@ fn client_publish() {
         // Create files on disk to sync
         let sync_dir = test::create_sub_dir(&d);
         let file_a = CurrentFile::new(
-            test::rsync_uri("rsync://127.0.0.1/repo/alice/a.txt"),
+            test::rsync_uri("rsync://localhost/repo/alice/a.txt"),
             &test::as_bytes("a")
         );
         let file_b = CurrentFile::new(
-            test::rsync_uri("rsync://127.0.0.1/repo/alice/b.txt"),
+            test::rsync_uri("rsync://localhost/repo/alice/b.txt"),
             &test::as_bytes("b")
         );
         let file_c = CurrentFile::new(
-            test::rsync_uri("rsync://127.0.0.1/repo/alice/c.txt"),
+            test::rsync_uri("rsync://localhost/repo/alice/c.txt"),
             &test::as_bytes("c")
         );
 

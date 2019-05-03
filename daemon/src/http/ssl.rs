@@ -348,7 +348,7 @@ mod tests {
             builder.set_certificate_chain_file(cert_file_path).unwrap();
 
             HttpServer::new(|| {App::new()})
-                .bind_ssl("127.0.0.1:8443", builder)
+                .bind_ssl("localhost:8443", builder)
                 .unwrap();
         });
     }

@@ -26,10 +26,10 @@ impl ConfigDefaults {
     fn use_ssl() -> SslChoice { SslChoice::Test }
     fn data_dir() -> PathBuf { PathBuf::from("./data")}
     fn rsync_base() -> uri::Rsync {
-        uri::Rsync::from_str("rsync://127.0.0.1/repo/").unwrap()
+        uri::Rsync::from_str("rsync://localhost/repo/").unwrap()
     }
     fn rrdp_base_uri() -> uri::Https {
-        uri::Https::from_str("https://127.0.0.1:3000/rrdp/").unwrap()
+        uri::Https::from_str("https://localhost:3000/rrdp/").unwrap()
     }
     fn log_level() -> LevelFilter { LevelFilter::Info }
     fn log_type() -> LogType { LogType::Stderr }
@@ -131,7 +131,17 @@ impl Config {
     pub fn service_uri(&self) -> uri::Https {
         let mut uri = String::new();
         uri.push_str("https://");
-        uri.push_str(&self.socket_addr().to_string());
+
+        if self.ip == ConfigDefaults::ip() {
+            uri.push_str("localhost");
+        } else {
+            uri.push_str(&format!("{}", self.ip.to_string()))
+        }
+
+        if self.port != 443 {
+            uri.push_str(&format!(":{}", self.port));
+        }
+
         uri.push_str("/");
 
         uri::Https::from_string(uri).unwrap()

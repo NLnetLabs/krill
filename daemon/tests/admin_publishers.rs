@@ -76,7 +76,7 @@ fn admin_publishers() {
 
         let handle = "alice";
         let token = "secret";
-        let base_rsync_uri_alice = "rsync://127.0.0.1/repo/alice/";
+        let base_rsync_uri_alice = "rsync://localhost/repo/alice/";
 
         // Set up a test PubServer Config
         let server_conf = {
@@ -93,7 +93,7 @@ fn admin_publishers() {
         });
 
         // XXX TODO: Find a better way to know the server is ready!
-        thread::sleep(time::Duration::from_millis(5000));
+        thread::sleep(time::Duration::from_millis(30000));
 
         // Add client "alice"
         add_publisher(handle, base_rsync_uri_alice, token);
