@@ -1,9 +1,16 @@
 <template>
     <div>
-        <span v-if="hasTa">
+        <span v-show="hasTa">
             {{ $t("trustanchor.present") }}
+
+            <el-table :data="[taData]" style="width: 100%">
+                <el-table-column prop="resources.asn.Blocks" label="ASNs"></el-table-column>
+                <el-table-column prop="resources.v4" label="IPv4"></el-table-column>
+                <el-table-column prop="resources.v6" label="IPv6"></el-table-column>
+            </el-table>
+
         </span>
-        <span v-else>
+        <span v-show="noTa">
             {{ $t("trustanchor.absent") }}
             <el-form :inline="true">
                 <el-form-item>
@@ -25,9 +32,10 @@
 
             {{ $t("trustanchor.sure") }}
 
+
             <div style="height: 20px"></div>
 
-            <el-form :model="form" :inline="true">
+            <el-form :inline="true">
 
                 <el-row type="flex" class="modal-footer" justify="end">
                     <el-form-item>
@@ -57,8 +65,9 @@
 
             return {
                 hasTa: false,
+                noTa: false,
                 dialogFormVisible: false,
-                taDetails: ""
+                taData: {}
             };
         },
         created() {
@@ -67,12 +76,17 @@
 
         methods: {
             load_ta: function() {
+
                 const self = this;
 
                 APIService.getTrustAnchor().then(response => {
-                   if (response.statusCode == 200) {
-                       self.hasTa = true;
-                   }
+                    self.hasTa = true;
+                    self.noTa = false;
+                    self.taData = response.data;
+                   response.toString()
+                }).catch( () => {
+                    self.hasTa = false;
+                    self.noTa = true;
                 });
             },
 
