@@ -135,7 +135,7 @@ impl Config {
         if self.ip == ConfigDefaults::ip() {
             uri.push_str("localhost");
         } else {
-            uri.push_str(&format!("{}", self.ip.to_string()))
+            uri.push_str(&self.ip.to_string())
         }
 
         if self.port != 443 {

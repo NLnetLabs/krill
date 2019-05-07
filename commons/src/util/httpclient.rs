@@ -138,7 +138,7 @@ fn client() -> Result<Client, Error> {
 
     let builder = Client::builder().gzip(true).timeout(Duration::from_secs(300));
 
-    let builder = if TEST_MODE.with(|m| m.borrow().clone()) {
+    let builder = if TEST_MODE.with(|m| *m.borrow()) {
         builder.danger_accept_invalid_certs(true)
     } else {
         builder
