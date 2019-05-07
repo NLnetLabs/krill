@@ -194,6 +194,10 @@ impl Signer for OpenSslSigner {
 
         Ok((signature, key))
     }
+
+    fn rand(&self, target: &mut [u8]) -> Result<(), SignerError> {
+        openssl::rand::rand_bytes(target).map_err(SignerError::OpenSslError)
+    }
 }
 
 
