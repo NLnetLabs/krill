@@ -27,7 +27,6 @@ use krill_daemon::http::server::PubServerApp;
 /// Tests that the server can be started and a health check can be done
 /// through the CLI
 #[test]
-#[ignore]
 fn health_check() {
     test::test_with_tmp_dir(|d| {
         // Set up a test PubServer Config with a client in it.
@@ -54,7 +53,7 @@ fn health_check() {
             Command::Health
         );
 
-        let res = KrillClient::process(krillc_opts);
+        let res = KrillClient::test(krillc_opts);
         assert!(res.is_ok());
         let res = res.unwrap();
         assert_eq!(res, ApiResponse::Health)

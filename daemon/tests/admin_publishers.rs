@@ -26,7 +26,7 @@ fn execute_krillc_command(command: Command) -> ApiResponse {
         ReportFormat::Json,
         command
     );
-    match KrillClient::process(krillc_opts) {
+    match KrillClient::test(krillc_opts) {
         Ok(res) => res, // ok
         Err(e) => {
             panic!("{}", e)
@@ -70,7 +70,6 @@ fn details_publisher(handle: &str) -> ApiResponse {
 }
 
 #[test]
-#[ignore]
 fn admin_publishers() {
     test::test_with_tmp_dir(|d| {
 
@@ -93,7 +92,7 @@ fn admin_publishers() {
         });
 
         // XXX TODO: Find a better way to know the server is ready!
-        thread::sleep(time::Duration::from_millis(30000));
+        thread::sleep(time::Duration::from_millis(500));
 
         // Add client "alice"
         add_publisher(handle, base_rsync_uri_alice, token);

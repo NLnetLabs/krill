@@ -1,4 +1,5 @@
 //! Some helper functions for HTTP calls
+use std::cell::RefCell;
 use std::io::Read;
 use std::time::Duration;
 use bytes::Bytes;
@@ -14,6 +15,7 @@ use serde::de::DeserializeOwned;
 
 const JSON_CONTENT: &str = "application/json";
 
+thread_local!(pub static TEST_MODE: RefCell<bool> = RefCell::new(false));
 
 /// Performs a GET request that expects a json response that can be
 /// deserialized into the an owned value of the expected type. Returns an error
@@ -133,11 +135,16 @@ pub fn delete(
 
 
 fn client() -> Result<Client, Error> {
-    Client::builder()
-        .gzip(true)
-        .timeout(Duration::from_secs(300))
-        .build()
-        .map_err(Error::RequestError)
+
+    let builder = Client::builder().gzip(true).timeout(Duration::from_secs(300));
+
+    let builder = if TEST_MODE.with(|m| m.borrow().clone()) {
+        builder.danger_accept_invalid_certs(true)
+    } else {
+        builder
+    };
+
+    builder.build().map_err(Error::RequestError)
 }
 
 fn headers(

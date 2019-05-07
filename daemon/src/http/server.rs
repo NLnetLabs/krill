@@ -149,11 +149,20 @@ impl PubServerApp {
             }
         };
 
-        server::new(move || PubServerApp::new(ps.clone()))
-            .bind(config.socket_addr())
-            .unwrap_or_else(|_| panic!("Cannot bind to: {}", config.socket_addr()))
-            .shutdown_timeout(0)
-            .start();
+        let server = server::new(move || PubServerApp::new(ps.clone()));
+
+        match Self::https_builder(config) {
+            Ok(https_builder) => {
+                server.bind_ssl(config.socket_addr(), https_builder)
+                    .unwrap_or_else(|_| panic!("Cannot bind to: {}", config.socket_addr()))
+                    .shutdown_timeout(0)
+                    .start();
+            },
+            Err(e) => {
+                eprintln!("{}", e);
+                ::std::process::exit(1);
+            }
+        }
     }
 
     /// Used to run the server in blocking mode, from the main method.

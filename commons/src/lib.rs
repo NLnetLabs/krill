@@ -17,6 +17,7 @@ extern crate rpki;
 extern crate serde_json;
 extern crate syslog;
 extern crate xml as xmlrs;
+extern crate core;
 
 pub mod api;
 pub mod eventsourcing;

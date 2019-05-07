@@ -205,7 +205,7 @@ impl<S: CaSigner> TrustAnchor<S> {
         resources: &ResourceSet,
         signer: Arc<S>
     ) -> Result<Cert, Error> {
-        let serial: Serial = rand::thread_rng().gen::<u64>().into();
+        let serial: Serial = rand::thread_rng().gen::<u128>().into();
         let pub_key = signer.get_key_info(&key).map_err(|_| Error::MissingKey)?;
         let name = pub_key.to_subject_name();
 
@@ -230,9 +230,12 @@ impl<S: CaSigner> TrustAnchor<S> {
         cert.set_v4_resources(Some(resources.v4().deref().clone()));
         cert.set_v6_resources(Some(resources.v6().deref().clone()));
 
-        let cert = cert.into_cert(signer.as_ref(), key)
+        let cert = cert
+            .into_cert(signer.as_ref(), key)
             .map_err(|_| Error::SignerError)?.to_captured();
-        Ok(Cert::decode(cert.as_slice()).map_err(|_| Error::GeneratedMalformedObject)?)
+        let cert_slice = cert.as_slice();
+
+        Ok(Cert::decode(cert_slice).map_err(|_| Error::malformed(cert_slice))?)
     }
 
 }
@@ -319,8 +322,8 @@ pub enum Error {
     #[display(fmt = "Error while signing.")]
     SignerError,
 
-    #[display(fmt = "Generated a malformed object.")]
-    GeneratedMalformedObject,
+    #[display(fmt = "Generated a malformed object: {}", _0)]
+    GeneratedMalformedObject(String),
 
     #[display(fmt = "RepoInfo already was initialised.")]
     RepoInfoAlreadyInitialised,
@@ -330,6 +333,13 @@ pub enum Error {
 
     #[display(fmt = "Resource Authority was not initialised.")]
     NotInitialised,
+}
+
+impl Error {
+    pub fn malformed(object: &[u8]) -> Error {
+        let string = base64::encode(object);
+        Error::GeneratedMalformedObject(string)
+    }
 }
 
 impl std::error::Error for Error {}

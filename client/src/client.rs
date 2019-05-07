@@ -26,7 +26,7 @@ use crate::options::{
 /// Command line tool for Krill admin tasks
 pub struct KrillClient {
     server: uri::Https,
-    token: String
+    token: String,
 }
 
 impl KrillClient {
@@ -48,16 +48,21 @@ impl KrillClient {
     /// and client.
     pub fn process(options: Options) -> Result<ApiResponse, Error> {
         let client = KrillClient {
-            server: options.server,
-            token:  options.token
+            server:   options.server,
+            token:    options.token,
         };
-
         match options.command {
             Command::Health => client.health(),
             Command::Publishers(cmd) => client.publishers(cmd),
             Command::Rfc8181(cmd) => client.rfc8181(cmd),
             Command::NotSet => Err(Error::MissingCommand)
         }
+    }
+
+//    #[cfg(test)]
+    pub fn test(options: Options) -> Result<ApiResponse, Error> {
+        httpclient::TEST_MODE.with(|m| { *m.borrow_mut() = true; });
+        Self::process(options)
     }
 
     fn health(&self) -> Result<ApiResponse, Error> {
