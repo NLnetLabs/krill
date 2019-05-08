@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 use std::ops::Deref;
 use std::sync::Arc;
 
+use bytes::Bytes;
 use serde::Serialize;
 use rand::Rng;
 
@@ -59,6 +60,10 @@ impl TaCertificate {
     pub fn to_tal(&self, uris: Vec<uri::Https>) -> TrustAnchorLocator {
         let cert = Cert::decode(self.cert.to_bytes()).unwrap(); // can contain valid certs
         TrustAnchorLocator::new(uris, &cert)
+    }
+
+    pub fn to_bytes(&self) -> Bytes {
+        self.cert.to_bytes()
     }
 }
 
@@ -189,6 +194,10 @@ impl<S: CaSigner> TrustAnchor<S> {
 
     pub fn tal(&self) -> Result<&TrustAnchorLocator, Error> {
         Ok(&self.authority()?.tal)
+    }
+
+    pub fn cert(&self) -> Result<Bytes, Error> {
+        Ok(self.authority()?.cert.to_bytes())
     }
 
     pub fn resources(&self) -> Result<&ResourceSet, Error> {

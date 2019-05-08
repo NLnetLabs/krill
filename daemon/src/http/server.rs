@@ -73,6 +73,9 @@ impl PubServerApp {
             .resource("/ta/ta.tal", |r| {
                 r.method(Method::GET).f(endpoints::tal);
             })
+            .resource("/ta/ta.cer", |r| {
+                r.method(Method::GET).f(endpoints::ta_cer);
+            })
 
             .resource("/publication/{handle}", |r| {
                 r.method(Method::GET).with(endpoints::handle_list);

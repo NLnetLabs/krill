@@ -220,6 +220,15 @@ pub fn tal(req: &HttpRequest) -> HttpResponse {
     }
 }
 
+pub fn ta_cer(req: &HttpRequest) -> HttpResponse {
+    match ro_server(req).trust_anchor_cert() {
+        Some(cert) => {
+            HttpResponse::Ok().body(cert.to_vec())
+        },
+        None => api_not_found()
+    }
+}
+
 
 
 //------------ Serving RRDP --------------------------------------------------

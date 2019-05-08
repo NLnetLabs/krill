@@ -2,8 +2,12 @@
 use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
+
+use bytes::Bytes;
+
 use bcder::Captured;
 use rpki::uri;
+
 use krill_ca::{CaServer, CaServerError};
 use krill_commons::api::publication;
 use krill_commons::api::admin;
@@ -224,6 +228,10 @@ impl KrillServer {
 impl KrillServer {
     pub fn trust_anchor(&self) ->  Option<TrustAnchorInfo> {
         self.caserver.get_trust_anchor_info().ok()
+    }
+
+    pub fn trust_anchor_cert(&self) -> Option<Bytes> {
+        self.caserver.get_trust_anchor_cert().ok()
     }
 
     pub fn init_trust_anchor(&mut self) -> Result<(), Error> {

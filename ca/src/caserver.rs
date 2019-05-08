@@ -2,6 +2,8 @@ use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use bytes::Bytes;
+
 use krill_commons::api::ca::{TrustAnchorInfo, RepoInfo};
 use krill_commons::eventsourcing::{AggregateStore, DiskAggregateStore, AggregateStoreError, Aggregate};
 
@@ -40,6 +42,15 @@ impl<S: CaSigner> CaServer<S> {
             .get_latest(&ta_handle())
             .map_err(|_| Error::TrustAnchorNotInitialisedError)?
             .as_info()
+            .map_err(Error::TrustAnchorError)
+    }
+
+    /// Gets the TA certificate, if present. Returns an error if the TA is unitialized.
+    pub fn get_trust_anchor_cert(&self) -> CaResult<Bytes, S> {
+        self.ta_store
+            .get_latest(&ta_handle())
+            .map_err(|_| Error::TrustAnchorNotInitialisedError)?
+            .cert()
             .map_err(Error::TrustAnchorError)
     }
 
