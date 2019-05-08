@@ -30,6 +30,7 @@
     "absent": "There is no embedded Trust Anchor configured",
     "sure" : "Are you sure? You typically only need this in test and development situations.",
     "present": "Embedded Trust Anchor Details",
+    "downloadTal": "Download TAL file",
     "add": "Initialise Trust Anchor"
   },
   "form": {

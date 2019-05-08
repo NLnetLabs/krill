@@ -7,7 +7,11 @@
                 <el-table-column prop="resources.asn.Blocks" label="ASNs"></el-table-column>
                 <el-table-column prop="resources.v4" label="IPv4"></el-table-column>
                 <el-table-column prop="resources.v6" label="IPv6"></el-table-column>
+                <el-table-column prop="repo_info.base_uri" label="Base URI"></el-table-column>
+                <el-table-column prop="repo_info.rpki_notify" label="RPKI notify"></el-table-column>
             </el-table>
+
+            <a href="/ta/ta.tal">{{ $t("trustanchor.downloadTal")}}</a>
 
         </span>
         <span v-show="noTa">

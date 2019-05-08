@@ -209,6 +209,17 @@ pub fn init_trust_anchor(req: &HttpRequest) -> HttpResponse {
     render_empty_res(rw_server(&req).init_trust_anchor())
 }
 
+pub fn tal(req: &HttpRequest) -> HttpResponse {
+    match ro_server(req).trust_anchor() {
+        Some(ta) => {
+            HttpResponse::Ok()
+                .content_type("text/plain")
+                .body(format!("{}", ta.tal()))
+        },
+        None => api_not_found()
+    }
+}
+
 
 
 //------------ Serving RRDP --------------------------------------------------

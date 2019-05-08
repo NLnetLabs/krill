@@ -70,6 +70,10 @@ impl PubServerApp {
                 r.method(Method::POST).f(endpoints::init_trust_anchor);
             })
 
+            .resource("/ta/ta.tal", |r| {
+                r.method(Method::GET).f(endpoints::tal);
+            })
+
             .resource("/publication/{handle}", |r| {
                 r.method(Method::GET).with(endpoints::handle_list);
                 r.method(Method::POST).with_config(endpoints::handle_delta, |cfg| {
