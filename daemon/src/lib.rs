@@ -27,6 +27,7 @@ extern crate krill_commons;
 extern crate krill_cms_proxy;
 extern crate krill_pubc;
 extern crate krill_pubd;
+extern crate krill_client;
 
 pub mod auth;
 pub mod config;

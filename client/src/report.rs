@@ -1,6 +1,7 @@
 use std::str::FromStr;
 use krill_commons::api::admin::{PublisherDetails, PublisherList};
 use krill_cms_proxy::api::ClientInfo;
+use krill_commons::api::ca::TrustAnchorInfo;
 
 
 //------------ ApiResponse ---------------------------------------------------
@@ -10,6 +11,7 @@ use krill_cms_proxy::api::ClientInfo;
 #[allow(clippy::large_enum_variant)]
 pub enum ApiResponse {
     Health,
+    TrustAnchorInfo(TrustAnchorInfo),
     PublisherDetails(PublisherDetails),
     PublisherList(PublisherList),
     Rfc8181ClientList(Vec<ClientInfo>),
@@ -33,6 +35,9 @@ impl ApiResponse {
                         Err(ReportError::UnsupportedFormat)
                     }
                 },
+                ApiResponse::TrustAnchorInfo(ta) => {
+                    Ok(Some(ta.report(fmt)?))
+                }
                 ApiResponse::PublisherList(list) => {
                     Ok(Some(list.report(fmt)?))
                 },
@@ -99,12 +104,38 @@ trait Report {
     fn report(&self, format: ReportFormat) -> Result<String, ReportError>;
 }
 
+impl Report for TrustAnchorInfo {
+    fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
+        match format {
+            ReportFormat::Default | ReportFormat::Json => {
+                Ok(serde_json::to_string_pretty(self).unwrap())
+            },
+            ReportFormat::Text => {
+                let mut res = String::new();
+
+                let resources = self.resources();
+
+                res.push_str(&format!("ASNs: {}\n", resources.asn()));
+                res.push_str(&format!("IPv4: {}\n", resources.v4()));
+                res.push_str(&format!("IPv6: {}\n", resources.v6()));
+
+                res.push_str("\n");
+
+                res.push_str("TAL:\n");
+                res.push_str(&format!("{}", self.tal()));
+
+                Ok(res)
+            },
+            _ => Err(ReportError::UnsupportedFormat)
+        }
+    }
+}
 
 impl Report for PublisherList {
     fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
         match format {
             ReportFormat::Default | ReportFormat::Json => {
-                Ok(serde_json::to_string(self).unwrap())
+                Ok(serde_json::to_string_pretty(self).unwrap())
             },
             ReportFormat::Text => {
                 let mut res = String::new();
@@ -130,7 +161,7 @@ impl Report for PublisherDetails {
     fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
         match format {
             ReportFormat::Default | ReportFormat::Json => {
-                Ok(serde_json::to_string(self).unwrap())
+                Ok(serde_json::to_string_pretty(self).unwrap())
             },
             ReportFormat::Text => {
 
@@ -155,7 +186,7 @@ impl Report for Vec<ClientInfo> {
     fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
         match format {
             ReportFormat::Default | ReportFormat::Json => {
-                Ok(serde_json::to_string(self).unwrap())
+                Ok(serde_json::to_string_pretty(self).unwrap())
             },
             ReportFormat::Text => {
                 let mut res = String::new();

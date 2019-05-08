@@ -203,8 +203,15 @@ impl Options {
 pub enum Command {
     NotSet,
     Health,
+    TrustAnchor(TrustAnchorCommand),
     Publishers(PublishersCommand),
     Rfc8181(Rfc8181Command)
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TrustAnchorCommand {
+    Show,
+    Init
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

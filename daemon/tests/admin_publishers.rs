@@ -7,22 +7,7 @@ use krill_client::KrillClient;
 use krill_client::report::ApiResponse;
 use krill_client::report::ReportFormat;
 use krill_commons::util::test;
-
-
-fn execute_krillc_command(command: Command) -> ApiResponse {
-    let krillc_opts = Options::new(
-        test::https_uri("https://localhost:3000/"),
-        "secret",
-        ReportFormat::Json,
-        command
-    );
-    match KrillClient::test(krillc_opts) {
-        Ok(res) => res, // ok
-        Err(e) => {
-            panic!("{}", e)
-        }
-    }
-}
+use krill_daemon::test::{ test_with_krill_server, execute_krillc_command };
 
 fn add_publisher(handle: &str, base_uri: &str, token: &str) {
     let command = Command::Publishers(PublishersCommand::Add(
@@ -61,7 +46,7 @@ fn details_publisher(handle: &str) -> ApiResponse {
 
 #[test]
 fn admin_publishers() {
-    krill_daemon::test::test_with_krill_server(|_d| {
+    test_with_krill_server(|_d| {
 
         let handle = "alice";
         let token = "secret";

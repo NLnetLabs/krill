@@ -3,6 +3,7 @@ extern crate clap;
 extern crate krill_commons;
 extern crate krill_cms_proxy;
 extern crate rpki;
+extern crate serde;
 
 pub mod options;
 pub mod report;

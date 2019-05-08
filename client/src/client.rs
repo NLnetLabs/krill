@@ -1,6 +1,8 @@
 use std::io;
 use rpki::uri;
 
+use serde::de::DeserializeOwned;
+
 use krill_commons::util::file;
 use krill_commons::util::httpclient;
 use krill_commons::api::admin::{
@@ -22,6 +24,8 @@ use crate::options::{
     PublishersCommand,
     Rfc8181Command
 };
+use options::TrustAnchorCommand;
+use krill_commons::api::ca::TrustAnchorInfo;
 
 /// Command line tool for Krill admin tasks
 pub struct KrillClient {
@@ -53,6 +57,7 @@ impl KrillClient {
         };
         match options.command {
             Command::Health => client.health(),
+            Command::TrustAnchor(cmd) => client.trustanchor(cmd),
             Command::Publishers(cmd) => client.publishers(cmd),
             Command::Rfc8181(cmd) => client.rfc8181(cmd),
             Command::NotSet => Err(Error::MissingCommand)
@@ -73,16 +78,28 @@ impl KrillClient {
         Ok(ApiResponse::Health)
     }
 
+    fn trustanchor(&self, command: TrustAnchorCommand) -> Result<ApiResponse, Error> {
+        match command {
+            TrustAnchorCommand::Init => {
+                let uri = self.resolve_uri("api/v1/trustanchor");
+                httpclient::post_empty(&uri, Some(&self.token))?;
+                Ok(ApiResponse::Empty)
+            },
+            TrustAnchorCommand::Show => {
+                let uri = self.resolve_uri("api/v1/trustanchor");
+                let ta: TrustAnchorInfo  = self.get_json(&uri)?;
+                Ok(ApiResponse::TrustAnchorInfo(ta))
+            }
+        }
+    }
+
     fn publishers(
         &self,
         command: PublishersCommand,
     ) -> Result<ApiResponse, Error> {
         match command {
             PublishersCommand::List => {
-                let list: PublisherList = httpclient::get_json(
-                    &self.resolve_uri("api/v1/publishers"),
-                    Some(&self.token)
-                )?;
+                let list: PublisherList = self.get_json(&self.resolve_uri("api/v1/publishers"))?;
                 Ok(ApiResponse::PublisherList(list))
             },
             PublishersCommand::Add(add) => {
@@ -103,10 +120,7 @@ impl KrillClient {
                 let uri = format!("api/v1/publishers/{}", handle);
                 let uri = self.resolve_uri(&uri);
 
-                let details: PublisherDetails = httpclient::get_json(
-                    &uri,
-                    Some(&self.token)
-                )?;
+                let details: PublisherDetails = self.get_json(&uri)?;
                 Ok(ApiResponse::PublisherDetails(details))
             },
         }
@@ -126,10 +140,7 @@ impl KrillClient {
         match command {
             Rfc8181Command::List => {
                 let uri = self.resolve_uri("api/v1/rfc8181/clients");
-                let list: Vec<ClientInfo> = httpclient::get_json(
-                    &uri,
-                    Some(&self.token)
-                )?;
+                let list: Vec<ClientInfo> = self.get_json(&uri)?;
 
                 Ok(ApiResponse::Rfc8181ClientList(list))
             },
@@ -159,6 +170,16 @@ impl KrillClient {
 
     fn resolve_uri(&self, path: &str) -> String {
         format!("{}{}", &self.server, path)
+    }
+
+    fn get_json<T: DeserializeOwned>(
+        &self,
+        uri: &str,
+    ) -> Result<T, Error> {
+        httpclient::get_json(
+            &uri,
+            Some(&self.token)
+        ).map_err(Error::HttpClientError)
     }
 }
 

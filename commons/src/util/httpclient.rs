@@ -86,6 +86,17 @@ pub fn post_json_with_response<T: DeserializeOwned>(
     process_json_response(res)
 }
 
+/// Performs a POST with no data to the given URI and expects and empty 200 OK response.
+pub fn post_empty(uri: &str, token: Option<&str>) -> Result<(), Error> {
+    let headers = headers(Some(JSON_CONTENT), token)?;
+    let res = client()?.post(uri).headers(headers).send()?;
+    if let Some(res) = opt_text_response(res)? {
+        Err(Error::UnexpectedResponse(res))
+    } else {
+        Ok(())
+    }
+}
+
 
 /// Posts binary data, and expects a binary response.
 ///

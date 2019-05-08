@@ -6,6 +6,9 @@ use std::path::PathBuf;
 use actix::System;
 
 use krill_commons::util::test;
+use krill_client::KrillClient;
+use krill_client::options::{Command, Options};
+use krill_client::report::{ApiResponse, ReportFormat};
 use crate::config::Config;
 use crate::http::server::PubServerApp;
 
@@ -31,4 +34,20 @@ pub fn test_with_krill_server<F>(op: F) where F: FnOnce(PathBuf) -> () {
 
         op(dir)
     })
+}
+
+
+pub fn execute_krillc_command(command: Command) -> ApiResponse {
+    let krillc_opts = Options::new(
+        test::https_uri("https://localhost:3000/"),
+        "secret",
+        ReportFormat::Json,
+        command
+    );
+    match KrillClient::test(krillc_opts) {
+        Ok(res) => res, // ok
+        Err(e) => {
+            panic!("{}", e)
+        }
+    }
 }

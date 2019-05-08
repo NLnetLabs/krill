@@ -183,6 +183,14 @@ impl TrustAnchorInfo {
     pub fn tal(&self) -> &TrustAnchorLocator {
         &self.tal
     }
+
+    pub fn resources(&self) -> &ResourceSet {
+        &self.resources
+    }
+
+    pub fn repo_info(&self) -> &RepoInfo {
+        &self.repo_info
+    }
 }
 
 //------------ ResourceSetError ----------------------------------------------
