@@ -64,6 +64,16 @@ impl Options {
                 all is well, exit code 1 in case of any issues")
             )
 
+            .subcommand(SubCommand::with_name("trustanchor")
+                .about("Manage embedded Trust Anchor (used for testing)")
+                .subcommand(SubCommand::with_name("show")
+                    .about("Show embedded TA details.")
+                )
+                .subcommand(SubCommand::with_name("init")
+                    .about("Initialise embedded TA.")
+                )
+            )
+
             .subcommand(SubCommand::with_name("publishers")
                 .about("Manage publishers")
                 .subcommand(SubCommand::with_name("list")
@@ -144,6 +154,15 @@ impl Options {
 
         if let Some(_m) = matches.subcommand_matches("health") {
             command = Command::Health;
+        }
+
+        if let Some(m) = matches.subcommand_matches("trustanchor") {
+            if let Some(_m) = m.subcommand_matches("show") {
+                command = Command::TrustAnchor(TrustAnchorCommand::Show)
+            }
+            if let Some(_m) = m.subcommand_matches("init") {
+                command = Command::TrustAnchor(TrustAnchorCommand::Init)
+            }
         }
 
         if let Some(m) = matches.subcommand_matches("publishers") {
