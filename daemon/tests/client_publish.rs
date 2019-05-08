@@ -1,12 +1,3 @@
-extern crate actix;
-extern crate futures;
-extern crate reqwest;
-extern crate rpki;
-extern crate serde_json;
-extern crate tokio;
-extern crate bytes;
-extern crate toml;
-
 extern crate krill_client;
 extern crate krill_cms_proxy;
 extern crate krill_commons;
@@ -16,7 +7,6 @@ extern crate krill_pubc;
 use std::{thread, time};
 use std::collections::HashSet;
 use std::path::PathBuf;
-use actix::System;
 use krill_client::KrillClient;
 use krill_client::options::{AddPublisher, Command, Options, PublishersCommand, Rfc8181Command, AddRfc8181Client};
 use krill_client::report::ReportFormat;
@@ -26,8 +16,6 @@ use krill_commons::util::file;
 use krill_commons::util::httpclient;
 use krill_commons::util::test;
 use krill_commons::api::publication::ListReply;
-use krill_daemon::config::Config;
-use krill_daemon::http::server::PubServerApp;
 use krill_pubc::{ApiResponse, Format};
 use krill_pubc::apiclient;
 use krill_pubc::cmsclient;
@@ -155,27 +143,13 @@ fn get_repository_response(handle: &str) -> RepositoryResponse {
 
 #[test]
 fn client_publish() {
-    test::test_with_tmp_dir(|d| {
+    krill_daemon::test::test_with_krill_server(|d| {
 
         let server_uri = "https://localhost:3000/";
         let handle = "alice";
         let token = "secret";
         let base_rsync_uri_alice = "rsync://localhost/repo/alice/";
         let base_rsync_uri_bob = "rsync://localhost/repo/bob/";
-
-        // Set up a test PubServer Config
-        let server_conf = {
-            // Use a data dir for the storage
-            let data_dir = test::create_sub_dir(&d);
-            Config::test(&data_dir)
-        };
-
-        // Start the server
-        thread::spawn(||{
-            System::run(move || {
-                PubServerApp::start(&server_conf);
-            })
-        });
 
         // XXX TODO: Find a better way to know the server is ready!
         thread::sleep(time::Duration::from_millis(500));

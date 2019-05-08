@@ -33,5 +33,6 @@ pub mod config;
 pub mod endpoints;
 pub mod krillserver;
 pub mod http;
+pub mod test;
 
 
