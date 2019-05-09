@@ -7,6 +7,7 @@ use actix::System;
 
 use krill_commons::util::test;
 use krill_client::KrillClient;
+use krill_client::Error;
 use krill_client::options::{Command, Options};
 use krill_client::report::{ApiResponse, ReportFormat};
 use crate::config::Config;
@@ -29,11 +30,33 @@ pub fn test_with_krill_server<F>(op: F) where F: FnOnce(PathBuf) -> () {
             })
         });
 
-        // XXX TODO: Find a better way to know the server is ready!
-        thread::sleep(time::Duration::from_millis(500));
+        let mut tries = 0;
+        loop {
+            thread::sleep(time::Duration::from_millis(100));
+            if let Ok(_res) = health_check() {
+                break
+            }
+
+            tries += 1;
+            if tries > 20 {
+                panic!("Server is not coming up")
+            }
+        }
+
 
         op(dir)
     })
+}
+
+fn health_check() -> Result<ApiResponse, Error> {
+    let krillc_opts = Options::new(
+        test::https_uri("https://localhost:3000/"),
+        "secret",
+        ReportFormat::Default,
+        Command::Health
+    );
+
+    KrillClient::test(krillc_opts)
 }
 
 

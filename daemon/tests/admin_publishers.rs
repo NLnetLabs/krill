@@ -2,10 +2,8 @@ extern crate krill_commons;
 extern crate krill_client;
 extern crate krill_daemon;
 
-use krill_client::options::{AddPublisher, Command, Options, PublishersCommand};
-use krill_client::KrillClient;
+use krill_client::options::{AddPublisher, Command, PublishersCommand};
 use krill_client::report::ApiResponse;
-use krill_client::report::ReportFormat;
 use krill_commons::util::test;
 use krill_daemon::test::{ test_with_krill_server, execute_krillc_command };
 
