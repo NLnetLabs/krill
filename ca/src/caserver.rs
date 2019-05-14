@@ -2,8 +2,6 @@ use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use bytes::Bytes;
-
 use krill_commons::api::ca::{TrustAnchorInfo, RepoInfo};
 use krill_commons::eventsourcing::{AggregateStore, DiskAggregateStore, AggregateStoreError, Aggregate};
 
@@ -18,6 +16,7 @@ use crate::trustanchor::{
 };
 use rpki::crypto::PublicKeyFormat;
 use rpki::uri;
+use trustanchor::TaCertificate;
 
 
 //------------ CaServer ------------------------------------------------------
@@ -46,15 +45,21 @@ impl<S: CaSigner> CaServer<S> {
     }
 
     /// Gets the TA certificate, if present. Returns an error if the TA is unitialized.
-    pub fn get_trust_anchor_cert(&self) -> CaResult<Bytes, S> {
+    pub fn get_trust_anchor_cert(&self) -> CaResult<TaCertificate, S> {
         self.ta_store
             .get_latest(&ta_handle())
             .map_err(|_| Error::TrustAnchorNotInitialisedError)?
             .cert()
             .map_err(Error::TrustAnchorError)
+            .map(std::clone::Clone::clone)
     }
 
-    pub fn init_ta(&mut self, info: RepoInfo, ta_uris: Vec<uri::Https>) -> CaResult<(), S> {
+    pub fn init_ta(
+        &mut self,
+        info: RepoInfo,
+        ta_aia: uri::Rsync,
+        ta_uris: Vec<uri::Https>
+    ) -> CaResult<(), S> {
         let handle = ta_handle();
         if self.ta_store.has(handle.as_ref()) {
             Err(Error::TrustAnchorInitialisedError)
@@ -72,7 +77,7 @@ impl<S: CaSigner> CaServer<S> {
                 .map_err(Error::SignerError)?;
 
             let add_auth = TrustAnchorCommandDetails::init_with_all_resources(
-                &handle, key, self.signer.clone(), ta_uris
+                &handle, ta_aia, ta_uris, key, self.signer.clone()
             );
             let events = ta.process_command(add_auth)?;
             self.ta_store.update(&handle, ta, events)?;
@@ -94,7 +99,7 @@ pub enum Error<S: CaSigner> {
     IoError(io::Error),
 
     #[display(fmt = "{}", _0)]
-    TrustAnchorError(trustanchor::Error),
+    TrustAnchorError(trustanchor::Error<S>),
 
     #[display(fmt = "TrustAnchor was already initialised")]
     TrustAnchorInitialisedError,
@@ -113,8 +118,8 @@ impl<S: CaSigner> From<io::Error> for Error<S> {
     fn from(e: io::Error) -> Self { Error::IoError(e) }
 }
 
-impl<S: CaSigner> From<trustanchor::Error> for Error<S> {
-    fn from(e: trustanchor::Error) -> Self { Error::TrustAnchorError(e) }
+impl<S: CaSigner> From<trustanchor::Error<S>> for Error<S> {
+    fn from(e: trustanchor::Error<S>) -> Self { Error::TrustAnchorError(e) }
 }
 
 impl<S: CaSigner> From<AggregateStoreError> for Error<S> {
@@ -144,10 +149,11 @@ mod tests {
             };
 
             let ta_uri = test::https_uri("https://localhost/ta/ta.cer");
+            let ta_aia = test::rsync_uri("rsync://localhost/repo/ta.cer");
 
             assert!(server.get_trust_anchor_info().is_err());
 
-            server.init_ta(repo_info.clone(), vec![ta_uri]).unwrap();
+            server.init_ta(repo_info.clone(), ta_aia, vec![ta_uri]).unwrap();
 
             assert!(server.get_trust_anchor_info().is_ok());
         })

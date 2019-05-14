@@ -4,6 +4,7 @@ version = "0.2.0"
 authors = ["Tim Bruijnzeels <tim@nlnetlabs.nl>", "Martin Hoffmann <martin@nlnetlabs.nl>"]
 
 [dependencies]
+bcder           = "^0.3"
 base64          = "^0.10"
 bytes           = "^0.4"
 derive_more     = "^0.13"

@@ -74,14 +74,36 @@ impl RepoInfo {
     }
 
     pub fn rpki_manifest(&self, pub_key: &PublicKey) -> uri::Rsync {
-        let key_id_hex = hex::encode(pub_key.key_identifier().as_ref());
+        self.object_uri(&self.mft_name(pub_key))
+    }
+
+    pub fn mft_name(&self, pub_key: &PublicKey) -> String {
+        self.key_based_name("mft", pub_key)
+    }
+
+    pub fn crl_uri(&self, pub_key: &PublicKey) -> uri::Rsync {
+        self.object_uri(&self.crl_name(pub_key))
+    }
+
+    pub fn crl_name(&self, pub_key: &PublicKey) -> String {
+        self.key_based_name("crl", pub_key)
+    }
+
+    fn object_uri(&self, name: &str) -> uri::Rsync {
         let uri_string = format!(
-            "{}{}.mft",
+            "{}{}",
             self.base_uri.to_string(),
-            key_id_hex
+            name
         );
 
         uri::Rsync::from_string(uri_string).unwrap()
+    }
+
+    fn key_based_name(&self, ext: &str, pub_key: &PublicKey) -> String {
+        let key_id_hex = hex::encode(pub_key.key_identifier().as_ref());
+        format!("{}.{}",
+            key_id_hex, ext
+        )
     }
 
     pub fn rpki_notify(&self) -> uri::Https {
@@ -108,7 +130,7 @@ pub struct ResourceClass {
 
 impl ResourceClass {
     pub fn new(resources: ResourceSet, key: SignerKeyId) -> Self {
-        let current_key = ActiveKey { key };
+        let current_key = ActiveKey { key_id: key };
         ResourceClass { resources, current_key }
     }
 }
@@ -117,13 +139,15 @@ impl ResourceClass {
 
 #[derive(Clone, Debug, Deserialize,  Eq, PartialEq, Serialize)]
 pub struct ActiveKey {
-    key: SignerKeyId,
+    key_id: SignerKeyId,
 }
 
 impl ActiveKey {
-    pub fn new(key: SignerKeyId) -> Self {
-        ActiveKey { key }
+    pub fn new(key_id: SignerKeyId) -> Self {
+        ActiveKey { key_id }
     }
+
+    pub fn key_id(&self) -> &SignerKeyId { &self.key_id }
 }
 
 

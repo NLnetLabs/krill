@@ -3,8 +3,6 @@ use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use bytes::Bytes;
-
 use bcder::Captured;
 use rpki::uri;
 
@@ -22,6 +20,7 @@ use krill_cms_proxy::sigmsg::SignedMessage;
 use krill_pubd::PubServer;
 use krill_pubd::publishers::Publisher;
 use crate::auth::Authorizer;
+use krill_ca::trustanchor::TaCertificate;
 
 
 //------------ KrillServer ---------------------------------------------------
@@ -230,7 +229,7 @@ impl KrillServer {
         self.caserver.get_trust_anchor_info().ok()
     }
 
-    pub fn trust_anchor_cert(&self) -> Option<Bytes> {
+    pub fn trust_anchor_cert(&self) -> Option<TaCertificate> {
         self.caserver.get_trust_anchor_cert().ok()
     }
 
@@ -240,7 +239,9 @@ impl KrillServer {
         let ta_uri = format!("{}{}", self.service_uri.to_string(), "ta/ta.cer");
         let ta_uri = uri::Https::from_string(ta_uri).unwrap();
 
-        self.caserver.init_ta(repo_info, vec![ta_uri]).map_err(Error::CaServerError)
+        let ta_aia = self.pubserver.ta_aia();
+
+        self.caserver.init_ta(repo_info, ta_aia, vec![ta_uri]).map_err(Error::CaServerError)
     }
 }
 
