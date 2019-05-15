@@ -41,9 +41,9 @@ use krill_commons::api::ca::RepoInfo;
 /// commands to them, stores them.. also publishes the combined snapshots and
 /// deltas, and manages the files on disk for rsync.
 pub struct PubServer {
-    rrdp_store: Arc<AggregateStore<RrdpServer>>,
+    rrdp_store: Arc<DiskAggregateStore<RrdpServer>>,
     rsyncd_store: RsyncdStore,
-    store: Arc<AggregateStore<Publisher>>,
+    store: Arc<DiskAggregateStore<Publisher>>,
     base_rsync_uri: uri::Rsync // jail for the publishers
 }
 

@@ -10,13 +10,13 @@ use crate::trustanchor::{
     TA_NS,
     ta_handle,
     CaSigner,
+    TaCertificate,
     TrustAnchor,
     TrustAnchorCommandDetails,
     TrustAnchorInitDetails,
 };
 use rpki::crypto::PublicKeyFormat;
 use rpki::uri;
-use trustanchor::TaCertificate;
 
 
 //------------ CaServer ------------------------------------------------------
@@ -24,7 +24,7 @@ use trustanchor::TaCertificate;
 pub struct CaServer<S: CaSigner> {
     #[allow(dead_code)]
     signer: Arc<S>,
-    ta_store: Arc<AggregateStore<TrustAnchor<S>>>
+    ta_store: Arc<DiskAggregateStore<TrustAnchor<S>>>
 }
 
 

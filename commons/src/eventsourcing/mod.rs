@@ -1,721 +1,296 @@
 //! Event sourcing support for Krill
 
-mod es_example; // Example implementation and tests.
+mod agg;
+pub use self::agg::{
+    Aggregate,
+    AggregateId
+};
 
-use std::any::Any;
-use std::collections::HashMap;
-use std::fs;
-use std::fmt;
-use std::fs::File;
-use std::io;
-use std::io::Write;
-use std::path::Path;
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::RwLock;
-use serde::Serialize;
-use serde::de::DeserializeOwned;
-use serde_json;
-use crate::util::file;
+mod evt;
+pub use self::evt::{
+    Event,
+    StoredEvent
+};
 
-const SNAPSHOT_FREQ: u64 = 5;
+mod cmd;
+pub use self::cmd::{
+    Command,
+    CommandDetails,
+    SentCommand
+};
 
-//------------ Storable ------------------------------------------------------
+mod store;
+pub use self::store::{
+    DiskKeyStore,
+    KeyStore,
+    KeyStoreError,
+    Storable
+};
 
-pub trait Storable: Clone + Serialize + DeserializeOwned + Sized + 'static {}
-impl<T: Clone + Serialize + DeserializeOwned + Sized + 'static> Storable for T { }
+mod agg_store;
+pub use self::agg_store::{
+    AggregateStore,
+    AggregateStoreError,
+    DiskAggregateStore
+};
+
+mod listener;
+pub use self::listener::{
+    EventCounter,
+    EventListener
+};
 
 
-//------------ AggregateId ---------------------------------------------------
+//------------ Tests ---------------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct AggregateId(String);
+#[cfg(test)]
+mod tests {
 
+    //! Example implementation using the eventsourcing module.
+    //!
+    //! Goal is two-fold: document using a simple domain, and test the module.
+    //!
 
-impl AggregateId {
-    pub fn as_str(&self) -> &str {
-        &self.0.as_str()
-    }
-}
+    use std::sync::Arc;
 
-impl From<&str> for AggregateId {
-    fn from(s: &str) -> Self {
-        AggregateId(s.to_string())
-    }
-}
+    use serde::Serialize;
 
-impl From<String> for AggregateId {
-    fn from(s: String) -> Self {
-        AggregateId(s)
-    }
-}
+    use crate::util::test;
 
-impl AsRef<str> for AggregateId {
-    fn as_ref(&self) -> &str {
-        self.as_str()
-    }
-}
+    use super::*;
 
-impl AsRef<String> for AggregateId {
-    fn as_ref(&self) -> &String {
-        &self.0
-    }
-}
+    //------------ InitPersonEvent -----------------------------------------------
 
-impl AsRef<Path> for AggregateId {
-    fn as_ref(&self) -> &Path {
-        self.0.as_ref()
-    }
-}
-
-impl fmt::Display for AggregateId {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
-//------------ Aggregate -----------------------------------------------------
-
-pub trait Aggregate: Storable + Send + Sync + 'static {
-
-    type Command: Command<Event = Self::Event>;
-    type Event: Event;
-    type InitEvent: Event;
-    type Error: std::error::Error;
-
-    /// Creates a new instance. Expects an event with data needed to
-    /// initialise the instance. Typically this means that a specific
-    /// 'create' event is passed, with all the needed data, or just an empty
-    /// marker if no data is needed. Implementations must return an error in
-    /// case the instance cannot be created.
-    fn init(event: Self::InitEvent) -> Result<Self, Self::Error>;
-
-    /// Returns the current version of the aggregate.
-    fn version(&self) -> u64;
-
-    /// Applies the event to this. This MUST not result in any errors, and
-    /// this MUST be side-effect free. Applying the event just updates the
-    /// internal data of the aggregate.
+    /// Every aggregate defines their own initialisation event. This is the first
+    /// event stored for an instance.
     ///
-    /// Note the event is moved. This is done because we want to avoid
-    /// doing additional allocations where we can.
-    fn apply(&mut self, event: Self::Event);
+    /// Here we define a type wrapping around the generic StoredEvent, so we only
+    /// need to define the unique initialisation details.
+    type InitPersonEvent = StoredEvent<InitPersonDetails>;
 
-    /// Applies all events. Assumes that the list ordered, starting with the
-    /// oldest event, applicable, self.version matches the oldest event, and
-    /// contiguous, i.e. there are no missing events.
-    fn apply_all(&mut self, events: Vec<Self::Event>) {
-        for event in events {
-            self.apply(event);
+    impl InitPersonEvent {
+
+        pub fn init(id: &AggregateId, name: &str) -> Self {
+            StoredEvent::new(id, 0, InitPersonDetails { name: name.to_string()})
         }
     }
 
-    /// Processes a command. I.e. validate the command, and return a list of
-    /// events that will result in the desired new state, but do not apply
-    /// these event here.
+    #[derive(Clone, Deserialize, Serialize)]
+    struct InitPersonDetails {
+        pub name: String
+    }
+
+
+//------------ InitPersonEvent -----------------------------------------------
+
+    /// Every aggregate defines their own set of events - i.e. state changes. The
+    /// state of an aggregate can only change when events are applied. And events
+    /// cannot have side effects. If they did, then replaying events would become
+    /// problematic.
     ///
-    /// The command is moved, because we want to enable moving its data
-    /// without reallocating.
-    fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error>;
-}
+    /// Here we make a type alias wrapped around the generic StoredEvent and
+    /// include an enum with event details specific for Persons. Furthermore we
+    /// provide an implementation for this type alias so that we can have some
+    /// convenience functions for creating these events.
+    type PersonEvent = StoredEvent<PersonEventDetails>;
 
-
-//------------ Event --------------------------------------------------------
-
-pub trait Event: Storable + 'static {
-    /// Identifies the aggregate, useful when storing and retrieving the event.
-    fn id(&self) -> &AggregateId;
-
-    /// The version of the aggregate that this event updates. An aggregate that
-    /// is currently at version x, will get version x + 1, when the event for
-    /// version x is applied.
-    fn version(&self) -> u64;
-}
-
-#[derive(Clone, Deserialize, Serialize)]
-pub struct StoredEvent<E: Storable + 'static> {
-    id: AggregateId,
-    version: u64,
-    #[serde(deserialize_with = "E::deserialize")]
-    details: E
-}
-
-impl<E: Storable + 'static> StoredEvent<E> {
-
-    pub fn new(id: &AggregateId, version: u64, event: E) -> Self {
-        StoredEvent { id: id.clone(), version, details: event }
+    #[derive(Clone, Deserialize, Serialize)]
+    enum PersonEventDetails {
+        NameChanged(String),
+        HadBirthday
     }
 
-    pub fn details(&self) -> &E { & self.details }
+    impl PersonEvent {
+        pub fn had_birthday(p: &Person) -> Self {
+            StoredEvent::new(p.id(), p.version, PersonEventDetails::HadBirthday)
+        }
 
-    pub fn into_details(self) -> E { self.details }
-
-    /// Return the parts of this event.
-    pub fn unwrap(self) -> (AggregateId, u64, E) {
-        (self.id, self.version, self.details)
-    }
-}
-
-impl<E: Storable + 'static> Event for StoredEvent<E> {
-    fn id(&self) -> &AggregateId {
-        &self.id
+        pub fn name_changed(p: &Person, name: String) -> Self {
+            StoredEvent::new(
+                p.id(),
+                p.version,
+                PersonEventDetails::NameChanged(name))
+        }
     }
 
-    fn version(&self) -> u64 {
-        self.version
-    }
-}
 
-//------------ Command -------------------------------------------------------
+    //------------ PersonCommand -------------------------------------------------
 
-/// Commands are used to send an intent to change an aggregate.
-///
-/// Think of this as the data container for your update API, plus some
-/// meta-data to ensure that the command is sent to the right instance of an
-/// Aggregate, and that concurrency issues are handled.
-pub trait Command {
-    /// Identify the type of event returned by the aggregate that uses this
-    /// command. This is needed because we may need to check whether a
-    /// command conflicts with recent events.
-    type Event: Event;
-
-    /// Identifies the aggregate, useful when storing and retrieving the event.
-    fn id(&self) -> &AggregateId;
-
-    /// The version of the aggregate that this command updates. If this
-    /// command should update whatever the latest version happens to be, then
-    /// use None here.
-    fn version(&self) -> Option<u64>;
-
-    /// In case of concurrent processing of commands, the aggregate may be
-    /// outdated when a command is applied. In such cases this method expects
-    /// the list of events that happened since the ['affected_version'] and
-    /// will return whether there is a conflict. If there is no conflict that
-    /// the command may be applied again.
+    /// In order to change an aggregate a command is sent to it. The aggregate
+    /// will then validate the command and if there are no issues, it will return
+    /// a list (vec) of events that may be applied. This process in itself does
+    /// not change any state, the state of the aggregate is only changed when
+    /// those events are applied.
     ///
-    /// Note that this defaults to true, which is the safe choice when in
-    /// doubt. If you choose to implement this, then you will also need to
-    /// implement the ['set_affected_version'] function.
-    fn conflicts(&self, _events: &[Self::Event]) -> bool { true }
-}
+    /// Commands are not recorded. Only the resulting events are. For this reason
+    /// commands may have side-effects: e.g. write something to disk, send an
+    /// email, etc.
+    ///
+    /// Here we define a type wrapping around the generic SentCommand, so we only
+    /// need to provide an enum with specific command details. We also have an
+    /// implementation for this type alias providing some convenience methods.
+    type PersonCommand = SentCommand<PersonCommandDetails>;
 
-
-//------------ SentCommand ---------------------------------------------------
-
-/// Convenience wrapper so that implementations can just implement
-/// ['CommandDetails'] and leave the id and version boilerplate.
-#[derive(Clone)]
-pub struct SentCommand<C: CommandDetails> {
-    id: AggregateId,
-    version: Option<u64>,
-    details: C
-}
-
-impl<C: CommandDetails> Command for SentCommand<C> {
-    type Event = C::Event;
-
-    fn id(&self) -> &AggregateId {
-        &self.id
+    #[derive(Clone, Deserialize, Serialize)]
+    enum PersonCommandDetails {
+        ChangeName(String),
+        GoAroundTheSun
     }
 
-    fn version(&self) -> Option<u64> {
-        self.version
-    }
-}
-
-impl<C: CommandDetails> SentCommand<C> {
-
-    pub fn new(id: &AggregateId, version: Option<u64>, details: C) -> Self {
-        SentCommand { id: id.clone(), version, details }
+    impl CommandDetails for PersonCommandDetails {
+        type Event = PersonEvent;
     }
 
-    pub fn into_details(self) -> C { self.details }
-}
+    impl PersonCommand {
+
+        pub fn go_around_sun(id: &AggregateId, version: Option<u64>) -> Self {
+            Self::new(id, version, PersonCommandDetails::GoAroundTheSun)
+        }
 
 
-//------------ CommandDetails ------------------------------------------------
-
-/// Implement this for an enum with CommandDetails, so you you can reuse the
-/// id and version boilerplate from ['SentCommand'].
-pub trait CommandDetails: 'static {
-    type Event: Event;
-}
-
-
-//------------ KeyStore ------------------------------------------------------
-
-/// Generic KeyStore for AggregateManager
-pub trait KeyStore {
-
-    type Key;
-
-    fn key_for_snapshot() -> Self::Key;
-    fn key_for_event(version: u64) -> Self::Key;
-
-    /// Returns whether a key already exists.
-
-    fn has_key(&self, id: &AggregateId, key: &Self::Key) -> bool;
-
-
-    fn has_aggregate(&self, id: &AggregateId) -> bool;
-
-    fn aggregates(&self) -> Vec<AggregateId>; // Use Iterator?
-
-    /// Throws an error if the key already exists.
-
-    fn store<V: Any + Serialize>(
-        &self,
-        id: &AggregateId,
-        key: &Self::Key,
-        value: &V
-    ) -> Result<(), KeyStoreError>;
-
-    /// Get the value for this key, if any exists.
-
-    fn get<V: Any + Storable>(
-        &self,
-        id: &AggregateId,
-        key: &Self::Key
-    ) -> Result<Option<V>, KeyStoreError>;
-
-    /// Get the value for this key, if any exists.
-
-    fn get_event<V: Event>(
-        &self,
-        id: &AggregateId,
-        version: u64
-    ) -> Result<Option<V>, KeyStoreError>;
-
-    fn store_event<V: Event>(
-        &self,
-        event: &V
-    ) -> Result<(), KeyStoreError>;
-
-    /// Get the latest aggregate
-
-    fn get_aggregate<V: Aggregate>(
-        &self,
-        id: &AggregateId
-    ) -> Result<Option<V>, KeyStoreError>;
-
-    /// Saves the latest snapshot - overwrites any previous snapshot.
-
-    fn store_aggregate<V: Aggregate>(
-        &self,
-        id: &AggregateId,
-        aggregate: &V
-    ) -> Result<(), KeyStoreError>;
-}
-
-
-//------------ KeyStoreError -------------------------------------------------
-
-/// This type defines possible Errors for KeyStore
-#[derive(Debug, Display)]
-pub enum KeyStoreError {
-    #[display(fmt = "{}", _0)]
-    IoError(io::Error),
-
-    #[display(fmt = "{}", _0)]
-    JsonError(serde_json::Error),
-
-    #[display(fmt = "Key already exists: {}", _0)]
-    KeyExists(String),
-
-    #[display(fmt = "Aggregate init event exists, but cannot be applied")]
-    InitError
-}
-
-impl From<io::Error> for KeyStoreError {
-    fn from(e: io::Error) -> Self { KeyStoreError::IoError(e) }
-}
-
-impl From<serde_json::Error> for KeyStoreError {
-    fn from(e: serde_json::Error) -> Self { KeyStoreError::JsonError(e) }
-}
-
-impl std::error::Error for KeyStoreError { }
-
-
-//------------ DiskKeyStore --------------------------------------------------
-
-/// This type can store and retrieve values to/from disk, using json
-/// serialization.
-pub struct DiskKeyStore {
-    dir: PathBuf,
-}
-
-impl KeyStore for DiskKeyStore {
-    type Key = PathBuf;
-
-    fn key_for_snapshot() -> Self::Key {
-        PathBuf::from("snapshot.json")
+        pub fn change_name(id: &AggregateId, version: Option<u64>, s: &str) -> Self {
+            let details = PersonCommandDetails::ChangeName(s.to_string());
+            Self::new(id, version, details)
+        }
     }
 
-    fn key_for_event(version: u64) -> Self::Key {
-        PathBuf::from(format!("delta-{}.json", version))
+    //------------ PersonError ---------------------------------------------------
+
+    /// Errors specific to the Person aggregate, should only ever be returned when
+    /// applying a command that does not validate.
+    #[derive(Clone, Debug, Display)]
+    enum PersonError {
+        #[display(fmt = "No person can live longer than 255 years")]
+        TooOld
     }
 
-    fn has_key(&self, id: &AggregateId, key: &Self::Key) -> bool {
-        self.file_path(id, key).exists()
+    impl std::error::Error for PersonError {}
+
+
+    //------------ PersonResult --------------------------------------------------
+
+    /// A shorthand for the result type returned by the process_command function
+    /// of the Person aggregate.
+    type PersonResult = Result<Vec<PersonEvent>, PersonError>;
+
+
+    //------------ Person ------------------------------------------------------
+
+    /// Defines a person object. Persons have a name and an age.
+    ///
+    #[derive(Clone, Deserialize, Serialize)]
+    struct Person {
+        /// The id is needed when generating events.
+        id: AggregateId,
+
+        /// The version of for this particular Person. Versions
+        /// are incremented whenever events are applied. They are
+        /// used to store those and apply events in the correct
+        /// sequence, as well as to detect concurrency issues when
+        /// a command is sent.
+        version: u64,
+
+        name: String,
+        age: u8
     }
 
-    fn has_aggregate(&self, id: &AggregateId) -> bool {
-        self.dir_for_aggregate(id).exists()
+    impl Person {
+        pub fn id(&self) -> &AggregateId { &self.id }
+        pub fn version(&self) -> u64 { self.version }
+        pub fn name(&self) -> &String { &self.name }
+        pub fn age(&self) -> u8 { self.age }
     }
 
-    fn aggregates(&self) -> Vec<AggregateId> {
-        let mut res: Vec<AggregateId> = Vec::new();
+    impl Aggregate for Person {
+        type Command = PersonCommand;
+        type Event = PersonEvent;
+        type InitEvent = InitPersonEvent;
+        type Error = PersonError;
 
-        if let Ok(dir) = fs::read_dir(&self.dir) {
-            for d in dir {
-                let full_path = d.unwrap().path();
-                let path = full_path.file_name().unwrap();
+        fn init(event: InitPersonEvent) -> Result<Self, PersonError> {
+            let (id, _version, init) = event.unwrap();
+            Ok(Person {
+                id, version: 1, name: init.name, age: 0
+            })
+        }
 
-                let id = AggregateId::from(path.to_string_lossy().as_ref());
-                res.push(id);
+        fn version(&self) -> u64 {
+            self.version
+        }
+
+        fn apply(&mut self, event: PersonEvent) {
+            match event.into_details() {
+                PersonEventDetails::NameChanged(name) => { self.name = name },
+                PersonEventDetails::HadBirthday => { self.age += 1 }
             }
+            self.version += 1;
         }
 
-        res
-    }
-
-    fn store<V: Any + Serialize>(
-        &self,
-        id: &AggregateId,
-        key: &Self::Key,
-        value: &V
-    ) -> Result<(), KeyStoreError> {
-        let mut f = file::create_file_with_path(&self.file_path(id, key))?;
-        let json = serde_json::to_string(value)?;
-        f.write_all(json.as_ref())?;
-        Ok(())
-    }
-
-    fn get<V: Any + Storable>(
-        &self,
-        id: &AggregateId,
-        key: &Self::Key
-    ) -> Result<Option<V>, KeyStoreError> {
-        if self.has_key(id, key) {
-            let f = File::open(self.file_path(id, key))?;
-            let v: V = serde_json::from_reader(f)?;
-            Ok(Some(v))
-        } else {
-            Ok(None)
-        }
-    }
-
-    /// Get the value for this key, if any exists.
-    fn get_event<V: Event>(
-        &self,
-        id: &AggregateId,
-        version: u64
-    ) -> Result<Option<V>, KeyStoreError> {
-        let path = self.path_for_event(id, version);
-        if path.exists() {
-            let f = File::open(path)?;
-            let v: V = serde_json::from_reader(f)?;
-            Ok(Some(v))
-        } else {
-            Ok(None)
-        }
-    }
-
-    fn store_event<V: Event>(
-        &self,
-        event: &V
-    ) -> Result<(), KeyStoreError> {
-        let id = event.id();
-        let key = Self::key_for_event(event.version());
-        if self.has_key(id, &key) {
-            Err(KeyStoreError::KeyExists(key.to_string_lossy().to_string()))
-        } else {
-            self.store(id, &key, event)
-        }
-    }
-
-    fn get_aggregate<V: Aggregate>(
-        &self,
-        id: &AggregateId
-    ) -> Result<Option<V>, KeyStoreError> {
-        // try to get a snapshot.
-        // If that fails, try to get the init event.
-        // Then replay all newer events that can be found.
-        let key = Self::key_for_snapshot();
-        let aggregate_opt = match self.get::<V>(id, &key)? {
-            Some(aggregate) => Some(aggregate),
-            None => {
-                match self.get_event::<V::InitEvent>(id, 0)? {
-                    Some(e) => Some(V::init(e).map_err(|_|KeyStoreError::InitError)?),
-                    None => None
-                }
-            }
-        };
-
-        match aggregate_opt {
-            None => Ok(None),
-            Some(mut aggregate) => {
-                self.update_aggregate(id, &mut aggregate)?;
-                Ok(Some(aggregate))
-            }
-        }
-    }
-
-    fn store_aggregate<V: Aggregate>(
-        &self,
-        id: &AggregateId,
-        aggregate: &V
-    ) -> Result<(), KeyStoreError> {
-        let key = Self::key_for_snapshot();
-        self.store(id, &key, aggregate)
-    }
-}
-
-impl DiskKeyStore {
-    pub fn new(work_dir: &PathBuf, name_space: &str) -> Self {
-        let mut dir = work_dir.clone();
-        dir.push(name_space);
-        DiskKeyStore { dir }
-    }
-
-    /// Creates a directory for the name_space under the work_dir.
-    pub fn under_work_dir(
-        work_dir: &PathBuf,
-        name_space: &str
-    ) -> Result<Self, io::Error> {
-        let mut path = work_dir.clone();
-        path.push(name_space);
-        if ! path.is_dir() {
-            fs::create_dir_all(&path)?;
-        }
-        Ok(Self::new(work_dir, name_space))
-    }
-
-    fn file_path(&self, id: &AggregateId, key: &<Self as KeyStore>::Key) -> PathBuf {
-        let mut file_path = self.dir_for_aggregate(id);
-        file_path.push(key);
-        file_path
-    }
-
-    fn dir_for_aggregate(&self, id: &AggregateId) -> PathBuf {
-        let mut dir_path = self.dir.clone();
-        dir_path.push(id);
-        dir_path
-    }
-
-    fn path_for_event(
-        &self,
-        id: &AggregateId,
-        version: u64
-    ) -> PathBuf {
-        let mut file_path = self.dir_for_aggregate(id);
-        file_path.push(format!("delta-{}.json", version));
-        file_path
-    }
-
-    fn update_aggregate<A: Aggregate>(
-        &self,
-        id: &AggregateId,
-        aggregate: &mut A
-    ) -> Result<(), KeyStoreError> {
-        while let Some(e) = self.get_event(id, aggregate.version())? {
-            aggregate.apply(e);
-        }
-        Ok(())
-    }
-
-}
-
-
-pub type StoreResult<T> = Result<T, AggregateStoreError>;
-
-pub trait AggregateStore<A: Aggregate>: Send + Sync {
-    /// Gets the latest version for the given aggregate. Returns
-    /// an AggregateStoreError::UnknownAggregate in case the aggregate
-    /// does not exist.
-    fn get_latest(&self, id: &AggregateId) -> StoreResult<Arc<A>>;
-
-    /// Adds a new aggregate instance based on the init event.
-    fn add(&self, id: &AggregateId, init: A::InitEvent) -> StoreResult<()>;
-
-    /// Updates the aggregate instance in the store. Expects that the
-    /// Arc<A> retrieved using 'get_latest' is moved here, so clone on
-    /// writes can be avoided, and a verification can be done that there
-    /// is no concurrent modification. Returns the updated instance if all
-    /// is well, or an AggregateStoreError::ConcurrentModification if you
-    /// try to update an outdated instance.
-    fn update(&self, id: &AggregateId, agg: Arc<A>, events: Vec<A::Event>) -> StoreResult<Arc<A>>;
-
-    /// Returns true if an instance exists for the id
-    fn has(&self, id: &AggregateId) -> bool;
-
-    /// Lists all known ids.
-    fn list(&self) -> Vec<AggregateId>;
-}
-
-
-/// This type defines possible Errors for the AggregateStore
-#[derive(Debug, Display)]
-pub enum AggregateStoreError {
-    #[display(fmt = "{}", _0)]
-    KeyStoreError(KeyStoreError),
-
-    #[display(fmt = "Unknown aggregate: {}", _0)]
-    UnknownAggregate(AggregateId),
-
-    #[display(fmt = "Aggregate init event exists, but cannot be applied")]
-    InitError,
-
-    #[display(fmt = "Event not applicable to aggregate, id or version is off")]
-    WrongEventForAggregate,
-
-    #[display(fmt = "Trying to update outdated aggregate")]
-    ConcurrentModification,
-}
-
-impl From<KeyStoreError> for AggregateStoreError {
-    fn from(e: KeyStoreError) -> Self { AggregateStoreError::KeyStoreError(e) }
-}
-
-
-pub struct DiskAggregateStore<A: Aggregate> {
-    store: DiskKeyStore,
-    cache: RwLock<HashMap<AggregateId, Arc<A>>>,
-    use_cache: bool
-}
-
-impl<A: Aggregate> DiskAggregateStore<A> {
-    pub fn new(work_dir: &PathBuf, name_space: &str) -> Result<Self, io::Error> {
-        let store = DiskKeyStore::under_work_dir(work_dir, name_space)?;
-        let cache = RwLock::new(HashMap::new());
-        let use_cache = true;
-        Ok(DiskAggregateStore { store, cache, use_cache })
-    }
-}
-
-impl<A: Aggregate> DiskAggregateStore<A> {
-    fn has_updates(
-        &self,
-        id: &AggregateId,
-        aggregate: &A
-    ) -> StoreResult<bool> {
-        Ok(self.store.get_event::<A::Event>(id, aggregate.version())?.is_some())
-    }
-
-    fn cache_get(&self, id: &AggregateId) -> Option<Arc<A>> {
-        if self.use_cache {
-            self.cache.read().unwrap().get(id).cloned()
-        } else {
-            None
-        }
-    }
-
-    fn cache_update(&self, id: &AggregateId, arc: Arc<A>) {
-        if self.use_cache {
-            self.cache.write().unwrap().insert(id.clone(), arc);
-        }
-    }
-}
-
-impl<A: Aggregate> AggregateStore<A> for DiskAggregateStore<A> {
-    fn get_latest(&self, id: &AggregateId) -> StoreResult<Arc<A>> {
-        match self.cache_get(id) {
-            None => {
-                match self.store.get_aggregate(id)? {
-                    None => Err(AggregateStoreError::UnknownAggregate(id.clone())),
-                    Some(agg) => {
-                        let arc: Arc<A> = Arc::new(agg);
-                        self.cache_update(id, arc.clone());
-                        Ok(arc)
+        fn process_command(&self, command: Self::Command) -> PersonResult {
+            match command.into_details() {
+                PersonCommandDetails::ChangeName(name) => {
+                    let event = PersonEvent::name_changed(&self, name);
+                    Ok(vec![event])
+                },
+                PersonCommandDetails::GoAroundTheSun => {
+                    if self.age == 255 {
+                        Err(PersonError::TooOld)
+                    } else {
+                        let event = PersonEvent::had_birthday(&self);
+                        Ok(vec![event])
                     }
                 }
-            },
-            Some(mut arc) => {
-                if self.has_updates(id, &arc)? {
-                    let agg = Arc::make_mut(&mut arc);
-                    self.store.update_aggregate(id, agg)?;
-                }
-                Ok(arc)
             }
         }
     }
 
-    fn add(&self, id: &AggregateId, init: A::InitEvent) -> StoreResult<()> {
-        self.store.store_event(&init)?;
+    #[test]
+    fn test() {
+        test::test_with_tmp_dir(|d| {
 
-        let aggregate = A::init(init).map_err(|_| AggregateStoreError::InitError)?;
-        self.store.store_aggregate(id, &aggregate)?;
+            let counter = Arc::new(EventCounter::new());
+            let mut manager = DiskAggregateStore::<Person>::new(&d, "person").unwrap();
+            manager.add_listener(counter.clone());
 
-        let arc = Arc::new(aggregate);
-        self.cache_update(id, arc);
+            let id_alice = AggregateId::from("alice");
+            let alice_init = InitPersonEvent::init(&id_alice, "alice smith");
 
-        Ok(())
-    }
+            manager.add(&id_alice, alice_init).unwrap();
 
+            let mut alice = manager.get_latest(&id_alice).unwrap();
+            assert_eq!("alice smith", alice.name());
+            assert_eq!(0, alice.age());
 
-    fn update(&self, id: &AggregateId, prev: Arc<A>, events: Vec<A::Event>) -> StoreResult<Arc<A>> {
-        // Get the latest arc.
-        let mut latest = self.get_latest(id)?;
+            let mut age = 0;
+            loop {
+                let get_older = PersonCommand::go_around_sun(&id_alice, None);
+                let events = alice.process_command(get_older).unwrap();
+                alice = manager.update(&id_alice, alice, events).unwrap();
 
-        {
-            // Verify whether there is a concurrency issue
-            if prev.version() != latest.version() {
-                return Err(AggregateStoreError::ConcurrentModification)
-            }
-
-            // forget the previous version
-            std::mem::forget(prev);
-
-            // make the arc mutable, hopefully forgetting prev will avoid the clone
-            let agg = Arc::make_mut(&mut latest);
-
-            // Using a lock on the hashmap here to ensure that all updates happen sequentially.
-            // It would be better to get a lock only for this specific aggregate. So it may be
-            // worth rethinking the stru
-            //
-            // That said.. saving and applying events is really quick, so this should not hurt
-            // performance much.
-            //
-            // Also note that we don't need the lock to update the inner arc in the cache. We
-            // just need it to be in scope until we are done updating.
-            let _write_lock = self.cache.write().unwrap();
-
-            // There is a possible race condition. We may only have obtained the lock
-            if self.has_updates(id, &agg)? {
-                self.store.update_aggregate(id, agg)?;
-            }
-
-            let version_before = agg.version();
-            let nr_events = events.len() as u64;
-
-            for i in 0..nr_events {
-                let event = &events[i as usize];
-                if event.version() != version_before + i || event.id() != id {
-                    return Err(AggregateStoreError::WrongEventForAggregate);
+                age = age + 1;
+                if age == 21 {
+                    break
                 }
             }
 
-            for event in events {
-                self.store.store_event(&event)?;
-                agg.apply(event);
-                if agg.version() % SNAPSHOT_FREQ == 0 {
-                    self.store.store_aggregate(id, agg)?;
-                }
-            }
-        }
+            assert_eq!("alice smith", alice.name());
+            assert_eq!(21, alice.age());
 
-        Ok(latest)
-    }
+            let change_name = PersonCommand::change_name(&id_alice, Some(22), "alice smith-doe");
+            let events = alice.process_command(change_name).unwrap();
+            let alice = manager.update(&id_alice, alice, events).unwrap();
+            assert_eq!("alice smith-doe", alice.name());
+            assert_eq!(21, alice.age());
 
-    fn has(&self, id: &AggregateId) -> bool {
-        self.store.has_aggregate(id)
-    }
+            // Should read state from disk
+            let manager = DiskAggregateStore::<Person>::new(&d, "person").unwrap();
 
-    fn list(&self) -> Vec<AggregateId> {
-        self.store.aggregates()
+            let alice = manager.get_latest(&id_alice).unwrap();
+            assert_eq!("alice smith-doe", alice.name());
+            assert_eq!(21, alice.age());
+
+            assert_eq!(22, counter.total())
+
+        })
     }
 }
-
-
-

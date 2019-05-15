@@ -62,8 +62,8 @@ use crate::sigmsg::SignedMessage;
 #[derive(Clone)]
 pub struct ProxyServer {
     signer: OpenSslSigner,
-    clients_store: Arc<AggregateStore<ClientManager>>,
-    responder_store: Arc<AggregateStore<Responder>>,
+    clients_store: Arc<DiskAggregateStore<ClientManager>>,
+    responder_store: Arc<DiskAggregateStore<Responder>>,
     krill_uri: uri::Https
 }
 
