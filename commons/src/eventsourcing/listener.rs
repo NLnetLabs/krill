@@ -1,8 +1,6 @@
-use super::{
-    Event
-};
 use std::sync::RwLock;
 
+use super::Aggregate;
 
 //------------ EventListener -------------------------------------------------
 
@@ -14,8 +12,8 @@ use std::sync::RwLock;
 /// Note that at this time the events really happened, so
 /// EventListeners do not have the luxury of failure in case
 /// they do not like what happened.
-pub trait EventListener<E: Event>: Send + Sync + 'static {
-    fn listen(&self, event: &E);
+pub trait EventListener<A: Aggregate>: Send + Sync + 'static {
+    fn listen(&self, agg: &A, event: &A::Event);
 }
 
 
@@ -30,18 +28,20 @@ struct Counter {
     total: usize
 }
 
-impl EventCounter {
-    pub fn new() -> Self {
+impl Default for EventCounter {
+    fn default() -> Self {
         EventCounter { counter: RwLock::new(Counter { total: 0 }) }
     }
+}
 
+impl EventCounter {
     pub fn total(&self) -> usize {
         self.counter.read().unwrap().total
     }
 }
 
-impl<E: Event> EventListener<E> for EventCounter {
-    fn listen(&self, _event: &E) {
+impl<A: Aggregate> EventListener<A> for EventCounter {
+    fn listen(&self, _agg: &A, _event: &A::Event) {
         self.counter.write().unwrap().total += 1
     }
 }

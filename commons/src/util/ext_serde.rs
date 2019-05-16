@@ -1,8 +1,13 @@
 //! Defines helper methods for Serializing and Deserializing external types.
 use base64;
 use bytes::Bytes;
+use chrono::Utc;
 use log::LevelFilter;
 use rpki::uri;
+use rpki::x509::{
+    Serial,
+    Time,
+};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde::de;
 use syslog::Facility;
@@ -62,4 +67,28 @@ pub fn de_facility<'de, D>(d: D) -> Result<Facility, D::Error>
     Facility::from_str(&string).map_err(
         |_| { de::Error::custom(
             format!("Unsupported syslog_facility: \"{}\"", string))})
+}
+
+
+//------------ Time ----------------------------------------------------------
+
+pub fn de_time<'de, D>(d: D) -> Result<Time, D::Error> where D: Deserializer<'de> {
+    use chrono::TimeZone;
+
+    let time_stamp: i64 = i64::deserialize(d)?;
+    Ok(Time::new(Utc.timestamp_millis(time_stamp)))
+}
+
+pub fn ser_time<S>(time: &Time, s: S) -> Result<S::Ok, S::Error> where S: Serializer {
+    time.timestamp_millis().serialize(s)
+}
+
+//------------ Serial ----------------------------------------------------------
+
+pub fn de_serial<'de, D>(_d: D) -> Result<Serial, D::Error> where D: Deserializer<'de> {
+    Ok(Serial::from(1_u64))
+}
+
+pub fn ser_serial<S>(_serial: &Serial, s: S) -> Result<S::Ok, S::Error> where S: Serializer {
+    "1".serialize(s)
 }

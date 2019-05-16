@@ -248,7 +248,7 @@ mod tests {
     fn test() {
         test::test_with_tmp_dir(|d| {
 
-            let counter = Arc::new(EventCounter::new());
+            let counter = Arc::new(EventCounter::default());
             let mut manager = DiskAggregateStore::<Person>::new(&d, "person").unwrap();
             manager.add_listener(counter.clone());
 

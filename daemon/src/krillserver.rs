@@ -10,7 +10,7 @@ use krill_ca::{CaServer, CaServerError};
 use krill_commons::api::publication;
 use krill_commons::api::admin;
 use krill_commons::api::admin::PublisherHandle;
-use krill_commons::api::ca::{TrustAnchorInfo};
+use krill_commons::api::ca::{TrustAnchorInfo, IncomingCertificate};
 use krill_commons::util::softsigner::{OpenSslSigner, SignerError};
 use krill_cms_proxy::api::{ClientInfo, ClientHandle};
 use krill_cms_proxy::proxy;
@@ -19,8 +19,8 @@ use krill_cms_proxy::rfc8183::RepositoryResponse;
 use krill_cms_proxy::sigmsg::SignedMessage;
 use krill_pubd::PubServer;
 use krill_pubd::publishers::Publisher;
+
 use crate::auth::Authorizer;
-use krill_ca::trustanchor::TaCertificate;
 
 
 //------------ KrillServer ---------------------------------------------------
@@ -229,7 +229,7 @@ impl KrillServer {
         self.caserver.get_trust_anchor_info().ok()
     }
 
-    pub fn trust_anchor_cert(&self) -> Option<TaCertificate> {
+    pub fn trust_anchor_cert(&self) -> Option<IncomingCertificate> {
         self.caserver.get_trust_anchor_cert().ok()
     }
 

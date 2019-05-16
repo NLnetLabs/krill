@@ -2,27 +2,25 @@ use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use krill_commons::api::ca::{TrustAnchorInfo, RepoInfo};
-use krill_commons::eventsourcing::{AggregateStore, DiskAggregateStore, AggregateStoreError, Aggregate};
+use rpki::crypto::PublicKeyFormat;
+use rpki::uri;
+
+use krill_commons::api::ca::{TrustAnchorInfo, IncomingCertificate, RepoInfo};
+use krill_commons::eventsourcing::{AggregateStore, DiskAggregateStore, AggregateStoreError};
 
 use crate::trustanchor::{
     self,
     TA_NS,
     ta_handle,
     CaSigner,
-    TaCertificate,
     TrustAnchor,
-    TrustAnchorCommandDetails,
     TrustAnchorInitDetails,
 };
-use rpki::crypto::PublicKeyFormat;
-use rpki::uri;
 
 
 //------------ CaServer ------------------------------------------------------
 
 pub struct CaServer<S: CaSigner> {
-    #[allow(dead_code)]
     signer: Arc<S>,
     ta_store: Arc<DiskAggregateStore<TrustAnchor<S>>>
 }
@@ -45,13 +43,11 @@ impl<S: CaSigner> CaServer<S> {
     }
 
     /// Gets the TA certificate, if present. Returns an error if the TA is unitialized.
-    pub fn get_trust_anchor_cert(&self) -> CaResult<TaCertificate, S> {
-        self.ta_store
+    pub fn get_trust_anchor_cert(&self) -> CaResult<IncomingCertificate, S> {
+        Ok(self.ta_store
             .get_latest(&ta_handle())
             .map_err(|_| Error::TrustAnchorNotInitialisedError)?
-            .cert()
-            .map_err(Error::TrustAnchorError)
-            .map(std::clone::Clone::clone)
+            .cert().clone())
     }
 
     pub fn init_ta(
@@ -64,23 +60,21 @@ impl<S: CaSigner> CaServer<S> {
         if self.ta_store.has(handle.as_ref()) {
             Err(Error::TrustAnchorInitialisedError)
         } else {
-            let init = TrustAnchorInitDetails::init(&handle);
-            self.ta_store.add(handle.as_ref(), init)?;
-            let ta = self.ta_store.get_latest(&handle)?;
-
-            let add_repo_info = TrustAnchorCommandDetails::add_repo_info(&handle, info);
-            let events = ta.process_command(add_repo_info)?;
-            let ta = self.ta_store.update(&handle, ta, events)?;
-
             let key = Arc::make_mut(&mut self.signer)
                 .create_key(PublicKeyFormat::default())
                 .map_err(Error::SignerError)?;
 
-            let add_auth = TrustAnchorCommandDetails::init_with_all_resources(
-                &handle, ta_aia, ta_uris, key, self.signer.clone()
-            );
-            let events = ta.process_command(add_auth)?;
-            self.ta_store.update(&handle, ta, events)?;
+
+            let init = TrustAnchorInitDetails::init_with_all_resources(
+                &handle,
+                info,
+                ta_aia,
+                ta_uris,
+                key,
+                self.signer.clone()
+            )?;
+
+            self.ta_store.add(handle.as_ref(), init)?;
 
             Ok(())
         }
@@ -99,7 +93,7 @@ pub enum Error<S: CaSigner> {
     IoError(io::Error),
 
     #[display(fmt = "{}", _0)]
-    TrustAnchorError(trustanchor::Error<S>),
+    TrustAnchorError(trustanchor::Error),
 
     #[display(fmt = "TrustAnchor was already initialised")]
     TrustAnchorInitialisedError,
@@ -118,8 +112,8 @@ impl<S: CaSigner> From<io::Error> for Error<S> {
     fn from(e: io::Error) -> Self { Error::IoError(e) }
 }
 
-impl<S: CaSigner> From<trustanchor::Error<S>> for Error<S> {
-    fn from(e: trustanchor::Error<S>) -> Self { Error::TrustAnchorError(e) }
+impl<S: CaSigner> From<trustanchor::Error> for Error<S> {
+    fn from(e: trustanchor::Error) -> Self { Error::TrustAnchorError(e) }
 }
 
 impl<S: CaSigner> From<AggregateStoreError> for Error<S> {

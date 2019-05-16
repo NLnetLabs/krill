@@ -169,7 +169,7 @@ impl KeyStore for DiskKeyStore {
         value: &V
     ) -> Result<(), KeyStoreError> {
         let mut f = file::create_file_with_path(&self.file_path(id, key))?;
-        let json = serde_json::to_string(value)?;
+        let json = serde_json::to_string_pretty(value)?;
         f.write_all(json.as_ref())?;
         Ok(())
     }

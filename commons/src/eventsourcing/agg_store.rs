@@ -9,10 +9,10 @@ use super::{
     AggregateId,
     DiskKeyStore,
     Event,
+    EventListener,
     KeyStore,
     KeyStoreError,
 };
-use eventsourcing::EventListener;
 
 const SNAPSHOT_FREQ: u64 = 5;
 
@@ -43,7 +43,7 @@ pub trait AggregateStore<A: Aggregate>: Send + Sync {
 
     /// Adds a listener that will receive a reference to all events as they
     /// are stored.
-    fn add_listener<L: EventListener<A::Event>>(&mut self, listener: Arc<L>);
+    fn add_listener<L: EventListener<A>>(&mut self, listener: Arc<L>);
 }
 
 
@@ -75,7 +75,7 @@ pub struct DiskAggregateStore<A: Aggregate> {
     store: DiskKeyStore,
     cache: RwLock<HashMap<AggregateId, Arc<A>>>,
     use_cache: bool,
-    listeners: Vec<Arc<EventListener<A::Event>>>
+    listeners: Vec<Arc<EventListener<A>>>
 }
 
 impl<A: Aggregate> DiskAggregateStore<A> {
@@ -194,7 +194,7 @@ impl<A: Aggregate> AggregateStore<A> for DiskAggregateStore<A> {
                 self.store.store_event(&event)?;
 
                 for listener in &self.listeners {
-                    listener.as_ref().listen(&event);
+                    listener.as_ref().listen(agg, &event);
                 }
 
                 agg.apply(event);
@@ -215,7 +215,7 @@ impl<A: Aggregate> AggregateStore<A> for DiskAggregateStore<A> {
         self.store.aggregates()
     }
 
-    fn add_listener<L: EventListener<A::Event>>(&mut self, listener: Arc<L>) {
+    fn add_listener<L: EventListener<A>>(&mut self, listener: Arc<L>) {
         self.listeners.push(listener)
     }
 }

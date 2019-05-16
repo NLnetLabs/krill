@@ -10,6 +10,8 @@ use bytes::Bytes;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::cert::Cert;
+use rpki::crl::Crl;
+use rpki::manifest::Manifest;
 
 use crate::util::sha256;
 
@@ -55,9 +57,21 @@ impl From<String> for Base64 {
     }
 }
 
-impl From<Cert> for Base64 {
-    fn from(c: Cert) -> Self {
-        Base64::from_content(&c.to_captured().into_bytes())
+impl From<&Cert> for Base64 {
+    fn from(cert: &Cert) -> Self {
+        Base64::from_content(&cert.to_captured().into_bytes())
+    }
+}
+
+impl From<&Manifest> for Base64 {
+    fn from(mft: &Manifest) -> Self {
+        Base64::from_content(&mft.to_captured().into_bytes())
+    }
+}
+
+impl From<&Crl> for Base64 {
+    fn from(crl: &Crl) -> Self {
+        Base64::from_content(&crl.to_captured().into_bytes())
     }
 }
 
@@ -100,6 +114,12 @@ impl EncodedHash {
         let sha256 = sha256(content);
         let hex = hex::encode(sha256);
         EncodedHash::from(hex)
+    }
+}
+
+impl Into<Bytes> for EncodedHash {
+    fn into(self) -> Bytes {
+        self.0
     }
 }
 
