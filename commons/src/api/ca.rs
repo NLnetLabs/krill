@@ -276,8 +276,8 @@ impl From<&Crl> for CurrentObject {
 impl From<&Manifest> for CurrentObject {
     fn from(mft: &Manifest) -> Self {
         let content = Base64::from(mft);
-        let serial = mft.cert_serial();
-        let expires = mft.next_update();
+        let serial = mft.cert().serial_number();
+        let expires = mft.content().next_update();
 
         CurrentObject {
             content, serial, expires
@@ -354,7 +354,7 @@ impl From<&CurrentObject> for Revocation {
 
 impl From<&Manifest> for Revocation {
     fn from(m: &Manifest) -> Self {
-        let serial = m.cert_serial();
+        let serial = m.cert().serial_number();
         let revocation_date = Time::now();
         Revocation { serial, revocation_date }
     }
