@@ -19,8 +19,7 @@ use rpki::x509::{
     Time,
     Validity,
 };
-
-use krill_commons::api::admin::CaHandle;
+use krill_commons::api::admin::Handle;
 use krill_commons::api::ca::{
     CaKey,
     CurrentObjects,
@@ -44,8 +43,8 @@ use crate::signing::CaSignSupport;
 pub const TA_NS: &str = "trustanchors";
 pub const TA_ID: &str = "ta";
 
-pub fn ta_handle() -> CaHandle {
-    CaHandle::from(TA_ID)
+pub fn ta_handle() -> Handle {
+    Handle::from(TA_ID)
 }
 
 //------------ CaSigner ------------------------------------------------------
@@ -69,7 +68,7 @@ impl TrustAnchorInitDetails {
 
     /// Generates all the details for a Trust Anchor with all resources.
     pub fn init_with_all_resources<S: CaSigner>(
-        handle: &CaHandle,
+        handle: &Handle,
         repo_info: RepoInfo,
 
         ta_aia: uri::Rsync,
@@ -84,7 +83,7 @@ impl TrustAnchorInitDetails {
         let current_key = CaKey::new(key, IncomingCertificate::new(ta_cert, ta_aia));
 
         Ok(StoredEvent::new(
-            handle.as_ref(),
+            &handle,
             0,
             TrustAnchorInitDetails { repo_info, current_key, tal}
         ))
@@ -137,12 +136,24 @@ pub enum TrustAnchorEventDetails {
 
 
 impl TrustAnchorEventDetails {
-    pub fn published(ta: &CaHandle, v: u64, delta: PublicationDelta) -> TrustAnchorEvent {
-        Self::with_details(ta, v, TrustAnchorEventDetails::Published(delta))
+    pub fn published(
+        handle: &Handle,
+        version: u64,
+        delta: PublicationDelta
+    ) -> TrustAnchorEvent {
+        Self::with_details(
+            handle,
+            version,
+            TrustAnchorEventDetails::Published(delta)
+        )
     }
 
-    fn with_details(ta: &CaHandle, version: u64, details: TrustAnchorEventDetails) -> TrustAnchorEvent {
-        TrustAnchorEvent::new(ta.as_ref(), version, details)
+    fn with_details(
+        handle: &Handle,
+        version: u64,
+        details: TrustAnchorEventDetails
+    ) -> TrustAnchorEvent {
+        TrustAnchorEvent::new(&handle, version, details)
     }
 }
 
@@ -160,8 +171,12 @@ impl<S: CaSigner> CommandDetails for TrustAnchorCommandDetails<S> {
 }
 
 impl<S: CaSigner> TrustAnchorCommandDetails<S> {
-    pub fn publish(ta: &CaHandle, signer: Arc<S>) -> TrustAnchorCommand<S> {
-        SentCommand::new(ta.as_ref(), None, TrustAnchorCommandDetails::Publish(signer))
+    pub fn publish(handle: &Handle, signer: Arc<S>) -> TrustAnchorCommand<S> {
+        SentCommand::new(
+            &handle,
+            None,
+            TrustAnchorCommandDetails::Publish(signer)
+        )
     }
 }
 
@@ -175,7 +190,7 @@ type TaResult<R> = Result<R, Error>;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TrustAnchor<S: CaSigner> {
-    id: CaHandle,
+    id: Handle,
     version: u64,
 
     repo_info: RepoInfo,
@@ -238,7 +253,7 @@ impl<S: CaSigner> Aggregate for TrustAnchor<S> {
 
     fn init(event: Self::InitEvent) -> Result<Self, Self::Error> {
         let (id, _version, init) = event.unwrap();
-        let id = CaHandle::from(id);
+        let id = Handle::from(id);
         let version = 1; // after applying init
 
         let repo_info = init.repo_info;
@@ -351,12 +366,12 @@ mod tests {
                 signer.clone()
             ).unwrap();
 
-            store.add(handle.as_ref(), init).unwrap();
-            let ta = store.get_latest(handle.as_ref()).unwrap();
+            store.add(init).unwrap();
+            let ta = store.get_latest(&handle).unwrap();
 
             let publish_cmd = TrustAnchorCommandDetails::publish(&handle, signer);
             let events = ta.process_command(publish_cmd).unwrap();
-            let _ta = store.update(handle.as_ref(), ta, events).unwrap();
+            let _ta = store.update(&handle, ta, events).unwrap();
 
 
         })

@@ -1,8 +1,8 @@
 use rpki::uri;
 use krill_commons::api::publication;
 use krill_commons::api::admin::{
+    Handle,
     PublisherDetails,
-    PublisherHandle,
     PublisherRequest,
     Token
 };
@@ -11,7 +11,12 @@ use krill_commons::api::rrdp::{
     DeltaElements,
     VerificationError
 };
-use krill_commons::eventsourcing::{Aggregate, CommandDetails, StoredEvent, SentCommand};
+use krill_commons::eventsourcing::{
+    Aggregate,
+    CommandDetails,
+    StoredEvent,
+    SentCommand
+};
 
 
 //------------ PublisherInit -------------------------------------------------
@@ -27,9 +32,8 @@ pub struct InitPublisherDetails {
 impl InitPublisherDetails {
     pub fn for_request(req: PublisherRequest) -> PublisherInit {
         let (handle, token, base_uri) = req.unwrap(); // (self
-        let handle = PublisherHandle::from(handle);
         let details = InitPublisherDetails { token, base_uri };
-        StoredEvent::new(handle.as_ref(), 0, details)
+        StoredEvent::new(&handle, 0, details)
     }
 }
 
@@ -45,12 +49,27 @@ pub enum PublisherEventDetails {
 }
 
 impl PublisherEventDetails {
-    pub fn deactivated(id: &PublisherHandle, version: u64) -> PublisherEvent {
-        PublisherEvent::new(id.as_ref(), version, PublisherEventDetails::Deactivated)
+    pub fn deactivated(
+        handle: &Handle,
+        version: u64
+    ) -> PublisherEvent {
+        PublisherEvent::new(
+            &handle,
+            version,
+            PublisherEventDetails::Deactivated
+        )
     }
 
-    pub fn published(id: &PublisherHandle, version: u64, delta: DeltaElements) -> PublisherEvent {
-        PublisherEvent::new(id.as_ref(), version, PublisherEventDetails::Published(delta))
+    pub fn published(
+        handle: &Handle,
+        version: u64,
+        delta: DeltaElements
+    ) -> PublisherEvent {
+        PublisherEvent::new(
+            &handle,
+            version,
+            PublisherEventDetails::Published(delta)
+        )
     }
 }
 
@@ -70,12 +89,23 @@ impl CommandDetails for PublisherCommandDetails {
 }
 
 impl PublisherCommandDetails {
-    pub fn deactivate(id: &PublisherHandle) -> PublisherCommand {
-        PublisherCommand::new(id.as_ref(), None, PublisherCommandDetails::Deactivate)
+    pub fn deactivate(handle: &Handle) -> PublisherCommand {
+        PublisherCommand::new(
+            &handle,
+            None,
+            PublisherCommandDetails::Deactivate
+        )
     }
 
-    pub fn publish(id: &PublisherHandle, delta: publication::PublishDelta) -> PublisherCommand {
-        PublisherCommand::new(id.as_ref(), None, PublisherCommandDetails::Publish(delta))
+    pub fn publish(
+        handle: &Handle,
+        delta: publication::PublishDelta
+    ) -> PublisherCommand {
+        PublisherCommand::new(
+            &handle,
+            None,
+            PublisherCommandDetails::Publish(delta)
+        )
     }
 }
 
@@ -106,7 +136,7 @@ impl std::error::Error for PublisherError {}
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Publisher {
     /// Aggregate house keeping
-    id:          PublisherHandle,
+    handle:      Handle,
     version:     u64,
     deactivated: bool,
 
@@ -122,8 +152,8 @@ pub struct Publisher {
 
 /// # Accessors
 impl Publisher {
-    pub fn id(&self) -> &PublisherHandle {
-        &self.id
+    pub fn handle(&self) -> &Handle {
+        &self.handle
     }
 
     pub fn is_deactivated(&self) -> bool { self.deactivated }
@@ -138,7 +168,7 @@ impl Publisher {
 
     pub fn as_api_details(&self) -> PublisherDetails {
         PublisherDetails::new(
-            self.id.name(), self.deactivated, &self.base_uri
+            self.handle.as_str(), self.deactivated, &self.base_uri
         )
     }
 }
@@ -150,9 +180,9 @@ impl Publisher {
     fn create(event: PublisherInit) -> Self {
         let (id, _version, init) = event.unwrap();
         Publisher {
-            id:              PublisherHandle::from(id),
+            handle:              Handle::from(id),
             version:         1,
-            deactivated:         false,
+            deactivated:     false,
             token:           init.token,
             base_uri:        init.base_uri,
             current_objects: CurrentObjects::default()
@@ -163,7 +193,7 @@ impl Publisher {
         if self.deactivated {
             Err(PublisherError::Deactivated)
         } else {
-            let e = PublisherEventDetails::deactivated(&self.id, self.version);
+            let e = PublisherEventDetails::deactivated(&self.handle, self.version);
             Ok(vec![e])
         }
     }
@@ -192,7 +222,7 @@ impl Publisher {
         let delta = DeltaElements::from(delta);
         self.current_objects.verify_delta(&delta, &self.base_uri)?;
 
-        Ok(vec![PublisherEventDetails::published(&self.id, self.version, delta)])
+        Ok(vec![PublisherEventDetails::published(&self.handle, self.version, delta)])
     }
 
     fn apply_delta(&mut self, delta: DeltaElements) {

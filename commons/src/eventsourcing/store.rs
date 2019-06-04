@@ -9,11 +9,11 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json;
 
+use crate::api::admin::Handle;
 use crate::util::file;
 
 use super::{
     Aggregate,
-    AggregateId,
     Event,
 };
 
@@ -36,18 +36,18 @@ pub trait KeyStore {
 
     /// Returns whether a key already exists.
 
-    fn has_key(&self, id: &AggregateId, key: &Self::Key) -> bool;
+    fn has_key(&self, id: &Handle, key: &Self::Key) -> bool;
 
 
-    fn has_aggregate(&self, id: &AggregateId) -> bool;
+    fn has_aggregate(&self, id: &Handle) -> bool;
 
-    fn aggregates(&self) -> Vec<AggregateId>; // Use Iterator?
+    fn aggregates(&self) -> Vec<Handle>; // Use Iterator?
 
     /// Throws an error if the key already exists.
 
     fn store<V: Any + Serialize>(
         &self,
-        id: &AggregateId,
+        id: &Handle,
         key: &Self::Key,
         value: &V
     ) -> Result<(), KeyStoreError>;
@@ -56,7 +56,7 @@ pub trait KeyStore {
 
     fn get<V: Any + Storable>(
         &self,
-        id: &AggregateId,
+        id: &Handle,
         key: &Self::Key
     ) -> Result<Option<V>, KeyStoreError>;
 
@@ -64,7 +64,7 @@ pub trait KeyStore {
 
     fn get_event<V: Event>(
         &self,
-        id: &AggregateId,
+        id: &Handle,
         version: u64
     ) -> Result<Option<V>, KeyStoreError>;
 
@@ -77,14 +77,14 @@ pub trait KeyStore {
 
     fn get_aggregate<V: Aggregate>(
         &self,
-        id: &AggregateId
+        id: &Handle
     ) -> Result<Option<V>, KeyStoreError>;
 
     /// Saves the latest snapshot - overwrites any previous snapshot.
 
     fn store_aggregate<V: Aggregate>(
         &self,
-        id: &AggregateId,
+        id: &Handle,
         aggregate: &V
     ) -> Result<(), KeyStoreError>;
 }
@@ -138,23 +138,23 @@ impl KeyStore for DiskKeyStore {
         PathBuf::from(format!("delta-{}.json", version))
     }
 
-    fn has_key(&self, id: &AggregateId, key: &Self::Key) -> bool {
+    fn has_key(&self, id: &Handle, key: &Self::Key) -> bool {
         self.file_path(id, key).exists()
     }
 
-    fn has_aggregate(&self, id: &AggregateId) -> bool {
+    fn has_aggregate(&self, id: &Handle) -> bool {
         self.dir_for_aggregate(id).exists()
     }
 
-    fn aggregates(&self) -> Vec<AggregateId> {
-        let mut res: Vec<AggregateId> = Vec::new();
+    fn aggregates(&self) -> Vec<Handle> {
+        let mut res: Vec<Handle> = Vec::new();
 
         if let Ok(dir) = fs::read_dir(&self.dir) {
             for d in dir {
                 let full_path = d.unwrap().path();
                 let path = full_path.file_name().unwrap();
 
-                let id = AggregateId::from(path.to_string_lossy().as_ref());
+                let id = Handle::from(path.to_string_lossy().as_ref());
                 res.push(id);
             }
         }
@@ -164,7 +164,7 @@ impl KeyStore for DiskKeyStore {
 
     fn store<V: Any + Serialize>(
         &self,
-        id: &AggregateId,
+        id: &Handle,
         key: &Self::Key,
         value: &V
     ) -> Result<(), KeyStoreError> {
@@ -176,7 +176,7 @@ impl KeyStore for DiskKeyStore {
 
     fn get<V: Any + Storable>(
         &self,
-        id: &AggregateId,
+        id: &Handle,
         key: &Self::Key
     ) -> Result<Option<V>, KeyStoreError> {
         let path = self.file_path(id, key);
@@ -203,7 +203,7 @@ impl KeyStore for DiskKeyStore {
     /// Get the value for this key, if any exists.
     fn get_event<V: Event>(
         &self,
-        id: &AggregateId,
+        id: &Handle,
         version: u64
     ) -> Result<Option<V>, KeyStoreError> {
         let path = self.path_for_event(id, version);
@@ -231,7 +231,7 @@ impl KeyStore for DiskKeyStore {
         &self,
         event: &V
     ) -> Result<(), KeyStoreError> {
-        let id = event.id();
+        let id = event.handle();
         let key = Self::key_for_event(event.version());
         if self.has_key(id, &key) {
             Err(KeyStoreError::KeyExists(key.to_string_lossy().to_string()))
@@ -242,7 +242,7 @@ impl KeyStore for DiskKeyStore {
 
     fn get_aggregate<V: Aggregate>(
         &self,
-        id: &AggregateId
+        id: &Handle
     ) -> Result<Option<V>, KeyStoreError> {
         // try to get a snapshot.
         // If that fails, try to get the init event.
@@ -269,7 +269,7 @@ impl KeyStore for DiskKeyStore {
 
     fn store_aggregate<V: Aggregate>(
         &self,
-        id: &AggregateId,
+        id: &Handle,
         aggregate: &V
     ) -> Result<(), KeyStoreError> {
         let key = Self::key_for_snapshot();
@@ -297,13 +297,13 @@ impl DiskKeyStore {
         Ok(Self::new(work_dir, name_space))
     }
 
-    fn file_path(&self, id: &AggregateId, key: &<Self as KeyStore>::Key) -> PathBuf {
+    fn file_path(&self, id: &Handle, key: &<Self as KeyStore>::Key) -> PathBuf {
         let mut file_path = self.dir_for_aggregate(id);
         file_path.push(key);
         file_path
     }
 
-    fn dir_for_aggregate(&self, id: &AggregateId) -> PathBuf {
+    fn dir_for_aggregate(&self, id: &Handle) -> PathBuf {
         let mut dir_path = self.dir.clone();
         dir_path.push(id);
         dir_path
@@ -311,7 +311,7 @@ impl DiskKeyStore {
 
     fn path_for_event(
         &self,
-        id: &AggregateId,
+        id: &Handle,
         version: u64
     ) -> PathBuf {
         let mut file_path = self.dir_for_aggregate(id);
@@ -321,7 +321,7 @@ impl DiskKeyStore {
 
     pub fn update_aggregate<A: Aggregate>(
         &self,
-        id: &AggregateId,
+        id: &Handle,
         aggregate: &mut A
     ) -> Result<(), KeyStoreError> {
         while let Some(e) = self.get_event(id, aggregate.version())? {

@@ -1,11 +1,26 @@
 use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
+
 use bcder::{Captured, Mode};
 use bcder::encode::Values;
-use krill_commons::api::{ErrorResponse, ErrorCode};
-use krill_commons::api::admin::Token;
-use krill_commons::api::publication::{PublishRequest, PublishDelta, ListReply};
+
+use rpki::uri;
+use rpki::x509::ValidationError;
+
+use krill_commons::api::{
+    ErrorCode,
+    ErrorResponse,
+};
+use krill_commons::api::admin::{
+    Handle,
+    Token
+};
+use krill_commons::api::publication::{
+    ListReply,
+    PublishRequest,
+    PublishDelta,
+};
 use krill_commons::eventsourcing::{
     Aggregate,
     AggregateStore,
@@ -18,11 +33,8 @@ use rpki::crypto::{
     PublicKeyFormat,
     Signer
 };
-use rpki::uri;
-use rpki::x509::ValidationError;
 use crate::api::{
     ClientAuth,
-    ClientHandle,
     ClientInfo,
 };
 use crate::clients::{
@@ -81,14 +93,14 @@ impl ProxyServer {
 
         let clients_id = clients::id();
         if ! clients_store.has(&clients_id) {
-            clients_store.add(&clients_id, ClientsEvents::init())?;
+            clients_store.add(ClientsEvents::init())?;
         }
 
         let responder_id = responder::id();
         if ! responder_store.has(&responder_id) {
             let my_id = Self::new_id(&mut signer)?;
             let init = ResponderEvents::init(my_id);
-            responder_store.add(&responder_id, init)?;
+            responder_store.add(init)?;
         }
 
         Ok(ProxyServer { signer, clients_store, responder_store, krill_uri: krill_uri.clone() })
@@ -111,17 +123,17 @@ impl ProxyServer {
         self.process_clients_command(command)
     }
 
-    pub fn update_client_token(&self, handle: ClientHandle, token: Token) -> Result<(), Error> {
+    pub fn update_client_token(&self, handle: Handle, token: Token) -> Result<(), Error> {
         let update = ClientsCommands::update_token(handle, token);
         self.process_clients_command(update)
     }
 
-    pub fn update_client_cert(&self, handle: ClientHandle, cert: IdCert) -> Result<(), Error> {
+    pub fn update_client_cert(&self, handle: Handle, cert: IdCert) -> Result<(), Error> {
         let update = ClientsCommands::update_cert(handle, cert);
         self.process_clients_command(update)
     }
 
-    pub fn remove_client(&self, handle: ClientHandle) -> Result<(), Error> {
+    pub fn remove_client(&self, handle: Handle) -> Result<(), Error> {
         let remove = ClientsCommands::remove(handle);
         self.process_clients_command(remove)
     }
@@ -132,7 +144,7 @@ impl ProxyServer {
 
     pub fn response(
         &self,
-        handle: &ClientHandle,
+        handle: &Handle,
         service_uri: uri::Https,
         sia_base: uri::Rsync,
         rrdp_notification_uri: uri::Https
@@ -178,7 +190,7 @@ impl ProxyServer {
     pub fn handle_rfc8181_req(
         &self,
         msg: SignedMessage,
-        handle: ClientHandle
+        handle: Handle
     ) -> Result<Captured, Error> {
         match self.try_rfc8181_req(msg, handle) {
             Ok(captured) => Ok(captured),
@@ -193,7 +205,7 @@ impl ProxyServer {
     fn try_rfc8181_req(
         &self,
         msg: SignedMessage,
-        handle: ClientHandle
+        handle: Handle
     ) -> Result<Captured, Error> {
         debug!("Received request for: {}", &handle);
         match self.clients()?.client_auth(&handle) {
@@ -276,7 +288,7 @@ impl ProxyServer {
         Ok(enc.to_captured(Mode::Der))
     }
 
-    fn uri_for_pub_client(&self, handle: ClientHandle) -> String {
+    fn uri_for_pub_client(&self, handle: Handle) -> String {
         format!("{}publication/{}", self.krill_uri, handle)
     }
 
@@ -304,10 +316,10 @@ pub enum Error {
     ClientsError(clients::Error),
 
     #[display(fmt = "Unknown client: {}", _0)]
-    UnknownClient(ClientHandle),
+    UnknownClient(Handle),
 
     #[display(fmt = "No private key known for client: {}", _0)]
-    NoPrivateKey(ClientHandle),
+    NoPrivateKey(Handle),
 
     #[display(fmt = "{}", _0)]
     ValidationError(ValidationError),

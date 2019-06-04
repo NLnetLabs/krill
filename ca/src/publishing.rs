@@ -3,7 +3,11 @@
 use std::io;
 use std::path::PathBuf;
 
-use krill_commons::api::admin::{CaHandle, PubServerInfo, PublisherClientRequest};
+use krill_commons::api::admin::{
+    Handle,
+    PubServerInfo,
+    PublisherClientRequest
+};
 use krill_commons::api::ca::CurrentObjects;
 use krill_commons::api::publication::PublishDelta;
 use krill_commons::eventsourcing::{
@@ -36,11 +40,11 @@ pub struct PubClientInitDetails(PubServerInfo);
 
 impl PubClientInitDetails {
     pub fn init(
-        handle: &CaHandle,
+        handle: &Handle,
         server_info: PubServerInfo
     ) -> PubClientInit {
         PubClientInit::new(
-            handle.as_ref(),
+            handle,
             0,
             PubClientInitDetails(server_info)
         )
@@ -73,7 +77,7 @@ impl CommandDetails for PubClientCommandDetails {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PubClient {
-    id: CaHandle,
+    id: Handle,
     version: u64,
     server: PubServerInfo
 }
@@ -86,7 +90,7 @@ impl Aggregate for PubClient {
 
     fn init(event: Self::InitEvent) -> Result<Self, Self::Error> {
         let (id, _version, details) = event.unwrap();
-        let id = CaHandle::from(id);
+        let id = Handle::from(id);
         let version = 1;
         let server = details.0;
 
@@ -127,11 +131,11 @@ impl PubClients {
 
     fn publish(
         &self,
-        handle: &CaHandle,
+        handle: &Handle,
         _current_objects: &CurrentObjects,
         delta: PublishDelta
     ) {
-        let client = self.store.get_latest(handle.as_ref()).unwrap();
+        let client = self.store.get_latest(handle).unwrap();
 
         match client.server_info() {
             PubServerInfo::KrillServer(service_uri, token) => {
@@ -167,7 +171,7 @@ impl PubClients {
         let (handle, info) = req.unwrap();
 
         let init = PubClientInitDetails::init(&handle, info);
-        self.store.add(&handle, init)?;
+        self.store.add(init)?;
 
         Ok(())
     }
@@ -176,12 +180,15 @@ impl PubClients {
 
 impl<S: CaSigner> EventListener<TrustAnchor<S>> for PubClients {
     fn listen(&self, ta: &TrustAnchor<S>, event: &TrustAnchorEvent) {
-        let handle = CaHandle::from(event.id());
         let current_objects = ta.current_objects();
 
         match event.details() {
             TrustAnchorEventDetails::Published(delta) => {
-                self.publish(&handle, current_objects, delta.objects().clone().into());
+                self.publish(
+                    event.handle(),
+                    current_objects,
+                    delta.objects().clone
+                ().into());
             },
         }
     }

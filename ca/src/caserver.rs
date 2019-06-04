@@ -73,7 +73,7 @@ impl<S: CaSigner> CaServer<S> {
         ta_uris: Vec<uri::Https>
     ) -> CaResult<(), S> {
         let handle = ta_handle();
-        if self.ta_store.has(handle.as_ref()) {
+        if self.ta_store.has(&handle) {
             Err(Error::TrustAnchorInitialisedError)
         } else {
             let key = Arc::make_mut(&mut self.signer)
@@ -90,7 +90,7 @@ impl<S: CaSigner> CaServer<S> {
                 self.signer.clone()
             )?;
 
-            self.ta_store.add(handle.as_ref(), init)?;
+            self.ta_store.add(init)?;
 
             Ok(())
         }
@@ -99,7 +99,11 @@ impl<S: CaSigner> CaServer<S> {
     pub fn publish_ta(&self) -> CaResult<(), S> {
         let handle = ta_handle();
         let ta = self.ta_store.get_latest(&handle)?;
-        let ta_publish_cmd = TrustAnchorCommandDetails::publish(&handle, self.signer.clone());
+        let ta_publish_cmd = TrustAnchorCommandDetails::publish(
+            &handle,
+            self.signer.clone()
+        );
+
         let events = ta.process_command(ta_publish_cmd)?;
         self.ta_store.update(&handle, ta, events)?;
 

@@ -4,15 +4,24 @@
 //! used to exchange identity and configuration between CAs and their
 //! parent CA and/or RPKI Publication Servers.
 use std::io;
+use std::path::PathBuf;
+
 use base64::DecodeError;
 use bcder::decode;
+
 use rpki::uri;
 use rpki::x509;
 use rpki::x509::Time;
-use krill_commons::util::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
+
+use krill_commons::util::xml::{
+    AttributesError,
+    XmlReader,
+    XmlReaderErr,
+    XmlWriter
+};
+use krill_commons::api::admin::Handle;
+
 use crate::id::IdCert;
-use std::path::PathBuf;
-use api::ClientHandle;
 
 
 //------------ PublisherRequest ----------------------------------------------
@@ -127,8 +136,8 @@ impl PublisherRequest {
         &self.id_cert
     }
 
-    pub fn client_handle(&self) -> ClientHandle {
-        ClientHandle::from(self.publisher_handle.as_str())
+    pub fn client_handle(&self) -> Handle {
+        Handle::from(self.publisher_handle.as_str())
     }
 
     /// Saves this as an XML file

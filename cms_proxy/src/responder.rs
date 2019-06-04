@@ -1,6 +1,6 @@
+use krill_commons::api::admin::Handle;
 use krill_commons::eventsourcing::{
     Aggregate,
-    AggregateId,
     CommandDetails,
     SentCommand,
     StoredEvent
@@ -10,7 +10,7 @@ use crate::id::MyIdentity;
 
 // const fn is not stable yet
 const ID: &str = "cms-responder";
-pub fn id() -> AggregateId { AggregateId::from(ID) }
+pub fn id() -> Handle { Handle::from(ID) }
 
 //------------ ResponderEvent ---------------------------------------------
 
@@ -143,7 +143,7 @@ mod tests {
             let my_id = new_id(&d);
 
             let init = ResponderEvents::init(my_id);
-            store.add(&id(), init).unwrap();
+            store.add(init).unwrap();
         });
     }
 

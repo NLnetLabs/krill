@@ -6,7 +6,7 @@ use krill_client::options::{AddPublisher, Command, PublishersCommand};
 use krill_client::report::ApiResponse;
 use krill_commons::util::test;
 use krill_commons::api::admin::{
-    AggregateHandle,
+    Handle,
     Token
 };
 use krill_daemon::test::{ test_with_krill_server, execute_krillc_command };
@@ -14,9 +14,9 @@ use krill_daemon::test::{ test_with_krill_server, execute_krillc_command };
 fn add_publisher(handle: &str, base_uri: &str, token: &str) {
     let command = Command::Publishers(PublishersCommand::Add(
         AddPublisher {
-            handle: AggregateHandle::from(handle),
+            handle:   Handle::from(handle),
             base_uri: test::rsync_uri(base_uri),
-            token: Token::from(token)
+            token:    Token::from(token)
         }
     ));
     execute_krillc_command(command);

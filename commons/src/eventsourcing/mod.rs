@@ -3,7 +3,6 @@
 mod agg;
 pub use self::agg::{
     Aggregate,
-    AggregateId
 };
 
 mod evt;
@@ -55,6 +54,7 @@ mod tests {
 
     use serde::Serialize;
 
+    use crate::api::admin::Handle;
     use crate::util::test;
 
     use super::*;
@@ -70,7 +70,7 @@ mod tests {
 
     impl InitPersonEvent {
 
-        pub fn init(id: &AggregateId, name: &str) -> Self {
+        pub fn init(id: &Handle, name: &str) -> Self {
             StoredEvent::new(id, 0, InitPersonDetails { name: name.to_string()})
         }
     }
@@ -143,12 +143,12 @@ mod tests {
 
     impl PersonCommand {
 
-        pub fn go_around_sun(id: &AggregateId, version: Option<u64>) -> Self {
+        pub fn go_around_sun(id: &Handle, version: Option<u64>) -> Self {
             Self::new(id, version, PersonCommandDetails::GoAroundTheSun)
         }
 
 
-        pub fn change_name(id: &AggregateId, version: Option<u64>, s: &str) -> Self {
+        pub fn change_name(id: &Handle, version: Option<u64>, s: &str) -> Self {
             let details = PersonCommandDetails::ChangeName(s.to_string());
             Self::new(id, version, details)
         }
@@ -181,7 +181,7 @@ mod tests {
     #[derive(Clone, Deserialize, Serialize)]
     struct Person {
         /// The id is needed when generating events.
-        id: AggregateId,
+        id: Handle,
 
         /// The version of for this particular Person. Versions
         /// are incremented whenever events are applied. They are
@@ -195,7 +195,7 @@ mod tests {
     }
 
     impl Person {
-        pub fn id(&self) -> &AggregateId { &self.id }
+        pub fn id(&self) -> &Handle { &self.id }
         pub fn version(&self) -> u64 { self.version }
         pub fn name(&self) -> &String { &self.name }
         pub fn age(&self) -> u8 { self.age }
@@ -252,10 +252,10 @@ mod tests {
             let mut manager = DiskAggregateStore::<Person>::new(&d, "person").unwrap();
             manager.add_listener(counter.clone());
 
-            let id_alice = AggregateId::from("alice");
+            let id_alice = Handle::from("alice");
             let alice_init = InitPersonEvent::init(&id_alice, "alice smith");
 
-            manager.add(&id_alice, alice_init).unwrap();
+            manager.add(alice_init).unwrap();
 
             let mut alice = manager.get_latest(&id_alice).unwrap();
             assert_eq!("alice smith", alice.name());

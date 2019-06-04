@@ -1,60 +1,9 @@
-use std::fmt;
-use std::path::Path;
-
 use super::{
     Command,
     Event,
     Storable
 };
 
-
-//------------ AggregateId ---------------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct AggregateId(String);
-
-
-impl AggregateId {
-    pub fn as_str(&self) -> &str {
-        &self.0.as_str()
-    }
-}
-
-impl From<&str> for AggregateId {
-    fn from(s: &str) -> Self {
-        AggregateId(s.to_string())
-    }
-}
-
-impl From<String> for AggregateId {
-    fn from(s: String) -> Self {
-        AggregateId(s)
-    }
-}
-
-impl AsRef<str> for AggregateId {
-    fn as_ref(&self) -> &str {
-        self.as_str()
-    }
-}
-
-impl AsRef<String> for AggregateId {
-    fn as_ref(&self) -> &String {
-        &self.0
-    }
-}
-
-impl AsRef<Path> for AggregateId {
-    fn as_ref(&self) -> &Path {
-        self.0.as_ref()
-    }
-}
-
-impl fmt::Display for AggregateId {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
 
 //------------ Aggregate -----------------------------------------------------
 

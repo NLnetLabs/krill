@@ -3,7 +3,7 @@ use std::str::FromStr;
 use clap::{App, Arg, SubCommand};
 use rpki::uri;
 
-use krill_commons::api::admin::{PublisherHandle, Token};
+use krill_commons::api::admin::{Handle, Token};
 
 use crate::report::{
     ReportFormat,
@@ -179,7 +179,7 @@ impl Options {
                 command = Command::Publishers(PublishersCommand::List)
             }
             if let Some(m) = m.subcommand_matches("add") {
-                let handle = PublisherHandle::from(m.value_of("handle").unwrap());
+                let handle = Handle::from(m.value_of("handle").unwrap());
                 let base_uri = uri::Rsync::from_str(m.value_of("uri").unwrap())?;
                 let token = Token::from(m.value_of("token").unwrap());
 
@@ -253,7 +253,7 @@ pub enum PublishersCommand {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AddPublisher {
-    pub handle:   PublisherHandle,
+    pub handle:   Handle,
     pub base_uri: uri::Rsync,
     pub token:    Token
 }

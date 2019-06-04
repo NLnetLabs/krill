@@ -4,8 +4,8 @@ use std::sync::Arc;
 use rpki::uri;
 use krill_commons::api::publication;
 use krill_commons::api::admin::{
-    PublisherHandle,
-    PublisherRequest,
+    Handle,
+    PublisherRequest
 };
 use krill_commons::api::ca::RepoInfo;
 use krill_commons::api::rrdp::DeltaElements;
@@ -60,7 +60,7 @@ impl PubServer {
 
         if ! rrdp_store.has(&repo::id()) {
             let init = RrdpInitDetails::init_new(base_http_uri, repo_dir);
-            rrdp_store.add(&repo::id(), init)?;
+            rrdp_store.add(init)?;
         }
 
         let store = Arc::new(DiskAggregateStore::<Publisher>::new(work_dir, "publishers")?);
@@ -75,7 +75,7 @@ impl PubServer {
         Ok(pubserver)
     }
 
-    pub fn repo_info_for(&self, handle: &PublisherHandle) -> Result<RepoInfo, Error> {
+    pub fn repo_info_for(&self, handle: &Handle) -> Result<RepoInfo, Error> {
         let rsync_jail = format!("{}{}/", self.base_rsync_uri.to_string(), handle);
         let base_uri = uri::Rsync::from_string(rsync_jail).unwrap();
         let rpki_notify = self.rrdp_server()?.notification_uri();
@@ -99,7 +99,7 @@ impl PubServer {
 
     pub fn publish(
         &self,
-        handle: &PublisherHandle,
+        handle: &Handle,
         delta: publication::PublishDelta
     ) -> Result<(), Error> {
 
@@ -137,7 +137,7 @@ impl PubServer {
 
     pub fn list(
         &self,
-        handle: &PublisherHandle
+        handle: &Handle
     ) -> Result<publication::ListReply, Error> {
         match self.get_publisher(handle)? {
             Some(publisher) => Ok(publisher.list_current()),
@@ -151,15 +151,15 @@ impl PubServer {
 ///
 impl PubServer {
 
-    fn verify_handle(&self, handle: &PublisherHandle) -> Result<(), Error> {
-        let name = handle.name();
+    fn verify_handle(&self, handle: &Handle) -> Result<(), Error> {
+        let name = handle.as_str();
 
         if ! name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
-            return Err(Error::InvalidHandle(handle.to_string()))
+            return Err(Error::InvalidHandle(name.to_string()))
         }
 
-        if self.store.has(handle.as_ref()) {
-            return Err(Error::DuplicatePublisher(handle.to_string()))
+        if self.store.has(handle) {
+            return Err(Error::DuplicatePublisher(name.to_string()))
         }
 
         Ok(())
@@ -181,10 +181,10 @@ impl PubServer {
 
     pub fn get_publisher(
         &self,
-        handle: &PublisherHandle
+        handle: &Handle
     ) -> Result<Option<Arc<Publisher>>, Error> {
-        if self.store.has(handle.as_ref()) {
-            self.store.get_latest(handle.as_ref())
+        if self.store.has(handle) {
+            self.store.get_latest(handle)
                 .map(Some)
                 .map_err(Error::AggregateStoreError)
         } else {
@@ -198,20 +198,19 @@ impl PubServer {
         &self,
         req: PublisherRequest
     ) -> Result<(), Error> {
-        let handle = PublisherHandle::from(req.handle().as_str());
-        self.verify_handle(&handle)?;
+        self.verify_handle(req.handle())?;
         self.verify_base_uri(req.base_uri())?;
 
         let init = InitPublisherDetails::for_request(req);
 
-        self.store.add(handle.as_ref(), init)?;
+        self.store.add(init)?;
 
         Ok(())
     }
 
     /// Returns a list of publisher handles
-    pub fn list_publishers(&self) -> Vec<PublisherHandle> {
-        self.store.list().iter().map(PublisherHandle::from).collect()
+    pub fn list_publishers(&self) -> Vec<Handle> {
+        self.store.list()
     }
 
     /// Deactivates a publisher. For now this is irreversible, but we may add
@@ -220,7 +219,7 @@ impl PubServer {
     /// entities that would get confusing.
     pub fn deactivate_publisher(
         &self,
-        handle: &PublisherHandle
+        handle: &Handle
     ) -> Result<(), Error> {
         let cmd = PublisherCommandDetails::deactivate(handle);
         self.command_publisher(cmd)?;
@@ -235,7 +234,8 @@ impl PubServer {
         &self,
         command: PublisherCommand
     ) -> Result<Option<DeltaElements>, Error> {
-        let handle = PublisherHandle::from(command.id());
+
+        let handle = command.handle().clone();
 
         match self.get_publisher(&handle)? {
             None => Err(Error::UnknownPublisher(handle.to_string())),
@@ -258,7 +258,7 @@ impl PubServer {
                     }
                 }
 
-                self.store.update(handle.as_ref(), pbl, events)?;
+                self.store.update(&handle, pbl, events)?;
 
                 Ok(res)
             }
@@ -345,7 +345,7 @@ mod tests {
         uri: &str,
     ) -> PublisherRequest {
         let base_uri = test::rsync_uri(uri);
-        let handle = PublisherHandle::from(handle);
+        let handle = Handle::from(handle);
         let token = Token::from("secret");
 
         PublisherRequest::new(handle, token, base_uri)
@@ -374,10 +374,10 @@ mod tests {
             let server = make_server(&d);
             server.create_publisher(publisher_req).unwrap();
 
-            let handle = PublisherHandle::from("alice");
+            let handle = Handle::from("alice");
             let alice = server.get_publisher(&handle).unwrap().unwrap();
 
-            assert_eq!(alice.id(), &handle);
+            assert_eq!(alice.handle(), &handle);
         })
     }
 
@@ -454,11 +454,11 @@ mod tests {
     fn should_remove_publisher() {
         test::test_with_tmp_dir(|d| {
             let server = make_server(&d);
-            let handle = PublisherHandle::from("alice");
+            let handle = Handle::from("alice");
 
             // create publisher
             let publisher_req = make_publisher_req(
-                handle.name(),
+                handle.as_str(),
                 "rsync://localhost/repo/alice/",
             );
             server.create_publisher(publisher_req).unwrap();
@@ -485,7 +485,7 @@ mod tests {
                 "alice",
                 "rsync://localhost/repo/alice/",
             );
-            let handle = PublisherHandle::from("alice");
+            let handle = Handle::from("alice");
 
             let server = make_server(&d);
             server.create_publisher(publisher_req).unwrap();
@@ -512,7 +512,7 @@ mod tests {
                 "alice",
                 "rsync://localhost/repo/alice/",
             );
-            let handle = PublisherHandle::from("alice");
+            let handle = Handle::from("alice");
 
             let server = make_server(&d);
             server.create_publisher(publisher_req).unwrap();

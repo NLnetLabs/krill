@@ -1,7 +1,6 @@
-use super::{
-    AggregateId,
-    Event,
-};
+use crate::api::admin::Handle;
+
+use super::Event;
 
 
 //------------ Command -------------------------------------------------------
@@ -18,7 +17,7 @@ pub trait Command {
     type Event: Event;
 
     /// Identifies the aggregate, useful when storing and retrieving the event.
-    fn id(&self) -> &AggregateId;
+    fn handle(&self) -> &Handle;
 
     /// The version of the aggregate that this command updates. If this
     /// command should update whatever the latest version happens to be, then
@@ -44,7 +43,7 @@ pub trait Command {
 /// ['CommandDetails'] and leave the id and version boilerplate.
 #[derive(Clone)]
 pub struct SentCommand<C: CommandDetails> {
-    id: AggregateId,
+    handle: Handle,
     version: Option<u64>,
     details: C
 }
@@ -52,8 +51,8 @@ pub struct SentCommand<C: CommandDetails> {
 impl<C: CommandDetails> Command for SentCommand<C> {
     type Event = C::Event;
 
-    fn id(&self) -> &AggregateId {
-        &self.id
+    fn handle(&self) -> &Handle {
+        &self.handle
     }
 
     fn version(&self) -> Option<u64> {
@@ -63,8 +62,8 @@ impl<C: CommandDetails> Command for SentCommand<C> {
 
 impl<C: CommandDetails> SentCommand<C> {
 
-    pub fn new(id: &AggregateId, version: Option<u64>, details: C) -> Self {
-        SentCommand { id: id.clone(), version, details }
+    pub fn new(id: &Handle, version: Option<u64>, details: C) -> Self {
+        SentCommand { handle: id.clone(), version, details }
     }
 
     pub fn into_details(self) -> C { self.details }

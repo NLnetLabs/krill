@@ -1,35 +1,12 @@
-use std::fmt;
-
 use rpki::uri;
 
-use krill_commons::api::admin::AggregateHandle;
-use krill_commons::api::admin::Token;
+use krill_commons::api::admin::{
+    Handle,
+    Token
+};
 use krill_commons::util::softsigner::SignerKeyId;
 
 use crate::id::IdCert;
-
-
-//------------ ClientHandle --------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct ClientHandle(String);
-
-impl From<&str> for ClientHandle {
-    fn from(s: &str) -> Self {
-        ClientHandle(s.to_string())
-    }
-}
-
-impl From<&AggregateHandle> for ClientHandle {
-    fn from(handle: &AggregateHandle) -> Self { ClientHandle(handle.name().to_string())}
-}
-
-impl fmt::Display for ClientHandle {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
 
 //------------ Client ------------------------------------------------------
 
@@ -61,18 +38,18 @@ impl ClientAuth {
 
 #[derive(Debug, Clone, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ClientInfo {
-    handle: ClientHandle,
+    handle: Handle,
     auth: ClientAuth
 }
 
 impl ClientInfo {
-    pub fn new(handle: ClientHandle, auth: ClientAuth) -> Self {
+    pub fn new(handle: Handle, auth: ClientAuth) -> Self {
         ClientInfo { handle, auth }
     }
-    pub fn unwrap(self) -> (ClientHandle, ClientAuth ) {
+    pub fn unwrap(self) -> (Handle, ClientAuth ) {
         (self.handle, self.auth)
     }
-    pub fn handle(&self) -> &ClientHandle { &self.handle }
+    pub fn handle(&self) -> &Handle { &self.handle }
     pub fn auth(&self) -> &ClientAuth { &self.auth }
 }
 
@@ -80,7 +57,7 @@ impl ClientInfo {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CmsClientInfo {
-    handle: ClientHandle,
+    handle: Handle,
     server_cert: IdCert,
     key_id: SignerKeyId,
     publication_uri: uri::Https,
@@ -88,7 +65,7 @@ pub struct CmsClientInfo {
 
 impl CmsClientInfo {
     pub fn new(
-        handle: ClientHandle,
+        handle: Handle,
         cert: IdCert,
         key_id: SignerKeyId,
         publication_uri: uri::Https
@@ -96,8 +73,8 @@ impl CmsClientInfo {
         CmsClientInfo { handle, server_cert: cert, key_id, publication_uri }
     }
 
-    pub fn handle(&self) -> &ClientHandle { &self.handle }
-    pub fn set_handle(&mut self, handle: ClientHandle) { self.handle = handle; }
+    pub fn handle(&self) -> &Handle { &self.handle }
+    pub fn set_handle(&mut self, handle: Handle) { self.handle = handle; }
     pub fn server_cert(&self) -> &IdCert { &self.server_cert }
     pub fn set_server_cert(&mut self, cert: IdCert) { self.server_cert = cert; }
     pub fn key_id(&self) -> &SignerKeyId { &self.key_id }

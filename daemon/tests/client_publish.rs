@@ -8,10 +8,20 @@ use std::{thread, time};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use krill_client::KrillClient;
-use krill_client::options::{AddPublisher, Command, Options, PublishersCommand, Rfc8181Command, AddRfc8181Client};
+use krill_client::options::{
+    AddPublisher,
+    AddRfc8181Client,
+    Command,
+    Options,
+    PublishersCommand,
+    Rfc8181Command,
+};
 use krill_client::report::ReportFormat;
 use krill_cms_proxy::rfc8183::RepositoryResponse;
-use krill_commons::api::admin::{AggregateHandle, Token};
+use krill_commons::api::admin::{
+    Handle,
+    Token
+};
 use krill_commons::api::publication::ListReply;
 use krill_commons::util::file::CurrentFile;
 use krill_commons::util::file;
@@ -62,9 +72,9 @@ fn execute_krillc_command(command: Command) {
 fn add_publisher(handle: &str, base_uri: &str, token: &str) {
     let command = Command::Publishers(PublishersCommand::Add(
         AddPublisher {
-            handle: AggregateHandle::from(handle),
+            handle:   Handle::from(handle),
             base_uri: test::rsync_uri(base_uri),
-            token: Token::from(token)
+            token:    Token::from(token)
         }
     ));
     execute_krillc_command(command);

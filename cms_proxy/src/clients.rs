@@ -1,8 +1,10 @@
 use std::collections::HashMap;
-use krill_commons::api::admin::Token;
+use krill_commons::api::admin::{
+    Handle,
+    Token
+};
 use krill_commons::eventsourcing::{
     Aggregate,
-    AggregateId,
     Command,
     CommandDetails,
     Event,
@@ -11,14 +13,13 @@ use krill_commons::eventsourcing::{
 };
 use crate::api::{
     ClientAuth,
-    ClientHandle,
+    ClientInfo
 };
 use crate::id::IdCert;
-use api::ClientInfo;
 
 // const fn is not stable yet
 const ID: &str = "cms-clients";
-pub fn id() -> AggregateId { AggregateId::from(ID) }
+pub fn id() -> Handle { Handle::from(ID) }
 
 
 
@@ -31,19 +32,19 @@ impl ClientsEvents {
         StoredEvent::new(&id(), 0, ClientsInitDetails)
     }
 
-    pub fn added_client(version: u64, handle: ClientHandle, client: ClientAuth) -> ClientsEvent {
+    pub fn added_client(version: u64, handle: Handle, client: ClientAuth) -> ClientsEvent {
         StoredEvent::new(&id(), version, ClientsEventDetails::AddedClient(handle, client))
     }
 
-    pub fn updated_cert(version: u64, handle: ClientHandle, cert: IdCert) -> ClientsEvent {
+    pub fn updated_cert(version: u64, handle: Handle, cert: IdCert) -> ClientsEvent {
         StoredEvent::new(&id(), version, ClientsEventDetails::UpdatedClientCert(handle, cert))
     }
 
-    pub fn updated_token(version: u64, handle: ClientHandle, token: Token) -> ClientsEvent {
+    pub fn updated_token(version: u64, handle: Handle, token: Token) -> ClientsEvent {
         StoredEvent::new(&id(), version, ClientsEventDetails::UpdatedClientToken(handle, token))
     }
 
-    pub fn removed_client(version: u64, handle: ClientHandle) -> ClientsEvent {
+    pub fn removed_client(version: u64, handle: Handle) -> ClientsEvent {
         StoredEvent::new(&id(), version, ClientsEventDetails::RemovedClient(handle))
     }
 }
@@ -56,10 +57,10 @@ pub type ClientsInit = StoredEvent<ClientsInitDetails>;
 #[derive(Clone, Deserialize, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum ClientsEventDetails {
-    AddedClient(ClientHandle, ClientAuth),
-    UpdatedClientCert(ClientHandle, IdCert),
-    UpdatedClientToken(ClientHandle, Token),
-    RemovedClient(ClientHandle)
+    AddedClient(Handle, ClientAuth),
+    UpdatedClientCert(Handle, IdCert),
+    UpdatedClientToken(Handle, Token),
+    RemovedClient(Handle)
 }
 
 pub type ClientsEvent = StoredEvent<ClientsEventDetails>;
@@ -70,16 +71,16 @@ pub type ClientsEvent = StoredEvent<ClientsEventDetails>;
 pub struct ClientsCommands;
 
 impl ClientsCommands {
-    pub fn add(handle: ClientHandle, client: ClientAuth) -> ClientsCommand {
+    pub fn add(handle: Handle, client: ClientAuth) -> ClientsCommand {
         SentCommand::new(&id(), None, ClientsCommandDetails::AddClient(handle, client))
     }
-    pub fn update_cert(handle: ClientHandle, cert: IdCert) -> ClientsCommand {
+    pub fn update_cert(handle: Handle, cert: IdCert) -> ClientsCommand {
         SentCommand::new(&id(), None, ClientsCommandDetails::UpdateClientCert(handle, cert))
     }
-    pub fn update_token(handle: ClientHandle, token: Token) -> ClientsCommand {
+    pub fn update_token(handle: Handle, token: Token) -> ClientsCommand {
         SentCommand::new(&id(), None, ClientsCommandDetails::UpdateClientToken(handle, token))
     }
-    pub fn remove(handle: ClientHandle) -> ClientsCommand {
+    pub fn remove(handle: Handle) -> ClientsCommand {
         SentCommand::new(&id(), None, ClientsCommandDetails::RemoveClient(handle))
     }
 }
@@ -87,10 +88,10 @@ impl ClientsCommands {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum ClientsCommandDetails {
-    AddClient(ClientHandle, ClientAuth),
-    UpdateClientCert(ClientHandle, IdCert),
-    UpdateClientToken(ClientHandle, Token),
-    RemoveClient(ClientHandle)
+    AddClient(Handle, ClientAuth),
+    UpdateClientCert(Handle, IdCert),
+    UpdateClientToken(Handle, Token),
+    RemoveClient(Handle)
 }
 
 impl CommandDetails for ClientsCommandDetails {
@@ -112,7 +113,7 @@ pub struct ClientManager {
     version: u64,
 
     // Clients known by this proxy
-    clients: HashMap<ClientHandle, ClientAuth>
+    clients: HashMap<Handle, ClientAuth>
 }
 
 
@@ -192,7 +193,7 @@ impl Aggregate for ClientManager {
 }
 
 impl ClientManager {
-    pub fn client_auth(&self, handle: &ClientHandle) -> Option<&ClientAuth> {
+    pub fn client_auth(&self, handle: &Handle) -> Option<&ClientAuth> {
         self.clients.get(handle)
     }
 
@@ -204,18 +205,18 @@ impl ClientManager {
         res
     }
 
-    fn has_client(&self, handle: &ClientHandle) -> bool {
+    fn has_client(&self, handle: &Handle) -> bool {
         self.clients.contains_key(handle)
     }
 
-    fn assert_new(&self, handle: &ClientHandle) -> ProxyResult<()> {
+    fn assert_new(&self, handle: &Handle) -> ProxyResult<()> {
         if self.has_client(handle) {
             Err(Error::ClientExists(handle.clone()))
         } else { Ok(()) }
     }
 
 
-    fn assert_exists(&self, handle: &ClientHandle) -> ProxyResult<()> {
+    fn assert_exists(&self, handle: &Handle) -> ProxyResult<()> {
         if ! self.has_client(handle) {
             Err(Error::NoClient(handle.clone()))
         } else { Ok(()) }
@@ -233,10 +234,10 @@ pub enum Error {
     ConcurrentModification(u64, u64),
 
     #[display(fmt = "Client with handle {} cannot be added (already exists)", _0)]
-    ClientExists(ClientHandle),
+    ClientExists(Handle),
 
     #[display(fmt = "Client with handle {} does not exist", _0)]
-    NoClient(ClientHandle),
+    NoClient(Handle),
 }
 
 impl std::error::Error for Error {}
@@ -265,7 +266,7 @@ pub mod tests {
     pub fn add_client(work_dir: &PathBuf, name: &str) -> ClientsCommand {
         let cert = new_id_cert(work_dir);
         let token = Token::from(name);
-        let handle = ClientHandle::from(name);
+        let handle = Handle::from(name);
 
         ClientsCommands::add(
             handle,
@@ -283,7 +284,7 @@ pub mod tests {
 
             // Create the proxy server in the store
             let init = ClientsEvents::init();
-            store.add(&id(), init).unwrap();
+            store.add(init).unwrap();
 
             // Get the proxy for use
             let proxy = store.get_latest(&id()).unwrap();
@@ -292,7 +293,7 @@ pub mod tests {
             // Set up client "alice" and add to the proxy
             let alice_cert1 = new_id_cert(&d);
             let alice_token1 = Token::from("alice1");
-            let alice_handle = ClientHandle::from("alice");
+            let alice_handle = Handle::from("alice");
 
             let add_alice = ClientsCommands::add(
                 alice_handle.clone(),

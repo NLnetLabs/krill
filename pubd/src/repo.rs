@@ -2,6 +2,7 @@ use std::{io, fs};
 use std::path::PathBuf;
 use std::time::Duration;
 use rpki::uri;
+use krill_commons::api::admin::Handle;
 use krill_commons::api::rrdp::{
     Delta,
     DeltaElements,
@@ -14,7 +15,6 @@ use krill_commons::api::rrdp::{
 };
 use krill_commons::eventsourcing::{
     Aggregate,
-    AggregateId,
     CommandDetails,
     StoredEvent,
     SentCommand,
@@ -29,8 +29,8 @@ const RRDP_FOLDER: &str = "rrdp";
 const RSYNC_FOLDER: &str = "rsync";
 
 pub const ID: &str = "rrdp_server";
-pub fn id() -> AggregateId {
-    AggregateId::from(ID)
+pub fn id() -> Handle {
+    Handle::from(ID)
 }
 
 
@@ -74,12 +74,12 @@ pub enum RrdpEventDetails {
 }
 
 impl RrdpEventDetails {
-    fn added_delta(id: &AggregateId, ver: u64, delta: Delta) -> RrdpEvent {
+    fn added_delta(id: &Handle, ver: u64, delta: Delta) -> RrdpEvent {
         StoredEvent::new(id, ver, RrdpEventDetails::AddedDelta(delta))
     }
 
     fn updated_notification(
-        id: &AggregateId,
+        id: &Handle,
         ver: u64,
         notif: NotificationUpdate
     ) -> RrdpEvent {
@@ -87,7 +87,7 @@ impl RrdpEventDetails {
     }
 
     fn cleaned_up(
-        id: &AggregateId,
+        id: &Handle,
         ver: u64,
         time: Time
     ) -> RrdpEvent {

@@ -10,10 +10,10 @@ use krill_ca::{CaServer, CaServerError, PubClients, PubClientError};
 use krill_ca::trustanchor::{ta_handle};
 use krill_commons::api::publication;
 use krill_commons::api::admin;
-use krill_commons::api::admin::{PublisherHandle, Token, PubServerInfo};
+use krill_commons::api::admin::{Handle, Token, PubServerInfo};
 use krill_commons::api::ca::{TrustAnchorInfo, IncomingCertificate};
 use krill_commons::util::softsigner::{OpenSslSigner, SignerError};
-use krill_cms_proxy::api::{ClientInfo, ClientHandle};
+use krill_cms_proxy::api::ClientInfo;
 use krill_cms_proxy::proxy;
 use krill_cms_proxy::proxy::ProxyServer;
 use krill_cms_proxy::rfc8183::RepositoryResponse;
@@ -125,7 +125,7 @@ impl KrillServer {
                 match token_opt {
                     None => false,
                     Some(token) => {
-                        let handle = PublisherHandle::from(handle_str);
+                        let handle = Handle::from(handle_str);
                         if let Ok(Some(pbl)) = self.publisher(&handle) {
                             pbl.token() == &token
                         } else {
@@ -145,7 +145,7 @@ impl KrillServer {
     /// Returns all currently configured publishers. (excludes deactivated)
     pub fn publishers(
         &self
-    ) -> Vec<PublisherHandle> {
+    ) -> Vec<Handle> {
         self.pubserver.list_publishers()
     }
 
@@ -160,7 +160,7 @@ impl KrillServer {
     /// Removes a publisher, blows up if it didn't exist.
     pub fn deactivate_publisher(
         &mut self,
-        handle: &PublisherHandle
+        handle: &Handle
     ) -> Result<(), Error> {
         self.pubserver.deactivate_publisher(handle).map_err(Error::PubServer)
     }
@@ -168,7 +168,7 @@ impl KrillServer {
     /// Returns an option for a publisher.
     pub fn publisher(
         &self,
-        handle: &PublisherHandle
+        handle: &Handle
     ) -> Result<Option<Arc<Publisher>>, Error> {
         self.pubserver.get_publisher(handle).map_err(Error::PubServer)
     }
@@ -191,17 +191,16 @@ impl KrillServer {
         self.proxy_server.add_client(client).map_err(Error::ProxyServer)
     }
 
-    pub fn repository_response(&self, handle: &PublisherHandle) -> Result<RepositoryResponse, Error> {
-        let client = ClientHandle::from(handle);
+    pub fn repository_response(&self, handle: &Handle) -> Result<RepositoryResponse, Error> {
         let publisher = self.publisher(handle)?
-            .ok_or_else(|| Error::ProxyServer(proxy::Error::UnknownClient(client.clone())))?;
+            .ok_or_else(|| Error::ProxyServer(proxy::Error::UnknownClient(handle.clone())))?;
 
         let sia_base = publisher.base_uri().clone();
 
         let service_uri = format!(
             "{}rfc8181/{}",
             self.service_uri.to_string(),
-            &client
+            handle
         );
         let service_uri = uri::Https::from_string(service_uri).unwrap();
 
@@ -212,7 +211,7 @@ impl KrillServer {
         let rrdp_notification_uri = uri::Https::from_string(rrdp_notification_uri).unwrap();
 
         self.proxy_server.response(
-            &client,
+            handle,
             service_uri,
             sia_base,
             rrdp_notification_uri
@@ -222,7 +221,7 @@ impl KrillServer {
     pub fn handle_rfc8181_req(
         &self,
         msg: SignedMessage,
-        handle: ClientHandle
+        handle: Handle
     ) -> Result<Captured, Error> {
         self.proxy_server.handle_rfc8181_req(msg, handle).map_err(Error::ProxyServer)
     }
@@ -289,7 +288,7 @@ impl KrillServer {
     pub fn handle_delta(
         &self,
         delta: publication::PublishDelta,
-        handle: &PublisherHandle
+        handle: &Handle
     ) -> Result<(), Error> {
         self.pubserver.publish(handle, delta).map_err(Error::PubServer)
     }
@@ -297,7 +296,7 @@ impl KrillServer {
     /// Handles a list request sent to the API, or.. through the CmsProxy.
     pub fn handle_list(
         &self,
-        handle: &PublisherHandle
+        handle: &Handle
     ) -> Result<publication::ListReply, Error> {
         self.pubserver.list(handle).map_err(Error::PubServer)
     }

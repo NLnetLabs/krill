@@ -1,82 +1,59 @@
 //! Support for admin tasks, such as managing publishers and RFC8181 clients
 
 use std::fmt;
-use std::fmt::Display;
-use std::ops::Deref;
 
 use rpki::uri;
 use rpki::crypto::Signer;
 
 use crate::api::Link;
-use crate::eventsourcing::AggregateId;
 use crate::util::ext_serde;
+use std::path::Path;
 
-//------------ CaHandle ------------------------------------------------------
 
-pub type CaHandle = AggregateHandle;
+//------------ Handle --------------------------------------------------------
 
-//------------ PublisherHandle -----------------------------------------------
-
-pub type PublisherHandle = AggregateHandle;
-
-//------------ AggregateHandle -----------------------------------------------
-
-/// A type for referring to publishers, both in the api as well as to the
-/// aggregates.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct AggregateHandle(AggregateId);
+pub struct Handle(String);
 
-impl AggregateHandle {
-    pub fn name(&self) -> &str {
-        self.0.as_str()
+impl Handle {
+    pub fn as_str(&self) -> &str {
+        &self.0.as_str()
     }
 }
 
-impl From<&str> for AggregateHandle {
+impl From<&str> for Handle {
     fn from(s: &str) -> Self {
-        AggregateHandle::from(AggregateId::from(s))
+        Handle(s.to_string())
     }
 }
 
-impl From<String> for AggregateHandle {
-    fn from(s: String) -> Self { AggregateHandle::from(AggregateId::from(s))}
-}
-
-impl From<AggregateId> for AggregateHandle {
-    fn from(id: AggregateId) -> Self {
-        AggregateHandle(id)
+impl From<String> for Handle {
+    fn from(s: String) -> Self {
+        Handle(s)
     }
 }
 
-impl From<&AggregateId> for AggregateHandle {
-    fn from(id: &AggregateId) -> Self {
-        AggregateHandle(id.clone())
-    }
-}
-
-impl AsRef<str> for AggregateHandle {
+impl AsRef<str> for Handle {
     fn as_ref(&self) -> &str {
-        self.name()
+        self.as_str()
     }
 }
 
-impl AsRef<AggregateId> for AggregateHandle {
-    fn as_ref(&self) -> &AggregateId {
+impl AsRef<String> for Handle {
+    fn as_ref(&self) -> &String {
         &self.0
     }
 }
 
-impl Deref for AggregateHandle {
-    type Target = AggregateId;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
+impl AsRef<Path> for Handle {
+    fn as_ref(&self) -> &Path {
+        self.0.as_ref()
     }
 }
 
-impl Display for AggregateHandle {
+impl fmt::Display for Handle {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.name())
+        self.0.fmt(f)
     }
 }
 
@@ -126,14 +103,14 @@ impl fmt::Display for Token {
 /// publish).
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PublisherRequest {
-    handle:   PublisherHandle,
+    handle:   Handle,
     token:    Token,
     base_uri: uri::Rsync,
 }
 
 impl PublisherRequest {
     pub fn new(
-        handle:   PublisherHandle,
+        handle:   Handle,
         token:    Token,
         base_uri: uri::Rsync,
     ) -> Self {
@@ -146,7 +123,7 @@ impl PublisherRequest {
 }
 
 impl PublisherRequest {
-    pub fn handle(&self) -> &PublisherHandle {
+    pub fn handle(&self) -> &Handle {
         &self.handle
     }
 
@@ -159,7 +136,7 @@ impl PublisherRequest {
     }
 
     /// Return all the values (handle, token, base_uri).
-    pub fn unwrap(self) -> (PublisherHandle, Token, uri::Rsync) {
+    pub fn unwrap(self) -> (Handle, Token, uri::Rsync) {
         (self.handle, self.token, self.base_uri)
     }
 }
@@ -186,7 +163,7 @@ pub struct PublisherSummary {
 
 impl PublisherSummary {
     pub fn from(
-        handle: &PublisherHandle,
+        handle: &Handle,
         path_publishers: &str
     ) -> PublisherSummary {
         let mut links = Vec::new();
@@ -216,7 +193,7 @@ pub struct PublisherList {
 
 impl PublisherList {
     pub fn build(
-        publishers: &[PublisherHandle],
+        publishers: &[Handle],
         path_publishers: &str
     ) -> PublisherList {
         let publishers: Vec<PublisherSummary> = publishers.iter().map(|p|
@@ -284,17 +261,17 @@ impl Eq for PublisherDetails {}
 /// is used by an embedded CA to do the actual publication.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PublisherClientRequest {
-    handle:      PublisherHandle,
+    handle:      Handle,
     server_info: PubServerInfo
 }
 
 impl PublisherClientRequest {
-    pub fn new(handle: PublisherHandle, server_info: PubServerInfo) -> Self {
+    pub fn new(handle: Handle, server_info: PubServerInfo) -> Self {
         PublisherClientRequest { handle, server_info }
     }
 
     pub fn for_krill(
-        handle: PublisherHandle,
+        handle: Handle,
         service_uri: uri::Https,
         token: Token
     ) -> Self {
@@ -302,7 +279,7 @@ impl PublisherClientRequest {
         PublisherClientRequest { handle, server_info }
     }
 
-    pub fn unwrap(self) -> (PublisherHandle, PubServerInfo) {
+    pub fn unwrap(self) -> (Handle, PubServerInfo) {
         (self.handle, self.server_info)
     }
 }
