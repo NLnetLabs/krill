@@ -3,9 +3,9 @@
 use std::io;
 use std::path::PathBuf;
 
-use rpki::uri;
-
-use krill_commons::api::admin::CaHandle;
+use krill_commons::api::admin::{CaHandle, PubServerInfo, PublisherClientRequest};
+use krill_commons::api::ca::CurrentObjects;
+use krill_commons::api::publication::PublishDelta;
 use krill_commons::eventsourcing::{
     Aggregate,
     AggregateStore,
@@ -17,6 +17,7 @@ use krill_commons::eventsourcing::{
     SentCommand,
     StoredEvent,
 };
+use krill_commons::util::httpclient;
 
 use crate::trustanchor::{
     CaSigner,
@@ -24,18 +25,6 @@ use crate::trustanchor::{
     TrustAnchorEvent,
     TrustAnchorEventDetails
 };
-use krill_commons::api::ca::{CurrentObjects, ObjectsDelta};
-use krill_commons::api::publication;
-
-
-//------------ PubServerInfo -------------------------------------------------
-
-pub type Token = String;
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub enum PubServerInfo {
-    KrillServer(uri::Https, Token)
-}
 
 
 //------------ PubClientInit -------------------------------------------------
@@ -46,15 +35,14 @@ pub type PubClientInit = StoredEvent<PubClientInitDetails>;
 pub struct PubClientInitDetails(PubServerInfo);
 
 impl PubClientInitDetails {
-    pub fn init_with_krill(
+    pub fn init(
         handle: &CaHandle,
-        service_uri: uri::Https,
-        token: Token
+        server_info: PubServerInfo
     ) -> PubClientInit {
         PubClientInit::new(
             handle.as_ref(),
             0,
-            PubClientInitDetails(PubServerInfo::KrillServer(service_uri, token))
+            PubClientInitDetails(server_info)
         )
     }
 }
@@ -109,11 +97,11 @@ impl Aggregate for PubClient {
         self.version
     }
 
-    fn apply(&mut self, event: Self::Event) {
+    fn apply(&mut self, _event: Self::Event) {
         unimplemented!() // no events to process, yet
     }
 
-    fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
+    fn process_command(&self, _command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
         unimplemented!() // no commands to process, yet
     }
 }
@@ -125,50 +113,75 @@ impl PubClient {
 }
 
 
-//------------ Listener ------------------------------------------------------
+//------------ PubClients ----------------------------------------------------
 
-pub struct PublicationListener {
-    client_store: DiskAggregateStore<PubClient>
+pub struct PubClients {
+    store: DiskAggregateStore<PubClient>
 }
 
-impl PublicationListener {
+impl PubClients {
     pub fn build(work_dir: &PathBuf) -> Result<Self, Error> {
-        let client_store = DiskAggregateStore::<PubClient>::new(work_dir, "pub_clients")?;
-        Ok(PublicationListener { client_store })
+        let store = DiskAggregateStore::<PubClient>::new(work_dir, "pub_clients")?;
+        Ok(PubClients { store })
     }
 
     fn publish(
         &self,
         handle: &CaHandle,
         _current_objects: &CurrentObjects,
-        _delta: &ObjectsDelta
+        delta: PublishDelta
     ) {
-        let client = self.client_store.get_latest(handle.as_ref()).unwrap();
+        let client = self.store.get_latest(handle.as_ref()).unwrap();
 
         match client.server_info() {
             PubServerInfo::KrillServer(service_uri, token) => {
+                let service_uri = service_uri.as_str();
+
+                // Note, I could not think of a convenient way to pass down the test
+                // context, since there are different threads involved when testing.
+                // So, for now, just setting test mode whenever the publication is done
+                // at localhost.
+                if service_uri.starts_with("https://localhost") {
+                    httpclient::TEST_MODE.with(|m| { *m.borrow_mut() = true; });
+                }
+
                 let uri = format!("{}publication/{}", service_uri, handle.as_str());
 
-
-
+                match httpclient::post_json(&uri, delta, Some(token)) {
+                    Err(httpclient::Error::ErrorWithJson(_code, err)) => {
+                        if err.code() == 2007 || err.code() == 2008 {
+                            // TODO, do full sync!
+                            unimplemented!()
+                        } else {
+                            panic!("{}", err)
+                        }
+                    },
+                    Err(e) => panic!("{}", e),
+                    Ok(()) => {}
+                }
             }
         }
+    }
 
+    pub fn add(&self, req: PublisherClientRequest) -> Result<(), Error> {
+        let (handle, info) = req.unwrap();
 
+        let init = PubClientInitDetails::init(&handle, info);
+        self.store.add(&handle, init)?;
 
-        unimplemented!()
+        Ok(())
     }
 }
 
 
-impl<S: CaSigner> EventListener<TrustAnchor<S>> for PublicationListener {
+impl<S: CaSigner> EventListener<TrustAnchor<S>> for PubClients {
     fn listen(&self, ta: &TrustAnchor<S>, event: &TrustAnchorEvent) {
         let handle = CaHandle::from(event.id());
         let current_objects = ta.current_objects();
 
         match event.details() {
             TrustAnchorEventDetails::Published(delta) => {
-                self.publish(&handle, current_objects, delta.objects());
+                self.publish(&handle, current_objects, delta.objects().clone().into());
             },
         }
     }

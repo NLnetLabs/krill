@@ -4,6 +4,7 @@ use krill_commons::api::admin::{
     PublisherDetails,
     PublisherHandle,
     PublisherRequest,
+    Token
 };
 use krill_commons::api::rrdp::{
     CurrentObjects,
@@ -11,7 +12,6 @@ use krill_commons::api::rrdp::{
     VerificationError
 };
 use krill_commons::eventsourcing::{Aggregate, CommandDetails, StoredEvent, SentCommand};
-use krill_commons::util::ext_serde;
 
 
 //------------ PublisherInit -------------------------------------------------
@@ -20,11 +20,7 @@ pub type PublisherInit = StoredEvent<InitPublisherDetails>;
 
 #[derive(Clone, Deserialize, Serialize)]
 pub struct InitPublisherDetails {
-    token: String,
-
-    #[serde(
-        deserialize_with = "ext_serde::de_rsync_uri",
-        serialize_with = "ext_serde::ser_rsync_uri")]
+    token: Token,
     base_uri: uri::Rsync,
 }
 
@@ -115,13 +111,10 @@ pub struct Publisher {
     deactivated: bool,
 
     /// Publication jail for this publisher
-    #[serde(
-        deserialize_with = "ext_serde::de_rsync_uri",
-        serialize_with = "ext_serde::ser_rsync_uri")]
     base_uri:    uri::Rsync,
 
     /// The token used by the API
-    token:         String,
+    token:         Token,
 
     /// All objects currently published by this publisher, by hash
     current_objects:  CurrentObjects
@@ -135,7 +128,7 @@ impl Publisher {
 
     pub fn is_deactivated(&self) -> bool { self.deactivated }
 
-    pub fn token(&self) -> &String {
+    pub fn token(&self) -> &Token {
         &self.token
     }
 

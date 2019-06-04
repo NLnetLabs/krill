@@ -1,8 +1,10 @@
 //! Process requests received, delegate, and wrap up the responses.
 use std::sync::{RwLockReadGuard, RwLockWriteGuard};
+
 use actix_web::{HttpResponse, ResponseError, Json, Path};
 use actix_web::http::StatusCode;
 use serde::Serialize;
+
 use krill_cms_proxy::api::{ClientInfo, ClientHandle};
 use krill_cms_proxy::sigmsg::SignedMessage;
 use krill_commons::api::{admin, publication, ErrorResponse, ErrorCode};
@@ -10,6 +12,7 @@ use krill_commons::api::admin::PublisherHandle;
 use krill_commons::api::rrdp::VerificationError;
 use krill_pubd::publishers::PublisherError;
 use krill_pubd::repo::RrdpServerError;
+
 use crate::http::server::HttpRequest;
 use crate::krillserver::{self, KrillServer};
 
@@ -206,7 +209,11 @@ pub fn trust_anchor(req: &HttpRequest) -> HttpResponse {
 }
 
 pub fn init_trust_anchor(req: &HttpRequest) -> HttpResponse {
-    render_empty_res(rw_server(&req).init_trust_anchor())
+    render_empty_res(rw_server(req).init_trust_anchor())
+}
+
+pub fn publish_trust_anchor(req: &HttpRequest) -> HttpResponse {
+    render_empty_res(ro_server(req).publish_trust_anchor())
 }
 
 pub fn tal(req: &HttpRequest) -> HttpResponse {
@@ -290,6 +297,7 @@ impl ErrorToStatus for krillserver::Error {
             krillserver::Error::ProxyServer(_) => StatusCode::INTERNAL_SERVER_ERROR,
             krillserver::Error::SignerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             krillserver::Error::CaServerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            krillserver::Error::PubClientError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -347,7 +355,8 @@ impl ToErrorCode for krillserver::Error {
             krillserver::Error::PubServer(e) => e.code(),
             krillserver::Error::ProxyServer(_) => ErrorCode::ProxyError,
             krillserver::Error::SignerError(_) => ErrorCode::SigningError,
-            krillserver::Error::CaServerError(_) => ErrorCode::CaServerError
+            krillserver::Error::CaServerError(_) => ErrorCode::CaServerError,
+            krillserver::Error::PubClientError(_) => ErrorCode::PubClientServerError,
         }
     }
 }

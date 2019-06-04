@@ -2,6 +2,9 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use clap::{App, Arg, SubCommand};
 use rpki::uri;
+
+use krill_commons::api::admin::{PublisherHandle, Token};
+
 use crate::report::{
     ReportFormat,
     ReportError
@@ -13,7 +16,7 @@ use crate::report::{
 /// more easily.
 pub struct Options {
     pub server: uri::Https,
-    pub token: String,
+    pub token: Token,
     pub format: ReportFormat,
     pub command: Command
 }
@@ -30,7 +33,7 @@ impl Options {
         format: ReportFormat,
         command: Command
     ) -> Self {
-        Options { server, token: token.to_string(), format, command }
+        Options { server, token: Token::from(token), format, command }
     }
 
     /// Creates a new Options from command line args (useful for cli)
@@ -66,11 +69,14 @@ impl Options {
 
             .subcommand(SubCommand::with_name("trustanchor")
                 .about("Manage embedded Trust Anchor (used for testing)")
+                .subcommand(SubCommand::with_name("init")
+                    .about("Initialise embedded TA.")
+                )
                 .subcommand(SubCommand::with_name("show")
                     .about("Show embedded TA details.")
                 )
-                .subcommand(SubCommand::with_name("init")
-                    .about("Initialise embedded TA.")
+                .subcommand(SubCommand::with_name("publish")
+                    .about("Force publication for embedded TA now.")
                 )
             )
 
@@ -163,6 +169,9 @@ impl Options {
             if let Some(_m) = m.subcommand_matches("init") {
                 command = Command::TrustAnchor(TrustAnchorCommand::Init)
             }
+            if let Some(_m) = m.subcommand_matches("publish") {
+                command = Command::TrustAnchor(TrustAnchorCommand::Publish)
+            }
         }
 
         if let Some(m) = matches.subcommand_matches("publishers") {
@@ -170,9 +179,9 @@ impl Options {
                 command = Command::Publishers(PublishersCommand::List)
             }
             if let Some(m) = m.subcommand_matches("add") {
-                let handle = m.value_of("handle").unwrap().to_string();
+                let handle = PublisherHandle::from(m.value_of("handle").unwrap());
                 let base_uri = uri::Rsync::from_str(m.value_of("uri").unwrap())?;
-                let token = m.value_of("token").unwrap().to_string();
+                let token = Token::from(m.value_of("token").unwrap());
 
                 let add = AddPublisher { handle, base_uri, token };
                 command = Command::Publishers(
@@ -207,7 +216,7 @@ impl Options {
         let server = matches.value_of("server").unwrap(); // required
         let server = uri::Https::from_str(server).map_err(|_| Error::UriError)?;
 
-        let token = matches.value_of("token").unwrap().to_string(); // req.
+        let token = Token::from(matches.value_of("token").unwrap());
 
         let mut format = ReportFormat::Default;
         if let Some(fmt) = matches.value_of("format") {
@@ -229,8 +238,9 @@ pub enum Command {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TrustAnchorCommand {
+    Init,
     Show,
-    Init
+    Publish
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -243,9 +253,9 @@ pub enum PublishersCommand {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AddPublisher {
-    pub handle: String,
+    pub handle:   PublisherHandle,
     pub base_uri: uri::Rsync,
-    pub token:  String
+    pub token:    Token
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

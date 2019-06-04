@@ -6,6 +6,8 @@ pub mod admin;
 pub mod publication;
 pub mod rrdp;
 
+use std::fmt;
+
 use bytes::Bytes;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -190,6 +192,12 @@ impl ErrorResponse {
     pub fn msg(&self) -> &str { &self.msg }
 }
 
+impl fmt::Display for ErrorResponse {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", &serde_json::to_string(&self).unwrap())
+    }
+}
+
 impl Into<ErrorCode> for ErrorResponse {
     fn into(self) -> ErrorCode {
         ErrorCode::from(self.code)
@@ -256,6 +264,9 @@ pub enum ErrorCode {
     #[display(fmt="CA Server issue.")]
     CaServerError,
 
+    #[display(fmt="Publication Client Server issue.")]
+    PubClientServerError,
+
     #[display(fmt="Unrecognised error (this is a bug)")]
     Unknown
 }
@@ -283,6 +294,7 @@ impl From<usize> for ErrorCode {
             3003 => ErrorCode::SigningError,
             3004 => ErrorCode::ProxyError,
             3005 => ErrorCode::CaServerError,
+            3006 => ErrorCode::PubClientServerError,
 
             _ => ErrorCode::Unknown
         }
@@ -312,6 +324,7 @@ impl Into<ErrorResponse> for ErrorCode {
             ErrorCode::SigningError => 3003,
             ErrorCode::ProxyError => 3004,
             ErrorCode::CaServerError => 3005,
+            ErrorCode::PubClientServerError => 3006,
 
             ErrorCode::Unknown => 65535
         };
@@ -344,7 +357,7 @@ mod tests {
             test_code(n)
         }
 
-        for n in 3001..3006 {
+        for n in 3001..3007 {
             test_code(n)
         }
 

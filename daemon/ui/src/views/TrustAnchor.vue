@@ -13,6 +13,19 @@
 
             <a href="/ta/ta.tal">{{ $t("trustanchor.downloadTal")}}</a>
 
+            <el-form :inline="true">
+                <el-form-item>
+                    <el-button
+                            class="retire"
+                            icon="el-icon-pencil"
+                            type="primary"
+                            round
+                            size="mini"
+                            @click="publishTrustAnchor()"
+                    >{{ $t("trustanchor.publish") }}</el-button>
+                </el-form-item>
+            </el-form>
+
         </span>
         <span v-show="noTa">
             {{ $t("trustanchor.absent") }}
@@ -43,11 +56,11 @@
 
                 <el-row type="flex" class="modal-footer" justify="end">
                     <el-form-item>
-                        <el-button @click="hide_init_form()">{{ $t('form.cancel')
+                        <el-button @click="hideInitForm()">{{ $t('form.cancel')
                         }}</el-button>
                         <el-button
                                 type="primary"
-                                @click="init_ta()"
+                                @click="initTrustAnchor()"
                         >{{ $t('form.confirm') }}</el-button>
                     </el-form-item>
                 </el-row>
@@ -94,14 +107,18 @@
                 });
             },
 
-            hide_init_form: function () {
+            hideInitForm: function () {
                 this.dialogFormVisible = false;
             },
 
-            init_ta: function () {
+            initTrustAnchor: function () {
                 APIService.initTrustAnchor();
                 this.load_ta();
                 this.dialogFormVisible = false;
+            },
+
+            publishTrustAnchor: function () {
+                APIService.publishTrustAnchor()
             }
         }
 

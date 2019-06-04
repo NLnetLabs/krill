@@ -179,11 +179,23 @@ impl KeyStore for DiskKeyStore {
         id: &AggregateId,
         key: &Self::Key
     ) -> Result<Option<V>, KeyStoreError> {
-        if self.has_key(id, key) {
-            let f = File::open(self.file_path(id, key))?;
-            let v: V = serde_json::from_reader(f)?;
-            Ok(Some(v))
+        let path = self.file_path(id, key);
+        let path_str = path.to_string_lossy().into_owned();
+
+        if path.exists() {
+            let f = File::open(path)?;
+            match serde_json::from_reader(f) {
+                Err(e) => {
+                    error!("Could not deserialize json at: {}, error: {}", path_str, e);
+                    Err(KeyStoreError::JsonError(e))
+                },
+                Ok(v) => {
+                    info!("Deserialized json at: {}", path_str);
+                    Ok(Some(v))
+                }
+            }
         } else {
+            warn!("Could not find file at: {}", path_str);
             Ok(None)
         }
     }
@@ -195,11 +207,22 @@ impl KeyStore for DiskKeyStore {
         version: u64
     ) -> Result<Option<V>, KeyStoreError> {
         let path = self.path_for_event(id, version);
+        let path_str = path.to_string_lossy().into_owned();
+
         if path.exists() {
             let f = File::open(path)?;
-            let v: V = serde_json::from_reader(f)?;
-            Ok(Some(v))
+            match serde_json::from_reader(f) {
+                Err(e) => {
+                    error!("Could not deserialize json at: {}, error: {}", path_str, e);
+                    Err(KeyStoreError::JsonError(e))
+                },
+                Ok(v) => {
+                    info!("Deserialized event at: {}", path_str);
+                    Ok(Some(v))
+                }
+            }
         } else {
+            info!("No more events at: {}", path_str);
             Ok(None)
         }
     }

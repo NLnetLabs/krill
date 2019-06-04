@@ -6,10 +6,11 @@ use std::sync::Arc;
 use bcder::Captured;
 use rpki::uri;
 
-use krill_ca::{CaServer, CaServerError};
+use krill_ca::{CaServer, CaServerError, PubClients, PubClientError};
+use krill_ca::trustanchor::{ta_handle};
 use krill_commons::api::publication;
 use krill_commons::api::admin;
-use krill_commons::api::admin::PublisherHandle;
+use krill_commons::api::admin::{PublisherHandle, Token, PubServerInfo};
 use krill_commons::api::ca::{TrustAnchorInfo, IncomingCertificate};
 use krill_commons::util::softsigner::{OpenSslSigner, SignerError};
 use krill_cms_proxy::api::{ClientInfo, ClientHandle};
@@ -21,7 +22,6 @@ use krill_pubd::PubServer;
 use krill_pubd::publishers::Publisher;
 
 use crate::auth::Authorizer;
-
 
 //------------ KrillServer ---------------------------------------------------
 
@@ -47,10 +47,14 @@ pub struct KrillServer {
     // Component responsible for API authorisation checks
     authorizer: Authorizer,
 
-    // The configured publishers
+    // Publication server, with configured publishers
     pubserver: PubServer,
 
-    // The configured publishers
+    // Publication clients server, allows embedded CAs to publish
+    // at a PubServer
+    pub_clients: Arc<PubClients>,
+
+    // Handles the internal TA and/or CAs
     caserver: CaServer<OpenSslSigner>,
 
     // CMS+XML proxy server for non-Krill clients
@@ -84,7 +88,8 @@ impl KrillServer {
         )?;
 
         let signer = OpenSslSigner::build(work_dir)?;
-        let caserver = CaServer::build(work_dir, signer)?;
+        let pub_clients = Arc::new(PubClients::build(work_dir)?);
+        let caserver = CaServer::build(work_dir, pub_clients.clone(), signer)?;
 
         Ok(
             KrillServer {
@@ -92,6 +97,7 @@ impl KrillServer {
                 work_dir: work_dir.clone(),
                 authorizer,
                 pubserver,
+                pub_clients,
                 caserver,
                 proxy_server
             }
@@ -104,14 +110,14 @@ impl KrillServer {
 }
 
 impl KrillServer {
-    pub fn is_api_allowed(&self, token_opt: Option<String>) -> bool {
+    pub fn is_api_allowed(&self, token_opt: Option<Token>) -> bool {
         self.authorizer.is_api_allowed(token_opt)
     }
 
     pub fn is_publication_api_allowed(
         &self,
         handle_opt: Option<String>,
-        token_opt: Option<String>
+        token_opt: Option<Token>
     ) -> bool {
         match handle_opt {
             None => false,
@@ -234,14 +240,43 @@ impl KrillServer {
     }
 
     pub fn init_trust_anchor(&mut self) -> Result<(), Error> {
-        let repo_info = self.pubserver.repo_info_for(&PublisherHandle::from("ta"))?;
+
+        let pub_handle = ta_handle();
+
+        let repo_info = self.pubserver.repo_info_for(&pub_handle)?;
 
         let ta_uri = format!("{}{}", self.service_uri.to_string(), "ta/ta.cer");
         let ta_uri = uri::Https::from_string(ta_uri).unwrap();
 
         let ta_aia = self.pubserver.ta_aia();
 
+        let token = self.caserver.random_token();
+
+        // Add publisher
+        let req = admin::PublisherRequest::new(
+            pub_handle.clone(),
+            token.clone(),
+            repo_info.signed_object(""),
+        );
+        self.add_publisher(req)?;
+
+        // Add publisher client for TA
+        let req = admin::PublisherClientRequest::new(
+            pub_handle,
+            PubServerInfo::for_krill(
+                self.service_uri.clone(),
+                token
+            )
+        );
+        self.pub_clients.add(req)?;
+
+        // Add TA
         self.caserver.init_ta(repo_info, ta_aia, vec![ta_uri]).map_err(Error::CaServerError)
+    }
+
+    pub fn publish_trust_anchor(&self) -> Result<(), Error> {
+        self.caserver.publish_ta()?;
+        Ok(())
     }
 }
 
@@ -288,6 +323,9 @@ pub enum Error {
 
     #[display(fmt="{}", _0)]
     CaServerError(CaServerError<OpenSslSigner>),
+
+    #[display(fmt="{}", _0)]
+    PubClientError(PubClientError),
 }
 
 impl From<io::Error> for Error {
@@ -308,6 +346,10 @@ impl From<SignerError> for Error {
 
 impl From<CaServerError<OpenSslSigner>> for Error {
     fn from(e: CaServerError<OpenSslSigner>) -> Self { Error::CaServerError(e) }
+}
+
+impl From<PubClientError> for Error {
+    fn from(e: PubClientError) -> Self { Error::PubClientError(e) }
 }
 
 // Tested through integration tests

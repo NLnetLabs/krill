@@ -114,13 +114,18 @@ impl<A: Aggregate> DiskAggregateStore<A> {
 
 impl<A: Aggregate> AggregateStore<A> for DiskAggregateStore<A> {
     fn get_latest(&self, id: &AggregateId) -> StoreResult<Arc<A>> {
+        info!("Trying to load aggregate id: {}", id);
         match self.cache_get(id) {
             None => {
                 match self.store.get_aggregate(id)? {
-                    None => Err(AggregateStoreError::UnknownAggregate(id.clone())),
+                    None => {
+                        error!("Could not load aggregate with id: {} from disk", id);
+                        Err(AggregateStoreError::UnknownAggregate(id.clone()))
+                    },
                     Some(agg) => {
                         let arc: Arc<A> = Arc::new(agg);
                         self.cache_update(id, arc.clone());
+                        info!("Loaded aggregate id: {} from disk", id);
                         Ok(arc)
                     }
                 }
@@ -130,6 +135,7 @@ impl<A: Aggregate> AggregateStore<A> for DiskAggregateStore<A> {
                     let agg = Arc::make_mut(&mut arc);
                     self.store.update_aggregate(id, agg)?;
                 }
+                info!("Loaded aggregate id: {} from memory", id);
                 Ok(arc)
             }
         }

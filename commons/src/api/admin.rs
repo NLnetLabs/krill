@@ -1,12 +1,15 @@
 //! Support for admin tasks, such as managing publishers and RFC8181 clients
 
-use rpki::uri;
-use crate::api::Link;
-use crate::eventsourcing::AggregateId;
-use crate::util::ext_serde;
 use std::fmt;
 use std::fmt::Display;
 use std::ops::Deref;
+
+use rpki::uri;
+use rpki::crypto::Signer;
+
+use crate::api::Link;
+use crate::eventsourcing::AggregateId;
+use crate::util::ext_serde;
 
 //------------ CaHandle ------------------------------------------------------
 
@@ -78,27 +81,60 @@ impl Display for AggregateHandle {
 }
 
 
+//------------ Token ------------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct Token(String);
+
+impl Token {
+    pub fn random<S: Signer>(signer: &S) -> Self {
+        let mut res = <[u8; 20]>::default();
+        signer.rand(&mut res).unwrap();
+        let string = hex::encode(res);
+        Token(string)
+    }
+}
+
+impl From<&str> for Token {
+    fn from(s: &str) -> Self {
+        Token(s.to_string())
+    }
+}
+
+impl From<String> for Token {
+    fn from(s: String) -> Self {
+        Token(s)
+    }
+}
+
+impl AsRef<str> for Token {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for Token {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+
 //------------ PublisherRequest ----------------------------------------------
 
 /// This type defines request for a new Publisher (CA that is allowed to
 /// publish).
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PublisherRequest {
-    handle:        String,
-
-    /// The token used by the API
-    token:         String,
-
-    #[serde(
-    deserialize_with = "ext_serde::de_rsync_uri",
-    serialize_with = "ext_serde::ser_rsync_uri")]
-    base_uri:    uri::Rsync,
+    handle:   PublisherHandle,
+    token:    Token,
+    base_uri: uri::Rsync,
 }
 
 impl PublisherRequest {
     pub fn new(
-        handle:   String,
-        token:    String,
+        handle:   PublisherHandle,
+        token:    Token,
         base_uri: uri::Rsync,
     ) -> Self {
         PublisherRequest {
@@ -110,11 +146,11 @@ impl PublisherRequest {
 }
 
 impl PublisherRequest {
-    pub fn handle(&self) -> &String {
+    pub fn handle(&self) -> &PublisherHandle {
         &self.handle
     }
 
-    pub fn token(&self) -> &String {
+    pub fn token(&self) -> &Token {
         &self.token
     }
 
@@ -123,7 +159,7 @@ impl PublisherRequest {
     }
 
     /// Return all the values (handle, token, base_uri).
-    pub fn unwrap(self) -> (String, String, uri::Rsync) {
+    pub fn unwrap(self) -> (PublisherHandle, Token, uri::Rsync) {
         (self.handle, self.token, self.base_uri)
     }
 }
@@ -241,3 +277,46 @@ impl PartialEq for PublisherDetails {
 impl Eq for PublisherDetails {}
 
 
+
+//------------ PublisherClientRequest ----------------------------------------
+
+/// This type defines request for a new Publisher client, i.e. the proxy that
+/// is used by an embedded CA to do the actual publication.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PublisherClientRequest {
+    handle:      PublisherHandle,
+    server_info: PubServerInfo
+}
+
+impl PublisherClientRequest {
+    pub fn new(handle: PublisherHandle, server_info: PubServerInfo) -> Self {
+        PublisherClientRequest { handle, server_info }
+    }
+
+    pub fn for_krill(
+        handle: PublisherHandle,
+        service_uri: uri::Https,
+        token: Token
+    ) -> Self {
+        let server_info = PubServerInfo::for_krill(service_uri, token);
+        PublisherClientRequest { handle, server_info }
+    }
+
+    pub fn unwrap(self) -> (PublisherHandle, PubServerInfo) {
+        (self.handle, self.server_info)
+    }
+}
+
+
+//------------ PubServerInfo -------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum PubServerInfo {
+    KrillServer(uri::Https, Token)
+}
+
+impl PubServerInfo {
+    pub fn for_krill(service_uri: uri::Https, token: Token) -> Self {
+        PubServerInfo::KrillServer(service_uri, token)
+    }
+}

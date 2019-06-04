@@ -31,7 +31,8 @@
     "sure" : "Are you sure? You typically only need this in test and development situations.",
     "present": "Embedded Trust Anchor Details",
     "downloadTal": "Download TAL file",
-    "add": "Initialise Trust Anchor"
+    "add": "Initialise Trust Anchor",
+    "publish": "Publish Trust Anchor"
   },
   "form": {
     "required": "This field is required",

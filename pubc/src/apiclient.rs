@@ -1,10 +1,14 @@
 //! Publication Client that uses the JSON/Rest API
 use std::path::PathBuf;
 use std::str::FromStr;
+
 use clap::{App, Arg, SubCommand};
 use rpki::uri;
+
+use krill_commons::api::admin::Token;
 use krill_commons::api::publication;
 use krill_commons::util::{httpclient, file};
+
 use crate::{create_delta, ApiResponse, Format};
 
 //------------ Command -------------------------------------------------------
@@ -42,7 +46,7 @@ pub struct Connection {
     handle: String,
 
     // The token for this particular client handle.
-    token: String,
+    token: Token,
 }
 
 impl Connection {
@@ -53,7 +57,7 @@ impl Connection {
     ) -> Result<Self, Error> {
         let server_uri = uri::Https::from_str(server_uri)?;
         let handle     = handle.to_string();
-        let token      = token.to_string();
+        let token      = Token::from(token);
         Ok(Connection {server_uri, handle, token })
     }
 }

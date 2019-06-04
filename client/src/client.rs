@@ -8,10 +8,14 @@ use krill_commons::util::httpclient;
 use krill_commons::api::admin::{
     PublisherDetails,
     PublisherList,
-    PublisherRequest
+    PublisherRequest,
+    Token
 };
-
-use krill_cms_proxy::api::{ClientInfo, Token, ClientAuth};
+use krill_commons::api::ca::TrustAnchorInfo;
+use krill_cms_proxy::api::{
+    ClientAuth,
+    ClientInfo,
+};
 use krill_cms_proxy::rfc8183;
 
 use crate::report::{
@@ -22,15 +26,14 @@ use crate::options::{
     Options,
     Command,
     PublishersCommand,
-    Rfc8181Command
+    Rfc8181Command,
+    TrustAnchorCommand
 };
-use options::TrustAnchorCommand;
-use krill_commons::api::ca::TrustAnchorInfo;
 
 /// Command line tool for Krill admin tasks
 pub struct KrillClient {
     server: uri::Https,
-    token: String,
+    token: Token,
 }
 
 impl KrillClient {
@@ -89,6 +92,11 @@ impl KrillClient {
                 let uri = self.resolve_uri("api/v1/trustanchor");
                 let ta: TrustAnchorInfo  = self.get_json(&uri)?;
                 Ok(ApiResponse::TrustAnchorInfo(ta))
+            },
+            TrustAnchorCommand::Publish => {
+                let uri = self.resolve_uri("api/v1/publish/ta");
+                httpclient::post_empty(&uri, Some(&self.token))?;
+                Ok(ApiResponse::Empty)
             }
         }
     }

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use krill_commons::api::admin::Token;
 use krill_commons::eventsourcing::{
     Aggregate,
     AggregateId,
@@ -11,7 +12,6 @@ use krill_commons::eventsourcing::{
 use crate::api::{
     ClientAuth,
     ClientHandle,
-    Token
 };
 use crate::id::IdCert;
 use api::ClientInfo;

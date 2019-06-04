@@ -70,6 +70,10 @@ impl PubServerApp {
                 r.method(Method::POST).f(endpoints::init_trust_anchor);
             })
 
+            .resource("/api/v1/publish/ta", |r| {
+                r.method(Method::POST).f(endpoints::publish_trust_anchor)
+            })
+
             .resource("/ta/ta.tal", |r| {
                 r.method(Method::GET).f(endpoints::tal);
             })

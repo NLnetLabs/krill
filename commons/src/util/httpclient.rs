@@ -13,6 +13,9 @@ use reqwest::header::{
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
+use crate::api::ErrorResponse;
+use crate::api::admin::Token;
+
 const JSON_CONTENT: &str = "application/json";
 
 thread_local!(pub static TEST_MODE: RefCell<bool> = RefCell::new(false));
@@ -22,7 +25,7 @@ thread_local!(pub static TEST_MODE: RefCell<bool> = RefCell::new(false));
 /// if nothing is returned.
 pub fn get_json<T: DeserializeOwned>(
     uri: &str,
-    token: Option<&str>
+    token: Option<&Token>
 ) -> Result<T, Error> {
     let headers = headers(Some(JSON_CONTENT), token)?;
     let res = client()?.get(uri).headers(headers).send()?;
@@ -34,7 +37,7 @@ pub fn get_json<T: DeserializeOwned>(
 pub fn get_text(
     uri: &str,
     content_type: &str,
-    token: Option<&str>
+    token: Option<&Token>
 ) -> Result<String, Error> {
     let headers = headers(Some(content_type), token)?;
     let res = client()?.get(uri).headers(headers).send()?;
@@ -46,7 +49,7 @@ pub fn get_text(
 
 /// Checks that there is a 200 OK response at the given URI. Discards the
 /// response body.
-pub fn get_ok(uri: &str, token: Option<&str>) -> Result<(), Error> {
+pub fn get_ok(uri: &str, token: Option<&Token>) -> Result<(), Error> {
     let headers = headers(None, token)?;
     let res = client()?.get(uri).headers(headers).send()?;
     opt_text_response(res)?; // Will return nice errors with possible body.
@@ -59,7 +62,7 @@ pub fn get_ok(uri: &str, token: Option<&str>) -> Result<(), Error> {
 pub fn post_json(
     uri: &str,
     data: impl Serialize,
-    token: Option<&str>
+    token: Option<&Token>
 ) -> Result<(), Error> {
     let headers = headers(Some(JSON_CONTENT), token)?;
     let body = serde_json::to_string(&data)?;
@@ -78,7 +81,7 @@ pub fn post_json(
 pub fn post_json_with_response<T: DeserializeOwned>(
     uri: &str,
     data: impl Serialize,
-    token: Option<&str>
+    token: Option<&Token>
 ) -> Result<T, Error> {
     let headers = headers(Some(JSON_CONTENT), token)?;
     let body = serde_json::to_string(&data)?;
@@ -87,7 +90,7 @@ pub fn post_json_with_response<T: DeserializeOwned>(
 }
 
 /// Performs a POST with no data to the given URI and expects and empty 200 OK response.
-pub fn post_empty(uri: &str, token: Option<&str>) -> Result<(), Error> {
+pub fn post_empty(uri: &str, token: Option<&Token>) -> Result<(), Error> {
     let headers = headers(Some(JSON_CONTENT), token)?;
     let res = client()?.post(uri).headers(headers).send()?;
     if let Some(res) = opt_text_response(res)? {
@@ -137,7 +140,7 @@ pub fn post_binary(
 /// Sends a delete request to the specified url.
 pub fn delete(
     uri: &str,
-    token: Option<&str>
+    token: Option<&Token>
 ) -> Result<(), Error> {
     let headers = headers(None, token)?;
     client()?.delete(uri).headers(headers).send()?;
@@ -160,7 +163,7 @@ fn client() -> Result<Client, Error> {
 
 fn headers(
     content_type: Option<&str>,
-    token: Option<&str>
+    token: Option<&Token>
 ) -> Result<HeaderMap, Error> {
     let mut headers = HeaderMap::new();
     headers.insert(
@@ -216,7 +219,7 @@ fn opt_text_response(mut res: Response) -> Result<Option<String>, Error> {
                     if body.is_empty() {
                         Err(Error::BadStatus(status))
                     } else {
-                        Err(Error::ErrorWithBody(status, body))
+                        Err(Error::wrap_err_res(status, body))
                     }
                 },
                 _ => Err(Error::BadStatus(status))
@@ -241,6 +244,9 @@ pub enum Error {
     #[display(fmt="Status: {}, Error: {}", _0, _1)]
     ErrorWithBody(StatusCode, String),
 
+    #[display(fmt="Status: {}, Error: {}", _0, _1)]
+    ErrorWithJson(StatusCode, ErrorResponse),
+
     #[display(fmt="{}", _0)]
     JsonError(serde_json::Error),
 
@@ -252,6 +258,15 @@ pub enum Error {
 
     #[display(fmt="Unexpected response: {}", _0)]
     UnexpectedResponse(String)
+}
+
+impl Error {
+    fn wrap_err_res(code: StatusCode, content: String) -> Error {
+        match serde_json::from_str::<ErrorResponse>(&content) {
+            Ok(res) => Error::ErrorWithJson(code, res),
+            Err(_) => Error::ErrorWithBody(code, content)
+        }
+    }
 }
 
 impl From<reqwest::Error> for Error {

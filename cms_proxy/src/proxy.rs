@@ -4,6 +4,7 @@ use std::sync::Arc;
 use bcder::{Captured, Mode};
 use bcder::encode::Values;
 use krill_commons::api::{ErrorResponse, ErrorCode};
+use krill_commons::api::admin::Token;
 use krill_commons::api::publication::{PublishRequest, PublishDelta, ListReply};
 use krill_commons::eventsourcing::{
     Aggregate,
@@ -23,7 +24,6 @@ use crate::api::{
     ClientAuth,
     ClientHandle,
     ClientInfo,
-    Token
 };
 use crate::clients::{
     self,
@@ -248,7 +248,7 @@ impl ProxyServer {
     }
 
     fn send_list_request(uri: &str, token: &Token) -> Result<ReplyMessage, Error> {
-        let list = httpclient::get_json(&uri, Some(token.as_ref()))?;
+        let list = httpclient::get_json(&uri, Some(token))?;
         Ok(ReplyMessage::ListReply(list))
     }
 
@@ -256,7 +256,7 @@ impl ProxyServer {
         httpclient::post_json(
             uri,
             delta,
-            Some(token.as_ref())
+            Some(token)
         )?;
 
         Ok(ReplyMessage::SuccessReply)

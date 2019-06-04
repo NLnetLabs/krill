@@ -214,10 +214,6 @@ impl<S: CaSigner> TrustAnchor<S> {
         &self.current_key.current_set().objects()
     }
 
-    pub fn apply_delta(&mut self, delta: PublicationDelta) {
-        unimplemented!()
-    }
-
 }
 
 

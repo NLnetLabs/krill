@@ -18,4 +18,7 @@ pub use caserver::Error as CaServerError;
 pub mod trustanchor;
 
 mod signing;
-//mod publishing;q
+
+mod publishing;
+pub use publishing::PubClients;
+pub use publishing::Error as PubClientError;

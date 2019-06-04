@@ -1,11 +1,14 @@
 //! Authorization for the API
 use std::sync::{Arc, RwLock, RwLockReadGuard};
+
 use actix_web::{Form, HttpResponse, HttpRequest, Result};
 use actix_web::http::HeaderMap;
 use actix_web::middleware::{Middleware, Started};
 use actix_web::middleware::identity::RequestIdentity;
-use crate::krillserver::KrillServer;
 
+use krill_commons::api::admin::Token;
+
+use crate::krillserver::KrillServer;
 
 const ADMIN_API_PATH: &str = "/api/";
 const PUBLICATION_API_PATH: &str = "/publication/";
@@ -43,17 +46,17 @@ impl Middleware<Arc<RwLock<KrillServer>>> for CheckAuthorisation {
 }
 
 impl CheckAuthorisation {
-    fn extract_token(headers: &HeaderMap) -> Option<String> {
+    fn extract_token(headers: &HeaderMap) -> Option<Token> {
         if let Some(header) = headers.get("Authorization") {
             if let Ok(str_header) = header.to_str() {
                 let str_header = str_header.to_lowercase();
                 if str_header.len() > 6 {
                     let (bearer, token) = str_header.split_at(6);
                     let bearer = bearer.trim();
-                    let token = token.trim();
+                    let token = Token::from(token.trim());
 
                     if "bearer" == bearer {
-                        return Some(token.to_string())
+                        return Some(token)
                     }
                 }
             }
@@ -78,17 +81,17 @@ impl CheckAuthorisation {
 /// accessed.
 #[derive(Clone, Debug)]
 pub struct Authorizer {
-    krill_auth_token: String
+    krill_auth_token: Token
 }
 
 impl Authorizer {
     pub fn new(krill_auth_token: &str) -> Self {
         Authorizer {
-            krill_auth_token: krill_auth_token.to_string()
+            krill_auth_token: Token::from(krill_auth_token)
         }
     }
 
-    pub fn is_api_allowed(&self, token_opt: Option<String>) -> bool {
+    pub fn is_api_allowed(&self, token_opt: Option<Token>) -> bool {
         match token_opt {
             None => false,
             Some(secret) => self.krill_auth_token == secret
@@ -98,7 +101,7 @@ impl Authorizer {
 
 #[derive(Deserialize)]
 pub struct Credentials {
-    token: String
+    token: Token
 }
 
 pub fn post_login(

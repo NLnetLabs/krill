@@ -3,6 +3,7 @@ use std::fmt;
 use rpki::uri;
 
 use krill_commons::api::admin::AggregateHandle;
+use krill_commons::api::admin::Token;
 use krill_commons::util::softsigner::SignerKeyId;
 
 use crate::id::IdCert;
@@ -29,35 +30,6 @@ impl fmt::Display for ClientHandle {
     }
 }
 
-
-//------------ Token ------------------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct Token(String);
-
-impl From<&str> for Token {
-    fn from(s: &str) -> Self {
-        Token(s.to_string())
-    }
-}
-
-impl From<String> for Token {
-    fn from(s: String) -> Self {
-        Token(s)
-    }
-}
-
-impl AsRef<str> for Token {
-    fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Display for Token {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
 
 //------------ Client ------------------------------------------------------
 

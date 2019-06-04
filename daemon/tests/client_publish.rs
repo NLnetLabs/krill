@@ -11,11 +11,12 @@ use krill_client::KrillClient;
 use krill_client::options::{AddPublisher, Command, Options, PublishersCommand, Rfc8181Command, AddRfc8181Client};
 use krill_client::report::ReportFormat;
 use krill_cms_proxy::rfc8183::RepositoryResponse;
+use krill_commons::api::admin::{AggregateHandle, Token};
+use krill_commons::api::publication::ListReply;
 use krill_commons::util::file::CurrentFile;
 use krill_commons::util::file;
 use krill_commons::util::httpclient;
 use krill_commons::util::test;
-use krill_commons::api::publication::ListReply;
 use krill_pubc::{ApiResponse, Format};
 use krill_pubc::apiclient;
 use krill_pubc::cmsclient;
@@ -61,9 +62,9 @@ fn execute_krillc_command(command: Command) {
 fn add_publisher(handle: &str, base_uri: &str, token: &str) {
     let command = Command::Publishers(PublishersCommand::Add(
         AddPublisher {
-            handle: handle.to_string(),
+            handle: AggregateHandle::from(handle),
             base_uri: test::rsync_uri(base_uri),
-            token: token.to_string()
+            token: Token::from(token)
         }
     ));
     execute_krillc_command(command);
@@ -132,10 +133,10 @@ fn rfc8181_client_process_command(command: cmsclient::Command, state_dir: &PathB
 fn get_repository_response(handle: &str) -> RepositoryResponse {
     let uri = format!("https://localhost:3000/api/v1/rfc8181/{}/response.xml", handle);
     let content_type = "application/xml";
-    let token = Some("secret");
+    let token = Token::from("secret");
 
     let xml = httpclient::get_text(
-        &uri, content_type, token
+        &uri, content_type, Some(&token)
     ).unwrap();
 
     RepositoryResponse::decode(xml.as_bytes()).unwrap()

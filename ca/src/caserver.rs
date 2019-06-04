@@ -5,17 +5,28 @@ use std::sync::Arc;
 use rpki::crypto::PublicKeyFormat;
 use rpki::uri;
 
-use krill_commons::api::ca::{TrustAnchorInfo, IncomingCertificate, RepoInfo};
-use krill_commons::eventsourcing::{AggregateStore, DiskAggregateStore, AggregateStoreError};
-
+use krill_commons::api::admin::Token;
+use krill_commons::api::ca::{
+    IncomingCertificate,
+    RepoInfo,
+    TrustAnchorInfo,
+};
+use krill_commons::eventsourcing::{
+    Aggregate,
+    AggregateStore,
+    AggregateStoreError,
+    DiskAggregateStore,
+};
 use crate::trustanchor::{
     self,
     TA_NS,
     ta_handle,
     CaSigner,
     TrustAnchor,
+    TrustAnchorCommandDetails,
     TrustAnchorInitDetails,
 };
+use crate::PubClients;
 
 
 //------------ CaServer ------------------------------------------------------
@@ -28,12 +39,17 @@ pub struct CaServer<S: CaSigner> {
 
 impl<S: CaSigner> CaServer<S> {
 
-    pub fn build(work_dir: &PathBuf, signer: S) -> CaResult<Self, S> {
-        let ta_store = DiskAggregateStore::<TrustAnchor<S>>::new(work_dir, TA_NS)?;
+    pub fn build(
+        work_dir: &PathBuf,
+        pub_clients: Arc<PubClients>,
+        signer: S
+    ) -> CaResult<Self, S> {
+        let mut ta_store = DiskAggregateStore::<TrustAnchor<S>>::new(work_dir, TA_NS)?;
+        ta_store.add_listener(pub_clients);
         Ok(CaServer { signer: Arc::new(signer), ta_store: Arc::new(ta_store) })
     }
 
-    /// Gets the TrustAnchor, if present. Returns an error if the TA is unitialized.
+    /// Gets the TrustAnchor, if present. Returns an error if the TA is uninitialized.
     pub fn get_trust_anchor_info(&self) -> CaResult<TrustAnchorInfo, S> {
         self.ta_store
             .get_latest(&ta_handle())
@@ -42,7 +58,7 @@ impl<S: CaSigner> CaServer<S> {
             .map_err(Error::TrustAnchorError)
     }
 
-    /// Gets the TA certificate, if present. Returns an error if the TA is unitialized.
+    /// Gets the TA certificate, if present. Returns an error if the TA is uninitialized.
     pub fn get_trust_anchor_cert(&self) -> CaResult<IncomingCertificate, S> {
         Ok(self.ta_store
             .get_latest(&ta_handle())
@@ -78,6 +94,21 @@ impl<S: CaSigner> CaServer<S> {
 
             Ok(())
         }
+    }
+
+    pub fn publish_ta(&self) -> CaResult<(), S> {
+        let handle = ta_handle();
+        let ta = self.ta_store.get_latest(&handle)?;
+        let ta_publish_cmd = TrustAnchorCommandDetails::publish(&handle, self.signer.clone());
+        let events = ta.process_command(ta_publish_cmd)?;
+        self.ta_store.update(&handle, ta, events)?;
+
+        Ok(())
+    }
+
+    /// Generates a random token for embedded CAs
+    pub fn random_token(&self) -> Token {
+        Token::random(self.signer.as_ref())
     }
 
 }
@@ -134,7 +165,10 @@ mod tests {
     fn add_ta() {
         test::test_with_tmp_dir(|d| {
             let signer = OpenSslSigner::build(&d).unwrap();
-            let mut server = CaServer::<OpenSslSigner>::build(&d, signer).unwrap();
+
+            let pub_clients = Arc::new(PubClients::build(&d).unwrap());
+
+            let mut server = CaServer::<OpenSslSigner>::build(&d, pub_clients, signer).unwrap();
 
             let repo_info = {
                 let base_uri = test::rsync_uri("rsync://localhost/repo/ta/");

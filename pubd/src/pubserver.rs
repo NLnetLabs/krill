@@ -7,6 +7,7 @@ use krill_commons::api::admin::{
     PublisherHandle,
     PublisherRequest,
 };
+use krill_commons::api::ca::RepoInfo;
 use krill_commons::api::rrdp::DeltaElements;
 use krill_commons::eventsourcing::{
     Aggregate,
@@ -32,7 +33,6 @@ use crate::repo::{
     RrdpServerError,
     RsyncdStore,
 };
-use krill_commons::api::ca::RepoInfo;
 
 
 //------------ PubServer -----------------------------------------------------
@@ -76,7 +76,7 @@ impl PubServer {
     }
 
     pub fn repo_info_for(&self, handle: &PublisherHandle) -> Result<RepoInfo, Error> {
-        let rsync_jail = format!("{}{}", self.base_rsync_uri.to_string(), handle);
+        let rsync_jail = format!("{}{}/", self.base_rsync_uri.to_string(), handle);
         let base_uri = uri::Rsync::from_string(rsync_jail).unwrap();
         let rpki_notify = self.rrdp_server()?.notification_uri();
         Ok(RepoInfo::new(base_uri, rpki_notify))
@@ -326,6 +326,7 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
     use bytes::Bytes;
+    use krill_commons::api::admin::Token;
     use krill_commons::api::publication::PublishDeltaBuilder;
     use krill_commons::api::rrdp::VerificationError;
     use krill_commons::util::file::CurrentFile;
@@ -344,9 +345,10 @@ mod tests {
         uri: &str,
     ) -> PublisherRequest {
         let base_uri = test::rsync_uri(uri);
-        let token = "secret";
+        let handle = PublisherHandle::from(handle);
+        let token = Token::from("secret");
 
-        PublisherRequest::new(handle.to_string(), token.to_string(), base_uri)
+        PublisherRequest::new(handle, token, base_uri)
     }
 
     fn make_server(work_dir: &PathBuf) -> PubServer {
