@@ -85,10 +85,11 @@ pub fn ser_time<S>(time: &Time, s: S) -> Result<S::Ok, S::Error> where S: Serial
 
 //------------ Serial ----------------------------------------------------------
 
-pub fn de_serial<'de, D>(_d: D) -> Result<Serial, D::Error> where D: Deserializer<'de> {
-    Ok(Serial::from(1_u64))
+pub fn de_serial<'de, D>(d: D) -> Result<Serial, D::Error> where D: Deserializer<'de> {
+    let s = u128::deserialize(d)?;
+    Ok(Serial::from(s))
 }
 
 pub fn ser_serial<S>(_serial: &Serial, s: S) -> Result<S::Ok, S::Error> where S: Serializer {
-    "1".serialize(s)
+    1_u64.serialize(s)
 }
