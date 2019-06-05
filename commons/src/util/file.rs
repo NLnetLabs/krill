@@ -7,7 +7,6 @@ use bytes::Bytes;
 use rpki::uri;
 use crate::api::{ Base64, EncodedHash };
 use crate::api::publication;
-use crate::util::ext_serde;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
@@ -231,9 +230,7 @@ fn derive_uri(
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct CurrentFile {
-    #[serde(
-    deserialize_with = "ext_serde::de_rsync_uri",
-    serialize_with = "ext_serde::ser_rsync_uri")]
+    /// The full uri for this file.
     uri:     uri::Rsync,
 
     /// The actual file content. Note that we may want to store this

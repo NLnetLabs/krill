@@ -6,7 +6,6 @@ use rpki::uri;
 use rpki::crypto::Signer;
 
 use crate::api::Link;
-use crate::util::ext_serde;
 use std::path::Path;
 
 
@@ -218,13 +217,7 @@ impl PublisherList {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PublisherDetails {
     handle: String,
-
     deactivated: bool,
-
-    #[serde(
-    deserialize_with = "ext_serde::de_rsync_uri",
-    serialize_with = "ext_serde::ser_rsync_uri"
-    )]
     base_uri: uri::Rsync,
 }
 

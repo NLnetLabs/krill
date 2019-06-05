@@ -3,7 +3,6 @@ use base64;
 use bytes::Bytes;
 use chrono::Utc;
 use log::LevelFilter;
-use rpki::uri;
 use rpki::x509::{
     Serial,
     Time,
@@ -27,22 +26,6 @@ pub fn ser_bytes<S>(b: &Bytes, s: S) -> Result<S::Ok, S::Error>
 where S: Serializer
 {
     base64::encode(b).serialize(s)
-}
-
-
-//------------ uri::Rsync ----------------------------------------------------
-
-pub fn de_rsync_uri<'de, D>(d: D) -> Result<uri::Rsync, D::Error>
-where D: Deserializer<'de>
-{
-    let some = String::deserialize(d)?;
-    uri::Rsync::from_string(some).map_err(de::Error::custom)
-}
-
-pub fn ser_rsync_uri<S>(uri: &uri::Rsync, s: S) -> Result<S::Ok, S::Error>
-where S: Serializer
-{
-    uri.to_string().serialize(s)
 }
 
 

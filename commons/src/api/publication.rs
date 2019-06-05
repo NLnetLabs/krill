@@ -1,7 +1,6 @@
 //! Support for requests sent to the Json API
 use rpki::uri;
 use crate::api::{ Base64, EncodedHash };
-use crate::util::ext_serde;
 use crate::util::file::CurrentFile;
 
 
@@ -102,12 +101,7 @@ impl PublishDeltaBuilder {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Publish {
     tag: Option<String>,
-
-    #[serde(
-        deserialize_with = "ext_serde::de_rsync_uri",
-        serialize_with = "ext_serde::ser_rsync_uri")]
     uri: uri::Rsync,
-
     content: Base64
 }
 
@@ -144,14 +138,8 @@ impl Publish {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Update {
     tag: Option<String>,
-
-    #[serde(
-        deserialize_with = "ext_serde::de_rsync_uri",
-        serialize_with = "ext_serde::ser_rsync_uri")]
     uri: uri::Rsync,
-
     content: Base64,
-
     hash: EncodedHash,
 }
 
@@ -198,12 +186,7 @@ impl Update {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Withdraw {
     tag: Option<String>,
-
-    #[serde(
-        deserialize_with = "ext_serde::de_rsync_uri",
-        serialize_with = "ext_serde::ser_rsync_uri")]
     uri: uri::Rsync,
-
     hash: EncodedHash,
 }
 
@@ -280,11 +263,7 @@ impl ListReply {
 /// server.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct ListElement {
-    #[serde(
-    deserialize_with = "ext_serde::de_rsync_uri",
-    serialize_with = "ext_serde::ser_rsync_uri")]
     uri:     uri::Rsync,
-
     hash:    EncodedHash
 }
 

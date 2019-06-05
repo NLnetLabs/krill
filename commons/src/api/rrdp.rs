@@ -9,7 +9,6 @@ use rpki::uri;
 use crate::api::publication;
 use crate::api::Base64;
 use crate::api::EncodedHash;
-use crate::util::ext_serde;
 use crate::util::file;
 use crate::util::Time;
 use crate::util::xml::XmlWriter;
@@ -27,10 +26,6 @@ const NS: &str = "http://www.ripe.net/rpki/rrdp";
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PublishElement {
     base64: Base64,
-
-    #[serde(
-    deserialize_with = "ext_serde::de_rsync_uri",
-    serialize_with = "ext_serde::ser_rsync_uri")]
     uri: uri::Rsync
 }
 
@@ -59,9 +54,6 @@ impl From<publication::Publish> for PublishElement {
 /// the tag.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct UpdateElement {
-    #[serde(
-    deserialize_with = "ext_serde::de_rsync_uri",
-    serialize_with = "ext_serde::ser_rsync_uri")]
     uri: uri::Rsync,
     hash: EncodedHash,
     base64: Base64
@@ -95,9 +87,6 @@ impl Into<PublishElement> for UpdateElement {
 /// the tag.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WithdrawElement {
-    #[serde(
-    deserialize_with = "ext_serde::de_rsync_uri",
-    serialize_with = "ext_serde::ser_rsync_uri")]
     uri: uri::Rsync,
     hash: EncodedHash
 }
