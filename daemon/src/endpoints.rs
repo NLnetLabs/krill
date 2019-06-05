@@ -216,8 +216,8 @@ pub fn init_trust_anchor(req: &HttpRequest) -> HttpResponse {
     render_empty_res(rw_server(req).init_trust_anchor())
 }
 
-pub fn publish_trust_anchor(req: &HttpRequest) -> HttpResponse {
-    render_empty_res(ro_server(req).publish_trust_anchor())
+pub fn republish_all(req: &HttpRequest) -> HttpResponse {
+    render_empty_res(ro_server(req).republish_all())
 }
 
 pub fn tal(req: &HttpRequest) -> HttpResponse {

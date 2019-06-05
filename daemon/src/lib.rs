@@ -5,6 +5,7 @@ extern crate bytes;
 extern crate bcder;
 extern crate chrono;
 extern crate clap;
+extern crate clokwerk;
 extern crate core;
 #[macro_use] extern crate derive_more;
 extern crate futures;
@@ -34,6 +35,7 @@ pub mod config;
 pub mod endpoints;
 pub mod krillserver;
 pub mod http;
+mod republisher;
 pub mod test;
 
 

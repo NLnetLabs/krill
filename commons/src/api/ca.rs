@@ -6,6 +6,7 @@ use std::fmt;
 use std::str::FromStr;
 
 use bytes::Bytes;
+use chrono::Duration;
 
 use rpki::cert::Cert;
 use rpki::crypto::PublicKey;
@@ -36,6 +37,7 @@ use crate::rpki::manifest::{
     FileAndHash,
     Manifest,
 };
+
 
 
 //------------ TaCertificate -------------------------------------------------
@@ -222,6 +224,11 @@ impl CaKey {
     pub fn incoming_cert(&self) -> &IncomingCertificate { &self.incoming_cert }
     pub fn current_set(&self) -> &CurrentObjectSet { &self.current_set }
 
+    pub fn needs_publication(&self) -> bool {
+        self.current_set.number == 1 ||
+        self.current_set.next_update < Time::now() + Duration::hours(8)
+    }
+
     pub fn apply_delta(&mut self, delta: PublicationDelta) {
         self.current_set.apply_delta(delta)
     }
@@ -323,7 +330,7 @@ impl CurrentObjects {
     pub fn mft_entries(&self) -> Vec<FileAndHash<Bytes, Bytes>> {
         self.0.keys().filter(|k| !k.ends_with("mft")).map(|k| {
             let name_bytes = Bytes::from(k.as_str());
-            let hash_bytes = self.0.get(k).unwrap().content.to_encoded_hash().into();
+            let hash_bytes = self.0[k].content.to_encoded_hash().into();
             FileAndHash::new(name_bytes, hash_bytes)
         }).collect()
     }
@@ -365,7 +372,9 @@ pub struct Revocations(Vec<Revocation>);
 
 impl Revocations {
     pub fn to_crl_entries(&self) -> Vec<CrlEntry> {
-        self.0.iter().map(|r| CrlEntry::new(Serial::from(r.serial), r.revocation_date)).collect()
+        self.0.iter()
+            .map(|r| CrlEntry::new(r.serial, r.revocation_date))
+            .collect()
     }
 
     /// Purges all expired revocations, and returns them.
@@ -535,7 +544,7 @@ impl Into<publication::PublishDelta> for ObjectsDelta {
     fn into(self) -> publication::PublishDelta {
         let mut builder = publication::PublishDeltaBuilder::new();
 
-        fn resolve(uri: &uri::Rsync, name: &ObjectName) -> uri::Rsync {
+        fn resolve(uri: &uri::Rsync, name: &str) -> uri::Rsync {
             let uri = format!("{}{}", uri.to_string(), name);
             uri::Rsync::from_string(uri).unwrap()
         }

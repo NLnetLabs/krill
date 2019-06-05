@@ -178,9 +178,9 @@ impl Publisher {
 impl Publisher {
 
     fn create(event: PublisherInit) -> Self {
-        let (id, _version, init) = event.unwrap();
+        let (handle, _version, init) = event.unwrap();
         Publisher {
-            handle:              Handle::from(id),
+            handle,
             version:         1,
             deactivated:     false,
             token:           init.token,

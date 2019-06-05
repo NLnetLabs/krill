@@ -119,7 +119,7 @@ impl TrustAnchorInitDetails {
         cert.set_v4_resources(Some(resources.v4().deref().clone()));
         cert.set_v6_resources(Some(resources.v6().deref().clone()));
 
-        cert.into_cert(signer.as_ref(), key).map_err(|e| Error::signer_error(e))
+        cert.into_cert(signer.as_ref(), key).map_err(Error::signer_error)
     }
 }
 
@@ -163,7 +163,7 @@ pub type TrustAnchorCommand<S> = SentCommand<TrustAnchorCommandDetails<S>>;
 
 #[derive(Clone, Debug)]
 pub enum TrustAnchorCommandDetails<S: CaSigner> {
-    Publish(Arc<S>)
+    Republish(Arc<S>)
 }
 
 impl<S: CaSigner> CommandDetails for TrustAnchorCommandDetails<S> {
@@ -171,11 +171,11 @@ impl<S: CaSigner> CommandDetails for TrustAnchorCommandDetails<S> {
 }
 
 impl<S: CaSigner> TrustAnchorCommandDetails<S> {
-    pub fn publish(handle: &Handle, signer: Arc<S>) -> TrustAnchorCommand<S> {
+    pub fn republish(handle: &Handle, signer: Arc<S>) -> TrustAnchorCommand<S> {
         SentCommand::new(
             &handle,
             None,
-            TrustAnchorCommandDetails::Publish(signer)
+            TrustAnchorCommandDetails::Republish(signer)
         )
     }
 }
@@ -190,7 +190,7 @@ type TaResult<R> = Result<R, Error>;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct TrustAnchor<S: CaSigner> {
-    id: Handle,
+    handle: Handle,
     version: u64,
 
     repo_info: RepoInfo,
@@ -233,15 +233,19 @@ impl<S: CaSigner> TrustAnchor<S> {
 
 
 impl<S: CaSigner> TrustAnchor<S> {
-    fn publish(&self, signer: Arc<S>) -> TaResult<Vec<TrustAnchorEvent>> {
+    fn republish(&self, signer: Arc<S>) -> TaResult<Vec<TrustAnchorEvent>> {
+        if !self.current_key.needs_publication() {
+            return Ok(vec![])
+        }
+
         let delta = CaSignSupport::publish(
             signer,
             &self.current_key,
             self.repo_info(),
             ""
-        ).map_err(|e| Error::signer_error(e))?;
+        ).map_err(Error::signer_error)?;
 
-        Ok(vec![TrustAnchorEventDetails::published(&self.id, self.version, delta)])
+        Ok(vec![TrustAnchorEventDetails::published(&self.handle, self.version, delta)])
     }
 }
 
@@ -252,8 +256,7 @@ impl<S: CaSigner> Aggregate for TrustAnchor<S> {
     type Error = Error;
 
     fn init(event: Self::InitEvent) -> Result<Self, Self::Error> {
-        let (id, _version, init) = event.unwrap();
-        let id = Handle::from(id);
+        let (handle, _version, init) = event.unwrap();
         let version = 1; // after applying init
 
         let repo_info = init.repo_info;
@@ -262,7 +265,7 @@ impl<S: CaSigner> Aggregate for TrustAnchor<S> {
 
         Ok(
             TrustAnchor {
-                id,
+                handle,
                 version,
                 repo_info,
                 current_key,
@@ -287,7 +290,7 @@ impl<S: CaSigner> Aggregate for TrustAnchor<S> {
 
     fn process_command(&self, command: Self::Command) -> TaResult<Vec<TrustAnchorEvent>> {
         match command.into_details() {
-            TrustAnchorCommandDetails::Publish(signer) => self.publish(signer)
+            TrustAnchorCommandDetails::Republish(signer) => self.republish(signer)
         }
     }
 }
@@ -369,7 +372,7 @@ mod tests {
             store.add(init).unwrap();
             let ta = store.get_latest(&handle).unwrap();
 
-            let publish_cmd = TrustAnchorCommandDetails::publish(&handle, signer);
+            let publish_cmd = TrustAnchorCommandDetails::republish(&handle, signer);
             let events = ta.process_command(publish_cmd).unwrap();
             let _ta = store.update(&handle, ta, events).unwrap();
 

@@ -3,6 +3,7 @@ extern crate bytes;
 extern crate core;
 #[macro_use] extern crate derive_more;
 extern crate hex;
+#[macro_use] extern crate log;
 extern crate rand;
 #[macro_use] extern crate serde;
 extern crate serde_json;

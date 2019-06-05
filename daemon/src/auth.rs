@@ -85,9 +85,9 @@ pub struct Authorizer {
 }
 
 impl Authorizer {
-    pub fn new(krill_auth_token: &str) -> Self {
+    pub fn new(krill_auth_token: &Token) -> Self {
         Authorizer {
-            krill_auth_token: Token::from(krill_auth_token)
+            krill_auth_token: krill_auth_token.clone()
         }
     }
 

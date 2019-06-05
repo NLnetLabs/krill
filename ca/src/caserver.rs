@@ -96,16 +96,24 @@ impl<S: CaSigner> CaServer<S> {
         }
     }
 
-    pub fn publish_ta(&self) -> CaResult<(), S> {
-        let handle = ta_handle();
-        let ta = self.ta_store.get_latest(&handle)?;
-        let ta_publish_cmd = TrustAnchorCommandDetails::publish(
-            &handle,
-            self.signer.clone()
-        );
+    pub fn republish_all(&self) -> CaResult<(), S> {
+        self.publish_ta()
+    }
 
-        let events = ta.process_command(ta_publish_cmd)?;
-        self.ta_store.update(&handle, ta, events)?;
+    pub fn publish_ta(&self) -> CaResult<(), S> {
+        // if there is a TA, publish it
+        let ta_handle = ta_handle();
+        if let Ok(ta) = self.ta_store.get_latest(&ta_handle) {
+            let ta_republish = TrustAnchorCommandDetails::republish(
+                &ta_handle,
+                self.signer.clone()
+            );
+
+            let events = ta.process_command(ta_republish)?;
+            if ! events.is_empty() {
+                self.ta_store.update(&ta_handle, ta, events)?;
+            }
+        }
 
         Ok(())
     }

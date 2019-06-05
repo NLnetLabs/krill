@@ -94,7 +94,7 @@ impl KrillClient {
                 Ok(ApiResponse::TrustAnchorInfo(ta))
             },
             TrustAnchorCommand::Publish => {
-                let uri = self.resolve_uri("api/v1/publish/ta");
+                let uri = self.resolve_uri("api/v1/republish");
                 httpclient::post_empty(&uri, Some(&self.token))?;
                 Ok(ApiResponse::Empty)
             }

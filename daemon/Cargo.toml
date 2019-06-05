@@ -10,6 +10,7 @@ actix-web       = { version = "0.7.19", features = ["alpn"] }
 base64          = "^0.9"
 bcder           = "^0.3"
 bytes           = "^0.4"
+clokwerk        = "^0.1"
 chrono          = { version = "^0.4", features = ["serde"] }
 clap            = "^2.32"
 derive_more     = "^0.13"

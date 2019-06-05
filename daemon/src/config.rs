@@ -13,6 +13,7 @@ use serde::{Deserialize, Deserializer};
 use toml;
 use krill_commons::util::ext_serde;
 use crate::http::ssl;
+use krill_commons::api::admin::Token;
 
 const SERVER_NAME: &str = "Krill";
 
@@ -35,11 +36,11 @@ impl ConfigDefaults {
     fn log_type() -> LogType { LogType::Stderr }
     fn syslog_facility() -> Facility { Facility::LOG_DAEMON }
     fn log_file() -> PathBuf { PathBuf::from("./krill.log")}
-    fn auth_token() -> String {
+    fn auth_token() -> Token {
         use std::env;
 
         match env::var("KRILL_AUTH_TOKEN") {
-            Ok(token) => token,
+            Ok(token) => Token::from(token),
             Err(_) => {
                 eprintln!("You MUST provide a value for the master API key, either by setting \"auth_token\" in the config file, or by setting the KRILL_AUTH_TOKEN environment variable.");
                 ::std::process::exit(1);
@@ -101,7 +102,7 @@ pub struct Config {
     log_file: PathBuf,
 
     #[serde(default = "ConfigDefaults::auth_token")]
-    pub auth_token: String
+    pub auth_token: Token
 }
 
 /// # Accessors
@@ -164,7 +165,7 @@ impl Config {
         let mut log_file = data_dir.clone();
         log_file.push("krill.log");
         let syslog_facility = ConfigDefaults::syslog_facility();
-        let auth_token = "secret".to_string();
+        let auth_token = Token::from("secret");
 
         Config {
             ip,

@@ -22,6 +22,8 @@ use krill_pubd::PubServer;
 use krill_pubd::publishers::Publisher;
 
 use crate::auth::Authorizer;
+use republisher::Republisher;
+
 
 //------------ KrillServer ---------------------------------------------------
 
@@ -58,7 +60,12 @@ pub struct KrillServer {
     caserver: CaServer<OpenSslSigner>,
 
     // CMS+XML proxy server for non-Krill clients
-    proxy_server: ProxyServer
+    proxy_server: ProxyServer,
+
+    // Responsible for republishing periodically
+    #[allow(dead_code)] // keep this in scope
+    republisher: Republisher
+
 }
 
 /// # Set up and initialisation
@@ -70,10 +77,12 @@ impl KrillServer {
         base_uri: &uri::Rsync,
         service_uri: uri::Https,
         rrdp_base_uri: &uri::Https,
-        authorizer: Authorizer,
+        token: &Token,
     ) -> Result<Self, Error> {
         let mut repo_dir = work_dir.clone();
         repo_dir.push("repo");
+
+        let authorizer = Authorizer::new(token);
 
         let pubserver = PubServer::build(
             base_uri.clone(),
@@ -91,6 +100,11 @@ impl KrillServer {
         let pub_clients = Arc::new(PubClients::build(work_dir)?);
         let caserver = CaServer::build(work_dir, pub_clients.clone(), signer)?;
 
+        let republisher = {
+            let publish_uri = format!("{}api/v1/republish", service_uri);
+            Republisher::new(publish_uri, token)
+        };
+
         Ok(
             KrillServer {
                 service_uri,
@@ -99,7 +113,8 @@ impl KrillServer {
                 pubserver,
                 pub_clients,
                 caserver,
-                proxy_server
+                proxy_server,
+                republisher
             }
         )
     }
@@ -270,11 +285,20 @@ impl KrillServer {
         self.pub_clients.add(req)?;
 
         // Add TA
-        self.caserver.init_ta(repo_info, ta_aia, vec![ta_uri]).map_err(Error::CaServerError)
+        self.caserver.init_ta(
+            repo_info,
+            ta_aia,
+            vec![ta_uri]
+        ).map_err(Error::CaServerError)?;
+
+        // Force initial  publication
+        self.caserver.publish_ta()?;
+
+        Ok(())
     }
 
-    pub fn publish_trust_anchor(&self) -> Result<(), Error> {
-        self.caserver.publish_ta()?;
+    pub fn republish_all(&self) -> Result<(), Error> {
+        self.caserver.republish_all()?;
         Ok(())
     }
 }

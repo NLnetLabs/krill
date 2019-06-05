@@ -26,7 +26,7 @@ pub trait AggregateStore<A: Aggregate>: Send + Sync {
     fn get_latest(&self, id: &Handle) -> StoreResult<Arc<A>>;
 
     /// Adds a new aggregate instance based on the init event.
-    fn add(&self, init: A::InitEvent) -> StoreResult<()>;
+    fn add(&self, init: A::InitEvent) -> StoreResult<Arc<A>>;
 
     /// Updates the aggregate instance in the store. Expects that the
     /// Arc<A> retrieved using 'get_latest' is moved here, so clone on
@@ -115,7 +115,7 @@ impl<A: Aggregate> DiskAggregateStore<A> {
 
 impl<A: Aggregate> AggregateStore<A> for DiskAggregateStore<A> {
     fn get_latest(&self, handle: &Handle) -> StoreResult<Arc<A>> {
-        info!("Trying to load aggregate id: {}", handle);
+        debug!("Trying to load aggregate id: {}", handle);
         match self.cache_get(handle) {
             None => {
                 match self.store.get_aggregate(handle)? {
@@ -126,7 +126,7 @@ impl<A: Aggregate> AggregateStore<A> for DiskAggregateStore<A> {
                     Some(agg) => {
                         let arc: Arc<A> = Arc::new(agg);
                         self.cache_update(handle, arc.clone());
-                        info!("Loaded aggregate id: {} from disk", handle);
+                        debug!("Loaded aggregate id: {} from disk", handle);
                         Ok(arc)
                     }
                 }
@@ -136,7 +136,7 @@ impl<A: Aggregate> AggregateStore<A> for DiskAggregateStore<A> {
                     let agg = Arc::make_mut(&mut arc);
                     self.store.update_aggregate(handle, agg)?;
                 }
-                info!("Loaded aggregate id: {} from memory", handle);
+                debug!("Loaded aggregate id: {} from memory", handle);
                 Ok(arc)
             }
         }
@@ -145,7 +145,7 @@ impl<A: Aggregate> AggregateStore<A> for DiskAggregateStore<A> {
     fn add(
         &self,
         init: A::InitEvent
-    ) -> StoreResult<()> {
+    ) -> StoreResult<Arc<A>> {
         self.store.store_event(&init)?;
 
         let handle = init.handle().clone();
@@ -154,9 +154,9 @@ impl<A: Aggregate> AggregateStore<A> for DiskAggregateStore<A> {
         self.store.store_aggregate(&handle, &aggregate)?;
 
         let arc = Arc::new(aggregate);
-        self.cache_update(&handle, arc);
+        self.cache_update(&handle, arc.clone());
 
-        Ok(())
+        Ok(arc)
     }
 
 
@@ -168,7 +168,6 @@ impl<A: Aggregate> AggregateStore<A> for DiskAggregateStore<A> {
     ) -> StoreResult<Arc<A>> {
         // Get the latest arc.
         let mut latest = self.get_latest(handle)?;
-
         {
             // Verify whether there is a concurrency issue
             if prev.version() != latest.version() {
@@ -181,9 +180,10 @@ impl<A: Aggregate> AggregateStore<A> for DiskAggregateStore<A> {
             // make the arc mutable, hopefully forgetting prev will avoid the clone
             let agg = Arc::make_mut(&mut latest);
 
+
             // Using a lock on the hashmap here to ensure that all updates happen sequentially.
             // It would be better to get a lock only for this specific aggregate. So it may be
-            // worth rethinking the stru
+            // worth rethinking the structure.
             //
             // That said.. saving and applying events is really quick, so this should not hurt
             // performance much.

@@ -72,7 +72,7 @@ impl CaSignSupport {
         // TODO for now only publish MFT and CRL, revoking old MFTs only
         if let Some(mft) = old_mft {
             let revocation = Revocation::from(mft);
-            revocations.add(revocation.clone());
+            revocations.add(revocation);
             revocations_delta.add(revocation);
         }
 

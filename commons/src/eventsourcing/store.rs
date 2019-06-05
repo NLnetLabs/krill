@@ -190,12 +190,12 @@ impl KeyStore for DiskKeyStore {
                     Err(KeyStoreError::JsonError(e))
                 },
                 Ok(v) => {
-                    info!("Deserialized json at: {}", path_str);
+                    debug!("Deserialized json at: {}", path_str);
                     Ok(Some(v))
                 }
             }
         } else {
-            warn!("Could not find file at: {}", path_str);
+            debug!("Could not find file at: {}", path_str);
             Ok(None)
         }
     }
@@ -217,12 +217,12 @@ impl KeyStore for DiskKeyStore {
                     Err(KeyStoreError::JsonError(e))
                 },
                 Ok(v) => {
-                    info!("Deserialized event at: {}", path_str);
+                    debug!("Deserialized event at: {}", path_str);
                     Ok(Some(v))
                 }
             }
         } else {
-            info!("No more events at: {}", path_str);
+            debug!("No more events at: {}", path_str);
             Ok(None)
         }
     }

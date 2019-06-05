@@ -16,7 +16,7 @@ use actix_web::http::{Method, StatusCode};
 use bcder::decode;
 use futures::Future;
 use openssl::ssl::{SslMethod, SslAcceptor, SslAcceptorBuilder, SslFiletype};
-use crate::auth::{self, Authorizer, CheckAuthorisation, Credentials};
+use crate::auth::{self, CheckAuthorisation, Credentials};
 use crate::config::Config;
 use crate::endpoints;
 use crate::http::ssl;
@@ -70,9 +70,11 @@ impl PubServerApp {
                 r.method(Method::POST).f(endpoints::init_trust_anchor);
             })
 
-            .resource("/api/v1/publish/ta", |r| {
-                r.method(Method::POST).f(endpoints::publish_trust_anchor)
+            .resource("/api/v1/republish", |r| {
+                r.method(Method::POST).f(endpoints::republish_all)
             })
+
+
 
             .resource("/ta/ta.tal", |r| {
                 r.method(Method::GET).f(endpoints::tal);
@@ -135,14 +137,13 @@ impl PubServerApp {
     pub fn create_server(
         config: &Config
     ) -> Result<Arc<RwLock<KrillServer>>, Error> {
-        let authorizer = Authorizer::new(&config.auth_token);
 
         let pub_server = KrillServer::build(
             &config.data_dir,
             &config.rsync_base,
             config.service_uri(),
             &config.rrdp_base_uri,
-            authorizer,
+            &config.auth_token,
         )?;
 
         Ok(Arc::new(RwLock::new(pub_server)))

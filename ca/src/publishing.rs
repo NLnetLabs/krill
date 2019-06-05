@@ -1,6 +1,6 @@
 //! Supports publishing signed objects.
 
-use std::io;
+use std::{io, thread};
 use std::path::PathBuf;
 
 use krill_commons::api::admin::{
@@ -77,7 +77,7 @@ impl CommandDetails for PubClientCommandDetails {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PubClient {
-    id: Handle,
+    handle: Handle,
     version: u64,
     server: PubServerInfo
 }
@@ -89,12 +89,11 @@ impl Aggregate for PubClient {
     type Error = Error;
 
     fn init(event: Self::InitEvent) -> Result<Self, Self::Error> {
-        let (id, _version, details) = event.unwrap();
-        let id = Handle::from(id);
+        let (handle, _version, details) = event.unwrap();
         let version = 1;
         let server = details.0;
 
-        Ok (PubClient { id, version, server })
+        Ok (PubClient { handle, version, server })
     }
 
     fn version(&self) -> u64 {
@@ -105,7 +104,10 @@ impl Aggregate for PubClient {
         unimplemented!() // no events to process, yet
     }
 
-    fn process_command(&self, _command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
+    fn process_command(
+        &self,
+        _command: Self::Command
+    ) -> Result<Vec<Self::Event>, Self::Error> {
         unimplemented!() // no commands to process, yet
     }
 }
@@ -139,30 +141,32 @@ impl PubClients {
 
         match client.server_info() {
             PubServerInfo::KrillServer(service_uri, token) => {
-                let service_uri = service_uri.as_str();
+                let uri = format!("{}publication/{}", service_uri, handle);
+                let service_uri = service_uri.clone();
+                let token = token.clone();
 
-                // Note, I could not think of a convenient way to pass down the test
-                // context, since there are different threads involved when testing.
-                // So, for now, just setting test mode whenever the publication is done
-                // at localhost.
-                if service_uri.starts_with("https://localhost") {
-                    httpclient::TEST_MODE.with(|m| { *m.borrow_mut() = true; });
-                }
+                thread::spawn(move ||{
+                    // Note, I could not think of a convenient way to pass down
+                    // the test context, since there are different threads
+                    // involved when testing. So, for now, just setting test
+                    // mode whenever the publication is done at localhost.
+                    if service_uri.as_str().starts_with("https://localhost") {
+                        httpclient::TEST_MODE.with(|m| { *m.borrow_mut() = true; });
+                    }
+                    match httpclient::post_json(&uri, delta, Some(&token)) {
+                        Err(httpclient::Error::ErrorWithJson(_code, err)) => {
+                            if err.code() == 2007 || err.code() == 2008 {
+                                // TODO, do full sync!
+                                unimplemented!()
+                            } else {
+                                error!("{}", err)
+                            }
+                        },
+                        Err(e) => error!("{}", e),
+                        Ok(()) => {}
+                    }
+                });
 
-                let uri = format!("{}publication/{}", service_uri, handle.as_str());
-
-                match httpclient::post_json(&uri, delta, Some(token)) {
-                    Err(httpclient::Error::ErrorWithJson(_code, err)) => {
-                        if err.code() == 2007 || err.code() == 2008 {
-                            // TODO, do full sync!
-                            unimplemented!()
-                        } else {
-                            panic!("{}", err)
-                        }
-                    },
-                    Err(e) => panic!("{}", e),
-                    Ok(()) => {}
-                }
             }
         }
     }

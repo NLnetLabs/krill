@@ -15,7 +15,7 @@ fn embedded_trust_anchor() {
         let command = Command::TrustAnchor(TrustAnchorCommand::Show);
         execute_krillc_command(command);
 
-        let command = Command::TrustAnchor(TrustAnchorCommand::Publish);
-        let _res = execute_krillc_command(command);
+//        let command = Command::TrustAnchor(TrustAnchorCommand::Publish);
+//        let _res = execute_krillc_command(command);
     });
 }
