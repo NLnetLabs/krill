@@ -5,7 +5,6 @@ use log::LevelFilter;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde::de;
 use syslog::Facility;
-use rpki::x509::Serial;
 
 
 //------------ Bytes ---------------------------------------------------------
@@ -46,15 +45,4 @@ pub fn de_facility<'de, D>(d: D) -> Result<Facility, D::Error>
     Facility::from_str(&string).map_err(
         |_| { de::Error::custom(
             format!("Unsupported syslog_facility: \"{}\"", string))})
-}
-
-//------------ Serial ----------------------------------------------------------
-
-pub fn de_serial<'de, D>(d: D) -> Result<Serial, D::Error> where D: Deserializer<'de> {
-    let s = u128::deserialize(d)?;
-    Ok(Serial::from(s))
-}
-
-pub fn ser_serial<S>(_serial: &Serial, s: S) -> Result<S::Ok, S::Error> where S: Serializer {
-    1_u64.serialize(s)
 }

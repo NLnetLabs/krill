@@ -240,9 +240,6 @@ impl CaKey {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CurrentObject {
     content: Base64,
-    #[serde(
-        deserialize_with = "ext_serde::de_serial",
-        serialize_with = "ext_serde::ser_serial")]
     serial: Serial,
     expires: Time
 }
