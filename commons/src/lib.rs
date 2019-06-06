@@ -1,7 +1,7 @@
 //! Common types used by the various Krill components.
 
-extern crate actix;
-extern crate actix_web;
+//extern crate actix;
+//extern crate actix_web;
 extern crate base64;
 extern crate bytes;
 extern crate chrono;

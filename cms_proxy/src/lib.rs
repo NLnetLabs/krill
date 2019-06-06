@@ -16,11 +16,6 @@ extern crate rpki;
 extern crate serde_json;
 extern crate xml as xmlrs;
 
-// Support parsing json sent to the actix server
-extern crate actix;
-extern crate actix_web;
-extern crate futures;
-
 // XXX Temporarily
 extern crate ring;
 extern crate untrusted;
@@ -28,7 +23,6 @@ extern crate untrusted;
 pub mod api;
 pub mod builder;
 pub mod clients;
-pub mod fromreq;
 pub mod id;
 pub mod proxy;
 pub mod responder;

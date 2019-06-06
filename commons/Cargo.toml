@@ -4,8 +4,6 @@ version = "0.2.0"
 authors = ["Tim Bruijnzeels <tim@nlnetlabs.nl>", "Martin Hoffmann <martin@nlnetlabs.nl>"]
 
 [dependencies]
-actix         = "0.7.9"
-actix-web    = "0.7.19"
 base64       = "^0.9"
 bytes        = "^0.4"
 chrono       = { version = "^0.4", features = ["serde"] }

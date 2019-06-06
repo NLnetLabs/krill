@@ -5,7 +5,6 @@ authors = ["Tim Bruijnzeels <tim@nlnetlabs.nl>", "Martin Hoffmann <martin@nlnetl
 build   = "build-ui.rs"
 
 [dependencies]
-actix           = "0.7.9"
 actix-web       = { version = "0.7.19", features = ["alpn"] }
 base64          = "^0.9"
 bcder           = "^0.3"

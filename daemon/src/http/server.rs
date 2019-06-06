@@ -74,8 +74,6 @@ impl PubServerApp {
                 r.method(Method::POST).f(endpoints::republish_all)
             })
 
-
-
             .resource("/ta/ta.tal", |r| {
                 r.method(Method::GET).f(endpoints::tal);
             })
@@ -85,13 +83,17 @@ impl PubServerApp {
 
             .resource("/publication/{handle}", |r| {
                 r.method(Method::GET).with(endpoints::handle_list);
-                r.method(Method::POST).with_config(endpoints::handle_delta, |cfg| {
-                    cfg.1.limit(256 * 1024 * 1024); //up to 256MB;
-                })
+                r.method(Method::POST).with_config(
+                    endpoints::handle_delta,
+                    |cfg| { cfg.1.limit(256 * 1024 * 1024); } //up to 256MB
+                )
             })
 
             .resource("/rfc8181/{handle}", |r| {
-                r.method(Method::POST).with(endpoints::handle_rfc8181_request)
+                r.method(Method::POST).with_config(
+                    endpoints::handle_rfc8181_request,
+                    |cfg| { cfg.1.limit(256 * 1024 * 1024); } //up to 256MB
+                )
             })
 
             .resource("/rrdp/{path:.*}", |r| {

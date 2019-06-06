@@ -20,6 +20,7 @@ use krill_pubd::repo::RrdpServerError;
 
 use crate::http::server::HttpRequest;
 use crate::krillserver::{self, KrillServer};
+use bytes::Bytes;
 
 
 //------------ Support Functions ---------------------------------------------
@@ -133,18 +134,23 @@ pub fn publisher_details(
 #[allow(clippy::needless_pass_by_value)]
 pub fn handle_rfc8181_request(
     req: HttpRequest,
-    msg: SignedMessage,
+    msg_bytes: Bytes,
     handle: Path<Handle>
 ) -> HttpResponse {
-    match ro_server(&req).handle_rfc8181_req(msg, handle.into_inner()) {
-        Ok(captured) => {
-            HttpResponse::build(StatusCode::OK)
-                .content_type("application/rpki-publication")
-                .body(captured.into_bytes())
+    match SignedMessage::decode(msg_bytes, true) {
+        Ok(msg) => {
+            match ro_server(&req).handle_rfc8181_req(msg, handle.into_inner()) {
+                Ok(captured) => {
+                    HttpResponse::build(StatusCode::OK)
+                        .content_type("application/rpki-publication")
+                        .body(captured.into_bytes())
+                }
+                Err(e) => {
+                    server_error(&Error::ServerError(e))
+                }
+            }
         }
-        Err(e) => {
-            server_error(&Error::ServerError(e))
-        }
+        Err(_) => server_error(&Error::CmsError)
     }
 }
 
@@ -182,10 +188,10 @@ pub fn rfc8181_clients(req: &HttpRequest) -> HttpResponse {
 
 pub fn add_rfc8181_client(
     req: HttpRequest,
-    client: ClientInfo
+    client: Json<ClientInfo>
 ) -> HttpResponse {
     let server = ro_server(&req);
-    render_empty_res(server.add_rfc8181_client(client))
+    render_empty_res(server.add_rfc8181_client(client.into_inner()))
 }
 
 pub fn repository_response(
@@ -263,6 +269,9 @@ pub enum Error {
     #[display(fmt = "{}", _0)]
     JsonError(serde_json::Error),
 
+    #[display(fmt = "Could not decode protocol CMS")]
+    CmsError,
+
     #[display(fmt = "Invalid publisher request")]
     PublisherRequestError
 }
@@ -288,6 +297,7 @@ impl ErrorToStatus for Error {
         match self {
             Error::ServerError(e) => e.status(),
             Error::JsonError(_) => StatusCode::BAD_REQUEST,
+            Error::CmsError => StatusCode::BAD_REQUEST,
             Error::PublisherRequestError => StatusCode::BAD_REQUEST
         }
     }
@@ -347,6 +357,7 @@ impl ToErrorCode for Error {
         match self {
             Error::ServerError(e) => e.code(),
             Error::JsonError(_) => ErrorCode::InvalidJson,
+            Error::CmsError => ErrorCode::InvalidCms,
             Error::PublisherRequestError => ErrorCode::InvalidPublisherRequest
         }
     }

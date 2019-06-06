@@ -3,7 +3,7 @@
 use std::{thread, time};
 use std::path::PathBuf;
 
-use actix::System;
+use actix_web::actix::System;
 
 use krill_commons::util::test;
 use krill_client::KrillClient;
@@ -24,7 +24,7 @@ pub fn test_with_krill_server<F>(op: F) where F: FnOnce(PathBuf) -> () {
         };
 
         // Start the server
-        thread::spawn(||{
+        thread::spawn(move ||{
             System::run(move || {
                 PubServerApp::start(&server_conf);
             })

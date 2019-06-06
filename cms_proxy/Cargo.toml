@@ -20,11 +20,6 @@ xml-rs        = "0.8.0"
 fern         = "^0.5"
 log          = "^0.4"
 
-# To support parsing API json in the requests for actix
-actix         = "0.7.9"
-actix-web     = "0.7.19"
-futures       = "0.1"
-
 # XXX Temporarily
 ring = "^0.13"
 untrusted = "^0.6"
