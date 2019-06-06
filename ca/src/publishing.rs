@@ -29,6 +29,7 @@ use crate::trustanchor::{
     TrustAnchorEvent,
     TrustAnchorEventDetails
 };
+use krill_commons::api::ErrorCode;
 
 
 //------------ PubClientInit -------------------------------------------------
@@ -155,8 +156,10 @@ impl PubClients {
                     }
                     match httpclient::post_json(&uri, delta, Some(&token)) {
                         Err(httpclient::Error::ErrorWithJson(_code, err)) => {
-                            if err.code() == 2007 || err.code() == 2008 {
-                                // TODO, do full sync!
+                            let err: ErrorCode = err.into();
+                            if err == ErrorCode::ObjectAlreadyPresent ||
+                               err == ErrorCode::NoObjectForHashAndOrUri {
+                                // TODO: https://github.com/NLnetLabs/krill/issues/42
                                 unimplemented!()
                             } else {
                                 error!("{}", err)
