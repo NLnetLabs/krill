@@ -6,10 +6,10 @@ use bytes::Bytes;
 
 use rpki::crl::{Crl, TbsCertList};
 use rpki::manifest::{Manifest, ManifestContent, FileAndHash};
-use rpki::crypto::{DigestAlgorithm, SigningError};
+use rpki::crypto::{DigestAlgorithm, KeyIdentifier, SigningError};
 use rpki::crypto::signer::KeyError;
 use rpki::sigobj::SignedObjectBuilder;
-use rpki::x509::{Serial, Time, KeyIdentifier, Validity};
+use rpki::x509::{Serial, Time, Validity};
 
 use krill_commons::api::ca::{
     AddedObject,

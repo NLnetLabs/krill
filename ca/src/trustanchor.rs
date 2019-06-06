@@ -378,13 +378,4 @@ mod tests {
 
 
         })
-    }
-
-    #[test]
-    fn should_deserialize_ta_publish_event() {
-        let string = include_str!("../test-resources/delta-1.json");
-        let _event: TrustAnchorEvent = serde_json::from_str(string).unwrap();
-    }
-
-
-}
+    } }

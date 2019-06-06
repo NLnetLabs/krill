@@ -244,10 +244,6 @@ pub struct CurrentObject {
         deserialize_with = "ext_serde::de_serial",
         serialize_with = "ext_serde::ser_serial")]
     serial: Serial,
-
-    #[serde(
-    deserialize_with = "ext_serde::de_time",
-    serialize_with = "ext_serde::ser_time")]
     expires: Time
 }
 
@@ -343,10 +339,7 @@ impl CurrentObjects {
 /// that it implements De/Serialize and Eq/PartialEq
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Revocation {
-    #[serde(deserialize_with = "ext_serde::de_serial", serialize_with = "ext_serde::ser_serial")]
     serial: Serial,
-
-    #[serde(deserialize_with = "ext_serde::de_time", serialize_with = "ext_serde::ser_time")]
     revocation_date: Time
 }
 
@@ -434,16 +427,10 @@ impl RevocationsDelta {
 /// This type describes the complete current set of objects for CA key.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CurrentObjectSet {
-    #[serde(deserialize_with = "ext_serde::de_time", serialize_with = "ext_serde::ser_time")]
     this_update: Time,
-
-    #[serde(deserialize_with = "ext_serde::de_time", serialize_with = "ext_serde::ser_time")]
     next_update: Time,
-
     number: u64,
-
     revocations: Revocations,
-
     objects: CurrentObjects
 }
 
@@ -485,14 +472,9 @@ impl CurrentObjectSet {
 /// This type describes a set up of objects published for a CA key.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublicationDelta {
-    #[serde(deserialize_with = "ext_serde::de_time", serialize_with = "ext_serde::ser_time")]
     this_update: Time,
-
-    #[serde(deserialize_with = "ext_serde::de_time", serialize_with = "ext_serde::ser_time")]
     next_update: Time,
-
-    number: u64, // crl and mft number
-
+    number: u64,
     revocations: RevocationsDelta,
     objects: ObjectsDelta
 }
