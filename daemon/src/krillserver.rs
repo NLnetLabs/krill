@@ -21,8 +21,8 @@ use krill_cms_proxy::sigmsg::SignedMessage;
 use krill_pubd::PubServer;
 use krill_pubd::publishers::Publisher;
 
-use crate::auth::Authorizer;
-use republisher::Republisher;
+use crate::auth::{Auth, Authorizer};
+use crate::republisher::Republisher;
 
 
 //------------ KrillServer ---------------------------------------------------
@@ -125,28 +125,34 @@ impl KrillServer {
 }
 
 impl KrillServer {
-    pub fn is_api_allowed(&self, token_opt: Option<Token>) -> bool {
-        self.authorizer.is_api_allowed(token_opt)
+    pub fn login(&self, token: Token) -> bool {
+        self.authorizer.is_api_allowed(&token)
+    }
+
+    pub fn is_api_allowed(
+        &self,
+        auth: &Auth
+    ) -> bool {
+        match auth {
+            Auth::User(name) => name == "admin",
+            Auth::Bearer(token) => self.authorizer.is_api_allowed(&token)
+        }
     }
 
     pub fn is_publication_api_allowed(
         &self,
-        handle_opt: Option<String>,
-        token_opt: Option<Token>
+        handle: &Handle,
+        auth: &Auth
     ) -> bool {
-        match handle_opt {
-            None => false,
-            Some(handle_str) => {
-                match token_opt {
-                    None => false,
-                    Some(token) => {
-                        let handle = Handle::from(handle_str);
-                        if let Ok(Some(pbl)) = self.publisher(&handle) {
-                            pbl.token() == &token
-                        } else {
-                            false
-                        }
-                    }
+        match auth {
+            Auth::User(name) => name == "admin",
+            Auth::Bearer(token) => {
+                if self.authorizer.is_api_allowed(&token) {
+                    true
+                } else if let Ok(Some(pbl)) = self.publisher(&handle) {
+                    pbl.token() == token
+                } else {
+                    false
                 }
             }
         }

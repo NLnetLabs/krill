@@ -36,7 +36,6 @@ use krill_commons::api::publication;
 
 use crate::auth::{
     AUTH_COOKIE_NAME,
-    CheckAuthorisation,
     is_logged_in,
     login,
     logout
@@ -81,7 +80,6 @@ pub fn start(config: &Config) -> Result<(), Error> {
     };
 
     let https_builder = https_builder(config)?;
-    let check_auth = CheckAuthorisation::new(&config.auth_token);
 
     HttpServer::new(move || {
         App::new()
@@ -90,7 +88,6 @@ pub fn start(config: &Config) -> Result<(), Error> {
             .wrap(CookieSession::signed(&[0; 32])
                 .name(AUTH_COOKIE_NAME)
                 .secure(true))
-            .wrap(check_auth.clone())
             .route("/health", get().to(endpoints::health))
 
             .service(

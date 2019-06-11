@@ -166,7 +166,7 @@ impl PubClients {
                             }
                         },
                         Err(e) => error!("{}", e),
-                        Ok(()) => {}
+                        Ok(()) => debug!("PubClients: Published delta")
                     }
                 });
 
@@ -187,10 +187,12 @@ impl PubClients {
 
 impl<S: CaSigner> EventListener<TrustAnchor<S>> for PubClients {
     fn listen(&self, ta: &TrustAnchor<S>, event: &TrustAnchorEvent) {
-        let current_objects = ta.current_objects();
 
         match event.details() {
             TrustAnchorEventDetails::Published(delta) => {
+                debug!("PubClients: Observed delta for publishing");
+
+                let current_objects = ta.current_objects();
                 self.publish(
                     event.handle(),
                     current_objects,

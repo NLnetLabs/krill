@@ -1,7 +1,4 @@
 //! Authorization for the API
-use std::sync::Arc;
-
-use actix_service::{Service, Transform};
 use actix_web::{
     Error,
     FromRequest,
@@ -11,16 +8,12 @@ use actix_web::{
 };
 use actix_web::dev::{
     Payload,
-    ServiceResponse,
-    ServiceRequest,
 };
 use actix_web::middleware::identity::Identity;
 use actix_web::web::{
     self,
     Json
 };
-use futures::future::{ok, Either, FutureResult};
-use futures::Poll;
 
 use krill_commons::api::admin::Token;
 
@@ -45,11 +38,8 @@ impl Authorizer {
         }
     }
 
-    pub fn is_api_allowed(&self, token_opt: Option<Token>) -> bool {
-        match token_opt {
-            None => false,
-            Some(secret) => self.krill_auth_token == secret
-        }
+    pub fn is_api_allowed(&self, token: &Token) -> bool {
+        &self.krill_auth_token == token
     }
 }
 
@@ -63,7 +53,7 @@ pub fn login(
     cred: Json<Credentials>,
     id: Identity
 ) -> HttpResponse {
-    if server.read().is_api_allowed(Some(cred.token.clone())) {
+    if server.read().login(cred.token.clone()) {
         id.remember("admin".to_string());
         HttpResponse::Ok().finish()
     } else {
@@ -86,85 +76,17 @@ pub fn is_logged_in(
 }
 
 
-#[derive(Clone)]
-pub struct CheckAuthorisation(Arc<Token>);
 
-impl CheckAuthorisation {
-    pub fn new(token: &Token) -> Self {
-        let arc = Arc::new(token.clone());
-        CheckAuthorisation(arc)
-    }
-}
-
-impl <S, B> Transform<S> for CheckAuthorisation
-    where
-        S: Service<Request = ServiceRequest, Response=ServiceResponse<B>, Error = Error>,
-        S::Future: 'static,
-{
-    type Request = ServiceRequest;
-    type Response = ServiceResponse<B>;
-    type Error = Error;
-    type InitError = ();
-    type Transform = CheckAuthorisationMiddleware<S>;
-    type Future = FutureResult<Self::Transform, Self::InitError>;
-
-    fn new_transform(&self, service: S) -> Self::Future {
-        ok(CheckAuthorisationMiddleware { token: self.0.clone(), service })
-    }
-}
-
-
-pub struct CheckAuthorisationMiddleware<S> {
-    token: Arc<Token>,
-    service: S
-}
-
-impl<S, B> Service for CheckAuthorisationMiddleware<S>
-    where
-        S: Service<Request = ServiceRequest, Response = ServiceResponse<B>, Error = Error>,
-        S::Future: 'static,
-{
-    type Request = ServiceRequest;
-    type Response = ServiceResponse<B>;
-    type Error = Error;
-    type Future = Either<S::Future, FutureResult<Self::Response, Self::Error>>;
-
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.service.poll_ready()
-    }
-
-    /// This implementation will verify a Bearer token in the HTTPS request
-    /// if it is present. I.e. if a token is presented it has to be valid. If
-    /// no token is presented then, just pass on. Logged in users are verified
-    /// because methods include an Auth parameter, which enforces that either
-    /// a user is logged in, or a token is present in its FromRequest
-    /// implementation.
-    fn call(&mut self, req: Self::Request) -> Self::Future {
-
-        if let Some(header) = req.headers().get("Authorization").cloned() {
-            if let Ok(str_header) = header.to_str() {
-                if let Ok(token) = Auth::extract_bearer_token(str_header) {
-                    if &token == self.token.as_ref() {
-                        return Either::A(self.service.call(req))
-                    }
-                }
-            }
-            Either::B(ok(req.error_response(AuthError::InvalidToken.error_response())))
-        } else {
-            // If no Bearer token is present in the header, then just pass on.
-            Either::A(self.service.call(req))
-        }
-    }
-}
+pub type UserName = String;
 
 pub enum Auth {
-    User(String),
-    Bearer
+    User(UserName),
+    Bearer(Token)
 }
 
 impl Auth {
     /// Extracts the bearer token from header string,
-    /// returns an error if parsing fails
+    /// returns an invalid token error if parsing fails
     fn extract_bearer_token(header: &str) -> Result<Token, AuthError> {
         let header = header.to_lowercase();
         if header.len() > 6 {
@@ -177,7 +99,7 @@ impl Auth {
             }
         }
 
-        Err(AuthError::Unauthorised)
+        Err(AuthError::InvalidToken)
     }
 }
 
@@ -191,10 +113,11 @@ impl FromRequest for Auth {
             info!("Found user: {}", &identity);
             Ok(Auth::User(identity))
         } else if let Some(header) = req.headers().get("Authorization") {
-            let _token = Auth::extract_bearer_token(
+            let token = Auth::extract_bearer_token(
                 header.to_str().map_err(|_| AuthError::InvalidToken)?
             )?;
-            Ok(Auth::Bearer)
+
+            Ok(Auth::Bearer(token))
         } else {
             Err(AuthError::Unauthorised.into())
         }

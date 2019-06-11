@@ -29,7 +29,8 @@ use crate::auth::Auth;
 use crate::http::server::AppServer;
 use crate::krillserver;
 
-const NOT_FOUND: &[u8] = include_bytes!("../ui/dist/404.html");
+const NOT_FOUND: &[u8] =
+    include_bytes!("../ui/dist/404.html");
 
 //------------ Support Functions ---------------------------------------------
 
@@ -87,22 +88,54 @@ pub fn api_health(_auth: Auth) -> HttpResponse {
     api_ok()
 }
 
+fn if_allowed<F>(allowed: bool, op: F) -> HttpResponse
+    where F: FnOnce() -> HttpResponse {
+    if allowed { op() } else { HttpResponse::Forbidden().finish() }
+}
+
+fn if_api_allowed<F>(
+    server: &web::Data<AppServer>,
+    auth: &Auth,
+    op: F
+) -> HttpResponse where F: FnOnce() -> HttpResponse {
+    let allowed = server.read().is_api_allowed(auth);
+    if_allowed(allowed, op)
+}
+
+fn if_publication_allowed<F>(
+    server: &web::Data<AppServer>,
+    handle: &Handle,
+    auth: &Auth,
+    op: F
+) -> HttpResponse where F: FnOnce() -> HttpResponse {
+    let allowed = server.read().is_publication_api_allowed(handle, auth);
+    if_allowed(allowed, op)
+}
 
 //------------ Admin: Publishers ---------------------------------------------
 
 /// Returns a json structure with all publishers in it.
-pub fn publishers(server: web::Data<AppServer>) -> HttpResponse {
+pub fn publishers(
+    server: web::Data<AppServer>,
+    auth: Auth
+) -> HttpResponse {
     let publishers = server.read().publishers();
-    render_json(admin::PublisherList::build(&publishers, "/api/v1/publishers"))
+
+    if_api_allowed(&server, &auth, || {
+        render_json(admin::PublisherList::build(&publishers, "/api/v1/publishers"))
+    })
 }
 
 /// Adds a publisher
 #[allow(clippy::needless_pass_by_value)]
 pub fn add_publisher(
     server: web::Data<AppServer>,
+    auth: Auth,
     pbl: Json<admin::PublisherRequest>
 ) -> HttpResponse {
-    render_empty_res(server.write().add_publisher(pbl.into_inner()))
+    if_api_allowed(&server, &auth, ||{
+        render_empty_res(server.write().add_publisher(pbl.into_inner()))
+    })
 }
 
 /// Removes a publisher. Should be idempotent! If if did not exist then
@@ -110,26 +143,32 @@ pub fn add_publisher(
 #[allow(clippy::needless_pass_by_value)]
 pub fn deactivate_publisher(
     server: web::Data<AppServer>,
+    auth: Auth,
     handle: Path<Handle>
 ) -> HttpResponse {
-    render_empty_res(server.write().deactivate_publisher(&handle))
+    if_api_allowed(&server, &auth, || {
+        render_empty_res(server.write().deactivate_publisher(&handle))
+    })
 }
 
 /// Returns a json structure with publisher details
 #[allow(clippy::needless_pass_by_value)]
 pub fn publisher_details(
     server: web::Data<AppServer>,
+    auth: Auth,
     handle: Path<Handle>
 ) -> HttpResponse {
-    match server.read().publisher(&handle) {
-        Ok(None) => api_not_found(),
-        Ok(Some(publisher)) => {
-            render_json(
-                &publisher.as_api_details()
-            )
-        },
-        Err(e) => server_error(&Error::ServerError(e))
-    }
+    if_api_allowed(&server, &auth, ||{
+        match server.read().publisher(&handle) {
+            Ok(None) => api_not_found(),
+            Ok(Some(publisher)) => {
+                render_json(
+                    &publisher.as_api_details()
+                )
+            },
+            Err(e) => server_error(&Error::ServerError(e))
+        }
+    })
 }
 
 
@@ -139,8 +178,8 @@ pub fn publisher_details(
 #[allow(clippy::needless_pass_by_value)]
 pub fn handle_rfc8181_request(
     server: web::Data<AppServer>,
+    handle: Path<Handle>,
     msg_bytes: Bytes,
-    handle: Path<Handle>
 ) -> HttpResponse {
     match SignedMessage::decode(msg_bytes, true) {
         Ok(msg) => {
@@ -163,71 +202,107 @@ pub fn handle_rfc8181_request(
 #[allow(clippy::needless_pass_by_value)]
 pub fn handle_delta(
     server: web::Data<AppServer>,
+    auth: Auth,
     delta: Json<publication::PublishDelta>,
     handle: Path<Handle>
 ) -> HttpResponse {
-    render_empty_res(server.read().handle_delta(delta.into_inner(), &handle))
+    let handle = handle.into_inner();
+    if_publication_allowed(&server, &handle, &auth, || {
+            render_empty_res(server.read().handle_delta(delta.into_inner(), &handle))
+        }
+    )
 }
 
 /// Processes a list request sent to the API.
 #[allow(clippy::needless_pass_by_value)]
 pub fn handle_list(
     server: web::Data<AppServer>,
+    auth: Auth,
     handle: Path<Handle>
 ) -> HttpResponse {
-    match server.read().handle_list(&handle) {
-        Ok(list) => render_json(list),
-        Err(e)   => server_error(&Error::ServerError(e))
-    }
+    let handle = handle.into_inner();
+    if_publication_allowed(&server, &handle, &auth, ||{
+        match server.read().handle_list(&handle) {
+            Ok(list) => render_json(list),
+            Err(e)   => server_error(&Error::ServerError(e))
+        }
+    })
 }
 
 
 //------------ Admin: Rfc8181 -----------------------------------------------
 
-pub fn rfc8181_clients(server: web::Data<AppServer>) -> HttpResponse {
-    match server.read().rfc8181_clients() {
-        Ok(clients) => render_json(clients),
-        Err(e) => server_error(&Error::ServerError(e ))
-    }
+pub fn rfc8181_clients(
+    server: web::Data<AppServer>,
+    auth: Auth
+) -> HttpResponse {
+    if_api_allowed(&server, &auth, ||{
+        match server.read().rfc8181_clients() {
+            Ok(clients) => render_json(clients),
+            Err(e) => server_error(&Error::ServerError(e ))
+        }
+    })
 }
 
 pub fn add_rfc8181_client(
     server: web::Data<AppServer>,
+    auth: Auth,
     client: Json<ClientInfo>
 ) -> HttpResponse {
-    render_empty_res(server.read().add_rfc8181_client(client.into_inner()))
+    if_api_allowed(&server, &auth, ||{
+        render_empty_res(server.read().add_rfc8181_client(client.into_inner()))
+    })
 }
 
 pub fn repository_response(
     server: web::Data<AppServer>,
+    auth: Auth,
     handle: Path<Handle>
 ) -> HttpResponse {
-    match server.read().repository_response(&handle) {
-        Ok(res) => {
-            HttpResponse::Ok()
-                .content_type("application/xml")
-                .body(res.encode_vec())
-        },
+    let handle = handle.into_inner();
+    if_publication_allowed(&server, &handle, &auth, ||{
+        match server.read().repository_response(&handle) {
+            Ok(res) => {
+                HttpResponse::Ok()
+                    .content_type("application/xml")
+                    .body(res.encode_vec())
+            },
 
-        Err(e) => server_error(&Error::ServerError(e))
-    }
+            Err(e) => server_error(&Error::ServerError(e))
+        }
+    })
 }
 
 //------------ Admin: TrustAnchor --------------------------------------------
 
-pub fn trust_anchor(server: web::Data<AppServer>) -> HttpResponse {
-    match server.read().trust_anchor() {
-        Some(ta) => render_json(ta),
-        None => api_not_found()
-    }
+pub fn trust_anchor(
+    server: web::Data<AppServer>,
+    auth: Auth
+) -> HttpResponse {
+    if_api_allowed(&server, &auth, ||{
+        match server.read().trust_anchor() {
+            Some(ta) => render_json(ta),
+            None => api_not_found()
+        }
+    })
 }
 
-pub fn init_trust_anchor(server: web::Data<AppServer>) -> HttpResponse {
-    render_empty_res(server.write().init_trust_anchor())
+pub fn init_trust_anchor(
+    server: web::Data<AppServer>,
+    auth: Auth
+) -> HttpResponse {
+    if_api_allowed(&server, &auth, || {
+        render_empty_res(server.write().init_trust_anchor())
+    })
 }
 
-pub fn republish_all(server: web::Data<AppServer>) -> HttpResponse {
-    render_empty_res(server.read().republish_all())
+pub fn republish_all(
+    server: web::Data<AppServer>,
+    auth: Auth
+) -> HttpResponse {
+    if_api_allowed(&server, &auth, || {
+        render_empty_res(server.read().republish_all())
+    })
 }
 
 pub fn tal(server: web::Data<AppServer>) -> HttpResponse {

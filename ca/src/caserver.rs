@@ -97,6 +97,7 @@ impl<S: CaSigner> CaServer<S> {
     }
 
     pub fn republish_all(&self) -> CaResult<(), S> {
+        debug!("Publishing");
         self.publish_ta()
     }
 
@@ -105,10 +106,12 @@ impl<S: CaSigner> CaServer<S> {
         let ta_handle = ta_handle();
 
         if ! self.ta_store.has(&ta_handle) {
+            debug!("No embedded TA present");
             return Ok(()) // bail out early in case there is no embedded TA
         }
 
         if let Ok(ta) = self.ta_store.get_latest(&ta_handle) {
+            debug!("Publishing TA");
             let ta_republish = TrustAnchorCommandDetails::republish(
                 &ta_handle,
                 self.signer.clone()
@@ -118,6 +121,8 @@ impl<S: CaSigner> CaServer<S> {
             if ! events.is_empty() {
                 self.ta_store.update(&ta_handle, ta, events)?;
             }
+        } else {
+            error!("TA present, but could not be loaded");
         }
 
         Ok(())
