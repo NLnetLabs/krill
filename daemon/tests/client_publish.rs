@@ -256,7 +256,7 @@ fn client_publish() {
                 ApiResponse::List(list) => {
                     assert_eq!(3, list.elements().len());
 
-                    let returned_set: HashSet<_>  = list.elements().into_iter().collect();
+                    let returned_set: HashSet<_>  = list.elements().iter().collect();
 
                     let list_el_a = file_a.into_list_element();
                     let list_el_b = file_b.into_list_element();
@@ -306,7 +306,7 @@ fn client_publish() {
                 ApiResponse::List(list) => {
                     assert_eq!(1, list.elements().len());
 
-                    let returned_set: HashSet<_>  = list.elements().into_iter().collect();
+                    let returned_set: HashSet<_>  = list.elements().iter().collect();
 
                     let list_el_c = file_c.into_list_element();
 
