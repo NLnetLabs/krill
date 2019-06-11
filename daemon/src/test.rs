@@ -3,16 +3,14 @@
 use std::{thread, time};
 use std::path::PathBuf;
 
-use actix_web::actix::System;
-
 use krill_commons::util::test;
 use krill_client::KrillClient;
 use krill_client::Error;
 use krill_client::options::{Command, Options};
 use krill_client::report::{ApiResponse, ReportFormat};
-use crate::config::Config;
-use crate::http::server::PubServerApp;
 
+use crate::config::Config;
+use crate::http::server;
 
 pub fn test_with_krill_server<F>(op: F) where F: FnOnce(PathBuf) -> () {
     test::test_with_tmp_dir(|dir| {
@@ -24,11 +22,7 @@ pub fn test_with_krill_server<F>(op: F) where F: FnOnce(PathBuf) -> () {
         };
 
         // Start the server
-        thread::spawn(move ||{
-            System::run(move || {
-                PubServerApp::start(&server_conf);
-            })
-        });
+        thread::spawn(move || { server::start(&server_conf).unwrap() });
 
         let mut tries = 0;
         loop {

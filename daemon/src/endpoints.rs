@@ -1,8 +1,15 @@
 //! Process requests received, delegate, and wrap up the responses.
-use std::sync::{RwLockReadGuard, RwLockWriteGuard};
-
-use actix_web::{HttpResponse, ResponseError, Json, Path};
+use actix_web::{
+    HttpResponse,
+    ResponseError
+};
 use actix_web::http::StatusCode;
+use actix_web::web::{
+    self,
+    Json,
+    Path,
+};
+use bytes::Bytes;
 use serde::Serialize;
 
 use krill_cms_proxy::api::ClientInfo;
@@ -18,22 +25,13 @@ use krill_commons::api::rrdp::VerificationError;
 use krill_pubd::publishers::PublisherError;
 use krill_pubd::repo::RrdpServerError;
 
-use crate::http::server::HttpRequest;
-use crate::krillserver::{self, KrillServer};
-use bytes::Bytes;
+use crate::auth::Auth;
+use crate::http::server::AppServer;
+use crate::krillserver;
 
+const NOT_FOUND: &[u8] = include_bytes!("../ui/dist/404.html");
 
 //------------ Support Functions ---------------------------------------------
-
-/// Returns a server in a read lock
-pub fn ro_server(req: &HttpRequest) -> RwLockReadGuard<KrillServer> {
-    req.state().read().unwrap()
-}
-
-/// Returns a server in a write lock
-pub fn rw_server(req: &HttpRequest) -> RwLockWriteGuard<KrillServer> {
-    req.state().write().unwrap()
-}
 
 /// Helper function to render json output.
 ///
@@ -70,13 +68,22 @@ fn api_not_found() -> HttpResponse {
     HttpResponse::build(StatusCode::NOT_FOUND).finish()
 }
 
+pub fn not_found() -> HttpResponse {
+    HttpResponse::build(StatusCode::NOT_FOUND).body(NOT_FOUND)
+}
+
 /// A clean 200 result for the API (no content, not for humans)
 pub fn api_ok() -> HttpResponse {
     HttpResponse::Ok().finish()
 }
 
-/// Returns the server health. XXX TODO: do a real test!
-pub fn health(_r: &HttpRequest) -> HttpResponse {
+/// Returns the server health.
+pub fn health() -> HttpResponse {
+    api_ok()
+}
+
+/// Returns the server health.
+pub fn api_health(_auth: Auth) -> HttpResponse {
     api_ok()
 }
 
@@ -84,39 +91,37 @@ pub fn health(_r: &HttpRequest) -> HttpResponse {
 //------------ Admin: Publishers ---------------------------------------------
 
 /// Returns a json structure with all publishers in it.
-pub fn publishers(req: &HttpRequest) -> HttpResponse {
-    let publishers = ro_server(req).publishers();
+pub fn publishers(server: web::Data<AppServer>) -> HttpResponse {
+    let publishers = server.read().publishers();
     render_json(admin::PublisherList::build(&publishers, "/api/v1/publishers"))
 }
 
 /// Adds a publisher
 #[allow(clippy::needless_pass_by_value)]
 pub fn add_publisher(
-    req: HttpRequest,
+    server: web::Data<AppServer>,
     pbl: Json<admin::PublisherRequest>
 ) -> HttpResponse {
-    let mut server = rw_server(&req);
-    render_empty_res(server.add_publisher(pbl.into_inner()))
+    render_empty_res(server.write().add_publisher(pbl.into_inner()))
 }
 
 /// Removes a publisher. Should be idempotent! If if did not exist then
 /// that's just fine.
 #[allow(clippy::needless_pass_by_value)]
 pub fn deactivate_publisher(
-    req: HttpRequest,
+    server: web::Data<AppServer>,
     handle: Path<Handle>
 ) -> HttpResponse {
-    render_empty_res(rw_server(&req).deactivate_publisher(&handle))
+    render_empty_res(server.write().deactivate_publisher(&handle))
 }
 
 /// Returns a json structure with publisher details
 #[allow(clippy::needless_pass_by_value)]
 pub fn publisher_details(
-    req: HttpRequest,
+    server: web::Data<AppServer>,
     handle: Path<Handle>
 ) -> HttpResponse {
-    let server = ro_server(&req);
-    match server.publisher(&handle) {
+    match server.read().publisher(&handle) {
         Ok(None) => api_not_found(),
         Ok(Some(publisher)) => {
             render_json(
@@ -133,13 +138,13 @@ pub fn publisher_details(
 /// Processes an RFC8181 query and returns the appropriate response.
 #[allow(clippy::needless_pass_by_value)]
 pub fn handle_rfc8181_request(
-    req: HttpRequest,
+    server: web::Data<AppServer>,
     msg_bytes: Bytes,
     handle: Path<Handle>
 ) -> HttpResponse {
     match SignedMessage::decode(msg_bytes, true) {
         Ok(msg) => {
-            match ro_server(&req).handle_rfc8181_req(msg, handle.into_inner()) {
+            match server.read().handle_rfc8181_req(msg, handle.into_inner()) {
                 Ok(captured) => {
                     HttpResponse::build(StatusCode::OK)
                         .content_type("application/rpki-publication")
@@ -157,20 +162,20 @@ pub fn handle_rfc8181_request(
 /// Processes a publishdelta request sent to the API.
 #[allow(clippy::needless_pass_by_value)]
 pub fn handle_delta(
-    req: HttpRequest,
+    server: web::Data<AppServer>,
     delta: Json<publication::PublishDelta>,
     handle: Path<Handle>
 ) -> HttpResponse {
-    render_empty_res(ro_server(&req).handle_delta(delta.into_inner(), &handle))
+    render_empty_res(server.read().handle_delta(delta.into_inner(), &handle))
 }
 
 /// Processes a list request sent to the API.
 #[allow(clippy::needless_pass_by_value)]
 pub fn handle_list(
-    req: HttpRequest,
+    server: web::Data<AppServer>,
     handle: Path<Handle>
 ) -> HttpResponse {
-    match ro_server(&req).handle_list(&handle) {
+    match server.read().handle_list(&handle) {
         Ok(list) => render_json(list),
         Err(e)   => server_error(&Error::ServerError(e))
     }
@@ -179,26 +184,25 @@ pub fn handle_list(
 
 //------------ Admin: Rfc8181 -----------------------------------------------
 
-pub fn rfc8181_clients(req: &HttpRequest) -> HttpResponse {
-    match ro_server(req).rfc8181_clients() {
+pub fn rfc8181_clients(server: web::Data<AppServer>) -> HttpResponse {
+    match server.read().rfc8181_clients() {
         Ok(clients) => render_json(clients),
         Err(e) => server_error(&Error::ServerError(e ))
     }
 }
 
 pub fn add_rfc8181_client(
-    req: HttpRequest,
+    server: web::Data<AppServer>,
     client: Json<ClientInfo>
 ) -> HttpResponse {
-    let server = ro_server(&req);
-    render_empty_res(server.add_rfc8181_client(client.into_inner()))
+    render_empty_res(server.read().add_rfc8181_client(client.into_inner()))
 }
 
 pub fn repository_response(
-    req: HttpRequest,
+    server: web::Data<AppServer>,
     handle: Path<Handle>
 ) -> HttpResponse {
-    match ro_server(&req).repository_response(&handle) {
+    match server.read().repository_response(&handle) {
         Ok(res) => {
             HttpResponse::Ok()
                 .content_type("application/xml")
@@ -211,23 +215,23 @@ pub fn repository_response(
 
 //------------ Admin: TrustAnchor --------------------------------------------
 
-pub fn trust_anchor(req: &HttpRequest) -> HttpResponse {
-    match ro_server(req).trust_anchor() {
+pub fn trust_anchor(server: web::Data<AppServer>) -> HttpResponse {
+    match server.read().trust_anchor() {
         Some(ta) => render_json(ta),
         None => api_not_found()
     }
 }
 
-pub fn init_trust_anchor(req: &HttpRequest) -> HttpResponse {
-    render_empty_res(rw_server(req).init_trust_anchor())
+pub fn init_trust_anchor(server: web::Data<AppServer>) -> HttpResponse {
+    render_empty_res(server.write().init_trust_anchor())
 }
 
-pub fn republish_all(req: &HttpRequest) -> HttpResponse {
-    render_empty_res(ro_server(req).republish_all())
+pub fn republish_all(server: web::Data<AppServer>) -> HttpResponse {
+    render_empty_res(server.read().republish_all())
 }
 
-pub fn tal(req: &HttpRequest) -> HttpResponse {
-    match ro_server(req).trust_anchor() {
+pub fn tal(server: web::Data<AppServer>) -> HttpResponse {
+    match server.read().trust_anchor() {
         Some(ta) => {
             HttpResponse::Ok()
                 .content_type("text/plain")
@@ -237,8 +241,8 @@ pub fn tal(req: &HttpRequest) -> HttpResponse {
     }
 }
 
-pub fn ta_cer(req: &HttpRequest) -> HttpResponse {
-    match ro_server(req).trust_anchor_cert() {
+pub fn ta_cer(server: web::Data<AppServer>) -> HttpResponse {
+    match server.read().trust_anchor_cert() {
         Some(cert) => {
             HttpResponse::Ok().body(cert.der_encoded().to_vec())
         },
@@ -250,8 +254,7 @@ pub fn ta_cer(req: &HttpRequest) -> HttpResponse {
 
 //------------ Serving RRDP --------------------------------------------------
 
-pub fn current_snapshot_json(req: &HttpRequest) -> HttpResponse {
-    let _server = ro_server(req);
+pub fn current_snapshot_json(_server: web::Data<AppServer>) -> HttpResponse {
     unimplemented!()
 }
 

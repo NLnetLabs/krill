@@ -103,6 +103,11 @@ impl<S: CaSigner> CaServer<S> {
     pub fn publish_ta(&self) -> CaResult<(), S> {
         // if there is a TA, publish it
         let ta_handle = ta_handle();
+
+        if ! self.ta_store.has(&ta_handle) {
+            return Ok(()) // bail out early in case there is no embedded TA
+        }
+
         if let Ok(ta) = self.ta_store.get_latest(&ta_handle) {
             let ta_republish = TrustAnchorCommandDetails::republish(
                 &ta_handle,

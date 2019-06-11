@@ -1,78 +1,32 @@
 //! Authorization for the API
-use std::sync::{Arc, RwLock, RwLockReadGuard};
+use std::sync::Arc;
 
-use actix_web::{Form, HttpResponse, HttpRequest, Result};
-use actix_web::http::HeaderMap;
-use actix_web::middleware::{Middleware, Started};
-use actix_web::middleware::identity::RequestIdentity;
+use actix_service::{Service, Transform};
+use actix_web::{
+    Error,
+    FromRequest,
+    HttpResponse,
+    HttpRequest,
+    ResponseError,
+};
+use actix_web::dev::{
+    Payload,
+    ServiceResponse,
+    ServiceRequest,
+};
+use actix_web::middleware::identity::Identity;
+use actix_web::web::{
+    self,
+    Json
+};
+use futures::future::{ok, Either, FutureResult};
+use futures::Poll;
 
 use krill_commons::api::admin::Token;
 
-use crate::krillserver::KrillServer;
+use crate::http::server::AppServer;
 
-const ADMIN_API_PATH: &str = "/api/";
-const PUBLICATION_API_PATH: &str = "/publication/";
-
-pub struct CheckAuthorisation;
-
-impl Middleware<Arc<RwLock<KrillServer>>> for CheckAuthorisation {
-    fn start(
-        &self,
-        req: &HttpRequest<Arc<RwLock<KrillServer>>>
-    ) -> Result<Started> {
-        if req.identity() == Some("admin".to_string()) {
-            return Ok(Started::Done)
-        }
-
-        let server: RwLockReadGuard<KrillServer> = req.state().read().unwrap();
-
-        let mut allowed = true;
-
-        let token_opt = Self::extract_token(req.headers());
-
-        if req.path().starts_with(ADMIN_API_PATH) {
-            allowed = server.is_api_allowed(token_opt)
-        } else if req.path().starts_with(PUBLICATION_API_PATH) {
-            let handle_opt = Self::extract_publication_handle(req.path());
-            allowed = server.is_publication_api_allowed(handle_opt, token_opt);
-        }
-
-        if allowed {
-            Ok(Started::Done)
-        } else {
-            Ok(Started::Response(HttpResponse::Forbidden().finish()))
-        }
-    }
-}
-
-impl CheckAuthorisation {
-    fn extract_token(headers: &HeaderMap) -> Option<Token> {
-        if let Some(header) = headers.get("Authorization") {
-            if let Ok(str_header) = header.to_str() {
-                let str_header = str_header.to_lowercase();
-                if str_header.len() > 6 {
-                    let (bearer, token) = str_header.split_at(6);
-                    let bearer = bearer.trim();
-                    let token = Token::from(token.trim());
-
-                    if "bearer" == bearer {
-                        return Some(token)
-                    }
-                }
-            }
-        }
-        None
-    }
-
-    fn extract_publication_handle(path: &str) -> Option<String> {
-        if path.starts_with(PUBLICATION_API_PATH) {
-            let (_, handle) = path.split_at(PUBLICATION_API_PATH.len());
-            Some(handle.to_string())
-        } else {
-            None
-        }
-    }
-}
+pub const AUTH_COOKIE_NAME: &str = "krill_auth";
 
 
 //------------ Authorizer ----------------------------------------------------
@@ -104,48 +58,161 @@ pub struct Credentials {
     token: Token
 }
 
-pub fn post_login(
-    req: HttpRequest<Arc<RwLock<KrillServer>>>,
-    cred: Credentials
+pub fn login(
+    server: web::Data<AppServer>,
+    cred: Json<Credentials>,
+    id: Identity
 ) -> HttpResponse {
-    let server: RwLockReadGuard<KrillServer> = req.state().read().unwrap();
-    if server.is_api_allowed(Some(cred.token.clone())) {
-        req.remember("admin".to_string());
+    if server.read().is_api_allowed(Some(cred.token.clone())) {
+        id.remember("admin".to_string());
         HttpResponse::Ok().finish()
     } else {
+        info!("Failed login attempt {}", cred.token.as_ref());
         HttpResponse::Forbidden().finish()
     }
 }
 
-pub fn post_logout(
-    req: &HttpRequest<Arc<RwLock<KrillServer>>>
+pub fn logout(
+    id: Identity
 ) -> HttpResponse {
-    req.forget();
+    id.forget();
+    HttpResponse::Ok().finish()
+}
+
+pub fn is_logged_in(
+    _auth: Auth
+) -> HttpResponse {
     HttpResponse::Ok().finish()
 }
 
 
-#[allow(clippy::needless_pass_by_value)]
-pub fn login_page(
-    req: HttpRequest<Arc<RwLock<KrillServer>>>,
-    form: Form<Credentials>
-) -> HttpResponse {
-    let server: RwLockReadGuard<KrillServer> = req.state().read().unwrap();
-    if server.is_api_allowed(Some(form.token.clone())) {
-        req.remember("admin".to_string());
-        HttpResponse::Found().header("location", "/api/v1/publishers").finish()
-    } else {
-        HttpResponse::Forbidden().finish()
+#[derive(Clone)]
+pub struct CheckAuthorisation(Arc<Token>);
+
+impl CheckAuthorisation {
+    pub fn new(token: &Token) -> Self {
+        let arc = Arc::new(token.clone());
+        CheckAuthorisation(arc)
     }
 }
 
-pub fn is_logged_in(
-    req: &HttpRequest<Arc<RwLock<KrillServer>>>
-) -> HttpResponse {
-    if req.identity() == Some("admin".to_string()) {
-        HttpResponse::Ok().finish()
-    } else {
-        HttpResponse::Forbidden().finish()
+impl <S, B> Transform<S> for CheckAuthorisation
+    where
+        S: Service<Request = ServiceRequest, Response=ServiceResponse<B>, Error = Error>,
+        S::Future: 'static,
+{
+    type Request = ServiceRequest;
+    type Response = ServiceResponse<B>;
+    type Error = Error;
+    type InitError = ();
+    type Transform = CheckAuthorisationMiddleware<S>;
+    type Future = FutureResult<Self::Transform, Self::InitError>;
+
+    fn new_transform(&self, service: S) -> Self::Future {
+        ok(CheckAuthorisationMiddleware { token: self.0.clone(), service })
     }
 }
 
+
+pub struct CheckAuthorisationMiddleware<S> {
+    token: Arc<Token>,
+    service: S
+}
+
+impl<S, B> Service for CheckAuthorisationMiddleware<S>
+    where
+        S: Service<Request = ServiceRequest, Response = ServiceResponse<B>, Error = Error>,
+        S::Future: 'static,
+{
+    type Request = ServiceRequest;
+    type Response = ServiceResponse<B>;
+    type Error = Error;
+    type Future = Either<S::Future, FutureResult<Self::Response, Self::Error>>;
+
+    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
+        self.service.poll_ready()
+    }
+
+    /// This implementation will verify a Bearer token in the HTTPS request
+    /// if it is present. I.e. if a token is presented it has to be valid. If
+    /// no token is presented then, just pass on. Logged in users are verified
+    /// because methods include an Auth parameter, which enforces that either
+    /// a user is logged in, or a token is present in its FromRequest
+    /// implementation.
+    fn call(&mut self, req: Self::Request) -> Self::Future {
+
+        if let Some(header) = req.headers().get("Authorization").cloned() {
+            if let Ok(str_header) = header.to_str() {
+                if let Ok(token) = Auth::extract_bearer_token(str_header) {
+                    if &token == self.token.as_ref() {
+                        return Either::A(self.service.call(req))
+                    }
+                }
+            }
+            Either::B(ok(req.error_response(AuthError::InvalidToken.error_response())))
+        } else {
+            // If no Bearer token is present in the header, then just pass on.
+            Either::A(self.service.call(req))
+        }
+    }
+}
+
+pub enum Auth {
+    User(String),
+    Bearer
+}
+
+impl Auth {
+    /// Extracts the bearer token from header string,
+    /// returns an error if parsing fails
+    fn extract_bearer_token(header: &str) -> Result<Token, AuthError> {
+        let header = header.to_lowercase();
+        if header.len() > 6 {
+            let (bearer, token) = header.split_at(6);
+            let bearer = bearer.trim();
+            let token = Token::from(token.trim());
+
+            if "bearer" == bearer {
+                return Ok(token)
+            }
+        }
+
+        Err(AuthError::Unauthorised)
+    }
+}
+
+impl FromRequest for Auth {
+    type Error = Error;
+    type Future = Result<Auth, Error>;
+    type Config = ();
+
+    fn from_request(req: &HttpRequest, payload: &mut Payload) -> Self::Future {
+        if let Some(identity) = Identity::from_request(req, payload)?.identity() {
+            info!("Found user: {}", &identity);
+            Ok(Auth::User(identity))
+        } else if let Some(header) = req.headers().get("Authorization") {
+            let _token = Auth::extract_bearer_token(
+                header.to_str().map_err(|_| AuthError::InvalidToken)?
+            )?;
+            Ok(Auth::Bearer)
+        } else {
+            Err(AuthError::Unauthorised.into())
+        }
+    }
+}
+
+
+#[derive(Debug, Display)]
+pub enum AuthError {
+    #[display(fmt = "Neither logged in user, nor bearer token found")]
+    Unauthorised,
+
+    #[display(fmt = "Invalid token")]
+    InvalidToken
+}
+
+impl ResponseError for AuthError {
+    fn error_response(&self) -> HttpResponse {
+        HttpResponse::Forbidden().finish()
+    }
+}

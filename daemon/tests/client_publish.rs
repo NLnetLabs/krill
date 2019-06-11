@@ -4,7 +4,6 @@ extern crate krill_commons;
 extern crate krill_daemon;
 extern crate krill_pubc;
 
-use std::{thread, time};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use krill_client::KrillClient;
@@ -161,9 +160,6 @@ fn client_publish() {
         let token = "secret";
         let base_rsync_uri_alice = "rsync://localhost/repo/alice/";
         let base_rsync_uri_bob = "rsync://localhost/repo/bob/";
-
-        // XXX TODO: Find a better way to know the server is ready!
-        thread::sleep(time::Duration::from_millis(500));
 
         // Add client "alice"
         add_publisher(handle, base_rsync_uri_alice, token);
