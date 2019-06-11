@@ -318,7 +318,6 @@ mod tests {
 
     use super::*;
     use actix_web::*;
-    use actix_web::server::HttpServer;
     use openssl::ssl::{SslMethod, SslAcceptor, SslFiletype};
     use krill_commons::util::test;
 

@@ -267,7 +267,7 @@ mod tests {
                 let events = alice.process_command(get_older).unwrap();
                 alice = manager.update(&id_alice, alice, events).unwrap();
 
-                age = age + 1;
+                age += 1;
                 if age == 21 {
                     break
                 }

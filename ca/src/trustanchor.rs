@@ -235,6 +235,7 @@ impl<S: CaSigner> TrustAnchor<S> {
 impl<S: CaSigner> TrustAnchor<S> {
     fn republish(&self, signer: Arc<S>) -> TaResult<Vec<TrustAnchorEvent>> {
         if !self.current_key.needs_publication() {
+            debug!("TA does not need to be republished");
             return Ok(vec![])
         }
 

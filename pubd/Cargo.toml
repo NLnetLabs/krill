@@ -7,7 +7,7 @@ authors = ["Tim Bruijnzeels <tim@nlnetlabs.nl>", "Martin Hoffmann <martin@nlnetl
 bytes           = "^0.4"
 derive_more     = "^0.13"
 rand            = "^0.5"
-rpki            = "^0.4"
+rpki            = "^0.5"
 serde           = { version = "^1.0", features = ["derive"] }
 
 [dependencies.krill_commons]

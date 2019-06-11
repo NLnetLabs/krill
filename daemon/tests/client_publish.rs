@@ -4,7 +4,6 @@ extern crate krill_commons;
 extern crate krill_daemon;
 extern crate krill_pubc;
 
-use std::{thread, time};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use krill_client::KrillClient;
@@ -162,9 +161,6 @@ fn client_publish() {
         let base_rsync_uri_alice = "rsync://localhost/repo/alice/";
         let base_rsync_uri_bob = "rsync://localhost/repo/bob/";
 
-        // XXX TODO: Find a better way to know the server is ready!
-        thread::sleep(time::Duration::from_millis(500));
-
         // Add client "alice"
         add_publisher(handle, base_rsync_uri_alice, token);
 
@@ -260,7 +256,7 @@ fn client_publish() {
                 ApiResponse::List(list) => {
                     assert_eq!(3, list.elements().len());
 
-                    let returned_set: HashSet<_>  = list.elements().into_iter().collect();
+                    let returned_set: HashSet<_>  = list.elements().iter().collect();
 
                     let list_el_a = file_a.into_list_element();
                     let list_el_b = file_b.into_list_element();
@@ -310,7 +306,7 @@ fn client_publish() {
                 ApiResponse::List(list) => {
                     assert_eq!(1, list.elements().len());
 
-                    let returned_set: HashSet<_>  = list.elements().into_iter().collect();
+                    let returned_set: HashSet<_>  = list.elements().iter().collect();
 
                     let list_el_c = file_c.into_list_element();
 

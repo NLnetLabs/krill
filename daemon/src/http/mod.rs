@@ -1,4 +1,3 @@
-#[macro_use] mod statics;
-
 pub mod server;
 pub mod ssl;
+pub mod statics;

@@ -1,5 +1,6 @@
-extern crate actix;
 extern crate actix_web;
+extern crate actix_service;
+extern crate actix_session;
 extern crate base64;
 extern crate bytes;
 extern crate bcder;

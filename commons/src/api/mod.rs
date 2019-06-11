@@ -220,8 +220,8 @@ pub enum ErrorCode {
     #[display(fmt="Invalid handle name")]
     InvalidHandle,
 
-    #[display(fmt="Handle already in use")]
-    DuplicateHandle,
+    #[display(fmt="Submitted protocol CMS cannot be parsed")]
+    InvalidCms,
 
     // 2000s (Authorisation and Consistency issues)
     #[display(fmt="Unknown publisher")]
@@ -247,6 +247,9 @@ pub enum ErrorCode {
 
     #[display(fmt="No file found for hash at uri")]
     NoObjectForHashAndOrUri,
+
+    #[display(fmt="Handle already in use")]
+    DuplicateHandle,
 
     // 3000s (Server Errors)
     #[display(fmt="Cannot update internal state, issue with work_dir?")]
@@ -278,6 +281,7 @@ impl From<usize> for ErrorCode {
             1002 => ErrorCode::InvalidPublisherRequest,
             1003 => ErrorCode::InvalidPublicationXml,
             1004 => ErrorCode::InvalidHandle,
+            1005 => ErrorCode::InvalidCms,
 
             2001 => ErrorCode::UnknownPublisher,
             2002 => ErrorCode::CmsValidation,
@@ -308,6 +312,7 @@ impl Into<ErrorResponse> for ErrorCode {
             ErrorCode::InvalidPublisherRequest => 1002,
             ErrorCode::InvalidPublicationXml => 1003,
             ErrorCode::InvalidHandle => 1004,
+            ErrorCode::InvalidCms => 1005,
 
             ErrorCode::UnknownPublisher => 2001,
             ErrorCode::CmsValidation => 2002,
@@ -349,7 +354,7 @@ mod tests {
             assert_eq!(number_to_test, response.code());
         }
 
-        for n in 1001..1005 {
+        for n in 1001..1006 {
             test_code(n)
         }
 
