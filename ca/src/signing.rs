@@ -38,7 +38,6 @@ impl CaSignSupport {
     ) -> Result<PublicationDelta, CaSignError<S>> {
 
         let aia = ca_key.incoming_cert().uri();
-        let signing_cert = ca_key.incoming_cert().cert();
         let key_id = ca_key.key_id();
 
         let pub_key = signer.get_key_info(key_id).map_err(CaSignError::KeyError)?;
@@ -124,7 +123,6 @@ impl CaSignSupport {
                 ),
                 signer.as_ref(),
                 key_id,
-                signing_cert
             ).map_err(CaSignError::SigningError)?
         };
 
