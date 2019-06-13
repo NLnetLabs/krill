@@ -20,10 +20,10 @@
             text-color="#fff"
             active-text-color="#fff">
               <el-menu-item index="1" :route="{ name: 'publishers'}">
-                  Publishers
+                {{ $t("publishers.publishers") }}
               </el-menu-item>
               <el-menu-item index="2" :route="{ name: 'trustanchor'}">
-                  Trust Anchor
+                {{ $t("trustanchor.ta") }}
               </el-menu-item>
             </el-menu>
             &nbsp;
