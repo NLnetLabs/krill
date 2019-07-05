@@ -246,7 +246,7 @@ mod tests {
 
     #[test]
     fn test() {
-        test::test_with_tmp_dir(|d| {
+        test::test_under_tmp(|d| {
 
             let counter = Arc::new(EventCounter::default());
             let mut manager = DiskAggregateStore::<Person>::new(&d, "person").unwrap();

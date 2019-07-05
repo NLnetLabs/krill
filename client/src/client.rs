@@ -5,12 +5,7 @@ use serde::de::DeserializeOwned;
 
 use krill_commons::util::file;
 use krill_commons::util::httpclient;
-use krill_commons::api::admin::{
-    PublisherDetails,
-    PublisherList,
-    PublisherRequest,
-    Token
-};
+use krill_commons::api::admin::{PublisherDetails, PublisherList, PublisherRequest, Token, ParentCaContact};
 use krill_commons::api::ca::TrustAnchorInfo;
 use krill_cms_proxy::api::{
     ClientAuth,
@@ -29,6 +24,7 @@ use crate::options::{
     Rfc8181Command,
     TrustAnchorCommand
 };
+use options::CaCommand;
 
 /// Command line tool for Krill admin tasks
 pub struct KrillClient {
@@ -61,6 +57,7 @@ impl KrillClient {
         match options.command {
             Command::Health => client.health(),
             Command::TrustAnchor(cmd) => client.trustanchor(cmd),
+            Command::CertAuth(cmd) => client.certauth(cmd),
             Command::Publishers(cmd) => client.publishers(cmd),
             Command::Rfc8181(cmd) => client.rfc8181(cmd),
             Command::NotSet => Err(Error::MissingCommand)
@@ -96,6 +93,29 @@ impl KrillClient {
             TrustAnchorCommand::Publish => {
                 let uri = self.resolve_uri("api/v1/republish");
                 httpclient::post_empty(&uri, Some(&self.token))?;
+                Ok(ApiResponse::Empty)
+            },
+            TrustAnchorCommand::AddChild(req) => {
+                let uri = self.resolve_uri("api/v1/trustanchor/children");
+                let info: ParentCaContact = httpclient::post_json_with_response(
+                    &uri, req, Some(&self.token)
+                )?;
+                Ok(ApiResponse::ParentCaInfo(info))
+            }
+        }
+    }
+
+    fn certauth(&self, command: CaCommand) -> Result<ApiResponse, Error> {
+        match command {
+            CaCommand::Init(init) => {
+                let uri = self.resolve_uri("api/v1/cas");
+                httpclient::post_json(&uri, init, Some(&self.token))?;
+                Ok(ApiResponse::Empty)
+            },
+            CaCommand::AddParent(handle, parent) => {
+                let uri = format!("api/v1/cas/{}/parents", handle);
+                let uri = self.resolve_uri(&uri);
+                httpclient::post_json(&uri, parent, Some(&self.token))?;
                 Ok(ApiResponse::Empty)
             }
         }

@@ -3,12 +3,13 @@
 use std::{io, thread};
 use std::path::PathBuf;
 
+use krill_commons::api::ErrorCode;
 use krill_commons::api::admin::{
     Handle,
     PubServerInfo,
     PublisherClientRequest
 };
-use krill_commons::api::ca::CurrentObjects;
+use krill_commons::api::ca::AllCurrentObjects;
 use krill_commons::api::publication::PublishDelta;
 use krill_commons::eventsourcing::{
     Aggregate,
@@ -26,10 +27,10 @@ use krill_commons::util::httpclient;
 use crate::trustanchor::{
     CaSigner,
     TrustAnchor,
-    TrustAnchorEvent,
-    TrustAnchorEventDetails
+    TaEvt,
+    TaEvtDet
 };
-use krill_commons::api::ErrorCode;
+use ca::{CertAuth, CaEvt, CaEvtDet};
 
 
 //------------ PubClientInit -------------------------------------------------
@@ -135,7 +136,7 @@ impl PubClients {
     fn publish(
         &self,
         handle: &Handle,
-        _current_objects: &CurrentObjects,
+        _current_objects: AllCurrentObjects,
         delta: PublishDelta
     ) {
         let client = self.store.get_latest(handle).unwrap();
@@ -145,6 +146,7 @@ impl PubClients {
                 let uri = format!("{}publication/{}", service_uri, handle);
                 let service_uri = service_uri.clone();
                 let token = token.clone();
+                let handle = handle.clone();
 
                 thread::spawn(move ||{
                     // Note, I could not think of a convenient way to pass down
@@ -159,14 +161,13 @@ impl PubClients {
                             let err: ErrorCode = err.into();
                             if err == ErrorCode::ObjectAlreadyPresent ||
                                err == ErrorCode::NoObjectForHashAndOrUri {
-                                // TODO: https://github.com/NLnetLabs/krill/issues/42
-                                unimplemented!()
+                                unimplemented!("https://github.com/NLnetLabs/krill/issues/42")
                             } else {
                                 error!("{}", err)
                             }
                         },
                         Err(e) => error!("{}", e),
-                        Ok(()) => debug!("PubClients: Published delta")
+                        Ok(()) => debug!("PubClients: published for {}", handle)
                     }
                 });
 
@@ -184,21 +185,34 @@ impl PubClients {
     }
 }
 
-
+/// Implement listening for TrustAnchor Published events.
 impl<S: CaSigner> EventListener<TrustAnchor<S>> for PubClients {
-    fn listen(&self, ta: &TrustAnchor<S>, event: &TrustAnchorEvent) {
+    fn listen(&self, ta: &TrustAnchor<S>, event: &TaEvt) {
+        if let TaEvtDet::Published(delta) = event.details() {
+            debug!("PubClients: Observed delta for publishing");
 
-        match event.details() {
-            TrustAnchorEventDetails::Published(delta) => {
-                debug!("PubClients: Observed delta for publishing");
+            let current_objects = ta.current_objects();
+            self.publish(
+                event.handle(),
+                current_objects,
+                delta.objects().clone().into()
+            );
+        }
+    }
+}
 
-                let current_objects = ta.current_objects();
-                self.publish(
-                    event.handle(),
-                    current_objects,
-                    delta.objects().clone
-                ().into());
-            },
+/// Implement listening for CertAuth Published events.
+impl<S: CaSigner> EventListener<CertAuth<S>> for PubClients {
+    fn listen(&self, ca: &CertAuth<S>, event: &CaEvt) {
+        if let CaEvtDet::Published(_,_,_,delta) = event.details() {
+            debug!("Pubclients: publishing for {}", event.handle());
+
+            let current_objects = ca.current_objects();
+            self.publish(
+                event.handle(),
+                current_objects,
+                delta.objects().clone().into()
+            );
         }
     }
 }

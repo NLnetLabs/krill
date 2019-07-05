@@ -1,3 +1,4 @@
+extern crate actix_identity;
 extern crate actix_web;
 extern crate actix_service;
 extern crate actix_session;

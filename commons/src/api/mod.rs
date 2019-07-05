@@ -1,8 +1,11 @@
 //! Data structures for the API, shared between client and server.
 
+pub mod admin;
 pub mod ca;
 
-pub mod admin;
+mod provisioning;
+pub use self::provisioning::*;
+
 pub mod publication;
 pub mod rrdp;
 

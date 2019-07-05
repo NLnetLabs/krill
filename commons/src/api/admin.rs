@@ -7,6 +7,7 @@ use rpki::crypto::Signer;
 
 use crate::api::Link;
 use std::path::Path;
+use api::ca::ResourceSet;
 
 
 //------------ Handle --------------------------------------------------------
@@ -280,8 +281,9 @@ impl PublisherClientRequest {
 
 //------------ PubServerInfo -------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Display, Serialize)]
 pub enum PubServerInfo {
+    #[display(fmt = "Krill at: {}", _0)]
     KrillServer(uri::Https, Token)
 }
 
@@ -290,3 +292,107 @@ impl PubServerInfo {
         PubServerInfo::KrillServer(service_uri, token)
     }
 }
+
+
+//------------ ParentCaInfo --------------------------------------------------
+
+// This type defines all parent ca details for a certificate authority.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ParentCaInfo {
+    handle: Handle,           // the local name the child gave to the parent
+    contact: ParentCaContact  // where the parent can be contacted
+}
+
+impl ParentCaInfo {
+    pub fn new(
+        handle: Handle,
+        contact: ParentCaContact
+    ) -> Self {
+        ParentCaInfo { handle, contact }
+    }
+
+    pub fn unwrap(self) -> (Handle, ParentCaContact) {
+        (self.handle, self.contact)
+    }
+}
+
+//------------ ParentCaContact -----------------------------------------------
+
+/// This type contains the information needed to contact the parent ca
+/// for resource provisioning requests (RFC6492).
+#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
+pub enum ParentCaContact {
+    #[display(fmt = "Remote krill at: {}", _0)]
+    RemoteKrill(uri::Https, Token),
+
+    #[display(fmt = "Embedded CA: {}", _0)]
+    Embedded(Handle, Token),
+}
+
+impl ParentCaContact {
+    pub fn for_remote_krill(service_uri: uri::Https, token: Token) -> Self {
+        ParentCaContact::RemoteKrill(service_uri, token)
+    }
+
+    pub fn for_embedded(parent: Handle, token: Token) -> Self {
+        ParentCaContact::Embedded(parent, token)
+    }
+}
+
+
+//------------ CertAuthInit --------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CertAuthInit {
+    handle:   Handle,
+    token:    Token,
+    pub_mode: CertAuthPubMode
+}
+
+impl CertAuthInit {
+    pub fn new(
+        handle:   Handle,
+        token:    Token,
+        pub_mode: CertAuthPubMode
+    ) -> Self {
+        CertAuthInit { handle, token, pub_mode }
+    }
+
+    pub fn unwrap(self) -> (Handle, Token, CertAuthPubMode) {
+        ( self.handle, self.token, self.pub_mode )
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum CertAuthPubMode {
+    Embedded
+}
+
+
+//------------ AddChildRequest -----------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AddChildRequest {
+    handle: Handle,
+    token: Token,
+    resources: ResourceSet
+}
+
+impl AddChildRequest {
+    pub fn new(
+        handle: Handle,
+        token: Token,
+        resources: ResourceSet
+    ) -> Self {
+        AddChildRequest { handle, token, resources }
+    }
+
+    pub fn token(&self) -> &Token { &self.token }
+
+    pub fn unwrap(self) -> (Handle, Token, ResourceSet) {
+        (self.handle, self.token, self.resources)
+    }
+}
+
+
+

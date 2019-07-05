@@ -1,5 +1,5 @@
 use std::str::FromStr;
-use krill_commons::api::admin::{PublisherDetails, PublisherList};
+use krill_commons::api::admin::{PublisherDetails, PublisherList, ParentCaContact};
 use krill_cms_proxy::api::ClientInfo;
 use krill_commons::api::ca::TrustAnchorInfo;
 
@@ -12,6 +12,7 @@ use krill_commons::api::ca::TrustAnchorInfo;
 pub enum ApiResponse {
     Health,
     TrustAnchorInfo(TrustAnchorInfo),
+    ParentCaInfo(ParentCaContact),
     PublisherDetails(PublisherDetails),
     PublisherList(PublisherList),
     Rfc8181ClientList(Vec<ClientInfo>),
@@ -37,6 +38,9 @@ impl ApiResponse {
                 },
                 ApiResponse::TrustAnchorInfo(ta) => {
                     Ok(Some(ta.report(fmt)?))
+                },
+                ApiResponse::ParentCaInfo(info) => {
+                    Ok(Some(info.report(fmt)?))
                 }
                 ApiResponse::PublisherList(list) => {
                     Ok(Some(list.report(fmt)?))
@@ -125,6 +129,20 @@ impl Report for TrustAnchorInfo {
                 res.push_str(&format!("{}", self.tal()));
 
                 Ok(res)
+            },
+            _ => Err(ReportError::UnsupportedFormat)
+        }
+    }
+}
+
+impl Report for ParentCaContact {
+    fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
+        match format {
+            ReportFormat::Default | ReportFormat::Json => {
+                Ok(serde_json::to_string_pretty(self).unwrap())
+            },
+            ReportFormat::Text => {
+                Ok(self.to_string())
             },
             _ => Err(ReportError::UnsupportedFormat)
         }

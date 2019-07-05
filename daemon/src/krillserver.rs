@@ -8,10 +8,10 @@ use rpki::uri;
 
 use krill_ca::{CaServer, CaServerError, PubClients, PubClientError};
 use krill_ca::trustanchor::{ta_handle};
-use krill_commons::api::publication;
+use krill_commons::api::{publication, Entitlements, IssuanceRequest};
 use krill_commons::api::admin;
-use krill_commons::api::admin::{Handle, Token, PubServerInfo};
-use krill_commons::api::ca::{TrustAnchorInfo, IncomingCertificate};
+use krill_commons::api::admin::{Handle, Token, PubServerInfo, CertAuthInit, CertAuthPubMode, ParentCaContact, AddChildRequest, ParentCaInfo};
+use krill_commons::api::ca::{TrustAnchorInfo, RcvdCert, IssuedCert};
 use krill_commons::util::softsigner::{OpenSslSigner, SignerError};
 use krill_cms_proxy::api::ClientInfo;
 use krill_cms_proxy::proxy;
@@ -23,6 +23,7 @@ use krill_pubd::publishers::Publisher;
 
 use crate::auth::{Auth, Authorizer};
 use crate::republisher::Republisher;
+
 
 
 //------------ KrillServer ---------------------------------------------------
@@ -78,7 +79,7 @@ impl KrillServer {
         service_uri: uri::Https,
         rrdp_base_uri: &uri::Https,
         token: &Token,
-    ) -> Result<Self, Error> {
+    ) -> KrillRes<Self> {
         let mut repo_dir = work_dir.clone();
         repo_dir.push("repo");
 
@@ -174,7 +175,7 @@ impl KrillServer {
     pub fn add_publisher(
         &mut self,
         pbl_req: admin::PublisherRequest
-    ) -> Result<(), Error> {
+    ) -> EmptyRes {
         self.pubserver.create_publisher(pbl_req).map_err(Error::PubServer)
     }
 
@@ -182,7 +183,7 @@ impl KrillServer {
     pub fn deactivate_publisher(
         &mut self,
         handle: &Handle
-    ) -> Result<(), Error> {
+    ) -> EmptyRes {
         self.pubserver.deactivate_publisher(handle).map_err(Error::PubServer)
     }
 
@@ -208,7 +209,7 @@ impl KrillServer {
         self.proxy_server.list_clients().map_err(Error::ProxyServer)
     }
 
-    pub fn add_rfc8181_client(&self, client: ClientInfo) -> Result<(), Error> {
+    pub fn add_rfc8181_client(&self, client: ClientInfo) -> EmptyRes {
         self.proxy_server.add_client(client).map_err(Error::ProxyServer)
     }
 
@@ -251,15 +252,15 @@ impl KrillServer {
 /// # Admin Trust Anchor
 ///
 impl KrillServer {
-    pub fn trust_anchor(&self) ->  Option<TrustAnchorInfo> {
-        self.caserver.get_trust_anchor_info().ok()
+    pub fn ta_info(&self) ->  Option<TrustAnchorInfo> {
+        self.caserver.get_trust_anchor().map(|ta| ta.as_info()).ok()
     }
 
-    pub fn trust_anchor_cert(&self) -> Option<IncomingCertificate> {
-        self.caserver.get_trust_anchor_cert().ok()
+    pub fn trust_anchor_cert(&self) -> Option<RcvdCert> {
+        self.caserver.get_trust_anchor().map(|ta| ta.cert().clone()).ok()
     }
 
-    pub fn init_trust_anchor(&mut self) -> Result<(), Error> {
+    pub fn ta_init(&mut self) -> EmptyRes {
 
         let pub_handle = ta_handle();
 
@@ -276,7 +277,7 @@ impl KrillServer {
         let req = admin::PublisherRequest::new(
             pub_handle.clone(),
             token.clone(),
-            repo_info.signed_object(""),
+            repo_info.base_uri().clone(),
         );
         self.add_publisher(req)?;
 
@@ -298,15 +299,99 @@ impl KrillServer {
         ).map_err(Error::CaServerError)?;
 
         // Force initial  publication
-        self.caserver.publish_ta()?;
+        self.caserver.ta_publish()?;
 
         Ok(())
     }
 
-    pub fn republish_all(&self) -> Result<(), Error> {
+    /// Adds a child to the TA and returns the ParentCaInfo that the child
+    /// will to contact this TA for resource requests.
+    pub fn ta_add_child(
+        &self,
+        req: AddChildRequest
+    ) -> Result<ParentCaContact, Error> {
+        let token = req.token().clone();
+        self.caserver.ta_add_child(req)?;
+
+        // TODO: Return embedded / remote parent contact dep. on request
+        Ok(ParentCaContact::for_embedded(ta_handle(), token))
+    }
+
+    pub fn republish_all(&self) -> EmptyRes {
         self.caserver.republish_all()?;
         Ok(())
     }
+}
+
+/// # Admin CAS
+///
+impl KrillServer {
+    pub fn ca_init(&mut self, init: CertAuthInit) -> EmptyRes {
+
+        let (handle, token, pub_mode) = init.unwrap();
+
+        let repo_info = match pub_mode {
+            CertAuthPubMode::Embedded => self.pubserver.repo_info_for(&handle)?
+        };
+        let base_uri = repo_info.ca_repository("");
+
+        // Create CA
+        self.caserver.init_ca(&handle, token.clone(), repo_info)?;
+
+        // Add publisher
+        let req = admin::PublisherRequest::new(
+            handle.clone(),
+            token.clone(),
+            base_uri,
+        );
+        self.add_publisher(req)?;
+
+        // Add publisher for CA
+        let req = admin::PublisherClientRequest::new(
+            handle,
+            PubServerInfo::for_krill(
+                self.service_uri.clone(),
+                token
+            )
+        );
+        self.pub_clients.add(req)?;
+
+        Ok(())
+    }
+
+    pub fn ca_add_parent(
+        &self,
+        handle: Handle,
+        parent: ParentCaInfo
+    ) -> EmptyRes {
+        self.caserver.ca_add_parent(handle, parent)?;
+        Ok(())
+    }
+
+    pub fn list(
+        &self,
+        parent: &Handle,
+        child: &Handle,
+        auth: Auth
+    ) -> KrillRes<Entitlements> {
+        Ok(self.caserver.list(parent, child, &auth.into())?)
+    }
+
+    pub fn issue(
+        &self,
+        parent: &Handle,
+        child: &Handle,
+        issue_req: IssuanceRequest,
+        auth: Auth
+    ) -> KrillRes<IssuedCert> {
+        Ok(self.caserver.issue(
+            parent,
+            child,
+            issue_req,
+            auth.into()
+        )?)
+    }
+
 }
 
 /// # Handle publication requests
@@ -319,7 +404,7 @@ impl KrillServer {
         &self,
         delta: publication::PublishDelta,
         handle: &Handle
-    ) -> Result<(), Error> {
+    ) -> EmptyRes {
         self.pubserver.publish(handle, delta).map_err(Error::PubServer)
     }
 
@@ -332,6 +417,11 @@ impl KrillServer {
     }
 }
 
+
+//------------ Response Aliases ----------------------------------------------
+
+type KrillRes<T> = Result<T, Error>;
+type EmptyRes = KrillRes<()>;
 
 //------------ Error ---------------------------------------------------------
 

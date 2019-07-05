@@ -134,7 +134,7 @@ mod tests {
 
     #[test]
     fn should_init() {
-        test::test_with_tmp_dir(|d| {
+        test::test_under_tmp(|d| {
 
             // Set up a store for the proxy
             let store = DiskAggregateStore::<Responder>::new(&d, "proxy").unwrap();

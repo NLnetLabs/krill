@@ -3,7 +3,7 @@ use std::str::FromStr;
 use clap::{App, Arg, SubCommand};
 use rpki::uri;
 
-use krill_commons::api::admin::{Handle, Token};
+use krill_commons::api::admin::{Handle, Token, CertAuthInit, AddChildRequest, ParentCaInfo};
 
 use crate::report::{
     ReportFormat,
@@ -232,6 +232,7 @@ pub enum Command {
     NotSet,
     Health,
     TrustAnchor(TrustAnchorCommand),
+    CertAuth(CaCommand),
     Publishers(PublishersCommand),
     Rfc8181(Rfc8181Command)
 }
@@ -240,8 +241,16 @@ pub enum Command {
 pub enum TrustAnchorCommand {
     Init,
     Show,
-    Publish
+    Publish,
+    AddChild(AddChildRequest)
 }
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CaCommand {
+    Init(CertAuthInit),
+    AddParent(Handle, ParentCaInfo)
+}
+
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PublishersCommand {

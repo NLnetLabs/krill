@@ -13,11 +13,11 @@ use crate::config::Config;
 use crate::http::server;
 
 pub fn test_with_krill_server<F>(op: F) where F: FnOnce(PathBuf) -> () {
-    test::test_with_tmp_dir(|dir| {
+    test::test_under_tmp(|dir| {
         // Set up a test PubServer Config
         let server_conf = {
             // Use a data dir for the storage
-            let data_dir = test::create_sub_dir(&dir);
+            let data_dir = test::sub_dir(&dir);
             Config::test(&data_dir)
         };
 
@@ -44,7 +44,7 @@ pub fn test_with_krill_server<F>(op: F) where F: FnOnce(PathBuf) -> () {
 
 fn health_check() -> Result<ApiResponse, Error> {
     let krillc_opts = Options::new(
-        test::https_uri("https://localhost:3000/"),
+        test::https("https://localhost:3000/"),
         "secret",
         ReportFormat::Default,
         Command::Health
@@ -56,7 +56,7 @@ fn health_check() -> Result<ApiResponse, Error> {
 
 pub fn execute_krillc_command(command: Command) -> ApiResponse {
     let krillc_opts = Options::new(
-        test::https_uri("https://localhost:3000/"),
+        test::https("https://localhost:3000/"),
         "secret",
         ReportFormat::Json,
         command

@@ -90,6 +90,7 @@ pub fn start(config: &Config) -> Result<(), Error> {
                 .secure(true))
             .route("/health", get().to(endpoints::health))
 
+            // API end-points
             .service(
                 scope("/api/v1")
                     .route("/health", get().to(api_health))
@@ -106,15 +107,21 @@ pub fn start(config: &Config) -> Result<(), Error> {
                     }))
                     .route("/rfc8181/{handle}/response.xml", get().to(repository_response))
 
-                    .route("/trustanchor", get().to(trust_anchor))
-                    .route("/trustanchor", post().to(init_trust_anchor))
+                    .route("/trustanchor", get().to(ta_info))
+                    .route("/trustanchor", post().to(ta_init))
+                    .route("/trustanchor/children", post().to(ta_add_child))
+
+                    .route("/cas", post().to(ca_init))
+                    .route("/cas/{handle}/parents", post().to(ca_add_parent))
 
                     .route("/republish", post().to(republish_all))
             )
 
+            // Public TA related methods
             .route("/ta/ta.tal", get().to(tal))
             .route("/ta/ta.cer", get().to(ta_cer))
 
+            // Publication by (embedded) clients
             .route("/publication/{handle}", get().to(handle_list))
             .route("/publication/{handle}", post().to(handle_delta))
             .data(web::Json::<publication::PublishDelta>::configure(|cfg| {
@@ -122,10 +129,18 @@ pub fn start(config: &Config) -> Result<(), Error> {
             }))
             .route("/rfc8181/{handle}", post().to(handle_rfc8181_request))
 
+            // Provisioning for (embedded) clients
+            .route("/provisioning/{parent}/{child}/list", get().to(list))
+            .route("/provisioning/{parent}/{child}/issue", post().to(issue))
+            // "/provisioning/{handle}/(list|req|rev)"
+
+
+            // UI support
             .route("/ui/is_logged_in", get().to(is_logged_in))
             .route("/ui/login", post().to(login))
             .route("/ui/logout", post().to(logout))
 
+            // RRDP repository
             .route("/rrdp/{path:.*}", get().to(serve_rrdp_files))
 
             .route("/", get().to(|| {

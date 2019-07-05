@@ -277,7 +277,7 @@ pub mod tests {
 
     #[test]
     fn should_manage_clients() {
-        test::test_with_tmp_dir(|d| {
+        test::test_under_tmp(|d| {
 
             // Set up a store for the proxy
             let store = DiskAggregateStore::<ClientManager>::new(&d, "proxy").unwrap();

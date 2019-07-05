@@ -5,6 +5,7 @@ authors = ["Tim Bruijnzeels <tim@nlnetlabs.nl>", "Martin Hoffmann <martin@nlnetl
 build   = "build-ui.rs"
 
 [dependencies]
+actix-identity  = "0.1.0"
 actix-web       = { version = "1.0.0", features = ["ssl"] }
 actix-session   = "0.1.0"
 actix-service   = "0.4.0"

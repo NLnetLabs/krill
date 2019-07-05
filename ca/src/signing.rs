@@ -1,6 +1,7 @@
 //! Support for signing mft, crl, certificates, roas..
 //! Common objects for TAs and CAs
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
+use std::ops::Deref;
 
 use bytes::Bytes;
 
@@ -13,7 +14,7 @@ use rpki::x509::{Serial, Time, Validity};
 
 use krill_commons::api::ca::{
     AddedObject,
-    CaKey,
+    CertifiedKey,
     CurrentObject,
     ObjectsDelta,
     PublicationDelta,
@@ -30,17 +31,25 @@ pub struct CaSignSupport;
 
 impl CaSignSupport {
 
+    /// Publish for the given Key and repository.
+    ///
+    /// Any updates for existing objects will result in Update, rather
+    /// than Publish elements for the PublicationDelta, and the previous
+    /// instances will be revoked.
     pub fn publish<S: CaSigner>(
-        signer: Arc<S>,
-        ca_key: &CaKey,
+        signer: Arc<RwLock<S>>,
+        ca_key: &CertifiedKey,
         repo_info: &RepoInfo,
-        name_space: &str
+        name_space: &str,
+        mut objects_delta: ObjectsDelta
     ) -> Result<PublicationDelta, CaSignError<S>> {
 
         let aia = ca_key.incoming_cert().uri();
         let key_id = ca_key.key_id();
 
-        let pub_key = signer.get_key_info(key_id).map_err(CaSignError::KeyError)?;
+        let pub_key = signer.read().unwrap()
+            .get_key_info(key_id)
+            .map_err(CaSignError::KeyError)?;
 
         let aki = KeyIdentifier::from_public_key(&pub_key);
 
@@ -57,13 +66,12 @@ impl CaSignSupport {
         let mut revocations_delta = RevocationsDelta::default();
 
         let mut current_objects = current_set.objects().clone();
-        let mut objects_delta = ObjectsDelta::new(repo_info.signed_object(name_space));
 
         for expired in revocations.purge() {
             revocations_delta.drop(expired);
         }
 
-        let mft_name = RepoInfo::mft_name(&pub_key);
+        let mft_name = RepoInfo::mft_name(&pub_key.key_identifier());
         let mft_uri = repo_info.resolve(name_space, &mft_name);
         let old_mft = current_set.objects().object_for(&mft_name);
 
@@ -75,7 +83,7 @@ impl CaSignSupport {
             revocations_delta.add(revocation);
         }
 
-        let crl_name = RepoInfo::crl_name(&pub_key);
+        let crl_name = RepoInfo::crl_name(&pub_key.key_identifier());
         let crl_uri = repo_info.resolve(name_space, &crl_name);
 
         let crl: Crl = {
@@ -89,7 +97,10 @@ impl CaSignSupport {
                 serial_number
             );
 
-            crl.into_crl(signer.as_ref(), key_id).map_err(CaSignError::SigningError)?
+            crl.into_crl(
+                signer.read().unwrap().deref(),
+                key_id
+            ).map_err(CaSignError::SigningError)?
         };
 
         match current_objects.insert(crl_name.clone(), CurrentObject::from(&crl)) {
@@ -115,13 +126,15 @@ impl CaSignSupport {
 
             mft_content.into_manifest(
                 SignedObjectBuilder::new(
-                    Serial::random(signer.as_ref()).map_err(CaSignError::SignerError)?,
+                    Serial::random(
+                        signer.read().unwrap().deref()
+                    ).map_err(CaSignError::SignerError)?,
                     Validity::new(now, next_week),
                     crl_uri,
                     aia.clone(),
                     mft_uri.clone()
                 ),
-                signer.as_ref(),
+                signer.read().unwrap().deref(),
                 key_id,
             ).map_err(CaSignError::SigningError)?
         };

@@ -9,7 +9,7 @@ use actix_web::{
 use actix_web::dev::{
     Payload,
 };
-use actix_web::middleware::identity::Identity;
+use actix_identity::Identity;
 use actix_web::web::{
     self,
     Json
@@ -100,6 +100,15 @@ impl Auth {
         }
 
         Err(AuthError::InvalidToken)
+    }
+}
+
+impl Into<Token> for Auth {
+    fn into(self) -> Token {
+        match self {
+            Auth::Bearer(token) => token,
+            _ => Token::from("")
+        }
     }
 }
 

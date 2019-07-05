@@ -11,11 +11,11 @@ use rpki::uri;
 /// directory.
 ///
 /// Note that if your test fails the directory is not cleaned up.
-pub fn test_with_tmp_dir<F>(op: F) where F: FnOnce(PathBuf) -> () {
+pub fn test_under_tmp<F>(op: F) where F: FnOnce(PathBuf) -> () {
     use std::fs;
     use std::path::PathBuf;
 
-    let dir = create_sub_dir(&PathBuf::from("work"));
+    let dir = sub_dir(&PathBuf::from("work"));
     let path = PathBuf::from(&dir);
 
     op(dir);
@@ -25,7 +25,7 @@ pub fn test_with_tmp_dir<F>(op: F) where F: FnOnce(PathBuf) -> () {
 
 /// This method sets up a random subdirectory and returns it. It is
 /// assumed that the caller will clean this directory themselves.
-pub fn create_sub_dir(base_dir: &PathBuf) -> PathBuf {
+pub fn sub_dir(base_dir: &PathBuf) -> PathBuf {
     use std::fs;
     use std::path::PathBuf;
     use rand::{thread_rng, Rng};
@@ -42,11 +42,11 @@ pub fn create_sub_dir(base_dir: &PathBuf) -> PathBuf {
     full_path
 }
 
-pub fn rsync_uri(s: &str) -> uri::Rsync {
+pub fn rsync(s: &str) -> uri::Rsync {
     uri::Rsync::from_str(s).unwrap()
 }
 
-pub fn https_uri(s: &str) -> uri::Https {  uri::Https::from_str(s).unwrap() }
+pub fn https(s: &str) -> uri::Https {  uri::Https::from_str(s).unwrap() }
 
 pub fn as_bytes(s: &str) -> Bytes { Bytes::from(s) }
 

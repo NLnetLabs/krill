@@ -14,13 +14,8 @@ use serde::Serialize;
 
 use krill_cms_proxy::api::ClientInfo;
 use krill_cms_proxy::sigmsg::SignedMessage;
-use krill_commons::api::{
-    admin,
-    publication,
-    ErrorResponse,
-    ErrorCode,
-};
-use krill_commons::api::admin::Handle;
+use krill_commons::api::{admin, publication, ErrorCode, ErrorResponse, IssuanceRequest};
+use krill_commons::api::admin::{Handle, CertAuthInit, AddChildRequest, ParentCaInfo};
 use krill_commons::api::rrdp::VerificationError;
 use krill_pubd::publishers::PublisherError;
 use krill_pubd::repo::RrdpServerError;
@@ -29,8 +24,7 @@ use crate::auth::Auth;
 use crate::http::server::AppServer;
 use crate::krillserver;
 
-const NOT_FOUND: &[u8] =
-    include_bytes!("../ui/dist/404.html");
+const NOT_FOUND: &[u8] = include_bytes!("../ui/dist/404.html");
 
 //------------ Support Functions ---------------------------------------------
 
@@ -268,31 +262,31 @@ pub fn repository_response(
                     .body(res.encode_vec())
             },
 
-            Err(e) => server_error(&Error::ServerError(e))
+                Err(e) => server_error(&Error::ServerError(e))
         }
     })
 }
 
 //------------ Admin: TrustAnchor --------------------------------------------
 
-pub fn trust_anchor(
+pub fn ta_info(
     server: web::Data<AppServer>,
     auth: Auth
 ) -> HttpResponse {
     if_api_allowed(&server, &auth, ||{
-        match server.read().trust_anchor() {
+        match server.read().ta_info() {
             Some(ta) => render_json(ta),
             None => api_not_found()
         }
     })
 }
 
-pub fn init_trust_anchor(
+pub fn ta_init(
     server: web::Data<AppServer>,
     auth: Auth
 ) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
-        render_empty_res(server.write().init_trust_anchor())
+        render_empty_res(server.write().ta_init())
     })
 }
 
@@ -306,7 +300,7 @@ pub fn republish_all(
 }
 
 pub fn tal(server: web::Data<AppServer>) -> HttpResponse {
-    match server.read().trust_anchor() {
+    match server.read().ta_info() {
         Some(ta) => {
             HttpResponse::Ok()
                 .content_type("text/plain")
@@ -322,6 +316,86 @@ pub fn ta_cer(server: web::Data<AppServer>) -> HttpResponse {
             HttpResponse::Ok().body(cert.der_encoded().to_vec())
         },
         None => api_not_found()
+    }
+}
+
+pub fn ta_add_child(
+    server: web::Data<AppServer>,
+    req: Json<AddChildRequest>,
+    auth: Auth
+) -> HttpResponse {
+    if_api_allowed(&server, &auth, || {
+        match server.read().ta_add_child(req.into_inner()) {
+            Ok(info) => render_json(info),
+            Err(e) => server_error(&Error::ServerError(e))
+        }
+    })
+}
+
+//------------ Admin: CertAuth -----------------------------------------------
+
+pub fn ca_init(
+    server: web::Data<AppServer>,
+    auth: Auth,
+    ca_init: Json<CertAuthInit>
+) -> HttpResponse {
+    if_api_allowed(&server, &auth, || {
+        render_empty_res(server.write().ca_init(ca_init.into_inner()))
+    })
+}
+
+pub fn ca_add_parent(
+    server: web::Data<AppServer>,
+    auth: Auth,
+    handle: Path<Handle>,
+    parent: Json<ParentCaInfo>
+) -> HttpResponse {
+    if_api_allowed(&server, &auth, || {
+        render_empty_res(
+            server.read()
+                .ca_add_parent(handle.into_inner(), parent.into_inner()))
+    })
+}
+
+//------------ Provisioning (RFC6492) ----------------------------------------
+
+/// Lists the child entitlements.
+///
+/// See: https://tools.ietf.org/html/rfc6492#section-3.3.2
+pub fn list(
+    server: web::Data<AppServer>,
+    auth: Auth,
+    parent: Path<Handle>,
+    child: Path<Handle>
+) -> HttpResponse {
+    match server.read().list(
+        &parent.into_inner(),
+        &child.into_inner(),
+        auth
+    ) {
+        Ok(entitlements) => render_json(entitlements),
+        Err(e) => server_error(&Error::ServerError(e))
+    }
+}
+
+/// Issue a Certificate in response to a Certificate Issuance request
+///
+/// See: https://tools.ietf.org/html/rfc6492#section3.4.1-2
+pub fn issue(
+    server: web::Data<AppServer>,
+    auth: Auth,
+    parent: Path<Handle>,
+    child: Path<Handle>,
+    issue_req: Json<IssuanceRequest>
+) -> HttpResponse {
+    match server.read().issue(
+        &parent.into_inner(),
+        &child.into_inner(),
+        issue_req.into_inner(),
+        auth
+    ) {
+        Ok(issued) => render_json(issued),
+        Err(e) => server_error(&Error::ServerError(e))
     }
 }
 
