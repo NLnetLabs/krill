@@ -9,7 +9,7 @@ use actix_web::{
 use actix_web::dev::{
     Payload,
 };
-use actix_web::middleware::identity::Identity;
+use actix_identity::Identity;
 use actix_web::web::{
     self,
     Json
