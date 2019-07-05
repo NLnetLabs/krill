@@ -100,7 +100,7 @@ impl TrustAnchorLocator {
     /// Creates a new TAL, panics when the provided Cert is not a TA cert.
     pub fn new(uris: Vec<uri::Https>, cert: &Cert) -> Self {
         if cert.authority_key_identifier().is_some() {
-            panic!("Trying to create TrustAnchorLocator for a non-TA certificate.")
+            panic!("Trying to create TAL for a non-TA certificate.")
         }
         let encoded_ski = cert.subject_public_key_info().to_info_bytes();
         TrustAnchorLocator { uris, encoded_ski }
@@ -148,13 +148,12 @@ impl RepoInfo {
     pub fn signed_object(&self, name_space: &str) -> uri::Rsync {
         match name_space {
             "" => self.base_uri.clone(),
-            _  => uri::Rsync::from_string(format!("{}{}/", self.base_uri.to_string(), name_space)).unwrap()
+            _  => self.base_uri.join(name_space.as_ref()).join(b"/")
         }
     }
 
     pub fn resolve(&self, name_space: &str, file_name: &str) -> uri::Rsync {
-        let uri = format!("{}{}", self.signed_object(name_space).to_string(), file_name);
-        uri::Rsync::from_string(uri).unwrap()
+        self.signed_object(name_space).join(file_name.as_ref())
     }
 
     pub fn rpki_notify(&self) -> uri::Https {
@@ -184,20 +183,12 @@ impl RepoInfo {
 
 impl PartialEq for RepoInfo {
     fn eq(&self, other: &RepoInfo) -> bool {
-        self.base_uri == other.base_uri && self.rpki_notify.as_str() == other.rpki_notify.as_str()
+        self.base_uri == other.base_uri &&
+        self.rpki_notify.as_str() == other.rpki_notify.as_str()
     }
 }
 
 impl Eq for RepoInfo {}
-
-
-//------------ ResourceClass -------------------------------------------------
-
-#[derive(Clone, Debug, Deserialize,  Eq, PartialEq, Serialize)]
-pub struct ResourceClass {
-    name: String,
-    current_key: CaKey
-}
 
 
 //------------ CaKey ---------------------------------------------------------
@@ -298,7 +289,11 @@ impl Default for CurrentObjects {
 }
 
 impl CurrentObjects {
-    pub fn insert(&mut self, name: String, object: CurrentObject) -> Option<CurrentObject> {
+    pub fn insert(
+        &mut self,
+        name: String,
+        object: CurrentObject
+    ) -> Option<CurrentObject> {
         self.0.insert(name, object)
     }
 
@@ -505,7 +500,12 @@ pub struct ObjectsDelta {
 
 impl ObjectsDelta {
     pub fn new(signed_objects_uri: uri::Rsync) -> Self {
-        ObjectsDelta { signed_objects_uri, added: vec![], updated: vec![], withdrawn: vec![]}
+        ObjectsDelta {
+            signed_objects_uri,
+            added: vec![],
+            updated: vec![],
+            withdrawn: vec![]
+        }
     }
 
     pub fn add(&mut self, added: AddedObject) {
@@ -523,27 +523,27 @@ impl Into<publication::PublishDelta> for ObjectsDelta {
     fn into(self) -> publication::PublishDelta {
         let mut builder = publication::PublishDeltaBuilder::new();
 
-        fn resolve(uri: &uri::Rsync, name: &str) -> uri::Rsync {
-            let uri = format!("{}{}", uri.to_string(), name);
-            uri::Rsync::from_string(uri).unwrap()
-        }
-
         for a in self.added.into_iter() {
             let publish = publication::Publish::new(
-                None, resolve(&self.signed_objects_uri, &a.name), a.object.content
+                None,
+                self.signed_objects_uri.join(a.name.as_ref()),
+                a.object.content
             );
             builder.add_publish(publish);
         }
         for u in self.updated.into_iter() {
             let update = publication::Update::new(
-                None, resolve(&self.signed_objects_uri, &u.name), u.object.content, u.old
+                None,
+                self.signed_objects_uri.join(u.name.as_ref()),
+                u.object.content,
+                u.old
             );
             builder.add_update(update);
         }
         for w in self.withdrawn.into_iter() {
             let withdraw = publication::Withdraw::new(
                 None,
-                resolve(&self.signed_objects_uri, &w.name),
+                self.signed_objects_uri.join(w.name.as_ref()),
                 w.hash
             );
             builder.add_withdraw(withdraw);
@@ -615,10 +615,10 @@ pub struct ResourceSet {
 }
 
 impl ResourceSet {
-    pub fn from_strs(asns: &str, ipv4: &str, ipv6: &str) -> Result<Self, ResourceSetError> {
-        let asn = AsResources::from_str(asns).map_err(|_| ResourceSetError::AsnParsing)?;
-        let v4 = Ipv4Resources::from_str(ipv4).map_err(|_| ResourceSetError::Ipv4Parsing)?;
-        let v6 = Ipv6Resources::from_str(ipv6).map_err(|_| ResourceSetError::Ipv6Parsing)?;
+    pub fn from_strs(asn: &str, v4: &str, v6: &str) -> Result<Self, ResSetErr> {
+        let asn = AsResources::from_str(asn).map_err(|_| ResSetErr::Asn)?;
+        let v4 = Ipv4Resources::from_str(v4).map_err(|_| ResSetErr::V4)?;
+        let v6 = Ipv6Resources::from_str(v6).map_err(|_| ResSetErr::V6)?;
         Ok(ResourceSet { asn , v4, v6 })
     }
 
@@ -708,21 +708,21 @@ impl TrustAnchorInfo {
     }
 }
 
-//------------ ResourceSetError ----------------------------------------------
+//------------ ResSetErr -----------------------------------------------------
 
 #[derive(Clone, Debug, Display, Eq, PartialEq)]
-pub enum ResourceSetError {
+pub enum ResSetErr {
     #[display(fmt="Cannot parse ASN resources")]
-    AsnParsing,
+    Asn,
 
     #[display(fmt="Cannot parse IPv4 resources")]
-    Ipv4Parsing,
+    V4,
 
     #[display(fmt="Cannot parse IPv6 resources")]
-    Ipv6Parsing,
+    V6,
 
     #[display(fmt="Mixed Address Families in configured resource set")]
-    MixedFamilies,
+    Mix,
 }
 
 
