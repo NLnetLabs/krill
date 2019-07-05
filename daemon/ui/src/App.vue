@@ -10,7 +10,25 @@
               </div>
             </router-link>
           </el-col>
-          <el-col :span="20">
+          <el-col :span="14">
+            <el-menu
+            v-if="user"
+            :router="true"
+            :default-active="activeIndex"
+            mode="horizontal"
+            background-color="#f63107"
+            text-color="#fff"
+            active-text-color="#fff">
+              <el-menu-item index="1" :route="{ name: 'publishers'}">
+                {{ $t("publishers.publishers") }}
+              </el-menu-item>
+              <el-menu-item index="2" :route="{ name: 'trustanchor'}">
+                {{ $t("trustanchor.ta") }}
+              </el-menu-item>
+            </el-menu>
+            &nbsp;
+          </el-col>
+          <el-col :span="6">
             <div class="toolbar">
               <el-select v-model="$i18n.locale" placeholder="Language" size="small">
                 <el-option v-for="lang in langs" :key="lang.iso" :value="lang.iso" :label="lang.label"></el-option>
@@ -44,6 +62,12 @@ body {
   color: #ffffff;
   z-index: 3;
 }
+.el-menu-item a {
+  text-decoration: none;
+}
+.logo {
+  line-height: 10px;
+}
 .logo img {
   width: 146px;
   margin-left: -14px;
@@ -69,13 +93,25 @@ export default {
       langs: [
         {iso: "it", label: "Italiano"},
         {iso: "en", label: "English"}
-      ]
+      ],
+      activeIndex: null
     };
+  },
+  watch: {
+    $route (to, from) {
+      this.activeIndex = this.getActiveIndex(to.name);
+    }
+  },
+  mounted: function(){
+    this.activeIndex = this.getActiveIndex(this.$route.name);
   },
   created() {
     this.loadUser();
   },
   methods: {
+    getActiveIndex(path) {
+      return ''+ (['publishers', 'trustanchor'].indexOf(path) + 1);
+    },
     loadUser() {
       this.user = JSON.parse(localStorage.getItem("user"));
     },

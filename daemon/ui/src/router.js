@@ -1,7 +1,6 @@
 import Vue from 'vue'
 import Router from 'vue-router'
 
-import Home from './views/Home.vue'
 import Login from './views/Login.vue'
 import Publishers from './views/Publishers.vue'
 import PublisherDetails from './views/PublisherDetails.vue'
@@ -15,7 +14,7 @@ const router = new Router({
     {
       path: '/',
       name: 'home',
-      component: Home
+      redirect: { name: 'publishers' }
     },
     {
       path: '/publishers',
