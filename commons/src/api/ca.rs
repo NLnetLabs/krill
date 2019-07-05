@@ -28,7 +28,6 @@ use rpki::x509::{
 use crate::api::{
     Base64,
     EncodedHash,
-
 };
 use crate::api::admin::{
     Handle,
@@ -207,7 +206,6 @@ impl ChildResources {
 }
 
 
-
 //------------ IssuedCert ----------------------------------------------------
 
 /// This type defines an issued certificate, including its publication
@@ -252,6 +250,7 @@ impl PartialEq for IssuedCert {
 }
 
 impl Eq for IssuedCert {}
+
 
 //------------ RcvdCert ------------------------------------------------------
 
@@ -426,15 +425,6 @@ impl PartialEq for RepoInfo {
 }
 
 impl Eq for RepoInfo {}
-
-
-//------------ ResourceClass -------------------------------------------------
-
-#[derive(Clone, Debug, Deserialize,  Eq, PartialEq, Serialize)]
-pub struct ResourceClass {
-    name: String,
-    current_key: CertifiedKey
-}
 
 
 //------------ CertifiedKey --------------------------------------------------
@@ -621,6 +611,9 @@ impl CurrentObjects {
     }
 }
 
+
+//------------ AllCurrentObjects ---------------------------------------------
+
 /// This type contains a mapping of all name spaces for parent & resource
 /// classes to CurrentObjects for each space.
 pub struct AllCurrentObjects<'a>(HashMap<&'a str, &'a CurrentObjects>);
@@ -648,6 +641,7 @@ impl<'a> AllCurrentObjects<'a> {
     }
 }
 
+
 //------------ Revocation ----------------------------------------------------
 
 /// A Crl Revocation. Note that this type differs from CrlEntry in
@@ -674,6 +668,9 @@ impl From<&Manifest> for Revocation {
         Revocation { serial, revocation_date }
     }
 }
+
+
+//------------ Revocations ---------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Revocations(Vec<Revocation>);
@@ -712,6 +709,9 @@ impl Default for Revocations {
         Revocations(vec![])
     }
 }
+
+
+//------------ RevocationsDelta ----------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RevocationsDelta {
@@ -813,6 +813,11 @@ impl PublicationDelta {
 }
 
 
+//------------ ObjectsDelta --------------------------------------------------
+
+/// This type defines the changes to be published under a resource class,
+/// so it includes the base 'ca_repo' and all objects that are added,
+/// updated, or withdrawn.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ObjectsDelta {
     ca_repo: uri::Rsync,
@@ -877,6 +882,10 @@ impl Into<publication::PublishDelta> for ObjectsDelta {
     }
 }
 
+
+//------------ AddedObject ---------------------------------------------------
+
+/// An object that is newly added to the repository.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AddedObject {
     name: ObjectName,
@@ -892,6 +901,9 @@ impl AddedObject {
     }
 }
 
+//------------ UpdatedObject -------------------------------------------------
+
+/// A new object that replaces an earlier version by this name.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct UpdatedObject {
     name: ObjectName,
@@ -909,6 +921,10 @@ impl UpdatedObject {
     }
 }
 
+
+//------------ WithdrawnObject -----------------------------------------------
+
+/// An object that is to be withdrawn from the repository.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WithdrawnObject {
     name: ObjectName,
@@ -923,7 +939,6 @@ impl WithdrawnObject {
         WithdrawnObject { name, hash}
     }
 }
-
 
 
 //------------ ResourceSet ---------------------------------------------------
@@ -1020,7 +1035,6 @@ impl Default for ResourceSet {
     }
 }
 
-
 impl From<&Cert> for ResourceSet {
     fn from(cert: &Cert) -> Self {
         let asn = match cert.as_resources() {
@@ -1058,6 +1072,8 @@ impl From<&Cert> for ResourceSet {
 
 //------------ TrustAnchorInfo -----------------------------------------------
 
+/// This type represents the TrustAnchor details that need to be accessible
+/// through the API (CLI and UI).
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct TrustAnchorInfo {
     resources: ResourceSet,
