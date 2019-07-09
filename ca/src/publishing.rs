@@ -24,13 +24,9 @@ use krill_commons::eventsourcing::{
 };
 use krill_commons::util::httpclient;
 
-use crate::trustanchor::{
-    CaSigner,
-    TrustAnchor,
-    TaEvt,
-    TaEvtDet
-};
-use ca::{CertAuth, CaEvt, CaEvtDet};
+use crate::ca::{CertAuth, CaEvt, CaEvtDet};
+use crate::signing::CaSigner;
+
 
 
 //------------ PubClientInit -------------------------------------------------
@@ -185,26 +181,16 @@ impl PubClients {
     }
 }
 
-/// Implement listening for TrustAnchor Published events.
-impl<S: CaSigner> EventListener<TrustAnchor<S>> for PubClients {
-    fn listen(&self, ta: &TrustAnchor<S>, event: &TaEvt) {
-        if let TaEvtDet::Published(delta) = event.details() {
-            debug!("PubClients: Observed delta for publishing");
-
-            let current_objects = ta.current_objects();
-            self.publish(
-                event.handle(),
-                current_objects,
-                delta.objects().clone().into()
-            );
-        }
-    }
-}
 
 /// Implement listening for CertAuth Published events.
 impl<S: CaSigner> EventListener<CertAuth<S>> for PubClients {
     fn listen(&self, ca: &CertAuth<S>, event: &CaEvt) {
-        if let CaEvtDet::Published(_,_,_,delta) = event.details() {
+
+        if let Some(delta) = match event.details() {
+            CaEvtDet::Published(_,_,_, delta) => Some(delta),
+            CaEvtDet::TaPublished(delta) => Some(delta),
+            _ => None
+        } {
             debug!("Pubclients: publishing for {}", event.handle());
 
             let current_objects = ca.current_objects();

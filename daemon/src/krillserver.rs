@@ -6,8 +6,7 @@ use std::sync::Arc;
 use bcder::Captured;
 use rpki::uri;
 
-use krill_ca::{CaServer, CaServerError, PubClients, PubClientError};
-use krill_ca::trustanchor::{ta_handle};
+use krill_ca::{ta_handle, CaServer, CaServerError, PubClients, PubClientError};
 use krill_commons::api::{publication, Entitlements, IssuanceRequest};
 use krill_commons::api::admin;
 use krill_commons::api::admin::{Handle, Token, PubServerInfo, CertAuthInit, CertAuthPubMode, ParentCaContact, AddChildRequest, ParentCaInfo};
@@ -253,11 +252,14 @@ impl KrillServer {
 ///
 impl KrillServer {
     pub fn ta_info(&self) ->  Option<TrustAnchorInfo> {
-        self.caserver.get_trust_anchor().map(|ta| ta.as_info()).ok()
+        match self.caserver.get_trust_anchor() {
+            Ok(ta) => ta.as_ta_info().ok(),
+            _ => None
+        }
     }
 
     pub fn trust_anchor_cert(&self) -> Option<RcvdCert> {
-        self.caserver.get_trust_anchor().map(|ta| ta.cert().clone()).ok()
+        self.ta_info().map(|ta| ta.cert().clone())
     }
 
     pub fn ta_init(&mut self) -> EmptyRes {

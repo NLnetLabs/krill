@@ -14,18 +14,19 @@ extern crate rpki;
 extern crate krill_commons;
 
 mod ca;
+pub use ca::ta_handle;
 
 mod caserver;
-pub use caserver::CaServer;
-pub use caserver::Error as CaServerError;
-
-pub mod trustanchor;
+pub use self::caserver::CaServer;
+pub use self::caserver::Error as CaServerError;
 
 mod signing;
+pub use self::signing::CaSigner;
+pub use self::signing::CaSignSupport;
 
 mod publishing;
-pub use publishing::PubClients;
-pub use publishing::Error as PubClientError;
+pub use self::publishing::PubClients;
+pub use self::publishing::Error as PubClientError;
 
 
 //------------ Tests ---------------------------------------------------------
@@ -62,15 +63,8 @@ mod tests {
         test_under_tmp,
     };
 
-    use crate::trustanchor::{
-        ta_handle,
-        TA_NS,
-        TaCmdDet,
-        TaEvtDet,
-        TaIniDet,
-        TrustAnchor,
-    };
     use crate::ca::{
+        ta_handle,
         CA_NS,
         CertAuth,
         CaIniDet,
@@ -84,18 +78,21 @@ mod tests {
     }
 
     #[test]
-    fn ca_under_ta() {
+    fn init_ta() {
         test_under_tmp(|d| {
-            let ta_store = DiskAggregateStore::<TrustAnchor<OpenSslSigner>>::new(
-                &d, TA_NS
+            let ca_store = DiskAggregateStore::<CertAuth<OpenSslSigner>>::new(
+                &d, CA_NS
             ).unwrap();
-            let handle = ta_handle();
 
             let ta_repo_info = {
                 let base_uri = rsync("rsync://localhost/repo/ta/");
                 let rrdp_uri = https("https://localhost/repo/notifcation.xml");
                 RepoInfo::new(base_uri, rrdp_uri)
             };
+
+            let ta_handle = ta_handle();
+            let ta_token = Token::from("ta");
+
 
             let ta_uri = https("https://localhost/tal/ta.cer");
             let ta_aia = rsync("rsync://localhost/repo/ta.cer");
@@ -105,51 +102,23 @@ mod tests {
             let signer = Arc::new(RwLock::new(signer));
 
             //
-            // --- Create TA
-            //
-            // Expect:
-            //   - TA initialised
+            // --- Create TA and publish
             //
 
-            let init = TaIniDet::init_with_all_resources(
-                &handle,
+            let ta_ini = CaIniDet::init_ta(
+                &ta_handle,
+                ta_token.clone(),
                 ta_repo_info,
+
                 ta_aia,
                 vec![ta_uri],
                 key,
+
                 signer.clone()
             ).unwrap();
 
-
-            ta_store.add(init).unwrap();
-            let ta = ta_store.get_latest(&handle).unwrap();
-
-            let publish_cmd = TaCmdDet::republish(&handle, signer.clone());
-            let events = ta.process_command(publish_cmd).unwrap();
-            let ta = ta_store.update(&handle, ta, events).unwrap();
-
-            //
-            // --- Add Child to TA
-            //
-            // Expect:
-            //   - Child added to TA
-            //
-
-            let child_handle = Handle::from("child");
-            let child_token = Token::from("child");
-            let child_rs = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
-
-            let cmd = TaCmdDet::add_child(
-                &handle,
-                child_handle.clone(),
-                child_token.clone(),
-                child_rs
-            );
-
-            let events = ta.process_command(cmd).unwrap();
-            let ta = ta_store.update(&handle, ta, events).unwrap();
-
-            assert_eq!(1, ta.as_info().children().len());
+            ca_store.add(ta_ini).unwrap();
+            let ta = ca_store.get_latest(&ta_handle).unwrap();
 
             //
             // --- Create Child CA
@@ -157,16 +126,15 @@ mod tests {
             // Expect:
             //   - Child CA initialised
             //
+            let child_handle = Handle::from("child");
+            let child_token = Token::from("child");
+            let child_rs = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
 
             let ca_repo_info = {
                 let base_uri = rsync("rsync://localhost/repo/ca/");
                 let rrdp_uri = https("https://localhost/repo/notifcation.xml");
                 RepoInfo::new(base_uri, rrdp_uri)
             };
-
-            let ca_store = DiskAggregateStore::<CertAuth<OpenSslSigner>>::new(
-                &d, CA_NS
-            ).unwrap();
 
             let ca_ini = CaIniDet::init(
                 &child_handle,
@@ -178,22 +146,37 @@ mod tests {
             let child = ca_store.get_latest(&child_handle).unwrap();
 
             //
+            // --- Add Child to TA
+            //
+            // Expect:
+            //   - Child added to TA
+            //
+
+            let cmd = CaCmdDet::add_child(
+                &ta_handle,
+                child_handle.clone(),
+                child_token.clone(),
+                child_rs
+            );
+
+            let events = ta.process_command(cmd).unwrap();
+            let ta = ca_store.update(&ta_handle, ta, events).unwrap();
+
+            //
             // --- Add TA as parent to child CA
             //
             // Expect:
             //   - Parent added
             //
 
-            let parent_handle = Handle::from("parent");
-
             let parent = ParentCaContact::for_embedded(
-                parent_handle.clone(),
+                ta_handle.clone(),
                 child_token.clone()
             );
 
             let add_parent = CaCmdDet::add_parent(
                 &child_handle,
-                parent_handle.as_str(),
+                ta_handle.as_str(),
                 parent
             );
 
@@ -213,7 +196,7 @@ mod tests {
 
             let upd_ent = CaCmdDet::upd_entitlements(
                 &child_handle,
-                &parent_handle,
+                &ta_handle,
                 entitlements,
                 signer.clone()
             );
@@ -232,7 +215,7 @@ mod tests {
             assert_eq!("all", &class_name);
             assert_eq!(None, limit);
             if let ParentCaContact::Embedded(handle, token) = parent_info {
-                assert_eq!(parent_handle, handle);
+                assert_eq!(ta_handle, handle);
                 assert_eq!(child_token, token);
             } else {
                 panic!("Expected embedded contact")
@@ -246,8 +229,9 @@ mod tests {
             //   - Publication
             //
 
-            let ta_cmd = TaCmdDet::certify_child(
-                &handle, child_handle.clone(),
+            let ta_cmd = CaCmdDet::certify_child(
+                &ta_handle,
+                child_handle.clone(),
                 csr,
                 limit,
                 child_token.clone(),
@@ -256,10 +240,10 @@ mod tests {
 
             let ta_events = ta.process_command(ta_cmd).unwrap();
             let issued_evt = ta_events[0].clone().into_details();
-            let _ta = ta_store.update(&handle, ta, ta_events).unwrap();
+            let _ta = ca_store.update(&ta_handle, ta, ta_events).unwrap();
 
             let (h, n, issued) = match issued_evt {
-                TaEvtDet::CertificateIssued(h, n, c) => (h, n, c),
+                CaEvtDet::CertificateIssued(h, n, c) => (h, n, c),
                 _ => panic!("Expected issued certificate.")
             };
             assert_eq!(child_handle, h);
@@ -275,7 +259,7 @@ mod tests {
             let rcvd_cert = RcvdCert::from(issued);
 
             let upd_rcvd = CaCmdDet::upd_received_cert(
-                &child_handle, &parent_handle, DFLT_CLASS, rcvd_cert, signer.clone()
+                &child_handle, &ta_handle, DFLT_CLASS, rcvd_cert, signer.clone()
             );
 
             let events = child.process_command(upd_rcvd).unwrap();

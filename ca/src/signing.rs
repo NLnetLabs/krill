@@ -1,13 +1,15 @@
 //! Support for signing mft, crl, certificates, roas..
 //! Common objects for TAs and CAs
-use std::sync::{Arc, RwLock};
+use std::fmt::Debug;
 use std::ops::Deref;
+use std::sync::{Arc, RwLock};
 
 use bytes::Bytes;
+use serde::Serialize;
 
 use rpki::crl::{Crl, TbsCertList};
 use rpki::manifest::{Manifest, ManifestContent, FileAndHash};
-use rpki::crypto::{DigestAlgorithm, KeyIdentifier, SigningError};
+use rpki::crypto::{DigestAlgorithm, KeyIdentifier, SigningError, Signer};
 use rpki::crypto::signer::KeyError;
 use rpki::sigobj::SignedObjectBuilder;
 use rpki::x509::{Serial, Time, Validity};
@@ -24,9 +26,18 @@ use krill_commons::api::ca::{
     UpdatedObject,
 };
 
-use crate::trustanchor::CaSigner;
+use krill_commons::util::softsigner::SignerKeyId;
 
 
+//------------ CaSigner ------------------------------------------------------
+
+pub trait CaSigner: Signer<KeyId=SignerKeyId> + Clone + Debug + Serialize + Sized + Sync + Send +'static {}
+impl<T: Signer<KeyId=SignerKeyId> + Clone + Debug + Serialize + Sized + Sync + Send + 'static > CaSigner for T {}
+
+
+//------------ CaSignSupport -------------------------------------------------
+
+/// Support signing by CAs
 pub struct CaSignSupport;
 
 impl CaSignSupport {

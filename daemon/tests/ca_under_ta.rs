@@ -4,7 +4,7 @@ extern crate krill_commons;
 extern crate krill_pubc;
 extern crate krill_ca;
 
-use krill_ca::trustanchor::ta_handle;
+use krill_ca::ta_handle;
 use krill_client::options::{
     CaCommand,
     Command,

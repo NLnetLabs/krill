@@ -3,6 +3,7 @@
 
 use std::collections::HashMap;
 use std::fmt;
+use std::ops::Deref;
 use std::str;
 use std::str::FromStr;
 
@@ -44,7 +45,6 @@ use crate::rpki::manifest::{
     FileAndHash,
     Manifest,
 };
-use std::ops::Deref;
 
 
 //------------ ChildCa -------------------------------------------------------
@@ -1080,7 +1080,8 @@ pub struct TrustAnchorInfo {
     resources: ResourceSet,
     repo_info: RepoInfo,
     children: HashMap<Handle, ChildCaDetails>,
-    tal: TrustAnchorLocator
+    cert:     RcvdCert,
+    tal:      TrustAnchorLocator
 }
 
 impl TrustAnchorInfo {
@@ -1088,6 +1089,7 @@ impl TrustAnchorInfo {
         resources: ResourceSet,
         repo_info: RepoInfo,
         children: HashMap<Handle, ChildCaDetails>,
+        cert:     RcvdCert,
         tal: TrustAnchorLocator
     ) -> Self {
 
@@ -1095,6 +1097,7 @@ impl TrustAnchorInfo {
             resources,
             repo_info,
             children,
+            cert,
             tal
         }
     }
@@ -1109,6 +1112,10 @@ impl TrustAnchorInfo {
 
     pub fn children(&self) -> &HashMap<Handle, ChildCaDetails> {
         &self.children
+    }
+
+    pub fn cert(&self) -> &RcvdCert {
+        &self.cert
     }
 
     pub fn tal(&self) -> &TrustAnchorLocator {

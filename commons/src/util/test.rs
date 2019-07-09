@@ -20,7 +20,7 @@ pub fn test_under_tmp<F>(op: F) where F: FnOnce(PathBuf) -> () {
 
     op(dir);
 
-    fs::remove_dir_all(path).unwrap();
+    let _result = fs::remove_dir_all(path);
 }
 
 /// This method sets up a random subdirectory and returns it. It is

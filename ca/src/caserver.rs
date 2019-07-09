@@ -1,6 +1,7 @@
 use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
+use std::ops::Deref;
 
 use rpki::crypto::PublicKeyFormat;
 use rpki::uri;
@@ -32,25 +33,18 @@ use crate::ca::{
     CaCmdDet,
     CaIniDet,
     CaEvtDet,
-    ParentCa,
 };
-use crate::trustanchor::{
-    self,
-    TA_NS,
+use crate::{
     ta_handle,
     CaSigner,
-    TrustAnchor,
-    TaCmdDet,
-    TaIniDet,
+    PubClients
 };
-use crate::PubClients;
 
 
 //------------ CaServer ------------------------------------------------------
 
 pub struct CaServer<S: CaSigner> {
     signer: Arc<RwLock<S>>,
-    ta_store: Arc<DiskAggregateStore<TrustAnchor<S>>>,
     ca_store: Arc<DiskAggregateStore<CertAuth<S>>>
 }
 
@@ -64,22 +58,18 @@ impl<S: CaSigner> CaServer<S> {
         pub_clients: Arc<PubClients>,
         signer: S
     ) -> CaResult<Self, S> {
-        let mut ta_store = DiskAggregateStore::<TrustAnchor<S>>::new(work_dir, TA_NS)?;
-        ta_store.add_listener(pub_clients.clone());
-
         let mut ca_store = DiskAggregateStore::<CertAuth<S>>::new(work_dir, CA_NS)?;
         ca_store.add_listener(pub_clients);
 
         Ok(CaServer {
             signer: Arc::new(RwLock::new(signer)),
-            ta_store: Arc::new(ta_store),
             ca_store: Arc::new(ca_store)
         })
     }
 
     /// Gets the TrustAnchor, if present. Returns an error if the TA is uninitialized.
-    pub fn get_trust_anchor(&self) -> CaResult<Arc<TrustAnchor<S>>, S> {
-        self.ta_store
+    pub fn get_trust_anchor(&self) -> CaResult<Arc<CertAuth<S>>, S> {
+        self.ca_store
             .get_latest(&ta_handle())
             .map_err(|_| Error::TrustAnchorNotInitialisedError)
     }
@@ -92,7 +82,7 @@ impl<S: CaSigner> CaServer<S> {
         ta_uris: Vec<uri::Https>
     ) -> CaResult<(), S> {
         let handle = ta_handle();
-        if self.ta_store.has(&handle) {
+        if self.ca_store.has(&handle) {
             Err(Error::TrustAnchorInitialisedError)
         } else {
             let key = {
@@ -101,8 +91,11 @@ impl<S: CaSigner> CaServer<S> {
                     .map_err(Error::SignerError)?
             };
 
-            let init = TaIniDet::init_with_all_resources(
+            let token = Token::random(self.signer.read().unwrap().deref());
+
+            let init = CaIniDet::init_ta(
                 &handle,
+                token,
                 info,
                 ta_aia,
                 ta_uris,
@@ -110,7 +103,7 @@ impl<S: CaSigner> CaServer<S> {
                 self.signer.clone()
             )?;
 
-            self.ta_store.add(init)?;
+            self.ca_store.add(init)?;
 
             Ok(())
         }
@@ -131,21 +124,21 @@ impl<S: CaSigner> CaServer<S> {
         // if there is a TA, publish it
         let ta_handle = ta_handle();
 
-        if ! self.ta_store.has(&ta_handle) {
+        if ! self.ca_store.has(&ta_handle) {
             debug!("No embedded TA present");
             return Ok(()) // bail out w/o error in case there is no embedded TA
         }
 
-        if let Ok(ta) = self.ta_store.get_latest(&ta_handle) {
+        if let Ok(ta) = self.ca_store.get_latest(&ta_handle) {
             debug!("Publishing TA");
-            let ta_republish = TaCmdDet::republish(
+            let ta_republish = CaCmdDet::publish(
                 &ta_handle,
                 self.signer.clone()
             );
 
             let events = ta.process_command(ta_republish)?;
             if ! events.is_empty() {
-                self.ta_store.update(&ta_handle, ta, events)?;
+                self.ca_store.update(&ta_handle, ta, events)?;
             }
         } else {
             error!("TA present, but could not be loaded");
@@ -166,7 +159,7 @@ impl<S: CaSigner> CaServer<S> {
         let ta = self.get_trust_anchor()?;
         let ta_handle = ta_handle();
 
-        let add_child = TaCmdDet::<S>::add_child(
+        let add_child = CaCmdDet::<S>::add_child(
             &ta_handle,
             handle,
             token.clone(),
@@ -174,7 +167,7 @@ impl<S: CaSigner> CaServer<S> {
         );
 
         let events = ta.process_command(add_child)?;
-        self.ta_store.update(&ta_handle, ta, events)?;
+        self.ca_store.update(&ta_handle, ta, events)?;
 
         Ok(())
     }
@@ -235,7 +228,7 @@ impl<S: CaSigner> CaServer<S> {
                 unimplemented!("Issue for multiple classes from CAs, issue #25")
             }
 
-            let cmd = TaCmdDet::certify_child(
+            let cmd = CaCmdDet::certify_child(
                 parent,
                 child.clone(),
                 csr,
@@ -245,7 +238,7 @@ impl<S: CaSigner> CaServer<S> {
             );
 
             let events = ta.process_command(cmd)?;
-            let ta = self.ta_store.update(parent, ta, events)?;
+            let ta = self.ca_store.update(parent, ta, events)?;
 
             // Get the newly issued cert for the child. Unwrap here is safe.
             let child = ta.get_child(child).unwrap();
@@ -308,11 +301,12 @@ impl<S: CaSigner> CaServer<S> {
 
         let mut child = self.ca_store.get_latest(handle)?;
 
-        let parents: Vec<(Handle, ParentCa)> = child.parents()
-            .map(|e| (e.0.clone(), e.1.clone()))
-            .collect();
+        // If this is a TA, then just return.. there is not updating
+        if child.is_ta() {
+            return Ok(())
+        }
 
-        for (parent_handle, parent) in parents {
+        for (parent_handle, parent) in child.parents()? {
 
             let entitlements = match parent.contact() {
                 ParentCaContact::RemoteKrill(_uri, _token) => {
@@ -420,9 +414,6 @@ pub enum Error<S: CaSigner> {
     #[display(fmt = "{}", _0)]
     IoError(io::Error),
 
-    #[display(fmt = "{}", _0)]
-    TrustAnchorError(trustanchor::Error),
-
     #[display(fmt = "TrustAnchor was already initialised")]
     TrustAnchorInitialisedError,
 
@@ -447,10 +438,6 @@ pub enum Error<S: CaSigner> {
 
 impl<S: CaSigner> From<io::Error> for Error<S> {
     fn from(e: io::Error) -> Self { Error::IoError(e) }
-}
-
-impl<S: CaSigner> From<trustanchor::Error> for Error<S> {
-    fn from(e: trustanchor::Error) -> Self { Error::TrustAnchorError(e) }
 }
 
 impl<S: CaSigner> From<ca::Error> for Error<S> {

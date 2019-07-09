@@ -4,20 +4,48 @@ use std::marker::PhantomData;
 use std::ops::Deref;
 use std::sync::{Arc, RwLock};
 
+use chrono::Duration;
+use rand::Rng;
+
+use rpki::cert::{Cert, TbsCert, KeyUsage, Overclaim};
 use rpki::crypto::{PublicKey, PublicKeyFormat};
 use rpki::csr::Csr;
+use rpki::uri;
+use rpki::x509::{Serial, Validity, Time, Name};
 
-use krill_commons::api::{EntitlementClass, Entitlements, IssuanceRequest};
-use krill_commons::api::admin::{Handle, ParentCaContact, Token};
+use krill_commons::api::{
+    self,
+    DFLT_CLASS,
+    EncodedHash,
+    EntitlementClass,
+    Entitlements,
+    IssuanceRequest,
+    SigningCert,
+};
+use krill_commons::api::admin::{
+    Handle,
+    ParentCaContact,
+    Token
+};
 use krill_commons::api::ca::{
+    AddedObject,
     AllCurrentObjects,
     CertifiedKey,
+    ChildCa,
+    ChildCaDetails,
+    CurrentObject,
+    CurrentObjects,
+    IssuedCert,
     KeyRef,
+    ObjectName,
     ObjectsDelta,
     PublicationDelta,
     RcvdCert,
     RepoInfo,
     ResourceSet,
+    TrustAnchorInfo,
+    TrustAnchorLocator,
+    UpdatedObject,
 };
 use krill_commons::eventsourcing::{
     Aggregate,
@@ -27,17 +55,29 @@ use krill_commons::eventsourcing::{
 };
 use krill_commons::util::softsigner::SignerKeyId;
 
-use crate::trustanchor::CaSigner;
-use crate::signing::CaSignSupport;
+use crate::signing::{CaSigner, CaSignSupport};
 
 pub const CA_NS: &str = "cas";
+const TA_NAME: &str = "ta"; // reserved for TA
+
+pub fn ta_handle() -> Handle {
+    Handle::from(TA_NAME)
+}
+
 
 //------------ CertAuthInit --------------------------------------------------
 
 pub type CaIni = StoredEvent<CaIniDet>;
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[allow(clippy::large_enum_variant)]
+pub enum CaType {
+    Child,
+    Ta(CertifiedKey, TrustAnchorLocator)
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct CaIniDet(Token, RepoInfo);
+pub struct CaIniDet(Token, RepoInfo, CaType);
 
 impl CaIniDet {
     pub fn init(
@@ -48,8 +88,70 @@ impl CaIniDet {
         CaIni::new(
             handle,
             0,
-            CaIniDet(token, info)
+            CaIniDet(token, info, CaType::Child)
         )
+    }
+
+    pub fn init_ta<S: CaSigner>(
+        handle: &Handle,
+        token: Token,
+        info: RepoInfo,
+
+        ta_aia: uri::Rsync,
+        ta_uris: Vec<uri::Https>,
+
+        key: SignerKeyId,
+        signer: Arc<RwLock<S>>,
+    ) -> CaRes<CaIni> {
+        let resources = ResourceSet::all_resources();
+        let ta_cert = Self::mk_ta_cer(&info, &resources, &key, signer)?;
+        let tal = TrustAnchorLocator::new(ta_uris, &ta_cert);
+        let key = CertifiedKey::new(key, RcvdCert::new(ta_cert, ta_aia));
+
+        Ok(CaIni::new(
+            handle,
+            0,
+            CaIniDet(token, info, CaType::Ta(key, tal))
+        ))
+    }
+
+    fn mk_ta_cer<S: CaSigner>(
+        repo_info: &RepoInfo,
+        resources: &ResourceSet,
+        key: &S::KeyId,
+        signer: Arc<RwLock<S>>
+    ) -> CaRes<Cert> {
+        let serial: Serial = rand::thread_rng().gen::<u128>().into();
+
+        let signer = signer.read().unwrap();
+
+        let pub_key = signer.get_key_info(&key).map_err(Error::signer)?;
+        let name = pub_key.to_subject_name();
+
+        let mut cert = TbsCert::new(
+            serial,
+            name.clone(),
+            Validity::new(Time::now(), Time::years_from_now(100)),
+            Some(name),
+            pub_key.clone(),
+            KeyUsage::Ca,
+            Overclaim::Refuse
+        );
+
+        cert.set_basic_ca(Some(true));
+
+        cert.set_ca_repository(Some(repo_info.ca_repository("")));
+        cert.set_rpki_manifest(Some(repo_info.rpki_manifest("", &pub_key.key_identifier())));
+        cert.set_rpki_notify(Some(repo_info.rpki_notify()));
+
+        cert.set_as_resources(Some(resources.asn().clone()));
+        cert.set_v4_resources(Some(resources.v4().deref().clone()));
+        cert.set_v6_resources(Some(resources.v6().deref().clone()));
+
+        cert.into_cert(
+            signer.deref(),
+            key
+        ).map_err(Error::signer)
     }
 }
 
@@ -112,7 +214,11 @@ pub struct CertReceived {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum CaEvtDet {
-    // Parent Events
+    // Being a parent Events
+    ChildAdded(ChildCa),
+    CertificateIssued(Handle, String, IssuedCert),
+
+    // Being a child Events
     ParentAdded(ParentHandle, ParentCaContact),
     ResourceClassAdded(ParentHandle, ResourceClassName, ResourceClass),
 
@@ -124,12 +230,13 @@ pub enum CaEvtDet {
     PendingKeyActivated(ParentHandle, ResourceClassName, RcvdCert),
 
     // Publishing
-    Published(ParentHandle, ResourceClassName, KeyStatus, PublicationDelta)
+    Published(ParentHandle, ResourceClassName, KeyStatus, PublicationDelta),
+    TaPublished(PublicationDelta)
 }
 
 impl CaEvtDet {
     /// This marks a parent as added to the CA.
-    pub fn parent_added(
+    fn parent_added(
         handle: &Handle,
         version: u64,
         parent_handle: ParentHandle,
@@ -143,7 +250,7 @@ impl CaEvtDet {
     }
 
     /// This marks a resource class as added under a parent for the CA.
-    pub fn resource_class_added(
+    fn resource_class_added(
         handle: &Handle,
         version: u64,
         parent_handle: ParentHandle,
@@ -165,7 +272,7 @@ impl CaEvtDet {
     /// then gets a new certificate, it will send a command to the CA with
     /// the new certificate to mark it as received, and take other
     /// appriopiate actions (key life cycle, publication).
-    pub fn certificate_requested(
+    fn certificate_requested(
         handle: &Handle,
         version: u64,
         cert_issue_req: CertRequested
@@ -179,7 +286,7 @@ impl CaEvtDet {
 
     /// This marks a certificate as received for the key of the given status
     /// in a given resource class under a parent.
-    pub fn certificate_received(
+    fn certificate_received(
         handle: &Handle,
         version: u64,
         received: CertReceived
@@ -198,7 +305,7 @@ impl CaEvtDet {
     /// Note that key roll management is going to be implemented in the near
     /// future and then there will also be appropriate events for all the
     /// stages in a key roll.
-    pub fn pending_activated(
+    fn pending_activated(
         handle: &Handle,
         version: u64,
         parent: ParentHandle,
@@ -214,7 +321,7 @@ impl CaEvtDet {
 
     /// This marks a delta as published for a key under a resource class
     /// under a parent CA.
-    pub fn published(
+    fn published(
         handle: &Handle,
         version: u64,
         parent: ParentHandle,
@@ -226,6 +333,48 @@ impl CaEvtDet {
             handle,
             version,
             CaEvtDet::Published(parent, class_name, key_status, delta)
+        )
+    }
+
+    fn child_added(
+        handle: &Handle,
+        version: u64,
+        child: ChildCa
+    ) -> CaEvt {
+        StoredEvent::new(
+            handle,
+            version,
+            CaEvtDet::ChildAdded(child)
+        )
+    }
+
+    fn certificate_issued(
+        handle: &Handle,
+        version: u64,
+        child_handle: Handle,
+        class_name: &str,
+        cert: IssuedCert
+    ) -> CaEvt {
+        StoredEvent::new(
+            handle,
+            version,
+            CaEvtDet::CertificateIssued(
+                child_handle,
+                class_name.to_string(),
+                cert
+            )
+        )
+    }
+
+    fn published_ta(
+        handle: &Handle,
+        version: u64,
+        delta: PublicationDelta
+    ) -> CaEvt {
+        StoredEvent::new(
+            handle,
+            version,
+            CaEvtDet::TaPublished(delta)
         )
     }
 }
@@ -241,6 +390,11 @@ type ResourceClassName = String;
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum CaCmdDet<S: CaSigner> {
+    // Being a parent
+    AddChild(Handle, Token, ResourceSet),
+    CertifyChild(Handle, Csr, Option<ResourceSet>, Token, Arc<RwLock<S>>),
+
+    // Being a child
     AddParent(ParentHandle, ParentCaContact),
     UpdateEntitlements(ParentHandle, Entitlements, Arc<RwLock<S>>),
     UpdateRcvdCert(
@@ -248,7 +402,10 @@ pub enum CaCmdDet<S: CaSigner> {
         ResourceClassName,
         RcvdCert,
         Arc<RwLock<S>>
-    )
+    ),
+
+    // General
+    Republish(Arc<RwLock<S>>)
 }
 
 impl<S: CaSigner> CommandDetails for CaCmdDet<S> {
@@ -256,6 +413,42 @@ impl<S: CaSigner> CommandDetails for CaCmdDet<S> {
 }
 
 impl<S: CaSigner> CaCmdDet<S> {
+
+    /// Adds a child to this CA. Will return an error in case you try
+    /// to give the child resources not held by the CA. And until issue
+    /// #25 is implemented, returns an error when the CA is not a TA.
+    pub fn add_child(
+        handle: &Handle,
+        child_handle: Handle,
+        child_token: Token,
+        child_resources: ResourceSet,
+    ) -> CaCmd<S> {
+        SentCommand::new(
+            handle,
+            None,
+            CaCmdDet::AddChild(child_handle, child_token, child_resources)
+        )
+    }
+
+
+    /// Certify a child. Will return an error in case the child is
+    /// unknown, or in case resources are not held by the child.
+    pub fn certify_child(
+        handle: &Handle,
+        child_handle: Handle,
+        csr: Csr,
+        limit: Option<ResourceSet>,
+        token: Token,
+        signer: Arc<RwLock<S>>
+    ) -> CaCmd<S> {
+        SentCommand::new(
+            handle,
+            None,
+            CaCmdDet::CertifyChild(child_handle, csr, limit, token, signer)
+        )
+    }
+
+
     pub fn add_parent(
         handle: &Handle,
         name: &str,
@@ -303,6 +496,80 @@ impl<S: CaSigner> CaCmdDet<S> {
             )
         )
     }
+
+
+    pub fn publish(
+        handle: &Handle,
+        signer: Arc<RwLock<S>>
+    ) -> CaCmd<S> {
+        SentCommand::new(
+            handle,
+            None,
+            CaCmdDet::Republish(signer)
+        )
+    }
+}
+
+
+//------------ CaParents ---------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[allow(clippy::large_enum_variant)]
+pub enum CaParents {
+    SelfSigned(CertifiedKey, TrustAnchorLocator),
+    Parents(HashMap<Handle, ParentCa>)
+}
+
+impl CaParents {
+    fn is_self_signed(&self) -> bool {
+        match self {
+            CaParents::SelfSigned(_,_) => true,
+            _ => false
+        }
+    }
+
+    fn assert_parent_new(&self, parent: &Handle) -> CaRes<()> {
+        match self {
+            CaParents::SelfSigned(_,_) => Err(Error::NotAllowedForTa),
+            CaParents::Parents(map) => {
+                if map.contains_key(parent) {
+                    Err(Error::DuplicateParent(parent.clone()))
+                } else {
+                    Ok(())
+                }
+            }
+        }
+    }
+
+    fn insert(&mut self, handle: Handle, parent: ParentCa) -> CaRes<()> {
+        match self {
+            CaParents::SelfSigned(_,_) => Err(Error::NotAllowedForTa),
+            CaParents::Parents(map) => {
+                map.insert(handle, parent);
+                Ok(())
+            }
+        }
+    }
+
+    fn get(&self, handle: &Handle) -> CaRes<&ParentCa> {
+        match self {
+            CaParents::SelfSigned(_,_) => Err(Error::NotAllowedForTa),
+            CaParents::Parents(map) => Ok(
+                map.get(handle)
+                    .ok_or_else(|| Error::UnknownParent(handle.clone()))?
+            )
+        }
+    }
+
+    fn get_mut(&mut self, handle: &Handle) -> CaRes<&mut ParentCa> {
+        match self {
+            CaParents::SelfSigned(_,_) => Err(Error::NotAllowedForTa),
+            CaParents::Parents(map) => Ok(
+                map.get_mut(handle)
+                    .ok_or_else(|| Error::UnknownParent(handle.clone()))?
+            )
+        }
+    }
 }
 
 
@@ -316,7 +583,9 @@ pub struct CertAuth<S: CaSigner> {
     token: Token, // The admin token for this CertAuth
 
     base_repo: RepoInfo,
-    parents: HashMap<Handle, ParentCa>,
+    parents: CaParents,
+
+    children: HashMap<Handle, ChildCaDetails>,
 
     phantom_signer: PhantomData<S>
 }
@@ -336,16 +605,30 @@ impl<S: CaSigner> Aggregate for CertAuth<S> {
 
         let token = details.0;
         let base_repo = details.1;
+        let ca_type = details.2;
 
-        let parents = HashMap::new();
+        if ca_type == CaType::Child && handle == Handle::from(TA_NAME) {
+            return Err(Error::NameReservedTa)
+        }
+
+        let parents = match ca_type {
+            CaType::Child => CaParents::Parents(HashMap::new()),
+            CaType::Ta(key, tal) => CaParents::SelfSigned(key, tal)
+        };
+
+        let children = HashMap::new();
 
         Ok(CertAuth {
             handle,
             version: 1,
 
             token,
+
             base_repo,
+
             parents,
+            children,
+
             phantom_signer: PhantomData
         })
     }
@@ -357,9 +640,20 @@ impl<S: CaSigner> Aggregate for CertAuth<S> {
     fn apply(&mut self, event: CaEvt) {
         self.version += 1;
         match event.into_details() {
+            // Being a parent
+            CaEvtDet::ChildAdded(child) => {
+                let (handle, details) = child.unwrap();
+                self.children.insert(handle, details);
+            },
+            CaEvtDet::CertificateIssued(child, class_name, issued_cert) => {
+                let child = self.children.get_mut(&child).unwrap();
+                child.add_cert(&class_name, issued_cert);
+            },
+
+            // Being a child
             CaEvtDet::ParentAdded(handle, info) => {
                 let parent = ParentCa::without_resource(info);
-                self.parents.insert(handle, parent);
+                self.parents.insert(handle, parent).unwrap();
             },
             CaEvtDet::ResourceClassAdded(parent, name, rc) => {
                 // Evt cannot occur without parent existing
@@ -383,11 +677,16 @@ impl<S: CaSigner> Aggregate for CertAuth<S> {
             CaEvtDet::CertificateReceived(_rcvd) => {
                 unimplemented!()
             },
+
+            // General functions
             CaEvtDet::Published(parent, class_name, status, delta) => {
                 let mut parent = self.parent_mut(parent).unwrap();
                 let mut rc = parent.class_mut(&class_name).unwrap();
                 let mut ck = rc.get_key_mut(&status).unwrap();
                 ck.apply_delta(delta);
+            },
+            CaEvtDet::TaPublished(_delta) => {
+
             }
 
         }
@@ -395,6 +694,15 @@ impl<S: CaSigner> Aggregate for CertAuth<S> {
 
     fn process_command(&self, command: CaCmd<S>) -> CaEvtsRes {
         match command.into_details() {
+            // being a parent
+            CaCmdDet::AddChild(child, token, resources) =>  {
+                self.add_child(child, token, resources)
+            },
+            CaCmdDet::CertifyChild(child, csr, limit, token, signer) => {
+                self.certify_child(child, csr, limit, token, signer)
+            }
+
+            // being a child
             CaCmdDet::AddParent(parent, info) => {
                 self.add_parent(parent,info)
             },
@@ -403,7 +711,37 @@ impl<S: CaSigner> Aggregate for CertAuth<S> {
             },
             CaCmdDet::UpdateRcvdCert(parent, class_name, rcvd_cert, signer) => {
                 self.update_received_cert(parent, class_name, rcvd_cert, signer)
+            },
+
+            // general CA functions
+            CaCmdDet::Republish(signer) => {
+                self.republish(signer)
             }
+        }
+    }
+}
+
+
+/// # Data presentation
+///
+impl<S: CaSigner> CertAuth<S> {
+    pub fn as_ta_info(&self) -> CaRes<TrustAnchorInfo> {
+        if let CaParents::SelfSigned(key, tal) = &self.parents {
+            let resources = key.incoming_cert().resources().clone();
+            let repo_info = self.base_repo.clone();
+            let children  = self.children.clone();
+            let cert = key.incoming_cert().clone();
+            let tal = tal.clone();
+
+            Ok(TrustAnchorInfo::new(
+                resources,
+                repo_info,
+                children,
+                cert,
+                tal
+            ))
+        } else {
+            unimplemented!()
         }
     }
 }
@@ -413,39 +751,370 @@ impl<S: CaSigner> Aggregate for CertAuth<S> {
 impl<S: CaSigner> CertAuth<S> {
     /// Returns all current objects for all parents, resource classes and keys
     pub fn current_objects(&self) -> AllCurrentObjects {
-        AllCurrentObjects::empty()
+        let mut objects = AllCurrentObjects::empty();
+
+        match &self.parents {
+            CaParents::SelfSigned(key, _tal) => {
+                objects.add_name_space(DFLT_CLASS, key.current_set().objects())
+            },
+            CaParents::Parents(parents) => {
+                for parent in parents.values() {
+                    for rc in parent.resources.values() {
+                        let ns = rc.name_space();
+                        if let Some(new_objects) = rc.new_objects() {
+                            objects.add_name_space(ns, new_objects);
+                        }
+                        if let Some(current_objects) = rc.current_objects() {
+                            objects.add_name_space(ns, current_objects);
+                        }
+                        if let Some(revoke_objects) = rc.revoke_objects() {
+                            objects.add_name_space(ns, revoke_objects);
+                        }
+                    }
+                }
+            }
+        }
+
+        objects
+    }
+
+    fn republish_delta_for_key(
+        key: &CertifiedKey,
+        repo_info: &RepoInfo,
+        name_space: &str,
+        signer: Arc<RwLock<S>>
+    ) -> CaRes<PublicationDelta> {
+        let ca_repo = repo_info.ca_repository(name_space);
+        let objects_delta = ObjectsDelta::new(ca_repo);
+        CaSignSupport::publish(
+            signer,
+            key,
+            repo_info,
+            name_space,
+            objects_delta
+        ).map_err(Error::signer)
+    }
+
+    /// Republish objects for this CA
+    pub fn republish(&self, signer: Arc<RwLock<S>>) -> CaEvtsRes {
+        let mut res = vec![];
+        match &self.parents {
+            CaParents::SelfSigned(key, _tal) => {
+                if key.needs_publication() {
+                    let delta = Self::republish_delta_for_key(
+                        key,
+                        &self.base_repo,
+                        "",
+                        signer.clone()
+                    )?;
+
+                    res.push(CaEvtDet::published_ta(
+                        &self.handle,
+                        self.version,
+                        delta
+                    ))
+                }
+            },
+            CaParents::Parents(_map) => {
+                unimplemented!()
+            }
+        }
+        Ok(res)
     }
 }
 
-/// # Manage parents & resources under parents
+/// # Being a parent
 ///
 impl<S: CaSigner> CertAuth<S> {
+    /// List entitlements (section 3.3.2 of RFC6492). Return an error if
+    /// the child is not authorized -- or unknown etc.
+    ///
+    /// Only supported in TAs until issue #25 is implemented.
+    pub fn list(
+        &self,
+        child_handle: &Handle,
+        token: &Token
+    ) -> CaRes<api::Entitlements> {
+        let child = self.get_authorised_child(child_handle, token)?;
+
+        let child_resources = child.resources(DFLT_CLASS)
+            .ok_or_else(|| Error::MissingResources)?;
+
+        let until = child_resources.not_after();
+        let issued = child_resources.certs().cloned().collect();
+
+        let cert = match &self.parents {
+            CaParents::SelfSigned(key, _tal) => key.incoming_cert(),
+            CaParents::Parents(_) => unimplemented!("Issue #25")
+        };
+        let resources = cert.resources().clone();
+        let cert = SigningCert::new(cert.uri().clone(), cert.cert().clone());
+
+        Ok(Entitlements::with_default_class(
+            cert, resources, until, issued
+        ))
+    }
+
+    /// Returns an authorized child, or an error if the child is not
+    /// authorized or unknown.
+    pub fn get_authorised_child(
+        &self,
+        child_handle: &Handle,
+        token: &Token
+    ) -> CaRes<&ChildCaDetails> {
+        let child = self.get_child(child_handle)?;
+
+        if token != child.token() {
+            Err(Error::Unauthorized(child_handle.clone()))
+        } else {
+            Ok(child)
+        }
+    }
+
+    /// Returns a child, or an error if the child is unknown.
+    pub fn get_child(&self, child: &Handle) -> CaRes<&ChildCaDetails> {
+        match self.children.get(child) {
+            None => Err(Error::UnknownChild(child.clone())),
+            Some(child) => Ok(child)
+        }
+    }
+
+    /// Adds the child, returns an error if the child is a duplicate,
+    /// or if the resources are not held by this CA, or (until #25) if
+    /// this CA is not a TA.
+    fn add_child(
+        &self,
+        handle: Handle,
+        token: Token,
+        resources: ResourceSet
+    ) -> CaEvtsRes {
+        // check that
+        // 1) the resources are held by me
+        match &self.parents {
+            CaParents::SelfSigned(key, _tal) => {
+                if ! key.incoming_cert().resources().contains(&resources) {
+                    return Err(Error::MissingResources)
+                }
+            },
+            CaParents::Parents(_map) => {
+                unimplemented!("Issue #25");
+            }
+        }
+
+        // 2) there is no existing child by this name
+        if self.has_child(&handle) {
+            return Err(Error::DuplicateChild(handle))
+        }
+
+        // TODO: Handle add child to normal CA (issue #25)
+        let mut child = ChildCa::without_resources(handle, token);
+        child.add_resources(DFLT_CLASS, resources);
+
+
+        Ok(vec![CaEvtDet::child_added(
+            &self.handle,
+            self.version,
+            child
+        )])
+    }
+
+    /// Certifies a child, unless:
+    /// = the child is unknown,
+    /// = the child is not authorised,
+    /// = the csr is invalid,
+    /// = the limit exceeds the child allocation,
+    /// = the signer throws up..
+    ///
+    /// This CA is not a TA (until #25)
+    fn certify_child(
+        &self,
+        child: Handle,
+        csr: Csr,
+        limit: Option<ResourceSet>,
+        token: Token,
+        signer: Arc<RwLock<S>>
+    ) -> CaEvtsRes {
+        let issuing_key = match &self.parents {
+            CaParents::SelfSigned(key, _tal) => key,
+            CaParents::Parents(_) => unimplemented!("Issue #25")
+        };
+
+        let issuing_cert = issuing_key.incoming_cert();
+
+        // verify child and resources
+        let child_resources = self.get_authorised_child(&child, &token)?
+            .resources(DFLT_CLASS)
+            .ok_or_else(|| Error::MissingResources)?;
+
+        let resources = match limit.as_ref() {
+            Some(limit) => {
+                if child_resources.resources().contains(limit) {
+                    limit
+                } else {
+                    return Err(Error::MissingResources)
+                }
+            },
+            None => child_resources.resources()
+        };
+        csr.validate()
+            .map_err(|_| Error::invalid_csr(&child, "invalid signature"))?;
+
+        // TODO: Check for key-re-use, ultimately return 1204 (RFC6492 3.4.1)
+        let current_cert = child_resources.cert(csr.public_key());
+
+        // create new cert
+        let issued_cert = {
+            let serial = {
+                Serial::random(signer.read().unwrap().deref())
+                    .map_err(Error::signer)?
+            };
+            let issuer = issuing_cert.cert().subject().clone();
+
+            let validity = Validity::new(
+                Time::now() - Duration::minutes(3),
+                child_resources.not_after()
+            );
+
+            let subject = Some(Name::from_pub_key(csr.public_key()));
+            let pub_key = csr.public_key().clone();
+
+            let key_usage = KeyUsage::Ca;
+            let overclaim = Overclaim::Refuse;
+
+            let mut cert = TbsCert::new(
+                serial, issuer, validity, subject, pub_key, key_usage, overclaim
+            );
+            cert.set_basic_ca(Some(true));
+
+            // Note! The issuing CA is not authoritative over *where* the child CA
+            // may publish. I.e. it will sign over any claimed URIs by the child,
+            // and assume that they will not be able to do anything malicious,
+            // because the publication server for those URIs should verify the
+            // identity of the publisher, and that RPs will not invalidate the
+            // content of another CA's repo, if they it is wrongfully claimed.
+            let ca_repository = csr.ca_repository()
+                .ok_or_else(|| Error::invalid_csr(&child, "missing ca repo"))?;
+            let rpki_manifest = csr.rpki_manifest()
+                .ok_or_else(|| Error::invalid_csr(&child, "missing mft uri"))?;
+            let rpki_notify = csr.rpki_notify();
+
+            cert.set_ca_issuer(Some(issuing_cert.uri().clone()));
+            cert.set_crl_uri(Some(issuing_cert.crl_uri()));
+
+            cert.set_ca_repository(Some(ca_repository.clone()));
+            cert.set_rpki_manifest(Some(rpki_manifest.clone()));
+            cert.set_rpki_notify(rpki_notify.cloned());
+
+            cert.set_as_resources(Some(resources.asn().clone()));
+            cert.set_v4_resources(Some(resources.v4().deref().clone()));
+            cert.set_v6_resources(Some(resources.v6().deref().clone()));
+
+            cert.set_authority_key_identifier(
+                Some(issuing_cert.cert().subject_key_identifier())
+            );
+
+            let cert = {
+                cert.into_cert(
+                    signer.read().unwrap().deref(),
+                    issuing_key.key_id()
+                ).map_err(Error::signer)?
+            };
+
+            let cert_uri = issuing_cert.uri_for_object(&cert);
+
+            IssuedCert::new(cert_uri, resources.clone(), cert)
+        };
+
+        let version = self.version;
+        let cert_object = CurrentObject::from(issued_cert.cert());
+
+        let issued_event = CaEvtDet::certificate_issued(
+            &self.handle,
+            version,
+            child,
+            DFLT_CLASS,
+            issued_cert.clone()
+        );
+
+        let delta = {
+            let ca_repo = self.base_repo.ca_repository("");
+            let mut delta = ObjectsDelta::new(ca_repo);
+            let cert_name = ObjectName::from(issued_cert.cert());
+
+            match current_cert {
+                None => {
+                    delta.add(AddedObject::new(cert_name,cert_object))
+                },
+                Some(old) => {
+                    let old_hash = EncodedHash::from_content(
+                        old.cert().to_captured().as_slice()
+                    );
+                    delta.update(UpdatedObject::new(
+                        cert_name, cert_object, old_hash
+                    ))
+                }
+            }
+            delta
+        };
+
+        let publish_event = CaEvtDet::published_ta(
+            &self.handle,
+            version + 1,
+            CaSignSupport::publish(
+                signer,
+                issuing_key,
+                &self.base_repo,
+                "",
+                delta
+            ).map_err(Error::signer)?
+        );
+
+        Ok(vec![issued_event, publish_event])
+    }
+
+    /// Returns `true` if the child is known, `false` otherwise. No errors.
+    fn has_child(&self, child_handle: &Handle) -> bool {
+        self.children.contains_key(child_handle)
+    }
+}
+
+/// # Being a child
+///
+impl<S: CaSigner> CertAuth<S> {
+    /// Returns true if this CertAuth is set up as a TA.
+    pub fn is_ta(&self) -> bool {
+        self.parents.is_self_signed()
+    }
     /// List all parents
-    pub fn parents(&self) -> impl Iterator<Item=(&Handle, &ParentCa)>{
-        self.parents.iter()
+    pub fn parents(&self) -> CaRes<Vec<(Handle, ParentCa)>> {
+        match &self.parents {
+            CaParents::SelfSigned(_,_) => Err(Error::NotAllowedForTa),
+            CaParents::Parents(map) => {
+                Ok(map.iter().map(|e| (e.0.clone(), e.1.clone())).collect())
+            }
+        }
     }
 
     fn parent(&self, parent: Handle) -> CaRes<&ParentCa> {
-        self.parents.get(&parent).ok_or_else(|| Error::UnknownParent(parent))
+        self.parents.get(&parent)
     }
 
     fn parent_mut(&mut self, parent: Handle) -> CaRes<&mut ParentCa> {
-        self.parents.get_mut(&parent).ok_or_else(|| Error::UnknownParent(parent))
+        self.parents.get_mut(&parent)
     }
 
     /// Adds a parent. This method will return an error in case a parent
     /// by this name (handle) is already known.
     fn add_parent(&self, parent: Handle, info: ParentCaContact) -> CaEvtsRes {
-        if self.parents.contains_key(&parent) {
-            Err(Error::DuplicateParent(parent))
-        } else {
-            Ok(vec![CaEvtDet::parent_added(
-                &self.handle,
-                self.version,
-                parent,
-                info
-            )])
-        }
+
+        self.parents.assert_parent_new(&parent)?;
+
+        Ok(vec![CaEvtDet::parent_added(
+            &self.handle,
+            self.version,
+            parent,
+            info
+        )])
     }
 
     /// This processes entitlements from a parent, and updates the known
@@ -795,6 +1464,21 @@ impl ResourceClass {
             revoke_key: None
         }
     }
+
+    pub fn name_space(&self) -> &str { &self.name_space }
+
+    pub fn new_objects(&self) -> Option<&CurrentObjects> {
+        self.new_key.as_ref().map(|k| k.current_set().objects())
+    }
+
+    pub fn current_objects(&self) -> Option<&CurrentObjects> {
+        self.current_key.as_ref().map(|k| k.current_set().objects())
+    }
+
+    pub fn revoke_objects(&self) -> Option<&CurrentObjects> {
+        self.revoke_key.as_ref().map(|k| k.current_set().objects())
+    }
+
 }
 
 /// # Request certificates
@@ -981,6 +1665,9 @@ pub enum KeyStatus {
 
 #[derive(Debug, Display)]
 pub enum  Error {
+    #[display(fmt = "Functionality not supported for TA.")]
+    NotAllowedForTa,
+
     #[display(fmt = "Duplicate parent added: {}", _0)]
     DuplicateParent(Handle),
 
@@ -989,6 +1676,25 @@ pub enum  Error {
 
     #[display(fmt = "Got response for unknown resource class: {}", _0)]
     UnknownResourceClass(String),
+
+    // Child related errors
+    #[display(fmt = "Name reserved for embedded TA.")]
+    NameReservedTa,
+
+    #[display(fmt = "Child {} already exists.", _0)]
+    DuplicateChild(Handle),
+
+    #[display(fmt = "Unknown child {}.", _0)]
+    UnknownChild(Handle),
+
+    #[display(fmt = "Unauthorized child {}", _0)]
+    Unauthorized(Handle),
+
+    #[display(fmt = "Not all child resources are held by TA")]
+    MissingResources,
+
+    #[display(fmt = "Invalidly CSR for child {}: {}.", _0, _1)]
+    InvalidCsr(Handle, String),
 
     #[display(fmt = "No key held by CA matching issued certificate: {}", _0)]
     NoKeyMatch(KeyRef),
@@ -1004,6 +1710,11 @@ impl Error {
     pub fn signer(e: impl Display) -> Self {
         Error::SignerError(e.to_string())
     }
+
+    pub fn invalid_csr(handle: &Handle, msg: &str) -> Self {
+        Error::InvalidCsr(handle.clone(), msg.to_string())
+    }
+
 }
 
 impl std::error::Error for Error {}
