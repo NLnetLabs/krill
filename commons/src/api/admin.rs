@@ -294,21 +294,21 @@ impl PubServerInfo {
 }
 
 
-//------------ ParentCaInfo --------------------------------------------------
+//------------ ParentCaReq ---------------------------------------------------
 
-// This type defines all parent ca details for a certificate authority.
+/// This type defines all parent ca details needed to add a parent to a CA
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ParentCaInfo {
+pub struct ParentCaReq {
     handle: Handle,           // the local name the child gave to the parent
     contact: ParentCaContact  // where the parent can be contacted
 }
 
-impl ParentCaInfo {
+impl ParentCaReq {
     pub fn new(
         handle: Handle,
         contact: ParentCaContact
     ) -> Self {
-        ParentCaInfo { handle, contact }
+        ParentCaReq { handle, contact }
     }
 
     pub fn unwrap(self) -> (Handle, ParentCaContact) {

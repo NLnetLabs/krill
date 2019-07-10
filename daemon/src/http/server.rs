@@ -112,6 +112,8 @@ pub fn start(config: &Config) -> Result<(), Error> {
                     .route("/trustanchor/children", post().to(ta_add_child))
 
                     .route("/cas", post().to(ca_init))
+                    .route("/cas", get().to(cas))
+                    .route("/cas/{handle}", get().to(ca_info))
                     .route("/cas/{handle}/parents", post().to(ca_add_parent))
 
                     .route("/republish", post().to(republish_all))

@@ -1,7 +1,7 @@
 use std::str::FromStr;
 use krill_commons::api::admin::{PublisherDetails, PublisherList, ParentCaContact};
 use krill_cms_proxy::api::ClientInfo;
-use krill_commons::api::ca::TrustAnchorInfo;
+use krill_commons::api::ca::{TrustAnchorInfo, CertAuthList, CertAuthInfo, CaParentsInfo, CurrentObjects};
 
 
 //------------ ApiResponse ---------------------------------------------------
@@ -11,10 +11,17 @@ use krill_commons::api::ca::TrustAnchorInfo;
 #[allow(clippy::large_enum_variant)]
 pub enum ApiResponse {
     Health,
+
     TrustAnchorInfo(TrustAnchorInfo),
+
+    CertAuthInfo(CertAuthInfo),
+    CertAuths(CertAuthList),
+
     ParentCaInfo(ParentCaContact),
+
     PublisherDetails(PublisherDetails),
     PublisherList(PublisherList),
+
     Rfc8181ClientList(Vec<ClientInfo>),
     Empty, // Typically a successful post just gets an empty 200 response
     GenericBody(String) // For when the server echos Json to a successful post
@@ -39,9 +46,15 @@ impl ApiResponse {
                 ApiResponse::TrustAnchorInfo(ta) => {
                     Ok(Some(ta.report(fmt)?))
                 },
+                ApiResponse::CertAuths(list) => {
+                    Ok(Some(list.report(fmt)?))
+                },
+                ApiResponse::CertAuthInfo(info) => {
+                    Ok(Some(info.report(fmt)?))
+                },
                 ApiResponse::ParentCaInfo(info) => {
                     Ok(Some(info.report(fmt)?))
-                }
+                },
                 ApiResponse::PublisherList(list) => {
                     Ok(Some(list.report(fmt)?))
                 },
@@ -63,9 +76,9 @@ impl ApiResponse {
 //------------ ReportFormat --------------------------------------------------
 
 /// This type defines the format to use when representing the api response
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReportFormat {
-    Default, // the normal format for this data type
+    Default, // the normal format for this data type, usually json
     None,
     Json,
     Text,
@@ -127,6 +140,161 @@ impl Report for TrustAnchorInfo {
 
                 res.push_str("TAL:\n");
                 res.push_str(&format!("{}", self.tal()));
+
+                res.push_str("\n");
+                res.push_str("\n");
+
+                res.push_str("Children:\n");
+                if self.children().len() > 0 {
+                    for (name, details) in self.children() {
+                        res.push_str(&format!("{}\n", name));
+                        for (class, resources) in details.resources() {
+                            res.push_str(&format!("  class: {}\n", class));
+
+                            let inrs = resources.resources();
+                            res.push_str(&format!("    asn: {}\n", inrs.asn()));
+                            res.push_str(&format!("    v4:  {}\n", inrs.v4()));
+                            res.push_str(&format!("    v6:  {}\n", inrs.v6()));
+                            res.push_str("\n");
+                        }
+
+                    }
+                } else {
+                    res.push_str("<none>");
+                }
+
+
+                Ok(res)
+            },
+            _ => Err(ReportError::UnsupportedFormat)
+        }
+    }
+}
+
+impl Report for CertAuthList {
+    fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
+        match format {
+            ReportFormat::Default | ReportFormat::Json => {
+                Ok(serde_json::to_string_pretty(self).unwrap())
+            },
+            ReportFormat::Text => {
+                let mut res = String::new();
+                for ca in self.cas() {
+                    res.push_str(&format!("{}\n", ca.name()));
+                }
+
+                Ok(res)
+            },
+            _ => Err(ReportError::UnsupportedFormat)
+        }
+    }
+}
+
+impl Report for CertAuthInfo {
+    fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
+        match format {
+            ReportFormat::Default | ReportFormat::Json => {
+                Ok(serde_json::to_string_pretty(self).unwrap())
+            },
+            ReportFormat::Text => {
+                let mut res = String::new();
+
+                let base_uri = self.base_repo().base_uri();
+                let rrdp_uri = self.base_repo().rpki_notify();
+
+                res.push_str(&format!("Name:     {}\n", self.handle()));
+                res.push_str("\n");
+                res.push_str(&format!("Base uri: {}\n", base_uri));
+                res.push_str(&format!("RRDP uri: {}\n", rrdp_uri));
+
+                res.push_str("\n");
+
+                fn print_objects(res: &mut String, objects: &CurrentObjects) {
+                    for object in objects.names() {
+                        res.push_str(&format!("  {}\n", object));
+                    }
+                }
+
+                match self.parents() {
+                    CaParentsInfo::SelfSigned(key, tal) => {
+                        res.push_str("This CA is a TA\n");
+                        res.push_str("\n");
+
+                        let inrs = key.resources();
+                        res.push_str(&format!("ASNs: {}\n", inrs.asn()));
+                        res.push_str(&format!("IPv4: {}\n", inrs.v4()));
+                        res.push_str(&format!("IPv6: {}\n", inrs.v6()));
+
+
+                        res.push_str("Current objects:\n");
+                        print_objects(&mut res, key.current_set().objects());
+                        res.push_str("\n");
+
+                        res.push_str("Children:\n");
+                        if self.children().len() > 0 {
+                            for (name, details) in self.children() {
+                                res.push_str(&format!("{}\n", name));
+                                for (class, resources) in details.resources() {
+                                    res.push_str(&format!("  class: {}\n", class));
+
+                                    let inrs = resources.resources();
+                                    res.push_str(&format!("    asn: {}\n", inrs.asn()));
+                                    res.push_str(&format!("    v4:  {}\n", inrs.v4()));
+                                    res.push_str(&format!("    v6:  {}\n", inrs.v6()));
+                                    res.push_str("\n");
+                                }
+
+                            }
+                        } else {
+                            res.push_str("<none>");
+                        }
+
+                        res.push_str("TAL:\n");
+                        res.push_str(&format!("{}\n", tal));
+                    },
+                    CaParentsInfo::Parents(map) => {
+                        for (_handle, info) in map {
+                            res.push_str(&format!("Parent:  {}\n", info.contact()));
+
+                            for (name, rc) in info.resources() {
+                                res.push_str(&format!("Resource Class: {}\n", name));
+                                if let Some(key) = rc.current_key() {
+                                    res.push_str("  CURRENT Key:\n");
+                                    res.push_str("    Resources:\n");
+                                    let inrs = key.resources();
+                                    res.push_str(&format!("    ASNs: {}\n", inrs.asn()));
+                                    res.push_str(&format!("    IPv4: {}\n", inrs.v4()));
+                                    res.push_str(&format!("    IPv6: {}\n", inrs.v6()));
+
+                                    res.push_str("    Objects:\n");
+                                    res.push_str("\n");
+                                    print_objects(&mut res, key.current_set().objects());
+                                }
+
+                                if rc.pending_key().is_some() {
+                                    res.push_str("  PENDING key exists!\n");
+                                    res.push_str("\n");
+                                }
+
+                                if rc.new_key().is_some() {
+                                    res.push_str("  NEW key exists!\n");
+                                    res.push_str("\n");
+                                }
+
+                                if rc.revoke_key().is_some() {
+                                    res.push_str("  OLD unrevoked key exists!\n");
+                                    res.push_str("\n");
+                                }
+
+                            }
+
+
+
+
+                        }
+                    }
+                }
+
 
                 Ok(res)
             },

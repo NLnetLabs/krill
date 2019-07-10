@@ -18,7 +18,7 @@ use krill_commons::api::admin::{
     CertAuthPubMode,
     Handle,
     ParentCaContact,
-    ParentCaInfo,
+    ParentCaReq,
     Token,
 };
 use krill_daemon::test::{ test_with_krill_server, execute_krillc_command };
@@ -51,7 +51,7 @@ fn add_child_to_ta(
     }
 }
 
-fn add_parent_to_ca(handle: &Handle, parent: ParentCaInfo) {
+fn add_parent_to_ca(handle: &Handle, parent: ParentCaReq) {
     execute_krillc_command(
         Command::CertAuth(CaCommand::AddParent(handle.clone(), parent))
     );
@@ -80,7 +80,7 @@ fn ca_under_ta() {
             let parent_contact = add_child_to_ta(
                 &child_handle, &child_token, child_resources
             );
-            ParentCaInfo::new(ta_handle.clone(), parent_contact)
+            ParentCaReq::new(ta_handle.clone(), parent_contact)
         };
 
         add_parent_to_ca(&child_handle, parent);

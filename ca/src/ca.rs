@@ -27,26 +27,7 @@ use krill_commons::api::admin::{
     ParentCaContact,
     Token
 };
-use krill_commons::api::ca::{
-    AddedObject,
-    AllCurrentObjects,
-    CertifiedKey,
-    ChildCa,
-    ChildCaDetails,
-    CurrentObject,
-    CurrentObjects,
-    IssuedCert,
-    KeyRef,
-    ObjectName,
-    ObjectsDelta,
-    PublicationDelta,
-    RcvdCert,
-    RepoInfo,
-    ResourceSet,
-    TrustAnchorInfo,
-    TrustAnchorLocator,
-    UpdatedObject,
-};
+use krill_commons::api::ca::{AddedObject, AllCurrentObjects, CertifiedKey, ChildCa, ChildCaDetails, CurrentObject, CurrentObjects, IssuedCert, KeyRef, ObjectName, ObjectsDelta, PublicationDelta, RcvdCert, RepoInfo, ResourceSet, TrustAnchorInfo, TrustAnchorLocator, UpdatedObject, CertAuthInfo, ResourceClassInfo, CaParentsInfo, ParentCaInfo};
 use krill_commons::eventsourcing::{
     Aggregate,
     CommandDetails,
@@ -521,6 +502,23 @@ pub enum CaParents {
 }
 
 impl CaParents {
+    fn as_info(&self) -> CaParentsInfo {
+        match self {
+            CaParents::SelfSigned(key, tal) => {
+                CaParentsInfo::SelfSigned(key.clone(), tal.clone())
+            },
+            CaParents::Parents(map) => {
+                let mut map_info = HashMap::new();
+
+                for (handle, parent) in map {
+                    map_info.insert(handle.clone(), parent.as_info());
+                }
+
+                CaParentsInfo::Parents(map_info)
+            }
+        }
+    }
+
     fn is_self_signed(&self) -> bool {
         match self {
             CaParents::SelfSigned(_,_) => true,
@@ -568,6 +566,13 @@ impl CaParents {
                 map.get_mut(handle)
                     .ok_or_else(|| Error::UnknownParent(handle.clone()))?
             )
+        }
+    }
+
+    fn ta_key_mut(&mut self) -> CaRes<&mut CertifiedKey> {
+        match self {
+            CaParents::SelfSigned(key,_) => Ok(key),
+            CaParents::Parents(_map) => Err(Error::NotTa)
         }
     }
 }
@@ -685,8 +690,9 @@ impl<S: CaSigner> Aggregate for CertAuth<S> {
                 let mut ck = rc.get_key_mut(&status).unwrap();
                 ck.apply_delta(delta);
             },
-            CaEvtDet::TaPublished(_delta) => {
-
+            CaEvtDet::TaPublished(delta) => {
+                let ta_key = self.ta_key_mut().unwrap();
+                ta_key.apply_delta(delta);
             }
 
         }
@@ -733,6 +739,7 @@ impl<S: CaSigner> CertAuth<S> {
             let cert = key.incoming_cert().clone();
             let tal = tal.clone();
 
+
             Ok(TrustAnchorInfo::new(
                 resources,
                 repo_info,
@@ -743,6 +750,15 @@ impl<S: CaSigner> CertAuth<S> {
         } else {
             unimplemented!()
         }
+    }
+
+    pub fn as_ca_info(&self) -> CertAuthInfo {
+        let handle = self.handle.clone();
+        let base_repo = self.base_repo.clone();
+        let parents = self.parents.as_info();
+        let children  = self.children.clone();
+
+        CertAuthInfo::new(handle, base_repo, parents, children)
     }
 }
 
@@ -837,7 +853,7 @@ impl<S: CaSigner> CertAuth<S> {
     ) -> CaRes<api::Entitlements> {
         let child = self.get_authorised_child(child_handle, token)?;
 
-        let child_resources = child.resources(DFLT_CLASS)
+        let child_resources = child.resources_for_class(DFLT_CLASS)
             .ok_or_else(|| Error::MissingResources)?;
 
         let until = child_resources.not_after();
@@ -889,7 +905,12 @@ impl<S: CaSigner> CertAuth<S> {
         resources: ResourceSet
     ) -> CaEvtsRes {
         // check that
-        // 1) the resources are held by me
+        // 1) the resource set is not empty
+        if resources.is_empty() {
+            return Err(Error::MusthaveResources)
+        }
+
+        // 2) the resources are held by me
         match &self.parents {
             CaParents::SelfSigned(key, _tal) => {
                 if ! key.incoming_cert().resources().contains(&resources) {
@@ -901,7 +922,7 @@ impl<S: CaSigner> CertAuth<S> {
             }
         }
 
-        // 2) there is no existing child by this name
+        // 3) there is no existing child by this name
         if self.has_child(&handle) {
             return Err(Error::DuplicateChild(handle))
         }
@@ -943,7 +964,7 @@ impl<S: CaSigner> CertAuth<S> {
 
         // verify child and resources
         let child_resources = self.get_authorised_child(&child, &token)?
-            .resources(DFLT_CLASS)
+            .resources_for_class(DFLT_CLASS)
             .ok_or_else(|| Error::MissingResources)?;
 
         let resources = match limit.as_ref() {
@@ -1101,6 +1122,10 @@ impl<S: CaSigner> CertAuth<S> {
 
     fn parent_mut(&mut self, parent: Handle) -> CaRes<&mut ParentCa> {
         self.parents.get_mut(&parent)
+    }
+
+    fn ta_key_mut(&mut self) -> CaRes<&mut CertifiedKey> {
+        self.parents.ta_key_mut()
     }
 
     /// Adds a parent. This method will return an error in case a parent
@@ -1373,6 +1398,16 @@ pub struct ParentCa {
 }
 
 impl ParentCa {
+    fn as_info(&self) -> ParentCaInfo {
+        let mut resources_info = HashMap::new();
+
+        for el in self.resources.iter() {
+            resources_info.insert(el.0.clone(), el.1.as_info());
+        }
+
+        ParentCaInfo::new(self.contact.clone(), resources_info)
+    }
+
     pub fn without_resource(contact: ParentCaContact) -> Self {
         ParentCa { contact, resources: HashMap::new() }
     }
@@ -1477,6 +1512,18 @@ impl ResourceClass {
 
     pub fn revoke_objects(&self) -> Option<&CurrentObjects> {
         self.revoke_key.as_ref().map(|k| k.current_set().objects())
+    }
+
+    /// Returns a ResourceClassInfo for this, which contains all the
+    /// same data, but which does not have any behaviour.
+    pub fn as_info(&self) -> ResourceClassInfo {
+        ResourceClassInfo::new(
+            self.name_space.clone(),
+            self.pending_key.clone(),
+            self.new_key.clone(),
+            self.current_key.clone(),
+            self.revoke_key.clone()
+        )
     }
 
 }
@@ -1681,6 +1728,9 @@ pub enum  Error {
     #[display(fmt = "Name reserved for embedded TA.")]
     NameReservedTa,
 
+    #[display(fmt = "Not allowed for non-TA CA.")]
+    NotTa,
+
     #[display(fmt = "Child {} already exists.", _0)]
     DuplicateChild(Handle),
 
@@ -1692,6 +1742,9 @@ pub enum  Error {
 
     #[display(fmt = "Not all child resources are held by TA")]
     MissingResources,
+
+    #[display(fmt = "Child CA MUST have resources.")]
+    MusthaveResources,
 
     #[display(fmt = "Invalidly CSR for child {}: {}.", _0, _1)]
     InvalidCsr(Handle, String),

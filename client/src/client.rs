@@ -6,7 +6,7 @@ use serde::de::DeserializeOwned;
 use krill_commons::util::file;
 use krill_commons::util::httpclient;
 use krill_commons::api::admin::{PublisherDetails, PublisherList, PublisherRequest, Token, ParentCaContact};
-use krill_commons::api::ca::TrustAnchorInfo;
+use krill_commons::api::ca::{TrustAnchorInfo};
 use krill_cms_proxy::api::{
     ClientAuth,
     ClientInfo,
@@ -41,7 +41,7 @@ impl KrillClient {
         let res = Self::process(options)?;
 
         if let Some(string) = res.report(format)? {
-            println!("{}", string)
+            print!("{}", string)
         }
         Ok(())
     }
@@ -107,6 +107,18 @@ impl KrillClient {
 
     fn certauth(&self, command: CaCommand) -> Result<ApiResponse, Error> {
         match command {
+            CaCommand::List => {
+                let uri = self.resolve_uri("api/v1/cas");
+                let cas = httpclient::get_json(&uri, Some(&self.token))?;
+                Ok(ApiResponse::CertAuths(cas))
+            },
+            CaCommand::Show(handle) => {
+                let uri = format!("api/v1/cas/{}", handle);
+                let uri = self.resolve_uri(&uri);
+                let ca_info = httpclient::get_json(&uri, Some(&self.token))?;
+
+                Ok(ApiResponse::CertAuthInfo(ca_info))
+            }
             CaCommand::Init(init) => {
                 let uri = self.resolve_uri("api/v1/cas");
                 httpclient::post_json(&uri, init, Some(&self.token))?;

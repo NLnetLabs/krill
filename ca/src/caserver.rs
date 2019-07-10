@@ -15,10 +15,10 @@ use krill_commons::api::admin::{
     AddChildRequest,
     Handle,
     ParentCaContact,
-    ParentCaInfo,
+    ParentCaReq,
     Token,
 };
-use krill_commons::api::ca::{IssuedCert, RcvdCert, RepoInfo};
+use krill_commons::api::ca::{IssuedCert, RcvdCert, RepoInfo, CertAuthList, CertAuthSummary};
 use krill_commons::eventsourcing::{
     Aggregate,
     AggregateStore,
@@ -184,7 +184,7 @@ impl<S: CaSigner> CaServer<S> {
 ///
 impl<S: CaSigner> CaServer<S> {
 
-    fn get_ca(&self, handle: &Handle) -> CaResult<Arc<CertAuth<S>>, S> {
+    pub fn get_ca(&self, handle: &Handle) -> CaResult<Arc<CertAuth<S>>, S> {
         self.ca_store.get_latest(handle)
             .map_err(|_| Error::UnknownCa(handle.to_string()))
     }
@@ -242,13 +242,21 @@ impl<S: CaSigner> CaServer<S> {
 
             // Get the newly issued cert for the child. Unwrap here is safe.
             let child = ta.get_child(child).unwrap();
-            let resources = child.resources(&class_name).unwrap();
+            let resources = child.resources_for_class(&class_name).unwrap();
             let issued_cert = resources.cert(&pub_key).unwrap();
 
             Ok(issued_cert.clone())
         }
     }
 
+    /// Get the current CAs
+    pub fn cas(&self) -> CertAuthList {
+        CertAuthList::new(
+            self.ca_store.list().into_iter()
+                .map(|h| CertAuthSummary::new(h))
+                .collect()
+        )
+    }
 
     /// Initialises an embedded CA, without any parents (for now).
     pub fn init_ca(
@@ -270,7 +278,7 @@ impl<S: CaSigner> CaServer<S> {
     pub fn ca_add_parent(
         &self,
         handle: Handle,
-        parent: ParentCaInfo
+        parent: ParentCaReq
     ) -> CaResult<(), S> {
         let ca = self.get_ca(&handle)?;
         let (parent_handle, parent_contact) = parent.unwrap();

@@ -45,6 +45,7 @@ use crate::rpki::manifest::{
     FileAndHash,
     Manifest,
 };
+use api::admin::ParentCaContact;
 
 
 //------------ ChildCa -------------------------------------------------------
@@ -100,11 +101,11 @@ impl ChildCaDetails {
 
     pub fn token(&self) -> &Token { &self.token }
 
-    pub fn resource_sets(&self) -> Vec<&ResourceSet> {
-        self.resources.iter().map(|e| &e.1.resources ).collect()
+    pub fn resources(&self) -> &HashMap<String, ChildResources> {
+        &self.resources
     }
 
-    pub fn resources(&self, class: &str) -> Option<&ChildResources> {
+    pub fn resources_for_class(&self, class: &str) -> Option<&ChildResources> {
         self.resources.get(class)
     }
 
@@ -200,6 +201,7 @@ impl ChildResources {
         let key_ref = KeyRef::from(cert.cert());
 
         self.not_after = cert.cert().validity().not_after();
+        self.resources = cert.resource_set().clone();
         self.certs.insert(key_ref, cert);
     }
 
@@ -239,6 +241,7 @@ impl IssuedCert {
     }
 
     pub fn cert(&self) -> &Cert { &self.cert }
+    pub fn resource_set(&self) -> &ResourceSet { &self.resource_set }
 }
 
 impl PartialEq for IssuedCert {
@@ -452,6 +455,8 @@ impl CertifiedKey {
     pub fn incoming_cert(&self) -> &RcvdCert { &self.incoming_cert }
     pub fn current_set(&self) -> &CurrentObjectSet { &self.current_set }
 
+    pub fn resources(&self) -> &ResourceSet { &self.incoming_cert.resources }
+
     pub fn needs_publication(&self) -> bool {
         self.current_set.number == 1 ||
         self.current_set.next_update < Time::now() + Duration::hours(8)
@@ -556,6 +561,12 @@ impl AsRef<str> for ObjectName {
     }
 }
 
+impl fmt::Display for ObjectName {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 impl Deref for ObjectName {
     type Target = String;
 
@@ -596,6 +607,10 @@ impl CurrentObjects {
         for wdr in delta.withdrawn.into_iter() {
             self.0.remove(&wdr.name);
         }
+    }
+
+    pub fn names(&self) -> impl Iterator<Item=&ObjectName> {
+        self.0.keys()
     }
 
     pub fn object_for(&self, name: &ObjectName) -> Option<&CurrentObject> {
@@ -970,6 +985,10 @@ impl ResourceSet {
         ResourceSet::from_strs(asns, v4, v6).unwrap()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self == &ResourceSet::default()
+    }
+
     pub fn asn(&self) -> &AsResources {
         &self.asn
     }
@@ -1120,6 +1139,155 @@ impl TrustAnchorInfo {
 
     pub fn tal(&self) -> &TrustAnchorLocator {
         &self.tal
+    }
+}
+
+//------------ CertAuthList --------------------------------------------------
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CertAuthList {
+    cas: Vec<CertAuthSummary>
+}
+
+impl CertAuthList {
+    pub fn new(cas: Vec<CertAuthSummary>) -> Self {
+        CertAuthList { cas }
+    }
+
+    pub fn cas(&self) -> &Vec<CertAuthSummary> { &self.cas }
+}
+
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CertAuthSummary {
+    name: Handle
+}
+
+impl CertAuthSummary {
+    pub fn new(name: Handle) -> Self {
+        CertAuthSummary { name }
+    }
+
+    pub fn name(&self) -> &Handle { &self.name }
+}
+
+
+//------------ CertAuthInfo --------------------------------------------------
+
+/// This type represents the details of a CertAuth that need
+/// to be exposed through the API/CLI/UI
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CertAuthInfo {
+    handle: Handle,
+    base_repo: RepoInfo,
+    parents: CaParentsInfo,
+    children: HashMap<Handle, ChildCaDetails>,
+}
+
+impl CertAuthInfo {
+    pub fn new(
+        handle: Handle,
+        base_repo: RepoInfo,
+        parents: CaParentsInfo,
+        children: HashMap<Handle, ChildCaDetails>
+    ) -> Self {
+        CertAuthInfo {
+            handle,
+            base_repo,
+            parents,
+            children
+        }
+    }
+
+    pub fn handle(&self) -> &Handle { &self.handle }
+    pub fn base_repo(&self) -> &RepoInfo { &self.base_repo }
+    pub fn parents(&self) -> &CaParentsInfo { &self.parents }
+    pub fn children(&self) -> &HashMap<Handle, ChildCaDetails> { &self.children }
+}
+
+/// This type contains public data about parents of a CA
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum CaParentsInfo {
+    SelfSigned(CertifiedKey, TrustAnchorLocator),
+    Parents(HashMap<Handle, ParentCaInfo>)
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ParentCaInfo {
+    contact: ParentCaContact,
+    resources: HashMap<String, ResourceClassInfo>
+}
+
+impl ParentCaInfo {
+    pub fn new(
+        contact: ParentCaContact,
+        resources: HashMap<String, ResourceClassInfo>
+    ) -> Self {
+        ParentCaInfo {
+            contact,
+            resources
+        }
+    }
+
+    pub fn contact(&self) -> &ParentCaContact { &self.contact }
+    pub fn resources(&self) -> &HashMap<String, ResourceClassInfo> { &self.resources }
+}
+
+//------------ ResourceClassInfo ---------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ResourceClassInfo {
+    name_space: String,
+    pending_key: Option<SignerKeyId>,
+    new_key: Option<CertifiedKey>,
+    current_key: Option<CertifiedKey>,
+    revoke_key: Option<CertifiedKey>
+}
+
+impl ResourceClassInfo {
+    pub fn new(
+        name_space: String,
+        pending_key: Option<SignerKeyId>,
+        new_key: Option<CertifiedKey>,
+        current_key: Option<CertifiedKey>,
+        revoke_key: Option<CertifiedKey>
+    ) -> Self {
+        ResourceClassInfo {
+            name_space,
+            pending_key,
+            new_key,
+            current_key,
+            revoke_key
+        }
+    }
+
+    pub fn name_space(&self) -> &str { &self.name_space }
+
+    pub fn pending_key(&self) -> Option<&SignerKeyId> {
+        self.pending_key.as_ref()
+    }
+
+    pub fn new_key(&self) -> Option<&CertifiedKey> {
+        self.new_key.as_ref()
+    }
+
+    pub fn current_key(&self) -> Option<&CertifiedKey> {
+        self.current_key.as_ref()
+    }
+
+    pub fn revoke_key(&self) -> Option<&CertifiedKey> {
+        self.revoke_key.as_ref()
+    }
+
+    pub fn new_objects(&self) -> Option<&CurrentObjects> {
+        self.new_key.as_ref().map(|k| k.current_set().objects())
+    }
+
+    pub fn current_objects(&self) -> Option<&CurrentObjects> {
+        self.current_key.as_ref().map(|k| k.current_set().objects())
+    }
+
+    pub fn revoke_objects(&self) -> Option<&CurrentObjects> {
+        self.revoke_key.as_ref().map(|k| k.current_set().objects())
     }
 }
 

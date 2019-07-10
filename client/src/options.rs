@@ -3,12 +3,13 @@ use std::str::FromStr;
 use clap::{App, Arg, SubCommand};
 use rpki::uri;
 
-use krill_commons::api::admin::{Handle, Token, CertAuthInit, AddChildRequest, ParentCaInfo};
+use krill_commons::api::admin::{Handle, Token, CertAuthInit, AddChildRequest, ParentCaReq, CertAuthPubMode, ParentCaContact};
 
 use crate::report::{
     ReportFormat,
     ReportError
 };
+use krill_commons::api::ca::ResourceSet;
 
 /// This type holds all the necessary data to connect to a Krill daemon, and
 /// authenticate, and perform a specific action. Note that this is extracted
@@ -77,6 +78,111 @@ impl Options {
                 )
                 .subcommand(SubCommand::with_name("publish")
                     .about("Force publication for embedded TA now.")
+                )
+                .subcommand(SubCommand::with_name("children")
+                    .about("Manage children of the embbeded TA")
+                    .subcommand(SubCommand::with_name("add")
+                        .about("Add a child to the embedded CA")
+                        .arg(Arg::with_name("handle")
+                            .short("h")
+                            .long("handle")
+                            .value_name("child-handle")
+                            .help("The handle (name) for the child CA")
+                            .required(true)
+                        )
+                        .arg(Arg::with_name("token")
+                            .short("ct")
+                            .long("token")
+                            .value_name("token-string")
+                            .help("The auth token between the child and TA")
+                            .required(true)
+                        )
+                        .arg(Arg::with_name("asn")
+                            .short("a")
+                            .long("asn")
+                            .value_name("AS resources")
+                            .help("The delegated AS resources: e.g. AS1, AS3-4")
+                            .required(false)
+                        )
+                        .arg(Arg::with_name("ipv4")
+                            .short("4")
+                            .long("ipv4")
+                            .value_name("IPv4 resources")
+                            .help("The delegated IPv4 resources: e.g. 192.168.0.0/16")
+                            .required(false)
+                        )
+                        .arg(Arg::with_name("ipv6")
+                            .short("6")
+                            .long("ipv6")
+                            .value_name("IPv6 resources")
+                            .help("The delegated IPv6 resources: e.g. 2001:db8::/32")
+                            .required(false)
+                        )
+                    )
+                )
+            )
+
+            .subcommand(SubCommand::with_name("cas")
+                .about("Manage CAs")
+                .subcommand(SubCommand::with_name("list")
+                    .about("Show current CAs")
+                )
+                .subcommand(SubCommand::with_name("show")
+                    .about("Show CA details)")
+                    .arg(Arg::with_name("handle")
+                        .short("h")
+                        .long("handle")
+                        .value_name("handle")
+                        .help("The handle (name) for the CA")
+                        .required(true)
+                    )
+                )
+                .subcommand(SubCommand::with_name("add")
+                    .about("Add a new CA)")
+                    .arg(Arg::with_name("handle")
+                        .short("h")
+                        .long("handle")
+                        .value_name("child-handle")
+                        .help("The handle (name) for the child CA")
+                        .required(true)
+                    )
+                    .arg(Arg::with_name("token")
+                        .short("ct")
+                        .long("token")
+                        .value_name("token-string")
+                        .help("The auth token to control the CA")
+                        .required(true)
+                    )
+                )
+                .subcommand(SubCommand::with_name("update")
+                    .about("Update an existing CA")
+                    .arg(Arg::with_name("handle")
+                        .short("h")
+                        .long("handle")
+                        .value_name("ca handle")
+                        .help("The handle (name) for the CA")
+                        .required(true)
+                    )
+                    .subcommand(SubCommand::with_name("add-parent")
+                        .about("Add a parent to a CA (only embedded for now)")
+
+                        .arg(Arg::with_name("parent")
+                            .short("p")
+                            .long("parent")
+                            .value_name("parent ca handle")
+                            .help("The handle (name) for the parent CA")
+                            .required(true)
+                        )
+
+                        .arg(Arg::with_name("token")
+                            .short("t")
+                            .long("token")
+                            .value_name("token-string")
+                            .help("The auth token the parent knows for the CA")
+                            .required(true)
+                        )
+                    )
+
                 )
             )
 
@@ -172,6 +278,57 @@ impl Options {
             if let Some(_m) = m.subcommand_matches("publish") {
                 command = Command::TrustAnchor(TrustAnchorCommand::Publish)
             }
+            if let Some(m) = m.subcommand_matches("children") {
+                if let Some(m) = m.subcommand_matches("add") {
+                    let handle = Handle::from(m.value_of("handle").unwrap());
+                    let token = Token::from(m.value_of("token").unwrap());
+
+                    let asn = m.value_of("asn").unwrap_or("");
+                    let ipv4 = m.value_of("ipv4").unwrap_or("");
+                    let ipv6 = m.value_of("ipv6").unwrap_or("");
+
+                    let res = ResourceSet::from_strs(asn, ipv4, ipv6).unwrap();
+
+                    let req = AddChildRequest::new(handle, token, res);
+                    command = Command::TrustAnchor(
+                        TrustAnchorCommand::AddChild(req)
+                    )
+                }
+            }
+
+        }
+
+        if let Some(m) = matches.subcommand_matches("cas") {
+            if let Some(_m) = m.subcommand_matches("list") {
+                command = Command::CertAuth(CaCommand::List)
+            }
+            if let Some(m) = m.subcommand_matches("show") {
+                let handle = Handle::from(m.value_of("handle").unwrap());
+                command = Command::CertAuth(CaCommand::Show(handle))
+            }
+            if let Some(m) = m.subcommand_matches("add") {
+                let handle = Handle::from(m.value_of("handle").unwrap());
+                let token = Token::from(m.value_of("token").unwrap());
+                let pub_mode = CertAuthPubMode::Embedded;
+
+                let init = CertAuthInit::new(handle, token, pub_mode);
+                command = Command::CertAuth(CaCommand::Init(init))
+            }
+            if let Some(m) = m.subcommand_matches("update") {
+                let handle = Handle::from(m.value_of("handle").unwrap());
+
+                if let Some(m) = m.subcommand_matches("add-parent") {
+                    let parent = Handle::from(m.value_of("parent").unwrap());
+                    let token = Token::from(m.value_of("token").unwrap());
+
+                    let contact = ParentCaContact::Embedded(parent.clone(), token);
+
+                    let parent = ParentCaReq::new(parent, contact);
+
+                    command = Command::CertAuth(
+                        CaCommand::AddParent(handle, parent))
+                }
+            }
         }
 
         if let Some(m) = matches.subcommand_matches("publishers") {
@@ -247,8 +404,10 @@ pub enum TrustAnchorCommand {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CaCommand {
+    List,
+    Show(Handle),
     Init(CertAuthInit),
-    AddParent(Handle, ParentCaInfo)
+    AddParent(Handle, ParentCaReq)
 }
 
 

@@ -15,6 +15,7 @@ extern crate krill_commons;
 
 mod ca;
 pub use ca::ta_handle;
+pub use ca::Error as CaError;
 
 mod caserver;
 pub use self::caserver::CaServer;

@@ -9,8 +9,8 @@ use rpki::uri;
 use krill_ca::{ta_handle, CaServer, CaServerError, PubClients, PubClientError};
 use krill_commons::api::{publication, Entitlements, IssuanceRequest};
 use krill_commons::api::admin;
-use krill_commons::api::admin::{Handle, Token, PubServerInfo, CertAuthInit, CertAuthPubMode, ParentCaContact, AddChildRequest, ParentCaInfo};
-use krill_commons::api::ca::{TrustAnchorInfo, RcvdCert, IssuedCert};
+use krill_commons::api::admin::{Handle, Token, PubServerInfo, CertAuthInit, CertAuthPubMode, ParentCaContact, AddChildRequest, ParentCaReq};
+use krill_commons::api::ca::{TrustAnchorInfo, RcvdCert, IssuedCert, CertAuthList, CertAuthInfo};
 use krill_commons::util::softsigner::{OpenSslSigner, SignerError};
 use krill_cms_proxy::api::ClientInfo;
 use krill_cms_proxy::proxy;
@@ -328,6 +328,14 @@ impl KrillServer {
 /// # Admin CAS
 ///
 impl KrillServer {
+    pub fn cas(&self) -> CertAuthList {
+        self.caserver.cas()
+    }
+
+    pub fn ca_info(&self, handle: &Handle) -> Option<CertAuthInfo> {
+        self.caserver.get_ca(handle).map(|ca| ca.as_ca_info()).ok()
+    }
+
     pub fn ca_init(&mut self, init: CertAuthInit) -> EmptyRes {
 
         let (handle, token, pub_mode) = init.unwrap();
@@ -364,7 +372,7 @@ impl KrillServer {
     pub fn ca_add_parent(
         &self,
         handle: Handle,
-        parent: ParentCaInfo
+        parent: ParentCaReq
     ) -> EmptyRes {
         self.caserver.ca_add_parent(handle, parent)?;
         Ok(())
