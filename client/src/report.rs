@@ -1,6 +1,7 @@
-use std::str::FromStr;
-use krill_commons::api::admin::{PublisherDetails, PublisherList, ParentCaContact};
+use std::str::{FromStr, from_utf8_unchecked};
 use krill_cms_proxy::api::ClientInfo;
+use krill_cms_proxy::rfc8183::RepositoryResponse;
+use krill_commons::api::admin::{PublisherDetails, PublisherList, ParentCaContact};
 use krill_commons::api::ca::{TrustAnchorInfo, CertAuthList, CertAuthInfo, CaParentsInfo, CurrentObjects};
 
 
@@ -23,6 +24,8 @@ pub enum ApiResponse {
     PublisherList(PublisherList),
 
     Rfc8181ClientList(Vec<ClientInfo>),
+    Rfc8181RepositoryResponse(RepositoryResponse),
+
     Empty, // Typically a successful post just gets an empty 200 response
     GenericBody(String) // For when the server echos Json to a successful post
 }
@@ -63,6 +66,9 @@ impl ApiResponse {
                 }
                 ApiResponse::Rfc8181ClientList(list) => {
                     Ok(Some(list.report(fmt)?))
+                }
+                ApiResponse::Rfc8181RepositoryResponse(res) => {
+                    Ok(Some(res.report(fmt)?))
                 }
                 ApiResponse::GenericBody(body) => {
                     Ok(Some(body.clone()))
@@ -145,7 +151,7 @@ impl Report for TrustAnchorInfo {
                 res.push_str("\n");
 
                 res.push_str("Children:\n");
-                if self.children().len() > 0 {
+                if !self.children().is_empty() {
                     for (name, details) in self.children() {
                         res.push_str(&format!("{}\n", name));
                         for (class, resources) in details.resources() {
@@ -231,7 +237,7 @@ impl Report for CertAuthInfo {
                         res.push_str("\n");
 
                         res.push_str("Children:\n");
-                        if self.children().len() > 0 {
+                        if !self.children().is_empty() {
                             for (name, details) in self.children() {
                                 res.push_str(&format!("{}\n", name));
                                 for (class, resources) in details.resources() {
@@ -253,7 +259,7 @@ impl Report for CertAuthInfo {
                         res.push_str(&format!("{}\n", tal));
                     },
                     CaParentsInfo::Parents(map) => {
-                        for (_handle, info) in map {
+                        for info in map.values() {
                             res.push_str(&format!("Parent:  {}\n", info.contact()));
 
                             for (name, rc) in info.resources() {
@@ -287,15 +293,9 @@ impl Report for CertAuthInfo {
                                 }
 
                             }
-
-
-
-
                         }
                     }
                 }
-
-
                 Ok(res)
             },
             _ => Err(ReportError::UnsupportedFormat)
@@ -381,14 +381,29 @@ impl Report for Vec<ClientInfo> {
                 for client in self.iter() {
                     let handle = client.handle();
                     let auth = client.auth();
-                    let token = auth.token();
                     let ski = auth.cert().ski_hex();
 
                     res.push_str(
-                        &format!("   Handle: {}, Token: {}, Cert (ski): {}\n", handle, token, ski)
+                        &format!("   Handle: {}, Cert (ski): {}\n", handle, ski)
                     );
                 }
                 Ok(res)
+            },
+            _ => Err(ReportError::UnsupportedFormat)
+        }
+    }
+}
+
+impl Report for RepositoryResponse {
+    fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
+        match format {
+            ReportFormat::Text | ReportFormat::Xml | ReportFormat::Default => {
+                let bytes = self.encode_vec();
+                let xml = unsafe {
+                    from_utf8_unchecked(&bytes)
+                };
+
+                Ok(xml.to_string())
             },
             _ => Err(ReportError::UnsupportedFormat)
         }

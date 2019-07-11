@@ -12,10 +12,7 @@ use krill_commons::api::{
     ErrorCode,
     ErrorResponse,
 };
-use krill_commons::api::admin::{
-    Handle,
-    Token
-};
+use krill_commons::api::admin::Handle;
 use krill_commons::api::publication::{
     ListReply,
     PublishRequest,
@@ -34,7 +31,6 @@ use rpki::crypto::{
     Signer
 };
 use crate::api::{
-    ClientAuth,
     ClientInfo,
 };
 use crate::clients::{
@@ -123,11 +119,6 @@ impl ProxyServer {
         self.process_clients_command(command)
     }
 
-    pub fn update_client_token(&self, handle: Handle, token: Token) -> Result<(), Error> {
-        let update = ClientsCommands::update_token(handle, token);
-        self.process_clients_command(update)
-    }
-
     pub fn update_client_cert(&self, handle: Handle, cert: IdCert) -> Result<(), Error> {
         let update = ClientsCommands::update_cert(handle, cert);
         self.process_clients_command(update)
@@ -184,52 +175,27 @@ impl ProxyServer {
 /// # Proxy RFC8181 requests to a Krill server
 ///
 impl ProxyServer {
-    /// Takes an RFC8181 request, validates it, then passes the request on to
-    /// Krill using the JSON API and the token known for the publisher, then
-    /// signs the response and returns the CMS as a Captured value.
-    pub fn handle_rfc8181_req(
+
+    /// Takes an RFC8181 request, validates it, and then returns the
+    /// request type
+    pub fn convert_rfc8181_req(
         &self,
         msg: SignedMessage,
-        handle: Handle
-    ) -> Result<Captured, Error> {
-        match self.try_rfc8181_req(msg, handle) {
-            Ok(captured) => Ok(captured),
-            Err(e) => {
-                self.wrap_error(e)
-            }
-        }
+        handle: &Handle
+    ) -> Result<PublishRequest, Error> {
+        self.validate_msg(&msg, handle)?;
+        self.convert_to_json_request(&msg)
     }
 
-    /// Tries to handle the RFC8181 request, but will throw errors that should
-    /// be checked and wrapped in a signed Error response.
-    fn try_rfc8181_req(
-        &self,
-        msg: SignedMessage,
-        handle: Handle
-    ) -> Result<Captured, Error> {
-        debug!("Received request for: {}", &handle);
-        match self.clients()?.client_auth(&handle) {
-            None => Err(Error::UnknownClient(handle)),
-            Some(client) => {
-                Self::validate_msg(&msg, client)?;
-                let req = self.convert_to_json_request(&msg)?;
-                let uri = self.uri_for_pub_client(handle);
-                let token = client.token();
-
-                let res = match req {
-                    PublishRequest::List => Self::send_list_request(&uri, token)?,
-                    PublishRequest::Delta(delta) => Self::send_delta(&uri, delta, token)?
-                };
-                let msg = Message::ReplyMessage(res);
-
-                self.sign_msg(msg)
-            }
-        }
+    /// Wraps a reply in the
+    pub fn sign_reply(&self, reply: ReplyMessage) -> Result<Captured, Error> {
+        let msg = Message::ReplyMessage(reply);
+        self.sign_msg(msg)
     }
 
     /// Wraps the error into a signed response, unless there is an issue with
     /// building / signing the response itself.
-    fn wrap_error(&self, e: Error) -> Result<Captured, Error> {
+    pub fn wrap_error(&self, e: Error) -> Result<Captured, Error> {
         let error_code = e.to_report_error_code();
         let report_error = ReportError::reply(error_code, None);
         let mut builder = ErrorReply::build_with_capacity(1);
@@ -240,11 +206,27 @@ impl ProxyServer {
         self.sign_msg(msg)
     }
 
-    fn validate_msg(msg: &SignedMessage, client: &ClientAuth) -> Result<(), Error> {
-        debug!("Validating Signed Message");
-        let id_cert = client.cert();
-        msg.validate(id_cert)?;
-        Ok(())
+    fn validate_msg(
+        &self,
+        msg: &SignedMessage,
+        handle: &Handle
+    ) -> Result<(), Error> {
+        match self.clients()?.client_auth(handle) {
+            None => {
+                warn!("Received RFC8181 message for unknown client: {}", &handle);
+                Err(Error::UnknownClient(handle.clone()))
+            },
+            Some(client) => {
+                let id_cert = client.cert();
+                match msg.validate(id_cert) {
+                    Ok(()) => Ok(()),
+                    Err(e) => {
+                        warn!("Received invalid message from {}", &handle);
+                        Err(Error::ValidationError(e))
+                    }
+                }
+            }
+        }
     }
 
     /// Retrieves the QueryMessage contained in the SignedMessage and
@@ -257,21 +239,6 @@ impl ProxyServer {
         let msg = rfc8181::Message::from_signed_message(&msg)?;
         let msg = msg.into_query()?;
         Ok(msg.into_publish_request())
-    }
-
-    fn send_list_request(uri: &str, token: &Token) -> Result<ReplyMessage, Error> {
-        let list = httpclient::get_json(&uri, Some(token))?;
-        Ok(ReplyMessage::ListReply(list))
-    }
-
-    fn send_delta(uri: &str, delta: PublishDelta, token: &Token) -> Result<ReplyMessage, Error> {
-        httpclient::post_json(
-            uri,
-            delta,
-            Some(token)
-        )?;
-
-        Ok(ReplyMessage::SuccessReply)
     }
 
     fn sign_msg(&self, msg: Message) -> Result<Captured, Error> {
@@ -287,11 +254,6 @@ impl ProxyServer {
 
         Ok(enc.to_captured(Mode::Der))
     }
-
-    fn uri_for_pub_client(&self, handle: Handle) -> String {
-        format!("{}publication/{}", self.krill_uri, handle)
-    }
-
 }
 
 

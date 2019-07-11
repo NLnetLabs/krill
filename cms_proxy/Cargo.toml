@@ -20,10 +20,6 @@ xml-rs        = "0.8.0"
 fern         = "^0.5"
 log          = "^0.4"
 
-# XXX Temporarily
-ring = "^0.14"
-untrusted = "^0.6"
-
 [dependencies.krill_commons]
 path = "../commons"
 version = "0.2.0"

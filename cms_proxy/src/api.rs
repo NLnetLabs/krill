@@ -1,9 +1,6 @@
 use rpki::uri;
 
-use krill_commons::api::admin::{
-    Handle,
-    Token
-};
+use krill_commons::api::admin::Handle;
 use krill_commons::util::softsigner::SignerKeyId;
 
 use crate::id::IdCert;
@@ -15,22 +12,16 @@ use crate::id::IdCert;
 pub struct ClientAuth {
     // Certificate used by the client
     cert: IdCert,
-
-    // Token known for this client by the krill server
-    token: Token
 }
 
 impl ClientAuth {
     pub fn new(
         cert: IdCert,
-        token: Token,
     ) -> Self {
-        ClientAuth { cert, token }
+        ClientAuth { cert }
     }
     pub fn cert(&self) -> &IdCert { &self.cert }
     pub fn set_cert(&mut self, cert: IdCert) { self.cert = cert; }
-    pub fn token(&self) -> &Token { & self.token }
-    pub fn set_token(&mut self, token: Token) { self.token = token; }
 }
 
 

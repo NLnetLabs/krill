@@ -12,19 +12,19 @@ use actix_web::web::{
 use bytes::Bytes;
 use serde::Serialize;
 
+use krill_ca::{CaError, CaServerError};
 use krill_cms_proxy::api::ClientInfo;
 use krill_cms_proxy::sigmsg::SignedMessage;
 use krill_commons::api::{admin, publication, ErrorCode, ErrorResponse, IssuanceRequest};
 use krill_commons::api::admin::{Handle, CertAuthInit, AddChildRequest, ParentCaReq};
 use krill_commons::api::rrdp::VerificationError;
+use krill_commons::util::softsigner::OpenSslSigner;
 use krill_pubd::publishers::PublisherError;
 use krill_pubd::repo::RrdpServerError;
 
 use crate::auth::Auth;
 use crate::http::server::AppServer;
 use crate::krillserver;
-use krill_ca::{CaError, CaServerError};
-use krill_commons::util::softsigner::OpenSslSigner;
 
 const NOT_FOUND: &[u8] = include_bytes!("../ui/dist/404.html");
 
@@ -217,6 +217,7 @@ pub fn handle_list(
     handle: Path<Handle>
 ) -> HttpResponse {
     let handle = handle.into_inner();
+    info!("Received list request for {}", &handle);
     if_publication_allowed(&server, &handle, &auth, ||{
         match server.read().handle_list(&handle) {
             Ok(list) => render_json(list),

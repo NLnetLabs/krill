@@ -16,10 +16,6 @@ extern crate rpki;
 extern crate serde_json;
 extern crate xml as xmlrs;
 
-// XXX Temporarily
-extern crate ring;
-extern crate untrusted;
-
 pub mod api;
 pub mod builder;
 pub mod clients;

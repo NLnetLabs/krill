@@ -13,13 +13,13 @@ use rpki::uri;
 use rpki::x509;
 use rpki::x509::Time;
 
+use krill_commons::api::admin::Handle;
 use krill_commons::util::xml::{
     AttributesError,
     XmlReader,
     XmlReaderErr,
     XmlWriter
 };
-use krill_commons::api::admin::Handle;
 
 use crate::id::IdCert;
 
@@ -215,7 +215,7 @@ impl From<x509::ValidationError> for PublisherRequestError {
 /// the details needed by the CA to send publication messages to the server.
 ///
 /// See https://tools.ietf.org/html/rfc8183#section-5.2.4
-#[derive(Debug)]
+#[derive(Clone, Debug, Deserialize, Eq, Serialize, PartialEq)]
 pub struct RepositoryResponse {
     /// The optional 'tag' identifier used like a session identifier
     tag: Option<String>,

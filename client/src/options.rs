@@ -3,13 +3,21 @@ use std::str::FromStr;
 use clap::{App, Arg, SubCommand};
 use rpki::uri;
 
-use krill_commons::api::admin::{Handle, Token, CertAuthInit, AddChildRequest, ParentCaReq, CertAuthPubMode, ParentCaContact};
+use krill_commons::api::admin::{
+    AddChildRequest,
+    CertAuthInit,
+    CertAuthPubMode,
+    Handle,
+    ParentCaReq,
+    ParentCaContact,
+    Token,
+};
+use krill_commons::api::ca::ResourceSet;
 
 use crate::report::{
     ReportFormat,
     ReportError
 };
-use krill_commons::api::ca::ResourceSet;
 
 /// This type holds all the necessary data to connect to a Krill daemon, and
 /// authenticate, and perform a specific action. Note that this is extracted
@@ -23,8 +31,8 @@ pub struct Options {
 }
 
 impl Options {
-    pub fn format(&self) -> &ReportFormat {
-        &self.format
+    pub fn format(&self) -> ReportFormat {
+        self.format
     }
 
     /// Creates a new Options explicitly (useful for testing)
@@ -242,20 +250,23 @@ impl Options {
                     .about("List all current clients with details")
                 )
                 .subcommand(SubCommand::with_name("add")
-                    .about("Add TFC8181 client")
-                    .arg(Arg::with_name("token")
-                        .short("t")
-                        .long("token")
-                        .value_name("text")
-                        .help("Specify a token string.")
-                        .required(true)
-                    )
+                    .about("Add RFC8181 client (assumes handle is in the XML)")
                     .arg(Arg::with_name("xml")
                         .short("x")
                         .long("xml")
                         .value_name("FILE")
                         .help("Specify a file containing an RFC8183 \
                         publisher request. (See: https://tools.ietf.org/html/rfc8183#section-5.2.3)")
+                        .required(true)
+                    )
+                )
+                .subcommand(SubCommand::with_name("repo-res")
+                    .about("Show the RFC8181 repository response xml")
+                    .arg(Arg::with_name("handle")
+                        .short("h")
+                        .long("handle")
+                        .value_name("publisher handle")
+                        .help("The publisher handle from RFC8181")
                         .required(true)
                     )
                 )
@@ -361,11 +372,16 @@ impl Options {
                 command = Command::Rfc8181(Rfc8181Command::List)
             }
             if let Some(m) = m.subcommand_matches("add") {
-                let token = m.value_of("token").unwrap().to_string();
                 let xml_path = m.value_of("xml").unwrap();
                 let xml = PathBuf::from(xml_path);
 
-                command = Command::Rfc8181(Rfc8181Command::Add(AddRfc8181Client{ token, xml }))
+                command = Command::Rfc8181(
+                    Rfc8181Command::Add(AddRfc8181Client{ xml })
+                )
+            }
+            if let Some(m) = m.subcommand_matches("repo-res") {
+                let handle =  Handle::from(m.value_of("handle").unwrap());
+                command = Command::Rfc8181(Rfc8181Command::RepoRes(handle));
             }
 
         }
@@ -430,11 +446,11 @@ pub struct AddPublisher {
 pub enum Rfc8181Command {
     List,
     Add(AddRfc8181Client),
+    RepoRes(Handle)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AddRfc8181Client {
-    pub token: String,
     pub xml: PathBuf
 }
 

@@ -861,7 +861,7 @@ impl<S: CaSigner> CertAuth<S> {
 
         let cert = match &self.parents {
             CaParents::SelfSigned(key, _tal) => key.incoming_cert(),
-            CaParents::Parents(_) => unimplemented!("Issue #25")
+            CaParents::Parents(_) => unimplemented!("Issue #25 (delegate from CA)")
         };
         let resources = cert.resources().clone();
         let cert = SigningCert::new(cert.uri().clone(), cert.cert().clone());
@@ -918,7 +918,7 @@ impl<S: CaSigner> CertAuth<S> {
                 }
             },
             CaParents::Parents(_map) => {
-                unimplemented!("Issue #25");
+                unimplemented!("#25 Issue #25 (delegate from CA)");
             }
         }
 
@@ -957,7 +957,7 @@ impl<S: CaSigner> CertAuth<S> {
     ) -> CaEvtsRes {
         let issuing_key = match &self.parents {
             CaParents::SelfSigned(key, _tal) => key,
-            CaParents::Parents(_) => unimplemented!("Issue #25")
+            CaParents::Parents(_) => unimplemented!("Issue #25 (delegate from CA)")
         };
 
         let issuing_cert = issuing_key.incoming_cert();
@@ -1343,7 +1343,7 @@ impl<S: CaSigner> CertAuth<S> {
                 Err(Error::KeyStatusChange(KeyStatus::Pending,
                                            KeyStatus::Pending)),
 
-            KeyStatus::New => unimplemented!(), // needed for key rolls
+            KeyStatus::New => unimplemented!("Issue #23 (key rolls)"),
 
             KeyStatus::Current => {
                 Ok(CaEvtDet::pending_activated(

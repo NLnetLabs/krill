@@ -7,7 +7,7 @@ use krill_client::report::ReportFormat;
 fn main() {
     match Options::from_args() {
         Ok(options) => {
-            let format = options.format().clone();
+            let format = options.format();
             match KrillClient::report(options) {
                 Ok(()) => {} //,
                 Err(e) => {

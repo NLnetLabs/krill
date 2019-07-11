@@ -18,6 +18,7 @@ use actix_web::web::{
 use krill_commons::api::admin::Token;
 
 use crate::http::server::AppServer;
+use std::fmt;
 
 pub const AUTH_COOKIE_NAME: &str = "krill_auth";
 
@@ -42,6 +43,9 @@ impl Authorizer {
         &self.krill_auth_token == token
     }
 }
+
+
+//------------ Credentials ---------------------------------------------------
 
 #[derive(Deserialize)]
 pub struct Credentials {
@@ -76,9 +80,11 @@ pub fn is_logged_in(
 }
 
 
-
 pub type UserName = String;
 
+//------------ Auth ----------------------------------------------------------
+
+#[derive(Clone, Debug)]
 pub enum Auth {
     User(UserName),
     Bearer(Token)
@@ -100,6 +106,15 @@ impl Auth {
         }
 
         Err(AuthError::InvalidToken)
+    }
+}
+
+impl fmt::Display for Auth {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Auth::User(user)    => write!(f, "User: {}", user),
+            Auth::Bearer(token) => write!(f, "Bearer: {}", token),
+        }
     }
 }
 
@@ -133,6 +148,8 @@ impl FromRequest for Auth {
     }
 }
 
+
+//------------ AuthError -----------------------------------------------------
 
 #[derive(Debug, Display)]
 pub enum AuthError {

@@ -22,7 +22,8 @@ use krill_pubd::publishers::Publisher;
 
 use crate::auth::{Auth, Authorizer};
 use crate::republisher::Republisher;
-
+use krill_commons::api::publication::PublishRequest;
+use krill_cms_proxy::rfc8181::ReplyMessage;
 
 
 //------------ KrillServer ---------------------------------------------------
@@ -144,7 +145,7 @@ impl KrillServer {
         handle: &Handle,
         auth: &Auth
     ) -> bool {
-        match auth {
+        let allowed = match auth {
             Auth::User(name) => name == "admin",
             Auth::Bearer(token) => {
                 if self.authorizer.is_api_allowed(&token) {
@@ -155,7 +156,15 @@ impl KrillServer {
                     false
                 }
             }
+        };
+
+        if allowed {
+            debug!("Access to publication api allowed")
+        } else {
+            warn!("Access to publication api disallowed for handle: {}, and auth: {}", handle, auth);
         }
+
+        allowed
     }
 
 }
@@ -244,7 +253,37 @@ impl KrillServer {
         msg: SignedMessage,
         handle: Handle
     ) -> Result<Captured, Error> {
-        self.proxy_server.handle_rfc8181_req(msg, handle).map_err(Error::ProxyServer)
+        info!("Handling signed request for {}", &handle);
+        match self.try_rfc8181_req(msg, handle) {
+            Ok(captured) => Ok(captured),
+            Err(Error::ProxyServer(e)) => {
+                self.proxy_server.wrap_error(e).map_err(Error::ProxyServer)
+            },
+            Err(e) => Err(e)
+        }
+    }
+
+    /// Try to handle the rfc8181 request, and error out in case of
+    /// issues.
+    fn try_rfc8181_req(
+        &self,
+        msg: SignedMessage,
+        handle: Handle
+    ) -> Result<Captured, Error> {
+        let req = self.proxy_server.convert_rfc8181_req(msg, &handle)?;
+        let reply = match req {
+            PublishRequest::List => {
+                ReplyMessage::ListReply(
+                    self.pubserver.list(&handle)?
+                )
+            },
+            PublishRequest::Delta(delta) => {
+                self.pubserver.publish(&handle, delta)?;
+                ReplyMessage::SuccessReply
+            }
+        };
+
+        self.proxy_server.sign_reply(reply).map_err(Error::ProxyServer)
     }
 }
 

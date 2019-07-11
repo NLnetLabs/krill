@@ -1,8 +1,5 @@
 use std::collections::HashMap;
-use krill_commons::api::admin::{
-    Handle,
-    Token
-};
+use krill_commons::api::admin::Handle;
 use krill_commons::eventsourcing::{
     Aggregate,
     Command,
@@ -40,10 +37,6 @@ impl ClientsEvents {
         StoredEvent::new(&id(), version, ClientsEventDetails::UpdatedClientCert(handle, cert))
     }
 
-    pub fn updated_token(version: u64, handle: Handle, token: Token) -> ClientsEvent {
-        StoredEvent::new(&id(), version, ClientsEventDetails::UpdatedClientToken(handle, token))
-    }
-
     pub fn removed_client(version: u64, handle: Handle) -> ClientsEvent {
         StoredEvent::new(&id(), version, ClientsEventDetails::RemovedClient(handle))
     }
@@ -59,7 +52,6 @@ pub type ClientsInit = StoredEvent<ClientsInitDetails>;
 pub enum ClientsEventDetails {
     AddedClient(Handle, ClientAuth),
     UpdatedClientCert(Handle, IdCert),
-    UpdatedClientToken(Handle, Token),
     RemovedClient(Handle)
 }
 
@@ -77,9 +69,6 @@ impl ClientsCommands {
     pub fn update_cert(handle: Handle, cert: IdCert) -> ClientsCommand {
         SentCommand::new(&id(), None, ClientsCommandDetails::UpdateClientCert(handle, cert))
     }
-    pub fn update_token(handle: Handle, token: Token) -> ClientsCommand {
-        SentCommand::new(&id(), None, ClientsCommandDetails::UpdateClientToken(handle, token))
-    }
     pub fn remove(handle: Handle) -> ClientsCommand {
         SentCommand::new(&id(), None, ClientsCommandDetails::RemoveClient(handle))
     }
@@ -90,7 +79,6 @@ impl ClientsCommands {
 pub enum ClientsCommandDetails {
     AddClient(Handle, ClientAuth),
     UpdateClientCert(Handle, IdCert),
-    UpdateClientToken(Handle, Token),
     RemoveClient(Handle)
 }
 
@@ -152,9 +140,6 @@ impl Aggregate for ClientManager {
             ClientsEventDetails::RemovedClient(handle) => {
                 self.clients.remove(&handle);
             }
-            ClientsEventDetails::UpdatedClientToken(handle, token) => {
-                self.clients.get_mut(&handle).unwrap().set_token(token);
-            }
         }
 
         self.version += 1;
@@ -178,10 +163,6 @@ impl Aggregate for ClientManager {
                 self.assert_exists(&handle)?;
                 res.push(ClientsEvents::updated_cert(self.version, handle, cert))
             },
-            ClientsCommandDetails::UpdateClientToken(handle, token) => {
-                self.assert_exists(&handle)?;
-                res.push(ClientsEvents::updated_token(self.version, handle, token))
-            }
             ClientsCommandDetails::RemoveClient(handle) => {
                 self.assert_exists(&handle)?;
                 res.push(ClientsEvents::removed_client(self.version, handle))
@@ -265,12 +246,11 @@ pub mod tests {
 
     pub fn add_client(work_dir: &PathBuf, name: &str) -> ClientsCommand {
         let cert = new_id_cert(work_dir);
-        let token = Token::from(name);
         let handle = Handle::from(name);
 
         ClientsCommands::add(
             handle,
-            ClientAuth::new(cert, token)
+            ClientAuth::new(cert)
         )
     }
 
@@ -292,12 +272,11 @@ pub mod tests {
 
             // Set up client "alice" and add to the proxy
             let alice_cert1 = new_id_cert(&d);
-            let alice_token1 = Token::from("alice1");
             let alice_handle = Handle::from("alice");
 
             let add_alice = ClientsCommands::add(
                 alice_handle.clone(),
-                ClientAuth::new(alice_cert1.clone(), alice_token1.clone())
+                ClientAuth::new(alice_cert1.clone())
             );
 
             let events = proxy.process_command(add_alice).unwrap();
@@ -306,9 +285,7 @@ pub mod tests {
 
             // Verify that "alice" was added.
             let alice = proxy.client_auth(&alice_handle).unwrap();
-
             assert_eq!(alice_cert1.to_bytes(), alice.cert().to_bytes());
-            assert_eq!(&alice_token1, alice.token());
 
             // Verify that "alice" is still known when we start up again
             // i.e. clear the cache and read from disk.
@@ -318,23 +295,6 @@ pub mod tests {
             {
                 let alice = proxy.client_auth(&alice_handle).unwrap();
                 assert_eq!(alice_cert1.to_bytes(), alice.cert().to_bytes());
-                assert_eq!(&alice_token1, alice.token());
-            }
-
-            // Update token
-            let alice_token2 = Token::from("alice2");
-            let update_alice_token = ClientsCommands::update_token(
-                alice_handle.clone(),
-                alice_token2.clone()
-            );
-
-            let events = proxy.process_command(update_alice_token).unwrap();
-            assert_eq!(1, events.len());
-
-            let proxy = store.update(&id(), proxy, events).unwrap();
-            {
-                let alice = proxy.client_auth(&alice_handle).unwrap();
-                assert_eq!(&alice_token2, alice.token());
             }
 
             // Update cert
