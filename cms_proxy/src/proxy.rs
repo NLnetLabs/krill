@@ -541,8 +541,8 @@ mod tests {
 
     #[test]
     fn should_init() {
-        test::test_with_tmp_dir(|d| {
-            let krill_uri = test::https_uri("https://localhost:3000/");
+        test::test_under_tmp(|d| {
+            let krill_uri = test::https("https://localhost:3000/");
             let server = ProxyServer::init(&d, &krill_uri).unwrap();
 
             let add_alice = clients::tests::add_client(&d, "alice");

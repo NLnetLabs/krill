@@ -23,7 +23,7 @@ impl Republisher {
         let token = token.clone();
 
         let mut scheduler = Scheduler::new();
-        scheduler.every(5.seconds()).run(move || {
+        scheduler.every(1.hours()).run(move || {
             if let Err(e) = httpclient::post_empty(
                 &publish_trigger_uri,
                 Some(&token)

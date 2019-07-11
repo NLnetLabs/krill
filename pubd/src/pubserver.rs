@@ -333,18 +333,18 @@ mod tests {
     use krill_commons::util::test;
 
     fn server_base_uri() -> uri::Rsync {
-        test::rsync_uri("rsync://localhost/repo/")
+        test::rsync("rsync://localhost/repo/")
     }
 
     fn server_base_http_uri() -> uri::Https {
-        test::https_uri("https://localhost/rrdp/")
+        test::https("https://localhost/rrdp/")
     }
 
     fn make_publisher_req(
         handle: &str,
         uri: &str,
     ) -> PublisherRequest {
-        let base_uri = test::rsync_uri(uri);
+        let base_uri = test::rsync(uri);
         let handle = Handle::from(handle);
         let token = Token::from("secret");
 
@@ -365,7 +365,7 @@ mod tests {
 
     #[test]
     fn should_add_publisher() {
-        test::test_with_tmp_dir(|d| {
+        test::test_under_tmp(|d| {
             let publisher_req = make_publisher_req(
                 "alice",
                 "rsync://localhost/repo/alice/",
@@ -383,7 +383,7 @@ mod tests {
 
     #[test]
     fn should_refuse_invalid_publisher_handle() {
-        test::test_with_tmp_dir(|d| {
+        test::test_under_tmp(|d| {
             let publisher_req = make_publisher_req(
                 "alice&",
                 "rsync://localhost/repo/alice/",
@@ -401,7 +401,7 @@ mod tests {
 
     #[test]
     fn should_refuse_base_uri_not_ending_with_slash() {
-        test::test_with_tmp_dir(|d| {
+        test::test_under_tmp(|d| {
             let publisher_req = make_publisher_req(
                 "alice",
                 "rsync://localhost/repo/alice",
@@ -417,7 +417,7 @@ mod tests {
 
     #[test]
     fn should_refuse_base_uri_outside_of_server_base() {
-        test::test_with_tmp_dir(|d| {
+        test::test_under_tmp(|d| {
             let publisher_req = make_publisher_req(
                 "alice",
                 "rsync://localhost/outside/alice/",
@@ -433,7 +433,7 @@ mod tests {
 
     #[test]
     fn should_not_add_publisher_twice() {
-        test::test_with_tmp_dir(|d| {
+        test::test_under_tmp(|d| {
             let publisher_req = make_publisher_req(
                 "alice",
                 "rsync://localhost/repo/alice/",
@@ -452,7 +452,7 @@ mod tests {
 
     #[test]
     fn should_remove_publisher() {
-        test::test_with_tmp_dir(|d| {
+        test::test_under_tmp(|d| {
             let server = make_server(&d);
             let handle = Handle::from("alice");
 
@@ -480,7 +480,7 @@ mod tests {
 
     #[test]
     fn should_list_files() {
-        test::test_with_tmp_dir(|d| {
+        test::test_under_tmp(|d| {
             let publisher_req = make_publisher_req(
                 "alice",
                 "rsync://localhost/repo/alice/",
@@ -499,7 +499,7 @@ mod tests {
 
     #[test]
     fn should_publish_files() {
-        test::test_with_tmp_dir(|d| {
+        test::test_under_tmp(|d| {
             // get the file out of a list_reply
             fn find_in_reply<'a>(
                 reply: &'a publication::ListReply,
@@ -519,12 +519,12 @@ mod tests {
 
             // Publish a single file
             let file1 = CurrentFile::new(
-                test::rsync_uri("rsync://localhost/repo/alice/file.txt"),
+                test::rsync("rsync://localhost/repo/alice/file.txt"),
                 &Bytes::from("example content")
             );
 
             let file2 = CurrentFile::new(
-                test::rsync_uri("rsync://localhost/repo/alice/file2.txt"),
+                test::rsync("rsync://localhost/repo/alice/file2.txt"),
                 &Bytes::from("example content 2")
             );
 
@@ -541,11 +541,11 @@ mod tests {
             assert_eq!(2, list_reply.elements().len());
             assert!(find_in_reply(
                 &list_reply,
-                &test::rsync_uri("rsync://localhost/repo/alice/file.txt")
+                &test::rsync("rsync://localhost/repo/alice/file.txt")
             ).is_some());
             assert!(find_in_reply(
                 &list_reply,
-                &test::rsync_uri("rsync://localhost/repo/alice/file2.txt")
+                &test::rsync("rsync://localhost/repo/alice/file2.txt")
             ).is_some());
 
             // Update
@@ -554,12 +554,12 @@ mod tests {
             // - add file 3
 
             let file1_update = CurrentFile::new(
-                test::rsync_uri("rsync://localhost/repo/alice/file.txt"),
+                test::rsync("rsync://localhost/repo/alice/file.txt"),
                 &Bytes::from("example content - updated")
             );
 
             let file3 = CurrentFile::new(
-                test::rsync_uri("rsync://localhost/repo/alice/file3.txt"),
+                test::rsync("rsync://localhost/repo/alice/file3.txt"),
                 &Bytes::from("example content 3")
             );
 
@@ -578,23 +578,23 @@ mod tests {
             assert_eq!(2, list_reply.elements().len());
             assert!(find_in_reply(
                 &list_reply,
-                &test::rsync_uri("rsync://localhost/repo/alice/file.txt")
+                &test::rsync("rsync://localhost/repo/alice/file.txt")
             ).is_some());
             assert_eq!(
                 find_in_reply(
                     &list_reply,
-                    &test::rsync_uri("rsync://localhost/repo/alice/file.txt")
+                    &test::rsync("rsync://localhost/repo/alice/file.txt")
                 ).unwrap().hash(),
                 file1_update.hash()
             );
             assert!(find_in_reply(
                 &list_reply,
-                &test::rsync_uri("rsync://localhost/repo/alice/file3.txt")
+                &test::rsync("rsync://localhost/repo/alice/file3.txt")
             ).is_some());
 
             // Should reject publish outside of base uri
             let file_outside = CurrentFile::new(
-                test::rsync_uri("rsync://localhost/repo/bob/file.txt"),
+                test::rsync("rsync://localhost/repo/bob/file.txt"),
                 &Bytes::from("irrelevant")
             );
             let mut builder = PublishDeltaBuilder::new();
@@ -614,7 +614,7 @@ mod tests {
 
             // Should reject update of file that does not exist
             let file2_update = CurrentFile::new(
-                test::rsync_uri("rsync://localhost/repo/alice/file2.txt"),
+                test::rsync("rsync://localhost/repo/alice/file2.txt"),
                 &Bytes::from("example content 2 updated")
             ); // file2 was removed
             let mut builder = PublishDeltaBuilder::new();
@@ -664,7 +664,7 @@ mod tests {
                     )
                 ) => { assert_eq!(
                     uri,
-                    test::rsync_uri("rsync://localhost/repo/alice/file3.txt")
+                    test::rsync("rsync://localhost/repo/alice/file3.txt")
                 )},
                 _ => panic!("Expected error publishing file that already exists")
             }

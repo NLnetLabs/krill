@@ -55,7 +55,7 @@ fn sync(
 
 fn execute_krillc_command(command: Command) {
     let krillc_opts = Options::new(
-        test::https_uri("https://localhost:3000/"),
+        test::https("https://localhost:3000/"),
         "secret",
         ReportFormat::Default,
         command
@@ -72,7 +72,7 @@ fn add_publisher(handle: &str, base_uri: &str, token: &str) {
     let command = Command::Publishers(PublishersCommand::Add(
         AddPublisher {
             handle:   Handle::from(handle),
-            base_uri: test::rsync_uri(base_uri),
+            base_uri: test::rsync(base_uri),
             token:    Token::from(token)
         }
     ));
@@ -198,17 +198,17 @@ fn client_publish() {
 
 
         // Create files on disk to sync
-        let sync_dir = test::create_sub_dir(&d);
+        let sync_dir = test::sub_dir(&d);
         let file_a = CurrentFile::new(
-            test::rsync_uri("rsync://localhost/repo/alice/a.txt"),
+            test::rsync("rsync://localhost/repo/alice/a.txt"),
             &test::as_bytes("a")
         );
         let file_b = CurrentFile::new(
-            test::rsync_uri("rsync://localhost/repo/alice/b.txt"),
+            test::rsync("rsync://localhost/repo/alice/b.txt"),
             &test::as_bytes("b")
         );
         let file_c = CurrentFile::new(
-            test::rsync_uri("rsync://localhost/repo/alice/c.txt"),
+            test::rsync("rsync://localhost/repo/alice/c.txt"),
             &test::as_bytes("c")
         );
 

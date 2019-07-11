@@ -323,7 +323,7 @@ mod tests {
 
     #[test]
     fn should_create_key_and_cert_and_start_server() {
-        test::test_with_tmp_dir(|d| {
+        test::test_under_tmp(|d| {
 
             let mut p_key_file_path = d.clone();
             p_key_file_path.push("ssl");

@@ -1,8 +1,11 @@
 //! Data structures for the API, shared between client and server.
 
+pub mod admin;
 pub mod ca;
 
-pub mod admin;
+mod provisioning;
+pub use self::provisioning::*;
+
 pub mod publication;
 pub mod rrdp;
 
@@ -207,7 +210,6 @@ impl Into<ErrorCode> for ErrorResponse {
 /// This type defines externally visible errors that the API may return.
 #[derive(Clone, Debug, Display, Eq, PartialEq)]
 pub enum ErrorCode {
-    // 1000s (User Input Errors)
     #[display(fmt="Submitted Json cannot be parsed")]
     InvalidJson,
 
@@ -223,21 +225,20 @@ pub enum ErrorCode {
     #[display(fmt="Submitted protocol CMS cannot be parsed")]
     InvalidCms,
 
-    // 2000s (Authorisation and Consistency issues)
-    #[display(fmt="Unknown publisher")]
-    UnknownPublisher,
-
-    #[display(fmt="Submitted protocol CMS does not validate")]
+    #[display(fmt="2001: Submitted protocol CMS does not validate")]
     CmsValidation,
-
-    #[display(fmt="Base URI for publisher is outside of publisher base URI")]
-    InvalidBaseUri,
 
     #[display(fmt="Out of sync with server, please send requests for instances sequentially")]
     ConcurrentModification,
 
-    #[display(fmt="Publisher has been deactivated")]
-    PublisherDeactivated,
+    #[display(fmt="Unknown publisher")]
+    UnknownPublisher,
+
+    #[display(fmt="Handle already in use")]
+    DuplicateHandle,
+
+    #[display(fmt="Base URI for publisher is outside of publisher base URI")]
+    InvalidBaseUri,
 
     #[display(fmt="Not allowed to publish outside of publisher jail")]
     UriOutsideJail,
@@ -248,10 +249,20 @@ pub enum ErrorCode {
     #[display(fmt="No file found for hash at uri")]
     NoObjectForHashAndOrUri,
 
-    #[display(fmt="Handle already in use")]
-    DuplicateHandle,
+    #[display(fmt="Publisher has been deactivated")]
+    PublisherDeactivated,
 
-    // 3000s (Server Errors)
+    // 2300s CA Admin Issues
+    #[display(fmt="Child with name exists")]
+    DuplicateChild,
+
+    #[display(fmt="Child MUST have resources")]
+    ChildNeedsResources,
+
+    #[display(fmt="Child cannot have resources not held by parent")]
+    ChildOverclaims,
+
+    // 3000s General server errors
     #[display(fmt="Cannot update internal state, issue with work_dir?")]
     Persistence,
 
@@ -264,7 +275,7 @@ pub enum ErrorCode {
     #[display(fmt="Proxy server error.")]
     ProxyError,
 
-    #[display(fmt="CA Server issue.")]
+    #[display(fmt="General CA Server issue.")]
     CaServerError,
 
     #[display(fmt="Publication Client Server issue.")]
@@ -277,22 +288,34 @@ pub enum ErrorCode {
 impl From<usize> for ErrorCode {
     fn from(n: usize) -> Self {
         match n {
+            // 1000s -> Parsing issues, possible bugs
             1001 => ErrorCode::InvalidJson,
             1002 => ErrorCode::InvalidPublisherRequest,
             1003 => ErrorCode::InvalidPublicationXml,
             1004 => ErrorCode::InvalidHandle,
             1005 => ErrorCode::InvalidCms,
 
-            2001 => ErrorCode::UnknownPublisher,
-            2002 => ErrorCode::CmsValidation,
-            2003 => ErrorCode::InvalidBaseUri,
-            2004 => ErrorCode::ConcurrentModification,
-            2005 => ErrorCode::PublisherDeactivated,
-            2006 => ErrorCode::UriOutsideJail,
-            2007 => ErrorCode::ObjectAlreadyPresent,
-            2008 => ErrorCode::NoObjectForHashAndOrUri,
-            2009 => ErrorCode::DuplicateHandle,
+            // 2000s -> General client issues
+            2001 => ErrorCode::CmsValidation,
+            2002 => ErrorCode::ConcurrentModification,
 
+            // 2100s -> Pub Admin issues
+            2101 => ErrorCode::InvalidBaseUri,
+            2102 => ErrorCode::DuplicateHandle,
+
+            // 2200s -> Pub Client issues
+            2201 => ErrorCode::UnknownPublisher,
+            2202 => ErrorCode::UriOutsideJail,
+            2203 => ErrorCode::ObjectAlreadyPresent,
+            2204 => ErrorCode::NoObjectForHashAndOrUri,
+            2205 => ErrorCode::PublisherDeactivated,
+
+            // 2300s -> CA Admin issues
+            2301 => ErrorCode::DuplicateChild,
+            2302 => ErrorCode::ChildNeedsResources,
+            2303 => ErrorCode::ChildOverclaims,
+
+            // 3000s -> Server issues, bugs or operational issues
             3001 => ErrorCode::Persistence,
             3002 => ErrorCode::RepositoryUpdate,
             3003 => ErrorCode::SigningError,
@@ -308,22 +331,34 @@ impl From<usize> for ErrorCode {
 impl Into<ErrorResponse> for ErrorCode {
     fn into(self) -> ErrorResponse {
         let code = match self {
+            // Parsing issues (bugs?)
             ErrorCode::InvalidJson => 1001,
             ErrorCode::InvalidPublisherRequest => 1002,
             ErrorCode::InvalidPublicationXml => 1003,
             ErrorCode::InvalidHandle => 1004,
             ErrorCode::InvalidCms => 1005,
 
-            ErrorCode::UnknownPublisher => 2001,
-            ErrorCode::CmsValidation => 2002,
-            ErrorCode::InvalidBaseUri => 2003,
-            ErrorCode::ConcurrentModification => 2004,
-            ErrorCode::PublisherDeactivated => 2005,
-            ErrorCode::UriOutsideJail => 2006,
-            ErrorCode::ObjectAlreadyPresent => 2007,
-            ErrorCode::NoObjectForHashAndOrUri => 2008,
-            ErrorCode::DuplicateHandle => 2009,
+            // general errors
+            ErrorCode::CmsValidation => 2001,
+            ErrorCode::ConcurrentModification => 2002,
 
+            // pub admin errors
+            ErrorCode::InvalidBaseUri => 2101,
+            ErrorCode::DuplicateHandle => 2102,
+
+            // pub client errors
+            ErrorCode::UnknownPublisher => 2201,
+            ErrorCode::UriOutsideJail => 2202,
+            ErrorCode::ObjectAlreadyPresent => 2203,
+            ErrorCode::NoObjectForHashAndOrUri => 2204,
+            ErrorCode::PublisherDeactivated => 2205,
+
+            // ca admin errors
+            ErrorCode::DuplicateChild => 2301,
+            ErrorCode::ChildNeedsResources => 2302,
+            ErrorCode::ChildOverclaims => 2303,
+
+            // server errors
             ErrorCode::Persistence => 3001,
             ErrorCode::RepositoryUpdate => 3002,
             ErrorCode::SigningError => 3003,
@@ -358,7 +393,19 @@ mod tests {
             test_code(n)
         }
 
-        for n in 2001..2010 {
+        for n in 2001..2003 {
+            test_code(n)
+        }
+
+        for n in 2101..2103 {
+            test_code(n)
+        }
+
+        for n in 2201..2206 {
+            test_code(n)
+        }
+
+        for n in 2301..2304 {
             test_code(n)
         }
 

@@ -15,7 +15,7 @@ fn add_publisher(handle: &str, base_uri: &str, token: &str) {
     let command = Command::Publishers(PublishersCommand::Add(
         AddPublisher {
             handle:   Handle::from(handle),
-            base_uri: test::rsync_uri(base_uri),
+            base_uri: test::rsync(base_uri),
             token:    Token::from(token)
         }
     ));

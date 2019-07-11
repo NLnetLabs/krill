@@ -314,7 +314,7 @@ pub mod tests {
 
     #[test]
     fn should_return_subject_public_key_info() {
-        test::test_with_tmp_dir(|d| {
+        test::test_under_tmp(|d| {
             let mut s = OpenSslSigner::build(&d).unwrap();
             let ki = s.create_key(PublicKeyFormat::default()).unwrap();
             s.get_key_info(&ki).unwrap();

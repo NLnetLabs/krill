@@ -103,6 +103,15 @@ impl Auth {
     }
 }
 
+impl Into<Token> for Auth {
+    fn into(self) -> Token {
+        match self {
+            Auth::Bearer(token) => token,
+            _ => Token::from("")
+        }
+    }
+}
+
 impl FromRequest for Auth {
     type Error = Error;
     type Future = Result<Auth, Error>;
