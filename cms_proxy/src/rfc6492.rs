@@ -5,6 +5,8 @@ use krill_commons::util::xml::{XmlReader, XmlReaderErr, AttributesError, XmlWrit
 const VERSION: &str = "1";
 const NS: &str = "http://www.apnic.net/specs/rescerts/up-down/";
 
+const TYPE_LIST: &str = "list";
+
 //------------ Message -------------------------------------------------------
 
 /// This type represents all Provisioning Messages defined in RFC6492.
@@ -28,13 +30,13 @@ pub enum MessageContent {
 impl MessageContent {
     fn msg_type(&self) -> &str {
         match self {
-            MessageContent::Query(q) => q.query_type(),
+            MessageContent::Query(q) => q.msg_type(),
             MessageContent::Reply => unimplemented!()
         }
     }
 }
 
-/// # Decoding
+/// # Decoding and Encoding
 ///
 impl Message {
     /// Decodes an XML structure
@@ -52,7 +54,7 @@ impl Message {
                 a.exhausted()?;
 
                 let content = match msg_type.as_ref() {
-                    "list" => {
+                    TYPE_LIST => {
                         Ok(MessageContent::Query(Query::decode(&msg_type, r)?))
                     },
                     _ => Err(Error::UnknownMessageType)
@@ -112,18 +114,18 @@ pub enum Query {
 
 
 impl Query {
-    fn query_type(&self) -> &str {
+    fn msg_type(&self) -> &str {
         match self {
-            Query::List => "list"
+            Query::List => TYPE_LIST
         }
     }
 
     fn decode<R>(
         query_type: &str,
-        r: &mut XmlReader<R>
+        _r: &mut XmlReader<R>
     ) -> Result<Self, Error> where R: io::Read {
         match query_type {
-            "list" => Ok(Query::List),
+            TYPE_LIST => Ok(Query::List),
             _ => Err(Error::UnknownMessageType)
         }
     }
