@@ -1,18 +1,20 @@
 use std::io;
 use std::str::FromStr;
+use std::convert::TryFrom;
 
 use chrono::{Utc, DateTime, SecondsFormat};
+use serde::export::fmt::Display;
 
+use rpki::cert::Cert;
+use rpki::crypto::KeyIdentifier;
+use rpki::csr::Csr;
+use rpki::resources::{AsResources, Ipv4Resources, Ipv6Resources};
 use rpki::uri;
 use rpki::x509::Time;
 
-use krill_commons::util::xml::{XmlReader, XmlReaderErr, AttributesError, XmlWriter};
-use krill_commons::api::{Entitlements, EntitlementClass, SigningCert, RequestResourceLimit, IssuanceRequest};
+use krill_commons::api::{Entitlements, EntitlementClass, SigningCert, RequestResourceLimit, IssuanceRequest, IssuanceResponse, RevocationRequest};
 use krill_commons::api::ca::{ResourceSet, ResSetErr, IssuedCert};
-use rpki::cert::Cert;
-use rpki::resources::{AsResources, Ipv4Resources, Ipv6Resources};
-use serde::export::fmt::Display;
-use rpki::csr::Csr;
+use krill_commons::util::xml::{XmlReader, XmlReaderErr, AttributesError, XmlWriter};
 
 
 //------------ Consts --------------------------------------------------------
@@ -23,6 +25,8 @@ const NS: &str = "http://www.apnic.net/specs/rescerts/up-down/";
 const TYPE_LIST_QRY: &str = "list";
 const TYPE_LIST_RES: &str = "list_response";
 const TYPE_ISSUE_QRY: &str = "issue";
+const TYPE_ISSUE_RES: &str = "issue_response";
+const TYPE_REVOKE_QRY: &str = "revoke";
 
 //------------ Message -------------------------------------------------------
 
@@ -47,9 +51,19 @@ impl Message {
         let content = Content::Res(Res::List(entitlements));
         Message { sender, recipient, content}
     }
+
+    pub fn revoke(
+        sender: String,
+        recipient: String,
+        revocation: RevocationRequest
+    ) -> Self {
+        let content = Content::Qry(Qry::Revoke(revocation));
+        Message { sender, recipient, content }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub enum Content {
     Qry(Qry),
     Res(Res)
@@ -82,10 +96,10 @@ impl Message {
                 a.exhausted()?;
 
                 let content = match msg_type.as_ref() {
-                    TYPE_LIST_QRY | TYPE_ISSUE_QRY => {
+                    TYPE_LIST_QRY | TYPE_ISSUE_QRY | TYPE_REVOKE_QRY => {
                         Ok(Content::Qry(Qry::decode(&msg_type, r)?))
                     },
-                    TYPE_LIST_RES => {
+                    TYPE_LIST_RES | TYPE_ISSUE_RES => {
                         Ok(Content::Res(Res::decode(&msg_type, r)?))
                     }
                     _ => Err(Error::UnknownMessageType)
@@ -139,9 +153,11 @@ impl Message {
 
 /// This type defines the various RFC6492 queries.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub enum Qry {
     List,
-    Issue(IssuanceRequest)
+    Issue(IssuanceRequest),
+    Revoke(RevocationRequest)
 }
 
 
@@ -149,7 +165,8 @@ impl Qry {
     fn msg_type(&self) -> &str {
         match self {
             Qry::List => TYPE_LIST_QRY,
-            Qry::Issue(_) => TYPE_ISSUE_QRY
+            Qry::Issue(_) => TYPE_ISSUE_QRY,
+            Qry::Revoke(_) => TYPE_REVOKE_QRY
         }
     }
 
@@ -159,14 +176,31 @@ impl Qry {
     ) -> Result<Self, Error> where R: io::Read {
         match msg_type {
             TYPE_LIST_QRY => Ok(Qry::List),
-            TYPE_ISSUE_QRY => Self::decode_issue(r),
+            TYPE_ISSUE_QRY => Ok(Qry::Issue(Self::decode_issue(r)?)),
+            TYPE_REVOKE_QRY => Ok(Qry::Revoke(Self::decode_revoke(r)?)),
             _ => Err(Error::UnknownMessageType)
         }
     }
 
+    fn decode_revoke<R>(
+        r: &mut XmlReader<R>
+    ) -> Result<RevocationRequest, Error> where R: io::Read {
+        r.take_named_element("key", |mut a, r| {
+            let class_name = a.take_req("class_name")?;
+            a.exhausted()?;
+
+            let ski_bytes = r.take_bytes_url_safe_pad()?;
+
+            let ski = KeyIdentifier::try_from(ski_bytes.as_ref())
+                .map_err(|_| Error::InvalidSki)?;
+
+            Ok(RevocationRequest::new(class_name.to_string(), ski))
+        })
+    }
+
     fn decode_issue<R>(
         r: &mut XmlReader<R>
-    ) -> Result<Qry, Error> where R: io::Read {
+    ) -> Result<IssuanceRequest, Error> where R: io::Read {
         r.take_named_element("request", |mut a, r|{
             let class_name = a.take_req("class_name")?;
             let mut limit = RequestResourceLimit::default();
@@ -192,11 +226,11 @@ impl Qry {
             let csr_bytes = r.take_bytes_characters()?;
             let csr = Csr::decode(csr_bytes).map_err(|_| Error::InvalidCsr)?;
 
-            Ok(Qry::Issue(IssuanceRequest::new(
+            Ok(IssuanceRequest::new(
                 class_name.to_string(),
                 limit,
                 csr
-            )))
+            ))
         })
     }
 
@@ -206,7 +240,8 @@ impl Qry {
     ) -> Result<(), io::Error> {
         match self {
             Qry::List => w.empty(),
-            Qry::Issue(issue_req) => Self::encode_issue(issue_req, w)
+            Qry::Issue(issue_req) => Self::encode_issue(issue_req, w),
+            Qry::Revoke(rev) => Self::encode_revoke(rev, w)
         }
     }
 
@@ -235,11 +270,22 @@ impl Qry {
         let mut attrs_str = vec![];
         attrs_str.push(("class_name", class_name));
         for (k, v) in &attrs_strings {
-            attrs_str.push((k.clone(), v.as_str()));
+            attrs_str.push((k, v.as_str()));
         }
 
         w.put_element("request", Some(attrs_str.as_slice()), |w| {
-            w.put_blob(&csr)
+            w.put_base64_std(&csr)
+        })
+    }
+
+    fn encode_revoke<W: io::Write>(
+        rev: &RevocationRequest,
+        w: &mut XmlWriter<W>
+    ) -> Result<(), io::Error> {
+        let att = [ ("class_name", rev.class_name() )];
+        let bytes = rev.key().as_slice();
+        w.put_element("key", Some(&att), |w| {
+            w.put_base64_url_safe(bytes)
         })
     }
 }
@@ -249,14 +295,17 @@ impl Qry {
 
 /// This type defines the various RFC6492 queries.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub enum Res {
-    List(Entitlements)
+    List(Entitlements),
+    Issue(IssuanceResponse)
 }
 
 impl Res {
     fn msg_type(&self) -> &str {
         match self {
-            Res::List(_) => TYPE_LIST_RES
+            Res::List(_) => TYPE_LIST_RES,
+            Res::Issue(_) => TYPE_ISSUE_RES
         }
     }
 
@@ -269,8 +318,51 @@ impl Res {
                 let entitlements = Self::decode_entitlements(r)?;
                 Ok(Res::List(entitlements))
             },
+            TYPE_ISSUE_RES => {
+                let issuance_response = Self::decode_issue_response(r)?;
+                Ok(Res::Issue(issuance_response))
+            }
             _ => Err(Error::UnknownMessageType)
         }
+    }
+
+    fn decode_issue_response<R>(
+        r: &mut XmlReader<R>
+    ) -> Result<IssuanceResponse, Error> where R: io::Read {
+        r.take_named_element("class", |mut a, r| {
+            let name = a.take_req("class_name")?;
+            let cert_url = uri::Rsync::from_str(
+                &a.take_req("cert_url")?
+            )?;
+
+            let asn = a.take_req("resource_set_as")?;
+            let v4  = a.take_req("resource_set_ipv4")?;
+            let v6  = a.take_req("resource_set_ipv6")?;
+            let resource_set = ResourceSet::from_strs(&asn, &v4, &v6)?;
+
+            let not_after = a.take_req("resource_set_notafter")?;
+            let not_after = DateTime::<Utc>::from_str(&not_after)?;
+            let not_after = Time::new(not_after);
+
+            a.exhausted()?;
+
+            let issued = Self::decode_issued_cert(r)?;
+
+            let cert = r.take_named_element("issuer", |a, r| {
+                a.exhausted()?;
+                Self::decode_cert(r)
+            })?;
+
+            let issuer = SigningCert::new(cert_url, cert);
+
+            Ok(IssuanceResponse::new(
+                name,
+                issuer,
+                resource_set,
+                not_after,
+                issued
+            ))
+        })
     }
 
     fn decode_entitlements<R>(
@@ -387,7 +479,8 @@ impl Res {
         w: &mut XmlWriter<W>
     ) -> Result<(), io::Error> {
         match self {
-            Res::List(ents) => Self::encode_entitlements(ents, w)
+            Res::List(ents) => Self::encode_entitlements(ents, w),
+            Res::Issue(response) => Self::encode_issuance_response(response, w)
         }
     }
 
@@ -401,14 +494,47 @@ impl Res {
         Ok(())
     }
 
+    fn encode_issuance_response<W: io::Write>(
+        res: &IssuanceResponse,
+        w: &mut XmlWriter<W>
+    ) -> Result<(), io::Error> {
+        Self::encode_class(
+            res.class_name(),
+            res.issuer().uri(),
+            res.not_after(),
+            res.resource_set(),
+            [res.issued().clone()].iter(),
+            res.issuer(),
+            w
+        )
+    }
+
     fn encode_entitlement_class<W: io::Write>(
         c: &EntitlementClass,
         w: &mut XmlWriter<W>
     ) -> Result<(), io::Error> {
-        let cert_url = c.issuer().uri().to_string();
-        let not_after = c.not_after()
-            .to_rfc3339_opts(SecondsFormat::Secs, true);
-        let inrs = c.resource_set();
+        Self::encode_class(
+            c.class_name(),
+            c.issuer().uri(),
+            c.not_after(),
+            c.resource_set(),
+            c.issued().iter(),
+            c.issuer(),
+            w
+        )
+    }
+
+    fn encode_class<'a, W: io::Write>(
+        class_name: &str,
+        cert_url: &uri::Rsync,
+        not_after: Time,
+        inrs: &ResourceSet,
+        issued: impl Iterator<Item=&'a IssuedCert>,
+        issuer: &SigningCert,
+        w: &mut XmlWriter<W>
+    ) -> Result<(), io::Error> {
+        let cert_url = cert_url.to_string();
+        let not_after = not_after.to_rfc3339_opts(SecondsFormat::Secs, true);
 
         let asn = inrs.asn().to_string();
         let v4 = inrs.v4().to_string();
@@ -417,20 +543,22 @@ impl Res {
         let mut attrs = vec![];
 
         attrs.push(("cert_url", cert_url.as_str()));
-        attrs.push(("class_name", c.name()));
+        attrs.push(("class_name", class_name));
         attrs.push(("resource_set_as", asn.as_str()));
         attrs.push(("resource_set_ipv4", v4.as_str()));
         attrs.push(("resource_set_ipv6", v6.as_str()));
         attrs.push(("resource_set_notafter", not_after.as_str()));
 
         w.put_element("class", Some(&attrs), |w| {
-            for issued in c.issued() {
+            for issued in issued {
                 Self::encode_issued(issued, w)?;
             }
-            let issuer_cert = c.issuer().cert().to_captured().into_bytes();
-            w.put_element("issuer", None, |w| { w.put_blob(&issuer_cert) })
+            let issuer_cert = issuer.cert().to_captured().into_bytes();
+            w.put_element("issuer", None, |w| { w.put_base64_std(&issuer_cert) })
         })
     }
+
+
 
     fn encode_issued<W: io::Write>(
         issued: &IssuedCert,
@@ -456,13 +584,13 @@ impl Res {
             attrs_strings.push(("resource_set_ipv6", v6.to_string()));
         }
 
-        let mut attrs_str = vec![];
+        let mut attrs_str: Vec<(&str, &str)> = vec![];
         for (k, v) in &attrs_strings {
-            attrs_str.push((k.clone(), v.as_str()));
+            attrs_str.push((k, v.as_str()));
         }
 
         w.put_element("certificate", Some(attrs_str.as_slice()), |w| {
-            w.put_blob(&cert_bytes)
+            w.put_base64_std(&cert_bytes)
         })
     }
 
@@ -500,9 +628,11 @@ pub enum Error {
     #[display(fmt = "Could not parse encoded certificate.")]
     InvalidCert,
 
-
     #[display(fmt = "Could not parse encoded certificate request.")]
     InvalidCsr,
+
+    #[display(fmt = "Could not parse SKI in revoke request.")]
+    InvalidSki,
 
     #[display(fmt = "{}", _0)]
     InrSyntax(String),
@@ -547,10 +677,13 @@ impl From<chrono::ParseError> for Error {
 #[cfg(test)]
 mod tests {
 
-    use super::*;
     use std::str;
-    use sigmsg::SignedMessage;
     use std::str::from_utf8_unchecked;
+
+    use crate::sigmsg::SignedMessage;
+    use crate::id::tests::test_id_certificate;
+
+    use super::*;
 
     /// Test that the we can re-encode the object to xml, parse that
     /// xml, and end up with an equal object.
@@ -598,10 +731,39 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
+    fn parse_and_encode_issue_response() {
+        let xml = extract_xml(
+            include_bytes!("../test/remote/rpkid-rfc6492-issue_response.der")
+        );
+        let issue = Message::decode(xml.as_bytes()).unwrap();
+        assert_re_encode_equals(issue);
+    }
+
+    #[test]
+    fn encode_and_parse_revocation_request() {
+        // No example CMS found for this one, so just composing and
+        // reading the XML based on the RFC spec only.
+        let cert = test_id_certificate();
+
+        let sender = "child".to_string();
+        let rcpt = "parent".to_string();
+        let class = "all".to_string();
+
+        let ski = cert.subject_public_key_info().key_identifier();
+        let revocation = RevocationRequest::new(class, ski);
+
+        let rev = Message::revoke(sender, rcpt, revocation);
+
+        let decoded_rev = Message::decode(rev.encode_vec().as_slice()).unwrap();
+
+        assert_eq!(rev, decoded_rev);
+    }
+
+    #[test]
+//    #[ignore]
     fn print_cms_content() {
         let xml = extract_xml(
-            include_bytes!("../test/remote/rpkid-rfc6492-list_response.der")
+            include_bytes!("../test/remote/rpkid-rfc6492-issue_response.der")
         );
 
         eprintln!("{}", xml);

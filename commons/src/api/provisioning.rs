@@ -1,9 +1,10 @@
-use api::ca::{ResourceSet, IssuedCert};
+use api::ca::{ResourceSet, IssuedCert, RcvdCert};
 use rpki::x509::Time;
 use rpki::cert::{Cert, Overclaim};
 use rpki::csr::Csr;
 use rpki::uri;
 use rpki::resources::{AsResources, Ipv4Resources, Ipv6Resources};
+use rpki::crypto::{PublicKey, KeyIdentifier};
 
 pub const DFLT_CLASS: &str = "all";
 
@@ -48,7 +49,7 @@ impl Entitlements {
     ) -> Self {
         let name = DFLT_CLASS.to_string();
         Entitlements { classes: vec![
-            EntitlementClass { name, issuer, resource_set, not_after, issued }
+            EntitlementClass { class_name: name, issuer, resource_set, not_after, issued }
         ]}
     }
     pub fn new(classes: Vec<EntitlementClass>) -> Self {
@@ -63,7 +64,7 @@ impl Entitlements {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct EntitlementClass {
-    name: String,
+    class_name: String,
     issuer: SigningCert,
     resource_set: ResourceSet,
     not_after: Time,
@@ -72,20 +73,51 @@ pub struct EntitlementClass {
 
 impl EntitlementClass {
     pub fn new(
-        name: String,
+        class_name: String,
         issuer: SigningCert,
         resource_set: ResourceSet,
         not_after: Time,
         issued: Vec<IssuedCert>
     ) -> Self {
-        EntitlementClass { name, issuer, resource_set, not_after, issued }
+        EntitlementClass { class_name, issuer, resource_set, not_after, issued }
     }
 
-    pub fn name(&self) -> &str { &self.name }
+    fn unwrap(
+        self
+    ) -> (String, SigningCert, ResourceSet, Time, Vec<IssuedCert>) {
+        (
+            self.class_name,
+            self.issuer,
+            self.resource_set,
+            self.not_after,
+            self.issued
+        )
+    }
+
+    pub fn class_name(&self) -> &str { &self.class_name }
     pub fn issuer(&self) -> &SigningCert { &self.issuer }
     pub fn resource_set(&self) -> &ResourceSet { &self.resource_set }
     pub fn not_after(&self) -> Time { self.not_after }
     pub fn issued(&self) -> &Vec<IssuedCert> { &self.issued }
+
+    /// Converts this into an IssuanceResponse for the given key. I.e. includes
+    /// the issued certificate matching the given public key only. Returns a
+    /// None if no match is found.
+    pub fn into_issuance_response(self, key: &PublicKey) -> Option<IssuanceResponse> {
+        let (class_name, issuer, resource_set, not_after, issued) = self.unwrap();
+
+        issued.into_iter()
+            .find(|issued| issued.cert().subject_public_key_info() == key)
+            .map(|issued| {
+                IssuanceResponse::new(
+                    class_name,
+                    issuer,
+                    resource_set,
+                    not_after,
+                    issued
+                )
+            })
+    }
 }
 
 
@@ -115,6 +147,15 @@ impl PartialEq for SigningCert {
 }
 
 impl Eq for SigningCert {}
+
+impl From<&RcvdCert> for SigningCert {
+    fn from(c: &RcvdCert) -> Self {
+        SigningCert {
+            uri: c.uri().clone(),
+            cert: c.cert().clone()
+        }
+    }
+}
 
 
 //------------ IssuanceRequest -----------------------------------------------
@@ -155,6 +196,45 @@ impl PartialEq for IssuanceRequest {
 }
 
 impl Eq for IssuanceRequest {}
+
+
+//------------ IssuanceResponse ----------------------------------------------
+
+/// A Certificate Issuance Response equivalent to the one defined in
+/// section 3.4.2 of RFC6492.
+///
+/// Note that this is like a single EntitlementClass response, except that
+/// it includes the one certificate which has just been issued only.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct IssuanceResponse {
+    class_name: String,
+    issuer: SigningCert,
+    resource_set: ResourceSet, // resources allowed on a cert
+    not_after: Time,
+    issued: IssuedCert
+}
+
+impl IssuanceResponse {
+    pub fn new(
+        class_name: String,
+        issuer: SigningCert,
+        resource_set: ResourceSet, // resources allowed on a cert
+        not_after: Time,
+        issued: IssuedCert
+    ) -> Self {
+        IssuanceResponse { class_name, issuer, resource_set, not_after, issued }
+    }
+
+    pub fn unwrap(self) -> (String, SigningCert, ResourceSet, IssuedCert) {
+        (self.class_name, self.issuer, self.resource_set, self.issued)
+    }
+
+    pub fn class_name(&self) -> &str { &self.class_name }
+    pub fn issuer(&self) -> &SigningCert { &self.issuer }
+    pub fn resource_set(&self) -> &ResourceSet { &self.resource_set }
+    pub fn not_after(&self) -> Time { self.not_after }
+    pub fn issued(&self) -> &IssuedCert { &self.issued }
+}
 
 
 //------------ RequestResourceLimit ------------------------------------------
@@ -286,3 +366,25 @@ impl Default for RequestResourceLimit {
         }
     }
 }
+
+
+//------------ RevocationRequest ---------------------------------------------
+
+/// This type represents a Certificate Revocation Request as
+/// defined in section 3.5.1 of RFC6492.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RevocationRequest {
+    class_name: String,
+    key: KeyIdentifier
+}
+
+impl RevocationRequest {
+    pub fn new(class_name: String, key: KeyIdentifier) -> Self {
+        RevocationRequest { class_name, key}
+    }
+
+    pub fn class_name(&self) -> &str { &self.class_name }
+    pub fn key(&self) -> &KeyIdentifier { &self.key }
+}
+
+

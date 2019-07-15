@@ -6,11 +6,7 @@ use std::ops::Deref;
 use rpki::crypto::PublicKeyFormat;
 use rpki::uri;
 
-use krill_commons::api::{
-    DFLT_CLASS,
-    Entitlements,
-    IssuanceRequest,
-};
+use krill_commons::api::{DFLT_CLASS, Entitlements, IssuanceRequest, IssuanceResponse};
 use krill_commons::api::admin::{
     AddChildRequest,
     Handle,
@@ -213,16 +209,14 @@ impl<S: CaSigner> CaServer<S> {
         child: &Handle,
         issue_req: IssuanceRequest,
         token: Token,
-    ) -> CaResult<IssuedCert, S> {
+    ) -> CaResult<IssuanceResponse, S> {
         if parent != & ta_handle() {
             unimplemented!("https://github.com/NLnetLabs/krill/issues/25");
         } else {
             let ta = self.get_trust_anchor()?;
 
-            // class name can be ignored for TA, only uses one.
-            let (class_name, limit, csr) = issue_req.unwrap();
-
-            let pub_key = csr.public_key().clone();
+            let class_name = issue_req.class_name();
+            let pub_key = issue_req.csr().public_key();
 
             if class_name != DFLT_CLASS {
                 unimplemented!("Issue for multiple classes from CAs, issue #25")
@@ -231,21 +225,24 @@ impl<S: CaSigner> CaServer<S> {
             let cmd = CaCmdDet::certify_child(
                 parent,
                 child.clone(),
-                csr,
-                limit,
-                token,
+                issue_req.clone(),
+                token.clone(),
                 self.signer.clone()
             );
 
             let events = ta.process_command(cmd)?;
             let ta = self.ca_store.update(parent, ta, events)?;
 
-            // Get the newly issued cert for the child. Unwrap here is safe.
-            let child = ta.get_child(child).unwrap();
-            let resources = child.resources_for_class(&class_name).unwrap();
-            let issued_cert = resources.cert(&pub_key).unwrap();
+            // New entitlements will include this resource class, and
+            // the newly issued certificate.
+            let response = ta.issuance_response(
+                child,
+                &class_name,
+                &pub_key,
+                &token
+            )?;
 
-            Ok(issued_cert.clone())
+            Ok(response)
         }
     }
 
@@ -369,12 +366,15 @@ impl<S: CaSigner> CaServer<S> {
                     ParentCaContact::Embedded(parent_handle, token) => {
                         for cert_req in cert_reqs {
                             let class_name = cert_req.class_name().to_string();
-                            let issued = self.issue(
+                            let issue_res = self.issue(
                                 parent_handle,
                                 &handle,
                                 cert_req,
                                 token.clone()
                             )?;
+
+                            let (_,_,_, issued) = issue_res.unwrap();
+
                             issued_certs.push((class_name, issued));
                         }
                     }

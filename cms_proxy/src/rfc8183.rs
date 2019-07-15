@@ -115,7 +115,7 @@ impl PublisherRequest {
                         "publisher_bpki_ta",
                         None,
                         |w| {
-                            w.put_blob(&self.id_cert.to_bytes())
+                            w.put_base64_std(&self.id_cert.to_bytes())
                         }
                     )
                 }
@@ -341,7 +341,7 @@ impl RepositoryResponse {
                         "repository_bpki_ta",
                         None,
                         |w| {
-                            w.put_blob(&self.id_cert.to_bytes())
+                            w.put_base64_std(&self.id_cert.to_bytes())
                         }
                     )
                 }

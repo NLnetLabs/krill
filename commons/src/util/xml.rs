@@ -218,10 +218,31 @@ impl <R: io::Read> XmlReader<R> {
 
     /// Takes base64 encoded bytes from the next 'characters' event.
     pub fn take_bytes_characters(&mut self) -> Result<Bytes, XmlReaderErr> {
-        let chars = Self::strip_whitespace(self.take_chars()?);
-        let b64 = base64::decode_config(&chars, base64::STANDARD_NO_PAD)?;
+        self.take_bytes(base64::STANDARD_NO_PAD)
+    }
+
+    /// Takes base64 encoded bytes from the next 'characters' event.
+    pub fn take_bytes_url_safe_pad(&mut self) -> Result<Bytes, XmlReaderErr> {
+        self.take_bytes(base64::URL_SAFE_NO_PAD)
+    }
+
+    fn take_bytes(
+        &mut self,
+        config: base64::Config
+    ) -> Result<Bytes, XmlReaderErr> {
+        let chars = self.take_chars()?;
+        // strip whitespace and padding (we are liberal in what we accept here)
+        // TODO: Avoid allocation, pass in an AsRef<[u8]> that
+        //       removes any whitespace on the fly.
+        let chars: Vec<u8> = chars.into_bytes()
+            .into_iter()
+            .filter(|c| !b" \n\t\r\x0b\x0c=".contains(c))
+            .collect();
+
+        let b64 = base64::decode_config(&chars, config)?;
         Ok(Bytes::from(b64))
     }
+
 
     pub fn take_empty(&mut self) -> Result<(), XmlReaderErr> {
         Ok(())
@@ -246,18 +267,6 @@ impl <R: io::Read> XmlReader<R> {
                 self.next_start_name.as_ref().map(AsRef::as_ref)
             }
         }
-    }
-
-    /// Convenience function to strip all whitespace from chars. E.g.
-    /// prior to decoding base64. I am quite sure this could be done
-    /// more efficiently.
-    ///
-    /// Asked the
-    fn strip_whitespace(s: String) -> Vec<u8> {
-        s.into_bytes()
-         .into_iter()
-         .filter(|c| !b" \n\t\r\x0b\x0c".contains(c))
-         .collect()
     }
 }
 
@@ -473,12 +482,17 @@ impl <W: io::Write> XmlWriter<W> {
         Ok(())
     }
 
-    /// Converts bytes to base64 encoded Characters as the content. Note
-    /// that you cannot have both Characters and other included elements.
-    /// This would be valid XML, but it's not used by any of the RPKI XML
-    /// structures.
-    pub fn put_blob(&mut self, bytes: &Bytes) -> Result<(), io::Error> {
-        let b64 = base64::encode(bytes);
+    /// Converts bytes to base64 encoded Characters as the content, using the
+    /// Standard character set, without padding.
+    pub fn put_base64_std(&mut self, bytes: &Bytes) -> Result<(), io::Error> {
+        let b64 = base64::encode_config(bytes, base64::STANDARD);
+        self.put_text(b64.as_ref())
+    }
+
+    /// Converts bytes to base64 encoded Characters as the content, using the
+    /// URL safe character set and padding.
+    pub fn put_base64_url_safe(&mut self, bytes: &[u8]) -> Result<(), io::Error> {
+        let b64 = base64::encode_config(bytes, base64::URL_SAFE);
         self.put_text(b64.as_ref())
     }
 
@@ -547,7 +561,7 @@ mod tests {
                 ]),
                 |w| {
                     w.put_element("b", None, |w| {
-                        w.put_blob(&Bytes::from("X"))
+                        w.put_base64_std(&Bytes::from("X"))
                     })
                 }
             )

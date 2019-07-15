@@ -13,7 +13,7 @@ use rpki::csr::Csr;
 use rpki::uri;
 use rpki::x509::{Serial, Validity, Time, Name};
 
-use krill_commons::api::{self, DFLT_CLASS, EncodedHash, EntitlementClass, Entitlements, IssuanceRequest, SigningCert, RequestResourceLimit};
+use krill_commons::api::{self, DFLT_CLASS, EncodedHash, EntitlementClass, Entitlements, IssuanceRequest, SigningCert, RequestResourceLimit, IssuanceResponse};
 use krill_commons::api::admin::{
     Handle,
     ParentCaContact,
@@ -134,39 +134,50 @@ impl CaIniDet {
 pub type CaEvt = StoredEvent<CaEvtDet>;
 
 
+//------------ CertIssued ---------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct CertIssued {
+    child: Handle,
+    response: IssuanceResponse
+}
+
+impl CertIssued {
+    pub fn unwrap(self) -> (Handle, IssuanceResponse) {
+        (self.child, self.response)
+    }
+}
+
+
 //------------ CertRequested -----------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct CertRequested {
     parent: ParentCaContact,
-    class_name: String,
-    resource_limit: RequestResourceLimit,
-    csr: Csr
+    request: IssuanceRequest
 }
 
 impl CertRequested {
-    pub fn unwrap(self) -> (ParentCaContact, String, RequestResourceLimit, Csr) {
-        (self.parent, self.class_name, self.resource_limit, self.csr)
+    pub fn unwrap(self) -> (ParentCaContact, IssuanceRequest) {
+        (self.parent, self.request)
     }
     pub fn parent(&self) -> &ParentCaContact {
         &self.parent
     }
     pub fn class_name(&self) -> &str {
-        &self.class_name
+        self.request.class_name()
     }
-    pub fn resource_limit(&self) -> &RequestResourceLimit {
-        &self.resource_limit
+    pub fn limit(&self) -> &RequestResourceLimit {
+        self.request.limit()
     }
     pub fn csr(&self) -> &Csr {
-        &self.csr
+        self.request.csr()
     }
 }
 
 impl Into<IssuanceRequest> for CertRequested {
     fn into(self) -> IssuanceRequest {
-        IssuanceRequest::new(
-            self.class_name, self.resource_limit, self.csr
-        )
+        self.request
     }
 }
 
@@ -189,7 +200,7 @@ pub struct CertReceived {
 pub enum CaEvtDet {
     // Being a parent Events
     ChildAdded(ChildCa),
-    CertificateIssued(Handle, String, IssuedCert),
+    CertificateIssued(CertIssued),
 
     // Being a child Events
     ParentAdded(ParentHandle, ParentCaContact),
@@ -324,18 +335,12 @@ impl CaEvtDet {
     fn certificate_issued(
         handle: &Handle,
         version: u64,
-        child_handle: Handle,
-        class_name: &str,
-        cert: IssuedCert
+        cert_issued: CertIssued
     ) -> CaEvt {
         StoredEvent::new(
             handle,
             version,
-            CaEvtDet::CertificateIssued(
-                child_handle,
-                class_name.to_string(),
-                cert
-            )
+            CaEvtDet::CertificateIssued(cert_issued)
         )
     }
 
@@ -365,7 +370,7 @@ type ResourceClassName = String;
 pub enum CaCmdDet<S: CaSigner> {
     // Being a parent
     AddChild(Handle, Token, ResourceSet),
-    CertifyChild(Handle, Csr, RequestResourceLimit, Token, Arc<RwLock<S>>),
+    CertifyChild(Handle, IssuanceRequest, Token, Arc<RwLock<S>>),
 
     // Being a child
     AddParent(ParentHandle, ParentCaContact),
@@ -409,15 +414,14 @@ impl<S: CaSigner> CaCmdDet<S> {
     pub fn certify_child(
         handle: &Handle,
         child_handle: Handle,
-        csr: Csr,
-        limit: RequestResourceLimit,
+        request: IssuanceRequest,
         token: Token,
         signer: Arc<RwLock<S>>
     ) -> CaCmd<S> {
         SentCommand::new(
             handle,
             None,
-            CaCmdDet::CertifyChild(child_handle, csr, limit, token, signer)
+            CaCmdDet::CertifyChild(child_handle, request, token, signer)
         )
     }
 
@@ -642,9 +646,13 @@ impl<S: CaSigner> Aggregate for CertAuth<S> {
                 let (handle, details) = child.unwrap();
                 self.children.insert(handle, details);
             },
-            CaEvtDet::CertificateIssued(child, class_name, issued_cert) => {
-                let child = self.children.get_mut(&child).unwrap();
-                child.add_cert(&class_name, issued_cert);
+            CaEvtDet::CertificateIssued(cert_issued) => {
+                let (child_hndl, response) = cert_issued.unwrap();
+                let (class_name, _, _, issued) = response.unwrap();
+
+                let child = self.children.get_mut(&child_hndl).unwrap();
+
+                child.add_cert(&class_name, issued);
             },
 
             // Being a child
@@ -660,7 +668,7 @@ impl<S: CaSigner> Aggregate for CertAuth<S> {
             CaEvtDet::CertificateRequested(req) => {
                 info!(
                     "Certificate requested for class {} from {}",
-                    req.class_name,
+                    req.class_name(),
                     req.parent
                 );
                 // do nothing, this should be picked up by listener and sent
@@ -696,8 +704,8 @@ impl<S: CaSigner> Aggregate for CertAuth<S> {
             CaCmdDet::AddChild(child, token, resources) =>  {
                 self.add_child(child, token, resources)
             },
-            CaCmdDet::CertifyChild(child, csr, limit, token, signer) => {
-                self.certify_child(child, csr, limit, token, signer)
+            CaCmdDet::CertifyChild(child, request, token, signer) => {
+                self.certify_child(child, request, token, signer)
             }
 
             // being a child
@@ -843,9 +851,47 @@ impl<S: CaSigner> CertAuth<S> {
         child_handle: &Handle,
         token: &Token
     ) -> CaRes<api::Entitlements> {
+        // TODO: Support arbitrary resource classes. See issue #25.
+        let dflt_entitlement_class = self.entitlement_class(
+            child_handle,
+            DFLT_CLASS,
+            token
+        )?;
+
+        Ok(Entitlements::new(vec![dflt_entitlement_class]))
+    }
+
+    /// Returns an issuance response for a child and a specific resource
+    /// class name and public key for the issued certificate.
+    pub fn issuance_response(
+        &self,
+        child_handle: &Handle,
+        class_name: &str,
+        pub_key: &PublicKey,
+        token: &Token
+    ) -> CaRes<api::IssuanceResponse> {
+        let entitlement_class = self.entitlement_class(
+            child_handle,
+            class_name,
+            token
+        )?;
+
+        entitlement_class
+            .into_issuance_response(pub_key)
+            .ok_or_else(|| Error::NoIssuedCert)
+    }
+
+
+    /// Returns the EntitlementClass for this child for the given class name.
+    fn entitlement_class(
+        &self,
+        child_handle: &Handle,
+        class_name: &str,
+        token: &Token
+    ) -> CaRes<api::EntitlementClass> {
         let child = self.get_authorised_child(child_handle, token)?;
 
-        let child_resources = child.resources_for_class(DFLT_CLASS)
+        let child_resources = child.resources_for_class(class_name)
             .ok_or_else(|| Error::MissingResources)?;
 
         let until = child_resources.not_after();
@@ -858,8 +904,12 @@ impl<S: CaSigner> CertAuth<S> {
         let resources = cert.resources().clone();
         let cert = SigningCert::new(cert.uri().clone(), cert.cert().clone());
 
-        Ok(Entitlements::with_default_class(
-            cert, resources, until, issued
+        Ok(EntitlementClass::new(
+            class_name.to_string(),
+            cert,
+            resources,
+            until,
+            issued
         ))
     }
 
@@ -942,11 +992,12 @@ impl<S: CaSigner> CertAuth<S> {
     fn certify_child(
         &self,
         child: Handle,
-        csr: Csr,
-        limit: RequestResourceLimit,
+        request: IssuanceRequest,
         token: Token,
         signer: Arc<RwLock<S>>
     ) -> CaEvtsRes {
+        let (class_name, limit, csr) = request.unwrap();
+
         let issuing_key = match &self.parents {
             CaParents::SelfSigned(key, _tal) => key,
             CaParents::Parents(_) => unimplemented!("Issue #25 (delegate from CA)")
@@ -956,7 +1007,7 @@ impl<S: CaSigner> CertAuth<S> {
 
         // verify child and resources
         let child_resources = self.get_authorised_child(&child, &token)?
-            .resources_for_class(DFLT_CLASS)
+            .resources_for_class(&class_name)
             .ok_or_else(|| Error::MissingResources)?;
 
         let resources = limit.resolve(child_resources.resources())
@@ -1034,12 +1085,23 @@ impl<S: CaSigner> CertAuth<S> {
         let version = self.version;
         let cert_object = CurrentObject::from(issued_cert.cert());
 
+        let signing_cert = SigningCert::from(issuing_cert);
+
+        let cert_issued = CertIssued {
+            child,
+            response: IssuanceResponse::new(
+                DFLT_CLASS.to_string(),
+                signing_cert,
+                resources,
+                issued_cert.cert().validity().not_after(),
+                issued_cert.clone()
+            )
+        };
+
         let issued_event = CaEvtDet::certificate_issued(
             &self.handle,
             version,
-            child,
-            DFLT_CLASS,
-            issued_cert.clone()
+            cert_issued
         );
 
         let delta = {
@@ -1145,7 +1207,7 @@ impl<S: CaSigner> CertAuth<S> {
         let mut version = self.version;
         for ent in entitlements.classes() {
 
-            let name = ent.name();
+            let name = ent.class_name();
 
             if let Some(_rc) = parent.resources.get(name) {
                 // Check whether a new certificate
@@ -1179,9 +1241,11 @@ impl<S: CaSigner> CertAuth<S> {
 
                 let cert_issue_req = CertRequested {
                     parent: parent.contact.clone(),
-                    class_name: ent.name().to_string(),
-                    resource_limit: RequestResourceLimit::default(),
-                    csr
+                    request: IssuanceRequest::new(
+                        ent.class_name().to_string(),
+                        RequestResourceLimit::default(),
+                        csr
+                    )
                 };
 
                 let added = CaEvtDet::resource_class_added(
@@ -1730,6 +1794,9 @@ pub enum  Error {
 
     #[display(fmt = "Child CA MUST have resources.")]
     MusthaveResources,
+
+    #[display(fmt = "No issued cert matching pub key in resource class.")]
+    NoIssuedCert,
 
     #[display(fmt = "Invalidly CSR for child {}: {}.", _0, _1)]
     InvalidCsr(Handle, String),
