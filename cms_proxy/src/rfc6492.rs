@@ -7,7 +7,7 @@ use rpki::uri;
 use rpki::x509::Time;
 
 use krill_commons::util::xml::{XmlReader, XmlReaderErr, AttributesError, XmlWriter};
-use krill_commons::api::{Entitlements, EntitlementClass, SigningCert, RequestResourceLimit, IssuanceRequest};
+use krill_commons::api::{Entitlements, EntitlementClass, SigningCert, RequestResourceLimit, IssuanceRequest, IssuanceResponse};
 use krill_commons::api::ca::{ResourceSet, ResSetErr, IssuedCert};
 use rpki::cert::Cert;
 use rpki::resources::{AsResources, Ipv4Resources, Ipv6Resources};
@@ -23,6 +23,7 @@ const NS: &str = "http://www.apnic.net/specs/rescerts/up-down/";
 const TYPE_LIST_QRY: &str = "list";
 const TYPE_LIST_RES: &str = "list_response";
 const TYPE_ISSUE_QRY: &str = "issue";
+const TYPE_ISSUE_RES: &str = "issue_response";
 
 //------------ Message -------------------------------------------------------
 
@@ -85,7 +86,7 @@ impl Message {
                     TYPE_LIST_QRY | TYPE_ISSUE_QRY => {
                         Ok(Content::Qry(Qry::decode(&msg_type, r)?))
                     },
-                    TYPE_LIST_RES => {
+                    TYPE_LIST_RES | TYPE_ISSUE_RES => {
                         Ok(Content::Res(Res::decode(&msg_type, r)?))
                     }
                     _ => Err(Error::UnknownMessageType)
@@ -250,13 +251,15 @@ impl Qry {
 /// This type defines the various RFC6492 queries.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Res {
-    List(Entitlements)
+    List(Entitlements),
+    Issue(IssuanceResponse)
 }
 
 impl Res {
     fn msg_type(&self) -> &str {
         match self {
-            Res::List(_) => TYPE_LIST_RES
+            Res::List(_) => TYPE_LIST_RES,
+            Res::Issue(_) => TYPE_ISSUE_RES
         }
     }
 
@@ -269,8 +272,51 @@ impl Res {
                 let entitlements = Self::decode_entitlements(r)?;
                 Ok(Res::List(entitlements))
             },
+            TYPE_ISSUE_RES => {
+                let issuance_response = Self::decode_issue_response(r)?;
+                Ok(Res::Issue(issuance_response))
+            }
             _ => Err(Error::UnknownMessageType)
         }
+    }
+
+    fn decode_issue_response<R>(
+        r: &mut XmlReader<R>
+    ) -> Result<IssuanceResponse, Error> where R: io::Read {
+        r.take_named_element("class", |mut a, r| {
+            let name = a.take_req("class_name")?;
+            let cert_url = uri::Rsync::from_str(
+                &a.take_req("cert_url")?
+            )?;
+
+            let asn = a.take_req("resource_set_as")?;
+            let v4  = a.take_req("resource_set_ipv4")?;
+            let v6  = a.take_req("resource_set_ipv6")?;
+            let resource_set = ResourceSet::from_strs(&asn, &v4, &v6)?;
+
+            let not_after = a.take_req("resource_set_notafter")?;
+            let not_after = DateTime::<Utc>::from_str(&not_after)?;
+            let not_after = Time::new(not_after);
+
+            a.exhausted()?;
+
+            let issued = Self::decode_issued_cert(r)?;
+
+            let cert = r.take_named_element("issuer", |a, r| {
+                a.exhausted()?;
+                Self::decode_cert(r)
+            })?;
+
+            let issuer = SigningCert::new(cert_url, cert);
+
+            Ok(IssuanceResponse::new(
+                name,
+                issuer,
+                resource_set,
+                not_after,
+                issued
+            ))
+        })
     }
 
     fn decode_entitlements<R>(
@@ -387,7 +433,8 @@ impl Res {
         w: &mut XmlWriter<W>
     ) -> Result<(), io::Error> {
         match self {
-            Res::List(ents) => Self::encode_entitlements(ents, w)
+            Res::List(ents) => Self::encode_entitlements(ents, w),
+            Res::Issue(response) => Self::encode_issuance_response(response, w)
         }
     }
 
@@ -401,14 +448,47 @@ impl Res {
         Ok(())
     }
 
+    fn encode_issuance_response<W: io::Write>(
+        res: &IssuanceResponse,
+        w: &mut XmlWriter<W>
+    ) -> Result<(), io::Error> {
+        Self::encode_class(
+            res.class_name(),
+            res.issuer().uri(),
+            res.not_after(),
+            res.resource_set(),
+            [res.issued().clone()].iter(),
+            res.issuer(),
+            w
+        )
+    }
+
     fn encode_entitlement_class<W: io::Write>(
         c: &EntitlementClass,
         w: &mut XmlWriter<W>
     ) -> Result<(), io::Error> {
-        let cert_url = c.issuer().uri().to_string();
-        let not_after = c.not_after()
-            .to_rfc3339_opts(SecondsFormat::Secs, true);
-        let inrs = c.resource_set();
+        Self::encode_class(
+            c.class_name(),
+            c.issuer().uri(),
+            c.not_after(),
+            c.resource_set(),
+            c.issued().iter(),
+            c.issuer(),
+            w
+        )
+    }
+
+    fn encode_class<'a, W: io::Write>(
+        class_name: &str,
+        cert_url: &uri::Rsync,
+        not_after: Time,
+        inrs: &ResourceSet,
+        issued: impl Iterator<Item=&'a IssuedCert>,
+        issuer: &SigningCert,
+        w: &mut XmlWriter<W>
+    ) -> Result<(), io::Error> {
+        let cert_url = cert_url.to_string();
+        let not_after = not_after.to_rfc3339_opts(SecondsFormat::Secs, true);
 
         let asn = inrs.asn().to_string();
         let v4 = inrs.v4().to_string();
@@ -417,20 +497,22 @@ impl Res {
         let mut attrs = vec![];
 
         attrs.push(("cert_url", cert_url.as_str()));
-        attrs.push(("class_name", c.name()));
+        attrs.push(("class_name", class_name));
         attrs.push(("resource_set_as", asn.as_str()));
         attrs.push(("resource_set_ipv4", v4.as_str()));
         attrs.push(("resource_set_ipv6", v6.as_str()));
         attrs.push(("resource_set_notafter", not_after.as_str()));
 
         w.put_element("class", Some(&attrs), |w| {
-            for issued in c.issued() {
+            for issued in issued {
                 Self::encode_issued(issued, w)?;
             }
-            let issuer_cert = c.issuer().cert().to_captured().into_bytes();
+            let issuer_cert = issuer.cert().to_captured().into_bytes();
             w.put_element("issuer", None, |w| { w.put_blob(&issuer_cert) })
         })
     }
+
+
 
     fn encode_issued<W: io::Write>(
         issued: &IssuedCert,
@@ -598,10 +680,19 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
+    fn parse_and_encode_issue_response() {
+        let xml = extract_xml(
+            include_bytes!("../test/remote/rpkid-rfc6492-issue_response.der")
+        );
+        let issue = Message::decode(xml.as_bytes()).unwrap();
+        assert_re_encode_equals(issue);
+    }
+
+    #[test]
+//    #[ignore]
     fn print_cms_content() {
         let xml = extract_xml(
-            include_bytes!("../test/remote/rpkid-rfc6492-list_response.der")
+            include_bytes!("../test/remote/rpkid-rfc6492-issue_response.der")
         );
 
         eprintln!("{}", xml);

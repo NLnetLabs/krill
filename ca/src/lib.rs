@@ -40,7 +40,7 @@ mod tests {
     use rpki::crypto::signer::Signer;
     use rpki::crypto::PublicKeyFormat;
 
-    use krill_commons::api::DFLT_CLASS;
+    use krill_commons::api::{DFLT_CLASS, IssuanceRequest};
     use krill_commons::api::admin::{
         Handle,
         Token,
@@ -212,7 +212,8 @@ mod tests {
                 _ => panic!("Expected Csr")
             };
 
-            let (parent_info, class_name, limit, csr) = req.unwrap();
+            let (parent_info, issuance_req) = req.unwrap();
+            let (class_name, limit, csr) = issuance_req.unwrap();
             assert_eq!("all", &class_name);
             assert!(limit.is_empty());
             if let ParentCaContact::Embedded(handle, token) = parent_info {
@@ -230,11 +231,14 @@ mod tests {
             //   - Publication
             //
 
+            let request = IssuanceRequest::new(
+                DFLT_CLASS.to_string(), limit, csr
+            );
+
             let ta_cmd = CaCmdDet::certify_child(
                 &ta_handle,
                 child_handle.clone(),
-                csr,
-                limit,
+                request,
                 child_token.clone(),
                 signer.clone()
             );
@@ -243,12 +247,17 @@ mod tests {
             let issued_evt = ta_events[0].clone().into_details();
             let _ta = ca_store.update(&ta_handle, ta, ta_events).unwrap();
 
-            let (h, n, issued) = match issued_evt {
-                CaEvtDet::CertificateIssued(h, n, c) => (h, n, c),
+            let issued = match issued_evt {
+                CaEvtDet::CertificateIssued(issued) => issued,
                 _ => panic!("Expected issued certificate.")
             };
-            assert_eq!(child_handle, h);
-            assert_eq!(DFLT_CLASS, n);
+
+            let (handle, issuance_res) = issued.unwrap();
+
+            let (class_name, _, _, issued) = issuance_res.unwrap();
+
+            assert_eq!(child_handle, handle);
+            assert_eq!(DFLT_CLASS, class_name);
 
             //
             // --- Return issued certificate to child CA
