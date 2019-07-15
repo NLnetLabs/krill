@@ -195,9 +195,9 @@ impl <R: io::Read> XmlReader<R> {
                     &tag,
                     Attributes{attributes},
                     self
-                );
+                )?;
                 self.expect_close(tag)?;
-                res
+                Ok(res)
             },
             _ => {
                 self.cache(n);
@@ -218,7 +218,8 @@ impl <R: io::Read> XmlReader<R> {
 
     /// Takes base64 encoded bytes from the next 'characters' event.
     pub fn take_bytes_characters(&mut self) -> Result<Bytes, XmlReaderErr> {
-        let b64 = base64::decode_config(&self.take_chars()?, base64::MIME)?;
+        let chars = Self::strip_whitespace(self.take_chars()?);
+        let b64 = base64::decode_config(&chars, base64::STANDARD_NO_PAD)?;
         Ok(Bytes::from(b64))
     }
 
@@ -245,6 +246,18 @@ impl <R: io::Read> XmlReader<R> {
                 self.next_start_name.as_ref().map(AsRef::as_ref)
             }
         }
+    }
+
+    /// Convenience function to strip all whitespace from chars. E.g.
+    /// prior to decoding base64. I am quite sure this could be done
+    /// more efficiently.
+    ///
+    /// Asked the
+    fn strip_whitespace(s: String) -> Vec<u8> {
+        s.into_bytes()
+         .into_iter()
+         .filter(|c| !b" \n\t\r\x0b\x0c".contains(c))
+         .collect()
     }
 }
 

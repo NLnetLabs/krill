@@ -4,7 +4,7 @@ version = "0.2.0"
 authors = ["Tim Bruijnzeels <tim@nlnetlabs.nl>", "Martin Hoffmann <martin@nlnetlabs.nl>"]
 
 [dependencies]
-base64       = "^0.9"
+base64       = "^0.10" # We get invalid length errors using v 0.10
 bytes        = "^0.4"
 chrono       = { version = "^0.4", features = ["serde"] }
 derive_more  = "^0.13"

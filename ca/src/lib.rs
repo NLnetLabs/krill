@@ -214,7 +214,7 @@ mod tests {
 
             let (parent_info, class_name, limit, csr) = req.unwrap();
             assert_eq!("all", &class_name);
-            assert_eq!(None, limit);
+            assert!(limit.is_empty());
             if let ParentCaContact::Embedded(handle, token) = parent_info {
                 assert_eq!(ta_handle, handle);
                 assert_eq!(child_token, token);

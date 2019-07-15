@@ -13,15 +13,7 @@ use rpki::csr::Csr;
 use rpki::uri;
 use rpki::x509::{Serial, Validity, Time, Name};
 
-use krill_commons::api::{
-    self,
-    DFLT_CLASS,
-    EncodedHash,
-    EntitlementClass,
-    Entitlements,
-    IssuanceRequest,
-    SigningCert,
-};
+use krill_commons::api::{self, DFLT_CLASS, EncodedHash, EntitlementClass, Entitlements, IssuanceRequest, SigningCert, RequestResourceLimit};
 use krill_commons::api::admin::{
     Handle,
     ParentCaContact,
@@ -148,12 +140,12 @@ pub type CaEvt = StoredEvent<CaEvtDet>;
 pub struct CertRequested {
     parent: ParentCaContact,
     class_name: String,
-    resource_limit: Option<ResourceSet>,
+    resource_limit: RequestResourceLimit,
     csr: Csr
 }
 
 impl CertRequested {
-    pub fn unwrap(self) -> (ParentCaContact, String, Option<ResourceSet>, Csr) {
+    pub fn unwrap(self) -> (ParentCaContact, String, RequestResourceLimit, Csr) {
         (self.parent, self.class_name, self.resource_limit, self.csr)
     }
     pub fn parent(&self) -> &ParentCaContact {
@@ -162,8 +154,8 @@ impl CertRequested {
     pub fn class_name(&self) -> &str {
         &self.class_name
     }
-    pub fn resource_limit(&self) -> Option<&ResourceSet> {
-        self.resource_limit.as_ref()
+    pub fn resource_limit(&self) -> &RequestResourceLimit {
+        &self.resource_limit
     }
     pub fn csr(&self) -> &Csr {
         &self.csr
@@ -373,7 +365,7 @@ type ResourceClassName = String;
 pub enum CaCmdDet<S: CaSigner> {
     // Being a parent
     AddChild(Handle, Token, ResourceSet),
-    CertifyChild(Handle, Csr, Option<ResourceSet>, Token, Arc<RwLock<S>>),
+    CertifyChild(Handle, Csr, RequestResourceLimit, Token, Arc<RwLock<S>>),
 
     // Being a child
     AddParent(ParentHandle, ParentCaContact),
@@ -418,7 +410,7 @@ impl<S: CaSigner> CaCmdDet<S> {
         handle: &Handle,
         child_handle: Handle,
         csr: Csr,
-        limit: Option<ResourceSet>,
+        limit: RequestResourceLimit,
         token: Token,
         signer: Arc<RwLock<S>>
     ) -> CaCmd<S> {
@@ -951,7 +943,7 @@ impl<S: CaSigner> CertAuth<S> {
         &self,
         child: Handle,
         csr: Csr,
-        limit: Option<ResourceSet>,
+        limit: RequestResourceLimit,
         token: Token,
         signer: Arc<RwLock<S>>
     ) -> CaEvtsRes {
@@ -967,16 +959,9 @@ impl<S: CaSigner> CertAuth<S> {
             .resources_for_class(DFLT_CLASS)
             .ok_or_else(|| Error::MissingResources)?;
 
-        let resources = match limit.as_ref() {
-            Some(limit) => {
-                if child_resources.resources().contains(limit) {
-                    limit
-                } else {
-                    return Err(Error::MissingResources)
-                }
-            },
-            None => child_resources.resources()
-        };
+        let resources = limit.resolve(child_resources.resources())
+            .ok_or_else(|| Error::MissingResources)?;
+
         csr.validate()
             .map_err(|_| Error::invalid_csr(&child, "invalid signature"))?;
 
@@ -1043,7 +1028,7 @@ impl<S: CaSigner> CertAuth<S> {
 
             let cert_uri = issuing_cert.uri_for_object(&cert);
 
-            IssuedCert::new(cert_uri, resources.clone(), cert)
+            IssuedCert::new(cert_uri, limit, resources.clone(), cert)
         };
 
         let version = self.version;
@@ -1195,7 +1180,7 @@ impl<S: CaSigner> CertAuth<S> {
                 let cert_issue_req = CertRequested {
                     parent: parent.contact.clone(),
                     class_name: ent.name().to_string(),
-                    resource_limit: None,
+                    resource_limit: RequestResourceLimit::default(),
                     csr
                 };
 

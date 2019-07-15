@@ -9,7 +9,7 @@ actix-identity  = "0.1.0"
 actix-web       = { version = "1.0.3", features = ["ssl"] }
 actix-session   = "0.1.0"
 actix-service   = "0.4.0"
-base64          = "^0.9"
+base64          = "^0.10"
 bcder           = "^0.3"
 bytes           = "^0.4"
 clokwerk        = "^0.1"

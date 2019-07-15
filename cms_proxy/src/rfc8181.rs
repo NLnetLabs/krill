@@ -889,15 +889,13 @@ impl From<uri::Error> for MessageError {
 mod tests {
 
     use super::*;
+
     use std::str;
-    use std::str::FromStr;
-    use rpki::uri::Rsync;
+
     use krill_commons::api::EncodedHash;
+    use krill_commons::util::test::rsync;
 
-    //------------ ListReplyBuilder ----------------------------------------------
-
-    /// This type is useful for testing
-    pub struct ListReplyBuilder {
+    struct ListReplyBuilder {
         elements: Vec<publication::ListElement>
     }
 
@@ -921,11 +919,6 @@ mod tests {
             )
         }
     }
-
-    fn rsync_uri(s: &str) -> Rsync {
-        Rsync::from_str(s).unwrap()
-    }
-
 
     fn assert_re_encode_equals(object: Message, xml: &str) {
         let vec = object.encode_vec();
@@ -999,8 +992,8 @@ mod tests {
         let object2 = Bytes::from_static(include_bytes!("../test/remote/pdu_200.der"));
 
         let mut b = ListReplyBuilder::with_capacity(2);
-        b.add(&object, rsync_uri("rsync://host/path/cms-ta.cer"));
-        b.add(&object2, rsync_uri("rsync://host/path/pdu.200.der"));
+        b.add(&object, rsync("rsync://host/path/cms-ta.cer"));
+        b.add(&object2, rsync("rsync://host/path/pdu.200.der"));
         let m = b.build_message();
 
         let v = m.encode_vec();
@@ -1015,7 +1008,7 @@ mod tests {
         let object = Bytes::from_static(include_bytes!("../test/remote/cms_ta.cer"));
         let object = Base64::from_content(&object);
         let publish = publication::Publish::with_hash_tag(
-            rsync_uri("rsync://host/path/cms-ta.cer"),
+            rsync("rsync://host/path/cms-ta.cer"),
             object
         );
         let error_pdu = PublishDeltaElement::Publish(publish);
@@ -1058,21 +1051,21 @@ mod tests {
 
         builder.add_withdraw(
             publication::Withdraw::with_hash_tag(
-                rsync_uri("rsync://host/path/cms-ta.cer"),
+                rsync("rsync://host/path/cms-ta.cer"),
                 object_hash.clone()
             )
         );
 
         builder.add_publish(
             publication::Publish::with_hash_tag(
-                rsync_uri("rsync://host/path/cms-ta.cer"),
+                rsync("rsync://host/path/cms-ta.cer"),
                 object
             )
         );
 
         builder.add_update(
             publication::Update::with_hash_tag(
-                rsync_uri("rsync://host/path/cms-ta.cer"),
+                rsync("rsync://host/path/cms-ta.cer"),
                 object2,
                 object_hash
             )

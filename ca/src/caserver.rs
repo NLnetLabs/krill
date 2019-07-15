@@ -253,7 +253,7 @@ impl<S: CaSigner> CaServer<S> {
     pub fn cas(&self) -> CertAuthList {
         CertAuthList::new(
             self.ca_store.list().into_iter()
-                .map(|h| CertAuthSummary::new(h))
+                .map(CertAuthSummary::new)
                 .collect()
         )
     }

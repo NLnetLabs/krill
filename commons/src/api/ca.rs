@@ -46,6 +46,7 @@ use crate::rpki::manifest::{
     Manifest,
 };
 use api::admin::ParentCaContact;
+use api::RequestResourceLimit;
 
 
 //------------ ChildCa -------------------------------------------------------
@@ -201,7 +202,7 @@ impl ChildResources {
         let key_ref = KeyRef::from(cert.cert());
 
         self.not_after = cert.cert().validity().not_after();
-        self.resources = cert.resource_set().clone();
+        self.resources = ResourceSet::from(cert.cert());
         self.certs.insert(key_ref, cert);
     }
 
@@ -223,6 +224,7 @@ impl ChildResources {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct IssuedCert {
     uri: uri::Rsync, // where this cert is published
+    limit: RequestResourceLimit, // the limit on the request
     resource_set: ResourceSet,
     cert: Cert
 }
@@ -230,23 +232,27 @@ pub struct IssuedCert {
 impl IssuedCert {
     pub fn new(
         uri: uri::Rsync,
+        limit: RequestResourceLimit,
         resource_set: ResourceSet,
         cert: Cert
     ) -> Self {
-        IssuedCert { uri, resource_set, cert }
+        IssuedCert { uri, limit, resource_set, cert }
     }
 
-    pub fn unwrap(self) -> (uri::Rsync, ResourceSet, Cert) {
-        (self.uri, self.resource_set, self.cert)
+    pub fn unwrap(self) -> (uri::Rsync, RequestResourceLimit, ResourceSet, Cert) {
+        (self.uri, self.limit, self.resource_set, self.cert)
     }
 
-    pub fn cert(&self) -> &Cert { &self.cert }
+    pub fn uri(&self) -> &uri::Rsync { &self.uri }
+    pub fn limit(&self) -> &RequestResourceLimit { &self.limit }
     pub fn resource_set(&self) -> &ResourceSet { &self.resource_set }
+    pub fn cert(&self) -> &Cert { &self.cert }
 }
 
 impl PartialEq for IssuedCert {
     fn eq(&self, other: &IssuedCert) -> bool {
         self.uri == other.uri &&
+        self.limit == other.limit &&
         self.resource_set == other.resource_set &&
         self.cert.to_captured().as_slice() == other.cert.to_captured().as_slice()
     }
@@ -971,6 +977,14 @@ pub struct ResourceSet {
 }
 
 impl ResourceSet {
+    pub fn new(
+        asn: AsResources,
+        v4: Ipv4Resources,
+        v6: Ipv6Resources
+    ) -> Self {
+        ResourceSet { asn, v4, v6 }
+    }
+
     pub fn from_strs(asn: &str, v4: &str, v6: &str) -> Result<Self, ResSetErr> {
         let asn = AsResources::from_str(asn).map_err(|_| ResSetErr::Asn)?;
         let v4 = Ipv4Resources::from_str(v4).map_err(|_| ResSetErr::V4)?;
@@ -1206,6 +1220,7 @@ impl CertAuthInfo {
 
 /// This type contains public data about parents of a CA
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[allow(clippy::large_enum_variant)]
 pub enum CaParentsInfo {
     SelfSigned(CertifiedKey, TrustAnchorLocator),
     Parents(HashMap<Handle, ParentCaInfo>)
