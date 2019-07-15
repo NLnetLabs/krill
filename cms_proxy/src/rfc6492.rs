@@ -7,11 +7,12 @@ use rpki::uri;
 use rpki::x509::Time;
 
 use krill_commons::util::xml::{XmlReader, XmlReaderErr, AttributesError, XmlWriter};
-use krill_commons::api::{Entitlements, EntitlementClass, SigningCert, RequestResourceLimit};
+use krill_commons::api::{Entitlements, EntitlementClass, SigningCert, RequestResourceLimit, IssuanceRequest};
 use krill_commons::api::ca::{ResourceSet, ResSetErr, IssuedCert};
 use rpki::cert::Cert;
 use rpki::resources::{AsResources, Ipv4Resources, Ipv6Resources};
 use serde::export::fmt::Display;
+use rpki::csr::Csr;
 
 
 //------------ Consts --------------------------------------------------------
@@ -21,6 +22,7 @@ const NS: &str = "http://www.apnic.net/specs/rescerts/up-down/";
 
 const TYPE_LIST_QRY: &str = "list";
 const TYPE_LIST_RES: &str = "list_response";
+const TYPE_ISSUE_QRY: &str = "issue";
 
 //------------ Message -------------------------------------------------------
 
@@ -80,7 +82,7 @@ impl Message {
                 a.exhausted()?;
 
                 let content = match msg_type.as_ref() {
-                    TYPE_LIST_QRY => {
+                    TYPE_LIST_QRY | TYPE_ISSUE_QRY => {
                         Ok(Content::Qry(Qry::decode(&msg_type, r)?))
                     },
                     TYPE_LIST_RES => {
@@ -138,25 +140,64 @@ impl Message {
 /// This type defines the various RFC6492 queries.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Qry {
-    List
+    List,
+    Issue(IssuanceRequest)
 }
 
 
 impl Qry {
     fn msg_type(&self) -> &str {
         match self {
-            Qry::List => TYPE_LIST_QRY
+            Qry::List => TYPE_LIST_QRY,
+            Qry::Issue(_) => TYPE_ISSUE_QRY
         }
     }
 
     fn decode<R>(
         msg_type: &str,
-        _r: &mut XmlReader<R>
+        r: &mut XmlReader<R>
     ) -> Result<Self, Error> where R: io::Read {
         match msg_type {
             TYPE_LIST_QRY => Ok(Qry::List),
+            TYPE_ISSUE_QRY => Self::decode_issue(r),
             _ => Err(Error::UnknownMessageType)
         }
+    }
+
+    fn decode_issue<R>(
+        r: &mut XmlReader<R>
+    ) -> Result<Qry, Error> where R: io::Read {
+        r.take_named_element("request", |mut a, r|{
+            let class_name = a.take_req("class_name")?;
+            let mut limit = RequestResourceLimit::default();
+
+            if let Some(asn) = a.take_opt("req_resource_set_as") {
+                let asn = AsResources::from_str(&asn)
+                    .map_err(Error::inr_syntax)?;
+                limit.with_asn(asn);
+            }
+
+            if let Some(ipv4) = a.take_opt("req_resource_set_ipv4") {
+                let ipv4 = Ipv4Resources::from_str(&ipv4)
+                    .map_err(Error::inr_syntax)?;
+                limit.with_ipv4(ipv4);
+            }
+
+            if let Some(ipv6) = a.take_opt("req_resource_set_ipv6") {
+                let ipv6 = Ipv6Resources::from_str(&ipv6)
+                    .map_err(Error::inr_syntax)?;
+                limit.with_ipv6(ipv6);
+            }
+
+            let csr_bytes = r.take_bytes_characters()?;
+            let csr = Csr::decode(csr_bytes).map_err(|_| Error::InvalidCsr)?;
+
+            Ok(Qry::Issue(IssuanceRequest::new(
+                class_name.to_string(),
+                limit,
+                csr
+            )))
+        })
     }
 
     fn encode<W: io::Write>(
@@ -164,8 +205,42 @@ impl Qry {
         w: &mut XmlWriter<W>
     ) -> Result<(), io::Error> {
         match self {
-            Qry::List => w.empty()
+            Qry::List => w.empty(),
+            Qry::Issue(issue_req) => Self::encode_issue(issue_req, w)
         }
+    }
+
+    fn encode_issue<W: io::Write>(
+        issue: &IssuanceRequest,
+        w: &mut XmlWriter<W>
+    ) -> Result<(), io::Error> {
+        let class_name = issue.class_name();
+        let limit = issue.limit();
+        let csr = issue.csr().to_captured().into_bytes();
+
+        // TODO: Use a better xml library so we don't have to do
+        //       super-messy allocations. Probably roll our own,
+        //       at least for composing.
+        let mut attrs_strings = vec![];
+        if let Some(asn) = limit.asn() {
+            attrs_strings.push(("req_resource_set_as", asn.to_string()));
+        }
+        if let Some(v4) = limit.v4() {
+            attrs_strings.push(("req_resource_set_ipv4", v4.to_string()));
+        }
+        if let Some(v6) = limit.v6() {
+            attrs_strings.push(("req_resource_set_ipv6", v6.to_string()));
+        }
+
+        let mut attrs_str = vec![];
+        attrs_str.push(("class_name", class_name));
+        for (k, v) in &attrs_strings {
+            attrs_str.push((k.clone(), v.as_str()));
+        }
+
+        w.put_element("request", Some(attrs_str.as_slice()), |w| {
+            w.put_blob(&csr)
+        })
     }
 }
 
@@ -425,6 +500,10 @@ pub enum Error {
     #[display(fmt = "Could not parse encoded certificate.")]
     InvalidCert,
 
+
+    #[display(fmt = "Could not parse encoded certificate request.")]
+    InvalidCsr,
+
     #[display(fmt = "{}", _0)]
     InrSyntax(String),
 }
@@ -507,6 +586,15 @@ mod tests {
         );
         let list_response = Message::decode(xml.as_bytes()).unwrap();
         assert_re_encode_equals(list_response);
+    }
+
+    #[test]
+    fn parse_and_encode_issue() {
+        let xml = extract_xml(
+            include_bytes!("../test/remote/rpkid-rfc6492-issue.der")
+        );
+        let issue = Message::decode(xml.as_bytes()).unwrap();
+        assert_re_encode_equals(issue);
     }
 
     #[test]

@@ -141,9 +141,9 @@ impl IssuanceRequest {
         (self.class_name, self.limit, self.csr)
     }
 
-    pub fn class_name(&self) -> &str {
-        &self.class_name
-    }
+    pub fn class_name(&self) -> &str { &self.class_name }
+    pub fn limit(&self) -> &RequestResourceLimit { &self.limit }
+    pub fn csr(&self) -> &Csr { &self.csr }
 }
 
 impl PartialEq for IssuanceRequest {
