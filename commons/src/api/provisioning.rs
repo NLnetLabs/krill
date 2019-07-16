@@ -93,7 +93,6 @@ impl EntitlementClass {
             self.issued
         )
     }
-
     pub fn class_name(&self) -> &str { &self.class_name }
     pub fn issuer(&self) -> &SigningCert { &self.issuer }
     pub fn resource_set(&self) -> &ResourceSet { &self.resource_set }
@@ -386,5 +385,3 @@ impl RevocationRequest {
     pub fn class_name(&self) -> &str { &self.class_name }
     pub fn key(&self) -> &KeyIdentifier { &self.key }
 }
-
-

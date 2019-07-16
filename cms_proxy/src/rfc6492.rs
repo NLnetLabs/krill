@@ -760,7 +760,7 @@ mod tests {
     }
 
     #[test]
-//    #[ignore]
+    #[ignore]
     fn print_cms_content() {
         let xml = extract_xml(
             include_bytes!("../test/remote/rpkid-rfc6492-issue_response.der")
