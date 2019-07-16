@@ -262,10 +262,7 @@ pub enum Error {
     EmptyResponse,
 
     #[display(fmt="{}", _0)]
-    PublisherRequestError(rfc8183::PublisherRequestError),
-
-    #[display(fmt="{}", _0)]
-    RepositoryResponseError(rfc8183::RepositoryResponseError),
+    Rfc8183(rfc8183::Error),
 }
 
 impl From<httpclient::Error> for Error {
@@ -284,14 +281,8 @@ impl From<ReportError> for Error {
     }
 }
 
-impl From<rfc8183::PublisherRequestError> for Error {
-    fn from(e: rfc8183::PublisherRequestError) -> Error {
-        Error::PublisherRequestError(e)
-    }
-}
-
-impl From<rfc8183::RepositoryResponseError> for Error {
-    fn from(e: rfc8183::RepositoryResponseError) -> Self {
-        Error::RepositoryResponseError(e)
+impl From<rfc8183::Error> for Error {
+    fn from(e: rfc8183::Error) -> Error {
+        Error::Rfc8183(e)
     }
 }

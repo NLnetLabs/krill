@@ -372,7 +372,7 @@ pub enum Error {
     IoError(io::Error),
 
     #[display(fmt="{}", _0)]
-    ResponseError(rfc8183::RepositoryResponseError),
+    Rfc8183(rfc8183::Error),
 
     #[display(fmt="{}", _0)]
     ClientError(ClientError),
@@ -399,9 +399,9 @@ impl From<io::Error> for Error {
     }
 }
 
-impl From<rfc8183::RepositoryResponseError> for Error {
-    fn from(e: rfc8183::RepositoryResponseError) -> Self {
-        Error::ResponseError(e)
+impl From<rfc8183::Error> for Error {
+    fn from(e: rfc8183::Error) -> Self {
+        Error::Rfc8183(e)
     }
 }
 

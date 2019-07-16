@@ -23,11 +23,105 @@ use krill_commons::util::xml::{
 
 use crate::id::IdCert;
 
-
-//------------ PublisherRequest ----------------------------------------------
-
 pub const VERSION: &str = "1";
 pub const NS: &str = "http://www.hactrn.net/uris/rpki/rpki-setup/";
+
+
+//------------ ChildRequest --------------------------------------------------
+
+/// Type representing a <child_request /> defined in section 5.2.1 of
+/// RFC8183.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ChildRequest {
+    /// The optional 'tag' identifier used like a session identifier
+    tag: Option<String>,
+
+    /// The handle the child wants to use for itself. This may not be honored
+    /// by the parent.
+    child_handle: Handle,
+
+    /// The self-signed IdCert containing the child's public key.
+    id_cert: IdCert,
+}
+
+/// # Data Access
+///
+impl ChildRequest {
+    pub fn unwrap(self) -> (Option<String>, Handle, IdCert) {
+        (self.tag, self.child_handle, self.id_cert)
+    }
+
+    pub fn tag(&self) -> Option<&String> { self.tag.as_ref() }
+    pub fn child_handle(&self) -> &Handle { &self.child_handle }
+    pub fn id_cert(&self) -> &IdCert { &self.id_cert }
+}
+
+/// # Decoding
+///
+impl ChildRequest {
+    /// Parses a <child_request /> message.
+    pub fn decode<R>(
+        reader: R
+    ) -> Result<Self, Error> where R: io::Read {
+        XmlReader::decode(reader, |r| {
+            r.take_named_element("child_request", |mut a, r| {
+                if a.take_req("version")? != VERSION {
+                    return Err(Error::InvalidVersion)
+                }
+
+                let tag = a.take_opt("tag");
+                let child_handle = Handle::from(a.take_req("child_handle")?);
+                a.exhausted()?;
+
+                let bytes = r.take_named_element("child_bpki_ta", |a,r| {
+                    a.exhausted()?;
+                    r.take_bytes_std()
+                })?;
+                let id_cert = IdCert::decode(bytes)?;
+
+                Ok(ChildRequest { child_handle, tag, id_cert })
+            })
+        })
+    }
+}
+
+/// # Encoding
+///
+impl ChildRequest {
+    /// Encodes the <child_request/> to a Vec
+    pub fn encode_vec(&self) -> Vec<u8> {
+        XmlWriter::encode_vec(|w| {
+
+            let mut a = vec![
+                ("xmlns", NS),
+                ("version", VERSION),
+                ("child_handle", self.child_handle.as_ref())
+            ];
+
+            if let Some(ref t) = self.tag {
+                a.push(("tag", t.as_ref()));
+            }
+
+            w.put_element(
+                "child_request",
+                Some(a.as_ref()),
+                |w| {
+                    w.put_element(
+                        "child_bpki_ta",
+                        None,
+                        |w| {
+                            w.put_base64_std(&self.id_cert.to_bytes())
+                        }
+                    )
+                }
+            )
+        })
+    }
+}
+
+
+
+//------------ PublisherRequest ----------------------------------------------
 
 /// Type representing a <publisher_request/>
 ///
@@ -43,52 +137,43 @@ pub struct PublisherRequest {
     /// The name the publishing CA likes to call itself by
     publisher_handle: String,
 
-    /// The encoded Identity Certificate
-    /// (for now, will be replaced by a concrete IdCert once it's defined)
+    /// The self-signed IdCert containing the publisher's public key.
     id_cert: IdCert,
 }
 
 impl PublisherRequest {
 
     /// Parses a <publisher_request /> message.
-    pub fn decode<R>(reader: R) -> Result<Self, PublisherRequestError>
+    pub fn decode<R>(reader: R) -> Result<Self, Error>
         where R: io::Read {
 
         XmlReader::decode(reader, |r| {
             r.take_named_element("publisher_request", |mut a, r| {
-                match a.take_req("version") {
-                    Ok(s) => {
-                        if s != "1" {
-                            return Err(PublisherRequestError::InvalidVersion)
-                        }
-                    }
-                    _ => return Err(PublisherRequestError::InvalidVersion)
+                if a.take_req("version")? != "1" {
+                    return Err(Error::InvalidVersion)
                 }
 
                 let tag = a.take_opt("tag");
-                let ph = a.take_req("publisher_handle")?;
-
+                let publisher_handle = a.take_req("publisher_handle")?;
                 a.exhausted()?;
 
-                let cert = r.take_named_element("publisher_bpki_ta", |a, r| {
+                let bytes = r.take_named_element("publisher_bpki_ta", |a, r| {
                     a.exhausted()?;
-                    r.take_bytes_characters()
+                    r.take_bytes_std()
                 })?;
 
-                Ok(PublisherRequest{
-                    tag: tag.map(Into::into),
-                    publisher_handle: ph,
-                    id_cert: IdCert::decode(cert)?
-                })
+                let id_cert = IdCert::decode(bytes)?;
+
+                Ok(PublisherRequest { tag, publisher_handle, id_cert })
             })
         })
     }
 
-    pub fn validate(&self) -> Result<(), PublisherRequestError> {
+    pub fn validate(&self) -> Result<(), Error> {
         self.validate_at(Time::now())
     }
 
-    pub fn validate_at(&self, now: Time) -> Result<(), PublisherRequestError> {
+    pub fn validate_at(&self, now: Time) -> Result<(), Error> {
         self.id_cert.validate_ta_at(now)?;
         Ok(())
     }
@@ -151,61 +236,7 @@ impl PublisherRequest {
 }
 
 
-//------------ PublisherRequestError -----------------------------------------
 
-#[derive(Debug, Display)]
-pub enum PublisherRequestError {
-    #[display(fmt = "Invalid XML for Publisher Request")]
-    InvalidXml,
-
-    #[display(fmt = "Invalid version for Publisher Request")]
-    InvalidVersion,
-
-    #[display(fmt = "Invalid XML file: {}", _0)]
-    XmlReadError(XmlReaderErr),
-
-    #[display(fmt = "Invalid XML file: {}", _0)]
-    XmlAttributesError(AttributesError),
-
-    #[display(fmt = "Invalid base64: {}", _0)]
-    Base64Error(DecodeError),
-
-    #[display(fmt = "Cannot parse identity certificate: {}", _0)]
-    CannotParseIdCert(decode::Error),
-
-    #[display(fmt = "Invalid identity certificate: {}", _0)]
-    InvalidIdCert(x509::ValidationError),
-}
-
-impl From<XmlReaderErr> for PublisherRequestError {
-    fn from(e: XmlReaderErr) -> PublisherRequestError{
-        PublisherRequestError::XmlReadError(e)
-    }
-}
-
-impl From<AttributesError> for PublisherRequestError {
-    fn from(e: AttributesError) -> PublisherRequestError{
-        PublisherRequestError::XmlAttributesError(e)
-    }
-}
-
-impl From<DecodeError> for PublisherRequestError {
-    fn from(e: DecodeError) -> PublisherRequestError {
-        PublisherRequestError::Base64Error(e)
-    }
-}
-
-impl From<decode::Error> for PublisherRequestError {
-    fn from(e: decode::Error) -> PublisherRequestError {
-        PublisherRequestError::CannotParseIdCert(e)
-    }
-}
-
-impl From<x509::ValidationError> for PublisherRequestError {
-    fn from(e: x509::ValidationError) -> PublisherRequestError {
-        PublisherRequestError::InvalidIdCert(e)
-    }
-}
 
 //------------ RepositoryResponse --------------------------------------------
 
@@ -259,16 +290,16 @@ impl RepositoryResponse {
     }
 
     /// Parses a <repository_response /> message.
-    pub fn decode<R>(reader: R) -> Result<Self, RepositoryResponseError>
+    pub fn decode<R>(reader: R) -> Result<Self, Error>
         where R: io::Read {
 
         XmlReader::decode(reader, |r| {
             r.take_named_element("repository_response", |mut a, r| {
                 match a.take_req("version") {
                     Ok(s) => if s != "1" {
-                        return Err(RepositoryResponseError::InvalidVersion)
+                        return Err(Error::InvalidVersion)
                     }
-                    _ => return Err(RepositoryResponseError::InvalidVersion)
+                    _ => return Err(Error::InvalidVersion)
                 }
 
                 let tag = a.take_opt("tag");
@@ -285,7 +316,7 @@ impl RepositoryResponse {
                 let id_cert = r.take_named_element(
                     "repository_bpki_ta", |a, r| {
                         a.exhausted()?;
-                        r.take_bytes_characters()})?;
+                        r.take_bytes_std()})?;
 
                 Ok(RepositoryResponse{
                     tag: tag.map(Into::into),
@@ -300,14 +331,14 @@ impl RepositoryResponse {
     }
 
 
-    pub fn validate(&self) -> Result<(), RepositoryResponseError> {
+    pub fn validate(&self) -> Result<(), Error> {
         self.validate_at(Time::now())
     }
 
     pub fn validate_at(
         &self,
         now: Time
-    ) -> Result<(), RepositoryResponseError> {
+    ) -> Result<(), Error> {
         self.id_cert.validate_ta_at(now)?;
         Ok(())
     }
@@ -388,14 +419,15 @@ impl RepositoryResponse {
 }
 
 
-//------------ RepositoryResponseError ---------------------------------------
+//------------ Error ---------------------------------------------------------
+
 
 #[derive(Debug, Display)]
-pub enum RepositoryResponseError {
-    #[display(fmt = "Invalid XML for Publisher Request")]
+pub enum Error {
+    #[display(fmt = "Invalid XML")]
     InvalidXml,
 
-    #[display(fmt = "Invalid version for Publisher Request")]
+    #[display(fmt = "Invalid version")]
     InvalidVersion,
 
     #[display(fmt = "Invalid XML file: {}", _0)]
@@ -413,70 +445,67 @@ pub enum RepositoryResponseError {
     #[display(fmt = "Invalid identity certificate: {}", _0)]
     InvalidIdCert(x509::ValidationError),
 
-    #[display(fmt = "Invalid URI on Repository Response: {}", _0)]
-    InvalidUri(uri::Error),
-
+    #[display(fmt = "{}", _0)]
+    Uri(uri::Error),
 }
 
-impl From<uri::Error> for RepositoryResponseError {
-    fn from(e: uri::Error) -> RepositoryResponseError {
-        RepositoryResponseError::InvalidUri(e)
+impl From<XmlReaderErr> for Error {
+    fn from(e: XmlReaderErr) -> Error {
+        Error::XmlReadError(e)
     }
 }
 
-impl From<XmlReaderErr> for RepositoryResponseError {
-    fn from(e: XmlReaderErr) -> RepositoryResponseError{
-        RepositoryResponseError::XmlReadError(e)
+impl From<AttributesError> for Error {
+    fn from(e: AttributesError) -> Error {
+        Error::XmlAttributesError(e)
     }
 }
 
-impl From<AttributesError> for RepositoryResponseError {
-    fn from(e: AttributesError) -> RepositoryResponseError{
-        RepositoryResponseError::XmlAttributesError(e)
+impl From<DecodeError> for Error {
+    fn from(e: DecodeError) -> Error {
+        Error::Base64Error(e)
     }
 }
 
-impl From<DecodeError> for RepositoryResponseError {
-    fn from(e: DecodeError) -> RepositoryResponseError {
-        RepositoryResponseError::Base64Error(e)
+impl From<decode::Error> for Error {
+    fn from(e: decode::Error) -> Error {
+        Error::CannotParseIdCert(e)
     }
 }
 
-impl From<decode::Error> for RepositoryResponseError {
-    fn from(e: decode::Error) -> RepositoryResponseError {
-        RepositoryResponseError::CannotParseIdCert(e)
+impl From<x509::ValidationError> for Error {
+    fn from(e: x509::ValidationError) -> Error {
+        Error::InvalidIdCert(e)
     }
 }
 
-impl From<x509::ValidationError> for RepositoryResponseError {
-    fn from(e: x509::ValidationError) -> RepositoryResponseError {
-        RepositoryResponseError::InvalidIdCert(e)
+impl From<uri::Error> for Error {
+    fn from(e: uri::Error) -> Self {
+        Error::Uri(e)
     }
 }
-
 
 //------------ Tests ---------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use std::str;
-    use std::str::FromStr;
+
     use rpki::x509::Time;
+
+    use krill_commons::util::test;
     use super::*;
 
     fn example_rrdp_uri() -> uri::Https {
-        uri::Https::from_str(
-            "https://rpki.example/rrdp/notify.xml").unwrap()
+        test::https("https://rpki.example/rrdp/notify.xml")
     }
 
     fn example_sia_base() -> uri::Rsync {
-        uri::Rsync::from_str(
-            "rsync://a.example/rpki/Alice/Bob-42/").unwrap()
+        test::rsync("rsync://a.example/rpki/Alice/Bob-42/")
     }
 
     fn example_service_uri() -> uri::Https {
-        uri::Https::from_str(
-            "https://a.example/publication/Alice/Bob-42").unwrap()
+        test::https("https://a.example/publication/Alice/Bob-42")
     }
 
     #[test]
@@ -537,6 +566,20 @@ mod tests {
         RepositoryResponse::decode(
             str::from_utf8(&enc).unwrap().as_bytes()
         ).unwrap().validate_at(Time::utc(2012, 1, 1, 0, 0, 0)).unwrap();
+    }
+
+    #[test]
+    fn parse_child_request() {
+        let xml = include_str!("../test/remote/carol-child-id.xml");
+        let req = ChildRequest::decode(xml.as_bytes()).unwrap();
+
+        assert_eq!(&Handle::from("Carol"), req.child_handle());
+        assert_eq!(None, req.tag());
+
+        let encoded = req.encode_vec();
+        let decoded = ChildRequest::decode(encoded.as_slice()).unwrap();
+
+        assert_eq!(req, decoded);
     }
 }
 

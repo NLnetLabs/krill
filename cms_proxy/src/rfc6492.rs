@@ -250,7 +250,7 @@ impl Qry {
                 limit.with_ipv6(ipv6);
             }
 
-            let csr_bytes = r.take_bytes_characters()?;
+            let csr_bytes = r.take_bytes_std()?;
             let csr = Csr::decode(csr_bytes).map_err(|_| Error::InvalidCsr)?;
 
             Ok(IssuanceRequest::new(
@@ -520,7 +520,7 @@ impl Res {
     fn decode_cert<R>(
         r: &mut XmlReader<R>
     ) -> Result<Cert, Error> where R: io::Read {
-        let bytes = r.take_bytes_characters()?;
+        let bytes = r.take_bytes_std()?;
         Cert::decode(bytes).map_err(|_| Error::InvalidCert)
     }
 

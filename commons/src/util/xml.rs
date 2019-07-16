@@ -217,7 +217,7 @@ impl <R: io::Read> XmlReader<R> {
     }
 
     /// Takes base64 encoded bytes from the next 'characters' event.
-    pub fn take_bytes_characters(&mut self) -> Result<Bytes, XmlReaderErr> {
+    pub fn take_bytes_std(&mut self) -> Result<Bytes, XmlReaderErr> {
         self.take_bytes(base64::STANDARD_NO_PAD)
     }
 
