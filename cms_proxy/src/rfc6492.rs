@@ -27,6 +27,7 @@ const TYPE_LIST_RES: &str = "list_response";
 const TYPE_ISSUE_QRY: &str = "issue";
 const TYPE_ISSUE_RES: &str = "issue_response";
 const TYPE_REVOKE_QRY: &str = "revoke";
+const TYPE_REVOKE_RES: &str = "revoke_response";
 
 //------------ Message -------------------------------------------------------
 
@@ -58,6 +59,15 @@ impl Message {
         revocation: RevocationRequest
     ) -> Self {
         let content = Content::Qry(Qry::Revoke(revocation));
+        Message { sender, recipient, content }
+    }
+
+    pub fn revoke_response(
+        sender: String,
+        recipient: String,
+        revocation: RevocationRequest
+    ) -> Self {
+        let content = Content::Res(Res::Revoke(revocation));
         Message { sender, recipient, content }
     }
 }
@@ -99,7 +109,7 @@ impl Message {
                     TYPE_LIST_QRY | TYPE_ISSUE_QRY | TYPE_REVOKE_QRY => {
                         Ok(Content::Qry(Qry::decode(&msg_type, r)?))
                     },
-                    TYPE_LIST_RES | TYPE_ISSUE_RES => {
+                    TYPE_LIST_RES | TYPE_ISSUE_RES | TYPE_REVOKE_RES => {
                         Ok(Content::Res(Res::decode(&msg_type, r)?))
                     }
                     _ => Err(Error::UnknownMessageType)
@@ -298,14 +308,16 @@ impl Qry {
 #[allow(clippy::large_enum_variant)]
 pub enum Res {
     List(Entitlements),
-    Issue(IssuanceResponse)
+    Issue(IssuanceResponse),
+    Revoke(RevocationRequest)
 }
 
 impl Res {
     fn msg_type(&self) -> &str {
         match self {
             Res::List(_) => TYPE_LIST_RES,
-            Res::Issue(_) => TYPE_ISSUE_RES
+            Res::Issue(_) => TYPE_ISSUE_RES,
+            Res::Revoke(_) => TYPE_REVOKE_RES
         }
     }
 
@@ -321,6 +333,10 @@ impl Res {
             TYPE_ISSUE_RES => {
                 let issuance_response = Self::decode_issue_response(r)?;
                 Ok(Res::Issue(issuance_response))
+            }
+            TYPE_REVOKE_RES => {
+                let request = Qry::decode_revoke(r)?;
+                Ok(Res::Revoke(request))
             }
             _ => Err(Error::UnknownMessageType)
         }
@@ -480,7 +496,8 @@ impl Res {
     ) -> Result<(), io::Error> {
         match self {
             Res::List(ents) => Self::encode_entitlements(ents, w),
-            Res::Issue(response) => Self::encode_issuance_response(response, w)
+            Res::Issue(response) => Self::encode_issuance_response(response, w),
+            Res::Revoke(request) => Qry::encode_revoke(request, w)
         }
     }
 
@@ -593,7 +610,6 @@ impl Res {
             w.put_base64_std(&cert_bytes)
         })
     }
-
 
 }
 
@@ -753,6 +769,26 @@ mod tests {
         let revocation = RevocationRequest::new(class, ski);
 
         let rev = Message::revoke(sender, rcpt, revocation);
+
+        let decoded_rev = Message::decode(rev.encode_vec().as_slice()).unwrap();
+
+        assert_eq!(rev, decoded_rev);
+    }
+
+    #[test]
+    fn encode_and_parse_revocation_response() {
+        // No example CMS found for this one, so just composing and
+        // reading the XML based on the RFC spec only.
+        let cert = test_id_certificate();
+
+        let sender = "child".to_string();
+        let rcpt = "parent".to_string();
+        let class = "all".to_string();
+
+        let ski = cert.subject_public_key_info().key_identifier();
+        let revocation = RevocationRequest::new(class, ski);
+
+        let rev = Message::revoke_response(sender, rcpt, revocation);
 
         let decoded_rev = Message::decode(rev.encode_vec().as_slice()).unwrap();
 
