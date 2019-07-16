@@ -28,6 +28,7 @@ const TYPE_ISSUE_QRY: &str = "issue";
 const TYPE_ISSUE_RES: &str = "issue_response";
 const TYPE_REVOKE_QRY: &str = "revoke";
 const TYPE_REVOKE_RES: &str = "revoke_response";
+const TYPE_ERROR_RES: &str = "error_response";
 
 //------------ Message -------------------------------------------------------
 
@@ -70,7 +71,17 @@ impl Message {
         let content = Content::Res(Res::Revoke(revocation));
         Message { sender, recipient, content }
     }
+
+    pub fn error_response(
+        sender: String,
+        recipient: String,
+        err: NotPerformedResponse
+    ) -> Result<Self, Error> {
+        let content = Content::Res(Res::Error(err));
+        Ok(Message { sender, recipient, content })
+    }
 }
+
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(clippy::large_enum_variant)]
@@ -109,7 +120,8 @@ impl Message {
                     TYPE_LIST_QRY | TYPE_ISSUE_QRY | TYPE_REVOKE_QRY => {
                         Ok(Content::Qry(Qry::decode(&msg_type, r)?))
                     },
-                    TYPE_LIST_RES | TYPE_ISSUE_RES | TYPE_REVOKE_RES => {
+                    TYPE_LIST_RES | TYPE_ISSUE_RES |
+                    TYPE_REVOKE_RES | TYPE_ERROR_RES => {
                         Ok(Content::Res(Res::decode(&msg_type, r)?))
                     }
                     _ => Err(Error::UnknownMessageType)
@@ -170,7 +182,8 @@ pub enum Qry {
     Revoke(RevocationRequest)
 }
 
-
+/// # Data Access
+///
 impl Qry {
     fn msg_type(&self) -> &str {
         match self {
@@ -179,7 +192,11 @@ impl Qry {
             Qry::Revoke(_) => TYPE_REVOKE_QRY
         }
     }
+}
 
+/// # Decoding
+///
+impl Qry {
     fn decode<R>(
         msg_type: &str,
         r: &mut XmlReader<R>
@@ -211,7 +228,7 @@ impl Qry {
     fn decode_issue<R>(
         r: &mut XmlReader<R>
     ) -> Result<IssuanceRequest, Error> where R: io::Read {
-        r.take_named_element("request", |mut a, r|{
+        r.take_named_element("request", |mut a, r| {
             let class_name = a.take_req("class_name")?;
             let mut limit = RequestResourceLimit::default();
 
@@ -243,7 +260,11 @@ impl Qry {
             ))
         })
     }
+}
 
+/// # Encoding
+///
+impl Qry {
     fn encode<W: io::Write>(
         &self,
         w: &mut XmlWriter<W>
@@ -301,7 +322,7 @@ impl Qry {
 }
 
 
-//------------ Reply ---------------------------------------------------------
+//------------ Res -----------------------------------------------------------
 
 /// This type defines the various RFC6492 queries.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -309,18 +330,28 @@ impl Qry {
 pub enum Res {
     List(Entitlements),
     Issue(IssuanceResponse),
-    Revoke(RevocationRequest)
+    Revoke(RevocationRequest),
+    Error(NotPerformedResponse)
 }
 
+
+/// # Data Access
+///
 impl Res {
     fn msg_type(&self) -> &str {
         match self {
             Res::List(_) => TYPE_LIST_RES,
             Res::Issue(_) => TYPE_ISSUE_RES,
-            Res::Revoke(_) => TYPE_REVOKE_RES
+            Res::Revoke(_) => TYPE_REVOKE_RES,
+            Res::Error(_) => TYPE_ERROR_RES
         }
     }
+}
 
+
+/// Decoding
+///
+impl Res {
     fn decode<R>(
         msg_type: &str,
         r: &mut XmlReader<R>
@@ -333,11 +364,15 @@ impl Res {
             TYPE_ISSUE_RES => {
                 let issuance_response = Self::decode_issue_response(r)?;
                 Ok(Res::Issue(issuance_response))
-            }
+            },
             TYPE_REVOKE_RES => {
                 let request = Qry::decode_revoke(r)?;
                 Ok(Res::Revoke(request))
-            }
+            },
+            TYPE_ERROR_RES => {
+                let err = Self::decode_error_response(r)?;
+                Ok(Res::Error(err))
+            },
             _ => Err(Error::UnknownMessageType)
         }
     }
@@ -352,8 +387,8 @@ impl Res {
             )?;
 
             let asn = a.take_req("resource_set_as")?;
-            let v4  = a.take_req("resource_set_ipv4")?;
-            let v6  = a.take_req("resource_set_ipv6")?;
+            let v4 = a.take_req("resource_set_ipv4")?;
+            let v6 = a.take_req("resource_set_ipv6")?;
             let resource_set = ResourceSet::from_strs(&asn, &v4, &v6)?;
 
             let not_after = a.take_req("resource_set_notafter")?;
@@ -403,8 +438,8 @@ impl Res {
                     )?;
 
                     let asn = a.take_req("resource_set_as")?;
-                    let v4  = a.take_req("resource_set_ipv4")?;
-                    let v6  = a.take_req("resource_set_ipv6")?;
+                    let v4 = a.take_req("resource_set_ipv4")?;
+                    let v6 = a.take_req("resource_set_ipv6")?;
 
                     let resource_set = ResourceSet::from_strs(&asn, &v4, &v6)?;
 
@@ -482,7 +517,6 @@ impl Res {
         })
     }
 
-
     fn decode_cert<R>(
         r: &mut XmlReader<R>
     ) -> Result<Cert, Error> where R: io::Read {
@@ -490,6 +524,24 @@ impl Res {
         Cert::decode(bytes).map_err(|_| Error::InvalidCert)
     }
 
+    fn decode_error_response<R>(
+        r: &mut XmlReader<R>
+    ) -> Result<NotPerformedResponse, Error> where R: io::Read {
+        let code = r.take_named_element("status", |_a, r| {
+            r.take_chars()
+        })?;
+
+        let _desc = r.take_named_element("description", |_a, r| {
+            r.take_chars()
+        })?;
+
+        NotPerformedResponse::from_code(&code)
+    }
+}
+
+/// # Encoding
+///
+impl Res {
     fn encode<W: io::Write>(
         &self,
         w: &mut XmlWriter<W>
@@ -497,7 +549,8 @@ impl Res {
         match self {
             Res::List(ents) => Self::encode_entitlements(ents, w),
             Res::Issue(response) => Self::encode_issuance_response(response, w),
-            Res::Revoke(request) => Qry::encode_revoke(request, w)
+            Res::Revoke(request) => Qry::encode_revoke(request, w),
+            Res::Error(err) => Self::encode_error_response(err, w)
         }
     }
 
@@ -611,7 +664,78 @@ impl Res {
         })
     }
 
+    fn encode_error_response<W: io::Write>(
+        error: &NotPerformedResponse,
+        w: &mut XmlWriter<W>
+    ) -> Result<(), io::Error> {
+        w.put_element("status", None, |w| {
+            w.put_text(&format!("{}", error.status))
+        })?;
+
+        let att = [ ( "xml:lang", "en-US" )];
+        w.put_element("description", Some(&att), |w| {
+            w.put_text(&error.description)
+        })
+    }
 }
+
+
+//------------ NotPerformedResponse ------------------------------------------
+
+/// This type describes the Not-performed responses defined in section 3.6
+/// of RFC 6492.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct NotPerformedResponse {
+    status: u64,
+    description: String
+}
+
+impl NotPerformedResponse {
+    /// Local helper. Please use [`from_code`] to create a response for an
+    /// status value defined in RFC6492.
+    fn new(status: u64, description: &str) -> Self {
+        NotPerformedResponse { status, description: description.to_string() }
+    }
+
+    /// Creates a response for a status value defined in RFC6492. Also adds
+    /// the description defined in the RFC.
+    pub fn from_code(code: &str) -> Result<Self, Error> {
+        match code {
+            "1101" => Ok(NotPerformedResponse::new(1101, "already processing request")),
+            "1102" => Ok(NotPerformedResponse::new(1102, "version number error")),
+            "1103" => Ok(NotPerformedResponse::new(1103, "unrecognized request type")),
+            "1104" => Ok(NotPerformedResponse::new(1104, "request scheduled for processing")),
+
+            "1201" => Ok(NotPerformedResponse::new(1201, "request - no such resource class")),
+            "1202" => Ok(NotPerformedResponse::new(1202, "request - no resources allocated in resource class")),
+            "1203" => Ok(NotPerformedResponse::new(1203, "request - badly formed certificate request")),
+            "1204" => Ok(NotPerformedResponse::new(1204, "request - already used key in request")),
+
+            "1301" => Ok(NotPerformedResponse::new(1301, "revoke - no such resource class")),
+            "1302" => Ok(NotPerformedResponse::new(1302, "revoke - no such key")),
+
+            "2001" => Ok(NotPerformedResponse::new(2001, "Internal Server Error - Request not performed")),
+            _ => Err(Error::InvalidErrorCode(code.to_string()))
+        }
+    }
+
+    pub fn _1101() -> Self { Self::from_code("1101").unwrap() }
+    pub fn _1102() -> Self { Self::from_code("1102").unwrap() }
+    pub fn _1103() -> Self { Self::from_code("1103").unwrap() }
+    pub fn _1104() -> Self { Self::from_code("1104").unwrap() }
+
+    pub fn _1201() -> Self { Self::from_code("1201").unwrap() }
+    pub fn _1202() -> Self { Self::from_code("1202").unwrap() }
+    pub fn _1203() -> Self { Self::from_code("1203").unwrap() }
+    pub fn _1204() -> Self { Self::from_code("1204").unwrap() }
+
+    pub fn _1301() -> Self { Self::from_code("1301").unwrap() }
+    pub fn _1302() -> Self { Self::from_code("1302").unwrap() }
+
+    pub fn _2001() -> Self { Self::from_code("2001").unwrap() }
+}
+
+
 
 //------------ Error ---------------------------------------------------------
 
@@ -649,6 +773,9 @@ pub enum Error {
 
     #[display(fmt = "Could not parse SKI in revoke request.")]
     InvalidSki,
+
+    #[display(fmt = "Invalid not-performed error code: {}.", _0)]
+    InvalidErrorCode(String),
 
     #[display(fmt = "{}", _0)]
     InrSyntax(String),
@@ -789,19 +916,23 @@ mod tests {
         let revocation = RevocationRequest::new(class, ski);
 
         let rev = Message::revoke_response(sender, rcpt, revocation);
-
         let decoded_rev = Message::decode(rev.encode_vec().as_slice()).unwrap();
 
         assert_eq!(rev, decoded_rev);
     }
 
-    #[test]
-    #[ignore]
-    fn print_cms_content() {
-        let xml = extract_xml(
-            include_bytes!("../test/remote/rpkid-rfc6492-issue_response.der")
-        );
 
-        eprintln!("{}", xml);
+    #[test]
+    fn encode_and_parse_error_response() {
+        // No example CMS found for this one, so just composing and
+        // reading the XML based on the RFC spec only.
+        let sender = "child".to_string();
+        let rcpt = "parent".to_string();
+        let err = NotPerformedResponse::_1101();
+
+        let err = Message::error_response(sender, rcpt, err).unwrap();
+        let decoded = Message::decode(err.encode_vec().as_slice()).unwrap();
+
+        assert_eq!(err, decoded);
     }
 }
