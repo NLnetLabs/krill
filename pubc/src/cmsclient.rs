@@ -6,11 +6,11 @@ use rpki::crypto::Signer;
 use krill_commons::api::publication::ListReply;
 use krill_commons::util::{softsigner, file};
 use krill_commons::util::softsigner::OpenSslSigner;
-use krill_cms_proxy::builder::IdCertBuilder;
-use krill_cms_proxy::rfc8183;
-use krill_cms_proxy::rfc8183::RepositoryResponse;
-use krill_cms_proxy::id::{MyIdentity, ParentInfo, MyRepoInfo};
-use krill_cms_proxy::proxy::{ClientProxy, ClientError};
+use krill_commons::remote::builder::IdCertBuilder;
+use krill_commons::remote::rfc8183;
+use krill_commons::remote::rfc8183::RepositoryResponse;
+use krill_commons::remote::id::{MyIdentity, ParentInfo, MyRepoInfo};
+use krill_commons::remote::proxy::{ClientProxy, ClientError};
 use crate::{create_delta, ApiResponse, Format};
 
 #[derive(Debug, Deserialize, Eq, PartialEq)]
@@ -366,7 +366,7 @@ pub enum Error {
     SignerError(softsigner::SignerError),
 
     #[display(fmt="{}", _0)]
-    BuilderError(krill_cms_proxy::builder::Error<softsigner::SignerError>),
+    BuilderError(krill_commons::remote::builder::Error<softsigner::SignerError>),
 
     #[display(fmt="{}", _0)]
     IoError(io::Error),
@@ -387,8 +387,8 @@ impl From<softsigner::SignerError> for Error {
     }
 }
 
-impl From<krill_cms_proxy::builder::Error<softsigner::SignerError>> for Error {
-    fn from(e: krill_cms_proxy::builder::Error<softsigner::SignerError>) -> Self {
+impl From<krill_commons::remote::builder::Error<softsigner::SignerError>> for Error {
+    fn from(e: krill_commons::remote::builder::Error<softsigner::SignerError>) -> Self {
         Error::BuilderError(e)
     }
 }

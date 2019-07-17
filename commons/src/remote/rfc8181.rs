@@ -3,16 +3,16 @@
 use std::io;
 use bytes::Bytes;
 use rpki::uri;
-use krill_commons::api::publication;
-use krill_commons::api::{Base64, EncodedHash};
-use krill_commons::util::xml::{
+use crate::api::publication;
+use crate::api::{Base64, EncodedHash};
+use crate::util::xml::{
     Attributes,
     AttributesError,
     XmlReader,
     XmlReaderErr,
     XmlWriter
 };
-use crate::sigmsg::SignedMessage;
+use crate::remote::sigmsg::SignedMessage;
 
 pub const VERSION: &str = "4";
 pub const NS: &str = "http://www.hactrn.net/uris/rpki/publication-spec/";
@@ -892,8 +892,8 @@ mod tests {
 
     use std::str;
 
-    use krill_commons::api::EncodedHash;
-    use krill_commons::util::test::rsync;
+    use crate::api::EncodedHash;
+    use crate::util::test::rsync;
 
     struct ListReplyBuilder {
         elements: Vec<publication::ListElement>
@@ -930,49 +930,49 @@ mod tests {
 
     #[test]
     fn should_parse_and_encode_multi_element_query() {
-        let xml = include_str!("../test/publication/publish.xml");
+        let xml = include_str!("../../test-resources/publication/publish.xml");
         let pm = Message::decode(xml.as_bytes()).unwrap();
         assert_re_encode_equals(pm, xml);
     }
 
     #[test]
     fn should_parse_and_encode_list_query() {
-        let xml = include_str!("../test/publication/list.xml");
+        let xml = include_str!("../../test-resources/publication/list.xml");
         let l = Message::decode(xml.as_bytes()).unwrap();
         assert_re_encode_equals(l, xml);
     }
 
     #[test]
     fn should_parse_and_encode_success_reply() {
-        let xml = include_str!("../test/publication/success.xml");
+        let xml = include_str!("../../test-resources/publication/success.xml");
         let s = Message::decode(xml.as_bytes()).unwrap();
         assert_re_encode_equals(s, xml);
     }
 
     #[test]
     fn should_parse_and_encode_list_reply() {
-        let xml = include_str!("../test/publication/list_reply.xml");
+        let xml = include_str!("../../test-resources/publication/list_reply.xml");
         let r = Message::decode(xml.as_bytes()).unwrap();
         assert_re_encode_equals(r, xml);
     }
 
     #[test]
     fn should_parse_and_encode_minimal_error() {
-        let xml = include_str!("../test/publication/report_error_minimal.xml");
+        let xml = include_str!("../../test-resources/publication/report_error_minimal.xml");
         let e = Message::decode(xml.as_bytes()).unwrap();
         assert_re_encode_equals(e, xml);
     }
 
     #[test]
     fn should_parse_and_encode_complex_error() {
-        let xml = include_str!("../test/publication/report_error_complex.xml");
+        let xml = include_str!("../../test-resources/publication/report_error_complex.xml");
         let e = Message::decode(xml.as_bytes()).unwrap();
         assert_re_encode_equals(e, xml);
     }
 
     #[test]
     fn should_parse_empty_list_reply() {
-        let xml = include_str!("../test/publication/list_reply_empty.xml");
+        let xml = include_str!("../../test-resources/publication/list_reply_empty.xml");
         let _ = Message::decode(xml.as_bytes()).unwrap();
     }
 
@@ -981,15 +981,15 @@ mod tests {
         let m = Message::success_reply();
         let v = m.encode_vec();
         let produced_xml = str::from_utf8(&v).unwrap();
-        let expected_xml = include_str!("../test/publication/generated/success_reply_result.xml");
+        let expected_xml = include_str!("../../test-resources/publication/generated/success_reply_result.xml");
 
         assert_eq!(produced_xml, expected_xml);
     }
 
     #[test]
     fn should_create_list_reply() {
-        let object = Bytes::from_static(include_bytes!("../test/remote/cms_ta.cer"));
-        let object2 = Bytes::from_static(include_bytes!("../test/remote/pdu_200.der"));
+        let object = Bytes::from_static(include_bytes!("../../test-resources/remote/cms_ta.cer"));
+        let object2 = Bytes::from_static(include_bytes!("../../test-resources/remote/pdu_200.der"));
 
         let mut b = ListReplyBuilder::with_capacity(2);
         b.add(&object, rsync("rsync://host/path/cms-ta.cer"));
@@ -998,14 +998,14 @@ mod tests {
 
         let v = m.encode_vec();
         let produced_xml = str::from_utf8(&v).unwrap();
-        let expected_xml = include_str!("../test/publication/generated/list_reply_result.xml");
+        let expected_xml = include_str!("../../test-resources/publication/generated/list_reply_result.xml");
 
         assert_eq!(produced_xml, expected_xml);
     }
 
     #[test]
     fn should_create_error_reply() {
-        let object = Bytes::from_static(include_bytes!("../test/remote/cms_ta.cer"));
+        let object = Bytes::from_static(include_bytes!("../../test-resources/remote/cms_ta.cer"));
         let object = Base64::from_content(&object);
         let publish = publication::Publish::with_hash_tag(
             rsync("rsync://host/path/cms-ta.cer"),
@@ -1024,7 +1024,7 @@ mod tests {
 
         let v = m.encode_vec();
         let produced_xml = str::from_utf8(&v).unwrap();
-        let expected_xml = include_str!("../test/publication/generated/error_reply_result.xml");
+        let expected_xml = include_str!("../../test-resources/publication/generated/error_reply_result.xml");
 
         assert_eq!(produced_xml, expected_xml);
     }
@@ -1034,15 +1034,15 @@ mod tests {
         let lq = Message::list_query();
         let vec = lq.encode_vec();
         let produced_xml = str::from_utf8(&vec).unwrap();
-        let expected_xml = include_str!("../test/publication/generated/list_query_result.xml");
+        let expected_xml = include_str!("../../test-resources/publication/generated/list_query_result.xml");
 
         assert_eq!(produced_xml, expected_xml);
     }
 
     #[test]
     fn should_encode_publish_delta() {
-        let object = Bytes::from_static(include_bytes!("../test/remote/cms_ta.cer"));
-        let object2 = Bytes::from_static(include_bytes!("../test/remote/pdu_200.der"));
+        let object = Bytes::from_static(include_bytes!("../../test-resources/remote/cms_ta.cer"));
+        let object2 = Bytes::from_static(include_bytes!("../../test-resources/remote/pdu_200.der"));
         let object_hash = EncodedHash::from_content(&object);
         let object = Base64::from_content(&object);
         let object2 = Base64::from_content(&object2);
@@ -1075,7 +1075,7 @@ mod tests {
         let vec = m.encode_vec();
         let produced_xml = str::from_utf8(&vec).unwrap();
 
-        let expected_xml = include_str!("../test/publication/generated/publish_query_result.xml");
+        let expected_xml = include_str!("../../test-resources/publication/generated/publish_query_result.xml");
 
         assert_eq!(produced_xml, expected_xml);
     }

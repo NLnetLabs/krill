@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use krill_commons::api::admin::Handle;
-use krill_commons::eventsourcing::{
+use crate::api::admin::Handle;
+use crate::eventsourcing::{
     Aggregate,
     Command,
     CommandDetails,
@@ -8,11 +8,11 @@ use krill_commons::eventsourcing::{
     SentCommand,
     StoredEvent
 };
-use crate::api::{
+use crate::remote::api::{
     ClientAuth,
     ClientInfo
 };
-use crate::id::IdCert;
+use crate::remote::id::IdCert;
 
 // const fn is not stable yet
 const ID: &str = "cms-clients";
@@ -230,13 +230,13 @@ pub mod tests {
 
     use super::*;
     use std::path::PathBuf;
-    use krill_commons::util::test;
-    use krill_commons::eventsourcing::AggregateStore;
-    use krill_commons::eventsourcing::DiskAggregateStore;
-    use krill_commons::util::softsigner::OpenSslSigner;
     use rpki::crypto::PublicKeyFormat;
     use rpki::crypto::Signer;
-    use crate::builder::IdCertBuilder;
+    use crate::util::test;
+    use crate::eventsourcing::AggregateStore;
+    use crate::eventsourcing::DiskAggregateStore;
+    use crate::util::softsigner::OpenSslSigner;
+    use crate::remote::builder::IdCertBuilder;
 
     pub fn new_id_cert(work_dir: &PathBuf) -> IdCert {
         let mut s = OpenSslSigner::build(work_dir).unwrap();

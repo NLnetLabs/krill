@@ -1,8 +1,8 @@
 use std::str::{FromStr, from_utf8_unchecked};
-use krill_cms_proxy::api::ClientInfo;
-use krill_cms_proxy::rfc8183::RepositoryResponse;
 use krill_commons::api::admin::{PublisherDetails, PublisherList, ParentCaContact};
 use krill_commons::api::ca::{TrustAnchorInfo, CertAuthList, CertAuthInfo, CaParentsInfo, CurrentObjects};
+use krill_commons::remote::api::ClientInfo;
+use krill_commons::remote::rfc8183::RepositoryResponse;
 
 
 //------------ ApiResponse ---------------------------------------------------

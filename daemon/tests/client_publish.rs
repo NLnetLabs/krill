@@ -1,5 +1,4 @@
 extern crate krill_client;
-extern crate krill_cms_proxy;
 extern crate krill_commons;
 extern crate krill_daemon;
 extern crate krill_pubc;
@@ -16,12 +15,12 @@ use krill_client::options::{
     Rfc8181Command,
 };
 use krill_client::report::ReportFormat;
-use krill_cms_proxy::rfc8183::RepositoryResponse;
 use krill_commons::api::admin::{
     Handle,
     Token
 };
 use krill_commons::api::publication::ListReply;
+use krill_commons::remote::rfc8183::RepositoryResponse;
 use krill_commons::util::file::CurrentFile;
 use krill_commons::util::file;
 use krill_commons::util::httpclient;

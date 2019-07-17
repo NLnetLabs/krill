@@ -11,19 +11,19 @@ use krill_commons::api::{publication, Entitlements, IssuanceRequest, IssuanceRes
 use krill_commons::api::admin;
 use krill_commons::api::admin::{Handle, Token, PubServerInfo, CertAuthInit, CertAuthPubMode, ParentCaContact, AddChildRequest, ParentCaReq};
 use krill_commons::api::ca::{TrustAnchorInfo, RcvdCert, CertAuthList, CertAuthInfo};
+use krill_commons::api::publication::PublishRequest;
 use krill_commons::util::softsigner::{OpenSslSigner, SignerError};
-use krill_cms_proxy::api::ClientInfo;
-use krill_cms_proxy::proxy;
-use krill_cms_proxy::proxy::ProxyServer;
-use krill_cms_proxy::rfc8183::RepositoryResponse;
-use krill_cms_proxy::sigmsg::SignedMessage;
+use krill_commons::remote::api::ClientInfo;
+use krill_commons::remote::proxy;
+use krill_commons::remote::proxy::ProxyServer;
+use krill_commons::remote::rfc8181::ReplyMessage;
+use krill_commons::remote::rfc8183::RepositoryResponse;
+use krill_commons::remote::sigmsg::SignedMessage;
 use krill_pubd::PubServer;
 use krill_pubd::publishers::Publisher;
 
 use crate::auth::{Auth, Authorizer};
 use crate::republisher::Republisher;
-use krill_commons::api::publication::PublishRequest;
-use krill_cms_proxy::rfc8181::ReplyMessage;
 
 
 //------------ KrillServer ---------------------------------------------------

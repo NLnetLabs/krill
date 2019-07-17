@@ -168,10 +168,8 @@ impl<S: CaSigner> CaServer<S> {
         Ok(())
     }
 
-
     /// Generates a random token for embedded CAs
     pub fn random_token(&self) -> Token {
-        use std::ops::Deref;
         Token::random(self.signer.read().unwrap().deref())
     }
 }

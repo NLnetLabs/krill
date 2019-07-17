@@ -675,8 +675,8 @@ impl<S: CaSigner> Aggregate for CertAuth<S> {
                 // to parent
             },
             CaEvtDet::PendingKeyActivated(parent, class_name, cert) => {
-                let mut parent = self.parent_mut(parent).unwrap();
-                let mut rc = parent.class_mut(&class_name).unwrap();
+                let parent = self.parent_mut(parent).unwrap();
+                let rc = parent.class_mut(&class_name).unwrap();
                 rc.pending_key_activated(cert);
             }
             CaEvtDet::CertificateReceived(_rcvd) => {
@@ -685,9 +685,9 @@ impl<S: CaSigner> Aggregate for CertAuth<S> {
 
             // General functions
             CaEvtDet::Published(parent, class_name, status, delta) => {
-                let mut parent = self.parent_mut(parent).unwrap();
-                let mut rc = parent.class_mut(&class_name).unwrap();
-                let mut ck = rc.get_key_mut(&status).unwrap();
+                let parent = self.parent_mut(parent).unwrap();
+                let rc = parent.class_mut(&class_name).unwrap();
+                let ck = rc.get_key_mut(&status).unwrap();
                 ck.apply_delta(delta);
             },
             CaEvtDet::TaPublished(delta) => {

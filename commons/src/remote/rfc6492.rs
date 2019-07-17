@@ -12,9 +12,17 @@ use rpki::resources::{AsResources, Ipv4Resources, Ipv6Resources};
 use rpki::uri;
 use rpki::x509::Time;
 
-use krill_commons::api::{Entitlements, EntitlementClass, SigningCert, RequestResourceLimit, IssuanceRequest, IssuanceResponse, RevocationRequest};
-use krill_commons::api::ca::{ResourceSet, ResSetErr, IssuedCert};
-use krill_commons::util::xml::{XmlReader, XmlReaderErr, AttributesError, XmlWriter};
+use crate::api::{
+    EntitlementClass,
+    Entitlements,
+    IssuanceRequest,
+    IssuanceResponse,
+    RevocationRequest,
+    RequestResourceLimit,
+    SigningCert,
+};
+use crate::api::ca::{ResourceSet, ResSetErr, IssuedCert};
+use crate::util::xml::{XmlReader, XmlReaderErr, AttributesError, XmlWriter};
 
 
 //------------ Consts --------------------------------------------------------
@@ -823,8 +831,8 @@ mod tests {
     use std::str;
     use std::str::from_utf8_unchecked;
 
-    use crate::sigmsg::SignedMessage;
-    use crate::id::tests::test_id_certificate;
+    use crate::remote::sigmsg::SignedMessage;
+    use crate::remote::id::tests::test_id_certificate;
 
     use super::*;
 
@@ -849,7 +857,7 @@ mod tests {
     #[test]
     fn parse_and_encode_list() {
         let xml = extract_xml(
-            include_bytes!("../test/remote/rpkid-rfc6492-list.der")
+            include_bytes!("../../test-resources/remote/rpkid-rfc6492-list.der")
         );
         let list = Message::decode(xml.as_bytes()).unwrap();
         assert_re_encode_equals(list);
@@ -858,7 +866,7 @@ mod tests {
     #[test]
     fn parse_and_encode_list_response() {
         let xml = extract_xml(
-            include_bytes!("../test/remote/rpkid-rfc6492-list_response.der")
+            include_bytes!("../../test-resources/remote/rpkid-rfc6492-list_response.der")
         );
         let list_response = Message::decode(xml.as_bytes()).unwrap();
         assert_re_encode_equals(list_response);
@@ -867,7 +875,7 @@ mod tests {
     #[test]
     fn parse_and_encode_issue() {
         let xml = extract_xml(
-            include_bytes!("../test/remote/rpkid-rfc6492-issue.der")
+            include_bytes!("../../test-resources/remote/rpkid-rfc6492-issue.der")
         );
         let issue = Message::decode(xml.as_bytes()).unwrap();
         assert_re_encode_equals(issue);
@@ -876,7 +884,7 @@ mod tests {
     #[test]
     fn parse_and_encode_issue_response() {
         let xml = extract_xml(
-            include_bytes!("../test/remote/rpkid-rfc6492-issue_response.der")
+            include_bytes!("../../test-resources/remote/rpkid-rfc6492-issue_response.der")
         );
         let issue = Message::decode(xml.as_bytes()).unwrap();
         assert_re_encode_equals(issue);

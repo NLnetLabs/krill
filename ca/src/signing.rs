@@ -98,7 +98,7 @@ impl CaSignSupport {
         let crl_uri = repo_info.resolve(name_space, &crl_name);
 
         let crl: Crl = {
-            let mut crl = TbsCertList::new(
+            let crl = TbsCertList::new(
                 Default::default(),
                 pub_key.to_subject_name(),
                 now,

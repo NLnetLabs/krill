@@ -3,7 +3,6 @@ extern crate clap;
 extern crate rpki;
 #[macro_use] extern crate serde;
 
-extern crate krill_cms_proxy;
 extern crate krill_commons;
 
 pub mod apiclient;

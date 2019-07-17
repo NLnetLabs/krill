@@ -10,21 +10,24 @@ use std::convert::TryFrom;
 
 use base64::DecodeError;
 use bcder::decode;
+use bytes::Bytes;
 
 use rpki::uri;
 use rpki::uri::Https;
 use rpki::x509;
 use rpki::x509::Time;
 
-use krill_commons::api::admin::Handle;
-use krill_commons::util::xml::{
+use crate::api::admin::Handle;
+use crate::util::file;
+use crate::util::xml::{
     AttributesError,
     XmlReader,
     XmlReaderErr,
     XmlWriter
 };
 
-use crate::id::IdCert;
+
+use crate::remote::id::IdCert;
 
 pub const VERSION: &str = "1";
 pub const NS: &str = "http://www.hactrn.net/uris/rpki/rpki-setup/";
@@ -403,9 +406,6 @@ impl PublisherRequest {
 
     /// Saves this as an XML file
     pub fn save(&self, full_path: &PathBuf) -> Result<(), io::Error> {
-        use krill_commons::util::file;
-        use bytes::Bytes;
-
         let xml = self.encode_vec();
         file::save(&Bytes::from(xml), full_path)
     }
@@ -586,9 +586,6 @@ impl RepositoryResponse {
 
     /// Saves this as an XML file
     pub fn save(&self, full_path: &PathBuf) -> Result<(), io::Error> {
-        use krill_commons::util::file;
-        use bytes::Bytes;
-
         let xml = self.encode_vec();
         file::save(&Bytes::from(xml), full_path)
     }
@@ -698,7 +695,8 @@ impl From<uri::Error> for Error {
 #[cfg(test)]
 mod tests {
     use rpki::x509::Time;
-    use krill_commons::util::test;
+    use crate::remote::id::tests::test_id_certificate;
+    use crate::util::test;
     use super::*;
 
     fn rpkid_time() -> Time {
@@ -721,7 +719,7 @@ mod tests {
 
     #[test]
     fn validate_rpkid_publisher_request() {
-        let xml = include_str!("../test/oob/publisher_request.xml");
+        let xml = include_str!("../../test-resources/oob/publisher_request.xml");
         let pr = PublisherRequest::validate_at(
             xml.as_bytes(),
             rpkid_time()
@@ -732,7 +730,7 @@ mod tests {
 
     #[test]
     fn validate_rpkid_repository_response() {
-        let xml = include_str!("../test/oob/repository_response.xml");
+        let xml = include_str!("../../test-resources/oob/repository_response.xml");
         let rr = RepositoryResponse::validate_at(
             xml.as_bytes(),
             rpkid_time()
@@ -746,7 +744,7 @@ mod tests {
 
     #[test]
     fn publisher_request() {
-        let cert = ::id::tests::test_id_certificate();
+        let cert = test_id_certificate();
 
         let pr = PublisherRequest {
             tag: Some("tag".to_string()),
@@ -764,7 +762,7 @@ mod tests {
 
     #[test]
     fn repository_response() {
-        let cert = ::id::tests::test_id_certificate();
+        let cert = test_id_certificate();
 
         let pr = RepositoryResponse {
             tag: Some("tag".to_string()),
@@ -785,7 +783,7 @@ mod tests {
 
     #[test]
     fn child_request() {
-        let xml = include_str!("../test/remote/rpkid-child-id.xml");
+        let xml = include_str!("../../test-resources/remote/rpkid-child-id.xml");
         let req = ChildRequest::validate_at(
             xml.as_bytes(),
             rpkid_time()
@@ -805,7 +803,7 @@ mod tests {
 
     #[test]
     fn validate_rpkid_parent_response_referral() {
-        let xml = include_str!("../test/remote/rpkid-parent-response-referral.xml");
+        let xml = include_str!("../../test-resources/remote/rpkid-parent-response-referral.xml");
         let _res = ParentResponse::validate_at(
             xml.as_bytes(),
             rpkid_time()
@@ -814,7 +812,7 @@ mod tests {
 
     #[test]
     fn parent_response() {
-        let xml = include_str!("../test/remote/rpkid-parent-response-offer.xml");
+        let xml = include_str!("../../test-resources/remote/rpkid-parent-response-offer.xml");
         let res = ParentResponse::validate_at(
             xml.as_bytes(),
             rpkid_time()

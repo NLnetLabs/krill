@@ -1,8 +1,7 @@
 //! Common types used by the various Krill components.
 
-//extern crate actix;
-//extern crate actix_web;
 extern crate base64;
+#[macro_use] extern crate bcder;
 extern crate bytes;
 extern crate chrono;
 #[macro_use] extern crate derive_more;
@@ -21,4 +20,5 @@ extern crate core;
 
 pub mod api;
 pub mod eventsourcing;
+pub mod remote;
 pub mod util;

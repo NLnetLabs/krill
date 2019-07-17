@@ -8,54 +8,54 @@ use bcder::encode::Values;
 use rpki::uri;
 use rpki::x509::ValidationError;
 
-use krill_commons::api::{
+use crate::api::{
     ErrorCode,
     ErrorResponse,
 };
-use krill_commons::api::admin::Handle;
-use krill_commons::api::publication::{
+use crate::api::admin::Handle;
+use crate::api::publication::{
     ListReply,
     PublishRequest,
     PublishDelta,
 };
-use krill_commons::eventsourcing::{
+use crate::eventsourcing::{
     Aggregate,
     AggregateStore,
     AggregateStoreError,
     DiskAggregateStore,
 };
-use krill_commons::util::httpclient;
-use krill_commons::util::softsigner::{OpenSslSigner, SignerError};
+use crate::util::httpclient;
+use crate::util::softsigner::{OpenSslSigner, SignerError};
 use rpki::crypto::{
     PublicKeyFormat,
     Signer
 };
-use crate::api::{
+use crate::remote::api::{
     ClientInfo,
 };
-use crate::clients::{
+use crate::remote::clients::{
     self,
     ClientManager,
     ClientsEvents,
     ClientsCommand,
     ClientsCommands
 };
-use crate::builder::{
+use crate::remote::builder::{
     self,
     IdCertBuilder,
     SignedMessageBuilder,
 };
-use crate::id::{
+use crate::remote::id::{
     IdCert,
     MyIdentity,
     ParentInfo
 };
-use crate::responder::{
+use crate::remote::responder::{
     self,
     Responder,
     ResponderEvents
 };
-use crate::rfc8181::{
+use crate::remote::rfc8181::{
     self,
     ErrorReply,
     Message,
@@ -63,9 +63,9 @@ use crate::rfc8181::{
     ReportError,
     ReportErrorCode,
 };
-use crate::rfc8183::RepositoryResponse;
-use crate::sigmsg::SignedMessage;
-use rfc8183::ServiceUri;
+use crate::remote::rfc8183::RepositoryResponse;
+use crate::remote::rfc8183::ServiceUri;
+use crate::remote::sigmsg::SignedMessage;
 
 
 #[derive(Clone)]
@@ -501,7 +501,7 @@ impl From<SignerError> for ClientError {
 mod tests {
 
     use super::*;
-    use krill_commons::util::test;
+    use crate::util::test;
 
     #[test]
     fn should_init() {

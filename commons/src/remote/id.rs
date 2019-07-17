@@ -14,8 +14,8 @@ use rpki::cert::ext::{
 use rpki::crypto::{PublicKey, SignatureAlgorithm};
 use rpki::x509::{Name, SignedData, Time, ValidationError, Validity};
 
-use krill_commons::util::softsigner::SignerKeyId;
-use rfc8183::ServiceUri;
+use crate::remote::rfc8183::ServiceUri;
+use crate::util::softsigner::SignerKeyId;
 
 
 //------------ MyIdentity ----------------------------------------------------
@@ -614,7 +614,7 @@ pub mod tests {
 
     // Useful until we can create IdCerts of our own
     pub fn test_id_certificate() -> IdCert {
-        let data = include_bytes!("../test/oob/id_publisher_ta.cer");
+        let data = include_bytes!("../../test-resources/oob/id_publisher_ta.cer");
         IdCert::decode(Bytes::from_static(data)).unwrap()
     }
 

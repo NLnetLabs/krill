@@ -13,12 +13,12 @@ use krill_commons::api::admin::{
     Token,
 };
 use krill_commons::api::ca::{TrustAnchorInfo};
-use krill_cms_proxy::api::{
+use krill_commons::remote::api::{
     ClientAuth,
     ClientInfo,
 };
-use krill_cms_proxy::rfc8183;
-use krill_cms_proxy::rfc8183::RepositoryResponse;
+use krill_commons::remote::rfc8183;
+use krill_commons::remote::rfc8183::RepositoryResponse;
 
 use crate::report::{
     ApiResponse,

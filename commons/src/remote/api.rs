@@ -1,9 +1,9 @@
 use rpki::uri;
 
-use krill_commons::api::admin::Handle;
-use krill_commons::util::softsigner::SignerKeyId;
+use crate::api::admin::Handle;
+use crate::util::softsigner::SignerKeyId;
 
-use crate::id::IdCert;
+use crate::remote::id::IdCert;
 
 //------------ Client ------------------------------------------------------
 

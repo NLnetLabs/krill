@@ -20,7 +20,7 @@ use rpki::sigobj::{
 };
 use rpki::x509::{Time, ValidationError};
 
-use crate::id::IdCert;
+use crate::remote::id::IdCert;
 
 //------------ Cms -----------------------------------------------------------
 
@@ -244,12 +244,12 @@ mod tests {
 
     #[test]
     fn should_parse_and_validate_signed_message() {
-        let der = include_bytes!("../test/remote/pdu_200.der");
+        let der = include_bytes!("../../test-resources/remote/pdu_200.der");
         let msg = SignedMessage::decode(
             Bytes::from_static(der), false
         ).unwrap();
 
-        let b = include_bytes!("../test/remote/cms_ta.cer");
+        let b = include_bytes!("../../test-resources/remote/cms_ta.cer");
         let id_cert = IdCert::decode(Bytes::from_static(b)).unwrap();
 
         msg.validate_at(&id_cert, Time::utc(2012, 1, 1, 0, 0, 0)).unwrap();
@@ -257,12 +257,12 @@ mod tests {
 
     #[test]
     fn should_reject_invalid_signed_message() {
-        let der = include_bytes!("../test/remote/pdu_200.der");
+        let der = include_bytes!("../../test-resources/remote/pdu_200.der");
         let msg = SignedMessage::decode(
             Bytes::from_static(der), false
         ).unwrap();
 
-        let b = include_bytes!("../test/oob/id_publisher_ta.cer");
+        let b = include_bytes!("../../test-resources/oob/id_publisher_ta.cer");
         let id_cert = IdCert::decode(Bytes::from_static(b)).unwrap();
 
         assert_eq!(

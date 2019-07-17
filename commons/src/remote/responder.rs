@@ -1,11 +1,11 @@
-use krill_commons::api::admin::Handle;
-use krill_commons::eventsourcing::{
+use crate::api::admin::Handle;
+use crate::eventsourcing::{
     Aggregate,
     CommandDetails,
     SentCommand,
     StoredEvent
 };
-use crate::id::MyIdentity;
+use crate::remote::id::MyIdentity;
 
 
 // const fn is not stable yet
@@ -114,15 +114,15 @@ impl std::error::Error for Error {}
 #[cfg(test)]
 mod tests {
 
-    use super::*;
     use std::path::PathBuf;
-    use krill_commons::util::test;
-    use krill_commons::eventsourcing::AggregateStore;
-    use krill_commons::eventsourcing::DiskAggregateStore;
-    use krill_commons::util::softsigner::OpenSslSigner;
     use rpki::crypto::PublicKeyFormat;
     use rpki::crypto::Signer;
-    use crate::builder::IdCertBuilder;
+    use crate::util::test;
+    use crate::eventsourcing::AggregateStore;
+    use crate::eventsourcing::DiskAggregateStore;
+    use crate::util::softsigner::OpenSslSigner;
+    use crate::remote::builder::IdCertBuilder;
+    use super::*;
 
     pub fn new_id(work_dir: &PathBuf) -> MyIdentity {
         let mut s = OpenSslSigner::build(work_dir).unwrap();

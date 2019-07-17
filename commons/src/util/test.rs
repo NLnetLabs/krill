@@ -1,8 +1,10 @@
+use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::str::FromStr;
 use bytes::Bytes;
+use rand::{thread_rng, Rng};
 use rpki::uri;
 
 /// This method sets up a test directory with a random name (a number)
@@ -12,9 +14,6 @@ use rpki::uri;
 ///
 /// Note that if your test fails the directory is not cleaned up.
 pub fn test_under_tmp<F>(op: F) where F: FnOnce(PathBuf) -> () {
-    use std::fs;
-    use std::path::PathBuf;
-
     let dir = sub_dir(&PathBuf::from("work"));
     let path = PathBuf::from(&dir);
 
@@ -26,10 +25,6 @@ pub fn test_under_tmp<F>(op: F) where F: FnOnce(PathBuf) -> () {
 /// This method sets up a random subdirectory and returns it. It is
 /// assumed that the caller will clean this directory themselves.
 pub fn sub_dir(base_dir: &PathBuf) -> PathBuf {
-    use std::fs;
-    use std::path::PathBuf;
-    use rand::{thread_rng, Rng};
-
     let mut rng = thread_rng();
     let rnd: u32 = rng.gen();
 

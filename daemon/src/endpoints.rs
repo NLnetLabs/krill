@@ -13,12 +13,12 @@ use bytes::Bytes;
 use serde::Serialize;
 
 use krill_ca::{CaError, CaServerError};
-use krill_cms_proxy::api::ClientInfo;
-use krill_cms_proxy::sigmsg::SignedMessage;
 use krill_commons::api::{admin, publication, ErrorCode, ErrorResponse, IssuanceRequest};
 use krill_commons::api::admin::{Handle, CertAuthInit, AddChildRequest, ParentCaReq};
 use krill_commons::api::rrdp::VerificationError;
 use krill_commons::util::softsigner::OpenSslSigner;
+use krill_commons::remote::api::ClientInfo;
+use krill_commons::remote::sigmsg::SignedMessage;
 use krill_pubd::publishers::PublisherError;
 use krill_pubd::repo::RrdpServerError;
 
