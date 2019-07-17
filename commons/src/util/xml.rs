@@ -410,7 +410,7 @@ pub enum AttributesError {
 }
 
 impl AttributesError {
-    fn extras(atts: &Vec<OwnedAttribute>) -> Self {
+    fn extras(atts: &[OwnedAttribute]) -> Self {
         let atts: Vec<String> = atts.iter().map(|a| format!("{}", a)).collect();
         let atts = atts.join(", ");
         AttributesError::ExtraAttributes(atts)
