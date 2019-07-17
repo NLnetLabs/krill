@@ -15,6 +15,7 @@ use rpki::crypto::{PublicKey, SignatureAlgorithm};
 use rpki::x509::{Name, SignedData, Time, ValidationError, Validity};
 
 use krill_commons::util::softsigner::SignerKeyId;
+use rfc8183::ServiceUri;
 
 
 //------------ MyIdentity ----------------------------------------------------
@@ -75,14 +76,14 @@ impl Eq for MyIdentity {}
 pub struct ParentInfo {
     publisher_handle: String,
     id_cert: IdCert,
-    service_uri: uri::Https,
+    service_uri: ServiceUri,
 }
 
 impl ParentInfo {
     pub fn new(
         publisher_handle: String,
         id_cert: IdCert,
-        service_uri: uri::Https,
+        service_uri: ServiceUri,
     ) -> Self {
         ParentInfo {
             publisher_handle,
@@ -97,7 +98,7 @@ impl ParentInfo {
     }
 
     /// The service URI where the client should send requests.
-    pub fn service_uri(&self) -> &uri::Https {
+    pub fn service_uri(&self) -> &ServiceUri {
         &self.service_uri
     }
 

@@ -65,6 +65,7 @@ use crate::rfc8181::{
 };
 use crate::rfc8183::RepositoryResponse;
 use crate::sigmsg::SignedMessage;
+use rfc8183::ServiceUri;
 
 
 #[derive(Clone)]
@@ -148,6 +149,7 @@ impl ProxyServer {
         };
 
         let publisher_handle = handle.to_string();
+        let service_uri = ServiceUri::Https(service_uri);
 
         Ok(RepositoryResponse::new(
             tag,

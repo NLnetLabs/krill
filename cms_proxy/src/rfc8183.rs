@@ -424,7 +424,7 @@ pub struct RepositoryResponse {
     id_cert: IdCert,
 
     /// The URI where the CA needs to send its RFC8181 messages
-    service_uri: uri::Https,
+    service_uri: ServiceUri,
 
     /// The Rsync base directory for objects published by the CA
     sia_base: uri::Rsync,
@@ -440,7 +440,7 @@ impl RepositoryResponse {
         tag: Option<String>,
         publisher_handle: String,
         id_cert: IdCert,
-        service_uri: uri::Https,
+        service_uri: ServiceUri,
         sia_base: uri::Rsync,
         rrdp_notification_uri: uri::Https
     ) -> Self {
@@ -466,7 +466,7 @@ impl RepositoryResponse {
 
                 let tag = a.take_opt("tag");
                 let publisher_handle = a.take_req("publisher_handle")?;
-                let service_uri = uri::Https::from_string(
+                let service_uri = ServiceUri::try_from(
                     a.take_req("service_uri")?)?;
                 let sia_base = uri::Rsync::from_string(
                     a.take_req("sia_base")?)?;
@@ -567,7 +567,7 @@ impl RepositoryResponse {
         &self.id_cert
     }
 
-    pub fn service_uri(&self) -> &uri::Https {
+    pub fn service_uri(&self) -> &ServiceUri {
         &self.service_uri
     }
 
@@ -595,7 +595,6 @@ impl TryFrom<String> for ServiceUri {
     type Error = Error;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        let value = value.to_lowercase();
         if value.starts_with("http://") {
             // TODO: Check a bit better? It will blow up when the uri is used..
             Ok(ServiceUri::Http(value))
@@ -704,8 +703,10 @@ mod tests {
         test::rsync("rsync://a.example/rpki/Alice/Bob-42/")
     }
 
-    fn example_service_uri() -> uri::Https {
-        test::https("https://a.example/publication/Alice/Bob-42")
+    fn example_service_uri() -> ServiceUri {
+        ServiceUri::Https(
+            test::https("https://a.example/publication/Alice/Bob-42")
+        )
     }
 
     #[test]
