@@ -308,7 +308,7 @@ pub struct PublisherRequest {
     id_cert: IdCert,
 }
 
-/// # Construct && Data Access
+/// # Construct and Data Access
 ///
 impl PublisherRequest {
     pub fn new(tag: Option<&str>, publisher_handle: &str, id_cert: IdCert) -> Self {
@@ -339,7 +339,7 @@ impl PublisherRequest {
     }
 
     /// Parses a <publisher_request /> message.
-    pub fn decode_at<R>(
+    fn decode_at<R>(
         reader: R,
         now: Time
     ) -> Result<Self, Error> where R: io::Read {
@@ -442,8 +442,9 @@ pub struct RepositoryResponse {
     rrdp_notification_uri: uri::Https
 }
 
+/// # Construct and Data Access
+///
 impl RepositoryResponse {
-
     /// Creates a new response.
     pub fn new(
         tag: Option<String>,
@@ -463,10 +464,46 @@ impl RepositoryResponse {
         }
     }
 
-    /// Parses a <repository_response /> message.
-    pub fn decode<R>(reader: R) -> Result<Self, Error>
-        where R: io::Read {
+    pub fn tag(&self) -> &Option<String> {
+        &self.tag
+    }
 
+    pub fn publisher_handle(&self) -> &String {
+        &self.publisher_handle
+    }
+
+    pub fn id_cert(&self) -> &IdCert {
+        &self.id_cert
+    }
+
+    pub fn service_uri(&self) -> &ServiceUri {
+        &self.service_uri
+    }
+
+    pub fn sia_base(&self) -> &uri::Rsync {
+        &self.sia_base
+    }
+
+    pub fn rrdp_notification_uri(&self) -> &uri::Https {
+        &self.rrdp_notification_uri
+    }
+}
+
+/// # Decoding
+///
+impl RepositoryResponse {
+    /// Parses a <repository_response /> message.
+    pub fn decode<R>(
+        reader: R
+    ) -> Result<Self, Error> where R: io::Read {
+        Self::decode_at(reader, Time::now())
+    }
+
+    fn decode_at<R>(
+        reader: R,
+        now: Time
+    ) -> Result<Self, Error>
+        where R: io::Read {
         XmlReader::decode(reader, |r| {
             r.take_named_element("repository_response", |mut a, r| {
                 if a.take_req("version")? != VERSION {
@@ -487,12 +524,16 @@ impl RepositoryResponse {
                 let id_cert = r.take_named_element(
                     "repository_bpki_ta", |a, r| {
                         a.exhausted()?;
-                        r.take_bytes_std()})?;
+                        r.take_bytes_std()
+                    })?;
 
-                Ok(RepositoryResponse{
-                    tag: tag.map(Into::into),
+                let id_cert = IdCert::decode(id_cert)?;
+                id_cert.validate_ta_at(now)?;
+
+                Ok(RepositoryResponse {
+                    tag,
                     publisher_handle,
-                    id_cert: IdCert::decode(id_cert)?,
+                    id_cert,
                     service_uri,
                     sia_base,
                     rrdp_notification_uri
@@ -500,20 +541,11 @@ impl RepositoryResponse {
             })
         })
     }
+}
 
-
-    pub fn validate(&self) -> Result<(), Error> {
-        self.validate_at(Time::now())
-    }
-
-    pub fn validate_at(
-        &self,
-        now: Time
-    ) -> Result<(), Error> {
-        self.id_cert.validate_ta_at(now)?;
-        Ok(())
-    }
-
+/// # Encoding
+///
+impl RepositoryResponse {
     /// Encodes the <repository_response/> to a Vec
     pub fn encode_vec(&self) -> Vec<u8> {
         XmlWriter::encode_vec(|w| {
@@ -561,34 +593,6 @@ impl RepositoryResponse {
         file::save(&Bytes::from(xml), full_path)
     }
 }
-
-/// # Accessors
-impl RepositoryResponse {
-    pub fn tag(&self) -> &Option<String> {
-        &self.tag
-    }
-
-    pub fn publisher_handle(&self) -> &String {
-        &self.publisher_handle
-    }
-
-    pub fn id_cert(&self) -> &IdCert {
-        &self.id_cert
-    }
-
-    pub fn service_uri(&self) -> &ServiceUri {
-        &self.service_uri
-    }
-
-    pub fn sia_base(&self) -> &uri::Rsync {
-        &self.sia_base
-    }
-
-    pub fn rrdp_notification_uri(&self) -> &uri::Https {
-        &self.rrdp_notification_uri
-    }
-}
-
 
 
 //------------ ServiceUri ----------------------------------------------------
@@ -693,10 +697,7 @@ impl From<uri::Error> for Error {
 
 #[cfg(test)]
 mod tests {
-    use std::str;
-
     use rpki::x509::Time;
-
     use krill_commons::util::test;
     use super::*;
 
@@ -732,14 +733,15 @@ mod tests {
     #[test]
     fn parse_rpkid_repository_response() {
         let xml = include_str!("../test/oob/repository_response.xml");
-        let rr = RepositoryResponse::decode(xml.as_bytes()).unwrap();
+        let rr = RepositoryResponse::decode_at(
+            xml.as_bytes(),
+            rpkid_time()
+        ).unwrap();
         assert_eq!(Some("A0001".to_string()), rr.tag);
         assert_eq!("Alice/Bob-42".to_string(), rr.publisher_handle);
         assert_eq!(example_service_uri(), rr.service_uri);
         assert_eq!(example_rrdp_uri(), rr.rrdp_notification_uri);
         assert_eq!(example_sia_base(), rr.sia_base);
-
-        rr.id_cert.validate_ta_at(rpkid_time()).unwrap();
     }
 
     #[test]
@@ -775,9 +777,10 @@ mod tests {
 
         let enc = pr.encode_vec();
 
-        RepositoryResponse::decode(
-            str::from_utf8(&enc).unwrap().as_bytes()
-        ).unwrap().validate_at(rpkid_time()).unwrap();
+        RepositoryResponse::decode_at(
+            enc.as_slice(),
+            rpkid_time()
+        ).unwrap();
     }
 
     #[test]
