@@ -308,12 +308,41 @@ pub struct PublisherRequest {
     id_cert: IdCert,
 }
 
+/// # Construct && Data Access
+///
 impl PublisherRequest {
+    pub fn new(tag: Option<&str>, publisher_handle: &str, id_cert: IdCert) -> Self {
+        PublisherRequest {
+            tag: tag.map(|s| { s.to_string() }),
+            publisher_handle: publisher_handle.to_string(),
+            id_cert
+        }
+    }
+
+    pub fn id_cert(&self) -> &IdCert {
+        &self.id_cert
+    }
+
+    pub fn client_handle(&self) -> Handle {
+        Handle::from(self.publisher_handle.as_str())
+    }
+}
+
+
+/// # Decoding
+///
+impl PublisherRequest {
+    pub fn decode<R>(
+        reader: R
+    ) -> Result<Self, Error> where R: io::Read {
+        Self::decode_at(reader, Time::now())
+    }
 
     /// Parses a <publisher_request /> message.
-    pub fn decode<R>(reader: R) -> Result<Self, Error>
-        where R: io::Read {
-
+    pub fn decode_at<R>(
+        reader: R,
+        now: Time
+    ) -> Result<Self, Error> where R: io::Read {
         XmlReader::decode(reader, |r| {
             r.take_named_element("publisher_request", |mut a, r| {
                 if a.take_req("version")? != "1" {
@@ -330,21 +359,17 @@ impl PublisherRequest {
                 })?;
 
                 let id_cert = IdCert::decode(bytes)?;
+                id_cert.validate_ta_at(now)?;
 
                 Ok(PublisherRequest { tag, publisher_handle, id_cert })
             })
         })
     }
+}
 
-    pub fn validate(&self) -> Result<(), Error> {
-        self.validate_at(Time::now())
-    }
-
-    pub fn validate_at(&self, now: Time) -> Result<(), Error> {
-        self.id_cert.validate_ta_at(now)?;
-        Ok(())
-    }
-
+/// Encoding
+///
+impl PublisherRequest {
     /// Encodes a <publisher_request> to a Vec
     pub fn encode_vec(&self) -> Vec<u8> {
         XmlWriter::encode_vec(|w| {
@@ -374,22 +399,6 @@ impl PublisherRequest {
 
             )
         })
-    }
-
-    pub fn new(tag: Option<&str>, publisher_handle: &str, id_cert: IdCert) -> Self {
-        PublisherRequest {
-            tag: tag.map(|s| { s.to_string() }),
-            publisher_handle: publisher_handle.to_string(),
-            id_cert
-        }
-    }
-
-    pub fn id_cert(&self) -> &IdCert {
-        &self.id_cert
-    }
-
-    pub fn client_handle(&self) -> Handle {
-        Handle::from(self.publisher_handle.as_str())
     }
 
     /// Saves this as an XML file
@@ -712,11 +721,12 @@ mod tests {
     #[test]
     fn parse_rpkid_publisher_request() {
         let xml = include_str!("../test/oob/publisher_request.xml");
-        let pr = PublisherRequest::decode(xml.as_bytes()).unwrap();
+        let pr = PublisherRequest::decode_at(
+            xml.as_bytes(),
+            rpkid_time()
+        ).unwrap();
         assert_eq!("Bob".to_string(), pr.publisher_handle);
         assert_eq!(Some("A0001".to_string()), pr.tag);
-
-        pr.id_cert.validate_ta_at(rpkid_time()).unwrap();
     }
 
     #[test]
@@ -744,9 +754,10 @@ mod tests {
 
         let enc = pr.encode_vec();
 
-        PublisherRequest::decode(
-            str::from_utf8(&enc).unwrap().as_bytes()
-        ).unwrap().validate_at(rpkid_time()).unwrap();
+        PublisherRequest::decode_at(
+            enc.as_slice(),
+            rpkid_time()
+        ).unwrap();
     }
 
     #[test]
