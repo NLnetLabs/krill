@@ -198,13 +198,13 @@ impl KrillClient {
                 let ct = "application/xml";
                 let xml = httpclient::get_text(&uri, ct, Some(&self.token))?;
 
-                let res = RepositoryResponse::decode(xml.as_bytes())?;
+                let res = RepositoryResponse::validate(xml.as_bytes())?;
                 Ok(ApiResponse::Rfc8181RepositoryResponse(res))
             },
             Rfc8181Command::Add(details) => {
 
                 let xml = file::read(&details.xml)?;
-                let pr = rfc8183::PublisherRequest::decode(xml.as_ref())?;
+                let pr = rfc8183::PublisherRequest::validate(xml.as_ref())?;
 
                 let handle = pr.client_handle();
 

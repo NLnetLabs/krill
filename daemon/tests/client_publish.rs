@@ -146,7 +146,7 @@ fn get_repository_response(handle: &str) -> RepositoryResponse {
         &uri, content_type, Some(&token)
     ).unwrap();
 
-    RepositoryResponse::decode(xml.as_bytes()).unwrap()
+    RepositoryResponse::validate(xml.as_bytes()).unwrap()
 }
 
 #[test]

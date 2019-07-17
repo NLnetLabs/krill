@@ -61,7 +61,7 @@ impl PubClient {
             },
             Command::RepoResponse(path) => {
                 let xml = file::read(&path)?;
-                let response = RepositoryResponse::decode(xml.as_ref())?;
+                let response = RepositoryResponse::validate(xml.as_ref())?;
                 client.process_repo_response(&response)?;
                 Ok(ApiResponse::Success)
             },

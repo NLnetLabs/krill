@@ -59,19 +59,19 @@ impl ChildRequest {
     pub fn id_cert(&self) -> &IdCert { &self.id_cert }
 }
 
-/// # Decoding
+/// # Validation
 ///
 impl ChildRequest {
     /// Parses a <child_request /> message, and validates the
     /// embedded certificate. MUST be a validly signed TA cert.
-    pub fn decode<R>(
+    pub fn validate<R>(
         reader: R
     ) -> Result<Self, Error> where R: io::Read {
-        Self::decode_at(reader, Time::now())
+        Self::validate_at(reader, Time::now())
     }
 
     /// Parses a <child_request /> message.
-    fn decode_at<R>(
+    fn validate_at<R>(
         reader: R,
         now: Time
     ) -> Result<Self, Error> where R: io::Read {
@@ -173,16 +173,16 @@ impl ParentResponse {
     pub fn service_uri(&self) -> &ServiceUri { &self.service_uri }
 }
 
-/// # Decoding
+/// # Validation
 ///
 impl ParentResponse {
-    pub fn decode<R>(
+    pub fn validate<R>(
         reader: R
     ) -> Result<Self, Error> where R: io::Read {
-        Self::decode_at(reader, Time::now())
+        Self::validate_at(reader, Time::now())
     }
 
-    fn decode_at<R>(
+    fn validate_at<R>(
         reader: R,
         now: Time
     ) -> Result<Self, Error> where R: io::Read {
@@ -329,17 +329,17 @@ impl PublisherRequest {
 }
 
 
-/// # Decoding
+/// # Validation
 ///
 impl PublisherRequest {
-    pub fn decode<R>(
+    pub fn validate<R>(
         reader: R
     ) -> Result<Self, Error> where R: io::Read {
-        Self::decode_at(reader, Time::now())
+        Self::validate_at(reader, Time::now())
     }
 
     /// Parses a <publisher_request /> message.
-    fn decode_at<R>(
+    fn validate_at<R>(
         reader: R,
         now: Time
     ) -> Result<Self, Error> where R: io::Read {
@@ -489,17 +489,17 @@ impl RepositoryResponse {
     }
 }
 
-/// # Decoding
+/// # Validation
 ///
 impl RepositoryResponse {
     /// Parses a <repository_response /> message.
-    pub fn decode<R>(
+    pub fn validate<R>(
         reader: R
     ) -> Result<Self, Error> where R: io::Read {
-        Self::decode_at(reader, Time::now())
+        Self::validate_at(reader, Time::now())
     }
 
-    fn decode_at<R>(
+    fn validate_at<R>(
         reader: R,
         now: Time
     ) -> Result<Self, Error>
@@ -720,9 +720,9 @@ mod tests {
     }
 
     #[test]
-    fn parse_rpkid_publisher_request() {
+    fn validate_rpkid_publisher_request() {
         let xml = include_str!("../test/oob/publisher_request.xml");
-        let pr = PublisherRequest::decode_at(
+        let pr = PublisherRequest::validate_at(
             xml.as_bytes(),
             rpkid_time()
         ).unwrap();
@@ -731,9 +731,9 @@ mod tests {
     }
 
     #[test]
-    fn parse_rpkid_repository_response() {
+    fn validate_rpkid_repository_response() {
         let xml = include_str!("../test/oob/repository_response.xml");
-        let rr = RepositoryResponse::decode_at(
+        let rr = RepositoryResponse::validate_at(
             xml.as_bytes(),
             rpkid_time()
         ).unwrap();
@@ -756,7 +756,7 @@ mod tests {
 
         let enc = pr.encode_vec();
 
-        PublisherRequest::decode_at(
+        PublisherRequest::validate_at(
             enc.as_slice(),
             rpkid_time()
         ).unwrap();
@@ -777,7 +777,7 @@ mod tests {
 
         let enc = pr.encode_vec();
 
-        RepositoryResponse::decode_at(
+        RepositoryResponse::validate_at(
             enc.as_slice(),
             rpkid_time()
         ).unwrap();
@@ -786,7 +786,7 @@ mod tests {
     #[test]
     fn child_request() {
         let xml = include_str!("../test/remote/rpkid-child-id.xml");
-        let req = ChildRequest::decode_at(
+        let req = ChildRequest::validate_at(
             xml.as_bytes(),
             rpkid_time()
         ).unwrap();
@@ -795,7 +795,7 @@ mod tests {
         assert_eq!(None, req.tag());
 
         let encoded = req.encode_vec();
-        let decoded = ChildRequest::decode_at(
+        let decoded = ChildRequest::validate_at(
             encoded.as_slice(),
             rpkid_time()
         ).unwrap();
@@ -804,9 +804,9 @@ mod tests {
     }
 
     #[test]
-    fn parse_rpkid_parent_response_referral() {
+    fn validate_rpkid_parent_response_referral() {
         let xml = include_str!("../test/remote/rpkid-parent-response-referral.xml");
-        let _res = ParentResponse::decode_at(
+        let _res = ParentResponse::validate_at(
             xml.as_bytes(),
             rpkid_time()
         ).unwrap();
@@ -815,13 +815,13 @@ mod tests {
     #[test]
     fn parent_response() {
         let xml = include_str!("../test/remote/rpkid-parent-response-offer.xml");
-        let res = ParentResponse::decode_at(
+        let res = ParentResponse::validate_at(
             xml.as_bytes(),
             rpkid_time()
         ).unwrap();
 
         let encoded = res.encode_vec();
-        let decoded = ParentResponse::decode_at(
+        let decoded = ParentResponse::validate_at(
             encoded.as_slice(),
             rpkid_time()
         ).unwrap();
