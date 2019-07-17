@@ -389,7 +389,7 @@ impl Attributes {
         if self.attributes.is_empty() {
             Ok(())
         } else {
-            Err(AttributesError::ExtraAttributes)
+            Err(AttributesError::extras(&self.attributes))
         }
     }
 }
@@ -402,11 +402,19 @@ pub enum AttributesError {
     #[display(fmt = "Required attribute missing: {}", _0)]
     MissingAttribute(String),
 
-    #[display(fmt = "Extra attributes found")]
-    ExtraAttributes,
+    #[display(fmt = "Extra attributes found: {}", _0)]
+    ExtraAttributes(String),
 
     #[display(fmt = "Wrong hex encoding: {}", _0)]
     HexError(FromHexError)
+}
+
+impl AttributesError {
+    fn extras(atts: &Vec<OwnedAttribute>) -> Self {
+        let atts: Vec<String> = atts.iter().map(|a| format!("{}", a)).collect();
+        let atts = atts.join(", ");
+        AttributesError::ExtraAttributes(atts)
+    }
 }
 
 
