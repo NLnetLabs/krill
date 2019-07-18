@@ -140,18 +140,10 @@ impl PubClients {
         match client.server_info() {
             PubServerInfo::KrillServer(service_uri, token) => {
                 let uri = format!("{}publication/{}", service_uri, handle);
-                let service_uri = service_uri.clone();
                 let token = token.clone();
                 let handle = handle.clone();
 
                 thread::spawn(move ||{
-                    // Note, I could not think of a convenient way to pass down
-                    // the test context, since there are different threads
-                    // involved when testing. So, for now, just setting test
-                    // mode whenever the publication is done at localhost.
-                    if service_uri.as_str().starts_with("https://localhost") {
-                        httpclient::TEST_MODE.with(|m| { *m.borrow_mut() = true; });
-                    }
                     match httpclient::post_json(&uri, delta, Some(&token)) {
                         Err(httpclient::Error::ErrorWithJson(_code, err)) => {
                             let err: ErrorCode = err.into();

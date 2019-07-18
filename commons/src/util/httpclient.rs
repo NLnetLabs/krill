@@ -1,5 +1,4 @@
 //! Some helper functions for HTTP calls
-use std::cell::RefCell;
 use std::io::Read;
 use std::time::Duration;
 use bytes::Bytes;
@@ -18,8 +17,6 @@ use crate::api::admin::Token;
 
 const JSON_CONTENT: &str = "application/json";
 
-thread_local!(pub static TEST_MODE: RefCell<bool> = RefCell::new(false));
-
 /// Performs a GET request that expects a json response that can be
 /// deserialized into the an owned value of the expected type. Returns an error
 /// if nothing is returned.
@@ -28,7 +25,7 @@ pub fn get_json<T: DeserializeOwned>(
     token: Option<&Token>
 ) -> Result<T, Error> {
     let headers = headers(Some(JSON_CONTENT), token)?;
-    let res = client()?.get(uri).headers(headers).send()?;
+    let res = client(uri)?.get(uri).headers(headers).send()?;
     process_json_response(res)
 }
 
@@ -40,7 +37,7 @@ pub fn get_text(
     token: Option<&Token>
 ) -> Result<String, Error> {
     let headers = headers(Some(content_type), token)?;
-    let res = client()?.get(uri).headers(headers).send()?;
+    let res = client(uri)?.get(uri).headers(headers).send()?;
     match opt_text_response(res)? {
         Some(res) => Ok(res),
         None => Err(Error::EmptyResponse)
@@ -51,7 +48,7 @@ pub fn get_text(
 /// response body.
 pub fn get_ok(uri: &str, token: Option<&Token>) -> Result<(), Error> {
     let headers = headers(None, token)?;
-    let res = client()?.get(uri).headers(headers).send()?;
+    let res = client(uri)?.get(uri).headers(headers).send()?;
     opt_text_response(res)?; // Will return nice errors with possible body.
     Ok(())
 }
@@ -66,7 +63,7 @@ pub fn post_json(
 ) -> Result<(), Error> {
     let headers = headers(Some(JSON_CONTENT), token)?;
     let body = serde_json::to_string(&data)?;
-    let res = client()?.post(uri).headers(headers).body(body).send()?;
+    let res = client(uri)?.post(uri).headers(headers).body(body).send()?;
     if let Some(res) = opt_text_response(res)? {
         Err(Error::UnexpectedResponse(res))
     } else {
@@ -85,14 +82,14 @@ pub fn post_json_with_response<T: DeserializeOwned>(
 ) -> Result<T, Error> {
     let headers = headers(Some(JSON_CONTENT), token)?;
     let body = serde_json::to_string(&data)?;
-    let res = client()?.post(uri).headers(headers).body(body).send()?;
+    let res = client(uri)?.post(uri).headers(headers).body(body).send()?;
     process_json_response(res)
 }
 
 /// Performs a POST with no data to the given URI and expects and empty 200 OK response.
 pub fn post_empty(uri: &str, token: Option<&Token>) -> Result<(), Error> {
     let headers = headers(Some(JSON_CONTENT), token)?;
-    let res = client()?.post(uri).headers(headers).send()?;
+    let res = client(uri)?.post(uri).headers(headers).send()?;
     if let Some(res) = opt_text_response(res)? {
         Err(Error::UnexpectedResponse(res))
     } else {
@@ -113,7 +110,7 @@ pub fn post_binary(
     let headers = headers(Some(content_type), None)?;
     let body = data.to_vec();
 
-    let mut res = client()?.post(uri).headers(headers).body(body).send()?;
+    let mut res = client(uri)?.post(uri).headers(headers).body(body).send()?;
 
     match res.status() {
         StatusCode::OK => {
@@ -143,22 +140,20 @@ pub fn delete(
     token: Option<&Token>
 ) -> Result<(), Error> {
     let headers = headers(None, token)?;
-    client()?.delete(uri).headers(headers).send()?;
+    client(uri)?.delete(uri).headers(headers).send()?;
     Ok(())
 }
 
 
-fn client() -> Result<Client, Error> {
-
+fn client(uri: &str) -> Result<Client, Error> {
     let builder = Client::builder().gzip(true).timeout(Duration::from_secs(300));
 
-    let builder = if TEST_MODE.with(|m| *m.borrow()) {
+    if uri.starts_with("https://localhost") || uri.starts_with("https://127.0.0.1") {
         builder.danger_accept_invalid_certs(true)
+            .build().map_err(Error::RequestError)
     } else {
-        builder
-    };
-
-    builder.build().map_err(Error::RequestError)
+        builder.build().map_err(Error::RequestError)
+    }
 }
 
 fn headers(

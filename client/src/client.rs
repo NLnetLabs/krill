@@ -71,12 +71,6 @@ impl KrillClient {
         }
     }
 
-//    #[cfg(test)]
-    pub fn test(options: Options) -> Result<ApiResponse, Error> {
-        httpclient::TEST_MODE.with(|m| { *m.borrow_mut() = true; });
-        Self::process(options)
-    }
-
     fn health(&self) -> Result<ApiResponse, Error> {
         httpclient::get_ok(
             &self.resolve_uri("api/v1/health"),

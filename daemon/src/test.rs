@@ -50,7 +50,7 @@ fn health_check() -> Result<ApiResponse, Error> {
         Command::Health
     );
 
-    KrillClient::test(krillc_opts)
+    KrillClient::process(krillc_opts)
 }
 
 
@@ -61,7 +61,7 @@ pub fn execute_krillc_command(command: Command) -> ApiResponse {
         ReportFormat::Json,
         command
     );
-    match KrillClient::test(krillc_opts) {
+    match KrillClient::process(krillc_opts) {
         Ok(res) => res, // ok
         Err(e) => {
             panic!("{}", e)

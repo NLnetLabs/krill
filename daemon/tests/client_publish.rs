@@ -59,7 +59,7 @@ fn execute_krillc_command(command: Command) {
         ReportFormat::Default,
         command
     );
-    match KrillClient::test(krillc_opts) {
+    match KrillClient::process(krillc_opts) {
         Ok(_res) => {}, // ok
         Err(e) => {
             panic!("{}", e)
