@@ -17,7 +17,7 @@ use krill_commons::remote::api::ClientInfo;
 use krill_commons::remote::proxy;
 use krill_commons::remote::proxy::ProxyServer;
 use krill_commons::remote::rfc8181::ReplyMessage;
-use krill_commons::remote::rfc8183::RepositoryResponse;
+use krill_commons::remote::rfc8183::{RepositoryResponse, ChildRequest};
 use krill_commons::remote::sigmsg::SignedMessage;
 use krill_pubd::PubServer;
 use krill_pubd::publishers::Publisher;
@@ -371,8 +371,14 @@ impl KrillServer {
         self.caserver.cas()
     }
 
+    /// Returns the public CA info for a CA, or NONE if the CA cannot be found.
     pub fn ca_info(&self, handle: &Handle) -> Option<CertAuthInfo> {
         self.caserver.get_ca(handle).map(|ca| ca.as_ca_info()).ok()
+    }
+
+    /// Returns the child request for a CA, or NONE if the CA cannot be found.
+    pub fn ca_child_req(&self, handle: &Handle) -> Option<ChildRequest> {
+        self.caserver.get_ca(handle).map(|ca| ca.child_request()).ok()
     }
 
     pub fn ca_init(&mut self, init: CertAuthInit) -> EmptyRes {

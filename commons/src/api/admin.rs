@@ -8,6 +8,7 @@ use rpki::crypto::Signer;
 use crate::api::Link;
 use std::path::Path;
 use api::ca::ResourceSet;
+use remote::rfc8183;
 
 
 //------------ Handle --------------------------------------------------------
@@ -321,12 +322,16 @@ impl ParentCaReq {
 /// This type contains the information needed to contact the parent ca
 /// for resource provisioning requests (RFC6492).
 #[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
+#[allow(clippy::large_enum_variant)]
 pub enum ParentCaContact {
     #[display(fmt = "Remote krill at: {}", _0)]
     RemoteKrill(uri::Https, Token),
 
     #[display(fmt = "Embedded CA: {}", _0)]
     Embedded(Handle, Token),
+
+    #[display(fmt = "RFC 6492 Parent")]
+    Rfc6492(rfc8183::ParentResponse)
 }
 
 impl ParentCaContact {
@@ -336,6 +341,10 @@ impl ParentCaContact {
 
     pub fn for_embedded(parent: Handle, token: Token) -> Self {
         ParentCaContact::Embedded(parent, token)
+    }
+
+    pub fn for_rfc6492(response: rfc8183::ParentResponse) -> Self {
+        ParentCaContact::Rfc6492(response)
     }
 }
 

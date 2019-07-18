@@ -369,6 +369,24 @@ pub fn ca_info(
     })
 }
 
+pub fn ca_child_req(
+    server: web::Data<AppServer>,
+    auth: Auth,
+    handle: Path<Handle>
+) -> HttpResponse {
+    let handle = handle.into_inner();
+    if_api_allowed(&server, &auth, || {
+        match server.read().ca_child_req(&handle) {
+            Some(req) => {
+                HttpResponse::Ok()
+                    .content_type("application/xml")
+                    .body(req.encode_vec())
+            },
+            None => api_not_found()
+        }
+    })
+}
+
 pub fn ca_add_parent(
     server: web::Data<AppServer>,
     auth: Auth,
@@ -629,7 +647,7 @@ impl ToErrorCode for CaError {
     fn code(&self) -> ErrorCode {
         match self {
             CaError::DuplicateChild(_) => ErrorCode::DuplicateChild,
-            CaError::MusthaveResources => ErrorCode::ChildNeedsResources,
+            CaError::MustHaveResources => ErrorCode::ChildNeedsResources,
             CaError::MissingResources => ErrorCode::ChildOverclaims,
             _ => ErrorCode::CaServerError
         }

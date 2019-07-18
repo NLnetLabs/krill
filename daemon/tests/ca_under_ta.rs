@@ -35,6 +35,12 @@ fn init_child(handle: &Handle, token: &Token) {
     execute_krillc_command(Command::CertAuth(CaCommand::Init(init)));
 }
 
+fn child_request(handle: &Handle) {
+    let _res = execute_krillc_command(
+        Command::CertAuth(CaCommand::ChildRequest(handle.clone()))
+    );
+}
+
 fn add_child_to_ta(
     handle: &Handle,
     token: &Token,
@@ -74,6 +80,8 @@ fn ca_under_ta() {
         init_ta();
 
         init_child(&child_handle, &child_token);
+
+        let _child_req = child_request(&child_handle);
 
 
         let parent = {

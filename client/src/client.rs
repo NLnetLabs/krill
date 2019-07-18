@@ -114,6 +114,29 @@ impl KrillClient {
 
     fn certauth(&self, command: CaCommand) -> Result<ApiResponse, Error> {
         match command {
+            CaCommand::AddParent(handle, parent) => {
+                let uri = format!("api/v1/cas/{}/parents", handle);
+                let uri = self.resolve_uri(&uri);
+                httpclient::post_json(&uri, parent, Some(&self.token))?;
+                Ok(ApiResponse::Empty)
+            },
+            CaCommand::ChildRequest(handle) => {
+                let uri = format!("api/v1/cas/{}/child_request", handle);
+                let uri = self.resolve_uri(&uri);
+                let xml = httpclient::get_text(
+                    &uri,
+                    "application/xml",
+                    Some(&self.token)
+                )?;
+
+                let req = rfc8183::ChildRequest::validate(xml.as_bytes())?;
+                Ok(ApiResponse::Rfc8183ChildRequest(req))
+            },
+            CaCommand::Init(init) => {
+                let uri = self.resolve_uri("api/v1/cas");
+                httpclient::post_json(&uri, init, Some(&self.token))?;
+                Ok(ApiResponse::Empty)
+            },
             CaCommand::List => {
                 let uri = self.resolve_uri("api/v1/cas");
                 let cas = self.get_json(&uri)?;
@@ -125,17 +148,6 @@ impl KrillClient {
                 let ca_info = self.get_json(&uri)?;
 
                 Ok(ApiResponse::CertAuthInfo(ca_info))
-            }
-            CaCommand::Init(init) => {
-                let uri = self.resolve_uri("api/v1/cas");
-                httpclient::post_json(&uri, init, Some(&self.token))?;
-                Ok(ApiResponse::Empty)
-            },
-            CaCommand::AddParent(handle, parent) => {
-                let uri = format!("api/v1/cas/{}/parents", handle);
-                let uri = self.resolve_uri(&uri);
-                httpclient::post_json(&uri, parent, Some(&self.token))?;
-                Ok(ApiResponse::Empty)
             }
         }
     }
@@ -199,7 +211,7 @@ impl KrillClient {
                 let xml = httpclient::get_text(&uri, ct, Some(&self.token))?;
 
                 let res = RepositoryResponse::validate(xml.as_bytes())?;
-                Ok(ApiResponse::Rfc8181RepositoryResponse(res))
+                Ok(ApiResponse::Rfc8183RepositoryResponse(res))
             },
             Rfc8181Command::Add(details) => {
 

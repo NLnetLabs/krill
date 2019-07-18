@@ -37,9 +37,6 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::{Arc, RwLock};
 
-    use rpki::crypto::signer::Signer;
-    use rpki::crypto::PublicKeyFormat;
-
     use krill_commons::api::{DFLT_CLASS, IssuanceRequest};
     use krill_commons::api::admin::{
         Handle,
@@ -92,14 +89,12 @@ mod tests {
             };
 
             let ta_handle = ta_handle();
-            let ta_token = Token::from("ta");
 
 
             let ta_uri = https("https://localhost/tal/ta.cer");
             let ta_aia = rsync("rsync://localhost/repo/ta.cer");
 
-            let mut signer = signer(&d);
-            let key = signer.create_key(PublicKeyFormat::default()).unwrap();
+            let signer = signer(&d);
             let signer = Arc::new(RwLock::new(signer));
 
             //
@@ -108,12 +103,9 @@ mod tests {
 
             let ta_ini = CaIniDet::init_ta(
                 &ta_handle,
-                ta_token.clone(),
                 ta_repo_info,
-
                 ta_aia,
                 vec![ta_uri],
-                key,
 
                 signer.clone()
             ).unwrap();
@@ -140,8 +132,9 @@ mod tests {
             let ca_ini = CaIniDet::init(
                 &child_handle,
                 child_token.clone(),
-                ca_repo_info
-            );
+                ca_repo_info,
+                signer.clone()
+            ).unwrap();
 
             ca_store.add(ca_ini).unwrap();
             let child = ca_store.get_latest(&child_handle).unwrap();

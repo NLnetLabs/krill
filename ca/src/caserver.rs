@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::ops::Deref;
 
-use rpki::crypto::PublicKeyFormat;
 use rpki::uri;
 
 use krill_commons::api::{DFLT_CLASS, Entitlements, IssuanceRequest, IssuanceResponse};
@@ -81,21 +80,11 @@ impl<S: CaSigner> CaServer<S> {
         if self.ca_store.has(&handle) {
             Err(Error::TrustAnchorInitialisedError)
         } else {
-            let key = {
-                self.signer.write().unwrap()
-                    .create_key(PublicKeyFormat::default())
-                    .map_err(Error::SignerError)?
-            };
-
-            let token = Token::random(self.signer.read().unwrap().deref());
-
             let init = CaIniDet::init_ta(
                 &handle,
-                token,
                 info,
                 ta_aia,
                 ta_uris,
-                key,
                 self.signer.clone()
             )?;
 
@@ -258,12 +247,12 @@ impl<S: CaSigner> CaServer<S> {
         &mut self,
         handle: &Handle,
         token: Token,
-        repo_info: RepoInfo
+        repo_info: RepoInfo,
     ) -> CaResult<(), S> {
         if self.ca_store.has(handle) {
             Err(Error::DuplicateCa(handle.to_string()))
         } else {
-            let init = CaIniDet::init(handle, token, repo_info);
+            let init = CaIniDet::init(handle, token, repo_info, self.signer.clone())?;
             self.ca_store.add(init)?;
             Ok(())
         }
@@ -322,7 +311,8 @@ impl<S: CaSigner> CaServer<S> {
 
                     let ta = self.get_trust_anchor()?;
                     ta.list(handle, &token)?
-                }
+                },
+                ParentCaContact::Rfc6492(_parent_res) => unimplemented!()
             };
 
             let update_ent_cmd = CaCmdDet::upd_entitlements(
@@ -375,7 +365,8 @@ impl<S: CaSigner> CaServer<S> {
 
                             issued_certs.push((class_name, issued));
                         }
-                    }
+                    },
+                    ParentCaContact::Rfc6492(_parent_res) => unimplemented!()
                 }
 
                 for (class_name, issued) in issued_certs {

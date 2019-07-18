@@ -3,6 +3,7 @@ use krill_commons::api::admin::{PublisherDetails, PublisherList, ParentCaContact
 use krill_commons::api::ca::{TrustAnchorInfo, CertAuthList, CertAuthInfo, CaParentsInfo, CurrentObjects};
 use krill_commons::remote::api::ClientInfo;
 use krill_commons::remote::rfc8183::RepositoryResponse;
+use krill_commons::remote::rfc8183;
 
 
 //------------ ApiResponse ---------------------------------------------------
@@ -24,7 +25,8 @@ pub enum ApiResponse {
     PublisherList(PublisherList),
 
     Rfc8181ClientList(Vec<ClientInfo>),
-    Rfc8181RepositoryResponse(RepositoryResponse),
+    Rfc8183RepositoryResponse(rfc8183::RepositoryResponse),
+    Rfc8183ChildRequest(rfc8183::ChildRequest),
 
     Empty, // Typically a successful post just gets an empty 200 response
     GenericBody(String) // For when the server echos Json to a successful post
@@ -67,7 +69,10 @@ impl ApiResponse {
                 ApiResponse::Rfc8181ClientList(list) => {
                     Ok(Some(list.report(fmt)?))
                 }
-                ApiResponse::Rfc8181RepositoryResponse(res) => {
+                ApiResponse::Rfc8183ChildRequest(req) => {
+                    Ok(Some(req.report(fmt)?))
+                }
+                ApiResponse::Rfc8183RepositoryResponse(res) => {
                     Ok(Some(res.report(fmt)?))
                 }
                 ApiResponse::GenericBody(body) => {
@@ -395,6 +400,22 @@ impl Report for Vec<ClientInfo> {
 }
 
 impl Report for RepositoryResponse {
+    fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
+        match format {
+            ReportFormat::Text | ReportFormat::Xml | ReportFormat::Default => {
+                let bytes = self.encode_vec();
+                let xml = unsafe {
+                    from_utf8_unchecked(&bytes)
+                };
+
+                Ok(xml.to_string())
+            },
+            _ => Err(ReportError::UnsupportedFormat)
+        }
+    }
+}
+
+impl Report for rfc8183::ChildRequest {
     fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
         match format {
             ReportFormat::Text | ReportFormat::Xml | ReportFormat::Default => {

@@ -145,6 +145,16 @@ impl Options {
                         .required(true)
                     )
                 )
+                .subcommand(SubCommand::with_name("rfc8183_child_request")
+                    .about("The RFC8183 Child Request for a CA")
+                    .arg(Arg::with_name("handle")
+                        .short("h")
+                        .long("handle")
+                        .value_name("handle")
+                        .help("The handle (name) for the CA")
+                        .required(true)
+                    )
+                )
                 .subcommand(SubCommand::with_name("add")
                     .about("Add a new CA)")
                     .arg(Arg::with_name("handle")
@@ -310,13 +320,6 @@ impl Options {
         }
 
         if let Some(m) = matches.subcommand_matches("cas") {
-            if let Some(_m) = m.subcommand_matches("list") {
-                command = Command::CertAuth(CaCommand::List)
-            }
-            if let Some(m) = m.subcommand_matches("show") {
-                let handle = Handle::from(m.value_of("handle").unwrap());
-                command = Command::CertAuth(CaCommand::Show(handle))
-            }
             if let Some(m) = m.subcommand_matches("add") {
                 let handle = Handle::from(m.value_of("handle").unwrap());
                 let token = Token::from(m.value_of("token").unwrap());
@@ -324,6 +327,17 @@ impl Options {
 
                 let init = CertAuthInit::new(handle, token, pub_mode);
                 command = Command::CertAuth(CaCommand::Init(init))
+            }
+            if let Some(m) = m.subcommand_matches("rfc8183_child_request") {
+                let handle = Handle::from(m.value_of("handle").unwrap());
+                command = Command::CertAuth(CaCommand::ChildRequest(handle))
+            }
+            if let Some(_m) = m.subcommand_matches("list") {
+                command = Command::CertAuth(CaCommand::List)
+            }
+            if let Some(m) = m.subcommand_matches("show") {
+                let handle = Handle::from(m.value_of("handle").unwrap());
+                command = Command::CertAuth(CaCommand::Show(handle))
             }
             if let Some(m) = m.subcommand_matches("update") {
                 let handle = Handle::from(m.value_of("handle").unwrap());
@@ -401,6 +415,7 @@ impl Options {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub enum Command {
     NotSet,
     Health,
@@ -419,11 +434,13 @@ pub enum TrustAnchorCommand {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub enum CaCommand {
+    AddParent(Handle, ParentCaReq),
+    ChildRequest(Handle),
+    Init(CertAuthInit),
     List,
     Show(Handle),
-    Init(CertAuthInit),
-    AddParent(Handle, ParentCaReq)
 }
 
 

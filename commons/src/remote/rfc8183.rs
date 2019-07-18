@@ -53,6 +53,10 @@ pub struct ChildRequest {
 /// # Data Access
 ///
 impl ChildRequest {
+    pub fn new(child_handle: Handle, id_cert: IdCert) -> Self {
+        ChildRequest { tag: None, child_handle, id_cert }
+    }
+
     pub fn unwrap(self) -> (Option<String>, Handle, IdCert) {
         (self.tag, self.child_handle, self.id_cert)
     }
@@ -147,7 +151,7 @@ impl ChildRequest {
 
 /// Type representing a <parent_response /> defined in section 5.2.2 of
 /// RFC8183.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentResponse {
     /// The optional 'tag' identifier used like a session identifier
     tag: Option<String>,

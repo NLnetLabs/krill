@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::marker::PhantomData;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock};
 
 use chrono::Duration;
@@ -29,12 +29,31 @@ use krill_commons::eventsourcing::{
 use krill_commons::util::softsigner::SignerKeyId;
 
 use crate::signing::{CaSigner, CaSignSupport};
+use krill_commons::remote::id::IdCert;
+use krill_commons::remote::builder::IdCertBuilder;
+use krill_commons::remote::rfc8183::ChildRequest;
 
 pub const CA_NS: &str = "cas";
 const TA_NAME: &str = "ta"; // reserved for TA
 
 pub fn ta_handle() -> Handle {
     Handle::from(TA_NAME)
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+struct Rfc8183Id {
+    key: SignerKeyId,
+    cert: IdCert
+}
+
+impl Rfc8183Id {
+    fn generate<S: CaSigner>(signer: &mut S) -> CaRes<Self> {
+        let key = signer.create_key(PublicKeyFormat::default())
+            .map_err(|e| Error::SignerError(e.to_string()))?;
+        let cert = IdCertBuilder::new_ta_id_cert(&key, signer.deref())
+            .map_err(|e| Error::SignerError(e.to_string()))?;
+        Ok(Rfc8183Id { key, cert })
+    }
 }
 
 
@@ -50,41 +69,53 @@ pub enum CaType {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct CaIniDet(Token, RepoInfo, CaType);
+pub struct CaIniDet(Token, Rfc8183Id, RepoInfo, CaType);
 
 impl CaIniDet {
-    pub fn init(
+    pub fn token(&self) -> &Token { &self.0 }
+}
+
+impl CaIniDet {
+    pub fn init<S: CaSigner>(
         handle: &Handle,
         token: Token,
-        info: RepoInfo
-    ) -> CaIni {
-        CaIni::new(
+        info: RepoInfo,
+        signer: Arc<RwLock<S>>
+    ) -> CaRes<CaIni> {
+        let mut signer = signer.write().unwrap();
+        let id = Rfc8183Id::generate(signer.deref_mut())?;
+        Ok(CaIni::new(
             handle,
             0,
-            CaIniDet(token, info, CaType::Child)
-        )
+            CaIniDet(token, id, info, CaType::Child)
+        ))
     }
 
     pub fn init_ta<S: CaSigner>(
         handle: &Handle,
-        token: Token,
         info: RepoInfo,
-
         ta_aia: uri::Rsync,
         ta_uris: Vec<uri::Https>,
-
-        key: SignerKeyId,
         signer: Arc<RwLock<S>>,
     ) -> CaRes<CaIni> {
+        let mut signer = signer.write().unwrap();
+
+        let id = Rfc8183Id::generate(signer.deref_mut())?;
+
+        let key = signer.create_key(PublicKeyFormat::default())
+            .map_err(|e| Error::SignerError(e.to_string()))?;
+
+        let token = Token::random(signer.deref());
+
         let resources = ResourceSet::all_resources();
-        let ta_cert = Self::mk_ta_cer(&info, &resources, &key, signer)?;
+        let ta_cert = Self::mk_ta_cer(&info, &resources, &key, signer.deref())?;
         let tal = TrustAnchorLocator::new(ta_uris, &ta_cert);
         let key = CertifiedKey::new(key, RcvdCert::new(ta_cert, ta_aia));
 
         Ok(CaIni::new(
             handle,
             0,
-            CaIniDet(token, info, CaType::Ta(key, tal))
+            CaIniDet(token, id, info, CaType::Ta(key, tal))
         ))
     }
 
@@ -92,11 +123,9 @@ impl CaIniDet {
         repo_info: &RepoInfo,
         resources: &ResourceSet,
         key: &S::KeyId,
-        signer: Arc<RwLock<S>>
+        signer: &S
     ) -> CaRes<Cert> {
         let serial: Serial = rand::thread_rng().gen::<u128>().into();
-
-        let signer = signer.read().unwrap();
 
         let pub_key = signer.get_key_info(&key).map_err(Error::signer)?;
         let name = pub_key.to_subject_name();
@@ -126,6 +155,8 @@ impl CaIniDet {
             key
         ).map_err(Error::signer)
     }
+
+
 }
 
 
@@ -581,7 +612,8 @@ pub struct CertAuth<S: CaSigner> {
     handle: Handle,
     version: u64,
 
-    token: Token, // The admin token for this CertAuth
+    token: Token,  // The admin token to access this CertAuth
+    id: Rfc8183Id, // Used for RFC 6492 (up-down) and RFC 8181 (publication)
 
     base_repo: RepoInfo,
     parents: CaParents,
@@ -605,8 +637,9 @@ impl<S: CaSigner> Aggregate for CertAuth<S> {
         let (handle, _version, details) = event.unwrap();
 
         let token = details.0;
-        let base_repo = details.1;
-        let ca_type = details.2;
+        let id = details.1;
+        let base_repo = details.2;
+        let ca_type = details.3;
 
         if ca_type == CaType::Child && handle == Handle::from(TA_NAME) {
             return Err(Error::NameReservedTa)
@@ -624,6 +657,7 @@ impl<S: CaSigner> Aggregate for CertAuth<S> {
             version: 1,
 
             token,
+            id,
 
             base_repo,
 
@@ -759,6 +793,10 @@ impl<S: CaSigner> CertAuth<S> {
         let children  = self.children.clone();
 
         CertAuthInfo::new(handle, base_repo, parents, children)
+    }
+
+    pub fn child_request(&self) -> ChildRequest {
+        ChildRequest::new(self.handle.clone(), self.id.cert.clone())
     }
 }
 
@@ -949,7 +987,7 @@ impl<S: CaSigner> CertAuth<S> {
         // check that
         // 1) the resource set is not empty
         if resources.is_empty() {
-            return Err(Error::MusthaveResources)
+            return Err(Error::MustHaveResources)
         }
 
         // 2) the resources are held by me
@@ -1793,12 +1831,12 @@ pub enum  Error {
     MissingResources,
 
     #[display(fmt = "Child CA MUST have resources.")]
-    MusthaveResources,
+    MustHaveResources,
 
     #[display(fmt = "No issued cert matching pub key in resource class.")]
     NoIssuedCert,
 
-    #[display(fmt = "Invalidly CSR for child {}: {}.", _0, _1)]
+    #[display(fmt = "Invalid CSR for child {}: {}.", _0, _1)]
     InvalidCsr(Handle, String),
 
     #[display(fmt = "No key held by CA matching issued certificate: {}", _0)]
