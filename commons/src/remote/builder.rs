@@ -25,7 +25,6 @@ use rpki::oid;
 use rpki::x509::{Name, Validity, Time};
 
 use crate::remote::id::{IdCert, IdExtensions};
-use crate::remote::rfc8181::Message;
 
 
 //------------ TbsCertificate ------------------------------------------------
@@ -271,9 +270,9 @@ impl SignedMessageBuilder {
     pub fn create<S: Signer>(
         issuing_key: &S::KeyId,
         signer: &S,
-        message: Message
+        message: Bytes
     ) -> Result<SignedMessageBuilder, Error<S::Error>> {
-        let content = OctetString::new(message.into_bytes());
+        let content = OctetString::new(message);
 
         let signer_info = SignerInfoBuilder::create(
             signer,
@@ -296,6 +295,10 @@ impl SignedMessageBuilder {
                 crl
             }
         )
+    }
+
+    pub fn into_bytes(&self) -> Bytes {
+        self.encode().to_captured(Mode::Der).into_bytes()
     }
 
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {

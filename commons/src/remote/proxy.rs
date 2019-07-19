@@ -249,7 +249,7 @@ impl ProxyServer {
         let builder = SignedMessageBuilder::create(
             responder.id().key_id(),
             &self.signer,
-            msg
+            msg.into_bytes()
         )?;
 
         let enc = builder.encode();
@@ -432,7 +432,7 @@ impl ClientProxy {
         let builder = SignedMessageBuilder::create(
             key_id,
             &signer,
-            msg
+            msg.into_bytes()
         )?;
         let enc = builder.encode();
 

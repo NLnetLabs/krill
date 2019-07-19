@@ -9,6 +9,7 @@ use crate::api::Link;
 use std::path::Path;
 use api::ca::ResourceSet;
 use remote::rfc8183;
+use remote::rfc8183::ChildRequest;
 
 
 //------------ Handle --------------------------------------------------------
@@ -299,17 +300,17 @@ impl PubServerInfo {
 
 /// This type defines all parent ca details needed to add a parent to a CA
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ParentCaReq {
+pub struct AddParentRequest {
     handle: Handle,           // the local name the child gave to the parent
     contact: ParentCaContact  // where the parent can be contacted
 }
 
-impl ParentCaReq {
+impl AddParentRequest {
     pub fn new(
         handle: Handle,
         contact: ParentCaContact
     ) -> Self {
-        ParentCaReq { handle, contact }
+        AddParentRequest { handle, contact }
     }
 
     pub fn unwrap(self) -> (Handle, ParentCaContact) {
@@ -383,25 +384,29 @@ pub enum CertAuthPubMode {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AddChildRequest {
     handle: Handle,
-    token: Token,
-    resources: ResourceSet
+    resources: ResourceSet,
+    auth: ChildAuthRequest
 }
 
 impl AddChildRequest {
     pub fn new(
         handle: Handle,
-        token: Token,
-        resources: ResourceSet
+        resources: ResourceSet,
+        auth: ChildAuthRequest
     ) -> Self {
-        AddChildRequest { handle, token, resources }
+        AddChildRequest { handle, resources, auth }
     }
 
-    pub fn token(&self) -> &Token { &self.token }
-
-    pub fn unwrap(self) -> (Handle, Token, ResourceSet) {
-        (self.handle, self.token, self.resources)
+    pub fn unwrap(self) -> (Handle, ResourceSet, ChildAuthRequest) {
+        (self.handle, self.resources, self.auth)
     }
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum ChildAuthRequest {
+    Embedded(Token),
+    Remote(Token),
+    Rfc8183(ChildRequest)
+}
 
 

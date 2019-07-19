@@ -130,12 +130,14 @@ pub fn start(config: &Config) -> Result<(), Error> {
             .data(web::Json::<publication::PublishDelta>::configure(|cfg| {
                 cfg.limit(256 * 1024 * 1024)
             }))
-            .route("/rfc8181/{handle}", post().to(handle_rfc8181_request))
+            .route("/rfc8181/{handle}", post().to(rfc8181))
 
-            // Provisioning for (embedded) clients
+            // Provisioning for remote krill clients
             .route("/provisioning/{parent}/{child}/list", get().to(list))
             .route("/provisioning/{parent}/{child}/issue", post().to(issue))
-            // "/provisioning/{handle}/(list|req|rev)"
+
+            // Provisioning for rfc6492 clients
+            .route("/rfc6492/{parent}/{child}", post().to(rfc6492))
 
 
             // UI support

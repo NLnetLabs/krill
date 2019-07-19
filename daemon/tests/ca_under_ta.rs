@@ -12,16 +12,9 @@ use krill_client::options::{
 };
 use krill_client::report::ApiResponse;
 use krill_commons::api::ca::ResourceSet;
-use krill_commons::api::admin::{
-    AddChildRequest,
-    CertAuthInit,
-    CertAuthPubMode,
-    Handle,
-    ParentCaContact,
-    ParentCaReq,
-    Token,
-};
+use krill_commons::api::admin::{AddChildRequest, CertAuthInit, CertAuthPubMode, Handle, ParentCaContact, AddParentRequest, Token, ChildAuthRequest};
 use krill_daemon::test::{ test_with_krill_server, execute_krillc_command };
+use krill_commons::remote::rfc8183;
 
 
 fn init_ta() {
@@ -35,18 +28,23 @@ fn init_child(handle: &Handle, token: &Token) {
     execute_krillc_command(Command::CertAuth(CaCommand::Init(init)));
 }
 
-fn child_request(handle: &Handle) {
-    let _res = execute_krillc_command(
+fn child_request(handle: &Handle) -> rfc8183::ChildRequest {
+    match execute_krillc_command(
         Command::CertAuth(CaCommand::ChildRequest(handle.clone()))
-    );
+    ) {
+        ApiResponse::Rfc8183ChildRequest(req) => req,
+        _ => panic!("Expected child request")
+    }
+
 }
 
-fn add_child_to_ta(
+fn add_child_to_ta_embedded(
     handle: &Handle,
     token: &Token,
     resources: ResourceSet
 ) -> ParentCaContact {
-    let req = AddChildRequest::new(handle.clone(), token.clone(), resources);
+    let auth = ChildAuthRequest::Embedded(token.clone());
+    let req = AddChildRequest::new(handle.clone(), resources, auth);
     let res = execute_krillc_command(
         Command::TrustAnchor(TrustAnchorCommand::AddChild(req))
     );
@@ -57,7 +55,24 @@ fn add_child_to_ta(
     }
 }
 
-fn add_parent_to_ca(handle: &Handle, parent: ParentCaReq) {
+fn add_child_to_ta_rfc6492(
+    handle: &Handle,
+    req: rfc8183::ChildRequest,
+    resources: ResourceSet
+) -> ParentCaContact {
+    let auth = ChildAuthRequest::Rfc8183(req);
+    let req = AddChildRequest::new(handle.clone(), resources, auth);
+    let res = execute_krillc_command(
+        Command::TrustAnchor(TrustAnchorCommand::AddChild(req))
+    );
+
+    match res {
+        ApiResponse::ParentCaInfo(info) => info,
+        _ => panic!("Expected ParentCaInfo response")
+    }
+}
+
+fn add_parent_to_ca(handle: &Handle, parent: AddParentRequest) {
     execute_krillc_command(
         Command::CertAuth(CaCommand::AddParent(handle.clone(), parent))
     );
@@ -68,29 +83,45 @@ fn ca_under_ta() {
     test_with_krill_server(|_d|{
 
         let ta_handle = ta_handle();
+        init_ta();
 
-        let child_handle = Handle::from("child");
-        let child_token = Token::from("child");
-        let child_resources = ResourceSet::from_strs(
+        let emb_child_handle = Handle::from("child");
+        let emb_child_token = Token::from("child");
+        let emb_child_resources = ResourceSet::from_strs(
             "",
             "192.168.0.0/16",
             ""
         ).unwrap();
 
-        init_ta();
-
-        init_child(&child_handle, &child_token);
-
-        let _child_req = child_request(&child_handle);
-
+        init_child(&emb_child_handle, &emb_child_token);
 
         let parent = {
-            let parent_contact = add_child_to_ta(
-                &child_handle, &child_token, child_resources
+            let parent_contact = add_child_to_ta_embedded(
+                &emb_child_handle, &emb_child_token, emb_child_resources
             );
-            ParentCaReq::new(ta_handle.clone(), parent_contact)
+            AddParentRequest::new(ta_handle.clone(), parent_contact)
         };
 
-        add_parent_to_ca(&child_handle, parent);
+        add_parent_to_ca(&emb_child_handle, parent);
+
+        let cms_child_handle = Handle::from("rfc6492");
+        let cms_child_token = Token::from("rfc6492");
+        let cms_child_resources = ResourceSet::from_strs(
+            "",
+            "10.0.0.0/16",
+            ""
+        ).unwrap();
+
+        init_child(&cms_child_handle, &cms_child_token);
+        let req = child_request(&cms_child_handle);
+
+        let parent = {
+            let contact = add_child_to_ta_rfc6492(
+                &cms_child_handle, req, cms_child_resources
+            );
+            AddParentRequest::new(ta_handle.clone(), contact)
+        };
+
+        add_parent_to_ca(&cms_child_handle, parent);
     });
 }

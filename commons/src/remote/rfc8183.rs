@@ -37,7 +37,7 @@ pub const NS: &str = "http://www.hactrn.net/uris/rpki/rpki-setup/";
 
 /// Type representing a <child_request /> defined in section 5.2.1 of
 /// RFC8183.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildRequest {
     /// The optional 'tag' identifier used like a session identifier
     tag: Option<String>,
@@ -170,9 +170,21 @@ pub struct ParentResponse {
     service_uri: ServiceUri,
 }
 
-/// # Data Access
+/// # Construct and Data Access
 ///
 impl ParentResponse {
+    pub fn new(
+        tag: Option<String>,
+        id_cert: IdCert,
+        parent_handle: Handle,
+        child_handle: Handle,
+        service_uri: ServiceUri,
+    ) -> Self {
+        ParentResponse {
+            tag, id_cert, parent_handle, child_handle, service_uri
+        }
+    }
+
     pub fn tag(&self) -> Option<&String> { self.tag.as_ref() }
     pub fn id_cert(&self) -> &IdCert { &self.id_cert }
     pub fn parent_handle(&self) -> &Handle { &self.parent_handle }

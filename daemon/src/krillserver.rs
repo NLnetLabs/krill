@@ -9,7 +9,7 @@ use rpki::uri;
 use krill_ca::{ta_handle, CaServer, CaServerError, PubClients, PubClientError};
 use krill_commons::api::{publication, Entitlements, IssuanceRequest, IssuanceResponse};
 use krill_commons::api::admin;
-use krill_commons::api::admin::{Handle, Token, PubServerInfo, CertAuthInit, CertAuthPubMode, ParentCaContact, AddChildRequest, ParentCaReq};
+use krill_commons::api::admin::{Handle, Token, PubServerInfo, CertAuthInit, CertAuthPubMode, ParentCaContact, AddChildRequest, AddParentRequest};
 use krill_commons::api::ca::{TrustAnchorInfo, RcvdCert, CertAuthList, CertAuthInfo};
 use krill_commons::api::publication::PublishRequest;
 use krill_commons::util::softsigner::{OpenSslSigner, SignerError};
@@ -351,11 +351,8 @@ impl KrillServer {
         &self,
         req: AddChildRequest
     ) -> Result<ParentCaContact, Error> {
-        let token = req.token().clone();
-        self.caserver.ta_add_child(req)?;
-
-        // TODO: Return embedded / remote parent contact dep. on request
-        Ok(ParentCaContact::for_embedded(ta_handle(), token))
+        let contact = self.caserver.ta_add_child(req, &self.service_uri)?;
+        Ok(contact)
     }
 
     pub fn republish_all(&self) -> EmptyRes {
@@ -417,7 +414,7 @@ impl KrillServer {
     pub fn ca_add_parent(
         &self,
         handle: Handle,
-        parent: ParentCaReq
+        parent: AddParentRequest
     ) -> EmptyRes {
         self.caserver.ca_add_parent(handle, parent)?;
         Ok(())

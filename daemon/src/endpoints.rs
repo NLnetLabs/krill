@@ -14,7 +14,7 @@ use serde::Serialize;
 
 use krill_ca::{CaError, CaServerError};
 use krill_commons::api::{admin, publication, ErrorCode, ErrorResponse, IssuanceRequest};
-use krill_commons::api::admin::{Handle, CertAuthInit, AddChildRequest, ParentCaReq};
+use krill_commons::api::admin::{Handle, CertAuthInit, AddChildRequest, AddParentRequest};
 use krill_commons::api::rrdp::VerificationError;
 use krill_commons::util::softsigner::OpenSslSigner;
 use krill_commons::remote::api::ClientInfo;
@@ -172,7 +172,7 @@ pub fn publisher_details(
 
 /// Processes an RFC8181 query and returns the appropriate response.
 #[allow(clippy::needless_pass_by_value)]
-pub fn handle_rfc8181_request(
+pub fn rfc8181(
     server: web::Data<AppServer>,
     handle: Path<Handle>,
     msg_bytes: Bytes,
@@ -391,7 +391,7 @@ pub fn ca_add_parent(
     server: web::Data<AppServer>,
     auth: Auth,
     handle: Path<Handle>,
-    parent: Json<ParentCaReq>
+    parent: Json<AddParentRequest>
 ) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_empty_res(
@@ -440,6 +440,15 @@ pub fn issue(
         Ok(issued) => render_json(issued),
         Err(e) => server_error(&Error::ServerError(e))
     }
+}
+
+/// Process an RFC 6492 request
+///
+pub fn rfc6492(
+    server: web::Data<AppServer>,
+    auth: Auth,
+) -> HttpResponse {
+    unimplemented!()
 }
 
 

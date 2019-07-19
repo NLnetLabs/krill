@@ -400,7 +400,7 @@ type ResourceClassName = String;
 #[allow(clippy::large_enum_variant)]
 pub enum CaCmdDet<S: CaSigner> {
     // Being a parent
-    AddChild(Handle, Token, ResourceSet),
+    AddChild(Handle, Token, Option<IdCert>, ResourceSet),
     CertifyChild(Handle, IssuanceRequest, Token, Arc<RwLock<S>>),
 
     // Being a child
@@ -430,12 +430,18 @@ impl<S: CaSigner> CaCmdDet<S> {
         handle: &Handle,
         child_handle: Handle,
         child_token: Token,
+        child_id_cert: Option<IdCert>,
         child_resources: ResourceSet,
     ) -> CaCmd<S> {
         SentCommand::new(
             handle,
             None,
-            CaCmdDet::AddChild(child_handle, child_token, child_resources)
+            CaCmdDet::AddChild(
+                child_handle,
+                child_token,
+                child_id_cert,
+                child_resources
+            )
         )
     }
 
@@ -735,8 +741,8 @@ impl<S: CaSigner> Aggregate for CertAuth<S> {
     fn process_command(&self, command: CaCmd<S>) -> CaEvtsRes {
         match command.into_details() {
             // being a parent
-            CaCmdDet::AddChild(child, token, resources) =>  {
-                self.add_child(child, token, resources)
+            CaCmdDet::AddChild(child, token, id_cert_opt, resources) =>  {
+                self.add_child(child, token, id_cert_opt, resources)
             },
             CaCmdDet::CertifyChild(child, request, token, signer) => {
                 self.certify_child(child, request, token, signer)
@@ -798,6 +804,10 @@ impl<S: CaSigner> CertAuth<S> {
     pub fn child_request(&self) -> ChildRequest {
         ChildRequest::new(self.handle.clone(), self.id.cert.clone())
     }
+
+    pub fn id_cert(&self) -> &IdCert { &self.id.cert }
+    pub(crate) fn id_key(&self) -> &SignerKeyId { &self.id.key }
+    pub fn handle(&self) -> &Handle { &self.handle }
 }
 
 /// # Publishing
@@ -982,6 +992,7 @@ impl<S: CaSigner> CertAuth<S> {
         &self,
         handle: Handle,
         token: Token,
+        id_cert: Option<IdCert>,
         resources: ResourceSet
     ) -> CaEvtsRes {
         // check that
@@ -1008,7 +1019,7 @@ impl<S: CaSigner> CertAuth<S> {
         }
 
         // TODO: Handle add child to normal CA (issue #25)
-        let mut child = ChildCa::without_resources(handle, token);
+        let mut child = ChildCa::without_resources(handle, token, id_cert);
         child.add_resources(DFLT_CLASS, resources);
 
 

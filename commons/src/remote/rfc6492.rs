@@ -2,6 +2,7 @@ use std::io;
 use std::str::FromStr;
 use std::convert::TryFrom;
 
+use bytes::Bytes;
 use chrono::{Utc, DateTime, SecondsFormat};
 use serde::export::fmt::Display;
 
@@ -30,6 +31,8 @@ use crate::util::xml::{XmlReader, XmlReaderErr, AttributesError, XmlWriter};
 const VERSION: &str = "1";
 const NS: &str = "http://www.apnic.net/specs/rescerts/up-down/";
 
+pub const CONTENT_TYPE: &str = "application/rpki-updown";
+
 const TYPE_LIST_QRY: &str = "list";
 const TYPE_LIST_RES: &str = "list_response";
 const TYPE_ISSUE_QRY: &str = "issue";
@@ -53,6 +56,14 @@ pub struct Message {
 }
 
 impl Message {
+    pub fn list(
+        sender: String,
+        recipient: String,
+    ) -> Self {
+        let content = Content::Qry(Qry::List);
+        Message { sender, recipient, content }
+    }
+
     pub fn list_response(
         sender: String,
         recipient: String,
@@ -175,7 +186,10 @@ impl Message {
         })
     }
 
-
+    /// Consumes the message and turns it into bytes
+    pub fn into_bytes(self) -> Bytes {
+        Bytes::from(self.encode_vec())
+    }
 }
 
 

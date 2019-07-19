@@ -3,21 +3,16 @@ use std::str::FromStr;
 use clap::{App, Arg, SubCommand};
 use rpki::uri;
 
-use krill_commons::api::admin::{
-    AddChildRequest,
-    CertAuthInit,
-    CertAuthPubMode,
-    Handle,
-    ParentCaReq,
-    ParentCaContact,
-    Token,
-};
+use krill_commons::api::admin::{AddChildRequest, CertAuthInit, CertAuthPubMode, Handle, AddParentRequest, ParentCaContact, Token, ChildAuthRequest};
 use krill_commons::api::ca::ResourceSet;
 
 use crate::report::{
     ReportFormat,
     ReportError
 };
+use krill_commons::util::file;
+use krill_commons::remote::rfc8183;
+use std::io;
 
 /// This type holds all the necessary data to connect to a Krill daemon, and
 /// authenticate, and perform a specific action. Note that this is extracted
@@ -91,20 +86,7 @@ impl Options {
                     .about("Manage children of the embbeded TA")
                     .subcommand(SubCommand::with_name("add")
                         .about("Add a child to the embedded CA")
-                        .arg(Arg::with_name("handle")
-                            .short("h")
-                            .long("handle")
-                            .value_name("child-handle")
-                            .help("The handle (name) for the child CA")
-                            .required(true)
-                        )
-                        .arg(Arg::with_name("token")
-                            .short("ct")
-                            .long("token")
-                            .value_name("token-string")
-                            .help("The auth token between the child and TA")
-                            .required(true)
-                        )
+
                         .arg(Arg::with_name("asn")
                             .short("a")
                             .long("asn")
@@ -125,6 +107,49 @@ impl Options {
                             .value_name("IPv6 resources")
                             .help("The delegated IPv6 resources: e.g. 2001:db8::/32")
                             .required(false)
+                        )
+
+                        .subcommand(SubCommand::with_name("krill")
+                            .about("Add a krill child, using token auth")
+                            .arg(Arg::with_name("handle")
+                                .short("h")
+                                .long("handle")
+                                .value_name("child-handle")
+                                .help("The handle (name) for the child CA")
+                                .required(true)
+                            )
+                            .arg(Arg::with_name("token")
+                                .short("t")
+                                .long("token")
+                                .value_name("token-string")
+                                .help("The auth token between the child and TA")
+                                .required(true)
+                            )
+                        )
+
+                        .subcommand(SubCommand::with_name("rfc6492")
+                            .about("Add an RFC 6492 child")
+                            .arg(Arg::with_name("handle")
+                                .short("h")
+                                .long("handle")
+                                .value_name("child-handle")
+                                .help("Override the handle in the XML")
+                                .required(false)
+                            )
+                            .arg(Arg::with_name("token")
+                                .short("t")
+                                .long("token")
+                                .value_name("token-string")
+                                .help("The auth token, defaults to a random token")
+                                .required(false)
+                            )
+                            .arg(Arg::with_name("xml")
+                                .short("x")
+                                .long("xml")
+                                .value_name("FILE")
+                                .help("RFC 8183 Child Request XML")
+                                .required(true)
+                            )
                         )
                     )
                 )
@@ -301,19 +326,49 @@ impl Options {
             }
             if let Some(m) = m.subcommand_matches("children") {
                 if let Some(m) = m.subcommand_matches("add") {
-                    let handle = Handle::from(m.value_of("handle").unwrap());
-                    let token = Token::from(m.value_of("token").unwrap());
 
                     let asn = m.value_of("asn").unwrap_or("");
                     let ipv4 = m.value_of("ipv4").unwrap_or("");
                     let ipv6 = m.value_of("ipv6").unwrap_or("");
 
-                    let res = ResourceSet::from_strs(asn, ipv4, ipv6).unwrap();
+                    if let Some(m) = m.subcommand_matches("embedded") {
+                        let handle = Handle::from(m.value_of("handle").unwrap());
+                        let token = Token::from(m.value_of("token").unwrap());
+                        let res = ResourceSet::from_strs(asn, ipv4, ipv6).unwrap();
 
-                    let req = AddChildRequest::new(handle, token, res);
-                    command = Command::TrustAnchor(
-                        TrustAnchorCommand::AddChild(req)
-                    )
+                        let auth = ChildAuthRequest::Embedded(token);
+
+                        let req = AddChildRequest::new(
+                            handle, res, auth
+                        );
+                        command = Command::TrustAnchor(TrustAnchorCommand::AddChild(req))
+                    }
+
+                    if let Some(m) = m.subcommand_matches("rfc6492") {
+                        let xml_path = m.value_of("xml").unwrap();
+                        let xml = PathBuf::from(xml_path);
+                        let bytes = file::read(&xml)?;
+                        let cr = rfc8183::ChildRequest::validate(bytes.as_ref())?;
+
+                        let handle = {
+                            if let Some(handle) = m.value_of("handle") {
+                                Handle::from(handle)
+                            } else {
+                                cr.child_handle().clone()
+                            }
+                        };
+
+                        let res = ResourceSet::from_strs(asn, ipv4, ipv6).unwrap();
+
+                        let auth = ChildAuthRequest::Rfc8183(cr);
+
+                        let req = AddChildRequest::new(
+                            handle, res, auth
+                        );
+                        command = Command::TrustAnchor(TrustAnchorCommand::AddChild(req))
+                    }
+
+
                 }
             }
 
@@ -348,7 +403,7 @@ impl Options {
 
                     let contact = ParentCaContact::Embedded(parent.clone(), token);
 
-                    let parent = ParentCaReq::new(parent, contact);
+                    let parent = AddParentRequest::new(parent, contact);
 
                     command = Command::CertAuth(
                         CaCommand::AddParent(handle, parent))
@@ -401,7 +456,7 @@ impl Options {
         }
 
         let server = matches.value_of("server").unwrap(); // required
-        let server = uri::Https::from_str(server).map_err(|_| Error::UriError)?;
+        let server = uri::Https::from_str(server).map_err(Error::UriError)?;
 
         let token = Token::from(matches.value_of("token").unwrap());
 
@@ -436,7 +491,7 @@ pub enum TrustAnchorCommand {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 pub enum CaCommand {
-    AddParent(Handle, ParentCaReq),
+    AddParent(Handle, AddParentRequest),
     ChildRequest(Handle),
     Init(CertAuthInit),
     List,
@@ -475,16 +530,34 @@ pub struct AddRfc8181Client {
 
 #[derive(Debug, Display)]
 pub enum Error {
-    #[display(fmt="Cannot parse URI.")]
-    UriError,
+    #[display(fmt="{}", _0)]
+    UriError(uri::Error),
+
+    #[display(fmt="{}", _0)]
+    IoError(io::Error),
 
     #[display(fmt="{}", _0)]
     ReportError(ReportError),
+
+    #[display(fmt="Invalid RFC8183 XML: {}", _0)]
+    Rfc8183(rfc8183::Error),
+}
+
+impl From<rfc8183::Error> for Error {
+    fn from(e: rfc8183::Error) -> Self {
+        Error::Rfc8183(e)
+    }
 }
 
 impl From<uri::Error> for Error {
-    fn from(_e: uri::Error) -> Self {
-        Error::UriError
+    fn from(e: uri::Error) -> Self {
+        Error::UriError(e)
+    }
+}
+
+impl From<io::Error> for Error {
+    fn from(e: io::Error) -> Self {
+        Error::IoError(e)
     }
 }
 

@@ -150,6 +150,7 @@ mod tests {
                 &ta_handle,
                 child_handle.clone(),
                 child_token.clone(),
+                None,
                 child_rs
             );
 

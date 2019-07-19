@@ -47,6 +47,7 @@ use crate::rpki::manifest::{
 };
 use api::admin::ParentCaContact;
 use api::RequestResourceLimit;
+use remote::id::IdCert;
 
 
 //------------ ChildCa -------------------------------------------------------
@@ -64,8 +65,12 @@ impl ChildCa {
         ChildCa { handle, details }
     }
 
-    pub fn without_resources(handle: Handle, token: Token) -> Self {
-        let details = ChildCaDetails::new(token);
+    pub fn without_resources(
+        handle: Handle,
+        token: Token,
+        id_cert: Option<IdCert>
+    ) -> Self {
+        let details = ChildCaDetails::new(token, id_cert);
         ChildCa { handle, details }
     }
 
@@ -92,12 +97,13 @@ impl ChildCa {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildCaDetails {
     token: Token,
+    id_cert: Option<IdCert>,
     resources: HashMap<String, ChildResources>
 }
 
 impl ChildCaDetails {
-    pub fn new(token: Token) -> Self {
-        ChildCaDetails { token, resources: HashMap::new() }
+    pub fn new(token: Token, id_cert: Option<IdCert>) -> Self {
+        ChildCaDetails { token, id_cert, resources: HashMap::new() }
     }
 
     pub fn token(&self) -> &Token { &self.token }
