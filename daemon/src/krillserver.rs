@@ -8,7 +8,7 @@ use rpki::uri;
 
 use krill_commons::api::{publication, Entitlements, IssuanceRequest, IssuanceResponse};
 use krill_commons::api::admin;
-use krill_commons::api::admin::{Handle, Token, PubServerContact, CertAuthInit, CertAuthPubMode, ParentCaContact, AddChildRequest, AddParentRequest};
+use krill_commons::api::admin::{Handle, Token, CertAuthInit, CertAuthPubMode, ParentCaContact, AddChildRequest, AddParentRequest};
 use krill_commons::api::ca::{TrustAnchorInfo, RcvdCert, CertAuthList, CertAuthInfo};
 use krill_commons::api::publication::PublishRequest;
 use krill_commons::util::softsigner::{OpenSslSigner, SignerError};
@@ -21,10 +21,6 @@ use krill_commons::remote::sigmsg::SignedMessage;
 use krill_pubd::PubServer;
 use krill_pubd::publishers::Publisher;
 
-use crate::ca::{
-    PubClients,
-    PubClientError
-};
 use crate::ca::caserver::{
     self,
     ta_handle,
@@ -33,10 +29,7 @@ use crate::ca::caserver::{
 use crate::auth::{Auth, Authorizer};
 use crate::republisher::Republisher;
 use crate::mq::EventQueueListener;
-use clokwerk::{Scheduler, ScheduleHandle, TimeUnits};
-use std::time::Duration;
-use mq::QueueEvent;
-
+use crate::scheduler::Scheduler;
 
 //------------ KrillServer ---------------------------------------------------
 
@@ -63,14 +56,10 @@ pub struct KrillServer {
     authorizer: Authorizer,
 
     // Publication server, with configured publishers
-    pubserver: PubServer,
-
-    // Publication clients server, allows embedded CAs to publish
-    // at a PubServer
-    pub_clients: Arc<PubClients>,
+    pubserver: Arc<PubServer>,
 
     // Handles the internal TA and/or CAs
-    caserver: CaServer<OpenSslSigner>,
+    caserver: Arc<CaServer<OpenSslSigner>>,
 
     // CMS+XML proxy server for non-Krill clients
     proxy_server: ProxyServer,
@@ -81,7 +70,7 @@ pub struct KrillServer {
 
     // Responsible for background tasks, e.g. re-publishing
     #[allow(dead_code)] // just need to keep this in scope
-    tasks_thread: ScheduleHandle
+    scheduler: Scheduler
 
 }
 
@@ -101,12 +90,12 @@ impl KrillServer {
 
         let authorizer = Authorizer::new(token);
 
-        let pubserver = PubServer::build(
+        let pubserver = Arc::new(PubServer::build(
             base_uri.clone(),
             rrdp_base_uri.clone(),
             repo_dir,
             work_dir
-        ).map_err(Error::PubServer)?;
+        ).map_err(Error::PubServer)?);
 
 
         let proxy_server = ProxyServer::init(
@@ -114,25 +103,24 @@ impl KrillServer {
         )?;
 
         let signer = OpenSslSigner::build(work_dir)?;
-        let pub_clients = Arc::new(PubClients::build(work_dir)?);
 
         let event_queue = Arc::new(EventQueueListener::in_mem());
 
-        let caserver = CaServer::build(
+        let caserver = Arc::new(CaServer::build(
             work_dir,
             event_queue.clone(),
-            pub_clients.clone(),
             signer
-        )?;
+        )?);
 
         let republisher = {
             let publish_uri = format!("{}api/v1/republish", service_uri);
             Republisher::new(publish_uri, token)
         };
 
-        let tasks_thread = Self::make_event_lister(
+        let scheduler = Scheduler::build(
             event_queue,
-            caserver.clone()
+            caserver.clone(),
+            pubserver.clone()
         );
 
         Ok(
@@ -141,38 +129,14 @@ impl KrillServer {
                 work_dir: work_dir.clone(),
                 authorizer,
                 pubserver,
-                pub_clients,
                 caserver,
                 proxy_server,
                 republisher,
-                tasks_thread
+                scheduler
             }
         )
     }
 
-    fn make_event_lister(
-        event_queue: Arc<EventQueueListener>,
-        _caserver: CaServer<OpenSslSigner>
-    ) -> ScheduleHandle {
-        let mut scheduler = Scheduler::new();
-        scheduler.every(5.seconds()).run(move || {
-            while let Some(evt) = event_queue.pop() {
-                match evt {
-                    QueueEvent::Delta(handle, _delta) => {
-                        info!("Received delta for: {}", handle);
-
-                    },
-                    QueueEvent::ParentAdded(handle, _parent, _contact) => {
-                        info!("Found parent for: {}", handle);
-//                        if let Err(e) = caserver.update_entitlements(&handle) {
-//                            error!("Error updating entitlements: {}", e);
-//                        }
-                    }
-                }
-            }
-        });
-        scheduler.watch_thread(Duration::from_millis(100))
-    }
 
     pub fn service_base_uri(&self) -> &uri::Https {
         &self.service_uri
@@ -376,16 +340,6 @@ impl KrillServer {
         );
         self.add_publisher(req)?;
 
-        // Add publisher client for TA
-        let req = admin::PublisherClientRequest::new(
-            pub_handle,
-            PubServerContact::for_krill(
-                self.service_uri.clone(),
-                token
-            )
-        );
-        self.pub_clients.add(req)?;
-
         // Add TA
         self.caserver.init_ta(
             repo_info,
@@ -451,16 +405,6 @@ impl KrillServer {
             base_uri,
         );
         self.add_publisher(req)?;
-
-        // Add publisher for CA
-        let req = admin::PublisherClientRequest::new(
-            handle,
-            PubServerContact::for_krill(
-                self.service_uri.clone(),
-                token
-            )
-        );
-        self.pub_clients.add(req)?;
 
         Ok(())
     }
@@ -557,9 +501,6 @@ pub enum Error {
 
     #[display(fmt="{}", _0)]
     CaServerError(caserver::Error<OpenSslSigner>),
-
-    #[display(fmt="{}", _0)]
-    PubClientError(PubClientError),
 }
 
 impl From<io::Error> for Error {
@@ -580,10 +521,6 @@ impl From<SignerError> for Error {
 
 impl From<caserver::Error<OpenSslSigner>> for Error {
     fn from(e: caserver::Error<OpenSslSigner>) -> Self { Error::CaServerError(e) }
-}
-
-impl From<PubClientError> for Error {
-    fn from(e: PubClientError) -> Self { Error::PubClientError(e) }
 }
 
 // Tested through integration tests

@@ -39,6 +39,7 @@ pub mod krillserver;
 pub mod http;
 mod republisher;
 pub mod test;
+pub mod scheduler;
 
 mod mq;
 

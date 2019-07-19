@@ -4,6 +4,7 @@
 //! entitlements.
 
 use std::collections::VecDeque;
+use std::fmt;
 use std::sync::RwLock;
 
 use krill_commons::api::admin::{
@@ -23,7 +24,6 @@ use crate::ca::{
     CertAuth,
     ParentHandle
 };
-use serde::export::fmt::Debug;
 
 //------------ QueueEvent ----------------------------------------------------
 
@@ -91,7 +91,7 @@ impl<S: CaSigner> EventListener<CertAuth<S>> for EventQueueListener {
 /// we will need someting more robust, and possibly multi-master later.
 ///
 /// The EventQueue should implement Eventlistener
-trait EventQueueStore: Debug {
+trait EventQueueStore: fmt::Debug {
     fn pop(&self) -> Option<QueueEvent>;
     fn push_back(&self, evt: QueueEvent);
 }

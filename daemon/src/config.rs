@@ -161,7 +161,7 @@ impl Config {
         let rsync_base = ConfigDefaults::rsync_base();
         let rrdp_base_uri = ConfigDefaults::rrdp_base_uri();
         let log_level =  LevelFilter::Info;
-        let log_type = LogType::File;
+        let log_type = LogType::Stderr;
         let mut log_file = data_dir.clone();
         log_file.push("krill.log");
         let syslog_facility = ConfigDefaults::syslog_facility();

@@ -1,6 +1,6 @@
 use std::{io, fmt};
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::ops::Deref;
 
 use rpki::uri;
@@ -20,7 +20,7 @@ use crate::ca::ca::{
     CaEvtDet,
 };
 use crate::ca::CaSigner;
-use ca::{CaError, PubClients};
+use ca::CaError;
 use mq::EventQueueListener;
 
 
@@ -36,7 +36,7 @@ pub fn ta_handle() -> Handle {
 #[derive(Clone)]
 pub struct CaServer<S: CaSigner> {
     signer: Arc<RwLock<S>>,
-    ca_store: Arc<DiskAggregateStore<CertAuth<S>>>
+    ca_store: Arc<RwLock<DiskAggregateStore<CertAuth<S>>>>
 }
 
 
@@ -47,35 +47,42 @@ impl<S: CaSigner> CaServer<S> {
     pub fn build(
         work_dir: &PathBuf,
         events_queue: Arc<EventQueueListener>,
-        pub_clients: Arc<PubClients>,
         signer: S
     ) -> CaResult<Self, S> {
         let mut ca_store = DiskAggregateStore::<CertAuth<S>>::new(work_dir, CA_NS)?;
         ca_store.add_listener(events_queue);
-        ca_store.add_listener(pub_clients);
 
         Ok(CaServer {
             signer: Arc::new(RwLock::new(signer)),
-            ca_store: Arc::new(ca_store)
+            ca_store: Arc::new(RwLock::new(ca_store))
         })
+    }
+
+    fn ca_store_ro(&self) -> RwLockReadGuard<DiskAggregateStore<CertAuth<S>>> {
+        self.ca_store.read().unwrap()
+    }
+
+    fn ca_store_rw(&self) -> RwLockWriteGuard<DiskAggregateStore<CertAuth<S>>> {
+        self.ca_store.write().unwrap()
     }
 
     /// Gets the TrustAnchor, if present. Returns an error if the TA is uninitialized.
     pub fn get_trust_anchor(&self) -> CaResult<Arc<CertAuth<S>>, S> {
-        self.ca_store
+        self.ca_store_ro()
             .get_latest(&ta_handle())
             .map_err(|_| Error::TrustAnchorNotInitialisedError)
     }
 
     /// Initialises an embedded trust anchor with all resources.
     pub fn init_ta(
-        &mut self,
+        &self,
         info: RepoInfo,
         ta_aia: uri::Rsync,
         ta_uris: Vec<uri::Https>
     ) -> CaResult<(), S> {
         let handle = ta_handle();
-        if self.ca_store.has(&handle) {
+        let ca_store = self.ca_store_rw();
+        if ca_store.has(&handle) {
             Err(Error::TrustAnchorInitialisedError)
         } else {
             let init = CaIniDet::init_ta(
@@ -86,7 +93,7 @@ impl<S: CaSigner> CaServer<S> {
                 self.signer.clone()
             )?;
 
-            self.ca_store.add(init)?;
+            ca_store.add(init)?;
 
             Ok(())
         }
@@ -107,12 +114,15 @@ impl<S: CaSigner> CaServer<S> {
         // if there is a TA, publish it
         let ta_handle = ta_handle();
 
-        if ! self.ca_store.has(&ta_handle) {
+        let ca_store = self.ca_store_rw();
+
+        // bail out w/o error in case there is no embedded TA
+        if ! ca_store.has(&ta_handle) {
             debug!("No embedded TA present");
-            return Ok(()) // bail out w/o error in case there is no embedded TA
+            return Ok(())
         }
 
-        if let Ok(ta) = self.ca_store.get_latest(&ta_handle) {
+        if let Ok(ta) = ca_store.get_latest(&ta_handle) {
             debug!("Publishing TA");
             let ta_republish = CaCmdDet::publish(
                 &ta_handle,
@@ -121,7 +131,7 @@ impl<S: CaSigner> CaServer<S> {
 
             let events = ta.process_command(ta_republish)?;
             if ! events.is_empty() {
-                self.ca_store.update(&ta_handle, ta, events)?;
+                ca_store.update(&ta_handle, ta, events)?;
             }
         } else {
             error!("TA present, but could not be loaded");
@@ -163,7 +173,7 @@ impl<S: CaSigner> CaServer<S> {
         );
 
         let events = ta.process_command(add_child)?;
-        let ta = self.ca_store.update(&ta_handle, ta, events)?;
+        let ta = self.ca_store.write().unwrap().update(&ta_handle, ta, events)?;
 
         match auth {
             ChildAuthRequest::Embedded(token) => {
@@ -206,7 +216,7 @@ impl<S: CaSigner> CaServer<S> {
 impl<S: CaSigner> CaServer<S> {
 
     pub fn get_ca(&self, handle: &Handle) -> CaResult<Arc<CertAuth<S>>, S> {
-        self.ca_store.get_latest(handle)
+        self.ca_store.read().unwrap().get_latest(handle)
             .map_err(|_| Error::UnknownCa(handle.to_string()))
     }
 
@@ -256,7 +266,7 @@ impl<S: CaSigner> CaServer<S> {
             );
 
             let events = ta.process_command(cmd)?;
-            let ta = self.ca_store.update(parent, ta, events)?;
+            let ta = self.ca_store.write().unwrap().update(parent, ta, events)?;
 
             // New entitlements will include this resource class, and
             // the newly issued certificate.
@@ -274,7 +284,7 @@ impl<S: CaSigner> CaServer<S> {
     /// Get the current CAs
     pub fn cas(&self) -> CertAuthList {
         CertAuthList::new(
-            self.ca_store.list().into_iter()
+            self.ca_store_ro().list().into_iter()
                 .map(CertAuthSummary::new)
                 .collect()
         )
@@ -282,16 +292,16 @@ impl<S: CaSigner> CaServer<S> {
 
     /// Initialises an embedded CA, without any parents (for now).
     pub fn init_ca(
-        &mut self,
+        &self,
         handle: &Handle,
         token: Token,
         repo_info: RepoInfo,
     ) -> CaResult<(), S> {
-        if self.ca_store.has(handle) {
+        if self.ca_store_ro().has(handle) {
             Err(Error::DuplicateCa(handle.to_string()))
         } else {
             let init = CaIniDet::init(handle, token, repo_info, self.signer.clone())?;
-            self.ca_store.add(init)?;
+            self.ca_store_rw().add(init)?;
             Ok(())
         }
     }
@@ -312,7 +322,7 @@ impl<S: CaSigner> CaServer<S> {
         );
         let events = ca.process_command(add)?;
 
-        self.ca_store.update(&handle, ca, events)?;
+        self.ca_store_rw().update(&handle, ca, events)?;
 
         Ok(())
     }
@@ -328,7 +338,9 @@ impl<S: CaSigner> CaServer<S> {
 
         let ta_handle = ta_handle();
 
-        let mut child = self.ca_store.get_latest(&handle)?;
+        let ca_store = self.ca_store_rw();
+
+        let mut child = ca_store.get_latest(&handle)?;
 
         // If this is a TA, then just return.. there is not updating
         if child.is_ta() {
@@ -407,7 +419,7 @@ impl<S: CaSigner> CaServer<S> {
                 //      class within a parent and only store the request
                 //      events if there is a positive reply on the
                 //      issuance.
-                child = self.ca_store.update(handle, child, events)?;
+                child = ca_store.update(handle, child, events)?;
 
                 let mut issued_certs: Vec<(String, IssuedCert)> = vec![];
 
@@ -445,7 +457,7 @@ impl<S: CaSigner> CaServer<S> {
                     );
 
                     let evts = child.process_command(upd_rcvd_cmd)?;
-                    child = self.ca_store.update(handle, child, evts)?;
+                    child = ca_store.update(handle, child, evts)?;
                 }
             }
         }
@@ -454,7 +466,7 @@ impl<S: CaSigner> CaServer<S> {
 
     /// Update entitlements for all CAs
     pub fn update_all_entitlements(&self) -> CaResult<(), S> {
-        for handle in self.ca_store.list() {
+        for handle in self.ca_store_ro().list() {
             if let Err(e) = self.update_entitlements(&handle) {
                 error!("{}", e)
             }
@@ -557,8 +569,6 @@ mod tests {
         test_under_tmp,
     };
 
-    use crate::ca::PubClients;
-
     fn signer(temp_dir: &PathBuf) -> OpenSslSigner {
         let signer_dir = sub_dir(temp_dir);
         OpenSslSigner::build(&signer_dir).unwrap()
@@ -569,14 +579,13 @@ mod tests {
         test::test_under_tmp(|d| {
             let signer = OpenSslSigner::build(&d).unwrap();
 
-            let pub_clients = Arc::new(PubClients::build(&d).unwrap());
             let event_queue = Arc::new(EventQueueListener::in_mem());
 
-            let mut server = CaServer::<OpenSslSigner>::build(
+            let server = CaServer::<OpenSslSigner>::build(
                 &d,
                 event_queue,
-                pub_clients,
-                signer).unwrap();
+                signer
+            ).unwrap();
 
             let repo_info = {
                 let base_uri = test::rsync("rsync://localhost/repo/ta/");

@@ -840,6 +840,11 @@ impl PublicationDelta {
     }
 }
 
+impl Into<publication::PublishDelta> for PublicationDelta {
+    fn into(self) -> publication::PublishDelta {
+        self.objects.into()
+    }
+}
 
 //------------ ObjectsDelta --------------------------------------------------
 

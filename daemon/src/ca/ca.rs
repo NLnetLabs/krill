@@ -13,11 +13,7 @@ use rpki::uri;
 use rpki::x509::{Serial, Validity, Time, Name};
 
 use krill_commons::api::{self, DFLT_CLASS, EncodedHash, EntitlementClass, Entitlements, IssuanceRequest, SigningCert, RequestResourceLimit, IssuanceResponse};
-use krill_commons::api::admin::{
-    Handle,
-    ParentCaContact,
-    Token
-};
+use krill_commons::api::admin::{Handle, ParentCaContact, Token, PubServerContact};
 use krill_commons::api::ca::{AddedObject, AllCurrentObjects, CertifiedKey, ChildCa, ChildCaDetails, CurrentObject, CurrentObjects, IssuedCert, KeyRef, ObjectName, ObjectsDelta, PublicationDelta, RcvdCert, RepoInfo, ResourceSet, TrustAnchorInfo, TrustAnchorLocator, UpdatedObject, CertAuthInfo, ResourceClassInfo, CaParentsInfo, ParentCaInfo};
 use krill_commons::eventsourcing::{
     Aggregate,
@@ -617,6 +613,7 @@ pub struct CertAuth<S: CaSigner> {
 
     base_repo: RepoInfo,
     parents: CaParents,
+    pubserver: PubServerContact, // TODO, allow remote
 
     children: HashMap<Handle, ChildCaDetails>,
 
@@ -649,6 +646,7 @@ impl<S: CaSigner> Aggregate for CertAuth<S> {
             CaType::Child => CaParents::Parents(HashMap::new()),
             CaType::Ta(key, tal) => CaParents::SelfSigned(key, tal)
         };
+        let pubserver = PubServerContact::embedded();
 
         let children = HashMap::new();
 
@@ -660,8 +658,9 @@ impl<S: CaSigner> Aggregate for CertAuth<S> {
             id,
 
             base_repo,
-
             parents,
+            pubserver,
+
             children,
 
             phantom_signer: PhantomData

@@ -538,7 +538,6 @@ impl ErrorToStatus for krillserver::Error {
             krillserver::Error::ProxyServer(_) => StatusCode::INTERNAL_SERVER_ERROR,
             krillserver::Error::SignerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             krillserver::Error::CaServerError(e) => e.status(),
-            krillserver::Error::PubClientError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -618,7 +617,6 @@ impl ToErrorCode for krillserver::Error {
             krillserver::Error::ProxyServer(_) => ErrorCode::ProxyError,
             krillserver::Error::SignerError(_) => ErrorCode::SigningError,
             krillserver::Error::CaServerError(e) => e.code(),
-            krillserver::Error::PubClientError(_) => ErrorCode::PubClientServerError,
         }
     }
 }

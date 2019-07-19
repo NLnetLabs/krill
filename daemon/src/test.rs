@@ -42,6 +42,10 @@ pub fn test_with_krill_server<F>(op: F) where F: FnOnce(PathBuf) -> () {
     })
 }
 
+pub fn wait_seconds(s: u64) {
+    thread::sleep(time::Duration::from_secs(s));
+}
+
 fn health_check() -> Result<ApiResponse, Error> {
     let krillc_opts = Options::new(
         test::https("https://localhost:3000/"),

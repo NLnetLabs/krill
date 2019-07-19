@@ -14,8 +14,4 @@ mod signing;
 pub use self::signing::CaSigner;
 pub use self::signing::CaSignSupport;
 
-mod publishing;
-pub use self::publishing::PubClients;
-pub use self::publishing::Error as PubClientError;
-
 

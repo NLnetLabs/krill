@@ -12,10 +12,8 @@ use krill_client::options::{
 use krill_client::report::ApiResponse;
 use krill_commons::api::ca::ResourceSet;
 use krill_commons::api::admin::{AddChildRequest, CertAuthInit, CertAuthPubMode, Handle, ParentCaContact, AddParentRequest, Token, ChildAuthRequest};
-use krill_daemon::test::{ test_with_krill_server, execute_krillc_command };
+use krill_daemon::test::{test_with_krill_server, execute_krillc_command, wait_seconds};
 use krill_commons::remote::rfc8183;
-use std::thread;
-use std::time::Duration;
 
 
 fn init_ta() {
@@ -124,5 +122,7 @@ fn ca_under_ta() {
         };
 
         add_parent_to_ca(&cms_child_handle, parent);
+
+        wait_seconds(5);
     });
 }
