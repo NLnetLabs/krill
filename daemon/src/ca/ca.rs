@@ -5,7 +5,6 @@ use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock};
 
 use chrono::Duration;
-use rand::Rng;
 
 use rpki::cert::{Cert, TbsCert, KeyUsage, Overclaim};
 use rpki::crypto::{PublicKey, PublicKeyFormat};
@@ -27,18 +26,13 @@ use krill_commons::eventsourcing::{
     StoredEvent,
 };
 use krill_commons::util::softsigner::SignerKeyId;
-
-use crate::signing::{CaSigner, CaSignSupport};
 use krill_commons::remote::id::IdCert;
 use krill_commons::remote::builder::IdCertBuilder;
 use krill_commons::remote::rfc8183::ChildRequest;
 
-pub const CA_NS: &str = "cas";
-const TA_NAME: &str = "ta"; // reserved for TA
+use crate::ca::signing::{CaSigner, CaSignSupport};
 
-pub fn ta_handle() -> Handle {
-    Handle::from(TA_NAME)
-}
+
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct Rfc8183Id {
@@ -125,7 +119,7 @@ impl CaIniDet {
         key: &S::KeyId,
         signer: &S
     ) -> CaRes<Cert> {
-        let serial: Serial = rand::thread_rng().gen::<u128>().into();
+        let serial: Serial = Serial::random(signer).map_err(Error::signer)?;
 
         let pub_key = signer.get_key_info(&key).map_err(Error::signer)?;
         let name = pub_key.to_subject_name();
@@ -393,7 +387,7 @@ impl CaEvtDet {
 
 pub type CaCmd<S> = SentCommand<CaCmdDet<S>>;
 
-type ParentHandle = Handle;
+pub type ParentHandle = Handle;
 type ResourceClassName = String;
 
 #[derive(Clone, Debug)]
@@ -647,7 +641,7 @@ impl<S: CaSigner> Aggregate for CertAuth<S> {
         let base_repo = details.2;
         let ca_type = details.3;
 
-        if ca_type == CaType::Child && handle == Handle::from(TA_NAME) {
+        if ca_type == CaType::Child && handle == Handle::from("ta") {
             return Err(Error::NameReservedTa)
         }
 
@@ -687,10 +681,10 @@ impl<S: CaSigner> Aggregate for CertAuth<S> {
                 self.children.insert(handle, details);
             },
             CaEvtDet::CertificateIssued(cert_issued) => {
-                let (child_hndl, response) = cert_issued.unwrap();
+                let (child_handle, response) = cert_issued.unwrap();
                 let (class_name, _, _, issued) = response.unwrap();
 
-                let child = self.children.get_mut(&child_hndl).unwrap();
+                let child = self.children.get_mut(&child_handle).unwrap();
 
                 child.add_cert(&class_name, issued);
             },
@@ -705,14 +699,9 @@ impl<S: CaSigner> Aggregate for CertAuth<S> {
                 self.parents.get_mut(&parent).unwrap()
                     .resources.insert(name, rc);
             }
-            CaEvtDet::CertificateRequested(req) => {
-                info!(
-                    "Certificate requested for class {} from {}",
-                    req.class_name(),
-                    req.parent
-                );
-                // do nothing, this should be picked up by listener and sent
-                // to parent
+            CaEvtDet::CertificateRequested(_req) => {
+                // do nothing, this is already sent to the parent,
+                // otherwise this event is not even saved.
             },
             CaEvtDet::PendingKeyActivated(parent, class_name, cert) => {
                 let parent = self.parent_mut(parent).unwrap();

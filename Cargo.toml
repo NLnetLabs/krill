@@ -1,5 +1,5 @@
 [workspace]
-members = [ "ca", "client", "commons", "daemon", "pubc", "pubd" ]
+members = [ "client", "commons", "daemon", "pubc", "pubd" ]
 
 [patch.crates-io]
 rpki = { git="https://github.com/NLnetLabs/rpki-rs.git" }

@@ -12,17 +12,19 @@ use actix_web::web::{
 use bytes::Bytes;
 use serde::Serialize;
 
-use krill_ca::{CaError, CaServerError};
 use krill_commons::api::{admin, publication, ErrorCode, ErrorResponse, IssuanceRequest};
 use krill_commons::api::admin::{Handle, CertAuthInit, AddChildRequest, AddParentRequest};
 use krill_commons::api::rrdp::VerificationError;
 use krill_commons::util::softsigner::OpenSslSigner;
 use krill_commons::remote::api::ClientInfo;
 use krill_commons::remote::sigmsg::SignedMessage;
+use krill_commons::remote::rfc6492;
 use krill_pubd::publishers::PublisherError;
 use krill_pubd::repo::RrdpServerError;
 
 use crate::auth::Auth;
+use crate::ca::CaError;
+use crate::ca::caserver;
 use crate::http::server::AppServer;
 use crate::krillserver;
 
@@ -203,10 +205,11 @@ pub fn handle_delta(
     handle: Path<Handle>
 ) -> HttpResponse {
     let handle = handle.into_inner();
+    let delta = delta.into_inner();
+    debug!("Received delta request for {}", &handle);
     if_publication_allowed(&server, &handle, &auth, || {
-            render_empty_res(server.read().handle_delta(delta.into_inner(), &handle))
-        }
-    )
+        render_empty_res(server.read().handle_delta(delta, &handle))
+    })
 }
 
 /// Processes a list request sent to the API.
@@ -217,7 +220,7 @@ pub fn handle_list(
     handle: Path<Handle>
 ) -> HttpResponse {
     let handle = handle.into_inner();
-    info!("Received list request for {}", &handle);
+    debug!("Received list request for {}", &handle);
     if_publication_allowed(&server, &handle, &auth, ||{
         match server.read().handle_list(&handle) {
             Ok(list) => render_json(list),
@@ -446,9 +449,29 @@ pub fn issue(
 ///
 pub fn rfc6492(
     server: web::Data<AppServer>,
-    auth: Auth,
+    parent: Path<Handle>,
+    child: Path<Handle>,
+    msg_bytes: Bytes,
 ) -> HttpResponse {
-    unimplemented!()
+    match SignedMessage::decode(msg_bytes, true) {
+        Ok(msg) => {
+            match server.read().rfc6492(
+                parent.into_inner(),
+                child.into_inner(),
+                msg
+            ) {
+                Ok(captured) => {
+                    HttpResponse::build(StatusCode::OK)
+                        .content_type(rfc6492::CONTENT_TYPE)
+                        .body(captured.into_bytes())
+                }
+                Err(e) => {
+                    server_error(&Error::ServerError(e))
+                }
+            }
+        }
+        Err(_) => server_error(&Error::CmsError)
+    }
 }
 
 
@@ -554,10 +577,10 @@ impl ErrorToStatus for RrdpServerError {
     }
 }
 
-impl ErrorToStatus for CaServerError<OpenSslSigner> {
+impl ErrorToStatus for caserver::Error<OpenSslSigner> {
     fn status(&self) -> StatusCode {
         match self {
-            CaServerError::CaError(e) => e.status(),
+            caserver::Error::CaError(e) => e.status(),
             _ => StatusCode::INTERNAL_SERVER_ERROR
         }
     }
@@ -643,10 +666,10 @@ impl ToErrorCode for RrdpServerError {
     }
 }
 
-impl ToErrorCode for CaServerError<OpenSslSigner> {
+impl ToErrorCode for caserver::Error<OpenSslSigner> {
     fn code(&self) -> ErrorCode {
         match self {
-            CaServerError::CaError(e) => e.code(),
+            caserver::Error::CaError(e) => e.code(),
             _ => ErrorCode::CaServerError
         }
     }

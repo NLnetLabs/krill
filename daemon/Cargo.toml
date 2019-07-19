@@ -37,9 +37,6 @@ xml-rs          = "0.8.0"
 [build-dependencies]
 ignore          = "^0.4"
 
-[dependencies.krill_ca]
-path = "../ca"
-version = "0.2.0"
 
 [dependencies.krill_client]
 path = "../client"

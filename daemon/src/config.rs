@@ -160,14 +160,14 @@ impl Config {
         let data_dir = data_dir.clone();
         let rsync_base = ConfigDefaults::rsync_base();
         let rrdp_base_uri = ConfigDefaults::rrdp_base_uri();
-        let log_level =  LevelFilter::Debug;
+        let log_level =  LevelFilter::Info;
         let log_type = LogType::File;
         let mut log_file = data_dir.clone();
         log_file.push("krill.log");
         let syslog_facility = ConfigDefaults::syslog_facility();
         let auth_token = Token::from("secret");
 
-        Config {
+        let c = Config {
             ip,
             port,
             use_ssl,
@@ -179,7 +179,9 @@ impl Config {
             log_file,
             syslog_facility,
             auth_token
-        }
+        };
+        c.init_logging().unwrap();
+        c
     }
 
     /// Creates the config (at startup). Panics in case of issues.

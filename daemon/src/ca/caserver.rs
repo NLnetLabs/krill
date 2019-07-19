@@ -8,33 +8,32 @@ use rpki::uri;
 use krill_commons::api::{DFLT_CLASS, Entitlements, IssuanceRequest, IssuanceResponse};
 use krill_commons::api::admin::{AddChildRequest, Handle, ParentCaContact, AddParentRequest, Token, ChildAuthRequest};
 use krill_commons::api::ca::{IssuedCert, RcvdCert, RepoInfo, CertAuthList, CertAuthSummary};
-use krill_commons::eventsourcing::{
-    Aggregate,
-    AggregateStore,
-    AggregateStoreError,
-    DiskAggregateStore,
-};
+use krill_commons::eventsourcing::{Aggregate, AggregateStore, AggregateStoreError, DiskAggregateStore};
 use krill_commons::util::httpclient;
 use krill_commons::remote::builder::SignedMessageBuilder;
+use krill_commons::remote::{rfc8183, rfc6492};
 
-use crate::ca::{
-    self,
-    CA_NS,
+use crate::ca::ca::{
     CertAuth,
     CaCmdDet,
     CaIniDet,
     CaEvtDet,
 };
-use crate::{
-    ta_handle,
-    CaSigner,
-    PubClients
-};
-use krill_commons::remote::{rfc8183, rfc6492};
+use crate::ca::CaSigner;
+use ca::{CaError, PubClients};
+use mq::EventQueueListener;
 
+
+pub const CA_NS: &str = "cas";
+const TA_NAME: &str = "ta"; // reserved for TA
+
+pub fn ta_handle() -> Handle {
+    Handle::from(TA_NAME)
+}
 
 //------------ CaServer ------------------------------------------------------
 
+#[derive(Clone)]
 pub struct CaServer<S: CaSigner> {
     signer: Arc<RwLock<S>>,
     ca_store: Arc<DiskAggregateStore<CertAuth<S>>>
@@ -47,10 +46,12 @@ impl<S: CaSigner> CaServer<S> {
     /// initialised.
     pub fn build(
         work_dir: &PathBuf,
+        events_queue: Arc<EventQueueListener>,
         pub_clients: Arc<PubClients>,
         signer: S
     ) -> CaResult<Self, S> {
         let mut ca_store = DiskAggregateStore::<CertAuth<S>>::new(work_dir, CA_NS)?;
+        ca_store.add_listener(events_queue);
         ca_store.add_listener(pub_clients);
 
         Ok(CaServer {
@@ -316,7 +317,8 @@ impl<S: CaSigner> CaServer<S> {
         Ok(())
     }
 
-    fn update_entitlements(&self, handle: &Handle) -> CaResult<(), S> {
+    /// Update entitlements for a CA
+    pub fn update_entitlements(&self, handle: &Handle) -> CaResult<(), S> {
 
         // Note: we can bail out on serious server side errors, indicating
         // a bug or data corruption issue on our side. However, we should
@@ -480,7 +482,7 @@ pub enum Error<S: CaSigner> {
     TrustAnchorNotInitialisedError,
 
     #[display(fmt = "{}", _0)]
-    CaError(ca::Error),
+    CaError(CaError),
 
     #[display(fmt = "CA {} was already initialised", _0)]
     DuplicateCa(String),
@@ -511,8 +513,8 @@ impl<S: CaSigner> From<io::Error> for Error<S> {
     fn from(e: io::Error) -> Self { Error::IoError(e) }
 }
 
-impl<S: CaSigner> From<ca::Error> for Error<S> {
-    fn from(e: ca::Error) -> Self { Error::CaError(e) }
+impl<S: CaSigner> From<CaError> for Error<S> {
+    fn from(e: CaError) -> Self { Error::CaError(e) }
 }
 
 impl<S: CaSigner> From<AggregateStoreError> for Error<S> {
@@ -526,8 +528,41 @@ impl<S: CaSigner> From<AggregateStoreError> for Error<S> {
 mod tests {
 
     use super::*;
-    use krill_commons::util::test;
+
+    use std::path::PathBuf;
+    use std::sync::{Arc, RwLock};
+
+    use krill_commons::api::{DFLT_CLASS, IssuanceRequest};
+    use krill_commons::api::admin::{
+        Handle,
+        Token,
+        ParentCaContact
+    };
+    use krill_commons::api::ca::{
+        RepoInfo,
+        ResourceSet,
+        RcvdCert
+    };
+    use krill_commons::eventsourcing::{
+        Aggregate,
+        AggregateStore,
+        DiskAggregateStore
+    };
     use krill_commons::util::softsigner::OpenSslSigner;
+    use krill_commons::util::test;
+    use krill_commons::util::test::{
+        sub_dir,
+        https,
+        rsync,
+        test_under_tmp,
+    };
+
+    use crate::ca::PubClients;
+
+    fn signer(temp_dir: &PathBuf) -> OpenSslSigner {
+        let signer_dir = sub_dir(temp_dir);
+        OpenSslSigner::build(&signer_dir).unwrap()
+    }
 
     #[test]
     fn add_ta() {
@@ -535,8 +570,13 @@ mod tests {
             let signer = OpenSslSigner::build(&d).unwrap();
 
             let pub_clients = Arc::new(PubClients::build(&d).unwrap());
+            let event_queue = Arc::new(EventQueueListener::in_mem());
 
-            let mut server = CaServer::<OpenSslSigner>::build(&d, pub_clients, signer).unwrap();
+            let mut server = CaServer::<OpenSslSigner>::build(
+                &d,
+                event_queue,
+                pub_clients,
+                signer).unwrap();
 
             let repo_info = {
                 let base_uri = test::rsync("rsync://localhost/repo/ta/");
@@ -555,4 +595,201 @@ mod tests {
         })
     }
 
+
+
+    #[test]
+    fn init_ta() {
+        test_under_tmp(|d| {
+            let ca_store = DiskAggregateStore::<CertAuth<OpenSslSigner>>::new(
+                &d, CA_NS
+            ).unwrap();
+
+            let ta_repo_info = {
+                let base_uri = rsync("rsync://localhost/repo/ta/");
+                let rrdp_uri = https("https://localhost/repo/notifcation.xml");
+                RepoInfo::new(base_uri, rrdp_uri)
+            };
+
+            let ta_handle = ta_handle();
+
+
+            let ta_uri = https("https://localhost/tal/ta.cer");
+            let ta_aia = rsync("rsync://localhost/repo/ta.cer");
+
+            let signer = signer(&d);
+            let signer = Arc::new(RwLock::new(signer));
+
+            //
+            // --- Create TA and publish
+            //
+
+            let ta_ini = CaIniDet::init_ta(
+                &ta_handle,
+                ta_repo_info,
+                ta_aia,
+                vec![ta_uri],
+
+                signer.clone()
+            ).unwrap();
+
+            ca_store.add(ta_ini).unwrap();
+            let ta = ca_store.get_latest(&ta_handle).unwrap();
+
+            //
+            // --- Create Child CA
+            //
+            // Expect:
+            //   - Child CA initialised
+            //
+            let child_handle = Handle::from("child");
+            let child_token = Token::from("child");
+            let child_rs = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
+
+            let ca_repo_info = {
+                let base_uri = rsync("rsync://localhost/repo/ca/");
+                let rrdp_uri = https("https://localhost/repo/notifcation.xml");
+                RepoInfo::new(base_uri, rrdp_uri)
+            };
+
+            let ca_ini = CaIniDet::init(
+                &child_handle,
+                child_token.clone(),
+                ca_repo_info,
+                signer.clone()
+            ).unwrap();
+
+            ca_store.add(ca_ini).unwrap();
+            let child = ca_store.get_latest(&child_handle).unwrap();
+
+            //
+            // --- Add Child to TA
+            //
+            // Expect:
+            //   - Child added to TA
+            //
+
+            let cmd = CaCmdDet::add_child(
+                &ta_handle,
+                child_handle.clone(),
+                child_token.clone(),
+                None,
+                child_rs
+            );
+
+            let events = ta.process_command(cmd).unwrap();
+            let ta = ca_store.update(&ta_handle, ta, events).unwrap();
+
+            //
+            // --- Add TA as parent to child CA
+            //
+            // Expect:
+            //   - Parent added
+            //
+
+            let parent = ParentCaContact::for_embedded(
+                ta_handle.clone(),
+                child_token.clone()
+            );
+
+            let add_parent = CaCmdDet::add_parent(
+                &child_handle,
+                ta_handle.as_str(),
+                parent
+            );
+
+            let events = child.process_command(add_parent).unwrap();
+            let child = ca_store.update(&child_handle, child, events).unwrap();
+
+            //
+            // --- Get resource entitlements for Child and let it process
+            //
+            // Expect:
+            //   - No change in TA (just read-only entitlements)
+            //   - Resource Class (DFLT) added to child with pending key
+            //   - Certificate requested by child
+            //
+
+            let entitlements = ta.list(&child_handle, &child_token).unwrap();
+
+            let upd_ent = CaCmdDet::upd_entitlements(
+                &child_handle,
+                &ta_handle,
+                entitlements,
+                signer.clone()
+            );
+
+            let events = child.process_command(upd_ent).unwrap();
+            assert_eq!(2, events.len()); // rc and csr
+            let req_evt = events[1].clone().into_details();
+            let child = ca_store.update(&child_handle, child, events).unwrap();
+
+            let req = match req_evt {
+                CaEvtDet::CertificateRequested(req) => req,
+                _ => panic!("Expected Csr")
+            };
+
+            let (parent_info, issuance_req) = req.unwrap();
+            let (class_name, limit, csr) = issuance_req.unwrap();
+            assert_eq!("all", &class_name);
+            assert!(limit.is_empty());
+            if let ParentCaContact::Embedded(handle, token) = parent_info {
+                assert_eq!(ta_handle, handle);
+                assert_eq!(child_token, token);
+            } else {
+                panic!("Expected embedded contact")
+            }
+
+            //
+            // --- Send certificate request from child to TA
+            //
+            // Expect:
+            //   - Certificate issued
+            //   - Publication
+            //
+
+            let request = IssuanceRequest::new(
+                DFLT_CLASS.to_string(), limit, csr
+            );
+
+            let ta_cmd = CaCmdDet::certify_child(
+                &ta_handle,
+                child_handle.clone(),
+                request,
+                child_token.clone(),
+                signer.clone()
+            );
+
+            let ta_events = ta.process_command(ta_cmd).unwrap();
+            let issued_evt = ta_events[0].clone().into_details();
+            let _ta = ca_store.update(&ta_handle, ta, ta_events).unwrap();
+
+            let issued = match issued_evt {
+                CaEvtDet::CertificateIssued(issued) => issued,
+                _ => panic!("Expected issued certificate.")
+            };
+
+            let (handle, issuance_res) = issued.unwrap();
+
+            let (class_name, _, _, issued) = issuance_res.unwrap();
+
+            assert_eq!(child_handle, handle);
+            assert_eq!(DFLT_CLASS, class_name);
+
+            //
+            // --- Return issued certificate to child CA
+            //
+            // Expect:
+            //   - Pending key activated
+            //   - Publication
+
+            let rcvd_cert = RcvdCert::from(issued);
+
+            let upd_rcvd = CaCmdDet::upd_received_cert(
+                &child_handle, &ta_handle, DFLT_CLASS, rcvd_cert, signer.clone()
+            );
+
+            let events = child.process_command(upd_rcvd).unwrap();
+            let _child = ca_store.update(&child_handle, child, events).unwrap();
+        })
+    }
 }

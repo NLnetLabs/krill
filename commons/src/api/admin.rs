@@ -258,24 +258,31 @@ impl Eq for PublisherDetails {}
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PublisherClientRequest {
     handle:      Handle,
-    server_info: PubServerInfo
+    server_info: PubServerContact
 }
 
 impl PublisherClientRequest {
-    pub fn new(handle: Handle, server_info: PubServerInfo) -> Self {
+    pub fn new(handle: Handle, server_info: PubServerContact) -> Self {
         PublisherClientRequest { handle, server_info }
     }
 
-    pub fn for_krill(
+    pub fn embedded(
+        handle: Handle
+    ) -> Self {
+        let server_info = PubServerContact::embedded();
+        PublisherClientRequest { handle, server_info }
+    }
+
+    pub fn krill(
         handle: Handle,
         service_uri: uri::Https,
         token: Token
     ) -> Self {
-        let server_info = PubServerInfo::for_krill(service_uri, token);
+        let server_info = PubServerContact::for_krill(service_uri, token);
         PublisherClientRequest { handle, server_info }
     }
 
-    pub fn unwrap(self) -> (Handle, PubServerInfo) {
+    pub fn unwrap(self) -> (Handle, PubServerContact) {
         (self.handle, self.server_info)
     }
 }
@@ -284,14 +291,21 @@ impl PublisherClientRequest {
 //------------ PubServerInfo -------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Display, Serialize)]
-pub enum PubServerInfo {
-    #[display(fmt = "Krill at: {}", _0)]
+pub enum PubServerContact {
+    #[display(fmt = "Embedded server.")]
+    Embedded,
+
+    #[display(fmt = "Remote Krill at: {}, using token: {}", _0, _1)]
     KrillServer(uri::Https, Token)
 }
 
-impl PubServerInfo {
+impl PubServerContact {
+    pub fn embedded() -> Self {
+        PubServerContact::Embedded
+    }
+
     pub fn for_krill(service_uri: uri::Https, token: Token) -> Self {
-        PubServerInfo::KrillServer(service_uri, token)
+        PubServerContact::KrillServer(service_uri, token)
     }
 }
 

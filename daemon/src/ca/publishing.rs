@@ -1,12 +1,11 @@
 //! Supports publishing signed objects.
 
-use std::{io, thread};
+use std::io;
 use std::path::PathBuf;
 
-use krill_commons::api::ErrorCode;
 use krill_commons::api::admin::{
     Handle,
-    PubServerInfo,
+    PubServerContact,
     PublisherClientRequest
 };
 use krill_commons::api::ca::AllCurrentObjects;
@@ -22,10 +21,9 @@ use krill_commons::eventsourcing::{
     SentCommand,
     StoredEvent,
 };
-use krill_commons::util::httpclient;
 
 use crate::ca::{CertAuth, CaEvt, CaEvtDet};
-use crate::signing::CaSigner;
+use crate::ca::signing::CaSigner;
 
 
 
@@ -34,12 +32,12 @@ use crate::signing::CaSigner;
 pub type PubClientInit = StoredEvent<PubClientInitDetails>;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct PubClientInitDetails(PubServerInfo);
+pub struct PubClientInitDetails(PubServerContact);
 
 impl PubClientInitDetails {
     pub fn init(
         handle: &Handle,
-        server_info: PubServerInfo
+        server_info: PubServerContact
     ) -> PubClientInit {
         PubClientInit::new(
             handle,
@@ -77,7 +75,7 @@ impl CommandDetails for PubClientCommandDetails {
 pub struct PubClient {
     handle: Handle,
     version: u64,
-    server: PubServerInfo
+    server: PubServerContact
 }
 
 impl Aggregate for PubClient {
@@ -111,7 +109,7 @@ impl Aggregate for PubClient {
 }
 
 impl PubClient {
-    pub fn server_info(&self) -> &PubServerInfo {
+    pub fn server_info(&self) -> &PubServerContact {
         &self.server
     }
 }
@@ -133,32 +131,36 @@ impl PubClients {
         &self,
         handle: &Handle,
         _current_objects: AllCurrentObjects,
-        delta: PublishDelta
+        _delta: PublishDelta
     ) {
         let client = self.store.get_latest(handle).unwrap();
 
         match client.server_info() {
-            PubServerInfo::KrillServer(service_uri, token) => {
-                let uri = format!("{}publication/{}", service_uri, handle);
-                let token = token.clone();
-                let handle = handle.clone();
+            PubServerContact::KrillServer(_uri, _token) => {
+                error!("Remote publication not implemented")
+//                let uri = format!("{}publication/{}", service_uri, handle);
+//                let token = token.clone();
+//                let handle = handle.clone();
+//
+//                thread::spawn(move ||{
+//                    match httpclient::post_json(&uri, delta, Some(&token)) {
+//                        Err(httpclient::Error::ErrorWithJson(_code, err)) => {
+//                            let err: ErrorCode = err.into();
+//                            if err == ErrorCode::ObjectAlreadyPresent ||
+//                               err == ErrorCode::NoObjectForHashAndOrUri {
+//                                unimplemented!("https://github.com/NLnetLabs/krill/issues/42")
+//                            } else {
+//                                error!("{}", err)
+//                            }
+//                        },
+//                        Err(e) => error!("{}", e),
+//                        Ok(()) => info!("PubClients: published for {}", handle)
+//                    }
+//                });
 
-                thread::spawn(move ||{
-                    match httpclient::post_json(&uri, delta, Some(&token)) {
-                        Err(httpclient::Error::ErrorWithJson(_code, err)) => {
-                            let err: ErrorCode = err.into();
-                            if err == ErrorCode::ObjectAlreadyPresent ||
-                               err == ErrorCode::NoObjectForHashAndOrUri {
-                                unimplemented!("https://github.com/NLnetLabs/krill/issues/42")
-                            } else {
-                                error!("{}", err)
-                            }
-                        },
-                        Err(e) => error!("{}", e),
-                        Ok(()) => debug!("PubClients: published for {}", handle)
-                    }
-                });
-
+            },
+            PubServerContact::Embedded => {
+                error!("Embedded publication not implemented")
             }
         }
     }
