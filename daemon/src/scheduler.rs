@@ -16,13 +16,16 @@ use krill_pubd::PubServer;
 
 pub struct Scheduler {
     #[allow(dead_code)] // just need to keep this in scope
-    event_thread: ScheduleHandle
+    event_sh: ScheduleHandle,
+
+    #[allow(dead_code)] // just need to keep this in scope
+    republish_sh: ScheduleHandle
 }
 
 impl Scheduler {
     pub fn build(
         event_queue: Arc<EventQueueListener>,
-        _caserver: Arc<CaServer<OpenSslSigner>>,
+        caserver: Arc<CaServer<OpenSslSigner>>,
         pubserver: Arc<PubServer>
     ) -> Self {
         let mut scheduler = clokwerk::Scheduler::new();
@@ -38,9 +41,16 @@ impl Scheduler {
                 }
             }
         });
+        let event_sh =  scheduler.watch_thread(Duration::from_millis(100));
+
+        let mut scheduler = clokwerk::Scheduler::new();
+        scheduler.every(1.hours()).run(move || {
+            caserver.republish_all(); // TODO: one by one and keep results
+        });
+        let republish_sh = scheduler.watch_thread(Duration::from_millis(100));
 
         Scheduler {
-            event_thread: scheduler.watch_thread(Duration::from_millis(100))
+            event_sh, republish_sh
         }
     }
 }

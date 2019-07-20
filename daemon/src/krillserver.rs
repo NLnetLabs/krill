@@ -27,7 +27,6 @@ use crate::ca::caserver::{
     CaServer,
 };
 use crate::auth::{Auth, Authorizer};
-use crate::republisher::Republisher;
 use crate::mq::EventQueueListener;
 use crate::scheduler::Scheduler;
 
@@ -63,10 +62,6 @@ pub struct KrillServer {
 
     // CMS+XML proxy server for non-Krill clients
     proxy_server: ProxyServer,
-
-    // Responsible for republishing periodically
-    #[allow(dead_code)] // keep this in scope
-    republisher: Republisher,
 
     // Responsible for background tasks, e.g. re-publishing
     #[allow(dead_code)] // just need to keep this in scope
@@ -112,11 +107,6 @@ impl KrillServer {
             signer
         )?);
 
-        let republisher = {
-            let publish_uri = format!("{}api/v1/republish", service_uri);
-            Republisher::new(publish_uri, token)
-        };
-
         let scheduler = Scheduler::build(
             event_queue,
             caserver.clone(),
@@ -131,7 +121,6 @@ impl KrillServer {
                 pubserver,
                 caserver,
                 proxy_server,
-                republisher,
                 scheduler
             }
         )

@@ -37,7 +37,6 @@ pub mod config;
 pub mod endpoints;
 pub mod krillserver;
 pub mod http;
-mod republisher;
 pub mod test;
 pub mod scheduler;
 
