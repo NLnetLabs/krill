@@ -9,7 +9,7 @@ use crate::api::Link;
 use std::path::Path;
 use api::ca::ResourceSet;
 use remote::rfc8183;
-use remote::rfc8183::ChildRequest;
+use remote::rfc8183::{ChildRequest, ServiceUri};
 
 
 //------------ Handle --------------------------------------------------------
@@ -340,7 +340,7 @@ impl AddParentRequest {
 #[allow(clippy::large_enum_variant)]
 pub enum ParentCaContact {
     #[display(fmt = "Remote krill at: {}", _0)]
-    RemoteKrill(uri::Https, Token),
+    RemoteKrill(ServiceUri, Token),
 
     #[display(fmt = "Embedded CA: {}", _0)]
     Embedded(Handle, Token),
@@ -350,7 +350,7 @@ pub enum ParentCaContact {
 }
 
 impl ParentCaContact {
-    pub fn for_remote_krill(service_uri: uri::Https, token: Token) -> Self {
+    pub fn for_remote_krill(service_uri: ServiceUri, token: Token) -> Self {
         ParentCaContact::RemoteKrill(service_uri, token)
     }
 
@@ -417,6 +417,7 @@ impl AddChildRequest {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[allow(clippy::large_enum_variant)]
 pub enum ChildAuthRequest {
     Embedded(Token),
     Remote(Token),

@@ -14,7 +14,7 @@ use rpki::x509::{Serial, Validity, Time, Name};
 
 use krill_commons::api::{self, DFLT_CLASS, EncodedHash, EntitlementClass, Entitlements, IssuanceRequest, SigningCert, RequestResourceLimit, IssuanceResponse};
 use krill_commons::api::admin::{Handle, ParentCaContact, Token, PubServerContact};
-use krill_commons::api::ca::{AddedObject, AllCurrentObjects, CertifiedKey, ChildCa, ChildCaDetails, CurrentObject, CurrentObjects, IssuedCert, KeyRef, ObjectName, ObjectsDelta, PublicationDelta, RcvdCert, RepoInfo, ResourceSet, TrustAnchorInfo, TrustAnchorLocator, UpdatedObject, CertAuthInfo, ResourceClassInfo, CaParentsInfo, ParentCaInfo};
+use krill_commons::api::ca::{AddedObject, AllCurrentObjects, CertifiedKey, ChildCa, ChildCaDetails, CurrentObject, CurrentObjects, IssuedCert, KeyRef, ObjectName, ObjectsDelta, PublicationDelta, RcvdCert, RepoInfo, ResourceSet, TrustAnchorInfo, TrustAnchorLocator, UpdatedObject, CertAuthInfo, ResourceClassInfo, CaParentsInfo, ParentCaInfo, PendingKey};
 use krill_commons::eventsourcing::{
     Aggregate,
     CommandDetails,
@@ -23,11 +23,13 @@ use krill_commons::eventsourcing::{
 };
 use krill_commons::util::softsigner::SignerKeyId;
 use krill_commons::remote::id::IdCert;
-use krill_commons::remote::builder::IdCertBuilder;
+use krill_commons::remote::builder::{IdCertBuilder, SignedMessageBuilder};
 use krill_commons::remote::rfc8183::ChildRequest;
 
 use crate::ca::signing::{CaSigner, CaSignSupport};
-
+use krill_commons::remote::sigmsg::SignedMessage;
+use krill_commons::remote::rfc6492;
+use bytes::Bytes;
 
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -174,20 +176,22 @@ impl CertIssued {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct CertRequested {
-    parent: ParentCaContact,
+    parent: ParentHandle,
+    key_status: KeyStatus,
     request: IssuanceRequest
 }
 
 impl CertRequested {
-    pub fn unwrap(self) -> (ParentCaContact, IssuanceRequest) {
-        (self.parent, self.request)
+    pub fn unwrap(self) -> (ParentHandle, KeyStatus, IssuanceRequest) {
+        (self.parent, self.key_status, self.request)
     }
-    pub fn parent(&self) -> &ParentCaContact {
+    pub fn parent(&self) -> &ParentHandle {
         &self.parent
     }
     pub fn class_name(&self) -> &str {
         self.request.class_name()
     }
+    pub fn status(&self) -> KeyStatus { self.key_status }
     pub fn limit(&self) -> &RequestResourceLimit {
         self.request.limit()
     }
@@ -439,7 +443,7 @@ impl<S: CaSigner> CaCmdDet<S> {
     /// Certify a child. Will return an error in case the child is
     /// unknown, or in case resources are not held by the child.
     pub fn certify_child(
-        handle: &Handle,
+        handle: &ParentHandle,
         child_handle: Handle,
         request: IssuanceRequest,
         token: Token,
@@ -698,12 +702,15 @@ impl<S: CaSigner> Aggregate for CertAuth<S> {
                 self.parents.get_mut(&parent).unwrap()
                     .resources.insert(name, rc);
             }
-            CaEvtDet::CertificateRequested(_req) => {
-                // do nothing, this is already sent to the parent,
-                // otherwise this event is not even saved.
+            CaEvtDet::CertificateRequested(req) => {
+                let (parent, status, req) = req.unwrap();
+                let class = req.class_name().to_owned();
+                self.parents.get_mut(&parent).unwrap()
+                    .resources.get_mut(&class).unwrap()
+                    .add_request(status, req)
             },
             CaEvtDet::PendingKeyActivated(parent, class_name, cert) => {
-                let parent = self.parent_mut(parent).unwrap();
+                let parent = self.parent_mut(&parent).unwrap();
                 let rc = parent.class_mut(&class_name).unwrap();
                 rc.pending_key_activated(cert);
             }
@@ -713,9 +720,9 @@ impl<S: CaSigner> Aggregate for CertAuth<S> {
 
             // General functions
             CaEvtDet::Published(parent, class_name, status, delta) => {
-                let parent = self.parent_mut(parent).unwrap();
+                let parent = self.parent_mut(&parent).unwrap();
                 let rc = parent.class_mut(&class_name).unwrap();
-                let ck = rc.get_key_mut(&status).unwrap();
+                let ck = rc.get_key_mut(status).unwrap();
                 ck.apply_delta(delta);
             },
             CaEvtDet::TaPublished(delta) => {
@@ -878,6 +885,38 @@ impl<S: CaSigner> CertAuth<S> {
 /// # Being a parent
 ///
 impl<S: CaSigner> CertAuth<S> {
+
+    pub fn verify_rfc6492(
+        &self,
+        msg: SignedMessage
+    ) -> CaRes<(rfc6492::Message, Token)> {
+        let content = rfc6492::Message::from_signed_message(&msg)?;
+
+        let child_handle = Handle::from(content.sender());
+        let child = self.get_child(&child_handle)?;
+
+        let child_cert = child.id_cert()
+            .ok_or_else(|| Error::Unauthorized(child_handle))?;
+        msg.validate(child_cert).map_err(|_| Error::InvalidRfc6492)?;
+
+        let token = child.token().clone();
+
+        Ok((content, token))
+    }
+
+    pub fn sign_rfc6492_response(
+        &self,
+        msg: rfc6492::Message,
+        signer: &S
+    ) -> CaRes<Bytes> {
+        let key = &self.id.key;
+        Ok(SignedMessageBuilder::create(
+            key,
+            signer,
+            msg.into_bytes()
+        ).map_err(Error::signer)?.as_bytes())
+    }
+
     /// List entitlements (section 3.3.2 of RFC6492). Return an error if
     /// the child is not authorized -- or unknown etc.
     ///
@@ -1045,7 +1084,11 @@ impl<S: CaSigner> CertAuth<S> {
         // verify child and resources
         let child_resources = self.get_authorised_child(&child, &token)?
             .resources_for_class(&class_name)
-            .ok_or_else(|| Error::MissingResources)?;
+            .ok_or_else(|| Error::MissingResourceClass)?;
+
+        if child_resources.resources().is_empty() {
+            return Err(Error::MissingResources)
+        }
 
         let resources = limit.resolve(child_resources.resources())
             .ok_or_else(|| Error::MissingResources)?;
@@ -1200,12 +1243,12 @@ impl<S: CaSigner> CertAuth<S> {
         }
     }
 
-    fn parent(&self, parent: Handle) -> CaRes<&ParentCa> {
-        self.parents.get(&parent)
+    fn parent(&self, parent: &Handle) -> CaRes<&ParentCa> {
+        self.parents.get(parent)
     }
 
-    fn parent_mut(&mut self, parent: Handle) -> CaRes<&mut ParentCa> {
-        self.parents.get_mut(&parent)
+    fn parent_mut(&mut self, parent: &Handle) -> CaRes<&mut ParentCa> {
+        self.parents.get_mut(parent)
     }
 
     fn ta_key_mut(&mut self) -> CaRes<&mut CertifiedKey> {
@@ -1226,6 +1269,30 @@ impl<S: CaSigner> CertAuth<S> {
         )])
     }
 
+    /// Get all the current open certificate requests for a parent.
+    /// Returns an empty list if the parent is not found.
+    pub fn cert_requests(&self, parent_handle: &ParentHandle) -> Vec<CertRequested> {
+        let mut res = vec![];
+
+        if let Ok(parent)= self.parent(parent_handle) {
+            for (_class_name, rc) in parent.resources.iter() {
+                if let Some(p) = &rc.pending_key {
+                    if let Some(r) = p.request() {
+                        res.push(
+                            CertRequested {
+                                parent: parent_handle.clone(),
+                                key_status: KeyStatus::Pending,
+                                request: r.clone()
+                            }
+                        )
+                    }
+                }
+            }
+        }
+
+        res
+    }
+
     /// This processes entitlements from a parent, and updates the known
     /// entitlement(s) and/or requests certificate(s) as needed. In case
     /// there are no changes in entitlements and certificates, this method
@@ -1238,7 +1305,7 @@ impl<S: CaSigner> CertAuth<S> {
     ) -> CaEvtsRes {
         let mut res = vec![];
 
-        let parent = self.parent(parent_handle.clone())?;
+        let parent = self.parent(&parent_handle)?;
 
         // Check if there is a resource class for each entitlement
         let mut version = self.version;
@@ -1277,7 +1344,8 @@ impl<S: CaSigner> CertAuth<S> {
                 };
 
                 let cert_issue_req = CertRequested {
-                    parent: parent.contact.clone(),
+                    parent: parent_handle.clone(),
+                    key_status: KeyStatus::Pending,
                     request: IssuanceRequest::new(
                         ent.class_name().to_string(),
                         RequestResourceLimit::default(),
@@ -1330,13 +1398,13 @@ impl<S: CaSigner> CertAuth<S> {
         rcvd_cert: RcvdCert,
         signer: Arc<RwLock<S>>
     ) -> CaEvtsRes {
-        let parent = self.parent(parent_handle.clone())?;
+        debug!("CA {}: Updating received cert for {}", self.handle, class_name);
+        let parent = self.parent(&parent_handle)?;
         let rc = parent.class(&class_name)?;
-
 
         let mut res = vec![];
 
-        let (mut status, new_status) = rc.match_cert(
+        let mut status = rc.match_cert(
             &rcvd_cert,
             signer.read().unwrap().deref()
         )?;
@@ -1350,7 +1418,7 @@ impl<S: CaSigner> CertAuth<S> {
                 &parent_handle,
                 &class_name,
                 rcvd_cert.clone(),
-                new_status.clone().unwrap(),
+                rc.new_status_for_pending(),
                 version
             )?
         } else {
@@ -1359,7 +1427,7 @@ impl<S: CaSigner> CertAuth<S> {
                 &parent_handle,
                 &class_name,
                 rcvd_cert.clone(),
-                status.clone(),
+                status,
                 version
             )
         };
@@ -1371,7 +1439,8 @@ impl<S: CaSigner> CertAuth<S> {
         // Get the key that needs publishing and apply the cert to it.
         let key_to_publish = match status {
             KeyStatus::Pending => {
-                CertifiedKey::new(rc.pending_key.clone().unwrap(), rcvd_cert)
+                let (key_id, _req) = rc.pending_key.clone().unwrap().unwrap();
+                CertifiedKey::new(key_id, rcvd_cert)
             },
             KeyStatus::New => {
                 rc.new_key.clone().unwrap().with_new_cert(rcvd_cert)
@@ -1391,7 +1460,7 @@ impl<S: CaSigner> CertAuth<S> {
 
         // Publish
         if status == KeyStatus::Pending {
-            status = new_status.unwrap()
+            status = rc.new_status_for_pending()
         }
 
         res.push(CaEvtDet::published(
@@ -1568,7 +1637,7 @@ impl ParentCa {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ResourceClass {
     name_space: String,
-    pending_key: Option<SignerKeyId>,
+    pending_key: Option<PendingKey>,
     new_key: Option<CertifiedKey>,
     current_key: Option<CertifiedKey>,
     revoke_key: Option<CertifiedKey>
@@ -1577,12 +1646,34 @@ pub struct ResourceClass {
 impl ResourceClass {
     /// Creates a new ResourceClass with a single pending key only.
     pub fn create(name_space: String, pending_key: SignerKeyId) -> Self {
+        let pending_key = PendingKey::new(pending_key);
         ResourceClass {
             name_space,
             pending_key: Some(pending_key),
             new_key: None,
             current_key: None,
             revoke_key: None
+        }
+    }
+
+    pub fn add_request(
+        &mut self,
+        status: KeyStatus,
+        req: IssuanceRequest
+    ) {
+        match status {
+            KeyStatus::Pending => {
+                self.pending_key.as_mut().unwrap().add_request(req);
+            },
+            KeyStatus::New => {
+                self.new_key.as_mut().unwrap().add_request(req);
+            },
+            KeyStatus::Current => {
+                self.current_key.as_mut().unwrap().add_request(req);
+            },
+            KeyStatus::Revoke => {
+                self.revoke_key.as_mut().unwrap().add_request(req);
+            },
         }
     }
 
@@ -1629,7 +1720,7 @@ impl ResourceClass {
         let signer = signer.read().map_err(Error::signer)?;
 
         if let Some(key) = self.pending_key.as_ref() {
-            let csr = self.create_csr(base_repo, key, signer.deref())?;
+            let csr = self.create_csr(base_repo, key.key_id(), signer.deref())?;
             res.push(csr)
         }
 
@@ -1674,7 +1765,7 @@ impl ResourceClass {
 impl ResourceClass {
 
     /// Gets a mutable reference to a certified key of the given status.
-    fn get_key_mut(&mut self, status: &KeyStatus) -> Option<&mut CertifiedKey> {
+    fn get_key_mut(&mut self, status: KeyStatus) -> Option<&mut CertifiedKey> {
         match status {
             KeyStatus::Pending => None,
             KeyStatus::New => self.new_key.as_mut(),
@@ -1689,35 +1780,33 @@ impl ResourceClass {
     /// key for a new resource class is activated. Therefore the current key
     /// can simply be overwritten.
     fn pending_key_activated(&mut self, cert: RcvdCert) {
-        let key_id = self.pending_key.take().unwrap();
+        let (key_id, _req) = self.pending_key.take().unwrap().unwrap();
         let certified_key = CertifiedKey::new(key_id, cert);
         self.current_key = Some(certified_key);
     }
 
+
+    /// Returns the new status for a pending key which receives a RcvdCert.
+    fn new_status_for_pending(&self) -> KeyStatus {
+        if self.current_key.is_some() {
+            KeyStatus::New
+        } else {
+            KeyStatus::Current
+        }
+    }
+
+
     /// This function will find the status of the matching key for a received
-    /// certificate, and if it is a pending key it will also return the
-    /// appropriate state change for that key. An error is returned if no
-    /// matching key could be found.
+    /// certificate. An error is returned if no matching key could be found.
     fn match_cert<S: CaSigner>(
         &self,
         rcvd_cert: &RcvdCert,
         signer: &S
-    ) -> CaRes<(KeyStatus, Option<KeyStatus>)> {
-        let status = self.match_key(
+    ) -> CaRes<KeyStatus> {
+        self.match_key(
             rcvd_cert.cert().subject_public_key_info(),
             signer
-        )?;
-
-        let change = if status == KeyStatus::Pending {
-            match self.current_key {
-                None => Some(KeyStatus::Current),
-                Some(_) => Some(KeyStatus::New)
-            }
-        } else {
-            None
-        };
-
-        Ok((status, change))
+        )
     }
 
     /// Helper to find which of the key_id-s of held keys in different stages
@@ -1730,7 +1819,7 @@ impl ResourceClass {
     ) -> Result<KeyStatus, Error> {
 
         if self.matches_key_id(
-            self.pending_key.as_ref(),
+            self.pending_key.as_ref().map(PendingKey::key_id),
             pub_key,
             signer
         ) {
@@ -1786,7 +1875,7 @@ impl ResourceClass {
 
 //------------ KeyStatus -----------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Display, Eq, Serialize, PartialEq)]
+#[derive(Copy, Clone, Debug, Deserialize, Display, Eq, Serialize, PartialEq)]
 pub enum KeyStatus {
     Pending,
     New,
@@ -1797,7 +1886,7 @@ pub enum KeyStatus {
 //------------ Error ---------------------------------------------------------
 
 #[derive(Debug, Display)]
-pub enum  Error {
+pub enum Error {
     #[display(fmt = "Functionality not supported for TA.")]
     NotAllowedForTa,
 
@@ -1829,6 +1918,9 @@ pub enum  Error {
     #[display(fmt = "Not all child resources are held by TA")]
     MissingResources,
 
+    #[display(fmt = "No matching resource class")]
+    MissingResourceClass,
+
     #[display(fmt = "Child CA MUST have resources.")]
     MustHaveResources,
 
@@ -1846,6 +1938,18 @@ pub enum  Error {
 
     #[display(fmt = "Key cannot change from status {} to {}", _0, _1)]
     KeyStatusChange(KeyStatus, KeyStatus),
+
+    #[display(fmt = "{}", _0)]
+    Rfc6492(rfc6492::Error),
+
+    #[display(fmt = "Invalidly signed RFC 6492 CMS.")]
+    InvalidRfc6492,
+}
+
+impl From<rfc6492::Error> for Error {
+    fn from(e: rfc6492::Error) -> Self {
+        Error::Rfc6492(e)
+    }
 }
 
 impl Error {

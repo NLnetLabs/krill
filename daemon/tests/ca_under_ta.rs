@@ -12,23 +12,23 @@ use krill_client::options::{
 use krill_client::report::ApiResponse;
 use krill_commons::api::ca::ResourceSet;
 use krill_commons::api::admin::{AddChildRequest, CertAuthInit, CertAuthPubMode, Handle, ParentCaContact, AddParentRequest, Token, ChildAuthRequest};
-use krill_daemon::test::{test_with_krill_server, execute_krillc_command, wait_seconds};
+use krill_daemon::test::{test_with_krill_server, krill_admin, wait_seconds};
 use krill_commons::remote::rfc8183;
 
 
 fn init_ta() {
-    execute_krillc_command(Command::TrustAnchor(TrustAnchorCommand::Init));
+    krill_admin(Command::TrustAnchor(TrustAnchorCommand::Init));
 }
 
 fn init_child(handle: &Handle, token: &Token) {
     let init = CertAuthInit::new(
         handle.clone(), token.clone(), CertAuthPubMode::Embedded
     );
-    execute_krillc_command(Command::CertAuth(CaCommand::Init(init)));
+    krill_admin(Command::CertAuth(CaCommand::Init(init)));
 }
 
 fn child_request(handle: &Handle) -> rfc8183::ChildRequest {
-    match execute_krillc_command(
+    match krill_admin(
         Command::CertAuth(CaCommand::ChildRequest(handle.clone()))
     ) {
         ApiResponse::Rfc8183ChildRequest(req) => req,
@@ -44,7 +44,7 @@ fn add_child_to_ta_embedded(
 ) -> ParentCaContact {
     let auth = ChildAuthRequest::Embedded(token.clone());
     let req = AddChildRequest::new(handle.clone(), resources, auth);
-    let res = execute_krillc_command(
+    let res = krill_admin(
         Command::TrustAnchor(TrustAnchorCommand::AddChild(req))
     );
 
@@ -61,7 +61,7 @@ fn add_child_to_ta_rfc6492(
 ) -> ParentCaContact {
     let auth = ChildAuthRequest::Rfc8183(req);
     let req = AddChildRequest::new(handle.clone(), resources, auth);
-    let res = execute_krillc_command(
+    let res = krill_admin(
         Command::TrustAnchor(TrustAnchorCommand::AddChild(req))
     );
 
@@ -72,7 +72,7 @@ fn add_child_to_ta_rfc6492(
 }
 
 fn add_parent_to_ca(handle: &Handle, parent: AddParentRequest) {
-    execute_krillc_command(
+    krill_admin(
         Command::CertAuth(CaCommand::AddParent(handle.clone(), parent))
     );
 }
@@ -123,6 +123,8 @@ fn ca_under_ta() {
 
         add_parent_to_ca(&cms_child_handle, parent);
 
-        wait_seconds(5);
+        wait_seconds(2);
+
+
     });
 }

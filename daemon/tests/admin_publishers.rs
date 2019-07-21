@@ -9,7 +9,7 @@ use krill_commons::api::admin::{
     Handle,
     Token
 };
-use krill_daemon::test::{ test_with_krill_server, execute_krillc_command };
+use krill_daemon::test::{test_with_krill_server, krill_admin};
 
 fn add_publisher(handle: &str, base_uri: &str, token: &str) {
     let command = Command::Publishers(PublishersCommand::Add(
@@ -19,7 +19,7 @@ fn add_publisher(handle: &str, base_uri: &str, token: &str) {
             token:    Token::from(token)
         }
     ));
-    execute_krillc_command(command);
+    krill_admin(command);
 }
 
 fn deactivate_publisher(handle: &str) {
@@ -27,7 +27,7 @@ fn deactivate_publisher(handle: &str) {
         PublishersCommand::Deactivate(handle.to_string())
     );
 
-    execute_krillc_command(command);
+    krill_admin(command);
 }
 
 fn list_publishers() -> ApiResponse {
@@ -35,7 +35,7 @@ fn list_publishers() -> ApiResponse {
         PublishersCommand::List
     );
 
-    execute_krillc_command(command)
+    krill_admin(command)
 }
 
 fn details_publisher(handle: &str) -> ApiResponse {
@@ -43,7 +43,7 @@ fn details_publisher(handle: &str) -> ApiResponse {
         PublishersCommand::Details(handle.to_string())
     );
 
-    execute_krillc_command(command)
+    krill_admin(command)
 }
 
 #[test]

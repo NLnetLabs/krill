@@ -137,7 +137,7 @@ pub fn start(config: &Config) -> Result<(), Error> {
             .route("/provisioning/{parent}/{child}/issue", post().to(issue))
 
             // Provisioning for rfc6492 clients
-            .route("/rfc6492/{parent}/{child}", post().to(rfc6492))
+            .route("/rfc6492/{handle}", post().to(rfc6492))
 
 
             // UI support

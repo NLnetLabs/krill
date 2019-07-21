@@ -1,6 +1,6 @@
 use std::io;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use rpki::uri;
 use krill_commons::api::publication;
 use krill_commons::api::admin::{
@@ -44,7 +44,8 @@ pub struct PubServer {
     rrdp_store: Arc<DiskAggregateStore<RrdpServer>>,
     rsyncd_store: RsyncdStore,
     store: Arc<DiskAggregateStore<Publisher>>,
-    base_rsync_uri: uri::Rsync // jail for the publishers
+    base_rsync_uri: uri::Rsync, // jail for the publishers,
+    command_lock: Mutex<()> // Only one command at the time.
 }
 
 impl PubServer {
@@ -65,11 +66,14 @@ impl PubServer {
 
         let store = Arc::new(DiskAggregateStore::<Publisher>::new(work_dir, "publishers")?);
 
+        let command_lock = Mutex::new(());
+
         let pubserver = PubServer {
             rrdp_store,
             rsyncd_store,
             store,
-            base_rsync_uri
+            base_rsync_uri,
+            command_lock
         };
 
         Ok(pubserver)
@@ -102,6 +106,9 @@ impl PubServer {
         handle: &Handle,
         delta: publication::PublishDelta
     ) -> Result<(), Error> {
+
+        // Only do one update at a time.
+        let _lock = self.command_lock.lock().unwrap();
 
         // Publish the delta for the publisher
         let cmd = PublisherCommandDetails::publish(handle, delta);

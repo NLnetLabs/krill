@@ -61,7 +61,7 @@ pub fn login(
         id.remember("admin".to_string());
         HttpResponse::Ok().finish()
     } else {
-        info!("Failed login attempt {}", cred.token.as_ref());
+        warn!("Failed login attempt {}", cred.token.as_ref());
         HttpResponse::Forbidden().finish()
     }
 }
@@ -134,7 +134,7 @@ impl FromRequest for Auth {
 
     fn from_request(req: &HttpRequest, payload: &mut Payload) -> Self::Future {
         if let Some(identity) = Identity::from_request(req, payload)?.identity() {
-            info!("Found user: {}", &identity);
+            debug!("Found user: {}", &identity);
             Ok(Auth::User(identity))
         } else if let Some(header) = req.headers().get("Authorization") {
             let token = Auth::extract_bearer_token(

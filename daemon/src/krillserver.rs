@@ -3,6 +3,7 @@ use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use bytes::Bytes;
 use bcder::Captured;
 use rpki::uri;
 
@@ -260,7 +261,7 @@ impl KrillServer {
         msg: SignedMessage,
         handle: Handle
     ) -> Result<Captured, Error> {
-        info!("Handling signed request for {}", &handle);
+        debug!("Handling signed request for {}", &handle);
         match self.try_rfc8181_req(msg, handle) {
             Ok(captured) => Ok(captured),
             Err(Error::ProxyServer(e)) => {
@@ -310,9 +311,9 @@ impl KrillServer {
 
     pub fn ta_init(&mut self) -> EmptyRes {
 
-        let pub_handle = ta_handle();
+        let ta_handle = ta_handle();
 
-        let repo_info = self.pubserver.repo_info_for(&pub_handle)?;
+        let repo_info = self.pubserver.repo_info_for(&ta_handle)?;
 
         let ta_uri = format!("{}{}", self.service_uri.to_string(), "ta/ta.cer");
         let ta_uri = uri::Https::from_string(ta_uri).unwrap();
@@ -323,7 +324,7 @@ impl KrillServer {
 
         // Add publisher
         let req = admin::PublisherRequest::new(
-            pub_handle.clone(),
+            ta_handle.clone(),
             token.clone(),
             repo_info.base_uri().clone(),
         );
@@ -337,7 +338,7 @@ impl KrillServer {
         ).map_err(Error::CaServerError)?;
 
         // Force initial  publication
-        self.caserver.ta_publish()?;
+        self.caserver.republish(&ta_handle)?;
 
         Ok(())
     }
@@ -433,11 +434,10 @@ impl KrillServer {
 
     pub fn rfc6492(
         &self,
-        _parent: Handle,
-        _child: Handle,
-        _msg: SignedMessage
-    ) -> KrillRes<Captured> {
-        unimplemented!("Got a message to debug")
+        handle: Handle,
+        msg: SignedMessage
+    ) -> KrillRes<Bytes> {
+        Ok(self.caserver.rfc6492(&handle, msg)?)
     }
 
 }

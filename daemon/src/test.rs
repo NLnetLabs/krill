@@ -58,7 +58,7 @@ fn health_check() -> Result<ApiResponse, Error> {
 }
 
 
-pub fn execute_krillc_command(command: Command) -> ApiResponse {
+pub fn krill_admin(command: Command) -> ApiResponse {
     let krillc_opts = Options::new(
         test::https("https://localhost:3000/"),
         "secret",

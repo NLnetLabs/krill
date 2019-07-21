@@ -30,9 +30,10 @@ use crate::ca::{
 /// This type contains all the events of interest for a KrillServer, with
 /// the details needed for triggered processing.
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub enum QueueEvent {
     ParentAdded(Handle, ParentHandle, ParentCaContact),
-    Delta(Handle, PublicationDelta)
+    Delta(Handle, PublicationDelta),
 }
 
 #[derive(Debug)]
@@ -64,9 +65,16 @@ unsafe impl Sync for EventQueueListener {}
 /// Implement listening for CertAuth Published events.
 impl<S: CaSigner> EventListener<CertAuth<S>> for EventQueueListener {
     fn listen(&self, _ca: &CertAuth<S>, event: &CaEvt) {
+
+        let json = serde_json::to_string_pretty(&event).unwrap();
+        debug!("Seen CertAuth event: {}", json);
+
         let handle = event.handle();
         match event.details() {
-            CaEvtDet::Published(_,_,_, delta) |
+            CaEvtDet::Published(_,_,_, delta) => {
+                let evt = QueueEvent::Delta(handle.clone(), delta.clone());
+                self.push_back(evt);
+            },
             CaEvtDet::TaPublished(delta) => {
                 let evt = QueueEvent::Delta(handle.clone(), delta.clone());
                 self.push_back(evt);
@@ -78,7 +86,7 @@ impl<S: CaSigner> EventListener<CertAuth<S>> for EventQueueListener {
                     contact.clone()
                 );
                 self.push_back(evt);
-            }
+            },
             _ => {}
         }
     }

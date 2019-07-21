@@ -297,7 +297,7 @@ impl SignedMessageBuilder {
         )
     }
 
-    pub fn into_bytes(&self) -> Bytes {
+    pub fn as_bytes(&self) -> Bytes {
         self.encode().to_captured(Mode::Der).into_bytes()
     }
 

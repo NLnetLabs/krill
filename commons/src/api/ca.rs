@@ -46,7 +46,7 @@ use crate::rpki::manifest::{
     Manifest,
 };
 use api::admin::ParentCaContact;
-use api::RequestResourceLimit;
+use api::{RequestResourceLimit, IssuanceRequest};
 use remote::id::IdCert;
 
 
@@ -107,6 +107,7 @@ impl ChildCaDetails {
     }
 
     pub fn token(&self) -> &Token { &self.token }
+    pub fn id_cert(&self) -> Option<&IdCert> { self.id_cert.as_ref() }
 
     pub fn resources(&self) -> &HashMap<String, ChildResources> {
         &self.resources
@@ -443,6 +444,32 @@ impl PartialEq for RepoInfo {
 impl Eq for RepoInfo {}
 
 
+//------------ PendingKey ----------------------------------------------------
+
+/// A Pending Key in a resource class. Should usually have an open
+/// IssuanceRequest, and will be move to a 'new' or 'current' CertifiedKey
+/// when a certificate is received.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PendingKey {
+    key_id: SignerKeyId,
+    request: Option<IssuanceRequest>
+}
+
+impl PendingKey {
+    pub fn new(key_id: SignerKeyId) -> Self {
+        PendingKey { key_id, request: None}
+    }
+    pub fn unwrap(self) -> (SignerKeyId, Option<IssuanceRequest>) {
+        (self.key_id, self.request)
+    }
+
+    pub fn key_id(&self) -> &SignerKeyId { &self.key_id }
+    pub fn request(&self) -> Option<&IssuanceRequest> { self.request.as_ref() }
+    pub fn add_request(&mut self, req: IssuanceRequest) { self.request = Some(req)}
+    pub fn clear_request(&mut self) { self.request = None }
+}
+
+
 //------------ CertifiedKey --------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -451,7 +478,8 @@ impl Eq for RepoInfo {}
 pub struct CertifiedKey {
     key_id: SignerKeyId,
     incoming_cert: RcvdCert,
-    current_set: CurrentObjectSet
+    current_set: CurrentObjectSet,
+    request: Option<IssuanceRequest>
 }
 
 impl CertifiedKey {
@@ -459,13 +487,16 @@ impl CertifiedKey {
         let current_set = CurrentObjectSet::default();
 
         CertifiedKey {
-            key_id, incoming_cert, current_set
+            key_id, incoming_cert, current_set, request: None
         }
     }
 
     pub fn key_id(&self) -> &SignerKeyId { &self.key_id }
     pub fn incoming_cert(&self) -> &RcvdCert { &self.incoming_cert }
     pub fn current_set(&self) -> &CurrentObjectSet { &self.current_set }
+    pub fn request(&self) -> Option<&IssuanceRequest> { self.request.as_ref() }
+    pub fn add_request(&mut self, req: IssuanceRequest) { self.request = Some(req)}
+    pub fn clear_request(&mut self) { self.request = None }
 
     pub fn resources(&self) -> &ResourceSet { &self.incoming_cert.resources }
 
@@ -1263,7 +1294,7 @@ impl ParentCaInfo {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ResourceClassInfo {
     name_space: String,
-    pending_key: Option<SignerKeyId>,
+    pending_key: Option<PendingKey>,
     new_key: Option<CertifiedKey>,
     current_key: Option<CertifiedKey>,
     revoke_key: Option<CertifiedKey>
@@ -1272,7 +1303,7 @@ pub struct ResourceClassInfo {
 impl ResourceClassInfo {
     pub fn new(
         name_space: String,
-        pending_key: Option<SignerKeyId>,
+        pending_key: Option<PendingKey>,
         new_key: Option<CertifiedKey>,
         current_key: Option<CertifiedKey>,
         revoke_key: Option<CertifiedKey>
@@ -1288,7 +1319,7 @@ impl ResourceClassInfo {
 
     pub fn name_space(&self) -> &str { &self.name_space }
 
-    pub fn pending_key(&self) -> Option<&SignerKeyId> {
+    pub fn pending_key(&self) -> Option<&PendingKey> {
         self.pending_key.as_ref()
     }
 

@@ -24,6 +24,8 @@ use crate::api::{
 };
 use crate::api::ca::{ResourceSet, ResSetErr, IssuedCert};
 use crate::util::xml::{XmlReader, XmlReaderErr, AttributesError, XmlWriter};
+use remote::sigmsg::SignedMessage;
+use api::admin::Handle;
 
 
 //------------ Consts --------------------------------------------------------
@@ -41,6 +43,9 @@ const TYPE_REVOKE_QRY: &str = "revoke";
 const TYPE_REVOKE_RES: &str = "revoke_response";
 const TYPE_ERROR_RES: &str = "error_response";
 
+pub type Sender = String;
+pub type Recipient = String;
+
 //------------ Message -------------------------------------------------------
 
 /// This type represents all Provisioning Messages defined in RFC6492.
@@ -50,11 +55,38 @@ const TYPE_ERROR_RES: &str = "error_response";
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Message {
-    sender: String,
-    recipient: String,
+    sender: Sender,
+    recipient: Recipient,
     content: Content
 }
 
+
+/// # Data Access
+///
+impl Message {
+    pub fn unwrap(self) -> (Sender, Recipient, Content) {
+        (self.sender, self.recipient, self.content)
+    }
+
+    pub fn sender_handle(&self) -> Handle { Handle::from(self.sender.as_str())}
+    pub fn sender(&self) -> &str { &self.sender }
+    pub fn recipient(&self) -> &str { &self.recipient }
+    pub fn content(&self) -> &Content { &self.content }
+}
+
+/// # Convenience accessors
+///
+impl Message {
+    pub fn into_reply(self) -> Result<Res, Error> {
+        match self.content {
+            Content::Res(res) => Ok(res),
+            Content::Qry(_) => Err(Error::WrongMessageType)
+        }
+    }
+}
+
+/// # Constructing
+///
 impl Message {
     pub fn list(
         sender: String,
@@ -71,6 +103,24 @@ impl Message {
     ) -> Self {
         let content = Content::Res(Res::List(entitlements));
         Message { sender, recipient, content}
+    }
+
+    pub fn issue(
+        sender: String,
+        recipient: String,
+        issuance_request: IssuanceRequest
+    ) -> Self {
+        let content = Content::Qry(Qry::Issue(issuance_request));
+        Message { sender, recipient, content }
+    }
+
+    pub fn issue_response(
+        sender: String,
+        recipient: String,
+        issuance_response: IssuanceResponse
+    ) -> Self {
+        let content = Content::Res(Res::Issue(issuance_response));
+        Message { sender, recipient, content }
     }
 
     pub fn revoke(
@@ -149,6 +199,13 @@ impl Message {
                 Ok(Message { sender, recipient, content })
             })
         })
+    }
+
+    /// Parses the content of a SignedMessage as a Message.
+    pub fn from_signed_message(
+        msg: &SignedMessage
+    ) -> Result<Message, Error> {
+        Message::decode(msg.content().to_bytes().as_ref())
     }
 
     /// Encode into XML
@@ -774,6 +831,9 @@ pub enum Error {
 
     #[display(fmt = "Unknown message type")]
     UnknownMessageType,
+
+    #[display(fmt = "Unexpected message type")]
+    WrongMessageType,
 
     #[display(fmt = "Invalid protocol version, MUST be 1")]
     InvalidVersion,

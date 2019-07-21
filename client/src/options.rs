@@ -41,6 +41,7 @@ impl Options {
     }
 
     /// Creates a new Options from command line args (useful for cli)
+    #[allow(clippy::cognitive_complexity)] // there are just many options
     pub fn from_args() -> Result<Options, Error> {
         let matches = App::new("Krill admin client")
             .version("0.2.0")
@@ -481,6 +482,7 @@ pub enum Command {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub enum TrustAnchorCommand {
     Init,
     Show,

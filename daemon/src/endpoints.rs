@@ -27,6 +27,7 @@ use crate::ca::CaError;
 use crate::ca::caserver;
 use crate::http::server::AppServer;
 use crate::krillserver;
+use ca::ParentHandle;
 
 const NOT_FOUND: &[u8] = include_bytes!("../ui/dist/404.html");
 
@@ -449,28 +450,30 @@ pub fn issue(
 ///
 pub fn rfc6492(
     server: web::Data<AppServer>,
-    parent: Path<Handle>,
-    child: Path<Handle>,
+    parent: Path<ParentHandle>,
     msg_bytes: Bytes,
 ) -> HttpResponse {
     match SignedMessage::decode(msg_bytes, true) {
         Ok(msg) => {
             match server.read().rfc6492(
                 parent.into_inner(),
-                child.into_inner(),
                 msg
             ) {
-                Ok(captured) => {
+                Ok(bytes) => {
                     HttpResponse::build(StatusCode::OK)
                         .content_type(rfc6492::CONTENT_TYPE)
-                        .body(captured.into_bytes())
+                        .body(bytes)
                 }
                 Err(e) => {
+                    error!("Error processing RFC6492 req: {}", e);
                     server_error(&Error::ServerError(e))
                 }
             }
         }
-        Err(_) => server_error(&Error::CmsError)
+        Err(e) => {
+            error!("Error processing RFC6492 req: {}", e);
+            server_error(&Error::CmsError)
+        }
     }
 }
 

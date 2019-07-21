@@ -28,26 +28,9 @@ impl Scheduler {
         caserver: Arc<CaServer<OpenSslSigner>>,
         pubserver: Arc<PubServer>
     ) -> Self {
-        let mut scheduler = clokwerk::Scheduler::new();
-        scheduler.every(1.seconds()).run(move || {
-            while let Some(evt) = event_queue.pop() {
-                match evt {
-                    QueueEvent::Delta(handle, delta) => {
-                        publish(&handle, delta, &pubserver);
-                    },
-                    QueueEvent::ParentAdded(handle, _parent, _contact) => {
-                        info!("Found parent for: {}", handle);
-                    }
-                }
-            }
-        });
-        let event_sh =  scheduler.watch_thread(Duration::from_millis(100));
 
-        let mut scheduler = clokwerk::Scheduler::new();
-        scheduler.every(1.hours()).run(move || {
-            caserver.republish_all(); // TODO: one by one and keep results
-        });
-        let republish_sh = scheduler.watch_thread(Duration::from_millis(100));
+        let event_sh = make_event_sh(event_queue, caserver.clone(), pubserver);
+        let republish_sh = make_republish_sh(caserver);
 
         Scheduler {
             event_sh, republish_sh
@@ -55,13 +38,53 @@ impl Scheduler {
     }
 }
 
+fn make_event_sh(
+    event_queue: Arc<EventQueueListener>,
+    caserver: Arc<CaServer<OpenSslSigner>>,
+    pubserver: Arc<PubServer>
+) -> ScheduleHandle {
+    let mut scheduler = clokwerk::Scheduler::new();
+    scheduler.every(1.seconds()).run(move || {
+        while let Some(evt) = event_queue.pop() {
+            match evt {
+                QueueEvent::Delta(handle, delta) => {
+                    publish(&handle, delta, &pubserver);
+                },
+                QueueEvent::ParentAdded(handle, parent, contact) => {
+                    if let Err(e) = caserver.get_updates_from_parent(
+                        &handle, &parent, contact
+                    ) {
+                        error!("Getting updates for {}, error: {}", &handle, e);
+                    }
+                },
+            }
+        }
+    });
+    scheduler.watch_thread(Duration::from_millis(100))
+}
+
+
+fn make_republish_sh(caserver: Arc<CaServer<OpenSslSigner>>) -> ScheduleHandle {
+    let mut scheduler = clokwerk::Scheduler::new();
+    scheduler.every(1.hours()).run(move || {
+        // TODO: one by one and keep the result per ca
+        if let Err(e) = caserver.republish_all() {
+            error!("Publishing failed: {}", e)
+        }
+    });
+    scheduler.watch_thread(Duration::from_millis(100))
+}
+
+
 fn publish(
     handle: &Handle,
     delta: PublicationDelta,
     pubserver: &PubServer
 ) {
+    debug!("Triggered publishing for CA: {}", handle);
     match pubserver.publish(handle, delta.into()) {
-        Ok(()) => info!("Published for CA: {}", handle),
+        Ok(()) => debug!("Published for CA: {}", handle),
         Err(e) => error!("Failed to publish for CA: {}, error: {}", handle, e)
     }
 }
+
