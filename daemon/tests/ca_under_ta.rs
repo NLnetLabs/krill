@@ -9,7 +9,7 @@ use krill_client::options::{
     TrustAnchorCommand,
 };
 use krill_client::report::ApiResponse;
-use krill_commons::api::ca::ResourceSet;
+use krill_commons::api::ca::{ResourceSet, CertAuthInfo, CaParentsInfo};
 use krill_commons::api::admin::{AddChildRequest, CertAuthInit, CertAuthPubMode, Handle, ParentCaContact, AddParentRequest, Token, ChildAuthRequest};
 use krill_commons::remote::rfc8183;
 use krill_daemon::ca::ta_handle;
@@ -77,6 +77,39 @@ fn add_parent_to_ca(handle: &Handle, parent: AddParentRequest) {
     );
 }
 
+fn ca_details(handle: &Handle) -> CertAuthInfo {
+    match krill_admin(Command::CertAuth(CaCommand::Show(handle.clone()))) {
+        ApiResponse::CertAuthInfo(inf) => inf,
+        _ => panic!("Expected cert auth info")
+    }
+
+}
+
+fn wait_for_resources_on_current_key(handle: &Handle, resources: &ResourceSet) {
+    let tries = 30;
+    for counter in 1..tries+1 {
+        if counter == tries {
+            panic!("cms child did not get its resource certificate");
+        }
+
+        let cms_ca_info = ca_details(handle.clone());
+
+        if let CaParentsInfo::Parents(parents) = cms_ca_info.parents() {
+            if let Some(parent) = parents.get(&ta_handle) {
+                if let Some(rc) = parent.resources().get("all") {
+                    if let Some(key) = rc.current_key() {
+                        assert_eq!(resources, key.resources());
+                        break
+                    }
+                }
+            }
+        }
+
+        wait_seconds(1);
+    }
+}
+
+
 #[test]
 fn ca_under_ta() {
     test_with_krill_server(|_d|{
@@ -116,14 +149,14 @@ fn ca_under_ta() {
 
         let parent = {
             let contact = add_child_to_ta_rfc6492(
-                &cms_child_handle, req, cms_child_resources
+                &cms_child_handle, req, cms_child_resources.clone()
             );
             AddParentRequest::new(ta_handle.clone(), contact)
         };
 
         add_parent_to_ca(&cms_child_handle, parent);
 
-        wait_seconds(2);
+        wait_for_resources_on_current_key(&cms_child_handle, &cms_child_resources);
 
 
     });
