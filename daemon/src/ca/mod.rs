@@ -37,6 +37,7 @@ pub use self::error::ServerError;
 pub type Result<T> = std::result::Result<T, Error>;
 pub type ServerResult<R, S> = std::result::Result<R, ServerError<S>>;
 pub type ParentHandle = Handle;
+pub type ChildHandle = Handle;
 pub type ResourceClassName = String;
 
 pub const TA_NAME: &str = "ta"; // reserved for TA
