@@ -3,7 +3,6 @@ extern crate krill_client;
 extern crate krill_commons;
 extern crate krill_pubc;
 
-use krill_daemon::ca::caserver::ta_handle;
 use krill_client::options::{
     CaCommand,
     Command,
@@ -12,8 +11,9 @@ use krill_client::options::{
 use krill_client::report::ApiResponse;
 use krill_commons::api::ca::ResourceSet;
 use krill_commons::api::admin::{AddChildRequest, CertAuthInit, CertAuthPubMode, Handle, ParentCaContact, AddParentRequest, Token, ChildAuthRequest};
-use krill_daemon::test::{test_with_krill_server, krill_admin, wait_seconds};
 use krill_commons::remote::rfc8183;
+use krill_daemon::ca::ta_handle;
+use krill_daemon::test::{test_with_krill_server, krill_admin, wait_seconds};
 
 
 fn init_ta() {

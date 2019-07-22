@@ -22,14 +22,14 @@ use krill_commons::remote::sigmsg::SignedMessage;
 use krill_pubd::PubServer;
 use krill_pubd::publishers::Publisher;
 
-use crate::ca::caserver::{
+use crate::ca::{
     self,
     ta_handle,
-    CaServer,
 };
 use crate::auth::{Auth, Authorizer};
 use crate::mq::EventQueueListener;
 use crate::scheduler::Scheduler;
+
 
 //------------ KrillServer ---------------------------------------------------
 
@@ -59,7 +59,7 @@ pub struct KrillServer {
     pubserver: Arc<PubServer>,
 
     // Handles the internal TA and/or CAs
-    caserver: Arc<CaServer<OpenSslSigner>>,
+    caserver: Arc<ca::CaServer<OpenSslSigner>>,
 
     // CMS+XML proxy server for non-Krill clients
     proxy_server: ProxyServer,
@@ -102,7 +102,7 @@ impl KrillServer {
 
         let event_queue = Arc::new(EventQueueListener::in_mem());
 
-        let caserver = Arc::new(CaServer::build(
+        let caserver = Arc::new(ca::CaServer::build(
             work_dir,
             event_queue.clone(),
             signer
@@ -489,7 +489,7 @@ pub enum Error {
     SignerError(SignerError),
 
     #[display(fmt="{}", _0)]
-    CaServerError(caserver::Error<OpenSslSigner>),
+    CaServerError(ca::ServerError<OpenSslSigner>),
 }
 
 impl From<io::Error> for Error {
@@ -508,8 +508,8 @@ impl From<SignerError> for Error {
     fn from(e: SignerError) -> Self { Error::SignerError(e) }
 }
 
-impl From<caserver::Error<OpenSslSigner>> for Error {
-    fn from(e: caserver::Error<OpenSslSigner>) -> Self { Error::CaServerError(e) }
+impl From<ca::ServerError<OpenSslSigner>> for Error {
+    fn from(e: ca::ServerError<OpenSslSigner>) -> Self { Error::CaServerError(e) }
 }
 
 // Tested through integration tests

@@ -6,13 +6,13 @@ use std::time::Duration;
 
 use clokwerk::{self, ScheduleHandle, TimeUnits};
 
-use mq::EventQueueListener;
-use mq::QueueEvent;
-use ca::caserver::CaServer;
-use krill_commons::util::softsigner::OpenSslSigner;
 use krill_commons::api::admin::Handle;
 use krill_commons::api::ca::PublicationDelta;
+use krill_commons::util::softsigner::OpenSslSigner;
 use krill_pubd::PubServer;
+
+use crate::ca::CaServer;
+use crate::mq::{EventQueueListener, QueueEvent};
 
 pub struct Scheduler {
     #[allow(dead_code)] // just need to keep this in scope

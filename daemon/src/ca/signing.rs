@@ -8,9 +8,9 @@ use bytes::Bytes;
 use serde::Serialize;
 
 use rpki::crl::{Crl, TbsCertList};
-use rpki::manifest::{Manifest, ManifestContent, FileAndHash};
-use rpki::crypto::{DigestAlgorithm, KeyIdentifier, SigningError, Signer};
+use rpki::crypto::{self, DigestAlgorithm, KeyIdentifier, SigningError};
 use rpki::crypto::signer::KeyError;
+use rpki::manifest::{Manifest, ManifestContent, FileAndHash};
 use rpki::sigobj::SignedObjectBuilder;
 use rpki::x509::{Serial, Time, Validity};
 
@@ -29,38 +29,38 @@ use krill_commons::api::ca::{
 use krill_commons::util::softsigner::SignerKeyId;
 
 
-//------------ CaSigner ------------------------------------------------------
+//------------ Signer --------------------------------------------------------
 
-pub trait CaSigner: Signer<KeyId=SignerKeyId> + Clone + Debug + Serialize + Sized + Sync + Send +'static {}
-impl<T: Signer<KeyId=SignerKeyId> + Clone + Debug + Serialize + Sized + Sync + Send + 'static > CaSigner for T {}
+pub trait Signer: crypto::Signer<KeyId=SignerKeyId> + Clone + Debug + Serialize + Sized + Sync + Send +'static {}
+impl<T: crypto::Signer<KeyId=SignerKeyId> + Clone + Debug + Serialize + Sized + Sync + Send + 'static > Signer for T {}
 
 
 //------------ CaSignSupport -------------------------------------------------
 
 /// Support signing by CAs
-pub struct CaSignSupport;
+pub struct SignSupport;
 
-impl CaSignSupport {
+impl SignSupport {
 
     /// Publish for the given Key and repository.
     ///
     /// Any updates for existing objects will result in Update, rather
     /// than Publish elements for the PublicationDelta, and the previous
     /// instances will be revoked.
-    pub fn publish<S: CaSigner>(
+    pub fn publish<S: Signer>(
         signer: Arc<RwLock<S>>,
         ca_key: &CertifiedKey,
         repo_info: &RepoInfo,
         name_space: &str,
         mut objects_delta: ObjectsDelta
-    ) -> Result<PublicationDelta, CaSignError<S>> {
+    ) -> Result<PublicationDelta, SignError<S>> {
 
         let aia = ca_key.incoming_cert().uri();
         let key_id = ca_key.key_id();
 
         let pub_key = signer.read().unwrap()
             .get_key_info(key_id)
-            .map_err(CaSignError::KeyError)?;
+            .map_err(SignError::KeyError)?;
 
         let aki = KeyIdentifier::from_public_key(&pub_key);
 
@@ -111,7 +111,7 @@ impl CaSignSupport {
             crl.into_crl(
                 signer.read().unwrap().deref(),
                 key_id
-            ).map_err(CaSignError::SigningError)?
+            ).map_err(SignError::SigningError)?
         };
 
         match current_objects.insert(crl_name.clone(), CurrentObject::from(&crl)) {
@@ -139,7 +139,7 @@ impl CaSignSupport {
                 SignedObjectBuilder::new(
                     Serial::random(
                         signer.read().unwrap().deref()
-                    ).map_err(CaSignError::SignerError)?,
+                    ).map_err(SignError::SignerError)?,
                     Validity::new(now, next_week),
                     crl_uri,
                     aia.clone(),
@@ -147,7 +147,7 @@ impl CaSignSupport {
                 ),
                 signer.read().unwrap().deref(),
                 key_id,
-            ).map_err(CaSignError::SigningError)?
+            ).map_err(SignError::SigningError)?
         };
 
         match old_mft {
@@ -195,10 +195,10 @@ impl ManifestEntry for Crl {
 }
 
 
-//------------ CaSignError ---------------------------------------------------
+//------------ SignError -----------------------------------------------------
 
 #[derive(Debug, Display)]
-pub enum CaSignError<S: CaSigner> {
+pub enum SignError<S: Signer> {
     #[display(fmt = "{}", _0)]
     SignerError(S::Error),
 

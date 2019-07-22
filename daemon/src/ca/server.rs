@@ -1,49 +1,70 @@
-use std::{io, fmt};
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
-use std::ops::Deref;
+
+use bytes::Bytes;
 
 use rpki::uri;
 
-use krill_commons::api::{DFLT_CLASS, Entitlements, IssuanceRequest, IssuanceResponse};
-use krill_commons::api::admin::{AddChildRequest, Handle, ParentCaContact, AddParentRequest, Token, ChildAuthRequest};
-use krill_commons::api::ca::{IssuedCert, RcvdCert, RepoInfo, CertAuthList, CertAuthSummary};
-use krill_commons::eventsourcing::{Aggregate, AggregateStore, AggregateStoreError, DiskAggregateStore};
-use krill_commons::util::httpclient;
+use krill_commons::api;
+use krill_commons::api::{
+    DFLT_CLASS,
+    Entitlements,
+    IssuanceRequest,
+    IssuanceResponse
+};
+use krill_commons::api::admin::{
+    AddChildRequest,
+    AddParentRequest,
+    ChildAuthRequest,
+    Handle,
+    ParentCaContact,
+    Token,
+};
+use krill_commons::api::ca::{
+    CertAuthList,
+    CertAuthSummary,
+    IssuedCert,
+    RcvdCert,
+    RepoInfo,
+};
+use krill_commons::eventsourcing::{
+    Aggregate,
+    AggregateStore,
+    DiskAggregateStore
+};
 use krill_commons::remote::builder::SignedMessageBuilder;
 use krill_commons::remote::{rfc8183, rfc6492};
-
-use crate::ca::ca::{
-    CertAuth,
-    CaCmdDet,
-    CaIniDet,
-};
-use crate::ca::CaSigner;
-use ca::{CaError, ParentHandle};
-use mq::EventQueueListener;
-use krill_commons::api;
 use krill_commons::remote::sigmsg::SignedMessage;
-use bytes::Bytes;
+use krill_commons::util::httpclient;
 use krill_commons::util::softsigner::SignerKeyId;
 
+use crate::ca::{
+    self,
+    CmdDet,
+    IniDet,
+    Signer,
+    CertAuth,
+    ParentHandle,
+    ServerResult,
+    ServerError,
+};
+use crate::mq::EventQueueListener;
 
-pub const CA_NS: &str = "cas";
-const TA_NAME: &str = "ta"; // reserved for TA
 
-pub fn ta_handle() -> Handle {
-    Handle::from(TA_NAME)
-}
+const CA_NS: &str = "cas";
+
 
 //------------ CaServer ------------------------------------------------------
 
 #[derive(Clone)]
-pub struct CaServer<S: CaSigner> {
+pub struct CaServer<S: Signer> {
     signer: Arc<RwLock<S>>,
     ca_store: Arc<DiskAggregateStore<CertAuth<S>>>
 }
 
 
-impl<S: CaSigner> CaServer<S> {
+impl<S: Signer> CaServer<S> {
 
     /// Builds a new CaServer. Will return an error if the TA store cannot be
     /// initialised.
@@ -51,7 +72,7 @@ impl<S: CaSigner> CaServer<S> {
         work_dir: &PathBuf,
         events_queue: Arc<EventQueueListener>,
         signer: S
-    ) -> CaResult<Self, S> {
+    ) -> ServerResult<Self, S> {
         let mut ca_store = DiskAggregateStore::<CertAuth<S>>::new(work_dir, CA_NS)?;
         ca_store.add_listener(events_queue);
 
@@ -62,10 +83,10 @@ impl<S: CaSigner> CaServer<S> {
     }
 
     /// Gets the TrustAnchor, if present. Returns an error if the TA is uninitialized.
-    pub fn get_trust_anchor(&self) -> CaResult<Arc<CertAuth<S>>, S> {
+    pub fn get_trust_anchor(&self) -> ServerResult<Arc<CertAuth<S>>, S> {
         self.ca_store
-            .get_latest(&ta_handle())
-            .map_err(|_| Error::TrustAnchorNotInitialisedError)
+            .get_latest(&ca::ta_handle())
+            .map_err(|_| ServerError::TrustAnchorNotInitialisedError)
     }
 
     /// Initialises an embedded trust anchor with all resources.
@@ -74,12 +95,12 @@ impl<S: CaSigner> CaServer<S> {
         info: RepoInfo,
         ta_aia: uri::Rsync,
         ta_uris: Vec<uri::Https>
-    ) -> CaResult<(), S> {
-        let handle = ta_handle();
+    ) -> ServerResult<(), S> {
+        let handle = ca::ta_handle();
         if self.ca_store.has(&handle) {
-            Err(Error::TrustAnchorInitialisedError)
+            Err(ServerError::TrustAnchorInitialisedError)
         } else {
-            let init = CaIniDet::init_ta(
+            let init = IniDet::init_ta(
                 &handle,
                 info,
                 ta_aia,
@@ -95,10 +116,10 @@ impl<S: CaSigner> CaServer<S> {
 
     /// Republish the embedded TA and CAs if needed, i.e. if they are close
     /// to their next update time.
-    pub fn republish_all(&self) -> CaResult<(), S> {
+    pub fn republish_all(&self) -> ServerResult<(), S> {
         for ca in self.cas().cas() {
             if let Err(e) = self.republish(ca.name()) {
-                error!("Error publishing: {}, Error: {}", ca.name(), e)
+                error!("ServerError publishing: {}, ServerError: {}", ca.name(), e)
             }
         }
         Ok(())
@@ -106,11 +127,11 @@ impl<S: CaSigner> CaServer<S> {
 
 
     /// Republish a CA, this is a no-op when there is nothing to publish.
-    pub fn republish(&self, handle: &Handle) -> CaResult<(), S> {
+    pub fn republish(&self, handle: &Handle) -> ServerResult<(), S> {
         debug!("Republish CA: {}", handle);
         let ca = self.ca_store.get_latest(handle)?;
 
-        let cmd = CaCmdDet::publish(
+        let cmd = CmdDet::publish(
             handle,
             self.signer.clone()
         );
@@ -128,13 +149,13 @@ impl<S: CaSigner> CaServer<S> {
         &self,
         req: AddChildRequest,
         service_uri: &uri::Https
-    ) -> CaResult<ParentCaContact, S> {
+    ) -> ServerResult<ParentCaContact, S> {
         let (handle, resources, auth) = req.unwrap();
 
         debug!("Adding child {} to TA", &handle);
 
         let ta = self.get_trust_anchor()?;
-        let ta_handle = ta_handle();
+        let ta_handle = ca::ta_handle();
 
         let token = match &auth {
             ChildAuthRequest::Embedded(token) => token.clone(),
@@ -147,7 +168,7 @@ impl<S: CaSigner> CaServer<S> {
             ChildAuthRequest::Rfc8183(req) => Some(req.id_cert().clone())
         };
 
-        let add_child = CaCmdDet::<S>::add_child(
+        let add_child = CmdDet::<S>::add_child(
             &ta_handle,
             handle.clone(),
             token,
@@ -195,11 +216,11 @@ impl<S: CaSigner> CaServer<S> {
 
 /// # CA support
 ///
-impl<S: CaSigner> CaServer<S> {
+impl<S: Signer> CaServer<S> {
 
-    pub fn get_ca(&self, handle: &Handle) -> CaResult<Arc<CertAuth<S>>, S> {
+    pub fn get_ca(&self, handle: &Handle) -> ServerResult<Arc<CertAuth<S>>, S> {
         self.ca_store.get_latest(handle)
-            .map_err(|_| Error::UnknownCa(handle.to_string()))
+            .map_err(|_| ServerError::UnknownCa(handle.to_string()))
     }
 
     /// Verifies an RFC6492 message and returns the child handle, token,
@@ -209,7 +230,7 @@ impl<S: CaSigner> CaServer<S> {
         &self,
         parent_handle: &Handle,
         msg: SignedMessage
-    ) -> CaResult<Bytes, S> {
+    ) -> ServerResult<Bytes, S> {
         debug!("RFC6492 Request: will check");
         let (content, token) = {
             let parent = self.ca_store.get_latest(parent_handle)?;
@@ -255,7 +276,7 @@ impl<S: CaSigner> CaServer<S> {
 
                 self.wrap_rfc6492_response(parent_handle, msg)
             },
-            _ => Err(Error::custom("Unsupported RFC6492 message"))
+            _ => Err(ServerError::custom("Unsupported RFC6492 message"))
         }
     }
 
@@ -263,13 +284,13 @@ impl<S: CaSigner> CaServer<S> {
         &self,
         handle: &Handle,
         msg: rfc6492::Message
-    ) -> CaResult<Bytes, S> {
+    ) -> ServerResult<Bytes, S> {
         debug!("RFC6492 Response wrapping for {}", handle);
         let ca = self.ca_store.get_latest(handle)?;
         let res = ca.sign_rfc6492_response(
             msg,
             self.signer.read().unwrap().deref()
-        ).map_err(Error::CaError);
+        ).map_err(ServerError::<S>::CertAuth);
         debug!("RFC6492 Response wrapped for {}", handle);
         res
     }
@@ -280,8 +301,8 @@ impl<S: CaSigner> CaServer<S> {
         parent: &Handle,
         child: &Handle,
         token: &Token
-    ) -> CaResult<Entitlements, S> {
-        if parent != & ta_handle() {
+    ) -> ServerResult<Entitlements, S> {
+        if parent != & ca::ta_handle() {
             unimplemented!("https://github.com/NLnetLabs/krill/issues/25");
         } else {
             let ta = self.get_trust_anchor()?;
@@ -298,8 +319,8 @@ impl<S: CaSigner> CaServer<S> {
         child: &Handle,
         issue_req: IssuanceRequest,
         token: Token,
-    ) -> CaResult<IssuanceResponse, S> {
-        if parent != & ta_handle() {
+    ) -> ServerResult<IssuanceResponse, S> {
+        if parent != & ca::ta_handle() {
             unimplemented!("https://github.com/NLnetLabs/krill/issues/25");
         } else {
             let ta = self.get_trust_anchor()?;
@@ -311,7 +332,7 @@ impl<S: CaSigner> CaServer<S> {
                 unimplemented!("Issue for multiple classes from CAs, issue #25")
             }
 
-            let cmd = CaCmdDet::certify_child(
+            let cmd = CmdDet::certify_child(
                 parent,
                 child.clone(),
                 issue_req.clone(),
@@ -350,11 +371,11 @@ impl<S: CaSigner> CaServer<S> {
         handle: &Handle,
         token: Token,
         repo_info: RepoInfo,
-    ) -> CaResult<(), S> {
+    ) -> ServerResult<(), S> {
         if self.ca_store.has(handle) {
-            Err(Error::DuplicateCa(handle.to_string()))
+            Err(ServerError::DuplicateCa(handle.to_string()))
         } else {
-            let init = CaIniDet::init(handle, token, repo_info, self.signer.clone())?;
+            let init = IniDet::init(handle, token, repo_info, self.signer.clone())?;
             self.ca_store.add(init)?;
             Ok(())
         }
@@ -365,11 +386,11 @@ impl<S: CaSigner> CaServer<S> {
         &self,
         handle: Handle,
         parent: AddParentRequest
-    ) -> CaResult<(), S> {
+    ) -> ServerResult<(), S> {
         let ca = self.get_ca(&handle)?;
         let (parent_handle, parent_contact) = parent.unwrap();
 
-        let add = CaCmdDet::add_parent(
+        let add = CmdDet::add_parent(
             &handle,
             parent_handle.as_str(),
             parent_contact
@@ -386,7 +407,7 @@ impl<S: CaSigner> CaServer<S> {
         handle: &Handle,
         parent: &ParentHandle,
         contact: ParentCaContact
-    ) -> CaResult<(), S> {
+    ) -> ServerResult<(), S> {
         let entitlements = self.get_entitlements_from_parent(handle, &contact)?;
 
         if ! self.update_if_need(handle, parent, entitlements)? {
@@ -401,7 +422,7 @@ impl<S: CaSigner> CaServer<S> {
         handle: &Handle,
         parent: &ParentHandle,
         contact: &ParentCaContact
-    ) -> CaResult<(), S> {
+    ) -> ServerResult<(), S> {
         match contact {
             ParentCaContact::Embedded(_p, token) => {
                 self.send_requests_embedded(handle, parent, token)
@@ -419,7 +440,7 @@ impl<S: CaSigner> CaServer<S> {
         handle: &Handle,
         parent_h: &ParentHandle,
         token: &Token
-    ) -> CaResult<(), S> {
+    ) -> ServerResult<(), S> {
         let mut child = self.ca_store.get_latest(handle)?;
         let requests = child.cert_requests(parent_h);
 
@@ -433,7 +454,7 @@ impl<S: CaSigner> CaServer<S> {
             let class_name = issuance_req.class_name().to_string();
             let pub_key = issuance_req.csr().public_key().clone();
 
-            let cmd = CaCmdDet::certify_child(
+            let cmd = CmdDet::certify_child(
                 parent_h,
                 handle.clone(),
                 issuance_req,
@@ -459,7 +480,7 @@ impl<S: CaSigner> CaServer<S> {
         for (class_name, issued) in issued_certs {
             let received = RcvdCert::from(issued);
 
-            let upd_rcvd_cmd = CaCmdDet::upd_received_cert(
+            let upd_rcvd_cmd = CmdDet::upd_received_cert(
                 handle,
                 parent_h,
                 &class_name,
@@ -479,7 +500,7 @@ impl<S: CaSigner> CaServer<S> {
         handle: &Handle,
         parent_h: &ParentHandle,
         parent_res: &rfc8183::ParentResponse
-    ) -> CaResult<(), S> {
+    ) -> ServerResult<(), S> {
         let mut child = self.ca_store.get_latest(handle)?;
         let requests = child.cert_requests(parent_h);
 
@@ -501,7 +522,7 @@ impl<S: CaSigner> CaServer<S> {
                     let (class_name,_,_, issued) = issue_response.unwrap();
                     let received = RcvdCert::from(issued);
 
-                    let update_rcvd_cmd = CaCmdDet::upd_received_cert(
+                    let update_rcvd_cmd = CmdDet::upd_received_cert(
                         handle,
                         parent_h,
                         &class_name,
@@ -513,7 +534,7 @@ impl<S: CaSigner> CaServer<S> {
                     child = self.ca_store.update(handle, child, events)?;
                 },
                 _ => {
-                    return Err(Error::custom("Got unexpected response to list query"))
+                    return Err(ServerError::custom("Got unexpected response to list query"))
                 }
             }
         }
@@ -530,10 +551,10 @@ impl<S: CaSigner> CaServer<S> {
         handle: &Handle,
         parent: &ParentHandle,
         entitlements: Entitlements
-    ) -> CaResult<bool, S> {
+    ) -> ServerResult<bool, S> {
         let child = self.ca_store.get_latest(handle)?;
 
-        let update_entitlements_command = CaCmdDet::upd_entitlements(
+        let update_entitlements_command = CmdDet::upd_entitlements(
             handle,
             parent,
             entitlements,
@@ -553,7 +574,7 @@ impl<S: CaSigner> CaServer<S> {
         &self,
         handle: &Handle,
         contact: &ParentCaContact
-    ) -> CaResult<api::Entitlements, S> {
+    ) -> ServerResult<api::Entitlements, S> {
         match contact {
             ParentCaContact::Embedded(parent, token) => {
                 self.get_entitlements_embedded(handle, parent, token)
@@ -570,17 +591,17 @@ impl<S: CaSigner> CaServer<S> {
         handle: &Handle,
         parent: &ParentHandle,
         token: &Token
-    ) -> CaResult<api::Entitlements, S> {
+    ) -> ServerResult<api::Entitlements, S> {
         let parent = self.ca_store.get_latest(parent)?;
 
-        parent.list(handle, token).map_err(Error::CaError)
+        parent.list(handle, token).map_err(ServerError::CertAuth)
     }
 
     fn get_entitlements_rfc6492(
         &self,
         handle: &Handle,
         parent_res: &rfc8183::ParentResponse
-    ) -> CaResult<api::Entitlements, S> {
+    ) -> ServerResult<api::Entitlements, S> {
         let child = self.ca_store.get_latest(handle)?;
 
         // create a list request
@@ -597,7 +618,7 @@ impl<S: CaSigner> CaServer<S> {
         match response {
             rfc6492::Res::Error(_) => unimplemented!("Deal with error response"),
             rfc6492::Res::List(ent) => Ok(ent),
-            _ => Err(Error::custom("Got unexpected response to list query"))
+            _ => Err(ServerError::custom("Got unexpected response to list query"))
         }
     }
 
@@ -606,7 +627,7 @@ impl<S: CaSigner> CaServer<S> {
         signing_key: &SignerKeyId,
         parent_res: &rfc8183::ParentResponse,
         msg: Bytes
-    ) -> CaResult<rfc6492::Res, S>{
+    ) -> ServerResult<rfc6492::Res, S>{
         // wrap it up and sign it
         let signed = {
             SignedMessageBuilder::create(
@@ -614,7 +635,7 @@ impl<S: CaSigner> CaServer<S> {
                 self.signer.read().unwrap().deref(),
                 msg
             )
-        }.map_err(Error::custom)?;
+        }.map_err(ServerError::custom)?;
 
         // send to the server
         let uri = parent_res.service_uri().to_string();
@@ -623,76 +644,25 @@ impl<S: CaSigner> CaServer<S> {
             &uri,
             &signed.as_bytes(),
             rfc6492::CONTENT_TYPE
-        ).map_err(Error::HttpClientError)?;
+        ).map_err(ServerError::HttpClientError)?;
 
         // unpack and validate response
-        let msg = SignedMessage::decode(res.as_ref(), true).map_err(Error::custom)?;
-        msg.validate(parent_res.id_cert()).map_err(Error::custom)?;
+        let msg = SignedMessage::decode(res.as_ref(), true).map_err(ServerError::custom)?;
+        msg.validate(parent_res.id_cert()).map_err(ServerError::custom)?;
         rfc6492::Message::from_signed_message(&msg)
-            .map_err(Error::custom)?
+            .map_err(ServerError::custom)?
             .into_reply()
-            .map_err(Error::custom)
+            .map_err(ServerError::custom)
     }
 }
 
 
 
 
-type CaResult<R, S> = Result<R, Error<S>>;
 
 
-//------------ Error ---------------------------------------------------------
 
-#[derive(Debug, Display)]
-pub enum Error<S: CaSigner> {
-    #[display(fmt = "{}", _0)]
-    IoError(io::Error),
 
-    #[display(fmt = "TrustAnchor was already initialised")]
-    TrustAnchorInitialisedError,
-
-    #[display(fmt = "TrustAnchor was not initialised")]
-    TrustAnchorNotInitialisedError,
-
-    #[display(fmt = "{}", _0)]
-    CaError(CaError),
-
-    #[display(fmt = "CA {} was already initialised", _0)]
-    DuplicateCa(String),
-
-    #[display(fmt = "CA {} is unknown", _0)]
-    UnknownCa(String),
-
-    #[display(fmt = "{}", _0)]
-    SignerError(S::Error),
-
-    #[display(fmt = "{}", _0)]
-    AggregateStoreError(AggregateStoreError),
-
-    #[display(fmt = "{}", _0)]
-    HttpClientError(httpclient::Error),
-
-    #[display(fmt = "{}", _0)]
-    Custom(String),
-}
-
-impl<S: CaSigner> Error<S> {
-    pub fn custom(e: impl fmt::Display) -> Self {
-        Error::Custom(e.to_string())
-    }
-}
-
-impl<S: CaSigner> From<io::Error> for Error<S> {
-    fn from(e: io::Error) -> Self { Error::IoError(e) }
-}
-
-impl<S: CaSigner> From<CaError> for Error<S> {
-    fn from(e: CaError) -> Self { Error::CaError(e) }
-}
-
-impl<S: CaSigner> From<AggregateStoreError> for Error<S> {
-    fn from(e: AggregateStoreError) -> Self { Error::AggregateStoreError(e) }
-}
 
 
 //------------ Tests ---------------------------------------------------------
@@ -729,6 +699,7 @@ mod tests {
         rsync,
         test_under_tmp,
     };
+    use ca::EvtDet;
 
     fn signer(temp_dir: &PathBuf) -> OpenSslSigner {
         let signer_dir = sub_dir(temp_dir);
@@ -780,7 +751,7 @@ mod tests {
                 RepoInfo::new(base_uri, rrdp_uri)
             };
 
-            let ta_handle = ta_handle();
+            let ta_handle = ca::ta_handle();
 
 
             let ta_uri = https("https://localhost/tal/ta.cer");
@@ -793,7 +764,7 @@ mod tests {
             // --- Create TA and publish
             //
 
-            let ta_ini = CaIniDet::init_ta(
+            let ta_ini = IniDet::init_ta(
                 &ta_handle,
                 ta_repo_info,
                 ta_aia,
@@ -821,7 +792,7 @@ mod tests {
                 RepoInfo::new(base_uri, rrdp_uri)
             };
 
-            let ca_ini = CaIniDet::init(
+            let ca_ini = IniDet::init(
                 &child_handle,
                 child_token.clone(),
                 ca_repo_info,
@@ -838,7 +809,7 @@ mod tests {
             //   - Child added to TA
             //
 
-            let cmd = CaCmdDet::add_child(
+            let cmd = CmdDet::add_child(
                 &ta_handle,
                 child_handle.clone(),
                 child_token.clone(),
@@ -861,7 +832,7 @@ mod tests {
                 child_token.clone()
             );
 
-            let add_parent = CaCmdDet::add_parent(
+            let add_parent = CmdDet::add_parent(
                 &child_handle,
                 ta_handle.as_str(),
                 parent
@@ -881,7 +852,7 @@ mod tests {
 
             let entitlements = ta.list(&child_handle, &child_token).unwrap();
 
-            let upd_ent = CaCmdDet::upd_entitlements(
+            let upd_ent = CmdDet::upd_entitlements(
                 &child_handle,
                 &ta_handle,
                 entitlements,
@@ -894,20 +865,14 @@ mod tests {
             let child = ca_store.update(&child_handle, child, events).unwrap();
 
             let req = match req_evt {
-                CaEvtDet::CertificateRequested(req) => req,
+                EvtDet::CertificateRequested(req) => req,
                 _ => panic!("Expected Csr")
             };
 
-            let (parent_info, issuance_req) = req.unwrap();
+            let (_handle, _key_status, issuance_req) = req.unwrap();
             let (class_name, limit, csr) = issuance_req.unwrap();
             assert_eq!("all", &class_name);
             assert!(limit.is_empty());
-            if let ParentCaContact::Embedded(handle, token) = parent_info {
-                assert_eq!(ta_handle, handle);
-                assert_eq!(child_token, token);
-            } else {
-                panic!("Expected embedded contact")
-            }
 
             //
             // --- Send certificate request from child to TA
@@ -921,7 +886,7 @@ mod tests {
                 DFLT_CLASS.to_string(), limit, csr
             );
 
-            let ta_cmd = CaCmdDet::certify_child(
+            let ta_cmd = CmdDet::certify_child(
                 &ta_handle,
                 child_handle.clone(),
                 request,
@@ -934,7 +899,7 @@ mod tests {
             let _ta = ca_store.update(&ta_handle, ta, ta_events).unwrap();
 
             let issued = match issued_evt {
-                CaEvtDet::CertificateIssued(issued) => issued,
+                EvtDet::CertificateIssued(issued) => issued,
                 _ => panic!("Expected issued certificate.")
             };
 
@@ -954,7 +919,7 @@ mod tests {
 
             let rcvd_cert = RcvdCert::from(issued);
 
-            let upd_rcvd = CaCmdDet::upd_received_cert(
+            let upd_rcvd = CmdDet::upd_received_cert(
                 &child_handle, &ta_handle, DFLT_CLASS, rcvd_cert, signer.clone()
             );
 

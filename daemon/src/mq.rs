@@ -12,15 +12,12 @@ use krill_commons::api::admin::{
     ParentCaContact
 };
 use krill_commons::api::ca::PublicationDelta;
-use krill_commons::eventsourcing::{
-    Event,
-    EventListener,
-};
+use krill_commons::eventsourcing;
 
 use crate::ca::{
-    CaSigner,
-    CaEvt,
-    CaEvtDet,
+    Signer,
+    Evt,
+    EvtDet,
     CertAuth,
     ParentHandle
 };
@@ -63,23 +60,25 @@ unsafe impl Sync for EventQueueListener {}
 
 
 /// Implement listening for CertAuth Published events.
-impl<S: CaSigner> EventListener<CertAuth<S>> for EventQueueListener {
-    fn listen(&self, _ca: &CertAuth<S>, event: &CaEvt) {
+impl<S: Signer> eventsourcing::EventListener<CertAuth<S>> for EventQueueListener {
+    fn listen(&self, _ca: &CertAuth<S>, event: &Evt) {
+
+        use krill_commons::eventsourcing::Event;
 
         let json = serde_json::to_string_pretty(&event).unwrap();
         debug!("Seen CertAuth event: {}", json);
 
         let handle = event.handle();
         match event.details() {
-            CaEvtDet::Published(_,_,_, delta) => {
+            EvtDet::Published(_, _, _, delta) => {
                 let evt = QueueEvent::Delta(handle.clone(), delta.clone());
                 self.push_back(evt);
             },
-            CaEvtDet::TaPublished(delta) => {
+            EvtDet::TaPublished(delta) => {
                 let evt = QueueEvent::Delta(handle.clone(), delta.clone());
                 self.push_back(evt);
             },
-            CaEvtDet::ParentAdded(parent, contact) => {
+            EvtDet::ParentAdded(parent, contact) => {
                 let evt = QueueEvent::ParentAdded(
                     handle.clone(),
                     parent.clone(),

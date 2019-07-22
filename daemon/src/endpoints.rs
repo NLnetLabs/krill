@@ -23,11 +23,10 @@ use krill_pubd::publishers::PublisherError;
 use krill_pubd::repo::RrdpServerError;
 
 use crate::auth::Auth;
-use crate::ca::CaError;
-use crate::ca::caserver;
+use crate::ca;
+use crate::ca::ParentHandle;
 use crate::http::server::AppServer;
 use crate::krillserver;
-use ca::ParentHandle;
 
 const NOT_FOUND: &[u8] = include_bytes!("../ui/dist/404.html");
 
@@ -579,20 +578,20 @@ impl ErrorToStatus for RrdpServerError {
     }
 }
 
-impl ErrorToStatus for caserver::Error<OpenSslSigner> {
+impl ErrorToStatus for ca::ServerError<OpenSslSigner> {
     fn status(&self) -> StatusCode {
         match self {
-            caserver::Error::CaError(e) => e.status(),
+            ca::ServerError::CertAuth(e) => e.status(),
             _ => StatusCode::INTERNAL_SERVER_ERROR
         }
     }
 }
 
-impl ErrorToStatus for CaError {
+impl ErrorToStatus for ca::Error {
     fn status(&self) -> StatusCode {
         match self {
-            CaError::Unauthorized(_) => StatusCode::FORBIDDEN,
-            CaError::SignerError(_) | CaError::KeyStatusChange(_,_) =>
+            ca::Error::Unauthorized(_) => StatusCode::FORBIDDEN,
+            ca::Error::SignerError(_) | ca::Error::KeyStatusChange(_,_) =>
                 StatusCode::INTERNAL_SERVER_ERROR,
             _ => StatusCode::BAD_REQUEST
         }
@@ -667,21 +666,21 @@ impl ToErrorCode for RrdpServerError {
     }
 }
 
-impl ToErrorCode for caserver::Error<OpenSslSigner> {
+impl ToErrorCode for ca::ServerError<OpenSslSigner> {
     fn code(&self) -> ErrorCode {
         match self {
-            caserver::Error::CaError(e) => e.code(),
+            ca::ServerError::CertAuth(e) => e.code(),
             _ => ErrorCode::CaServerError
         }
     }
 }
 
-impl ToErrorCode for CaError {
+impl ToErrorCode for ca::Error {
     fn code(&self) -> ErrorCode {
         match self {
-            CaError::DuplicateChild(_) => ErrorCode::DuplicateChild,
-            CaError::MustHaveResources => ErrorCode::ChildNeedsResources,
-            CaError::MissingResources => ErrorCode::ChildOverclaims,
+            ca::Error::DuplicateChild(_) => ErrorCode::DuplicateChild,
+            ca::Error::MustHaveResources => ErrorCode::ChildNeedsResources,
+            ca::Error::MissingResources => ErrorCode::ChildOverclaims,
             _ => ErrorCode::CaServerError
         }
     }
