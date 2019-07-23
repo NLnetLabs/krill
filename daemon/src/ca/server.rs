@@ -647,7 +647,14 @@ impl<S: Signer> CaServer<S> {
         ).map_err(ServerError::HttpClientError)?;
 
         // unpack and validate response
-        let msg = SignedMessage::decode(res.as_ref(), true).map_err(ServerError::custom)?;
+        let msg = match SignedMessage::decode(res.as_ref(), true)
+            .map_err(ServerError::custom) {
+            Ok(msg) => msg,
+            Err(e) => {
+                error!("Could not parse response: {}", base64::encode(res.as_ref()));
+                return Err(e)
+            }
+        };
         msg.validate(parent_res.id_cert()).map_err(ServerError::custom)?;
         rfc6492::Message::from_signed_message(&msg)
             .map_err(ServerError::custom)?
