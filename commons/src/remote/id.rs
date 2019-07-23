@@ -510,7 +510,9 @@ impl IdExtensions {
                             content, critical, &mut authority_key_id
                         )
                     } else if critical {
-                        xerr!(Err(decode::Malformed))
+                        // ignore for now, lacnic has key usage marked crit
+                        Ok(())
+//                        xerr!(Err(decode::Malformed))
                     } else {
                         // RFC 5280 says we can ignore non-critical
                         // extensions we don’t know of. RFC 6487
