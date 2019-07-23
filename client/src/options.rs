@@ -214,17 +214,34 @@ impl Options {
                             .short("p")
                             .long("parent")
                             .value_name("parent ca handle")
-                            .help("The handle (name) for the parent CA")
+                            .help("The local handle (name) for the parent CA")
                             .required(true)
                         )
 
-                        .arg(Arg::with_name("token")
-                            .short("t")
-                            .long("token")
-                            .value_name("token-string")
-                            .help("The auth token the parent knows for the CA")
-                            .required(true)
+                        .subcommand(SubCommand::with_name("embedded")
+                            .about("Add an embedded parent")
+
+                            .arg(Arg::with_name("token")
+                                .short("t")
+                                .long("token")
+                                .value_name("token-string")
+                                .help("The auth token the parent knows for the CA")
+                                .required(true)
+                            )
                         )
+
+                        .subcommand(SubCommand::with_name("rfc6492")
+                            .about("Add an RFC6492 parent")
+                            .arg(Arg::with_name("xml")
+                                .short("x")
+                                .long("xml")
+                                .value_name("response.xml")
+                                .help("The RFC8183 response xml file")
+                                .required(true)
+                            )
+                        )
+
+
                     )
 
                 )
@@ -400,14 +417,33 @@ impl Options {
 
                 if let Some(m) = m.subcommand_matches("add-parent") {
                     let parent = Handle::from(m.value_of("parent").unwrap());
-                    let token = Token::from(m.value_of("token").unwrap());
 
-                    let contact = ParentCaContact::Embedded(parent.clone(), token);
+                    if let Some(m) = m.subcommand_matches("embedded") {
+                        let token = Token::from(m.value_of("token").unwrap());
 
-                    let parent = AddParentRequest::new(parent, contact);
+                        let contact = ParentCaContact::Embedded(parent.clone(),
+                                                                token);
 
-                    command = Command::CertAuth(
-                        CaCommand::AddParent(handle, parent))
+                        let req = AddParentRequest::new(parent, contact);
+
+                        command = Command::CertAuth(
+                            CaCommand::AddParent(handle, req))
+                    } else if let Some(m) = m.subcommand_matches("rfc6492") {
+                        let xml_path = m.value_of("xml").unwrap();
+                        let xml = PathBuf::from(xml_path);
+                        let bytes = file::read(&xml)?;
+                        let pr = rfc8183::ParentResponse::validate(bytes.as_ref())?;
+
+                        let contact = ParentCaContact::Rfc6492(pr);
+                        let req = AddParentRequest::new(parent, contact);
+
+                        command = Command::CertAuth(
+                            CaCommand::AddParent(handle, req)
+                        )
+
+                    }
+
+
                 }
             }
         }
