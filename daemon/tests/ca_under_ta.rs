@@ -92,10 +92,10 @@ fn wait_for_resources_on_current_key(handle: &Handle, resources: &ResourceSet) {
             panic!("cms child did not get its resource certificate");
         }
 
-        let cms_ca_info = ca_details(handle.clone());
+        let cms_ca_info = ca_details(handle);
 
         if let CaParentsInfo::Parents(parents) = cms_ca_info.parents() {
-            if let Some(parent) = parents.get(&ta_handle) {
+            if let Some(parent) = parents.get(&ta_handle()) {
                 if let Some(rc) = parent.resources().get("all") {
                     if let Some(key) = rc.current_key() {
                         assert_eq!(resources, key.resources());

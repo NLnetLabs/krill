@@ -9,6 +9,7 @@ use krill_commons::remote::id::IdCert;
 use crate::ca::{
     Evt,
     Signer,
+    ChildHandle,
     ParentHandle,
     ResourceClassName
 };
@@ -25,18 +26,14 @@ pub type Cmd<S> = eventsourcing::SentCommand<CmdDet<S>>;
 #[allow(clippy::large_enum_variant)]
 pub enum CmdDet<S: Signer> {
     // Being a parent
-    AddChild(Handle, Token, Option<IdCert>, ResourceSet),
-    CertifyChild(Handle, IssuanceRequest, Token, Arc<RwLock<S>>),
+    AddChild(ChildHandle, Token, Option<IdCert>, ResourceSet),
+    UpdateChild(ChildHandle, Option<Token>, Option<IdCert>, Option<ResourceSet>),
+    CertifyChild(ChildHandle, IssuanceRequest, Token, Arc<RwLock<S>>),
 
     // Being a child
     AddParent(ParentHandle, ParentCaContact),
     UpdateEntitlements(ParentHandle, Entitlements, Arc<RwLock<S>>),
-    UpdateRcvdCert(
-        ParentHandle,
-        ResourceClassName,
-        RcvdCert,
-        Arc<RwLock<S>>
-    ),
+    UpdateRcvdCert(ParentHandle, ResourceClassName, RcvdCert, Arc<RwLock<S>>),
 
     // General
     Republish(Arc<RwLock<S>>)
@@ -66,6 +63,23 @@ impl<S: Signer> CmdDet<S> {
                 child_token,
                 child_id_cert,
                 child_resources
+            )
+        )
+    }
+
+    pub fn update_child_resources(
+        handle: &Handle,
+        child_handle: ChildHandle,
+        child_resources: ResourceSet
+    ) -> Cmd<S> {
+        eventsourcing::SentCommand::new(
+            handle,
+            None,
+            CmdDet::UpdateChild(
+                child_handle,
+                None,
+                None,
+                Some(child_resources)
             )
         )
     }

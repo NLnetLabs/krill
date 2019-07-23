@@ -61,22 +61,7 @@ use krill_commons::remote::rfc8183::ChildRequest;
 use krill_commons::remote::rfc6492;
 use krill_commons::util::softsigner::SignerKeyId;
 
-use ca::{
-    self,
-    CmdDet,
-    Cmd,
-    CertIssued,
-    CertRequested,
-    CertReceived,
-    Error,
-    Evt,
-    EvtDet,
-    Ini,
-    ParentHandle,
-    Result,
-    Signer,
-    SignSupport,
-};
+use ca::{self, CmdDet, Cmd, CertIssued, CertRequested, CertReceived, Error, Evt, EvtDet, Ini, ParentHandle, Result, Signer, SignSupport};
 
 
 //------------ Rfc8183Id ---------------------------------------------------
@@ -320,6 +305,7 @@ impl<S: Signer> Aggregate for CertAuth<S> {
             CmdDet::AddChild(child, token, id_cert_opt, resources) =>  {
                 self.add_child(child, token, id_cert_opt, resources)
             },
+            CmdDet::UpdateChild(_,_,_,_) => unimplemented!(),
             CmdDet::CertifyChild(child, request, token, signer) => {
                 self.certify_child(child, request, token, signer)
             }
