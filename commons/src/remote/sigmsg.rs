@@ -102,7 +102,7 @@ impl SignedMessage {
 
             let id_cert = Self::take_certificates(cons)?;
 
-            Self::drop_crls(cons)?;
+            let _whatever = Self::drop_crls(cons);
 
 
             let (sid, attrs, signature) = { // signerInfos
@@ -118,7 +118,7 @@ impl SignedMessage {
                         if alg != digest_algorithm {
                             return Err(decode::Malformed.into())
                         }
-                        let attrs = SignedAttrs::take_from(cons)?;
+                        let attrs = SignedAttrs::take_from_signed_message(cons)?;
                         if attrs.2 != content_type {
                             return Err(decode::Malformed.into())
                         }
@@ -157,7 +157,6 @@ impl SignedMessage {
         })
     }
 
-    #[allow(dead_code)]
     fn take_certificates<S: decode::Source>(
         cons: &mut decode::Constructed<S>
     ) -> Result<IdCert, S::Err> {
@@ -271,5 +270,14 @@ mod tests {
             ).unwrap_err(),
             ValidationError,
         );
+    }
+
+    #[test]
+    fn parse_lacnic_issue_response() {
+        let der = include_bytes!("../../test-resources/remote/lacnic-res-2.der");
+        let _msg = SignedMessage::decode(
+            Bytes::from_static(der),
+            false
+        ).unwrap();
     }
 }

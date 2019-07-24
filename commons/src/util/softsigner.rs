@@ -20,7 +20,6 @@ use serde::{de, ser};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fs::File;
 use std::io::Write;
-use std::str::from_utf8_unchecked;
 
 
 //------------ SignerKeyId ---------------------------------------------------

@@ -509,14 +509,10 @@ impl IdExtensions {
                         AuthorityKeyIdentifier::take(
                             content, critical, &mut authority_key_id
                         )
-                    } else if critical {
-                        // ignore for now, lacnic has key usage marked crit
-                        Ok(())
-//                        xerr!(Err(decode::Malformed))
                     } else {
-                        // RFC 5280 says we can ignore non-critical
-                        // extensions we don’t know of. RFC 6487
-                        // agrees. So let’s do that.
+                        // Id Certificates are poorly defined and may
+                        // contain critical extensions we do not actually
+                        // understand or need.
                         Ok(())
                     }
                 })?;

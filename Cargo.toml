@@ -2,5 +2,5 @@
 members = [ "client", "commons", "daemon", "pubc", "pubd" ]
 
 [patch.crates-io]
-rpki = { git="https://github.com/NLnetLabs/rpki-rs.git" }
+rpki = { git="https://github.com/NLnetLabs/rpki-rs.git", branch="accept-signed-message-cms" }
 bcder = { git="https://github.com/NLnetLabs/bcder.git" }

@@ -160,8 +160,5 @@ fn ca_under_ta() {
         add_parent_to_ca(&cms_child_handle, parent);
 
         wait_for_resources_on_current_key(&cms_child_handle, &cms_child_resources);
-
-
-        panic!("stop");
     });
 }
