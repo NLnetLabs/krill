@@ -20,6 +20,7 @@ use serde::{de, ser};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fs::File;
 use std::io::Write;
+use std::str::from_utf8_unchecked;
 
 
 //------------ SignerKeyId ---------------------------------------------------
@@ -90,8 +91,7 @@ impl OpenSslSigner {
     fn sign_with_key<D: AsRef<[u8]> + ?Sized>(
         pkey: &PKeyRef<Private>,
         data: &D
-    ) -> Result<Signature, SignerError>
-    {
+    ) -> Result<Signature, SignerError> {
         let mut signer = ::openssl::sign::Signer::new(
             MessageDigest::sha256(),
             pkey

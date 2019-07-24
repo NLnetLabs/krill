@@ -637,6 +637,8 @@ impl<S: Signer> CaServer<S> {
             )
         }.map_err(ServerError::custom)?;
 
+        error!("Sending: {}", base64::encode(&signed.as_bytes()));
+
         // send to the server
         let uri = parent_res.service_uri().to_string();
         debug!("Sending request to parent at: {}", &uri);

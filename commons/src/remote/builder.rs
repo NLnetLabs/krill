@@ -436,14 +436,6 @@ impl SignedAttributes {
                     )
                 )
             ),
-            encode::sequence(
-                (
-                    oid::MESSAGE_DIGEST.encode(),
-                    encode::set(
-                        self.digest.clone().encode()
-                    )
-                )
-            ),
             encode::sequence (
                 (
                     // This implementation will include a signing-time
@@ -452,6 +444,14 @@ impl SignedAttributes {
                     oid::SIGNING_TIME.encode(),
                     encode::set(
                         self.signing_time.encode()
+                    )
+                )
+            ),
+            encode::sequence(
+                (
+                    oid::MESSAGE_DIGEST.encode(),
+                    encode::set(
+                        self.digest.clone().encode()
                     )
                 )
             )
@@ -506,8 +506,9 @@ impl SignedSignerInfo {
         // X509 Extension.
         let sid = self.key_id.clone().encode_as(Tag::CTX_0);
 
-        //  digestAlgorithm DigestAlgorithmIdentifier,
-        let digest_algo = DigestAlgorithm::default().encode();
+        // digestAlgorithm DigestAlgorithmIdentifier,
+        // it seems this MUST NOT include the explicit NULL here
+        let digest_algo = encode::sequence(oid::SHA256.encode());
 
         let signed_attrs = Constructed::new(
             Tag::CTX_0,

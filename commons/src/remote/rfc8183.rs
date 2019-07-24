@@ -5,7 +5,7 @@
 //! parent CA and/or RPKI Publication Servers.
 use std::{io, fmt};
 use std::path::PathBuf;
-use std::str::FromStr;
+use std::str::{FromStr, from_utf8_unchecked};
 use std::convert::TryFrom;
 
 use base64::DecodeError;
@@ -146,6 +146,16 @@ impl ChildRequest {
     }
 }
 
+
+impl fmt::Display for ChildRequest {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let s = self.encode_vec();
+        let s = unsafe {
+            from_utf8_unchecked(s.as_slice())
+        };
+        s.fmt(f)
+    }
+}
 
 //------------ ParentResponse ------------------------------------------------
 

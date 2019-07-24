@@ -127,6 +127,7 @@ fn ca_under_ta() {
 
         init_child(&emb_child_handle, &emb_child_token);
 
+
         let parent = {
             let parent_contact = add_child_to_ta_embedded(
                 &emb_child_handle, &emb_child_token, emb_child_resources
@@ -147,6 +148,8 @@ fn ca_under_ta() {
         init_child(&cms_child_handle, &cms_child_token);
         let req = child_request(&cms_child_handle);
 
+        eprintln!("Child Request: {}", req);
+
         let parent = {
             let contact = add_child_to_ta_rfc6492(
                 &cms_child_handle, req, cms_child_resources.clone()
@@ -159,5 +162,6 @@ fn ca_under_ta() {
         wait_for_resources_on_current_key(&cms_child_handle, &cms_child_resources);
 
 
+        panic!("stop");
     });
 }
