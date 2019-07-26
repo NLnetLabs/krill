@@ -342,9 +342,11 @@ impl IdCert {
         self.validate_basics(now)?;
         self.validate_issued(issuer)?;
 
-        // Basic Constraints: Must not be present.
-        if self.extensions.basic_ca != None {
-            return Err(ValidationError)
+        // Basic Constraints: Must not be a CA cert.
+        if let Some(basic_ca) = &self.extensions.basic_ca {
+            if basic_ca.ca() {
+                return Err(ValidationError)
+            }
         }
 
         // Verify that this is signed by the issuer

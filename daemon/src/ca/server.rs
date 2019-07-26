@@ -231,12 +231,12 @@ impl<S: Signer> CaServer<S> {
         parent_handle: &Handle,
         msg: SignedMessage
     ) -> ServerResult<Bytes, S> {
-        debug!("RFC6492 Request: will check");
+        info!("RFC6492 Request: will check");
         let (content, token) = {
             let parent = self.ca_store.get_latest(parent_handle)?;
             parent.verify_rfc6492(msg)?
         };
-        debug!("RFC6492 Request: verified");
+        info!("RFC6492 Request: verified");
 
         let (sender, recipient, content) = content.unwrap();
         let sender_handle = Handle::from(sender.as_str());
@@ -637,11 +637,14 @@ impl<S: Signer> CaServer<S> {
             )
         }.map_err(ServerError::custom)?;
 
-        error!("Sending: {}", base64::encode(&signed.as_bytes()));
 
         // send to the server
         let uri = parent_res.service_uri().to_string();
-        debug!("Sending request to parent at: {}", &uri);
+        debug!("Sending to parent: {}\n{}",
+               &uri,
+               base64::encode(&signed.as_bytes())
+        );
+
         let res = httpclient::post_binary(
             &uri,
             &signed.as_bytes(),
@@ -649,7 +652,7 @@ impl<S: Signer> CaServer<S> {
         ).map_err(ServerError::HttpClientError)?;
 
         // unpack and validate response
-        let msg = match SignedMessage::decode(res.as_ref(), true)
+        let msg = match SignedMessage::decode(res.as_ref(), false)
             .map_err(ServerError::custom) {
             Ok(msg) => msg,
             Err(e) => {
@@ -657,7 +660,12 @@ impl<S: Signer> CaServer<S> {
                 return Err(e)
             }
         };
-        msg.validate(parent_res.id_cert()).map_err(ServerError::custom)?;
+
+        if let Err(e) = msg.validate(parent_res.id_cert()) {
+            error!("Could not validate response: {}", base64::encode(res.as_ref()));
+            return Err(ServerError::custom(e))
+        }
+
         rfc6492::Message::from_signed_message(&msg)
             .map_err(ServerError::custom)?
             .into_reply()

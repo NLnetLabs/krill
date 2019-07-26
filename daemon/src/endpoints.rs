@@ -452,7 +452,7 @@ pub fn rfc6492(
     parent: Path<ParentHandle>,
     msg_bytes: Bytes,
 ) -> HttpResponse {
-    match SignedMessage::decode(msg_bytes, true) {
+    match SignedMessage::decode(msg_bytes, false) {
         Ok(msg) => {
             match server.read().rfc6492(
                 parent.into_inner(),

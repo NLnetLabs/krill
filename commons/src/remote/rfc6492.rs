@@ -909,6 +909,7 @@ mod tests {
     use crate::remote::id::tests::test_id_certificate;
 
     use super::*;
+    use remote::id::IdCert;
 
     /// Test that the we can re-encode the object to xml, parse that
     /// xml, and end up with an equal object.
@@ -944,6 +945,25 @@ mod tests {
         );
         let list_response = Message::decode(xml.as_bytes()).unwrap();
         assert_re_encode_equals(list_response);
+    }
+
+    #[test]
+    fn parse_and_validate_apnic_response() {
+        let pdu = include_bytes!("../../test-resources/remote/apnic-list-response.der");
+
+        let msg = SignedMessage::decode(pdu.as_ref(), false).unwrap();
+        let content = msg.content().to_bytes();
+        let xml = unsafe {
+            from_utf8_unchecked(content.as_ref())
+        };
+
+
+        let _list_response = Message::decode(xml.as_bytes()).unwrap();
+
+        let cer_der = include_bytes!("../../test-resources/remote/apnic-id.der");
+        let cer = IdCert::decode(cer_der.as_ref()).unwrap();
+
+        msg.validate(&cer).unwrap();
     }
 
     #[test]
