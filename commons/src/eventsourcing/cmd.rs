@@ -2,7 +2,6 @@ use crate::api::admin::Handle;
 
 use super::Event;
 
-
 //------------ Command -------------------------------------------------------
 
 /// Commands are used to send an intent to change an aggregate.
@@ -33,9 +32,10 @@ pub trait Command {
     /// Note that this defaults to true, which is the safe choice when in
     /// doubt. If you choose to implement this, then you will also need to
     /// implement the ['set_affected_version'] function.
-    fn conflicts(&self, _events: &[Self::Event]) -> bool { true }
+    fn conflicts(&self, _events: &[Self::Event]) -> bool {
+        true
+    }
 }
-
 
 //------------ SentCommand ---------------------------------------------------
 
@@ -45,7 +45,7 @@ pub trait Command {
 pub struct SentCommand<C: CommandDetails> {
     handle: Handle,
     version: Option<u64>,
-    details: C
+    details: C,
 }
 
 impl<C: CommandDetails> Command for SentCommand<C> {
@@ -61,14 +61,18 @@ impl<C: CommandDetails> Command for SentCommand<C> {
 }
 
 impl<C: CommandDetails> SentCommand<C> {
-
     pub fn new(id: &Handle, version: Option<u64>, details: C) -> Self {
-        SentCommand { handle: id.clone(), version, details }
+        SentCommand {
+            handle: id.clone(),
+            version,
+            details,
+        }
     }
 
-    pub fn into_details(self) -> C { self.details }
+    pub fn into_details(self) -> C {
+        self.details
+    }
 }
-
 
 //------------ CommandDetails ------------------------------------------------
 

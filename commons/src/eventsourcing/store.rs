@@ -5,30 +5,24 @@ use std::io;
 use std::io::Write;
 use std::path::PathBuf;
 
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
 use serde_json;
 
 use crate::api::admin::Handle;
 use crate::util::file;
 
-use super::{
-    Aggregate,
-    Event,
-};
-
+use super::{Aggregate, Event};
 
 //------------ Storable ------------------------------------------------------
 
 pub trait Storable: Clone + Serialize + DeserializeOwned + Sized + 'static {}
-impl<T: Clone + Serialize + DeserializeOwned + Sized + 'static> Storable for T { }
-
+impl<T: Clone + Serialize + DeserializeOwned + Sized + 'static> Storable for T {}
 
 //------------ KeyStore ------------------------------------------------------
 
 /// Generic KeyStore for AggregateManager
 pub trait KeyStore {
-
     type Key;
 
     fn key_for_snapshot() -> Self::Key;
@@ -37,7 +31,6 @@ pub trait KeyStore {
     /// Returns whether a key already exists.
 
     fn has_key(&self, id: &Handle, key: &Self::Key) -> bool;
-
 
     fn has_aggregate(&self, id: &Handle) -> bool;
 
@@ -49,7 +42,7 @@ pub trait KeyStore {
         &self,
         id: &Handle,
         key: &Self::Key,
-        value: &V
+        value: &V,
     ) -> Result<(), KeyStoreError>;
 
     /// Get the value for this key, if any exists.
@@ -57,38 +50,27 @@ pub trait KeyStore {
     fn get<V: Any + Storable>(
         &self,
         id: &Handle,
-        key: &Self::Key
+        key: &Self::Key,
     ) -> Result<Option<V>, KeyStoreError>;
 
     /// Get the value for this key, if any exists.
 
-    fn get_event<V: Event>(
-        &self,
-        id: &Handle,
-        version: u64
-    ) -> Result<Option<V>, KeyStoreError>;
+    fn get_event<V: Event>(&self, id: &Handle, version: u64) -> Result<Option<V>, KeyStoreError>;
 
-    fn store_event<V: Event>(
-        &self,
-        event: &V
-    ) -> Result<(), KeyStoreError>;
+    fn store_event<V: Event>(&self, event: &V) -> Result<(), KeyStoreError>;
 
     /// Get the latest aggregate
 
-    fn get_aggregate<V: Aggregate>(
-        &self,
-        id: &Handle
-    ) -> Result<Option<V>, KeyStoreError>;
+    fn get_aggregate<V: Aggregate>(&self, id: &Handle) -> Result<Option<V>, KeyStoreError>;
 
     /// Saves the latest snapshot - overwrites any previous snapshot.
 
     fn store_aggregate<V: Aggregate>(
         &self,
         id: &Handle,
-        aggregate: &V
+        aggregate: &V,
     ) -> Result<(), KeyStoreError>;
 }
-
 
 //------------ KeyStoreError -------------------------------------------------
 
@@ -105,19 +87,22 @@ pub enum KeyStoreError {
     KeyExists(String),
 
     #[display(fmt = "Aggregate init event exists, but cannot be applied")]
-    InitError
+    InitError,
 }
 
 impl From<io::Error> for KeyStoreError {
-    fn from(e: io::Error) -> Self { KeyStoreError::IoError(e) }
+    fn from(e: io::Error) -> Self {
+        KeyStoreError::IoError(e)
+    }
 }
 
 impl From<serde_json::Error> for KeyStoreError {
-    fn from(e: serde_json::Error) -> Self { KeyStoreError::JsonError(e) }
+    fn from(e: serde_json::Error) -> Self {
+        KeyStoreError::JsonError(e)
+    }
 }
 
-impl std::error::Error for KeyStoreError { }
-
+impl std::error::Error for KeyStoreError {}
 
 //------------ DiskKeyStore --------------------------------------------------
 
@@ -166,7 +151,7 @@ impl KeyStore for DiskKeyStore {
         &self,
         id: &Handle,
         key: &Self::Key,
-        value: &V
+        value: &V,
     ) -> Result<(), KeyStoreError> {
         let mut f = file::create_file_with_path(&self.file_path(id, key))?;
         let json = serde_json::to_string_pretty(value)?;
@@ -177,7 +162,7 @@ impl KeyStore for DiskKeyStore {
     fn get<V: Any + Storable>(
         &self,
         id: &Handle,
-        key: &Self::Key
+        key: &Self::Key,
     ) -> Result<Option<V>, KeyStoreError> {
         let path = self.file_path(id, key);
         let path_str = path.to_string_lossy().into_owned();
@@ -188,7 +173,7 @@ impl KeyStore for DiskKeyStore {
                 Err(e) => {
                     error!("Could not deserialize json at: {}, error: {}", path_str, e);
                     Err(KeyStoreError::JsonError(e))
-                },
+                }
                 Ok(v) => {
                     debug!("Deserialized json at: {}", path_str);
                     Ok(Some(v))
@@ -201,11 +186,7 @@ impl KeyStore for DiskKeyStore {
     }
 
     /// Get the value for this key, if any exists.
-    fn get_event<V: Event>(
-        &self,
-        id: &Handle,
-        version: u64
-    ) -> Result<Option<V>, KeyStoreError> {
+    fn get_event<V: Event>(&self, id: &Handle, version: u64) -> Result<Option<V>, KeyStoreError> {
         let path = self.path_for_event(id, version);
         let path_str = path.to_string_lossy().into_owned();
 
@@ -215,7 +196,7 @@ impl KeyStore for DiskKeyStore {
                 Err(e) => {
                     error!("Could not deserialize json at: {}, error: {}", path_str, e);
                     Err(KeyStoreError::JsonError(e))
-                },
+                }
                 Ok(v) => {
                     debug!("Deserialized event at: {}", path_str);
                     Ok(Some(v))
@@ -227,10 +208,7 @@ impl KeyStore for DiskKeyStore {
         }
     }
 
-    fn store_event<V: Event>(
-        &self,
-        event: &V
-    ) -> Result<(), KeyStoreError> {
+    fn store_event<V: Event>(&self, event: &V) -> Result<(), KeyStoreError> {
         let id = event.handle();
         let key = Self::key_for_event(event.version());
         if self.has_key(id, &key) {
@@ -240,22 +218,17 @@ impl KeyStore for DiskKeyStore {
         }
     }
 
-    fn get_aggregate<V: Aggregate>(
-        &self,
-        id: &Handle
-    ) -> Result<Option<V>, KeyStoreError> {
+    fn get_aggregate<V: Aggregate>(&self, id: &Handle) -> Result<Option<V>, KeyStoreError> {
         // try to get a snapshot.
         // If that fails, try to get the init event.
         // Then replay all newer events that can be found.
         let key = Self::key_for_snapshot();
         let aggregate_opt = match self.get::<V>(id, &key)? {
             Some(aggregate) => Some(aggregate),
-            None => {
-                match self.get_event::<V::InitEvent>(id, 0)? {
-                    Some(e) => Some(V::init(e).map_err(|_|KeyStoreError::InitError)?),
-                    None => None
-                }
-            }
+            None => match self.get_event::<V::InitEvent>(id, 0)? {
+                Some(e) => Some(V::init(e).map_err(|_| KeyStoreError::InitError)?),
+                None => None,
+            },
         };
 
         match aggregate_opt {
@@ -270,7 +243,7 @@ impl KeyStore for DiskKeyStore {
     fn store_aggregate<V: Aggregate>(
         &self,
         id: &Handle,
-        aggregate: &V
+        aggregate: &V,
     ) -> Result<(), KeyStoreError> {
         let key = Self::key_for_snapshot();
         self.store(id, &key, aggregate)
@@ -285,13 +258,10 @@ impl DiskKeyStore {
     }
 
     /// Creates a directory for the name_space under the work_dir.
-    pub fn under_work_dir(
-        work_dir: &PathBuf,
-        name_space: &str
-    ) -> Result<Self, io::Error> {
+    pub fn under_work_dir(work_dir: &PathBuf, name_space: &str) -> Result<Self, io::Error> {
         let mut path = work_dir.clone();
         path.push(name_space);
-        if ! path.is_dir() {
+        if !path.is_dir() {
             fs::create_dir_all(&path)?;
         }
         Ok(Self::new(work_dir, name_space))
@@ -309,11 +279,7 @@ impl DiskKeyStore {
         dir_path
     }
 
-    fn path_for_event(
-        &self,
-        id: &Handle,
-        version: u64
-    ) -> PathBuf {
+    fn path_for_event(&self, id: &Handle, version: u64) -> PathBuf {
         let mut file_path = self.dir_for_aggregate(id);
         file_path.push(format!("delta-{}.json", version));
         file_path
@@ -322,7 +288,7 @@ impl DiskKeyStore {
     pub fn update_aggregate<A: Aggregate>(
         &self,
         id: &Handle,
-        aggregate: &mut A
+        aggregate: &mut A,
     ) -> Result<(), KeyStoreError> {
         while let Some(e) = self.get_event(id, aggregate.version())? {
             aggregate.apply(e);

@@ -6,7 +6,7 @@ pub mod clients;
 pub mod id;
 pub mod proxy;
 pub mod responder;
+pub mod rfc6492;
 pub mod rfc8181;
 pub mod rfc8183;
-pub mod rfc6492;
 pub mod sigmsg;

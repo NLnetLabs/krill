@@ -1,16 +1,12 @@
 use crate::api::admin::Handle;
-use crate::eventsourcing::{
-    Aggregate,
-    CommandDetails,
-    SentCommand,
-    StoredEvent
-};
+use crate::eventsourcing::{Aggregate, CommandDetails, SentCommand, StoredEvent};
 use crate::remote::id::MyIdentity;
-
 
 // const fn is not stable yet
 const ID: &str = "cms-responder";
-pub fn id() -> Handle { Handle::from(ID) }
+pub fn id() -> Handle {
+    Handle::from(ID)
+}
 
 //------------ ResponderEvent ---------------------------------------------
 
@@ -32,7 +28,6 @@ impl ResponderEvents {
         StoredEvent::new(&id(), 0, ResponderInitDetails { id: my_id })
     }
 }
-
 
 //------------ ResponderCommand --------------------------------------------
 
@@ -57,7 +52,6 @@ pub struct Responder {
     id: MyIdentity,
 }
 
-
 impl Aggregate for Responder {
     type Command = ResponderCommand;
     type Event = ResponderEvent;
@@ -67,12 +61,7 @@ impl Aggregate for Responder {
     fn init(event: Self::InitEvent) -> Result<Self, Self::Error> {
         let id = event.into_details().id;
         let version = 1;
-        Ok (
-            Responder {
-                version,
-                id
-            }
-        )
+        Ok(Responder { version, id })
     }
 
     fn version(&self) -> u64 {
@@ -96,7 +85,6 @@ impl Responder {
     }
 }
 
-
 //------------ Error ---------------------------------------------------------
 
 #[derive(Debug, Display)]
@@ -107,22 +95,20 @@ pub enum Error {
 
 impl std::error::Error for Error {}
 
-
-
 //------------ Tests ---------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
 
-    use std::path::PathBuf;
-    use rpki::crypto::PublicKeyFormat;
-    use rpki::crypto::Signer;
-    use crate::util::test;
+    use super::*;
     use crate::eventsourcing::AggregateStore;
     use crate::eventsourcing::DiskAggregateStore;
-    use crate::util::softsigner::OpenSslSigner;
     use crate::remote::builder::IdCertBuilder;
-    use super::*;
+    use crate::util::softsigner::OpenSslSigner;
+    use crate::util::test;
+    use rpki::crypto::PublicKeyFormat;
+    use rpki::crypto::Signer;
+    use std::path::PathBuf;
 
     pub fn new_id(work_dir: &PathBuf) -> MyIdentity {
         let mut s = OpenSslSigner::build(work_dir).unwrap();
@@ -135,7 +121,6 @@ mod tests {
     #[test]
     fn should_init() {
         test::test_under_tmp(|d| {
-
             // Set up a store for the proxy
             let store = DiskAggregateStore::<Responder>::new(&d, "proxy").unwrap();
 

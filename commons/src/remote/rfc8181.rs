@@ -1,22 +1,15 @@
 //! RFC8181 Messages
 
-use std::io;
-use bytes::Bytes;
-use rpki::uri;
 use crate::api::publication;
 use crate::api::{Base64, EncodedHash};
-use crate::util::xml::{
-    Attributes,
-    AttributesError,
-    XmlReader,
-    XmlReaderErr,
-    XmlWriter
-};
 use crate::remote::sigmsg::SignedMessage;
+use crate::util::xml::{Attributes, AttributesError, XmlReader, XmlReaderErr, XmlWriter};
+use bytes::Bytes;
+use rpki::uri;
+use std::io;
 
 pub const VERSION: &str = "4";
 pub const NS: &str = "http://www.hactrn.net/uris/rpki/publication-spec/";
-
 
 //------------ Message -------------------------------------------------------
 
@@ -24,7 +17,7 @@ pub const NS: &str = "http://www.hactrn.net/uris/rpki/publication-spec/";
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Message {
     QueryMessage(QueryMessage),
-    ReplyMessage(ReplyMessage)
+    ReplyMessage(ReplyMessage),
 }
 
 /// # Decoding and Encoding
@@ -32,63 +25,43 @@ pub enum Message {
 impl Message {
     /// Decodes an XML structure
     pub fn decode<R>(reader: R) -> Result<Self, MessageError>
-        where R: io::Read {
-
+    where
+        R: io::Read,
+    {
         XmlReader::decode(reader, |r| {
             r.take_named_element("msg", |mut a, r| {
-
                 match a.take_req("version")?.as_ref() {
-                    VERSION => { },
-                    _ => return Err(MessageError::InvalidVersion)
+                    VERSION => {}
+                    _ => return Err(MessageError::InvalidVersion),
                 }
                 let msg_type = a.take_req("type")?;
                 a.exhausted()?;
 
                 match msg_type.as_ref() {
-                    "query" => {
-                        Ok(Message::QueryMessage(QueryMessage::decode(r)?))
-                    },
-                    "reply" => {
-                        Ok(Message::ReplyMessage(ReplyMessage::decode(r)?))
-                    }
-                    _ => {
-                        Err(MessageError::UnknownMessageType)
-                    }
+                    "query" => Ok(Message::QueryMessage(QueryMessage::decode(r)?)),
+                    "reply" => Ok(Message::ReplyMessage(ReplyMessage::decode(r)?)),
+                    _ => Err(MessageError::UnknownMessageType),
                 }
             })
         })
     }
 
-    pub fn encode<W: io::Write>(&self, target: &mut XmlWriter<W>)
-                                -> Result<(), io::Error> {
-
+    pub fn encode<W: io::Write>(&self, target: &mut XmlWriter<W>) -> Result<(), io::Error> {
         let msg_type = match self {
             Message::QueryMessage(_) => "query",
-            Message::ReplyMessage(_) => "reply"
+            Message::ReplyMessage(_) => "reply",
         };
-        let a = [
-            ("xmlns", NS),
-            ("version", VERSION),
-            ("type", msg_type),
-        ];
+        let a = [("xmlns", NS), ("version", VERSION), ("type", msg_type)];
 
-        target.put_element(
-            "msg",
-            Some(&a),
-            |w| {
-                match self {
-                    Message::ReplyMessage(r) => { r.encode(w) }
-                    Message::QueryMessage(q) => { q.encode(w) }
-                }
-            }
-        )
+        target.put_element("msg", Some(&a), |w| match self {
+            Message::ReplyMessage(r) => r.encode(w),
+            Message::QueryMessage(q) => q.encode(w),
+        })
     }
 
     /// Encodes to a Vec
     pub fn encode_vec(&self) -> Vec<u8> {
-        XmlWriter::encode_vec(|w| {
-            self.encode(w)
-        })
+        XmlWriter::encode_vec(|w| self.encode(w))
     }
 
     /// Consumes the message and turns it into bytes
@@ -97,9 +70,7 @@ impl Message {
     }
 
     /// Parses the content of a SignedMessage as a Message.
-    pub fn from_signed_message(
-        msg: &SignedMessage
-    ) -> Result<Message, MessageError> {
+    pub fn from_signed_message(msg: &SignedMessage) -> Result<Message, MessageError> {
         Message::decode(msg.content().to_bytes().as_ref())
     }
 
@@ -108,7 +79,7 @@ impl Message {
     pub fn into_query(self) -> Result<QueryMessage, MessageError> {
         match self {
             Message::QueryMessage(q) => Ok(q),
-            _ => Err(MessageError::WrongMessageType)
+            _ => Err(MessageError::WrongMessageType),
         }
     }
 
@@ -117,7 +88,7 @@ impl Message {
     pub fn into_reply(self) -> Result<ReplyMessage, MessageError> {
         match self {
             Message::ReplyMessage(r) => Ok(r),
-            _ => Err(MessageError::WrongMessageType)
+            _ => Err(MessageError::WrongMessageType),
         }
     }
 }
@@ -125,7 +96,6 @@ impl Message {
 /// Constructing
 ///
 impl Message {
-
     pub fn list_reply(reply: publication::ListReply) -> Self {
         Message::ReplyMessage(ReplyMessage::ListReply(reply))
     }
@@ -143,66 +113,59 @@ impl Message {
     }
 }
 
-
 //------------ QueryMessage --------------------------------------------------
 
 /// This type represents query type Publication Messages defined in RFC8181
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum QueryMessage {
     PublishDelta(publication::PublishDelta),
-    ListQuery
+    ListQuery,
 }
 
 /// # Decoding and Encoding
 ///
 impl QueryMessage {
     fn decode<R>(r: &mut XmlReader<R>) -> Result<Self, MessageError>
-        where R: io::Read {
+    where
+        R: io::Read,
+    {
         match r.next_start_name() {
-            Some("list") =>{
+            Some("list") => {
                 Self::decode_list_query(r)?;
                 Ok(QueryMessage::ListQuery)
-            },
+            }
             Some("publish") | Some("withdraw") => {
                 Ok(QueryMessage::PublishDelta(PublishDeltaXml::decode(r)?))
-            },
+            }
             None => {
                 // empty publish query
                 Ok(QueryMessage::PublishDelta(PublishDeltaXml::decode(r)?))
-            },
-            _ => {
-                Err(MessageError::ExpectedStart(
-                    "list, publish, or withdraw".to_string()))
+            }
+            _ => Err(MessageError::ExpectedStart(
+                "list, publish, or withdraw".to_string(),
+            )),
+        }
+    }
+
+    fn decode_list_query<R: io::Read>(r: &mut XmlReader<R>) -> Result<(), MessageError> {
+        r.take_named_element("list", |_, r| r.take_empty())?;
+        Ok(())
+    }
+
+    pub fn encode<W: io::Write>(&self, w: &mut XmlWriter<W>) -> Result<(), io::Error> {
+        match self {
+            QueryMessage::PublishDelta(d) => {
+                PublishDeltaXml::encode(d, w)?;
+            }
+            QueryMessage::ListQuery => {
+                Self::encode_list_query(w)?;
             }
         }
-    }
-
-    fn decode_list_query<R: io::Read>(
-        r: &mut XmlReader<R>
-    ) -> Result<(), MessageError> {
-        r.take_named_element("list", |_, r| { r.take_empty() })?;
         Ok(())
     }
 
-    pub fn encode<W: io::Write>(
-        &self,
-        w: &mut XmlWriter<W>
-    ) -> Result<(), io::Error> {
-        match self {
-            QueryMessage::PublishDelta(d) => { PublishDeltaXml::encode(d, w)?; }
-            QueryMessage::ListQuery       => { Self::encode_list_query(w)?; }
-        }
-        Ok(())
-    }
-
-    fn encode_list_query<W: io::Write>(
-        w: &mut XmlWriter<W>
-    ) -> Result<(), io::Error> {
-        w.put_element(
-            "list",
-            None,
-            |w| { w.empty() }
-        )?;
+    fn encode_list_query<W: io::Write>(w: &mut XmlWriter<W>) -> Result<(), io::Error> {
+        w.put_element("list", None, |w| w.empty())?;
 
         Ok(())
     }
@@ -210,12 +173,11 @@ impl QueryMessage {
     /// Consumes this and returns this a PublishRequest for our (json) API
     pub fn into_publish_request(self) -> publication::PublishRequest {
         match self {
-            QueryMessage::ListQuery       => publication::PublishRequest::List,
-            QueryMessage::PublishDelta(d) => publication::PublishRequest::Delta(d)
+            QueryMessage::ListQuery => publication::PublishRequest::List,
+            QueryMessage::PublishDelta(d) => publication::PublishRequest::Delta(d),
         }
     }
 }
-
 
 //------------ PublishDeltaXml -----------------------------------------------
 
@@ -227,21 +189,15 @@ pub struct PublishDeltaXml;
 pub enum PublishDeltaElement {
     Publish(publication::Publish),
     Update(publication::Update),
-    Withdraw(publication::Withdraw)
+    Withdraw(publication::Withdraw),
 }
 
 impl PublishDeltaElement {
-    fn encode<W: io::Write>(
-        &self,
-        w: &mut XmlWriter<W>
-    ) -> Result<(), io::Error> {
+    fn encode<W: io::Write>(&self, w: &mut XmlWriter<W>) -> Result<(), io::Error> {
         match self {
-            PublishDeltaElement::Publish(p) =>
-                PublishDeltaXml::encode_publish(p, w),
-            PublishDeltaElement::Update(u) =>
-                PublishDeltaXml::encode_update(u, w),
-            PublishDeltaElement::Withdraw(wd) =>
-                PublishDeltaXml::encode_withdraw(wd, w)
+            PublishDeltaElement::Publish(p) => PublishDeltaXml::encode_publish(p, w),
+            PublishDeltaElement::Update(u) => PublishDeltaXml::encode_update(u, w),
+            PublishDeltaElement::Withdraw(wd) => PublishDeltaXml::encode_withdraw(wd, w),
         }
     }
 }
@@ -253,9 +209,8 @@ impl PublishDeltaXml {
     /// Publish element, or an Update - wrapped in a PublishElement.
     fn decode_publish_or_update<R: io::Read>(
         a: &mut Attributes,
-        r: &mut XmlReader<R>
+        r: &mut XmlReader<R>,
     ) -> Result<PublishDeltaElement, MessageError> {
-
         let uri = uri::Rsync::from_string(a.take_req("uri")?)?;
         let tag = a.take_req("tag")?;
         let base64_string = r.take_chars()?;
@@ -264,11 +219,9 @@ impl PublishDeltaXml {
         let res = match a.take_opt("hash") {
             Some(hash_str) => {
                 let hash = EncodedHash::from(hash_str);
-                let update = publication::Update::new(
-                    Some(tag), uri, base64, hash
-                );
+                let update = publication::Update::new(Some(tag), uri, base64, hash);
                 Ok(PublishDeltaElement::Update(update))
-            },
+            }
             None => {
                 let publish = publication::Publish::new(Some(tag), uri, base64);
                 Ok(PublishDeltaElement::Publish(publish))
@@ -280,10 +233,7 @@ impl PublishDeltaXml {
     }
 
     /// Decodes a <withdraw/> XML element.
-    fn decode_withdraw(
-        a: &mut Attributes
-    ) -> Result<PublishDeltaElement, MessageError> {
-
+    fn decode_withdraw(a: &mut Attributes) -> Result<PublishDeltaElement, MessageError> {
         let hash_str = a.take_req("hash")?;
         let hash = EncodedHash::from(hash_str);
         let uri = uri::Rsync::from_string(a.take_req("uri")?)?;
@@ -298,38 +248,27 @@ impl PublishDeltaXml {
     /// Decodes from an XML input. Used for processing a list of elements.
     /// Will return None when there is no (more) applicable element.
     fn decode_opt<R: io::Read>(
-        r: &mut XmlReader<R>
+        r: &mut XmlReader<R>,
     ) -> Result<Option<PublishDeltaElement>, MessageError> {
-
-        r.take_opt_element(|t, mut a, r| {
-            match t.name.as_ref() {
-                "publish"  => {
-                    Ok(Some(Self::decode_publish_or_update(&mut a, r)?))
-                },
-                "withdraw" => {
-                    Ok(Some(Self::decode_withdraw(&mut a)?))
-                },
-                _ => {
-                    Err(MessageError::UnexpectedStart(t.name.clone()))
-                }
-            }
+        r.take_opt_element(|t, mut a, r| match t.name.as_ref() {
+            "publish" => Ok(Some(Self::decode_publish_or_update(&mut a, r)?)),
+            "withdraw" => Ok(Some(Self::decode_withdraw(&mut a)?)),
+            _ => Err(MessageError::UnexpectedStart(t.name.clone())),
         })
     }
-
-
 
     /// Decodes a query XML structure. Expects that the outer <msg> element
     /// is processed by PublicationMessage::decode
     pub fn decode<R: io::Read>(
-        r: &mut XmlReader<R>
+        r: &mut XmlReader<R>,
     ) -> Result<publication::PublishDelta, MessageError> {
         let mut bld = publication::PublishDeltaBuilder::new();
 
         while let Some(pde) = Self::decode_opt(r)? {
             match pde {
-                PublishDeltaElement::Publish(p)  => bld.add_publish(p),
-                PublishDeltaElement::Update(u)   => bld.add_update(u),
-                PublishDeltaElement::Withdraw(w) => bld.add_withdraw(w)
+                PublishDeltaElement::Publish(p) => bld.add_publish(p),
+                PublishDeltaElement::Update(u) => bld.add_update(u),
+                PublishDeltaElement::Withdraw(w) => bld.add_withdraw(w),
             }
         }
 
@@ -344,84 +283,67 @@ impl PublishDeltaXml {
     /// RFC8181 CMS.
     pub fn encode<W: io::Write>(
         delta: &publication::PublishDelta,
-        w: &mut XmlWriter<W>
+        w: &mut XmlWriter<W>,
     ) -> Result<(), io::Error> {
-        for p in delta.publishes()  { Self::encode_publish(p, w)?; }
-        for u in delta.updates()    { Self::encode_update(u, w)?; }
-        for wd in delta.withdraws() { Self::encode_withdraw(wd, w)?; }
+        for p in delta.publishes() {
+            Self::encode_publish(p, w)?;
+        }
+        for u in delta.updates() {
+            Self::encode_update(u, w)?;
+        }
+        for wd in delta.withdraws() {
+            Self::encode_withdraw(wd, w)?;
+        }
         Ok(())
     }
 
     fn encode_publish<W: io::Write>(
         publish: &publication::Publish,
-        w: &mut XmlWriter<W>
+        w: &mut XmlWriter<W>,
     ) -> Result<(), io::Error> {
-
         let uri = publish.uri().to_string();
         let tag = publish.tag_for_xml();
         let content = publish.content().to_string();
 
-        let a = [
-            ("tag", tag.as_ref()),
-            ("uri", uri.as_ref()),
-        ];
+        let a = [("tag", tag.as_ref()), ("uri", uri.as_ref())];
 
-        w.put_element(
-            "publish",
-            Some(&a),
-            |w| {
-                w.put_text(content.as_ref())
-            }
-        )
+        w.put_element("publish", Some(&a), |w| w.put_text(content.as_ref()))
     }
 
     fn encode_update<W: io::Write>(
         update: &publication::Update,
-        w: &mut XmlWriter<W>
+        w: &mut XmlWriter<W>,
     ) -> Result<(), io::Error> {
-
         let uri = update.uri().to_string();
         let tag = update.tag_for_xml();
 
         let a = [
             ("tag", tag.as_ref()),
             ("hash", update.hash().as_ref()),
-            ("uri", uri.as_ref())
+            ("uri", uri.as_ref()),
         ];
 
-        w.put_element(
-            "publish",
-            Some(&a),
-            |w| {
-                w.put_text(update.content().as_ref())
-            }
-        )
+        w.put_element("publish", Some(&a), |w| {
+            w.put_text(update.content().as_ref())
+        })
     }
 
     fn encode_withdraw<W: io::Write>(
         withdraw: &publication::Withdraw,
-        w: &mut XmlWriter<W>
+        w: &mut XmlWriter<W>,
     ) -> Result<(), io::Error> {
-
         let uri = withdraw.uri().to_string();
         let tag = withdraw.tag_for_xml();
 
         let a = [
             ("hash", withdraw.hash().as_ref()),
             ("tag", tag.as_ref()),
-            ("uri", uri.as_ref())
+            ("uri", uri.as_ref()),
         ];
 
-        w.put_element(
-            "withdraw",
-            Some(&a),
-            |w| {
-                w.empty()
-            }
-        )
+        w.put_element("withdraw", Some(&a), |w| w.empty())
     }
 }
-
 
 //------------ ReplyMessage --------------------------------------------------
 
@@ -430,7 +352,7 @@ impl PublishDeltaXml {
 pub enum ReplyMessage {
     SuccessReply,
     ListReply(publication::ListReply),
-    ErrorReply(ErrorReply)
+    ErrorReply(ErrorReply),
 }
 
 /// # Decoding and Encoding
@@ -439,76 +361,70 @@ impl ReplyMessage {
     /// Decodes XML into a ReplyMessage containing either a Success, List or
     /// Error.
     fn decode<R>(r: &mut XmlReader<R>) -> Result<Self, MessageError>
-        where R: io::Read {
+    where
+        R: io::Read,
+    {
         match r.next_start_name() {
             Some("success") => {
                 Self::decode_success_reply(r)?;
                 Ok(ReplyMessage::SuccessReply)
-            },
-            Some("report_error") => {
-                Ok(ReplyMessage::ErrorReply(ErrorReply::decode(r)?))
-            },
-            Some("list") => {
-                Ok(ReplyMessage::ListReply(Self::decode_list_reply(r)?))
-            },
+            }
+            Some("report_error") => Ok(ReplyMessage::ErrorReply(ErrorReply::decode(r)?)),
+            Some("list") => Ok(ReplyMessage::ListReply(Self::decode_list_reply(r)?)),
             None => {
                 // An empty list response
                 Ok(ReplyMessage::ListReply(Self::decode_list_reply(r)?))
-            },
+            }
             _ => Err(MessageError::ExpectedStart(
-                "success, list or report_error".to_string()))
+                "success, list or report_error".to_string(),
+            )),
         }
     }
 
     /// Decodes a <success/> reply from XML.
-    pub fn decode_success_reply<R: io::Read>(
-        r: &mut XmlReader<R>
-    ) -> Result<(), MessageError> {
-        r.take_named_element("success", |_, r| { r.take_empty() })?;
+    pub fn decode_success_reply<R: io::Read>(r: &mut XmlReader<R>) -> Result<(), MessageError> {
+        r.take_named_element("success", |_, r| r.take_empty())?;
         Ok(())
     }
 
     /// Decodes XML to a ListReply.
     fn decode_list_reply<R: io::Read>(
-        r: &mut XmlReader<R>
+        r: &mut XmlReader<R>,
     ) -> Result<publication::ListReply, MessageError> {
-
         let mut elements = vec![];
 
         loop {
-            let e = r.take_opt_element(|t, mut a, _r| {
-                match t.name.as_ref() {
-                    "list" => {
-                        let hash = EncodedHash::from(a.take_req("hash")?);
-                        let uri = uri::Rsync::from_string(a.take_req("uri")?)?;
-                        a.exhausted()?;
+            let e = r.take_opt_element(|t, mut a, _r| match t.name.as_ref() {
+                "list" => {
+                    let hash = EncodedHash::from(a.take_req("hash")?);
+                    let uri = uri::Rsync::from_string(a.take_req("uri")?)?;
+                    a.exhausted()?;
 
-                        Ok(Some(publication::ListElement::new(uri, hash)))
-                    },
-                    _ => {
-                        Err(MessageError::UnexpectedStart(t.name.clone()))
-                    }
+                    Ok(Some(publication::ListElement::new(uri, hash)))
                 }
+                _ => Err(MessageError::UnexpectedStart(t.name.clone())),
             })?;
 
             match e {
                 Some(e) => elements.push(e),
-                None    => break
+                None => break,
             }
         }
         Ok(publication::ListReply::new(elements))
     }
 
     /// Encodes a ReplyMessage for inclusion in an RFC8181 Protocol CMS.
-    pub fn encode<W: io::Write>(
-        &self,
-        w: &mut XmlWriter<W>
-    ) -> Result<(), io::Error> {
-
+    pub fn encode<W: io::Write>(&self, w: &mut XmlWriter<W>) -> Result<(), io::Error> {
         match self {
-            ReplyMessage::SuccessReply  => { Self::encode_success_reply(w)?; }
-            ReplyMessage::ListReply(l)  => { Self::encode_list_reply(l, w)?; }
-            ReplyMessage::ErrorReply(e) => { e.encode(w)?; }
+            ReplyMessage::SuccessReply => {
+                Self::encode_success_reply(w)?;
+            }
+            ReplyMessage::ListReply(l) => {
+                Self::encode_list_reply(l, w)?;
+            }
+            ReplyMessage::ErrorReply(e) => {
+                e.encode(w)?;
+            }
         }
         Ok(())
     }
@@ -516,16 +432,15 @@ impl ReplyMessage {
     /// Encodes a ListReply to XML.
     fn encode_list_reply<W: io::Write>(
         reply: &publication::ListReply,
-        w: &mut XmlWriter<W>
+        w: &mut XmlWriter<W>,
     ) -> Result<(), io::Error> {
-
         for el in reply.elements() {
             let uri = el.uri().to_string();
 
             w.put_element(
                 "list",
                 Some(&[("hash", el.hash().as_ref()), ("uri", uri.as_ref())]),
-                |w| { w.empty() }
+                |w| w.empty(),
             )?;
         }
 
@@ -533,19 +448,11 @@ impl ReplyMessage {
     }
 
     /// Encodes a success reply to xml
-    pub fn encode_success_reply<W: io::Write>(
-        w: &mut XmlWriter<W>
-    ) -> Result<(), io::Error> {
-
-        w.put_element(
-            "success",
-            None,
-            |w| { w.empty() }
-        )?;
+    pub fn encode_success_reply<W: io::Write>(w: &mut XmlWriter<W>) -> Result<(), io::Error> {
+        w.put_element("success", None, |w| w.empty())?;
 
         Ok(())
     }
-
 }
 
 //------------ ErrorReply ----------------------------------------------------
@@ -554,51 +461,46 @@ impl ReplyMessage {
 /// https://tools.ietf.org/html/rfc8181#section-3.5 and 3.6
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ErrorReply {
-    errors: Vec<ReportError>
+    errors: Vec<ReportError>,
 }
 
 impl ErrorReply {
-    fn decode_error_text<R: io::Read>(r: &mut XmlReader<R>)
-                                      -> Result<Option<String>, MessageError> {
-
+    fn decode_error_text<R: io::Read>(
+        r: &mut XmlReader<R>,
+    ) -> Result<Option<String>, MessageError> {
         Ok(Some(r.take_named_element(
             "error_text",
             |a, r| -> Result<String, MessageError> {
                 a.exhausted()?;
                 Ok(r.take_chars()?)
-            }
+            },
         )?))
     }
 
     fn decode_failed_pdu<R: io::Read>(
-        r: &mut XmlReader<R>
+        r: &mut XmlReader<R>,
     ) -> Result<Option<PublishDeltaElement>, MessageError> {
         Ok(Some(r.take_named_element(
             "failed_pdu",
-            |a, r| -> Result<PublishDeltaElement, MessageError>{
+            |a, r| -> Result<PublishDeltaElement, MessageError> {
                 a.exhausted()?;
                 match PublishDeltaXml::decode_opt(r)? {
                     Some(p) => Ok(p),
-                    None => {
-                        Err(MessageError::MissingContent(
-                            "Expected PDU".to_string()))
-                    }
+                    None => Err(MessageError::MissingContent("Expected PDU".to_string())),
                 }
-            }
+            },
         )?))
     }
 
     /// Decodes XML into an ErrorReport.
-    pub fn decode<R: io::Read>(r: &mut XmlReader<R>)
-                               -> Result<Self, MessageError> {
-
+    pub fn decode<R: io::Read>(r: &mut XmlReader<R>) -> Result<Self, MessageError> {
         let mut errors = vec![];
         loop {
             let e = r.take_opt_element(|t, mut a, r| {
                 match t.name.as_ref() {
                     "report_error" => {
-                        let error_code = ReportErrorCode::from_str(
-                            a.take_req("error_code")?.as_ref())?;
+                        let error_code =
+                            ReportErrorCode::from_str(a.take_req("error_code")?.as_ref())?;
                         let tag = a.take_req("tag")?;
                         let mut error_text: Option<String> = None;
                         let mut failed_pdu: Option<PublishDeltaElement> = None;
@@ -609,77 +511,55 @@ impl ErrorReply {
                             match r.next_start_name() {
                                 Some("error_text") => {
                                     error_text = Self::decode_error_text(r)?;
-                                },
+                                }
                                 Some("failed_pdu") => {
                                     failed_pdu = Self::decode_failed_pdu(r)?;
-                                },
-                                _ => { }
+                                }
+                                _ => {}
                             }
                         }
 
-                        Ok(Some(
-                            ReportError{
-                                error_code,
-                                tag,
-                                error_text,
-                                failed_pdu
-                            }))
-                    },
-                    _ => {
-                        Err(MessageError::UnexpectedStart(t.name.clone()))
+                        Ok(Some(ReportError {
+                            error_code,
+                            tag,
+                            error_text,
+                            failed_pdu,
+                        }))
                     }
+                    _ => Err(MessageError::UnexpectedStart(t.name.clone())),
                 }
             })?;
             match e {
                 Some(e) => errors.push(e),
-                None => break
+                None => break,
             }
         }
-        Ok(ErrorReply{errors})
+        Ok(ErrorReply { errors })
     }
 
     /// Encodes an ErrorReport into XML.
-    pub fn encode<W: io::Write>(&self, w: &mut XmlWriter<W>)
-                                -> Result<(), io::Error> {
-
+    pub fn encode<W: io::Write>(&self, w: &mut XmlWriter<W>) -> Result<(), io::Error> {
         for e in &self.errors {
-
             let error_code = format!("{}", e.error_code);
-            let a = [
-                ("error_code", error_code.as_ref()),
-                ("tag", e.tag.as_ref())
-            ];
+            let a = [("error_code", error_code.as_ref()), ("tag", e.tag.as_ref())];
 
-            w.put_element(
-                "report_error",
-                Some(&a),
-                |w| {
-
-                    match &e.error_text {
-                        None => {},
-                        Some(t) => {
-                            w.put_element(
-                                "error_text",
-                                None,
-                                |w| { w.put_text(t.as_ref())}
-                            )?;
-                        }
+            w.put_element("report_error", Some(&a), |w| {
+                match &e.error_text {
+                    None => {}
+                    Some(t) => {
+                        w.put_element("error_text", None, |w| w.put_text(t.as_ref()))?;
                     }
-
-                    match &e.failed_pdu {
-                        None => {},
-                        Some(p) => {
-                            w.put_element(
-                                "failed_pdu",
-                                None,
-                                |w| { p.encode(w) }
-                            )?;
-                        }
-                    }
-
-                    w.empty()
                 }
-            )?;
+
+                match &e.failed_pdu {
+                    None => {}
+                    Some(p) => {
+                        w.put_element("failed_pdu", None, |w| p.encode(w))?;
+                    }
+                }
+
+                w.empty()
+            })?;
         }
 
         Ok(())
@@ -701,17 +581,18 @@ impl ErrorReply {
     }
 }
 
-
 //------------ ErrorReplyBuilder ---------------------------------------------
 
 #[derive(Default)]
 pub struct ErrorReplyBuilder {
-    errors: Vec<ReportError>
+    errors: Vec<ReportError>,
 }
 
 impl ErrorReplyBuilder {
     fn with_capacity(n: usize) -> Self {
-        ErrorReplyBuilder { errors: Vec::with_capacity(n) }
+        ErrorReplyBuilder {
+            errors: Vec::with_capacity(n),
+        }
     }
 
     /// Adds a ReportError to the ErrorReply. Multiple allowed.
@@ -722,14 +603,11 @@ impl ErrorReplyBuilder {
     /// Creates an ErrorReply wrapped in a Message for inclusion in a publication
     /// protocol CMS message.
     pub fn build_message(self) -> Message {
-        Message::ReplyMessage(
-            ReplyMessage::ErrorReply(
-                ErrorReply { errors: self.errors }
-            )
-        )
+        Message::ReplyMessage(ReplyMessage::ErrorReply(ErrorReply {
+            errors: self.errors,
+        }))
     }
 }
-
 
 //------------ ReportError ---------------------------------------------------
 
@@ -738,65 +616,63 @@ pub struct ReportError {
     error_code: ReportErrorCode,
     tag: String,
     error_text: Option<String>,
-    failed_pdu: Option<PublishDeltaElement>
+    failed_pdu: Option<PublishDeltaElement>,
 }
 
 impl ReportError {
     /// Creates an entry to include in an ErrorReply. Multiple entries may be
     /// included.
-    pub fn reply(
-        error_code: ReportErrorCode,
-        failed_pdu: Option<PublishDeltaElement>
-    ) -> Self {
+    pub fn reply(error_code: ReportErrorCode, failed_pdu: Option<PublishDeltaElement>) -> Self {
         let tag = match failed_pdu {
             None => "".to_string(),
             Some(ref pdu) => match pdu {
-                PublishDeltaElement::Publish(p)  => p.tag_for_xml(),
-                PublishDeltaElement::Update(u)   => u.tag_for_xml(),
-                PublishDeltaElement::Withdraw(w) => w.tag_for_xml()
-            }
+                PublishDeltaElement::Publish(p) => p.tag_for_xml(),
+                PublishDeltaElement::Update(u) => u.tag_for_xml(),
+                PublishDeltaElement::Withdraw(w) => w.tag_for_xml(),
+            },
         };
         let error_text = Some(error_code.to_text());
 
         ReportError {
-            error_code, tag, error_text, failed_pdu
+            error_code,
+            tag,
+            error_text,
+            failed_pdu,
         }
     }
 }
-
 
 //------------ ReportErrorCodes ----------------------------------------------
 
 /// The allowed error codes defined in RFC8181 section 2.5
 #[derive(Clone, Debug, Display, Eq, PartialEq)]
 pub enum ReportErrorCode {
-    #[display(fmt="xml_error")]
+    #[display(fmt = "xml_error")]
     XmlError,
 
-    #[display(fmt="permission_failure")]
+    #[display(fmt = "permission_failure")]
     PermissionFailure,
 
-    #[display(fmt="bad_cms_signature")]
+    #[display(fmt = "bad_cms_signature")]
     BadCmsSignature,
 
-    #[display(fmt="object_already_present")]
+    #[display(fmt = "object_already_present")]
     ObjectAlreadyPresent,
 
-    #[display(fmt="no_object_present")]
+    #[display(fmt = "no_object_present")]
     NoObjectPresent,
 
-    #[display(fmt="no_object_matching_hash")]
+    #[display(fmt = "no_object_matching_hash")]
     NoObjectMatchingHash,
 
-    #[display(fmt="consistency_problem")]
+    #[display(fmt = "consistency_problem")]
     ConsistencyProblem,
 
-    #[display(fmt="other_error")]
+    #[display(fmt = "other_error")]
     OtherError,
 }
 
 impl ReportErrorCode {
-
     /// Resolves the error type strings used in XML to the correct types.
     fn from_str(v: &str) -> Result<ReportErrorCode, MessageError> {
         match v {
@@ -808,7 +684,7 @@ impl ReportErrorCode {
             "no_object_matching_hash" => Ok(ReportErrorCode::NoObjectMatchingHash),
             "consistency_problem" => Ok(ReportErrorCode::ConsistencyProblem),
             "other_error" => Ok(ReportErrorCode::OtherError),
-            _ => Err(MessageError::InvalidErrorCode(v.to_string()))
+            _ => Err(MessageError::InvalidErrorCode(v.to_string())),
         }
     }
 
@@ -827,7 +703,6 @@ impl ReportErrorCode {
         }.to_string()
     }
 }
-
 
 //------------ PublicationMessageError ---------------------------------------
 
@@ -882,7 +757,6 @@ impl From<uri::Error> for MessageError {
     }
 }
 
-
 //------------ Tests ---------------------------------------------------------
 
 #[cfg(test)]
@@ -896,13 +770,14 @@ mod tests {
     use crate::util::test::rsync;
 
     struct ListReplyBuilder {
-        elements: Vec<publication::ListElement>
+        elements: Vec<publication::ListElement>,
     }
 
     impl ListReplyBuilder {
-
         fn with_capacity(n: usize) -> ListReplyBuilder {
-            ListReplyBuilder { elements: Vec::with_capacity(n) }
+            ListReplyBuilder {
+                elements: Vec::with_capacity(n),
+            }
         }
 
         pub fn add(&mut self, object: &Bytes, uri: uri::Rsync) {
@@ -914,9 +789,7 @@ mod tests {
         /// Creates a ListReply wrapped in a Message for inclusion in a publication
         /// protocol CMS message.
         pub fn build_message(self) -> Message {
-            Message::list_reply(
-                publication::ListReply::new(self.elements)
-            )
+            Message::list_reply(publication::ListReply::new(self.elements))
         }
     }
 
@@ -981,7 +854,8 @@ mod tests {
         let m = Message::success_reply();
         let v = m.encode_vec();
         let produced_xml = str::from_utf8(&v).unwrap();
-        let expected_xml = include_str!("../../test-resources/publication/generated/success_reply_result.xml");
+        let expected_xml =
+            include_str!("../../test-resources/publication/generated/success_reply_result.xml");
 
         assert_eq!(produced_xml, expected_xml);
     }
@@ -998,7 +872,8 @@ mod tests {
 
         let v = m.encode_vec();
         let produced_xml = str::from_utf8(&v).unwrap();
-        let expected_xml = include_str!("../../test-resources/publication/generated/list_reply_result.xml");
+        let expected_xml =
+            include_str!("../../test-resources/publication/generated/list_reply_result.xml");
 
         assert_eq!(produced_xml, expected_xml);
     }
@@ -1007,24 +882,22 @@ mod tests {
     fn should_create_error_reply() {
         let object = Bytes::from_static(include_bytes!("../../test-resources/remote/cms_ta.cer"));
         let object = Base64::from_content(&object);
-        let publish = publication::Publish::with_hash_tag(
-            rsync("rsync://host/path/cms-ta.cer"),
-            object
-        );
+        let publish =
+            publication::Publish::with_hash_tag(rsync("rsync://host/path/cms-ta.cer"), object);
         let error_pdu = PublishDeltaElement::Publish(publish);
 
         let mut b = ErrorReply::build_with_capacity(2);
         b.add(ReportError::reply(
-            ReportErrorCode::ObjectAlreadyPresent, Some(error_pdu))
-        );
-        b.add(ReportError::reply(
-            ReportErrorCode::OtherError, None)
-        );
+            ReportErrorCode::ObjectAlreadyPresent,
+            Some(error_pdu),
+        ));
+        b.add(ReportError::reply(ReportErrorCode::OtherError, None));
         let m = b.build_message();
 
         let v = m.encode_vec();
         let produced_xml = str::from_utf8(&v).unwrap();
-        let expected_xml = include_str!("../../test-resources/publication/generated/error_reply_result.xml");
+        let expected_xml =
+            include_str!("../../test-resources/publication/generated/error_reply_result.xml");
 
         assert_eq!(produced_xml, expected_xml);
     }
@@ -1034,7 +907,8 @@ mod tests {
         let lq = Message::list_query();
         let vec = lq.encode_vec();
         let produced_xml = str::from_utf8(&vec).unwrap();
-        let expected_xml = include_str!("../../test-resources/publication/generated/list_query_result.xml");
+        let expected_xml =
+            include_str!("../../test-resources/publication/generated/list_query_result.xml");
 
         assert_eq!(produced_xml, expected_xml);
     }
@@ -1049,33 +923,28 @@ mod tests {
 
         let mut builder = publication::PublishDeltaBuilder::new();
 
-        builder.add_withdraw(
-            publication::Withdraw::with_hash_tag(
-                rsync("rsync://host/path/cms-ta.cer"),
-                object_hash.clone()
-            )
-        );
+        builder.add_withdraw(publication::Withdraw::with_hash_tag(
+            rsync("rsync://host/path/cms-ta.cer"),
+            object_hash.clone(),
+        ));
 
-        builder.add_publish(
-            publication::Publish::with_hash_tag(
-                rsync("rsync://host/path/cms-ta.cer"),
-                object
-            )
-        );
+        builder.add_publish(publication::Publish::with_hash_tag(
+            rsync("rsync://host/path/cms-ta.cer"),
+            object,
+        ));
 
-        builder.add_update(
-            publication::Update::with_hash_tag(
-                rsync("rsync://host/path/cms-ta.cer"),
-                object2,
-                object_hash
-            )
-        );
+        builder.add_update(publication::Update::with_hash_tag(
+            rsync("rsync://host/path/cms-ta.cer"),
+            object2,
+            object_hash,
+        ));
 
         let m = Message::publish_delta_query(builder.finish());
         let vec = m.encode_vec();
         let produced_xml = str::from_utf8(&vec).unwrap();
 
-        let expected_xml = include_str!("../../test-resources/publication/generated/publish_query_result.xml");
+        let expected_xml =
+            include_str!("../../test-resources/publication/generated/publish_query_result.xml");
 
         assert_eq!(produced_xml, expected_xml);
     }

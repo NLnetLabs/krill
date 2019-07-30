@@ -1,8 +1,7 @@
 //! Support for requests sent to the Json API
-use rpki::uri;
-use crate::api::{ Base64, EncodedHash };
+use crate::api::{Base64, EncodedHash};
 use crate::util::file::CurrentFile;
-
+use rpki::uri;
 
 //------------ PublishRequest ------------------------------------------------
 
@@ -11,9 +10,8 @@ use crate::util::file::CurrentFile;
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum PublishRequest {
     List, // See https://tools.ietf.org/html/rfc8181#section-2.3
-    Delta(PublishDelta)
+    Delta(PublishDelta),
 }
-
 
 //------------ PublishDelta ------------------------------------------------
 
@@ -23,16 +21,16 @@ pub enum PublishRequest {
 pub struct PublishDelta {
     publishes: Vec<Publish>,
     updates: Vec<Update>,
-    withdraws: Vec<Withdraw>
+    withdraws: Vec<Withdraw>,
 }
 
 impl PublishDelta {
-    pub fn new(
-        publishes: Vec<Publish>,
-        updates: Vec<Update>,
-        withdraws: Vec<Withdraw>
-    ) -> Self {
-        PublishDelta { publishes, updates, withdraws }
+    pub fn new(publishes: Vec<Publish>, updates: Vec<Update>, withdraws: Vec<Withdraw>) -> Self {
+        PublishDelta {
+            publishes,
+            updates,
+            withdraws,
+        }
     }
 
     pub fn publishes(&self) -> &Vec<Publish> {
@@ -49,13 +47,14 @@ impl PublishDelta {
         self.publishes.len() + self.updates.len() + self.withdraws.len()
     }
 
-    pub fn is_empty(&self) -> bool { self.len() == 0 }
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 
     pub fn unwrap(self) -> (Vec<Publish>, Vec<Update>, Vec<Withdraw>) {
         (self.publishes, self.updates, self.withdraws)
     }
 }
-
 
 //------------ PublishDeltaBuilder -------------------------------------------
 
@@ -63,7 +62,7 @@ impl PublishDelta {
 pub struct PublishDeltaBuilder {
     publishes: Vec<Publish>,
     updates: Vec<Update>,
-    withdraws: Vec<Withdraw>
+    withdraws: Vec<Withdraw>,
 }
 
 impl PublishDeltaBuilder {
@@ -87,11 +86,10 @@ impl PublishDeltaBuilder {
         PublishDelta {
             publishes: self.publishes,
             updates: self.updates,
-            withdraws: self.withdraws
+            withdraws: self.withdraws,
         }
     }
 }
-
 
 //------------ Publish ------------------------------------------------------
 
@@ -102,7 +100,7 @@ impl PublishDeltaBuilder {
 pub struct Publish {
     tag: Option<String>,
     uri: uri::Rsync,
-    content: Base64
+    content: Base64,
 }
 
 impl Publish {
@@ -114,21 +112,26 @@ impl Publish {
         Publish { tag, uri, content }
     }
 
-    pub fn tag(&self) -> &Option<String> { &self.tag }
+    pub fn tag(&self) -> &Option<String> {
+        &self.tag
+    }
     pub fn tag_for_xml(&self) -> String {
         match &self.tag {
             None => "".to_string(),
-            Some(t) => t.clone()
+            Some(t) => t.clone(),
         }
     }
-    pub fn uri(&self) -> &uri::Rsync{ &self.uri}
-    pub fn content(&self) -> &Base64{ &self.content }
+    pub fn uri(&self) -> &uri::Rsync {
+        &self.uri
+    }
+    pub fn content(&self) -> &Base64 {
+        &self.content
+    }
 
     pub fn unwrap(self) -> (Option<String>, uri::Rsync, Base64) {
         (self.tag, self.uri, self.content)
     }
 }
-
 
 //------------ Update --------------------------------------------------------
 
@@ -148,35 +151,48 @@ impl Update {
         tag: Option<String>,
         uri: uri::Rsync,
         content: Base64,
-        old_hash: EncodedHash
+        old_hash: EncodedHash,
     ) -> Self {
-        Update { tag, uri, content, hash: old_hash }
+        Update {
+            tag,
+            uri,
+            content,
+            hash: old_hash,
+        }
     }
-    pub fn with_hash_tag(
-        uri: uri::Rsync,
-        content: Base64,
-        old_hash: EncodedHash
-    ) -> Self {
+    pub fn with_hash_tag(uri: uri::Rsync, content: Base64, old_hash: EncodedHash) -> Self {
         let tag = Some(content.to_hex_hash());
-        Update { tag, uri, content, hash: old_hash }
+        Update {
+            tag,
+            uri,
+            content,
+            hash: old_hash,
+        }
     }
 
-    pub fn tag(&self) -> &Option<String> { &self.tag }
+    pub fn tag(&self) -> &Option<String> {
+        &self.tag
+    }
     pub fn tag_for_xml(&self) -> String {
         match &self.tag {
             Some(t) => t.clone(),
-            None => "".to_string()
+            None => "".to_string(),
         }
     }
-    pub fn uri(&self) -> &uri::Rsync { &self.uri}
-    pub fn content(&self) -> &Base64 { &self.content }
-    pub fn hash(&self) -> &EncodedHash { &self.hash }
+    pub fn uri(&self) -> &uri::Rsync {
+        &self.uri
+    }
+    pub fn content(&self) -> &Base64 {
+        &self.content
+    }
+    pub fn hash(&self) -> &EncodedHash {
+        &self.hash
+    }
 
     pub fn unwrap(self) -> (Option<String>, uri::Rsync, Base64, EncodedHash) {
         (self.tag, self.uri, self.content, self.hash)
     }
 }
-
 
 //------------ Withdraw ------------------------------------------------------
 
@@ -204,19 +220,25 @@ impl Withdraw {
         Withdraw {
             tag: None,
             uri: el.uri().clone(),
-            hash: el.hash().clone()
+            hash: el.hash().clone(),
         }
     }
 
-    pub fn tag(&self) -> &Option<String> { &self.tag }
+    pub fn tag(&self) -> &Option<String> {
+        &self.tag
+    }
     pub fn tag_for_xml(&self) -> String {
         match &self.tag {
             Some(t) => t.clone(),
-            None => "".to_string()
+            None => "".to_string(),
         }
     }
-    pub fn uri(&self) -> &uri::Rsync { &self.uri}
-    pub fn hash(&self) -> &EncodedHash { &self.hash }
+    pub fn uri(&self) -> &uri::Rsync {
+        &self.uri
+    }
+    pub fn hash(&self) -> &EncodedHash {
+        &self.hash
+    }
 
     pub fn unwrap(self) -> (Option<String>, uri::Rsync, EncodedHash) {
         (self.tag, self.uri, self.hash)
@@ -228,9 +250,8 @@ impl Withdraw {
 /// This type is used to wrap API responses for publication requests.
 pub enum PublishReply {
     Success, // See https://tools.ietf.org/html/rfc8181#section-3.4
-    List(ListReply)
+    List(ListReply),
 }
-
 
 //------------ ListReply -----------------------------------------------------
 
@@ -238,7 +259,7 @@ pub enum PublishReply {
 /// https://tools.ietf.org/html/rfc8181#section-2.3
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ListReply {
-    elements: Vec<ListElement>
+    elements: Vec<ListElement>,
 }
 
 impl ListReply {
@@ -247,7 +268,10 @@ impl ListReply {
     }
 
     pub fn from_files(files: Vec<CurrentFile>) -> Self {
-        let elements = files.into_iter().map(CurrentFile::into_list_element).collect();
+        let elements = files
+            .into_iter()
+            .map(CurrentFile::into_list_element)
+            .collect();
         ListReply { elements }
     }
 
@@ -256,15 +280,14 @@ impl ListReply {
     }
 }
 
-
 //------------ ListElement ---------------------------------------------------
 
 /// This type represents a single object that is published at a publication
 /// server.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct ListElement {
-    uri:     uri::Rsync,
-    hash:    EncodedHash
+    uri: uri::Rsync,
+    hash: EncodedHash,
 }
 
 impl ListElement {
@@ -272,6 +295,10 @@ impl ListElement {
         ListElement { uri, hash }
     }
 
-    pub fn uri(&self) -> &uri::Rsync { &self.uri }
-    pub fn hash(&self) -> &EncodedHash { &self.hash }
+    pub fn uri(&self) -> &uri::Rsync {
+        &self.uri
+    }
+    pub fn hash(&self) -> &EncodedHash {
+        &self.hash
+    }
 }

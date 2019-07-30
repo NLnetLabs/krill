@@ -1,44 +1,22 @@
 //! Event sourcing support for Krill
 
 mod agg;
-pub use self::agg::{
-    Aggregate,
-};
+pub use self::agg::Aggregate;
 
 mod evt;
-pub use self::evt::{
-    Event,
-    StoredEvent
-};
+pub use self::evt::{Event, StoredEvent};
 
 mod cmd;
-pub use self::cmd::{
-    Command,
-    CommandDetails,
-    SentCommand
-};
+pub use self::cmd::{Command, CommandDetails, SentCommand};
 
 mod store;
-pub use self::store::{
-    DiskKeyStore,
-    KeyStore,
-    KeyStoreError,
-    Storable
-};
+pub use self::store::{DiskKeyStore, KeyStore, KeyStoreError, Storable};
 
 mod agg_store;
-pub use self::agg_store::{
-    AggregateStore,
-    AggregateStoreError,
-    DiskAggregateStore
-};
+pub use self::agg_store::{AggregateStore, AggregateStoreError, DiskAggregateStore};
 
 mod listener;
-pub use self::listener::{
-    EventCounter,
-    EventListener
-};
-
+pub use self::listener::{EventCounter, EventListener};
 
 //------------ Tests ---------------------------------------------------------
 
@@ -69,19 +47,23 @@ mod tests {
     type InitPersonEvent = StoredEvent<InitPersonDetails>;
 
     impl InitPersonEvent {
-
         pub fn init(id: &Handle, name: &str) -> Self {
-            StoredEvent::new(id, 0, InitPersonDetails { name: name.to_string()})
+            StoredEvent::new(
+                id,
+                0,
+                InitPersonDetails {
+                    name: name.to_string(),
+                },
+            )
         }
     }
 
     #[derive(Clone, Deserialize, Serialize)]
     struct InitPersonDetails {
-        pub name: String
+        pub name: String,
     }
 
-
-//------------ InitPersonEvent -----------------------------------------------
+    //------------ InitPersonEvent -----------------------------------------------
 
     /// Every aggregate defines their own set of events - i.e. state changes. The
     /// state of an aggregate can only change when events are applied. And events
@@ -97,7 +79,7 @@ mod tests {
     #[derive(Clone, Deserialize, Serialize)]
     enum PersonEventDetails {
         NameChanged(String),
-        HadBirthday
+        HadBirthday,
     }
 
     impl PersonEvent {
@@ -106,13 +88,9 @@ mod tests {
         }
 
         pub fn name_changed(p: &Person, name: String) -> Self {
-            StoredEvent::new(
-                p.id(),
-                p.version,
-                PersonEventDetails::NameChanged(name))
+            StoredEvent::new(p.id(), p.version, PersonEventDetails::NameChanged(name))
         }
     }
-
 
     //------------ PersonCommand -------------------------------------------------
 
@@ -134,7 +112,7 @@ mod tests {
     #[derive(Clone, Deserialize, Serialize)]
     enum PersonCommandDetails {
         ChangeName(String),
-        GoAroundTheSun
+        GoAroundTheSun,
     }
 
     impl CommandDetails for PersonCommandDetails {
@@ -142,11 +120,9 @@ mod tests {
     }
 
     impl PersonCommand {
-
         pub fn go_around_sun(id: &Handle, version: Option<u64>) -> Self {
             Self::new(id, version, PersonCommandDetails::GoAroundTheSun)
         }
-
 
         pub fn change_name(id: &Handle, version: Option<u64>, s: &str) -> Self {
             let details = PersonCommandDetails::ChangeName(s.to_string());
@@ -161,18 +137,16 @@ mod tests {
     #[derive(Clone, Debug, Display)]
     enum PersonError {
         #[display(fmt = "No person can live longer than 255 years")]
-        TooOld
+        TooOld,
     }
 
     impl std::error::Error for PersonError {}
-
 
     //------------ PersonResult --------------------------------------------------
 
     /// A shorthand for the result type returned by the process_command function
     /// of the Person aggregate.
     type PersonResult = Result<Vec<PersonEvent>, PersonError>;
-
 
     //------------ Person ------------------------------------------------------
 
@@ -191,14 +165,22 @@ mod tests {
         version: u64,
 
         name: String,
-        age: u8
+        age: u8,
     }
 
     impl Person {
-        pub fn id(&self) -> &Handle { &self.id }
-        pub fn version(&self) -> u64 { self.version }
-        pub fn name(&self) -> &String { &self.name }
-        pub fn age(&self) -> u8 { self.age }
+        pub fn id(&self) -> &Handle {
+            &self.id
+        }
+        pub fn version(&self) -> u64 {
+            self.version
+        }
+        pub fn name(&self) -> &String {
+            &self.name
+        }
+        pub fn age(&self) -> u8 {
+            self.age
+        }
     }
 
     impl Aggregate for Person {
@@ -210,7 +192,10 @@ mod tests {
         fn init(event: InitPersonEvent) -> Result<Self, PersonError> {
             let (id, _version, init) = event.unwrap();
             Ok(Person {
-                id, version: 1, name: init.name, age: 0
+                id,
+                version: 1,
+                name: init.name,
+                age: 0,
             })
         }
 
@@ -220,8 +205,8 @@ mod tests {
 
         fn apply(&mut self, event: PersonEvent) {
             match event.into_details() {
-                PersonEventDetails::NameChanged(name) => { self.name = name },
-                PersonEventDetails::HadBirthday => { self.age += 1 }
+                PersonEventDetails::NameChanged(name) => self.name = name,
+                PersonEventDetails::HadBirthday => self.age += 1,
             }
             self.version += 1;
         }
@@ -231,7 +216,7 @@ mod tests {
                 PersonCommandDetails::ChangeName(name) => {
                     let event = PersonEvent::name_changed(&self, name);
                     Ok(vec![event])
-                },
+                }
                 PersonCommandDetails::GoAroundTheSun => {
                     if self.age == 255 {
                         Err(PersonError::TooOld)
@@ -247,7 +232,6 @@ mod tests {
     #[test]
     fn test() {
         test::test_under_tmp(|d| {
-
             let counter = Arc::new(EventCounter::default());
             let mut manager = DiskAggregateStore::<Person>::new(&d, "person").unwrap();
             manager.add_listener(counter.clone());
@@ -269,7 +253,7 @@ mod tests {
 
                 age += 1;
                 if age == 21 {
-                    break
+                    break;
                 }
             }
 
@@ -290,7 +274,6 @@ mod tests {
             assert_eq!(21, alice.age());
 
             assert_eq!(22, counter.total())
-
         })
     }
 }

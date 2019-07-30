@@ -1,29 +1,14 @@
-use std::{io, fs};
-use std::path::PathBuf;
-use std::time::Duration;
-use rpki::uri;
 use krill_commons::api::admin::Handle;
 use krill_commons::api::rrdp::{
-    Delta,
-    DeltaElements,
-    DeltaRef,
-    FileRef,
-    Notification,
-    NotificationUpdate,
-    Snapshot,
+    Delta, DeltaElements, DeltaRef, FileRef, Notification, NotificationUpdate, Snapshot,
     SnapshotRef,
 };
-use krill_commons::eventsourcing::{
-    Aggregate,
-    CommandDetails,
-    StoredEvent,
-    SentCommand,
-};
-use krill_commons::util::{
-    file,
-    Time
-};
-
+use krill_commons::eventsourcing::{Aggregate, CommandDetails, SentCommand, StoredEvent};
+use krill_commons::util::{file, Time};
+use rpki::uri;
+use std::path::PathBuf;
+use std::time::Duration;
+use std::{fs, io};
 
 const RRDP_FOLDER: &str = "rrdp";
 const RSYNC_FOLDER: &str = "rsync";
@@ -33,7 +18,6 @@ pub fn id() -> Handle {
     Handle::from(ID)
 }
 
-
 //------------ RrdpInit ------------------------------------------------------
 
 pub type RrdpInit = StoredEvent<RrdpInitDetails>;
@@ -42,7 +26,7 @@ pub type RrdpInit = StoredEvent<RrdpInitDetails>;
 pub struct RrdpInitDetails {
     session: String,
     base_uri: uri::Https,
-    repo_dir: PathBuf
+    repo_dir: PathBuf,
 }
 
 impl RrdpInitDetails {
@@ -55,11 +39,14 @@ impl RrdpInitDetails {
         StoredEvent::new(
             &id(),
             0,
-            RrdpInitDetails { session, base_uri, repo_dir }
+            RrdpInitDetails {
+                session,
+                base_uri,
+                repo_dir,
+            },
         )
     }
 }
-
 
 //------------ RrdpEvent ------------------------------------------------------
 
@@ -70,7 +57,7 @@ pub type RrdpEvent = StoredEvent<RrdpEventDetails>;
 pub enum RrdpEventDetails {
     AddedDelta(Delta),
     UpdatedNotification(NotificationUpdate),
-    CleanedUp(Time)
+    CleanedUp(Time),
 }
 
 impl RrdpEventDetails {
@@ -78,23 +65,14 @@ impl RrdpEventDetails {
         StoredEvent::new(id, ver, RrdpEventDetails::AddedDelta(delta))
     }
 
-    fn updated_notification(
-        id: &Handle,
-        ver: u64,
-        notif: NotificationUpdate
-    ) -> RrdpEvent {
+    fn updated_notification(id: &Handle, ver: u64, notif: NotificationUpdate) -> RrdpEvent {
         StoredEvent::new(id, ver, RrdpEventDetails::UpdatedNotification(notif))
     }
 
-    fn cleaned_up(
-        id: &Handle,
-        ver: u64,
-        time: Time
-    ) -> RrdpEvent {
+    fn cleaned_up(id: &Handle, ver: u64, time: Time) -> RrdpEvent {
         StoredEvent::new(id, ver, RrdpEventDetails::CleanedUp(time))
     }
 }
-
 
 //------------ RrdpCommand ---------------------------------------------------
 
@@ -104,7 +82,7 @@ pub type RrdpCommand = SentCommand<RrdpCommandDetails>;
 pub enum RrdpCommandDetails {
     AddDelta(DeltaElements),
     Publish,
-    Cleanup(RetentionTime)
+    Cleanup(RetentionTime),
 }
 
 /// The retention time for snapshot and delta files no longer referenced.
@@ -128,27 +106,25 @@ impl RrdpCommandDetails {
     }
 }
 
-
 //------------ RrdpServerError -----------------------------------------------
 
 #[derive(Debug, Display)]
 pub enum RrdpServerError {
-
     #[display(fmt = "{}", _0)]
     IoError(io::Error),
 }
 
 impl From<io::Error> for RrdpServerError {
-    fn from(e: io::Error) -> Self { RrdpServerError::IoError(e) }
+    fn from(e: io::Error) -> Self {
+        RrdpServerError::IoError(e)
+    }
 }
 
 impl std::error::Error for RrdpServerError {}
 
-
 //------------ RrdpResult ----------------------------------------------------
 
 pub type RrdpResult = Result<Vec<RrdpEvent>, RrdpServerError>;
-
 
 //------------ RrdpServer ----------------------------------------------------
 
@@ -169,20 +145,19 @@ pub struct RrdpServer {
 
     notification: Notification,
     snapshot: Snapshot,
-    deltas: Vec<Delta>
+    deltas: Vec<Delta>,
 }
 
 /// # Publishing
 ///
 impl RrdpServer {
-
     fn process_published_delta(&mut self, delta: Delta) {
         self.snapshot.apply_delta(delta.clone());
         self.deltas.insert(0, delta);
 
-            // Keep a minimum of 2 deltas, and a maximum for which the combined
-            // number of elements does not exceed the number of elements in the
-            // snapshot.
+        // Keep a minimum of 2 deltas, and a maximum for which the combined
+        // number of elements does not exceed the number of elements in the
+        // snapshot.
         {
             let size_snapshot = self.snapshot.len();
             let mut total_deltas = 0;
@@ -205,18 +180,19 @@ impl RrdpServer {
         let session = self.session.clone();
         let delta = Delta::new(session, next, elements);
 
-        Ok(vec![RrdpEventDetails::added_delta(&id(), self.version, delta)])
+        Ok(vec![RrdpEventDetails::added_delta(
+            &id(),
+            self.version,
+            delta,
+        )])
     }
 
     /// Publishes the latest notification, snapshot and delta file to disk.
     /// Return event to move old files to clean-up list.
     fn publish(&self) -> RrdpResult {
         let snapshot_hash = self.snapshot.write_xml(&self.snapshot_path())?;
-        let snapshot_ref = SnapshotRef::new(
-            self.snapshot_uri(),
-            self.snapshot_path(),
-            snapshot_hash
-        );
+        let snapshot_ref =
+            SnapshotRef::new(self.snapshot_uri(), self.snapshot_path(), snapshot_hash);
 
         // Note we always have at least 1 delta when publishing.
         let last_delta = &self.deltas[0];
@@ -226,8 +202,8 @@ impl RrdpServer {
             FileRef::new(
                 self.delta_uri(last_delta.serial()),
                 self.delta_path(last_delta.serial()),
-                delta_hash
-            )
+                delta_hash,
+            ),
         );
 
         let update = NotificationUpdate::new(
@@ -235,20 +211,18 @@ impl RrdpServer {
             None,
             snapshot_ref,
             delta_ref,
-            self.deltas.last().unwrap().serial()
+            self.deltas.last().unwrap().serial(),
         );
 
         let mut notification = self.notification.clone();
         notification.update(update.clone());
         notification.write_xml(&self.notification_path())?;
 
-        Ok(vec![
-            RrdpEventDetails::updated_notification(
-                &id(),
-                self.version,
-                update
-            )
-        ])
+        Ok(vec![RrdpEventDetails::updated_notification(
+            &id(),
+            self.version,
+            update,
+        )])
     }
 
     /// Cleans out old files on disk, returns event for cleaning up the state.
@@ -261,13 +235,11 @@ impl RrdpServer {
             }
         }
 
-        Ok(vec![
-            RrdpEventDetails::cleaned_up(
-                &id(),
-                self.version,
-                cut_off
-            )
-        ])
+        Ok(vec![RrdpEventDetails::cleaned_up(
+            &id(),
+            self.version,
+            cut_off,
+        )])
     }
 }
 
@@ -275,9 +247,7 @@ impl RrdpServer {
 ///
 impl RrdpServer {
     pub fn notification_uri(&self) -> uri::Https {
-        uri::Https::from_string(
-            format!("{}notifcation.xml", self.base_uri.to_string())
-        ).unwrap() // Cannot fail. Config checked at startup.
+        uri::Https::from_string(format!("{}notifcation.xml", self.base_uri.to_string())).unwrap() // Cannot fail. Config checked at startup.
     }
 
     fn notification_path(&self) -> PathBuf {
@@ -301,12 +271,12 @@ impl RrdpServer {
     }
 
     fn new_snapshot_uri(base: &uri::Https, session: &str, serial: u64) -> uri::Https {
-        uri::Https::from_string(
-            format!("{}{}",
-                    base.to_string(),
-                    Self::snapshot_rel(session, serial)
-            )
-        ).unwrap() // Cannot fail. Config checked at startup.
+        uri::Https::from_string(format!(
+            "{}{}",
+            base.to_string(),
+            Self::snapshot_rel(session, serial)
+        ))
+        .unwrap() // Cannot fail. Config checked at startup.
     }
 
     fn snapshot_uri(&self) -> uri::Https {
@@ -318,12 +288,12 @@ impl RrdpServer {
     }
 
     fn delta_uri(&self, serial: u64) -> uri::Https {
-        uri::Https::from_string(
-            format!("{}{}",
-                    self.base_uri.to_string(),
-                    Self::delta_rel(&self.session, serial)
-            )
-        ).unwrap() // Cannot fail. Config checked at startup.
+        uri::Https::from_string(format!(
+            "{}{}",
+            self.base_uri.to_string(),
+            Self::delta_rel(&self.session, serial)
+        ))
+        .unwrap() // Cannot fail. Config checked at startup.
     }
 
     fn delta_path(&self, serial: u64) -> PathBuf {
@@ -332,8 +302,6 @@ impl RrdpServer {
         path
     }
 }
-
-
 
 impl Aggregate for RrdpServer {
     type Command = RrdpCommand;
@@ -356,11 +324,7 @@ impl Aggregate for RrdpServer {
         let snapshot_uri = Self::new_snapshot_uri(&base_uri, &session, 0);
         let snapshot_hash = snapshot.write_xml(&snapshot_path)?;
 
-        let snapshot_ref = SnapshotRef::new(
-            snapshot_uri,
-            snapshot_path,
-            snapshot_hash
-        );
+        let snapshot_ref = SnapshotRef::new(snapshot_uri, snapshot_path, snapshot_hash);
 
         let notification = Notification::create(session.clone(), snapshot_ref);
         let deltas = vec![];
@@ -373,7 +337,7 @@ impl Aggregate for RrdpServer {
             serial,
             notification,
             snapshot,
-            deltas
+            deltas,
         })
     }
 
@@ -383,15 +347,13 @@ impl Aggregate for RrdpServer {
 
     fn apply(&mut self, event: Self::Event) {
         match event.into_details() {
-            RrdpEventDetails::AddedDelta(delta) =>
-                self.process_published_delta(delta),
-            RrdpEventDetails::UpdatedNotification(notification) =>
-                self.notification.update(notification),
-            RrdpEventDetails::CleanedUp(time) =>
-                self.notification.clean_up(time)
+            RrdpEventDetails::AddedDelta(delta) => self.process_published_delta(delta),
+            RrdpEventDetails::UpdatedNotification(notification) => {
+                self.notification.update(notification)
+            }
+            RrdpEventDetails::CleanedUp(time) => self.notification.clean_up(time),
         }
         self.version += 1;
-
     }
 
     fn process_command(&self, command: Self::Command) -> RrdpResult {
@@ -403,7 +365,6 @@ impl Aggregate for RrdpServer {
     }
 }
 
-
 //------------ RsyncdStore ---------------------------------------------------
 
 /// This type is responsible for publishing files on disk in a structure so
@@ -413,7 +374,7 @@ impl Aggregate for RrdpServer {
 /// base uri used.
 #[derive(Clone, Debug)]
 pub struct RsyncdStore {
-    rsync_dir: PathBuf
+    rsync_dir: PathBuf,
 }
 
 /// # Construct
@@ -422,10 +383,10 @@ impl RsyncdStore {
     pub fn build(repo_dir: &PathBuf) -> Result<Self, io::Error> {
         let mut rsync_dir = PathBuf::from(repo_dir);
         rsync_dir.push(RSYNC_FOLDER);
-        if ! rsync_dir.is_dir() {
+        if !rsync_dir.is_dir() {
             fs::create_dir_all(&rsync_dir)?;
         }
-        Ok ( RsyncdStore { rsync_dir } )
+        Ok(RsyncdStore { rsync_dir })
     }
 }
 
@@ -434,28 +395,16 @@ impl RsyncdStore {
 impl RsyncdStore {
     /// Saves all the publishes and updates, deletes all the withdraws.
     pub fn publish(&self, delta: &DeltaElements) -> Result<(), io::Error> {
-
         for p in delta.publishes() {
-            file::save_with_rsync_uri(
-                &p.base64().to_bytes(),
-                &self.rsync_dir,
-                p.uri()
-            )?;
+            file::save_with_rsync_uri(&p.base64().to_bytes(), &self.rsync_dir, p.uri())?;
         }
 
         for u in delta.updates() {
-            file::save_with_rsync_uri(
-                &u.base64().to_bytes(),
-                &self.rsync_dir,
-                u.uri()
-            )?;
+            file::save_with_rsync_uri(&u.base64().to_bytes(), &self.rsync_dir, u.uri())?;
         }
 
         for w in delta.withdraws() {
-            file::delete_with_rsync_uri(
-                &self.rsync_dir,
-                w.uri()
-            )?;
+            file::delete_with_rsync_uri(&self.rsync_dir, w.uri())?;
         }
         Ok(())
     }

@@ -1,10 +1,11 @@
-use std::str::{FromStr, from_utf8_unchecked};
-use krill_commons::api::admin::{PublisherDetails, PublisherList, ParentCaContact};
-use krill_commons::api::ca::{TrustAnchorInfo, CertAuthList, CertAuthInfo, CaParentsInfo, CurrentObjects};
+use krill_commons::api::admin::{ParentCaContact, PublisherDetails, PublisherList};
+use krill_commons::api::ca::{
+    CaParentsInfo, CertAuthInfo, CertAuthList, CurrentObjects, TrustAnchorInfo,
+};
 use krill_commons::remote::api::ClientInfo;
-use krill_commons::remote::rfc8183::RepositoryResponse;
 use krill_commons::remote::rfc8183;
-
+use krill_commons::remote::rfc8183::RepositoryResponse;
+use std::str::{from_utf8_unchecked, FromStr};
 
 //------------ ApiResponse ---------------------------------------------------
 
@@ -28,15 +29,12 @@ pub enum ApiResponse {
     Rfc8183RepositoryResponse(rfc8183::RepositoryResponse),
     Rfc8183ChildRequest(rfc8183::ChildRequest),
 
-    Empty, // Typically a successful post just gets an empty 200 response
-    GenericBody(String) // For when the server echos Json to a successful post
+    Empty,               // Typically a successful post just gets an empty 200 response
+    GenericBody(String), // For when the server echos Json to a successful post
 }
 
 impl ApiResponse {
-    pub fn report(
-        &self,
-        fmt: ReportFormat
-    ) -> Result<Option<String>, ReportError> {
+    pub fn report(&self, fmt: ReportFormat) -> Result<Option<String>, ReportError> {
         if fmt == ReportFormat::None {
             Ok(None)
         } else {
@@ -47,38 +45,18 @@ impl ApiResponse {
                     } else {
                         Err(ReportError::UnsupportedFormat)
                     }
-                },
-                ApiResponse::TrustAnchorInfo(ta) => {
-                    Ok(Some(ta.report(fmt)?))
-                },
-                ApiResponse::CertAuths(list) => {
-                    Ok(Some(list.report(fmt)?))
-                },
-                ApiResponse::CertAuthInfo(info) => {
-                    Ok(Some(info.report(fmt)?))
-                },
-                ApiResponse::ParentCaInfo(info) => {
-                    Ok(Some(info.report(fmt)?))
-                },
-                ApiResponse::PublisherList(list) => {
-                    Ok(Some(list.report(fmt)?))
-                },
-                ApiResponse::PublisherDetails(details) => {
-                    Ok(Some(details.report(fmt)?))
                 }
-                ApiResponse::Rfc8181ClientList(list) => {
-                    Ok(Some(list.report(fmt)?))
-                }
-                ApiResponse::Rfc8183ChildRequest(req) => {
-                    Ok(Some(req.report(fmt)?))
-                }
-                ApiResponse::Rfc8183RepositoryResponse(res) => {
-                    Ok(Some(res.report(fmt)?))
-                }
-                ApiResponse::GenericBody(body) => {
-                    Ok(Some(body.clone()))
-                }
-                ApiResponse::Empty => Ok(None)
+                ApiResponse::TrustAnchorInfo(ta) => Ok(Some(ta.report(fmt)?)),
+                ApiResponse::CertAuths(list) => Ok(Some(list.report(fmt)?)),
+                ApiResponse::CertAuthInfo(info) => Ok(Some(info.report(fmt)?)),
+                ApiResponse::ParentCaInfo(info) => Ok(Some(info.report(fmt)?)),
+                ApiResponse::PublisherList(list) => Ok(Some(list.report(fmt)?)),
+                ApiResponse::PublisherDetails(details) => Ok(Some(details.report(fmt)?)),
+                ApiResponse::Rfc8181ClientList(list) => Ok(Some(list.report(fmt)?)),
+                ApiResponse::Rfc8183ChildRequest(req) => Ok(Some(req.report(fmt)?)),
+                ApiResponse::Rfc8183RepositoryResponse(res) => Ok(Some(res.report(fmt)?)),
+                ApiResponse::GenericBody(body) => Ok(Some(body.clone())),
+                ApiResponse::Empty => Ok(None),
             }
         }
     }
@@ -93,7 +71,7 @@ pub enum ReportFormat {
     None,
     Json,
     Text,
-    Xml
+    Xml,
 }
 
 impl FromStr for ReportFormat {
@@ -104,25 +82,23 @@ impl FromStr for ReportFormat {
             "none" => Ok(ReportFormat::None),
             "json" => Ok(ReportFormat::Json),
             "text" => Ok(ReportFormat::Text),
-            "xml"  => Ok(ReportFormat::Xml),
-            _ => Err(ReportError::UnrecognisedFormat(s.to_string()))
+            "xml" => Ok(ReportFormat::Xml),
+            _ => Err(ReportError::UnrecognisedFormat(s.to_string())),
         }
     }
 }
-
 
 //------------ ReportError ---------------------------------------------------
 
 /// This type defines possible Errors for KeyStore
 #[derive(Debug, Display)]
 pub enum ReportError {
-    #[display(fmt="This report format is not supported for this data")]
+    #[display(fmt = "This report format is not supported for this data")]
     UnsupportedFormat,
 
-    #[display(fmt="This report format is not recognised: {}", _0)]
-    UnrecognisedFormat(String)
+    #[display(fmt = "This report format is not recognised: {}", _0)]
+    UnrecognisedFormat(String),
 }
-
 
 //------------ Report --------------------------------------------------------
 
@@ -137,7 +113,7 @@ impl Report for TrustAnchorInfo {
         match format {
             ReportFormat::Default | ReportFormat::Json => {
                 Ok(serde_json::to_string_pretty(self).unwrap())
-            },
+            }
             ReportFormat::Text => {
                 let mut res = String::new();
 
@@ -168,16 +144,14 @@ impl Report for TrustAnchorInfo {
                             res.push_str(&format!("    v6:  {}\n", inrs.v6()));
                             res.push_str("\n");
                         }
-
                     }
                 } else {
                     res.push_str("<none>");
                 }
 
-
                 Ok(res)
-            },
-            _ => Err(ReportError::UnsupportedFormat)
+            }
+            _ => Err(ReportError::UnsupportedFormat),
         }
     }
 }
@@ -187,7 +161,7 @@ impl Report for CertAuthList {
         match format {
             ReportFormat::Default | ReportFormat::Json => {
                 Ok(serde_json::to_string_pretty(self).unwrap())
-            },
+            }
             ReportFormat::Text => {
                 let mut res = String::new();
                 for ca in self.cas() {
@@ -195,8 +169,8 @@ impl Report for CertAuthList {
                 }
 
                 Ok(res)
-            },
-            _ => Err(ReportError::UnsupportedFormat)
+            }
+            _ => Err(ReportError::UnsupportedFormat),
         }
     }
 }
@@ -206,7 +180,7 @@ impl Report for CertAuthInfo {
         match format {
             ReportFormat::Default | ReportFormat::Json => {
                 Ok(serde_json::to_string_pretty(self).unwrap())
-            },
+            }
             ReportFormat::Text => {
                 let mut res = String::new();
 
@@ -236,7 +210,6 @@ impl Report for CertAuthInfo {
                         res.push_str(&format!("IPv4: {}\n", inrs.v4()));
                         res.push_str(&format!("IPv6: {}\n", inrs.v6()));
 
-
                         res.push_str("Current objects:\n");
                         print_objects(&mut res, key.current_set().objects());
                         res.push_str("\n");
@@ -254,7 +227,6 @@ impl Report for CertAuthInfo {
                                     res.push_str(&format!("    v6:  {}\n", inrs.v6()));
                                     res.push_str("\n");
                                 }
-
                             }
                         } else {
                             res.push_str("<none>");
@@ -262,7 +234,7 @@ impl Report for CertAuthInfo {
 
                         res.push_str("TAL:\n");
                         res.push_str(&format!("{}\n", tal));
-                    },
+                    }
                     CaParentsInfo::Parents(map) => {
                         for info in map.values() {
                             res.push_str(&format!("Parent:  {}\n", info.contact()));
@@ -296,14 +268,13 @@ impl Report for CertAuthInfo {
                                     res.push_str("  OLD unrevoked key exists!\n");
                                     res.push_str("\n");
                                 }
-
                             }
                         }
                     }
                 }
                 Ok(res)
-            },
-            _ => Err(ReportError::UnsupportedFormat)
+            }
+            _ => Err(ReportError::UnsupportedFormat),
         }
     }
 }
@@ -313,11 +284,9 @@ impl Report for ParentCaContact {
         match format {
             ReportFormat::Default | ReportFormat::Json => {
                 Ok(serde_json::to_string_pretty(self).unwrap())
-            },
-            ReportFormat::Text => {
-                Ok(self.to_string())
-            },
-            _ => Err(ReportError::UnsupportedFormat)
+            }
+            ReportFormat::Text => Ok(self.to_string()),
+            _ => Err(ReportError::UnsupportedFormat),
         }
     }
 }
@@ -327,14 +296,14 @@ impl Report for PublisherList {
         match format {
             ReportFormat::Default | ReportFormat::Json => {
                 Ok(serde_json::to_string_pretty(self).unwrap())
-            },
+            }
             ReportFormat::Text => {
                 let mut res = String::new();
 
                 res.push_str("Publishers: ");
                 let mut first = true;
                 for p in self.publishers() {
-                    if ! first {
+                    if !first {
                         res.push_str(", ");
                     } else {
                         first = false;
@@ -342,8 +311,8 @@ impl Report for PublisherList {
                     res.push_str(p.id());
                 }
                 Ok(res)
-            },
-            _ => Err(ReportError::UnsupportedFormat)
+            }
+            _ => Err(ReportError::UnsupportedFormat),
         }
     }
 }
@@ -353,9 +322,8 @@ impl Report for PublisherDetails {
         match format {
             ReportFormat::Default | ReportFormat::Json => {
                 Ok(serde_json::to_string_pretty(self).unwrap())
-            },
+            }
             ReportFormat::Text => {
-
                 let mut res = String::new();
 
                 res.push_str("handle: ");
@@ -367,8 +335,8 @@ impl Report for PublisherDetails {
                 res.push_str("\n");
 
                 Ok(res)
-            },
-            _ => Err(ReportError::UnsupportedFormat)
+            }
+            _ => Err(ReportError::UnsupportedFormat),
         }
     }
 }
@@ -378,7 +346,7 @@ impl Report for Vec<ClientInfo> {
         match format {
             ReportFormat::Default | ReportFormat::Json => {
                 Ok(serde_json::to_string_pretty(self).unwrap())
-            },
+            }
             ReportFormat::Text => {
                 let mut res = String::new();
 
@@ -388,13 +356,11 @@ impl Report for Vec<ClientInfo> {
                     let auth = client.auth();
                     let ski = auth.cert().ski_hex();
 
-                    res.push_str(
-                        &format!("   Handle: {}, Cert (ski): {}\n", handle, ski)
-                    );
+                    res.push_str(&format!("   Handle: {}, Cert (ski): {}\n", handle, ski));
                 }
                 Ok(res)
-            },
-            _ => Err(ReportError::UnsupportedFormat)
+            }
+            _ => Err(ReportError::UnsupportedFormat),
         }
     }
 }
@@ -404,13 +370,11 @@ impl Report for RepositoryResponse {
         match format {
             ReportFormat::Text | ReportFormat::Xml | ReportFormat::Default => {
                 let bytes = self.encode_vec();
-                let xml = unsafe {
-                    from_utf8_unchecked(&bytes)
-                };
+                let xml = unsafe { from_utf8_unchecked(&bytes) };
 
                 Ok(xml.to_string())
-            },
-            _ => Err(ReportError::UnsupportedFormat)
+            }
+            _ => Err(ReportError::UnsupportedFormat),
         }
     }
 }
@@ -420,13 +384,11 @@ impl Report for rfc8183::ChildRequest {
         match format {
             ReportFormat::Text | ReportFormat::Xml | ReportFormat::Default => {
                 let bytes = self.encode_vec();
-                let xml = unsafe {
-                    from_utf8_unchecked(&bytes)
-                };
+                let xml = unsafe { from_utf8_unchecked(&bytes) };
 
                 Ok(xml.to_string())
-            },
-            _ => Err(ReportError::UnsupportedFormat)
+            }
+            _ => Err(ReportError::UnsupportedFormat),
         }
     }
 }

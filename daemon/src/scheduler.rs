@@ -19,21 +19,21 @@ pub struct Scheduler {
     event_sh: ScheduleHandle,
 
     #[allow(dead_code)] // just need to keep this in scope
-    republish_sh: ScheduleHandle
+    republish_sh: ScheduleHandle,
 }
 
 impl Scheduler {
     pub fn build(
         event_queue: Arc<EventQueueListener>,
         caserver: Arc<CaServer<OpenSslSigner>>,
-        pubserver: Arc<PubServer>
+        pubserver: Arc<PubServer>,
     ) -> Self {
-
         let event_sh = make_event_sh(event_queue, caserver.clone(), pubserver);
         let republish_sh = make_republish_sh(caserver);
 
         Scheduler {
-            event_sh, republish_sh
+            event_sh,
+            republish_sh,
         }
     }
 }
@@ -41,7 +41,7 @@ impl Scheduler {
 fn make_event_sh(
     event_queue: Arc<EventQueueListener>,
     caserver: Arc<CaServer<OpenSslSigner>>,
-    pubserver: Arc<PubServer>
+    pubserver: Arc<PubServer>,
 ) -> ScheduleHandle {
     let mut scheduler = clokwerk::Scheduler::new();
     scheduler.every(1.seconds()).run(move || {
@@ -49,20 +49,17 @@ fn make_event_sh(
             match evt {
                 QueueEvent::Delta(handle, delta) => {
                     publish(&handle, delta, &pubserver);
-                },
+                }
                 QueueEvent::ParentAdded(handle, parent, contact) => {
-                    if let Err(e) = caserver.get_updates_from_parent(
-                        &handle, &parent, contact
-                    ) {
+                    if let Err(e) = caserver.get_updates_from_parent(&handle, &parent, contact) {
                         error!("Getting updates for {}, error: {}", &handle, e);
                     }
-                },
+                }
             }
         }
     });
     scheduler.watch_thread(Duration::from_millis(100))
 }
-
 
 fn make_republish_sh(caserver: Arc<CaServer<OpenSslSigner>>) -> ScheduleHandle {
     let mut scheduler = clokwerk::Scheduler::new();
@@ -75,16 +72,10 @@ fn make_republish_sh(caserver: Arc<CaServer<OpenSslSigner>>) -> ScheduleHandle {
     scheduler.watch_thread(Duration::from_millis(100))
 }
 
-
-fn publish(
-    handle: &Handle,
-    delta: PublicationDelta,
-    pubserver: &PubServer
-) {
+fn publish(handle: &Handle, delta: PublicationDelta, pubserver: &PubServer) {
     debug!("Triggered publishing for CA: {}", handle);
     match pubserver.publish(handle, delta.into()) {
         Ok(()) => debug!("Published for CA: {}", handle),
-        Err(e) => error!("Failed to publish for CA: {}, error: {}", handle, e)
+        Err(e) => error!("Failed to publish for CA: {}, error: {}", handle, e),
     }
 }
-

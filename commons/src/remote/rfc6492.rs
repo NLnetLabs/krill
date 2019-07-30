@@ -1,9 +1,9 @@
+use std::convert::TryFrom;
 use std::io;
 use std::str::FromStr;
-use std::convert::TryFrom;
 
 use bytes::Bytes;
-use chrono::{Utc, DateTime, SecondsFormat};
+use chrono::{DateTime, SecondsFormat, Utc};
 use serde::export::fmt::Display;
 
 use rpki::cert::Cert;
@@ -13,20 +13,14 @@ use rpki::resources::{AsResources, Ipv4Resources, Ipv6Resources};
 use rpki::uri;
 use rpki::x509::Time;
 
+use crate::api::ca::{IssuedCert, ResSetErr, ResourceSet};
 use crate::api::{
-    EntitlementClass,
-    Entitlements,
-    IssuanceRequest,
-    IssuanceResponse,
-    RevocationRequest,
-    RequestResourceLimit,
-    SigningCert,
+    EntitlementClass, Entitlements, IssuanceRequest, IssuanceResponse, RequestResourceLimit,
+    RevocationRequest, SigningCert,
 };
-use crate::api::ca::{ResourceSet, ResSetErr, IssuedCert};
-use crate::util::xml::{XmlReader, XmlReaderErr, AttributesError, XmlWriter};
-use remote::sigmsg::SignedMessage;
+use crate::util::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
 use api::admin::Handle;
-
+use remote::sigmsg::SignedMessage;
 
 //------------ Consts --------------------------------------------------------
 
@@ -57,9 +51,8 @@ pub type Recipient = String;
 pub struct Message {
     sender: Sender,
     recipient: Recipient,
-    content: Content
+    content: Content,
 }
-
 
 /// # Data Access
 ///
@@ -68,10 +61,18 @@ impl Message {
         (self.sender, self.recipient, self.content)
     }
 
-    pub fn sender_handle(&self) -> Handle { Handle::from(self.sender.as_str())}
-    pub fn sender(&self) -> &str { &self.sender }
-    pub fn recipient(&self) -> &str { &self.recipient }
-    pub fn content(&self) -> &Content { &self.content }
+    pub fn sender_handle(&self) -> Handle {
+        Handle::from(self.sender.as_str())
+    }
+    pub fn sender(&self) -> &str {
+        &self.sender
+    }
+    pub fn recipient(&self) -> &str {
+        &self.recipient
+    }
+    pub fn content(&self) -> &Content {
+        &self.content
+    }
 }
 
 /// # Convenience accessors
@@ -80,7 +81,7 @@ impl Message {
     pub fn into_reply(self) -> Result<Res, Error> {
         match self.content {
             Content::Res(res) => Ok(res),
-            Content::Qry(_) => Err(Error::WrongMessageType)
+            Content::Qry(_) => Err(Error::WrongMessageType),
         }
     }
 }
@@ -88,82 +89,94 @@ impl Message {
 /// # Constructing
 ///
 impl Message {
-    pub fn list(
-        sender: String,
-        recipient: String,
-    ) -> Self {
+    pub fn list(sender: String, recipient: String) -> Self {
         let content = Content::Qry(Qry::List);
-        Message { sender, recipient, content }
+        Message {
+            sender,
+            recipient,
+            content,
+        }
     }
 
-    pub fn list_response(
-        sender: String,
-        recipient: String,
-        entitlements: Entitlements
-    ) -> Self {
+    pub fn list_response(sender: String, recipient: String, entitlements: Entitlements) -> Self {
         let content = Content::Res(Res::List(entitlements));
-        Message { sender, recipient, content}
+        Message {
+            sender,
+            recipient,
+            content,
+        }
     }
 
-    pub fn issue(
-        sender: String,
-        recipient: String,
-        issuance_request: IssuanceRequest
-    ) -> Self {
+    pub fn issue(sender: String, recipient: String, issuance_request: IssuanceRequest) -> Self {
         let content = Content::Qry(Qry::Issue(issuance_request));
-        Message { sender, recipient, content }
+        Message {
+            sender,
+            recipient,
+            content,
+        }
     }
 
     pub fn issue_response(
         sender: String,
         recipient: String,
-        issuance_response: IssuanceResponse
+        issuance_response: IssuanceResponse,
     ) -> Self {
         let content = Content::Res(Res::Issue(issuance_response));
-        Message { sender, recipient, content }
+        Message {
+            sender,
+            recipient,
+            content,
+        }
     }
 
-    pub fn revoke(
-        sender: String,
-        recipient: String,
-        revocation: RevocationRequest
-    ) -> Self {
+    pub fn revoke(sender: String, recipient: String, revocation: RevocationRequest) -> Self {
         let content = Content::Qry(Qry::Revoke(revocation));
-        Message { sender, recipient, content }
+        Message {
+            sender,
+            recipient,
+            content,
+        }
     }
 
     pub fn revoke_response(
         sender: String,
         recipient: String,
-        revocation: RevocationRequest
+        revocation: RevocationRequest,
     ) -> Self {
         let content = Content::Res(Res::Revoke(revocation));
-        Message { sender, recipient, content }
+        Message {
+            sender,
+            recipient,
+            content,
+        }
     }
 
     pub fn error_response(
         sender: String,
         recipient: String,
-        err: NotPerformedResponse
+        err: NotPerformedResponse,
     ) -> Result<Self, Error> {
         let content = Content::Res(Res::Error(err));
-        Ok(Message { sender, recipient, content })
+        Ok(Message {
+            sender,
+            recipient,
+            content,
+        })
     }
 }
-
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 pub enum Content {
     Qry(Qry),
-    Res(Res)
+    Res(Res),
 }
 
 impl Content {
     fn msg_type(&self) -> &str {
         match self {
             Content::Qry(q) => q.msg_type(),
-            Content::Res(r) => r.msg_type()
+            Content::Res(r) => r.msg_type(),
         }
     }
 }
@@ -172,13 +185,15 @@ impl Content {
 ///
 impl Message {
     /// Decodes an XML structure
-    pub fn decode<R>(reader: R) -> Result<Self, Error> where R: io::Read {
+    pub fn decode<R>(reader: R) -> Result<Self, Error>
+    where
+        R: io::Read,
+    {
         XmlReader::decode(reader, |r| {
-            r.take_named_element("message",|mut a, r| {
-
+            r.take_named_element("message", |mut a, r| {
                 match a.take_req("version")?.as_ref() {
-                    VERSION => { },
-                    _ => return Err(Error::InvalidVersion)
+                    VERSION => {}
+                    _ => return Err(Error::InvalidVersion),
                 }
                 let sender = a.take_req("sender")?;
                 let recipient = a.take_req("recipient")?;
@@ -188,32 +203,29 @@ impl Message {
                 let content = match msg_type.as_ref() {
                     TYPE_LIST_QRY | TYPE_ISSUE_QRY | TYPE_REVOKE_QRY => {
                         Ok(Content::Qry(Qry::decode(&msg_type, r)?))
-                    },
-                    TYPE_LIST_RES | TYPE_ISSUE_RES |
-                    TYPE_REVOKE_RES | TYPE_ERROR_RES => {
+                    }
+                    TYPE_LIST_RES | TYPE_ISSUE_RES | TYPE_REVOKE_RES | TYPE_ERROR_RES => {
                         Ok(Content::Res(Res::decode(&msg_type, r)?))
                     }
-                    _ => Err(Error::UnknownMessageType)
+                    _ => Err(Error::UnknownMessageType),
                 }?;
 
-                Ok(Message { sender, recipient, content })
+                Ok(Message {
+                    sender,
+                    recipient,
+                    content,
+                })
             })
         })
     }
 
     /// Parses the content of a SignedMessage as a Message.
-    pub fn from_signed_message(
-        msg: &SignedMessage
-    ) -> Result<Message, Error> {
+    pub fn from_signed_message(msg: &SignedMessage) -> Result<Message, Error> {
         Message::decode(msg.content().to_bytes().as_ref())
     }
 
     /// Encode into XML
-    pub fn encode<W: io::Write>(
-        &self,
-        target: &mut XmlWriter<W>
-    ) -> Result<(), io::Error> {
-
+    pub fn encode<W: io::Write>(&self, target: &mut XmlWriter<W>) -> Result<(), io::Error> {
         let msg_type = self.content.msg_type();
 
         let attrs = [
@@ -221,26 +233,18 @@ impl Message {
             ("version", VERSION),
             ("sender", &self.sender),
             ("recipient", &self.recipient),
-            ("type", msg_type)
+            ("type", msg_type),
         ];
 
-        target.put_element(
-            "message",
-            Some(&attrs),
-            |w| {
-                match &self.content {
-                    Content::Qry(q) => q.encode(w),
-                    Content::Res(r) => r.encode(w)
-                }
-            }
-        )
+        target.put_element("message", Some(&attrs), |w| match &self.content {
+            Content::Qry(q) => q.encode(w),
+            Content::Res(r) => r.encode(w),
+        })
     }
 
     /// Encodes to a Vec
     pub fn encode_vec(&self) -> Vec<u8> {
-        XmlWriter::encode_vec(|w| {
-            self.encode(w)
-        })
+        XmlWriter::encode_vec(|w| self.encode(w))
     }
 
     /// Consumes the message and turns it into bytes
@@ -248,7 +252,6 @@ impl Message {
         Bytes::from(self.encode_vec())
     }
 }
-
 
 //------------ Query ---------------------------------------------------------
 
@@ -258,7 +261,7 @@ impl Message {
 pub enum Qry {
     List,
     Issue(IssuanceRequest),
-    Revoke(RevocationRequest)
+    Revoke(RevocationRequest),
 }
 
 /// # Data Access
@@ -268,7 +271,7 @@ impl Qry {
         match self {
             Qry::List => TYPE_LIST_QRY,
             Qry::Issue(_) => TYPE_ISSUE_QRY,
-            Qry::Revoke(_) => TYPE_REVOKE_QRY
+            Qry::Revoke(_) => TYPE_REVOKE_QRY,
         }
     }
 }
@@ -276,67 +279,61 @@ impl Qry {
 /// # Decoding
 ///
 impl Qry {
-    fn decode<R>(
-        msg_type: &str,
-        r: &mut XmlReader<R>
-    ) -> Result<Self, Error> where R: io::Read {
+    fn decode<R>(msg_type: &str, r: &mut XmlReader<R>) -> Result<Self, Error>
+    where
+        R: io::Read,
+    {
         match msg_type {
             TYPE_LIST_QRY => Ok(Qry::List),
             TYPE_ISSUE_QRY => Ok(Qry::Issue(Self::decode_issue(r)?)),
             TYPE_REVOKE_QRY => Ok(Qry::Revoke(Self::decode_revoke(r)?)),
-            _ => Err(Error::UnknownMessageType)
+            _ => Err(Error::UnknownMessageType),
         }
     }
 
-    fn decode_revoke<R>(
-        r: &mut XmlReader<R>
-    ) -> Result<RevocationRequest, Error> where R: io::Read {
+    fn decode_revoke<R>(r: &mut XmlReader<R>) -> Result<RevocationRequest, Error>
+    where
+        R: io::Read,
+    {
         r.take_named_element("key", |mut a, r| {
             let class_name = a.take_req("class_name")?;
             a.exhausted()?;
 
             let ski_bytes = r.take_bytes_url_safe_pad()?;
 
-            let ski = KeyIdentifier::try_from(ski_bytes.as_ref())
-                .map_err(|_| Error::InvalidSki)?;
+            let ski = KeyIdentifier::try_from(ski_bytes.as_ref()).map_err(|_| Error::InvalidSki)?;
 
             Ok(RevocationRequest::new(class_name.to_string(), ski))
         })
     }
 
-    fn decode_issue<R>(
-        r: &mut XmlReader<R>
-    ) -> Result<IssuanceRequest, Error> where R: io::Read {
+    fn decode_issue<R>(r: &mut XmlReader<R>) -> Result<IssuanceRequest, Error>
+    where
+        R: io::Read,
+    {
         r.take_named_element("request", |mut a, r| {
             let class_name = a.take_req("class_name")?;
             let mut limit = RequestResourceLimit::default();
 
             if let Some(asn) = a.take_opt("req_resource_set_as") {
-                let asn = AsResources::from_str(&asn)
-                    .map_err(Error::inr_syntax)?;
+                let asn = AsResources::from_str(&asn).map_err(Error::inr_syntax)?;
                 limit.with_asn(asn);
             }
 
             if let Some(ipv4) = a.take_opt("req_resource_set_ipv4") {
-                let ipv4 = Ipv4Resources::from_str(&ipv4)
-                    .map_err(Error::inr_syntax)?;
+                let ipv4 = Ipv4Resources::from_str(&ipv4).map_err(Error::inr_syntax)?;
                 limit.with_ipv4(ipv4);
             }
 
             if let Some(ipv6) = a.take_opt("req_resource_set_ipv6") {
-                let ipv6 = Ipv6Resources::from_str(&ipv6)
-                    .map_err(Error::inr_syntax)?;
+                let ipv6 = Ipv6Resources::from_str(&ipv6).map_err(Error::inr_syntax)?;
                 limit.with_ipv6(ipv6);
             }
 
             let csr_bytes = r.take_bytes_std()?;
             let csr = Csr::decode(csr_bytes).map_err(|_| Error::InvalidCsr)?;
 
-            Ok(IssuanceRequest::new(
-                class_name.to_string(),
-                limit,
-                csr
-            ))
+            Ok(IssuanceRequest::new(class_name.to_string(), limit, csr))
         })
     }
 }
@@ -344,20 +341,17 @@ impl Qry {
 /// # Encoding
 ///
 impl Qry {
-    fn encode<W: io::Write>(
-        &self,
-        w: &mut XmlWriter<W>
-    ) -> Result<(), io::Error> {
+    fn encode<W: io::Write>(&self, w: &mut XmlWriter<W>) -> Result<(), io::Error> {
         match self {
             Qry::List => w.empty(),
             Qry::Issue(issue_req) => Self::encode_issue(issue_req, w),
-            Qry::Revoke(rev) => Self::encode_revoke(rev, w)
+            Qry::Revoke(rev) => Self::encode_revoke(rev, w),
         }
     }
 
     fn encode_issue<W: io::Write>(
         issue: &IssuanceRequest,
-        w: &mut XmlWriter<W>
+        w: &mut XmlWriter<W>,
     ) -> Result<(), io::Error> {
         let class_name = issue.class_name();
         let limit = issue.limit();
@@ -390,16 +384,13 @@ impl Qry {
 
     fn encode_revoke<W: io::Write>(
         rev: &RevocationRequest,
-        w: &mut XmlWriter<W>
+        w: &mut XmlWriter<W>,
     ) -> Result<(), io::Error> {
-        let att = [ ("class_name", rev.class_name() )];
+        let att = [("class_name", rev.class_name())];
         let bytes = rev.key().as_slice();
-        w.put_element("key", Some(&att), |w| {
-            w.put_base64_url_safe(bytes)
-        })
+        w.put_element("key", Some(&att), |w| w.put_base64_url_safe(bytes))
     }
 }
-
 
 //------------ Res -----------------------------------------------------------
 
@@ -410,9 +401,8 @@ pub enum Res {
     List(Entitlements),
     Issue(IssuanceResponse),
     Revoke(RevocationRequest),
-    Error(NotPerformedResponse)
+    Error(NotPerformedResponse),
 }
-
 
 /// # Data Access
 ///
@@ -422,48 +412,46 @@ impl Res {
             Res::List(_) => TYPE_LIST_RES,
             Res::Issue(_) => TYPE_ISSUE_RES,
             Res::Revoke(_) => TYPE_REVOKE_RES,
-            Res::Error(_) => TYPE_ERROR_RES
+            Res::Error(_) => TYPE_ERROR_RES,
         }
     }
 }
 
-
 /// Decoding
 ///
 impl Res {
-    fn decode<R>(
-        msg_type: &str,
-        r: &mut XmlReader<R>
-    ) -> Result<Self, Error> where R: io::Read {
+    fn decode<R>(msg_type: &str, r: &mut XmlReader<R>) -> Result<Self, Error>
+    where
+        R: io::Read,
+    {
         match msg_type {
             TYPE_LIST_RES => {
                 let entitlements = Self::decode_entitlements(r)?;
                 Ok(Res::List(entitlements))
-            },
+            }
             TYPE_ISSUE_RES => {
                 let issuance_response = Self::decode_issue_response(r)?;
                 Ok(Res::Issue(issuance_response))
-            },
+            }
             TYPE_REVOKE_RES => {
                 let request = Qry::decode_revoke(r)?;
                 Ok(Res::Revoke(request))
-            },
+            }
             TYPE_ERROR_RES => {
                 let err = Self::decode_error_response(r)?;
                 Ok(Res::Error(err))
-            },
-            _ => Err(Error::UnknownMessageType)
+            }
+            _ => Err(Error::UnknownMessageType),
         }
     }
 
-    fn decode_issue_response<R>(
-        r: &mut XmlReader<R>
-    ) -> Result<IssuanceResponse, Error> where R: io::Read {
+    fn decode_issue_response<R>(r: &mut XmlReader<R>) -> Result<IssuanceResponse, Error>
+    where
+        R: io::Read,
+    {
         r.take_named_element("class", |mut a, r| {
             let name = a.take_req("class_name")?;
-            let cert_url = uri::Rsync::from_str(
-                &a.take_req("cert_url")?
-            )?;
+            let cert_url = uri::Rsync::from_str(&a.take_req("cert_url")?)?;
 
             let asn = a.take_req("resource_set_as")?;
             let v4 = a.take_req("resource_set_ipv4")?;
@@ -490,14 +478,15 @@ impl Res {
                 issuer,
                 resource_set,
                 not_after,
-                issued
+                issued,
             ))
         })
     }
 
-    fn decode_entitlements<R>(
-        r: &mut XmlReader<R>
-    ) -> Result<Entitlements, Error> where R: io::Read {
+    fn decode_entitlements<R>(r: &mut XmlReader<R>) -> Result<Entitlements, Error>
+    where
+        R: io::Read,
+    {
         let mut classes = vec![];
         while let Some(class) = Self::decode_entitlement_class(r)? {
             classes.push(class);
@@ -505,88 +494,84 @@ impl Res {
         Ok(Entitlements::new(classes))
     }
 
-    fn decode_entitlement_class<R>(
-        r: &mut XmlReader<R>
-    ) -> Result<Option<EntitlementClass>, Error> where R: io::Read {
-        r.take_opt_element(|t, mut a, r| {
-            match t.name.as_ref() {
-                "class" => {
-                    let name = a.take_req("class_name")?;
-                    let cert_url = uri::Rsync::from_str(
-                        &a.take_req("cert_url")?
-                    )?;
+    fn decode_entitlement_class<R>(r: &mut XmlReader<R>) -> Result<Option<EntitlementClass>, Error>
+    where
+        R: io::Read,
+    {
+        r.take_opt_element(|t, mut a, r| match t.name.as_ref() {
+            "class" => {
+                let name = a.take_req("class_name")?;
+                let cert_url = uri::Rsync::from_str(&a.take_req("cert_url")?)?;
 
-                    let asn = a.take_req("resource_set_as")?;
-                    let v4 = a.take_req("resource_set_ipv4")?;
-                    let v6 = a.take_req("resource_set_ipv6")?;
+                let asn = a.take_req("resource_set_as")?;
+                let v4 = a.take_req("resource_set_ipv4")?;
+                let v6 = a.take_req("resource_set_ipv6")?;
 
-                    let resource_set = ResourceSet::from_strs(&asn, &v4, &v6)?;
+                let resource_set = ResourceSet::from_strs(&asn, &v4, &v6)?;
 
-                    let not_after = a.take_req("resource_set_notafter")?;
-                    let not_after = DateTime::<Utc>::from_str(&not_after)?;
-                    let not_after = Time::new(not_after);
+                let not_after = a.take_req("resource_set_notafter")?;
+                let not_after = DateTime::<Utc>::from_str(&not_after)?;
+                let not_after = Time::new(not_after);
 
+                a.exhausted()?;
+
+                let mut issued = vec![];
+                while let Some(issued_cert) = Self::decode_opt_issued_cert(r)? {
+                    issued.push(issued_cert);
+                }
+
+                let cert = r.take_named_element("issuer", |a, r| {
                     a.exhausted()?;
+                    Self::decode_cert(r)
+                })?;
 
-                    let mut issued = vec![];
-                    while let Some(issued_cert) = Self::decode_opt_issued_cert(r)? {
-                        issued.push(issued_cert);
-                    }
+                let issuer = SigningCert::new(cert_url, cert);
 
-                    let cert = r.take_named_element("issuer", |a, r| {
-                        a.exhausted()?;
-                        Self::decode_cert(r)
-                    })?;
-
-                    let issuer = SigningCert::new(cert_url, cert);
-
-                    Ok(Some(EntitlementClass::new(
-                        name, issuer, resource_set, not_after, issued
-                    )))
-                },
-                _ => Err(Error::UnexpectedStart(t.name.clone()))
+                Ok(Some(EntitlementClass::new(
+                    name,
+                    issuer,
+                    resource_set,
+                    not_after,
+                    issued,
+                )))
             }
+            _ => Err(Error::UnexpectedStart(t.name.clone())),
         })
     }
 
-    fn decode_opt_issued_cert<R>(
-        r: &mut XmlReader<R>
-    ) -> Result<Option<IssuedCert>, Error> where R: io::Read {
+    fn decode_opt_issued_cert<R>(r: &mut XmlReader<R>) -> Result<Option<IssuedCert>, Error>
+    where
+        R: io::Read,
+    {
         match r.next_start_name() {
             Some("certificate") => {
                 let cert = Self::decode_issued_cert(r)?;
                 Ok(Some(cert))
-            },
-            _ => Ok(None)
+            }
+            _ => Ok(None),
         }
     }
 
-    fn decode_issued_cert<R>(
-        r: &mut XmlReader<R>
-    ) -> Result<IssuedCert, Error> where R: io::Read {
+    fn decode_issued_cert<R>(r: &mut XmlReader<R>) -> Result<IssuedCert, Error>
+    where
+        R: io::Read,
+    {
         r.take_named_element("certificate", |mut a, r| {
-            let cert_url = uri::Rsync::from_str(
-                &a.take_req("cert_url").map_err(Error::XmlAttributesError)?
-            )?;
+            let cert_url =
+                uri::Rsync::from_str(&a.take_req("cert_url").map_err(Error::XmlAttributesError)?)?;
 
             let mut limit = RequestResourceLimit::default();
 
             if let Some(asn) = a.take_opt("req_resource_set_as") {
-                limit.with_asn(
-                    AsResources::from_str(&asn).map_err(Error::inr_syntax)?
-                );
+                limit.with_asn(AsResources::from_str(&asn).map_err(Error::inr_syntax)?);
             }
 
             if let Some(v4) = a.take_opt("req_resource_set_ipv4") {
-                limit.with_ipv4(
-                    Ipv4Resources::from_str(&v4).map_err(Error::inr_syntax)?
-                );
+                limit.with_ipv4(Ipv4Resources::from_str(&v4).map_err(Error::inr_syntax)?);
             }
 
             if let Some(v6) = a.take_opt("req_resource_set_ipv6") {
-                limit.with_ipv6(
-                    Ipv6Resources::from_str(&v6).map_err(Error::inr_syntax)?
-                );
+                limit.with_ipv6(Ipv6Resources::from_str(&v6).map_err(Error::inr_syntax)?);
             }
 
             let cert = Self::decode_cert(r)?;
@@ -596,23 +581,21 @@ impl Res {
         })
     }
 
-    fn decode_cert<R>(
-        r: &mut XmlReader<R>
-    ) -> Result<Cert, Error> where R: io::Read {
+    fn decode_cert<R>(r: &mut XmlReader<R>) -> Result<Cert, Error>
+    where
+        R: io::Read,
+    {
         let bytes = r.take_bytes_std()?;
         Cert::decode(bytes).map_err(|_| Error::InvalidCert)
     }
 
-    fn decode_error_response<R>(
-        r: &mut XmlReader<R>
-    ) -> Result<NotPerformedResponse, Error> where R: io::Read {
-        let code = r.take_named_element("status", |_a, r| {
-            r.take_chars()
-        })?;
+    fn decode_error_response<R>(r: &mut XmlReader<R>) -> Result<NotPerformedResponse, Error>
+    where
+        R: io::Read,
+    {
+        let code = r.take_named_element("status", |_a, r| r.take_chars())?;
 
-        let _desc = r.take_named_element("description", |_a, r| {
-            r.take_chars()
-        })?;
+        let _desc = r.take_named_element("description", |_a, r| r.take_chars())?;
 
         NotPerformedResponse::from_code(&code)
     }
@@ -621,21 +604,18 @@ impl Res {
 /// # Encoding
 ///
 impl Res {
-    fn encode<W: io::Write>(
-        &self,
-        w: &mut XmlWriter<W>
-    ) -> Result<(), io::Error> {
+    fn encode<W: io::Write>(&self, w: &mut XmlWriter<W>) -> Result<(), io::Error> {
         match self {
             Res::List(ents) => Self::encode_entitlements(ents, w),
             Res::Issue(response) => Self::encode_issuance_response(response, w),
             Res::Revoke(request) => Qry::encode_revoke(request, w),
-            Res::Error(err) => Self::encode_error_response(err, w)
+            Res::Error(err) => Self::encode_error_response(err, w),
         }
     }
 
     fn encode_entitlements<W: io::Write>(
         e: &Entitlements,
-        w: &mut XmlWriter<W>
+        w: &mut XmlWriter<W>,
     ) -> Result<(), io::Error> {
         for class in e.classes() {
             Self::encode_entitlement_class(class, w)?;
@@ -645,7 +625,7 @@ impl Res {
 
     fn encode_issuance_response<W: io::Write>(
         res: &IssuanceResponse,
-        w: &mut XmlWriter<W>
+        w: &mut XmlWriter<W>,
     ) -> Result<(), io::Error> {
         Self::encode_class(
             res.class_name(),
@@ -654,13 +634,13 @@ impl Res {
             res.resource_set(),
             [res.issued().clone()].iter(),
             res.issuer(),
-            w
+            w,
         )
     }
 
     fn encode_entitlement_class<W: io::Write>(
         c: &EntitlementClass,
-        w: &mut XmlWriter<W>
+        w: &mut XmlWriter<W>,
     ) -> Result<(), io::Error> {
         Self::encode_class(
             c.class_name(),
@@ -669,7 +649,7 @@ impl Res {
             c.resource_set(),
             c.issued().iter(),
             c.issuer(),
-            w
+            w,
         )
     }
 
@@ -678,9 +658,9 @@ impl Res {
         cert_url: &uri::Rsync,
         not_after: Time,
         inrs: &ResourceSet,
-        issued: impl Iterator<Item=&'a IssuedCert>,
+        issued: impl Iterator<Item = &'a IssuedCert>,
         issuer: &SigningCert,
-        w: &mut XmlWriter<W>
+        w: &mut XmlWriter<W>,
     ) -> Result<(), io::Error> {
         let cert_url = cert_url.to_string();
         let not_after = not_after.to_rfc3339_opts(SecondsFormat::Secs, true);
@@ -703,15 +683,13 @@ impl Res {
                 Self::encode_issued(issued, w)?;
             }
             let issuer_cert = issuer.cert().to_captured().into_bytes();
-            w.put_element("issuer", None, |w| { w.put_base64_std(&issuer_cert) })
+            w.put_element("issuer", None, |w| w.put_base64_std(&issuer_cert))
         })
     }
 
-
-
     fn encode_issued<W: io::Write>(
         issued: &IssuedCert,
-        w: &mut XmlWriter<W>
+        w: &mut XmlWriter<W>,
     ) -> Result<(), io::Error> {
         let cert_url = issued.uri().to_string();
         let limit = issued.limit();
@@ -745,19 +723,16 @@ impl Res {
 
     fn encode_error_response<W: io::Write>(
         error: &NotPerformedResponse,
-        w: &mut XmlWriter<W>
+        w: &mut XmlWriter<W>,
     ) -> Result<(), io::Error> {
-        w.put_element("status", None, |w| {
-            w.put_text(&format!("{}", error.status))
-        })?;
+        w.put_element("status", None, |w| w.put_text(&format!("{}", error.status)))?;
 
-        let att = [ ( "xml:lang", "en-US" )];
+        let att = [("xml:lang", "en-US")];
         w.put_element("description", Some(&att), |w| {
             w.put_text(&error.description)
         })
     }
 }
-
 
 //------------ NotPerformedResponse ------------------------------------------
 
@@ -766,55 +741,102 @@ impl Res {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NotPerformedResponse {
     status: u64,
-    description: String
+    description: String,
 }
 
 impl NotPerformedResponse {
     /// Local helper. Please use [`from_code`] to create a response for an
     /// status value defined in RFC6492.
     fn new(status: u64, description: &str) -> Self {
-        NotPerformedResponse { status, description: description.to_string() }
+        NotPerformedResponse {
+            status,
+            description: description.to_string(),
+        }
     }
 
     /// Creates a response for a status value defined in RFC6492. Also adds
     /// the description defined in the RFC.
     pub fn from_code(code: &str) -> Result<Self, Error> {
         match code {
-            "1101" => Ok(NotPerformedResponse::new(1101, "already processing request")),
+            "1101" => Ok(NotPerformedResponse::new(
+                1101,
+                "already processing request",
+            )),
             "1102" => Ok(NotPerformedResponse::new(1102, "version number error")),
             "1103" => Ok(NotPerformedResponse::new(1103, "unrecognized request type")),
-            "1104" => Ok(NotPerformedResponse::new(1104, "request scheduled for processing")),
+            "1104" => Ok(NotPerformedResponse::new(
+                1104,
+                "request scheduled for processing",
+            )),
 
-            "1201" => Ok(NotPerformedResponse::new(1201, "request - no such resource class")),
-            "1202" => Ok(NotPerformedResponse::new(1202, "request - no resources allocated in resource class")),
-            "1203" => Ok(NotPerformedResponse::new(1203, "request - badly formed certificate request")),
-            "1204" => Ok(NotPerformedResponse::new(1204, "request - already used key in request")),
+            "1201" => Ok(NotPerformedResponse::new(
+                1201,
+                "request - no such resource class",
+            )),
+            "1202" => Ok(NotPerformedResponse::new(
+                1202,
+                "request - no resources allocated in resource class",
+            )),
+            "1203" => Ok(NotPerformedResponse::new(
+                1203,
+                "request - badly formed certificate request",
+            )),
+            "1204" => Ok(NotPerformedResponse::new(
+                1204,
+                "request - already used key in request",
+            )),
 
-            "1301" => Ok(NotPerformedResponse::new(1301, "revoke - no such resource class")),
+            "1301" => Ok(NotPerformedResponse::new(
+                1301,
+                "revoke - no such resource class",
+            )),
             "1302" => Ok(NotPerformedResponse::new(1302, "revoke - no such key")),
 
-            "2001" => Ok(NotPerformedResponse::new(2001, "Internal Server Error - Request not performed")),
-            _ => Err(Error::InvalidErrorCode(code.to_string()))
+            "2001" => Ok(NotPerformedResponse::new(
+                2001,
+                "Internal Server Error - Request not performed",
+            )),
+            _ => Err(Error::InvalidErrorCode(code.to_string())),
         }
     }
 
-    pub fn _1101() -> Self { Self::from_code("1101").unwrap() }
-    pub fn _1102() -> Self { Self::from_code("1102").unwrap() }
-    pub fn _1103() -> Self { Self::from_code("1103").unwrap() }
-    pub fn _1104() -> Self { Self::from_code("1104").unwrap() }
+    pub fn _1101() -> Self {
+        Self::from_code("1101").unwrap()
+    }
+    pub fn _1102() -> Self {
+        Self::from_code("1102").unwrap()
+    }
+    pub fn _1103() -> Self {
+        Self::from_code("1103").unwrap()
+    }
+    pub fn _1104() -> Self {
+        Self::from_code("1104").unwrap()
+    }
 
-    pub fn _1201() -> Self { Self::from_code("1201").unwrap() }
-    pub fn _1202() -> Self { Self::from_code("1202").unwrap() }
-    pub fn _1203() -> Self { Self::from_code("1203").unwrap() }
-    pub fn _1204() -> Self { Self::from_code("1204").unwrap() }
+    pub fn _1201() -> Self {
+        Self::from_code("1201").unwrap()
+    }
+    pub fn _1202() -> Self {
+        Self::from_code("1202").unwrap()
+    }
+    pub fn _1203() -> Self {
+        Self::from_code("1203").unwrap()
+    }
+    pub fn _1204() -> Self {
+        Self::from_code("1204").unwrap()
+    }
 
-    pub fn _1301() -> Self { Self::from_code("1301").unwrap() }
-    pub fn _1302() -> Self { Self::from_code("1302").unwrap() }
+    pub fn _1301() -> Self {
+        Self::from_code("1301").unwrap()
+    }
+    pub fn _1302() -> Self {
+        Self::from_code("1302").unwrap()
+    }
 
-    pub fn _2001() -> Self { Self::from_code("2001").unwrap() }
+    pub fn _2001() -> Self {
+        Self::from_code("2001").unwrap()
+    }
 }
-
-
 
 //------------ Error ---------------------------------------------------------
 
@@ -864,7 +886,9 @@ pub enum Error {
 }
 
 impl Error {
-    fn inr_syntax(e: impl Display) -> Self { Error::InrSyntax(e.to_string())}
+    fn inr_syntax(e: impl Display) -> Self {
+        Error::InrSyntax(e.to_string())
+    }
 }
 
 impl From<XmlReaderErr> for Error {
@@ -905,8 +929,8 @@ mod tests {
     use std::str;
     use std::str::from_utf8_unchecked;
 
-    use crate::remote::sigmsg::SignedMessage;
     use crate::remote::id::tests::test_id_certificate;
+    use crate::remote::sigmsg::SignedMessage;
 
     use super::*;
     use remote::id::IdCert;
@@ -923,26 +947,24 @@ mod tests {
     fn extract_xml(pdu: &[u8]) -> String {
         let msg = SignedMessage::decode(pdu.as_ref(), false).unwrap();
         let content = msg.content().to_bytes();
-        let xml = unsafe {
-            from_utf8_unchecked(content.as_ref())
-        };
+        let xml = unsafe { from_utf8_unchecked(content.as_ref()) };
         xml.to_string()
     }
 
     #[test]
     fn parse_and_encode_list() {
-        let xml = extract_xml(
-            include_bytes!("../../test-resources/remote/rpkid-rfc6492-list.der")
-        );
+        let xml = extract_xml(include_bytes!(
+            "../../test-resources/remote/rpkid-rfc6492-list.der"
+        ));
         let list = Message::decode(xml.as_bytes()).unwrap();
         assert_re_encode_equals(list);
     }
 
     #[test]
     fn parse_and_encode_list_response() {
-        let xml = extract_xml(
-            include_bytes!("../../test-resources/remote/rpkid-rfc6492-list_response.der")
-        );
+        let xml = extract_xml(include_bytes!(
+            "../../test-resources/remote/rpkid-rfc6492-list_response.der"
+        ));
         let list_response = Message::decode(xml.as_bytes()).unwrap();
         assert_re_encode_equals(list_response);
     }
@@ -953,10 +975,7 @@ mod tests {
 
         let msg = SignedMessage::decode(pdu.as_ref(), false).unwrap();
         let content = msg.content().to_bytes();
-        let xml = unsafe {
-            from_utf8_unchecked(content.as_ref())
-        };
-
+        let xml = unsafe { from_utf8_unchecked(content.as_ref()) };
 
         let _list_response = Message::decode(xml.as_bytes()).unwrap();
 
@@ -968,18 +987,18 @@ mod tests {
 
     #[test]
     fn parse_and_encode_issue() {
-        let xml = extract_xml(
-            include_bytes!("../../test-resources/remote/rpkid-rfc6492-issue.der")
-        );
+        let xml = extract_xml(include_bytes!(
+            "../../test-resources/remote/rpkid-rfc6492-issue.der"
+        ));
         let issue = Message::decode(xml.as_bytes()).unwrap();
         assert_re_encode_equals(issue);
     }
 
     #[test]
     fn parse_and_encode_issue_response() {
-        let xml = extract_xml(
-            include_bytes!("../../test-resources/remote/rpkid-rfc6492-issue_response.der")
-        );
+        let xml = extract_xml(include_bytes!(
+            "../../test-resources/remote/rpkid-rfc6492-issue_response.der"
+        ));
         let issue = Message::decode(xml.as_bytes()).unwrap();
         assert_re_encode_equals(issue);
     }
@@ -1022,7 +1041,6 @@ mod tests {
 
         assert_eq!(rev, decoded_rev);
     }
-
 
     #[test]
     fn encode_and_parse_error_response() {

@@ -2,7 +2,6 @@ use crate::api::admin::Handle;
 
 use super::Storable;
 
-
 //------------ Event --------------------------------------------------------
 
 pub trait Event: Storable + 'static {
@@ -20,18 +19,25 @@ pub struct StoredEvent<E: Storable + 'static> {
     id: Handle,
     version: u64,
     #[serde(deserialize_with = "E::deserialize")]
-    details: E
+    details: E,
 }
 
 impl<E: Storable + 'static> StoredEvent<E> {
-
     pub fn new(id: &Handle, version: u64, event: E) -> Self {
-        StoredEvent { id: id.clone(), version, details: event }
+        StoredEvent {
+            id: id.clone(),
+            version,
+            details: event,
+        }
     }
 
-    pub fn details(&self) -> &E { & self.details }
+    pub fn details(&self) -> &E {
+        &self.details
+    }
 
-    pub fn into_details(self) -> E { self.details }
+    pub fn into_details(self) -> E {
+        self.details
+    }
 
     /// Return the parts of this event.
     pub fn unwrap(self) -> (Handle, u64, E) {

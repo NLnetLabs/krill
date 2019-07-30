@@ -1,39 +1,22 @@
+use crate::publishers::{
+    InitPublisherDetails, Publisher, PublisherCommand, PublisherCommandDetails, PublisherError,
+    PublisherEventDetails,
+};
+use crate::repo::{
+    self, RetentionTime, RrdpCommandDetails, RrdpInitDetails, RrdpServer, RrdpServerError,
+    RsyncdStore,
+};
+use krill_commons::api::admin::{Handle, PublisherRequest};
+use krill_commons::api::ca::RepoInfo;
+use krill_commons::api::publication;
+use krill_commons::api::rrdp::DeltaElements;
+use krill_commons::eventsourcing::{
+    Aggregate, AggregateStore, AggregateStoreError, Command, DiskAggregateStore,
+};
+use rpki::uri;
 use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use rpki::uri;
-use krill_commons::api::publication;
-use krill_commons::api::admin::{
-    Handle,
-    PublisherRequest
-};
-use krill_commons::api::ca::RepoInfo;
-use krill_commons::api::rrdp::DeltaElements;
-use krill_commons::eventsourcing::{
-    Aggregate,
-    AggregateStore,
-    AggregateStoreError,
-    Command,
-    DiskAggregateStore,
-};
-use crate::publishers::{
-    Publisher,
-    PublisherCommand,
-    PublisherCommandDetails,
-    PublisherError,
-    PublisherEventDetails,
-    InitPublisherDetails
-};
-use crate::repo::{
-    self,
-    RetentionTime,
-    RrdpCommandDetails,
-    RrdpInitDetails,
-    RrdpServer,
-    RrdpServerError,
-    RsyncdStore,
-};
-
 
 //------------ PubServer -----------------------------------------------------
 
@@ -45,26 +28,32 @@ pub struct PubServer {
     rsyncd_store: RsyncdStore,
     store: Arc<DiskAggregateStore<Publisher>>,
     base_rsync_uri: uri::Rsync, // jail for the publishers,
-    command_lock: Mutex<()> // Only one command at the time.
+    command_lock: Mutex<()>,    // Only one command at the time.
 }
 
 impl PubServer {
     pub fn build(
         base_rsync_uri: uri::Rsync,
         base_http_uri: uri::Https, // for the RRDP files
-        repo_dir: PathBuf, // for the RRDP and rsync files
-        work_dir: &PathBuf // for the aggregate stores
+        repo_dir: PathBuf,         // for the RRDP and rsync files
+        work_dir: &PathBuf,        // for the aggregate stores
     ) -> Result<Self, Error> {
-        let rrdp_store = Arc::new(DiskAggregateStore::<RrdpServer>::new(work_dir, "repo-server")?);
+        let rrdp_store = Arc::new(DiskAggregateStore::<RrdpServer>::new(
+            work_dir,
+            "repo-server",
+        )?);
 
         let rsyncd_store = RsyncdStore::build(&repo_dir)?;
 
-        if ! rrdp_store.has(&repo::id()) {
+        if !rrdp_store.has(&repo::id()) {
             let init = RrdpInitDetails::init_new(base_http_uri, repo_dir);
             rrdp_store.add(init)?;
         }
 
-        let store = Arc::new(DiskAggregateStore::<Publisher>::new(work_dir, "publishers")?);
+        let store = Arc::new(DiskAggregateStore::<Publisher>::new(
+            work_dir,
+            "publishers",
+        )?);
 
         let command_lock = Mutex::new(());
 
@@ -73,7 +62,7 @@ impl PubServer {
             rsyncd_store,
             store,
             base_rsync_uri,
-            command_lock
+            command_lock,
         };
 
         Ok(pubserver)
@@ -92,21 +81,16 @@ impl PubServer {
     }
 }
 
-
 /// # Publication Protocol support
 ///
 impl PubServer {
-
     fn rrdp_server(&self) -> Result<Arc<RrdpServer>, Error> {
-        self.rrdp_store.get_latest(&repo::id()).map_err(Error::AggregateStoreError)
+        self.rrdp_store
+            .get_latest(&repo::id())
+            .map_err(Error::AggregateStoreError)
     }
 
-    pub fn publish(
-        &self,
-        handle: &Handle,
-        delta: publication::PublishDelta
-    ) -> Result<(), Error> {
-
+    pub fn publish(&self, handle: &Handle, delta: publication::PublishDelta) -> Result<(), Error> {
         // Only do one update at a time.
         let _lock = self.command_lock.lock().unwrap();
 
@@ -125,12 +109,16 @@ impl PubServer {
             let rrdp = self.rrdp_server()?;
             let add_cmd = RrdpCommandDetails::add_delta(delta);
             let rrdp_add_delta_events = rrdp.process_command(add_cmd)?;
-            let rrdp = self.rrdp_store.update(&repo_id, rrdp, rrdp_add_delta_events)?;
+            let rrdp = self
+                .rrdp_store
+                .update(&repo_id, rrdp, rrdp_add_delta_events)?;
 
             // Trigger publication of the RRDP files
             let publish_cmd = RrdpCommandDetails::publish();
             let rrdp_publish_events = rrdp.process_command(publish_cmd)?;
-            let rrdp = self.rrdp_store.update(&repo_id, rrdp, rrdp_publish_events)?;
+            let rrdp = self
+                .rrdp_store
+                .update(&repo_id, rrdp, rrdp_publish_events)?;
 
             // Clean up old files
             let retention = RetentionTime::from_secs(0);
@@ -142,31 +130,26 @@ impl PubServer {
         Ok(())
     }
 
-    pub fn list(
-        &self,
-        handle: &Handle
-    ) -> Result<publication::ListReply, Error> {
+    pub fn list(&self, handle: &Handle) -> Result<publication::ListReply, Error> {
         match self.get_publisher(handle)? {
             Some(publisher) => Ok(publisher.list_current()),
-            None => Err(Error::UnknownPublisher(handle.to_string()))
+            None => Err(Error::UnknownPublisher(handle.to_string())),
         }
     }
 }
 
-
 /// # Publishing
 ///
 impl PubServer {
-
     fn verify_handle(&self, handle: &Handle) -> Result<(), Error> {
         let name = handle.as_str();
 
-        if ! name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
-            return Err(Error::InvalidHandle(name.to_string()))
+        if !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+            return Err(Error::InvalidHandle(name.to_string()));
         }
 
         if self.store.has(handle) {
-            return Err(Error::DuplicatePublisher(name.to_string()))
+            return Err(Error::DuplicatePublisher(name.to_string()));
         }
 
         Ok(())
@@ -186,12 +169,10 @@ impl PubServer {
         }
     }
 
-    pub fn get_publisher(
-        &self,
-        handle: &Handle
-    ) -> Result<Option<Arc<Publisher>>, Error> {
+    pub fn get_publisher(&self, handle: &Handle) -> Result<Option<Arc<Publisher>>, Error> {
         if self.store.has(handle) {
-            self.store.get_latest(handle)
+            self.store
+                .get_latest(handle)
                 .map(Some)
                 .map_err(Error::AggregateStoreError)
         } else {
@@ -201,10 +182,7 @@ impl PubServer {
 
     /// Adds a publisher. Will complain if a publisher already exists for this
     /// handle. Will also verify that the base_uri is allowed.
-    pub fn create_publisher(
-        &self,
-        req: PublisherRequest
-    ) -> Result<(), Error> {
+    pub fn create_publisher(&self, req: PublisherRequest) -> Result<(), Error> {
         self.verify_handle(req.handle())?;
         self.verify_base_uri(req.base_uri())?;
 
@@ -224,24 +202,16 @@ impl PubServer {
     /// re-activation in future. Reason is that we never forget the history
     /// of the old publisher, and if handles are re-used by different
     /// entities that would get confusing.
-    pub fn deactivate_publisher(
-        &self,
-        handle: &Handle
-    ) -> Result<(), Error> {
+    pub fn deactivate_publisher(&self, handle: &Handle) -> Result<(), Error> {
         let cmd = PublisherCommandDetails::deactivate(handle);
         self.command_publisher(cmd)?;
         Ok(())
     }
 
-
     /// Apply a command to a publisher. If this was a successful publication
     /// command, then return the delta so that it can be published by the
     /// RRDP server.
-    fn command_publisher(
-        &self,
-        command: PublisherCommand
-    ) -> Result<Option<DeltaElements>, Error> {
-
+    fn command_publisher(&self, command: PublisherCommand) -> Result<Option<DeltaElements>, Error> {
         let handle = command.handle().clone();
 
         match self.get_publisher(&handle)? {
@@ -251,9 +221,7 @@ impl PubServer {
 
                 if let Some(version) = command.version() {
                     if version != pbl.version() {
-                        return Err(
-                            Error::ConcurrentModification(version, pbl.version())
-                        )
+                        return Err(Error::ConcurrentModification(version, pbl.version()));
                     }
                 }
 
@@ -271,7 +239,6 @@ impl PubServer {
             }
         }
     }
-
 }
 
 //------------ Error ---------------------------------------------------------
@@ -281,10 +248,16 @@ pub enum Error {
     #[display(fmt = "{}", _0)]
     IoError(io::Error),
 
-    #[display(fmt = "The publisher handle may only contain a-ZA-Z0-9 and _. You sent: {}", _0)]
+    #[display(
+        fmt = "The publisher handle may only contain a-ZA-Z0-9 and _. You sent: {}",
+        _0
+    )]
     InvalidHandle(String),
 
-    #[display(fmt = "Duplicate publisher with name: {} (note: might be de-activated).", _0)]
+    #[display(
+        fmt = "Duplicate publisher with name: {} (note: might be de-activated).",
+        _0
+    )]
     DuplicatePublisher(String),
 
     #[display(fmt = "Unknown publisher with name: {}.", _0)]
@@ -307,23 +280,30 @@ pub enum Error {
 }
 
 impl From<io::Error> for Error {
-    fn from(e: io::Error) -> Self { Error::IoError(e) }
+    fn from(e: io::Error) -> Self {
+        Error::IoError(e)
+    }
 }
 
 impl From<PublisherError> for Error {
-    fn from(e: PublisherError) -> Self { Error::PublisherError(e) }
+    fn from(e: PublisherError) -> Self {
+        Error::PublisherError(e)
+    }
 }
 
 impl From<RrdpServerError> for Error {
-    fn from(e: RrdpServerError) -> Self { Error::RrdpServerError(e) }
+    fn from(e: RrdpServerError) -> Self {
+        Error::RrdpServerError(e)
+    }
 }
 
 impl From<AggregateStoreError> for Error {
-    fn from(e: AggregateStoreError) -> Self { Error::AggregateStoreError(e) }
+    fn from(e: AggregateStoreError) -> Self {
+        Error::AggregateStoreError(e)
+    }
 }
 
 impl std::error::Error for Error {}
-
 
 //------------ Tests ---------------------------------------------------------
 
@@ -331,13 +311,13 @@ impl std::error::Error for Error {}
 mod tests {
 
     use super::*;
-    use std::path::PathBuf;
     use bytes::Bytes;
     use krill_commons::api::admin::Token;
     use krill_commons::api::publication::PublishDeltaBuilder;
     use krill_commons::api::rrdp::VerificationError;
     use krill_commons::util::file::CurrentFile;
     use krill_commons::util::test;
+    use std::path::PathBuf;
 
     fn server_base_uri() -> uri::Rsync {
         test::rsync("rsync://localhost/repo/")
@@ -347,10 +327,7 @@ mod tests {
         test::https("https://localhost/rrdp/")
     }
 
-    fn make_publisher_req(
-        handle: &str,
-        uri: &str,
-    ) -> PublisherRequest {
+    fn make_publisher_req(handle: &str, uri: &str) -> PublisherRequest {
         let base_uri = test::rsync(uri);
         let handle = Handle::from(handle);
         let token = Token::from("secret");
@@ -366,17 +343,15 @@ mod tests {
             server_base_uri(),
             server_base_http_uri(),
             base_dir,
-            work_dir
-        ).unwrap()
+            work_dir,
+        )
+        .unwrap()
     }
 
     #[test]
     fn should_add_publisher() {
         test::test_under_tmp(|d| {
-            let publisher_req = make_publisher_req(
-                "alice",
-                "rsync://localhost/repo/alice/",
-            );
+            let publisher_req = make_publisher_req("alice", "rsync://localhost/repo/alice/");
 
             let server = make_server(&d);
             server.create_publisher(publisher_req).unwrap();
@@ -391,17 +366,12 @@ mod tests {
     #[test]
     fn should_refuse_invalid_publisher_handle() {
         test::test_under_tmp(|d| {
-            let publisher_req = make_publisher_req(
-                "alice&",
-                "rsync://localhost/repo/alice/",
-            );
+            let publisher_req = make_publisher_req("alice&", "rsync://localhost/repo/alice/");
 
             let server = make_server(&d);
             match server.create_publisher(publisher_req) {
-                Err(Error::InvalidHandle(handle)) => {
-                    assert_eq!(handle, "alice&".to_string())
-                },
-                _ => panic!("Expected error")
+                Err(Error::InvalidHandle(handle)) => assert_eq!(handle, "alice&".to_string()),
+                _ => panic!("Expected error"),
             }
         })
     }
@@ -409,15 +379,12 @@ mod tests {
     #[test]
     fn should_refuse_base_uri_not_ending_with_slash() {
         test::test_under_tmp(|d| {
-            let publisher_req = make_publisher_req(
-                "alice",
-                "rsync://localhost/repo/alice",
-            );
+            let publisher_req = make_publisher_req("alice", "rsync://localhost/repo/alice");
 
             let server = make_server(&d);
             match server.create_publisher(publisher_req) {
-                Err(Error::InvalidBaseUri) => { },
-                _ => panic!("Expected error")
+                Err(Error::InvalidBaseUri) => {}
+                _ => panic!("Expected error"),
             }
         })
     }
@@ -425,15 +392,12 @@ mod tests {
     #[test]
     fn should_refuse_base_uri_outside_of_server_base() {
         test::test_under_tmp(|d| {
-            let publisher_req = make_publisher_req(
-                "alice",
-                "rsync://localhost/outside/alice/",
-            );
+            let publisher_req = make_publisher_req("alice", "rsync://localhost/outside/alice/");
 
             let server = make_server(&d);
             match server.create_publisher(publisher_req) {
-                Err(Error::InvalidBaseUri) => { },
-                _ => panic!("Expected error")
+                Err(Error::InvalidBaseUri) => {}
+                _ => panic!("Expected error"),
             }
         })
     }
@@ -441,18 +405,13 @@ mod tests {
     #[test]
     fn should_not_add_publisher_twice() {
         test::test_under_tmp(|d| {
-            let publisher_req = make_publisher_req(
-                "alice",
-                "rsync://localhost/repo/alice/",
-            );
+            let publisher_req = make_publisher_req("alice", "rsync://localhost/repo/alice/");
 
             let server = make_server(&d);
             server.create_publisher(publisher_req.clone()).unwrap();
             match server.create_publisher(publisher_req) {
-                Err(Error::DuplicatePublisher(name)) => {
-                    assert_eq!(name, "alice".to_string())
-                },
-                _ => panic!("Expected error")
+                Err(Error::DuplicatePublisher(name)) => assert_eq!(name, "alice".to_string()),
+                _ => panic!("Expected error"),
             }
         })
     }
@@ -464,10 +423,8 @@ mod tests {
             let handle = Handle::from("alice");
 
             // create publisher
-            let publisher_req = make_publisher_req(
-                handle.as_str(),
-                "rsync://localhost/repo/alice/",
-            );
+            let publisher_req =
+                make_publisher_req(handle.as_str(), "rsync://localhost/repo/alice/");
             server.create_publisher(publisher_req).unwrap();
 
             // expect to see it in the list
@@ -481,17 +438,13 @@ mod tests {
             // expect that it is now inactive
             let alice = server.get_publisher(&handle).unwrap().unwrap();
             assert!(alice.is_deactivated())
-
         })
     }
 
     #[test]
     fn should_list_files() {
         test::test_under_tmp(|d| {
-            let publisher_req = make_publisher_req(
-                "alice",
-                "rsync://localhost/repo/alice/",
-            );
+            let publisher_req = make_publisher_req("alice", "rsync://localhost/repo/alice/");
             let handle = Handle::from("alice");
 
             let server = make_server(&d);
@@ -510,15 +463,12 @@ mod tests {
             // get the file out of a list_reply
             fn find_in_reply<'a>(
                 reply: &'a publication::ListReply,
-                uri: &uri::Rsync
+                uri: &uri::Rsync,
             ) -> Option<&'a publication::ListElement> {
                 reply.elements().iter().find(|e| e.uri() == uri)
             }
 
-            let publisher_req = make_publisher_req(
-                "alice",
-                "rsync://localhost/repo/alice/",
-            );
+            let publisher_req = make_publisher_req("alice", "rsync://localhost/repo/alice/");
             let handle = Handle::from("alice");
 
             let server = make_server(&d);
@@ -527,12 +477,12 @@ mod tests {
             // Publish a single file
             let file1 = CurrentFile::new(
                 test::rsync("rsync://localhost/repo/alice/file.txt"),
-                &Bytes::from("example content")
+                &Bytes::from("example content"),
             );
 
             let file2 = CurrentFile::new(
                 test::rsync("rsync://localhost/repo/alice/file2.txt"),
-                &Bytes::from("example content 2")
+                &Bytes::from("example content 2"),
             );
 
             let mut builder = PublishDeltaBuilder::new();
@@ -549,11 +499,13 @@ mod tests {
             assert!(find_in_reply(
                 &list_reply,
                 &test::rsync("rsync://localhost/repo/alice/file.txt")
-            ).is_some());
+            )
+            .is_some());
             assert!(find_in_reply(
                 &list_reply,
                 &test::rsync("rsync://localhost/repo/alice/file2.txt")
-            ).is_some());
+            )
+            .is_some());
 
             // Update
             // - update file
@@ -562,12 +514,12 @@ mod tests {
 
             let file1_update = CurrentFile::new(
                 test::rsync("rsync://localhost/repo/alice/file.txt"),
-                &Bytes::from("example content - updated")
+                &Bytes::from("example content - updated"),
             );
 
             let file3 = CurrentFile::new(
                 test::rsync("rsync://localhost/repo/alice/file3.txt"),
-                &Bytes::from("example content 3")
+                &Bytes::from("example content 3"),
             );
 
             let mut builder = PublishDeltaBuilder::new();
@@ -586,58 +538,54 @@ mod tests {
             assert!(find_in_reply(
                 &list_reply,
                 &test::rsync("rsync://localhost/repo/alice/file.txt")
-            ).is_some());
+            )
+            .is_some());
             assert_eq!(
                 find_in_reply(
                     &list_reply,
                     &test::rsync("rsync://localhost/repo/alice/file.txt")
-                ).unwrap().hash(),
+                )
+                .unwrap()
+                .hash(),
                 file1_update.hash()
             );
             assert!(find_in_reply(
                 &list_reply,
                 &test::rsync("rsync://localhost/repo/alice/file3.txt")
-            ).is_some());
+            )
+            .is_some());
 
             // Should reject publish outside of base uri
             let file_outside = CurrentFile::new(
                 test::rsync("rsync://localhost/repo/bob/file.txt"),
-                &Bytes::from("irrelevant")
+                &Bytes::from("irrelevant"),
             );
             let mut builder = PublishDeltaBuilder::new();
             builder.add_publish(file_outside.as_publish());
             let delta = builder.finish();
 
             match server.publish(&handle, delta) {
-                Err(
-                    Error::PublisherError(
-                        PublisherError::VerificationError(
-                            VerificationError::UriOutsideJail(_, _)
-                        )
-                    )
-                ) => {}, // ok
-                _ => panic!("Expected error publishing outside of base uri jail")
+                Err(Error::PublisherError(PublisherError::VerificationError(
+                    VerificationError::UriOutsideJail(_, _),
+                ))) => {} // ok
+                _ => panic!("Expected error publishing outside of base uri jail"),
             }
 
             // Should reject update of file that does not exist
             let file2_update = CurrentFile::new(
                 test::rsync("rsync://localhost/repo/alice/file2.txt"),
-                &Bytes::from("example content 2 updated")
+                &Bytes::from("example content 2 updated"),
             ); // file2 was removed
             let mut builder = PublishDeltaBuilder::new();
             builder.add_update(file2_update.as_update(file2.hash()));
             let delta = builder.finish();
 
             match server.publish(&handle, delta) {
-                Err(
-                    Error::PublisherError(
-                        PublisherError::VerificationError(
-                            VerificationError::NoObjectForHashAndOrUri(_)
-                        )
-                    )
-                ) => {},
+                Err(Error::PublisherError(PublisherError::VerificationError(
+                    VerificationError::NoObjectForHashAndOrUri(_),
+                ))) => {}
                 // ok
-                _ => panic!("Expected error when file for update can't be found")
+                _ => panic!("Expected error when file for update can't be found"),
             }
 
             // should reject withdraw for file that does not exist
@@ -647,14 +595,10 @@ mod tests {
             let cmd = PublisherCommandDetails::publish(&handle, delta);
 
             match server.command_publisher(cmd) {
-                Err(
-                    Error::PublisherError(
-                        PublisherError::VerificationError(
-                            VerificationError::NoObjectForHashAndOrUri(_)
-                        )
-                    )
-                ) => {}, // ok
-                _ => panic!("Expected error withdrawing file that does not exist")
+                Err(Error::PublisherError(PublisherError::VerificationError(
+                    VerificationError::NoObjectForHashAndOrUri(_),
+                ))) => {} // ok
+                _ => panic!("Expected error withdrawing file that does not exist"),
             }
 
             // should reject publish for file that does exist
@@ -663,17 +607,10 @@ mod tests {
             let delta = builder.finish();
 
             match server.publish(&handle, delta) {
-                Err(
-                    Error::PublisherError(
-                        PublisherError::VerificationError
-                        (VerificationError::ObjectAlreadyPresent(uri)
-                        )
-                    )
-                ) => { assert_eq!(
-                    uri,
-                    test::rsync("rsync://localhost/repo/alice/file3.txt")
-                )},
-                _ => panic!("Expected error publishing file that already exists")
+                Err(Error::PublisherError(PublisherError::VerificationError(
+                    VerificationError::ObjectAlreadyPresent(uri),
+                ))) => assert_eq!(uri, test::rsync("rsync://localhost/repo/alice/file3.txt")),
+                _ => panic!("Expected error publishing file that already exists"),
             }
         });
     }

@@ -1,31 +1,20 @@
 //! Support for building RPKI Certificates and Objects
-use std::fmt;
-use bcder::{BitString, Mode, OctetString, Oid, Tag};
-use bcder::{decode, encode};
 use bcder::encode::{Constructed, PrimitiveContent, Values};
+use bcder::{decode, encode};
+use bcder::{BitString, Mode, OctetString, Oid, Tag};
 use bytes::Bytes;
 use chrono::Utc;
-use rpki::cert::ext::{
-    AuthorityKeyIdentifier,
-    CrlNumber,
-    Extensions,
-    KeyIdentifier
-};
+use rpki::cert::ext::{AuthorityKeyIdentifier, CrlNumber, Extensions, KeyIdentifier};
 use rpki::crl::Crl;
-use rpki::crypto::{
-    DigestAlgorithm,
-    Signature,
-    SignatureAlgorithm,
-    Signer,
-    SigningError,
-    PublicKey
-};
 use rpki::crypto::signer::KeyError;
+use rpki::crypto::{
+    DigestAlgorithm, PublicKey, Signature, SignatureAlgorithm, Signer, SigningError,
+};
 use rpki::oid;
-use rpki::x509::{Name, Validity, Time};
+use rpki::x509::{Name, Time, Validity};
+use std::fmt;
 
 use crate::remote::id::{IdCert, IdExtensions};
-
 
 //------------ TbsCertificate ------------------------------------------------
 
@@ -33,12 +22,11 @@ use crate::remote::id::{IdCert, IdExtensions};
 #[allow(clippy::large_enum_variant)]
 pub enum RpkiTbsExtension {
     ResourceExtensions(Extensions),
-    IdExtensions(IdExtensions)
+    IdExtensions(IdExtensions),
 }
 
 /// This type represents the signed content part of an RPKI Certificate.
 pub struct RpkiTbsCertificate {
-
     // The General structure is documented in section 4.1 or RFC5280
     //
     //    TBSCertificate  ::=  SEQUENCE  {
@@ -77,7 +65,6 @@ pub struct RpkiTbsCertificate {
 /// # Encoding
 ///
 impl RpkiTbsCertificate {
-
     /// Encodes this certificate.
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
         match self.extensions {
@@ -86,23 +73,21 @@ impl RpkiTbsCertificate {
                     (
                         Constructed::new(
                             Tag::CTX_0,
-                            2.encode() // Version 3 is encoded as 2
+                            2.encode(), // Version 3 is encoded as 2
                         ),
                         self.serial_number.encode(),
                         SignatureAlgorithm::default().x509_encode(),
-                        self.issuer.encode_ref()
+                        self.issuer.encode_ref(),
                     ),
                     (
                         self.validity.encode(),
                         self.subject.encode_ref(),
                         self.subject_public_key_info.clone().encode(),
-                        id_ext.encode()
-                    )
+                        id_ext.encode(),
+                    ),
                 ))
-            },
-            RpkiTbsExtension::ResourceExtensions(ref _ext) => {
-                unimplemented!()
             }
+            RpkiTbsExtension::ResourceExtensions(ref _ext) => unimplemented!(),
         }
     }
 }
@@ -116,7 +101,7 @@ impl RpkiTbsCertificate {
         validity: Validity,
         subject: Name,
         subject_public_key_info: PublicKey,
-        extensions: RpkiTbsExtension
+        extensions: RpkiTbsExtension,
     ) -> Self {
         Self {
             serial_number,
@@ -124,7 +109,7 @@ impl RpkiTbsCertificate {
             validity,
             subject,
             subject_public_key_info,
-            extensions
+            extensions,
         }
     }
 }
@@ -154,9 +139,8 @@ impl IdCertBuilder {
         duration: ::chrono::Duration,
         issuing_key: &PublicKey,
         subject_key: &PublicKey,
-        ext: IdExtensions
-    ) -> RpkiTbsCertificate
-    {
+        ext: IdExtensions,
+    ) -> RpkiTbsCertificate {
         let issuer = Name::from_pub_key(issuing_key);
         let validity = Validity::from_duration(duration);
         let subject = Name::from_pub_key(subject_key);
@@ -167,7 +151,7 @@ impl IdCertBuilder {
             validity,
             subject,
             subject_public_key_info: subject_key.clone(),
-            extensions: RpkiTbsExtension::IdExtensions(ext)
+            extensions: RpkiTbsExtension::IdExtensions(ext),
         }
     }
 
@@ -175,18 +159,12 @@ impl IdCertBuilder {
         issuing_key: &S::KeyId,
         subject_key: &PublicKey,
         ext: IdExtensions,
-        signer: &S
+        signer: &S,
     ) -> Result<IdCert, SigningError<S::Error>> {
         let issuing_key_info = signer.get_key_info(issuing_key)?;
         let dur = ::chrono::Duration::weeks(52000);
 
-        let tbs = Self::make_tbs_certificate_request(
-            1,
-            dur,
-            &issuing_key_info,
-            &subject_key,
-            ext
-        );
+        let tbs = Self::make_tbs_certificate_request(1, dur, &issuing_key_info, &subject_key, ext);
 
         let enc_cert = tbs.encode();
         let enc_cert_c = enc_cert.to_captured(Mode::Der);
@@ -194,20 +172,18 @@ impl IdCertBuilder {
 
         let signature = BitString::new(
             0,
-            signer.sign(
-                issuing_key,
-                SignatureAlgorithm::default(),
-                enc_cert_b
-            )?.value().clone()
+            signer
+                .sign(issuing_key, SignatureAlgorithm::default(), enc_cert_b)?
+                .value()
+                .clone(),
         );
 
-        let captured_cert = encode::sequence (
-            (
-                enc_cert,
-                SignatureAlgorithm::default().x509_encode(),
-                signature.encode()
-            )
-        ).to_captured(Mode::Der);
+        let captured_cert = encode::sequence((
+            enc_cert,
+            SignatureAlgorithm::default().x509_encode(),
+            signature.encode(),
+        ))
+        .to_captured(Mode::Der);
 
         // Todo -> Return the bytes, or a captured, not a parsed cert
         let id_cert = IdCert::decode(captured_cert.as_ref()).unwrap();
@@ -221,41 +197,27 @@ impl IdCertBuilder {
     /// component.
     pub fn new_ta_id_cert<S: Signer>(
         issuing_key: &S::KeyId,
-        signer: &S
+        signer: &S,
     ) -> Result<IdCert, Error<S::Error>> {
         let issuing_key_info = signer.get_key_info(issuing_key)?;
         let ext = IdExtensions::for_id_ta_cert(&issuing_key_info);
-        let cert = IdCertBuilder::create_signed_cert(
-            issuing_key,
-            &issuing_key_info,
-            ext,
-            signer
-        )?;
+        let cert = IdCertBuilder::create_signed_cert(issuing_key, &issuing_key_info, ext, signer)?;
         Ok(cert)
     }
 
     pub fn new_ee_cert<S: Signer>(
         issuing_key: &S::KeyId,
         subject_key: &PublicKey,
-        signer: &S
+        signer: &S,
     ) -> Result<IdCert, Error<S::Error>> {
         let issuing_key_info = signer.get_key_info(issuing_key)?;
 
-        let ext = IdExtensions::for_id_ee_cert(
-            subject_key,
-            &issuing_key_info
-        );
+        let ext = IdExtensions::for_id_ee_cert(subject_key, &issuing_key_info);
 
-        let cert = IdCertBuilder::create_signed_cert(
-            issuing_key,
-            subject_key,
-            ext,
-            signer
-        )?;
+        let cert = IdCertBuilder::create_signed_cert(issuing_key, subject_key, ext, signer)?;
         Ok(cert)
     }
 }
-
 
 //------------ SignedMessageBuilder ------------------------------------------
 
@@ -263,38 +225,29 @@ pub struct SignedMessageBuilder {
     content: OctetString,
     signer_info: SignedSignerInfo,
     ee_cert: IdCert,
-    crl: Crl
+    crl: Crl,
 }
 
 impl SignedMessageBuilder {
     pub fn create<S: Signer>(
         issuing_key: &S::KeyId,
         signer: &S,
-        message: Bytes
+        message: Bytes,
     ) -> Result<SignedMessageBuilder, Error<S::Error>> {
         let content = OctetString::new(message);
 
-        let signer_info = SignerInfoBuilder::create(
-            signer,
-            &content.to_bytes()
-        )?;
+        let signer_info = SignerInfoBuilder::create(signer, &content.to_bytes())?;
 
-        let ee_cert = IdCertBuilder::new_ee_cert(
-            issuing_key,
-            signer_info.one_off_key(),
-            signer
-        )?;
+        let ee_cert = IdCertBuilder::new_ee_cert(issuing_key, signer_info.one_off_key(), signer)?;
 
         let crl = CrlBuilder::create(issuing_key, signer)?;
 
-        Ok(
-            SignedMessageBuilder {
-                content,
-                signer_info,
-                ee_cert,
-                crl
-            }
-        )
+        Ok(SignedMessageBuilder {
+            content,
+            signer_info,
+            ee_cert,
+            crl,
+        })
     }
 
     pub fn as_bytes(&self) -> Bytes {
@@ -302,7 +255,6 @@ impl SignedMessageBuilder {
     }
 
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
-
         // ContentInfo ::= SEQUENCE {
         //           contentType ContentType,
         //           content [0] EXPLICIT ANY DEFINED BY contentType }
@@ -324,56 +276,31 @@ impl SignedMessageBuilder {
         //  The eContentType for the RPKI Protocol Message object is defined as
         //  id-ct-xml, and has the numerical value of 1.2.840.113549.1.9.16.1.28.
 
-        let digest_algorithms = encode::set(
-            encode::sequence(
-                rpki::oid::SHA256.encode()
-            )
-        );
+        let digest_algorithms = encode::set(encode::sequence(rpki::oid::SHA256.encode()));
 
-        let encap_content_info = encode::sequence(
-            (
-                oid::PROTOCOL_CONTENT_TYPE.encode(),
-                Constructed::new(Tag::CTX_0, self.content.clone().encode())
-            )
-        );
+        let encap_content_info = encode::sequence((
+            oid::PROTOCOL_CONTENT_TYPE.encode(),
+            Constructed::new(Tag::CTX_0, self.content.clone().encode()),
+        ));
 
-        let certificates = Constructed::new(
-            Tag::CTX_0,
-            self.ee_cert.encode()
-        );
+        let certificates = Constructed::new(Tag::CTX_0, self.ee_cert.encode());
 
-        let crls = Constructed::new(
-            Tag::CTX_1,
-            self.crl.encode_ref()
-        );
+        let crls = Constructed::new(Tag::CTX_1, self.crl.encode_ref());
 
         let signer_infos = encode::set(self.signer_info.encode());
 
-        encode::sequence(
-            (
-                oid::SIGNED_DATA.encode(),
-                Constructed::new(
-                    Tag::CTX_0,
-                    encode::sequence(
-                        (
-                            (
-                                3.encode(),
-                                digest_algorithms,
-                                encap_content_info
-                            ),
-                            (
-                                certificates,
-                                crls,
-                                signer_infos
-                            )
-                        )
-                    )
-                )
-            )
-        )
+        encode::sequence((
+            oid::SIGNED_DATA.encode(),
+            Constructed::new(
+                Tag::CTX_0,
+                encode::sequence((
+                    (3.encode(), digest_algorithms, encap_content_info),
+                    (certificates, crls, signer_infos),
+                )),
+            ),
+        ))
     }
 }
-
 
 /// This type represent Signed Attributes in Signer Info.
 ///
@@ -393,13 +320,12 @@ impl SignedMessageBuilder {
 /// See section 2.1.6.4 of RFC 6488 for specifications.
 /// ```
 pub struct SignedAttributes {
-    content_type: &'static Oid<& 'static [u8]>,
+    content_type: &'static Oid<&'static [u8]>,
     digest: OctetString,
-    signing_time: Time
+    signing_time: Time,
 }
 
 impl SignedAttributes {
-
     /// Creates a new SignedAttributes.
     ///
     /// Needs the content type for this specific kind of CMS (protocol, ROA,
@@ -408,11 +334,7 @@ impl SignedAttributes {
     ///
     /// This implementation will include a signing-time attribute using the
     /// time that the SignedAttributes was created.
-    pub fn new(
-        content_type: &'static Oid<&'static [u8]>,
-        content: &Bytes
-    ) -> Self {
-
+    pub fn new(content_type: &'static Oid<&'static [u8]>, content: &Bytes) -> Self {
         let content_digest = DigestAlgorithm::default().digest(content);
 
         let digest = Bytes::from(content_digest.as_ref());
@@ -421,58 +343,42 @@ impl SignedAttributes {
         Self {
             content_type,
             digest,
-            signing_time: Time::now()
+            signing_time: Time::now(),
         }
     }
 
     /// Encodes the SignedAttributes for inclusion in a CMS.
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
         (
-            encode::sequence(
-                (
-                    oid::CONTENT_TYPE.encode(),
-                    encode::set(
-                        self.content_type.encode()
-                    )
-                )
-            ),
-            encode::sequence (
-                (
-                    // This implementation will include a signing-time
-                    // attribute using the time that the SignedAttributes
-                    // was created.
-                    oid::SIGNING_TIME.encode(),
-                    encode::set(
-                        self.signing_time.encode()
-                    )
-                )
-            ),
-            encode::sequence(
-                (
-                    oid::MESSAGE_DIGEST.encode(),
-                    encode::set(
-                        self.digest.clone().encode()
-                    )
-                )
-            )
+            encode::sequence((
+                oid::CONTENT_TYPE.encode(),
+                encode::set(self.content_type.encode()),
+            )),
+            encode::sequence((
+                // This implementation will include a signing-time
+                // attribute using the time that the SignedAttributes
+                // was created.
+                oid::SIGNING_TIME.encode(),
+                encode::set(self.signing_time.encode()),
+            )),
+            encode::sequence((
+                oid::MESSAGE_DIGEST.encode(),
+                encode::set(self.digest.clone().encode()),
+            )),
         )
     }
 
     /// Generates a signature using a one time key
-    pub fn sign<S: Signer>(
-        &self,
-        signer: &S
-    ) -> Result<(Signature, PublicKey), Error<S::Error>> {
+    pub fn sign<S: Signer>(&self, signer: &S) -> Result<(Signature, PublicKey), Error<S::Error>> {
         // See section 5.4 of RFC 5652
         //  ...The IMPLICIT [0] tag in the signedAttrs is not used for the DER
         //  encoding, rather an EXPLICIT SET OF tag is used...
         let encode_in_set = encode::set(self.encode()).to_captured(Mode::Der);
-        signer.sign_one_off(SignatureAlgorithm::default(), encode_in_set.as_slice())
+        signer
+            .sign_one_off(SignatureAlgorithm::default(), encode_in_set.as_slice())
             .map_err(Error::SignerError)
     }
-
 }
-
 
 //------------ SignedSignerInfo ----------------------------------------------
 
@@ -480,11 +386,11 @@ pub struct SignedSignerInfo {
     signed_attributes: SignedAttributes,
     key: PublicKey,
     key_id: KeyIdentifier,
-    signature: OctetString
+    signature: OctetString,
 }
 
 impl SignedSignerInfo {
-    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a  {
+    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
         // SignerInfo ::= SEQUENCE {
         //      version CMSVersion,
         //      sid SignerIdentifier,
@@ -510,33 +416,21 @@ impl SignedSignerInfo {
         // it seems this MUST NOT include the explicit NULL here
         let digest_algo = encode::sequence(oid::SHA256.encode());
 
-        let signed_attrs = Constructed::new(
-            Tag::CTX_0,
-            self.signed_attributes.encode()
-        );
+        let signed_attrs = Constructed::new(Tag::CTX_0, self.signed_attributes.encode());
 
-        encode::sequence(
+        encode::sequence((
+            (version, sid, digest_algo, signed_attrs),
             (
-                (
-                    version,
-                    sid,
-                    digest_algo,
-                    signed_attrs
-                ),
-                (
-                    SignatureAlgorithm::default().cms_encode(),
-                    self.signature.clone().encode()
-                )
-            )
-        )
+                SignatureAlgorithm::default().cms_encode(),
+                self.signature.clone().encode(),
+            ),
+        ))
     }
 
     pub fn one_off_key(&self) -> &PublicKey {
         &self.key
     }
 }
-
-
 
 //------------ SignerInfoBuilder ---------------------------------------------
 
@@ -553,12 +447,11 @@ impl SignerInfoBuilder {
     /// really only require some bits.
     pub fn create<S: Signer>(
         signer: &S,
-        message: &Bytes
+        message: &Bytes,
     ) -> Result<SignedSignerInfo, Error<S::Error>> {
-
         let signed_attributes = SignedAttributes::new(
             &oid::PROTOCOL_CONTENT_TYPE, // XXX TODO: derive from message
-            message
+            message,
         );
 
         let (signature, key) = signed_attributes.sign(signer)?;
@@ -566,27 +459,20 @@ impl SignerInfoBuilder {
         let key_id = KeyIdentifier::new(&key);
         let signature = OctetString::new(signature.value().clone());
 
-        Ok(
-            SignedSignerInfo {
-                signed_attributes,
-                key,
-                key_id,
-                signature
-            }
-        )
+        Ok(SignedSignerInfo {
+            signed_attributes,
+            key,
+            key_id,
+            signature,
+        })
     }
-
 }
-
-
-
 
 //------------ CrlBuilder ----------------------------------------------------
 
 pub struct CrlBuilder;
 
 impl CrlBuilder {
-
     /// Creates a CRL for use with protocol messages. I.e. it revokes nothing,
     /// because smart people use single use keys for EE certs, and it's valid
     /// for, like, forever -- cause really this thing is useless. Still it is
@@ -594,68 +480,57 @@ impl CrlBuilder {
     ///
     /// This will all be changed in future when we implement generating CRLs
     /// for the RPKI CA.
-    pub fn create<S: Signer>(
-        issuing_key: &S::KeyId,
-        signer: &S
-    ) -> Result<Crl, Error<S::Error>>
-    {
+    pub fn create<S: Signer>(issuing_key: &S::KeyId, signer: &S) -> Result<Crl, Error<S::Error>> {
         let pub_key = signer.get_key_info(issuing_key)?;
         let name = Name::from_pub_key(&pub_key);
         let now = Time::new(Utc::now());
-        let eternity = Time::new(Utc::now()+::chrono::Duration::weeks(52000));
+        let eternity = Time::new(Utc::now() + ::chrono::Duration::weeks(52000));
 
         let crl_number = CrlNumber::new(1);
         let aki = AuthorityKeyIdentifier::new(&pub_key);
 
         let extensions = Constructed::new(
             Tag::CTX_0,
-            encode::sequence(
-                (
-                    aki.encode(),
-                    crl_number.encode()
-                )
-            )
+            encode::sequence((aki.encode(), crl_number.encode())),
         );
 
-        let crl_data = encode::sequence(
+        let crl_data = encode::sequence((
             (
-                (
-                    1.encode(),
-                    SignatureAlgorithm::default().x509_encode(),
-                    name.encode_ref()
-                ),
-                (
-                    now.encode(),
-                    eternity.encode(),
-                    // Real revocations go here
-                    extensions
-                )
-            )
-        );
+                1.encode(),
+                SignatureAlgorithm::default().x509_encode(),
+                name.encode_ref(),
+            ),
+            (
+                now.encode(),
+                eternity.encode(),
+                // Real revocations go here
+                extensions,
+            ),
+        ));
 
         let signature = BitString::new(
             0,
-            signer.sign(
-                issuing_key,
-                SignatureAlgorithm::default(),
-                crl_data.to_captured(Mode::Der).as_slice()
-            )?.value().clone()
+            signer
+                .sign(
+                    issuing_key,
+                    SignatureAlgorithm::default(),
+                    crl_data.to_captured(Mode::Der).as_slice(),
+                )?
+                .value()
+                .clone(),
         );
 
-        let crl_obj = encode::sequence(
-            (
-                crl_data,
-                SignatureAlgorithm::default().x509_encode(),
-                signature.encode()
-            )
-        );
+        let crl_obj = encode::sequence((
+            crl_data,
+            SignatureAlgorithm::default().x509_encode(),
+            signature.encode(),
+        ));
 
         let crl = Crl::decode(crl_obj.to_captured(Mode::Der).as_ref())?;
 
         Ok(crl)
     }
 }
-
 
 #[derive(Debug, Display)]
 pub enum Error<S: fmt::Debug + fmt::Display> {
@@ -676,15 +551,21 @@ pub enum Error<S: fmt::Debug + fmt::Display> {
 }
 
 impl<S: fmt::Debug + fmt::Display> From<KeyError<S>> for Error<S> {
-    fn from(e: KeyError<S>) -> Self { Error::KeyError(e) }
+    fn from(e: KeyError<S>) -> Self {
+        Error::KeyError(e)
+    }
 }
 
 impl<S: fmt::Debug + fmt::Display> From<SigningError<S>> for Error<S> {
-    fn from(e: SigningError<S>) -> Self { Error::SigningError(e) }
+    fn from(e: SigningError<S>) -> Self {
+        Error::SigningError(e)
+    }
 }
 
 impl<S: fmt::Debug + fmt::Display> From<decode::Error> for Error<S> {
-    fn from(e: decode::Error) -> Self { Error::DecodeError(e) }
+    fn from(e: decode::Error) -> Self {
+        Error::DecodeError(e)
+    }
 }
 
 //------------ Tests ---------------------------------------------------------
@@ -695,13 +576,13 @@ pub mod tests {
 
     use super::*;
     use crate::util::test;
-    use signing::softsigner::OpenSslSigner;
-    use signing::PublicKeyAlgorithm;
-    use remote::sigmsg::SignedMessage;
     use publication::query::ListQuery;
-    use util::softsigner::OpenSslSigner;
     use remote::publication::query::ListQuery;
     use remote::rfc8181::ListQuery;
+    use remote::sigmsg::SignedMessage;
+    use signing::softsigner::OpenSslSigner;
+    use signing::PublicKeyAlgorithm;
+    use util::softsigner::OpenSslSigner;
 
     #[test]
     fn should_create_self_signed_ta_id_cert() {
@@ -709,7 +590,7 @@ pub mod tests {
             let mut s = OpenSslSigner::build(&d);
             let key_id = s.create_key(&PublicKeyAlgorithm::RsaEncryption).unwrap();
 
-            let id_cert = IdCertBuilder::new_ta_id_cert(&key_id, & mut s).unwrap();
+            let id_cert = IdCertBuilder::new_ta_id_cert(&key_id, &mut s).unwrap();
             id_cert.validate_ta().unwrap();
         });
     }
@@ -721,7 +602,7 @@ pub mod tests {
             let key_id = s.create_key(&PublicKeyAlgorithm::RsaEncryption).unwrap();
             let key_info = s.get_key_info(&key_id).unwrap();
 
-            let crl = CrlBuilder::create(&key_id, & mut s).unwrap();
+            let crl = CrlBuilder::create(&key_id, &mut s).unwrap();
             crl.validate(&key_info).unwrap();
         })
     }
@@ -731,15 +612,11 @@ pub mod tests {
         test::test_with_tmp_dir(|d| {
             let mut s = OpenSslSigner::build(&d);
             let key_id = s.create_key(&PublicKeyAlgorithm::RsaEncryption).unwrap();
-            let id_cert = IdCertBuilder::new_ta_id_cert(&key_id, & mut s).unwrap();
+            let id_cert = IdCertBuilder::new_ta_id_cert(&key_id, &mut s).unwrap();
 
             let message = ListQuery::build_message();
 
-            let builder = SignedMessageBuilder::create(
-                &key_id,
-                &mut s,
-                message.clone()
-            ).unwrap();
+            let builder = SignedMessageBuilder::create(&key_id, &mut s, message.clone()).unwrap();
 
             let encoded_cms = builder.encode().to_captured(Mode::Der);
 
@@ -752,7 +629,4 @@ pub mod tests {
         });
     }
 
-
 }
-
-

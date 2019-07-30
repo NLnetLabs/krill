@@ -1,7 +1,7 @@
 extern crate ignore;
 
-use std::process::Command;
 use ignore::Walk;
+use std::process::Command;
 
 //#[allow(dead_code)]
 fn main() {

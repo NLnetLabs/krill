@@ -1,19 +1,8 @@
 //! Authorization for the API
-use actix_web::{
-    Error,
-    FromRequest,
-    HttpResponse,
-    HttpRequest,
-    ResponseError,
-};
-use actix_web::dev::{
-    Payload,
-};
 use actix_identity::Identity;
-use actix_web::web::{
-    self,
-    Json
-};
+use actix_web::dev::Payload;
+use actix_web::web::{self, Json};
+use actix_web::{Error, FromRequest, HttpRequest, HttpResponse, ResponseError};
 
 use krill_commons::api::admin::Token;
 
@@ -22,20 +11,19 @@ use std::fmt;
 
 pub const AUTH_COOKIE_NAME: &str = "krill_auth";
 
-
 //------------ Authorizer ----------------------------------------------------
 
 /// This type is responsible for checking authorisations when the API is
 /// accessed.
 #[derive(Clone, Debug)]
 pub struct Authorizer {
-    krill_auth_token: Token
+    krill_auth_token: Token,
 }
 
 impl Authorizer {
     pub fn new(krill_auth_token: &Token) -> Self {
         Authorizer {
-            krill_auth_token: krill_auth_token.clone()
+            krill_auth_token: krill_auth_token.clone(),
         }
     }
 
@@ -44,19 +32,14 @@ impl Authorizer {
     }
 }
 
-
 //------------ Credentials ---------------------------------------------------
 
 #[derive(Deserialize)]
 pub struct Credentials {
-    token: Token
+    token: Token,
 }
 
-pub fn login(
-    server: web::Data<AppServer>,
-    cred: Json<Credentials>,
-    id: Identity
-) -> HttpResponse {
+pub fn login(server: web::Data<AppServer>, cred: Json<Credentials>, id: Identity) -> HttpResponse {
     if server.read().login(cred.token.clone()) {
         id.remember("admin".to_string());
         HttpResponse::Ok().finish()
@@ -66,19 +49,14 @@ pub fn login(
     }
 }
 
-pub fn logout(
-    id: Identity
-) -> HttpResponse {
+pub fn logout(id: Identity) -> HttpResponse {
     id.forget();
     HttpResponse::Ok().finish()
 }
 
-pub fn is_logged_in(
-    _auth: Auth
-) -> HttpResponse {
+pub fn is_logged_in(_auth: Auth) -> HttpResponse {
     HttpResponse::Ok().finish()
 }
-
 
 pub type UserName = String;
 
@@ -87,7 +65,7 @@ pub type UserName = String;
 #[derive(Clone, Debug)]
 pub enum Auth {
     User(UserName),
-    Bearer(Token)
+    Bearer(Token),
 }
 
 impl Auth {
@@ -101,7 +79,7 @@ impl Auth {
             let token = Token::from(token.trim());
 
             if "bearer" == bearer {
-                return Ok(token)
+                return Ok(token);
             }
         }
 
@@ -112,7 +90,7 @@ impl Auth {
 impl fmt::Display for Auth {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Auth::User(user)    => write!(f, "User: {}", user),
+            Auth::User(user) => write!(f, "User: {}", user),
             Auth::Bearer(token) => write!(f, "Bearer: {}", token),
         }
     }
@@ -122,7 +100,7 @@ impl Into<Token> for Auth {
     fn into(self) -> Token {
         match self {
             Auth::Bearer(token) => token,
-            _ => Token::from("")
+            _ => Token::from(""),
         }
     }
 }
@@ -137,9 +115,8 @@ impl FromRequest for Auth {
             debug!("Found user: {}", &identity);
             Ok(Auth::User(identity))
         } else if let Some(header) = req.headers().get("Authorization") {
-            let token = Auth::extract_bearer_token(
-                header.to_str().map_err(|_| AuthError::InvalidToken)?
-            )?;
+            let token =
+                Auth::extract_bearer_token(header.to_str().map_err(|_| AuthError::InvalidToken)?)?;
 
             Ok(Auth::Bearer(token))
         } else {
@@ -147,7 +124,6 @@ impl FromRequest for Auth {
         }
     }
 }
-
 
 //------------ AuthError -----------------------------------------------------
 
@@ -157,7 +133,7 @@ pub enum AuthError {
     Unauthorised,
 
     #[display(fmt = "Invalid token")]
-    InvalidToken
+    InvalidToken,
 }
 
 impl ResponseError for AuthError {

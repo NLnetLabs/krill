@@ -1,19 +1,19 @@
+use crate::http::ssl;
+use clap::{App, Arg};
+use krill_commons::api::admin::Token;
+use krill_commons::util::ext_serde;
+use log::LevelFilter;
+use rpki::uri;
+use serde::de;
+use serde::{Deserialize, Deserializer};
 use std::fs::File;
 use std::io;
 use std::io::Read;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::str::FromStr;
-use clap::{App, Arg};
-use log::LevelFilter;
-use rpki::uri;
 use syslog::Facility;
-use serde::de;
-use serde::{Deserialize, Deserializer};
 use toml;
-use krill_commons::util::ext_serde;
-use crate::http::ssl;
-use krill_commons::api::admin::Token;
 
 const SERVER_NAME: &str = "Krill";
 
@@ -22,20 +22,36 @@ const SERVER_NAME: &str = "Krill";
 pub struct ConfigDefaults;
 
 impl ConfigDefaults {
-    fn ip() -> IpAddr { IpAddr::V4(Ipv4Addr::new(127,0,0,1))}
-    fn port() -> u16 { 3000 }
-    fn use_ssl() -> SslChoice { SslChoice::Test }
-    fn data_dir() -> PathBuf { PathBuf::from("./data")}
+    fn ip() -> IpAddr {
+        IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))
+    }
+    fn port() -> u16 {
+        3000
+    }
+    fn use_ssl() -> SslChoice {
+        SslChoice::Test
+    }
+    fn data_dir() -> PathBuf {
+        PathBuf::from("./data")
+    }
     fn rsync_base() -> uri::Rsync {
         uri::Rsync::from_str("rsync://localhost/repo/").unwrap()
     }
     fn rrdp_base_uri() -> uri::Https {
         uri::Https::from_str("https://localhost:3000/rrdp/").unwrap()
     }
-    fn log_level() -> LevelFilter { LevelFilter::Info }
-    fn log_type() -> LogType { LogType::Stderr }
-    fn syslog_facility() -> Facility { Facility::LOG_DAEMON }
-    fn log_file() -> PathBuf { PathBuf::from("./krill.log")}
+    fn log_level() -> LevelFilter {
+        LevelFilter::Info
+    }
+    fn log_type() -> LogType {
+        LogType::Stderr
+    }
+    fn syslog_facility() -> Facility {
+        Facility::LOG_DAEMON
+    }
+    fn log_file() -> PathBuf {
+        PathBuf::from("./krill.log")
+    }
     fn auth_token() -> Token {
         use std::env;
 
@@ -45,11 +61,9 @@ impl ConfigDefaults {
                 eprintln!("You MUST provide a value for the master API key, either by setting \"auth_token\" in the config file, or by setting the KRILL_AUTH_TOKEN environment variable.");
                 ::std::process::exit(1);
             }
-
         }
     }
 }
-
 
 //------------ Config --------------------------------------------------------
 
@@ -60,27 +74,22 @@ impl ConfigDefaults {
 /// to override any of the settings in the config file.
 #[derive(Debug, Deserialize)]
 pub struct Config {
-
-    #[serde(default="ConfigDefaults::ip")]
+    #[serde(default = "ConfigDefaults::ip")]
     ip: IpAddr,
 
-    #[serde(default="ConfigDefaults::port")]
+    #[serde(default = "ConfigDefaults::port")]
     port: u16,
 
-    #[serde(default="ConfigDefaults::use_ssl")]
+    #[serde(default = "ConfigDefaults::use_ssl")]
     use_ssl: SslChoice,
 
-    #[serde(default="ConfigDefaults::data_dir")]
+    #[serde(default = "ConfigDefaults::data_dir")]
     pub data_dir: PathBuf,
 
-    #[serde(
-        default = "ConfigDefaults::rsync_base",
-    )]
+    #[serde(default = "ConfigDefaults::rsync_base")]
     pub rsync_base: uri::Rsync,
 
-    #[serde(
-        default = "ConfigDefaults::rrdp_base_uri",
-    )]
+    #[serde(default = "ConfigDefaults::rrdp_base_uri")]
     pub rrdp_base_uri: uri::Https,
 
     #[serde(
@@ -102,7 +111,7 @@ pub struct Config {
     log_file: PathBuf,
 
     #[serde(default = "ConfigDefaults::auth_token")]
-    pub auth_token: Token
+    pub auth_token: Token,
 }
 
 /// # Accessors
@@ -151,16 +160,14 @@ impl Config {
 
 /// # Create
 impl Config {
-    pub fn test(
-        data_dir: &PathBuf,
-    ) -> Self {
+    pub fn test(data_dir: &PathBuf) -> Self {
         let ip = ConfigDefaults::ip();
         let port = ConfigDefaults::port();
         let use_ssl = SslChoice::Test;
         let data_dir = data_dir.clone();
         let rsync_base = ConfigDefaults::rsync_base();
         let rrdp_base_uri = ConfigDefaults::rrdp_base_uri();
-        let log_level =  LevelFilter::Info;
+        let log_level = LevelFilter::Info;
         let log_type = LogType::Stderr;
         let mut log_file = data_dir.clone();
         log_file.push("krill.log");
@@ -178,7 +185,7 @@ impl Config {
             log_type,
             log_file,
             syslog_facility,
-            auth_token
+            auth_token,
         };
         c.init_logging().unwrap();
         c
@@ -188,19 +195,24 @@ impl Config {
     pub fn create() -> Result<Self, ConfigError> {
         let matches = App::new("NLnet Labs RRDP Server")
             .version("0.1b")
-            .arg(Arg::with_name("config")
-                .short("c")
-                .long("config")
-                .value_name("FILE")
-                .help("Specify non-default config file. If no file is \
-                specified './daemon/defaults/krill.conf' will be used to \
-                determine default values for all settings. Note that you \
-                can use any of the following options to override any of \
-                these values..")
-                .required(false))
+            .arg(
+                Arg::with_name("config")
+                    .short("c")
+                    .long("config")
+                    .value_name("FILE")
+                    .help(
+                        "Specify non-default config file. If no file is \
+                         specified './daemon/defaults/krill.conf' will be used to \
+                         determine default values for all settings. Note that you \
+                         can use any of the following options to override any of \
+                         these values..",
+                    )
+                    .required(false),
+            )
             .get_matches();
 
-        let config_file = matches.value_of("config")
+        let config_file = matches
+            .value_of("config")
             .unwrap_or("./daemon/defaults/krill.conf");
 
         let c = Self::read_config(config_file)?;
@@ -216,7 +228,7 @@ impl Config {
         let c: Config = toml::from_slice(v.as_slice())?;
 
         if c.port < 1024 {
-            return Err(ConfigError::other("Port number must be >1024"))
+            return Err(ConfigError::other("Port number must be >1024"));
         }
 
         Ok(c)
@@ -232,53 +244,39 @@ impl Config {
                 dispatch = {
                     if self.log_level == LevelFilter::Debug {
                         dispatch.format(|out, message, record| {
-                            out.finish(
-                                format_args!(
-                                    "{} [{}] [{}] {}",
-                                    chrono::Local::now()
-                                        .format("%Y-%m-%d %H:%M:%S"),
-                                    record.target(),
-                                    record.level(),
-                                    message
-                                )
-                            )
+                            out.finish(format_args!(
+                                "{} [{}] [{}] {}",
+                                chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+                                record.target(),
+                                record.level(),
+                                message
+                            ))
                         })
                     } else {
                         dispatch.format(|out, message, record| {
-                            out.finish(
-                                format_args!(
-                                    "{} [{}] {}",
-                                    chrono::Local::now()
-                                        .format("%Y-%m-%d %H:%M:%S"),
-                                    record.level(),
-                                    message
-                                )
-                            )
+                            out.finish(format_args!(
+                                "{} [{}] {}",
+                                chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+                                record.level(),
+                                message
+                            ))
                         })
                     }
                 };
 
-                dispatch.level(self.log_level)
+                dispatch
+                    .level(self.log_level)
                     .chain(file)
                     .apply()
                     .map_err(|e| {
-                        ConfigError::Other(
-                            format!("Failed to init file logging: {}", e)
-                        )
+                        ConfigError::Other(format!("Failed to init file logging: {}", e))
                     })?;
-            },
+            }
 
             LogType::Syslog => {
-                syslog::init(
-                    self.syslog_facility,
-                    self.log_level,
-                    Some(SERVER_NAME)
-                ).map_err(|e| {
-                    ConfigError::Other(
-                        format!("Failed to init syslog: {}", e)
-                    )
-                })?;
-            },
+                syslog::init(self.syslog_facility, self.log_level, Some(SERVER_NAME))
+                    .map_err(|e| ConfigError::Other(format!("Failed to init syslog: {}", e)))?;
+            }
 
             LogType::Stderr => {
                 let dispatch = fern::Dispatch::new()
@@ -286,9 +284,7 @@ impl Config {
                     .chain(io::stderr());
 
                 dispatch.apply().map_err(|e| {
-                    ConfigError::Other(
-                        format!("Failed to init stderr logging: {}", e)
-                    )
+                    ConfigError::Other(format!("Failed to init stderr logging: {}", e))
                 })?;
             }
         }
@@ -299,17 +295,17 @@ impl Config {
 
 #[derive(Debug, Display)]
 pub enum ConfigError {
-    #[display(fmt ="{}", _0)]
+    #[display(fmt = "{}", _0)]
     IoError(io::Error),
 
-    #[display(fmt ="{}", _0)]
+    #[display(fmt = "{}", _0)]
     TomlError(toml::de::Error),
 
-    #[display(fmt ="{}", _0)]
+    #[display(fmt = "{}", _0)]
     RpkiUriError(uri::Error),
 
-    #[display(fmt ="{}", _0)]
-    Other(String)
+    #[display(fmt = "{}", _0)]
+    Other(String),
 }
 
 impl ConfigError {
@@ -336,7 +332,6 @@ impl From<uri::Error> for ConfigError {
     }
 }
 
-
 //------------ LogType -------------------------------------------------------
 
 /// The target to log to.
@@ -344,9 +339,8 @@ impl From<uri::Error> for ConfigError {
 pub enum LogType {
     Syslog,
     Stderr,
-    File
+    File,
 }
-
 
 //--- PartialEq and Eq
 
@@ -356,25 +350,28 @@ impl PartialEq for LogType {
             (&LogType::Syslog, &LogType::Syslog) => true,
             (&LogType::Stderr, &LogType::Stderr) => true,
             (&LogType::File, &LogType::File) => true,
-            _ => false
+            _ => false,
         }
     }
 }
 
-impl Eq for LogType { }
+impl Eq for LogType {}
 
 impl<'de> Deserialize<'de> for LogType {
     fn deserialize<D>(d: D) -> Result<LogType, D::Error>
-        where D: Deserializer<'de> {
+    where
+        D: Deserializer<'de>,
+    {
         let string = String::deserialize(d)?;
         match string.as_str() {
             "stderr" => Ok(LogType::Stderr),
             "syslog" => Ok(LogType::Syslog),
             "file" => Ok(LogType::File),
-            _ => Err(
-                    de::Error::custom(
-                        format!("expected \"stderr\", \"syslog\", or \
-                        \"file\", found : \"{}\"", string)))
+            _ => Err(de::Error::custom(format!(
+                "expected \"stderr\", \"syslog\", or \
+                 \"file\", found : \"{}\"",
+                string
+            ))),
         }
     }
 }
@@ -382,24 +379,26 @@ impl<'de> Deserialize<'de> for LogType {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SslChoice {
     Yes,
-    Test
+    Test,
 }
 
 impl<'de> Deserialize<'de> for SslChoice {
     fn deserialize<D>(d: D) -> Result<SslChoice, D::Error>
-        where D: Deserializer<'de> {
+    where
+        D: Deserializer<'de>,
+    {
         let string = String::deserialize(d)?;
         match string.as_str() {
-            "yes"  => Ok(SslChoice::Yes),
+            "yes" => Ok(SslChoice::Yes),
             "test" => Ok(SslChoice::Test),
-            _ => Err(
-                de::Error::custom(
-                    format!("expected \"yes\", or \"test\", \
-                    found: \"{}\"", string)))
+            _ => Err(de::Error::custom(format!(
+                "expected \"yes\", or \"test\", \
+                 found: \"{}\"",
+                string
+            ))),
         }
     }
 }
-
 
 //------------ Tests ---------------------------------------------------------
 

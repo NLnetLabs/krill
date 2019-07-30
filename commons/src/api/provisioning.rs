@@ -1,10 +1,10 @@
-use api::ca::{ResourceSet, IssuedCert, RcvdCert};
-use rpki::x509::Time;
+use api::ca::{IssuedCert, RcvdCert, ResourceSet};
 use rpki::cert::{Cert, Overclaim};
+use rpki::crypto::{KeyIdentifier, PublicKey};
 use rpki::csr::Csr;
-use rpki::uri;
 use rpki::resources::{AsResources, Ipv4Resources, Ipv6Resources};
-use rpki::crypto::{PublicKey, KeyIdentifier};
+use rpki::uri;
+use rpki::x509::Time;
 
 pub const DFLT_CLASS: &str = "all";
 
@@ -14,22 +14,24 @@ pub const DFLT_CLASS: &str = "all";
 #[allow(clippy::large_enum_variant)]
 pub enum ProvisioningRequest {
     List,
-    Request(IssuanceRequest)
+    Request(IssuanceRequest),
 }
 
 impl ProvisioningRequest {
-    pub fn list() -> Self { ProvisioningRequest::List }
-    pub fn request(r: IssuanceRequest) -> Self { ProvisioningRequest::Request(r)}
+    pub fn list() -> Self {
+        ProvisioningRequest::List
+    }
+    pub fn request(r: IssuanceRequest) -> Self {
+        ProvisioningRequest::Request(r)
+    }
 }
-
 
 //------------ ProvisioningResponse -----------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum ProvisioningResponse {
-    List(Entitlements)
+    List(Entitlements),
 }
-
 
 //------------ Entitlements -------------------------------------------------
 
@@ -37,7 +39,7 @@ pub enum ProvisioningResponse {
 /// in section 3.3.2 of RFC6492.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Entitlements {
-    classes: Vec<EntitlementClass>
+    classes: Vec<EntitlementClass>,
 }
 
 impl Entitlements {
@@ -45,20 +47,27 @@ impl Entitlements {
         issuer: SigningCert,
         resource_set: ResourceSet,
         not_after: Time,
-        issued: Vec<IssuedCert>
+        issued: Vec<IssuedCert>,
     ) -> Self {
         let name = DFLT_CLASS.to_string();
-        Entitlements { classes: vec![
-            EntitlementClass { class_name: name, issuer, resource_set, not_after, issued }
-        ]}
+        Entitlements {
+            classes: vec![EntitlementClass {
+                class_name: name,
+                issuer,
+                resource_set,
+                not_after,
+                issued,
+            }],
+        }
     }
     pub fn new(classes: Vec<EntitlementClass>) -> Self {
         Entitlements { classes }
     }
 
-    pub fn classes(&self) -> &Vec<EntitlementClass> { &self.classes }
+    pub fn classes(&self) -> &Vec<EntitlementClass> {
+        &self.classes
+    }
 }
-
 
 //------------ EntitlementClass ----------------------------------------------
 
@@ -68,7 +77,7 @@ pub struct EntitlementClass {
     issuer: SigningCert,
     resource_set: ResourceSet,
     not_after: Time,
-    issued: Vec<IssuedCert>
+    issued: Vec<IssuedCert>,
 }
 
 impl EntitlementClass {
@@ -77,27 +86,41 @@ impl EntitlementClass {
         issuer: SigningCert,
         resource_set: ResourceSet,
         not_after: Time,
-        issued: Vec<IssuedCert>
+        issued: Vec<IssuedCert>,
     ) -> Self {
-        EntitlementClass { class_name, issuer, resource_set, not_after, issued }
+        EntitlementClass {
+            class_name,
+            issuer,
+            resource_set,
+            not_after,
+            issued,
+        }
     }
 
-    fn unwrap(
-        self
-    ) -> (String, SigningCert, ResourceSet, Time, Vec<IssuedCert>) {
+    fn unwrap(self) -> (String, SigningCert, ResourceSet, Time, Vec<IssuedCert>) {
         (
             self.class_name,
             self.issuer,
             self.resource_set,
             self.not_after,
-            self.issued
+            self.issued,
         )
     }
-    pub fn class_name(&self) -> &str { &self.class_name }
-    pub fn issuer(&self) -> &SigningCert { &self.issuer }
-    pub fn resource_set(&self) -> &ResourceSet { &self.resource_set }
-    pub fn not_after(&self) -> Time { self.not_after }
-    pub fn issued(&self) -> &Vec<IssuedCert> { &self.issued }
+    pub fn class_name(&self) -> &str {
+        &self.class_name
+    }
+    pub fn issuer(&self) -> &SigningCert {
+        &self.issuer
+    }
+    pub fn resource_set(&self) -> &ResourceSet {
+        &self.resource_set
+    }
+    pub fn not_after(&self) -> Time {
+        self.not_after
+    }
+    pub fn issued(&self) -> &Vec<IssuedCert> {
+        &self.issued
+    }
 
     /// Converts this into an IssuanceResponse for the given key. I.e. includes
     /// the issued certificate matching the given public key only. Returns a
@@ -105,27 +128,21 @@ impl EntitlementClass {
     pub fn into_issuance_response(self, key: &PublicKey) -> Option<IssuanceResponse> {
         let (class_name, issuer, resource_set, not_after, issued) = self.unwrap();
 
-        issued.into_iter()
+        issued
+            .into_iter()
             .find(|issued| issued.cert().subject_public_key_info() == key)
             .map(|issued| {
-                IssuanceResponse::new(
-                    class_name,
-                    issuer,
-                    resource_set,
-                    not_after,
-                    issued
-                )
+                IssuanceResponse::new(class_name, issuer, resource_set, not_after, issued)
             })
     }
 }
-
 
 //------------ SigningCert ---------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SigningCert {
     uri: uri::Rsync,
-    cert: Cert
+    cert: Cert,
 }
 
 impl SigningCert {
@@ -133,15 +150,18 @@ impl SigningCert {
         SigningCert { uri, cert }
     }
 
-    pub fn uri(&self) -> &uri::Rsync { &self.uri }
-    pub fn cert(&self) -> &Cert { &self.cert }
+    pub fn uri(&self) -> &uri::Rsync {
+        &self.uri
+    }
+    pub fn cert(&self) -> &Cert {
+        &self.cert
+    }
 }
-
 
 impl PartialEq for SigningCert {
     fn eq(&self, other: &SigningCert) -> bool {
-        self.uri == other.uri &&
-        self.cert.to_captured().as_slice() == other.cert.to_captured().as_slice()
+        self.uri == other.uri
+            && self.cert.to_captured().as_slice() == other.cert.to_captured().as_slice()
     }
 }
 
@@ -151,11 +171,10 @@ impl From<&RcvdCert> for SigningCert {
     fn from(c: &RcvdCert) -> Self {
         SigningCert {
             uri: c.uri().clone(),
-            cert: c.cert().clone()
+            cert: c.cert().clone(),
         }
     }
 }
-
 
 //------------ IssuanceRequest -----------------------------------------------
 
@@ -165,37 +184,42 @@ impl From<&RcvdCert> for SigningCert {
 pub struct IssuanceRequest {
     class_name: String,
     limit: RequestResourceLimit,
-    csr: Csr
+    csr: Csr,
 }
 
 impl IssuanceRequest {
-    pub fn new(
-        class_name: String,
-        limit: RequestResourceLimit,
-        csr: Csr
-    ) -> Self {
-        IssuanceRequest { class_name, limit, csr }
+    pub fn new(class_name: String, limit: RequestResourceLimit, csr: Csr) -> Self {
+        IssuanceRequest {
+            class_name,
+            limit,
+            csr,
+        }
     }
 
     pub fn unwrap(self) -> (String, RequestResourceLimit, Csr) {
         (self.class_name, self.limit, self.csr)
     }
 
-    pub fn class_name(&self) -> &str { &self.class_name }
-    pub fn limit(&self) -> &RequestResourceLimit { &self.limit }
-    pub fn csr(&self) -> &Csr { &self.csr }
+    pub fn class_name(&self) -> &str {
+        &self.class_name
+    }
+    pub fn limit(&self) -> &RequestResourceLimit {
+        &self.limit
+    }
+    pub fn csr(&self) -> &Csr {
+        &self.csr
+    }
 }
 
 impl PartialEq for IssuanceRequest {
     fn eq(&self, other: &IssuanceRequest) -> bool {
-        self.class_name == other.class_name &&
-        self.limit == other.limit &&
-        self.csr.to_captured().as_slice() == other.csr.to_captured().as_slice()
+        self.class_name == other.class_name
+            && self.limit == other.limit
+            && self.csr.to_captured().as_slice() == other.csr.to_captured().as_slice()
     }
 }
 
 impl Eq for IssuanceRequest {}
-
 
 //------------ IssuanceResponse ----------------------------------------------
 
@@ -210,7 +234,7 @@ pub struct IssuanceResponse {
     issuer: SigningCert,
     resource_set: ResourceSet, // resources allowed on a cert
     not_after: Time,
-    issued: IssuedCert
+    issued: IssuedCert,
 }
 
 impl IssuanceResponse {
@@ -219,22 +243,37 @@ impl IssuanceResponse {
         issuer: SigningCert,
         resource_set: ResourceSet, // resources allowed on a cert
         not_after: Time,
-        issued: IssuedCert
+        issued: IssuedCert,
     ) -> Self {
-        IssuanceResponse { class_name, issuer, resource_set, not_after, issued }
+        IssuanceResponse {
+            class_name,
+            issuer,
+            resource_set,
+            not_after,
+            issued,
+        }
     }
 
     pub fn unwrap(self) -> (String, SigningCert, ResourceSet, IssuedCert) {
         (self.class_name, self.issuer, self.resource_set, self.issued)
     }
 
-    pub fn class_name(&self) -> &str { &self.class_name }
-    pub fn issuer(&self) -> &SigningCert { &self.issuer }
-    pub fn resource_set(&self) -> &ResourceSet { &self.resource_set }
-    pub fn not_after(&self) -> Time { self.not_after }
-    pub fn issued(&self) -> &IssuedCert { &self.issued }
+    pub fn class_name(&self) -> &str {
+        &self.class_name
+    }
+    pub fn issuer(&self) -> &SigningCert {
+        &self.issuer
+    }
+    pub fn resource_set(&self) -> &ResourceSet {
+        &self.resource_set
+    }
+    pub fn not_after(&self) -> Time {
+        self.not_after
+    }
+    pub fn issued(&self) -> &IssuedCert {
+        &self.issued
+    }
 }
-
 
 //------------ RequestResourceLimit ------------------------------------------
 
@@ -250,11 +289,13 @@ impl IssuanceResponse {
 pub struct RequestResourceLimit {
     asn: Option<AsResources>,
     v4: Option<Ipv4Resources>,
-    v6: Option<Ipv6Resources>
+    v6: Option<Ipv6Resources>,
 }
 
 impl RequestResourceLimit {
-    pub fn new() -> RequestResourceLimit { Self::default() }
+    pub fn new() -> RequestResourceLimit {
+        Self::default()
+    }
 
     pub fn is_empty(&self) -> bool {
         self.asn == None && self.v4 == None && self.v6 == None
@@ -272,9 +313,15 @@ impl RequestResourceLimit {
         self.v6 = Some(ipv6);
     }
 
-    pub fn asn(&self) -> Option<&AsResources> { self.asn.as_ref() }
-    pub fn v4(&self) -> Option<&Ipv4Resources> { self.v4.as_ref() }
-    pub fn v6(&self) -> Option<&Ipv6Resources> { self.v6.as_ref() }
+    pub fn asn(&self) -> Option<&AsResources> {
+        self.asn.as_ref()
+    }
+    pub fn v4(&self) -> Option<&Ipv4Resources> {
+        self.v4.as_ref()
+    }
+    pub fn v6(&self) -> Option<&Ipv6Resources> {
+        self.v6.as_ref()
+    }
 
     /// Give back a ResourceSet based on the input set as limited by this.
     /// Note, if the limit exceeds the input set for any resource type
@@ -289,14 +336,14 @@ impl RequestResourceLimit {
                         // resources. This is unverifiable. As Krill
                         // will never use the "inherit" type on CA certificates
                         // it is safe to just return a None here.
-                        return None
-                    },
+                        return None;
+                    }
                     Some(parent_asn) => {
-                        if parent_asn.validate_issued(
-                            Some(asn),
-                            Overclaim::Refuse
-                        ).is_err() {
-                            return None // Child is overclaiming
+                        if parent_asn
+                            .validate_issued(Some(asn), Overclaim::Refuse)
+                            .is_err()
+                        {
+                            return None; // Child is overclaiming
                         }
                         asn.clone() // Child gets what they ask for
                     }
@@ -313,14 +360,14 @@ impl RequestResourceLimit {
                         // resources. This is unverifiable. As Krill
                         // will never use the "inherit" type on CA certificates
                         // it is safe to just return a None here.
-                        return None
-                    },
+                        return None;
+                    }
                     Some(parent_v4) => {
-                        if parent_v4.validate_issued(
-                            Some(v4),
-                            Overclaim::Refuse
-                        ).is_err() {
-                            return None // Child is overclaiming
+                        if parent_v4
+                            .validate_issued(Some(v4), Overclaim::Refuse)
+                            .is_err()
+                        {
+                            return None; // Child is overclaiming
                         }
                         v4.clone() // Child gets what they ask for
                     }
@@ -337,14 +384,14 @@ impl RequestResourceLimit {
                         // resources. This is unverifiable. As Krill
                         // will never use the "inherit" type on CA certificates
                         // it is safe to just return a None here.
-                        return None
-                    },
+                        return None;
+                    }
                     Some(parent_v6) => {
-                        if parent_v6.validate_issued(
-                            Some(v6),
-                            Overclaim::Refuse
-                        ).is_err() {
-                            return None // Child is overclaiming
+                        if parent_v6
+                            .validate_issued(Some(v6), Overclaim::Refuse)
+                            .is_err()
+                        {
+                            return None; // Child is overclaiming
                         }
                         v6.clone() // Child gets what they ask for
                     }
@@ -361,11 +408,10 @@ impl Default for RequestResourceLimit {
         RequestResourceLimit {
             asn: None,
             v4: None,
-            v6: None
+            v6: None,
         }
     }
 }
-
 
 //------------ RevocationRequest ---------------------------------------------
 
@@ -374,14 +420,18 @@ impl Default for RequestResourceLimit {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RevocationRequest {
     class_name: String,
-    key: KeyIdentifier
+    key: KeyIdentifier,
 }
 
 impl RevocationRequest {
     pub fn new(class_name: String, key: KeyIdentifier) -> Self {
-        RevocationRequest { class_name, key}
+        RevocationRequest { class_name, key }
     }
 
-    pub fn class_name(&self) -> &str { &self.class_name }
-    pub fn key(&self) -> &KeyIdentifier { &self.key }
+    pub fn class_name(&self) -> &str {
+        &self.class_name
+    }
+    pub fn key(&self) -> &KeyIdentifier {
+        &self.key
+    }
 }

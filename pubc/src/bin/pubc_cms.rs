@@ -5,9 +5,8 @@ use krill_pubc::cmsclient;
 use krill_pubc::cmsclient::PubClient;
 
 fn main() {
-
     let options = match cmsclient::Options::create() {
-        Ok(o)  => o,
+        Ok(o) => o,
         Err(e) => {
             eprintln!("{}", e);
             ::std::process::exit(1);
@@ -23,5 +22,4 @@ fn main() {
             ::std::process::exit(1);
         }
     }
-
 }

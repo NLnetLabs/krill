@@ -3,48 +3,27 @@
 //! Here we deal with booting and setup, and once active deal with parsing
 //! arguments and routing of requests, typically handing off to the
 //! daemon::api::endpoints functions for processing and responding.
-use std::io;
 use std::fs::File;
-use std::sync::{
-    Arc,
-    RwLock,
-    RwLockReadGuard,
-    RwLockWriteGuard
-};
+use std::io;
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use actix_web::{
-    App,
-    FromRequest,
-    HttpResponse,
-    HttpServer,
-};
-use actix_web::http::StatusCode;
-use actix_web::{guard, middleware, web};
-use actix_web::web::{
-    delete,
-    get,
-    post,
-    scope,
-    Path
-};
 use actix_session::CookieSession;
-use openssl::ssl::{SslMethod, SslAcceptor, SslAcceptorBuilder, SslFiletype};
+use actix_web::http::StatusCode;
+use actix_web::web::{delete, get, post, scope, Path};
+use actix_web::{guard, middleware, web};
+use actix_web::{App, FromRequest, HttpResponse, HttpServer};
+use openssl::ssl::{SslAcceptor, SslAcceptorBuilder, SslFiletype, SslMethod};
 
 use bcder::decode;
 
 use krill_commons::api::publication;
 
-use crate::auth::{
-    AUTH_COOKIE_NAME,
-    is_logged_in,
-    login,
-    logout
-};
+use crate::auth::{is_logged_in, login, logout, AUTH_COOKIE_NAME};
 use crate::config::Config;
 use crate::endpoints;
 use crate::endpoints::*;
-use crate::http::statics::WithStaticContent;
 use crate::http::ssl;
+use crate::http::statics::WithStaticContent;
 use crate::krillserver;
 use crate::krillserver::KrillServer;
 
@@ -63,10 +42,7 @@ impl AppServer {
     }
 }
 
-
-
 pub fn start(config: &Config) -> Result<(), Error> {
-
     let server = {
         let krill = KrillServer::build(
             &config.data_dir,
@@ -85,45 +61,40 @@ pub fn start(config: &Config) -> Result<(), Error> {
         App::new()
             .data(server.clone())
             .wrap(middleware::Logger::default())
-            .wrap(CookieSession::signed(&[0; 32])
-                .name(AUTH_COOKIE_NAME)
-                .secure(true))
+            .wrap(
+                CookieSession::signed(&[0; 32])
+                    .name(AUTH_COOKIE_NAME)
+                    .secure(true),
+            )
             .route("/health", get().to(endpoints::health))
-
             // API end-points
             .service(
                 scope("/api/v1")
                     .route("/health", get().to(api_health))
-
                     .route("/publishers", get().to(publishers))
                     .route("/publishers", post().to(add_publisher))
                     .route("/publishers/{handle}", get().to(publisher_details))
                     .route("/publishers/{handle}", delete().to(deactivate_publisher))
-
                     .route("/rfc8181/clients", get().to(rfc8181_clients))
                     .route("/rfc8181/clients", post().to(add_rfc8181_client))
-                    .data(web::Bytes::configure(|cfg| {
-                        cfg.limit(256 * 1024 * 1024)
-                    }))
-                    .route("/rfc8181/{handle}/response.xml", get().to(repository_response))
-
+                    .data(web::Bytes::configure(|cfg| cfg.limit(256 * 1024 * 1024)))
+                    .route(
+                        "/rfc8181/{handle}/response.xml",
+                        get().to(repository_response),
+                    )
                     .route("/trustanchor", get().to(ta_info))
                     .route("/trustanchor", post().to(ta_init))
                     .route("/trustanchor/children", post().to(ta_add_child))
-
                     .route("/cas", post().to(ca_init))
                     .route("/cas", get().to(cas))
                     .route("/cas/{handle}", get().to(ca_info))
                     .route("/cas/{handle}/child_request", get().to(ca_child_req))
                     .route("/cas/{handle}/parents", post().to(ca_add_parent))
-
-                    .route("/republish", post().to(republish_all))
+                    .route("/republish", post().to(republish_all)),
             )
-
             // Public TA related methods
             .route("/ta/ta.tal", get().to(tal))
             .route("/ta/ta.cer", get().to(ta_cer))
-
             // Publication by (embedded) clients
             .route("/publication/{handle}", get().to(handle_list))
             .route("/publication/{handle}", post().to(handle_delta))
@@ -131,31 +102,26 @@ pub fn start(config: &Config) -> Result<(), Error> {
                 cfg.limit(256 * 1024 * 1024)
             }))
             .route("/rfc8181/{handle}", post().to(rfc8181))
-
             // Provisioning for remote krill clients
             .route("/provisioning/{parent}/{child}/list", get().to(list))
             .route("/provisioning/{parent}/{child}/issue", post().to(issue))
-
             // Provisioning for rfc6492 clients
             .route("/rfc6492/{handle}", post().to(rfc6492))
-
-
             // UI support
             .route("/ui/is_logged_in", get().to(is_logged_in))
             .route("/ui/login", post().to(login))
             .route("/ui/logout", post().to(logout))
-
             // RRDP repository
             .route("/rrdp/{path:.*}", get().to(serve_rrdp_files))
-
-            .route("/", get().to(|| {
-                HttpResponse::Found()
-                    .header("location", "/ui/index.html")
-                    .finish()
-            }))
-
+            .route(
+                "/",
+                get().to(|| {
+                    HttpResponse::Found()
+                        .header("location", "/ui/index.html")
+                        .finish()
+                }),
+            )
             .add_statics()
-
             // default
             .default_service(
                 // 404 for GET request
@@ -168,12 +134,12 @@ pub fn start(config: &Config) -> Result<(), Error> {
                             .to(HttpResponse::MethodNotAllowed),
                     ),
             )
-
-    }).bind_ssl(config.socket_addr(), https_builder)?.run()?;
+    })
+    .bind_ssl(config.socket_addr(), https_builder)?
+    .run()?;
 
     Ok(())
 }
-
 
 /// Used to set up HTTPS. Creates keypair and self signed certificate
 /// if config has 'use_ssl=test'.
@@ -186,14 +152,13 @@ fn https_builder(config: &Config) -> Result<SslAcceptorBuilder, Error> {
     let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls())
         .map_err(|e| Error::Other(format!("{}", e)))?;
 
-    builder.set_private_key_file(
-        config.https_key_file(),
-        SslFiletype::PEM
-    ).map_err(|e| Error::Other(format!("{}", e)))?;
+    builder
+        .set_private_key_file(config.https_key_file(), SslFiletype::PEM)
+        .map_err(|e| Error::Other(format!("{}", e)))?;
 
-    builder.set_certificate_chain_file(
-        config.https_cert_file()
-    ).map_err(|e| Error::Other(format!("{}", e)))?;
+    builder
+        .set_certificate_chain_file(config.https_cert_file())
+        .map_err(|e| Error::Other(format!("{}", e)))?;
 
     Ok(builder)
 }
@@ -203,11 +168,7 @@ fn https_builder(config: &Config) -> Result<SslAcceptorBuilder, Error> {
 // See also:
 // https://github.com/actix/actix-website/blob/master/content/docs/static-files.md
 // https://www.keycdn.com/blog/http-cache-headers
-fn serve_rrdp_files(
-    server: web::Data<AppServer>,
-    path: Path<String>
-) -> HttpResponse
-{
+fn serve_rrdp_files(server: web::Data<AppServer>, path: Path<String>) -> HttpResponse {
     let mut full_path = server.read().rrdp_base_path();
     full_path.push(path.into_inner());
     match File::open(full_path) {
@@ -217,13 +178,10 @@ fn serve_rrdp_files(
             file.read_to_end(&mut buffer).unwrap();
 
             HttpResponse::build(StatusCode::OK).body(buffer)
-        },
-        _ => {
-            HttpResponse::build(StatusCode::NOT_FOUND).finish()
         }
+        _ => HttpResponse::build(StatusCode::NOT_FOUND).finish(),
     }
 }
-
 
 //------------ Error ---------------------------------------------------------
 
@@ -250,15 +208,21 @@ pub enum Error {
 }
 
 impl From<serde_json::Error> for Error {
-    fn from(e: serde_json::Error) -> Self { Error::JsonError(e) }
+    fn from(e: serde_json::Error) -> Self {
+        Error::JsonError(e)
+    }
 }
 
 impl From<io::Error> for Error {
-    fn from(e: io::Error) -> Self { Error::IoError(e) }
+    fn from(e: io::Error) -> Self {
+        Error::IoError(e)
+    }
 }
 
 impl From<krillserver::Error> for Error {
-    fn from(e: krillserver::Error) -> Self { Error::ServerError(e) }
+    fn from(e: krillserver::Error) -> Self {
+        Error::ServerError(e)
+    }
 }
 
 impl std::error::Error for Error {
@@ -269,8 +233,7 @@ impl std::error::Error for Error {
 
 impl actix_web::ResponseError for Error {
     fn error_response(&self) -> HttpResponse {
-        HttpResponse::build(StatusCode::INTERNAL_SERVER_ERROR)
-            .body(format!("{}", self))
+        HttpResponse::build(StatusCode::INTERNAL_SERVER_ERROR).body(format!("{}", self))
     }
 }
 

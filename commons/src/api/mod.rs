@@ -20,7 +20,6 @@ use rpki::manifest::Manifest;
 
 use crate::util::sha256;
 
-
 //------------ Base64 --------------------------------------------------------
 
 /// This type contains a base64 encoded structure. The publication protocol
@@ -82,29 +81,28 @@ impl From<&Crl> for Base64 {
 
 impl ToString for Base64 {
     fn to_string(&self) -> String {
-        unsafe {
-            String::from_utf8_unchecked(self.0.to_vec())
-        }
+        unsafe { String::from_utf8_unchecked(self.0.to_vec()) }
     }
 }
 
 impl Serialize for Base64 {
-    fn serialize<S>(
-        &self, serializer: S
-    ) -> Result<S::Ok, S::Error> where S: Serializer {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
         self.to_string().serialize(serializer)
     }
 }
 
 impl<'de> Deserialize<'de> for Base64 {
-    fn deserialize<D>(
-        deserializer: D
-    ) -> Result<Base64, D::Error> where D: Deserializer<'de> {
+    fn deserialize<D>(deserializer: D) -> Result<Base64, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
         let string = String::deserialize(deserializer)?;
         Ok(Base64::from(string))
     }
 }
-
 
 //------------ EncodedHash ---------------------------------------------------
 
@@ -143,30 +141,28 @@ impl From<String> for EncodedHash {
 
 impl ToString for EncodedHash {
     fn to_string(&self) -> String {
-        unsafe {
-            String::from_utf8_unchecked(self.0.to_vec())
-        }
+        unsafe { String::from_utf8_unchecked(self.0.to_vec()) }
     }
 }
 
 impl Serialize for EncodedHash {
-    fn serialize<S>(
-        &self, serializer: S
-    ) -> Result<S::Ok, S::Error> where S: Serializer {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
         self.to_string().serialize(serializer)
     }
 }
 
 impl<'de> Deserialize<'de> for EncodedHash {
-    fn deserialize<D>(
-        deserializer: D
-    ) -> Result<EncodedHash, D::Error> where D: Deserializer<'de> {
+    fn deserialize<D>(deserializer: D) -> Result<EncodedHash, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
         let string = String::deserialize(deserializer)?;
         Ok(EncodedHash::from(string))
     }
 }
-
-
 
 //------------ Link ----------------------------------------------------------
 
@@ -175,9 +171,8 @@ impl<'de> Deserialize<'de> for EncodedHash {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Link {
     rel: String,
-    link: String
+    link: String,
 }
-
 
 //------------ ErrorResponse --------------------------------------------------
 
@@ -186,13 +181,19 @@ pub struct Link {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct ErrorResponse {
     code: usize,
-    msg: String
+    msg: String,
 }
 
 impl ErrorResponse {
-    pub fn new(code: usize, msg: String) -> Self { ErrorResponse { code, msg }}
-    pub fn code(&self) -> usize { self.code }
-    pub fn msg(&self) -> &str { &self.msg }
+    pub fn new(code: usize, msg: String) -> Self {
+        ErrorResponse { code, msg }
+    }
+    pub fn code(&self) -> usize {
+        self.code
+    }
+    pub fn msg(&self) -> &str {
+        &self.msg
+    }
 }
 
 impl fmt::Display for ErrorResponse {
@@ -210,79 +211,79 @@ impl Into<ErrorCode> for ErrorResponse {
 /// This type defines externally visible errors that the API may return.
 #[derive(Clone, Debug, Display, Eq, PartialEq)]
 pub enum ErrorCode {
-    #[display(fmt="Submitted Json cannot be parsed")]
+    #[display(fmt = "Submitted Json cannot be parsed")]
     InvalidJson,
 
-    #[display(fmt="Invalid RFC8183 Publisher Request")]
+    #[display(fmt = "Invalid RFC8183 Publisher Request")]
     InvalidPublisherRequest,
 
-    #[display(fmt="Issue with submitted publication XML")]
+    #[display(fmt = "Issue with submitted publication XML")]
     InvalidPublicationXml,
 
-    #[display(fmt="Invalid handle name")]
+    #[display(fmt = "Invalid handle name")]
     InvalidHandle,
 
-    #[display(fmt="Submitted protocol CMS cannot be parsed")]
+    #[display(fmt = "Submitted protocol CMS cannot be parsed")]
     InvalidCms,
 
-    #[display(fmt="2001: Submitted protocol CMS does not validate")]
+    #[display(fmt = "2001: Submitted protocol CMS does not validate")]
     CmsValidation,
 
-    #[display(fmt="Out of sync with server, please send requests for instances sequentially")]
+    #[display(fmt = "Out of sync with server, please send requests for instances sequentially")]
     ConcurrentModification,
 
-    #[display(fmt="Unknown publisher")]
+    #[display(fmt = "Unknown publisher")]
     UnknownPublisher,
 
-    #[display(fmt="Handle already in use")]
+    #[display(fmt = "Handle already in use")]
     DuplicateHandle,
 
-    #[display(fmt="Base URI for publisher is outside of publisher base URI")]
+    #[display(fmt = "Base URI for publisher is outside of publisher base URI")]
     InvalidBaseUri,
 
-    #[display(fmt="Not allowed to publish outside of publisher jail")]
+    #[display(fmt = "Not allowed to publish outside of publisher jail")]
     UriOutsideJail,
 
-    #[display(fmt="File already exists for uri (use update!)")]
+    #[display(fmt = "File already exists for uri (use update!)")]
     ObjectAlreadyPresent,
 
-    #[display(fmt="No file found for hash at uri")]
+    #[display(fmt = "No file found for hash at uri")]
     NoObjectForHashAndOrUri,
 
-    #[display(fmt="Publisher has been deactivated")]
+    #[display(fmt = "Publisher has been deactivated")]
     PublisherDeactivated,
 
     // 2300s CA Admin Issues
-    #[display(fmt="Child with name exists")]
+    #[display(fmt = "Child with name exists")]
     DuplicateChild,
 
-    #[display(fmt="Child MUST have resources")]
+    #[display(fmt = "Child MUST have resources")]
     ChildNeedsResources,
 
-    #[display(fmt="Child cannot have resources not held by parent")]
+    #[display(fmt = "Child cannot have resources not held by parent")]
     ChildOverclaims,
 
     // 3000s General server errors
-    #[display(fmt="Cannot update internal state, issue with work_dir?")]
+    #[display(fmt = "Cannot update internal state, issue with work_dir?")]
     Persistence,
 
-    #[display(fmt="Cannot update repository, issue with repo_dir?")]
+    #[display(fmt = "Cannot update repository, issue with repo_dir?")]
     RepositoryUpdate,
 
-    #[display(fmt="Signing error, issue with openssl version or work_dir?")]
+    #[display(fmt = "Signing error, issue with openssl version or work_dir?")]
     SigningError,
 
-    #[display(fmt="Proxy server error.")]
+    #[display(fmt = "Proxy server error.")]
     ProxyError,
 
-    #[display(fmt="General CA Server issue.")]
+    #[display(fmt = "General CA Server issue.")]
     CaServerError,
 
-    #[display(fmt="Publication Client Server issue.")]
+    #[display(fmt = "Publication Client Server issue.")]
     PubClientServerError,
 
-    #[display(fmt="Unrecognised error (this is a bug)")]
-    Unknown
+    #[display(fmt = "Unrecognised error (this is a bug)")]
+    Unknown,
 }
 
 impl From<usize> for ErrorCode {
@@ -323,7 +324,7 @@ impl From<usize> for ErrorCode {
             3005 => ErrorCode::CaServerError,
             3006 => ErrorCode::PubClientServerError,
 
-            _ => ErrorCode::Unknown
+            _ => ErrorCode::Unknown,
         }
     }
 }
@@ -366,7 +367,7 @@ impl Into<ErrorResponse> for ErrorCode {
             ErrorCode::CaServerError => 3005,
             ErrorCode::PubClientServerError => 3006,
 
-            ErrorCode::Unknown => 65535
+            ErrorCode::Unknown => 65535,
         };
         let msg = format!("{}", self);
 
@@ -382,7 +383,6 @@ mod tests {
 
     #[test]
     fn should_convert_code_to_number_and_back() {
-
         fn test_code(number_to_test: usize) {
             let code = ErrorCode::from(number_to_test);
             let response: ErrorResponse = code.into();
@@ -412,8 +412,5 @@ mod tests {
         for n in 3001..3007 {
             test_code(n)
         }
-
-
     }
 }
-

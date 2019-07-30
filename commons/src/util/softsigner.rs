@@ -1,26 +1,20 @@
 //! Support for signing things using software keys (through openssl) and
 //! storing them unencrypted on disk.
-use std::{fs, io};
-use std::path::PathBuf;
 use bytes::Bytes;
-use openssl::rsa::Rsa;
-use openssl::hash::MessageDigest;
 use openssl::error::ErrorStack;
+use openssl::hash::MessageDigest;
 use openssl::pkey::{PKey, PKeyRef, Private};
-use rpki::crypto::{
-    Signature,
-    SignatureAlgorithm,
-    Signer,
-    SigningError,
-    PublicKey,
-    PublicKeyFormat
-};
+use openssl::rsa::Rsa;
 use rpki::crypto::signer::KeyError;
+use rpki::crypto::{
+    PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
+};
 use serde::{de, ser};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fs::File;
 use std::io::Write;
-
+use std::path::PathBuf;
+use std::{fs, io};
 
 //------------ SignerKeyId ---------------------------------------------------
 
@@ -40,23 +34,23 @@ impl AsRef<str> for SignerKeyId {
 }
 
 impl Serialize for SignerKeyId {
-    fn serialize<S>(
-        &self,
-        serializer: S
-    ) -> Result<S::Ok, S::Error> where S: Serializer {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
         self.as_ref().serialize(serializer)
     }
 }
 
 impl<'de> Deserialize<'de> for SignerKeyId {
-    fn deserialize<D>(
-        deserializer: D
-    ) -> Result<Self, D::Error> where D: Deserializer<'de> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
         let s = String::deserialize(deserializer)?;
         Ok(SignerKeyId::new(&s))
     }
 }
-
 
 //------------ OpenSslSigner -------------------------------------------------
 
@@ -65,21 +59,20 @@ impl<'de> Deserialize<'de> for SignerKeyId {
 /// Keeps the keys in memory (for now).
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct OpenSslSigner {
-    keys_dir: PathBuf
+    keys_dir: PathBuf,
 }
 
 impl OpenSslSigner {
     pub fn build(work_dir: &PathBuf) -> Result<Self, SignerError> {
         let meta_data = fs::metadata(&work_dir)?;
         if meta_data.is_dir() {
-
             let mut keys_dir = PathBuf::from(work_dir);
             keys_dir.push("keys");
-            if ! keys_dir.is_dir() {
+            if !keys_dir.is_dir() {
                 fs::create_dir_all(&keys_dir)?;
             }
 
-            Ok(OpenSslSigner { keys_dir } )
+            Ok(OpenSslSigner { keys_dir })
         } else {
             Err(SignerError::InvalidWorkDir(work_dir.clone()))
         }
@@ -89,17 +82,15 @@ impl OpenSslSigner {
 impl OpenSslSigner {
     fn sign_with_key<D: AsRef<[u8]> + ?Sized>(
         pkey: &PKeyRef<Private>,
-        data: &D
+        data: &D,
     ) -> Result<Signature, SignerError> {
-        let mut signer = ::openssl::sign::Signer::new(
-            MessageDigest::sha256(),
-            pkey
-        )?;
+        let mut signer = ::openssl::sign::Signer::new(MessageDigest::sha256(), pkey)?;
         signer.update(data.as_ref())?;
 
         let signature = Signature::new(
             SignatureAlgorithm::default(),
-            Bytes::from(signer.sign_to_vec()?));
+            Bytes::from(signer.sign_to_vec()?),
+        );
 
         Ok(signature)
     }
@@ -113,7 +104,6 @@ impl OpenSslSigner {
         } else {
             Err(SignerError::KeyNotFound)
         }
-
     }
 
     fn key_path(&self, key_id: &SignerKeyId) -> PathBuf {
@@ -124,14 +114,10 @@ impl OpenSslSigner {
 }
 
 impl Signer for OpenSslSigner {
-
     type KeyId = SignerKeyId;
     type Error = SignerError;
 
-    fn create_key(
-        &mut self,
-        _algorithm: PublicKeyFormat
-    ) -> Result<Self::KeyId, Self::Error> {
+    fn create_key(&mut self, _algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
         let kp = OpenSslKeyPair::build()?;
 
         let pk = &kp.subject_public_key_info()?;
@@ -147,18 +133,12 @@ impl Signer for OpenSslSigner {
         Ok(key_id)
     }
 
-    fn get_key_info(
-        &self,
-        key_id: &Self::KeyId
-    ) -> Result<PublicKey, KeyError<Self::Error>> {
+    fn get_key_info(&self, key_id: &Self::KeyId) -> Result<PublicKey, KeyError<Self::Error>> {
         let key_pair = self.load_key(key_id)?;
         Ok(key_pair.subject_public_key_info()?)
     }
 
-    fn destroy_key(
-        &mut self,
-        key_id: &Self::KeyId
-    ) -> Result<(), KeyError<Self::Error>> {
+    fn destroy_key(&mut self, key_id: &Self::KeyId) -> Result<(), KeyError<Self::Error>> {
         let path = self.key_path(key_id);
         if path.exists() {
             fs::remove_file(path).map_err(SignerError::IoError)?;
@@ -170,24 +150,20 @@ impl Signer for OpenSslSigner {
         &self,
         key_id: &Self::KeyId,
         _algorithm: SignatureAlgorithm,
-        data: &D
+        data: &D,
     ) -> Result<Signature, SigningError<Self::Error>> {
         let key_pair = self.load_key(key_id)?;
-        Self::sign_with_key(key_pair.pkey.as_ref(), data)
-            .map_err(|e| { SigningError::Signer(e)})
+        Self::sign_with_key(key_pair.pkey.as_ref(), data).map_err(|e| SigningError::Signer(e))
     }
 
     fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
         &self,
         _algorithm: SignatureAlgorithm,
-        data: &D
+        data: &D,
     ) -> Result<(Signature, PublicKey), SignerError> {
         let kp = OpenSslKeyPair::build()?;
 
-        let signature = Self::sign_with_key(
-            kp.pkey.as_ref(),
-            data
-        )?;
+        let signature = Self::sign_with_key(kp.pkey.as_ref(), data)?;
 
         let key = kp.subject_public_key_info()?;
 
@@ -199,21 +175,22 @@ impl Signer for OpenSslSigner {
     }
 }
 
-
 //------------ OpenSslKeyPair ------------------------------------------------
 
 /// An openssl based RSA key pair
 pub struct OpenSslKeyPair {
-    pkey: PKey<Private>
+    pkey: PKey<Private>,
 }
 
 impl Serialize for OpenSslKeyPair {
-    fn serialize<S>(
-        &self,
-        s: S
-    ) -> Result<S::Ok, S::Error> where
-        S: Serializer {
-        let bytes: Vec<u8> = self.pkey.as_ref().private_key_to_der()
+    fn serialize<S>(&self, s: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let bytes: Vec<u8> = self
+            .pkey
+            .as_ref()
+            .private_key_to_der()
             .map_err(ser::Error::custom)?;
 
         base64::encode(&bytes).serialize(s)
@@ -221,25 +198,19 @@ impl Serialize for OpenSslKeyPair {
 }
 
 impl<'de> Deserialize<'de> for OpenSslKeyPair {
-    fn deserialize<D>(
-        d: D
-    ) -> Result<OpenSslKeyPair, D::Error> where
-        D: Deserializer<'de> {
+    fn deserialize<D>(d: D) -> Result<OpenSslKeyPair, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
         match String::deserialize(d) {
             Ok(base64) => {
-                let bytes = base64::decode(&base64)
-                    .map_err(de::Error::custom)?;
+                let bytes = base64::decode(&base64).map_err(de::Error::custom)?;
 
-                let pkey = PKey::private_key_from_der(&bytes)
-                    .map_err(de::Error::custom)?;
+                let pkey = PKey::private_key_from_der(&bytes).map_err(de::Error::custom)?;
 
-                Ok(
-                    OpenSslKeyPair {
-                        pkey
-                    }
-                )
-            },
-            Err(err) => Err(err)
+                Ok(OpenSslKeyPair { pkey })
+            }
+            Err(err) => Err(err),
         }
     }
 }
@@ -250,7 +221,7 @@ impl OpenSslKeyPair {
         // So, there is no way to recover.
         let rsa = Rsa::generate(2048)?;
         let pkey = PKey::from_rsa(rsa)?;
-        Ok(OpenSslKeyPair{ pkey })
+        Ok(OpenSslKeyPair { pkey })
     }
 
     fn subject_public_key_info(&self) -> Result<PublicKey, SignerError> {
@@ -260,7 +231,6 @@ impl OpenSslKeyPair {
         Ok(PublicKey::decode(&mut b).map_err(|_| SignerError::DecodeError)?)
     }
 }
-
 
 //------------ OpenSslKeyError -----------------------------------------------
 
@@ -323,7 +293,6 @@ pub mod tests {
 
     #[test]
     fn should_serialize_and_deserialize_key() {
-
         let key = OpenSslKeyPair::build().unwrap();
         let json = serde_json::to_string(&key).unwrap();
         let key_des: OpenSslKeyPair = serde_json::from_str(json.as_str()).unwrap();

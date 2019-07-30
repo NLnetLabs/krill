@@ -2,15 +2,14 @@
 
 use std::fmt;
 
-use rpki::uri;
 use rpki::crypto::Signer;
+use rpki::uri;
 
 use crate::api::Link;
-use std::path::Path;
 use api::ca::ResourceSet;
 use remote::rfc8183;
 use remote::rfc8183::{ChildRequest, ServiceUri};
-
+use std::path::Path;
 
 //------------ Handle --------------------------------------------------------
 
@@ -59,7 +58,6 @@ impl fmt::Display for Handle {
     }
 }
 
-
 //------------ Token ------------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -98,24 +96,19 @@ impl fmt::Display for Token {
     }
 }
 
-
 //------------ PublisherRequest ----------------------------------------------
 
 /// This type defines request for a new Publisher (CA that is allowed to
 /// publish).
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PublisherRequest {
-    handle:   Handle,
-    token:    Token,
+    handle: Handle,
+    token: Token,
     base_uri: uri::Rsync,
 }
 
 impl PublisherRequest {
-    pub fn new(
-        handle:   Handle,
-        token:    Token,
-        base_uri: uri::Rsync,
-    ) -> Self {
+    pub fn new(handle: Handle, token: Token, base_uri: uri::Rsync) -> Self {
         PublisherRequest {
             handle,
             token,
@@ -145,13 +138,11 @@ impl PublisherRequest {
 
 impl PartialEq for PublisherRequest {
     fn eq(&self, other: &PublisherRequest) -> bool {
-        self.handle == other.handle &&
-        self.base_uri == other.base_uri
+        self.handle == other.handle && self.base_uri == other.base_uri
     }
 }
 
 impl Eq for PublisherRequest {}
-
 
 //------------ PublisherSummaryInfo ------------------------------------------
 
@@ -160,58 +151,51 @@ impl Eq for PublisherRequest {}
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublisherSummary {
     id: String,
-    links: Vec<Link>
+    links: Vec<Link>,
 }
 
 impl PublisherSummary {
-    pub fn from(
-        handle: &Handle,
-        path_publishers: &str
-    ) -> PublisherSummary {
+    pub fn from(handle: &Handle, path_publishers: &str) -> PublisherSummary {
         let mut links = Vec::new();
         let self_link = Link {
             rel: "self".to_string(),
-            link: format!("{}/{}", path_publishers, handle)
+            link: format!("{}/{}", path_publishers, handle),
         };
         links.push(self_link);
 
         PublisherSummary {
             id: handle.to_string(),
-            links
+            links,
         }
     }
 
-    pub fn id(&self) -> &str { &self.id }
+    pub fn id(&self) -> &str {
+        &self.id
+    }
 }
-
 
 //------------ PublisherList -------------------------------------------------
 
 /// This type represents a list of (all) current publishers to show in the API
 #[derive(Clone, Eq, Debug, Deserialize, PartialEq, Serialize)]
 pub struct PublisherList {
-    publishers: Vec<PublisherSummary>
+    publishers: Vec<PublisherSummary>,
 }
 
 impl PublisherList {
-    pub fn build(
-        publishers: &[Handle],
-        path_publishers: &str
-    ) -> PublisherList {
-        let publishers: Vec<PublisherSummary> = publishers.iter().map(|p|
-            PublisherSummary::from(&p, path_publishers)
-        ).collect();
+    pub fn build(publishers: &[Handle], path_publishers: &str) -> PublisherList {
+        let publishers: Vec<PublisherSummary> = publishers
+            .iter()
+            .map(|p| PublisherSummary::from(&p, path_publishers))
+            .collect();
 
-        PublisherList {
-            publishers
-        }
+        PublisherList { publishers }
     }
 
     pub fn publishers(&self) -> &Vec<PublisherSummary> {
         &self.publishers
     }
 }
-
 
 //------------ PublisherDetails ----------------------------------------------
 
@@ -229,27 +213,31 @@ impl PublisherDetails {
         PublisherDetails {
             handle: handle.to_string(),
             deactivated,
-            base_uri: base_uri.clone()
+            base_uri: base_uri.clone(),
         }
     }
 
-    pub fn handle(&self) -> &str { &self.handle }
-    pub fn deactivated(&self) -> bool { self.deactivated }
-    pub fn base_uri(&self) -> &uri::Rsync { &self.base_uri }
+    pub fn handle(&self) -> &str {
+        &self.handle
+    }
+    pub fn deactivated(&self) -> bool {
+        self.deactivated
+    }
+    pub fn base_uri(&self) -> &uri::Rsync {
+        &self.base_uri
+    }
 }
 
 impl PartialEq for PublisherDetails {
     fn eq(&self, other: &PublisherDetails) -> bool {
         match (serde_json::to_string(self), serde_json::to_string(other)) {
             (Ok(ser_self), Ok(ser_other)) => ser_self == ser_other,
-            _ => false
+            _ => false,
         }
     }
 }
 
 impl Eq for PublisherDetails {}
-
-
 
 //------------ PublisherClientRequest ----------------------------------------
 
@@ -257,36 +245,38 @@ impl Eq for PublisherDetails {}
 /// is used by an embedded CA to do the actual publication.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PublisherClientRequest {
-    handle:      Handle,
-    server_info: PubServerContact
+    handle: Handle,
+    server_info: PubServerContact,
 }
 
 impl PublisherClientRequest {
     pub fn new(handle: Handle, server_info: PubServerContact) -> Self {
-        PublisherClientRequest { handle, server_info }
+        PublisherClientRequest {
+            handle,
+            server_info,
+        }
     }
 
-    pub fn embedded(
-        handle: Handle
-    ) -> Self {
+    pub fn embedded(handle: Handle) -> Self {
         let server_info = PubServerContact::embedded();
-        PublisherClientRequest { handle, server_info }
+        PublisherClientRequest {
+            handle,
+            server_info,
+        }
     }
 
-    pub fn krill(
-        handle: Handle,
-        service_uri: uri::Https,
-        token: Token
-    ) -> Self {
+    pub fn krill(handle: Handle, service_uri: uri::Https, token: Token) -> Self {
         let server_info = PubServerContact::for_krill(service_uri, token);
-        PublisherClientRequest { handle, server_info }
+        PublisherClientRequest {
+            handle,
+            server_info,
+        }
     }
 
     pub fn unwrap(self) -> (Handle, PubServerContact) {
         (self.handle, self.server_info)
     }
 }
-
 
 //------------ PubServerInfo -------------------------------------------------
 
@@ -296,7 +286,7 @@ pub enum PubServerContact {
     Embedded,
 
     #[display(fmt = "Remote Krill at: {}, using token: {}", _0, _1)]
-    KrillServer(uri::Https, Token)
+    KrillServer(uri::Https, Token),
 }
 
 impl PubServerContact {
@@ -309,21 +299,17 @@ impl PubServerContact {
     }
 }
 
-
 //------------ ParentCaReq ---------------------------------------------------
 
 /// This type defines all parent ca details needed to add a parent to a CA
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AddParentRequest {
     handle: Handle,           // the local name the child gave to the parent
-    contact: ParentCaContact  // where the parent can be contacted
+    contact: ParentCaContact, // where the parent can be contacted
 }
 
 impl AddParentRequest {
-    pub fn new(
-        handle: Handle,
-        contact: ParentCaContact
-    ) -> Self {
+    pub fn new(handle: Handle, contact: ParentCaContact) -> Self {
         AddParentRequest { handle, contact }
     }
 
@@ -346,7 +332,7 @@ pub enum ParentCaContact {
     Embedded(Handle, Token),
 
     #[display(fmt = "RFC 6492 Parent")]
-    Rfc6492(rfc8183::ParentResponse)
+    Rfc6492(rfc8183::ParentResponse),
 }
 
 impl ParentCaContact {
@@ -363,35 +349,33 @@ impl ParentCaContact {
     }
 }
 
-
 //------------ CertAuthInit --------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthInit {
-    handle:   Handle,
-    token:    Token,
-    pub_mode: CertAuthPubMode
+    handle: Handle,
+    token: Token,
+    pub_mode: CertAuthPubMode,
 }
 
 impl CertAuthInit {
-    pub fn new(
-        handle:   Handle,
-        token:    Token,
-        pub_mode: CertAuthPubMode
-    ) -> Self {
-        CertAuthInit { handle, token, pub_mode }
+    pub fn new(handle: Handle, token: Token, pub_mode: CertAuthPubMode) -> Self {
+        CertAuthInit {
+            handle,
+            token,
+            pub_mode,
+        }
     }
 
     pub fn unwrap(self) -> (Handle, Token, CertAuthPubMode) {
-        ( self.handle, self.token, self.pub_mode )
+        (self.handle, self.token, self.pub_mode)
     }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum CertAuthPubMode {
-    Embedded
+    Embedded,
 }
-
 
 //------------ AddChildRequest -----------------------------------------------
 
@@ -399,16 +383,16 @@ pub enum CertAuthPubMode {
 pub struct AddChildRequest {
     handle: Handle,
     resources: ResourceSet,
-    auth: ChildAuthRequest
+    auth: ChildAuthRequest,
 }
 
 impl AddChildRequest {
-    pub fn new(
-        handle: Handle,
-        resources: ResourceSet,
-        auth: ChildAuthRequest
-    ) -> Self {
-        AddChildRequest { handle, resources, auth }
+    pub fn new(handle: Handle, resources: ResourceSet, auth: ChildAuthRequest) -> Self {
+        AddChildRequest {
+            handle,
+            resources,
+            auth,
+        }
     }
 
     pub fn unwrap(self) -> (Handle, ResourceSet, ChildAuthRequest) {
@@ -421,7 +405,5 @@ impl AddChildRequest {
 pub enum ChildAuthRequest {
     Embedded(Token),
     Remote(Token),
-    Rfc8183(ChildRequest)
+    Rfc8183(ChildRequest),
 }
-
-

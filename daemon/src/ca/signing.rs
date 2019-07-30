@@ -8,32 +8,37 @@ use bytes::Bytes;
 use serde::Serialize;
 
 use rpki::crl::{Crl, TbsCertList};
-use rpki::crypto::{self, DigestAlgorithm, KeyIdentifier, SigningError};
 use rpki::crypto::signer::KeyError;
-use rpki::manifest::{Manifest, ManifestContent, FileAndHash};
+use rpki::crypto::{self, DigestAlgorithm, KeyIdentifier, SigningError};
+use rpki::manifest::{FileAndHash, Manifest, ManifestContent};
 use rpki::sigobj::SignedObjectBuilder;
 use rpki::x509::{Serial, Time, Validity};
 
 use krill_commons::api::ca::{
-    AddedObject,
-    CertifiedKey,
-    CurrentObject,
-    ObjectsDelta,
-    PublicationDelta,
-    RepoInfo,
-    Revocation,
-    RevocationsDelta,
-    UpdatedObject,
+    AddedObject, CertifiedKey, CurrentObject, ObjectsDelta, PublicationDelta, RepoInfo, Revocation,
+    RevocationsDelta, UpdatedObject,
 };
 
 use krill_commons::util::softsigner::SignerKeyId;
 
-
 //------------ Signer --------------------------------------------------------
 
-pub trait Signer: crypto::Signer<KeyId=SignerKeyId> + Clone + Debug + Serialize + Sized + Sync + Send +'static {}
-impl<T: crypto::Signer<KeyId=SignerKeyId> + Clone + Debug + Serialize + Sized + Sync + Send + 'static > Signer for T {}
-
+pub trait Signer:
+    crypto::Signer<KeyId = SignerKeyId> + Clone + Debug + Serialize + Sized + Sync + Send + 'static
+{
+}
+impl<
+        T: crypto::Signer<KeyId = SignerKeyId>
+            + Clone
+            + Debug
+            + Serialize
+            + Sized
+            + Sync
+            + Send
+            + 'static,
+    > Signer for T
+{
+}
 
 //------------ CaSignSupport -------------------------------------------------
 
@@ -41,7 +46,6 @@ impl<T: crypto::Signer<KeyId=SignerKeyId> + Clone + Debug + Serialize + Sized + 
 pub struct SignSupport;
 
 impl SignSupport {
-
     /// Publish for the given Key and repository.
     ///
     /// Any updates for existing objects will result in Update, rather
@@ -52,13 +56,14 @@ impl SignSupport {
         ca_key: &CertifiedKey,
         repo_info: &RepoInfo,
         name_space: &str,
-        mut objects_delta: ObjectsDelta
+        mut objects_delta: ObjectsDelta,
     ) -> Result<PublicationDelta, SignError<S>> {
-
         let aia = ca_key.incoming_cert().uri();
         let key_id = ca_key.key_id();
 
-        let pub_key = signer.read().unwrap()
+        let pub_key = signer
+            .read()
+            .unwrap()
             .get_key_info(key_id)
             .map_err(SignError::KeyError)?;
 
@@ -105,20 +110,18 @@ impl SignSupport {
                 tomorrow,
                 revocations.to_crl_entries(),
                 aki,
-                serial_number
+                serial_number,
             );
 
-            crl.into_crl(
-                signer.read().unwrap().deref(),
-                key_id
-            ).map_err(SignError::SigningError)?
+            crl.into_crl(signer.read().unwrap().deref(), key_id)
+                .map_err(SignError::SigningError)?
         };
 
         match current_objects.insert(crl_name.clone(), CurrentObject::from(&crl)) {
             None => {
                 let added = AddedObject::new(crl_name, CurrentObject::from(&crl));
                 objects_delta.add(added);
-            },
+            }
             Some(old_crl) => {
                 let hash = old_crl.content().to_encoded_hash();
                 let updated = UpdatedObject::new(crl_name, CurrentObject::from(&crl), hash);
@@ -132,29 +135,30 @@ impl SignSupport {
                 now,
                 tomorrow,
                 DigestAlgorithm::default(),
-                current_objects.mft_entries().iter()
+                current_objects.mft_entries().iter(),
             );
 
-            mft_content.into_manifest(
-                SignedObjectBuilder::new(
-                    Serial::random(
-                        signer.read().unwrap().deref()
-                    ).map_err(SignError::SignerError)?,
-                    Validity::new(now, next_week),
-                    crl_uri,
-                    aia.clone(),
-                    mft_uri.clone()
-                ),
-                signer.read().unwrap().deref(),
-                key_id,
-            ).map_err(SignError::SigningError)?
+            mft_content
+                .into_manifest(
+                    SignedObjectBuilder::new(
+                        Serial::random(signer.read().unwrap().deref())
+                            .map_err(SignError::SignerError)?,
+                        Validity::new(now, next_week),
+                        crl_uri,
+                        aia.clone(),
+                        mft_uri.clone(),
+                    ),
+                    signer.read().unwrap().deref(),
+                    key_id,
+                )
+                .map_err(SignError::SigningError)?
         };
 
         match old_mft {
             None => {
                 let added = AddedObject::new(mft_name, CurrentObject::from(&mft));
                 objects_delta.add(added);
-            },
+            }
             Some(old_mft) => {
                 let hash = old_mft.content().to_encoded_hash();
                 let updated = UpdatedObject::new(mft_name, CurrentObject::from(&mft), hash);
@@ -167,7 +171,7 @@ impl SignSupport {
             tomorrow,
             number,
             revocations_delta,
-            objects_delta
+            objects_delta,
         ))
     }
 }
@@ -176,15 +180,13 @@ trait ManifestEntry {
     fn mft_bytes(&self) -> Bytes;
     fn mft_hash(&self) -> Bytes {
         Bytes::from(
-            DigestAlgorithm::default().digest(
-                self.mft_bytes().as_ref()).as_ref()
+            DigestAlgorithm::default()
+                .digest(self.mft_bytes().as_ref())
+                .as_ref(),
         )
     }
     fn mft_entry(&self, name: &str) -> FileAndHash<Bytes, Bytes> {
-        FileAndHash::new(
-            Bytes::from(name),
-            self.mft_hash()
-        )
+        FileAndHash::new(Bytes::from(name), self.mft_hash())
     }
 }
 
@@ -193,7 +195,6 @@ impl ManifestEntry for Crl {
         self.to_captured().into_bytes()
     }
 }
-
 
 //------------ SignError -----------------------------------------------------
 

@@ -6,14 +6,7 @@ use std::sync::RwLock;
 
 use crate::api::admin::Handle;
 
-use super::{
-    Aggregate,
-    DiskKeyStore,
-    Event,
-    EventListener,
-    KeyStore,
-    KeyStoreError,
-};
+use super::{Aggregate, DiskKeyStore, Event, EventListener, KeyStore, KeyStoreError};
 
 const SNAPSHOT_FREQ: u64 = 5;
 
@@ -47,7 +40,6 @@ pub trait AggregateStore<A: Aggregate>: Send + Sync {
     fn add_listener<L: EventListener<A>>(&mut self, listener: Arc<L>);
 }
 
-
 /// This type defines possible Errors for the AggregateStore
 #[derive(Debug, Display)]
 pub enum AggregateStoreError {
@@ -68,16 +60,17 @@ pub enum AggregateStoreError {
 }
 
 impl From<KeyStoreError> for AggregateStoreError {
-    fn from(e: KeyStoreError) -> Self { AggregateStoreError::KeyStoreError(e) }
+    fn from(e: KeyStoreError) -> Self {
+        AggregateStoreError::KeyStoreError(e)
+    }
 }
-
 
 pub struct DiskAggregateStore<A: Aggregate> {
     store: DiskKeyStore,
     cache: RwLock<HashMap<Handle, Arc<A>>>,
     use_cache: bool,
     listeners: Vec<Arc<EventListener<A>>>,
-    outer_lock: RwLock<()>
+    outer_lock: RwLock<()>,
 }
 
 impl<A: Aggregate> DiskAggregateStore<A> {
@@ -87,17 +80,22 @@ impl<A: Aggregate> DiskAggregateStore<A> {
         let use_cache = true;
         let listeners = vec![];
         let lock = RwLock::new(());
-        Ok(DiskAggregateStore { store, cache, use_cache, listeners, outer_lock: lock })
+        Ok(DiskAggregateStore {
+            store,
+            cache,
+            use_cache,
+            listeners,
+            outer_lock: lock,
+        })
     }
 }
 
 impl<A: Aggregate> DiskAggregateStore<A> {
-    fn has_updates(
-        &self,
-        id: &Handle,
-        aggregate: &A
-    ) -> StoreResult<bool> {
-        Ok(self.store.get_event::<A::Event>(id, aggregate.version())?.is_some())
+    fn has_updates(&self, id: &Handle, aggregate: &A) -> StoreResult<bool> {
+        Ok(self
+            .store
+            .get_event::<A::Event>(id, aggregate.version())?
+            .is_some())
     }
 
     fn cache_get(&self, id: &Handle) -> Option<Arc<A>> {
@@ -117,18 +115,16 @@ impl<A: Aggregate> DiskAggregateStore<A> {
     fn get_latest_no_lock(&self, handle: &Handle) -> StoreResult<Arc<A>> {
         debug!("Trying to load aggregate id: {}", handle);
         match self.cache_get(handle) {
-            None => {
-                match self.store.get_aggregate(handle)? {
-                    None => {
-                        error!("Could not load aggregate with id: {} from disk", handle);
-                        Err(AggregateStoreError::UnknownAggregate(handle.clone()))
-                    },
-                    Some(agg) => {
-                        let arc: Arc<A> = Arc::new(agg);
-                        self.cache_update(handle, arc.clone());
-                        debug!("Loaded aggregate id: {} from disk", handle);
-                        Ok(arc)
-                    }
+            None => match self.store.get_aggregate(handle)? {
+                None => {
+                    error!("Could not load aggregate with id: {} from disk", handle);
+                    Err(AggregateStoreError::UnknownAggregate(handle.clone()))
+                }
+                Some(agg) => {
+                    let arc: Arc<A> = Arc::new(agg);
+                    self.cache_update(handle, arc.clone());
+                    debug!("Loaded aggregate id: {} from disk", handle);
+                    Ok(arc)
                 }
             },
             Some(mut arc) => {
@@ -149,10 +145,7 @@ impl<A: Aggregate> AggregateStore<A> for DiskAggregateStore<A> {
         self.get_latest_no_lock(handle)
     }
 
-    fn add(
-        &self,
-        init: A::InitEvent
-    ) -> StoreResult<Arc<A>> {
+    fn add(&self, init: A::InitEvent) -> StoreResult<Arc<A>> {
         let _lock = self.outer_lock.write().unwrap();
 
         self.store.store_event(&init)?;
@@ -168,13 +161,7 @@ impl<A: Aggregate> AggregateStore<A> for DiskAggregateStore<A> {
         Ok(arc)
     }
 
-
-    fn update(
-        &self,
-        handle: &Handle,
-        prev: Arc<A>,
-        events: Vec<A::Event>
-    ) -> StoreResult<Arc<A>> {
+    fn update(&self, handle: &Handle, prev: Arc<A>, events: Vec<A::Event>) -> StoreResult<Arc<A>> {
         let _lock = self.outer_lock.write().unwrap();
 
         // Get the latest arc.
@@ -182,7 +169,7 @@ impl<A: Aggregate> AggregateStore<A> for DiskAggregateStore<A> {
         {
             // Verify whether there is a concurrency issue
             if prev.version() != latest.version() {
-                return Err(AggregateStoreError::ConcurrentModification(handle.clone()))
+                return Err(AggregateStoreError::ConcurrentModification(handle.clone()));
             }
 
             // forget the previous version
@@ -190,7 +177,6 @@ impl<A: Aggregate> AggregateStore<A> for DiskAggregateStore<A> {
 
             // make the arc mutable, hopefully forgetting prev will avoid the clone
             let agg = Arc::make_mut(&mut latest);
-
 
             // Using a lock on the hashmap here to ensure that all updates happen sequentially.
             // It would be better to get a lock only for this specific aggregate. So it may be
@@ -213,8 +199,7 @@ impl<A: Aggregate> AggregateStore<A> for DiskAggregateStore<A> {
 
             for i in 0..nr_events {
                 let event = &events[i as usize];
-                if event.version() != version_before + i ||
-                   event.handle() != handle {
+                if event.version() != version_before + i || event.handle() != handle {
                     return Err(AggregateStoreError::WrongEventForAggregate);
                 }
             }

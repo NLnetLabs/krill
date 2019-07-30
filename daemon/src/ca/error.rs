@@ -1,14 +1,14 @@
 use std::fmt::Display;
 
-use krill_commons::api::admin::{Handle};
-use krill_commons::api::ca::{KeyRef};
-use krill_commons::eventsourcing::{AggregateStoreError};
+use krill_commons::api::admin::Handle;
+use krill_commons::api::ca::KeyRef;
+use krill_commons::eventsourcing::AggregateStoreError;
 use krill_commons::remote::rfc6492;
 
-use crate::ca::signing::{Signer};
-use ca::{KeyStatus};
-use std::{io, fmt};
+use crate::ca::signing::Signer;
+use ca::KeyStatus;
 use krill_commons::util::httpclient;
+use std::{fmt, io};
 
 //------------ Error ---------------------------------------------------------
 
@@ -87,12 +87,9 @@ impl Error {
     pub fn invalid_csr(handle: &Handle, msg: &str) -> Self {
         Error::InvalidCsr(handle.clone(), msg.to_string())
     }
-
 }
 
 impl std::error::Error for Error {}
-
-
 
 //------------ Error ---------------------------------------------------------
 
@@ -136,13 +133,19 @@ impl<S: Signer> ServerError<S> {
 }
 
 impl<S: Signer> From<io::Error> for ServerError<S> {
-    fn from(e: io::Error) -> Self { ServerError::IoError(e) }
+    fn from(e: io::Error) -> Self {
+        ServerError::IoError(e)
+    }
 }
 
 impl<S: Signer> From<Error> for ServerError<S> {
-    fn from(e: Error) -> Self { ServerError::CertAuth(e) }
+    fn from(e: Error) -> Self {
+        ServerError::CertAuth(e)
+    }
 }
 
 impl<S: Signer> From<AggregateStoreError> for ServerError<S> {
-    fn from(e: AggregateStoreError) -> Self { ServerError::AggregateStoreError(e) }
+    fn from(e: AggregateStoreError) -> Self {
+        ServerError::AggregateStoreError(e)
+    }
 }

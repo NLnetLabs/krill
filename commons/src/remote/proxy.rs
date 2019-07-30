@@ -2,84 +2,42 @@ use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use bcder::{Captured, Mode};
 use bcder::encode::Values;
+use bcder::{Captured, Mode};
 
 use rpki::uri;
 use rpki::x509::ValidationError;
 
-use crate::api::{
-    ErrorCode,
-    ErrorResponse,
-};
 use crate::api::admin::Handle;
-use crate::api::publication::{
-    ListReply,
-    PublishRequest,
-    PublishDelta,
-};
-use crate::eventsourcing::{
-    Aggregate,
-    AggregateStore,
-    AggregateStoreError,
-    DiskAggregateStore,
-};
-use crate::util::httpclient;
-use crate::util::softsigner::{OpenSslSigner, SignerError};
-use rpki::crypto::{
-    PublicKeyFormat,
-    Signer
-};
-use crate::remote::api::{
-    ClientInfo,
-};
-use crate::remote::clients::{
-    self,
-    ClientManager,
-    ClientsEvents,
-    ClientsCommand,
-    ClientsCommands
-};
-use crate::remote::builder::{
-    self,
-    IdCertBuilder,
-    SignedMessageBuilder,
-};
-use crate::remote::id::{
-    IdCert,
-    MyIdentity,
-    ParentInfo
-};
-use crate::remote::responder::{
-    self,
-    Responder,
-    ResponderEvents
-};
+use crate::api::publication::{ListReply, PublishDelta, PublishRequest};
+use crate::api::{ErrorCode, ErrorResponse};
+use crate::eventsourcing::{Aggregate, AggregateStore, AggregateStoreError, DiskAggregateStore};
+use crate::remote::api::ClientInfo;
+use crate::remote::builder::{self, IdCertBuilder, SignedMessageBuilder};
+use crate::remote::clients::{self, ClientManager, ClientsCommand, ClientsCommands, ClientsEvents};
+use crate::remote::id::{IdCert, MyIdentity, ParentInfo};
+use crate::remote::responder::{self, Responder, ResponderEvents};
 use crate::remote::rfc8181::{
-    self,
-    ErrorReply,
-    Message,
-    ReplyMessage,
-    ReportError,
-    ReportErrorCode,
+    self, ErrorReply, Message, ReplyMessage, ReportError, ReportErrorCode,
 };
 use crate::remote::rfc8183::RepositoryResponse;
 use crate::remote::rfc8183::ServiceUri;
 use crate::remote::sigmsg::SignedMessage;
-
+use crate::util::httpclient;
+use crate::util::softsigner::{OpenSslSigner, SignerError};
+use rpki::crypto::{PublicKeyFormat, Signer};
 
 #[derive(Clone)]
 pub struct ProxyServer {
     signer: OpenSslSigner,
     clients_store: Arc<DiskAggregateStore<ClientManager>>,
     responder_store: Arc<DiskAggregateStore<Responder>>,
-    krill_uri: uri::Https
+    krill_uri: uri::Https,
 }
 
 /// # Server Life Cycle
 ///
 impl ProxyServer {
-
     /// Initialises the Proxy Server. This will re-use the existing clients and
     /// responder (i.e. server certificate and all), if they exist for this work_dir.
     /// If they do not exist, they will be initialised as well.
@@ -89,18 +47,23 @@ impl ProxyServer {
         let responder_store = Arc::new(DiskAggregateStore::<Responder>::new(work_dir, "proxy")?);
 
         let clients_id = clients::id();
-        if ! clients_store.has(&clients_id) {
+        if !clients_store.has(&clients_id) {
             clients_store.add(ClientsEvents::init())?;
         }
 
         let responder_id = responder::id();
-        if ! responder_store.has(&responder_id) {
+        if !responder_store.has(&responder_id) {
             let my_id = Self::new_id(&mut signer)?;
             let init = ResponderEvents::init(my_id);
             responder_store.add(init)?;
         }
 
-        Ok(ProxyServer { signer, clients_store, responder_store, krill_uri: krill_uri.clone() })
+        Ok(ProxyServer {
+            signer,
+            clients_store,
+            responder_store,
+            krill_uri: krill_uri.clone(),
+        })
     }
 
     fn new_id(signer: &mut OpenSslSigner) -> Result<MyIdentity, Error> {
@@ -139,7 +102,7 @@ impl ProxyServer {
         handle: &Handle,
         service_uri: uri::Https,
         sia_base: uri::Rsync,
-        rrdp_notification_uri: uri::Https
+        rrdp_notification_uri: uri::Https,
     ) -> Result<RepositoryResponse, Error> {
         let tag = None;
 
@@ -157,7 +120,7 @@ impl ProxyServer {
             id_cert,
             service_uri,
             sia_base,
-            rrdp_notification_uri
+            rrdp_notification_uri,
         ))
     }
 
@@ -170,20 +133,21 @@ impl ProxyServer {
     }
 
     fn clients(&self) -> Result<Arc<ClientManager>, Error> {
-        self.clients_store.get_latest(&clients::id()).map_err(Error::StoreError)
+        self.clients_store
+            .get_latest(&clients::id())
+            .map_err(Error::StoreError)
     }
 }
 
 /// # Proxy RFC8181 requests to a Krill server
 ///
 impl ProxyServer {
-
     /// Takes an RFC8181 request, validates it, and then returns the
     /// request type
     pub fn convert_rfc8181_req(
         &self,
         msg: SignedMessage,
-        handle: &Handle
+        handle: &Handle,
     ) -> Result<PublishRequest, Error> {
         self.validate_msg(&msg, handle)?;
         self.convert_to_json_request(&msg)
@@ -208,16 +172,12 @@ impl ProxyServer {
         self.sign_msg(msg)
     }
 
-    fn validate_msg(
-        &self,
-        msg: &SignedMessage,
-        handle: &Handle
-    ) -> Result<(), Error> {
+    fn validate_msg(&self, msg: &SignedMessage, handle: &Handle) -> Result<(), Error> {
         match self.clients()?.client_auth(handle) {
             None => {
                 warn!("Received RFC8181 message for unknown client: {}", &handle);
                 Err(Error::UnknownClient(handle.clone()))
-            },
+            }
             Some(client) => {
                 let id_cert = client.cert();
                 match msg.validate(id_cert) {
@@ -233,10 +193,7 @@ impl ProxyServer {
 
     /// Retrieves the QueryMessage contained in the SignedMessage and
     /// converts into the (json) equivalent request for the API.
-    fn convert_to_json_request(
-        &self,
-        msg: &SignedMessage
-    ) -> Result<PublishRequest, Error> {
+    fn convert_to_json_request(&self, msg: &SignedMessage) -> Result<PublishRequest, Error> {
         debug!("Convert contained message to Json equivalent");
         let msg = rfc8181::Message::from_signed_message(&msg)?;
         let msg = msg.into_query()?;
@@ -246,19 +203,14 @@ impl ProxyServer {
     fn sign_msg(&self, msg: Message) -> Result<Captured, Error> {
         let responder = self.responder_store.get_latest(&responder::id())?;
 
-        let builder = SignedMessageBuilder::create(
-            responder.id().key_id(),
-            &self.signer,
-            msg.into_bytes()
-        )?;
+        let builder =
+            SignedMessageBuilder::create(responder.id().key_id(), &self.signer, msg.into_bytes())?;
 
         let enc = builder.encode();
 
         Ok(enc.to_captured(Mode::Der))
     }
 }
-
-
 
 //------------ Error ---------------------------------------------------------
 
@@ -296,35 +248,51 @@ pub enum Error {
 }
 
 impl From<io::Error> for Error {
-    fn from(e: io::Error) -> Self { Error::IoError(e) }
+    fn from(e: io::Error) -> Self {
+        Error::IoError(e)
+    }
 }
 
 impl From<AggregateStoreError> for Error {
-    fn from(e: AggregateStoreError) -> Self { Error::StoreError(e) }
+    fn from(e: AggregateStoreError) -> Self {
+        Error::StoreError(e)
+    }
 }
 
 impl From<clients::Error> for Error {
-    fn from(e: clients::Error) -> Self { Error::ClientsError(e) }
+    fn from(e: clients::Error) -> Self {
+        Error::ClientsError(e)
+    }
 }
 
 impl From<SignerError> for Error {
-    fn from(e: SignerError) -> Self { Error::SignerError(e) }
+    fn from(e: SignerError) -> Self {
+        Error::SignerError(e)
+    }
 }
 
 impl From<builder::Error<SignerError>> for Error {
-    fn from(e: builder::Error<SignerError>) -> Self { Error::BuilderError(e) }
+    fn from(e: builder::Error<SignerError>) -> Self {
+        Error::BuilderError(e)
+    }
 }
 
 impl From<ValidationError> for Error {
-    fn from(e: ValidationError) -> Self { Error::ValidationError(e) }
+    fn from(e: ValidationError) -> Self {
+        Error::ValidationError(e)
+    }
 }
 
 impl From<rfc8181::MessageError> for Error {
-    fn from(e: rfc8181::MessageError) -> Self { Error::Rfc8181MessageError(e) }
+    fn from(e: rfc8181::MessageError) -> Self {
+        Error::Rfc8181MessageError(e)
+    }
 }
 
 impl From<httpclient::Error> for Error {
-    fn from(e: httpclient::Error) -> Self { Error::HttpClientError(e) }
+    fn from(e: httpclient::Error) -> Self {
+        Error::HttpClientError(e)
+    }
 }
 
 impl Error {
@@ -333,55 +301,54 @@ impl Error {
             Error::ValidationError(_) => ReportErrorCode::PermissionFailure,
             Error::Rfc8181MessageError(_) => ReportErrorCode::XmlError,
             Error::UnknownClient(_) => ReportErrorCode::PermissionFailure,
-            Error::HttpClientError(http_error) => {
-                match http_error {
-                    httpclient::Error::ErrorWithBody(_code, body) => {
-                        match serde_json::from_str::<ErrorResponse>(body) {
-                            Ok(response) => {
-                                let error_nr = response.code();
-                                let error_code: ErrorCode = response.into();
-                                match error_code {
-                                    ErrorCode::InvalidPublicationXml => ReportErrorCode::XmlError,
-                                    ErrorCode::ObjectAlreadyPresent => ReportErrorCode::ObjectAlreadyPresent,
-                                    ErrorCode::NoObjectForHashAndOrUri => ReportErrorCode::NoObjectMatchingHash,
-                                    _ => {
-                                        if error_nr > 2000 && error_nr < 3000 {
-                                            ReportErrorCode::PermissionFailure
-                                        } else {
-                                            ReportErrorCode::OtherError
-                                        }
+            Error::HttpClientError(http_error) => match http_error {
+                httpclient::Error::ErrorWithBody(_code, body) => {
+                    match serde_json::from_str::<ErrorResponse>(body) {
+                        Ok(response) => {
+                            let error_nr = response.code();
+                            let error_code: ErrorCode = response.into();
+                            match error_code {
+                                ErrorCode::InvalidPublicationXml => ReportErrorCode::XmlError,
+                                ErrorCode::ObjectAlreadyPresent => {
+                                    ReportErrorCode::ObjectAlreadyPresent
+                                }
+                                ErrorCode::NoObjectForHashAndOrUri => {
+                                    ReportErrorCode::NoObjectMatchingHash
+                                }
+                                _ => {
+                                    if error_nr > 2000 && error_nr < 3000 {
+                                        ReportErrorCode::PermissionFailure
+                                    } else {
+                                        ReportErrorCode::OtherError
                                     }
                                 }
                             }
-                            Err(_) => ReportErrorCode::OtherError
                         }
+                        Err(_) => ReportErrorCode::OtherError,
                     }
-                    _ => ReportErrorCode::OtherError
                 }
-
-            }
-            _ => ReportErrorCode::OtherError
+                _ => ReportErrorCode::OtherError,
+            },
+            _ => ReportErrorCode::OtherError,
         }
     }
 }
-
-
 
 /// This type proxies native Krill requests to a remote RFC compliant server
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ClientProxy {
     id: MyIdentity,
     parent: ParentInfo,
-    work_dir: PathBuf
+    work_dir: PathBuf,
 }
 
 impl ClientProxy {
-    pub fn new(
-        id: MyIdentity,
-        parent: ParentInfo,
-        work_dir: PathBuf
-    ) -> Self {
-        ClientProxy { id, parent, work_dir }
+    pub fn new(id: MyIdentity, parent: ParentInfo, work_dir: PathBuf) -> Self {
+        ClientProxy {
+            id,
+            parent,
+            work_dir,
+        }
     }
 
     pub fn list(&self) -> Result<ListReply, ClientError> {
@@ -391,7 +358,7 @@ impl ClientProxy {
         match reply {
             rfc8181::ReplyMessage::ErrorReply(e) => Err(ClientError::ErrorReply(e)),
             rfc8181::ReplyMessage::SuccessReply => Err(ClientError::UnexpectedReply),
-            rfc8181::ReplyMessage::ListReply(list) => Ok(list)
+            rfc8181::ReplyMessage::ListReply(list) => Ok(list),
         }
     }
 
@@ -402,20 +369,16 @@ impl ClientProxy {
         match reply {
             rfc8181::ReplyMessage::ErrorReply(e) => Err(ClientError::ErrorReply(e)),
             rfc8181::ReplyMessage::ListReply(_) => Err(ClientError::UnexpectedReply),
-            rfc8181::ReplyMessage::SuccessReply => Ok(())
+            rfc8181::ReplyMessage::SuccessReply => Ok(()),
         }
     }
 
-    fn proxy_msg(
-        &self,
-        msg: rfc8181::Message,
-    ) -> Result<rfc8181::Message, ClientError> {
-
+    fn proxy_msg(&self, msg: rfc8181::Message) -> Result<rfc8181::Message, ClientError> {
         let signed = self.sign(msg)?.into_bytes();
         let res = httpclient::post_binary(
             &self.parent.service_uri().to_string(),
             &signed,
-            "application/rpki-publication"
+            "application/rpki-publication",
         )?;
 
         let res_msg = SignedMessage::decode(res, true)?;
@@ -425,21 +388,15 @@ impl ClientProxy {
     }
 
     fn sign(&self, msg: Message) -> Result<Captured, ClientError> {
-
         let key_id = self.id.key_id();
         let signer = OpenSslSigner::build(&self.work_dir)?;
 
-        let builder = SignedMessageBuilder::create(
-            key_id,
-            &signer,
-            msg.into_bytes()
-        )?;
+        let builder = SignedMessageBuilder::create(key_id, &signer, msg.into_bytes())?;
         let enc = builder.encode();
 
         Ok(enc.to_captured(Mode::Der))
     }
 }
-
 
 //------------ ClientError ----------------------------------------------------
 
@@ -460,40 +417,51 @@ pub enum ClientError {
     #[display(fmt = "{}", _0)]
     BuilderError(builder::Error<SignerError>),
 
-    #[display(fmt="Received error from server: {:?}", _0)]
+    #[display(fmt = "Received error from server: {:?}", _0)]
     ErrorReply(rfc8181::ErrorReply),
 
-    #[display(fmt="Received unexpected reply (list vs success)")]
+    #[display(fmt = "Received unexpected reply (list vs success)")]
     UnexpectedReply,
 
-    #[display(fmt="{}", _0)]
+    #[display(fmt = "{}", _0)]
     SignerError(SignerError),
 }
 
 impl From<httpclient::Error> for ClientError {
-    fn from(e: httpclient::Error) -> Self { ClientError::HttpError(e) }
+    fn from(e: httpclient::Error) -> Self {
+        ClientError::HttpError(e)
+    }
 }
 
 impl From<bcder::decode::Error> for ClientError {
-    fn from(e: bcder::decode::Error) -> Self { ClientError::DecodeError(e) }
+    fn from(e: bcder::decode::Error) -> Self {
+        ClientError::DecodeError(e)
+    }
 }
 
 impl From<ValidationError> for ClientError {
-    fn from(e: ValidationError) -> Self { ClientError::ValidationError(e) }
+    fn from(e: ValidationError) -> Self {
+        ClientError::ValidationError(e)
+    }
 }
 
 impl From<rfc8181::MessageError> for ClientError {
-    fn from(e: rfc8181::MessageError) -> Self { ClientError::MessageError(e) }
+    fn from(e: rfc8181::MessageError) -> Self {
+        ClientError::MessageError(e)
+    }
 }
 
 impl From<builder::Error<SignerError>> for ClientError {
-    fn from(e: builder::Error<SignerError>) -> Self { ClientError::BuilderError(e) }
+    fn from(e: builder::Error<SignerError>) -> Self {
+        ClientError::BuilderError(e)
+    }
 }
 
 impl From<SignerError> for ClientError {
-    fn from(e: SignerError) -> Self { ClientError::SignerError(e) }
+    fn from(e: SignerError) -> Self {
+        ClientError::SignerError(e)
+    }
 }
-
 
 //------------ Tests ---------------------------------------------------------
 

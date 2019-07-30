@@ -11,44 +11,21 @@ use bytes::Bytes;
 use chrono::Duration;
 
 use rpki::cert::{Cert, Overclaim};
-use rpki::crypto::{PublicKey, KeyIdentifier};
-use rpki::resources::{
-    AsBlocks,
-    AsResources,
-    IpBlocks,
-    IpResources,
-    Ipv4Resources,
-    Ipv6Resources,
-};
+use rpki::crypto::{KeyIdentifier, PublicKey};
+use rpki::resources::{AsBlocks, AsResources, IpBlocks, IpResources, Ipv4Resources, Ipv6Resources};
 use rpki::uri;
-use rpki::x509::{
-    Serial,
-    Time,
-};
+use rpki::x509::{Serial, Time};
 
-use crate::api::{
-    Base64,
-    EncodedHash,
-};
-use crate::api::admin::{
-    Handle,
-    Token
-};
+use crate::api::admin::{Handle, Token};
 use crate::api::publication;
+use crate::api::{Base64, EncodedHash};
+use crate::rpki::crl::{Crl, CrlEntry};
+use crate::rpki::manifest::{FileAndHash, Manifest};
 use crate::util::ext_serde;
 use crate::util::softsigner::SignerKeyId;
-use crate::rpki::crl::{
-    Crl,
-    CrlEntry,
-};
-use crate::rpki::manifest::{
-    FileAndHash,
-    Manifest,
-};
 use api::admin::ParentCaContact;
-use api::{RequestResourceLimit, IssuanceRequest};
+use api::{IssuanceRequest, RequestResourceLimit};
 use remote::id::IdCert;
-
 
 //------------ ChildCa -------------------------------------------------------
 
@@ -57,7 +34,7 @@ use remote::id::IdCert;
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildCa {
     handle: Handle,
-    details: ChildCaDetails
+    details: ChildCaDetails,
 }
 
 impl ChildCa {
@@ -65,11 +42,7 @@ impl ChildCa {
         ChildCa { handle, details }
     }
 
-    pub fn without_resources(
-        handle: Handle,
-        token: Token,
-        id_cert: Option<IdCert>
-    ) -> Self {
+    pub fn without_resources(handle: Handle, token: Token, id_cert: Option<IdCert>) -> Self {
         let details = ChildCaDetails::new(token, id_cert);
         ChildCa { handle, details }
     }
@@ -87,10 +60,9 @@ impl ChildCa {
     }
 
     pub fn unwrap(self) -> (Handle, ChildCaDetails) {
-        (self.handle, self.details )
+        (self.handle, self.details)
     }
 }
-
 
 //------------ ChildCaDetails ------------------------------------------------
 
@@ -98,16 +70,24 @@ impl ChildCa {
 pub struct ChildCaDetails {
     token: Token,
     id_cert: Option<IdCert>,
-    resources: HashMap<String, ChildResources>
+    resources: HashMap<String, ChildResources>,
 }
 
 impl ChildCaDetails {
     pub fn new(token: Token, id_cert: Option<IdCert>) -> Self {
-        ChildCaDetails { token, id_cert, resources: HashMap::new() }
+        ChildCaDetails {
+            token,
+            id_cert,
+            resources: HashMap::new(),
+        }
     }
 
-    pub fn token(&self) -> &Token { &self.token }
-    pub fn id_cert(&self) -> Option<&IdCert> { self.id_cert.as_ref() }
+    pub fn token(&self) -> &Token {
+        &self.token
+    }
+    pub fn id_cert(&self) -> Option<&IdCert> {
+        self.id_cert.as_ref()
+    }
 
     pub fn resources(&self) -> &HashMap<String, ChildResources> {
         &self.resources
@@ -118,10 +98,8 @@ impl ChildCaDetails {
     }
 
     pub fn add_resources(&mut self, name: &str, resources: ResourceSet) {
-        self.resources.insert(
-            name.to_string(),
-            ChildResources::new(resources)
-        );
+        self.resources
+            .insert(name.to_string(), ChildResources::new(resources));
     }
 
     pub fn add_cert(&mut self, class_name: &str, cert: IssuedCert) {
@@ -129,7 +107,6 @@ impl ChildCaDetails {
         // been issued to it. So, it's safe to unwrap here.
         self.resources.get_mut(class_name).unwrap().add_cert(cert)
     }
-
 }
 
 /// This type defines a reference to PublicKey for easy storage and lookup.
@@ -139,9 +116,7 @@ pub struct KeyRef(String);
 impl From<&KeyIdentifier> for KeyRef {
     fn from(ki: &KeyIdentifier) -> Self {
         let hex = ki.into_hex();
-        let s = unsafe {
-            str::from_utf8_unchecked(&hex)
-        };
+        let s = unsafe { str::from_utf8_unchecked(&hex) };
         KeyRef(s.to_string())
     }
 }
@@ -151,7 +126,6 @@ impl From<&Cert> for KeyRef {
         Self::from(&c.subject_key_identifier())
     }
 }
-
 
 //------------ ChildResources ------------------------------------------------
 
@@ -164,20 +138,21 @@ impl From<&Cert> for KeyRef {
 pub struct ChildResources {
     resources: ResourceSet,
     not_after: Time,
-    certs: HashMap<KeyRef, IssuedCert>
+    certs: HashMap<KeyRef, IssuedCert>,
 }
 
 impl ChildResources {
-
     pub fn new(resources: ResourceSet) -> Self {
         ChildResources {
             resources,
             not_after: Time::next_year(),
-            certs: HashMap::new()
+            certs: HashMap::new(),
         }
     }
 
-    pub fn resources(&self) -> &ResourceSet { &self.resources }
+    pub fn resources(&self) -> &ResourceSet {
+        &self.resources
+    }
 
     /// Give back the not_after time that would be used on newly
     /// issued certificates. See `resource_set_notafter` in
@@ -196,7 +171,7 @@ impl ChildResources {
         }
     }
 
-    pub fn certs(&self) -> impl Iterator<Item=&IssuedCert> {
+    pub fn certs(&self) -> impl Iterator<Item = &IssuedCert> {
         self.certs.values()
     }
 
@@ -212,9 +187,7 @@ impl ChildResources {
         self.resources = ResourceSet::from(cert.cert());
         self.certs.insert(key_ref, cert);
     }
-
 }
-
 
 //------------ IssuedCert ----------------------------------------------------
 
@@ -230,10 +203,10 @@ impl ChildResources {
 // of the stored json structures.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct IssuedCert {
-    uri: uri::Rsync, // where this cert is published
+    uri: uri::Rsync,             // where this cert is published
     limit: RequestResourceLimit, // the limit on the request
     resource_set: ResourceSet,
-    cert: Cert
+    cert: Cert,
 }
 
 impl IssuedCert {
@@ -241,32 +214,44 @@ impl IssuedCert {
         uri: uri::Rsync,
         limit: RequestResourceLimit,
         resource_set: ResourceSet,
-        cert: Cert
+        cert: Cert,
     ) -> Self {
-        IssuedCert { uri, limit, resource_set, cert }
+        IssuedCert {
+            uri,
+            limit,
+            resource_set,
+            cert,
+        }
     }
 
     pub fn unwrap(self) -> (uri::Rsync, RequestResourceLimit, ResourceSet, Cert) {
         (self.uri, self.limit, self.resource_set, self.cert)
     }
 
-    pub fn uri(&self) -> &uri::Rsync { &self.uri }
-    pub fn limit(&self) -> &RequestResourceLimit { &self.limit }
-    pub fn resource_set(&self) -> &ResourceSet { &self.resource_set }
-    pub fn cert(&self) -> &Cert { &self.cert }
+    pub fn uri(&self) -> &uri::Rsync {
+        &self.uri
+    }
+    pub fn limit(&self) -> &RequestResourceLimit {
+        &self.limit
+    }
+    pub fn resource_set(&self) -> &ResourceSet {
+        &self.resource_set
+    }
+    pub fn cert(&self) -> &Cert {
+        &self.cert
+    }
 }
 
 impl PartialEq for IssuedCert {
     fn eq(&self, other: &IssuedCert) -> bool {
-        self.uri == other.uri &&
-        self.limit == other.limit &&
-        self.resource_set == other.resource_set &&
-        self.cert.to_captured().as_slice() == other.cert.to_captured().as_slice()
+        self.uri == other.uri
+            && self.limit == other.limit
+            && self.resource_set == other.resource_set
+            && self.cert.to_captured().as_slice() == other.cert.to_captured().as_slice()
     }
 }
 
 impl Eq for IssuedCert {}
-
 
 //------------ RcvdCert ------------------------------------------------------
 
@@ -277,22 +262,27 @@ impl Eq for IssuedCert {}
 pub struct RcvdCert {
     cert: Cert,
     uri: uri::Rsync,
-    resources: ResourceSet
+    resources: ResourceSet,
 }
 
 impl RcvdCert {
-
     pub fn new(cert: Cert, uri: uri::Rsync) -> Self {
         let resources = ResourceSet::from(&cert);
-        RcvdCert { cert, uri, resources }
+        RcvdCert {
+            cert,
+            uri,
+            resources,
+        }
     }
 
-    pub fn cert(&self) -> &Cert { &self.cert }
-    pub fn uri(&self) -> &uri::Rsync { &self.uri }
+    pub fn cert(&self) -> &Cert {
+        &self.cert
+    }
+    pub fn uri(&self) -> &uri::Rsync {
+        &self.uri
+    }
     pub fn crl_uri(&self) -> uri::Rsync {
-        self.uri_for_object(
-            ObjectName::new(&self.cert.subject_key_identifier(), "crl")
-        )
+        self.uri_for_object(ObjectName::new(&self.cert.subject_key_identifier(), "crl"))
     }
 
     pub fn uri_for_object(&self, name: impl Into<ObjectName>) -> uri::Rsync {
@@ -300,7 +290,9 @@ impl RcvdCert {
         self.cert.ca_repository().unwrap().join(name.as_bytes())
     }
 
-    pub fn resources(&self) -> &ResourceSet { &self.resources }
+    pub fn resources(&self) -> &ResourceSet {
+        &self.resources
+    }
 
     pub fn der_encoded(&self) -> Bytes {
         self.cert.to_captured().into_bytes()
@@ -312,7 +304,7 @@ impl From<IssuedCert> for RcvdCert {
         RcvdCert {
             cert: issued.cert,
             uri: issued.uri,
-            resources: issued.resource_set
+            resources: issued.resource_set,
         }
     }
 }
@@ -325,13 +317,12 @@ impl AsRef<Cert> for RcvdCert {
 
 impl PartialEq for RcvdCert {
     fn eq(&self, other: &RcvdCert) -> bool {
-        self.cert.to_captured().into_bytes() == other.cert.to_captured().into_bytes() &&
-            self.uri == other.uri
+        self.cert.to_captured().into_bytes() == other.cert.to_captured().into_bytes()
+            && self.uri == other.uri
     }
 }
 
 impl Eq for RcvdCert {}
-
 
 //------------ TrustAnchorLocator --------------------------------------------
 
@@ -341,7 +332,8 @@ pub struct TrustAnchorLocator {
 
     #[serde(
         deserialize_with = "ext_serde::de_bytes",
-        serialize_with = "ext_serde::ser_bytes")]
+        serialize_with = "ext_serde::ser_bytes"
+    )]
     encoded_ski: Bytes,
 }
 
@@ -370,9 +362,9 @@ impl fmt::Display for TrustAnchorLocator {
 
         for i in 0..=(len / wrap) {
             if (i * wrap + wrap) < len {
-                writeln!(f, "{}", &base64[i * wrap .. i * wrap + wrap])?;
+                writeln!(f, "{}", &base64[i * wrap..i * wrap + wrap])?;
             } else {
-                write!(f, "{}", &base64[i * wrap .. ])?;
+                write!(f, "{}", &base64[i * wrap..])?;
             }
         }
 
@@ -380,38 +372,38 @@ impl fmt::Display for TrustAnchorLocator {
     }
 }
 
-
 //------------ RepoInfo ------------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RepoInfo {
     base_uri: uri::Rsync,
-    rpki_notify: uri::Https
+    rpki_notify: uri::Https,
 }
 
 impl RepoInfo {
     pub fn new(base_uri: uri::Rsync, rpki_notify: uri::Https) -> Self {
-        RepoInfo { base_uri, rpki_notify }
+        RepoInfo {
+            base_uri,
+            rpki_notify,
+        }
     }
 
-    pub fn base_uri(&self) -> &uri::Rsync { &self.base_uri }
+    pub fn base_uri(&self) -> &uri::Rsync {
+        &self.base_uri
+    }
 
     /// Returns the ca repository uri for this RepoInfo and a given namespace.
     /// If the namespace is an empty str, it is omitted from the path.
     pub fn ca_repository(&self, name_space: &str) -> uri::Rsync {
         match name_space {
             "" => self.base_uri.clone(),
-            _  => self.base_uri.join(name_space.as_ref()).join(b"/")
+            _ => self.base_uri.join(name_space.as_ref()).join(b"/"),
         }
     }
 
     /// Returns the rpki manifest uri for this RepoInfo and a given namespace.
     /// If the namespace is an empty str, it is omitted from the path.
-    pub fn rpki_manifest(
-        &self,
-        name_space: &str,
-        signing_key: &KeyIdentifier
-    ) -> uri::Rsync {
+    pub fn rpki_manifest(&self, name_space: &str, signing_key: &KeyIdentifier) -> uri::Rsync {
         self.resolve(name_space, &Self::mft_name(signing_key))
     }
 
@@ -436,13 +428,11 @@ impl RepoInfo {
 
 impl PartialEq for RepoInfo {
     fn eq(&self, other: &RepoInfo) -> bool {
-        self.base_uri == other.base_uri &&
-        self.rpki_notify.as_str() == other.rpki_notify.as_str()
+        self.base_uri == other.base_uri && self.rpki_notify.as_str() == other.rpki_notify.as_str()
     }
 }
 
 impl Eq for RepoInfo {}
-
 
 //------------ PendingKey ----------------------------------------------------
 
@@ -452,23 +442,33 @@ impl Eq for RepoInfo {}
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PendingKey {
     key_id: SignerKeyId,
-    request: Option<IssuanceRequest>
+    request: Option<IssuanceRequest>,
 }
 
 impl PendingKey {
     pub fn new(key_id: SignerKeyId) -> Self {
-        PendingKey { key_id, request: None}
+        PendingKey {
+            key_id,
+            request: None,
+        }
     }
     pub fn unwrap(self) -> (SignerKeyId, Option<IssuanceRequest>) {
         (self.key_id, self.request)
     }
 
-    pub fn key_id(&self) -> &SignerKeyId { &self.key_id }
-    pub fn request(&self) -> Option<&IssuanceRequest> { self.request.as_ref() }
-    pub fn add_request(&mut self, req: IssuanceRequest) { self.request = Some(req)}
-    pub fn clear_request(&mut self) { self.request = None }
+    pub fn key_id(&self) -> &SignerKeyId {
+        &self.key_id
+    }
+    pub fn request(&self) -> Option<&IssuanceRequest> {
+        self.request.as_ref()
+    }
+    pub fn add_request(&mut self, req: IssuanceRequest) {
+        self.request = Some(req)
+    }
+    pub fn clear_request(&mut self) {
+        self.request = None
+    }
 }
-
 
 //------------ CertifiedKey --------------------------------------------------
 
@@ -479,7 +479,7 @@ pub struct CertifiedKey {
     key_id: SignerKeyId,
     incoming_cert: RcvdCert,
     current_set: CurrentObjectSet,
-    request: Option<IssuanceRequest>
+    request: Option<IssuanceRequest>,
 }
 
 impl CertifiedKey {
@@ -487,22 +487,39 @@ impl CertifiedKey {
         let current_set = CurrentObjectSet::default();
 
         CertifiedKey {
-            key_id, incoming_cert, current_set, request: None
+            key_id,
+            incoming_cert,
+            current_set,
+            request: None,
         }
     }
 
-    pub fn key_id(&self) -> &SignerKeyId { &self.key_id }
-    pub fn incoming_cert(&self) -> &RcvdCert { &self.incoming_cert }
-    pub fn current_set(&self) -> &CurrentObjectSet { &self.current_set }
-    pub fn request(&self) -> Option<&IssuanceRequest> { self.request.as_ref() }
-    pub fn add_request(&mut self, req: IssuanceRequest) { self.request = Some(req)}
-    pub fn clear_request(&mut self) { self.request = None }
+    pub fn key_id(&self) -> &SignerKeyId {
+        &self.key_id
+    }
+    pub fn incoming_cert(&self) -> &RcvdCert {
+        &self.incoming_cert
+    }
+    pub fn current_set(&self) -> &CurrentObjectSet {
+        &self.current_set
+    }
+    pub fn request(&self) -> Option<&IssuanceRequest> {
+        self.request.as_ref()
+    }
+    pub fn add_request(&mut self, req: IssuanceRequest) {
+        self.request = Some(req)
+    }
+    pub fn clear_request(&mut self) {
+        self.request = None
+    }
 
-    pub fn resources(&self) -> &ResourceSet { &self.incoming_cert.resources }
+    pub fn resources(&self) -> &ResourceSet {
+        &self.incoming_cert.resources
+    }
 
     pub fn needs_publication(&self) -> bool {
-        self.current_set.number == 1 ||
-        self.current_set.next_update < Time::now() + Duration::hours(8)
+        self.current_set.number == 1
+            || self.current_set.next_update < Time::now() + Duration::hours(8)
     }
 
     pub fn with_new_cert(mut self, cert: RcvdCert) -> Self {
@@ -515,20 +532,25 @@ impl CertifiedKey {
     }
 }
 
-
 //------------ CurrentObject -------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CurrentObject {
     content: Base64,
     serial: Serial,
-    expires: Time
+    expires: Time,
 }
 
 impl CurrentObject {
-    pub fn content(&self) -> &Base64 { &self.content }
-    pub fn serial(&self) -> Serial { self.serial }
-    pub fn expires(&self) -> Time { self.expires }
+    pub fn content(&self) -> &Base64 {
+        &self.content
+    }
+    pub fn serial(&self) -> Serial {
+        self.serial
+    }
+    pub fn expires(&self) -> Time {
+        self.expires
+    }
 }
 
 impl From<&Cert> for CurrentObject {
@@ -537,7 +559,9 @@ impl From<&Cert> for CurrentObject {
         let serial = cert.serial_number();
         let expires = cert.validity().not_after();
         CurrentObject {
-            content, serial, expires
+            content,
+            serial,
+            expires,
         }
     }
 }
@@ -545,11 +569,13 @@ impl From<&Cert> for CurrentObject {
 impl From<&Crl> for CurrentObject {
     fn from(crl: &Crl) -> Self {
         let content = Base64::from(crl);
-        let serial = crl.crl_number();  // never revoked
+        let serial = crl.crl_number(); // never revoked
         let expires = crl.next_update();
 
         CurrentObject {
-            content, serial, expires
+            content,
+            serial,
+            expires,
         }
     }
 }
@@ -561,11 +587,12 @@ impl From<&Manifest> for CurrentObject {
         let expires = mft.content().next_update();
 
         CurrentObject {
-            content, serial, expires
+            content,
+            serial,
+            expires,
         }
     }
 }
-
 
 //------------ ObjectName ----------------------------------------------------
 
@@ -618,7 +645,6 @@ impl Deref for ObjectName {
     }
 }
 
-
 //------------ CurrentObjects ------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -631,16 +657,11 @@ impl Default for CurrentObjects {
 }
 
 impl CurrentObjects {
-    pub fn insert(
-        &mut self,
-        name: ObjectName,
-        object: CurrentObject
-    ) -> Option<CurrentObject> {
+    pub fn insert(&mut self, name: ObjectName, object: CurrentObject) -> Option<CurrentObject> {
         self.0.insert(name, object)
     }
 
     pub fn apply_delta(&mut self, delta: ObjectsDelta) {
-
         for add in delta.added.into_iter() {
             self.0.insert(add.name, add.object);
         }
@@ -652,7 +673,7 @@ impl CurrentObjects {
         }
     }
 
-    pub fn names(&self) -> impl Iterator<Item=&ObjectName> {
+    pub fn names(&self) -> impl Iterator<Item = &ObjectName> {
         self.0.keys()
     }
 
@@ -662,14 +683,17 @@ impl CurrentObjects {
 
     /// Returns Manifest Entries, i.e. excluding the manifest itself
     pub fn mft_entries(&self) -> Vec<FileAndHash<Bytes, Bytes>> {
-        self.0.keys().filter(|k| !k.as_ref().ends_with("mft")).map(|k| {
-            let name_bytes = Bytes::from(k.as_str());
-            let hash_bytes = self.0[k].content.to_encoded_hash().into();
-            FileAndHash::new(name_bytes, hash_bytes)
-        }).collect()
+        self.0
+            .keys()
+            .filter(|k| !k.as_ref().ends_with("mft"))
+            .map(|k| {
+                let name_bytes = Bytes::from(k.as_str());
+                let hash_bytes = self.0[k].content.to_encoded_hash().into();
+                FileAndHash::new(name_bytes, hash_bytes)
+            })
+            .collect()
     }
 }
-
 
 //------------ AllCurrentObjects ---------------------------------------------
 
@@ -682,24 +706,16 @@ impl<'a> AllCurrentObjects<'a> {
         AllCurrentObjects(HashMap::new())
     }
 
-    pub fn for_name_space(
-        name_space: &'a str,
-        current_objects: &'a CurrentObjects
-    ) -> Self {
+    pub fn for_name_space(name_space: &'a str, current_objects: &'a CurrentObjects) -> Self {
         let mut res = Self::empty();
         res.add_name_space(name_space, current_objects);
         res
     }
 
-    pub fn add_name_space(
-        &mut self,
-        name_space: &'a str,
-        current_objects: &'a CurrentObjects
-    ) {
+    pub fn add_name_space(&mut self, name_space: &'a str, current_objects: &'a CurrentObjects) {
         self.0.insert(name_space, current_objects);
     }
 }
-
 
 //------------ Revocation ----------------------------------------------------
 
@@ -708,14 +724,14 @@ impl<'a> AllCurrentObjects<'a> {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Revocation {
     serial: Serial,
-    revocation_date: Time
+    revocation_date: Time,
 }
 
 impl From<&CurrentObject> for Revocation {
     fn from(co: &CurrentObject) -> Self {
         Revocation {
             serial: co.serial,
-            revocation_date: Time::now()
+            revocation_date: Time::now(),
         }
     }
 }
@@ -724,10 +740,12 @@ impl From<&Manifest> for Revocation {
     fn from(m: &Manifest) -> Self {
         let serial = m.cert().serial_number();
         let revocation_date = Time::now();
-        Revocation { serial, revocation_date }
+        Revocation {
+            serial,
+            revocation_date,
+        }
     }
 }
-
 
 //------------ Revocations ---------------------------------------------------
 
@@ -736,17 +754,18 @@ pub struct Revocations(Vec<Revocation>);
 
 impl Revocations {
     pub fn to_crl_entries(&self) -> Vec<CrlEntry> {
-        self.0.iter()
+        self.0
+            .iter()
             .map(|r| CrlEntry::new(r.serial, r.revocation_date))
             .collect()
     }
 
     /// Purges all expired revocations, and returns them.
     pub fn purge(&mut self) -> Vec<Revocation> {
-
-        let (relevant, expired) = self.0.iter().partition(|r| {
-            r.revocation_date.validate_not_after(Time::now()).is_ok()
-        });
+        let (relevant, expired) = self
+            .0
+            .iter()
+            .partition(|r| r.revocation_date.validate_not_after(Time::now()).is_ok());
         self.0 = relevant;
         expired
     }
@@ -769,20 +788,19 @@ impl Default for Revocations {
     }
 }
 
-
 //------------ RevocationsDelta ----------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RevocationsDelta {
     added: Vec<Revocation>,
-    dropped: Vec<Revocation>
+    dropped: Vec<Revocation>,
 }
 
 impl Default for RevocationsDelta {
     fn default() -> Self {
         RevocationsDelta {
             added: vec![],
-            dropped: vec![]
+            dropped: vec![],
         }
     }
 }
@@ -805,7 +823,7 @@ pub struct CurrentObjectSet {
     next_update: Time,
     number: u64,
     revocations: Revocations,
-    objects: CurrentObjects
+    objects: CurrentObjects,
 }
 
 impl Default for CurrentObjectSet {
@@ -815,7 +833,7 @@ impl Default for CurrentObjectSet {
             next_update: Time::tomorrow(),
             number: 1,
             revocations: Revocations::default(),
-            objects: CurrentObjects::default()
+            objects: CurrentObjects::default(),
         }
     }
 }
@@ -840,7 +858,6 @@ impl CurrentObjectSet {
     }
 }
 
-
 //------------ PublicationDelta ----------------------------------------------
 
 /// This type describes a set up of objects published for a CA key.
@@ -850,7 +867,7 @@ pub struct PublicationDelta {
     next_update: Time,
     number: u64,
     revocations: RevocationsDelta,
-    objects: ObjectsDelta
+    objects: ObjectsDelta,
 }
 
 impl PublicationDelta {
@@ -859,10 +876,14 @@ impl PublicationDelta {
         next_update: Time,
         number: u64,
         revocations: RevocationsDelta,
-        objects: ObjectsDelta
+        objects: ObjectsDelta,
     ) -> Self {
         PublicationDelta {
-            this_update, next_update, number, revocations, objects
+            this_update,
+            next_update,
+            number,
+            revocations,
+            objects,
         }
     }
 
@@ -887,7 +908,7 @@ pub struct ObjectsDelta {
     ca_repo: uri::Rsync,
     added: Vec<AddedObject>,
     updated: Vec<UpdatedObject>,
-    withdrawn: Vec<WithdrawnObject>
+    withdrawn: Vec<WithdrawnObject>,
 }
 
 impl ObjectsDelta {
@@ -898,7 +919,7 @@ impl ObjectsDelta {
             ca_repo,
             added: vec![],
             updated: vec![],
-            withdrawn: vec![]
+            withdrawn: vec![],
         }
     }
 
@@ -921,7 +942,7 @@ impl Into<publication::PublishDelta> for ObjectsDelta {
             let publish = publication::Publish::new(
                 None,
                 self.ca_repo.join(a.name.as_bytes()),
-                a.object.content
+                a.object.content,
             );
             builder.add_publish(publish);
         }
@@ -930,22 +951,18 @@ impl Into<publication::PublishDelta> for ObjectsDelta {
                 None,
                 self.ca_repo.join(u.name.as_bytes()),
                 u.object.content,
-                u.old
+                u.old,
             );
             builder.add_update(update);
         }
         for w in self.withdrawn.into_iter() {
-            let withdraw = publication::Withdraw::new(
-                None,
-                self.ca_repo.join(w.name.as_bytes()),
-                w.hash
-            );
+            let withdraw =
+                publication::Withdraw::new(None, self.ca_repo.join(w.name.as_bytes()), w.hash);
             builder.add_withdraw(withdraw);
         }
         builder.finish()
     }
 }
-
 
 //------------ AddedObject ---------------------------------------------------
 
@@ -953,14 +970,11 @@ impl Into<publication::PublishDelta> for ObjectsDelta {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AddedObject {
     name: ObjectName,
-    object: CurrentObject
+    object: CurrentObject,
 }
 
 impl AddedObject {
-    pub fn new(
-        name: ObjectName,
-        object: CurrentObject
-    ) -> Self {
+    pub fn new(name: ObjectName, object: CurrentObject) -> Self {
         AddedObject { name, object }
     }
 }
@@ -972,19 +986,14 @@ impl AddedObject {
 pub struct UpdatedObject {
     name: ObjectName,
     object: CurrentObject,
-    old: EncodedHash
+    old: EncodedHash,
 }
 
 impl UpdatedObject {
-    pub fn new(
-        name: ObjectName,
-        object: CurrentObject,
-        old: EncodedHash
-    ) -> Self {
+    pub fn new(name: ObjectName, object: CurrentObject, old: EncodedHash) -> Self {
         UpdatedObject { name, object, old }
     }
 }
-
 
 //------------ WithdrawnObject -----------------------------------------------
 
@@ -992,18 +1001,14 @@ impl UpdatedObject {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WithdrawnObject {
     name: ObjectName,
-    hash: EncodedHash
+    hash: EncodedHash,
 }
 
 impl WithdrawnObject {
-    pub fn new(
-        name: ObjectName,
-        hash: EncodedHash
-    ) -> Self {
-        WithdrawnObject { name, hash}
+    pub fn new(name: ObjectName, hash: EncodedHash) -> Self {
+        WithdrawnObject { name, hash }
     }
 }
-
 
 //------------ ResourceSet ---------------------------------------------------
 
@@ -1015,15 +1020,11 @@ impl WithdrawnObject {
 pub struct ResourceSet {
     asn: AsResources,
     v4: Ipv4Resources,
-    v6: Ipv6Resources
+    v6: Ipv6Resources,
 }
 
 impl ResourceSet {
-    pub fn new(
-        asn: AsResources,
-        v4: Ipv4Resources,
-        v6: Ipv6Resources
-    ) -> Self {
+    pub fn new(asn: AsResources, v4: Ipv4Resources, v6: Ipv6Resources) -> Self {
         ResourceSet { asn, v4, v6 }
     }
 
@@ -1031,7 +1032,7 @@ impl ResourceSet {
         let asn = AsResources::from_str(asn).map_err(|_| ResSetErr::Asn)?;
         let v4 = Ipv4Resources::from_str(v4).map_err(|_| ResSetErr::V4)?;
         let v6 = Ipv6Resources::from_str(v6).map_err(|_| ResSetErr::V6)?;
-        Ok(ResourceSet { asn , v4, v6 })
+        Ok(ResourceSet { asn, v4, v6 })
     }
 
     pub fn all_resources() -> Self {
@@ -1062,37 +1063,36 @@ impl ResourceSet {
     /// resources in the other set will be considered to fall outside of
     /// this set.
     pub fn contains(&self, other: &ResourceSet) -> bool {
-        if (self.asn.is_inherited() && ! other.asn.is_inherited()) ||
-           (self.v4.is_inherited() && ! other.v4.is_inherited())||
-           (self.v6.is_inherited() && ! other.v6.is_inherited()) {
+        if (self.asn.is_inherited() && !other.asn.is_inherited())
+            || (self.v4.is_inherited() && !other.v4.is_inherited())
+            || (self.v6.is_inherited() && !other.v6.is_inherited())
+        {
             return false;
         }
 
         if let Some(asn) = self.asn.as_blocks() {
-
-
-            if asn.validate_issued(
-                Some(&other.asn),
-                Overclaim::Refuse
-            ).is_err() {
+            if asn
+                .validate_issued(Some(&other.asn), Overclaim::Refuse)
+                .is_err()
+            {
                 return false;
             }
         }
 
         if let Some(v4) = self.v4.as_blocks() {
-            if v4.validate_issued(
-                Some(&other.v4),
-                Overclaim::Refuse
-            ).is_err() {
+            if v4
+                .validate_issued(Some(&other.v4), Overclaim::Refuse)
+                .is_err()
+            {
                 return false;
             }
         }
 
         if let Some(v6) = self.v6.as_blocks() {
-            if v6.validate_issued(
-                Some(&other.v6),
-                Overclaim::Refuse
-            ).is_err() {
+            if v6
+                .validate_issued(Some(&other.v6), Overclaim::Refuse)
+                .is_err()
+            {
                 return false;
             }
         }
@@ -1115,36 +1115,34 @@ impl From<&Cert> for ResourceSet {
     fn from(cert: &Cert) -> Self {
         let asn = match cert.as_resources() {
             None => AsResources::blocks(AsBlocks::empty()),
-            Some(set) => set.clone()
+            Some(set) => set.clone(),
         };
 
         let v4 = {
             let v4 = match cert.v4_resources() {
                 None => IpResources::blocks(IpBlocks::empty()),
-                Some(res) => res.clone()
+                Some(res) => res.clone(),
             };
             match v4.to_blocks() {
                 Ok(blocks) => Ipv4Resources::blocks(blocks),
-                Err(_) => Ipv4Resources::inherit()
+                Err(_) => Ipv4Resources::inherit(),
             }
         };
 
         let v6 = {
             let v6 = match cert.v6_resources() {
                 None => IpResources::blocks(IpBlocks::empty()),
-                Some(res) => res.clone()
+                Some(res) => res.clone(),
             };
             match v6.to_blocks() {
                 Ok(blocks) => Ipv6Resources::blocks(blocks),
-                Err(_) => Ipv6Resources::inherit()
+                Err(_) => Ipv6Resources::inherit(),
             }
         };
-
 
         ResourceSet { asn, v4, v6 }
     }
 }
-
 
 //------------ TrustAnchorInfo -----------------------------------------------
 
@@ -1155,8 +1153,8 @@ pub struct TrustAnchorInfo {
     resources: ResourceSet,
     repo_info: RepoInfo,
     children: HashMap<Handle, ChildCaDetails>,
-    cert:     RcvdCert,
-    tal:      TrustAnchorLocator
+    cert: RcvdCert,
+    tal: TrustAnchorLocator,
 }
 
 impl TrustAnchorInfo {
@@ -1164,16 +1162,15 @@ impl TrustAnchorInfo {
         resources: ResourceSet,
         repo_info: RepoInfo,
         children: HashMap<Handle, ChildCaDetails>,
-        cert:     RcvdCert,
-        tal: TrustAnchorLocator
+        cert: RcvdCert,
+        tal: TrustAnchorLocator,
     ) -> Self {
-
         TrustAnchorInfo {
             resources,
             repo_info,
             children,
             cert,
-            tal
+            tal,
         }
     }
 
@@ -1201,7 +1198,7 @@ impl TrustAnchorInfo {
 //------------ CertAuthList --------------------------------------------------
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthList {
-    cas: Vec<CertAuthSummary>
+    cas: Vec<CertAuthSummary>,
 }
 
 impl CertAuthList {
@@ -1209,13 +1206,14 @@ impl CertAuthList {
         CertAuthList { cas }
     }
 
-    pub fn cas(&self) -> &Vec<CertAuthSummary> { &self.cas }
+    pub fn cas(&self) -> &Vec<CertAuthSummary> {
+        &self.cas
+    }
 }
-
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthSummary {
-    name: Handle
+    name: Handle,
 }
 
 impl CertAuthSummary {
@@ -1223,9 +1221,10 @@ impl CertAuthSummary {
         CertAuthSummary { name }
     }
 
-    pub fn name(&self) -> &Handle { &self.name }
+    pub fn name(&self) -> &Handle {
+        &self.name
+    }
 }
-
 
 //------------ CertAuthInfo --------------------------------------------------
 
@@ -1244,20 +1243,28 @@ impl CertAuthInfo {
         handle: Handle,
         base_repo: RepoInfo,
         parents: CaParentsInfo,
-        children: HashMap<Handle, ChildCaDetails>
+        children: HashMap<Handle, ChildCaDetails>,
     ) -> Self {
         CertAuthInfo {
             handle,
             base_repo,
             parents,
-            children
+            children,
         }
     }
 
-    pub fn handle(&self) -> &Handle { &self.handle }
-    pub fn base_repo(&self) -> &RepoInfo { &self.base_repo }
-    pub fn parents(&self) -> &CaParentsInfo { &self.parents }
-    pub fn children(&self) -> &HashMap<Handle, ChildCaDetails> { &self.children }
+    pub fn handle(&self) -> &Handle {
+        &self.handle
+    }
+    pub fn base_repo(&self) -> &RepoInfo {
+        &self.base_repo
+    }
+    pub fn parents(&self) -> &CaParentsInfo {
+        &self.parents
+    }
+    pub fn children(&self) -> &HashMap<Handle, ChildCaDetails> {
+        &self.children
+    }
 }
 
 /// This type contains public data about parents of a CA
@@ -1265,28 +1272,26 @@ impl CertAuthInfo {
 #[allow(clippy::large_enum_variant)]
 pub enum CaParentsInfo {
     SelfSigned(CertifiedKey, TrustAnchorLocator),
-    Parents(HashMap<Handle, ParentCaInfo>)
+    Parents(HashMap<Handle, ParentCaInfo>),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentCaInfo {
     contact: ParentCaContact,
-    resources: HashMap<String, ResourceClassInfo>
+    resources: HashMap<String, ResourceClassInfo>,
 }
 
 impl ParentCaInfo {
-    pub fn new(
-        contact: ParentCaContact,
-        resources: HashMap<String, ResourceClassInfo>
-    ) -> Self {
-        ParentCaInfo {
-            contact,
-            resources
-        }
+    pub fn new(contact: ParentCaContact, resources: HashMap<String, ResourceClassInfo>) -> Self {
+        ParentCaInfo { contact, resources }
     }
 
-    pub fn contact(&self) -> &ParentCaContact { &self.contact }
-    pub fn resources(&self) -> &HashMap<String, ResourceClassInfo> { &self.resources }
+    pub fn contact(&self) -> &ParentCaContact {
+        &self.contact
+    }
+    pub fn resources(&self) -> &HashMap<String, ResourceClassInfo> {
+        &self.resources
+    }
 }
 
 //------------ ResourceClassInfo ---------------------------------------------
@@ -1297,7 +1302,7 @@ pub struct ResourceClassInfo {
     pending_key: Option<PendingKey>,
     new_key: Option<CertifiedKey>,
     current_key: Option<CertifiedKey>,
-    revoke_key: Option<CertifiedKey>
+    revoke_key: Option<CertifiedKey>,
 }
 
 impl ResourceClassInfo {
@@ -1306,18 +1311,20 @@ impl ResourceClassInfo {
         pending_key: Option<PendingKey>,
         new_key: Option<CertifiedKey>,
         current_key: Option<CertifiedKey>,
-        revoke_key: Option<CertifiedKey>
+        revoke_key: Option<CertifiedKey>,
     ) -> Self {
         ResourceClassInfo {
             name_space,
             pending_key,
             new_key,
             current_key,
-            revoke_key
+            revoke_key,
         }
     }
 
-    pub fn name_space(&self) -> &str { &self.name_space }
+    pub fn name_space(&self) -> &str {
+        &self.name_space
+    }
 
     pub fn pending_key(&self) -> Option<&PendingKey> {
         self.pending_key.as_ref()
@@ -1352,19 +1359,18 @@ impl ResourceClassInfo {
 
 #[derive(Clone, Debug, Display, Eq, PartialEq)]
 pub enum ResSetErr {
-    #[display(fmt="Cannot parse ASN resources")]
+    #[display(fmt = "Cannot parse ASN resources")]
     Asn,
 
-    #[display(fmt="Cannot parse IPv4 resources")]
+    #[display(fmt = "Cannot parse IPv4 resources")]
     V4,
 
-    #[display(fmt="Cannot parse IPv6 resources")]
+    #[display(fmt = "Cannot parse IPv6 resources")]
     V6,
 
-    #[display(fmt="Mixed Address Families in configured resource set")]
+    #[display(fmt = "Mixed Address Families in configured resource set")]
     Mix,
 }
-
 
 //============ Tests =========================================================
 
@@ -1374,10 +1380,10 @@ mod test {
     use super::*;
     use bytes::Bytes;
 
+    use crate::util::softsigner::OpenSslSigner;
+    use crate::util::test;
     use rpki::crypto::signer::Signer;
     use rpki::crypto::PublicKeyFormat;
-    use crate::util::test;
-    use crate::util::softsigner::OpenSslSigner;
 
     fn base_uri() -> uri::Rsync {
         test::rsync("rsync://localhost/repo/ta/")
@@ -1388,7 +1394,10 @@ mod test {
     }
 
     fn info() -> RepoInfo {
-        RepoInfo { base_uri: base_uri(), rpki_notify: rrdp_uri() }
+        RepoInfo {
+            base_uri: base_uri(),
+            rpki_notify: rrdp_uri(),
+        }
     }
 
     #[test]
@@ -1409,9 +1418,7 @@ mod test {
             unsafe {
                 use std::str;
 
-                let mft_path = str::from_utf8_unchecked(
-                    mft_uri.relative_to(&base_uri()).unwrap()
-                );
+                let mft_path = str::from_utf8_unchecked(mft_uri.relative_to(&base_uri()).unwrap());
 
                 assert_eq!(44, mft_path.len());
 
@@ -1460,7 +1467,7 @@ mod test {
     fn serialize_deserialise_repo_info() {
         let info = RepoInfo::new(
             test::rsync("rsync://some/module/folder/"),
-            test::https("https://host/notification.xml")
+            test::https("https://host/notification.xml"),
         );
 
         let json = serde_json::to_string(&info).unwrap();
@@ -1481,6 +1488,5 @@ mod test {
         let found_tal = tal.to_string();
 
         assert_eq!(expected_tal, &found_tal);
-
     }
 }

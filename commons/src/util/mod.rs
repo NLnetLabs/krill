@@ -1,14 +1,14 @@
 //! General utility modules for use all over the code base
-use std::time::Duration;
 use bytes::Bytes;
+use chrono::offset::TimeZone;
 use chrono::DateTime;
 use chrono::Utc;
-use chrono::offset::TimeZone;
 use rpki::crypto::DigestAlgorithm;
+use serde::Deserialize;
+use serde::Deserializer;
 use serde::Serialize;
 use serde::Serializer;
-use serde::Deserializer;
-use serde::Deserialize;
+use std::time::Duration;
 
 pub mod ext_serde;
 pub mod file;
@@ -42,20 +42,20 @@ impl Time {
 }
 
 impl Serialize for Time {
-    fn serialize<S>(
-        &self, serializer: S
-    ) -> Result<S::Ok, S::Error> where S: Serializer {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
         serializer.serialize_i64(self.0.timestamp_millis())
     }
 }
 
 impl<'de> Deserialize<'de> for Time {
-    fn deserialize<D>(
-        deserializer: D
-    ) -> Result<Self, D::Error> where D: Deserializer<'de> {
-
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
         let timestamp: i64 = i64::deserialize(deserializer)?;
         Ok(Time(Utc.timestamp_millis(timestamp)))
     }
 }
-

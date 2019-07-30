@@ -4,9 +4,8 @@ extern crate krill_pubc;
 use krill_pubc::apiclient;
 
 fn main() {
-
     let options = match apiclient::Options::create() {
-        Ok(o)  => o,
+        Ok(o) => o,
         Err(e) => {
             eprintln!("Error parsing options: {}", e);
             ::std::process::exit(1);
@@ -22,5 +21,4 @@ fn main() {
             ::std::process::exit(1);
         }
     }
-
 }

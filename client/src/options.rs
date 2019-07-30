@@ -1,17 +1,17 @@
-use std::path::PathBuf;
-use std::str::FromStr;
 use clap::{App, Arg, SubCommand};
 use rpki::uri;
+use std::path::PathBuf;
+use std::str::FromStr;
 
-use krill_commons::api::admin::{AddChildRequest, CertAuthInit, CertAuthPubMode, Handle, AddParentRequest, ParentCaContact, Token, ChildAuthRequest};
+use krill_commons::api::admin::{
+    AddChildRequest, AddParentRequest, CertAuthInit, CertAuthPubMode, ChildAuthRequest, Handle,
+    ParentCaContact, Token,
+};
 use krill_commons::api::ca::ResourceSet;
 
-use crate::report::{
-    ReportFormat,
-    ReportError
-};
-use krill_commons::util::file;
+use crate::report::{ReportError, ReportFormat};
 use krill_commons::remote::rfc8183;
+use krill_commons::util::file;
 use std::io;
 
 /// This type holds all the necessary data to connect to a Krill daemon, and
@@ -22,7 +22,7 @@ pub struct Options {
     pub server: uri::Https,
     pub token: Token,
     pub format: ReportFormat,
-    pub command: Command
+    pub command: Command,
 }
 
 impl Options {
@@ -31,13 +31,13 @@ impl Options {
     }
 
     /// Creates a new Options explicitly (useful for testing)
-    pub fn new(
-        server: uri::Https,
-        token: &str,
-        format: ReportFormat,
-        command: Command
-    ) -> Self {
-        Options { server, token: Token::from(token), format, command }
+    pub fn new(server: uri::Https, token: &str, format: ReportFormat, command: Command) -> Self {
+        Options {
+            server,
+            token: Token::from(token),
+            format,
+            command,
+        }
     }
 
     /// Creates a new Options from command line args (useful for cli)
@@ -344,7 +344,6 @@ impl Options {
             }
             if let Some(m) = m.subcommand_matches("children") {
                 if let Some(m) = m.subcommand_matches("add") {
-
                     let asn = m.value_of("asn").unwrap_or("");
                     let ipv4 = m.value_of("ipv4").unwrap_or("");
                     let ipv6 = m.value_of("ipv6").unwrap_or("");
@@ -356,9 +355,7 @@ impl Options {
 
                         let auth = ChildAuthRequest::Embedded(token);
 
-                        let req = AddChildRequest::new(
-                            handle, res, auth
-                        );
+                        let req = AddChildRequest::new(handle, res, auth);
                         command = Command::TrustAnchor(TrustAnchorCommand::AddChild(req))
                     }
 
@@ -380,16 +377,11 @@ impl Options {
 
                         let auth = ChildAuthRequest::Rfc8183(cr);
 
-                        let req = AddChildRequest::new(
-                            handle, res, auth
-                        );
+                        let req = AddChildRequest::new(handle, res, auth);
                         command = Command::TrustAnchor(TrustAnchorCommand::AddChild(req))
                     }
-
-
                 }
             }
-
         }
 
         if let Some(m) = matches.subcommand_matches("cas") {
@@ -421,13 +413,11 @@ impl Options {
                     if let Some(m) = m.subcommand_matches("embedded") {
                         let token = Token::from(m.value_of("token").unwrap());
 
-                        let contact = ParentCaContact::Embedded(parent.clone(),
-                                                                token);
+                        let contact = ParentCaContact::Embedded(parent.clone(), token);
 
                         let req = AddParentRequest::new(parent, contact);
 
-                        command = Command::CertAuth(
-                            CaCommand::AddParent(handle, req))
+                        command = Command::CertAuth(CaCommand::AddParent(handle, req))
                     } else if let Some(m) = m.subcommand_matches("rfc6492") {
                         let xml_path = m.value_of("xml").unwrap();
                         let xml = PathBuf::from(xml_path);
@@ -437,13 +427,8 @@ impl Options {
                         let contact = ParentCaContact::Rfc6492(pr);
                         let req = AddParentRequest::new(parent, contact);
 
-                        command = Command::CertAuth(
-                            CaCommand::AddParent(handle, req)
-                        )
-
+                        command = Command::CertAuth(CaCommand::AddParent(handle, req))
                     }
-
-
                 }
             }
         }
@@ -457,10 +442,12 @@ impl Options {
                 let base_uri = uri::Rsync::from_str(m.value_of("uri").unwrap())?;
                 let token = Token::from(m.value_of("token").unwrap());
 
-                let add = AddPublisher { handle, base_uri, token };
-                command = Command::Publishers(
-                    PublishersCommand::Add(add)
-                );
+                let add = AddPublisher {
+                    handle,
+                    base_uri,
+                    token,
+                };
+                command = Command::Publishers(PublishersCommand::Add(add));
             }
             if let Some(m) = m.subcommand_matches("details") {
                 let handle = m.value_of("handle").unwrap();
@@ -481,15 +468,12 @@ impl Options {
                 let xml_path = m.value_of("xml").unwrap();
                 let xml = PathBuf::from(xml_path);
 
-                command = Command::Rfc8181(
-                    Rfc8181Command::Add(AddRfc8181Client{ xml })
-                )
+                command = Command::Rfc8181(Rfc8181Command::Add(AddRfc8181Client { xml }))
             }
             if let Some(m) = m.subcommand_matches("repo-res") {
-                let handle =  Handle::from(m.value_of("handle").unwrap());
+                let handle = Handle::from(m.value_of("handle").unwrap());
                 command = Command::Rfc8181(Rfc8181Command::RepoRes(handle));
             }
-
         }
 
         let server = matches.value_of("server").unwrap(); // required
@@ -502,7 +486,12 @@ impl Options {
             format = ReportFormat::from_str(fmt)?;
         }
 
-        Ok(Options { server, token, format, command })
+        Ok(Options {
+            server,
+            token,
+            format,
+            command,
+        })
     }
 }
 
@@ -514,7 +503,7 @@ pub enum Command {
     TrustAnchor(TrustAnchorCommand),
     CertAuth(CaCommand),
     Publishers(PublishersCommand),
-    Rfc8181(Rfc8181Command)
+    Rfc8181(Rfc8181Command),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -523,7 +512,7 @@ pub enum TrustAnchorCommand {
     Init,
     Show,
     Publish,
-    AddChild(AddChildRequest)
+    AddChild(AddChildRequest),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -536,48 +525,47 @@ pub enum CaCommand {
     Show(Handle),
 }
 
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PublishersCommand {
     Add(AddPublisher),
     Details(String),
     Deactivate(String),
-    List
+    List,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AddPublisher {
-    pub handle:   Handle,
+    pub handle: Handle,
     pub base_uri: uri::Rsync,
-    pub token:    Token
+    pub token: Token,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Rfc8181Command {
     List,
     Add(AddRfc8181Client),
-    RepoRes(Handle)
+    RepoRes(Handle),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AddRfc8181Client {
-    pub xml: PathBuf
+    pub xml: PathBuf,
 }
 
 //------------ Error ---------------------------------------------------------
 
 #[derive(Debug, Display)]
 pub enum Error {
-    #[display(fmt="{}", _0)]
+    #[display(fmt = "{}", _0)]
     UriError(uri::Error),
 
-    #[display(fmt="{}", _0)]
+    #[display(fmt = "{}", _0)]
     IoError(io::Error),
 
-    #[display(fmt="{}", _0)]
+    #[display(fmt = "{}", _0)]
     ReportError(ReportError),
 
-    #[display(fmt="Invalid RFC8183 XML: {}", _0)]
+    #[display(fmt = "Invalid RFC8183 XML: {}", _0)]
     Rfc8183(rfc8183::Error),
 }
 

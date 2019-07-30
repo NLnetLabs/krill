@@ -7,20 +7,11 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::sync::RwLock;
 
-use krill_commons::api::admin::{
-    Handle,
-    ParentCaContact
-};
+use krill_commons::api::admin::{Handle, ParentCaContact};
 use krill_commons::api::ca::PublicationDelta;
 use krill_commons::eventsourcing;
 
-use crate::ca::{
-    Signer,
-    Evt,
-    EvtDet,
-    CertAuth,
-    ParentHandle
-};
+use crate::ca::{CertAuth, Evt, EvtDet, ParentHandle, Signer};
 
 //------------ QueueEvent ----------------------------------------------------
 
@@ -35,12 +26,14 @@ pub enum QueueEvent {
 
 #[derive(Debug)]
 pub struct EventQueueListener {
-    q: RwLock<Box<EventQueueStore>>
+    q: RwLock<Box<EventQueueStore>>,
 }
 
 impl EventQueueListener {
     pub fn in_mem() -> Self {
-        EventQueueListener { q: RwLock::new(Box::new(MemoryEventQueue::new()))}
+        EventQueueListener {
+            q: RwLock::new(Box::new(MemoryEventQueue::new())),
+        }
     }
 }
 
@@ -58,11 +51,9 @@ impl EventQueueListener {
 unsafe impl Send for EventQueueListener {}
 unsafe impl Sync for EventQueueListener {}
 
-
 /// Implement listening for CertAuth Published events.
 impl<S: Signer> eventsourcing::EventListener<CertAuth<S>> for EventQueueListener {
     fn listen(&self, _ca: &CertAuth<S>, event: &Evt) {
-
         use krill_commons::eventsourcing::Event;
 
         let json = serde_json::to_string_pretty(&event).unwrap();
@@ -73,19 +64,15 @@ impl<S: Signer> eventsourcing::EventListener<CertAuth<S>> for EventQueueListener
             EvtDet::Published(_, _, _, delta) => {
                 let evt = QueueEvent::Delta(handle.clone(), delta.clone());
                 self.push_back(evt);
-            },
+            }
             EvtDet::TaPublished(delta) => {
                 let evt = QueueEvent::Delta(handle.clone(), delta.clone());
                 self.push_back(evt);
-            },
+            }
             EvtDet::ParentAdded(parent, contact) => {
-                let evt = QueueEvent::ParentAdded(
-                    handle.clone(),
-                    parent.clone(),
-                    contact.clone()
-                );
+                let evt = QueueEvent::ParentAdded(handle.clone(), parent.clone(), contact.clone());
                 self.push_back(evt);
-            },
+            }
             _ => {}
         }
     }
@@ -103,18 +90,19 @@ trait EventQueueStore: fmt::Debug {
     fn push_back(&self, evt: QueueEvent);
 }
 
-
 //------------ MemoryEventQueue ----------------------------------------------
 
 /// In memory event queue implementation.
 #[derive(Debug)]
 struct MemoryEventQueue {
-    q: RwLock<VecDeque<QueueEvent>>
+    q: RwLock<VecDeque<QueueEvent>>,
 }
 
 impl MemoryEventQueue {
     pub fn new() -> Self {
-        MemoryEventQueue { q: RwLock::new(VecDeque::new())}
+        MemoryEventQueue {
+            q: RwLock::new(VecDeque::new()),
+        }
     }
 }
 
@@ -127,5 +115,3 @@ impl EventQueueStore for MemoryEventQueue {
         self.q.write().unwrap().push_back(evt);
     }
 }
-
-

@@ -1,37 +1,22 @@
-use std::io;
 use rpki::uri;
+use std::io;
 
 use serde::de::DeserializeOwned;
 
-use krill_commons::util::file;
-use krill_commons::util::httpclient;
 use krill_commons::api::admin::{
-    ParentCaContact,
-    PublisherDetails,
-    PublisherList,
-    PublisherRequest,
-    Token,
+    ParentCaContact, PublisherDetails, PublisherList, PublisherRequest, Token,
 };
-use krill_commons::api::ca::{TrustAnchorInfo};
-use krill_commons::remote::api::{
-    ClientAuth,
-    ClientInfo,
-};
+use krill_commons::api::ca::TrustAnchorInfo;
+use krill_commons::remote::api::{ClientAuth, ClientInfo};
 use krill_commons::remote::rfc8183;
 use krill_commons::remote::rfc8183::RepositoryResponse;
+use krill_commons::util::file;
+use krill_commons::util::httpclient;
 
-use crate::report::{
-    ApiResponse,
-    ReportError
-};
 use crate::options::{
-    Options,
-    CaCommand,
-    Command,
-    PublishersCommand,
-    Rfc8181Command,
-    TrustAnchorCommand
+    CaCommand, Command, Options, PublishersCommand, Rfc8181Command, TrustAnchorCommand,
 };
+use crate::report::{ApiResponse, ReportError};
 
 /// Command line tool for Krill admin tasks
 pub struct KrillClient {
@@ -40,7 +25,6 @@ pub struct KrillClient {
 }
 
 impl KrillClient {
-
     /// Delegates the options to be processed, and reports the response
     /// back to the user. Note that error reporting is handled by CLI.
     pub fn report(options: Options) -> Result<(), Error> {
@@ -58,8 +42,8 @@ impl KrillClient {
     /// and client.
     pub fn process(options: Options) -> Result<ApiResponse, Error> {
         let client = KrillClient {
-            server:   options.server,
-            token:    options.token,
+            server: options.server,
+            token: options.token,
         };
         match options.command {
             Command::Health => client.health(),
@@ -67,15 +51,12 @@ impl KrillClient {
             Command::CertAuth(cmd) => client.certauth(cmd),
             Command::Publishers(cmd) => client.publishers(cmd),
             Command::Rfc8181(cmd) => client.rfc8181(cmd),
-            Command::NotSet => Err(Error::MissingCommand)
+            Command::NotSet => Err(Error::MissingCommand),
         }
     }
 
     fn health(&self) -> Result<ApiResponse, Error> {
-        httpclient::get_ok(
-            &self.resolve_uri("api/v1/health"),
-            Some(&self.token)
-        )?;
+        httpclient::get_ok(&self.resolve_uri("api/v1/health"), Some(&self.token))?;
         Ok(ApiResponse::Health)
     }
 
@@ -85,22 +66,21 @@ impl KrillClient {
                 let uri = self.resolve_uri("api/v1/trustanchor");
                 httpclient::post_empty(&uri, Some(&self.token))?;
                 Ok(ApiResponse::Empty)
-            },
+            }
             TrustAnchorCommand::Show => {
                 let uri = self.resolve_uri("api/v1/trustanchor");
-                let ta: TrustAnchorInfo  = self.get_json(&uri)?;
+                let ta: TrustAnchorInfo = self.get_json(&uri)?;
                 Ok(ApiResponse::TrustAnchorInfo(ta))
-            },
+            }
             TrustAnchorCommand::Publish => {
                 let uri = self.resolve_uri("api/v1/republish");
                 httpclient::post_empty(&uri, Some(&self.token))?;
                 Ok(ApiResponse::Empty)
-            },
+            }
             TrustAnchorCommand::AddChild(req) => {
                 let uri = self.resolve_uri("api/v1/trustanchor/children");
-                let info: ParentCaContact = httpclient::post_json_with_response(
-                    &uri, req, Some(&self.token)
-                )?;
+                let info: ParentCaContact =
+                    httpclient::post_json_with_response(&uri, req, Some(&self.token))?;
                 Ok(ApiResponse::ParentCaInfo(info))
             }
         }
@@ -113,29 +93,25 @@ impl KrillClient {
                 let uri = self.resolve_uri(&uri);
                 httpclient::post_json(&uri, parent, Some(&self.token))?;
                 Ok(ApiResponse::Empty)
-            },
+            }
             CaCommand::ChildRequest(handle) => {
                 let uri = format!("api/v1/cas/{}/child_request", handle);
                 let uri = self.resolve_uri(&uri);
-                let xml = httpclient::get_text(
-                    &uri,
-                    "application/xml",
-                    Some(&self.token)
-                )?;
+                let xml = httpclient::get_text(&uri, "application/xml", Some(&self.token))?;
 
                 let req = rfc8183::ChildRequest::validate(xml.as_bytes())?;
                 Ok(ApiResponse::Rfc8183ChildRequest(req))
-            },
+            }
             CaCommand::Init(init) => {
                 let uri = self.resolve_uri("api/v1/cas");
                 httpclient::post_json(&uri, init, Some(&self.token))?;
                 Ok(ApiResponse::Empty)
-            },
+            }
             CaCommand::List => {
                 let uri = self.resolve_uri("api/v1/cas");
                 let cas = self.get_json(&uri)?;
                 Ok(ApiResponse::CertAuths(cas))
-            },
+            }
             CaCommand::Show(handle) => {
                 let uri = format!("api/v1/cas/{}", handle);
                 let uri = self.resolve_uri(&uri);
@@ -146,36 +122,29 @@ impl KrillClient {
         }
     }
 
-    fn publishers(
-        &self,
-        command: PublishersCommand,
-    ) -> Result<ApiResponse, Error> {
+    fn publishers(&self, command: PublishersCommand) -> Result<ApiResponse, Error> {
         match command {
             PublishersCommand::List => {
                 let list: PublisherList = self.get_json(&self.resolve_uri("api/v1/publishers"))?;
                 Ok(ApiResponse::PublisherList(list))
-            },
+            }
             PublishersCommand::Add(add) => {
-                let pbl = PublisherRequest::new(
-                    add.handle,
-                    add.token,
-                    add.base_uri
-                );
+                let pbl = PublisherRequest::new(add.handle, add.token, add.base_uri);
                 self.add_publisher(pbl)
-            },
+            }
             PublishersCommand::Deactivate(handle) => {
                 let uri = format!("api/v1/publishers/{}", handle);
                 let uri = self.resolve_uri(&uri);
                 httpclient::delete(&uri, Some(&self.token))?;
                 Ok(ApiResponse::Empty)
-            },
+            }
             PublishersCommand::Details(handle) => {
                 let uri = format!("api/v1/publishers/{}", handle);
                 let uri = self.resolve_uri(&uri);
 
                 let details: PublisherDetails = self.get_json(&uri)?;
                 Ok(ApiResponse::PublisherDetails(details))
-            },
+            }
         }
     }
 
@@ -183,7 +152,7 @@ impl KrillClient {
         httpclient::post_json(
             &self.resolve_uri("api/v1/publishers"),
             pbl,
-            Some(&self.token)
+            Some(&self.token),
         )?;
 
         Ok(ApiResponse::Empty)
@@ -196,7 +165,7 @@ impl KrillClient {
                 let list: Vec<ClientInfo> = self.get_json(&uri)?;
 
                 Ok(ApiResponse::Rfc8181ClientList(list))
-            },
+            }
             Rfc8181Command::RepoRes(handle) => {
                 let uri = format!("api/v1/rfc8181/{}/response.xml", handle);
                 let uri = self.resolve_uri(&uri);
@@ -206,9 +175,8 @@ impl KrillClient {
 
                 let res = RepositoryResponse::validate(xml.as_bytes())?;
                 Ok(ApiResponse::Rfc8183RepositoryResponse(res))
-            },
+            }
             Rfc8181Command::Add(details) => {
-
                 let xml = file::read(&details.xml)?;
                 let pr = rfc8183::PublisherRequest::validate(xml.as_ref())?;
 
@@ -222,7 +190,7 @@ impl KrillClient {
                 httpclient::post_json(
                     &self.resolve_uri("api/v1/rfc8181/clients"),
                     info,
-                    Some(&self.token)
+                    Some(&self.token),
                 )?;
 
                 Ok(ApiResponse::Empty)
@@ -234,14 +202,8 @@ impl KrillClient {
         format!("{}{}", &self.server, path)
     }
 
-    fn get_json<T: DeserializeOwned>(
-        &self,
-        uri: &str,
-    ) -> Result<T, Error> {
-        httpclient::get_json(
-            &uri,
-            Some(&self.token)
-        ).map_err(Error::HttpClientError)
+    fn get_json<T: DeserializeOwned>(&self, uri: &str) -> Result<T, Error> {
+        httpclient::get_json(&uri, Some(&self.token)).map_err(Error::HttpClientError)
     }
 }
 
@@ -249,30 +211,32 @@ impl KrillClient {
 
 #[derive(Debug, Display)]
 pub enum Error {
-    #[display(fmt="No valid command given, see --help")]
+    #[display(fmt = "No valid command given, see --help")]
     MissingCommand,
 
-    #[display(fmt="Server is not available.")]
+    #[display(fmt = "Server is not available.")]
     ServerDown,
 
-    #[display(fmt="{}", _0)]
+    #[display(fmt = "{}", _0)]
     HttpClientError(httpclient::Error),
 
-    #[display(fmt="{}", _0)]
+    #[display(fmt = "{}", _0)]
     ReportError(ReportError),
 
-    #[display(fmt="Can't read file: {}", _0)]
+    #[display(fmt = "Can't read file: {}", _0)]
     IoError(io::Error),
 
-    #[display(fmt="Empty response received from server")]
+    #[display(fmt = "Empty response received from server")]
     EmptyResponse,
 
-    #[display(fmt="{}", _0)]
+    #[display(fmt = "{}", _0)]
     Rfc8183(rfc8183::Error),
 }
 
 impl From<httpclient::Error> for Error {
-    fn from(e: httpclient::Error) -> Self { Error::HttpClientError(e) }
+    fn from(e: httpclient::Error) -> Self {
+        Error::HttpClientError(e)
+    }
 }
 
 impl From<io::Error> for Error {

@@ -1,22 +1,17 @@
-use bcder::{Mode, OctetString, Oid, Tag, Unsigned};
-use bcder::{decode, encode};
-use bcder::encode::Values;
 use bcder::encode::Constructed;
+use bcder::encode::Values;
+use bcder::{decode, encode};
+use bcder::{Mode, OctetString, Oid, Tag, Unsigned};
 use bytes::Bytes;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use rpki::uri;
-use rpki::cert::ext::{
-    AuthorityKeyIdentifier,
-    BasicCa,
-    SubjectKeyIdentifier
-};
+use rpki::cert::ext::{AuthorityKeyIdentifier, BasicCa, SubjectKeyIdentifier};
 use rpki::crypto::{PublicKey, SignatureAlgorithm};
+use rpki::uri;
 use rpki::x509::{Name, SignedData, Time, ValidationError, Validity};
 
 use crate::remote::rfc8183::ServiceUri;
 use crate::util::softsigner::SignerKeyId;
-
 
 //------------ MyIdentity ----------------------------------------------------
 
@@ -28,7 +23,7 @@ pub struct MyIdentity {
 
     id_cert: IdCert,
 
-    key_id: SignerKeyId
+    key_id: SignerKeyId,
 }
 
 impl MyIdentity {
@@ -36,7 +31,7 @@ impl MyIdentity {
         MyIdentity {
             name: name.to_string(),
             id_cert,
-            key_id
+            key_id,
         }
     }
 
@@ -59,14 +54,13 @@ impl MyIdentity {
 
 impl PartialEq for MyIdentity {
     fn eq(&self, other: &MyIdentity) -> bool {
-        self.name == other.name &&
-            self.id_cert.to_bytes() == other.id_cert.to_bytes() &&
-            self.key_id == other.key_id
+        self.name == other.name
+            && self.id_cert.to_bytes() == other.id_cert.to_bytes()
+            && self.key_id == other.key_id
     }
 }
 
 impl Eq for MyIdentity {}
-
 
 //------------ ParentInfo ----------------------------------------------------
 
@@ -80,11 +74,7 @@ pub struct ParentInfo {
 }
 
 impl ParentInfo {
-    pub fn new(
-        publisher_handle: String,
-        id_cert: IdCert,
-        service_uri: ServiceUri,
-    ) -> Self {
+    pub fn new(publisher_handle: String, id_cert: IdCert, service_uri: ServiceUri) -> Self {
         ParentInfo {
             publisher_handle,
             id_cert,
@@ -110,14 +100,13 @@ impl ParentInfo {
 
 impl PartialEq for ParentInfo {
     fn eq(&self, other: &ParentInfo) -> bool {
-        self.id_cert.to_bytes() == other.id_cert.to_bytes() &&
-            self.service_uri == other.service_uri &&
-            self.publisher_handle == other.publisher_handle
+        self.id_cert.to_bytes() == other.id_cert.to_bytes()
+            && self.service_uri == other.service_uri
+            && self.publisher_handle == other.publisher_handle
     }
 }
 
 impl Eq for ParentInfo {}
-
 
 //------------ MyRepoInfo ----------------------------------------------------
 
@@ -126,15 +115,15 @@ impl Eq for ParentInfo {}
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct MyRepoInfo {
     sia_base: uri::Rsync,
-    notify_sia: uri::Https
+    notify_sia: uri::Https,
 }
 
 impl MyRepoInfo {
-    pub fn new(
-        sia_base: uri::Rsync,
-        notify_sia: uri::Https
-    ) -> Self {
-        MyRepoInfo { sia_base, notify_sia }
+    pub fn new(sia_base: uri::Rsync, notify_sia: uri::Https) -> Self {
+        MyRepoInfo {
+            sia_base,
+            notify_sia,
+        }
     }
 
     /// The base rsync directory under which the publisher may publish.
@@ -150,13 +139,11 @@ impl MyRepoInfo {
 
 impl PartialEq for MyRepoInfo {
     fn eq(&self, other: &MyRepoInfo) -> bool {
-        self.sia_base == other.sia_base &&
-            self.notify_sia == other.notify_sia
+        self.sia_base == other.sia_base && self.notify_sia == other.notify_sia
     }
 }
 
 impl Eq for MyRepoInfo {}
-
 
 //------------ IdCert --------------------------------------------------------
 
@@ -246,40 +233,40 @@ impl IdCert {
     }
 
     /// Takes an encoded certificate from the beginning of a value.
-    pub fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    pub fn take_from<S: decode::Source>(cons: &mut decode::Constructed<S>) -> Result<Self, S::Err> {
         cons.take_sequence(Self::from_constructed)
     }
 
     /// Parses the content of a Certificate sequence.
     pub fn from_constructed<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
+        cons: &mut decode::Constructed<S>,
     ) -> Result<Self, S::Err> {
         let signed_data = SignedData::from_constructed(cons)?;
 
-        signed_data.data().clone().decode(|cons| {
-            cons.take_sequence(|cons| {
-                // version [0] EXPLICIT Version DEFAULT v1.
-                //  -- we need extensions so apparently, we want v3 which,
-                //     confusingly, is 2.
-                cons.take_constructed_if(Tag::CTX_0, |c| c.skip_u8_if(2))?;
+        signed_data
+            .data()
+            .clone()
+            .decode(|cons| {
+                cons.take_sequence(|cons| {
+                    // version [0] EXPLICIT Version DEFAULT v1.
+                    //  -- we need extensions so apparently, we want v3 which,
+                    //     confusingly, is 2.
+                    cons.take_constructed_if(Tag::CTX_0, |c| c.skip_u8_if(2))?;
 
-                Ok(IdCert {
-                    signed_data,
-                    serial_number: Unsigned::take_from(cons)?,
-                    signature: SignatureAlgorithm::x509_take_from(cons)?,
-                    issuer: Name::take_from(cons)?,
-                    validity: Validity::take_from(cons)?,
-                    subject: Name::take_from(cons)?,
-                    subject_public_key_info: PublicKey::take_from(cons)?,
-                    extensions: cons.take_constructed_if(
-                        Tag::CTX_3,
-                        IdExtensions::take_from
-                    )?,
+                    Ok(IdCert {
+                        signed_data,
+                        serial_number: Unsigned::take_from(cons)?,
+                        signature: SignatureAlgorithm::x509_take_from(cons)?,
+                        issuer: Name::take_from(cons)?,
+                        validity: Validity::take_from(cons)?,
+                        subject: Name::take_from(cons)?,
+                        subject_public_key_info: PublicKey::take_from(cons)?,
+                        extensions: cons
+                            .take_constructed_if(Tag::CTX_3, IdExtensions::take_from)?,
+                    })
                 })
             })
-        }).map_err(Into::into)
+            .map_err(Into::into)
     }
 
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
@@ -316,7 +303,8 @@ impl IdCert {
         }
 
         // Verify that this is self signed
-        self.signed_data.verify_signature(&self.subject_public_key_info)?;
+        self.signed_data
+            .verify_signature(&self.subject_public_key_info)?;
 
         Ok(())
     }
@@ -327,25 +315,18 @@ impl IdCert {
     /// by the provided `issuer` certificate.
     ///
     /// Note that this does _not_ check the CRL.
-    pub fn validate_ee(
-        &self,
-        issuer: &IdCert,
-    ) -> Result<(), ValidationError> {
+    pub fn validate_ee(&self, issuer: &IdCert) -> Result<(), ValidationError> {
         self.validate_ee_at(issuer, Time::now())
     }
 
-    pub fn validate_ee_at(
-        &self,
-        issuer: &IdCert,
-        now: Time,
-    ) -> Result<(), ValidationError> {
+    pub fn validate_ee_at(&self, issuer: &IdCert, now: Time) -> Result<(), ValidationError> {
         self.validate_basics(now)?;
         self.validate_issued(issuer)?;
 
         // Basic Constraints: Must not be a CA cert.
         if let Some(basic_ca) = &self.extensions.basic_ca {
             if basic_ca.ca() {
-                return Err(ValidationError)
+                return Err(ValidationError);
             }
         }
 
@@ -353,7 +334,6 @@ impl IdCert {
         self.validate_signature(issuer)?;
         Ok(())
     }
-
 
     //--- Validation Components
 
@@ -369,7 +349,7 @@ impl IdCert {
         if self.extensions.subject_key_id().as_slice().unwrap()
             != self.subject_public_key_info().key_identifier().as_ref()
         {
-            return Err(ValidationError)
+            return Err(ValidationError);
         }
 
         Ok(())
@@ -383,18 +363,14 @@ impl IdCert {
     ///
     /// This check assumes for now that we are always dealing with V3
     /// certificates and AKI and SKI have to match.
-    fn validate_issued(
-        &self,
-        issuer: &IdCert,
-    ) -> Result<(), ValidationError> {
+    fn validate_issued(&self, issuer: &IdCert) -> Result<(), ValidationError> {
         // Authority Key Identifier. Must be present and match the
         // subject key ID of `issuer`.
         if let Some(aki) = self.extensions.authority_key_id() {
             if aki != issuer.extensions.subject_key_id() {
-                return Err(ValidationError)
+                return Err(ValidationError);
             }
-        }
-        else {
+        } else {
             return Err(ValidationError);
         }
 
@@ -410,7 +386,7 @@ impl IdCert {
         // und the “cA” flag must be set (RFC5280).
         if let Some(ref ca) = self.extensions.basic_ca {
             if ca.ca() {
-                return  Ok(())
+                return Ok(());
             }
         }
 
@@ -418,14 +394,11 @@ impl IdCert {
     }
 
     /// Validates the certificate’s signature.
-    fn validate_signature(
-        &self,
-        issuer: &IdCert
-    ) -> Result<(), ValidationError> {
-        self.signed_data.verify_signature(issuer.subject_public_key_info())
+    fn validate_signature(&self, issuer: &IdCert) -> Result<(), ValidationError> {
+        self.signed_data
+            .verify_signature(issuer.subject_public_key_info())
     }
 }
-
 
 //--- AsRef
 
@@ -436,10 +409,10 @@ impl AsRef<IdCert> for IdCert {
 }
 
 impl Serialize for IdCert {
-    fn serialize<S>(
-        &self,
-        serializer: S
-    ) -> Result<S::Ok, S::Error> where S: Serializer {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
         let bytes = self.to_bytes();
         let str = base64::encode(&bytes);
         str.serialize(serializer)
@@ -455,9 +428,10 @@ impl PartialEq for IdCert {
 impl Eq for IdCert {}
 
 impl<'de> Deserialize<'de> for IdCert {
-    fn deserialize<D>(
-        deserializer: D
-    ) -> Result<Self, D::Error> where D: Deserializer<'de> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
         use serde::de;
 
         let some = String::deserialize(deserializer)?;
@@ -466,8 +440,6 @@ impl<'de> Deserialize<'de> for IdCert {
         IdCert::decode(b).map_err(de::Error::custom)
     }
 }
-
-
 
 //------------ IdExtensions --------------------------------------------------
 
@@ -489,9 +461,7 @@ pub struct IdExtensions {
 /// # Decoding
 ///
 impl IdExtensions {
-    pub fn take_from<S: decode::Source>(
-        cons: &mut decode::Constructed<S>
-    ) -> Result<Self, S::Err> {
+    pub fn take_from<S: decode::Source>(cons: &mut decode::Constructed<S>) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
             let mut basic_ca = None;
             let mut subject_key_id = None;
@@ -504,13 +474,9 @@ impl IdExtensions {
                     if id == oid::CE_BASIC_CONSTRAINTS {
                         BasicCa::take(content, critical, &mut basic_ca)
                     } else if id == oid::CE_SUBJECT_KEY_IDENTIFIER {
-                        SubjectKeyIdentifier::take(
-                            content, critical, &mut subject_key_id
-                        )
+                        SubjectKeyIdentifier::take(content, critical, &mut subject_key_id)
                     } else if id == oid::CE_AUTHORITY_KEY_IDENTIFIER {
-                        AuthorityKeyIdentifier::take(
-                            content, critical, &mut authority_key_id
-                        )
+                        AuthorityKeyIdentifier::take(content, critical, &mut authority_key_id)
                     } else {
                         // Id Certificates are poorly defined and may
                         // contain critical extensions we do not actually
@@ -534,45 +500,38 @@ impl IdExtensions {
 // We have to do this the hard way because some extensions are optional.
 // Therefore we need logic to determine which ones to encode.
 impl IdExtensions {
-
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
         Constructed::new(
             Tag::CTX_3,
-            encode::sequence(
-                (
-                    self.basic_ca.as_ref().map(BasicCa::encode),
-                    self.subject_key_id.clone().encode(),
-                    self.authority_key_id.clone().map(AuthorityKeyIdentifier::encode)
-                )
-            )
+            encode::sequence((
+                self.basic_ca.as_ref().map(BasicCa::encode),
+                self.subject_key_id.clone().encode(),
+                self.authority_key_id
+                    .clone()
+                    .map(AuthorityKeyIdentifier::encode),
+            )),
         )
     }
-
 }
-
 
 /// # Creating
 ///
 impl IdExtensions {
-
     /// Creates extensions to be used on a self-signed TA IdCert
     pub fn for_id_ta_cert(key: &PublicKey) -> Self {
-        IdExtensions{
+        IdExtensions {
             basic_ca: Some(BasicCa::new(true, true)),
             subject_key_id: SubjectKeyIdentifier::new(key),
-            authority_key_id: Some(AuthorityKeyIdentifier::new(key))
+            authority_key_id: Some(AuthorityKeyIdentifier::new(key)),
         }
     }
 
     /// Creates extensions to be used on an EE IdCert in a protocol CMS
-    pub fn for_id_ee_cert(
-        subject_key: &PublicKey,
-        issuing_key: &PublicKey
-    ) -> Self {
-        IdExtensions{
+    pub fn for_id_ee_cert(subject_key: &PublicKey, issuing_key: &PublicKey) -> Self {
+        IdExtensions {
             basic_ca: None,
             subject_key_id: SubjectKeyIdentifier::new(subject_key),
-            authority_key_id: Some(AuthorityKeyIdentifier::new(issuing_key))
+            authority_key_id: Some(AuthorityKeyIdentifier::new(issuing_key)),
         }
     }
 }
@@ -587,11 +546,10 @@ impl IdExtensions {
     pub fn authority_key_id(&self) -> Option<&OctetString> {
         match &self.authority_key_id {
             Some(a) => Some(a.authority_key_id()),
-            None => None
+            None => None,
         }
     }
 }
-
 
 //------------ OIDs ----------------------------------------------------------
 
@@ -602,7 +560,6 @@ mod oid {
     pub const CE_SUBJECT_KEY_IDENTIFIER: Oid<&[u8]> = Oid(&[85, 29, 14]);
     pub const CE_AUTHORITY_KEY_IDENTIFIER: Oid<&[u8]> = Oid(&[85, 29, 35]);
 }
-
 
 //------------ Tests ---------------------------------------------------------
 
@@ -620,8 +577,8 @@ pub mod tests {
 
     #[test]
     fn should_parse_id_publisher_ta_cert() {
-        test_id_certificate().validate_ta_at(
-            Time::utc(2012, 1, 1, 0, 0, 0)
-        ).unwrap();
+        test_id_certificate()
+            .validate_ta_at(Time::utc(2012, 1, 1, 0, 0, 0))
+            .unwrap();
     }
 }

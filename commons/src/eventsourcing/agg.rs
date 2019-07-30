@@ -1,14 +1,8 @@
-use super::{
-    Command,
-    Event,
-    Storable
-};
-
+use super::{Command, Event, Storable};
 
 //------------ Aggregate -----------------------------------------------------
 
 pub trait Aggregate: Storable + Send + Sync + 'static {
-
     type Command: Command<Event = Self::Event>;
     type Event: Event;
     type InitEvent: Event;

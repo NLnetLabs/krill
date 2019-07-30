@@ -1,24 +1,17 @@
 //! Process requests received, delegate, and wrap up the responses.
-use actix_web::{
-    HttpResponse,
-    ResponseError
-};
 use actix_web::http::StatusCode;
-use actix_web::web::{
-    self,
-    Json,
-    Path,
-};
+use actix_web::web::{self, Json, Path};
+use actix_web::{HttpResponse, ResponseError};
 use bytes::Bytes;
 use serde::Serialize;
 
-use krill_commons::api::{admin, publication, ErrorCode, ErrorResponse, IssuanceRequest};
-use krill_commons::api::admin::{Handle, CertAuthInit, AddChildRequest, AddParentRequest};
+use krill_commons::api::admin::{AddChildRequest, AddParentRequest, CertAuthInit, Handle};
 use krill_commons::api::rrdp::VerificationError;
-use krill_commons::util::softsigner::OpenSslSigner;
+use krill_commons::api::{admin, publication, ErrorCode, ErrorResponse, IssuanceRequest};
 use krill_commons::remote::api::ClientInfo;
-use krill_commons::remote::sigmsg::SignedMessage;
 use krill_commons::remote::rfc6492;
+use krill_commons::remote::sigmsg::SignedMessage;
+use krill_commons::util::softsigner::OpenSslSigner;
 use krill_pubd::publishers::PublisherError;
 use krill_pubd::repo::RrdpServerError;
 
@@ -36,13 +29,11 @@ const NOT_FOUND: &[u8] = include_bytes!("../ui/dist/404.html");
 ///
 /// XXX TODO: Use actix Json<> when returning values
 fn render_json<O: Serialize>(object: O) -> HttpResponse {
-    match serde_json::to_string(&object){
-        Ok(enc) => {
-            HttpResponse::Ok()
-                .content_type("application/json")
-                .body(enc)
-        },
-        Err(e) => server_error(&Error::JsonError(e))
+    match serde_json::to_string(&object) {
+        Ok(enc) => HttpResponse::Ok()
+            .content_type("application/json")
+            .body(enc),
+        Err(e) => server_error(&Error::JsonError(e)),
     }
 }
 
@@ -53,14 +44,12 @@ fn server_error(error: &Error) -> HttpResponse {
     error.error_response()
 }
 
-
 fn render_empty_res(res: Result<(), krillserver::Error>) -> HttpResponse {
     match res {
         Ok(()) => api_ok(),
-        Err(e) => server_error(&Error::ServerError(e))
+        Err(e) => server_error(&Error::ServerError(e)),
     }
 }
-
 
 /// A clean 404 result for the API (no content, not for humans)
 fn api_not_found() -> HttpResponse {
@@ -87,15 +76,20 @@ pub fn api_health(_auth: Auth) -> HttpResponse {
 }
 
 fn if_allowed<F>(allowed: bool, op: F) -> HttpResponse
-    where F: FnOnce() -> HttpResponse {
-    if allowed { op() } else { HttpResponse::Forbidden().finish() }
+where
+    F: FnOnce() -> HttpResponse,
+{
+    if allowed {
+        op()
+    } else {
+        HttpResponse::Forbidden().finish()
+    }
 }
 
-fn if_api_allowed<F>(
-    server: &web::Data<AppServer>,
-    auth: &Auth,
-    op: F
-) -> HttpResponse where F: FnOnce() -> HttpResponse {
+fn if_api_allowed<F>(server: &web::Data<AppServer>, auth: &Auth, op: F) -> HttpResponse
+where
+    F: FnOnce() -> HttpResponse,
+{
     let allowed = server.read().is_api_allowed(auth);
     if_allowed(allowed, op)
 }
@@ -104,8 +98,11 @@ fn if_publication_allowed<F>(
     server: &web::Data<AppServer>,
     handle: &Handle,
     auth: &Auth,
-    op: F
-) -> HttpResponse where F: FnOnce() -> HttpResponse {
+    op: F,
+) -> HttpResponse
+where
+    F: FnOnce() -> HttpResponse,
+{
     let allowed = server.read().is_publication_api_allowed(handle, auth);
     if_allowed(allowed, op)
 }
@@ -113,14 +110,14 @@ fn if_publication_allowed<F>(
 //------------ Admin: Publishers ---------------------------------------------
 
 /// Returns a json structure with all publishers in it.
-pub fn publishers(
-    server: web::Data<AppServer>,
-    auth: Auth
-) -> HttpResponse {
+pub fn publishers(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
     let publishers = server.read().publishers();
 
     if_api_allowed(&server, &auth, || {
-        render_json(admin::PublisherList::build(&publishers, "/api/v1/publishers"))
+        render_json(admin::PublisherList::build(
+            &publishers,
+            "/api/v1/publishers",
+        ))
     })
 }
 
@@ -129,9 +126,9 @@ pub fn publishers(
 pub fn add_publisher(
     server: web::Data<AppServer>,
     auth: Auth,
-    pbl: Json<admin::PublisherRequest>
+    pbl: Json<admin::PublisherRequest>,
 ) -> HttpResponse {
-    if_api_allowed(&server, &auth, ||{
+    if_api_allowed(&server, &auth, || {
         render_empty_res(server.write().add_publisher(pbl.into_inner()))
     })
 }
@@ -142,7 +139,7 @@ pub fn add_publisher(
 pub fn deactivate_publisher(
     server: web::Data<AppServer>,
     auth: Auth,
-    handle: Path<Handle>
+    handle: Path<Handle>,
 ) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_empty_res(server.write().deactivate_publisher(&handle))
@@ -154,21 +151,14 @@ pub fn deactivate_publisher(
 pub fn publisher_details(
     server: web::Data<AppServer>,
     auth: Auth,
-    handle: Path<Handle>
+    handle: Path<Handle>,
 ) -> HttpResponse {
-    if_api_allowed(&server, &auth, ||{
-        match server.read().publisher(&handle) {
-            Ok(None) => api_not_found(),
-            Ok(Some(publisher)) => {
-                render_json(
-                    &publisher.as_api_details()
-                )
-            },
-            Err(e) => server_error(&Error::ServerError(e))
-        }
+    if_api_allowed(&server, &auth, || match server.read().publisher(&handle) {
+        Ok(None) => api_not_found(),
+        Ok(Some(publisher)) => render_json(&publisher.as_api_details()),
+        Err(e) => server_error(&Error::ServerError(e)),
     })
 }
-
 
 //------------ Publication ---------------------------------------------------
 
@@ -180,19 +170,13 @@ pub fn rfc8181(
     msg_bytes: Bytes,
 ) -> HttpResponse {
     match SignedMessage::decode(msg_bytes, true) {
-        Ok(msg) => {
-            match server.read().handle_rfc8181_req(msg, handle.into_inner()) {
-                Ok(captured) => {
-                    HttpResponse::build(StatusCode::OK)
-                        .content_type("application/rpki-publication")
-                        .body(captured.into_bytes())
-                }
-                Err(e) => {
-                    server_error(&Error::ServerError(e))
-                }
-            }
-        }
-        Err(_) => server_error(&Error::CmsError)
+        Ok(msg) => match server.read().handle_rfc8181_req(msg, handle.into_inner()) {
+            Ok(captured) => HttpResponse::build(StatusCode::OK)
+                .content_type("application/rpki-publication")
+                .body(captured.into_bytes()),
+            Err(e) => server_error(&Error::ServerError(e)),
+        },
+        Err(_) => server_error(&Error::CmsError),
     }
 }
 
@@ -202,7 +186,7 @@ pub fn handle_delta(
     server: web::Data<AppServer>,
     auth: Auth,
     delta: Json<publication::PublishDelta>,
-    handle: Path<Handle>
+    handle: Path<Handle>,
 ) -> HttpResponse {
     let handle = handle.into_inner();
     let delta = delta.into_inner();
@@ -214,42 +198,32 @@ pub fn handle_delta(
 
 /// Processes a list request sent to the API.
 #[allow(clippy::needless_pass_by_value)]
-pub fn handle_list(
-    server: web::Data<AppServer>,
-    auth: Auth,
-    handle: Path<Handle>
-) -> HttpResponse {
+pub fn handle_list(server: web::Data<AppServer>, auth: Auth, handle: Path<Handle>) -> HttpResponse {
     let handle = handle.into_inner();
     debug!("Received list request for {}", &handle);
-    if_publication_allowed(&server, &handle, &auth, ||{
+    if_publication_allowed(&server, &handle, &auth, || {
         match server.read().handle_list(&handle) {
             Ok(list) => render_json(list),
-            Err(e)   => server_error(&Error::ServerError(e))
+            Err(e) => server_error(&Error::ServerError(e)),
         }
     })
 }
 
-
 //------------ Admin: Rfc8181 -----------------------------------------------
 
-pub fn rfc8181_clients(
-    server: web::Data<AppServer>,
-    auth: Auth
-) -> HttpResponse {
-    if_api_allowed(&server, &auth, ||{
-        match server.read().rfc8181_clients() {
-            Ok(clients) => render_json(clients),
-            Err(e) => server_error(&Error::ServerError(e ))
-        }
+pub fn rfc8181_clients(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
+    if_api_allowed(&server, &auth, || match server.read().rfc8181_clients() {
+        Ok(clients) => render_json(clients),
+        Err(e) => server_error(&Error::ServerError(e)),
     })
 }
 
 pub fn add_rfc8181_client(
     server: web::Data<AppServer>,
     auth: Auth,
-    client: Json<ClientInfo>
+    client: Json<ClientInfo>,
 ) -> HttpResponse {
-    if_api_allowed(&server, &auth, ||{
+    if_api_allowed(&server, &auth, || {
         render_empty_res(server.read().add_rfc8181_client(client.into_inner()))
     })
 }
@@ -257,49 +231,36 @@ pub fn add_rfc8181_client(
 pub fn repository_response(
     server: web::Data<AppServer>,
     auth: Auth,
-    handle: Path<Handle>
+    handle: Path<Handle>,
 ) -> HttpResponse {
     let handle = handle.into_inner();
-    if_publication_allowed(&server, &handle, &auth, ||{
+    if_publication_allowed(&server, &handle, &auth, || {
         match server.read().repository_response(&handle) {
-            Ok(res) => {
-                HttpResponse::Ok()
-                    .content_type("application/xml")
-                    .body(res.encode_vec())
-            },
+            Ok(res) => HttpResponse::Ok()
+                .content_type("application/xml")
+                .body(res.encode_vec()),
 
-                Err(e) => server_error(&Error::ServerError(e))
+            Err(e) => server_error(&Error::ServerError(e)),
         }
     })
 }
 
 //------------ Admin: TrustAnchor --------------------------------------------
 
-pub fn ta_info(
-    server: web::Data<AppServer>,
-    auth: Auth
-) -> HttpResponse {
-    if_api_allowed(&server, &auth, ||{
-        match server.read().ta_info() {
-            Some(ta) => render_json(ta),
-            None => api_not_found()
-        }
+pub fn ta_info(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
+    if_api_allowed(&server, &auth, || match server.read().ta_info() {
+        Some(ta) => render_json(ta),
+        None => api_not_found(),
     })
 }
 
-pub fn ta_init(
-    server: web::Data<AppServer>,
-    auth: Auth
-) -> HttpResponse {
+pub fn ta_init(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_empty_res(server.write().ta_init())
     })
 }
 
-pub fn republish_all(
-    server: web::Data<AppServer>,
-    auth: Auth
-) -> HttpResponse {
+pub fn republish_all(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_empty_res(server.read().republish_all())
     })
@@ -307,67 +268,54 @@ pub fn republish_all(
 
 pub fn tal(server: web::Data<AppServer>) -> HttpResponse {
     match server.read().ta_info() {
-        Some(ta) => {
-            HttpResponse::Ok()
-                .content_type("text/plain")
-                .body(format!("{}", ta.tal()))
-        },
-        None => api_not_found()
+        Some(ta) => HttpResponse::Ok()
+            .content_type("text/plain")
+            .body(format!("{}", ta.tal())),
+        None => api_not_found(),
     }
 }
 
 pub fn ta_cer(server: web::Data<AppServer>) -> HttpResponse {
     match server.read().trust_anchor_cert() {
-        Some(cert) => {
-            HttpResponse::Ok().body(cert.der_encoded().to_vec())
-        },
-        None => api_not_found()
+        Some(cert) => HttpResponse::Ok().body(cert.der_encoded().to_vec()),
+        None => api_not_found(),
     }
 }
 
 pub fn ta_add_child(
     server: web::Data<AppServer>,
     req: Json<AddChildRequest>,
-    auth: Auth
+    auth: Auth,
 ) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         match server.read().ta_add_child(req.into_inner()) {
             Ok(info) => render_json(info),
-            Err(e) => server_error(&Error::ServerError(e))
+            Err(e) => server_error(&Error::ServerError(e)),
         }
     })
 }
 
 //------------ Admin: CertAuth -----------------------------------------------
 
-pub fn cas(
-    server: web::Data<AppServer>,
-    auth: Auth
-) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        render_json(server.read().cas())
-    })
+pub fn cas(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
+    if_api_allowed(&server, &auth, || render_json(server.read().cas()))
 }
 
 pub fn ca_init(
     server: web::Data<AppServer>,
     auth: Auth,
-    ca_init: Json<CertAuthInit>
+    ca_init: Json<CertAuthInit>,
 ) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_empty_res(server.write().ca_init(ca_init.into_inner()))
     })
 }
 
-pub fn ca_info(
-    server: web::Data<AppServer>,
-    auth: Auth,
-    handle: Path<Handle>
-) -> HttpResponse {
+pub fn ca_info(server: web::Data<AppServer>, auth: Auth, handle: Path<Handle>) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         match server.read().ca_info(&handle.into_inner()) {
             Some(info) => render_json(info),
-            None => api_not_found()
+            None => api_not_found(),
         }
     })
 }
@@ -375,17 +323,15 @@ pub fn ca_info(
 pub fn ca_child_req(
     server: web::Data<AppServer>,
     auth: Auth,
-    handle: Path<Handle>
+    handle: Path<Handle>,
 ) -> HttpResponse {
     let handle = handle.into_inner();
     if_api_allowed(&server, &auth, || {
         match server.read().ca_child_req(&handle) {
-            Some(req) => {
-                HttpResponse::Ok()
-                    .content_type("application/xml")
-                    .body(req.encode_vec())
-            },
-            None => api_not_found()
+            Some(req) => HttpResponse::Ok()
+                .content_type("application/xml")
+                .body(req.encode_vec()),
+            None => api_not_found(),
         }
     })
 }
@@ -394,12 +340,14 @@ pub fn ca_add_parent(
     server: web::Data<AppServer>,
     auth: Auth,
     handle: Path<Handle>,
-    parent: Json<AddParentRequest>
+    parent: Json<AddParentRequest>,
 ) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_empty_res(
-            server.read()
-                .ca_add_parent(handle.into_inner(), parent.into_inner()))
+            server
+                .read()
+                .ca_add_parent(handle.into_inner(), parent.into_inner()),
+        )
     })
 }
 
@@ -412,15 +360,14 @@ pub fn list(
     server: web::Data<AppServer>,
     auth: Auth,
     parent: Path<Handle>,
-    child: Path<Handle>
+    child: Path<Handle>,
 ) -> HttpResponse {
-    match server.read().list(
-        &parent.into_inner(),
-        &child.into_inner(),
-        auth
-    ) {
+    match server
+        .read()
+        .list(&parent.into_inner(), &child.into_inner(), auth)
+    {
         Ok(entitlements) => render_json(entitlements),
-        Err(e) => server_error(&Error::ServerError(e))
+        Err(e) => server_error(&Error::ServerError(e)),
     }
 }
 
@@ -432,16 +379,16 @@ pub fn issue(
     auth: Auth,
     parent: Path<Handle>,
     child: Path<Handle>,
-    issue_req: Json<IssuanceRequest>
+    issue_req: Json<IssuanceRequest>,
 ) -> HttpResponse {
     match server.read().issue(
         &parent.into_inner(),
         &child.into_inner(),
         issue_req.into_inner(),
-        auth
+        auth,
     ) {
         Ok(issued) => render_json(issued),
-        Err(e) => server_error(&Error::ServerError(e))
+        Err(e) => server_error(&Error::ServerError(e)),
     }
 }
 
@@ -453,22 +400,15 @@ pub fn rfc6492(
     msg_bytes: Bytes,
 ) -> HttpResponse {
     match SignedMessage::decode(msg_bytes, false) {
-        Ok(msg) => {
-            match server.read().rfc6492(
-                parent.into_inner(),
-                msg
-            ) {
-                Ok(bytes) => {
-                    HttpResponse::build(StatusCode::OK)
-                        .content_type(rfc6492::CONTENT_TYPE)
-                        .body(bytes)
-                }
-                Err(e) => {
-                    error!("Error processing RFC6492 req: {}", e);
-                    server_error(&Error::ServerError(e))
-                }
+        Ok(msg) => match server.read().rfc6492(parent.into_inner(), msg) {
+            Ok(bytes) => HttpResponse::build(StatusCode::OK)
+                .content_type(rfc6492::CONTENT_TYPE)
+                .body(bytes),
+            Err(e) => {
+                error!("Error processing RFC6492 req: {}", e);
+                server_error(&Error::ServerError(e))
             }
-        }
+        },
         Err(e) => {
             error!("Error processing RFC6492 req: {}", e);
             server_error(&Error::CmsError)
@@ -476,16 +416,11 @@ pub fn rfc6492(
     }
 }
 
-
-
 //------------ Serving RRDP --------------------------------------------------
 
 pub fn current_snapshot_json(_server: web::Data<AppServer>) -> HttpResponse {
     unimplemented!()
 }
-
-
-
 
 //------------ Error ---------------------------------------------------------
 
@@ -502,7 +437,7 @@ pub enum Error {
     CmsError,
 
     #[display(fmt = "Invalid publisher request")]
-    PublisherRequestError
+    PublisherRequestError,
 }
 
 /// Translate an error to an HTTP Status Code
@@ -527,7 +462,7 @@ impl ErrorToStatus for Error {
             Error::ServerError(e) => e.status(),
             Error::JsonError(_) => StatusCode::BAD_REQUEST,
             Error::CmsError => StatusCode::BAD_REQUEST,
-            Error::PublisherRequestError => StatusCode::BAD_REQUEST
+            Error::PublisherRequestError => StatusCode::BAD_REQUEST,
         }
     }
 }
@@ -558,7 +493,6 @@ impl ErrorToStatus for krill_pubd::Error {
             krill_pubd::Error::AggregateStoreError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
-
 }
 
 impl ErrorToStatus for PublisherError {
@@ -582,7 +516,7 @@ impl ErrorToStatus for ca::ServerError<OpenSslSigner> {
     fn status(&self) -> StatusCode {
         match self {
             ca::ServerError::CertAuth(e) => e.status(),
-            _ => StatusCode::INTERNAL_SERVER_ERROR
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -591,14 +525,13 @@ impl ErrorToStatus for ca::Error {
     fn status(&self) -> StatusCode {
         match self {
             ca::Error::Unauthorized(_) => StatusCode::FORBIDDEN,
-            ca::Error::SignerError(_) | ca::Error::KeyStatusChange(_,_) =>
-                StatusCode::INTERNAL_SERVER_ERROR,
-            _ => StatusCode::BAD_REQUEST
+            ca::Error::SignerError(_) | ca::Error::KeyStatusChange(_, _) => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
+            _ => StatusCode::BAD_REQUEST,
         }
     }
 }
-
-
 
 impl ToErrorCode for Error {
     fn code(&self) -> ErrorCode {
@@ -606,7 +539,7 @@ impl ToErrorCode for Error {
             Error::ServerError(e) => e.code(),
             Error::JsonError(_) => ErrorCode::InvalidJson,
             Error::CmsError => ErrorCode::InvalidCms,
-            Error::PublisherRequestError => ErrorCode::InvalidPublisherRequest
+            Error::PublisherRequestError => ErrorCode::InvalidPublisherRequest,
         }
     }
 }
@@ -653,7 +586,7 @@ impl ToErrorCode for VerificationError {
         match self {
             VerificationError::NoObjectForHashAndOrUri(_) => ErrorCode::NoObjectForHashAndOrUri,
             VerificationError::ObjectAlreadyPresent(_) => ErrorCode::ObjectAlreadyPresent,
-            VerificationError::UriOutsideJail(_, _) => ErrorCode::UriOutsideJail
+            VerificationError::UriOutsideJail(_, _) => ErrorCode::UriOutsideJail,
         }
     }
 }
@@ -661,7 +594,7 @@ impl ToErrorCode for VerificationError {
 impl ToErrorCode for RrdpServerError {
     fn code(&self) -> ErrorCode {
         match self {
-            RrdpServerError::IoError(_) => ErrorCode::Persistence
+            RrdpServerError::IoError(_) => ErrorCode::Persistence,
         }
     }
 }
@@ -670,7 +603,7 @@ impl ToErrorCode for ca::ServerError<OpenSslSigner> {
     fn code(&self) -> ErrorCode {
         match self {
             ca::ServerError::CertAuth(e) => e.code(),
-            _ => ErrorCode::CaServerError
+            _ => ErrorCode::CaServerError,
         }
     }
 }
@@ -681,12 +614,10 @@ impl ToErrorCode for ca::Error {
             ca::Error::DuplicateChild(_) => ErrorCode::DuplicateChild,
             ca::Error::MustHaveResources => ErrorCode::ChildNeedsResources,
             ca::Error::MissingResources => ErrorCode::ChildOverclaims,
-            _ => ErrorCode::CaServerError
+            _ => ErrorCode::CaServerError,
         }
     }
 }
-
-
 
 impl Error {
     fn to_error_response(&self) -> ErrorResponse {

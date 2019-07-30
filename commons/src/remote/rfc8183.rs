@@ -3,10 +3,10 @@
 //! Support for the RFC8183 out-of-band setup requests and responses
 //! used to exchange identity and configuration between CAs and their
 //! parent CA and/or RPKI Publication Servers.
-use std::{io, fmt};
-use std::path::PathBuf;
-use std::str::{FromStr, from_utf8_unchecked};
 use std::convert::TryFrom;
+use std::path::PathBuf;
+use std::str::{from_utf8_unchecked, FromStr};
+use std::{fmt, io};
 
 use base64::DecodeError;
 use bcder::decode;
@@ -19,19 +19,12 @@ use rpki::x509::Time;
 
 use crate::api::admin::Handle;
 use crate::util::file;
-use crate::util::xml::{
-    AttributesError,
-    XmlReader,
-    XmlReaderErr,
-    XmlWriter
-};
-
+use crate::util::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
 
 use crate::remote::id::IdCert;
 
 pub const VERSION: &str = "1";
 pub const NS: &str = "http://www.hactrn.net/uris/rpki/rpki-setup/";
-
 
 //------------ ChildRequest --------------------------------------------------
 
@@ -54,16 +47,26 @@ pub struct ChildRequest {
 ///
 impl ChildRequest {
     pub fn new(child_handle: Handle, id_cert: IdCert) -> Self {
-        ChildRequest { tag: None, child_handle, id_cert }
+        ChildRequest {
+            tag: None,
+            child_handle,
+            id_cert,
+        }
     }
 
     pub fn unwrap(self) -> (Option<String>, Handle, IdCert) {
         (self.tag, self.child_handle, self.id_cert)
     }
 
-    pub fn tag(&self) -> Option<&String> { self.tag.as_ref() }
-    pub fn child_handle(&self) -> &Handle { &self.child_handle }
-    pub fn id_cert(&self) -> &IdCert { &self.id_cert }
+    pub fn tag(&self) -> Option<&String> {
+        self.tag.as_ref()
+    }
+    pub fn child_handle(&self) -> &Handle {
+        &self.child_handle
+    }
+    pub fn id_cert(&self) -> &IdCert {
+        &self.id_cert
+    }
 }
 
 /// # Validation
@@ -71,42 +74,49 @@ impl ChildRequest {
 impl ChildRequest {
     /// Parses a <child_request /> message, and validates the
     /// embedded certificate. MUST be a validly signed TA cert.
-    pub fn validate<R>(
-        reader: R
-    ) -> Result<Self, Error> where R: io::Read {
+    pub fn validate<R>(reader: R) -> Result<Self, Error>
+    where
+        R: io::Read,
+    {
         Self::validate_at(reader, Time::now())
     }
 
     /// Parses a <child_request /> message.
-    fn validate_at<R>(
-        reader: R,
-        now: Time
-    ) -> Result<Self, Error> where R: io::Read {
+    fn validate_at<R>(reader: R, now: Time) -> Result<Self, Error>
+    where
+        R: io::Read,
+    {
         XmlReader::decode(reader, |r| {
             r.take_named_element("child_request", |mut a, r| {
                 if a.take_req("version")? != VERSION {
-                    return Err(Error::InvalidVersion)
+                    return Err(Error::InvalidVersion);
                 }
 
                 let tag = a.take_opt("tag");
                 let child_handle = Handle::from(a.take_req("child_handle")?);
 
                 if a.take_opt("valid_until").is_some() {
-                    warn!("Found deprecated attribute 'valid_until' used by \
-                    old rpkid implementations. Ignoring this, but other \
-                    things may break.")
+                    warn!(
+                        "Found deprecated attribute 'valid_until' used by \
+                         old rpkid implementations. Ignoring this, but other \
+                         things may break."
+                    )
                 }
 
                 a.exhausted()?;
 
-                let bytes = r.take_named_element("child_bpki_ta", |a,r| {
+                let bytes = r.take_named_element("child_bpki_ta", |a, r| {
                     a.exhausted()?;
                     r.take_bytes_std()
                 })?;
                 let id_cert = IdCert::decode(bytes)?;
                 id_cert.validate_ta_at(now)?;
 
-                Ok(ChildRequest { child_handle, tag, id_cert })
+                Ok(ChildRequest {
+                    child_handle,
+                    tag,
+                    id_cert,
+                })
             })
         })
     }
@@ -118,41 +128,29 @@ impl ChildRequest {
     /// Encodes the <child_request/> to a Vec
     pub fn encode_vec(&self) -> Vec<u8> {
         XmlWriter::encode_vec(|w| {
-
             let mut a = vec![
                 ("xmlns", NS),
                 ("version", VERSION),
-                ("child_handle", self.child_handle.as_ref())
+                ("child_handle", self.child_handle.as_ref()),
             ];
 
             if let Some(ref t) = self.tag {
                 a.push(("tag", t.as_ref()));
             }
 
-            w.put_element(
-                "child_request",
-                Some(a.as_ref()),
-                |w| {
-                    w.put_element(
-                        "child_bpki_ta",
-                        None,
-                        |w| {
-                            w.put_base64_std(&self.id_cert.to_bytes())
-                        }
-                    )
-                }
-            )
+            w.put_element("child_request", Some(a.as_ref()), |w| {
+                w.put_element("child_bpki_ta", None, |w| {
+                    w.put_base64_std(&self.id_cert.to_bytes())
+                })
+            })
         })
     }
 }
 
-
 impl fmt::Display for ChildRequest {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let s = self.encode_vec();
-        let s = unsafe {
-            from_utf8_unchecked(s.as_slice())
-        };
+        let s = unsafe { from_utf8_unchecked(s.as_slice()) };
         s.fmt(f)
     }
 }
@@ -191,35 +189,49 @@ impl ParentResponse {
         service_uri: ServiceUri,
     ) -> Self {
         ParentResponse {
-            tag, id_cert, parent_handle, child_handle, service_uri
+            tag,
+            id_cert,
+            parent_handle,
+            child_handle,
+            service_uri,
         }
     }
 
-    pub fn tag(&self) -> Option<&String> { self.tag.as_ref() }
-    pub fn id_cert(&self) -> &IdCert { &self.id_cert }
-    pub fn parent_handle(&self) -> &Handle { &self.parent_handle }
-    pub fn child_handle(&self) -> &Handle { &self.child_handle }
-    pub fn service_uri(&self) -> &ServiceUri { &self.service_uri }
+    pub fn tag(&self) -> Option<&String> {
+        self.tag.as_ref()
+    }
+    pub fn id_cert(&self) -> &IdCert {
+        &self.id_cert
+    }
+    pub fn parent_handle(&self) -> &Handle {
+        &self.parent_handle
+    }
+    pub fn child_handle(&self) -> &Handle {
+        &self.child_handle
+    }
+    pub fn service_uri(&self) -> &ServiceUri {
+        &self.service_uri
+    }
 }
 
 /// # Validation
 ///
 impl ParentResponse {
-    pub fn validate<R>(
-        reader: R
-    ) -> Result<Self, Error> where R: io::Read {
+    pub fn validate<R>(reader: R) -> Result<Self, Error>
+    where
+        R: io::Read,
+    {
         Self::validate_at(reader, Time::now())
     }
 
-    fn validate_at<R>(
-        reader: R,
-        now: Time
-    ) -> Result<Self, Error> where R: io::Read {
+    fn validate_at<R>(reader: R, now: Time) -> Result<Self, Error>
+    where
+        R: io::Read,
+    {
         XmlReader::decode(reader, |r| {
             r.take_named_element("parent_response", |mut a, r| {
-
                 if a.take_req("version")? != VERSION {
-                    return Err(Error::InvalidVersion)
+                    return Err(Error::InvalidVersion);
                 }
 
                 let tag = a.take_opt("tag");
@@ -228,9 +240,11 @@ impl ParentResponse {
                 let service_uri = ServiceUri::try_from(a.take_req("service_uri")?)?;
 
                 if a.take_opt("valid_until").is_some() {
-                    warn!("Found deprecated attribute 'valid_until' used by \
-                    old rpkid implementations. Ignoring this, but other \
-                    things may break.")
+                    warn!(
+                        "Found deprecated attribute 'valid_until' used by \
+                         old rpkid implementations. Ignoring this, but other \
+                         things may break."
+                    )
                 }
 
                 a.exhausted()?;
@@ -248,20 +262,21 @@ impl ParentResponse {
                 ///
                 /// I.e. the child needs to set up their publication server
                 /// exchange separately, and explicitly.
-                fn ignore_offer_or_referral<R>(
-                    r: &mut XmlReader<R>
-                ) -> Result<(), Error> where R: io::Read {
+                fn ignore_offer_or_referral<R>(r: &mut XmlReader<R>) -> Result<(), Error>
+                where
+                    R: io::Read,
+                {
                     r.take_opt_element(|tag, _a, r| {
                         match tag.name.as_str() {
                             "offer" => {
                                 r.take_empty()?;
                                 Ok(None)
-                            },
+                            }
                             "referral" => {
                                 let chars = r.take_chars()?;
                                 Ok(Some(chars)) // help return type inference.
-                            },
-                            _ => Err(Error::InvalidXml)
+                            }
+                            _ => Err(Error::InvalidXml),
                         }
                     })?;
                     Ok(())
@@ -272,7 +287,11 @@ impl ParentResponse {
                 }
 
                 Ok(ParentResponse {
-                    tag, id_cert, parent_handle, child_handle, service_uri
+                    tag,
+                    id_cert,
+                    parent_handle,
+                    child_handle,
+                    service_uri,
                 })
             })
         })
@@ -285,7 +304,6 @@ impl ParentResponse {
     /// Encodes the <parent_response/> to a Vec
     pub fn encode_vec(&self) -> Vec<u8> {
         XmlWriter::encode_vec(|w| {
-
             let service_uri = self.service_uri.to_string();
 
             let mut a = vec![
@@ -300,19 +318,11 @@ impl ParentResponse {
                 a.push(("tag", t.as_ref()));
             }
 
-            w.put_element(
-                "parent_response",
-                Some(a.as_ref()),
-                |w| {
-                    w.put_element(
-                        "parent_bpki_ta",
-                        None,
-                        |w| {
-                            w.put_base64_std(&self.id_cert.to_bytes())
-                        }
-                    )
-                }
-            )
+            w.put_element("parent_response", Some(a.as_ref()), |w| {
+                w.put_element("parent_bpki_ta", None, |w| {
+                    w.put_base64_std(&self.id_cert.to_bytes())
+                })
+            })
         })
     }
 }
@@ -342,9 +352,9 @@ pub struct PublisherRequest {
 impl PublisherRequest {
     pub fn new(tag: Option<&str>, publisher_handle: &str, id_cert: IdCert) -> Self {
         PublisherRequest {
-            tag: tag.map(|s| { s.to_string() }),
+            tag: tag.map(|s| s.to_string()),
             publisher_handle: publisher_handle.to_string(),
-            id_cert
+            id_cert,
         }
     }
 
@@ -357,25 +367,25 @@ impl PublisherRequest {
     }
 }
 
-
 /// # Validation
 ///
 impl PublisherRequest {
-    pub fn validate<R>(
-        reader: R
-    ) -> Result<Self, Error> where R: io::Read {
+    pub fn validate<R>(reader: R) -> Result<Self, Error>
+    where
+        R: io::Read,
+    {
         Self::validate_at(reader, Time::now())
     }
 
     /// Parses a <publisher_request /> message.
-    fn validate_at<R>(
-        reader: R,
-        now: Time
-    ) -> Result<Self, Error> where R: io::Read {
+    fn validate_at<R>(reader: R, now: Time) -> Result<Self, Error>
+    where
+        R: io::Read,
+    {
         XmlReader::decode(reader, |r| {
             r.take_named_element("publisher_request", |mut a, r| {
                 if a.take_req("version")? != "1" {
-                    return Err(Error::InvalidVersion)
+                    return Err(Error::InvalidVersion);
                 }
 
                 let tag = a.take_opt("tag");
@@ -390,7 +400,11 @@ impl PublisherRequest {
                 let id_cert = IdCert::decode(bytes)?;
                 id_cert.validate_ta_at(now)?;
 
-                Ok(PublisherRequest { tag, publisher_handle, id_cert })
+                Ok(PublisherRequest {
+                    tag,
+                    publisher_handle,
+                    id_cert,
+                })
             })
         })
     }
@@ -402,31 +416,21 @@ impl PublisherRequest {
     /// Encodes a <publisher_request> to a Vec
     pub fn encode_vec(&self) -> Vec<u8> {
         XmlWriter::encode_vec(|w| {
-
             let mut a = vec![
                 ("xmlns", NS),
                 ("version", VERSION),
-                ("publisher_handle", self.publisher_handle.as_ref())
+                ("publisher_handle", self.publisher_handle.as_ref()),
             ];
 
             if let Some(ref t) = self.tag {
                 a.push(("tag", t.as_ref()));
             }
 
-            w.put_element(
-                "publisher_request",
-                Some(a.as_ref()),
-                |w| {
-                    w.put_element(
-                        "publisher_bpki_ta",
-                        None,
-                        |w| {
-                            w.put_base64_std(&self.id_cert.to_bytes())
-                        }
-                    )
-                }
-
-            )
+            w.put_element("publisher_request", Some(a.as_ref()), |w| {
+                w.put_element("publisher_bpki_ta", None, |w| {
+                    w.put_base64_std(&self.id_cert.to_bytes())
+                })
+            })
         })
     }
 
@@ -436,7 +440,6 @@ impl PublisherRequest {
         file::save(&Bytes::from(xml), full_path)
     }
 }
-
 
 //------------ RepositoryResponse --------------------------------------------
 
@@ -465,7 +468,7 @@ pub struct RepositoryResponse {
     sia_base: uri::Rsync,
 
     /// The HTTPS notification URI that the CA can use
-    rrdp_notification_uri: uri::Https
+    rrdp_notification_uri: uri::Https,
 }
 
 /// # Construct and Data Access
@@ -478,7 +481,7 @@ impl RepositoryResponse {
         id_cert: IdCert,
         service_uri: ServiceUri,
         sia_base: uri::Rsync,
-        rrdp_notification_uri: uri::Https
+        rrdp_notification_uri: uri::Https,
     ) -> Self {
         RepositoryResponse {
             tag,
@@ -486,7 +489,7 @@ impl RepositoryResponse {
             id_cert,
             service_uri,
             sia_base,
-            rrdp_notification_uri
+            rrdp_notification_uri,
         }
     }
 
@@ -519,39 +522,36 @@ impl RepositoryResponse {
 ///
 impl RepositoryResponse {
     /// Parses a <repository_response /> message.
-    pub fn validate<R>(
-        reader: R
-    ) -> Result<Self, Error> where R: io::Read {
+    pub fn validate<R>(reader: R) -> Result<Self, Error>
+    where
+        R: io::Read,
+    {
         Self::validate_at(reader, Time::now())
     }
 
-    fn validate_at<R>(
-        reader: R,
-        now: Time
-    ) -> Result<Self, Error>
-        where R: io::Read {
+    fn validate_at<R>(reader: R, now: Time) -> Result<Self, Error>
+    where
+        R: io::Read,
+    {
         XmlReader::decode(reader, |r| {
             r.take_named_element("repository_response", |mut a, r| {
                 if a.take_req("version")? != VERSION {
-                    return Err(Error::InvalidVersion)
+                    return Err(Error::InvalidVersion);
                 }
 
                 let tag = a.take_opt("tag");
                 let publisher_handle = a.take_req("publisher_handle")?;
-                let service_uri = ServiceUri::try_from(
-                    a.take_req("service_uri")?)?;
-                let sia_base = uri::Rsync::from_string(
-                    a.take_req("sia_base")?)?;
-                let rrdp_notification_uri = uri::Https::from_string(
-                    a.take_req("rrdp_notification_uri")?)?;
+                let service_uri = ServiceUri::try_from(a.take_req("service_uri")?)?;
+                let sia_base = uri::Rsync::from_string(a.take_req("sia_base")?)?;
+                let rrdp_notification_uri =
+                    uri::Https::from_string(a.take_req("rrdp_notification_uri")?)?;
 
                 a.exhausted()?;
 
-                let id_cert = r.take_named_element(
-                    "repository_bpki_ta", |a, r| {
-                        a.exhausted()?;
-                        r.take_bytes_std()
-                    })?;
+                let id_cert = r.take_named_element("repository_bpki_ta", |a, r| {
+                    a.exhausted()?;
+                    r.take_bytes_std()
+                })?;
 
                 let id_cert = IdCert::decode(id_cert)?;
                 id_cert.validate_ta_at(now)?;
@@ -562,7 +562,7 @@ impl RepositoryResponse {
                     id_cert,
                     service_uri,
                     sia_base,
-                    rrdp_notification_uri
+                    rrdp_notification_uri,
                 })
             })
         })
@@ -575,7 +575,6 @@ impl RepositoryResponse {
     /// Encodes the <repository_response/> to a Vec
     pub fn encode_vec(&self) -> Vec<u8> {
         XmlWriter::encode_vec(|w| {
-
             let service_uri = self.service_uri.to_string();
             let sia_base = self.sia_base.to_string();
             let rrdp_notification_uri = self.rrdp_notification_uri.to_string();
@@ -586,27 +585,18 @@ impl RepositoryResponse {
                 ("publisher_handle", self.publisher_handle.as_ref()),
                 ("service_uri", service_uri.as_ref()),
                 ("sia_base", sia_base.as_ref()),
-                ("rrdp_notification_uri", rrdp_notification_uri.as_ref())
+                ("rrdp_notification_uri", rrdp_notification_uri.as_ref()),
             ];
 
             if let Some(ref t) = self.tag {
                 a.push(("tag", t.as_ref()));
             }
 
-            w.put_element(
-                "repository_response",
-                Some(&a),
-                |w| {
-                    w.put_element(
-                        "repository_bpki_ta",
-                        None,
-                        |w| {
-                            w.put_base64_std(&self.id_cert.to_bytes())
-                        }
-                    )
-                }
-
-            )
+            w.put_element("repository_response", Some(&a), |w| {
+                w.put_element("repository_bpki_ta", None, |w| {
+                    w.put_base64_std(&self.id_cert.to_bytes())
+                })
+            })
         })
     }
 
@@ -617,14 +607,13 @@ impl RepositoryResponse {
     }
 }
 
-
 //------------ ServiceUri ----------------------------------------------------
 
 /// The service URI where a child or publisher needs to send its
 #[derive(Clone, Debug, Deserialize, Eq, Serialize, PartialEq)]
 pub enum ServiceUri {
     Https(uri::Https),
-    Http(String)
+    Http(String),
 }
 
 impl TryFrom<String> for ServiceUri {
@@ -644,14 +633,12 @@ impl fmt::Display for ServiceUri {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             ServiceUri::Http(string) => string.fmt(f),
-            ServiceUri::Https(https) => https.fmt(f)
+            ServiceUri::Https(https) => https.fmt(f),
         }
     }
 }
 
-
 //------------ Error ---------------------------------------------------------
-
 
 #[derive(Debug, Display)]
 pub enum Error {
@@ -720,10 +707,10 @@ impl From<uri::Error> for Error {
 
 #[cfg(test)]
 mod tests {
-    use rpki::x509::Time;
+    use super::*;
     use crate::remote::id::tests::test_id_certificate;
     use crate::util::test;
-    use super::*;
+    use rpki::x509::Time;
 
     fn rpkid_time() -> Time {
         Time::utc(2012, 1, 1, 0, 0, 0)
@@ -738,18 +725,13 @@ mod tests {
     }
 
     fn example_service_uri() -> ServiceUri {
-        ServiceUri::Https(
-            test::https("https://a.example/publication/Alice/Bob-42")
-        )
+        ServiceUri::Https(test::https("https://a.example/publication/Alice/Bob-42"))
     }
 
     #[test]
     fn validate_rpkid_publisher_request() {
         let xml = include_str!("../../test-resources/oob/publisher_request.xml");
-        let pr = PublisherRequest::validate_at(
-            xml.as_bytes(),
-            rpkid_time()
-        ).unwrap();
+        let pr = PublisherRequest::validate_at(xml.as_bytes(), rpkid_time()).unwrap();
         assert_eq!("Bob".to_string(), pr.publisher_handle);
         assert_eq!(Some("A0001".to_string()), pr.tag);
     }
@@ -757,10 +739,7 @@ mod tests {
     #[test]
     fn validate_rpkid_repository_response() {
         let xml = include_str!("../../test-resources/oob/repository_response.xml");
-        let rr = RepositoryResponse::validate_at(
-            xml.as_bytes(),
-            rpkid_time()
-        ).unwrap();
+        let rr = RepositoryResponse::validate_at(xml.as_bytes(), rpkid_time()).unwrap();
         assert_eq!(Some("A0001".to_string()), rr.tag);
         assert_eq!("Alice/Bob-42".to_string(), rr.publisher_handle);
         assert_eq!(example_service_uri(), rr.service_uri);
@@ -775,15 +754,12 @@ mod tests {
         let pr = PublisherRequest {
             tag: Some("tag".to_string()),
             publisher_handle: "tim".to_string(),
-            id_cert: cert
+            id_cert: cert,
         };
 
         let enc = pr.encode_vec();
 
-        PublisherRequest::validate_at(
-            enc.as_slice(),
-            rpkid_time()
-        ).unwrap();
+        PublisherRequest::validate_at(enc.as_slice(), rpkid_time()).unwrap();
     }
 
     #[test]
@@ -796,33 +772,24 @@ mod tests {
             rrdp_notification_uri: example_rrdp_uri(),
             sia_base: example_sia_base(),
             service_uri: example_service_uri(),
-            id_cert: cert
+            id_cert: cert,
         };
 
         let enc = pr.encode_vec();
 
-        RepositoryResponse::validate_at(
-            enc.as_slice(),
-            rpkid_time()
-        ).unwrap();
+        RepositoryResponse::validate_at(enc.as_slice(), rpkid_time()).unwrap();
     }
 
     #[test]
     fn child_request() {
         let xml = include_str!("../../test-resources/remote/rpkid-child-id.xml");
-        let req = ChildRequest::validate_at(
-            xml.as_bytes(),
-            rpkid_time()
-        ).unwrap();
+        let req = ChildRequest::validate_at(xml.as_bytes(), rpkid_time()).unwrap();
 
         assert_eq!(&Handle::from("Carol"), req.child_handle());
         assert_eq!(None, req.tag());
 
         let encoded = req.encode_vec();
-        let decoded = ChildRequest::validate_at(
-            encoded.as_slice(),
-            rpkid_time()
-        ).unwrap();
+        let decoded = ChildRequest::validate_at(encoded.as_slice(), rpkid_time()).unwrap();
 
         assert_eq!(req, decoded);
     }
@@ -830,27 +797,17 @@ mod tests {
     #[test]
     fn validate_rpkid_parent_response_referral() {
         let xml = include_str!("../../test-resources/remote/rpkid-parent-response-referral.xml");
-        let _res = ParentResponse::validate_at(
-            xml.as_bytes(),
-            rpkid_time()
-        ).unwrap();
+        let _res = ParentResponse::validate_at(xml.as_bytes(), rpkid_time()).unwrap();
     }
 
     #[test]
     fn parent_response() {
         let xml = include_str!("../../test-resources/remote/rpkid-parent-response-offer.xml");
-        let res = ParentResponse::validate_at(
-            xml.as_bytes(),
-            rpkid_time()
-        ).unwrap();
+        let res = ParentResponse::validate_at(xml.as_bytes(), rpkid_time()).unwrap();
 
         let encoded = res.encode_vec();
-        let decoded = ParentResponse::validate_at(
-            encoded.as_slice(),
-            rpkid_time()
-        ).unwrap();
+        let decoded = ParentResponse::validate_at(encoded.as_slice(), rpkid_time()).unwrap();
 
         assert_eq!(res, decoded);
     }
 }
-

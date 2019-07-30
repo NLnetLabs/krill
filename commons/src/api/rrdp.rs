@@ -1,18 +1,17 @@
 //! Data objects used in the (RRDP) repository. I.e. the publish, update, and
 //! withdraw elements, as well as the notification, snapshot and delta file
 //! definitions.
-use std::collections::HashMap;
-use std::io;
-use std::path::PathBuf;
-use bytes::Bytes;
-use rpki::uri;
 use crate::api::publication;
 use crate::api::Base64;
 use crate::api::EncodedHash;
 use crate::util::file;
-use crate::util::Time;
 use crate::util::xml::XmlWriter;
-
+use crate::util::Time;
+use bytes::Bytes;
+use rpki::uri;
+use std::collections::HashMap;
+use std::io;
+use std::path::PathBuf;
 
 const VERSION: &str = "1";
 const NS: &str = "http://www.ripe.net/rpki/rrdp";
@@ -26,7 +25,7 @@ const NS: &str = "http://www.ripe.net/rpki/rrdp";
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PublishElement {
     base64: Base64,
-    uri: uri::Rsync
+    uri: uri::Rsync,
 }
 
 impl PublishElement {
@@ -34,8 +33,12 @@ impl PublishElement {
         PublishElement { base64, uri }
     }
 
-    pub fn base64(&self) -> &Base64 { &self.base64 }
-    pub fn uri(&self) -> &uri::Rsync { &self.uri }
+    pub fn base64(&self) -> &Base64 {
+        &self.base64
+    }
+    pub fn uri(&self) -> &uri::Rsync {
+        &self.uri
+    }
 }
 
 impl From<publication::Publish> for PublishElement {
@@ -44,7 +47,6 @@ impl From<publication::Publish> for PublishElement {
         PublishElement { uri, base64 }
     }
 }
-
 
 //------------ UpdateElement -------------------------------------------------
 
@@ -56,13 +58,19 @@ impl From<publication::Publish> for PublishElement {
 pub struct UpdateElement {
     uri: uri::Rsync,
     hash: EncodedHash,
-    base64: Base64
+    base64: Base64,
 }
 
 impl UpdateElement {
-    pub fn uri(&self) -> &uri::Rsync { &self.uri }
-    pub fn hash(&self) -> &EncodedHash { &self.hash }
-    pub fn base64(&self) -> &Base64 { &self.base64 }
+    pub fn uri(&self) -> &uri::Rsync {
+        &self.uri
+    }
+    pub fn hash(&self) -> &EncodedHash {
+        &self.hash
+    }
+    pub fn base64(&self) -> &Base64 {
+        &self.base64
+    }
 }
 
 impl From<publication::Update> for UpdateElement {
@@ -74,10 +82,12 @@ impl From<publication::Update> for UpdateElement {
 
 impl Into<PublishElement> for UpdateElement {
     fn into(self) -> PublishElement {
-        PublishElement { uri: self.uri, base64: self.base64 }
+        PublishElement {
+            uri: self.uri,
+            base64: self.base64,
+        }
     }
 }
-
 
 //------------ WithdrawElement -----------------------------------------------
 
@@ -88,12 +98,16 @@ impl Into<PublishElement> for UpdateElement {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WithdrawElement {
     uri: uri::Rsync,
-    hash: EncodedHash
+    hash: EncodedHash,
 }
 
 impl WithdrawElement {
-    pub fn uri(&self) -> &uri::Rsync { &self.uri }
-    pub fn hash(&self) -> &EncodedHash { &self.hash }
+    pub fn uri(&self) -> &uri::Rsync {
+        &self.uri
+    }
+    pub fn hash(&self) -> &EncodedHash {
+        &self.hash
+    }
 }
 
 impl From<publication::Withdraw> for WithdrawElement {
@@ -103,25 +117,23 @@ impl From<publication::Withdraw> for WithdrawElement {
     }
 }
 
-
-
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Notification {
-    session:    String,
-    serial:     u64,
-    time:       Time,
-    snapshot:   SnapshotRef,
-    deltas:     Vec<DeltaRef>,
-    old_refs:   Vec<(Time, FileRef)>
+    session: String,
+    serial: u64,
+    time: Time,
+    snapshot: SnapshotRef,
+    deltas: Vec<DeltaRef>,
+    old_refs: Vec<(Time, FileRef)>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct NotificationUpdate {
-    time:       Time,
-    session:    Option<String>,
-    snapshot:   SnapshotRef,
-    delta:      DeltaRef,
-    last_delta: u64
+    time: Time,
+    session: Option<String>,
+    snapshot: SnapshotRef,
+    delta: DeltaRef,
+    last_delta: u64,
 }
 
 impl NotificationUpdate {
@@ -130,21 +142,33 @@ impl NotificationUpdate {
         session: Option<String>,
         snapshot: SnapshotRef,
         delta: DeltaRef,
-        last_delta: u64
+        last_delta: u64,
     ) -> Self {
-        NotificationUpdate { time, session, snapshot, delta, last_delta }
+        NotificationUpdate {
+            time,
+            session,
+            snapshot,
+            delta,
+            last_delta,
+        }
     }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct NotificationCreate {
-    session:   String,
-    snapshot:  SnapshotRef
+    session: String,
+    snapshot: SnapshotRef,
 }
 
 impl NotificationUpdate {
     pub fn unwrap(self) -> (Time, Option<String>, SnapshotRef, DeltaRef, u64) {
-        (self.time, self.session, self.snapshot, self.delta, self.last_delta)
+        (
+            self.time,
+            self.session,
+            self.snapshot,
+            self.delta,
+            self.last_delta,
+        )
     }
 }
 
@@ -180,7 +204,7 @@ impl Notification {
 
     /// Cleans up all old references from before the given time.
     pub fn clean_up(&mut self, t: Time) {
-        self.old_refs.retain(|old_ref| {! old_ref.0.on_or_before(&t)})
+        self.old_refs.retain(|old_ref| !old_ref.0.on_or_before(&t))
     }
 
     pub fn create(session: String, snapshot: SnapshotRef) -> Self {
@@ -190,7 +214,7 @@ impl Notification {
             time: Time::now(),
             snapshot,
             deltas: vec![],
-            old_refs: vec![]
+            old_refs: vec![],
         }
     }
 
@@ -198,8 +222,7 @@ impl Notification {
         debug!("Writing notification file: {}", path.to_string_lossy());
         let mut file = file::create_file_with_path(&path)?;
 
-        XmlWriter::encode_to_file(& mut file, |w| {
-
+        XmlWriter::encode_to_file(&mut file, |w| {
             let a = [
                 ("xmlns", NS),
                 ("version", VERSION),
@@ -207,75 +230,64 @@ impl Notification {
                 ("serial", &format!("{}", self.serial)),
             ];
 
-            w.put_element(
-                "notification",
-                Some(&a),
-                |w| {
-                    {
-                        // snapshot ref
-                        let uri = self.snapshot.uri.to_string();
-                        let a = [
-                            ("uri", uri.as_str()),
-                            ("hash", self.snapshot.hash.as_ref())
-                        ];
-                        w.put_element(
-                            "snapshot",
-                            Some(&a),
-                            |w| { w.empty() }
-                        )?;
-                    }
-
-                    {
-                        // delta refs
-                        for delta in &self.deltas {
-                            let serial = format!("{}", delta.serial);
-                            let uri = delta.file_ref.uri.to_string();
-                            let a = [
-                                ("serial", serial.as_ref()),
-                                ("uri", uri.as_str()),
-                                ("hash", delta.file_ref.hash.as_ref())
-                            ];
-                            w.put_element(
-                                "delta",
-                                Some(&a),
-                                |w| { w.empty() }
-                            )?;
-                        }
-                    }
-
-                    Ok(())
+            w.put_element("notification", Some(&a), |w| {
+                {
+                    // snapshot ref
+                    let uri = self.snapshot.uri.to_string();
+                    let a = [("uri", uri.as_str()), ("hash", self.snapshot.hash.as_ref())];
+                    w.put_element("snapshot", Some(&a), |w| w.empty())?;
                 }
-            )
+
+                {
+                    // delta refs
+                    for delta in &self.deltas {
+                        let serial = format!("{}", delta.serial);
+                        let uri = delta.file_ref.uri.to_string();
+                        let a = [
+                            ("serial", serial.as_ref()),
+                            ("uri", uri.as_str()),
+                            ("hash", delta.file_ref.hash.as_ref()),
+                        ];
+                        w.put_element("delta", Some(&a), |w| w.empty())?;
+                    }
+                }
+
+                Ok(())
+            })
         })?;
 
         Ok(())
-
     }
-
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct FileRef {
-    uri:   uri::Https,
-    path:  PathBuf,
-    hash:  EncodedHash,
+    uri: uri::Https,
+    path: PathBuf,
+    hash: EncodedHash,
 }
 
 impl FileRef {
     pub fn new(uri: uri::Https, path: PathBuf, hash: EncodedHash) -> Self {
         FileRef { uri, path, hash }
     }
-    pub fn uri(&self) -> &uri::Https { &self.uri }
-    pub fn path(&self) -> &PathBuf { &self.path }
-    pub fn hash(&self) -> &EncodedHash { &self.hash }
+    pub fn uri(&self) -> &uri::Https {
+        &self.uri
+    }
+    pub fn path(&self) -> &PathBuf {
+        &self.path
+    }
+    pub fn hash(&self) -> &EncodedHash {
+        &self.hash
+    }
 }
 
 pub type SnapshotRef = FileRef;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct DeltaRef {
-    serial:     u64,
-    file_ref:   FileRef
+    serial: u64,
+    file_ref: FileRef,
 }
 
 impl DeltaRef {
@@ -283,7 +295,9 @@ impl DeltaRef {
         DeltaRef { serial, file_ref }
     }
 
-    pub fn serial(&self) -> u64 { self.serial }
+    pub fn serial(&self) -> u64 {
+        self.serial
+    }
 }
 
 impl AsRef<FileRef> for DeltaRef {
@@ -291,7 +305,6 @@ impl AsRef<FileRef> for DeltaRef {
         &self.file_ref
     }
 }
-
 
 //------------ CurrentObjects ------------------------------------------------
 
@@ -322,19 +335,22 @@ impl CurrentObjects {
     }
 }
 
-
 //------------ VerificationError ---------------------------------------------
 
 /// Issues with relation to verifying deltas.
 #[derive(Clone, Debug, Display)]
 pub enum VerificationError {
-    #[display(fmt="Publishing ({}) outside of jail URI ({}) is not allowed.", _0, _1)]
+    #[display(
+        fmt = "Publishing ({}) outside of jail URI ({}) is not allowed.",
+        _0,
+        _1
+    )]
     UriOutsideJail(uri::Rsync, uri::Rsync),
 
-    #[display(fmt="File already exists for uri (use update!): {}", _0)]
+    #[display(fmt = "File already exists for uri (use update!): {}", _0)]
     ObjectAlreadyPresent(uri::Rsync),
 
-    #[display(fmt="File does not match hash at uri: {}", _0)]
+    #[display(fmt = "File does not match hash at uri: {}", _0)]
     NoObjectForHashAndOrUri(uri::Rsync),
 }
 
@@ -353,42 +369,36 @@ impl VerificationError {
 }
 
 impl CurrentObjects {
-
-    fn has_match(
-        &self,
-        hash: &EncodedHash,
-        uri: &uri::Rsync
-    ) -> bool {
+    fn has_match(&self, hash: &EncodedHash, uri: &uri::Rsync) -> bool {
         match self.0.get(hash) {
             Some(el) => el.uri() == uri,
-            None => false
+            None => false,
         }
     }
 
     pub fn verify_delta(
         &self,
         delta: &DeltaElements,
-        jail: &uri::Rsync
+        jail: &uri::Rsync,
     ) -> Result<(), VerificationError> {
-
         for p in delta.publishes() {
-            if ! jail.is_parent_of(p.uri()) {
-                return Err(VerificationError::outside(jail, p.uri()))
+            if !jail.is_parent_of(p.uri()) {
+                return Err(VerificationError::outside(jail, p.uri()));
             }
             let hash = p.base64().to_encoded_hash();
             if self.0.contains_key(&hash) {
-                return Err(VerificationError::present(p.uri()))
+                return Err(VerificationError::present(p.uri()));
             }
         }
 
         for u in delta.updates() {
-            if ! self.has_match(u.hash(), u.uri()) {
+            if !self.has_match(u.hash(), u.uri()) {
                 return Err(VerificationError::no_match(u.uri()));
             }
         }
 
         for w in delta.withdraws() {
-            if ! self.has_match(w.hash(), w.uri()) {
+            if !self.has_match(w.hash(), w.uri()) {
                 return Err(VerificationError::no_match(w.uri()));
             }
         }
@@ -418,21 +428,28 @@ impl CurrentObjects {
         }
     }
 
-    pub fn len(&self) -> usize { self.0.len() }
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
 
-    pub fn is_empty(&self) -> bool { self.0.is_empty() }
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 
     pub fn to_list_reply(&self) -> publication::ListReply {
-        let elements = self.0.iter().map(|el| {
-            let hash = el.0.clone();
-            let uri = el.1.uri().clone();
-            publication::ListElement::new(uri, hash)
-        }).collect();
+        let elements = self
+            .0
+            .iter()
+            .map(|el| {
+                let hash = el.0.clone();
+                let uri = el.1.uri().clone();
+                publication::ListElement::new(uri, hash)
+            })
+            .collect();
 
         publication::ListReply::new(elements)
     }
 }
-
 
 //------------ Snapshot ------------------------------------------------------
 
@@ -441,13 +458,17 @@ impl CurrentObjects {
 pub struct Snapshot {
     session: String,
     serial: u64,
-    current_objects: CurrentObjects
+    current_objects: CurrentObjects,
 }
 
 impl Snapshot {
     pub fn new(session: String) -> Self {
         let current_objects = CurrentObjects::default();
-        Snapshot { session, serial: 0, current_objects }
+        Snapshot {
+            session,
+            serial: 0,
+            current_objects,
+        }
     }
 
     pub fn apply_delta(&mut self, delta: Delta) {
@@ -457,9 +478,13 @@ impl Snapshot {
         self.current_objects.apply_delta(elements)
     }
 
-    pub fn len(&self) -> usize { self.current_objects.len() }
+    pub fn len(&self) -> usize {
+        self.current_objects.len()
+    }
 
-    pub fn is_empty(&self) -> bool { self.current_objects.is_empty() }
+    pub fn is_empty(&self) -> bool {
+        self.current_objects.is_empty()
+    }
 
     pub fn write_xml(&self, path: &PathBuf) -> Result<EncodedHash, io::Error> {
         let vec = XmlWriter::encode_vec(|w| {
@@ -470,24 +495,14 @@ impl Snapshot {
                 ("serial", &format!("{}", self.serial)),
             ];
 
-            w.put_element(
-                "snapshot",
-                Some(&a),
-                |w| {
-                    for el in self.current_objects.elements() {
-                        let uri = el.uri.to_string();
-                        let atr = [ ("uri", uri.as_ref())];
-                        w.put_element(
-                            "publish",
-                            Some(&atr),
-                            |w| {
-                                w.put_text(el.base64.as_ref())
-                            }
-                        )?;
-                    }
-                    Ok(())
+            w.put_element("snapshot", Some(&a), |w| {
+                for el in self.current_objects.elements() {
+                    let uri = el.uri.to_string();
+                    let atr = [("uri", uri.as_ref())];
+                    w.put_element("publish", Some(&atr), |w| w.put_text(el.base64.as_ref()))?;
                 }
-            )
+                Ok(())
+            })
         });
         let bytes = Bytes::from(vec);
 
@@ -498,7 +513,6 @@ impl Snapshot {
     }
 }
 
-
 //------------ DeltaElements -------------------------------------------------
 
 /// Defines the elements for an RRDP delta.
@@ -506,7 +520,7 @@ impl Snapshot {
 pub struct DeltaElements {
     publishes: Vec<PublishElement>,
     updates: Vec<UpdateElement>,
-    withdraws: Vec<WithdrawElement>
+    withdraws: Vec<WithdrawElement>,
 }
 
 impl From<publication::PublishDelta> for DeltaElements {
@@ -517,14 +531,22 @@ impl From<publication::PublishDelta> for DeltaElements {
         let updates = upds.into_iter().map(UpdateElement::from).collect();
         let withdraws = wdrs.into_iter().map(WithdrawElement::from).collect();
 
-        DeltaElements { publishes, updates, withdraws }
+        DeltaElements {
+            publishes,
+            updates,
+            withdraws,
+        }
     }
 }
 
 impl DeltaElements {
     pub fn unwrap(
-        self
-    ) -> (Vec<PublishElement>, Vec<UpdateElement>, Vec<WithdrawElement>) {
+        self,
+    ) -> (
+        Vec<PublishElement>,
+        Vec<UpdateElement>,
+        Vec<WithdrawElement>,
+    ) {
         (self.publishes, self.updates, self.withdraws)
     }
 
@@ -549,47 +571,58 @@ impl DeltaElements {
     }
 }
 
-
 //------------ Delta ---------------------------------------------------------
 
 /// Defines an RRDP delta.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Delta {
-    session:  String,
-    serial:   u64,
-    time:     Time,
-    elements: DeltaElements
+    session: String,
+    serial: u64,
+    time: Time,
+    elements: DeltaElements,
 }
 
 impl Delta {
-    pub fn new(
-        session: String,
-        serial: u64,
-        elements: DeltaElements
-    ) -> Self {
-        Delta { session, time: Time::now(), serial, elements }
+    pub fn new(session: String, serial: u64, elements: DeltaElements) -> Self {
+        Delta {
+            session,
+            time: Time::now(),
+            serial,
+            elements,
+        }
     }
 
-    pub fn session(&self) -> &str { &self.session }
-    pub fn serial(&self) -> u64 { self.serial }
-    pub fn time(&self) -> &Time { &self.time }
-    pub fn elements(&self) -> &DeltaElements { &self.elements }
+    pub fn session(&self) -> &str {
+        &self.session
+    }
+    pub fn serial(&self) -> u64 {
+        self.serial
+    }
+    pub fn time(&self) -> &Time {
+        &self.time
+    }
+    pub fn elements(&self) -> &DeltaElements {
+        &self.elements
+    }
 
     /// Total number of elements
     ///
     /// This is a cheap approximation of the size of the delta that can help
     /// in determining the choice of how many deltas to include in a
     /// notification file.
-    pub fn len(&self) -> usize { self.elements.len() }
+    pub fn len(&self) -> usize {
+        self.elements.len()
+    }
 
-    pub fn is_empty(&self) -> bool { self.elements.is_empty() }
+    pub fn is_empty(&self) -> bool {
+        self.elements.is_empty()
+    }
 
     pub fn unwrap(self) -> (String, u64, DeltaElements) {
         (self.session, self.serial, self.elements)
     }
 
     pub fn write_xml(&self, path: &PathBuf) -> Result<EncodedHash, io::Error> {
-
         let vec = XmlWriter::encode_vec(|w| {
             let a = [
                 ("xmlns", NS),
@@ -598,53 +631,27 @@ impl Delta {
                 ("serial", &format!("{}", self.serial)),
             ];
 
-            w.put_element(
-                "delta",
-                Some(&a),
-                |w| {
-                    for el in &self.elements.publishes {
-                        let uri = el.uri.to_string();
-                        let atr = [ ("uri", uri.as_ref())];
-                        w.put_element(
-                            "publish",
-                            Some(&atr),
-                            |w| {
-                                w.put_text(el.base64.as_ref())
-                            }
-                        )?;
-                    }
-
-                    for el in &self.elements.updates {
-                        let uri = el.uri.to_string();
-                        let atr = [
-                            ("uri", uri.as_ref()),
-                            ("hash", el.hash.as_ref())
-                        ];
-                        w.put_element(
-                            "publish",
-                            Some(&atr),
-                            |w| {
-                                w.put_text(el.base64.as_ref())
-                            }
-                        )?;
-                    }
-
-                    for el in &self.elements.withdraws {
-                        let uri = el.uri.to_string();
-                        let atr = [
-                            ("uri", uri.as_ref()),
-                            ("hash", el.hash.as_ref())
-                        ];
-                        w.put_element(
-                            "withdraw",
-                            Some(&atr),
-                            |w| { w.empty() }
-                        )?;
-                    }
-
-                    Ok(())
+            w.put_element("delta", Some(&a), |w| {
+                for el in &self.elements.publishes {
+                    let uri = el.uri.to_string();
+                    let atr = [("uri", uri.as_ref())];
+                    w.put_element("publish", Some(&atr), |w| w.put_text(el.base64.as_ref()))?;
                 }
-            )
+
+                for el in &self.elements.updates {
+                    let uri = el.uri.to_string();
+                    let atr = [("uri", uri.as_ref()), ("hash", el.hash.as_ref())];
+                    w.put_element("publish", Some(&atr), |w| w.put_text(el.base64.as_ref()))?;
+                }
+
+                for el in &self.elements.withdraws {
+                    let uri = el.uri.to_string();
+                    let atr = [("uri", uri.as_ref()), ("hash", el.hash.as_ref())];
+                    w.put_element("withdraw", Some(&atr), |w| w.empty())?;
+                }
+
+                Ok(())
+            })
         });
 
         let bytes = Bytes::from(vec);
@@ -653,5 +660,4 @@ impl Delta {
 
         Ok(hash)
     }
-
 }

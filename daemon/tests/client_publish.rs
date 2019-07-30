@@ -3,32 +3,24 @@ extern crate krill_commons;
 extern crate krill_daemon;
 extern crate krill_pubc;
 
-use std::collections::HashSet;
-use std::path::PathBuf;
-use krill_client::KrillClient;
 use krill_client::options::{
-    AddPublisher,
-    AddRfc8181Client,
-    Command,
-    Options,
-    PublishersCommand,
-    Rfc8181Command,
+    AddPublisher, AddRfc8181Client, Command, Options, PublishersCommand, Rfc8181Command,
 };
 use krill_client::report::ReportFormat;
-use krill_commons::api::admin::{
-    Handle,
-    Token
-};
+use krill_client::KrillClient;
+use krill_commons::api::admin::{Handle, Token};
 use krill_commons::api::publication::ListReply;
 use krill_commons::remote::rfc8183::RepositoryResponse;
-use krill_commons::util::file::CurrentFile;
 use krill_commons::util::file;
+use krill_commons::util::file::CurrentFile;
 use krill_commons::util::httpclient;
 use krill_commons::util::test;
-use krill_pubc::{ApiResponse, Format};
 use krill_pubc::apiclient;
 use krill_pubc::cmsclient;
 use krill_pubc::cmsclient::PubClient;
+use krill_pubc::{ApiResponse, Format};
+use std::collections::HashSet;
+use std::path::PathBuf;
 
 fn list(server_uri: &str, handle: &str, token: &str) -> apiclient::Options {
     let conn = apiclient::Connection::build(server_uri, handle, token).unwrap();
@@ -43,7 +35,7 @@ fn sync(
     handle: &str,
     token: &str,
     syncdir: &PathBuf,
-    base_uri: &str
+    base_uri: &str,
 ) -> apiclient::Options {
     let conn = apiclient::Connection::build(server_uri, handle, token).unwrap();
     let cmd = apiclient::Command::sync(syncdir.to_str().unwrap(), base_uri).unwrap();
@@ -57,31 +49,25 @@ fn execute_krillc_command(command: Command) {
         test::https("https://localhost:3000/"),
         "secret",
         ReportFormat::Default,
-        command
+        command,
     );
     match KrillClient::process(krillc_opts) {
-        Ok(_res) => {}, // ok
-        Err(e) => {
-            panic!("{}", e)
-        }
+        Ok(_res) => {} // ok
+        Err(e) => panic!("{}", e),
     }
 }
 
 fn add_publisher(handle: &str, base_uri: &str, token: &str) {
-    let command = Command::Publishers(PublishersCommand::Add(
-        AddPublisher {
-            handle:   Handle::from(handle),
-            base_uri: test::rsync(base_uri),
-            token:    Token::from(token)
-        }
-    ));
+    let command = Command::Publishers(PublishersCommand::Add(AddPublisher {
+        handle: Handle::from(handle),
+        base_uri: test::rsync(base_uri),
+        token: Token::from(token),
+    }));
     execute_krillc_command(command);
 }
 
 fn remove_publisher(handle: &str) {
-    let command = Command::Publishers(
-        PublishersCommand::Deactivate(handle.to_string())
-    );
+    let command = Command::Publishers(PublishersCommand::Deactivate(handle.to_string()));
 
     execute_krillc_command(command);
 }
@@ -91,18 +77,14 @@ fn rfc8181_client_init(handle: &str, state_dir: &PathBuf) {
     rfc8181_client_process_command(command, &state_dir);
 }
 
-fn rfc8181_client_add(state_dir: &PathBuf)  {
+fn rfc8181_client_add(state_dir: &PathBuf) {
     let mut pr_path = state_dir.clone();
     pr_path.push("request.xml");
 
     let command = cmsclient::Command::publisher_request(pr_path.clone());
     rfc8181_client_process_command(command, &state_dir);
 
-    let command = Command::Rfc8181(
-        Rfc8181Command::Add(
-            AddRfc8181Client { xml: pr_path }
-        )
-    );
+    let command = Command::Rfc8181(Rfc8181Command::Add(AddRfc8181Client { xml: pr_path }));
 
     execute_krillc_command(command);
 }
@@ -119,7 +101,7 @@ fn rfc8181_client_list(state_dir: &PathBuf) -> ListReply {
     let api_response = rfc8181_client_process_command(command, &state_dir);
     match api_response {
         ApiResponse::Success => panic!("Expected list"),
-        ApiResponse::List(list) => list
+        ApiResponse::List(list) => list,
     }
 }
 
@@ -137,13 +119,14 @@ fn rfc8181_client_process_command(command: cmsclient::Command, state_dir: &PathB
 
 #[allow(dead_code)]
 fn get_repository_response(handle: &str) -> RepositoryResponse {
-    let uri = format!("https://localhost:3000/api/v1/rfc8181/{}/response.xml", handle);
+    let uri = format!(
+        "https://localhost:3000/api/v1/rfc8181/{}/response.xml",
+        handle
+    );
     let content_type = "application/xml";
     let token = Token::from("secret");
 
-    let xml = httpclient::get_text(
-        &uri, content_type, Some(&token)
-    ).unwrap();
+    let xml = httpclient::get_text(&uri, content_type, Some(&token)).unwrap();
 
     RepositoryResponse::validate(xml.as_bytes()).unwrap()
 }
@@ -151,7 +134,6 @@ fn get_repository_response(handle: &str) -> RepositoryResponse {
 #[test]
 fn client_publish() {
     krill_daemon::test::test_with_krill_server(|d| {
-
         let server_uri = "https://localhost:3000/";
         let handle = "alice";
         let token = "secret";
@@ -163,56 +145,45 @@ fn client_publish() {
 
         // Calls to api should require the correct token
         {
-            let res = apiclient::execute(list(
-                server_uri,
-                handle,
-                "wrong token"
-            ));
+            let res = apiclient::execute(list(server_uri, handle, "wrong token"));
 
             match res {
-                Err(apiclient::Error::HttpClientError
-                    (httpclient::Error::Forbidden)) => {},
+                Err(apiclient::Error::HttpClientError(httpclient::Error::Forbidden)) => {}
                 Err(e) => panic!("Expected forbidden, got: {}", e),
-                _ => panic!("Expected forbidden")
+                _ => panic!("Expected forbidden"),
             }
         }
 
         // List files at server, expect no files
         {
-            let list = apiclient::execute(list(
-                server_uri,
-                handle,
-                token
-            )).unwrap();
+            let list = apiclient::execute(list(server_uri, handle, token)).unwrap();
 
             match list {
                 ApiResponse::List(list) => {
                     assert_eq!(0, list.elements().len());
-                },
-                _ => panic!("Expected list")
+                }
+                _ => panic!("Expected list"),
             }
         }
-
 
         // Create files on disk to sync
         let sync_dir = test::sub_dir(&d);
         let file_a = CurrentFile::new(
             test::rsync("rsync://localhost/repo/alice/a.txt"),
-            &test::as_bytes("a")
+            &test::as_bytes("a"),
         );
         let file_b = CurrentFile::new(
             test::rsync("rsync://localhost/repo/alice/b.txt"),
-            &test::as_bytes("b")
+            &test::as_bytes("b"),
         );
         let file_c = CurrentFile::new(
             test::rsync("rsync://localhost/repo/alice/c.txt"),
-            &test::as_bytes("c")
+            &test::as_bytes("c"),
         );
 
         file::save_in_dir(&file_a.to_bytes(), &sync_dir, "a.txt").unwrap();
         file::save_in_dir(&file_b.to_bytes(), &sync_dir, "b.txt").unwrap();
         file::save_in_dir(&file_c.to_bytes(), &sync_dir, "c.txt").unwrap();
-
 
         // Must refuse syncing files outside of publisher base dir
         {
@@ -221,12 +192,11 @@ fn client_publish() {
                 handle,
                 token,
                 &sync_dir,
-                base_rsync_uri_bob
+                base_rsync_uri_bob,
             ));
 
             assert!(api_res.is_err())
         }
-
 
         // Sync files
         {
@@ -235,44 +205,36 @@ fn client_publish() {
                 handle,
                 token,
                 &sync_dir,
-                base_rsync_uri_alice
-            )).unwrap();
+                base_rsync_uri_alice,
+            ))
+            .unwrap();
 
             assert_eq!(ApiResponse::Success, api_res);
         }
 
         // We should now see these files when we list
         {
-            let list = apiclient::execute(list(
-                server_uri,
-                handle,
-                token
-            )).unwrap();
+            let list = apiclient::execute(list(server_uri, handle, token)).unwrap();
 
             match list {
                 ApiResponse::List(list) => {
                     assert_eq!(3, list.elements().len());
 
-                    let returned_set: HashSet<_>  = list.elements().iter().collect();
+                    let returned_set: HashSet<_> = list.elements().iter().collect();
 
                     let list_el_a = file_a.into_list_element();
                     let list_el_b = file_b.into_list_element();
                     let list_el_c = file_c.clone().into_list_element();
 
-                    let expected_elements = vec![
-                        &list_el_a,
-                        &list_el_b,
-                        &list_el_c
-                    ];
+                    let expected_elements = vec![&list_el_a, &list_el_b, &list_el_c];
                     let expected_set: HashSet<_> = expected_elements.into_iter().collect();
                     assert_eq!(expected_set, returned_set);
-                },
-                _ => panic!("Expected list")
+                }
+                _ => panic!("Expected list"),
             }
         }
 
         // XXX TODO We should also see these files in RRDP
-
 
         // Now we should be able to delete it all again
         file::delete_in_dir(&sync_dir, "a.txt").unwrap();
@@ -285,33 +247,30 @@ fn client_publish() {
                 handle,
                 token,
                 &sync_dir,
-                base_rsync_uri_alice
-            )).unwrap();
+                base_rsync_uri_alice,
+            ))
+            .unwrap();
 
             assert_eq!(ApiResponse::Success, api_res);
         }
 
         // List files at server, expect 1 file (c.txt)
         {
-            let list = apiclient::execute(list(
-                server_uri,
-                handle,
-                token
-            )).unwrap();
+            let list = apiclient::execute(list(server_uri, handle, token)).unwrap();
 
             match list {
                 ApiResponse::List(list) => {
                     assert_eq!(1, list.elements().len());
 
-                    let returned_set: HashSet<_>  = list.elements().iter().collect();
+                    let returned_set: HashSet<_> = list.elements().iter().collect();
 
                     let list_el_c = file_c.into_list_element();
 
                     let expected_elements = vec![&list_el_c];
                     let expected_set: HashSet<_> = expected_elements.into_iter().collect();
                     assert_eq!(expected_set, returned_set);
-                },
-                _ => panic!("Expected list")
+                }
+                _ => panic!("Expected list"),
             }
         }
 
@@ -354,15 +313,15 @@ fn client_publish() {
         let sync_dir = test::sub_dir(&d);
         let file_a = CurrentFile::new(
             test::rsync("rsync://localhost/repo/alice/a.txt"),
-            &test::as_bytes("a")
+            &test::as_bytes("a"),
         );
         let file_b = CurrentFile::new(
             test::rsync("rsync://localhost/repo/alice/b.txt"),
-            &test::as_bytes("b")
+            &test::as_bytes("b"),
         );
         let file_c = CurrentFile::new(
             test::rsync("rsync://localhost/repo/alice/c.txt"),
-            &test::as_bytes("c")
+            &test::as_bytes("c"),
         );
 
         file::save_in_dir(&file_a.to_bytes(), &sync_dir, "a.txt").unwrap();
@@ -376,5 +335,4 @@ fn client_publish() {
         let list = rfc8181_client_list(&state_dir);
         assert_eq!(3, list.elements().len());
     });
-
 }

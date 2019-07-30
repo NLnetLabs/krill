@@ -16,21 +16,22 @@ pub trait EventListener<A: Aggregate>: Send + Sync + 'static {
     fn listen(&self, agg: &A, event: &A::Event);
 }
 
-
 //------------ EventCounter --------------------------------------------------
 
 /// Example listener that simply counts all events
 pub struct EventCounter {
-    counter: RwLock<Counter>
+    counter: RwLock<Counter>,
 }
 
 struct Counter {
-    total: usize
+    total: usize,
 }
 
 impl Default for EventCounter {
     fn default() -> Self {
-        EventCounter { counter: RwLock::new(Counter { total: 0 }) }
+        EventCounter {
+            counter: RwLock::new(Counter { total: 0 }),
+        }
     }
 }
 

@@ -1,24 +1,14 @@
-use std::collections::HashMap;
 use crate::api::admin::Handle;
-use crate::eventsourcing::{
-    Aggregate,
-    Command,
-    CommandDetails,
-    Event,
-    SentCommand,
-    StoredEvent
-};
-use crate::remote::api::{
-    ClientAuth,
-    ClientInfo
-};
+use crate::eventsourcing::{Aggregate, Command, CommandDetails, Event, SentCommand, StoredEvent};
+use crate::remote::api::{ClientAuth, ClientInfo};
 use crate::remote::id::IdCert;
+use std::collections::HashMap;
 
 // const fn is not stable yet
 const ID: &str = "cms-clients";
-pub fn id() -> Handle { Handle::from(ID) }
-
-
+pub fn id() -> Handle {
+    Handle::from(ID)
+}
 
 //------------ ClientsEvents --------------------------------------------
 
@@ -30,11 +20,19 @@ impl ClientsEvents {
     }
 
     pub fn added_client(version: u64, handle: Handle, client: ClientAuth) -> ClientsEvent {
-        StoredEvent::new(&id(), version, ClientsEventDetails::AddedClient(handle, client))
+        StoredEvent::new(
+            &id(),
+            version,
+            ClientsEventDetails::AddedClient(handle, client),
+        )
     }
 
     pub fn updated_cert(version: u64, handle: Handle, cert: IdCert) -> ClientsEvent {
-        StoredEvent::new(&id(), version, ClientsEventDetails::UpdatedClientCert(handle, cert))
+        StoredEvent::new(
+            &id(),
+            version,
+            ClientsEventDetails::UpdatedClientCert(handle, cert),
+        )
     }
 
     pub fn removed_client(version: u64, handle: Handle) -> ClientsEvent {
@@ -52,11 +50,10 @@ pub type ClientsInit = StoredEvent<ClientsInitDetails>;
 pub enum ClientsEventDetails {
     AddedClient(Handle, ClientAuth),
     UpdatedClientCert(Handle, IdCert),
-    RemovedClient(Handle)
+    RemovedClient(Handle),
 }
 
 pub type ClientsEvent = StoredEvent<ClientsEventDetails>;
-
 
 //------------ ClientsCommands -------------------------------------------
 
@@ -64,10 +61,18 @@ pub struct ClientsCommands;
 
 impl ClientsCommands {
     pub fn add(handle: Handle, client: ClientAuth) -> ClientsCommand {
-        SentCommand::new(&id(), None, ClientsCommandDetails::AddClient(handle, client))
+        SentCommand::new(
+            &id(),
+            None,
+            ClientsCommandDetails::AddClient(handle, client),
+        )
     }
     pub fn update_cert(handle: Handle, cert: IdCert) -> ClientsCommand {
-        SentCommand::new(&id(), None, ClientsCommandDetails::UpdateClientCert(handle, cert))
+        SentCommand::new(
+            &id(),
+            None,
+            ClientsCommandDetails::UpdateClientCert(handle, cert),
+        )
     }
     pub fn remove(handle: Handle) -> ClientsCommand {
         SentCommand::new(&id(), None, ClientsCommandDetails::RemoveClient(handle))
@@ -79,7 +84,7 @@ impl ClientsCommands {
 pub enum ClientsCommandDetails {
     AddClient(Handle, ClientAuth),
     UpdateClientCert(Handle, IdCert),
-    RemoveClient(Handle)
+    RemoveClient(Handle),
 }
 
 impl CommandDetails for ClientsCommandDetails {
@@ -87,7 +92,6 @@ impl CommandDetails for ClientsCommandDetails {
 }
 
 pub type ClientsCommand = SentCommand<ClientsCommandDetails>;
-
 
 //------------ ClientManager -------------------------------------------------
 
@@ -101,9 +105,8 @@ pub struct ClientManager {
     version: u64,
 
     // Clients known by this proxy
-    clients: HashMap<Handle, ClientAuth>
+    clients: HashMap<Handle, ClientAuth>,
 }
-
 
 impl Aggregate for ClientManager {
     type Command = ClientsCommand;
@@ -131,12 +134,12 @@ impl Aggregate for ClientManager {
             )
         }
         match event.into_details() {
-            ClientsEventDetails::AddedClient(handle, client)   => {
+            ClientsEventDetails::AddedClient(handle, client) => {
                 self.clients.insert(handle, client);
-            },
+            }
             ClientsEventDetails::UpdatedClientCert(handle, id_cert) => {
                 self.clients.get_mut(&handle).unwrap().set_cert(id_cert);
-            },
+            }
             ClientsEventDetails::RemovedClient(handle) => {
                 self.clients.remove(&handle);
             }
@@ -148,7 +151,7 @@ impl Aggregate for ClientManager {
     fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
         if let Some(version) = command.version() {
             if version != self.version {
-                return Err(Error::ConcurrentModification(version, self.version))
+                return Err(Error::ConcurrentModification(version, self.version));
             }
         }
 
@@ -158,11 +161,11 @@ impl Aggregate for ClientManager {
             ClientsCommandDetails::AddClient(handle, client) => {
                 self.assert_new(&handle)?;
                 res.push(ClientsEvents::added_client(self.version, handle, client))
-            },
+            }
             ClientsCommandDetails::UpdateClientCert(handle, cert) => {
                 self.assert_exists(&handle)?;
                 res.push(ClientsEvents::updated_cert(self.version, handle, cert))
-            },
+            }
             ClientsCommandDetails::RemoveClient(handle) => {
                 self.assert_exists(&handle)?;
                 res.push(ClientsEvents::removed_client(self.version, handle))
@@ -181,8 +184,8 @@ impl ClientManager {
     pub fn list(&self) -> Vec<ClientInfo> {
         let mut res = vec![];
         for (handle, auth) in self.clients.iter() {
-           res.push(ClientInfo::new(handle.clone(), auth.clone()));
-        };
+            res.push(ClientInfo::new(handle.clone(), auth.clone()));
+        }
         res
     }
 
@@ -193,19 +196,21 @@ impl ClientManager {
     fn assert_new(&self, handle: &Handle) -> ProxyResult<()> {
         if self.has_client(handle) {
             Err(Error::ClientExists(handle.clone()))
-        } else { Ok(()) }
+        } else {
+            Ok(())
+        }
     }
 
-
     fn assert_exists(&self, handle: &Handle) -> ProxyResult<()> {
-        if ! self.has_client(handle) {
+        if !self.has_client(handle) {
             Err(Error::NoClient(handle.clone()))
-        } else { Ok(()) }
+        } else {
+            Ok(())
+        }
     }
 }
 
 type ProxyResult<T> = Result<T, Error>;
-
 
 //------------ Error ---------------------------------------------------------
 
@@ -229,14 +234,14 @@ impl std::error::Error for Error {}
 pub mod tests {
 
     use super::*;
-    use std::path::PathBuf;
-    use rpki::crypto::PublicKeyFormat;
-    use rpki::crypto::Signer;
-    use crate::util::test;
     use crate::eventsourcing::AggregateStore;
     use crate::eventsourcing::DiskAggregateStore;
-    use crate::util::softsigner::OpenSslSigner;
     use crate::remote::builder::IdCertBuilder;
+    use crate::util::softsigner::OpenSslSigner;
+    use crate::util::test;
+    use rpki::crypto::PublicKeyFormat;
+    use rpki::crypto::Signer;
+    use std::path::PathBuf;
 
     pub fn new_id_cert(work_dir: &PathBuf) -> IdCert {
         let mut s = OpenSslSigner::build(work_dir).unwrap();
@@ -248,17 +253,12 @@ pub mod tests {
         let cert = new_id_cert(work_dir);
         let handle = Handle::from(name);
 
-        ClientsCommands::add(
-            handle,
-            ClientAuth::new(cert)
-        )
+        ClientsCommands::add(handle, ClientAuth::new(cert))
     }
-
 
     #[test]
     fn should_manage_clients() {
         test::test_under_tmp(|d| {
-
             // Set up a store for the proxy
             let store = DiskAggregateStore::<ClientManager>::new(&d, "proxy").unwrap();
 
@@ -274,10 +274,8 @@ pub mod tests {
             let alice_cert1 = new_id_cert(&d);
             let alice_handle = Handle::from("alice");
 
-            let add_alice = ClientsCommands::add(
-                alice_handle.clone(),
-                ClientAuth::new(alice_cert1.clone())
-            );
+            let add_alice =
+                ClientsCommands::add(alice_handle.clone(), ClientAuth::new(alice_cert1.clone()));
 
             let events = proxy.process_command(add_alice).unwrap();
             assert_eq!(1, events.len());
@@ -299,10 +297,8 @@ pub mod tests {
 
             // Update cert
             let alice_cert2 = new_id_cert(&d);
-            let update_alice_cert = ClientsCommands::update_cert(
-                alice_handle.clone(),
-                alice_cert2.clone()
-            );
+            let update_alice_cert =
+                ClientsCommands::update_cert(alice_handle.clone(), alice_cert2.clone());
 
             let events = proxy.process_command(update_alice_cert).unwrap();
             assert_eq!(1, events.len());
@@ -320,7 +316,6 @@ pub mod tests {
             let proxy = store.update(&id(), proxy, events).unwrap();
 
             assert!(proxy.client_auth(&alice_handle).is_none());
-
         })
     }
 }
