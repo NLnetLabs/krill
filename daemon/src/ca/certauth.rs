@@ -13,9 +13,9 @@ use rpki::x509::{Name, Serial, Time, Validity};
 
 use krill_commons::api::admin::{Handle, ParentCaContact, PubServerContact, Token};
 use krill_commons::api::ca::{
-    AddedObject, AllCurrentObjects, CaParentsInfo, CertAuthInfo, CertifiedKey, ChildCa,
-    ChildCaDetails, CurrentObject, CurrentObjects, IssuedCert, KeyRef, ObjectName, ObjectsDelta,
-    ParentCaInfo, PendingKey, PublicationDelta, RcvdCert, RepoInfo, ResourceClassInfo, ResourceSet,
+    AddedObject, AllCurrentObjects, CaParentsInfo, CertAuthInfo, CertifiedKey, ChildCaDetails,
+    CurrentObject, CurrentObjects, IssuedCert, KeyRef, ObjectName, ObjectsDelta, ParentCaInfo,
+    PendingKey, PublicationDelta, RcvdCert, RepoInfo, ResourceClassInfo, ResourceSet,
     TrustAnchorInfo, TrustAnchorLocator, UpdatedObject,
 };
 use krill_commons::api::{
@@ -31,8 +31,8 @@ use krill_commons::remote::sigmsg::SignedMessage;
 use krill_commons::util::softsigner::SignerKeyId;
 
 use ca::{
-    self, CertIssued, CertReceived, CertRequested, Cmd, CmdDet, Error, Evt, EvtDet, Ini,
-    ParentHandle, Result, SignSupport, Signer,
+    self, ChildHandle, Cmd, CmdDet, Error, Evt, EvtDet, Ini, ParentHandle, Result, SignSupport,
+    Signer,
 };
 
 //------------ Rfc8183Id ---------------------------------------------------
@@ -211,18 +211,18 @@ impl<S: Signer> Aggregate for CertAuth<S> {
         self.version += 1;
         match event.into_details() {
             // Being a parent
-            EvtDet::ChildAdded(child) => {
-                let (handle, details) = child.unwrap();
-                self.children.insert(handle, details);
+            EvtDet::ChildAdded(child, details) => {
+                self.children.insert(child, details);
             }
-            EvtDet::CertificateIssued(cert_issued) => {
-                let (child_handle, response) = cert_issued.unwrap();
+            EvtDet::CertificateIssued(child, response) => {
                 let (class_name, _, _, issued) = response.unwrap();
-
-                let child = self.children.get_mut(&child_handle).unwrap();
-
+                let child = self.children.get_mut(&child).unwrap();
                 child.add_cert(&class_name, issued);
             }
+            EvtDet::ChildUpdatedToken(_child, _token) => unimplemented!(),
+            EvtDet::ChildUpdatedIdCert(_child, _cert) => unimplemented!(),
+            EvtDet::ChildUpdatedResourceClass(_child, _name, _resources) => unimplemented!(),
+            EvtDet::ChildRemovedResourceClass(_child, _name) => unimplemented!(),
 
             // Being a child
             EvtDet::ParentAdded(handle, info) => {
@@ -237,8 +237,8 @@ impl<S: Signer> Aggregate for CertAuth<S> {
                     .resources
                     .insert(name, rc);
             }
-            EvtDet::CertificateRequested(req) => {
-                let (parent, status, req) = req.unwrap();
+            EvtDet::ResourceClassRemoved(_parent, _name, _delta) => unimplemented!(),
+            EvtDet::CertificateRequested(parent, req, status) => {
                 let class = req.class_name().to_owned();
                 self.parents
                     .get_mut(&parent)
@@ -253,7 +253,7 @@ impl<S: Signer> Aggregate for CertAuth<S> {
                 let rc = parent.class_mut(&class_name).unwrap();
                 rc.pending_key_activated(cert);
             }
-            EvtDet::CertificateReceived(_rcvd) => unimplemented!(),
+            EvtDet::CertificateReceived(_parent, _class_name, _status, _rcvd) => unimplemented!(),
 
             // General functions
             EvtDet::Published(parent, class_name, status, delta) => {
@@ -515,7 +515,7 @@ impl<S: Signer> CertAuth<S> {
     /// this CA is not a TA.
     fn add_child(
         &self,
-        handle: Handle,
+        child: ChildHandle,
         token: Token,
         id_cert: Option<IdCert>,
         resources: ResourceSet,
@@ -539,15 +539,20 @@ impl<S: Signer> CertAuth<S> {
         }
 
         // 3) there is no existing child by this name
-        if self.has_child(&handle) {
-            return Err(Error::DuplicateChild(handle));
+        if self.has_child(&child) {
+            return Err(Error::DuplicateChild(child));
         }
 
         // TODO: Handle add child to normal CA (issue #25)
-        let mut child = ChildCa::without_resources(handle, token, id_cert);
-        child.add_resources(DFLT_CLASS, resources);
+        let mut child_details = ChildCaDetails::new(token, id_cert);
+        child_details.add_resources(DFLT_CLASS, resources);
 
-        Ok(vec![EvtDet::child_added(&self.handle, self.version, child)])
+        Ok(vec![EvtDet::child_added(
+            &self.handle,
+            self.version,
+            child,
+            child_details,
+        )])
     }
 
     /// Certifies a child, unless:
@@ -657,18 +662,15 @@ impl<S: Signer> CertAuth<S> {
 
         let signing_cert = SigningCert::from(issuing_cert);
 
-        let cert_issued = CertIssued::new(
-            child,
-            IssuanceResponse::new(
-                DFLT_CLASS.to_string(),
-                signing_cert,
-                resources,
-                issued_cert.cert().validity().not_after(),
-                issued_cert.clone(),
-            ),
+        let response = IssuanceResponse::new(
+            DFLT_CLASS.to_string(),
+            signing_cert,
+            resources,
+            issued_cert.cert().validity().not_after(),
+            issued_cert.clone(),
         );
 
-        let issued_event = EvtDet::certificate_issued(&self.handle, version, cert_issued);
+        let issued_event = EvtDet::certificate_issued(&self.handle, version, child, response);
 
         let delta = {
             let ca_repo = self.base_repo.ca_repository("");
@@ -743,18 +745,14 @@ impl<S: Signer> CertAuth<S> {
 
     /// Get all the current open certificate requests for a parent.
     /// Returns an empty list if the parent is not found.
-    pub fn cert_requests(&self, parent_handle: &ParentHandle) -> Vec<CertRequested> {
+    pub fn cert_requests(&self, parent_handle: &ParentHandle) -> Vec<IssuanceRequest> {
         let mut res = vec![];
 
         if let Ok(parent) = self.parent(parent_handle) {
             for (_class_name, rc) in parent.resources.iter() {
                 if let Some(p) = &rc.pending_key {
                     if let Some(r) = p.request() {
-                        res.push(CertRequested::new(
-                            parent_handle.clone(),
-                            KeyStatus::Pending,
-                            r.clone(),
-                        ))
+                        res.push(r.clone());
                     }
                 }
             }
@@ -813,14 +811,10 @@ impl<S: Signer> CertAuth<S> {
                         .unwrap()
                 };
 
-                let cert_issue_req = CertRequested::new(
-                    parent_handle.clone(),
-                    KeyStatus::Pending,
-                    IssuanceRequest::new(
-                        ent.class_name().to_string(),
-                        RequestResourceLimit::default(),
-                        csr,
-                    ),
+                let issuance_request = IssuanceRequest::new(
+                    ent.class_name().to_string(),
+                    RequestResourceLimit::default(),
+                    csr,
                 );
 
                 let added = EvtDet::resource_class_added(
@@ -833,7 +827,13 @@ impl<S: Signer> CertAuth<S> {
 
                 version += 1;
 
-                let req = EvtDet::certificate_requested(&self.handle, version, cert_issue_req);
+                let req = EvtDet::certificate_requested(
+                    &self.handle,
+                    version,
+                    parent_handle.clone(),
+                    issuance_request,
+                    KeyStatus::Pending,
+                );
 
                 version += 1;
 
@@ -989,7 +989,10 @@ impl<S: Signer> CertAuth<S> {
         EvtDet::certificate_received(
             handle,
             version,
-            CertReceived::new(parent_handle.clone(), class_name.to_string(), status, cert),
+            parent_handle.clone(),
+            class_name.to_string(),
+            status,
+            cert,
         )
     }
 }

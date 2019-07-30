@@ -85,9 +85,9 @@ impl HttpsSigner {
                 .rsa()
                 .unwrap()
                 .public_key_to_der()
-                .map_err(|e| Error::OpenSslError(e))?,
+                .map_err(Error::OpenSslError)?,
         );
-        let pk = PublicKey::decode(&mut b).map_err(|e| Error::DecodeError(e))?;
+        let pk = PublicKey::decode(&mut b).map_err(Error::DecodeError)?;
         Ok(pk)
     }
 

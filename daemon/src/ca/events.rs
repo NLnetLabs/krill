@@ -3,20 +3,21 @@ use std::sync::{Arc, RwLock};
 
 use rpki::cert::{Cert, KeyUsage, Overclaim, TbsCert};
 use rpki::crypto::PublicKeyFormat;
-use rpki::csr::Csr;
 use rpki::uri;
 use rpki::x509::{Serial, Time, Validity};
 
 use krill_commons::api::admin::{Handle, ParentCaContact, Token};
 use krill_commons::api::ca::{
-    CertifiedKey, ChildCa, PublicationDelta, RcvdCert, RepoInfo, ResourceSet, TrustAnchorLocator,
+    CertifiedKey, ChildCaDetails, PublicationDelta, RcvdCert, RepoInfo, ResourceSet,
+    TrustAnchorLocator,
 };
-use krill_commons::api::{IssuanceRequest, IssuanceResponse, RequestResourceLimit};
+use krill_commons::api::{IssuanceRequest, IssuanceResponse};
 use krill_commons::eventsourcing::StoredEvent;
 
 use crate::ca::signing::Signer;
-use ca::{CaType, Error, KeyStatus, ParentHandle, ResourceClassName, Result};
+use ca::{CaType, ChildHandle, Error, KeyStatus, ParentHandle, ResourceClassName, Result};
 use ca::{ResourceClass, Rfc8183Id};
+use krill_commons::remote::id::IdCert;
 
 //------------ Ini -----------------------------------------------------------
 
@@ -117,111 +118,25 @@ impl IniDet {
 
 pub type Evt = StoredEvent<EvtDet>;
 
-//------------ CertIssued ---------------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct CertIssued {
-    child: Handle,
-    response: IssuanceResponse,
-}
-
-impl CertIssued {
-    pub fn new(child: Handle, response: IssuanceResponse) -> Self {
-        CertIssued { child, response }
-    }
-    pub fn unwrap(self) -> (Handle, IssuanceResponse) {
-        (self.child, self.response)
-    }
-}
-
-//------------ CertRequested -----------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct CertRequested {
-    parent: ParentHandle,
-    key_status: KeyStatus,
-    request: IssuanceRequest,
-}
-
-impl CertRequested {
-    pub fn new(parent: ParentHandle, key_status: KeyStatus, request: IssuanceRequest) -> Self {
-        CertRequested {
-            parent,
-            key_status,
-            request,
-        }
-    }
-
-    pub fn unwrap(self) -> (ParentHandle, KeyStatus, IssuanceRequest) {
-        (self.parent, self.key_status, self.request)
-    }
-    pub fn parent(&self) -> &ParentHandle {
-        &self.parent
-    }
-    pub fn class_name(&self) -> &str {
-        self.request.class_name()
-    }
-    pub fn status(&self) -> KeyStatus {
-        self.key_status
-    }
-    pub fn limit(&self) -> &RequestResourceLimit {
-        self.request.limit()
-    }
-    pub fn csr(&self) -> &Csr {
-        self.request.csr()
-    }
-}
-
-impl Into<IssuanceRequest> for CertRequested {
-    fn into(self) -> IssuanceRequest {
-        self.request
-    }
-}
-
-//------------ CertReceived ------------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct CertReceived {
-    parent: ParentHandle,
-    class_name: ResourceClassName,
-    key_status: KeyStatus,
-    cert: RcvdCert,
-}
-
-impl CertReceived {
-    pub fn new(
-        parent: ParentHandle,
-        class_name: ResourceClassName,
-        key_status: KeyStatus,
-        cert: RcvdCert,
-    ) -> Self {
-        CertReceived {
-            parent,
-            class_name,
-            key_status,
-            cert,
-        }
-    }
-}
-
 //------------ EvtDet -------------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum EvtDet {
     // Being a parent Events
-    ChildAdded(ChildCa),
-    CertificateIssued(CertIssued),
+    ChildAdded(ChildHandle, ChildCaDetails),
+    CertificateIssued(ChildHandle, IssuanceResponse),
+    ChildUpdatedToken(ChildHandle, Token),
+    ChildUpdatedIdCert(ChildHandle, IdCert),
+    ChildUpdatedResourceClass(ChildHandle, ResourceClassName, ResourceSet),
+    ChildRemovedResourceClass(ChildHandle, ResourceClassName),
 
     // Being a child Events
     ParentAdded(ParentHandle, ParentCaContact),
     ResourceClassAdded(ParentHandle, ResourceClassName, ResourceClass),
-
-    // Certificate Events
-    CertificateRequested(CertRequested),
-    CertificateReceived(CertReceived),
-
-    // Key Life Cycle Events
+    ResourceClassRemoved(ParentHandle, ResourceClassName, PublicationDelta),
+    CertificateRequested(ParentHandle, IssuanceRequest, KeyStatus),
+    CertificateReceived(ParentHandle, ResourceClassName, KeyStatus, RcvdCert),
     PendingKeyActivated(ParentHandle, ResourceClassName, RcvdCert),
 
     // Publishing
@@ -264,12 +179,14 @@ impl EvtDet {
     pub(super) fn certificate_requested(
         handle: &Handle,
         version: u64,
-        cert_issue_req: CertRequested,
+        parent: ParentHandle,
+        request: IssuanceRequest,
+        key_status: KeyStatus,
     ) -> Evt {
         StoredEvent::new(
             handle,
             version,
-            EvtDet::CertificateRequested(cert_issue_req),
+            EvtDet::CertificateRequested(parent, request, key_status),
         )
     }
 
@@ -278,9 +195,16 @@ impl EvtDet {
     pub(super) fn certificate_received(
         handle: &Handle,
         version: u64,
-        received: CertReceived,
+        parent: ParentHandle,
+        class_name: ResourceClassName,
+        key_status: KeyStatus,
+        rcvd_cert: RcvdCert,
     ) -> Evt {
-        StoredEvent::new(handle, version, EvtDet::CertificateReceived(received))
+        StoredEvent::new(
+            handle,
+            version,
+            EvtDet::CertificateReceived(parent, class_name, key_status, rcvd_cert),
+        )
     }
 
     /// This marks the pending key as activated. This occurs when a resource
@@ -321,16 +245,22 @@ impl EvtDet {
         )
     }
 
-    pub(super) fn child_added(handle: &Handle, version: u64, child: ChildCa) -> Evt {
-        StoredEvent::new(handle, version, EvtDet::ChildAdded(child))
+    pub(super) fn child_added(
+        handle: &Handle,
+        version: u64,
+        child: ChildHandle,
+        details: ChildCaDetails,
+    ) -> Evt {
+        StoredEvent::new(handle, version, EvtDet::ChildAdded(child, details))
     }
 
     pub(super) fn certificate_issued(
         handle: &Handle,
         version: u64,
-        cert_issued: CertIssued,
+        child: ChildHandle,
+        response: IssuanceResponse,
     ) -> Evt {
-        StoredEvent::new(handle, version, EvtDet::CertificateIssued(cert_issued))
+        StoredEvent::new(handle, version, EvtDet::CertificateIssued(child, response))
     }
 
     pub(super) fn published_ta(handle: &Handle, version: u64, delta: PublicationDelta) -> Evt {

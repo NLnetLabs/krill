@@ -27,43 +27,6 @@ use api::admin::ParentCaContact;
 use api::{IssuanceRequest, RequestResourceLimit};
 use remote::id::IdCert;
 
-//------------ ChildCa -------------------------------------------------------
-
-/// This type defines a Child Certificate Authority under a parent
-/// Certificate Authority.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ChildCa {
-    handle: Handle,
-    details: ChildCaDetails,
-}
-
-impl ChildCa {
-    pub fn new(handle: Handle, details: ChildCaDetails) -> Self {
-        ChildCa { handle, details }
-    }
-
-    pub fn without_resources(handle: Handle, token: Token, id_cert: Option<IdCert>) -> Self {
-        let details = ChildCaDetails::new(token, id_cert);
-        ChildCa { handle, details }
-    }
-
-    pub fn add_resources(&mut self, name: &str, resources: ResourceSet) {
-        self.details.add_resources(name, resources);
-    }
-
-    pub fn handle(&self) -> &Handle {
-        &self.handle
-    }
-
-    pub fn details(&self) -> &ChildCaDetails {
-        &self.details
-    }
-
-    pub fn unwrap(self) -> (Handle, ChildCaDetails) {
-        (self.handle, self.details)
-    }
-}
-
 //------------ ChildCaDetails ------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

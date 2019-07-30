@@ -358,15 +358,13 @@ impl<S: Signer> CaServer<S> {
         let mut issued_certs: Vec<(String, IssuedCert)> = vec![];
 
         for req in requests.into_iter() {
-            let (_, _, issuance_req) = req.unwrap();
-
-            let class_name = issuance_req.class_name().to_string();
-            let pub_key = issuance_req.csr().public_key().clone();
+            let class_name = req.class_name().to_string();
+            let pub_key = req.csr().public_key().clone();
 
             let cmd = CmdDet::certify_child(
                 parent_h,
                 handle.clone(),
-                issuance_req,
+                req,
                 token.clone(),
                 self.signer.clone(),
             );
@@ -411,8 +409,7 @@ impl<S: Signer> CaServer<S> {
         for req in requests.into_iter() {
             let sender = parent_res.child_handle().to_string();
             let recipient = parent_res.parent_handle().to_string();
-            let (_, _, issuance_req) = req.unwrap();
-            let issue = rfc6492::Message::issue(sender, recipient, issuance_req);
+            let issue = rfc6492::Message::issue(sender, recipient, req);
 
             let res = self.send_rfc6492_and_validate_response(
                 child.id_key(),
@@ -726,12 +723,11 @@ mod tests {
             let req_evt = events[1].clone().into_details();
             let child = ca_store.update(&child_handle, child, events).unwrap();
 
-            let req = match req_evt {
-                EvtDet::CertificateRequested(req) => req,
+            let (_handle, issuance_req, _key_status) = match req_evt {
+                EvtDet::CertificateRequested(parent, req, status) => (parent, req, status),
                 _ => panic!("Expected Csr"),
             };
 
-            let (_handle, _key_status, issuance_req) = req.unwrap();
             let (class_name, limit, csr) = issuance_req.unwrap();
             assert_eq!("all", &class_name);
             assert!(limit.is_empty());
@@ -758,13 +754,10 @@ mod tests {
             let issued_evt = ta_events[0].clone().into_details();
             let _ta = ca_store.update(&ta_handle, ta, ta_events).unwrap();
 
-            let issued = match issued_evt {
-                EvtDet::CertificateIssued(issued) => issued,
+            let (handle, issuance_res) = match issued_evt {
+                EvtDet::CertificateIssued(child, issued) => (child, issued),
                 _ => panic!("Expected issued certificate."),
             };
-
-            let (handle, issuance_res) = issued.unwrap();
-
             let (class_name, _, _, issued) = issuance_res.unwrap();
 
             assert_eq!(child_handle, handle);

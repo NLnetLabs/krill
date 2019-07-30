@@ -14,9 +14,6 @@ pub use self::commands::Cmd;
 pub use self::commands::CmdDet;
 
 mod events;
-pub use self::events::CertIssued;
-pub use self::events::CertReceived;
-pub use self::events::CertRequested;
 pub use self::events::Evt;
 pub use self::events::EvtDet;
 pub use self::events::Ini;

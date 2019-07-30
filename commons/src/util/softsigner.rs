@@ -153,7 +153,7 @@ impl Signer for OpenSslSigner {
         data: &D,
     ) -> Result<Signature, SigningError<Self::Error>> {
         let key_pair = self.load_key(key_id)?;
-        Self::sign_with_key(key_pair.pkey.as_ref(), data).map_err(|e| SigningError::Signer(e))
+        Self::sign_with_key(key_pair.pkey.as_ref(), data).map_err(SigningError::Signer)
     }
 
     fn sign_one_off<D: AsRef<[u8]> + ?Sized>(
