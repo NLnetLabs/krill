@@ -2,6 +2,7 @@
 //! can have access without needing to depend on the full krill_ca module.
 
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use std::fmt;
 use std::ops::Deref;
 use std::str;
@@ -10,22 +11,54 @@ use std::str::FromStr;
 use bytes::Bytes;
 use chrono::Duration;
 
-use rpki::cert::{Cert, Overclaim};
+use rpki::cert::Cert;
 use rpki::crypto::{KeyIdentifier, PublicKey};
-use rpki::resources::{AsBlocks, AsResources, IpBlocks, IpResources, Ipv4Resources, Ipv6Resources};
+use rpki::resources::{AsBlocks, AsResources, IpBlocks, IpBlocksForFamily, IpResources};
 use rpki::uri;
 use rpki::x509::{Serial, Time};
 
-use crate::api::admin::{Handle, Token};
+use crate::api::admin::{Handle, ParentCaContact, Token};
 use crate::api::publication;
-use crate::api::{Base64, EncodedHash};
+use crate::api::{Base64, EncodedHash, IssuanceRequest, RequestResourceLimit};
+use crate::remote::id::IdCert;
 use crate::rpki::crl::{Crl, CrlEntry};
 use crate::rpki::manifest::{FileAndHash, Manifest};
 use crate::util::ext_serde;
 use crate::util::softsigner::SignerKeyId;
-use api::admin::ParentCaContact;
-use api::{IssuanceRequest, RequestResourceLimit};
-use remote::id::IdCert;
+
+//------------ ChildCaInfo ---------------------------------------------------
+
+/// This type represents information about a child CA that is safe to share
+/// through the API. I.e. it does not contain the child Token, but may contain
+/// the IdCert for the child since this only includes a public key.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ChildCaInfo {
+    id_cert: Option<IdCert>,
+    resources: HashMap<String, ChildResources>,
+}
+
+impl ChildCaInfo {
+    pub fn id_cert(&self) -> Option<&IdCert> {
+        self.id_cert.as_ref()
+    }
+
+    pub fn resources(&self) -> &HashMap<String, ChildResources> {
+        &self.resources
+    }
+
+    pub fn resources_for_class(&self, class: &str) -> Option<&ChildResources> {
+        self.resources.get(class)
+    }
+}
+
+impl From<ChildCaDetails> for ChildCaInfo {
+    fn from(d: ChildCaDetails) -> Self {
+        ChildCaInfo {
+            id_cert: d.id_cert,
+            resources: d.resources,
+        }
+    }
+}
 
 //------------ ChildCaDetails ------------------------------------------------
 
@@ -48,19 +81,41 @@ impl ChildCaDetails {
     pub fn token(&self) -> &Token {
         &self.token
     }
+
+    pub fn set_token(&mut self, token: Token) {
+        self.token = token;
+    }
+
     pub fn id_cert(&self) -> Option<&IdCert> {
         self.id_cert.as_ref()
+    }
+
+    pub fn set_id_cert(&mut self, id_cert: IdCert) {
+        self.id_cert = Some(id_cert);
     }
 
     pub fn resources(&self) -> &HashMap<String, ChildResources> {
         &self.resources
     }
 
+    /// This function will update the resource entitlements for an existing class
+    /// or create a new class if needed
+    pub fn set_resources_for_class(&mut self, class: &str, resources: ResourceSet) {
+        if self.resources.contains_key(class) {
+            self.resources
+                .get_mut(class)
+                .unwrap()
+                .set_resources(resources);
+        } else {
+            self.add_new_resource_class(class, resources)
+        }
+    }
+
     pub fn resources_for_class(&self, class: &str) -> Option<&ChildResources> {
         self.resources.get(class)
     }
 
-    pub fn add_resources(&mut self, name: &str, resources: ResourceSet) {
+    pub fn add_new_resource_class(&mut self, name: &str, resources: ResourceSet) {
         self.resources
             .insert(name.to_string(), ChildResources::new(resources));
     }
@@ -100,6 +155,7 @@ impl From<&Cert> for KeyRef {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildResources {
     resources: ResourceSet,
+    since: Time,
     not_after: Time,
     certs: HashMap<KeyRef, IssuedCert>,
 }
@@ -108,6 +164,7 @@ impl ChildResources {
     pub fn new(resources: ResourceSet) -> Self {
         ChildResources {
             resources,
+            since: Time::now(),
             not_after: Time::next_year(),
             certs: HashMap::new(),
         }
@@ -115,6 +172,11 @@ impl ChildResources {
 
     pub fn resources(&self) -> &ResourceSet {
         &self.resources
+    }
+
+    pub fn set_resources(&mut self, resources: ResourceSet) {
+        self.resources = resources;
+        self.since = Time::now();
     }
 
     /// Give back the not_after time that would be used on newly
@@ -147,7 +209,7 @@ impl ChildResources {
         let key_ref = KeyRef::from(cert.cert());
 
         self.not_after = cert.cert().validity().not_after();
-        self.resources = ResourceSet::from(cert.cert());
+        self.resources = ResourceSet::try_from(cert.cert()).unwrap();
         self.certs.insert(key_ref, cert);
     }
 }
@@ -229,8 +291,7 @@ pub struct RcvdCert {
 }
 
 impl RcvdCert {
-    pub fn new(cert: Cert, uri: uri::Rsync) -> Self {
-        let resources = ResourceSet::from(&cert);
+    pub fn new(cert: Cert, uri: uri::Rsync, resources: ResourceSet) -> Self {
         RcvdCert {
             cert,
             uri,
@@ -981,20 +1042,33 @@ impl WithdrawnObject {
 /// and is (de)serializable.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ResourceSet {
-    asn: AsResources,
-    v4: Ipv4Resources,
-    v6: Ipv6Resources,
+    asn: AsBlocks,
+
+    #[serde(
+        deserialize_with = "ext_serde::de_ip_blocks_4",
+        serialize_with = "ext_serde::ser_ip_blocks_4"
+    )]
+    v4: IpBlocks,
+
+    #[serde(
+        deserialize_with = "ext_serde::de_ip_blocks_6",
+        serialize_with = "ext_serde::ser_ip_blocks_6"
+    )]
+    v6: IpBlocks,
 }
 
 impl ResourceSet {
-    pub fn new(asn: AsResources, v4: Ipv4Resources, v6: Ipv6Resources) -> Self {
+    pub fn new(asn: AsBlocks, v4: IpBlocks, v6: IpBlocks) -> Self {
         ResourceSet { asn, v4, v6 }
     }
 
     pub fn from_strs(asn: &str, v4: &str, v6: &str) -> Result<Self, ResSetErr> {
-        let asn = AsResources::from_str(asn).map_err(|_| ResSetErr::Asn)?;
-        let v4 = Ipv4Resources::from_str(v4).map_err(|_| ResSetErr::V4)?;
-        let v6 = Ipv6Resources::from_str(v6).map_err(|_| ResSetErr::V6)?;
+        let asn = AsBlocks::from_str(asn).map_err(|_| ResSetErr::Asn)?;
+        if v4.contains(':') || v6.contains('.') {
+            return Err(ResSetErr::Mix);
+        }
+        let v4 = IpBlocks::from_str(v4).map_err(|_| ResSetErr::V4)?;
+        let v6 = IpBlocks::from_str(v6).map_err(|_| ResSetErr::V6)?;
         Ok(ResourceSet { asn, v4, v6 })
     }
 
@@ -1009,16 +1083,77 @@ impl ResourceSet {
         self == &ResourceSet::default()
     }
 
-    pub fn asn(&self) -> &AsResources {
+    pub fn asn(&self) -> &AsBlocks {
         &self.asn
     }
 
-    pub fn v4(&self) -> &Ipv4Resources {
-        &self.v4
+    pub fn v4(&self) -> IpBlocksForFamily {
+        self.v4.as_v4()
     }
 
-    pub fn v6(&self) -> &Ipv6Resources {
-        &self.v6
+    pub fn v6(&self) -> IpBlocksForFamily {
+        self.v6.as_v6()
+    }
+
+    pub fn to_as_resources(&self) -> AsResources {
+        AsResources::blocks(self.asn.clone())
+    }
+
+    pub fn to_ip_resources_v4(&self) -> IpResources {
+        IpResources::blocks(self.v4.clone())
+    }
+
+    pub fn to_ip_resources_v6(&self) -> IpResources {
+        IpResources::blocks(self.v6.clone())
+    }
+
+    /// Apply a limit to this set, will return an error in case the limit
+    /// exceeds the set.
+    pub fn apply_limit(&self, limit: &RequestResourceLimit) -> Result<Self, ResSetErr> {
+        if limit.is_empty() {
+            return Ok(self.clone());
+        }
+
+        let asn = {
+            match limit.asn() {
+                None => self.asn.clone(),
+                Some(asn) => {
+                    if self.asn.contains(asn) {
+                        asn.clone()
+                    } else {
+                        return Err(ResSetErr::LimitExceedsResources);
+                    }
+                }
+            }
+        };
+
+        let v4 = {
+            match limit.v4() {
+                None => self.v4.clone(),
+                Some(v4) => {
+                    if self.v4.contains(v4) {
+                        v4.clone()
+                    } else {
+                        return Err(ResSetErr::LimitExceedsResources);
+                    }
+                }
+            }
+        };
+
+        let v6 = {
+            match limit.v6() {
+                None => self.v6.clone(),
+                Some(v6) => {
+                    if self.v6.contains(v6) {
+                        v6.clone()
+                    } else {
+                        return Err(ResSetErr::LimitExceedsResources);
+                    }
+                }
+            }
+        };
+
+        Ok(ResourceSet { asn, v4, v6 })
     }
 
     /// Check of the other set is contained by this set. If this set
@@ -1026,84 +1161,67 @@ impl ResourceSet {
     /// resources in the other set will be considered to fall outside of
     /// this set.
     pub fn contains(&self, other: &ResourceSet) -> bool {
-        if (self.asn.is_inherited() && !other.asn.is_inherited())
-            || (self.v4.is_inherited() && !other.v4.is_inherited())
-            || (self.v6.is_inherited() && !other.v6.is_inherited())
-        {
-            return false;
-        }
+        self.asn.contains(other.asn()) && self.v4.contains(&other.v4) && self.v6.contains(&other.v6)
+    }
 
-        if let Some(asn) = self.asn.as_blocks() {
-            if asn
-                .validate_issued(Some(&other.asn), Overclaim::Refuse)
-                .is_err()
-            {
-                return false;
-            }
-        }
+    /// Returns the union of this ResourceSet and the other. I.e. a new
+    /// ResourceSet containing all resources found in one or both.
+    pub fn union(&self, other: &ResourceSet) -> Self {
+        let asn = self.asn.union(&other.asn);
+        let v4 = self.v4.union(&other.v4);
+        let v6 = self.v6.union(&other.v6);
+        ResourceSet { asn, v4, v6 }
+    }
 
-        if let Some(v4) = self.v4.as_blocks() {
-            if v4
-                .validate_issued(Some(&other.v4), Overclaim::Refuse)
-                .is_err()
-            {
-                return false;
-            }
-        }
-
-        if let Some(v6) = self.v6.as_blocks() {
-            if v6
-                .validate_issued(Some(&other.v6), Overclaim::Refuse)
-                .is_err()
-            {
-                return false;
-            }
-        }
-
-        true
+    /// Returns the intersection of this ResourceSet and the other. I.e. a new
+    /// ResourceSet containing all resources found in both sets.
+    pub fn intersection(&self, other: &ResourceSet) -> Self {
+        let asn = self.asn.intersection(&other.asn);
+        let v4 = self.v4.intersection(&other.v4);
+        let v6 = self.v6.intersection(&other.v6);
+        ResourceSet { asn, v4, v6 }
     }
 }
 
 impl Default for ResourceSet {
     fn default() -> Self {
         ResourceSet {
-            asn: AsResources::blocks(AsBlocks::empty()),
-            v4: Ipv4Resources::blocks(IpBlocks::empty()),
-            v6: Ipv6Resources::blocks(IpBlocks::empty()),
+            asn: AsBlocks::empty(),
+            v4: IpBlocks::empty(),
+            v6: IpBlocks::empty(),
         }
     }
 }
 
-impl From<&Cert> for ResourceSet {
-    fn from(cert: &Cert) -> Self {
+impl TryFrom<&Cert> for ResourceSet {
+    type Error = ResSetErr;
+
+    fn try_from(cert: &Cert) -> Result<Self, Self::Error> {
         let asn = match cert.as_resources() {
-            None => AsResources::blocks(AsBlocks::empty()),
-            Some(set) => set.clone(),
+            None => AsBlocks::empty(),
+            Some(as_resources) => match as_resources.to_blocks() {
+                Ok(as_blocks) => as_blocks,
+                Err(_) => return Err(ResSetErr::InheritOnCaCert),
+            },
         };
 
-        let v4 = {
-            let v4 = match cert.v4_resources() {
-                None => IpResources::blocks(IpBlocks::empty()),
-                Some(res) => res.clone(),
-            };
-            match v4.to_blocks() {
-                Ok(blocks) => Ipv4Resources::blocks(blocks),
-                Err(_) => Ipv4Resources::inherit(),
-            }
+        let v4 = match cert.v4_resources() {
+            None => IpBlocks::empty(),
+            Some(res) => match res.to_blocks() {
+                Ok(blocks) => blocks,
+                Err(_) => return Err(ResSetErr::InheritOnCaCert),
+            },
         };
 
-        let v6 = {
-            let v6 = match cert.v6_resources() {
-                None => IpResources::blocks(IpBlocks::empty()),
-                Some(res) => res.clone(),
-            };
-            match v6.to_blocks() {
-                Ok(blocks) => Ipv6Resources::blocks(blocks),
-                Err(_) => Ipv6Resources::inherit(),
-            }
+        let v6 = match cert.v6_resources() {
+            None => IpBlocks::empty(),
+            Some(res) => match res.to_blocks() {
+                Ok(blocks) => blocks,
+                Err(_) => return Err(ResSetErr::InheritOnCaCert),
+            },
         };
 
-        ResourceSet { asn, v4, v6 }
+        Ok(ResourceSet { asn, v4, v6 })
     }
 }
 
@@ -1333,6 +1451,12 @@ pub enum ResSetErr {
 
     #[display(fmt = "Mixed Address Families in configured resource set")]
     Mix,
+
+    #[display(fmt = "Found inherited resources on CA certificate")]
+    InheritOnCaCert,
+
+    #[display(fmt = "RequestResourceLimit exceeds resources")]
+    LimitExceedsResources,
 }
 
 //============ Tests =========================================================
@@ -1399,22 +1523,8 @@ mod test {
     }
 
     #[test]
-    fn serialize_deserialize_asn_blocks() {
-        let asns = "AS65000-AS65003, AS65005";
-        let ipv4s = "";
-        let ipv6s = "";
-
-        let set = ResourceSet::from_strs(asns, ipv4s, ipv6s).unwrap();
-
-        let json = serde_json::to_string(&set).unwrap();
-        let deser_set = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(set, deser_set);
-    }
-
-    #[test]
     fn serialize_deserialize_resource_set() {
-        let asns = "inherit";
+        let asns = "AS65000-AS65003, AS65005";
         let ipv4s = "10.0.0.0/8, 192.168.0.0";
         let ipv6s = "::1, 2001:db8::/32";
 

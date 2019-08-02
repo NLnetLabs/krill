@@ -1,3 +1,4 @@
+use std::convert::TryFrom;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock};
 
@@ -13,11 +14,13 @@ use krill_commons::api::ca::{
 };
 use krill_commons::api::{IssuanceRequest, IssuanceResponse};
 use krill_commons::eventsourcing::StoredEvent;
+use krill_commons::remote::id::IdCert;
 
 use crate::ca::signing::Signer;
-use ca::{CaType, ChildHandle, Error, KeyStatus, ParentHandle, ResourceClassName, Result};
-use ca::{ResourceClass, Rfc8183Id};
-use krill_commons::remote::id::IdCert;
+use crate::ca::{
+    CaType, ChildHandle, Error, KeyStatus, ParentHandle, ResourceClass, ResourceClassName, Result,
+    Rfc8183Id,
+};
 
 //------------ Ini -----------------------------------------------------------
 
@@ -70,7 +73,9 @@ impl IniDet {
         let resources = ResourceSet::all_resources();
         let ta_cert = Self::mk_ta_cer(&info, &resources, &key, signer.deref())?;
         let tal = TrustAnchorLocator::new(ta_uris, &ta_cert);
-        let key = CertifiedKey::new(key, RcvdCert::new(ta_cert, ta_aia));
+        let resources = ResourceSet::try_from(&ta_cert).unwrap(); // cannot have inherit
+
+        let key = CertifiedKey::new(key, RcvdCert::new(ta_cert, ta_aia, resources));
 
         Ok(Ini::new(
             handle,
@@ -106,9 +111,9 @@ impl IniDet {
         cert.set_rpki_manifest(Some(repo_info.rpki_manifest("", &pub_key.key_identifier())));
         cert.set_rpki_notify(Some(repo_info.rpki_notify()));
 
-        cert.set_as_resources(Some(resources.asn().clone()));
-        cert.set_v4_resources(Some(resources.v4().deref().clone()));
-        cert.set_v6_resources(Some(resources.v6().deref().clone()));
+        cert.set_as_resources(Some(resources.to_as_resources()));
+        cert.set_v4_resources(Some(resources.to_ip_resources_v4()));
+        cert.set_v6_resources(Some(resources.to_ip_resources_v6()));
 
         cert.into_cert(signer.deref(), key).map_err(Error::signer)
     }
@@ -252,6 +257,38 @@ impl EvtDet {
         details: ChildCaDetails,
     ) -> Evt {
         StoredEvent::new(handle, version, EvtDet::ChildAdded(child, details))
+    }
+
+    pub(super) fn child_updated_token(
+        handle: &Handle,
+        version: u64,
+        child: ChildHandle,
+        token: Token,
+    ) -> Evt {
+        StoredEvent::new(handle, version, EvtDet::ChildUpdatedToken(child, token))
+    }
+
+    pub(super) fn child_updated_cert(
+        handle: &Handle,
+        version: u64,
+        child: ChildHandle,
+        id_cert: IdCert,
+    ) -> Evt {
+        StoredEvent::new(handle, version, EvtDet::ChildUpdatedIdCert(child, id_cert))
+    }
+
+    pub(super) fn child_updated_resources(
+        handle: &Handle,
+        version: u64,
+        child: ChildHandle,
+        class_name: ResourceClassName,
+        resources: ResourceSet,
+    ) -> Evt {
+        StoredEvent::new(
+            handle,
+            version,
+            EvtDet::ChildUpdatedResourceClass(child, class_name, resources),
+        )
     }
 
     pub(super) fn certificate_issued(

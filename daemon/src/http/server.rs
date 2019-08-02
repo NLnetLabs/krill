@@ -85,6 +85,8 @@ pub fn start(config: &Config) -> Result<(), Error> {
                     .route("/trustanchor", get().to(ta_info))
                     .route("/trustanchor", post().to(ta_init))
                     .route("/trustanchor/children", post().to(ta_add_child))
+                    .route("/trustanchor/children/{handle}", get().to(ta_show_child))
+                    .route("/trustanchor/children/{handle}", post().to(ta_update_child))
                     .route("/cas", post().to(ca_init))
                     .route("/cas", get().to(cas))
                     .route("/cas/{handle}", get().to(ca_info))

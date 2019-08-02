@@ -11,7 +11,9 @@ use rpki::crypto::{PublicKey, PublicKeyFormat};
 use rpki::csr::Csr;
 use rpki::x509::{Name, Serial, Time, Validity};
 
-use krill_commons::api::admin::{Handle, ParentCaContact, PubServerContact, Token};
+use krill_commons::api::admin::{
+    Handle, ParentCaContact, PubServerContact, Token, UpdateChildRequest,
+};
 use krill_commons::api::ca::{
     AddedObject, AllCurrentObjects, CaParentsInfo, CertAuthInfo, CertifiedKey, ChildCaDetails,
     CurrentObject, CurrentObjects, IssuedCert, KeyRef, ObjectName, ObjectsDelta, ParentCaInfo,
@@ -219,9 +221,18 @@ impl<S: Signer> Aggregate for CertAuth<S> {
                 let child = self.children.get_mut(&child).unwrap();
                 child.add_cert(&class_name, issued);
             }
-            EvtDet::ChildUpdatedToken(_child, _token) => unimplemented!(),
-            EvtDet::ChildUpdatedIdCert(_child, _cert) => unimplemented!(),
-            EvtDet::ChildUpdatedResourceClass(_child, _name, _resources) => unimplemented!(),
+            EvtDet::ChildUpdatedToken(child, token) => {
+                let child = self.children.get_mut(&child).unwrap();
+                child.set_token(token);
+            }
+            EvtDet::ChildUpdatedIdCert(child, cert) => {
+                let child = self.children.get_mut(&child).unwrap();
+                child.set_id_cert(cert);
+            }
+            EvtDet::ChildUpdatedResourceClass(child, class, resources) => {
+                let child = self.children.get_mut(&child).unwrap();
+                child.set_resources_for_class(&class, resources)
+            }
             EvtDet::ChildRemovedResourceClass(_child, _name) => unimplemented!(),
 
             // Being a child
@@ -275,7 +286,7 @@ impl<S: Signer> Aggregate for CertAuth<S> {
             CmdDet::AddChild(child, token, id_cert_opt, resources) => {
                 self.add_child(child, token, id_cert_opt, resources)
             }
-            CmdDet::UpdateChild(_, _, _, _) => unimplemented!(),
+            CmdDet::UpdateChild(child, req) => self.update_child(&child, req),
             CmdDet::CertifyChild(child, request, token, signer) => {
                 self.certify_child(child, request, token, signer)
             }
@@ -545,7 +556,7 @@ impl<S: Signer> CertAuth<S> {
 
         // TODO: Handle add child to normal CA (issue #25)
         let mut child_details = ChildCaDetails::new(token, id_cert);
-        child_details.add_resources(DFLT_CLASS, resources);
+        child_details.add_new_resource_class(DFLT_CLASS, resources);
 
         Ok(vec![EvtDet::child_added(
             &self.handle,
@@ -589,9 +600,10 @@ impl<S: Signer> CertAuth<S> {
             return Err(Error::MissingResources);
         }
 
-        let resources = limit
-            .resolve(child_resources.resources())
-            .ok_or_else(|| Error::MissingResources)?;
+        let resources = child_resources
+            .resources()
+            .apply_limit(&limit)
+            .map_err(|_| Error::MissingResources)?;
 
         csr.validate()
             .map_err(|_| Error::invalid_csr(&child, "invalid signature"))?;
@@ -641,9 +653,9 @@ impl<S: Signer> CertAuth<S> {
             cert.set_rpki_manifest(Some(rpki_manifest.clone()));
             cert.set_rpki_notify(rpki_notify.cloned());
 
-            cert.set_as_resources(Some(resources.asn().clone()));
-            cert.set_v4_resources(Some(resources.v4().deref().clone()));
-            cert.set_v6_resources(Some(resources.v6().deref().clone()));
+            cert.set_as_resources(Some(resources.to_as_resources()));
+            cert.set_v4_resources(Some(resources.to_ip_resources_v4()));
+            cert.set_v6_resources(Some(resources.to_ip_resources_v6()));
 
             cert.set_authority_key_identifier(Some(issuing_cert.cert().subject_key_identifier()));
 
@@ -695,6 +707,97 @@ impl<S: Signer> CertAuth<S> {
         );
 
         Ok(vec![issued_event, publish_event])
+    }
+
+    fn update_child(&self, child_handle: &Handle, req: UpdateChildRequest) -> ca::Result<Vec<Evt>> {
+        let (token_opt, cert_opt, resources_opt) = req.unwrap();
+
+        let mut version = self.version;
+        let mut res = vec![];
+
+        let child = self.get_child(child_handle)?;
+
+        if let Some(token) = token_opt {
+            res.push(EvtDet::child_updated_token(
+                &self.handle,
+                version,
+                child_handle.clone(),
+                token,
+            ));
+            version += 1;
+        }
+
+        if let Some(id_cert) = cert_opt {
+            res.push(EvtDet::child_updated_cert(
+                &self.handle,
+                version,
+                child_handle.clone(),
+                id_cert,
+            ));
+        }
+
+        if let Some(resources) = resources_opt {
+            let mut my_resources = HashMap::new();
+            match &self.parents {
+                CaParents::Parents(_parents_map) => unimplemented!("Issue #25"),
+                CaParents::SelfSigned(key, _tal) => {
+                    my_resources.insert(DFLT_CLASS, key.incoming_cert().resources());
+                }
+            }
+
+            let all_my_resources = my_resources
+                .values()
+                .fold(ResourceSet::default(), |acc, res| acc.union(res));
+
+            if !all_my_resources.contains(&resources) {
+                return Err(Error::MissingResources);
+            }
+
+            // Map the new child resources to classes
+            let mut child_entitlements = HashMap::new();
+            for (class_name, resources_for_class) in my_resources.into_iter() {
+                let child_resources_for_class = resources_for_class.intersection(&resources);
+                if !child_resources_for_class.is_empty() {
+                    child_entitlements.insert(class_name.to_string(), child_resources_for_class);
+                }
+            }
+
+            // Get the current child resources
+            let mut child_resources = HashMap::new();
+            for (class_name, child_rc) in child.resources().iter() {
+                child_resources.insert(class_name, child_rc.resources());
+            }
+
+            // Determine for each whether the entitlement is changed, added, or removed
+            for (class_name, entitled_resource_set) in child_entitlements.into_iter() {
+                if match child_resources.remove(&class_name) {
+                    None => true,
+                    Some(current_resources) => current_resources != &entitled_resource_set,
+                } {
+                    res.push(EvtDet::child_updated_resources(
+                        &self.handle,
+                        version,
+                        child_handle.clone(),
+                        class_name,
+                        entitled_resource_set,
+                    ));
+                    version += 1;
+                }
+            }
+
+            for class_name in child_resources.keys() {
+                res.push(EvtDet::child_updated_resources(
+                    &self.handle,
+                    version,
+                    child_handle.clone(),
+                    class_name.to_string(),
+                    ResourceSet::default(),
+                ));
+                version += 1;
+            }
+        }
+
+        Ok(res)
     }
 
     /// Returns `true` if the child is known, `false` otherwise. No errors.

@@ -1,10 +1,12 @@
-use api::ca::{IssuedCert, RcvdCert, ResourceSet};
-use rpki::cert::{Cert, Overclaim};
+use rpki::cert::Cert;
 use rpki::crypto::{KeyIdentifier, PublicKey};
 use rpki::csr::Csr;
-use rpki::resources::{AsResources, Ipv4Resources, Ipv6Resources};
+use rpki::resources::{AsBlocks, IpBlocks};
 use rpki::uri;
 use rpki::x509::Time;
+
+use crate::api::ca::{IssuedCert, RcvdCert, ResourceSet};
+use crate::util::ext_serde;
 
 pub const DFLT_CLASS: &str = "all";
 
@@ -287,9 +289,19 @@ impl IssuanceResponse {
 /// See: https://tools.ietf.org/html/rfc6492#section-3.4.1
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RequestResourceLimit {
-    asn: Option<AsResources>,
-    v4: Option<Ipv4Resources>,
-    v6: Option<Ipv6Resources>,
+    asn: Option<AsBlocks>,
+
+    #[serde(
+        deserialize_with = "ext_serde::de_ip_blocks_4_opt",
+        serialize_with = "ext_serde::ser_ip_blocks_4_opt"
+    )]
+    v4: Option<IpBlocks>,
+
+    #[serde(
+        deserialize_with = "ext_serde::de_ip_blocks_6_opt",
+        serialize_with = "ext_serde::ser_ip_blocks_6_opt"
+    )]
+    v6: Option<IpBlocks>,
 }
 
 impl RequestResourceLimit {
@@ -301,105 +313,28 @@ impl RequestResourceLimit {
         self.asn == None && self.v4 == None && self.v6 == None
     }
 
-    pub fn with_asn(&mut self, asn: AsResources) {
+    pub fn with_asn(&mut self, asn: AsBlocks) {
         self.asn = Some(asn);
     }
 
-    pub fn with_ipv4(&mut self, ipv4: Ipv4Resources) {
+    pub fn with_ipv4(&mut self, ipv4: IpBlocks) {
         self.v4 = Some(ipv4);
     }
 
-    pub fn with_ipv6(&mut self, ipv6: Ipv6Resources) {
+    pub fn with_ipv6(&mut self, ipv6: IpBlocks) {
         self.v6 = Some(ipv6);
     }
 
-    pub fn asn(&self) -> Option<&AsResources> {
+    pub fn asn(&self) -> Option<&AsBlocks> {
         self.asn.as_ref()
     }
-    pub fn v4(&self) -> Option<&Ipv4Resources> {
+
+    pub fn v4(&self) -> Option<&IpBlocks> {
         self.v4.as_ref()
     }
-    pub fn v6(&self) -> Option<&Ipv6Resources> {
+
+    pub fn v6(&self) -> Option<&IpBlocks> {
         self.v6.as_ref()
-    }
-
-    /// Give back a ResourceSet based on the input set as limited by this.
-    /// Note, if the limit exceeds the input set for any resource type
-    /// [`None`] is returned instead.
-    pub fn resolve(&self, set: &ResourceSet) -> Option<ResourceSet> {
-        let asn = match &self.asn {
-            None => set.asn().clone(),
-            Some(asn) => {
-                match set.asn().as_blocks() {
-                    None => {
-                        // Asking for a specific sub-set of inherited
-                        // resources. This is unverifiable. As Krill
-                        // will never use the "inherit" type on CA certificates
-                        // it is safe to just return a None here.
-                        return None;
-                    }
-                    Some(parent_asn) => {
-                        if parent_asn
-                            .validate_issued(Some(asn), Overclaim::Refuse)
-                            .is_err()
-                        {
-                            return None; // Child is overclaiming
-                        }
-                        asn.clone() // Child gets what they ask for
-                    }
-                }
-            }
-        };
-
-        let v4 = match &self.v4 {
-            None => set.v4().clone(),
-            Some(v4) => {
-                match set.v4().as_blocks() {
-                    None => {
-                        // Asking for a specific sub-set of inherited
-                        // resources. This is unverifiable. As Krill
-                        // will never use the "inherit" type on CA certificates
-                        // it is safe to just return a None here.
-                        return None;
-                    }
-                    Some(parent_v4) => {
-                        if parent_v4
-                            .validate_issued(Some(v4), Overclaim::Refuse)
-                            .is_err()
-                        {
-                            return None; // Child is overclaiming
-                        }
-                        v4.clone() // Child gets what they ask for
-                    }
-                }
-            }
-        };
-
-        let v6 = match &self.v6 {
-            None => set.v6().clone(),
-            Some(v6) => {
-                match set.v6().as_blocks() {
-                    None => {
-                        // Asking for a specific sub-set of inherited
-                        // resources. This is unverifiable. As Krill
-                        // will never use the "inherit" type on CA certificates
-                        // it is safe to just return a None here.
-                        return None;
-                    }
-                    Some(parent_v6) => {
-                        if parent_v6
-                            .validate_issued(Some(v6), Overclaim::Refuse)
-                            .is_err()
-                        {
-                            return None; // Child is overclaiming
-                        }
-                        v6.clone() // Child gets what they ask for
-                    }
-                }
-            }
-        };
-
-        Some(ResourceSet::new(asn, v4, v6))
     }
 }
 

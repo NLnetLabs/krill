@@ -83,6 +83,12 @@ impl KrillClient {
                     httpclient::post_json_with_response(&uri, req, Some(&self.token))?;
                 Ok(ApiResponse::ParentCaInfo(info))
             }
+            TrustAnchorCommand::UpdateChild(child, req) => {
+                let uri = format!("api/v1/trustanchor/children/{}", child);
+                let uri = self.resolve_uri(&uri);
+                httpclient::post_json(&uri, req, Some(&self.token))?;
+                Ok(ApiResponse::Empty)
+            }
         }
     }
 

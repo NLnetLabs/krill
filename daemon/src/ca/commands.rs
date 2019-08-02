@@ -1,6 +1,6 @@
 use std::sync::{Arc, RwLock};
 
-use krill_commons::api::admin::{Handle, ParentCaContact, Token};
+use krill_commons::api::admin::{Handle, ParentCaContact, Token, UpdateChildRequest};
 use krill_commons::api::ca::{RcvdCert, ResourceSet};
 use krill_commons::api::{Entitlements, IssuanceRequest};
 use krill_commons::eventsourcing;
@@ -19,12 +19,7 @@ pub type Cmd<S> = eventsourcing::SentCommand<CmdDet<S>>;
 pub enum CmdDet<S: Signer> {
     // Being a parent
     AddChild(ChildHandle, Token, Option<IdCert>, ResourceSet),
-    UpdateChild(
-        ChildHandle,
-        Option<Token>,
-        Option<IdCert>,
-        Option<ResourceSet>,
-    ),
+    UpdateChild(ChildHandle, UpdateChildRequest),
     CertifyChild(ChildHandle, IssuanceRequest, Token, Arc<RwLock<S>>),
 
     // Being a child
@@ -58,16 +53,12 @@ impl<S: Signer> CmdDet<S> {
         )
     }
 
-    pub fn update_child_resources(
+    pub fn update_child(
         handle: &Handle,
         child_handle: ChildHandle,
-        child_resources: ResourceSet,
+        req: UpdateChildRequest,
     ) -> Cmd<S> {
-        eventsourcing::SentCommand::new(
-            handle,
-            None,
-            CmdDet::UpdateChild(child_handle, None, None, Some(child_resources)),
-        )
+        eventsourcing::SentCommand::new(handle, None, CmdDet::UpdateChild(child_handle, req))
     }
 
     /// Certify a child. Will return an error in case the child is

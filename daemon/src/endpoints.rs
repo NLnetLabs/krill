@@ -5,7 +5,9 @@ use actix_web::{HttpResponse, ResponseError};
 use bytes::Bytes;
 use serde::Serialize;
 
-use krill_commons::api::admin::{AddChildRequest, AddParentRequest, CertAuthInit, Handle};
+use krill_commons::api::admin::{
+    AddChildRequest, AddParentRequest, CertAuthInit, Handle, UpdateChildRequest,
+};
 use krill_commons::api::rrdp::VerificationError;
 use krill_commons::api::{admin, publication, ErrorCode, ErrorResponse, IssuanceRequest};
 use krill_commons::remote::api::ClientInfo;
@@ -290,6 +292,35 @@ pub fn ta_add_child(
     if_api_allowed(&server, &auth, || {
         match server.read().ta_add_child(req.into_inner()) {
             Ok(info) => render_json(info),
+            Err(e) => server_error(&Error::ServerError(e)),
+        }
+    })
+}
+
+pub fn ta_update_child(
+    server: web::Data<AppServer>,
+    child: Path<Handle>,
+    req: Json<UpdateChildRequest>,
+    auth: Auth,
+) -> HttpResponse {
+    if_api_allowed(&server, &auth, || {
+        render_empty_res(
+            server
+                .read()
+                .ta_update_child(child.into_inner(), req.into_inner()),
+        )
+    })
+}
+
+pub fn ta_show_child(
+    server: web::Data<AppServer>,
+    child: Path<Handle>,
+    auth: Auth,
+) -> HttpResponse {
+    if_api_allowed(&server, &auth, || {
+        match server.read().ta_show_child(&child.into_inner()) {
+            Ok(Some(child)) => render_json(child),
+            Ok(None) => api_not_found(),
             Err(e) => server_error(&Error::ServerError(e)),
         }
     })

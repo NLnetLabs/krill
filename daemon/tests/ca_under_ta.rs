@@ -7,7 +7,7 @@ use krill_client::options::{CaCommand, Command, TrustAnchorCommand};
 use krill_client::report::ApiResponse;
 use krill_commons::api::admin::{
     AddChildRequest, AddParentRequest, CertAuthInit, CertAuthPubMode, ChildAuthRequest, Handle,
-    ParentCaContact, Token,
+    ParentCaContact, Token, UpdateChildRequest,
 };
 use krill_commons::api::ca::{CaParentsInfo, CertAuthInfo, ResourceSet};
 use krill_commons::remote::rfc8183;
@@ -60,6 +60,17 @@ fn add_child_to_ta_rfc6492(
     }
 }
 
+fn update_child(handle: &Handle, resources: &ResourceSet) {
+    let req = UpdateChildRequest::new(None, None, Some(resources.clone()));
+    match krill_admin(Command::TrustAnchor(TrustAnchorCommand::UpdateChild(
+        handle.clone(),
+        req,
+    ))) {
+        ApiResponse::Empty => {}
+        _ => panic!("Expected empty ok response"),
+    }
+}
+
 fn add_parent_to_ca(handle: &Handle, parent: AddParentRequest) {
     krill_admin(Command::CertAuth(CaCommand::AddParent(
         handle.clone(),
@@ -87,8 +98,9 @@ fn wait_for_resources_on_current_key(handle: &Handle, resources: &ResourceSet) {
             if let Some(parent) = parents.get(&ta_handle()) {
                 if let Some(rc) = parent.resources().get("all") {
                     if let Some(key) = rc.current_key() {
-                        assert_eq!(resources, key.resources());
-                        break;
+                        if resources == key.resources() {
+                            return;
+                        }
                     }
                 }
             }
@@ -104,6 +116,8 @@ fn ca_under_ta() {
         let ta_handle = ta_handle();
         init_ta();
 
+        // Embedded CA ----------------------------------------------------------------------------
+
         let emb_child_handle = Handle::from("child");
         let emb_child_token = Token::from("child");
         let emb_child_resources = ResourceSet::from_strs("", "192.168.0.0/16", "").unwrap();
@@ -118,14 +132,14 @@ fn ca_under_ta() {
 
         add_parent_to_ca(&emb_child_handle, parent);
 
+        // RFC6492 CA -----------------------------------------------------------------------------
+
         let cms_child_handle = Handle::from("rfc6492");
         let cms_child_token = Token::from("rfc6492");
         let cms_child_resources = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
 
         init_child(&cms_child_handle, &cms_child_token);
         let req = child_request(&cms_child_handle);
-
-        eprintln!("Child Request: {}", req);
 
         let parent = {
             let contact =
@@ -136,5 +150,10 @@ fn ca_under_ta() {
         add_parent_to_ca(&cms_child_handle, parent);
 
         wait_for_resources_on_current_key(&cms_child_handle, &cms_child_resources);
+
+        let cms_child_resources = ResourceSet::from_strs("AS65000", "10.0.0.0/16", "").unwrap();
+        update_child(&cms_child_handle, &cms_child_resources);
+
+        //        wait_for_resources_on_current_key(&cms_child_handle, &cms_child_resources);
     });
 }

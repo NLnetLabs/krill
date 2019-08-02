@@ -1,18 +1,18 @@
 use clap::{App, Arg, SubCommand};
 use rpki::uri;
+use std::io;
 use std::path::PathBuf;
 use std::str::FromStr;
 
 use krill_commons::api::admin::{
     AddChildRequest, AddParentRequest, CertAuthInit, CertAuthPubMode, ChildAuthRequest, Handle,
-    ParentCaContact, Token,
+    ParentCaContact, Token, UpdateChildRequest,
 };
-use krill_commons::api::ca::ResourceSet;
-
-use crate::report::{ReportError, ReportFormat};
+use krill_commons::api::ca::{ResSetErr, ResourceSet};
 use krill_commons::remote::rfc8183;
 use krill_commons::util::file;
-use std::io;
+
+use crate::report::{ReportError, ReportFormat};
 
 /// This type holds all the necessary data to connect to a Krill daemon, and
 /// authenticate, and perform a specific action. Note that this is extracted
@@ -152,6 +152,53 @@ impl Options {
                                 .required(true)
                             )
                         )
+                    )
+                    .subcommand(SubCommand::with_name("update")
+                        .about("Update details for a child")
+                        .arg(Arg::with_name("handle")
+                            .short("h")
+                            .long("handle")
+                            .value_name("child-handle")
+                            .help("Override the handle in the XML")
+                            .required(false)
+                        )
+                        .arg(Arg::with_name("token")
+                            .short("t")
+                            .long("token")
+                            .value_name("token-string")
+                            .help("Update the authentication token for the child")
+                            .required(false)
+                        )
+                        .arg(Arg::with_name("xml")
+                            .short("x")
+                            .long("xml")
+                            .value_name("FILE")
+                            .help("Update child certificate from RFC 8183 Child Request XML")
+                            .required(false)
+                        )
+                        .arg(Arg::with_name("asn")
+                            .short("a")
+                            .long("asn")
+                            .value_name("AS resources")
+                            .help("Update the delegated AS resources: e.g. AS1, AS3-4")
+                            .required(false)
+                        )
+                        .arg(Arg::with_name("ipv4")
+                            .short("4")
+                            .long("ipv4")
+                            .value_name("IPv4 resources")
+                            .help("Update the delegated IPv4 resources: e.g. 192.168.0.0/16")
+                            .required(false)
+                        )
+                        .arg(Arg::with_name("ipv6")
+                            .short("6")
+                            .long("ipv6")
+                            .value_name("IPv6 resources")
+                            .help("Update the delegated IPv6 resources: e.g. 2001:db8::/32")
+                            .required(false)
+                        )
+
+
                     )
                 )
             )
@@ -373,13 +420,43 @@ impl Options {
                             }
                         };
 
-                        let res = ResourceSet::from_strs(asn, ipv4, ipv6).unwrap();
+                        let res = ResourceSet::from_strs(asn, ipv4, ipv6)?;
 
                         let auth = ChildAuthRequest::Rfc8183(cr);
 
                         let req = AddChildRequest::new(handle, res, auth);
                         command = Command::TrustAnchor(TrustAnchorCommand::AddChild(req))
                     }
+                }
+
+                if let Some(m) = m.subcommand_matches("update") {
+                    let handle = Handle::from(m.value_of("handle").unwrap());
+                    let token = m.value_of("token").map(Token::from);
+                    let cert = match m.value_of("xml") {
+                        Some(xml_path) => {
+                            let xml = PathBuf::from(xml_path);
+                            let bytes = file::read(&xml)?;
+                            let cr = rfc8183::ChildRequest::validate(bytes.as_ref())?;
+                            let (_, _, cert) = cr.unwrap();
+                            Some(cert)
+                        }
+                        None => None,
+                    };
+
+                    let asn = m.value_of("asn").unwrap_or("");
+                    let ipv4 = m.value_of("ipv4").unwrap_or("");
+                    let ipv6 = m.value_of("ipv6").unwrap_or("");
+                    let resources = ResourceSet::from_strs(asn, ipv4, ipv6)?;
+
+                    let resources = if resources.is_empty() {
+                        None
+                    } else {
+                        Some(resources)
+                    };
+
+                    let req = UpdateChildRequest::new(token, cert, resources);
+
+                    command = Command::TrustAnchor(TrustAnchorCommand::UpdateChild(handle, req))
                 }
             }
         }
@@ -513,6 +590,7 @@ pub enum TrustAnchorCommand {
     Show,
     Publish,
     AddChild(AddChildRequest),
+    UpdateChild(Handle, UpdateChildRequest),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -567,6 +645,9 @@ pub enum Error {
 
     #[display(fmt = "Invalid RFC8183 XML: {}", _0)]
     Rfc8183(rfc8183::Error),
+
+    #[display(fmt = "Invalid resources requested: {}", _0)]
+    ResSetErr(ResSetErr),
 }
 
 impl From<rfc8183::Error> for Error {
@@ -590,5 +671,11 @@ impl From<io::Error> for Error {
 impl From<ReportError> for Error {
     fn from(e: ReportError) -> Self {
         Error::ReportError(e)
+    }
+}
+
+impl From<ResSetErr> for Error {
+    fn from(e: ResSetErr) -> Self {
+        Error::ResSetErr(e)
     }
 }

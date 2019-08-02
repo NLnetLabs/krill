@@ -9,18 +9,18 @@ use serde::export::fmt::Display;
 use rpki::cert::Cert;
 use rpki::crypto::KeyIdentifier;
 use rpki::csr::Csr;
-use rpki::resources::{AsResources, Ipv4Resources, Ipv6Resources};
 use rpki::uri;
 use rpki::x509::Time;
 
+use crate::api::admin::Handle;
 use crate::api::ca::{IssuedCert, ResSetErr, ResourceSet};
 use crate::api::{
     EntitlementClass, Entitlements, IssuanceRequest, IssuanceResponse, RequestResourceLimit,
     RevocationRequest, SigningCert,
 };
+use crate::remote::sigmsg::SignedMessage;
+use crate::rpki::resources::{AsBlocks, IpBlocks};
 use crate::util::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
-use api::admin::Handle;
-use remote::sigmsg::SignedMessage;
 
 //------------ Consts --------------------------------------------------------
 
@@ -316,17 +316,17 @@ impl Qry {
             let mut limit = RequestResourceLimit::default();
 
             if let Some(asn) = a.take_opt("req_resource_set_as") {
-                let asn = AsResources::from_str(&asn).map_err(Error::inr_syntax)?;
+                let asn = AsBlocks::from_str(&asn).map_err(Error::inr_syntax)?;
                 limit.with_asn(asn);
             }
 
             if let Some(ipv4) = a.take_opt("req_resource_set_ipv4") {
-                let ipv4 = Ipv4Resources::from_str(&ipv4).map_err(Error::inr_syntax)?;
+                let ipv4 = IpBlocks::from_str(&ipv4).map_err(Error::inr_syntax)?;
                 limit.with_ipv4(ipv4);
             }
 
             if let Some(ipv6) = a.take_opt("req_resource_set_ipv6") {
-                let ipv6 = Ipv6Resources::from_str(&ipv6).map_err(Error::inr_syntax)?;
+                let ipv6 = IpBlocks::from_str(&ipv6).map_err(Error::inr_syntax)?;
                 limit.with_ipv6(ipv6);
             }
 
@@ -365,10 +365,10 @@ impl Qry {
             attrs_strings.push(("req_resource_set_as", asn.to_string()));
         }
         if let Some(v4) = limit.v4() {
-            attrs_strings.push(("req_resource_set_ipv4", v4.to_string()));
+            attrs_strings.push(("req_resource_set_ipv4", v4.as_v4().to_string()));
         }
         if let Some(v6) = limit.v6() {
-            attrs_strings.push(("req_resource_set_ipv6", v6.to_string()));
+            attrs_strings.push(("req_resource_set_ipv6", v6.as_v6().to_string()));
         }
 
         let mut attrs_str = vec![];
@@ -563,19 +563,19 @@ impl Res {
             let mut limit = RequestResourceLimit::default();
 
             if let Some(asn) = a.take_opt("req_resource_set_as") {
-                limit.with_asn(AsResources::from_str(&asn).map_err(Error::inr_syntax)?);
+                limit.with_asn(AsBlocks::from_str(&asn).map_err(Error::inr_syntax)?);
             }
 
             if let Some(v4) = a.take_opt("req_resource_set_ipv4") {
-                limit.with_ipv4(Ipv4Resources::from_str(&v4).map_err(Error::inr_syntax)?);
+                limit.with_ipv4(IpBlocks::from_str(&v4).map_err(Error::inr_syntax)?);
             }
 
             if let Some(v6) = a.take_opt("req_resource_set_ipv6") {
-                limit.with_ipv6(Ipv6Resources::from_str(&v6).map_err(Error::inr_syntax)?);
+                limit.with_ipv6(IpBlocks::from_str(&v6).map_err(Error::inr_syntax)?);
             }
 
             let cert = Self::decode_cert(r)?;
-            let resource_set = ResourceSet::from(&cert);
+            let resource_set = ResourceSet::try_from(&cert)?;
 
             Ok(IssuedCert::new(cert_url, limit, resource_set, cert))
         })
@@ -705,10 +705,10 @@ impl Res {
             attrs_strings.push(("resource_set_as", asn.to_string()));
         }
         if let Some(v4) = limit.v4() {
-            attrs_strings.push(("resource_set_ipv4", v4.to_string()));
+            attrs_strings.push(("resource_set_ipv4", v4.as_v4().to_string()));
         }
         if let Some(v6) = limit.v6() {
-            attrs_strings.push(("resource_set_ipv6", v6.to_string()));
+            attrs_strings.push(("resource_set_ipv6", v6.as_v6().to_string()));
         }
 
         let mut attrs_str: Vec<(&str, &str)> = vec![];

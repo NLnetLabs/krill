@@ -1,15 +1,16 @@
 //! Support for admin tasks, such as managing publishers and RFC8181 clients
 
 use std::fmt;
+use std::path::Path;
 
 use rpki::crypto::Signer;
 use rpki::uri;
 
+use crate::api::ca::ResourceSet;
 use crate::api::Link;
-use api::ca::ResourceSet;
-use remote::rfc8183;
-use remote::rfc8183::{ChildRequest, ServiceUri};
-use std::path::Path;
+use crate::remote::id::IdCert;
+use crate::remote::rfc8183;
+use crate::remote::rfc8183::{ChildRequest, ServiceUri};
 
 //------------ Handle --------------------------------------------------------
 
@@ -400,10 +401,39 @@ impl AddChildRequest {
     }
 }
 
+//------------ ChildAuthRequest ----------------------------------------------
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum ChildAuthRequest {
     Embedded(Token),
     Remote(Token),
     Rfc8183(ChildRequest),
+}
+
+//------------ UpdateChildRequest --------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct UpdateChildRequest {
+    token: Option<Token>,
+    id_cert: Option<IdCert>,
+    resources: Option<ResourceSet>,
+}
+
+impl UpdateChildRequest {
+    pub fn new(
+        token: Option<Token>,
+        id_cert: Option<IdCert>,
+        resources: Option<ResourceSet>,
+    ) -> Self {
+        UpdateChildRequest {
+            token,
+            id_cert,
+            resources,
+        }
+    }
+
+    pub fn unwrap(self) -> (Option<Token>, Option<IdCert>, Option<ResourceSet>) {
+        (self.token, self.id_cert, self.resources)
+    }
 }

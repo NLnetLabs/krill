@@ -10,9 +10,9 @@ use rpki::uri;
 use krill_commons::api::admin;
 use krill_commons::api::admin::{
     AddChildRequest, AddParentRequest, CertAuthInit, CertAuthPubMode, Handle, ParentCaContact,
-    Token,
+    Token, UpdateChildRequest,
 };
-use krill_commons::api::ca::{CertAuthInfo, CertAuthList, RcvdCert, TrustAnchorInfo};
+use krill_commons::api::ca::{CertAuthInfo, CertAuthList, ChildCaInfo, RcvdCert, TrustAnchorInfo};
 use krill_commons::api::publication::PublishRequest;
 use krill_commons::api::{publication, Entitlements, IssuanceRequest, IssuanceResponse};
 use krill_commons::remote::api::ClientInfo;
@@ -26,6 +26,7 @@ use krill_pubd::publishers::Publisher;
 use krill_pubd::PubServer;
 
 use crate::auth::{Auth, Authorizer};
+use crate::ca::ChildHandle;
 use crate::ca::{self, ta_handle};
 use crate::mq::EventQueueListener;
 use crate::scheduler::Scheduler;
@@ -301,9 +302,20 @@ impl KrillServer {
 
     /// Adds a child to the TA and returns the ParentCaInfo that the child
     /// will to contact this TA for resource requests.
-    pub fn ta_add_child(&self, req: AddChildRequest) -> Result<ParentCaContact, Error> {
+    pub fn ta_add_child(&self, req: AddChildRequest) -> KrillRes<ParentCaContact> {
         let contact = self.caserver.ta_add_child(req, &self.service_uri)?;
         Ok(contact)
+    }
+
+    pub fn ta_update_child(&self, child: ChildHandle, req: UpdateChildRequest) -> EmptyRes {
+        self.caserver.ta_update_child(child, req)?;
+        Ok(())
+    }
+
+    /// Show details for a child under the TA.
+    pub fn ta_show_child(&self, child: &ChildHandle) -> KrillRes<Option<ChildCaInfo>> {
+        let child = self.caserver.ta_show_child(child)?;
+        Ok(child)
     }
 
     pub fn republish_all(&self) -> EmptyRes {

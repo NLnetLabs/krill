@@ -9,8 +9,11 @@ use rpki::uri;
 use krill_commons::api;
 use krill_commons::api::admin::{
     AddChildRequest, AddParentRequest, ChildAuthRequest, Handle, ParentCaContact, Token,
+    UpdateChildRequest,
 };
-use krill_commons::api::ca::{CertAuthList, CertAuthSummary, IssuedCert, RcvdCert, RepoInfo};
+use krill_commons::api::ca::{
+    CertAuthList, CertAuthSummary, ChildCaInfo, IssuedCert, RcvdCert, RepoInfo,
+};
 use krill_commons::api::{Entitlements, IssuanceRequest, IssuanceResponse, DFLT_CLASS};
 use krill_commons::eventsourcing::{Aggregate, AggregateStore, DiskAggregateStore};
 use krill_commons::remote::builder::SignedMessageBuilder;
@@ -19,7 +22,9 @@ use krill_commons::remote::{rfc6492, rfc8183};
 use krill_commons::util::httpclient;
 use krill_commons::util::softsigner::SignerKeyId;
 
-use crate::ca::{self, CertAuth, CmdDet, IniDet, ParentHandle, ServerError, ServerResult, Signer};
+use crate::ca::{
+    self, CertAuth, ChildHandle, CmdDet, IniDet, ParentHandle, ServerError, ServerResult, Signer,
+};
 use crate::mq::EventQueueListener;
 
 const CA_NS: &str = "cas";
@@ -151,6 +156,37 @@ impl<S: Signer> CaServer<S> {
                 Ok(ParentCaContact::for_rfc6492(response))
             }
         }
+    }
+
+    /// Show details for a child under the TA. Returns Ok(None) if the TA is present,
+    /// but the child is not known.
+    pub fn ta_show_child(&self, child: &ChildHandle) -> ServerResult<Option<ChildCaInfo>, S> {
+        debug!("Finding details for {} under TA", child);
+
+        let ta = self.get_trust_anchor()?;
+        let child_opt = match ta.get_child(child) {
+            Err(_) => None,
+            Ok(child_details) => Some(child_details.clone().into()),
+        };
+
+        Ok(child_opt)
+    }
+
+    pub fn ta_update_child(
+        &self,
+        child: ChildHandle,
+        req: UpdateChildRequest,
+    ) -> ServerResult<(), S> {
+        debug!("Finding details for {} under TA", child);
+        let ta = self.get_trust_anchor()?;
+        let ta_handle = ca::ta_handle();
+
+        let events = ta.process_command(CmdDet::update_child(&ta_handle, child, req))?;
+        if !events.is_empty() {
+            self.ca_store.update(&ta_handle, ta, events)?;
+        }
+
+        Ok(())
     }
 
     /// Generates a random token for embedded CAs
