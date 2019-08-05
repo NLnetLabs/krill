@@ -1,11 +1,11 @@
-use crate::publishers::{
-    InitPublisherDetails, Publisher, PublisherCommand, PublisherCommandDetails, PublisherError,
-    PublisherEventDetails,
-};
-use crate::repo::{
-    self, RetentionTime, RrdpCommandDetails, RrdpInitDetails, RrdpServer, RrdpServerError,
-    RsyncdStore,
-};
+use std::io;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+
+use chrono::Duration;
+
+use rpki::uri;
+
 use krill_commons::api::admin::{Handle, PublisherRequest};
 use krill_commons::api::ca::RepoInfo;
 use krill_commons::api::publication;
@@ -13,10 +13,15 @@ use krill_commons::api::rrdp::DeltaElements;
 use krill_commons::eventsourcing::{
     Aggregate, AggregateStore, AggregateStoreError, Command, DiskAggregateStore,
 };
-use rpki::uri;
-use std::io;
-use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+
+use crate::publishers::{
+    InitPublisherDetails, Publisher, PublisherCommand, PublisherCommandDetails, PublisherError,
+    PublisherEventDetails,
+};
+use crate::repo::{
+    self, RrdpCommandDetails, RrdpInitDetails, RrdpServer, RrdpServerError,
+    RsyncdStore,
+};
 
 //------------ PubServer -----------------------------------------------------
 
@@ -121,7 +126,7 @@ impl PubServer {
                 .update(&repo_id, rrdp, rrdp_publish_events)?;
 
             // Clean up old files
-            let retention = RetentionTime::from_secs(0);
+            let retention = Duration::seconds(0);
             let clean_cmd = RrdpCommandDetails::clean_up(retention);
             let rrdp_clean_events = rrdp.process_command(clean_cmd)?;
             self.rrdp_store.update(&repo_id, rrdp, rrdp_clean_events)?;

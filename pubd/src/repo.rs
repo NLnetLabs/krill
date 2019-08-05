@@ -1,14 +1,17 @@
+use std::{fs, io};
+use std::path::PathBuf;
+
+use chrono::Duration;
+use rpki::uri;
+use rpki::x509::Time;
+
 use krill_commons::api::admin::Handle;
 use krill_commons::api::rrdp::{
     Delta, DeltaElements, DeltaRef, FileRef, Notification, NotificationUpdate, Snapshot,
     SnapshotRef,
 };
 use krill_commons::eventsourcing::{Aggregate, CommandDetails, SentCommand, StoredEvent};
-use krill_commons::util::{file, Time};
-use rpki::uri;
-use std::path::PathBuf;
-use std::time::Duration;
-use std::{fs, io};
+use krill_commons::util::file;
 
 const RRDP_FOLDER: &str = "rrdp";
 const RSYNC_FOLDER: &str = "rsync";
@@ -78,7 +81,7 @@ impl RrdpEventDetails {
 
 pub type RrdpCommand = SentCommand<RrdpCommandDetails>;
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug)]
 pub enum RrdpCommandDetails {
     AddDelta(DeltaElements),
     Publish,
@@ -227,9 +230,9 @@ impl RrdpServer {
 
     /// Cleans out old files on disk, returns event for cleaning up the state.
     fn cleanup(&self, retention: RetentionTime) -> RrdpResult {
-        let cut_off = Time::before_now(retention);
+        let cut_off = Time::now() - retention;
         for old in self.notification.old_refs() {
-            if old.0.on_or_before(&cut_off) {
+            if old.0 <= cut_off {
                 // Don't care if it were already deleted.
                 let _ = file::clean_file_and_path(&old.1.path());
             }

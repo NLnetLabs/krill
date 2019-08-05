@@ -1,4 +1,5 @@
 extern crate bytes;
+extern crate chrono;
 #[macro_use]
 extern crate derive_more;
 extern crate rand;

@@ -1,17 +1,20 @@
 //! Data objects used in the (RRDP) repository. I.e. the publish, update, and
 //! withdraw elements, as well as the notification, snapshot and delta file
 //! definitions.
+use std::collections::HashMap;
+use std::io;
+use std::path::PathBuf;
+
+use bytes::Bytes;
+
+use rpki::uri;
+use rpki::x509::Time;
+
 use crate::api::publication;
 use crate::api::Base64;
 use crate::api::EncodedHash;
 use crate::util::file;
 use crate::util::xml::XmlWriter;
-use crate::util::Time;
-use bytes::Bytes;
-use rpki::uri;
-use std::collections::HashMap;
-use std::io;
-use std::path::PathBuf;
 
 const VERSION: &str = "1";
 const NS: &str = "http://www.ripe.net/rpki/rrdp";
@@ -204,7 +207,7 @@ impl Notification {
 
     /// Cleans up all old references from before the given time.
     pub fn clean_up(&mut self, t: Time) {
-        self.old_refs.retain(|old_ref| !old_ref.0.on_or_before(&t))
+        self.old_refs.retain(|old_ref| old_ref.0 > t)
     }
 
     pub fn create(session: String, snapshot: SnapshotRef) -> Self {
