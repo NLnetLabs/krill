@@ -1,20 +1,20 @@
 //! Support for building RPKI Certificates and Objects
+use std::fmt;
 use bcder::encode::{Constructed, PrimitiveContent, Values};
 use bcder::{decode, encode};
 use bcder::{BitString, Mode, OctetString, Oid, Tag};
 use bytes::Bytes;
 use chrono::Utc;
-use rpki::cert::ext::{AuthorityKeyIdentifier, CrlNumber, Extensions, KeyIdentifier};
-use rpki::crl::Crl;
+use rpki::cert::ext::{CrlNumber, Extensions, KeyIdentifier};
 use rpki::crypto::signer::KeyError;
 use rpki::crypto::{
     DigestAlgorithm, PublicKey, Signature, SignatureAlgorithm, Signer, SigningError,
 };
 use rpki::oid;
 use rpki::x509::{Name, Time, Validity};
-use std::fmt;
 
 use crate::remote::id::{IdCert, IdExtensions};
+use crate::remote::sigmsg::SigMsgCrl;
 
 //------------ TbsCertificate ------------------------------------------------
 
@@ -225,7 +225,7 @@ pub struct SignedMessageBuilder {
     content: OctetString,
     signer_info: SignedSignerInfo,
     ee_cert: IdCert,
-    crl: Crl,
+    crl: SigMsgCrl,
 }
 
 impl SignedMessageBuilder {
@@ -240,7 +240,7 @@ impl SignedMessageBuilder {
 
         let ee_cert = IdCertBuilder::new_ee_cert(issuing_key, signer_info.one_off_key(), signer)?;
 
-        let crl = CrlBuilder::create(issuing_key, signer)?;
+        let crl = SigMsgCrlBuilder::create(issuing_key, signer)?;
 
         Ok(SignedMessageBuilder {
             content,
@@ -470,29 +470,22 @@ impl SignerInfoBuilder {
 
 //------------ CrlBuilder ----------------------------------------------------
 
-pub struct CrlBuilder;
+pub struct SigMsgCrlBuilder;
 
-impl CrlBuilder {
-    /// Creates a CRL for use with protocol messages. I.e. it revokes nothing,
-    /// because smart people use single use keys for EE certs, and it's valid
-    /// for, like, forever -- cause really this thing is useless. Still it is
-    /// mandatory, so make one (1) and re-use it.
-    ///
-    /// This will all be changed in future when we implement generating CRLs
-    /// for the RPKI CA.
-    pub fn create<S: Signer>(issuing_key: &S::KeyId, signer: &S) -> Result<Crl, Error<S::Error>> {
+impl SigMsgCrlBuilder {
+    /// Creates a CRL for use with protocol messages. This revokes nothing,
+    /// because we use single use keys for EE certs.
+    pub fn create<S: Signer>(
+        issuing_key: &S::KeyId,
+        signer: &S,
+    ) -> Result<SigMsgCrl, Error<S::Error>> {
         let pub_key = signer.get_key_info(issuing_key)?;
         let name = Name::from_pub_key(&pub_key);
-        let now = Time::new(Utc::now());
-        let eternity = Time::new(Utc::now() + ::chrono::Duration::weeks(52000));
+        let just_now = Time::new(Utc::now()) - ::chrono::Duration::minutes(5);
+        let in_a_bit = Time::new(Utc::now() + ::chrono::Duration::minutes(5));
 
         let crl_number = CrlNumber::new(1);
-        let aki = AuthorityKeyIdentifier::new(&pub_key);
-
-        let extensions = Constructed::new(
-            Tag::CTX_0,
-            encode::sequence((aki.encode(), crl_number.encode())),
-        );
+        let extensions = Constructed::new(Tag::CTX_0, encode::sequence(crl_number.encode()));
 
         let crl_data = encode::sequence((
             (
@@ -501,8 +494,8 @@ impl CrlBuilder {
                 name.encode_ref(),
             ),
             (
-                now.encode(),
-                eternity.encode(),
+                just_now.encode(),
+                in_a_bit.encode(),
                 // Real revocations go here
                 extensions,
             ),
@@ -526,7 +519,7 @@ impl CrlBuilder {
             signature.encode(),
         ));
 
-        let crl = Crl::decode(crl_obj.to_captured(Mode::Der).as_ref())?;
+        let crl = SigMsgCrl::decode(crl_obj.to_captured(Mode::Der).as_ref())?;
 
         Ok(crl)
     }
@@ -602,7 +595,7 @@ pub mod tests {
             let key_id = s.create_key(&PublicKeyAlgorithm::RsaEncryption).unwrap();
             let key_info = s.get_key_info(&key_id).unwrap();
 
-            let crl = CrlBuilder::create(&key_id, &mut s).unwrap();
+            let crl = SigMsgCrlBuilder::create(&key_id, &mut s).unwrap();
             crl.validate(&key_info).unwrap();
         })
     }

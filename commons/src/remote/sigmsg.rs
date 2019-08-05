@@ -3,14 +3,14 @@
 
 use bytes::Bytes;
 
-use bcder::decode;
 use bcder::string::OctetString;
+use bcder::{decode, encode, Captured};
 use bcder::{Mode, Oid, Tag};
 
-use rpki::crypto::{DigestAlgorithm, KeyIdentifier, Signature, SignatureAlgorithm};
+use rpki::crypto::{DigestAlgorithm, KeyIdentifier, PublicKey, Signature, SignatureAlgorithm};
 use rpki::oid;
 use rpki::sigobj::{MessageDigest, SignedAttrs};
-use rpki::x509::{Time, ValidationError};
+use rpki::x509::{SignedData, Time, ValidationError};
 
 use crate::remote::id::IdCert;
 
@@ -29,6 +29,7 @@ pub struct SignedMessage {
     content_type: Oid<Bytes>,
     content: OctetString,
     id_cert: IdCert,
+    crl: SigMsgCrl,
 
     //--- From SignerInfo
     //
@@ -83,7 +84,7 @@ impl SignedMessage {
 
             let id_cert = Self::take_certificates(cons)?;
 
-            let _whatever = Self::drop_crls(cons);
+            let crl = Self::take_crl(cons)?;
 
             let (sid, attrs, signature) = {
                 // signerInfos
@@ -116,6 +117,7 @@ impl SignedMessage {
                 content_type,
                 content,
                 id_cert,
+                crl,
 
                 sid,
                 signed_attrs: attrs.0,
@@ -144,18 +146,13 @@ impl SignedMessage {
         })
     }
 
-    // Drop the CRLs, if present.
+    // Take the CRL, if present.
     //
-    // The ones from DRL don't seem to parse, and their value is
-    // is very limited.
-    //
-    // These CRLs only really protect if an operator use multi-use
-    // keys for their EE certificates and is given some frequently
-    // re-signed CRL by the CA cert for inclusion.. then if the EE
-    // key is stolen you get a bit of protection.
-    //
-    fn drop_crls<S: decode::Source>(cons: &mut decode::Constructed<S>) -> Result<(), S::Err> {
-        cons.take_constructed_if(Tag::CTX_1, |cons| cons.skip_all())
+    // In theory there could be multiple CRLs, one for each CA certificate included in signing
+    // this object. However, nobody seems to do this, and it's rather poorly defined how (and why)
+    // this would be done. So.. just expecting 1 CRL here.
+    fn take_crl<S: decode::Source>(cons: &mut decode::Constructed<S>) -> Result<SigMsgCrl, S::Err> {
+        cons.take_constructed_if(Tag::CTX_1, |cons| SigMsgCrl::take_from(cons))
     }
 }
 
@@ -194,6 +191,54 @@ impl SignedMessage {
             .subject_public_key_info()
             .verify(&msg, &self.signature)
             .map_err(Into::into)
+    }
+}
+
+//------------ SigMsgCrl -----------------------------------------------------
+
+/// An RPKI certificate revocation list used in RFC6492 and RFC8181 protocol signed
+/// messages.
+#[derive(Clone, Debug)]
+pub struct SigMsgCrl {
+    /// The outer structure of the CRL.
+    signed_data: SignedData,
+}
+
+/// # Decode, Validate, and Encode
+///
+impl SigMsgCrl {
+    /// Parses a source as a certificate revocation list.
+    pub fn decode<S: decode::Source>(source: S) -> Result<Self, S::Err> {
+        Mode::Der.decode(source, Self::take_from)
+    }
+
+    /// Takes an encoded CRL from the beginning of a constructed value.
+    pub fn take_from<S: decode::Source>(cons: &mut decode::Constructed<S>) -> Result<Self, S::Err> {
+        cons.take_sequence(Self::from_constructed)
+    }
+
+    /// Parses the content of a certificate revocation list.
+    pub fn from_constructed<S: decode::Source>(
+        cons: &mut decode::Constructed<S>,
+    ) -> Result<Self, S::Err> {
+        let signed_data = SignedData::from_constructed(cons)?;
+        Ok(Self { signed_data })
+    }
+
+    /// Validates the certificate revocation list.
+    ///
+    /// The list’s signature is validated against the provided public key.
+    pub fn validate(&self, public_key: &PublicKey) -> Result<(), ValidationError> {
+        self.signed_data.verify_signature(public_key)
+    }
+
+    pub fn encode_ref<'a>(&'a self) -> impl encode::Values + 'a {
+        self.signed_data.encode_ref()
+    }
+
+    /// Returns a captured encoding of the CRL.
+    pub fn to_captured(&self) -> Captured {
+        Captured::from_values(Mode::Der, self.encode_ref())
     }
 }
 
