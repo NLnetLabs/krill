@@ -154,6 +154,6 @@ fn ca_under_ta() {
         let cms_child_resources = ResourceSet::from_strs("AS65000", "10.0.0.0/16", "").unwrap();
         update_child(&cms_child_handle, &cms_child_resources);
 
-        //        wait_for_resources_on_current_key(&cms_child_handle, &cms_child_resources);
+        wait_for_resources_on_current_key(&cms_child_handle, &cms_child_resources);
     });
 }

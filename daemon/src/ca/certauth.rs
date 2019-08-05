@@ -264,7 +264,11 @@ impl<S: Signer> Aggregate for CertAuth<S> {
                 let rc = parent.class_mut(&class_name).unwrap();
                 rc.pending_key_activated(cert);
             }
-            EvtDet::CertificateReceived(_parent, _class_name, _status, _rcvd) => unimplemented!(),
+            EvtDet::CertificateReceived(parent, class_name, status, cert) => {
+                let parent = self.parent_mut(&parent).unwrap();
+                let rc = parent.class_mut(&class_name).unwrap();
+                rc.received_cert(status, cert);
+            },
 
             // General functions
             EvtDet::Published(parent, class_name, status, delta) => {
@@ -485,13 +489,12 @@ impl<S: Signer> CertAuth<S> {
             CaParents::SelfSigned(key, _tal) => key.incoming_cert(),
             CaParents::Parents(_) => unimplemented!("Issue #25 (delegate from CA)"),
         };
-        let resources = cert.resources().clone();
         let cert = SigningCert::new(cert.uri().clone(), cert.cert().clone());
 
         Ok(EntitlementClass::new(
             class_name.to_string(),
             cert,
-            resources,
+            child_resources.resources().clone(),
             until,
             issued,
         ))
@@ -853,15 +856,47 @@ impl<S: Signer> CertAuth<S> {
 
         if let Ok(parent) = self.parent(parent_handle) {
             for (_class_name, rc) in parent.resources.iter() {
-                if let Some(p) = &rc.pending_key {
+                if let Some(p) = rc.pending_key.as_ref() {
                     if let Some(r) = p.request() {
                         res.push(r.clone());
+                    }
+                }
+                if let Some(p) = rc.new_key.as_ref() {
+                    if let Some(r) = p.request() {
+                        res.push(r.clone())
+                    }
+                }
+                if let Some(p) = rc.current_key.as_ref() {
+                    if let Some(r) = p.request() {
+                        res.push(r.clone())
                     }
                 }
             }
         }
 
         res
+    }
+
+    fn opt_cert_request_for_status(
+        &self,
+        parent_handle: Handle,
+        entitlement: &EntitlementClass,
+        rc: &ResourceClass,
+        key_status: KeyStatus,
+        version: u64,
+        signer: &Arc<RwLock<S>>,
+    ) -> ca::Result<Option<Evt>> {
+        Ok(rc
+            .request_cert(key_status, entitlement, &self.base_repo, signer)?
+            .map(|request| {
+                EvtDet::certificate_requested(
+                    &self.handle,
+                    version,
+                    parent_handle.clone(),
+                    request,
+                    key_status,
+                )
+            }))
     }
 
     /// This processes entitlements from a parent, and updates the known
@@ -880,17 +915,60 @@ impl<S: Signer> CertAuth<S> {
 
         // Check if there is a resource class for each entitlement
         let mut version = self.version;
+
+        // TODO: Remove current resource classes no longer in entitlements
+
         for ent in entitlements.classes() {
             let name = ent.class_name();
 
-            if let Some(_rc) = parent.resources.get(name) {
-                // Check whether a new certificate
-                // should be requested.
-                // I.e. we only have a pending key, or
-                // the current key certificate does not
-                // match the entitled validity time or
-                // resources.
-                unimplemented!()
+            if let Some(rc) = parent.resources.get(name) {
+                if let Some(req) = self.opt_cert_request_for_status(
+                    parent_handle.clone(),
+                    ent,
+                    &rc,
+                    KeyStatus::Pending,
+                    version,
+                    &signer,
+                )? {
+                    info!(
+                        "CA {} requests new certificate for pending key of class {}",
+                        self.handle, name
+                    );
+                    res.push(req);
+                    version += 1;
+                }
+
+                if let Some(req) = self.opt_cert_request_for_status(
+                    parent_handle.clone(),
+                    ent,
+                    &rc,
+                    KeyStatus::New,
+                    version,
+                    &signer,
+                )? {
+                    info!(
+                        "CA {} requests new certificate for new key of class {}",
+                        self.handle, name
+                    );
+                    res.push(req);
+                    version += 1;
+                }
+
+                if let Some(req) = self.opt_cert_request_for_status(
+                    parent_handle.clone(),
+                    ent,
+                    &rc,
+                    KeyStatus::Current,
+                    version,
+                    &signer,
+                )? {
+                    info!(
+                        "CA {} requests new certificate for current key of class {}",
+                        self.handle, name
+                    );
+                    res.push(req);
+                    version += 1;
+                }
             } else {
                 // Create a resource class with a pending key
                 let key_id = {
@@ -904,21 +982,16 @@ impl<S: Signer> CertAuth<S> {
                 let ns = format!("{}-{}", &parent_handle, name);
                 let rc = ResourceClass::create(ns, key_id);
 
-                // Create certificate sign request
-                let csr = {
-                    // there must be simpler way to take the one CSR
-                    // that must be in the resulting Vec
-                    rc.request_certs(ent, &self.base_repo, &signer)?
-                        .into_iter()
-                        .next()
-                        .unwrap()
-                };
-
-                let issuance_request = IssuanceRequest::new(
-                    ent.class_name().to_string(),
-                    RequestResourceLimit::default(),
-                    csr,
-                );
+                let req = self
+                    .opt_cert_request_for_status(
+                        parent_handle.clone(),
+                        ent,
+                        &rc,
+                        KeyStatus::Pending,
+                        version + 1, // version will be the one *after* adding the resource class
+                        &signer,
+                    )?
+                    .unwrap(); // we can be sure we did a request for the new pending key
 
                 let added = EvtDet::resource_class_added(
                     &self.handle,
@@ -927,18 +1000,7 @@ impl<S: Signer> CertAuth<S> {
                     name.to_string(),
                     rc,
                 );
-
-                version += 1;
-
-                let req = EvtDet::certificate_requested(
-                    &self.handle,
-                    version,
-                    parent_handle.clone(),
-                    issuance_request,
-                    KeyStatus::Pending,
-                );
-
-                version += 1;
+                version += 2;
 
                 res.push(added);
                 res.push(req);
@@ -966,8 +1028,8 @@ impl<S: Signer> CertAuth<S> {
         rcvd_cert: RcvdCert,
         signer: Arc<RwLock<S>>,
     ) -> ca::Result<Vec<Evt>> {
-        debug!(
-            "CA {}: Updating received cert for {}",
+        info!(
+            "CA {}: Updating received cert for class: {}",
             self.handle, class_name
         );
         let parent = self.parent(&parent_handle)?;
@@ -1271,28 +1333,52 @@ impl ResourceClass {
 /// # Request certificates
 ///
 impl ResourceClass {
-    /// Creates CSRs for all keys in this resource class that can use a new
-    /// certificate based on the current cert they have, and the entitlement.
-    pub fn request_certs<S: Signer>(
+    /// Request a certificate for a key of the given status.
+    fn request_cert<S: Signer>(
         &self,
-        _entitlement: &EntitlementClass,
+        key_status: KeyStatus,
+        entitlement: &EntitlementClass,
         base_repo: &RepoInfo,
         signer: &Arc<RwLock<S>>,
-    ) -> Result<Vec<Csr>> {
-        let mut res = vec![];
+    ) -> Result<Option<IssuanceRequest>> {
         let signer = signer.read().map_err(Error::signer)?;
 
-        if let Some(key) = self.pending_key.as_ref() {
-            let csr = self.create_csr(base_repo, key.key_id(), signer.deref())?;
-            res.push(csr)
-        }
+        let key_opt = match key_status {
+            KeyStatus::Pending => self.pending_key.as_ref().map(|k| k.key_id()),
+            KeyStatus::New => match self.new_key.as_ref() {
+                None => None,
+                Some(key) => {
+                    if key.wants_update(entitlement.resource_set(), entitlement.not_after()) {
+                        Some(key.key_id())
+                    } else {
+                        None
+                    }
+                }
+            },
+            KeyStatus::Current => match self.current_key.as_ref() {
+                None => None,
+                Some(key) => {
+                    if key.wants_update(entitlement.resource_set(), entitlement.not_after()) {
+                        Some(key.key_id())
+                    } else {
+                        None
+                    }
+                }
+            },
+            KeyStatus::Revoke => return Err(Error::InvalidKeyStatus),
+        };
 
-        if self.new_key.is_some() || self.current_key.is_some() || self.revoke_key.is_some() {
-            // TODO Request updated cert for keys with cert if needed
-            unimplemented!()
+        match key_opt {
+            None => Ok(None),
+            Some(key) => {
+                let csr = self.create_csr(base_repo, key, signer.deref())?;
+                Ok(Some(IssuanceRequest::new(
+                    entitlement.class_name().to_string(),
+                    RequestResourceLimit::default(),
+                    csr,
+                )))
+            }
         }
-
-        Ok(res)
     }
 
     /// Creates a Csr for the given key. Note that this parses the encoded
@@ -1344,6 +1430,19 @@ impl ResourceClass {
         let (key_id, _req) = self.pending_key.take().unwrap().unwrap();
         let certified_key = CertifiedKey::new(key_id, cert);
         self.current_key = Some(certified_key);
+    }
+
+    fn received_cert(&mut self, status: KeyStatus, cert: RcvdCert) {
+        match status {
+            KeyStatus::Pending => unimplemented!("Key roll, see issue #23"),
+            KeyStatus::New => unimplemented!("Key roll, see issue #23"),
+            KeyStatus::Current => {
+                if let Some(key) = self.current_key.as_mut() {
+                    key.set_incoming_cert(cert)
+                };
+            }
+            KeyStatus::Revoke => unimplemented!("Should never request cert for this key")
+        }
     }
 
     /// Returns the new status for a pending key which receives a RcvdCert.

@@ -79,6 +79,7 @@ impl KrillServer {
         service_uri: uri::Https,
         rrdp_base_uri: &uri::Https,
         token: &Token,
+        ca_refresh_rate: u32,
     ) -> KrillRes<Self> {
         let mut repo_dir = work_dir.clone();
         repo_dir.push("repo");
@@ -98,7 +99,12 @@ impl KrillServer {
 
         let caserver = Arc::new(ca::CaServer::build(work_dir, event_queue.clone(), signer)?);
 
-        let scheduler = Scheduler::build(event_queue, caserver.clone(), pubserver.clone());
+        let scheduler = Scheduler::build(
+            event_queue,
+            caserver.clone(),
+            pubserver.clone(),
+            ca_refresh_rate,
+        );
 
         Ok(KrillServer {
             service_uri,

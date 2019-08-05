@@ -19,8 +19,7 @@ use crate::publishers::{
     PublisherEventDetails,
 };
 use crate::repo::{
-    self, RrdpCommandDetails, RrdpInitDetails, RrdpServer, RrdpServerError,
-    RsyncdStore,
+    self, RrdpCommandDetails, RrdpInitDetails, RrdpServer, RrdpServerError, RsyncdStore,
 };
 
 //------------ PubServer -----------------------------------------------------

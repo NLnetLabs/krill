@@ -1,5 +1,4 @@
 //! Support for building RPKI Certificates and Objects
-use std::fmt;
 use bcder::encode::{Constructed, PrimitiveContent, Values};
 use bcder::{decode, encode};
 use bcder::{BitString, Mode, OctetString, Oid, Tag};
@@ -12,6 +11,7 @@ use rpki::crypto::{
 };
 use rpki::oid;
 use rpki::x509::{Name, Time, Validity};
+use std::fmt;
 
 use crate::remote::id::{IdCert, IdExtensions};
 use crate::remote::sigmsg::SigMsgCrl;

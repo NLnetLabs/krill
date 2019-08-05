@@ -189,7 +189,7 @@ impl ChildResources {
     pub fn not_after(&self) -> Time {
         let cut_off = Time::now() + Duration::weeks(13);
 
-        if self.not_after.validate_not_before(cut_off).is_err() {
+        if self.not_after < cut_off {
             Time::next_year()
         } else {
             self.not_after
@@ -524,6 +524,10 @@ impl CertifiedKey {
     pub fn incoming_cert(&self) -> &RcvdCert {
         &self.incoming_cert
     }
+    pub fn set_incoming_cert(&mut self, incoming_cert: RcvdCert) {
+        self.incoming_cert = incoming_cert;
+    }
+
     pub fn current_set(&self) -> &CurrentObjectSet {
         &self.current_set
     }
@@ -539,6 +543,11 @@ impl CertifiedKey {
 
     pub fn resources(&self) -> &ResourceSet {
         &self.incoming_cert.resources
+    }
+
+    pub fn wants_update(&self, new_resources: &ResourceSet, new_not_after: Time) -> bool {
+        let not_after = self.incoming_cert().cert.validity().not_after();
+        self.resources() != new_resources || not_after != new_not_after
     }
 
     pub fn needs_publication(&self) -> bool {
@@ -1222,6 +1231,12 @@ impl TryFrom<&Cert> for ResourceSet {
         };
 
         Ok(ResourceSet { asn, v4, v6 })
+    }
+}
+
+impl fmt::Display for ResourceSet {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "asn: {}, v4: {}, v6: {}", self.asn, self.v4(), self.v6())
     }
 }
 

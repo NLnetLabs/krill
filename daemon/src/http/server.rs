@@ -50,6 +50,7 @@ pub fn start(config: &Config) -> Result<(), Error> {
             config.service_uri(),
             &config.rrdp_base_uri,
             &config.auth_token,
+            config.ca_refresh,
         )?;
 
         AppServer(Arc::new(RwLock::new(krill)))

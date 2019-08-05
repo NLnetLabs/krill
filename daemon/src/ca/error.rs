@@ -1,14 +1,14 @@
+use std::{fmt, io};
 use std::fmt::Display;
 
 use krill_commons::api::admin::Handle;
 use krill_commons::api::ca::KeyRef;
 use krill_commons::eventsourcing::AggregateStoreError;
 use krill_commons::remote::rfc6492;
+use krill_commons::util::httpclient;
 
 use crate::ca::signing::Signer;
-use ca::KeyStatus;
-use krill_commons::util::httpclient;
-use std::{fmt, io};
+use crate::ca::KeyStatus;
 
 //------------ Error ---------------------------------------------------------
 
@@ -56,6 +56,9 @@ pub enum Error {
 
     #[display(fmt = "Invalid CSR for child {}: {}.", _0, _1)]
     InvalidCsr(Handle, String),
+
+    #[display(fmt = "Invalid key status for operation.")]
+    InvalidKeyStatus,
 
     #[display(fmt = "No key held by CA matching issued certificate: {}", _0)]
     NoKeyMatch(KeyRef),

@@ -350,19 +350,43 @@ impl<S: Signer> CaServer<S> {
         Ok(())
     }
 
+    /// Try to get updates for all embedded CAs, will skip the TA and/or CAs that
+    /// have no parents. Will try to process all and log possible errors, i.e. do
+    /// not bail out because of issues with one CA.
+    pub fn get_updates_for_all_cas(&self) -> ServerResult<(), S> {
+        for handle in self.ca_store.list() {
+            if let Ok(ca) = self.get_ca(&handle) {
+                if let Ok(parents) = ca.parents() {
+                    for (parent, info) in parents.into_iter() {
+                        let contact = info.contact();
+                        if let Err(e) = self.get_updates_from_parent(&handle, &parent, contact) {
+                            error!(
+                                "Failed to refresh CA certificates for {}, error: {}",
+                                &handle, e
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Try to update a specific CA
     pub fn get_updates_from_parent(
         &self,
         handle: &Handle,
         parent: &ParentHandle,
-        contact: ParentCaContact,
+        contact: &ParentCaContact,
     ) -> ServerResult<(), S> {
-        let entitlements = self.get_entitlements_from_parent(handle, &contact)?;
+        let entitlements = self.get_entitlements_from_parent(handle, contact)?;
 
         if !self.update_if_need(handle, parent, entitlements)? {
             return Ok(()); // Nothing to do
         }
 
-        self.send_requests(handle, parent, &contact)
+        self.send_requests(handle, parent, contact)
     }
 
     fn send_requests(
@@ -470,7 +494,9 @@ impl<S: Signer> CaServer<S> {
                     let events = child.process_command(update_rcvd_cmd)?;
                     child = self.ca_store.update(handle, child, events)?;
                 }
-                _ => return Err(ServerError::custom("Got unexpected response to list query")),
+                _ => return {
+                    Err(ServerError::custom("Got unexpected response to issue query"))
+                },
             }
         }
 

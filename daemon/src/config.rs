@@ -63,6 +63,9 @@ impl ConfigDefaults {
             }
         }
     }
+    fn ca_refresh() -> u32 {
+        600
+    }
 }
 
 //------------ Config --------------------------------------------------------
@@ -112,6 +115,9 @@ pub struct Config {
 
     #[serde(default = "ConfigDefaults::auth_token")]
     pub auth_token: Token,
+
+    #[serde(default = "ConfigDefaults::ca_refresh")]
+    pub ca_refresh: u32,
 }
 
 /// # Accessors
@@ -173,6 +179,7 @@ impl Config {
         log_file.push("krill.log");
         let syslog_facility = ConfigDefaults::syslog_facility();
         let auth_token = Token::from("secret");
+        let ca_refresh = 5;
 
         let c = Config {
             ip,
@@ -186,6 +193,7 @@ impl Config {
             log_file,
             syslog_facility,
             auth_token,
+            ca_refresh,
         };
         c.init_logging().unwrap();
         c

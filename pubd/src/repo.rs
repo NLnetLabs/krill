@@ -1,5 +1,5 @@
-use std::{fs, io};
 use std::path::PathBuf;
+use std::{fs, io};
 
 use chrono::Duration;
 use rpki::uri;
