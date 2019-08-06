@@ -9,7 +9,7 @@ use rpki::x509::{Serial, Time, Validity};
 
 use krill_commons::api::admin::{Handle, ParentCaContact, Token};
 use krill_commons::api::ca::{
-    CertifiedKey, ChildCaDetails, PublicationDelta, RcvdCert, RepoInfo, ResourceSet,
+    CertifiedKey, ChildCaDetails, ObjectsDelta, PublicationDelta, RcvdCert, RepoInfo, ResourceSet,
     TrustAnchorLocator,
 };
 use krill_commons::api::{IssuanceRequest, IssuanceResponse};
@@ -139,7 +139,7 @@ pub enum EvtDet {
     // Being a child Events
     ParentAdded(ParentHandle, ParentCaContact),
     ResourceClassAdded(ParentHandle, ResourceClassName, ResourceClass),
-    ResourceClassRemoved(ParentHandle, ResourceClassName, PublicationDelta),
+    ResourceClassRemoved(ParentHandle, ResourceClassName, ObjectsDelta),
     CertificateRequested(ParentHandle, IssuanceRequest, KeyStatus),
     CertificateReceived(ParentHandle, ResourceClassName, KeyStatus, RcvdCert),
     PendingKeyActivated(ParentHandle, ResourceClassName, RcvdCert),
@@ -165,13 +165,28 @@ impl EvtDet {
         handle: &Handle,
         version: u64,
         parent_handle: ParentHandle,
-        class_name: String,
+        class_name: ResourceClassName,
         resource_class: ResourceClass,
     ) -> Evt {
         StoredEvent::new(
             handle,
             version,
             EvtDet::ResourceClassAdded(parent_handle, class_name, resource_class),
+        )
+    }
+
+    /// This marks a resource class as removed, and all its (possible) objects as withdrawn
+    pub(super) fn resource_class_removed(
+        handle: &Handle,
+        version: u64,
+        parent_handle: ParentHandle,
+        class_name: ResourceClassName,
+        delta: ObjectsDelta,
+    ) -> Evt {
+        StoredEvent::new(
+            handle,
+            version,
+            EvtDet::ResourceClassRemoved(parent_handle, class_name, delta),
         )
     }
 
@@ -233,23 +248,6 @@ impl EvtDet {
         )
     }
 
-    /// This marks a delta as published for a key under a resource class
-    /// under a parent CA.
-    pub(super) fn published(
-        handle: &Handle,
-        version: u64,
-        parent: ParentHandle,
-        class_name: ResourceClassName,
-        key_status: KeyStatus,
-        delta: PublicationDelta,
-    ) -> Evt {
-        StoredEvent::new(
-            handle,
-            version,
-            EvtDet::Published(parent, class_name, key_status, delta),
-        )
-    }
-
     pub(super) fn child_added(
         handle: &Handle,
         version: u64,
@@ -298,6 +296,23 @@ impl EvtDet {
         response: IssuanceResponse,
     ) -> Evt {
         StoredEvent::new(handle, version, EvtDet::CertificateIssued(child, response))
+    }
+
+    /// This marks a delta as published for a key under a resource class
+    /// under a parent CA.
+    pub(super) fn published(
+        handle: &Handle,
+        version: u64,
+        parent: ParentHandle,
+        class_name: ResourceClassName,
+        key_status: KeyStatus,
+        delta: PublicationDelta,
+    ) -> Evt {
+        StoredEvent::new(
+            handle,
+            version,
+            EvtDet::Published(parent, class_name, key_status, delta),
+        )
     }
 
     pub(super) fn published_ta(handle: &Handle, version: u64, delta: PublicationDelta) -> Evt {

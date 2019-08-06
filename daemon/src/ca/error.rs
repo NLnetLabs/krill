@@ -1,5 +1,5 @@
-use std::{fmt, io};
 use std::fmt::Display;
+use std::{fmt, io};
 
 use krill_commons::api::admin::Handle;
 use krill_commons::api::ca::KeyRef;

@@ -7,7 +7,7 @@ use std::time::Duration;
 use clokwerk::{self, ScheduleHandle, TimeUnits};
 
 use krill_commons::api::admin::Handle;
-use krill_commons::api::ca::PublicationDelta;
+use krill_commons::api::publication::PublishDelta;
 use krill_commons::util::softsigner::OpenSslSigner;
 use krill_pubd::PubServer;
 
@@ -80,9 +80,9 @@ fn make_republish_sh(caserver: Arc<CaServer<OpenSslSigner>>) -> ScheduleHandle {
     scheduler.watch_thread(Duration::from_millis(100))
 }
 
-fn publish(handle: &Handle, delta: PublicationDelta, pubserver: &PubServer) {
+fn publish(handle: &Handle, delta: PublishDelta, pubserver: &PubServer) {
     debug!("Triggered publishing for CA: {}", handle);
-    match pubserver.publish(handle, delta.into()) {
+    match pubserver.publish(handle, delta) {
         Ok(()) => debug!("Published for CA: {}", handle),
         Err(e) => error!("Failed to publish for CA: {}, error: {}", handle, e),
     }

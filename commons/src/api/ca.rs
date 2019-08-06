@@ -540,7 +540,6 @@ impl CertifiedKey {
         self.request = Some(req)
     }
 
-
     pub fn wants_update(&self, new_resources: &ResourceSet, new_not_after: Time) -> bool {
         let not_after = self.incoming_cert().cert.validity().not_after();
         self.incoming_cert.resources() != new_resources || not_after != new_not_after
@@ -579,6 +578,11 @@ impl CurrentObject {
     }
     pub fn expires(&self) -> Time {
         self.expires
+    }
+
+    pub fn to_hash(&self) -> EncodedHash {
+        let bytes = self.content.to_bytes();
+        EncodedHash::from_content(bytes.as_ref())
     }
 }
 
@@ -708,6 +712,15 @@ impl CurrentObjects {
 
     pub fn object_for(&self, name: &ObjectName) -> Option<&CurrentObject> {
         self.0.get(name)
+    }
+
+    /// Returns withdraws for all the objects in this set. E.g. when the resource
+    /// class containing this set is removed, or the key is destroyed.
+    pub fn withdraw(&self) -> Vec<WithdrawnObject> {
+        self.0
+            .iter()
+            .map(|(name, object)| WithdrawnObject::for_current(name.clone(), object))
+            .collect()
     }
 
     /// Returns Manifest Entries, i.e. excluding the manifest itself
@@ -1034,8 +1047,11 @@ pub struct WithdrawnObject {
 }
 
 impl WithdrawnObject {
-    pub fn new(name: ObjectName, hash: EncodedHash) -> Self {
-        WithdrawnObject { name, hash }
+    pub fn for_current(name: ObjectName, current: &CurrentObject) -> Self {
+        WithdrawnObject {
+            name,
+            hash: current.to_hash(),
+        }
     }
 }
 

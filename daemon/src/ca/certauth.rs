@@ -32,9 +32,9 @@ use krill_commons::remote::rfc8183::ChildRequest;
 use krill_commons::remote::sigmsg::SignedMessage;
 use krill_commons::util::softsigner::SignerKeyId;
 
-use ca::{
-    self, ChildHandle, Cmd, CmdDet, Error, Evt, EvtDet, Ini, ParentHandle, Result, SignSupport,
-    Signer,
+use crate::ca::{
+    self, ChildHandle, Cmd, CmdDet, Error, Evt, EvtDet, Ini, ParentHandle, ResourceClassName,
+    Result, SignSupport, Signer,
 };
 
 //------------ Rfc8183Id ---------------------------------------------------
@@ -268,7 +268,7 @@ impl<S: Signer> Aggregate for CertAuth<S> {
                 let parent = self.parent_mut(&parent).unwrap();
                 let rc = parent.class_mut(&class_name).unwrap();
                 rc.received_cert(status, cert);
-            },
+            }
 
             // General functions
             EvtDet::Published(parent, class_name, status, delta) => {
@@ -915,7 +915,31 @@ impl<S: Signer> CertAuth<S> {
         // Check if there is a resource class for each entitlement
         let mut version = self.version;
 
-        // TODO: Remove current resource classes no longer in entitlements
+        // Check if there are any current resource classes, now removed
+        // from the entitlements. In which case we will have to clean them
+        // up and un-publish everything there was.
+        let current_resource_classes = &parent.resources;
+        let entitled_classes: Vec<&str> = entitlements
+            .classes()
+            .iter()
+            .map(|c| c.class_name())
+            .collect();
+        for (name, class) in current_resource_classes
+            .iter()
+            .filter(|(name, _class)| !entitled_classes.contains(&name.as_str()))
+        {
+
+            let delta = class.withdraw(&self.base_repo);
+
+            res.push(EvtDet::resource_class_removed(
+                &self.handle,
+                version,
+                parent_handle.clone(),
+                name.clone(),
+                delta,
+            ));
+            version += 1;
+        }
 
         for ent in entitlements.classes() {
             let name = ent.class_name();
@@ -1169,7 +1193,7 @@ impl<S: Signer> CertAuth<S> {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ParentCa {
     contact: ParentCaContact,
-    resources: HashMap<String, ResourceClass>,
+    resources: HashMap<ResourceClassName, ResourceClass>,
 }
 
 impl ParentCa {
@@ -1316,6 +1340,30 @@ impl ResourceClass {
         self.revoke_key.as_ref().map(|k| k.current_set().objects())
     }
 
+    /// Returns withdraws for all current objects, for when this resource class
+    /// needs to be removed.
+    pub fn withdraw(&self, base_repo: &RepoInfo) -> ObjectsDelta {
+        let base_repo = base_repo.ca_repository(self.name_space());
+        let mut delta = ObjectsDelta::new(base_repo);
+
+        if let Some(objects) = self.new_objects() {
+            for withdraw in objects.withdraw().into_iter() {
+                delta.withdraw(withdraw);
+            }
+        }
+        if let Some(objects) = self.current_objects() {
+            for withdraw in objects.withdraw().into_iter() {
+                delta.withdraw(withdraw);
+            }
+        }
+        if let Some(objects) = self.revoke_objects() {
+            for withdraw in objects.withdraw().into_iter() {
+                delta.withdraw(withdraw);
+            }
+        }
+        delta
+    }
+
     /// Returns a ResourceClassInfo for this, which contains all the
     /// same data, but which does not have any behaviour.
     pub fn as_info(&self) -> ResourceClassInfo {
@@ -1417,14 +1465,15 @@ impl ResourceClass {
             KeyStatus::New => self.new_key.as_mut(),
             KeyStatus::Current => self.current_key.as_mut(),
             KeyStatus::Revoke => self.revoke_key.as_mut(),
-        }.unwrap().apply_delta(delta)
+        }
+        .unwrap()
+        .apply_delta(delta)
     }
 }
 
 /// # Key Life Cycle and Receiving Certificates
 ///
 impl ResourceClass {
-
     /// This function activates the pending key.
     ///
     /// This can only happen based on an event that happens when a pending
@@ -1436,7 +1485,6 @@ impl ResourceClass {
         self.current_key = Some(certified_key);
     }
 
-
     fn received_cert(&mut self, status: KeyStatus, cert: RcvdCert) {
         match status {
             KeyStatus::Pending => unimplemented!("Key roll, see issue #23"),
@@ -1446,7 +1494,7 @@ impl ResourceClass {
                     key.set_incoming_cert(cert)
                 };
             }
-            KeyStatus::Revoke => unimplemented!("Should never request cert for this key")
+            KeyStatus::Revoke => unimplemented!("Should never request cert for this key"),
         }
     }
 

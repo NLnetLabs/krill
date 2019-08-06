@@ -494,9 +494,13 @@ impl<S: Signer> CaServer<S> {
                     let events = child.process_command(update_rcvd_cmd)?;
                     child = self.ca_store.update(handle, child, events)?;
                 }
-                _ => return {
-                    Err(ServerError::custom("Got unexpected response to issue query"))
-                },
+                _ => {
+                    return {
+                        Err(ServerError::custom(
+                            "Got unexpected response to issue query",
+                        ))
+                    }
+                }
             }
         }
 

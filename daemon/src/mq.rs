@@ -8,7 +8,7 @@ use std::fmt;
 use std::sync::RwLock;
 
 use krill_commons::api::admin::{Handle, ParentCaContact};
-use krill_commons::api::ca::PublicationDelta;
+use krill_commons::api::publication::PublishDelta;
 use krill_commons::eventsourcing;
 
 use crate::ca::{CertAuth, Evt, EvtDet, ParentHandle, Signer};
@@ -21,7 +21,7 @@ use crate::ca::{CertAuth, Evt, EvtDet, ParentHandle, Signer};
 #[allow(clippy::large_enum_variant)]
 pub enum QueueEvent {
     ParentAdded(Handle, ParentHandle, ParentCaContact),
-    Delta(Handle, PublicationDelta),
+    Delta(Handle, PublishDelta),
 }
 
 #[derive(Debug)]
@@ -62,11 +62,15 @@ impl<S: Signer> eventsourcing::EventListener<CertAuth<S>> for EventQueueListener
         let handle = event.handle();
         match event.details() {
             EvtDet::Published(_, _, _, delta) => {
-                let evt = QueueEvent::Delta(handle.clone(), delta.clone());
+                let evt = QueueEvent::Delta(handle.clone(), delta.objects().clone().into());
                 self.push_back(evt);
             }
             EvtDet::TaPublished(delta) => {
-                let evt = QueueEvent::Delta(handle.clone(), delta.clone());
+                let evt = QueueEvent::Delta(handle.clone(), delta.objects().clone().into());
+                self.push_back(evt);
+            }
+            EvtDet::ResourceClassRemoved(_parent, _class_name, delta) => {
+                let evt = QueueEvent::Delta(handle.clone(), delta.clone().into());
                 self.push_back(evt);
             }
             EvtDet::ParentAdded(parent, contact) => {
