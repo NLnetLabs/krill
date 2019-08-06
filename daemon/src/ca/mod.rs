@@ -5,9 +5,11 @@ use krill_commons::api::admin::Handle;
 mod certauth;
 pub use self::certauth::CaType;
 pub use self::certauth::CertAuth;
-pub use self::certauth::KeyStatus;
-pub use self::certauth::ResourceClass;
 pub use self::certauth::Rfc8183Id;
+
+mod rc;
+pub use self::rc::KeyStatus;
+pub use self::rc::ResourceClass;
 
 mod commands;
 pub use self::commands::Cmd;
