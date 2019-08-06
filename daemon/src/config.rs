@@ -44,7 +44,7 @@ impl ConfigDefaults {
         LevelFilter::Info
     }
     fn log_type() -> LogType {
-        LogType::Stderr
+        LogType::File
     }
     fn syslog_facility() -> Facility {
         Facility::LOG_DAEMON
