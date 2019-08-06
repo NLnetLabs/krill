@@ -274,8 +274,7 @@ impl<S: Signer> Aggregate for CertAuth<S> {
             EvtDet::Published(parent, class_name, status, delta) => {
                 let parent = self.parent_mut(&parent).unwrap();
                 let rc = parent.class_mut(&class_name).unwrap();
-                let ck = rc.get_key_mut(status).unwrap();
-                ck.apply_delta(delta);
+                rc.apply_delta(delta, status);
             }
             EvtDet::TaPublished(delta) => {
                 let ta_key = self.ta_key_mut().unwrap();
@@ -1408,18 +1407,23 @@ impl ResourceClass {
     }
 }
 
-/// # Key Life Cycle and Receiving Certificates
+/// # Publishing
 ///
 impl ResourceClass {
-    /// Gets a mutable reference to a certified key of the given status.
-    fn get_key_mut(&mut self, status: KeyStatus) -> Option<&mut CertifiedKey> {
-        match status {
+    /// Applies a publication delta to the appropriate key in this resource class.
+    pub fn apply_delta(&mut self, delta: PublicationDelta, key_status: KeyStatus) {
+        match key_status {
             KeyStatus::Pending => None,
             KeyStatus::New => self.new_key.as_mut(),
             KeyStatus::Current => self.current_key.as_mut(),
             KeyStatus::Revoke => self.revoke_key.as_mut(),
-        }
+        }.unwrap().apply_delta(delta)
     }
+}
+
+/// # Key Life Cycle and Receiving Certificates
+///
+impl ResourceClass {
 
     /// This function activates the pending key.
     ///
@@ -1431,6 +1435,7 @@ impl ResourceClass {
         let certified_key = CertifiedKey::new(key_id, cert);
         self.current_key = Some(certified_key);
     }
+
 
     fn received_cert(&mut self, status: KeyStatus, cert: RcvdCert) {
         match status {

@@ -525,29 +525,25 @@ impl CertifiedKey {
         &self.incoming_cert
     }
     pub fn set_incoming_cert(&mut self, incoming_cert: RcvdCert) {
+        self.request = None;
         self.incoming_cert = incoming_cert;
     }
 
     pub fn current_set(&self) -> &CurrentObjectSet {
         &self.current_set
     }
+
     pub fn request(&self) -> Option<&IssuanceRequest> {
         self.request.as_ref()
     }
     pub fn add_request(&mut self, req: IssuanceRequest) {
         self.request = Some(req)
     }
-    pub fn clear_request(&mut self) {
-        self.request = None
-    }
 
-    pub fn resources(&self) -> &ResourceSet {
-        &self.incoming_cert.resources
-    }
 
     pub fn wants_update(&self, new_resources: &ResourceSet, new_not_after: Time) -> bool {
         let not_after = self.incoming_cert().cert.validity().not_after();
-        self.resources() != new_resources || not_after != new_not_after
+        self.incoming_cert.resources() != new_resources || not_after != new_not_after
     }
 
     pub fn needs_publication(&self) -> bool {

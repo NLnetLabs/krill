@@ -205,7 +205,7 @@ impl Report for CertAuthInfo {
                         res.push_str("This CA is a TA\n");
                         res.push_str("\n");
 
-                        let inrs = key.resources();
+                        let inrs = key.incoming_cert().resources();
                         res.push_str(&format!("ASNs: {}\n", inrs.asn()));
                         res.push_str(&format!("IPv4: {}\n", inrs.v4()));
                         res.push_str(&format!("IPv6: {}\n", inrs.v6()));
@@ -244,7 +244,7 @@ impl Report for CertAuthInfo {
                                 if let Some(key) = rc.current_key() {
                                     res.push_str("  CURRENT Key:\n");
                                     res.push_str("    Resources:\n");
-                                    let inrs = key.resources();
+                                    let inrs = key.incoming_cert().resources();
                                     res.push_str(&format!("    ASNs: {}\n", inrs.asn()));
                                     res.push_str(&format!("    IPv4: {}\n", inrs.v4()));
                                     res.push_str(&format!("    IPv6: {}\n", inrs.v6()));

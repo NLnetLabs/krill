@@ -98,7 +98,7 @@ fn wait_for_resources_on_current_key(handle: &Handle, resources: &ResourceSet) {
             if let Some(parent) = parents.get(&ta_handle()) {
                 if let Some(rc) = parent.resources().get("all") {
                     if let Some(key) = rc.current_key() {
-                        if resources == key.resources() {
+                        if resources == key.incoming_cert().resources() {
                             return;
                         }
                     }
