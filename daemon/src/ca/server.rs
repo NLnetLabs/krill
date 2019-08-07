@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 use bytes::Bytes;
+use chrono::Duration;
 
 use rpki::uri;
 
@@ -337,7 +338,7 @@ impl<S: Signer> CaServer<S> {
         }
     }
 
-    /// Adds a parent to a ca
+    /// Adds a parent to a CA
     pub fn ca_add_parent(&self, handle: Handle, parent: AddParentRequest) -> ServerResult<(), S> {
         let ca = self.get_ca(&handle)?;
         let (parent_handle, parent_contact) = parent.unwrap();
@@ -346,6 +347,20 @@ impl<S: Signer> CaServer<S> {
         let events = ca.process_command(add)?;
 
         self.ca_store.update(&handle, ca, events)?;
+
+        Ok(())
+    }
+
+    /// Perform a key roll for all active keys in a CA older than the specified duration.
+    pub fn ca_keyroll_init(&self, handle: Handle, max_age: Duration) -> ServerResult<(), S> {
+        let ca = self.get_ca(&handle)?;
+
+        let init_key_roll = CmdDet::init_roll(&handle, max_age, self.signer.clone());
+        let events = ca.process_command(init_key_roll)?;
+
+        if ! events.is_empty() {
+            self.ca_store.update(&handle, ca, events)?;
+        }
 
         Ok(())
     }

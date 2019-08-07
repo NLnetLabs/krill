@@ -7,20 +7,20 @@ use rpki::crypto::PublicKeyFormat;
 use rpki::uri;
 use rpki::x509::{Serial, Time, Validity};
 
+use krill_commons::api::{IssuanceRequest, IssuanceResponse};
 use krill_commons::api::admin::{Handle, ParentCaContact, Token};
 use krill_commons::api::ca::{
     CertifiedKey, ChildCaDetails, ObjectsDelta, PublicationDelta, RcvdCert, RepoInfo, ResourceSet,
     TrustAnchorLocator,
 };
-use krill_commons::api::{IssuanceRequest, IssuanceResponse};
 use krill_commons::eventsourcing::StoredEvent;
 use krill_commons::remote::id::IdCert;
+use krill_commons::util::softsigner::SignerKeyId;
 
 use crate::ca::signing::Signer;
 use crate::ca::{
     CaType, ChildHandle, Error, ParentHandle, ResourceClass, ResourceClassName, Result, Rfc8183Id,
 };
-use krill_commons::util::softsigner::SignerKeyId;
 
 //------------ Ini -----------------------------------------------------------
 
@@ -142,6 +142,9 @@ pub enum EvtDet {
     ResourceClassRemoved(ParentHandle, ResourceClassName, ObjectsDelta),
     CertificateRequested(ParentHandle, IssuanceRequest, SignerKeyId),
     CertificateReceived(ParentHandle, ResourceClassName, SignerKeyId, RcvdCert),
+
+    // Key roll
+    KeyrollPendingKeyAdded(ParentHandle, ResourceClassName, SignerKeyId),
 
     // Publishing
     Published(

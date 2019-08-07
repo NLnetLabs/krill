@@ -262,12 +262,6 @@ pub fn ta_init(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
     })
 }
 
-pub fn republish_all(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        render_empty_res(server.read().republish_all())
-    })
-}
-
 pub fn tal(server: web::Data<AppServer>) -> HttpResponse {
     match server.read().ta_info() {
         Some(ta) => HttpResponse::Ok()
@@ -379,6 +373,27 @@ pub fn ca_add_parent(
                 .read()
                 .ca_add_parent(handle.into_inner(), parent.into_inner()),
         )
+    })
+}
+
+/// Force a key roll for a CA, i.e. use a max key age of 0 seconds.
+pub fn ca_keyroll_init(
+    server: web::Data<AppServer>,
+    auth: Auth,
+    handle: Path<Handle>
+) -> HttpResponse {
+    if_api_allowed(&server, &auth, || {
+        render_empty_res(
+            server.read().ca_keyroll_init(handle.into_inner())
+        )
+    })
+}
+
+//------------ Admin: Force republish ----------------------------------------
+
+pub fn republish_all(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
+    if_api_allowed(&server, &auth, || {
+        render_empty_res(server.read().republish_all())
     })
 }
 

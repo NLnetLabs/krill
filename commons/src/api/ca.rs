@@ -1424,11 +1424,10 @@ impl ResourceClassInfo {
             | ResourceClassKeysInfo::RollOld(current, _) => {
                 Some(current.incoming_cert().resources())
             }
-            _ => None
+            _ => None,
         }
     }
 }
-
 
 //------------ ResourceClassKeysInfo -----------------------------------------
 
@@ -1465,7 +1464,7 @@ impl fmt::Display for ResourceClassKeysInfo {
                 res.push_str("State: key-roll phase 2: new key with certificate\n");
             }
             ResourceClassKeysInfo::RollOld(_, _) => {
-                res.push_str("State: key-roll phase 3: old key may be revoked\n");
+                res.push_str("State: key-roll phase 3: old key pending revocation by parent\n");
             }
         }
 

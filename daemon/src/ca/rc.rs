@@ -1,7 +1,12 @@
 use std::ops::Deref;
 use std::sync::{Arc, RwLock};
 
+use chrono::Duration;
+
+use rpki::crypto::PublicKeyFormat;
 use rpki::csr::Csr;
+use rpki::uri;
+use rpki::x509::Time;
 
 use krill_commons::api::ca::{
     CertifiedKey, CurrentObjects, KeyRef, ObjectsDelta, PendingKey, PublicationDelta, RcvdCert,
@@ -13,7 +18,6 @@ use krill_commons::util::softsigner::SignerKeyId;
 use crate::ca::{
     self, Error, EvtDet, ParentHandle, ResourceClassName, Result, SignSupport, Signer,
 };
-use rpki::uri;
 
 /// A CA may have multiple parents, e.g. two RIRs, and it may not get all its
 /// resource entitlements in one set, but in a number of so-called "resource
@@ -72,6 +76,7 @@ use rpki::uri;
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ResourceClass {
     name_space: String,
+    last_key_change: Time,
     keys: ResourceClassKeys,
 }
 
@@ -80,6 +85,7 @@ impl ResourceClass {
     pub fn create(name_space: String, pending_key: SignerKeyId) -> Self {
         ResourceClass {
             name_space,
+            last_key_change: Time::now(),
             keys: ResourceClassKeys::create(pending_key),
         }
     }
@@ -169,6 +175,7 @@ impl ResourceClass {
         match &mut self.keys {
             ResourceClassKeys::Pending(pending) => {
                 let current = CertifiedKey::new(pending.key_id().clone(), cert);
+                self.last_key_change = Time::now();
                 self.keys = ResourceClassKeys::Active(current);
             }
             ResourceClassKeys::Active(current) => {
@@ -176,8 +183,9 @@ impl ResourceClass {
             }
             ResourceClassKeys::RollPending(pending, current) => {
                 if pending.key_id() == &key_id {
-                    let current = CertifiedKey::new(pending.key_id().clone(), cert);
-                    self.keys = ResourceClassKeys::Active(current);
+                    let new = CertifiedKey::new(pending.key_id().clone(), cert);
+                    self.last_key_change = Time::now();
+                    self.keys = ResourceClassKeys::RollNew(new, current.clone());
                 } else {
                     current.set_incoming_cert(cert);
                 }
@@ -197,6 +205,38 @@ impl ResourceClass {
                 }
             }
         }
+    }
+
+    /// Adds a pending key.
+    pub fn pending_key_added(&mut self, key_id: SignerKeyId) {
+        match &self.keys {
+            ResourceClassKeys::Active(current) => {
+                let pending = PendingKey::new(key_id);
+                self.keys = ResourceClassKeys::RollPending(pending, current.clone())
+            }
+            _ => unimplemented!("Should never create event to add key when roll in progress")
+        }
+    }
+
+    pub fn keyroll_initiate<S: Signer>(
+        &self,
+        parent: ParentHandle,
+        class_name: ResourceClassName,
+        base_repo: &RepoInfo,
+        duration: Duration,
+        signer: &mut S,
+    ) -> ca::Result<Vec<EvtDet>> {
+        if self.last_key_change + duration > Time::now() {
+            return Ok(vec![]);
+        }
+
+        self.keys.keyroll_initiate(
+            parent,
+            class_name,
+            base_repo,
+            &self.name_space,
+            signer
+        )
     }
 }
 
@@ -548,6 +588,44 @@ impl ResourceClassKeys {
             ResourceClassKeys::RollPending(p, c) => ResourceClassKeysInfo::RollPending(p, c),
             ResourceClassKeys::RollNew(n, c) => ResourceClassKeysInfo::RollNew(n, c),
             ResourceClassKeys::RollOld(c, o) => ResourceClassKeysInfo::RollOld(c, o),
+        }
+    }
+}
+
+/// # Key Rolls
+///
+impl ResourceClassKeys {
+    /// Initiates a key roll if the current state is 'Active'. This will return event details
+    /// for a newly create pending key and requested certificate for it.
+    fn keyroll_initiate<S: Signer>(
+        &self,
+        parent: ParentHandle,
+        class_name: ResourceClassName,
+        base_repo: &RepoInfo,
+        name_space: &str,
+        signer: &mut S,
+    ) -> ca::Result<Vec<EvtDet>> {
+        match self {
+            ResourceClassKeys::Active(_current) => {
+                let key_id = {
+                    signer
+                        .create_key(PublicKeyFormat::default())
+                        .map_err(Error::signer)?
+                };
+
+                let issuance_req =
+                    self.create_issuance_req(base_repo, name_space, &class_name, &key_id, signer)?;
+
+                Ok(vec![
+                    EvtDet::KeyrollPendingKeyAdded(
+                        parent.clone(),
+                        class_name.clone(),
+                        key_id.clone(),
+                    ),
+                    EvtDet::CertificateRequested(parent, issuance_req, key_id),
+                ])
+            }
+            _ => Ok(vec![]),
         }
     }
 }

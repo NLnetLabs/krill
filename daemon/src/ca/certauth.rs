@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::marker::PhantomData;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock};
 
 use bytes::Bytes;
@@ -210,7 +210,10 @@ impl<S: Signer> Aggregate for CertAuth<S> {
     fn apply(&mut self, event: Evt) {
         self.version += 1;
         match event.into_details() {
+
+            //-----------------------------------------------------------------------
             // Being a parent
+            //-----------------------------------------------------------------------
             EvtDet::ChildAdded(child, details) => {
                 self.children.insert(child, details);
             }
@@ -233,7 +236,9 @@ impl<S: Signer> Aggregate for CertAuth<S> {
             }
             EvtDet::ChildRemovedResourceClass(_child, _name) => unimplemented!(),
 
+            //-----------------------------------------------------------------------
             // Being a child
+            //-----------------------------------------------------------------------
             EvtDet::ParentAdded(handle, info) => {
                 let parent = ParentCa::without_resource(info);
                 self.parents.insert(handle, parent).unwrap();
@@ -263,7 +268,18 @@ impl<S: Signer> Aggregate for CertAuth<S> {
                 rc.received_cert(key_id, cert);
             }
 
+            //-----------------------------------------------------------------------
+            // Key Roll
+            //-----------------------------------------------------------------------
+            EvtDet::KeyrollPendingKeyAdded(parent, class_name, key_id) => {
+                let parent = self.parent_mut(&parent).unwrap();
+                let rc = parent.class_mut(&class_name).unwrap();
+                rc.pending_key_added(key_id);
+            }
+
+            //-----------------------------------------------------------------------
             // General functions
+            //-----------------------------------------------------------------------
             EvtDet::Published(parent, class_name, key_id, delta) => {
                 let parent = self.parent_mut(&parent).unwrap();
                 let rc = parent.class_mut(&class_name).unwrap();
@@ -296,7 +312,12 @@ impl<S: Signer> Aggregate for CertAuth<S> {
                 self.update_received_cert(parent, class_name, rcvd_cert, signer)
             }
 
-            // general CA functions
+            // Key rolls
+            CmdDet::KeyRollInitiate(duration, signer) => self.keyroll_initiate(duration, signer),
+            CmdDet::KeyRollActivate(duration) => self.keyroll_activate(duration),
+            CmdDet::KeyRollFinish(parent, class_name) => self.keyroll_finish(parent, class_name),
+
+            // Republish
             CmdDet::Republish(signer) => self.republish(signer),
         }
     }
@@ -337,44 +358,11 @@ impl<S: Signer> CertAuth<S> {
     pub fn id_cert(&self) -> &IdCert {
         &self.id.cert
     }
-    pub(crate) fn id_key(&self) -> &SignerKeyId {
+    pub fn id_key(&self) -> &SignerKeyId {
         &self.id.key
     }
     pub fn handle(&self) -> &Handle {
         &self.handle
-    }
-}
-
-/// # Publishing
-///
-impl<S: Signer> CertAuth<S> {
-    fn republish_delta_for_key(
-        key: &CertifiedKey,
-        repo_info: &RepoInfo,
-        name_space: &str,
-        signer: Arc<RwLock<S>>,
-    ) -> Result<PublicationDelta> {
-        let ca_repo = repo_info.ca_repository(name_space);
-        let objects_delta = ObjectsDelta::new(ca_repo);
-        SignSupport::publish(signer, key, repo_info, name_space, objects_delta)
-            .map_err(Error::signer)
-    }
-
-    /// Republish objects for this CA
-    pub fn republish(&self, signer: Arc<RwLock<S>>) -> ca::Result<Vec<Evt>> {
-        let mut res = vec![];
-        match &self.parents {
-            CaParents::SelfSigned(key, _tal) => {
-                if key.needs_publication() {
-                    let delta =
-                        Self::republish_delta_for_key(key, &self.base_repo, "", signer.clone())?;
-
-                    res.push(EvtDet::published_ta(&self.handle, self.version, delta))
-                }
-            }
-            CaParents::Parents(_map) => unimplemented!(),
-        }
-        Ok(res)
     }
 }
 
@@ -976,6 +964,88 @@ impl<S: Signer> CertAuth<S> {
     }
 }
 
+/// # Key Rolls
+///
+impl<S: Signer> CertAuth<S> {
+    fn keyroll_initiate(&self, duration: Duration, signer: Arc<RwLock<S>>) -> ca::Result<Vec<Evt>> {
+        match &self.parents {
+            CaParents::SelfSigned(_, _) => Ok(vec![]), // pending IETF standard.
+            CaParents::Parents(map) => {
+                let mut signer = signer.write().unwrap();
+                let mut version = self.version;
+                let mut res = vec![];
+
+                for (parent_handle, parent) in map.iter() {
+                    for (class_name, class) in parent.resources().iter() {
+
+                        for details in class.keyroll_initiate(
+                            parent_handle.clone(),
+                            class_name.clone(),
+                            &self.base_repo,
+                            duration,
+                            signer.deref_mut()
+                        )?.into_iter() {
+                            res.push(StoredEvent::new(
+                                self.handle(),
+                                version,
+                                details
+                            ));
+                            version += 1;
+                        }
+                    }
+                }
+
+                Ok(res)
+            }
+        }
+    }
+
+    fn keyroll_activate(&self, _duration: Duration) -> ca::Result<Vec<Evt>> {
+        unimplemented!()
+    }
+
+    fn keyroll_finish(
+        &self,
+        _parent: ParentHandle,
+        _class_name: ResourceClassName,
+    ) -> ca::Result<Vec<Evt>> {
+        unimplemented!()
+    }
+}
+
+/// # Publishing
+///
+impl<S: Signer> CertAuth<S> {
+    fn republish_delta_for_key(
+        key: &CertifiedKey,
+        repo_info: &RepoInfo,
+        name_space: &str,
+        signer: Arc<RwLock<S>>,
+    ) -> Result<PublicationDelta> {
+        let ca_repo = repo_info.ca_repository(name_space);
+        let objects_delta = ObjectsDelta::new(ca_repo);
+        SignSupport::publish(signer, key, repo_info, name_space, objects_delta)
+            .map_err(Error::signer)
+    }
+
+    /// Republish objects for this CA
+    pub fn republish(&self, signer: Arc<RwLock<S>>) -> ca::Result<Vec<Evt>> {
+        let mut res = vec![];
+        match &self.parents {
+            CaParents::SelfSigned(key, _tal) => {
+                if key.needs_publication() {
+                    let delta =
+                        Self::republish_delta_for_key(key, &self.base_repo, "", signer.clone())?;
+
+                    res.push(EvtDet::published_ta(&self.handle, self.version, delta))
+                }
+            }
+            CaParents::Parents(_map) => unimplemented!(),
+        }
+        Ok(res)
+    }
+}
+
 //------------ ParentCa ------------------------------------------------------
 
 /// This type defines a parent for a CA and includes the information
@@ -988,6 +1058,10 @@ pub struct ParentCa {
 }
 
 impl ParentCa {
+    fn resources(&self) -> &HashMap<ResourceClassName, ResourceClass> {
+        &self.resources
+    }
+
     fn as_info(&self) -> ParentCaInfo {
         let mut resources_info = HashMap::new();
 

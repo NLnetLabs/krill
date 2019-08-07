@@ -72,10 +72,12 @@ pub fn start(config: &Config) -> Result<(), Error> {
             .service(
                 scope("/api/v1")
                     .route("/health", get().to(api_health))
+
                     .route("/publishers", get().to(publishers))
                     .route("/publishers", post().to(add_publisher))
                     .route("/publishers/{handle}", get().to(publisher_details))
                     .route("/publishers/{handle}", delete().to(deactivate_publisher))
+
                     .route("/rfc8181/clients", get().to(rfc8181_clients))
                     .route("/rfc8181/clients", post().to(add_rfc8181_client))
                     .data(web::Bytes::configure(|cfg| cfg.limit(256 * 1024 * 1024)))
@@ -83,17 +85,21 @@ pub fn start(config: &Config) -> Result<(), Error> {
                         "/rfc8181/{handle}/response.xml",
                         get().to(repository_response),
                     )
+
                     .route("/trustanchor", get().to(ta_info))
                     .route("/trustanchor", post().to(ta_init))
                     .route("/trustanchor/children", post().to(ta_add_child))
                     .route("/trustanchor/children/{handle}", get().to(ta_show_child))
                     .route("/trustanchor/children/{handle}", post().to(ta_update_child))
+
                     .route("/cas", post().to(ca_init))
                     .route("/cas", get().to(cas))
                     .route("/cas/{handle}", get().to(ca_info))
                     .route("/cas/{handle}/child_request", get().to(ca_child_req))
                     .route("/cas/{handle}/parents", post().to(ca_add_parent))
-                    .route("/republish", post().to(republish_all)),
+                    .route("/cas/{handle}/keys/init_roll", post().to(ca_keyroll_init))
+
+                    .route("/republish", post().to(republish_all))
             )
             // Public TA related methods
             .route("/ta/ta.tal", get().to(tal))
