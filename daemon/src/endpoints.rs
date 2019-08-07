@@ -556,9 +556,7 @@ impl ErrorToStatus for ca::Error {
     fn status(&self) -> StatusCode {
         match self {
             ca::Error::Unauthorized(_) => StatusCode::FORBIDDEN,
-            ca::Error::SignerError(_) | ca::Error::KeyStatusChange(_, _) => {
-                StatusCode::INTERNAL_SERVER_ERROR
-            }
+            ca::Error::SignerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             _ => StatusCode::BAD_REQUEST,
         }
     }

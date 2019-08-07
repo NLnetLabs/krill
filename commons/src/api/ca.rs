@@ -3,10 +3,10 @@
 
 use std::collections::HashMap;
 use std::convert::TryFrom;
-use std::fmt;
 use std::ops::Deref;
 use std::str;
 use std::str::FromStr;
+use std::{fmt, ops};
 
 use bytes::Bytes;
 use chrono::Duration;
@@ -706,6 +706,10 @@ impl CurrentObjects {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     pub fn names(&self) -> impl Iterator<Item = &ObjectName> {
         self.0.keys()
     }
@@ -737,25 +741,15 @@ impl CurrentObjects {
     }
 }
 
-//------------ AllCurrentObjects ---------------------------------------------
+impl ops::Add for CurrentObjects {
+    type Output = CurrentObjects;
 
-/// This type contains a mapping of all name spaces for parent & resource
-/// classes to CurrentObjects for each space.
-pub struct AllCurrentObjects<'a>(HashMap<&'a str, &'a CurrentObjects>);
-
-impl<'a> AllCurrentObjects<'a> {
-    pub fn empty() -> Self {
-        AllCurrentObjects(HashMap::new())
-    }
-
-    pub fn for_name_space(name_space: &'a str, current_objects: &'a CurrentObjects) -> Self {
-        let mut res = Self::empty();
-        res.add_name_space(name_space, current_objects);
-        res
-    }
-
-    pub fn add_name_space(&mut self, name_space: &'a str, current_objects: &'a CurrentObjects) {
-        self.0.insert(name_space, current_objects);
+    fn add(self, other: CurrentObjects) -> CurrentObjects {
+        let mut map = self.0;
+        for (name, object) in other.0.into_iter() {
+            map.insert(name, object);
+        }
+        CurrentObjects(map)
     }
 }
 
@@ -1407,59 +1401,89 @@ impl ParentCaInfo {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ResourceClassInfo {
     name_space: String,
-    pending_key: Option<PendingKey>,
-    new_key: Option<CertifiedKey>,
-    current_key: Option<CertifiedKey>,
-    revoke_key: Option<CertifiedKey>,
+    keys: ResourceClassKeysInfo,
 }
 
 impl ResourceClassInfo {
-    pub fn new(
-        name_space: String,
-        pending_key: Option<PendingKey>,
-        new_key: Option<CertifiedKey>,
-        current_key: Option<CertifiedKey>,
-        revoke_key: Option<CertifiedKey>,
-    ) -> Self {
-        ResourceClassInfo {
-            name_space,
-            pending_key,
-            new_key,
-            current_key,
-            revoke_key,
-        }
+    pub fn new(name_space: String, keys: ResourceClassKeysInfo) -> Self {
+        ResourceClassInfo { name_space, keys }
     }
 
     pub fn name_space(&self) -> &str {
         &self.name_space
     }
-
-    pub fn pending_key(&self) -> Option<&PendingKey> {
-        self.pending_key.as_ref()
+    pub fn keys(&self) -> &ResourceClassKeysInfo {
+        &self.keys
     }
 
-    pub fn new_key(&self) -> Option<&CertifiedKey> {
-        self.new_key.as_ref()
+    pub fn current_resources(&self) -> Option<&ResourceSet> {
+        match &self.keys {
+            ResourceClassKeysInfo::Active(current)
+            | ResourceClassKeysInfo::RollPending(_, current)
+            | ResourceClassKeysInfo::RollNew(_, current)
+            | ResourceClassKeysInfo::RollOld(current, _) => {
+                Some(current.incoming_cert().resources())
+            }
+            _ => None
+        }
     }
+}
 
-    pub fn current_key(&self) -> Option<&CertifiedKey> {
-        self.current_key.as_ref()
-    }
 
-    pub fn revoke_key(&self) -> Option<&CertifiedKey> {
-        self.revoke_key.as_ref()
-    }
+//------------ ResourceClassKeysInfo -----------------------------------------
 
-    pub fn new_objects(&self) -> Option<&CurrentObjects> {
-        self.new_key.as_ref().map(|k| k.current_set().objects())
-    }
+/// Contains the current key status for a resource class.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[allow(clippy::large_enum_variant)]
+pub enum ResourceClassKeysInfo {
+    Pending(PendingKey),
+    Active(CurrentKey),
+    RollPending(PendingKey, CurrentKey),
+    RollNew(NewKey, CurrentKey),
+    RollOld(CurrentKey, OldKey),
+}
 
-    pub fn current_objects(&self) -> Option<&CurrentObjects> {
-        self.current_key.as_ref().map(|k| k.current_set().objects())
-    }
+type NewKey = CertifiedKey;
+type CurrentKey = CertifiedKey;
+type OldKey = CertifiedKey;
 
-    pub fn revoke_objects(&self) -> Option<&CurrentObjects> {
-        self.revoke_key.as_ref().map(|k| k.current_set().objects())
+impl fmt::Display for ResourceClassKeysInfo {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut res = String::new();
+
+        match &self {
+            ResourceClassKeysInfo::Pending(_) => {
+                res.push_str("State: pending\n");
+            }
+            ResourceClassKeysInfo::Active(_) => {
+                res.push_str("State: active\n");
+            }
+            ResourceClassKeysInfo::RollPending(_, _) => {
+                res.push_str("State: key-roll phase 1: pending key for key roll\n");
+            }
+            ResourceClassKeysInfo::RollNew(_, _) => {
+                res.push_str("State: key-roll phase 2: new key with certificate\n");
+            }
+            ResourceClassKeysInfo::RollOld(_, _) => {
+                res.push_str("State: key-roll phase 3: old key may be revoked\n");
+            }
+        }
+
+        match &self {
+            ResourceClassKeysInfo::Active(current)
+            | ResourceClassKeysInfo::RollPending(_, current)
+            | ResourceClassKeysInfo::RollNew(_, current)
+            | ResourceClassKeysInfo::RollOld(current, _) => {
+                res.push_str("    Resources:\n");
+                let inrs = current.incoming_cert().resources();
+                res.push_str(&format!("    ASNs: {}\n", inrs.asn()));
+                res.push_str(&format!("    IPv4: {}\n", inrs.v4()));
+                res.push_str(&format!("    IPv6: {}\n", inrs.v6()));
+            }
+            _ => {}
+        }
+
+        res.fmt(f)
     }
 }
 

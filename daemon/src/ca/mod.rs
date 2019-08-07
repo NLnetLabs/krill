@@ -8,7 +8,6 @@ pub use self::certauth::CertAuth;
 pub use self::certauth::Rfc8183Id;
 
 mod rc;
-pub use self::rc::KeyStatus;
 pub use self::rc::ResourceClass;
 
 mod commands;

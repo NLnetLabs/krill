@@ -14,15 +14,15 @@ use krill_commons::api::admin::{
     Handle, ParentCaContact, PubServerContact, Token, UpdateChildRequest,
 };
 use krill_commons::api::ca::{
-    AddedObject, AllCurrentObjects, CaParentsInfo, CertAuthInfo, CertifiedKey, ChildCaDetails,
-    CurrentObject, IssuedCert, ObjectName, ObjectsDelta, ParentCaInfo, PublicationDelta, RcvdCert,
-    RepoInfo, ResourceSet, TrustAnchorInfo, TrustAnchorLocator, UpdatedObject,
+    AddedObject, CaParentsInfo, CertAuthInfo, CertifiedKey, ChildCaDetails, CurrentObject,
+    IssuedCert, ObjectName, ObjectsDelta, ParentCaInfo, PublicationDelta, RcvdCert, RepoInfo,
+    ResourceSet, TrustAnchorInfo, TrustAnchorLocator, UpdatedObject,
 };
 use krill_commons::api::{
     self, EncodedHash, EntitlementClass, Entitlements, IssuanceRequest, IssuanceResponse,
     SigningCert, DFLT_CLASS,
 };
-use krill_commons::eventsourcing::Aggregate;
+use krill_commons::eventsourcing::{Aggregate, StoredEvent};
 use krill_commons::remote::builder::{IdCertBuilder, SignedMessageBuilder};
 use krill_commons::remote::id::IdCert;
 use krill_commons::remote::rfc6492;
@@ -31,10 +31,9 @@ use krill_commons::remote::sigmsg::SignedMessage;
 use krill_commons::util::softsigner::SignerKeyId;
 
 use crate::ca::{
-    self, ChildHandle, Cmd, CmdDet, Error, Evt, EvtDet, Ini, ParentHandle, ResourceClassName,
-    Result, SignSupport, Signer,
+    self, ChildHandle, Cmd, CmdDet, Error, Evt, EvtDet, Ini, ParentHandle, ResourceClass,
+    ResourceClassName, Result, SignSupport, Signer,
 };
-use ca::{KeyStatus, ResourceClass};
 
 //------------ Rfc8183Id ---------------------------------------------------
 
@@ -258,22 +257,17 @@ impl<S: Signer> Aggregate for CertAuth<S> {
                     .unwrap()
                     .add_request(status, req)
             }
-            EvtDet::PendingKeyActivated(parent, class_name, cert) => {
+            EvtDet::CertificateReceived(parent, class_name, key_id, cert) => {
                 let parent = self.parent_mut(&parent).unwrap();
                 let rc = parent.class_mut(&class_name).unwrap();
-                rc.pending_key_activated(cert);
-            }
-            EvtDet::CertificateReceived(parent, class_name, status, cert) => {
-                let parent = self.parent_mut(&parent).unwrap();
-                let rc = parent.class_mut(&class_name).unwrap();
-                rc.received_cert(status, cert);
+                rc.received_cert(key_id, cert);
             }
 
             // General functions
-            EvtDet::Published(parent, class_name, status, delta) => {
+            EvtDet::Published(parent, class_name, key_id, delta) => {
                 let parent = self.parent_mut(&parent).unwrap();
                 let rc = parent.class_mut(&class_name).unwrap();
-                rc.apply_delta(delta, status);
+                rc.apply_delta(delta, key_id);
             }
             EvtDet::TaPublished(delta) => {
                 let ta_key = self.ta_key_mut().unwrap();
@@ -354,35 +348,6 @@ impl<S: Signer> CertAuth<S> {
 /// # Publishing
 ///
 impl<S: Signer> CertAuth<S> {
-    /// Returns all current objects for all parents, resource classes and keys
-    pub fn current_objects(&self) -> AllCurrentObjects {
-        let mut objects = AllCurrentObjects::empty();
-
-        match &self.parents {
-            CaParents::SelfSigned(key, _tal) => {
-                objects.add_name_space(DFLT_CLASS, key.current_set().objects())
-            }
-            CaParents::Parents(parents) => {
-                for parent in parents.values() {
-                    for rc in parent.resources.values() {
-                        let ns = rc.name_space();
-                        if let Some(new_objects) = rc.new_objects() {
-                            objects.add_name_space(ns, new_objects);
-                        }
-                        if let Some(current_objects) = rc.current_objects() {
-                            objects.add_name_space(ns, current_objects);
-                        }
-                        if let Some(revoke_objects) = rc.revoke_objects() {
-                            objects.add_name_space(ns, revoke_objects);
-                        }
-                    }
-                }
-            }
-        }
-
-        objects
-    }
-
     fn republish_delta_for_key(
         key: &CertifiedKey,
         repo_info: &RepoInfo,
@@ -861,26 +826,23 @@ impl<S: Signer> CertAuth<S> {
         res
     }
 
-    fn opt_cert_request_for_status(
+    fn make_request_events(
         &self,
-        parent_handle: Handle,
+        version: &mut u64,
+        parent: &ParentHandle,
         entitlement: &EntitlementClass,
         rc: &ResourceClass,
-        key_status: KeyStatus,
-        version: u64,
         signer: &Arc<RwLock<S>>,
-    ) -> ca::Result<Option<Evt>> {
-        Ok(rc
-            .request_cert(key_status, entitlement, &self.base_repo, signer)?
-            .map(|request| {
-                EvtDet::certificate_requested(
-                    &self.handle,
-                    version,
-                    parent_handle.clone(),
-                    request,
-                    key_status,
-                )
-            }))
+    ) -> Result<Vec<Evt>> {
+        let req_details_list =
+            rc.request_certs(parent.clone(), entitlement, &self.base_repo, &signer)?;
+
+        let mut res = vec![];
+        for details in req_details_list.into_iter() {
+            res.push(StoredEvent::new(&self.handle, *version, details));
+            *version += 1;
+        }
+        Ok(res)
     }
 
     /// This processes entitlements from a parent, and updates the known
@@ -929,53 +891,13 @@ impl<S: Signer> CertAuth<S> {
             let name = ent.class_name();
 
             if let Some(rc) = parent.resources.get(name) {
-                if let Some(req) = self.opt_cert_request_for_status(
-                    parent_handle.clone(),
+                res.append(&mut self.make_request_events(
+                    &mut version,
+                    &parent_handle,
                     ent,
-                    &rc,
-                    KeyStatus::Pending,
-                    version,
+                    rc,
                     &signer,
-                )? {
-                    info!(
-                        "CA {} requests new certificate for pending key of class {}",
-                        self.handle, name
-                    );
-                    res.push(req);
-                    version += 1;
-                }
-
-                if let Some(req) = self.opt_cert_request_for_status(
-                    parent_handle.clone(),
-                    ent,
-                    &rc,
-                    KeyStatus::New,
-                    version,
-                    &signer,
-                )? {
-                    info!(
-                        "CA {} requests new certificate for new key of class {}",
-                        self.handle, name
-                    );
-                    res.push(req);
-                    version += 1;
-                }
-
-                if let Some(req) = self.opt_cert_request_for_status(
-                    parent_handle.clone(),
-                    ent,
-                    &rc,
-                    KeyStatus::Current,
-                    version,
-                    &signer,
-                )? {
-                    info!(
-                        "CA {} requests new certificate for current key of class {}",
-                        self.handle, name
-                    );
-                    res.push(req);
-                    version += 1;
-                }
+                )?);
             } else {
                 // Create a resource class with a pending key
                 let key_id = {
@@ -988,29 +910,22 @@ impl<S: Signer> CertAuth<S> {
 
                 let ns = format!("{}-{}", &parent_handle, name);
                 let rc = ResourceClass::create(ns, key_id);
+                let rc_add_version = version;
+                version += 1;
 
-                let req = self
-                    .opt_cert_request_for_status(
-                        parent_handle.clone(),
-                        ent,
-                        &rc,
-                        KeyStatus::Pending,
-                        version + 1, // version will be the one *after* adding the resource class
-                        &signer,
-                    )?
-                    .unwrap(); // we can be sure we did a request for the new pending key
+                let mut request_events =
+                    self.make_request_events(&mut version, &parent_handle, ent, &rc, &signer)?;
 
                 let added = EvtDet::resource_class_added(
                     &self.handle,
-                    version,
+                    rc_add_version,
                     parent_handle.clone(),
                     name.to_string(),
                     rc,
                 );
-                version += 2;
 
                 res.push(added);
-                res.push(req);
+                res.append(&mut request_events);
             }
         }
         Ok(res)
@@ -1041,15 +956,23 @@ impl<S: Signer> CertAuth<S> {
         );
         let parent = self.parent(&parent_handle)?;
         let rc = parent.class(&class_name)?;
-        rc.update_received_cert(
+        let evt_details = rc.update_received_cert(
             rcvd_cert,
             &self.base_repo,
-            &self.handle,
             parent_handle,
             class_name,
-            self.version,
             signer,
-        )
+        )?;
+
+        let mut res = vec![];
+        let mut version = self.version;
+
+        for details in evt_details.into_iter() {
+            res.push(StoredEvent::new(&self.handle, version, details));
+            version += 1;
+        }
+
+        Ok(res)
     }
 }
 

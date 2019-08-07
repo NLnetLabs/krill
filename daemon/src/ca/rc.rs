@@ -1,20 +1,19 @@
 use std::ops::Deref;
 use std::sync::{Arc, RwLock};
 
-use rpki::crypto::PublicKey;
 use rpki::csr::Csr;
 
-use krill_commons::api::admin::Handle;
 use krill_commons::api::ca::{
     CertifiedKey, CurrentObjects, KeyRef, ObjectsDelta, PendingKey, PublicationDelta, RcvdCert,
-    RepoInfo, ResourceClassInfo,
+    RepoInfo, ResourceClassInfo, ResourceClassKeysInfo,
 };
 use krill_commons::api::{EntitlementClass, IssuanceRequest, RequestResourceLimit};
 use krill_commons::util::softsigner::SignerKeyId;
 
 use crate::ca::{
-    self, Error, Evt, EvtDet, ParentHandle, ResourceClassName, Result, SignSupport, Signer,
+    self, Error, EvtDet, ParentHandle, ResourceClassName, Result, SignSupport, Signer,
 };
+use rpki::uri;
 
 /// A CA may have multiple parents, e.g. two RIRs, and it may not get all its
 /// resource entitlements in one set, but in a number of so-called "resource
@@ -73,39 +72,15 @@ use crate::ca::{
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ResourceClass {
     name_space: String,
-    pending_key: Option<PendingKey>,
-    new_key: Option<CertifiedKey>,
-    current_key: Option<CertifiedKey>,
-    revoke_key: Option<CertifiedKey>,
+    keys: ResourceClassKeys,
 }
 
 impl ResourceClass {
     /// Creates a new ResourceClass with a single pending key only.
     pub fn create(name_space: String, pending_key: SignerKeyId) -> Self {
-        let pending_key = PendingKey::new(pending_key);
         ResourceClass {
             name_space,
-            pending_key: Some(pending_key),
-            new_key: None,
-            current_key: None,
-            revoke_key: None,
-        }
-    }
-
-    pub fn add_request(&mut self, status: KeyStatus, req: IssuanceRequest) {
-        match status {
-            KeyStatus::Pending => {
-                self.pending_key.as_mut().unwrap().add_request(req);
-            }
-            KeyStatus::New => {
-                self.new_key.as_mut().unwrap().add_request(req);
-            }
-            KeyStatus::Current => {
-                self.current_key.as_mut().unwrap().add_request(req);
-            }
-            KeyStatus::Revoke => {
-                self.revoke_key.as_mut().unwrap().add_request(req);
-            }
+            keys: ResourceClassKeys::create(pending_key),
         }
     }
 
@@ -113,252 +88,66 @@ impl ResourceClass {
         &self.name_space
     }
 
-    /// Returns the current objects under the new key.
-    pub fn new_objects(&self) -> Option<&CurrentObjects> {
-        self.new_key.as_ref().map(|k| k.current_set().objects())
+    /// Adds a request to an existing key for future reference.
+    pub fn add_request(&mut self, key_id: SignerKeyId, req: IssuanceRequest) {
+        self.keys.add_request(key_id, req);
     }
 
-    /// Returns the current objects under the current key.
-    pub fn current_objects(&self) -> Option<&CurrentObjects> {
-        self.current_key.as_ref().map(|k| k.current_set().objects())
-    }
-
-    /// Returns the current objects under the key that is to be revoked.
-    pub fn revoke_objects(&self) -> Option<&CurrentObjects> {
-        self.revoke_key.as_ref().map(|k| k.current_set().objects())
+    pub fn objects(&self) -> CurrentObjects {
+        self.keys.objects()
     }
 
     /// Returns withdraws for all current objects, for when this resource class
     /// needs to be removed.
     pub fn withdraw(&self, base_repo: &RepoInfo) -> ObjectsDelta {
         let base_repo = base_repo.ca_repository(self.name_space());
-        let mut delta = ObjectsDelta::new(base_repo);
-
-        if let Some(objects) = self.new_objects() {
-            for withdraw in objects.withdraw().into_iter() {
-                delta.withdraw(withdraw);
-            }
-        }
-        if let Some(objects) = self.current_objects() {
-            for withdraw in objects.withdraw().into_iter() {
-                delta.withdraw(withdraw);
-            }
-        }
-        if let Some(objects) = self.revoke_objects() {
-            for withdraw in objects.withdraw().into_iter() {
-                delta.withdraw(withdraw);
-            }
-        }
-        delta
+        self.keys.withdraw(base_repo)
     }
 
-    #[allow(clippy::too_many_arguments)]
+    /// Returns event details for receiving the certificate and publishing for it.
     pub fn update_received_cert<S: Signer>(
         &self,
         rcvd_cert: RcvdCert,
         base_repo: &RepoInfo,
-        handle: &Handle,
-        parent_handle: ParentHandle,
+        parent: ParentHandle,
         class_name: ResourceClassName,
-        version: u64,
         signer: Arc<RwLock<S>>,
-    ) -> ca::Result<Vec<Evt>> {
-        let mut res = vec![];
-
-        let mut status = self.status_for_cert(&rcvd_cert, signer.read().unwrap().deref())?;
-
-        let event = if status == KeyStatus::Pending {
-            self.update_cert_for_pending(
-                &handle,
-                &parent_handle,
-                &class_name,
-                rcvd_cert.clone(),
-                self.new_status_for_pending(),
-                version,
-            )?
-        } else {
-            self.update_cert_for_certified_key(
-                &handle,
-                &parent_handle,
-                &class_name,
-                rcvd_cert.clone(),
-                status,
-                version,
-            )
-        };
-
-        res.push(event);
-
-        // Get the key that needs publishing and apply the cert to it.
-        let key_to_publish = self.key_to_publish(status, rcvd_cert)?;
-
-        // TODO: Check current objects in relation to resources
-        //       and shrink/remove/add based on config.
-        let ca_repo = base_repo.ca_repository(&self.name_space);
-        let delta = ObjectsDelta::new(ca_repo);
-
-        // Publish
-        if status == KeyStatus::Pending {
-            status = self.new_status_for_pending()
-        }
-
-        res.push(EvtDet::published(
-            &handle,
-            version + 1,
-            parent_handle,
+    ) -> ca::Result<Vec<EvtDet>> {
+        self.keys.update_received_cert(
+            parent,
+            rcvd_cert,
+            base_repo,
             class_name,
-            status,
-            SignSupport::publish(signer, &key_to_publish, base_repo, &self.name_space, delta)
-                .map_err(Error::signer)?,
-        ));
-
-        Ok(res)
-    }
-
-    /// Updates the certificate for the pending key, and depending on whether
-    /// this a key for a new resource class, or a pending key in a key roll,
-    /// returns the correct lifecycle event.
-    fn update_cert_for_pending(
-        &self,
-        handle: &Handle,
-        parent_handle: &ParentHandle,
-        class_name: &str,
-        cert: RcvdCert,
-        new_status: KeyStatus,
-        version: u64,
-    ) -> Result<Evt> {
-        match new_status {
-            KeyStatus::Pending => Err(Error::KeyStatusChange(
-                KeyStatus::Pending,
-                KeyStatus::Pending,
-            )),
-
-            KeyStatus::New => unimplemented!("Issue #23 (key rolls)"),
-
-            KeyStatus::Current => Ok(EvtDet::pending_activated(
-                handle,
-                version,
-                parent_handle.clone(),
-                class_name.to_string(),
-                cert,
-            )),
-
-            KeyStatus::Revoke => Err(Error::KeyStatusChange(
-                KeyStatus::Pending,
-                KeyStatus::Revoke,
-            )),
-        }
-    }
-
-    /// Returns an event for updating the certificate on an existing
-    /// certified key.
-    fn update_cert_for_certified_key(
-        &self,
-        handle: &Handle,
-        parent_handle: &ParentHandle,
-        class_name: &str,
-        cert: RcvdCert,
-        status: KeyStatus,
-        version: u64,
-    ) -> Evt {
-        EvtDet::certificate_received(
-            handle,
-            version,
-            parent_handle.clone(),
-            class_name.to_string(),
-            status,
-            cert,
+            &self.name_space,
+            signer,
         )
     }
 
     /// Returns a ResourceClassInfo for this, which contains all the
     /// same data, but which does not have any behaviour.
     pub fn as_info(&self) -> ResourceClassInfo {
-        ResourceClassInfo::new(
-            self.name_space.clone(),
-            self.pending_key.clone(),
-            self.new_key.clone(),
-            self.current_key.clone(),
-            self.revoke_key.clone(),
-        )
+        ResourceClassInfo::new(self.name_space.clone(), self.keys.as_info())
     }
 }
 
 /// # Request certificates
 ///
 impl ResourceClass {
-    /// Request a certificate for a key of the given status.
-    pub fn request_cert<S: Signer>(
+    /// Request certificates for any key that needs it.
+    pub fn request_certs<S: Signer>(
         &self,
-        key_status: KeyStatus,
+        parent: ParentHandle,
         entitlement: &EntitlementClass,
         base_repo: &RepoInfo,
         signer: &Arc<RwLock<S>>,
-    ) -> Result<Option<IssuanceRequest>> {
-        let signer = signer.read().map_err(Error::signer)?;
-
-        let key_opt = match key_status {
-            KeyStatus::Pending => self.pending_key.as_ref().map(|k| k.key_id()),
-            KeyStatus::New => match self.new_key.as_ref() {
-                None => None,
-                Some(key) => {
-                    if key.wants_update(entitlement.resource_set(), entitlement.not_after()) {
-                        Some(key.key_id())
-                    } else {
-                        None
-                    }
-                }
-            },
-            KeyStatus::Current => match self.current_key.as_ref() {
-                None => None,
-                Some(key) => {
-                    if key.wants_update(entitlement.resource_set(), entitlement.not_after()) {
-                        Some(key.key_id())
-                    } else {
-                        None
-                    }
-                }
-            },
-            KeyStatus::Revoke => return Err(Error::InvalidKeyStatus),
-        };
-
-        match key_opt {
-            None => Ok(None),
-            Some(key) => {
-                let csr = self.create_csr(base_repo, key, signer.deref())?;
-                Ok(Some(IssuanceRequest::new(
-                    entitlement.class_name().to_string(),
-                    RequestResourceLimit::default(),
-                    csr,
-                )))
-            }
-        }
+    ) -> Result<Vec<EvtDet>> {
+        self.keys
+            .request_certs(parent, entitlement, base_repo, &self.name_space, signer)
     }
 
-    /// Creates a Csr for the given key. Note that this parses the encoded
-    /// key. This is not the most efficient way, but makes storing and
-    /// serializing the Csr in an event possible (the Captured cannot be
-    /// stored).
-    fn create_csr<S: Signer>(
-        &self,
-        base_repo: &RepoInfo,
-        key: &SignerKeyId,
-        signer: &S,
-    ) -> Result<Csr> {
-        let pub_key = signer.get_key_info(key).map_err(Error::signer)?;
-
-        let enc = Csr::construct(
-            signer,
-            key,
-            &base_repo.ca_repository(&self.name_space),
-            &base_repo.rpki_manifest(&self.name_space, &pub_key.key_identifier()),
-            Some(&base_repo.rpki_notify()),
-        )
-        .map_err(Error::signer)?;
-
-        let csr = Csr::decode(enc.as_slice()).map_err(Error::signer)?;
-
-        Ok(csr)
+    /// This function returns all current certificate requests.
+    pub fn cert_requests(&self) -> Vec<IssuanceRequest> {
+        self.keys.cert_requests()
     }
 }
 
@@ -366,179 +155,399 @@ impl ResourceClass {
 ///
 impl ResourceClass {
     /// Applies a publication delta to the appropriate key in this resource class.
-    pub fn apply_delta(&mut self, delta: PublicationDelta, key_status: KeyStatus) {
-        match key_status {
-            KeyStatus::Pending => None,
-            KeyStatus::New => self.new_key.as_mut(),
-            KeyStatus::Current => self.current_key.as_mut(),
-            KeyStatus::Revoke => self.revoke_key.as_mut(),
-        }
-        .unwrap()
-        .apply_delta(delta)
+    pub fn apply_delta(&mut self, delta: PublicationDelta, key_id: SignerKeyId) {
+        self.keys.apply_delta(delta, key_id);
     }
 }
 
 /// # Key Life Cycle and Receiving Certificates
 ///
 impl ResourceClass {
-    /// This function activates the pending key.
-    ///
-    /// This can only happen based on an event that happens when a pending
-    /// key for a new resource class is activated. Therefore the current key
-    /// can simply be overwritten.
-    pub fn pending_key_activated(&mut self, cert: RcvdCert) {
-        let (key_id, _req) = self.pending_key.take().unwrap().unwrap();
-        let certified_key = CertifiedKey::new(key_id, cert);
-        self.current_key = Some(certified_key);
-    }
-
     /// This function marks a certificate as received.
-    pub fn received_cert(&mut self, status: KeyStatus, cert: RcvdCert) {
-        match status {
-            KeyStatus::Pending => unimplemented!("Key roll, see issue #23"),
-            KeyStatus::New => unimplemented!("Key roll, see issue #23"),
-            KeyStatus::Current => {
-                if let Some(key) = self.current_key.as_mut() {
-                    key.set_incoming_cert(cert)
-                };
+    pub fn received_cert(&mut self, key_id: SignerKeyId, cert: RcvdCert) {
+        // if there is a pending key, then we need to do some promotions..
+        match &mut self.keys {
+            ResourceClassKeys::Pending(pending) => {
+                let current = CertifiedKey::new(pending.key_id().clone(), cert);
+                self.keys = ResourceClassKeys::Active(current);
             }
-            KeyStatus::Revoke => unimplemented!("Should never request cert for this key"),
+            ResourceClassKeys::Active(current) => {
+                current.set_incoming_cert(cert);
+            }
+            ResourceClassKeys::RollPending(pending, current) => {
+                if pending.key_id() == &key_id {
+                    let current = CertifiedKey::new(pending.key_id().clone(), cert);
+                    self.keys = ResourceClassKeys::Active(current);
+                } else {
+                    current.set_incoming_cert(cert);
+                }
+            }
+            ResourceClassKeys::RollNew(new, current) => {
+                if new.key_id() == &key_id {
+                    new.set_incoming_cert(cert);
+                } else {
+                    current.set_incoming_cert(cert);
+                }
+            }
+            ResourceClassKeys::RollOld(current, old) => {
+                if current.key_id() == &key_id {
+                    current.set_incoming_cert(cert);
+                } else {
+                    old.set_incoming_cert(cert);
+                }
+            }
+        }
+    }
+}
+
+//------------ ResourceClassKeys ---------------------------------------------
+
+/// This type contains the keys for a resource class and guards that keys
+/// are created, activated, rolled and retired properly.
+#[derive(Clone, Debug, Deserialize, Eq, Serialize, PartialEq)]
+#[allow(clippy::large_enum_variant)]
+pub enum ResourceClassKeys {
+    Pending(PendingKey),
+    Active(CurrentKey),
+    RollPending(PendingKey, CurrentKey),
+    RollNew(NewKey, CurrentKey),
+    RollOld(CurrentKey, OldKey),
+}
+
+type NewKey = CertifiedKey;
+type CurrentKey = CertifiedKey;
+type OldKey = CertifiedKey;
+
+impl ResourceClassKeys {
+    fn create(pending_key: SignerKeyId) -> Self {
+        ResourceClassKeys::Pending(PendingKey::new(pending_key))
+    }
+
+    fn add_request(&mut self, key_id: SignerKeyId, req: IssuanceRequest) {
+        match self {
+            ResourceClassKeys::Pending(pending) => pending.add_request(req),
+            ResourceClassKeys::Active(current) => current.add_request(req),
+            ResourceClassKeys::RollPending(pending, current) => {
+                if pending.key_id() == &key_id {
+                    pending.add_request(req)
+                } else {
+                    current.add_request(req)
+                }
+            }
+            ResourceClassKeys::RollNew(new, current) => {
+                if new.key_id() == &key_id {
+                    new.add_request(req)
+                } else {
+                    current.add_request(req)
+                }
+            }
+            ResourceClassKeys::RollOld(current, old) => {
+                if current.key_id() == &key_id {
+                    current.add_request(req)
+                } else {
+                    old.add_request(req)
+                }
+            }
         }
     }
 
-    /// This function returns all current certificate requests.
-    pub fn cert_requests(&self) -> Vec<IssuanceRequest> {
-        let mut res = vec![];
-        if let Some(p) = self.pending_key.as_ref() {
-            if let Some(r) = p.request() {
-                res.push(r.clone());
+    fn objects(&self) -> CurrentObjects {
+        let mut objects = CurrentObjects::default();
+
+        match self {
+            ResourceClassKeys::Pending(_pending) => {}
+            ResourceClassKeys::Active(current) => {
+                objects = objects + current.current_set().objects().clone();
             }
-        }
-        if let Some(p) = self.new_key.as_ref() {
-            if let Some(r) = p.request() {
-                res.push(r.clone())
+            ResourceClassKeys::RollPending(_pending, current) => {
+                objects = objects + current.current_set().objects().clone();
             }
-        }
-        if let Some(p) = self.current_key.as_ref() {
-            if let Some(r) = p.request() {
-                res.push(r.clone())
+            ResourceClassKeys::RollNew(new, current) => {
+                objects = objects + new.current_set().objects().clone();
+                objects = objects + current.current_set().objects().clone();
+            }
+            ResourceClassKeys::RollOld(current, old) => {
+                objects = objects + current.current_set().objects().clone();
+                objects = objects + old.current_set().objects().clone();
             }
         }
 
-        res
+        objects
     }
 
-    /// Returns the new status for a pending key which receives a RcvdCert.
-    pub fn new_status_for_pending(&self) -> KeyStatus {
-        if self.current_key.is_some() {
-            KeyStatus::New
-        } else {
-            KeyStatus::Current
+    fn withdraw(&self, base_repo: uri::Rsync) -> ObjectsDelta {
+        let mut delta = ObjectsDelta::new(base_repo);
+        for withdraw in self.objects().withdraw() {
+            delta.withdraw(withdraw)
         }
+        delta
     }
 
-    /// This function will find the status of the matching key for a received
-    /// certificate. An error is returned if no matching key could be found.
-    pub fn status_for_cert<S: Signer>(
+    fn find_matching_key_for_rcvd_cert<S: Signer>(
         &self,
-        rcvd_cert: &RcvdCert,
+        cert: &RcvdCert,
         signer: &S,
-    ) -> Result<KeyStatus> {
-        self.match_key(rcvd_cert.cert().subject_public_key_info(), signer)
-    }
-
-    pub fn key_to_publish(&self, status: KeyStatus, rcvd_cert: RcvdCert) -> Result<CertifiedKey> {
-        Ok(match status {
-            KeyStatus::Pending => {
-                let (key_id, _req) = self
-                    .pending_key
-                    .clone()
-                    .ok_or_else(|| Error::InvalidKeyStatus)?
-                    .unwrap();
-                CertifiedKey::new(key_id, rcvd_cert)
+    ) -> ca::Result<CertifiedKey> {
+        match self {
+            ResourceClassKeys::Pending(pending) => {
+                self.matches_key_id(pending.key_id(), cert, signer)?;
+                Ok(CertifiedKey::new(pending.key_id().clone(), cert.clone()))
             }
-            KeyStatus::New => self
-                .new_key
-                .clone()
-                .ok_or_else(|| Error::InvalidKeyStatus)?
-                .with_new_cert(rcvd_cert),
-            KeyStatus::Current => self
-                .current_key
-                .clone()
-                .ok_or_else(|| Error::InvalidKeyStatus)?
-                .with_new_cert(rcvd_cert),
-            KeyStatus::Revoke => self
-                .revoke_key
-                .clone()
-                .ok_or_else(|| Error::InvalidKeyStatus)?
-                .with_new_cert(rcvd_cert),
-        })
-    }
-
-    /// Helper to find which of the key_id-s of held keys in different stages
-    /// match the public key, and return that status. Returns an error if
-    /// there is no match.
-    fn match_key<S: Signer>(&self, pub_key: &PublicKey, signer: &S) -> ca::Result<KeyStatus> {
-        if self.matches_key_id(
-            self.pending_key.as_ref().map(PendingKey::key_id),
-            pub_key,
-            signer,
-        ) {
-            return Ok(KeyStatus::Pending);
+            ResourceClassKeys::Active(current) => {
+                self.matches_key_id(current.key_id(), cert, signer)?;
+                Ok(current.clone())
+            }
+            ResourceClassKeys::RollPending(pending, current) => {
+                if self.matches_key_id(pending.key_id(), cert, signer).is_ok() {
+                    Ok(CertifiedKey::new(pending.key_id().clone(), cert.clone()))
+                } else {
+                    self.matches_key_id(current.key_id(), cert, signer)?;
+                    Ok(current.clone())
+                }
+            }
+            ResourceClassKeys::RollNew(new, current) => {
+                if self.matches_key_id(new.key_id(), cert, signer).is_ok() {
+                    Ok(new.clone())
+                } else {
+                    self.matches_key_id(current.key_id(), cert, signer)?;
+                    Ok(current.clone())
+                }
+            }
+            ResourceClassKeys::RollOld(current, old) => {
+                if self.matches_key_id(current.key_id(), cert, signer).is_ok() {
+                    Ok(current.clone())
+                } else {
+                    self.matches_key_id(old.key_id(), cert, signer)?;
+                    Ok(old.clone())
+                }
+            }
         }
-
-        if self.matches_key_id(
-            self.new_key.as_ref().map(CertifiedKey::key_id),
-            pub_key,
-            signer,
-        ) {
-            return Ok(KeyStatus::New);
-        }
-
-        if self.matches_key_id(
-            self.current_key.as_ref().map(CertifiedKey::key_id),
-            pub_key,
-            signer,
-        ) {
-            return Ok(KeyStatus::Current);
-        }
-
-        if self.matches_key_id(
-            self.revoke_key.as_ref().map(CertifiedKey::key_id),
-            pub_key,
-            signer,
-        ) {
-            return Ok(KeyStatus::Revoke);
-        }
-
-        Err(Error::NoKeyMatch(KeyRef::from(&pub_key.key_identifier())))
     }
 
     /// Helper to match a key_id to a pub key.
     fn matches_key_id<S: Signer>(
         &self,
-        key_id: Option<&SignerKeyId>,
-        pub_key: &PublicKey,
+        key_id: &SignerKeyId,
+        cert: &RcvdCert,
         signer: &S,
-    ) -> bool {
-        if let Some(id) = key_id {
-            if let Ok(info) = signer.get_key_info(id) {
-                &info == pub_key
-            } else {
-                false
+    ) -> ca::Result<()> {
+        let cert = cert.cert();
+        let pub_key = cert.subject_public_key_info();
+
+        if let Ok(info) = signer.get_key_info(key_id) {
+            if &info == pub_key {
+                return Ok(());
             }
-        } else {
-            false
+        }
+
+        Err(ca::Error::NoKeyMatch(KeyRef::from(cert)))
+    }
+
+    fn update_received_cert<S: Signer>(
+        &self,
+        parent: ParentHandle,
+        rcvd_cert: RcvdCert,
+        base_repo: &RepoInfo,
+        class_name: ResourceClassName,
+        name_space: &str,
+        signer: Arc<RwLock<S>>,
+    ) -> ca::Result<Vec<EvtDet>> {
+        let mut res = vec![];
+
+        let certified_key =
+            self.find_matching_key_for_rcvd_cert(&rcvd_cert, signer.read().unwrap().deref())?;
+
+        res.push(EvtDet::CertificateReceived(
+            parent.clone(),
+            class_name.clone(),
+            certified_key.key_id().clone(),
+            rcvd_cert,
+        ));
+
+        let ca_repo = base_repo.ca_repository(name_space);
+        let delta = ObjectsDelta::new(ca_repo);
+
+        let delta = SignSupport::publish(signer, &certified_key, base_repo, name_space, delta)
+            .map_err(Error::signer)?;
+
+        res.push(EvtDet::Published(
+            parent,
+            class_name,
+            certified_key.key_id().clone(),
+            delta,
+        ));
+
+        Ok(res)
+    }
+
+    fn apply_delta(&mut self, delta: PublicationDelta, key_id: SignerKeyId) {
+        match self {
+            ResourceClassKeys::Pending(_pending) => unimplemented!("Cannot apply delta to pending"),
+            ResourceClassKeys::Active(current) => current.apply_delta(delta),
+            ResourceClassKeys::RollPending(_pending, current) => current.apply_delta(delta),
+            ResourceClassKeys::RollNew(new, current) => {
+                if new.key_id() == &key_id {
+                    new.apply_delta(delta)
+                } else {
+                    current.apply_delta(delta)
+                }
+            }
+            ResourceClassKeys::RollOld(current, old) => {
+                if current.key_id() == &key_id {
+                    current.apply_delta(delta)
+                } else {
+                    old.apply_delta(delta)
+                }
+            }
         }
     }
-}
 
-//------------ KeyStatus -----------------------------------------------------
+    pub fn request_certs<S: Signer>(
+        &self,
+        parent: ParentHandle,
+        entitlement: &EntitlementClass,
+        base_repo: &RepoInfo,
+        name_space: &str,
+        signer: &Arc<RwLock<S>>,
+    ) -> Result<Vec<EvtDet>> {
+        let mut keys_for_requests = vec![];
+        match self {
+            ResourceClassKeys::Pending(pending) => {
+                keys_for_requests.push(pending.key_id());
+            }
+            ResourceClassKeys::Active(current) => {
+                if current.wants_update(entitlement.resource_set(), entitlement.not_after()) {
+                    keys_for_requests.push(current.key_id());
+                }
+            }
+            ResourceClassKeys::RollPending(pending, current) => {
+                keys_for_requests.push(pending.key_id());
+                if current.wants_update(entitlement.resource_set(), entitlement.not_after()) {
+                    keys_for_requests.push(current.key_id());
+                }
+            }
+            ResourceClassKeys::RollNew(new, current) => {
+                if new.wants_update(entitlement.resource_set(), entitlement.not_after()) {
+                    keys_for_requests.push(new.key_id());
+                }
+                if current.wants_update(entitlement.resource_set(), entitlement.not_after()) {
+                    keys_for_requests.push(current.key_id());
+                }
+            }
+            ResourceClassKeys::RollOld(current, old) => {
+                if current.wants_update(entitlement.resource_set(), entitlement.not_after()) {
+                    keys_for_requests.push(current.key_id());
+                }
+                if old.wants_update(entitlement.resource_set(), entitlement.not_after()) {
+                    keys_for_requests.push(old.key_id());
+                }
+            }
+        }
 
-#[derive(Copy, Clone, Debug, Deserialize, Display, Eq, Serialize, PartialEq)]
-pub enum KeyStatus {
-    Pending,
-    New,
-    Current,
-    Revoke,
+        let mut res = vec![];
+
+        let signer = signer.read().unwrap();
+
+        for key_id in keys_for_requests.into_iter() {
+            let req = self.create_issuance_req(
+                base_repo,
+                name_space,
+                entitlement.class_name(),
+                key_id,
+                signer.deref(),
+            )?;
+
+            res.push(EvtDet::CertificateRequested(
+                parent.clone(),
+                req,
+                key_id.clone(),
+            ));
+        }
+
+        Ok(res)
+    }
+
+    /// Returns all open certificate requests
+    fn cert_requests(&self) -> Vec<IssuanceRequest> {
+        let mut res = vec![];
+        match self {
+            ResourceClassKeys::Pending(pending) => {
+                if let Some(r) = pending.request() {
+                    res.push(r.clone())
+                }
+            }
+            ResourceClassKeys::Active(current) => {
+                if let Some(r) = current.request() {
+                    res.push(r.clone())
+                }
+            }
+            ResourceClassKeys::RollPending(pending, current) => {
+                if let Some(r) = pending.request() {
+                    res.push(r.clone())
+                }
+                if let Some(r) = current.request() {
+                    res.push(r.clone())
+                }
+            }
+            ResourceClassKeys::RollNew(new, current) => {
+                if let Some(r) = new.request() {
+                    res.push(r.clone())
+                }
+                if let Some(r) = current.request() {
+                    res.push(r.clone())
+                }
+            }
+            ResourceClassKeys::RollOld(current, old) => {
+                if let Some(r) = current.request() {
+                    res.push(r.clone())
+                }
+                if let Some(r) = old.request() {
+                    res.push(r.clone())
+                }
+            }
+        }
+        res
+    }
+
+    /// Creates a Csr for the given key. Note that this parses the encoded
+    /// key. This is not the most efficient way, but makes storing and
+    /// serializing the Csr in an event possible (the Captured cannot be
+    /// stored).
+    fn create_issuance_req<S: Signer>(
+        &self,
+        base_repo: &RepoInfo,
+        name_space: &str,
+        class_name: &str,
+        key: &SignerKeyId,
+        signer: &S,
+    ) -> Result<IssuanceRequest> {
+        let pub_key = signer.get_key_info(key).map_err(Error::signer)?;
+
+        let enc = Csr::construct(
+            signer,
+            key,
+            &base_repo.ca_repository(name_space),
+            &base_repo.rpki_manifest(name_space, &pub_key.key_identifier()),
+            Some(&base_repo.rpki_notify()),
+        )
+        .map_err(Error::signer)?;
+
+        let csr = Csr::decode(enc.as_slice()).map_err(Error::signer)?;
+
+        Ok(IssuanceRequest::new(
+            class_name.to_string(),
+            RequestResourceLimit::default(),
+            csr,
+        ))
+    }
+
+    fn as_info(&self) -> ResourceClassKeysInfo {
+        match self.clone() {
+            ResourceClassKeys::Pending(p) => ResourceClassKeysInfo::Pending(p),
+            ResourceClassKeys::Active(c) => ResourceClassKeysInfo::Active(c),
+            ResourceClassKeys::RollPending(p, c) => ResourceClassKeysInfo::RollPending(p, c),
+            ResourceClassKeys::RollNew(n, c) => ResourceClassKeysInfo::RollNew(n, c),
+            ResourceClassKeys::RollOld(c, o) => ResourceClassKeysInfo::RollOld(c, o),
+        }
+    }
 }

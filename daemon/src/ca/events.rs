@@ -18,9 +18,9 @@ use krill_commons::remote::id::IdCert;
 
 use crate::ca::signing::Signer;
 use crate::ca::{
-    CaType, ChildHandle, Error, KeyStatus, ParentHandle, ResourceClass, ResourceClassName, Result,
-    Rfc8183Id,
+    CaType, ChildHandle, Error, ParentHandle, ResourceClass, ResourceClassName, Result, Rfc8183Id,
 };
+use krill_commons::util::softsigner::SignerKeyId;
 
 //------------ Ini -----------------------------------------------------------
 
@@ -140,12 +140,16 @@ pub enum EvtDet {
     ParentAdded(ParentHandle, ParentCaContact),
     ResourceClassAdded(ParentHandle, ResourceClassName, ResourceClass),
     ResourceClassRemoved(ParentHandle, ResourceClassName, ObjectsDelta),
-    CertificateRequested(ParentHandle, IssuanceRequest, KeyStatus),
-    CertificateReceived(ParentHandle, ResourceClassName, KeyStatus, RcvdCert),
-    PendingKeyActivated(ParentHandle, ResourceClassName, RcvdCert),
+    CertificateRequested(ParentHandle, IssuanceRequest, SignerKeyId),
+    CertificateReceived(ParentHandle, ResourceClassName, SignerKeyId, RcvdCert),
 
     // Publishing
-    Published(ParentHandle, ResourceClassName, KeyStatus, PublicationDelta),
+    Published(
+        ParentHandle,
+        ResourceClassName,
+        SignerKeyId,
+        PublicationDelta,
+    ),
     TaPublished(PublicationDelta),
 }
 
@@ -187,64 +191,6 @@ impl EvtDet {
             handle,
             version,
             EvtDet::ResourceClassRemoved(parent_handle, class_name, delta),
-        )
-    }
-
-    /// This marks that a certificate has been requested. This does not result
-    /// in any status change inside the CA and is intended to be picked up by
-    /// a listener which will contact the parent of this CA. If that listener
-    /// then gets a new certificate, it will send a command to the CA with
-    /// the new certificate to mark it as received, and take other
-    /// appropriate actions (key life cycle, publication).
-    pub(super) fn certificate_requested(
-        handle: &Handle,
-        version: u64,
-        parent: ParentHandle,
-        request: IssuanceRequest,
-        key_status: KeyStatus,
-    ) -> Evt {
-        StoredEvent::new(
-            handle,
-            version,
-            EvtDet::CertificateRequested(parent, request, key_status),
-        )
-    }
-
-    /// This marks a certificate as received for the key of the given status
-    /// in a given resource class under a parent.
-    pub(super) fn certificate_received(
-        handle: &Handle,
-        version: u64,
-        parent: ParentHandle,
-        class_name: ResourceClassName,
-        key_status: KeyStatus,
-        rcvd_cert: RcvdCert,
-    ) -> Evt {
-        StoredEvent::new(
-            handle,
-            version,
-            EvtDet::CertificateReceived(parent, class_name, key_status, rcvd_cert),
-        )
-    }
-
-    /// This marks the pending key as activated. This occurs when a resource
-    /// class that was initialised with a pending key has received the
-    /// certificate for the pending key.
-    ///
-    /// Note that key roll management is going to be implemented in the near
-    /// future and then there will also be appropriate events for all the
-    /// stages in a key roll.
-    pub(super) fn pending_activated(
-        handle: &Handle,
-        version: u64,
-        parent: ParentHandle,
-        class_name: ResourceClassName,
-        received: RcvdCert,
-    ) -> Evt {
-        StoredEvent::new(
-            handle,
-            version,
-            EvtDet::PendingKeyActivated(parent, class_name, received),
         )
     }
 
@@ -296,23 +242,6 @@ impl EvtDet {
         response: IssuanceResponse,
     ) -> Evt {
         StoredEvent::new(handle, version, EvtDet::CertificateIssued(child, response))
-    }
-
-    /// This marks a delta as published for a key under a resource class
-    /// under a parent CA.
-    pub(super) fn published(
-        handle: &Handle,
-        version: u64,
-        parent: ParentHandle,
-        class_name: ResourceClassName,
-        key_status: KeyStatus,
-        delta: PublicationDelta,
-    ) -> Evt {
-        StoredEvent::new(
-            handle,
-            version,
-            EvtDet::Published(parent, class_name, key_status, delta),
-        )
     }
 
     pub(super) fn published_ta(handle: &Handle, version: u64, delta: PublicationDelta) -> Evt {
