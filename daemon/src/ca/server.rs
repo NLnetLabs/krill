@@ -455,7 +455,6 @@ impl<S: Signer> CaServer<S> {
             ParentCaContact::Rfc6492(parent_res) => {
                 self.send_revoke_requests_rfc6492(revoke_request, child.id_key(), parent_res)
             }
-            ParentCaContact::RemoteKrill(_, _) => unimplemented!(),
         }?;
 
         for response in revoke_responses.into_iter() {
@@ -535,7 +534,6 @@ impl<S: Signer> CaServer<S> {
             ParentCaContact::Rfc6492(parent_res) => {
                 self.send_cert_requests_rfc6492(cert_requests, child.id_key(), &parent_res)
             }
-            ParentCaContact::RemoteKrill(_, _) => unimplemented!("Deprecate?"),
         }?;
 
         for (class_name, issued) in issued_certs.into_iter() {
@@ -659,7 +657,6 @@ impl<S: Signer> CaServer<S> {
                 self.get_entitlements_embedded(handle, parent, token)
             }
             ParentCaContact::Rfc6492(res) => self.get_entitlements_rfc6492(handle, res),
-            _ => unimplemented!(),
         }
     }
 

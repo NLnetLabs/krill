@@ -10,7 +10,7 @@ use crate::api::ca::ResourceSet;
 use crate::api::Link;
 use crate::remote::id::IdCert;
 use crate::remote::rfc8183;
-use crate::remote::rfc8183::{ChildRequest, ServiceUri};
+use crate::remote::rfc8183::ChildRequest;
 
 //------------ Handle --------------------------------------------------------
 
@@ -326,9 +326,6 @@ impl AddParentRequest {
 #[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum ParentCaContact {
-    #[display(fmt = "Remote krill at: {}", _0)]
-    RemoteKrill(ServiceUri, Token),
-
     #[display(fmt = "Embedded CA: {}", _0)]
     Embedded(Handle, Token),
 
@@ -337,10 +334,6 @@ pub enum ParentCaContact {
 }
 
 impl ParentCaContact {
-    pub fn for_remote_krill(service_uri: ServiceUri, token: Token) -> Self {
-        ParentCaContact::RemoteKrill(service_uri, token)
-    }
-
     pub fn for_embedded(parent: Handle, token: Token) -> Self {
         ParentCaContact::Embedded(parent, token)
     }
