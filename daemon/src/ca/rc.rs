@@ -222,7 +222,7 @@ impl ResourceClass {
                 let pending = PendingKey::new(key_id);
                 self.keys = ResourceClassKeys::RollPending(pending, current.clone())
             }
-            _ => unimplemented!("Should never create event to add key when roll in progress"),
+            _ => panic!("Should never create event to add key when roll in progress"),
         }
     }
 
@@ -233,7 +233,7 @@ impl ResourceClass {
                 let old_key = OldKey::new(current.clone(), revoke_req);
                 self.keys = ResourceClassKeys::RollOld(new.clone(), old_key);
             }
-            _ => unimplemented!("Should never create event to add key when roll in progress"),
+            _ => panic!("Should never create event to activate key when no roll in progress"),
         }
     }
 
@@ -243,7 +243,7 @@ impl ResourceClass {
             ResourceClassKeys::RollOld(current, _old) => {
                 self.keys = ResourceClassKeys::Active(current.clone());
             }
-            _ => unimplemented!("Should never create event to remove old key, when there is none"),
+            _ => panic!("Should never create event to remove old key, when there is none"),
         }
     }
 
@@ -483,7 +483,7 @@ impl ResourceClassKeys {
 
     fn apply_delta(&mut self, delta: PublicationDelta, key_id: KeyId) {
         match self {
-            ResourceClassKeys::Pending(_pending) => unimplemented!("Cannot apply delta to pending"),
+            ResourceClassKeys::Pending(_pending) => panic!("Should never have delta for pending"),
             ResourceClassKeys::Active(current) => current.apply_delta(delta),
             ResourceClassKeys::RollPending(_pending, current) => current.apply_delta(delta),
             ResourceClassKeys::RollNew(new, current) => {
