@@ -9,7 +9,7 @@ use krill_commons::api::admin::{
     AddChildRequest, AddParentRequest, CertAuthInit, Handle, UpdateChildRequest,
 };
 use krill_commons::api::rrdp::VerificationError;
-use krill_commons::api::{admin, publication, ErrorCode, ErrorResponse, IssuanceRequest};
+use krill_commons::api::{admin, publication, ErrorCode, ErrorResponse};
 use krill_commons::remote::api::ClientInfo;
 use krill_commons::remote::rfc6492;
 use krill_commons::remote::sigmsg::SignedMessage;
@@ -407,45 +407,6 @@ pub fn republish_all(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
 }
 
 //------------ Provisioning (RFC6492) ----------------------------------------
-
-/// Lists the child entitlements.
-///
-/// See: https://tools.ietf.org/html/rfc6492#section-3.3.2
-pub fn list(
-    server: web::Data<AppServer>,
-    auth: Auth,
-    parent: Path<Handle>,
-    child: Path<Handle>,
-) -> HttpResponse {
-    match server
-        .read()
-        .list(&parent.into_inner(), &child.into_inner(), auth)
-    {
-        Ok(entitlements) => render_json(entitlements),
-        Err(e) => server_error(&Error::ServerError(e)),
-    }
-}
-
-/// Issue a Certificate in response to a Certificate Issuance request
-///
-/// See: https://tools.ietf.org/html/rfc6492#section3.4.1-2
-pub fn issue(
-    server: web::Data<AppServer>,
-    auth: Auth,
-    parent: Path<Handle>,
-    child: Path<Handle>,
-    issue_req: Json<IssuanceRequest>,
-) -> HttpResponse {
-    match server.read().issue(
-        &parent.into_inner(),
-        &child.into_inner(),
-        issue_req.into_inner(),
-        auth,
-    ) {
-        Ok(issued) => render_json(issued),
-        Err(e) => server_error(&Error::ServerError(e)),
-    }
-}
 
 /// Process an RFC 6492 request
 ///

@@ -135,7 +135,6 @@ pub enum EvtDet {
     ChildAdded(ChildHandle, ChildCaDetails),
     ChildCertificateIssued(ChildHandle, IssuanceResponse),
     ChildKeyRevoked(ChildHandle, RevocationResponse),
-    ChildUpdatedToken(ChildHandle, Token),
     ChildUpdatedIdCert(ChildHandle, IdCert),
     ChildUpdatedResourceClass(ChildHandle, ResourceClassName, ResourceSet),
     ChildRemovedResourceClass(ChildHandle, ResourceClassName),
@@ -209,15 +208,6 @@ impl EvtDet {
         details: ChildCaDetails,
     ) -> Evt {
         StoredEvent::new(handle, version, EvtDet::ChildAdded(child, details))
-    }
-
-    pub(super) fn child_updated_token(
-        handle: &Handle,
-        version: u64,
-        child: ChildHandle,
-        token: Token,
-    ) -> Evt {
-        StoredEvent::new(handle, version, EvtDet::ChildUpdatedToken(child, token))
     }
 
     pub(super) fn child_updated_cert(

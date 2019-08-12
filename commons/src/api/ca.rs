@@ -17,7 +17,7 @@ use rpki::resources::{AsBlocks, AsResources, IpBlocks, IpBlocksForFamily, IpReso
 use rpki::uri;
 use rpki::x509::{Serial, Time};
 
-use crate::api::admin::{Handle, ParentCaContact, Token};
+use crate::api::admin::{Handle, ParentCaContact};
 use crate::api::publication;
 use crate::api::{
     Base64, EncodedHash, IssuanceRequest, RequestResourceLimit, RevocationRequest,
@@ -67,26 +67,16 @@ impl From<ChildCaDetails> for ChildCaInfo {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildCaDetails {
-    token: Token,
     id_cert: Option<IdCert>,
     resources: HashMap<String, ChildResources>,
 }
 
 impl ChildCaDetails {
-    pub fn new(token: Token, id_cert: Option<IdCert>) -> Self {
+    pub fn new(id_cert: Option<IdCert>) -> Self {
         ChildCaDetails {
-            token,
             id_cert,
             resources: HashMap::new(),
         }
-    }
-
-    pub fn token(&self) -> &Token {
-        &self.token
-    }
-
-    pub fn set_token(&mut self, token: Token) {
-        self.token = token;
     }
 
     pub fn id_cert(&self) -> Option<&IdCert> {

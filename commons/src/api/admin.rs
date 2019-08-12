@@ -10,7 +10,7 @@ use crate::api::ca::ResourceSet;
 use crate::api::Link;
 use crate::remote::id::IdCert;
 use crate::remote::rfc8183;
-use crate::remote::rfc8183::{ChildRequest, ServiceUri};
+use crate::remote::rfc8183::ChildRequest;
 
 //------------ Handle --------------------------------------------------------
 
@@ -326,25 +326,14 @@ impl AddParentRequest {
 #[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum ParentCaContact {
-    #[display(fmt = "Remote krill at: {}", _0)]
-    RemoteKrill(ServiceUri, Token),
-
-    #[display(fmt = "Embedded CA: {}", _0)]
-    Embedded(Handle, Token),
+    #[display(fmt = "Embedded parent")]
+    Embedded,
 
     #[display(fmt = "RFC 6492 Parent")]
     Rfc6492(rfc8183::ParentResponse),
 }
 
 impl ParentCaContact {
-    pub fn for_remote_krill(service_uri: ServiceUri, token: Token) -> Self {
-        ParentCaContact::RemoteKrill(service_uri, token)
-    }
-
-    pub fn for_embedded(parent: Handle, token: Token) -> Self {
-        ParentCaContact::Embedded(parent, token)
-    }
-
     pub fn for_rfc6492(response: rfc8183::ParentResponse) -> Self {
         ParentCaContact::Rfc6492(response)
     }
@@ -406,8 +395,7 @@ impl AddChildRequest {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum ChildAuthRequest {
-    Embedded(Token),
-    Remote(Token),
+    Embedded,
     Rfc8183(ChildRequest),
 }
 
@@ -415,25 +403,16 @@ pub enum ChildAuthRequest {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct UpdateChildRequest {
-    token: Option<Token>,
     id_cert: Option<IdCert>,
     resources: Option<ResourceSet>,
 }
 
 impl UpdateChildRequest {
-    pub fn new(
-        token: Option<Token>,
-        id_cert: Option<IdCert>,
-        resources: Option<ResourceSet>,
-    ) -> Self {
-        UpdateChildRequest {
-            token,
-            id_cert,
-            resources,
-        }
+    pub fn new(id_cert: Option<IdCert>, resources: Option<ResourceSet>) -> Self {
+        UpdateChildRequest { id_cert, resources }
     }
 
-    pub fn unwrap(self) -> (Option<Token>, Option<IdCert>, Option<ResourceSet>) {
-        (self.token, self.id_cert, self.resources)
+    pub fn unpack(self) -> (Option<IdCert>, Option<ResourceSet>) {
+        (self.id_cert, self.resources)
     }
 }

@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use chrono::Duration;
 
-use krill_commons::api::admin::{Handle, ParentCaContact, Token, UpdateChildRequest};
+use krill_commons::api::admin::{Handle, ParentCaContact, UpdateChildRequest};
 use krill_commons::api::ca::{RcvdCert, ResourceSet};
 use krill_commons::api::{Entitlements, IssuanceRequest, RevocationRequest, RevocationResponse};
 use krill_commons::eventsourcing;
@@ -24,11 +24,11 @@ pub enum CmdDet<S: Signer> {
     // ------------------------------------------------------------
 
     // Add a new child under this parent CA
-    AddChild(ChildHandle, Token, Option<IdCert>, ResourceSet),
+    AddChild(ChildHandle, Option<IdCert>, ResourceSet),
     // Update some details for an existing child, e.g. resources.
     UpdateChild(ChildHandle, UpdateChildRequest),
     // Process an issuance request by an existing child.
-    CertifyChild(ChildHandle, IssuanceRequest, Token, Arc<RwLock<S>>),
+    CertifyChild(ChildHandle, IssuanceRequest, Arc<RwLock<S>>),
     // Process a revoke request by an existing child.
     RevokeKeyForChild(ChildHandle, RevocationRequest, Arc<RwLock<S>>),
 
@@ -84,14 +84,13 @@ impl<S: Signer> CmdDet<S> {
     pub fn add_child(
         handle: &Handle,
         child_handle: Handle,
-        child_token: Token,
         child_id_cert: Option<IdCert>,
         child_resources: ResourceSet,
     ) -> Cmd<S> {
         eventsourcing::SentCommand::new(
             handle,
             None,
-            CmdDet::AddChild(child_handle, child_token, child_id_cert, child_resources),
+            CmdDet::AddChild(child_handle, child_id_cert, child_resources),
         )
     }
 
@@ -109,13 +108,12 @@ impl<S: Signer> CmdDet<S> {
         handle: &Handle,
         child_handle: ChildHandle,
         request: IssuanceRequest,
-        token: Token,
         signer: Arc<RwLock<S>>,
     ) -> Cmd<S> {
         eventsourcing::SentCommand::new(
             handle,
             None,
-            CmdDet::CertifyChild(child_handle, request, token, signer),
+            CmdDet::CertifyChild(child_handle, request, signer),
         )
     }
 

@@ -124,28 +124,18 @@ impl<S: Signer> CaServer<S> {
         let ta = self.get_trust_anchor()?;
         let ta_handle = ca::ta_handle();
 
-        let token = match &auth {
-            ChildAuthRequest::Embedded(token) => token.clone(),
-            ChildAuthRequest::Remote(token) => token.clone(),
-            ChildAuthRequest::Rfc8183(_) => self.random_token(),
-        };
-
         let id_cert = match &auth {
-            ChildAuthRequest::Embedded(_) | ChildAuthRequest::Remote(_) => None,
+            ChildAuthRequest::Embedded => None,
             ChildAuthRequest::Rfc8183(req) => Some(req.id_cert().clone()),
         };
 
-        let add_child =
-            CmdDet::<S>::add_child(&ta_handle, handle.clone(), token, id_cert, resources);
+        let add_child = CmdDet::add_child(&ta_handle, handle.clone(), id_cert, resources);
 
         let events = ta.process_command(add_child)?;
         let ta = self.ca_store.update(&ta_handle, ta, events)?;
 
         match auth {
-            ChildAuthRequest::Embedded(token) => {
-                Ok(ParentCaContact::for_embedded(ta_handle, token))
-            }
-            ChildAuthRequest::Remote(_token) => unimplemented!(),
+            ChildAuthRequest::Embedded => Ok(ParentCaContact::Embedded),
             ChildAuthRequest::Rfc8183(req) => {
                 let service_uri = format!("{}rfc6492/{}", service_uri.to_string(), ta.handle());
                 let service_uri = uri::Https::from_string(service_uri).unwrap();
@@ -214,10 +204,8 @@ impl<S: Signer> CaServer<S> {
     /// functions can be called.
     pub fn rfc6492(&self, ca_handle: &Handle, msg: SignedMessage) -> ServerResult<Bytes, S> {
         debug!("RFC6492 Request: will check");
-        let (content, token) = {
-            let ca = self.ca_store.get_latest(ca_handle)?;
-            ca.verify_rfc6492(msg)?
-        };
+        let ca = self.ca_store.get_latest(ca_handle)?;
+        let content = ca.verify_rfc6492(msg)?;
         debug!("RFC6492 Request: verified");
 
         let (sender, recipient, content) = content.unwrap();
@@ -230,12 +218,12 @@ impl<S: Signer> CaServer<S> {
                 self.wrap_rfc6492_response(ca_handle, msg)
             }
             rfc6492::Content::Qry(rfc6492::Qry::List) => {
-                let entitlements = self.list(ca_handle, &child, &token)?;
+                let entitlements = self.list(ca_handle, &child)?;
                 let msg = rfc6492::Message::list_response(sender, recipient, entitlements);
                 self.wrap_rfc6492_response(ca_handle, msg)
             }
             rfc6492::Content::Qry(rfc6492::Qry::Issue(req)) => {
-                let res = self.issue(ca_handle, &child, req, token)?;
+                let res = self.issue(ca_handle, &child, req)?;
                 let msg = rfc6492::Message::issue_response(sender, recipient, res);
                 self.wrap_rfc6492_response(ca_handle, msg)
             }
@@ -262,13 +250,12 @@ impl<S: Signer> CaServer<S> {
         &self,
         parent: &Handle,
         child: &Handle,
-        token: &Token,
     ) -> ServerResult<Entitlements, S> {
         if parent != &ca::ta_handle() {
             unimplemented!("https://github.com/NLnetLabs/krill/issues/25");
         } else {
             let ta = self.get_trust_anchor()?;
-            Ok(ta.list(child, token)?)
+            Ok(ta.list(child)?)
         }
     }
 
@@ -280,7 +267,6 @@ impl<S: Signer> CaServer<S> {
         parent: &Handle,
         child: &ChildHandle,
         issue_req: IssuanceRequest,
-        token: Token,
     ) -> ServerResult<IssuanceResponse, S> {
         if parent != &ca::ta_handle() {
             unimplemented!("https://github.com/NLnetLabs/krill/issues/25");
@@ -298,7 +284,6 @@ impl<S: Signer> CaServer<S> {
                 parent,
                 child.clone(),
                 issue_req.clone(),
-                token.clone(),
                 self.signer.clone(),
             );
 
@@ -307,7 +292,7 @@ impl<S: Signer> CaServer<S> {
 
             // New entitlements will include this resource class, and
             // the newly issued certificate.
-            let response = ta.issuance_response(child, &class_name, &pub_key, &token)?;
+            let response = ta.issuance_response(child, &class_name, &pub_key)?;
 
             Ok(response)
         }
@@ -449,13 +434,12 @@ impl<S: Signer> CaServer<S> {
         let revoke_request = child.revoke_requests(parent);
 
         let revoke_responses = match child.parent(parent)?.contact() {
-            ParentCaContact::Embedded(_parent, _token) => {
+            ParentCaContact::Embedded => {
                 self.send_revoke_requests_embedded(revoke_request, handle, parent)
             }
             ParentCaContact::Rfc6492(parent_res) => {
                 self.send_revoke_requests_rfc6492(revoke_request, child.id_key(), parent_res)
             }
-            ParentCaContact::RemoteKrill(_, _) => unimplemented!(),
         }?;
 
         for response in revoke_responses.into_iter() {
@@ -529,13 +513,12 @@ impl<S: Signer> CaServer<S> {
         let cert_requests = child.cert_requests(parent);
 
         let issued_certs = match child.parent(parent)?.contact() {
-            ParentCaContact::Embedded(_parent, token) => {
-                self.send_cert_requests_embedded(cert_requests, handle, parent, token)
+            ParentCaContact::Embedded => {
+                self.send_cert_requests_embedded(cert_requests, handle, parent)
             }
             ParentCaContact::Rfc6492(parent_res) => {
                 self.send_cert_requests_rfc6492(cert_requests, child.id_key(), &parent_res)
             }
-            ParentCaContact::RemoteKrill(_, _) => unimplemented!("Deprecate?"),
         }?;
 
         for (class_name, issued) in issued_certs.into_iter() {
@@ -561,7 +544,6 @@ impl<S: Signer> CaServer<S> {
         requests: Vec<IssuanceRequest>,
         handle: &Handle,
         parent_h: &ParentHandle,
-        token: &Token,
     ) -> ServerResult<Vec<(ResourceClassName, IssuedCert)>, S> {
         let mut parent = self.ca_store.get_latest(parent_h)?;
 
@@ -575,14 +557,13 @@ impl<S: Signer> CaServer<S> {
                 parent_h,
                 handle.clone(),
                 req,
-                token.clone(),
                 self.signer.clone(),
             );
 
             let events = parent.process_command(cmd)?;
             parent = self.ca_store.update(parent_h, parent, events)?;
 
-            let response = parent.issuance_response(handle, &class_name, &pub_key, &token)?;
+            let response = parent.issuance_response(handle, &class_name, &pub_key)?;
 
             let (_, _, _, issued) = response.unwrap();
 
@@ -655,11 +636,10 @@ impl<S: Signer> CaServer<S> {
         parent: &ParentHandle,
     ) -> ServerResult<api::Entitlements, S> {
         match self.get_ca(&handle)?.parent(parent)?.contact() {
-            ParentCaContact::Embedded(parent, token) => {
-                self.get_entitlements_embedded(handle, parent, token)
+            ParentCaContact::Embedded => {
+                self.get_entitlements_embedded(handle, parent)
             }
             ParentCaContact::Rfc6492(res) => self.get_entitlements_rfc6492(handle, res),
-            _ => unimplemented!(),
         }
     }
 
@@ -667,11 +647,9 @@ impl<S: Signer> CaServer<S> {
         &self,
         handle: &Handle,
         parent: &ParentHandle,
-        token: &Token,
     ) -> ServerResult<api::Entitlements, S> {
         let parent = self.ca_store.get_latest(parent)?;
-
-        parent.list(handle, token).map_err(ServerError::CertAuth)
+        parent.list(handle).map_err(ServerError::CertAuth)
     }
 
     fn get_entitlements_rfc6492(
@@ -868,7 +846,6 @@ mod tests {
             let cmd = CmdDet::add_child(
                 &ta_handle,
                 child_handle.clone(),
-                child_token.clone(),
                 None,
                 child_rs,
             );
@@ -883,7 +860,7 @@ mod tests {
             //   - Parent added
             //
 
-            let parent = ParentCaContact::for_embedded(ta_handle.clone(), child_token.clone());
+            let parent = ParentCaContact::Embedded;
 
             let add_parent = CmdDet::add_parent(&child_handle, ta_handle.clone(), parent);
 
@@ -899,7 +876,7 @@ mod tests {
             //   - Certificate requested by child
             //
 
-            let entitlements = ta.list(&child_handle, &child_token).unwrap();
+            let entitlements = ta.list(&child_handle).unwrap();
 
             let upd_ent = CmdDet::upd_entitlements(
                 &child_handle,
@@ -936,7 +913,6 @@ mod tests {
                 &ta_handle,
                 child_handle.clone(),
                 request,
-                child_token.clone(),
                 signer.clone(),
             );
 

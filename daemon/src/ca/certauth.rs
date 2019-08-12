@@ -225,10 +225,6 @@ impl<S: Signer> Aggregate for CertAuth<S> {
                 let child = self.children.get_mut(&child).unwrap();
                 child.revoke_key(response);
             }
-            EvtDet::ChildUpdatedToken(child, token) => {
-                let child = self.children.get_mut(&child).unwrap();
-                child.set_token(token);
-            }
             EvtDet::ChildUpdatedIdCert(child, cert) => {
                 let child = self.children.get_mut(&child).unwrap();
                 child.set_id_cert(cert);
@@ -310,12 +306,12 @@ impl<S: Signer> Aggregate for CertAuth<S> {
     fn process_command(&self, command: Cmd<S>) -> ca::Result<Vec<Evt>> {
         match command.into_details() {
             // being a parent
-            CmdDet::AddChild(child, token, id_cert_opt, resources) => {
-                self.add_child(child, token, id_cert_opt, resources)
+            CmdDet::AddChild(child, id_cert_opt, resources) => {
+                self.add_child(child, id_cert_opt, resources)
             }
             CmdDet::UpdateChild(child, req) => self.update_child(&child, req),
-            CmdDet::CertifyChild(child, request, token, signer) => {
-                self.certify_child(child, request, token, signer)
+            CmdDet::CertifyChild(child, request, signer) => {
+                self.certify_child(child, request, signer)
             }
             CmdDet::RevokeKeyForChild(child, request, signer) => {
                 self.revoke_child_key(child, request, signer)
@@ -387,7 +383,7 @@ impl<S: Signer> CertAuth<S> {
 /// # Being a parent
 ///
 impl<S: Signer> CertAuth<S> {
-    pub fn verify_rfc6492(&self, msg: SignedMessage) -> Result<(rfc6492::Message, Token)> {
+    pub fn verify_rfc6492(&self, msg: SignedMessage) -> Result<rfc6492::Message> {
         let content = rfc6492::Message::from_signed_message(&msg)?;
 
         let child_handle = Handle::from(content.sender());
@@ -399,9 +395,8 @@ impl<S: Signer> CertAuth<S> {
         msg.validate(child_cert)
             .map_err(|_| Error::InvalidRfc6492)?;
 
-        let token = child.token().clone();
 
-        Ok((content, token))
+        Ok(content)
     }
 
     pub fn sign_rfc6492_response(&self, msg: rfc6492::Message, signer: &S) -> Result<Bytes> {
@@ -415,9 +410,9 @@ impl<S: Signer> CertAuth<S> {
     /// the child is not authorized -- or unknown etc.
     ///
     /// Only supported in TAs until issue #25 is implemented.
-    pub fn list(&self, child_handle: &Handle, token: &Token) -> Result<api::Entitlements> {
+    pub fn list(&self, child_handle: &Handle) -> Result<api::Entitlements> {
         // TODO: Support arbitrary resource classes. See issue #25.
-        let dflt_entitlement_class = self.entitlement_class(child_handle, DFLT_CLASS, token)?;
+        let dflt_entitlement_class = self.entitlement_class(child_handle, DFLT_CLASS)?;
 
         Ok(Entitlements::new(vec![dflt_entitlement_class]))
     }
@@ -429,9 +424,8 @@ impl<S: Signer> CertAuth<S> {
         child_handle: &Handle,
         class_name: &str,
         pub_key: &PublicKey,
-        token: &Token,
     ) -> Result<api::IssuanceResponse> {
-        let entitlement_class = self.entitlement_class(child_handle, class_name, token)?;
+        let entitlement_class = self.entitlement_class(child_handle, class_name)?;
 
         entitlement_class
             .into_issuance_response(pub_key)
@@ -443,9 +437,8 @@ impl<S: Signer> CertAuth<S> {
         &self,
         child_handle: &Handle,
         class_name: &str,
-        token: &Token,
     ) -> Result<api::EntitlementClass> {
-        let child = self.get_authorised_child(child_handle, token)?;
+        let child = self.get_child(child_handle)?;
 
         let child_resources = child
             .resources_for_class(class_name)
@@ -469,22 +462,6 @@ impl<S: Signer> CertAuth<S> {
         ))
     }
 
-    /// Returns an authorized child, or an error if the child is not
-    /// authorized or unknown.
-    pub fn get_authorised_child(
-        &self,
-        child_handle: &Handle,
-        token: &Token,
-    ) -> Result<&ChildCaDetails> {
-        let child = self.get_child(child_handle)?;
-
-        if token != child.token() {
-            Err(Error::Unauthorized(child_handle.clone()))
-        } else {
-            Ok(child)
-        }
-    }
-
     /// Returns a child, or an error if the child is unknown.
     pub fn get_child(&self, child: &Handle) -> Result<&ChildCaDetails> {
         match self.children.get(child) {
@@ -499,7 +476,6 @@ impl<S: Signer> CertAuth<S> {
     fn add_child(
         &self,
         child: ChildHandle,
-        token: Token,
         id_cert: Option<IdCert>,
         resources: ResourceSet,
     ) -> ca::Result<Vec<Evt>> {
@@ -527,7 +503,7 @@ impl<S: Signer> CertAuth<S> {
         }
 
         // TODO: Handle add child to normal CA (issue #25)
-        let mut child_details = ChildCaDetails::new(token, id_cert);
+        let mut child_details = ChildCaDetails::new(id_cert);
         child_details.add_new_resource_class(DFLT_CLASS, resources);
 
         Ok(vec![EvtDet::child_added(
@@ -550,7 +526,6 @@ impl<S: Signer> CertAuth<S> {
         &self,
         child: Handle,
         request: IssuanceRequest,
-        token: Token,
         signer: Arc<RwLock<S>>,
     ) -> ca::Result<Vec<Evt>> {
         let (class_name, limit, csr) = request.unwrap();
@@ -564,7 +539,7 @@ impl<S: Signer> CertAuth<S> {
 
         // verify child and resources
         let child_resources = self
-            .get_authorised_child(&child, &token)?
+            .get_child(&child)?
             .resources_for_class(&class_name)
             .ok_or_else(|| Error::MissingResourceClass)?;
 
@@ -688,22 +663,12 @@ impl<S: Signer> CertAuth<S> {
     }
 
     fn update_child(&self, child_handle: &Handle, req: UpdateChildRequest) -> ca::Result<Vec<Evt>> {
-        let (token_opt, cert_opt, resources_opt) = req.unwrap();
+        let (cert_opt, resources_opt) = req.unpack();
 
         let mut version = self.version;
         let mut res = vec![];
 
         let child = self.get_child(child_handle)?;
-
-        if let Some(token) = token_opt {
-            res.push(EvtDet::child_updated_token(
-                &self.handle,
-                version,
-                child_handle.clone(),
-                token,
-            ));
-            version += 1;
-        }
 
         if let Some(id_cert) = cert_opt {
             res.push(EvtDet::child_updated_cert(
