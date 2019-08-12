@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 use bytes::Bytes;
+use chrono::Duration;
 
 use rpki::uri;
 
@@ -14,16 +15,20 @@ use krill_commons::api::admin::{
 use krill_commons::api::ca::{
     CertAuthList, CertAuthSummary, ChildCaInfo, IssuedCert, RcvdCert, RepoInfo,
 };
-use krill_commons::api::{Entitlements, IssuanceRequest, IssuanceResponse, DFLT_CLASS};
+use krill_commons::api::{
+    Entitlements, IssuanceRequest, IssuanceResponse, RevocationRequest, RevocationResponse,
+    DFLT_CLASS,
+};
 use krill_commons::eventsourcing::{Aggregate, AggregateStore, DiskAggregateStore};
 use krill_commons::remote::builder::SignedMessageBuilder;
 use krill_commons::remote::sigmsg::SignedMessage;
 use krill_commons::remote::{rfc6492, rfc8183};
 use krill_commons::util::httpclient;
-use krill_commons::util::softsigner::SignerKeyId;
+use krill_commons::util::softsigner::KeyId;
 
 use crate::ca::{
-    self, CertAuth, ChildHandle, CmdDet, IniDet, ParentHandle, ServerError, ServerResult, Signer,
+    self, CertAuth, ChildHandle, CmdDet, IniDet, ParentHandle, ResourceClassName, ServerError,
+    ServerResult, Signer,
 };
 use crate::mq::EventQueueListener;
 
@@ -207,34 +212,32 @@ impl<S: Signer> CaServer<S> {
     /// Verifies an RFC6492 message and returns the child handle, token,
     /// and content of the request, so that the simple 'list' and 'issue'
     /// functions can be called.
-    pub fn rfc6492(&self, parent_handle: &Handle, msg: SignedMessage) -> ServerResult<Bytes, S> {
-        info!("RFC6492 Request: will check");
+    pub fn rfc6492(&self, ca_handle: &Handle, msg: SignedMessage) -> ServerResult<Bytes, S> {
+        debug!("RFC6492 Request: will check");
         let (content, token) = {
-            let parent = self.ca_store.get_latest(parent_handle)?;
-            parent.verify_rfc6492(msg)?
+            let ca = self.ca_store.get_latest(ca_handle)?;
+            ca.verify_rfc6492(msg)?
         };
-        info!("RFC6492 Request: verified");
+        debug!("RFC6492 Request: verified");
 
         let (sender, recipient, content) = content.unwrap();
-        let sender_handle = Handle::from(sender.as_str());
+        let child = Handle::from(sender.as_str());
 
         match content {
-            rfc6492::Content::Qry(rfc6492::Qry::Revoke(_)) => {
-                unimplemented!("Revocation not yet supported")
+            rfc6492::Content::Qry(rfc6492::Qry::Revoke(req)) => {
+                let res = self.revoke(ca_handle, child, req)?;
+                let msg = rfc6492::Message::revoke_response(sender, recipient, res);
+                self.wrap_rfc6492_response(ca_handle, msg)
             }
             rfc6492::Content::Qry(rfc6492::Qry::List) => {
-                let entitlements = self.list(parent_handle, &sender_handle, &token)?;
-
+                let entitlements = self.list(ca_handle, &child, &token)?;
                 let msg = rfc6492::Message::list_response(sender, recipient, entitlements);
-
-                self.wrap_rfc6492_response(parent_handle, msg)
+                self.wrap_rfc6492_response(ca_handle, msg)
             }
             rfc6492::Content::Qry(rfc6492::Qry::Issue(req)) => {
-                let res = self.issue(parent_handle, &sender_handle, req, token)?;
-
+                let res = self.issue(ca_handle, &child, req, token)?;
                 let msg = rfc6492::Message::issue_response(sender, recipient, res);
-
-                self.wrap_rfc6492_response(parent_handle, msg)
+                self.wrap_rfc6492_response(ca_handle, msg)
             }
             _ => Err(ServerError::custom("Unsupported RFC6492 message")),
         }
@@ -275,7 +278,7 @@ impl<S: Signer> CaServer<S> {
     pub fn issue(
         &self,
         parent: &Handle,
-        child: &Handle,
+        child: &ChildHandle,
         issue_req: IssuanceRequest,
         token: Token,
     ) -> ServerResult<IssuanceResponse, S> {
@@ -310,6 +313,25 @@ impl<S: Signer> CaServer<S> {
         }
     }
 
+    /// See: https://tools.ietf.org/html/rfc6492#section3.5.1-2
+    pub fn revoke(
+        &self,
+        ca_handle: &Handle,
+        child: ChildHandle,
+        revoke_request: RevocationRequest,
+    ) -> ServerResult<RevocationResponse, S> {
+        let res = (&revoke_request).into(); // response provided that no errors are returned earlier
+
+        let cmd =
+            CmdDet::revoke_key_for_child(ca_handle, child, revoke_request, self.signer.clone());
+
+        let ca = self.get_ca(ca_handle)?;
+        let events = ca.process_command(cmd)?;
+        self.ca_store.update(ca_handle, ca, events)?;
+
+        Ok(res)
+    }
+
     /// Get the current CAs
     pub fn cas(&self) -> CertAuthList {
         CertAuthList::new(
@@ -337,15 +359,45 @@ impl<S: Signer> CaServer<S> {
         }
     }
 
-    /// Adds a parent to a ca
+    /// Adds a parent to a CA
     pub fn ca_add_parent(&self, handle: Handle, parent: AddParentRequest) -> ServerResult<(), S> {
         let ca = self.get_ca(&handle)?;
         let (parent_handle, parent_contact) = parent.unwrap();
 
-        let add = CmdDet::add_parent(&handle, parent_handle.as_str(), parent_contact);
+        let add = CmdDet::add_parent(&handle, parent_handle, parent_contact);
         let events = ca.process_command(add)?;
 
         self.ca_store.update(&handle, ca, events)?;
+
+        Ok(())
+    }
+
+    /// Perform a key roll for all active keys in a CA older than the specified duration.
+    pub fn ca_keyroll_init(&self, handle: Handle, max_age: Duration) -> ServerResult<(), S> {
+        let ca = self.get_ca(&handle)?;
+
+        let init_key_roll = CmdDet::key_roll_init(&handle, max_age, self.signer.clone());
+        let events = ca.process_command(init_key_roll)?;
+
+        if !events.is_empty() {
+            self.ca_store.update(&handle, ca, events)?;
+        }
+
+        Ok(())
+    }
+
+    /// Activate a new key, as part of the key roll process (RFC6489). Only new keys that
+    /// have an age equal to or greater than the staging period are promoted. The RFC mandates
+    /// a staging period of 24 hours, but we may use a shorter period for testing and/or emergency
+    /// manual key rolls.
+    pub fn ca_keyroll_activate(&self, handle: Handle, staging: Duration) -> ServerResult<(), S> {
+        let ca = self.get_ca(&handle)?;
+
+        let activate_cmd = CmdDet::key_roll_activate(&handle, staging, self.signer.clone());
+        let events = ca.process_command(activate_cmd)?;
+        if !events.is_empty() {
+            self.ca_store.update(&handle, ca, events)?;
+        }
 
         Ok(())
     }
@@ -357,9 +409,8 @@ impl<S: Signer> CaServer<S> {
         for handle in self.ca_store.list() {
             if let Ok(ca) = self.get_ca(&handle) {
                 if let Ok(parents) = ca.parents() {
-                    for (parent, info) in parents.into_iter() {
-                        let contact = info.contact();
-                        if let Err(e) = self.get_updates_from_parent(&handle, &parent, contact) {
+                    for (parent, _info) in parents.into_iter() {
+                        if let Err(e) = self.get_updates_from_parent(&handle, &parent) {
                             error!(
                                 "Failed to refresh CA certificates for {}, error: {}",
                                 &handle, e
@@ -378,41 +429,140 @@ impl<S: Signer> CaServer<S> {
         &self,
         handle: &Handle,
         parent: &ParentHandle,
-        contact: &ParentCaContact,
     ) -> ServerResult<(), S> {
-        let entitlements = self.get_entitlements_from_parent(handle, contact)?;
+        let entitlements = self.get_entitlements_from_parent(handle, parent)?;
 
-        if !self.update_if_need(handle, parent, entitlements)? {
+        if !self.update_if_needed(handle, parent.clone(), entitlements)? {
             return Ok(()); // Nothing to do
         }
 
-        self.send_requests(handle, parent, contact)
+        self.send_requests(handle, parent)
     }
 
-    fn send_requests(
-        &self,
-        handle: &Handle,
-        parent: &ParentHandle,
-        contact: &ParentCaContact,
-    ) -> ServerResult<(), S> {
-        match contact {
-            ParentCaContact::Embedded(_p, token) => {
-                self.send_requests_embedded(handle, parent, token)
+    pub fn send_requests(&self, handle: &Handle, parent: &ParentHandle) -> ServerResult<(), S> {
+        self.send_revoke_requests(handle, parent)?;
+        self.send_cert_requests(handle, parent)
+    }
+
+    fn send_revoke_requests(&self, handle: &Handle, parent: &ParentHandle) -> ServerResult<(), S> {
+        let mut child = self.ca_store.get_latest(handle)?;
+        let revoke_request = child.revoke_requests(parent);
+
+        let revoke_responses = match child.parent(parent)?.contact() {
+            ParentCaContact::Embedded(_parent, _token) => {
+                self.send_revoke_requests_embedded(revoke_request, handle, parent)
             }
-            ParentCaContact::Rfc6492(res) => self.send_requests_rfc6492(handle, parent, res),
-            _ => unimplemented!(),
+            ParentCaContact::Rfc6492(parent_res) => {
+                self.send_revoke_requests_rfc6492(revoke_request, child.id_key(), parent_res)
+            }
+            ParentCaContact::RemoteKrill(_, _) => unimplemented!(),
+        }?;
+
+        for response in revoke_responses.into_iter() {
+            let cmd = CmdDet::key_roll_finish(handle, parent.clone(), response);
+            let events = child.process_command(cmd)?;
+            child = self.ca_store.update(handle, child, events)?;
         }
+
+        Ok(())
     }
 
-    fn send_requests_embedded(
+    fn send_revoke_requests_embedded(
         &self,
+        revoke_requests: Vec<&RevocationRequest>,
+        handle: &Handle,
+        parent_h: &ParentHandle,
+    ) -> ServerResult<Vec<RevocationResponse>, S> {
+        let mut parent = self.ca_store.get_latest(parent_h)?;
+        let mut revocation_responses = vec![];
+
+        for req in revoke_requests.into_iter() {
+            let cmd = CmdDet::revoke_key_for_child(
+                parent_h,
+                handle.clone(),
+                req.clone(),
+                self.signer.clone(),
+            );
+
+            let events = parent.process_command(cmd)?;
+            parent = self.ca_store.update(parent_h, parent, events)?;
+
+            revocation_responses.push(req.into());
+        }
+
+        Ok(revocation_responses)
+    }
+
+    fn send_revoke_requests_rfc6492(
+        &self,
+        revoke_requests: Vec<&RevocationRequest>,
+        signing_key: &KeyId,
+        parent_res: &rfc8183::ParentResponse,
+    ) -> ServerResult<Vec<RevocationResponse>, S> {
+        let mut res = vec![];
+
+        for req in revoke_requests.into_iter() {
+            let sender = parent_res.child_handle().to_string();
+            let recipient = parent_res.parent_handle().to_string();
+            let revoke = rfc6492::Message::revoke(sender, recipient, req.clone());
+
+            match self.send_rfc6492_and_validate_response(
+                signing_key,
+                parent_res,
+                revoke.into_bytes(),
+            ) {
+                Err(e) => error!("Could not send/validate revoke: {}", e),
+                Ok(response) => match response {
+                    rfc6492::Res::Revoke(revoke_response) => res.push(revoke_response),
+                    rfc6492::Res::NotPerformed(e) => error!("We got an error response: {}", e),
+                    rfc6492::Res::List(_) => error!("List response to revoke request??"),
+                    rfc6492::Res::Issue(_) => error!("Issue response to revoke request??"),
+                },
+            }
+        }
+
+        Ok(res)
+    }
+
+    fn send_cert_requests(&self, handle: &Handle, parent: &ParentHandle) -> ServerResult<(), S> {
+        let mut child = self.ca_store.get_latest(handle)?;
+        let cert_requests = child.cert_requests(parent);
+
+        let issued_certs = match child.parent(parent)?.contact() {
+            ParentCaContact::Embedded(_parent, token) => {
+                self.send_cert_requests_embedded(cert_requests, handle, parent, token)
+            }
+            ParentCaContact::Rfc6492(parent_res) => {
+                self.send_cert_requests_rfc6492(cert_requests, child.id_key(), &parent_res)
+            }
+            ParentCaContact::RemoteKrill(_, _) => unimplemented!("Deprecate?"),
+        }?;
+
+        for (class_name, issued) in issued_certs.into_iter() {
+            let received = RcvdCert::from(issued);
+
+            let upd_rcvd_cmd = CmdDet::upd_received_cert(
+                handle,
+                parent.clone(),
+                class_name,
+                received,
+                self.signer.clone(),
+            );
+
+            let evts = child.process_command(upd_rcvd_cmd)?;
+            child = self.ca_store.update(handle, child, evts)?;
+        }
+
+        Ok(())
+    }
+
+    fn send_cert_requests_embedded(
+        &self,
+        requests: Vec<IssuanceRequest>,
         handle: &Handle,
         parent_h: &ParentHandle,
         token: &Token,
-    ) -> ServerResult<(), S> {
-        let mut child = self.ca_store.get_latest(handle)?;
-        let requests = child.cert_requests(parent_h);
-
+    ) -> ServerResult<Vec<(ResourceClassName, IssuedCert)>, S> {
         let mut parent = self.ca_store.get_latest(parent_h)?;
 
         let mut issued_certs: Vec<(String, IssuedCert)> = vec![];
@@ -438,83 +588,51 @@ impl<S: Signer> CaServer<S> {
 
             issued_certs.push((class_name, issued));
         }
-
-        for (class_name, issued) in issued_certs {
-            let received = RcvdCert::from(issued);
-
-            let upd_rcvd_cmd = CmdDet::upd_received_cert(
-                handle,
-                parent_h,
-                &class_name,
-                received,
-                self.signer.clone(),
-            );
-
-            let evts = child.process_command(upd_rcvd_cmd)?;
-            child = self.ca_store.update(handle, child, evts)?;
-        }
-
-        Ok(())
+        Ok(issued_certs)
     }
 
-    fn send_requests_rfc6492(
+    fn send_cert_requests_rfc6492(
         &self,
-        handle: &Handle,
-        parent_h: &ParentHandle,
+        requests: Vec<IssuanceRequest>,
+        signing_key: &KeyId,
         parent_res: &rfc8183::ParentResponse,
-    ) -> ServerResult<(), S> {
-        let mut child = self.ca_store.get_latest(handle)?;
-        let requests = child.cert_requests(parent_h);
+    ) -> ServerResult<Vec<(ResourceClassName, IssuedCert)>, S> {
+        let mut res = vec![];
 
         for req in requests.into_iter() {
             let sender = parent_res.child_handle().to_string();
             let recipient = parent_res.parent_handle().to_string();
             let issue = rfc6492::Message::issue(sender, recipient, req);
 
-            let res = self.send_rfc6492_and_validate_response(
-                child.id_key(),
+            match self.send_rfc6492_and_validate_response(
+                signing_key,
                 parent_res,
                 issue.into_bytes(),
-            )?;
-
-            match res {
-                rfc6492::Res::Error(_) => unimplemented!("Deal with error"),
-                rfc6492::Res::Issue(issue_response) => {
-                    let (class_name, _, _, issued) = issue_response.unwrap();
-                    let received = RcvdCert::from(issued);
-
-                    let update_rcvd_cmd = CmdDet::upd_received_cert(
-                        handle,
-                        parent_h,
-                        &class_name,
-                        received,
-                        self.signer.clone(),
-                    );
-
-                    let events = child.process_command(update_rcvd_cmd)?;
-                    child = self.ca_store.update(handle, child, events)?;
-                }
-                _ => {
-                    return {
-                        Err(ServerError::custom(
-                            "Got unexpected response to issue query",
-                        ))
+            ) {
+                Err(e) => error!("Could not send/validate csr: {}", e),
+                Ok(response) => match response {
+                    rfc6492::Res::NotPerformed(e) => error!("We got an error response: {}", e),
+                    rfc6492::Res::Issue(issue_response) => {
+                        let (class_name, _, _, issued) = issue_response.unwrap();
+                        res.push((class_name, issued));
                     }
-                }
+                    rfc6492::Res::List(_) => error!("List reply to issue request??"),
+                    rfc6492::Res::Revoke(_) => error!("Revoke reply to issue request??"),
+                },
             }
         }
 
-        Ok(())
+        Ok(res)
     }
 
     /// Updates the CA if entitlements are different from what the CA
     /// currently has under this parent. Returns [`Ok(true)`] in case
     /// there were any updates. In that case the CA will have been updated
     /// with open certificate requests which can be retrieved.
-    fn update_if_need(
+    fn update_if_needed(
         &self,
         handle: &Handle,
-        parent: &ParentHandle,
+        parent: ParentHandle,
         entitlements: Entitlements,
     ) -> ServerResult<bool, S> {
         let child = self.ca_store.get_latest(handle)?;
@@ -534,9 +652,9 @@ impl<S: Signer> CaServer<S> {
     fn get_entitlements_from_parent(
         &self,
         handle: &Handle,
-        contact: &ParentCaContact,
+        parent: &ParentHandle,
     ) -> ServerResult<api::Entitlements, S> {
-        match contact {
+        match self.get_ca(&handle)?.parent(parent)?.contact() {
             ParentCaContact::Embedded(parent, token) => {
                 self.get_entitlements_embedded(handle, parent, token)
             }
@@ -572,7 +690,9 @@ impl<S: Signer> CaServer<S> {
             self.send_rfc6492_and_validate_response(child.id_key(), parent_res, list.into_bytes())?;
 
         match response {
-            rfc6492::Res::Error(_) => unimplemented!("Deal with error response"),
+            rfc6492::Res::NotPerformed(np) => {
+                Err(ServerError::Custom(format!("Not performed: {}", np)))
+            }
             rfc6492::Res::List(ent) => Ok(ent),
             _ => Err(ServerError::custom("Got unexpected response to list query")),
         }
@@ -580,7 +700,7 @@ impl<S: Signer> CaServer<S> {
 
     fn send_rfc6492_and_validate_response(
         &self,
-        signing_key: &SignerKeyId,
+        signing_key: &KeyId,
         parent_res: &rfc8183::ParentResponse,
         msg: Bytes,
     ) -> ServerResult<rfc6492::Res, S> {
@@ -765,7 +885,7 @@ mod tests {
 
             let parent = ParentCaContact::for_embedded(ta_handle.clone(), child_token.clone());
 
-            let add_parent = CmdDet::add_parent(&child_handle, ta_handle.as_str(), parent);
+            let add_parent = CmdDet::add_parent(&child_handle, ta_handle.clone(), parent);
 
             let events = child.process_command(add_parent).unwrap();
             let child = ca_store.update(&child_handle, child, events).unwrap();
@@ -781,8 +901,12 @@ mod tests {
 
             let entitlements = ta.list(&child_handle, &child_token).unwrap();
 
-            let upd_ent =
-                CmdDet::upd_entitlements(&child_handle, &ta_handle, entitlements, signer.clone());
+            let upd_ent = CmdDet::upd_entitlements(
+                &child_handle,
+                ta_handle.clone(),
+                entitlements,
+                signer.clone(),
+            );
 
             let events = child.process_command(upd_ent).unwrap();
             assert_eq!(2, events.len()); // rc and csr
@@ -821,7 +945,7 @@ mod tests {
             let _ta = ca_store.update(&ta_handle, ta, ta_events).unwrap();
 
             let (handle, issuance_res) = match issued_evt {
-                EvtDet::CertificateIssued(child, issued) => (child, issued),
+                EvtDet::ChildCertificateIssued(child, issued) => (child, issued),
                 _ => panic!("Expected issued certificate."),
             };
             let (class_name, _, _, issued) = issuance_res.unwrap();
@@ -840,8 +964,8 @@ mod tests {
 
             let upd_rcvd = CmdDet::upd_received_cert(
                 &child_handle,
-                &ta_handle,
-                DFLT_CLASS,
+                ta_handle,
+                DFLT_CLASS.to_string(),
                 rcvd_cert,
                 signer.clone(),
             );

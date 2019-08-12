@@ -56,11 +56,17 @@ fn make_event_sh(
                 QueueEvent::Delta(handle, delta) => {
                     publish(&handle, delta, &pubserver);
                 }
-                QueueEvent::ParentAdded(handle, parent, contact) => {
-                    if let Err(e) = caserver.get_updates_from_parent(&handle, &parent, &contact) {
-                        error!("Getting updates for {}, error: {}", &handle, e);
-                    } else {
-                        info!("Parent added, updated certificates for CA {}", &handle);
+                QueueEvent::ParentAdded(handle, parent) => {
+                    if let Err(e) = caserver.get_updates_from_parent(&handle, &parent) {
+                        error!(
+                            "Error getting updates for {}, from parent: {},  error: {}",
+                            &handle, &parent, e
+                        )
+                    }
+                }
+                QueueEvent::RequestsPending(handle, parent) => {
+                    if let Err(e) = caserver.send_requests(&handle, &parent) {
+                        error!("Sending pending requests for {}, error: {}", &handle, e);
                     }
                 }
             }

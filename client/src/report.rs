@@ -241,33 +241,7 @@ impl Report for CertAuthInfo {
 
                             for (name, rc) in info.resources() {
                                 res.push_str(&format!("Resource Class: {}\n", name));
-                                if let Some(key) = rc.current_key() {
-                                    res.push_str("  CURRENT Key:\n");
-                                    res.push_str("    Resources:\n");
-                                    let inrs = key.incoming_cert().resources();
-                                    res.push_str(&format!("    ASNs: {}\n", inrs.asn()));
-                                    res.push_str(&format!("    IPv4: {}\n", inrs.v4()));
-                                    res.push_str(&format!("    IPv6: {}\n", inrs.v6()));
-
-                                    res.push_str("    Objects:\n");
-                                    res.push_str("\n");
-                                    print_objects(&mut res, key.current_set().objects());
-                                }
-
-                                if rc.pending_key().is_some() {
-                                    res.push_str("  PENDING key exists!\n");
-                                    res.push_str("\n");
-                                }
-
-                                if rc.new_key().is_some() {
-                                    res.push_str("  NEW key exists!\n");
-                                    res.push_str("\n");
-                                }
-
-                                if rc.revoke_key().is_some() {
-                                    res.push_str("  OLD unrevoked key exists!\n");
-                                    res.push_str("\n");
-                                }
+                                res.push_str(&format!("{}", rc.keys()));
                             }
                         }
                     }

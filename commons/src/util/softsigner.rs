@@ -1,39 +1,41 @@
 //! Support for signing things using software keys (through openssl) and
 //! storing them unencrypted on disk.
+use std::{fs, io};
+use std::fs::File;
+use std::io::Write;
+use std::path::PathBuf;
+
 use bytes::Bytes;
 use openssl::error::ErrorStack;
 use openssl::hash::MessageDigest;
 use openssl::pkey::{PKey, PKeyRef, Private};
 use openssl::rsa::Rsa;
+use serde::{de, ser};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
 use rpki::crypto::signer::KeyError;
 use rpki::crypto::{
     PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
 };
-use serde::{de, ser};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::fs::File;
-use std::io::Write;
-use std::path::PathBuf;
-use std::{fs, io};
 
-//------------ SignerKeyId ---------------------------------------------------
+//------------ KeyId ---------------------------------------------------------
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SignerKeyId(String);
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct KeyId(String);
 
-impl SignerKeyId {
+impl KeyId {
     pub fn new(s: &str) -> Self {
-        SignerKeyId(s.to_string())
+        KeyId(s.to_string())
     }
 }
 
-impl AsRef<str> for SignerKeyId {
+impl AsRef<str> for KeyId {
     fn as_ref(&self) -> &str {
         &self.0
     }
 }
 
-impl Serialize for SignerKeyId {
+impl Serialize for KeyId {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -42,13 +44,13 @@ impl Serialize for SignerKeyId {
     }
 }
 
-impl<'de> Deserialize<'de> for SignerKeyId {
+impl<'de> Deserialize<'de> for KeyId {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        Ok(SignerKeyId::new(&s))
+        Ok(KeyId::new(&s))
     }
 }
 
@@ -95,7 +97,7 @@ impl OpenSslSigner {
         Ok(signature)
     }
 
-    fn load_key(&self, id: &SignerKeyId) -> Result<OpenSslKeyPair, SignerError> {
+    fn load_key(&self, id: &KeyId) -> Result<OpenSslKeyPair, SignerError> {
         let path = self.key_path(id);
         if path.exists() {
             let f = File::open(path)?;
@@ -106,7 +108,7 @@ impl OpenSslSigner {
         }
     }
 
-    fn key_path(&self, key_id: &SignerKeyId) -> PathBuf {
+    fn key_path(&self, key_id: &KeyId) -> PathBuf {
         let mut path = self.keys_dir.clone();
         path.push(key_id.as_ref());
         path
@@ -114,7 +116,7 @@ impl OpenSslSigner {
 }
 
 impl Signer for OpenSslSigner {
-    type KeyId = SignerKeyId;
+    type KeyId = KeyId;
     type Error = SignerError;
 
     fn create_key(&mut self, _algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
@@ -122,7 +124,7 @@ impl Signer for OpenSslSigner {
 
         let pk = &kp.subject_public_key_info()?;
         let hex_hash = hex::encode(pk.key_identifier().as_ref());
-        let key_id = SignerKeyId(hex_hash);
+        let key_id = KeyId(hex_hash);
 
         let path = self.key_path(&key_id);
         let json = serde_json::to_string(&kp)?;

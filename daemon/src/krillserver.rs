@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use bcder::Captured;
 use bytes::Bytes;
+use chrono::Duration;
 use rpki::uri;
 
 use krill_commons::api::admin;
@@ -369,8 +370,19 @@ impl KrillServer {
     }
 
     pub fn ca_add_parent(&self, handle: Handle, parent: AddParentRequest) -> EmptyRes {
-        self.caserver.ca_add_parent(handle, parent)?;
-        Ok(())
+        Ok(self.caserver.ca_add_parent(handle, parent)?)
+    }
+
+    pub fn ca_keyroll_init(&self, handle: Handle) -> EmptyRes {
+        Ok(self
+            .caserver
+            .ca_keyroll_init(handle, Duration::seconds(0))?)
+    }
+
+    pub fn ca_keyroll_activate(&self, handle: Handle) -> EmptyRes {
+        Ok(self
+            .caserver
+            .ca_keyroll_activate(handle, Duration::seconds(0))?)
     }
 
     pub fn list(&self, parent: &Handle, child: &Handle, auth: Auth) -> KrillRes<Entitlements> {

@@ -118,6 +118,18 @@ impl KrillClient {
                 let cas = self.get_json(&uri)?;
                 Ok(ApiResponse::CertAuths(cas))
             }
+            CaCommand::KeyRollInit(handle) => {
+                let uri = format!("api/v1/cas/{}/keys/roll_init", handle);
+                let uri = self.resolve_uri(&uri);
+                self.post_empty(&uri)?;
+                Ok(ApiResponse::Empty)
+            }
+            CaCommand::KeyRollActivate(handle) => {
+                let uri = format!("api/v1/cas/{}/keys/roll_activate", handle);
+                let uri = self.resolve_uri(&uri);
+                self.post_empty(&uri)?;
+                Ok(ApiResponse::Empty)
+            }
             CaCommand::Show(handle) => {
                 let uri = format!("api/v1/cas/{}", handle);
                 let uri = self.resolve_uri(&uri);
@@ -210,6 +222,10 @@ impl KrillClient {
 
     fn get_json<T: DeserializeOwned>(&self, uri: &str) -> Result<T, Error> {
         httpclient::get_json(&uri, Some(&self.token)).map_err(Error::HttpClientError)
+    }
+
+    fn post_empty(&self, uri: &str) -> Result<(), Error> {
+        httpclient::post_empty(uri, Some(&self.token)).map_err(Error::HttpClientError)
     }
 }
 

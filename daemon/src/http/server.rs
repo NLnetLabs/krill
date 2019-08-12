@@ -93,6 +93,11 @@ pub fn start(config: &Config) -> Result<(), Error> {
                     .route("/cas/{handle}", get().to(ca_info))
                     .route("/cas/{handle}/child_request", get().to(ca_child_req))
                     .route("/cas/{handle}/parents", post().to(ca_add_parent))
+                    .route("/cas/{handle}/keys/roll_init", post().to(ca_keyroll_init))
+                    .route(
+                        "/cas/{handle}/keys/roll_activate",
+                        post().to(ca_keyroll_activate),
+                    )
                     .route("/republish", post().to(republish_all)),
             )
             // Public TA related methods

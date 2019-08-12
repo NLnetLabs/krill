@@ -8,7 +8,6 @@ use krill_commons::remote::rfc6492;
 use krill_commons::util::httpclient;
 
 use crate::ca::signing::Signer;
-use crate::ca::KeyStatus;
 
 //------------ Error ---------------------------------------------------------
 
@@ -65,9 +64,6 @@ pub enum Error {
 
     #[display(fmt = "Signing issue: {}", _0)]
     SignerError(String),
-
-    #[display(fmt = "Key cannot change from status {} to {}", _0, _1)]
-    KeyStatusChange(KeyStatus, KeyStatus),
 
     #[display(fmt = "{}", _0)]
     Rfc6492(rfc6492::Error),

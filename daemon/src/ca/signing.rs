@@ -1,11 +1,9 @@
 //! Support for signing mft, crl, certificates, roas..
 //! Common objects for TAs and CAs
-use std::fmt::Debug;
 use std::ops::Deref;
 use std::sync::{Arc, RwLock};
 
 use bytes::Bytes;
-use serde::Serialize;
 
 use rpki::crl::{Crl, TbsCertList};
 use rpki::crypto::signer::KeyError;
@@ -18,27 +16,12 @@ use krill_commons::api::ca::{
     AddedObject, CertifiedKey, CurrentObject, ObjectsDelta, PublicationDelta, RepoInfo, Revocation,
     RevocationsDelta, UpdatedObject,
 };
-
-use krill_commons::util::softsigner::SignerKeyId;
+use krill_commons::util::softsigner::KeyId;
 
 //------------ Signer --------------------------------------------------------
 
-pub trait Signer:
-    crypto::Signer<KeyId = SignerKeyId> + Clone + Debug + Serialize + Sized + Sync + Send + 'static
-{
-}
-impl<
-        T: crypto::Signer<KeyId = SignerKeyId>
-            + Clone
-            + Debug
-            + Serialize
-            + Sized
-            + Sync
-            + Send
-            + 'static,
-    > Signer for T
-{
-}
+pub trait Signer: crypto::Signer<KeyId = KeyId> + Clone + Sized + Sync + Send + 'static {}
+impl<T: crypto::Signer<KeyId = KeyId> + Clone + Sized + Sync + Send + 'static> Signer for T {}
 
 //------------ CaSignSupport -------------------------------------------------
 
@@ -57,6 +40,7 @@ impl SignSupport {
         repo_info: &RepoInfo,
         name_space: &str,
         mut objects_delta: ObjectsDelta,
+        new_revocations: Vec<Revocation>,
     ) -> Result<PublicationDelta, SignError<S>> {
         let aia = ca_key.incoming_cert().uri();
         let key_id = ca_key.key_id();
@@ -81,11 +65,15 @@ impl SignSupport {
         let mut revocations = current_set.revocations().clone();
         let mut revocations_delta = RevocationsDelta::default();
 
-        let mut current_objects = current_set.objects().clone();
+        for revocation in new_revocations.into_iter() {
+            revocations_delta.add(revocation);
+        }
 
         for expired in revocations.purge() {
             revocations_delta.drop(expired);
         }
+
+        let mut current_objects = current_set.objects().clone();
 
         let mft_name = RepoInfo::mft_name(&pub_key.key_identifier());
         let mft_uri = repo_info.resolve(name_space, &mft_name);

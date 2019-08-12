@@ -1,8 +1,9 @@
-use clap::{App, Arg, SubCommand};
-use rpki::uri;
 use std::io;
 use std::path::PathBuf;
 use std::str::FromStr;
+
+use clap::{App, Arg, SubCommand};
+use rpki::uri;
 
 use krill_commons::api::admin::{
     AddChildRequest, AddParentRequest, CertAuthInit, CertAuthPubMode, ChildAuthRequest, Handle,
@@ -228,6 +229,24 @@ impl Options {
                         .required(true)
                     )
                 )
+
+                .subcommand(SubCommand::with_name("keyroll")
+                    .about("Perform a manual key roll for a CA")
+                    .arg(Arg::with_name("handle")
+                        .short("h")
+                        .long("handle")
+                        .value_name("handle")
+                        .help("The handle (name) for the CA")
+                        .required(true)
+                    )
+                    .subcommand(SubCommand::with_name("init")
+                        .about("Initialise a key roll for all active keys")
+                    )
+                    .subcommand(SubCommand::with_name("activate")
+                        .about("Activate all new keys now (RFC say to do this >24H after init)")
+                    )
+                )
+
                 .subcommand(SubCommand::with_name("add")
                     .about("Add a new CA)")
                     .arg(Arg::with_name("handle")
@@ -468,18 +487,27 @@ impl Options {
                 let pub_mode = CertAuthPubMode::Embedded;
 
                 let init = CertAuthInit::new(handle, token, pub_mode);
-                command = Command::CertAuth(CaCommand::Init(init))
+                command = Command::CertAuth(CaCommand::Init(init));
             }
             if let Some(m) = m.subcommand_matches("rfc8183_child_request") {
                 let handle = Handle::from(m.value_of("handle").unwrap());
-                command = Command::CertAuth(CaCommand::ChildRequest(handle))
+                command = Command::CertAuth(CaCommand::ChildRequest(handle));
             }
             if let Some(_m) = m.subcommand_matches("list") {
-                command = Command::CertAuth(CaCommand::List)
+                command = Command::CertAuth(CaCommand::List);
             }
+            if let Some(m) = m.subcommand_matches("keyroll") {
+                let handle = Handle::from(m.value_of("handle").unwrap());
+                if let Some(_m) = m.subcommand_matches("init") {
+                    command = Command::CertAuth(CaCommand::KeyRollInit(handle));
+                } else if let Some(_m) = m.subcommand_matches("activate") {
+                    command = Command::CertAuth(CaCommand::KeyRollActivate(handle));
+                }
+            }
+
             if let Some(m) = m.subcommand_matches("show") {
                 let handle = Handle::from(m.value_of("handle").unwrap());
-                command = Command::CertAuth(CaCommand::Show(handle))
+                command = Command::CertAuth(CaCommand::Show(handle));
             }
             if let Some(m) = m.subcommand_matches("update") {
                 let handle = Handle::from(m.value_of("handle").unwrap());
@@ -504,7 +532,7 @@ impl Options {
                         let contact = ParentCaContact::Rfc6492(pr);
                         let req = AddParentRequest::new(parent, contact);
 
-                        command = Command::CertAuth(CaCommand::AddParent(handle, req))
+                        command = Command::CertAuth(CaCommand::AddParent(handle, req));
                     }
                 }
             }
@@ -599,6 +627,8 @@ pub enum CaCommand {
     AddParent(Handle, AddParentRequest),
     ChildRequest(Handle),
     Init(CertAuthInit),
+    KeyRollInit(Handle),
+    KeyRollActivate(Handle),
     List,
     Show(Handle),
 }

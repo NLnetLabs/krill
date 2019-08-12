@@ -1,6 +1,6 @@
 use std::convert::TryFrom;
-use std::io;
 use std::str::FromStr;
+use std::{fmt, io};
 
 use bytes::Bytes;
 use chrono::{DateTime, SecondsFormat, Utc};
@@ -16,7 +16,7 @@ use crate::api::admin::Handle;
 use crate::api::ca::{IssuedCert, ResSetErr, ResourceSet};
 use crate::api::{
     EntitlementClass, Entitlements, IssuanceRequest, IssuanceResponse, RequestResourceLimit,
-    RevocationRequest, SigningCert,
+    RevocationRequest, RevocationResponse, SigningCert,
 };
 use crate::remote::sigmsg::SignedMessage;
 use crate::rpki::resources::{AsBlocks, IpBlocks};
@@ -141,7 +141,7 @@ impl Message {
     pub fn revoke_response(
         sender: String,
         recipient: String,
-        revocation: RevocationRequest,
+        revocation: RevocationResponse,
     ) -> Self {
         let content = Content::Res(Res::Revoke(revocation));
         Message {
@@ -151,12 +151,12 @@ impl Message {
         }
     }
 
-    pub fn error_response(
+    pub fn not_performed_response(
         sender: String,
         recipient: String,
         err: NotPerformedResponse,
     ) -> Result<Self, Error> {
-        let content = Content::Res(Res::Error(err));
+        let content = Content::Res(Res::NotPerformed(err));
         Ok(Message {
             sender,
             recipient,
@@ -295,14 +295,15 @@ impl Qry {
     where
         R: io::Read,
     {
-        r.take_named_element("key", |mut a, r| {
+        r.take_named_element("key", |mut a, _r| {
             let class_name = a.take_req("class_name")?;
+            let ski = a.take_req("ski")?;
+            let ski_bytes = base64::decode_config(&ski, base64::URL_SAFE_NO_PAD)
+                .map_err(|_| Error::InvalidSki)?;
+
             a.exhausted()?;
 
-            let ski_bytes = r.take_bytes_url_safe_pad()?;
-
             let ski = KeyIdentifier::try_from(ski_bytes.as_ref()).map_err(|_| Error::InvalidSki)?;
-
             Ok(RevocationRequest::new(class_name.to_string(), ski))
         })
     }
@@ -386,9 +387,10 @@ impl Qry {
         rev: &RevocationRequest,
         w: &mut XmlWriter<W>,
     ) -> Result<(), io::Error> {
-        let att = [("class_name", rev.class_name())];
         let bytes = rev.key().as_slice();
-        w.put_element("key", Some(&att), |w| w.put_base64_url_safe(bytes))
+        let encoded = base64::encode_config(bytes, base64::URL_SAFE_NO_PAD);
+        let att = [("class_name", rev.class_name()), ("ski", encoded.as_str())];
+        w.put_element("key", Some(&att), |w| w.empty())
     }
 }
 
@@ -400,8 +402,8 @@ impl Qry {
 pub enum Res {
     List(Entitlements),
     Issue(IssuanceResponse),
-    Revoke(RevocationRequest),
-    Error(NotPerformedResponse),
+    Revoke(RevocationResponse),
+    NotPerformed(NotPerformedResponse),
 }
 
 /// # Data Access
@@ -412,7 +414,7 @@ impl Res {
             Res::List(_) => TYPE_LIST_RES,
             Res::Issue(_) => TYPE_ISSUE_RES,
             Res::Revoke(_) => TYPE_REVOKE_RES,
-            Res::Error(_) => TYPE_ERROR_RES,
+            Res::NotPerformed(_) => TYPE_ERROR_RES,
         }
     }
 }
@@ -435,11 +437,11 @@ impl Res {
             }
             TYPE_REVOKE_RES => {
                 let request = Qry::decode_revoke(r)?;
-                Ok(Res::Revoke(request))
+                Ok(Res::Revoke(request.into()))
             }
             TYPE_ERROR_RES => {
                 let err = Self::decode_error_response(r)?;
-                Ok(Res::Error(err))
+                Ok(Res::NotPerformed(err))
             }
             _ => Err(Error::UnknownMessageType),
         }
@@ -595,9 +597,18 @@ impl Res {
     {
         let code = r.take_named_element("status", |_a, r| r.take_chars())?;
 
-        let _desc = r.take_named_element("description", |_a, r| r.take_chars())?;
+        let desc = r.take_named_element("description", |_a, r| r.take_chars())?;
 
-        NotPerformedResponse::from_code(&code)
+        match NotPerformedResponse::from_code(&code) {
+            Ok(res) => Ok(res),
+            Err(e) => {
+                error!(
+                    "Strange error response with code: {}, description: {}",
+                    code, desc
+                );
+                Err(e)
+            }
+        }
     }
 }
 
@@ -608,8 +619,8 @@ impl Res {
         match self {
             Res::List(ents) => Self::encode_entitlements(ents, w),
             Res::Issue(response) => Self::encode_issuance_response(response, w),
-            Res::Revoke(request) => Qry::encode_revoke(request, w),
-            Res::Error(err) => Self::encode_error_response(err, w),
+            Res::Revoke(response) => Self::encode_revoke_reponse(response, w),
+            Res::NotPerformed(err) => Self::encode_error_response(err, w),
         }
     }
 
@@ -732,6 +743,16 @@ impl Res {
             w.put_text(&error.description)
         })
     }
+
+    fn encode_revoke_reponse<W: io::Write>(
+        res: &RevocationResponse,
+        w: &mut XmlWriter<W>,
+    ) -> Result<(), io::Error> {
+        let bytes = res.key().as_slice();
+        let encoded = base64::encode_config(bytes, base64::URL_SAFE_NO_PAD);
+        let att = [("class_name", res.class_name()), ("ski", encoded.as_str())];
+        w.put_element("key", Some(&att), |w| w.empty())
+    }
 }
 
 //------------ NotPerformedResponse ------------------------------------------
@@ -835,6 +856,16 @@ impl NotPerformedResponse {
 
     pub fn _2001() -> Self {
         Self::from_code("2001").unwrap()
+    }
+}
+
+impl fmt::Display for NotPerformedResponse {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "status: {}, description: {}",
+            self.status, &self.description
+        )
     }
 }
 
@@ -1034,7 +1065,7 @@ mod tests {
         let class = "all".to_string();
 
         let ski = cert.subject_public_key_info().key_identifier();
-        let revocation = RevocationRequest::new(class, ski);
+        let revocation = RevocationResponse::new(class, ski);
 
         let rev = Message::revoke_response(sender, rcpt, revocation);
         let decoded_rev = Message::decode(rev.encode_vec().as_slice()).unwrap();
@@ -1050,7 +1081,7 @@ mod tests {
         let rcpt = "parent".to_string();
         let err = NotPerformedResponse::_1101();
 
-        let err = Message::error_response(sender, rcpt, err).unwrap();
+        let err = Message::not_performed_response(sender, rcpt, err).unwrap();
         let decoded = Message::decode(err.encode_vec().as_slice()).unwrap();
 
         assert_eq!(err, decoded);

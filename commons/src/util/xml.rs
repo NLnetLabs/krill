@@ -1,12 +1,13 @@
 //! Support for RPKI XML structures.
+use std::{fs, io};
+use std::fs::File;
+use std::path::Path;
+
 use base64;
 use base64::DecodeError;
 use bytes::Bytes;
 use hex;
 use hex::FromHexError;
-use std::fs::File;
-use std::path::Path;
-use std::{fs, io};
 use xmlrs::attribute::OwnedAttribute;
 use xmlrs::reader::XmlEvent;
 use xmlrs::{reader, writer};
@@ -218,11 +219,6 @@ impl<R: io::Read> XmlReader<R> {
     /// Takes base64 encoded bytes from the next 'characters' event.
     pub fn take_bytes_std(&mut self) -> Result<Bytes, XmlReaderErr> {
         self.take_bytes(base64::STANDARD_NO_PAD)
-    }
-
-    /// Takes base64 encoded bytes from the next 'characters' event.
-    pub fn take_bytes_url_safe_pad(&mut self) -> Result<Bytes, XmlReaderErr> {
-        self.take_bytes(base64::URL_SAFE_NO_PAD)
     }
 
     fn take_bytes(&mut self, config: base64::Config) -> Result<Bytes, XmlReaderErr> {
@@ -483,13 +479,6 @@ impl<W: io::Write> XmlWriter<W> {
     /// Standard character set, without padding.
     pub fn put_base64_std(&mut self, bytes: &Bytes) -> Result<(), io::Error> {
         let b64 = base64::encode_config(bytes, base64::STANDARD);
-        self.put_text(b64.as_ref())
-    }
-
-    /// Converts bytes to base64 encoded Characters as the content, using the
-    /// URL safe character set and padding.
-    pub fn put_base64_url_safe(&mut self, bytes: &[u8]) -> Result<(), io::Error> {
-        let b64 = base64::encode_config(bytes, base64::URL_SAFE);
         self.put_text(b64.as_ref())
     }
 
