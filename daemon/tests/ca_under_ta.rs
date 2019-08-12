@@ -32,10 +32,9 @@ fn child_request(handle: &Handle) -> rfc8183::ChildRequest {
 
 fn add_child_to_ta_embedded(
     handle: &Handle,
-    token: &Token,
     resources: ResourceSet,
 ) -> ParentCaContact {
-    let auth = ChildAuthRequest::Embedded(token.clone());
+    let auth = ChildAuthRequest::Embedded;
     let req = AddChildRequest::new(handle.clone(), resources, auth);
     let res = krill_admin(Command::TrustAnchor(TrustAnchorCommand::AddChild(req)));
 
@@ -61,7 +60,7 @@ fn add_child_to_ta_rfc6492(
 }
 
 fn update_child(handle: &Handle, resources: &ResourceSet) {
-    let req = UpdateChildRequest::new(None, None, Some(resources.clone()));
+    let req = UpdateChildRequest::new(None, Some(resources.clone()));
     match krill_admin(Command::TrustAnchor(TrustAnchorCommand::UpdateChild(
         handle.clone(),
         req,
@@ -185,7 +184,7 @@ fn ca_under_ta() {
 
         let parent = {
             let parent_contact =
-                add_child_to_ta_embedded(&emb_child_handle, &emb_child_token, emb_child_resources);
+                add_child_to_ta_embedded(&emb_child_handle, emb_child_resources);
             AddParentRequest::new(ta_handle.clone(), parent_contact)
         };
 

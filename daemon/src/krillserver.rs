@@ -14,8 +14,8 @@ use krill_commons::api::admin::{
     Token, UpdateChildRequest,
 };
 use krill_commons::api::ca::{CertAuthInfo, CertAuthList, ChildCaInfo, RcvdCert, TrustAnchorInfo};
+use krill_commons::api::publication;
 use krill_commons::api::publication::PublishRequest;
-use krill_commons::api::{publication, Entitlements, IssuanceRequest, IssuanceResponse};
 use krill_commons::remote::api::ClientInfo;
 use krill_commons::remote::proxy;
 use krill_commons::remote::proxy::ProxyServer;
@@ -383,20 +383,6 @@ impl KrillServer {
         Ok(self
             .caserver
             .ca_keyroll_activate(handle, Duration::seconds(0))?)
-    }
-
-    pub fn list(&self, parent: &Handle, child: &Handle, auth: Auth) -> KrillRes<Entitlements> {
-        Ok(self.caserver.list(parent, child, &auth.into())?)
-    }
-
-    pub fn issue(
-        &self,
-        parent: &Handle,
-        child: &Handle,
-        issue_req: IssuanceRequest,
-        auth: Auth,
-    ) -> KrillRes<IssuanceResponse> {
-        Ok(self.caserver.issue(parent, child, issue_req, auth.into())?)
     }
 
     pub fn rfc6492(&self, handle: Handle, msg: SignedMessage) -> KrillRes<Bytes> {

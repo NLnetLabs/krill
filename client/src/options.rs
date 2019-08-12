@@ -111,20 +111,13 @@ impl Options {
                             .required(false)
                         )
 
-                        .subcommand(SubCommand::with_name("krill")
-                            .about("Add a krill child, using token auth")
+                        .subcommand(SubCommand::with_name("embedded")
+                            .about("Add an embedded child")
                             .arg(Arg::with_name("handle")
                                 .short("h")
                                 .long("handle")
                                 .value_name("child-handle")
-                                .help("The handle (name) for the child CA")
-                                .required(true)
-                            )
-                            .arg(Arg::with_name("token")
-                                .short("t")
-                                .long("token")
-                                .value_name("token-string")
-                                .help("The auth token between the child and TA")
+                                .help("The handle of the child")
                                 .required(true)
                             )
                         )
@@ -136,13 +129,6 @@ impl Options {
                                 .long("handle")
                                 .value_name("child-handle")
                                 .help("Override the handle in the XML")
-                                .required(false)
-                            )
-                            .arg(Arg::with_name("token")
-                                .short("t")
-                                .long("token")
-                                .value_name("token-string")
-                                .help("The auth token, defaults to a random token")
                                 .required(false)
                             )
                             .arg(Arg::with_name("xml")
@@ -161,13 +147,6 @@ impl Options {
                             .long("handle")
                             .value_name("child-handle")
                             .help("Override the handle in the XML")
-                            .required(false)
-                        )
-                        .arg(Arg::with_name("token")
-                            .short("t")
-                            .long("token")
-                            .value_name("token-string")
-                            .help("Update the authentication token for the child")
                             .required(false)
                         )
                         .arg(Arg::with_name("xml")
@@ -286,14 +265,6 @@ impl Options {
 
                         .subcommand(SubCommand::with_name("embedded")
                             .about("Add an embedded parent")
-
-                            .arg(Arg::with_name("token")
-                                .short("t")
-                                .long("token")
-                                .value_name("token-string")
-                                .help("The auth token the parent knows for the CA")
-                                .required(true)
-                            )
                         )
 
                         .subcommand(SubCommand::with_name("rfc6492")
@@ -416,10 +387,8 @@ impl Options {
 
                     if let Some(m) = m.subcommand_matches("embedded") {
                         let handle = Handle::from(m.value_of("handle").unwrap());
-                        let token = Token::from(m.value_of("token").unwrap());
                         let res = ResourceSet::from_strs(asn, ipv4, ipv6).unwrap();
-
-                        let auth = ChildAuthRequest::Embedded(token);
+                        let auth = ChildAuthRequest::Embedded;
 
                         let req = AddChildRequest::new(handle, res, auth);
                         command = Command::TrustAnchor(TrustAnchorCommand::AddChild(req))
@@ -450,7 +419,6 @@ impl Options {
 
                 if let Some(m) = m.subcommand_matches("update") {
                     let handle = Handle::from(m.value_of("handle").unwrap());
-                    let token = m.value_of("token").map(Token::from);
                     let cert = match m.value_of("xml") {
                         Some(xml_path) => {
                             let xml = PathBuf::from(xml_path);
@@ -473,7 +441,7 @@ impl Options {
                         Some(resources)
                     };
 
-                    let req = UpdateChildRequest::new(token, cert, resources);
+                    let req = UpdateChildRequest::new(cert, resources);
 
                     command = Command::TrustAnchor(TrustAnchorCommand::UpdateChild(handle, req))
                 }
@@ -515,11 +483,8 @@ impl Options {
                 if let Some(m) = m.subcommand_matches("add-parent") {
                     let parent = Handle::from(m.value_of("parent").unwrap());
 
-                    if let Some(m) = m.subcommand_matches("embedded") {
-                        let token = Token::from(m.value_of("token").unwrap());
-
-                        let contact = ParentCaContact::Embedded(parent.clone(), token);
-
+                    if let Some(_m) = m.subcommand_matches("embedded") {
+                        let contact = ParentCaContact::Embedded;
                         let req = AddParentRequest::new(parent, contact);
 
                         command = Command::CertAuth(CaCommand::AddParent(handle, req))
