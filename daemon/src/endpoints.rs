@@ -380,12 +380,21 @@ pub fn ca_add_parent(
 pub fn ca_keyroll_init(
     server: web::Data<AppServer>,
     auth: Auth,
-    handle: Path<Handle>
+    handle: Path<Handle>,
 ) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
-        render_empty_res(
-            server.read().ca_keyroll_init(handle.into_inner())
-        )
+        render_empty_res(server.read().ca_keyroll_init(handle.into_inner()))
+    })
+}
+
+/// Force key activation for all new keys, i.e. use a staging period of 0 seconds.
+pub fn ca_keyroll_activate(
+    server: web::Data<AppServer>,
+    auth: Auth,
+    handle: Path<Handle>,
+) -> HttpResponse {
+    if_api_allowed(&server, &auth, || {
+        render_empty_res(server.read().ca_keyroll_activate(handle.into_inner()))
     })
 }
 

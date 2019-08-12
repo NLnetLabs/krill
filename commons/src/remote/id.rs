@@ -11,7 +11,7 @@ use rpki::uri;
 use rpki::x509::{Name, SignedData, Time, ValidationError, Validity};
 
 use crate::remote::rfc8183::ServiceUri;
-use crate::util::softsigner::SignerKeyId;
+use crate::util::softsigner::KeyId;
 
 //------------ MyIdentity ----------------------------------------------------
 
@@ -23,11 +23,11 @@ pub struct MyIdentity {
 
     id_cert: IdCert,
 
-    key_id: SignerKeyId,
+    key_id: KeyId,
 }
 
 impl MyIdentity {
-    pub fn new(name: &str, id_cert: IdCert, key_id: SignerKeyId) -> Self {
+    pub fn new(name: &str, id_cert: IdCert, key_id: KeyId) -> Self {
         MyIdentity {
             name: name.to_string(),
             id_cert,
@@ -47,7 +47,7 @@ impl MyIdentity {
 
     /// The identifier that the Signer needs to use the key for the identity
     /// certificate.
-    pub fn key_id(&self) -> &SignerKeyId {
+    pub fn key_id(&self) -> &KeyId {
         &self.key_id
     }
 }

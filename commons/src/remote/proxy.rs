@@ -5,6 +5,7 @@ use std::sync::Arc;
 use bcder::encode::Values;
 use bcder::{Captured, Mode};
 
+use rpki::crypto::{PublicKeyFormat, Signer};
 use rpki::uri;
 use rpki::x509::ValidationError;
 
@@ -25,7 +26,6 @@ use crate::remote::rfc8183::ServiceUri;
 use crate::remote::sigmsg::SignedMessage;
 use crate::util::httpclient;
 use crate::util::softsigner::{OpenSslSigner, SignerError};
-use rpki::crypto::{PublicKeyFormat, Signer};
 
 #[derive(Clone)]
 pub struct ProxyServer {

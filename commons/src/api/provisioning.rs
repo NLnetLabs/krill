@@ -370,3 +370,48 @@ impl RevocationRequest {
         &self.key
     }
 }
+
+//------------ RevocationResponse --------------------------------------------
+
+/// This type represents a Certificate Revocation Response as
+/// defined in section 3.5.2 of RFC6492.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RevocationResponse {
+    class_name: String,
+    key: KeyIdentifier,
+}
+
+impl RevocationResponse {
+    pub fn new(class_name: String, key: KeyIdentifier) -> Self {
+        RevocationResponse { class_name, key }
+    }
+
+    pub fn unpack(self) -> (String, KeyIdentifier) {
+        (self.class_name, self.key)
+    }
+
+    pub fn class_name(&self) -> &str {
+        &self.class_name
+    }
+    pub fn key(&self) -> &KeyIdentifier {
+        &self.key
+    }
+}
+
+impl From<&RevocationRequest> for RevocationResponse {
+    fn from(req: &RevocationRequest) -> Self {
+        RevocationResponse {
+            class_name: req.class_name.clone(),
+            key: req.key,
+        }
+    }
+}
+
+impl From<RevocationRequest> for RevocationResponse {
+    fn from(req: RevocationRequest) -> Self {
+        RevocationResponse {
+            class_name: req.class_name,
+            key: req.key,
+        }
+    }
+}

@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 use std::convert::TryFrom;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use std::str;
 use std::str::FromStr;
 use std::{fmt, ops};
@@ -12,19 +12,22 @@ use bytes::Bytes;
 use chrono::Duration;
 
 use rpki::cert::Cert;
-use rpki::crypto::{KeyIdentifier, PublicKey};
+use rpki::crypto::KeyIdentifier;
 use rpki::resources::{AsBlocks, AsResources, IpBlocks, IpBlocksForFamily, IpResources};
 use rpki::uri;
 use rpki::x509::{Serial, Time};
 
 use crate::api::admin::{Handle, ParentCaContact, Token};
 use crate::api::publication;
-use crate::api::{Base64, EncodedHash, IssuanceRequest, RequestResourceLimit};
+use crate::api::{
+    Base64, EncodedHash, IssuanceRequest, RequestResourceLimit, RevocationRequest,
+    RevocationResponse,
+};
 use crate::remote::id::IdCert;
 use crate::rpki::crl::{Crl, CrlEntry};
 use crate::rpki::manifest::{FileAndHash, Manifest};
 use crate::util::ext_serde;
-use crate::util::softsigner::SignerKeyId;
+use crate::util::softsigner::KeyId;
 
 //------------ ChildCaInfo ---------------------------------------------------
 
@@ -125,6 +128,11 @@ impl ChildCaDetails {
         // been issued to it. So, it's safe to unwrap here.
         self.resources.get_mut(class_name).unwrap().add_cert(cert)
     }
+
+    pub fn revoke_key(&mut self, revocation: RevocationResponse) {
+        let (class_name, key_id) = revocation.unpack();
+        self.resources.get_mut(&class_name).unwrap().revoke(&key_id)
+    }
 }
 
 /// This type defines a reference to PublicKey for easy storage and lookup.
@@ -200,8 +208,8 @@ impl ChildResources {
         self.certs.values()
     }
 
-    pub fn cert(&self, pub_key: &PublicKey) -> Option<&IssuedCert> {
-        let key_ref = KeyRef::from(&pub_key.key_identifier());
+    pub fn cert(&self, key_id: &KeyIdentifier) -> Option<&IssuedCert> {
+        let key_ref = KeyRef::from(key_id);
         self.certs.get(&key_ref)
     }
 
@@ -211,6 +219,11 @@ impl ChildResources {
         self.not_after = cert.cert().validity().not_after();
         self.resources = ResourceSet::try_from(cert.cert()).unwrap();
         self.certs.insert(key_ref, cert);
+    }
+
+    pub fn revoke(&mut self, key_id: &KeyIdentifier) {
+        let key_ref = KeyRef::from(key_id);
+        self.certs.remove(&key_ref);
     }
 }
 
@@ -465,22 +478,22 @@ impl Eq for RepoInfo {}
 /// when a certificate is received.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PendingKey {
-    key_id: SignerKeyId,
+    key_id: KeyId,
     request: Option<IssuanceRequest>,
 }
 
 impl PendingKey {
-    pub fn new(key_id: SignerKeyId) -> Self {
+    pub fn new(key_id: KeyId) -> Self {
         PendingKey {
             key_id,
             request: None,
         }
     }
-    pub fn unwrap(self) -> (SignerKeyId, Option<IssuanceRequest>) {
+    pub fn unwrap(self) -> (KeyId, Option<IssuanceRequest>) {
         (self.key_id, self.request)
     }
 
-    pub fn key_id(&self) -> &SignerKeyId {
+    pub fn key_id(&self) -> &KeyId {
         &self.key_id
     }
     pub fn request(&self) -> Option<&IssuanceRequest> {
@@ -494,20 +507,55 @@ impl PendingKey {
     }
 }
 
+//------------ OldKey --------------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, Serialize, PartialEq)]
+pub struct OldKey {
+    key: CertifiedKey,
+    revoke_req: RevocationRequest,
+}
+
+impl OldKey {
+    pub fn new(key: CertifiedKey, revoke_req: RevocationRequest) -> Self {
+        OldKey { key, revoke_req }
+    }
+
+    pub fn key(&self) -> &CertifiedKey {
+        &self.key
+    }
+    pub fn revoke_req(&self) -> &RevocationRequest {
+        &self.revoke_req
+    }
+}
+
+impl Deref for OldKey {
+    type Target = CertifiedKey;
+
+    fn deref(&self) -> &Self::Target {
+        &self.key
+    }
+}
+
+impl DerefMut for OldKey {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.key
+    }
+}
+
 //------------ CertifiedKey --------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 /// Describes a Key that is certified. I.e. it received an incoming certificate
 /// and has at least a MFT and CRL.
 pub struct CertifiedKey {
-    key_id: SignerKeyId,
+    key_id: KeyId,
     incoming_cert: RcvdCert,
     current_set: CurrentObjectSet,
     request: Option<IssuanceRequest>,
 }
 
 impl CertifiedKey {
-    pub fn new(key_id: SignerKeyId, incoming_cert: RcvdCert) -> Self {
+    pub fn new(key_id: KeyId, incoming_cert: RcvdCert) -> Self {
         let current_set = CurrentObjectSet::default();
 
         CertifiedKey {
@@ -518,7 +566,7 @@ impl CertifiedKey {
         }
     }
 
-    pub fn key_id(&self) -> &SignerKeyId {
+    pub fn key_id(&self) -> &KeyId {
         &self.key_id
     }
     pub fn incoming_cert(&self) -> &RcvdCert {
@@ -760,26 +808,30 @@ impl ops::Add for CurrentObjects {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Revocation {
     serial: Serial,
-    revocation_date: Time,
+    expires: Time,
 }
 
 impl From<&CurrentObject> for Revocation {
     fn from(co: &CurrentObject) -> Self {
         Revocation {
-            serial: co.serial,
-            revocation_date: Time::now(),
+            serial: co.serial(),
+            expires: co.expires(),
+        }
+    }
+}
+
+impl From<&Cert> for Revocation {
+    fn from(cer: &Cert) -> Self {
+        Revocation {
+            serial: cer.serial_number(),
+            expires: cer.validity().not_after(),
         }
     }
 }
 
 impl From<&Manifest> for Revocation {
     fn from(m: &Manifest) -> Self {
-        let serial = m.cert().serial_number();
-        let revocation_date = Time::now();
-        Revocation {
-            serial,
-            revocation_date,
-        }
+        Self::from(m.cert())
     }
 }
 
@@ -792,16 +844,13 @@ impl Revocations {
     pub fn to_crl_entries(&self) -> Vec<CrlEntry> {
         self.0
             .iter()
-            .map(|r| CrlEntry::new(r.serial, r.revocation_date))
+            .map(|r| CrlEntry::new(r.serial, r.expires))
             .collect()
     }
 
     /// Purges all expired revocations, and returns them.
     pub fn purge(&mut self) -> Vec<Revocation> {
-        let (relevant, expired) = self
-            .0
-            .iter()
-            .partition(|r| r.revocation_date.validate_not_after(Time::now()).is_ok());
+        let (relevant, expired) = self.0.iter().partition(|r| r.expires > Time::now());
         self.0 = relevant;
         expired
     }
@@ -1444,7 +1493,6 @@ pub enum ResourceClassKeysInfo {
 
 type NewKey = CertifiedKey;
 type CurrentKey = CertifiedKey;
-type OldKey = CertifiedKey;
 
 impl fmt::Display for ResourceClassKeysInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

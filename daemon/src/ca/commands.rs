@@ -4,7 +4,7 @@ use chrono::Duration;
 
 use krill_commons::api::admin::{Handle, ParentCaContact, Token, UpdateChildRequest};
 use krill_commons::api::ca::{RcvdCert, ResourceSet};
-use krill_commons::api::{Entitlements, IssuanceRequest};
+use krill_commons::api::{Entitlements, IssuanceRequest, RevocationRequest, RevocationResponse};
 use krill_commons::eventsourcing;
 use krill_commons::remote::id::IdCert;
 
@@ -29,6 +29,8 @@ pub enum CmdDet<S: Signer> {
     UpdateChild(ChildHandle, UpdateChildRequest),
     // Process an issuance request by an existing child.
     CertifyChild(ChildHandle, IssuanceRequest, Token, Arc<RwLock<S>>),
+    // Process a revoke request by an existing child.
+    RevokeKeyForChild(ChildHandle, RevocationRequest, Arc<RwLock<S>>),
 
     // ------------------------------------------------------------
     // Being a child (only allowed if this CA is not self-signed)
@@ -59,11 +61,11 @@ pub enum CmdDet<S: Signer> {
     //
     // RFC6489 dictates that 24 hours MUST be observed. However, shorter time frames can
     // be used for testing, and in case of emergency rolls.
-    KeyRollActivate(Duration),
+    KeyRollActivate(Duration, Arc<RwLock<S>>),
 
     // Finish the keyroll after the parent confirmed that a key for a parent and resource
     // class has been revoked. I.e. remove the old key, and withdraw the crl and mft for it.
-    KeyRollFinish(ParentHandle, ResourceClassName),
+    KeyRollFinish(ParentHandle, RevocationResponse),
 
     // ------------------------------------------------------------
     // Publishing
@@ -104,8 +106,8 @@ impl<S: Signer> CmdDet<S> {
     /// Certify a child. Will return an error in case the child is
     /// unknown, or in case resources are not held by the child.
     pub fn certify_child(
-        handle: &ParentHandle,
-        child_handle: Handle,
+        handle: &Handle,
+        child_handle: ChildHandle,
         request: IssuanceRequest,
         token: Token,
         signer: Arc<RwLock<S>>,
@@ -117,40 +119,69 @@ impl<S: Signer> CmdDet<S> {
         )
     }
 
-    pub fn add_parent(handle: &Handle, name: &str, info: ParentCaContact) -> Cmd<S> {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::AddParent(Handle::from(name), info))
+    /// Revoke a key for a child.
+    pub fn revoke_key_for_child(
+        handle: &Handle,
+        child_handle: ChildHandle,
+        request: RevocationRequest,
+        signer: Arc<RwLock<S>>,
+    ) -> Cmd<S> {
+        eventsourcing::SentCommand::new(
+            handle,
+            None,
+            CmdDet::RevokeKeyForChild(child_handle, request, signer),
+        )
+    }
+
+    pub fn add_parent(handle: &Handle, parent: ParentHandle, info: ParentCaContact) -> Cmd<S> {
+        eventsourcing::SentCommand::new(handle, None, CmdDet::AddParent(parent, info))
     }
 
     pub fn upd_entitlements(
         handle: &Handle,
-        parent: &ParentHandle,
+        parent: ParentHandle,
         entitlements: Entitlements,
         signer: Arc<RwLock<S>>,
     ) -> Cmd<S> {
         eventsourcing::SentCommand::new(
             handle,
             None,
-            CmdDet::UpdateEntitlements(parent.clone(), entitlements, signer),
+            CmdDet::UpdateEntitlements(parent, entitlements, signer),
         )
     }
 
     pub fn upd_received_cert(
         handle: &Handle,
-        parent: &ParentHandle,
-        class_name: &str,
+        parent: ParentHandle,
+        class_name: ResourceClassName,
         cert: RcvdCert,
         signer: Arc<RwLock<S>>,
     ) -> Cmd<S> {
         eventsourcing::SentCommand::new(
             handle,
             None,
-            CmdDet::UpdateRcvdCert(parent.clone(), class_name.to_string(), cert, signer),
+            CmdDet::UpdateRcvdCert(parent, class_name, cert, signer),
         )
     }
 
-    //----- Key Rolls
-    pub fn init_roll(handle: &Handle, duration: Duration, signer: Arc<RwLock<S>>) -> Cmd<S> {
+    //-------------------------------------------------------------------------------
+    // Key Rolls
+    //-------------------------------------------------------------------------------
+
+    pub fn key_roll_init(handle: &Handle, duration: Duration, signer: Arc<RwLock<S>>) -> Cmd<S> {
         eventsourcing::SentCommand::new(handle, None, CmdDet::KeyRollInitiate(duration, signer))
+    }
+
+    pub fn key_roll_activate(handle: &Handle, staging: Duration, signer: Arc<RwLock<S>>) -> Cmd<S> {
+        eventsourcing::SentCommand::new(handle, None, CmdDet::KeyRollActivate(staging, signer))
+    }
+
+    pub fn key_roll_finish(
+        handle: &Handle,
+        parent: ParentHandle,
+        res: RevocationResponse,
+    ) -> Cmd<S> {
+        eventsourcing::SentCommand::new(handle, None, CmdDet::KeyRollFinish(parent, res))
     }
 
     pub fn publish(handle: &Handle, signer: Arc<RwLock<S>>) -> Cmd<S> {

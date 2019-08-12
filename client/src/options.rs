@@ -1,8 +1,9 @@
-use clap::{App, Arg, SubCommand};
-use rpki::uri;
 use std::io;
 use std::path::PathBuf;
 use std::str::FromStr;
+
+use clap::{App, Arg, SubCommand};
+use rpki::uri;
 
 use krill_commons::api::admin::{
     AddChildRequest, AddParentRequest, CertAuthInit, CertAuthPubMode, ChildAuthRequest, Handle,
@@ -240,6 +241,9 @@ impl Options {
                     )
                     .subcommand(SubCommand::with_name("init")
                         .about("Initialise a key roll for all active keys")
+                    )
+                    .subcommand(SubCommand::with_name("activate")
+                        .about("Activate all new keys now (RFC say to do this >24H after init)")
                     )
                 )
 
@@ -496,6 +500,8 @@ impl Options {
                 let handle = Handle::from(m.value_of("handle").unwrap());
                 if let Some(_m) = m.subcommand_matches("init") {
                     command = Command::CertAuth(CaCommand::KeyRollInit(handle));
+                } else if let Some(_m) = m.subcommand_matches("activate") {
+                    command = Command::CertAuth(CaCommand::KeyRollActivate(handle));
                 }
             }
 
@@ -622,6 +628,7 @@ pub enum CaCommand {
     ChildRequest(Handle),
     Init(CertAuthInit),
     KeyRollInit(Handle),
+    KeyRollActivate(Handle),
     List,
     Show(Handle),
 }

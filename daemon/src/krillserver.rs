@@ -4,8 +4,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use bcder::Captured;
-use chrono::Duration;
 use bytes::Bytes;
+use chrono::Duration;
 use rpki::uri;
 
 use krill_commons::api::admin;
@@ -374,7 +374,15 @@ impl KrillServer {
     }
 
     pub fn ca_keyroll_init(&self, handle: Handle) -> EmptyRes {
-        Ok(self.caserver.ca_keyroll_init(handle, Duration::seconds(0))?)
+        Ok(self
+            .caserver
+            .ca_keyroll_init(handle, Duration::seconds(0))?)
+    }
+
+    pub fn ca_keyroll_activate(&self, handle: Handle) -> EmptyRes {
+        Ok(self
+            .caserver
+            .ca_keyroll_activate(handle, Duration::seconds(0))?)
     }
 
     pub fn list(&self, parent: &Handle, child: &Handle, auth: Auth) -> KrillRes<Entitlements> {

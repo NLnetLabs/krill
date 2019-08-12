@@ -1,7 +1,10 @@
 //! Support for requests sent to the Json API
+use std::ops;
+
+use rpki::uri;
+
 use crate::api::{Base64, EncodedHash};
 use crate::util::file::CurrentFile;
-use rpki::uri;
 
 //------------ PublishRequest ------------------------------------------------
 
@@ -33,6 +36,10 @@ impl PublishDelta {
         }
     }
 
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
     pub fn publishes(&self) -> &Vec<Publish> {
         &self.publishes
     }
@@ -53,6 +60,27 @@ impl PublishDelta {
 
     pub fn unwrap(self) -> (Vec<Publish>, Vec<Update>, Vec<Withdraw>) {
         (self.publishes, self.updates, self.withdraws)
+    }
+}
+
+impl Default for PublishDelta {
+    fn default() -> Self {
+        PublishDelta {
+            publishes: vec![],
+            updates: vec![],
+            withdraws: vec![],
+        }
+    }
+}
+
+impl ops::Add for PublishDelta {
+    type Output = PublishDelta;
+
+    fn add(mut self, mut other: Self) -> Self::Output {
+        self.publishes.append(&mut other.publishes);
+        self.updates.append(&mut other.updates);
+        self.withdraws.append(&mut other.withdraws);
+        self
     }
 }
 

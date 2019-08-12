@@ -119,7 +119,13 @@ impl KrillClient {
                 Ok(ApiResponse::CertAuths(cas))
             }
             CaCommand::KeyRollInit(handle) => {
-                let uri = format!("api/v1/cas/{}/keys/init_roll", handle);
+                let uri = format!("api/v1/cas/{}/keys/roll_init", handle);
+                let uri = self.resolve_uri(&uri);
+                self.post_empty(&uri)?;
+                Ok(ApiResponse::Empty)
+            }
+            CaCommand::KeyRollActivate(handle) => {
+                let uri = format!("api/v1/cas/{}/keys/roll_activate", handle);
                 let uri = self.resolve_uri(&uri);
                 self.post_empty(&uri)?;
                 Ok(ApiResponse::Empty)

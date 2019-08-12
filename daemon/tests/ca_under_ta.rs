@@ -9,7 +9,7 @@ use krill_commons::api::admin::{
     AddChildRequest, AddParentRequest, CertAuthInit, CertAuthPubMode, ChildAuthRequest, Handle,
     ParentCaContact, Token, UpdateChildRequest,
 };
-use krill_commons::api::ca::{CaParentsInfo, CertAuthInfo, ResourceSet, ResourceClassKeysInfo};
+use krill_commons::api::ca::{CaParentsInfo, CertAuthInfo, ResourceClassKeysInfo, ResourceSet};
 use krill_commons::remote::rfc8183;
 use krill_daemon::ca::ta_handle;
 use krill_daemon::test::{krill_admin, test_with_krill_server, wait_seconds};
@@ -78,8 +78,14 @@ fn add_parent_to_ca(handle: &Handle, parent: AddParentRequest) {
     )));
 }
 
-fn ca_init_roll(handle: &Handle) {
+fn ca_roll_init(handle: &Handle) {
     krill_admin(Command::CertAuth(CaCommand::KeyRollInit(handle.clone())));
+}
+
+fn ca_roll_activate(handle: &Handle) {
+    krill_admin(Command::CertAuth(CaCommand::KeyRollActivate(
+        handle.clone(),
+    )));
 }
 
 fn ca_details(handle: &Handle) -> CertAuthInfo {
@@ -89,7 +95,10 @@ fn ca_details(handle: &Handle) -> CertAuthInfo {
     }
 }
 
-fn wait_for<O>(tries: u64, error_msg: &'static str, op: O) where O: Copy + FnOnce() -> bool {
+fn wait_for<O>(tries: u64, error_msg: &'static str, op: O)
+where
+    O: Copy + FnOnce() -> bool,
+{
     for _counter in 1..tries + 1 {
         if op() == true {
             return;
@@ -100,22 +109,26 @@ fn wait_for<O>(tries: u64, error_msg: &'static str, op: O) where O: Copy + FnOnc
 }
 
 fn wait_for_resources_on_current_key(handle: &Handle, resources: &ResourceSet) {
-    wait_for(30, "cms child did not get its resource certificate", move || {
-        let cms_ca_info = ca_details(handle);
+    wait_for(
+        30,
+        "cms child did not get its resource certificate",
+        move || {
+            let cms_ca_info = ca_details(handle);
 
-        if let CaParentsInfo::Parents(parents) = cms_ca_info.parents() {
-            if let Some(parent) = parents.get(&ta_handle()) {
-                if let Some(rc) = parent.resources().get("all") {
-                    if let Some(current_resources) = rc.current_resources() {
-                        if resources == current_resources {
-                            return true;
+            if let CaParentsInfo::Parents(parents) = cms_ca_info.parents() {
+                if let Some(parent) = parents.get(&ta_handle()) {
+                    if let Some(rc) = parent.resources().get("all") {
+                        if let Some(current_resources) = rc.current_resources() {
+                            if resources == current_resources {
+                                return true;
+                            }
                         }
                     }
                 }
             }
-        }
-        false
-    })
+            false
+        },
+    )
 }
 
 fn wait_for_new_key(handle: &Handle) {
@@ -126,8 +139,28 @@ fn wait_for_new_key(handle: &Handle) {
             if let Some(parent) = parents.get(&ta_handle()) {
                 if let Some(rc) = parent.resources().get("all") {
                     match rc.keys() {
-                        ResourceClassKeysInfo::RollNew(_,_) => return true,
-                        _ => return false
+                        ResourceClassKeysInfo::RollNew(new, _) => {
+                            return new.current_set().number() == 2
+                        }
+                        _ => return false,
+                    }
+                }
+            }
+        }
+        false
+    })
+}
+
+fn wait_for_key_roll_complete(handle: &Handle) {
+    wait_for(30, "Key roll did not complete", || {
+        let cms_ca_info = ca_details(handle);
+
+        if let CaParentsInfo::Parents(parents) = cms_ca_info.parents() {
+            if let Some(parent) = parents.get(&ta_handle()) {
+                if let Some(rc) = parent.resources().get("all") {
+                    match rc.keys() {
+                        ResourceClassKeysInfo::Active(_) => return true,
+                        _ => return false,
                     }
                 }
             }
@@ -174,15 +207,16 @@ fn ca_under_ta() {
         };
 
         add_parent_to_ca(&cms_child_handle, parent);
-
         wait_for_resources_on_current_key(&cms_child_handle, &cms_child_resources);
 
         let cms_child_resources = ResourceSet::from_strs("AS65000", "10.0.0.0/16", "").unwrap();
         update_child(&cms_child_handle, &cms_child_resources);
-
         wait_for_resources_on_current_key(&cms_child_handle, &cms_child_resources);
 
-        ca_init_roll(&cms_child_handle);
+        ca_roll_init(&cms_child_handle);
         wait_for_new_key(&cms_child_handle);
+
+        ca_roll_activate(&cms_child_handle);
+        wait_for_key_roll_complete(&cms_child_handle);
     });
 }

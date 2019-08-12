@@ -7,7 +7,7 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::sync::RwLock;
 
-use krill_commons::api::admin::{Handle, ParentCaContact};
+use krill_commons::api::admin::Handle;
 use krill_commons::api::publication::PublishDelta;
 use krill_commons::eventsourcing;
 
@@ -20,8 +20,9 @@ use crate::ca::{CertAuth, Evt, EvtDet, ParentHandle, Signer};
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 pub enum QueueEvent {
-    ParentAdded(Handle, ParentHandle, ParentCaContact),
     Delta(Handle, PublishDelta),
+    ParentAdded(Handle, ParentHandle),
+    RequestsPending(Handle, ParentHandle),
 }
 
 #[derive(Debug)]
@@ -61,8 +62,12 @@ impl<S: Signer> eventsourcing::EventListener<CertAuth<S>> for EventQueueListener
 
         let handle = event.handle();
         match event.details() {
-            EvtDet::Published(_, _, _, delta) => {
-                let evt = QueueEvent::Delta(handle.clone(), delta.objects().clone().into());
+            EvtDet::Published(_, _, delta) => {
+                let publish_delta = delta.values().fold(PublishDelta::empty(), |acc, el| {
+                    acc + el.objects().clone().into()
+                });
+
+                let evt = QueueEvent::Delta(handle.clone(), publish_delta);
                 self.push_back(evt);
             }
             EvtDet::TaPublished(delta) => {
@@ -73,8 +78,22 @@ impl<S: Signer> eventsourcing::EventListener<CertAuth<S>> for EventQueueListener
                 let evt = QueueEvent::Delta(handle.clone(), delta.clone().into());
                 self.push_back(evt);
             }
-            EvtDet::ParentAdded(parent, contact) => {
-                let evt = QueueEvent::ParentAdded(handle.clone(), parent.clone(), contact.clone());
+            EvtDet::KeyRollFinished(_parent, _class_name, delta) => {
+                let evt = QueueEvent::Delta(handle.clone(), delta.clone().into());
+                self.push_back(evt);
+            }
+
+            EvtDet::ParentAdded(parent, _contact) => {
+                let evt = QueueEvent::ParentAdded(handle.clone(), parent.clone());
+                self.push_back(evt);
+            }
+
+            EvtDet::CertificateRequested(parent, _, _) => {
+                let evt = QueueEvent::RequestsPending(handle.clone(), parent.clone());
+                self.push_back(evt);
+            }
+            EvtDet::KeyRollActivated(parent, _, _) => {
+                let evt = QueueEvent::RequestsPending(handle.clone(), parent.clone());
                 self.push_back(evt);
             }
             _ => {}

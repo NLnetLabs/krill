@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::{Arc, RwLock};
 
@@ -9,11 +10,13 @@ use rpki::uri;
 use rpki::x509::Time;
 
 use krill_commons::api::ca::{
-    CertifiedKey, CurrentObjects, KeyRef, ObjectsDelta, PendingKey, PublicationDelta, RcvdCert,
-    RepoInfo, ResourceClassInfo, ResourceClassKeysInfo,
+    CertifiedKey, CurrentObjects, KeyRef, ObjectsDelta, OldKey, PendingKey, PublicationDelta,
+    RcvdCert, RepoInfo, ResourceClassInfo, ResourceClassKeysInfo,
 };
-use krill_commons::api::{EntitlementClass, IssuanceRequest, RequestResourceLimit};
-use krill_commons::util::softsigner::SignerKeyId;
+use krill_commons::api::{
+    EntitlementClass, IssuanceRequest, RequestResourceLimit, RevocationRequest,
+};
+use krill_commons::util::softsigner::KeyId;
 
 use crate::ca::{
     self, Error, EvtDet, ParentHandle, ResourceClassName, Result, SignSupport, Signer,
@@ -82,7 +85,7 @@ pub struct ResourceClass {
 
 impl ResourceClass {
     /// Creates a new ResourceClass with a single pending key only.
-    pub fn create(name_space: String, pending_key: SignerKeyId) -> Self {
+    pub fn create(name_space: String, pending_key: KeyId) -> Self {
         ResourceClass {
             name_space,
             last_key_change: Time::now(),
@@ -95,7 +98,7 @@ impl ResourceClass {
     }
 
     /// Adds a request to an existing key for future reference.
-    pub fn add_request(&mut self, key_id: SignerKeyId, req: IssuanceRequest) {
+    pub fn add_request(&mut self, key_id: KeyId, req: IssuanceRequest) {
         self.keys.add_request(key_id, req);
     }
 
@@ -155,13 +158,18 @@ impl ResourceClass {
     pub fn cert_requests(&self) -> Vec<IssuanceRequest> {
         self.keys.cert_requests()
     }
+
+    /// Returns the revocation request for the old key, if it exists.
+    pub fn revoke_request(&self) -> Option<&RevocationRequest> {
+        self.keys.revoke_request()
+    }
 }
 
 /// # Publishing
 ///
 impl ResourceClass {
     /// Applies a publication delta to the appropriate key in this resource class.
-    pub fn apply_delta(&mut self, delta: PublicationDelta, key_id: SignerKeyId) {
+    pub fn apply_delta(&mut self, delta: PublicationDelta, key_id: KeyId) {
         self.keys.apply_delta(delta, key_id);
     }
 }
@@ -170,7 +178,7 @@ impl ResourceClass {
 ///
 impl ResourceClass {
     /// This function marks a certificate as received.
-    pub fn received_cert(&mut self, key_id: SignerKeyId, cert: RcvdCert) {
+    pub fn received_cert(&mut self, key_id: KeyId, cert: RcvdCert) {
         // if there is a pending key, then we need to do some promotions..
         match &mut self.keys {
             ResourceClassKeys::Pending(pending) => {
@@ -208,16 +216,38 @@ impl ResourceClass {
     }
 
     /// Adds a pending key.
-    pub fn pending_key_added(&mut self, key_id: SignerKeyId) {
+    pub fn pending_key_added(&mut self, key_id: KeyId) {
         match &self.keys {
             ResourceClassKeys::Active(current) => {
                 let pending = PendingKey::new(key_id);
                 self.keys = ResourceClassKeys::RollPending(pending, current.clone())
             }
-            _ => unimplemented!("Should never create event to add key when roll in progress")
+            _ => unimplemented!("Should never create event to add key when roll in progress"),
         }
     }
 
+    /// Activates the new key
+    pub fn new_key_activated(&mut self, revoke_req: RevocationRequest) {
+        match &self.keys {
+            ResourceClassKeys::RollNew(new, current) => {
+                let old_key = OldKey::new(current.clone(), revoke_req);
+                self.keys = ResourceClassKeys::RollOld(new.clone(), old_key);
+            }
+            _ => unimplemented!("Should never create event to add key when roll in progress"),
+        }
+    }
+
+    /// Removes the old key, we return the to the state where there is one active key.
+    pub fn old_key_removed(&mut self) {
+        match &self.keys {
+            ResourceClassKeys::RollOld(current, _old) => {
+                self.keys = ResourceClassKeys::Active(current.clone());
+            }
+            _ => unimplemented!("Should never create event to remove old key, when there is none"),
+        }
+    }
+
+    /// Initiate a key roll
     pub fn keyroll_initiate<S: Signer>(
         &self,
         parent: ParentHandle,
@@ -230,13 +260,46 @@ impl ResourceClass {
             return Ok(vec![]);
         }
 
-        self.keys.keyroll_initiate(
-            parent,
-            class_name,
-            base_repo,
-            &self.name_space,
-            signer
-        )
+        self.keys
+            .keyroll_initiate(parent, class_name, base_repo, &self.name_space, signer)
+    }
+
+    /// Activate a new key, if it's been longer than the staging period.
+    pub fn keyroll_activate<S: Signer>(
+        &self,
+        parent: ParentHandle,
+        class_name: ResourceClassName,
+        staging: Duration,
+        signer: &S,
+    ) -> ca::Result<Vec<EvtDet>> {
+        if self.last_key_change + staging > Time::now() {
+            return Ok(vec![]);
+        }
+
+        self.keys.keyroll_activate(parent, class_name, signer)
+    }
+
+    /// Finish a key roll, withdraw the old key
+    pub fn keyroll_finish(
+        &self,
+        parent: ParentHandle,
+        class_name: ResourceClassName,
+        base_repo: &RepoInfo,
+    ) -> ca::Result<EvtDet> {
+        let withdraws = match &self.keys {
+            ResourceClassKeys::RollOld(_current, old) => {
+                Some(old.current_set().objects().withdraw())
+            }
+            _ => None,
+        }
+        .ok_or_else(|| Error::InvalidKeyStatus)?;
+
+        let mut objects_delta = ObjectsDelta::new(base_repo.ca_repository(self.name_space()));
+        for withdraw in withdraws.into_iter() {
+            objects_delta.withdraw(withdraw);
+        }
+
+        Ok(EvtDet::KeyRollFinished(parent, class_name, objects_delta))
     }
 }
 
@@ -256,14 +319,13 @@ pub enum ResourceClassKeys {
 
 type NewKey = CertifiedKey;
 type CurrentKey = CertifiedKey;
-type OldKey = CertifiedKey;
 
 impl ResourceClassKeys {
-    fn create(pending_key: SignerKeyId) -> Self {
+    fn create(pending_key: KeyId) -> Self {
         ResourceClassKeys::Pending(PendingKey::new(pending_key))
     }
 
-    fn add_request(&mut self, key_id: SignerKeyId, req: IssuanceRequest) {
+    fn add_request(&mut self, key_id: KeyId, req: IssuanceRequest) {
         match self {
             ResourceClassKeys::Pending(pending) => pending.add_request(req),
             ResourceClassKeys::Active(current) => current.add_request(req),
@@ -358,7 +420,7 @@ impl ResourceClassKeys {
                     Ok(current.clone())
                 } else {
                     self.matches_key_id(old.key_id(), cert, signer)?;
-                    Ok(old.clone())
+                    Ok(old.key().clone())
                 }
             }
         }
@@ -367,7 +429,7 @@ impl ResourceClassKeys {
     /// Helper to match a key_id to a pub key.
     fn matches_key_id<S: Signer>(
         &self,
-        key_id: &SignerKeyId,
+        key_id: &KeyId,
         cert: &RcvdCert,
         signer: &S,
     ) -> ca::Result<()> {
@@ -407,20 +469,19 @@ impl ResourceClassKeys {
         let ca_repo = base_repo.ca_repository(name_space);
         let delta = ObjectsDelta::new(ca_repo);
 
-        let delta = SignSupport::publish(signer, &certified_key, base_repo, name_space, delta)
-            .map_err(Error::signer)?;
+        let delta =
+            SignSupport::publish(signer, &certified_key, base_repo, name_space, delta, vec![])
+                .map_err(Error::signer)?;
 
-        res.push(EvtDet::Published(
-            parent,
-            class_name,
-            certified_key.key_id().clone(),
-            delta,
-        ));
+        let mut delta_map = HashMap::new();
+        delta_map.insert(certified_key.key_id().clone(), delta);
+
+        res.push(EvtDet::Published(parent, class_name, delta_map));
 
         Ok(res)
     }
 
-    fn apply_delta(&mut self, delta: PublicationDelta, key_id: SignerKeyId) {
+    fn apply_delta(&mut self, delta: PublicationDelta, key_id: KeyId) {
         match self {
             ResourceClassKeys::Pending(_pending) => unimplemented!("Cannot apply delta to pending"),
             ResourceClassKeys::Active(current) => current.apply_delta(delta),
@@ -558,7 +619,7 @@ impl ResourceClassKeys {
         base_repo: &RepoInfo,
         name_space: &str,
         class_name: &str,
-        key: &SignerKeyId,
+        key: &KeyId,
         signer: &S,
     ) -> Result<IssuanceRequest> {
         let pub_key = signer.get_key_info(key).map_err(Error::signer)?;
@@ -579,6 +640,14 @@ impl ResourceClassKeys {
             RequestResourceLimit::default(),
             csr,
         ))
+    }
+
+    /// Returns the revoke request if there is an old key.
+    pub fn revoke_request(&self) -> Option<&RevocationRequest> {
+        match self {
+            ResourceClassKeys::RollOld(_current, old) => Some(old.revoke_req()),
+            _ => None,
+        }
     }
 
     fn as_info(&self) -> ResourceClassKeysInfo {
@@ -617,13 +686,40 @@ impl ResourceClassKeys {
                     self.create_issuance_req(base_repo, name_space, &class_name, &key_id, signer)?;
 
                 Ok(vec![
-                    EvtDet::KeyrollPendingKeyAdded(
+                    EvtDet::KeyRollPendingKeyAdded(
                         parent.clone(),
                         class_name.clone(),
                         key_id.clone(),
                     ),
                     EvtDet::CertificateRequested(parent, issuance_req, key_id),
                 ])
+            }
+            _ => Ok(vec![]),
+        }
+    }
+
+    /// Marks the new key as current, and the current key as old, and requests revocation of
+    /// the old key.
+    // TODO: When ROAs are supported, now is also the time to republish all objects under the
+    //       new current key, and withdraw them from the old key.
+    fn keyroll_activate<S: Signer>(
+        &self,
+        parent: ParentHandle,
+        class_name: ResourceClassName,
+        signer: &S,
+    ) -> ca::Result<Vec<EvtDet>> {
+        match self {
+            ResourceClassKeys::RollNew(_new, current) => {
+                let ki = signer
+                    .get_key_info(current.key_id())
+                    .map_err(Error::signer)?
+                    .key_identifier();
+
+                let revoke_req = RevocationRequest::new(class_name.clone(), ki);
+
+                Ok(vec![EvtDet::KeyRollActivated(
+                    parent, class_name, revoke_req,
+                )])
             }
             _ => Ok(vec![]),
         }

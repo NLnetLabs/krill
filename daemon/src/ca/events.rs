@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock};
@@ -7,15 +8,17 @@ use rpki::crypto::PublicKeyFormat;
 use rpki::uri;
 use rpki::x509::{Serial, Time, Validity};
 
-use krill_commons::api::{IssuanceRequest, IssuanceResponse};
 use krill_commons::api::admin::{Handle, ParentCaContact, Token};
 use krill_commons::api::ca::{
     CertifiedKey, ChildCaDetails, ObjectsDelta, PublicationDelta, RcvdCert, RepoInfo, ResourceSet,
     TrustAnchorLocator,
 };
+use krill_commons::api::{
+    IssuanceRequest, IssuanceResponse, RevocationRequest, RevocationResponse,
+};
 use krill_commons::eventsourcing::StoredEvent;
 use krill_commons::remote::id::IdCert;
-use krill_commons::util::softsigner::SignerKeyId;
+use krill_commons::util::softsigner::KeyId;
 
 use crate::ca::signing::Signer;
 use crate::ca::{
@@ -130,7 +133,8 @@ pub type Evt = StoredEvent<EvtDet>;
 pub enum EvtDet {
     // Being a parent Events
     ChildAdded(ChildHandle, ChildCaDetails),
-    CertificateIssued(ChildHandle, IssuanceResponse),
+    ChildCertificateIssued(ChildHandle, IssuanceResponse),
+    ChildKeyRevoked(ChildHandle, RevocationResponse),
     ChildUpdatedToken(ChildHandle, Token),
     ChildUpdatedIdCert(ChildHandle, IdCert),
     ChildUpdatedResourceClass(ChildHandle, ResourceClassName, ResourceSet),
@@ -140,18 +144,19 @@ pub enum EvtDet {
     ParentAdded(ParentHandle, ParentCaContact),
     ResourceClassAdded(ParentHandle, ResourceClassName, ResourceClass),
     ResourceClassRemoved(ParentHandle, ResourceClassName, ObjectsDelta),
-    CertificateRequested(ParentHandle, IssuanceRequest, SignerKeyId),
-    CertificateReceived(ParentHandle, ResourceClassName, SignerKeyId, RcvdCert),
+    CertificateRequested(ParentHandle, IssuanceRequest, KeyId),
+    CertificateReceived(ParentHandle, ResourceClassName, KeyId, RcvdCert),
 
     // Key roll
-    KeyrollPendingKeyAdded(ParentHandle, ResourceClassName, SignerKeyId),
+    KeyRollPendingKeyAdded(ParentHandle, ResourceClassName, KeyId),
+    KeyRollActivated(ParentHandle, ResourceClassName, RevocationRequest),
+    KeyRollFinished(ParentHandle, ResourceClassName, ObjectsDelta),
 
     // Publishing
     Published(
         ParentHandle,
         ResourceClassName,
-        SignerKeyId,
-        PublicationDelta,
+        HashMap<KeyId, PublicationDelta>,
     ),
     TaPublished(PublicationDelta),
 }
@@ -238,13 +243,26 @@ impl EvtDet {
         )
     }
 
-    pub(super) fn certificate_issued(
+    pub(super) fn child_certificate_issued(
         handle: &Handle,
         version: u64,
         child: ChildHandle,
         response: IssuanceResponse,
     ) -> Evt {
-        StoredEvent::new(handle, version, EvtDet::CertificateIssued(child, response))
+        StoredEvent::new(
+            handle,
+            version,
+            EvtDet::ChildCertificateIssued(child, response),
+        )
+    }
+
+    pub(super) fn child_revoke_key(
+        handle: &Handle,
+        version: u64,
+        child: ChildHandle,
+        response: RevocationResponse,
+    ) -> Evt {
+        StoredEvent::new(handle, version, EvtDet::ChildKeyRevoked(child, response))
     }
 
     pub(super) fn published_ta(handle: &Handle, version: u64, delta: PublicationDelta) -> Evt {

@@ -16,11 +16,11 @@ use krill_commons::api::admin::{
 use krill_commons::api::ca::{
     AddedObject, CaParentsInfo, CertAuthInfo, CertifiedKey, ChildCaDetails, CurrentObject,
     IssuedCert, ObjectName, ObjectsDelta, ParentCaInfo, PublicationDelta, RcvdCert, RepoInfo,
-    ResourceSet, TrustAnchorInfo, TrustAnchorLocator, UpdatedObject,
+    ResourceSet, Revocation, TrustAnchorInfo, TrustAnchorLocator, UpdatedObject, WithdrawnObject,
 };
 use krill_commons::api::{
     self, EncodedHash, EntitlementClass, Entitlements, IssuanceRequest, IssuanceResponse,
-    SigningCert, DFLT_CLASS,
+    RevocationRequest, RevocationResponse, SigningCert, DFLT_CLASS,
 };
 use krill_commons::eventsourcing::{Aggregate, StoredEvent};
 use krill_commons::remote::builder::{IdCertBuilder, SignedMessageBuilder};
@@ -28,7 +28,7 @@ use krill_commons::remote::id::IdCert;
 use krill_commons::remote::rfc6492;
 use krill_commons::remote::rfc8183::ChildRequest;
 use krill_commons::remote::sigmsg::SignedMessage;
-use krill_commons::util::softsigner::SignerKeyId;
+use krill_commons::util::softsigner::KeyId;
 
 use crate::ca::{
     self, ChildHandle, Cmd, CmdDet, Error, Evt, EvtDet, Ini, ParentHandle, ResourceClass,
@@ -39,7 +39,7 @@ use crate::ca::{
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Rfc8183Id {
-    key: SignerKeyId,
+    key: KeyId,
     cert: IdCert,
 }
 
@@ -210,17 +210,20 @@ impl<S: Signer> Aggregate for CertAuth<S> {
     fn apply(&mut self, event: Evt) {
         self.version += 1;
         match event.into_details() {
-
             //-----------------------------------------------------------------------
             // Being a parent
             //-----------------------------------------------------------------------
             EvtDet::ChildAdded(child, details) => {
                 self.children.insert(child, details);
             }
-            EvtDet::CertificateIssued(child, response) => {
+            EvtDet::ChildCertificateIssued(child, response) => {
                 let (class_name, _, _, issued) = response.unwrap();
                 let child = self.children.get_mut(&child).unwrap();
                 child.add_cert(&class_name, issued);
+            }
+            EvtDet::ChildKeyRevoked(child, response) => {
+                let child = self.children.get_mut(&child).unwrap();
+                child.revoke_key(response);
             }
             EvtDet::ChildUpdatedToken(child, token) => {
                 let child = self.children.get_mut(&child).unwrap();
@@ -271,19 +274,31 @@ impl<S: Signer> Aggregate for CertAuth<S> {
             //-----------------------------------------------------------------------
             // Key Roll
             //-----------------------------------------------------------------------
-            EvtDet::KeyrollPendingKeyAdded(parent, class_name, key_id) => {
+            EvtDet::KeyRollPendingKeyAdded(parent, class_name, key_id) => {
                 let parent = self.parent_mut(&parent).unwrap();
                 let rc = parent.class_mut(&class_name).unwrap();
                 rc.pending_key_added(key_id);
+            }
+            EvtDet::KeyRollActivated(parent, class_name, revoke_req) => {
+                let parent = self.parent_mut(&parent).unwrap();
+                let rc = parent.class_mut(&class_name).unwrap();
+                rc.new_key_activated(revoke_req);
+            }
+            EvtDet::KeyRollFinished(parent, class_name, _delta) => {
+                let parent = self.parent_mut(&parent).unwrap();
+                let rc = parent.class_mut(&class_name).unwrap();
+                rc.old_key_removed();
             }
 
             //-----------------------------------------------------------------------
             // General functions
             //-----------------------------------------------------------------------
-            EvtDet::Published(parent, class_name, key_id, delta) => {
+            EvtDet::Published(parent, class_name, delta_map) => {
                 let parent = self.parent_mut(&parent).unwrap();
                 let rc = parent.class_mut(&class_name).unwrap();
-                rc.apply_delta(delta, key_id);
+                for (key_id, delta) in delta_map.into_iter() {
+                    rc.apply_delta(delta, key_id);
+                }
             }
             EvtDet::TaPublished(delta) => {
                 let ta_key = self.ta_key_mut().unwrap();
@@ -302,6 +317,9 @@ impl<S: Signer> Aggregate for CertAuth<S> {
             CmdDet::CertifyChild(child, request, token, signer) => {
                 self.certify_child(child, request, token, signer)
             }
+            CmdDet::RevokeKeyForChild(child, request, signer) => {
+                self.revoke_child_key(child, request, signer)
+            }
 
             // being a child
             CmdDet::AddParent(parent, info) => self.add_parent(parent, info),
@@ -314,8 +332,8 @@ impl<S: Signer> Aggregate for CertAuth<S> {
 
             // Key rolls
             CmdDet::KeyRollInitiate(duration, signer) => self.keyroll_initiate(duration, signer),
-            CmdDet::KeyRollActivate(duration) => self.keyroll_activate(duration),
-            CmdDet::KeyRollFinish(parent, class_name) => self.keyroll_finish(parent, class_name),
+            CmdDet::KeyRollActivate(duration, signer) => self.keyroll_activate(duration, signer),
+            CmdDet::KeyRollFinish(parent, response) => self.keyroll_finish(parent, response),
 
             // Republish
             CmdDet::Republish(signer) => self.republish(signer),
@@ -358,7 +376,7 @@ impl<S: Signer> CertAuth<S> {
     pub fn id_cert(&self) -> &IdCert {
         &self.id.cert
     }
-    pub fn id_key(&self) -> &SignerKeyId {
+    pub fn id_key(&self) -> &KeyId {
         &self.id.key
     }
     pub fn handle(&self) -> &Handle {
@@ -563,7 +581,13 @@ impl<S: Signer> CertAuth<S> {
             .map_err(|_| Error::invalid_csr(&child, "invalid signature"))?;
 
         // TODO: Check for key-re-use, ultimately return 1204 (RFC6492 3.4.1)
-        let current_cert = child_resources.cert(csr.public_key());
+        let current_cert = child_resources.cert(&csr.public_key().key_identifier());
+
+        // Check if we need to revoke
+        let mut revocations = vec![];
+        if let Some(issued) = current_cert {
+            revocations.push(Revocation::from(issued.cert()))
+        }
 
         // create new cert
         let issued_cert = {
@@ -636,7 +660,7 @@ impl<S: Signer> CertAuth<S> {
             issued_cert.clone(),
         );
 
-        let issued_event = EvtDet::certificate_issued(&self.handle, version, child, response);
+        let issued_event = EvtDet::child_certificate_issued(&self.handle, version, child, response);
 
         let delta = {
             let ca_repo = self.base_repo.ca_repository("");
@@ -647,7 +671,7 @@ impl<S: Signer> CertAuth<S> {
                 None => delta.add(AddedObject::new(cert_name, cert_object)),
                 Some(old) => {
                     let old_hash = EncodedHash::from_content(old.cert().to_captured().as_slice());
-                    delta.update(UpdatedObject::new(cert_name, cert_object, old_hash))
+                    delta.update(UpdatedObject::new(cert_name, cert_object, old_hash));
                 }
             }
             delta
@@ -656,7 +680,7 @@ impl<S: Signer> CertAuth<S> {
         let publish_event = EvtDet::published_ta(
             &self.handle,
             version + 1,
-            SignSupport::publish(signer, issuing_key, &self.base_repo, "", delta)
+            SignSupport::publish(signer, issuing_key, &self.base_repo, "", delta, revocations)
                 .map_err(Error::signer)?,
         );
 
@@ -754,6 +778,60 @@ impl<S: Signer> CertAuth<S> {
         Ok(res)
     }
 
+    /// Revokes a key for a child. So, add all certs for the key to the CRL, and withdraw
+    /// the .cer file for it.
+    fn revoke_child_key(
+        &self,
+        child: ChildHandle,
+        request: RevocationRequest,
+        signer: Arc<RwLock<S>>,
+    ) -> ca::Result<Vec<Evt>> {
+        // verify child and resources
+        let class_name = request.class_name();
+        let child_resources = self
+            .get_child(&child)?
+            .resources_for_class(class_name)
+            .ok_or_else(|| Error::MissingResourceClass)?;
+
+        let ca_key = match &self.parents {
+            CaParents::SelfSigned(key, _) => key,
+            CaParents::Parents(_map) => unimplemented!("Issue #25"),
+        };
+
+        // TODO For #25 find correct namespace for matching RC
+        let name_space = "";
+
+        if let Some(last_cert) = child_resources.cert(request.key()) {
+            let response = request.into();
+
+            let name = ObjectName::from(last_cert.cert());
+            let current_object = CurrentObject::from(last_cert.cert());
+            let withdrawn = WithdrawnObject::for_current(name, &current_object);
+
+            let revocations = vec![Revocation::from(last_cert.cert())];
+
+            let mut objects_delta = ObjectsDelta::new(self.base_repo.ca_repository(name_space));
+            objects_delta.withdraw(withdrawn);
+
+            let pub_delta = SignSupport::publish(
+                signer,
+                ca_key,
+                &self.base_repo,
+                name_space,
+                objects_delta,
+                revocations,
+            )
+            .map_err(Error::signer)?;
+
+            let revoked = EvtDet::child_revoke_key(&self.handle, self.version, child, response);
+            let published = EvtDet::published_ta(&self.handle, self.version + 1, pub_delta);
+
+            Ok(vec![revoked, published])
+        } else {
+            Err(Error::NoIssuedCert)
+        }
+    }
+
     /// Returns `true` if the child is known, `false` otherwise. No errors.
     fn has_child(&self, child_handle: &Handle) -> bool {
         self.children.contains_key(child_handle)
@@ -775,7 +853,7 @@ impl<S: Signer> CertAuth<S> {
         }
     }
 
-    fn parent(&self, parent: &Handle) -> Result<&ParentCa> {
+    pub fn parent(&self, parent: &Handle) -> Result<&ParentCa> {
         self.parents.get(parent)
     }
 
@@ -831,6 +909,19 @@ impl<S: Signer> CertAuth<S> {
             *version += 1;
         }
         Ok(res)
+    }
+
+    /// Returns the open revocation requests for the given parent.
+    pub fn revoke_requests(&self, parent: &ParentHandle) -> Vec<&RevocationRequest> {
+        let mut res = vec![];
+        if let Ok(parent) = self.parent(parent) {
+            for (_class_name, rc) in parent.resources.iter() {
+                if let Some(req) = rc.revoke_request() {
+                    res.push(req)
+                }
+            }
+        }
+        res
     }
 
     /// This processes entitlements from a parent, and updates the known
@@ -938,7 +1029,7 @@ impl<S: Signer> CertAuth<S> {
         rcvd_cert: RcvdCert,
         signer: Arc<RwLock<S>>,
     ) -> ca::Result<Vec<Evt>> {
-        info!(
+        debug!(
             "CA {}: Updating received cert for class: {}",
             self.handle, class_name
         );
@@ -977,19 +1068,17 @@ impl<S: Signer> CertAuth<S> {
 
                 for (parent_handle, parent) in map.iter() {
                     for (class_name, class) in parent.resources().iter() {
-
-                        for details in class.keyroll_initiate(
-                            parent_handle.clone(),
-                            class_name.clone(),
-                            &self.base_repo,
-                            duration,
-                            signer.deref_mut()
-                        )?.into_iter() {
-                            res.push(StoredEvent::new(
-                                self.handle(),
-                                version,
-                                details
-                            ));
+                        for details in class
+                            .keyroll_initiate(
+                                parent_handle.clone(),
+                                class_name.clone(),
+                                &self.base_repo,
+                                duration,
+                                signer.deref_mut(),
+                            )?
+                            .into_iter()
+                        {
+                            res.push(StoredEvent::new(self.handle(), version, details));
                             version += 1;
                         }
                     }
@@ -1000,16 +1089,62 @@ impl<S: Signer> CertAuth<S> {
         }
     }
 
-    fn keyroll_activate(&self, _duration: Duration) -> ca::Result<Vec<Evt>> {
-        unimplemented!()
+    fn keyroll_activate(&self, staging: Duration, signer: Arc<RwLock<S>>) -> ca::Result<Vec<Evt>> {
+        match &self.parents {
+            CaParents::SelfSigned(_, _) => Ok(vec![]),
+            CaParents::Parents(map) => {
+                let signer = signer.read().unwrap();
+                let mut version = self.version;
+                let mut res = vec![];
+
+                for (parent_handle, parent) in map.iter() {
+                    for (class_name, class) in parent.resources().iter() {
+                        for details in class
+                            .keyroll_activate(
+                                parent_handle.clone(),
+                                class_name.clone(),
+                                staging,
+                                signer.deref(),
+                            )?
+                            .into_iter()
+                        {
+                            res.push(StoredEvent::new(self.handle(), version, details));
+                            version += 1;
+                        }
+                    }
+                }
+                Ok(res)
+            }
+        }
     }
 
     fn keyroll_finish(
         &self,
-        _parent: ParentHandle,
-        _class_name: ResourceClassName,
+        parent_h: ParentHandle,
+        response: RevocationResponse,
     ) -> ca::Result<Vec<Evt>> {
-        unimplemented!()
+        match &self.parents {
+            CaParents::SelfSigned(_, _) => Ok(vec![]),
+            CaParents::Parents(map) => {
+                let (class_name, _key_id) = response.unpack();
+                let parent = map
+                    .get(&parent_h)
+                    .ok_or_else(|| Error::UnknownParent(parent_h.clone()))?;
+
+                let rc = parent
+                    .resources()
+                    .get(&class_name)
+                    .ok_or_else(|| Error::UnknownResourceClass(class_name.clone()))?;
+
+                let finish_details = rc.keyroll_finish(parent_h, class_name, &self.base_repo)?;
+
+                Ok(vec![StoredEvent::new(
+                    self.handle(),
+                    self.version,
+                    finish_details,
+                )])
+            }
+        }
     }
 }
 
@@ -1024,7 +1159,7 @@ impl<S: Signer> CertAuth<S> {
     ) -> Result<PublicationDelta> {
         let ca_repo = repo_info.ca_repository(name_space);
         let objects_delta = ObjectsDelta::new(ca_repo);
-        SignSupport::publish(signer, key, repo_info, name_space, objects_delta)
+        SignSupport::publish(signer, key, repo_info, name_space, objects_delta, vec![])
             .map_err(Error::signer)
     }
 
@@ -1040,7 +1175,7 @@ impl<S: Signer> CertAuth<S> {
                     res.push(EvtDet::published_ta(&self.handle, self.version, delta))
                 }
             }
-            CaParents::Parents(_map) => unimplemented!(),
+            CaParents::Parents(_map) => error!("Republishing CAs not implemented"),
         }
         Ok(res)
     }
