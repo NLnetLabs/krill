@@ -66,6 +66,7 @@ impl SignSupport {
         let mut revocations_delta = RevocationsDelta::default();
 
         for revocation in new_revocations.into_iter() {
+            revocations.add(revocation);
             revocations_delta.add(revocation);
         }
 
