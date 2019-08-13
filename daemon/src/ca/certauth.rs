@@ -250,7 +250,13 @@ impl<S: Signer> Aggregate for CertAuth<S> {
                     .resources
                     .insert(name, rc);
             }
-            EvtDet::ResourceClassRemoved(_parent, _name, _delta) => unimplemented!(),
+            EvtDet::ResourceClassRemoved(parent, name, _delta, _revocations) => {
+                self.parents
+                    .get_mut(&parent)
+                    .unwrap()
+                    .resources
+                    .remove(&name);
+            }
             EvtDet::CertificateRequested(parent, req, status) => {
                 let class = req.class_name().to_owned();
                 self.parents
@@ -395,7 +401,6 @@ impl<S: Signer> CertAuth<S> {
         msg.validate(child_cert)
             .map_err(|_| Error::InvalidRfc6492)?;
 
-
         Ok(content)
     }
 
@@ -412,9 +417,12 @@ impl<S: Signer> CertAuth<S> {
     /// Only supported in TAs until issue #25 is implemented.
     pub fn list(&self, child_handle: &Handle) -> Result<api::Entitlements> {
         // TODO: Support arbitrary resource classes. See issue #25.
-        let dflt_entitlement_class = self.entitlement_class(child_handle, DFLT_CLASS)?;
+        let mut classes = vec![];
+        if let Some(class) = self.entitlement_class(child_handle, DFLT_CLASS) {
+            classes.push(class);
+        }
 
-        Ok(Entitlements::new(vec![dflt_entitlement_class]))
+        Ok(Entitlements::new(classes))
     }
 
     /// Returns an issuance response for a child and a specific resource
@@ -425,7 +433,9 @@ impl<S: Signer> CertAuth<S> {
         class_name: &str,
         pub_key: &PublicKey,
     ) -> Result<api::IssuanceResponse> {
-        let entitlement_class = self.entitlement_class(child_handle, class_name)?;
+        let entitlement_class = self
+            .entitlement_class(child_handle, class_name)
+            .ok_or_else(|| Error::NoIssuedCert)?;
 
         entitlement_class
             .into_issuance_response(pub_key)
@@ -437,12 +447,20 @@ impl<S: Signer> CertAuth<S> {
         &self,
         child_handle: &Handle,
         class_name: &str,
-    ) -> Result<api::EntitlementClass> {
-        let child = self.get_child(child_handle)?;
+    ) -> Option<api::EntitlementClass> {
+        let child = match self.get_child(child_handle) {
+            Ok(child) => child,
+            Err(_) => return None,
+        };
 
-        let child_resources = child
-            .resources_for_class(class_name)
-            .ok_or_else(|| Error::MissingResources)?;
+        let child_resources = match child.resources_for_class(class_name) {
+            Some(res) => res,
+            None => return None,
+        };
+
+        if child_resources.resources().is_empty() {
+            return None;
+        }
 
         let until = child_resources.not_after();
         let issued = child_resources.certs().cloned().collect();
@@ -453,7 +471,7 @@ impl<S: Signer> CertAuth<S> {
         };
         let cert = SigningCert::new(cert.uri().clone(), cert.cert().clone());
 
-        Ok(EntitlementClass::new(
+        Some(EntitlementClass::new(
             class_name.to_string(),
             cert,
             child_resources.resources().clone(),
@@ -863,10 +881,10 @@ impl<S: Signer> CertAuth<S> {
         parent: &ParentHandle,
         entitlement: &EntitlementClass,
         rc: &ResourceClass,
-        signer: &Arc<RwLock<S>>,
+        signer: &S,
     ) -> Result<Vec<Evt>> {
         let req_details_list =
-            rc.request_certs(parent.clone(), entitlement, &self.base_repo, &signer)?;
+            rc.make_request_events(parent.clone(), entitlement, &self.base_repo, signer)?;
 
         let mut res = vec![];
         for details in req_details_list.into_iter() {
@@ -893,6 +911,9 @@ impl<S: Signer> CertAuth<S> {
     /// entitlement(s) and/or requests certificate(s) as needed. In case
     /// there are no changes in entitlements and certificates, this method
     /// will result in 0 events - i.e. it is then a no-op.
+    ///
+    /// If there are no more resources in a resource class, then the CA will
+    /// request revocation for all its keys in the resource class.
     fn update_entitlements(
         &self,
         parent_handle: Handle,
@@ -919,7 +940,10 @@ impl<S: Signer> CertAuth<S> {
             .iter()
             .filter(|(name, _class)| !entitled_classes.contains(&name.as_str()))
         {
+            let signer = signer.read().unwrap();
+
             let delta = class.withdraw(&self.base_repo);
+            let revocations = class.revoke(name.clone(), signer.deref())?;
 
             res.push(EvtDet::resource_class_removed(
                 &self.handle,
@@ -927,6 +951,7 @@ impl<S: Signer> CertAuth<S> {
                 parent_handle.clone(),
                 name.clone(),
                 delta,
+                revocations,
             ));
             version += 1;
         }
@@ -935,12 +960,13 @@ impl<S: Signer> CertAuth<S> {
             let name = ent.class_name();
 
             if let Some(rc) = parent.resources.get(name) {
+                let signer = signer.read().unwrap();
                 res.append(&mut self.make_request_events(
                     &mut version,
                     &parent_handle,
                     ent,
                     rc,
-                    &signer,
+                    signer.deref(),
                 )?);
             } else {
                 // Create a resource class with a pending key
@@ -957,8 +983,14 @@ impl<S: Signer> CertAuth<S> {
                 let rc_add_version = version;
                 version += 1;
 
-                let mut request_events =
-                    self.make_request_events(&mut version, &parent_handle, ent, &rc, &signer)?;
+                let signer = signer.read().unwrap();
+                let mut request_events = self.make_request_events(
+                    &mut version,
+                    &parent_handle,
+                    ent,
+                    &rc,
+                    signer.deref(),
+                )?;
 
                 let added = EvtDet::resource_class_added(
                     &self.handle,

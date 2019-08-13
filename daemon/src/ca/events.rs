@@ -142,7 +142,12 @@ pub enum EvtDet {
     // Being a child Events
     ParentAdded(ParentHandle, ParentCaContact),
     ResourceClassAdded(ParentHandle, ResourceClassName, ResourceClass),
-    ResourceClassRemoved(ParentHandle, ResourceClassName, ObjectsDelta),
+    ResourceClassRemoved(
+        ParentHandle,
+        ResourceClassName,
+        ObjectsDelta,
+        Vec<RevocationRequest>,
+    ),
     CertificateRequested(ParentHandle, IssuanceRequest, KeyId),
     CertificateReceived(ParentHandle, ResourceClassName, KeyId, RcvdCert),
 
@@ -193,11 +198,12 @@ impl EvtDet {
         parent_handle: ParentHandle,
         class_name: ResourceClassName,
         delta: ObjectsDelta,
+        revocations: Vec<RevocationRequest>,
     ) -> Evt {
         StoredEvent::new(
             handle,
             version,
-            EvtDet::ResourceClassRemoved(parent_handle, class_name, delta),
+            EvtDet::ResourceClassRemoved(parent_handle, class_name, delta, revocations),
         )
     }
 

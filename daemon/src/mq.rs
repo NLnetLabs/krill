@@ -7,6 +7,7 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::sync::RwLock;
 
+use krill_commons::api::RevocationRequest;
 use krill_commons::api::admin::Handle;
 use krill_commons::api::publication::PublishDelta;
 use krill_commons::eventsourcing;
@@ -23,6 +24,7 @@ pub enum QueueEvent {
     Delta(Handle, PublishDelta),
     ParentAdded(Handle, ParentHandle),
     RequestsPending(Handle, ParentHandle),
+    ResourceClassRemoved(Handle, ParentHandle, Vec<RevocationRequest>),
 }
 
 #[derive(Debug)]
@@ -74,9 +76,13 @@ impl<S: Signer> eventsourcing::EventListener<CertAuth<S>> for EventQueueListener
                 let evt = QueueEvent::Delta(handle.clone(), delta.objects().clone().into());
                 self.push_back(evt);
             }
-            EvtDet::ResourceClassRemoved(_parent, _class_name, delta) => {
-                let evt = QueueEvent::Delta(handle.clone(), delta.clone().into());
-                self.push_back(evt);
+            EvtDet::ResourceClassRemoved(parent, _class_name, delta, revocations) => {
+                self.push_back(QueueEvent::Delta(handle.clone(), delta.clone().into()));
+                self.push_back(QueueEvent::ResourceClassRemoved(
+                    handle.clone(),
+                    parent.clone(),
+                    revocations.clone(),
+                ))
             }
             EvtDet::KeyRollFinished(_parent, _class_name, delta) => {
                 let evt = QueueEvent::Delta(handle.clone(), delta.clone().into());

@@ -19,6 +19,7 @@ use rpki::x509::{Serial, Time};
 
 use crate::api::admin::{Handle, ParentCaContact};
 use crate::api::publication;
+use crate::api::publication::Publish;
 use crate::api::{
     Base64, EncodedHash, IssuanceRequest, RequestResourceLimit, RevocationRequest,
     RevocationResponse,
@@ -765,6 +766,16 @@ impl CurrentObjects {
             .collect()
     }
 
+    /// Returns publish's for all objects in this set.
+    pub fn publish(&self, base_uri: &RepoInfo, name_space: &str) -> Vec<Publish> {
+        let ca_repo = base_uri.ca_repository(name_space);
+        self.0.iter()
+            .map(|(name, object)| {
+                Publish::new(None, ca_repo.join(name.as_bytes()), object.content.clone())
+            })
+            .collect()
+    }
+
     /// Returns Manifest Entries, i.e. excluding the manifest itself
     pub fn mft_entries(&self) -> Vec<FileAndHash<Bytes, Bytes>> {
         self.0
@@ -1406,6 +1417,26 @@ impl CertAuthInfo {
     pub fn children(&self) -> &HashMap<Handle, ChildCaDetails> {
         &self.children
     }
+
+    pub fn published_objects(&self) -> Vec<Publish> {
+        let mut res = vec![];
+        match &self.parents {
+            CaParentsInfo::SelfSigned(key, _tal) => {
+                res.append(&mut key.current_set.objects().publish(self.base_repo(), ""));
+            },
+            CaParentsInfo::Parents(map) => {
+                for (_parent, parent_info) in map.iter() {
+                    for rc in parent_info.resources().values() {
+                        let name_space = rc.name_space();
+                        res.append(&mut rc.objects().publish(self.base_repo(), name_space));
+                    }
+                }
+            }
+        }
+
+        res
+    }
+
 }
 
 /// This type contains public data about parents of a CA
@@ -1465,6 +1496,25 @@ impl ResourceClassInfo {
             }
             _ => None,
         }
+    }
+
+    pub fn objects(&self) -> CurrentObjects {
+        let mut res = CurrentObjects::default();
+        match &self.keys {
+            ResourceClassKeysInfo::Pending(_) => {},
+            ResourceClassKeysInfo::Active(current) | ResourceClassKeysInfo::RollPending(_, current)=> {
+                res = res + current.current_set().objects().clone();
+            }
+            ResourceClassKeysInfo::RollNew(new, current) => {
+                res = res + new.current_set().objects().clone();
+                res = res + current.current_set().objects().clone();
+            }
+            ResourceClassKeysInfo::RollOld(current, old) => {
+                res = res + current.current_set().objects().clone();
+                res = res + old.current_set().objects().clone();
+            }
+        }
+        res
     }
 }
 

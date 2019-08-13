@@ -30,10 +30,7 @@ fn child_request(handle: &Handle) -> rfc8183::ChildRequest {
     }
 }
 
-fn add_child_to_ta_embedded(
-    handle: &Handle,
-    resources: ResourceSet,
-) -> ParentCaContact {
+fn add_child_to_ta_embedded(handle: &Handle, resources: ResourceSet) -> ParentCaContact {
     let auth = ChildAuthRequest::Embedded;
     let req = AddChildRequest::new(handle.clone(), resources, auth);
     let res = krill_admin(Command::TrustAnchor(TrustAnchorCommand::AddChild(req)));
@@ -168,6 +165,26 @@ fn wait_for_key_roll_complete(handle: &Handle) {
     })
 }
 
+fn wait_for_resource_class_to_disappear(handle: &Handle) {
+    wait_for(30, "Resource class not removed", || {
+        let cms_ca_info = ca_details(handle);
+
+        if let CaParentsInfo::Parents(parents) = cms_ca_info.parents() {
+            if let Some(parent) = parents.get(&ta_handle()) {
+                return parent.resources().get("all").is_none();
+            }
+        }
+        false
+    })
+}
+
+fn wait_for_ta_to_have_number_of_issued_certs(number: usize) {
+    wait_for(30, "TA has wrong amount of issued certs", || {
+        let ta = ca_details(&ta_handle());
+        ta.published_objects().len() == 2 + number
+    })
+}
+
 #[test]
 fn ca_under_ta() {
     test_with_krill_server(|_d| {
@@ -183,8 +200,7 @@ fn ca_under_ta() {
         init_child(&emb_child_handle, &emb_child_token);
 
         let parent = {
-            let parent_contact =
-                add_child_to_ta_embedded(&emb_child_handle, emb_child_resources);
+            let parent_contact = add_child_to_ta_embedded(&emb_child_handle, emb_child_resources);
             AddParentRequest::new(ta_handle.clone(), parent_contact)
         };
 
@@ -207,6 +223,7 @@ fn ca_under_ta() {
 
         add_parent_to_ca(&cms_child_handle, parent);
         wait_for_resources_on_current_key(&cms_child_handle, &cms_child_resources);
+        wait_for_ta_to_have_number_of_issued_certs(2);
 
         let cms_child_resources = ResourceSet::from_strs("AS65000", "10.0.0.0/16", "").unwrap();
         update_child(&cms_child_handle, &cms_child_resources);
@@ -214,8 +231,16 @@ fn ca_under_ta() {
 
         ca_roll_init(&cms_child_handle);
         wait_for_new_key(&cms_child_handle);
+        wait_for_ta_to_have_number_of_issued_certs(3);
 
         ca_roll_activate(&cms_child_handle);
         wait_for_key_roll_complete(&cms_child_handle);
+        wait_for_ta_to_have_number_of_issued_certs(2);
+
+        let cms_child_resources = ResourceSet::from_strs("", "", "").unwrap();
+        update_child(&cms_child_handle, &cms_child_resources);
+        wait_for_resource_class_to_disappear(&cms_child_handle);
+
+        wait_for_ta_to_have_number_of_issued_certs(1);
     });
 }

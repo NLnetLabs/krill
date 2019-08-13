@@ -246,11 +246,7 @@ impl<S: Signer> CaServer<S> {
     }
 
     /// List the entitlements for a child: 3.3.2 of RFC6492
-    pub fn list(
-        &self,
-        parent: &Handle,
-        child: &Handle,
-    ) -> ServerResult<Entitlements, S> {
+    pub fn list(&self, parent: &Handle, child: &Handle) -> ServerResult<Entitlements, S> {
         if parent != &ca::ta_handle() {
             unimplemented!("https://github.com/NLnetLabs/krill/issues/25");
         } else {
@@ -425,22 +421,17 @@ impl<S: Signer> CaServer<S> {
     }
 
     pub fn send_requests(&self, handle: &Handle, parent: &ParentHandle) -> ServerResult<(), S> {
-        self.send_revoke_requests(handle, parent)?;
-        self.send_cert_requests(handle, parent)
+        self.send_revoke_requests_handle_responses(handle, parent)?;
+        self.send_cert_requests_handle_responses(handle, parent)
     }
 
-    fn send_revoke_requests(&self, handle: &Handle, parent: &ParentHandle) -> ServerResult<(), S> {
+    fn send_revoke_requests_handle_responses(&self, handle: &Handle, parent: &ParentHandle) -> ServerResult<(), S> {
         let mut child = self.ca_store.get_latest(handle)?;
-        let revoke_request = child.revoke_requests(parent);
+        let requests = child.revoke_requests(parent);
 
-        let revoke_responses = match child.parent(parent)?.contact() {
-            ParentCaContact::Embedded => {
-                self.send_revoke_requests_embedded(revoke_request, handle, parent)
-            }
-            ParentCaContact::Rfc6492(parent_res) => {
-                self.send_revoke_requests_rfc6492(revoke_request, child.id_key(), parent_res)
-            }
-        }?;
+        let revoke_responses = self.send_revoke_requests(
+            handle, parent, requests
+        )?;
 
         for response in revoke_responses.into_iter() {
             let cmd = CmdDet::key_roll_finish(handle, parent.clone(), response);
@@ -449,6 +440,23 @@ impl<S: Signer> CaServer<S> {
         }
 
         Ok(())
+    }
+
+    pub fn send_revoke_requests(
+        &self,
+        handle: &Handle,
+        parent: &ParentHandle,
+        requests: Vec<&RevocationRequest>
+    ) -> ServerResult<Vec<RevocationResponse>, S> {
+        let child = self.ca_store.get_latest(handle)?;
+        match child.parent(parent)?.contact() {
+            ParentCaContact::Embedded => {
+                self.send_revoke_requests_embedded(requests, handle, parent)
+            }
+            ParentCaContact::Rfc6492(parent_res) => {
+                self.send_revoke_requests_rfc6492(requests, child.id_key(), parent_res)
+            }
+        }
     }
 
     fn send_revoke_requests_embedded(
@@ -508,7 +516,7 @@ impl<S: Signer> CaServer<S> {
         Ok(res)
     }
 
-    fn send_cert_requests(&self, handle: &Handle, parent: &ParentHandle) -> ServerResult<(), S> {
+    fn send_cert_requests_handle_responses(&self, handle: &Handle, parent: &ParentHandle) -> ServerResult<(), S> {
         let mut child = self.ca_store.get_latest(handle)?;
         let cert_requests = child.cert_requests(parent);
 
@@ -553,12 +561,7 @@ impl<S: Signer> CaServer<S> {
             let class_name = req.class_name().to_string();
             let pub_key = req.csr().public_key().clone();
 
-            let cmd = CmdDet::certify_child(
-                parent_h,
-                handle.clone(),
-                req,
-                self.signer.clone(),
-            );
+            let cmd = CmdDet::certify_child(parent_h, handle.clone(), req, self.signer.clone());
 
             let events = parent.process_command(cmd)?;
             parent = self.ca_store.update(parent_h, parent, events)?;
@@ -636,9 +639,7 @@ impl<S: Signer> CaServer<S> {
         parent: &ParentHandle,
     ) -> ServerResult<api::Entitlements, S> {
         match self.get_ca(&handle)?.parent(parent)?.contact() {
-            ParentCaContact::Embedded => {
-                self.get_entitlements_embedded(handle, parent)
-            }
+            ParentCaContact::Embedded => self.get_entitlements_embedded(handle, parent),
             ParentCaContact::Rfc6492(res) => self.get_entitlements_rfc6492(handle, res),
         }
     }
@@ -843,12 +844,7 @@ mod tests {
             //   - Child added to TA
             //
 
-            let cmd = CmdDet::add_child(
-                &ta_handle,
-                child_handle.clone(),
-                None,
-                child_rs,
-            );
+            let cmd = CmdDet::add_child(&ta_handle, child_handle.clone(), None, child_rs);
 
             let events = ta.process_command(cmd).unwrap();
             let ta = ca_store.update(&ta_handle, ta, events).unwrap();
@@ -909,12 +905,8 @@ mod tests {
 
             let request = IssuanceRequest::new(DFLT_CLASS.to_string(), limit, csr);
 
-            let ta_cmd = CmdDet::certify_child(
-                &ta_handle,
-                child_handle.clone(),
-                request,
-                signer.clone(),
-            );
+            let ta_cmd =
+                CmdDet::certify_child(&ta_handle, child_handle.clone(), request, signer.clone());
 
             let ta_events = ta.process_command(ta_cmd).unwrap();
             let issued_evt = ta_events[0].clone().into_details();

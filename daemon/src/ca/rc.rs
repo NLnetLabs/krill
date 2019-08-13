@@ -106,13 +106,16 @@ impl ResourceClass {
         self.keys.objects()
     }
 
-    /// Returns withdraws for all current objects, for when this resource class
-    /// needs to be removed.
-    pub fn withdraw(&self, base_repo: &RepoInfo) -> ObjectsDelta {
-        let base_repo = base_repo.ca_repository(self.name_space());
-        self.keys.withdraw(base_repo)
+    /// Returns a ResourceClassInfo for this, which contains all the
+    /// same data, but which does not have any behaviour.
+    pub fn as_info(&self) -> ResourceClassInfo {
+        ResourceClassInfo::new(self.name_space.clone(), self.keys.as_info())
     }
+}
 
+/// # Request certificates
+///
+impl ResourceClass {
     /// Returns event details for receiving the certificate and publishing for it.
     pub fn update_received_cert<S: Signer>(
         &self,
@@ -132,23 +135,13 @@ impl ResourceClass {
         )
     }
 
-    /// Returns a ResourceClassInfo for this, which contains all the
-    /// same data, but which does not have any behaviour.
-    pub fn as_info(&self) -> ResourceClassInfo {
-        ResourceClassInfo::new(self.name_space.clone(), self.keys.as_info())
-    }
-}
-
-/// # Request certificates
-///
-impl ResourceClass {
     /// Request certificates for any key that needs it.
-    pub fn request_certs<S: Signer>(
+    pub fn make_request_events<S: Signer>(
         &self,
         parent: ParentHandle,
         entitlement: &EntitlementClass,
         base_repo: &RepoInfo,
-        signer: &Arc<RwLock<S>>,
+        signer: &S,
     ) -> Result<Vec<EvtDet>> {
         self.keys
             .request_certs(parent, entitlement, base_repo, &self.name_space, signer)
@@ -171,6 +164,26 @@ impl ResourceClass {
     /// Applies a publication delta to the appropriate key in this resource class.
     pub fn apply_delta(&mut self, delta: PublicationDelta, key_id: KeyId) {
         self.keys.apply_delta(delta, key_id);
+    }
+}
+
+/// # Removing a resource class
+///
+impl ResourceClass {
+    /// Returns withdraws for all current objects, for when this resource class
+    /// needs to be removed.
+    pub fn withdraw(&self, base_repo: &RepoInfo) -> ObjectsDelta {
+        let base_repo = base_repo.ca_repository(self.name_space());
+        self.keys.withdraw(base_repo)
+    }
+
+    /// Returns revocation requests for all certified keys in this resource class.
+    pub fn revoke<S: Signer>(
+        &self,
+        class_name: ResourceClassName,
+        signer: &S,
+    ) -> ca::Result<Vec<RevocationRequest>> {
+        self.keys.revoke(class_name, signer)
     }
 }
 
@@ -377,12 +390,51 @@ impl ResourceClassKeys {
         objects
     }
 
+    /// Withdraw all objects in all keys
     fn withdraw(&self, base_repo: uri::Rsync) -> ObjectsDelta {
         let mut delta = ObjectsDelta::new(base_repo);
         for withdraw in self.objects().withdraw() {
             delta.withdraw(withdraw)
         }
         delta
+    }
+
+    /// Revoke all current keys
+    fn revoke<S: Signer>(
+        &self,
+        class_name: ResourceClassName,
+        signer: &S,
+    ) -> ca::Result<Vec<RevocationRequest>> {
+        match self {
+            ResourceClassKeys::Pending(_pending) => Ok(vec![]), // nothing to revoke
+            ResourceClassKeys::Active(current) | ResourceClassKeys::RollPending(_, current) => {
+                let revoke_current = Self::revoke_key(class_name, current.key_id(), signer)?;
+                Ok(vec![revoke_current])
+            }
+            ResourceClassKeys::RollNew(new, current) => {
+                let revoke_new = Self::revoke_key(class_name.clone(), new.key_id(), signer)?;
+                let revoke_current = Self::revoke_key(class_name, current.key_id(), signer)?;
+                Ok(vec![revoke_new, revoke_current])
+            }
+            ResourceClassKeys::RollOld(current, old) => {
+                let revoke_current = Self::revoke_key(class_name, current.key_id(), signer)?;
+                let revoke_old = old.revoke_req().clone();
+                Ok(vec![revoke_current, revoke_old])
+            }
+        }
+    }
+
+    fn revoke_key<S: Signer>(
+        class_name: ResourceClassName,
+        key_id: &KeyId,
+        signer: &S,
+    ) -> ca::Result<RevocationRequest> {
+        let ki = signer
+            .get_key_info(key_id)
+            .map_err(Error::signer)?
+            .key_identifier();
+
+        Ok(RevocationRequest::new(class_name, ki))
     }
 
     fn find_matching_key_for_rcvd_cert<S: Signer>(
@@ -503,13 +555,13 @@ impl ResourceClassKeys {
         }
     }
 
-    pub fn request_certs<S: Signer>(
+    fn request_certs<S: Signer>(
         &self,
         parent: ParentHandle,
         entitlement: &EntitlementClass,
         base_repo: &RepoInfo,
         name_space: &str,
-        signer: &Arc<RwLock<S>>,
+        signer: &S,
     ) -> Result<Vec<EvtDet>> {
         let mut keys_for_requests = vec![];
         match self {
@@ -547,15 +599,13 @@ impl ResourceClassKeys {
 
         let mut res = vec![];
 
-        let signer = signer.read().unwrap();
-
         for key_id in keys_for_requests.into_iter() {
             let req = self.create_issuance_req(
                 base_repo,
                 name_space,
                 entitlement.class_name(),
                 key_id,
-                signer.deref(),
+                signer,
             )?;
 
             res.push(EvtDet::CertificateRequested(
@@ -710,13 +760,7 @@ impl ResourceClassKeys {
     ) -> ca::Result<Vec<EvtDet>> {
         match self {
             ResourceClassKeys::RollNew(_new, current) => {
-                let ki = signer
-                    .get_key_info(current.key_id())
-                    .map_err(Error::signer)?
-                    .key_identifier();
-
-                let revoke_req = RevocationRequest::new(class_name.clone(), ki);
-
+                let revoke_req = Self::revoke_key(class_name.clone(), current.key_id(), signer)?;
                 Ok(vec![EvtDet::KeyRollActivated(
                     parent, class_name, revoke_req,
                 )])

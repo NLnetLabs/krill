@@ -1,7 +1,7 @@
 //! Support for RPKI XML structures.
-use std::{fs, io};
 use std::fs::File;
 use std::path::Path;
+use std::{fs, io};
 
 use base64;
 use base64::DecodeError;
