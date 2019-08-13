@@ -204,20 +204,23 @@ impl<A: Aggregate> AggregateStore<A> for DiskAggregateStore<A> {
                 }
             }
 
-            for event in events {
-                self.store.store_event(&event)?;
+            for event in &events {
+                self.store.store_event(event)?;
 
                 agg.apply(event.clone());
                 if agg.version() % SNAPSHOT_FREQ == 0 {
                     self.store.store_aggregate(handle, agg)?;
                 }
+            }
 
+            cache.insert(handle.clone(), Arc::new(agg.clone()));
+
+            // Only send this to listeners after everything has been saved.
+            for event in events {
                 for listener in &self.listeners {
                     listener.as_ref().listen(agg, &event);
                 }
             }
-
-            cache.insert(handle.clone(), Arc::new(agg.clone()));
         }
 
         Ok(latest)
