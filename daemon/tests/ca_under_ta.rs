@@ -57,7 +57,18 @@ fn add_child_to_ta_rfc6492(
 }
 
 fn update_child(handle: &Handle, resources: &ResourceSet) {
-    let req = UpdateChildRequest::new(None, Some(resources.clone()));
+    let req = UpdateChildRequest::graceful(None, Some(resources.clone()));
+    match krill_admin(Command::TrustAnchor(TrustAnchorCommand::UpdateChild(
+        handle.clone(),
+        req,
+    ))) {
+        ApiResponse::Empty => {}
+        _ => panic!("Expected empty ok response"),
+    }
+}
+
+fn force_update_child(handle: &Handle, resources: &ResourceSet) {
+    let req = UpdateChildRequest::force(None, Some(resources.clone()));
     match krill_admin(Command::TrustAnchor(TrustAnchorCommand::UpdateChild(
         handle.clone(),
         req,
@@ -108,22 +119,7 @@ fn wait_for_resources_on_current_key(handle: &Handle, resources: &ResourceSet) {
     wait_for(
         30,
         "cms child did not get its resource certificate",
-        move || {
-            let cms_ca_info = ca_details(handle);
-
-            if let CaParentsInfo::Parents(parents) = cms_ca_info.parents() {
-                if let Some(parent) = parents.get(&ta_handle()) {
-                    if let Some(rc) = parent.resources().get("all") {
-                        if let Some(current_resources) = rc.current_resources() {
-                            if resources == current_resources {
-                                return true;
-                            }
-                        }
-                    }
-                }
-            }
-            false
-        },
+        move || &ca_current_resources(handle) == resources,
     )
 }
 
@@ -180,9 +176,45 @@ fn wait_for_resource_class_to_disappear(handle: &Handle) {
 
 fn wait_for_ta_to_have_number_of_issued_certs(number: usize) {
     wait_for(30, "TA has wrong amount of issued certs", || {
-        let ta = ca_details(&ta_handle());
-        ta.published_objects().len() == 2 + number
+        ta_issued_certs() == number
     })
+}
+
+fn ta_issued_certs() -> usize {
+    let ta = ca_details(&ta_handle());
+    ta.published_objects().len() - 2
+}
+
+fn ta_issued_resources(child: &Handle) -> ResourceSet {
+    let ta = ca_details(&ta_handle());
+    let child = ta.children().get(child).unwrap();
+    if let Some(resources) = child.resources().get("all") {
+        for cert in resources.certs_iter() {
+            return cert.resource_set().clone();
+        }
+    }
+    ResourceSet::default()
+}
+
+fn ca_current_resources(handle: &Handle) -> ResourceSet {
+    let ca = ca_details(handle);
+
+    if let CaParentsInfo::Parents(parents) = ca.parents() {
+        if let Some(parent) = parents.get(&ta_handle()) {
+            if let Some(rc) = parent.resources().get("all") {
+                match rc.keys() {
+                    ResourceClassKeysInfo::Active(current)
+                    | ResourceClassKeysInfo::RollPending(_, current)
+                    | ResourceClassKeysInfo::RollNew(_, current)
+                    | ResourceClassKeysInfo::RollOld(current, _) => {
+                        return current.incoming_cert().resources().clone()
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    ResourceSet::default()
 }
 
 #[test]
@@ -242,5 +274,15 @@ fn ca_under_ta() {
         wait_for_resource_class_to_disappear(&cms_child_handle);
 
         wait_for_ta_to_have_number_of_issued_certs(1);
+
+        let emb_child_resources = ResourceSet::from_strs("", "192.168.0.0/24", "").unwrap();
+        force_update_child(&emb_child_handle, &emb_child_resources);
+        assert_eq!(ta_issued_resources(&emb_child_handle), emb_child_resources);
+        wait_for_resources_on_current_key(&emb_child_handle, &emb_child_resources);
+
+        let emb_child_resources = ResourceSet::default();
+        force_update_child(&emb_child_handle, &emb_child_resources);
+        assert_eq!(0, ta_issued_certs());
+        wait_for_resource_class_to_disappear(&emb_child_handle);
     });
 }

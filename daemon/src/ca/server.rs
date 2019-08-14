@@ -129,7 +129,7 @@ impl<S: Signer> CaServer<S> {
             ChildAuthRequest::Rfc8183(req) => Some(req.id_cert().clone()),
         };
 
-        let add_child = CmdDet::add_child(&ta_handle, handle.clone(), id_cert, resources);
+        let add_child = CmdDet::child_add(&ta_handle, handle.clone(), id_cert, resources);
 
         let events = ta.process_command(add_child)?;
         let ta = self.ca_store.update(&ta_handle, ta, events)?;
@@ -172,13 +172,27 @@ impl<S: Signer> CaServer<S> {
         child: ChildHandle,
         req: UpdateChildRequest,
     ) -> ServerResult<(), S> {
-        debug!("Finding details for {} under TA", child);
-        let ta = self.get_trust_anchor()?;
+        debug!("Updating details for {} under TA", child);
+        let mut ta = self.get_trust_anchor()?;
         let ta_handle = ca::ta_handle();
 
-        let events = ta.process_command(CmdDet::update_child(&ta_handle, child, req))?;
+        let force = req.is_force();
+
+        let events = ta.process_command(CmdDet::child_update(&ta_handle, child.clone(), req))?;
         if !events.is_empty() {
-            self.ca_store.update(&ta_handle, ta, events)?;
+            ta = self.ca_store.update(&ta_handle, ta, events)?;
+
+            if force {
+                let events = ta.process_command(CmdDet::child_shrink(
+                    &ta_handle,
+                    child,
+                    Duration::seconds(0),
+                    self.signer.clone(),
+                ))?;
+                if !events.is_empty() {
+                    self.ca_store.update(&ta_handle, ta, events)?;
+                }
+            }
         }
 
         Ok(())
@@ -276,7 +290,7 @@ impl<S: Signer> CaServer<S> {
                 unimplemented!("Issue for multiple classes from CAs, issue #25")
             }
 
-            let cmd = CmdDet::certify_child(
+            let cmd = CmdDet::child_certify(
                 parent,
                 child.clone(),
                 issue_req.clone(),
@@ -303,8 +317,7 @@ impl<S: Signer> CaServer<S> {
     ) -> ServerResult<RevocationResponse, S> {
         let res = (&revoke_request).into(); // response provided that no errors are returned earlier
 
-        let cmd =
-            CmdDet::revoke_key_for_child(ca_handle, child, revoke_request, self.signer.clone());
+        let cmd = CmdDet::child_revoke_key(ca_handle, child, revoke_request, self.signer.clone());
 
         let ca = self.get_ca(ca_handle)?;
         let events = ca.process_command(cmd)?;
@@ -425,13 +438,15 @@ impl<S: Signer> CaServer<S> {
         self.send_cert_requests_handle_responses(handle, parent)
     }
 
-    fn send_revoke_requests_handle_responses(&self, handle: &Handle, parent: &ParentHandle) -> ServerResult<(), S> {
+    fn send_revoke_requests_handle_responses(
+        &self,
+        handle: &Handle,
+        parent: &ParentHandle,
+    ) -> ServerResult<(), S> {
         let mut child = self.ca_store.get_latest(handle)?;
         let requests = child.revoke_requests(parent);
 
-        let revoke_responses = self.send_revoke_requests(
-            handle, parent, requests
-        )?;
+        let revoke_responses = self.send_revoke_requests(handle, parent, requests)?;
 
         for response in revoke_responses.into_iter() {
             let cmd = CmdDet::key_roll_finish(handle, parent.clone(), response);
@@ -446,7 +461,7 @@ impl<S: Signer> CaServer<S> {
         &self,
         handle: &Handle,
         parent: &ParentHandle,
-        requests: Vec<&RevocationRequest>
+        requests: Vec<&RevocationRequest>,
     ) -> ServerResult<Vec<RevocationResponse>, S> {
         let child = self.ca_store.get_latest(handle)?;
         match child.parent(parent)?.contact() {
@@ -469,7 +484,7 @@ impl<S: Signer> CaServer<S> {
         let mut revocation_responses = vec![];
 
         for req in revoke_requests.into_iter() {
-            let cmd = CmdDet::revoke_key_for_child(
+            let cmd = CmdDet::child_revoke_key(
                 parent_h,
                 handle.clone(),
                 req.clone(),
@@ -516,7 +531,11 @@ impl<S: Signer> CaServer<S> {
         Ok(res)
     }
 
-    fn send_cert_requests_handle_responses(&self, handle: &Handle, parent: &ParentHandle) -> ServerResult<(), S> {
+    fn send_cert_requests_handle_responses(
+        &self,
+        handle: &Handle,
+        parent: &ParentHandle,
+    ) -> ServerResult<(), S> {
         let mut child = self.ca_store.get_latest(handle)?;
         let cert_requests = child.cert_requests(parent);
 
@@ -561,7 +580,7 @@ impl<S: Signer> CaServer<S> {
             let class_name = req.class_name().to_string();
             let pub_key = req.csr().public_key().clone();
 
-            let cmd = CmdDet::certify_child(parent_h, handle.clone(), req, self.signer.clone());
+            let cmd = CmdDet::child_certify(parent_h, handle.clone(), req, self.signer.clone());
 
             let events = parent.process_command(cmd)?;
             parent = self.ca_store.update(parent_h, parent, events)?;
@@ -844,7 +863,7 @@ mod tests {
             //   - Child added to TA
             //
 
-            let cmd = CmdDet::add_child(&ta_handle, child_handle.clone(), None, child_rs);
+            let cmd = CmdDet::child_add(&ta_handle, child_handle.clone(), None, child_rs);
 
             let events = ta.process_command(cmd).unwrap();
             let ta = ca_store.update(&ta_handle, ta, events).unwrap();
@@ -906,7 +925,7 @@ mod tests {
             let request = IssuanceRequest::new(DFLT_CLASS.to_string(), limit, csr);
 
             let ta_cmd =
-                CmdDet::certify_child(&ta_handle, child_handle.clone(), request, signer.clone());
+                CmdDet::child_certify(&ta_handle, child_handle.clone(), request, signer.clone());
 
             let ta_events = ta.process_command(ta_cmd).unwrap();
             let issued_evt = ta_events[0].clone().into_details();

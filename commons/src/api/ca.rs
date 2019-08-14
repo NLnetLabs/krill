@@ -10,6 +10,8 @@ use std::{fmt, ops};
 
 use bytes::Bytes;
 use chrono::Duration;
+use serde::de;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::cert::Cert;
 use rpki::crypto::KeyIdentifier;
@@ -92,6 +94,10 @@ impl ChildCaDetails {
         &self.resources
     }
 
+    pub fn remove_resource(&mut self, class_name: &str) {
+        self.resources.remove(class_name);
+    }
+
     /// This function will update the resource entitlements for an existing class
     /// or create a new class if needed
     pub fn set_resources_for_class(&mut self, class: &str, resources: ResourceSet) {
@@ -127,20 +133,56 @@ impl ChildCaDetails {
 }
 
 /// This type defines a reference to PublicKey for easy storage and lookup.
-#[derive(Clone, Debug, Deserialize, Display, Eq, Hash, PartialEq, Serialize)]
-pub struct KeyRef(String);
+#[derive(Clone, Debug, Display, Eq, Hash, PartialEq)]
+pub struct KeyRef(KeyIdentifier);
 
 impl From<&KeyIdentifier> for KeyRef {
     fn from(ki: &KeyIdentifier) -> Self {
-        let hex = ki.into_hex();
-        let s = unsafe { str::from_utf8_unchecked(&hex) };
-        KeyRef(s.to_string())
+        KeyRef(ki.clone())
+    }
+}
+
+impl From<KeyIdentifier> for KeyRef {
+    fn from(ki: KeyIdentifier) -> Self {
+        KeyRef(ki)
+    }
+}
+
+impl From<&KeyRef> for KeyIdentifier {
+    fn from(kr: &KeyRef) -> Self {
+        kr.0.clone()
+    }
+}
+
+impl From<KeyRef> for KeyIdentifier {
+    fn from(kr: KeyRef) -> Self {
+        kr.0
     }
 }
 
 impl From<&Cert> for KeyRef {
     fn from(c: &Cert) -> Self {
-        Self::from(&c.subject_key_identifier())
+        KeyRef(c.subject_key_identifier())
+    }
+}
+
+impl Serialize for KeyRef {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.0.to_string().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for KeyRef {
+    fn deserialize<D>(deserializer: D) -> Result<KeyRef, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let string = String::deserialize(deserializer)?;
+        let ki = KeyIdentifier::from_str(&string).map_err(de::Error::custom)?;
+        Ok(KeyRef(ki))
     }
 }
 
@@ -154,7 +196,7 @@ impl From<&Cert> for KeyRef {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildResources {
     resources: ResourceSet,
-    since: Time,
+    shrink_pending: Option<Time>,
     not_after: Time,
     certs: HashMap<KeyRef, IssuedCert>,
 }
@@ -163,7 +205,7 @@ impl ChildResources {
     pub fn new(resources: ResourceSet) -> Self {
         ChildResources {
             resources,
-            since: Time::now(),
+            shrink_pending: None,
             not_after: Time::next_year(),
             certs: HashMap::new(),
         }
@@ -174,8 +216,10 @@ impl ChildResources {
     }
 
     pub fn set_resources(&mut self, resources: ResourceSet) {
+        if !resources.contains(&self.resources) {
+            self.shrink_pending = Some(Time::now());
+        }
         self.resources = resources;
-        self.since = Time::now();
     }
 
     /// Give back the not_after time that would be used on newly
@@ -195,8 +239,12 @@ impl ChildResources {
         }
     }
 
-    pub fn certs(&self) -> impl Iterator<Item = &IssuedCert> {
+    pub fn certs_iter(&self) -> impl Iterator<Item = &IssuedCert> {
         self.certs.values()
+    }
+
+    pub fn certs(&self) -> &HashMap<KeyRef, IssuedCert> {
+        &self.certs
     }
 
     pub fn cert(&self, key_id: &KeyIdentifier) -> Option<&IssuedCert> {
@@ -205,16 +253,70 @@ impl ChildResources {
     }
 
     pub fn add_cert(&mut self, cert: IssuedCert) {
-        let key_ref = KeyRef::from(cert.cert());
-
+        // We can assume that the correct not_after date was used when the certificate
+        // was issued - because the `not_after` function was called. Therefore we can update
+        // the not_after value for this child resource class for future use.
         self.not_after = cert.cert().validity().not_after();
-        self.resources = ResourceSet::try_from(cert.cert()).unwrap();
+
+        // Update the certificate for this key, or insert it for a new key.
+        let key_ref = KeyRef::from(cert.cert());
         self.certs.insert(key_ref, cert);
+
+        // If a shrink was pending, check that it's still applicable.
+        if self.shrink_pending.is_some()
+            && self
+                .certs
+                .values()
+                .find(|c| !self.resources.contains(c.resource_set()))
+                .is_none()
+        {
+            self.shrink_pending = None;
+        }
+    }
+
+    pub fn shrink_pending(&self) -> Option<Time> {
+        self.shrink_pending
     }
 
     pub fn revoke(&mut self, key_id: &KeyIdentifier) {
         let key_ref = KeyRef::from(key_id);
         self.certs.remove(&key_ref);
+    }
+}
+
+//------------ ReplacedObject ------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ReplacedObject {
+    revocation: Revocation,
+    hash: EncodedHash,
+}
+
+impl ReplacedObject {
+    pub fn new(revocation: Revocation, hash: EncodedHash) -> Self {
+        ReplacedObject { revocation, hash }
+    }
+
+    pub fn revocation(&self) -> Revocation {
+        self.revocation
+    }
+
+    pub fn hash(&self) -> &EncodedHash {
+        &self.hash
+    }
+}
+
+impl From<&Cert> for ReplacedObject {
+    fn from(c: &Cert) -> Self {
+        let revocation = Revocation::from(c);
+        let hash = EncodedHash::from_content(c.to_captured().as_slice());
+        ReplacedObject { revocation, hash }
+    }
+}
+
+impl From<&IssuedCert> for ReplacedObject {
+    fn from(issued: &IssuedCert) -> Self {
+        Self::from(issued.cert())
     }
 }
 
@@ -236,6 +338,7 @@ pub struct IssuedCert {
     limit: RequestResourceLimit, // the limit on the request
     resource_set: ResourceSet,
     cert: Cert,
+    replaces: Option<ReplacedObject>,
 }
 
 impl IssuedCert {
@@ -244,12 +347,14 @@ impl IssuedCert {
         limit: RequestResourceLimit,
         resource_set: ResourceSet,
         cert: Cert,
+        replaces: Option<ReplacedObject>,
     ) -> Self {
         IssuedCert {
             uri,
             limit,
             resource_set,
             cert,
+            replaces,
         }
     }
 
@@ -268,6 +373,9 @@ impl IssuedCert {
     }
     pub fn cert(&self) -> &Cert {
         &self.cert
+    }
+    pub fn replaces(&self) -> Option<&ReplacedObject> {
+        self.replaces.as_ref()
     }
 }
 
@@ -769,7 +877,8 @@ impl CurrentObjects {
     /// Returns publish's for all objects in this set.
     pub fn publish(&self, base_uri: &RepoInfo, name_space: &str) -> Vec<Publish> {
         let ca_repo = base_uri.ca_repository(name_space);
-        self.0.iter()
+        self.0
+            .iter()
             .map(|(name, object)| {
                 Publish::new(None, ca_repo.join(name.as_bytes()), object.content.clone())
             })
@@ -1065,6 +1174,14 @@ impl AddedObject {
     }
 }
 
+impl From<&Cert> for AddedObject {
+    fn from(cert: &Cert) -> Self {
+        let name = ObjectName::from(cert);
+        let object = CurrentObject::from(cert);
+        AddedObject { name, object }
+    }
+}
+
 //------------ UpdatedObject -------------------------------------------------
 
 /// A new object that replaces an earlier version by this name.
@@ -1077,6 +1194,12 @@ pub struct UpdatedObject {
 
 impl UpdatedObject {
     pub fn new(name: ObjectName, object: CurrentObject, old: EncodedHash) -> Self {
+        UpdatedObject { name, object, old }
+    }
+
+    pub fn for_cert(new: &Cert, old: EncodedHash) -> Self {
+        let name = ObjectName::from(new);
+        let object = CurrentObject::from(new);
         UpdatedObject { name, object, old }
     }
 }
@@ -1096,6 +1219,14 @@ impl WithdrawnObject {
             name,
             hash: current.to_hash(),
         }
+    }
+}
+
+impl From<&Cert> for WithdrawnObject {
+    fn from(c: &Cert) -> Self {
+        let name = ObjectName::from(c);
+        let hash = EncodedHash::from_content(c.to_captured().as_slice());
+        WithdrawnObject { name, hash }
     }
 }
 
@@ -1423,7 +1554,7 @@ impl CertAuthInfo {
         match &self.parents {
             CaParentsInfo::SelfSigned(key, _tal) => {
                 res.append(&mut key.current_set.objects().publish(self.base_repo(), ""));
-            },
+            }
             CaParentsInfo::Parents(map) => {
                 for (_parent, parent_info) in map.iter() {
                     for rc in parent_info.resources().values() {
@@ -1436,7 +1567,6 @@ impl CertAuthInfo {
 
         res
     }
-
 }
 
 /// This type contains public data about parents of a CA
@@ -1501,8 +1631,9 @@ impl ResourceClassInfo {
     pub fn objects(&self) -> CurrentObjects {
         let mut res = CurrentObjects::default();
         match &self.keys {
-            ResourceClassKeysInfo::Pending(_) => {},
-            ResourceClassKeysInfo::Active(current) | ResourceClassKeysInfo::RollPending(_, current)=> {
+            ResourceClassKeysInfo::Pending(_) => {}
+            ResourceClassKeysInfo::Active(current)
+            | ResourceClassKeysInfo::RollPending(_, current) => {
                 res = res + current.current_set().objects().clone();
             }
             ResourceClassKeysInfo::RollNew(new, current) => {

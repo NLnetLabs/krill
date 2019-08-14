@@ -58,12 +58,14 @@ fn make_event_sh(
                 }
                 QueueEvent::ResourceClassRemoved(handle, parent, revocations) => {
                     let revocations = revocations.iter().collect();
-                    if caserver.send_revoke_requests(&handle, &parent, revocations).is_err() {
+                    if caserver
+                        .send_revoke_requests(&handle, &parent, revocations)
+                        .is_err()
+                    {
                         info!("Could not revoke key for removed resource class. This is not \
                         an issue, because typically the parent will revoke our keys pro-actively, \
                         just before removing the resource class entitlements.");
                     }
-
                 }
                 QueueEvent::ParentAdded(handle, parent) => {
                     if let Err(e) = caserver.get_updates_from_parent(&handle, &parent) {

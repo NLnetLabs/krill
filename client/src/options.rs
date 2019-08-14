@@ -177,8 +177,13 @@ impl Options {
                             .help("Update the delegated IPv6 resources: e.g. 2001:db8::/32")
                             .required(false)
                         )
-
-
+                        .arg(Arg::with_name("force")
+                            .short("f")
+                            .long("force")
+                            .takes_value(false)
+                            .help("Force resource shrink now.")
+                            .required(false)
+                        )
                     )
                 )
             )
@@ -441,7 +446,11 @@ impl Options {
                         Some(resources)
                     };
 
-                    let req = UpdateChildRequest::new(cert, resources);
+                    let req = if m.is_present("force") {
+                        UpdateChildRequest::force(cert, resources)
+                    } else {
+                        UpdateChildRequest::graceful(cert, resources)
+                    };
 
                     command = Command::TrustAnchor(TrustAnchorCommand::UpdateChild(handle, req))
                 }

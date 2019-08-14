@@ -405,14 +405,31 @@ pub enum ChildAuthRequest {
 pub struct UpdateChildRequest {
     id_cert: Option<IdCert>,
     resources: Option<ResourceSet>,
+    force: bool,
 }
 
 impl UpdateChildRequest {
-    pub fn new(id_cert: Option<IdCert>, resources: Option<ResourceSet>) -> Self {
-        UpdateChildRequest { id_cert, resources }
+    pub fn graceful(id_cert: Option<IdCert>, resources: Option<ResourceSet>) -> Self {
+        UpdateChildRequest {
+            id_cert,
+            resources,
+            force: false,
+        }
+    }
+
+    pub fn force(id_cert: Option<IdCert>, resources: Option<ResourceSet>) -> Self {
+        UpdateChildRequest {
+            id_cert,
+            resources,
+            force: true,
+        }
     }
 
     pub fn unpack(self) -> (Option<IdCert>, Option<ResourceSet>) {
         (self.id_cert, self.resources)
+    }
+
+    pub fn is_force(&self) -> bool {
+        self.force
     }
 }

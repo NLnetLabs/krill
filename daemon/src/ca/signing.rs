@@ -10,6 +10,7 @@ use rpki::crypto::signer::KeyError;
 use rpki::crypto::{self, DigestAlgorithm, KeyIdentifier, SigningError};
 use rpki::manifest::{FileAndHash, Manifest, ManifestContent};
 use rpki::sigobj::SignedObjectBuilder;
+use rpki::uri;
 use rpki::x509::{Serial, Time, Validity};
 
 use krill_commons::api::ca::{
@@ -22,6 +23,36 @@ use krill_commons::util::softsigner::KeyId;
 
 pub trait Signer: crypto::Signer<KeyId = KeyId> + Clone + Sized + Sync + Send + 'static {}
 impl<T: crypto::Signer<KeyId = KeyId> + Clone + Sized + Sync + Send + 'static> Signer for T {}
+
+//------------ CertSiaInfo ---------------------------------------------------
+
+pub type CaRepository = uri::Rsync;
+pub type RpkiManifest = uri::Rsync;
+pub type RpkiNotify = uri::Https;
+
+pub struct CertSiaInfo {
+    ca_repository: CaRepository,
+    rpki_manifest: RpkiManifest,
+    rpki_notify: Option<RpkiNotify>,
+}
+
+impl CertSiaInfo {
+    pub fn new(
+        ca_repository: CaRepository,
+        rpki_manifest: RpkiManifest,
+        rpki_notify: Option<RpkiNotify>,
+    ) -> Self {
+        CertSiaInfo {
+            ca_repository,
+            rpki_manifest,
+            rpki_notify,
+        }
+    }
+
+    pub fn unpack(self) -> (CaRepository, RpkiManifest, Option<RpkiNotify>) {
+        (self.ca_repository, self.rpki_manifest, self.rpki_notify)
+    }
+}
 
 //------------ CaSignSupport -------------------------------------------------
 

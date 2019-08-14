@@ -303,7 +303,8 @@ impl Qry {
 
             a.exhausted()?;
 
-            let ski = KeyIdentifier::try_from(ski_bytes.as_ref()).map_err(|_| Error::InvalidSki)?;
+            let ski =
+                KeyIdentifier::try_from(ski_bytes.as_slice()).map_err(|_| Error::InvalidSki)?;
             Ok(RevocationRequest::new(class_name.to_string(), ski))
         })
     }
@@ -579,7 +580,7 @@ impl Res {
             let cert = Self::decode_cert(r)?;
             let resource_set = ResourceSet::try_from(&cert)?;
 
-            Ok(IssuedCert::new(cert_url, limit, resource_set, cert))
+            Ok(IssuedCert::new(cert_url, limit, resource_set, cert, None))
         })
     }
 

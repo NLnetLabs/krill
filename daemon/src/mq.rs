@@ -7,9 +7,9 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::sync::RwLock;
 
-use krill_commons::api::RevocationRequest;
 use krill_commons::api::admin::Handle;
 use krill_commons::api::publication::PublishDelta;
+use krill_commons::api::RevocationRequest;
 use krill_commons::eventsourcing;
 
 use crate::ca::{CertAuth, Evt, EvtDet, ParentHandle, Signer};
