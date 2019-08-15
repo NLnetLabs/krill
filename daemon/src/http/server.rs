@@ -44,15 +44,7 @@ impl AppServer {
 
 pub fn start(config: &Config) -> Result<(), Error> {
     let server = {
-        let krill = KrillServer::build(
-            &config.data_dir,
-            &config.rsync_base,
-            config.service_uri(),
-            &config.rrdp_base_uri,
-            &config.auth_token,
-            config.ca_refresh,
-        )?;
-
+        let krill = KrillServer::build(config)?;
         AppServer(Arc::new(RwLock::new(krill)))
     };
 

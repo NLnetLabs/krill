@@ -15,12 +15,18 @@ use crate::ca::CaServer;
 use crate::mq::{EventQueueListener, QueueEvent};
 
 pub struct Scheduler {
+    /// Responsible for listening to events and executing triggered processes, such
+    /// as publication of newly generated RPKI objects.
     #[allow(dead_code)] // just need to keep this in scope
     event_sh: ScheduleHandle,
 
+    /// Responsible for periodically republishing so that MFTs and CRLs do not go stale.
     #[allow(dead_code)] // just need to keep this in scope
     republish_sh: ScheduleHandle,
 
+    /// Responsible for letting CA check with their parents whether their resource
+    /// entitlements have changed *and* for the shrinking of issued certificates, if
+    /// they are not renewed within the configured grace period.
     #[allow(dead_code)] // just need to keep this in scope
     ca_refresh_sh: ScheduleHandle,
 }
@@ -31,10 +37,11 @@ impl Scheduler {
         caserver: Arc<CaServer<OpenSslSigner>>,
         pubserver: Arc<PubServer>,
         ca_refresh_rate: u32,
+        shrink_grace: i64,
     ) -> Self {
         let event_sh = make_event_sh(event_queue, caserver.clone(), pubserver);
         let republish_sh = make_republish_sh(caserver.clone());
-        let ca_refresh_sh = make_ca_refresh_sh(caserver, ca_refresh_rate);
+        let ca_refresh_sh = make_ca_refresh_sh(caserver, ca_refresh_rate, shrink_grace);
 
         Scheduler {
             event_sh,
@@ -105,11 +112,18 @@ fn publish(handle: &Handle, delta: PublishDelta, pubserver: &PubServer) {
     }
 }
 
-fn make_ca_refresh_sh(caserver: Arc<CaServer<OpenSslSigner>>, refresh_rate: u32) -> ScheduleHandle {
+fn make_ca_refresh_sh(
+    caserver: Arc<CaServer<OpenSslSigner>>,
+    refresh_rate: u32,
+    grace_period: i64,
+) -> ScheduleHandle {
     let mut scheduler = clokwerk::Scheduler::new();
     scheduler.every(refresh_rate.seconds()).run(move || {
         if let Err(e) = caserver.get_updates_for_all_cas() {
             error!("Failed to refresh CA certificates: {}", e);
+        }
+        if let Err(e) = caserver.all_cas_shrink(chrono::Duration::hours(grace_period)) {
+            error!("Failed to shrink CA certificates: {}", e);
         }
     });
     scheduler.watch_thread(Duration::from_millis(100))

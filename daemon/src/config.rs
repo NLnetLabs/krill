@@ -66,6 +66,9 @@ impl ConfigDefaults {
     fn ca_refresh() -> u32 {
         600
     }
+    fn shrink_grace() -> i64 {
+        24
+    }
 }
 
 //------------ Config --------------------------------------------------------
@@ -118,6 +121,9 @@ pub struct Config {
 
     #[serde(default = "ConfigDefaults::ca_refresh")]
     pub ca_refresh: u32,
+
+    #[serde(default = "ConfigDefaults::shrink_grace")]
+    pub shrink_grace: i64,
 }
 
 /// # Accessors
@@ -180,6 +186,7 @@ impl Config {
         let syslog_facility = ConfigDefaults::syslog_facility();
         let auth_token = Token::from("secret");
         let ca_refresh = 5;
+        let shrink_grace = 24;
 
         let c = Config {
             ip,
@@ -194,6 +201,7 @@ impl Config {
             syslog_facility,
             auth_token,
             ca_refresh,
+            shrink_grace,
         };
         c.init_logging().unwrap();
         c

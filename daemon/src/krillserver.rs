@@ -29,6 +29,7 @@ use krill_pubd::PubServer;
 use crate::auth::{Auth, Authorizer};
 use crate::ca::ChildHandle;
 use crate::ca::{self, ta_handle};
+use crate::config::Config;
 use crate::mq::EventQueueListener;
 use crate::scheduler::Scheduler;
 
@@ -75,13 +76,16 @@ impl KrillServer {
     /// Creates a new publication server. Note that state is preserved
     /// on disk in the work_dir provided.
     pub fn build(
-        work_dir: &PathBuf,
-        base_uri: &uri::Rsync,
-        service_uri: uri::Https,
-        rrdp_base_uri: &uri::Https,
-        token: &Token,
-        ca_refresh_rate: u32,
+        config: &Config
     ) -> KrillRes<Self> {
+        let work_dir = &config.data_dir;
+        let base_uri = &config.rsync_base;
+        let service_uri = config.service_uri();
+        let rrdp_base_uri = &config.rrdp_base_uri;
+        let token = &config.auth_token;
+        let ca_refresh_rate = config.ca_refresh;
+        let shrink_grace = config.shrink_grace;
+
         let mut repo_dir = work_dir.clone();
         repo_dir.push("repo");
 
@@ -105,6 +109,7 @@ impl KrillServer {
             caserver.clone(),
             pubserver.clone(),
             ca_refresh_rate,
+            shrink_grace,
         );
 
         Ok(KrillServer {

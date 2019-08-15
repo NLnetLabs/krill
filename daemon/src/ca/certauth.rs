@@ -31,11 +31,11 @@ use krill_commons::remote::rfc8183::ChildRequest;
 use krill_commons::remote::sigmsg::SignedMessage;
 use krill_commons::util::softsigner::KeyId;
 
+use crate::ca::signing::CertSiaInfo;
 use crate::ca::{
     self, ChildHandle, Cmd, CmdDet, Error, Evt, EvtDet, Ini, ParentHandle, ResourceClass,
     ResourceClassName, Result, SignSupport, Signer,
 };
-use crate::ca::signing::CertSiaInfo;
 
 //------------ Rfc8183Id ---------------------------------------------------
 
@@ -494,6 +494,11 @@ impl<S: Signer> CertAuth<S> {
         }
     }
 
+    /// Returns an iterator for the handles of all children under this CA.
+    pub fn children(&self) -> impl Iterator<Item = &ChildHandle> {
+        self.children.keys()
+    }
+
     /// Adds the child, returns an error if the child is a duplicate,
     /// or if the resources are not held by this CA, or (until #25) if
     /// this CA is not a TA.
@@ -575,7 +580,7 @@ impl<S: Signer> CertAuth<S> {
 
         let issue_response = self.issue_child_certificate(
             &child,
-            &class_name,
+            class_name.clone(),
             pub_key,
             sia_info,
             limit,
@@ -583,7 +588,7 @@ impl<S: Signer> CertAuth<S> {
         )?;
 
         let publication_delta = self.update_published_child_certificates(
-            &class_name,
+            class_name,
             vec![issue_response.issued()],
             vec![],
             signer,
@@ -601,7 +606,7 @@ impl<S: Signer> CertAuth<S> {
     fn issue_child_certificate(
         &self,
         child: &ChildHandle,
-        class_name: &ResourceClassName,
+        class_name: ResourceClassName,
         pub_key: PublicKey,
         sia_info: CertSiaInfo,
         limit: RequestResourceLimit,
@@ -685,7 +690,7 @@ impl<S: Signer> CertAuth<S> {
         let signing_cert = SigningCert::from(issuing_cert);
 
         Ok(IssuanceResponse::new(
-            class_name.clone(),
+            class_name,
             signing_cert,
             resources,
             issued_cert.cert().validity().not_after(),
@@ -697,7 +702,7 @@ impl<S: Signer> CertAuth<S> {
     /// for updating child certificates.
     pub fn update_published_child_certificates(
         &self,
-        _class_name: &ResourceClassName, // Issue #25
+        _class_name: ResourceClassName, // Issue #25
         issued_certs: Vec<&IssuedCert>,
         removed_certs: Vec<&Cert>,
         signer: Arc<RwLock<S>>,
@@ -759,7 +764,7 @@ impl<S: Signer> CertAuth<S> {
     /// very uncommon, and unclear why it would be beneficial), and - more importantly - it
     /// creates a corner case where there are new entitled resources but there is no intersection
     /// with the old resource set.
-    fn shrink_child(
+    pub fn shrink_child(
         &self,
         child_handle: &ChildHandle,
         grace: Duration,
@@ -815,7 +820,7 @@ impl<S: Signer> CertAuth<S> {
                                 let pub_key = issued_cert.cert().subject_public_key_info().clone();
                                 issuance_responses.push(self.issue_child_certificate(
                                     child_handle,
-                                    class_name,
+                                    class_name.clone(),
                                     pub_key,
                                     sia_info,
                                     RequestResourceLimit::default(),
@@ -827,7 +832,7 @@ impl<S: Signer> CertAuth<S> {
                     let issued = issuance_responses.iter().map(|res| res.issued()).collect();
 
                     let publication_delta = self.update_published_child_certificates(
-                        class_name,
+                        class_name.clone(),
                         issued,
                         removed,
                         signer.clone(),

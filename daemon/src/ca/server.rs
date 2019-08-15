@@ -418,6 +418,23 @@ impl<S: Signer> CaServer<S> {
         Ok(())
     }
 
+    /// Let all CAs shrink certificates that have not been updated within the graceperiod.
+    pub fn all_cas_shrink(&self, grace: Duration) -> ServerResult<(), S> {
+        for handle in self.ca_store.list() {
+            if let Ok(ca) = self.get_ca(&handle) {
+                for child in ca.children() {
+                    if let Err(e) = ca.shrink_child(child, grace, self.signer.clone()) {
+                        error!(
+                            "Could not shrink certificates for CA {}, error: {}",
+                            child, e
+                        );
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Try to update a specific CA
     pub fn get_updates_from_parent(
         &self,

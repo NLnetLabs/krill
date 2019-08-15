@@ -106,8 +106,8 @@ fn wait_for<O>(tries: u64, error_msg: &'static str, op: O)
 where
     O: Copy + FnOnce() -> bool,
 {
-    for _counter in 1..tries + 1 {
-        if op() == true {
+    for _counter in 1..= tries {
+        if op() {
             return;
         }
         wait_seconds(1);
@@ -189,8 +189,8 @@ fn ta_issued_resources(child: &Handle) -> ResourceSet {
     let ta = ca_details(&ta_handle());
     let child = ta.children().get(child).unwrap();
     if let Some(resources) = child.resources().get("all") {
-        for cert in resources.certs_iter() {
-            return cert.resource_set().clone();
+        if let Some(cert) = resources.certs_iter().next() {
+            return cert.resource_set().clone(); // for our testing the first will do
         }
     }
     ResourceSet::default()
