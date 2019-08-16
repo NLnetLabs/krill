@@ -22,8 +22,27 @@ use krill_commons::util::softsigner::KeyId;
 
 use crate::ca::signing::Signer;
 use crate::ca::{
-    CaType, ChildHandle, Error, ParentHandle, ResourceClass, ResourceClassName, Result, Rfc8183Id,
+    ChildHandle, Error, ParentHandle, ResourceClass, ResourceClassName, Result, Rfc8183Id,
 };
+
+//------------ TaIniDetails --------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[allow(clippy::large_enum_variant)]
+pub struct Ta {
+    key: CertifiedKey,
+    tal: TrustAnchorLocator,
+}
+
+impl Ta {
+    pub fn new(key: CertifiedKey, tal: TrustAnchorLocator) -> Self {
+        Ta { key, tal }
+    }
+
+    pub fn unpack(self) -> (CertifiedKey, TrustAnchorLocator) {
+        (self.key, self.tal)
+    }
+}
 
 //------------ Ini -----------------------------------------------------------
 
@@ -32,14 +51,14 @@ pub type Ini = StoredEvent<IniDet>;
 //------------ IniDet --------------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct IniDet(Token, Rfc8183Id, RepoInfo, CaType);
+pub struct IniDet(Token, Rfc8183Id, RepoInfo, Option<Ta>);
 
 impl IniDet {
     pub fn token(&self) -> &Token {
         &self.0
     }
 
-    pub fn unwrap(self) -> (Token, Rfc8183Id, RepoInfo, CaType) {
+    pub fn unwrap(self) -> (Token, Rfc8183Id, RepoInfo, Option<Ta>) {
         (self.0, self.1, self.2, self.3)
     }
 }
@@ -53,7 +72,7 @@ impl IniDet {
     ) -> Result<Ini> {
         let mut signer = signer.write().unwrap();
         let id = Rfc8183Id::generate(signer.deref_mut())?;
-        Ok(Ini::new(handle, 0, IniDet(token, id, info, CaType::Child)))
+        Ok(Ini::new(handle, 0, IniDet(token, id, info, None)))
     }
 
     pub fn init_ta<S: Signer>(
@@ -77,14 +96,11 @@ impl IniDet {
         let ta_cert = Self::mk_ta_cer(&info, &resources, &key, signer.deref())?;
         let tal = TrustAnchorLocator::new(ta_uris, &ta_cert);
         let resources = ResourceSet::try_from(&ta_cert).unwrap(); // cannot have inherit
-
         let key = CertifiedKey::new(key, RcvdCert::new(ta_cert, ta_aia, resources));
 
-        Ok(Ini::new(
-            handle,
-            0,
-            IniDet(token, id, info, CaType::Ta(key, tal)),
-        ))
+        let ta = Ta::new(key, tal);
+
+        Ok(Ini::new(handle, 0, IniDet(token, id, info, Some(ta))))
     }
 
     fn mk_ta_cer<S: Signer>(
@@ -157,12 +173,7 @@ pub enum EvtDet {
     KeyRollFinished(ParentHandle, ResourceClassName, ObjectsDelta),
 
     // Publishing
-    Published(
-        ParentHandle,
-        ResourceClassName,
-        HashMap<KeyId, PublicationDelta>,
-    ),
-    TaPublished(PublicationDelta),
+    Published(ResourceClassName, HashMap<KeyId, PublicationDelta>),
 }
 
 impl EvtDet {
@@ -261,7 +272,12 @@ impl EvtDet {
         StoredEvent::new(handle, version, EvtDet::ChildKeyRevoked(child, response))
     }
 
-    pub(super) fn published_ta(handle: &Handle, version: u64, delta: PublicationDelta) -> Evt {
-        StoredEvent::new(handle, version, EvtDet::TaPublished(delta))
+    pub(super) fn published(
+        handle: &Handle,
+        version: u64,
+        class_name: ResourceClassName,
+        deltas: HashMap<KeyId, PublicationDelta>,
+    ) -> Evt {
+        StoredEvent::new(handle, version, EvtDet::Published(class_name, deltas))
     }
 }

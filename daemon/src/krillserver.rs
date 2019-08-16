@@ -75,9 +75,7 @@ pub struct KrillServer {
 impl KrillServer {
     /// Creates a new publication server. Note that state is preserved
     /// on disk in the work_dir provided.
-    pub fn build(
-        config: &Config
-    ) -> KrillRes<Self> {
+    pub fn build(config: &Config) -> KrillRes<Self> {
         let work_dir = &config.data_dir;
         let base_uri = &config.rsync_base;
         let service_uri = config.service_uri();

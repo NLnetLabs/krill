@@ -138,7 +138,7 @@ pub struct KeyRef(KeyIdentifier);
 
 impl From<&KeyIdentifier> for KeyRef {
     fn from(ki: &KeyIdentifier) -> Self {
-        KeyRef(ki.clone())
+        KeyRef(*ki)
     }
 }
 
@@ -150,7 +150,7 @@ impl From<KeyIdentifier> for KeyRef {
 
 impl From<&KeyRef> for KeyIdentifier {
     fn from(kr: &KeyRef) -> Self {
-        kr.0.clone()
+        kr.0
     }
 }
 
@@ -1517,7 +1517,7 @@ impl CertAuthSummary {
 pub struct CertAuthInfo {
     handle: Handle,
     base_repo: RepoInfo,
-    parents: CaParentsInfo,
+    parents: HashMap<Handle, ParentCaInfo>,
     children: HashMap<Handle, ChildCaDetails>,
 }
 
@@ -1525,7 +1525,7 @@ impl CertAuthInfo {
     pub fn new(
         handle: Handle,
         base_repo: RepoInfo,
-        parents: CaParentsInfo,
+        parents: HashMap<Handle, ParentCaInfo>,
         children: HashMap<Handle, ChildCaDetails>,
     ) -> Self {
         CertAuthInfo {
@@ -1542,39 +1542,27 @@ impl CertAuthInfo {
     pub fn base_repo(&self) -> &RepoInfo {
         &self.base_repo
     }
-    pub fn parents(&self) -> &CaParentsInfo {
+    pub fn parents(&self) -> &HashMap<Handle, ParentCaInfo> {
         &self.parents
     }
+    pub fn parent(&self, parent: &Handle) -> Option<&ParentCaInfo> {
+        self.parents.get(parent)
+    }
+
     pub fn children(&self) -> &HashMap<Handle, ChildCaDetails> {
         &self.children
     }
 
     pub fn published_objects(&self) -> Vec<Publish> {
         let mut res = vec![];
-        match &self.parents {
-            CaParentsInfo::SelfSigned(key, _tal) => {
-                res.append(&mut key.current_set.objects().publish(self.base_repo(), ""));
-            }
-            CaParentsInfo::Parents(map) => {
-                for (_parent, parent_info) in map.iter() {
-                    for rc in parent_info.resources().values() {
-                        let name_space = rc.name_space();
-                        res.append(&mut rc.objects().publish(self.base_repo(), name_space));
-                    }
-                }
+        for (_parent, parent_info) in self.parents.iter() {
+            for rc in parent_info.resources().values() {
+                let name_space = rc.name_space();
+                res.append(&mut rc.objects().publish(self.base_repo(), name_space));
             }
         }
-
         res
     }
-}
-
-/// This type contains public data about parents of a CA
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[allow(clippy::large_enum_variant)]
-pub enum CaParentsInfo {
-    SelfSigned(CertifiedKey, TrustAnchorLocator),
-    Parents(HashMap<Handle, ParentCaInfo>),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

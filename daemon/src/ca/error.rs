@@ -47,6 +47,9 @@ pub enum Error {
     #[display(fmt = "No matching resource class")]
     MissingResourceClass,
 
+    #[display(fmt = "No current key in resource class")]
+    ResourceClassNoCurrentKey,
+
     #[display(fmt = "Child CA MUST have resources.")]
     MustHaveResources,
 

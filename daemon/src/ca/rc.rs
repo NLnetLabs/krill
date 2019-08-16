@@ -21,6 +21,7 @@ use krill_commons::util::softsigner::KeyId;
 use crate::ca::{
     self, Error, EvtDet, ParentHandle, ResourceClassName, Result, SignSupport, Signer,
 };
+use ca::TA_NAME;
 
 /// A CA may have multiple parents, e.g. two RIRs, and it may not get all its
 /// resource entitlements in one set, but in a number of so-called "resource
@@ -32,50 +33,7 @@ use crate::ca::{
 ///
 /// Furthermore a resource class manages the key life cycle, and certificates
 /// for each key, as well as products that need to be issued by the 'current'
-/// key for this class. The key life cycle has the following stages:
-///
-/// - Pending Key
-///
-/// This is a newly generated key, for which a certificate has been requested,
-/// but it is not yet received. This key is not published.
-///
-/// Pending keys can only be created for new Resource Classes, or when there
-/// is no key roll in progress: i.e. the Resource Class contains a 'current'
-/// key only.
-///
-/// - New Key
-///
-/// When a certificate is received for a pending key, it is promoted to a 'new'
-/// key. If there are no other keys in this resource class, then this key can
-/// be promoted to 'current' key immediately - see below.
-///
-/// If there is already an current key, then the new key status should be
-/// observed for at least 24 hours. New keys publish a manifest and a ROA, but
-/// no other products.
-///
-/// - Current Key
-///
-/// A current key publishes a manifest and CRL, and all the products pertaining
-/// to the Internet Number Resources in this resource class.
-///
-/// If a resource class contains a current key only, a key roll can be
-/// initiated: a pending key is created and a certificate is requested, when
-/// the certificate is received the pending key is promoted to 'new' key, and
-/// a staging period of at least 24 hours is started. Note that the MFT and
-/// CRL for both keys are published under the same namespace, but only the
-/// current key publishes additional objects.
-///
-/// When the staging period is over the new key can be promoted to current
-/// key. When this happens the current key is promoted to the stage 'revoke'
-/// key - see below. And the 'new' key become the 'current' key.
-///
-/// - Revoke Key
-///
-/// A revoke key only publishes a manifest and CRL, but no additional
-/// products. When a revoke key is created a revocation request is generated
-/// for the parent. The moment confirmation is received from the parent, the
-/// 'revoke' key is dropped, and its content is withdrawn.
-///
+/// key for this class.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ResourceClass {
     name_space: String,
@@ -83,6 +41,8 @@ pub struct ResourceClass {
     keys: ResourceClassKeys,
 }
 
+/// # Creating new instances
+///
 impl ResourceClass {
     /// Creates a new ResourceClass with a single pending key only.
     pub fn create(name_space: String, pending_key: KeyId) -> Self {
@@ -93,6 +53,18 @@ impl ResourceClass {
         }
     }
 
+    pub fn for_ta(key: CertifiedKey) -> Self {
+        ResourceClass {
+            name_space: TA_NAME.to_string(),
+            last_key_change: Time::now(),
+            keys: ResourceClassKeys::for_ta(key),
+        }
+    }
+}
+
+/// # Data Access
+///
+impl ResourceClass {
     pub fn name_space(&self) -> &str {
         &self.name_space
     }
@@ -102,8 +74,30 @@ impl ResourceClass {
         self.keys.add_request(key_id, req);
     }
 
+    /// Returns all objects for all keys
     pub fn objects(&self) -> CurrentObjects {
         self.keys.objects()
+    }
+
+    /// Returns the current certificate, if there is any
+    pub fn current_certificate(&self) -> Option<&RcvdCert> {
+        self.current_key().map(|k| k.incoming_cert())
+    }
+
+    /// Returns a reference to current key for this RC, if there is any.
+    pub fn current_key(&self) -> Option<&CurrentKey> {
+        match &self.keys {
+            ResourceClassKeys::Active(current)
+            | ResourceClassKeys::RollPending(_, current)
+            | ResourceClassKeys::RollNew(_, current)
+            | ResourceClassKeys::RollOld(current, _) => Some(current),
+            _ => None,
+        }
+    }
+
+    pub fn get_current_key(&self) -> Result<&CurrentKey> {
+        self.current_key()
+            .ok_or_else(|| Error::ResourceClassNoCurrentKey)
     }
 
     /// Returns a ResourceClassInfo for this, which contains all the
@@ -164,6 +158,55 @@ impl ResourceClass {
     /// Applies a publication delta to the appropriate key in this resource class.
     pub fn apply_delta(&mut self, delta: PublicationDelta, key_id: KeyId) {
         self.keys.apply_delta(delta, key_id);
+    }
+
+    /// Republish all keys in this class (that want it).
+    pub fn republish<S: Signer>(
+        &self,
+        repo_info: &RepoInfo,
+        class_name: ResourceClassName,
+        signer: Arc<RwLock<S>>,
+    ) -> ca::Result<EvtDet> {
+        let name_space = &self.name_space;
+
+        let mut deltas: HashMap<KeyId, PublicationDelta> = HashMap::new();
+
+        match &self.keys {
+            ResourceClassKeys::Pending(_) => {}
+            ResourceClassKeys::RollPending(_, current) | ResourceClassKeys::Active(current) => {
+                publish_key_if_needed(current, repo_info, name_space, signer, &mut deltas)?;
+            }
+            ResourceClassKeys::RollNew(new, current) => {
+                publish_key_if_needed(new, repo_info, name_space, signer.clone(), &mut deltas)?;
+                publish_key_if_needed(current, repo_info, name_space, signer, &mut deltas)?;
+            }
+            ResourceClassKeys::RollOld(current, old) => {
+                publish_key_if_needed(current, repo_info, name_space, signer.clone(), &mut deltas)?;
+                publish_key_if_needed(old, repo_info, name_space, signer, &mut deltas)?;
+            }
+        };
+
+        // lil' helper
+        fn publish_key_if_needed<S: Signer>(
+            key: &CertifiedKey,
+            repo_info: &RepoInfo,
+            name_space: &str,
+            signer: Arc<RwLock<S>>,
+            deltas: &mut HashMap<KeyId, PublicationDelta>,
+        ) -> ca::Result<()> {
+            if key.needs_publication() {
+                let key_id = key.key_id();
+                let ca_repo = repo_info.ca_repository(name_space);
+                let objects_delta = ObjectsDelta::new(ca_repo);
+                let delta =
+                    SignSupport::publish(signer, key, repo_info, name_space, objects_delta, vec![])
+                        .map_err(Error::signer)?;
+                deltas.insert(key_id.clone(), delta);
+            }
+            Ok(())
+        }
+
+        Ok(EvtDet::Published(class_name, deltas))
     }
 }
 
@@ -336,6 +379,10 @@ type CurrentKey = CertifiedKey;
 impl ResourceClassKeys {
     fn create(pending_key: KeyId) -> Self {
         ResourceClassKeys::Pending(PendingKey::new(pending_key))
+    }
+
+    fn for_ta(key: CurrentKey) -> Self {
+        ResourceClassKeys::Active(key)
     }
 
     fn add_request(&mut self, key_id: KeyId, req: IssuanceRequest) {
@@ -528,7 +575,7 @@ impl ResourceClassKeys {
         let mut delta_map = HashMap::new();
         delta_map.insert(certified_key.key_id().clone(), delta);
 
-        res.push(EvtDet::Published(parent, class_name, delta_map));
+        res.push(EvtDet::Published(class_name, delta_map));
 
         Ok(res)
     }

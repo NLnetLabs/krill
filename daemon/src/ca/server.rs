@@ -27,8 +27,8 @@ use krill_commons::util::httpclient;
 use krill_commons::util::softsigner::KeyId;
 
 use crate::ca::{
-    self, CertAuth, ChildHandle, CmdDet, IniDet, ParentHandle, ResourceClassName, ServerError,
-    ServerResult, Signer,
+    self, ta_handle, CertAuth, ChildHandle, CmdDet, IniDet, ParentHandle, ResourceClassName,
+    ServerError, ServerResult, Signer,
 };
 use crate::mq::EventQueueListener;
 
@@ -368,6 +368,7 @@ impl<S: Signer> CaServer<S> {
 
     /// Perform a key roll for all active keys in a CA older than the specified duration.
     pub fn ca_keyroll_init(&self, handle: Handle, max_age: Duration) -> ServerResult<(), S> {
+        info!("Starting keyroll for: {}", &handle);
         let ca = self.get_ca(&handle)?;
 
         let init_key_roll = CmdDet::key_roll_init(&handle, max_age, self.signer.clone());
@@ -402,14 +403,12 @@ impl<S: Signer> CaServer<S> {
     pub fn get_updates_for_all_cas(&self) -> ServerResult<(), S> {
         for handle in self.ca_store.list() {
             if let Ok(ca) = self.get_ca(&handle) {
-                if let Ok(parents) = ca.parents() {
-                    for (parent, _info) in parents.into_iter() {
-                        if let Err(e) = self.get_updates_from_parent(&handle, &parent) {
-                            error!(
-                                "Failed to refresh CA certificates for {}, error: {}",
-                                &handle, e
-                            );
-                        }
+                for (parent, _info) in ca.parents().into_iter() {
+                    if let Err(e) = self.get_updates_from_parent(&handle, &parent) {
+                        error!(
+                            "Failed to refresh CA certificates for {}, error: {}",
+                            &handle, e
+                        );
                     }
                 }
             }
@@ -421,6 +420,9 @@ impl<S: Signer> CaServer<S> {
     /// Let all CAs shrink certificates that have not been updated within the graceperiod.
     pub fn all_cas_shrink(&self, grace: Duration) -> ServerResult<(), S> {
         for handle in self.ca_store.list() {
+            if handle == ta_handle() {
+                continue;
+            }
             if let Ok(ca) = self.get_ca(&handle) {
                 for child in ca.children() {
                     if let Err(e) = ca.shrink_child(child, grace, self.signer.clone()) {
@@ -441,13 +443,17 @@ impl<S: Signer> CaServer<S> {
         handle: &Handle,
         parent: &ParentHandle,
     ) -> ServerResult<(), S> {
-        let entitlements = self.get_entitlements_from_parent(handle, parent)?;
+        if handle == &ta_handle() {
+            Ok(())
+        } else {
+            let entitlements = self.get_entitlements_from_parent(handle, parent)?;
 
-        if !self.update_if_needed(handle, parent.clone(), entitlements)? {
-            return Ok(()); // Nothing to do
+            if !self.update_if_needed(handle, parent.clone(), entitlements)? {
+                return Ok(()); // Nothing to do
+            }
+
+            self.send_requests(handle, parent)
         }
-
-        self.send_requests(handle, parent)
     }
 
     pub fn send_requests(&self, handle: &Handle, parent: &ParentHandle) -> ServerResult<(), S> {
@@ -482,6 +488,9 @@ impl<S: Signer> CaServer<S> {
     ) -> ServerResult<Vec<RevocationResponse>, S> {
         let child = self.ca_store.get_latest(handle)?;
         match child.parent(parent)?.contact() {
+            ParentCaContact::Ta(_) => {
+                Err(ca::Error::NotAllowedForTa).map_err(ServerError::CertAuth)
+            }
             ParentCaContact::Embedded => {
                 self.send_revoke_requests_embedded(requests, handle, parent)
             }
@@ -557,6 +566,9 @@ impl<S: Signer> CaServer<S> {
         let cert_requests = child.cert_requests(parent);
 
         let issued_certs = match child.parent(parent)?.contact() {
+            ParentCaContact::Ta(_) => {
+                Err(ca::Error::NotAllowedForTa).map_err(ServerError::CertAuth)
+            }
             ParentCaContact::Embedded => {
                 self.send_cert_requests_embedded(cert_requests, handle, parent)
             }
@@ -675,6 +687,9 @@ impl<S: Signer> CaServer<S> {
         parent: &ParentHandle,
     ) -> ServerResult<api::Entitlements, S> {
         match self.get_ca(&handle)?.parent(parent)?.contact() {
+            ParentCaContact::Ta(_) => {
+                Err(ca::Error::NotAllowedForTa).map_err(ServerError::CertAuth)
+            }
             ParentCaContact::Embedded => self.get_entitlements_embedded(handle, parent),
             ParentCaContact::Rfc6492(res) => self.get_entitlements_rfc6492(handle, res),
         }

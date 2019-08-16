@@ -64,16 +64,12 @@ impl<S: Signer> eventsourcing::EventListener<CertAuth<S>> for EventQueueListener
 
         let handle = event.handle();
         match event.details() {
-            EvtDet::Published(_, _, delta) => {
+            EvtDet::Published(_, delta) => {
                 let publish_delta = delta.values().fold(PublishDelta::empty(), |acc, el| {
                     acc + el.objects().clone().into()
                 });
 
                 let evt = QueueEvent::Delta(handle.clone(), publish_delta);
-                self.push_back(evt);
-            }
-            EvtDet::TaPublished(delta) => {
-                let evt = QueueEvent::Delta(handle.clone(), delta.objects().clone().into());
                 self.push_back(evt);
             }
             EvtDet::ResourceClassRemoved(parent, _class_name, delta, revocations) => {
