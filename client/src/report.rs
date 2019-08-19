@@ -1,9 +1,10 @@
+use std::str::{from_utf8_unchecked, FromStr};
+
 use krill_commons::api::admin::{ParentCaContact, PublisherDetails, PublisherList};
 use krill_commons::api::ca::{CertAuthInfo, CertAuthList, CurrentObjects, TrustAnchorInfo};
 use krill_commons::remote::api::ClientInfo;
 use krill_commons::remote::rfc8183;
 use krill_commons::remote::rfc8183::RepositoryResponse;
-use std::str::{from_utf8_unchecked, FromStr};
 
 //------------ ApiResponse ---------------------------------------------------
 
@@ -199,16 +200,16 @@ impl Report for CertAuthInfo {
                 }
 
                 for info in self.parents().values() {
-                    res.push_str(&format!("Parent:  {}\n", info.contact()));
+                    res.push_str(&format!("Parent:  {}\n", info));
+                }
 
-                    for (name, rc) in info.resources() {
-                        res.push_str(&format!("Resource Class: {}\n", name));
-                        res.push_str(&format!("{}", rc.keys()));
+                for (name, rc) in self.resources() {
+                    res.push_str(&format!("Resource Class: {}\n", name));
+                    res.push_str(&format!("{}", rc.keys()));
 
-                        res.push_str("Current objects:\n");
-                        print_objects(&mut res, &rc.objects());
-                        res.push_str("\n");
-                    }
+                    res.push_str("Current objects:\n");
+                    print_objects(&mut res, &rc.objects());
+                    res.push_str("\n");
                 }
 
                 res.push_str("Children:\n");

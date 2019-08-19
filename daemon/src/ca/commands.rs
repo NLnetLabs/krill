@@ -43,7 +43,7 @@ pub enum CmdDet<S: Signer> {
     // Process new entitlements from a parent and create issue/revoke requests as needed.
     UpdateEntitlements(ParentHandle, Entitlements, Arc<RwLock<S>>),
     // Process a new certificate received from a parent.
-    UpdateRcvdCert(ParentHandle, ResourceClassName, RcvdCert, Arc<RwLock<S>>),
+    UpdateRcvdCert(ResourceClassName, RcvdCert, Arc<RwLock<S>>),
 
     // ------------------------------------------------------------
     // Key rolls
@@ -165,7 +165,6 @@ impl<S: Signer> CmdDet<S> {
 
     pub fn upd_received_cert(
         handle: &Handle,
-        parent: ParentHandle,
         class_name: ResourceClassName,
         cert: RcvdCert,
         signer: Arc<RwLock<S>>,
@@ -173,7 +172,7 @@ impl<S: Signer> CmdDet<S> {
         eventsourcing::SentCommand::new(
             handle,
             None,
-            CmdDet::UpdateRcvdCert(parent, class_name, cert, signer),
+            CmdDet::UpdateRcvdCert(class_name, cert, signer),
         )
     }
 

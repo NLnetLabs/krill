@@ -402,7 +402,7 @@ impl<S: Signer> CaServer<S> {
     pub fn get_updates_for_all_cas(&self) -> ServerResult<(), S> {
         for handle in self.ca_store.list() {
             if let Ok(ca) = self.get_ca(&handle) {
-                for (parent, _info) in ca.parents().into_iter() {
+                for parent in ca.parents() {
                     if let Err(e) = self.get_updates_from_parent(&handle, &parent) {
                         error!(
                             "Failed to refresh CA certificates for {}, error: {}",
@@ -455,9 +455,19 @@ impl<S: Signer> CaServer<S> {
         }
     }
 
+    /// Sends requests to a specific parent for the CA matching handle.
     pub fn send_requests(&self, handle: &Handle, parent: &ParentHandle) -> ServerResult<(), S> {
         self.send_revoke_requests_handle_responses(handle, parent)?;
         self.send_cert_requests_handle_responses(handle, parent)
+    }
+
+    /// Sends requests to all parents for the CA matching the handle.
+    pub fn send_all_requests(&self, handle: &Handle) -> ServerResult<(), S> {
+        let ca = self.get_ca(handle)?;
+        for parent in ca.parents() {
+            self.send_requests(handle, parent)?;
+        }
+        Ok(())
     }
 
     fn send_revoke_requests_handle_responses(
@@ -486,7 +496,7 @@ impl<S: Signer> CaServer<S> {
         requests: Vec<&RevocationRequest>,
     ) -> ServerResult<Vec<RevocationResponse>, S> {
         let child = self.ca_store.get_latest(handle)?;
-        match child.parent(parent)?.contact() {
+        match child.parent(parent)? {
             ParentCaContact::Ta(_) => {
                 Err(ca::Error::NotAllowedForTa).map_err(ServerError::CertAuth)
             }
@@ -564,7 +574,7 @@ impl<S: Signer> CaServer<S> {
         let mut child = self.ca_store.get_latest(handle)?;
         let cert_requests = child.cert_requests(parent);
 
-        let issued_certs = match child.parent(parent)?.contact() {
+        let issued_certs = match child.parent(parent)? {
             ParentCaContact::Ta(_) => {
                 Err(ca::Error::NotAllowedForTa).map_err(ServerError::CertAuth)
             }
@@ -579,13 +589,8 @@ impl<S: Signer> CaServer<S> {
         for (class_name, issued) in issued_certs.into_iter() {
             let received = RcvdCert::from(issued);
 
-            let upd_rcvd_cmd = CmdDet::upd_received_cert(
-                handle,
-                parent.clone(),
-                class_name,
-                received,
-                self.signer.clone(),
-            );
+            let upd_rcvd_cmd =
+                CmdDet::upd_received_cert(handle, class_name, received, self.signer.clone());
 
             let evts = child.process_command(upd_rcvd_cmd)?;
             child = self.ca_store.update(handle, child, evts)?;
@@ -685,7 +690,7 @@ impl<S: Signer> CaServer<S> {
         handle: &Handle,
         parent: &ParentHandle,
     ) -> ServerResult<api::Entitlements, S> {
-        match self.get_ca(&handle)?.parent(parent)?.contact() {
+        match self.get_ca(&handle)?.parent(parent)? {
             ParentCaContact::Ta(_) => {
                 Err(ca::Error::NotAllowedForTa).map_err(ServerError::CertAuth)
             }
@@ -982,7 +987,6 @@ mod tests {
 
             let upd_rcvd = CmdDet::upd_received_cert(
                 &child_handle,
-                ta_handle,
                 ResourceClassName::default(),
                 rcvd_cert,
                 signer.clone(),

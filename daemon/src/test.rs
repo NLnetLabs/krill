@@ -191,14 +191,10 @@ pub fn wait_for_resources_on_current_key(handle: &Handle, resources: &ResourceSe
 pub fn wait_for_new_key(handle: &Handle) {
     wait_for(30, "No new key received", move || {
         let ca = ca_details(handle);
-        if let Some(parent) = ca.parent(&ta_handle()) {
-            if let Some(rc) = parent.resources().get(&ResourceClassName::default()) {
-                match rc.keys() {
-                    ResourceClassKeysInfo::RollNew(new, _) => {
-                        return new.current_set().number() == 2
-                    }
-                    _ => return false,
-                }
+        if let Some(rc) = ca.resources().get(&ResourceClassName::default()) {
+            match rc.keys() {
+                ResourceClassKeysInfo::RollNew(new, _) => return new.current_set().number() == 2,
+                _ => return false,
             }
         }
 
@@ -210,12 +206,10 @@ pub fn wait_for_key_roll_complete(handle: &Handle) {
     wait_for(30, "Key roll did not complete", || {
         let ca = ca_details(handle);
 
-        if let Some(parent) = ca.parent(&ta_handle()) {
-            if let Some(rc) = parent.resources().get(&ResourceClassName::default()) {
-                match rc.keys() {
-                    ResourceClassKeysInfo::Active(_) => return true,
-                    _ => return false,
-                }
+        if let Some(rc) = ca.resources().get(&ResourceClassName::default()) {
+            match rc.keys() {
+                ResourceClassKeysInfo::Active(_) => return true,
+                _ => return false,
             }
         }
 
@@ -226,15 +220,7 @@ pub fn wait_for_key_roll_complete(handle: &Handle) {
 pub fn wait_for_resource_class_to_disappear(handle: &Handle) {
     wait_for(30, "Resource class not removed", || {
         let ca = ca_details(handle);
-
-        if let Some(parent) = ca.parent(&ta_handle()) {
-            return parent
-                .resources()
-                .get(&ResourceClassName::default())
-                .is_none();
-        }
-
-        false
+        ca.resources().get(&ResourceClassName::default()).is_none()
     })
 }
 
@@ -263,17 +249,15 @@ pub fn ta_issued_resources(child: &Handle) -> ResourceSet {
 pub fn ca_current_resources(handle: &Handle) -> ResourceSet {
     let ca = ca_details(handle);
 
-    if let Some(parent) = ca.parent(&ta_handle()) {
-        if let Some(rc) = parent.resources().get(&ResourceClassName::default()) {
-            match rc.keys() {
-                ResourceClassKeysInfo::Active(current)
-                | ResourceClassKeysInfo::RollPending(_, current)
-                | ResourceClassKeysInfo::RollNew(_, current)
-                | ResourceClassKeysInfo::RollOld(current, _) => {
-                    return current.incoming_cert().resources().clone()
-                }
-                _ => {}
+    if let Some(rc) = ca.resources().get(&ResourceClassName::default()) {
+        match rc.keys() {
+            ResourceClassKeysInfo::Active(current)
+            | ResourceClassKeysInfo::RollPending(_, current)
+            | ResourceClassKeysInfo::RollNew(_, current)
+            | ResourceClassKeysInfo::RollOld(current, _) => {
+                return current.incoming_cert().resources().clone()
             }
+            _ => {}
         }
     }
 

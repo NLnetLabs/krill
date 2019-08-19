@@ -19,7 +19,7 @@ use krill_commons::api::{
 };
 use krill_commons::util::softsigner::KeyId;
 
-use crate::ca::{self, Error, EvtDet, ParentHandle, Result, SignSupport, Signer, TA_NAME};
+use crate::ca::{self, ta_handle, Error, EvtDet, ParentHandle, Result, SignSupport, Signer};
 
 //------------ ResourceClass -----------------------------------------------
 
@@ -37,6 +37,10 @@ use crate::ca::{self, Error, EvtDet, ParentHandle, Result, SignSupport, Signer, 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ResourceClass {
     name_space: String,
+
+    parent_handle: ParentHandle,
+    parent_rc_name: ResourceClassName,
+
     last_key_change: Time,
     keys: ResourceClassKeys,
 }
@@ -45,17 +49,26 @@ pub struct ResourceClass {
 ///
 impl ResourceClass {
     /// Creates a new ResourceClass with a single pending key only.
-    pub fn create(name_space: String, pending_key: KeyId) -> Self {
+    pub fn create(
+        name_space: String,
+        parent_handle: ParentHandle,
+        parent_rc_name: ResourceClassName,
+        pending_key: KeyId,
+    ) -> Self {
         ResourceClass {
             name_space,
+            parent_handle,
+            parent_rc_name,
             last_key_change: Time::now(),
             keys: ResourceClassKeys::create(pending_key),
         }
     }
 
-    pub fn for_ta(key: CertifiedKey) -> Self {
+    pub fn for_ta(parent_rc_name: ResourceClassName, key: CertifiedKey) -> Self {
         ResourceClass {
-            name_space: TA_NAME.to_string(),
+            name_space: parent_rc_name.to_string(),
+            parent_handle: ta_handle(),
+            parent_rc_name,
             last_key_change: Time::now(),
             keys: ResourceClassKeys::for_ta(key),
         }
@@ -67,6 +80,16 @@ impl ResourceClass {
 impl ResourceClass {
     pub fn name_space(&self) -> &str {
         &self.name_space
+    }
+
+    /// Returns the name of the parent where we got this RC from.
+    pub fn parent_handle(&self) -> &ParentHandle {
+        &self.parent_handle
+    }
+
+    /// Returns the name that the parent uses for this RC.
+    pub fn parent_rc_name(&self) -> &ResourceClassName {
+        &self.parent_rc_name
     }
 
     /// Adds a request to an existing key for future reference.
@@ -115,30 +138,23 @@ impl ResourceClass {
         &self,
         rcvd_cert: RcvdCert,
         base_repo: &RepoInfo,
-        parent: ParentHandle,
         class_name: ResourceClassName,
         signer: Arc<RwLock<S>>,
     ) -> ca::Result<Vec<EvtDet>> {
-        self.keys.update_received_cert(
-            parent,
-            rcvd_cert,
-            base_repo,
-            class_name,
-            &self.name_space,
-            signer,
-        )
+        self.keys
+            .update_received_cert(rcvd_cert, base_repo, class_name, &self.name_space, signer)
     }
 
     /// Request certificates for any key that needs it.
     pub fn make_request_events<S: Signer>(
         &self,
-        parent: ParentHandle,
+        rcn: ResourceClassName,
         entitlement: &EntitlementClass,
         base_repo: &RepoInfo,
         signer: &S,
     ) -> Result<Vec<EvtDet>> {
         self.keys
-            .request_certs(parent, entitlement, base_repo, &self.name_space, signer)
+            .request_certs(rcn, entitlement, base_repo, &self.name_space, signer)
     }
 
     /// This function returns all current certificate requests.
@@ -306,7 +322,6 @@ impl ResourceClass {
     /// Initiate a key roll
     pub fn keyroll_initiate<S: Signer>(
         &self,
-        parent: ParentHandle,
         class_name: ResourceClassName,
         base_repo: &RepoInfo,
         duration: Duration,
@@ -316,14 +331,18 @@ impl ResourceClass {
             return Ok(vec![]);
         }
 
-        self.keys
-            .keyroll_initiate(parent, class_name, base_repo, &self.name_space, signer)
+        self.keys.keyroll_initiate(
+            class_name,
+            self.parent_rc_name.clone(),
+            base_repo,
+            &self.name_space,
+            signer,
+        )
     }
 
     /// Activate a new key, if it's been longer than the staging period.
     pub fn keyroll_activate<S: Signer>(
         &self,
-        parent: ParentHandle,
         class_name: ResourceClassName,
         staging: Duration,
         signer: &S,
@@ -332,13 +351,13 @@ impl ResourceClass {
             return Ok(vec![]);
         }
 
-        self.keys.keyroll_activate(parent, class_name, signer)
+        self.keys
+            .keyroll_activate(class_name, self.parent_rc_name.clone(), signer)
     }
 
     /// Finish a key roll, withdraw the old key
     pub fn keyroll_finish(
         &self,
-        parent: ParentHandle,
         class_name: ResourceClassName,
         base_repo: &RepoInfo,
     ) -> ca::Result<EvtDet> {
@@ -355,7 +374,7 @@ impl ResourceClass {
             objects_delta.withdraw(withdraw);
         }
 
-        Ok(EvtDet::KeyRollFinished(parent, class_name, objects_delta))
+        Ok(EvtDet::KeyRollFinished(class_name, objects_delta))
     }
 }
 
@@ -546,7 +565,6 @@ impl ResourceClassKeys {
 
     fn update_received_cert<S: Signer>(
         &self,
-        parent: ParentHandle,
         rcvd_cert: RcvdCert,
         base_repo: &RepoInfo,
         class_name: ResourceClassName,
@@ -559,7 +577,6 @@ impl ResourceClassKeys {
             self.find_matching_key_for_rcvd_cert(&rcvd_cert, signer.read().unwrap().deref())?;
 
         res.push(EvtDet::CertificateReceived(
-            parent.clone(),
             class_name.clone(),
             certified_key.key_id().clone(),
             rcvd_cert,
@@ -604,7 +621,7 @@ impl ResourceClassKeys {
 
     fn request_certs<S: Signer>(
         &self,
-        parent: ParentHandle,
+        rcn: ResourceClassName,
         entitlement: &EntitlementClass,
         base_repo: &RepoInfo,
         name_space: &str,
@@ -656,7 +673,7 @@ impl ResourceClassKeys {
             )?;
 
             res.push(EvtDet::CertificateRequested(
-                parent.clone(),
+                rcn.clone(),
                 req,
                 key_id.clone(),
             ));
@@ -765,8 +782,8 @@ impl ResourceClassKeys {
     /// for a newly create pending key and requested certificate for it.
     fn keyroll_initiate<S: Signer>(
         &self,
-        parent: ParentHandle,
         class_name: ResourceClassName,
+        parent_class_name: ResourceClassName,
         base_repo: &RepoInfo,
         name_space: &str,
         signer: &mut S,
@@ -782,14 +799,14 @@ impl ResourceClassKeys {
                 let issuance_req = self.create_issuance_req(
                     base_repo,
                     name_space,
-                    class_name.clone(),
+                    parent_class_name,
                     &key_id,
                     signer,
                 )?;
 
                 Ok(vec![
-                    EvtDet::KeyRollPendingKeyAdded(parent.clone(), class_name, key_id.clone()),
-                    EvtDet::CertificateRequested(parent, issuance_req, key_id),
+                    EvtDet::KeyRollPendingKeyAdded(class_name.clone(), key_id.clone()),
+                    EvtDet::CertificateRequested(class_name, issuance_req, key_id),
                 ])
             }
             _ => Ok(vec![]),
@@ -802,16 +819,14 @@ impl ResourceClassKeys {
     //       new current key, and withdraw them from the old key.
     fn keyroll_activate<S: Signer>(
         &self,
-        parent: ParentHandle,
         class_name: ResourceClassName,
+        parent_class_name: ResourceClassName,
         signer: &S,
     ) -> ca::Result<Vec<EvtDet>> {
         match self {
             ResourceClassKeys::RollNew(_new, current) => {
-                let revoke_req = Self::revoke_key(class_name.clone(), current.key_id(), signer)?;
-                Ok(vec![EvtDet::KeyRollActivated(
-                    parent, class_name, revoke_req,
-                )])
+                let revoke_req = Self::revoke_key(parent_class_name, current.key_id(), signer)?;
+                Ok(vec![EvtDet::KeyRollActivated(class_name, revoke_req)])
             }
             _ => Ok(vec![]),
         }

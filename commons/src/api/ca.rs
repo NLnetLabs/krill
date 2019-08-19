@@ -1584,7 +1584,8 @@ impl CertAuthSummary {
 pub struct CertAuthInfo {
     handle: Handle,
     base_repo: RepoInfo,
-    parents: HashMap<Handle, ParentCaInfo>,
+    parents: HashMap<Handle, ParentCaContact>,
+    resources: HashMap<ResourceClassName, ResourceClassInfo>,
     children: HashMap<Handle, ChildCaDetails>,
 }
 
@@ -1592,13 +1593,15 @@ impl CertAuthInfo {
     pub fn new(
         handle: Handle,
         base_repo: RepoInfo,
-        parents: HashMap<Handle, ParentCaInfo>,
+        parents: HashMap<Handle, ParentCaContact>,
+        resources: HashMap<ResourceClassName, ResourceClassInfo>,
         children: HashMap<Handle, ChildCaDetails>,
     ) -> Self {
         CertAuthInfo {
             handle,
             base_repo,
             parents,
+            resources,
             children,
         }
     }
@@ -1606,14 +1609,21 @@ impl CertAuthInfo {
     pub fn handle(&self) -> &Handle {
         &self.handle
     }
+
     pub fn base_repo(&self) -> &RepoInfo {
         &self.base_repo
     }
-    pub fn parents(&self) -> &HashMap<Handle, ParentCaInfo> {
+
+    pub fn parents(&self) -> &HashMap<Handle, ParentCaContact> {
         &self.parents
     }
-    pub fn parent(&self, parent: &Handle) -> Option<&ParentCaInfo> {
+
+    pub fn parent(&self, parent: &Handle) -> Option<&ParentCaContact> {
         self.parents.get(parent)
+    }
+
+    pub fn resources(&self) -> &HashMap<ResourceClassName, ResourceClassInfo> {
+        &self.resources
     }
 
     pub fn children(&self) -> &HashMap<Handle, ChildCaDetails> {
@@ -1622,11 +1632,9 @@ impl CertAuthInfo {
 
     pub fn published_objects(&self) -> Vec<Publish> {
         let mut res = vec![];
-        for (_parent, parent_info) in self.parents.iter() {
-            for rc in parent_info.resources().values() {
-                let name_space = rc.name_space();
-                res.append(&mut rc.objects().publish(self.base_repo(), name_space));
-            }
+        for (_rc_name, rc) in self.resources.iter() {
+            let name_space = rc.name_space();
+            res.append(&mut rc.objects().publish(self.base_repo(), name_space));
         }
         res
     }

@@ -155,20 +155,20 @@ pub enum EvtDet {
 
     // Being a child Events
     ParentAdded(ParentHandle, ParentCaContact),
-    ResourceClassAdded(ParentHandle, ResourceClassName, ResourceClass),
+    ResourceClassAdded(ResourceClassName, ResourceClass),
     ResourceClassRemoved(
-        ParentHandle,
         ResourceClassName,
         ObjectsDelta,
+        ParentHandle,
         Vec<RevocationRequest>,
     ),
-    CertificateRequested(ParentHandle, IssuanceRequest, KeyId),
-    CertificateReceived(ParentHandle, ResourceClassName, KeyId, RcvdCert),
+    CertificateRequested(ResourceClassName, IssuanceRequest, KeyId),
+    CertificateReceived(ResourceClassName, KeyId, RcvdCert),
 
     // Key roll
-    KeyRollPendingKeyAdded(ParentHandle, ResourceClassName, KeyId),
-    KeyRollActivated(ParentHandle, ResourceClassName, RevocationRequest),
-    KeyRollFinished(ParentHandle, ResourceClassName, ObjectsDelta),
+    KeyRollPendingKeyAdded(ResourceClassName, KeyId),
+    KeyRollActivated(ResourceClassName, RevocationRequest),
+    KeyRollFinished(ResourceClassName, ObjectsDelta),
 
     // Publishing
     Published(ResourceClassName, HashMap<KeyId, PublicationDelta>),
@@ -189,14 +189,13 @@ impl EvtDet {
     pub(super) fn resource_class_added(
         handle: &Handle,
         version: u64,
-        parent_handle: ParentHandle,
         class_name: ResourceClassName,
         resource_class: ResourceClass,
     ) -> Evt {
         StoredEvent::new(
             handle,
             version,
-            EvtDet::ResourceClassAdded(parent_handle, class_name, resource_class),
+            EvtDet::ResourceClassAdded(class_name, resource_class),
         )
     }
 
@@ -204,15 +203,15 @@ impl EvtDet {
     pub(super) fn resource_class_removed(
         handle: &Handle,
         version: u64,
-        parent_handle: ParentHandle,
         class_name: ResourceClassName,
         delta: ObjectsDelta,
+        parent: ParentHandle,
         revocations: Vec<RevocationRequest>,
     ) -> Evt {
         StoredEvent::new(
             handle,
             version,
-            EvtDet::ResourceClassRemoved(parent_handle, class_name, delta, revocations),
+            EvtDet::ResourceClassRemoved(class_name, delta, parent, revocations),
         )
     }
 

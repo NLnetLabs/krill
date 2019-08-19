@@ -15,8 +15,8 @@ use krill_commons::api::admin::{
 };
 use krill_commons::api::ca::{
     AddedObject, CertAuthInfo, ChildCaDetails, CurrentObject, IssuedCert, ObjectName, ObjectsDelta,
-    ParentCaInfo, PublicationDelta, RcvdCert, ReplacedObject, RepoInfo, ResourceClassName,
-    ResourceSet, Revocation, TrustAnchorInfo, UpdatedObject, WithdrawnObject,
+    PublicationDelta, RcvdCert, ReplacedObject, RepoInfo, ResourceClassName, ResourceSet,
+    Revocation, TrustAnchorInfo, UpdatedObject, WithdrawnObject,
 };
 use krill_commons::api::{
     self, EntitlementClass, Entitlements, IssuanceRequest, IssuanceResponse, RequestResourceLimit,
@@ -33,7 +33,7 @@ use krill_commons::util::softsigner::KeyId;
 use crate::ca::signing::CertSiaInfo;
 use crate::ca::{
     self, ta_handle, ChildHandle, Cmd, CmdDet, Error, Evt, EvtDet, Ini, ParentHandle,
-    ResourceClass, Result, SignSupport, Signer, Ta,
+    ResourceClass, Result, SignSupport, Signer,
 };
 
 //------------ Rfc8183Id ---------------------------------------------------
@@ -68,7 +68,11 @@ pub struct CertAuth<S: Signer> {
     base_repo: RepoInfo,
     pubserver: PubServerContact, // TODO, allow remote
 
-    parents: HashMap<ParentHandle, ParentCa>,
+    parents: HashMap<ParentHandle, ParentCaContact>,
+
+    next_class_name: u32,
+    resources: HashMap<ResourceClassName, ResourceClass>,
+
     children: HashMap<ChildHandle, ChildCaDetails>,
 
     phantom_signer: PhantomData<S>,
@@ -87,8 +91,16 @@ impl<S: Signer> Aggregate for CertAuth<S> {
         let pubserver = PubServerContact::embedded(); // TODO: support remote
 
         let mut parents = HashMap::new();
+        let mut resources = HashMap::new();
+        let mut next_class_name = 0;
+
         if let Some(ta) = ta_opt {
-            parents.insert(ta_handle(), ParentCa::for_ta(ta));
+            let (key, tal) = ta.unpack();
+            parents.insert(ta_handle(), ParentCaContact::Ta(tal));
+
+            let rcn = ResourceClassName::from(next_class_name);
+            next_class_name += 1;
+            resources.insert(rcn.clone(), ResourceClass::for_ta(rcn, key));
         }
 
         let children = HashMap::new();
@@ -104,6 +116,10 @@ impl<S: Signer> Aggregate for CertAuth<S> {
             pubserver,
 
             parents,
+
+            next_class_name,
+            resources,
+
             children,
 
             phantom_signer: PhantomData,
@@ -125,88 +141,82 @@ impl<S: Signer> Aggregate for CertAuth<S> {
             }
             EvtDet::ChildCertificateIssued(child, response) => {
                 let (class_name, _, _, issued) = response.unwrap();
-                let child = self.children.get_mut(&child).unwrap();
-                child.add_cert(&class_name, issued);
+                self.children
+                    .get_mut(&child)
+                    .unwrap()
+                    .add_cert(&class_name, issued);
             }
             EvtDet::ChildKeyRevoked(child, response) => {
-                let child = self.children.get_mut(&child).unwrap();
-                child.revoke_key(response);
+                self.children.get_mut(&child).unwrap().revoke_key(response);
             }
             EvtDet::ChildUpdatedIdCert(child, cert) => {
-                let child = self.children.get_mut(&child).unwrap();
-                child.set_id_cert(cert);
+                self.children.get_mut(&child).unwrap().set_id_cert(cert);
             }
-            EvtDet::ChildUpdatedResourceClass(child, class, resources) => {
-                let child = self.children.get_mut(&child).unwrap();
-                child.set_resources_for_class(class, resources)
-            }
+            EvtDet::ChildUpdatedResourceClass(child, class, resources) => self
+                .children
+                .get_mut(&child)
+                .unwrap()
+                .set_resources_for_class(class, resources),
             EvtDet::ChildRemovedResourceClass(child, name) => {
-                let child = self.children.get_mut(&child).unwrap();
-                child.remove_resource(&name);
+                self.children
+                    .get_mut(&child)
+                    .unwrap()
+                    .remove_resource(&name);
             }
 
             //-----------------------------------------------------------------------
             // Being a child
             //-----------------------------------------------------------------------
             EvtDet::ParentAdded(handle, info) => {
-                let parent = ParentCa::without_resource(info);
-                self.parents.insert(handle, parent);
+                self.parents.insert(handle, info);
             }
-            EvtDet::ResourceClassAdded(parent, name, rc) => {
-                // Evt cannot occur without parent existing
-                self.parents
-                    .get_mut(&parent)
-                    .unwrap()
-                    .resources
-                    .insert(name, rc);
+            EvtDet::ResourceClassAdded(name, rc) => {
+                self.next_class_name += 1;
+                self.resources.insert(name, rc);
             }
-            EvtDet::ResourceClassRemoved(parent, name, _delta, _revocations) => {
-                self.parents
-                    .get_mut(&parent)
-                    .unwrap()
-                    .resources
-                    .remove(&name);
+            EvtDet::ResourceClassRemoved(name, _delta, _parent, _revocations) => {
+                self.resources.remove(&name);
             }
-            EvtDet::CertificateRequested(parent, req, status) => {
-                let class = req.class_name().to_owned();
-                self.parents
-                    .get_mut(&parent)
+            EvtDet::CertificateRequested(name, req, status) => {
+                self.resources
+                    .get_mut(&name)
                     .unwrap()
-                    .resources
-                    .get_mut(&class)
-                    .unwrap()
-                    .add_request(status, req)
+                    .add_request(status, req);
             }
-            EvtDet::CertificateReceived(parent, class_name, key_id, cert) => {
-                let parent = self.parent_mut(&parent).unwrap();
-                let rc = parent.class_mut(&class_name).unwrap();
-                rc.received_cert(key_id, cert);
+            EvtDet::CertificateReceived(class_name, key_id, cert) => {
+                self.resources
+                    .get_mut(&class_name)
+                    .unwrap()
+                    .received_cert(key_id, cert);
             }
 
             //-----------------------------------------------------------------------
             // Key Roll
             //-----------------------------------------------------------------------
-            EvtDet::KeyRollPendingKeyAdded(parent, class_name, key_id) => {
-                let parent = self.parent_mut(&parent).unwrap();
-                let rc = parent.class_mut(&class_name).unwrap();
-                rc.pending_key_added(key_id);
+            EvtDet::KeyRollPendingKeyAdded(class_name, key_id) => {
+                self.resources
+                    .get_mut(&class_name)
+                    .unwrap()
+                    .pending_key_added(key_id);
             }
-            EvtDet::KeyRollActivated(parent, class_name, revoke_req) => {
-                let parent = self.parent_mut(&parent).unwrap();
-                let rc = parent.class_mut(&class_name).unwrap();
-                rc.new_key_activated(revoke_req);
+            EvtDet::KeyRollActivated(class_name, revoke_req) => {
+                self.resources
+                    .get_mut(&class_name)
+                    .unwrap()
+                    .new_key_activated(revoke_req);
             }
-            EvtDet::KeyRollFinished(parent, class_name, _delta) => {
-                let parent = self.parent_mut(&parent).unwrap();
-                let rc = parent.class_mut(&class_name).unwrap();
-                rc.old_key_removed();
+            EvtDet::KeyRollFinished(class_name, _delta) => {
+                self.resources
+                    .get_mut(&class_name)
+                    .unwrap()
+                    .old_key_removed();
             }
 
             //-----------------------------------------------------------------------
             // General functions
             //-----------------------------------------------------------------------
             EvtDet::Published(class_name, delta_map) => {
-                let rc = self.resource_class_mut(&class_name).unwrap();
+                let rc = self.resources.get_mut(&class_name).unwrap();
                 for (key_id, delta) in delta_map.into_iter() {
                     rc.apply_delta(delta, key_id);
                 }
@@ -234,14 +244,14 @@ impl<S: Signer> Aggregate for CertAuth<S> {
             CmdDet::UpdateEntitlements(parent, entitlements, signer) => {
                 self.update_entitlements(parent, entitlements, signer)
             }
-            CmdDet::UpdateRcvdCert(parent, class_name, rcvd_cert, signer) => {
-                self.update_received_cert(parent, class_name, rcvd_cert, signer)
+            CmdDet::UpdateRcvdCert(class_name, rcvd_cert, signer) => {
+                self.update_received_cert(class_name, rcvd_cert, signer)
             }
 
             // Key rolls
             CmdDet::KeyRollInitiate(duration, signer) => self.keyroll_initiate(duration, signer),
             CmdDet::KeyRollActivate(duration, signer) => self.keyroll_activate(duration, signer),
-            CmdDet::KeyRollFinish(parent, response) => self.keyroll_finish(parent, response),
+            CmdDet::KeyRollFinish(parent, response) => self.keyroll_finish(&parent, response),
 
             // Republish
             CmdDet::Republish(signer) => self.republish(signer),
@@ -254,14 +264,14 @@ impl<S: Signer> Aggregate for CertAuth<S> {
 impl<S: Signer> CertAuth<S> {
     pub fn as_ta_info(&self) -> Result<TrustAnchorInfo> {
         if let Ok(ta) = self.parent(&ta_handle()) {
-            let tal = match ta.contact() {
+            let tal = match ta {
                 ParentCaContact::Ta(tal) => Some(tal),
                 _ => None,
             }
             .ok_or_else(|| Error::NotTa)?;
 
-            let rc = ta
-                .resources()
+            let rc = self
+                .resources
                 .get(&ResourceClassName::default())
                 .ok_or_else(|| Error::NotTa)?;
             let cert = rc.current_certificate().ok_or_else(|| Error::NotTa)?;
@@ -287,13 +297,16 @@ impl<S: Signer> CertAuth<S> {
         let handle = self.handle.clone();
         let base_repo = self.base_repo.clone();
 
-        let mut parents = HashMap::new();
-        for (name, parent) in &self.parents {
-            parents.insert(name.clone(), parent.as_info());
+        let parents = self.parents.clone();
+
+        let mut resources = HashMap::new();
+
+        for (name, rc) in &self.resources {
+            resources.insert(name.clone(), rc.as_info());
         }
         let children = self.children.clone();
 
-        CertAuthInfo::new(handle, base_repo, parents, children)
+        CertAuthInfo::new(handle, base_repo, parents, resources, children)
     }
 
     pub fn child_request(&self) -> ChildRequest {
@@ -308,31 +321,6 @@ impl<S: Signer> CertAuth<S> {
     }
     pub fn handle(&self) -> &Handle {
         &self.handle
-    }
-
-    /// Gets the resource class by name, if it exists, under any parent
-    // TODO: Ensure that we have unique resource class names internally
-    fn resource_class(&self, class_name: &ResourceClassName) -> Option<&ResourceClass> {
-        for parent in self.parents.values() {
-            if let Some(rc) = parent.resources().get(class_name) {
-                return Some(rc);
-            }
-        }
-        None
-    }
-
-    fn resource_class_mut(&mut self, class_name: &ResourceClassName) -> Option<&mut ResourceClass> {
-        for parent in self.parents.values_mut() {
-            if let Ok(rc) = parent.class_mut(class_name) {
-                return Some(rc);
-            }
-        }
-        None
-    }
-
-    fn get_resource_class(&self, class_name: &ResourceClassName) -> Result<&ResourceClass> {
-        self.resource_class(class_name)
-            .ok_or_else(|| Error::MissingResourceClass)
     }
 }
 
@@ -415,7 +403,7 @@ impl<S: Signer> CertAuth<S> {
         let until = child_resources.not_after();
         let issued = child_resources.certs_iter().cloned().collect();
 
-        let my_rc = match self.resource_class(class_name) {
+        let my_rc = match self.resources.get(class_name) {
             Some(rc) => rc,
             None => return None,
         };
@@ -487,14 +475,12 @@ impl<S: Signer> CertAuth<S> {
         let mut map = HashMap::new();
         let mut matched_resources = ResourceSet::default();
 
-        for parent in self.parents.values() {
-            for (name, rc) in parent.resources() {
-                if let Some(rcvd_cert) = rc.current_certificate() {
-                    let resources = rcvd_cert.resources().intersection(&child_resources);
-                    if !resources.is_empty() {
-                        matched_resources = matched_resources.union(&resources);
-                        map.insert(name.clone(), resources);
-                    }
+        for (name, rc) in &self.resources {
+            if let Some(rcvd_cert) = rc.current_certificate() {
+                let resources = rcvd_cert.resources().intersection(&child_resources);
+                if !resources.is_empty() {
+                    matched_resources = matched_resources.union(&resources);
+                    map.insert(name.clone(), resources);
                 }
             }
         }
@@ -580,7 +566,10 @@ impl<S: Signer> CertAuth<S> {
         limit: RequestResourceLimit,
         signer: &S,
     ) -> Result<IssuanceResponse> {
-        let my_rc = self.get_resource_class(&class_name)?;
+        let my_rc = self
+            .resources
+            .get(&class_name)
+            .ok_or_else(|| Error::unknown_resource_class(&class_name))?;
         let issuing_key = my_rc.get_current_key()?;
         let issuing_cert = issuing_key.incoming_cert();
 
@@ -672,7 +661,11 @@ impl<S: Signer> CertAuth<S> {
         removed_certs: Vec<&Cert>,
         signer: Arc<RwLock<S>>,
     ) -> Result<HashMap<KeyId, PublicationDelta>> {
-        let my_rc = self.get_resource_class(class_name)?;
+        let my_rc = self
+            .resources
+            .get(&class_name)
+            .ok_or_else(|| Error::unknown_resource_class(&class_name))?;
+
         let issuing_key = my_rc.get_current_key()?;
         let name_space = my_rc.name_space();
 
@@ -912,7 +905,11 @@ impl<S: Signer> CertAuth<S> {
             .resources_for_class(&class_name)
             .ok_or_else(|| Error::MissingResourceClass)?;
 
-        let my_rc = self.get_resource_class(&class_name)?;
+        let my_rc = self
+            .resources
+            .get(&class_name)
+            .ok_or_else(|| Error::unknown_resource_class(&class_name))?;
+
         let ca_key = my_rc.get_current_key()?;
         let name_space = my_rc.name_space();
 
@@ -960,11 +957,8 @@ impl<S: Signer> CertAuth<S> {
 ///
 impl<S: Signer> CertAuth<S> {
     /// List all parents
-    pub fn parents(&self) -> Vec<(ParentHandle, ParentCa)> {
-        self.parents
-            .iter()
-            .map(|e| (e.0.clone(), e.1.clone()))
-            .collect()
+    pub fn parents(&self) -> impl Iterator<Item = &ParentHandle> {
+        self.parents.keys()
     }
 
     fn has_parent(&self, parent: &ParentHandle) -> bool {
@@ -974,7 +968,7 @@ impl<S: Signer> CertAuth<S> {
     /// Returns true if this CertAuth is set up as a TA.
     pub fn is_ta(&self) -> bool {
         for info in self.parents.values() {
-            if let ParentCaContact::Ta(_) = info.contact {
+            if let ParentCaContact::Ta(_) = info {
                 return true;
             }
         }
@@ -982,15 +976,11 @@ impl<S: Signer> CertAuth<S> {
         false
     }
 
-    pub fn parent(&self, parent: &ParentHandle) -> Result<&ParentCa> {
+    /// Gets the ParentCaContact for this ParentHandle. Returns an Err when the
+    /// parent does not exist.
+    pub fn parent(&self, parent: &ParentHandle) -> Result<&ParentCaContact> {
         self.parents
             .get(parent)
-            .ok_or_else(|| Error::UnknownParent(parent.clone()))
-    }
-
-    fn parent_mut(&mut self, parent: &ParentHandle) -> Result<&mut ParentCa> {
-        self.parents
-            .get_mut(parent)
             .ok_or_else(|| Error::UnknownParent(parent.clone()))
     }
 
@@ -999,6 +989,8 @@ impl<S: Signer> CertAuth<S> {
     fn add_parent(&self, parent: Handle, info: ParentCaContact) -> ca::Result<Vec<Evt>> {
         if self.has_parent(&parent) {
             Err(Error::DuplicateParent(parent))
+        } else if self.is_ta() {
+            Err(Error::NotAllowedForTa)
         } else {
             Ok(vec![EvtDet::parent_added(
                 &self.handle,
@@ -1009,13 +1001,28 @@ impl<S: Signer> CertAuth<S> {
         }
     }
 
+    /// Maps a parent and parent's resource class name to a ResourceClassName and
+    /// ResourceClass of our own.
+    fn find_parent_rc(
+        &self,
+        parent: &ParentHandle,
+        parent_rcn: &ResourceClassName,
+    ) -> Option<(&ResourceClassName, &ResourceClass)> {
+        for (my_name, rc) in self.resources.iter() {
+            if rc.parent_handle() == parent && rc.parent_rc_name() == parent_rcn {
+                return Some((my_name, rc));
+            }
+        }
+        None
+    }
+
     /// Get all the current open certificate requests for a parent.
     /// Returns an empty list if the parent is not found.
     pub fn cert_requests(&self, parent_handle: &ParentHandle) -> Vec<IssuanceRequest> {
         let mut res = vec![];
 
-        if let Ok(parent) = self.parent(parent_handle) {
-            for (_class_name, rc) in parent.resources.iter() {
+        for rc in self.resources.values() {
+            if rc.parent_handle() == parent_handle {
                 res.append(&mut rc.cert_requests())
             }
         }
@@ -1026,13 +1033,12 @@ impl<S: Signer> CertAuth<S> {
     fn make_request_events(
         &self,
         version: &mut u64,
-        parent: &ParentHandle,
+        rcn: ResourceClassName,
         entitlement: &EntitlementClass,
         rc: &ResourceClass,
         signer: &S,
     ) -> Result<Vec<Evt>> {
-        let req_details_list =
-            rc.make_request_events(parent.clone(), entitlement, &self.base_repo, signer)?;
+        let req_details_list = rc.make_request_events(rcn, entitlement, &self.base_repo, signer)?;
 
         let mut res = vec![];
         for details in req_details_list.into_iter() {
@@ -1045,9 +1051,9 @@ impl<S: Signer> CertAuth<S> {
     /// Returns the open revocation requests for the given parent.
     pub fn revoke_requests(&self, parent: &ParentHandle) -> Vec<&RevocationRequest> {
         let mut res = vec![];
-        if let Ok(parent) = self.parent(parent) {
-            for (_class_name, rc) in parent.resources.iter() {
-                if let Some(req) = rc.revoke_request() {
+        for rc in self.resources.values() {
+            if let Some(req) = rc.revoke_request() {
+                if rc.parent_handle() == parent {
                     res.push(req)
                 }
             }
@@ -1070,15 +1076,14 @@ impl<S: Signer> CertAuth<S> {
     ) -> ca::Result<Vec<Evt>> {
         let mut res = vec![];
 
-        let parent = self.parent(&parent_handle)?;
-
         // Check if there is a resource class for each entitlement
         let mut version = self.version;
 
         // Check if there are any current resource classes, now removed
         // from the entitlements. In which case we will have to clean them
         // up and un-publish everything there was.
-        let current_resource_classes = &parent.resources;
+        let current_resource_classes = &self.resources;
+
         let entitled_classes: Vec<&ResourceClassName> = entitlements
             .classes()
             .iter()
@@ -1096,60 +1101,66 @@ impl<S: Signer> CertAuth<S> {
             res.push(EvtDet::resource_class_removed(
                 &self.handle,
                 version,
-                parent_handle.clone(),
                 name.clone(),
                 delta,
+                parent_handle.clone(),
                 revocations,
             ));
             version += 1;
         }
 
+        // Now check all the entitlements and either create an RC for them, or update.
         for ent in entitlements.classes() {
-            let name = ent.class_name();
+            let parent_rc_name = ent.class_name();
 
-            if let Some(rc) = parent.resources.get(name) {
-                let signer = signer.read().unwrap();
-                res.append(&mut self.make_request_events(
-                    &mut version,
-                    &parent_handle,
-                    ent,
-                    rc,
-                    signer.deref(),
-                )?);
-            } else {
-                // Create a resource class with a pending key
-                let key_id = {
-                    signer
-                        .write()
-                        .unwrap()
-                        .create_key(PublicKeyFormat::default())
-                        .map_err(Error::signer)?
-                };
+            match self.find_parent_rc(&parent_handle, &parent_rc_name) {
+                Some((rcn, rc)) => {
+                    // We have a matching RC, make requests (note this may be a no-op).
+                    let signer = signer.read().unwrap();
+                    res.append(&mut self.make_request_events(
+                        &mut version,
+                        rcn.clone(),
+                        ent,
+                        rc,
+                        signer.deref(),
+                    )?);
+                }
+                None => {
+                    // Create a resource class with a pending key
+                    let key_id = {
+                        signer
+                            .write()
+                            .unwrap()
+                            .create_key(PublicKeyFormat::default())
+                            .map_err(Error::signer)?
+                    };
 
-                let ns = format!("{}-{}", &parent_handle, name);
-                let rc = ResourceClass::create(ns, key_id);
-                let rc_add_version = version;
-                version += 1;
+                    let rcn = ResourceClassName::from(self.next_class_name);
+                    let ns = rcn.to_string();
 
-                let signer = signer.read().unwrap();
-                let mut request_events = self.make_request_events(
-                    &mut version,
-                    &parent_handle,
-                    ent,
-                    &rc,
-                    signer.deref(),
-                )?;
+                    let rc = ResourceClass::create(
+                        ns,
+                        parent_handle.clone(),
+                        parent_rc_name.clone(),
+                        key_id,
+                    );
+                    let rc_add_version = version;
+                    version += 1;
 
-                let added = EvtDet::resource_class_added(
-                    &self.handle,
-                    rc_add_version,
-                    parent_handle.clone(),
-                    name.clone(),
-                    rc,
-                );
+                    let signer = signer.read().unwrap();
+                    let mut request_events = self.make_request_events(
+                        &mut version,
+                        rcn.clone(),
+                        ent,
+                        &rc,
+                        signer.deref(),
+                    )?;
 
-                res.push(added);
-                res.append(&mut request_events);
+                    let added = EvtDet::resource_class_added(&self.handle, rc_add_version, rcn, rc);
+
+                    res.push(added);
+                    res.append(&mut request_events);
+                }
             }
         }
         Ok(res)
@@ -1169,24 +1180,20 @@ impl<S: Signer> CertAuth<S> {
     /// and ROAs/Certs would be become invalid.
     fn update_received_cert(
         &self,
-        parent_handle: Handle,
-        class_name: ResourceClassName,
+        rcn: ResourceClassName,
         rcvd_cert: RcvdCert,
         signer: Arc<RwLock<S>>,
     ) -> ca::Result<Vec<Evt>> {
         debug!(
             "CA {}: Updating received cert for class: {}",
-            self.handle, class_name
+            self.handle, rcn
         );
-        let parent = self.parent(&parent_handle)?;
-        let rc = parent.class(&class_name)?;
-        let evt_details = rc.update_received_cert(
-            rcvd_cert,
-            &self.base_repo,
-            parent_handle,
-            class_name,
-            signer,
-        )?;
+
+        let rc = self
+            .resources
+            .get(&rcn)
+            .ok_or_else(|| Error::unknown_resource_class(&rcn))?;
+        let evt_details = rc.update_received_cert(rcvd_cert, &self.base_repo, rcn, signer)?;
 
         let mut res = vec![];
         let mut version = self.version;
@@ -1212,21 +1219,18 @@ impl<S: Signer> CertAuth<S> {
         let mut version = self.version;
         let mut res = vec![];
 
-        for (parent_handle, parent) in self.parents.iter() {
-            for (class_name, class) in parent.resources().iter() {
-                for details in class
-                    .keyroll_initiate(
-                        parent_handle.clone(),
-                        class_name.clone(),
-                        &self.base_repo,
-                        duration,
-                        signer.deref_mut(),
-                    )?
-                    .into_iter()
-                {
-                    res.push(StoredEvent::new(self.handle(), version, details));
-                    version += 1;
-                }
+        for (class_name, class) in self.resources.iter() {
+            for details in class
+                .keyroll_initiate(
+                    class_name.clone(),
+                    &self.base_repo,
+                    duration,
+                    signer.deref_mut(),
+                )?
+                .into_iter()
+            {
+                res.push(StoredEvent::new(self.handle(), version, details));
+                version += 1;
             }
         }
 
@@ -1242,43 +1246,34 @@ impl<S: Signer> CertAuth<S> {
         let mut version = self.version;
         let mut res = vec![];
 
-        for (parent_handle, parent) in self.parents.iter() {
-            for (class_name, class) in parent.resources().iter() {
-                for details in class
-                    .keyroll_activate(
-                        parent_handle.clone(),
-                        class_name.clone(),
-                        staging,
-                        signer.deref(),
-                    )?
-                    .into_iter()
-                {
-                    res.push(StoredEvent::new(self.handle(), version, details));
-                    version += 1;
-                }
+        for (class_name, class) in self.resources.iter() {
+            for details in class
+                .keyroll_activate(class_name.clone(), staging, signer.deref())?
+                .into_iter()
+            {
+                res.push(StoredEvent::new(self.handle(), version, details));
+                version += 1;
             }
         }
+
         Ok(res)
     }
 
     fn keyroll_finish(
         &self,
-        parent_h: ParentHandle,
+        parent_h: &ParentHandle,
         response: RevocationResponse,
     ) -> ca::Result<Vec<Evt>> {
         if self.is_ta() {
             return Ok(vec![]);
         }
+        let (parent_rc_name, _key_id) = response.unpack();
 
-        let (class_name, _key_id) = response.unpack();
-        let parent = self.parent(&parent_h)?;
+        let (my_name, my_rc) = self
+            .find_parent_rc(parent_h, &parent_rc_name)
+            .ok_or_else(|| Error::unknown_resource_class(&parent_rc_name))?;
 
-        let rc = parent
-            .resources()
-            .get(&class_name)
-            .ok_or_else(|| Error::unknown_resource_class(&class_name))?;
-
-        let finish_details = rc.keyroll_finish(parent_h, class_name, &self.base_repo)?;
+        let finish_details = my_rc.keyroll_finish(my_name.clone(), &self.base_repo)?;
 
         Ok(vec![StoredEvent::new(
             self.handle(),
@@ -1294,14 +1289,12 @@ impl<S: Signer> CertAuth<S> {
     /// Republish objects for this CA
     pub fn republish(&self, signer: Arc<RwLock<S>>) -> ca::Result<Vec<Evt>> {
         let mut publish_details = vec![];
-        for parent in self.parents.values() {
-            for (class_name, rc) in parent.resources().iter() {
-                publish_details.push(rc.republish(
-                    &self.base_repo,
-                    class_name.clone(),
-                    signer.clone(),
-                )?);
-            }
+        for (class_name, rc) in self.resources.iter() {
+            publish_details.push(rc.republish(
+                &self.base_repo,
+                class_name.clone(),
+                signer.clone(),
+            )?);
         }
 
         let mut res = vec![];
@@ -1312,67 +1305,5 @@ impl<S: Signer> CertAuth<S> {
         }
 
         Ok(res)
-    }
-}
-
-//------------ ParentCa ------------------------------------------------------
-
-/// This type defines a parent for a CA and includes the information
-/// needed to contact it, as well as a map of all the ResourceClass-es
-/// that the CA has under this parent.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct ParentCa {
-    contact: ParentCaContact,
-    resources: HashMap<ResourceClassName, ResourceClass>,
-}
-
-impl ParentCa {
-    /// Creates a new ParentCa for a parent contact. No resources yet,
-    /// they will have to be synchronised.
-    pub fn without_resource(contact: ParentCaContact) -> Self {
-        ParentCa {
-            contact,
-            resources: HashMap::new(),
-        }
-    }
-
-    /// Creates a self-signed parent proxy for a TA.
-    pub fn for_ta(ta: Ta) -> Self {
-        let (key, tal) = ta.unpack();
-        let contact = ParentCaContact::Ta(tal);
-        let mut resources = HashMap::new();
-        resources.insert(ResourceClassName::default(), ResourceClass::for_ta(key));
-
-        ParentCa { contact, resources }
-    }
-
-    fn resources(&self) -> &HashMap<ResourceClassName, ResourceClass> {
-        &self.resources
-    }
-
-    fn as_info(&self) -> ParentCaInfo {
-        let mut resources_info = HashMap::new();
-
-        for el in self.resources.iter() {
-            resources_info.insert(el.0.clone(), el.1.as_info());
-        }
-
-        ParentCaInfo::new(self.contact.clone(), resources_info)
-    }
-
-    pub fn contact(&self) -> &ParentCaContact {
-        &self.contact
-    }
-
-    fn class(&self, class_name: &ResourceClassName) -> Result<&ResourceClass> {
-        self.resources
-            .get(class_name)
-            .ok_or_else(|| Error::UnknownResourceClass(class_name.to_string()))
-    }
-
-    fn class_mut(&mut self, class_name: &ResourceClassName) -> Result<&mut ResourceClass> {
-        self.resources
-            .get_mut(class_name)
-            .ok_or_else(|| Error::UnknownResourceClass(class_name.to_string()))
     }
 }
