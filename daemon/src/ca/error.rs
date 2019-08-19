@@ -89,6 +89,10 @@ impl Error {
     pub fn invalid_csr(handle: &Handle, msg: &str) -> Self {
         Error::InvalidCsr(handle.clone(), msg.to_string())
     }
+
+    pub fn unknown_resource_class(class: impl Display) -> Self {
+        Error::UnknownResourceClass(class.to_string())
+    }
 }
 
 impl std::error::Error for Error {}

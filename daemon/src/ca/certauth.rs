@@ -15,12 +15,12 @@ use krill_commons::api::admin::{
 };
 use krill_commons::api::ca::{
     AddedObject, CertAuthInfo, ChildCaDetails, CurrentObject, IssuedCert, ObjectName, ObjectsDelta,
-    ParentCaInfo, PublicationDelta, RcvdCert, ReplacedObject, RepoInfo, ResourceSet, Revocation,
-    TrustAnchorInfo, UpdatedObject, WithdrawnObject,
+    ParentCaInfo, PublicationDelta, RcvdCert, ReplacedObject, RepoInfo, ResourceClassName,
+    ResourceSet, Revocation, TrustAnchorInfo, UpdatedObject, WithdrawnObject,
 };
 use krill_commons::api::{
     self, EntitlementClass, Entitlements, IssuanceRequest, IssuanceResponse, RequestResourceLimit,
-    RevocationRequest, RevocationResponse, SigningCert, DFLT_CLASS,
+    RevocationRequest, RevocationResponse, SigningCert,
 };
 use krill_commons::eventsourcing::{Aggregate, StoredEvent};
 use krill_commons::remote::builder::{IdCertBuilder, SignedMessageBuilder};
@@ -33,7 +33,7 @@ use krill_commons::util::softsigner::KeyId;
 use crate::ca::signing::CertSiaInfo;
 use crate::ca::{
     self, ta_handle, ChildHandle, Cmd, CmdDet, Error, Evt, EvtDet, Ini, ParentHandle,
-    ResourceClass, ResourceClassName, Result, SignSupport, Signer, Ta,
+    ResourceClass, Result, SignSupport, Signer, Ta,
 };
 
 //------------ Rfc8183Id ---------------------------------------------------
@@ -138,11 +138,11 @@ impl<S: Signer> Aggregate for CertAuth<S> {
             }
             EvtDet::ChildUpdatedResourceClass(child, class, resources) => {
                 let child = self.children.get_mut(&child).unwrap();
-                child.set_resources_for_class(&class, resources)
+                child.set_resources_for_class(class, resources)
             }
             EvtDet::ChildRemovedResourceClass(child, name) => {
                 let child = self.children.get_mut(&child).unwrap();
-                child.remove_resource(name.as_str());
+                child.remove_resource(&name);
             }
 
             //-----------------------------------------------------------------------
@@ -260,7 +260,10 @@ impl<S: Signer> CertAuth<S> {
             }
             .ok_or_else(|| Error::NotTa)?;
 
-            let rc = ta.resources().get("all").ok_or_else(|| Error::NotTa)?;
+            let rc = ta
+                .resources()
+                .get(&ResourceClassName::default())
+                .ok_or_else(|| Error::NotTa)?;
             let cert = rc.current_certificate().ok_or_else(|| Error::NotTa)?;
 
             let resources = cert.resources().clone();
@@ -309,7 +312,7 @@ impl<S: Signer> CertAuth<S> {
 
     /// Gets the resource class by name, if it exists, under any parent
     // TODO: Ensure that we have unique resource class names internally
-    fn resource_class(&self, class_name: &str) -> Option<&ResourceClass> {
+    fn resource_class(&self, class_name: &ResourceClassName) -> Option<&ResourceClass> {
         for parent in self.parents.values() {
             if let Some(rc) = parent.resources().get(class_name) {
                 return Some(rc);
@@ -318,7 +321,7 @@ impl<S: Signer> CertAuth<S> {
         None
     }
 
-    fn resource_class_mut(&mut self, class_name: &str) -> Option<&mut ResourceClass> {
+    fn resource_class_mut(&mut self, class_name: &ResourceClassName) -> Option<&mut ResourceClass> {
         for parent in self.parents.values_mut() {
             if let Ok(rc) = parent.class_mut(class_name) {
                 return Some(rc);
@@ -327,7 +330,7 @@ impl<S: Signer> CertAuth<S> {
         None
     }
 
-    fn get_resource_class(&self, class_name: &str) -> Result<&ResourceClass> {
+    fn get_resource_class(&self, class_name: &ResourceClassName) -> Result<&ResourceClass> {
         self.resource_class(class_name)
             .ok_or_else(|| Error::MissingResourceClass)
     }
@@ -365,7 +368,7 @@ impl<S: Signer> CertAuth<S> {
     pub fn list(&self, child_handle: &Handle) -> Result<api::Entitlements> {
         // TODO: Support arbitrary resource classes. See issue #25.
         let mut classes = vec![];
-        if let Some(class) = self.entitlement_class(child_handle, DFLT_CLASS) {
+        if let Some(class) = self.entitlement_class(child_handle, &ResourceClassName::default()) {
             classes.push(class);
         }
 
@@ -377,7 +380,7 @@ impl<S: Signer> CertAuth<S> {
     pub fn issuance_response(
         &self,
         child_handle: &Handle,
-        class_name: &str,
+        class_name: &ResourceClassName,
         pub_key: &PublicKey,
     ) -> Result<api::IssuanceResponse> {
         let entitlement_class = self
@@ -393,7 +396,7 @@ impl<S: Signer> CertAuth<S> {
     fn entitlement_class(
         &self,
         child_handle: &Handle,
-        class_name: &str,
+        class_name: &ResourceClassName,
     ) -> Option<api::EntitlementClass> {
         let child = match self.get_child(child_handle) {
             Ok(child) => child,
@@ -424,7 +427,7 @@ impl<S: Signer> CertAuth<S> {
         let cert = SigningCert::new(my_rcvd_cert.uri().clone(), my_rcvd_cert.cert().clone());
 
         Some(EntitlementClass::new(
-            class_name.to_string(),
+            class_name.clone(),
             cert,
             child_resources.resources().clone(),
             until,
@@ -480,7 +483,7 @@ impl<S: Signer> CertAuth<S> {
     fn child_resource_classes_entitlements(
         &self,
         child_resources: ResourceSet,
-    ) -> Result<HashMap<&ResourceClassName, ResourceSet>> {
+    ) -> Result<HashMap<ResourceClassName, ResourceSet>> {
         let mut map = HashMap::new();
         let mut matched_resources = ResourceSet::default();
 
@@ -490,7 +493,7 @@ impl<S: Signer> CertAuth<S> {
                     let resources = rcvd_cert.resources().intersection(&child_resources);
                     if !resources.is_empty() {
                         matched_resources = matched_resources.union(&resources);
-                        map.insert(name, resources);
+                        map.insert(name.clone(), resources);
                     }
                 }
             }
@@ -577,7 +580,7 @@ impl<S: Signer> CertAuth<S> {
         limit: RequestResourceLimit,
         signer: &S,
     ) -> Result<IssuanceResponse> {
-        let my_rc = self.get_resource_class(class_name.as_str())?;
+        let my_rc = self.get_resource_class(&class_name)?;
         let issuing_key = my_rc.get_current_key()?;
         let issuing_cert = issuing_key.incoming_cert();
 
@@ -664,7 +667,7 @@ impl<S: Signer> CertAuth<S> {
     /// for updating child certificates.
     pub fn update_published_child_certificates(
         &self,
-        class_name: &str,
+        class_name: &ResourceClassName,
         issued_certs: Vec<&IssuedCert>,
         removed_certs: Vec<&Cert>,
         signer: Arc<RwLock<S>>,
@@ -860,7 +863,7 @@ impl<S: Signer> CertAuth<S> {
             // Determine for each entitlement whether the current is changed, or a new
             // resource class can be added.
             for (class_name, entitled_resource_set) in child_entitlements.into_iter() {
-                if match child_resources.remove(class_name) {
+                if match child_resources.remove(&class_name) {
                     None => true,
                     Some(current_resources) => current_resources != &entitled_resource_set,
                 } {
@@ -868,7 +871,7 @@ impl<S: Signer> CertAuth<S> {
                         &self.handle,
                         version,
                         child_handle.clone(),
-                        class_name.clone(),
+                        class_name,
                         entitled_resource_set,
                     ));
                     version += 1;
@@ -902,7 +905,8 @@ impl<S: Signer> CertAuth<S> {
         signer: Arc<RwLock<S>>,
     ) -> ca::Result<Vec<Evt>> {
         // verify child and resources
-        let class_name = request.class_name().to_string();
+        let class_name = request.class_name().clone();
+
         let child_resources = self
             .get_child(&child)?
             .resources_for_class(&class_name)
@@ -1075,14 +1079,14 @@ impl<S: Signer> CertAuth<S> {
         // from the entitlements. In which case we will have to clean them
         // up and un-publish everything there was.
         let current_resource_classes = &parent.resources;
-        let entitled_classes: Vec<&str> = entitlements
+        let entitled_classes: Vec<&ResourceClassName> = entitlements
             .classes()
             .iter()
             .map(|c| c.class_name())
             .collect();
         for (name, class) in current_resource_classes
             .iter()
-            .filter(|(name, _class)| !entitled_classes.contains(&name.as_str()))
+            .filter(|(name, _class)| !entitled_classes.contains(name))
         {
             let signer = signer.read().unwrap();
 
@@ -1140,7 +1144,7 @@ impl<S: Signer> CertAuth<S> {
                     &self.handle,
                     rc_add_version,
                     parent_handle.clone(),
-                    name.to_string(),
+                    name.clone(),
                     rc,
                 );
 
@@ -1272,7 +1276,7 @@ impl<S: Signer> CertAuth<S> {
         let rc = parent
             .resources()
             .get(&class_name)
-            .ok_or_else(|| Error::UnknownResourceClass(class_name.clone()))?;
+            .ok_or_else(|| Error::unknown_resource_class(&class_name))?;
 
         let finish_details = rc.keyroll_finish(parent_h, class_name, &self.base_repo)?;
 
@@ -1337,7 +1341,7 @@ impl ParentCa {
         let (key, tal) = ta.unpack();
         let contact = ParentCaContact::Ta(tal);
         let mut resources = HashMap::new();
-        resources.insert("all".to_string(), ResourceClass::for_ta(key));
+        resources.insert(ResourceClassName::default(), ResourceClass::for_ta(key));
 
         ParentCa { contact, resources }
     }
@@ -1360,13 +1364,13 @@ impl ParentCa {
         &self.contact
     }
 
-    fn class(&self, class_name: &str) -> Result<&ResourceClass> {
+    fn class(&self, class_name: &ResourceClassName) -> Result<&ResourceClass> {
         self.resources
             .get(class_name)
             .ok_or_else(|| Error::UnknownResourceClass(class_name.to_string()))
     }
 
-    fn class_mut(&mut self, class_name: &str) -> Result<&mut ResourceClass> {
+    fn class_mut(&mut self, class_name: &ResourceClassName) -> Result<&mut ResourceClass> {
         self.resources
             .get_mut(class_name)
             .ok_or_else(|| Error::UnknownResourceClass(class_name.to_string()))

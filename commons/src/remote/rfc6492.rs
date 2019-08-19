@@ -13,7 +13,7 @@ use rpki::uri;
 use rpki::x509::Time;
 
 use crate::api::admin::Handle;
-use crate::api::ca::{IssuedCert, ResSetErr, ResourceSet};
+use crate::api::ca::{IssuedCert, ResSetErr, ResourceClassName, ResourceSet};
 use crate::api::{
     EntitlementClass, Entitlements, IssuanceRequest, IssuanceResponse, RequestResourceLimit,
     RevocationRequest, RevocationResponse, SigningCert,
@@ -296,7 +296,7 @@ impl Qry {
         R: io::Read,
     {
         r.take_named_element("key", |mut a, _r| {
-            let class_name = a.take_req("class_name")?;
+            let class_name = ResourceClassName::from(a.take_req("class_name")?);
             let ski = a.take_req("ski")?;
             let ski_bytes = base64::decode_config(&ski, base64::URL_SAFE_NO_PAD)
                 .map_err(|_| Error::InvalidSki)?;
@@ -305,7 +305,7 @@ impl Qry {
 
             let ski =
                 KeyIdentifier::try_from(ski_bytes.as_slice()).map_err(|_| Error::InvalidSki)?;
-            Ok(RevocationRequest::new(class_name.to_string(), ski))
+            Ok(RevocationRequest::new(class_name, ski))
         })
     }
 
@@ -314,7 +314,7 @@ impl Qry {
         R: io::Read,
     {
         r.take_named_element("request", |mut a, r| {
-            let class_name = a.take_req("class_name")?;
+            let class_name = ResourceClassName::from(a.take_req("class_name")?);
             let mut limit = RequestResourceLimit::default();
 
             if let Some(asn) = a.take_opt("req_resource_set_as") {
@@ -335,7 +335,7 @@ impl Qry {
             let csr_bytes = r.take_bytes_std()?;
             let csr = Csr::decode(csr_bytes).map_err(|_| Error::InvalidCsr)?;
 
-            Ok(IssuanceRequest::new(class_name.to_string(), limit, csr))
+            Ok(IssuanceRequest::new(class_name, limit, csr))
         })
     }
 }
@@ -372,9 +372,9 @@ impl Qry {
         if let Some(v6) = limit.v6() {
             attrs_strings.push(("req_resource_set_ipv6", v6.as_v6().to_string()));
         }
+        attrs_strings.push(("class_name", class_name.to_string()));
 
-        let mut attrs_str = vec![];
-        attrs_str.push(("class_name", class_name));
+        let mut attrs_str: Vec<(&str, &str)> = vec![];
         for (k, v) in &attrs_strings {
             attrs_str.push((k, v.as_str()));
         }
@@ -388,9 +388,13 @@ impl Qry {
         rev: &RevocationRequest,
         w: &mut XmlWriter<W>,
     ) -> Result<(), io::Error> {
+        let class_name = rev.class_name().to_string();
         let bytes = rev.key().as_slice();
         let encoded = base64::encode_config(bytes, base64::URL_SAFE_NO_PAD);
-        let att = [("class_name", rev.class_name()), ("ski", encoded.as_str())];
+        let att = [
+            ("class_name", class_name.as_str()),
+            ("ski", encoded.as_str()),
+        ];
         w.put_element("key", Some(&att), |w| w.empty())
     }
 }
@@ -453,7 +457,7 @@ impl Res {
         R: io::Read,
     {
         r.take_named_element("class", |mut a, r| {
-            let name = a.take_req("class_name")?;
+            let name = ResourceClassName::from(a.take_req("class_name")?);
             let cert_url = uri::Rsync::from_str(&a.take_req("cert_url")?)?;
 
             let asn = a.take_req("resource_set_as")?;
@@ -503,7 +507,7 @@ impl Res {
     {
         r.take_opt_element(|t, mut a, r| match t.name.as_ref() {
             "class" => {
-                let name = a.take_req("class_name")?;
+                let name = ResourceClassName::from(a.take_req("class_name")?);
                 let cert_url = uri::Rsync::from_str(&a.take_req("cert_url")?)?;
 
                 let asn = a.take_req("resource_set_as")?;
@@ -666,7 +670,7 @@ impl Res {
     }
 
     fn encode_class<'a, W: io::Write>(
-        class_name: &str,
+        class_name: &ResourceClassName,
         cert_url: &uri::Rsync,
         not_after: Time,
         inrs: &ResourceSet,
@@ -675,6 +679,7 @@ impl Res {
         w: &mut XmlWriter<W>,
     ) -> Result<(), io::Error> {
         let cert_url = cert_url.to_string();
+        let class_name = class_name.to_string();
         let not_after = not_after.to_rfc3339_opts(SecondsFormat::Secs, true);
 
         let asn = inrs.asn().to_string();
@@ -684,7 +689,7 @@ impl Res {
         let mut attrs = vec![];
 
         attrs.push(("cert_url", cert_url.as_str()));
-        attrs.push(("class_name", class_name));
+        attrs.push(("class_name", class_name.as_str()));
         attrs.push(("resource_set_as", asn.as_str()));
         attrs.push(("resource_set_ipv4", v4.as_str()));
         attrs.push(("resource_set_ipv6", v6.as_str()));
@@ -749,9 +754,13 @@ impl Res {
         res: &RevocationResponse,
         w: &mut XmlWriter<W>,
     ) -> Result<(), io::Error> {
+        let class_name = res.class_name().to_string();
         let bytes = res.key().as_slice();
         let encoded = base64::encode_config(bytes, base64::URL_SAFE_NO_PAD);
-        let att = [("class_name", res.class_name()), ("ski", encoded.as_str())];
+        let att = [
+            ("class_name", class_name.as_str()),
+            ("ski", encoded.as_str()),
+        ];
         w.put_element("key", Some(&att), |w| w.empty())
     }
 }
@@ -818,6 +827,7 @@ impl NotPerformedResponse {
                 2001,
                 "Internal Server Error - Request not performed",
             )),
+
             _ => Err(Error::InvalidErrorCode(code.to_string())),
         }
     }
@@ -1043,7 +1053,7 @@ mod tests {
 
         let sender = "child".to_string();
         let rcpt = "parent".to_string();
-        let class = "all".to_string();
+        let class = ResourceClassName::default();
 
         let ski = cert.subject_public_key_info().key_identifier();
         let revocation = RevocationRequest::new(class, ski);
@@ -1063,7 +1073,7 @@ mod tests {
 
         let sender = "child".to_string();
         let rcpt = "parent".to_string();
-        let class = "all".to_string();
+        let class = ResourceClassName::default();
 
         let ski = cert.subject_public_key_info().key_identifier();
         let revocation = RevocationResponse::new(class, ski);

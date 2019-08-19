@@ -13,11 +13,10 @@ use krill_commons::api::admin::{
     UpdateChildRequest,
 };
 use krill_commons::api::ca::{
-    CertAuthList, CertAuthSummary, ChildCaInfo, IssuedCert, RcvdCert, RepoInfo,
+    CertAuthList, CertAuthSummary, ChildCaInfo, IssuedCert, RcvdCert, RepoInfo, ResourceClassName,
 };
 use krill_commons::api::{
     Entitlements, IssuanceRequest, IssuanceResponse, RevocationRequest, RevocationResponse,
-    DFLT_CLASS,
 };
 use krill_commons::eventsourcing::{Aggregate, AggregateStore, DiskAggregateStore};
 use krill_commons::remote::builder::SignedMessageBuilder;
@@ -27,8 +26,8 @@ use krill_commons::util::httpclient;
 use krill_commons::util::softsigner::KeyId;
 
 use crate::ca::{
-    self, ta_handle, CertAuth, ChildHandle, CmdDet, IniDet, ParentHandle, ResourceClassName,
-    ServerError, ServerResult, Signer,
+    self, ta_handle, CertAuth, ChildHandle, CmdDet, IniDet, ParentHandle, ServerError,
+    ServerResult, Signer,
 };
 use crate::mq::EventQueueListener;
 
@@ -286,7 +285,7 @@ impl<S: Signer> CaServer<S> {
             let class_name = issue_req.class_name();
             let pub_key = issue_req.csr().public_key();
 
-            if class_name != DFLT_CLASS {
+            if class_name != &ResourceClassName::default() {
                 unimplemented!("Issue for multiple classes from CAs, issue #25")
             }
 
@@ -603,10 +602,10 @@ impl<S: Signer> CaServer<S> {
     ) -> ServerResult<Vec<(ResourceClassName, IssuedCert)>, S> {
         let mut parent = self.ca_store.get_latest(parent_h)?;
 
-        let mut issued_certs: Vec<(String, IssuedCert)> = vec![];
+        let mut issued_certs: Vec<(ResourceClassName, IssuedCert)> = vec![];
 
         for req in requests.into_iter() {
-            let class_name = req.class_name().to_string();
+            let class_name = req.class_name().clone();
             let pub_key = req.csr().public_key().clone();
 
             let cmd = CmdDet::child_certify(parent_h, handle.clone(), req, self.signer.clone());
@@ -787,7 +786,7 @@ mod tests {
     use ca::EvtDet;
     use krill_commons::api::admin::{Handle, ParentCaContact, Token};
     use krill_commons::api::ca::{RcvdCert, RepoInfo, ResourceSet};
-    use krill_commons::api::{IssuanceRequest, DFLT_CLASS};
+    use krill_commons::api::IssuanceRequest;
     use krill_commons::eventsourcing::{Aggregate, AggregateStore, DiskAggregateStore};
     use krill_commons::util::softsigner::OpenSslSigner;
     use krill_commons::util::test;
@@ -943,7 +942,7 @@ mod tests {
             };
 
             let (class_name, limit, csr) = issuance_req.unwrap();
-            assert_eq!("all", &class_name);
+            assert_eq!(ResourceClassName::default(), class_name);
             assert!(limit.is_empty());
 
             //
@@ -954,7 +953,7 @@ mod tests {
             //   - Publication
             //
 
-            let request = IssuanceRequest::new(DFLT_CLASS.to_string(), limit, csr);
+            let request = IssuanceRequest::new(ResourceClassName::default(), limit, csr);
 
             let ta_cmd =
                 CmdDet::child_certify(&ta_handle, child_handle.clone(), request, signer.clone());
@@ -970,7 +969,7 @@ mod tests {
             let (class_name, _, _, issued) = issuance_res.unwrap();
 
             assert_eq!(child_handle, handle);
-            assert_eq!(DFLT_CLASS, class_name);
+            assert_eq!(ResourceClassName::default(), class_name);
 
             //
             // --- Return issued certificate to child CA
@@ -984,7 +983,7 @@ mod tests {
             let upd_rcvd = CmdDet::upd_received_cert(
                 &child_handle,
                 ta_handle,
-                DFLT_CLASS.to_string(),
+                ResourceClassName::default(),
                 rcvd_cert,
                 signer.clone(),
             );

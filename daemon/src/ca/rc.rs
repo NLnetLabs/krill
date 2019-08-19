@@ -3,6 +3,7 @@ use std::ops::Deref;
 use std::sync::{Arc, RwLock};
 
 use chrono::Duration;
+use serde::{Deserialize, Serialize};
 
 use rpki::crypto::PublicKeyFormat;
 use rpki::csr::Csr;
@@ -11,17 +12,16 @@ use rpki::x509::Time;
 
 use krill_commons::api::ca::{
     CertifiedKey, CurrentObjects, KeyRef, ObjectsDelta, OldKey, PendingKey, PublicationDelta,
-    RcvdCert, RepoInfo, ResourceClassInfo, ResourceClassKeysInfo,
+    RcvdCert, RepoInfo, ResourceClassInfo, ResourceClassKeysInfo, ResourceClassName,
 };
 use krill_commons::api::{
     EntitlementClass, IssuanceRequest, RequestResourceLimit, RevocationRequest,
 };
 use krill_commons::util::softsigner::KeyId;
 
-use crate::ca::{
-    self, Error, EvtDet, ParentHandle, ResourceClassName, Result, SignSupport, Signer,
-};
-use ca::TA_NAME;
+use crate::ca::{self, Error, EvtDet, ParentHandle, Result, SignSupport, Signer, TA_NAME};
+
+//------------ ResourceClass -----------------------------------------------
 
 /// A CA may have multiple parents, e.g. two RIRs, and it may not get all its
 /// resource entitlements in one set, but in a number of so-called "resource
@@ -650,7 +650,7 @@ impl ResourceClassKeys {
             let req = self.create_issuance_req(
                 base_repo,
                 name_space,
-                entitlement.class_name(),
+                entitlement.class_name().clone(),
                 key_id,
                 signer,
             )?;
@@ -715,7 +715,7 @@ impl ResourceClassKeys {
         &self,
         base_repo: &RepoInfo,
         name_space: &str,
-        class_name: &str,
+        class_name: ResourceClassName,
         key: &KeyId,
         signer: &S,
     ) -> Result<IssuanceRequest> {
@@ -733,7 +733,7 @@ impl ResourceClassKeys {
         let csr = Csr::decode(enc.as_slice()).map_err(Error::signer)?;
 
         Ok(IssuanceRequest::new(
-            class_name.to_string(),
+            class_name,
             RequestResourceLimit::default(),
             csr,
         ))
@@ -779,15 +779,16 @@ impl ResourceClassKeys {
                         .map_err(Error::signer)?
                 };
 
-                let issuance_req =
-                    self.create_issuance_req(base_repo, name_space, &class_name, &key_id, signer)?;
+                let issuance_req = self.create_issuance_req(
+                    base_repo,
+                    name_space,
+                    class_name.clone(),
+                    &key_id,
+                    signer,
+                )?;
 
                 Ok(vec![
-                    EvtDet::KeyRollPendingKeyAdded(
-                        parent.clone(),
-                        class_name.clone(),
-                        key_id.clone(),
-                    ),
+                    EvtDet::KeyRollPendingKeyAdded(parent.clone(), class_name, key_id.clone()),
                     EvtDet::CertificateRequested(parent, issuance_req, key_id),
                 ])
             }

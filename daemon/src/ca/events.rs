@@ -10,8 +10,8 @@ use rpki::x509::{Serial, Time, Validity};
 
 use krill_commons::api::admin::{Handle, ParentCaContact, Token};
 use krill_commons::api::ca::{
-    CertifiedKey, ChildCaDetails, ObjectsDelta, PublicationDelta, RcvdCert, RepoInfo, ResourceSet,
-    TrustAnchorLocator,
+    CertifiedKey, ChildCaDetails, ObjectsDelta, PublicationDelta, RcvdCert, RepoInfo,
+    ResourceClassName, ResourceSet, TrustAnchorLocator,
 };
 use krill_commons::api::{
     IssuanceRequest, IssuanceResponse, RevocationRequest, RevocationResponse,
@@ -21,9 +21,7 @@ use krill_commons::remote::id::IdCert;
 use krill_commons::util::softsigner::KeyId;
 
 use crate::ca::signing::Signer;
-use crate::ca::{
-    ChildHandle, Error, ParentHandle, ResourceClass, ResourceClassName, Result, Rfc8183Id,
-};
+use crate::ca::{ChildHandle, Error, ParentHandle, ResourceClass, Result, Rfc8183Id};
 
 //------------ TaIniDetails --------------------------------------------------
 

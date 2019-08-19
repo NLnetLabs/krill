@@ -11,7 +11,7 @@ use krill_commons::api::admin::{
     AddChildRequest, AddParentRequest, CertAuthInit, CertAuthPubMode, ChildAuthRequest, Handle,
     ParentCaContact, Token, UpdateChildRequest,
 };
-use krill_commons::api::ca::{CertAuthInfo, ResourceClassKeysInfo, ResourceSet};
+use krill_commons::api::ca::{CertAuthInfo, ResourceClassKeysInfo, ResourceClassName, ResourceSet};
 use krill_commons::remote::rfc8183;
 use krill_commons::util::test;
 
@@ -192,7 +192,7 @@ pub fn wait_for_new_key(handle: &Handle) {
     wait_for(30, "No new key received", move || {
         let ca = ca_details(handle);
         if let Some(parent) = ca.parent(&ta_handle()) {
-            if let Some(rc) = parent.resources().get("all") {
+            if let Some(rc) = parent.resources().get(&ResourceClassName::default()) {
                 match rc.keys() {
                     ResourceClassKeysInfo::RollNew(new, _) => {
                         return new.current_set().number() == 2
@@ -211,7 +211,7 @@ pub fn wait_for_key_roll_complete(handle: &Handle) {
         let ca = ca_details(handle);
 
         if let Some(parent) = ca.parent(&ta_handle()) {
-            if let Some(rc) = parent.resources().get("all") {
+            if let Some(rc) = parent.resources().get(&ResourceClassName::default()) {
                 match rc.keys() {
                     ResourceClassKeysInfo::Active(_) => return true,
                     _ => return false,
@@ -228,7 +228,10 @@ pub fn wait_for_resource_class_to_disappear(handle: &Handle) {
         let ca = ca_details(handle);
 
         if let Some(parent) = ca.parent(&ta_handle()) {
-            return parent.resources().get("all").is_none();
+            return parent
+                .resources()
+                .get(&ResourceClassName::default())
+                .is_none();
         }
 
         false
@@ -249,7 +252,7 @@ pub fn ta_issued_certs() -> usize {
 pub fn ta_issued_resources(child: &Handle) -> ResourceSet {
     let ta = ca_details(&ta_handle());
     let child = ta.children().get(child).unwrap();
-    if let Some(resources) = child.resources().get("all") {
+    if let Some(resources) = child.resources().get(&ResourceClassName::default()) {
         if let Some(cert) = resources.certs_iter().next() {
             return cert.resource_set().clone(); // for our testing the first will do
         }
@@ -261,7 +264,7 @@ pub fn ca_current_resources(handle: &Handle) -> ResourceSet {
     let ca = ca_details(handle);
 
     if let Some(parent) = ca.parent(&ta_handle()) {
-        if let Some(rc) = parent.resources().get("all") {
+        if let Some(rc) = parent.resources().get(&ResourceClassName::default()) {
             match rc.keys() {
                 ResourceClassKeysInfo::Active(current)
                 | ResourceClassKeysInfo::RollPending(_, current)

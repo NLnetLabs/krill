@@ -5,10 +5,8 @@ use rpki::resources::{AsBlocks, IpBlocks};
 use rpki::uri;
 use rpki::x509::Time;
 
-use crate::api::ca::{IssuedCert, RcvdCert, ResourceSet};
+use crate::api::ca::{IssuedCert, RcvdCert, ResourceClassName, ResourceSet};
 use crate::util::ext_serde;
-
-pub const DFLT_CLASS: &str = "all";
 
 //------------ ProvisioningRequest -------------------------------------------
 
@@ -51,10 +49,9 @@ impl Entitlements {
         not_after: Time,
         issued: Vec<IssuedCert>,
     ) -> Self {
-        let name = DFLT_CLASS.to_string();
         Entitlements {
             classes: vec![EntitlementClass {
-                class_name: name,
+                class_name: ResourceClassName::default(),
                 issuer,
                 resource_set,
                 not_after,
@@ -75,7 +72,7 @@ impl Entitlements {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct EntitlementClass {
-    class_name: String,
+    class_name: ResourceClassName,
     issuer: SigningCert,
     resource_set: ResourceSet,
     not_after: Time,
@@ -84,7 +81,7 @@ pub struct EntitlementClass {
 
 impl EntitlementClass {
     pub fn new(
-        class_name: String,
+        class_name: ResourceClassName,
         issuer: SigningCert,
         resource_set: ResourceSet,
         not_after: Time,
@@ -99,7 +96,15 @@ impl EntitlementClass {
         }
     }
 
-    fn unwrap(self) -> (String, SigningCert, ResourceSet, Time, Vec<IssuedCert>) {
+    fn unwrap(
+        self,
+    ) -> (
+        ResourceClassName,
+        SigningCert,
+        ResourceSet,
+        Time,
+        Vec<IssuedCert>,
+    ) {
         (
             self.class_name,
             self.issuer,
@@ -108,18 +113,23 @@ impl EntitlementClass {
             self.issued,
         )
     }
-    pub fn class_name(&self) -> &str {
+
+    pub fn class_name(&self) -> &ResourceClassName {
         &self.class_name
     }
+
     pub fn issuer(&self) -> &SigningCert {
         &self.issuer
     }
+
     pub fn resource_set(&self) -> &ResourceSet {
         &self.resource_set
     }
+
     pub fn not_after(&self) -> Time {
         self.not_after
     }
+
     pub fn issued(&self) -> &Vec<IssuedCert> {
         &self.issued
     }
@@ -184,13 +194,13 @@ impl From<&RcvdCert> for SigningCert {
 /// defined in section 3.4.1 of RFC6492.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct IssuanceRequest {
-    class_name: String,
+    class_name: ResourceClassName,
     limit: RequestResourceLimit,
     csr: Csr,
 }
 
 impl IssuanceRequest {
-    pub fn new(class_name: String, limit: RequestResourceLimit, csr: Csr) -> Self {
+    pub fn new(class_name: ResourceClassName, limit: RequestResourceLimit, csr: Csr) -> Self {
         IssuanceRequest {
             class_name,
             limit,
@@ -198,11 +208,11 @@ impl IssuanceRequest {
         }
     }
 
-    pub fn unwrap(self) -> (String, RequestResourceLimit, Csr) {
+    pub fn unwrap(self) -> (ResourceClassName, RequestResourceLimit, Csr) {
         (self.class_name, self.limit, self.csr)
     }
 
-    pub fn class_name(&self) -> &str {
+    pub fn class_name(&self) -> &ResourceClassName {
         &self.class_name
     }
     pub fn limit(&self) -> &RequestResourceLimit {
@@ -232,7 +242,7 @@ impl Eq for IssuanceRequest {}
 /// it includes the one certificate which has just been issued only.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct IssuanceResponse {
-    class_name: String,
+    class_name: ResourceClassName,
     issuer: SigningCert,
     resource_set: ResourceSet, // resources allowed on a cert
     not_after: Time,
@@ -241,7 +251,7 @@ pub struct IssuanceResponse {
 
 impl IssuanceResponse {
     pub fn new(
-        class_name: String,
+        class_name: ResourceClassName,
         issuer: SigningCert,
         resource_set: ResourceSet, // resources allowed on a cert
         not_after: Time,
@@ -256,22 +266,26 @@ impl IssuanceResponse {
         }
     }
 
-    pub fn unwrap(self) -> (String, SigningCert, ResourceSet, IssuedCert) {
+    pub fn unwrap(self) -> (ResourceClassName, SigningCert, ResourceSet, IssuedCert) {
         (self.class_name, self.issuer, self.resource_set, self.issued)
     }
 
-    pub fn class_name(&self) -> &str {
+    pub fn class_name(&self) -> &ResourceClassName {
         &self.class_name
     }
+
     pub fn issuer(&self) -> &SigningCert {
         &self.issuer
     }
+
     pub fn resource_set(&self) -> &ResourceSet {
         &self.resource_set
     }
+
     pub fn not_after(&self) -> Time {
         self.not_after
     }
+
     pub fn issued(&self) -> &IssuedCert {
         &self.issued
     }
@@ -354,16 +368,16 @@ impl Default for RequestResourceLimit {
 /// defined in section 3.5.1 of RFC6492.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RevocationRequest {
-    class_name: String,
+    class_name: ResourceClassName,
     key: KeyIdentifier,
 }
 
 impl RevocationRequest {
-    pub fn new(class_name: String, key: KeyIdentifier) -> Self {
+    pub fn new(class_name: ResourceClassName, key: KeyIdentifier) -> Self {
         RevocationRequest { class_name, key }
     }
 
-    pub fn class_name(&self) -> &str {
+    pub fn class_name(&self) -> &ResourceClassName {
         &self.class_name
     }
     pub fn key(&self) -> &KeyIdentifier {
@@ -377,20 +391,20 @@ impl RevocationRequest {
 /// defined in section 3.5.2 of RFC6492.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RevocationResponse {
-    class_name: String,
+    class_name: ResourceClassName,
     key: KeyIdentifier,
 }
 
 impl RevocationResponse {
-    pub fn new(class_name: String, key: KeyIdentifier) -> Self {
+    pub fn new(class_name: ResourceClassName, key: KeyIdentifier) -> Self {
         RevocationResponse { class_name, key }
     }
 
-    pub fn unpack(self) -> (String, KeyIdentifier) {
+    pub fn unpack(self) -> (ResourceClassName, KeyIdentifier) {
         (self.class_name, self.key)
     }
 
-    pub fn class_name(&self) -> &str {
+    pub fn class_name(&self) -> &ResourceClassName {
         &self.class_name
     }
     pub fn key(&self) -> &KeyIdentifier {

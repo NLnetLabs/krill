@@ -3,12 +3,12 @@ use std::sync::{Arc, RwLock};
 use chrono::Duration;
 
 use krill_commons::api::admin::{Handle, ParentCaContact, UpdateChildRequest};
-use krill_commons::api::ca::{RcvdCert, ResourceSet};
+use krill_commons::api::ca::{RcvdCert, ResourceClassName, ResourceSet};
 use krill_commons::api::{Entitlements, IssuanceRequest, RevocationRequest, RevocationResponse};
 use krill_commons::eventsourcing;
 use krill_commons::remote::id::IdCert;
 
-use crate::ca::{ChildHandle, Evt, ParentHandle, ResourceClassName, Signer};
+use crate::ca::{ChildHandle, Evt, ParentHandle, Signer};
 
 //------------ Command -----------------------------------------------------
 
