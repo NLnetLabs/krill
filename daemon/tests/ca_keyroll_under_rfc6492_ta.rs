@@ -28,7 +28,7 @@ fn ca_keyroll_under_rfc6492_ta() {
         };
 
         add_parent_to_ca(&child, parent);
-        wait_for_resources_on_current_key(&child, &child_resources);
+        wait_for_current_resources(&child, &child_resources);
         wait_for_ta_to_have_number_of_issued_certs(1);
 
         ca_roll_init(&child);

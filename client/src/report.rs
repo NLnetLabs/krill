@@ -19,7 +19,7 @@ pub enum ApiResponse {
     CertAuthInfo(CertAuthInfo),
     CertAuths(CertAuthList),
 
-    ParentCaInfo(ParentCaContact),
+    ParentCaContact(ParentCaContact),
 
     PublisherDetails(PublisherDetails),
     PublisherList(PublisherList),
@@ -48,7 +48,7 @@ impl ApiResponse {
                 ApiResponse::TrustAnchorInfo(ta) => Ok(Some(ta.report(fmt)?)),
                 ApiResponse::CertAuths(list) => Ok(Some(list.report(fmt)?)),
                 ApiResponse::CertAuthInfo(info) => Ok(Some(info.report(fmt)?)),
-                ApiResponse::ParentCaInfo(info) => Ok(Some(info.report(fmt)?)),
+                ApiResponse::ParentCaContact(contact) => Ok(Some(contact.report(fmt)?)),
                 ApiResponse::PublisherList(list) => Ok(Some(list.report(fmt)?)),
                 ApiResponse::PublisherDetails(details) => Ok(Some(details.report(fmt)?)),
                 ApiResponse::Rfc8181ClientList(list) => Ok(Some(list.report(fmt)?)),

@@ -82,12 +82,15 @@ pub fn start(config: &Config) -> Result<(), Error> {
                     .route("/trustanchor/children/{handle}", post().to(ta_update_child))
                     .route("/cas", post().to(ca_init))
                     .route("/cas", get().to(cas))
-                    .route("/cas/{handle}", get().to(ca_info))
-                    .route("/cas/{handle}/child_request", get().to(ca_child_req))
-                    .route("/cas/{handle}/parents", post().to(ca_add_parent))
-                    .route("/cas/{handle}/keys/roll_init", post().to(ca_keyroll_init))
+                    .route("/cas/{ca}", get().to(ca_info))
+                    .route("/cas/{ca}/child_request", get().to(ca_child_req))
+                    .route("/cas/{ca}/parents", post().to(ca_add_parent))
+                    .route("/cas/{ca}/children", post().to(ca_add_child))
+                    .route("/cas/{ca}/children/{child}", get().to(ca_show_child))
+                    .route("/cas/{ca}/children/{child}", post().to(ca_update_child))
+                    .route("/cas/{ca}/keys/roll_init", post().to(ca_keyroll_init))
                     .route(
-                        "/cas/{handle}/keys/roll_activate",
+                        "/cas/{ca}/keys/roll_activate",
                         post().to(ca_keyroll_activate),
                     )
                     .route("/republish", post().to(republish_all)),

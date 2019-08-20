@@ -251,7 +251,7 @@ impl<S: Signer> Aggregate for CertAuth<S> {
             // Key rolls
             CmdDet::KeyRollInitiate(duration, signer) => self.keyroll_initiate(duration, signer),
             CmdDet::KeyRollActivate(duration, signer) => self.keyroll_activate(duration, signer),
-            CmdDet::KeyRollFinish(parent, response) => self.keyroll_finish(&parent, response),
+            CmdDet::KeyRollFinish(rcn, response) => self.keyroll_finish(rcn, response),
 
             // Republish
             CmdDet::Republish(signer) => self.republish(signer),
@@ -351,13 +351,13 @@ impl<S: Signer> CertAuth<S> {
 
     /// List entitlements (section 3.3.2 of RFC6492). Return an error if
     /// the child is not authorized -- or unknown etc.
-    ///
-    /// Only supported in TAs until issue #25 is implemented.
     pub fn list(&self, child_handle: &Handle) -> Result<api::Entitlements> {
-        // TODO: Support arbitrary resource classes. See issue #25.
         let mut classes = vec![];
-        if let Some(class) = self.entitlement_class(child_handle, &ResourceClassName::default()) {
-            classes.push(class);
+
+        for rcn in self.resources.keys() {
+            if let Some(class) = self.entitlement_class(child_handle, rcn) {
+                classes.push(class);
+            }
         }
 
         Ok(Entitlements::new(classes))
@@ -498,8 +498,6 @@ impl<S: Signer> CertAuth<S> {
     /// = the csr is invalid,
     /// = the limit exceeds the child allocation,
     /// = the signer throws up..
-    ///
-    /// This CA is not a TA (until #25)
     fn certify_child(
         &self,
         child: Handle,
@@ -1018,12 +1016,15 @@ impl<S: Signer> CertAuth<S> {
 
     /// Get all the current open certificate requests for a parent.
     /// Returns an empty list if the parent is not found.
-    pub fn cert_requests(&self, parent_handle: &ParentHandle) -> Vec<IssuanceRequest> {
-        let mut res = vec![];
+    pub fn cert_requests(
+        &self,
+        parent_handle: &ParentHandle,
+    ) -> HashMap<ResourceClassName, Vec<IssuanceRequest>> {
+        let mut res = HashMap::new();
 
-        for rc in self.resources.values() {
+        for (name, rc) in self.resources.iter() {
             if rc.parent_handle() == parent_handle {
-                res.append(&mut rc.cert_requests())
+                res.insert(name.clone(), rc.cert_requests());
             }
         }
 
@@ -1049,14 +1050,19 @@ impl<S: Signer> CertAuth<S> {
     }
 
     /// Returns the open revocation requests for the given parent.
-    pub fn revoke_requests(&self, parent: &ParentHandle) -> Vec<&RevocationRequest> {
-        let mut res = vec![];
-        for rc in self.resources.values() {
+    pub fn revoke_requests(
+        &self,
+        parent: &ParentHandle,
+    ) -> HashMap<ResourceClassName, Vec<RevocationRequest>> {
+        let mut res = HashMap::new();
+        for (name, rc) in self.resources.iter() {
+            let mut revokes = vec![];
             if let Some(req) = rc.revoke_request() {
                 if rc.parent_handle() == parent {
-                    res.push(req)
+                    revokes.push(req.clone())
                 }
             }
+            res.insert(name.clone(), revokes);
         }
         res
     }
@@ -1089,10 +1095,13 @@ impl<S: Signer> CertAuth<S> {
             .iter()
             .map(|c| c.class_name())
             .collect();
-        for (name, class) in current_resource_classes
-            .iter()
-            .filter(|(name, _class)| !entitled_classes.contains(name))
-        {
+
+        for (name, class) in current_resource_classes.iter().filter(|(_name, class)| {
+            // Find the classes for this parent, not included
+            // in the entitlements now received.
+            class.parent_handle() == &parent_handle
+                && !entitled_classes.contains(&class.parent_rc_name())
+        }) {
             let signer = signer.read().unwrap();
 
             let delta = class.withdraw(&self.base_repo);
@@ -1261,19 +1270,18 @@ impl<S: Signer> CertAuth<S> {
 
     fn keyroll_finish(
         &self,
-        parent_h: &ParentHandle,
-        response: RevocationResponse,
+        rcn: ResourceClassName,
+        _response: RevocationResponse,
     ) -> ca::Result<Vec<Evt>> {
         if self.is_ta() {
             return Ok(vec![]);
         }
-        let (parent_rc_name, _key_id) = response.unpack();
+        let my_rc = self
+            .resources
+            .get(&rcn)
+            .ok_or_else(|| Error::unknown_resource_class(&rcn))?;
 
-        let (my_name, my_rc) = self
-            .find_parent_rc(parent_h, &parent_rc_name)
-            .ok_or_else(|| Error::unknown_resource_class(&parent_rc_name))?;
-
-        let finish_details = my_rc.keyroll_finish(my_name.clone(), &self.base_repo)?;
+        let finish_details = my_rc.keyroll_finish(rcn, &self.base_repo)?;
 
         Ok(vec![StoredEvent::new(
             self.handle(),

@@ -3,11 +3,12 @@
 //! signed material, or asking a newly added parent for resource
 //! entitlements.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::sync::RwLock;
 
 use krill_commons::api::admin::Handle;
+use krill_commons::api::ca::ResourceClassName;
 use krill_commons::api::publication::PublishDelta;
 use krill_commons::api::RevocationRequest;
 use krill_commons::eventsourcing;
@@ -24,7 +25,11 @@ pub enum QueueEvent {
     Delta(Handle, PublishDelta),
     ParentAdded(Handle, ParentHandle),
     RequestsPending(Handle),
-    ResourceClassRemoved(Handle, ParentHandle, Vec<RevocationRequest>),
+    ResourceClassRemoved(
+        Handle,
+        ParentHandle,
+        HashMap<ResourceClassName, Vec<RevocationRequest>>,
+    ),
 }
 
 #[derive(Debug)]
@@ -72,12 +77,16 @@ impl<S: Signer> eventsourcing::EventListener<CertAuth<S>> for EventQueueListener
                 let evt = QueueEvent::Delta(handle.clone(), publish_delta);
                 self.push_back(evt);
             }
-            EvtDet::ResourceClassRemoved(_class_name, delta, parent, revocations) => {
+            EvtDet::ResourceClassRemoved(class_name, delta, parent, revocations) => {
                 self.push_back(QueueEvent::Delta(handle.clone(), delta.clone().into()));
+
+                let mut revocations_map = HashMap::new();
+                revocations_map.insert(class_name.clone(), revocations.clone());
+
                 self.push_back(QueueEvent::ResourceClassRemoved(
                     handle.clone(),
                     parent.clone(),
-                    revocations.clone(),
+                    revocations_map,
                 ))
             }
             EvtDet::KeyRollFinished(_class_name, delta) => {

@@ -15,7 +15,7 @@ use krill_commons::api::ca::{CertAuthInfo, ResourceClassKeysInfo, ResourceClassN
 use krill_commons::remote::rfc8183;
 use krill_commons::util::test;
 
-use crate::ca::ta_handle;
+use crate::ca::{ta_handle, ChildHandle, ParentHandle};
 use crate::config::Config;
 use crate::http::server;
 
@@ -101,7 +101,7 @@ pub fn add_child_to_ta_embedded(handle: &Handle, resources: ResourceSet) -> Pare
     let res = krill_admin(Command::TrustAnchor(TrustAnchorCommand::AddChild(req)));
 
     match res {
-        ApiResponse::ParentCaInfo(info) => info,
+        ApiResponse::ParentCaContact(info) => info,
         _ => panic!("Expected ParentCaInfo response"),
     }
 }
@@ -116,7 +116,23 @@ pub fn add_child_to_ta_rfc6492(
     let res = krill_admin(Command::TrustAnchor(TrustAnchorCommand::AddChild(req)));
 
     match res {
-        ApiResponse::ParentCaInfo(info) => info,
+        ApiResponse::ParentCaContact(info) => info,
+        _ => panic!("Expected ParentCaInfo response"),
+    }
+}
+
+pub fn add_child_rfc6492(
+    parent: &ParentHandle,
+    child: &ChildHandle,
+    req: rfc8183::ChildRequest,
+    resources: ResourceSet,
+) -> ParentCaContact {
+    let auth = ChildAuthRequest::Rfc8183(req);
+    let req = AddChildRequest::new(child.clone(), resources, auth);
+    let res = krill_admin(Command::CertAuth(CaCommand::AddChild(parent.clone(), req)));
+
+    match res {
+        ApiResponse::ParentCaContact(info) => info,
         _ => panic!("Expected ParentCaInfo response"),
     }
 }
@@ -180,7 +196,7 @@ where
     panic!(error_msg);
 }
 
-pub fn wait_for_resources_on_current_key(handle: &Handle, resources: &ResourceSet) {
+pub fn wait_for_current_resources(handle: &Handle, resources: &ResourceSet) {
     wait_for(
         30,
         "cms child did not get its resource certificate",
@@ -249,17 +265,19 @@ pub fn ta_issued_resources(child: &Handle) -> ResourceSet {
 pub fn ca_current_resources(handle: &Handle) -> ResourceSet {
     let ca = ca_details(handle);
 
-    if let Some(rc) = ca.resources().get(&ResourceClassName::default()) {
+    let mut res = ResourceSet::default();
+
+    for rc in ca.resources().values() {
         match rc.keys() {
             ResourceClassKeysInfo::Active(current)
             | ResourceClassKeysInfo::RollPending(_, current)
             | ResourceClassKeysInfo::RollNew(_, current)
             | ResourceClassKeysInfo::RollOld(current, _) => {
-                return current.incoming_cert().resources().clone()
+                res = res.union(current.incoming_cert().resources());
             }
             _ => {}
         }
     }
 
-    ResourceSet::default()
+    res
 }

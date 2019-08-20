@@ -327,7 +327,7 @@ impl AddParentRequest {
 #[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum ParentCaContact {
-    #[display(fmt = "In this context this CA is a self-signed TA")]
+    #[display(fmt = "This CA is a TA with TAL:\n{}", _0)]
     Ta(TrustAnchorLocator),
 
     #[display(fmt = "Embedded parent")]
