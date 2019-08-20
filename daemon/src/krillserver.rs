@@ -27,8 +27,7 @@ use krill_pubd::publishers::Publisher;
 use krill_pubd::PubServer;
 
 use crate::auth::{Auth, Authorizer};
-use crate::ca::ChildHandle;
-use crate::ca::{self, ta_handle};
+use crate::ca::{self, ta_handle, ChildHandle, ParentHandle};
 use crate::config::Config;
 use crate::mq::EventQueueListener;
 use crate::scheduler::Scheduler;
@@ -75,9 +74,7 @@ pub struct KrillServer {
 impl KrillServer {
     /// Creates a new publication server. Note that state is preserved
     /// on disk in the work_dir provided.
-    pub fn build(
-        config: &Config
-    ) -> KrillRes<Self> {
+    pub fn build(config: &Config) -> KrillRes<Self> {
         let work_dir = &config.data_dir;
         let base_uri = &config.rsync_base;
         let service_uri = config.service_uri();
@@ -312,21 +309,35 @@ impl KrillServer {
         Ok(())
     }
 
-    /// Adds a child to the TA and returns the ParentCaInfo that the child
-    /// will to contact this TA for resource requests.
-    pub fn ta_add_child(&self, req: AddChildRequest) -> KrillRes<ParentCaContact> {
-        let contact = self.caserver.ta_add_child(req, &self.service_uri)?;
+    /// Adds a child to a CA and returns the ParentCaInfo that the child
+    /// will need to contact this CA for resource requests.
+    pub fn ca_add_child(
+        &self,
+        parent: &ParentHandle,
+        req: AddChildRequest,
+    ) -> KrillRes<ParentCaContact> {
+        let contact = self.caserver.ca_add_child(parent, req, &self.service_uri)?;
         Ok(contact)
     }
 
-    pub fn ta_update_child(&self, child: ChildHandle, req: UpdateChildRequest) -> EmptyRes {
-        self.caserver.ta_update_child(child, req)?;
+    /// Update IdCert or resources of a child.
+    pub fn ca_update_child(
+        &self,
+        parent: &ParentHandle,
+        child: ChildHandle,
+        req: UpdateChildRequest,
+    ) -> EmptyRes {
+        self.caserver.ca_update_child(parent, child, req)?;
         Ok(())
     }
 
     /// Show details for a child under the TA.
-    pub fn ta_show_child(&self, child: &ChildHandle) -> KrillRes<Option<ChildCaInfo>> {
-        let child = self.caserver.ta_show_child(child)?;
+    pub fn ca_show_child(
+        &self,
+        parent: &ParentHandle,
+        child: &ChildHandle,
+    ) -> KrillRes<Option<ChildCaInfo>> {
+        let child = self.caserver.ca_show_child(parent, child)?;
         Ok(child)
     }
 

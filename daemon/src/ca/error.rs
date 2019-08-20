@@ -47,6 +47,9 @@ pub enum Error {
     #[display(fmt = "No matching resource class")]
     MissingResourceClass,
 
+    #[display(fmt = "No current key in resource class")]
+    ResourceClassNoCurrentKey,
+
     #[display(fmt = "Child CA MUST have resources.")]
     MustHaveResources,
 
@@ -85,6 +88,10 @@ impl Error {
 
     pub fn invalid_csr(handle: &Handle, msg: &str) -> Self {
         Error::InvalidCsr(handle.clone(), msg.to_string())
+    }
+
+    pub fn unknown_resource_class(class: impl Display) -> Self {
+        Error::UnknownResourceClass(class.to_string())
     }
 }
 

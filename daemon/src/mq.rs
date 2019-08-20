@@ -3,11 +3,12 @@
 //! signed material, or asking a newly added parent for resource
 //! entitlements.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::sync::RwLock;
 
 use krill_commons::api::admin::Handle;
+use krill_commons::api::ca::ResourceClassName;
 use krill_commons::api::publication::PublishDelta;
 use krill_commons::api::RevocationRequest;
 use krill_commons::eventsourcing;
@@ -23,8 +24,12 @@ use crate::ca::{CertAuth, Evt, EvtDet, ParentHandle, Signer};
 pub enum QueueEvent {
     Delta(Handle, PublishDelta),
     ParentAdded(Handle, ParentHandle),
-    RequestsPending(Handle, ParentHandle),
-    ResourceClassRemoved(Handle, ParentHandle, Vec<RevocationRequest>),
+    RequestsPending(Handle),
+    ResourceClassRemoved(
+        Handle,
+        ParentHandle,
+        HashMap<ResourceClassName, Vec<RevocationRequest>>,
+    ),
 }
 
 #[derive(Debug)]
@@ -64,7 +69,7 @@ impl<S: Signer> eventsourcing::EventListener<CertAuth<S>> for EventQueueListener
 
         let handle = event.handle();
         match event.details() {
-            EvtDet::Published(_, _, delta) => {
+            EvtDet::Published(_, delta) => {
                 let publish_delta = delta.values().fold(PublishDelta::empty(), |acc, el| {
                     acc + el.objects().clone().into()
                 });
@@ -72,19 +77,19 @@ impl<S: Signer> eventsourcing::EventListener<CertAuth<S>> for EventQueueListener
                 let evt = QueueEvent::Delta(handle.clone(), publish_delta);
                 self.push_back(evt);
             }
-            EvtDet::TaPublished(delta) => {
-                let evt = QueueEvent::Delta(handle.clone(), delta.objects().clone().into());
-                self.push_back(evt);
-            }
-            EvtDet::ResourceClassRemoved(parent, _class_name, delta, revocations) => {
+            EvtDet::ResourceClassRemoved(class_name, delta, parent, revocations) => {
                 self.push_back(QueueEvent::Delta(handle.clone(), delta.clone().into()));
+
+                let mut revocations_map = HashMap::new();
+                revocations_map.insert(class_name.clone(), revocations.clone());
+
                 self.push_back(QueueEvent::ResourceClassRemoved(
                     handle.clone(),
                     parent.clone(),
-                    revocations.clone(),
+                    revocations_map,
                 ))
             }
-            EvtDet::KeyRollFinished(_parent, _class_name, delta) => {
+            EvtDet::KeyRollFinished(_class_name, delta) => {
                 let evt = QueueEvent::Delta(handle.clone(), delta.clone().into());
                 self.push_back(evt);
             }
@@ -94,12 +99,12 @@ impl<S: Signer> eventsourcing::EventListener<CertAuth<S>> for EventQueueListener
                 self.push_back(evt);
             }
 
-            EvtDet::CertificateRequested(parent, _, _) => {
-                let evt = QueueEvent::RequestsPending(handle.clone(), parent.clone());
+            EvtDet::CertificateRequested(_, _, _) => {
+                let evt = QueueEvent::RequestsPending(handle.clone());
                 self.push_back(evt);
             }
-            EvtDet::KeyRollActivated(parent, _, _) => {
-                let evt = QueueEvent::RequestsPending(handle.clone(), parent.clone());
+            EvtDet::KeyRollActivated(_, _) => {
+                let evt = QueueEvent::RequestsPending(handle.clone());
                 self.push_back(evt);
             }
             _ => {}

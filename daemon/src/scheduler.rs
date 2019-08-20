@@ -64,7 +64,6 @@ fn make_event_sh(
                     publish(&handle, delta, &pubserver);
                 }
                 QueueEvent::ResourceClassRemoved(handle, parent, revocations) => {
-                    let revocations = revocations.iter().collect();
                     if caserver
                         .send_revoke_requests(&handle, &parent, revocations)
                         .is_err()
@@ -82,8 +81,8 @@ fn make_event_sh(
                         )
                     }
                 }
-                QueueEvent::RequestsPending(handle, parent) => {
-                    if let Err(e) = caserver.send_requests(&handle, &parent) {
+                QueueEvent::RequestsPending(handle) => {
+                    if let Err(e) = caserver.send_all_requests(&handle) {
                         error!("Sending pending requests for {}, error: {}", &handle, e);
                     }
                 }

@@ -4,9 +4,8 @@
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::ops::{Deref, DerefMut};
-use std::str;
-use std::str::FromStr;
-use std::{fmt, ops};
+use std::str::{from_utf8_unchecked, FromStr};
+use std::{fmt, ops, str};
 
 use bytes::Bytes;
 use chrono::Duration;
@@ -32,6 +31,75 @@ use crate::rpki::manifest::{FileAndHash, Manifest};
 use crate::util::ext_serde;
 use crate::util::softsigner::KeyId;
 
+//------------ ResourceClassName -------------------------------------------
+
+/// This type represents a resource class name, as used in RFC6492. The protocol
+/// allows for any arbitrary set of utf8 characters to be used as the name, though
+/// in practice names can be expected to be short and plain ascii or even numbers.
+///
+/// We store the name in a Bytes for cheap cloning, as these names need to be passed
+/// around quite a bit and end up being stored as owned values in events.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct ResourceClassName {
+    name: Bytes,
+}
+
+impl Default for ResourceClassName {
+    fn default() -> ResourceClassName {
+        ResourceClassName::from(0)
+    }
+}
+
+impl From<u32> for ResourceClassName {
+    fn from(nr: u32) -> ResourceClassName {
+        ResourceClassName {
+            name: Bytes::from(format!("{}", nr)),
+        }
+    }
+}
+
+impl From<&str> for ResourceClassName {
+    fn from(s: &str) -> ResourceClassName {
+        ResourceClassName {
+            name: Bytes::from(s),
+        }
+    }
+}
+
+impl From<String> for ResourceClassName {
+    fn from(s: String) -> ResourceClassName {
+        ResourceClassName {
+            name: Bytes::from(s),
+        }
+    }
+}
+
+impl fmt::Display for ResourceClassName {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let s = unsafe { from_utf8_unchecked(self.name.as_ref()) };
+        write!(f, "{}", s)
+    }
+}
+
+impl Serialize for ResourceClassName {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.to_string().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ResourceClassName {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<ResourceClassName, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let string = String::deserialize(deserializer)?;
+        Ok(ResourceClassName::from(string))
+    }
+}
+
 //------------ ChildCaInfo ---------------------------------------------------
 
 /// This type represents information about a child CA that is safe to share
@@ -40,7 +108,7 @@ use crate::util::softsigner::KeyId;
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildCaInfo {
     id_cert: Option<IdCert>,
-    resources: HashMap<String, ChildResources>,
+    resources: HashMap<ResourceClassName, ChildResources>,
 }
 
 impl ChildCaInfo {
@@ -48,11 +116,11 @@ impl ChildCaInfo {
         self.id_cert.as_ref()
     }
 
-    pub fn resources(&self) -> &HashMap<String, ChildResources> {
+    pub fn resources(&self) -> &HashMap<ResourceClassName, ChildResources> {
         &self.resources
     }
 
-    pub fn resources_for_class(&self, class: &str) -> Option<&ChildResources> {
+    pub fn resources_for_class(&self, class: &ResourceClassName) -> Option<&ChildResources> {
         self.resources.get(class)
     }
 }
@@ -71,7 +139,7 @@ impl From<ChildCaDetails> for ChildCaInfo {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildCaDetails {
     id_cert: Option<IdCert>,
-    resources: HashMap<String, ChildResources>,
+    resources: HashMap<ResourceClassName, ChildResources>,
 }
 
 impl ChildCaDetails {
@@ -90,20 +158,20 @@ impl ChildCaDetails {
         self.id_cert = Some(id_cert);
     }
 
-    pub fn resources(&self) -> &HashMap<String, ChildResources> {
+    pub fn resources(&self) -> &HashMap<ResourceClassName, ChildResources> {
         &self.resources
     }
 
-    pub fn remove_resource(&mut self, class_name: &str) {
+    pub fn remove_resource(&mut self, class_name: &ResourceClassName) {
         self.resources.remove(class_name);
     }
 
     /// This function will update the resource entitlements for an existing class
     /// or create a new class if needed
-    pub fn set_resources_for_class(&mut self, class: &str, resources: ResourceSet) {
-        if self.resources.contains_key(class) {
+    pub fn set_resources_for_class(&mut self, class: ResourceClassName, resources: ResourceSet) {
+        if self.resources.contains_key(&class) {
             self.resources
-                .get_mut(class)
+                .get_mut(&class)
                 .unwrap()
                 .set_resources(resources);
         } else {
@@ -111,16 +179,15 @@ impl ChildCaDetails {
         }
     }
 
-    pub fn resources_for_class(&self, class: &str) -> Option<&ChildResources> {
+    pub fn resources_for_class(&self, class: &ResourceClassName) -> Option<&ChildResources> {
         self.resources.get(class)
     }
 
-    pub fn add_new_resource_class(&mut self, name: &str, resources: ResourceSet) {
-        self.resources
-            .insert(name.to_string(), ChildResources::new(resources));
+    pub fn add_new_resource_class(&mut self, name: ResourceClassName, resources: ResourceSet) {
+        self.resources.insert(name, ChildResources::new(resources));
     }
 
-    pub fn add_cert(&mut self, class_name: &str, cert: IssuedCert) {
+    pub fn add_cert(&mut self, class_name: &ResourceClassName, cert: IssuedCert) {
         // Note the resource class MUST exist, or no cert would have
         // been issued to it. So, it's safe to unwrap here.
         self.resources.get_mut(class_name).unwrap().add_cert(cert)
@@ -138,7 +205,7 @@ pub struct KeyRef(KeyIdentifier);
 
 impl From<&KeyIdentifier> for KeyRef {
     fn from(ki: &KeyIdentifier) -> Self {
-        KeyRef(ki.clone())
+        KeyRef(*ki)
     }
 }
 
@@ -150,7 +217,7 @@ impl From<KeyIdentifier> for KeyRef {
 
 impl From<&KeyRef> for KeyIdentifier {
     fn from(kr: &KeyRef) -> Self {
-        kr.0.clone()
+        kr.0
     }
 }
 
@@ -1517,7 +1584,8 @@ impl CertAuthSummary {
 pub struct CertAuthInfo {
     handle: Handle,
     base_repo: RepoInfo,
-    parents: CaParentsInfo,
+    parents: HashMap<Handle, ParentCaContact>,
+    resources: HashMap<ResourceClassName, ResourceClassInfo>,
     children: HashMap<Handle, ChildCaDetails>,
 }
 
@@ -1525,13 +1593,15 @@ impl CertAuthInfo {
     pub fn new(
         handle: Handle,
         base_repo: RepoInfo,
-        parents: CaParentsInfo,
+        parents: HashMap<Handle, ParentCaContact>,
+        resources: HashMap<ResourceClassName, ResourceClassInfo>,
         children: HashMap<Handle, ChildCaDetails>,
     ) -> Self {
         CertAuthInfo {
             handle,
             base_repo,
             parents,
+            resources,
             children,
         }
     }
@@ -1539,59 +1609,55 @@ impl CertAuthInfo {
     pub fn handle(&self) -> &Handle {
         &self.handle
     }
+
     pub fn base_repo(&self) -> &RepoInfo {
         &self.base_repo
     }
-    pub fn parents(&self) -> &CaParentsInfo {
+
+    pub fn parents(&self) -> &HashMap<Handle, ParentCaContact> {
         &self.parents
     }
+
+    pub fn parent(&self, parent: &Handle) -> Option<&ParentCaContact> {
+        self.parents.get(parent)
+    }
+
+    pub fn resources(&self) -> &HashMap<ResourceClassName, ResourceClassInfo> {
+        &self.resources
+    }
+
     pub fn children(&self) -> &HashMap<Handle, ChildCaDetails> {
         &self.children
     }
 
     pub fn published_objects(&self) -> Vec<Publish> {
         let mut res = vec![];
-        match &self.parents {
-            CaParentsInfo::SelfSigned(key, _tal) => {
-                res.append(&mut key.current_set.objects().publish(self.base_repo(), ""));
-            }
-            CaParentsInfo::Parents(map) => {
-                for (_parent, parent_info) in map.iter() {
-                    for rc in parent_info.resources().values() {
-                        let name_space = rc.name_space();
-                        res.append(&mut rc.objects().publish(self.base_repo(), name_space));
-                    }
-                }
-            }
+        for (_rc_name, rc) in self.resources.iter() {
+            let name_space = rc.name_space();
+            res.append(&mut rc.objects().publish(self.base_repo(), name_space));
         }
-
         res
     }
-}
-
-/// This type contains public data about parents of a CA
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[allow(clippy::large_enum_variant)]
-pub enum CaParentsInfo {
-    SelfSigned(CertifiedKey, TrustAnchorLocator),
-    Parents(HashMap<Handle, ParentCaInfo>),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentCaInfo {
     contact: ParentCaContact,
-    resources: HashMap<String, ResourceClassInfo>,
+    resources: HashMap<ResourceClassName, ResourceClassInfo>,
 }
 
 impl ParentCaInfo {
-    pub fn new(contact: ParentCaContact, resources: HashMap<String, ResourceClassInfo>) -> Self {
+    pub fn new(
+        contact: ParentCaContact,
+        resources: HashMap<ResourceClassName, ResourceClassInfo>,
+    ) -> Self {
         ParentCaInfo { contact, resources }
     }
 
     pub fn contact(&self) -> &ParentCaContact {
         &self.contact
     }
-    pub fn resources(&self) -> &HashMap<String, ResourceClassInfo> {
+    pub fn resources(&self) -> &HashMap<ResourceClassName, ResourceClassInfo> {
         &self.resources
     }
 }

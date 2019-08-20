@@ -18,8 +18,7 @@ use krill_pubd::publishers::PublisherError;
 use krill_pubd::repo::RrdpServerError;
 
 use crate::auth::Auth;
-use crate::ca;
-use crate::ca::ParentHandle;
+use crate::ca::{self, ta_handle, ParentHandle};
 use crate::http::server::AppServer;
 use crate::krillserver;
 
@@ -278,19 +277,38 @@ pub fn ta_cer(server: web::Data<AppServer>) -> HttpResponse {
     }
 }
 
+// TODO: Deprecate!
 pub fn ta_add_child(
     server: web::Data<AppServer>,
     req: Json<AddChildRequest>,
     auth: Auth,
 ) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
-        match server.read().ta_add_child(req.into_inner()) {
+        match server.read().ca_add_child(&ta_handle(), req.into_inner()) {
             Ok(info) => render_json(info),
             Err(e) => server_error(&Error::ServerError(e)),
         }
     })
 }
 
+pub fn ca_add_child(
+    server: web::Data<AppServer>,
+    parent: Path<ParentHandle>,
+    req: Json<AddChildRequest>,
+    auth: Auth,
+) -> HttpResponse {
+    if_api_allowed(&server, &auth, || {
+        match server
+            .read()
+            .ca_add_child(&parent.into_inner(), req.into_inner())
+        {
+            Ok(info) => render_json(info),
+            Err(e) => server_error(&Error::ServerError(e)),
+        }
+    })
+}
+
+// TODO: Deprecate
 pub fn ta_update_child(
     server: web::Data<AppServer>,
     child: Path<Handle>,
@@ -298,21 +316,59 @@ pub fn ta_update_child(
     auth: Auth,
 ) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
-        render_empty_res(
-            server
-                .read()
-                .ta_update_child(child.into_inner(), req.into_inner()),
-        )
+        render_empty_res(server.read().ca_update_child(
+            &ta_handle(),
+            child.into_inner(),
+            req.into_inner(),
+        ))
     })
 }
 
+pub fn ca_update_child(
+    server: web::Data<AppServer>,
+    parent: Path<Handle>,
+    child: Path<Handle>,
+    req: Json<UpdateChildRequest>,
+    auth: Auth,
+) -> HttpResponse {
+    if_api_allowed(&server, &auth, || {
+        render_empty_res(server.read().ca_update_child(
+            &parent.into_inner(),
+            child.into_inner(),
+            req.into_inner(),
+        ))
+    })
+}
+
+// TODO: Deprecate
 pub fn ta_show_child(
     server: web::Data<AppServer>,
     child: Path<Handle>,
     auth: Auth,
 ) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
-        match server.read().ta_show_child(&child.into_inner()) {
+        match server
+            .read()
+            .ca_show_child(&ta_handle(), &child.into_inner())
+        {
+            Ok(Some(child)) => render_json(child),
+            Ok(None) => api_not_found(),
+            Err(e) => server_error(&Error::ServerError(e)),
+        }
+    })
+}
+
+pub fn ca_show_child(
+    server: web::Data<AppServer>,
+    parent: Path<Handle>,
+    child: Path<Handle>,
+    auth: Auth,
+) -> HttpResponse {
+    if_api_allowed(&server, &auth, || {
+        match server
+            .read()
+            .ca_show_child(&parent.into_inner(), &child.into_inner())
+        {
             Ok(Some(child)) => render_json(child),
             Ok(None) => api_not_found(),
             Err(e) => server_error(&Error::ServerError(e)),

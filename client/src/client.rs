@@ -1,6 +1,6 @@
-use rpki::uri;
 use std::io;
 
+use rpki::uri;
 use serde::de::DeserializeOwned;
 
 use krill_commons::api::admin::{
@@ -81,7 +81,7 @@ impl KrillClient {
                 let uri = self.resolve_uri("api/v1/trustanchor/children");
                 let info: ParentCaContact =
                     httpclient::post_json_with_response(&uri, req, Some(&self.token))?;
-                Ok(ApiResponse::ParentCaInfo(info))
+                Ok(ApiResponse::ParentCaContact(info))
             }
             TrustAnchorCommand::UpdateChild(child, req) => {
                 let uri = format!("api/v1/trustanchor/children/{}", child);
@@ -94,10 +94,9 @@ impl KrillClient {
 
     fn certauth(&self, command: CaCommand) -> Result<ApiResponse, Error> {
         match command {
-            CaCommand::AddParent(handle, parent) => {
-                let uri = format!("api/v1/cas/{}/parents", handle);
-                let uri = self.resolve_uri(&uri);
-                httpclient::post_json(&uri, parent, Some(&self.token))?;
+            CaCommand::Init(init) => {
+                let uri = self.resolve_uri("api/v1/cas");
+                httpclient::post_json(&uri, init, Some(&self.token))?;
                 Ok(ApiResponse::Empty)
             }
             CaCommand::ChildRequest(handle) => {
@@ -108,16 +107,28 @@ impl KrillClient {
                 let req = rfc8183::ChildRequest::validate(xml.as_bytes())?;
                 Ok(ApiResponse::Rfc8183ChildRequest(req))
             }
-            CaCommand::Init(init) => {
-                let uri = self.resolve_uri("api/v1/cas");
-                httpclient::post_json(&uri, init, Some(&self.token))?;
+
+            CaCommand::AddParent(handle, parent) => {
+                let uri = format!("api/v1/cas/{}/parents", handle);
+                let uri = self.resolve_uri(&uri);
+                httpclient::post_json(&uri, parent, Some(&self.token))?;
                 Ok(ApiResponse::Empty)
             }
-            CaCommand::List => {
-                let uri = self.resolve_uri("api/v1/cas");
-                let cas = self.get_json(&uri)?;
-                Ok(ApiResponse::CertAuths(cas))
+
+            CaCommand::AddChild(handle, req) => {
+                let uri = format!("api/v1/cas/{}/children", handle);
+                let uri = self.resolve_uri(&uri);
+                let info: ParentCaContact =
+                    httpclient::post_json_with_response(&uri, req, Some(&self.token))?;
+                Ok(ApiResponse::ParentCaContact(info))
             }
+            CaCommand::UpdateChild(handle, child, req) => {
+                let uri = format!("api/v1/cas/{}/children/{}", handle, child);
+                let uri = self.resolve_uri(&uri);
+                httpclient::post_json(&uri, req, Some(&self.token))?;
+                Ok(ApiResponse::Empty)
+            }
+
             CaCommand::KeyRollInit(handle) => {
                 let uri = format!("api/v1/cas/{}/keys/roll_init", handle);
                 let uri = self.resolve_uri(&uri);
@@ -136,6 +147,11 @@ impl KrillClient {
                 let ca_info = self.get_json(&uri)?;
 
                 Ok(ApiResponse::CertAuthInfo(ca_info))
+            }
+            CaCommand::List => {
+                let uri = self.resolve_uri("api/v1/cas");
+                let cas = self.get_json(&uri)?;
+                Ok(ApiResponse::CertAuths(cas))
             }
         }
     }

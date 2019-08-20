@@ -7,6 +7,7 @@ use rpki::crypto::Signer;
 use rpki::uri;
 
 use crate::api::ca::ResourceSet;
+use crate::api::ca::TrustAnchorLocator;
 use crate::api::Link;
 use crate::remote::id::IdCert;
 use crate::remote::rfc8183;
@@ -326,6 +327,9 @@ impl AddParentRequest {
 #[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum ParentCaContact {
+    #[display(fmt = "This CA is a TA with TAL:\n{}", _0)]
+    Ta(TrustAnchorLocator),
+
     #[display(fmt = "Embedded parent")]
     Embedded,
 

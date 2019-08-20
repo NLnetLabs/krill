@@ -3,7 +3,6 @@
 use krill_commons::api::admin::Handle;
 
 mod certauth;
-pub use self::certauth::CaType;
 pub use self::certauth::CertAuth;
 pub use self::certauth::Rfc8183Id;
 
@@ -19,6 +18,7 @@ pub use self::events::Evt;
 pub use self::events::EvtDet;
 pub use self::events::Ini;
 pub use self::events::IniDet;
+pub use self::events::Ta;
 
 mod server;
 pub use self::server::CaServer;
@@ -35,7 +35,6 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub type ServerResult<R, S> = std::result::Result<R, ServerError<S>>;
 pub type ParentHandle = Handle;
 pub type ChildHandle = Handle;
-pub type ResourceClassName = String;
 
 pub const TA_NAME: &str = "ta"; // reserved for TA
 

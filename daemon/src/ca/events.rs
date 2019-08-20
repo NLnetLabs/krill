@@ -10,8 +10,8 @@ use rpki::x509::{Serial, Time, Validity};
 
 use krill_commons::api::admin::{Handle, ParentCaContact, Token};
 use krill_commons::api::ca::{
-    CertifiedKey, ChildCaDetails, ObjectsDelta, PublicationDelta, RcvdCert, RepoInfo, ResourceSet,
-    TrustAnchorLocator,
+    CertifiedKey, ChildCaDetails, ObjectsDelta, PublicationDelta, RcvdCert, RepoInfo,
+    ResourceClassName, ResourceSet, TrustAnchorLocator,
 };
 use krill_commons::api::{
     IssuanceRequest, IssuanceResponse, RevocationRequest, RevocationResponse,
@@ -21,9 +21,26 @@ use krill_commons::remote::id::IdCert;
 use krill_commons::util::softsigner::KeyId;
 
 use crate::ca::signing::Signer;
-use crate::ca::{
-    CaType, ChildHandle, Error, ParentHandle, ResourceClass, ResourceClassName, Result, Rfc8183Id,
-};
+use crate::ca::{ChildHandle, Error, ParentHandle, ResourceClass, Result, Rfc8183Id};
+
+//------------ TaIniDetails --------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[allow(clippy::large_enum_variant)]
+pub struct Ta {
+    key: CertifiedKey,
+    tal: TrustAnchorLocator,
+}
+
+impl Ta {
+    pub fn new(key: CertifiedKey, tal: TrustAnchorLocator) -> Self {
+        Ta { key, tal }
+    }
+
+    pub fn unpack(self) -> (CertifiedKey, TrustAnchorLocator) {
+        (self.key, self.tal)
+    }
+}
 
 //------------ Ini -----------------------------------------------------------
 
@@ -32,14 +49,14 @@ pub type Ini = StoredEvent<IniDet>;
 //------------ IniDet --------------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct IniDet(Token, Rfc8183Id, RepoInfo, CaType);
+pub struct IniDet(Token, Rfc8183Id, RepoInfo, Option<Ta>);
 
 impl IniDet {
     pub fn token(&self) -> &Token {
         &self.0
     }
 
-    pub fn unwrap(self) -> (Token, Rfc8183Id, RepoInfo, CaType) {
+    pub fn unwrap(self) -> (Token, Rfc8183Id, RepoInfo, Option<Ta>) {
         (self.0, self.1, self.2, self.3)
     }
 }
@@ -53,7 +70,7 @@ impl IniDet {
     ) -> Result<Ini> {
         let mut signer = signer.write().unwrap();
         let id = Rfc8183Id::generate(signer.deref_mut())?;
-        Ok(Ini::new(handle, 0, IniDet(token, id, info, CaType::Child)))
+        Ok(Ini::new(handle, 0, IniDet(token, id, info, None)))
     }
 
     pub fn init_ta<S: Signer>(
@@ -77,14 +94,11 @@ impl IniDet {
         let ta_cert = Self::mk_ta_cer(&info, &resources, &key, signer.deref())?;
         let tal = TrustAnchorLocator::new(ta_uris, &ta_cert);
         let resources = ResourceSet::try_from(&ta_cert).unwrap(); // cannot have inherit
-
         let key = CertifiedKey::new(key, RcvdCert::new(ta_cert, ta_aia, resources));
 
-        Ok(Ini::new(
-            handle,
-            0,
-            IniDet(token, id, info, CaType::Ta(key, tal)),
-        ))
+        let ta = Ta::new(key, tal);
+
+        Ok(Ini::new(handle, 0, IniDet(token, id, info, Some(ta))))
     }
 
     fn mk_ta_cer<S: Signer>(
@@ -141,28 +155,23 @@ pub enum EvtDet {
 
     // Being a child Events
     ParentAdded(ParentHandle, ParentCaContact),
-    ResourceClassAdded(ParentHandle, ResourceClassName, ResourceClass),
+    ResourceClassAdded(ResourceClassName, ResourceClass),
     ResourceClassRemoved(
-        ParentHandle,
         ResourceClassName,
         ObjectsDelta,
+        ParentHandle,
         Vec<RevocationRequest>,
     ),
-    CertificateRequested(ParentHandle, IssuanceRequest, KeyId),
-    CertificateReceived(ParentHandle, ResourceClassName, KeyId, RcvdCert),
+    CertificateRequested(ResourceClassName, IssuanceRequest, KeyId),
+    CertificateReceived(ResourceClassName, KeyId, RcvdCert),
 
     // Key roll
-    KeyRollPendingKeyAdded(ParentHandle, ResourceClassName, KeyId),
-    KeyRollActivated(ParentHandle, ResourceClassName, RevocationRequest),
-    KeyRollFinished(ParentHandle, ResourceClassName, ObjectsDelta),
+    KeyRollPendingKeyAdded(ResourceClassName, KeyId),
+    KeyRollActivated(ResourceClassName, RevocationRequest),
+    KeyRollFinished(ResourceClassName, ObjectsDelta),
 
     // Publishing
-    Published(
-        ParentHandle,
-        ResourceClassName,
-        HashMap<KeyId, PublicationDelta>,
-    ),
-    TaPublished(PublicationDelta),
+    Published(ResourceClassName, HashMap<KeyId, PublicationDelta>),
 }
 
 impl EvtDet {
@@ -180,14 +189,13 @@ impl EvtDet {
     pub(super) fn resource_class_added(
         handle: &Handle,
         version: u64,
-        parent_handle: ParentHandle,
         class_name: ResourceClassName,
         resource_class: ResourceClass,
     ) -> Evt {
         StoredEvent::new(
             handle,
             version,
-            EvtDet::ResourceClassAdded(parent_handle, class_name, resource_class),
+            EvtDet::ResourceClassAdded(class_name, resource_class),
         )
     }
 
@@ -195,15 +203,15 @@ impl EvtDet {
     pub(super) fn resource_class_removed(
         handle: &Handle,
         version: u64,
-        parent_handle: ParentHandle,
         class_name: ResourceClassName,
         delta: ObjectsDelta,
+        parent: ParentHandle,
         revocations: Vec<RevocationRequest>,
     ) -> Evt {
         StoredEvent::new(
             handle,
             version,
-            EvtDet::ResourceClassRemoved(parent_handle, class_name, delta, revocations),
+            EvtDet::ResourceClassRemoved(class_name, delta, parent, revocations),
         )
     }
 
@@ -261,7 +269,12 @@ impl EvtDet {
         StoredEvent::new(handle, version, EvtDet::ChildKeyRevoked(child, response))
     }
 
-    pub(super) fn published_ta(handle: &Handle, version: u64, delta: PublicationDelta) -> Evt {
-        StoredEvent::new(handle, version, EvtDet::TaPublished(delta))
+    pub(super) fn published(
+        handle: &Handle,
+        version: u64,
+        class_name: ResourceClassName,
+        deltas: HashMap<KeyId, PublicationDelta>,
+    ) -> Evt {
+        StoredEvent::new(handle, version, EvtDet::Published(class_name, deltas))
     }
 }

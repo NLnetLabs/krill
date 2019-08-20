@@ -1,11 +1,10 @@
+use std::str::{from_utf8_unchecked, FromStr};
+
 use krill_commons::api::admin::{ParentCaContact, PublisherDetails, PublisherList};
-use krill_commons::api::ca::{
-    CaParentsInfo, CertAuthInfo, CertAuthList, CurrentObjects, TrustAnchorInfo,
-};
+use krill_commons::api::ca::{CertAuthInfo, CertAuthList, CurrentObjects, TrustAnchorInfo};
 use krill_commons::remote::api::ClientInfo;
 use krill_commons::remote::rfc8183;
 use krill_commons::remote::rfc8183::RepositoryResponse;
-use std::str::{from_utf8_unchecked, FromStr};
 
 //------------ ApiResponse ---------------------------------------------------
 
@@ -20,7 +19,7 @@ pub enum ApiResponse {
     CertAuthInfo(CertAuthInfo),
     CertAuths(CertAuthList),
 
-    ParentCaInfo(ParentCaContact),
+    ParentCaContact(ParentCaContact),
 
     PublisherDetails(PublisherDetails),
     PublisherList(PublisherList),
@@ -49,7 +48,7 @@ impl ApiResponse {
                 ApiResponse::TrustAnchorInfo(ta) => Ok(Some(ta.report(fmt)?)),
                 ApiResponse::CertAuths(list) => Ok(Some(list.report(fmt)?)),
                 ApiResponse::CertAuthInfo(info) => Ok(Some(info.report(fmt)?)),
-                ApiResponse::ParentCaInfo(info) => Ok(Some(info.report(fmt)?)),
+                ApiResponse::ParentCaContact(contact) => Ok(Some(contact.report(fmt)?)),
                 ApiResponse::PublisherList(list) => Ok(Some(list.report(fmt)?)),
                 ApiResponse::PublisherDetails(details) => Ok(Some(details.report(fmt)?)),
                 ApiResponse::Rfc8181ClientList(list) => Ok(Some(list.report(fmt)?)),
@@ -200,52 +199,37 @@ impl Report for CertAuthInfo {
                     }
                 }
 
-                match self.parents() {
-                    CaParentsInfo::SelfSigned(key, tal) => {
-                        res.push_str("This CA is a TA\n");
-                        res.push_str("\n");
-
-                        let inrs = key.incoming_cert().resources();
-                        res.push_str(&format!("ASNs: {}\n", inrs.asn()));
-                        res.push_str(&format!("IPv4: {}\n", inrs.v4()));
-                        res.push_str(&format!("IPv6: {}\n", inrs.v6()));
-
-                        res.push_str("Current objects:\n");
-                        print_objects(&mut res, key.current_set().objects());
-                        res.push_str("\n");
-
-                        res.push_str("Children:\n");
-                        if !self.children().is_empty() {
-                            for (name, details) in self.children() {
-                                res.push_str(&format!("{}\n", name));
-                                for (class, resources) in details.resources() {
-                                    res.push_str(&format!("  class: {}\n", class));
-
-                                    let inrs = resources.resources();
-                                    res.push_str(&format!("    asn: {}\n", inrs.asn()));
-                                    res.push_str(&format!("    v4:  {}\n", inrs.v4()));
-                                    res.push_str(&format!("    v6:  {}\n", inrs.v6()));
-                                    res.push_str("\n");
-                                }
-                            }
-                        } else {
-                            res.push_str("<none>");
-                        }
-
-                        res.push_str("TAL:\n");
-                        res.push_str(&format!("{}\n", tal));
-                    }
-                    CaParentsInfo::Parents(map) => {
-                        for info in map.values() {
-                            res.push_str(&format!("Parent:  {}\n", info.contact()));
-
-                            for (name, rc) in info.resources() {
-                                res.push_str(&format!("Resource Class: {}\n", name));
-                                res.push_str(&format!("{}", rc.keys()));
-                            }
-                        }
-                    }
+                for info in self.parents().values() {
+                    res.push_str(&format!("Parent:  {}\n", info));
                 }
+
+                for (name, rc) in self.resources() {
+                    res.push_str(&format!("Resource Class: {}\n", name));
+                    res.push_str(&format!("{}", rc.keys()));
+
+                    res.push_str("Current objects:\n");
+                    print_objects(&mut res, &rc.objects());
+                    res.push_str("\n");
+                }
+
+                res.push_str("Children:\n");
+                if !self.children().is_empty() {
+                    for (name, details) in self.children() {
+                        res.push_str(&format!("{}\n", name));
+                        for (class, resources) in details.resources() {
+                            res.push_str(&format!("  class: {}\n", class));
+
+                            let inrs = resources.resources();
+                            res.push_str(&format!("    asn: {}\n", inrs.asn()));
+                            res.push_str(&format!("    v4:  {}\n", inrs.v4()));
+                            res.push_str(&format!("    v6:  {}\n", inrs.v6()));
+                            res.push_str("\n");
+                        }
+                    }
+                } else {
+                    res.push_str("<none>");
+                }
+
                 Ok(res)
             }
             _ => Err(ReportError::UnsupportedFormat),

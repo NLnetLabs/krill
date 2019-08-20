@@ -3,12 +3,12 @@ use std::sync::{Arc, RwLock};
 use chrono::Duration;
 
 use krill_commons::api::admin::{Handle, ParentCaContact, UpdateChildRequest};
-use krill_commons::api::ca::{RcvdCert, ResourceSet};
+use krill_commons::api::ca::{RcvdCert, ResourceClassName, ResourceSet};
 use krill_commons::api::{Entitlements, IssuanceRequest, RevocationRequest, RevocationResponse};
 use krill_commons::eventsourcing;
 use krill_commons::remote::id::IdCert;
 
-use crate::ca::{ChildHandle, Evt, ParentHandle, ResourceClassName, Signer};
+use crate::ca::{ChildHandle, Evt, ParentHandle, Signer};
 
 //------------ Command -----------------------------------------------------
 
@@ -43,7 +43,7 @@ pub enum CmdDet<S: Signer> {
     // Process new entitlements from a parent and create issue/revoke requests as needed.
     UpdateEntitlements(ParentHandle, Entitlements, Arc<RwLock<S>>),
     // Process a new certificate received from a parent.
-    UpdateRcvdCert(ParentHandle, ResourceClassName, RcvdCert, Arc<RwLock<S>>),
+    UpdateRcvdCert(ResourceClassName, RcvdCert, Arc<RwLock<S>>),
 
     // ------------------------------------------------------------
     // Key rolls
@@ -67,7 +67,7 @@ pub enum CmdDet<S: Signer> {
 
     // Finish the keyroll after the parent confirmed that a key for a parent and resource
     // class has been revoked. I.e. remove the old key, and withdraw the crl and mft for it.
-    KeyRollFinish(ParentHandle, RevocationResponse),
+    KeyRollFinish(ResourceClassName, RevocationResponse),
 
     // ------------------------------------------------------------
     // Publishing
@@ -81,8 +81,7 @@ impl<S: Signer> eventsourcing::CommandDetails for CmdDet<S> {
 
 impl<S: Signer> CmdDet<S> {
     /// Adds a child to this CA. Will return an error in case you try
-    /// to give the child resources not held by the CA. And until issue
-    /// #25 is implemented, returns an error when the CA is not a TA.
+    /// to give the child resources not held by the CA.
     pub fn child_add(
         handle: &Handle,
         child_handle: Handle,
@@ -165,7 +164,6 @@ impl<S: Signer> CmdDet<S> {
 
     pub fn upd_received_cert(
         handle: &Handle,
-        parent: ParentHandle,
         class_name: ResourceClassName,
         cert: RcvdCert,
         signer: Arc<RwLock<S>>,
@@ -173,7 +171,7 @@ impl<S: Signer> CmdDet<S> {
         eventsourcing::SentCommand::new(
             handle,
             None,
-            CmdDet::UpdateRcvdCert(parent, class_name, cert, signer),
+            CmdDet::UpdateRcvdCert(class_name, cert, signer),
         )
     }
 
@@ -191,10 +189,10 @@ impl<S: Signer> CmdDet<S> {
 
     pub fn key_roll_finish(
         handle: &Handle,
-        parent: ParentHandle,
+        rcn: ResourceClassName,
         res: RevocationResponse,
     ) -> Cmd<S> {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::KeyRollFinish(parent, res))
+        eventsourcing::SentCommand::new(handle, None, CmdDet::KeyRollFinish(rcn, res))
     }
 
     pub fn publish(handle: &Handle, signer: Arc<RwLock<S>>) -> Cmd<S> {
