@@ -18,6 +18,7 @@ use krill_commons::util::test;
 use crate::ca::{ta_handle, ChildHandle, ParentHandle};
 use crate::config::Config;
 use crate::http::server;
+use krill_commons::api::RouteAuthorizationUpdates;
 
 pub fn test_with_krill_server<F>(op: F)
 where
@@ -173,6 +174,13 @@ pub fn ca_roll_init(handle: &Handle) {
 pub fn ca_roll_activate(handle: &Handle) {
     krill_admin(Command::CertAuth(CaCommand::KeyRollActivate(
         handle.clone(),
+    )));
+}
+
+pub fn ca_route_authorizations_update(handle: &Handle, updates: RouteAuthorizationUpdates) {
+    krill_admin(Command::CertAuth(CaCommand::RouteAuthorizationsUpdate(
+        handle.clone(),
+        updates,
     )));
 }
 

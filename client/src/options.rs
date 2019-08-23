@@ -14,6 +14,7 @@ use krill_commons::remote::rfc8183;
 use krill_commons::util::file;
 
 use crate::report::{ReportError, ReportFormat};
+use krill_commons::api::RouteAuthorizationUpdates;
 
 /// This type holds all the necessary data to connect to a Krill daemon, and
 /// authenticate, and perform a specific action. Note that this is extracted
@@ -800,6 +801,9 @@ pub enum CaCommand {
 
     // Activate all new keys now (finish keyroll, provided new key was certified)
     KeyRollActivate(Handle),
+
+    // Update the Route Authorizations for this CA
+    RouteAuthorizationsUpdate(Handle, RouteAuthorizationUpdates),
 
     // Show details for this CA
     Show(Handle),

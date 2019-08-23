@@ -8,6 +8,7 @@ use krill_commons::remote::rfc6492;
 use krill_commons::util::httpclient;
 
 use crate::ca::signing::Signer;
+use krill_commons::api::RouteAuthorization;
 
 //------------ Error ---------------------------------------------------------
 
@@ -73,6 +74,18 @@ pub enum Error {
 
     #[display(fmt = "Invalidly signed RFC 6492 CMS.")]
     InvalidRfc6492,
+
+    #[display(fmt = "Trying to remove unknown authorization: {}", _0)]
+    AuthorisationUnknown(RouteAuthorization),
+
+    #[display(fmt = "Trying to re-add authorization: {}", _0)]
+    AuthorisationAlreadyPresent(RouteAuthorization),
+
+    #[display(
+        fmt = "Trying to add authorization for resource not held by this CA: {}",
+        _0
+    )]
+    AuthorisationNotEntitled(RouteAuthorization),
 }
 
 impl From<rfc6492::Error> for Error {

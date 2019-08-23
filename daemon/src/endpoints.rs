@@ -9,7 +9,7 @@ use krill_commons::api::admin::{
     AddChildRequest, AddParentRequest, CertAuthInit, Handle, UpdateChildRequest,
 };
 use krill_commons::api::rrdp::VerificationError;
-use krill_commons::api::{admin, publication, ErrorCode, ErrorResponse};
+use krill_commons::api::{admin, publication, ErrorCode, ErrorResponse, RouteAuthorizationUpdates};
 use krill_commons::remote::api::ClientInfo;
 use krill_commons::remote::rfc6492;
 use krill_commons::remote::sigmsg::SignedMessage;
@@ -433,24 +433,38 @@ pub fn ca_add_parent(
 }
 
 /// Force a key roll for a CA, i.e. use a max key age of 0 seconds.
-pub fn ca_keyroll_init(
-    server: web::Data<AppServer>,
-    auth: Auth,
-    handle: Path<Handle>,
-) -> HttpResponse {
+pub fn ca_kr_init(server: web::Data<AppServer>, auth: Auth, handle: Path<Handle>) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_empty_res(server.read().ca_keyroll_init(handle.into_inner()))
     })
 }
 
 /// Force key activation for all new keys, i.e. use a staging period of 0 seconds.
-pub fn ca_keyroll_activate(
+pub fn ca_kr_activate(
     server: web::Data<AppServer>,
     auth: Auth,
     handle: Path<Handle>,
 ) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_empty_res(server.read().ca_keyroll_activate(handle.into_inner()))
+    })
+}
+
+//------------ Admin: Force republish ----------------------------------------
+
+/// Update the route authorizations for this CA
+pub fn ca_routes_update(
+    server: web::Data<AppServer>,
+    auth: Auth,
+    handle: Path<Handle>,
+    updates: Json<RouteAuthorizationUpdates>,
+) -> HttpResponse {
+    if_api_allowed(&server, &auth, || {
+        render_empty_res(
+            server
+                .read()
+                .ca_routes_update(handle.into_inner(), updates.into_inner()),
+        )
     })
 }
 

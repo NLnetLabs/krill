@@ -7,6 +7,10 @@ mod provisioning;
 pub use self::provisioning::*;
 
 pub mod publication;
+
+mod roas;
+pub use self::roas::*;
+
 pub mod rrdp;
 
 use std::fmt;
@@ -17,6 +21,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use rpki::cert::Cert;
 use rpki::crl::Crl;
 use rpki::manifest::Manifest;
+use rpki::roa::Roa;
 
 use crate::util::sha256;
 
@@ -64,6 +69,12 @@ impl From<String> for Base64 {
 impl From<&Cert> for Base64 {
     fn from(cert: &Cert) -> Self {
         Base64::from_content(&cert.to_captured().into_bytes())
+    }
+}
+
+impl From<&Roa> for Base64 {
+    fn from(roa: &Roa) -> Self {
+        Base64::from_content(&roa.to_captured().into_bytes())
     }
 }
 

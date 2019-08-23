@@ -1,7 +1,7 @@
 //! Common data types for Certificate Authorities, defined here so that the CLI
 //! can have access without needing to depend on the full krill_ca module.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::ops::{Deref, DerefMut};
 use std::str::{from_utf8_unchecked, FromStr};
@@ -30,6 +30,8 @@ use crate::rpki::crl::{Crl, CrlEntry};
 use crate::rpki::manifest::{FileAndHash, Manifest};
 use crate::util::ext_serde;
 use crate::util::softsigner::KeyId;
+use api::RouteAuthorization;
+use rpki::roa::Roa;
 
 //------------ ResourceClassName -------------------------------------------
 
@@ -351,6 +353,10 @@ impl ChildResources {
     }
 }
 
+//------------ RevokedObject -------------------------------------------------
+
+pub type RevokedObject = ReplacedObject;
+
 //------------ ReplacedObject ------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -384,6 +390,14 @@ impl From<&Cert> for ReplacedObject {
 impl From<&IssuedCert> for ReplacedObject {
     fn from(issued: &IssuedCert) -> Self {
         Self::from(issued.cert())
+    }
+}
+
+impl From<&Roa> for ReplacedObject {
+    fn from(r: &Roa) -> Self {
+        let revocation = Revocation::from(r);
+        let hash = EncodedHash::from_content(r.to_captured().as_slice());
+        ReplacedObject { revocation, hash }
     }
 }
 
@@ -484,6 +498,9 @@ impl RcvdCert {
     pub fn uri(&self) -> &uri::Rsync {
         &self.uri
     }
+
+    /// The URI of the CRL published BY THIS certificate, i.e. the uri to use
+    /// on certs issued by this.
     pub fn crl_uri(&self) -> uri::Rsync {
         self.uri_for_object(ObjectName::new(&self.cert.subject_key_identifier(), "crl"))
     }
@@ -841,6 +858,20 @@ impl From<&Manifest> for CurrentObject {
     }
 }
 
+impl From<&Roa> for CurrentObject {
+    fn from(roa: &Roa) -> Self {
+        let content = Base64::from(roa);
+        let serial = roa.cert().serial_number();
+        let expires = roa.cert().validity().not_after();
+
+        CurrentObject {
+            content,
+            serial,
+            expires
+        }
+    }
+}
+
 //------------ ObjectName ----------------------------------------------------
 
 /// This type is used to represent the (deterministic) file names for
@@ -869,6 +900,12 @@ impl From<&Manifest> for ObjectName {
 impl From<&Crl> for ObjectName {
     fn from(c: &Crl) -> Self {
         Self::new(c.authority_key_identifier(), "crl")
+    }
+}
+
+impl From<&RouteAuthorization> for ObjectName {
+    fn from(auth: &RouteAuthorization) -> Self {
+        ObjectName(format!("{}.roa", hex::encode(auth.to_string())))
     }
 }
 
@@ -1009,6 +1046,12 @@ impl From<&Cert> for Revocation {
 impl From<&Manifest> for Revocation {
     fn from(m: &Manifest) -> Self {
         Self::from(m.cert())
+    }
+}
+
+impl From<&Roa> for Revocation {
+    fn from(_r: &Roa) -> Self {
+        unimplemented!("Need access to ROA EE cert")
     }
 }
 
@@ -1587,6 +1630,7 @@ pub struct CertAuthInfo {
     parents: HashMap<Handle, ParentCaContact>,
     resources: HashMap<ResourceClassName, ResourceClassInfo>,
     children: HashMap<Handle, ChildCaDetails>,
+    route_authorizations: HashSet<RouteAuthorization>,
 }
 
 impl CertAuthInfo {
@@ -1596,6 +1640,7 @@ impl CertAuthInfo {
         parents: HashMap<Handle, ParentCaContact>,
         resources: HashMap<ResourceClassName, ResourceClassInfo>,
         children: HashMap<Handle, ChildCaDetails>,
+        route_authorizations: HashSet<RouteAuthorization>,
     ) -> Self {
         CertAuthInfo {
             handle,
@@ -1603,6 +1648,7 @@ impl CertAuthInfo {
             parents,
             resources,
             children,
+            route_authorizations,
         }
     }
 
@@ -1630,6 +1676,10 @@ impl CertAuthInfo {
         &self.children
     }
 
+    pub fn route_authorizations(&self) -> &HashSet<RouteAuthorization> {
+        &self.route_authorizations
+    }
+
     pub fn published_objects(&self) -> Vec<Publish> {
         let mut res = vec![];
         for (_rc_name, rc) in self.resources.iter() {
@@ -1637,28 +1687,6 @@ impl CertAuthInfo {
             res.append(&mut rc.objects().publish(self.base_repo(), name_space));
         }
         res
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ParentCaInfo {
-    contact: ParentCaContact,
-    resources: HashMap<ResourceClassName, ResourceClassInfo>,
-}
-
-impl ParentCaInfo {
-    pub fn new(
-        contact: ParentCaContact,
-        resources: HashMap<ResourceClassName, ResourceClassInfo>,
-    ) -> Self {
-        ParentCaInfo { contact, resources }
-    }
-
-    pub fn contact(&self) -> &ParentCaContact {
-        &self.contact
-    }
-    pub fn resources(&self) -> &HashMap<ResourceClassName, ResourceClassInfo> {
-        &self.resources
     }
 }
 

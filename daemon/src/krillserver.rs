@@ -8,7 +8,6 @@ use bytes::Bytes;
 use chrono::Duration;
 use rpki::uri;
 
-use krill_commons::api::admin;
 use krill_commons::api::admin::{
     AddChildRequest, AddParentRequest, CertAuthInit, CertAuthPubMode, Handle, ParentCaContact,
     Token, UpdateChildRequest,
@@ -16,6 +15,7 @@ use krill_commons::api::admin::{
 use krill_commons::api::ca::{CertAuthInfo, CertAuthList, ChildCaInfo, RcvdCert, TrustAnchorInfo};
 use krill_commons::api::publication;
 use krill_commons::api::publication::PublishRequest;
+use krill_commons::api::{admin, RouteAuthorizationUpdates};
 use krill_commons::remote::api::ClientInfo;
 use krill_commons::remote::proxy;
 use krill_commons::remote::proxy::ProxyServer;
@@ -403,6 +403,14 @@ impl KrillServer {
 
     pub fn rfc6492(&self, handle: Handle, msg: SignedMessage) -> KrillRes<Bytes> {
         Ok(self.caserver.rfc6492(&handle, msg)?)
+    }
+}
+
+/// # Handle route authorization requests
+///
+impl KrillServer {
+    pub fn ca_routes_update(&self, handle: Handle, updates: RouteAuthorizationUpdates) -> EmptyRes {
+        Ok(self.caserver.ca_routes_update(handle, updates)?)
     }
 }
 

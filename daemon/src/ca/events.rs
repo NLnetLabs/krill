@@ -11,10 +11,10 @@ use rpki::x509::{Serial, Time, Validity};
 use krill_commons::api::admin::{Handle, ParentCaContact, Token};
 use krill_commons::api::ca::{
     CertifiedKey, ChildCaDetails, ObjectsDelta, PublicationDelta, RcvdCert, RepoInfo,
-    ResourceClassName, ResourceSet, TrustAnchorLocator,
+    ResourceClassName, ResourceSet, RevokedObject, TrustAnchorLocator,
 };
 use krill_commons::api::{
-    IssuanceRequest, IssuanceResponse, RevocationRequest, RevocationResponse,
+    IssuanceRequest, IssuanceResponse, RevocationRequest, RevocationResponse, RouteAuthorization,
 };
 use krill_commons::eventsourcing::StoredEvent;
 use krill_commons::remote::id::IdCert;
@@ -22,6 +22,7 @@ use krill_commons::util::softsigner::KeyId;
 
 use crate::ca::signing::Signer;
 use crate::ca::{ChildHandle, Error, ParentHandle, ResourceClass, Result, Rfc8183Id};
+use ca::RoaInfo;
 
 //------------ TaIniDetails --------------------------------------------------
 
@@ -136,6 +137,75 @@ impl IniDet {
     }
 }
 
+//------------ RouteAuthorizationUpdate ------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RouteAuthorizationUpdate {
+    authorization: RouteAuthorization,
+    roas: HashMap<ResourceClassName, RoaInfo>,
+}
+
+impl RouteAuthorizationUpdate {
+    pub fn new(
+        authorization: RouteAuthorization,
+        roas: HashMap<ResourceClassName, RoaInfo>,
+    ) -> Self {
+        RouteAuthorizationUpdate {
+            authorization,
+            roas,
+        }
+    }
+
+    pub fn unpack(self) -> (RouteAuthorization, HashMap<ResourceClassName, RoaInfo>) {
+        (self.authorization, self.roas)
+    }
+
+    pub fn authorization(&self) -> &RouteAuthorization {
+        &self.authorization
+    }
+
+    pub fn roas(&self) -> &HashMap<ResourceClassName, RoaInfo> {
+        &self.roas
+    }
+}
+
+//------------ RouteAuthorizationRemoval -----------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RouteAuthorizationRemoval {
+    authorization: RouteAuthorization,
+    roas: HashMap<ResourceClassName, RevokedObject>,
+}
+
+impl RouteAuthorizationRemoval {
+    pub fn new(
+        authorization: RouteAuthorization,
+        roas: HashMap<ResourceClassName, RevokedObject>,
+    ) -> Self {
+        RouteAuthorizationRemoval {
+            authorization,
+            roas,
+        }
+    }
+
+    pub fn unpack(
+        self,
+    ) -> (
+        RouteAuthorization,
+        HashMap<ResourceClassName, RevokedObject>,
+    ) {
+        (self.authorization, self.roas)
+    }
+
+    pub fn authorization(&self) -> &RouteAuthorization {
+        &self.authorization
+    }
+
+    pub fn roas(&self) -> &HashMap<ResourceClassName, RevokedObject> {
+        &self.roas
+    }
+}
+
 //------------ Evt ---------------------------------------------------------
 
 pub type Evt = StoredEvent<EvtDet>;
@@ -169,6 +239,10 @@ pub enum EvtDet {
     KeyRollPendingKeyAdded(ResourceClassName, KeyId),
     KeyRollActivated(ResourceClassName, RevocationRequest),
     KeyRollFinished(ResourceClassName, ObjectsDelta),
+
+    // Route Authorizations
+    RouteAuthorizationUpdated(RouteAuthorizationUpdate),
+    RouteAuthorizationRemoved(RouteAuthorizationRemoval),
 
     // Publishing
     Published(ResourceClassName, HashMap<KeyId, PublicationDelta>),

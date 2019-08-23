@@ -10,10 +10,7 @@ use rpki::csr::Csr;
 use rpki::uri;
 use rpki::x509::Time;
 
-use krill_commons::api::ca::{
-    CertifiedKey, CurrentObjects, KeyRef, ObjectsDelta, OldKey, PendingKey, PublicationDelta,
-    RcvdCert, RepoInfo, ResourceClassInfo, ResourceClassKeysInfo, ResourceClassName,
-};
+use krill_commons::api::ca::{CertifiedKey, CurrentObjects, KeyRef, ObjectsDelta, OldKey, PendingKey, PublicationDelta, RcvdCert, RepoInfo, ResourceClassInfo, ResourceClassKeysInfo, ResourceClassName, ResourceSet, Revocation};
 use krill_commons::api::{
     EntitlementClass, IssuanceRequest, RequestResourceLimit, RevocationRequest,
 };
@@ -107,6 +104,11 @@ impl ResourceClass {
         self.current_key().map(|k| k.incoming_cert())
     }
 
+    /// Returns the current resources for this resource class
+    pub fn current_resources(&self) -> Option<&ResourceSet> {
+        self.current_certificate().map(|c| c.resources())
+    }
+
     /// Returns a reference to current key for this RC, if there is any.
     pub fn current_key(&self) -> Option<&CurrentKey> {
         match &self.keys {
@@ -174,6 +176,31 @@ impl ResourceClass {
     /// Applies a publication delta to the appropriate key in this resource class.
     pub fn apply_delta(&mut self, delta: PublicationDelta, key_id: KeyId) {
         self.keys.apply_delta(delta, key_id);
+    }
+
+    /// Publish/update/withdraw objects under the current key.
+    pub fn publish_objects<S: Signer>(
+        &self,
+        repo_info: &RepoInfo,
+        class_name: ResourceClassName,
+        objects_delta: ObjectsDelta,
+        new_revocations: Vec<Revocation>,
+        signer: Arc<RwLock<S>>,
+    ) -> ca::Result<EvtDet> {
+        let key = self.current_key().ok_or_else(|| Error::ResourceClassNoCurrentKey)?;
+        let pub_delta = SignSupport::publish(
+            signer,
+            key,
+            repo_info,
+            self.name_space.as_str(),
+            objects_delta,
+            new_revocations
+        ).map_err(Error::signer)?;
+
+        let mut key_pub_map = HashMap::new();
+        key_pub_map.insert(key.key_id().clone(), pub_delta);
+
+        Ok(EvtDet::Published(class_name, key_pub_map))
     }
 
     /// Republish all keys in this class (that want it).
@@ -815,7 +842,7 @@ impl ResourceClassKeys {
 
     /// Marks the new key as current, and the current key as old, and requests revocation of
     /// the old key.
-    // TODO: When ROAs are supported, now is also the time to republish all objects under the
+    // TODO: #30 When ROAs are supported, now is also the time to republish all objects under the
     //       new current key, and withdraw them from the old key.
     fn keyroll_activate<S: Signer>(
         &self,

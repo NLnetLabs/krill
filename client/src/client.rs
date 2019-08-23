@@ -17,6 +17,7 @@ use crate::options::{
     CaCommand, Command, Options, PublishersCommand, Rfc8181Command, TrustAnchorCommand,
 };
 use crate::report::{ApiResponse, ReportError};
+use serde::Serialize;
 
 /// Command line tool for Krill admin tasks
 pub struct KrillClient {
@@ -141,6 +142,14 @@ impl KrillClient {
                 self.post_empty(&uri)?;
                 Ok(ApiResponse::Empty)
             }
+
+            CaCommand::RouteAuthorizationsUpdate(handle, updates) => {
+                let uri = format!("api/v1/cas/{}/routes", handle);
+                let uri = self.resolve_uri(&uri);
+                self.post_json(&uri, updates)?;
+                Ok(ApiResponse::Empty)
+            }
+
             CaCommand::Show(handle) => {
                 let uri = format!("api/v1/cas/{}", handle);
                 let uri = self.resolve_uri(&uri);
@@ -242,6 +251,10 @@ impl KrillClient {
 
     fn post_empty(&self, uri: &str) -> Result<(), Error> {
         httpclient::post_empty(uri, Some(&self.token)).map_err(Error::HttpClientError)
+    }
+
+    fn post_json(&self, uri: &str, data: impl Serialize) -> Result<(), Error> {
+        httpclient::post_json(&uri, data, Some(&self.token)).map_err(Error::HttpClientError)
     }
 }
 

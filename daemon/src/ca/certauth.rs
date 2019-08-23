@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock};
@@ -20,7 +20,8 @@ use krill_commons::api::ca::{
 };
 use krill_commons::api::{
     self, EntitlementClass, Entitlements, IssuanceRequest, IssuanceResponse, RequestResourceLimit,
-    RevocationRequest, RevocationResponse, SigningCert,
+    RevocationRequest, RevocationResponse, RouteAuthorization, RouteAuthorizationUpdates,
+    SigningCert,
 };
 use krill_commons::eventsourcing::{Aggregate, StoredEvent};
 use krill_commons::remote::builder::{IdCertBuilder, SignedMessageBuilder};
@@ -35,6 +36,11 @@ use crate::ca::{
     self, ta_handle, ChildHandle, Cmd, CmdDet, Error, Evt, EvtDet, Ini, ParentHandle,
     ResourceClass, Result, SignSupport, Signer,
 };
+use ca::events::RouteAuthorizationUpdate;
+use ca::routes::Routes;
+use ca::RoaInfo;
+use rpki::roa::RoaBuilder;
+use rpki::sigobj::SignedObjectBuilder;
 
 //------------ Rfc8183Id ---------------------------------------------------
 
@@ -75,6 +81,8 @@ pub struct CertAuth<S: Signer> {
 
     children: HashMap<ChildHandle, ChildCaDetails>,
 
+    routes: Routes,
+
     phantom_signer: PhantomData<S>,
 }
 
@@ -104,6 +112,7 @@ impl<S: Signer> Aggregate for CertAuth<S> {
         }
 
         let children = HashMap::new();
+        let routes = Routes::default();
 
         Ok(CertAuth {
             handle,
@@ -121,6 +130,8 @@ impl<S: Signer> Aggregate for CertAuth<S> {
             resources,
 
             children,
+
+            routes,
 
             phantom_signer: PhantomData,
         })
@@ -213,6 +224,12 @@ impl<S: Signer> Aggregate for CertAuth<S> {
             }
 
             //-----------------------------------------------------------------------
+            // Route Authorizations
+            //-----------------------------------------------------------------------
+            EvtDet::RouteAuthorizationUpdated(update) => self.routes.update(update),
+            EvtDet::RouteAuthorizationRemoved(removal) => self.routes.remove(&removal),
+
+            //-----------------------------------------------------------------------
             // General functions
             //-----------------------------------------------------------------------
             EvtDet::Published(class_name, delta_map) => {
@@ -252,6 +269,11 @@ impl<S: Signer> Aggregate for CertAuth<S> {
             CmdDet::KeyRollInitiate(duration, signer) => self.keyroll_initiate(duration, signer),
             CmdDet::KeyRollActivate(duration, signer) => self.keyroll_activate(duration, signer),
             CmdDet::KeyRollFinish(rcn, response) => self.keyroll_finish(rcn, response),
+
+            // Route Authorizations
+            CmdDet::RouteAuthorizationsUpdate(updates, signer) => {
+                self.route_authorizations_update(updates, signer)
+            }
 
             // Republish
             CmdDet::Republish(signer) => self.republish(signer),
@@ -305,8 +327,16 @@ impl<S: Signer> CertAuth<S> {
             resources.insert(name.clone(), rc.as_info());
         }
         let children = self.children.clone();
+        let authorizations = self.routes.authorizations().cloned().collect();
 
-        CertAuthInfo::new(handle, base_repo, parents, resources, children)
+        CertAuthInfo::new(
+            handle,
+            base_repo,
+            parents,
+            resources,
+            children,
+            authorizations,
+        )
     }
 
     pub fn child_request(&self) -> ChildRequest {
@@ -652,7 +682,7 @@ impl<S: Signer> CertAuth<S> {
 
     /// Create a publish event details including the revocations, update, withdrawals needed
     /// for updating child certificates.
-    pub fn update_published_child_certificates(
+    fn update_published_child_certificates(
         &self,
         class_name: &ResourceClassName,
         issued_certs: Vec<&IssuedCert>,
@@ -1312,6 +1342,144 @@ impl<S: Signer> CertAuth<S> {
             version += 1;
         }
 
+        Ok(res)
+    }
+}
+
+/// # Managing Route Authorizations
+///
+impl<S: Signer> CertAuth<S> {
+    /// Updates the route authorizations for this CA, and update ROAs. Will return
+    /// an error in case authorisations are added for which this CA does not hold
+    /// the prefix.
+    fn route_authorizations_update(
+        &self,
+        updates: RouteAuthorizationUpdates,
+        signer: Arc<RwLock<S>>,
+    ) -> ca::Result<Vec<Evt>> {
+        let (added, removed) = updates.unpack();
+
+        let mut res = vec![];
+        let mut version = self.version;
+
+        let mut deltas = HashMap::new();
+
+        for update in self.route_authorizations_add(added, signer.clone())? {
+            for (rcn, roa_info) in update.roas().iter() {
+                if !deltas.contains_key(rcn) {
+                    let rc = self.resources.get(rcn).unwrap();
+                    let delta = ObjectsDelta::new(self.base_repo.ca_repository(rc.name_space()));
+                    deltas.insert(rcn.clone(), delta);
+                }
+
+                let delta_mut = deltas.get_mut(rcn).unwrap();
+
+                let object = CurrentObject::from(roa_info.roa());
+                let name = ObjectName::from(update.authorization());
+                match roa_info.replaces() {
+                    None => delta_mut.add(AddedObject::new(name, object)),
+                    Some(replaced) => {
+                        delta_mut.update(UpdatedObject::new(name, object, replaced.hash().clone()))
+                    }
+                }
+            }
+
+            res.push(StoredEvent::new(
+                &self.handle,
+                version,
+                EvtDet::RouteAuthorizationUpdated(update),
+            ));
+            version += 1;
+        }
+
+        let mut revocations_map: HashMap<ResourceClassName, Vec<Revocation>> = HashMap::new();
+        for _detail in self.route_authorizations_remove(removed)? {
+//            res.push(StoredEvent::new(&self.handle, version, detail));
+//            version += 1;
+            unimplemented!("#30")
+        }
+
+        // Create publication delta with all additions/updates/withdraws as a single delta
+        for (rcn, delta) in deltas.into_iter() {
+            let rc = self.resources.get(&rcn).unwrap();
+            let revocations = revocations_map.remove(&rcn).unwrap_or_else(|| vec![]);
+
+            let pub_detail = rc.publish_objects(
+                &self.base_repo,
+                rcn,
+                delta,
+                revocations,
+                signer.clone()
+            )?;
+
+            res.push(StoredEvent::new(&self.handle, version, pub_detail));
+            version += 1;
+        }
+
+        Ok(res)
+    }
+
+    /// Add a new route authorisation. Creates ROAs in the appropriate resource classes.
+    fn route_authorizations_add(
+        &self,
+        additions: HashSet<RouteAuthorization>,
+        signer: Arc<RwLock<S>>,
+    ) -> ca::Result<Vec<RouteAuthorizationUpdate>> {
+        let mut res = vec![];
+
+        for add in additions {
+            if self.routes.has(&add) {
+                return Err(Error::AuthorisationAlreadyPresent(add));
+            } else {
+                let mut rc_roa_map = HashMap::new();
+
+                for (rcn, rc) in self.resources.iter() {
+                    if let Some(key) = rc.current_key() {
+                        let prefix = add.prefix();
+                        if key.incoming_cert().resources().contains(&prefix.into()) {
+                            let mut roa = RoaBuilder::new(add.origin().into());
+                            roa.push_addr(prefix.addr(), prefix.len(), prefix.max_length());
+
+                            let signer = signer.read().unwrap();
+
+                            let crl_uri = key.incoming_cert().crl_uri();
+                            let roa_uri = key.incoming_cert().uri_for_object(&add);
+                            let aia = key.incoming_cert().uri();
+
+                            let roa = roa
+                                .finalize(
+                                    SignedObjectBuilder::new(
+                                        Serial::random(signer.deref()).map_err(Error::signer)?,
+                                        SignSupport::sign_validity_year(),
+                                        crl_uri,
+                                        aia.clone(),
+                                        roa_uri,
+                                    ),
+                                    signer.deref(),
+                                    key.key_id(),
+                                )
+                                .map_err(Error::signer)?;
+
+                            rc_roa_map.insert(rcn.clone(), RoaInfo::new_roa(roa));
+                        }
+                    }
+                }
+                if rc_roa_map.is_empty() {
+                    return Err(Error::AuthorisationNotEntitled(add));
+                }
+
+                res.push(RouteAuthorizationUpdate::new(add, rc_roa_map));
+            }
+        }
+
+        Ok(res)
+    }
+
+    fn route_authorizations_remove(
+        &self,
+        _removals: HashSet<RouteAuthorization>,
+    ) -> ca::Result<Vec<EvtDet>> {
+        let res = vec![];
         Ok(res)
     }
 }
