@@ -15,12 +15,14 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use rpki::cert::Cert;
 use rpki::crypto::KeyIdentifier;
 use rpki::resources::{AsBlocks, AsResources, IpBlocks, IpBlocksForFamily, IpResources};
+use rpki::roa::Roa;
 use rpki::uri;
 use rpki::x509::{Serial, Time};
 
 use crate::api::admin::{Handle, ParentCaContact};
 use crate::api::publication;
 use crate::api::publication::Publish;
+use crate::api::RouteAuthorization;
 use crate::api::{
     Base64, EncodedHash, IssuanceRequest, RequestResourceLimit, RevocationRequest,
     RevocationResponse,
@@ -30,8 +32,6 @@ use crate::rpki::crl::{Crl, CrlEntry};
 use crate::rpki::manifest::{FileAndHash, Manifest};
 use crate::util::ext_serde;
 use crate::util::softsigner::KeyId;
-use api::RouteAuthorization;
-use rpki::roa::Roa;
 
 //------------ ResourceClassName -------------------------------------------
 
@@ -867,7 +867,7 @@ impl From<&Roa> for CurrentObject {
         CurrentObject {
             content,
             serial,
-            expires
+            expires,
         }
     }
 }
@@ -1050,8 +1050,8 @@ impl From<&Manifest> for Revocation {
 }
 
 impl From<&Roa> for Revocation {
-    fn from(_r: &Roa) -> Self {
-        unimplemented!("Need access to ROA EE cert")
+    fn from(r: &Roa) -> Self {
+        Self::from(r.cert())
     }
 }
 
@@ -1324,6 +1324,13 @@ pub struct WithdrawnObject {
 }
 
 impl WithdrawnObject {
+    pub fn new(
+        name: ObjectName,
+        hash: EncodedHash,
+    ) -> Self {
+        WithdrawnObject { name, hash }
+    }
+
     pub fn for_current(name: ObjectName, current: &CurrentObject) -> Self {
         WithdrawnObject {
             name,

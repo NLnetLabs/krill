@@ -3,9 +3,10 @@ use std::collections::HashMap;
 use rpki::roa::Roa;
 use rpki::x509::Time;
 
-use ca::events::{RouteAuthorizationRemoval, RouteAuthorizationUpdate};
 use krill_commons::api::ca::{ReplacedObject, ResourceClassName};
 use krill_commons::api::RouteAuthorization;
+
+use crate::ca::events::{RouteAuthorizationRemoval, RouteAuthorizationUpdate};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Routes {
@@ -69,6 +70,10 @@ impl RouteInfo {
         for (rcn, roa_info) in roas.into_iter() {
             self.roas.insert(rcn, roa_info);
         }
+    }
+
+    pub fn roas(&self) -> &HashMap<ResourceClassName, RoaInfo> {
+        &self.roas
     }
 }
 

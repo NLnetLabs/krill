@@ -34,10 +34,12 @@ fn ca_roas() {
         let mut updates = RouteAuthorizationUpdates::empty();
         updates.add(RouteAuthorization::from_str("10.0.0.0/24 => 64496").unwrap());
         updates.add(RouteAuthorization::from_str("10.0.1.0/24 => 64496").unwrap());
-
         ca_route_authorizations_update(&child, updates);
 
-        // TODO: Check that the ROAs are created, and validate them!
+        let mut updates = RouteAuthorizationUpdates::empty();
+        updates.remove(RouteAuthorization::from_str("10.0.1.0/24 => 64496").unwrap());
+        ca_route_authorizations_update(&child, updates);
 
+        // TODO: Check that repository content, and validate! ..and check CRL for revoke of ROA
     });
 }

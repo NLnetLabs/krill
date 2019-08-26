@@ -10,7 +10,11 @@ use rpki::csr::Csr;
 use rpki::uri;
 use rpki::x509::Time;
 
-use krill_commons::api::ca::{CertifiedKey, CurrentObjects, KeyRef, ObjectsDelta, OldKey, PendingKey, PublicationDelta, RcvdCert, RepoInfo, ResourceClassInfo, ResourceClassKeysInfo, ResourceClassName, ResourceSet, Revocation};
+use krill_commons::api::ca::{
+    CertifiedKey, CurrentObjects, KeyRef, ObjectsDelta, OldKey, PendingKey, PublicationDelta,
+    RcvdCert, RepoInfo, ResourceClassInfo, ResourceClassKeysInfo, ResourceClassName, ResourceSet,
+    Revocation,
+};
 use krill_commons::api::{
     EntitlementClass, IssuanceRequest, RequestResourceLimit, RevocationRequest,
 };
@@ -187,15 +191,18 @@ impl ResourceClass {
         new_revocations: Vec<Revocation>,
         signer: Arc<RwLock<S>>,
     ) -> ca::Result<EvtDet> {
-        let key = self.current_key().ok_or_else(|| Error::ResourceClassNoCurrentKey)?;
+        let key = self
+            .current_key()
+            .ok_or_else(|| Error::ResourceClassNoCurrentKey)?;
         let pub_delta = SignSupport::publish(
             signer,
             key,
             repo_info,
             self.name_space.as_str(),
             objects_delta,
-            new_revocations
-        ).map_err(Error::signer)?;
+            new_revocations,
+        )
+        .map_err(Error::signer)?;
 
         let mut key_pub_map = HashMap::new();
         key_pub_map.insert(key.key_id().clone(), pub_delta);

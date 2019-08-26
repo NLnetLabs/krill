@@ -1,14 +1,15 @@
 use std::collections::HashSet;
 use std::fmt;
 use std::hash::{Hash, Hasher};
+use std::net::IpAddr;
 use std::str::FromStr;
 
 use serde::de;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use api::ca::ResourceSet;
 use rpki::resources::{AddressFamily, AsBlocks, AsId, IpBlocks, IpBlocksBuilder, Prefix};
-use std::net::IpAddr;
+
+use crate::api::ca::ResourceSet;
 
 //------------ RouteAuthorizationUpdates -----------------------------------
 
@@ -63,7 +64,7 @@ impl Default for RouteAuthorizationUpdates {
 
 /// This type defines a prefix and optional maximum length (other than the
 /// prefix length) which is to be authorized for the given origin ASN.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct RouteAuthorization {
     origin: AsNumber,
     prefix: RoaPrefix,
@@ -107,10 +108,29 @@ impl fmt::Display for RouteAuthorization {
     }
 }
 
+impl Serialize for RouteAuthorization {
+    fn serialize<S>(&self, s: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.to_string().serialize(s)
+    }
+}
+
+impl<'de> Deserialize<'de> for RouteAuthorization {
+    fn deserialize<D>(d: D) -> Result<RouteAuthorization, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let string = String::deserialize(d)?;
+        RouteAuthorization::from_str(string.as_str()).map_err(de::Error::custom)
+    }
+}
+
 //------------ RoaPrefix ---------------------------------------------------
 
 /// This type defines a ROA IPv4 or IPv6 prefix and optional max length.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug)]
 pub struct RoaPrefix {
     prefix: Prefix,
     max_length: Option<u8>,
@@ -124,9 +144,11 @@ impl RoaPrefix {
             AddressFamily::Ipv6 => IpAddr::V6(self.prefix.to_v6()),
         }
     }
-    pub fn len(&self) -> u8 {
+
+    pub fn length(&self) -> u8 {
         self.prefix.addr_len()
     }
+
     pub fn max_length(&self) -> Option<u8> {
         self.max_length
     }
@@ -149,8 +171,22 @@ impl Hash for RoaPrefix {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.prefix.hash(state);
         self.max_length.hash(state);
+        match self.family {
+            AddressFamily::Ipv4 => 1.hash(state),
+            AddressFamily::Ipv6 => 2.hash(state),
+        }
     }
 }
+
+impl PartialEq for RoaPrefix {
+    fn eq(&self, other: &RoaPrefix) -> bool {
+        self.prefix == other.prefix
+            && self.max_length == other.max_length
+            && self.family == other.family
+    }
+}
+
+impl Eq for RoaPrefix {}
 
 impl fmt::Display for RoaPrefix {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -172,7 +208,7 @@ impl FromStr for RoaPrefix {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.trim();
 
-        let mut parts = s.split("-");
+        let mut parts = s.split('-');
         let prefix = parts.next().ok_or_else(|| AuthorizationFmtError::pfx(s))?;
 
         let family = if s.contains('.') {
