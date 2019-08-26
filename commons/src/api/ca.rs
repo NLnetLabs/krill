@@ -617,7 +617,7 @@ impl RepoInfo {
     pub fn ca_repository(&self, name_space: &str) -> uri::Rsync {
         match name_space {
             "" => self.base_uri.clone(),
-            _ => self.base_uri.join(name_space.as_ref()).join(b"/"),
+            _ => self.base_uri.join(name_space.as_ref()),
         }
     }
 
@@ -1324,10 +1324,7 @@ pub struct WithdrawnObject {
 }
 
 impl WithdrawnObject {
-    pub fn new(
-        name: ObjectName,
-        hash: EncodedHash,
-    ) -> Self {
+    pub fn new(name: ObjectName, hash: EncodedHash) -> Self {
         WithdrawnObject { name, hash }
     }
 

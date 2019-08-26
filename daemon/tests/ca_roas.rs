@@ -6,7 +6,7 @@ extern crate krill_pubc;
 use std::str::FromStr;
 
 use krill_commons::api::admin::{AddParentRequest, Handle, Token};
-use krill_commons::api::ca::ResourceSet;
+use krill_commons::api::ca::{ObjectName, ResourceSet};
 use krill_commons::api::{RouteAuthorization, RouteAuthorizationUpdates};
 use krill_daemon::ca::ta_handle;
 use krill_daemon::test::*;
@@ -31,15 +31,27 @@ fn ca_roas() {
             wait_for_current_resources(&child, &child_resources);
         }
 
-        let mut updates = RouteAuthorizationUpdates::empty();
-        updates.add(RouteAuthorization::from_str("10.0.0.0/24 => 64496").unwrap());
-        updates.add(RouteAuthorization::from_str("10.0.1.0/24 => 64496").unwrap());
-        ca_route_authorizations_update(&child, updates);
+        // Add some Route Authorizations
+        let route_1 = RouteAuthorization::from_str("10.0.0.0/24 => 64496").unwrap();
+        let route_2 = RouteAuthorization::from_str("10.0.1.0/24 => 64496").unwrap();
+
+        let crl_file = ".crl";
+        let mft_file = ".mft";
+        let route1_file = ObjectName::from(&route_1).to_string();
+        let route1_file = route1_file.as_str();
+        let route2_file = ObjectName::from(&route_2).to_string();;
+        let route2_file = route2_file.as_str();
 
         let mut updates = RouteAuthorizationUpdates::empty();
-        updates.remove(RouteAuthorization::from_str("10.0.1.0/24 => 64496").unwrap());
+        updates.add(route_1);
+        updates.add(route_2);
         ca_route_authorizations_update(&child, updates);
+        wait_for_published_objects(&child, &[crl_file, mft_file, route1_file, route2_file]);
 
-        // TODO: Check that repository content, and validate! ..and check CRL for revoke of ROA
+        // Remove a Route Authorization
+        let mut updates = RouteAuthorizationUpdates::empty();
+        updates.remove(route_1);
+        ca_route_authorizations_update(&child, updates);
+        wait_for_published_objects(&child, &[crl_file, mft_file, route2_file]);
     });
 }
