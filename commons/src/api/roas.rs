@@ -60,6 +60,53 @@ impl Default for RouteAuthorizationUpdates {
     }
 }
 
+impl fmt::Display for RouteAuthorizationUpdates {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for a in &self.added {
+            writeln!(f, "A: {}", a)?;
+        }
+        for r in &self.removed {
+            writeln!(f, "R: {}", r)?;
+        }
+        Ok(())
+    }
+}
+
+impl FromStr for RouteAuthorizationUpdates {
+    type Err = AuthorizationFmtError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut added = HashSet::new();
+        let mut removed = HashSet::new();
+
+        for line in s.lines() {
+            let line = match line.find('#') {
+                None => &line,
+                Some(pos) => &line[..pos],
+            };
+            let line = line.trim();
+
+            if line.is_empty() {
+                continue;
+            } else if line.starts_with("A:") {
+                let line = &line[2..];
+                let line = line.trim();
+                let auth = RouteAuthorization::from_str(line)?;
+                added.insert(auth);
+            } else if line.starts_with("R:") {
+                let line = &line[2..];
+                let line = line.trim();
+                let auth = RouteAuthorization::from_str(line)?;
+                removed.insert(auth);
+            } else {
+                return Err(AuthorizationFmtError::delta(line));
+            }
+        }
+
+        Ok(RouteAuthorizationUpdates { added, removed })
+    }
+}
+
 //------------ RouteAuthorization ------------------------------------------
 
 /// This type defines a prefix and optional maximum length (other than the
@@ -304,7 +351,7 @@ impl fmt::Display for AsNumber {
     }
 }
 
-//------------ RoaPrefixError ----------------------------------------------
+//------------ AuthorizationFmtError -------------------------------------
 
 #[derive(Clone, Debug, Display, Eq, PartialEq)]
 pub enum AuthorizationFmtError {
@@ -316,6 +363,9 @@ pub enum AuthorizationFmtError {
 
     #[display(fmt = "Invalid authorisation string: {}", _0)]
     Auth(String),
+
+    #[display(fmt = "Invalid authorisation delta string: {}", _0)]
+    Delta(String),
 }
 
 impl AuthorizationFmtError {
@@ -329,6 +379,10 @@ impl AuthorizationFmtError {
 
     fn auth(s: &str) -> Self {
         AuthorizationFmtError::Auth(s.to_string())
+    }
+
+    fn delta(s: &str) -> Self {
+        AuthorizationFmtError::Delta(s.to_string())
     }
 }
 
@@ -356,6 +410,34 @@ mod tests {
 
         parse_encode_authorization("192.168.0.0/16 => 64496");
         parse_encode_authorization("192.168.0.0/16-24 => 64496");
+    }
+
+    #[test]
+    fn parse_delta() {
+        let delta = concat!(
+            "# Some comment\n",
+            "  # Indented comment\n",
+            "\n", // empty line
+            "A: 192.168.0.0/16 => 64496 # inline comment\n",
+            "A: 192.168.1.0/24 => 64496\n",
+            "R: 192.168.3.0/24 => 64496\n",
+        );
+
+        let expected = {
+            let mut added = HashSet::new();
+            added.insert(RouteAuthorization::from_str("192.168.0.0/16 => 64496").unwrap());
+            added.insert(RouteAuthorization::from_str("192.168.1.0/24 => 64496").unwrap());
+
+            let mut removed = HashSet::new();
+            removed.insert(RouteAuthorization::from_str("192.168.3.0/24 => 64496").unwrap());
+            RouteAuthorizationUpdates::new(added, removed)
+        };
+
+        let parsed = RouteAuthorizationUpdates::from_str(delta).unwrap();
+        assert_eq!(expected, parsed);
+
+        let reparsed = RouteAuthorizationUpdates::from_str(&parsed.to_string()).unwrap();
+        assert_eq!(parsed, reparsed);
     }
 
 }
