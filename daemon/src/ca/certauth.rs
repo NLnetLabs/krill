@@ -350,6 +350,16 @@ impl<S: Signer> CertAuth<S> {
     pub fn handle(&self) -> &Handle {
         &self.handle
     }
+
+    pub fn all_resources(&self) -> ResourceSet {
+        let mut resources = ResourceSet::default();
+        for rc in self.resources.values() {
+            if let Some(rc_resources) = rc.current_resources() {
+                resources = resources.union(rc_resources);
+            }
+        }
+        resources
+    }
 }
 
 /// # Being a parent
@@ -1369,6 +1379,7 @@ impl<S: Signer> CertAuth<S> {
 
         let mut res = vec![];
         let mut version = self.version;
+        let all_resources = self.all_resources();
 
         let mut current_auths: HashSet<RouteAuthorization> =
             self.routes.authorizations().cloned().collect();
@@ -1376,6 +1387,8 @@ impl<S: Signer> CertAuth<S> {
         for auth in added {
             if current_auths.contains(&auth) {
                 return Err(Error::AuthorisationAlreadyPresent(auth));
+            } else if !all_resources.contains(&auth.prefix().into()) {
+                return Err(Error::AuthorisationNotEntitled(auth));
             } else {
                 current_auths.insert(auth);
                 res.push(StoredEvent::new(

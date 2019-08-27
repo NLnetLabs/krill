@@ -83,6 +83,19 @@ pub fn krill_admin(command: Command) -> ApiResponse {
     }
 }
 
+pub fn krill_admin_expect_error(command: Command) -> Error {
+    let krillc_opts = Options::new(
+        test::https("https://localhost:3000/"),
+        "secret",
+        ReportFormat::Json,
+        command,
+    );
+    match KrillClient::process(krillc_opts) {
+        Ok(_res) => panic!("Expected error"),
+        Err(e) => e,
+    }
+}
+
 pub fn init_ta() {
     krill_admin(Command::TrustAnchor(TrustAnchorCommand::Init));
 }
@@ -182,6 +195,16 @@ pub fn ca_roll_activate(handle: &Handle) {
 
 pub fn ca_route_authorizations_update(handle: &Handle, updates: RouteAuthorizationUpdates) {
     krill_admin(Command::CertAuth(CaCommand::RouteAuthorizationsUpdate(
+        handle.clone(),
+        updates,
+    )));
+}
+
+pub fn ca_route_authorizations_update_expect_error(
+    handle: &Handle,
+    updates: RouteAuthorizationUpdates,
+) {
+    krill_admin_expect_error(Command::CertAuth(CaCommand::RouteAuthorizationsUpdate(
         handle.clone(),
         updates,
     )));

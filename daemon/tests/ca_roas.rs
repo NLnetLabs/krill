@@ -53,5 +53,11 @@ fn ca_roas() {
         updates.remove(route_1);
         ca_route_authorizations_update(&child, updates);
         wait_for_published_objects(&child, &[crl_file, mft_file, route2_file]);
+
+        // Refuse authorization for prefix not held by CA
+        let route_not_held = RouteAuthorization::from_str("192.168.0.0/24 => 64496").unwrap();
+        let mut updates = RouteAuthorizationUpdates::empty();
+        updates.add(route_not_held);
+        ca_route_authorizations_update_expect_error(&child, updates);
     });
 }
