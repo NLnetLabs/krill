@@ -1,6 +1,4 @@
 use std::collections::HashMap;
-use std::ops::Deref;
-use std::sync::{Arc, RwLock};
 
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
@@ -13,14 +11,17 @@ use rpki::x509::Time;
 use krill_commons::api::ca::{
     CertifiedKey, CurrentObjects, KeyRef, ObjectsDelta, OldKey, PendingKey, PublicationDelta,
     RcvdCert, RepoInfo, ResourceClassInfo, ResourceClassKeysInfo, ResourceClassName, ResourceSet,
-    Revocation,
+    Revocation, RevokedObject,
 };
 use krill_commons::api::{
-    EntitlementClass, IssuanceRequest, RequestResourceLimit, RevocationRequest,
+    EntitlementClass, IssuanceRequest, RequestResourceLimit, RevocationRequest, RouteAuthorization,
 };
 use krill_commons::util::softsigner::KeyId;
 
-use crate::ca::{self, ta_handle, Error, EvtDet, ParentHandle, Result, SignSupport, Signer};
+use crate::ca::events::RoaUpdates;
+use crate::ca::{
+    self, ta_handle, Error, EvtDet, ParentHandle, Result, RoaInfo, Roas, SignSupport, Signer,
+};
 
 //------------ ResourceClass -----------------------------------------------
 
@@ -42,6 +43,8 @@ pub struct ResourceClass {
     parent_handle: ParentHandle,
     parent_rc_name: ResourceClassName,
 
+    roas: Roas,
+
     last_key_change: Time,
     keys: ResourceClassKeys,
 }
@@ -60,6 +63,7 @@ impl ResourceClass {
             name_space,
             parent_handle,
             parent_rc_name,
+            roas: Roas::default(),
             last_key_change: Time::now(),
             keys: ResourceClassKeys::create(pending_key),
         }
@@ -70,6 +74,7 @@ impl ResourceClass {
             name_space: parent_rc_name.to_string(),
             parent_handle: ta_handle(),
             parent_rc_name,
+            roas: Roas::default(),
             last_key_change: Time::now(),
             keys: ResourceClassKeys::for_ta(key),
         }
@@ -145,7 +150,7 @@ impl ResourceClass {
         rcvd_cert: RcvdCert,
         base_repo: &RepoInfo,
         class_name: ResourceClassName,
-        signer: Arc<RwLock<S>>,
+        signer: &S,
     ) -> ca::Result<Vec<EvtDet>> {
         self.keys
             .update_received_cert(rcvd_cert, base_repo, class_name, &self.name_space, signer)
@@ -189,18 +194,18 @@ impl ResourceClass {
         class_name: ResourceClassName,
         objects_delta: ObjectsDelta,
         new_revocations: Vec<Revocation>,
-        signer: Arc<RwLock<S>>,
+        signer: &S,
     ) -> ca::Result<EvtDet> {
         let key = self
             .current_key()
             .ok_or_else(|| Error::ResourceClassNoCurrentKey)?;
         let pub_delta = SignSupport::publish(
-            signer,
             key,
             repo_info,
             self.name_space.as_str(),
             objects_delta,
             new_revocations,
+            signer,
         )
         .map_err(Error::signer)?;
 
@@ -215,7 +220,7 @@ impl ResourceClass {
         &self,
         repo_info: &RepoInfo,
         class_name: ResourceClassName,
-        signer: Arc<RwLock<S>>,
+        signer: &S,
     ) -> ca::Result<EvtDet> {
         let name_space = &self.name_space;
 
@@ -227,11 +232,11 @@ impl ResourceClass {
                 publish_key_if_needed(current, repo_info, name_space, signer, &mut deltas)?;
             }
             ResourceClassKeys::RollNew(new, current) => {
-                publish_key_if_needed(new, repo_info, name_space, signer.clone(), &mut deltas)?;
+                publish_key_if_needed(new, repo_info, name_space, signer, &mut deltas)?;
                 publish_key_if_needed(current, repo_info, name_space, signer, &mut deltas)?;
             }
             ResourceClassKeys::RollOld(current, old) => {
-                publish_key_if_needed(current, repo_info, name_space, signer.clone(), &mut deltas)?;
+                publish_key_if_needed(current, repo_info, name_space, signer, &mut deltas)?;
                 publish_key_if_needed(old, repo_info, name_space, signer, &mut deltas)?;
             }
         };
@@ -241,7 +246,7 @@ impl ResourceClass {
             key: &CertifiedKey,
             repo_info: &RepoInfo,
             name_space: &str,
-            signer: Arc<RwLock<S>>,
+            signer: &S,
             deltas: &mut HashMap<KeyId, PublicationDelta>,
         ) -> ca::Result<()> {
             if key.needs_publication() {
@@ -249,7 +254,7 @@ impl ResourceClass {
                 let ca_repo = repo_info.ca_repository(name_space);
                 let objects_delta = ObjectsDelta::new(ca_repo);
                 let delta =
-                    SignSupport::publish(signer, key, repo_info, name_space, objects_delta, vec![])
+                    SignSupport::publish(key, repo_info, name_space, objects_delta, vec![], signer)
                         .map_err(Error::signer)?;
                 deltas.insert(key_id.clone(), delta);
             }
@@ -409,6 +414,73 @@ impl ResourceClass {
         }
 
         Ok(EvtDet::KeyRollFinished(class_name, objects_delta))
+    }
+}
+
+/// # ROAs
+///
+impl ResourceClass {
+    /// Updates the ROAs in accordance with the current authorizations.
+    ///
+    pub fn update_roas<S: Signer>(
+        &self,
+        auths: &[RouteAuthorization],
+        signer: &S,
+    ) -> ca::Result<RoaUpdates> {
+        let mut updates = RoaUpdates::default();
+
+        let current_key = self
+            .current_key()
+            .ok_or_else(|| ca::Error::ResourceClassNoCurrentKey)?;
+
+        let resources = current_key.incoming_cert().resources();
+
+        // Remove any ROAs no longer in auths, or no longer in resources.
+        for (current_auth, roa_info) in self.roas.iter() {
+            if !auths.contains(current_auth) || !resources.contains(&current_auth.prefix().into()) {
+                updates.remove(*current_auth, RevokedObject::from(roa_info.roa()));
+            }
+        }
+
+        for auth in auths {
+            // if the auth is not in this resource class, just skip it.
+            if !resources.contains(&auth.prefix().into()) {
+                continue;
+            }
+
+            match self.roas.get(auth) {
+                None => {
+                    // NO ROA yet, so create one.
+                    let roa = Roas::make_roa(
+                        auth,
+                        current_key.incoming_cert(),
+                        current_key.key_id(),
+                        signer,
+                    )?;
+
+                    updates.update(*auth, RoaInfo::new_roa(roa));
+                }
+                Some(roa) => {
+                    // Re-issue if the ROA is getting close to its expiration time
+                    if roa.roa().cert().validity().not_after() < Time::now() + Duration::weeks(4) {
+                        let new_roa = Roas::make_roa(
+                            auth,
+                            current_key.incoming_cert(),
+                            current_key.key_id(),
+                            signer,
+                        )?;
+
+                        updates.update(*auth, RoaInfo::updated_roa(roa, new_roa));
+                    }
+                }
+            }
+        }
+
+        Ok(updates)
+    }
+
+    pub fn roas_updated(&mut self, updates: RoaUpdates) {
+        self.roas.updated(updates);
     }
 }
 
@@ -603,12 +675,11 @@ impl ResourceClassKeys {
         base_repo: &RepoInfo,
         class_name: ResourceClassName,
         name_space: &str,
-        signer: Arc<RwLock<S>>,
+        signer: &S,
     ) -> ca::Result<Vec<EvtDet>> {
         let mut res = vec![];
 
-        let certified_key =
-            self.find_matching_key_for_rcvd_cert(&rcvd_cert, signer.read().unwrap().deref())?;
+        let certified_key = self.find_matching_key_for_rcvd_cert(&rcvd_cert, signer)?;
 
         res.push(EvtDet::CertificateReceived(
             class_name.clone(),
@@ -620,7 +691,7 @@ impl ResourceClassKeys {
         let delta = ObjectsDelta::new(ca_repo);
 
         let delta =
-            SignSupport::publish(signer, &certified_key, base_repo, name_space, delta, vec![])
+            SignSupport::publish(&certified_key, base_repo, name_space, delta, vec![], signer)
                 .map_err(Error::signer)?;
 
         let mut delta_map = HashMap::new();

@@ -1,13 +1,19 @@
 use std::collections::HashMap;
 
-use rpki::roa::Roa;
-use rpki::x509::Time;
+use rpki::roa::{Roa, RoaBuilder};
+use rpki::sigobj::SignedObjectBuilder;
+use rpki::x509::{Serial, Time};
 
-use krill_commons::api::ca::{ReplacedObject, ResourceClassName};
+use krill_commons::api::ca::{RcvdCert, ReplacedObject};
 use krill_commons::api::RouteAuthorization;
+use krill_commons::util::softsigner::KeyId;
 
-use crate::ca::events::{RouteAuthorizationRemoval, RouteAuthorizationUpdate};
+use crate::ca::events::RoaUpdates;
+use crate::ca::{self, SignSupport, Signer};
 
+//------------ Routes ------------------------------------------------------
+
+/// The current authorizations and corresponding meta-information for a CA.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Routes {
     map: HashMap<RouteAuthorization, RouteInfo>,
@@ -35,56 +41,31 @@ impl Routes {
     }
 
     /// Adds a new authorization, or updates an existing one.
-    pub fn update(&mut self, update: RouteAuthorizationUpdate) {
-        let (authorization, roas) = update.unpack();
-
-        match self.map.get_mut(&authorization) {
-            Some(info) => info.update(roas),
-            None => {
-                self.map.insert(authorization, RouteInfo::new(roas));
-            }
-        }
+    pub fn add(&mut self, auth: RouteAuthorization) {
+        self.map.insert(auth, RouteInfo::default());
     }
 
     /// Removes an authorization
-    pub fn remove(&mut self, removal: &RouteAuthorizationRemoval) {
-        self.map.remove(removal.authorization());
+    pub fn remove(&mut self, auth: &RouteAuthorization) {
+        self.map.remove(auth);
     }
 }
 
+//------------ RouteInfo ---------------------------------------------------
+
+/// Meta-information about a configured RouteAuthorization.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RouteInfo {
-    since: Time,                               // authorization first added by user
-    roas: HashMap<ResourceClassName, RoaInfo>, // actual ROAs (may become empty)
-}
-
-impl RouteInfo {
-    pub fn new(roas: HashMap<ResourceClassName, RoaInfo>) -> Self {
-        RouteInfo {
-            since: Time::now(),
-            roas,
-        }
-    }
-
-    pub fn update(&mut self, roas: HashMap<ResourceClassName, RoaInfo>) {
-        for (rcn, roa_info) in roas.into_iter() {
-            self.roas.insert(rcn, roa_info);
-        }
-    }
-
-    pub fn roas(&self) -> &HashMap<ResourceClassName, RoaInfo> {
-        &self.roas
-    }
+    since: Time, // authorization first added by user
 }
 
 impl Default for RouteInfo {
     fn default() -> Self {
-        RouteInfo {
-            since: Time::now(),
-            roas: HashMap::new(),
-        }
+        RouteInfo { since: Time::now() }
     }
 }
+
+//------------ RoaInfo -----------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RoaInfo {
@@ -121,5 +102,76 @@ impl RoaInfo {
 
     pub fn replaces(&self) -> Option<&ReplacedObject> {
         self.replaces.as_ref()
+    }
+}
+
+//------------ Roas --------------------------------------------------------
+
+/// ROAs held by a resource class in a CA.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Roas {
+    inner: HashMap<RouteAuthorization, RoaInfo>,
+}
+
+impl Default for Roas {
+    fn default() -> Self {
+        Roas {
+            inner: HashMap::new(),
+        }
+    }
+}
+
+impl Roas {
+    pub fn get(&self, auth: &RouteAuthorization) -> Option<&RoaInfo> {
+        self.inner.get(auth)
+    }
+
+    pub fn updated(&mut self, updates: RoaUpdates) {
+        let (updated, removed) = updates.unpack();
+
+        for (auth, info) in updated.into_iter() {
+            self.inner.insert(auth, info);
+        }
+
+        for auth in removed.keys() {
+            self.inner.remove(auth);
+        }
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = (&RouteAuthorization, &RoaInfo)> {
+        self.inner.iter()
+    }
+
+    pub fn authorizations(&self) -> impl Iterator<Item = &RouteAuthorization> {
+        self.inner.keys()
+    }
+
+    pub fn make_roa<S: Signer>(
+        auth: &RouteAuthorization,
+        incoming_cert: &RcvdCert,
+        signing_key: &KeyId,
+        signer: &S,
+    ) -> ca::Result<Roa> {
+        let prefix = auth.prefix();
+        let crl_uri = incoming_cert.crl_uri();
+        let roa_uri = incoming_cert.uri_for_object(auth);
+        let aia = incoming_cert.uri();
+
+        let mut roa_builder = RoaBuilder::new(auth.origin().into());
+        roa_builder.push_addr(prefix.addr(), prefix.length(), prefix.max_length());
+
+        roa_builder
+            .finalize(
+                SignedObjectBuilder::new(
+                    Serial::random(signer).map_err(ca::Error::signer)?,
+                    SignSupport::sign_validity_year(),
+                    crl_uri,
+                    aia.clone(),
+                    roa_uri,
+                ),
+                signer,
+                signing_key,
+            )
+            .map_err(ca::Error::signer)
     }
 }
