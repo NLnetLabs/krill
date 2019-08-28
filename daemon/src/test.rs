@@ -3,15 +3,19 @@
 use std::path::PathBuf;
 use std::{thread, time};
 
-use krill_client::options::{CaCommand, Command, Options, TrustAnchorCommand};
+use rpki::uri::Rsync;
+
+use krill_client::options::{CaCommand, Command, Options, PublishersCommand, TrustAnchorCommand};
 use krill_client::report::{ApiResponse, ReportFormat};
 use krill_client::{Error, KrillClient};
 
 use krill_commons::api::admin::{
     AddChildRequest, AddParentRequest, CertAuthInit, CertAuthPubMode, ChildAuthRequest, Handle,
-    ParentCaContact, Token, UpdateChildRequest,
+    ParentCaContact, PublisherDetails, Token, UpdateChildRequest,
 };
 use krill_commons::api::ca::{CertAuthInfo, ResourceClassKeysInfo, ResourceClassName, ResourceSet};
+use krill_commons::api::publication::Publish;
+use krill_commons::api::RouteAuthorizationUpdates;
 use krill_commons::remote::rfc8183;
 use krill_commons::util::test;
 
@@ -76,6 +80,19 @@ pub fn krill_admin(command: Command) -> ApiResponse {
     match KrillClient::process(krillc_opts) {
         Ok(res) => res, // ok
         Err(e) => panic!("{}", e),
+    }
+}
+
+pub fn krill_admin_expect_error(command: Command) -> Error {
+    let krillc_opts = Options::new(
+        test::https("https://localhost:3000/"),
+        "secret",
+        ReportFormat::Json,
+        command,
+    );
+    match KrillClient::process(krillc_opts) {
+        Ok(_res) => panic!("Expected error"),
+        Err(e) => e,
     }
 }
 
@@ -173,6 +190,23 @@ pub fn ca_roll_init(handle: &Handle) {
 pub fn ca_roll_activate(handle: &Handle) {
     krill_admin(Command::CertAuth(CaCommand::KeyRollActivate(
         handle.clone(),
+    )));
+}
+
+pub fn ca_route_authorizations_update(handle: &Handle, updates: RouteAuthorizationUpdates) {
+    krill_admin(Command::CertAuth(CaCommand::RouteAuthorizationsUpdate(
+        handle.clone(),
+        updates,
+    )));
+}
+
+pub fn ca_route_authorizations_update_expect_error(
+    handle: &Handle,
+    updates: RouteAuthorizationUpdates,
+) {
+    krill_admin_expect_error(Command::CertAuth(CaCommand::RouteAuthorizationsUpdate(
+        handle.clone(),
+        updates,
     )));
 }
 
@@ -280,4 +314,39 @@ pub fn ca_current_resources(handle: &Handle) -> ResourceSet {
     }
 
     res
+}
+
+pub fn ca_current_objects(handle: &Handle) -> Vec<Publish> {
+    let ca = ca_details(handle);
+    ca.published_objects()
+}
+
+pub fn publisher_details(handle: &Handle) -> PublisherDetails {
+    match krill_admin(Command::Publishers(PublishersCommand::Details(
+        handle.to_string(),
+    ))) {
+        ApiResponse::PublisherDetails(pub_details) => pub_details,
+        _ => panic!("Expected publisher details"),
+    }
+}
+
+pub fn wait_for_published_objects(handle: &Handle, objects: &[&str]) {
+    wait_for(30, "No exact match for published objects found", || {
+        let details = publisher_details(handle);
+
+        let current_files = details.current_files();
+        if current_files.len() != objects.len() {
+            return false;
+        }
+
+        let current_files: Vec<&Rsync> = current_files.iter().map(|p| p.uri()).collect();
+
+        for o in objects {
+            if current_files.iter().find(|uri| uri.ends_with(o)).is_none() {
+                return false;
+            }
+        }
+
+        true
+    })
 }

@@ -8,6 +8,7 @@ use rpki::uri;
 
 use crate::api::ca::ResourceSet;
 use crate::api::ca::TrustAnchorLocator;
+use crate::api::rrdp::PublishElement;
 use crate::api::Link;
 use crate::remote::id::IdCert;
 use crate::remote::rfc8183;
@@ -208,25 +209,38 @@ pub struct PublisherDetails {
     handle: String,
     deactivated: bool,
     base_uri: uri::Rsync,
+    current_files: Vec<PublishElement>,
 }
 
 impl PublisherDetails {
-    pub fn new(handle: &str, deactivated: bool, base_uri: &uri::Rsync) -> Self {
+    pub fn new(
+        handle: &str,
+        deactivated: bool,
+        base_uri: &uri::Rsync,
+        current_files: Vec<PublishElement>,
+    ) -> Self {
         PublisherDetails {
             handle: handle.to_string(),
             deactivated,
             base_uri: base_uri.clone(),
+            current_files,
         }
     }
 
     pub fn handle(&self) -> &str {
         &self.handle
     }
+
     pub fn deactivated(&self) -> bool {
         self.deactivated
     }
+
     pub fn base_uri(&self) -> &uri::Rsync {
         &self.base_uri
+    }
+
+    pub fn current_files(&self) -> &Vec<PublishElement> {
+        &self.current_files
     }
 }
 

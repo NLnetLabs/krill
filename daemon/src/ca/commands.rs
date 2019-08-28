@@ -4,7 +4,9 @@ use chrono::Duration;
 
 use krill_commons::api::admin::{Handle, ParentCaContact, UpdateChildRequest};
 use krill_commons::api::ca::{RcvdCert, ResourceClassName, ResourceSet};
-use krill_commons::api::{Entitlements, IssuanceRequest, RevocationRequest, RevocationResponse};
+use krill_commons::api::{
+    Entitlements, IssuanceRequest, RevocationRequest, RevocationResponse, RouteAuthorizationUpdates,
+};
 use krill_commons::eventsourcing;
 use krill_commons::remote::id::IdCert;
 
@@ -68,6 +70,11 @@ pub enum CmdDet<S: Signer> {
     // Finish the keyroll after the parent confirmed that a key for a parent and resource
     // class has been revoked. I.e. remove the old key, and withdraw the crl and mft for it.
     KeyRollFinish(ResourceClassName, RevocationResponse),
+
+    // ------------------------------------------------------------
+    // ROA Support
+    // ------------------------------------------------------------
+    RouteAuthorizationsUpdate(RouteAuthorizationUpdates, Arc<RwLock<S>>),
 
     // ------------------------------------------------------------
     // Publishing
@@ -197,5 +204,20 @@ impl<S: Signer> CmdDet<S> {
 
     pub fn publish(handle: &Handle, signer: Arc<RwLock<S>>) -> Cmd<S> {
         eventsourcing::SentCommand::new(handle, None, CmdDet::Republish(signer))
+    }
+
+    //-------------------------------------------------------------------------------
+    // Route Authorizations
+    //-------------------------------------------------------------------------------
+    pub fn route_authorizations_update(
+        handle: &Handle,
+        updates: RouteAuthorizationUpdates,
+        signer: Arc<RwLock<S>>,
+    ) -> Cmd<S> {
+        eventsourcing::SentCommand::new(
+            handle,
+            None,
+            CmdDet::RouteAuthorizationsUpdate(updates, signer),
+        )
     }
 }

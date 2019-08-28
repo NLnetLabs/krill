@@ -1,8 +1,9 @@
 use std::io;
 use std::path::PathBuf;
-use std::str::FromStr;
+use std::str::{from_utf8_unchecked, FromStr};
 
 use clap::{App, Arg, SubCommand};
+
 use rpki::uri;
 
 use krill_commons::api::admin::{
@@ -10,6 +11,7 @@ use krill_commons::api::admin::{
     ParentCaContact, Token, UpdateChildRequest,
 };
 use krill_commons::api::ca::{ResSetErr, ResourceSet};
+use krill_commons::api::{AuthorizationFmtError, RouteAuthorizationUpdates};
 use krill_commons::remote::rfc8183;
 use krill_commons::util::file;
 
@@ -398,6 +400,30 @@ impl Options {
                     )
                 )
 
+                .subcommand(SubCommand::with_name("roas")
+                    .about("Manage route authorizations by this CA")
+                    .arg(Arg::with_name("handle")
+                        .short("h")
+                        .long("handle")
+                        .value_name("ca handle")
+                        .help("The handle (name) for the CA")
+                        .required(true)
+                    )
+
+                    .subcommand(SubCommand::with_name("list")
+                        .about("List current authorisations and ROA objects")
+                    )
+                    .subcommand(SubCommand::with_name("update")
+                        .about("Update the authorizations for this CA")
+                        .arg(Arg::with_name("delta")
+                            .short("d")
+                            .long("delta")
+                            .value_name("FILE")
+                            .help("path to file containing deltas")
+                            .required(true)
+                        )
+                    )
+                )
             )
 
             .subcommand(SubCommand::with_name("publishers")
@@ -694,6 +720,20 @@ impl Options {
                     }
                 }
             }
+
+            if let Some(m) = m.subcommand_matches("roas") {
+                let ca = Handle::from(m.value_of("handle").unwrap());
+
+                if let Some(_m) = m.subcommand_matches("list") {
+                    command = Command::CertAuth(CaCommand::RouteAuthorizationsList(ca));
+                } else if let Some(m) = m.subcommand_matches("update") {
+                    let file = PathBuf::from(m.value_of("delta").unwrap());
+                    let bytes = file::read(&file)?;
+                    let str = unsafe { from_utf8_unchecked(bytes.as_ref()) };
+                    let delta = RouteAuthorizationUpdates::from_str(str)?;
+                    command = Command::CertAuth(CaCommand::RouteAuthorizationsUpdate(ca, delta));
+                }
+            }
         }
 
         if let Some(m) = matches.subcommand_matches("publishers") {
@@ -801,6 +841,12 @@ pub enum CaCommand {
     // Activate all new keys now (finish keyroll, provided new key was certified)
     KeyRollActivate(Handle),
 
+    // List the current RouteAuthorizations
+    RouteAuthorizationsList(Handle),
+
+    // Update the Route Authorizations for this CA
+    RouteAuthorizationsUpdate(Handle, RouteAuthorizationUpdates),
+
     // Show details for this CA
     Show(Handle),
 
@@ -853,6 +899,9 @@ pub enum Error {
 
     #[display(fmt = "Invalid resources requested: {}", _0)]
     ResSetErr(ResSetErr),
+
+    #[display(fmt = "{}", _0)]
+    InvalidRouteDelta(AuthorizationFmtError),
 }
 
 impl From<rfc8183::Error> for Error {
@@ -882,5 +931,11 @@ impl From<ReportError> for Error {
 impl From<ResSetErr> for Error {
     fn from(e: ResSetErr) -> Self {
         Error::ResSetErr(e)
+    }
+}
+
+impl From<AuthorizationFmtError> for Error {
+    fn from(e: AuthorizationFmtError) -> Self {
+        Error::InvalidRouteDelta(e)
     }
 }

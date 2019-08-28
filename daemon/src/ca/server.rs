@@ -18,6 +18,7 @@ use krill_commons::api::ca::{
 };
 use krill_commons::api::{
     Entitlements, IssuanceRequest, IssuanceResponse, RevocationRequest, RevocationResponse,
+    RouteAuthorizationUpdates,
 };
 use krill_commons::eventsourcing::{Aggregate, AggregateStore, DiskAggregateStore};
 use krill_commons::remote::builder::SignedMessageBuilder;
@@ -793,6 +794,28 @@ impl<S: Signer> CaServer<S> {
             .map_err(ServerError::custom)?
             .into_reply()
             .map_err(ServerError::custom)
+    }
+}
+
+/// # Support Route Authorization functions
+///
+impl<S: Signer> CaServer<S> {
+    /// Update the routes authorized by a CA
+    pub fn ca_routes_update(
+        &self,
+        handle: Handle,
+        updates: RouteAuthorizationUpdates,
+    ) -> ServerResult<(), S> {
+        let ca = self.get_ca(&handle)?;
+
+        let cmd = CmdDet::route_authorizations_update(&handle, updates, self.signer.clone());
+        let events = ca.process_command(cmd)?;
+
+        if !events.is_empty() {
+            self.ca_store.update(&handle, ca, events)?;
+        }
+
+        Ok(())
     }
 }
 

@@ -3,6 +3,7 @@ use std::{fmt, io};
 
 use krill_commons::api::admin::Handle;
 use krill_commons::api::ca::KeyRef;
+use krill_commons::api::RouteAuthorization;
 use krill_commons::eventsourcing::AggregateStoreError;
 use krill_commons::remote::rfc6492;
 use krill_commons::util::httpclient;
@@ -50,6 +51,9 @@ pub enum Error {
     #[display(fmt = "No current key in resource class")]
     ResourceClassNoCurrentKey,
 
+    #[display(fmt = "No new key in resource class")]
+    ResourceClassNoNewKey,
+
     #[display(fmt = "Child CA MUST have resources.")]
     MustHaveResources,
 
@@ -73,6 +77,18 @@ pub enum Error {
 
     #[display(fmt = "Invalidly signed RFC 6492 CMS.")]
     InvalidRfc6492,
+
+    #[display(fmt = "Trying to remove unknown authorization: {}", _0)]
+    AuthorisationUnknown(RouteAuthorization),
+
+    #[display(fmt = "Trying to re-add authorization: {}", _0)]
+    AuthorisationAlreadyPresent(RouteAuthorization),
+
+    #[display(
+        fmt = "Trying to add authorization for resource not held by this CA: {}",
+        _0
+    )]
+    AuthorisationNotEntitled(RouteAuthorization),
 }
 
 impl From<rfc6492::Error> for Error {

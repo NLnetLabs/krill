@@ -9,6 +9,9 @@ pub use self::certauth::Rfc8183Id;
 mod rc;
 pub use self::rc::ResourceClass;
 
+mod routes;
+pub use self::routes::*;
+
 mod commands;
 pub use self::commands::Cmd;
 pub use self::commands::CmdDet;

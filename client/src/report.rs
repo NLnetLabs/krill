@@ -2,6 +2,7 @@ use std::str::{from_utf8_unchecked, FromStr};
 
 use krill_commons::api::admin::{ParentCaContact, PublisherDetails, PublisherList};
 use krill_commons::api::ca::{CertAuthInfo, CertAuthList, CurrentObjects, TrustAnchorInfo};
+use krill_commons::api::RouteAuthorization;
 use krill_commons::remote::api::ClientInfo;
 use krill_commons::remote::rfc8183;
 use krill_commons::remote::rfc8183::RepositoryResponse;
@@ -18,6 +19,7 @@ pub enum ApiResponse {
 
     CertAuthInfo(CertAuthInfo),
     CertAuths(CertAuthList),
+    RouteAuthorizations(Vec<RouteAuthorization>),
 
     ParentCaContact(ParentCaContact),
 
@@ -48,6 +50,7 @@ impl ApiResponse {
                 ApiResponse::TrustAnchorInfo(ta) => Ok(Some(ta.report(fmt)?)),
                 ApiResponse::CertAuths(list) => Ok(Some(list.report(fmt)?)),
                 ApiResponse::CertAuthInfo(info) => Ok(Some(info.report(fmt)?)),
+                ApiResponse::RouteAuthorizations(auths) => Ok(Some(auths.report(fmt)?)),
                 ApiResponse::ParentCaContact(contact) => Ok(Some(contact.report(fmt)?)),
                 ApiResponse::PublisherList(list) => Ok(Some(list.report(fmt)?)),
                 ApiResponse::PublisherDetails(details) => Ok(Some(details.report(fmt)?)),
@@ -240,10 +243,24 @@ impl Report for CertAuthInfo {
 impl Report for ParentCaContact {
     fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
         match format {
-            ReportFormat::Default | ReportFormat::Json => {
-                Ok(serde_json::to_string_pretty(self).unwrap())
+            ReportFormat::Json => Ok(serde_json::to_string_pretty(self).unwrap()),
+            ReportFormat::Default | ReportFormat::Text | ReportFormat::Xml => {
+                let mut res = String::new();
+                match self {
+                    ParentCaContact::Ta(tal) => {
+                        res.push_str(&format!("{}", tal));
+                    }
+                    ParentCaContact::Embedded => {
+                        res.push_str("Embedded parent");
+                    }
+                    ParentCaContact::Rfc6492(response) => {
+                        let bytes = response.encode_vec();
+                        let xml = unsafe { from_utf8_unchecked(&bytes) };
+                        res.push_str(xml);
+                    }
+                }
+                Ok(res)
             }
-            ReportFormat::Text => Ok(self.to_string()),
             _ => Err(ReportError::UnsupportedFormat),
         }
     }
@@ -345,6 +362,24 @@ impl Report for rfc8183::ChildRequest {
                 let xml = unsafe { from_utf8_unchecked(&bytes) };
 
                 Ok(xml.to_string())
+            }
+            _ => Err(ReportError::UnsupportedFormat),
+        }
+    }
+}
+
+impl Report for Vec<RouteAuthorization> {
+    fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
+        match format {
+            ReportFormat::Default | ReportFormat::Json => {
+                Ok(serde_json::to_string_pretty(self).unwrap())
+            }
+            ReportFormat::Text => {
+                let mut res = String::new();
+                for a in self.iter() {
+                    res.push_str(&format!("{}\n", a));
+                }
+                Ok(res)
             }
             _ => Err(ReportError::UnsupportedFormat),
         }

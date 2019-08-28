@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock};
@@ -20,7 +20,8 @@ use krill_commons::api::ca::{
 };
 use krill_commons::api::{
     self, EntitlementClass, Entitlements, IssuanceRequest, IssuanceResponse, RequestResourceLimit,
-    RevocationRequest, RevocationResponse, SigningCert,
+    RevocationRequest, RevocationResponse, RouteAuthorization, RouteAuthorizationUpdates,
+    SigningCert,
 };
 use krill_commons::eventsourcing::{Aggregate, StoredEvent};
 use krill_commons::remote::builder::{IdCertBuilder, SignedMessageBuilder};
@@ -30,10 +31,11 @@ use krill_commons::remote::rfc8183::ChildRequest;
 use krill_commons::remote::sigmsg::SignedMessage;
 use krill_commons::util::softsigner::KeyId;
 
+use crate::ca::rc::PublishMode;
 use crate::ca::signing::CertSiaInfo;
 use crate::ca::{
     self, ta_handle, ChildHandle, Cmd, CmdDet, Error, Evt, EvtDet, Ini, ParentHandle,
-    ResourceClass, Result, SignSupport, Signer,
+    ResourceClass, Result, Routes, SignSupport, Signer,
 };
 
 //------------ Rfc8183Id ---------------------------------------------------
@@ -75,6 +77,8 @@ pub struct CertAuth<S: Signer> {
 
     children: HashMap<ChildHandle, ChildCaDetails>,
 
+    routes: Routes,
+
     phantom_signer: PhantomData<S>,
 }
 
@@ -104,6 +108,7 @@ impl<S: Signer> Aggregate for CertAuth<S> {
         }
 
         let children = HashMap::new();
+        let routes = Routes::default();
 
         Ok(CertAuth {
             handle,
@@ -121,6 +126,8 @@ impl<S: Signer> Aggregate for CertAuth<S> {
             resources,
 
             children,
+
+            routes,
 
             phantom_signer: PhantomData,
         })
@@ -213,6 +220,15 @@ impl<S: Signer> Aggregate for CertAuth<S> {
             }
 
             //-----------------------------------------------------------------------
+            // Route Authorizations
+            //-----------------------------------------------------------------------
+            EvtDet::RouteAuthorizationAdded(update) => self.routes.add(update),
+            EvtDet::RouteAuthorizationRemoved(removal) => self.routes.remove(&removal),
+            EvtDet::RoasUpdated(rcn, updates) => {
+                self.resources.get_mut(&rcn).unwrap().roas_updated(updates)
+            }
+
+            //-----------------------------------------------------------------------
             // General functions
             //-----------------------------------------------------------------------
             EvtDet::Published(class_name, delta_map) => {
@@ -252,6 +268,11 @@ impl<S: Signer> Aggregate for CertAuth<S> {
             CmdDet::KeyRollInitiate(duration, signer) => self.keyroll_initiate(duration, signer),
             CmdDet::KeyRollActivate(duration, signer) => self.keyroll_activate(duration, signer),
             CmdDet::KeyRollFinish(rcn, response) => self.keyroll_finish(rcn, response),
+
+            // Route Authorizations
+            CmdDet::RouteAuthorizationsUpdate(updates, signer) => {
+                self.route_authorizations_update(updates, signer)
+            }
 
             // Republish
             CmdDet::Republish(signer) => self.republish(signer),
@@ -305,8 +326,16 @@ impl<S: Signer> CertAuth<S> {
             resources.insert(name.clone(), rc.as_info());
         }
         let children = self.children.clone();
+        let authorizations = self.routes.authorizations().cloned().collect();
 
-        CertAuthInfo::new(handle, base_repo, parents, resources, children)
+        CertAuthInfo::new(
+            handle,
+            base_repo,
+            parents,
+            resources,
+            children,
+            authorizations,
+        )
     }
 
     pub fn child_request(&self) -> ChildRequest {
@@ -321,6 +350,16 @@ impl<S: Signer> CertAuth<S> {
     }
     pub fn handle(&self) -> &Handle {
         &self.handle
+    }
+
+    pub fn all_resources(&self) -> ResourceSet {
+        let mut resources = ResourceSet::default();
+        for rc in self.resources.values() {
+            if let Some(rc_resources) = rc.current_resources() {
+                resources = resources.union(rc_resources);
+            }
+        }
+        resources
     }
 }
 
@@ -652,13 +691,15 @@ impl<S: Signer> CertAuth<S> {
 
     /// Create a publish event details including the revocations, update, withdrawals needed
     /// for updating child certificates.
-    pub fn update_published_child_certificates(
+    fn update_published_child_certificates(
         &self,
         class_name: &ResourceClassName,
         issued_certs: Vec<&IssuedCert>,
         removed_certs: Vec<&Cert>,
         signer: Arc<RwLock<S>>,
     ) -> Result<HashMap<KeyId, PublicationDelta>> {
+        let signer = signer.read().unwrap();
+
         let my_rc = self
             .resources
             .get(&class_name)
@@ -694,12 +735,12 @@ impl<S: Signer> CertAuth<S> {
         }
 
         let delta = SignSupport::publish(
-            signer,
             issuing_key,
             &self.base_repo,
             name_space,
             objects_delta,
             revocations,
+            signer.deref(),
         )
         .map_err(Error::signer)?;
 
@@ -895,9 +936,10 @@ impl<S: Signer> CertAuth<S> {
         request: RevocationRequest,
         signer: Arc<RwLock<S>>,
     ) -> ca::Result<Vec<Evt>> {
-        // verify child and resources
+        let signer = signer.read().unwrap();
         let class_name = request.class_name().clone();
 
+        // verify child and resources
         let child_resources = self
             .get_child(&child)?
             .resources_for_class(&class_name)
@@ -924,12 +966,12 @@ impl<S: Signer> CertAuth<S> {
             objects_delta.withdraw(withdrawn);
 
             let pub_delta = SignSupport::publish(
-                signer,
                 ca_key,
                 &self.base_repo,
                 name_space,
                 objects_delta,
                 revocations,
+                signer.deref(),
             )
             .map_err(Error::signer)?;
 
@@ -1198,11 +1240,14 @@ impl<S: Signer> CertAuth<S> {
             self.handle, rcn
         );
 
+        let signer = signer.read().unwrap();
+
         let rc = self
             .resources
             .get(&rcn)
             .ok_or_else(|| Error::unknown_resource_class(&rcn))?;
-        let evt_details = rc.update_received_cert(rcvd_cert, &self.base_repo, rcn, signer)?;
+        let evt_details =
+            rc.update_received_cert(rcvd_cert, &self.base_repo, rcn, signer.deref())?;
 
         let mut res = vec![];
         let mut version = self.version;
@@ -1255,9 +1300,9 @@ impl<S: Signer> CertAuth<S> {
         let mut version = self.version;
         let mut res = vec![];
 
-        for (class_name, class) in self.resources.iter() {
+        for (rcn, class) in self.resources.iter() {
             for details in class
-                .keyroll_activate(class_name.clone(), staging, signer.deref())?
+                .keyroll_activate(&self.base_repo, rcn.clone(), staging, signer.deref())?
                 .into_iter()
             {
                 res.push(StoredEvent::new(self.handle(), version, details));
@@ -1296,19 +1341,135 @@ impl<S: Signer> CertAuth<S> {
 impl<S: Signer> CertAuth<S> {
     /// Republish objects for this CA
     pub fn republish(&self, signer: Arc<RwLock<S>>) -> ca::Result<Vec<Evt>> {
-        let mut publish_details = vec![];
-        for (class_name, rc) in self.resources.iter() {
-            publish_details.push(rc.republish(
-                &self.base_repo,
-                class_name.clone(),
-                signer.clone(),
-            )?);
-        }
+        let signer = signer.read().unwrap();
 
         let mut res = vec![];
         let mut version = self.version;
-        for details in publish_details.into_iter() {
-            res.push(StoredEvent::new(&self.handle, version, details));
+
+        for (class_name, rc) in self.resources.iter() {
+            if rc.current_key().is_some() {
+                let auths: Vec<RouteAuthorization> =
+                    self.routes.authorizations().cloned().collect();
+
+                for evt_det in rc
+                    .republish(
+                        auths.as_slice(),
+                        &self.base_repo,
+                        class_name.clone(),
+                        &PublishMode::Normal,
+                        signer.deref(),
+                    )?
+                    .into_iter()
+                {
+                    res.push(StoredEvent::new(&self.handle, version, evt_det));
+                    version += 1;
+                }
+            }
+        }
+
+        Ok(res)
+    }
+}
+
+/// # Managing Route Authorizations
+///
+impl<S: Signer> CertAuth<S> {
+    /// Updates the route authorizations for this CA, and update ROAs. Will return
+    /// an error in case authorisations are added for which this CA does not hold
+    /// the prefix.
+    fn route_authorizations_update(
+        &self,
+        updates: RouteAuthorizationUpdates,
+        signer: Arc<RwLock<S>>,
+    ) -> ca::Result<Vec<Evt>> {
+        let (added, removed) = updates.unpack();
+        let signer = signer.read().unwrap();
+        let mode = PublishMode::Normal;
+
+        let mut res = vec![];
+        let mut version = self.version;
+        let all_resources = self.all_resources();
+
+        let mut current_auths: HashSet<RouteAuthorization> =
+            self.routes.authorizations().cloned().collect();
+
+        for auth in added {
+            if current_auths.contains(&auth) {
+                return Err(Error::AuthorisationAlreadyPresent(auth));
+            } else if !all_resources.contains(&auth.prefix().into()) {
+                return Err(Error::AuthorisationNotEntitled(auth));
+            } else {
+                current_auths.insert(auth);
+                res.push(StoredEvent::new(
+                    self.handle(),
+                    version,
+                    EvtDet::RouteAuthorizationAdded(auth),
+                ));
+                version += 1;
+            }
+        }
+
+        for auth in removed {
+            if current_auths.contains(&auth) {
+                current_auths.remove(&auth);
+                res.push(StoredEvent::new(
+                    self.handle(),
+                    version,
+                    EvtDet::RouteAuthorizationRemoved(auth),
+                ));
+                version += 1;
+            } else {
+                return Err(Error::AuthorisationUnknown(auth));
+            }
+        }
+
+        let current_auths: Vec<RouteAuthorization> = current_auths.into_iter().collect();
+
+        let mut deltas = HashMap::new();
+
+        // Update ROAs, and derive deltas and revocations for publishing.
+        for (rcn, rc) in self.resources.iter() {
+            let updates = rc.update_roas(current_auths.as_slice(), &mode, signer.deref())?;
+            if updates.contains_changes() {
+                let mut delta = ObjectsDelta::new(self.base_repo.ca_repository(rc.name_space()));
+
+                for added in updates.added().into_iter() {
+                    delta.add(added);
+                }
+                for update in updates.updated().into_iter() {
+                    delta.update(update);
+                }
+                for withdraw in updates.withdrawn().into_iter() {
+                    delta.withdraw(withdraw);
+                }
+
+                let revocations = updates.revocations();
+
+                deltas.insert(rcn, (delta, revocations));
+
+                res.push(StoredEvent::new(
+                    self.handle(),
+                    version,
+                    EvtDet::RoasUpdated(rcn.clone(), updates),
+                ));
+                version += 1;
+            }
+        }
+
+        // Create publication delta with all additions/updates/withdraws as a single delta
+        for (rcn, (delta, revocations)) in deltas.into_iter() {
+            let rc = self.resources.get(&rcn).unwrap();
+
+            let pub_detail = rc.publish_objects(
+                &self.base_repo,
+                rcn.clone(),
+                delta,
+                revocations,
+                &mode,
+                signer.deref(),
+            )?;
+
+            res.push(StoredEvent::new(&self.handle, version, pub_detail));
             version += 1;
         }
 

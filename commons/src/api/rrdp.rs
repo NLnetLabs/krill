@@ -329,7 +329,7 @@ impl Default for CurrentObjects {
 }
 
 impl CurrentObjects {
-    fn elements(&self) -> Vec<&PublishElement> {
+    pub fn elements(&self) -> Vec<&PublishElement> {
         let mut res = vec![];
         for el in self.0.values() {
             res.push(el)

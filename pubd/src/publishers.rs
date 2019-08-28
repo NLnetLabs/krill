@@ -1,8 +1,9 @@
+use rpki::uri;
+
 use krill_commons::api::admin::{Handle, PublisherDetails, PublisherRequest, Token};
 use krill_commons::api::publication;
 use krill_commons::api::rrdp::{CurrentObjects, DeltaElements, VerificationError};
 use krill_commons::eventsourcing::{Aggregate, CommandDetails, SentCommand, StoredEvent};
-use rpki::uri;
 
 //------------ PublisherInit -------------------------------------------------
 
@@ -124,7 +125,16 @@ impl Publisher {
     }
 
     pub fn as_api_details(&self) -> PublisherDetails {
-        PublisherDetails::new(self.handle.as_str(), self.deactivated, &self.base_uri)
+        PublisherDetails::new(
+            self.handle.as_str(),
+            self.deactivated,
+            &self.base_uri,
+            self.current_objects
+                .elements()
+                .into_iter()
+                .cloned()
+                .collect(),
+        )
     }
 }
 

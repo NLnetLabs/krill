@@ -10,18 +10,19 @@ use rpki::x509::{Serial, Time, Validity};
 
 use krill_commons::api::admin::{Handle, ParentCaContact, Token};
 use krill_commons::api::ca::{
-    CertifiedKey, ChildCaDetails, ObjectsDelta, PublicationDelta, RcvdCert, RepoInfo,
-    ResourceClassName, ResourceSet, TrustAnchorLocator,
+    AddedObject, CertifiedKey, ChildCaDetails, CurrentObject, ObjectName, ObjectsDelta,
+    PublicationDelta, RcvdCert, RepoInfo, ResourceClassName, ResourceSet, Revocation,
+    RevokedObject, TrustAnchorLocator, UpdatedObject, WithdrawnObject,
 };
 use krill_commons::api::{
-    IssuanceRequest, IssuanceResponse, RevocationRequest, RevocationResponse,
+    IssuanceRequest, IssuanceResponse, RevocationRequest, RevocationResponse, RouteAuthorization,
 };
 use krill_commons::eventsourcing::StoredEvent;
 use krill_commons::remote::id::IdCert;
 use krill_commons::util::softsigner::KeyId;
 
 use crate::ca::signing::Signer;
-use crate::ca::{ChildHandle, Error, ParentHandle, ResourceClass, Result, Rfc8183Id};
+use crate::ca::{ChildHandle, Error, ParentHandle, ResourceClass, Result, Rfc8183Id, RoaInfo};
 
 //------------ TaIniDetails --------------------------------------------------
 
@@ -136,6 +137,102 @@ impl IniDet {
     }
 }
 
+//------------ RoaUpdates --------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RoaUpdates {
+    updated: HashMap<RouteAuthorization, RoaInfo>,
+    removed: HashMap<RouteAuthorization, RevokedObject>,
+}
+
+impl Default for RoaUpdates {
+    fn default() -> Self {
+        RoaUpdates {
+            updated: HashMap::new(),
+            removed: HashMap::new(),
+        }
+    }
+}
+
+impl RoaUpdates {
+    pub fn new(
+        updated: HashMap<RouteAuthorization, RoaInfo>,
+        removed: HashMap<RouteAuthorization, RevokedObject>,
+    ) -> Self {
+        RoaUpdates { updated, removed }
+    }
+
+    pub fn contains_changes(&self) -> bool {
+        !(self.updated.is_empty() && self.removed.is_empty())
+    }
+
+    pub fn update(&mut self, auth: RouteAuthorization, roa: RoaInfo) {
+        self.updated.insert(auth, roa);
+    }
+
+    pub fn remove(&mut self, auth: RouteAuthorization, revoke: RevokedObject) {
+        self.removed.insert(auth, revoke);
+    }
+
+    pub fn added(&self) -> Vec<AddedObject> {
+        let mut res = vec![];
+        for (auth, info) in self.updated.iter() {
+            if info.replaces().is_none() {
+                let object = CurrentObject::from(info.roa());
+                let name = ObjectName::from(auth);
+                res.push(AddedObject::new(name, object));
+            }
+        }
+        res
+    }
+
+    pub fn updated(&self) -> Vec<UpdatedObject> {
+        let mut res = vec![];
+        for (auth, info) in self.updated.iter() {
+            if let Some(replaced) = info.replaces() {
+                let object = CurrentObject::from(info.roa());
+                let name = ObjectName::from(auth);
+                res.push(UpdatedObject::new(name, object, replaced.hash().clone()));
+            }
+        }
+        res
+    }
+
+    pub fn withdrawn(&self) -> Vec<WithdrawnObject> {
+        let mut res = vec![];
+        for (auth, revoked) in self.removed.iter() {
+            let name = ObjectName::from(auth);
+            let hash = revoked.hash().clone();
+            res.push(WithdrawnObject::new(name, hash));
+        }
+        res
+    }
+
+    pub fn revocations(&self) -> Vec<Revocation> {
+        let mut res = vec![];
+        for info in self.updated.values() {
+            if let Some(old) = info.replaces() {
+                res.push(old.revocation())
+            }
+        }
+
+        for revoked in self.removed.values() {
+            res.push(revoked.revocation())
+        }
+
+        res
+    }
+
+    pub fn unpack(
+        self,
+    ) -> (
+        HashMap<RouteAuthorization, RoaInfo>,
+        HashMap<RouteAuthorization, RevokedObject>,
+    ) {
+        (self.updated, self.removed)
+    }
+}
+
 //------------ Evt ---------------------------------------------------------
 
 pub type Evt = StoredEvent<EvtDet>;
@@ -169,6 +266,11 @@ pub enum EvtDet {
     KeyRollPendingKeyAdded(ResourceClassName, KeyId),
     KeyRollActivated(ResourceClassName, RevocationRequest),
     KeyRollFinished(ResourceClassName, ObjectsDelta),
+
+    // Route Authorizations
+    RouteAuthorizationAdded(RouteAuthorization),
+    RouteAuthorizationRemoved(RouteAuthorization),
+    RoasUpdated(ResourceClassName, RoaUpdates),
 
     // Publishing
     Published(ResourceClassName, HashMap<KeyId, PublicationDelta>),

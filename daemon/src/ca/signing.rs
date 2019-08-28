@@ -1,8 +1,5 @@
 //! Support for signing mft, crl, certificates, roas..
 //! Common objects for TAs and CAs
-use std::ops::Deref;
-use std::sync::{Arc, RwLock};
-
 use bytes::Bytes;
 
 use rpki::crl::{Crl, TbsCertList};
@@ -66,21 +63,17 @@ impl SignSupport {
     /// than Publish elements for the PublicationDelta, and the previous
     /// instances will be revoked.
     pub fn publish<S: Signer>(
-        signer: Arc<RwLock<S>>,
         ca_key: &CertifiedKey,
         repo_info: &RepoInfo,
         name_space: &str,
         mut objects_delta: ObjectsDelta,
         new_revocations: Vec<Revocation>,
+        signer: &S,
     ) -> Result<PublicationDelta, SignError<S>> {
         let aia = ca_key.incoming_cert().uri();
         let key_id = ca_key.key_id();
 
-        let pub_key = signer
-            .read()
-            .unwrap()
-            .get_key_info(key_id)
-            .map_err(SignError::KeyError)?;
+        let pub_key = signer.get_key_info(key_id).map_err(SignError::KeyError)?;
 
         let aki = KeyIdentifier::from_public_key(&pub_key);
 
@@ -133,7 +126,7 @@ impl SignSupport {
                 serial_number,
             );
 
-            crl.into_crl(signer.read().unwrap().deref(), key_id)
+            crl.into_crl(signer, key_id)
                 .map_err(SignError::SigningError)?
         };
 
@@ -161,14 +154,13 @@ impl SignSupport {
             mft_content
                 .into_manifest(
                     SignedObjectBuilder::new(
-                        Serial::random(signer.read().unwrap().deref())
-                            .map_err(SignError::SignerError)?,
+                        Serial::random(signer).map_err(SignError::SignerError)?,
                         Validity::new(now, next_week),
                         crl_uri,
                         aia.clone(),
                         mft_uri.clone(),
                     ),
-                    signer.read().unwrap().deref(),
+                    signer,
                     key_id,
                 )
                 .map_err(SignError::SigningError)?
@@ -193,6 +185,14 @@ impl SignSupport {
             revocations_delta,
             objects_delta,
         ))
+    }
+
+    /// Returns a validity period from 5 minutes ago (in case of NTP mess-up), to
+    /// one year from now.
+    pub fn sign_validity_year() -> Validity {
+        let just_now = Time::five_minutes_ago();
+        let one_year = Time::next_year();
+        Validity::new(just_now, one_year)
     }
 }
 

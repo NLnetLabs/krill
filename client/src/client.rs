@@ -1,12 +1,14 @@
 use std::io;
 
-use rpki::uri;
 use serde::de::DeserializeOwned;
+use serde::Serialize;
+
+use rpki::uri;
 
 use krill_commons::api::admin::{
     ParentCaContact, PublisherDetails, PublisherList, PublisherRequest, Token,
 };
-use krill_commons::api::ca::TrustAnchorInfo;
+use krill_commons::api::ca::{CertAuthInfo, TrustAnchorInfo};
 use krill_commons::remote::api::{ClientAuth, ClientInfo};
 use krill_commons::remote::rfc8183;
 use krill_commons::remote::rfc8183::RepositoryResponse;
@@ -141,6 +143,24 @@ impl KrillClient {
                 self.post_empty(&uri)?;
                 Ok(ApiResponse::Empty)
             }
+
+            CaCommand::RouteAuthorizationsList(handle) => {
+                let uri = format!("api/v1/cas/{}", handle);
+                let uri = self.resolve_uri(&uri);
+                let ca_info: CertAuthInfo = self.get_json(&uri)?;
+
+                Ok(ApiResponse::RouteAuthorizations(
+                    ca_info.route_authorizations().iter().cloned().collect(),
+                ))
+            }
+
+            CaCommand::RouteAuthorizationsUpdate(handle, updates) => {
+                let uri = format!("api/v1/cas/{}/routes", handle);
+                let uri = self.resolve_uri(&uri);
+                self.post_json(&uri, updates)?;
+                Ok(ApiResponse::Empty)
+            }
+
             CaCommand::Show(handle) => {
                 let uri = format!("api/v1/cas/{}", handle);
                 let uri = self.resolve_uri(&uri);
@@ -242,6 +262,10 @@ impl KrillClient {
 
     fn post_empty(&self, uri: &str) -> Result<(), Error> {
         httpclient::post_empty(uri, Some(&self.token)).map_err(Error::HttpClientError)
+    }
+
+    fn post_json(&self, uri: &str, data: impl Serialize) -> Result<(), Error> {
+        httpclient::post_json(&uri, data, Some(&self.token)).map_err(Error::HttpClientError)
     }
 }
 
