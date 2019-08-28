@@ -9,7 +9,6 @@ use std::{fmt, ops, str};
 
 use bytes::Bytes;
 use chrono::Duration;
-use serde::de;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::cert::Cert;
@@ -201,60 +200,6 @@ impl ChildCaDetails {
     }
 }
 
-/// This type defines a reference to PublicKey for easy storage and lookup.
-#[derive(Clone, Debug, Display, Eq, Hash, PartialEq)]
-pub struct KeyRef(KeyIdentifier);
-
-impl From<&KeyIdentifier> for KeyRef {
-    fn from(ki: &KeyIdentifier) -> Self {
-        KeyRef(*ki)
-    }
-}
-
-impl From<KeyIdentifier> for KeyRef {
-    fn from(ki: KeyIdentifier) -> Self {
-        KeyRef(ki)
-    }
-}
-
-impl From<&KeyRef> for KeyIdentifier {
-    fn from(kr: &KeyRef) -> Self {
-        kr.0
-    }
-}
-
-impl From<KeyRef> for KeyIdentifier {
-    fn from(kr: KeyRef) -> Self {
-        kr.0
-    }
-}
-
-impl From<&Cert> for KeyRef {
-    fn from(c: &Cert) -> Self {
-        KeyRef(c.subject_key_identifier())
-    }
-}
-
-impl Serialize for KeyRef {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        self.0.to_string().serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for KeyRef {
-    fn deserialize<D>(deserializer: D) -> Result<KeyRef, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let string = String::deserialize(deserializer)?;
-        let ki = KeyIdentifier::from_str(&string).map_err(de::Error::custom)?;
-        Ok(KeyRef(ki))
-    }
-}
-
 //------------ ChildResources ------------------------------------------------
 
 /// This type defines the resource entitlements for a child CA within
@@ -267,7 +212,7 @@ pub struct ChildResources {
     resources: ResourceSet,
     shrink_pending: Option<Time>,
     not_after: Time,
-    certs: HashMap<KeyRef, IssuedCert>,
+    certs: HashMap<KeyIdentifier, IssuedCert>,
 }
 
 impl ChildResources {
@@ -312,13 +257,12 @@ impl ChildResources {
         self.certs.values()
     }
 
-    pub fn certs(&self) -> &HashMap<KeyRef, IssuedCert> {
+    pub fn certs(&self) -> &HashMap<KeyIdentifier, IssuedCert> {
         &self.certs
     }
 
     pub fn cert(&self, key_id: &KeyIdentifier) -> Option<&IssuedCert> {
-        let key_ref = KeyRef::from(key_id);
-        self.certs.get(&key_ref)
+        self.certs.get(key_id)
     }
 
     pub fn add_cert(&mut self, cert: IssuedCert) {
@@ -328,8 +272,8 @@ impl ChildResources {
         self.not_after = cert.cert().validity().not_after();
 
         // Update the certificate for this key, or insert it for a new key.
-        let key_ref = KeyRef::from(cert.cert());
-        self.certs.insert(key_ref, cert);
+        self.certs
+            .insert(cert.cert().subject_key_identifier(), cert);
 
         // If a shrink was pending, check that it's still applicable.
         if self.shrink_pending.is_some()
@@ -348,8 +292,7 @@ impl ChildResources {
     }
 
     pub fn revoke(&mut self, key_id: &KeyIdentifier) {
-        let key_ref = KeyRef::from(key_id);
-        self.certs.remove(&key_ref);
+        self.certs.remove(&key_id);
     }
 }
 
@@ -885,7 +828,7 @@ pub struct ObjectName(String);
 
 impl ObjectName {
     pub fn new(ki: &KeyIdentifier, extension: &str) -> Self {
-        ObjectName(format!("{}.{}", KeyRef::from(ki), extension))
+        ObjectName(format!("{}.{}", ki, extension))
     }
 }
 
@@ -962,7 +905,8 @@ impl CurrentObjects {
     }
 
     pub fn deactivate(&mut self) {
-        self.0.retain(|name, _| name.ends_with(".mft") || name.ends_with(".crl"))
+        self.0
+            .retain(|name, _| name.ends_with(".mft") || name.ends_with(".crl"))
     }
 
     pub fn is_empty(&self) -> bool {

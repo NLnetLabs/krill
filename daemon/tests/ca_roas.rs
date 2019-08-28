@@ -76,7 +76,10 @@ fn ca_roas() {
         // And route3 should remain there during a roll.
         ca_roll_init(&child);
         wait_for_new_key(&child);
-        wait_for_published_objects(&child, &[crl_file, mft_file, crl_file, mft_file, route3_file]);
+        wait_for_published_objects(
+            &child,
+            &[crl_file, mft_file, crl_file, mft_file, route3_file],
+        );
 
         ca_roll_activate(&child);
         wait_for_key_roll_complete(&child);

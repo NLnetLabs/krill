@@ -1,8 +1,9 @@
 use std::fmt::Display;
 use std::{fmt, io};
 
+use rpki::crypto::KeyIdentifier;
+
 use krill_commons::api::admin::Handle;
-use krill_commons::api::ca::KeyRef;
 use krill_commons::api::RouteAuthorization;
 use krill_commons::eventsourcing::AggregateStoreError;
 use krill_commons::remote::rfc6492;
@@ -67,7 +68,7 @@ pub enum Error {
     InvalidKeyStatus,
 
     #[display(fmt = "No key held by CA matching issued certificate: {}", _0)]
-    NoKeyMatch(KeyRef),
+    NoKeyMatch(KeyIdentifier),
 
     #[display(fmt = "Signing issue: {}", _0)]
     SignerError(String),

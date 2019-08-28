@@ -787,9 +787,8 @@ impl<S: Signer> CertAuth<S> {
                             class_name, child_handle
                         );
                         // Remove resource set and revoke all certs
-                        for (keyref, issued) in child_resources.certs().iter() {
-                            let revocation =
-                                RevocationResponse::new(class_name.clone(), keyref.into());
+                        for (key_id, issued) in child_resources.certs().iter() {
+                            let revocation = RevocationResponse::new(class_name.clone(), *key_id);
                             events.push(EvtDet::ChildKeyRevoked(child_handle.clone(), revocation));
                             removed.push(issued.cert())
                         }

@@ -9,9 +9,9 @@ use rpki::uri;
 use rpki::x509::Time;
 
 use krill_commons::api::ca::{
-    CertifiedKey, CurrentObjects, KeyRef, ObjectsDelta, OldKey, PendingKey, PublicationDelta,
-    RcvdCert, RepoInfo, ResourceClassInfo, ResourceClassKeysInfo, ResourceClassName, ResourceSet,
-    Revocation, RevokedObject,
+    CertifiedKey, CurrentObjects, ObjectsDelta, OldKey, PendingKey, PublicationDelta, RcvdCert,
+    RepoInfo, ResourceClassInfo, ResourceClassKeysInfo, ResourceClassName, ResourceSet, Revocation,
+    RevokedObject,
 };
 use krill_commons::api::{
     EntitlementClass, IssuanceRequest, RequestResourceLimit, RevocationRequest, RouteAuthorization,
@@ -470,14 +470,17 @@ impl ResourceClass {
 
         let authorizations: Vec<RouteAuthorization> = self.roas.authorizations().cloned().collect();
 
-        res.push(self.keys.keyroll_activate(rcn.clone(), self.parent_rc_name.clone(), signer)?);
+        res.push(
+            self.keys
+                .keyroll_activate(rcn.clone(), self.parent_rc_name.clone(), signer)?,
+        );
 
         res.append(&mut self.republish(
             authorizations.as_slice(),
             repo_info,
             rcn,
             &PublishMode::KeyRollActivation,
-            signer
+            signer,
         )?);
 
         Ok(res)
@@ -760,7 +763,7 @@ impl ResourceClassKeys {
             }
         }
 
-        Err(ca::Error::NoKeyMatch(KeyRef::from(cert)))
+        Err(ca::Error::NoKeyMatch(cert.subject_key_identifier()))
     }
 
     fn update_received_cert<S: Signer>(
