@@ -134,6 +134,15 @@ impl ResourceClass {
             .ok_or_else(|| Error::ResourceClassNoCurrentKey)
     }
 
+    /// Gets the new key for a key roll, or returns an error if there is none.
+    pub fn get_new_key(&self) -> Result<&NewKey> {
+        if let ResourceClassKeys::RollNew(new_key, _) = &self.keys {
+            Ok(new_key)
+        } else {
+            Err(Error::ResourceClassNoNewKey)
+        }
+    }
+
     /// Returns a ResourceClassInfo for this, which contains all the
     /// same data, but which does not have any behaviour.
     pub fn as_info(&self) -> ResourceClassInfo {
@@ -148,12 +157,41 @@ impl ResourceClass {
     pub fn update_received_cert<S: Signer>(
         &self,
         rcvd_cert: RcvdCert,
-        base_repo: &RepoInfo,
-        class_name: ResourceClassName,
+        repo_info: &RepoInfo,
+        rcn: ResourceClassName,
         signer: &S,
     ) -> ca::Result<Vec<EvtDet>> {
-        self.keys
-            .update_received_cert(rcvd_cert, base_repo, class_name, &self.name_space, signer)
+        let mut res = vec![];
+
+        let publish_mode = {
+            let resources = rcvd_cert.resources().clone();
+
+            match &self.keys {
+                ResourceClassKeys::Pending(pending)
+                | ResourceClassKeys::RollPending(pending, _) => {
+                    let key = CertifiedKey::new(pending.key_id().clone(), rcvd_cert.clone());
+                    PublishMode::PendingKeyActivation(key)
+                }
+                _ => PublishMode::UpdatedResources(resources),
+            }
+        };
+
+        res.push(
+            self.keys
+                .update_received_cert(rcvd_cert, rcn.clone(), signer)?,
+        );
+
+        let authorizations: Vec<RouteAuthorization> = self.roas.authorizations().cloned().collect();
+
+        res.append(&mut self.republish(
+            authorizations.as_slice(),
+            repo_info,
+            rcn,
+            &publish_mode,
+            signer,
+        )?);
+
+        Ok(res)
     }
 
     /// Request certificates for any key that needs it.
@@ -194,74 +232,109 @@ impl ResourceClass {
         class_name: ResourceClassName,
         objects_delta: ObjectsDelta,
         new_revocations: Vec<Revocation>,
+        mode: &PublishMode,
         signer: &S,
     ) -> ca::Result<EvtDet> {
-        let key = self
-            .current_key()
-            .ok_or_else(|| Error::ResourceClassNoCurrentKey)?;
-        let pub_delta = SignSupport::publish(
-            key,
+        let mut key_pub_map = HashMap::new();
+
+        let (publish_key, other_key_opt) = match mode {
+            PublishMode::Normal | PublishMode::UpdatedResources(_) => {
+                let other_key_opt = match &self.keys {
+                    ResourceClassKeys::RollNew(new, _) => Some(new),
+                    ResourceClassKeys::RollOld(_, old) => Some(old.key()),
+                    _ => None,
+                };
+                (self.get_current_key()?, other_key_opt)
+            }
+            PublishMode::PendingKeyActivation(key) => (key, None),
+            PublishMode::KeyRollActivation => (self.get_new_key()?, Some(self.get_current_key()?)),
+        };
+
+        let (publish_key_revocations, other_key_revocations) = match mode {
+            PublishMode::Normal | PublishMode::UpdatedResources(_) => (new_revocations, vec![]),
+            PublishMode::KeyRollActivation => (vec![], new_revocations),
+            PublishMode::PendingKeyActivation(_) => (vec![], vec![]),
+        };
+
+        let publish_key_delta = SignSupport::publish(
+            publish_key,
             repo_info,
             self.name_space.as_str(),
             objects_delta,
-            new_revocations,
+            publish_key_revocations,
             signer,
         )
         .map_err(Error::signer)?;
 
-        let mut key_pub_map = HashMap::new();
-        key_pub_map.insert(key.key_id().clone(), pub_delta);
+        key_pub_map.insert(publish_key.key_id().clone(), publish_key_delta);
+
+        if let Some(other_key) = other_key_opt {
+            let ns = self.name_space();
+            let delta = ObjectsDelta::new(repo_info.ca_repository(ns));
+
+            let other_delta = SignSupport::publish(
+                other_key,
+                repo_info,
+                ns,
+                delta,
+                other_key_revocations,
+                signer,
+            )
+            .map_err(ca::Error::signer)?;
+
+            key_pub_map.insert(other_key.key_id().clone(), other_delta);
+        }
 
         Ok(EvtDet::Published(class_name, key_pub_map))
     }
 
-    /// Republish all keys in this class (that want it).
+    fn needs_publication(&self, mode: &PublishMode) -> bool {
+        match mode {
+            PublishMode::PendingKeyActivation(_) => true,
+            PublishMode::Normal => self.get_current_key().unwrap().close_to_next_update(),
+            _ => true,
+        }
+    }
+
+    /// Republish all keys in this class (that want it). Also update
+    /// ROAs as needed.
     pub fn republish<S: Signer>(
         &self,
+        authorizations: &[RouteAuthorization],
         repo_info: &RepoInfo,
-        class_name: ResourceClassName,
+        rcn: ResourceClassName,
+        mode: &PublishMode,
         signer: &S,
-    ) -> ca::Result<EvtDet> {
-        let name_space = &self.name_space;
+    ) -> ca::Result<Vec<EvtDet>> {
+        let mut res = vec![];
 
-        let mut deltas: HashMap<KeyId, PublicationDelta> = HashMap::new();
+        let ns = self.name_space();
+        let mut delta = ObjectsDelta::new(repo_info.ca_repository(ns));
+        let mut revocations = vec![];
 
-        match &self.keys {
-            ResourceClassKeys::Pending(_) => {}
-            ResourceClassKeys::RollPending(_, current) | ResourceClassKeys::Active(current) => {
-                publish_key_if_needed(current, repo_info, name_space, signer, &mut deltas)?;
-            }
-            ResourceClassKeys::RollNew(new, current) => {
-                publish_key_if_needed(new, repo_info, name_space, signer, &mut deltas)?;
-                publish_key_if_needed(current, repo_info, name_space, signer, &mut deltas)?;
-            }
-            ResourceClassKeys::RollOld(current, old) => {
-                publish_key_if_needed(current, repo_info, name_space, signer, &mut deltas)?;
-                publish_key_if_needed(old, repo_info, name_space, signer, &mut deltas)?;
-            }
-        };
+        let updates = self.update_roas(authorizations, mode, signer)?;
+        let contains_changes = updates.contains_changes();
 
-        // lil' helper
-        fn publish_key_if_needed<S: Signer>(
-            key: &CertifiedKey,
-            repo_info: &RepoInfo,
-            name_space: &str,
-            signer: &S,
-            deltas: &mut HashMap<KeyId, PublicationDelta>,
-        ) -> ca::Result<()> {
-            if key.needs_publication() {
-                let key_id = key.key_id();
-                let ca_repo = repo_info.ca_repository(name_space);
-                let objects_delta = ObjectsDelta::new(ca_repo);
-                let delta =
-                    SignSupport::publish(key, repo_info, name_space, objects_delta, vec![], signer)
-                        .map_err(Error::signer)?;
-                deltas.insert(key_id.clone(), delta);
+        if contains_changes {
+            for added in updates.added().into_iter() {
+                delta.add(added);
             }
-            Ok(())
+            for update in updates.updated().into_iter() {
+                delta.update(update);
+            }
+            for withdraw in updates.withdrawn().into_iter() {
+                delta.withdraw(withdraw);
+            }
+            revocations.append(&mut updates.revocations());
+
+            res.push(EvtDet::RoasUpdated(rcn.clone(), updates));
         }
 
-        Ok(EvtDet::Published(class_name, deltas))
+        if contains_changes || self.needs_publication(mode) {
+            res.push(self.publish_objects(&repo_info, rcn, delta, revocations, mode, signer)?);
+        }
+
+        Ok(res)
     }
 }
 
@@ -420,20 +493,28 @@ impl ResourceClass {
 /// # ROAs
 ///
 impl ResourceClass {
-    /// Updates the ROAs in accordance with the current authorizations.
-    ///
+    /// Updates the ROAs in accordance with the current authorizations, and
+    /// the target resources and key determined by the PublishMode.
     pub fn update_roas<S: Signer>(
         &self,
         auths: &[RouteAuthorization],
+        mode: &PublishMode,
         signer: &S,
     ) -> ca::Result<RoaUpdates> {
         let mut updates = RoaUpdates::default();
 
-        let current_key = self
-            .current_key()
-            .ok_or_else(|| ca::Error::ResourceClassNoCurrentKey)?;
+        let key = match mode {
+            PublishMode::Normal | PublishMode::UpdatedResources(_) => self.get_current_key()?,
+            PublishMode::KeyRollActivation => self.get_new_key()?,
+            PublishMode::PendingKeyActivation(key) => key,
+        };
 
-        let resources = current_key.incoming_cert().resources();
+        let resources = match mode {
+            PublishMode::Normal => key.incoming_cert().resources(),
+            PublishMode::UpdatedResources(resources) => resources,
+            PublishMode::KeyRollActivation => self.get_current_key()?.incoming_cert().resources(),
+            PublishMode::PendingKeyActivation(key) => key.incoming_cert().resources(),
+        };
 
         // Remove any ROAs no longer in auths, or no longer in resources.
         for (current_auth, roa_info) in self.roas.iter() {
@@ -451,24 +532,20 @@ impl ResourceClass {
             match self.roas.get(auth) {
                 None => {
                     // NO ROA yet, so create one.
-                    let roa = Roas::make_roa(
-                        auth,
-                        current_key.incoming_cert(),
-                        current_key.key_id(),
-                        signer,
-                    )?;
+                    let roa = Roas::make_roa(auth, key.incoming_cert(), key.key_id(), signer)?;
 
                     updates.update(*auth, RoaInfo::new_roa(roa));
                 }
                 Some(roa) => {
-                    // Re-issue if the ROA is getting close to its expiration time
-                    if roa.roa().cert().validity().not_after() < Time::now() + Duration::weeks(4) {
-                        let new_roa = Roas::make_roa(
-                            auth,
-                            current_key.incoming_cert(),
-                            current_key.key_id(),
-                            signer,
-                        )?;
+                    // Re-issue if the ROA is getting close to its expiration time, or if we are
+                    //  activating the new key.
+                    let expiring =
+                        roa.roa().cert().validity().not_after() < Time::now() + Duration::weeks(4);
+                    let activating = mode == &PublishMode::KeyRollActivation;
+
+                    if expiring || activating {
+                        let new_roa =
+                            Roas::make_roa(auth, key.incoming_cert(), key.key_id(), signer)?;
 
                         updates.update(*auth, RoaInfo::updated_roa(roa, new_roa));
                     }
@@ -479,6 +556,7 @@ impl ResourceClass {
         Ok(updates)
     }
 
+    /// Marks the ROAs as updated from a RoaUpdated event.
     pub fn roas_updated(&mut self, updates: RoaUpdates) {
         self.roas.updated(updates);
     }
@@ -672,34 +750,16 @@ impl ResourceClassKeys {
     fn update_received_cert<S: Signer>(
         &self,
         rcvd_cert: RcvdCert,
-        base_repo: &RepoInfo,
-        class_name: ResourceClassName,
-        name_space: &str,
+        rcn: ResourceClassName,
         signer: &S,
-    ) -> ca::Result<Vec<EvtDet>> {
-        let mut res = vec![];
-
+    ) -> ca::Result<EvtDet> {
         let certified_key = self.find_matching_key_for_rcvd_cert(&rcvd_cert, signer)?;
 
-        res.push(EvtDet::CertificateReceived(
-            class_name.clone(),
+        Ok(EvtDet::CertificateReceived(
+            rcn.clone(),
             certified_key.key_id().clone(),
             rcvd_cert,
-        ));
-
-        let ca_repo = base_repo.ca_repository(name_space);
-        let delta = ObjectsDelta::new(ca_repo);
-
-        let delta =
-            SignSupport::publish(&certified_key, base_repo, name_space, delta, vec![], signer)
-                .map_err(Error::signer)?;
-
-        let mut delta_map = HashMap::new();
-        delta_map.insert(certified_key.key_id().clone(), delta);
-
-        res.push(EvtDet::Published(class_name, delta_map));
-
-        Ok(res)
+        ))
     }
 
     fn apply_delta(&mut self, delta: PublicationDelta, key_id: KeyId) {
@@ -936,4 +996,28 @@ impl ResourceClassKeys {
             _ => Ok(vec![]),
         }
     }
+}
+
+//------------ PublishMode -------------------------------------------------
+
+/// Describes which kind of publication we're after:
+///
+/// Normal: Use the current key and resources. ROAs are re-issued and revoked
+///         under the current key - if needed.
+///
+/// UpdatedResources: Use the current key, but with the new resource set that
+///         this key is about to be updated with.
+///
+/// PendingKeyActivation: The pending key will be activated, to either a new
+///         (init) or the current (roll) key, and needs to be published.
+///
+/// KeyActivation: Publish ROAs and certificates under the new key, and revoke
+///         them under the old key - which will be revoked shortly.
+///
+#[derive(Clone, Eq, PartialEq)]
+pub enum PublishMode {
+    Normal,
+    UpdatedResources(ResourceSet),
+    PendingKeyActivation(CertifiedKey),
+    KeyRollActivation,
 }

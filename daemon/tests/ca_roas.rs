@@ -59,5 +59,10 @@ fn ca_roas() {
         let mut updates = RouteAuthorizationUpdates::empty();
         updates.add(route_not_held);
         ca_route_authorizations_update_expect_error(&child, updates);
+
+        // Shrink resources and see that ROA is removed
+        let child_resources = ResourceSet::from_strs("", "192.168.0.0/16", "").unwrap();
+        update_child(&child, &child_resources);
+        wait_for_published_objects(&child, &[crl_file, mft_file]);
     });
 }

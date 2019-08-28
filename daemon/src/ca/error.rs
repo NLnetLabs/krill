@@ -3,12 +3,12 @@ use std::{fmt, io};
 
 use krill_commons::api::admin::Handle;
 use krill_commons::api::ca::KeyRef;
+use krill_commons::api::RouteAuthorization;
 use krill_commons::eventsourcing::AggregateStoreError;
 use krill_commons::remote::rfc6492;
 use krill_commons::util::httpclient;
 
 use crate::ca::signing::Signer;
-use krill_commons::api::RouteAuthorization;
 
 //------------ Error ---------------------------------------------------------
 
@@ -50,6 +50,9 @@ pub enum Error {
 
     #[display(fmt = "No current key in resource class")]
     ResourceClassNoCurrentKey,
+
+    #[display(fmt = "No new key in resource class")]
+    ResourceClassNoNewKey,
 
     #[display(fmt = "Child CA MUST have resources.")]
     MustHaveResources,

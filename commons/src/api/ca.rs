@@ -776,8 +776,8 @@ impl CertifiedKey {
         self.incoming_cert.resources() != new_resources || not_after != new_not_after
     }
 
-    pub fn needs_publication(&self) -> bool {
-        self.current_set.number == 1
+    pub fn close_to_next_update(&self) -> bool {
+        self.current_set.number == 1 // The first set is empty (not even crl/mft)
             || self.current_set.next_update < Time::now() + Duration::hours(8)
     }
 

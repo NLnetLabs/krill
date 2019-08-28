@@ -31,6 +31,7 @@ use krill_commons::remote::rfc8183::ChildRequest;
 use krill_commons::remote::sigmsg::SignedMessage;
 use krill_commons::util::softsigner::KeyId;
 
+use crate::ca::rc::PublishMode;
 use crate::ca::signing::CertSiaInfo;
 use crate::ca::{
     self, ta_handle, ChildHandle, Cmd, CmdDet, Error, Evt, EvtDet, Ini, ParentHandle,
@@ -1342,21 +1343,28 @@ impl<S: Signer> CertAuth<S> {
     pub fn republish(&self, signer: Arc<RwLock<S>>) -> ca::Result<Vec<Evt>> {
         let signer = signer.read().unwrap();
 
-        let mut publish_details = vec![];
-
-        for (class_name, rc) in self.resources.iter() {
-            publish_details.push(rc.republish(
-                &self.base_repo,
-                class_name.clone(),
-                signer.deref(),
-            )?);
-        }
-
         let mut res = vec![];
         let mut version = self.version;
-        for details in publish_details.into_iter() {
-            res.push(StoredEvent::new(&self.handle, version, details));
-            version += 1;
+
+        for (class_name, rc) in self.resources.iter() {
+            if rc.current_key().is_some() {
+                let auths: Vec<RouteAuthorization> =
+                    self.routes.authorizations().cloned().collect();
+
+                for evt_det in rc
+                    .republish(
+                        auths.as_slice(),
+                        &self.base_repo,
+                        class_name.clone(),
+                        &PublishMode::Normal,
+                        signer.deref(),
+                    )?
+                    .into_iter()
+                {
+                    res.push(StoredEvent::new(&self.handle, version, evt_det));
+                    version += 1;
+                }
+            }
         }
 
         Ok(res)
@@ -1376,6 +1384,7 @@ impl<S: Signer> CertAuth<S> {
     ) -> ca::Result<Vec<Evt>> {
         let (added, removed) = updates.unpack();
         let signer = signer.read().unwrap();
+        let mode = PublishMode::Normal;
 
         let mut res = vec![];
         let mut version = self.version;
@@ -1420,7 +1429,7 @@ impl<S: Signer> CertAuth<S> {
 
         // Update ROAs, and derive deltas and revocations for publishing.
         for (rcn, rc) in self.resources.iter() {
-            let updates = rc.update_roas(current_auths.as_slice(), signer.deref())?;
+            let updates = rc.update_roas(current_auths.as_slice(), &mode, signer.deref())?;
             if updates.contains_changes() {
                 let mut delta = ObjectsDelta::new(self.base_repo.ca_repository(rc.name_space()));
 
@@ -1456,6 +1465,7 @@ impl<S: Signer> CertAuth<S> {
                 rcn.clone(),
                 delta,
                 revocations,
+                &mode,
                 signer.deref(),
             )?;
 
