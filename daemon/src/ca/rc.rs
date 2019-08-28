@@ -414,7 +414,9 @@ impl ResourceClass {
     pub fn new_key_activated(&mut self, revoke_req: RevocationRequest) {
         match &self.keys {
             ResourceClassKeys::RollNew(new, current) => {
-                let old_key = OldKey::new(current.clone(), revoke_req);
+                let mut old_key = OldKey::new(current.clone(), revoke_req);
+                old_key.deactivate();
+
                 self.keys = ResourceClassKeys::RollOld(new.clone(), old_key);
             }
             _ => panic!("Should never create event to activate key when no roll in progress"),
@@ -455,7 +457,8 @@ impl ResourceClass {
     /// Activate a new key, if it's been longer than the staging period.
     pub fn keyroll_activate<S: Signer>(
         &self,
-        class_name: ResourceClassName,
+        repo_info: &RepoInfo,
+        rcn: ResourceClassName,
         staging: Duration,
         signer: &S,
     ) -> ca::Result<Vec<EvtDet>> {
@@ -463,8 +466,21 @@ impl ResourceClass {
             return Ok(vec![]);
         }
 
-        self.keys
-            .keyroll_activate(class_name, self.parent_rc_name.clone(), signer)
+        let mut res = vec![];
+
+        let authorizations: Vec<RouteAuthorization> = self.roas.authorizations().cloned().collect();
+
+        res.push(self.keys.keyroll_activate(rcn.clone(), self.parent_rc_name.clone(), signer)?);
+
+        res.append(&mut self.republish(
+            authorizations.as_slice(),
+            repo_info,
+            rcn,
+            &PublishMode::KeyRollActivation,
+            signer
+        )?);
+
+        Ok(res)
     }
 
     /// Finish a key roll, withdraw the old key
@@ -980,20 +996,18 @@ impl ResourceClassKeys {
 
     /// Marks the new key as current, and the current key as old, and requests revocation of
     /// the old key.
-    // TODO: #30 When ROAs are supported, now is also the time to republish all objects under the
-    //       new current key, and withdraw them from the old key.
     fn keyroll_activate<S: Signer>(
         &self,
         class_name: ResourceClassName,
         parent_class_name: ResourceClassName,
         signer: &S,
-    ) -> ca::Result<Vec<EvtDet>> {
+    ) -> ca::Result<EvtDet> {
         match self {
             ResourceClassKeys::RollNew(_new, current) => {
                 let revoke_req = Self::revoke_key(parent_class_name, current.key_id(), signer)?;
-                Ok(vec![EvtDet::KeyRollActivated(class_name, revoke_req)])
+                Ok(EvtDet::KeyRollActivated(class_name, revoke_req))
             }
-            _ => Ok(vec![]),
+            _ => Err(Error::ResourceClassNoNewKey),
         }
     }
 }
@@ -1015,6 +1029,7 @@ impl ResourceClassKeys {
 ///         them under the old key - which will be revoked shortly.
 ///
 #[derive(Clone, Eq, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub enum PublishMode {
     Normal,
     UpdatedResources(ResourceSet),

@@ -34,6 +34,7 @@ fn ca_roas() {
         // Add some Route Authorizations
         let route_1 = RouteAuthorization::from_str("10.0.0.0/24 => 64496").unwrap();
         let route_2 = RouteAuthorization::from_str("10.0.1.0/24 => 64496").unwrap();
+        let route_3 = RouteAuthorization::from_str("192.168.0.0/24 => 64496").unwrap();
 
         let crl_file = ".crl";
         let mft_file = ".mft";
@@ -41,6 +42,8 @@ fn ca_roas() {
         let route1_file = route1_file.as_str();
         let route2_file = ObjectName::from(&route_2).to_string();;
         let route2_file = route2_file.as_str();
+        let route3_file = ObjectName::from(&route_3).to_string();
+        let route3_file = route3_file.as_str();
 
         let mut updates = RouteAuthorizationUpdates::empty();
         updates.add(route_1);
@@ -55,14 +58,28 @@ fn ca_roas() {
         wait_for_published_objects(&child, &[crl_file, mft_file, route2_file]);
 
         // Refuse authorization for prefix not held by CA
-        let route_not_held = RouteAuthorization::from_str("192.168.0.0/24 => 64496").unwrap();
         let mut updates = RouteAuthorizationUpdates::empty();
-        updates.add(route_not_held);
+        updates.add(route_3);
         ca_route_authorizations_update_expect_error(&child, updates);
 
         // Shrink resources and see that ROA is removed
         let child_resources = ResourceSet::from_strs("", "192.168.0.0/16", "").unwrap();
         update_child(&child, &child_resources);
         wait_for_published_objects(&child, &[crl_file, mft_file]);
+
+        // Now route3 can be added
+        let mut updates = RouteAuthorizationUpdates::empty();
+        updates.add(route_3);
+        ca_route_authorizations_update(&child, updates);
+        wait_for_published_objects(&child, &[crl_file, mft_file, route3_file]);
+
+        // And route3 should remain there during a roll.
+        ca_roll_init(&child);
+        wait_for_new_key(&child);
+        wait_for_published_objects(&child, &[crl_file, mft_file, crl_file, mft_file, route3_file]);
+
+        ca_roll_activate(&child);
+        wait_for_key_roll_complete(&child);
+        wait_for_published_objects(&child, &[crl_file, mft_file, route3_file]);
     });
 }

@@ -1300,9 +1300,9 @@ impl<S: Signer> CertAuth<S> {
         let mut version = self.version;
         let mut res = vec![];
 
-        for (class_name, class) in self.resources.iter() {
+        for (rcn, class) in self.resources.iter() {
             for details in class
-                .keyroll_activate(class_name.clone(), staging, signer.deref())?
+                .keyroll_activate(&self.base_repo, rcn.clone(), staging, signer.deref())?
                 .into_iter()
             {
                 res.push(StoredEvent::new(self.handle(), version, details));

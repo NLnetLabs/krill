@@ -789,6 +789,10 @@ impl CertifiedKey {
     pub fn apply_delta(&mut self, delta: PublicationDelta) {
         self.current_set.apply_delta(delta)
     }
+
+    pub fn deactivate(&mut self) {
+        self.current_set.deactivate()
+    }
 }
 
 //------------ CurrentObject -------------------------------------------------
@@ -955,6 +959,10 @@ impl CurrentObjects {
         for wdr in delta.withdrawn.into_iter() {
             self.0.remove(&wdr.name);
         }
+    }
+
+    pub fn deactivate(&mut self) {
+        self.0.retain(|name, _| name.ends_with(".mft") || name.ends_with(".crl"))
     }
 
     pub fn is_empty(&self) -> bool {
@@ -1160,6 +1168,14 @@ impl CurrentObjectSet {
         self.number = delta.number;
         self.revocations.apply_delta(delta.revocations);
         self.objects.apply_delta(delta.objects)
+    }
+
+    /// TODO: Remove when ROAs and Certs are no longer stored here. See issue #68
+    ///
+    /// For now... remove all but the mft and crl from the set, so that when the
+    /// key is withdrawn only the CRL and MFT are removed.
+    pub fn deactivate(&mut self) {
+        self.objects.deactivate()
     }
 }
 
