@@ -204,7 +204,7 @@ impl ProxyServer {
         let responder = self.responder_store.get_latest(&responder::id())?;
 
         let builder =
-            SignedMessageBuilder::create(responder.id().key_id(), &self.signer, msg.into_bytes())?;
+            SignedMessageBuilder::create(&responder.id().key_id(), &self.signer, msg.into_bytes())?;
 
         let enc = builder.encode();
 
@@ -391,7 +391,7 @@ impl ClientProxy {
         let key_id = self.id.key_id();
         let signer = OpenSslSigner::build(&self.work_dir)?;
 
-        let builder = SignedMessageBuilder::create(key_id, &signer, msg.into_bytes())?;
+        let builder = SignedMessageBuilder::create(&key_id, &signer, msg.into_bytes())?;
         let enc = builder.encode();
 
         Ok(enc.to_captured(Mode::Der))

@@ -15,44 +15,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::crypto::signer::KeyError;
 use rpki::crypto::{
-    PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
+    KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
 };
-
-//------------ KeyId ---------------------------------------------------------
-
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct KeyId(String);
-
-impl KeyId {
-    pub fn new(s: &str) -> Self {
-        KeyId(s.to_string())
-    }
-}
-
-impl AsRef<str> for KeyId {
-    fn as_ref(&self) -> &str {
-        &self.0
-    }
-}
-
-impl Serialize for KeyId {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        self.as_ref().serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for KeyId {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        Ok(KeyId::new(&s))
-    }
-}
 
 //------------ OpenSslSigner -------------------------------------------------
 
@@ -97,7 +61,7 @@ impl OpenSslSigner {
         Ok(signature)
     }
 
-    fn load_key(&self, id: &KeyId) -> Result<OpenSslKeyPair, SignerError> {
+    fn load_key(&self, id: &KeyIdentifier) -> Result<OpenSslKeyPair, SignerError> {
         let path = self.key_path(id);
         if path.exists() {
             let f = File::open(path)?;
@@ -108,23 +72,22 @@ impl OpenSslSigner {
         }
     }
 
-    fn key_path(&self, key_id: &KeyId) -> PathBuf {
+    fn key_path(&self, key_id: &KeyIdentifier) -> PathBuf {
         let mut path = self.keys_dir.clone();
-        path.push(key_id.as_ref());
+        path.push(&key_id.to_string());
         path
     }
 }
 
 impl Signer for OpenSslSigner {
-    type KeyId = KeyId;
+    type KeyId = KeyIdentifier;
     type Error = SignerError;
 
     fn create_key(&mut self, _algorithm: PublicKeyFormat) -> Result<Self::KeyId, Self::Error> {
         let kp = OpenSslKeyPair::build()?;
 
         let pk = &kp.subject_public_key_info()?;
-        let hex_hash = hex::encode(pk.key_identifier().as_ref());
-        let key_id = KeyId(hex_hash);
+        let key_id = pk.key_identifier();
 
         let path = self.key_path(&key_id);
         let json = serde_json::to_string(&kp)?;

@@ -1,9 +1,12 @@
 //! Support for building RPKI Certificates and Objects
+use std::fmt;
+
+use bytes::Bytes;
+use chrono::Utc;
+
 use bcder::encode::{Constructed, PrimitiveContent, Values};
 use bcder::{decode, encode};
 use bcder::{BitString, Mode, OctetString, Oid, Tag};
-use bytes::Bytes;
-use chrono::Utc;
 use rpki::cert::ext::{CrlNumber, Extensions, KeyIdentifier};
 use rpki::crypto::signer::KeyError;
 use rpki::crypto::{
@@ -11,7 +14,6 @@ use rpki::crypto::{
 };
 use rpki::oid;
 use rpki::x509::{Name, Time, Validity};
-use std::fmt;
 
 use crate::remote::id::{IdCert, IdExtensions};
 use crate::remote::sigmsg::SigMsgCrl;
@@ -211,9 +213,7 @@ impl IdCertBuilder {
         signer: &S,
     ) -> Result<IdCert, Error<S::Error>> {
         let issuing_key_info = signer.get_key_info(issuing_key)?;
-
         let ext = IdExtensions::for_id_ee_cert(subject_key, &issuing_key_info);
-
         let cert = IdCertBuilder::create_signed_cert(issuing_key, subject_key, ext, signer)?;
         Ok(cert)
     }

@@ -4,7 +4,7 @@ use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock};
 
 use rpki::cert::{Cert, KeyUsage, Overclaim, TbsCert};
-use rpki::crypto::PublicKeyFormat;
+use rpki::crypto::{KeyIdentifier, PublicKeyFormat};
 use rpki::uri;
 use rpki::x509::{Serial, Time, Validity};
 
@@ -19,7 +19,6 @@ use krill_commons::api::{
 };
 use krill_commons::eventsourcing::StoredEvent;
 use krill_commons::remote::id::IdCert;
-use krill_commons::util::softsigner::KeyId;
 
 use crate::ca::signing::Signer;
 use crate::ca::{ChildHandle, Error, ParentHandle, ResourceClass, Result, Rfc8183Id, RoaInfo};
@@ -259,11 +258,11 @@ pub enum EvtDet {
         ParentHandle,
         Vec<RevocationRequest>,
     ),
-    CertificateRequested(ResourceClassName, IssuanceRequest, KeyId),
-    CertificateReceived(ResourceClassName, KeyId, RcvdCert),
+    CertificateRequested(ResourceClassName, IssuanceRequest, KeyIdentifier),
+    CertificateReceived(ResourceClassName, KeyIdentifier, RcvdCert),
 
     // Key roll
-    KeyRollPendingKeyAdded(ResourceClassName, KeyId),
+    KeyRollPendingKeyAdded(ResourceClassName, KeyIdentifier),
     KeyRollActivated(ResourceClassName, RevocationRequest),
     KeyRollFinished(ResourceClassName, ObjectsDelta),
 
@@ -273,7 +272,7 @@ pub enum EvtDet {
     RoasUpdated(ResourceClassName, RoaUpdates),
 
     // Publishing
-    Published(ResourceClassName, HashMap<KeyId, PublicationDelta>),
+    Published(ResourceClassName, HashMap<KeyIdentifier, PublicationDelta>),
 }
 
 impl EvtDet {
@@ -375,7 +374,7 @@ impl EvtDet {
         handle: &Handle,
         version: u64,
         class_name: ResourceClassName,
-        deltas: HashMap<KeyId, PublicationDelta>,
+        deltas: HashMap<KeyIdentifier, PublicationDelta>,
     ) -> Evt {
         StoredEvent::new(handle, version, EvtDet::Published(class_name, deltas))
     }

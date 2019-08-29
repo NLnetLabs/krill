@@ -6,6 +6,7 @@ use std::sync::{Arc, RwLock};
 use bytes::Bytes;
 use chrono::Duration;
 
+use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 
 use krill_commons::api;
@@ -25,7 +26,6 @@ use krill_commons::remote::builder::SignedMessageBuilder;
 use krill_commons::remote::sigmsg::SignedMessage;
 use krill_commons::remote::{rfc6492, rfc8183};
 use krill_commons::util::httpclient;
-use krill_commons::util::softsigner::KeyId;
 
 use crate::ca::{
     self, ta_handle, CertAuth, ChildHandle, CmdDet, IniDet, ParentHandle, ServerError,
@@ -534,7 +534,7 @@ impl<S: Signer> CaServer<S> {
     fn send_revoke_requests_rfc6492(
         &self,
         revoke_requests: HashMap<ResourceClassName, Vec<RevocationRequest>>,
-        signing_key: &KeyId,
+        signing_key: &KeyIdentifier,
         parent_res: &rfc8183::ParentResponse,
     ) -> ServerResult<HashMap<ResourceClassName, Vec<RevocationResponse>>, S> {
         let mut revoke_map = HashMap::new();
@@ -643,7 +643,7 @@ impl<S: Signer> CaServer<S> {
     fn send_cert_requests_rfc6492(
         &self,
         requests: HashMap<ResourceClassName, Vec<IssuanceRequest>>,
-        signing_key: &KeyId,
+        signing_key: &KeyIdentifier,
         parent_res: &rfc8183::ParentResponse,
     ) -> ServerResult<HashMap<ResourceClassName, Vec<IssuedCert>>, S> {
         let mut issued_map = HashMap::new();
@@ -753,7 +753,7 @@ impl<S: Signer> CaServer<S> {
 
     fn send_rfc6492_and_validate_response(
         &self,
-        signing_key: &KeyId,
+        signing_key: &KeyIdentifier,
         parent_res: &rfc8183::ParentResponse,
         msg: Bytes,
     ) -> ServerResult<rfc6492::Res, S> {

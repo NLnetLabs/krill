@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 
+use rpki::crypto::KeyIdentifier;
 use rpki::roa::{Roa, RoaBuilder};
 use rpki::sigobj::SignedObjectBuilder;
 use rpki::x509::{Serial, Time};
 
 use krill_commons::api::ca::{RcvdCert, ReplacedObject};
 use krill_commons::api::RouteAuthorization;
-use krill_commons::util::softsigner::KeyId;
 
 use crate::ca::events::RoaUpdates;
 use crate::ca::{self, SignSupport, Signer};
@@ -149,7 +149,7 @@ impl Roas {
     pub fn make_roa<S: Signer>(
         auth: &RouteAuthorization,
         incoming_cert: &RcvdCert,
-        signing_key: &KeyId,
+        signing_key: &KeyIdentifier,
         signer: &S,
     ) -> ca::Result<Roa> {
         let prefix = auth.prefix();

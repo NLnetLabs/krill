@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
 
-use rpki::crypto::PublicKeyFormat;
+use rpki::crypto::{KeyIdentifier, PublicKeyFormat};
 use rpki::csr::Csr;
 use rpki::uri;
 use rpki::x509::Time;
@@ -16,7 +16,6 @@ use krill_commons::api::ca::{
 use krill_commons::api::{
     EntitlementClass, IssuanceRequest, RequestResourceLimit, RevocationRequest, RouteAuthorization,
 };
-use krill_commons::util::softsigner::KeyId;
 
 use crate::ca::events::RoaUpdates;
 use crate::ca::{
@@ -57,7 +56,7 @@ impl ResourceClass {
         name_space: String,
         parent_handle: ParentHandle,
         parent_rc_name: ResourceClassName,
-        pending_key: KeyId,
+        pending_key: KeyIdentifier,
     ) -> Self {
         ResourceClass {
             name_space,
@@ -99,7 +98,7 @@ impl ResourceClass {
     }
 
     /// Adds a request to an existing key for future reference.
-    pub fn add_request(&mut self, key_id: KeyId, req: IssuanceRequest) {
+    pub fn add_request(&mut self, key_id: KeyIdentifier, req: IssuanceRequest) {
         self.keys.add_request(key_id, req);
     }
 
@@ -169,7 +168,7 @@ impl ResourceClass {
             match &self.keys {
                 ResourceClassKeys::Pending(pending)
                 | ResourceClassKeys::RollPending(pending, _) => {
-                    let key = CertifiedKey::new(pending.key_id().clone(), rcvd_cert.clone());
+                    let key = CertifiedKey::new(*pending.key_id(), rcvd_cert.clone());
                     PublishMode::PendingKeyActivation(key)
                 }
                 _ => PublishMode::UpdatedResources(resources),
@@ -221,7 +220,7 @@ impl ResourceClass {
 ///
 impl ResourceClass {
     /// Applies a publication delta to the appropriate key in this resource class.
-    pub fn apply_delta(&mut self, delta: PublicationDelta, key_id: KeyId) {
+    pub fn apply_delta(&mut self, delta: PublicationDelta, key_id: KeyIdentifier) {
         self.keys.apply_delta(delta, key_id);
     }
 
@@ -362,11 +361,11 @@ impl ResourceClass {
 ///
 impl ResourceClass {
     /// This function marks a certificate as received.
-    pub fn received_cert(&mut self, key_id: KeyId, cert: RcvdCert) {
+    pub fn received_cert(&mut self, key_id: KeyIdentifier, cert: RcvdCert) {
         // if there is a pending key, then we need to do some promotions..
         match &mut self.keys {
             ResourceClassKeys::Pending(pending) => {
-                let current = CertifiedKey::new(pending.key_id().clone(), cert);
+                let current = CertifiedKey::new(*pending.key_id(), cert);
                 self.last_key_change = Time::now();
                 self.keys = ResourceClassKeys::Active(current);
             }
@@ -375,7 +374,7 @@ impl ResourceClass {
             }
             ResourceClassKeys::RollPending(pending, current) => {
                 if pending.key_id() == &key_id {
-                    let new = CertifiedKey::new(pending.key_id().clone(), cert);
+                    let new = CertifiedKey::new(*pending.key_id(), cert);
                     self.last_key_change = Time::now();
                     self.keys = ResourceClassKeys::RollNew(new, current.clone());
                 } else {
@@ -400,7 +399,7 @@ impl ResourceClass {
     }
 
     /// Adds a pending key.
-    pub fn pending_key_added(&mut self, key_id: KeyId) {
+    pub fn pending_key_added(&mut self, key_id: KeyIdentifier) {
         match &self.keys {
             ResourceClassKeys::Active(current) => {
                 let pending = PendingKey::new(key_id);
@@ -599,7 +598,7 @@ type NewKey = CertifiedKey;
 type CurrentKey = CertifiedKey;
 
 impl ResourceClassKeys {
-    fn create(pending_key: KeyId) -> Self {
+    fn create(pending_key: KeyIdentifier) -> Self {
         ResourceClassKeys::Pending(PendingKey::new(pending_key))
     }
 
@@ -607,7 +606,7 @@ impl ResourceClassKeys {
         ResourceClassKeys::Active(key)
     }
 
-    fn add_request(&mut self, key_id: KeyId, req: IssuanceRequest) {
+    fn add_request(&mut self, key_id: KeyIdentifier, req: IssuanceRequest) {
         match self {
             ResourceClassKeys::Pending(pending) => pending.add_request(req),
             ResourceClassKeys::Active(current) => current.add_request(req),
@@ -695,7 +694,7 @@ impl ResourceClassKeys {
 
     fn revoke_key<S: Signer>(
         class_name: ResourceClassName,
-        key_id: &KeyId,
+        key_id: &KeyIdentifier,
         signer: &S,
     ) -> ca::Result<RevocationRequest> {
         let ki = signer
@@ -714,7 +713,7 @@ impl ResourceClassKeys {
         match self {
             ResourceClassKeys::Pending(pending) => {
                 self.matches_key_id(pending.key_id(), cert, signer)?;
-                Ok(CertifiedKey::new(pending.key_id().clone(), cert.clone()))
+                Ok(CertifiedKey::new(*pending.key_id(), cert.clone()))
             }
             ResourceClassKeys::Active(current) => {
                 self.matches_key_id(current.key_id(), cert, signer)?;
@@ -722,7 +721,7 @@ impl ResourceClassKeys {
             }
             ResourceClassKeys::RollPending(pending, current) => {
                 if self.matches_key_id(pending.key_id(), cert, signer).is_ok() {
-                    Ok(CertifiedKey::new(pending.key_id().clone(), cert.clone()))
+                    Ok(CertifiedKey::new(*pending.key_id(), cert.clone()))
                 } else {
                     self.matches_key_id(current.key_id(), cert, signer)?;
                     Ok(current.clone())
@@ -750,7 +749,7 @@ impl ResourceClassKeys {
     /// Helper to match a key_id to a pub key.
     fn matches_key_id<S: Signer>(
         &self,
-        key_id: &KeyId,
+        key_id: &KeyIdentifier,
         cert: &RcvdCert,
         signer: &S,
     ) -> ca::Result<()> {
@@ -776,12 +775,12 @@ impl ResourceClassKeys {
 
         Ok(EvtDet::CertificateReceived(
             rcn.clone(),
-            certified_key.key_id().clone(),
+            *certified_key.key_id(),
             rcvd_cert,
         ))
     }
 
-    fn apply_delta(&mut self, delta: PublicationDelta, key_id: KeyId) {
+    fn apply_delta(&mut self, delta: PublicationDelta, key_id: KeyIdentifier) {
         match self {
             ResourceClassKeys::Pending(_pending) => panic!("Should never have delta for pending"),
             ResourceClassKeys::Active(current) => current.apply_delta(delta),
@@ -856,11 +855,7 @@ impl ResourceClassKeys {
                 signer,
             )?;
 
-            res.push(EvtDet::CertificateRequested(
-                rcn.clone(),
-                req,
-                key_id.clone(),
-            ));
+            res.push(EvtDet::CertificateRequested(rcn.clone(), req, *key_id));
         }
 
         Ok(res)
@@ -917,7 +912,7 @@ impl ResourceClassKeys {
         base_repo: &RepoInfo,
         name_space: &str,
         class_name: ResourceClassName,
-        key: &KeyId,
+        key: &KeyIdentifier,
         signer: &S,
     ) -> Result<IssuanceRequest> {
         let pub_key = signer.get_key_info(key).map_err(Error::signer)?;
@@ -989,7 +984,7 @@ impl ResourceClassKeys {
                 )?;
 
                 Ok(vec![
-                    EvtDet::KeyRollPendingKeyAdded(class_name.clone(), key_id.clone()),
+                    EvtDet::KeyRollPendingKeyAdded(class_name.clone(), key_id),
                     EvtDet::CertificateRequested(class_name, issuance_req, key_id),
                 ])
             }

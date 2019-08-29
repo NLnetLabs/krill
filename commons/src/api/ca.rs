@@ -30,7 +30,6 @@ use crate::remote::id::IdCert;
 use crate::rpki::crl::{Crl, CrlEntry};
 use crate::rpki::manifest::{FileAndHash, Manifest};
 use crate::util::ext_serde;
-use crate::util::softsigner::KeyId;
 
 //------------ ResourceClassName -------------------------------------------
 
@@ -604,22 +603,22 @@ impl Eq for RepoInfo {}
 /// when a certificate is received.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PendingKey {
-    key_id: KeyId,
+    key_id: KeyIdentifier,
     request: Option<IssuanceRequest>,
 }
 
 impl PendingKey {
-    pub fn new(key_id: KeyId) -> Self {
+    pub fn new(key_id: KeyIdentifier) -> Self {
         PendingKey {
             key_id,
             request: None,
         }
     }
-    pub fn unwrap(self) -> (KeyId, Option<IssuanceRequest>) {
+    pub fn unwrap(self) -> (KeyIdentifier, Option<IssuanceRequest>) {
         (self.key_id, self.request)
     }
 
-    pub fn key_id(&self) -> &KeyId {
+    pub fn key_id(&self) -> &KeyIdentifier {
         &self.key_id
     }
     pub fn request(&self) -> Option<&IssuanceRequest> {
@@ -674,14 +673,14 @@ impl DerefMut for OldKey {
 /// Describes a Key that is certified. I.e. it received an incoming certificate
 /// and has at least a MFT and CRL.
 pub struct CertifiedKey {
-    key_id: KeyId,
+    key_id: KeyIdentifier,
     incoming_cert: RcvdCert,
     current_set: CurrentObjectSet,
     request: Option<IssuanceRequest>,
 }
 
 impl CertifiedKey {
-    pub fn new(key_id: KeyId, incoming_cert: RcvdCert) -> Self {
+    pub fn new(key_id: KeyIdentifier, incoming_cert: RcvdCert) -> Self {
         let current_set = CurrentObjectSet::default();
 
         CertifiedKey {
@@ -692,7 +691,7 @@ impl CertifiedKey {
         }
     }
 
-    pub fn key_id(&self) -> &KeyId {
+    pub fn key_id(&self) -> &KeyIdentifier {
         &self.key_id
     }
     pub fn incoming_cert(&self) -> &RcvdCert {

@@ -1,17 +1,16 @@
+use bytes::Bytes;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
 use bcder::encode::Constructed;
 use bcder::encode::Values;
 use bcder::{decode, encode};
 use bcder::{Mode, OctetString, Oid, Tag, Unsigned};
-use bytes::Bytes;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
 use rpki::cert::ext::{AuthorityKeyIdentifier, BasicCa, SubjectKeyIdentifier};
-use rpki::crypto::{PublicKey, SignatureAlgorithm};
+use rpki::crypto::{KeyIdentifier, PublicKey, SignatureAlgorithm};
 use rpki::uri;
 use rpki::x509::{Name, SignedData, Time, ValidationError, Validity};
 
 use crate::remote::rfc8183::ServiceUri;
-use crate::util::softsigner::KeyId;
 
 //------------ MyIdentity ----------------------------------------------------
 
@@ -20,14 +19,12 @@ use crate::util::softsigner::KeyId;
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct MyIdentity {
     name: String,
-
     id_cert: IdCert,
-
-    key_id: KeyId,
+    key_id: KeyIdentifier,
 }
 
 impl MyIdentity {
-    pub fn new(name: &str, id_cert: IdCert, key_id: KeyId) -> Self {
+    pub fn new(name: &str, id_cert: IdCert, key_id: KeyIdentifier) -> Self {
         MyIdentity {
             name: name.to_string(),
             id_cert,
@@ -47,8 +44,8 @@ impl MyIdentity {
 
     /// The identifier that the Signer needs to use the key for the identity
     /// certificate.
-    pub fn key_id(&self) -> &KeyId {
-        &self.key_id
+    pub fn key_id(&self) -> KeyIdentifier {
+        self.key_id
     }
 }
 

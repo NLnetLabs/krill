@@ -14,12 +14,17 @@ use krill_commons::api::ca::{
     AddedObject, CertifiedKey, CurrentObject, ObjectsDelta, PublicationDelta, RepoInfo, Revocation,
     RevocationsDelta, UpdatedObject,
 };
-use krill_commons::util::softsigner::KeyId;
 
 //------------ Signer --------------------------------------------------------
 
-pub trait Signer: crypto::Signer<KeyId = KeyId> + Clone + Sized + Sync + Send + 'static {}
-impl<T: crypto::Signer<KeyId = KeyId> + Clone + Sized + Sync + Send + 'static> Signer for T {}
+pub trait Signer:
+    crypto::Signer<KeyId = KeyIdentifier> + Clone + Sized + Sync + Send + 'static
+{
+}
+impl<T: crypto::Signer<KeyId = KeyIdentifier> + Clone + Sized + Sync + Send + 'static> Signer
+    for T
+{
+}
 
 //------------ CertSiaInfo ---------------------------------------------------
 

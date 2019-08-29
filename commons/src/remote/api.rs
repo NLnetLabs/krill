@@ -1,8 +1,7 @@
+use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 
 use crate::api::admin::Handle;
-use crate::util::softsigner::KeyId;
-
 use crate::remote::id::IdCert;
 
 //------------ Client ------------------------------------------------------
@@ -55,12 +54,17 @@ impl ClientInfo {
 pub struct CmsClientInfo {
     handle: Handle,
     server_cert: IdCert,
-    key_id: KeyId,
+    key_id: KeyIdentifier,
     publication_uri: uri::Https,
 }
 
 impl CmsClientInfo {
-    pub fn new(handle: Handle, cert: IdCert, key_id: KeyId, publication_uri: uri::Https) -> Self {
+    pub fn new(
+        handle: Handle,
+        cert: IdCert,
+        key_id: KeyIdentifier,
+        publication_uri: uri::Https,
+    ) -> Self {
         CmsClientInfo {
             handle,
             server_cert: cert,
@@ -81,10 +85,10 @@ impl CmsClientInfo {
     pub fn set_server_cert(&mut self, cert: IdCert) {
         self.server_cert = cert;
     }
-    pub fn key_id(&self) -> &KeyId {
-        &self.key_id
+    pub fn key_id(&self) -> KeyIdentifier {
+        self.key_id
     }
-    pub fn set_key_id(&mut self, key_id: KeyId) {
+    pub fn set_key_id(&mut self, key_id: KeyIdentifier) {
         self.key_id = key_id;
     }
     pub fn publication_uri(&self) -> &uri::Https {

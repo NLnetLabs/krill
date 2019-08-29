@@ -7,7 +7,7 @@ use bytes::Bytes;
 use chrono::Duration;
 
 use rpki::cert::{Cert, KeyUsage, Overclaim, TbsCert};
-use rpki::crypto::{PublicKey, PublicKeyFormat};
+use rpki::crypto::{KeyIdentifier, PublicKey, PublicKeyFormat};
 use rpki::x509::{Name, Serial, Time, Validity};
 
 use krill_commons::api::admin::{
@@ -29,7 +29,6 @@ use krill_commons::remote::id::IdCert;
 use krill_commons::remote::rfc6492;
 use krill_commons::remote::rfc8183::ChildRequest;
 use krill_commons::remote::sigmsg::SignedMessage;
-use krill_commons::util::softsigner::KeyId;
 
 use crate::ca::rc::PublishMode;
 use crate::ca::signing::CertSiaInfo;
@@ -42,7 +41,7 @@ use crate::ca::{
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Rfc8183Id {
-    key: KeyId,
+    key: KeyIdentifier,
     cert: IdCert,
 }
 
@@ -345,7 +344,7 @@ impl<S: Signer> CertAuth<S> {
     pub fn id_cert(&self) -> &IdCert {
         &self.id.cert
     }
-    pub fn id_key(&self) -> &KeyId {
+    pub fn id_key(&self) -> &KeyIdentifier {
         &self.id.key
     }
     pub fn handle(&self) -> &Handle {
@@ -669,7 +668,7 @@ impl<S: Signer> CertAuth<S> {
             cert.set_authority_key_identifier(Some(issuing_cert.cert().subject_key_identifier()));
 
             let cert = {
-                cert.into_cert(signer, issuing_key.key_id())
+                cert.into_cert(signer, &issuing_key.key_id())
                     .map_err(Error::signer)?
             };
 
@@ -697,7 +696,7 @@ impl<S: Signer> CertAuth<S> {
         issued_certs: Vec<&IssuedCert>,
         removed_certs: Vec<&Cert>,
         signer: Arc<RwLock<S>>,
-    ) -> Result<HashMap<KeyId, PublicationDelta>> {
+    ) -> Result<HashMap<KeyIdentifier, PublicationDelta>> {
         let signer = signer.read().unwrap();
 
         let my_rc = self
