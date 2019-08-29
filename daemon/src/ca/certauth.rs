@@ -58,6 +58,8 @@ impl Rfc8183Id {
 
 //------------ CertAuth ----------------------------------------------------
 
+/// This type defines a Certification Authority at a slightly higher level
+/// than one might expect.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct CertAuth<S: Signer> {
     handle: Handle,
@@ -1159,6 +1161,8 @@ impl<S: Signer> CertAuth<S> {
         }
 
         // Now check all the entitlements and either create an RC for them, or update.
+        let mut next_class_name = self.next_class_name;
+
         for ent in entitlements.classes() {
             let parent_rc_name = ent.class_name();
 
@@ -1184,7 +1188,9 @@ impl<S: Signer> CertAuth<S> {
                             .map_err(Error::signer)?
                     };
 
-                    let rcn = ResourceClassName::from(self.next_class_name);
+                    let rcn = ResourceClassName::from(next_class_name);
+                    next_class_name += 1;
+
                     let ns = rcn.to_string();
 
                     let rc = ResourceClass::create(
