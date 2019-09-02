@@ -22,10 +22,7 @@ use crate::api::admin::{Handle, ParentCaContact};
 use crate::api::publication;
 use crate::api::publication::Publish;
 use crate::api::RouteAuthorization;
-use crate::api::{
-    Base64, EncodedHash, IssuanceRequest, RequestResourceLimit, RevocationRequest,
-    RevocationResponse,
-};
+use crate::api::{Base64, EncodedHash, IssuanceRequest, RequestResourceLimit, RevocationRequest};
 use crate::remote::id::IdCert;
 use crate::rpki::crl::{Crl, CrlEntry};
 use crate::rpki::manifest::{FileAndHash, Manifest};
@@ -108,45 +105,20 @@ impl<'de> Deserialize<'de> for ResourceClassName {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildCaInfo {
     id_cert: Option<IdCert>,
-    resources: HashMap<ResourceClassName, ChildResources>,
+    entitled_resources: ResourceSet,
+    issued_resources: ResourceSet,
 }
 
 impl ChildCaInfo {
-    pub fn id_cert(&self) -> Option<&IdCert> {
-        self.id_cert.as_ref()
-    }
-
-    pub fn resources(&self) -> &HashMap<ResourceClassName, ChildResources> {
-        &self.resources
-    }
-
-    pub fn resources_for_class(&self, class: &ResourceClassName) -> Option<&ChildResources> {
-        self.resources.get(class)
-    }
-}
-
-impl From<ChildCaDetails> for ChildCaInfo {
-    fn from(d: ChildCaDetails) -> Self {
+    pub fn new(
+        id_cert: Option<IdCert>,
+        entitled_resources: ResourceSet,
+        issued_resources: ResourceSet,
+    ) -> Self {
         ChildCaInfo {
-            id_cert: d.id_cert,
-            resources: d.resources,
-        }
-    }
-}
-
-//------------ ChildCaDetails ------------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ChildCaDetails {
-    id_cert: Option<IdCert>,
-    resources: HashMap<ResourceClassName, ChildResources>,
-}
-
-impl ChildCaDetails {
-    pub fn new(id_cert: Option<IdCert>) -> Self {
-        ChildCaDetails {
             id_cert,
-            resources: HashMap::new(),
+            entitled_resources,
+            issued_resources,
         }
     }
 
@@ -154,144 +126,12 @@ impl ChildCaDetails {
         self.id_cert.as_ref()
     }
 
-    pub fn set_id_cert(&mut self, id_cert: IdCert) {
-        self.id_cert = Some(id_cert);
+    pub fn entitled_resources(&self) -> &ResourceSet {
+        &self.entitled_resources
     }
 
-    pub fn resources(&self) -> &HashMap<ResourceClassName, ChildResources> {
-        &self.resources
-    }
-
-    pub fn remove_resource(&mut self, class_name: &ResourceClassName) {
-        self.resources.remove(class_name);
-    }
-
-    /// This function will update the resource entitlements for an existing class
-    /// or create a new class if needed
-    pub fn set_resources_for_class(&mut self, class: ResourceClassName, resources: ResourceSet) {
-        if self.resources.contains_key(&class) {
-            self.resources
-                .get_mut(&class)
-                .unwrap()
-                .set_resources(resources);
-        } else {
-            self.add_new_resource_class(class, resources)
-        }
-    }
-
-    pub fn resources_for_class(&self, class: &ResourceClassName) -> Option<&ChildResources> {
-        self.resources.get(class)
-    }
-
-    pub fn add_new_resource_class(&mut self, name: ResourceClassName, resources: ResourceSet) {
-        self.resources.insert(name, ChildResources::new(resources));
-    }
-
-    pub fn add_cert(&mut self, class_name: &ResourceClassName, cert: IssuedCert) {
-        // Note the resource class MUST exist, or no cert would have
-        // been issued to it. So, it's safe to unwrap here.
-        self.resources.get_mut(class_name).unwrap().add_cert(cert)
-    }
-
-    pub fn revoke_key(&mut self, revocation: RevocationResponse) {
-        let (class_name, key_id) = revocation.unpack();
-        self.resources.get_mut(&class_name).unwrap().revoke(&key_id)
-    }
-}
-
-//------------ ChildResources ------------------------------------------------
-
-/// This type defines the resource entitlements for a child CA within
-/// a given resource class. Includes the set of current certificates
-/// issued to the child CA.
-///
-/// See: https://tools.ietf.org/html/rfc6492#section-3.3.2
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ChildResources {
-    resources: ResourceSet,
-    shrink_pending: Option<Time>,
-    not_after: Time,
-    certs: HashMap<KeyIdentifier, IssuedCert>,
-}
-
-impl ChildResources {
-    pub fn new(resources: ResourceSet) -> Self {
-        ChildResources {
-            resources,
-            shrink_pending: None,
-            not_after: Time::next_year(),
-            certs: HashMap::new(),
-        }
-    }
-
-    pub fn resources(&self) -> &ResourceSet {
-        &self.resources
-    }
-
-    pub fn set_resources(&mut self, resources: ResourceSet) {
-        if !resources.contains(&self.resources) {
-            self.shrink_pending = Some(Time::now());
-        }
-        self.resources = resources;
-    }
-
-    /// Give back the not_after time that would be used on newly
-    /// issued certificates. See `resource_set_notafter` in
-    /// section 3.3.2 of RFC6492.
-    ///
-    /// This is the stored 'not_after' time for this ChildResources,
-    /// or if this time is less than 3 months away, an updated time
-    /// which is now + one year.
-    pub fn not_after(&self) -> Time {
-        let cut_off = Time::now() + Duration::weeks(13);
-
-        if self.not_after < cut_off {
-            Time::next_year()
-        } else {
-            self.not_after
-        }
-    }
-
-    pub fn certs_iter(&self) -> impl Iterator<Item = &IssuedCert> {
-        self.certs.values()
-    }
-
-    pub fn certs(&self) -> &HashMap<KeyIdentifier, IssuedCert> {
-        &self.certs
-    }
-
-    pub fn cert(&self, key_id: &KeyIdentifier) -> Option<&IssuedCert> {
-        self.certs.get(key_id)
-    }
-
-    pub fn add_cert(&mut self, cert: IssuedCert) {
-        // We can assume that the correct not_after date was used when the certificate
-        // was issued - because the `not_after` function was called. Therefore we can update
-        // the not_after value for this child resource class for future use.
-        self.not_after = cert.cert().validity().not_after();
-
-        // Update the certificate for this key, or insert it for a new key.
-        self.certs
-            .insert(cert.cert().subject_key_identifier(), cert);
-
-        // If a shrink was pending, check that it's still applicable.
-        if self.shrink_pending.is_some()
-            && self
-                .certs
-                .values()
-                .find(|c| !self.resources.contains(c.resource_set()))
-                .is_none()
-        {
-            self.shrink_pending = None;
-        }
-    }
-
-    pub fn shrink_pending(&self) -> Option<Time> {
-        self.shrink_pending
-    }
-
-    pub fn revoke(&mut self, key_id: &KeyIdentifier) {
-        self.certs.remove(&key_id);
+    pub fn issued_resources(&self) -> &ResourceSet {
+        &self.issued_resources
     }
 }
 
@@ -441,10 +281,25 @@ impl RcvdCert {
         &self.uri
     }
 
+    /// The name of the CRL published by THIS certificate.
+    pub fn crl_name(&self) -> ObjectName {
+        ObjectName::new(&self.cert.subject_key_identifier(), "crl")
+    }
+
     /// The URI of the CRL published BY THIS certificate, i.e. the uri to use
     /// on certs issued by this.
     pub fn crl_uri(&self) -> uri::Rsync {
-        self.uri_for_object(ObjectName::new(&self.cert.subject_key_identifier(), "crl"))
+        self.uri_for_object(self.crl_name())
+    }
+
+    /// The name of the MFT published by THIS certificate.
+    pub fn mft_name(&self) -> ObjectName {
+        ObjectName::new(&self.cert.subject_key_identifier(), "mft")
+    }
+
+    /// The URI of the MFT published by THIS certificate.
+    pub fn mft_uri(&self) -> uri::Rsync {
+        self.uri_for_object(self.mft_name())
     }
 
     pub fn uri_for_object(&self, name: impl Into<ObjectName>) -> uri::Rsync {
@@ -1196,6 +1051,14 @@ impl ObjectsDelta {
     pub fn withdraw(&mut self, withdrawn: WithdrawnObject) {
         self.withdrawn.push(withdrawn);
     }
+
+    pub fn len(&self) -> usize {
+        self.added.len() + self.updated.len() + self.withdrawn.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.added.is_empty() && self.updated.is_empty() && self.withdrawn.is_empty()
+    }
 }
 
 impl Into<publication::PublishDelta> for ObjectsDelta {
@@ -1508,7 +1371,7 @@ impl fmt::Display for ResourceSet {
 pub struct TrustAnchorInfo {
     resources: ResourceSet,
     repo_info: RepoInfo,
-    children: HashMap<Handle, ChildCaDetails>,
+    children: HashMap<Handle, ChildCaInfo>,
     cert: RcvdCert,
     tal: TrustAnchorLocator,
 }
@@ -1517,7 +1380,7 @@ impl TrustAnchorInfo {
     pub fn new(
         resources: ResourceSet,
         repo_info: RepoInfo,
-        children: HashMap<Handle, ChildCaDetails>,
+        children: HashMap<Handle, ChildCaInfo>,
         cert: RcvdCert,
         tal: TrustAnchorLocator,
     ) -> Self {
@@ -1538,7 +1401,7 @@ impl TrustAnchorInfo {
         &self.repo_info
     }
 
-    pub fn children(&self) -> &HashMap<Handle, ChildCaDetails> {
+    pub fn children(&self) -> &HashMap<Handle, ChildCaInfo> {
         &self.children
     }
 
@@ -1592,7 +1455,7 @@ pub struct CertAuthInfo {
     base_repo: RepoInfo,
     parents: HashMap<Handle, ParentCaContact>,
     resources: HashMap<ResourceClassName, ResourceClassInfo>,
-    children: HashMap<Handle, ChildCaDetails>,
+    children: HashMap<Handle, ChildCaInfo>,
     route_authorizations: HashSet<RouteAuthorization>,
 }
 
@@ -1602,7 +1465,7 @@ impl CertAuthInfo {
         base_repo: RepoInfo,
         parents: HashMap<Handle, ParentCaContact>,
         resources: HashMap<ResourceClassName, ResourceClassInfo>,
-        children: HashMap<Handle, ChildCaDetails>,
+        children: HashMap<Handle, ChildCaInfo>,
         route_authorizations: HashSet<RouteAuthorization>,
     ) -> Self {
         CertAuthInfo {
@@ -1635,7 +1498,7 @@ impl CertAuthInfo {
         &self.resources
     }
 
-    pub fn children(&self) -> &HashMap<Handle, ChildCaDetails> {
+    pub fn children(&self) -> &HashMap<Handle, ChildCaInfo> {
         &self.children
     }
 
@@ -1673,16 +1536,18 @@ impl ResourceClassInfo {
         &self.keys
     }
 
-    pub fn current_resources(&self) -> Option<&ResourceSet> {
+    pub fn current_key(&self) -> Option<&CertifiedKey> {
         match &self.keys {
             ResourceClassKeysInfo::Active(current)
             | ResourceClassKeysInfo::RollPending(_, current)
             | ResourceClassKeysInfo::RollNew(_, current)
-            | ResourceClassKeysInfo::RollOld(current, _) => {
-                Some(current.incoming_cert().resources())
-            }
+            | ResourceClassKeysInfo::RollOld(current, _) => Some(current),
             _ => None,
         }
+    }
+
+    pub fn current_resources(&self) -> Option<&ResourceSet> {
+        self.current_key().map(|k| k.incoming_cert().resources())
     }
 
     pub fn objects(&self) -> CurrentObjects {

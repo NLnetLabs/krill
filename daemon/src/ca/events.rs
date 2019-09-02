@@ -10,9 +10,9 @@ use rpki::x509::{Serial, Time, Validity};
 
 use krill_commons::api::admin::{Handle, ParentCaContact, Token};
 use krill_commons::api::ca::{
-    AddedObject, CertifiedKey, ChildCaDetails, CurrentObject, ObjectName, ObjectsDelta,
-    PublicationDelta, RcvdCert, RepoInfo, ResourceClassName, ResourceSet, Revocation,
-    RevokedObject, TrustAnchorLocator, UpdatedObject, WithdrawnObject,
+    AddedObject, CertifiedKey, CurrentObject, ObjectName, ObjectsDelta, PublicationDelta, RcvdCert,
+    RepoInfo, ResourceClassName, ResourceSet, Revocation, RevokedObject, TrustAnchorLocator,
+    UpdatedObject, WithdrawnObject,
 };
 use krill_commons::api::{
     IssuanceRequest, IssuanceResponse, RevocationRequest, RevocationResponse, RouteAuthorization,
@@ -21,7 +21,9 @@ use krill_commons::eventsourcing::StoredEvent;
 use krill_commons::remote::id::IdCert;
 
 use crate::ca::signing::Signer;
-use crate::ca::{ChildHandle, Error, ParentHandle, ResourceClass, Result, Rfc8183Id, RoaInfo};
+use crate::ca::{
+    ChildDetails, ChildHandle, Error, ParentHandle, ResourceClass, Result, Rfc8183Id, RoaInfo,
+};
 
 //------------ TaIniDetails --------------------------------------------------
 
@@ -138,6 +140,7 @@ impl IniDet {
 
 //------------ RoaUpdates --------------------------------------------------
 
+/// Describes an update to the set of ROAs under a ResourceClass.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RoaUpdates {
     updated: HashMap<RouteAuthorization, RoaInfo>,
@@ -242,12 +245,11 @@ pub type Evt = StoredEvent<EvtDet>;
 #[allow(clippy::large_enum_variant)]
 pub enum EvtDet {
     // Being a parent Events
-    ChildAdded(ChildHandle, ChildCaDetails),
+    ChildAdded(ChildHandle, ChildDetails),
     ChildCertificateIssued(ChildHandle, IssuanceResponse),
     ChildKeyRevoked(ChildHandle, RevocationResponse),
     ChildUpdatedIdCert(ChildHandle, IdCert),
-    ChildUpdatedResourceClass(ChildHandle, ResourceClassName, ResourceSet),
-    ChildRemovedResourceClass(ChildHandle, ResourceClassName),
+    ChildUpdatedResources(ChildHandle, ResourceSet, Time),
 
     // Being a child Events
     ParentAdded(ParentHandle, ParentCaContact),
@@ -320,7 +322,7 @@ impl EvtDet {
         handle: &Handle,
         version: u64,
         child: ChildHandle,
-        details: ChildCaDetails,
+        details: ChildDetails,
     ) -> Evt {
         StoredEvent::new(handle, version, EvtDet::ChildAdded(child, details))
     }
@@ -338,13 +340,19 @@ impl EvtDet {
         handle: &Handle,
         version: u64,
         child: ChildHandle,
-        class_name: ResourceClassName,
         resources: ResourceSet,
+        force: bool,
     ) -> Evt {
+        let grace = if force {
+            Time::now()
+        } else {
+            Time::tomorrow()
+        };
+
         StoredEvent::new(
             handle,
             version,
-            EvtDet::ChildUpdatedResourceClass(child, class_name, resources),
+            EvtDet::ChildUpdatedResources(child, resources, grace),
         )
     }
 

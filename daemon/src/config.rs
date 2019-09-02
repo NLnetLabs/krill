@@ -1,19 +1,23 @@
-use crate::http::ssl;
-use clap::{App, Arg};
-use krill_commons::api::admin::Token;
-use krill_commons::util::ext_serde;
-use log::LevelFilter;
-use rpki::uri;
-use serde::de;
-use serde::{Deserialize, Deserializer};
 use std::fs::File;
 use std::io;
 use std::io::Read;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::str::FromStr;
+
+use clap::{App, Arg};
+use log::LevelFilter;
+use serde::de;
+use serde::{Deserialize, Deserializer};
 use syslog::Facility;
 use toml;
+
+use rpki::uri;
+
+use krill_commons::api::admin::Token;
+use krill_commons::util::ext_serde;
+
+use crate::http::ssl;
 
 const SERVER_NAME: &str = "Krill";
 
@@ -65,9 +69,6 @@ impl ConfigDefaults {
     }
     fn ca_refresh() -> u32 {
         600
-    }
-    fn shrink_grace() -> i64 {
-        24
     }
 }
 
@@ -121,9 +122,6 @@ pub struct Config {
 
     #[serde(default = "ConfigDefaults::ca_refresh")]
     pub ca_refresh: u32,
-
-    #[serde(default = "ConfigDefaults::shrink_grace")]
-    pub shrink_grace: i64,
 }
 
 /// # Accessors
@@ -186,7 +184,6 @@ impl Config {
         let syslog_facility = ConfigDefaults::syslog_facility();
         let auth_token = Token::from("secret");
         let ca_refresh = 5;
-        let shrink_grace = 24;
 
         let c = Config {
             ip,
@@ -201,7 +198,6 @@ impl Config {
             syslog_facility,
             auth_token,
             ca_refresh,
-            shrink_grace,
         };
         c.init_logging().unwrap();
         c

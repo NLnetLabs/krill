@@ -443,8 +443,8 @@ impl UpdateChildRequest {
         }
     }
 
-    pub fn unpack(self) -> (Option<IdCert>, Option<ResourceSet>) {
-        (self.id_cert, self.resources)
+    pub fn unpack(self) -> (Option<IdCert>, Option<ResourceSet>, bool) {
+        (self.id_cert, self.resources, self.force)
     }
 
     pub fn is_force(&self) -> bool {

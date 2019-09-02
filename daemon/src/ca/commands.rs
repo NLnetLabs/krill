@@ -34,7 +34,7 @@ pub enum CmdDet<S: Signer> {
     // Process a revoke request by an existing child.
     ChildRevokeKey(ChildHandle, RevocationRequest, Arc<RwLock<S>>),
     // Shrink child (only has events in case child is overclaiming)
-    ChildShrink(ChildHandle, Duration, Arc<RwLock<S>>),
+    ChildShrink(ChildHandle, Arc<RwLock<S>>),
 
     // ------------------------------------------------------------
     // Being a child (only allowed if this CA is not self-signed)
@@ -142,14 +142,9 @@ impl<S: Signer> CmdDet<S> {
     pub fn child_shrink(
         handle: &Handle,
         child_handle: ChildHandle,
-        grace: Duration,
         signer: Arc<RwLock<S>>,
     ) -> Cmd<S> {
-        eventsourcing::SentCommand::new(
-            handle,
-            None,
-            CmdDet::ChildShrink(child_handle, grace, signer),
-        )
+        eventsourcing::SentCommand::new(handle, None, CmdDet::ChildShrink(child_handle, signer))
     }
 
     pub fn add_parent(handle: &Handle, parent: ParentHandle, info: ParentCaContact) -> Cmd<S> {

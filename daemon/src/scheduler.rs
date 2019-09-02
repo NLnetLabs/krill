@@ -37,11 +37,10 @@ impl Scheduler {
         caserver: Arc<CaServer<OpenSslSigner>>,
         pubserver: Arc<PubServer>,
         ca_refresh_rate: u32,
-        shrink_grace: i64,
     ) -> Self {
         let event_sh = make_event_sh(event_queue, caserver.clone(), pubserver);
         let republish_sh = make_republish_sh(caserver.clone());
-        let ca_refresh_sh = make_ca_refresh_sh(caserver, ca_refresh_rate, shrink_grace);
+        let ca_refresh_sh = make_ca_refresh_sh(caserver, ca_refresh_rate);
 
         Scheduler {
             event_sh,
@@ -111,17 +110,13 @@ fn publish(handle: &Handle, delta: PublishDelta, pubserver: &PubServer) {
     }
 }
 
-fn make_ca_refresh_sh(
-    caserver: Arc<CaServer<OpenSslSigner>>,
-    refresh_rate: u32,
-    grace_period: i64,
-) -> ScheduleHandle {
+fn make_ca_refresh_sh(caserver: Arc<CaServer<OpenSslSigner>>, refresh_rate: u32) -> ScheduleHandle {
     let mut scheduler = clokwerk::Scheduler::new();
     scheduler.every(refresh_rate.seconds()).run(move || {
         if let Err(e) = caserver.get_updates_for_all_cas() {
             error!("Failed to refresh CA certificates: {}", e);
         }
-        if let Err(e) = caserver.all_cas_shrink(chrono::Duration::hours(grace_period)) {
+        if let Err(e) = caserver.all_cas_shrink() {
             error!("Failed to shrink CA certificates: {}", e);
         }
     });

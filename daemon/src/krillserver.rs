@@ -81,7 +81,6 @@ impl KrillServer {
         let rrdp_base_uri = &config.rrdp_base_uri;
         let token = &config.auth_token;
         let ca_refresh_rate = config.ca_refresh;
-        let shrink_grace = config.shrink_grace;
 
         let mut repo_dir = work_dir.clone();
         repo_dir.push("repo");
@@ -106,7 +105,6 @@ impl KrillServer {
             caserver.clone(),
             pubserver.clone(),
             ca_refresh_rate,
-            shrink_grace,
         );
 
         Ok(KrillServer {

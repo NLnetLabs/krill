@@ -137,15 +137,8 @@ impl Report for TrustAnchorInfo {
                 if !self.children().is_empty() {
                     for (name, details) in self.children() {
                         res.push_str(&format!("{}\n", name));
-                        for (class, resources) in details.resources() {
-                            res.push_str(&format!("  class: {}\n", class));
-
-                            let inrs = resources.resources();
-                            res.push_str(&format!("    asn: {}\n", inrs.asn()));
-                            res.push_str(&format!("    v4:  {}\n", inrs.v4()));
-                            res.push_str(&format!("    v6:  {}\n", inrs.v6()));
-                            res.push_str("\n");
-                        }
+                        res.push_str(&format!("  resources: {}\n", details.entitled_resources()));
+                        res.push_str("\n");
                     }
                 } else {
                     res.push_str("<none>");
@@ -219,15 +212,8 @@ impl Report for CertAuthInfo {
                 if !self.children().is_empty() {
                     for (name, details) in self.children() {
                         res.push_str(&format!("{}\n", name));
-                        for (class, resources) in details.resources() {
-                            res.push_str(&format!("  class: {}\n", class));
-
-                            let inrs = resources.resources();
-                            res.push_str(&format!("    asn: {}\n", inrs.asn()));
-                            res.push_str(&format!("    v4:  {}\n", inrs.v4()));
-                            res.push_str(&format!("    v6:  {}\n", inrs.v6()));
-                            res.push_str("\n");
-                        }
+                        res.push_str(&format!("  resources: {}\n", details.entitled_resources()));
+                        res.push_str("\n");
                     }
                 } else {
                     res.push_str("<none>");

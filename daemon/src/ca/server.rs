@@ -192,12 +192,8 @@ impl<S: Signer> CaServer<S> {
             ca = self.ca_store.update(parent, ca, events)?;
 
             if force {
-                let events = ca.process_command(CmdDet::child_shrink(
-                    parent,
-                    child,
-                    Duration::seconds(0),
-                    self.signer.clone(),
-                ))?;
+                let events =
+                    ca.process_command(CmdDet::child_shrink(parent, child, self.signer.clone()))?;
                 if !events.is_empty() {
                     self.ca_store.update(parent, ca, events)?;
                 }
@@ -411,14 +407,14 @@ impl<S: Signer> CaServer<S> {
     }
 
     /// Let all CAs shrink certificates that have not been updated within the graceperiod.
-    pub fn all_cas_shrink(&self, grace: Duration) -> ServerResult<(), S> {
+    pub fn all_cas_shrink(&self) -> ServerResult<(), S> {
         for handle in self.ca_store.list() {
             if handle == ta_handle() {
                 continue;
             }
             if let Ok(ca) = self.get_ca(&handle) {
                 for child in ca.children() {
-                    if let Err(e) = ca.shrink_child(child, grace, self.signer.clone()) {
+                    if let Err(e) = ca.shrink_child(child, self.signer.clone()) {
                         error!(
                             "Could not shrink certificates for CA {}, error: {}",
                             child, e

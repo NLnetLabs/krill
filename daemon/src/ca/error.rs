@@ -43,11 +43,14 @@ pub enum Error {
     #[display(fmt = "Unauthorized child {}", _0)]
     Unauthorized(Handle),
 
-    #[display(fmt = "Not all child resources are held by TA")]
+    #[display(fmt = "Requester is not entitled to all requested resources.")]
     MissingResources,
 
     #[display(fmt = "No matching resource class")]
-    MissingResourceClass,
+    ResourceClassNotFound,
+
+    #[display(fmt = "Attempting to re-use key between resource classes.")]
+    ResourceClassKeyReused,
 
     #[display(fmt = "No current key in resource class")]
     ResourceClassNoCurrentKey,
@@ -61,8 +64,8 @@ pub enum Error {
     #[display(fmt = "No issued cert matching pub key in resource class.")]
     NoIssuedCert,
 
-    #[display(fmt = "Invalid CSR for child {}: {}.", _0, _1)]
-    InvalidCsr(Handle, String),
+    #[display(fmt = "Invalid CSR: {}.", _0)]
+    InvalidCsr(String),
 
     #[display(fmt = "Invalid key status for operation.")]
     InvalidKeyStatus,
@@ -103,8 +106,8 @@ impl Error {
         Error::SignerError(e.to_string())
     }
 
-    pub fn invalid_csr(handle: &Handle, msg: &str) -> Self {
-        Error::InvalidCsr(handle.clone(), msg.to_string())
+    pub fn invalid_csr(msg: &str) -> Self {
+        Error::InvalidCsr(msg.to_string())
     }
 
     pub fn unknown_resource_class(class: impl Display) -> Self {

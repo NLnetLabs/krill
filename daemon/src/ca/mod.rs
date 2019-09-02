@@ -6,6 +6,9 @@ mod certauth;
 pub use self::certauth::CertAuth;
 pub use self::certauth::Rfc8183Id;
 
+mod child;
+pub use self::child::*;
+
 mod rc;
 pub use self::rc::ResourceClass;
 

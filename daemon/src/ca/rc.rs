@@ -9,17 +9,20 @@ use rpki::uri;
 use rpki::x509::Time;
 
 use krill_commons::api::ca::{
-    CertifiedKey, CurrentObjects, ObjectsDelta, OldKey, PendingKey, PublicationDelta, RcvdCert,
-    RepoInfo, ResourceClassInfo, ResourceClassKeysInfo, ResourceClassName, ResourceSet, Revocation,
-    RevokedObject,
+    CertifiedKey, CurrentObjects, IssuedCert, ObjectsDelta, OldKey, PendingKey, PublicationDelta,
+    RcvdCert, ReplacedObject, RepoInfo, ResourceClassInfo, ResourceClassKeysInfo,
+    ResourceClassName, ResourceSet, Revocation, RevokedObject,
 };
 use krill_commons::api::{
-    EntitlementClass, IssuanceRequest, RequestResourceLimit, RevocationRequest, RouteAuthorization,
+    EntitlementClass, IssuanceRequest, IssuanceResponse, RequestResourceLimit, RevocationRequest,
+    RouteAuthorization, SigningCert,
 };
 
 use crate::ca::events::RoaUpdates;
+use crate::ca::signing::CsrInfo;
 use crate::ca::{
-    self, ta_handle, Error, EvtDet, ParentHandle, Result, RoaInfo, Roas, SignSupport, Signer,
+    self, ta_handle, Certificates, Error, EvtDet, ParentHandle, Result, RoaInfo, Roas, SignSupport,
+    Signer,
 };
 
 //------------ ResourceClass -----------------------------------------------
@@ -37,12 +40,14 @@ use crate::ca::{
 /// key for this class.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ResourceClass {
+    name: ResourceClassName,
     name_space: String,
 
     parent_handle: ParentHandle,
     parent_rc_name: ResourceClassName,
 
     roas: Roas,
+    certificates: Certificates,
 
     last_key_change: Time,
     keys: ResourceClassKeys,
@@ -53,16 +58,19 @@ pub struct ResourceClass {
 impl ResourceClass {
     /// Creates a new ResourceClass with a single pending key only.
     pub fn create(
+        name: ResourceClassName,
         name_space: String,
         parent_handle: ParentHandle,
         parent_rc_name: ResourceClassName,
         pending_key: KeyIdentifier,
     ) -> Self {
         ResourceClass {
+            name,
             name_space,
             parent_handle,
             parent_rc_name,
             roas: Roas::default(),
+            certificates: Certificates::default(),
             last_key_change: Time::now(),
             keys: ResourceClassKeys::create(pending_key),
         }
@@ -70,10 +78,12 @@ impl ResourceClass {
 
     pub fn for_ta(parent_rc_name: ResourceClassName, key: CertifiedKey) -> Self {
         ResourceClass {
+            name: parent_rc_name.clone(),
             name_space: parent_rc_name.to_string(),
             parent_handle: ta_handle(),
             parent_rc_name,
             roas: Roas::default(),
+            certificates: Certificates::default(),
             last_key_change: Time::now(),
             keys: ResourceClassKeys::for_ta(key),
         }
@@ -157,7 +167,6 @@ impl ResourceClass {
         &self,
         rcvd_cert: RcvdCert,
         repo_info: &RepoInfo,
-        rcn: ResourceClassName,
         signer: &S,
     ) -> ca::Result<Vec<EvtDet>> {
         let mut res = vec![];
@@ -177,7 +186,7 @@ impl ResourceClass {
 
         res.push(
             self.keys
-                .update_received_cert(rcvd_cert, rcn.clone(), signer)?,
+                .update_received_cert(rcvd_cert, self.name.clone(), signer)?,
         );
 
         let authorizations: Vec<RouteAuthorization> = self.roas.authorizations().cloned().collect();
@@ -185,7 +194,6 @@ impl ResourceClass {
         res.append(&mut self.republish(
             authorizations.as_slice(),
             repo_info,
-            rcn,
             &publish_mode,
             signer,
         )?);
@@ -196,13 +204,17 @@ impl ResourceClass {
     /// Request certificates for any key that needs it.
     pub fn make_request_events<S: Signer>(
         &self,
-        rcn: ResourceClassName,
         entitlement: &EntitlementClass,
         base_repo: &RepoInfo,
         signer: &S,
     ) -> Result<Vec<EvtDet>> {
-        self.keys
-            .request_certs(rcn, entitlement, base_repo, &self.name_space, signer)
+        self.keys.request_certs(
+            self.name.clone(),
+            entitlement,
+            base_repo,
+            &self.name_space,
+            signer,
+        )
     }
 
     /// This function returns all current certificate requests.
@@ -224,11 +236,14 @@ impl ResourceClass {
         self.keys.apply_delta(delta, key_id);
     }
 
-    /// Publish/update/withdraw objects under the current key.
+    /// Publish/update/withdraw objects under the key, determined by the
+    /// [PublishMode]. Will revoke updated and withdrawn objects under the
+    /// correct key as well, i.e. when activating a new key objects will
+    /// be re-published and updated in terms of publication, but will only
+    /// be revoked under the old key.
     pub fn publish_objects<S: Signer>(
         &self,
         repo_info: &RepoInfo,
-        class_name: ResourceClassName,
         objects_delta: ObjectsDelta,
         new_revocations: Vec<Revocation>,
         mode: &PublishMode,
@@ -284,7 +299,7 @@ impl ResourceClass {
             key_pub_map.insert(other_key.key_id().clone(), other_delta);
         }
 
-        Ok(EvtDet::Published(class_name, key_pub_map))
+        Ok(EvtDet::Published(self.name.clone(), key_pub_map))
     }
 
     fn needs_publication(&self, mode: &PublishMode) -> bool {
@@ -301,7 +316,6 @@ impl ResourceClass {
         &self,
         authorizations: &[RouteAuthorization],
         repo_info: &RepoInfo,
-        rcn: ResourceClassName,
         mode: &PublishMode,
         signer: &S,
     ) -> ca::Result<Vec<EvtDet>> {
@@ -311,26 +325,24 @@ impl ResourceClass {
         let mut delta = ObjectsDelta::new(repo_info.ca_repository(ns));
         let mut revocations = vec![];
 
-        let updates = self.update_roas(authorizations, mode, signer)?;
-        let contains_changes = updates.contains_changes();
-
-        if contains_changes {
-            for added in updates.added().into_iter() {
+        let roa_updates = self.update_roas(authorizations, mode, signer)?;
+        if roa_updates.contains_changes() {
+            for added in roa_updates.added().into_iter() {
                 delta.add(added);
             }
-            for update in updates.updated().into_iter() {
+            for update in roa_updates.updated().into_iter() {
                 delta.update(update);
             }
-            for withdraw in updates.withdrawn().into_iter() {
+            for withdraw in roa_updates.withdrawn().into_iter() {
                 delta.withdraw(withdraw);
             }
-            revocations.append(&mut updates.revocations());
+            revocations.append(&mut roa_updates.revocations());
 
-            res.push(EvtDet::RoasUpdated(rcn.clone(), updates));
+            res.push(EvtDet::RoasUpdated(self.name.clone(), roa_updates));
         }
 
-        if contains_changes || self.needs_publication(mode) {
-            res.push(self.publish_objects(&repo_info, rcn, delta, revocations, mode, signer)?);
+        if !delta.is_empty() || !revocations.is_empty() || self.needs_publication(mode) {
+            res.push(self.publish_objects(&repo_info, delta, revocations, mode, signer)?);
         }
 
         Ok(res)
@@ -348,12 +360,8 @@ impl ResourceClass {
     }
 
     /// Returns revocation requests for all certified keys in this resource class.
-    pub fn revoke<S: Signer>(
-        &self,
-        class_name: ResourceClassName,
-        signer: &S,
-    ) -> ca::Result<Vec<RevocationRequest>> {
-        self.keys.revoke(class_name, signer)
+    pub fn revoke<S: Signer>(&self, signer: &S) -> ca::Result<Vec<RevocationRequest>> {
+        self.keys.revoke(self.name.clone(), signer)
     }
 }
 
@@ -435,7 +443,6 @@ impl ResourceClass {
     /// Initiate a key roll
     pub fn keyroll_initiate<S: Signer>(
         &self,
-        class_name: ResourceClassName,
         base_repo: &RepoInfo,
         duration: Duration,
         signer: &mut S,
@@ -445,7 +452,7 @@ impl ResourceClass {
         }
 
         self.keys.keyroll_initiate(
-            class_name,
+            self.name.clone(),
             self.parent_rc_name.clone(),
             base_repo,
             &self.name_space,
@@ -457,7 +464,6 @@ impl ResourceClass {
     pub fn keyroll_activate<S: Signer>(
         &self,
         repo_info: &RepoInfo,
-        rcn: ResourceClassName,
         staging: Duration,
         signer: &S,
     ) -> ca::Result<Vec<EvtDet>> {
@@ -469,15 +475,15 @@ impl ResourceClass {
 
         let authorizations: Vec<RouteAuthorization> = self.roas.authorizations().cloned().collect();
 
-        res.push(
-            self.keys
-                .keyroll_activate(rcn.clone(), self.parent_rc_name.clone(), signer)?,
-        );
+        res.push(self.keys.keyroll_activate(
+            self.name.clone(),
+            self.parent_rc_name.clone(),
+            signer,
+        )?);
 
         res.append(&mut self.republish(
             authorizations.as_slice(),
             repo_info,
-            rcn,
             &PublishMode::KeyRollActivation,
             signer,
         )?);
@@ -486,11 +492,7 @@ impl ResourceClass {
     }
 
     /// Finish a key roll, withdraw the old key
-    pub fn keyroll_finish(
-        &self,
-        class_name: ResourceClassName,
-        base_repo: &RepoInfo,
-    ) -> ca::Result<EvtDet> {
+    pub fn keyroll_finish(&self, base_repo: &RepoInfo) -> ca::Result<EvtDet> {
         let withdraws = match &self.keys {
             ResourceClassKeys::RollOld(_current, old) => {
                 Some(old.current_set().objects().withdraw())
@@ -504,7 +506,69 @@ impl ResourceClass {
             objects_delta.withdraw(withdraw);
         }
 
-        Ok(EvtDet::KeyRollFinished(class_name, objects_delta))
+        Ok(EvtDet::KeyRollFinished(self.name.clone(), objects_delta))
+    }
+}
+
+/// # Issuing certificates
+///
+impl ResourceClass {
+    /// Makes a single CA certificate and wraps it in an issuance response.
+    ///
+    /// Will use the intersection of the requested child resources, and the
+    /// resources actually held by the this resource class. An error will be
+    /// returned if a ResourceRequestLimit was used that includes resources
+    /// that are not in this intersection.
+    ///
+    /// Note that this certificate still needs to be added to this RC by
+    /// calling the update_certs function.
+    pub fn issue_cert<S: Signer>(
+        &self,
+        csr: CsrInfo,
+        child_resources: &ResourceSet,
+        limit: RequestResourceLimit,
+        mode: &PublishMode,
+        signer: &S,
+    ) -> ca::Result<IssuanceResponse> {
+        let signing_key = match mode {
+            PublishMode::Normal | PublishMode::UpdatedResources(_) => self.get_current_key()?,
+            PublishMode::KeyRollActivation => self.get_new_key()?,
+            PublishMode::PendingKeyActivation(key) => key,
+        };
+
+        let parent_resources = match mode {
+            PublishMode::UpdatedResources(resources) => resources,
+            _ => signing_key.incoming_cert().resources(),
+        };
+
+        let resources = parent_resources.intersection(child_resources);
+        let replaces = self
+            .certificates
+            .get(&csr.key_id())
+            .map(ReplacedObject::from);
+
+        let issued =
+            SignSupport::make_issued_cert(csr, &resources, limit, replaces, signing_key, signer)?;
+
+        let signing_cert = SigningCert::from(signing_key.incoming_cert());
+
+        Ok(IssuanceResponse::new(
+            self.name.clone(),
+            signing_cert,
+            resources,
+            issued.cert().validity().not_after(),
+            issued,
+        ))
+    }
+
+    /// Stores an [IssuedCert](krill_commons.api.ca.IssuedCert)
+    pub fn certificate_issued(&mut self, issued: IssuedCert) {
+        self.certificates.certificate_issued(issued);
+    }
+
+    /// Removes a revoked key.
+    pub fn key_revoked(&mut self, key: &KeyIdentifier) {
+        self.certificates.key_revoked(key);
     }
 }
 
