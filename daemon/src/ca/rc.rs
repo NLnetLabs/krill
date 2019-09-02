@@ -9,9 +9,10 @@ use rpki::uri;
 use rpki::x509::Time;
 
 use krill_commons::api::ca::{
-    CertifiedKey, CurrentObjects, IssuedCert, ObjectsDelta, OldKey, PendingKey, PublicationDelta,
-    RcvdCert, ReplacedObject, RepoInfo, ResourceClassInfo, ResourceClassKeysInfo,
-    ResourceClassName, ResourceSet, Revocation, RevokedObject,
+    CertifiedKey, CurrentObject, CurrentObjects, IssuedCert, ObjectName, ObjectsDelta, OldKey,
+    PendingKey, PublicationDelta, RcvdCert, ReplacedObject, RepoInfo, ResourceClassInfo,
+    ResourceClassKeysInfo, ResourceClassName, ResourceSet, Revocation, RevokedObject,
+    WithdrawnObject,
 };
 use krill_commons::api::{
     EntitlementClass, IssuanceRequest, IssuanceResponse, RequestResourceLimit, RevocationRequest,
@@ -559,6 +560,43 @@ impl ResourceClass {
             issued.cert().validity().not_after(),
             issued,
         ))
+    }
+
+    /// Withdraw a key, and add it to the Revocations.
+    pub fn withdraw_key<S: Signer>(
+        &self,
+        issued: &IssuedCert,
+        repo_info: &RepoInfo,
+        signer: &S,
+    ) -> ca::Result<EvtDet> {
+        let my_key = self.current_key().ok_or_else(|| Error::NoIssuedCert)?;
+
+        let name = ObjectName::from(issued.cert());
+        let current_object = CurrentObject::from(issued.cert());
+
+        let withdrawn = WithdrawnObject::for_current(name, &current_object);
+        let revocations = vec![Revocation::from(issued.cert())];
+
+        let name_space = self.name_space();
+        let ca_repo = repo_info.ca_repository(name_space);
+
+        let mut objects_delta = ObjectsDelta::new(ca_repo);
+        objects_delta.withdraw(withdrawn);
+
+        let pub_delta = SignSupport::publish(
+            my_key,
+            repo_info,
+            name_space,
+            objects_delta,
+            revocations,
+            signer,
+        )
+        .map_err(Error::signer)?;
+
+        let mut deltas = HashMap::new();
+        deltas.insert(my_key.key_id().clone(), pub_delta);
+
+        Ok(EvtDet::Published(self.name.clone(), deltas))
     }
 
     /// Stores an [IssuedCert](krill_commons.api.ca.IssuedCert)

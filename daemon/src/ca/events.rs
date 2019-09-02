@@ -343,11 +343,7 @@ impl EvtDet {
         resources: ResourceSet,
         force: bool,
     ) -> Evt {
-        let grace = if force {
-            Time::now()
-        } else {
-            Time::tomorrow()
-        };
+        let grace = if force { Time::now() } else { Time::tomorrow() };
 
         StoredEvent::new(
             handle,

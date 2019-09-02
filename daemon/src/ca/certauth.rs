@@ -14,9 +14,8 @@ use krill_commons::api::admin::{
     Handle, ParentCaContact, PubServerContact, Token, UpdateChildRequest,
 };
 use krill_commons::api::ca::{
-    AddedObject, CertAuthInfo, CurrentObject, IssuedCert, ObjectName, ObjectsDelta,
-    PublicationDelta, RcvdCert, RepoInfo, ResourceClassName, ResourceSet, Revocation,
-    TrustAnchorInfo, UpdatedObject, WithdrawnObject,
+    AddedObject, CertAuthInfo, IssuedCert, ObjectsDelta, PublicationDelta, RcvdCert, RepoInfo,
+    ResourceClassName, ResourceSet, Revocation, TrustAnchorInfo, UpdatedObject, WithdrawnObject,
 };
 use krill_commons::api::{
     self, EntitlementClass, Entitlements, IssuanceRequest, IssuanceResponse, RequestResourceLimit,
@@ -784,7 +783,7 @@ impl<S: Signer> CertAuth<S> {
         Ok(res)
     }
 
-    /// Revokes a key for a child. So, add all certs for the key to the CRL, and withdraw
+    /// Revokes a key for a child. So, add the last cert for the key to the CRL, and withdraw
     /// the .cer file for it.
     fn revoke_child_key(
         &self,
@@ -793,52 +792,30 @@ impl<S: Signer> CertAuth<S> {
         signer: Arc<RwLock<S>>,
     ) -> ca::Result<Vec<Evt>> {
         let signer = signer.read().unwrap();
+        let signer = signer.deref();
+
         let rcn = request.class_name();
 
-        let my_rc = self
+        let rc = self
             .resources
             .get(rcn)
             .ok_or_else(|| Error::unknown_resource_class(rcn))?;
 
-        let my_key = my_rc.current_key().ok_or_else(|| Error::NoIssuedCert)?;
-
         let child = self.get_child(&child_handle)?;
-        let last_response = child
+
+        let issued = child
             .issuance_response(request.key())
-            .ok_or_else(|| Error::NoIssuedCert)?;
+            .ok_or_else(|| Error::NoIssuedCert)?
+            .issued();
 
-        let last_cert = last_response.issued();
+        let handle = &self.handle;
+        let version = self.version;
+        let repo = &self.base_repo;
 
-        let name = ObjectName::from(last_cert.cert());
-        let current_object = CurrentObject::from(last_cert.cert());
+        let rev = EvtDet::child_revoke_key(handle, version, child_handle, request.into());
+        let wdr = StoredEvent::new(handle, version + 1, rc.withdraw_key(issued, repo, signer)?);
 
-        let withdrawn = WithdrawnObject::for_current(name, &current_object);
-        let revocations = vec![Revocation::from(last_cert.cert())];
-
-        let name_space = my_rc.name_space();
-        let ca_repo = self.base_repo.ca_repository(name_space);
-
-        let mut objects_delta = ObjectsDelta::new(ca_repo);
-        objects_delta.withdraw(withdrawn);
-
-        let pub_delta = SignSupport::publish(
-            my_key,
-            &self.base_repo,
-            name_space,
-            objects_delta,
-            revocations,
-            signer.deref(),
-        )
-        .map_err(Error::signer)?;
-
-        let mut deltas = HashMap::new();
-        deltas.insert(my_key.key_id().clone(), pub_delta);
-
-        let published = EvtDet::published(&self.handle, self.version + 1, rcn.clone(), deltas);
-        let revoked =
-            EvtDet::child_revoke_key(&self.handle, self.version, child_handle, request.into());
-
-        Ok(vec![revoked, published])
+        Ok(vec![rev, wdr])
     }
 
     /// Returns `true` if the child is known, `false` otherwise. No errors.
