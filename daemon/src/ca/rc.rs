@@ -4,13 +4,17 @@ use chrono::Duration;
 use serde::{Deserialize, Serialize};
 
 use rpki::cert::Cert;
-use rpki::crypto::KeyIdentifier;
-use rpki::x509::Time;
+use rpki::crl::{Crl, TbsCertList};
+use rpki::crypto::{DigestAlgorithm, KeyIdentifier};
+use rpki::manifest::{Manifest, ManifestContent};
+use rpki::sigobj::SignedObjectBuilder;
+use rpki::x509::{Serial, Time, Validity};
 
 use krill_commons::api::ca::{
-    AddedObject, CertifiedKey, CurrentObjects, IssuedCert, ObjectsDelta, OldKey, PendingKey,
-    PublicationDelta, RcvdCert, ReplacedObject, RepoInfo, ResourceClassInfo, ResourceClassName,
-    ResourceSet, Revocation, RevokedObject, UpdatedObject, WithdrawnObject,
+    AddedObject, CertifiedKey, CurrentObject, CurrentObjects, IssuedCert, ObjectsDelta, OldKey,
+    PendingKey, PublicationDelta, RcvdCert, ReplacedObject, RepoInfo, ResourceClassInfo,
+    ResourceClassName, ResourceSet, Revocation, RevocationsDelta, RevokedObject, UpdatedObject,
+    WithdrawnObject,
 };
 use krill_commons::api::{
     EntitlementClass, IssuanceRequest, IssuanceResponse, RequestResourceLimit, RevocationRequest,
@@ -269,15 +273,15 @@ impl ResourceClass {
             PublishMode::PendingKeyActivation(_) => (vec![], vec![]),
         };
 
-        let publish_key_delta = SignSupport::publish(
-            publish_key,
-            repo_info,
-            self.name_space.as_str(),
-            objects_delta,
-            publish_key_revocations,
-            signer,
-        )
-        .map_err(Error::signer)?;
+        let publish_key_delta = self
+            .make_publication_delta(
+                publish_key,
+                repo_info,
+                objects_delta,
+                publish_key_revocations,
+                signer,
+            )
+            .map_err(Error::signer)?;
 
         key_pub_map.insert(publish_key.key_id().clone(), publish_key_delta);
 
@@ -285,15 +289,9 @@ impl ResourceClass {
             let ns = self.name_space();
             let delta = ObjectsDelta::new(repo_info.ca_repository(ns));
 
-            let other_delta = SignSupport::publish(
-                other_key,
-                repo_info,
-                ns,
-                delta,
-                other_key_revocations,
-                signer,
-            )
-            .map_err(ca::Error::signer)?;
+            let other_delta = self
+                .make_publication_delta(other_key, repo_info, delta, other_key_revocations, signer)
+                .map_err(ca::Error::signer)?;
 
             key_pub_map.insert(other_key.key_id().clone(), other_delta);
         }
@@ -385,19 +383,139 @@ impl ResourceClass {
             }
         }
 
-        let delta = SignSupport::publish(
-            issuing_key,
-            repo_info,
-            name_space,
-            objects_delta,
-            revocations,
-            signer,
-        )
-        .map_err(Error::signer)?;
+        let delta = self
+            .make_publication_delta(issuing_key, repo_info, objects_delta, revocations, signer)
+            .map_err(Error::signer)?;
 
         let mut res = HashMap::new();
         res.insert(issuing_key.key_id().clone(), delta);
         Ok(res)
+    }
+
+    fn make_publication_delta<S: Signer>(
+        &self,
+        ca_key: &CertifiedKey,
+        repo_info: &RepoInfo,
+        mut objects_delta: ObjectsDelta,
+        new_revocations: Vec<Revocation>,
+        signer: &S,
+    ) -> ca::Result<PublicationDelta> {
+        let name_space = self.name_space();
+
+        let aia = ca_key.incoming_cert().uri();
+        let key_id = ca_key.key_id();
+
+        let pub_key = signer.get_key_info(key_id).map_err(ca::Error::signer)?;
+
+        let aki = KeyIdentifier::from_public_key(&pub_key);
+
+        let current_set = ca_key.current_set();
+
+        let number = current_set.number() + 1;
+        let serial_number = Serial::from(number);
+
+        let now = Time::now();
+        let tomorrow = Time::tomorrow();
+        let next_week = Time::next_week();
+
+        let mut revocations = current_set.revocations().clone();
+        let mut revocations_delta = RevocationsDelta::default();
+
+        for revocation in new_revocations.into_iter() {
+            revocations.add(revocation);
+            revocations_delta.add(revocation);
+        }
+
+        for expired in revocations.purge() {
+            revocations_delta.drop(expired);
+        }
+
+        let mut current_objects = current_set.objects().clone();
+
+        let mft_name = RepoInfo::mft_name(&pub_key.key_identifier());
+        let mft_uri = repo_info.resolve(name_space, &mft_name);
+        let old_mft = current_set.objects().object_for(&mft_name);
+
+        // TODO Process other objects, re-issue, revoke, add/remove
+        // TODO for now only publish MFT and CRL, revoking old MFTs only
+        if let Some(mft) = old_mft {
+            let revocation = Revocation::from(mft);
+            revocations.add(revocation);
+            revocations_delta.add(revocation);
+        }
+
+        let crl_name = RepoInfo::crl_name(&pub_key.key_identifier());
+        let crl_uri = repo_info.resolve(name_space, &crl_name);
+
+        let crl: Crl = {
+            let crl = TbsCertList::new(
+                Default::default(),
+                pub_key.to_subject_name(),
+                now,
+                tomorrow,
+                revocations.to_crl_entries(),
+                aki,
+                serial_number,
+            );
+
+            crl.into_crl(signer, key_id).map_err(ca::Error::signer)?
+        };
+
+        match current_objects.insert(crl_name.clone(), CurrentObject::from(&crl)) {
+            None => {
+                let added = AddedObject::new(crl_name, CurrentObject::from(&crl));
+                objects_delta.add(added);
+            }
+            Some(old_crl) => {
+                let hash = old_crl.content().to_encoded_hash();
+                let updated = UpdatedObject::new(crl_name, CurrentObject::from(&crl), hash);
+                objects_delta.update(updated);
+            }
+        }
+
+        let mft: Manifest = {
+            let mft_content = ManifestContent::new(
+                serial_number,
+                now,
+                tomorrow,
+                DigestAlgorithm::default(),
+                current_objects.mft_entries().iter(),
+            );
+
+            mft_content
+                .into_manifest(
+                    SignedObjectBuilder::new(
+                        Serial::random(signer).map_err(ca::Error::signer)?,
+                        Validity::new(now, next_week),
+                        crl_uri,
+                        aia.clone(),
+                        mft_uri.clone(),
+                    ),
+                    signer,
+                    key_id,
+                )
+                .map_err(ca::Error::signer)?
+        };
+
+        match old_mft {
+            None => {
+                let added = AddedObject::new(mft_name, CurrentObject::from(&mft));
+                objects_delta.add(added);
+            }
+            Some(old_mft) => {
+                let hash = old_mft.content().to_encoded_hash();
+                let updated = UpdatedObject::new(mft_name, CurrentObject::from(&mft), hash);
+                objects_delta.update(updated);
+            }
+        }
+
+        Ok(PublicationDelta::new(
+            now,
+            tomorrow,
+            number,
+            revocations_delta,
+            objects_delta,
+        ))
     }
 }
 

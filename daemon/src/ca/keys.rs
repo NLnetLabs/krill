@@ -12,10 +12,7 @@ use krill_commons::api::{
     EntitlementClass, IssuanceRequest, RequestResourceLimit, RevocationRequest,
 };
 
-use crate::ca::{
-    self, Error, EvtDet, Result,
-    Signer,
-};
+use crate::ca::{self, Error, EvtDet, Result, Signer};
 
 //------------ ResourceClassKeys ---------------------------------------------
 
