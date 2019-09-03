@@ -437,7 +437,7 @@ impl<S: Signer> CaServer<S> {
         } else {
             let entitlements = self.get_entitlements_from_parent(handle, parent)?;
 
-            if !self.update_if_needed(handle, parent.clone(), entitlements)? {
+            if !self.update_resource_classes(handle, parent.clone(), entitlements)? {
                 return Ok(()); // Nothing to do
             }
 
@@ -676,11 +676,11 @@ impl<S: Signer> CaServer<S> {
         Ok(issued_map)
     }
 
-    /// Updates the CA if entitlements are different from what the CA
-    /// currently has under this parent. Returns [`Ok(true)`] in case
-    /// there were any updates. In that case the CA will have been updated
-    /// with open certificate requests which can be retrieved.
-    fn update_if_needed(
+    /// Updates the CA resource classes, if entitlements are different from
+    /// what the CA currently has under this parent. Returns [`Ok(true)`] in
+    /// case there were any updates, implying that there will be open requests
+    /// for the parent CA.
+    fn update_resource_classes(
         &self,
         handle: &Handle,
         parent: ParentHandle,
@@ -689,7 +689,7 @@ impl<S: Signer> CaServer<S> {
         let child = self.ca_store.get_latest(handle)?;
 
         let update_entitlements_command =
-            CmdDet::upd_entitlements(handle, parent, entitlements, self.signer.clone());
+            CmdDet::upd_resource_classes(handle, parent, entitlements, self.signer.clone());
 
         let events = child.process_command(update_entitlements_command)?;
         if !events.is_empty() {
@@ -966,7 +966,7 @@ mod tests {
 
             let entitlements = ta.list(&child_handle).unwrap();
 
-            let upd_ent = CmdDet::upd_entitlements(
+            let upd_ent = CmdDet::upd_resource_classes(
                 &child_handle,
                 ta_handle.clone(),
                 entitlements,

@@ -266,8 +266,8 @@ impl<S: Signer> Aggregate for CertAuth<S> {
 
             // being a child
             CmdDet::AddParent(parent, info) => self.add_parent(parent, info),
-            CmdDet::UpdateEntitlements(parent, entitlements, signer) => {
-                self.update_entitlements(parent, entitlements, signer)
+            CmdDet::UpdateResourceClasses(parent, entitlements, signer) => {
+                self.update_resource_classes(parent, entitlements, signer)
             }
             CmdDet::UpdateRcvdCert(class_name, rcvd_cert, signer) => {
                 self.update_received_cert(class_name, rcvd_cert, signer)
@@ -883,14 +883,27 @@ impl<S: Signer> CertAuth<S> {
         res
     }
 
-    /// This processes entitlements from a parent, and updates the known
-    /// entitlement(s) and/or requests certificate(s) as needed. In case
-    /// there are no changes in entitlements and certificates, this method
-    /// will result in 0 events - i.e. it is then a no-op.
+    /// This processes entitlements from a parent, and updates the resource
+    /// classes for this CA as needed. I.e.
     ///
-    /// If there are no more resources in a resource class, then the CA will
-    /// request revocation for all its keys in the resource class.
-    fn update_entitlements(
+    /// 1) It removes lost RCs, and requests revocation of the key(s). Note
+    ///    that this revocation request may result in an error because the
+    ///    parent already revoked these keys - or not - we don't know.
+    ///
+    ///    Krill parents will by default do a 'soft' shrink where resource
+    ///    classes are removed, but not yet revoked. So a krill parent will
+    ///    expect the revoke request from the child.
+    ///
+    /// 2) For any new RCs in the entitlements new RCs will be created, each
+    ///    with a pending key and an open certificate sign request.
+    ///
+    /// 3) For RCs that exist both for the CA and in the entitlements, new
+    ///    certificates will be requested in case resource entitlements, or
+    ///    validity times (not after) changed.
+    ///
+    ///  TODO: Shrink issued ROAs and certificates pro-actively before
+    ///        requesting the shrunk certificate.
+    fn update_resource_classes(
         &self,
         parent_handle: Handle,
         entitlements: Entitlements,

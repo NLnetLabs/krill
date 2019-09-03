@@ -42,8 +42,10 @@ pub enum CmdDet<S: Signer> {
 
     // Add a parent to this CA. Can have multiple parents.
     AddParent(ParentHandle, ParentCaContact),
-    // Process new entitlements from a parent and create issue/revoke requests as needed.
-    UpdateEntitlements(ParentHandle, Entitlements, Arc<RwLock<S>>),
+    // Process new entitlements from a parent and remove/create/update
+    // ResourceClasses and certificate requests or key revocation requests
+    // as needed.
+    UpdateResourceClasses(ParentHandle, Entitlements, Arc<RwLock<S>>),
     // Process a new certificate received from a parent.
     UpdateRcvdCert(ResourceClassName, RcvdCert, Arc<RwLock<S>>),
 
@@ -151,7 +153,7 @@ impl<S: Signer> CmdDet<S> {
         eventsourcing::SentCommand::new(handle, None, CmdDet::AddParent(parent, info))
     }
 
-    pub fn upd_entitlements(
+    pub fn upd_resource_classes(
         handle: &Handle,
         parent: ParentHandle,
         entitlements: Entitlements,
@@ -160,7 +162,7 @@ impl<S: Signer> CmdDet<S> {
         eventsourcing::SentCommand::new(
             handle,
             None,
-            CmdDet::UpdateEntitlements(parent, entitlements, signer),
+            CmdDet::UpdateResourceClasses(parent, entitlements, signer),
         )
     }
 
