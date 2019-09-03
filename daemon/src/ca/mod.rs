@@ -12,6 +12,9 @@ pub use self::child::*;
 mod rc;
 pub use self::rc::ResourceClass;
 
+mod keys;
+pub use self::keys::*;
+
 mod routes;
 pub use self::routes::*;
 
