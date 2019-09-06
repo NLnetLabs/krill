@@ -250,7 +250,7 @@ impl RrdpServer {
 ///
 impl RrdpServer {
     pub fn notification_uri(&self) -> uri::Https {
-        uri::Https::from_string(format!("{}notifcation.xml", self.base_uri.to_string())).unwrap() // Cannot fail. Config checked at startup.
+        uri::Https::from_string(format!("{}notification.xml", self.base_uri.to_string())).unwrap() // Cannot fail. Config checked at startup.
     }
 
     fn notification_path(&self) -> PathBuf {
