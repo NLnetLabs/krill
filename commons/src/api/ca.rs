@@ -1401,7 +1401,7 @@ pub struct CertAuthInfo {
     handle: Handle,
     base_repo: RepoInfo,
     parents: HashMap<Handle, ParentCaContact>,
-    resources: HashMap<ResourceClassName, ResourceClassInfo>,
+    resources: HashMap<ResourceClassName, KeyStateInfo>,
     children: HashMap<Handle, ChildCaInfo>,
     route_authorizations: HashSet<RouteAuthorization>,
 }
@@ -1411,7 +1411,7 @@ impl CertAuthInfo {
         handle: Handle,
         base_repo: RepoInfo,
         parents: HashMap<Handle, ParentCaContact>,
-        resources: HashMap<ResourceClassName, ResourceClassInfo>,
+        resources: HashMap<ResourceClassName, KeyStateInfo>,
         children: HashMap<Handle, ChildCaInfo>,
         route_authorizations: HashSet<RouteAuthorization>,
     ) -> Self {
@@ -1441,7 +1441,7 @@ impl CertAuthInfo {
         self.parents.get(parent)
     }
 
-    pub fn resources(&self) -> &HashMap<ResourceClassName, ResourceClassInfo> {
+    pub fn resources(&self) -> &HashMap<ResourceClassName, KeyStateInfo> {
         &self.resources
     }
 
@@ -1463,22 +1463,22 @@ impl CertAuthInfo {
     }
 }
 
-//------------ ResourceClassInfo ---------------------------------------------
+//------------ KeyStateInfo -------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct ResourceClassInfo {
+pub struct KeyStateInfo {
     name_space: String,
     keys: ResourceClassKeysInfo,
     current_objects: CurrentObjects,
 }
 
-impl ResourceClassInfo {
+impl KeyStateInfo {
     pub fn new(
         name_space: String,
         keys: ResourceClassKeysInfo,
         current_objects: CurrentObjects,
     ) -> Self {
-        ResourceClassInfo {
+        KeyStateInfo {
             name_space,
             keys,
             current_objects,

@@ -10,7 +10,7 @@ use rpki::x509::Time;
 use krill_commons::api::{
     AddedObject, CurrentObject, CurrentObjects, EntitlementClass, HexEncodedHash, IssuanceRequest,
     IssuanceResponse, IssuedCert, ObjectName, ObjectsDelta, RcvdCert, ReplacedObject, RepoInfo,
-    RequestResourceLimit, ResourceClassInfo, ResourceClassName, ResourceSet, Revocation,
+    RequestResourceLimit, KeyStateInfo, ResourceClassName, ResourceSet, Revocation,
     RevocationRequest, RevokedObject, RouteAuthorization, SigningCert, UpdatedObject,
     WithdrawnObject,
 };
@@ -20,7 +20,7 @@ use crate::ca::signing::CsrInfo;
 use crate::ca::{
     self, ta_handle, AddedOrUpdated, Certificates, CertifiedKey, CrlBuilder, CurrentKey,
     CurrentObjectSetDelta, Error, EvtDet, ManifestBuilder, NewKey, OldKey, ParentHandle,
-    PendingKey, ResourceClassKeys, Result, RoaInfo, Roas, SignSupport, Signer,
+    PendingKey, KeyState, Result, RoaInfo, Roas, SignSupport, Signer,
 };
 
 //------------ ResourceClass -----------------------------------------------
@@ -48,7 +48,7 @@ pub struct ResourceClass {
     certificates: Certificates,
 
     last_key_change: Time,
-    keys: ResourceClassKeys,
+    key_state: KeyState,
 }
 
 /// # Creating new instances
@@ -70,7 +70,7 @@ impl ResourceClass {
             roas: Roas::default(),
             certificates: Certificates::default(),
             last_key_change: Time::now(),
-            keys: ResourceClassKeys::create(pending_key),
+            key_state: KeyState::create(pending_key),
         }
     }
 
@@ -83,7 +83,7 @@ impl ResourceClass {
             roas: Roas::default(),
             certificates: Certificates::default(),
             last_key_change: Time::now(),
-            keys: ResourceClassKeys::create(pending_key),
+            key_state: KeyState::create(pending_key),
         }
     }
 }
@@ -107,7 +107,7 @@ impl ResourceClass {
 
     /// Adds a request to an existing key for future reference.
     pub fn add_request(&mut self, key_id: KeyIdentifier, req: IssuanceRequest) {
-        self.keys.add_request(key_id, req);
+        self.key_state.add_request(key_id, req);
     }
 
     /// Returns the current certificate, if there is any
@@ -122,11 +122,11 @@ impl ResourceClass {
 
     /// Returns a reference to current key for this RC, if there is any.
     pub fn current_key(&self) -> Option<&CurrentKey> {
-        match &self.keys {
-            ResourceClassKeys::Active(current)
-            | ResourceClassKeys::RollPending(_, current)
-            | ResourceClassKeys::RollNew(_, current)
-            | ResourceClassKeys::RollOld(current, _) => Some(current),
+        match &self.key_state {
+            KeyState::Active(current)
+            | KeyState::RollPending(_, current)
+            | KeyState::RollNew(_, current)
+            | KeyState::RollOld(current, _) => Some(current),
             _ => None,
         }
     }
@@ -138,7 +138,7 @@ impl ResourceClass {
 
     /// Gets the new key for a key roll, or returns an error if there is none.
     pub fn get_new_key(&self) -> Result<&NewKey> {
-        if let ResourceClassKeys::RollNew(new_key, _) = &self.keys {
+        if let KeyState::RollNew(new_key, _) = &self.key_state {
             Ok(new_key)
         } else {
             Err(Error::ResourceClassNoNewKey)
@@ -166,19 +166,19 @@ impl ResourceClass {
             objects.insert(ObjectName::from(crl), CurrentObject::from(crl));
         }
 
-        match &self.keys {
-            ResourceClassKeys::Pending(_) => {} // nothing to add
-            ResourceClassKeys::Active(current) => {
+        match &self.key_state {
+            KeyState::Pending(_) => {} // nothing to add
+            KeyState::Active(current) => {
                 add_mft_and_crl(&mut current_objects, current);
             }
-            ResourceClassKeys::RollPending(_, current) => {
+            KeyState::RollPending(_, current) => {
                 add_mft_and_crl(&mut current_objects, current);
             }
-            ResourceClassKeys::RollNew(new, current) => {
+            KeyState::RollNew(new, current) => {
                 add_mft_and_crl(&mut current_objects, new);
                 add_mft_and_crl(&mut current_objects, current);
             }
-            ResourceClassKeys::RollOld(current, old) => {
+            KeyState::RollOld(current, old) => {
                 add_mft_and_crl(&mut current_objects, current);
                 add_mft_and_crl(&mut current_objects, old);
             }
@@ -189,10 +189,10 @@ impl ResourceClass {
 
     /// Returns a ResourceClassInfo for this, which contains all the
     /// same data, but which does not have any behaviour.
-    pub fn as_info(&self) -> ResourceClassInfo {
-        ResourceClassInfo::new(
+    pub fn as_info(&self) -> KeyStateInfo {
+        KeyStateInfo::new(
             self.name_space.clone(),
-            self.keys.as_info(),
+            self.key_state.as_info(),
             self.current_objects(),
         )
     }
@@ -231,8 +231,8 @@ impl ResourceClass {
             Ok((active_key, delta))
         }
 
-        match &self.keys {
-            ResourceClassKeys::Pending(pending) => {
+        match &self.key_state {
+            KeyState::Pending(pending) => {
                 if rcvd_cert_ki != pending.key_id() {
                     Err(ca::Error::NoKeyMatch(rcvd_cert_ki))
                 } else {
@@ -244,10 +244,10 @@ impl ResourceClass {
                     )])
                 }
             }
-            ResourceClassKeys::Active(current) => {
+            KeyState::Active(current) => {
                 self.update_rcvd_cert_current(current, rcvd_cert, repo_info, signer)
             }
-            ResourceClassKeys::RollPending(pending, current) => {
+            KeyState::RollPending(pending, current) => {
                 if rcvd_cert_ki == pending.key_id() {
                     let (active_key, delta) = create_active_key_and_delta(rcvd_cert, signer)?;
                     Ok(vec![EvtDet::KeyPendingToNew(
@@ -259,7 +259,7 @@ impl ResourceClass {
                     self.update_rcvd_cert_current(current, rcvd_cert, repo_info, signer)
                 }
             }
-            ResourceClassKeys::RollNew(new, current) => {
+            KeyState::RollNew(new, current) => {
                 if rcvd_cert_ki == new.key_id() {
                     Ok(vec![EvtDet::CertificateReceived(
                         self.name.clone(),
@@ -270,7 +270,7 @@ impl ResourceClass {
                     self.update_rcvd_cert_current(current, rcvd_cert, repo_info, signer)
                 }
             }
-            ResourceClassKeys::RollOld(current, _old) => {
+            KeyState::RollOld(current, _old) => {
                 // We will never request a new certificate for an old key
                 self.update_rcvd_cert_current(current, rcvd_cert, repo_info, signer)
             }
@@ -320,7 +320,7 @@ impl ResourceClass {
         base_repo: &RepoInfo,
         signer: &S,
     ) -> Result<Vec<EvtDet>> {
-        self.keys.request_certs(
+        self.key_state.request_certs(
             self.name.clone(),
             entitlement,
             base_repo,
@@ -331,12 +331,12 @@ impl ResourceClass {
 
     /// This function returns all current certificate requests.
     pub fn cert_requests(&self) -> Vec<IssuanceRequest> {
-        self.keys.cert_requests()
+        self.key_state.cert_requests()
     }
 
     /// Returns the revocation request for the old key, if it exists.
     pub fn revoke_request(&self) -> Option<&RevocationRequest> {
-        self.keys.revoke_request()
+        self.key_state.revoke_request()
     }
 }
 
@@ -345,7 +345,7 @@ impl ResourceClass {
 impl ResourceClass {
     /// Applies a publication delta to the appropriate key in this resource class.
     pub fn apply_delta(&mut self, delta: CurrentObjectSetDelta, key_id: KeyIdentifier) {
-        self.keys.apply_delta(delta, key_id);
+        self.key_state.apply_delta(delta, key_id);
     }
 
     /// Publish/update/withdraw objects under the key, determined by the
@@ -365,9 +365,9 @@ impl ResourceClass {
 
         let (publish_key, other_key_opt) = match mode {
             PublishMode::Normal | PublishMode::UpdatedResources(_) => {
-                let other_key_opt = match &self.keys {
-                    ResourceClassKeys::RollNew(new, _) => Some(new),
-                    ResourceClassKeys::RollOld(_, old) => Some(old.key()),
+                let other_key_opt = match &self.key_state {
+                    KeyState::RollNew(new, _) => Some(new),
+                    KeyState::RollOld(_, old) => Some(old.key()),
                     _ => None,
                 };
                 (self.get_current_key()?, other_key_opt)
@@ -580,7 +580,7 @@ impl ResourceClass {
 
     /// Returns revocation requests for all certified keys in this resource class.
     pub fn revoke<S: Signer>(&self, signer: &S) -> ca::Result<Vec<RevocationRequest>> {
-        self.keys.revoke(self.name.clone(), signer)
+        self.key_state.revoke(self.name.clone(), signer)
     }
 }
 
@@ -590,24 +590,24 @@ impl ResourceClass {
     /// This function marks a certificate as received.
     pub fn received_cert(&mut self, key_id: KeyIdentifier, cert: RcvdCert) {
         // if there is a pending key, then we need to do some promotions..
-        match &mut self.keys {
-            ResourceClassKeys::Pending(_pending) => {
+        match &mut self.key_state {
+            KeyState::Pending(_pending) => {
                 panic!("Would have received KeyPendingToActive event")
             }
-            ResourceClassKeys::Active(current) => {
+            KeyState::Active(current) => {
                 current.set_incoming_cert(cert);
             }
-            ResourceClassKeys::RollPending(_pending, current) => {
+            KeyState::RollPending(_pending, current) => {
                 current.set_incoming_cert(cert);
             }
-            ResourceClassKeys::RollNew(new, current) => {
+            KeyState::RollNew(new, current) => {
                 if new.key_id() == &key_id {
                     new.set_incoming_cert(cert);
                 } else {
                     current.set_incoming_cert(cert);
                 }
             }
-            ResourceClassKeys::RollOld(current, old) => {
+            KeyState::RollOld(current, old) => {
                 if current.key_id() == &key_id {
                     current.set_incoming_cert(cert);
                 } else {
@@ -619,10 +619,10 @@ impl ResourceClass {
 
     /// Adds a pending key.
     pub fn pending_key_added(&mut self, key_id: KeyIdentifier) {
-        match &self.keys {
-            ResourceClassKeys::Active(current) => {
+        match &self.key_state {
+            KeyState::Active(current) => {
                 let pending = PendingKey::new(key_id);
-                self.keys = ResourceClassKeys::RollPending(pending, current.clone())
+                self.key_state = KeyState::RollPending(pending, current.clone())
             }
             _ => panic!("Should never create event to add key when roll in progress"),
         }
@@ -630,9 +630,9 @@ impl ResourceClass {
 
     /// Moves a pending key to new
     pub fn pending_key_to_new(&mut self, new: CertifiedKey) {
-        match &self.keys {
-            ResourceClassKeys::RollPending(_pending, current) => {
-                self.keys = ResourceClassKeys::RollNew(new, current.clone());
+        match &self.key_state {
+            KeyState::RollPending(_pending, current) => {
+                self.key_state = KeyState::RollNew(new, current.clone());
             }
             _ => panic!("Cannot move pending to new, if state is not roll pending"),
         }
@@ -640,9 +640,9 @@ impl ResourceClass {
 
     /// Moves a pending key to current
     pub fn pending_key_to_active(&mut self, new: CertifiedKey) {
-        match &self.keys {
-            ResourceClassKeys::Pending(_pending) => {
-                self.keys = ResourceClassKeys::Active(new);
+        match &self.key_state {
+            KeyState::Pending(_pending) => {
+                self.key_state = KeyState::Active(new);
             }
             _ => panic!("Cannot move pending to active, if state is not pending"),
         }
@@ -650,10 +650,10 @@ impl ResourceClass {
 
     /// Activates the new key
     pub fn new_key_activated(&mut self, revoke_req: RevocationRequest) {
-        match &self.keys {
-            ResourceClassKeys::RollNew(new, current) => {
+        match &self.key_state {
+            KeyState::RollNew(new, current) => {
                 let old_key = OldKey::new(current.clone(), revoke_req);
-                self.keys = ResourceClassKeys::RollOld(new.clone(), old_key);
+                self.key_state = KeyState::RollOld(new.clone(), old_key);
             }
             _ => panic!("Should never create event to activate key when no roll in progress"),
         }
@@ -661,9 +661,9 @@ impl ResourceClass {
 
     /// Removes the old key, we return the to the state where there is one active key.
     pub fn old_key_removed(&mut self) {
-        match &self.keys {
-            ResourceClassKeys::RollOld(current, _old) => {
-                self.keys = ResourceClassKeys::Active(current.clone());
+        match &self.key_state {
+            KeyState::RollOld(current, _old) => {
+                self.key_state = KeyState::Active(current.clone());
             }
             _ => panic!("Should never create event to remove old key, when there is none"),
         }
@@ -680,7 +680,7 @@ impl ResourceClass {
             return Ok(vec![]);
         }
 
-        self.keys.keyroll_initiate(
+        self.key_state.keyroll_initiate(
             self.name.clone(),
             self.parent_rc_name.clone(),
             base_repo,
@@ -704,7 +704,7 @@ impl ResourceClass {
 
         let authorizations: Vec<RouteAuthorization> = self.roas.authorizations().cloned().collect();
 
-        res.push(self.keys.keyroll_activate(
+        res.push(self.key_state.keyroll_activate(
             self.name.clone(),
             self.parent_rc_name.clone(),
             signer,
@@ -722,8 +722,8 @@ impl ResourceClass {
 
     /// Finish a key roll, withdraw the old key
     pub fn keyroll_finish(&self, base_repo: &RepoInfo) -> ca::Result<EvtDet> {
-        match &self.keys {
-            ResourceClassKeys::RollOld(_current, old) => {
+        match &self.key_state {
+            KeyState::RollOld(_current, old) => {
                 let mut objects_delta =
                     ObjectsDelta::new(base_repo.ca_repository(self.name_space()));
 

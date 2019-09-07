@@ -164,13 +164,14 @@ impl DerefMut for OldKey {
     }
 }
 
-//------------ ResourceClassKeys ---------------------------------------------
+
+//------------ KeyState ------------------------------------------------------
 
 /// This type contains the keys for a resource class and guards that keys
 /// are created, activated, rolled and retired properly.
 #[derive(Clone, Debug, Deserialize, Eq, Serialize, PartialEq)]
 #[allow(clippy::large_enum_variant)]
-pub enum ResourceClassKeys {
+pub enum KeyState {
     Pending(PendingKey),
     Active(CurrentKey),
     RollPending(PendingKey, CurrentKey),
@@ -178,30 +179,30 @@ pub enum ResourceClassKeys {
     RollOld(CurrentKey, OldKey),
 }
 
-impl ResourceClassKeys {
+impl KeyState {
     pub fn create(pending_key: KeyIdentifier) -> Self {
-        ResourceClassKeys::Pending(PendingKey::new(pending_key))
+        KeyState::Pending(PendingKey::new(pending_key))
     }
 
     pub fn add_request(&mut self, key_id: KeyIdentifier, req: IssuanceRequest) {
         match self {
-            ResourceClassKeys::Pending(pending) => pending.add_request(req),
-            ResourceClassKeys::Active(current) => current.add_request(req),
-            ResourceClassKeys::RollPending(pending, current) => {
+            KeyState::Pending(pending) => pending.add_request(req),
+            KeyState::Active(current) => current.add_request(req),
+            KeyState::RollPending(pending, current) => {
                 if pending.key_id() == &key_id {
                     pending.add_request(req)
                 } else {
                     current.add_request(req)
                 }
             }
-            ResourceClassKeys::RollNew(new, current) => {
+            KeyState::RollNew(new, current) => {
                 if new.key_id() == &key_id {
                     new.add_request(req)
                 } else {
                     current.add_request(req)
                 }
             }
-            ResourceClassKeys::RollOld(current, old) => {
+            KeyState::RollOld(current, old) => {
                 if current.key_id() == &key_id {
                     current.add_request(req)
                 } else {
@@ -218,17 +219,17 @@ impl ResourceClassKeys {
         signer: &S,
     ) -> ca::Result<Vec<RevocationRequest>> {
         match self {
-            ResourceClassKeys::Pending(_pending) => Ok(vec![]), // nothing to revoke
-            ResourceClassKeys::Active(current) | ResourceClassKeys::RollPending(_, current) => {
+            KeyState::Pending(_pending) => Ok(vec![]), // nothing to revoke
+            KeyState::Active(current) | KeyState::RollPending(_, current) => {
                 let revoke_current = Self::revoke_key(class_name, current.key_id(), signer)?;
                 Ok(vec![revoke_current])
             }
-            ResourceClassKeys::RollNew(new, current) => {
+            KeyState::RollNew(new, current) => {
                 let revoke_new = Self::revoke_key(class_name.clone(), new.key_id(), signer)?;
                 let revoke_current = Self::revoke_key(class_name, current.key_id(), signer)?;
                 Ok(vec![revoke_new, revoke_current])
             }
-            ResourceClassKeys::RollOld(current, old) => {
+            KeyState::RollOld(current, old) => {
                 let revoke_current = Self::revoke_key(class_name, current.key_id(), signer)?;
                 let revoke_old = old.revoke_req().clone();
                 Ok(vec![revoke_current, revoke_old])
@@ -251,17 +252,17 @@ impl ResourceClassKeys {
 
     pub fn apply_delta(&mut self, delta: CurrentObjectSetDelta, key_id: KeyIdentifier) {
         match self {
-            ResourceClassKeys::Pending(_pending) => panic!("Should never have delta for pending"),
-            ResourceClassKeys::Active(current) => current.apply_delta(delta),
-            ResourceClassKeys::RollPending(_pending, current) => current.apply_delta(delta),
-            ResourceClassKeys::RollNew(new, current) => {
+            KeyState::Pending(_pending) => panic!("Should never have delta for pending"),
+            KeyState::Active(current) => current.apply_delta(delta),
+            KeyState::RollPending(_pending, current) => current.apply_delta(delta),
+            KeyState::RollNew(new, current) => {
                 if new.key_id() == &key_id {
                     new.apply_delta(delta)
                 } else {
                     current.apply_delta(delta)
                 }
             }
-            ResourceClassKeys::RollOld(current, old) => {
+            KeyState::RollOld(current, old) => {
                 if current.key_id() == &key_id {
                     current.apply_delta(delta)
                 } else {
@@ -281,21 +282,21 @@ impl ResourceClassKeys {
     ) -> Result<Vec<EvtDet>> {
         let mut keys_for_requests = vec![];
         match self {
-            ResourceClassKeys::Pending(pending) => {
+            KeyState::Pending(pending) => {
                 keys_for_requests.push(pending.key_id());
             }
-            ResourceClassKeys::Active(current) => {
+            KeyState::Active(current) => {
                 if current.wants_update(entitlement.resource_set(), entitlement.not_after()) {
                     keys_for_requests.push(current.key_id());
                 }
             }
-            ResourceClassKeys::RollPending(pending, current) => {
+            KeyState::RollPending(pending, current) => {
                 keys_for_requests.push(pending.key_id());
                 if current.wants_update(entitlement.resource_set(), entitlement.not_after()) {
                     keys_for_requests.push(current.key_id());
                 }
             }
-            ResourceClassKeys::RollNew(new, current) => {
+            KeyState::RollNew(new, current) => {
                 if new.wants_update(entitlement.resource_set(), entitlement.not_after()) {
                     keys_for_requests.push(new.key_id());
                 }
@@ -303,7 +304,7 @@ impl ResourceClassKeys {
                     keys_for_requests.push(current.key_id());
                 }
             }
-            ResourceClassKeys::RollOld(current, old) => {
+            KeyState::RollOld(current, old) => {
                 if current.wants_update(entitlement.resource_set(), entitlement.not_after()) {
                     keys_for_requests.push(current.key_id());
                 }
@@ -334,17 +335,17 @@ impl ResourceClassKeys {
     pub fn cert_requests(&self) -> Vec<IssuanceRequest> {
         let mut res = vec![];
         match self {
-            ResourceClassKeys::Pending(pending) => {
+            KeyState::Pending(pending) => {
                 if let Some(r) = pending.request() {
                     res.push(r.clone())
                 }
             }
-            ResourceClassKeys::Active(current) => {
+            KeyState::Active(current) => {
                 if let Some(r) = current.request() {
                     res.push(r.clone())
                 }
             }
-            ResourceClassKeys::RollPending(pending, current) => {
+            KeyState::RollPending(pending, current) => {
                 if let Some(r) = pending.request() {
                     res.push(r.clone())
                 }
@@ -352,7 +353,7 @@ impl ResourceClassKeys {
                     res.push(r.clone())
                 }
             }
-            ResourceClassKeys::RollNew(new, current) => {
+            KeyState::RollNew(new, current) => {
                 if let Some(r) = new.request() {
                     res.push(r.clone())
                 }
@@ -360,7 +361,7 @@ impl ResourceClassKeys {
                     res.push(r.clone())
                 }
             }
-            ResourceClassKeys::RollOld(current, old) => {
+            KeyState::RollOld(current, old) => {
                 if let Some(r) = current.request() {
                     res.push(r.clone())
                 }
@@ -407,22 +408,22 @@ impl ResourceClassKeys {
     /// Returns the revoke request if there is an old key.
     pub fn revoke_request(&self) -> Option<&RevocationRequest> {
         match self {
-            ResourceClassKeys::RollOld(_current, old) => Some(old.revoke_req()),
+            KeyState::RollOld(_current, old) => Some(old.revoke_req()),
             _ => None,
         }
     }
 
     pub fn as_info(&self) -> ResourceClassKeysInfo {
         match self.clone() {
-            ResourceClassKeys::Pending(p) => ResourceClassKeysInfo::Pending(p.as_info()),
-            ResourceClassKeys::Active(c) => ResourceClassKeysInfo::Active(c.as_info()),
-            ResourceClassKeys::RollPending(p, c) => {
+            KeyState::Pending(p) => ResourceClassKeysInfo::Pending(p.as_info()),
+            KeyState::Active(c) => ResourceClassKeysInfo::Active(c.as_info()),
+            KeyState::RollPending(p, c) => {
                 ResourceClassKeysInfo::RollPending(p.as_info(), c.as_info())
             }
-            ResourceClassKeys::RollNew(n, c) => {
+            KeyState::RollNew(n, c) => {
                 ResourceClassKeysInfo::RollNew(n.as_info(), c.as_info())
             }
-            ResourceClassKeys::RollOld(c, o) => {
+            KeyState::RollOld(c, o) => {
                 ResourceClassKeysInfo::RollOld(c.as_info(), o.as_info())
             }
         }
@@ -431,7 +432,7 @@ impl ResourceClassKeys {
 
 /// # Key Life Cycle
 ///
-impl ResourceClassKeys {
+impl KeyState {
     /// Initiates a key roll if the current state is 'Active'. This will return event details
     /// for a newly create pending key and requested certificate for it.
     pub fn keyroll_initiate<S: Signer>(
@@ -443,7 +444,7 @@ impl ResourceClassKeys {
         signer: &mut S,
     ) -> ca::Result<Vec<EvtDet>> {
         match self {
-            ResourceClassKeys::Active(_current) => {
+            KeyState::Active(_current) => {
                 let key_id = {
                     signer
                         .create_key(PublicKeyFormat::default())
@@ -476,7 +477,7 @@ impl ResourceClassKeys {
         signer: &S,
     ) -> ca::Result<EvtDet> {
         match self {
-            ResourceClassKeys::RollNew(_new, current) => {
+            KeyState::RollNew(_new, current) => {
                 let revoke_req = Self::revoke_key(parent_class_name, current.key_id(), signer)?;
                 Ok(EvtDet::KeyRollActivated(class_name, revoke_req))
             }
