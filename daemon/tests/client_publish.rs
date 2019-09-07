@@ -3,13 +3,15 @@ extern crate krill_commons;
 extern crate krill_daemon;
 extern crate krill_pubc;
 
+use std::collections::HashSet;
+use std::path::PathBuf;
+
 use krill_client::options::{
     AddPublisher, AddRfc8181Client, Command, Options, PublishersCommand, Rfc8181Command,
 };
 use krill_client::report::ReportFormat;
 use krill_client::KrillClient;
-use krill_commons::api::admin::{Handle, Token};
-use krill_commons::api::publication::ListReply;
+use krill_commons::api::{Handle, ListReply, Token};
 use krill_commons::remote::rfc8183::RepositoryResponse;
 use krill_commons::util::file;
 use krill_commons::util::file::CurrentFile;
@@ -19,8 +21,6 @@ use krill_pubc::apiclient;
 use krill_pubc::cmsclient;
 use krill_pubc::cmsclient::PubClient;
 use krill_pubc::{ApiResponse, Format};
-use std::collections::HashSet;
-use std::path::PathBuf;
 
 fn list(server_uri: &str, handle: &str, token: &str) -> apiclient::Options {
     let conn = apiclient::Connection::build(server_uri, handle, token).unwrap();

@@ -4,7 +4,7 @@ use actix_web::dev::Payload;
 use actix_web::web::{self, Json};
 use actix_web::{Error, FromRequest, HttpRequest, HttpResponse, ResponseError};
 
-use krill_commons::api::admin::Token;
+use krill_commons::api::Token;
 
 use crate::http::server::AppServer;
 use std::fmt;

@@ -3,12 +3,11 @@
 
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 use std::str::{from_utf8_unchecked, FromStr};
 use std::{fmt, ops, str};
 
 use bytes::Bytes;
-use chrono::Duration;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::cert::Cert;
@@ -22,7 +21,7 @@ use crate::api::admin::{Handle, ParentCaContact};
 use crate::api::publication;
 use crate::api::publication::Publish;
 use crate::api::RouteAuthorization;
-use crate::api::{Base64, EncodedHash, IssuanceRequest, RequestResourceLimit, RevocationRequest};
+use crate::api::{Base64, HexEncodedHash, IssuanceRequest, RequestResourceLimit};
 use crate::remote::id::IdCert;
 use crate::rpki::crl::{Crl, CrlEntry};
 use crate::rpki::manifest::{FileAndHash, Manifest};
@@ -144,11 +143,11 @@ pub type RevokedObject = ReplacedObject;
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ReplacedObject {
     revocation: Revocation,
-    hash: EncodedHash,
+    hash: HexEncodedHash,
 }
 
 impl ReplacedObject {
-    pub fn new(revocation: Revocation, hash: EncodedHash) -> Self {
+    pub fn new(revocation: Revocation, hash: HexEncodedHash) -> Self {
         ReplacedObject { revocation, hash }
     }
 
@@ -156,7 +155,7 @@ impl ReplacedObject {
         self.revocation
     }
 
-    pub fn hash(&self) -> &EncodedHash {
+    pub fn hash(&self) -> &HexEncodedHash {
         &self.hash
     }
 }
@@ -164,7 +163,7 @@ impl ReplacedObject {
 impl From<&Cert> for ReplacedObject {
     fn from(c: &Cert) -> Self {
         let revocation = Revocation::from(c);
-        let hash = EncodedHash::from_content(c.to_captured().as_slice());
+        let hash = HexEncodedHash::from_content(c.to_captured().as_slice());
         ReplacedObject { revocation, hash }
     }
 }
@@ -178,7 +177,7 @@ impl From<&IssuedCert> for ReplacedObject {
 impl From<&Roa> for ReplacedObject {
     fn from(r: &Roa) -> Self {
         let revocation = Revocation::from(r);
-        let hash = EncodedHash::from_content(r.to_captured().as_slice());
+        let hash = HexEncodedHash::from_content(r.to_captured().as_slice());
         ReplacedObject { revocation, hash }
     }
 }
@@ -295,6 +294,11 @@ impl RcvdCert {
     /// The name of the MFT published by THIS certificate.
     pub fn mft_name(&self) -> ObjectName {
         ObjectName::new(&self.cert.subject_key_identifier(), "mft")
+    }
+
+    /// Return the CA repository URI where this certificate publishes.
+    pub fn ca_repository(&self) -> &uri::Rsync {
+        self.cert().ca_repository().unwrap()
     }
 
     /// The URI of the MFT published by THIS certificate.
@@ -451,97 +455,33 @@ impl PartialEq for RepoInfo {
 
 impl Eq for RepoInfo {}
 
-//------------ PendingKey ----------------------------------------------------
+//------------ PendingKeyInfo ------------------------------------------------
 
-/// A Pending Key in a resource class. Should usually have an open
-/// IssuanceRequest, and will be move to a 'new' or 'current' CertifiedKey
-/// when a certificate is received.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct PendingKey {
-    key_id: KeyIdentifier,
-    request: Option<IssuanceRequest>,
-}
+pub struct PendingKeyInfo(KeyIdentifier);
 
-impl PendingKey {
-    pub fn new(key_id: KeyIdentifier) -> Self {
-        PendingKey {
-            key_id,
-            request: None,
-        }
-    }
-    pub fn unwrap(self) -> (KeyIdentifier, Option<IssuanceRequest>) {
-        (self.key_id, self.request)
-    }
-
-    pub fn key_id(&self) -> &KeyIdentifier {
-        &self.key_id
-    }
-    pub fn request(&self) -> Option<&IssuanceRequest> {
-        self.request.as_ref()
-    }
-    pub fn add_request(&mut self, req: IssuanceRequest) {
-        self.request = Some(req)
-    }
-    pub fn clear_request(&mut self) {
-        self.request = None
+impl PendingKeyInfo {
+    pub fn new(ki: KeyIdentifier) -> Self {
+        PendingKeyInfo(ki)
     }
 }
 
-//------------ OldKey --------------------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, Serialize, PartialEq)]
-pub struct OldKey {
-    key: CertifiedKey,
-    revoke_req: RevocationRequest,
-}
-
-impl OldKey {
-    pub fn new(key: CertifiedKey, revoke_req: RevocationRequest) -> Self {
-        OldKey { key, revoke_req }
-    }
-
-    pub fn key(&self) -> &CertifiedKey {
-        &self.key
-    }
-    pub fn revoke_req(&self) -> &RevocationRequest {
-        &self.revoke_req
-    }
-}
-
-impl Deref for OldKey {
-    type Target = CertifiedKey;
-
-    fn deref(&self) -> &Self::Target {
-        &self.key
-    }
-}
-
-impl DerefMut for OldKey {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.key
-    }
-}
-
-//------------ CertifiedKey --------------------------------------------------
+//------------ CertifiedKeyInfo ----------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 /// Describes a Key that is certified. I.e. it received an incoming certificate
 /// and has at least a MFT and CRL.
-pub struct CertifiedKey {
+pub struct CertifiedKeyInfo {
     key_id: KeyIdentifier,
     incoming_cert: RcvdCert,
-    current_set: CurrentObjectSet,
     request: Option<IssuanceRequest>,
 }
 
-impl CertifiedKey {
+impl CertifiedKeyInfo {
     pub fn new(key_id: KeyIdentifier, incoming_cert: RcvdCert) -> Self {
-        let current_set = CurrentObjectSet::default();
-
-        CertifiedKey {
+        CertifiedKeyInfo {
             key_id,
             incoming_cert,
-            current_set,
             request: None,
         }
     }
@@ -552,43 +492,8 @@ impl CertifiedKey {
     pub fn incoming_cert(&self) -> &RcvdCert {
         &self.incoming_cert
     }
-    pub fn set_incoming_cert(&mut self, incoming_cert: RcvdCert) {
-        self.request = None;
-        self.incoming_cert = incoming_cert;
-    }
-
-    pub fn current_set(&self) -> &CurrentObjectSet {
-        &self.current_set
-    }
-
     pub fn request(&self) -> Option<&IssuanceRequest> {
         self.request.as_ref()
-    }
-    pub fn add_request(&mut self, req: IssuanceRequest) {
-        self.request = Some(req)
-    }
-
-    pub fn wants_update(&self, new_resources: &ResourceSet, new_not_after: Time) -> bool {
-        let not_after = self.incoming_cert().cert.validity().not_after();
-        self.incoming_cert.resources() != new_resources || not_after != new_not_after
-    }
-
-    pub fn close_to_next_update(&self) -> bool {
-        self.current_set.number == 1 // The first set is empty (not even crl/mft)
-            || self.current_set.next_update < Time::now() + Duration::hours(8)
-    }
-
-    pub fn with_new_cert(mut self, cert: RcvdCert) -> Self {
-        self.incoming_cert = cert;
-        self
-    }
-
-    pub fn apply_delta(&mut self, delta: PublicationDelta) {
-        self.current_set.apply_delta(delta)
-    }
-
-    pub fn deactivate(&mut self) {
-        self.current_set.deactivate()
     }
 }
 
@@ -612,9 +517,9 @@ impl CurrentObject {
         self.expires
     }
 
-    pub fn to_hash(&self) -> EncodedHash {
+    pub fn to_hex_hash(&self) -> HexEncodedHash {
         let bytes = self.content.to_bytes();
-        EncodedHash::from_content(bytes.as_ref())
+        HexEncodedHash::from_content(bytes.as_ref())
     }
 }
 
@@ -707,6 +612,12 @@ impl From<&Crl> for ObjectName {
 impl From<&RouteAuthorization> for ObjectName {
     fn from(auth: &RouteAuthorization) -> Self {
         ObjectName(format!("{}.roa", hex::encode(auth.to_string())))
+    }
+}
+
+impl Into<Bytes> for ObjectName {
+    fn into(self) -> Bytes {
+        Bytes::from(self.0)
     }
 }
 
@@ -929,7 +840,7 @@ impl RevocationsDelta {
 
 /// This type describes the complete current set of objects for CA key.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CurrentObjectSet {
+pub struct CurrentObjectSetInfo {
     this_update: Time,
     next_update: Time,
     number: u64,
@@ -937,9 +848,9 @@ pub struct CurrentObjectSet {
     objects: CurrentObjects,
 }
 
-impl Default for CurrentObjectSet {
+impl Default for CurrentObjectSetInfo {
     fn default() -> Self {
-        CurrentObjectSet {
+        CurrentObjectSetInfo {
             this_update: Time::now(),
             next_update: Time::tomorrow(),
             number: 1,
@@ -949,7 +860,7 @@ impl Default for CurrentObjectSet {
     }
 }
 
-impl CurrentObjectSet {
+impl CurrentObjectSetInfo {
     pub fn number(&self) -> u64 {
         self.number
     }
@@ -959,29 +870,13 @@ impl CurrentObjectSet {
     pub fn objects(&self) -> &CurrentObjects {
         &self.objects
     }
-
-    pub fn apply_delta(&mut self, delta: PublicationDelta) {
-        self.this_update = delta.this_update;
-        self.next_update = delta.next_update;
-        self.number = delta.number;
-        self.revocations.apply_delta(delta.revocations);
-        self.objects.apply_delta(delta.objects)
-    }
-
-    /// TODO: Remove when ROAs and Certs are no longer stored here. See issue #68
-    ///
-    /// For now... remove all but the mft and crl from the set, so that when the
-    /// key is withdrawn only the CRL and MFT are removed.
-    pub fn deactivate(&mut self) {
-        self.objects.deactivate()
-    }
 }
 
 //------------ PublicationDelta ----------------------------------------------
 
 /// This type describes a set up of objects published for a CA key.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct PublicationDelta {
+pub struct PublicationDeltaInfo {
     this_update: Time,
     next_update: Time,
     number: u64,
@@ -989,7 +884,7 @@ pub struct PublicationDelta {
     objects: ObjectsDelta,
 }
 
-impl PublicationDelta {
+impl PublicationDeltaInfo {
     pub fn new(
         this_update: Time,
         next_update: Time,
@@ -997,7 +892,7 @@ impl PublicationDelta {
         revocations: RevocationsDelta,
         objects: ObjectsDelta,
     ) -> Self {
-        PublicationDelta {
+        PublicationDeltaInfo {
             this_update,
             next_update,
             number,
@@ -1006,12 +901,22 @@ impl PublicationDelta {
         }
     }
 
+    pub fn unpack(self) -> (Time, Time, u64, RevocationsDelta, ObjectsDelta) {
+        (
+            self.this_update,
+            self.next_update,
+            self.number,
+            self.revocations,
+            self.objects,
+        )
+    }
+
     pub fn objects(&self) -> &ObjectsDelta {
         &self.objects
     }
 }
 
-impl Into<publication::PublishDelta> for PublicationDelta {
+impl Into<publication::PublishDelta> for PublicationDeltaInfo {
     fn into(self) -> publication::PublishDelta {
         self.objects.into()
     }
@@ -1045,11 +950,25 @@ impl ObjectsDelta {
     pub fn add(&mut self, added: AddedObject) {
         self.added.push(added);
     }
+
+    pub fn added(&self) -> &Vec<AddedObject> {
+        &self.added
+    }
+
     pub fn update(&mut self, updated: UpdatedObject) {
         self.updated.push(updated);
     }
+
+    pub fn updated(&self) -> &Vec<UpdatedObject> {
+        &self.updated
+    }
+
     pub fn withdraw(&mut self, withdrawn: WithdrawnObject) {
         self.withdrawn.push(withdrawn);
+    }
+
+    pub fn withdrawn(&self) -> &Vec<WithdrawnObject> {
+        &self.withdrawn
     }
 
     pub fn len(&self) -> usize {
@@ -1104,6 +1023,14 @@ impl AddedObject {
     pub fn new(name: ObjectName, object: CurrentObject) -> Self {
         AddedObject { name, object }
     }
+
+    pub fn name(&self) -> &ObjectName {
+        &self.name
+    }
+
+    pub fn object(&self) -> &CurrentObject {
+        &self.object
+    }
 }
 
 impl From<&Cert> for AddedObject {
@@ -1121,18 +1048,30 @@ impl From<&Cert> for AddedObject {
 pub struct UpdatedObject {
     name: ObjectName,
     object: CurrentObject,
-    old: EncodedHash,
+    old: HexEncodedHash,
 }
 
 impl UpdatedObject {
-    pub fn new(name: ObjectName, object: CurrentObject, old: EncodedHash) -> Self {
+    pub fn new(name: ObjectName, object: CurrentObject, old: HexEncodedHash) -> Self {
         UpdatedObject { name, object, old }
     }
 
-    pub fn for_cert(new: &Cert, old: EncodedHash) -> Self {
+    pub fn for_cert(new: &Cert, old: HexEncodedHash) -> Self {
         let name = ObjectName::from(new);
         let object = CurrentObject::from(new);
         UpdatedObject { name, object, old }
+    }
+
+    pub fn name(&self) -> &ObjectName {
+        &self.name
+    }
+
+    pub fn object(&self) -> &CurrentObject {
+        &self.object
+    }
+
+    pub fn old(&self) -> &HexEncodedHash {
+        &self.old
     }
 }
 
@@ -1142,26 +1081,34 @@ impl UpdatedObject {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WithdrawnObject {
     name: ObjectName,
-    hash: EncodedHash,
+    hash: HexEncodedHash,
 }
 
 impl WithdrawnObject {
-    pub fn new(name: ObjectName, hash: EncodedHash) -> Self {
+    pub fn new(name: ObjectName, hash: HexEncodedHash) -> Self {
         WithdrawnObject { name, hash }
     }
 
     pub fn for_current(name: ObjectName, current: &CurrentObject) -> Self {
         WithdrawnObject {
             name,
-            hash: current.to_hash(),
+            hash: current.to_hex_hash(),
         }
+    }
+
+    pub fn name(&self) -> &ObjectName {
+        &self.name
+    }
+
+    pub fn hash(&self) -> &HexEncodedHash {
+        &self.hash
     }
 }
 
 impl From<&Cert> for WithdrawnObject {
     fn from(c: &Cert) -> Self {
         let name = ObjectName::from(c);
-        let hash = EncodedHash::from_content(c.to_captured().as_slice());
+        let hash = HexEncodedHash::from_content(c.to_captured().as_slice());
         WithdrawnObject { name, hash }
     }
 }
@@ -1510,7 +1457,7 @@ impl CertAuthInfo {
         let mut res = vec![];
         for (_rc_name, rc) in self.resources.iter() {
             let name_space = rc.name_space();
-            res.append(&mut rc.objects().publish(self.base_repo(), name_space));
+            res.append(&mut rc.current_objects().publish(self.base_repo(), name_space));
         }
         res
     }
@@ -1522,11 +1469,20 @@ impl CertAuthInfo {
 pub struct ResourceClassInfo {
     name_space: String,
     keys: ResourceClassKeysInfo,
+    current_objects: CurrentObjects,
 }
 
 impl ResourceClassInfo {
-    pub fn new(name_space: String, keys: ResourceClassKeysInfo) -> Self {
-        ResourceClassInfo { name_space, keys }
+    pub fn new(
+        name_space: String,
+        keys: ResourceClassKeysInfo,
+        current_objects: CurrentObjects,
+    ) -> Self {
+        ResourceClassInfo {
+            name_space,
+            keys,
+            current_objects,
+        }
     }
 
     pub fn name_space(&self) -> &str {
@@ -1536,7 +1492,7 @@ impl ResourceClassInfo {
         &self.keys
     }
 
-    pub fn current_key(&self) -> Option<&CertifiedKey> {
+    pub fn current_key(&self) -> Option<&CertifiedKeyInfo> {
         match &self.keys {
             ResourceClassKeysInfo::Active(current)
             | ResourceClassKeysInfo::RollPending(_, current)
@@ -1550,24 +1506,8 @@ impl ResourceClassInfo {
         self.current_key().map(|k| k.incoming_cert().resources())
     }
 
-    pub fn objects(&self) -> CurrentObjects {
-        let mut res = CurrentObjects::default();
-        match &self.keys {
-            ResourceClassKeysInfo::Pending(_) => {}
-            ResourceClassKeysInfo::Active(current)
-            | ResourceClassKeysInfo::RollPending(_, current) => {
-                res = res + current.current_set().objects().clone();
-            }
-            ResourceClassKeysInfo::RollNew(new, current) => {
-                res = res + new.current_set().objects().clone();
-                res = res + current.current_set().objects().clone();
-            }
-            ResourceClassKeysInfo::RollOld(current, old) => {
-                res = res + current.current_set().objects().clone();
-                res = res + old.current_set().objects().clone();
-            }
-        }
-        res
+    pub fn current_objects(&self) -> &CurrentObjects {
+        &self.current_objects
     }
 }
 
@@ -1577,15 +1517,16 @@ impl ResourceClassInfo {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum ResourceClassKeysInfo {
-    Pending(PendingKey),
-    Active(CurrentKey),
-    RollPending(PendingKey, CurrentKey),
-    RollNew(NewKey, CurrentKey),
-    RollOld(CurrentKey, OldKey),
+    Pending(PendingKeyInfo),
+    Active(CurrentKeyInfo),
+    RollPending(PendingKeyInfo, CurrentKeyInfo),
+    RollNew(NewKeyInfo, CurrentKeyInfo),
+    RollOld(CurrentKeyInfo, OldKeyInfo),
 }
 
-type NewKey = CertifiedKey;
-type CurrentKey = CertifiedKey;
+type NewKeyInfo = CertifiedKeyInfo;
+type CurrentKeyInfo = CertifiedKeyInfo;
+type OldKeyInfo = CertifiedKeyInfo;
 
 impl fmt::Display for ResourceClassKeysInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

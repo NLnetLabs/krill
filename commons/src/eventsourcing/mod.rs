@@ -32,7 +32,7 @@ mod tests {
 
     use serde::Serialize;
 
-    use crate::api::admin::Handle;
+    use crate::api::Handle;
     use crate::util::test;
 
     use super::*;

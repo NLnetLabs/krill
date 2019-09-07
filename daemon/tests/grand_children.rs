@@ -3,8 +3,9 @@ extern crate krill_commons;
 extern crate krill_daemon;
 extern crate krill_pubc;
 
-use krill_commons::api::admin::{AddParentRequest, Handle, Token};
-use krill_commons::api::ca::{ObjectName, ResourceClassName, ResourceSet};
+use krill_commons::api::{
+    AddParentRequest, Handle, ObjectName, ResourceClassName, ResourceSet, Token,
+};
 use krill_daemon::ca::ta_handle;
 use krill_daemon::test::*;
 

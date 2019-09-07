@@ -9,17 +9,11 @@ use chrono::Duration;
 use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 
-use krill_commons::api;
-use krill_commons::api::admin::{
-    AddChildRequest, AddParentRequest, ChildAuthRequest, Handle, ParentCaContact, Token,
-    UpdateChildRequest,
-};
-use krill_commons::api::ca::{
-    CertAuthList, CertAuthSummary, ChildCaInfo, IssuedCert, RcvdCert, RepoInfo, ResourceClassName,
-};
 use krill_commons::api::{
-    Entitlements, IssuanceRequest, IssuanceResponse, RevocationRequest, RevocationResponse,
-    RouteAuthorizationUpdates,
+    self, AddChildRequest, AddParentRequest, CertAuthList, CertAuthSummary, ChildAuthRequest,
+    ChildCaInfo, Entitlements, Handle, IssuanceRequest, IssuanceResponse, IssuedCert,
+    ParentCaContact, RcvdCert, RepoInfo, ResourceClassName, ResourceSet, RevocationRequest,
+    RevocationResponse, RouteAuthorizationUpdates, Token, UpdateChildRequest,
 };
 use krill_commons::eventsourcing::{Aggregate, AggregateStore, DiskAggregateStore};
 use krill_commons::remote::builder::SignedMessageBuilder;
@@ -78,10 +72,22 @@ impl<S: Signer> CaServer<S> {
         if self.ca_store.has(&handle) {
             Err(ServerError::TrustAnchorInitialisedError)
         } else {
-            let init = IniDet::init_ta(&handle, info, ta_aia, ta_uris, self.signer.clone())?;
+            let init = IniDet::init_ta(&handle, info, ta_uris, self.signer.clone())?;
 
-            self.ca_store.add(init)?;
+            let ta = self.ca_store.add(init)?;
 
+            let ta_cert = ta.parent(&handle).unwrap().to_ta_cert();
+
+            let rcvd_cert = RcvdCert::new(ta_cert.clone(), ta_aia, ResourceSet::all_resources());
+
+            let events = ta.process_command(CmdDet::upd_received_cert(
+                &handle,
+                ResourceClassName::default(),
+                rcvd_cert,
+                self.signer.clone(),
+            ))?;
+
+            self.ca_store.update(&handle, ta, events)?;
             Ok(())
         }
     }
@@ -826,9 +832,9 @@ mod tests {
     use std::sync::{Arc, RwLock};
 
     use ca::EvtDet;
-    use krill_commons::api::admin::{Handle, ParentCaContact, Token};
-    use krill_commons::api::ca::{RcvdCert, RepoInfo, ResourceSet};
-    use krill_commons::api::IssuanceRequest;
+    use krill_commons::api::{
+        Handle, IssuanceRequest, ParentCaContact, RcvdCert, RepoInfo, ResourceSet, Token,
+    };
     use krill_commons::eventsourcing::{Aggregate, AggregateStore, DiskAggregateStore};
     use krill_commons::util::softsigner::OpenSslSigner;
     use krill_commons::util::test;
@@ -890,17 +896,25 @@ mod tests {
             // --- Create TA and publish
             //
 
-            let ta_ini = IniDet::init_ta(
-                &ta_handle,
-                ta_repo_info,
-                ta_aia,
-                vec![ta_uri],
-                signer.clone(),
-            )
-            .unwrap();
+            let ta_ini =
+                IniDet::init_ta(&ta_handle, ta_repo_info, vec![ta_uri], signer.clone()).unwrap();
 
             ca_store.add(ta_ini).unwrap();
             let ta = ca_store.get_latest(&ta_handle).unwrap();
+
+            let ta_cert = ta.parent(&ta_handle).unwrap().to_ta_cert();
+            let rcvd_cert = RcvdCert::new(ta_cert.clone(), ta_aia, ResourceSet::all_resources());
+
+            let events = ta
+                .process_command(CmdDet::upd_received_cert(
+                    &ta_handle,
+                    ResourceClassName::default(),
+                    rcvd_cert,
+                    signer.clone(),
+                ))
+                .unwrap();
+
+            let ta = ca_store.update(&ta_handle, ta, events).unwrap();
 
             //
             // --- Create Child CA

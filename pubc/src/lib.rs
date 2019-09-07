@@ -10,24 +10,26 @@ extern crate krill_commons;
 pub mod apiclient;
 pub mod cmsclient;
 
-use krill_commons::api::publication;
-use krill_commons::util::file;
-use rpki::uri;
 use std::path::PathBuf;
 
+use rpki::uri;
+
+use krill_commons::api::{ListReply, PublishDelta, PublishDeltaBuilder, Withdraw};
+use krill_commons::util::file;
+
 pub fn create_delta(
-    list_reply: &publication::ListReply,
+    list_reply: &ListReply,
     dir: &PathBuf,
     base_rsync: &uri::Rsync,
-) -> Result<publication::PublishDelta, file::Error> {
-    let mut delta_builder = publication::PublishDeltaBuilder::new();
+) -> Result<PublishDelta, file::Error> {
+    let mut delta_builder = PublishDeltaBuilder::new();
 
     let current = file::crawl_incl_rsync_base(dir, base_rsync)?;
 
     // loop through what the server has and find the ones to withdraw
     for p in list_reply.elements() {
         if current.iter().find(|c| c.uri() == p.uri()).is_none() {
-            delta_builder.add_withdraw(publication::Withdraw::from_list_element(p));
+            delta_builder.add_withdraw(Withdraw::from_list_element(p));
         }
     }
 
@@ -79,7 +81,7 @@ pub struct UnsupportedFormat;
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ApiResponse {
     Success,
-    List(publication::ListReply),
+    List(ListReply),
 }
 
 impl ApiResponse {

@@ -5,11 +5,11 @@ use chrono::Duration;
 use rpki::uri;
 use rpki::x509::Time;
 
-use krill_commons::api::admin::Handle;
 use krill_commons::api::rrdp::{
     Delta, DeltaElements, DeltaRef, FileRef, Notification, NotificationUpdate, Snapshot,
     SnapshotRef,
 };
+use krill_commons::api::Handle;
 use krill_commons::eventsourcing::{Aggregate, CommandDetails, SentCommand, StoredEvent};
 use krill_commons::util::file;
 

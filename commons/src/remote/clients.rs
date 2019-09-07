@@ -1,8 +1,9 @@
-use crate::api::admin::Handle;
+use std::collections::HashMap;
+
+use crate::api::Handle;
 use crate::eventsourcing::{Aggregate, Command, CommandDetails, Event, SentCommand, StoredEvent};
 use crate::remote::api::{ClientAuth, ClientInfo};
 use crate::remote::id::IdCert;
-use std::collections::HashMap;
 
 // const fn is not stable yet
 const ID: &str = "cms-clients";

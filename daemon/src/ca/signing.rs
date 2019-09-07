@@ -12,10 +12,9 @@ use rpki::manifest::FileAndHash;
 use rpki::uri;
 use rpki::x509::{Name, Serial, Time, Validity};
 
-use krill_commons::api::ca::{CertifiedKey, IssuedCert, ReplacedObject, ResourceSet};
-use krill_commons::api::RequestResourceLimit;
+use krill_commons::api::{IssuedCert, ReplacedObject, RequestResourceLimit, ResourceSet};
 
-use crate::ca;
+use crate::ca::{self, CertifiedKey};
 
 //------------ Signer --------------------------------------------------------
 

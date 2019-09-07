@@ -3,8 +3,7 @@ use std::{fmt, io};
 
 use rpki::crypto::KeyIdentifier;
 
-use krill_commons::api::admin::Handle;
-use krill_commons::api::RouteAuthorization;
+use krill_commons::api::{Handle, RouteAuthorization};
 use krill_commons::eventsourcing::AggregateStoreError;
 use krill_commons::remote::rfc6492;
 use krill_commons::util::httpclient;

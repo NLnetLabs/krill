@@ -5,8 +5,7 @@ use std::str::FromStr;
 use clap::{App, Arg, SubCommand};
 use rpki::uri;
 
-use krill_commons::api::admin::Token;
-use krill_commons::api::publication;
+use krill_commons::api::{ListReply, Token};
 use krill_commons::util::{file, httpclient};
 
 use crate::{create_delta, ApiResponse, Format};
@@ -183,14 +182,14 @@ pub fn execute(options: Options) -> Result<ApiResponse, Error> {
     }
 }
 
-fn list_query(connection: &Connection) -> Result<publication::ListReply, Error> {
+fn list_query(connection: &Connection) -> Result<ListReply, Error> {
     let uri = format!(
         "{}publication/{}",
         &connection.server_uri.to_string(),
         &connection.handle
     );
 
-    match httpclient::get_json::<publication::ListReply>(&uri, Some(&connection.token)) {
+    match httpclient::get_json::<ListReply>(&uri, Some(&connection.token)) {
         Err(e) => Err(Error::HttpClientError(e)),
         Ok(list) => Ok(list),
     }

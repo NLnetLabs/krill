@@ -17,7 +17,7 @@ use rpki::uri::Https;
 use rpki::x509;
 use rpki::x509::Time;
 
-use crate::api::admin::Handle;
+use crate::api::Handle;
 use crate::util::file;
 use crate::util::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
 

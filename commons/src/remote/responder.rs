@@ -1,4 +1,4 @@
-use crate::api::admin::Handle;
+use crate::api::Handle;
 use crate::eventsourcing::{Aggregate, CommandDetails, SentCommand, StoredEvent};
 use crate::remote::id::MyIdentity;
 

@@ -6,8 +6,7 @@ use std::time::Duration;
 
 use clokwerk::{self, ScheduleHandle, TimeUnits};
 
-use krill_commons::api::admin::Handle;
-use krill_commons::api::publication::PublishDelta;
+use krill_commons::api::{Handle, PublishDelta};
 use krill_commons::util::softsigner::OpenSslSigner;
 use krill_pubd::PubServer;
 

@@ -12,11 +12,10 @@ use rpki::csr::Csr;
 use rpki::uri;
 use rpki::x509::Time;
 
-use crate::api::admin::Handle;
-use crate::api::ca::{IssuedCert, ResSetErr, ResourceClassName, ResourceSet};
 use crate::api::{
-    EntitlementClass, Entitlements, IssuanceRequest, IssuanceResponse, RequestResourceLimit,
-    RevocationRequest, RevocationResponse, SigningCert,
+    EntitlementClass, Entitlements, Handle, IssuanceRequest, IssuanceResponse, IssuedCert,
+    RequestResourceLimit, ResSetErr, ResourceClassName, ResourceSet, RevocationRequest,
+    RevocationResponse, SigningCert,
 };
 use crate::remote::sigmsg::SignedMessage;
 use crate::rpki::resources::{AsBlocks, IpBlocks};

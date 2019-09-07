@@ -9,15 +9,12 @@ use krill_client::options::{CaCommand, Command, Options, PublishersCommand, Trus
 use krill_client::report::{ApiResponse, ReportFormat};
 use krill_client::{Error, KrillClient};
 
-use krill_commons::api::admin::{
-    AddChildRequest, AddParentRequest, CertAuthInit, CertAuthPubMode, ChildAuthRequest, Handle,
-    ParentCaContact, PublisherDetails, Token, UpdateChildRequest,
+use krill_commons::api::{
+    AddChildRequest, AddParentRequest, CertAuthInfo, CertAuthInit, CertAuthPubMode,
+    CertifiedKeyInfo, ChildAuthRequest, Handle, ParentCaContact, Publish, PublisherDetails,
+    ResourceClassKeysInfo, ResourceClassName, ResourceSet, RouteAuthorizationUpdates, Token,
+    UpdateChildRequest,
 };
-use krill_commons::api::ca::{
-    CertAuthInfo, CertifiedKey, ResourceClassKeysInfo, ResourceClassName, ResourceSet,
-};
-use krill_commons::api::publication::Publish;
-use krill_commons::api::RouteAuthorizationUpdates;
 use krill_commons::remote::rfc8183;
 use krill_commons::util::test;
 
@@ -219,7 +216,7 @@ pub fn ca_details(handle: &Handle) -> CertAuthInfo {
     }
 }
 
-pub fn ca_key_for_rcn(handle: &Handle, rcn: &ResourceClassName) -> CertifiedKey {
+pub fn ca_key_for_rcn(handle: &Handle, rcn: &ResourceClassName) -> CertifiedKeyInfo {
     ca_details(handle)
         .resources()
         .get(rcn)
@@ -256,7 +253,7 @@ pub fn wait_for_new_key(handle: &Handle) {
         let ca = ca_details(handle);
         if let Some(rc) = ca.resources().get(&ResourceClassName::default()) {
             match rc.keys() {
-                ResourceClassKeysInfo::RollNew(new, _) => return new.current_set().number() == 2,
+                ResourceClassKeysInfo::RollNew(_, _) => return true,
                 _ => return false,
             }
         }

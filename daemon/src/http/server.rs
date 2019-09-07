@@ -16,7 +16,7 @@ use openssl::ssl::{SslAcceptor, SslAcceptorBuilder, SslFiletype, SslMethod};
 
 use bcder::decode;
 
-use krill_commons::api::publication;
+use krill_commons::api::PublishDelta;
 
 use crate::auth::{is_logged_in, login, logout, AUTH_COOKIE_NAME};
 use crate::config::Config;
@@ -99,7 +99,7 @@ pub fn start(config: &Config) -> Result<(), Error> {
             // Publication by (embedded) clients
             .route("/publication/{handle}", get().to(handle_list))
             .route("/publication/{handle}", post().to(handle_delta))
-            .data(web::Json::<publication::PublishDelta>::configure(|cfg| {
+            .data(web::Json::<PublishDelta>::configure(|cfg| {
                 cfg.limit(256 * 1024 * 1024)
             }))
             .route("/rfc8181/{handle}", post().to(rfc8181))

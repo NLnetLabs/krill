@@ -5,9 +5,10 @@ extern crate krill_pubc;
 
 use std::str::FromStr;
 
-use krill_commons::api::admin::{AddParentRequest, Handle, Token};
-use krill_commons::api::ca::{ObjectName, ResourceSet};
-use krill_commons::api::{RouteAuthorization, RouteAuthorizationUpdates};
+use krill_commons::api::{
+    AddParentRequest, Handle, ObjectName, ResourceSet, RouteAuthorization,
+    RouteAuthorizationUpdates, Token,
+};
 use krill_daemon::ca::ta_handle;
 use krill_daemon::test::*;
 

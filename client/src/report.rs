@@ -1,8 +1,9 @@
 use std::str::{from_utf8_unchecked, FromStr};
 
-use krill_commons::api::admin::{ParentCaContact, PublisherDetails, PublisherList};
-use krill_commons::api::ca::{CertAuthInfo, CertAuthList, CurrentObjects, TrustAnchorInfo};
-use krill_commons::api::RouteAuthorization;
+use krill_commons::api::{
+    CertAuthInfo, CertAuthList, CurrentObjects, ParentCaContact, PublisherDetails, PublisherList,
+    RouteAuthorization, TrustAnchorInfo,
+};
 use krill_commons::remote::api::ClientInfo;
 use krill_commons::remote::rfc8183;
 use krill_commons::remote::rfc8183::RepositoryResponse;
@@ -204,7 +205,7 @@ impl Report for CertAuthInfo {
                     res.push_str(&format!("{}", rc.keys()));
 
                     res.push_str("Current objects:\n");
-                    print_objects(&mut res, &rc.objects());
+                    print_objects(&mut res, rc.current_objects());
                     res.push_str("\n");
                 }
 
@@ -233,8 +234,8 @@ impl Report for ParentCaContact {
             ReportFormat::Default | ReportFormat::Text | ReportFormat::Xml => {
                 let mut res = String::new();
                 match self {
-                    ParentCaContact::Ta(tal) => {
-                        res.push_str(&format!("{}", tal));
+                    ParentCaContact::Ta(details) => {
+                        res.push_str(&format!("{}", details.tal()));
                     }
                     ParentCaContact::Embedded => {
                         res.push_str("Embedded parent");

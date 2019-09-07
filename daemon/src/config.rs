@@ -14,7 +14,7 @@ use toml;
 
 use rpki::uri;
 
-use krill_commons::api::admin::Token;
+use krill_commons::api::Token;
 use krill_commons::util::ext_serde;
 
 use crate::http::ssl;

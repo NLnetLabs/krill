@@ -5,10 +5,10 @@ use serde::Serialize;
 
 use rpki::uri;
 
-use krill_commons::api::admin::{
-    ParentCaContact, PublisherDetails, PublisherList, PublisherRequest, Token,
+use krill_commons::api::{
+    CertAuthInfo, ParentCaContact, PublisherDetails, PublisherList, PublisherRequest, Token,
+    TrustAnchorInfo,
 };
-use krill_commons::api::ca::{CertAuthInfo, TrustAnchorInfo};
 use krill_commons::remote::api::{ClientAuth, ClientInfo};
 use krill_commons::remote::rfc8183;
 use krill_commons::remote::rfc8183::RepositoryResponse;

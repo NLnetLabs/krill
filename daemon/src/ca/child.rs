@@ -1,14 +1,15 @@
 use std::collections::HashMap;
 
 use rpki::crypto::KeyIdentifier;
+use rpki::x509::Time;
 
-use krill_commons::api::ca::{ChildCaInfo, IssuedCert, ResourceClassName, ResourceSet};
-use krill_commons::api::{IssuanceResponse, RevocationResponse};
+use krill_commons::api::{
+    ChildCaInfo, IssuanceResponse, IssuedCert, ResourceClassName, ResourceSet, RevocationResponse,
+};
 use krill_commons::remote::id::IdCert;
 
 use crate::ca;
 use crate::ca::ChildHandle;
-use rpki::x509::Time;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[allow(clippy::large_enum_variant)]
@@ -230,6 +231,10 @@ impl Certificates {
 
     pub fn get(&self, ki: &KeyIdentifier) -> Option<&IssuedCert> {
         self.inner.get(ki)
+    }
+
+    pub fn current(&self) -> impl Iterator<Item = &IssuedCert> {
+        self.inner.values()
     }
 }
 

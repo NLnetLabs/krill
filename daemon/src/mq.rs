@@ -7,10 +7,7 @@ use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::sync::RwLock;
 
-use krill_commons::api::admin::Handle;
-use krill_commons::api::ca::ResourceClassName;
-use krill_commons::api::publication::PublishDelta;
-use krill_commons::api::RevocationRequest;
+use krill_commons::api::{Handle, PublishDelta, ResourceClassName, RevocationRequest};
 use krill_commons::eventsourcing;
 
 use crate::ca::{CertAuth, Evt, EvtDet, ParentHandle, Signer};
@@ -69,12 +66,18 @@ impl<S: Signer> eventsourcing::EventListener<CertAuth<S>> for EventQueueListener
 
         let handle = event.handle();
         match event.details() {
-            EvtDet::Published(_, delta) => {
+            EvtDet::ObjectSetUpdated(_, delta) => {
                 let publish_delta = delta.values().fold(PublishDelta::empty(), |acc, el| {
                     acc + el.objects().clone().into()
                 });
 
                 let evt = QueueEvent::Delta(handle.clone(), publish_delta);
+                self.push_back(evt);
+            }
+            EvtDet::KeyPendingToNew(_, _, delta)
+            | EvtDet::KeyPendingToActive(_, _, delta)
+            | EvtDet::KeyRollFinished(_, delta) => {
+                let evt = QueueEvent::Delta(handle.clone(), delta.clone().into());
                 self.push_back(evt);
             }
             EvtDet::ResourceClassRemoved(class_name, delta, parent, revocations) => {
@@ -88,10 +91,6 @@ impl<S: Signer> eventsourcing::EventListener<CertAuth<S>> for EventQueueListener
                     parent.clone(),
                     revocations_map,
                 ))
-            }
-            EvtDet::KeyRollFinished(_class_name, delta) => {
-                let evt = QueueEvent::Delta(handle.clone(), delta.clone().into());
-                self.push_back(evt);
             }
 
             EvtDet::ParentAdded(parent, _contact) => {

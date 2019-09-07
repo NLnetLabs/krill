@@ -1,14 +1,16 @@
-use crate::api::publication;
-use crate::api::{Base64, EncodedHash};
-use bytes::Bytes;
-use rpki::uri;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
 use std::fs;
 use std::fs::File;
 use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use std::str::FromStr;
+
+use bytes::Bytes;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
+
+use rpki::uri;
+
+use crate::api::{Base64, HexEncodedHash, ListElement, Publish, Update, Withdraw};
 
 /// Creates a sub dir if needed, return full path to it
 pub fn sub_dir(base: &PathBuf, name: &str) -> Result<PathBuf, io::Error> {
@@ -219,7 +221,7 @@ pub struct CurrentFile {
     /// in the publication protocol for list, update and withdraw). Saving
     /// this rather than calculating on demand seems a small price for some
     /// performance gain.
-    hash: EncodedHash,
+    hash: HexEncodedHash,
 }
 
 impl CurrentFile {
@@ -247,34 +249,34 @@ impl CurrentFile {
         self.content.to_bytes()
     }
 
-    pub fn hash(&self) -> &EncodedHash {
+    pub fn hash(&self) -> &HexEncodedHash {
         &self.hash
     }
 
-    pub fn as_publish(&self) -> publication::Publish {
+    pub fn as_publish(&self) -> Publish {
         let tag = Some(self.hash.to_string());
         let uri = self.uri.clone();
         let content = self.content.clone();
-        publication::Publish::new(tag, uri, content)
+        Publish::new(tag, uri, content)
     }
 
-    pub fn as_update(&self, old_hash: &EncodedHash) -> publication::Update {
+    pub fn as_update(&self, old_hash: &HexEncodedHash) -> Update {
         let tag = None;
         let uri = self.uri.clone();
         let content = self.content.clone();
         let hash = old_hash.clone();
-        publication::Update::new(tag, uri, content, hash)
+        Update::new(tag, uri, content, hash)
     }
 
-    pub fn as_withdraw(&self) -> publication::Withdraw {
+    pub fn as_withdraw(&self) -> Withdraw {
         let tag = None;
         let uri = self.uri.clone();
         let hash = self.hash.clone();
-        publication::Withdraw::new(tag, uri, hash)
+        Withdraw::new(tag, uri, hash)
     }
 
-    pub fn into_list_element(self) -> publication::ListElement {
-        publication::ListElement::new(self.uri, self.hash)
+    pub fn into_list_element(self) -> ListElement {
+        ListElement::new(self.uri, self.hash)
     }
 }
 

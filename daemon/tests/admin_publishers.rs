@@ -4,7 +4,7 @@ extern crate krill_daemon;
 
 use krill_client::options::{AddPublisher, Command, PublishersCommand};
 use krill_client::report::ApiResponse;
-use krill_commons::api::admin::{Handle, Token};
+use krill_commons::api::{Handle, Token};
 use krill_commons::util::test;
 use krill_daemon::test::{krill_admin, test_with_krill_server};
 

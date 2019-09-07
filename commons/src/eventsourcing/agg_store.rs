@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::RwLock;
 
-use crate::api::admin::Handle;
+use crate::api::Handle;
 
 use super::{Aggregate, DiskKeyStore, Event, EventListener, KeyStore, KeyStoreError};
 

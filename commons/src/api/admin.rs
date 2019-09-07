@@ -3,6 +3,7 @@
 use std::fmt;
 use std::path::Path;
 
+use rpki::cert::Cert;
 use rpki::crypto::Signer;
 use rpki::uri;
 
@@ -334,6 +335,47 @@ impl AddParentRequest {
     }
 }
 
+//------------ TaCertDetails -------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct TaCertDetails {
+    cert: Cert,
+    resources: ResourceSet,
+    tal: TrustAnchorLocator,
+}
+
+impl TaCertDetails {
+    pub fn new(cert: Cert, resources: ResourceSet, tal: TrustAnchorLocator) -> Self {
+        TaCertDetails {
+            cert,
+            resources,
+            tal,
+        }
+    }
+
+    pub fn cert(&self) -> &Cert {
+        &self.cert
+    }
+
+    pub fn resources(&self) -> &ResourceSet {
+        &self.resources
+    }
+
+    pub fn tal(&self) -> &TrustAnchorLocator {
+        &self.tal
+    }
+}
+
+impl PartialEq for TaCertDetails {
+    fn eq(&self, other: &Self) -> bool {
+        self.tal == other.tal
+            && self.resources == other.resources
+            && self.cert.to_captured().as_slice() == other.cert.to_captured().as_slice()
+    }
+}
+
+impl Eq for TaCertDetails {}
+
 //------------ ParentCaContact -----------------------------------------------
 
 /// This type contains the information needed to contact the parent ca
@@ -341,8 +383,8 @@ impl AddParentRequest {
 #[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum ParentCaContact {
-    #[display(fmt = "This CA is a TA with TAL:\n{}", _0)]
-    Ta(TrustAnchorLocator),
+    #[display(fmt = "This CA is a TA")]
+    Ta(TaCertDetails),
 
     #[display(fmt = "Embedded parent")]
     Embedded,
@@ -354,6 +396,13 @@ pub enum ParentCaContact {
 impl ParentCaContact {
     pub fn for_rfc6492(response: rfc8183::ParentResponse) -> Self {
         ParentCaContact::Rfc6492(response)
+    }
+
+    pub fn to_ta_cert(&self) -> &Cert {
+        match &self {
+            ParentCaContact::Ta(details) => details.cert(),
+            _ => panic!("Not a TA parent"),
+        }
     }
 }
 

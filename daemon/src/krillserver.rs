@@ -8,14 +8,12 @@ use bytes::Bytes;
 use chrono::Duration;
 use rpki::uri;
 
-use krill_commons::api::admin::{
-    AddChildRequest, AddParentRequest, CertAuthInit, CertAuthPubMode, Handle, ParentCaContact,
-    Token, UpdateChildRequest,
+use krill_commons::api::{
+    AddChildRequest, AddParentRequest, CertAuthInfo, CertAuthInit, CertAuthList, CertAuthPubMode,
+    ChildCaInfo, Handle, ListReply, ParentCaContact, PublishDelta, PublishRequest,
+    PublisherRequest, RcvdCert, RouteAuthorizationUpdates, Token, TrustAnchorInfo,
+    UpdateChildRequest,
 };
-use krill_commons::api::ca::{CertAuthInfo, CertAuthList, ChildCaInfo, RcvdCert, TrustAnchorInfo};
-use krill_commons::api::publication;
-use krill_commons::api::publication::PublishRequest;
-use krill_commons::api::{admin, RouteAuthorizationUpdates};
 use krill_commons::remote::api::ClientInfo;
 use krill_commons::remote::proxy;
 use krill_commons::remote::proxy::ProxyServer;
@@ -170,7 +168,7 @@ impl KrillServer {
     }
 
     /// Adds the publishers, blows up if it already existed.
-    pub fn add_publisher(&mut self, pbl_req: admin::PublisherRequest) -> EmptyRes {
+    pub fn add_publisher(&mut self, pbl_req: PublisherRequest) -> EmptyRes {
         self.pubserver
             .create_publisher(pbl_req)
             .map_err(Error::PubServer)
@@ -289,7 +287,7 @@ impl KrillServer {
         let token = self.caserver.random_token();
 
         // Add publisher
-        let req = admin::PublisherRequest::new(
+        let req = PublisherRequest::new(
             ta_handle.clone(),
             token.clone(),
             repo_info.base_uri().clone(),
@@ -377,7 +375,7 @@ impl KrillServer {
         self.caserver.init_ca(&handle, token.clone(), repo_info)?;
 
         // Add publisher
-        let req = admin::PublisherRequest::new(handle.clone(), token.clone(), base_uri);
+        let req = PublisherRequest::new(handle.clone(), token.clone(), base_uri);
         self.add_publisher(req)?;
 
         Ok(())
@@ -418,14 +416,14 @@ impl KrillServer {
     /// Handles a publish delta request sent to the API, or.. through
     /// the CmsProxy.
     #[allow(clippy::needless_pass_by_value)]
-    pub fn handle_delta(&self, delta: publication::PublishDelta, handle: &Handle) -> EmptyRes {
+    pub fn handle_delta(&self, delta: PublishDelta, handle: &Handle) -> EmptyRes {
         self.pubserver
             .publish(handle, delta)
             .map_err(Error::PubServer)
     }
 
     /// Handles a list request sent to the API, or.. through the CmsProxy.
-    pub fn handle_list(&self, handle: &Handle) -> Result<publication::ListReply, Error> {
+    pub fn handle_list(&self, handle: &Handle) -> Result<ListReply, Error> {
         self.pubserver.list(handle).map_err(Error::PubServer)
     }
 }

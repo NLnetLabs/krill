@@ -12,7 +12,7 @@ use rpki::x509::Time;
 
 use crate::api::publication;
 use crate::api::Base64;
-use crate::api::EncodedHash;
+use crate::api::HexEncodedHash;
 use crate::util::file;
 use crate::util::xml::XmlWriter;
 
@@ -60,7 +60,7 @@ impl From<publication::Publish> for PublishElement {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct UpdateElement {
     uri: uri::Rsync,
-    hash: EncodedHash,
+    hash: HexEncodedHash,
     base64: Base64,
 }
 
@@ -68,7 +68,7 @@ impl UpdateElement {
     pub fn uri(&self) -> &uri::Rsync {
         &self.uri
     }
-    pub fn hash(&self) -> &EncodedHash {
+    pub fn hash(&self) -> &HexEncodedHash {
         &self.hash
     }
     pub fn base64(&self) -> &Base64 {
@@ -101,14 +101,14 @@ impl Into<PublishElement> for UpdateElement {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct WithdrawElement {
     uri: uri::Rsync,
-    hash: EncodedHash,
+    hash: HexEncodedHash,
 }
 
 impl WithdrawElement {
     pub fn uri(&self) -> &uri::Rsync {
         &self.uri
     }
-    pub fn hash(&self) -> &EncodedHash {
+    pub fn hash(&self) -> &HexEncodedHash {
         &self.hash
     }
 }
@@ -267,11 +267,11 @@ impl Notification {
 pub struct FileRef {
     uri: uri::Https,
     path: PathBuf,
-    hash: EncodedHash,
+    hash: HexEncodedHash,
 }
 
 impl FileRef {
-    pub fn new(uri: uri::Https, path: PathBuf, hash: EncodedHash) -> Self {
+    pub fn new(uri: uri::Https, path: PathBuf, hash: HexEncodedHash) -> Self {
         FileRef { uri, path, hash }
     }
     pub fn uri(&self) -> &uri::Https {
@@ -280,7 +280,7 @@ impl FileRef {
     pub fn path(&self) -> &PathBuf {
         &self.path
     }
-    pub fn hash(&self) -> &EncodedHash {
+    pub fn hash(&self) -> &HexEncodedHash {
         &self.hash
     }
 }
@@ -320,7 +320,7 @@ impl AsRef<FileRef> for DeltaRef {
 // the uri and the base64, but not the hash. So keeping the actual elements
 // around means we can be more efficient in producing that output.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct CurrentObjects(HashMap<EncodedHash, PublishElement>);
+pub struct CurrentObjects(HashMap<HexEncodedHash, PublishElement>);
 
 impl Default for CurrentObjects {
     fn default() -> Self {
@@ -372,7 +372,7 @@ impl VerificationError {
 }
 
 impl CurrentObjects {
-    fn has_match(&self, hash: &EncodedHash, uri: &uri::Rsync) -> bool {
+    fn has_match(&self, hash: &HexEncodedHash, uri: &uri::Rsync) -> bool {
         match self.0.get(hash) {
             Some(el) => el.uri() == uri,
             None => false,
@@ -489,7 +489,7 @@ impl Snapshot {
         self.current_objects.is_empty()
     }
 
-    pub fn write_xml(&self, path: &PathBuf) -> Result<EncodedHash, io::Error> {
+    pub fn write_xml(&self, path: &PathBuf) -> Result<HexEncodedHash, io::Error> {
         let vec = XmlWriter::encode_vec(|w| {
             let a = [
                 ("xmlns", NS),
@@ -510,7 +510,7 @@ impl Snapshot {
         let bytes = Bytes::from(vec);
 
         file::save(&bytes, path)?;
-        let hash = EncodedHash::from_content(&bytes);
+        let hash = HexEncodedHash::from_content(&bytes);
 
         Ok(hash)
     }
@@ -625,7 +625,7 @@ impl Delta {
         (self.session, self.serial, self.elements)
     }
 
-    pub fn write_xml(&self, path: &PathBuf) -> Result<EncodedHash, io::Error> {
+    pub fn write_xml(&self, path: &PathBuf) -> Result<HexEncodedHash, io::Error> {
         let vec = XmlWriter::encode_vec(|w| {
             let a = [
                 ("xmlns", NS),
@@ -659,7 +659,7 @@ impl Delta {
 
         let bytes = Bytes::from(vec);
         file::save(&bytes, &path)?;
-        let hash = EncodedHash::from_content(&bytes);
+        let hash = HexEncodedHash::from_content(&bytes);
 
         Ok(hash)
     }
