@@ -26,7 +26,6 @@ fn ca_roas() {
 
         // Set up under parent  ----------------------------------------------------------------
         {
-            init_ta();
             let parent = {
                 let parent_contact = add_child_to_ta_embedded(&child, child_resources.clone());
                 AddParentRequest::new(ta_handle(), parent_contact)

@@ -48,12 +48,11 @@ fn admin_publishers() {
         // Find "alice" in list
         let res = list_publishers();
         match res {
-            ApiResponse::PublisherList(list) => {
-                // there should be one and it should be alice
-                assert_eq!(1, list.publishers().len());
-                let alice = &list.publishers().get(0).unwrap();
-                assert_eq!("alice", alice.id());
-            }
+            ApiResponse::PublisherList(list) => assert!(list
+                .publishers()
+                .iter()
+                .find(|p| { p.id() == "alice" })
+                .is_some()),
             _ => panic!("Expected publisher list"),
         }
 

@@ -7,7 +7,6 @@ use rpki::uri;
 
 use krill_commons::api::{
     CertAuthInfo, ParentCaContact, PublisherDetails, PublisherList, PublisherRequest, Token,
-    TrustAnchorInfo,
 };
 use krill_commons::remote::api::{ClientAuth, ClientInfo};
 use krill_commons::remote::rfc8183;
@@ -15,9 +14,7 @@ use krill_commons::remote::rfc8183::RepositoryResponse;
 use krill_commons::util::file;
 use krill_commons::util::httpclient;
 
-use crate::options::{
-    CaCommand, Command, Options, PublishersCommand, Rfc8181Command, TrustAnchorCommand,
-};
+use crate::options::{CaCommand, Command, Options, PublishersCommand, Rfc8181Command};
 use crate::report::{ApiResponse, ReportError};
 
 /// Command line tool for Krill admin tasks
@@ -49,7 +46,6 @@ impl KrillClient {
         };
         match options.command {
             Command::Health => client.health(),
-            Command::TrustAnchor(cmd) => client.trustanchor(cmd),
             Command::CertAuth(cmd) => client.certauth(cmd),
             Command::Publishers(cmd) => client.publishers(cmd),
             Command::Rfc8181(cmd) => client.rfc8181(cmd),
@@ -60,38 +56,6 @@ impl KrillClient {
     fn health(&self) -> Result<ApiResponse, Error> {
         httpclient::get_ok(&self.resolve_uri("api/v1/health"), Some(&self.token))?;
         Ok(ApiResponse::Health)
-    }
-
-    fn trustanchor(&self, command: TrustAnchorCommand) -> Result<ApiResponse, Error> {
-        match command {
-            TrustAnchorCommand::Init => {
-                let uri = self.resolve_uri("api/v1/trustanchor");
-                httpclient::post_empty(&uri, Some(&self.token))?;
-                Ok(ApiResponse::Empty)
-            }
-            TrustAnchorCommand::Show => {
-                let uri = self.resolve_uri("api/v1/trustanchor");
-                let ta: TrustAnchorInfo = self.get_json(&uri)?;
-                Ok(ApiResponse::TrustAnchorInfo(ta))
-            }
-            TrustAnchorCommand::Publish => {
-                let uri = self.resolve_uri("api/v1/republish");
-                httpclient::post_empty(&uri, Some(&self.token))?;
-                Ok(ApiResponse::Empty)
-            }
-            TrustAnchorCommand::AddChild(req) => {
-                let uri = self.resolve_uri("api/v1/trustanchor/children");
-                let info: ParentCaContact =
-                    httpclient::post_json_with_response(&uri, req, Some(&self.token))?;
-                Ok(ApiResponse::ParentCaContact(info))
-            }
-            TrustAnchorCommand::UpdateChild(child, req) => {
-                let uri = format!("api/v1/trustanchor/children/{}", child);
-                let uri = self.resolve_uri(&uri);
-                httpclient::post_json(&uri, req, Some(&self.token))?;
-                Ok(ApiResponse::Empty)
-            }
-        }
     }
 
     fn certauth(&self, command: CaCommand) -> Result<ApiResponse, Error> {

@@ -11,7 +11,6 @@ use krill_daemon::test::*;
 fn ca_keyroll_under_rfc6492_ta() {
     test_with_krill_server(|_d| {
         let ta_handle = ta_handle();
-        init_ta();
 
         let child = Handle::from("rfc6492");
         let child_token = Token::from("rfc6492");

@@ -2,7 +2,7 @@ use std::str::{from_utf8_unchecked, FromStr};
 
 use krill_commons::api::{
     CertAuthInfo, CertAuthList, CurrentObjects, ParentCaContact, PublisherDetails, PublisherList,
-    RouteAuthorization, TrustAnchorInfo,
+    RouteAuthorization,
 };
 use krill_commons::remote::api::ClientInfo;
 use krill_commons::remote::rfc8183;
@@ -15,8 +15,6 @@ use krill_commons::remote::rfc8183::RepositoryResponse;
 #[allow(clippy::large_enum_variant)]
 pub enum ApiResponse {
     Health,
-
-    TrustAnchorInfo(TrustAnchorInfo),
 
     CertAuthInfo(CertAuthInfo),
     CertAuths(CertAuthList),
@@ -48,7 +46,6 @@ impl ApiResponse {
                         Err(ReportError::UnsupportedFormat)
                     }
                 }
-                ApiResponse::TrustAnchorInfo(ta) => Ok(Some(ta.report(fmt)?)),
                 ApiResponse::CertAuths(list) => Ok(Some(list.report(fmt)?)),
                 ApiResponse::CertAuthInfo(info) => Ok(Some(info.report(fmt)?)),
                 ApiResponse::RouteAuthorizations(auths) => Ok(Some(auths.report(fmt)?)),
@@ -109,47 +106,6 @@ pub enum ReportError {
 /// response can be formatted for users.
 trait Report {
     fn report(&self, format: ReportFormat) -> Result<String, ReportError>;
-}
-
-impl Report for TrustAnchorInfo {
-    fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
-        match format {
-            ReportFormat::Default | ReportFormat::Json => {
-                Ok(serde_json::to_string_pretty(self).unwrap())
-            }
-            ReportFormat::Text => {
-                let mut res = String::new();
-
-                let resources = self.resources();
-
-                res.push_str(&format!("ASNs: {}\n", resources.asn()));
-                res.push_str(&format!("IPv4: {}\n", resources.v4()));
-                res.push_str(&format!("IPv6: {}\n", resources.v6()));
-
-                res.push_str("\n");
-
-                res.push_str("TAL:\n");
-                res.push_str(&format!("{}", self.tal()));
-
-                res.push_str("\n");
-                res.push_str("\n");
-
-                res.push_str("Children:\n");
-                if !self.children().is_empty() {
-                    for (name, details) in self.children() {
-                        res.push_str(&format!("{}\n", name));
-                        res.push_str(&format!("  resources: {}\n", details.entitled_resources()));
-                        res.push_str("\n");
-                    }
-                } else {
-                    res.push_str("<none>");
-                }
-
-                Ok(res)
-            }
-            _ => Err(ReportError::UnsupportedFormat),
-        }
-    }
 }
 
 impl Report for CertAuthList {

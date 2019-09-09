@@ -9,18 +9,17 @@ use rpki::x509::Time;
 
 use krill_commons::api::{
     AddedObject, CurrentObject, CurrentObjects, EntitlementClass, HexEncodedHash, IssuanceRequest,
-    IssuanceResponse, IssuedCert, ObjectName, ObjectsDelta, RcvdCert, ReplacedObject, RepoInfo,
-    RequestResourceLimit, KeyStateInfo, ResourceClassName, ResourceSet, Revocation,
-    RevocationRequest, RevokedObject, RouteAuthorization, SigningCert, UpdatedObject,
-    WithdrawnObject,
+    IssuanceResponse, IssuedCert, KeyStateInfo, ObjectName, ObjectsDelta, RcvdCert, ReplacedObject,
+    RepoInfo, RequestResourceLimit, ResourceClassName, ResourceSet, Revocation, RevocationRequest,
+    RevokedObject, RouteAuthorization, SigningCert, UpdatedObject, WithdrawnObject,
 };
 
 use crate::ca::events::RoaUpdates;
 use crate::ca::signing::CsrInfo;
 use crate::ca::{
     self, ta_handle, AddedOrUpdated, Certificates, CertifiedKey, CrlBuilder, CurrentKey,
-    CurrentObjectSetDelta, Error, EvtDet, ManifestBuilder, NewKey, OldKey, ParentHandle,
-    PendingKey, KeyState, Result, RoaInfo, Roas, SignSupport, Signer,
+    CurrentObjectSetDelta, Error, EvtDet, KeyState, ManifestBuilder, NewKey, OldKey, ParentHandle,
+    PendingKey, Result, RoaInfo, Roas, SignSupport, Signer,
 };
 
 //------------ ResourceClass -----------------------------------------------
@@ -591,9 +590,7 @@ impl ResourceClass {
     pub fn received_cert(&mut self, key_id: KeyIdentifier, cert: RcvdCert) {
         // if there is a pending key, then we need to do some promotions..
         match &mut self.key_state {
-            KeyState::Pending(_pending) => {
-                panic!("Would have received KeyPendingToActive event")
-            }
+            KeyState::Pending(_pending) => panic!("Would have received KeyPendingToActive event"),
             KeyState::Active(current) => {
                 current.set_incoming_cert(cert);
             }

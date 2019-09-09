@@ -74,121 +74,6 @@ impl Options {
                 all is well, exit code 1 in case of any issues")
             )
 
-            .subcommand(SubCommand::with_name("trustanchor")
-                .about("Manage embedded Trust Anchor (used for testing)")
-                .subcommand(SubCommand::with_name("init")
-                    .about("Initialise embedded TA.")
-                )
-                .subcommand(SubCommand::with_name("show")
-                    .about("Show embedded TA details.")
-                )
-                .subcommand(SubCommand::with_name("publish")
-                    .about("Force publication for embedded TA now.")
-                )
-                .subcommand(SubCommand::with_name("children")
-                    .about("Manage children of the embbeded TA")
-                    .subcommand(SubCommand::with_name("add")
-                        .about("Add a child to the embedded CA")
-
-                        .arg(Arg::with_name("asn")
-                            .short("a")
-                            .long("asn")
-                            .value_name("AS resources")
-                            .help("The delegated AS resources: e.g. AS1, AS3-4")
-                            .required(false)
-                        )
-                        .arg(Arg::with_name("ipv4")
-                            .short("4")
-                            .long("ipv4")
-                            .value_name("IPv4 resources")
-                            .help("The delegated IPv4 resources: e.g. 192.168.0.0/16")
-                            .required(false)
-                        )
-                        .arg(Arg::with_name("ipv6")
-                            .short("6")
-                            .long("ipv6")
-                            .value_name("IPv6 resources")
-                            .help("The delegated IPv6 resources: e.g. 2001:db8::/32")
-                            .required(false)
-                        )
-
-                        .subcommand(SubCommand::with_name("embedded")
-                            .about("Add an embedded child")
-                            .arg(Arg::with_name("handle")
-                                .short("h")
-                                .long("handle")
-                                .value_name("child-handle")
-                                .help("The handle of the child")
-                                .required(true)
-                            )
-                        )
-
-                        .subcommand(SubCommand::with_name("rfc6492")
-                            .about("Add an RFC 6492 child")
-                            .arg(Arg::with_name("handle")
-                                .short("h")
-                                .long("handle")
-                                .value_name("child-handle")
-                                .help("Override the handle in the XML")
-                                .required(false)
-                            )
-                            .arg(Arg::with_name("xml")
-                                .short("x")
-                                .long("xml")
-                                .value_name("FILE")
-                                .help("RFC 8183 Child Request XML")
-                                .required(true)
-                            )
-                        )
-                    )
-                    .subcommand(SubCommand::with_name("update")
-                        .about("Update details for a child")
-                        .arg(Arg::with_name("handle")
-                            .short("h")
-                            .long("handle")
-                            .value_name("child-handle")
-                            .help("Override the handle in the XML")
-                            .required(false)
-                        )
-                        .arg(Arg::with_name("xml")
-                            .short("x")
-                            .long("xml")
-                            .value_name("FILE")
-                            .help("Update child certificate from RFC 8183 Child Request XML")
-                            .required(false)
-                        )
-                        .arg(Arg::with_name("asn")
-                            .short("a")
-                            .long("asn")
-                            .value_name("AS resources")
-                            .help("Update the delegated AS resources: e.g. AS1, AS3-4")
-                            .required(false)
-                        )
-                        .arg(Arg::with_name("ipv4")
-                            .short("4")
-                            .long("ipv4")
-                            .value_name("IPv4 resources")
-                            .help("Update the delegated IPv4 resources: e.g. 192.168.0.0/16")
-                            .required(false)
-                        )
-                        .arg(Arg::with_name("ipv6")
-                            .short("6")
-                            .long("ipv6")
-                            .value_name("IPv6 resources")
-                            .help("Update the delegated IPv6 resources: e.g. 2001:db8::/32")
-                            .required(false)
-                        )
-                        .arg(Arg::with_name("force")
-                            .short("f")
-                            .long("force")
-                            .takes_value(false)
-                            .help("Force resource shrink now.")
-                            .required(false)
-                        )
-                    )
-                )
-            )
-
             .subcommand(SubCommand::with_name("cas")
                 .about("Manage CAs")
                 .subcommand(SubCommand::with_name("list")
@@ -510,89 +395,6 @@ impl Options {
             command = Command::Health;
         }
 
-        if let Some(m) = matches.subcommand_matches("trustanchor") {
-            if let Some(_m) = m.subcommand_matches("show") {
-                command = Command::TrustAnchor(TrustAnchorCommand::Show)
-            }
-            if let Some(_m) = m.subcommand_matches("init") {
-                command = Command::TrustAnchor(TrustAnchorCommand::Init)
-            }
-            if let Some(_m) = m.subcommand_matches("publish") {
-                command = Command::TrustAnchor(TrustAnchorCommand::Publish)
-            }
-            if let Some(m) = m.subcommand_matches("children") {
-                if let Some(m) = m.subcommand_matches("add") {
-                    let asn = m.value_of("asn").unwrap_or("");
-                    let ipv4 = m.value_of("ipv4").unwrap_or("");
-                    let ipv6 = m.value_of("ipv6").unwrap_or("");
-
-                    if let Some(m) = m.subcommand_matches("embedded") {
-                        let handle = Handle::from(m.value_of("handle").unwrap());
-                        let res = ResourceSet::from_strs(asn, ipv4, ipv6).unwrap();
-                        let auth = ChildAuthRequest::Embedded;
-
-                        let req = AddChildRequest::new(handle, res, auth);
-                        command = Command::TrustAnchor(TrustAnchorCommand::AddChild(req))
-                    }
-
-                    if let Some(m) = m.subcommand_matches("rfc6492") {
-                        let xml_path = m.value_of("xml").unwrap();
-                        let xml = PathBuf::from(xml_path);
-                        let bytes = file::read(&xml)?;
-                        let cr = rfc8183::ChildRequest::validate(bytes.as_ref())?;
-
-                        let handle = {
-                            if let Some(handle) = m.value_of("handle") {
-                                Handle::from(handle)
-                            } else {
-                                cr.child_handle().clone()
-                            }
-                        };
-
-                        let res = ResourceSet::from_strs(asn, ipv4, ipv6)?;
-
-                        let auth = ChildAuthRequest::Rfc8183(cr);
-
-                        let req = AddChildRequest::new(handle, res, auth);
-                        command = Command::TrustAnchor(TrustAnchorCommand::AddChild(req))
-                    }
-                }
-
-                if let Some(m) = m.subcommand_matches("update") {
-                    let handle = Handle::from(m.value_of("handle").unwrap());
-                    let cert = match m.value_of("xml") {
-                        Some(xml_path) => {
-                            let xml = PathBuf::from(xml_path);
-                            let bytes = file::read(&xml)?;
-                            let cr = rfc8183::ChildRequest::validate(bytes.as_ref())?;
-                            let (_, _, cert) = cr.unwrap();
-                            Some(cert)
-                        }
-                        None => None,
-                    };
-
-                    let asn = m.value_of("asn").unwrap_or("");
-                    let ipv4 = m.value_of("ipv4").unwrap_or("");
-                    let ipv6 = m.value_of("ipv6").unwrap_or("");
-                    let resources = ResourceSet::from_strs(asn, ipv4, ipv6)?;
-
-                    let resources = if resources.is_empty() {
-                        None
-                    } else {
-                        Some(resources)
-                    };
-
-                    let req = if m.is_present("force") {
-                        UpdateChildRequest::force(cert, resources)
-                    } else {
-                        UpdateChildRequest::graceful(cert, resources)
-                    };
-
-                    command = Command::TrustAnchor(TrustAnchorCommand::UpdateChild(handle, req))
-                }
-            }
-        }
-
         if let Some(m) = matches.subcommand_matches("cas") {
             if let Some(m) = m.subcommand_matches("add") {
                 let handle = Handle::from(m.value_of("handle").unwrap());
@@ -637,10 +439,8 @@ impl Options {
                         let auth = ChildAuthRequest::Embedded;
 
                         let req = AddChildRequest::new(handle, res, auth);
-                        command = Command::TrustAnchor(TrustAnchorCommand::AddChild(req))
-                    }
-
-                    if let Some(m) = m.subcommand_matches("rfc6492") {
+                        command = Command::CertAuth(CaCommand::AddChild(ca, req))
+                    } else if let Some(m) = m.subcommand_matches("rfc6492") {
                         let xml_path = m.value_of("xml").unwrap();
                         let xml = PathBuf::from(xml_path);
                         let bytes = file::read(&xml)?;
@@ -802,20 +602,9 @@ impl Options {
 pub enum Command {
     NotSet,
     Health,
-    TrustAnchor(TrustAnchorCommand),
     CertAuth(CaCommand),
     Publishers(PublishersCommand),
     Rfc8181(Rfc8181Command),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-#[allow(clippy::large_enum_variant)]
-pub enum TrustAnchorCommand {
-    Init,
-    Show,
-    Publish,
-    AddChild(AddChildRequest),
-    UpdateChild(Handle, UpdateChildRequest),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -18,7 +18,7 @@ use krill_pubd::publishers::PublisherError;
 use krill_pubd::repo::RrdpServerError;
 
 use crate::auth::Auth;
-use crate::ca::{self, ta_handle, ParentHandle};
+use crate::ca::{self, ParentHandle};
 use crate::http::server::AppServer;
 use crate::krillserver;
 
@@ -245,47 +245,20 @@ pub fn repository_response(
 
 //------------ Admin: TrustAnchor --------------------------------------------
 
-pub fn ta_info(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
-    if_api_allowed(&server, &auth, || match server.read().ta_info() {
-        Some(ta) => render_json(ta),
-        None => api_not_found(),
-    })
-}
-
-pub fn ta_init(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        render_empty_res(server.write().ta_init())
-    })
-}
-
 pub fn tal(server: web::Data<AppServer>) -> HttpResponse {
-    match server.read().ta_info() {
-        Some(ta) => HttpResponse::Ok()
+    match server.read().ta() {
+        Ok(ta) => HttpResponse::Ok()
             .content_type("text/plain")
             .body(format!("{}", ta.tal())),
-        None => api_not_found(),
+        Err(_) => api_not_found(),
     }
 }
 
 pub fn ta_cer(server: web::Data<AppServer>) -> HttpResponse {
     match server.read().trust_anchor_cert() {
-        Some(cert) => HttpResponse::Ok().body(cert.der_encoded().to_vec()),
+        Some(cert) => HttpResponse::Ok().body(cert.to_captured().to_vec()),
         None => api_not_found(),
     }
-}
-
-// TODO: Deprecate!
-pub fn ta_add_child(
-    server: web::Data<AppServer>,
-    req: Json<AddChildRequest>,
-    auth: Auth,
-) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        match server.read().ca_add_child(&ta_handle(), req.into_inner()) {
-            Ok(info) => render_json(info),
-            Err(e) => server_error(&Error::ServerError(e)),
-        }
-    })
 }
 
 pub fn ca_add_child(
@@ -305,67 +278,32 @@ pub fn ca_add_child(
     })
 }
 
-// TODO: Deprecate
-pub fn ta_update_child(
-    server: web::Data<AppServer>,
-    child: Path<Handle>,
-    req: Json<UpdateChildRequest>,
-    auth: Auth,
-) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        render_empty_res(server.read().ca_update_child(
-            &ta_handle(),
-            child.into_inner(),
-            req.into_inner(),
-        ))
-    })
-}
-
 pub fn ca_update_child(
     server: web::Data<AppServer>,
-    parent: Path<Handle>,
-    child: Path<Handle>,
+    ca_and_child: Path<(Handle, Handle)>,
     req: Json<UpdateChildRequest>,
     auth: Auth,
 ) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        render_empty_res(server.read().ca_update_child(
-            &parent.into_inner(),
-            child.into_inner(),
-            req.into_inner(),
-        ))
-    })
-}
+    let ca_and_child = ca_and_child.into_inner();
+    let ca = ca_and_child.0;
+    let child = ca_and_child.1;
 
-// TODO: Deprecate
-pub fn ta_show_child(
-    server: web::Data<AppServer>,
-    child: Path<Handle>,
-    auth: Auth,
-) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
-        match server
-            .read()
-            .ca_show_child(&ta_handle(), &child.into_inner())
-        {
-            Ok(Some(child)) => render_json(child),
-            Ok(None) => api_not_found(),
-            Err(e) => server_error(&Error::ServerError(e)),
-        }
+        render_empty_res(server.read().ca_update_child(&ca, child, req.into_inner()))
     })
 }
 
 pub fn ca_show_child(
     server: web::Data<AppServer>,
-    parent: Path<Handle>,
-    child: Path<Handle>,
+    ca_and_child: Path<(Handle, Handle)>,
     auth: Auth,
 ) -> HttpResponse {
+    let ca_and_child = ca_and_child.into_inner();
+    let ca = ca_and_child.0;
+    let child = ca_and_child.1;
+
     if_api_allowed(&server, &auth, || {
-        match server
-            .read()
-            .ca_show_child(&parent.into_inner(), &child.into_inner())
-        {
+        match server.read().ca_show_child(&ca, &child) {
             Ok(Some(child)) => render_json(child),
             Ok(None) => api_not_found(),
             Err(e) => server_error(&Error::ServerError(e)),

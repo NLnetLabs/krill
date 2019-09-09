@@ -1310,57 +1310,6 @@ impl fmt::Display for ResourceSet {
     }
 }
 
-//------------ TrustAnchorInfo -----------------------------------------------
-
-/// This type represents the TrustAnchor details that need to be accessible
-/// through the API (CLI and UI).
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct TrustAnchorInfo {
-    resources: ResourceSet,
-    repo_info: RepoInfo,
-    children: HashMap<Handle, ChildCaInfo>,
-    cert: RcvdCert,
-    tal: TrustAnchorLocator,
-}
-
-impl TrustAnchorInfo {
-    pub fn new(
-        resources: ResourceSet,
-        repo_info: RepoInfo,
-        children: HashMap<Handle, ChildCaInfo>,
-        cert: RcvdCert,
-        tal: TrustAnchorLocator,
-    ) -> Self {
-        TrustAnchorInfo {
-            resources,
-            repo_info,
-            children,
-            cert,
-            tal,
-        }
-    }
-
-    pub fn resources(&self) -> &ResourceSet {
-        &self.resources
-    }
-
-    pub fn repo_info(&self) -> &RepoInfo {
-        &self.repo_info
-    }
-
-    pub fn children(&self) -> &HashMap<Handle, ChildCaInfo> {
-        &self.children
-    }
-
-    pub fn cert(&self) -> &RcvdCert {
-        &self.cert
-    }
-
-    pub fn tal(&self) -> &TrustAnchorLocator {
-        &self.tal
-    }
-}
-
 //------------ CertAuthList --------------------------------------------------
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthList {

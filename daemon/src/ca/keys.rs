@@ -164,7 +164,6 @@ impl DerefMut for OldKey {
     }
 }
 
-
 //------------ KeyState ------------------------------------------------------
 
 /// This type contains the keys for a resource class and guards that keys
@@ -420,12 +419,8 @@ impl KeyState {
             KeyState::RollPending(p, c) => {
                 ResourceClassKeysInfo::RollPending(p.as_info(), c.as_info())
             }
-            KeyState::RollNew(n, c) => {
-                ResourceClassKeysInfo::RollNew(n.as_info(), c.as_info())
-            }
-            KeyState::RollOld(c, o) => {
-                ResourceClassKeysInfo::RollOld(c.as_info(), o.as_info())
-            }
+            KeyState::RollNew(n, c) => ResourceClassKeysInfo::RollNew(n.as_info(), c.as_info()),
+            KeyState::RollOld(c, o) => ResourceClassKeysInfo::RollOld(c.as_info(), o.as_info()),
         }
     }
 }

@@ -32,6 +32,9 @@ impl ConfigDefaults {
     fn port() -> u16 {
         3000
     }
+    fn use_ta() -> bool {
+        false
+    }
     fn use_ssl() -> SslChoice {
         SslChoice::Test
     }
@@ -41,8 +44,8 @@ impl ConfigDefaults {
     fn rsync_base() -> uri::Rsync {
         uri::Rsync::from_str("rsync://localhost/repo/").unwrap()
     }
-    fn rrdp_base_uri() -> uri::Https {
-        uri::Https::from_str("https://localhost:3000/rrdp/").unwrap()
+    fn service_uri() -> String {
+        "https://localhost:3000/".to_string()
     }
     fn log_level() -> LevelFilter {
         LevelFilter::Info
@@ -87,6 +90,9 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::port")]
     port: u16,
 
+    #[serde(default = "ConfigDefaults::use_ta")]
+    use_ta: bool,
+
     #[serde(default = "ConfigDefaults::use_ssl")]
     use_ssl: SslChoice,
 
@@ -96,8 +102,8 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::rsync_base")]
     pub rsync_base: uri::Rsync,
 
-    #[serde(default = "ConfigDefaults::rrdp_base_uri")]
-    pub rrdp_base_uri: uri::Https,
+    #[serde(default = "ConfigDefaults::service_uri")]
+    service_uri: String,
 
     #[serde(
         default = "ConfigDefaults::log_level",
@@ -149,22 +155,19 @@ impl Config {
     }
 
     pub fn service_uri(&self) -> uri::Https {
-        let mut uri = String::new();
-        uri.push_str("https://");
+        uri::Https::from_str(&self.service_uri).unwrap()
+    }
 
-        if self.ip == ConfigDefaults::ip() {
-            uri.push_str("localhost");
-        } else {
-            uri.push_str(&self.ip.to_string())
-        }
+    pub fn rrdp_base_uri(&self) -> uri::Https {
+        uri::Https::from_string(format!("{}rrdp/", &self.service_uri)).unwrap()
+    }
 
-        if self.port != 443 {
-            uri.push_str(&format!(":{}", self.port));
-        }
+    pub fn ta_cert_uri(&self) -> uri::Https {
+        uri::Https::from_string(format!("{}ta/ta.cer", &self.service_uri)).unwrap()
+    }
 
-        uri.push_str("/");
-
-        uri::Https::from_string(uri).unwrap()
+    pub fn use_ta(&self) -> bool {
+        self.use_ta
     }
 }
 
@@ -173,10 +176,11 @@ impl Config {
     pub fn test(data_dir: &PathBuf) -> Self {
         let ip = ConfigDefaults::ip();
         let port = ConfigDefaults::port();
+        let use_ta = true;
         let use_ssl = SslChoice::Test;
         let data_dir = data_dir.clone();
         let rsync_base = ConfigDefaults::rsync_base();
-        let rrdp_base_uri = ConfigDefaults::rrdp_base_uri();
+        let service_uri = ConfigDefaults::service_uri();
         let log_level = LevelFilter::Info;
         let log_type = LogType::Stderr;
         let mut log_file = data_dir.clone();
@@ -188,10 +192,11 @@ impl Config {
         let c = Config {
             ip,
             port,
+            use_ta,
             use_ssl,
             data_dir,
             rsync_base,
-            rrdp_base_uri,
+            service_uri,
             log_level,
             log_type,
             log_file,

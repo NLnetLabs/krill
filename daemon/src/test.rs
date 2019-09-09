@@ -5,7 +5,7 @@ use std::{thread, time};
 
 use rpki::uri::Rsync;
 
-use krill_client::options::{CaCommand, Command, Options, PublishersCommand, TrustAnchorCommand};
+use krill_client::options::{CaCommand, Command, Options, PublishersCommand};
 use krill_client::report::{ApiResponse, ReportFormat};
 use krill_client::{Error, KrillClient};
 
@@ -95,10 +95,6 @@ pub fn krill_admin_expect_error(command: Command) -> Error {
     }
 }
 
-pub fn init_ta() {
-    krill_admin(Command::TrustAnchor(TrustAnchorCommand::Init));
-}
-
 pub fn init_child(handle: &Handle, token: &Token) {
     let init = CertAuthInit::new(handle.clone(), token.clone(), CertAuthPubMode::Embedded);
     krill_admin(Command::CertAuth(CaCommand::Init(init)));
@@ -114,7 +110,7 @@ pub fn child_request(handle: &Handle) -> rfc8183::ChildRequest {
 pub fn add_child_to_ta_embedded(handle: &Handle, resources: ResourceSet) -> ParentCaContact {
     let auth = ChildAuthRequest::Embedded;
     let req = AddChildRequest::new(handle.clone(), resources, auth);
-    let res = krill_admin(Command::TrustAnchor(TrustAnchorCommand::AddChild(req)));
+    let res = krill_admin(Command::CertAuth(CaCommand::AddChild(ta_handle(), req)));
 
     match res {
         ApiResponse::ParentCaContact(info) => info,
@@ -129,7 +125,7 @@ pub fn add_child_to_ta_rfc6492(
 ) -> ParentCaContact {
     let auth = ChildAuthRequest::Rfc8183(req);
     let req = AddChildRequest::new(handle.clone(), resources, auth);
-    let res = krill_admin(Command::TrustAnchor(TrustAnchorCommand::AddChild(req)));
+    let res = krill_admin(Command::CertAuth(CaCommand::AddChild(ta_handle(), req)));
 
     match res {
         ApiResponse::ParentCaContact(info) => info,
@@ -155,7 +151,8 @@ pub fn add_child_rfc6492(
 
 pub fn update_child(handle: &Handle, resources: &ResourceSet) {
     let req = UpdateChildRequest::graceful(None, Some(resources.clone()));
-    match krill_admin(Command::TrustAnchor(TrustAnchorCommand::UpdateChild(
+    match krill_admin(Command::CertAuth(CaCommand::UpdateChild(
+        ta_handle(),
         handle.clone(),
         req,
     ))) {
@@ -166,7 +163,8 @@ pub fn update_child(handle: &Handle, resources: &ResourceSet) {
 
 pub fn force_update_child(handle: &Handle, resources: &ResourceSet) {
     let req = UpdateChildRequest::force(None, Some(resources.clone()));
-    match krill_admin(Command::TrustAnchor(TrustAnchorCommand::UpdateChild(
+    match krill_admin(Command::CertAuth(CaCommand::UpdateChild(
+        ta_handle(),
         handle.clone(),
         req,
     ))) {

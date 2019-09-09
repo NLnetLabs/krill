@@ -76,11 +76,6 @@ impl PubServer {
         let rpki_notify = self.rrdp_server()?.notification_uri();
         Ok(RepoInfo::new(base_uri, rpki_notify))
     }
-
-    pub fn ta_aia(&self) -> uri::Rsync {
-        let uri = format!("{}ta.cer", self.base_rsync_uri.to_string());
-        uri::Rsync::from_string(uri).unwrap()
-    }
 }
 
 /// # Publication Protocol support

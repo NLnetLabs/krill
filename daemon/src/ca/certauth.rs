@@ -14,8 +14,7 @@ use krill_commons::api::{
     self, CertAuthInfo, EntitlementClass, Entitlements, Handle, IssuanceRequest, IssuanceResponse,
     IssuedCert, ObjectsDelta, ParentCaContact, PubServerContact, RcvdCert, RepoInfo,
     RequestResourceLimit, ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse,
-    RouteAuthorization, RouteAuthorizationUpdates, SigningCert, Token, TrustAnchorInfo,
-    UpdateChildRequest,
+    RouteAuthorization, RouteAuthorizationUpdates, SigningCert, Token, UpdateChildRequest,
 };
 use krill_commons::eventsourcing::{Aggregate, StoredEvent};
 use krill_commons::remote::builder::{IdCertBuilder, SignedMessageBuilder};
@@ -299,41 +298,6 @@ impl<S: Signer> Aggregate for CertAuth<S> {
 /// # Data presentation
 ///
 impl<S: Signer> CertAuth<S> {
-    pub fn as_ta_info(&self) -> Result<TrustAnchorInfo> {
-        if let Ok(ta) = self.parent(&ta_handle()) {
-            let tal = match ta {
-                ParentCaContact::Ta(details) => Some(details),
-                _ => None,
-            }
-            .ok_or_else(|| Error::NotTa)?
-            .tal()
-            .clone();
-
-            let rc = self
-                .resources
-                .get(&ResourceClassName::default())
-                .ok_or_else(|| Error::NotTa)?;
-            let cert = rc.current_certificate().ok_or_else(|| Error::NotTa)?;
-
-            let resources = cert.resources().clone();
-            let repo_info = self.base_repo.clone();
-            let mut children = HashMap::new();
-            for (handle, details) in &self.children {
-                children.insert(handle.clone(), details.clone().into());
-            }
-
-            Ok(TrustAnchorInfo::new(
-                resources,
-                repo_info,
-                children,
-                cert.clone(),
-                tal,
-            ))
-        } else {
-            Err(Error::NotTa)
-        }
-    }
-
     pub fn as_ca_info(&self) -> CertAuthInfo {
         let handle = self.handle.clone();
         let base_repo = self.base_repo.clone();

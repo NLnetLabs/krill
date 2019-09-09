@@ -30,7 +30,6 @@ fn grand_children() {
         // -------------------- TA -----------------------------------------------
 
         let ta_handle = ta_handle();
-        init_ta();
 
         let ta_key = ca_key_for_rcn(&ta_handle, &rcn_0);
         let ta_mft_file = ta_key.incoming_cert().mft_name().to_string();

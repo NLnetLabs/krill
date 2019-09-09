@@ -75,11 +75,6 @@ pub fn start(config: &Config) -> Result<(), Error> {
                         "/rfc8181/{handle}/response.xml",
                         get().to(repository_response),
                     )
-                    .route("/trustanchor", get().to(ta_info))
-                    .route("/trustanchor", post().to(ta_init))
-                    .route("/trustanchor/children", post().to(ta_add_child))
-                    .route("/trustanchor/children/{handle}", get().to(ta_show_child))
-                    .route("/trustanchor/children/{handle}", post().to(ta_update_child))
                     .route("/cas", post().to(ca_init))
                     .route("/cas", get().to(cas))
                     .route("/cas/{ca}", get().to(ca_info))

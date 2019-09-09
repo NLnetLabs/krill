@@ -6,13 +6,13 @@ use std::sync::Arc;
 use bcder::Captured;
 use bytes::Bytes;
 use chrono::Duration;
+use rpki::cert::Cert;
 use rpki::uri;
 
 use krill_commons::api::{
     AddChildRequest, AddParentRequest, CertAuthInfo, CertAuthInit, CertAuthList, CertAuthPubMode,
     ChildCaInfo, Handle, ListReply, ParentCaContact, PublishDelta, PublishRequest,
-    PublisherRequest, RcvdCert, RouteAuthorizationUpdates, Token, TrustAnchorInfo,
-    UpdateChildRequest,
+    PublisherRequest, RouteAuthorizationUpdates, TaCertDetails, Token, UpdateChildRequest,
 };
 use krill_commons::remote::api::ClientInfo;
 use krill_commons::remote::proxy;
@@ -76,7 +76,7 @@ impl KrillServer {
         let work_dir = &config.data_dir;
         let base_uri = &config.rsync_base;
         let service_uri = config.service_uri();
-        let rrdp_base_uri = &config.rrdp_base_uri;
+        let rrdp_base_uri = &config.rrdp_base_uri();
         let token = &config.auth_token;
         let ca_refresh_rate = config.ca_refresh;
 
@@ -93,10 +93,40 @@ impl KrillServer {
         let proxy_server = ProxyServer::init(work_dir, &service_uri)?;
 
         let signer = OpenSslSigner::build(work_dir)?;
-
         let event_queue = Arc::new(EventQueueListener::in_mem());
-
         let caserver = Arc::new(ca::CaServer::build(work_dir, event_queue.clone(), signer)?);
+
+        if config.use_ta() {
+            let ta_handle = ta_handle();
+            if caserver.get_ca(&ta_handle).is_err() {
+                let repo_info = pubserver.repo_info_for(&ta_handle)?;
+
+                let ta_uri = config.ta_cert_uri();
+
+                let ta_aia = format!("{}ta/ta.cer", config.rsync_base.to_string());
+                let ta_aia = uri::Rsync::from_string(ta_aia).unwrap();
+                let token = caserver.random_token();
+
+                // Add publisher
+                let req = PublisherRequest::new(
+                    ta_handle.clone(),
+                    token.clone(),
+                    repo_info.base_uri().clone(),
+                );
+
+                pubserver.create_publisher(req).map_err(Error::PubServer)?;
+
+                // Add TA
+                caserver
+                    .init_ta(repo_info, ta_aia, vec![ta_uri])
+                    .map_err(Error::CaServerError)?;
+
+                // Force initial  publication
+                caserver.republish(&ta_handle)?;
+
+                info!("Created embedded Trust Anchor");
+            }
+        }
 
         let scheduler = Scheduler::build(
             event_queue,
@@ -260,49 +290,20 @@ impl KrillServer {
     }
 }
 
-/// # Admin Trust Anchor
+/// # Admin CA as parent
 ///
 impl KrillServer {
-    pub fn ta_info(&self) -> Option<TrustAnchorInfo> {
-        match self.caserver.get_trust_anchor() {
-            Ok(ta) => ta.as_ta_info().ok(),
-            _ => None,
+    pub fn ta(&self) -> KrillRes<TaCertDetails> {
+        let ta = self.caserver.get_ca(&ta_handle())?;
+        if let ParentCaContact::Ta(ta) = ta.parent(&ta_handle()).unwrap() {
+            Ok(ta.clone())
+        } else {
+            panic!("Found TA which was not initialized as TA.")
         }
     }
 
-    pub fn trust_anchor_cert(&self) -> Option<RcvdCert> {
-        self.ta_info().map(|ta| ta.cert().clone())
-    }
-
-    pub fn ta_init(&mut self) -> EmptyRes {
-        let ta_handle = ta_handle();
-
-        let repo_info = self.pubserver.repo_info_for(&ta_handle)?;
-
-        let ta_uri = format!("{}{}", self.service_uri.to_string(), "ta/ta.cer");
-        let ta_uri = uri::Https::from_string(ta_uri).unwrap();
-
-        let ta_aia = self.pubserver.ta_aia();
-
-        let token = self.caserver.random_token();
-
-        // Add publisher
-        let req = PublisherRequest::new(
-            ta_handle.clone(),
-            token.clone(),
-            repo_info.base_uri().clone(),
-        );
-        self.add_publisher(req)?;
-
-        // Add TA
-        self.caserver
-            .init_ta(repo_info, ta_aia, vec![ta_uri])
-            .map_err(Error::CaServerError)?;
-
-        // Force initial  publication
-        self.caserver.republish(&ta_handle)?;
-
-        Ok(())
+    pub fn trust_anchor_cert(&self) -> Option<Cert> {
+        self.ta().ok().map(|details| details.cert().clone())
     }
 
     /// Adds a child to a CA and returns the ParentCaInfo that the child
