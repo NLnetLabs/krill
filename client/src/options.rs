@@ -80,7 +80,7 @@ impl Options {
                     .about("Show current CAs")
                 )
                 .subcommand(SubCommand::with_name("show")
-                    .about("Show CA details)")
+                    .about("Show CA details")
                     .arg(Arg::with_name("handle")
                         .short("h")
                         .long("handle")
@@ -118,7 +118,7 @@ impl Options {
                 )
 
                 .subcommand(SubCommand::with_name("add")
-                    .about("Add a new CA)")
+                    .about("Add a new CA")
                     .arg(Arg::with_name("handle")
                         .short("h")
                         .long("handle")
