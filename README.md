@@ -1,7 +1,6 @@
 [![Travis Build Status](https://api.travis-ci.com/NLnetLabs/krill.svg?branch=master)](https://travis-ci.com/NLnetLabs/krill)
 [![Documentation Status](https://readthedocs.org/projects/rpki/badge/?version=latest)](https://rpki.readthedocs.io/en/latest/?badge=latest)
 
-
 # Krill
 
 Krill is a Resource Public Key Infrastructure (RPKI) daemon, featuring 
@@ -13,22 +12,19 @@ Krill lets organisations run RPKI on their own systems as a child of one or more
 
 To learn more about Krill and how it can benefit your organisation, please refer to the [NLnet Labs website](https://www.nlnetlabs.nl/projects/rpki/krill/). Extensive documentation on Krill and RPKI technology is available on [Read the Docs](https://rpki.readthedocs.io/). We wrote a [blog post](https://medium.com/nlnetlabs/krill-a-new-rpki-certificate-authority-a0acb374431f) with background information as well.
 
-## Development
+## Documentation
 
-Because we believe in transparent development, this project is public while development is ongoing. We are committed to delivering a basic, production quality implementation of Krill by late 2019, with development continuing to offer a full-featured toolset throughout 2020. If you want to track the progress, learn more about the current status and project planning, please have a look at our 
-[milestones](https://github.com/NLnetLabs/krill/milestones?direction=asc&sort=due_date&state=open). 
+Background and technical documentation, including how to build and get started, is maintained on [Read the Docs](https://rpki.readthedocs.io/en/latest/krill/index.html).
+
+## Development, features and bugs
+
+Please have a look at the Changelog.md file, our 
+[planned releases](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc
+), and/or [issues](https://github.com/NLnetLabs/krill/issues). 
 
 If you have any questions, comments or ideas, you are welcome
  to discuss them on our [RPKI mailing list](https://nlnetlabs.nl/mailman/listinfo/rpki), or feel 
 free to create an issue right here on GitHub.
-
-## Status
-
-The Publication Server of Krill is functional. It means that at this point in time, and until a basic Certificate Authority is implemented, running Krill is interesting mostly for developers.
-
-## Documentation
-
-Background and technical documentation, including how to build and get started, is maintained on [Read the Docs](https://rpki.readthedocs.io/en/latest/krill/index.html).
 
 ## License
 

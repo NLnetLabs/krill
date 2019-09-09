@@ -90,7 +90,7 @@ impl Options {
 impl Options {
     pub fn create() -> Result<Self, Error> {
         let m = App::new("NLnet Labs RRDP client (API)")
-            .version("0.1b")
+            .version("0.1.0")
             .arg(
                 Arg::with_name("server")
                     .short("s")

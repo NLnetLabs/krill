@@ -1,6 +1,6 @@
 [package]
 name    = "krill_daemon"
-version = "0.2.0"
+version = "0.1.0"
 authors = ["Tim Bruijnzeels <tim@nlnetlabs.nl>", "Martin Hoffmann <martin@nlnetlabs.nl>"]
 build   = "build-ui.rs"
 
@@ -40,16 +40,16 @@ ignore          = "^0.4"
 
 [dependencies.krill_client]
 path = "../client"
-version = "0.2.0"
+version = "0.1.0"
 
 [dependencies.krill_commons]
 path = "../commons"
-version = "0.2.0"
+version = "0.1.0"
 
 [dependencies.krill_pubc]
 path = "../pubc"
-version = "0.2.0"
+version = "0.1.0"
 
 [dependencies.krill_pubd]
 path = "../pubd"
-version = "0.2.0"
+version = "0.1.0"

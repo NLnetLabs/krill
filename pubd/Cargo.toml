@@ -1,6 +1,6 @@
 [package]
 name    = "krill_pubd"
-version = "0.2.0"
+version = "0.1.0"
 authors = ["Tim Bruijnzeels <tim@nlnetlabs.nl>", "Martin Hoffmann <martin@nlnetlabs.nl>"]
 
 [dependencies]
@@ -14,4 +14,4 @@ uuid            = "0.7"
 
 [dependencies.krill_commons]
 path = "../commons"
-version = "0.2.0"
+version = "0.1.0"

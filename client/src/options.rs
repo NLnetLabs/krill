@@ -46,7 +46,7 @@ impl Options {
     #[allow(clippy::cognitive_complexity)] // there are just many options
     pub fn from_args() -> Result<Options, Error> {
         let matches = App::new("Krill admin client")
-            .version("0.2.0")
+            .version("0.1.0")
             .arg(Arg::with_name("server")
                 .short("s")
                 .long("server")

@@ -1,6 +1,6 @@
 [package]
 name    = "krill_pubc"
-version = "0.2.0"
+version = "0.1.0"
 authors = ["Tim Bruijnzeels <tim@nlnetlabs.nl>", "Martin Hoffmann <martin@nlnetlabs.nl>"]
 
 [dependencies]
@@ -12,5 +12,5 @@ serde_json      = "^1.0"
 
 [dependencies.krill_commons]
 path = "../commons"
-version = "0.2.0"
+version = "0.1.0"
 
