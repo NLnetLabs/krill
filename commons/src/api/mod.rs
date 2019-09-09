@@ -1,12 +1,16 @@
 //! Data structures for the API, shared between client and server.
 
-pub mod admin;
-pub mod ca;
+mod admin;
+pub use self::admin::*;
+
+mod ca;
+pub use self::ca::*;
 
 mod provisioning;
 pub use self::provisioning::*;
 
-pub mod publication;
+mod publication;
+pub use self::publication::*;
 
 mod roas;
 pub use self::roas::*;
@@ -48,8 +52,8 @@ impl Base64 {
         hex::encode(sha256(&self.to_bytes()))
     }
 
-    pub fn to_encoded_hash(&self) -> EncodedHash {
-        EncodedHash::from(self.to_hex_hash())
+    pub fn to_encoded_hash(&self) -> HexEncodedHash {
+        HexEncodedHash::from(self.to_hex_hash())
     }
 }
 
@@ -115,48 +119,66 @@ impl<'de> Deserialize<'de> for Base64 {
     }
 }
 
-//------------ EncodedHash ---------------------------------------------------
+//------------ HexEncodedHash ------------------------------------------------
 
 /// This type contains a hex encoded sha256 hash.
 ///
 /// Note that we store this in a Bytes for cheap cloning.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct EncodedHash(Bytes);
+pub struct HexEncodedHash(Bytes);
 
-impl EncodedHash {
+impl HexEncodedHash {
     pub fn from_content(content: &[u8]) -> Self {
         let sha256 = sha256(content);
         let hex = hex::encode(sha256);
-        EncodedHash::from(hex)
+        HexEncodedHash::from(hex)
     }
 }
 
-impl Into<Bytes> for EncodedHash {
+impl Into<Bytes> for HexEncodedHash {
     fn into(self) -> Bytes {
         self.0
     }
 }
 
-impl AsRef<str> for EncodedHash {
+impl AsRef<str> for HexEncodedHash {
     fn as_ref(&self) -> &str {
         use std::str;
         str::from_utf8(&self.0).unwrap()
     }
 }
 
-impl From<String> for EncodedHash {
-    fn from(s: String) -> Self {
-        EncodedHash(Bytes::from(s.to_lowercase()))
+impl AsRef<Bytes> for HexEncodedHash {
+    fn as_ref(&self) -> &Bytes {
+        &self.0
     }
 }
 
-impl ToString for EncodedHash {
+impl From<&Crl> for HexEncodedHash {
+    fn from(crl: &Crl) -> Self {
+        Self::from_content(crl.to_captured().as_slice())
+    }
+}
+
+impl From<&Manifest> for HexEncodedHash {
+    fn from(mft: &Manifest) -> Self {
+        Self::from_content(mft.to_captured().as_slice())
+    }
+}
+
+impl From<String> for HexEncodedHash {
+    fn from(s: String) -> Self {
+        HexEncodedHash(Bytes::from(s.to_lowercase()))
+    }
+}
+
+impl ToString for HexEncodedHash {
     fn to_string(&self) -> String {
         unsafe { String::from_utf8_unchecked(self.0.to_vec()) }
     }
 }
 
-impl Serialize for EncodedHash {
+impl Serialize for HexEncodedHash {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -165,13 +187,13 @@ impl Serialize for EncodedHash {
     }
 }
 
-impl<'de> Deserialize<'de> for EncodedHash {
-    fn deserialize<D>(deserializer: D) -> Result<EncodedHash, D::Error>
+impl<'de> Deserialize<'de> for HexEncodedHash {
+    fn deserialize<D>(deserializer: D) -> Result<HexEncodedHash, D::Error>
     where
         D: Deserializer<'de>,
     {
         let string = String::deserialize(deserializer)?;
-        Ok(EncodedHash::from(string))
+        Ok(HexEncodedHash::from(string))
     }
 }
 

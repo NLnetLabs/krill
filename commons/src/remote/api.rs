@@ -1,7 +1,7 @@
 use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 
-use crate::api::admin::Handle;
+use crate::api::Handle;
 use crate::remote::id::IdCert;
 
 //------------ Client ------------------------------------------------------

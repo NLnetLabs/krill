@@ -1,13 +1,22 @@
 //! Certificate Authority related code.
 //!
-use krill_commons::api::admin::Handle;
+use krill_commons::api::Handle;
 
 mod certauth;
 pub use self::certauth::CertAuth;
 pub use self::certauth::Rfc8183Id;
 
+mod child;
+pub use self::child::*;
+
 mod rc;
 pub use self::rc::ResourceClass;
+
+mod keys;
+pub use self::keys::*;
+
+mod publishing;
+pub use self::publishing::*;
 
 mod routes;
 pub use self::routes::*;
@@ -21,7 +30,6 @@ pub use self::events::Evt;
 pub use self::events::EvtDet;
 pub use self::events::Ini;
 pub use self::events::IniDet;
-pub use self::events::Ta;
 
 mod server;
 pub use self::server::CaServer;

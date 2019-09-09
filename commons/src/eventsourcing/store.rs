@@ -9,7 +9,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json;
 
-use crate::api::admin::Handle;
+use crate::api::Handle;
 use crate::util::file;
 
 use super::{Aggregate, Event};

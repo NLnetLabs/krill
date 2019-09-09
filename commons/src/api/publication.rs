@@ -3,7 +3,7 @@ use std::ops;
 
 use rpki::uri;
 
-use crate::api::{Base64, EncodedHash};
+use crate::api::{Base64, HexEncodedHash};
 use crate::util::file::CurrentFile;
 
 //------------ PublishRequest ------------------------------------------------
@@ -171,7 +171,7 @@ pub struct Update {
     tag: Option<String>,
     uri: uri::Rsync,
     content: Base64,
-    hash: EncodedHash,
+    hash: HexEncodedHash,
 }
 
 impl Update {
@@ -179,7 +179,7 @@ impl Update {
         tag: Option<String>,
         uri: uri::Rsync,
         content: Base64,
-        old_hash: EncodedHash,
+        old_hash: HexEncodedHash,
     ) -> Self {
         Update {
             tag,
@@ -188,7 +188,7 @@ impl Update {
             hash: old_hash,
         }
     }
-    pub fn with_hash_tag(uri: uri::Rsync, content: Base64, old_hash: EncodedHash) -> Self {
+    pub fn with_hash_tag(uri: uri::Rsync, content: Base64, old_hash: HexEncodedHash) -> Self {
         let tag = Some(content.to_hex_hash());
         Update {
             tag,
@@ -213,11 +213,11 @@ impl Update {
     pub fn content(&self) -> &Base64 {
         &self.content
     }
-    pub fn hash(&self) -> &EncodedHash {
+    pub fn hash(&self) -> &HexEncodedHash {
         &self.hash
     }
 
-    pub fn unwrap(self) -> (Option<String>, uri::Rsync, Base64, EncodedHash) {
+    pub fn unwrap(self) -> (Option<String>, uri::Rsync, Base64, HexEncodedHash) {
         (self.tag, self.uri, self.content, self.hash)
     }
 }
@@ -231,15 +231,15 @@ impl Update {
 pub struct Withdraw {
     tag: Option<String>,
     uri: uri::Rsync,
-    hash: EncodedHash,
+    hash: HexEncodedHash,
 }
 
 impl Withdraw {
-    pub fn new(tag: Option<String>, uri: uri::Rsync, hash: EncodedHash) -> Self {
+    pub fn new(tag: Option<String>, uri: uri::Rsync, hash: HexEncodedHash) -> Self {
         Withdraw { tag, uri, hash }
     }
 
-    pub fn with_hash_tag(uri: uri::Rsync, hash: EncodedHash) -> Self {
+    pub fn with_hash_tag(uri: uri::Rsync, hash: HexEncodedHash) -> Self {
         let tag = Some(hash.to_string());
         Withdraw { tag, uri, hash }
     }
@@ -264,11 +264,11 @@ impl Withdraw {
     pub fn uri(&self) -> &uri::Rsync {
         &self.uri
     }
-    pub fn hash(&self) -> &EncodedHash {
+    pub fn hash(&self) -> &HexEncodedHash {
         &self.hash
     }
 
-    pub fn unwrap(self) -> (Option<String>, uri::Rsync, EncodedHash) {
+    pub fn unwrap(self) -> (Option<String>, uri::Rsync, HexEncodedHash) {
         (self.tag, self.uri, self.hash)
     }
 }
@@ -315,18 +315,18 @@ impl ListReply {
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct ListElement {
     uri: uri::Rsync,
-    hash: EncodedHash,
+    hash: HexEncodedHash,
 }
 
 impl ListElement {
-    pub fn new(uri: uri::Rsync, hash: EncodedHash) -> Self {
+    pub fn new(uri: uri::Rsync, hash: HexEncodedHash) -> Self {
         ListElement { uri, hash }
     }
 
     pub fn uri(&self) -> &uri::Rsync {
         &self.uri
     }
-    pub fn hash(&self) -> &EncodedHash {
+    pub fn hash(&self) -> &HexEncodedHash {
         &self.hash
     }
 }

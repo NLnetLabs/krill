@@ -1,14 +1,14 @@
 //! Some helper functions for HTTP calls
+use std::io::Read;
+use std::time::Duration;
+
 use bytes::Bytes;
 use reqwest::header::{HeaderMap, HeaderValue, InvalidHeaderValue, CONTENT_TYPE, USER_AGENT};
 use reqwest::{Client, Response, StatusCode};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use std::io::Read;
-use std::time::Duration;
 
-use crate::api::admin::Token;
-use crate::api::ErrorResponse;
+use crate::api::{ErrorResponse, Token};
 
 const JSON_CONTENT: &str = "application/json";
 

@@ -5,11 +5,11 @@ use actix_web::{HttpResponse, ResponseError};
 use bytes::Bytes;
 use serde::Serialize;
 
-use krill_commons::api::admin::{
-    AddChildRequest, AddParentRequest, CertAuthInit, Handle, UpdateChildRequest,
-};
 use krill_commons::api::rrdp::VerificationError;
-use krill_commons::api::{admin, publication, ErrorCode, ErrorResponse, RouteAuthorizationUpdates};
+use krill_commons::api::{
+    AddChildRequest, AddParentRequest, CertAuthInit, ErrorCode, ErrorResponse, Handle,
+    PublishDelta, PublisherList, PublisherRequest, RouteAuthorizationUpdates, UpdateChildRequest,
+};
 use krill_commons::remote::api::ClientInfo;
 use krill_commons::remote::rfc6492;
 use krill_commons::remote::sigmsg::SignedMessage;
@@ -115,10 +115,7 @@ pub fn publishers(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
     let publishers = server.read().publishers();
 
     if_api_allowed(&server, &auth, || {
-        render_json(admin::PublisherList::build(
-            &publishers,
-            "/api/v1/publishers",
-        ))
+        render_json(PublisherList::build(&publishers, "/api/v1/publishers"))
     })
 }
 
@@ -127,7 +124,7 @@ pub fn publishers(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
 pub fn add_publisher(
     server: web::Data<AppServer>,
     auth: Auth,
-    pbl: Json<admin::PublisherRequest>,
+    pbl: Json<PublisherRequest>,
 ) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_empty_res(server.write().add_publisher(pbl.into_inner()))
@@ -186,7 +183,7 @@ pub fn rfc8181(
 pub fn handle_delta(
     server: web::Data<AppServer>,
     auth: Auth,
-    delta: Json<publication::PublishDelta>,
+    delta: Json<PublishDelta>,
     handle: Path<Handle>,
 ) -> HttpResponse {
     let handle = handle.into_inner();

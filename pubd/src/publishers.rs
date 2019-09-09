@@ -1,8 +1,9 @@
 use rpki::uri;
 
-use krill_commons::api::admin::{Handle, PublisherDetails, PublisherRequest, Token};
-use krill_commons::api::publication;
 use krill_commons::api::rrdp::{CurrentObjects, DeltaElements, VerificationError};
+use krill_commons::api::{
+    Handle, ListReply, PublishDelta, PublisherDetails, PublisherRequest, Token,
+};
 use krill_commons::eventsourcing::{Aggregate, CommandDetails, SentCommand, StoredEvent};
 
 //------------ PublisherInit -------------------------------------------------
@@ -50,7 +51,7 @@ pub type PublisherCommand = SentCommand<PublisherCommandDetails>;
 #[derive(Clone, Deserialize, Serialize)]
 pub enum PublisherCommandDetails {
     Deactivate,
-    Publish(publication::PublishDelta),
+    Publish(PublishDelta),
 }
 
 impl CommandDetails for PublisherCommandDetails {
@@ -62,7 +63,7 @@ impl PublisherCommandDetails {
         PublisherCommand::new(&handle, None, PublisherCommandDetails::Deactivate)
     }
 
-    pub fn publish(handle: &Handle, delta: publication::PublishDelta) -> PublisherCommand {
+    pub fn publish(handle: &Handle, delta: PublishDelta) -> PublisherCommand {
         PublisherCommand::new(&handle, None, PublisherCommandDetails::Publish(delta))
     }
 }
@@ -171,7 +172,7 @@ impl Publisher {
     /// the use of Bytes as the underlying structure. Still, it may be good
     /// to change this implementation in future to return a structure that
     /// takes references, and only lives long enough to compose a response.
-    pub fn list_current(&self) -> publication::ListReply {
+    pub fn list_current(&self) -> ListReply {
         self.current_objects.to_list_reply()
     }
 
@@ -179,7 +180,7 @@ impl Publisher {
     /// provided that it's legitimate.
     fn process_delta_cmd(
         &self,
-        delta: publication::PublishDelta,
+        delta: PublishDelta,
     ) -> Result<Vec<PublisherEvent>, PublisherError> {
         let delta = DeltaElements::from(delta);
         self.current_objects.verify_delta(&delta, &self.base_uri)?;

@@ -6,12 +6,11 @@ use clap::{App, Arg, SubCommand};
 
 use rpki::uri;
 
-use krill_commons::api::admin::{
-    AddChildRequest, AddParentRequest, CertAuthInit, CertAuthPubMode, ChildAuthRequest, Handle,
-    ParentCaContact, Token, UpdateChildRequest,
+use krill_commons::api::{
+    AddChildRequest, AddParentRequest, AuthorizationFmtError, CertAuthInit, CertAuthPubMode,
+    ChildAuthRequest, Handle, ParentCaContact, ResSetErr, ResourceSet, RouteAuthorizationUpdates,
+    Token, UpdateChildRequest,
 };
-use krill_commons::api::ca::{ResSetErr, ResourceSet};
-use krill_commons::api::{AuthorizationFmtError, RouteAuthorizationUpdates};
 use krill_commons::remote::rfc8183;
 use krill_commons::util::file;
 

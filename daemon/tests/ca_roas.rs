@@ -5,13 +5,17 @@ extern crate krill_pubc;
 
 use std::str::FromStr;
 
-use krill_commons::api::admin::{AddParentRequest, Handle, Token};
-use krill_commons::api::ca::{ObjectName, ResourceSet};
-use krill_commons::api::{RouteAuthorization, RouteAuthorizationUpdates};
+use krill_commons::api::{
+    AddParentRequest, Handle, ObjectName, ResourceSet, RouteAuthorization,
+    RouteAuthorizationUpdates, Token,
+};
 use krill_daemon::ca::ta_handle;
 use krill_daemon::test::*;
 
 #[test]
+/// Test the CAs can issue and publish ROAs for their resources, and that
+/// ROAs get updated and published properly when resources change, as well
+/// as during and after key rolls.
 fn ca_roas() {
     test_with_krill_server(|_d| {
         let child = Handle::from("child");

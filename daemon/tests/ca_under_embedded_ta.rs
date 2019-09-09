@@ -3,8 +3,7 @@ extern crate krill_commons;
 extern crate krill_daemon;
 extern crate krill_pubc;
 
-use krill_commons::api::admin::{AddParentRequest, Handle, Token};
-use krill_commons::api::ca::ResourceSet;
+use krill_commons::api::{AddParentRequest, Handle, ResourceSet, Token};
 use krill_daemon::ca::ta_handle;
 use krill_daemon::test::*;
 
@@ -12,6 +11,7 @@ use krill_daemon::test::*;
 fn ca_under_embedded_ta() {
     test_with_krill_server(|_d| {
         let ta_handle = ta_handle();
+
         init_ta();
 
         let child = Handle::from("child");

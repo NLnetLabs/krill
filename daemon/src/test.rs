@@ -9,13 +9,12 @@ use krill_client::options::{CaCommand, Command, Options, PublishersCommand, Trus
 use krill_client::report::{ApiResponse, ReportFormat};
 use krill_client::{Error, KrillClient};
 
-use krill_commons::api::admin::{
-    AddChildRequest, AddParentRequest, CertAuthInit, CertAuthPubMode, ChildAuthRequest, Handle,
-    ParentCaContact, PublisherDetails, Token, UpdateChildRequest,
+use krill_commons::api::{
+    AddChildRequest, AddParentRequest, CertAuthInfo, CertAuthInit, CertAuthPubMode,
+    CertifiedKeyInfo, ChildAuthRequest, Handle, ParentCaContact, Publish, PublisherDetails,
+    ResourceClassKeysInfo, ResourceClassName, ResourceSet, RouteAuthorizationUpdates, Token,
+    UpdateChildRequest,
 };
-use krill_commons::api::ca::{CertAuthInfo, ResourceClassKeysInfo, ResourceClassName, ResourceSet};
-use krill_commons::api::publication::Publish;
-use krill_commons::api::RouteAuthorizationUpdates;
 use krill_commons::remote::rfc8183;
 use krill_commons::util::test;
 
@@ -217,7 +216,17 @@ pub fn ca_details(handle: &Handle) -> CertAuthInfo {
     }
 }
 
-pub fn wait_for<O>(tries: u64, error_msg: &'static str, op: O)
+pub fn ca_key_for_rcn(handle: &Handle, rcn: &ResourceClassName) -> CertifiedKeyInfo {
+    ca_details(handle)
+        .resources()
+        .get(rcn)
+        .unwrap()
+        .current_key()
+        .unwrap()
+        .clone()
+}
+
+pub fn wait_for<O>(tries: u64, error_msg: &str, op: O)
 where
     O: Copy + FnOnce() -> bool,
 {
@@ -227,7 +236,8 @@ where
         }
         wait_seconds(1);
     }
-    panic!(error_msg);
+    eprintln!("{}", error_msg);
+    panic!();
 }
 
 pub fn wait_for_current_resources(handle: &Handle, resources: &ResourceSet) {
@@ -243,7 +253,7 @@ pub fn wait_for_new_key(handle: &Handle) {
         let ca = ca_details(handle);
         if let Some(rc) = ca.resources().get(&ResourceClassName::default()) {
             match rc.keys() {
-                ResourceClassKeysInfo::RollNew(new, _) => return new.current_set().number() == 2,
+                ResourceClassKeysInfo::RollNew(_, _) => return true,
                 _ => return false,
             }
         }
@@ -288,12 +298,7 @@ pub fn ta_issued_certs() -> usize {
 pub fn ta_issued_resources(child: &Handle) -> ResourceSet {
     let ta = ca_details(&ta_handle());
     let child = ta.children().get(child).unwrap();
-    if let Some(resources) = child.resources().get(&ResourceClassName::default()) {
-        if let Some(cert) = resources.certs_iter().next() {
-            return cert.resource_set().clone(); // for our testing the first will do
-        }
-    }
-    ResourceSet::default()
+    child.issued_resources().clone()
 }
 
 pub fn ca_current_resources(handle: &Handle) -> ResourceSet {
@@ -331,22 +336,38 @@ pub fn publisher_details(handle: &Handle) -> PublisherDetails {
 }
 
 pub fn wait_for_published_objects(handle: &Handle, objects: &[&str]) {
-    wait_for(30, "No exact match for published objects found", || {
-        let details = publisher_details(handle);
+    let mut details = publisher_details(handle);
 
+    for _counter in 1..=30 {
         let current_files = details.current_files();
-        if current_files.len() != objects.len() {
-            return false;
-        }
 
-        let current_files: Vec<&Rsync> = current_files.iter().map(|p| p.uri()).collect();
-
-        for o in objects {
-            if current_files.iter().find(|uri| uri.ends_with(o)).is_none() {
-                return false;
+        if current_files.len() == objects.len() {
+            let current_files: Vec<&Rsync> = current_files.iter().map(|p| p.uri()).collect();
+            let mut all_matched = true;
+            for o in objects {
+                if current_files.iter().find(|uri| uri.ends_with(o)).is_none() {
+                    all_matched = false;
+                }
+            }
+            if all_matched {
+                return;
             }
         }
 
-        true
-    })
+        wait_seconds(1);
+
+        details = publisher_details(handle);
+    }
+
+    eprintln!("Did not find match for: {}", handle);
+    eprintln!("Found:");
+    for file in details.current_files() {
+        eprintln!("  {}", file.uri());
+    }
+    eprintln!("Expected:");
+    for file in objects {
+        eprintln!("  {}", file);
+    }
+
+    panic!("Exiting test");
 }

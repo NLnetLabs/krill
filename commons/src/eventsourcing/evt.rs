@@ -1,4 +1,4 @@
-use crate::api::admin::Handle;
+use crate::api::Handle;
 
 use super::Storable;
 

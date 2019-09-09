@@ -2,10 +2,10 @@ use std::sync::{Arc, RwLock};
 
 use chrono::Duration;
 
-use krill_commons::api::admin::{Handle, ParentCaContact, UpdateChildRequest};
-use krill_commons::api::ca::{RcvdCert, ResourceClassName, ResourceSet};
 use krill_commons::api::{
-    Entitlements, IssuanceRequest, RevocationRequest, RevocationResponse, RouteAuthorizationUpdates,
+    Entitlements, Handle, IssuanceRequest, ParentCaContact, RcvdCert, ResourceClassName,
+    ResourceSet, RevocationRequest, RevocationResponse, RouteAuthorizationUpdates,
+    UpdateChildRequest,
 };
 use krill_commons::eventsourcing;
 use krill_commons::remote::id::IdCert;
@@ -34,7 +34,7 @@ pub enum CmdDet<S: Signer> {
     // Process a revoke request by an existing child.
     ChildRevokeKey(ChildHandle, RevocationRequest, Arc<RwLock<S>>),
     // Shrink child (only has events in case child is overclaiming)
-    ChildShrink(ChildHandle, Duration, Arc<RwLock<S>>),
+    ChildShrink(ChildHandle, Arc<RwLock<S>>),
 
     // ------------------------------------------------------------
     // Being a child (only allowed if this CA is not self-signed)
@@ -42,8 +42,10 @@ pub enum CmdDet<S: Signer> {
 
     // Add a parent to this CA. Can have multiple parents.
     AddParent(ParentHandle, ParentCaContact),
-    // Process new entitlements from a parent and create issue/revoke requests as needed.
-    UpdateEntitlements(ParentHandle, Entitlements, Arc<RwLock<S>>),
+    // Process new entitlements from a parent and remove/create/update
+    // ResourceClasses and certificate requests or key revocation requests
+    // as needed.
+    UpdateResourceClasses(ParentHandle, Entitlements, Arc<RwLock<S>>),
     // Process a new certificate received from a parent.
     UpdateRcvdCert(ResourceClassName, RcvdCert, Arc<RwLock<S>>),
 
@@ -142,21 +144,16 @@ impl<S: Signer> CmdDet<S> {
     pub fn child_shrink(
         handle: &Handle,
         child_handle: ChildHandle,
-        grace: Duration,
         signer: Arc<RwLock<S>>,
     ) -> Cmd<S> {
-        eventsourcing::SentCommand::new(
-            handle,
-            None,
-            CmdDet::ChildShrink(child_handle, grace, signer),
-        )
+        eventsourcing::SentCommand::new(handle, None, CmdDet::ChildShrink(child_handle, signer))
     }
 
     pub fn add_parent(handle: &Handle, parent: ParentHandle, info: ParentCaContact) -> Cmd<S> {
         eventsourcing::SentCommand::new(handle, None, CmdDet::AddParent(parent, info))
     }
 
-    pub fn upd_entitlements(
+    pub fn upd_resource_classes(
         handle: &Handle,
         parent: ParentHandle,
         entitlements: Entitlements,
@@ -165,7 +162,7 @@ impl<S: Signer> CmdDet<S> {
         eventsourcing::SentCommand::new(
             handle,
             None,
-            CmdDet::UpdateEntitlements(parent, entitlements, signer),
+            CmdDet::UpdateResourceClasses(parent, entitlements, signer),
         )
     }
 

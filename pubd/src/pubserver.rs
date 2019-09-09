@@ -6,10 +6,8 @@ use chrono::Duration;
 
 use rpki::uri;
 
-use krill_commons::api::admin::{Handle, PublisherRequest};
-use krill_commons::api::ca::RepoInfo;
-use krill_commons::api::publication;
 use krill_commons::api::rrdp::DeltaElements;
+use krill_commons::api::{Handle, ListReply, PublishDelta, PublisherRequest, RepoInfo};
 use krill_commons::eventsourcing::{
     Aggregate, AggregateStore, AggregateStoreError, Command, DiskAggregateStore,
 };
@@ -94,7 +92,7 @@ impl PubServer {
             .map_err(Error::AggregateStoreError)
     }
 
-    pub fn publish(&self, handle: &Handle, delta: publication::PublishDelta) -> Result<(), Error> {
+    pub fn publish(&self, handle: &Handle, delta: PublishDelta) -> Result<(), Error> {
         // Only do one update at a time.
         let _lock = self.command_lock.lock().unwrap();
 
@@ -134,7 +132,7 @@ impl PubServer {
         Ok(())
     }
 
-    pub fn list(&self, handle: &Handle) -> Result<publication::ListReply, Error> {
+    pub fn list(&self, handle: &Handle) -> Result<ListReply, Error> {
         match self.get_publisher(handle)? {
             Some(publisher) => Ok(publisher.list_current()),
             None => Err(Error::UnknownPublisher(handle.to_string())),
@@ -316,9 +314,8 @@ mod tests {
 
     use super::*;
     use bytes::Bytes;
-    use krill_commons::api::admin::Token;
-    use krill_commons::api::publication::PublishDeltaBuilder;
     use krill_commons::api::rrdp::VerificationError;
+    use krill_commons::api::{ListElement, PublishDeltaBuilder, Token};
     use krill_commons::util::file::CurrentFile;
     use krill_commons::util::test;
     use std::path::PathBuf;
@@ -466,9 +463,9 @@ mod tests {
         test::test_under_tmp(|d| {
             // get the file out of a list_reply
             fn find_in_reply<'a>(
-                reply: &'a publication::ListReply,
+                reply: &'a ListReply,
                 uri: &uri::Rsync,
-            ) -> Option<&'a publication::ListElement> {
+            ) -> Option<&'a ListElement> {
                 reply.elements().iter().find(|e| e.uri() == uri)
             }
 

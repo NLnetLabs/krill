@@ -5,8 +5,7 @@ use rpki::roa::{Roa, RoaBuilder};
 use rpki::sigobj::SignedObjectBuilder;
 use rpki::x509::{Serial, Time};
 
-use krill_commons::api::ca::{RcvdCert, ReplacedObject};
-use krill_commons::api::RouteAuthorization;
+use krill_commons::api::{RcvdCert, ReplacedObject, RouteAuthorization};
 
 use crate::ca::events::RoaUpdates;
 use crate::ca::{self, SignSupport, Signer};
@@ -140,6 +139,10 @@ impl Roas {
 
     pub fn iter(&self) -> impl Iterator<Item = (&RouteAuthorization, &RoaInfo)> {
         self.inner.iter()
+    }
+
+    pub fn current(&self) -> impl Iterator<Item = &RoaInfo> {
+        self.inner.values()
     }
 
     pub fn authorizations(&self) -> impl Iterator<Item = &RouteAuthorization> {

@@ -9,17 +9,11 @@ use chrono::Duration;
 use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 
-use krill_commons::api;
-use krill_commons::api::admin::{
-    AddChildRequest, AddParentRequest, ChildAuthRequest, Handle, ParentCaContact, Token,
-    UpdateChildRequest,
-};
-use krill_commons::api::ca::{
-    CertAuthList, CertAuthSummary, ChildCaInfo, IssuedCert, RcvdCert, RepoInfo, ResourceClassName,
-};
 use krill_commons::api::{
-    Entitlements, IssuanceRequest, IssuanceResponse, RevocationRequest, RevocationResponse,
-    RouteAuthorizationUpdates,
+    self, AddChildRequest, AddParentRequest, CertAuthList, CertAuthSummary, ChildAuthRequest,
+    ChildCaInfo, Entitlements, Handle, IssuanceRequest, IssuanceResponse, IssuedCert,
+    ParentCaContact, RcvdCert, RepoInfo, ResourceClassName, ResourceSet, RevocationRequest,
+    RevocationResponse, RouteAuthorizationUpdates, Token, UpdateChildRequest,
 };
 use krill_commons::eventsourcing::{Aggregate, AggregateStore, DiskAggregateStore};
 use krill_commons::remote::builder::SignedMessageBuilder;
@@ -78,10 +72,22 @@ impl<S: Signer> CaServer<S> {
         if self.ca_store.has(&handle) {
             Err(ServerError::TrustAnchorInitialisedError)
         } else {
-            let init = IniDet::init_ta(&handle, info, ta_aia, ta_uris, self.signer.clone())?;
+            let init = IniDet::init_ta(&handle, info, ta_uris, self.signer.clone())?;
 
-            self.ca_store.add(init)?;
+            let ta = self.ca_store.add(init)?;
 
+            let ta_cert = ta.parent(&handle).unwrap().to_ta_cert();
+
+            let rcvd_cert = RcvdCert::new(ta_cert.clone(), ta_aia, ResourceSet::all_resources());
+
+            let events = ta.process_command(CmdDet::upd_received_cert(
+                &handle,
+                ResourceClassName::default(),
+                rcvd_cert,
+                self.signer.clone(),
+            ))?;
+
+            self.ca_store.update(&handle, ta, events)?;
             Ok(())
         }
     }
@@ -192,12 +198,8 @@ impl<S: Signer> CaServer<S> {
             ca = self.ca_store.update(parent, ca, events)?;
 
             if force {
-                let events = ca.process_command(CmdDet::child_shrink(
-                    parent,
-                    child,
-                    Duration::seconds(0),
-                    self.signer.clone(),
-                ))?;
+                let events =
+                    ca.process_command(CmdDet::child_shrink(parent, child, self.signer.clone()))?;
                 if !events.is_empty() {
                     self.ca_store.update(parent, ca, events)?;
                 }
@@ -411,14 +413,14 @@ impl<S: Signer> CaServer<S> {
     }
 
     /// Let all CAs shrink certificates that have not been updated within the graceperiod.
-    pub fn all_cas_shrink(&self, grace: Duration) -> ServerResult<(), S> {
+    pub fn all_cas_shrink(&self) -> ServerResult<(), S> {
         for handle in self.ca_store.list() {
             if handle == ta_handle() {
                 continue;
             }
             if let Ok(ca) = self.get_ca(&handle) {
                 for child in ca.children() {
-                    if let Err(e) = ca.shrink_child(child, grace, self.signer.clone()) {
+                    if let Err(e) = ca.shrink_child(child, self.signer.clone()) {
                         error!(
                             "Could not shrink certificates for CA {}, error: {}",
                             child, e
@@ -441,7 +443,7 @@ impl<S: Signer> CaServer<S> {
         } else {
             let entitlements = self.get_entitlements_from_parent(handle, parent)?;
 
-            if !self.update_if_needed(handle, parent.clone(), entitlements)? {
+            if !self.update_resource_classes(handle, parent.clone(), entitlements)? {
                 return Ok(()); // Nothing to do
             }
 
@@ -680,11 +682,11 @@ impl<S: Signer> CaServer<S> {
         Ok(issued_map)
     }
 
-    /// Updates the CA if entitlements are different from what the CA
-    /// currently has under this parent. Returns [`Ok(true)`] in case
-    /// there were any updates. In that case the CA will have been updated
-    /// with open certificate requests which can be retrieved.
-    fn update_if_needed(
+    /// Updates the CA resource classes, if entitlements are different from
+    /// what the CA currently has under this parent. Returns [`Ok(true)`] in
+    /// case there were any updates, implying that there will be open requests
+    /// for the parent CA.
+    fn update_resource_classes(
         &self,
         handle: &Handle,
         parent: ParentHandle,
@@ -693,7 +695,7 @@ impl<S: Signer> CaServer<S> {
         let child = self.ca_store.get_latest(handle)?;
 
         let update_entitlements_command =
-            CmdDet::upd_entitlements(handle, parent, entitlements, self.signer.clone());
+            CmdDet::upd_resource_classes(handle, parent, entitlements, self.signer.clone());
 
         let events = child.process_command(update_entitlements_command)?;
         if !events.is_empty() {
@@ -830,9 +832,9 @@ mod tests {
     use std::sync::{Arc, RwLock};
 
     use ca::EvtDet;
-    use krill_commons::api::admin::{Handle, ParentCaContact, Token};
-    use krill_commons::api::ca::{RcvdCert, RepoInfo, ResourceSet};
-    use krill_commons::api::IssuanceRequest;
+    use krill_commons::api::{
+        Handle, IssuanceRequest, ParentCaContact, RcvdCert, RepoInfo, ResourceSet, Token,
+    };
     use krill_commons::eventsourcing::{Aggregate, AggregateStore, DiskAggregateStore};
     use krill_commons::util::softsigner::OpenSslSigner;
     use krill_commons::util::test;
@@ -894,17 +896,25 @@ mod tests {
             // --- Create TA and publish
             //
 
-            let ta_ini = IniDet::init_ta(
-                &ta_handle,
-                ta_repo_info,
-                ta_aia,
-                vec![ta_uri],
-                signer.clone(),
-            )
-            .unwrap();
+            let ta_ini =
+                IniDet::init_ta(&ta_handle, ta_repo_info, vec![ta_uri], signer.clone()).unwrap();
 
             ca_store.add(ta_ini).unwrap();
             let ta = ca_store.get_latest(&ta_handle).unwrap();
+
+            let ta_cert = ta.parent(&ta_handle).unwrap().to_ta_cert();
+            let rcvd_cert = RcvdCert::new(ta_cert.clone(), ta_aia, ResourceSet::all_resources());
+
+            let events = ta
+                .process_command(CmdDet::upd_received_cert(
+                    &ta_handle,
+                    ResourceClassName::default(),
+                    rcvd_cert,
+                    signer.clone(),
+                ))
+                .unwrap();
+
+            let ta = ca_store.update(&ta_handle, ta, events).unwrap();
 
             //
             // --- Create Child CA
@@ -970,7 +980,7 @@ mod tests {
 
             let entitlements = ta.list(&child_handle).unwrap();
 
-            let upd_ent = CmdDet::upd_entitlements(
+            let upd_ent = CmdDet::upd_resource_classes(
                 &child_handle,
                 ta_handle.clone(),
                 entitlements,
