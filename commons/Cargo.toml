@@ -5,7 +5,7 @@ authors = ["Tim Bruijnzeels <tim@nlnetlabs.nl>", "Martin Hoffmann <martin@nlnetl
 
 [dependencies]
 base64       = "^0.10"
-bcder        = "^0.3"
+bcder        = "^0.4"
 bytes        = "^0.4"
 chrono       = { version = "^0.4", features = ["serde"] }
 derive_more  = "^0.13"
@@ -15,7 +15,7 @@ log          = "^0.4"
 openssl      = { version = "^0.10", features = ["v110"] }
 rand         = "^0.5"
 reqwest      = "^0.9.17"
-rpki         = "^0.5"
+rpki         = "^0.6"
 serde        = { version = "^1.0", features = [ "derive" ] }
 serde_json   = "^1.0"
 syslog       = "^4.0"
