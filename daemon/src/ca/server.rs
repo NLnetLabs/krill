@@ -856,7 +856,7 @@ mod tests {
 
             let repo_info = {
                 let base_uri = test::rsync("rsync://localhost/repo/ta/");
-                let rrdp_uri = test::https("https://localhost/repo/notifcation.xml");
+                let rrdp_uri = test::https("https://localhost/repo/notification.xml");
                 RepoInfo::new(base_uri, rrdp_uri)
             };
 
@@ -880,7 +880,7 @@ mod tests {
 
             let ta_repo_info = {
                 let base_uri = rsync("rsync://localhost/repo/ta/");
-                let rrdp_uri = https("https://localhost/repo/notifcation.xml");
+                let rrdp_uri = https("https://localhost/repo/notification.xml");
                 RepoInfo::new(base_uri, rrdp_uri)
             };
 
@@ -928,7 +928,7 @@ mod tests {
 
             let ca_repo_info = {
                 let base_uri = rsync("rsync://localhost/repo/ca/");
-                let rrdp_uri = https("https://localhost/repo/notifcation.xml");
+                let rrdp_uri = https("https://localhost/repo/notification.xml");
                 RepoInfo::new(base_uri, rrdp_uri)
             };
 
