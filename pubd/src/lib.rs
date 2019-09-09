@@ -6,6 +6,7 @@ extern crate rand;
 extern crate rpki;
 #[macro_use]
 extern crate serde;
+extern crate uuid;
 extern crate krill_commons;
 
 pub mod publishers;

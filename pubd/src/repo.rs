@@ -34,10 +34,8 @@ pub struct RrdpInitDetails {
 
 impl RrdpInitDetails {
     pub fn init_new(base_uri: uri::Https, repo_dir: PathBuf) -> RrdpInit {
-        use rand::{thread_rng, Rng};
-        let mut rng = thread_rng();
-        let rnd: u32 = rng.gen();
-        let session = format!("{}", rnd);
+        use uuid::Uuid;
+        let session = format!("{}", Uuid::new_v4());
 
         StoredEvent::new(
             &id(),
