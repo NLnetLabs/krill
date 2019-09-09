@@ -232,7 +232,7 @@ impl Options {
     /// Creates the config (at startup). Panics in case of issues.
     pub fn create() -> Result<Self, OptionsError> {
         let m = App::new("NLnet Labs RRDP Client (RFC8181)")
-            .version("0.1b")
+            .version("0.1")
             .arg(
                 Arg::with_name("state")
                     .short("s")

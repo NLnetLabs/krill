@@ -211,7 +211,7 @@ impl Config {
     /// Creates the config (at startup). Panics in case of issues.
     pub fn create() -> Result<Self, ConfigError> {
         let matches = App::new("NLnet Labs RRDP Server")
-            .version("0.1b")
+            .version("0.1")
             .arg(
                 Arg::with_name("config")
                     .short("c")
