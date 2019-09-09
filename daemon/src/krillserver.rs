@@ -220,7 +220,7 @@ impl KrillServer {
 
     pub fn rrdp_base_path(&self) -> PathBuf {
         let mut path = self.work_dir.clone();
-        path.push("rrdp");
+        path.push("repo/rrdp");
         path
     }
 }
