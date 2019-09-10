@@ -22,8 +22,6 @@ use crate::ca::{self, ParentHandle};
 use crate::http::server::AppServer;
 use crate::krillserver;
 
-const NOT_FOUND: &[u8] = include_bytes!("../ui/dist/404.html");
-
 //------------ Support Functions ---------------------------------------------
 
 /// Helper function to render json output.
@@ -58,7 +56,7 @@ fn api_not_found() -> HttpResponse {
 }
 
 pub fn not_found() -> HttpResponse {
-    HttpResponse::build(StatusCode::NOT_FOUND).body(NOT_FOUND)
+    HttpResponse::build(StatusCode::NOT_FOUND).body("NOT_FOUND")
 }
 
 /// A clean 200 result for the API (no content, not for humans)

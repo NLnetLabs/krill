@@ -2,7 +2,6 @@
 name    = "krill_daemon"
 version = "0.1.0"
 authors = ["Tim Bruijnzeels <tim@nlnetlabs.nl>", "Martin Hoffmann <martin@nlnetlabs.nl>"]
-build   = "build-ui.rs"
 
 [dependencies]
 actix-identity  = "0.1.0"

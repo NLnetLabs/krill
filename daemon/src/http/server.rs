@@ -18,12 +18,11 @@ use bcder::decode;
 
 use krill_commons::api::PublishDelta;
 
-use crate::auth::{is_logged_in, login, logout, AUTH_COOKIE_NAME};
+use crate::auth::AUTH_COOKIE_NAME;
 use crate::config::Config;
 use crate::endpoints;
 use crate::endpoints::*;
 use crate::http::ssl;
-use crate::http::statics::WithStaticContent;
 use crate::krillserver;
 use crate::krillserver::KrillServer;
 
@@ -97,13 +96,13 @@ pub fn start(config: &Config) -> Result<(), Error> {
             .data(web::Json::<PublishDelta>::configure(|cfg| {
                 cfg.limit(256 * 1024 * 1024)
             }))
+
+            // Identity exchanges for remote publishers
             .route("/rfc8181/{handle}", post().to(rfc8181))
+
             // Provisioning for remote krill clients
             .route("/rfc6492/{handle}", post().to(rfc6492))
-            // UI support
-            .route("/ui/is_logged_in", get().to(is_logged_in))
-            .route("/ui/login", post().to(login))
-            .route("/ui/logout", post().to(logout))
+
             // RRDP repository
             .route("/rrdp/{path:.*}", get().to(serve_rrdp_files))
             .route(
@@ -114,7 +113,6 @@ pub fn start(config: &Config) -> Result<(), Error> {
                         .finish()
                 }),
             )
-            .add_statics()
             // default
             .default_service(
                 // 404 for GET request
