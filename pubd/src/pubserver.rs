@@ -141,7 +141,11 @@ impl PubServer {
     fn verify_handle(&self, handle: &Handle) -> Result<(), Error> {
         let name = handle.as_str();
 
-        if !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
+        // TODO: Issue #83 Allow '\' and '/' as well as per RFC 8183
+        if !name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+        {
             return Err(Error::InvalidHandle(name.to_string()));
         }
 
@@ -246,7 +250,7 @@ pub enum Error {
     IoError(io::Error),
 
     #[display(
-        fmt = "The publisher handle may only contain a-ZA-Z0-9 and _. You sent: {}",
+        fmt = "The publisher handle may only contain -_A-Za-z0-9, (\\ /) see issue #83, got: {}",
         _0
     )]
     InvalidHandle(String),

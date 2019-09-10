@@ -397,7 +397,17 @@ impl Options {
 
         if let Some(m) = matches.subcommand_matches("cas") {
             if let Some(m) = m.subcommand_matches("add") {
-                let handle = Handle::from(m.value_of("handle").unwrap());
+                let handle_str = m.value_of("handle").unwrap();
+
+                // TODO: Issue #83 Allow '\' and '/' as well as per RFC 8183
+                if !handle_str
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+                {
+                    return Err(Error::InvalidHandle);
+                }
+
+                let handle = Handle::from(handle_str);
                 let token = Token::from(m.value_of("token").unwrap());
                 let pub_mode = CertAuthPubMode::Embedded;
 
@@ -690,6 +700,9 @@ pub enum Error {
 
     #[display(fmt = "{}", _0)]
     InvalidRouteDelta(AuthorizationFmtError),
+
+    #[display(fmt = "The publisher handle may only contain -_A-Za-z0-9, (\\ /) see issue #83")]
+    InvalidHandle,
 }
 
 impl From<rfc8183::Error> for Error {

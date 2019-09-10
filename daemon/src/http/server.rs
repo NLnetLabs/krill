@@ -96,13 +96,10 @@ pub fn start(config: &Config) -> Result<(), Error> {
             .data(web::Json::<PublishDelta>::configure(|cfg| {
                 cfg.limit(256 * 1024 * 1024)
             }))
-
             // Identity exchanges for remote publishers
             .route("/rfc8181/{handle}", post().to(rfc8181))
-
             // Provisioning for remote krill clients
             .route("/rfc6492/{handle}", post().to(rfc6492))
-
             // RRDP repository
             .route("/rrdp/{path:.*}", get().to(serve_rrdp_files))
             .route(
