@@ -11,7 +11,8 @@
 #          supplied by the operator.
 #   
 #   B: The operator wants to control the Krill daemon configuration themselves.
-#      They signal this by setting env var KRILL_MANUAL_MODE.
+#      They do this by Docker mounting their own krill.conf over the
+#      /var/krill/data/krill.conf path.
 #
 #   C: The operator wants to run some other command in the container, e.g.
 #      krill_admin.
