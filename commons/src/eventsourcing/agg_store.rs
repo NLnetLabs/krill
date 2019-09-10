@@ -69,7 +69,7 @@ pub struct DiskAggregateStore<A: Aggregate> {
     store: DiskKeyStore,
     cache: RwLock<HashMap<Handle, Arc<A>>>,
     use_cache: bool,
-    listeners: Vec<Arc<EventListener<A>>>,
+    listeners: Vec<Arc<dyn EventListener<A>>>,
     outer_lock: RwLock<()>,
 }
 

@@ -31,7 +31,7 @@ pub enum QueueEvent {
 
 #[derive(Debug)]
 pub struct EventQueueListener {
-    q: RwLock<Box<EventQueueStore>>,
+    q: RwLock<Box<dyn EventQueueStore>>,
 }
 
 impl EventQueueListener {

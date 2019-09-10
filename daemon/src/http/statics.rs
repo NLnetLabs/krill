@@ -91,13 +91,13 @@ pub struct StaticContent {
 
 //------------ Definition of Statics -----------------------------------------
 
-static HTML: &'static str = "text/html";
-static FAV: &'static str = "image/x-icon";
-static JS: &'static str = "application/javascript";
-static CSS: &'static str = "text/css";
-static SVG: &'static str = "image/svg+xml";
-static WOFF: &'static str = "font/woff";
-static WOFF2: &'static str = "font/woff2";
+static HTML: &str = "text/html";
+static FAV: &str = "image/x-icon";
+static JS: &str = "application/javascript";
+static CSS: &str = "text/css";
+static SVG: &str = "image/svg+xml";
+static WOFF: &str = "font/woff";
+static WOFF2: &str = "font/woff2";
 
 static NOT_FOUND: StaticContent = StaticContent {
     web_path: "/ui/404.html",
