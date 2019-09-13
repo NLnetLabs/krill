@@ -1028,6 +1028,22 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
+    fn parse_and_validate_ncc_response() {
+        let pdu = include_bytes!("../../../test-resources/remote/ncc-response.ber");
+        let msg = SignedMessage::decode(pdu.as_ref(), false).unwrap();
+
+        let content = msg.content().to_bytes();
+        let xml = unsafe { from_utf8_unchecked(content.as_ref()) };
+        let _list_response = Message::decode(xml.as_bytes()).unwrap();
+
+        let ncc_id_cer = include_bytes!("../../../test-resources/remote/ncc-id.der");
+        let ncc_id_cer = IdCert::decode(ncc_id_cer.as_ref()).unwrap();
+
+        msg.validate(&ncc_id_cer).unwrap();
+    }
+
+    #[test]
     fn parse_and_encode_issue() {
         let xml = extract_xml(include_bytes!(
             "../../../test-resources/remote/rpkid-rfc6492-issue.der"
