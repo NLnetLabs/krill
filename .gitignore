@@ -3,10 +3,7 @@
 Cargo.lock
 .DS_Store
 data
-publishers
 krill.log
 target/
 tmp
-daemon/ui/dist
 work
-package-lock.json
