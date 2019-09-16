@@ -1,8 +1,10 @@
+use std::convert::TryFrom;
+use std::env;
 use std::io;
 use std::path::PathBuf;
 use std::str::{from_utf8_unchecked, FromStr};
 
-use clap::{App, Arg, SubCommand};
+use clap::{App, Arg, ArgMatches, SubCommand};
 
 use rpki::uri;
 
@@ -12,8 +14,87 @@ use crate::commons::api::{
     ChildAuthRequest, Handle, ParentCaContact, ResSetErr, ResourceSet, RouteAuthorizationUpdates,
     Token, UpdateChildRequest,
 };
+use crate::commons::remote::id::IdCert;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
+
+const KRILL_CLI_SERVER_ARG: &str = "server";
+const KRILL_CLI_SERVER_ENV: &str = "KRILL_CLI_SERVER";
+
+const KRILL_CLI_TOKEN_ARG: &str = "admintoken";
+const KRILL_CLI_TOKEN_ENV: &str = "KRILL_CLI_ADMIN_TOKEN";
+
+const KRILL_CLI_FORMAT_ARG: &str = "format";
+const KRILL_CLI_FORMAT_ENV: &str = "KRILL_CLI_FORMAT";
+
+const KRILL_CLI_API_ARG: &str = "api";
+pub const KRILL_CLI_API_ENV: &str = "KRILL_CLI_API";
+
+const KRILL_CLI_MY_CA_ARG: &str = "ca";
+const KRILL_CLI_MY_CA_ENV: &str = "KRILL_CLI_MY_CA";
+
+const KRILL_CLI_MY_CA_TOKEN_ARG: &str = "catoken";
+const KRILL_CLI_MY_CA_TOKEN_ENV: &str = "KRILL_CLI_MY_CA_TOKEN";
+
+struct GeneralArgs {
+    server: uri::Https,
+    token: Token,
+    format: ReportFormat,
+    api: bool,
+}
+
+impl GeneralArgs {
+    fn from_matches(matches: &ArgMatches) -> Result<Self, Error> {
+        let server = {
+            let mut server = match env::var(KRILL_CLI_SERVER_ENV) {
+                Ok(server_str) => Some(uri::Https::try_from(server_str)?),
+                Err(_) => None,
+            };
+
+            if let Some(server_str) = matches.value_of(KRILL_CLI_SERVER_ARG) {
+                server = Some(uri::Https::from_str(server_str)?);
+            }
+
+            server.ok_or_else(|| {
+                Error::missing_arg_with_env(KRILL_CLI_SERVER_ARG, KRILL_CLI_SERVER_ENV)
+            })?
+        };
+
+        let token = {
+            let mut token = env::var(KRILL_CLI_TOKEN_ENV).ok().map(Token::from);
+
+            if let Some(token_str) = matches.value_of(KRILL_CLI_TOKEN_ARG) {
+                token = Some(Token::from(token_str));
+            }
+
+            token.ok_or_else(|| {
+                Error::missing_arg_with_env(KRILL_CLI_TOKEN_ARG, KRILL_CLI_TOKEN_ENV)
+            })?
+        };
+
+        let format = {
+            let mut format = match env::var(KRILL_CLI_FORMAT_ENV) {
+                Ok(fmt_str) => Some(ReportFormat::from_str(&fmt_str)?),
+                Err(_) => None,
+            };
+
+            if let Some(fmt_str) = matches.value_of(KRILL_CLI_FORMAT_ARG) {
+                format = Some(ReportFormat::from_str(fmt_str)?);
+            }
+
+            format.unwrap_or_else(|| ReportFormat::Text)
+        };
+
+        let api = env::var(KRILL_CLI_API_ENV).is_ok() || matches.is_present(KRILL_CLI_API_ARG);
+
+        Ok(GeneralArgs {
+            server,
+            token,
+            format,
+            api,
+        })
+    }
+}
 
 /// This type holds all the necessary data to connect to a Krill daemon, and
 /// authenticate, and perform a specific action. Note that this is extracted
@@ -23,10 +104,21 @@ pub struct Options {
     pub server: uri::Https,
     pub token: Token,
     pub format: ReportFormat,
+    pub api: bool,
     pub command: Command,
 }
 
 impl Options {
+    fn make(general: GeneralArgs, command: Command) -> Self {
+        Options {
+            server: general.server,
+            token: general.token,
+            format: general.format,
+            api: general.api,
+            command,
+        }
+    }
+
     pub fn format(&self) -> ReportFormat {
         self.format
     }
@@ -37,572 +129,607 @@ impl Options {
             server,
             token: Token::from(token),
             format,
+            api: false,
             command,
         }
     }
 
-    /// Creates a new Options from command line args (useful for cli)
-    #[allow(clippy::cognitive_complexity)] // there are just many options
-    pub fn from_args() -> Result<Options, Error> {
-        let matches = App::new("Krill admin client")
-            .version("0.1.0")
-            .arg(Arg::with_name("server")
+    fn add_general_args<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        app.arg(
+            Arg::with_name("server")
                 .short("s")
                 .long("server")
                 .value_name("URI")
-                .help("Specify the full URI to the krill server.")
-                .required(true))
-            .arg(Arg::with_name("token")
+                .help("The full URI to the krill server. Or set env: KRILL_CLI_SERVER")
+                .required(false),
+        )
+        .arg(
+            Arg::with_name("admintoken")
                 .short("t")
-                .long("token")
+                .long("admintoken")
                 .value_name("token-string")
-                .help("Specify the value of an admin token.")
-                .required(true))
-            .arg(Arg::with_name("format")
+                .help("The admin token. Or set env: KRILL_CLI_ADMIN_TOKEN")
+                .required(false),
+        )
+        .arg(
+            Arg::with_name("format")
                 .short("f")
                 .long("format")
                 .value_name("type")
-                .help(
-                    "Specify the report format (none|json|text|xml). If \
-                    left unspecified the format will match the \
-                    corresponding server api response type.")
+                .help("Report format: none|json|text (default) |xml. Or set env: KRILL_CLI_FORMAT")
+                .required(false),
+        )
+        .arg(
+            Arg::with_name("api")
+                .long("api")
+                .help("Only show the API call and exit. Or set env: KRILL_CLI_API=1")
+                .required(false),
+        )
+    }
+
+    fn add_my_ca_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        app.arg(
+            Arg::with_name("ca")
+                .value_name("name")
+                .short("c")
+                .long("ca")
+                .help("The name of the CA you wish to control. Or set env: KRILL_CLI_MY_CA")
+                .required(false),
+        )
+    }
+
+    fn add_child_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        app.arg(
+            Arg::with_name("child")
+                .value_name("name")
+                .long("child")
+                .help("The name of the child CA you wish to control.")
+                .required(false),
+        )
+    }
+
+    fn add_child_resource_args<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        app.arg(
+            Arg::with_name("asn")
+                .short("a")
+                .long("asn")
+                .value_name("AS resources")
+                .help("The delegated AS resources: e.g. AS1, AS3-4")
+                .required(false),
+        )
+        .arg(
+            Arg::with_name("ipv4")
+                .short("4")
+                .long("ipv4")
+                .value_name("IPv4 resources")
+                .help("The delegated IPv4 resources: e.g. 192.168.0.0/16")
+                .required(false),
+        )
+        .arg(
+            Arg::with_name("ipv6")
+                .short("6")
+                .long("ipv6")
+                .value_name("IPv6 resources")
+                .help("The delegated IPv6 resources: e.g. 2001:db8::/32")
+                .required(false),
+        )
+    }
+
+    fn add_child_embedded_rfc6492_args<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        app.arg(
+            Arg::with_name("embedded")
+                .long("embedded")
+                .help("Add a child that exists in this Krill instance. Note that an id cert can \
+                still be added later to allow this child to connect remotely. It's really how the \
+                child configures its parent that determines how it will connect")
                 .required(false)
-            )
-            .subcommand(SubCommand::with_name("health")
-                .about("Perform a health check. Exits with exit code 0 if \
-                all is well, exit code 1 in case of any issues")
-            )
+        )
+        .arg(
+            Arg::with_name("rfc8183")
+                .long("rfc8183")
+                .help("Add a child using an RFC8183 Child Request XML file. This will return \
+                an RFC8183 Parent Response XML (on stdout)")
+                .value_name("<XML file>")
+                .required(false)
+        )
+    }
 
-            .subcommand(SubCommand::with_name("cas")
-                .about("Manage CAs")
-                .subcommand(SubCommand::with_name("list")
-                    .about("Show current CAs")
-                )
-                .subcommand(SubCommand::with_name("show")
-                    .about("Show CA details")
-                    .arg(Arg::with_name("handle")
-                        .short("h")
-                        .long("handle")
-                        .value_name("handle")
-                        .help("The handle (name) for the CA")
-                        .required(true)
-                    )
-                )
-                .subcommand(SubCommand::with_name("rfc8183_child_request")
-                    .about("The RFC8183 Child Request for a CA")
-                    .arg(Arg::with_name("handle")
-                        .short("h")
-                        .long("handle")
-                        .value_name("handle")
-                        .help("The handle (name) for the CA")
-                        .required(true)
-                    )
-                )
+    fn add_parent_embedded_rfc6492_args<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        app.arg(
+            Arg::with_name("parent")
+                .long("parent")
+                .short("p")
+                .value_name("name")
+                .help("The local by which your ca refers to this parent.")
+                .required(true),
+        ).arg(
+            Arg::with_name("embedded")
+                .long("embedded")
+                .help("Add a parent that exists in this Krill instance.")
+                .required(false),
+        )
+        .arg(
+            Arg::with_name("rfc8183")
+                .long("rfc8183")
+                .help("Add a parent using an RFC8183 Parent Response XML file.")
+                .value_name("<XML file>")
+                .required(false),
+        )
+    }
 
-                .subcommand(SubCommand::with_name("keyroll")
-                    .about("Perform a manual key roll for a CA")
-                    .arg(Arg::with_name("handle")
-                        .short("h")
-                        .long("handle")
-                        .value_name("handle")
-                        .help("The handle (name) for the CA")
-                        .required(true)
-                    )
-                    .subcommand(SubCommand::with_name("init")
-                        .about("Initialise a key roll for all active keys")
-                    )
-                    .subcommand(SubCommand::with_name("activate")
-                        .about("Activate all new keys now (RFC say to do this >24H after init)")
-                    )
-                )
+    fn make_cas_list_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let sub =
+            SubCommand::with_name("list").about("List the current CAs in this Krill instance");
 
-                .subcommand(SubCommand::with_name("add")
-                    .about("Add a new CA")
-                    .arg(Arg::with_name("handle")
-                        .short("h")
-                        .long("handle")
-                        .value_name("child-handle")
-                        .help("The handle (name) for the child CA")
-                        .required(true)
-                    )
-                    .arg(Arg::with_name("token")
-                        .short("ct")
-                        .long("token")
-                        .value_name("token-string")
-                        .help("The auth token to control the CA")
-                        .required(true)
-                    )
-                )
-                .subcommand(SubCommand::with_name("update")
-                    .about("Update an existing CA")
-                    .arg(Arg::with_name("handle")
-                        .short("h")
-                        .long("handle")
-                        .value_name("ca handle")
-                        .help("The handle (name) for the CA")
-                        .required(true)
-                    )
-                    .subcommand(SubCommand::with_name("add-parent")
-                        .about("Add a parent to a CA (only embedded for now)")
+        let sub = Self::add_general_args(sub);
 
-                        .arg(Arg::with_name("parent")
-                            .short("p")
-                            .long("parent")
-                            .value_name("parent ca handle")
-                            .help("The local handle (name) for the parent CA")
-                            .required(true)
-                        )
+        app.subcommand(sub)
+    }
 
-                        .subcommand(SubCommand::with_name("embedded")
-                            .about("Add an embedded parent")
-                        )
+    fn make_cas_show_ca_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub =
+            SubCommand::with_name("show").about("Show details of a CA in this Krill instance.");
 
-                        .subcommand(SubCommand::with_name("rfc6492")
-                            .about("Add an RFC6492 parent")
-                            .arg(Arg::with_name("xml")
-                                .short("x")
-                                .long("xml")
-                                .value_name("response.xml")
-                                .help("The RFC8183 response xml file")
-                                .required(true)
-                            )
-                        )
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
 
+        app.subcommand(sub)
+    }
 
-                    )
-                )
+    fn make_cas_add_ca_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("add").about("Add a new CA to this Krill instance.");
 
-                .subcommand(SubCommand::with_name("children")
-                    .about("Manage children of this CA")
-                    .arg(Arg::with_name("handle")
-                        .short("h")
-                        .long("handle")
-                        .value_name("ca handle")
-                        .help("The handle (name) for the CA")
-                        .required(true)
-                    )
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
 
-                    .subcommand(SubCommand::with_name("add")
-                        .about("Add a child to the embedded CA")
+        sub = sub.arg(
+            Arg::with_name("catoken")
+                .help("The token for your CA. Or set: KRILL_MY_CA_TOKEN")
+                .value_name("token-string")
+                .long("catoken")
+                .required(true),
+        );
 
-                        .arg(Arg::with_name("asn")
-                            .short("a")
-                            .long("asn")
-                            .value_name("AS resources")
-                            .help("The delegated AS resources: e.g. AS1, AS3-4")
-                            .required(false)
-                        )
-                        .arg(Arg::with_name("ipv4")
-                            .short("4")
-                            .long("ipv4")
-                            .value_name("IPv4 resources")
-                            .help("The delegated IPv4 resources: e.g. 192.168.0.0/16")
-                            .required(false)
-                        )
-                        .arg(Arg::with_name("ipv6")
-                            .short("6")
-                            .long("ipv6")
-                            .value_name("IPv6 resources")
-                            .help("The delegated IPv6 resources: e.g. 2001:db8::/32")
-                            .required(false)
-                        )
+        app.subcommand(sub)
+    }
 
-                        .subcommand(SubCommand::with_name("embedded")
-                            .about("Add an embedded child")
-                            .arg(Arg::with_name("handle")
-                                .short("h")
-                                .long("handle")
-                                .value_name("child-handle")
-                                .help("The handle of the child")
-                                .required(true)
-                            )
-                        )
+    fn make_cas_children_add_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("add").about("Add a child to a CA in Krill.");
 
-                        .subcommand(SubCommand::with_name("rfc6492")
-                            .about("Add an RFC 6492 child")
-                            .arg(Arg::with_name("handle")
-                                .short("h")
-                                .long("handle")
-                                .value_name("child-handle")
-                                .help("Override the handle in the XML")
-                                .required(false)
-                            )
-                            .arg(Arg::with_name("xml")
-                                .short("x")
-                                .long("xml")
-                                .value_name("FILE")
-                                .help("RFC 8183 Child Request XML")
-                                .required(true)
-                            )
-                        )
-                    )
-                    .subcommand(SubCommand::with_name("update")
-                        .about("Update details for a child")
-                        .arg(Arg::with_name("handle")
-                            .short("h")
-                            .long("handle")
-                            .value_name("child-handle")
-                            .help("Override the handle in the XML")
-                            .required(false)
-                        )
-                        .arg(Arg::with_name("xml")
-                            .short("x")
-                            .long("xml")
-                            .value_name("FILE")
-                            .help("Update child certificate from RFC 8183 Child Request XML")
-                            .required(false)
-                        )
-                        .arg(Arg::with_name("asn")
-                            .short("a")
-                            .long("asn")
-                            .value_name("AS resources")
-                            .help("Update the delegated AS resources: e.g. AS1, AS3-4")
-                            .required(false)
-                        )
-                        .arg(Arg::with_name("ipv4")
-                            .short("4")
-                            .long("ipv4")
-                            .value_name("IPv4 resources")
-                            .help("Update the delegated IPv4 resources: e.g. 192.168.0.0/16")
-                            .required(false)
-                        )
-                        .arg(Arg::with_name("ipv6")
-                            .short("6")
-                            .long("ipv6")
-                            .value_name("IPv6 resources")
-                            .help("Update the delegated IPv6 resources: e.g. 2001:db8::/32")
-                            .required(false)
-                        )
-                        .arg(Arg::with_name("force")
-                            .short("f")
-                            .long("force")
-                            .takes_value(false)
-                            .help("Force resource shrink now.")
-                            .required(false)
-                        )
-                    )
-                )
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+        sub = Self::add_child_arg(sub);
+        sub = Self::add_child_resource_args(sub);
+        sub = Self::add_child_embedded_rfc6492_args(sub);
 
-                .subcommand(SubCommand::with_name("roas")
-                    .about("Manage route authorizations by this CA")
-                    .arg(Arg::with_name("handle")
-                        .short("h")
-                        .long("handle")
-                        .value_name("ca handle")
-                        .help("The handle (name) for the CA")
-                        .required(true)
-                    )
+        app.subcommand(sub)
+    }
 
-                    .subcommand(SubCommand::with_name("list")
-                        .about("List current authorisations and ROA objects")
-                    )
-                    .subcommand(SubCommand::with_name("update")
-                        .about("Update the authorizations for this CA")
-                        .arg(Arg::with_name("delta")
-                            .short("d")
-                            .long("delta")
-                            .value_name("FILE")
-                            .help("path to file containing deltas")
-                            .required(true)
-                        )
-                    )
-                )
-            )
+    fn make_cas_children_update_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub =
+            SubCommand::with_name("update").about("Update an existing child of a CA in Krill.");
 
-            .subcommand(SubCommand::with_name("publishers")
-                .about("Manage publishers")
-                .subcommand(SubCommand::with_name("list")
-                    .about("List all current publishers")
-                )
-                .subcommand(SubCommand::with_name("add")
-                    .about("Add an API using publisher.")
-                    .arg(Arg::with_name("token")
-                        .short("t")
-                        .long("token")
-                        .value_name("text")
-                        .help("Specify a token string.")
-                        .required(true)
-                    )
-                    .arg(Arg::with_name("uri")
-                        .short("u")
-                        .long("uri")
-                        .value_name("rsync uri")
-                        .help("Rsync base uri for publisher. Must be covered by server, and not overlap with existing publishers.")
-                        .required(true)
-                    )
-                    .arg(Arg::with_name("handle")
-                        .short("h")
-                        .long("handle")
-                        .value_name("name")
-                        .help("A unique name for this publisher. Must be a-Z0-9 without spaces.")
-                        .required(true)
-                    )
-                )
-                .subcommand(SubCommand::with_name("details")
-                    .about("Show details for a publisher.")
-                    .arg(Arg::with_name("handle")
-                        .short("h")
-                        .long("handle")
-                        .value_name("publisher handle")
-                        .help("The publisher handle from RFC8181")
-                        .required(true)
-                    )
-                )
-                .subcommand(SubCommand::with_name("deactivate")
-                    .about("Removes a known publisher")
-                    .arg(Arg::with_name("handle")
-                        .short("h")
-                        .long("handle")
-                        .value_name("publisher handle")
-                        .help("The publisher handle from RFC8181")
-                        .required(true)
-                    )
-                )
-            )
-            .subcommand(SubCommand::with_name("rfc8181")
-                .about("Manage RFC8181 clients")
-                .subcommand(SubCommand::with_name("list")
-                    .about("List all current clients with details")
-                )
-                .subcommand(SubCommand::with_name("add")
-                    .about("Add RFC8181 client (assumes handle is in the XML)")
-                    .arg(Arg::with_name("xml")
-                        .short("x")
-                        .long("xml")
-                        .value_name("FILE")
-                        .help("Specify a file containing an RFC8183 \
-                        publisher request. (See: https://tools.ietf.org/html/rfc8183#section-5.2.3)")
-                        .required(true)
-                    )
-                )
-                .subcommand(SubCommand::with_name("repo-res")
-                    .about("Show the RFC8181 repository response xml")
-                    .arg(Arg::with_name("handle")
-                        .short("h")
-                        .long("handle")
-                        .value_name("publisher handle")
-                        .help("The publisher handle from RFC8181")
-                        .required(true)
-                    )
-                )
-            )
-            .get_matches();
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+        sub = Self::add_child_arg(sub);
+        sub = Self::add_child_resource_args(sub);
+        sub = sub.arg(
+            Arg::with_name("idcert")
+                .long("idcert")
+                .help("The child's updated ID certificate")
+                .value_name("DER encoded certificate")
+                .required(false),
+        );
 
-        let mut command = Command::NotSet;
+        app.subcommand(sub)
+    }
 
-        if let Some(_m) = matches.subcommand_matches("health") {
-            command = Command::Health;
+    fn make_cas_children_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("children").about("Manage children for a CA in Krill.");
+
+        sub = Self::make_cas_children_add_sc(sub);
+        sub = Self::make_cas_children_update_sc(sub);
+
+        app.subcommand(sub)
+    }
+
+    fn make_cas_parents_myid_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("myid").about("Show this CA's RFC8183 Request XML");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        app.subcommand(sub)
+    }
+
+    fn make_cas_parents_add_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("add").about("Add a parent to this CA.");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+        sub = Self::add_parent_embedded_rfc6492_args(sub);
+
+        app.subcommand(sub)
+    }
+
+    fn make_cas_parents_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("parents").about("Manage parents for a CA in Krill.");
+
+        sub = Self::make_cas_parents_myid_sc(sub);
+        sub = Self::make_cas_parents_add_sc(sub);
+
+        app.subcommand(sub)
+    }
+
+    fn make_cas_keyroll_init_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub =
+            SubCommand::with_name("init").about("Initialise roll for all keys held by this CA");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        app.subcommand(sub)
+    }
+
+    fn make_cas_keyroll_activate_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub =
+            SubCommand::with_name("activate").about("Finish roll for all keys held by this CA");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        app.subcommand(sub)
+    }
+
+    fn make_cas_keyroll_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("keyroll").about("Perform a manual key-roll in Krill.");
+
+        sub = Self::make_cas_keyroll_init_sc(sub);
+        sub = Self::make_cas_keyroll_activate_sc(sub);
+
+        app.subcommand(sub)
+    }
+
+    fn make_cas_routes_list_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("list").about("Show current authorizations.");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        app.subcommand(sub)
+    }
+
+    fn make_cas_routes_update_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("update").about("Update authorizations.");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        sub = sub.arg(
+            Arg::with_name("delta")
+                .long("delta")
+                .help(concat!(
+                    "Provide a delta file using the following format:\n",
+                    "# Some comment\n",
+                    "  # Indented comment\n",
+                    "\n", // empty line
+                    "A: 192.168.0.0/16 => 64496 # inline comment\n",
+                    "A: 192.168.1.0/24 => 64496\n",
+                    "R: 192.168.3.0/24 => 64496\n",
+                ))
+                .value_name("<file>")
+                .required(true),
+        );
+
+        app.subcommand(sub)
+    }
+
+    fn make_cas_routes_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("roas").about("Manage ROAs for your CA.");
+
+        sub = Self::make_cas_routes_list_sc(sub);
+        sub = Self::make_cas_routes_update_sc(sub);
+
+        app.subcommand(sub)
+    }
+
+    fn make_cas_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("cas").about("Manage Certification Authorities");
+
+        sub = Self::make_cas_list_sc(sub);
+        sub = Self::make_cas_show_ca_sc(sub);
+        sub = Self::make_cas_add_ca_sc(sub);
+        sub = Self::make_cas_children_sc(sub);
+        sub = Self::make_cas_parents_sc(sub);
+        sub = Self::make_cas_keyroll_sc(sub);
+        sub = Self::make_cas_routes_sc(sub);
+
+        app.subcommand(sub)
+    }
+
+    fn make_matches<'a>() -> ArgMatches<'a> {
+        let mut app = App::new("Krill Client").version("0.1.1");
+
+        app = Self::make_cas_sc(app);
+
+        app.get_matches()
+    }
+
+    //---------------------- Parsing
+
+    fn parse_my_ca(matches: &ArgMatches) -> Result<Handle, Error> {
+        let my_ca = {
+            let mut my_ca = env::var(KRILL_CLI_MY_CA_ENV).ok().map(Handle::from);
+
+            if let Some(my_ca_str) = matches.value_of(KRILL_CLI_MY_CA_ARG) {
+                my_ca = Some(Handle::from(my_ca_str));
+            }
+
+            my_ca.ok_or_else(|| {
+                Error::missing_arg_with_env(KRILL_CLI_MY_CA_ARG, KRILL_CLI_MY_CA_ENV)
+            })?
+        };
+
+        Ok(my_ca)
+    }
+
+    fn parse_my_ca_token(matches: &ArgMatches) -> Result<Token, Error> {
+        let my_ca_token = {
+            let mut my_ca_token = env::var(KRILL_CLI_MY_CA_TOKEN_ENV).ok().map(Token::from);
+
+            if let Some(my_ca_token_str) = matches.value_of(KRILL_CLI_MY_CA_TOKEN_ARG) {
+                my_ca_token = Some(Token::from(my_ca_token_str));
+            }
+
+            my_ca_token.ok_or_else(|| {
+                Error::missing_arg_with_env(KRILL_CLI_MY_CA_TOKEN_ARG, KRILL_CLI_MY_CA_TOKEN_ENV)
+            })?
+        };
+
+        Ok(my_ca_token)
+    }
+
+    fn parse_resource_args(matches: &ArgMatches) -> Result<Option<ResourceSet>, Error> {
+        let asn = matches.value_of("asn");
+        let v4 = matches.value_of("ipv4");
+        let v6 = matches.value_of("ipv6");
+
+        if asn.is_some() || v4.is_some() || v6.is_some() {
+            let asn = asn.unwrap_or_else(|| "");
+            let v4 = v4.unwrap_or_else(|| "");
+            let v6 = v6.unwrap_or_else(|| "");
+
+            Ok(Some(ResourceSet::from_strs(asn, v4, v6)?))
+        } else {
+            Ok(None)
         }
+    }
 
+    fn parse_matches_cas_list(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let command = Command::CertAuth(CaCommand::List);
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_add(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+        let token = Self::parse_my_ca_token(matches)?;
+
+        let init = CertAuthInit::new(my_ca, token, CertAuthPubMode::Embedded);
+
+        let command = Command::CertAuth(CaCommand::Init(init));
+
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_show(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let command = Command::CertAuth(CaCommand::Show(my_ca));
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_children_add(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let child = matches.value_of("child").map(Handle::from).unwrap();
+        let resources =
+            Self::parse_resource_args(matches)?.ok_or_else(|| Error::MissingResources)?;
+
+        let auth_request = {
+            if matches.is_present("embedded") {
+                ChildAuthRequest::Embedded
+            } else if let Some(path) = matches.value_of("rfc8183") {
+                let xml = PathBuf::from(path);
+                let bytes = file::read(&xml)?;
+                let cr = rfc8183::ChildRequest::validate(bytes.as_ref())?;
+                ChildAuthRequest::Rfc8183(cr)
+            } else {
+                return Err(Error::MissingChildAuth);
+            }
+        };
+
+        let child_request = AddChildRequest::new(child, resources, auth_request);
+
+        let command = Command::CertAuth(CaCommand::AddChild(my_ca, child_request));
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_children_update(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let child = matches.value_of("child").map(Handle::from).unwrap();
+
+        let id_cert = {
+            if let Some(path) = matches.value_of("idcert") {
+                let bytes = file::read(&PathBuf::from(path))?;
+                let id_cert = IdCert::decode(bytes).map_err(|_| Error::InvalidChildIdCert)?;
+                Some(id_cert)
+            } else {
+                None
+            }
+        };
+        let resources = Self::parse_resource_args(matches)?;
+
+        let update = UpdateChildRequest::force(id_cert, resources);
+
+        let command = Command::CertAuth(CaCommand::UpdateChild(my_ca, child, update));
+
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_children(matches: &ArgMatches) -> Result<Options, Error> {
+        if let Some(m) = matches.subcommand_matches("add") {
+            Self::parse_matches_cas_children_add(m)
+        } else if let Some(m) = matches.subcommand_matches("update") {
+            Self::parse_matches_cas_children_update(m)
+        } else {
+            Err(Error::UnrecognisedSubCommand)
+        }
+    }
+
+    fn parse_matches_cas_parents_myid(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let command = Command::CertAuth(CaCommand::ChildRequest(my_ca));
+
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_parents_add(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let parent = matches.value_of("parent").map(Handle::from).unwrap();
+
+        let parent_req = {
+            if matches.is_present("embedded") {
+                AddParentRequest::new(parent, ParentCaContact::Embedded)
+            } else if let Some(path) = matches.value_of("rfc8183") {
+                let xml = PathBuf::from(path);
+                let bytes = file::read(&xml)?;
+                let res = rfc8183::ParentResponse::validate(bytes.as_ref())?;
+
+                AddParentRequest::new(parent, ParentCaContact::for_rfc6492(res))
+            } else {
+                return Err(Error::MissingChildAuth);
+            }
+        };
+
+        let command = Command::CertAuth(CaCommand::AddParent(my_ca, parent_req));
+
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_parents(matches: &ArgMatches) -> Result<Options, Error> {
+        if let Some(m) = matches.subcommand_matches("myid") {
+            Self::parse_matches_cas_parents_myid(m)
+        } else if let Some(m) = matches.subcommand_matches("add") {
+            Self::parse_matches_cas_parents_add(m)
+        } else {
+            Err(Error::UnrecognisedSubCommand)
+        }
+    }
+
+    fn parse_matches_cas_keyroll_init(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let command = Command::CertAuth(CaCommand::KeyRollInit(my_ca));
+
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_keyroll_activate(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let command = Command::CertAuth(CaCommand::KeyRollActivate(my_ca));
+
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_keyroll(matches: &ArgMatches) -> Result<Options, Error> {
+        if let Some(m) = matches.subcommand_matches("init") {
+            Self::parse_matches_cas_keyroll_init(m)
+        } else if let Some(m) = matches.subcommand_matches("activate") {
+            Self::parse_matches_cas_keyroll_activate(m)
+        } else {
+            Err(Error::UnrecognisedSubCommand)
+        }
+    }
+
+    fn parse_matches_cas_routes_list(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let command = Command::CertAuth(CaCommand::RouteAuthorizationsList(my_ca));
+
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_routes_update(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let updates = {
+            let path = matches.value_of("delta").map(PathBuf::from).unwrap();
+            let bytes = file::read(&path)?;
+            let updates_str = unsafe { from_utf8_unchecked(&bytes) };
+            RouteAuthorizationUpdates::from_str(updates_str)?
+        };
+
+        let command = Command::CertAuth(CaCommand::RouteAuthorizationsUpdate(my_ca, updates));
+
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_routes(matches: &ArgMatches) -> Result<Options, Error> {
+        if let Some(m) = matches.subcommand_matches("list") {
+            Self::parse_matches_cas_routes_list(m)
+        } else if let Some(m) = matches.subcommand_matches("update") {
+            Self::parse_matches_cas_routes_update(m)
+        } else {
+            Err(Error::UnrecognisedSubCommand)
+        }
+    }
+
+    fn parse_matches_cas(matches: &ArgMatches) -> Result<Options, Error> {
+        if let Some(m) = matches.subcommand_matches("list") {
+            Self::parse_matches_cas_list(m)
+        } else if let Some(m) = matches.subcommand_matches("add") {
+            Self::parse_matches_cas_add(m)
+        } else if let Some(m) = matches.subcommand_matches("show") {
+            Self::parse_matches_cas_show(m)
+        } else if let Some(m) = matches.subcommand_matches("children") {
+            Self::parse_matches_cas_children(m)
+        } else if let Some(m) = matches.subcommand_matches("parents") {
+            Self::parse_matches_cas_parents(m)
+        } else if let Some(m) = matches.subcommand_matches("keyroll") {
+            Self::parse_matches_cas_keyroll(m)
+        } else if let Some(m) = matches.subcommand_matches("roas") {
+            Self::parse_matches_cas_routes(m)
+        } else {
+            Err(Error::UnrecognisedSubCommand)
+        }
+    }
+
+    fn parse_matches(matches: ArgMatches) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("cas") {
-            if let Some(m) = m.subcommand_matches("add") {
-                let handle_str = m.value_of("handle").unwrap();
-
-                // TODO: Issue #83 Allow '\' and '/' as well as per RFC 8183
-                if !handle_str
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
-                {
-                    return Err(Error::InvalidHandle);
-                }
-
-                let handle = Handle::from(handle_str);
-                let token = Token::from(m.value_of("token").unwrap());
-                let pub_mode = CertAuthPubMode::Embedded;
-
-                let init = CertAuthInit::new(handle, token, pub_mode);
-                command = Command::CertAuth(CaCommand::Init(init));
-            }
-            if let Some(m) = m.subcommand_matches("rfc8183_child_request") {
-                let handle = Handle::from(m.value_of("handle").unwrap());
-                command = Command::CertAuth(CaCommand::ChildRequest(handle));
-            }
-            if let Some(_m) = m.subcommand_matches("list") {
-                command = Command::CertAuth(CaCommand::List);
-            }
-            if let Some(m) = m.subcommand_matches("keyroll") {
-                let handle = Handle::from(m.value_of("handle").unwrap());
-                if let Some(_m) = m.subcommand_matches("init") {
-                    command = Command::CertAuth(CaCommand::KeyRollInit(handle));
-                } else if let Some(_m) = m.subcommand_matches("activate") {
-                    command = Command::CertAuth(CaCommand::KeyRollActivate(handle));
-                }
-            }
-
-            if let Some(m) = m.subcommand_matches("show") {
-                let handle = Handle::from(m.value_of("handle").unwrap());
-                command = Command::CertAuth(CaCommand::Show(handle));
-            }
-
-            if let Some(m) = m.subcommand_matches("children") {
-                let ca = Handle::from(m.value_of("handle").unwrap());
-
-                if let Some(m) = m.subcommand_matches("add") {
-                    let asn = m.value_of("asn").unwrap_or("");
-                    let ipv4 = m.value_of("ipv4").unwrap_or("");
-                    let ipv6 = m.value_of("ipv6").unwrap_or("");
-
-                    if let Some(m) = m.subcommand_matches("embedded") {
-                        let handle = Handle::from(m.value_of("handle").unwrap());
-                        let res = ResourceSet::from_strs(asn, ipv4, ipv6).unwrap();
-                        let auth = ChildAuthRequest::Embedded;
-
-                        let req = AddChildRequest::new(handle, res, auth);
-                        command = Command::CertAuth(CaCommand::AddChild(ca, req))
-                    } else if let Some(m) = m.subcommand_matches("rfc6492") {
-                        let xml_path = m.value_of("xml").unwrap();
-                        let xml = PathBuf::from(xml_path);
-                        let bytes = file::read(&xml)?;
-                        let cr = rfc8183::ChildRequest::validate(bytes.as_ref())?;
-
-                        let handle = {
-                            if let Some(handle) = m.value_of("handle") {
-                                Handle::from(handle)
-                            } else {
-                                cr.child_handle().clone()
-                            }
-                        };
-
-                        let res = ResourceSet::from_strs(asn, ipv4, ipv6)?;
-
-                        let auth = ChildAuthRequest::Rfc8183(cr);
-
-                        let req = AddChildRequest::new(handle, res, auth);
-                        command = Command::CertAuth(CaCommand::AddChild(ca, req))
-                    }
-                } else if let Some(m) = m.subcommand_matches("update") {
-                    let handle = Handle::from(m.value_of("handle").unwrap());
-                    let cert = match m.value_of("xml") {
-                        Some(xml_path) => {
-                            let xml = PathBuf::from(xml_path);
-                            let bytes = file::read(&xml)?;
-                            let cr = rfc8183::ChildRequest::validate(bytes.as_ref())?;
-                            let (_, _, cert) = cr.unwrap();
-                            Some(cert)
-                        }
-                        None => None,
-                    };
-
-                    let asn = m.value_of("asn").unwrap_or("");
-                    let ipv4 = m.value_of("ipv4").unwrap_or("");
-                    let ipv6 = m.value_of("ipv6").unwrap_or("");
-                    let resources = ResourceSet::from_strs(asn, ipv4, ipv6)?;
-
-                    let resources = if resources.is_empty() {
-                        None
-                    } else {
-                        Some(resources)
-                    };
-
-                    let req = if m.is_present("force") {
-                        UpdateChildRequest::force(cert, resources)
-                    } else {
-                        UpdateChildRequest::graceful(cert, resources)
-                    };
-
-                    command = Command::CertAuth(CaCommand::UpdateChild(ca, handle, req))
-                }
-            }
-
-            if let Some(m) = m.subcommand_matches("update") {
-                let handle = Handle::from(m.value_of("handle").unwrap());
-
-                if let Some(m) = m.subcommand_matches("add-parent") {
-                    let parent = Handle::from(m.value_of("parent").unwrap());
-
-                    if let Some(_m) = m.subcommand_matches("embedded") {
-                        let contact = ParentCaContact::Embedded;
-                        let req = AddParentRequest::new(parent, contact);
-
-                        command = Command::CertAuth(CaCommand::AddParent(handle, req))
-                    } else if let Some(m) = m.subcommand_matches("rfc6492") {
-                        let xml_path = m.value_of("xml").unwrap();
-                        let xml = PathBuf::from(xml_path);
-                        let bytes = file::read(&xml)?;
-                        let pr = rfc8183::ParentResponse::validate(bytes.as_ref())?;
-
-                        let contact = ParentCaContact::Rfc6492(pr);
-                        let req = AddParentRequest::new(parent, contact);
-
-                        command = Command::CertAuth(CaCommand::AddParent(handle, req));
-                    }
-                }
-            }
-
-            if let Some(m) = m.subcommand_matches("roas") {
-                let ca = Handle::from(m.value_of("handle").unwrap());
-
-                if let Some(_m) = m.subcommand_matches("list") {
-                    command = Command::CertAuth(CaCommand::RouteAuthorizationsList(ca));
-                } else if let Some(m) = m.subcommand_matches("update") {
-                    let file = PathBuf::from(m.value_of("delta").unwrap());
-                    let bytes = file::read(&file)?;
-                    let str = unsafe { from_utf8_unchecked(bytes.as_ref()) };
-                    let delta = RouteAuthorizationUpdates::from_str(str)?;
-                    command = Command::CertAuth(CaCommand::RouteAuthorizationsUpdate(ca, delta));
-                }
-            }
+            Self::parse_matches_cas(m)
+        } else {
+            Err(Error::UnrecognisedSubCommand)
         }
+    }
 
-        if let Some(m) = matches.subcommand_matches("publishers") {
-            if let Some(_m) = m.subcommand_matches("list") {
-                command = Command::Publishers(PublishersCommand::List)
-            }
-            if let Some(m) = m.subcommand_matches("add") {
-                let handle = Handle::from(m.value_of("handle").unwrap());
-                let base_uri = uri::Rsync::from_str(m.value_of("uri").unwrap())?;
-                let token = Token::from(m.value_of("token").unwrap());
-
-                let add = AddPublisher {
-                    handle,
-                    base_uri,
-                    token,
-                };
-                command = Command::Publishers(PublishersCommand::Add(add));
-            }
-            if let Some(m) = m.subcommand_matches("details") {
-                let handle = m.value_of("handle").unwrap();
-                let details = PublishersCommand::Details(handle.to_string());
-                command = Command::Publishers(details);
-            }
-            if let Some(m) = m.subcommand_matches("deactivate") {
-                let handle = m.value_of("handle").unwrap().to_string();
-                command = Command::Publishers(PublishersCommand::Deactivate(handle))
-            }
-        }
-
-        if let Some(m) = matches.subcommand_matches("rfc8181") {
-            if let Some(_m) = m.subcommand_matches("list") {
-                command = Command::Rfc8181(Rfc8181Command::List)
-            }
-            if let Some(m) = m.subcommand_matches("add") {
-                let xml_path = m.value_of("xml").unwrap();
-                let xml = PathBuf::from(xml_path);
-
-                command = Command::Rfc8181(Rfc8181Command::Add(AddRfc8181Client { xml }))
-            }
-            if let Some(m) = m.subcommand_matches("repo-res") {
-                let handle = Handle::from(m.value_of("handle").unwrap());
-                command = Command::Rfc8181(Rfc8181Command::RepoRes(handle));
-            }
-        }
-
-        let server = matches.value_of("server").unwrap(); // required
-        let server = uri::Https::from_str(server).map_err(Error::UriError)?;
-
-        let token = Token::from(matches.value_of("token").unwrap());
-
-        let mut format = ReportFormat::Default;
-        if let Some(fmt) = matches.value_of("format") {
-            format = ReportFormat::from_str(fmt)?;
-        }
-
-        Ok(Options {
-            server,
-            token,
-            format,
-            command,
-        })
+    pub fn from_args() -> Result<Options, Error> {
+        let matches = Self::make_matches();
+        Self::parse_matches(matches)
     }
 }
 
@@ -628,7 +755,7 @@ pub enum CaCommand {
     // Add a parent to this CA
     AddParent(Handle, AddParentRequest),
 
-    // Add a child to this CA
+    // Children
     AddChild(Handle, AddChildRequest),
     UpdateChild(Handle, Handle, UpdateChildRequest),
 
@@ -702,6 +829,31 @@ pub enum Error {
 
     #[display(fmt = "The publisher handle may only contain -_A-Za-z0-9, (\\ /) see issue #83")]
     InvalidHandle,
+
+    #[display(
+        fmt = "Missing argument: --{}, alternatively you may use env var: {}",
+        _0,
+        _1
+    )]
+    MissingArgWithEnv(String, String),
+
+    #[display(fmt = "You must specify resources when adding a CA (--asn, --ipv4, --ipv6)")]
+    MissingResources,
+
+    #[display(fmt = "You must specify either --embedded or --rfc8183 when adding a child")]
+    MissingChildAuth,
+
+    #[display(fmt = "Invalid ID cert for child.")]
+    InvalidChildIdCert,
+
+    #[display(fmt = "Unrecognised sub-command. Use 'help'.")]
+    UnrecognisedSubCommand,
+}
+
+impl Error {
+    fn missing_arg_with_env(arg: &str, env_var: &str) -> Self {
+        Error::MissingArgWithEnv(arg.to_string(), env_var.to_string())
+    }
 }
 
 impl From<rfc8183::Error> for Error {

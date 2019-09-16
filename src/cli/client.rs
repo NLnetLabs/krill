@@ -1,10 +1,11 @@
-use std::io;
+use std::{env, io};
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 use rpki::uri;
 
+use crate::cli::options::KRILL_CLI_API_ENV;
 use crate::cli::options::{CaCommand, Command, Options, PublishersCommand, Rfc8181Command};
 use crate::cli::report::{ApiResponse, ReportError};
 use crate::commons::api::{
@@ -43,6 +44,11 @@ impl KrillClient {
             server: options.server,
             token: options.token,
         };
+
+        if options.api {
+            env::set_var(KRILL_CLI_API_ENV, "1") // this is safe here, because the CLI will exit
+        }
+
         match options.command {
             Command::Health => client.health(),
             Command::CertAuth(cmd) => client.certauth(cmd),
@@ -79,7 +85,6 @@ impl KrillClient {
                 httpclient::post_json(&uri, parent, Some(&self.token))?;
                 Ok(ApiResponse::Empty)
             }
-
             CaCommand::AddChild(handle, req) => {
                 let uri = format!("api/v1/cas/{}/children", handle);
                 let uri = self.resolve_uri(&uri);
