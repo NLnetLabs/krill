@@ -184,7 +184,7 @@ impl Options {
                 .value_name("name")
                 .long("child")
                 .help("The name of the child CA you wish to control.")
-                .required(false),
+                .required(true),
         )
     }
 
