@@ -35,3 +35,7 @@ xml-rs          = "0.8.0"
 
 [build-dependencies]
 ignore          = "^0.4"
+
+[features]
+default = []
+extra-debug = [ "rpki/extra-debug" ]
