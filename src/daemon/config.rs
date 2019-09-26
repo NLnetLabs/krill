@@ -2,6 +2,7 @@ use std::fs::File;
 use std::io;
 use std::io::Read;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::env;
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -32,7 +33,7 @@ impl ConfigDefaults {
         3000
     }
     fn use_ta() -> bool {
-        false
+        env::var("KRILL_USE_TA").is_ok()
     }
     fn use_ssl() -> SslChoice {
         SslChoice::Test
@@ -59,7 +60,6 @@ impl ConfigDefaults {
         PathBuf::from("./krill.log")
     }
     fn auth_token() -> Token {
-        use std::env;
 
         match env::var("KRILL_AUTH_TOKEN") {
             Ok(token) => Token::from(token),
@@ -229,7 +229,7 @@ impl Config {
 
         let config_file = matches
             .value_of("config")
-            .unwrap_or("./daemon/defaults/krill.conf");
+            .unwrap_or("./defaults/krill.conf");
 
         let c = Self::read_config(config_file)?;
         c.init_logging()?;

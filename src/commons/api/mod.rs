@@ -296,6 +296,12 @@ pub enum ErrorCode {
     #[display(fmt = "Child cannot have resources not held by parent")]
     ChildOverclaims,
 
+    #[display(fmt = "Parent with name exists")]
+    DuplicateParent,
+
+    #[display(fmt = "Child unknown")]
+    UnknownChild,
+
     // 3000s General server errors
     #[display(fmt = "Cannot update internal state, issue with work_dir?")]
     Persistence,
@@ -348,6 +354,8 @@ impl From<usize> for ErrorCode {
             2301 => ErrorCode::DuplicateChild,
             2302 => ErrorCode::ChildNeedsResources,
             2303 => ErrorCode::ChildOverclaims,
+            2304 => ErrorCode::DuplicateParent,
+            2305 => ErrorCode::UnknownChild,
 
             // 3000s -> Server issues, bugs or operational issues
             3001 => ErrorCode::Persistence,
@@ -391,6 +399,8 @@ impl Into<ErrorResponse> for ErrorCode {
             ErrorCode::DuplicateChild => 2301,
             ErrorCode::ChildNeedsResources => 2302,
             ErrorCode::ChildOverclaims => 2303,
+            ErrorCode::DuplicateParent => 2304,
+            ErrorCode::UnknownChild => 2305,
 
             // server errors
             ErrorCode::Persistence => 3001,
@@ -438,7 +448,7 @@ mod tests {
             test_code(n)
         }
 
-        for n in 2301..2304 {
+        for n in 2301..2306 {
             test_code(n)
         }
 

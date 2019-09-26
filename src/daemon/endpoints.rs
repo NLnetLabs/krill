@@ -535,6 +535,8 @@ impl ErrorToStatus for ca::ServerError<OpenSslSigner> {
     fn status(&self) -> StatusCode {
         match self {
             ca::ServerError::CertAuth(e) => e.status(),
+            ca::ServerError::DuplicateCa(_) => StatusCode::BAD_REQUEST,
+            ca::ServerError::UnknownCa(_) => StatusCode::BAD_REQUEST,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -620,6 +622,8 @@ impl ToErrorCode for ca::ServerError<OpenSslSigner> {
     fn code(&self) -> ErrorCode {
         match self {
             ca::ServerError::CertAuth(e) => e.code(),
+            ca::ServerError::DuplicateCa(_) => ErrorCode::DuplicateChild,
+            ca::ServerError::UnknownCa(_) => ErrorCode::UnknownChild,
             _ => ErrorCode::CaServerError,
         }
     }
@@ -629,8 +633,10 @@ impl ToErrorCode for ca::Error {
     fn code(&self) -> ErrorCode {
         match self {
             ca::Error::DuplicateChild(_) => ErrorCode::DuplicateChild,
+            ca::Error::UnknownChild(_) => ErrorCode::UnknownChild,
             ca::Error::MustHaveResources => ErrorCode::ChildNeedsResources,
             ca::Error::MissingResources => ErrorCode::ChildOverclaims,
+            ca::Error::DuplicateParent(_) => ErrorCode::DuplicateParent,
             _ => ErrorCode::CaServerError,
         }
     }
