@@ -1040,7 +1040,7 @@ mod tests {
         let ncc_id_cer = include_bytes!("../../../test-resources/remote/ncc-id.der");
         let ncc_id_cer = IdCert::decode(ncc_id_cer.as_ref()).unwrap();
 
-        msg.validate_at(&ncc_id_cer, Time::utc(2019, 9, 14, 0, 0, 0))
+        msg.validate_at(&ncc_id_cer, Time::utc(2019, 9, 27, 0, 0, 0))
             .unwrap();
     }
 
