@@ -33,12 +33,7 @@ impl ConfigDefaults {
         3000
     }
     fn use_ta() -> bool {
-
-        if let Ok(_) = env::var("KRILL_USE_TA") {
-            true
-        } else {
-            false
-        }
+        env::var("KRILL_USE_TA").is_ok()
     }
     fn use_ssl() -> SslChoice {
         SslChoice::Test
