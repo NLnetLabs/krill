@@ -6,6 +6,7 @@ use clap::{App, Arg, SubCommand};
 use rpki::crypto::PublicKeyFormat;
 use rpki::crypto::Signer;
 
+use crate::commons::api::Handle;
 use crate::commons::api::ListReply;
 use crate::commons::remote::builder;
 use crate::commons::remote::builder::IdCertBuilder;
@@ -19,7 +20,7 @@ use crate::pubc::{create_delta, ApiResponse, Format};
 
 #[derive(Debug, Deserialize, Eq, PartialEq)]
 pub enum Command {
-    Init(String),
+    Init(Handle),
     PublisherRequest(PathBuf),
     RepoResponse(PathBuf),
     List,
@@ -27,8 +28,8 @@ pub enum Command {
 }
 
 impl Command {
-    pub fn init(name: &str) -> Command {
-        Command::Init(name.to_string())
+    pub fn init(name: Handle) -> Command {
+        Command::Init(name)
     }
 
     pub fn publisher_request(path: PathBuf) -> Command {
@@ -69,7 +70,7 @@ impl PubClient {
                 Ok(ApiResponse::Success)
             }
             Command::Init(name) => {
-                client.init(&name)?;
+                client.init(name)?;
                 Ok(ApiResponse::Success)
             }
             Command::List => {
@@ -91,7 +92,7 @@ impl PubClient {
 
     /// Initialises a new publication client, using a new key pair, and
     /// returns a publisher request that can be sent to the server.
-    fn init(&mut self, name: &str) -> Result<(), Error> {
+    fn init(&mut self, name: Handle) -> Result<(), Error> {
         let mut signer = OpenSslSigner::build(&self.state_dir)?;
 
         let key_id = signer.create_key(PublicKeyFormat::default())?;
@@ -107,7 +108,7 @@ impl PubClient {
         let id = self.my_identity()?;
         Ok(rfc8183::PublisherRequest::new(
             None,
-            id.name(),
+            id.name().clone(),
             id.id_cert().clone(),
         ))
     }
@@ -319,7 +320,8 @@ impl Options {
         let command = {
             if let Some(m) = m.subcommand_matches("init") {
                 let name = m.value_of("name").unwrap();
-                Command::Init(name.to_string())
+                let name = Handle::from_str_unsafe(name);
+                Command::Init(name)
             } else if let Some(m) = m.subcommand_matches("request") {
                 let xml = m.value_of("xml").unwrap();
                 let xml = PathBuf::from(xml);

@@ -207,7 +207,7 @@ impl KrillClient {
                 let id_cert = pr.id_cert().clone();
                 let auth = ClientAuth::new(id_cert);
 
-                let info = ClientInfo::new(handle, auth);
+                let info = ClientInfo::new(handle.clone(), auth);
 
                 httpclient::post_json(
                     &self.resolve_uri("api/v1/rfc8181/clients"),

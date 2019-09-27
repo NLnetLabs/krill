@@ -4,10 +4,11 @@ use rpki::crypto::KeyIdentifier;
 use rpki::x509::Time;
 
 use crate::commons::api::{
-    ChildCaInfo, IssuanceResponse, IssuedCert, ResourceClassName, ResourceSet, RevocationResponse,
+    ChildCaInfo, ChildHandle, IssuanceResponse, IssuedCert, ResourceClassName, ResourceSet,
+    RevocationResponse,
 };
 use crate::commons::remote::id::IdCert;
-use crate::daemon::ca::{self, ChildHandle};
+use crate::daemon::ca;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[allow(clippy::large_enum_variant)]

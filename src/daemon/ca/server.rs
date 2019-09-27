@@ -11,9 +11,9 @@ use rpki::uri;
 
 use crate::commons::api::{
     self, AddChildRequest, AddParentRequest, CertAuthList, CertAuthSummary, ChildAuthRequest,
-    ChildCaInfo, Entitlements, Handle, IssuanceRequest, IssuanceResponse, IssuedCert,
-    ParentCaContact, RcvdCert, RepoInfo, ResourceClassName, ResourceSet, RevocationRequest,
-    RevocationResponse, RouteAuthorizationUpdates, Token, UpdateChildRequest,
+    ChildCaInfo, ChildHandle, Entitlements, Handle, IssuanceRequest, IssuanceResponse, IssuedCert,
+    ParentCaContact, ParentHandle, RcvdCert, RepoInfo, ResourceClassName, ResourceSet,
+    RevocationRequest, RevocationResponse, RouteAuthorizationUpdates, Token, UpdateChildRequest,
 };
 use crate::commons::eventsourcing::{Aggregate, AggregateStore, DiskAggregateStore};
 use crate::commons::remote::builder::SignedMessageBuilder;
@@ -21,8 +21,7 @@ use crate::commons::remote::sigmsg::SignedMessage;
 use crate::commons::remote::{rfc6492, rfc8183};
 use crate::commons::util::httpclient;
 use crate::daemon::ca::{
-    self, ta_handle, CertAuth, ChildHandle, CmdDet, IniDet, ParentHandle, ServerError,
-    ServerResult, Signer,
+    self, ta_handle, CertAuth, CmdDet, IniDet, ServerError, ServerResult, Signer,
 };
 use crate::daemon::mq::EventQueueListener;
 
@@ -232,23 +231,22 @@ impl<S: Signer> CaServer<S> {
         let content = ca.verify_rfc6492(msg)?;
         debug!("RFC6492 Request: verified");
 
-        let (sender, recipient, content) = content.unwrap();
-        let child = Handle::from(sender.as_str());
+        let (child, recipient, content) = content.unwrap();
 
         match content {
             rfc6492::Content::Qry(rfc6492::Qry::Revoke(req)) => {
-                let res = self.revoke(ca_handle, child, req)?;
-                let msg = rfc6492::Message::revoke_response(sender, recipient, res);
+                let res = self.revoke(ca_handle, child.clone(), req)?;
+                let msg = rfc6492::Message::revoke_response(child, recipient, res);
                 self.wrap_rfc6492_response(ca_handle, msg)
             }
             rfc6492::Content::Qry(rfc6492::Qry::List) => {
                 let entitlements = self.list(ca_handle, &child)?;
-                let msg = rfc6492::Message::list_response(sender, recipient, entitlements);
+                let msg = rfc6492::Message::list_response(child, recipient, entitlements);
                 self.wrap_rfc6492_response(ca_handle, msg)
             }
             rfc6492::Content::Qry(rfc6492::Qry::Issue(req)) => {
                 let res = self.issue(ca_handle, &child, req)?;
-                let msg = rfc6492::Message::issue_response(sender, recipient, res);
+                let msg = rfc6492::Message::issue_response(child, recipient, res);
                 self.wrap_rfc6492_response(ca_handle, msg)
             }
             _ => Err(ServerError::custom("Unsupported RFC6492 message")),
@@ -543,8 +541,8 @@ impl<S: Signer> CaServer<S> {
         for (rcn, revoke_requests) in revoke_requests.into_iter() {
             let mut revocations = vec![];
             for req in revoke_requests.into_iter() {
-                let sender = parent_res.child_handle().to_string();
-                let recipient = parent_res.parent_handle().to_string();
+                let sender = parent_res.child_handle().clone();
+                let recipient = parent_res.parent_handle().clone();
                 let revoke = rfc6492::Message::revoke(sender, recipient, req.clone());
 
                 match self.send_rfc6492_and_validate_response(
@@ -653,8 +651,8 @@ impl<S: Signer> CaServer<S> {
             let mut issued_certs = vec![];
 
             for req in requests.into_iter() {
-                let sender = parent_res.child_handle().to_string();
-                let recipient = parent_res.parent_handle().to_string();
+                let sender = parent_res.child_handle().clone();
+                let recipient = parent_res.parent_handle().clone();
                 let issue = rfc6492::Message::issue(sender, recipient, req);
 
                 match self.send_rfc6492_and_validate_response(
@@ -736,8 +734,8 @@ impl<S: Signer> CaServer<S> {
         let child = self.ca_store.get_latest(handle)?;
 
         // create a list request
-        let sender = parent_res.child_handle().to_string();
-        let recipient = parent_res.parent_handle().to_string();
+        let sender = parent_res.child_handle().clone();
+        let recipient = parent_res.parent_handle().clone();
         let list = rfc6492::Message::list(sender, recipient);
 
         let response =
@@ -921,7 +919,7 @@ mod tests {
             // Expect:
             //   - Child CA initialised
             //
-            let child_handle = Handle::from("child");
+            let child_handle = Handle::from_str_unsafe("child");
             let child_token = Token::from("child");
             let child_rs = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
 

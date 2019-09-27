@@ -1,8 +1,8 @@
+use std::env;
 use std::fs::File;
 use std::io;
 use std::io::Read;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
-use std::env;
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -60,7 +60,6 @@ impl ConfigDefaults {
         PathBuf::from("./krill.log")
     }
     fn auth_token() -> Token {
-
         match env::var("KRILL_AUTH_TOKEN") {
             Ok(token) => Token::from(token),
             Err(_) => {

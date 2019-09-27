@@ -1,7 +1,12 @@
 //! Support for admin tasks, such as managing publishers and RFC8181 clients
 
 use std::fmt;
-use std::path::Path;
+use std::path::PathBuf;
+use std::str::{from_utf8_unchecked, FromStr};
+
+use bytes::Bytes;
+use serde::de;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::cert::Cert;
 use rpki::crypto::Signer;
@@ -17,50 +22,97 @@ use crate::commons::remote::rfc8183::ChildRequest;
 
 //------------ Handle --------------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct Handle(String);
+pub type ParentHandle = Handle;
+pub type ChildHandle = Handle;
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct Handle {
+    name: Bytes,
+}
 
 impl Handle {
     pub fn as_str(&self) -> &str {
-        &self.0.as_str()
+        self.as_ref()
+    }
+
+    pub fn from_str_unsafe(s: &str) -> Self {
+        Self::from_str(s).unwrap()
+    }
+
+    pub fn from_path_unsafe(path: &PathBuf) -> Self {
+        let path = path.file_name().unwrap();
+        let s = path.to_string_lossy().to_string();
+        let s = s.replace("+", "/");
+        let s = s.replace("=", "\\");
+        Self::from_str(&s).unwrap()
+    }
+
+    /// We replace "/" with "+" and "\" with "=" to make file system
+    /// safe names.
+    pub fn to_path_buf(&self) -> PathBuf {
+        let s = self.to_string();
+        let s = s.replace("/", "+");
+        let s = s.replace("\\", "=");
+        PathBuf::from(s)
     }
 }
 
-impl From<&str> for Handle {
-    fn from(s: &str) -> Self {
-        Handle(s.to_string())
-    }
-}
+impl FromStr for Handle {
+    type Err = InvalidHandle;
 
-impl From<String> for Handle {
-    fn from(s: String) -> Self {
-        Handle(s)
+    /// Accepted pattern: [-_A-Za-z0-9/]{1,255}
+    /// See Appendix A of RFC8183.
+    ///
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'/' || b == b'\\')
+            && !s.is_empty()
+            && s.len() < 256
+        {
+            Ok(Handle {
+                name: Bytes::from(s),
+            })
+        } else {
+            Err(InvalidHandle)
+        }
     }
 }
 
 impl AsRef<str> for Handle {
     fn as_ref(&self) -> &str {
-        self.as_str()
-    }
-}
-
-impl AsRef<String> for Handle {
-    fn as_ref(&self) -> &String {
-        &self.0
-    }
-}
-
-impl AsRef<Path> for Handle {
-    fn as_ref(&self) -> &Path {
-        self.0.as_ref()
+        unsafe { from_utf8_unchecked(self.name.as_ref()) }
     }
 }
 
 impl fmt::Display for Handle {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        self.0.fmt(f)
+        write!(f, "{}", self.as_str())
     }
 }
+
+impl Serialize for Handle {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.to_string().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Handle {
+    fn deserialize<D>(deserializer: D) -> Result<Handle, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let string = String::deserialize(deserializer)?;
+        let handle = Handle::from_str(&string).map_err(de::Error::custom)?;
+        Ok(handle)
+    }
+}
+
+#[derive(Debug, Display)]
+#[display(fmt = "Handle MUST have pattern: [-_A-Za-z0-9/]{{1,255}}")]
+pub struct InvalidHandle;
 
 //------------ Token ------------------------------------------------------
 
@@ -498,5 +550,42 @@ impl UpdateChildRequest {
 
     pub fn is_force(&self) -> bool {
         self.force
+    }
+}
+
+//------------ Tests ---------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn should_accept_rfc8183_handle() {
+        // See appendix A of RFC8183
+        // handle  = xsd:string { maxLength="255" pattern="[\-_A-Za-z0-9/]*" }
+        Handle::from_str("abcDEF012/\\-_").unwrap();
+    }
+
+    #[test]
+    fn should_reject_invalid_handle() {
+        // See appendix A of RFC8183
+        // handle  = xsd:string { maxLength="255" pattern="[\-_A-Za-z0-9/]*" }
+        assert!(Handle::from_str("&").is_err());
+    }
+
+    #[test]
+    fn should_make_file_system_safe() {
+        let handle = Handle::from_str("abcDEF012/\\-_").unwrap();
+        let expected_path_buf = PathBuf::from("abcDEF012+=-_");
+        assert_eq!(handle.to_path_buf(), expected_path_buf);
+    }
+
+    #[test]
+    fn should_make_handle_from_dir() {
+        let path = PathBuf::from("a/b/abcDEF012+=-_");
+        let handle = Handle::from_path_unsafe(&path);
+        let expected_handle = Handle::from_str("abcDEF012/\\-_").unwrap();
+        assert_eq!(handle, expected_handle);
     }
 }

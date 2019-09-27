@@ -93,7 +93,8 @@ impl ChildRequest {
                 }
 
                 let tag = a.take_opt("tag");
-                let child_handle = Handle::from(a.take_req("child_handle")?);
+                let child_handle = Handle::from_str(&a.take_req("child_handle")?)
+                    .map_err(|_| Error::InvalidHandle)?;
 
                 if a.take_opt("valid_until").is_some() {
                     warn!(
@@ -235,8 +236,11 @@ impl ParentResponse {
                 }
 
                 let tag = a.take_opt("tag");
-                let parent_handle = Handle::from(a.take_req("parent_handle")?);
-                let child_handle = Handle::from(a.take_req("child_handle")?);
+                let parent_handle = Handle::from_str(&a.take_req("parent_handle")?)
+                    .map_err(|_| Error::InvalidHandle)?;
+
+                let child_handle = Handle::from_str(&a.take_req("child_handle")?)
+                    .map_err(|_| Error::InvalidHandle)?;
                 let service_uri = ServiceUri::try_from(a.take_req("service_uri")?)?;
 
                 if a.take_opt("valid_until").is_some() {
@@ -341,7 +345,7 @@ pub struct PublisherRequest {
     tag: Option<String>,
 
     /// The name the publishing CA likes to call itself by
-    publisher_handle: String,
+    publisher_handle: Handle,
 
     /// The self-signed IdCert containing the publisher's public key.
     id_cert: IdCert,
@@ -350,10 +354,10 @@ pub struct PublisherRequest {
 /// # Construct and Data Access
 ///
 impl PublisherRequest {
-    pub fn new(tag: Option<&str>, publisher_handle: &str, id_cert: IdCert) -> Self {
+    pub fn new(tag: Option<&str>, publisher_handle: Handle, id_cert: IdCert) -> Self {
         PublisherRequest {
             tag: tag.map(|s| s.to_string()),
-            publisher_handle: publisher_handle.to_string(),
+            publisher_handle,
             id_cert,
         }
     }
@@ -362,8 +366,8 @@ impl PublisherRequest {
         &self.id_cert
     }
 
-    pub fn client_handle(&self) -> Handle {
-        Handle::from(self.publisher_handle.as_str())
+    pub fn client_handle(&self) -> &Handle {
+        &self.publisher_handle
     }
 }
 
@@ -390,6 +394,8 @@ impl PublisherRequest {
 
                 let tag = a.take_opt("tag");
                 let publisher_handle = a.take_req("publisher_handle")?;
+                let publisher_handle =
+                    Handle::from_str(&publisher_handle).map_err(|_| Error::InvalidHandle)?;
                 a.exhausted()?;
 
                 let bytes = r.take_named_element("publisher_bpki_ta", |a, r| {
@@ -456,7 +462,7 @@ pub struct RepositoryResponse {
 
     /// The name the publication server decided to call the CA by.
     /// Note that this may not be the same as the handle the CA asked for.
-    publisher_handle: String,
+    publisher_handle: Handle,
 
     /// The Publication Server Identity Certificate
     id_cert: IdCert,
@@ -477,7 +483,7 @@ impl RepositoryResponse {
     /// Creates a new response.
     pub fn new(
         tag: Option<String>,
-        publisher_handle: String,
+        publisher_handle: Handle,
         id_cert: IdCert,
         service_uri: ServiceUri,
         sia_base: uri::Rsync,
@@ -497,7 +503,7 @@ impl RepositoryResponse {
         &self.tag
     }
 
-    pub fn publisher_handle(&self) -> &String {
+    pub fn publisher_handle(&self) -> &Handle {
         &self.publisher_handle
     }
 
@@ -541,6 +547,9 @@ impl RepositoryResponse {
 
                 let tag = a.take_opt("tag");
                 let publisher_handle = a.take_req("publisher_handle")?;
+                let publisher_handle =
+                    Handle::from_str(&publisher_handle).map_err(|_| Error::InvalidHandle)?;
+
                 let service_uri = ServiceUri::try_from(a.take_req("service_uri")?)?;
                 let sia_base = uri::Rsync::from_string(a.take_req("sia_base")?)?;
                 let rrdp_notification_uri =
@@ -657,6 +666,9 @@ pub enum Error {
     #[display(fmt = "Invalid base64: {}", _0)]
     Base64Error(DecodeError),
 
+    #[display(fmt = "Invalid handle in XML, MUST be [-_A-Za-z0-9/]{{1,255}}")]
+    InvalidHandle,
+
     #[display(fmt = "Cannot parse identity certificate: {}", _0)]
     CannotParseIdCert(decode::Error),
 
@@ -734,7 +746,7 @@ mod tests {
     fn validate_rpkid_publisher_request() {
         let xml = include_str!("../../../test-resources/oob/publisher_request.xml");
         let pr = PublisherRequest::validate_at(xml.as_bytes(), rpkid_time()).unwrap();
-        assert_eq!("Bob".to_string(), pr.publisher_handle);
+        assert_eq!(Handle::from_str_unsafe("Bob"), pr.publisher_handle);
         assert_eq!(Some("A0001".to_string()), pr.tag);
     }
 
@@ -743,7 +755,7 @@ mod tests {
         let xml = include_str!("../../../test-resources/oob/repository_response.xml");
         let rr = RepositoryResponse::validate_at(xml.as_bytes(), rpkid_time()).unwrap();
         assert_eq!(Some("A0001".to_string()), rr.tag);
-        assert_eq!("Alice/Bob-42".to_string(), rr.publisher_handle);
+        assert_eq!(Handle::from_str_unsafe("Alice/Bob-42"), rr.publisher_handle);
         assert_eq!(example_service_uri(), rr.service_uri);
         assert_eq!(example_rrdp_uri(), rr.rrdp_notification_uri);
         assert_eq!(example_sia_base(), rr.sia_base);
@@ -755,7 +767,7 @@ mod tests {
 
         let pr = PublisherRequest {
             tag: Some("tag".to_string()),
-            publisher_handle: "tim".to_string(),
+            publisher_handle: Handle::from_str_unsafe("tim"),
             id_cert: cert,
         };
 
@@ -770,7 +782,7 @@ mod tests {
 
         let pr = RepositoryResponse {
             tag: Some("tag".to_string()),
-            publisher_handle: "tim".to_string(),
+            publisher_handle: Handle::from_str_unsafe("tim"),
             rrdp_notification_uri: example_rrdp_uri(),
             sia_base: example_sia_base(),
             service_uri: example_service_uri(),
@@ -787,7 +799,7 @@ mod tests {
         let xml = include_str!("../../../test-resources/remote/rpkid-child-id.xml");
         let req = ChildRequest::validate_at(xml.as_bytes(), rpkid_time()).unwrap();
 
-        assert_eq!(&Handle::from("Carol"), req.child_handle());
+        assert_eq!(&Handle::from_str_unsafe("Carol"), req.child_handle());
         assert_eq!(None, req.tag());
 
         let encoded = req.encode_vec();

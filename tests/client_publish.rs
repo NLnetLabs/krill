@@ -19,8 +19,8 @@ use krill::pubc::cmsclient;
 use krill::pubc::cmsclient::PubClient;
 use krill::pubc::{ApiResponse, Format};
 
-fn list(server_uri: &str, handle: &str, token: &str) -> apiclient::Options {
-    let conn = apiclient::Connection::build(server_uri, handle, token).unwrap();
+fn list(server_uri: &str, handle: &Handle, token: &str) -> apiclient::Options {
+    let conn = apiclient::Connection::build(server_uri, handle.clone(), token).unwrap();
     let cmd = apiclient::Command::List;
     let fmt = Format::Json;
 
@@ -29,12 +29,12 @@ fn list(server_uri: &str, handle: &str, token: &str) -> apiclient::Options {
 
 fn sync(
     server_uri: &str,
-    handle: &str,
+    handle: &Handle,
     token: &str,
     syncdir: &PathBuf,
     base_uri: &str,
 ) -> apiclient::Options {
-    let conn = apiclient::Connection::build(server_uri, handle, token).unwrap();
+    let conn = apiclient::Connection::build(server_uri, handle.clone(), token).unwrap();
     let cmd = apiclient::Command::sync(syncdir.to_str().unwrap(), base_uri).unwrap();
     let fmt = Format::Json;
 
@@ -54,23 +54,23 @@ fn execute_krillc_command(command: Command) {
     }
 }
 
-fn add_publisher(handle: &str, base_uri: &str, token: &str) {
+fn add_publisher(handle: &Handle, base_uri: &str, token: &str) {
     let command = Command::Publishers(PublishersCommand::Add(AddPublisher {
-        handle: Handle::from(handle),
+        handle: handle.clone(),
         base_uri: test::rsync(base_uri),
         token: Token::from(token),
     }));
     execute_krillc_command(command);
 }
 
-fn remove_publisher(handle: &str) {
-    let command = Command::Publishers(PublishersCommand::Deactivate(handle.to_string()));
+fn remove_publisher(handle: &Handle) {
+    let command = Command::Publishers(PublishersCommand::Deactivate(handle.clone()));
 
     execute_krillc_command(command);
 }
 
-fn rfc8181_client_init(handle: &str, state_dir: &PathBuf) {
-    let command = cmsclient::Command::init(handle);
+fn rfc8181_client_init(handle: &Handle, state_dir: &PathBuf) {
+    let command = cmsclient::Command::init(handle.clone());
     rfc8181_client_process_command(command, &state_dir);
 }
 
@@ -115,7 +115,7 @@ fn rfc8181_client_process_command(command: cmsclient::Command, state_dir: &PathB
 }
 
 #[allow(dead_code)]
-fn get_repository_response(handle: &str) -> RepositoryResponse {
+fn get_repository_response(handle: &Handle) -> RepositoryResponse {
     let uri = format!(
         "https://localhost:3000/api/v1/rfc8181/{}/response.xml",
         handle
@@ -132,17 +132,17 @@ fn get_repository_response(handle: &str) -> RepositoryResponse {
 fn client_publish() {
     krill::daemon::test::test_with_krill_server(|d| {
         let server_uri = "https://localhost:3000/";
-        let handle = "alice";
+        let handle = Handle::from_str_unsafe("alice");
         let token = "secret";
         let base_rsync_uri_alice = "rsync://localhost/repo/alice/";
         let base_rsync_uri_bob = "rsync://localhost/repo/bob/";
 
         // Add client "alice"
-        add_publisher(handle, base_rsync_uri_alice, token);
+        add_publisher(&handle, base_rsync_uri_alice, token);
 
         // Calls to api should require the correct token
         {
-            let res = apiclient::execute(list(server_uri, handle, "wrong token"));
+            let res = apiclient::execute(list(server_uri, &handle, "wrong token"));
 
             match res {
                 Err(apiclient::Error::HttpClientError(httpclient::Error::Forbidden)) => {}
@@ -153,7 +153,7 @@ fn client_publish() {
 
         // List files at server, expect no files
         {
-            let list = apiclient::execute(list(server_uri, handle, token)).unwrap();
+            let list = apiclient::execute(list(server_uri, &handle, token)).unwrap();
 
             match list {
                 ApiResponse::List(list) => {
@@ -186,7 +186,7 @@ fn client_publish() {
         {
             let api_res = apiclient::execute(sync(
                 server_uri,
-                handle,
+                &handle,
                 token,
                 &sync_dir,
                 base_rsync_uri_bob,
@@ -199,7 +199,7 @@ fn client_publish() {
         {
             let api_res = apiclient::execute(sync(
                 server_uri,
-                handle,
+                &handle,
                 token,
                 &sync_dir,
                 base_rsync_uri_alice,
@@ -211,7 +211,7 @@ fn client_publish() {
 
         // We should now see these files when we list
         {
-            let list = apiclient::execute(list(server_uri, handle, token)).unwrap();
+            let list = apiclient::execute(list(server_uri, &handle, token)).unwrap();
 
             match list {
                 ApiResponse::List(list) => {
@@ -241,7 +241,7 @@ fn client_publish() {
         {
             let api_res = apiclient::execute(sync(
                 server_uri,
-                handle,
+                &handle,
                 token,
                 &sync_dir,
                 base_rsync_uri_alice,
@@ -253,7 +253,7 @@ fn client_publish() {
 
         // List files at server, expect 1 file (c.txt)
         {
-            let list = apiclient::execute(list(server_uri, handle, token)).unwrap();
+            let list = apiclient::execute(list(server_uri, &handle, token)).unwrap();
 
             match list {
                 ApiResponse::List(list) => {
@@ -272,7 +272,7 @@ fn client_publish() {
         }
 
         // Remove alice
-        remove_publisher(handle);
+        remove_publisher(&handle);
 
         // XXX TODO Must remove files when removing publisher
         // Expect that c.txt is removed when looking at latest snapshot.
@@ -280,22 +280,22 @@ fn client_publish() {
 
         // Now test with CMS proxy
 
-        let handle = "carol";
+        let handle = Handle::from_str_unsafe("carol");
         let token = "secret";
         let base_rsync_uri = "rsync://localhost/repo/carol/";
 
         // Add client "carol"
-        add_publisher(handle, base_rsync_uri, token);
+        add_publisher(&handle, base_rsync_uri, token);
 
         let state_dir = test::sub_dir(&d);
 
         // Add RFC8181 client for alice
-        rfc8181_client_init(handle, &state_dir);
+        rfc8181_client_init(&handle, &state_dir);
 
         rfc8181_client_add(&state_dir);
 
         // Get the server response.xml and add it to the client
-        let response = get_repository_response(handle);
+        let response = get_repository_response(&handle);
         let mut response_path = state_dir.clone();
         response_path.push("response.xml");
         response.save(&response_path).unwrap();

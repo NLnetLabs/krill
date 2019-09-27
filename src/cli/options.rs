@@ -242,7 +242,8 @@ impl Options {
                 .value_name("name")
                 .help("The local by which your ca refers to this parent.")
                 .required(true),
-        ).arg(
+        )
+        .arg(
             Arg::with_name("embedded")
                 .long("embedded")
                 .help("Add a parent that exists in this Krill instance.")
@@ -459,10 +460,14 @@ impl Options {
 
     fn parse_my_ca(matches: &ArgMatches) -> Result<Handle, Error> {
         let my_ca = {
-            let mut my_ca = env::var(KRILL_CLI_MY_CA_ENV).ok().map(Handle::from);
+            let mut my_ca = None;
+
+            if let Ok(my_ca_env) = env::var(KRILL_CLI_MY_CA_ENV) {
+                my_ca = Some(Handle::from_str(&my_ca_env).map_err(|_| Error::InvalidHandle)?);
+            }
 
             if let Some(my_ca_str) = matches.value_of(KRILL_CLI_MY_CA_ARG) {
-                my_ca = Some(Handle::from(my_ca_str));
+                my_ca = Some(Handle::from_str(my_ca_str).map_err(|_| Error::InvalidHandle)?);
             }
 
             my_ca.ok_or_else(|| {
@@ -535,7 +540,9 @@ impl Options {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
-        let child = matches.value_of("child").map(Handle::from).unwrap();
+        let child = matches.value_of("child").unwrap();
+        let child = Handle::from_str(child).map_err(|_| Error::InvalidHandle)?;
+
         let resources =
             Self::parse_resource_args(matches)?.ok_or_else(|| Error::MissingResources)?;
 
@@ -562,7 +569,8 @@ impl Options {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
-        let child = matches.value_of("child").map(Handle::from).unwrap();
+        let child = matches.value_of("child").unwrap();
+        let child = Handle::from_str(child).map_err(|_| Error::InvalidHandle)?;
 
         let id_cert = {
             if let Some(path) = matches.value_of("idcert") {
@@ -605,7 +613,8 @@ impl Options {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
-        let parent = matches.value_of("parent").map(Handle::from).unwrap();
+        let parent = matches.value_of("parent").unwrap();
+        let parent = Handle::from_str(parent).map_err(|_| Error::InvalidHandle)?;
 
         let parent_req = {
             if matches.is_present("embedded") {
@@ -781,8 +790,8 @@ pub enum CaCommand {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum PublishersCommand {
     Add(AddPublisher),
-    Details(String),
-    Deactivate(String),
+    Details(Handle),
+    Deactivate(Handle),
     List,
 }
 

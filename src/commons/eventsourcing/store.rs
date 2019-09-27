@@ -136,10 +136,8 @@ impl KeyStore for DiskKeyStore {
 
         if let Ok(dir) = fs::read_dir(&self.dir) {
             for d in dir {
-                let full_path = d.unwrap().path();
-                let path = full_path.file_name().unwrap();
-
-                let id = Handle::from(path.to_string_lossy().as_ref());
+                let path = d.unwrap().path();
+                let id = Handle::from_path_unsafe(&path);
                 res.push(id);
             }
         }
@@ -275,7 +273,7 @@ impl DiskKeyStore {
 
     fn dir_for_aggregate(&self, id: &Handle) -> PathBuf {
         let mut dir_path = self.dir.clone();
-        dir_path.push(id);
+        dir_path.push(id.to_path_buf());
         dir_path
     }
 

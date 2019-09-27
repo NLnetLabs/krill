@@ -9,17 +9,17 @@ use rpki::x509::Time;
 
 use crate::commons::api::{
     AddedObject, CurrentObject, CurrentObjects, EntitlementClass, HexEncodedHash, IssuanceRequest,
-    IssuanceResponse, IssuedCert, KeyStateInfo, ObjectName, ObjectsDelta, RcvdCert, ReplacedObject,
-    RepoInfo, RequestResourceLimit, ResourceClassName, ResourceSet, Revocation, RevocationRequest,
-    RevokedObject, RouteAuthorization, SigningCert, UpdatedObject, WithdrawnObject,
+    IssuanceResponse, IssuedCert, KeyStateInfo, ObjectName, ObjectsDelta, ParentHandle, RcvdCert,
+    ReplacedObject, RepoInfo, RequestResourceLimit, ResourceClassName, ResourceSet, Revocation,
+    RevocationRequest, RevokedObject, RouteAuthorization, SigningCert, UpdatedObject,
+    WithdrawnObject,
 };
-
 use crate::daemon::ca::events::RoaUpdates;
 use crate::daemon::ca::signing::CsrInfo;
 use crate::daemon::ca::{
     self, ta_handle, AddedOrUpdated, Certificates, CertifiedKey, CrlBuilder, CurrentKey,
-    CurrentObjectSetDelta, Error, EvtDet, KeyState, ManifestBuilder, NewKey, OldKey, ParentHandle,
-    PendingKey, Result, RoaInfo, Roas, SignSupport, Signer,
+    CurrentObjectSetDelta, Error, EvtDet, KeyState, ManifestBuilder, NewKey, OldKey, PendingKey,
+    Result, RoaInfo, Roas, SignSupport, Signer,
 };
 
 //------------ ResourceClass -----------------------------------------------

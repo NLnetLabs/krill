@@ -69,7 +69,7 @@ impl ProxyServer {
     fn new_id(signer: &mut OpenSslSigner) -> Result<MyIdentity, Error> {
         let key_id = signer.create_key(PublicKeyFormat::default())?;
         let id_cert = IdCertBuilder::new_ta_id_cert(&key_id, signer)?;
-        let name = "krill-proxy";
+        let name = Handle::from_str_unsafe("krill-proxy");
         Ok(MyIdentity::new(name, id_cert, key_id))
     }
 }
@@ -111,7 +111,7 @@ impl ProxyServer {
             responder.id().id_cert().clone()
         };
 
-        let publisher_handle = handle.to_string();
+        let publisher_handle = handle.clone();
         let service_uri = ServiceUri::Https(service_uri);
 
         Ok(RepositoryResponse::new(

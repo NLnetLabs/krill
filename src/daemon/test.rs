@@ -10,13 +10,13 @@ use crate::cli::report::{ApiResponse, ReportFormat};
 use crate::cli::{Error, KrillClient};
 use crate::commons::api::{
     AddChildRequest, AddParentRequest, CertAuthInfo, CertAuthInit, CertAuthPubMode,
-    CertifiedKeyInfo, ChildAuthRequest, Handle, ParentCaContact, Publish, PublisherDetails,
-    ResourceClassKeysInfo, ResourceClassName, ResourceSet, RouteAuthorizationUpdates, Token,
-    UpdateChildRequest,
+    CertifiedKeyInfo, ChildAuthRequest, ChildHandle, Handle, ParentCaContact, ParentHandle,
+    Publish, PublisherDetails, ResourceClassKeysInfo, ResourceClassName, ResourceSet,
+    RouteAuthorizationUpdates, Token, UpdateChildRequest,
 };
 use crate::commons::remote::rfc8183;
 use crate::commons::util::test;
-use crate::daemon::ca::{ta_handle, ChildHandle, ParentHandle};
+use crate::daemon::ca::ta_handle;
 use crate::daemon::config::Config;
 use crate::daemon::http::server;
 
@@ -324,7 +324,7 @@ pub fn ca_current_objects(handle: &Handle) -> Vec<Publish> {
 
 pub fn publisher_details(handle: &Handle) -> PublisherDetails {
     match krill_admin(Command::Publishers(PublishersCommand::Details(
-        handle.to_string(),
+        handle.clone(),
     ))) {
         ApiResponse::PublisherDetails(pub_details) => pub_details,
         _ => panic!("Expected publisher details"),

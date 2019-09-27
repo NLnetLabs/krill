@@ -236,7 +236,7 @@ mod tests {
             let mut manager = DiskAggregateStore::<Person>::new(&d, "person").unwrap();
             manager.add_listener(counter.clone());
 
-            let id_alice = Handle::from("alice");
+            let id_alice = Handle::from_str_unsafe("alice");
             let alice_init = InitPersonEvent::init(&id_alice, "alice smith");
 
             manager.add(alice_init).unwrap();

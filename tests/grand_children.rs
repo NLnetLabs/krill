@@ -35,7 +35,7 @@ fn grand_children() {
         let ta_crl_file = ta_crl_file.as_str();
 
         // -------------------- CA1 -----------------------------------------------
-        let ca1 = Handle::from("CA1");
+        let ca1 = Handle::from_str_unsafe("CA1");
         let ca1_res = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
 
         init_child(&ca1, &Token::from("CA1"));
@@ -59,7 +59,7 @@ fn grand_children() {
         wait_for_published_objects(&ta_handle, &[ta_crl_file, ta_mft_file, ca1_cert_file]);
 
         // -------------------- CA2 -----------------------------------------------
-        let ca2 = Handle::from("CA2");
+        let ca2 = Handle::from_str_unsafe("CA2");
         let ca2_res = ResourceSet::from_strs("", "10.1.0.0/16", "").unwrap();
 
         init_child(&ca2, &Token::from("CA2"));
@@ -86,7 +86,7 @@ fn grand_children() {
         );
 
         // -------------------- CA3 -----------------------------------------------
-        let ca3 = Handle::from("CA3");
+        let ca3 = Handle::from_str_unsafe("CA3");
         let ca_3_res_under_ca_1 = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
 
         init_child(&ca3, &Token::from("CA3"));
@@ -131,7 +131,7 @@ fn grand_children() {
         wait_for_published_objects(&ca2, &[ca2_mft_file, ca2_crl_file, ca3_2_cert_file]);
 
         // -------------------- CA4 -----------------------------------------------
-        let ca4 = Handle::from("CA4");
+        let ca4 = Handle::from_str_unsafe("CA4");
         let ca_4_res_under_ca_3 = ResourceSet::from_strs("", "10.0.0.0-10.1.0.255", "").unwrap();
 
         init_child(&ca4, &Token::from("CA4"));

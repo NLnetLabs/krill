@@ -15,7 +15,7 @@ use krill::daemon::test::*;
 /// as during and after key rolls.
 fn ca_roas() {
     test_with_krill_server(|_d| {
-        let child = Handle::from("child");
+        let child = Handle::from_str_unsafe("child");
         let child_token = Token::from("child");
         let child_resources = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
 

@@ -10,7 +10,7 @@ use crate::commons::remote::id::IdCert;
 // const fn is not stable yet
 const ID: &str = "cms-clients";
 pub fn id() -> Handle {
-    Handle::from(ID)
+    Handle::from_str_unsafe(ID)
 }
 
 //------------ ClientsEvents --------------------------------------------
@@ -257,7 +257,7 @@ pub mod tests {
 
     pub fn add_client(work_dir: &PathBuf, name: &str) -> ClientsCommand {
         let cert = new_id_cert(work_dir);
-        let handle = Handle::from(name);
+        let handle = Handle::from_str_unsafe(name);
 
         ClientsCommands::add(handle, ClientAuth::new(cert))
     }
@@ -278,7 +278,7 @@ pub mod tests {
 
             // Set up client "alice" and add to the proxy
             let alice_cert1 = new_id_cert(&d);
-            let alice_handle = Handle::from("alice");
+            let alice_handle = Handle::from_str_unsafe("alice");
 
             let add_alice =
                 ClientsCommands::add(alice_handle.clone(), ClientAuth::new(alice_cert1.clone()));

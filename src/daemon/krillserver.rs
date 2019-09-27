@@ -11,8 +11,9 @@ use rpki::uri;
 
 use crate::commons::api::{
     AddChildRequest, AddParentRequest, CertAuthInfo, CertAuthInit, CertAuthList, CertAuthPubMode,
-    ChildCaInfo, Handle, ListReply, ParentCaContact, PublishDelta, PublishRequest,
-    PublisherRequest, RouteAuthorizationUpdates, TaCertDetails, Token, UpdateChildRequest,
+    ChildCaInfo, ChildHandle, Handle, ListReply, ParentCaContact, ParentHandle, PublishDelta,
+    PublishRequest, PublisherRequest, RouteAuthorizationUpdates, TaCertDetails, Token,
+    UpdateChildRequest,
 };
 use crate::commons::remote::api::ClientInfo;
 use crate::commons::remote::proxy;
@@ -22,7 +23,7 @@ use crate::commons::remote::rfc8183::{ChildRequest, RepositoryResponse};
 use crate::commons::remote::sigmsg::SignedMessage;
 use crate::commons::util::softsigner::{OpenSslSigner, SignerError};
 use crate::daemon::auth::{Auth, Authorizer};
-use crate::daemon::ca::{self, ta_handle, ChildHandle, ParentHandle};
+use crate::daemon::ca::{self, ta_handle};
 use crate::daemon::config::Config;
 use crate::daemon::mq::EventQueueListener;
 use crate::daemon::scheduler::Scheduler;

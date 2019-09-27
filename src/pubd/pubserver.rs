@@ -11,7 +11,6 @@ use crate::commons::api::{Handle, ListReply, PublishDelta, PublisherRequest, Rep
 use crate::commons::eventsourcing::{
     Aggregate, AggregateStore, AggregateStoreError, Command, DiskAggregateStore,
 };
-
 use crate::pubd::publishers::{
     InitPublisherDetails, Publisher, PublisherCommand, PublisherCommandDetails, PublisherError,
     PublisherEventDetails,
@@ -331,7 +330,7 @@ mod tests {
 
     fn make_publisher_req(handle: &str, uri: &str) -> PublisherRequest {
         let base_uri = test::rsync(uri);
-        let handle = Handle::from(handle);
+        let handle = Handle::from_str_unsafe(handle);
         let token = Token::from("secret");
 
         PublisherRequest::new(handle, token, base_uri)
@@ -358,23 +357,10 @@ mod tests {
             let server = make_server(&d);
             server.create_publisher(publisher_req).unwrap();
 
-            let handle = Handle::from("alice");
+            let handle = Handle::from_str_unsafe("alice");
             let alice = server.get_publisher(&handle).unwrap().unwrap();
 
             assert_eq!(alice.handle(), &handle);
-        })
-    }
-
-    #[test]
-    fn should_refuse_invalid_publisher_handle() {
-        test::test_under_tmp(|d| {
-            let publisher_req = make_publisher_req("alice&", "rsync://localhost/repo/alice/");
-
-            let server = make_server(&d);
-            match server.create_publisher(publisher_req) {
-                Err(Error::InvalidHandle(handle)) => assert_eq!(handle, "alice&".to_string()),
-                _ => panic!("Expected error"),
-            }
         })
     }
 
@@ -422,7 +408,7 @@ mod tests {
     fn should_remove_publisher() {
         test::test_under_tmp(|d| {
             let server = make_server(&d);
-            let handle = Handle::from("alice");
+            let handle = Handle::from_str_unsafe("alice");
 
             // create publisher
             let publisher_req =
@@ -447,7 +433,7 @@ mod tests {
     fn should_list_files() {
         test::test_under_tmp(|d| {
             let publisher_req = make_publisher_req("alice", "rsync://localhost/repo/alice/");
-            let handle = Handle::from("alice");
+            let handle = Handle::from_str_unsafe("alice");
 
             let server = make_server(&d);
             server.create_publisher(publisher_req).unwrap();
@@ -471,7 +457,7 @@ mod tests {
             }
 
             let publisher_req = make_publisher_req("alice", "rsync://localhost/repo/alice/");
-            let handle = Handle::from("alice");
+            let handle = Handle::from_str_unsafe("alice");
 
             let server = make_server(&d);
             server.create_publisher(publisher_req).unwrap();

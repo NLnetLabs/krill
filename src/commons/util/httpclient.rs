@@ -38,7 +38,11 @@ impl<'a> fmt::Display for PostBody<'a> {
             PostBody::String(string) => write!(f, "{}", string),
             PostBody::Bytes(bytes) => {
                 let base64 = base64::encode(bytes);
-                write!(f, "<binary content, base64 encoded for display here> {}", base64)
+                write!(
+                    f,
+                    "<binary content, base64 encoded for display here> {}",
+                    base64
+                )
             }
         }
     }

@@ -10,6 +10,7 @@ use rpki::crypto::{KeyIdentifier, PublicKey, SignatureAlgorithm};
 use rpki::uri;
 use rpki::x509::{Name, SignedData, Time, ValidationError, Validity};
 
+use crate::commons::api::Handle;
 use crate::commons::remote::rfc8183::ServiceUri;
 
 //------------ MyIdentity ----------------------------------------------------
@@ -18,23 +19,23 @@ use crate::commons::remote::rfc8183::ServiceUri;
 /// publishing (up-down) or publication.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct MyIdentity {
-    name: String,
+    name: Handle,
     id_cert: IdCert,
     key_id: KeyIdentifier,
 }
 
 impl MyIdentity {
-    pub fn new(name: &str, id_cert: IdCert, key_id: KeyIdentifier) -> Self {
+    pub fn new(name: Handle, id_cert: IdCert, key_id: KeyIdentifier) -> Self {
         MyIdentity {
-            name: name.to_string(),
+            name,
             id_cert,
             key_id,
         }
     }
 
     /// The name for this actor.
-    pub fn name(&self) -> &str {
-        self.name.as_str()
+    pub fn name(&self) -> &Handle {
+        &self.name
     }
 
     /// The identity certificate for this actor.
@@ -65,13 +66,13 @@ impl Eq for MyIdentity {}
 /// particular, its identity and where it may be contacted.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ParentInfo {
-    publisher_handle: String,
+    publisher_handle: Handle,
     id_cert: IdCert,
     service_uri: ServiceUri,
 }
 
 impl ParentInfo {
-    pub fn new(publisher_handle: String, id_cert: IdCert, service_uri: ServiceUri) -> Self {
+    pub fn new(publisher_handle: Handle, id_cert: IdCert, service_uri: ServiceUri) -> Self {
         ParentInfo {
             publisher_handle,
             id_cert,
@@ -90,7 +91,7 @@ impl ParentInfo {
     }
 
     /// The name the publication server prefers to go by
-    pub fn publisher_handle(&self) -> &String {
+    pub fn publisher_handle(&self) -> &Handle {
         &self.publisher_handle
     }
 }

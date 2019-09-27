@@ -6,7 +6,7 @@ use clap::{App, Arg, SubCommand};
 
 use rpki::uri;
 
-use crate::commons::api::{ListReply, Token};
+use crate::commons::api::{Handle, ListReply, Token};
 use crate::commons::util::{file, httpclient};
 use crate::pubc::{create_delta, ApiResponse, Format};
 
@@ -40,16 +40,15 @@ pub struct Connection {
     server_uri: uri::Https,
 
     // The handle by which this client is known to the server.
-    handle: String,
+    handle: Handle,
 
     // The token for this particular client handle.
     token: Token,
 }
 
 impl Connection {
-    pub fn build(server_uri: &str, handle: &str, token: &str) -> Result<Self, Error> {
+    pub fn build(server_uri: &str, handle: Handle, token: &str) -> Result<Self, Error> {
         let server_uri = uri::Https::from_str(server_uri)?;
-        let handle = handle.to_string();
         let token = Token::from(token);
         Ok(Connection {
             server_uri,
@@ -148,6 +147,8 @@ impl Options {
         let connection = {
             let server_uri = m.value_of("server").unwrap();
             let handle = m.value_of("handle").unwrap();
+            let handle = Handle::from_str(handle).map_err(|_| Error::InvalidHandle)?;
+
             let token = m.value_of("token").unwrap();
             Connection::build(server_uri, handle, token)?
         };
@@ -243,6 +244,9 @@ pub enum Error {
 
     #[display(fmt = "Base URI must end with '/'.")]
     InvalidBaseUri,
+
+    #[display(fmt = "Invalid handle")]
+    InvalidHandle,
 }
 
 impl From<uri::Error> for Error {

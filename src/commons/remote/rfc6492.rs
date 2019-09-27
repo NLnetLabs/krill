@@ -37,8 +37,8 @@ const TYPE_REVOKE_QRY: &str = "revoke";
 const TYPE_REVOKE_RES: &str = "revoke_response";
 const TYPE_ERROR_RES: &str = "error_response";
 
-pub type Sender = String;
-pub type Recipient = String;
+pub type Sender = Handle;
+pub type Recipient = Handle;
 
 //------------ Message -------------------------------------------------------
 
@@ -61,15 +61,14 @@ impl Message {
         (self.sender, self.recipient, self.content)
     }
 
-    pub fn sender_handle(&self) -> Handle {
-        Handle::from(self.sender.as_str())
-    }
-    pub fn sender(&self) -> &str {
+    pub fn sender(&self) -> &Handle {
         &self.sender
     }
-    pub fn recipient(&self) -> &str {
+
+    pub fn recipient(&self) -> &Handle {
         &self.recipient
     }
+
     pub fn content(&self) -> &Content {
         &self.content
     }
@@ -89,7 +88,7 @@ impl Message {
 /// # Constructing
 ///
 impl Message {
-    pub fn list(sender: String, recipient: String) -> Self {
+    pub fn list(sender: Sender, recipient: Recipient) -> Self {
         let content = Content::Qry(Qry::List);
         Message {
             sender,
@@ -98,7 +97,7 @@ impl Message {
         }
     }
 
-    pub fn list_response(sender: String, recipient: String, entitlements: Entitlements) -> Self {
+    pub fn list_response(sender: Sender, recipient: Recipient, entitlements: Entitlements) -> Self {
         let content = Content::Res(Res::List(entitlements));
         Message {
             sender,
@@ -107,7 +106,7 @@ impl Message {
         }
     }
 
-    pub fn issue(sender: String, recipient: String, issuance_request: IssuanceRequest) -> Self {
+    pub fn issue(sender: Sender, recipient: Recipient, issuance_request: IssuanceRequest) -> Self {
         let content = Content::Qry(Qry::Issue(issuance_request));
         Message {
             sender,
@@ -117,8 +116,8 @@ impl Message {
     }
 
     pub fn issue_response(
-        sender: String,
-        recipient: String,
+        sender: Sender,
+        recipient: Recipient,
         issuance_response: IssuanceResponse,
     ) -> Self {
         let content = Content::Res(Res::Issue(issuance_response));
@@ -129,7 +128,7 @@ impl Message {
         }
     }
 
-    pub fn revoke(sender: String, recipient: String, revocation: RevocationRequest) -> Self {
+    pub fn revoke(sender: Sender, recipient: Recipient, revocation: RevocationRequest) -> Self {
         let content = Content::Qry(Qry::Revoke(revocation));
         Message {
             sender,
@@ -139,8 +138,8 @@ impl Message {
     }
 
     pub fn revoke_response(
-        sender: String,
-        recipient: String,
+        sender: Sender,
+        recipient: Recipient,
         revocation: RevocationResponse,
     ) -> Self {
         let content = Content::Res(Res::Revoke(revocation));
@@ -152,8 +151,8 @@ impl Message {
     }
 
     pub fn not_performed_response(
-        sender: String,
-        recipient: String,
+        sender: Sender,
+        recipient: Recipient,
         err: NotPerformedResponse,
     ) -> Result<Self, Error> {
         let content = Content::Res(Res::NotPerformed(err));
@@ -196,7 +195,9 @@ impl Message {
                     _ => return Err(Error::InvalidVersion),
                 }
                 let sender = a.take_req("sender")?;
+                let sender = Handle::from_str(&sender).map_err(|_| Error::InvalidHandle)?;
                 let recipient = a.take_req("recipient")?;
+                let recipient = Handle::from_str(&recipient).map_err(|_| Error::InvalidHandle)?;
                 let msg_type = a.take_req("type")?;
                 a.exhausted()?;
 
@@ -231,8 +232,8 @@ impl Message {
         let attrs = [
             ("xmlns", NS),
             ("version", VERSION),
-            ("sender", &self.sender),
-            ("recipient", &self.recipient),
+            ("sender", self.sender.as_str()),
+            ("recipient", self.recipient.as_str()),
             ("type", msg_type),
         ];
 
@@ -914,6 +915,9 @@ pub enum Error {
     #[display(fmt = "Could not parse encoded certificate.")]
     InvalidCert,
 
+    #[display(fmt = "Invalid handle.")]
+    InvalidHandle,
+
     #[display(fmt = "Could not parse encoded certificate request.")]
     InvalidCsr,
 
@@ -1068,8 +1072,8 @@ mod tests {
         // reading the XML based on the RFC spec only.
         let cert = test_id_certificate();
 
-        let sender = "child".to_string();
-        let rcpt = "parent".to_string();
+        let sender = Handle::from_str_unsafe("child");
+        let rcpt = Handle::from_str_unsafe("parent");
         let class = ResourceClassName::default();
 
         let ski = cert.subject_public_key_info().key_identifier();
@@ -1088,8 +1092,8 @@ mod tests {
         // reading the XML based on the RFC spec only.
         let cert = test_id_certificate();
 
-        let sender = "child".to_string();
-        let rcpt = "parent".to_string();
+        let sender = Handle::from_str_unsafe("child");
+        let rcpt = Handle::from_str_unsafe("parent");
         let class = ResourceClassName::default();
 
         let ski = cert.subject_public_key_info().key_identifier();
@@ -1105,8 +1109,8 @@ mod tests {
     fn encode_and_parse_error_response() {
         // No example CMS found for this one, so just composing and
         // reading the XML based on the RFC spec only.
-        let sender = "child".to_string();
-        let rcpt = "parent".to_string();
+        let sender = Handle::from_str_unsafe("child");
+        let rcpt = Handle::from_str_unsafe("parent");
         let err = NotPerformedResponse::_1101();
 
         let err = Message::not_performed_response(sender, rcpt, err).unwrap();

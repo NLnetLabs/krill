@@ -18,7 +18,7 @@ const RSYNC_FOLDER: &str = "rsync";
 
 pub const ID: &str = "rrdp_server";
 pub fn id() -> Handle {
-    Handle::from(ID)
+    Handle::from_str_unsafe(ID)
 }
 
 //------------ RrdpInit ------------------------------------------------------

@@ -9,7 +9,7 @@ fn ca_under_rfc6492_ta() {
     test_with_krill_server(|_d| {
         let ta_handle = ta_handle();
 
-        let child = Handle::from("rfc6492");
+        let child = Handle::from_str_unsafe("rfc6492");
         let child_token = Token::from("rfc6492");
         let child_resources = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
 

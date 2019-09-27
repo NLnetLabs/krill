@@ -11,10 +11,11 @@ use rpki::cert::Cert;
 use rpki::crypto::{KeyIdentifier, PublicKey, PublicKeyFormat};
 
 use crate::commons::api::{
-    self, CertAuthInfo, EntitlementClass, Entitlements, Handle, IssuanceRequest, IssuanceResponse,
-    IssuedCert, ObjectsDelta, ParentCaContact, PubServerContact, RcvdCert, RepoInfo,
-    RequestResourceLimit, ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse,
-    RouteAuthorization, RouteAuthorizationUpdates, SigningCert, Token, UpdateChildRequest,
+    self, CertAuthInfo, ChildHandle, EntitlementClass, Entitlements, Handle, IssuanceRequest,
+    IssuanceResponse, IssuedCert, ObjectsDelta, ParentCaContact, ParentHandle, PubServerContact,
+    RcvdCert, RepoInfo, RequestResourceLimit, ResourceClassName, ResourceSet, RevocationRequest,
+    RevocationResponse, RouteAuthorization, RouteAuthorizationUpdates, SigningCert, Token,
+    UpdateChildRequest,
 };
 use crate::commons::eventsourcing::{Aggregate, StoredEvent};
 use crate::commons::remote::builder::{IdCertBuilder, SignedMessageBuilder};
@@ -22,12 +23,11 @@ use crate::commons::remote::id::IdCert;
 use crate::commons::remote::rfc6492;
 use crate::commons::remote::rfc8183::ChildRequest;
 use crate::commons::remote::sigmsg::SignedMessage;
-
 use crate::daemon::ca::rc::PublishMode;
 use crate::daemon::ca::signing::CsrInfo;
 use crate::daemon::ca::{
-    self, ta_handle, ChildDetails, ChildHandle, Cmd, CmdDet, CurrentObjectSetDelta, Error, Evt,
-    EvtDet, Ini, ParentHandle, ResourceClass, Result, Routes, Signer,
+    self, ta_handle, ChildDetails, Cmd, CmdDet, CurrentObjectSetDelta, Error, Evt, EvtDet, Ini,
+    ResourceClass, Result, Routes, Signer,
 };
 
 //------------ Rfc8183Id ---------------------------------------------------
@@ -357,12 +357,13 @@ impl<S: Signer> CertAuth<S> {
     pub fn verify_rfc6492(&self, msg: SignedMessage) -> Result<rfc6492::Message> {
         let content = rfc6492::Message::from_signed_message(&msg)?;
 
-        let child_handle = Handle::from(content.sender());
-        let child = self.get_child(&child_handle)?;
+        let child_handle = content.sender();
+        let child = self.get_child(child_handle)?;
 
         let child_cert = child
             .id_cert()
-            .ok_or_else(|| Error::Unauthorized(child_handle))?;
+            .ok_or_else(|| Error::Unauthorized(child_handle.clone()))?;
+
         msg.validate(child_cert)
             .map_err(|_| Error::InvalidRfc6492)?;
 

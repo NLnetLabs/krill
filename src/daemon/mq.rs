@@ -7,9 +7,11 @@ use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::sync::RwLock;
 
-use crate::commons::api::{Handle, PublishDelta, ResourceClassName, RevocationRequest};
+use crate::commons::api::{
+    Handle, ParentHandle, PublishDelta, ResourceClassName, RevocationRequest,
+};
 use crate::commons::eventsourcing;
-use crate::daemon::ca::{CertAuth, Evt, EvtDet, ParentHandle, Signer};
+use crate::daemon::ca::{CertAuth, Evt, EvtDet, Signer};
 
 //------------ QueueEvent ----------------------------------------------------
 

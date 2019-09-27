@@ -3,13 +3,13 @@ use std::sync::{Arc, RwLock};
 use chrono::Duration;
 
 use crate::commons::api::{
-    Entitlements, Handle, IssuanceRequest, ParentCaContact, RcvdCert, ResourceClassName,
-    ResourceSet, RevocationRequest, RevocationResponse, RouteAuthorizationUpdates,
-    UpdateChildRequest,
+    ChildHandle, Entitlements, Handle, IssuanceRequest, ParentCaContact, ParentHandle, RcvdCert,
+    ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse,
+    RouteAuthorizationUpdates, UpdateChildRequest,
 };
 use crate::commons::eventsourcing;
 use crate::commons::remote::id::IdCert;
-use crate::daemon::ca::{ChildHandle, Evt, ParentHandle, Signer};
+use crate::daemon::ca::{Evt, Signer};
 
 //------------ Command -----------------------------------------------------
 

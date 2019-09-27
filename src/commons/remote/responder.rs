@@ -6,7 +6,7 @@ use super::id::MyIdentity;
 // const fn is not stable yet
 const ID: &str = "cms-responder";
 pub fn id() -> Handle {
-    Handle::from(ID)
+    Handle::from_str_unsafe(ID)
 }
 
 //------------ ResponderEvent ---------------------------------------------
@@ -117,7 +117,7 @@ mod tests {
         let mut s = OpenSslSigner::build(work_dir).unwrap();
         let key_id = s.create_key(PublicKeyFormat::default()).unwrap();
         let id_cert = IdCertBuilder::new_ta_id_cert(&key_id, &s).unwrap();
-        let name = "krill-proxy";
+        let name = Handle::from_str_unsafe("krill-proxy");
         MyIdentity::new(name, id_cert, key_id)
     }
 
