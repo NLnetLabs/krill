@@ -10,7 +10,6 @@ use clap::{App, Arg};
 use log::LevelFilter;
 use serde::de;
 use serde::{Deserialize, Deserializer};
-use syslog::Facility;
 use toml;
 
 use rpki::uri;
@@ -18,8 +17,6 @@ use rpki::uri;
 use crate::commons::api::Token;
 use crate::commons::util::ext_serde;
 use crate::daemon::http::ssl;
-
-const SERVER_NAME: &str = "Krill";
 
 //------------ ConfigDefaults ------------------------------------------------
 
@@ -52,9 +49,6 @@ impl ConfigDefaults {
     }
     fn log_type() -> LogType {
         LogType::File
-    }
-    fn syslog_facility() -> Facility {
-        Facility::LOG_DAEMON
     }
     fn log_file() -> PathBuf {
         PathBuf::from("./krill.log")
@@ -111,12 +105,6 @@ pub struct Config {
 
     #[serde(default = "ConfigDefaults::log_type")]
     log_type: LogType,
-
-    #[serde(
-        default = "ConfigDefaults::syslog_facility",
-        deserialize_with = "ext_serde::de_facility"
-    )]
-    syslog_facility: Facility,
 
     #[serde(default = "ConfigDefaults::log_file")]
     log_file: PathBuf,
@@ -183,7 +171,6 @@ impl Config {
         let log_type = LogType::Stderr;
         let mut log_file = data_dir.clone();
         log_file.push("krill.log");
-        let syslog_facility = ConfigDefaults::syslog_facility();
         let auth_token = Token::from("secret");
         let ca_refresh = 5;
 
@@ -198,7 +185,6 @@ impl Config {
             log_level,
             log_type,
             log_file,
-            syslog_facility,
             auth_token,
             ca_refresh,
         };
@@ -251,60 +237,70 @@ impl Config {
 
     pub fn init_logging(&self) -> Result<(), ConfigError> {
         match self.log_type {
-            LogType::File => {
-                let file = fern::log_file(&self.log_file)?;
-
-                let mut dispatch = fern::Dispatch::new();
-
-                dispatch = {
-                    if self.log_level == LevelFilter::Debug {
-                        dispatch.format(|out, message, record| {
-                            out.finish(format_args!(
-                                "{} [{}] [{}] {}",
-                                chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-                                record.target(),
-                                record.level(),
-                                message
-                            ))
-                        })
-                    } else {
-                        dispatch.format(|out, message, record| {
-                            out.finish(format_args!(
-                                "{} [{}] {}",
-                                chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-                                record.level(),
-                                message
-                            ))
-                        })
-                    }
-                };
-
-                dispatch
-                    .level(self.log_level)
-                    .chain(file)
-                    .apply()
-                    .map_err(|e| {
-                        ConfigError::Other(format!("Failed to init file logging: {}", e))
-                    })?;
-            }
-
-            LogType::Syslog => {
-                syslog::init(self.syslog_facility, self.log_level, Some(SERVER_NAME))
-                    .map_err(|e| ConfigError::Other(format!("Failed to init syslog: {}", e)))?;
-            }
-
-            LogType::Stderr => {
-                let dispatch = fern::Dispatch::new()
-                    .level(self.log_level)
-                    .chain(io::stderr());
-
-                dispatch.apply().map_err(|e| {
-                    ConfigError::Other(format!("Failed to init stderr logging: {}", e))
-                })?;
-            }
+            LogType::File => self.file_logger(&self.log_file),
+            LogType::Stderr => self.stderr_logger(),
         }
+    }
 
-        Ok(())
+    /// Creates a stderr logger.
+    fn stderr_logger(&self) -> Result<(), ConfigError> {
+        self.fern_logger()
+            .chain(io::stderr())
+            .apply()
+            .map_err(|e| ConfigError::Other(format!("Failed to init stderr logging: {}", e)))
+    }
+
+    /// Creates a file logger using the file provided by `path`.
+    fn file_logger(&self, path: &PathBuf) -> Result<(), ConfigError> {
+        let file = match fern::log_file(path) {
+            Ok(file) => file,
+            Err(err) => {
+                let error_string = format!("Failed to open log file '{}': {}", path.display(), err);
+                error!("{}", error_string.as_str());
+                return Err(ConfigError::Other(error_string));
+            }
+        };
+        self.fern_logger()
+            .chain(file)
+            .apply()
+            .map_err(|e| ConfigError::Other(format!("Failed to init file logging: {}", e)))
+    }
+
+    /// Creates and returns a fern logger
+    fn fern_logger(&self) -> fern::Dispatch {
+        let framework_level = match self.log_level {
+            LevelFilter::Off => LevelFilter::Off,
+            LevelFilter::Error => LevelFilter::Error,
+            _ => LevelFilter::Warn, // more becomes too noisy
+        };
+
+        let show_target =
+            self.log_level == LevelFilter::Trace || self.log_level == LevelFilter::Debug;
+
+        fern::Dispatch::new()
+            .format(move |out, message, record| {
+                if show_target {
+                    out.finish(format_args!(
+                        "{} [{}] [{}] {}",
+                        chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+                        record.target(),
+                        record.level(),
+                        message
+                    ))
+                } else {
+                    out.finish(format_args!(
+                        "{} [{}] {}",
+                        chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+                        record.level(),
+                        message
+                    ))
+                }
+            })
+            .level(self.log_level)
+            .level_for("actix_web", framework_level)
+            .level_for("hyper", framework_level)
+            .level_for("reqwest", framework_level)
+            .level_for("tokio_reactor", framework_level)
     }
 }
 
@@ -350,27 +346,11 @@ impl From<uri::Error> for ConfigError {
 //------------ LogType -------------------------------------------------------
 
 /// The target to log to.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LogType {
-    Syslog,
     Stderr,
     File,
 }
-
-//--- PartialEq and Eq
-
-impl PartialEq for LogType {
-    fn eq(&self, other: &LogType) -> bool {
-        match (self, other) {
-            (&LogType::Syslog, &LogType::Syslog) => true,
-            (&LogType::Stderr, &LogType::Stderr) => true,
-            (&LogType::File, &LogType::File) => true,
-            _ => false,
-        }
-    }
-}
-
-impl Eq for LogType {}
 
 impl<'de> Deserialize<'de> for LogType {
     fn deserialize<D>(d: D) -> Result<LogType, D::Error>
@@ -380,11 +360,9 @@ impl<'de> Deserialize<'de> for LogType {
         let string = String::deserialize(d)?;
         match string.as_str() {
             "stderr" => Ok(LogType::Stderr),
-            "syslog" => Ok(LogType::Syslog),
             "file" => Ok(LogType::File),
             _ => Err(de::Error::custom(format!(
-                "expected \"stderr\", \"syslog\", or \
-                 \"file\", found : \"{}\"",
+                "expected \"stderr\" or \"file\", found : \"{}\"",
                 string
             ))),
         }
