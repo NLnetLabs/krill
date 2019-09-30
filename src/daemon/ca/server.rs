@@ -360,7 +360,6 @@ impl<S: Signer> CaServer<S> {
 
     /// Perform a key roll for all active keys in a CA older than the specified duration.
     pub fn ca_keyroll_init(&self, handle: Handle, max_age: Duration) -> ServerResult<(), S> {
-        info!("Starting keyroll for: {}", &handle);
         let ca = self.get_ca(&handle)?;
 
         let init_key_roll = CmdDet::key_roll_init(&handle, max_age, self.signer.clone());

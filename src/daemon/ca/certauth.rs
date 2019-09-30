@@ -1030,13 +1030,19 @@ impl<S: Signer> CertAuth<S> {
         let mut version = self.version;
         let mut res = vec![];
 
-        for rc in self.resources.values() {
+        for (rcn, rc) in self.resources.iter() {
+            let mut started = false;
             for details in rc
                 .keyroll_initiate(&self.base_repo, duration, signer.deref_mut())?
                 .into_iter()
             {
+                started = true;
                 res.push(StoredEvent::new(self.handle(), version, details));
                 version += 1;
+            }
+
+            if started {
+                info!("Started key roll for ca: {}, rc: {}", &self.handle, rcn);
             }
         }
 
@@ -1052,13 +1058,21 @@ impl<S: Signer> CertAuth<S> {
         let mut version = self.version;
         let mut res = vec![];
 
-        for class in self.resources.values() {
-            for details in class
+
+        for (rcn, rc) in self.resources.iter() {
+            let mut activated = false;
+
+            for details in rc
                 .keyroll_activate(&self.base_repo, staging, signer.deref())?
                 .into_iter()
             {
+                activated = true;
                 res.push(StoredEvent::new(self.handle(), version, details));
                 version += 1;
+            }
+
+            if activated {
+                info!("Activated key for ca: {}, rc: {}", &self.handle, rcn);
             }
         }
 
@@ -1079,6 +1093,8 @@ impl<S: Signer> CertAuth<S> {
             .ok_or_else(|| Error::unknown_resource_class(&rcn))?;
 
         let finish_details = my_rc.keyroll_finish(&self.base_repo)?;
+
+        info!("Finished key roll for ca: {}, rc: {}", &self.handle, rcn);
 
         Ok(vec![StoredEvent::new(
             self.handle(),
