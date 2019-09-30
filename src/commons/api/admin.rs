@@ -553,6 +553,21 @@ impl UpdateChildRequest {
     }
 }
 
+impl fmt::Display for UpdateChildRequest {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.id_cert.is_some() {
+            write!(f, "new id cert ")?;
+        }
+        if let Some(resources) = &self.resources {
+            write!(f, "new resources: {} ", resources)?;
+        }
+        if self.force {
+            write!(f, "<forced>")?;
+        }
+        Ok(())
+    }
+}
+
 //------------ Tests ---------------------------------------------------------
 
 #[cfg(test)]

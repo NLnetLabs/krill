@@ -113,7 +113,7 @@ impl<A: Aggregate> DiskAggregateStore<A> {
     }
 
     fn get_latest_no_lock(&self, handle: &Handle) -> StoreResult<Arc<A>> {
-        debug!("Trying to load aggregate id: {}", handle);
+        trace!("Trying to load aggregate id: {}", handle);
         match self.cache_get(handle) {
             None => match self.store.get_aggregate(handle)? {
                 None => {
@@ -123,7 +123,7 @@ impl<A: Aggregate> DiskAggregateStore<A> {
                 Some(agg) => {
                     let arc: Arc<A> = Arc::new(agg);
                     self.cache_update(handle, arc.clone());
-                    debug!("Loaded aggregate id: {} from disk", handle);
+                    trace!("Loaded aggregate id: {} from disk", handle);
                     Ok(arc)
                 }
             },
@@ -132,7 +132,7 @@ impl<A: Aggregate> DiskAggregateStore<A> {
                     let agg = Arc::make_mut(&mut arc);
                     self.store.update_aggregate(handle, agg)?;
                 }
-                debug!("Loaded aggregate id: {} from memory", handle);
+                trace!("Loaded aggregate id: {} from memory", handle);
                 Ok(arc)
             }
         }
@@ -169,6 +169,7 @@ impl<A: Aggregate> AggregateStore<A> for DiskAggregateStore<A> {
         {
             // Verify whether there is a concurrency issue
             if prev.version() != latest.version() {
+                // TODO: Print history (last X events) and conflict to log.
                 return Err(AggregateStoreError::ConcurrentModification(handle.clone()));
             }
 

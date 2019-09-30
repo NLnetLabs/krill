@@ -187,7 +187,7 @@ pub fn handle_delta(
 ) -> HttpResponse {
     let handle = handle.into_inner();
     let delta = delta.into_inner();
-    debug!("Received delta request for {}", &handle);
+    trace!("Received delta request for {}", &handle);
     if_publication_allowed(&server, &handle, &auth, || {
         render_empty_res(server.read().handle_delta(delta, &handle))
     })
@@ -197,7 +197,7 @@ pub fn handle_delta(
 #[allow(clippy::needless_pass_by_value)]
 pub fn handle_list(server: web::Data<AppServer>, auth: Auth, handle: Path<Handle>) -> HttpResponse {
     let handle = handle.into_inner();
-    debug!("Received list request for {}", &handle);
+    trace!("Received list request for {}", &handle);
     if_publication_allowed(&server, &handle, &auth, || {
         match server.read().handle_list(&handle) {
             Ok(list) => render_json(list),

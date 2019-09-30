@@ -123,7 +123,7 @@ pub fn clean_file_and_path(path: &PathBuf) -> Result<(), io::Error> {
         while parent_opt.is_some() {
             let parent = parent_opt.unwrap();
             if parent.read_dir()?.count() == 0 {
-                debug!("Will delete {}", parent.to_string_lossy().to_string());
+                trace!("Will delete {}", parent.to_string_lossy().to_string());
                 fs::remove_dir(parent)?;
             }
 

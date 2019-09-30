@@ -112,7 +112,7 @@ impl FromRequest for Auth {
 
     fn from_request(req: &HttpRequest, payload: &mut Payload) -> Self::Future {
         if let Some(identity) = Identity::from_request(req, payload)?.identity() {
-            debug!("Found user: {}", &identity);
+            trace!("Found user: {}", &identity);
             Ok(Auth::User(identity))
         } else if let Some(header) = req.headers().get("Authorization") {
             let token =

@@ -65,7 +65,7 @@ fn make_event_sh(
                         .send_revoke_requests(&handle, &parent, revocations)
                         .is_err()
                     {
-                        info!("Could not revoke key for removed resource class. This is not \
+                        debug!("Could not revoke key for removed resource class. This is not \
                         an issue, because typically the parent will revoke our keys pro-actively, \
                         just before removing the resource class entitlements.");
                     }
@@ -101,10 +101,9 @@ fn make_republish_sh(caserver: Arc<CaServer<OpenSslSigner>>) -> ScheduleHandle {
 }
 
 fn publish(handle: &Handle, delta: PublishDelta, pubserver: &PubServer) {
-    debug!("Triggered publishing for CA: {}", handle);
-    match pubserver.publish(handle, delta) {
-        Ok(()) => debug!("Published for CA: {}", handle),
-        Err(e) => error!("Failed to publish for CA: {}, error: {}", handle, e),
+    trace!("Asking CA: {} if it wants to publish", handle);
+    if let Err(e) = pubserver.publish(handle, delta) {
+        error!("Failed to publish for CA: {}, error: {}", handle, e);
     }
 }
 

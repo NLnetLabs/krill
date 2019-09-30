@@ -194,7 +194,7 @@ impl ProxyServer {
     /// Retrieves the QueryMessage contained in the SignedMessage and
     /// converts into the (json) equivalent request for the API.
     fn convert_to_json_request(&self, msg: &SignedMessage) -> Result<PublishRequest, Error> {
-        debug!("Convert contained message to Json equivalent");
+        trace!("Convert contained message to Json equivalent");
         let msg = rfc8181::Message::from_signed_message(&msg)?;
         let msg = msg.into_query()?;
         Ok(msg.into_publish_request())

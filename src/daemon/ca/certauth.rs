@@ -827,10 +827,12 @@ impl<S: Signer> CertAuth<S> {
         rc: &ResourceClass,
         signer: &S,
     ) -> Result<Vec<Evt>> {
+        let parent_class_name = entitlement.class_name().clone();
         let req_details_list = rc.make_request_events(entitlement, &self.base_repo, signer)?;
 
         let mut res = vec![];
         for details in req_details_list.into_iter() {
+            debug!("Updating Entitlements for CA: {}, Request for RC: {}", &self.handle, &parent_class_name);
             res.push(StoredEvent::new(&self.handle, *version, details));
             *version += 1;
         }
@@ -908,6 +910,8 @@ impl<S: Signer> CertAuth<S> {
             let delta = rc.withdraw(&self.base_repo);
             let revocations = rc.revoke(signer.deref())?;
 
+            debug!("Updating Entitlements for CA: {}, Removing RC: {}", &self.handle, &name);
+
             res.push(EvtDet::resource_class_removed(
                 &self.handle,
                 version,
@@ -960,6 +964,7 @@ impl<S: Signer> CertAuth<S> {
                     );
                     let rc_add_version = version;
                     version += 1;
+                    debug!("Updating Entitlements for CA: {}, adding RC: {}", &self.handle, &rcn);
 
                     let signer = signer.read().unwrap();
                     let mut request_events =

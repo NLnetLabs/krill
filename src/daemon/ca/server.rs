@@ -165,7 +165,7 @@ impl<S: Signer> CaServer<S> {
         parent: &ParentHandle,
         child: &ChildHandle,
     ) -> ServerResult<Option<ChildCaInfo>, S> {
-        debug!("Finding details for CA: {} under parent: {}", child, parent);
+        trace!("Finding details for CA: {} under parent: {}", child, parent);
 
         let ca = self.get_ca(parent)?;
         let child_opt = match ca.get_child(child) {
@@ -184,8 +184,8 @@ impl<S: Signer> CaServer<S> {
         req: UpdateChildRequest,
     ) -> ServerResult<(), S> {
         debug!(
-            "Updating details for CA: {} under parent: {}",
-            child, parent
+            "Updating details for CA: {} under parent: {} to: {}",
+            child, parent, req
         );
         let mut ca = self.get_ca(parent)?;
 
@@ -216,20 +216,27 @@ impl<S: Signer> CaServer<S> {
 /// # CA support
 ///
 impl<S: Signer> CaServer<S> {
+    /// Gets a CA by the given handle, returns an `Err(ServerError::UnknownCA)` if it
+    /// does not exist.
     pub fn get_ca(&self, handle: &Handle) -> ServerResult<Arc<CertAuth<S>>, S> {
         self.ca_store
             .get_latest(handle)
             .map_err(|_| ServerError::UnknownCa(handle.to_string()))
     }
 
+    /// Checks whether a CA by the given handle exists.
+    pub fn has_ca(&self, handle: &Handle) -> bool {
+        self.ca_store.has(handle)
+    }
+
     /// Verifies an RFC6492 message and returns the child handle, token,
     /// and content of the request, so that the simple 'list' and 'issue'
     /// functions can be called.
     pub fn rfc6492(&self, ca_handle: &Handle, msg: SignedMessage) -> ServerResult<Bytes, S> {
-        debug!("RFC6492 Request: will check");
+        trace!("RFC6492 Request: will check");
         let ca = self.ca_store.get_latest(ca_handle)?;
         let content = ca.verify_rfc6492(msg)?;
-        debug!("RFC6492 Request: verified");
+        trace!("RFC6492 Request: verified");
 
         let (child, recipient, content) = content.unwrap();
 
@@ -258,7 +265,7 @@ impl<S: Signer> CaServer<S> {
         handle: &Handle,
         msg: rfc6492::Message,
     ) -> ServerResult<Bytes, S> {
-        debug!("RFC6492 Response wrapping for {}", handle);
+        trace!("RFC6492 Response wrapping for {}", handle);
         self.get_ca(handle)?
             .sign_rfc6492_response(msg, self.signer.read().unwrap().deref())
             .map_err(ServerError::<S>::CertAuth)
@@ -763,7 +770,7 @@ impl<S: Signer> CaServer<S> {
         // send to the server
         let uri = parent_res.service_uri().to_string();
         debug!(
-            "Sending to parent: {}\n{}",
+            "Sending RFC6492 message to parent: {}\n{}",
             &uri,
             base64::encode(&signed.as_bytes())
         );
@@ -773,7 +780,10 @@ impl<S: Signer> CaServer<S> {
 
         // unpack and validate response
         let msg = match SignedMessage::decode(res.as_ref(), false).map_err(ServerError::custom) {
-            Ok(msg) => msg,
+            Ok(msg) => {
+                debug!("Received syntactically correct RFC6492 response.");
+                msg
+            },
             Err(e) => {
                 error!("Could not parse response: {}", base64::encode(res.as_ref()));
                 return Err(e);

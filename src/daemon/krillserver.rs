@@ -99,7 +99,9 @@ impl KrillServer {
 
         if config.use_ta() {
             let ta_handle = ta_handle();
-            if caserver.get_ca(&ta_handle).is_err() {
+            if !caserver.has_ca(&ta_handle) {
+                info!("Creating embedded Trust Anchor");
+
                 let repo_info = pubserver.repo_info_for(&ta_handle)?;
 
                 let ta_uri = config.ta_cert_uri();
@@ -125,7 +127,6 @@ impl KrillServer {
                 // Force initial  publication
                 caserver.republish(&ta_handle)?;
 
-                info!("Created embedded Trust Anchor");
             }
         }
 
@@ -179,7 +180,7 @@ impl KrillServer {
         };
 
         if allowed {
-            debug!("Access to publication api allowed")
+            trace!("Access to publication api allowed")
         } else {
             warn!(
                 "Access to publication api disallowed for handle: {}, and auth: {}",

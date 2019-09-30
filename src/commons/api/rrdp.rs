@@ -222,7 +222,7 @@ impl Notification {
     }
 
     pub fn write_xml(&self, path: &PathBuf) -> Result<(), io::Error> {
-        debug!("Writing notification file: {}", path.to_string_lossy());
+        trace!("Writing notification file: {}", path.to_string_lossy());
         let mut file = file::create_file_with_path(&path)?;
 
         XmlWriter::encode_to_file(&mut file, |w| {
@@ -490,6 +490,7 @@ impl Snapshot {
     }
 
     pub fn write_xml(&self, path: &PathBuf) -> Result<HexEncodedHash, io::Error> {
+        trace!("Writing snapshot file: {}", path.to_string_lossy());
         let vec = XmlWriter::encode_vec(|w| {
             let a = [
                 ("xmlns", NS),
@@ -626,6 +627,7 @@ impl Delta {
     }
 
     pub fn write_xml(&self, path: &PathBuf) -> Result<HexEncodedHash, io::Error> {
+        trace!("Writing delta file: {}", path.to_string_lossy());
         let vec = XmlWriter::encode_vec(|w| {
             let a = [
                 ("xmlns", NS),

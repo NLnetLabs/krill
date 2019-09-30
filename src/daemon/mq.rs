@@ -63,7 +63,7 @@ impl<S: Signer> eventsourcing::EventListener<CertAuth<S>> for EventQueueListener
         use crate::commons::eventsourcing::Event;
 
         let json = serde_json::to_string_pretty(&event).unwrap();
-        debug!("Seen CertAuth event: {}", json);
+        trace!("Seen CertAuth event: {}", json);
 
         let handle = event.handle();
         match event.details() {
