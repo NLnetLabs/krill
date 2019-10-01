@@ -283,8 +283,8 @@ impl Config {
                     out.finish(format_args!(
                         "{} [{}] [{}] {}",
                         chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
-                        record.target(),
                         record.level(),
+                        record.target(),
                         message
                     ))
                 } else {
@@ -298,6 +298,7 @@ impl Config {
             })
             .level(self.log_level)
             .level_for("actix_web", framework_level)
+            .level_for("actix_server", framework_level)
             .level_for("hyper", framework_level)
             .level_for("reqwest", framework_level)
             .level_for("tokio_reactor", framework_level)
