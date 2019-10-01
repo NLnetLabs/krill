@@ -59,7 +59,7 @@ pub enum AggregateStoreError {
     #[display(fmt = "Event not applicable to aggregate, id or version is off")]
     WrongEventForAggregate,
 
-    #[display(fmt = "Trying to update outdated aggregate: {}", _0)]
+    #[display(fmt = "Trying to update outdated aggregate '{}'", _0)]
     ConcurrentModification(Handle),
 }
 
@@ -173,7 +173,17 @@ impl<A: Aggregate> AggregateStore<A> for DiskAggregateStore<A> {
         {
             // Verify whether there is a concurrency issue
             if prev.version() != latest.version() {
-                // TODO: Print history (last X events) and conflict to log.
+                let history = self.history(handle)?;
+
+                let events_str: Vec<String> = events.iter().map(|evt| evt.to_string()).collect();
+
+                error!(
+                    "Version conflict updating '{}'\n\tHistory:\n{}\n\tNew events:\n{}\n",
+                    handle,
+                    history,
+                    events_str.join("\n")
+                );
+
                 return Err(AggregateStoreError::ConcurrentModification(handle.clone()));
             }
 
