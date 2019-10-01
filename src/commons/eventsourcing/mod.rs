@@ -28,6 +28,7 @@ mod tests {
     //! Goal is two-fold: document using a simple domain, and test the module.
     //!
 
+    use std::fmt;
     use std::sync::Arc;
 
     use serde::Serialize;
@@ -63,6 +64,12 @@ mod tests {
         pub name: String,
     }
 
+    impl fmt::Display for InitPersonDetails {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            write!(f, "person initialised with name '{}'", self.name)
+        }
+    }
+
     //------------ InitPersonEvent -----------------------------------------------
 
     /// Every aggregate defines their own set of events - i.e. state changes. The
@@ -89,6 +96,17 @@ mod tests {
 
         pub fn name_changed(p: &Person, name: String) -> Self {
             StoredEvent::new(p.id(), p.version, PersonEventDetails::NameChanged(name))
+        }
+    }
+
+    impl fmt::Display for PersonEventDetails {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            match self {
+                PersonEventDetails::NameChanged(new_name) => {
+                    write!(f, "changed name to '{}'", new_name)
+                }
+                PersonEventDetails::HadBirthday => write!(f, "went around the sun."),
+            }
         }
     }
 
@@ -230,7 +248,7 @@ mod tests {
     }
 
     #[test]
-    fn test() {
+    fn event_sourcing_framework() {
         test::test_under_tmp(|d| {
             let counter = Arc::new(EventCounter::default());
             let mut manager = DiskAggregateStore::<Person>::new(&d, "person").unwrap();
@@ -273,7 +291,38 @@ mod tests {
             assert_eq!("alice smith-doe", alice.name());
             assert_eq!(21, alice.age());
 
-            assert_eq!(22, counter.total())
+            assert_eq!(22, counter.total());
+
+            let history = manager.history(&id_alice).unwrap();
+
+            let expected_history = concat!(
+                "id: alice version: 0 details: person initialised with name 'alice smith'\n",
+                "id: alice version: 1 details: went around the sun.\n",
+                "id: alice version: 2 details: went around the sun.\n",
+                "id: alice version: 3 details: went around the sun.\n",
+                "id: alice version: 4 details: went around the sun.\n",
+                "id: alice version: 5 details: went around the sun.\n",
+                "id: alice version: 6 details: went around the sun.\n",
+                "id: alice version: 7 details: went around the sun.\n",
+                "id: alice version: 8 details: went around the sun.\n",
+                "id: alice version: 9 details: went around the sun.\n",
+                "id: alice version: 10 details: went around the sun.\n",
+                "id: alice version: 11 details: went around the sun.\n",
+                "id: alice version: 12 details: went around the sun.\n",
+                "id: alice version: 13 details: went around the sun.\n",
+                "id: alice version: 14 details: went around the sun.\n",
+                "id: alice version: 15 details: went around the sun.\n",
+                "id: alice version: 16 details: went around the sun.\n",
+                "id: alice version: 17 details: went around the sun.\n",
+                "id: alice version: 18 details: went around the sun.\n",
+                "id: alice version: 19 details: went around the sun.\n",
+                "id: alice version: 20 details: went around the sun.\n",
+                "id: alice version: 21 details: went around the sun.\n",
+                "id: alice version: 22 details: changed name to 'alice smith-doe'\n"
+            );
+
+            assert_eq!(history.to_string().as_str(), expected_history);
         })
     }
+
 }

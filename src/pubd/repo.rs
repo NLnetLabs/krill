@@ -1,5 +1,5 @@
 use std::path::PathBuf;
-use std::{fs, io};
+use std::{fmt, fs, io};
 
 use chrono::Duration;
 use rpki::uri;
@@ -49,6 +49,18 @@ impl RrdpInitDetails {
     }
 }
 
+impl fmt::Display for RrdpInitDetails {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "Initialised RRDP server, session: {}, base uri: {}, repo dir: {}",
+            self.session,
+            self.base_uri,
+            self.repo_dir.to_string_lossy().to_string()
+        )
+    }
+}
+
 //------------ RrdpEvent ------------------------------------------------------
 
 pub type RrdpEvent = StoredEvent<RrdpEventDetails>;
@@ -72,6 +84,24 @@ impl RrdpEventDetails {
 
     fn cleaned_up(id: &Handle, ver: u64, time: Time) -> RrdpEvent {
         StoredEvent::new(id, ver, RrdpEventDetails::CleanedUp(time))
+    }
+}
+
+impl fmt::Display for RrdpEventDetails {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            RrdpEventDetails::AddedDelta(delta) => write!(
+                f,
+                "Added delta for session: {}, serial {}, with {} elements",
+                delta.session(),
+                delta.serial(),
+                delta.elements().len()
+            ),
+            RrdpEventDetails::UpdatedNotification(_update) => {
+                write!(f, "Updated notification file")
+            }
+            RrdpEventDetails::CleanedUp(_time) => write!(f, "Cleaned up old deltas"),
+        }
     }
 }
 

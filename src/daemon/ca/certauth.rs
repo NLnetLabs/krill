@@ -49,6 +49,12 @@ impl Rfc8183Id {
     }
 }
 
+impl Rfc8183Id {
+    pub fn key_hash(&self) -> String {
+        self.cert.ski_hex()
+    }
+}
+
 //------------ CertAuth ----------------------------------------------------
 
 /// This type defines a Certification Authority at a slightly higher level
@@ -832,7 +838,10 @@ impl<S: Signer> CertAuth<S> {
 
         let mut res = vec![];
         for details in req_details_list.into_iter() {
-            debug!("Updating Entitlements for CA: {}, Request for RC: {}", &self.handle, &parent_class_name);
+            debug!(
+                "Updating Entitlements for CA: {}, Request for RC: {}",
+                &self.handle, &parent_class_name
+            );
             res.push(StoredEvent::new(&self.handle, *version, details));
             *version += 1;
         }
@@ -910,7 +919,10 @@ impl<S: Signer> CertAuth<S> {
             let delta = rc.withdraw(&self.base_repo);
             let revocations = rc.revoke(signer.deref())?;
 
-            debug!("Updating Entitlements for CA: {}, Removing RC: {}", &self.handle, &name);
+            debug!(
+                "Updating Entitlements for CA: {}, Removing RC: {}",
+                &self.handle, &name
+            );
 
             res.push(EvtDet::resource_class_removed(
                 &self.handle,
@@ -964,7 +976,10 @@ impl<S: Signer> CertAuth<S> {
                     );
                     let rc_add_version = version;
                     version += 1;
-                    debug!("Updating Entitlements for CA: {}, adding RC: {}", &self.handle, &rcn);
+                    debug!(
+                        "Updating Entitlements for CA: {}, adding RC: {}",
+                        &self.handle, &rcn
+                    );
 
                     let signer = signer.read().unwrap();
                     let mut request_events =
@@ -1062,7 +1077,6 @@ impl<S: Signer> CertAuth<S> {
         let signer = signer.read().unwrap();
         let mut version = self.version;
         let mut res = vec![];
-
 
         for (rcn, rc) in self.resources.iter() {
             let mut activated = false;
@@ -1167,9 +1181,12 @@ impl<S: Signer> CertAuth<S> {
 
         for auth in added {
             if current_auths.contains(&auth) {
-                return Err(Error::AuthorisationAlreadyPresent(auth));
+                return Err(Error::AuthorisationAlreadyPresent(
+                    auth,
+                    self.handle.clone(),
+                ));
             } else if !all_resources.contains(&auth.prefix().into()) {
-                return Err(Error::AuthorisationNotEntitled(auth));
+                return Err(Error::AuthorisationNotEntitled(auth, self.handle.clone()));
             } else {
                 current_auths.insert(auth);
                 res.push(StoredEvent::new(
@@ -1191,7 +1208,7 @@ impl<S: Signer> CertAuth<S> {
                 ));
                 version += 1;
             } else {
-                return Err(Error::AuthorisationUnknown(auth));
+                return Err(Error::AuthorisationUnknown(auth, self.handle.clone()));
             }
         }
 

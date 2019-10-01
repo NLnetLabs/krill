@@ -7,6 +7,7 @@ use std::sync::RwLock;
 use crate::commons::api::Handle;
 
 use super::{Aggregate, DiskKeyStore, Event, EventListener, KeyStore, KeyStoreError};
+use commons::eventsourcing::agg::AggregateHistory;
 
 const SNAPSHOT_FREQ: u64 = 5;
 
@@ -25,7 +26,7 @@ pub trait AggregateStore<A: Aggregate>: Send + Sync {
     /// Arc<A> retrieved using 'get_latest' is moved here, so clone on
     /// writes can be avoided, and a verification can be done that there
     /// is no concurrent modification. Returns the updated instance if all
-    /// is well, or an AggregateStoreError::ConcurrentModification if you
+    /// is well, or an `AggregateStoreError::ConcurrentModification` if you
     /// try to update an outdated instance.
     fn update(&self, id: &Handle, agg: Arc<A>, events: Vec<A::Event>) -> StoreResult<Arc<A>>;
 
@@ -38,6 +39,9 @@ pub trait AggregateStore<A: Aggregate>: Send + Sync {
     /// Adds a listener that will receive a reference to all events as they
     /// are stored.
     fn add_listener<L: EventListener<A>>(&mut self, listener: Arc<L>);
+
+    /// Lists the complete history for an aggregate.
+    fn history(&self, id: &Handle) -> StoreResult<AggregateHistory<A>>;
 }
 
 /// This type defines possible Errors for the AggregateStore
@@ -241,5 +245,11 @@ impl<A: Aggregate> AggregateStore<A> for DiskAggregateStore<A> {
         let _lock = self.outer_lock.write().unwrap();
 
         self.listeners.push(listener)
+    }
+
+    fn history(&self, id: &Handle) -> StoreResult<AggregateHistory<A>> {
+        self.store
+            .history::<A>(id)
+            .map_err(AggregateStoreError::KeyStoreError)
     }
 }

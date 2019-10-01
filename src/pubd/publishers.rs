@@ -1,3 +1,5 @@
+use std::fmt;
+
 use rpki::uri;
 
 use crate::commons::api::rrdp::{CurrentObjects, DeltaElements, VerificationError};
@@ -24,13 +26,25 @@ impl InitPublisherDetails {
     }
 }
 
+impl fmt::Display for InitPublisherDetails {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "initialised with token: {} and base_uri: {}",
+            self.token, self.base_uri
+        )
+    }
+}
+
 //------------ PublisherEvent ------------------------------------------------
 
 pub type PublisherEvent = StoredEvent<PublisherEventDetails>;
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Display, Serialize)]
 pub enum PublisherEventDetails {
+    #[display(fmt = "deactivated")]
     Deactivated,
+    #[display(fmt = "published")]
     Published(DeltaElements),
 }
 
@@ -48,9 +62,12 @@ impl PublisherEventDetails {
 
 pub type PublisherCommand = SentCommand<PublisherCommandDetails>;
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Display, Serialize)]
 pub enum PublisherCommandDetails {
+    #[display(fmt = "deactivate")]
     Deactivate,
+
+    #[display(fmt = "publish")]
     Publish(PublishDelta),
 }
 

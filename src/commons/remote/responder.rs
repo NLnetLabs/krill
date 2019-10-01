@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::commons::api::Handle;
 use crate::commons::eventsourcing::{Aggregate, CommandDetails, SentCommand, StoredEvent};
 
@@ -18,7 +20,18 @@ pub struct ResponderInitDetails {
 
 pub type ResponderInit = StoredEvent<ResponderInitDetails>;
 
-#[derive(Clone, Deserialize, Serialize)]
+impl fmt::Display for ResponderInitDetails {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "initialised responder, with key (hash): {}",
+            self.id.id_cert().ski_hex()
+        )
+    }
+}
+
+#[derive(Clone, Deserialize, Display, Serialize)]
+#[display(fmt = "Responder event")]
 pub struct ResponderEventDetails; // in future: update identity or uri
 
 pub type ResponderEvent = StoredEvent<ResponderEventDetails>;

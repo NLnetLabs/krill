@@ -783,7 +783,7 @@ impl<S: Signer> CaServer<S> {
             Ok(msg) => {
                 debug!("Received syntactically correct RFC6492 response.");
                 msg
-            },
+            }
             Err(e) => {
                 error!("Could not parse response: {}", base64::encode(res.as_ref()));
                 return Err(e);

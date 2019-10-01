@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock};
 
@@ -28,15 +29,20 @@ pub type Ini = StoredEvent<IniDet>;
 //------------ IniDet --------------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct IniDet(Token, Rfc8183Id, RepoInfo, Option<TaCertDetails>);
+pub struct IniDet {
+    token: Token,
+    id: Rfc8183Id,
+    info: RepoInfo,
+    ta_details: Option<TaCertDetails>,
+}
 
 impl IniDet {
     pub fn token(&self) -> &Token {
-        &self.0
+        &self.token
     }
 
     pub fn unwrap(self) -> (Token, Rfc8183Id, RepoInfo, Option<TaCertDetails>) {
-        (self.0, self.1, self.2, self.3)
+        (self.token, self.id, self.info, self.ta_details)
     }
 }
 
@@ -49,7 +55,16 @@ impl IniDet {
     ) -> Result<Ini> {
         let mut signer = signer.write().unwrap();
         let id = Rfc8183Id::generate(signer.deref_mut())?;
-        Ok(Ini::new(handle, 0, IniDet(token, id, info, None)))
+        Ok(Ini::new(
+            handle,
+            0,
+            IniDet {
+                token,
+                id,
+                info,
+                ta_details: None,
+            },
+        ))
     }
 
     pub fn init_ta<S: Signer>(
@@ -77,7 +92,16 @@ impl IniDet {
             TaCertDetails::new(ta_cert, resources, tal)
         };
 
-        Ok(Ini::new(handle, 0, IniDet(token, id, info, Some(ta))))
+        Ok(Ini::new(
+            handle,
+            0,
+            IniDet {
+                token,
+                id,
+                info,
+                ta_details: Some(ta),
+            },
+        ))
     }
 
     fn mk_ta_cer<S: Signer>(
@@ -116,6 +140,23 @@ impl IniDet {
         cert.set_v6_resources(Some(resources.to_ip_resources_v6()));
 
         cert.into_cert(signer.deref(), key).map_err(Error::signer)
+    }
+}
+
+impl fmt::Display for IniDet {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "Initialised with token: {}, cert (hash): {}, base_uri: {}, rpki notify: {}",
+            self.token,
+            self.id.key_hash(),
+            self.info.base_uri(),
+            self.info.rpki_notify()
+        )?;
+        if self.ta_details.is_some() {
+            write!(f, " AS TA")?;
+        }
+        Ok(())
     }
 }
 
@@ -367,5 +408,156 @@ impl EvtDet {
         deltas: HashMap<KeyIdentifier, CurrentObjectSetDelta>,
     ) -> Evt {
         StoredEvent::new(handle, version, EvtDet::ObjectSetUpdated(rcn, deltas))
+    }
+}
+
+impl fmt::Display for EvtDet {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            // Being a parent Events
+            EvtDet::ChildAdded(child, details) => {
+                write!(
+                    f,
+                    "added child '{}' with resources '{}",
+                    child,
+                    details.resources()
+                )?;
+                if let Some(cert) = details.id_cert() {
+                    write!(f, ", id (hash): {}", cert.ski_hex())?;
+                }
+                Ok(())
+            }
+            EvtDet::ChildCertificateIssued(child, response) => write!(
+                f,
+                "issued certificate to child '{}' with resources '{}'",
+                child,
+                response.resource_set()
+            ),
+            EvtDet::ChildKeyRevoked(child, response) => write!(
+                f,
+                "revoked certificate for child '{}', with key(hash) '{}'",
+                child,
+                response.key()
+            ),
+            EvtDet::ChildUpdatedIdCert(child, id_crt) => write!(
+                f,
+                "updated child '{}' id (hash) '{}'",
+                child,
+                id_crt.ski_hex()
+            ),
+            EvtDet::ChildUpdatedResources(child, resources, _) => {
+                write!(f, "updated child '{}' resources to '{}'", child, resources)
+            }
+
+            // Being a child Events
+            EvtDet::ParentAdded(parent, contact) => {
+                let contact_str = match contact {
+                    ParentCaContact::Embedded => "embedded",
+                    ParentCaContact::Ta(_) => "TA proxy",
+                    ParentCaContact::Rfc6492(_) => "RFC6492",
+                };
+                write!(f, "added {} parent '{}' ", contact_str, parent)
+            }
+            EvtDet::ResourceClassAdded(rcn, _) => {
+                write!(f, "added resource class with name '{}'", rcn)
+            }
+            EvtDet::ResourceClassRemoved(rcn, _, parent, _) => write!(
+                f,
+                "removed resource clases with name '{}' under parent '{}'",
+                rcn, parent
+            ),
+            EvtDet::CertificateRequested(rcn, _, ki) => write!(
+                f,
+                "requested certificate for key (hash) '{}' under resource class '{}'",
+                ki, rcn
+            ),
+            EvtDet::CertificateReceived(rcn, ki, _) => write!(
+                f,
+                "received certificate for key (hash) '{}' under resource class '{}'",
+                ki, rcn
+            ),
+
+            // Key life cycle
+            EvtDet::KeyRollPendingKeyAdded(rcn, ki) => write!(
+                f,
+                "key roll: added pending key '{}' under resource class '{}'",
+                ki, rcn
+            ),
+            EvtDet::KeyPendingToNew(rcn, key, _) => write!(
+                f,
+                "key roll: moving pending key '{}' to new state under resource class '{}'",
+                key.key_id(), rcn
+            ),
+            EvtDet::KeyPendingToActive(rcn, key, _) => {
+                write!(
+                    f,
+                    "activating pending key '{}' under resource class '{}'",
+                    key.key_id(), rcn
+                )
+            },
+            EvtDet::KeyRollActivated(rcn, revoke) => write!(
+                f,
+                "key roll: activated new key, requested revocation of '{}' under resource class '{}'",
+                revoke.key(), rcn
+            ),
+            EvtDet::KeyRollFinished(rcn, _) => write!(
+                f,
+                "key roll: finished for resource class '{}'",
+                rcn
+            ),
+
+            // Route Authorizations
+            EvtDet::RouteAuthorizationAdded(route) => write!(
+                f,
+                "added route authorization: '{}'",
+                route
+            ),
+            EvtDet::RouteAuthorizationRemoved(route) => write!(
+                f,
+                "removed route authorization: '{}'",
+                route
+            ),
+            EvtDet::RoasUpdated(rcn, roa_updates) => {
+                write!(f, "updated ROAs under resource class '{}'", rcn)?;
+                if ! roa_updates.updated.is_empty() {
+                    write!(f, " added: ")?;
+                    for auth in roa_updates.updated.keys() {
+                        write!(f, "{} ", auth)?;
+                    }
+                }
+                if ! roa_updates.removed.is_empty() {
+                    write!(f, " removed: ")?;
+                    for auth in roa_updates.removed.keys() {
+                        write!(f, "{} ", auth)?;
+                    }
+                }
+                Ok(())
+            },
+
+            // Publishing
+            EvtDet::ObjectSetUpdated(rcn, key_objects_map) => {
+                write!(f, "updated objects under resource class '{}'", rcn)?;
+
+                for (key, delta) in key_objects_map.iter() {
+                    if !delta.objects().is_empty() {
+                        write!(f, " key: '{}'", key)?;
+                        write!(f, " added: ")?;
+                        for add in delta.objects().added() {
+                            write!(f, "{} ", add.name())?;
+                        }
+                        write!(f, " updated: ")?;
+                        for upd in delta.objects().updated() {
+                            write!(f, "{} ", upd.name())?;
+                        }
+                        write!(f, " withdrawn: ")?;
+                        for wdr in delta.objects().withdrawn() {
+                            write!(f, "{} ", wdr.name())?;
+                        }
+                    }
+                }
+
+                Ok(())
+            },
+        }
     }
 }

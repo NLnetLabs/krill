@@ -81,6 +81,8 @@ impl KrillServer {
         let token = &config.auth_token;
         let ca_refresh_rate = config.ca_refresh;
 
+        info!("Starting krill using service uri: {}", service_uri);
+
         let mut repo_dir = work_dir.clone();
         repo_dir.push("repo");
 
@@ -126,7 +128,6 @@ impl KrillServer {
 
                 // Force initial  publication
                 caserver.republish(&ta_handle)?;
-
             }
         }
 

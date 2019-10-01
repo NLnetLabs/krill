@@ -80,17 +80,22 @@ pub enum Error {
     #[display(fmt = "Invalidly signed RFC 6492 CMS.")]
     InvalidRfc6492,
 
-    #[display(fmt = "Trying to remove unknown authorization: {}", _0)]
-    AuthorisationUnknown(RouteAuthorization),
+    #[display(
+        fmt = "User tries to remove unknown authorization '{}' from CA '{}'",
+        _0,
+        _1
+    )]
+    AuthorisationUnknown(RouteAuthorization, Handle),
 
-    #[display(fmt = "Trying to re-add authorization: {}", _0)]
-    AuthorisationAlreadyPresent(RouteAuthorization),
+    #[display(fmt = "User tries  to re-add authorization '{}' for CA '{}'", _0, _1)]
+    AuthorisationAlreadyPresent(RouteAuthorization, Handle),
 
     #[display(
-        fmt = "Trying to add authorization for resource not held by this CA: {}",
-        _0
+        fmt = "User tries to add authorization '{}' for resource not held by CA '{}'",
+        _0,
+        _1
     )]
-    AuthorisationNotEntitled(RouteAuthorization),
+    AuthorisationNotEntitled(RouteAuthorization, Handle),
 }
 
 impl From<rfc6492::Error> for Error {

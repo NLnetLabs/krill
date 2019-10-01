@@ -6,6 +6,7 @@ use crate::commons::eventsourcing::{
 };
 use crate::commons::remote::api::{ClientAuth, ClientInfo};
 use crate::commons::remote::id::IdCert;
+use std::fmt;
 
 // const fn is not stable yet
 const ID: &str = "cms-clients";
@@ -43,7 +44,7 @@ impl ClientsEvents {
     }
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Display, Serialize)]
 pub struct ClientsInitDetails;
 
 pub type ClientsInit = StoredEvent<ClientsInitDetails>;
@@ -54,6 +55,26 @@ pub enum ClientsEventDetails {
     AddedClient(Handle, ClientAuth),
     UpdatedClientCert(Handle, IdCert),
     RemovedClient(Handle),
+}
+
+impl fmt::Display for ClientsEventDetails {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ClientsEventDetails::AddedClient(handle, auth) => write!(
+                f,
+                "Added client: {}, Id (pub key hash): {}",
+                handle,
+                auth.cert().ski_hex()
+            ),
+            ClientsEventDetails::UpdatedClientCert(handle, cert) => write!(
+                f,
+                "Updated client: {}, Id (pub key hash): {}",
+                handle,
+                cert.ski_hex()
+            ),
+            ClientsEventDetails::RemovedClient(handle) => write!(f, "Removed client: {}", handle),
+        }
+    }
 }
 
 pub type ClientsEvent = StoredEvent<ClientsEventDetails>;

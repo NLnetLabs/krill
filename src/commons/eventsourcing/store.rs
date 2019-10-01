@@ -13,6 +13,7 @@ use crate::commons::api::Handle;
 use crate::commons::util::file;
 
 use super::{Aggregate, Event};
+use commons::eventsourcing::agg::AggregateHistory;
 
 //------------ Storable ------------------------------------------------------
 
@@ -83,11 +84,14 @@ pub enum KeyStoreError {
     #[display(fmt = "{}", _0)]
     JsonError(serde_json::Error),
 
-    #[display(fmt = "Key already exists: {}", _0)]
+    #[display(fmt = "Key '{}' already exists", _0)]
     KeyExists(String),
 
     #[display(fmt = "Aggregate init event exists, but cannot be applied")]
     InitError,
+
+    #[display(fmt = "No history for aggregate with key '{}'", _0)]
+    NoHistory(Handle),
 }
 
 impl From<io::Error> for KeyStoreError {
@@ -292,5 +296,20 @@ impl DiskKeyStore {
             aggregate.apply(e);
         }
         Ok(())
+    }
+
+    pub fn history<A: Aggregate>(&self, id: &Handle) -> Result<AggregateHistory<A>, KeyStoreError> {
+        let init = self
+            .get_event::<A::InitEvent>(id, 0)?
+            .ok_or_else(|| KeyStoreError::NoHistory(id.clone()))?;
+
+        let mut events: Vec<A::Event> = vec![];
+        let mut version = 1;
+        while let Some(e) = self.get_event(id, version)? {
+            events.push(e);
+            version += 1;
+        }
+
+        Ok(AggregateHistory::new(init, events))
     }
 }
