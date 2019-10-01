@@ -335,6 +335,15 @@ pub fn ca_info(server: web::Data<AppServer>, auth: Auth, handle: Path<Handle>) -
     })
 }
 
+pub fn ca_history(server: web::Data<AppServer>, auth: Auth, handle: Path<Handle>) -> HttpResponse {
+    if_api_allowed(&server, &auth, || {
+        match server.read().ca_history(&handle.into_inner()) {
+            Some(history) => render_json(history),
+            None => api_not_found(),
+        }
+    })
+}
+
 pub fn ca_child_req(
     server: web::Data<AppServer>,
     auth: Auth,

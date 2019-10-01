@@ -1,5 +1,6 @@
 use std::str::{from_utf8_unchecked, FromStr};
 
+use crate::commons::api::CertAuthHistory;
 use crate::commons::api::{
     CertAuthInfo, CertAuthList, CurrentObjects, ParentCaContact, PublisherDetails, PublisherList,
     RouteAuthorization,
@@ -17,6 +18,7 @@ pub enum ApiResponse {
     Health,
 
     CertAuthInfo(CertAuthInfo),
+    CertAuthHistory(CertAuthHistory),
     CertAuths(CertAuthList),
     RouteAuthorizations(Vec<RouteAuthorization>),
 
@@ -48,6 +50,7 @@ impl ApiResponse {
                 }
                 ApiResponse::CertAuths(list) => Ok(Some(list.report(fmt)?)),
                 ApiResponse::CertAuthInfo(info) => Ok(Some(info.report(fmt)?)),
+                ApiResponse::CertAuthHistory(history) => Ok(Some(history.report(fmt)?)),
                 ApiResponse::RouteAuthorizations(auths) => Ok(Some(auths.report(fmt)?)),
                 ApiResponse::ParentCaContact(contact) => Ok(Some(contact.report(fmt)?)),
                 ApiResponse::PublisherList(list) => Ok(Some(list.report(fmt)?)),
@@ -178,6 +181,16 @@ impl Report for CertAuthInfo {
 
                 Ok(res)
             }
+            _ => Err(ReportError::UnsupportedFormat),
+        }
+    }
+}
+
+impl Report for CertAuthHistory {
+    fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
+        match format {
+            ReportFormat::Json => Ok(serde_json::to_string_pretty(self).unwrap()),
+            ReportFormat::Default | ReportFormat::Text => Ok(format!("{}", self)),
             _ => Err(ReportError::UnsupportedFormat),
         }
     }

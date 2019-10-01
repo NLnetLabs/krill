@@ -13,7 +13,7 @@ pub fn id() -> Handle {
 
 //------------ ResponderEvent ---------------------------------------------
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ResponderInitDetails {
     id: MyIdentity,
 }
@@ -30,7 +30,7 @@ impl fmt::Display for ResponderInitDetails {
     }
 }
 
-#[derive(Clone, Deserialize, Display, Serialize)]
+#[derive(Clone, Deserialize, Display, Eq, PartialEq, Serialize)]
 #[display(fmt = "Responder event")]
 pub struct ResponderEventDetails; // in future: update identity or uri
 

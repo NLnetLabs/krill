@@ -6,7 +6,7 @@ use super::Storable;
 
 //------------ Event --------------------------------------------------------
 
-pub trait Event: fmt::Display + Storable + 'static {
+pub trait Event: fmt::Display + Eq + PartialEq + Storable + 'static {
     /// Identifies the aggregate, useful when storing and retrieving the event.
     fn handle(&self) -> &Handle;
 
@@ -16,15 +16,15 @@ pub trait Event: fmt::Display + Storable + 'static {
     fn version(&self) -> u64;
 }
 
-#[derive(Clone, Deserialize, Serialize)]
-pub struct StoredEvent<E: fmt::Display + Storable + 'static> {
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct StoredEvent<E: fmt::Display + Eq + PartialEq + Storable + 'static> {
     id: Handle,
     version: u64,
     #[serde(deserialize_with = "E::deserialize")]
     details: E,
 }
 
-impl<E: fmt::Display + Storable + 'static> StoredEvent<E> {
+impl<E: fmt::Display + Eq + PartialEq + Storable + 'static> StoredEvent<E> {
     pub fn new(id: &Handle, version: u64, event: E) -> Self {
         StoredEvent {
             id: id.clone(),
@@ -47,7 +47,7 @@ impl<E: fmt::Display + Storable + 'static> StoredEvent<E> {
     }
 }
 
-impl<E: fmt::Display + Storable + 'static> Event for StoredEvent<E> {
+impl<E: fmt::Display + Eq + PartialEq + Storable + 'static> Event for StoredEvent<E> {
     fn handle(&self) -> &Handle {
         &self.id
     }
@@ -57,7 +57,7 @@ impl<E: fmt::Display + Storable + 'static> Event for StoredEvent<E> {
     }
 }
 
-impl<E: fmt::Display + Storable + 'static> fmt::Display for StoredEvent<E> {
+impl<E: fmt::Display + Eq + PartialEq + Storable + 'static> fmt::Display for StoredEvent<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,

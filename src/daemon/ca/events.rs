@@ -28,7 +28,7 @@ pub type Ini = StoredEvent<IniDet>;
 
 //------------ IniDet --------------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct IniDet {
     token: Token,
     id: Rfc8183Id,
@@ -163,7 +163,7 @@ impl fmt::Display for IniDet {
 //------------ RoaUpdates --------------------------------------------------
 
 /// Describes an update to the set of ROAs under a ResourceClass.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaUpdates {
     updated: HashMap<RouteAuthorization, RoaInfo>,
     removed: HashMap<RouteAuthorization, RevokedObject>,
@@ -263,7 +263,7 @@ pub type Evt = StoredEvent<EvtDet>;
 
 //------------ EvtDet -------------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum EvtDet {
     // Being a parent Events
@@ -550,8 +550,8 @@ impl fmt::Display for EvtDet {
                             write!(f, "{} ", upd.name())?;
                         }
                         write!(f, " withdrawn: ")?;
-                        for wdr in delta.objects().withdrawn() {
-                            write!(f, "{} ", wdr.name())?;
+                        for upd in delta.objects().withdrawn() {
+                            write!(f, "{} ", upd.name())?;
                         }
                     }
                 }

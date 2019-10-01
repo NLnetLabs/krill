@@ -25,7 +25,7 @@ pub fn id() -> Handle {
 
 pub type RrdpInit = StoredEvent<RrdpInitDetails>;
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RrdpInitDetails {
     session: String,
     base_uri: uri::Https,
@@ -65,7 +65,7 @@ impl fmt::Display for RrdpInitDetails {
 
 pub type RrdpEvent = StoredEvent<RrdpEventDetails>;
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum RrdpEventDetails {
     AddedDelta(Delta),

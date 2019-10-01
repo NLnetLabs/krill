@@ -10,7 +10,7 @@ use crate::commons::api::{
 use crate::commons::remote::id::IdCert;
 use crate::daemon::ca;
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum LastResponse {
     Issuance(IssuanceResponse),
@@ -25,7 +25,7 @@ impl LastResponse {}
 ///
 /// Note that the actual [IssuedCert] corresponding to the [KeyIdentifier]
 /// and [ResourceClassName] are kept in the parent's [ResourceClass].
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildDetails {
     id_cert: Option<IdCert>,
     resources: ResourceSet,
@@ -213,7 +213,7 @@ pub struct Children {
 //------------ Certificates ------------------------------------------------
 
 /// The collection of certificates issued under a [ResourceClass](ca.ResourceClass).
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Certificates {
     inner: HashMap<KeyIdentifier, IssuedCert>,
 }

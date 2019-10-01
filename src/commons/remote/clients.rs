@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt;
 
 use crate::commons::api::Handle;
 use crate::commons::eventsourcing::{
@@ -6,7 +7,6 @@ use crate::commons::eventsourcing::{
 };
 use crate::commons::remote::api::{ClientAuth, ClientInfo};
 use crate::commons::remote::id::IdCert;
-use std::fmt;
 
 // const fn is not stable yet
 const ID: &str = "cms-clients";
@@ -44,12 +44,12 @@ impl ClientsEvents {
     }
 }
 
-#[derive(Clone, Deserialize, Display, Serialize)]
+#[derive(Clone, Deserialize, Display, Eq, PartialEq, Serialize)]
 pub struct ClientsInitDetails;
 
 pub type ClientsInit = StoredEvent<ClientsInitDetails>;
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum ClientsEventDetails {
     AddedClient(Handle, ClientAuth),

@@ -9,6 +9,7 @@ use chrono::Duration;
 use rpki::cert::Cert;
 use rpki::uri;
 
+use crate::commons::api::CertAuthHistory;
 use crate::commons::api::{
     AddChildRequest, AddParentRequest, CertAuthInfo, CertAuthInit, CertAuthList, CertAuthPubMode,
     ChildCaInfo, ChildHandle, Handle, ListReply, ParentCaContact, ParentHandle, PublishDelta,
@@ -357,6 +358,11 @@ impl KrillServer {
     /// Returns the public CA info for a CA, or NONE if the CA cannot be found.
     pub fn ca_info(&self, handle: &Handle) -> Option<CertAuthInfo> {
         self.caserver.get_ca(handle).map(|ca| ca.as_ca_info()).ok()
+    }
+
+    /// Returns the history for a CA, or NONE in case of issues (i.e. it does not exist).
+    pub fn ca_history(&self, handle: &Handle) -> Option<CertAuthHistory> {
+        self.caserver.get_ca_history(handle).ok()
     }
 
     /// Returns the child request for a CA, or NONE if the CA cannot be found.

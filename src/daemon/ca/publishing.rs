@@ -14,7 +14,6 @@ use crate::commons::api::{
     AddedObject, CurrentObject, HexEncodedHash, IssuedCert, ObjectName, ObjectsDelta, RcvdCert,
     Revocation, Revocations, RevocationsDelta, RouteAuthorization, UpdatedObject, WithdrawnObject,
 };
-
 use crate::daemon::ca::{self, RoaInfo, Signer};
 
 //------------ AddedOrUpdated ----------------------------------------------
@@ -97,7 +96,7 @@ impl Eq for CrlInfo {}
 //------------ PublicationDelta ----------------------------------------------
 
 /// This type describes a set up of objects published for a CA key.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CurrentObjectSetDelta {
     number: u64,
     revocations_delta: RevocationsDelta,

@@ -12,7 +12,7 @@ use crate::commons::eventsourcing::{Aggregate, CommandDetails, SentCommand, Stor
 
 pub type PublisherInit = StoredEvent<InitPublisherDetails>;
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct InitPublisherDetails {
     token: Token,
     base_uri: uri::Rsync,
@@ -40,7 +40,7 @@ impl fmt::Display for InitPublisherDetails {
 
 pub type PublisherEvent = StoredEvent<PublisherEventDetails>;
 
-#[derive(Clone, Deserialize, Display, Serialize)]
+#[derive(Clone, Deserialize, Display, Eq, PartialEq, Serialize)]
 pub enum PublisherEventDetails {
     #[display(fmt = "deactivated")]
     Deactivated,

@@ -103,10 +103,20 @@ impl RoaInfo {
     }
 }
 
+impl PartialEq for RoaInfo {
+    fn eq(&self, other: &RoaInfo) -> bool {
+        self.roa.to_captured().as_slice() == other.roa.to_captured().as_slice()
+            && self.since == other.since
+            && self.replaces == other.replaces
+    }
+}
+
+impl Eq for RoaInfo {}
+
 //------------ Roas --------------------------------------------------------
 
 /// ROAs held by a resource class in a CA.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Roas {
     inner: HashMap<RouteAuthorization, RoaInfo>,
 }

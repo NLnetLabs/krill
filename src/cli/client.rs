@@ -136,6 +136,15 @@ impl KrillClient {
 
                 Ok(ApiResponse::CertAuthInfo(ca_info))
             }
+
+            CaCommand::ShowHistory(handle) => {
+                let uri = format!("api/v1/cas/{}/history", handle);
+                let uri = self.resolve_uri(&uri);
+                let history = self.get_json(&uri)?;
+
+                Ok(ApiResponse::CertAuthHistory(history))
+            }
+
             CaCommand::List => {
                 let uri = self.resolve_uri("api/v1/cas");
                 let cas = self.get_json(&uri)?;

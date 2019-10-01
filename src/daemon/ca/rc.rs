@@ -35,7 +35,7 @@ use crate::daemon::ca::{
 /// Furthermore a resource class manages the key life cycle, and certificates
 /// for each key, as well as products that need to be issued by the 'current'
 /// key for this class.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ResourceClass {
     name: ResourceClassName,
     name_space: String,

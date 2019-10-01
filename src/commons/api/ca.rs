@@ -24,8 +24,10 @@ use crate::commons::api::publication;
 use crate::commons::api::publication::Publish;
 use crate::commons::api::RouteAuthorization;
 use crate::commons::api::{Base64, HexEncodedHash, IssuanceRequest, RequestResourceLimit};
+use crate::commons::eventsourcing::AggregateHistory;
 use crate::commons::remote::id::IdCert;
 use crate::commons::util::ext_serde;
+use crate::daemon::ca::{self, CertAuth, Signer};
 
 //------------ ResourceClassName -------------------------------------------
 
@@ -140,7 +142,7 @@ pub type RevokedObject = ReplacedObject;
 
 //------------ ReplacedObject ------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ReplacedObject {
     revocation: Revocation,
     hash: HexEncodedHash,
@@ -1409,6 +1411,31 @@ impl CertAuthInfo {
             res.append(&mut rc.current_objects().publish(self.base_repo(), name_space));
         }
         res
+    }
+}
+
+//------------ CertAuthHistory -----------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CertAuthHistory {
+    init: ca::Ini,
+    events: Vec<ca::Evt>,
+}
+
+impl<S: Signer> From<AggregateHistory<CertAuth<S>>> for CertAuthHistory {
+    fn from(history: AggregateHistory<CertAuth<S>>) -> Self {
+        let (init, events) = history.unpack();
+        CertAuthHistory { init, events }
+    }
+}
+
+impl fmt::Display for CertAuthHistory {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "{}", self.init)?;
+        for evt in &self.events {
+            writeln!(f, "{}", evt)?;
+        }
+        Ok(())
     }
 }
 

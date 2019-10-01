@@ -9,6 +9,7 @@ use chrono::Duration;
 use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 
+use crate::commons::api::CertAuthHistory;
 use crate::commons::api::{
     self, AddChildRequest, AddParentRequest, CertAuthList, CertAuthSummary, ChildAuthRequest,
     ChildCaInfo, ChildHandle, Entitlements, Handle, IssuanceRequest, IssuanceResponse, IssuedCert,
@@ -221,6 +222,14 @@ impl<S: Signer> CaServer<S> {
     pub fn get_ca(&self, handle: &Handle) -> ServerResult<Arc<CertAuth<S>>, S> {
         self.ca_store
             .get_latest(handle)
+            .map_err(|_| ServerError::UnknownCa(handle.to_string()))
+    }
+
+    /// Gets the history for a CA.
+    pub fn get_ca_history(&self, handle: &Handle) -> ServerResult<CertAuthHistory, S> {
+        self.ca_store
+            .history(handle)
+            .map(CertAuthHistory::from)
             .map_err(|_| ServerError::UnknownCa(handle.to_string()))
     }
 

@@ -2,6 +2,7 @@
 
 mod agg;
 pub use self::agg::Aggregate;
+pub use self::agg::AggregateHistory;
 
 mod evt;
 pub use self::evt::{Event, StoredEvent};
@@ -59,7 +60,7 @@ mod tests {
         }
     }
 
-    #[derive(Clone, Deserialize, Serialize)]
+    #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
     struct InitPersonDetails {
         pub name: String,
     }

@@ -259,8 +259,7 @@ impl Options {
     }
 
     fn make_cas_list_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let sub =
-            SubCommand::with_name("list").about("List the current CAs in this Krill instance");
+        let sub = SubCommand::with_name("list").about("List the current CAs.");
 
         let sub = Self::add_general_args(sub);
 
@@ -268,8 +267,16 @@ impl Options {
     }
 
     fn make_cas_show_ca_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub =
-            SubCommand::with_name("show").about("Show details of a CA in this Krill instance.");
+        let mut sub = SubCommand::with_name("show").about("Show details of a CA.");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        app.subcommand(sub)
+    }
+
+    fn make_cas_show_history_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("history").about("Show full history of a CA.");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -278,7 +285,7 @@ impl Options {
     }
 
     fn make_cas_add_ca_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("add").about("Add a new CA to this Krill instance.");
+        let mut sub = SubCommand::with_name("add").about("Add a new CA.");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -295,7 +302,7 @@ impl Options {
     }
 
     fn make_cas_children_add_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("add").about("Add a child to a CA in Krill.");
+        let mut sub = SubCommand::with_name("add").about("Add a child to a CA.");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -307,8 +314,7 @@ impl Options {
     }
 
     fn make_cas_children_update_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub =
-            SubCommand::with_name("update").about("Update an existing child of a CA in Krill.");
+        let mut sub = SubCommand::with_name("update").about("Update an existing child of a CA.");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -354,7 +360,7 @@ impl Options {
     }
 
     fn make_cas_parents_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("parents").about("Manage parents for a CA in Krill.");
+        let mut sub = SubCommand::with_name("parents").about("Manage parents for a CA.");
 
         sub = Self::make_cas_parents_myid_sc(sub);
         sub = Self::make_cas_parents_add_sc(sub);
@@ -364,7 +370,7 @@ impl Options {
 
     fn make_cas_keyroll_init_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub =
-            SubCommand::with_name("init").about("Initialise roll for all keys held by this CA");
+            SubCommand::with_name("init").about("Initialise roll for all keys held by this CA.");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -374,7 +380,7 @@ impl Options {
 
     fn make_cas_keyroll_activate_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub =
-            SubCommand::with_name("activate").about("Finish roll for all keys held by this CA");
+            SubCommand::with_name("activate").about("Finish roll for all keys held by this CA.");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -439,6 +445,7 @@ impl Options {
 
         sub = Self::make_cas_list_sc(sub);
         sub = Self::make_cas_show_ca_sc(sub);
+        sub = Self::make_cas_show_history_sc(sub);
         sub = Self::make_cas_add_ca_sc(sub);
         sub = Self::make_cas_children_sc(sub);
         sub = Self::make_cas_parents_sc(sub);
@@ -533,6 +540,14 @@ impl Options {
         let my_ca = Self::parse_my_ca(matches)?;
 
         let command = Command::CertAuth(CaCommand::Show(my_ca));
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_history(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let command = Command::CertAuth(CaCommand::ShowHistory(my_ca));
         Ok(Options::make(general_args, command))
     }
 
@@ -715,6 +730,8 @@ impl Options {
             Self::parse_matches_cas_add(m)
         } else if let Some(m) = matches.subcommand_matches("show") {
             Self::parse_matches_cas_show(m)
+        } else if let Some(m) = matches.subcommand_matches("history") {
+            Self::parse_matches_cas_history(m)
         } else if let Some(m) = matches.subcommand_matches("children") {
             Self::parse_matches_cas_children(m)
         } else if let Some(m) = matches.subcommand_matches("parents") {
@@ -782,6 +799,9 @@ pub enum CaCommand {
 
     // Show details for this CA
     Show(Handle),
+
+    // Show the history for this CA
+    ShowHistory(Handle),
 
     // List all CAs
     List,

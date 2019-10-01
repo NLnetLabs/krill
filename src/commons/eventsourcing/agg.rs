@@ -73,6 +73,10 @@ impl<A: Aggregate> AggregateHistory<A> {
     pub fn new(init: A::InitEvent, events: Vec<A::Event>) -> Self {
         AggregateHistory { init, events }
     }
+
+    pub fn unpack(self) -> (A::InitEvent, Vec<A::Event>) {
+        (self.init, self.events)
+    }
 }
 
 impl<A: Aggregate> fmt::Display for AggregateHistory<A> {

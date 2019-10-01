@@ -25,7 +25,7 @@ const NS: &str = "http://www.ripe.net/rpki/rrdp";
 ///
 /// Note that the difference with the publication protocol is the absence of
 /// the tag.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublishElement {
     base64: Base64,
     uri: uri::Rsync,
@@ -57,7 +57,7 @@ impl From<publication::Publish> for PublishElement {
 ///
 /// Note that the difference with the publication protocol is the absence of
 /// the tag.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct UpdateElement {
     uri: uri::Rsync,
     hash: HexEncodedHash,
@@ -98,7 +98,7 @@ impl Into<PublishElement> for UpdateElement {
 ///
 /// Note that the difference with the publication protocol is the absence of
 /// the tag.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WithdrawElement {
     uri: uri::Rsync,
     hash: HexEncodedHash,
@@ -130,7 +130,7 @@ pub struct Notification {
     old_refs: Vec<(Time, FileRef)>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct NotificationUpdate {
     time: Time,
     session: Option<String>,
@@ -157,7 +157,7 @@ impl NotificationUpdate {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct NotificationCreate {
     session: String,
     snapshot: SnapshotRef,
@@ -263,7 +263,7 @@ impl Notification {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct FileRef {
     uri: uri::Https,
     path: PathBuf,
@@ -287,7 +287,7 @@ impl FileRef {
 
 pub type SnapshotRef = FileRef;
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct DeltaRef {
     serial: u64,
     file_ref: FileRef,
@@ -520,7 +520,7 @@ impl Snapshot {
 //------------ DeltaElements -------------------------------------------------
 
 /// Defines the elements for an RRDP delta.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct DeltaElements {
     publishes: Vec<PublishElement>,
     updates: Vec<UpdateElement>,
@@ -578,7 +578,7 @@ impl DeltaElements {
 //------------ Delta ---------------------------------------------------------
 
 /// Defines an RRDP delta.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Delta {
     session: String,
     serial: u64,
