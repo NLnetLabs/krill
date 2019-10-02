@@ -93,6 +93,10 @@ pub fn krill_admin_expect_error(command: Command) -> Error {
     }
 }
 
+fn refresh_all() {
+    krill_admin(Command::CertAuth(CaCommand::RefreshAll));
+}
+
 pub fn init_child(handle: &Handle, token: &Token) {
     let init = CertAuthInit::new(handle.clone(), token.clone(), CertAuthPubMode::Embedded);
     krill_admin(Command::CertAuth(CaCommand::Init(init)));
@@ -157,18 +161,7 @@ pub fn update_child(handle: &Handle, resources: &ResourceSet) {
         ApiResponse::Empty => {}
         _ => panic!("Expected empty ok response"),
     }
-}
-
-pub fn force_update_child(handle: &Handle, resources: &ResourceSet) {
-    let req = UpdateChildRequest::force(None, Some(resources.clone()));
-    match krill_admin(Command::CertAuth(CaCommand::UpdateChild(
-        ta_handle(),
-        handle.clone(),
-        req,
-    ))) {
-        ApiResponse::Empty => {}
-        _ => panic!("Expected empty ok response"),
-    }
+    refresh_all();
 }
 
 pub fn add_parent_to_ca(handle: &Handle, parent: AddParentRequest) {

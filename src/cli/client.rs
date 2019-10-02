@@ -150,6 +150,12 @@ impl KrillClient {
                 let cas = self.get_json(&uri)?;
                 Ok(ApiResponse::CertAuths(cas))
             }
+
+            CaCommand::RefreshAll => {
+                let uri = self.resolve_uri("api/v1/refresh_all");
+                self.post_empty(&uri)?;
+                Ok(ApiResponse::Empty)
+            }
         }
     }
 

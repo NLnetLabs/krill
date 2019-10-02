@@ -278,17 +278,17 @@ impl fmt::Display for IssuanceRequest {
             .csr
             .rpki_notify()
             .map(uri::Https::to_string)
-            .unwrap_or(none.clone());
+            .unwrap_or_else(|| none.clone());
         let ca_repo = self
             .csr
             .ca_repository()
             .map(uri::Rsync::to_string)
-            .unwrap_or(none.clone());
+            .unwrap_or_else(|| none.clone());
         let rpki_manifest = self
             .csr
             .rpki_manifest()
             .map(uri::Rsync::to_string)
-            .unwrap_or(none.clone());
+            .unwrap_or_else(|| none.clone());
 
         write!(
             f,
@@ -434,13 +434,17 @@ impl fmt::Display for RequestResourceLimit {
             .v4
             .as_ref()
             .map(|blocks| IpBlocksForFamily::v4(blocks).to_string())
-            .unwrap_or(all.clone());
+            .unwrap_or_else(|| all.clone());
         let v6_string = self
             .v6
             .as_ref()
             .map(|blocks| IpBlocksForFamily::v6(blocks).to_string())
-            .unwrap_or(all.clone());
-        let asn_string = self.asn.as_ref().map(AsBlocks::to_string).unwrap_or(all);
+            .unwrap_or_else(|| all.clone());
+        let asn_string = self
+            .asn
+            .as_ref()
+            .map(AsBlocks::to_string)
+            .unwrap_or_else(|| all);
 
         write!(
             f,

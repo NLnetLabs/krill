@@ -172,7 +172,7 @@ impl Config {
         let mut log_file = data_dir.clone();
         log_file.push("krill.log");
         let auth_token = Token::from("secret");
-        let ca_refresh = 5;
+        let ca_refresh = 3600;
 
         let c = Config {
             ip,

@@ -97,7 +97,7 @@ impl<S: Signer> fmt::Display for CmdDet<S> {
                 id_cert_opt
                     .as_ref()
                     .map(|c| c.ski_hex())
-                    .unwrap_or("<none>".to_string()),
+                    .unwrap_or_else(|| "<none>".to_string()),
                 res
             ),
             CmdDet::ChildUpdate(child, update_req) => {

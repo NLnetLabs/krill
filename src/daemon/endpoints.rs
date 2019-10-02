@@ -419,6 +419,15 @@ pub fn republish_all(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
     })
 }
 
+//------------ Admin: Force republish ----------------------------------------
+
+/// Refresh all CAs
+pub fn refresh_all(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
+    if_api_allowed(&server, &auth, || {
+        render_empty_res(server.read().refresh_all())
+    })
+}
+
 //------------ Provisioning (RFC6492) ----------------------------------------
 
 /// Process an RFC 6492 request

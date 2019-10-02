@@ -128,9 +128,12 @@ mod tests {
     /// implementation for this type alias providing some convenience methods.
     type PersonCommand = SentCommand<PersonCommandDetails>;
 
-    #[derive(Clone, Deserialize, Serialize)]
+    #[derive(Clone, Deserialize, Display, Serialize)]
     enum PersonCommandDetails {
+        #[display(fmt = "Change name to {}", _0)]
         ChangeName(String),
+
+        #[display(fmt = "Go around the sun")]
         GoAroundTheSun,
     }
 

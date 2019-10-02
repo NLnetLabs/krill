@@ -6,7 +6,6 @@ use std::time::Duration;
 
 use clokwerk::{self, ScheduleHandle, TimeUnits};
 
-use crate::commons::api::{Handle, PublishDelta};
 use crate::commons::util::softsigner::OpenSslSigner;
 use crate::daemon::ca::CaServer;
 use crate::daemon::mq::{EventQueueListener, QueueEvent};
@@ -59,7 +58,9 @@ fn make_event_sh(
             match evt {
                 QueueEvent::Delta(handle, version, delta) => {
                     trace!("Trigger publication for '{}' version '{}'", handle, version);
-                    publish(&handle, delta, &pubserver);
+                    if let Err(e) = pubserver.publish(&handle, delta) {
+                        error!("Failed to publish for CA: {}, error: {}", handle, e);
+                    }
                 }
                 QueueEvent::ResourceClassRemoved(handle, _, parent, revocations) => {
                     trace!(
@@ -104,30 +105,19 @@ fn make_event_sh(
 fn make_republish_sh(caserver: Arc<CaServer<OpenSslSigner>>) -> ScheduleHandle {
     let mut scheduler = clokwerk::Scheduler::new();
     scheduler.every(1.hours()).run(move || {
-        // TODO: one by one and keep the result per ca
+        info!("Triggering background republication for all CAs");
         if let Err(e) = caserver.republish_all() {
-            error!("Publishing failed: {}", e);
+            error!("Background republishing failed: {}", e);
         }
     });
     scheduler.watch_thread(Duration::from_millis(100))
 }
 
-fn publish(handle: &Handle, delta: PublishDelta, pubserver: &PubServer) {
-    trace!("Asking CA: {} if it wants to publish", handle);
-    if let Err(e) = pubserver.publish(handle, delta) {
-        error!("Failed to publish for CA: {}, error: {}", handle, e);
-    }
-}
-
 fn make_ca_refresh_sh(caserver: Arc<CaServer<OpenSslSigner>>, refresh_rate: u32) -> ScheduleHandle {
     let mut scheduler = clokwerk::Scheduler::new();
     scheduler.every(refresh_rate.seconds()).run(move || {
-        if let Err(e) = caserver.get_updates_for_all_cas() {
-            error!("Failed to refresh CA certificates: {}", e);
-        }
-        if let Err(e) = caserver.all_cas_shrink() {
-            error!("Failed to shrink CA certificates: {}", e);
-        }
+        info!("Triggering background refresh for all CAs");
+        caserver.refresh_all()
     });
     scheduler.watch_thread(Duration::from_millis(100))
 }

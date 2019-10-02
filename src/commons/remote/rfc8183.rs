@@ -146,13 +146,23 @@ impl ChildRequest {
             })
         })
     }
+
+    /// Encode to XML string
+    pub fn to_xml(&self) -> String {
+        let s = self.encode_vec();
+        let s = unsafe { from_utf8_unchecked(s.as_slice()) };
+        s.to_string()
+    }
 }
 
 impl fmt::Display for ChildRequest {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let s = self.encode_vec();
-        let s = unsafe { from_utf8_unchecked(s.as_slice()) };
-        s.fmt(f)
+        write!(
+            f,
+            "handle '{}' id (key) '{}'",
+            self.child_handle,
+            self.id_cert.ski_hex()
+        )
     }
 }
 

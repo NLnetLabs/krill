@@ -85,7 +85,8 @@ pub fn start(config: &Config) -> Result<(), Error> {
                     .route("/cas/{ca}/keys/roll_init", post().to(ca_kr_init))
                     .route("/cas/{ca}/keys/roll_activate", post().to(ca_kr_activate))
                     .route("/cas/{ca}/routes", post().to(ca_routes_update))
-                    .route("/republish", post().to(republish_all)),
+                    .route("/republish", post().to(republish_all))
+                    .route("/refresh_all", post().to(refresh_all)),
             )
             // Public TA related methods
             .route("/ta/ta.tal", get().to(tal))

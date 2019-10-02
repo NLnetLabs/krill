@@ -1,7 +1,7 @@
 //! An RPKI publication protocol server.
-use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::{io, thread};
 
 use bcder::Captured;
 use bytes::Bytes;
@@ -342,8 +342,18 @@ impl KrillServer {
         Ok(child)
     }
 
+    /// Republish all CAs that need it.
     pub fn republish_all(&self) -> EmptyRes {
         self.caserver.republish_all()?;
+        Ok(())
+    }
+
+    /// Refresh all CAs: ask for updates and shrink as needed.
+    pub fn refresh_all(&self) -> EmptyRes {
+        let server = self.caserver.clone();
+        thread::spawn(move || {
+            server.refresh_all();
+        });
         Ok(())
     }
 }

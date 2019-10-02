@@ -488,7 +488,8 @@ pub enum CertAuthPubMode {
 
 //------------ AddChildRequest -----------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
+#[display(fmt = "handle '{}' resources '{}' kind '{}'", handle, resources, auth)]
 pub struct AddChildRequest {
     handle: Handle,
     resources: ResourceSet,
@@ -511,10 +512,12 @@ impl AddChildRequest {
 
 //------------ ChildAuthRequest ----------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum ChildAuthRequest {
+    #[display(fmt = "embedded")]
     Embedded,
+    #[display(fmt = "{}", _0)]
     Rfc8183(ChildRequest),
 }
 

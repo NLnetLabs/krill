@@ -26,25 +26,21 @@ fn ca_under_embedded_ta() {
         wait_for_current_resources(&child, &child_resources);
         wait_for_ta_to_have_number_of_issued_certs(1);
 
-        // When the parent adds resources to a CA, it will allocate them only when the child
-        // requests them, even if forced is used.
+        // When the parent adds resources to a CA, it can request a new resource certificate.
         let new_child_resources = ResourceSet::from_strs("AS65000", "10.0.0.0/16", "").unwrap();
-        force_update_child(&child, &new_child_resources);
-        assert_eq!(ta_issued_resources(&child), child_resources);
+        update_child(&child, &new_child_resources);
         wait_for_current_resources(&child, &new_child_resources);
         wait_for_ta_to_have_number_of_issued_certs(1);
         assert_eq!(ta_issued_resources(&child), new_child_resources);
 
-        // When the parent force updates the child resources, it will update the child's CA
-        // certificate immediately. The child will find out later when it tries to sync.
+        // When the removes child resources, the child will get a reduced certificate when it syncs.
         let child_resources = ResourceSet::from_strs("", "10.0.0.0/24", "").unwrap();
-        force_update_child(&child, &child_resources);
-        assert_eq!(ta_issued_resources(&child), child_resources);
+        update_child(&child, &child_resources);
         wait_for_current_resources(&child, &child_resources);
+        assert_eq!(ta_issued_resources(&child), child_resources);
 
-        // When all resources are removed, the child still gets a chance to clean up if force
-        // is not used.. The child will request that its certificate is revoked, and remove
-        // the resource class.
+        // When all resources are removed, the child will request that its certificate is revoked,
+        // and remove the resource class.
         let child_resources = ResourceSet::default();
         update_child(&child, &child_resources);
         wait_for_resource_class_to_disappear(&child);

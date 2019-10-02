@@ -117,6 +117,17 @@ impl<S: Signer> CaServer<S> {
         Ok(())
     }
 
+    /// Refresh all CAs: ask for updates and shrink as needed.
+    pub fn refresh_all(&self) {
+        info!("Refreshing all CAs");
+        if let Err(e) = self.get_updates_for_all_cas() {
+            error!("Failed to refresh CA certificates: {}", e);
+        }
+        if let Err(e) = self.all_cas_shrink() {
+            error!("Failed to shrink CA certificates: {}", e);
+        }
+    }
+
     /// Adds a child under an embedded CA
     pub fn ca_add_child(
         &self,
@@ -124,11 +135,10 @@ impl<S: Signer> CaServer<S> {
         req: AddChildRequest,
         service_uri: &uri::Https,
     ) -> ServerResult<ParentCaContact, S> {
-        let (child_handle, child_res, child_auth) = req.unwrap();
-
-        info!("Adding child {} to CA {}", &child_handle, &parent);
+        info!("CA '{}' process add child request: {}", &parent, &req);
 
         let ca = self.get_ca(parent)?;
+        let (child_handle, child_res, child_auth) = req.unwrap();
 
         let id_cert = match &child_auth {
             ChildAuthRequest::Embedded => None,
@@ -184,7 +194,7 @@ impl<S: Signer> CaServer<S> {
         child: ChildHandle,
         req: UpdateChildRequest,
     ) -> ServerResult<(), S> {
-        debug!(
+        info!(
             "Updating details for CA: {} under parent: {} to: {}",
             child, parent, req
         );

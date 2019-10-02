@@ -805,6 +805,9 @@ pub enum CaCommand {
 
     // List all CAs
     List,
+
+    // Refresh all CAs: let them update from parents, and shrink children if needed
+    RefreshAll,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

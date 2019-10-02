@@ -82,7 +82,7 @@ impl<C: CommandDetails> fmt::Display for SentCommand<C> {
             .version
             .as_ref()
             .map(u64::to_string)
-            .unwrap_or("any".to_string());
+            .unwrap_or_else(|| "any".to_string());
         write!(
             f,
             "id '{}' version '{}' details '{}'",
