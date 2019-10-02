@@ -84,7 +84,7 @@ mod tests {
     /// convenience functions for creating these events.
     type PersonEvent = StoredEvent<PersonEventDetails>;
 
-    #[derive(Clone, Deserialize, Serialize)]
+    #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
     enum PersonEventDetails {
         NameChanged(String),
         HadBirthday,

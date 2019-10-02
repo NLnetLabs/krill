@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::commons::api::Handle;
 
 use super::Event;
@@ -74,10 +76,25 @@ impl<C: CommandDetails> SentCommand<C> {
     }
 }
 
+impl<C: CommandDetails> fmt::Display for SentCommand<C> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let version_string = self
+            .version
+            .as_ref()
+            .map(u64::to_string)
+            .unwrap_or("any".to_string());
+        write!(
+            f,
+            "id '{}' version '{}' details '{}'",
+            self.handle, version_string, self.details
+        )
+    }
+}
+
 //------------ CommandDetails ------------------------------------------------
 
 /// Implement this for an enum with CommandDetails, so you you can reuse the
 /// id and version boilerplate from ['SentCommand'].
-pub trait CommandDetails: 'static {
+pub trait CommandDetails: fmt::Display + 'static {
     type Event: Event;
 }

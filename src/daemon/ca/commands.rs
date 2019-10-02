@@ -1,3 +1,4 @@
+use std::fmt;
 use std::sync::{Arc, RwLock};
 
 use chrono::Duration;
@@ -81,6 +82,77 @@ pub enum CmdDet<S: Signer> {
     // Publishing
     // ------------------------------------------------------------
     Republish(Arc<RwLock<S>>),
+}
+
+impl<S: Signer> fmt::Display for CmdDet<S> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            // ------------------------------------------------------------
+            // Being a parent
+            // ------------------------------------------------------------
+            CmdDet::ChildAdd(child, id_cert_opt, res) => write!(
+                f,
+                "Add child '{}' with RFC8183 key '{}' and resources '{}'",
+                child,
+                id_cert_opt
+                    .as_ref()
+                    .map(|c| c.ski_hex())
+                    .unwrap_or("<none>".to_string()),
+                res
+            ),
+            CmdDet::ChildUpdate(child, update_req) => {
+                write!(f, "Update child '{}' with {}", child, update_req)
+            }
+            CmdDet::ChildCertify(child, req, _) => {
+                write!(f, "Certify child '{}' for request '{}'", child, req)
+            }
+            CmdDet::ChildRevokeKey(child, req, _) => {
+                write!(f, "Revoke child '{}' request '{}'", child, req)
+            }
+            CmdDet::ChildShrink(child, _) => write!(f, "Shrink child '{}' if needed", child),
+
+            // ------------------------------------------------------------
+            // Being a child (only allowed if this CA is not self-signed)
+            // ------------------------------------------------------------
+            CmdDet::AddParent(parent, contact) => {
+                write!(f, "Add parent '{}' as '{}'", parent, contact)
+            }
+            CmdDet::UpdateResourceClasses(parent, entitlements, _) => write!(
+                f,
+                "Update entitlements under parent '{}' to '{}",
+                parent, entitlements
+            ),
+            // Process a new certificate received from a parent.
+            CmdDet::UpdateRcvdCert(rcn, rcvd_cert, _) => write!(
+                f,
+                "Update received cert in RC '{}', with resources '{}'",
+                rcn,
+                rcvd_cert.resources()
+            ),
+
+            // ------------------------------------------------------------
+            // Key rolls
+            // ------------------------------------------------------------
+            CmdDet::KeyRollInitiate(duration, _) => {
+                write!(f, "Initiate key roll for keys older than '{}'", duration)
+            }
+            CmdDet::KeyRollActivate(duration, _) => {
+                write!(f, "Activate new keys older than '{}' in key roll", duration)
+            }
+
+            CmdDet::KeyRollFinish(rcn, _) => write!(f, "Retire old revoked key in RC '{}'", rcn),
+
+            // ------------------------------------------------------------
+            // ROA Support
+            // ------------------------------------------------------------
+            CmdDet::RouteAuthorizationsUpdate(updates, _) => write!(f, "Update ROAs '{}'", updates),
+
+            // ------------------------------------------------------------
+            // Publishing
+            // ------------------------------------------------------------
+            CmdDet::Republish(_) => write!(f, "Republish (if needed)"),
+        }
+    }
 }
 
 impl<S: Signer> eventsourcing::CommandDetails for CmdDet<S> {

@@ -57,10 +57,16 @@ fn make_event_sh(
     scheduler.every(1.seconds()).run(move || {
         while let Some(evt) = event_queue.pop() {
             match evt {
-                QueueEvent::Delta(handle, delta) => {
+                QueueEvent::Delta(handle, version, delta) => {
+                    trace!("Trigger publication for '{}' version '{}'", handle, version);
                     publish(&handle, delta, &pubserver);
                 }
-                QueueEvent::ResourceClassRemoved(handle, parent, revocations) => {
+                QueueEvent::ResourceClassRemoved(handle, _, parent, revocations) => {
+                    trace!(
+                        "Trigger send revoke requests for removed RC for '{}' under '{}'",
+                        handle,
+                        parent
+                    );
                     if caserver
                         .send_revoke_requests(&handle, &parent, revocations)
                         .is_err()
@@ -70,17 +76,23 @@ fn make_event_sh(
                         just before removing the resource class entitlements.");
                     }
                 }
-                QueueEvent::ParentAdded(handle, parent) => {
+                QueueEvent::ParentAdded(handle, _, parent) => {
+                    trace!(
+                        "Get updates for '{}' from added parent '{}'.",
+                        handle,
+                        parent
+                    );
                     if let Err(e) = caserver.get_updates_from_parent(&handle, &parent) {
                         error!(
-                            "Error getting updates for {}, from parent: {},  error: {}",
+                            "Error getting updates for '{}', from parent '{}',  error: '{}'",
                             &handle, &parent, e
                         )
                     }
                 }
-                QueueEvent::RequestsPending(handle) => {
+                QueueEvent::RequestsPending(handle, _) => {
+                    trace!("Get updates for pending requests for '{}'.", handle);
                     if let Err(e) = caserver.send_all_requests(&handle) {
-                        error!("Sending pending requests for {}, error: {}", &handle, e);
+                        error!("Sending pending requests for '{}', error '{}'", &handle, e);
                     }
                 }
             }

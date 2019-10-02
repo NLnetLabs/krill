@@ -1,7 +1,9 @@
+use std::fmt;
+
 use rpki::cert::Cert;
 use rpki::crypto::{KeyIdentifier, PublicKey};
 use rpki::csr::Csr;
-use rpki::resources::{AsBlocks, IpBlocks};
+use rpki::resources::{AsBlocks, IpBlocks, IpBlocksForFamily};
 use rpki::uri;
 use rpki::x509::Time;
 
@@ -65,6 +67,20 @@ impl Entitlements {
 
     pub fn classes(&self) -> &Vec<EntitlementClass> {
         &self.classes
+    }
+}
+
+impl fmt::Display for Entitlements {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let classes: Vec<String> = self
+            .classes
+            .iter()
+            .map(EntitlementClass::to_string)
+            .collect();
+
+        let classes = classes.join(", ");
+
+        write!(f, "{}", classes)
     }
 }
 
@@ -146,6 +162,27 @@ impl EntitlementClass {
             .map(|issued| {
                 IssuanceResponse::new(class_name, issuer, resource_set, not_after, issued)
             })
+    }
+}
+
+impl fmt::Display for EntitlementClass {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let issued: Vec<String> = self
+            .issued
+            .iter()
+            .map(|c| c.cert().subject_key_identifier().to_string())
+            .collect();
+
+        let issued = issued.join(",");
+
+        write!(
+            f,
+            "class name '{}' issuing key '{}' resources '{}' issued '{}'",
+            self.class_name,
+            self.issuer.cert.subject_key_identifier(),
+            self.resource_set,
+            issued
+        )
     }
 }
 
@@ -232,6 +269,34 @@ impl PartialEq for IssuanceRequest {
 }
 
 impl Eq for IssuanceRequest {}
+
+impl fmt::Display for IssuanceRequest {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let ki = self.csr.public_key().key_identifier();
+        let none = "<none>".to_string();
+        let rpki_notify = self
+            .csr
+            .rpki_notify()
+            .map(uri::Https::to_string)
+            .unwrap_or(none.clone());
+        let ca_repo = self
+            .csr
+            .ca_repository()
+            .map(uri::Rsync::to_string)
+            .unwrap_or(none.clone());
+        let rpki_manifest = self
+            .csr
+            .rpki_manifest()
+            .map(uri::Rsync::to_string)
+            .unwrap_or(none.clone());
+
+        write!(
+            f,
+            "class name '{}' limit '{}' csr for key '{}' rrdp notify '{}' ca repo '{}' mft '{}'",
+            self.class_name, self.limit, ki, rpki_notify, ca_repo, rpki_manifest
+        )
+    }
+}
 
 //------------ IssuanceResponse ----------------------------------------------
 
@@ -362,11 +427,35 @@ impl Default for RequestResourceLimit {
     }
 }
 
+impl fmt::Display for RequestResourceLimit {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let all = "all".to_string();
+        let v4_string = self
+            .v4
+            .as_ref()
+            .map(|blocks| IpBlocksForFamily::v4(blocks).to_string())
+            .unwrap_or(all.clone());
+        let v6_string = self
+            .v6
+            .as_ref()
+            .map(|blocks| IpBlocksForFamily::v6(blocks).to_string())
+            .unwrap_or(all.clone());
+        let asn_string = self.asn.as_ref().map(AsBlocks::to_string).unwrap_or(all);
+
+        write!(
+            f,
+            "v4 '{}' v6 '{}' asn '{}'",
+            v4_string, v6_string, asn_string
+        )
+    }
+}
+
 //------------ RevocationRequest ---------------------------------------------
 
 /// This type represents a Certificate Revocation Request as
 /// defined in section 3.5.1 of RFC6492.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
+#[display(fmt = "class name '{}' key '{}'", class_name, key)]
 pub struct RevocationRequest {
     class_name: ResourceClassName,
     key: KeyIdentifier,

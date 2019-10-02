@@ -115,6 +115,23 @@ impl CommandDetails for ClientsCommandDetails {
     type Event = StoredEvent<ClientsEventDetails>;
 }
 
+impl fmt::Display for ClientsCommandDetails {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ClientsCommandDetails::AddClient(handle, auth) => write!(
+                f,
+                "add client '{}' with key '{}'",
+                handle,
+                auth.cert().ski_hex()
+            ),
+            ClientsCommandDetails::UpdateClientCert(handle, cert) => {
+                write!(f, "update client '{}' set key '{}'", handle, cert.ski_hex())
+            }
+            ClientsCommandDetails::RemoveClient(handle) => write!(f, "remove client '{}'", handle),
+        }
+    }
+}
+
 pub type ClientsCommand = SentCommand<ClientsCommandDetails>;
 
 //------------ ClientManager -------------------------------------------------

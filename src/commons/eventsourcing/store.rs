@@ -211,6 +211,8 @@ impl KeyStore for DiskKeyStore {
     }
 
     fn store_event<V: Event>(&self, event: &V) -> Result<(), KeyStoreError> {
+        trace!("Storing event: {}", event);
+
         let id = event.handle();
         let key = Self::key_for_event(event.version());
         if self.has_key(id, &key) {

@@ -262,6 +262,13 @@ impl<S: Signer> Aggregate for CertAuth<S> {
     }
 
     fn process_command(&self, command: Cmd<S>) -> ca::Result<Vec<Evt>> {
+        trace!(
+            "Sending command to CA '{}', version: {}: {}",
+            self.handle,
+            self.version,
+            command
+        );
+
         match command.into_details() {
             // being a parent
             CmdDet::ChildAdd(child, id_cert_opt, resources) => {

@@ -109,10 +109,13 @@ impl fmt::Display for RrdpEventDetails {
 
 pub type RrdpCommand = SentCommand<RrdpCommandDetails>;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Display)]
 pub enum RrdpCommandDetails {
+    #[display(fmt = "add delta file")]
     AddDelta(DeltaElements),
+    #[display(fmt = "publish")]
     Publish,
+    #[display(fmt = "clean up")]
     Cleanup(RetentionTime),
 }
 

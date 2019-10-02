@@ -45,7 +45,8 @@ impl ResponderEvents {
 
 //------------ ResponderCommand --------------------------------------------
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Display, Serialize)]
+#[display(fmt = "responder command")]
 pub struct ResponderCommandDetails; // in future: update identity or uri
 
 impl CommandDetails for ResponderCommandDetails {

@@ -10,21 +10,29 @@ use std::sync::RwLock;
 use crate::commons::api::{
     Handle, ParentHandle, PublishDelta, ResourceClassName, RevocationRequest,
 };
-use crate::commons::eventsourcing;
+use crate::commons::eventsourcing::{self, Event};
 use crate::daemon::ca::{CertAuth, Evt, EvtDet, Signer};
 
 //------------ QueueEvent ----------------------------------------------------
 
 /// This type contains all the events of interest for a KrillServer, with
 /// the details needed for triggered processing.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Display, Eq, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 pub enum QueueEvent {
-    Delta(Handle, PublishDelta),
-    ParentAdded(Handle, ParentHandle),
-    RequestsPending(Handle),
+    #[display(fmt = "delta for '{}' version '{}'", _0, _1)]
+    Delta(Handle, u64, PublishDelta),
+
+    #[display(fmt = "parent added to '{}' version '{}'", _0, _1)]
+    ParentAdded(Handle, u64, ParentHandle),
+
+    #[display(fmt = "requests pending for '{}' version '{}'", _0, _1)]
+    RequestsPending(Handle, u64),
+
+    #[display(fmt = "resource class removed for '{}' version '{}'", _0, _1)]
     ResourceClassRemoved(
         Handle,
+        u64,
         ParentHandle,
         HashMap<ResourceClassName, Vec<RevocationRequest>>,
     ),
@@ -60,51 +68,54 @@ unsafe impl Sync for EventQueueListener {}
 /// Implement listening for CertAuth Published events.
 impl<S: Signer> eventsourcing::EventListener<CertAuth<S>> for EventQueueListener {
     fn listen(&self, _ca: &CertAuth<S>, event: &Evt) {
-        use crate::commons::eventsourcing::Event;
-
-        let json = serde_json::to_string_pretty(&event).unwrap();
-        trace!("Seen CertAuth event: {}", json);
+        trace!("Seen CertAuth event '{}'", event);
 
         let handle = event.handle();
+        let version = event.version();
         match event.details() {
             EvtDet::ObjectSetUpdated(_, delta) => {
                 let publish_delta = delta.values().fold(PublishDelta::empty(), |acc, el| {
                     acc + el.objects().clone().into()
                 });
 
-                let evt = QueueEvent::Delta(handle.clone(), publish_delta);
+                let evt = QueueEvent::Delta(handle.clone(), version, publish_delta);
                 self.push_back(evt);
             }
             EvtDet::KeyPendingToNew(_, _, delta)
             | EvtDet::KeyPendingToActive(_, _, delta)
             | EvtDet::KeyRollFinished(_, delta) => {
-                let evt = QueueEvent::Delta(handle.clone(), delta.clone().into());
+                let evt = QueueEvent::Delta(handle.clone(), version, delta.clone().into());
                 self.push_back(evt);
             }
             EvtDet::ResourceClassRemoved(class_name, delta, parent, revocations) => {
-                self.push_back(QueueEvent::Delta(handle.clone(), delta.clone().into()));
+                self.push_back(QueueEvent::Delta(
+                    handle.clone(),
+                    version,
+                    delta.clone().into(),
+                ));
 
                 let mut revocations_map = HashMap::new();
                 revocations_map.insert(class_name.clone(), revocations.clone());
 
                 self.push_back(QueueEvent::ResourceClassRemoved(
                     handle.clone(),
+                    version,
                     parent.clone(),
                     revocations_map,
                 ))
             }
 
             EvtDet::ParentAdded(parent, _contact) => {
-                let evt = QueueEvent::ParentAdded(handle.clone(), parent.clone());
+                let evt = QueueEvent::ParentAdded(handle.clone(), version, parent.clone());
                 self.push_back(evt);
             }
 
             EvtDet::CertificateRequested(_, _, _) => {
-                let evt = QueueEvent::RequestsPending(handle.clone());
+                let evt = QueueEvent::RequestsPending(handle.clone(), version);
                 self.push_back(evt);
             }
             EvtDet::KeyRollActivated(_, _) => {
-                let evt = QueueEvent::RequestsPending(handle.clone());
+                let evt = QueueEvent::RequestsPending(handle.clone(), version);
                 self.push_back(evt);
             }
             _ => {}
@@ -142,10 +153,17 @@ impl MemoryEventQueue {
 
 impl EventQueueStore for MemoryEventQueue {
     fn pop(&self) -> Option<QueueEvent> {
-        self.q.write().unwrap().pop_front()
+        let res = self.q.write().unwrap().pop_front();
+
+        if let Some(evt) = res.as_ref() {
+            trace!("Popping evt from schedule queue: {}", evt)
+        }
+
+        res
     }
 
     fn push_back(&self, evt: QueueEvent) {
+        trace!("Pushing event to schedule queue: {}", evt);
         self.q.write().unwrap().push_back(evt);
     }
 }
