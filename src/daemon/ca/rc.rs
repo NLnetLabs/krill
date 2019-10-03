@@ -693,7 +693,7 @@ impl ResourceClass {
         staging: Duration,
         signer: &S,
     ) -> ca::Result<Vec<EvtDet>> {
-        if self.last_key_change + staging > Time::now() {
+        if !self.key_state.has_new_key() || self.last_key_change + staging > Time::now() {
             return Ok(vec![]);
         }
 

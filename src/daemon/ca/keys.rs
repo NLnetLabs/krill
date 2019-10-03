@@ -481,4 +481,12 @@ impl KeyState {
             _ => Err(Error::ResourceClassNoNewKey),
         }
     }
+
+    /// Returns true if there is a new key
+    pub fn has_new_key(&self) -> bool {
+        match self {
+            KeyState::RollNew(_, _) => true,
+            _ => false,
+        }
+    }
 }
