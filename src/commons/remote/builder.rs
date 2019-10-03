@@ -138,13 +138,12 @@ impl IdCertBuilder {
     /// the extensions: subject_key_id and authority_key_id, but no basic_ca.
     fn make_tbs_certificate_request(
         serial_number: u32,
-        duration: ::chrono::Duration,
         issuing_key: &PublicKey,
         subject_key: &PublicKey,
         ext: IdExtensions,
     ) -> RpkiTbsCertificate {
         let issuer = Name::from_pub_key(issuing_key);
-        let validity = Validity::from_duration(duration);
+        let validity = Validity::new(Time::five_minutes_ago(), Time::years_from_now(100));
         let subject = Name::from_pub_key(subject_key);
 
         RpkiTbsCertificate {
@@ -164,9 +163,8 @@ impl IdCertBuilder {
         signer: &S,
     ) -> Result<IdCert, SigningError<S::Error>> {
         let issuing_key_info = signer.get_key_info(issuing_key)?;
-        let dur = ::chrono::Duration::weeks(52000);
 
-        let tbs = Self::make_tbs_certificate_request(1, dur, &issuing_key_info, &subject_key, ext);
+        let tbs = Self::make_tbs_certificate_request(1, &issuing_key_info, &subject_key, ext);
 
         let enc_cert = tbs.encode();
         let enc_cert_c = enc_cert.to_captured(Mode::Der);
