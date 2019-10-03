@@ -788,23 +788,26 @@ impl<S: Signer> CaServer<S> {
 
         // send to the server
         let uri = parent_res.service_uri().to_string();
+        let send_msg = signed.as_bytes();
+
         debug!(
             "Sending RFC6492 message to parent: {}\n{}",
             &uri,
-            base64::encode(&signed.as_bytes())
+            base64::encode(&send_msg)
         );
-
-        let res = httpclient::post_binary(&uri, &signed.as_bytes(), rfc6492::CONTENT_TYPE)
+        let res = httpclient::post_binary(&uri, &send_msg, rfc6492::CONTENT_TYPE)
             .map_err(ServerError::HttpClientError)?;
+
+        debug!(
+            "Received RFC6492 response: {}",
+            base64::encode(res.as_ref())
+        );
 
         // unpack and validate response
         let msg = match SignedMessage::decode(res.as_ref(), false).map_err(ServerError::custom) {
-            Ok(msg) => {
-                debug!("Received syntactically correct RFC6492 response.");
-                msg
-            }
+            Ok(msg) => msg,
             Err(e) => {
-                error!("Could not parse response: {}", base64::encode(res.as_ref()));
+                error!("Could not parse RFC6492 response");
                 return Err(e);
             }
         };
