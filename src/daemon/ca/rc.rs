@@ -9,8 +9,8 @@ use rpki::x509::Time;
 
 use crate::commons::api::{
     AddedObject, CurrentObject, CurrentObjects, EntitlementClass, HexEncodedHash, IssuanceRequest,
-    IssuanceResponse, IssuedCert, KeyStateInfo, ObjectName, ObjectsDelta, ParentHandle, RcvdCert,
-    ReplacedObject, RepoInfo, RequestResourceLimit, ResourceClassName, ResourceSet, Revocation,
+    IssuanceResponse, IssuedCert, ObjectName, ObjectsDelta, ParentHandle, RcvdCert, ReplacedObject,
+    RepoInfo, RequestResourceLimit, ResourceClassInfo, ResourceClassName, ResourceSet, Revocation,
     RevocationRequest, RevokedObject, RouteAuthorization, SigningCert, UpdatedObject,
     WithdrawnObject,
 };
@@ -188,9 +188,10 @@ impl ResourceClass {
 
     /// Returns a ResourceClassInfo for this, which contains all the
     /// same data, but which does not have any behaviour.
-    pub fn as_info(&self) -> KeyStateInfo {
-        KeyStateInfo::new(
+    pub fn as_info(&self) -> ResourceClassInfo {
+        ResourceClassInfo::new(
             self.name_space.clone(),
+            self.parent_handle.clone(),
             self.key_state.as_info(),
             self.current_objects(),
         )

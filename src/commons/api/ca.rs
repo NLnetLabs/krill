@@ -28,6 +28,7 @@ use crate::commons::eventsourcing::AggregateHistory;
 use crate::commons::remote::id::IdCert;
 use crate::commons::util::ext_serde;
 use crate::daemon::ca::{self, CertAuth, Signer};
+use commons::api::ParentHandle;
 
 //------------ ResourceClassName -------------------------------------------
 
@@ -1352,7 +1353,7 @@ pub struct CertAuthInfo {
     handle: Handle,
     base_repo: RepoInfo,
     parents: HashMap<Handle, ParentCaContact>,
-    resources: HashMap<ResourceClassName, KeyStateInfo>,
+    resources: HashMap<ResourceClassName, ResourceClassInfo>,
     children: HashMap<Handle, ChildCaInfo>,
     route_authorizations: HashSet<RouteAuthorization>,
 }
@@ -1362,7 +1363,7 @@ impl CertAuthInfo {
         handle: Handle,
         base_repo: RepoInfo,
         parents: HashMap<Handle, ParentCaContact>,
-        resources: HashMap<ResourceClassName, KeyStateInfo>,
+        resources: HashMap<ResourceClassName, ResourceClassInfo>,
         children: HashMap<Handle, ChildCaInfo>,
         route_authorizations: HashSet<RouteAuthorization>,
     ) -> Self {
@@ -1392,7 +1393,7 @@ impl CertAuthInfo {
         self.parents.get(parent)
     }
 
-    pub fn resources(&self) -> &HashMap<ResourceClassName, KeyStateInfo> {
+    pub fn resources(&self) -> &HashMap<ResourceClassName, ResourceClassInfo> {
         &self.resources
     }
 
@@ -1442,20 +1443,23 @@ impl fmt::Display for CertAuthHistory {
 //------------ KeyStateInfo -------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct KeyStateInfo {
+pub struct ResourceClassInfo {
     name_space: String,
+    parent_handle: ParentHandle,
     keys: ResourceClassKeysInfo,
     current_objects: CurrentObjects,
 }
 
-impl KeyStateInfo {
+impl ResourceClassInfo {
     pub fn new(
         name_space: String,
+        parent_handle: ParentHandle,
         keys: ResourceClassKeysInfo,
         current_objects: CurrentObjects,
     ) -> Self {
-        KeyStateInfo {
+        ResourceClassInfo {
             name_space,
+            parent_handle,
             keys,
             current_objects,
         }
@@ -1463,6 +1467,9 @@ impl KeyStateInfo {
 
     pub fn name_space(&self) -> &str {
         &self.name_space
+    }
+    pub fn parent_handle(&self) -> &ParentHandle {
+        &self.parent_handle
     }
     pub fn keys(&self) -> &ResourceClassKeysInfo {
         &self.keys

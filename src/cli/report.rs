@@ -155,9 +155,10 @@ impl Report for CertAuthInfo {
                     }
                 }
 
-                for info in self.parents().values() {
-                    res.push_str(&format!("Parent:  {}\n", info));
+                for (name, kind) in self.parents().iter() {
+                    res.push_str(&format!("Parent:  {}, Kind: {}\n", name, kind));
                 }
+                res.push_str("\n");
 
                 for (name, rc) in self.resources() {
                     res.push_str(&format!("Resource Class: {}\n", name));
