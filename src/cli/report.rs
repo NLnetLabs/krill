@@ -161,7 +161,8 @@ impl Report for CertAuthInfo {
                 res.push_str("\n");
 
                 for (name, rc) in self.resources() {
-                    res.push_str(&format!("Resource Class: {}\n", name));
+                    res.push_str(&format!("Resource Class: {}\n", name,));
+                    res.push_str(&format!("Parent: {}\n", rc.parent_handle()));
                     res.push_str(&format!("{}", rc.keys()));
 
                     res.push_str("Current objects:\n");
