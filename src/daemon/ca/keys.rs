@@ -69,8 +69,47 @@ impl CertifiedKey {
     }
 
     pub fn wants_update(&self, new_resources: &ResourceSet, new_not_after: Time) -> bool {
+        // If the validity time eligibility has changed, then we *may* want to ask for a new
+        // certificate, but only if:
+        // a) our current certificate expires *after* the eligible time, because we probably should
+        //    know..
+        // b) the new not after time is significantly better than our current time, because we
+        //    do not want to ask for new certificates every hour if the parent uses a simple
+        //    strategy like: not-after = now + 1 year..
+        //
+        // See issue #95
+
         let not_after = self.incoming_cert().cert().validity().not_after();
-        self.incoming_cert.resources() != new_resources || not_after != new_not_after
+
+        let want_new_validity = {
+            let not_after = not_after.timestamp_millis();
+            let new_not_after = new_not_after.timestamp_millis();
+
+            if not_after == new_not_after {
+                debug!(
+                    "No change in not after time for certificate for key '{}'",
+                    self.key_id
+                );
+                false
+            } else if not_after < new_not_after {
+                warn!(
+                    "Parent reduced not after time for certificate for key '{}'",
+                    self.key_id
+                );
+                true
+            } else if (new_not_after as f64 / not_after as f64) > 1.1_f64 {
+                debug!(
+                    "Parent increased not after time >10% for certificate for key '{}'",
+                    self.key_id
+                );
+                true
+            } else {
+                debug!("New not after time less than 10% after current time for for certificate for key '{}', not requesting a new certificate.", self.key_id);
+                false
+            }
+        };
+
+        self.incoming_cert.resources() != new_resources || want_new_validity
     }
 
     pub fn close_to_next_update(&self) -> bool {
