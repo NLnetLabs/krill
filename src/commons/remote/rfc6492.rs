@@ -1048,6 +1048,23 @@ mod tests {
     }
 
     #[test]
+    fn parse_and_validate_lacnic_response() {
+        let pdu = include_bytes!("../../../test-resources/remote/lacnic-valid.ber");
+        let msg = SignedMessage::decode(pdu.as_ref(), false).unwrap();
+
+        let content = msg.content().to_bytes();
+        let xml = unsafe { from_utf8_unchecked(content.as_ref()) };
+
+        let _response = Message::decode(xml.as_bytes()).unwrap();
+
+        let lacnic_id_cer = include_bytes!("../../../test-resources/remote/lacnic-id.der");
+        let lacnic_id_cer = IdCert::decode(lacnic_id_cer.as_ref()).unwrap();
+
+        msg.validate_at(&lacnic_id_cer, Time::utc(2019, 10, 4, 0, 0, 0))
+            .unwrap();
+    }
+
+    #[test]
     fn parse_invalid_lacnic_response() {
         let pdu = include_bytes!("../../../test-resources/remote/lacnic-invalid-response.ber");
         let msg = SignedMessage::decode(pdu.as_ref(), false).unwrap();

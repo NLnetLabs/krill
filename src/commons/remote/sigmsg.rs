@@ -274,10 +274,4 @@ mod tests {
             ValidationError,
         );
     }
-
-    #[test]
-    fn parse_lacnic_issue_response() {
-        let der = include_bytes!("../../../test-resources/remote/lacnic-res-2.der");
-        let _msg = SignedMessage::decode(Bytes::from_static(der), false).unwrap();
-    }
 }
