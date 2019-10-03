@@ -1048,6 +1048,34 @@ mod tests {
     }
 
     #[test]
+    fn parse_invalid_lacnic_response() {
+        let pdu = include_bytes!("../../../test-resources/remote/lacnic-invalid-response.ber");
+        let msg = SignedMessage::decode(pdu.as_ref(), false).unwrap();
+
+        let content = msg.content().to_bytes();
+        let xml = unsafe { from_utf8_unchecked(content.as_ref()) };
+
+        // this version contains mailformed XML, the sender and receiver attributes are missing.
+        // see RFC6492 section 3.2
+
+        // Lacnic content
+        //<?xml version="1.0" encoding="UTF-8"?>
+        //<message xmlns="http://www.apnic.net/specs/rescerts/up-down/" version="1" type="error_response">
+        //  <status>2001</status>
+        //  <description xml:lang="en-US">Internal Server Error - Request not performed</description>
+        //</message>
+
+        // Should be:
+        //<?xml version="1.0" encoding="UTF-8"?>
+        //<message xmlns="http://www.apnic.net/specs/rescerts/up-down/" version="1" sender="lacnic" recipient="krill" type="error_response">
+        //  <status>2001</status>
+        //  <description xml:lang="en-US">Internal Server Error - Request not performed</description>
+        //</message>
+
+        assert!(Message::decode(xml.as_bytes()).is_err());
+    }
+
+    #[test]
     fn parse_and_encode_issue() {
         let xml = extract_xml(include_bytes!(
             "../../../test-resources/remote/rpkid-rfc6492-issue.der"
