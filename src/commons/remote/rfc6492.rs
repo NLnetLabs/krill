@@ -1032,7 +1032,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn parse_and_validate_ncc_response() {
         let pdu = include_bytes!("../../../test-resources/remote/ncc-response.ber");
         let msg = SignedMessage::decode(pdu.as_ref(), false).unwrap();
@@ -1044,7 +1043,7 @@ mod tests {
         let ncc_id_cer = include_bytes!("../../../test-resources/remote/ncc-id.der");
         let ncc_id_cer = IdCert::decode(ncc_id_cer.as_ref()).unwrap();
 
-        msg.validate_at(&ncc_id_cer, Time::utc(2019, 9, 27, 0, 0, 0))
+        msg.validate_at(&ncc_id_cer, Time::utc(2019, 10, 4, 0, 0, 0))
             .unwrap();
     }
 
