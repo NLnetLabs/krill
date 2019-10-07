@@ -173,8 +173,11 @@ impl KeyStore for DiskKeyStore {
             let f = File::open(path)?;
             match serde_json::from_reader(f) {
                 Err(e) => {
-                    error!("Could not deserialize json at: {}, error: {}", path_str, e);
-                    Err(KeyStoreError::JsonError(e))
+                    warn!(
+                        "Could not deserialize snapshot json '{}', got error: '{}'. Will fall back to events.",
+                        path_str, e
+                    );
+                    Ok(None)
                 }
                 Ok(v) => {
                     trace!("Deserialized json at: {}", path_str);
