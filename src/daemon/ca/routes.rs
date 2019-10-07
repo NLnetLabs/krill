@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use rpki::roa::{Roa, RoaBuilder};
 use rpki::sigobj::SignedObjectBuilder;
-use rpki::x509::{Name, Serial, Time};
+use rpki::x509::{Serial, Time};
 
 use crate::commons::api::{ReplacedObject, RouteAuthorization};
 use crate::daemon::ca::events::RoaUpdates;
@@ -181,8 +181,7 @@ impl Roas {
             aia.clone(),
             roa_uri,
         );
-        let issuer = Name::from_pub_key(incoming_cert.cert().subject_public_key_info());
-        object_builder.set_issuer(Some(issuer));
+        object_builder.set_issuer(Some(incoming_cert.cert().subject().clone()));
 
         roa_builder
             .finalize(object_builder, signer, signing_key)
