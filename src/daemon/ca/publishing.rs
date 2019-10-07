@@ -8,7 +8,7 @@ use rpki::crl::{Crl, TbsCertList};
 use rpki::crypto::{DigestAlgorithm, KeyIdentifier, PublicKey};
 use rpki::manifest::{FileAndHash, Manifest, ManifestContent};
 use rpki::sigobj::SignedObjectBuilder;
-use rpki::x509::{Serial, Time, Validity};
+use rpki::x509::{Name, Serial, Time, Validity};
 
 use crate::commons::api::{
     AddedObject, CurrentObject, HexEncodedHash, IssuedCert, ObjectName, ObjectsDelta, RcvdCert,
@@ -347,19 +347,18 @@ impl ManifestBuilder {
                 DigestAlgorithm::default(),
                 entries,
             );
+            let mut object_builder = SignedObjectBuilder::new(
+                Serial::random(signer).map_err(ca::Error::signer)?,
+                Validity::new(now, next_week),
+                signing_cert.crl_uri(),
+                aia.clone(),
+                signing_cert.mft_uri(),
+            );
+            let issuer = Name::from_pub_key(signing_cert.cert().subject_public_key_info());
+            object_builder.set_issuer(Some(issuer));
 
             mft_content
-                .into_manifest(
-                    SignedObjectBuilder::new(
-                        Serial::random(signer).map_err(ca::Error::signer)?,
-                        Validity::new(now, next_week),
-                        signing_cert.crl_uri(),
-                        aia.clone(),
-                        signing_cert.mft_uri(),
-                    ),
-                    signer,
-                    &aki,
-                )
+                .into_manifest(object_builder, signer, &aki)
                 .map_err(ca::Error::signer)?
         };
 

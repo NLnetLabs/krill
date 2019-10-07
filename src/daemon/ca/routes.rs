@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 
-use rpki::crypto::KeyIdentifier;
 use rpki::roa::{Roa, RoaBuilder};
 use rpki::sigobj::SignedObjectBuilder;
-use rpki::x509::{Serial, Time};
+use rpki::x509::{Name, Serial, Time};
 
-use crate::commons::api::{RcvdCert, ReplacedObject, RouteAuthorization};
+use crate::commons::api::{ReplacedObject, RouteAuthorization};
 use crate::daemon::ca::events::RoaUpdates;
 use crate::daemon::ca::{self, SignSupport, Signer};
+use daemon::ca::CertifiedKey;
 
 //------------ Routes ------------------------------------------------------
 
@@ -160,30 +160,32 @@ impl Roas {
 
     pub fn make_roa<S: Signer>(
         auth: &RouteAuthorization,
-        incoming_cert: &RcvdCert,
-        signing_key: &KeyIdentifier,
+        certified_key: &CertifiedKey,
         signer: &S,
     ) -> ca::Result<Roa> {
         let prefix = auth.prefix();
+
+        let incoming_cert = certified_key.incoming_cert();
         let crl_uri = incoming_cert.crl_uri();
         let roa_uri = incoming_cert.uri_for_object(auth);
         let aia = incoming_cert.uri();
 
+        let signing_key = certified_key.key_id();
+
         let mut roa_builder = RoaBuilder::new(auth.origin().into());
         roa_builder.push_addr(prefix.addr(), prefix.length(), prefix.max_length());
+        let mut object_builder = SignedObjectBuilder::new(
+            Serial::random(signer).map_err(ca::Error::signer)?,
+            SignSupport::sign_validity_year(),
+            crl_uri,
+            aia.clone(),
+            roa_uri,
+        );
+        let issuer = Name::from_pub_key(incoming_cert.cert().subject_public_key_info());
+        object_builder.set_issuer(Some(issuer));
 
         roa_builder
-            .finalize(
-                SignedObjectBuilder::new(
-                    Serial::random(signer).map_err(ca::Error::signer)?,
-                    SignSupport::sign_validity_year(),
-                    crl_uri,
-                    aia.clone(),
-                    roa_uri,
-                ),
-                signer,
-                signing_key,
-            )
+            .finalize(object_builder, signer, signing_key)
             .map_err(ca::Error::signer)
     }
 }

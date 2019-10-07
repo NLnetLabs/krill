@@ -839,8 +839,7 @@ impl ResourceClass {
             match self.roas.get(auth) {
                 None => {
                     // NO ROA yet, so create one.
-                    let roa = Roas::make_roa(auth, key.incoming_cert(), key.key_id(), signer)?;
-
+                    let roa = Roas::make_roa(auth, key, signer)?;
                     updates.update(*auth, RoaInfo::new_roa(roa));
                 }
                 Some(roa) => {
@@ -851,9 +850,7 @@ impl ResourceClass {
                     let activating = mode == &PublishMode::KeyRollActivation;
 
                     if expiring || activating {
-                        let new_roa =
-                            Roas::make_roa(auth, key.incoming_cert(), key.key_id(), signer)?;
-
+                        let new_roa = Roas::make_roa(auth, key, signer)?;
                         updates.update(*auth, RoaInfo::updated_roa(roa, new_roa));
                     }
                 }
