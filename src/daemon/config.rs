@@ -167,7 +167,7 @@ impl Config {
         let data_dir = data_dir.clone();
         let rsync_base = ConfigDefaults::rsync_base();
         let service_uri = ConfigDefaults::service_uri();
-        let log_level = LevelFilter::Debug;
+        let log_level = LevelFilter::Trace;
         let log_type = LogType::Stderr;
         let mut log_file = data_dir.clone();
         log_file.push("krill.log");
@@ -276,7 +276,6 @@ impl Config {
 
         let show_target =
             self.log_level == LevelFilter::Trace || self.log_level == LevelFilter::Debug;
-
         fern::Dispatch::new()
             .format(move |out, message, record| {
                 if show_target {
@@ -299,9 +298,12 @@ impl Config {
             .level(self.log_level)
             .level_for("actix_web", framework_level)
             .level_for("actix_server", framework_level)
+            .level_for("actix_http", framework_level)
             .level_for("hyper", framework_level)
+            .level_for("mio", framework_level)
             .level_for("reqwest", framework_level)
             .level_for("tokio_reactor", framework_level)
+            .level_for("want", framework_level)
     }
 }
 
