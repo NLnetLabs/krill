@@ -521,7 +521,7 @@ impl ResourceClass {
             new_revocations,
             number,
             Some(current_crl_hash),
-            &signing_pub_key,
+            signing_cert,
             signer,
         )?;
 
@@ -541,7 +541,6 @@ impl ResourceClass {
         let roas = self.roas.iter();
 
         let manifest_info = ManifestBuilder::new(&crl_info, issued, roas, &objects_delta).build(
-            &signing_pub_key,
             signing_cert,
             number,
             Some(current_mft_hash),

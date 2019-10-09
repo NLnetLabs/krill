@@ -31,8 +31,7 @@ pub struct CertifiedKey {
 impl CertifiedKey {
     pub fn create<S: Signer>(incoming_cert: RcvdCert, signer: &S) -> ca::Result<Self> {
         let key_id = incoming_cert.cert().subject_key_identifier();
-        let key = signer.get_key_info(&key_id).map_err(ca::Error::signer)?;
-        let current_set = CurrentObjectSet::create(&key, &incoming_cert, signer)?;
+        let current_set = CurrentObjectSet::create(&incoming_cert, signer)?;
 
         Ok(CertifiedKey {
             key_id,

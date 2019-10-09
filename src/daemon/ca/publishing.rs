@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use bytes::Bytes;
 
 use rpki::crl::{Crl, TbsCertList};
-use rpki::crypto::{DigestAlgorithm, KeyIdentifier, PublicKey};
+use rpki::crypto::{DigestAlgorithm, KeyIdentifier};
 use rpki::manifest::{FileAndHash, Manifest, ManifestContent};
 use rpki::sigobj::SignedObjectBuilder;
 use rpki::x509::{Serial, Time, Validity};
@@ -139,11 +139,7 @@ pub struct CurrentObjectSet {
 }
 
 impl CurrentObjectSet {
-    pub fn create<S: Signer>(
-        signing_key: &PublicKey,
-        signing_cert: &RcvdCert,
-        signer: &S,
-    ) -> ca::Result<Self> {
+    pub fn create<S: Signer>(signing_cert: &RcvdCert, signer: &S) -> ca::Result<Self> {
         let number = 1;
         let revocations = Revocations::default();
         let (crl_info, _) = CrlBuilder::build(
@@ -151,17 +147,12 @@ impl CurrentObjectSet {
             vec![],
             number,
             None,
-            signing_key,
+            signing_cert,
             signer,
         )?;
 
-        let manifest_info = ManifestBuilder::with_crl_only(&crl_info).build(
-            signing_key,
-            signing_cert,
-            number,
-            None,
-            signer,
-        )?;
+        let manifest_info =
+            ManifestBuilder::with_crl_only(&crl_info).build(signing_cert, number, None, signer)?;
 
         Ok(CurrentObjectSet {
             number,
@@ -218,9 +209,11 @@ impl CrlBuilder {
         new_revocations: Vec<Revocation>,
         number: u64,
         old: Option<HexEncodedHash>,
-        signing_key: &PublicKey,
+        signing_cert: &RcvdCert,
         signer: &S,
     ) -> ca::Result<(CrlInfo, RevocationsDelta)> {
+        let signing_key = signing_cert.cert().subject_public_key_info();
+
         let aki = KeyIdentifier::from_public_key(signing_key);
         let name = ObjectName::new(&aki, "crl");
 
@@ -238,7 +231,7 @@ impl CrlBuilder {
         let tomorrow = Time::tomorrow();
         let serial_number = Serial::from(number);
 
-        let crl = TbsCertList::new(
+        let mut crl = TbsCertList::new(
             Default::default(),
             signing_key.to_subject_name(),
             now,
@@ -247,6 +240,7 @@ impl CrlBuilder {
             aki,
             serial_number,
         );
+        crl.set_issuer(signing_cert.cert().subject().clone());
 
         let crl = crl.into_crl(signer, &aki).map_err(ca::Error::signer)?;
 
@@ -323,12 +317,12 @@ impl ManifestBuilder {
 
     pub fn build<S: Signer>(
         self,
-        signing_key: &PublicKey,
         signing_cert: &RcvdCert,
         number: u64,
         old: Option<HexEncodedHash>,
         signer: &S,
     ) -> ca::Result<ManifestInfo> {
+        let signing_key = signing_cert.cert().subject_public_key_info();
         let aia = signing_cert.uri();
         let aki = KeyIdentifier::from_public_key(signing_key);
         let serial_number = Serial::from(number);
