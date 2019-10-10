@@ -327,7 +327,8 @@ impl ManifestBuilder {
         let aki = KeyIdentifier::from_public_key(signing_key);
         let serial_number = Serial::from(number);
 
-        let now = Time::five_minutes_ago();
+        let just_now = Time::five_minutes_ago();
+        let now = Time::now();
         let tomorrow = Time::tomorrow();
         let next_week = Time::next_week();
 
@@ -336,19 +337,20 @@ impl ManifestBuilder {
         let manifest: Manifest = {
             let mft_content = ManifestContent::new(
                 serial_number,
-                now,
+                just_now,
                 tomorrow,
                 DigestAlgorithm::default(),
                 entries,
             );
             let mut object_builder = SignedObjectBuilder::new(
                 Serial::random(signer).map_err(ca::Error::signer)?,
-                Validity::new(now, next_week),
+                Validity::new(just_now, next_week),
                 signing_cert.crl_uri(),
                 aia.clone(),
                 signing_cert.mft_uri(),
             );
             object_builder.set_issuer(Some(signing_cert.cert().subject().clone()));
+            object_builder.set_signing_time(Some(now));
 
             mft_content
                 .into_manifest(object_builder, signer, &aki)

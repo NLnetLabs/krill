@@ -182,6 +182,7 @@ impl Roas {
             roa_uri,
         );
         object_builder.set_issuer(Some(incoming_cert.cert().subject().clone()));
+        object_builder.set_signing_time(Some(Time::now()));
 
         roa_builder
             .finalize(object_builder, signer, signing_key)
