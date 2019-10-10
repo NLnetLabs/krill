@@ -35,13 +35,28 @@ pub enum CmdDet<S: Signer> {
     ChildRevokeKey(ChildHandle, RevocationRequest, Arc<RwLock<S>>),
     // Shrink child (only has events in case child is overclaiming)
     ChildShrink(ChildHandle, Arc<RwLock<S>>),
+    // Remove child (also revokes, and removes issued certs, and republishes)
+    ChildRemove(ChildHandle, Arc<RwLock<S>>),
 
     // ------------------------------------------------------------
     // Being a child (only allowed if this CA is not self-signed)
     // ------------------------------------------------------------
 
+    // Update our own ID key and cert. Note that this will break
+    // communications with RFC6492 parents. This command is added,
+    // because we need it for testing that we can update this ID
+    // for parents, and children. In practice however, one may not
+    // want to use this until RFC8183 is extended with some words
+    // on how to re-do the ID exchange.
+    GenerateNewIdKey(Arc<RwLock<S>>),
+
     // Add a parent to this CA. Can have multiple parents.
     AddParent(ParentHandle, ParentCaContact),
+    // Update a parent's contact
+    UpdateParentContact(ParentHandle, ParentCaContact),
+    // Remove a parent, freeing up its handle for future (re-)use.
+    RemoveParent(ParentHandle),
+
     // Process new entitlements from a parent and remove/create/update
     // ResourceClasses and certificate requests or key revocation requests
     // as needed.
@@ -110,13 +125,22 @@ impl<S: Signer> fmt::Display for CmdDet<S> {
                 write!(f, "Revoke child '{}' request '{}'", child, req)
             }
             CmdDet::ChildShrink(child, _) => write!(f, "Shrink child '{}' if needed", child),
+            CmdDet::ChildRemove(child, _) => {
+                write!(f, "Remove child '{}' and revoke&remove its certs", child)
+            }
 
             // ------------------------------------------------------------
             // Being a child (only allowed if this CA is not self-signed)
             // ------------------------------------------------------------
+            CmdDet::GenerateNewIdKey(_) => write!(f, "Generate a new RFC8183 ID."),
             CmdDet::AddParent(parent, contact) => {
                 write!(f, "Add parent '{}' as '{}'", parent, contact)
             }
+            CmdDet::UpdateParentContact(parent, contact) => {
+                write!(f, "Update contact for parent '{}' to '{}'", parent, contact)
+            }
+            CmdDet::RemoveParent(parent) => write!(f, "Remove parent '{}'", parent),
+
             CmdDet::UpdateResourceClasses(parent, entitlements, _) => write!(
                 f,
                 "Update entitlements under parent '{}' to '{}",
@@ -220,8 +244,28 @@ impl<S: Signer> CmdDet<S> {
         eventsourcing::SentCommand::new(handle, None, CmdDet::ChildShrink(child_handle, signer))
     }
 
+    pub fn child_remove(
+        handle: &Handle,
+        child_handle: ChildHandle,
+        signer: Arc<RwLock<S>>,
+    ) -> Cmd<S> {
+        eventsourcing::SentCommand::new(handle, None, CmdDet::ChildRemove(child_handle, signer))
+    }
+
+    pub fn update_id(handle: &Handle, signer: Arc<RwLock<S>>) -> Cmd<S> {
+        eventsourcing::SentCommand::new(handle, None, CmdDet::GenerateNewIdKey(signer))
+    }
+
     pub fn add_parent(handle: &Handle, parent: ParentHandle, info: ParentCaContact) -> Cmd<S> {
         eventsourcing::SentCommand::new(handle, None, CmdDet::AddParent(parent, info))
+    }
+
+    pub fn update_parent(handle: &Handle, parent: ParentHandle, info: ParentCaContact) -> Cmd<S> {
+        eventsourcing::SentCommand::new(handle, None, CmdDet::UpdateParentContact(parent, info))
+    }
+
+    pub fn remove_parent(handle: &Handle, parent: ParentHandle) -> Cmd<S> {
+        eventsourcing::SentCommand::new(handle, None, CmdDet::RemoveParent(parent))
     }
 
     pub fn upd_resource_classes(

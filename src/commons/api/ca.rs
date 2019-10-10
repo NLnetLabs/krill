@@ -255,6 +255,14 @@ impl PartialEq for IssuedCert {
 
 impl Eq for IssuedCert {}
 
+impl Deref for IssuedCert {
+    type Target = Cert;
+
+    fn deref(&self) -> &Self::Target {
+        &self.cert
+    }
+}
+
 //------------ RcvdCert ------------------------------------------------------
 
 /// Contains a CA Certificate that has been issued to this CA, for some key.

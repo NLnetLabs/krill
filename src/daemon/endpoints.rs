@@ -7,9 +7,8 @@ use serde::Serialize;
 
 use crate::commons::api::rrdp::VerificationError;
 use crate::commons::api::{
-    AddChildRequest, AddParentRequest, CertAuthInit, ErrorCode, ErrorResponse, Handle,
-    ParentHandle, PublishDelta, PublisherList, PublisherRequest, RouteAuthorizationUpdates,
-    UpdateChildRequest,
+    AddChildRequest, CertAuthInit, ErrorCode, ErrorResponse, Handle, ParentCaReq, ParentHandle,
+    PublishDelta, PublisherList, PublisherRequest, RouteAuthorizationUpdates, UpdateChildRequest,
 };
 use crate::commons::remote::api::ClientInfo;
 use crate::commons::remote::rfc6492;
@@ -22,6 +21,7 @@ use crate::daemon::krillserver;
 use crate::pubd;
 use crate::pubd::publishers::PublisherError;
 use crate::pubd::repo::RrdpServerError;
+use commons::api::ParentCaContact;
 
 //------------ Support Functions ---------------------------------------------
 
@@ -277,7 +277,7 @@ pub fn ca_add_child(
     })
 }
 
-pub fn ca_update_child(
+pub fn ca_child_update(
     server: web::Data<AppServer>,
     ca_and_child: Path<(Handle, Handle)>,
     req: Json<UpdateChildRequest>,
@@ -288,7 +288,21 @@ pub fn ca_update_child(
     let child = ca_and_child.1;
 
     if_api_allowed(&server, &auth, || {
-        render_empty_res(server.read().ca_update_child(&ca, child, req.into_inner()))
+        render_empty_res(server.read().ca_child_update(&ca, child, req.into_inner()))
+    })
+}
+
+pub fn ca_child_remove(
+    server: web::Data<AppServer>,
+    ca_and_child: Path<(Handle, Handle)>,
+    auth: Auth,
+) -> HttpResponse {
+    let ca_and_child = ca_and_child.into_inner();
+    let ca = ca_and_child.0;
+    let child = ca_and_child.1;
+
+    if_api_allowed(&server, &auth, || {
+        render_empty_res(server.read().ca_child_remove(&ca, child))
     })
 }
 
@@ -310,6 +324,29 @@ pub fn ca_show_child(
     })
 }
 
+pub fn ca_parent_contact(
+    server: web::Data<AppServer>,
+    ca_and_child: Path<(Handle, Handle)>,
+    auth: Auth,
+) -> HttpResponse {
+    let ca_and_child = ca_and_child.into_inner();
+    let ca = ca_and_child.0;
+    let child = ca_and_child.1;
+
+    if_api_allowed(&server, &auth, || {
+        match server.read().ca_parent_contact(&ca, child.clone()) {
+            Ok(contact) => render_json(contact),
+            Err(e) => {
+                debug!(
+                    "Asked parent response from '{}' for '{}', but got error '{}'",
+                    ca, child, e
+                );
+                api_not_found()
+            }
+        }
+    })
+}
+
 //------------ Admin: CertAuth -----------------------------------------------
 
 pub fn cas(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
@@ -323,6 +360,16 @@ pub fn ca_init(
 ) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_empty_res(server.write().ca_init(ca_init.into_inner()))
+    })
+}
+
+pub fn ca_update_id(
+    server: web::Data<AppServer>,
+    auth: Auth,
+    handle: Path<Handle>,
+) -> HttpResponse {
+    if_api_allowed(&server, &auth, || {
+        render_empty_res(server.read().ca_update_id(handle.into_inner()))
     })
 }
 
@@ -364,7 +411,7 @@ pub fn ca_add_parent(
     server: web::Data<AppServer>,
     auth: Auth,
     handle: Path<Handle>,
-    parent: Json<AddParentRequest>,
+    parent: Json<ParentCaReq>,
 ) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_empty_res(
@@ -372,6 +419,33 @@ pub fn ca_add_parent(
                 .read()
                 .ca_add_parent(handle.into_inner(), parent.into_inner()),
         )
+    })
+}
+
+pub fn ca_update_parent(
+    server: web::Data<AppServer>,
+    auth: Auth,
+    ca_and_parent: Path<(Handle, Handle)>,
+    contact: Json<ParentCaContact>,
+) -> HttpResponse {
+    let (ca, parent) = ca_and_parent.into_inner();
+    if_api_allowed(&server, &auth, || {
+        render_empty_res(
+            server
+                .read()
+                .ca_update_parent(ca, parent, contact.into_inner()),
+        )
+    })
+}
+
+pub fn ca_remove_parent(
+    server: web::Data<AppServer>,
+    auth: Auth,
+    ca_and_parent: Path<(Handle, Handle)>,
+) -> HttpResponse {
+    let (ca, parent) = ca_and_parent.into_inner();
+    if_api_allowed(&server, &auth, || {
+        render_empty_res(server.read().ca_remove_parent(ca, parent))
     })
 }
 

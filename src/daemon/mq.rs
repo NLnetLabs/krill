@@ -81,6 +81,14 @@ impl<S: Signer> eventsourcing::EventListener<CertAuth<S>> for EventQueueListener
                 let evt = QueueEvent::Delta(handle.clone(), version, publish_delta);
                 self.push_back(evt);
             }
+            EvtDet::ParentRemoved(_, deltas) => {
+                let publish_delta = deltas
+                    .iter()
+                    .fold(PublishDelta::empty(), |acc, el| acc + el.clone().into());
+
+                let evt = QueueEvent::Delta(handle.clone(), version, publish_delta);
+                self.push_back(evt);
+            }
             EvtDet::KeyPendingToNew(_, _, delta)
             | EvtDet::KeyPendingToActive(_, _, delta)
             | EvtDet::KeyRollFinished(_, delta) => {

@@ -372,14 +372,14 @@ impl PubServerContact {
 
 /// This type defines all parent ca details needed to add a parent to a CA
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct AddParentRequest {
+pub struct ParentCaReq {
     handle: Handle,           // the local name the child gave to the parent
     contact: ParentCaContact, // where the parent can be contacted
 }
 
-impl AddParentRequest {
+impl ParentCaReq {
     pub fn new(handle: Handle, contact: ParentCaContact) -> Self {
-        AddParentRequest { handle, contact }
+        ParentCaReq { handle, contact }
     }
 
     pub fn unwrap(self) -> (Handle, ParentCaContact) {

@@ -1,8 +1,6 @@
 extern crate krill;
 
-use krill::commons::api::{
-    AddParentRequest, Handle, ObjectName, ResourceClassName, ResourceSet, Token,
-};
+use krill::commons::api::{Handle, ObjectName, ParentCaReq, ResourceClassName, ResourceSet, Token};
 use krill::daemon::ca::ta_handle;
 use krill::daemon::test::*;
 
@@ -42,7 +40,7 @@ fn grand_children() {
         let req = child_request(&ca1);
         let parent = {
             let contact = add_child_to_ta_rfc6492(&ca1, req, ca1_res.clone());
-            AddParentRequest::new(ta_handle.clone(), contact)
+            ParentCaReq::new(ta_handle.clone(), contact)
         };
         add_parent_to_ca(&ca1, parent);
         wait_for_current_resources(&ca1, &ca1_res);
@@ -66,7 +64,7 @@ fn grand_children() {
         let req = child_request(&ca2);
         let parent = {
             let contact = add_child_to_ta_rfc6492(&ca2, req, ca2_res.clone());
-            AddParentRequest::new(ta_handle.clone(), contact)
+            ParentCaReq::new(ta_handle.clone(), contact)
         };
         add_parent_to_ca(&ca2, parent);
         wait_for_current_resources(&ca2, &ca2_res);
@@ -93,7 +91,7 @@ fn grand_children() {
         let req = child_request(&ca3);
         let parent = {
             let contact = add_child_rfc6492(&ca1, &ca3, req, ca_3_res_under_ca_1.clone());
-            AddParentRequest::new(ca1.clone(), contact)
+            ParentCaReq::new(ca1.clone(), contact)
         };
         add_parent_to_ca(&ca3, parent);
         wait_for_current_resources(&ca3, &ca_3_res_under_ca_1);
@@ -114,7 +112,7 @@ fn grand_children() {
         let req = child_request(&ca3);
         let parent = {
             let contact = add_child_rfc6492(&ca2, &ca3, req, ca_3_res_under_ca_2.clone());
-            AddParentRequest::new(ca2.clone(), contact)
+            ParentCaReq::new(ca2.clone(), contact)
         };
         add_parent_to_ca(&ca3, parent);
         wait_for_current_resources(&ca3, &ca_3_res);
@@ -138,7 +136,7 @@ fn grand_children() {
         let req = child_request(&ca4);
         let parent = {
             let contact = add_child_rfc6492(&ca3, &ca4, req, ca_4_res_under_ca_3.clone());
-            AddParentRequest::new(ca3.clone(), contact)
+            ParentCaReq::new(ca3.clone(), contact)
         };
         add_parent_to_ca(&ca4, parent);
         wait_for_current_resources(&ca4, &ca_4_res_under_ca_3);

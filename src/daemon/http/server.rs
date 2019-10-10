@@ -76,12 +76,20 @@ pub fn start(config: &Config) -> Result<(), Error> {
                     .route("/cas", post().to(ca_init))
                     .route("/cas", get().to(cas))
                     .route("/cas/{ca}", get().to(ca_info))
+                    .route("/cas/{ca}/id", post().to(ca_update_id))
                     .route("/cas/{ca}/history", get().to(ca_history))
                     .route("/cas/{ca}/child_request", get().to(ca_child_req))
                     .route("/cas/{ca}/parents", post().to(ca_add_parent))
+                    .route("/cas/{ca}/parents/{parent}", post().to(ca_update_parent))
+                    .route("/cas/{ca}/parents/{parent}", delete().to(ca_remove_parent))
                     .route("/cas/{ca}/children", post().to(ca_add_child))
+                    .route(
+                        "/cas/{ca}/parent_contact/{child}",
+                        get().to(ca_parent_contact),
+                    )
                     .route("/cas/{ca}/children/{child}", get().to(ca_show_child))
-                    .route("/cas/{ca}/children/{child}", post().to(ca_update_child))
+                    .route("/cas/{ca}/children/{child}", post().to(ca_child_update))
+                    .route("/cas/{ca}/children/{child}", delete().to(ca_child_remove))
                     .route("/cas/{ca}/keys/roll_init", post().to(ca_kr_init))
                     .route("/cas/{ca}/keys/roll_activate", post().to(ca_kr_activate))
                     .route("/cas/{ca}/routes", post().to(ca_routes_update))

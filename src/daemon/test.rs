@@ -9,9 +9,9 @@ use crate::cli::options::{CaCommand, Command, Options, PublishersCommand};
 use crate::cli::report::{ApiResponse, ReportFormat};
 use crate::cli::{Error, KrillClient};
 use crate::commons::api::{
-    AddChildRequest, AddParentRequest, CertAuthInfo, CertAuthInit, CertAuthPubMode,
-    CertifiedKeyInfo, ChildAuthRequest, ChildHandle, Handle, ParentCaContact, ParentHandle,
-    Publish, PublisherDetails, ResourceClassKeysInfo, ResourceClassName, ResourceSet,
+    AddChildRequest, CertAuthInfo, CertAuthInit, CertAuthPubMode, CertifiedKeyInfo,
+    ChildAuthRequest, ChildHandle, Handle, ParentCaContact, ParentCaReq, ParentHandle, Publish,
+    PublisherDetails, ResourceClassKeysInfo, ResourceClassName, ResourceSet,
     RouteAuthorizationUpdates, Token, UpdateChildRequest,
 };
 use crate::commons::remote::rfc8183;
@@ -19,6 +19,7 @@ use crate::commons::util::test;
 use crate::daemon::ca::ta_handle;
 use crate::daemon::config::Config;
 use crate::daemon::http::server;
+use commons::remote::rfc8183::ChildRequest;
 
 pub fn test_with_krill_server<F>(op: F)
 where
@@ -102,6 +103,20 @@ pub fn init_child(handle: &Handle, token: &Token) {
     krill_admin(Command::CertAuth(CaCommand::Init(init)));
 }
 
+pub fn generate_new_id(handle: &Handle) {
+    krill_admin(Command::CertAuth(CaCommand::UpdateId(handle.clone())));
+}
+
+pub fn parent_contact(handle: &Handle, child: &ChildHandle) -> ParentCaContact {
+    match krill_admin(Command::CertAuth(CaCommand::ParentResponse(
+        handle.clone(),
+        child.clone(),
+    ))) {
+        ApiResponse::ParentCaContact(contact) => contact,
+        _ => panic!("Expected RFC8183 parent response"),
+    }
+}
+
 pub fn child_request(handle: &Handle) -> rfc8183::ChildRequest {
     match krill_admin(Command::CertAuth(CaCommand::ChildRequest(handle.clone()))) {
         ApiResponse::Rfc8183ChildRequest(req) => req,
@@ -112,7 +127,7 @@ pub fn child_request(handle: &Handle) -> rfc8183::ChildRequest {
 pub fn add_child_to_ta_embedded(handle: &Handle, resources: ResourceSet) -> ParentCaContact {
     let auth = ChildAuthRequest::Embedded;
     let req = AddChildRequest::new(handle.clone(), resources, auth);
-    let res = krill_admin(Command::CertAuth(CaCommand::AddChild(ta_handle(), req)));
+    let res = krill_admin(Command::CertAuth(CaCommand::ChildAdd(ta_handle(), req)));
 
     match res {
         ApiResponse::ParentCaContact(info) => info,
@@ -127,7 +142,7 @@ pub fn add_child_to_ta_rfc6492(
 ) -> ParentCaContact {
     let auth = ChildAuthRequest::Rfc8183(req);
     let req = AddChildRequest::new(handle.clone(), resources, auth);
-    let res = krill_admin(Command::CertAuth(CaCommand::AddChild(ta_handle(), req)));
+    let res = krill_admin(Command::CertAuth(CaCommand::ChildAdd(ta_handle(), req)));
 
     match res {
         ApiResponse::ParentCaContact(info) => info,
@@ -143,7 +158,7 @@ pub fn add_child_rfc6492(
 ) -> ParentCaContact {
     let auth = ChildAuthRequest::Rfc8183(req);
     let req = AddChildRequest::new(child.clone(), resources, auth);
-    let res = krill_admin(Command::CertAuth(CaCommand::AddChild(parent.clone(), req)));
+    let res = krill_admin(Command::CertAuth(CaCommand::ChildAdd(parent.clone(), req)));
 
     match res {
         ApiResponse::ParentCaContact(info) => info,
@@ -151,11 +166,28 @@ pub fn add_child_rfc6492(
     }
 }
 
-pub fn update_child(handle: &Handle, resources: &ResourceSet) {
+pub fn update_child(ca: &Handle, child: &ChildHandle, resources: &ResourceSet) {
     let req = UpdateChildRequest::graceful(None, Some(resources.clone()));
-    match krill_admin(Command::CertAuth(CaCommand::UpdateChild(
-        ta_handle(),
-        handle.clone(),
+    send_child_request(ca, child, req)
+}
+
+pub fn update_child_id(ca: &Handle, child: &ChildHandle, req: ChildRequest) {
+    let (_, _, id) = req.unwrap();
+    let req = UpdateChildRequest::graceful(Some(id), None);
+    send_child_request(ca, child, req)
+}
+
+pub fn delete_child(ca: &Handle, child: &ChildHandle) {
+    krill_admin(Command::CertAuth(CaCommand::ChildDelete(
+        ca.clone(),
+        child.clone(),
+    )));
+}
+
+fn send_child_request(ca: &Handle, child: &Handle, req: UpdateChildRequest) {
+    match krill_admin(Command::CertAuth(CaCommand::ChildUpdate(
+        ca.clone(),
+        child.clone(),
         req,
     ))) {
         ApiResponse::Empty => {}
@@ -164,10 +196,22 @@ pub fn update_child(handle: &Handle, resources: &ResourceSet) {
     refresh_all();
 }
 
-pub fn add_parent_to_ca(handle: &Handle, parent: AddParentRequest) {
-    krill_admin(Command::CertAuth(CaCommand::AddParent(
-        handle.clone(),
-        parent,
+pub fn add_parent_to_ca(ca: &Handle, parent: ParentCaReq) {
+    krill_admin(Command::CertAuth(CaCommand::AddParent(ca.clone(), parent)));
+}
+
+pub fn update_parent_contact(ca: &Handle, parent: &ParentHandle, contact: ParentCaContact) {
+    krill_admin(Command::CertAuth(CaCommand::UpdateParentContact(
+        ca.clone(),
+        parent.clone(),
+        contact,
+    )));
+}
+
+pub fn delete_parent(ca: &Handle, parent: &ParentHandle) {
+    krill_admin(Command::CertAuth(CaCommand::RemoveParent(
+        ca.clone(),
+        parent.clone(),
     )));
 }
 

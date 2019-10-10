@@ -11,8 +11,8 @@ use rpki::uri;
 
 use crate::commons::api::CertAuthHistory;
 use crate::commons::api::{
-    AddChildRequest, AddParentRequest, CertAuthInfo, CertAuthInit, CertAuthList, CertAuthPubMode,
-    ChildCaInfo, ChildHandle, Handle, ListReply, ParentCaContact, ParentHandle, PublishDelta,
+    AddChildRequest, CertAuthInfo, CertAuthInit, CertAuthList, CertAuthPubMode, ChildCaInfo,
+    ChildHandle, Handle, ListReply, ParentCaContact, ParentCaReq, ParentHandle, PublishDelta,
     PublishRequest, PublisherRequest, RouteAuthorizationUpdates, TaCertDetails, Token,
     UpdateChildRequest,
 };
@@ -321,14 +321,32 @@ impl KrillServer {
         Ok(contact)
     }
 
+    /// Shows the parent contact for a child.
+    pub fn ca_parent_contact(
+        &self,
+        parent: &ParentHandle,
+        child: ChildHandle,
+    ) -> KrillRes<ParentCaContact> {
+        let contact = self
+            .caserver
+            .ca_parent_contact(parent, child, None, &self.service_uri)?;
+        Ok(contact)
+    }
+
     /// Update IdCert or resources of a child.
-    pub fn ca_update_child(
+    pub fn ca_child_update(
         &self,
         parent: &ParentHandle,
         child: ChildHandle,
         req: UpdateChildRequest,
     ) -> EmptyRes {
-        self.caserver.ca_update_child(parent, child, req)?;
+        self.caserver.ca_child_update(parent, child, req)?;
+        Ok(())
+    }
+
+    /// Update IdCert or resources of a child.
+    pub fn ca_child_remove(&self, handle: &Handle, child: ChildHandle) -> EmptyRes {
+        self.caserver.ca_child_remove(handle, child)?;
         Ok(())
     }
 
@@ -401,8 +419,25 @@ impl KrillServer {
         Ok(())
     }
 
-    pub fn ca_add_parent(&self, handle: Handle, parent: AddParentRequest) -> EmptyRes {
+    pub fn ca_update_id(&self, handle: Handle) -> EmptyRes {
+        Ok(self.caserver.ca_update_id(handle)?)
+    }
+
+    pub fn ca_add_parent(&self, handle: Handle, parent: ParentCaReq) -> EmptyRes {
         Ok(self.caserver.ca_add_parent(handle, parent)?)
+    }
+
+    pub fn ca_update_parent(
+        &self,
+        handle: Handle,
+        parent: ParentHandle,
+        contact: ParentCaContact,
+    ) -> EmptyRes {
+        Ok(self.caserver.ca_update_parent(handle, parent, contact)?)
+    }
+
+    pub fn ca_remove_parent(&self, handle: Handle, parent: ParentHandle) -> EmptyRes {
+        Ok(self.caserver.ca_remove_parent(handle, parent)?)
     }
 
     pub fn ca_keyroll_init(&self, handle: Handle) -> EmptyRes {

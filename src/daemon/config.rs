@@ -274,6 +274,13 @@ impl Config {
             _ => LevelFilter::Warn, // more becomes too noisy
         };
 
+        let krill_framework_level = match self.log_level {
+            LevelFilter::Off => LevelFilter::Off,
+            LevelFilter::Error => LevelFilter::Error,
+            LevelFilter::Warn => LevelFilter::Warn,
+            _ => LevelFilter::Debug, // more becomes too noisy
+        };
+
         let show_target =
             self.log_level == LevelFilter::Trace || self.log_level == LevelFilter::Debug;
         fern::Dispatch::new()
@@ -304,6 +311,8 @@ impl Config {
             .level_for("reqwest", framework_level)
             .level_for("tokio_reactor", framework_level)
             .level_for("want", framework_level)
+            .level_for("krill::commons::eventsourcing", krill_framework_level)
+            .level_for("krill::commons::util::file", krill_framework_level)
     }
 }
 

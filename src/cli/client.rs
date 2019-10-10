@@ -66,14 +66,25 @@ impl KrillClient {
     fn certauth(&self, command: CaCommand) -> Result<ApiResponse, Error> {
         match command {
             CaCommand::Init(init) => {
-                let uri = self.resolve_uri("api/v1/cas");
-                httpclient::post_json(&uri, init, Some(&self.token))?;
+                self.post_json("api/v1/cas", init)?;
                 Ok(ApiResponse::Empty)
             }
+
+            CaCommand::UpdateId(handle) => {
+                let uri = format!("api/v1/cas/{}/id", handle);
+                self.post_empty(&uri)?;
+                Ok(ApiResponse::Empty)
+            }
+
+            CaCommand::ParentResponse(handle, child) => {
+                let uri = format!("api/v1/cas/{}/parent_contact/{}", handle, child);
+                let info: ParentCaContact = self.get_json(&uri)?;
+                Ok(ApiResponse::ParentCaContact(info))
+            }
+
             CaCommand::ChildRequest(handle) => {
                 let uri = format!("api/v1/cas/{}/child_request", handle);
-                let uri = self.resolve_uri(&uri);
-                let xml = httpclient::get_text(&uri, "application/xml", Some(&self.token))?;
+                let xml = self.get_text(&uri, "application/xml")?;
 
                 let req = rfc8183::ChildRequest::validate(xml.as_bytes())?;
                 Ok(ApiResponse::Rfc8183ChildRequest(req))
@@ -81,40 +92,51 @@ impl KrillClient {
 
             CaCommand::AddParent(handle, parent) => {
                 let uri = format!("api/v1/cas/{}/parents", handle);
-                let uri = self.resolve_uri(&uri);
-                httpclient::post_json(&uri, parent, Some(&self.token))?;
+                self.post_json(&uri, parent)?;
                 Ok(ApiResponse::Empty)
             }
-            CaCommand::AddChild(handle, req) => {
+
+            CaCommand::UpdateParentContact(handle, parent, contact) => {
+                let uri = format!("api/v1/cas/{}/parents/{}", handle, parent);
+                self.post_json(&uri, contact)?;
+                Ok(ApiResponse::Empty)
+            }
+
+            CaCommand::RemoveParent(handle, parent) => {
+                let uri = format!("api/v1/cas/{}/parents/{}", handle, parent);
+                self.delete(&uri)?;
+                Ok(ApiResponse::Empty)
+            }
+
+            CaCommand::ChildAdd(handle, req) => {
                 let uri = format!("api/v1/cas/{}/children", handle);
-                let uri = self.resolve_uri(&uri);
-                let info: ParentCaContact =
-                    httpclient::post_json_with_response(&uri, req, Some(&self.token))?;
+                let info: ParentCaContact = self.post_json_with_response(&uri, req)?;
                 Ok(ApiResponse::ParentCaContact(info))
             }
-            CaCommand::UpdateChild(handle, child, req) => {
+            CaCommand::ChildUpdate(handle, child, req) => {
                 let uri = format!("api/v1/cas/{}/children/{}", handle, child);
-                let uri = self.resolve_uri(&uri);
-                httpclient::post_json(&uri, req, Some(&self.token))?;
+                self.post_json(&uri, req)?;
+                Ok(ApiResponse::Empty)
+            }
+            CaCommand::ChildDelete(handle, child) => {
+                let uri = format!("api/v1/cas/{}/children/{}", handle, child);
+                self.delete(&uri)?;
                 Ok(ApiResponse::Empty)
             }
 
             CaCommand::KeyRollInit(handle) => {
                 let uri = format!("api/v1/cas/{}/keys/roll_init", handle);
-                let uri = self.resolve_uri(&uri);
                 self.post_empty(&uri)?;
                 Ok(ApiResponse::Empty)
             }
             CaCommand::KeyRollActivate(handle) => {
                 let uri = format!("api/v1/cas/{}/keys/roll_activate", handle);
-                let uri = self.resolve_uri(&uri);
                 self.post_empty(&uri)?;
                 Ok(ApiResponse::Empty)
             }
 
             CaCommand::RouteAuthorizationsList(handle) => {
                 let uri = format!("api/v1/cas/{}", handle);
-                let uri = self.resolve_uri(&uri);
                 let ca_info: CertAuthInfo = self.get_json(&uri)?;
 
                 Ok(ApiResponse::RouteAuthorizations(
@@ -124,14 +146,12 @@ impl KrillClient {
 
             CaCommand::RouteAuthorizationsUpdate(handle, updates) => {
                 let uri = format!("api/v1/cas/{}/routes", handle);
-                let uri = self.resolve_uri(&uri);
                 self.post_json(&uri, updates)?;
                 Ok(ApiResponse::Empty)
             }
 
             CaCommand::Show(handle) => {
                 let uri = format!("api/v1/cas/{}", handle);
-                let uri = self.resolve_uri(&uri);
                 let ca_info = self.get_json(&uri)?;
 
                 Ok(ApiResponse::CertAuthInfo(ca_info))
@@ -139,21 +159,18 @@ impl KrillClient {
 
             CaCommand::ShowHistory(handle) => {
                 let uri = format!("api/v1/cas/{}/history", handle);
-                let uri = self.resolve_uri(&uri);
                 let history = self.get_json(&uri)?;
 
                 Ok(ApiResponse::CertAuthHistory(history))
             }
 
             CaCommand::List => {
-                let uri = self.resolve_uri("api/v1/cas");
-                let cas = self.get_json(&uri)?;
+                let cas = self.get_json("api/v1/cas")?;
                 Ok(ApiResponse::CertAuths(cas))
             }
 
             CaCommand::RefreshAll => {
-                let uri = self.resolve_uri("api/v1/refresh_all");
-                self.post_empty(&uri)?;
+                self.post_empty("api/v1/refresh_all")?;
                 Ok(ApiResponse::Empty)
             }
         }
@@ -162,7 +179,7 @@ impl KrillClient {
     fn publishers(&self, command: PublishersCommand) -> Result<ApiResponse, Error> {
         match command {
             PublishersCommand::List => {
-                let list: PublisherList = self.get_json(&self.resolve_uri("api/v1/publishers"))?;
+                let list: PublisherList = self.get_json("api/v1/publishers")?;
                 Ok(ApiResponse::PublisherList(list))
             }
             PublishersCommand::Add(add) => {
@@ -171,14 +188,11 @@ impl KrillClient {
             }
             PublishersCommand::Deactivate(handle) => {
                 let uri = format!("api/v1/publishers/{}", handle);
-                let uri = self.resolve_uri(&uri);
-                httpclient::delete(&uri, Some(&self.token))?;
+                self.delete(&uri)?;
                 Ok(ApiResponse::Empty)
             }
             PublishersCommand::Details(handle) => {
                 let uri = format!("api/v1/publishers/{}", handle);
-                let uri = self.resolve_uri(&uri);
-
                 let details: PublisherDetails = self.get_json(&uri)?;
                 Ok(ApiResponse::PublisherDetails(details))
             }
@@ -186,29 +200,20 @@ impl KrillClient {
     }
 
     fn add_publisher(&self, pbl: PublisherRequest) -> Result<ApiResponse, Error> {
-        httpclient::post_json(
-            &self.resolve_uri("api/v1/publishers"),
-            pbl,
-            Some(&self.token),
-        )?;
-
+        self.post_json("api/v1/publishers", pbl)?;
         Ok(ApiResponse::Empty)
     }
 
     fn rfc8181(&self, command: Rfc8181Command) -> Result<ApiResponse, Error> {
         match command {
             Rfc8181Command::List => {
-                let uri = self.resolve_uri("api/v1/rfc8181/clients");
-                let list: Vec<ClientInfo> = self.get_json(&uri)?;
-
+                let list: Vec<ClientInfo> = self.get_json("api/v1/rfc8181/clients")?;
                 Ok(ApiResponse::Rfc8181ClientList(list))
             }
             Rfc8181Command::RepoRes(handle) => {
                 let uri = format!("api/v1/rfc8181/{}/response.xml", handle);
-                let uri = self.resolve_uri(&uri);
-
                 let ct = "application/xml";
-                let xml = httpclient::get_text(&uri, ct, Some(&self.token))?;
+                let xml = self.get_text(&uri, ct)?;
 
                 let res = RepositoryResponse::validate(xml.as_bytes())?;
                 Ok(ApiResponse::Rfc8183RepositoryResponse(res))
@@ -224,11 +229,7 @@ impl KrillClient {
 
                 let info = ClientInfo::new(handle.clone(), auth);
 
-                httpclient::post_json(
-                    &self.resolve_uri("api/v1/rfc8181/clients"),
-                    info,
-                    Some(&self.token),
-                )?;
+                self.post_json("api/v1/rfc8181/clients", info)?;
 
                 Ok(ApiResponse::Empty)
             }
@@ -239,16 +240,39 @@ impl KrillClient {
         format!("{}{}", &self.server, path)
     }
 
+    fn get_text(&self, uri: &str, content_type: &str) -> Result<String, Error> {
+        let uri = self.resolve_uri(uri);
+        httpclient::get_text(&uri, content_type, Some(&self.token)).map_err(Error::HttpClientError)
+    }
+
     fn get_json<T: DeserializeOwned>(&self, uri: &str) -> Result<T, Error> {
+        let uri = self.resolve_uri(uri);
         httpclient::get_json(&uri, Some(&self.token)).map_err(Error::HttpClientError)
     }
 
     fn post_empty(&self, uri: &str) -> Result<(), Error> {
-        httpclient::post_empty(uri, Some(&self.token)).map_err(Error::HttpClientError)
+        let uri = self.resolve_uri(uri);
+        httpclient::post_empty(&uri, Some(&self.token)).map_err(Error::HttpClientError)
     }
 
     fn post_json(&self, uri: &str, data: impl Serialize) -> Result<(), Error> {
+        let uri = self.resolve_uri(uri);
         httpclient::post_json(&uri, data, Some(&self.token)).map_err(Error::HttpClientError)
+    }
+
+    fn post_json_with_response<T: DeserializeOwned>(
+        &self,
+        uri: &str,
+        data: impl Serialize,
+    ) -> Result<T, Error> {
+        let uri = self.resolve_uri(uri);
+        httpclient::post_json_with_response(&uri, data, Some(&self.token))
+            .map_err(Error::HttpClientError)
+    }
+
+    fn delete(&self, uri: &str) -> Result<(), Error> {
+        let uri = self.resolve_uri(uri);
+        httpclient::delete(&uri, Some(&self.token)).map_err(Error::HttpClientError)
     }
 }
 

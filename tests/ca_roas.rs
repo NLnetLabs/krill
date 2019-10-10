@@ -3,8 +3,8 @@ extern crate krill;
 use std::str::FromStr;
 
 use krill::commons::api::{
-    AddParentRequest, Handle, ObjectName, ResourceSet, RouteAuthorization,
-    RouteAuthorizationUpdates, Token,
+    Handle, ObjectName, ParentCaReq, ResourceSet, RouteAuthorization, RouteAuthorizationUpdates,
+    Token,
 };
 use krill::daemon::ca::ta_handle;
 use krill::daemon::test::*;
@@ -15,6 +15,7 @@ use krill::daemon::test::*;
 /// as during and after key rolls.
 fn ca_roas() {
     test_with_krill_server(|_d| {
+        let ta_handle = ta_handle();
         let child = Handle::from_str_unsafe("child");
         let child_token = Token::from("child");
         let child_resources = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
@@ -25,7 +26,7 @@ fn ca_roas() {
         {
             let parent = {
                 let parent_contact = add_child_to_ta_embedded(&child, child_resources.clone());
-                AddParentRequest::new(ta_handle(), parent_contact)
+                ParentCaReq::new(ta_handle.clone(), parent_contact)
             };
             add_parent_to_ca(&child, parent);
             wait_for_current_resources(&child, &child_resources);
@@ -64,7 +65,7 @@ fn ca_roas() {
 
         // Shrink resources and see that ROA is removed
         let child_resources = ResourceSet::from_strs("", "192.168.0.0/16", "").unwrap();
-        update_child(&child, &child_resources);
+        update_child(&ta_handle, &child, &child_resources);
         wait_for_published_objects(&child, &[crl_file, mft_file]);
 
         // Now route3 can be added

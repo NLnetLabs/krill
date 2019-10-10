@@ -180,12 +180,27 @@ impl<S: Signer> Aggregate for CertAuth<S> {
                 .unwrap()
                 .set_resources(resources, grace),
 
+            EvtDet::ChildRemoved(child) => {
+                self.children.remove(&child);
+            }
+
             //-----------------------------------------------------------------------
             // Being a child
             //-----------------------------------------------------------------------
+            EvtDet::IdUpdated(id) => {
+                self.id = id;
+            }
             EvtDet::ParentAdded(handle, info) => {
                 self.parents.insert(handle, info);
             }
+            EvtDet::ParentUpdated(handle, info) => {
+                self.parents.insert(handle, info);
+            }
+            EvtDet::ParentRemoved(handle, _deltas) => {
+                self.parents.remove(&handle);
+                self.resources.retain(|_, rc| rc.parent_handle() != &handle);
+            }
+
             EvtDet::ResourceClassAdded(name, rc) => {
                 self.next_class_name += 1;
                 self.resources.insert(name, rc);
@@ -262,29 +277,32 @@ impl<S: Signer> Aggregate for CertAuth<S> {
     }
 
     fn process_command(&self, command: Cmd<S>) -> ca::Result<Vec<Evt>> {
-        trace!(
+        info!(
             "Sending command to CA '{}', version: {}: {}",
-            self.handle,
-            self.version,
-            command
+            self.handle, self.version, command
         );
 
         match command.into_details() {
             // being a parent
             CmdDet::ChildAdd(child, id_cert_opt, resources) => {
-                self.add_child(child, id_cert_opt, resources)
+                self.child_add(child, id_cert_opt, resources)
             }
-            CmdDet::ChildUpdate(child, req) => self.update_child(&child, req),
+            CmdDet::ChildUpdate(child, req) => self.child_update(&child, req),
             CmdDet::ChildCertify(child, request, signer) => {
-                self.certify_child(child, request, signer)
+                self.child_certify(child, request, signer)
             }
             CmdDet::ChildRevokeKey(child, request, signer) => {
-                self.revoke_child_key(child, request, signer)
+                self.child_revoke_key(child, request, signer)
             }
-            CmdDet::ChildShrink(child, signer) => self.shrink_child(&child, signer),
+            CmdDet::ChildShrink(child, signer) => self.child_shrink(&child, signer),
+            CmdDet::ChildRemove(child, signer) => self.child_remove(&child, signer),
 
             // being a child
+            CmdDet::GenerateNewIdKey(signer) => self.generate_new_id_key(signer),
             CmdDet::AddParent(parent, info) => self.add_parent(parent, info),
+            CmdDet::UpdateParentContact(parent, info) => self.update_parent(parent, info),
+            CmdDet::RemoveParent(parent) => self.remove_parent(parent),
+
             CmdDet::UpdateResourceClasses(parent, entitlements, signer) => {
                 self.update_resource_classes(parent, entitlements, signer)
             }
@@ -477,7 +495,7 @@ impl<S: Signer> CertAuth<S> {
 
     /// Adds the child, returns an error if the child is a duplicate,
     /// or if the resources are empty, or not held by this CA.
-    fn add_child(
+    fn child_add(
         &self,
         child: ChildHandle,
         id_cert: Option<IdCert>,
@@ -506,7 +524,7 @@ impl<S: Signer> CertAuth<S> {
     /// = the csr is invalid,
     /// = the limit exceeds the child allocation,
     /// = the signer throws up..
-    fn certify_child(
+    fn child_certify(
         &self,
         child: Handle,
         request: IssuanceRequest,
@@ -521,8 +539,7 @@ impl<S: Signer> CertAuth<S> {
         let issue_response =
             self.issue_child_certificate(&child, rcn.clone(), csr_info, limit, signer)?;
 
-        let set_deltas =
-            self.republish_certs(&rcn, vec![issue_response.issued()], vec![], signer)?;
+        let set_deltas = self.republish_certs(&rcn, &[issue_response.issued()], &[], signer)?;
 
         let issued_event =
             EvtDet::child_certificate_issued(&self.handle, self.version, child, issue_response);
@@ -563,8 +580,8 @@ impl<S: Signer> CertAuth<S> {
     fn republish_certs(
         &self,
         class_name: &ResourceClassName,
-        issued_certs: Vec<&IssuedCert>,
-        removed_certs: Vec<&Cert>,
+        issued_certs: &[&IssuedCert],
+        removed_certs: &[&Cert],
         signer: &S,
     ) -> Result<HashMap<KeyIdentifier, CurrentObjectSetDelta>> {
         self.resources
@@ -586,7 +603,7 @@ impl<S: Signer> CertAuth<S> {
     /// very uncommon, and unclear why it would be beneficial), and - more importantly - it
     /// creates a corner case where there are new entitled resources but there is no intersection
     /// with the old resource set.
-    pub fn shrink_child(
+    pub fn child_shrink(
         &self,
         child_handle: &ChildHandle,
         signer: Arc<RwLock<S>>,
@@ -649,9 +666,10 @@ impl<S: Signer> CertAuth<S> {
                 }
             }
 
-            let issued = issuance_responses.iter().map(|res| res.issued()).collect();
+            let issued: Vec<&IssuedCert> =
+                issuance_responses.iter().map(|res| res.issued()).collect();
 
-            let set_deltas = self.republish_certs(rcn, issued, removed, signer)?;
+            let set_deltas = self.republish_certs(rcn, &issued, &removed, signer)?;
 
             for response in issuance_responses.into_iter() {
                 events.push(EvtDet::ChildCertificateIssued(
@@ -680,7 +698,7 @@ impl<S: Signer> CertAuth<S> {
     /// Note: this does not yet revoke / reissue / republish anything. If the 'force' option was
     /// used in the update request, then shrink_child should be called with a grace period that
     /// is effective immediately.
-    fn update_child(&self, child_handle: &Handle, req: UpdateChildRequest) -> ca::Result<Vec<Evt>> {
+    fn child_update(&self, child_handle: &Handle, req: UpdateChildRequest) -> ca::Result<Vec<Evt>> {
         let (cert_opt, resources_opt, force) = req.unpack();
 
         let mut version = self.version;
@@ -717,7 +735,7 @@ impl<S: Signer> CertAuth<S> {
 
     /// Revokes a key for a child. So, add the last cert for the key to the CRL, and withdraw
     /// the .cer file for it.
-    fn revoke_child_key(
+    fn child_revoke_key(
         &self,
         child_handle: ChildHandle,
         request: RevocationRequest,
@@ -730,7 +748,7 @@ impl<S: Signer> CertAuth<S> {
 
         let child = self.get_child(&child_handle)?;
 
-        let issued = child
+        let removed = child
             .issuance_response(request.key())
             .ok_or_else(|| Error::NoIssuedCert)?
             .issued()
@@ -739,12 +757,63 @@ impl<S: Signer> CertAuth<S> {
         let handle = &self.handle;
         let version = self.version;
 
-        let set_deltas = self.republish_certs(&rcn, vec![], vec![issued], signer)?;
+        let set_deltas = self.republish_certs(&rcn, &[], &[removed], signer)?;
 
         let wdr = EvtDet::current_set_updated(handle, version + 1, rcn.clone(), set_deltas);
         let rev = EvtDet::child_revoke_key(handle, version, child_handle, request.into());
 
         Ok(vec![rev, wdr])
+    }
+
+    fn child_remove(
+        &self,
+        child_handle: &ChildHandle,
+        signer: Arc<RwLock<S>>,
+    ) -> ca::Result<Vec<Evt>> {
+        let signer = signer.read().unwrap();
+        let signer = signer.deref();
+        let child = self.get_child(&child_handle)?;
+
+        let mut version = self.version;
+        let handle = &self.handle;
+
+        let mut res = vec![];
+
+        // Find all the certs in all RCs for this child and revoke, and unpublish them.
+        for rcn in self.resources.keys() {
+            let issued_certs = child.issued(rcn);
+
+            if issued_certs.is_empty() {
+                continue;
+            }
+
+            for issued in &issued_certs {
+                let response =
+                    RevocationResponse::new(rcn.clone(), issued.subject_key_identifier());
+
+                res.push(EvtDet::child_revoke_key(
+                    handle,
+                    version,
+                    child_handle.clone(),
+                    response,
+                ));
+                version += 1;
+            }
+
+            let removed: Vec<&Cert> = issued_certs.iter().map(|i| i.cert()).collect();
+            let set_deltas = self.republish_certs(&rcn, &[], &removed, signer)?;
+            res.push(EvtDet::current_set_updated(
+                handle,
+                version,
+                rcn.clone(),
+                set_deltas,
+            ));
+            version += 1;
+        }
+
+        res.push(EvtDet::child_removed(handle, version, child_handle.clone()));
+
+        Ok(res)
     }
 
     /// Returns `true` if the child is known, `false` otherwise. No errors.
@@ -756,6 +825,14 @@ impl<S: Signer> CertAuth<S> {
 /// # Being a child
 ///
 impl<S: Signer> CertAuth<S> {
+    /// Generates a new ID key for this CA.
+    fn generate_new_id_key(&self, signer: Arc<RwLock<S>>) -> ca::Result<Vec<Evt>> {
+        let mut signer = signer.write().unwrap();
+        let id = Rfc8183Id::generate(signer.deref_mut())?;
+
+        Ok(vec![EvtDet::id_updated(&self.handle, self.version, id)])
+    }
+
     /// List all parents
     pub fn parents(&self) -> impl Iterator<Item = &ParentHandle> {
         self.parents.keys()
@@ -793,6 +870,43 @@ impl<S: Signer> CertAuth<S> {
             Err(Error::NotAllowedForTa)
         } else {
             Ok(vec![EvtDet::parent_added(
+                &self.handle,
+                self.version,
+                parent,
+                info,
+            )])
+        }
+    }
+
+    /// Removes a parent. Returns an error if it doesn't exist.
+    fn remove_parent(&self, parent: Handle) -> ca::Result<Vec<Evt>> {
+        // remove the parent, the RCs and un-publish everything.
+        let mut deltas = vec![];
+        for rc in self
+            .resources
+            .values()
+            .filter(|rc| rc.parent_handle() == &parent)
+        {
+            deltas.push(rc.withdraw(&self.base_repo));
+        }
+
+        Ok(vec![EvtDet::parent_removed(
+            &self.handle,
+            self.version,
+            parent,
+            deltas,
+        )])
+    }
+
+    /// Updates an existing parent's contact. This will return an error if
+    /// the parent is not known.
+    fn update_parent(&self, parent: Handle, info: ParentCaContact) -> ca::Result<Vec<Evt>> {
+        if !self.has_parent(&parent) {
+            Err(Error::UnknownParent(parent))
+        } else if self.is_ta() {
+            Err(Error::NotAllowedForTa)
+        } else {
+            Ok(vec![EvtDet::parent_updated(
                 &self.handle,
                 self.version,
                 parent,

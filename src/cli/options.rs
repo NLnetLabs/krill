@@ -10,13 +10,14 @@ use rpki::uri;
 
 use crate::cli::report::{ReportError, ReportFormat};
 use crate::commons::api::{
-    AddChildRequest, AddParentRequest, AuthorizationFmtError, CertAuthInit, CertAuthPubMode,
-    ChildAuthRequest, Handle, ParentCaContact, ResSetErr, ResourceSet, RouteAuthorizationUpdates,
-    Token, UpdateChildRequest,
+    AddChildRequest, AuthorizationFmtError, CertAuthInit, CertAuthPubMode, ChildAuthRequest,
+    Handle, ParentCaContact, ParentCaReq, ResSetErr, ResourceSet, RouteAuthorizationUpdates, Token,
+    UpdateChildRequest,
 };
 use crate::commons::remote::id::IdCert;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
+use commons::api::{ChildHandle, ParentHandle};
 
 const KRILL_CLI_SERVER_ARG: &str = "server";
 const KRILL_CLI_SERVER_ENV: &str = "KRILL_CLI_SERVER";
@@ -234,7 +235,7 @@ impl Options {
         )
     }
 
-    fn add_parent_embedded_rfc6492_args<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+    fn add_parent_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         app.arg(
             Arg::with_name("parent")
                 .long("parent")
@@ -243,19 +244,23 @@ impl Options {
                 .help("The local by which your ca refers to this parent.")
                 .required(true),
         )
-        .arg(
-            Arg::with_name("embedded")
-                .long("embedded")
-                .help("Add a parent that exists in this Krill instance.")
-                .required(false),
-        )
-        .arg(
-            Arg::with_name("rfc8183")
-                .long("rfc8183")
-                .help("Add a parent using an RFC8183 Parent Response XML file.")
-                .value_name("<XML file>")
-                .required(false),
-        )
+    }
+
+    fn add_parent_embedded_rfc6492_args<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        Self::add_parent_arg(app)
+            .arg(
+                Arg::with_name("embedded")
+                    .long("embedded")
+                    .help("Parent exists in this Krill instance.")
+                    .required(false),
+            )
+            .arg(
+                Arg::with_name("rfc8183")
+                    .long("rfc8183")
+                    .help("Parent is remote, uses an RFC8183 Parent Response XML file.")
+                    .value_name("<XML file>")
+                    .required(false),
+            )
     }
 
     fn make_cas_list_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
@@ -331,11 +336,22 @@ impl Options {
         app.subcommand(sub)
     }
 
+    fn make_cas_children_remove_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("remove").about("Remove an existing child from a CA.");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+        sub = Self::add_child_arg(sub);
+
+        app.subcommand(sub)
+    }
+
     fn make_cas_children_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("children").about("Manage children for a CA in Krill.");
 
         sub = Self::make_cas_children_add_sc(sub);
         sub = Self::make_cas_children_update_sc(sub);
+        sub = Self::make_cas_children_remove_sc(sub);
 
         app.subcommand(sub)
     }
@@ -359,11 +375,35 @@ impl Options {
         app.subcommand(sub)
     }
 
+    fn make_cas_parents_update_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub =
+            SubCommand::with_name("update").about("Update an existing parent of this CA.");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+        sub = Self::add_parent_embedded_rfc6492_args(sub);
+
+        app.subcommand(sub)
+    }
+
+    fn make_cas_parents_remove_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub =
+            SubCommand::with_name("remove").about("Remove an existing parent from this CA.");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+        sub = Self::add_parent_arg(sub);
+
+        app.subcommand(sub)
+    }
+
     fn make_cas_parents_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("parents").about("Manage parents for a CA.");
 
         sub = Self::make_cas_parents_myid_sc(sub);
         sub = Self::make_cas_parents_add_sc(sub);
+        sub = Self::make_cas_parents_update_sc(sub);
+        sub = Self::make_cas_parents_remove_sc(sub);
 
         app.subcommand(sub)
     }
@@ -576,7 +616,7 @@ impl Options {
 
         let child_request = AddChildRequest::new(child, resources, auth_request);
 
-        let command = Command::CertAuth(CaCommand::AddChild(my_ca, child_request));
+        let command = Command::CertAuth(CaCommand::ChildAdd(my_ca, child_request));
         Ok(Options::make(general_args, command))
     }
 
@@ -600,8 +640,18 @@ impl Options {
 
         let update = UpdateChildRequest::force(id_cert, resources);
 
-        let command = Command::CertAuth(CaCommand::UpdateChild(my_ca, child, update));
+        let command = Command::CertAuth(CaCommand::ChildUpdate(my_ca, child, update));
+        Ok(Options::make(general_args, command))
+    }
 
+    fn parse_matches_cas_children_remove(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let child = matches.value_of("child").unwrap();
+        let child = Handle::from_str(child).map_err(|_| Error::InvalidHandle)?;
+
+        let command = Command::CertAuth(CaCommand::ChildDelete(my_ca, child));
         Ok(Options::make(general_args, command))
     }
 
@@ -610,6 +660,8 @@ impl Options {
             Self::parse_matches_cas_children_add(m)
         } else if let Some(m) = matches.subcommand_matches("update") {
             Self::parse_matches_cas_children_update(m)
+        } else if let Some(m) = matches.subcommand_matches("remove") {
+            Self::parse_matches_cas_children_remove(m)
         } else {
             Err(Error::UnrecognisedSubCommand)
         }
@@ -627,26 +679,46 @@ impl Options {
     fn parse_matches_cas_parents_add(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
+        let parent_req = Self::parse_parent_ca_req(matches)?;
 
+        let command = Command::CertAuth(CaCommand::AddParent(my_ca, parent_req));
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_parents_update(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+        let parent_req = Self::parse_parent_ca_req(matches)?;
+        let (parent, contact) = parent_req.unwrap();
+
+        let command = Command::CertAuth(CaCommand::UpdateParentContact(my_ca, parent, contact));
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_parent_ca_req(matches: &ArgMatches) -> Result<ParentCaReq, Error> {
         let parent = matches.value_of("parent").unwrap();
         let parent = Handle::from_str(parent).map_err(|_| Error::InvalidHandle)?;
 
-        let parent_req = {
-            if matches.is_present("embedded") {
-                AddParentRequest::new(parent, ParentCaContact::Embedded)
-            } else if let Some(path) = matches.value_of("rfc8183") {
-                let xml = PathBuf::from(path);
-                let bytes = file::read(&xml)?;
-                let res = rfc8183::ParentResponse::validate(bytes.as_ref())?;
+        if matches.is_present("embedded") {
+            Ok(ParentCaReq::new(parent, ParentCaContact::Embedded))
+        } else if let Some(path) = matches.value_of("rfc8183") {
+            let xml = PathBuf::from(path);
+            let bytes = file::read(&xml)?;
+            let res = rfc8183::ParentResponse::validate(bytes.as_ref())?;
 
-                AddParentRequest::new(parent, ParentCaContact::for_rfc6492(res))
-            } else {
-                return Err(Error::MissingChildAuth);
-            }
-        };
+            Ok(ParentCaReq::new(parent, ParentCaContact::for_rfc6492(res)))
+        } else {
+            Err(Error::MissingChildAuth)
+        }
+    }
 
-        let command = Command::CertAuth(CaCommand::AddParent(my_ca, parent_req));
+    fn parse_matches_cas_parents_remove(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+        let parent = matches.value_of("parent").unwrap();
+        let parent = Handle::from_str(parent).map_err(|_| Error::InvalidHandle)?;
 
+        let command = Command::CertAuth(CaCommand::RemoveParent(my_ca, parent));
         Ok(Options::make(general_args, command))
     }
 
@@ -655,6 +727,10 @@ impl Options {
             Self::parse_matches_cas_parents_myid(m)
         } else if let Some(m) = matches.subcommand_matches("add") {
             Self::parse_matches_cas_parents_add(m)
+        } else if let Some(m) = matches.subcommand_matches("update") {
+            Self::parse_matches_cas_parents_update(m)
+        } else if let Some(m) = matches.subcommand_matches("remove") {
+            Self::parse_matches_cas_parents_remove(m)
         } else {
             Err(Error::UnrecognisedSubCommand)
         }
@@ -775,20 +851,33 @@ pub enum CaCommand {
     // Initialise a CA
     Init(CertAuthInit),
 
+    // Update CA id
+    UpdateId(Handle),
+
+    // Get an RFC8183 parent response
+    ParentResponse(Handle, ChildHandle),
+
     // Get the RFC8183 child request
     ChildRequest(Handle),
 
     // Add a parent to this CA
-    AddParent(Handle, AddParentRequest),
+    AddParent(Handle, ParentCaReq),
+
+    // Update parent contact
+    UpdateParentContact(Handle, ParentHandle, ParentCaContact),
+
+    // Remove a parent
+    RemoveParent(Handle, ParentHandle),
 
     // Children
-    AddChild(Handle, AddChildRequest),
-    UpdateChild(Handle, Handle, UpdateChildRequest),
+    ChildAdd(Handle, AddChildRequest),
+    ChildUpdate(Handle, ChildHandle, UpdateChildRequest),
+    ChildDelete(Handle, ChildHandle),
 
     // Initialise a manual key-roll now
     KeyRollInit(Handle),
 
-    // Activate all new keys now (finish keyroll, provided new key was certified)
+    // Activate all new keys now (finish key roll, provided new key was certified)
     KeyRollActivate(Handle),
 
     // List the current RouteAuthorizations

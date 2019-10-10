@@ -11,9 +11,9 @@ use rpki::uri;
 
 use crate::commons::api::CertAuthHistory;
 use crate::commons::api::{
-    self, AddChildRequest, AddParentRequest, CertAuthList, CertAuthSummary, ChildAuthRequest,
-    ChildCaInfo, ChildHandle, Entitlements, Handle, IssuanceRequest, IssuanceResponse, IssuedCert,
-    ParentCaContact, ParentHandle, RcvdCert, RepoInfo, ResourceClassName, ResourceSet,
+    self, AddChildRequest, CertAuthList, CertAuthSummary, ChildAuthRequest, ChildCaInfo,
+    ChildHandle, Entitlements, Handle, IssuanceRequest, IssuanceResponse, IssuedCert,
+    ParentCaContact, ParentCaReq, ParentHandle, RcvdCert, RepoInfo, ResourceClassName, ResourceSet,
     RevocationRequest, RevocationResponse, RouteAuthorizationUpdates, Token, UpdateChildRequest,
 };
 use crate::commons::eventsourcing::{Aggregate, AggregateStore, DiskAggregateStore};
@@ -148,24 +148,42 @@ impl<S: Signer> CaServer<S> {
         let add_child = CmdDet::child_add(&parent, child_handle.clone(), id_cert, child_res);
 
         let events = ca.process_command(add_child)?;
-        let ca = self.ca_store.update(&parent, ca, events)?;
+        self.ca_store.update(&parent, ca, events)?;
 
-        match child_auth {
-            ChildAuthRequest::Embedded => Ok(ParentCaContact::Embedded),
-            ChildAuthRequest::Rfc8183(req) => {
-                let service_uri = format!("{}rfc6492/{}", service_uri.to_string(), ca.handle());
-                let service_uri = uri::Https::from_string(service_uri).unwrap();
-                let service_uri = rfc8183::ServiceUri::Https(service_uri);
+        let tag = match child_auth {
+            ChildAuthRequest::Rfc8183(req) => req.tag().cloned(),
+            _ => None,
+        };
 
-                let response = rfc8183::ParentResponse::new(
-                    req.tag().cloned(),
-                    ca.id_cert().clone(),
-                    ca.handle().clone(),
-                    child_handle,
-                    service_uri,
-                );
-                Ok(ParentCaContact::for_rfc6492(response))
-            }
+        self.ca_parent_contact(parent, child_handle, tag, service_uri)
+    }
+
+    /// Show a contact for a child.
+    pub fn ca_parent_contact(
+        &self,
+        parent: &ParentHandle,
+        child_handle: ChildHandle,
+        tag: Option<String>,
+        service_uri: &uri::Https,
+    ) -> ServerResult<ParentCaContact, S> {
+        let ca = self.get_ca(parent)?;
+        let child = ca.get_child(&child_handle)?;
+
+        if child.id_cert().is_some() {
+            let service_uri = format!("{}rfc6492/{}", service_uri.to_string(), ca.handle());
+            let service_uri = uri::Https::from_string(service_uri).unwrap();
+            let service_uri = rfc8183::ServiceUri::Https(service_uri);
+
+            let response = rfc8183::ParentResponse::new(
+                tag,
+                ca.id_cert().clone(),
+                ca.handle().clone(),
+                child_handle,
+                service_uri,
+            );
+            Ok(ParentCaContact::for_rfc6492(response))
+        } else {
+            Ok(ParentCaContact::Embedded)
         }
     }
 
@@ -188,32 +206,38 @@ impl<S: Signer> CaServer<S> {
     }
 
     /// Update a child under this CA.
-    pub fn ca_update_child(
+    pub fn ca_child_update(
         &self,
-        parent: &ParentHandle,
+        handle: &Handle,
         child: ChildHandle,
         req: UpdateChildRequest,
     ) -> ServerResult<(), S> {
-        info!(
-            "Updating details for CA: {} under parent: {} to: {}",
-            child, parent, req
-        );
-        let mut ca = self.get_ca(parent)?;
+        let mut ca = self.get_ca(handle)?;
 
         let force = req.is_force();
 
-        let events = ca.process_command(CmdDet::child_update(parent, child.clone(), req))?;
+        let events = ca.process_command(CmdDet::child_update(handle, child.clone(), req))?;
         if !events.is_empty() {
-            ca = self.ca_store.update(parent, ca, events)?;
+            ca = self.ca_store.update(handle, ca, events)?;
 
             if force {
                 let events =
-                    ca.process_command(CmdDet::child_shrink(parent, child, self.signer.clone()))?;
+                    ca.process_command(CmdDet::child_shrink(handle, child, self.signer.clone()))?;
                 if !events.is_empty() {
-                    self.ca_store.update(parent, ca, events)?;
+                    self.ca_store.update(handle, ca, events)?;
                 }
             }
         }
+
+        Ok(())
+    }
+
+    /// Update a child under this CA.
+    pub fn ca_child_remove(&self, handle: &Handle, child: ChildHandle) -> ServerResult<(), S> {
+        let ca = self.get_ca(handle)?;
+        let signer = self.signer.clone();
+        let events = ca.process_command(CmdDet::child_remove(handle, child, signer))?;
+        self.ca_store.update(handle, ca, events)?;
 
         Ok(())
     }
@@ -371,13 +395,53 @@ impl<S: Signer> CaServer<S> {
         }
     }
 
+    pub fn ca_update_id(&self, handle: Handle) -> ServerResult<(), S> {
+        let ca = self.get_ca(&handle)?;
+
+        let cmd = CmdDet::update_id(&handle, self.signer.clone());
+        let events = ca.process_command(cmd)?;
+
+        self.ca_store.update(&handle, ca, events)?;
+
+        Ok(())
+    }
+
     /// Adds a parent to a CA
-    pub fn ca_add_parent(&self, handle: Handle, parent: AddParentRequest) -> ServerResult<(), S> {
+    pub fn ca_add_parent(&self, handle: Handle, parent: ParentCaReq) -> ServerResult<(), S> {
         let ca = self.get_ca(&handle)?;
         let (parent_handle, parent_contact) = parent.unwrap();
 
         let add = CmdDet::add_parent(&handle, parent_handle, parent_contact);
         let events = ca.process_command(add)?;
+
+        self.ca_store.update(&handle, ca, events)?;
+
+        Ok(())
+    }
+
+    /// Updates a parent of a CA
+    pub fn ca_update_parent(
+        &self,
+        handle: Handle,
+        parent: ParentHandle,
+        contact: ParentCaContact,
+    ) -> ServerResult<(), S> {
+        let ca = self.get_ca(&handle)?;
+
+        let upd = CmdDet::update_parent(&handle, parent, contact);
+        let events = ca.process_command(upd)?;
+
+        self.ca_store.update(&handle, ca, events)?;
+
+        Ok(())
+    }
+
+    /// Removes a parent from a CA
+    pub fn ca_remove_parent(&self, handle: Handle, parent: ParentHandle) -> ServerResult<(), S> {
+        let ca = self.get_ca(&handle)?;
+
+        let upd = CmdDet::remove_parent(&handle, parent);
+        let events = ca.process_command(upd)?;
 
         self.ca_store.update(&handle, ca, events)?;
 
@@ -442,7 +506,7 @@ impl<S: Signer> CaServer<S> {
             }
             if let Ok(ca) = self.get_ca(&handle) {
                 for child in ca.children() {
-                    if let Err(e) = ca.shrink_child(child, self.signer.clone()) {
+                    if let Err(e) = ca.child_shrink(child, self.signer.clone()) {
                         error!(
                             "Could not shrink certificates for CA {}, error: {}",
                             child, e

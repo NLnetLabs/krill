@@ -449,8 +449,8 @@ impl ResourceClass {
     /// for updating child certificates.
     pub fn republish_certs<S: Signer>(
         &self,
-        issued_certs: Vec<&IssuedCert>,
-        removed_certs: Vec<&Cert>,
+        issued_certs: &[&IssuedCert],
+        removed_certs: &[&Cert],
         repo_info: &RepoInfo,
         signer: &S,
     ) -> Result<HashMap<KeyIdentifier, CurrentObjectSetDelta>> {
@@ -458,10 +458,10 @@ impl ResourceClass {
         let name_space = self.name_space();
 
         let mut revocations = vec![];
-        for cert in removed_certs.iter() {
+        for cert in removed_certs {
             revocations.push(Revocation::from(*cert));
         }
-        for issued in issued_certs.iter() {
+        for issued in issued_certs {
             if let Some(replaced) = issued.replaces() {
                 revocations.push(replaced.revocation());
             }
@@ -470,10 +470,10 @@ impl ResourceClass {
         let ca_repo = repo_info.ca_repository(name_space);
         let mut objects_delta = ObjectsDelta::new(ca_repo);
 
-        for removed in removed_certs.into_iter() {
-            objects_delta.withdraw(WithdrawnObject::from(removed));
+        for removed in removed_certs {
+            objects_delta.withdraw(WithdrawnObject::from(*removed));
         }
-        for issued in issued_certs.into_iter() {
+        for issued in issued_certs {
             match issued.replaces() {
                 None => objects_delta.add(AddedObject::from(issued.cert())),
                 Some(replaced) => objects_delta.update(UpdatedObject::for_cert(
@@ -500,10 +500,6 @@ impl ResourceClass {
         signer: &S,
     ) -> ca::Result<CurrentObjectSetDelta> {
         let signing_cert = signing_key.incoming_cert();
-        let signing_pub_key = signer
-            .get_key_info(signing_key.key_id())
-            .map_err(ca::Error::signer)?;
-
         let current_set = signing_key.current_set();
         let current_revocations = current_set.revocations().clone();
         let number = current_set.number() + 1;

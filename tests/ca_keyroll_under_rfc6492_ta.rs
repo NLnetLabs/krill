@@ -1,6 +1,6 @@
 extern crate krill;
 
-use krill::commons::api::{AddParentRequest, Handle, ResourceSet, Token};
+use krill::commons::api::{Handle, ParentCaReq, ResourceSet, Token};
 use krill::daemon::ca::ta_handle;
 use krill::daemon::test::*;
 
@@ -19,7 +19,7 @@ fn ca_keyroll_under_rfc6492_ta() {
         // RFC6492 parent --------------------------------------------------------------------
         let parent = {
             let contact = add_child_to_ta_rfc6492(&child, req, child_resources.clone());
-            AddParentRequest::new(ta_handle.clone(), contact)
+            ParentCaReq::new(ta_handle.clone(), contact)
         };
 
         add_parent_to_ca(&child, parent);

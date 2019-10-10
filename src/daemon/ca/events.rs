@@ -272,9 +272,14 @@ pub enum EvtDet {
     ChildKeyRevoked(ChildHandle, RevocationResponse),
     ChildUpdatedIdCert(ChildHandle, IdCert),
     ChildUpdatedResources(ChildHandle, ResourceSet, Time),
+    ChildRemoved(ChildHandle),
 
     // Being a child Events
+    IdUpdated(Rfc8183Id),
     ParentAdded(ParentHandle, ParentCaContact),
+    ParentUpdated(ParentHandle, ParentCaContact),
+    ParentRemoved(ParentHandle, Vec<ObjectsDelta>),
+
     ResourceClassAdded(ResourceClassName, ResourceClass),
     ResourceClassRemoved(
         ResourceClassName,
@@ -305,6 +310,11 @@ pub enum EvtDet {
 }
 
 impl EvtDet {
+    /// This marks the RFC8183Id as updated
+    pub(super) fn id_updated(handle: &Handle, version: u64, id: Rfc8183Id) -> Evt {
+        StoredEvent::new(handle, version, EvtDet::IdUpdated(id))
+    }
+
     /// This marks a parent as added to the CA.
     pub(super) fn parent_added(
         handle: &Handle,
@@ -313,6 +323,30 @@ impl EvtDet {
         info: ParentCaContact,
     ) -> Evt {
         StoredEvent::new(handle, version, EvtDet::ParentAdded(parent_handle, info))
+    }
+
+    /// This marks a parent contact as updated
+    pub(super) fn parent_updated(
+        handle: &Handle,
+        version: u64,
+        parent_handle: ParentHandle,
+        info: ParentCaContact,
+    ) -> Evt {
+        StoredEvent::new(handle, version, EvtDet::ParentUpdated(parent_handle, info))
+    }
+
+    /// This marks a parent as removed
+    pub(super) fn parent_removed(
+        handle: &Handle,
+        version: u64,
+        parent_handle: ParentHandle,
+        withdraws: Vec<ObjectsDelta>,
+    ) -> Evt {
+        StoredEvent::new(
+            handle,
+            version,
+            EvtDet::ParentRemoved(parent_handle, withdraws),
+        )
     }
 
     /// This marks a resource class as added under a parent for the CA.
@@ -401,6 +435,10 @@ impl EvtDet {
         StoredEvent::new(handle, version, EvtDet::ChildKeyRevoked(child, response))
     }
 
+    pub(super) fn child_removed(handle: &Handle, version: u64, child: ChildHandle) -> Evt {
+        StoredEvent::new(handle, version, EvtDet::ChildRemoved(child))
+    }
+
     pub(super) fn current_set_updated(
         handle: &Handle,
         version: u64,
@@ -448,8 +486,14 @@ impl fmt::Display for EvtDet {
             EvtDet::ChildUpdatedResources(child, resources, _) => {
                 write!(f, "updated child '{}' resources to '{}'", child, resources)
             }
+            EvtDet::ChildRemoved(child) => {
+                write!(f, "removed child '{}'", child)
+            }
 
             // Being a child Events
+            EvtDet::IdUpdated(id) => {
+                write!(f, "updated RFC8183 id to key '{}'", id.key_hash())
+            }
             EvtDet::ParentAdded(parent, contact) => {
                 let contact_str = match contact {
                     ParentCaContact::Embedded => "embedded",
@@ -458,12 +502,24 @@ impl fmt::Display for EvtDet {
                 };
                 write!(f, "added {} parent '{}' ", contact_str, parent)
             }
+            EvtDet::ParentUpdated(parent, contact) => {
+                let contact_str = match contact {
+                    ParentCaContact::Embedded => "embedded",
+                    ParentCaContact::Ta(_) => "TA proxy",
+                    ParentCaContact::Rfc6492(_) => "RFC6492",
+                };
+                write!(f, "updated parent '{}' contact to '{}' ", parent,  contact_str)
+            }
+            EvtDet::ParentRemoved(parent, _deltas) => {
+                write!(f, "removed parent '{}'", parent)
+            }
+
             EvtDet::ResourceClassAdded(rcn, _) => {
                 write!(f, "added resource class with name '{}'", rcn)
             }
             EvtDet::ResourceClassRemoved(rcn, _, parent, _) => write!(
                 f,
-                "removed resource clases with name '{}' under parent '{}'",
+                "removed resource class with name '{}' under parent '{}'",
                 rcn, parent
             ),
             EvtDet::CertificateRequested(rcn, _, ki) => write!(
