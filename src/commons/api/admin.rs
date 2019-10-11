@@ -334,14 +334,6 @@ impl PublisherClientRequest {
         }
     }
 
-    pub fn krill(handle: Handle, service_uri: uri::Https, token: Token) -> Self {
-        let server_info = PubServerContact::for_krill(service_uri, token);
-        PublisherClientRequest {
-            handle,
-            server_info,
-        }
-    }
-
     pub fn unwrap(self) -> (Handle, PubServerContact) {
         (self.handle, self.server_info)
     }
@@ -353,18 +345,11 @@ impl PublisherClientRequest {
 pub enum PubServerContact {
     #[display(fmt = "Embedded server.")]
     Embedded,
-
-    #[display(fmt = "Remote Krill at: {}, using token: {}", _0, _1)]
-    KrillServer(uri::Https, Token),
 }
 
 impl PubServerContact {
     pub fn embedded() -> Self {
         PubServerContact::Embedded
-    }
-
-    pub fn for_krill(service_uri: uri::Https, token: Token) -> Self {
-        PubServerContact::KrillServer(service_uri, token)
     }
 }
 

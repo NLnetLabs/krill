@@ -16,7 +16,6 @@ use openssl::ssl::{SslAcceptor, SslAcceptorBuilder, SslFiletype, SslMethod};
 
 use bcder::decode;
 
-use crate::commons::api::PublishDelta;
 use crate::daemon::auth::AUTH_COOKIE_NAME;
 use crate::daemon::config::Config;
 use crate::daemon::endpoints;
@@ -99,12 +98,6 @@ pub fn start(config: &Config) -> Result<(), Error> {
             // Public TA related methods
             .route("/ta/ta.tal", get().to(tal))
             .route("/ta/ta.cer", get().to(ta_cer))
-            // Publication by (embedded) clients
-            .route("/publication/{handle}", get().to(handle_list))
-            .route("/publication/{handle}", post().to(handle_delta))
-            .data(web::Json::<PublishDelta>::configure(|cfg| {
-                cfg.limit(256 * 1024 * 1024)
-            }))
             // Identity exchanges for remote publishers
             .route("/rfc8181/{handle}", post().to(rfc8181))
             // Provisioning for remote krill clients
