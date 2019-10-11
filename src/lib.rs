@@ -31,5 +31,4 @@ extern crate xml as xmlrs;
 pub mod cli;
 pub mod commons;
 pub mod daemon;
-pub mod pubc;
 pub mod pubd;
