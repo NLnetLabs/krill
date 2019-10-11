@@ -412,10 +412,7 @@ impl KeyState {
         res
     }
 
-    /// Creates a Csr for the given key. Note that this parses the encoded
-    /// key. This is not the most efficient way, but makes storing and
-    /// serializing the Csr in an event possible (the Captured cannot be
-    /// stored).
+    /// Creates a Csr for the given key.
     fn create_issuance_req<S: Signer>(
         &self,
         base_repo: &RepoInfo,
@@ -429,7 +426,7 @@ impl KeyState {
         let enc = Csr::construct(
             signer,
             key,
-            &base_repo.ca_repository(name_space),
+            &base_repo.ca_repository(name_space).join(&[]), // force trailing slash
             &base_repo.rpki_manifest(name_space, &pub_key.key_identifier()),
             Some(&base_repo.rpki_notify()),
         )
