@@ -18,7 +18,7 @@ fn ca_roas() {
         let ta_handle = ta_handle();
         let child = Handle::from_str_unsafe("child");
         let child_token = Token::from("child");
-        let child_resources = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
+        let child_resources = ResourceSet::from_strs("", "10.0.0.0/16", "2001:DB8::/32").unwrap();
 
         init_child(&child, &child_token);
 
@@ -34,7 +34,7 @@ fn ca_roas() {
 
         // Add some Route Authorizations
         let route_1 = RouteAuthorization::from_str("10.0.0.0/24 => 64496").unwrap();
-        let route_2 = RouteAuthorization::from_str("10.0.1.0/24 => 64496").unwrap();
+        let route_2 = RouteAuthorization::from_str("2001:DB8::/32-48 => 64496").unwrap();
         let route_3 = RouteAuthorization::from_str("192.168.0.0/24 => 64496").unwrap();
 
         let crl_file = ".crl";
