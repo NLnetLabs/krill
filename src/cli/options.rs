@@ -480,25 +480,25 @@ impl Options {
         app.subcommand(sub)
     }
 
-    fn make_cas_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("cas").about("Manage Certification Authorities");
-
-        sub = Self::make_cas_list_sc(sub);
-        sub = Self::make_cas_show_ca_sc(sub);
-        sub = Self::make_cas_show_history_sc(sub);
-        sub = Self::make_cas_add_ca_sc(sub);
-        sub = Self::make_cas_children_sc(sub);
-        sub = Self::make_cas_parents_sc(sub);
-        sub = Self::make_cas_keyroll_sc(sub);
-        sub = Self::make_cas_routes_sc(sub);
-
-        app.subcommand(sub)
+    fn make_health_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        app.subcommand(
+            SubCommand::with_name("health").about("Perform an authenticated health check"),
+        )
     }
 
     fn make_matches<'a>() -> ArgMatches<'a> {
         let mut app = App::new("Krill Client").version("0.1.1");
 
-        app = Self::make_cas_sc(app);
+        app = Self::make_cas_list_sc(app);
+        app = Self::make_cas_show_ca_sc(app);
+        app = Self::make_cas_show_history_sc(app);
+        app = Self::make_cas_add_ca_sc(app);
+        app = Self::make_cas_children_sc(app);
+        app = Self::make_cas_parents_sc(app);
+        app = Self::make_cas_keyroll_sc(app);
+        app = Self::make_cas_routes_sc(app);
+
+        app = Self::make_health_sc(app);
 
         app.get_matches()
     }
@@ -799,7 +799,13 @@ impl Options {
         }
     }
 
-    fn parse_matches_cas(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_health(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let command = Command::Health;
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches(matches: ArgMatches) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("list") {
             Self::parse_matches_cas_list(m)
         } else if let Some(m) = matches.subcommand_matches("add") {
@@ -816,14 +822,8 @@ impl Options {
             Self::parse_matches_cas_keyroll(m)
         } else if let Some(m) = matches.subcommand_matches("roas") {
             Self::parse_matches_cas_routes(m)
-        } else {
-            Err(Error::UnrecognisedSubCommand)
-        }
-    }
-
-    fn parse_matches(matches: ArgMatches) -> Result<Options, Error> {
-        if let Some(m) = matches.subcommand_matches("cas") {
-            Self::parse_matches_cas(m)
+        } else if let Some(m) = matches.subcommand_matches("health") {
+            Self::parse_matches_health(m)
         } else {
             Err(Error::UnrecognisedSubCommand)
         }
