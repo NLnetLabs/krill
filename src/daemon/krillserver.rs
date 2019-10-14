@@ -30,6 +30,7 @@ use crate::daemon::scheduler::Scheduler;
 use crate::pubd;
 use crate::pubd::publishers::Publisher;
 use crate::pubd::PubServer;
+use commons::api::Token;
 
 //------------ KrillServer ---------------------------------------------------
 
@@ -149,9 +150,17 @@ impl KrillServer {
     }
 }
 
+/// # Authentication
 impl KrillServer {
+    pub fn login(&self, token: Token) -> bool {
+        self.authorizer.is_api_allowed(&token)
+    }
+
     pub fn is_api_allowed(&self, auth: &Auth) -> bool {
-        self.authorizer.is_api_allowed(auth)
+        match auth {
+            Auth::Bearer(token) => self.authorizer.is_api_allowed(token),
+            Auth::User(_) => true,
+        }
     }
 }
 

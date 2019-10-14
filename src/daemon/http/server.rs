@@ -16,7 +16,7 @@ use openssl::ssl::{SslAcceptor, SslAcceptorBuilder, SslFiletype, SslMethod};
 
 use bcder::decode;
 
-use crate::daemon::auth::AUTH_COOKIE_NAME;
+use crate::daemon::auth::{is_logged_in, login, logout, AUTH_COOKIE_NAME};
 use crate::daemon::config::Config;
 use crate::daemon::endpoints;
 use crate::daemon::endpoints::*;
@@ -60,7 +60,9 @@ pub fn start(config: &Config) -> Result<(), Error> {
             // API end-points
             .service(
                 scope("/api/v1")
+                    // Health
                     .route("/health", get().to(api_health))
+                    // Publishers (both embedded and remote)
                     .route("/publishers", get().to(publishers))
                     .route("/publishers", post().to(add_publisher))
                     .route("/publishers/{handle}", get().to(publisher_details))
@@ -72,6 +74,7 @@ pub fn start(config: &Config) -> Result<(), Error> {
                         "/rfc8181/{handle}/response.xml",
                         get().to(repository_response),
                     )
+                    // CAs (both embedded and remote)
                     .route("/cas", post().to(ca_init))
                     .route("/cas", get().to(cas))
                     .route("/cas/{ca}", get().to(ca_info))
@@ -92,27 +95,25 @@ pub fn start(config: &Config) -> Result<(), Error> {
                     .route("/cas/{ca}/keys/roll_init", post().to(ca_kr_init))
                     .route("/cas/{ca}/keys/roll_activate", post().to(ca_kr_activate))
                     .route("/cas/{ca}/routes", post().to(ca_routes_update))
+                    // Republish ALL CAs
                     .route("/republish", post().to(republish_all))
+                    // Force refresh of ALL CAs
                     .route("/refresh_all", post().to(refresh_all)),
             )
-            // Public TA related methods
-            .route("/ta/ta.tal", get().to(tal))
-            .route("/ta/ta.cer", get().to(ta_cer))
+            // Logged in users for the API
+            .route("/ui/is_logged_in", get().to(is_logged_in))
+            .route("/ui/login", post().to(login))
+            .route("/ui/logout", post().to(logout))
             // Identity exchanges for remote publishers
             .route("/rfc8181/{handle}", post().to(rfc8181))
             // Provisioning for remote krill clients
             .route("/rfc6492/{handle}", post().to(rfc6492))
+            // Public TA related methods
+            .route("/ta/ta.tal", get().to(tal))
+            .route("/ta/ta.cer", get().to(ta_cer))
             // RRDP repository
             .route("/rrdp/{path:.*}", get().to(serve_rrdp_files))
-            .route(
-                "/",
-                get().to(|| {
-                    HttpResponse::Found()
-                        .header("location", "/ui/index.html")
-                        .finish()
-                }),
-            )
-            // default
+            // Catch all (not found or not allowed)
             .default_service(
                 // 404 for GET request
                 web::resource("")
