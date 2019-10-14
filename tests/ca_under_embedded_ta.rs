@@ -10,10 +10,9 @@ fn ca_under_embedded_ta() {
         let ta_handle = ta_handle();
 
         let child = Handle::from_str_unsafe("child");
-        let child_token = Token::from("child");
         let child_resources = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
 
-        init_child(&child, &child_token);
+        init_child(&child);
 
         // Embedded parent --------------------------------------------------------------------
         let parent = {

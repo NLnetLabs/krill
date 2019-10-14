@@ -1,14 +1,10 @@
 //! Authorization for the API
 use std::fmt;
 
-use actix_identity::Identity;
 use actix_web::dev::Payload;
-use actix_web::web::{self, Json};
 use actix_web::{Error, FromRequest, HttpRequest, HttpResponse, ResponseError};
 
 use crate::commons::api::Token;
-
-use super::http::server::AppServer;
 
 pub const AUTH_COOKIE_NAME: &str = "krill_auth";
 
@@ -28,48 +24,21 @@ impl Authorizer {
         }
     }
 
-    pub fn is_api_allowed(&self, token: &Token) -> bool {
-        &self.krill_auth_token == token
+    pub fn is_api_allowed(&self, auth: &Auth) -> bool {
+        &self.krill_auth_token == auth.token()
     }
 }
-
-//------------ Credentials ---------------------------------------------------
-
-#[derive(Deserialize)]
-pub struct Credentials {
-    token: Token,
-}
-
-pub fn login(server: web::Data<AppServer>, cred: Json<Credentials>, id: Identity) -> HttpResponse {
-    if server.read().login(cred.token.clone()) {
-        id.remember("admin".to_string());
-        HttpResponse::Ok().finish()
-    } else {
-        warn!("Failed login attempt {}", cred.token.as_ref());
-        HttpResponse::Forbidden().finish()
-    }
-}
-
-pub fn logout(id: Identity) -> HttpResponse {
-    id.forget();
-    HttpResponse::Ok().finish()
-}
-
-pub fn is_logged_in(_auth: Auth) -> HttpResponse {
-    HttpResponse::Ok().finish()
-}
-
-pub type UserName = String;
 
 //------------ Auth ----------------------------------------------------------
 
 #[derive(Clone, Debug)]
-pub enum Auth {
-    User(UserName),
-    Bearer(Token),
-}
+pub struct Auth(Token);
 
 impl Auth {
+    pub fn token(&self) -> &Token {
+        &self.0
+    }
+
     /// Extracts the bearer token from header string,
     /// returns an invalid token error if parsing fails
     fn extract_bearer_token(header: &str) -> Result<Token, AuthError> {
@@ -89,19 +58,13 @@ impl Auth {
 
 impl fmt::Display for Auth {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Auth::User(user) => write!(f, "User: {}", user),
-            Auth::Bearer(token) => write!(f, "Bearer: {}", token),
-        }
+        write!(f, "Bearer: {}", self.0)
     }
 }
 
 impl Into<Token> for Auth {
     fn into(self) -> Token {
-        match self {
-            Auth::Bearer(token) => token,
-            _ => Token::from(""),
-        }
+        self.0
     }
 }
 
@@ -110,15 +73,12 @@ impl FromRequest for Auth {
     type Future = Result<Auth, Error>;
     type Config = ();
 
-    fn from_request(req: &HttpRequest, payload: &mut Payload) -> Self::Future {
-        if let Some(identity) = Identity::from_request(req, payload)?.identity() {
-            trace!("Found user: {}", &identity);
-            Ok(Auth::User(identity))
-        } else if let Some(header) = req.headers().get("Authorization") {
+    fn from_request(req: &HttpRequest, _payload: &mut Payload) -> Self::Future {
+        if let Some(header) = req.headers().get("Authorization") {
             let token =
                 Auth::extract_bearer_token(header.to_str().map_err(|_| AuthError::InvalidToken)?)?;
 
-            Ok(Auth::Bearer(token))
+            Ok(Auth(token))
         } else {
             Err(AuthError::Unauthorised.into())
         }

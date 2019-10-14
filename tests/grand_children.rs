@@ -1,6 +1,6 @@
 extern crate krill;
 
-use krill::commons::api::{Handle, ObjectName, ParentCaReq, ResourceClassName, ResourceSet, Token};
+use krill::commons::api::{Handle, ObjectName, ParentCaReq, ResourceClassName, ResourceSet};
 use krill::daemon::ca::ta_handle;
 use krill::daemon::test::*;
 
@@ -36,7 +36,7 @@ fn grand_children() {
         let ca1 = Handle::from_str_unsafe("CA1");
         let ca1_res = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
 
-        init_child(&ca1, &Token::from("CA1"));
+        init_child(&ca1);
         let req = child_request(&ca1);
         let parent = {
             let contact = add_child_to_ta_rfc6492(&ca1, req, ca1_res.clone());
@@ -60,7 +60,7 @@ fn grand_children() {
         let ca2 = Handle::from_str_unsafe("CA2");
         let ca2_res = ResourceSet::from_strs("", "10.1.0.0/16", "").unwrap();
 
-        init_child(&ca2, &Token::from("CA2"));
+        init_child(&ca2);
         let req = child_request(&ca2);
         let parent = {
             let contact = add_child_to_ta_rfc6492(&ca2, req, ca2_res.clone());
@@ -87,7 +87,7 @@ fn grand_children() {
         let ca3 = Handle::from_str_unsafe("CA3");
         let ca_3_res_under_ca_1 = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
 
-        init_child(&ca3, &Token::from("CA3"));
+        init_child(&ca3);
         let req = child_request(&ca3);
         let parent = {
             let contact = add_child_rfc6492(&ca1, &ca3, req, ca_3_res_under_ca_1.clone());
@@ -132,7 +132,7 @@ fn grand_children() {
         let ca4 = Handle::from_str_unsafe("CA4");
         let ca_4_res_under_ca_3 = ResourceSet::from_strs("", "10.0.0.0-10.1.0.255", "").unwrap();
 
-        init_child(&ca4, &Token::from("CA4"));
+        init_child(&ca4);
         let req = child_request(&ca4);
         let parent = {
             let contact = add_child_rfc6492(&ca3, &ca4, req, ca_4_res_under_ca_3.clone());

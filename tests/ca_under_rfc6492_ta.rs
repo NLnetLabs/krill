@@ -1,6 +1,6 @@
 extern crate krill;
 
-use krill::commons::api::{Handle, ParentCaReq, ResourceSet, Token};
+use krill::commons::api::{Handle, ParentCaReq, ResourceSet};
 use krill::daemon::ca::ta_handle;
 use krill::daemon::test::*;
 
@@ -10,10 +10,9 @@ fn ca_under_rfc6492_ta() {
         let ta_handle = ta_handle();
 
         let child = Handle::from_str_unsafe("rfc6492");
-        let child_token = Token::from("rfc6492");
         let child_resources = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
 
-        init_child(&child, &child_token);
+        init_child(&child);
 
         // Add child to parent (ta)
         let parent = {

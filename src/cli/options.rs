@@ -34,9 +34,6 @@ pub const KRILL_CLI_API_ENV: &str = "KRILL_CLI_API";
 const KRILL_CLI_MY_CA_ARG: &str = "ca";
 const KRILL_CLI_MY_CA_ENV: &str = "KRILL_CLI_MY_CA";
 
-const KRILL_CLI_MY_CA_TOKEN_ARG: &str = "catoken";
-const KRILL_CLI_MY_CA_TOKEN_ENV: &str = "KRILL_CLI_MY_CA_TOKEN";
-
 struct GeneralArgs {
     server: uri::Https,
     token: Token,
@@ -295,14 +292,6 @@ impl Options {
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
 
-        sub = sub.arg(
-            Arg::with_name("catoken")
-                .help("The token for your CA. Or set: KRILL_MY_CA_TOKEN")
-                .value_name("token-string")
-                .long("catoken")
-                .required(true),
-        );
-
         app.subcommand(sub)
     }
 
@@ -525,22 +514,6 @@ impl Options {
         Ok(my_ca)
     }
 
-    fn parse_my_ca_token(matches: &ArgMatches) -> Result<Token, Error> {
-        let my_ca_token = {
-            let mut my_ca_token = env::var(KRILL_CLI_MY_CA_TOKEN_ENV).ok().map(Token::from);
-
-            if let Some(my_ca_token_str) = matches.value_of(KRILL_CLI_MY_CA_TOKEN_ARG) {
-                my_ca_token = Some(Token::from(my_ca_token_str));
-            }
-
-            my_ca_token.ok_or_else(|| {
-                Error::missing_arg_with_env(KRILL_CLI_MY_CA_TOKEN_ARG, KRILL_CLI_MY_CA_TOKEN_ENV)
-            })?
-        };
-
-        Ok(my_ca_token)
-    }
-
     fn parse_resource_args(matches: &ArgMatches) -> Result<Option<ResourceSet>, Error> {
         let asn = matches.value_of("asn");
         let v4 = matches.value_of("ipv4");
@@ -566,9 +539,8 @@ impl Options {
     fn parse_matches_cas_add(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
-        let token = Self::parse_my_ca_token(matches)?;
 
-        let init = CertAuthInit::new(my_ca, token, CertAuthPubMode::Embedded);
+        let init = CertAuthInit::new(my_ca, CertAuthPubMode::Embedded);
 
         let command = Command::CertAuth(CaCommand::Init(init));
 
@@ -911,7 +883,6 @@ pub enum PublishersCommand {
 pub struct AddPublisher {
     pub handle: Handle,
     pub base_uri: uri::Rsync,
-    pub token: Token,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -3,9 +3,7 @@ use std::fmt;
 use rpki::uri;
 
 use crate::commons::api::rrdp::{CurrentObjects, DeltaElements, VerificationError};
-use crate::commons::api::{
-    Handle, ListReply, PublishDelta, PublisherDetails, PublisherRequest, Token,
-};
+use crate::commons::api::{Handle, ListReply, PublishDelta, PublisherDetails, PublisherRequest};
 use crate::commons::eventsourcing::{Aggregate, CommandDetails, SentCommand, StoredEvent};
 
 //------------ PublisherInit -------------------------------------------------
@@ -14,25 +12,20 @@ pub type PublisherInit = StoredEvent<InitPublisherDetails>;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct InitPublisherDetails {
-    token: Token,
     base_uri: uri::Rsync,
 }
 
 impl InitPublisherDetails {
     pub fn for_request(req: PublisherRequest) -> PublisherInit {
-        let (handle, token, base_uri) = req.unwrap(); // (self
-        let details = InitPublisherDetails { token, base_uri };
+        let (handle, base_uri) = req.unwrap(); // (self
+        let details = InitPublisherDetails { base_uri };
         StoredEvent::new(&handle, 0, details)
     }
 }
 
 impl fmt::Display for InitPublisherDetails {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "initialised with token: {} and base_uri: {}",
-            self.token, self.base_uri
-        )
+        write!(f, "initialised with base_uri: {}", self.base_uri)
     }
 }
 
@@ -117,9 +110,6 @@ pub struct Publisher {
     /// Publication jail for this publisher
     base_uri: uri::Rsync,
 
-    /// The token used by the API
-    token: Token,
-
     /// All objects currently published by this publisher, by hash
     current_objects: CurrentObjects,
 }
@@ -132,10 +122,6 @@ impl Publisher {
 
     pub fn is_deactivated(&self) -> bool {
         self.deactivated
-    }
-
-    pub fn token(&self) -> &Token {
-        &self.token
     }
 
     pub fn base_uri(&self) -> &uri::Rsync {
@@ -165,7 +151,6 @@ impl Publisher {
             handle,
             version: 1,
             deactivated: false,
-            token: init.token,
             base_uri: init.base_uri,
             current_objects: CurrentObjects::default(),
         }

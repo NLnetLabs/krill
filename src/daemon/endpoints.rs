@@ -8,7 +8,7 @@ use serde::Serialize;
 use crate::commons::api::rrdp::VerificationError;
 use crate::commons::api::{
     AddChildRequest, CertAuthInit, ErrorCode, ErrorResponse, Handle, ParentCaReq, ParentHandle,
-    PublishDelta, PublisherList, PublisherRequest, RouteAuthorizationUpdates, UpdateChildRequest,
+    PublisherList, PublisherRequest, RouteAuthorizationUpdates, UpdateChildRequest,
 };
 use crate::commons::remote::api::ClientInfo;
 use crate::commons::remote::rfc6492;
@@ -94,19 +94,6 @@ where
     if_allowed(allowed, op)
 }
 
-fn if_publication_allowed<F>(
-    server: &web::Data<AppServer>,
-    handle: &Handle,
-    auth: &Auth,
-    op: F,
-) -> HttpResponse
-where
-    F: FnOnce() -> HttpResponse,
-{
-    let allowed = server.read().is_publication_api_allowed(handle, auth);
-    if_allowed(allowed, op)
-}
-
 //------------ Admin: Publishers ---------------------------------------------
 
 /// Returns a json structure with all publishers in it.
@@ -177,35 +164,6 @@ pub fn rfc8181(
     }
 }
 
-/// Processes a publishdelta request sent to the API.
-#[allow(clippy::needless_pass_by_value)]
-pub fn handle_delta(
-    server: web::Data<AppServer>,
-    auth: Auth,
-    delta: Json<PublishDelta>,
-    handle: Path<Handle>,
-) -> HttpResponse {
-    let handle = handle.into_inner();
-    let delta = delta.into_inner();
-    trace!("Received delta request for {}", &handle);
-    if_publication_allowed(&server, &handle, &auth, || {
-        render_empty_res(server.read().handle_delta(delta, &handle))
-    })
-}
-
-/// Processes a list request sent to the API.
-#[allow(clippy::needless_pass_by_value)]
-pub fn handle_list(server: web::Data<AppServer>, auth: Auth, handle: Path<Handle>) -> HttpResponse {
-    let handle = handle.into_inner();
-    trace!("Received list request for {}", &handle);
-    if_publication_allowed(&server, &handle, &auth, || {
-        match server.read().handle_list(&handle) {
-            Ok(list) => render_json(list),
-            Err(e) => server_error(&Error::ServerError(e)),
-        }
-    })
-}
-
 //------------ Admin: Rfc8181 -----------------------------------------------
 
 pub fn rfc8181_clients(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
@@ -231,7 +189,7 @@ pub fn repository_response(
     handle: Path<Handle>,
 ) -> HttpResponse {
     let handle = handle.into_inner();
-    if_publication_allowed(&server, &handle, &auth, || {
+    if_api_allowed(&server, &auth, || {
         match server.read().repository_response(&handle) {
             Ok(res) => HttpResponse::Ok()
                 .content_type("application/xml")

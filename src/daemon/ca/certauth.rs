@@ -14,7 +14,7 @@ use crate::commons::api::{
     self, CertAuthInfo, ChildHandle, EntitlementClass, Entitlements, Handle, IssuanceRequest,
     IssuanceResponse, IssuedCert, ObjectsDelta, ParentCaContact, ParentHandle, PubServerContact,
     RcvdCert, RepoInfo, RequestResourceLimit, ResourceClassName, ResourceSet, RevocationRequest,
-    RevocationResponse, RouteAuthorization, RouteAuthorizationUpdates, SigningCert, Token,
+    RevocationResponse, RouteAuthorization, RouteAuthorizationUpdates, SigningCert,
     UpdateChildRequest,
 };
 use crate::commons::eventsourcing::{Aggregate, StoredEvent};
@@ -64,7 +64,6 @@ pub struct CertAuth<S: Signer> {
     handle: Handle,
     version: u64,
 
-    token: Token,  // The admin token to access this CertAuth
     id: Rfc8183Id, // Used for RFC 6492 (up-down) and RFC 8181 (publication)
 
     base_repo: RepoInfo,
@@ -90,7 +89,7 @@ impl<S: Signer> Aggregate for CertAuth<S> {
 
     fn init(event: Ini) -> Result<Self> {
         let (handle, _version, details) = event.unwrap();
-        let (token, id, base_repo, ta_opt) = details.unwrap();
+        let (id, base_repo, ta_opt) = details.unwrap();
 
         let pubserver = PubServerContact::embedded(); // TODO: support remote
 
@@ -114,7 +113,6 @@ impl<S: Signer> Aggregate for CertAuth<S> {
             handle,
             version: 1,
 
-            token,
             id,
 
             base_repo,

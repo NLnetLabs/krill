@@ -314,7 +314,7 @@ mod tests {
     use bytes::Bytes;
 
     use crate::commons::api::rrdp::VerificationError;
-    use crate::commons::api::{ListElement, PublishDeltaBuilder, Token};
+    use crate::commons::api::{ListElement, PublishDeltaBuilder};
     use crate::commons::util::file::CurrentFile;
     use crate::commons::util::test;
 
@@ -331,9 +331,8 @@ mod tests {
     fn make_publisher_req(handle: &str, uri: &str) -> PublisherRequest {
         let base_uri = test::rsync(uri);
         let handle = Handle::from_str_unsafe(handle);
-        let token = Token::from("secret");
 
-        PublisherRequest::new(handle, token, base_uri)
+        PublisherRequest::new(handle, base_uri)
     }
 
     fn make_server(work_dir: &PathBuf) -> PubServer {

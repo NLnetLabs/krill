@@ -183,7 +183,7 @@ impl KrillClient {
                 Ok(ApiResponse::PublisherList(list))
             }
             PublishersCommand::Add(add) => {
-                let pbl = PublisherRequest::new(add.handle, add.token, add.base_uri);
+                let pbl = PublisherRequest::new(add.handle, add.base_uri);
                 self.add_publisher(pbl)
             }
             PublishersCommand::Deactivate(handle) => {

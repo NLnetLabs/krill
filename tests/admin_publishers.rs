@@ -2,15 +2,14 @@ extern crate krill;
 
 use krill::cli::options::{AddPublisher, Command, PublishersCommand};
 use krill::cli::report::ApiResponse;
-use krill::commons::api::{Handle, Token};
+use krill::commons::api::Handle;
 use krill::commons::util::test;
 use krill::daemon::test::{krill_admin, test_with_krill_server};
 
-fn add_publisher(handle: &Handle, base_uri: &str, token: &str) {
+fn add_publisher(handle: &Handle, base_uri: &str) {
     let command = Command::Publishers(PublishersCommand::Add(AddPublisher {
         handle: handle.clone(),
         base_uri: test::rsync(base_uri),
-        token: Token::from(token),
     }));
     krill_admin(command);
 }
@@ -37,11 +36,10 @@ fn details_publisher(handle: &Handle) -> ApiResponse {
 fn admin_publishers() {
     test_with_krill_server(|_d| {
         let handle = Handle::from_str_unsafe("alice");
-        let token = "secret";
         let base_rsync_uri_alice = "rsync://localhost/repo/alice/";
 
         // Add client "alice"
-        add_publisher(&handle, base_rsync_uri_alice, token);
+        add_publisher(&handle, base_rsync_uri_alice);
 
         // Find "alice" in list
         let res = list_publishers();

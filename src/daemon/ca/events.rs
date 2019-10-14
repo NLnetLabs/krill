@@ -12,7 +12,7 @@ use crate::commons::api::{
     AddedObject, ChildHandle, CurrentObject, Handle, IssuanceRequest, IssuanceResponse, ObjectName,
     ObjectsDelta, ParentCaContact, ParentHandle, RcvdCert, RepoInfo, ResourceClassName,
     ResourceSet, Revocation, RevocationRequest, RevocationResponse, RevokedObject,
-    RouteAuthorization, TaCertDetails, Token, TrustAnchorLocator, UpdatedObject, WithdrawnObject,
+    RouteAuthorization, TaCertDetails, TrustAnchorLocator, UpdatedObject, WithdrawnObject,
 };
 use crate::commons::eventsourcing::StoredEvent;
 use crate::commons::remote::id::IdCert;
@@ -30,36 +30,25 @@ pub type Ini = StoredEvent<IniDet>;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct IniDet {
-    token: Token,
     id: Rfc8183Id,
     info: RepoInfo,
     ta_details: Option<TaCertDetails>,
 }
 
 impl IniDet {
-    pub fn token(&self) -> &Token {
-        &self.token
-    }
-
-    pub fn unwrap(self) -> (Token, Rfc8183Id, RepoInfo, Option<TaCertDetails>) {
-        (self.token, self.id, self.info, self.ta_details)
+    pub fn unwrap(self) -> (Rfc8183Id, RepoInfo, Option<TaCertDetails>) {
+        (self.id, self.info, self.ta_details)
     }
 }
 
 impl IniDet {
-    pub fn init<S: Signer>(
-        handle: &Handle,
-        token: Token,
-        info: RepoInfo,
-        signer: Arc<RwLock<S>>,
-    ) -> Result<Ini> {
+    pub fn init<S: Signer>(handle: &Handle, info: RepoInfo, signer: Arc<RwLock<S>>) -> Result<Ini> {
         let mut signer = signer.write().unwrap();
         let id = Rfc8183Id::generate(signer.deref_mut())?;
         Ok(Ini::new(
             handle,
             0,
             IniDet {
-                token,
                 id,
                 info,
                 ta_details: None,
@@ -74,7 +63,6 @@ impl IniDet {
         signer: Arc<RwLock<S>>,
     ) -> Result<Ini> {
         let mut signer = signer.write().unwrap();
-        let token = Token::random(signer.deref());
         let id = Rfc8183Id::generate(signer.deref_mut())?;
 
         let ta = {
@@ -96,7 +84,6 @@ impl IniDet {
             handle,
             0,
             IniDet {
-                token,
                 id,
                 info,
                 ta_details: Some(ta),
@@ -147,8 +134,7 @@ impl fmt::Display for IniDet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
-            "Initialised with token: {}, cert (hash): {}, base_uri: {}, rpki notify: {}",
-            self.token,
+            "Initialised with cert (hash): {}, base_uri: {}, rpki notify: {}",
             self.id.key_hash(),
             self.info.base_uri(),
             self.info.rpki_notify()

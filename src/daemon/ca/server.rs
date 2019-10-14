@@ -380,16 +380,11 @@ impl<S: Signer> CaServer<S> {
     }
 
     /// Initialises an embedded CA, without any parents (for now).
-    pub fn init_ca(
-        &self,
-        handle: &Handle,
-        token: Token,
-        repo_info: RepoInfo,
-    ) -> ServerResult<(), S> {
+    pub fn init_ca(&self, handle: &Handle, repo_info: RepoInfo) -> ServerResult<(), S> {
         if self.ca_store.has(handle) {
             Err(ServerError::DuplicateCa(handle.to_string()))
         } else {
-            let init = IniDet::init(handle, token, repo_info, self.signer.clone())?;
+            let init = IniDet::init(handle, repo_info, self.signer.clone())?;
             self.ca_store.add(init)?;
             Ok(())
         }
@@ -924,7 +919,7 @@ mod tests {
     use std::sync::{Arc, RwLock};
 
     use crate::commons::api::{
-        Handle, IssuanceRequest, ParentCaContact, RcvdCert, RepoInfo, ResourceSet, Token,
+        Handle, IssuanceRequest, ParentCaContact, RcvdCert, RepoInfo, ResourceSet,
     };
     use crate::commons::eventsourcing::{Aggregate, AggregateStore, DiskAggregateStore};
     use crate::commons::util::softsigner::OpenSslSigner;
@@ -1015,7 +1010,6 @@ mod tests {
             //   - Child CA initialised
             //
             let child_handle = Handle::from_str_unsafe("child");
-            let child_token = Token::from("child");
             let child_rs = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
 
             let ca_repo_info = {
@@ -1024,13 +1018,7 @@ mod tests {
                 RepoInfo::new(base_uri, rrdp_uri)
             };
 
-            let ca_ini = IniDet::init(
-                &child_handle,
-                child_token.clone(),
-                ca_repo_info,
-                signer.clone(),
-            )
-            .unwrap();
+            let ca_ini = IniDet::init(&child_handle, ca_repo_info, signer.clone()).unwrap();
 
             ca_store.add(ca_ini).unwrap();
             let child = ca_store.get_latest(&child_handle).unwrap();

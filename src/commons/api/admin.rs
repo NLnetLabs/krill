@@ -156,20 +156,15 @@ impl fmt::Display for Token {
 
 /// This type defines request for a new Publisher (CA that is allowed to
 /// publish).
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublisherRequest {
     handle: Handle,
-    token: Token,
     base_uri: uri::Rsync,
 }
 
 impl PublisherRequest {
-    pub fn new(handle: Handle, token: Token, base_uri: uri::Rsync) -> Self {
-        PublisherRequest {
-            handle,
-            token,
-            base_uri,
-        }
+    pub fn new(handle: Handle, base_uri: uri::Rsync) -> Self {
+        PublisherRequest { handle, base_uri }
     }
 }
 
@@ -178,27 +173,15 @@ impl PublisherRequest {
         &self.handle
     }
 
-    pub fn token(&self) -> &Token {
-        &self.token
-    }
-
     pub fn base_uri(&self) -> &uri::Rsync {
         &self.base_uri
     }
 
-    /// Return all the values (handle, token, base_uri).
-    pub fn unwrap(self) -> (Handle, Token, uri::Rsync) {
-        (self.handle, self.token, self.base_uri)
+    /// Return all the values (handle, base_uri).
+    pub fn unwrap(self) -> (Handle, uri::Rsync) {
+        (self.handle, self.base_uri)
     }
 }
-
-impl PartialEq for PublisherRequest {
-    fn eq(&self, other: &PublisherRequest) -> bool {
-        self.handle == other.handle && self.base_uri == other.base_uri
-    }
-}
-
-impl Eq for PublisherRequest {}
 
 //------------ PublisherSummaryInfo ------------------------------------------
 
@@ -448,21 +431,16 @@ impl ParentCaContact {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthInit {
     handle: Handle,
-    token: Token,
     pub_mode: CertAuthPubMode,
 }
 
 impl CertAuthInit {
-    pub fn new(handle: Handle, token: Token, pub_mode: CertAuthPubMode) -> Self {
-        CertAuthInit {
-            handle,
-            token,
-            pub_mode,
-        }
+    pub fn new(handle: Handle, pub_mode: CertAuthPubMode) -> Self {
+        CertAuthInit { handle, pub_mode }
     }
 
-    pub fn unwrap(self) -> (Handle, Token, CertAuthPubMode) {
-        (self.handle, self.token, self.pub_mode)
+    pub fn unwrap(self) -> (Handle, CertAuthPubMode) {
+        (self.handle, self.pub_mode)
     }
 }
 

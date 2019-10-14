@@ -13,8 +13,7 @@ use crate::commons::api::CertAuthHistory;
 use crate::commons::api::{
     AddChildRequest, CertAuthInfo, CertAuthInit, CertAuthList, CertAuthPubMode, ChildCaInfo,
     ChildHandle, Handle, ListReply, ParentCaContact, ParentCaReq, ParentHandle, PublishDelta,
-    PublishRequest, PublisherRequest, RouteAuthorizationUpdates, TaCertDetails, Token,
-    UpdateChildRequest,
+    PublishRequest, PublisherRequest, RouteAuthorizationUpdates, TaCertDetails, UpdateChildRequest,
 };
 use crate::commons::remote::api::ClientInfo;
 use crate::commons::remote::proxy;
@@ -111,14 +110,9 @@ impl KrillServer {
 
                 let ta_aia = format!("{}ta/ta.cer", config.rsync_base.to_string());
                 let ta_aia = uri::Rsync::from_string(ta_aia).unwrap();
-                let token = caserver.random_token();
 
                 // Add publisher
-                let req = PublisherRequest::new(
-                    ta_handle.clone(),
-                    token.clone(),
-                    repo_info.base_uri().clone(),
-                );
+                let req = PublisherRequest::new(ta_handle.clone(), repo_info.base_uri().clone());
 
                 pubserver.create_publisher(req).map_err(Error::PubServer)?;
 
@@ -156,41 +150,8 @@ impl KrillServer {
 }
 
 impl KrillServer {
-    pub fn login(&self, token: Token) -> bool {
-        self.authorizer.is_api_allowed(&token)
-    }
-
     pub fn is_api_allowed(&self, auth: &Auth) -> bool {
-        match auth {
-            Auth::User(name) => name == "admin",
-            Auth::Bearer(token) => self.authorizer.is_api_allowed(&token),
-        }
-    }
-
-    pub fn is_publication_api_allowed(&self, handle: &Handle, auth: &Auth) -> bool {
-        let allowed = match auth {
-            Auth::User(name) => name == "admin",
-            Auth::Bearer(token) => {
-                if self.authorizer.is_api_allowed(&token) {
-                    true
-                } else if let Ok(Some(pbl)) = self.publisher(&handle) {
-                    pbl.token() == token
-                } else {
-                    false
-                }
-            }
-        };
-
-        if allowed {
-            trace!("Access to publication api allowed")
-        } else {
-            warn!(
-                "Access to publication api disallowed for handle: {}, and auth: {}",
-                handle, auth
-            );
-        }
-
-        allowed
+        self.authorizer.is_api_allowed(auth)
     }
 }
 
@@ -402,7 +363,7 @@ impl KrillServer {
     }
 
     pub fn ca_init(&mut self, init: CertAuthInit) -> EmptyRes {
-        let (handle, token, pub_mode) = init.unwrap();
+        let (handle, pub_mode) = init.unwrap();
 
         let repo_info = match pub_mode {
             CertAuthPubMode::Embedded => self.pubserver.repo_info_for(&handle)?,
@@ -410,10 +371,10 @@ impl KrillServer {
         let base_uri = repo_info.ca_repository("");
 
         // Create CA
-        self.caserver.init_ca(&handle, token.clone(), repo_info)?;
+        self.caserver.init_ca(&handle, repo_info)?;
 
         // Add publisher
-        let req = PublisherRequest::new(handle.clone(), token.clone(), base_uri);
+        let req = PublisherRequest::new(handle.clone(), base_uri);
         self.add_publisher(req)?;
 
         Ok(())

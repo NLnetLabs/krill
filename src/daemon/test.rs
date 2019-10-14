@@ -12,7 +12,7 @@ use crate::commons::api::{
     AddChildRequest, CertAuthInfo, CertAuthInit, CertAuthPubMode, CertifiedKeyInfo,
     ChildAuthRequest, ChildHandle, Handle, ParentCaContact, ParentCaReq, ParentHandle, Publish,
     PublisherDetails, ResourceClassKeysInfo, ResourceClassName, ResourceSet,
-    RouteAuthorizationUpdates, Token, UpdateChildRequest,
+    RouteAuthorizationUpdates, UpdateChildRequest,
 };
 use crate::commons::remote::rfc8183;
 use crate::commons::util::test;
@@ -98,8 +98,8 @@ fn refresh_all() {
     krill_admin(Command::CertAuth(CaCommand::RefreshAll));
 }
 
-pub fn init_child(handle: &Handle, token: &Token) {
-    let init = CertAuthInit::new(handle.clone(), token.clone(), CertAuthPubMode::Embedded);
+pub fn init_child(handle: &Handle) {
+    let init = CertAuthInit::new(handle.clone(), CertAuthPubMode::Embedded);
     krill_admin(Command::CertAuth(CaCommand::Init(init)));
 }
 

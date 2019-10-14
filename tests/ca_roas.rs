@@ -4,7 +4,6 @@ use std::str::FromStr;
 
 use krill::commons::api::{
     Handle, ObjectName, ParentCaReq, ResourceSet, RouteAuthorization, RouteAuthorizationUpdates,
-    Token,
 };
 use krill::daemon::ca::ta_handle;
 use krill::daemon::test::*;
@@ -17,10 +16,9 @@ fn ca_roas() {
     test_with_krill_server(|_d| {
         let ta_handle = ta_handle();
         let child = Handle::from_str_unsafe("child");
-        let child_token = Token::from("child");
         let child_resources = ResourceSet::from_strs("", "10.0.0.0/16", "2001:DB8::/32").unwrap();
 
-        init_child(&child, &child_token);
+        init_child(&child);
 
         // Set up under parent  ----------------------------------------------------------------
         {
