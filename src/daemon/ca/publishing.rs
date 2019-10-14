@@ -272,11 +272,13 @@ impl ManifestBuilder {
     ) -> Self {
         let mut entries: HashMap<Bytes, Bytes> = HashMap::new();
 
+        // Add the *new* CRL
         entries.insert(
             crl_info.name.clone().into(),
             Self::mft_hash(crl_info.crl.to_captured().as_slice()),
         );
 
+        // Add all *current* issued certs
         for issued in issued {
             let cert = issued.cert();
             let name = ObjectName::from(cert);
@@ -285,6 +287,7 @@ impl ManifestBuilder {
             entries.insert(name.into(), hash);
         }
 
+        // Add all *current* ROAs
         for (auth, roa_info) in roas {
             let roa = roa_info.roa();
             let name = ObjectName::from(auth);
@@ -293,6 +296,7 @@ impl ManifestBuilder {
             entries.insert(name.into(), hash);
         }
 
+        // Add all *new* objects
         for added in delta.added() {
             let name = added.name().clone();
             let hash = Self::mft_hash(added.object().content().to_bytes().as_ref());
@@ -300,6 +304,9 @@ impl ManifestBuilder {
             entries.insert(name.into(), hash);
         }
 
+        // Add all *updated* objects, note that this may (should) update any ROAs that
+        // existed under the same name, but that are now updated (issued under a new key,
+        // or validation time).
         for updated in delta.updated() {
             let name = updated.name().clone();
             let hash = Self::mft_hash(updated.object().content().to_bytes().as_ref());
@@ -307,6 +314,7 @@ impl ManifestBuilder {
             entries.insert(name.into(), hash);
         }
 
+        // Remove any *withdrawn* objects if present; i.e. removed certs or ROAs.
         for withdraw in delta.withdrawn() {
             let name: Bytes = withdraw.name().clone().into();
             entries.remove(&name);

@@ -532,7 +532,7 @@ impl ResourceClass {
         //  - the new CRL
         //  - current ROAs
         //  - current Certs
-        //  - applying the delta
+        //  - applying the delta - which may update the current ROAs and Certs on the MFT
         let issued = self.certificates.current();
         let roas = self.roas.iter();
 
