@@ -41,5 +41,5 @@ default = []
 extra-debug = [ "rpki/extra-debug" ]
 
 [patch.crates-io]
-rpki = { git = "https://github.com/NLnetLabs/rpki-rs" }
+rpki = { git = "https://github.com/NLnetLabs/rpki-rs", branch = "eq-for-owned-chain" }
 bcder = { git = "https://github.com/NLnetLabs/bcder" }
