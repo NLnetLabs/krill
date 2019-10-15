@@ -65,13 +65,12 @@ impl Auth {
     /// Extracts the bearer token from header string,
     /// returns an invalid token error if parsing fails
     fn extract_bearer_token(header: &str) -> Result<Token, AuthError> {
-        let header = header.to_lowercase();
         if header.len() > 6 {
             let (bearer, token) = header.split_at(6);
             let bearer = bearer.trim();
             let token = Token::from(token.trim());
 
-            if "bearer" == bearer {
+            if "Bearer" == bearer {
                 return Ok(token);
             }
         }
