@@ -1686,4 +1686,43 @@ mod test {
 
         assert_eq!(expected_tal, &found_tal);
     }
+
+    #[test]
+    fn resource_set_eq() {
+        let asns = "AS65000-AS65003, AS65005";
+        let ipv4s = "10.0.0.0/8, 192.168.0.0";
+        let ipv6s = "::1, 2001:db8::/32";
+
+        let resource_set = ResourceSet::from_strs(asns, ipv4s, ipv6s).unwrap();
+
+        let asns_2 = "AS65000-AS65003";
+        let ipv4s_2 = "192.168.0.0";
+        let ipv6s_2 = "2001:db8::/32";
+
+        let resource_set_asn_differs = ResourceSet::from_strs(asns_2, ipv4s, ipv6s).unwrap();
+        let resource_set_v4_differs = ResourceSet::from_strs(asns, ipv4s_2, ipv6s).unwrap();
+        let resource_set_v6_differs = ResourceSet::from_strs(asns, ipv4s, ipv6s_2).unwrap();
+        let resource_set_2 = ResourceSet::from_strs(asns_2, ipv4s_2, ipv6s_2).unwrap();
+
+        assert_eq!(resource_set, resource_set);
+        assert_eq!(resource_set_asn_differs, resource_set_asn_differs);
+        assert_eq!(resource_set_v4_differs, resource_set_v4_differs);
+        assert_eq!(resource_set_v6_differs, resource_set_v6_differs);
+        assert_eq!(resource_set_2, resource_set_2);
+
+        assert_ne!(resource_set, resource_set_asn_differs);
+        assert_ne!(resource_set, resource_set_v4_differs);
+        assert_ne!(resource_set, resource_set_v6_differs);
+        assert_ne!(resource_set, resource_set_2);
+
+        let default_set = ResourceSet::default();
+        let certified = ResourceSet::from_strs(
+            "",
+            "10.0.0.0/16, 192.168.0.0/16",
+            "2001:db8::/32, 2000:db8::/32",
+        )
+        .unwrap();
+        assert_ne!(default_set, certified);
+        assert_ne!(resource_set, certified);
+    }
 }
