@@ -1378,3 +1378,21 @@ impl<S: Signer> CertAuth<S> {
         Ok(res)
     }
 }
+
+//------------ Tests ---------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commons::util::softsigner::OpenSslSigner;
+    use crate::commons::util::test;
+
+    #[test]
+    fn generate_id_cert() {
+        test::test_under_tmp(|d| {
+            let mut signer = OpenSslSigner::build(&d).unwrap();
+            let id = Rfc8183Id::generate(&mut signer).unwrap();
+            id.cert.validate_ta().unwrap();
+        });
+    }
+}

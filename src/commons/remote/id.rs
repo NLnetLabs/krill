@@ -342,7 +342,7 @@ impl IdCert {
         // Validity. Check according to RFC 5280.
         self.validity.validate_at(now)?;
 
-        // Subject Key Identifer. Must be the SHA-1 hash of the octets
+        // Subject Key Identifier. Must be the SHA-1 hash of the octets
         // of the subjectPublicKey.
         if self.extensions.subject_key_id().as_slice().unwrap()
             != self.subject_public_key_info().key_identifier().as_ref()
@@ -574,7 +574,7 @@ pub mod tests {
     }
 
     #[test]
-    fn should_parse_id_publisher_ta_cert() {
+    fn parse_id_publisher_ta_cert() {
         test_id_certificate()
             .validate_ta_at(Time::utc(2012, 1, 1, 0, 0, 0))
             .unwrap();

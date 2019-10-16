@@ -357,7 +357,7 @@ impl SignedAttributes {
                 // attribute using the time that the SignedAttributes
                 // was created.
                 oid::SIGNING_TIME.encode(),
-                encode::set(self.signing_time.encode()),
+                encode::set(self.signing_time.encode_varied()),
             )),
             encode::sequence((
                 oid::MESSAGE_DIGEST.encode(),
@@ -492,8 +492,8 @@ impl SigMsgCrlBuilder {
                 name.encode_ref(),
             ),
             (
-                just_now.encode(),
-                in_a_bit.encode(),
+                just_now.encode_varied(),
+                in_a_bit.encode_varied(),
                 // Real revocations go here
                 extensions,
             ),
