@@ -1,6 +1,6 @@
 extern crate krill;
 
-use krill::commons::api::{Handle, ParentCaReq, ResourceSet, Token};
+use krill::commons::api::{Handle, ParentCaReq, ResourceSet};
 use krill::daemon::ca::ta_handle;
 use krill::daemon::test::*;
 
