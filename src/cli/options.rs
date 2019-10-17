@@ -22,8 +22,8 @@ use commons::api::{ChildHandle, ParentHandle};
 const KRILL_CLI_SERVER_ARG: &str = "server";
 const KRILL_CLI_SERVER_ENV: &str = "KRILL_CLI_SERVER";
 
-const KRILL_CLI_TOKEN_ARG: &str = "admintoken";
-const KRILL_CLI_TOKEN_ENV: &str = "KRILL_CLI_ADMIN_TOKEN";
+const KRILL_CLI_TOKEN_ARG: &str = "token";
+const KRILL_CLI_TOKEN_ENV: &str = "KRILL_CLI_TOKEN";
 
 const KRILL_CLI_FORMAT_ARG: &str = "format";
 const KRILL_CLI_FORMAT_ENV: &str = "KRILL_CLI_FORMAT";
@@ -134,32 +134,32 @@ impl Options {
 
     fn add_general_args<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         app.arg(
-            Arg::with_name("server")
+            Arg::with_name(KRILL_CLI_SERVER_ARG)
                 .short("s")
-                .long("server")
+                .long(KRILL_CLI_SERVER_ARG)
                 .value_name("URI")
                 .help("The full URI to the krill server. Or set env: KRILL_CLI_SERVER")
                 .required(false),
         )
         .arg(
-            Arg::with_name("admintoken")
+            Arg::with_name(KRILL_CLI_TOKEN_ARG)
                 .short("t")
-                .long("admintoken")
-                .value_name("token-string")
-                .help("The admin token. Or set env: KRILL_CLI_ADMIN_TOKEN")
+                .long(KRILL_CLI_TOKEN_ARG)
+                .value_name("string")
+                .help("The secret token for the krill server. Or set env: KRILL_CLI_TOKEN")
                 .required(false),
         )
         .arg(
-            Arg::with_name("format")
+            Arg::with_name(KRILL_CLI_FORMAT_ARG)
                 .short("f")
-                .long("format")
+                .long(KRILL_CLI_FORMAT_ARG)
                 .value_name("type")
                 .help("Report format: none|json|text (default) |xml. Or set env: KRILL_CLI_FORMAT")
                 .required(false),
         )
         .arg(
-            Arg::with_name("api")
-                .long("api")
+            Arg::with_name(KRILL_CLI_API_ARG)
+                .long("KRILL_CLI_API_ARG")
                 .help("Only show the API call and exit. Or set env: KRILL_CLI_API=1")
                 .required(false),
         )
@@ -167,10 +167,10 @@ impl Options {
 
     fn add_my_ca_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         app.arg(
-            Arg::with_name("ca")
+            Arg::with_name(KRILL_CLI_MY_CA_ARG)
                 .value_name("name")
                 .short("c")
-                .long("ca")
+                .long(KRILL_CLI_MY_CA_ARG)
                 .help("The name of the CA you wish to control. Or set env: KRILL_CLI_MY_CA")
                 .required(false),
         )
@@ -476,7 +476,7 @@ impl Options {
     }
 
     fn make_matches<'a>() -> ArgMatches<'a> {
-        let mut app = App::new("Krill Client").version("0.1.1");
+        let mut app = App::new("Krill Client").version("0.2.0");
 
         app = Self::make_cas_list_sc(app);
         app = Self::make_cas_show_ca_sc(app);
