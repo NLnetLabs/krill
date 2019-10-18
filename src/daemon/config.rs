@@ -18,6 +18,9 @@ use crate::commons::api::Token;
 use crate::commons::util::ext_serde;
 use crate::daemon::http::ssl;
 
+pub const APP_NAME: &str = "NLnet Labs RRDP Server";
+pub const APP_VERSION: &str = "0.2.1";
+
 //------------ ConfigDefaults ------------------------------------------------
 
 pub struct ConfigDefaults;
@@ -192,10 +195,9 @@ impl Config {
         c
     }
 
-    /// Creates the config (at startup). Panics in case of issues.
-    pub fn create() -> Result<Self, ConfigError> {
-        let matches = App::new("NLnet Labs RRDP Server")
-            .version("0.1")
+    pub fn get_config_filename() -> String {
+        let matches = App::new(APP_NAME)
+            .version(APP_VERSION)
             .arg(
                 Arg::with_name("config")
                     .short("c")
@@ -215,6 +217,12 @@ impl Config {
         let config_file = matches
             .value_of("config")
             .unwrap_or("./defaults/krill.conf");
+        format!("{}", config_file)
+    }
+
+    /// Creates the config (at startup). Panics in case of issues.
+    pub fn create() -> Result<Self, ConfigError> {
+        let config_file = &*Self::get_config_filename();
 
         let c = Self::read_config(config_file)?;
         c.init_logging()?;
