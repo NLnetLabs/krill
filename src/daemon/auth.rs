@@ -50,8 +50,12 @@ pub fn logout(id: Identity) -> HttpResponse {
     HttpResponse::Ok().finish()
 }
 
-pub fn is_logged_in(_auth: Auth) -> HttpResponse {
-    HttpResponse::Ok().finish()
+pub fn is_logged_in(id: Identity) -> HttpResponse {
+    if id.identity().is_some() {
+        HttpResponse::Ok().finish()
+    } else {
+        HttpResponse::Forbidden()
+    }
 }
 
 pub type UserName = String;
