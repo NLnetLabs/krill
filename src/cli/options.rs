@@ -34,6 +34,9 @@ pub const KRILL_CLI_API_ENV: &str = "KRILL_CLI_API";
 const KRILL_CLI_MY_CA_ARG: &str = "ca";
 const KRILL_CLI_MY_CA_ENV: &str = "KRILL_CLI_MY_CA";
 
+const APP_NAME: &str = "Krill Client";
+const APP_VERSION: &str = "0.2.0";
+
 struct GeneralArgs {
     server: uri::Https,
     token: Token,
@@ -488,7 +491,7 @@ impl Options {
     }
 
     fn make_matches<'a>() -> ArgMatches<'a> {
-        let mut app = App::new("Krill Client").version("0.2.0");
+        let mut app = App::new(APP_NAME).version(APP_VERSION);
 
         app = Self::make_cas_list_sc(app);
         app = Self::make_cas_show_ca_sc(app);
