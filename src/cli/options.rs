@@ -159,7 +159,7 @@ impl Options {
         )
         .arg(
             Arg::with_name(KRILL_CLI_API_ARG)
-                .long("KRILL_CLI_API_ARG")
+                .long(KRILL_CLI_API_ARG)
                 .help("Only show the API call and exit. Or set env: KRILL_CLI_API=1")
                 .required(false),
         )
