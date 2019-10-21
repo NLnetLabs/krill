@@ -21,8 +21,6 @@ use crate::daemon::config::Config;
 use crate::daemon::endpoints;
 use crate::daemon::endpoints::*;
 use crate::daemon::http::ssl;
-use crate::daemon::version::APP_NAME;
-use crate::daemon::version::APP_VERSION;
 use crate::daemon::krillserver;
 use crate::daemon::krillserver::KrillServer;
 
@@ -47,8 +45,6 @@ pub fn start(config: &Config) -> Result<(), Error> {
         AppServer(Arc::new(RwLock::new(krill)))
     };
 
-    info!("{} v{}", APP_NAME, APP_VERSION);
-    info!("Using {} as configuration file", Config::get_config_filename());
     let https_builder = https_builder(config)?;
 
     HttpServer::new(move || {

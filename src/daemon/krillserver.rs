@@ -9,6 +9,8 @@ use chrono::Duration;
 use rpki::cert::Cert;
 use rpki::uri;
 
+use crate::KRILL_SERVER_APP;
+use crate::KRILL_VERSION;
 use crate::commons::api::CertAuthHistory;
 use crate::commons::api::{
     AddChildRequest, CertAuthInfo, CertAuthInit, CertAuthList, CertAuthPubMode, ChildCaInfo,
@@ -82,6 +84,8 @@ impl KrillServer {
         let token = &config.auth_token;
         let ca_refresh_rate = config.ca_refresh;
 
+        info!("{} v{}", KRILL_SERVER_APP, KRILL_VERSION);
+        info!("Using {} as configuration file", Config::get_config_filename());
         info!("Starting krill using service uri: {}", service_uri);
 
         let mut repo_dir = work_dir.clone();

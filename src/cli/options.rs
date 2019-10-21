@@ -9,8 +9,8 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 use rpki::uri;
 
 use crate::cli::report::{ReportError, ReportFormat};
-use crate::cli::version::APP_NAME;
-use crate::cli::version::APP_VERSION;
+use crate::KRILL_CLIENT_APP;
+use crate::KRILL_VERSION;
 use crate::commons::api::{
     AddChildRequest, AuthorizationFmtError, CertAuthInit, CertAuthPubMode, ChildAuthRequest,
     Handle, ParentCaContact, ParentCaReq, ResSetErr, ResourceSet, RouteAuthorizationUpdates, Token,
@@ -491,7 +491,7 @@ impl Options {
     }
 
     fn make_matches<'a>() -> ArgMatches<'a> {
-        let mut app = App::new(APP_NAME).version(APP_VERSION);
+        let mut app = App::new(KRILL_CLIENT_APP).version(KRILL_VERSION);
 
         app = Self::make_cas_list_sc(app);
         app = Self::make_cas_show_ca_sc(app);
