@@ -21,8 +21,8 @@ use crate::daemon::config::Config;
 use crate::daemon::endpoints;
 use crate::daemon::endpoints::*;
 use crate::daemon::http::ssl;
-use crate::daemon::config::APP_NAME;
-use crate::daemon::config::APP_VERSION;
+use crate::daemon::version::APP_NAME;
+use crate::daemon::version::APP_VERSION;
 use crate::daemon::krillserver;
 use crate::daemon::krillserver::KrillServer;
 

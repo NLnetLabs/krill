@@ -17,9 +17,8 @@ use rpki::uri;
 use crate::commons::api::Token;
 use crate::commons::util::ext_serde;
 use crate::daemon::http::ssl;
-
-pub const APP_NAME: &str = "NLnet Labs RRDP Server";
-pub const APP_VERSION: &str = "0.2.1";
+use crate::daemon::version::APP_NAME;
+use crate::daemon::version::APP_VERSION;
 
 //------------ ConfigDefaults ------------------------------------------------
 

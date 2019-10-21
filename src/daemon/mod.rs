@@ -6,5 +6,6 @@ pub mod http;
 pub mod krillserver;
 pub mod scheduler;
 pub mod test;
+pub mod version;
 
 mod mq;

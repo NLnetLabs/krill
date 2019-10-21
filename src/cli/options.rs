@@ -9,6 +9,8 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 use rpki::uri;
 
 use crate::cli::report::{ReportError, ReportFormat};
+use crate::cli::version::APP_NAME;
+use crate::cli::version::APP_VERSION;
 use crate::commons::api::{
     AddChildRequest, AuthorizationFmtError, CertAuthInit, CertAuthPubMode, ChildAuthRequest,
     Handle, ParentCaContact, ParentCaReq, ResSetErr, ResourceSet, RouteAuthorizationUpdates, Token,
@@ -17,6 +19,7 @@ use crate::commons::api::{
 use crate::commons::remote::id::IdCert;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
+
 use commons::api::{ChildHandle, ParentHandle};
 
 const KRILL_CLI_SERVER_ARG: &str = "server";
@@ -33,9 +36,6 @@ pub const KRILL_CLI_API_ENV: &str = "KRILL_CLI_API";
 
 const KRILL_CLI_MY_CA_ARG: &str = "ca";
 const KRILL_CLI_MY_CA_ENV: &str = "KRILL_CLI_MY_CA";
-
-const APP_NAME: &str = "Krill Client";
-const APP_VERSION: &str = "0.2.0";
 
 struct GeneralArgs {
     server: uri::Https,
