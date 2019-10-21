@@ -84,9 +84,9 @@ impl KrillServer {
         let token = &config.auth_token;
         let ca_refresh_rate = config.ca_refresh;
 
-        info!("{} v{}", KRILL_SERVER_APP, KRILL_VERSION);
-        info!("Using {} as configuration file", Config::get_config_filename());
-        info!("Starting krill using service uri: {}", service_uri);
+        info!("Starting {} v{}", KRILL_SERVER_APP, KRILL_VERSION);
+        info!("{} uses configuration file: {}", KRILL_SERVER_APP, Config::get_config_filename());
+        info!("{} uses service uri: {}", KRILL_SERVER_APP, service_uri);
 
         let mut repo_dir = work_dir.clone();
         repo_dir.push("repo");
