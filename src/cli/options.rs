@@ -9,6 +9,8 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 use rpki::uri;
 
 use crate::cli::report::{ReportError, ReportFormat};
+use crate::KRILL_CLIENT_APP;
+use crate::KRILL_VERSION;
 use crate::commons::api::{
     AddChildRequest, AuthorizationFmtError, CertAuthInit, CertAuthPubMode, ChildAuthRequest,
     Handle, ParentCaContact, ParentCaReq, ResSetErr, ResourceSet, RouteAuthorizationUpdates, Token,
@@ -17,6 +19,7 @@ use crate::commons::api::{
 use crate::commons::remote::id::IdCert;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
+
 use commons::api::{ChildHandle, ParentHandle};
 
 const KRILL_CLI_SERVER_ARG: &str = "server";
@@ -488,7 +491,7 @@ impl Options {
     }
 
     fn make_matches<'a>() -> ArgMatches<'a> {
-        let mut app = App::new("Krill Client").version("0.2.0");
+        let mut app = App::new(KRILL_CLIENT_APP).version(KRILL_VERSION);
 
         app = Self::make_cas_list_sc(app);
         app = Self::make_cas_show_ca_sc(app);
