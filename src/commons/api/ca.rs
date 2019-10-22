@@ -22,13 +22,13 @@ use rpki::x509::{Serial, Time};
 use crate::commons::api::admin::{Handle, ParentCaContact};
 use crate::commons::api::publication;
 use crate::commons::api::publication::Publish;
-use crate::commons::api::RouteAuthorization;
-use crate::commons::api::{Base64, HexEncodedHash, IssuanceRequest, RequestResourceLimit};
+use crate::commons::api::{
+    Base64, HexEncodedHash, IssuanceRequest, ParentHandle, RequestResourceLimit, RouteAuthorization,
+};
 use crate::commons::eventsourcing::AggregateHistory;
 use crate::commons::remote::id::IdCert;
 use crate::commons::util::ext_serde;
 use crate::daemon::ca::{self, CertAuth, Signer};
-use commons::api::ParentHandle;
 
 //------------ ResourceClassName -------------------------------------------
 
@@ -1130,7 +1130,7 @@ impl From<&Cert> for WithdrawnObject {
 ///
 /// This type supports conversions to and from string representations,
 /// and is (de)serializable.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ResourceSet {
     asn: AsBlocks,
 
@@ -1320,6 +1320,21 @@ impl fmt::Display for ResourceSet {
         write!(f, "asn: {}, v4: {}, v6: {}", self.asn, self.v4(), self.v6())
     }
 }
+
+// TODO: Implement equals better on enclosed AsBlocks and IpBlocks, and check corner cases
+impl PartialEq for ResourceSet {
+    fn eq(&self, other: &Self) -> bool {
+        if let (Ok(self_str), Ok(other_str)) =
+            (serde_json::to_string(&self), serde_json::to_string(other))
+        {
+            self_str == other_str
+        } else {
+            false
+        }
+    }
+}
+
+impl Eq for ResourceSet {}
 
 //------------ CertAuthList --------------------------------------------------
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
