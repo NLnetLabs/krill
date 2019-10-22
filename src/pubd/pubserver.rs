@@ -1,6 +1,6 @@
 use std::io;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use chrono::Duration;
 
@@ -18,18 +18,28 @@ use crate::pubd::publishers::{
 use crate::pubd::repo::{
     self, RrdpCommandDetails, RrdpInitDetails, RrdpServer, RrdpServerError, RsyncdStore,
 };
+use commons::util::softsigner::OpenSslSigner;
 
 //------------ PubServer -----------------------------------------------------
 
-/// This server manages all publishers. I.e. finds them, adds them, dispatches
-/// commands to them, stores them.. also publishes the combined snapshots and
-/// deltas, and manages the files on disk for rsync.
+/// The Publication Server.
+///
+/// This component is responsible for:
+/// * managing allowed publishers
+/// * verifying requests from remote RFC8183 publishers
+/// * verifying requests from local (embedded) publishers
+/// * updating the RRDP server with any deltas
+/// * updating the contents on disk for Rsync
+/// * responding to publishers
+/// * wrapping responses in RFC8183 for remote publishers
+///
 pub struct PubServer {
     rrdp_store: Arc<DiskAggregateStore<RrdpServer>>,
     rsyncd_store: RsyncdStore,
     store: Arc<DiskAggregateStore<Publisher>>,
     base_rsync_uri: uri::Rsync, // jail for the publishers,
     command_lock: Mutex<()>,    // Only one command at the time.
+    signer: Arc<RwLock<OpenSslSigner>>,
 }
 
 impl PubServer {
@@ -38,6 +48,7 @@ impl PubServer {
         base_http_uri: uri::Https, // for the RRDP files
         repo_dir: PathBuf,         // for the RRDP and rsync files
         work_dir: &PathBuf,        // for the aggregate stores
+        signer: Arc<RwLock<OpenSslSigner>>,
     ) -> Result<Self, Error> {
         let rrdp_store = Arc::new(DiskAggregateStore::<RrdpServer>::new(
             work_dir,
@@ -64,6 +75,7 @@ impl PubServer {
             store,
             base_rsync_uri,
             command_lock,
+            signer,
         };
 
         Ok(pubserver)
@@ -331,11 +343,15 @@ mod tests {
     fn make_publisher_req(handle: &str, uri: &str) -> PublisherRequest {
         let base_uri = test::rsync(uri);
         let handle = Handle::from_str_unsafe(handle);
+        let id_cert = None; // embedded
 
-        PublisherRequest::new(handle, base_uri)
+        PublisherRequest::new(handle, id_cert, base_uri)
     }
 
     fn make_server(work_dir: &PathBuf) -> PubServer {
+        let signer = OpenSslSigner::build(work_dir).unwrap();
+        let signer = Arc::new(RwLock::new(signer));
+
         let mut base_dir = work_dir.clone();
         base_dir.push("repo");
 
@@ -344,6 +360,7 @@ mod tests {
             server_base_http_uri(),
             base_dir,
             work_dir,
+            signer,
         )
         .unwrap()
     }

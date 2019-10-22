@@ -42,13 +42,13 @@ impl<S: Signer> CaServer<S> {
     pub fn build(
         work_dir: &PathBuf,
         events_queue: Arc<EventQueueListener>,
-        signer: S,
+        signer: Arc<RwLock<S>>,
     ) -> ServerResult<Self, S> {
         let mut ca_store = DiskAggregateStore::<CertAuth<S>>::new(work_dir, CA_NS)?;
         ca_store.add_listener(events_queue);
 
         Ok(CaServer {
-            signer: Arc::new(RwLock::new(signer)),
+            signer,
             ca_store: Arc::new(ca_store),
         })
     }
@@ -936,6 +936,7 @@ mod tests {
     fn add_ta() {
         test::test_under_tmp(|d| {
             let signer = OpenSslSigner::build(&d).unwrap();
+            let signer = Arc::new(RwLock::new(signer));
 
             let event_queue = Arc::new(EventQueueListener::in_mem());
 

@@ -5,6 +5,7 @@ use rpki::uri;
 use crate::commons::api::rrdp::{CurrentObjects, DeltaElements, VerificationError};
 use crate::commons::api::{Handle, ListReply, PublishDelta, PublisherDetails, PublisherRequest};
 use crate::commons::eventsourcing::{Aggregate, CommandDetails, SentCommand, StoredEvent};
+use commons::remote::id::IdCert;
 
 //------------ PublisherInit -------------------------------------------------
 
@@ -12,13 +13,14 @@ pub type PublisherInit = StoredEvent<InitPublisherDetails>;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct InitPublisherDetails {
+    id_cert: Option<IdCert>,
     base_uri: uri::Rsync,
 }
 
 impl InitPublisherDetails {
     pub fn for_request(req: PublisherRequest) -> PublisherInit {
-        let (handle, base_uri) = req.unwrap(); // (self
-        let details = InitPublisherDetails { base_uri };
+        let (handle, id_cert, base_uri) = req.unwrap(); // (self
+        let details = InitPublisherDetails { id_cert, base_uri };
         StoredEvent::new(&handle, 0, details)
     }
 }
@@ -107,6 +109,9 @@ pub struct Publisher {
     version: u64,
     deactivated: bool,
 
+    /// Used by remote RFC8181 publishers
+    id_cert: Option<IdCert>,
+
     /// Publication jail for this publisher
     base_uri: uri::Rsync,
 
@@ -130,8 +135,9 @@ impl Publisher {
 
     pub fn as_api_details(&self) -> PublisherDetails {
         PublisherDetails::new(
-            self.handle.as_str(),
+            &self.handle,
             self.deactivated,
+            self.id_cert.as_ref(),
             &self.base_uri,
             self.current_objects
                 .elements()
@@ -151,6 +157,7 @@ impl Publisher {
             handle,
             version: 1,
             deactivated: false,
+            id_cert: init.id_cert,
             base_uri: init.base_uri,
             current_objects: CurrentObjects::default(),
         }

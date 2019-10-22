@@ -360,9 +360,7 @@ pub fn ca_current_objects(handle: &Handle) -> Vec<Publish> {
 }
 
 pub fn publisher_details(handle: &Handle) -> PublisherDetails {
-    match krill_admin(Command::Publishers(PublishersCommand::Details(
-        handle.clone(),
-    ))) {
+    match krill_admin(Command::Publishers(PublishersCommand::Show(handle.clone()))) {
         ApiResponse::PublisherDetails(pub_details) => pub_details,
         _ => panic!("Expected publisher details"),
     }

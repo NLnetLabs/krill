@@ -259,9 +259,11 @@ impl Report for PublisherDetails {
             ReportFormat::Text => {
                 let mut res = String::new();
 
-                res.push_str("handle: ");
-                res.push_str(self.handle());
-                res.push_str("\n");
+                res.push_str(&format!("handle: {}\n", self.handle()));
+
+                if let Some(id_cert) = self.id_cert() {
+                    res.push_str(&format!("id: {}", id_cert.ski_hex()))
+                }
 
                 res.push_str("base uri: ");
                 res.push_str(self.base_uri().to_string().as_str());

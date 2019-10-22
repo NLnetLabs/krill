@@ -159,12 +159,17 @@ impl fmt::Display for Token {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublisherRequest {
     handle: Handle,
+    id_cert: Option<IdCert>,
     base_uri: uri::Rsync,
 }
 
 impl PublisherRequest {
-    pub fn new(handle: Handle, base_uri: uri::Rsync) -> Self {
-        PublisherRequest { handle, base_uri }
+    pub fn new(handle: Handle, id_cert: Option<IdCert>, base_uri: uri::Rsync) -> Self {
+        PublisherRequest {
+            handle,
+            id_cert,
+            base_uri,
+        }
     }
 }
 
@@ -178,8 +183,8 @@ impl PublisherRequest {
     }
 
     /// Return all the values (handle, base_uri).
-    pub fn unwrap(self) -> (Handle, uri::Rsync) {
-        (self.handle, self.base_uri)
+    pub fn unwrap(self) -> (Handle, Option<IdCert>, uri::Rsync) {
+        (self.handle, self.id_cert, self.base_uri)
     }
 }
 
@@ -240,56 +245,48 @@ impl PublisherList {
 
 /// This type defines the publisher details for:
 /// /api/v1/publishers/{handle}
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublisherDetails {
-    handle: String,
+    handle: Handle,
     deactivated: bool,
+    id_cert: Option<IdCert>,
     base_uri: uri::Rsync,
     current_files: Vec<PublishElement>,
 }
 
 impl PublisherDetails {
     pub fn new(
-        handle: &str,
+        handle: &Handle,
         deactivated: bool,
+        id_cert: Option<&IdCert>,
         base_uri: &uri::Rsync,
         current_files: Vec<PublishElement>,
     ) -> Self {
         PublisherDetails {
-            handle: handle.to_string(),
+            handle: handle.clone(),
             deactivated,
+            id_cert: id_cert.cloned(),
             base_uri: base_uri.clone(),
             current_files,
         }
     }
 
-    pub fn handle(&self) -> &str {
+    pub fn handle(&self) -> &Handle {
         &self.handle
     }
-
     pub fn deactivated(&self) -> bool {
         self.deactivated
     }
-
+    pub fn id_cert(&self) -> Option<&IdCert> {
+        self.id_cert.as_ref()
+    }
     pub fn base_uri(&self) -> &uri::Rsync {
         &self.base_uri
     }
-
     pub fn current_files(&self) -> &Vec<PublishElement> {
         &self.current_files
     }
 }
-
-impl PartialEq for PublisherDetails {
-    fn eq(&self, other: &PublisherDetails) -> bool {
-        match (serde_json::to_string(self), serde_json::to_string(other)) {
-            (Ok(ser_self), Ok(ser_other)) => ser_self == ser_other,
-            _ => false,
-        }
-    }
-}
-
-impl Eq for PublisherDetails {}
 
 //------------ PublisherClientRequest ----------------------------------------
 
@@ -445,8 +442,10 @@ impl CertAuthInit {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[allow(clippy::large_enum_variant)]
 pub enum CertAuthPubMode {
     Embedded,
+    Rfc8181(IdCert),
 }
 
 //------------ AddChildRequest -----------------------------------------------

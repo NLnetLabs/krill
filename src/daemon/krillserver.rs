@@ -1,6 +1,6 @@
 //! An RPKI publication protocol server.
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::{io, thread};
 
 use bcder::Captured;
@@ -91,16 +91,24 @@ impl KrillServer {
         let mut repo_dir = work_dir.clone();
         repo_dir.push("repo");
 
+        let signer = OpenSslSigner::build(work_dir)?;
+        let signer = Arc::new(RwLock::new(signer));
+
         let authorizer = Authorizer::new(token);
 
         let pubserver = Arc::new(
-            PubServer::build(base_uri.clone(), rrdp_base_uri.clone(), repo_dir, work_dir)
-                .map_err(Error::PubServer)?,
+            PubServer::build(
+                base_uri.clone(),
+                rrdp_base_uri.clone(),
+                repo_dir,
+                work_dir,
+                signer.clone(),
+            )
+            .map_err(Error::PubServer)?,
         );
 
-        let proxy_server = ProxyServer::init(work_dir, &service_uri)?;
+        let proxy_server = ProxyServer::init(work_dir)?;
 
-        let signer = OpenSslSigner::build(work_dir)?;
         let event_queue = Arc::new(EventQueueListener::in_mem());
         let caserver = Arc::new(ca::CaServer::build(work_dir, event_queue.clone(), signer)?);
 
@@ -117,7 +125,8 @@ impl KrillServer {
                 let ta_aia = uri::Rsync::from_string(ta_aia).unwrap();
 
                 // Add publisher
-                let req = PublisherRequest::new(ta_handle.clone(), repo_info.base_uri().clone());
+                let req =
+                    PublisherRequest::new(ta_handle.clone(), None, repo_info.base_uri().clone());
 
                 pubserver.create_publisher(req).map_err(Error::PubServer)?;
 
@@ -378,16 +387,19 @@ impl KrillServer {
     pub fn ca_init(&mut self, init: CertAuthInit) -> EmptyRes {
         let (handle, pub_mode) = init.unwrap();
 
-        let repo_info = match pub_mode {
-            CertAuthPubMode::Embedded => self.pubserver.repo_info_for(&handle)?,
-        };
+        let repo_info = self.pubserver.repo_info_for(&handle)?;
         let base_uri = repo_info.ca_repository("");
 
         // Create CA
         self.caserver.init_ca(&handle, repo_info)?;
 
+        let id_cert = match pub_mode {
+            CertAuthPubMode::Embedded => None,
+            CertAuthPubMode::Rfc8181(id_cert) => Some(id_cert),
+        };
+
         // Add publisher
-        let req = PublisherRequest::new(handle.clone(), base_uri);
+        let req = PublisherRequest::new(handle.clone(), id_cert, base_uri);
         self.add_publisher(req)?;
 
         Ok(())

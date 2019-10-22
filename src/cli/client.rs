@@ -183,7 +183,7 @@ impl KrillClient {
                 Ok(ApiResponse::PublisherList(list))
             }
             PublishersCommand::Add(add) => {
-                let pbl = PublisherRequest::new(add.handle, add.base_uri);
+                let pbl = PublisherRequest::new(add.handle, add.id_cert, add.base_uri);
                 self.add_publisher(pbl)
             }
             PublishersCommand::Deactivate(handle) => {
@@ -191,7 +191,7 @@ impl KrillClient {
                 self.delete(&uri)?;
                 Ok(ApiResponse::Empty)
             }
-            PublishersCommand::Details(handle) => {
+            PublishersCommand::Show(handle) => {
                 let uri = format!("api/v1/publishers/{}", handle);
                 let details: PublisherDetails = self.get_json(&uri)?;
                 Ok(ApiResponse::PublisherDetails(details))

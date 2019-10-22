@@ -484,6 +484,47 @@ impl Options {
         app.subcommand(sub)
     }
 
+    fn make_publishers_list_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("list").about("List all publishers.");
+        sub = Self::add_general_args(sub);
+        app.subcommand(sub)
+    }
+
+    fn add_publisher_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        app.arg(
+            Arg::with_name("publisher")
+                .value_name("handle")
+                .short("p")
+                .long("publisher")
+                .help("The handle (name) of the publisher.")
+                .required(true),
+        )
+    }
+
+    fn make_publishers_add_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("add").about("Add a publisher.");
+        sub = Self::add_general_args(sub);
+        sub = Self::add_publisher_arg(sub);
+        app.subcommand(sub)
+    }
+
+    fn make_publishers_show_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("show").about("Show details for a publisher.");
+        sub = Self::add_general_args(sub);
+        sub = Self::add_publisher_arg(sub);
+        app.subcommand(sub)
+    }
+
+    fn make_publishers_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("publishers").about("Manage publishers in Krill.");
+
+        sub = Self::make_publishers_list_sc(sub);
+        sub = Self::make_publishers_add_sc(sub);
+        sub = Self::make_publishers_show_sc(sub);
+
+        app.subcommand(sub)
+    }
+
     fn make_health_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         app.subcommand(
             SubCommand::with_name("health").about("Perform an authenticated health check"),
@@ -501,6 +542,8 @@ impl Options {
         app = Self::make_cas_parents_sc(app);
         app = Self::make_cas_keyroll_sc(app);
         app = Self::make_cas_routes_sc(app);
+
+        app = Self::make_publishers_sc(app);
 
         app = Self::make_health_sc(app);
 
@@ -900,9 +943,10 @@ pub enum CaCommand {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub enum PublishersCommand {
     Add(AddPublisher),
-    Details(Handle),
+    Show(Handle),
     Deactivate(Handle),
     List,
 }
@@ -910,6 +954,7 @@ pub enum PublishersCommand {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AddPublisher {
     pub handle: Handle,
+    pub id_cert: Option<IdCert>,
     pub base_uri: uri::Rsync,
 }
 

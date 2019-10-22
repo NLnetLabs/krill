@@ -9,6 +9,7 @@ use krill::daemon::test::{krill_admin, test_with_krill_server};
 fn add_publisher(handle: &Handle, base_uri: &str) {
     let command = Command::Publishers(PublishersCommand::Add(AddPublisher {
         handle: handle.clone(),
+        id_cert: None, // embedded for test
         base_uri: test::rsync(base_uri),
     }));
     krill_admin(command);
@@ -27,7 +28,7 @@ fn list_publishers() -> ApiResponse {
 }
 
 fn details_publisher(handle: &Handle) -> ApiResponse {
-    let command = Command::Publishers(PublishersCommand::Details(handle.clone()));
+    let command = Command::Publishers(PublishersCommand::Show(handle.clone()));
 
     krill_admin(command)
 }
@@ -56,7 +57,7 @@ fn admin_publishers() {
         let details_res = details_publisher(&handle);
         match details_res {
             ApiResponse::PublisherDetails(details) => {
-                assert_eq!("alice", details.handle());
+                assert_eq!(&handle, details.handle());
                 assert_eq!(false, details.deactivated());
             }
             _ => panic!("Expected details"),
@@ -69,7 +70,7 @@ fn admin_publishers() {
         let details_res = details_publisher(&handle);
         match details_res {
             ApiResponse::PublisherDetails(details) => {
-                assert_eq!("alice", details.handle());
+                assert_eq!(&handle, details.handle());
                 assert_eq!(true, details.deactivated());
             }
             _ => panic!("Expected details"),
