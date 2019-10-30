@@ -1,5 +1,5 @@
 #
-# -- stage 1: build krilld and krill_admin
+# -- stage 1: build krill and krillc
 # Use Ubuntu 16.04 because this is what the Travis CI Krill build uses.
 #
 FROM ubuntu:16.04 AS builder
@@ -15,21 +15,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
 ENV PATH "/root/.cargo/bin:$PATH"
 
-# Build the Krill daemon and krill_admin CLI tool
-# Due to https://github.com/rust-lang/cargo/issues/2644#issuecomment-526931209
-# we do a hacky first step to build dependencies first so that we don't have to
-# COPY directories and files individually because COPY . . causes the entire
-# build to be repeated if any file is changed, even if it was a docker/ file
-# that only affects the second stage of the build.
-WORKDIR /tmp/krill
-COPY Cargo.toml .
-COPY yarn.lock .
-COPY client client
-COPY commons commons
-COPY daemon daemon
-COPY pubc pubc
-COPY pubd pubd
-RUN cargo build --release --bin krilld --bin krill_admin
+WORKDIR /tmp/krill/src
+COPY Cargo.toml /tmp/krill/
+COPY src /tmp/krill/src/
+RUN cargo build --release
 
 #
 # -- stage 2: create an image containing just the binaries, configs &
@@ -37,8 +26,8 @@ RUN cargo build --release --bin krilld --bin krill_admin
 #             it.
 #
 FROM ubuntu:16.04
-COPY --from=builder /tmp/krill/target/release/krilld /usr/local/bin/
-COPY --from=builder /tmp/krill/target/release/krill_admin /usr/local/bin/
+COPY --from=builder /tmp/krill/target/release/krill /usr/local/bin/
+COPY --from=builder /tmp/krill/target/release/krillc /usr/local/bin/
 
 # Build variables for uid and guid of user to run container
 ARG RUN_USER=krill
@@ -69,4 +58,4 @@ RUN chown ${RUN_USER}: /opt/entrypoint.sh
 EXPOSE 3000/tcp
 
 ENTRYPOINT ["/opt/entrypoint.sh"]
-CMD ["krilld", "-c", "/var/krill/data/krill.conf"]
+CMD ["krill", "-c", "/var/krill/data/krill.conf"]
