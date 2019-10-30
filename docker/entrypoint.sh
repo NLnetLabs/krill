@@ -35,7 +35,7 @@ log_info() {
     echo "${LOG_PREFIX} $*"
 }
 
-if [ "$1" == "krilld" ]; then
+if [ "$1" == "krill" ]; then
     # Does the opreator want to use their own API token? If so they must
     # supply the KRILL_AUTH_TOKEN env var.
     if [ "${KRILL_AUTH_TOKEN}" == "None" ]; then
@@ -74,8 +74,6 @@ EOF
         cat ${KRILL_CONF}
         log_info "End of dump"
     fi
-
-
 fi
 
 # Launch the command supplied either by the default CMD (krilld) in the
