@@ -15,7 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
 ENV PATH "/root/.cargo/bin:$PATH"
 
-WORKDIR /tmp/krill/src
+WORKDIR /tmp/krill
 COPY Cargo.toml /tmp/krill/
 COPY src /tmp/krill/src/
 RUN cargo build --release
