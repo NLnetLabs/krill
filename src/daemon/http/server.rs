@@ -11,7 +11,7 @@ use actix_session::CookieSession;
 use actix_web::http::StatusCode;
 use actix_web::web::{delete, get, post, scope, Path};
 use actix_web::{guard, middleware, web};
-use actix_web::{App, FromRequest, HttpResponse, HttpServer};
+use actix_web::{App, HttpResponse, HttpServer};
 use openssl::ssl::{SslAcceptor, SslAcceptorBuilder, SslFiletype, SslMethod};
 
 use bcder::decode;
@@ -62,16 +62,13 @@ pub fn start(config: &Config) -> Result<(), Error> {
                 scope("/api/v1")
                     // Health
                     .route("/health", get().to(api_health))
-                    // Publishers (both embedded and remote)
-                    .route("/publishers", get().to(publishers))
-                    .route("/publishers", post().to(add_publisher))
-                    .route("/publishers/{handle}", get().to(publisher_details))
-                    .route("/publishers/{handle}", delete().to(deactivate_publisher))
-                    .route("/rfc8181/clients", get().to(rfc8181_clients))
-                    .route("/rfc8181/clients", post().to(add_rfc8181_client))
-                    .data(web::Bytes::configure(|cfg| cfg.limit(256 * 1024 * 1024)))
+                    // Repositories and their publishers (both embedded and remote)
+                    .route("/publishers", get().to(list_pbl))
+                    .route("/publishers", post().to(add_pbl))
+                    .route("/publishers/{handle}", get().to(show_pbl))
+                    .route("/publishers/{handle}", delete().to(remove_pbl))
                     .route(
-                        "/rfc8181/{handle}/response.xml",
+                        "/publishers/{handle}/response.xml",
                         get().to(repository_response),
                     )
                     // CAs (both embedded and remote)

@@ -58,7 +58,7 @@ fn make_event_sh(
             match evt {
                 QueueEvent::Delta(handle, version, delta) => {
                     trace!("Trigger publication for '{}' version '{}'", handle, version);
-                    if let Err(e) = pubserver.publish(&handle, delta) {
+                    if let Err(e) = pubserver.publish(handle.clone(), delta) {
                         error!("Failed to publish for CA: {}, error: {}", handle, e);
                     }
                 }

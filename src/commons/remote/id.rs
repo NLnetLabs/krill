@@ -6,59 +6,12 @@ use bcder::encode::Values;
 use bcder::{decode, encode};
 use bcder::{Mode, OctetString, Oid, Tag, Unsigned};
 use rpki::cert::ext::{AuthorityKeyIdentifier, BasicCa, SubjectKeyIdentifier};
-use rpki::crypto::{KeyIdentifier, PublicKey, SignatureAlgorithm};
+use rpki::crypto::{PublicKey, SignatureAlgorithm};
 use rpki::uri;
 use rpki::x509::{Name, SignedData, Time, ValidationError, Validity};
 
 use crate::commons::api::Handle;
 use crate::commons::remote::rfc8183::ServiceUri;
-
-//------------ MyIdentity ----------------------------------------------------
-
-/// This type stores identity details for a client or server involved in RPKI
-/// publishing (up-down) or publication.
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct MyIdentity {
-    name: Handle,
-    id_cert: IdCert,
-    key_id: KeyIdentifier,
-}
-
-impl MyIdentity {
-    pub fn new(name: Handle, id_cert: IdCert, key_id: KeyIdentifier) -> Self {
-        MyIdentity {
-            name,
-            id_cert,
-            key_id,
-        }
-    }
-
-    /// The name for this actor.
-    pub fn name(&self) -> &Handle {
-        &self.name
-    }
-
-    /// The identity certificate for this actor.
-    pub fn id_cert(&self) -> &IdCert {
-        &self.id_cert
-    }
-
-    /// The identifier that the Signer needs to use the key for the identity
-    /// certificate.
-    pub fn key_id(&self) -> KeyIdentifier {
-        self.key_id
-    }
-}
-
-impl PartialEq for MyIdentity {
-    fn eq(&self, other: &MyIdentity) -> bool {
-        self.name == other.name
-            && self.id_cert.to_bytes() == other.id_cert.to_bytes()
-            && self.key_id == other.key_id
-    }
-}
-
-impl Eq for MyIdentity {}
 
 //------------ ParentInfo ----------------------------------------------------
 

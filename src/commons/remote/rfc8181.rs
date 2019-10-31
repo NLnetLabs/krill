@@ -15,6 +15,7 @@ use super::sigmsg::SignedMessage;
 
 pub const VERSION: &str = "4";
 pub const NS: &str = "http://www.hactrn.net/uris/rpki/publication-spec/";
+pub const CONTENT_TYPE: &str = "application/rpki-publication";
 
 //------------ Message -------------------------------------------------------
 

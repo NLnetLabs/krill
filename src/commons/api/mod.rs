@@ -55,6 +55,10 @@ impl Base64 {
     pub fn to_encoded_hash(&self) -> HexEncodedHash {
         HexEncodedHash::from(self.to_hex_hash())
     }
+
+    pub fn size(&self) -> usize {
+        self.0.len()
+    }
 }
 
 impl AsRef<str> for Base64 {

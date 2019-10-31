@@ -1337,6 +1337,7 @@ impl PartialEq for ResourceSet {
 impl Eq for ResourceSet {}
 
 //------------ CertAuthList --------------------------------------------------
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthList {
     cas: Vec<CertAuthSummary>,
@@ -1351,6 +1352,8 @@ impl CertAuthList {
         &self.cas
     }
 }
+
+//------------ CertAuthSummary -----------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthSummary {

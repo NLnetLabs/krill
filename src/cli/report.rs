@@ -1,13 +1,11 @@
 use std::str::{from_utf8_unchecked, FromStr};
 
-use crate::commons::api::CertAuthHistory;
 use crate::commons::api::{
-    CertAuthInfo, CertAuthList, CurrentObjects, ParentCaContact, PublisherDetails, PublisherList,
-    RouteAuthorization,
+    CertAuthHistory, CertAuthInfo, CertAuthList, CurrentObjects, ParentCaContact, PublisherDetails,
+    PublisherList, RouteAuthorization,
 };
 use crate::commons::remote::api::ClientInfo;
 use crate::commons::remote::rfc8183;
-use crate::commons::remote::rfc8183::RepositoryResponse;
 
 //------------ ApiResponse ---------------------------------------------------
 
@@ -260,14 +258,8 @@ impl Report for PublisherDetails {
                 let mut res = String::new();
 
                 res.push_str(&format!("handle: {}\n", self.handle()));
-
-                if let Some(id_cert) = self.id_cert() {
-                    res.push_str(&format!("id: {}", id_cert.ski_hex()))
-                }
-
-                res.push_str("base uri: ");
-                res.push_str(self.base_uri().to_string().as_str());
-                res.push_str("\n");
+                res.push_str(&format!("id: {}", self.id_cert().ski_hex()));
+                res.push_str(&format!("base uri: {}\n", self.base_uri().to_string()));
 
                 Ok(res)
             }
@@ -300,7 +292,7 @@ impl Report for Vec<ClientInfo> {
     }
 }
 
-impl Report for RepositoryResponse {
+impl Report for rfc8183::RepositoryResponse {
     fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
         match format {
             ReportFormat::Text | ReportFormat::Xml | ReportFormat::Default => {

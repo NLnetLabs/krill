@@ -34,7 +34,7 @@ use crate::daemon::ca::{
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Rfc8183Id {
-    key: KeyIdentifier,
+    key: KeyIdentifier, // convenient (and efficient) access
     cert: IdCert,
 }
 

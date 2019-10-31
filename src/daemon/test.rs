@@ -9,17 +9,17 @@ use crate::cli::options::{CaCommand, Command, Options, PublishersCommand};
 use crate::cli::report::{ApiResponse, ReportFormat};
 use crate::cli::{Error, KrillClient};
 use crate::commons::api::{
-    AddChildRequest, CertAuthInfo, CertAuthInit, CertAuthPubMode, CertifiedKeyInfo,
-    ChildAuthRequest, ChildHandle, Handle, ParentCaContact, ParentCaReq, ParentHandle, Publish,
-    PublisherDetails, ResourceClassKeysInfo, ResourceClassName, ResourceSet,
-    RouteAuthorizationUpdates, UpdateChildRequest,
+    AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildAuthRequest, ChildHandle,
+    Handle, ParentCaContact, ParentCaReq, ParentHandle, Publish, PublisherDetails, PublisherHandle,
+    ResourceClassKeysInfo, ResourceClassName, ResourceSet, RouteAuthorizationUpdates,
+    UpdateChildRequest,
 };
 use crate::commons::remote::rfc8183;
+use crate::commons::remote::rfc8183::ChildRequest;
 use crate::commons::util::test;
 use crate::daemon::ca::ta_handle;
 use crate::daemon::config::Config;
 use crate::daemon::http::server;
-use commons::remote::rfc8183::ChildRequest;
 
 pub fn test_with_krill_server<F>(op: F)
 where
@@ -99,7 +99,7 @@ fn refresh_all() {
 }
 
 pub fn init_child(handle: &Handle) {
-    let init = CertAuthInit::new(handle.clone(), CertAuthPubMode::Embedded);
+    let init = CertAuthInit::new(handle.clone());
     krill_admin(Command::CertAuth(CaCommand::Init(init)));
 }
 
@@ -359,15 +359,17 @@ pub fn ca_current_objects(handle: &Handle) -> Vec<Publish> {
     ca.published_objects()
 }
 
-pub fn publisher_details(handle: &Handle) -> PublisherDetails {
-    match krill_admin(Command::Publishers(PublishersCommand::Show(handle.clone()))) {
+pub fn publisher_details(publisher: &PublisherHandle) -> PublisherDetails {
+    match krill_admin(Command::Publishers(PublishersCommand::ShowPublisher(
+        publisher.clone(),
+    ))) {
         ApiResponse::PublisherDetails(pub_details) => pub_details,
         _ => panic!("Expected publisher details"),
     }
 }
 
-pub fn wait_for_published_objects(handle: &Handle, objects: &[&str]) {
-    let mut details = publisher_details(handle);
+pub fn wait_for_published_objects(publisher: &PublisherHandle, objects: &[&str]) {
+    let mut details = publisher_details(publisher);
 
     for _counter in 1..=30 {
         let current_files = details.current_files();
@@ -387,10 +389,10 @@ pub fn wait_for_published_objects(handle: &Handle, objects: &[&str]) {
 
         wait_seconds(1);
 
-        details = publisher_details(handle);
+        details = publisher_details(publisher);
     }
 
-    eprintln!("Did not find match for: {}", handle);
+    eprintln!("Did not find match for: {}", publisher);
     eprintln!("Found:");
     for file in details.current_files() {
         eprintln!("  {}", file.uri());

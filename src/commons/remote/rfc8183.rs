@@ -457,6 +457,12 @@ impl PublisherRequest {
     }
 }
 
+impl Into<IdCert> for PublisherRequest {
+    fn into(self) -> IdCert {
+        self.id_cert
+    }
+}
+
 //------------ RepositoryResponse --------------------------------------------
 
 /// Type representing a <repository_response/>

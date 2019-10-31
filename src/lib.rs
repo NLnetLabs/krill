@@ -1,7 +1,3 @@
-pub const KRILL_VERSION: &str = "0.2.1";
-pub const KRILL_SERVER_APP: &str = "Krill";
-pub const KRILL_CLIENT_APP: &str = "Krill Client";
-
 extern crate clap;
 #[macro_use]
 extern crate derive_more;
@@ -34,5 +30,6 @@ extern crate xml as xmlrs;
 
 pub mod cli;
 pub mod commons;
+pub mod constants;
 pub mod daemon;
 pub mod pubd;

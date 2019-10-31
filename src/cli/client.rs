@@ -5,17 +5,15 @@ use serde::Serialize;
 
 use rpki::uri;
 
-use crate::cli::options::KRILL_CLI_API_ENV;
-use crate::cli::options::{CaCommand, Command, Options, PublishersCommand, Rfc8181Command};
+use crate::cli::options::{CaCommand, Command, Options, PublishersCommand};
 use crate::cli::report::{ApiResponse, ReportError};
 use crate::commons::api::{
     CertAuthInfo, ParentCaContact, PublisherDetails, PublisherList, PublisherRequest, Token,
 };
-use crate::commons::remote::api::{ClientAuth, ClientInfo};
 use crate::commons::remote::rfc8183;
 use crate::commons::remote::rfc8183::RepositoryResponse;
-use crate::commons::util::file;
 use crate::commons::util::httpclient;
+use crate::constants::KRILL_CLI_API_ENV;
 
 /// Command line tool for Krill admin tasks
 pub struct KrillClient {
@@ -46,14 +44,15 @@ impl KrillClient {
         };
 
         if options.api {
-            env::set_var(KRILL_CLI_API_ENV, "1") // this is safe here, because the CLI will exit
+            // passing the api option in the env, so that the call
+            // to the back-end will just print and exit.
+            env::set_var(KRILL_CLI_API_ENV, "1")
         }
 
         match options.command {
             Command::Health => client.health(),
             Command::CertAuth(cmd) => client.certauth(cmd),
             Command::Publishers(cmd) => client.publishers(cmd),
-            Command::Rfc8181(cmd) => client.rfc8181(cmd),
             Command::NotSet => Err(Error::MissingCommand),
         }
     }
@@ -178,60 +177,32 @@ impl KrillClient {
 
     fn publishers(&self, command: PublishersCommand) -> Result<ApiResponse, Error> {
         match command {
-            PublishersCommand::List => {
+            PublishersCommand::PublisherList => {
                 let list: PublisherList = self.get_json("api/v1/publishers")?;
                 Ok(ApiResponse::PublisherList(list))
             }
-            PublishersCommand::Add(add) => {
-                let pbl = PublisherRequest::new(add.handle, add.id_cert, add.base_uri);
-                self.add_publisher(pbl)
+            PublishersCommand::AddPublisher(publisher, id_cert) => {
+                let pbl = PublisherRequest::new(publisher, id_cert);
+                self.post_json("api/v1/publishers", pbl)?;
+                Ok(ApiResponse::Empty)
             }
-            PublishersCommand::Deactivate(handle) => {
+            PublishersCommand::RemovePublisher(handle) => {
                 let uri = format!("api/v1/publishers/{}", handle);
                 self.delete(&uri)?;
                 Ok(ApiResponse::Empty)
             }
-            PublishersCommand::Show(handle) => {
+            PublishersCommand::ShowPublisher(handle) => {
                 let uri = format!("api/v1/publishers/{}", handle);
                 let details: PublisherDetails = self.get_json(&uri)?;
                 Ok(ApiResponse::PublisherDetails(details))
             }
-        }
-    }
-
-    fn add_publisher(&self, pbl: PublisherRequest) -> Result<ApiResponse, Error> {
-        self.post_json("api/v1/publishers", pbl)?;
-        Ok(ApiResponse::Empty)
-    }
-
-    fn rfc8181(&self, command: Rfc8181Command) -> Result<ApiResponse, Error> {
-        match command {
-            Rfc8181Command::List => {
-                let list: Vec<ClientInfo> = self.get_json("api/v1/rfc8181/clients")?;
-                Ok(ApiResponse::Rfc8181ClientList(list))
-            }
-            Rfc8181Command::RepoRes(handle) => {
-                let uri = format!("api/v1/rfc8181/{}/response.xml", handle);
+            PublishersCommand::RepositiryResponse(handle) => {
+                let uri = format!("api/v1/publishers/{}/response.xml", handle);
                 let ct = "application/xml";
                 let xml = self.get_text(&uri, ct)?;
 
                 let res = RepositoryResponse::validate(xml.as_bytes())?;
                 Ok(ApiResponse::Rfc8183RepositoryResponse(res))
-            }
-            Rfc8181Command::Add(details) => {
-                let xml = file::read(&details.xml)?;
-                let pr = rfc8183::PublisherRequest::validate(xml.as_ref())?;
-
-                let handle = pr.client_handle();
-
-                let id_cert = pr.id_cert().clone();
-                let auth = ClientAuth::new(id_cert);
-
-                let info = ClientInfo::new(handle.clone(), auth);
-
-                self.post_json("api/v1/rfc8181/clients", info)?;
-
-                Ok(ApiResponse::Empty)
             }
         }
     }

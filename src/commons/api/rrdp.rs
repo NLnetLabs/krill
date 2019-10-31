@@ -2,10 +2,13 @@
 //! withdraw elements, as well as the notification, snapshot and delta file
 //! definitions.
 use std::collections::HashMap;
+use std::fmt;
 use std::io;
 use std::path::PathBuf;
 
 use bytes::Bytes;
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
+use uuid::Uuid;
 
 use rpki::uri;
 use rpki::x509::Time;
@@ -18,6 +21,55 @@ use crate::commons::util::xml::XmlWriter;
 
 const VERSION: &str = "1";
 const NS: &str = "http://www.ripe.net/rpki/rrdp";
+
+//------------ RrdpSession ---------------------------------------------------
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RrdpSession(Uuid);
+
+impl Default for RrdpSession {
+    fn default() -> Self {
+        RrdpSession(Uuid::new_v4())
+    }
+}
+
+impl RrdpSession {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl AsRef<Uuid> for RrdpSession {
+    fn as_ref(&self) -> &Uuid {
+        &self.0
+    }
+}
+
+impl Serialize for RrdpSession {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.to_string().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for RrdpSession {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let string = String::deserialize(deserializer)?;
+        let uuid = Uuid::parse_str(&string).map_err(de::Error::custom)?;
+
+        Ok(RrdpSession(uuid))
+    }
+}
+
+impl fmt::Display for RrdpSession {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.0.to_hyphenated())
+    }
+}
 
 //------------ PublishElement ------------------------------------------------
 
@@ -41,6 +93,16 @@ impl PublishElement {
     }
     pub fn uri(&self) -> &uri::Rsync {
         &self.uri
+    }
+    pub fn size(&self) -> usize {
+        self.base64.size()
+    }
+
+    pub fn as_withdraw(&self) -> WithdrawElement {
+        WithdrawElement {
+            uri: self.uri.clone(),
+            hash: self.base64.to_encoded_hash(),
+        }
     }
 }
 
@@ -73,6 +135,9 @@ impl UpdateElement {
     }
     pub fn base64(&self) -> &Base64 {
         &self.base64
+    }
+    pub fn size(&self) -> usize {
+        self.base64.size()
     }
 }
 
@@ -120,20 +185,62 @@ impl From<publication::Withdraw> for WithdrawElement {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Notification {
-    session: String,
+    session: RrdpSession,
     serial: u64,
     time: Time,
     snapshot: SnapshotRef,
     deltas: Vec<DeltaRef>,
-    old_refs: Vec<(Time, FileRef)>,
+    last_delta: Option<u64>,
+}
+
+impl Notification {
+    pub fn new(
+        session: RrdpSession,
+        serial: u64,
+        snapshot: SnapshotRef,
+        deltas: Vec<DeltaRef>,
+    ) -> Self {
+        let last_delta = Self::find_last_delta(&deltas);
+        Notification {
+            session,
+            serial,
+            time: Time::now(),
+            snapshot,
+            deltas,
+            last_delta,
+        }
+    }
+
+    pub fn serial(&self) -> u64 {
+        self.serial
+    }
+
+    pub fn last_delta(&self) -> Option<u64> {
+        self.last_delta
+    }
+
+    fn find_last_delta(deltas: &[DeltaRef]) -> Option<u64> {
+        if deltas.is_empty() {
+            None
+        } else {
+            let mut serial = deltas[0].serial;
+            for d in deltas {
+                if d.serial < serial {
+                    serial = d.serial
+                }
+            }
+
+            Some(serial)
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct NotificationUpdate {
     time: Time,
-    session: Option<String>,
+    session: Option<RrdpSession>,
     snapshot: SnapshotRef,
     delta: DeltaRef,
     last_delta: u64,
@@ -142,7 +249,7 @@ pub struct NotificationUpdate {
 impl NotificationUpdate {
     pub fn new(
         time: Time,
-        session: Option<String>,
+        session: Option<RrdpSession>,
         snapshot: SnapshotRef,
         delta: DeltaRef,
         last_delta: u64,
@@ -159,12 +266,12 @@ impl NotificationUpdate {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct NotificationCreate {
-    session: String,
+    session: RrdpSession,
     snapshot: SnapshotRef,
 }
 
 impl NotificationUpdate {
-    pub fn unwrap(self) -> (Time, Option<String>, SnapshotRef, DeltaRef, u64) {
+    pub fn unwrap(self) -> (Time, Option<RrdpSession>, SnapshotRef, DeltaRef, u64) {
         (
             self.time,
             self.session,
@@ -176,11 +283,7 @@ impl NotificationUpdate {
 }
 
 impl Notification {
-    pub fn old_refs(&self) -> &Vec<(Time, FileRef)> {
-        &self.old_refs
-    }
-
-    pub fn update(&mut self, update: NotificationUpdate) {
+    pub fn update_old_way(&mut self, update: NotificationUpdate) {
         let (time, session_opt, snapshot, delta, last_delta) = update.unwrap();
         if let Some(session) = session_opt {
             self.session = session;
@@ -202,23 +305,10 @@ impl Notification {
 
         self.deltas.insert(0, delta);
         self.deltas.retain(|delta| delta.serial >= last_delta);
-        self.old_refs.append(&mut refs_to_retire);
     }
 
-    /// Cleans up all old references from before the given time.
-    pub fn clean_up(&mut self, t: Time) {
-        self.old_refs.retain(|old_ref| old_ref.0 > t)
-    }
-
-    pub fn create(session: String, snapshot: SnapshotRef) -> Self {
-        Notification {
-            session,
-            serial: 0,
-            time: Time::now(),
-            snapshot,
-            deltas: vec![],
-            old_refs: vec![],
-        }
+    pub fn create(session: RrdpSession, snapshot: SnapshotRef) -> Self {
+        Notification::new(session, 0, snapshot, vec![])
     }
 
     pub fn write_xml(&self, path: &PathBuf) -> Result<(), io::Error> {
@@ -229,7 +319,7 @@ impl Notification {
             let a = [
                 ("xmlns", NS),
                 ("version", VERSION),
-                ("session_id", self.session.as_ref()),
+                ("session_id", &format!("{}", self.session)),
                 ("serial", &format!("{}", self.serial)),
             ];
 
@@ -319,7 +409,7 @@ impl AsRef<FileRef> for DeltaRef {
 // b) The publish element as it appears in an RFC8182 snapshot.xml includes
 // the uri and the base64, but not the hash. So keeping the actual elements
 // around means we can be more efficient in producing that output.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CurrentObjects(HashMap<HexEncodedHash, PublishElement>);
 
 impl Default for CurrentObjects {
@@ -459,19 +549,27 @@ impl CurrentObjects {
 /// A structure to contain the RRDP snapshot data.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Snapshot {
-    session: String,
+    session: RrdpSession,
     serial: u64,
     current_objects: CurrentObjects,
 }
 
 impl Snapshot {
-    pub fn new(session: String) -> Self {
+    pub fn new(session: RrdpSession) -> Self {
         let current_objects = CurrentObjects::default();
         Snapshot {
             session,
             serial: 0,
             current_objects,
         }
+    }
+
+    pub fn elements(&self) -> Vec<&PublishElement> {
+        self.current_objects.elements()
+    }
+
+    pub fn serial(&self) -> u64 {
+        self.serial
     }
 
     pub fn apply_delta(&mut self, delta: Delta) {
@@ -481,21 +579,29 @@ impl Snapshot {
         self.current_objects.apply_delta(elements)
     }
 
-    pub fn len(&self) -> usize {
-        self.current_objects.len()
+    pub fn size(&self) -> usize {
+        self.current_objects
+            .elements()
+            .iter()
+            .fold(0, |sum, p| sum + p.size())
     }
 
-    pub fn is_empty(&self) -> bool {
-        self.current_objects.is_empty()
-    }
-
-    pub fn write_xml(&self, path: &PathBuf) -> Result<HexEncodedHash, io::Error> {
+    pub fn write_xml(&self, path: &PathBuf) -> Result<(), io::Error> {
         trace!("Writing snapshot file: {}", path.to_string_lossy());
-        let vec = XmlWriter::encode_vec(|w| {
+        let vec = self.xml();
+        let bytes = Bytes::from(vec);
+
+        file::save(&bytes, path)?;
+
+        Ok(())
+    }
+
+    pub fn xml(&self) -> Vec<u8> {
+        XmlWriter::encode_vec(|w| {
             let a = [
                 ("xmlns", NS),
                 ("version", VERSION),
-                ("session_id", self.session.as_ref()),
+                ("session_id", &format!("{}", self.session)),
                 ("serial", &format!("{}", self.serial)),
             ];
 
@@ -503,17 +609,12 @@ impl Snapshot {
                 for el in self.current_objects.elements() {
                     let uri = el.uri.to_string();
                     let atr = [("uri", uri.as_ref())];
-                    w.put_element("publish", Some(&atr), |w| w.put_text(el.base64.as_ref()))?;
+                    w.put_element("publish", Some(&atr), |w| w.put_text(el.base64.as_ref()))
+                        .unwrap();
                 }
                 Ok(())
             })
-        });
-        let bytes = Bytes::from(vec);
-
-        file::save(&bytes, path)?;
-        let hash = HexEncodedHash::from_content(&bytes);
-
-        Ok(hash)
+        })
     }
 }
 
@@ -527,23 +628,19 @@ pub struct DeltaElements {
     withdraws: Vec<WithdrawElement>,
 }
 
-impl From<publication::PublishDelta> for DeltaElements {
-    fn from(d: publication::PublishDelta) -> Self {
-        let (pbls, upds, wdrs) = d.unwrap();
-
-        let publishes = pbls.into_iter().map(PublishElement::from).collect();
-        let updates = upds.into_iter().map(UpdateElement::from).collect();
-        let withdraws = wdrs.into_iter().map(WithdrawElement::from).collect();
-
+impl DeltaElements {
+    pub fn new(
+        publishes: Vec<PublishElement>,
+        updates: Vec<UpdateElement>,
+        withdraws: Vec<WithdrawElement>,
+    ) -> Self {
         DeltaElements {
             publishes,
             updates,
             withdraws,
         }
     }
-}
 
-impl DeltaElements {
     pub fn unwrap(
         self,
     ) -> (
@@ -556,6 +653,13 @@ impl DeltaElements {
 
     pub fn len(&self) -> usize {
         self.publishes.len() + self.updates.len() + self.withdraws.len()
+    }
+
+    pub fn size(&self) -> usize {
+        let sum_publishes = self.publishes.iter().fold(0, |sum, p| sum + p.size());
+        let sum_updates = self.updates.iter().fold(0, |sum, u| sum + u.size());
+
+        sum_publishes + sum_updates
     }
 
     pub fn is_empty(&self) -> bool {
@@ -575,19 +679,35 @@ impl DeltaElements {
     }
 }
 
+impl From<publication::PublishDelta> for DeltaElements {
+    fn from(d: publication::PublishDelta) -> Self {
+        let (pbls, upds, wdrs) = d.unwrap();
+
+        let publishes = pbls.into_iter().map(PublishElement::from).collect();
+        let updates = upds.into_iter().map(UpdateElement::from).collect();
+        let withdraws = wdrs.into_iter().map(WithdrawElement::from).collect();
+
+        DeltaElements {
+            publishes,
+            updates,
+            withdraws,
+        }
+    }
+}
+
 //------------ Delta ---------------------------------------------------------
 
 /// Defines an RRDP delta.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Delta {
-    session: String,
+    session: RrdpSession,
     serial: u64,
     time: Time,
     elements: DeltaElements,
 }
 
 impl Delta {
-    pub fn new(session: String, serial: u64, elements: DeltaElements) -> Self {
+    pub fn new(session: RrdpSession, serial: u64, elements: DeltaElements) -> Self {
         Delta {
             session,
             time: Time::now(),
@@ -596,8 +716,8 @@ impl Delta {
         }
     }
 
-    pub fn session(&self) -> &str {
-        &self.session
+    pub fn session(&self) -> RrdpSession {
+        self.session
     }
     pub fn serial(&self) -> u64 {
         self.serial
@@ -622,17 +742,25 @@ impl Delta {
         self.elements.is_empty()
     }
 
-    pub fn unwrap(self) -> (String, u64, DeltaElements) {
+    pub fn unwrap(self) -> (RrdpSession, u64, DeltaElements) {
         (self.session, self.serial, self.elements)
     }
 
-    pub fn write_xml(&self, path: &PathBuf) -> Result<HexEncodedHash, io::Error> {
+    pub fn write_xml(&self, path: &PathBuf) -> Result<(), io::Error> {
         trace!("Writing delta file: {}", path.to_string_lossy());
-        let vec = XmlWriter::encode_vec(|w| {
+        let vec = self.xml();
+        let bytes = Bytes::from(vec);
+        file::save(&bytes, &path)?;
+
+        Ok(())
+    }
+
+    pub fn xml(&self) -> Vec<u8> {
+        XmlWriter::encode_vec(|w| {
             let a = [
                 ("xmlns", NS),
                 ("version", VERSION),
-                ("session_id", self.session.as_ref()),
+                ("session_id", &format!("{}", self.session)),
                 ("serial", &format!("{}", self.serial)),
             ];
 
@@ -657,12 +785,6 @@ impl Delta {
 
                 Ok(())
             })
-        });
-
-        let bytes = Bytes::from(vec);
-        file::save(&bytes, &path)?;
-        let hash = HexEncodedHash::from_content(&bytes);
-
-        Ok(hash)
+        })
     }
 }

@@ -9,33 +9,15 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 use rpki::uri;
 
 use crate::cli::report::{ReportError, ReportFormat};
-use crate::KRILL_CLIENT_APP;
-use crate::KRILL_VERSION;
 use crate::commons::api::{
-    AddChildRequest, AuthorizationFmtError, CertAuthInit, CertAuthPubMode, ChildAuthRequest,
-    Handle, ParentCaContact, ParentCaReq, ResSetErr, ResourceSet, RouteAuthorizationUpdates, Token,
-    UpdateChildRequest,
+    AddChildRequest, AuthorizationFmtError, CertAuthInit, ChildAuthRequest, ChildHandle, Handle,
+    ParentCaContact, ParentCaReq, ParentHandle, PublisherHandle, ResSetErr, ResourceSet,
+    RouteAuthorizationUpdates, Token, UpdateChildRequest,
 };
 use crate::commons::remote::id::IdCert;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
-
-use commons::api::{ChildHandle, ParentHandle};
-
-const KRILL_CLI_SERVER_ARG: &str = "server";
-const KRILL_CLI_SERVER_ENV: &str = "KRILL_CLI_SERVER";
-
-const KRILL_CLI_TOKEN_ARG: &str = "token";
-const KRILL_CLI_TOKEN_ENV: &str = "KRILL_CLI_TOKEN";
-
-const KRILL_CLI_FORMAT_ARG: &str = "format";
-const KRILL_CLI_FORMAT_ENV: &str = "KRILL_CLI_FORMAT";
-
-const KRILL_CLI_API_ARG: &str = "api";
-pub const KRILL_CLI_API_ENV: &str = "KRILL_CLI_API";
-
-const KRILL_CLI_MY_CA_ARG: &str = "ca";
-const KRILL_CLI_MY_CA_ENV: &str = "KRILL_CLI_MY_CA";
+use crate::constants::*;
 
 struct GeneralArgs {
     server: uri::Https,
@@ -505,6 +487,21 @@ impl Options {
         let mut sub = SubCommand::with_name("add").about("Add a publisher.");
         sub = Self::add_general_args(sub);
         sub = Self::add_publisher_arg(sub);
+
+        sub = sub.arg(Arg::with_name("rfc8183")
+            .value_name("file")
+            .long("rfc8183")
+            .help("RFC8183 Publisher Request XML file containing a certificate (tag and handle are ignored)")
+            .required(true)
+        );
+
+        app.subcommand(sub)
+    }
+
+    fn make_publishers_remove_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("remove").about("Remove a publisher.");
+        sub = Self::add_general_args(sub);
+        sub = Self::add_publisher_arg(sub);
         app.subcommand(sub)
     }
 
@@ -515,12 +512,22 @@ impl Options {
         app.subcommand(sub)
     }
 
+    fn make_publishers_response_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("response")
+            .about("Show RFC8183 Repository Response for a publisher.");
+        sub = Self::add_general_args(sub);
+        sub = Self::add_publisher_arg(sub);
+        app.subcommand(sub)
+    }
+
     fn make_publishers_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("publishers").about("Manage publishers in Krill.");
 
         sub = Self::make_publishers_list_sc(sub);
         sub = Self::make_publishers_add_sc(sub);
+        sub = Self::make_publishers_remove_sc(sub);
         sub = Self::make_publishers_show_sc(sub);
+        sub = Self::make_publishers_response_sc(sub);
 
         app.subcommand(sub)
     }
@@ -598,7 +605,7 @@ impl Options {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
-        let init = CertAuthInit::new(my_ca, CertAuthPubMode::Embedded);
+        let init = CertAuthInit::new(my_ca);
 
         let command = Command::CertAuth(CaCommand::Init(init));
 
@@ -842,6 +849,70 @@ impl Options {
         }
     }
 
+    fn parse_publisher_arg(matches: &ArgMatches) -> Result<PublisherHandle, Error> {
+        let publisher_str = matches.value_of("publisher").unwrap();
+        PublisherHandle::from_str(publisher_str).map_err(|_| Error::InvalidHandle)
+    }
+
+    fn parse_matches_publishers_list(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let command = Command::Publishers(PublishersCommand::PublisherList);
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_publishers_add(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let publisher = Self::parse_publisher_arg(matches)?;
+
+        let id_cert: IdCert = {
+            let path = matches.value_of("rfc8183").unwrap();
+            let path = PathBuf::from(path);
+            let bytes = file::read(&path)?;
+            let req = rfc8183::PublisherRequest::validate(bytes.as_ref())?;
+            req.into()
+        };
+
+        let command = Command::Publishers(PublishersCommand::AddPublisher(publisher, id_cert));
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_publishers_remove(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let publisher = Self::parse_publisher_arg(matches)?;
+        let command = Command::Publishers(PublishersCommand::RemovePublisher(publisher));
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_publishers_show(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let publisher = Self::parse_publisher_arg(matches)?;
+        let command = Command::Publishers(PublishersCommand::ShowPublisher(publisher));
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_publishers_repo_response(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let publisher = Self::parse_publisher_arg(matches)?;
+        let command = Command::Publishers(PublishersCommand::RepositiryResponse(publisher));
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_publishers(matches: &ArgMatches) -> Result<Options, Error> {
+        if let Some(m) = matches.subcommand_matches("list") {
+            Self::parse_matches_publishers_list(m)
+        } else if let Some(m) = matches.subcommand_matches("add") {
+            Self::parse_matches_publishers_add(m)
+        } else if let Some(m) = matches.subcommand_matches("remove") {
+            Self::parse_matches_publishers_remove(m)
+        } else if let Some(m) = matches.subcommand_matches("show") {
+            Self::parse_matches_publishers_show(m)
+        } else if let Some(m) = matches.subcommand_matches("response") {
+            Self::parse_matches_publishers_repo_response(m)
+        } else {
+            Err(Error::UnrecognisedSubCommand)
+        }
+    }
+
     fn parse_matches_health(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let command = Command::Health;
@@ -865,6 +936,8 @@ impl Options {
             Self::parse_matches_cas_keyroll(m)
         } else if let Some(m) = matches.subcommand_matches("roas") {
             Self::parse_matches_cas_routes(m)
+        } else if let Some(m) = matches.subcommand_matches("publishers") {
+            Self::parse_matches_publishers(m)
         } else if let Some(m) = matches.subcommand_matches("health") {
             Self::parse_matches_health(m)
         } else {
@@ -885,7 +958,6 @@ pub enum Command {
     Health,
     CertAuth(CaCommand),
     Publishers(PublishersCommand),
-    Rfc8181(Rfc8181Command),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -945,29 +1017,11 @@ pub enum CaCommand {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 pub enum PublishersCommand {
-    Add(AddPublisher),
-    Show(Handle),
-    Deactivate(Handle),
-    List,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AddPublisher {
-    pub handle: Handle,
-    pub id_cert: Option<IdCert>,
-    pub base_uri: uri::Rsync,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum Rfc8181Command {
-    List,
-    Add(AddRfc8181Client),
-    RepoRes(Handle),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AddRfc8181Client {
-    pub xml: PathBuf,
+    AddPublisher(PublisherHandle, IdCert),
+    ShowPublisher(PublisherHandle),
+    RemovePublisher(PublisherHandle),
+    RepositiryResponse(PublisherHandle),
+    PublisherList,
 }
 
 //------------ Error ---------------------------------------------------------

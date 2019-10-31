@@ -7,11 +7,12 @@ use serde::Serialize;
 
 use crate::commons::api::rrdp::VerificationError;
 use crate::commons::api::{
-    AddChildRequest, CertAuthInit, ErrorCode, ErrorResponse, Handle, ParentCaReq, ParentHandle,
-    PublisherList, PublisherRequest, RouteAuthorizationUpdates, UpdateChildRequest,
+    AddChildRequest, CertAuthInit, ErrorCode, ErrorResponse, Handle, ParentCaContact, ParentCaReq,
+    ParentHandle, PublisherHandle, PublisherList, PublisherRequest, RouteAuthorizationUpdates,
+    UpdateChildRequest,
 };
-use crate::commons::remote::api::ClientInfo;
 use crate::commons::remote::rfc6492;
+use crate::commons::remote::rfc8181;
 use crate::commons::remote::sigmsg::SignedMessage;
 use crate::commons::util::softsigner::OpenSslSigner;
 use crate::daemon::auth::Auth;
@@ -19,9 +20,6 @@ use crate::daemon::ca;
 use crate::daemon::http::server::AppServer;
 use crate::daemon::krillserver;
 use crate::pubd;
-use crate::pubd::publishers::PublisherError;
-use crate::pubd::repo::RrdpServerError;
-use commons::api::ParentCaContact;
 
 //------------ Support Functions ---------------------------------------------
 
@@ -97,17 +95,16 @@ where
 //------------ Admin: Publishers ---------------------------------------------
 
 /// Returns a json structure with all publishers in it.
-pub fn publishers(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
-    let publishers = server.read().publishers();
-
-    if_api_allowed(&server, &auth, || {
-        render_json(PublisherList::build(&publishers, "/api/v1/publishers"))
+pub fn list_pbl(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
+    if_api_allowed(&server, &auth, || match server.read().publishers() {
+        Ok(publishers) => render_json(PublisherList::build(&publishers, "/api/v1/publishers")),
+        Err(e) => server_error(&Error::ServerError(e)),
     })
 }
 
 /// Adds a publisher
 #[allow(clippy::needless_pass_by_value)]
-pub fn add_publisher(
+pub fn add_pbl(
     server: web::Data<AppServer>,
     auth: Auth,
     pbl: Json<PublisherRequest>,
@@ -120,77 +117,62 @@ pub fn add_publisher(
 /// Removes a publisher. Should be idempotent! If if did not exist then
 /// that's just fine.
 #[allow(clippy::needless_pass_by_value)]
-pub fn deactivate_publisher(
+pub fn remove_pbl(
     server: web::Data<AppServer>,
     auth: Auth,
-    handle: Path<Handle>,
+    publisher: Path<Handle>,
 ) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
-        render_empty_res(server.write().deactivate_publisher(&handle))
+        render_empty_res(server.write().remove_publisher(publisher.into_inner()))
     })
 }
 
 /// Returns a json structure with publisher details
 #[allow(clippy::needless_pass_by_value)]
-pub fn publisher_details(
-    server: web::Data<AppServer>,
-    auth: Auth,
-    handle: Path<Handle>,
-) -> HttpResponse {
-    if_api_allowed(&server, &auth, || match server.read().publisher(&handle) {
-        Ok(None) => api_not_found(),
-        Ok(Some(publisher)) => render_json(&publisher.as_api_details()),
-        Err(e) => server_error(&Error::ServerError(e)),
+pub fn show_pbl(server: web::Data<AppServer>, auth: Auth, publisher: Path<Handle>) -> HttpResponse {
+    if_api_allowed(&server, &auth, || {
+        match server.read().publisher(&publisher.into_inner()) {
+            Ok(Some(publisher)) => render_json(publisher),
+            Ok(None) => api_not_found(),
+            Err(e) => server_error(&Error::ServerError(e)),
+        }
     })
 }
 
 //------------ Publication ---------------------------------------------------
 
 /// Processes an RFC8181 query and returns the appropriate response.
-#[allow(clippy::needless_pass_by_value)]
 pub fn rfc8181(
     server: web::Data<AppServer>,
-    handle: Path<Handle>,
+    publisher: Path<PublisherHandle>,
     msg_bytes: Bytes,
 ) -> HttpResponse {
-    match SignedMessage::decode(msg_bytes, true) {
-        Ok(msg) => match server.read().handle_rfc8181_req(msg, handle.into_inner()) {
-            Ok(captured) => HttpResponse::build(StatusCode::OK)
-                .content_type("application/rpki-publication")
-                .body(captured.into_bytes()),
-            Err(e) => server_error(&Error::ServerError(e)),
+    match SignedMessage::decode(msg_bytes, false) {
+        Ok(msg) => match server.read().rfc8181(publisher.into_inner(), msg) {
+            Ok(bytes) => HttpResponse::build(StatusCode::OK)
+                .content_type(rfc8181::CONTENT_TYPE)
+                .body(bytes),
+            Err(e) => {
+                error!("Error processing RFC8181 req: {}", e);
+                server_error(&Error::ServerError(e))
+            }
         },
-        Err(_) => server_error(&Error::CmsError),
+        Err(e) => {
+            error!("Error processing RFC8181 req: {}", e);
+            server_error(&Error::CmsError)
+        }
     }
 }
 
-//------------ Admin: Rfc8181 -----------------------------------------------
-
-pub fn rfc8181_clients(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
-    if_api_allowed(&server, &auth, || match server.read().rfc8181_clients() {
-        Ok(clients) => render_json(clients),
-        Err(e) => server_error(&Error::ServerError(e)),
-    })
-}
-
-pub fn add_rfc8181_client(
-    server: web::Data<AppServer>,
-    auth: Auth,
-    client: Json<ClientInfo>,
-) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        render_empty_res(server.read().add_rfc8181_client(client.into_inner()))
-    })
-}
+//------------ repository_response ---------------------------------------------
 
 pub fn repository_response(
     server: web::Data<AppServer>,
     auth: Auth,
-    handle: Path<Handle>,
+    publisher: Path<Handle>,
 ) -> HttpResponse {
-    let handle = handle.into_inner();
     if_api_allowed(&server, &auth, || {
-        match server.read().repository_response(&handle) {
+        match server.read().repository_response(&publisher.into_inner()) {
             Ok(res) => HttpResponse::Ok()
                 .content_type("application/xml")
                 .body(res.encode_vec()),
@@ -486,12 +468,6 @@ pub fn rfc6492(
     }
 }
 
-//------------ Serving RRDP --------------------------------------------------
-
-pub fn current_snapshot_json(_server: web::Data<AppServer>) -> HttpResponse {
-    unimplemented!()
-}
-
 //------------ Error ---------------------------------------------------------
 
 #[derive(Debug, Display)]
@@ -542,7 +518,6 @@ impl ErrorToStatus for krillserver::Error {
         match self {
             krillserver::Error::IoError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             krillserver::Error::PubServer(e) => e.status(),
-            krillserver::Error::ProxyServer(_) => StatusCode::INTERNAL_SERVER_ERROR,
             krillserver::Error::SignerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             krillserver::Error::CaServerError(e) => e.status(),
         }
@@ -552,32 +527,9 @@ impl ErrorToStatus for krillserver::Error {
 impl ErrorToStatus for pubd::Error {
     fn status(&self) -> StatusCode {
         match self {
-            pubd::Error::IoError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            pubd::Error::InvalidBaseUri => StatusCode::BAD_REQUEST,
-            pubd::Error::InvalidHandle(_) => StatusCode::BAD_REQUEST,
             pubd::Error::DuplicatePublisher(_) => StatusCode::BAD_REQUEST,
             pubd::Error::UnknownPublisher(_) => StatusCode::FORBIDDEN,
-            pubd::Error::ConcurrentModification(_, _) => StatusCode::BAD_REQUEST,
-            pubd::Error::PublisherError(e) => e.status(),
-            pubd::Error::RrdpServerError(e) => e.status(),
-            pubd::Error::AggregateStoreError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        }
-    }
-}
-
-impl ErrorToStatus for PublisherError {
-    fn status(&self) -> StatusCode {
-        match self {
-            PublisherError::Deactivated => StatusCode::FORBIDDEN,
-            PublisherError::VerificationError(_) => StatusCode::FORBIDDEN,
-        }
-    }
-}
-
-impl ErrorToStatus for RrdpServerError {
-    fn status(&self) -> StatusCode {
-        match self {
-            RrdpServerError::IoError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 }
@@ -619,7 +571,6 @@ impl ToErrorCode for krillserver::Error {
         match self {
             krillserver::Error::IoError(_) => ErrorCode::Persistence,
             krillserver::Error::PubServer(e) => e.code(),
-            krillserver::Error::ProxyServer(_) => ErrorCode::ProxyError,
             krillserver::Error::SignerError(_) => ErrorCode::SigningError,
             krillserver::Error::CaServerError(e) => e.code(),
         }
@@ -629,24 +580,17 @@ impl ToErrorCode for krillserver::Error {
 impl ToErrorCode for pubd::Error {
     fn code(&self) -> ErrorCode {
         match self {
-            pubd::Error::IoError(_) => ErrorCode::Persistence,
-            pubd::Error::InvalidBaseUri => ErrorCode::InvalidBaseUri,
-            pubd::Error::InvalidHandle(_) => ErrorCode::InvalidHandle,
+            pubd::Error::Validation => ErrorCode::CmsValidation,
+            pubd::Error::Rfc8181MessageError(_) => ErrorCode::InvalidPublicationXml,
             pubd::Error::DuplicatePublisher(_) => ErrorCode::DuplicateHandle,
             pubd::Error::UnknownPublisher(_) => ErrorCode::UnknownPublisher,
-            pubd::Error::ConcurrentModification(_, _) => ErrorCode::ConcurrentModification,
-            pubd::Error::PublisherError(e) => e.code(),
-            pubd::Error::RrdpServerError(e) => e.code(),
-            pubd::Error::AggregateStoreError(_) => ErrorCode::Persistence,
-        }
-    }
-}
-
-impl ToErrorCode for PublisherError {
-    fn code(&self) -> ErrorCode {
-        match self {
-            PublisherError::Deactivated => ErrorCode::PublisherDeactivated,
-            PublisherError::VerificationError(e) => e.code(),
+            pubd::Error::PublishingOutsideBaseUri(_, _) => ErrorCode::UriOutsideJail,
+            pubd::Error::BaseUriNoDir(_) => ErrorCode::InvalidBaseUri,
+            pubd::Error::RrdpVerificationError(e) => e.code(),
+            pubd::Error::NoRepository => ErrorCode::UnknownPublisher,
+            pubd::Error::Store(_) => ErrorCode::Persistence,
+            pubd::Error::IoError(_) => ErrorCode::Persistence,
+            pubd::Error::SignerError(_) => ErrorCode::SigningError,
         }
     }
 }
@@ -657,14 +601,6 @@ impl ToErrorCode for VerificationError {
             VerificationError::NoObjectForHashAndOrUri(_) => ErrorCode::NoObjectForHashAndOrUri,
             VerificationError::ObjectAlreadyPresent(_) => ErrorCode::ObjectAlreadyPresent,
             VerificationError::UriOutsideJail(_, _) => ErrorCode::UriOutsideJail,
-        }
-    }
-}
-
-impl ToErrorCode for RrdpServerError {
-    fn code(&self) -> ErrorCode {
-        match self {
-            RrdpServerError::IoError(_) => ErrorCode::Persistence,
         }
     }
 }

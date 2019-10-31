@@ -16,9 +16,8 @@ use rpki::uri;
 
 use crate::commons::api::Token;
 use crate::commons::util::ext_serde;
+use crate::constants::*;
 use crate::daemon::http::ssl;
-use crate::KRILL_SERVER_APP;
-use crate::KRILL_VERSION;
 
 //------------ ConfigDefaults ------------------------------------------------
 
@@ -47,7 +46,10 @@ impl ConfigDefaults {
         "https://localhost:3000/".to_string()
     }
     fn log_level() -> LevelFilter {
-        LevelFilter::Info
+        match env::var("KRILL_LOG_LEVEL") {
+            Ok(level) => LevelFilter::from_str(&level).unwrap(),
+            _ => LevelFilter::Info,
+        }
     }
     fn log_type() -> LogType {
         LogType::File
@@ -216,12 +218,18 @@ impl Config {
         let config_file = matches
             .value_of("config")
             .unwrap_or("./defaults/krill.conf");
-        format!("{}", config_file)
+
+        config_file.to_string()
     }
 
     /// Creates the config (at startup). Panics in case of issues.
     pub fn create() -> Result<Self, ConfigError> {
         let config_file = Self::get_config_filename();
+
+        info!(
+            "{} uses configuration file: {}",
+            KRILL_SERVER_APP, config_file
+        );
 
         let c = Self::read_config(&config_file)?;
         c.init_logging()?;

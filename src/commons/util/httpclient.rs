@@ -9,8 +9,8 @@ use reqwest::{Client, Response, StatusCode};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use crate::cli::options::KRILL_CLI_API_ENV;
 use crate::commons::api::{ErrorResponse, Token};
+use crate::constants::KRILL_CLI_API_ENV;
 
 const JSON_CONTENT: &str = "application/json";
 

@@ -22,8 +22,11 @@ use crate::commons::remote::rfc8183::ChildRequest;
 
 //------------ Handle --------------------------------------------------------
 
+// Some type aliases that help make the use of Handles more explicit.
 pub type ParentHandle = Handle;
 pub type ChildHandle = Handle;
+pub type PublisherHandle = Handle;
+pub type RepositoryHandle = Handle;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Handle {
@@ -81,6 +84,12 @@ impl FromStr for Handle {
 impl AsRef<str> for Handle {
     fn as_ref(&self) -> &str {
         unsafe { from_utf8_unchecked(self.name.as_ref()) }
+    }
+}
+
+impl AsRef<[u8]> for Handle {
+    fn as_ref(&self) -> &[u8] {
+        self.name.as_ref()
     }
 }
 
@@ -159,17 +168,12 @@ impl fmt::Display for Token {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublisherRequest {
     handle: Handle,
-    id_cert: Option<IdCert>,
-    base_uri: uri::Rsync,
+    id_cert: IdCert,
 }
 
 impl PublisherRequest {
-    pub fn new(handle: Handle, id_cert: Option<IdCert>, base_uri: uri::Rsync) -> Self {
-        PublisherRequest {
-            handle,
-            id_cert,
-            base_uri,
-        }
+    pub fn new(handle: Handle, id_cert: IdCert) -> Self {
+        PublisherRequest { handle, id_cert }
     }
 }
 
@@ -177,14 +181,12 @@ impl PublisherRequest {
     pub fn handle(&self) -> &Handle {
         &self.handle
     }
-
-    pub fn base_uri(&self) -> &uri::Rsync {
-        &self.base_uri
+    pub fn id_cert(&self) -> &IdCert {
+        &self.id_cert
     }
 
-    /// Return all the values (handle, base_uri).
-    pub fn unwrap(self) -> (Handle, Option<IdCert>, uri::Rsync) {
-        (self.handle, self.id_cert, self.base_uri)
+    pub fn unpack(self) -> (Handle, IdCert) {
+        (self.handle, self.id_cert)
     }
 }
 
@@ -248,8 +250,7 @@ impl PublisherList {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublisherDetails {
     handle: Handle,
-    deactivated: bool,
-    id_cert: Option<IdCert>,
+    id_cert: IdCert,
     base_uri: uri::Rsync,
     current_files: Vec<PublishElement>,
 }
@@ -257,15 +258,13 @@ pub struct PublisherDetails {
 impl PublisherDetails {
     pub fn new(
         handle: &Handle,
-        deactivated: bool,
-        id_cert: Option<&IdCert>,
+        id_cert: IdCert,
         base_uri: &uri::Rsync,
         current_files: Vec<PublishElement>,
     ) -> Self {
         PublisherDetails {
             handle: handle.clone(),
-            deactivated,
-            id_cert: id_cert.cloned(),
+            id_cert,
             base_uri: base_uri.clone(),
             current_files,
         }
@@ -274,11 +273,8 @@ impl PublisherDetails {
     pub fn handle(&self) -> &Handle {
         &self.handle
     }
-    pub fn deactivated(&self) -> bool {
-        self.deactivated
-    }
-    pub fn id_cert(&self) -> Option<&IdCert> {
-        self.id_cert.as_ref()
+    pub fn id_cert(&self) -> &IdCert {
+        &self.id_cert
     }
     pub fn base_uri(&self) -> &uri::Rsync {
         &self.base_uri
@@ -428,16 +424,15 @@ impl ParentCaContact {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthInit {
     handle: Handle,
-    pub_mode: CertAuthPubMode,
 }
 
 impl CertAuthInit {
-    pub fn new(handle: Handle, pub_mode: CertAuthPubMode) -> Self {
-        CertAuthInit { handle, pub_mode }
+    pub fn new(handle: Handle) -> Self {
+        CertAuthInit { handle }
     }
 
-    pub fn unwrap(self) -> (Handle, CertAuthPubMode) {
-        (self.handle, self.pub_mode)
+    pub fn unpack(self) -> Handle {
+        self.handle
     }
 }
 

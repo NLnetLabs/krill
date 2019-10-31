@@ -1,6 +1,13 @@
-pub mod publishers;
-pub mod repo;
-
+mod commands;
+mod error;
+mod events;
+mod publishers;
 mod pubserver;
-pub use self::pubserver::Error;
+mod repository;
+
+pub use self::commands::{Cmd, CmdDet};
+pub use self::error::Error;
+pub use self::events::{Evt, EvtDet, Ini, IniDet, RrdpUpdate};
+pub use self::publishers::Publisher;
 pub use self::pubserver::PubServer;
+pub use self::repository::Repository;
