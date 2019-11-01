@@ -1,5 +1,5 @@
 //! RFC8181 Messages
-use std::io;
+use std::{fmt, io};
 
 use bytes::Bytes;
 
@@ -577,6 +577,20 @@ impl ErrorReply {
     /// avoided.
     pub fn build_with_capacity(n: usize) -> ErrorReplyBuilder {
         ErrorReplyBuilder::with_capacity(n)
+    }
+}
+
+impl fmt::Display for ErrorReply {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Got error response: ")?;
+        for err in &self.errors {
+            match &err.error_text {
+                None => write!(f, "error code: {} ", err.error_code)?,
+                Some(text) => write!(f, "error code: {}, text: {} ", err.error_code, text)?,
+            }
+        }
+        writeln!(f)?;
+        Ok(())
     }
 }
 

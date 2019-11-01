@@ -10,6 +10,7 @@ use crate::commons::util::softsigner::OpenSslSigner;
 use crate::daemon::ca::CaServer;
 use crate::daemon::mq::{EventQueueListener, QueueEvent};
 use crate::pubd::PubServer;
+use crate::publish::CaPublisher;
 
 pub struct Scheduler {
     /// Responsible for listening to events and executing triggered processes, such
@@ -56,9 +57,11 @@ fn make_event_sh(
     scheduler.every(1.seconds()).run(move || {
         while let Some(evt) = event_queue.pop() {
             match evt {
-                QueueEvent::Delta(handle, version, delta) => {
+                QueueEvent::Delta(handle, version) => {
                     trace!("Trigger publication for '{}' version '{}'", handle, version);
-                    if let Err(e) = pubserver.publish(handle.clone(), delta) {
+                    let publisher = CaPublisher::new(caserver.clone(), pubserver.clone());
+
+                    if let Err(e) = publisher.publish(&handle) {
                         error!("Failed to publish for CA: {}, error: {}", handle, e);
                     }
                 }

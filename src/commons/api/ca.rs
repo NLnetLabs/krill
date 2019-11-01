@@ -1377,7 +1377,7 @@ impl CertAuthSummary {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthInfo {
     handle: Handle,
-    base_repo: RepoInfo,
+    repo_info: RepoInfo,
     parents: HashMap<Handle, ParentCaContact>,
     resources: HashMap<ResourceClassName, ResourceClassInfo>,
     children: HashMap<Handle, ChildCaInfo>,
@@ -1387,7 +1387,7 @@ pub struct CertAuthInfo {
 impl CertAuthInfo {
     pub fn new(
         handle: Handle,
-        base_repo: RepoInfo,
+        repo_info: RepoInfo,
         parents: HashMap<Handle, ParentCaContact>,
         resources: HashMap<ResourceClassName, ResourceClassInfo>,
         children: HashMap<Handle, ChildCaInfo>,
@@ -1395,7 +1395,7 @@ impl CertAuthInfo {
     ) -> Self {
         CertAuthInfo {
             handle,
-            base_repo,
+            repo_info,
             parents,
             resources,
             children,
@@ -1407,8 +1407,8 @@ impl CertAuthInfo {
         &self.handle
     }
 
-    pub fn base_repo(&self) -> &RepoInfo {
-        &self.base_repo
+    pub fn repo_repo(&self) -> &RepoInfo {
+        &self.repo_info
     }
 
     pub fn parents(&self) -> &HashMap<Handle, ParentCaContact> {
@@ -1435,7 +1435,7 @@ impl CertAuthInfo {
         let mut res = vec![];
         for (_rc_name, rc) in self.resources.iter() {
             let name_space = rc.name_space();
-            res.append(&mut rc.current_objects().publish(self.base_repo(), name_space));
+            res.append(&mut rc.current_objects().publish(self.repo_repo(), name_space));
         }
         res
     }

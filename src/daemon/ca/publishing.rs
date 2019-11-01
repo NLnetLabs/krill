@@ -33,6 +33,14 @@ pub struct ManifestInfo {
 }
 
 impl ManifestInfo {
+    pub fn name(&self) -> &ObjectName {
+        &self.name
+    }
+
+    pub fn manifest(&self) -> &Manifest {
+        &self.manifest
+    }
+
     pub fn added_or_updated(&self) -> AddedOrUpdated {
         let name = self.name.clone();
         let object = CurrentObject::from(&self.manifest);
@@ -68,6 +76,14 @@ pub struct CrlInfo {
 }
 
 impl CrlInfo {
+    pub fn name(&self) -> &ObjectName {
+        &self.name
+    }
+
+    pub fn crl(&self) -> &Crl {
+        &self.crl
+    }
+
     pub fn added_or_updated(&self) -> AddedOrUpdated {
         let name = self.name.clone();
         let object = CurrentObject::from(&self.crl);

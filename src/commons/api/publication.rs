@@ -306,6 +306,10 @@ impl ListReply {
     pub fn elements(&self) -> &Vec<ListElement> {
         &self.elements
     }
+
+    pub fn into_elements(self) -> Vec<ListElement> {
+        self.elements
+    }
 }
 
 //------------ ListElement ---------------------------------------------------
@@ -328,5 +332,9 @@ impl ListElement {
     }
     pub fn hash(&self) -> &HexEncodedHash {
         &self.hash
+    }
+
+    pub fn unpack(self) -> (uri::Rsync, HexEncodedHash) {
+        (self.uri, self.hash)
     }
 }

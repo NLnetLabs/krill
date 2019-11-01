@@ -43,7 +43,7 @@ pub use self::error::Error;
 pub use self::error::ServerError;
 
 pub type Result<T> = std::result::Result<T, Error>;
-pub type ServerResult<R, S> = std::result::Result<R, ServerError<S>>;
+pub type ServerResult<R> = std::result::Result<R, ServerError>;
 
 pub const TA_NAME: &str = "ta"; // reserved for TA
 

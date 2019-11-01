@@ -425,7 +425,7 @@ pub enum Error {
     SignerError(SignerError),
 
     #[display(fmt = "{}", _0)]
-    CaServerError(ca::ServerError<OpenSslSigner>),
+    CaServerError(ca::ServerError),
 }
 
 impl From<io::Error> for Error {
@@ -446,8 +446,8 @@ impl From<SignerError> for Error {
     }
 }
 
-impl From<ca::ServerError<OpenSslSigner>> for Error {
-    fn from(e: ca::ServerError<OpenSslSigner>) -> Self {
+impl From<ca::ServerError> for Error {
+    fn from(e: ca::ServerError) -> Self {
         Error::CaServerError(e)
     }
 }

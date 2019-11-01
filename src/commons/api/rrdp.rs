@@ -104,6 +104,10 @@ impl PublishElement {
             hash: self.base64.to_encoded_hash(),
         }
     }
+
+    pub fn unpack(self) -> (uri::Rsync, Base64) {
+        (self.uri, self.base64)
+    }
 }
 
 impl From<publication::Publish> for PublishElement {

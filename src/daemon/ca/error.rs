@@ -7,7 +7,6 @@ use crate::commons::api::{Handle, RouteAuthorization};
 use crate::commons::eventsourcing::AggregateStoreError;
 use crate::commons::remote::rfc6492;
 use crate::commons::util::httpclient;
-use crate::daemon::ca::signing::Signer;
 
 //------------ Error ---------------------------------------------------------
 
@@ -123,7 +122,7 @@ impl std::error::Error for Error {}
 //------------ Error ---------------------------------------------------------
 
 #[derive(Debug, Display)]
-pub enum ServerError<S: Signer> {
+pub enum ServerError {
     #[display(fmt = "{}", _0)]
     IoError(io::Error),
 
@@ -143,7 +142,7 @@ pub enum ServerError<S: Signer> {
     UnknownCa(String),
 
     #[display(fmt = "{}", _0)]
-    SignerError(S::Error),
+    SignerError(String),
 
     #[display(fmt = "{}", _0)]
     AggregateStoreError(AggregateStoreError),
@@ -155,25 +154,29 @@ pub enum ServerError<S: Signer> {
     Custom(String),
 }
 
-impl<S: Signer> ServerError<S> {
+impl ServerError {
     pub fn custom(e: impl fmt::Display) -> Self {
         ServerError::Custom(e.to_string())
     }
+
+    pub fn signer(e: impl fmt::Display) -> Self {
+        ServerError::SignerError(e.to_string())
+    }
 }
 
-impl<S: Signer> From<io::Error> for ServerError<S> {
+impl From<io::Error> for ServerError {
     fn from(e: io::Error) -> Self {
         ServerError::IoError(e)
     }
 }
 
-impl<S: Signer> From<Error> for ServerError<S> {
+impl From<Error> for ServerError {
     fn from(e: Error) -> Self {
         ServerError::CertAuth(e)
     }
 }
 
-impl<S: Signer> From<AggregateStoreError> for ServerError<S> {
+impl From<AggregateStoreError> for ServerError {
     fn from(e: AggregateStoreError) -> Self {
         ServerError::AggregateStoreError(e)
     }

@@ -137,8 +137,8 @@ impl Report for CertAuthInfo {
             ReportFormat::Text => {
                 let mut res = String::new();
 
-                let base_uri = self.base_repo().base_uri();
-                let rrdp_uri = self.base_repo().rpki_notify();
+                let base_uri = self.repo_repo().base_uri();
+                let rrdp_uri = self.repo_repo().rpki_notify();
 
                 res.push_str(&format!("Name:     {}\n", self.handle()));
                 res.push_str("\n");

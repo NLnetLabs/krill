@@ -3,6 +3,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::str::{from_utf8_unchecked, FromStr};
 
+use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 
 use crate::commons::api::rrdp::{
@@ -19,7 +20,6 @@ use crate::commons::util::file;
 use crate::constants::{REPOSITORY_RRDP_DIR, REPOSITORY_RSYNC_DIR};
 use crate::pubd::publishers::Publisher;
 use crate::pubd::{Cmd, CmdDet, Error, Evt, EvtDet, Ini, RrdpUpdate};
-use rpki::crypto::KeyIdentifier;
 
 //------------ RsyncdStore ---------------------------------------------------
 
@@ -525,13 +525,14 @@ impl Repository {
         let rsync_base = publisher.base_uri();
         let service_uri = ServiceUri::Https(rfc8181_uri);
 
+        let repo_info = RepoInfo::new(rsync_base.clone(), self.rrdp.notification_uri());
+
         Ok(RepositoryResponse::new(
             None,
             publisher_handle.clone(),
             self.id_cert.clone(),
             service_uri,
-            rsync_base.clone(),
-            self.rrdp.notification_uri(),
+            repo_info,
         ))
     }
 

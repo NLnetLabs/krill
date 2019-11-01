@@ -14,7 +14,6 @@ use crate::commons::api::{
 use crate::commons::remote::rfc6492;
 use crate::commons::remote::rfc8181;
 use crate::commons::remote::sigmsg::SignedMessage;
-use crate::commons::util::softsigner::OpenSslSigner;
 use crate::daemon::auth::Auth;
 use crate::daemon::ca;
 use crate::daemon::http::server::AppServer;
@@ -534,7 +533,7 @@ impl ErrorToStatus for pubd::Error {
     }
 }
 
-impl ErrorToStatus for ca::ServerError<OpenSslSigner> {
+impl ErrorToStatus for ca::ServerError {
     fn status(&self) -> StatusCode {
         match self {
             ca::ServerError::CertAuth(e) => e.status(),
@@ -605,7 +604,7 @@ impl ToErrorCode for VerificationError {
     }
 }
 
-impl ToErrorCode for ca::ServerError<OpenSslSigner> {
+impl ToErrorCode for ca::ServerError {
     fn code(&self) -> ErrorCode {
         match self {
             ca::ServerError::CertAuth(e) => e.code(),

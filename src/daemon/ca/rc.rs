@@ -7,6 +7,8 @@ use rpki::cert::Cert;
 use rpki::crypto::KeyIdentifier;
 use rpki::x509::Time;
 
+use crate::commons::api::rrdp::PublishElement;
+use crate::commons::api::Base64;
 use crate::commons::api::{
     AddedObject, CurrentObject, CurrentObjects, EntitlementClass, HexEncodedHash, IssuanceRequest,
     IssuanceResponse, IssuedCert, ObjectName, ObjectsDelta, ParentHandle, RcvdCert, ReplacedObject,
@@ -144,7 +146,7 @@ impl ResourceClass {
         }
     }
 
-    fn current_objects(&self) -> CurrentObjects {
+    pub fn current_objects(&self) -> CurrentObjects {
         let mut current_objects = CurrentObjects::default();
 
         for (auth, roa_info) in self.roas.iter() {
@@ -555,6 +557,48 @@ impl ResourceClass {
             crl_info,
             objects_delta,
         ))
+    }
+
+    pub fn all_objects(&self, base_repo: &RepoInfo) -> Vec<PublishElement> {
+        let mut res = vec![];
+        let ns = self.name_space();
+
+        // ROAs
+        for (authorization, info) in self.roas.iter() {
+            let base64 = Base64::from_content(info.roa().to_captured().as_slice());
+            let object_name = ObjectName::from(authorization);
+            let uri = base_repo.resolve(ns, object_name.as_str());
+            res.push(PublishElement::new(base64, uri));
+        }
+        // Certs
+        for cert in self.certificates.current() {
+            let base64 = Base64::from_content(cert.to_captured().as_slice());
+            let uri = cert.uri().clone();
+            res.push(PublishElement::new(base64, uri));
+        }
+
+        // MFT and CRL for each key
+        let sets = match &self.key_state {
+            KeyState::Pending(_) => vec![],
+            KeyState::Active(current) => vec![current.current_set()],
+            KeyState::RollPending(_, current) => vec![current.current_set()],
+            KeyState::RollNew(new, current) => vec![new.current_set(), current.current_set()],
+            KeyState::RollOld(current, old) => vec![current.current_set(), old.current_set()],
+        };
+
+        for set in sets {
+            let crl_info = set.crl_info();
+            let crl_base64 = Base64::from_content(crl_info.crl().to_captured().as_slice());
+            let crl_uri = base_repo.resolve(ns, crl_info.name());
+            res.push(PublishElement::new(crl_base64, crl_uri));
+
+            let mft_info = set.manifest_info();
+            let mft_base64 = Base64::from_content(mft_info.manifest().to_captured().as_slice());
+            let mft_uri = base_repo.resolve(ns, mft_info.name());
+            res.push(PublishElement::new(mft_base64, mft_uri));
+        }
+
+        res
     }
 }
 

@@ -7,9 +7,7 @@ use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::sync::RwLock;
 
-use crate::commons::api::{
-    Handle, ParentHandle, PublishDelta, ResourceClassName, RevocationRequest,
-};
+use crate::commons::api::{Handle, ParentHandle, ResourceClassName, RevocationRequest};
 use crate::commons::eventsourcing::{self, Event};
 use crate::daemon::ca::{CertAuth, Evt, EvtDet, Signer};
 
@@ -21,7 +19,7 @@ use crate::daemon::ca::{CertAuth, Evt, EvtDet, Signer};
 #[allow(clippy::large_enum_variant)]
 pub enum QueueEvent {
     #[display(fmt = "delta for '{}' version '{}'", _0, _1)]
-    Delta(Handle, u64, PublishDelta),
+    Delta(Handle, u64),
 
     #[display(fmt = "parent added to '{}' version '{}'", _0, _1)]
     ParentAdded(Handle, u64, ParentHandle),
@@ -73,34 +71,16 @@ impl<S: Signer> eventsourcing::EventListener<CertAuth<S>> for EventQueueListener
         let handle = event.handle();
         let version = event.version();
         match event.details() {
-            EvtDet::ObjectSetUpdated(_, delta) => {
-                let publish_delta = delta.values().fold(PublishDelta::empty(), |acc, el| {
-                    acc + el.objects().clone().into()
-                });
-
-                let evt = QueueEvent::Delta(handle.clone(), version, publish_delta);
+            EvtDet::ObjectSetUpdated(_, _)
+            | EvtDet::ParentRemoved(_, _)
+            | EvtDet::KeyPendingToNew(_, _, _)
+            | EvtDet::KeyPendingToActive(_, _, _)
+            | EvtDet::KeyRollFinished(_, _) => {
+                let evt = QueueEvent::Delta(handle.clone(), version);
                 self.push_back(evt);
             }
-            EvtDet::ParentRemoved(_, deltas) => {
-                let publish_delta = deltas
-                    .iter()
-                    .fold(PublishDelta::empty(), |acc, el| acc + el.clone().into());
-
-                let evt = QueueEvent::Delta(handle.clone(), version, publish_delta);
-                self.push_back(evt);
-            }
-            EvtDet::KeyPendingToNew(_, _, delta)
-            | EvtDet::KeyPendingToActive(_, _, delta)
-            | EvtDet::KeyRollFinished(_, delta) => {
-                let evt = QueueEvent::Delta(handle.clone(), version, delta.clone().into());
-                self.push_back(evt);
-            }
-            EvtDet::ResourceClassRemoved(class_name, delta, parent, revocations) => {
-                self.push_back(QueueEvent::Delta(
-                    handle.clone(),
-                    version,
-                    delta.clone().into(),
-                ));
+            EvtDet::ResourceClassRemoved(class_name, _delta, parent, revocations) => {
+                self.push_back(QueueEvent::Delta(handle.clone(), version));
 
                 let mut revocations_map = HashMap::new();
                 revocations_map.insert(class_name.clone(), revocations.clone());

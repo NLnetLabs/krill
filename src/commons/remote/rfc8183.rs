@@ -13,15 +13,12 @@ use bcder::decode;
 use bytes::Bytes;
 
 use rpki::uri;
-use rpki::uri::Https;
 use rpki::x509;
-use rpki::x509::Time;
 
-use crate::commons::api::Handle;
+use crate::commons::api::{Handle, RepoInfo};
+use crate::commons::remote::id::IdCert;
 use crate::commons::util::file;
 use crate::commons::util::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
-
-use super::id::IdCert;
 
 pub const VERSION: &str = "1";
 pub const NS: &str = "http://www.hactrn.net/uris/rpki/rpki-setup/";
@@ -78,11 +75,11 @@ impl ChildRequest {
     where
         R: io::Read,
     {
-        Self::validate_at(reader, Time::now())
+        Self::validate_at(reader, x509::Time::now())
     }
 
     /// Parses a <child_request /> message.
-    fn validate_at<R>(reader: R, now: Time) -> Result<Self, Error>
+    fn validate_at<R>(reader: R, now: x509::Time) -> Result<Self, Error>
     where
         R: io::Read,
     {
@@ -232,10 +229,10 @@ impl ParentResponse {
     where
         R: io::Read,
     {
-        Self::validate_at(reader, Time::now())
+        Self::validate_at(reader, x509::Time::now())
     }
 
-    fn validate_at<R>(reader: R, now: Time) -> Result<Self, Error>
+    fn validate_at<R>(reader: R, now: x509::Time) -> Result<Self, Error>
     where
         R: io::Read,
     {
@@ -388,11 +385,11 @@ impl PublisherRequest {
     where
         R: io::Read,
     {
-        Self::validate_at(reader, Time::now())
+        Self::validate_at(reader, x509::Time::now())
     }
 
     /// Parses a <publisher_request /> message.
-    fn validate_at<R>(reader: R, now: Time) -> Result<Self, Error>
+    fn validate_at<R>(reader: R, now: x509::Time) -> Result<Self, Error>
     where
         R: io::Read,
     {
@@ -486,11 +483,8 @@ pub struct RepositoryResponse {
     /// The URI where the CA needs to send its RFC8181 messages
     service_uri: ServiceUri,
 
-    /// The Rsync base directory for objects published by the CA
-    sia_base: uri::Rsync,
-
-    /// The HTTPS notification URI that the CA can use
-    rrdp_notification_uri: uri::Https,
+    /// Contains the rsync base (sia_base) and rrdp notification uri
+    repo_info: RepoInfo,
 }
 
 /// # Construct and Data Access
@@ -502,16 +496,14 @@ impl RepositoryResponse {
         publisher_handle: Handle,
         id_cert: IdCert,
         service_uri: ServiceUri,
-        sia_base: uri::Rsync,
-        rrdp_notification_uri: uri::Https,
+        repo_info: RepoInfo,
     ) -> Self {
         RepositoryResponse {
             tag,
             publisher_handle,
             id_cert,
             service_uri,
-            sia_base,
-            rrdp_notification_uri,
+            repo_info,
         }
     }
 
@@ -531,12 +523,8 @@ impl RepositoryResponse {
         &self.service_uri
     }
 
-    pub fn sia_base(&self) -> &uri::Rsync {
-        &self.sia_base
-    }
-
-    pub fn rrdp_notification_uri(&self) -> &uri::Https {
-        &self.rrdp_notification_uri
+    pub fn repo_info(&self) -> &RepoInfo {
+        &self.repo_info
     }
 }
 
@@ -548,10 +536,10 @@ impl RepositoryResponse {
     where
         R: io::Read,
     {
-        Self::validate_at(reader, Time::now())
+        Self::validate_at(reader, x509::Time::now())
     }
 
-    fn validate_at<R>(reader: R, now: Time) -> Result<Self, Error>
+    fn validate_at<R>(reader: R, now: x509::Time) -> Result<Self, Error>
     where
         R: io::Read,
     {
@@ -581,13 +569,14 @@ impl RepositoryResponse {
                 let id_cert = IdCert::decode(id_cert)?;
                 id_cert.validate_ta_at(now)?;
 
+                let repo_info = RepoInfo::new(sia_base, rrdp_notification_uri);
+
                 Ok(RepositoryResponse {
                     tag,
                     publisher_handle,
                     id_cert,
                     service_uri,
-                    sia_base,
-                    rrdp_notification_uri,
+                    repo_info,
                 })
             })
         })
@@ -601,8 +590,8 @@ impl RepositoryResponse {
     pub fn encode_vec(&self) -> Vec<u8> {
         XmlWriter::encode_vec(|w| {
             let service_uri = self.service_uri.to_string();
-            let sia_base = self.sia_base.to_string();
-            let rrdp_notification_uri = self.rrdp_notification_uri.to_string();
+            let sia_base = self.repo_info.base_uri().to_string();
+            let rrdp_notification_uri = self.repo_info.rpki_notify().to_string();
 
             let mut a = vec![
                 ("xmlns", NS),
@@ -649,7 +638,7 @@ impl TryFrom<String> for ServiceUri {
             // TODO: Check a bit better? It will blow up when the uri is used..
             Ok(ServiceUri::Http(value))
         } else {
-            Ok(ServiceUri::Https(Https::from_str(&value)?))
+            Ok(ServiceUri::Https(uri::Https::from_str(&value)?))
         }
     }
 }
@@ -773,8 +762,8 @@ mod tests {
         assert_eq!(Some("A0001".to_string()), rr.tag);
         assert_eq!(Handle::from_str_unsafe("Alice/Bob-42"), rr.publisher_handle);
         assert_eq!(example_service_uri(), rr.service_uri);
-        assert_eq!(example_rrdp_uri(), rr.rrdp_notification_uri);
-        assert_eq!(example_sia_base(), rr.sia_base);
+        assert_eq!(example_rrdp_uri(), rr.repo_info().rpki_notify());
+        assert_eq!(&example_sia_base(), rr.repo_info().base_uri());
     }
 
     #[test]
@@ -796,11 +785,12 @@ mod tests {
     fn repository_response() {
         let cert = test_id_certificate();
 
+        let repo_info = RepoInfo::new(example_sia_base(), example_rrdp_uri());
+
         let pr = RepositoryResponse {
             tag: Some("tag".to_string()),
             publisher_handle: Handle::from_str_unsafe("tim"),
-            rrdp_notification_uri: example_rrdp_uri(),
-            sia_base: example_sia_base(),
+            repo_info,
             service_uri: example_service_uri(),
             id_cert: cert,
         };

@@ -12,13 +12,11 @@ use rpki::cert::Cert;
 use rpki::crypto::Signer;
 use rpki::uri;
 
-use crate::commons::api::ca::ResourceSet;
-use crate::commons::api::ca::TrustAnchorLocator;
+use crate::commons::api::ca::{ResourceSet, TrustAnchorLocator};
 use crate::commons::api::rrdp::PublishElement;
-use crate::commons::api::Link;
+use crate::commons::api::{Link, RepoInfo};
 use crate::commons::remote::id::IdCert;
 use crate::commons::remote::rfc8183;
-use crate::commons::remote::rfc8183::ChildRequest;
 
 //------------ Handle --------------------------------------------------------
 
@@ -295,15 +293,16 @@ pub struct PublisherClientRequest {
 }
 
 impl PublisherClientRequest {
-    pub fn new(handle: Handle, server_info: PubServerContact) -> Self {
+    pub fn rfc8183(handle: Handle, response: rfc8183::RepositoryResponse) -> Self {
+        let server_info = PubServerContact::rfc8183(response);
         PublisherClientRequest {
             handle,
             server_info,
         }
     }
 
-    pub fn embedded(handle: Handle) -> Self {
-        let server_info = PubServerContact::embedded();
+    pub fn embedded(handle: Handle, repo_info: RepoInfo) -> Self {
+        let server_info = PubServerContact::embedded(repo_info);
         PublisherClientRequest {
             handle,
             server_info,
@@ -318,14 +317,29 @@ impl PublisherClientRequest {
 //------------ PubServerInfo -------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Display, Serialize)]
+#[allow(clippy::large_enum_variant)]
 pub enum PubServerContact {
     #[display(fmt = "Embedded server.")]
-    Embedded,
+    Embedded(RepoInfo),
+
+    #[display(fmt = "Embedded server.")]
+    Rfc8181(rfc8183::RepositoryResponse),
 }
 
 impl PubServerContact {
-    pub fn embedded() -> Self {
-        PubServerContact::Embedded
+    pub fn embedded(info: RepoInfo) -> Self {
+        PubServerContact::Embedded(info)
+    }
+
+    pub fn rfc8183(response: rfc8183::RepositoryResponse) -> Self {
+        PubServerContact::Rfc8181(response)
+    }
+
+    pub fn repo_info(&self) -> &RepoInfo {
+        match self {
+            PubServerContact::Embedded(info) => info,
+            PubServerContact::Rfc8181(response) => response.repo_info(),
+        }
     }
 }
 
@@ -475,7 +489,7 @@ pub enum ChildAuthRequest {
     #[display(fmt = "embedded")]
     Embedded,
     #[display(fmt = "{}", _0)]
-    Rfc8183(ChildRequest),
+    Rfc8183(rfc8183::ChildRequest),
 }
 
 //------------ UpdateChildRequest --------------------------------------------
