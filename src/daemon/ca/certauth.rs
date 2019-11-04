@@ -14,9 +14,9 @@ use crate::commons::api::rrdp::PublishElement;
 use crate::commons::api::{
     self, CertAuthInfo, ChildHandle, EntitlementClass, Entitlements, Handle, IssuanceRequest,
     IssuanceResponse, IssuedCert, ObjectsDelta, ParentCaContact, ParentHandle, PubServerContact,
-    RcvdCert, RequestResourceLimit, ResourceClassName, ResourceSet, RevocationRequest,
-    RevocationResponse, RouteAuthorization, RouteAuthorizationUpdates, SigningCert,
-    UpdateChildRequest,
+    PublisherRequest, RcvdCert, RequestResourceLimit, ResourceClassName, ResourceSet,
+    RevocationRequest, RevocationResponse, RouteAuthorization, RouteAuthorizationUpdates,
+    SigningCert, UpdateChildRequest,
 };
 use crate::commons::eventsourcing::{Aggregate, StoredEvent};
 use crate::commons::remote::builder::{IdCertBuilder, SignedMessageBuilder};
@@ -356,6 +356,10 @@ impl<S: Signer> CertAuth<S> {
 
     pub fn child_request(&self) -> ChildRequest {
         ChildRequest::new(self.handle.clone(), self.id.cert.clone())
+    }
+
+    pub fn publisher_request(&self) -> PublisherRequest {
+        PublisherRequest::new(self.handle.clone(), self.id_cert().clone())
     }
 
     pub fn id_cert(&self) -> &IdCert {

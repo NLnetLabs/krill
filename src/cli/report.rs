@@ -28,6 +28,7 @@ pub enum ApiResponse {
     Rfc8181ClientList(Vec<ClientInfo>),
     Rfc8183RepositoryResponse(rfc8183::RepositoryResponse),
     Rfc8183ChildRequest(rfc8183::ChildRequest),
+    Rfc8183PublisherRequest(rfc8183::PublisherRequest),
 
     Empty,               // Typically a successful post just gets an empty 200 response
     GenericBody(String), // For when the server echos Json to a successful post
@@ -55,6 +56,7 @@ impl ApiResponse {
                 ApiResponse::PublisherDetails(details) => Ok(Some(details.report(fmt)?)),
                 ApiResponse::Rfc8181ClientList(list) => Ok(Some(list.report(fmt)?)),
                 ApiResponse::Rfc8183ChildRequest(req) => Ok(Some(req.report(fmt)?)),
+                ApiResponse::Rfc8183PublisherRequest(req) => Ok(Some(req.report(fmt)?)),
                 ApiResponse::Rfc8183RepositoryResponse(res) => Ok(Some(res.report(fmt)?)),
                 ApiResponse::GenericBody(body) => Ok(Some(body.clone())),
                 ApiResponse::Empty => Ok(None),
@@ -307,6 +309,20 @@ impl Report for rfc8183::RepositoryResponse {
 }
 
 impl Report for rfc8183::ChildRequest {
+    fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
+        match format {
+            ReportFormat::Text | ReportFormat::Xml | ReportFormat::Default => {
+                let bytes = self.encode_vec();
+                let xml = unsafe { from_utf8_unchecked(&bytes) };
+
+                Ok(xml.to_string())
+            }
+            _ => Err(ReportError::UnsupportedFormat),
+        }
+    }
+}
+
+impl Report for rfc8183::PublisherRequest {
     fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
         match format {
             ReportFormat::Text | ReportFormat::Xml | ReportFormat::Default => {

@@ -13,7 +13,9 @@ use krill::commons::api::rrdp::CurrentObjects;
 use krill::commons::api::{Handle, PublisherHandle};
 use krill::commons::remote::builder::IdCertBuilder;
 use krill::commons::util::softsigner::OpenSslSigner;
-use krill::daemon::test::{krill_admin, test_with_krill_server};
+use krill::daemon::test::{
+    krill_admin, krill_pubd_admin, start_krill_pubd_server, test_with_krill_server,
+};
 use krill::pubd::Publisher;
 
 fn publisher(work_dir: &PathBuf, base_uri: &str) -> Publisher {
@@ -32,27 +34,32 @@ fn add_publisher(publisher_handle: &PublisherHandle, publisher: &Publisher) {
         publisher_handle.clone(),
         publisher.id_cert().clone(),
     ));
-    krill_admin(command);
+    krill_pubd_admin(command);
 }
 
 fn remove_publisher(publisher: &PublisherHandle) {
     let command = Command::Publishers(PublishersCommand::RemovePublisher(publisher.clone()));
-    krill_admin(command);
+    krill_pubd_admin(command);
 }
 
 fn list_publishers() -> ApiResponse {
     let command = Command::Publishers(PublishersCommand::PublisherList);
-    krill_admin(command)
+    krill_pubd_admin(command)
 }
 
 fn details_publisher(publisher: &PublisherHandle) -> ApiResponse {
     let command = Command::Publishers(PublishersCommand::ShowPublisher(publisher.clone()));
-    krill_admin(command)
+    krill_pubd_admin(command)
 }
 
+/// This tests that you can run krill with an embedded TA and CA, and
+/// have the CA publish at another krill instance which is is set up
+/// as a publication server only (i.e. it just has no TA and CAs).
 #[test]
-fn admin_publishers() {
+fn remote_publication() {
     test_with_krill_server(|d| {
+        start_krill_pubd_server();
+
         let alice_handle = Handle::from_str_unsafe("alice");
         let alice = publisher(&d, "rsync://localhost/repo/0/alice/");
 

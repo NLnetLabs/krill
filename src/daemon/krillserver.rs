@@ -324,6 +324,14 @@ impl KrillServer {
             .ok()
     }
 
+    /// Returns the publisher request for a CA, or NONE of the CA cannot be found.
+    pub fn ca_publisher_req(&self, handle: &Handle) -> Option<PublisherRequest> {
+        self.caserver
+            .get_ca(handle)
+            .map(|ca| ca.publisher_request())
+            .ok()
+    }
+
     pub fn ca_init(&mut self, init: CertAuthInit) -> EmptyRes {
         let handle = init.unpack();
 

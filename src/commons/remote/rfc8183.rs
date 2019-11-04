@@ -346,7 +346,7 @@ impl ParentResponse {
 /// Publication Server.
 ///
 /// For more info, see: https://tools.ietf.org/html/rfc8183#section-5.2.3
-#[derive(Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PublisherRequest {
     /// The optional 'tag' identifier used like a session identifier
     tag: Option<String>,

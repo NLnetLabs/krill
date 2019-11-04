@@ -53,6 +53,27 @@ where
     })
 }
 
+pub fn start_krill_pubd_server() {
+    let data_dir = test::sub_dir(&PathBuf::from("work"));
+    let server_conf = Config::pubd_test(&data_dir);
+
+    // Start the server
+    thread::spawn(move || server::start(&server_conf).unwrap());
+
+    let mut tries = 0;
+    loop {
+        thread::sleep(time::Duration::from_millis(100));
+        if let Ok(_res) = krill_pubd_health() {
+            break;
+        }
+
+        tries += 1;
+        if tries > 20 {
+            panic!("Server is not coming up")
+        }
+    }
+}
+
 pub fn wait_seconds(s: u64) {
     thread::sleep(time::Duration::from_secs(s));
 }
@@ -71,6 +92,30 @@ fn health_check() -> Result<ApiResponse, Error> {
 pub fn krill_admin(command: Command) -> ApiResponse {
     let krillc_opts = Options::new(
         test::https("https://localhost:3000/"),
+        "secret",
+        ReportFormat::Json,
+        command,
+    );
+    match KrillClient::process(krillc_opts) {
+        Ok(res) => res, // ok
+        Err(e) => panic!("{}", e),
+    }
+}
+
+fn krill_pubd_health() -> Result<ApiResponse, Error> {
+    let krillc_opts = Options::new(
+        test::https("https://localhost:3001/"),
+        "secret",
+        ReportFormat::Default,
+        Command::Health,
+    );
+
+    KrillClient::process(krillc_opts)
+}
+
+pub fn krill_pubd_admin(command: Command) -> ApiResponse {
+    let krillc_opts = Options::new(
+        test::https("https://localhost:3001/"),
         "secret",
         ReportFormat::Json,
         command,

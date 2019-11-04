@@ -346,6 +346,20 @@ pub fn ca_child_req(
     })
 }
 
+pub fn ca_publisher_req(
+    server: web::Data<AppServer>,
+    auth: Auth,
+    handle: Path<Handle>,
+) -> HttpResponse {
+    let handle = handle.into_inner();
+    if_api_allowed(&server, &auth, || {
+        match server.read().ca_publisher_req(&handle) {
+            Some(req) => render_json(req),
+            None => api_not_found(),
+        }
+    })
+}
+
 pub fn ca_add_parent(
     server: web::Data<AppServer>,
     auth: Auth,

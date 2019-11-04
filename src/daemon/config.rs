@@ -163,7 +163,7 @@ impl Config {
 
 /// # Create
 impl Config {
-    pub fn test(data_dir: &PathBuf) -> Self {
+    fn test_config(data_dir: &PathBuf) -> Self {
         let ip = ConfigDefaults::ip();
         let port = ConfigDefaults::port();
         let use_ta = true;
@@ -178,7 +178,7 @@ impl Config {
         let auth_token = Token::from("secret");
         let ca_refresh = 3600;
 
-        let c = Config {
+        Config {
             ip,
             port,
             use_ta,
@@ -191,9 +191,20 @@ impl Config {
             log_file,
             auth_token,
             ca_refresh,
-        };
-        c.init_logging().unwrap();
-        c
+        }
+    }
+
+    pub fn test(data_dir: &PathBuf) -> Self {
+        let config = Self::test_config(data_dir);
+        config.init_logging().unwrap();
+        config
+    }
+
+    pub fn pubd_test(data_dir: &PathBuf) -> Self {
+        let mut config = Self::test_config(data_dir);
+        config.port = 3001;
+        config.use_ta = false;
+        config
     }
 
     pub fn get_config_filename() -> String {

@@ -89,6 +89,15 @@ impl KrillClient {
                 Ok(ApiResponse::Rfc8183ChildRequest(req))
             }
 
+            CaCommand::PublisherRequest(handle) => {
+                let uri = format!("api/v1/cas/{}/publisher_request", handle);
+                let req: PublisherRequest = self.get_json(&uri)?;
+                let (handle, id_cert) = req.unpack();
+                let req = rfc8183::PublisherRequest::new(None, handle, id_cert);
+
+                Ok(ApiResponse::Rfc8183PublisherRequest(req))
+            }
+
             CaCommand::AddParent(handle, parent) => {
                 let uri = format!("api/v1/cas/{}/parents", handle);
                 self.post_json(&uri, parent)?;
