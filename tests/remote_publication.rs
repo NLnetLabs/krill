@@ -11,33 +11,28 @@ use rpki::uri;
 use krill::cli::options::{CaCommand, Command, PublishersCommand};
 use krill::cli::report::ApiResponse;
 use krill::commons::api::rrdp::CurrentObjects;
-use krill::commons::api::{CaRepoDetails, Handle, ParentCaReq, PublisherHandle, ResourceSet};
+use krill::commons::api::{
+    CaRepoDetails, Handle, ParentCaReq, PublisherHandle, PublisherList, ResourceSet,
+};
 use krill::commons::remote::builder::IdCertBuilder;
+use krill::commons::remote::rfc8183;
 use krill::commons::util::softsigner::OpenSslSigner;
 use krill::daemon::ca::ta_handle;
 use krill::daemon::test::{
     add_child_to_ta_embedded, add_parent_to_ca, init_child, krill_admin, krill_pubd_admin,
     start_krill_pubd_server, test_with_krill_server, wait_for_current_resources,
 };
-use krill::pubd::Publisher;
-use pretty::Doc::Append;
 
-fn publisher(work_dir: &PathBuf, base_uri: &str) -> Publisher {
-    let mut signer = OpenSslSigner::build(work_dir).unwrap();
-
-    let key = signer.create_key(PublicKeyFormat::default()).unwrap();
-    let id_cert = IdCertBuilder::new_ta_id_cert(&key, &signer).unwrap();
-
-    let base_uri = uri::Rsync::from_str(base_uri).unwrap();
-
-    Publisher::new(id_cert, base_uri, CurrentObjects::default())
+fn repository_response(publisher: &PublisherHandle) -> rfc8183::RepositoryResponse {
+    let command = Command::Publishers(PublishersCommand::RepositiryResponse(publisher.clone()));
+    match krill_pubd_admin(command) {
+        ApiResponse::Rfc8183RepositoryResponse(response) => response,
+        _ => panic!("Expected repository response."),
+    }
 }
 
-fn add_publisher(publisher_handle: &PublisherHandle, publisher: &Publisher) {
-    let command = Command::Publishers(PublishersCommand::AddPublisher(
-        publisher_handle.clone(),
-        publisher.id_cert().clone(),
-    ));
+fn add_publisher(req: rfc8183::PublisherRequest) {
+    let command = Command::Publishers(PublishersCommand::AddPublisher(req));
     krill_pubd_admin(command);
 }
 
@@ -46,9 +41,20 @@ fn remove_publisher(publisher: &PublisherHandle) {
     krill_pubd_admin(command);
 }
 
-fn list_publishers() -> ApiResponse {
+fn list_publishers() -> PublisherList {
     let command = Command::Publishers(PublishersCommand::PublisherList);
-    krill_pubd_admin(command)
+    match krill_pubd_admin(command) {
+        ApiResponse::PublisherList(list) => list,
+        _ => panic!("Expected publisher list"),
+    }
+}
+
+fn has_publisher(publisher: &PublisherHandle) -> bool {
+    list_publishers()
+        .publishers()
+        .iter()
+        .find(|p| p.id() == publisher.as_str())
+        .is_some()
 }
 
 fn details_publisher(publisher: &PublisherHandle) -> ApiResponse {
@@ -61,6 +67,14 @@ fn repo_details(ca: &Handle) -> CaRepoDetails {
     match krill_admin(command) {
         ApiResponse::RepoDetails(details) => details,
         _ => panic!("Expected repo details"),
+    }
+}
+
+fn publisher_request(ca: &Handle) -> rfc8183::PublisherRequest {
+    let command = Command::CertAuth(CaCommand::RepoPublisherRequest(ca.clone()));
+    match krill_admin(command) {
+        ApiResponse::Rfc8183PublisherRequest(req) => req,
+        _ => panic!("Expected publisher request"),
     }
 }
 
@@ -96,21 +110,16 @@ fn remote_publication() {
         let list = child_repo_details.state().as_list();
         assert_eq!(2, list.elements().len());
 
-        //        let alice = publisher(&d, "rsync://localhost/repo/0/child/");
-        //
-        //        // Add client "alice"
-        //        add_publisher(&alice_handle, &alice);
-        //
-        //        // Find "alice" in list
-        //        let res = list_publishers();
-        //        match res {
-        //            ApiResponse::PublisherList(list) => assert!(list
-        //                .publishers()
-        //                .iter()
-        //                .find(|p| { p.id() == "alice" })
-        //                .is_some()),
-        //            _ => panic!("Expected publisher list"),
-        //        }
+        // Add child to the secondary publication server
+        let publisher_request = publisher_request(&child);
+        add_publisher(publisher_request);
+
+        // Find "child" in list
+        assert!(has_publisher(&child));
+
+        // Get a Repository Response for the child CA
+        let response = repository_response(&child);
+
         //
         //        // Find details for alice
         //        let details_res = details_publisher(&alice_handle);

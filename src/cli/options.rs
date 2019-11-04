@@ -515,11 +515,19 @@ impl Options {
         sub = Self::add_general_args(sub);
         sub = Self::add_publisher_arg(sub);
 
-        sub = sub.arg(Arg::with_name("rfc8183")
-            .value_name("file")
-            .long("rfc8183")
-            .help("RFC8183 Publisher Request XML file containing a certificate (tag and handle are ignored)")
-            .required(true)
+        sub = sub.arg(
+            Arg::with_name("rfc8183")
+                .value_name("file")
+                .long("rfc8183")
+                .help("RFC8183 Publisher Request XML file containing a certificate (tag is ignored)")
+                .required(true)
+        ).arg(
+            Arg::with_name("publisher")
+                .value_name("handle")
+                .short("p")
+                .long("publisher")
+                .help("Override the publisher handle in the XML.")
+                .required(false),
         );
 
         app.subcommand(sub)
@@ -918,17 +926,18 @@ impl Options {
 
     fn parse_matches_publishers_add(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
-        let publisher = Self::parse_publisher_arg(matches)?;
 
-        let id_cert: IdCert = {
-            let path = matches.value_of("rfc8183").unwrap();
-            let path = PathBuf::from(path);
-            let bytes = file::read(&path)?;
-            let req = rfc8183::PublisherRequest::validate(bytes.as_ref())?;
-            req.into()
-        };
+        let path = matches.value_of("rfc8183").unwrap();
+        let path = PathBuf::from(path);
+        let bytes = file::read(&path)?;
+        let mut req = rfc8183::PublisherRequest::validate(bytes.as_ref())?;
 
-        let command = Command::Publishers(PublishersCommand::AddPublisher(publisher, id_cert));
+        if let Ok(publisher) = Self::parse_publisher_arg(matches) {
+            let (tag, _, cert) = req.unpack();
+            req = rfc8183::PublisherRequest::new(tag, publisher, cert);
+        }
+
+        let command = Command::Publishers(PublishersCommand::AddPublisher(req));
         Ok(Options::make(general_args, command))
     }
 
@@ -1079,7 +1088,7 @@ pub enum CaCommand {
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 pub enum PublishersCommand {
-    AddPublisher(PublisherHandle, IdCert),
+    AddPublisher(rfc8183::PublisherRequest),
     ShowPublisher(PublisherHandle),
     RemovePublisher(PublisherHandle),
     RepositiryResponse(PublisherHandle),

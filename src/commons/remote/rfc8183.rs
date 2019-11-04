@@ -361,9 +361,9 @@ pub struct PublisherRequest {
 /// # Construct and Data Access
 ///
 impl PublisherRequest {
-    pub fn new(tag: Option<&str>, publisher_handle: PublisherHandle, id_cert: IdCert) -> Self {
+    pub fn new(tag: Option<String>, publisher_handle: PublisherHandle, id_cert: IdCert) -> Self {
         PublisherRequest {
-            tag: tag.map(|s| s.to_string()),
+            tag,
             publisher_handle,
             id_cert,
         }

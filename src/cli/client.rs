@@ -191,9 +191,8 @@ impl KrillClient {
                 let list: PublisherList = self.get_json("api/v1/publishers")?;
                 Ok(ApiResponse::PublisherList(list))
             }
-            PublishersCommand::AddPublisher(publisher, id_cert) => {
-                let pbl = rfc8183::PublisherRequest::new(None, publisher, id_cert);
-                self.post_json("api/v1/publishers", pbl)?;
+            PublishersCommand::AddPublisher(req) => {
+                self.post_json("api/v1/publishers", req)?;
                 Ok(ApiResponse::Empty)
             }
             PublishersCommand::RemovePublisher(handle) => {
