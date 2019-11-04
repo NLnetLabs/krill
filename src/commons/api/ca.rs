@@ -23,7 +23,8 @@ use crate::commons::api::admin::{Handle, ParentCaContact};
 use crate::commons::api::publication;
 use crate::commons::api::publication::Publish;
 use crate::commons::api::{
-    Base64, HexEncodedHash, IssuanceRequest, ParentHandle, RequestResourceLimit, RouteAuthorization,
+    Base64, HexEncodedHash, IssuanceRequest, ListReply, ParentHandle, PubServerContact,
+    RequestResourceLimit, RouteAuthorization,
 };
 use crate::commons::eventsourcing::AggregateHistory;
 use crate::commons::remote::id::IdCert;
@@ -1574,6 +1575,53 @@ impl fmt::Display for ResourceClassKeysInfo {
         }
 
         res.fmt(f)
+    }
+}
+
+//------------ CaRepoDetails -------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum CurrentRepoState {
+    List(ListReply),
+    Error(String),
+}
+
+impl CurrentRepoState {
+    pub fn list(list: ListReply) -> Self {
+        CurrentRepoState::List(list)
+    }
+
+    pub fn error(e: impl fmt::Display) -> Self {
+        CurrentRepoState::Error(e.to_string())
+    }
+
+    pub fn as_list(&self) -> &ListReply {
+        match &self {
+            CurrentRepoState::List(list) => list,
+            CurrentRepoState::Error(e) => panic!("{}", e),
+        }
+    }
+}
+
+/// This struct contains the API details for the configure Repository server,
+/// and objects published there, for a CA.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CaRepoDetails {
+    contact: PubServerContact,
+    state: CurrentRepoState,
+}
+
+impl CaRepoDetails {
+    pub fn new(contact: PubServerContact, state: CurrentRepoState) -> Self {
+        CaRepoDetails { contact, state }
+    }
+
+    pub fn contact(&self) -> &PubServerContact {
+        &self.contact
+    }
+
+    pub fn state(&self) -> &CurrentRepoState {
+        &self.state
     }
 }
 

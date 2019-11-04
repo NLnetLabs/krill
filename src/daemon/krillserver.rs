@@ -9,10 +9,11 @@ use rpki::cert::Cert;
 use rpki::uri;
 
 use crate::commons::api::{
-    AddChildRequest, CertAuthHistory, CertAuthInfo, CertAuthInit, CertAuthList, ChildCaInfo,
-    ChildHandle, Handle, ListReply, ParentCaContact, ParentCaReq, ParentHandle, PublishDelta,
-    PublisherDetails, PublisherHandle, PublisherRequest, RepoInfo, RouteAuthorizationUpdates,
-    TaCertDetails, Token, UpdateChildRequest,
+    AddChildRequest, CaRepoDetails, CertAuthHistory, CertAuthInfo, CertAuthInit, CertAuthList,
+    ChildCaInfo, ChildHandle, CurrentRepoState, Handle, ListReply, ParentCaContact, ParentCaReq,
+    ParentHandle, PubServerContact, PublishDelta, PublisherDetails, PublisherHandle,
+    PublisherRequest, RepoInfo, RouteAuthorizationUpdates, TaCertDetails, Token,
+    UpdateChildRequest,
 };
 use crate::commons::remote::rfc8183::{ChildRequest, RepositoryResponse};
 use crate::commons::remote::sigmsg::SignedMessage;
@@ -348,6 +349,32 @@ impl KrillServer {
         self.add_publisher(req)?;
 
         Ok(())
+    }
+
+    /// Return the info about the configure repository server for a given Ca,
+    /// and the actual objects published there, as reported by a list reply.
+    pub fn ca_repo_details(&self, handle: &Handle) -> Option<CaRepoDetails> {
+        self.caserver
+            .get_ca(handle)
+            .map(|ca| {
+                let contact = ca.pub_server_contact().clone();
+
+                let state = match &contact {
+                    PubServerContact::Embedded(_) => match self.pubserver.list(handle) {
+                        Err(e) => CurrentRepoState::error(e),
+                        Ok(list) => CurrentRepoState::list(list),
+                    },
+                    PubServerContact::Rfc8181(_response) => {
+                        match self.caserver.send_rfc8181_list(handle) {
+                            Err(e) => CurrentRepoState::error(e),
+                            Ok(list) => CurrentRepoState::list(list),
+                        }
+                    }
+                };
+
+                CaRepoDetails::new(contact, state)
+            })
+            .ok()
     }
 
     pub fn ca_update_id(&self, handle: Handle) -> EmptyRes {

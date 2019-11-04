@@ -176,12 +176,6 @@ impl From<String> for HexEncodedHash {
     }
 }
 
-impl ToString for HexEncodedHash {
-    fn to_string(&self) -> String {
-        unsafe { String::from_utf8_unchecked(self.0.to_vec()) }
-    }
-}
-
 impl Serialize for HexEncodedHash {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -198,6 +192,13 @@ impl<'de> Deserialize<'de> for HexEncodedHash {
     {
         let string = String::deserialize(deserializer)?;
         Ok(HexEncodedHash::from(string))
+    }
+}
+
+impl fmt::Display for HexEncodedHash {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let string = unsafe { String::from_utf8_unchecked(self.0.to_vec()) };
+        write!(f, "{}", string)
     }
 }
 

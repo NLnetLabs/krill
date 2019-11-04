@@ -475,10 +475,20 @@ impl Options {
         app.subcommand(sub)
     }
 
+    fn make_case_repo_show_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("show").about("Show current repo config and state.");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        app.subcommand(sub)
+    }
+
     fn make_cas_repo_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("repo").about("Manage the repository for your CA.");
 
         sub = Self::make_case_repo_request_sc(sub);
+        sub = Self::make_case_repo_show_sc(sub);
 
         app.subcommand(sub)
     }
@@ -871,7 +881,16 @@ impl Options {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
-        let command = Command::CertAuth(CaCommand::PublisherRequest(my_ca));
+        let command = Command::CertAuth(CaCommand::RepoPublisherRequest(my_ca));
+
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_repo_details(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let command = Command::CertAuth(CaCommand::RepoDetails(my_ca));
 
         Ok(Options::make(general_args, command))
     }
@@ -879,6 +898,8 @@ impl Options {
     fn parse_matches_cas_repo(matches: &ArgMatches) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("request") {
             Self::parse_matches_cas_repo_request(m)
+        } else if let Some(m) = matches.subcommand_matches("show") {
+            Self::parse_matches_cas_repo_details(m)
         } else {
             Err(Error::UnrecognisedSubCommand)
         }
@@ -1013,7 +1034,8 @@ pub enum CaCommand {
     ChildRequest(Handle),
 
     // Get the RFC8183 publisher request
-    PublisherRequest(Handle),
+    RepoPublisherRequest(Handle),
+    RepoDetails(Handle),
 
     // Add a parent to this CA
     AddParent(Handle, ParentCaReq),

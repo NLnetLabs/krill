@@ -69,7 +69,7 @@ pub fn health() -> HttpResponse {
 
 /// Returns the server health.
 pub fn api_health(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
-    if_api_allowed(&server, &auth, || api_ok())
+    if_api_allowed(&server, &auth, api_ok)
 }
 
 fn if_allowed<F>(allowed: bool, op: F) -> HttpResponse
@@ -354,6 +354,20 @@ pub fn ca_publisher_req(
     let handle = handle.into_inner();
     if_api_allowed(&server, &auth, || {
         match server.read().ca_publisher_req(&handle) {
+            Some(req) => render_json(req),
+            None => api_not_found(),
+        }
+    })
+}
+
+pub fn ca_repo_details(
+    server: web::Data<AppServer>,
+    auth: Auth,
+    handle: Path<Handle>,
+) -> HttpResponse {
+    let handle = handle.into_inner();
+    if_api_allowed(&server, &auth, || {
+        match server.read().ca_repo_details(&handle) {
             Some(req) => render_json(req),
             None => api_not_found(),
         }

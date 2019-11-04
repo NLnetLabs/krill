@@ -14,6 +14,7 @@ use crate::commons::remote::rfc8183;
 use crate::commons::remote::rfc8183::RepositoryResponse;
 use crate::commons::util::httpclient;
 use crate::constants::KRILL_CLI_API_ENV;
+use commons::api::CaRepoDetails;
 
 /// Command line tool for Krill admin tasks
 pub struct KrillClient {
@@ -89,13 +90,20 @@ impl KrillClient {
                 Ok(ApiResponse::Rfc8183ChildRequest(req))
             }
 
-            CaCommand::PublisherRequest(handle) => {
-                let uri = format!("api/v1/cas/{}/publisher_request", handle);
+            CaCommand::RepoPublisherRequest(handle) => {
+                let uri = format!("api/v1/cas/{}/repo/publisher_request", handle);
                 let req: PublisherRequest = self.get_json(&uri)?;
                 let (handle, id_cert) = req.unpack();
                 let req = rfc8183::PublisherRequest::new(None, handle, id_cert);
 
                 Ok(ApiResponse::Rfc8183PublisherRequest(req))
+            }
+
+            CaCommand::RepoDetails(handle) => {
+                let uri = format!("api/v1/cas/{}/repo/", handle);
+                let details: CaRepoDetails = self.get_json(&uri)?;
+
+                Ok(ApiResponse::RepoDetails(details))
             }
 
             CaCommand::AddParent(handle, parent) => {

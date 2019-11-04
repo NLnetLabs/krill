@@ -316,7 +316,7 @@ impl PublisherClientRequest {
 
 //------------ PubServerInfo -------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Display, Serialize)]
+#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum PubServerContact {
     #[display(fmt = "Embedded server.")]
@@ -331,8 +331,19 @@ impl PubServerContact {
         PubServerContact::Embedded(info)
     }
 
+    pub fn is_embedded(&self) -> bool {
+        match self {
+            PubServerContact::Embedded(_) => true,
+            _ => false,
+        }
+    }
+
     pub fn rfc8183(response: rfc8183::RepositoryResponse) -> Self {
         PubServerContact::Rfc8181(response)
+    }
+
+    pub fn is_rfc8183(&self) -> bool {
+        !self.is_embedded()
     }
 
     pub fn repo_info(&self) -> &RepoInfo {

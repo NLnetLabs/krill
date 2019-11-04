@@ -1,8 +1,8 @@
 use std::str::{from_utf8_unchecked, FromStr};
 
 use crate::commons::api::{
-    CertAuthHistory, CertAuthInfo, CertAuthList, CurrentObjects, ParentCaContact, PublisherDetails,
-    PublisherList, RouteAuthorization,
+    CaRepoDetails, CertAuthHistory, CertAuthInfo, CertAuthList, CurrentObjects, CurrentRepoState,
+    ParentCaContact, PubServerContact, PublisherDetails, PublisherList, RouteAuthorization,
 };
 use crate::commons::remote::api::ClientInfo;
 use crate::commons::remote::rfc8183;
@@ -29,6 +29,8 @@ pub enum ApiResponse {
     Rfc8183RepositoryResponse(rfc8183::RepositoryResponse),
     Rfc8183ChildRequest(rfc8183::ChildRequest),
     Rfc8183PublisherRequest(rfc8183::PublisherRequest),
+
+    RepoDetails(CaRepoDetails),
 
     Empty,               // Typically a successful post just gets an empty 200 response
     GenericBody(String), // For when the server echos Json to a successful post
@@ -58,6 +60,7 @@ impl ApiResponse {
                 ApiResponse::Rfc8183ChildRequest(req) => Ok(Some(req.report(fmt)?)),
                 ApiResponse::Rfc8183PublisherRequest(req) => Ok(Some(req.report(fmt)?)),
                 ApiResponse::Rfc8183RepositoryResponse(res) => Ok(Some(res.report(fmt)?)),
+                ApiResponse::RepoDetails(details) => Ok(Some(details.report(fmt)?)),
                 ApiResponse::GenericBody(body) => Ok(Some(body.clone())),
                 ApiResponse::Empty => Ok(None),
             }
@@ -347,6 +350,54 @@ impl Report for Vec<RouteAuthorization> {
                 for a in self.iter() {
                     res.push_str(&format!("{}\n", a));
                 }
+                Ok(res)
+            }
+            _ => Err(ReportError::UnsupportedFormat),
+        }
+    }
+}
+
+impl Report for CaRepoDetails {
+    fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
+        match format {
+            ReportFormat::Json => Ok(serde_json::to_string_pretty(self).unwrap()),
+            ReportFormat::Default | ReportFormat::Text => {
+                let mut res = String::new();
+
+                res.push_str("Repository Details:\n");
+                match self.contact() {
+                    PubServerContact::Embedded(repo_info) => {
+                        res.push_str("  type:        embedded\n");
+                        res.push_str(&format!("  base_uri:    {}\n", repo_info.base_uri()));
+                        res.push_str(&format!("  rpki_notify: {}\n", repo_info.rpki_notify()));
+                    }
+                    PubServerContact::Rfc8181(response) => {
+                        res.push_str("  type:        remote\n");
+                        res.push_str(&format!("  service uri: {}\n", response.service_uri()));
+                        let repo_info = response.repo_info();
+                        res.push_str(&format!("  base_uri:    {}\n", repo_info.base_uri()));
+                        res.push_str(&format!("  rpki_notify: {}\n", repo_info.rpki_notify()));
+                    }
+                }
+
+                res.push_str("\n");
+                res.push_str("Currently published:\n");
+                match self.state() {
+                    CurrentRepoState::Error(e) => {
+                        res.push_str(&format!("  Error contacting repo! => {}", e));
+                    }
+                    CurrentRepoState::List(list) => {
+                        let elements = list.elements();
+                        if elements.is_empty() {
+                            res.push_str("  <nothing>\n");
+                        } else {
+                            for el in elements.iter() {
+                                res.push_str(&format!("  {} {}\n", el.hash(), el.uri()));
+                            }
+                        }
+                    }
+                }
+
                 Ok(res)
             }
             _ => Err(ReportError::UnsupportedFormat),
