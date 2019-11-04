@@ -10,12 +10,10 @@ use crate::commons::api::rrdp::{
     CurrentObjects, Delta, DeltaElements, DeltaRef, FileRef, Notification, RrdpSession, Snapshot,
     SnapshotRef,
 };
-use crate::commons::api::{
-    Handle, HexEncodedHash, PublishDelta, PublisherHandle, PublisherRequest, RepoInfo,
-};
+use crate::commons::api::{Handle, HexEncodedHash, PublishDelta, PublisherHandle, RepoInfo};
 use crate::commons::eventsourcing::Aggregate;
 use crate::commons::remote::id::IdCert;
-use crate::commons::remote::rfc8183::{RepositoryResponse, ServiceUri};
+use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
 use crate::constants::{REPOSITORY_RRDP_DIR, REPOSITORY_RSYNC_DIR};
 use crate::pubd::publishers::Publisher;
@@ -469,8 +467,11 @@ impl Aggregate for Repository {
 /// # Manage publishers
 ///
 impl Repository {
-    fn add_publisher(&self, publisher_request: PublisherRequest) -> Result<Vec<Evt>, Error> {
-        let (handle, id_cert) = publisher_request.unpack();
+    fn add_publisher(
+        &self,
+        publisher_request: rfc8183::PublisherRequest,
+    ) -> Result<Vec<Evt>, Error> {
+        let (_tag, handle, id_cert) = publisher_request.unpack();
 
         if self.publishers.contains_key(&handle) {
             Err(Error::DuplicatePublisher(handle))
@@ -520,14 +521,14 @@ impl Repository {
         &self,
         rfc8181_uri: uri::Https,
         publisher_handle: &PublisherHandle,
-    ) -> Result<RepositoryResponse, Error> {
+    ) -> Result<rfc8183::RepositoryResponse, Error> {
         let publisher = self.get_publisher(publisher_handle)?;
         let rsync_base = publisher.base_uri();
-        let service_uri = ServiceUri::Https(rfc8181_uri);
+        let service_uri = rfc8183::ServiceUri::Https(rfc8181_uri);
 
         let repo_info = RepoInfo::new(rsync_base.clone(), self.rrdp.notification_uri());
 
-        Ok(RepositoryResponse::new(
+        Ok(rfc8183::RepositoryResponse::new(
             None,
             publisher_handle.clone(),
             self.id_cert.clone(),

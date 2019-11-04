@@ -8,13 +8,11 @@ use rpki::uri;
 use crate::cli::options::{CaCommand, Command, Options, PublishersCommand};
 use crate::cli::report::{ApiResponse, ReportError};
 use crate::commons::api::{
-    CertAuthInfo, ParentCaContact, PublisherDetails, PublisherList, PublisherRequest, Token,
+    CaRepoDetails, CertAuthInfo, ParentCaContact, PublisherDetails, PublisherList, Token,
 };
 use crate::commons::remote::rfc8183;
-use crate::commons::remote::rfc8183::RepositoryResponse;
 use crate::commons::util::httpclient;
 use crate::constants::KRILL_CLI_API_ENV;
-use commons::api::CaRepoDetails;
 
 /// Command line tool for Krill admin tasks
 pub struct KrillClient {
@@ -85,24 +83,19 @@ impl KrillClient {
             CaCommand::ChildRequest(handle) => {
                 let uri = format!("api/v1/cas/{}/child_request", handle);
                 let xml = self.get_text(&uri, "application/xml")?;
-
                 let req = rfc8183::ChildRequest::validate(xml.as_bytes())?;
                 Ok(ApiResponse::Rfc8183ChildRequest(req))
             }
 
             CaCommand::RepoPublisherRequest(handle) => {
                 let uri = format!("api/v1/cas/{}/repo/publisher_request", handle);
-                let req: PublisherRequest = self.get_json(&uri)?;
-                let (handle, id_cert) = req.unpack();
-                let req = rfc8183::PublisherRequest::new(None, handle, id_cert);
-
+                let req: rfc8183::PublisherRequest = self.get_json(&uri)?;
                 Ok(ApiResponse::Rfc8183PublisherRequest(req))
             }
 
             CaCommand::RepoDetails(handle) => {
                 let uri = format!("api/v1/cas/{}/repo/", handle);
                 let details: CaRepoDetails = self.get_json(&uri)?;
-
                 Ok(ApiResponse::RepoDetails(details))
             }
 
@@ -199,7 +192,7 @@ impl KrillClient {
                 Ok(ApiResponse::PublisherList(list))
             }
             PublishersCommand::AddPublisher(publisher, id_cert) => {
-                let pbl = PublisherRequest::new(publisher, id_cert);
+                let pbl = rfc8183::PublisherRequest::new(None, publisher, id_cert);
                 self.post_json("api/v1/publishers", pbl)?;
                 Ok(ApiResponse::Empty)
             }
@@ -218,7 +211,7 @@ impl KrillClient {
                 let ct = "application/xml";
                 let xml = self.get_text(&uri, ct)?;
 
-                let res = RepositoryResponse::validate(xml.as_bytes())?;
+                let res = rfc8183::RepositoryResponse::validate(xml.as_bytes())?;
                 Ok(ApiResponse::Rfc8183RepositoryResponse(res))
             }
         }

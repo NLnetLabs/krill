@@ -159,35 +159,6 @@ impl fmt::Display for Token {
     }
 }
 
-//------------ PublisherRequest ----------------------------------------------
-
-/// This type defines request for a new Publisher (CA that is allowed to
-/// publish).
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct PublisherRequest {
-    handle: Handle,
-    id_cert: IdCert,
-}
-
-impl PublisherRequest {
-    pub fn new(handle: Handle, id_cert: IdCert) -> Self {
-        PublisherRequest { handle, id_cert }
-    }
-}
-
-impl PublisherRequest {
-    pub fn handle(&self) -> &Handle {
-        &self.handle
-    }
-    pub fn id_cert(&self) -> &IdCert {
-        &self.id_cert
-    }
-
-    pub fn unpack(self) -> (Handle, IdCert) {
-        (self.handle, self.id_cert)
-    }
-}
-
 //------------ PublisherSummaryInfo ------------------------------------------
 
 /// Defines a summary of publisher information to be used in the publisher

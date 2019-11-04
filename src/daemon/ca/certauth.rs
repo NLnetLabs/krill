@@ -14,15 +14,15 @@ use crate::commons::api::rrdp::PublishElement;
 use crate::commons::api::{
     self, CertAuthInfo, ChildHandle, EntitlementClass, Entitlements, Handle, IssuanceRequest,
     IssuanceResponse, IssuedCert, ObjectsDelta, ParentCaContact, ParentHandle, PubServerContact,
-    PublisherRequest, RcvdCert, RequestResourceLimit, ResourceClassName, ResourceSet,
-    RevocationRequest, RevocationResponse, RouteAuthorization, RouteAuthorizationUpdates,
-    SigningCert, UpdateChildRequest,
+    RcvdCert, RequestResourceLimit, ResourceClassName, ResourceSet, RevocationRequest,
+    RevocationResponse, RouteAuthorization, RouteAuthorizationUpdates, SigningCert,
+    UpdateChildRequest,
 };
 use crate::commons::eventsourcing::{Aggregate, StoredEvent};
 use crate::commons::remote::builder::{IdCertBuilder, SignedMessageBuilder};
 use crate::commons::remote::id::IdCert;
 use crate::commons::remote::rfc6492;
-use crate::commons::remote::rfc8183::ChildRequest;
+use crate::commons::remote::rfc8183;
 use crate::commons::remote::sigmsg::SignedMessage;
 use crate::daemon::ca::rc::PublishMode;
 use crate::daemon::ca::signing::CsrInfo;
@@ -354,12 +354,12 @@ impl<S: Signer> CertAuth<S> {
         )
     }
 
-    pub fn child_request(&self) -> ChildRequest {
-        ChildRequest::new(self.handle.clone(), self.id.cert.clone())
+    pub fn child_request(&self) -> rfc8183::ChildRequest {
+        rfc8183::ChildRequest::new(self.handle.clone(), self.id.cert.clone())
     }
 
-    pub fn publisher_request(&self) -> PublisherRequest {
-        PublisherRequest::new(self.handle.clone(), self.id_cert().clone())
+    pub fn publisher_request(&self) -> rfc8183::PublisherRequest {
+        rfc8183::PublisherRequest::new(None, self.handle.clone(), self.id_cert().clone())
     }
 
     pub fn id_cert(&self) -> &IdCert {

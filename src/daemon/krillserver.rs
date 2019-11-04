@@ -11,11 +11,10 @@ use rpki::uri;
 use crate::commons::api::{
     AddChildRequest, CaRepoDetails, CertAuthHistory, CertAuthInfo, CertAuthInit, CertAuthList,
     ChildCaInfo, ChildHandle, CurrentRepoState, Handle, ListReply, ParentCaContact, ParentCaReq,
-    ParentHandle, PubServerContact, PublishDelta, PublisherDetails, PublisherHandle,
-    PublisherRequest, RepoInfo, RouteAuthorizationUpdates, TaCertDetails, Token,
-    UpdateChildRequest,
+    ParentHandle, PubServerContact, PublishDelta, PublisherDetails, PublisherHandle, RepoInfo,
+    RouteAuthorizationUpdates, TaCertDetails, Token, UpdateChildRequest,
 };
-use crate::commons::remote::rfc8183::{ChildRequest, RepositoryResponse};
+use crate::commons::remote::rfc8183;
 use crate::commons::remote::sigmsg::SignedMessage;
 use crate::commons::util::softsigner::{OpenSslSigner, SignerError};
 use crate::constants::*;
@@ -113,7 +112,8 @@ impl KrillServer {
                 let ta = caserver.get_trust_anchor()?;
 
                 // Add publisher
-                let req = PublisherRequest::new(ta_handle.clone(), ta.id_cert().clone());
+                let req =
+                    rfc8183::PublisherRequest::new(None, ta_handle.clone(), ta.id_cert().clone());
 
                 pubserver.create_publisher(req)?;
 
@@ -166,7 +166,7 @@ impl KrillServer {
     }
 
     /// Adds the publishers, blows up if it already existed.
-    pub fn add_publisher(&mut self, req: PublisherRequest) -> EmptyRes {
+    pub fn add_publisher(&mut self, req: rfc8183::PublisherRequest) -> EmptyRes {
         self.pubserver
             .create_publisher(req)
             .map_err(Error::PubServer)
@@ -202,7 +202,7 @@ impl KrillServer {
     pub fn repository_response(
         &self,
         publisher: &PublisherHandle,
-    ) -> Result<RepositoryResponse, Error> {
+    ) -> Result<rfc8183::RepositoryResponse, Error> {
         let rfc8181_uri =
             uri::Https::from_string(format!("{}rfc8181/{}", self.service_uri, publisher)).unwrap();
 
@@ -318,7 +318,7 @@ impl KrillServer {
     }
 
     /// Returns the child request for a CA, or NONE if the CA cannot be found.
-    pub fn ca_child_req(&self, handle: &Handle) -> Option<ChildRequest> {
+    pub fn ca_child_req(&self, handle: &Handle) -> Option<rfc8183::ChildRequest> {
         self.caserver
             .get_ca(handle)
             .map(|ca| ca.child_request())
@@ -326,7 +326,7 @@ impl KrillServer {
     }
 
     /// Returns the publisher request for a CA, or NONE of the CA cannot be found.
-    pub fn ca_publisher_req(&self, handle: &Handle) -> Option<PublisherRequest> {
+    pub fn ca_publisher_req(&self, handle: &Handle) -> Option<rfc8183::PublisherRequest> {
         self.caserver
             .get_ca(handle)
             .map(|ca| ca.publisher_request())
@@ -345,7 +345,7 @@ impl KrillServer {
         let id_cert = ca.id_cert().clone();
 
         // Add publisher
-        let req = PublisherRequest::new(handle.clone(), id_cert);
+        let req = rfc8183::PublisherRequest::new(None, handle.clone(), id_cert);
         self.add_publisher(req)?;
 
         Ok(())

@@ -6,15 +6,14 @@ use bytes::Bytes;
 use rpki::uri;
 
 use crate::commons::api::{
-    Handle, ListReply, PublishDelta, PublisherDetails, PublisherHandle, PublisherRequest, RepoInfo,
-    RepositoryHandle,
+    Handle, ListReply, PublishDelta, PublisherDetails, PublisherHandle, RepoInfo, RepositoryHandle,
 };
 use crate::commons::eventsourcing::{
     Aggregate, AggregateStore, AggregateStoreError, DiskAggregateStore,
 };
 use crate::commons::remote::builder::SignedMessageBuilder;
 use crate::commons::remote::rfc8181;
-use crate::commons::remote::rfc8183::RepositoryResponse;
+use crate::commons::remote::rfc8183;
 use crate::commons::remote::sigmsg::SignedMessage;
 use crate::commons::util::softsigner::OpenSslSigner;
 use crate::constants::*;
@@ -185,14 +184,14 @@ impl PubServer {
         &self,
         rfc8181_uri: uri::Https,
         publisher: &PublisherHandle,
-    ) -> Result<RepositoryResponse, Error> {
+    ) -> Result<rfc8183::RepositoryResponse, Error> {
         let repository = self.repository()?;
         repository.repository_response(rfc8181_uri, publisher)
     }
 
     /// Adds a publisher. Will complain if a publisher already exists for this
     /// handle. Will also verify that the base_uri is allowed.
-    pub fn create_publisher(&self, req: PublisherRequest) -> Result<(), Error> {
+    pub fn create_publisher(&self, req: rfc8183::PublisherRequest) -> Result<(), Error> {
         let repository_handle = Self::repository_handle();
         let cmd = CmdDet::add_publisher(&repository_handle, req);
         let repository = self.repository()?;
@@ -269,9 +268,9 @@ mod tests {
         Publisher::new(id_cert, base_uri, CurrentObjects::default())
     }
 
-    fn make_publisher_req(handle: &str, id_cert: &IdCert) -> PublisherRequest {
+    fn make_publisher_req(handle: &str, id_cert: &IdCert) -> rfc8183::PublisherRequest {
         let handle = Handle::from_str(handle).unwrap();
-        PublisherRequest::new(handle, id_cert.clone())
+        rfc8183::PublisherRequest::new(None, handle, id_cert.clone())
     }
 
     fn make_server(work_dir: &PathBuf) -> PubServer {

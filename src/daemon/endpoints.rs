@@ -8,12 +8,10 @@ use serde::Serialize;
 use crate::commons::api::rrdp::VerificationError;
 use crate::commons::api::{
     AddChildRequest, CertAuthInit, ErrorCode, ErrorResponse, Handle, ParentCaContact, ParentCaReq,
-    ParentHandle, PublisherHandle, PublisherList, PublisherRequest, RouteAuthorizationUpdates,
-    UpdateChildRequest,
+    ParentHandle, PublisherHandle, PublisherList, RouteAuthorizationUpdates, UpdateChildRequest,
 };
-use crate::commons::remote::rfc6492;
-use crate::commons::remote::rfc8181;
 use crate::commons::remote::sigmsg::SignedMessage;
+use crate::commons::remote::{rfc6492, rfc8181, rfc8183};
 use crate::daemon::auth::Auth;
 use crate::daemon::ca;
 use crate::daemon::http::server::AppServer;
@@ -23,8 +21,6 @@ use crate::pubd;
 //------------ Support Functions ---------------------------------------------
 
 /// Helper function to render json output.
-///
-/// XXX TODO: Use actix Json<> when returning values
 fn render_json<O: Serialize>(object: O) -> HttpResponse {
     match serde_json::to_string(&object) {
         Ok(enc) => HttpResponse::Ok()
@@ -106,7 +102,7 @@ pub fn list_pbl(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
 pub fn add_pbl(
     server: web::Data<AppServer>,
     auth: Auth,
-    pbl: Json<PublisherRequest>,
+    pbl: Json<rfc8183::PublisherRequest>,
 ) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_empty_res(server.write().add_publisher(pbl.into_inner()))

@@ -1,10 +1,9 @@
 use std::fmt;
 
-use crate::commons::api::PublishDelta;
-use crate::commons::api::PublisherHandle;
-use crate::commons::api::{PublisherRequest, RepositoryHandle};
+use crate::commons::api::{PublishDelta, PublisherHandle, RepositoryHandle};
 use crate::commons::eventsourcing::CommandDetails;
 use crate::commons::eventsourcing::SentCommand;
+use crate::commons::remote::rfc8183;
 use crate::pubd::Evt;
 
 //------------ Cmd ---------------------------------------------------------
@@ -14,7 +13,7 @@ pub type Cmd = SentCommand<CmdDet>;
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum CmdDet {
-    AddPublisher(PublisherRequest),
+    AddPublisher(rfc8183::PublisherRequest),
     RemovePublisher(PublisherHandle),
     Publish(PublisherHandle, PublishDelta),
 }
@@ -24,7 +23,7 @@ impl CommandDetails for CmdDet {
 }
 
 impl CmdDet {
-    pub fn add_publisher(handle: &RepositoryHandle, request: PublisherRequest) -> Cmd {
+    pub fn add_publisher(handle: &RepositoryHandle, request: rfc8183::PublisherRequest) -> Cmd {
         SentCommand::new(handle, None, CmdDet::AddPublisher(request))
     }
 
@@ -47,7 +46,7 @@ impl fmt::Display for CmdDet {
             CmdDet::AddPublisher(request) => write!(
                 f,
                 "Added publisher '{}' with id cert hash '{}'",
-                request.handle(),
+                request.publisher_handle(),
                 request.id_cert().ski_hex(),
             ),
             CmdDet::RemovePublisher(publisher) => {

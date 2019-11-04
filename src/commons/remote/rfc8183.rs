@@ -15,7 +15,7 @@ use bytes::Bytes;
 use rpki::uri;
 use rpki::x509;
 
-use crate::commons::api::{Handle, RepoInfo};
+use crate::commons::api::{Handle, PublisherHandle, RepoInfo};
 use crate::commons::remote::id::IdCert;
 use crate::commons::util::file;
 use crate::commons::util::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
@@ -346,13 +346,13 @@ impl ParentResponse {
 /// Publication Server.
 ///
 /// For more info, see: https://tools.ietf.org/html/rfc8183#section-5.2.3
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublisherRequest {
     /// The optional 'tag' identifier used like a session identifier
     tag: Option<String>,
 
     /// The name the publishing CA likes to call itself by
-    publisher_handle: Handle,
+    publisher_handle: PublisherHandle,
 
     /// The self-signed IdCert containing the publisher's public key.
     id_cert: IdCert,
@@ -361,7 +361,7 @@ pub struct PublisherRequest {
 /// # Construct and Data Access
 ///
 impl PublisherRequest {
-    pub fn new(tag: Option<&str>, publisher_handle: Handle, id_cert: IdCert) -> Self {
+    pub fn new(tag: Option<&str>, publisher_handle: PublisherHandle, id_cert: IdCert) -> Self {
         PublisherRequest {
             tag: tag.map(|s| s.to_string()),
             publisher_handle,
@@ -373,8 +373,12 @@ impl PublisherRequest {
         &self.id_cert
     }
 
-    pub fn client_handle(&self) -> &Handle {
+    pub fn publisher_handle(&self) -> &Handle {
         &self.publisher_handle
+    }
+
+    pub fn unpack(self) -> (Option<String>, PublisherHandle, IdCert) {
+        (self.tag, self.publisher_handle, self.id_cert)
     }
 }
 
