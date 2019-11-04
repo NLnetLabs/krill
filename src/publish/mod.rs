@@ -1,5 +1,4 @@
 //! Support CAs publishing at a local, or remote, repository
-
 use std::collections::HashMap;
 use std::sync::Arc;
 
