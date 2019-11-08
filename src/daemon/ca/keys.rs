@@ -11,7 +11,6 @@ use crate::commons::api::{
     CertifiedKeyInfo, EntitlementClass, IssuanceRequest, PendingKeyInfo, RcvdCert, RepoInfo,
     RequestResourceLimit, ResourceClassKeysInfo, ResourceClassName, ResourceSet, RevocationRequest,
 };
-
 use crate::daemon::ca::{
     self, CurrentObjectSet, CurrentObjectSetDelta, Error, EvtDet, Result, Signer,
 };
@@ -371,6 +370,31 @@ impl KeyState {
             )?;
 
             res.push(EvtDet::CertificateRequested(rcn.clone(), req, *key_id));
+        }
+
+        Ok(res)
+    }
+
+    pub fn request_certs_new_repo<S: Signer>(
+        &self,
+        rcn: ResourceClassName,
+        base_repo: &RepoInfo,
+        name_space: &str,
+        signer: &S,
+    ) -> Result<Vec<EvtDet>> {
+        let mut res = vec![];
+
+        let keys = match self {
+            KeyState::Pending(pending) => vec![pending.key_id()],
+            KeyState::Active(current) => vec![current.key_id()],
+            KeyState::RollPending(pending, current) => vec![pending.key_id(), current.key_id()],
+            KeyState::RollNew(new, current) => vec![new.key_id(), current.key_id()],
+            KeyState::RollOld(current, old) => vec![current.key_id(), old.key_id()],
+        };
+
+        for ki in keys {
+            let req = self.create_issuance_req(base_repo, name_space, rcn.clone(), ki, signer)?;
+            res.push(EvtDet::CertificateRequested(rcn.clone(), req, *ki));
         }
 
         Ok(res)

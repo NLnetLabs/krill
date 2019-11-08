@@ -5,7 +5,7 @@ use chrono::Duration;
 
 use crate::commons::api::{
     ChildHandle, Entitlements, Handle, IssuanceRequest, ParentCaContact, ParentHandle, RcvdCert,
-    ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse,
+    RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse,
     RouteAuthorizationUpdates, UpdateChildRequest,
 };
 use crate::commons::eventsourcing;
@@ -33,8 +33,6 @@ pub enum CmdDet<S: Signer> {
     ChildCertify(ChildHandle, IssuanceRequest, Arc<RwLock<S>>),
     // Process a revoke request by an existing child.
     ChildRevokeKey(ChildHandle, RevocationRequest, Arc<RwLock<S>>),
-    // Shrink child (only has events in case child is overclaiming)
-    ChildShrink(ChildHandle, Arc<RwLock<S>>),
     // Remove child (also revokes, and removes issued certs, and republishes)
     ChildRemove(ChildHandle, Arc<RwLock<S>>),
 
@@ -96,7 +94,15 @@ pub enum CmdDet<S: Signer> {
     // ------------------------------------------------------------
     // Publishing
     // ------------------------------------------------------------
+
+    // Republish, if needed, may be a no-op if everything is still fresh.
     Republish(Arc<RwLock<S>>),
+
+    // Update the repository where this CA publishes
+    RepoUpdate(RepositoryContact, Arc<RwLock<S>>),
+
+    // Clean up the old pending to withdraw repo.
+    RepoRemoveOld(Arc<RwLock<S>>),
 }
 
 impl<S: Signer> fmt::Display for CmdDet<S> {
@@ -124,7 +130,6 @@ impl<S: Signer> fmt::Display for CmdDet<S> {
             CmdDet::ChildRevokeKey(child, req, _) => {
                 write!(f, "Revoke child '{}' request '{}'", child, req)
             }
-            CmdDet::ChildShrink(child, _) => write!(f, "Shrink child '{}' if needed", child),
             CmdDet::ChildRemove(child, _) => {
                 write!(f, "Remove child '{}' and revoke&remove its certs", child)
             }
@@ -175,6 +180,13 @@ impl<S: Signer> fmt::Display for CmdDet<S> {
             // Publishing
             // ------------------------------------------------------------
             CmdDet::Republish(_) => write!(f, "Republish (if needed)"),
+            CmdDet::RepoUpdate(update, _) => match update {
+                RepositoryContact::Embedded(_) => write!(f, "Update repo to embedded server"),
+                RepositoryContact::Rfc8181(res) => {
+                    write!(f, "Update repo to server at: {}", res.service_uri())
+                }
+            },
+            CmdDet::RepoRemoveOld(_) => write!(f, "Clean up old repository (if present)."),
         }
     }
 }
@@ -234,14 +246,6 @@ impl<S: Signer> CmdDet<S> {
             None,
             CmdDet::ChildRevokeKey(child_handle, request, signer),
         )
-    }
-
-    pub fn child_shrink(
-        handle: &Handle,
-        child_handle: ChildHandle,
-        signer: Arc<RwLock<S>>,
-    ) -> Cmd<S> {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::ChildShrink(child_handle, signer))
     }
 
     pub fn child_remove(
@@ -316,6 +320,18 @@ impl<S: Signer> CmdDet<S> {
 
     pub fn publish(handle: &Handle, signer: Arc<RwLock<S>>) -> Cmd<S> {
         eventsourcing::SentCommand::new(handle, None, CmdDet::Republish(signer))
+    }
+
+    pub fn update_repo(
+        handle: &Handle,
+        contact: RepositoryContact,
+        signer: Arc<RwLock<S>>,
+    ) -> Cmd<S> {
+        eventsourcing::SentCommand::new(handle, None, CmdDet::RepoUpdate(contact, signer))
+    }
+
+    pub fn remove_old_repo(handle: &Handle, signer: Arc<RwLock<S>>) -> Cmd<S> {
+        eventsourcing::SentCommand::new(handle, None, CmdDet::RepoRemoveOld(signer))
     }
 
     //-------------------------------------------------------------------------------

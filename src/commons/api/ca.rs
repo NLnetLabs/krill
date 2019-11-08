@@ -23,7 +23,7 @@ use crate::commons::api::admin::{Handle, ParentCaContact};
 use crate::commons::api::publication;
 use crate::commons::api::publication::Publish;
 use crate::commons::api::{
-    Base64, HexEncodedHash, IssuanceRequest, ListReply, ParentHandle, PubServerContact,
+    Base64, HexEncodedHash, IssuanceRequest, ListReply, ParentHandle, RepositoryContact,
     RequestResourceLimit, RouteAuthorization,
 };
 use crate::commons::eventsourcing::AggregateHistory;
@@ -109,19 +109,13 @@ impl<'de> Deserialize<'de> for ResourceClassName {
 pub struct ChildCaInfo {
     id_cert: Option<IdCert>,
     entitled_resources: ResourceSet,
-    issued_resources: ResourceSet,
 }
 
 impl ChildCaInfo {
-    pub fn new(
-        id_cert: Option<IdCert>,
-        entitled_resources: ResourceSet,
-        issued_resources: ResourceSet,
-    ) -> Self {
+    pub fn new(id_cert: Option<IdCert>, entitled_resources: ResourceSet) -> Self {
         ChildCaInfo {
             id_cert,
             entitled_resources,
-            issued_resources,
         }
     }
 
@@ -131,10 +125,6 @@ impl ChildCaInfo {
 
     pub fn entitled_resources(&self) -> &ResourceSet {
         &self.entitled_resources
-    }
-
-    pub fn issued_resources(&self) -> &ResourceSet {
-        &self.issued_resources
     }
 }
 
@@ -224,7 +214,7 @@ impl IssuedCert {
         }
     }
 
-    pub fn unwrap(self) -> (uri::Rsync, RequestResourceLimit, ResourceSet, Cert) {
+    pub fn unpack(self) -> (uri::Rsync, RequestResourceLimit, ResourceSet, Cert) {
         (self.uri, self.limit, self.resource_set, self.cert)
     }
 
@@ -1607,16 +1597,16 @@ impl CurrentRepoState {
 /// and objects published there, for a CA.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CaRepoDetails {
-    contact: PubServerContact,
+    contact: RepositoryContact,
     state: CurrentRepoState,
 }
 
 impl CaRepoDetails {
-    pub fn new(contact: PubServerContact, state: CurrentRepoState) -> Self {
+    pub fn new(contact: RepositoryContact, state: CurrentRepoState) -> Self {
         CaRepoDetails { contact, state }
     }
 
-    pub fn contact(&self) -> &PubServerContact {
+    pub fn contact(&self) -> &RepositoryContact {
         &self.contact
     }
 

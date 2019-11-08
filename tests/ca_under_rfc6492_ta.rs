@@ -31,13 +31,11 @@ fn ca_under_rfc6492_ta() {
         update_child(&ta_handle, &child, &new_child_resources);
         wait_for_current_resources(&child, &new_child_resources);
         wait_for_ta_to_have_number_of_issued_certs(1);
-        assert_eq!(ta_issued_resources(&child), new_child_resources);
 
         // When the removes child resources, the child will get a reduced certificate when it syncs.
         let child_resources = ResourceSet::from_strs("", "10.0.0.0/24", "").unwrap();
         update_child(&ta_handle, &child, &child_resources);
         wait_for_current_resources(&child, &child_resources);
-        assert_eq!(ta_issued_resources(&child), child_resources);
 
         // When all resources are removed, the child will request that its certificate is revoked,
         // and remove the resource class.
@@ -55,7 +53,6 @@ fn ca_under_rfc6492_ta() {
         let child_resources = ResourceSet::from_strs("", "10.0.0.0/24", "").unwrap();
         update_child(&ta_handle, &child, &child_resources);
         wait_for_current_resources(&child, &child_resources);
-        assert_eq!(ta_issued_resources(&child), child_resources);
 
         // Update the ID of the child, and tell parent
         generate_new_id(&child);
@@ -66,7 +63,6 @@ fn ca_under_rfc6492_ta() {
         let child_resources = ResourceSet::from_strs("AS65000", "10.0.0.0/16", "").unwrap();
         update_child(&ta_handle, &child, &child_resources);
         wait_for_current_resources(&child, &child_resources);
-        assert_eq!(ta_issued_resources(&child), child_resources);
 
         // Remove parent
         delete_parent(&child, &ta_handle);

@@ -260,12 +260,12 @@ impl PublisherDetails {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct PublisherClientRequest {
     handle: Handle,
-    server_info: PubServerContact,
+    server_info: RepositoryContact,
 }
 
 impl PublisherClientRequest {
     pub fn rfc8183(handle: Handle, response: rfc8183::RepositoryResponse) -> Self {
-        let server_info = PubServerContact::rfc8183(response);
+        let server_info = RepositoryContact::rfc8183(response);
         PublisherClientRequest {
             handle,
             server_info,
@@ -273,55 +273,96 @@ impl PublisherClientRequest {
     }
 
     pub fn embedded(handle: Handle, repo_info: RepoInfo) -> Self {
-        let server_info = PubServerContact::embedded(repo_info);
+        let server_info = RepositoryContact::embedded(repo_info);
         PublisherClientRequest {
             handle,
             server_info,
         }
     }
 
-    pub fn unwrap(self) -> (Handle, PubServerContact) {
+    pub fn unwrap(self) -> (Handle, RepositoryContact) {
         (self.handle, self.server_info)
     }
 }
 
-//------------ PubServerInfo -------------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
+//------------ RepositoryUpdate ----------------------------------------------
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
-pub enum PubServerContact {
-    #[display(fmt = "Embedded server.")]
-    Embedded(RepoInfo),
-
-    #[display(fmt = "Embedded server.")]
+pub enum RepositoryUpdate {
+    Embedded,
     Rfc8181(rfc8183::RepositoryResponse),
 }
 
-impl PubServerContact {
+impl RepositoryUpdate {
+    pub fn embedded() -> Self {
+        RepositoryUpdate::Embedded
+    }
+
+    pub fn rfc8181(response: rfc8183::RepositoryResponse) -> Self {
+        RepositoryUpdate::Rfc8181(response)
+    }
+
+    pub fn as_response_opt(&self) -> Option<&rfc8183::RepositoryResponse> {
+        match self {
+            RepositoryUpdate::Embedded => None,
+            RepositoryUpdate::Rfc8181(res) => Some(res),
+        }
+    }
+}
+
+//------------ PubServerContact ----------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[allow(clippy::large_enum_variant)]
+pub enum RepositoryContact {
+    Embedded(RepoInfo),
+    Rfc8181(rfc8183::RepositoryResponse),
+}
+
+impl RepositoryContact {
     pub fn embedded(info: RepoInfo) -> Self {
-        PubServerContact::Embedded(info)
+        RepositoryContact::Embedded(info)
     }
 
     pub fn is_embedded(&self) -> bool {
         match self {
-            PubServerContact::Embedded(_) => true,
+            RepositoryContact::Embedded(_) => true,
             _ => false,
         }
     }
 
     pub fn rfc8183(response: rfc8183::RepositoryResponse) -> Self {
-        PubServerContact::Rfc8181(response)
+        RepositoryContact::Rfc8181(response)
     }
 
     pub fn is_rfc8183(&self) -> bool {
         !self.is_embedded()
     }
 
+    pub fn as_reponse_opt(&self) -> Option<&rfc8183::RepositoryResponse> {
+        match self {
+            RepositoryContact::Embedded(_) => None,
+            RepositoryContact::Rfc8181(res) => Some(res),
+        }
+    }
+
     pub fn repo_info(&self) -> &RepoInfo {
         match self {
-            PubServerContact::Embedded(info) => info,
-            PubServerContact::Rfc8181(response) => response.repo_info(),
+            RepositoryContact::Embedded(info) => info,
+            RepositoryContact::Rfc8181(response) => response.repo_info(),
         }
+    }
+}
+
+impl fmt::Display for RepositoryContact {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let msg = match self {
+            RepositoryContact::Embedded(_) => "embedded publication server".to_string(),
+            RepositoryContact::Rfc8181(res) => {
+                format!("remote publication server at {}", res.service_uri())
+            }
+        };
+        write!(f, "{}", msg)
     }
 }
 
@@ -480,32 +521,28 @@ pub enum ChildAuthRequest {
 pub struct UpdateChildRequest {
     id_cert: Option<IdCert>,
     resources: Option<ResourceSet>,
-    force: bool,
 }
 
 impl UpdateChildRequest {
-    pub fn graceful(id_cert: Option<IdCert>, resources: Option<ResourceSet>) -> Self {
+    pub fn new(id_cert: Option<IdCert>, resources: Option<ResourceSet>) -> Self {
+        UpdateChildRequest { id_cert, resources }
+    }
+    pub fn id_cert(id_cert: IdCert) -> Self {
         UpdateChildRequest {
-            id_cert,
-            resources,
-            force: false,
+            id_cert: Some(id_cert),
+            resources: None,
         }
     }
 
-    pub fn force(id_cert: Option<IdCert>, resources: Option<ResourceSet>) -> Self {
+    pub fn resources(resources: ResourceSet) -> Self {
         UpdateChildRequest {
-            id_cert,
-            resources,
-            force: true,
+            id_cert: None,
+            resources: Some(resources),
         }
     }
 
-    pub fn unpack(self) -> (Option<IdCert>, Option<ResourceSet>, bool) {
-        (self.id_cert, self.resources, self.force)
-    }
-
-    pub fn is_force(&self) -> bool {
-        self.force
+    pub fn unpack(self) -> (Option<IdCert>, Option<ResourceSet>) {
+        (self.id_cert, self.resources)
     }
 }
 
@@ -516,9 +553,6 @@ impl fmt::Display for UpdateChildRequest {
         }
         if let Some(resources) = &self.resources {
             write!(f, "new resources: {} ", resources)?;
-        }
-        if self.force {
-            write!(f, "<forced>")?;
         }
         Ok(())
     }

@@ -2,12 +2,12 @@ use std::collections::HashMap;
 
 use rpki::roa::{Roa, RoaBuilder};
 use rpki::sigobj::SignedObjectBuilder;
+use rpki::uri;
 use rpki::x509::{Serial, Time};
 
-use crate::commons::api::{ReplacedObject, RouteAuthorization};
+use crate::commons::api::{ObjectName, ReplacedObject, RouteAuthorization};
 use crate::daemon::ca::events::RoaUpdates;
-use crate::daemon::ca::{self, SignSupport, Signer};
-use daemon::ca::CertifiedKey;
+use crate::daemon::ca::{self, CertifiedKey, SignSupport, Signer};
 
 //------------ Routes ------------------------------------------------------
 
@@ -161,13 +161,22 @@ impl Roas {
     pub fn make_roa<S: Signer>(
         auth: &RouteAuthorization,
         certified_key: &CertifiedKey,
+        new_repo: Option<&uri::Rsync>,
         signer: &S,
     ) -> ca::Result<Roa> {
         let prefix = auth.prefix();
 
         let incoming_cert = certified_key.incoming_cert();
-        let crl_uri = incoming_cert.crl_uri();
-        let roa_uri = incoming_cert.uri_for_object(auth);
+        let crl_uri = match &new_repo {
+            None => incoming_cert.crl_uri(),
+            Some(base_uri) => base_uri.join(incoming_cert.crl_name().as_bytes()),
+        };
+
+        let roa_uri = match &new_repo {
+            None => incoming_cert.uri_for_object(auth),
+            Some(base_uri) => base_uri.join(ObjectName::from(auth).as_bytes()),
+        };
+
         let aia = incoming_cert.uri();
 
         let signing_key = certified_key.key_id();

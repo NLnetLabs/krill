@@ -2,64 +2,43 @@ extern crate krill;
 extern crate pretty;
 extern crate rpki;
 
-use std::path::PathBuf;
-use std::str::FromStr;
-
-use rpki::crypto::{PublicKeyFormat, Signer};
-use rpki::uri;
-
 use krill::cli::options::{CaCommand, Command, PublishersCommand};
 use krill::cli::report::ApiResponse;
-use krill::commons::api::rrdp::CurrentObjects;
 use krill::commons::api::{
-    CaRepoDetails, Handle, ParentCaReq, PublisherHandle, PublisherList, ResourceSet,
+    CaRepoDetails, Handle, ParentCaReq, PublisherDetails, PublisherHandle, RepositoryUpdate,
+    ResourceSet,
 };
-use krill::commons::remote::builder::IdCertBuilder;
 use krill::commons::remote::rfc8183;
-use krill::commons::util::softsigner::OpenSslSigner;
 use krill::daemon::ca::ta_handle;
 use krill::daemon::test::{
     add_child_to_ta_embedded, add_parent_to_ca, init_child, krill_admin, krill_pubd_admin,
-    start_krill_pubd_server, test_with_krill_server, wait_for_current_resources,
+    start_krill_pubd_server, test_with_krill_server, wait_for, wait_for_current_resources,
+    PubdTestContext,
 };
 
-fn repository_response(publisher: &PublisherHandle) -> rfc8183::RepositoryResponse {
+fn repository_response(
+    publisher: &PublisherHandle,
+    server: PubdTestContext,
+) -> rfc8183::RepositoryResponse {
     let command = Command::Publishers(PublishersCommand::RepositiryResponse(publisher.clone()));
-    match krill_pubd_admin(command) {
+    match krill_pubd_admin(command, server) {
         ApiResponse::Rfc8183RepositoryResponse(response) => response,
         _ => panic!("Expected repository response."),
     }
 }
 
-fn add_publisher(req: rfc8183::PublisherRequest) {
+fn add_publisher(req: rfc8183::PublisherRequest, server: PubdTestContext) {
     let command = Command::Publishers(PublishersCommand::AddPublisher(req));
-    krill_pubd_admin(command);
+    krill_pubd_admin(command, server);
 }
 
-fn remove_publisher(publisher: &PublisherHandle) {
-    let command = Command::Publishers(PublishersCommand::RemovePublisher(publisher.clone()));
-    krill_pubd_admin(command);
-}
-
-fn list_publishers() -> PublisherList {
-    let command = Command::Publishers(PublishersCommand::PublisherList);
-    match krill_pubd_admin(command) {
-        ApiResponse::PublisherList(list) => list,
-        _ => panic!("Expected publisher list"),
-    }
-}
-
-fn has_publisher(publisher: &PublisherHandle) -> bool {
-    list_publishers()
-        .publishers()
-        .iter()
-        .find(|p| p.id() == publisher.as_str())
-        .is_some()
-}
-
-fn details_publisher(publisher: &PublisherHandle) -> ApiResponse {
+fn details_publisher(publisher: &PublisherHandle, server: PubdTestContext) -> PublisherDetails {
     let command = Command::Publishers(PublishersCommand::ShowPublisher(publisher.clone()));
-    krill_pubd_admin(command)
+    let res = krill_pubd_admin(command, server);
+    match res {
+        ApiResponse::PublisherDetails(details) => details,
+        _ => panic!("Expected publisher details"),
+    }
 }
 
 fn repo_details(ca: &Handle) -> CaRepoDetails {
@@ -68,6 +47,11 @@ fn repo_details(ca: &Handle) -> CaRepoDetails {
         ApiResponse::RepoDetails(details) => details,
         _ => panic!("Expected repo details"),
     }
+}
+
+fn repo_update(ca: &Handle, update: RepositoryUpdate) {
+    let command = Command::CertAuth(CaCommand::RepoUpdate(ca.clone(), update));
+    krill_admin(command);
 }
 
 fn publisher_request(ca: &Handle) -> rfc8183::PublisherRequest {
@@ -83,7 +67,7 @@ fn publisher_request(ca: &Handle) -> rfc8183::PublisherRequest {
 /// as a publication server only (i.e. it just has no TA and CAs).
 #[test]
 fn remote_publication() {
-    test_with_krill_server(|d| {
+    test_with_krill_server(|_d| {
         start_krill_pubd_server();
 
         let ta_handle = ta_handle();
@@ -105,43 +89,63 @@ fn remote_publication() {
         }
 
         // Child should now publish using the embedded repo
-        let child_repo_details = repo_details(&child);
-        assert!(child_repo_details.contact().is_embedded());
-        let list = child_repo_details.state().as_list();
-        assert_eq!(2, list.elements().len());
+        wait_for(30, "Should see objects at embedded location", || {
+            let child_repo_details = repo_details(&child);
+            assert!(child_repo_details.contact().is_embedded());
+            let list = child_repo_details.state().as_list();
+            list.elements().len() == 2
+        });
 
         // Add child to the secondary publication server
         let publisher_request = publisher_request(&child);
-        add_publisher(publisher_request);
+        add_publisher(publisher_request, PubdTestContext::Secondary);
 
-        // Find "child" in list
-        assert!(has_publisher(&child));
+        // The child should now be known at the pub server and have no files
+        let details_at_pubd = details_publisher(&child, PubdTestContext::Secondary);
+        assert_eq!(details_at_pubd.current_files().len(), 0);
 
         // Get a Repository Response for the child CA
-        let response = repository_response(&child);
+        let response = repository_response(&child, PubdTestContext::Secondary);
 
-        //
-        //        // Find details for alice
-        //        let details_res = details_publisher(&alice_handle);
-        //        match details_res {
-        //            ApiResponse::PublisherDetails(details) => {
-        //                assert_eq!(&alice_handle, details.handle());
-        //            }
-        //            _ => panic!("Expected details"),
-        //        }
-        //
-        //        // Remove alice
-        //        remove_publisher(&alice_handle);
-        //
-        //        // Expect that alice has been removed
-        //        let res = list_publishers();
-        //        match res {
-        //            ApiResponse::PublisherList(list) => assert!(list
-        //                .publishers()
-        //                .iter()
-        //                .find(|p| { p.id() == "alice" })
-        //                .is_none()),
-        //            _ => panic!("Expected publisher list"),
-        //        }
+        // Update the repo for the child
+        let update = RepositoryUpdate::Rfc8181(response);
+        repo_update(&child, update);
+
+        // Child should now publish using the remote repo
+        wait_for(30, "Should see objects at new location", || {
+            let child_repo_details = repo_details(&child);
+            assert!(child_repo_details.contact().is_rfc8183());
+            let list = child_repo_details.state().as_list();
+            list.elements().len() == 2
+        });
+
+        // Child should now clean up the old repo
+        wait_for(10, "Child should clean up at old repository", || {
+            let details_at_main = details_publisher(&child, PubdTestContext::Main);
+            details_at_main.current_files().len() == 0
+        });
+
+        // Now let's migrate back, so that we see that works too.
+
+        // Get a Repository Response for the child CA
+        let response = repository_response(&child, PubdTestContext::Main);
+
+        // Update the repo for the child
+        let update = RepositoryUpdate::Rfc8181(response);
+        repo_update(&child, update);
+
+        // Child should now publish using the main repo
+        wait_for(30, "Should see objects at new location", || {
+            let child_repo_details = repo_details(&child);
+            assert!(child_repo_details.contact().is_rfc8183());
+            let list = child_repo_details.state().as_list();
+            list.elements().len() == 2
+        });
+
+        // Child should now clean up the old repo
+        wait_for(10, "Child should clean up at old repository", || {
+            let details_at_main = details_publisher(&child, PubdTestContext::Secondary);
+            details_at_main.current_files().len() == 0
+        });
     });
 }

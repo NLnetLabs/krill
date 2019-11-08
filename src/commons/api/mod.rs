@@ -170,6 +170,12 @@ impl From<&Manifest> for HexEncodedHash {
     }
 }
 
+impl From<&Cert> for HexEncodedHash {
+    fn from(cert: &Cert) -> Self {
+        Self::from_content(cert.to_captured().as_slice())
+    }
+}
+
 impl From<String> for HexEncodedHash {
     fn from(s: String) -> Self {
         HexEncodedHash(Bytes::from(s.to_lowercase()))

@@ -95,6 +95,12 @@ pub enum Error {
         _1
     )]
     AuthorisationNotEntitled(RouteAuthorization, Handle),
+
+    #[display(fmt = "New repository already in use.")]
+    NewRepoUpdateNoChange,
+
+    #[display(fmt = "Error getting list query from new repository: {}", _0)]
+    NewRepoUpdateNotResponsive(String),
 }
 
 impl From<rfc6492::Error> for Error {

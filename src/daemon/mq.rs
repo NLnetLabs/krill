@@ -34,6 +34,9 @@ pub enum QueueEvent {
         ParentHandle,
         HashMap<ResourceClassName, Vec<RevocationRequest>>,
     ),
+
+    #[display(fmt = "clean up old repo *if it exists* for '{}' version '{}'", _0, _1)]
+    CleanOldRepo(Handle, u64),
 }
 
 #[derive(Debug)]
@@ -104,6 +107,10 @@ impl<S: Signer> eventsourcing::EventListener<CertAuth<S>> for EventQueueListener
             }
             EvtDet::KeyRollActivated(_, _) => {
                 let evt = QueueEvent::RequestsPending(handle.clone(), version);
+                self.push_back(evt);
+            }
+            EvtDet::CertificateReceived(_, _, _) => {
+                let evt = QueueEvent::CleanOldRepo(handle.clone(), version);
                 self.push_back(evt);
             }
             _ => {}

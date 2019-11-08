@@ -96,7 +96,25 @@ fn make_event_sh(
                 QueueEvent::RequestsPending(handle, _) => {
                     trace!("Get updates for pending requests for '{}'.", handle);
                     if let Err(e) = caserver.send_all_requests(&handle) {
-                        error!("Sending pending requests for '{}', error '{}'", &handle, e);
+                        error!(
+                            "Failed to send pending requests for '{}', error '{}'",
+                            &handle, e
+                        );
+                    }
+                }
+                QueueEvent::CleanOldRepo(handle, _) => {
+                    let publisher = CaPublisher::new(caserver.clone(), pubserver.clone());
+                    if let Err(e) = publisher.clean_up(&handle) {
+                        info!(
+                            "Could not clean up old repo for '{}', it may be that it's no longer available. Got error '{}'",
+                            &handle, e
+                        );
+                    }
+                    if let Err(e) = caserver.remove_old_repo(&handle) {
+                        error!(
+                            "Failed to remove old repo from ca '{}', error '{}'",
+                            &handle, e
+                        );
                     }
                 }
             }

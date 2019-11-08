@@ -204,6 +204,7 @@ impl Config {
         let mut config = Self::test_config(data_dir);
         config.port = 3001;
         config.use_ta = false;
+        config.service_uri = "https://localhost:3001/".to_string();
         config
     }
 

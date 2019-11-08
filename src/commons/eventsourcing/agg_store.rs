@@ -5,9 +5,10 @@ use std::sync::Arc;
 use std::sync::RwLock;
 
 use crate::commons::api::Handle;
-
-use super::{Aggregate, DiskKeyStore, Event, EventListener, KeyStore, KeyStoreError};
-use commons::eventsourcing::agg::AggregateHistory;
+use crate::commons::eventsourcing::agg::AggregateHistory;
+use crate::commons::eventsourcing::{
+    Aggregate, DiskKeyStore, Event, EventListener, KeyStore, KeyStoreError,
+};
 
 const SNAPSHOT_FREQ: u64 = 5;
 
@@ -28,6 +29,8 @@ pub trait AggregateStore<A: Aggregate>: Send + Sync {
     /// is no concurrent modification. Returns the updated instance if all
     /// is well, or an `AggregateStoreError::ConcurrentModification` if you
     /// try to update an outdated instance.
+    //
+    // TODO: Remove the `id` argument, it is also in the aggregate.
     fn update(&self, id: &Handle, agg: Arc<A>, events: Vec<A::Event>) -> StoreResult<Arc<A>>;
 
     /// Returns true if an instance exists for the id

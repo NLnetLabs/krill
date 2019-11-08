@@ -88,7 +88,7 @@ impl KrillClient {
             }
 
             CaCommand::RepoPublisherRequest(handle) => {
-                let uri = format!("api/v1/cas/{}/repo/publisher_request", handle);
+                let uri = format!("api/v1/cas/{}/repo/request", handle);
                 let req: rfc8183::PublisherRequest = self.get_json(&uri)?;
                 Ok(ApiResponse::Rfc8183PublisherRequest(req))
             }
@@ -97,6 +97,12 @@ impl KrillClient {
                 let uri = format!("api/v1/cas/{}/repo/", handle);
                 let details: CaRepoDetails = self.get_json(&uri)?;
                 Ok(ApiResponse::RepoDetails(details))
+            }
+
+            CaCommand::RepoUpdate(handle, update) => {
+                let uri = format!("api/v1/cas/{}/repo/", handle);
+                self.post_json(&uri, update)?;
+                Ok(ApiResponse::Empty)
             }
 
             CaCommand::AddParent(handle, parent) => {

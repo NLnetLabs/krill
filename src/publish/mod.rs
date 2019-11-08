@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::commons::api::Handle;
-use crate::commons::api::{PubServerContact, Publish, PublishDelta, Update, Withdraw};
+use crate::commons::api::{Publish, PublishDelta, RepositoryContact, Update, Withdraw};
 use crate::commons::util::softsigner::OpenSslSigner;
 use crate::daemon::ca;
 use crate::daemon::ca::CaServer;
@@ -34,9 +34,9 @@ impl CaPublisher {
     pub fn publish(&self, ca_handle: &Handle) -> Result<(), Error> {
         let ca = self.caserver.get_ca(ca_handle)?;
 
-        let list_reply = match ca.pub_server_contact() {
-            PubServerContact::Embedded(_) => self.pubserver.list(ca_handle)?,
-            PubServerContact::Rfc8181(_) => self.caserver.send_rfc8181_list(ca_handle)?,
+        let list_reply = match ca.repository_contact() {
+            RepositoryContact::Embedded(_) => self.pubserver.list(ca_handle)?,
+            RepositoryContact::Rfc8181(repo) => self.caserver.send_rfc8181_list(ca_handle, repo)?,
         };
 
         let delta = {
@@ -69,10 +69,42 @@ impl CaPublisher {
             PublishDelta::new(publishes, updates, withdraws)
         };
 
-        match ca.pub_server_contact() {
-            PubServerContact::Embedded(_) => self.pubserver.publish(ca_handle.clone(), delta)?,
-            PubServerContact::Rfc8181(_) => self.caserver.send_rfc8181_delta(ca_handle, delta)?,
+        match ca.repository_contact() {
+            RepositoryContact::Embedded(_) => self.pubserver.publish(ca_handle.clone(), delta)?,
+            RepositoryContact::Rfc8181(repo) => {
+                self.caserver.send_rfc8181_delta(ca_handle, repo, delta)?
+            }
         };
+
+        Ok(())
+    }
+
+    pub fn clean_up(&self, ca_handle: &Handle) -> Result<(), Error> {
+        let ca = self.caserver.get_ca(ca_handle)?;
+
+        let repo = match ca.old_repository_contact() {
+            None => return Ok(()),
+            Some(contact) => contact,
+        };
+
+        info!(
+            "Will perform best effort clean up of old repository: {}",
+            repo
+        );
+
+        let list_reply = match repo {
+            RepositoryContact::Embedded(_) => self.pubserver.list(ca_handle)?,
+            RepositoryContact::Rfc8181(repo) => self.caserver.send_rfc8181_list(ca_handle, repo)?,
+        };
+
+        let delta = list_reply.into_withdraw_delta();
+
+        match repo {
+            RepositoryContact::Embedded(_) => self.pubserver.publish(ca_handle.clone(), delta)?,
+            RepositoryContact::Rfc8181(res) => {
+                self.caserver.send_rfc8181_delta(ca_handle, res, delta)?
+            }
+        }
 
         Ok(())
     }

@@ -40,6 +40,20 @@ pub struct CsrInfo {
 }
 
 impl CsrInfo {
+    pub fn new(
+        ca_repository: CaRepository,
+        rpki_manifest: RpkiManifest,
+        rpki_notify: Option<RpkiNotify>,
+        key: PublicKey,
+    ) -> Self {
+        CsrInfo {
+            ca_repository,
+            rpki_manifest,
+            rpki_notify,
+            key,
+        }
+    }
+
     pub fn unpack(self) -> (CaRepository, RpkiManifest, Option<RpkiNotify>, PublicKey) {
         (
             self.ca_repository,

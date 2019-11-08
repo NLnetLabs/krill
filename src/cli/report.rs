@@ -2,7 +2,7 @@ use std::str::{from_utf8_unchecked, FromStr};
 
 use crate::commons::api::{
     CaRepoDetails, CertAuthHistory, CertAuthInfo, CertAuthList, CurrentObjects, CurrentRepoState,
-    ParentCaContact, PubServerContact, PublisherDetails, PublisherList, RouteAuthorization,
+    ParentCaContact, PublisherDetails, PublisherList, RepositoryContact, RouteAuthorization,
 };
 use crate::commons::remote::api::ClientInfo;
 use crate::commons::remote::rfc8183;
@@ -366,12 +366,12 @@ impl Report for CaRepoDetails {
 
                 res.push_str("Repository Details:\n");
                 match self.contact() {
-                    PubServerContact::Embedded(repo_info) => {
+                    RepositoryContact::Embedded(repo_info) => {
                         res.push_str("  type:        embedded\n");
                         res.push_str(&format!("  base_uri:    {}\n", repo_info.base_uri()));
                         res.push_str(&format!("  rpki_notify: {}\n", repo_info.rpki_notify()));
                     }
-                    PubServerContact::Rfc8181(response) => {
+                    RepositoryContact::Rfc8181(response) => {
                         res.push_str("  type:        remote\n");
                         res.push_str(&format!("  service uri: {}\n", response.service_uri()));
                         let repo_info = response.repo_info();

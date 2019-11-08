@@ -9,9 +9,9 @@ use rpki::uri;
 use rpki::x509::{Serial, Time, Validity};
 
 use crate::commons::api::{
-    AddedObject, ChildHandle, CurrentObject, Handle, IssuanceRequest, IssuanceResponse, ObjectName,
-    ObjectsDelta, ParentCaContact, ParentHandle, RcvdCert, RepoInfo, ResourceClassName,
-    ResourceSet, Revocation, RevocationRequest, RevocationResponse, RevokedObject,
+    AddedObject, ChildHandle, CurrentObject, Handle, IssuanceRequest, IssuedCert, ObjectName,
+    ObjectsDelta, ParentCaContact, ParentHandle, RcvdCert, RepoInfo, RepositoryContact,
+    ResourceClassName, ResourceSet, Revocation, RevocationRequest, RevokedObject,
     RouteAuthorization, TaCertDetails, TrustAnchorLocator, UpdatedObject, WithdrawnObject,
 };
 use crate::commons::eventsourcing::StoredEvent;
@@ -172,8 +172,12 @@ impl RoaUpdates {
         RoaUpdates { updated, removed }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.updated.is_empty() && self.removed.is_empty()
+    }
+
     pub fn contains_changes(&self) -> bool {
-        !(self.updated.is_empty() && self.removed.is_empty())
+        !self.is_empty()
     }
 
     pub fn update(&mut self, auth: RouteAuthorization, roa: RoaInfo) {
@@ -243,6 +247,37 @@ impl RoaUpdates {
     }
 }
 
+//------------ ChildCertificateUpdates -------------------------------------
+
+/// Describes an update to the set of ROAs under a ResourceClass.
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ChildCertificateUpdates {
+    issued: Vec<IssuedCert>,
+    removed: Vec<KeyIdentifier>,
+}
+
+impl ChildCertificateUpdates {
+    pub fn is_empty(&self) -> bool {
+        self.issued.is_empty() && self.removed.is_empty()
+    }
+    pub fn issue(&mut self, new: IssuedCert) {
+        self.issued.push(new);
+    }
+    pub fn remove(&mut self, ki: KeyIdentifier) {
+        self.removed.push(ki);
+    }
+
+    pub fn issued(&self) -> &Vec<IssuedCert> {
+        &self.issued
+    }
+    pub fn removed(&self) -> &Vec<KeyIdentifier> {
+        &self.removed
+    }
+    pub fn unpack(self) -> (Vec<IssuedCert>, Vec<KeyIdentifier>) {
+        (self.issued, self.removed)
+    }
+}
+
 //------------ Evt ---------------------------------------------------------
 
 pub type Evt = StoredEvent<EvtDet>;
@@ -254,8 +289,9 @@ pub type Evt = StoredEvent<EvtDet>;
 pub enum EvtDet {
     // Being a parent Events
     ChildAdded(ChildHandle, ChildDetails),
-    ChildCertificateIssued(ChildHandle, IssuanceResponse),
-    ChildKeyRevoked(ChildHandle, RevocationResponse),
+    ChildCertificateIssued(ChildHandle, ResourceClassName, KeyIdentifier),
+    ChildKeyRevoked(ChildHandle, ResourceClassName, KeyIdentifier),
+    ChildCertificatesUpdated(ResourceClassName, ChildCertificateUpdates),
     ChildUpdatedIdCert(ChildHandle, IdCert),
     ChildUpdatedResources(ChildHandle, ResourceSet, Time),
     ChildRemoved(ChildHandle),
@@ -293,6 +329,8 @@ pub enum EvtDet {
         ResourceClassName,
         HashMap<KeyIdentifier, CurrentObjectSetDelta>,
     ),
+    RepoUpdated(RepositoryContact),
+    RepoCleaned(RepositoryContact),
 }
 
 impl EvtDet {
@@ -388,14 +426,13 @@ impl EvtDet {
         version: u64,
         child: ChildHandle,
         resources: ResourceSet,
-        force: bool,
     ) -> Evt {
-        let grace = if force { Time::now() } else { Time::tomorrow() };
+        let time = Time::now();
 
         StoredEvent::new(
             handle,
             version,
-            EvtDet::ChildUpdatedResources(child, resources, grace),
+            EvtDet::ChildUpdatedResources(child, resources, time),
         )
     }
 
@@ -403,12 +440,13 @@ impl EvtDet {
         handle: &Handle,
         version: u64,
         child: ChildHandle,
-        response: IssuanceResponse,
+        rcn: ResourceClassName,
+        ki: KeyIdentifier,
     ) -> Evt {
         StoredEvent::new(
             handle,
             version,
-            EvtDet::ChildCertificateIssued(child, response),
+            EvtDet::ChildCertificateIssued(child, rcn, ki),
         )
     }
 
@@ -416,9 +454,23 @@ impl EvtDet {
         handle: &Handle,
         version: u64,
         child: ChildHandle,
-        response: RevocationResponse,
+        rcn: ResourceClassName,
+        ki: KeyIdentifier,
     ) -> Evt {
-        StoredEvent::new(handle, version, EvtDet::ChildKeyRevoked(child, response))
+        StoredEvent::new(handle, version, EvtDet::ChildKeyRevoked(child, rcn, ki))
+    }
+
+    pub(super) fn child_certificates_updated(
+        handle: &Handle,
+        version: u64,
+        rcn: ResourceClassName,
+        updates: ChildCertificateUpdates,
+    ) -> Evt {
+        StoredEvent::new(
+            handle,
+            version,
+            EvtDet::ChildCertificatesUpdated(rcn, updates),
+        )
     }
 
     pub(super) fn child_removed(handle: &Handle, version: u64, child: ChildHandle) -> Evt {
@@ -451,17 +503,41 @@ impl fmt::Display for EvtDet {
                 }
                 Ok(())
             }
-            EvtDet::ChildCertificateIssued(child, response) => write!(
+            EvtDet::ChildCertificateIssued(child, rcn, ki) => write!(
                 f,
-                "issued certificate to child '{}' with resources '{}'",
+                "issued certificate to child '{}' for class '{}' and pub key '{}'",
                 child,
-                response.resource_set()
+                rcn,
+                ki
             ),
-            EvtDet::ChildKeyRevoked(child, response) => write!(
+            EvtDet::ChildCertificatesUpdated(rcn, updates) => {
+                write!(
+                    f,
+                    "updated child certificates in resource class {}",
+                    rcn
+                )?;
+                let issued = updates.issued();
+                if !issued.is_empty() {
+                    write!(f," (re-)issued keys: ")?;
+                    for iss in issued {
+                        write!(f, " {}", iss.subject_key_identifier())?;
+                    }
+                }
+                let revoked = updates.removed();
+                if !revoked.is_empty() {
+                    write!(f, " revoked keys: ")?;
+                    for rev in revoked {
+                        write!(f, " {}", rev)?;
+                    }
+                }
+                Ok(())
+            }
+            EvtDet::ChildKeyRevoked(child, rcn, ki) => write!(
                 f,
-                "revoked certificate for child '{}', with key(hash) '{}'",
+                "revoked certificate for child '{}' in resource class '{}' with key(hash) '{}'",
                 child,
-                response.key()
+                rcn,
+                ki
             ),
             EvtDet::ChildUpdatedIdCert(child, id_crt) => write!(
                 f,
@@ -600,6 +676,18 @@ impl fmt::Display for EvtDet {
 
                 Ok(())
             },
+            EvtDet::RepoUpdated(updated) => {
+                match updated {
+                    RepositoryContact::Embedded(_) => write!(f, "updated repository to embedded server"),
+                    RepositoryContact::Rfc8181(res) => write!(f, "updated repository to remote server: {}", res.service_uri())
+                }
+            }
+            EvtDet::RepoCleaned(old) => {
+                match old {
+                    RepositoryContact::Embedded(_) => write!(f, "cleaned old embedded repository"),
+                    RepositoryContact::Rfc8181(res) => write!(f, "cleaned repository at remote server: {}", res.service_uri())
+                }
+            }
         }
     }
 }

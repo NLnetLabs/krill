@@ -170,7 +170,7 @@ fn grand_children() {
             ],
         );
 
-        // Check that C4 publishes two resource classes, with only crls and mfts
+        // Check that CA4 publishes two resource classes, with only crls and mfts
         wait_for_published_objects(
             &ca4,
             &[

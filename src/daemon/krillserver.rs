@@ -11,8 +11,8 @@ use rpki::uri;
 use crate::commons::api::{
     AddChildRequest, CaRepoDetails, CertAuthHistory, CertAuthInfo, CertAuthInit, CertAuthList,
     ChildCaInfo, ChildHandle, CurrentRepoState, Handle, ListReply, ParentCaContact, ParentCaReq,
-    ParentHandle, PubServerContact, PublishDelta, PublisherDetails, PublisherHandle, RepoInfo,
-    RouteAuthorizationUpdates, TaCertDetails, Token, UpdateChildRequest,
+    ParentHandle, PublishDelta, PublisherDetails, PublisherHandle, RepoInfo, RepositoryContact,
+    RepositoryUpdate, RouteAuthorizationUpdates, TaCertDetails, Token, UpdateChildRequest,
 };
 use crate::commons::remote::rfc8183;
 use crate::commons::remote::sigmsg::SignedMessage;
@@ -357,24 +357,50 @@ impl KrillServer {
         self.caserver
             .get_ca(handle)
             .map(|ca| {
-                let contact = ca.pub_server_contact().clone();
-
-                let state = match &contact {
-                    PubServerContact::Embedded(_) => match self.pubserver.list(handle) {
-                        Err(e) => CurrentRepoState::error(e),
-                        Ok(list) => CurrentRepoState::list(list),
-                    },
-                    PubServerContact::Rfc8181(_response) => {
-                        match self.caserver.send_rfc8181_list(handle) {
-                            Err(e) => CurrentRepoState::error(e),
-                            Ok(list) => CurrentRepoState::list(list),
-                        }
-                    }
-                };
-
+                let contact = ca.repository_contact().clone();
+                let repo_opt = contact.as_reponse_opt();
+                let state = self.repo_state(handle, repo_opt);
                 CaRepoDetails::new(contact, state)
             })
             .ok()
+    }
+
+    /// Update the repository for a CA, or return an error. (see `CertAuth::repo_update`)
+    pub fn ca_update_repo(&self, handle: Handle, update: RepositoryUpdate) -> EmptyRes {
+        // first check that the new repo can be contacted
+        let repo = update.as_response_opt();
+
+        if let CurrentRepoState::Error(msg) = self.repo_state(&handle, repo) {
+            Err(Error::CaServerError(ca::ServerError::CertAuth(
+                ca::Error::NewRepoUpdateNotResponsive(msg),
+            )))
+        } else {
+            let contact = match update {
+                RepositoryUpdate::Embedded => {
+                    RepositoryContact::embedded(self.pubserver.repo_info_for(&handle)?)
+                }
+                RepositoryUpdate::Rfc8181(res) => RepositoryContact::Rfc8181(res),
+            };
+
+            Ok(self.caserver.update_repo(handle, contact)?)
+        }
+    }
+
+    fn repo_state(
+        &self,
+        handle: &Handle,
+        repo: Option<&rfc8183::RepositoryResponse>,
+    ) -> CurrentRepoState {
+        match repo {
+            None => match self.pubserver.list(handle) {
+                Err(e) => CurrentRepoState::error(e),
+                Ok(list) => CurrentRepoState::list(list),
+            },
+            Some(repo) => match self.caserver.send_rfc8181_list(handle, repo) {
+                Err(e) => CurrentRepoState::error(e),
+                Ok(list) => CurrentRepoState::list(list),
+            },
+        }
     }
 
     pub fn ca_update_id(&self, handle: Handle) -> EmptyRes {

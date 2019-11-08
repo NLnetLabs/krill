@@ -8,7 +8,8 @@ use serde::Serialize;
 use crate::commons::api::rrdp::VerificationError;
 use crate::commons::api::{
     AddChildRequest, CertAuthInit, ErrorCode, ErrorResponse, Handle, ParentCaContact, ParentCaReq,
-    ParentHandle, PublisherHandle, PublisherList, RouteAuthorizationUpdates, UpdateChildRequest,
+    ParentHandle, PublisherHandle, PublisherList, RepositoryUpdate, RouteAuthorizationUpdates,
+    UpdateChildRequest,
 };
 use crate::commons::remote::sigmsg::SignedMessage;
 use crate::commons::remote::{rfc6492, rfc8181, rfc8183};
@@ -367,6 +368,18 @@ pub fn ca_repo_details(
             Some(req) => render_json(req),
             None => api_not_found(),
         }
+    })
+}
+
+pub fn ca_repo_update(
+    server: web::Data<AppServer>,
+    auth: Auth,
+    handle: Path<Handle>,
+    update: Json<RepositoryUpdate>,
+) -> HttpResponse {
+    let handle = handle.into_inner();
+    if_api_allowed(&server, &auth, || {
+        render_empty_res(server.read().ca_update_repo(handle, update.into_inner()))
     })
 }
 

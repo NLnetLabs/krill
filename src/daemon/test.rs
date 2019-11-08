@@ -21,6 +21,11 @@ use crate::daemon::ca::ta_handle;
 use crate::daemon::config::Config;
 use crate::daemon::http::server;
 
+pub enum PubdTestContext {
+    Main,
+    Secondary,
+}
+
 pub fn test_with_krill_server<F>(op: F)
 where
     F: FnOnce(PathBuf) -> (),
@@ -113,16 +118,21 @@ fn krill_pubd_health() -> Result<ApiResponse, Error> {
     KrillClient::process(krillc_opts)
 }
 
-pub fn krill_pubd_admin(command: Command) -> ApiResponse {
-    let krillc_opts = Options::new(
-        test::https("https://localhost:3001/"),
-        "secret",
-        ReportFormat::Json,
-        command,
-    );
-    match KrillClient::process(krillc_opts) {
-        Ok(res) => res, // ok
-        Err(e) => panic!("{}", e),
+pub fn krill_pubd_admin(command: Command, server: PubdTestContext) -> ApiResponse {
+    match server {
+        PubdTestContext::Main => krill_admin(command),
+        PubdTestContext::Secondary => {
+            let krillc_opts = Options::new(
+                test::https("https://localhost:3001/"),
+                "secret",
+                ReportFormat::Json,
+                command,
+            );
+            match KrillClient::process(krillc_opts) {
+                Ok(res) => res, // ok
+                Err(e) => panic!("{}", e),
+            }
+        }
     }
 }
 
@@ -212,13 +222,13 @@ pub fn add_child_rfc6492(
 }
 
 pub fn update_child(ca: &Handle, child: &ChildHandle, resources: &ResourceSet) {
-    let req = UpdateChildRequest::graceful(None, Some(resources.clone()));
+    let req = UpdateChildRequest::resources(resources.clone());
     send_child_request(ca, child, req)
 }
 
 pub fn update_child_id(ca: &Handle, child: &ChildHandle, req: ChildRequest) {
     let (_, _, id) = req.unwrap();
-    let req = UpdateChildRequest::graceful(Some(id), None);
+    let req = UpdateChildRequest::id_cert(id);
     send_child_request(ca, child, req)
 }
 
@@ -371,12 +381,6 @@ pub fn wait_for_ta_to_have_number_of_issued_certs(number: usize) {
 pub fn ta_issued_certs() -> usize {
     let ta = ca_details(&ta_handle());
     ta.published_objects().len() - 2
-}
-
-pub fn ta_issued_resources(child: &Handle) -> ResourceSet {
-    let ta = ca_details(&ta_handle());
-    let child = ta.children().get(child).unwrap();
-    child.issued_resources().clone()
 }
 
 pub fn ca_current_resources(handle: &Handle) -> ResourceSet {

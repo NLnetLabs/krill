@@ -11,15 +11,14 @@ use crate::commons::api::rrdp::PublishElement;
 use crate::commons::api::Base64;
 use crate::commons::api::{
     AddedObject, CurrentObject, CurrentObjects, EntitlementClass, HexEncodedHash, IssuanceRequest,
-    IssuanceResponse, IssuedCert, ObjectName, ObjectsDelta, ParentHandle, RcvdCert, ReplacedObject,
-    RepoInfo, RequestResourceLimit, ResourceClassInfo, ResourceClassName, ResourceSet, Revocation,
-    RevocationRequest, RevokedObject, RouteAuthorization, SigningCert, UpdatedObject,
-    WithdrawnObject,
+    IssuedCert, ObjectName, ObjectsDelta, ParentHandle, RcvdCert, ReplacedObject, RepoInfo,
+    RequestResourceLimit, ResourceClassInfo, ResourceClassName, ResourceSet, Revocation,
+    RevocationRequest, RevokedObject, RouteAuthorization, UpdatedObject, WithdrawnObject,
 };
-use crate::daemon::ca::events::RoaUpdates;
+use crate::daemon::ca::events::{ChildCertificateUpdates, RoaUpdates};
 use crate::daemon::ca::signing::CsrInfo;
 use crate::daemon::ca::{
-    self, ta_handle, AddedOrUpdated, Certificates, CertifiedKey, CrlBuilder, CurrentKey,
+    self, ta_handle, AddedOrUpdated, CertifiedKey, ChildCertificates, CrlBuilder, CurrentKey,
     CurrentObjectSetDelta, Error, EvtDet, KeyState, ManifestBuilder, NewKey, OldKey, PendingKey,
     Result, RoaInfo, Roas, SignSupport, Signer,
 };
@@ -46,7 +45,7 @@ pub struct ResourceClass {
     parent_rc_name: ResourceClassName,
 
     roas: Roas,
-    certificates: Certificates,
+    certificates: ChildCertificates,
 
     last_key_change: Time,
     key_state: KeyState,
@@ -69,7 +68,7 @@ impl ResourceClass {
             parent_handle,
             parent_rc_name,
             roas: Roas::default(),
-            certificates: Certificates::default(),
+            certificates: ChildCertificates::default(),
             last_key_change: Time::now(),
             key_state: KeyState::create(pending_key),
         }
@@ -82,7 +81,7 @@ impl ResourceClass {
             parent_handle: ta_handle(),
             parent_rc_name,
             roas: Roas::default(),
-            certificates: Certificates::default(),
+            certificates: ChildCertificates::default(),
             last_key_change: Time::now(),
             key_state: KeyState::create(pending_key),
         }
@@ -331,6 +330,20 @@ impl ResourceClass {
         )
     }
 
+    /// Request new certificates for all keys when the base repo changes.
+    pub fn make_request_events_new_repo<S: Signer>(
+        &self,
+        base_repo: &RepoInfo,
+        signer: &S,
+    ) -> Result<Vec<EvtDet>> {
+        self.key_state.request_certs_new_repo(
+            self.name.clone(),
+            base_repo,
+            &self.name_space,
+            signer,
+        )
+    }
+
     /// This function returns all current certificate requests.
     pub fn cert_requests(&self) -> Vec<IssuanceRequest> {
         self.key_state.cert_requests()
@@ -366,7 +379,8 @@ impl ResourceClass {
         let mut key_pub_map = HashMap::new();
 
         let (publish_key, other_key_opt) = match mode {
-            PublishMode::Normal | PublishMode::UpdatedResources(_) => {
+            PublishMode::KeyRollActivation => (self.get_new_key()?, Some(self.get_current_key()?)),
+            _ => {
                 let other_key_opt = match &self.key_state {
                     KeyState::RollNew(new, _) => Some(new),
                     KeyState::RollOld(_, old) => Some(old.key()),
@@ -374,12 +388,11 @@ impl ResourceClass {
                 };
                 (self.get_current_key()?, other_key_opt)
             }
-            PublishMode::KeyRollActivation => (self.get_new_key()?, Some(self.get_current_key()?)),
         };
 
         let (publish_key_revocations, other_key_revocations) = match mode {
-            PublishMode::Normal | PublishMode::UpdatedResources(_) => (new_revocations, vec![]),
             PublishMode::KeyRollActivation => (vec![], new_revocations),
+            _ => (new_revocations, vec![]),
         };
 
         let publish_key_delta = self
@@ -438,6 +451,27 @@ impl ResourceClass {
             revocations.append(&mut roa_updates.revocations());
 
             res.push(EvtDet::RoasUpdated(self.name.clone(), roa_updates));
+        }
+
+        let child_cert_updates = self.update_child_certificates(mode, signer)?;
+        if !child_cert_updates.is_empty() {
+            for issued in child_cert_updates.issued() {
+                match issued.replaces() {
+                    None => delta.add(AddedObject::from(issued.cert())),
+                    Some(old) => {
+                        delta.update(UpdatedObject::for_cert(issued.cert(), old.hash().clone()))
+                    }
+                }
+            }
+            for key in child_cert_updates.removed() {
+                let issued = self.certificates.get(key).unwrap();
+                delta.withdraw(WithdrawnObject::from(issued.cert()));
+                revocations.push(Revocation::from(issued.cert()));
+            }
+            res.push(EvtDet::ChildCertificatesUpdated(
+                self.name.clone(),
+                child_cert_updates,
+            ));
         }
 
         if !delta.is_empty() || !revocations.is_empty() || self.needs_publication(mode) {
@@ -794,19 +828,10 @@ impl ResourceClass {
         csr: CsrInfo,
         child_resources: &ResourceSet,
         limit: RequestResourceLimit,
-        mode: &PublishMode,
         signer: &S,
-    ) -> ca::Result<IssuanceResponse> {
-        let signing_key = match mode {
-            PublishMode::Normal | PublishMode::UpdatedResources(_) => self.get_current_key()?,
-            PublishMode::KeyRollActivation => self.get_new_key()?,
-        };
-
-        let parent_resources = match mode {
-            PublishMode::UpdatedResources(resources) => resources,
-            _ => signing_key.incoming_cert().resources(),
-        };
-
+    ) -> ca::Result<IssuedCert> {
+        let signing_key = self.get_current_key()?;
+        let parent_resources = signing_key.incoming_cert().resources();
         let resources = parent_resources.intersection(child_resources);
         let replaces = self
             .certificates
@@ -816,20 +841,109 @@ impl ResourceClass {
         let issued =
             SignSupport::make_issued_cert(csr, &resources, limit, replaces, signing_key, signer)?;
 
-        let signing_cert = SigningCert::from(signing_key.incoming_cert());
+        Ok(issued)
+    }
 
-        Ok(IssuanceResponse::new(
-            self.name.clone(),
-            signing_cert,
-            resources,
-            issued.cert().validity().not_after(),
-            issued,
-        ))
+    fn re_issue<S: Signer>(
+        &self,
+        previous: &IssuedCert,
+        updated_resources: Option<ResourceSet>,
+        signing_key: &CertifiedKey,
+        csr_info_opt: Option<CsrInfo>,
+        signer: &S,
+    ) -> ca::Result<IssuedCert> {
+        let (_uri, limit, resource_set, cert) = previous.clone().unpack();
+        let csr = csr_info_opt.unwrap_or_else(|| CsrInfo::from(&cert));
+        let resource_set = updated_resources.unwrap_or(resource_set);
+        let replaced = ReplacedObject::new(Revocation::from(&cert), HexEncodedHash::from(&cert));
+
+        let re_issued = SignSupport::make_issued_cert(
+            csr,
+            &resource_set,
+            limit,
+            Some(replaced),
+            signing_key,
+            signer,
+        )?;
+
+        Ok(re_issued)
+    }
+
+    fn update_child_certificates<S: Signer>(
+        &self,
+        mode: &PublishMode,
+        signer: &S,
+    ) -> ca::Result<ChildCertificateUpdates> {
+        let mut updates = ChildCertificateUpdates::default();
+
+        let signing_key = match mode {
+            PublishMode::KeyRollActivation => self.get_new_key()?,
+            _ => self.get_current_key()?,
+        };
+
+        match mode {
+            PublishMode::Normal => {
+                // re-issue: things about to expire
+                // revoke: nothing
+                for issued in self.certificates.expiring() {
+                    let re_issued = self.re_issue(issued, None, signing_key, None, signer)?;
+                    updates.issue(re_issued);
+                }
+            }
+            PublishMode::UpdatedResources(resources) => {
+                //    re-issue: overclaiming with remaining
+                //    revoke: overclaiming without remaining
+                for issued in self.certificates.overclaiming(resources) {
+                    let remaining_resources = issued.resource_set().intersection(resources);
+                    if remaining_resources.is_empty() {
+                        // revoke
+                        updates.remove(issued.subject_key_identifier());
+                    } else {
+                        // re-issue
+                        let re_issued = self.re_issue(
+                            issued,
+                            Some(remaining_resources),
+                            signing_key,
+                            None,
+                            signer,
+                        )?;
+                        updates.issue(re_issued);
+                    }
+                }
+            }
+            PublishMode::KeyRollActivation => {
+                for issued in self.certificates.iter() {
+                    let re_issued = self.re_issue(issued, None, signing_key, None, signer)?;
+                    updates.issue(re_issued);
+                }
+            }
+            PublishMode::NewRepo(info) => {
+                for issued in self.certificates.iter() {
+                    let csr_info_update = CsrInfo::new(
+                        info.ca_repository(self.name_space()),
+                        info.rpki_manifest(self.name_space(), &issued.subject_key_identifier()),
+                        Some(info.rpki_notify()),
+                        issued.subject_public_key_info().clone(),
+                    );
+
+                    let re_issued =
+                        self.re_issue(issued, None, signing_key, Some(csr_info_update), signer)?;
+                    updates.issue(re_issued);
+                }
+            }
+        }
+
+        Ok(updates)
     }
 
     /// Stores an [IssuedCert](krill_commons.api.ca.IssuedCert)
     pub fn certificate_issued(&mut self, issued: IssuedCert) {
         self.certificates.certificate_issued(issued);
+    }
+
+    /// Returns an issued certificate for a key, if it exists
+    pub fn issued(&self, ki: &KeyIdentifier) -> Option<&IssuedCert> {
+        self.certificates.get(ki)
     }
 
     /// Removes a revoked key.
@@ -852,14 +966,19 @@ impl ResourceClass {
         let mut updates = RoaUpdates::default();
 
         let key = match mode {
-            PublishMode::Normal | PublishMode::UpdatedResources(_) => self.get_current_key()?,
             PublishMode::KeyRollActivation => self.get_new_key()?,
+            _ => self.get_current_key()?,
         };
 
         let resources = match mode {
-            PublishMode::Normal => key.incoming_cert().resources(),
+            PublishMode::Normal | PublishMode::NewRepo(_) => key.incoming_cert().resources(),
             PublishMode::UpdatedResources(resources) => resources,
             PublishMode::KeyRollActivation => self.get_current_key()?.incoming_cert().resources(),
+        };
+
+        let new_repo = match &mode {
+            PublishMode::NewRepo(info) => Some(info.ca_repository(self.name_space())),
+            _ => None,
         };
 
         // Remove any ROAs no longer in auths, or no longer in resources.
@@ -878,7 +997,7 @@ impl ResourceClass {
             match self.roas.get(auth) {
                 None => {
                     // NO ROA yet, so create one.
-                    let roa = Roas::make_roa(auth, key, signer)?;
+                    let roa = Roas::make_roa(auth, key, new_repo.as_ref(), signer)?;
                     updates.update(*auth, RoaInfo::new_roa(roa));
                 }
                 Some(roa) => {
@@ -888,8 +1007,8 @@ impl ResourceClass {
                         roa.roa().cert().validity().not_after() < Time::now() + Duration::weeks(4);
                     let activating = mode == &PublishMode::KeyRollActivation;
 
-                    if expiring || activating {
-                        let new_roa = Roas::make_roa(auth, key, signer)?;
+                    if expiring || activating || new_repo.is_some() {
+                        let new_roa = Roas::make_roa(auth, key, new_repo.as_ref(), signer)?;
                         updates.update(*auth, RoaInfo::updated_roa(roa, new_roa));
                     }
                 }
@@ -927,4 +1046,5 @@ pub enum PublishMode {
     Normal,
     UpdatedResources(ResourceSet),
     KeyRollActivation,
+    NewRepo(RepoInfo),
 }

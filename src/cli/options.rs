@@ -1,6 +1,7 @@
 use std::convert::TryFrom;
 use std::env;
 use std::io;
+use std::io::Read;
 use std::path::PathBuf;
 use std::str::{from_utf8_unchecked, FromStr};
 
@@ -9,6 +10,7 @@ use clap::{App, Arg, ArgMatches, SubCommand};
 use rpki::uri;
 
 use crate::cli::report::{ReportError, ReportFormat};
+use crate::commons::api::RepositoryUpdate;
 use crate::commons::api::{
     AddChildRequest, AuthorizationFmtError, CertAuthInit, ChildAuthRequest, ChildHandle, Handle,
     ParentCaContact, ParentCaReq, ParentHandle, PublisherHandle, ResSetErr, ResourceSet,
@@ -466,7 +468,7 @@ impl Options {
         app.subcommand(sub)
     }
 
-    fn make_case_repo_request_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+    fn make_cas_repo_request_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("request").about("Show RFC8183 Publisher Request.");
 
         sub = Self::add_general_args(sub);
@@ -475,7 +477,7 @@ impl Options {
         app.subcommand(sub)
     }
 
-    fn make_case_repo_show_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+    fn make_cas_repo_show_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("show").about("Show current repo config and state.");
 
         sub = Self::add_general_args(sub);
@@ -484,11 +486,35 @@ impl Options {
         app.subcommand(sub)
     }
 
+    fn make_cas_repo_update_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("update").about("Update the repository");
+
+        let mut embedded =
+            SubCommand::with_name("embedded").about("Use the embedded server in krill");
+        embedded = Self::add_general_args(embedded);
+        embedded = Self::add_my_ca_arg(embedded);
+
+        let mut remote = SubCommand::with_name("rfc8183").about("Use a remote server");
+        remote = Self::add_general_args(remote);
+        remote = Self::add_my_ca_arg(remote);
+        remote = remote.arg(
+            Arg::with_name("file")
+                .help("File containing the RFC8183 XML. Defaults to reading from STDIN")
+                .required(false),
+        );
+
+        sub = sub.subcommand(embedded);
+        sub = sub.subcommand(remote);
+
+        app.subcommand(sub)
+    }
+
     fn make_cas_repo_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("repo").about("Manage the repository for your CA.");
 
-        sub = Self::make_case_repo_request_sc(sub);
-        sub = Self::make_case_repo_show_sc(sub);
+        sub = Self::make_cas_repo_request_sc(sub);
+        sub = Self::make_cas_repo_show_sc(sub);
+        sub = Self::make_cas_repo_update_sc(sub);
 
         app.subcommand(sub)
     }
@@ -711,7 +737,7 @@ impl Options {
         };
         let resources = Self::parse_resource_args(matches)?;
 
-        let update = UpdateChildRequest::force(id_cert, resources);
+        let update = UpdateChildRequest::new(id_cert, resources);
 
         let command = Command::CertAuth(CaCommand::ChildUpdate(my_ca, child, update));
         Ok(Options::make(general_args, command))
@@ -903,11 +929,42 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
+    fn parse_matches_cas_update(matches: &ArgMatches) -> Result<Options, Error> {
+        if let Some(_m) = matches.subcommand_matches("embedded") {
+            let general_args = GeneralArgs::from_matches(matches)?;
+            let my_ca = Self::parse_my_ca(matches)?;
+            let update = RepositoryUpdate::embedded();
+            let command = Command::CertAuth(CaCommand::RepoUpdate(my_ca, update));
+            Ok(Options::make(general_args, command))
+        } else {
+            let general_args = GeneralArgs::from_matches(matches)?;
+            let my_ca = Self::parse_my_ca(matches)?;
+
+            let response = if let Some(path) = matches.value_of("file") {
+                let path = PathBuf::from(path);
+                let bytes = file::read(&path).unwrap();
+
+                rfc8183::RepositoryResponse::validate(bytes.as_ref()).unwrap()
+            } else {
+                let mut buffer = String::new();
+                io::stdin().read_to_string(&mut buffer)?;
+
+                rfc8183::RepositoryResponse::validate(buffer.as_bytes()).unwrap()
+            };
+
+            let update = RepositoryUpdate::rfc8181(response);
+            let command = Command::CertAuth(CaCommand::RepoUpdate(my_ca, update));
+            Ok(Options::make(general_args, command))
+        }
+    }
+
     fn parse_matches_cas_repo(matches: &ArgMatches) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("request") {
             Self::parse_matches_cas_repo_request(m)
         } else if let Some(m) = matches.subcommand_matches("show") {
             Self::parse_matches_cas_repo_details(m)
+        } else if let Some(m) = matches.subcommand_matches("update") {
+            Self::parse_matches_cas_update(m)
         } else {
             Err(Error::UnrecognisedSubCommand)
         }
@@ -1045,6 +1102,7 @@ pub enum CaCommand {
     // Get the RFC8183 publisher request
     RepoPublisherRequest(Handle),
     RepoDetails(Handle),
+    RepoUpdate(Handle, RepositoryUpdate),
 
     // Add a parent to this CA
     AddParent(Handle, ParentCaReq),

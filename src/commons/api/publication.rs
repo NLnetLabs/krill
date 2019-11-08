@@ -310,6 +310,19 @@ impl ListReply {
     pub fn into_elements(self) -> Vec<ListElement> {
         self.elements
     }
+
+    pub fn into_withdraw_delta(self) -> PublishDelta {
+        let withdraws: Vec<Withdraw> = self
+            .elements
+            .into_iter()
+            .map(|el| {
+                let (uri, hash) = el.unpack();
+                Withdraw::new(None, uri, hash)
+            })
+            .collect();
+
+        PublishDelta::new(vec![], vec![], withdraws)
+    }
 }
 
 //------------ ListElement ---------------------------------------------------

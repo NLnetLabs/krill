@@ -476,6 +476,10 @@ impl RevocationRequest {
     pub fn key(&self) -> &KeyIdentifier {
         &self.key
     }
+
+    pub fn unpack(self) -> (ResourceClassName, KeyIdentifier) {
+        (self.class_name, self.key)
+    }
 }
 
 //------------ RevocationResponse --------------------------------------------

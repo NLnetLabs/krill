@@ -13,18 +13,18 @@ use crate::commons::api::CertAuthHistory;
 use crate::commons::api::{
     self, AddChildRequest, CertAuthList, CertAuthSummary, ChildAuthRequest, ChildCaInfo,
     ChildHandle, Entitlements, Handle, IssuanceRequest, IssuanceResponse, IssuedCert, ListReply,
-    ParentCaContact, ParentCaReq, ParentHandle, PubServerContact, PublishDelta, RcvdCert, RepoInfo,
-    ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse,
-    RouteAuthorizationUpdates, Token, UpdateChildRequest,
+    ParentCaContact, ParentCaReq, ParentHandle, PublishDelta, RcvdCert, RepoInfo,
+    RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse,
+    RouteAuthorizationUpdates, UpdateChildRequest,
 };
-use crate::commons::eventsourcing::{Aggregate, AggregateStore, DiskAggregateStore};
+use crate::commons::eventsourcing::{Aggregate, AggregateStore, Command, DiskAggregateStore};
 use crate::commons::remote::builder::SignedMessageBuilder;
 use crate::commons::remote::id::IdCert;
 use crate::commons::remote::sigmsg::SignedMessage;
 use crate::commons::remote::{rfc6492, rfc8181, rfc8183};
 use crate::commons::util::httpclient;
 use crate::daemon::ca::{
-    self, ta_handle, CertAuth, CmdDet, IniDet, ServerError, ServerResult, Signer,
+    self, ta_handle, CertAuth, Cmd, CmdDet, IniDet, ServerError, ServerResult, Signer,
 };
 use crate::daemon::mq::EventQueueListener;
 
@@ -93,6 +93,15 @@ impl<S: Signer> CaServer<S> {
         }
     }
 
+    /// Send a command to a CA
+    fn send_command(&self, cmd: Cmd<S>) -> ServerResult<()> {
+        let handle = cmd.handle().clone();
+        let ca = self.get_ca(&handle)?;
+        let events = ca.process_command(cmd)?;
+        self.ca_store.update(&handle, ca, events)?;
+        Ok(())
+    }
+
     /// Republish the embedded TA and CAs if needed, i.e. if they are close
     /// to their next update time.
     pub fn republish_all(&self) -> ServerResult<()> {
@@ -106,17 +115,27 @@ impl<S: Signer> CaServer<S> {
 
     /// Republish a CA, this is a no-op when there is nothing to publish.
     pub fn republish(&self, handle: &Handle) -> ServerResult<()> {
-        debug!("Republish CA: {}", handle);
+        let cmd = CmdDet::publish(handle, self.signer.clone());
+        self.send_command(cmd)
+    }
+
+    /// Update repository where a CA publishes.
+    pub fn update_repo(&self, handle: Handle, new_contact: RepositoryContact) -> ServerResult<()> {
+        let cmd = CmdDet::update_repo(&handle, new_contact, self.signer.clone());
+        self.send_command(cmd)
+    }
+
+    /// Clean up old repo, if present.
+    pub fn remove_old_repo(&self, handle: &Handle) -> ServerResult<()> {
         let ca = self.ca_store.get_latest(handle)?;
 
-        let cmd = CmdDet::publish(handle, self.signer.clone());
-
-        let events = ca.process_command(cmd)?;
-        if !events.is_empty() {
-            self.ca_store.update(handle, ca, events)?;
+        if ca.has_old_repo() {
+            info!("Removing old repository after receiving updated certificate");
+            let cmd = CmdDet::remove_old_repo(handle, self.signer.clone());
+            self.send_command(cmd)
+        } else {
+            Ok(())
         }
-
-        Ok(())
     }
 
     /// Refresh all CAs: ask for updates and shrink as needed.
@@ -124,9 +143,6 @@ impl<S: Signer> CaServer<S> {
         info!("Refreshing all CAs");
         if let Err(e) = self.get_updates_for_all_cas() {
             error!("Failed to refresh CA certificates: {}", e);
-        }
-        if let Err(e) = self.all_cas_shrink() {
-            error!("Failed to shrink CA certificates: {}", e);
         }
     }
 
@@ -214,39 +230,13 @@ impl<S: Signer> CaServer<S> {
         child: ChildHandle,
         req: UpdateChildRequest,
     ) -> ServerResult<()> {
-        let mut ca = self.get_ca(handle)?;
-
-        let force = req.is_force();
-
-        let events = ca.process_command(CmdDet::child_update(handle, child.clone(), req))?;
-        if !events.is_empty() {
-            ca = self.ca_store.update(handle, ca, events)?;
-
-            if force {
-                let events =
-                    ca.process_command(CmdDet::child_shrink(handle, child, self.signer.clone()))?;
-                if !events.is_empty() {
-                    self.ca_store.update(handle, ca, events)?;
-                }
-            }
-        }
-
-        Ok(())
+        self.send_command(CmdDet::child_update(handle, child, req))
     }
 
     /// Update a child under this CA.
     pub fn ca_child_remove(&self, handle: &Handle, child: ChildHandle) -> ServerResult<()> {
-        let ca = self.get_ca(handle)?;
         let signer = self.signer.clone();
-        let events = ca.process_command(CmdDet::child_remove(handle, child, signer))?;
-        self.ca_store.update(handle, ca, events)?;
-
-        Ok(())
-    }
-
-    /// Generates a random token for embedded CAs
-    pub fn random_token(&self) -> Token {
-        Token::random(self.signer.read().unwrap().deref())
+        self.send_command(CmdDet::child_remove(handle, child, signer))
     }
 }
 
@@ -431,28 +421,14 @@ impl<S: Signer> CaServer<S> {
 
     /// Removes a parent from a CA
     pub fn ca_remove_parent(&self, handle: Handle, parent: ParentHandle) -> ServerResult<()> {
-        let ca = self.get_ca(&handle)?;
-
         let upd = CmdDet::remove_parent(&handle, parent);
-        let events = ca.process_command(upd)?;
-
-        self.ca_store.update(&handle, ca, events)?;
-
-        Ok(())
+        self.send_command(upd)
     }
 
     /// Perform a key roll for all active keys in a CA older than the specified duration.
     pub fn ca_keyroll_init(&self, handle: Handle, max_age: Duration) -> ServerResult<()> {
-        let ca = self.get_ca(&handle)?;
-
         let init_key_roll = CmdDet::key_roll_init(&handle, max_age, self.signer.clone());
-        let events = ca.process_command(init_key_roll)?;
-
-        if !events.is_empty() {
-            self.ca_store.update(&handle, ca, events)?;
-        }
-
-        Ok(())
+        self.send_command(init_key_roll)
     }
 
     /// Activate a new key, as part of the key roll process (RFC6489). Only new keys that
@@ -460,15 +436,8 @@ impl<S: Signer> CaServer<S> {
     /// a staging period of 24 hours, but we may use a shorter period for testing and/or emergency
     /// manual key rolls.
     pub fn ca_keyroll_activate(&self, handle: Handle, staging: Duration) -> ServerResult<()> {
-        let ca = self.get_ca(&handle)?;
-
         let activate_cmd = CmdDet::key_roll_activate(&handle, staging, self.signer.clone());
-        let events = ca.process_command(activate_cmd)?;
-        if !events.is_empty() {
-            self.ca_store.update(&handle, ca, events)?;
-        }
-
-        Ok(())
+        self.send_command(activate_cmd)
     }
 
     /// Try to get updates for all embedded CAs, will skip the TA and/or CAs that
@@ -488,26 +457,6 @@ impl<S: Signer> CaServer<S> {
             }
         }
 
-        Ok(())
-    }
-
-    /// Let all CAs shrink certificates that have not been updated within the graceperiod.
-    pub fn all_cas_shrink(&self) -> ServerResult<()> {
-        for handle in self.ca_store.list() {
-            if handle == ta_handle() {
-                continue;
-            }
-            if let Ok(ca) = self.get_ca(&handle) {
-                for child in ca.children() {
-                    if let Err(e) = ca.child_shrink(child, self.signer.clone()) {
-                        error!(
-                            "Could not shrink certificates for CA {}, error: {}",
-                            child, e
-                        );
-                    }
-                }
-            }
-        }
         Ok(())
     }
 
@@ -539,9 +488,11 @@ impl<S: Signer> CaServer<S> {
     /// Sends requests to all parents for the CA matching the handle.
     pub fn send_all_requests(&self, handle: &Handle) -> ServerResult<()> {
         let ca = self.get_ca(handle)?;
+
         for parent in ca.parents() {
             self.send_requests(handle, parent)?;
         }
+
         Ok(())
     }
 
@@ -907,14 +858,10 @@ impl<S: Signer> CaServer<S> {
     fn send_rfc8181_and_validate_response(
         &self,
         ca_handle: &Handle,
+        repository: &rfc8183::RepositoryResponse,
         msg: Bytes,
     ) -> ServerResult<rfc8181::ReplyMessage> {
         let ca = self.get_ca(ca_handle)?;
-
-        let repository = match ca.pub_server_contact() {
-            PubServerContact::Rfc8181(response) => response,
-            PubServerContact::Embedded(_) => return Err(ServerError::custom("no RFC8181 repo")),
-        };
 
         let response = self.send_procotol_msg_and_validate(
             ca.id_key(),
@@ -930,9 +877,14 @@ impl<S: Signer> CaServer<S> {
             .map_err(ServerError::custom)
     }
 
-    pub fn send_rfc8181_list(&self, ca_handle: &Handle) -> ServerResult<ListReply> {
+    pub fn send_rfc8181_list(
+        &self,
+        ca_handle: &Handle,
+        repository: &rfc8183::RepositoryResponse,
+    ) -> ServerResult<ListReply> {
         let reply = self.send_rfc8181_and_validate_response(
             ca_handle,
+            repository,
             rfc8181::Message::list_query().into_bytes(),
         )?;
 
@@ -945,10 +897,16 @@ impl<S: Signer> CaServer<S> {
         }
     }
 
-    pub fn send_rfc8181_delta(&self, ca_handle: &Handle, delta: PublishDelta) -> ServerResult<()> {
+    pub fn send_rfc8181_delta(
+        &self,
+        ca_handle: &Handle,
+        repository: &rfc8183::RepositoryResponse,
+        delta: PublishDelta,
+    ) -> ServerResult<()> {
         let message = rfc8181::Message::publish_delta_query(delta);
 
-        let reply = self.send_rfc8181_and_validate_response(ca_handle, message.into_bytes())?;
+        let reply =
+            self.send_rfc8181_and_validate_response(ca_handle, repository, message.into_bytes())?;
 
         match reply {
             rfc8181::ReplyMessage::SuccessReply => Ok(()),
@@ -989,22 +947,11 @@ mod tests {
 
     use super::*;
 
-    use std::path::PathBuf;
     use std::sync::{Arc, RwLock};
 
-    use crate::commons::api::{
-        Handle, IssuanceRequest, ParentCaContact, RcvdCert, RepoInfo, ResourceSet,
-    };
-    use crate::commons::eventsourcing::{Aggregate, AggregateStore, DiskAggregateStore};
+    use crate::commons::api::RepoInfo;
     use crate::commons::util::softsigner::OpenSslSigner;
     use crate::commons::util::test;
-    use crate::commons::util::test::{https, rsync, sub_dir, test_under_tmp};
-    use crate::daemon::ca::EvtDet;
-
-    fn signer(temp_dir: &PathBuf) -> OpenSslSigner {
-        let signer_dir = sub_dir(temp_dir);
-        OpenSslSigner::build(&signer_dir).unwrap()
-    }
 
     #[test]
     fn add_ta() {
@@ -1032,174 +979,6 @@ mod tests {
                 .unwrap();
 
             assert!(server.get_trust_anchor().is_ok());
-        })
-    }
-
-    #[test]
-    fn init_ta() {
-        test_under_tmp(|d| {
-            let ca_store = DiskAggregateStore::<CertAuth<OpenSslSigner>>::new(&d, CA_NS).unwrap();
-
-            let ta_repo_info = {
-                let base_uri = rsync("rsync://localhost/repo/ta/");
-                let rrdp_uri = https("https://localhost/repo/notification.xml");
-                RepoInfo::new(base_uri, rrdp_uri)
-            };
-
-            let ta_handle = ca::ta_handle();
-
-            let ta_uri = https("https://localhost/tal/ta.cer");
-            let ta_aia = rsync("rsync://localhost/repo/ta.cer");
-
-            let signer = signer(&d);
-            let signer = Arc::new(RwLock::new(signer));
-
-            //
-            // --- Create TA and publish
-            //
-
-            let ta_ini =
-                IniDet::init_ta(&ta_handle, ta_repo_info, vec![ta_uri], signer.clone()).unwrap();
-
-            ca_store.add(ta_ini).unwrap();
-            let ta = ca_store.get_latest(&ta_handle).unwrap();
-
-            let ta_cert = ta.parent(&ta_handle).unwrap().to_ta_cert();
-            let rcvd_cert = RcvdCert::new(ta_cert.clone(), ta_aia, ResourceSet::all_resources());
-
-            let events = ta
-                .process_command(CmdDet::upd_received_cert(
-                    &ta_handle,
-                    ResourceClassName::default(),
-                    rcvd_cert,
-                    signer.clone(),
-                ))
-                .unwrap();
-
-            let ta = ca_store.update(&ta_handle, ta, events).unwrap();
-
-            //
-            // --- Create Child CA
-            //
-            // Expect:
-            //   - Child CA initialised
-            //
-            let child_handle = Handle::from_str_unsafe("child");
-            let child_rs = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
-
-            let ca_repo_info = {
-                let base_uri = rsync("rsync://localhost/repo/ca/");
-                let rrdp_uri = https("https://localhost/repo/notification.xml");
-                RepoInfo::new(base_uri, rrdp_uri)
-            };
-
-            let ca_ini = IniDet::init(&child_handle, ca_repo_info, signer.clone()).unwrap();
-
-            ca_store.add(ca_ini).unwrap();
-            let child = ca_store.get_latest(&child_handle).unwrap();
-
-            //
-            // --- Add Child to TA
-            //
-            // Expect:
-            //   - Child added to TA
-            //
-
-            let cmd = CmdDet::child_add(&ta_handle, child_handle.clone(), None, child_rs);
-
-            let events = ta.process_command(cmd).unwrap();
-            let ta = ca_store.update(&ta_handle, ta, events).unwrap();
-
-            //
-            // --- Add TA as parent to child CA
-            //
-            // Expect:
-            //   - Parent added
-            //
-
-            let parent = ParentCaContact::Embedded;
-
-            let add_parent = CmdDet::add_parent(&child_handle, ta_handle.clone(), parent);
-
-            let events = child.process_command(add_parent).unwrap();
-            let child = ca_store.update(&child_handle, child, events).unwrap();
-
-            //
-            // --- Get resource entitlements for Child and let it process
-            //
-            // Expect:
-            //   - No change in TA (just read-only entitlements)
-            //   - Resource Class (DFLT) added to child with pending key
-            //   - Certificate requested by child
-            //
-
-            let entitlements = ta.list(&child_handle).unwrap();
-
-            let upd_ent = CmdDet::upd_resource_classes(
-                &child_handle,
-                ta_handle.clone(),
-                entitlements,
-                signer.clone(),
-            );
-
-            let events = child.process_command(upd_ent).unwrap();
-            assert_eq!(2, events.len()); // rc and csr
-            let req_evt = events[1].clone().into_details();
-            let child = ca_store.update(&child_handle, child, events).unwrap();
-
-            let (_handle, issuance_req, _key_status) = match req_evt {
-                EvtDet::CertificateRequested(parent, req, status) => (parent, req, status),
-                _ => panic!("Expected Csr"),
-            };
-
-            let (class_name, limit, csr) = issuance_req.unwrap();
-            assert_eq!(ResourceClassName::default(), class_name);
-            assert!(limit.is_empty());
-
-            //
-            // --- Send certificate request from child to TA
-            //
-            // Expect:
-            //   - Certificate issued
-            //   - Publication
-            //
-
-            let request = IssuanceRequest::new(ResourceClassName::default(), limit, csr);
-
-            let ta_cmd =
-                CmdDet::child_certify(&ta_handle, child_handle.clone(), request, signer.clone());
-
-            let ta_events = ta.process_command(ta_cmd).unwrap();
-            let issued_evt = ta_events[0].clone().into_details();
-            let _ta = ca_store.update(&ta_handle, ta, ta_events).unwrap();
-
-            let (handle, issuance_res) = match issued_evt {
-                EvtDet::ChildCertificateIssued(child, issued) => (child, issued),
-                _ => panic!("Expected issued certificate."),
-            };
-            let (class_name, _, _, issued) = issuance_res.unwrap();
-
-            assert_eq!(child_handle, handle);
-            assert_eq!(ResourceClassName::default(), class_name);
-
-            //
-            // --- Return issued certificate to child CA
-            //
-            // Expect:
-            //   - Pending key activated
-            //   - Publication
-
-            let rcvd_cert = RcvdCert::from(issued);
-
-            let upd_rcvd = CmdDet::upd_received_cert(
-                &child_handle,
-                ResourceClassName::default(),
-                rcvd_cert,
-                signer.clone(),
-            );
-
-            let events = child.process_command(upd_rcvd).unwrap();
-            let _child = ca_store.update(&child_handle, child, events).unwrap();
         })
     }
 }
