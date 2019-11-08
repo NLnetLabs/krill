@@ -96,9 +96,11 @@ pub fn start(config: &Config) -> Result<(), Error> {
                     .route("/cas/{ca}/keys/roll_activate", post().to(ca_kr_activate))
                     .route("/cas/{ca}/routes", post().to(ca_routes_update))
                     // Republish ALL CAs
-                    .route("/republish", post().to(republish_all))
-                    // Force refresh of ALL CAs
-                    .route("/refresh_all", post().to(refresh_all)),
+                    .route("/cas/republish_all", post().to(republish_all))
+                    // Force resyncing of all CAs at repo servers
+                    .route("/cas/resync_all", post().to(resync_all))
+                    // Force refresh of ALL CA certificates
+                    .route("/cas/refresh_all", post().to(refresh_all)),
             )
             // Logged in users for the API
             .route("/ui/is_logged_in", get().to(is_logged_in))

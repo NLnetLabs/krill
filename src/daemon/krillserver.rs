@@ -25,6 +25,7 @@ use crate::daemon::mq::EventQueueListener;
 use crate::daemon::scheduler::Scheduler;
 use crate::pubd;
 use crate::pubd::PubServer;
+use crate::publish::CaPublisher;
 
 //------------ KrillServer ---------------------------------------------------
 
@@ -287,6 +288,19 @@ impl KrillServer {
     /// Republish all CAs that need it.
     pub fn republish_all(&self) -> EmptyRes {
         self.caserver.republish_all()?;
+        Ok(())
+    }
+
+    /// Re-sync all CAs with their repositories
+    pub fn resync_all(&self) -> EmptyRes {
+        let publisher = CaPublisher::new(self.caserver.clone(), self.pubserver.clone());
+
+        for ca in self.caserver.cas().cas() {
+            if let Err(e) = publisher.publish(ca.name()) {
+                error!("Failed to sync ca: {}. Got error: {}", ca.name(), e)
+            }
+        }
+
         Ok(())
     }
 

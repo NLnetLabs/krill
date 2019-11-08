@@ -5,7 +5,7 @@ use serde::Serialize;
 
 use rpki::uri;
 
-use crate::cli::options::{CaCommand, Command, Options, PublishersCommand};
+use crate::cli::options::{BulkCaCommand, CaCommand, Command, Options, PublishersCommand};
 use crate::cli::report::{ApiResponse, ReportError};
 use crate::commons::api::{
     CaRepoDetails, CertAuthInfo, ParentCaContact, PublisherDetails, PublisherList, Token,
@@ -50,6 +50,7 @@ impl KrillClient {
 
         match options.command {
             Command::Health => client.health(),
+            Command::Bulk(cmd) => client.bulk(cmd),
             Command::CertAuth(cmd) => client.certauth(cmd),
             Command::Publishers(cmd) => client.publishers(cmd),
             Command::NotSet => Err(Error::MissingCommand),
@@ -59,6 +60,23 @@ impl KrillClient {
     fn health(&self) -> Result<ApiResponse, Error> {
         httpclient::get_ok(&self.resolve_uri("api/v1/health"), Some(&self.token))?;
         Ok(ApiResponse::Health)
+    }
+
+    fn bulk(&self, command: BulkCaCommand) -> Result<ApiResponse, Error> {
+        match command {
+            BulkCaCommand::Refresh => {
+                self.post_empty("api/v1/cas/refresh_all")?;
+                Ok(ApiResponse::Empty)
+            }
+            BulkCaCommand::Publish => {
+                self.post_empty("api/v1/cas/republish_all")?;
+                Ok(ApiResponse::Empty)
+            }
+            BulkCaCommand::Sync => {
+                self.post_empty("api/v1/cas/resync_all")?;
+                Ok(ApiResponse::Empty)
+            }
+        }
     }
 
     fn certauth(&self, command: CaCommand) -> Result<ApiResponse, Error> {
@@ -182,11 +200,6 @@ impl KrillClient {
             CaCommand::List => {
                 let cas = self.get_json("api/v1/cas")?;
                 Ok(ApiResponse::CertAuths(cas))
-            }
-
-            CaCommand::RefreshAll => {
-                self.post_empty("api/v1/refresh_all")?;
-                Ok(ApiResponse::Empty)
             }
         }
     }

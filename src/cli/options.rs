@@ -539,7 +539,6 @@ impl Options {
     fn make_publishers_add_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("add").about("Add a publisher.");
         sub = Self::add_general_args(sub);
-        sub = Self::add_publisher_arg(sub);
 
         sub = sub.arg(
             Arg::with_name("rfc8183")
@@ -593,6 +592,31 @@ impl Options {
         app.subcommand(sub)
     }
 
+    fn make_bulk_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("bulk")
+            .about("Manually trigger refresh/republish/resync for all cas");
+
+        let mut refresh = SubCommand::with_name("refresh")
+            .about("Force that all CAs ask their parents for updated certificates");
+        refresh = Self::add_general_args(refresh);
+
+        let mut republish = SubCommand::with_name("publish").about(
+            "Force that all CAs create new objects if needed (in which case they will also sync)",
+        );
+        republish = Self::add_general_args(republish);
+
+        let mut resync =
+            SubCommand::with_name("sync").about("Force that all CAs sync with their repo server");
+        resync = Self::add_general_args(resync);
+
+        sub = sub
+            .subcommand(refresh)
+            .subcommand(republish)
+            .subcommand(resync);
+
+        app.subcommand(sub)
+    }
+
     fn make_health_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         app.subcommand(
             SubCommand::with_name("health").about("Perform an authenticated health check"),
@@ -615,6 +639,8 @@ impl Options {
         app = Self::make_publishers_sc(app);
 
         app = Self::make_health_sc(app);
+
+        app = Self::make_bulk_sc(app);
 
         app.get_matches()
     }
@@ -1035,6 +1061,24 @@ impl Options {
         }
     }
 
+    fn parse_matches_bulk(matches: &ArgMatches) -> Result<Options, Error> {
+        if let Some(m) = matches.subcommand_matches("publish") {
+            let general_args = GeneralArgs::from_matches(m)?;
+            let command = Command::Bulk(BulkCaCommand::Publish);
+            Ok(Options::make(general_args, command))
+        } else if let Some(m) = matches.subcommand_matches("refresh") {
+            let general_args = GeneralArgs::from_matches(m)?;
+            let command = Command::Bulk(BulkCaCommand::Refresh);
+            Ok(Options::make(general_args, command))
+        } else if let Some(m) = matches.subcommand_matches("sync") {
+            let general_args = GeneralArgs::from_matches(m)?;
+            let command = Command::Bulk(BulkCaCommand::Sync);
+            Ok(Options::make(general_args, command))
+        } else {
+            Err(Error::UnrecognisedSubCommand)
+        }
+    }
+
     fn parse_matches_health(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let command = Command::Health;
@@ -1062,6 +1106,8 @@ impl Options {
             Self::parse_matches_cas_repo(m)
         } else if let Some(m) = matches.subcommand_matches("publishers") {
             Self::parse_matches_publishers(m)
+        } else if let Some(m) = matches.subcommand_matches("bulk") {
+            Self::parse_matches_bulk(m)
         } else if let Some(m) = matches.subcommand_matches("health") {
             Self::parse_matches_health(m)
         } else {
@@ -1080,6 +1126,7 @@ impl Options {
 pub enum Command {
     NotSet,
     Health,
+    Bulk(BulkCaCommand),
     CertAuth(CaCommand),
     Publishers(PublishersCommand),
 }
@@ -1138,9 +1185,13 @@ pub enum CaCommand {
 
     // List all CAs
     List,
+}
 
-    // Refresh all CAs: let them update from parents, and shrink children if needed
-    RefreshAll,
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum BulkCaCommand {
+    Refresh,
+    Publish,
+    Sync,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

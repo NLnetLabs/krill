@@ -469,7 +469,11 @@ pub fn republish_all(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
     })
 }
 
-//------------ Admin: Force republish ----------------------------------------
+pub fn resync_all(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
+    if_api_allowed(&server, &auth, || {
+        render_empty_res(server.read().resync_all())
+    })
+}
 
 /// Refresh all CAs
 pub fn refresh_all(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {

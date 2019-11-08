@@ -5,7 +5,7 @@ use std::{thread, time};
 
 use rpki::uri::Rsync;
 
-use crate::cli::options::{CaCommand, Command, Options, PublishersCommand};
+use crate::cli::options::{BulkCaCommand, CaCommand, Command, Options, PublishersCommand};
 use crate::cli::report::{ApiResponse, ReportFormat};
 use crate::cli::{Error, KrillClient};
 use crate::commons::api::{
@@ -150,7 +150,7 @@ pub fn krill_admin_expect_error(command: Command) -> Error {
 }
 
 fn refresh_all() {
-    krill_admin(Command::CertAuth(CaCommand::RefreshAll));
+    krill_admin(Command::Bulk(BulkCaCommand::Refresh));
 }
 
 pub fn init_child(handle: &Handle) {
