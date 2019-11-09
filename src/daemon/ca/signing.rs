@@ -156,9 +156,20 @@ impl SignSupport {
         cert.set_rpki_manifest(Some(rpki_manifest));
         cert.set_rpki_notify(rpki_notify);
 
-        cert.set_as_resources(Some(resources.to_as_resources()));
-        cert.set_v4_resources(Some(resources.to_ip_resources_v4()));
-        cert.set_v6_resources(Some(resources.to_ip_resources_v6()));
+        let asns = resources.to_as_resources();
+        if asns.is_inherited() || !asns.as_blocks().unwrap().is_empty() {
+            cert.set_as_resources(Some(asns));
+        }
+
+        let ipv4 = resources.to_ip_resources_v4();
+        if ipv4.is_inherited() || !ipv4.as_blocks().unwrap().is_empty() {
+            cert.set_v4_resources(Some(ipv4));
+        }
+
+        let ipv6 = resources.to_ip_resources_v6();
+        if ipv6.is_inherited() || !ipv6.as_blocks().unwrap().is_empty() {
+            cert.set_v6_resources(Some(ipv6));
+        }
 
         cert.set_authority_key_identifier(Some(signing_cert.cert().subject_key_identifier()));
 
