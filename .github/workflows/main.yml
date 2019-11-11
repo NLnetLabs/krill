@@ -4,6 +4,9 @@ on: [push, pull_request, issue_comment]
 
 jobs:
   krill_e2e_test:
+    env:
+      TF_VAR_size: s-8vcpu-32gb
+
     name: deploy_and_test
     runs-on: ubuntu-18.04
     steps:
@@ -56,7 +59,6 @@ jobs:
         # pass those using -var on the command line.
         TF_VAR_do_token: ${{ secrets.DO_TOKEN }}
         TF_VAR_run_tests: false
-        TF_VAR_size: s-8vcpu-32gb
 
     - name: Run tests
       working-directory: ../rpki-deploy/terraform/krill-e2e-test/run_on_do
