@@ -1,5 +1,6 @@
 [![Travis Build Status](https://api.travis-ci.com/NLnetLabs/krill.svg?branch=master)](https://travis-ci.com/NLnetLabs/krill)
 [![Documentation Status](https://readthedocs.org/projects/rpki/badge/?version=latest)](https://rpki.readthedocs.io/en/latest/?badge=latest)
+[![E2E Test Status](https://github.com/nlnetlabs/krill/workflows/E2E%20Test/badge.svg)](https://github.com/nlnetlabs/krill/workflows/E2E%20Test/badge.svg)
 
 # Krill
 
