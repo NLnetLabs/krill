@@ -67,14 +67,20 @@ jobs:
         TF_VAR_do_token: ${{ secrets.DO_TOKEN }}
         TF_VAR_run_tests: true
 
-    - name: Dump logs on failure
+    - name: Dump diagnostics on failure
       if: failure()
       working-directory: ../rpki-deploy/terraform/krill-e2e-test/run_on_do
       run: |
+        terraform output docker_env_vars
         eval $(terraform output docker_env_vars)
         pushd ../lib/docker
         docker-compose ps
         docker-compose logs
+        docker system info
+        docker system events --since 60m
+        export KRILL_CLI_SERVER=https://localhost:3000/
+        export KRILL_CLI_TOKEN=$(docker logs krill 2>&1 | tac | grep -Eom 1 'token [a-z0-9-]+' | cut -d ' ' -f 2)
+        docker exec krill krillc list
 
 #     - name: Undeploy
 #       if: always()
