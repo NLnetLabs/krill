@@ -67,11 +67,20 @@ jobs:
         TF_VAR_do_token: ${{ secrets.DO_TOKEN }}
         TF_VAR_run_tests: true
 
-    - name: Undeploy
-      if: always()
+    - name: Dump logs on failure
+      if: failure()
       working-directory: ../rpki-deploy/terraform/krill-e2e-test/run_on_do
-      run: terraform destroy -auto-approve -var "ssh_key_path=$HOME/secrets/ssh_key" -var "krill_build_path=${GITHUB_WORKSPACE}/../krill"
-      env:
-        # Don't embed env var references in env var definitions here, instead
-        # pass those using -var on the command line.
-        TF_VAR_do_token: ${{ secrets.DO_TOKEN }}
+      run: |
+        eval $(terraform output docker_env_vars)
+        pushd ../lib/docker
+        docker-compose ps
+        docker-compose logs
+
+#     - name: Undeploy
+#       if: always()
+#       working-directory: ../rpki-deploy/terraform/krill-e2e-test/run_on_do
+#       run: terraform destroy -auto-approve -var "ssh_key_path=$HOME/secrets/ssh_key" -var "krill_build_path=${GITHUB_WORKSPACE}/../krill"
+#       env:
+#         # Don't embed env var references in env var definitions here, instead
+#         # pass those using -var on the command line.
+#         TF_VAR_do_token: ${{ secrets.DO_TOKEN }}
