@@ -1,6 +1,6 @@
 name: E2E Test
 
-on: [push, pull_request, issue_comment]
+on: [push, pull_request]
 
 jobs:
   krill_e2e_test:
@@ -84,11 +84,11 @@ jobs:
         export KRILL_CLI_TOKEN=$(docker logs krill 2>&1 | tac | grep -Eom 1 'token [a-z0-9-]+' | cut -d ' ' -f 2)
         docker exec krill krillc list
 
-#     - name: Undeploy
-#       if: always()
-#       working-directory: ../rpki-deploy/terraform/krill-e2e-test/run_on_do
-#       run: terraform destroy -auto-approve -var "ssh_key_path=$HOME/secrets/ssh_key" -var "krill_build_path=${GITHUB_WORKSPACE}/../krill"
-#       env:
-#         # Don't embed env var references in env var definitions here, instead
-#         # pass those using -var on the command line.
-#         TF_VAR_do_token: ${{ secrets.DO_TOKEN }}
+    - name: Undeploy
+      if: always()
+      working-directory: ../rpki-deploy/terraform/krill-e2e-test/run_on_do
+      run: terraform destroy -auto-approve -var "ssh_key_path=$HOME/secrets/ssh_key" -var "krill_build_path=${GITHUB_WORKSPACE}/../krill"
+      env:
+        # Don't embed env var references in env var definitions here, instead
+        # pass those using -var on the command line.
+        TF_VAR_do_token: ${{ secrets.DO_TOKEN }}
