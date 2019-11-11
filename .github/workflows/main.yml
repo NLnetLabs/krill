@@ -1,6 +1,6 @@
 name: E2E Test
 
-on: [push, pull_reques, issue_comment]
+on: [push, pull_request, issue_comment]
 
 jobs:
   krill_e2e_test:
