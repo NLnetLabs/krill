@@ -19,6 +19,9 @@ jobs:
         ref: master
         fetch-depth: 1
 
+    - name: Debug print cwd
+      run: pwd
+
     # Use a modified Dockerfile which builds off a partially built base image
     # to leverage an existing Cargo cache and thus speed up deployment.
     - name: Install modified Dockerfile into Krill checkout
@@ -29,9 +32,6 @@ jobs:
       uses: marocchino/setup-terraform@v1
       with:
         version: "0.12.13"
-
-    - name: Debug print cwd
-      run: pwd
 
     - name: Install Terraform plugins
       run: |
