@@ -20,13 +20,15 @@ jobs:
         fetch-depth: 1
 
     - name: Debug print cwd
-      run: pwd
+      run: |
+        pwd
+        ls -la ..
 
     # Use a modified Dockerfile which builds off a partially built base image
     # to leverage an existing Cargo cache and thus speed up deployment.
     - name: Install modified Dockerfile into Krill checkout
       run: |
-        cp ${GITHUB_WORKSPACE}/../repki-deploy/terraform/krill-e2e-test/lib/docker/krill/Dockerfile ${GITHUB_WORKSPACE}/../krill/Dockerfile
+        cp ${GITHUB_WORKSPACE}/../rpki-deploy/terraform/krill-e2e-test/lib/docker/krill/Dockerfile ${GITHUB_WORKSPACE}/../krill/Dockerfile
 
     - name: Install Terraform
       uses: marocchino/setup-terraform@v1
@@ -36,10 +38,10 @@ jobs:
     - name: Install Terraform plugins
       run: |
         mkdir -p $HOME/.terraform.d/plugins/
-        cp ${GITHUB_WORKSPACE}/../repki-deploy/terraform/plugins/terraform-provider-dockermachine $HOME/.terraform.d/plugins/
+        cp ${GITHUB_WORKSPACE}/../rpki-deploy/terraform/plugins/terraform-provider-dockermachine $HOME/.terraform.d/plugins/
 
     - name: Decrypt SSH key
-      working-directory: ${GITHUB_WORKSPACE}/../repki-deploy/terraform/krill-e2e-test
+      working-directory: ${GITHUB_WORKSPACE}/../rpki-deploy/terraform/krill-e2e-test
       run: |
         ./decrypt-ssh-key.sh
         ls -la $HOME/secrets/
@@ -49,7 +51,7 @@ jobs:
     # Don't lock the state file, otherwise if the user cancels the build via the
     # GitHub Actions UI the terraform destroy cleanup step will fail.
     - name: Deploy
-      working-directory: ${GITHUB_WORKSPACE}/../repki-deploy/terraform/krill-e2e-test/run_on_do
+      working-directory: ${GITHUB_WORKSPACE}/../rpki-deploy/terraform/krill-e2e-test/run_on_do
       timeout-minutes: 30
       run: |
         terraform init
@@ -62,7 +64,7 @@ jobs:
         TF_VAR_size: s-8vcpu-32gb
 
     - name: Run tests
-      working-directory: ${GITHUB_WORKSPACE}/../repki-deploy/terraform/krill-e2e-test/run_on_do
+      working-directory: ${GITHUB_WORKSPACE}/../rpki-deploy/terraform/krill-e2e-test/run_on_do
       run: terraform apply -auto-approve -var "ssh_key_path=$HOME/secrets/ssh_key" -var "krill_build_path=${GITHUB_WORKSPACE}/../krill"
       env:
         # Don't embed env var references in env var definitions here, instead
@@ -72,7 +74,7 @@ jobs:
 
     - name: Undeploy
       if: always()
-      working-directory: ${GITHUB_WORKSPACE}/../repki-deploy/terraform/krill-e2e-test/run_on_do
+      working-directory: ${GITHUB_WORKSPACE}/../rpki-deploy/terraform/krill-e2e-test/run_on_do
       run: terraform destroy -auto-approve -var "ssh_key_path=$HOME/secrets/ssh_key" -var "krill_build_path=${GITHUB_WORKSPACE}/../krill"
       env:
         # Don't embed env var references in env var definitions here, instead
