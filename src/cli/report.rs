@@ -2,10 +2,11 @@ use std::str::{from_utf8_unchecked, FromStr};
 
 use crate::commons::api::{
     CaRepoDetails, CertAuthHistory, CertAuthInfo, CertAuthList, CurrentObjects, CurrentRepoState,
-    ParentCaContact, PublisherDetails, PublisherList, RepositoryContact, RouteAuthorization,
+    ParentCaContact, PublisherDetails, PublisherList, RepositoryContact,
 };
 use crate::commons::remote::api::ClientInfo;
 use crate::commons::remote::rfc8183;
+use crate::daemon::ca::RouteAuthorization;
 
 //------------ ApiResponse ---------------------------------------------------
 

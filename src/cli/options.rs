@@ -14,7 +14,7 @@ use crate::commons::api::RepositoryUpdate;
 use crate::commons::api::{
     AddChildRequest, AuthorizationFmtError, CertAuthInit, ChildAuthRequest, ChildHandle, Handle,
     ParentCaContact, ParentCaReq, ParentHandle, PublisherHandle, ResSetErr, ResourceSet,
-    RouteAuthorizationUpdates, Token, UpdateChildRequest,
+    RoaDefinitionUpdates, Token, UpdateChildRequest,
 };
 use crate::commons::remote::id::IdCert;
 use crate::commons::remote::rfc8183;
@@ -919,7 +919,7 @@ impl Options {
             let path = matches.value_of("delta").map(PathBuf::from).unwrap();
             let bytes = file::read(&path)?;
             let updates_str = unsafe { from_utf8_unchecked(&bytes) };
-            RouteAuthorizationUpdates::from_str(updates_str)?
+            RoaDefinitionUpdates::from_str(updates_str)?
         };
 
         let command = Command::CertAuth(CaCommand::RouteAuthorizationsUpdate(my_ca, updates));
@@ -1175,7 +1175,7 @@ pub enum CaCommand {
     RouteAuthorizationsList(Handle),
 
     // Update the Route Authorizations for this CA
-    RouteAuthorizationsUpdate(Handle, RouteAuthorizationUpdates),
+    RouteAuthorizationsUpdate(Handle, RoaDefinitionUpdates),
 
     // Show details for this CA
     Show(Handle),

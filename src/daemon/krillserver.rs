@@ -12,7 +12,7 @@ use crate::commons::api::{
     AddChildRequest, CaRepoDetails, CertAuthHistory, CertAuthInfo, CertAuthInit, CertAuthList,
     ChildCaInfo, ChildHandle, CurrentRepoState, Handle, ListReply, ParentCaContact, ParentCaReq,
     ParentHandle, PublishDelta, PublisherDetails, PublisherHandle, RepoInfo, RepositoryContact,
-    RepositoryUpdate, RouteAuthorizationUpdates, TaCertDetails, Token, UpdateChildRequest,
+    RepositoryUpdate, RoaDefinitionUpdates, TaCertDetails, Token, UpdateChildRequest,
 };
 use crate::commons::remote::rfc8183;
 use crate::commons::remote::sigmsg::SignedMessage;
@@ -458,8 +458,8 @@ impl KrillServer {
 /// # Handle route authorization requests
 ///
 impl KrillServer {
-    pub fn ca_routes_update(&self, handle: Handle, updates: RouteAuthorizationUpdates) -> EmptyRes {
-        Ok(self.caserver.ca_routes_update(handle, updates)?)
+    pub fn ca_routes_update(&self, handle: Handle, updates: RoaDefinitionUpdates) -> EmptyRes {
+        Ok(self.caserver.ca_routes_update(handle, updates.into())?)
     }
 }
 

@@ -11,7 +11,7 @@ use crate::cli::{Error, KrillClient};
 use crate::commons::api::{
     AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildAuthRequest, ChildHandle,
     Handle, ParentCaContact, ParentCaReq, ParentHandle, Publish, PublisherDetails, PublisherHandle,
-    ResourceClassKeysInfo, ResourceClassName, ResourceSet, RouteAuthorizationUpdates,
+    ResourceClassKeysInfo, ResourceClassName, ResourceSet, RoaDefinitionUpdates,
     UpdateChildRequest,
 };
 use crate::commons::remote::rfc8183;
@@ -280,17 +280,14 @@ pub fn ca_roll_activate(handle: &Handle) {
     )));
 }
 
-pub fn ca_route_authorizations_update(handle: &Handle, updates: RouteAuthorizationUpdates) {
+pub fn ca_route_authorizations_update(handle: &Handle, updates: RoaDefinitionUpdates) {
     krill_admin(Command::CertAuth(CaCommand::RouteAuthorizationsUpdate(
         handle.clone(),
         updates,
     )));
 }
 
-pub fn ca_route_authorizations_update_expect_error(
-    handle: &Handle,
-    updates: RouteAuthorizationUpdates,
-) {
+pub fn ca_route_authorizations_update_expect_error(handle: &Handle, updates: RoaDefinitionUpdates) {
     krill_admin_expect_error(Command::CertAuth(CaCommand::RouteAuthorizationsUpdate(
         handle.clone(),
         updates,

@@ -1,13 +1,114 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::fmt;
+use std::ops::Deref;
+use std::str::FromStr;
+
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::roa::{Roa, RoaBuilder};
 use rpki::sigobj::SignedObjectBuilder;
 use rpki::uri;
 use rpki::x509::{Serial, Time};
 
-use crate::commons::api::{ObjectName, ReplacedObject, RouteAuthorization};
+use crate::commons::api::{ObjectName, ReplacedObject, RoaDefinition, RoaDefinitionUpdates};
 use crate::daemon::ca::events::RoaUpdates;
 use crate::daemon::ca::{self, CertifiedKey, SignSupport, Signer};
+
+//------------ RouteAuthorization ------------------------------------------
+
+/// This type defines a prefix and optional maximum length (other than the
+/// prefix length) which is to be authorized for the given origin ASN.
+#[derive(Clone, Copy, Debug, Display, Eq, Hash, PartialEq)]
+pub struct RouteAuthorization(RoaDefinition);
+
+impl RouteAuthorization {
+    pub fn new(definition: RoaDefinition) -> Self {
+        RouteAuthorization(definition)
+    }
+}
+
+impl AsRef<RoaDefinition> for RouteAuthorization {
+    fn as_ref(&self) -> &RoaDefinition {
+        &self.0
+    }
+}
+
+impl Deref for RouteAuthorization {
+    type Target = RoaDefinition;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl Serialize for RouteAuthorization {
+    fn serialize<S>(&self, s: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.to_string().serialize(s)
+    }
+}
+
+impl<'de> Deserialize<'de> for RouteAuthorization {
+    fn deserialize<D>(d: D) -> Result<RouteAuthorization, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let string = String::deserialize(d)?;
+        let def = RoaDefinition::from_str(string.as_str()).map_err(de::Error::custom)?;
+        Ok(RouteAuthorization(def))
+    }
+}
+
+impl From<RoaDefinition> for RouteAuthorization {
+    fn from(def: RoaDefinition) -> Self {
+        RouteAuthorization(def)
+    }
+}
+
+//------------ RouteAuthorizationUpdates -----------------------------------
+
+///
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RouteAuthorizationUpdates {
+    added: HashSet<RouteAuthorization>,
+    removed: HashSet<RouteAuthorization>,
+}
+
+impl RouteAuthorizationUpdates {
+    pub fn unpack(self) -> (HashSet<RouteAuthorization>, HashSet<RouteAuthorization>) {
+        (self.added, self.removed)
+    }
+}
+
+impl From<RoaDefinitionUpdates> for RouteAuthorizationUpdates {
+    fn from(definitions: RoaDefinitionUpdates) -> Self {
+        let (added, removed) = definitions.unpack();
+        let added = added.into_iter().map(RoaDefinition::into).collect();
+        let removed = removed.into_iter().map(RoaDefinition::into).collect();
+        RouteAuthorizationUpdates { added, removed }
+    }
+}
+
+impl fmt::Display for RouteAuthorizationUpdates {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if !self.added.is_empty() {
+            write!(f, "added:")?;
+            for a in &self.added {
+                write!(f, " {}", a)?;
+            }
+            write!(f, " ")?;
+        }
+        if !self.removed.is_empty() {
+            write!(f, "removed:")?;
+            for r in &self.removed {
+                write!(f, " {}", r)?;
+            }
+        }
+        Ok(())
+    }
+}
 
 //------------ Routes ------------------------------------------------------
 
@@ -181,8 +282,8 @@ impl Roas {
 
         let signing_key = certified_key.key_id();
 
-        let mut roa_builder = RoaBuilder::new(auth.origin().into());
-        roa_builder.push_addr(prefix.addr(), prefix.length(), prefix.max_length());
+        let mut roa_builder = RoaBuilder::new(auth.asn().into());
+        roa_builder.push_addr(prefix.ip_addr(), prefix.addr_len(), auth.max_length());
         let mut object_builder = SignedObjectBuilder::new(
             Serial::random(signer).map_err(ca::Error::signer)?,
             SignSupport::sign_validity_year(),
@@ -196,5 +297,32 @@ impl Roas {
         roa_builder
             .finalize(object_builder, signer, signing_key)
             .map_err(ca::Error::signer)
+    }
+}
+
+//------------ Tests -------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn serde_route_authorization() {
+        fn parse_encode_authorization(s: &str) {
+            let def = RoaDefinition::from_str(s).unwrap();
+            let auth = RouteAuthorization(def);
+
+            let json = serde_json::to_string(&auth).unwrap();
+            assert_eq!(format!("\"{}\"", s), json);
+
+            let des: RouteAuthorization = serde_json::from_str(&json).unwrap();
+            assert_eq!(des, auth);
+        }
+
+        parse_encode_authorization("192.168.0.0/16 => 64496");
+        parse_encode_authorization("192.168.0.0/16-24 => 64496");
+        parse_encode_authorization("2001:db8::/32 => 64496");
+        parse_encode_authorization("2001:db8::/32-48 => 64496");
     }
 }

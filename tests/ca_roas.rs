@@ -3,7 +3,7 @@ extern crate krill;
 use std::str::FromStr;
 
 use krill::commons::api::{
-    Handle, ObjectName, ParentCaReq, ResourceSet, RouteAuthorization, RouteAuthorizationUpdates,
+    Handle, ObjectName, ParentCaReq, ResourceSet, RoaDefinition, RoaDefinitionUpdates,
 };
 use krill::daemon::ca::ta_handle;
 use krill::daemon::test::*;
@@ -31,9 +31,9 @@ fn ca_roas() {
         }
 
         // Add some Route Authorizations
-        let route_1 = RouteAuthorization::from_str("10.0.0.0/24 => 64496").unwrap();
-        let route_2 = RouteAuthorization::from_str("2001:DB8::/32-48 => 64496").unwrap();
-        let route_3 = RouteAuthorization::from_str("192.168.0.0/24 => 64496").unwrap();
+        let route_1 = RoaDefinition::from_str("10.0.0.0/24 => 64496").unwrap();
+        let route_2 = RoaDefinition::from_str("2001:DB8::/32-48 => 64496").unwrap();
+        let route_3 = RoaDefinition::from_str("192.168.0.0/24 => 64496").unwrap();
 
         let crl_file = ".crl";
         let mft_file = ".mft";
@@ -44,20 +44,20 @@ fn ca_roas() {
         let route3_file = ObjectName::from(&route_3).to_string();
         let route3_file = route3_file.as_str();
 
-        let mut updates = RouteAuthorizationUpdates::empty();
+        let mut updates = RoaDefinitionUpdates::empty();
         updates.add(route_1);
         updates.add(route_2);
         ca_route_authorizations_update(&child, updates);
         wait_for_published_objects(&child, &[crl_file, mft_file, route1_file, route2_file]);
 
         // Remove a Route Authorization
-        let mut updates = RouteAuthorizationUpdates::empty();
+        let mut updates = RoaDefinitionUpdates::empty();
         updates.remove(route_1);
         ca_route_authorizations_update(&child, updates);
         wait_for_published_objects(&child, &[crl_file, mft_file, route2_file]);
 
         // Refuse authorization for prefix not held by CA
-        let mut updates = RouteAuthorizationUpdates::empty();
+        let mut updates = RoaDefinitionUpdates::empty();
         updates.add(route_3);
         ca_route_authorizations_update_expect_error(&child, updates);
 
@@ -67,7 +67,7 @@ fn ca_roas() {
         wait_for_published_objects(&child, &[crl_file, mft_file]);
 
         // Now route3 can be added
-        let mut updates = RouteAuthorizationUpdates::empty();
+        let mut updates = RoaDefinitionUpdates::empty();
         updates.add(route_3);
         ca_route_authorizations_update(&child, updates);
         wait_for_published_objects(&child, &[crl_file, mft_file, route3_file]);

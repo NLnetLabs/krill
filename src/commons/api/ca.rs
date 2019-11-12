@@ -24,12 +24,12 @@ use crate::commons::api::publication;
 use crate::commons::api::publication::Publish;
 use crate::commons::api::{
     Base64, HexEncodedHash, IssuanceRequest, ListReply, ParentHandle, RepositoryContact,
-    RequestResourceLimit, RouteAuthorization,
+    RequestResourceLimit, RoaDefinition,
 };
 use crate::commons::eventsourcing::AggregateHistory;
 use crate::commons::remote::id::IdCert;
 use crate::commons::util::ext_serde;
-use crate::daemon::ca::{self, CertAuth, Signer};
+use crate::daemon::ca::{self, CertAuth, RouteAuthorization, Signer};
 
 //------------ ResourceClassName -------------------------------------------
 
@@ -614,6 +614,12 @@ impl From<&Crl> for ObjectName {
 impl From<&RouteAuthorization> for ObjectName {
     fn from(auth: &RouteAuthorization) -> Self {
         ObjectName(format!("{}.roa", hex::encode(auth.to_string())))
+    }
+}
+
+impl From<&RoaDefinition> for ObjectName {
+    fn from(def: &RoaDefinition) -> Self {
+        ObjectName(format!("{}.roa", hex::encode(def.to_string())))
     }
 }
 

@@ -13,14 +13,14 @@ use crate::commons::api::{
     AddedObject, CurrentObject, CurrentObjects, EntitlementClass, HexEncodedHash, IssuanceRequest,
     IssuedCert, ObjectName, ObjectsDelta, ParentHandle, RcvdCert, ReplacedObject, RepoInfo,
     RequestResourceLimit, ResourceClassInfo, ResourceClassName, ResourceSet, Revocation,
-    RevocationRequest, RevokedObject, RouteAuthorization, UpdatedObject, WithdrawnObject,
+    RevocationRequest, RevokedObject, UpdatedObject, WithdrawnObject,
 };
 use crate::daemon::ca::events::{ChildCertificateUpdates, RoaUpdates};
 use crate::daemon::ca::signing::CsrInfo;
 use crate::daemon::ca::{
     self, ta_handle, AddedOrUpdated, CertifiedKey, ChildCertificates, CrlBuilder, CurrentKey,
     CurrentObjectSetDelta, Error, EvtDet, KeyState, ManifestBuilder, NewKey, OldKey, PendingKey,
-    Result, RoaInfo, Roas, SignSupport, Signer,
+    Result, RoaInfo, Roas, RouteAuthorization, SignSupport, Signer,
 };
 
 //------------ ResourceClass -----------------------------------------------

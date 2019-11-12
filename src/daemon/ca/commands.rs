@@ -6,11 +6,11 @@ use chrono::Duration;
 use crate::commons::api::{
     ChildHandle, Entitlements, Handle, IssuanceRequest, ParentCaContact, ParentHandle, RcvdCert,
     RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse,
-    RouteAuthorizationUpdates, UpdateChildRequest,
+    UpdateChildRequest,
 };
 use crate::commons::eventsourcing;
 use crate::commons::remote::id::IdCert;
-use crate::daemon::ca::{Evt, Signer};
+use crate::daemon::ca::{Evt, RouteAuthorizationUpdates, Signer};
 
 //------------ Command -----------------------------------------------------
 

@@ -8,7 +8,7 @@ use serde::Serialize;
 use crate::commons::api::rrdp::VerificationError;
 use crate::commons::api::{
     AddChildRequest, CertAuthInit, ErrorCode, ErrorResponse, Handle, ParentCaContact, ParentCaReq,
-    ParentHandle, PublisherHandle, PublisherList, RepositoryUpdate, RouteAuthorizationUpdates,
+    ParentHandle, PublisherHandle, PublisherList, RepositoryUpdate, RoaDefinitionUpdates,
     UpdateChildRequest,
 };
 use crate::commons::remote::sigmsg::SignedMessage;
@@ -450,7 +450,7 @@ pub fn ca_routes_update(
     server: web::Data<AppServer>,
     auth: Auth,
     handle: Path<Handle>,
-    updates: Json<RouteAuthorizationUpdates>,
+    updates: Json<RoaDefinitionUpdates>,
 ) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_empty_res(

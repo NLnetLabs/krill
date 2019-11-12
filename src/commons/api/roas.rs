@@ -1,15 +1,93 @@
 use std::collections::HashSet;
 use std::fmt;
-use std::hash::{Hash, Hasher};
 use std::net::IpAddr;
+use std::ops::Deref;
 use std::str::FromStr;
 
-use serde::de;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
-use rpki::resources::{AddressFamily, AsBlocks, AsId, IpBlocks, IpBlocksBuilder, Prefix};
+use rpki::resources::{AsBlocks, AsId, IpBlocks, IpBlocksBuilder, Prefix};
 
-use crate::commons::api::ca::ResourceSet;
+use crate::commons::api::ResourceSet;
+
+//------------ RoaDefinition -----------------------------------------------
+
+/// This type defines the definition of a Route Origin Authorization (ROA), i.e.
+/// the originating asn, IPv4 or IPv6 prefix, and optionally a max length.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct RoaDefinition {
+    asn: AsNumber,
+    prefix: TypedPrefix,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_length: Option<u8>,
+}
+
+impl RoaDefinition {
+    pub fn new(asn: AsNumber, prefix: TypedPrefix, max_length: Option<u8>) -> Self {
+        RoaDefinition {
+            asn,
+            prefix,
+            max_length,
+        }
+    }
+
+    pub fn asn(&self) -> AsNumber {
+        self.asn
+    }
+
+    pub fn prefix(&self) -> TypedPrefix {
+        self.prefix
+    }
+
+    pub fn max_length(&self) -> Option<u8> {
+        self.max_length
+    }
+}
+
+impl FromStr for RoaDefinition {
+    type Err = AuthorizationFmtError;
+
+    // "192.168.0.0/16 => 64496"
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut parts = s.split("=>");
+
+        let prefix_part = parts.next().ok_or_else(|| AuthorizationFmtError::auth(s))?;
+        let mut prefix_parts = prefix_part.split('-');
+        let prefix_str = prefix_parts
+            .next()
+            .ok_or_else(|| AuthorizationFmtError::auth(s))?;
+
+        let prefix = TypedPrefix::from_str(&prefix_str.trim())?;
+
+        let max_length = match prefix_parts.next() {
+            None => None,
+            Some(length_str) => {
+                Some(u8::from_str(&length_str.trim()).map_err(|_| AuthorizationFmtError::auth(s))?)
+            }
+        };
+
+        let asn_str = parts.next().ok_or_else(|| AuthorizationFmtError::auth(s))?;
+        if parts.next().is_some() {
+            return Err(AuthorizationFmtError::auth(s));
+        }
+        let origin = AsNumber::from_str(&asn_str.trim())?;
+
+        Ok(RoaDefinition {
+            asn: origin,
+            prefix,
+            max_length,
+        })
+    }
+}
+
+impl fmt::Display for RoaDefinition {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.max_length {
+            None => write!(f, "{} => {}", self.prefix, self.asn),
+            Some(length) => write!(f, "{}-{} => {}", self.prefix, length, self.asn),
+        }
+    }
+}
 
 //------------ RouteAuthorizationUpdates -----------------------------------
 
@@ -22,19 +100,19 @@ use crate::commons::api::ca::ResourceSet;
 /// all authorisations for a given prefix are published together in order to
 /// avoid invalidating announcements.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct RouteAuthorizationUpdates {
-    added: HashSet<RouteAuthorization>,
-    removed: HashSet<RouteAuthorization>,
+pub struct RoaDefinitionUpdates {
+    added: HashSet<RoaDefinition>,
+    removed: HashSet<RoaDefinition>,
 }
 
-impl RouteAuthorizationUpdates {
-    pub fn new(added: HashSet<RouteAuthorization>, removed: HashSet<RouteAuthorization>) -> Self {
-        RouteAuthorizationUpdates { added, removed }
+impl RoaDefinitionUpdates {
+    pub fn new(added: HashSet<RoaDefinition>, removed: HashSet<RoaDefinition>) -> Self {
+        RoaDefinitionUpdates { added, removed }
     }
 
     /// Unpack this and return all added (left), and all removed (right) route
     /// authorizations.
-    pub fn unpack(self) -> (HashSet<RouteAuthorization>, HashSet<RouteAuthorization>) {
+    pub fn unpack(self) -> (HashSet<RoaDefinition>, HashSet<RoaDefinition>) {
         (self.added, self.removed)
     }
 
@@ -42,25 +120,25 @@ impl RouteAuthorizationUpdates {
         Self::default()
     }
 
-    pub fn add(&mut self, add: RouteAuthorization) {
+    pub fn add(&mut self, add: RoaDefinition) {
         self.added.insert(add);
     }
 
-    pub fn remove(&mut self, rem: RouteAuthorization) {
+    pub fn remove(&mut self, rem: RoaDefinition) {
         self.removed.insert(rem);
     }
 }
 
-impl Default for RouteAuthorizationUpdates {
+impl Default for RoaDefinitionUpdates {
     fn default() -> Self {
-        RouteAuthorizationUpdates {
+        RoaDefinitionUpdates {
             added: HashSet::new(),
             removed: HashSet::new(),
         }
     }
 }
 
-impl fmt::Display for RouteAuthorizationUpdates {
+impl fmt::Display for RoaDefinitionUpdates {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for a in &self.added {
             writeln!(f, "A: {}", a)?;
@@ -72,7 +150,7 @@ impl fmt::Display for RouteAuthorizationUpdates {
     }
 }
 
-impl FromStr for RouteAuthorizationUpdates {
+impl FromStr for RoaDefinitionUpdates {
     type Err = AuthorizationFmtError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -91,71 +169,87 @@ impl FromStr for RouteAuthorizationUpdates {
             } else if line.starts_with("A:") {
                 let line = &line[2..];
                 let line = line.trim();
-                let auth = RouteAuthorization::from_str(line)?;
+                let auth = RoaDefinition::from_str(line)?;
                 added.insert(auth);
             } else if line.starts_with("R:") {
                 let line = &line[2..];
                 let line = line.trim();
-                let auth = RouteAuthorization::from_str(line)?;
+                let auth = RoaDefinition::from_str(line)?;
                 removed.insert(auth);
             } else {
                 return Err(AuthorizationFmtError::delta(line));
             }
         }
 
-        Ok(RouteAuthorizationUpdates { added, removed })
+        Ok(RoaDefinitionUpdates { added, removed })
     }
 }
 
-//------------ RouteAuthorization ------------------------------------------
-
-/// This type defines a prefix and optional maximum length (other than the
-/// prefix length) which is to be authorized for the given origin ASN.
+//------------ TypedPrefix -------------------------------------------------
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct RouteAuthorization {
-    origin: AsNumber,
-    prefix: RoaPrefix,
+pub enum TypedPrefix {
+    V4(Ipv4Prefix),
+    V6(Ipv6Prefix),
 }
 
-impl RouteAuthorization {
-    pub fn new(origin: AsNumber, prefix: RoaPrefix) -> Self {
-        RouteAuthorization { origin, prefix }
+impl TypedPrefix {
+    pub fn prefix(&self) -> &Prefix {
+        self.as_ref()
     }
 
-    pub fn origin(&self) -> AsNumber {
-        self.origin
-    }
-
-    pub fn prefix(&self) -> RoaPrefix {
-        self.prefix
+    pub fn ip_addr(&self) -> IpAddr {
+        match self {
+            TypedPrefix::V4(v4) => IpAddr::V4(v4.0.to_v4()),
+            TypedPrefix::V6(v6) => IpAddr::V6(v6.0.to_v6()),
+        }
     }
 }
 
-impl FromStr for RouteAuthorization {
+impl FromStr for TypedPrefix {
     type Err = AuthorizationFmtError;
 
-    // "192.168.0.0/16 => 64496"
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut parts = s.split("=>");
-        let prefix_str = parts.next().ok_or_else(|| AuthorizationFmtError::auth(s))?;
-        let asn_str = parts.next().ok_or_else(|| AuthorizationFmtError::auth(s))?;
-        if parts.next().is_some() {
-            return Err(AuthorizationFmtError::auth(s));
+    fn from_str(prefix: &str) -> Result<Self, Self::Err> {
+        if prefix.contains('.') {
+            Ok(TypedPrefix::V4(Ipv4Prefix(
+                Prefix::from_v4_str(prefix.trim())
+                    .map_err(|_| AuthorizationFmtError::pfx(prefix))?,
+            )))
+        } else {
+            Ok(TypedPrefix::V6(Ipv6Prefix(
+                Prefix::from_v6_str(prefix.trim())
+                    .map_err(|_| AuthorizationFmtError::pfx(prefix))?,
+            )))
         }
-        let prefix = RoaPrefix::from_str(&prefix_str)?;
-        let origin = AsNumber::from_str(&asn_str)?;
-
-        Ok(RouteAuthorization { origin, prefix })
     }
 }
 
-impl fmt::Display for RouteAuthorization {
+impl fmt::Display for TypedPrefix {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} => {}", self.prefix, self.origin)
+        match self {
+            TypedPrefix::V4(pfx) => pfx.fmt(f),
+            TypedPrefix::V6(pfx) => pfx.fmt(f),
+        }
     }
 }
 
-impl Serialize for RouteAuthorization {
+impl AsRef<Prefix> for TypedPrefix {
+    fn as_ref(&self) -> &Prefix {
+        match self {
+            TypedPrefix::V4(v4) => &v4.0,
+            TypedPrefix::V6(v6) => &v6.0,
+        }
+    }
+}
+
+impl Deref for TypedPrefix {
+    type Target = Prefix;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_ref()
+    }
+}
+
+impl Serialize for TypedPrefix {
     fn serialize<S>(&self, s: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -164,157 +258,54 @@ impl Serialize for RouteAuthorization {
     }
 }
 
-impl<'de> Deserialize<'de> for RouteAuthorization {
-    fn deserialize<D>(d: D) -> Result<RouteAuthorization, D::Error>
+impl<'de> Deserialize<'de> for TypedPrefix {
+    fn deserialize<D>(d: D) -> Result<TypedPrefix, D::Error>
     where
         D: Deserializer<'de>,
     {
         let string = String::deserialize(d)?;
-        RouteAuthorization::from_str(string.as_str()).map_err(de::Error::custom)
+        TypedPrefix::from_str(string.as_str()).map_err(de::Error::custom)
     }
 }
 
-//------------ RoaPrefix ---------------------------------------------------
+impl From<TypedPrefix> for ResourceSet {
+    fn from(tp: TypedPrefix) -> ResourceSet {
+        match tp {
+            TypedPrefix::V4(v4) => {
+                let mut builder = IpBlocksBuilder::new();
+                builder.push(v4.0);
+                let blocks = builder.finalize();
 
-/// This type defines a ROA IPv4 or IPv6 prefix and optional max length.
-#[derive(Clone, Copy, Debug)]
-pub struct RoaPrefix {
-    prefix: Prefix,
-    max_length: Option<u8>,
-    family: AddressFamily,
-}
+                ResourceSet::new(AsBlocks::empty(), blocks, IpBlocks::empty())
+            }
+            TypedPrefix::V6(v6) => {
+                let mut builder = IpBlocksBuilder::new();
+                builder.push(v6.0);
+                let blocks = builder.finalize();
 
-impl RoaPrefix {
-    pub fn addr(&self) -> IpAddr {
-        match self.family {
-            AddressFamily::Ipv4 => IpAddr::V4(self.prefix.to_v4()),
-            AddressFamily::Ipv6 => IpAddr::V6(self.prefix.to_v6()),
-        }
-    }
-
-    pub fn length(&self) -> u8 {
-        self.prefix.addr_len()
-    }
-
-    pub fn max_length(&self) -> Option<u8> {
-        self.max_length
-    }
-}
-
-impl From<RoaPrefix> for ResourceSet {
-    fn from(pfx: RoaPrefix) -> Self {
-        let mut builder = IpBlocksBuilder::new();
-        builder.push(pfx.prefix);
-        let blocks = builder.finalize();
-
-        match pfx.family {
-            AddressFamily::Ipv4 => ResourceSet::new(AsBlocks::empty(), blocks, IpBlocks::empty()),
-            AddressFamily::Ipv6 => ResourceSet::new(AsBlocks::empty(), IpBlocks::empty(), blocks),
+                ResourceSet::new(AsBlocks::empty(), IpBlocks::empty(), blocks)
+            }
         }
     }
 }
 
-impl Hash for RoaPrefix {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.prefix.hash(state);
-        self.max_length.hash(state);
-        match self.family {
-            AddressFamily::Ipv4 => 1.hash(state),
-            AddressFamily::Ipv6 => 2.hash(state),
-        }
-    }
-}
+//------------ Ipv4Prefix --------------------------------------------------
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Ipv4Prefix(Prefix);
 
-impl PartialEq for RoaPrefix {
-    fn eq(&self, other: &RoaPrefix) -> bool {
-        self.prefix == other.prefix
-            && self.max_length == other.max_length
-            && self.family == other.family
-    }
-}
-
-impl Eq for RoaPrefix {}
-
-impl fmt::Display for RoaPrefix {
+impl fmt::Display for Ipv4Prefix {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let add = self.prefix.addr();
-        let add_str = match self.family {
-            AddressFamily::Ipv4 => add.to_v4().to_string(),
-            AddressFamily::Ipv6 => add.to_v6().to_string(),
-        };
-        match self.max_length {
-            None => write!(f, "{}/{}", add_str, self.prefix.addr_len()),
-            Some(max) => write!(f, "{}/{}-{}", add_str, self.prefix.addr_len(), max),
-        }
+        write!(f, "{}/{}", self.0.to_v4(), self.0.addr_len())
     }
 }
 
-impl FromStr for RoaPrefix {
-    type Err = AuthorizationFmtError;
+//------------ Ipv6Prefix --------------------------------------------------
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct Ipv6Prefix(Prefix);
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let s = s.trim();
-
-        let mut parts = s.split('-');
-        let prefix = parts.next().ok_or_else(|| AuthorizationFmtError::pfx(s))?;
-
-        let family = if s.contains('.') {
-            AddressFamily::Ipv4
-        } else if s.contains(':') {
-            AddressFamily::Ipv6
-        } else {
-            return Err(AuthorizationFmtError::pfx(s));
-        };
-
-        let prefix = match family {
-            AddressFamily::Ipv4 => {
-                Prefix::from_v4_str(prefix).map_err(|_| AuthorizationFmtError::pfx(s))
-            }
-            AddressFamily::Ipv6 => {
-                Prefix::from_v6_str(prefix).map_err(|_| AuthorizationFmtError::pfx(s))
-            }
-        }
-        .map_err(|_| AuthorizationFmtError::pfx(s))?;
-
-        let max_length = match parts.next() {
-            None => None,
-            Some(s) => Some(u8::from_str(s).map_err(|_| AuthorizationFmtError::pfx(s))?),
-        };
-
-        if let Some(max) = max_length {
-            let too_long = match family {
-                AddressFamily::Ipv4 => max > 32,
-                AddressFamily::Ipv6 => max > 128,
-            };
-            if max < prefix.addr_len() || too_long {
-                return Err(AuthorizationFmtError::pfx(s));
-            }
-        }
-
-        Ok(RoaPrefix {
-            prefix,
-            max_length,
-            family,
-        })
-    }
-}
-
-impl Serialize for RoaPrefix {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        self.to_string().serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for RoaPrefix {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let string = String::deserialize(deserializer)?;
-        RoaPrefix::from_str(string.as_str()).map_err(de::Error::custom)
+impl fmt::Display for Ipv6Prefix {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}/{}", self.0.to_v6(), self.0.addr_len())
     }
 }
 
@@ -377,11 +368,11 @@ impl AuthorizationFmtError {
         AuthorizationFmtError::Asn(s.to_string())
     }
 
-    fn auth(s: &str) -> Self {
+    pub fn auth(s: &str) -> Self {
         AuthorizationFmtError::Auth(s.to_string())
     }
 
-    fn delta(s: &str) -> Self {
+    pub fn delta(s: &str) -> Self {
         AuthorizationFmtError::Delta(s.to_string())
     }
 }
@@ -391,26 +382,6 @@ impl AuthorizationFmtError {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parse_roa_prefix() {
-        assert!(RoaPrefix::from_str("192.168.0.0/16").is_ok());
-        assert!(RoaPrefix::from_str("192.168.0.0/16-16").is_ok());
-        assert!(RoaPrefix::from_str("192.168.0.0/16-24").is_ok());
-        assert!(RoaPrefix::from_str("192.168.0.0/16-15").is_err());
-        assert!(RoaPrefix::from_str("192.168.0.0/16-33").is_err());
-    }
-
-    #[test]
-    fn parse_route_authorization() {
-        fn parse_encode_authorization(s: &str) {
-            let authz = RouteAuthorization::from_str(s).unwrap();
-            assert_eq!(s, authz.to_string().as_str());
-        }
-
-        parse_encode_authorization("192.168.0.0/16 => 64496");
-        parse_encode_authorization("192.168.0.0/16-24 => 64496");
-    }
 
     #[test]
     fn parse_delta() {
@@ -425,19 +396,54 @@ mod tests {
 
         let expected = {
             let mut added = HashSet::new();
-            added.insert(RouteAuthorization::from_str("192.168.0.0/16 => 64496").unwrap());
-            added.insert(RouteAuthorization::from_str("192.168.1.0/24 => 64496").unwrap());
+            added.insert(RoaDefinition::from_str("192.168.0.0/16 => 64496").unwrap());
+            added.insert(RoaDefinition::from_str("192.168.1.0/24 => 64496").unwrap());
 
             let mut removed = HashSet::new();
-            removed.insert(RouteAuthorization::from_str("192.168.3.0/24 => 64496").unwrap());
-            RouteAuthorizationUpdates::new(added, removed)
+            removed.insert(RoaDefinition::from_str("192.168.3.0/24 => 64496").unwrap());
+            RoaDefinitionUpdates::new(added, removed)
         };
 
-        let parsed = RouteAuthorizationUpdates::from_str(delta).unwrap();
+        let parsed = RoaDefinitionUpdates::from_str(delta).unwrap();
         assert_eq!(expected, parsed);
 
-        let reparsed = RouteAuthorizationUpdates::from_str(&parsed.to_string()).unwrap();
+        let reparsed = RoaDefinitionUpdates::from_str(&parsed.to_string()).unwrap();
         assert_eq!(parsed, reparsed);
+    }
+
+    #[test]
+    fn parse_type_prefix() {
+        assert!(TypedPrefix::from_str("192.168.0.0/16").is_ok());
+        assert!(TypedPrefix::from_str("2001:db8::/32").is_ok());
+    }
+
+    #[test]
+    fn normalize_roa_definition_json() {
+        let def = RoaDefinition::from_str("192.168.0.0/16 => 64496").unwrap();
+        let json = serde_json::to_string(&def).unwrap();
+        let expected = "{\"asn\":64496,\"prefix\":\"192.168.0.0/16\"}";
+        assert_eq!(json, expected);
+
+        let def = RoaDefinition::from_str("192.168.0.0/16-24 => 64496").unwrap();
+        let json = serde_json::to_string(&def).unwrap();
+        let expected = "{\"asn\":64496,\"prefix\":\"192.168.0.0/16\",\"max_length\":24}";
+        assert_eq!(json, expected);
+    }
+
+    #[test]
+    fn serde_roa_definition() {
+        fn parse_ser_de_print_definition(s: &str) {
+            let def = RoaDefinition::from_str(s).unwrap();
+            let ser = serde_json::to_string(&def).unwrap();
+            let de = serde_json::from_str(&ser).unwrap();
+            assert_eq!(def, de);
+            assert_eq!(s, de.to_string().as_str())
+        }
+
+        parse_ser_de_print_definition("192.168.0.0/16 => 64496");
+        parse_ser_de_print_definition("192.168.0.0/16-24 => 64496");
+        parse_ser_de_print_definition("2001:db8::/32 => 64496");
+        parse_ser_de_print_definition("2001:db8::/32-48 => 64496");
     }
 
 }

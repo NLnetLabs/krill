@@ -16,7 +16,7 @@ use crate::commons::api::{
     self, CertAuthInfo, ChildHandle, EntitlementClass, Entitlements, Handle, IssuanceRequest,
     IssuedCert, ObjectsDelta, ParentCaContact, ParentHandle, RcvdCert, RepositoryContact,
     RequestResourceLimit, ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse,
-    RouteAuthorization, RouteAuthorizationUpdates, SigningCert, UpdateChildRequest,
+    SigningCert, UpdateChildRequest,
 };
 use crate::commons::eventsourcing::{Aggregate, StoredEvent};
 use crate::commons::remote::builder::{IdCertBuilder, SignedMessageBuilder};
@@ -30,7 +30,7 @@ use crate::daemon::ca::rc::PublishMode;
 use crate::daemon::ca::signing::CsrInfo;
 use crate::daemon::ca::{
     self, ta_handle, ChildDetails, Cmd, CmdDet, CurrentObjectSetDelta, Error, Evt, EvtDet, Ini,
-    ResourceClass, Result, Routes, Signer,
+    ResourceClass, Result, RouteAuthorization, RouteAuthorizationUpdates, Routes, Signer,
 };
 
 //------------ Rfc8183Id ---------------------------------------------------

@@ -12,9 +12,9 @@ use rpki::x509::{Serial, Time, Validity};
 
 use crate::commons::api::{
     AddedObject, CurrentObject, HexEncodedHash, IssuedCert, ObjectName, ObjectsDelta, RcvdCert,
-    Revocation, Revocations, RevocationsDelta, RouteAuthorization, UpdatedObject, WithdrawnObject,
+    Revocation, Revocations, RevocationsDelta, UpdatedObject, WithdrawnObject,
 };
-use crate::daemon::ca::{self, RoaInfo, Signer};
+use crate::daemon::ca::{self, RoaInfo, RouteAuthorization, Signer};
 
 //------------ AddedOrUpdated ----------------------------------------------
 

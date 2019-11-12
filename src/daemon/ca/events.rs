@@ -11,15 +11,15 @@ use rpki::x509::{Serial, Time, Validity};
 use crate::commons::api::{
     AddedObject, ChildHandle, CurrentObject, Handle, IssuanceRequest, IssuedCert, ObjectName,
     ObjectsDelta, ParentCaContact, ParentHandle, RcvdCert, RepoInfo, RepositoryContact,
-    ResourceClassName, ResourceSet, Revocation, RevocationRequest, RevokedObject,
-    RouteAuthorization, TaCertDetails, TrustAnchorLocator, UpdatedObject, WithdrawnObject,
+    ResourceClassName, ResourceSet, Revocation, RevocationRequest, RevokedObject, TaCertDetails,
+    TrustAnchorLocator, UpdatedObject, WithdrawnObject,
 };
 use crate::commons::eventsourcing::StoredEvent;
 use crate::commons::remote::id::IdCert;
 use crate::daemon::ca::signing::Signer;
 use crate::daemon::ca::{
     CertifiedKey, ChildDetails, CurrentObjectSetDelta, Error, ResourceClass, Result, Rfc8183Id,
-    RoaInfo,
+    RoaInfo, RouteAuthorization,
 };
 
 //------------ Ini -----------------------------------------------------------

@@ -3,10 +3,11 @@ use std::{fmt, io};
 
 use rpki::crypto::KeyIdentifier;
 
-use crate::commons::api::{Handle, RouteAuthorization};
+use crate::commons::api::Handle;
 use crate::commons::eventsourcing::AggregateStoreError;
 use crate::commons::remote::rfc6492;
 use crate::commons::util::httpclient;
+use crate::daemon::ca::RouteAuthorization;
 
 //------------ Error ---------------------------------------------------------
 

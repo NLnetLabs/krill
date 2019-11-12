@@ -15,7 +15,7 @@ use crate::commons::api::{
     ChildHandle, Entitlements, Handle, IssuanceRequest, IssuanceResponse, IssuedCert, ListReply,
     ParentCaContact, ParentCaReq, ParentHandle, PublishDelta, RcvdCert, RepoInfo,
     RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse,
-    RouteAuthorizationUpdates, UpdateChildRequest,
+    UpdateChildRequest,
 };
 use crate::commons::eventsourcing::{Aggregate, AggregateStore, Command, DiskAggregateStore};
 use crate::commons::remote::builder::SignedMessageBuilder;
@@ -24,7 +24,8 @@ use crate::commons::remote::sigmsg::SignedMessage;
 use crate::commons::remote::{rfc6492, rfc8181, rfc8183};
 use crate::commons::util::httpclient;
 use crate::daemon::ca::{
-    self, ta_handle, CertAuth, Cmd, CmdDet, IniDet, ServerError, ServerResult, Signer,
+    self, ta_handle, CertAuth, Cmd, CmdDet, IniDet, RouteAuthorizationUpdates, ServerError,
+    ServerResult, Signer,
 };
 use crate::daemon::mq::EventQueueListener;
 
