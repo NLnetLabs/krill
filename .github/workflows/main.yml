@@ -1,4 +1,3 @@
-# Harmless comment for testing GitHub Actions with a PR.
 name: E2E Test
 
 on: [push, pull_request]
