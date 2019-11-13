@@ -80,9 +80,7 @@ jobs:
         docker-compose logs
         docker system info
         docker system events --since 60m --until 1s
-        export KRILL_CLI_SERVER=https://localhost:3000/
-        export KRILL_CLI_TOKEN=$(docker logs krill 2>&1 | tac | grep -Eom 1 'token [a-z0-9-]+' | cut -d ' ' -f 2)
-        docker exec krill krillc list
+        docker exec -e KRILL_CLI_SERVER=https://localhost:3000/ -e KRILL_CLI_TOKEN=$(docker logs krill 2>&1 | tac | grep -Eom 1 'token [a-z0-9-]+' | cut -d ' ' -f 2) krill krillc list
 
     - name: Undeploy
       if: always()
