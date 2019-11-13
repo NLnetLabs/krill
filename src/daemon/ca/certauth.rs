@@ -367,7 +367,12 @@ impl<S: Signer> CertAuth<S> {
             children.insert(handle.clone(), details.clone().into());
         }
 
-        let authorizations = self.routes.authorizations().cloned().collect();
+        let roa_definitions = self
+            .routes
+            .authorizations()
+            .map(|a| a.as_ref())
+            .cloned()
+            .collect();
 
         CertAuthInfo::new(
             handle,
@@ -375,7 +380,7 @@ impl<S: Signer> CertAuth<S> {
             parents,
             resources,
             children,
-            authorizations,
+            roa_definitions,
         )
     }
 

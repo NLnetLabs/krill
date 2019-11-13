@@ -2,11 +2,10 @@ use std::str::{from_utf8_unchecked, FromStr};
 
 use crate::commons::api::{
     CaRepoDetails, CertAuthHistory, CertAuthInfo, CertAuthList, CurrentObjects, CurrentRepoState,
-    ParentCaContact, PublisherDetails, PublisherList, RepositoryContact,
+    ParentCaContact, PublisherDetails, PublisherList, RepositoryContact, RoaDefinition,
 };
 use crate::commons::remote::api::ClientInfo;
 use crate::commons::remote::rfc8183;
-use crate::daemon::ca::RouteAuthorization;
 
 //------------ ApiResponse ---------------------------------------------------
 
@@ -19,7 +18,7 @@ pub enum ApiResponse {
     CertAuthInfo(CertAuthInfo),
     CertAuthHistory(CertAuthHistory),
     CertAuths(CertAuthList),
-    RouteAuthorizations(Vec<RouteAuthorization>),
+    RouteAuthorizations(Vec<RoaDefinition>),
 
     ParentCaContact(ParentCaContact),
 
@@ -340,7 +339,7 @@ impl Report for rfc8183::PublisherRequest {
     }
 }
 
-impl Report for Vec<RouteAuthorization> {
+impl Report for Vec<RoaDefinition> {
     fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
         match format {
             ReportFormat::Default | ReportFormat::Json => {

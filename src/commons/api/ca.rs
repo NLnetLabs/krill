@@ -1378,7 +1378,7 @@ pub struct CertAuthInfo {
     parents: HashMap<Handle, ParentCaContact>,
     resources: HashMap<ResourceClassName, ResourceClassInfo>,
     children: HashMap<Handle, ChildCaInfo>,
-    route_authorizations: HashSet<RouteAuthorization>,
+    roa_definitions: HashSet<RoaDefinition>,
 }
 
 impl CertAuthInfo {
@@ -1388,7 +1388,7 @@ impl CertAuthInfo {
         parents: HashMap<Handle, ParentCaContact>,
         resources: HashMap<ResourceClassName, ResourceClassInfo>,
         children: HashMap<Handle, ChildCaInfo>,
-        route_authorizations: HashSet<RouteAuthorization>,
+        roa_definitions: HashSet<RoaDefinition>,
     ) -> Self {
         CertAuthInfo {
             handle,
@@ -1396,7 +1396,7 @@ impl CertAuthInfo {
             parents,
             resources,
             children,
-            route_authorizations,
+            roa_definitions,
         }
     }
 
@@ -1424,8 +1424,8 @@ impl CertAuthInfo {
         &self.children
     }
 
-    pub fn route_authorizations(&self) -> &HashSet<RouteAuthorization> {
-        &self.route_authorizations
+    pub fn route_authorizations(&self) -> &HashSet<RoaDefinition> {
+        &self.roa_definitions
     }
 
     pub fn published_objects(&self) -> Vec<Publish> {
