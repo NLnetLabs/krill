@@ -318,6 +318,20 @@ pub fn ca_info(server: web::Data<AppServer>, auth: Auth, handle: Path<Handle>) -
     })
 }
 
+pub fn ca_my_parent_contact(
+    server: web::Data<AppServer>,
+    auth: Auth,
+    ca_and_parent: Path<(Handle, Handle)>,
+) -> HttpResponse {
+    let (ca, parent) = ca_and_parent.into_inner();
+    if_api_allowed(&server, &auth, || {
+        match server.read().ca_my_parent_contact(&ca, &parent) {
+            Some(info) => render_json(info),
+            None => api_not_found(),
+        }
+    })
+}
+
 pub fn ca_history(server: web::Data<AppServer>, auth: Auth, handle: Path<Handle>) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         match server.read().ca_history(&handle.into_inner()) {

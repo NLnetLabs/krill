@@ -19,12 +19,11 @@ use rpki::roa::Roa;
 use rpki::uri;
 use rpki::x509::{Serial, Time};
 
-use crate::commons::api::admin::{Handle, ParentCaContact};
 use crate::commons::api::publication;
 use crate::commons::api::publication::Publish;
 use crate::commons::api::{
-    Base64, ChildHandle, HexEncodedHash, IssuanceRequest, ListReply, ParentHandle,
-    RepositoryContact, RequestResourceLimit, RoaDefinition,
+    Base64, ChildHandle, Handle, HexEncodedHash, IssuanceRequest, ListReply, ParentCaContact,
+    ParentHandle, RepositoryContact, RequestResourceLimit, RoaDefinition,
 };
 use crate::commons::eventsourcing::AggregateHistory;
 use crate::commons::remote::id::IdCert;
@@ -1416,6 +1415,43 @@ impl CertAuthSummary {
     }
 }
 
+//------------ ParentKindInfo ------------------------------------------------
+#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
+pub enum ParentKindInfo {
+    #[display(fmt = "This CA is a TA")]
+    Ta,
+
+    #[display(fmt = "Embedded parent")]
+    Embedded,
+
+    #[display(fmt = "RFC 6492 Parent")]
+    Rfc6492,
+}
+
+//------------ ParentInfo ----------------------------------------------------
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ParentInfo {
+    handle: ParentHandle,
+    kind: ParentKindInfo,
+}
+
+impl ParentInfo {
+    pub fn new(handle: ParentHandle, contact: ParentCaContact) -> Self {
+        let kind = match contact {
+            ParentCaContact::Ta(_) => ParentKindInfo::Ta,
+            ParentCaContact::Embedded => ParentKindInfo::Embedded,
+            ParentCaContact::Rfc6492(_) => ParentKindInfo::Rfc6492,
+        };
+        ParentInfo { handle, kind }
+    }
+}
+
+impl fmt::Display for ParentInfo {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{} {}", self.handle, self.kind)
+    }
+}
+
 //------------ CertAuthInfo --------------------------------------------------
 
 /// This type represents the details of a CertAuth that need
@@ -1424,7 +1460,7 @@ impl CertAuthSummary {
 pub struct CertAuthInfo {
     handle: Handle,
     repo_info: RepoInfo,
-    parents: HashMap<Handle, ParentCaContact>,
+    parents: Vec<ParentInfo>,
     resources: HashMap<ResourceClassName, ResourceClassInfo>,
     children: Vec<ChildHandle>,
     roa_definitions: HashSet<RoaDefinition>,
@@ -1434,11 +1470,16 @@ impl CertAuthInfo {
     pub fn new(
         handle: Handle,
         repo_info: RepoInfo,
-        parents: HashMap<Handle, ParentCaContact>,
+        parents: HashMap<ParentHandle, ParentCaContact>,
         resources: HashMap<ResourceClassName, ResourceClassInfo>,
         children: Vec<ChildHandle>,
         roa_definitions: HashSet<RoaDefinition>,
     ) -> Self {
+        let parents = parents
+            .into_iter()
+            .map(|(handle, contact)| ParentInfo::new(handle, contact))
+            .collect();
+
         CertAuthInfo {
             handle,
             repo_info,
@@ -1457,12 +1498,8 @@ impl CertAuthInfo {
         &self.repo_info
     }
 
-    pub fn parents(&self) -> &HashMap<Handle, ParentCaContact> {
+    pub fn parents(&self) -> &Vec<ParentInfo> {
         &self.parents
-    }
-
-    pub fn parent(&self, parent: &Handle) -> Option<&ParentCaContact> {
-        self.parents.get(parent)
     }
 
     pub fn resources(&self) -> &HashMap<ResourceClassName, ResourceClassInfo> {

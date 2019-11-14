@@ -1,12 +1,12 @@
 use std::str::{from_utf8_unchecked, FromStr};
 
 use crate::commons::api::{
-    CaRepoDetails, CertAuthHistory, CertAuthInfo, CertAuthList, CurrentObjects, CurrentRepoState,
-    ParentCaContact, PublisherDetails, PublisherList, RepositoryContact, RoaDefinition,
+    CaRepoDetails, CertAuthHistory, CertAuthInfo, CertAuthList, ChildCaInfo, CurrentObjects,
+    CurrentRepoState, ParentCaContact, PublisherDetails, PublisherList, RepositoryContact,
+    RoaDefinition,
 };
 use crate::commons::remote::api::ClientInfo;
 use crate::commons::remote::rfc8183;
-use commons::api::ChildCaInfo;
 
 //------------ ApiResponse ---------------------------------------------------
 
@@ -162,10 +162,14 @@ impl Report for CertAuthInfo {
                     }
                 }
 
-                for (name, kind) in self.parents().iter() {
-                    res.push_str(&format!("Parent:  {}, Kind: {}\n", name, kind));
+                res.push_str("Parents:\n");
+                if !self.parents().is_empty() {
+                    for parent in self.parents().iter() {
+                        res.push_str(&format!("{}\n", parent));
+                    }
+                } else {
+                    res.push_str("<none>\n")
                 }
-                res.push_str("\n");
 
                 for (name, rc) in self.resources() {
                     res.push_str(&format!("Resource Class: {}\n", name,));
@@ -183,7 +187,7 @@ impl Report for CertAuthInfo {
                         res.push_str(&format!("{}\n", child_handle));
                     }
                 } else {
-                    res.push_str("<none>");
+                    res.push_str("<none>\n");
                 }
 
                 Ok(res)

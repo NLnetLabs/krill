@@ -326,6 +326,21 @@ impl KrillServer {
         self.caserver.get_ca(handle).map(|ca| ca.as_ca_info()).ok()
     }
 
+    /// Returns the parent contact for a CA and parent, or NONE if either the CA or the parent cannot be found.
+    pub fn ca_my_parent_contact(
+        &self,
+        handle: &Handle,
+        parent: &ParentHandle,
+    ) -> Option<ParentCaContact> {
+        match self.caserver.get_ca(handle) {
+            Err(_) => None,
+            Ok(ca) => match ca.parent(parent) {
+                Err(_) => None,
+                Ok(parent) => Some(parent.clone()),
+            },
+        }
+    }
+
     /// Returns the history for a CA, or NONE in case of issues (i.e. it does not exist).
     pub fn ca_history(&self, handle: &Handle) -> Option<CertAuthHistory> {
         self.caserver.get_ca_history(handle).ok()

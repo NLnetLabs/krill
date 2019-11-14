@@ -386,6 +386,17 @@ impl Options {
         app.subcommand(sub)
     }
 
+    fn make_cas_parents_contact_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub =
+            SubCommand::with_name("contact").about("Show contact information for parent.");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+        sub = Self::add_parent_arg(sub);
+
+        app.subcommand(sub)
+    }
+
     fn make_cas_parents_remove_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub =
             SubCommand::with_name("remove").about("Remove an existing parent from this CA.");
@@ -403,6 +414,7 @@ impl Options {
         sub = Self::make_cas_parents_myid_sc(sub);
         sub = Self::make_cas_parents_add_sc(sub);
         sub = Self::make_cas_parents_update_sc(sub);
+        sub = Self::make_cas_parents_contact_sc(sub);
         sub = Self::make_cas_parents_remove_sc(sub);
 
         app.subcommand(sub)
@@ -875,6 +887,16 @@ impl Options {
         }
     }
 
+    fn parse_matches_cas_parents_info(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+        let parent = matches.value_of("parent").unwrap();
+        let parent = Handle::from_str(parent).map_err(|_| Error::InvalidHandle)?;
+
+        let command = Command::CertAuth(CaCommand::MyParentCaContact(my_ca, parent));
+        Ok(Options::make(general_args, command))
+    }
+
     fn parse_matches_cas_parents_remove(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
@@ -892,6 +914,8 @@ impl Options {
             Self::parse_matches_cas_parents_add(m)
         } else if let Some(m) = matches.subcommand_matches("update") {
             Self::parse_matches_cas_parents_update(m)
+        } else if let Some(m) = matches.subcommand_matches("contact") {
+            Self::parse_matches_cas_parents_info(m)
         } else if let Some(m) = matches.subcommand_matches("remove") {
             Self::parse_matches_cas_parents_remove(m)
         } else {
@@ -1165,7 +1189,7 @@ pub enum CaCommand {
     // Update CA id
     UpdateId(Handle),
 
-    // Get an RFC8183 parent response
+    // Get an RFC8183 parent response for a child
     ParentResponse(Handle, ChildHandle),
 
     // Get the RFC8183 child request
@@ -1178,6 +1202,8 @@ pub enum CaCommand {
 
     // Add a parent to this CA
     AddParent(Handle, ParentCaReq),
+    // Show my parent's contact
+    MyParentCaContact(Handle, ParentHandle),
 
     // Update parent contact
     UpdateParentContact(Handle, ParentHandle, ParentCaContact),

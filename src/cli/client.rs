@@ -8,12 +8,12 @@ use rpki::uri;
 use crate::cli::options::{BulkCaCommand, CaCommand, Command, Options, PublishersCommand};
 use crate::cli::report::{ApiResponse, ReportError};
 use crate::commons::api::{
-    CaRepoDetails, CertAuthInfo, ParentCaContact, PublisherDetails, PublisherList, Token,
+    CaRepoDetails, CertAuthInfo, ChildCaInfo, ParentCaContact, PublisherDetails, PublisherList,
+    Token,
 };
 use crate::commons::remote::rfc8183;
 use crate::commons::util::httpclient;
 use crate::constants::KRILL_CLI_API_ENV;
-use commons::api::ChildCaInfo;
 
 /// Command line tool for Krill admin tasks
 pub struct KrillClient {
@@ -94,7 +94,7 @@ impl KrillClient {
             }
 
             CaCommand::ParentResponse(handle, child) => {
-                let uri = format!("api/v1/cas/{}/parent_contact/{}", handle, child);
+                let uri = format!("api/v1/cas/{}/children/{}/contact", handle, child);
                 let info: ParentCaContact = self.get_json(&uri)?;
                 Ok(ApiResponse::ParentCaContact(info))
             }
@@ -140,6 +140,12 @@ impl KrillClient {
                 let uri = format!("api/v1/cas/{}/parents/{}", handle, parent);
                 self.delete(&uri)?;
                 Ok(ApiResponse::Empty)
+            }
+
+            CaCommand::MyParentCaContact(handle, parent) => {
+                let uri = format!("api/v1/cas/{}/parents/{}", handle, parent);
+                let parent: ParentCaContact = self.get_json(&uri)?;
+                Ok(ApiResponse::ParentCaContact(parent))
             }
 
             CaCommand::ChildInfo(handle, child) => {
