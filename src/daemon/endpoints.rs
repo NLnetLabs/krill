@@ -693,6 +693,9 @@ impl ToErrorCode for ca::Error {
             ca::Error::MustHaveResources => ErrorCode::ChildNeedsResources,
             ca::Error::MissingResources => ErrorCode::ChildOverclaims,
             ca::Error::DuplicateParent(_) => ErrorCode::DuplicateParent,
+            ca::Error::AuthorisationAlreadyPresent(_, _) => ErrorCode::RoaUpdateInvalidDuplicate,
+            ca::Error::AuthorisationUnknown(_, _) => ErrorCode::RoaUpdateInvalidMissing,
+            ca::Error::AuthorisationNotEntitled(_, _) => ErrorCode::RoaUpdateInvalidResources,
             _ => ErrorCode::CaServerError,
         }
     }

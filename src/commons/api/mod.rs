@@ -313,6 +313,15 @@ pub enum ErrorCode {
     #[display(fmt = "Child unknown")]
     UnknownChild,
 
+    #[display(fmt = "Invalid ROA delta: adding a definition which is already present")]
+    RoaUpdateInvalidDuplicate,
+
+    #[display(fmt = "Invalid ROA delta: removing a definition which is unknown")]
+    RoaUpdateInvalidMissing,
+
+    #[display(fmt = "Invalid ROA delta: not all resources held.")]
+    RoaUpdateInvalidResources,
+
     // 3000s General server errors
     #[display(fmt = "Cannot update internal state, issue with work_dir?")]
     Persistence,
@@ -368,6 +377,11 @@ impl From<usize> for ErrorCode {
             2304 => ErrorCode::DuplicateParent,
             2305 => ErrorCode::UnknownChild,
 
+            // 2400s -> ROA issues
+            2401 => ErrorCode::RoaUpdateInvalidDuplicate,
+            2402 => ErrorCode::RoaUpdateInvalidMissing,
+            2403 => ErrorCode::RoaUpdateInvalidResources,
+
             // 3000s -> Server issues, bugs or operational issues
             3001 => ErrorCode::Persistence,
             3002 => ErrorCode::RepositoryUpdate,
@@ -412,6 +426,11 @@ impl Into<ErrorResponse> for ErrorCode {
             ErrorCode::ChildOverclaims => 2303,
             ErrorCode::DuplicateParent => 2304,
             ErrorCode::UnknownChild => 2305,
+
+            // roa errors
+            ErrorCode::RoaUpdateInvalidDuplicate => 2401,
+            ErrorCode::RoaUpdateInvalidMissing => 2402,
+            ErrorCode::RoaUpdateInvalidResources => 2403,
 
             // server errors
             ErrorCode::Persistence => 3001,
@@ -460,6 +479,10 @@ mod tests {
         }
 
         for n in 2301..2306 {
+            test_code(n)
+        }
+
+        for n in 2401..2404 {
             test_code(n)
         }
 
