@@ -323,6 +323,17 @@ impl Options {
         app.subcommand(sub)
     }
 
+    fn make_cas_children_info_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub =
+            SubCommand::with_name("info").about("Show info for a child (id and resources).");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+        sub = Self::add_child_arg(sub);
+
+        app.subcommand(sub)
+    }
+
     fn make_cas_children_remove_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("remove").about("Remove an existing child from a CA.");
 
@@ -338,6 +349,7 @@ impl Options {
 
         sub = Self::make_cas_children_add_sc(sub);
         sub = Self::make_cas_children_update_sc(sub);
+        sub = Self::make_cas_children_info_sc(sub);
         sub = Self::make_cas_children_remove_sc(sub);
         sub = Self::make_cas_children_response_sc(sub);
 
@@ -769,6 +781,17 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
+    fn parse_matches_cas_children_info(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let child = matches.value_of("child").unwrap();
+        let child = Handle::from_str(child).map_err(|_| Error::InvalidHandle)?;
+
+        let command = Command::CertAuth(CaCommand::ChildInfo(my_ca, child));
+        Ok(Options::make(general_args, command))
+    }
+
     fn parse_matches_cas_children_response(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
@@ -796,6 +819,8 @@ impl Options {
             Self::parse_matches_cas_children_add(m)
         } else if let Some(m) = matches.subcommand_matches("response") {
             Self::parse_matches_cas_children_response(m)
+        } else if let Some(m) = matches.subcommand_matches("info") {
+            Self::parse_matches_cas_children_info(m)
         } else if let Some(m) = matches.subcommand_matches("update") {
             Self::parse_matches_cas_children_update(m)
         } else if let Some(m) = matches.subcommand_matches("remove") {
@@ -1161,6 +1186,7 @@ pub enum CaCommand {
     RemoveParent(Handle, ParentHandle),
 
     // Children
+    ChildInfo(Handle, ChildHandle),
     ChildAdd(Handle, AddChildRequest),
     ChildUpdate(Handle, ChildHandle, UpdateChildRequest),
     ChildDelete(Handle, ChildHandle),

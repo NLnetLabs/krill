@@ -6,6 +6,7 @@ use crate::commons::api::{
 };
 use crate::commons::remote::api::ClientInfo;
 use crate::commons::remote::rfc8183;
+use commons::api::ChildCaInfo;
 
 //------------ ApiResponse ---------------------------------------------------
 
@@ -21,6 +22,8 @@ pub enum ApiResponse {
     RouteAuthorizations(Vec<RoaDefinition>),
 
     ParentCaContact(ParentCaContact),
+
+    ChildInfo(ChildCaInfo),
 
     PublisherDetails(PublisherDetails),
     PublisherList(PublisherList),
@@ -54,6 +57,7 @@ impl ApiResponse {
                 ApiResponse::CertAuthHistory(history) => Ok(Some(history.report(fmt)?)),
                 ApiResponse::RouteAuthorizations(auths) => Ok(Some(auths.report(fmt)?)),
                 ApiResponse::ParentCaContact(contact) => Ok(Some(contact.report(fmt)?)),
+                ApiResponse::ChildInfo(info) => Ok(Some(info.report(fmt)?)),
                 ApiResponse::PublisherList(list) => Ok(Some(list.report(fmt)?)),
                 ApiResponse::PublisherDetails(details) => Ok(Some(details.report(fmt)?)),
                 ApiResponse::Rfc8181ClientList(list) => Ok(Some(list.report(fmt)?)),
@@ -220,6 +224,18 @@ impl Report for ParentCaContact {
                 }
                 Ok(res)
             }
+            _ => Err(ReportError::UnsupportedFormat),
+        }
+    }
+}
+
+impl Report for ChildCaInfo {
+    fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
+        match format {
+            ReportFormat::Default | ReportFormat::Json => {
+                Ok(serde_json::to_string_pretty(self).unwrap())
+            }
+            ReportFormat::Text => Ok(self.to_string()),
             _ => Err(ReportError::UnsupportedFormat),
         }
     }

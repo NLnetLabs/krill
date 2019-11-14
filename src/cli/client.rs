@@ -13,6 +13,7 @@ use crate::commons::api::{
 use crate::commons::remote::rfc8183;
 use crate::commons::util::httpclient;
 use crate::constants::KRILL_CLI_API_ENV;
+use commons::api::ChildCaInfo;
 
 /// Command line tool for Krill admin tasks
 pub struct KrillClient {
@@ -139,6 +140,12 @@ impl KrillClient {
                 let uri = format!("api/v1/cas/{}/parents/{}", handle, parent);
                 self.delete(&uri)?;
                 Ok(ApiResponse::Empty)
+            }
+
+            CaCommand::ChildInfo(handle, child) => {
+                let uri = format!("api/v1/cas/{}/children/{}", handle, child);
+                let info: ChildCaInfo = self.get_json(&uri)?;
+                Ok(ApiResponse::ChildInfo(info))
             }
 
             CaCommand::ChildAdd(handle, req) => {

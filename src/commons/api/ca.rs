@@ -100,29 +100,80 @@ impl<'de> Deserialize<'de> for ResourceClassName {
     }
 }
 
+//------------ IdCertPem -----------------------------------------------------
+
+/// A PEM encoded IdCert and sha256 of the encoding, for easier
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct IdCertPem {
+    pem: String,
+    hash: HexEncodedHash,
+}
+
+impl IdCertPem {
+    pub fn pem(&self) -> &str {
+        &self.pem
+    }
+
+    pub fn hash(&self) -> &HexEncodedHash {
+        &self.hash
+    }
+}
+
+impl From<&IdCert> for IdCertPem {
+    fn from(cer: &IdCert) -> Self {
+        let base64 = base64::encode(&cer.to_bytes());
+        let mut pem = "-----BEGIN CERTIFICATE-----\n".to_string();
+
+        for line in base64
+            .as_bytes()
+            .chunks(64)
+            .map(|b| unsafe { std::str::from_utf8_unchecked(b) })
+        {
+            pem.push_str(line);
+            pem.push_str("\n");
+        }
+
+        pem.push_str("-----END CERTIFICATE-----\n");
+
+        let hash = HexEncodedHash::from_content(pem.as_bytes());
+
+        IdCertPem { pem, hash }
+    }
+}
+
 //------------ ChildCaInfo ---------------------------------------------------
 
 /// This type represents information about a child CA that is shared through the API.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildCaInfo {
-    id_cert: Option<IdCert>,
+    id_cert: Option<IdCertPem>,
     entitled_resources: ResourceSet,
 }
 
 impl ChildCaInfo {
-    pub fn new(id_cert: Option<IdCert>, entitled_resources: ResourceSet) -> Self {
+    pub fn new(id_cert: Option<&IdCert>, entitled_resources: ResourceSet) -> Self {
         ChildCaInfo {
-            id_cert,
+            id_cert: id_cert.map(IdCertPem::from),
             entitled_resources,
         }
     }
 
-    pub fn id_cert(&self) -> Option<&IdCert> {
+    pub fn id_cert(&self) -> Option<&IdCertPem> {
         self.id_cert.as_ref()
     }
 
     pub fn entitled_resources(&self) -> &ResourceSet {
         &self.entitled_resources
+    }
+}
+
+impl fmt::Display for ChildCaInfo {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some(id) = &self.id_cert {
+            writeln!(f, "{}", id.pem())?;
+            writeln!(f, "SHA256 hash of PEM encoded certificate: {}", id.hash())?;
+        }
+        writeln!(f, "resources: {}", self.entitled_resources)
     }
 }
 
@@ -1784,5 +1835,18 @@ mod test {
         .unwrap();
         assert_ne!(default_set, certified);
         assert_ne!(resource_set, certified);
+    }
+
+    #[test]
+    fn id_cert_pem_match_openssl() {
+        let ncc_id = {
+            let bytes = include_bytes!("../../../test-resources/remote/ncc-id.der");
+            IdCert::decode(bytes.as_ref()).unwrap()
+        };
+
+        let ncc_id_openssl_pem = include_str!("../../../test-resources/remote/ncc-id.pem");
+        let ncc_id_pem = IdCertPem::from(&ncc_id);
+
+        assert_eq!(ncc_id_pem.pem(), ncc_id_openssl_pem);
     }
 }
