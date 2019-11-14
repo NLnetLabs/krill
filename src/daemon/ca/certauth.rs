@@ -362,10 +362,7 @@ impl<S: Signer> CertAuth<S> {
         for (name, rc) in &self.resources {
             resources.insert(name.clone(), rc.as_info());
         }
-        let mut children = HashMap::new();
-        for (handle, details) in &self.children {
-            children.insert(handle.clone(), details.clone().into());
-        }
+        let children: Vec<ChildHandle> = self.children.keys().cloned().collect();
 
         let roa_definitions = self
             .routes

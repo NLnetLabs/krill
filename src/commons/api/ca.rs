@@ -23,8 +23,8 @@ use crate::commons::api::admin::{Handle, ParentCaContact};
 use crate::commons::api::publication;
 use crate::commons::api::publication::Publish;
 use crate::commons::api::{
-    Base64, HexEncodedHash, IssuanceRequest, ListReply, ParentHandle, RepositoryContact,
-    RequestResourceLimit, RoaDefinition,
+    Base64, ChildHandle, HexEncodedHash, IssuanceRequest, ListReply, ParentHandle,
+    RepositoryContact, RequestResourceLimit, RoaDefinition,
 };
 use crate::commons::eventsourcing::AggregateHistory;
 use crate::commons::remote::id::IdCert;
@@ -102,9 +102,7 @@ impl<'de> Deserialize<'de> for ResourceClassName {
 
 //------------ ChildCaInfo ---------------------------------------------------
 
-/// This type represents information about a child CA that is safe to share
-/// through the API. I.e. it does not contain the child Token, but may contain
-/// the IdCert for the child since this only includes a public key.
+/// This type represents information about a child CA that is shared through the API.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ChildCaInfo {
     id_cert: Option<IdCert>,
@@ -1377,7 +1375,7 @@ pub struct CertAuthInfo {
     repo_info: RepoInfo,
     parents: HashMap<Handle, ParentCaContact>,
     resources: HashMap<ResourceClassName, ResourceClassInfo>,
-    children: HashMap<Handle, ChildCaInfo>,
+    children: Vec<ChildHandle>,
     roa_definitions: HashSet<RoaDefinition>,
 }
 
@@ -1387,7 +1385,7 @@ impl CertAuthInfo {
         repo_info: RepoInfo,
         parents: HashMap<Handle, ParentCaContact>,
         resources: HashMap<ResourceClassName, ResourceClassInfo>,
-        children: HashMap<Handle, ChildCaInfo>,
+        children: Vec<ChildHandle>,
         roa_definitions: HashSet<RoaDefinition>,
     ) -> Self {
         CertAuthInfo {
@@ -1420,7 +1418,7 @@ impl CertAuthInfo {
         &self.resources
     }
 
-    pub fn children(&self) -> &HashMap<Handle, ChildCaInfo> {
+    pub fn children(&self) -> &Vec<ChildHandle> {
         &self.children
     }
 

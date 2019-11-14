@@ -175,10 +175,8 @@ impl Report for CertAuthInfo {
 
                 res.push_str("Children:\n");
                 if !self.children().is_empty() {
-                    for (name, details) in self.children() {
-                        res.push_str(&format!("{}\n", name));
-                        res.push_str(&format!("  resources: {}\n", details.entitled_resources()));
-                        res.push_str("\n");
+                    for child_handle in self.children() {
+                        res.push_str(&format!("{}\n", child_handle));
                     }
                 } else {
                     res.push_str("<none>");
