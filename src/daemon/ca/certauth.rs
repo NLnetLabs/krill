@@ -16,7 +16,7 @@ use crate::commons::api::{
     self, CertAuthInfo, ChildHandle, EntitlementClass, Entitlements, Handle, IssuanceRequest,
     IssuedCert, ObjectsDelta, ParentCaContact, ParentHandle, RcvdCert, RepositoryContact,
     RequestResourceLimit, ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse,
-    SigningCert, UpdateChildRequest,
+    RoaDefinition, SigningCert, UpdateChildRequest,
 };
 use crate::commons::eventsourcing::{Aggregate, StoredEvent};
 use crate::commons::remote::builder::{IdCertBuilder, SignedMessageBuilder};
@@ -364,21 +364,15 @@ impl<S: Signer> CertAuth<S> {
         }
         let children: Vec<ChildHandle> = self.children.keys().cloned().collect();
 
-        let roa_definitions = self
-            .routes
+        CertAuthInfo::new(handle, repo_info, parents, resources, children)
+    }
+
+    pub fn roa_definitions(&self) -> Vec<RoaDefinition> {
+        self.routes
             .authorizations()
             .map(|a| a.as_ref())
             .cloned()
-            .collect();
-
-        CertAuthInfo::new(
-            handle,
-            repo_info,
-            parents,
-            resources,
-            children,
-            roa_definitions,
-        )
+            .collect()
     }
 
     pub fn child_request(&self) -> rfc8183::ChildRequest {

@@ -8,8 +8,7 @@ use rpki::uri;
 use crate::cli::options::{BulkCaCommand, CaCommand, Command, Options, PublishersCommand};
 use crate::cli::report::{ApiResponse, ReportError};
 use crate::commons::api::{
-    CaRepoDetails, CertAuthInfo, ChildCaInfo, ParentCaContact, PublisherDetails, PublisherList,
-    Token,
+    CaRepoDetails, ChildCaInfo, ParentCaContact, PublisherDetails, PublisherList, Token,
 };
 use crate::commons::remote::rfc8183;
 use crate::commons::util::httpclient;
@@ -182,12 +181,9 @@ impl KrillClient {
             }
 
             CaCommand::RouteAuthorizationsList(handle) => {
-                let uri = format!("api/v1/cas/{}", handle);
-                let ca_info: CertAuthInfo = self.get_json(&uri)?;
-
-                Ok(ApiResponse::RouteAuthorizations(
-                    ca_info.route_authorizations().iter().cloned().collect(),
-                ))
+                let uri = format!("api/v1/cas/{}/routes", handle);
+                let roas = self.get_json(&uri)?;
+                Ok(ApiResponse::RouteAuthorizations(roas))
             }
 
             CaCommand::RouteAuthorizationsUpdate(handle, updates) => {

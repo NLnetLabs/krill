@@ -475,6 +475,21 @@ pub fn ca_routes_update(
     })
 }
 
+/// show the route authorizations for this CA
+pub fn ca_routes_show(
+    server: web::Data<AppServer>,
+    auth: Auth,
+    handle: Path<Handle>,
+) -> HttpResponse {
+    if_api_allowed(&server, &auth, || {
+        let handle = handle.into_inner();
+        match server.read().ca_routes_show(&handle) {
+            Ok(roas) => render_json(roas),
+            Err(_) => api_not_found(),
+        }
+    })
+}
+
 //------------ Admin: Force republish ----------------------------------------
 
 pub fn republish_all(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {

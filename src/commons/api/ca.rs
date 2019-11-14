@@ -1,7 +1,7 @@
 //! Common data types for Certificate Authorities, defined here so that the CLI
 //! can have access without needing to depend on the full krill_ca module.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::ops::Deref;
 use std::str::{from_utf8_unchecked, FromStr};
@@ -1463,7 +1463,6 @@ pub struct CertAuthInfo {
     parents: Vec<ParentInfo>,
     resources: HashMap<ResourceClassName, ResourceClassInfo>,
     children: Vec<ChildHandle>,
-    roa_definitions: HashSet<RoaDefinition>,
 }
 
 impl CertAuthInfo {
@@ -1473,7 +1472,6 @@ impl CertAuthInfo {
         parents: HashMap<ParentHandle, ParentCaContact>,
         resources: HashMap<ResourceClassName, ResourceClassInfo>,
         children: Vec<ChildHandle>,
-        roa_definitions: HashSet<RoaDefinition>,
     ) -> Self {
         let parents = parents
             .into_iter()
@@ -1486,7 +1484,6 @@ impl CertAuthInfo {
             parents,
             resources,
             children,
-            roa_definitions,
         }
     }
 
@@ -1508,10 +1505,6 @@ impl CertAuthInfo {
 
     pub fn children(&self) -> &Vec<ChildHandle> {
         &self.children
-    }
-
-    pub fn route_authorizations(&self) -> &HashSet<RoaDefinition> {
-        &self.roa_definitions
     }
 
     pub fn published_objects(&self) -> Vec<Publish> {
