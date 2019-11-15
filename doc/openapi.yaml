@@ -344,7 +344,7 @@ components:
       required: true
     child_handle:
       in: path
-      name: ca_handle
+      name: child_handle
       schema:
         $ref: '#/components/schemas/Handle'
       required: true
@@ -488,6 +488,8 @@ components:
                 type: object
               route_authorizations:
                 type: array
+                items:
+                  type: string
           example:
             handle: 'ca'
             base_repo:
