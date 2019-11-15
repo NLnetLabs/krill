@@ -225,7 +225,7 @@ impl Options {
                 .long("parent")
                 .short("p")
                 .value_name("name")
-                .help("The local by which your ca refers to this parent.")
+                .help("The local name by which your ca refers to this parent.")
                 .required(true),
         )
     }
@@ -387,8 +387,8 @@ impl Options {
     }
 
     fn make_cas_parents_contact_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub =
-            SubCommand::with_name("contact").about("Show contact information for parent.");
+        let mut sub = SubCommand::with_name("contact")
+            .about("Show contact information for a parent of this CA.");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -409,7 +409,7 @@ impl Options {
     }
 
     fn make_cas_parents_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("parents").about("Manage parents for a CA.");
+        let mut sub = SubCommand::with_name("parents").about("Manage parents for this CA.");
 
         sub = Self::make_cas_parents_myid_sc(sub);
         sub = Self::make_cas_parents_add_sc(sub);
@@ -511,7 +511,8 @@ impl Options {
     }
 
     fn make_cas_repo_update_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("update").about("Update the repository");
+        let mut sub =
+            SubCommand::with_name("update").about("Change which repository this CA uses.");
 
         let mut embedded =
             SubCommand::with_name("embedded").about("Use the embedded server in krill");
