@@ -1012,7 +1012,7 @@ impl Options {
             let update = RepositoryUpdate::embedded();
             let command = Command::CertAuth(CaCommand::RepoUpdate(my_ca, update));
             Ok(Options::make(general_args, command))
-        } else {
+        } else if let Some(matches) = matches.subcommand_matches("rfc8183") {
             let general_args = GeneralArgs::from_matches(matches)?;
             let my_ca = Self::parse_my_ca(matches)?;
 
@@ -1031,6 +1031,8 @@ impl Options {
             let update = RepositoryUpdate::rfc8181(response);
             let command = Command::CertAuth(CaCommand::RepoUpdate(my_ca, update));
             Ok(Options::make(general_args, command))
+        } else {
+            Err(Error::UnrecognisedSubCommand)
         }
     }
 
