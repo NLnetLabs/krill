@@ -1448,7 +1448,7 @@ impl ParentInfo {
 
 impl fmt::Display for ParentInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} {}", self.handle, self.kind)
+        write!(f, "Handle: {} Kind: {}", self.handle, self.kind)
     }
 }
 

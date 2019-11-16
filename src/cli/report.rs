@@ -167,6 +167,7 @@ impl Report for CertAuthInfo {
                     for parent in self.parents().iter() {
                         res.push_str(&format!("{}\n", parent));
                     }
+                    res.push_str("\n");
                 } else {
                     res.push_str("<none>\n")
                 }
