@@ -3,6 +3,28 @@
 Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
 for planned releases. 
 
+## 0.3.0 'The Krilling is on the wall'
+
+This release focused on publication.
+
+You can now use Krill as an RFC8181 compliant Repository Server. If you want to use it as a dedicated
+repository server only, you can simply do this by not configuring any CAs in that particular instance.
+
+You can now also update your CAs to use a remote RFC8181 Repository Server. This is particularly
+useful if you want to outsource the responsibility of 24/7 availability of your RPKI repository
+to a third party.   
+
+We have also made some breaking changes to the API. So, you may have to look again at any
+automation you may have set previously up for version 0.2.0.
+
+The known issue where Krill CAs and their publication server may become out-of-sync after
+restarts has been solved. Krill CAs will always perform a check when publishing, and if needed
+to do full re-syncs.
+
+The next release of Krill is aimed for early December and will focus fully on stability, and the
+other known issues listed under release 0.2.0. But, note that there may still be small API changes
+in the coming release, as we are still optimizing things.
+
 ## 0.2.0 'Interkrillactic, Planetary'
 
 This release focused on testing, and fixing, any issues found when running Krill under various
