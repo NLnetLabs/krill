@@ -216,10 +216,10 @@ impl From<&IssuedCert> for ReplacedObject {
     }
 }
 
-impl From<&Roa> for ReplacedObject {
-    fn from(r: &Roa) -> Self {
-        let revocation = Revocation::from(r);
-        let hash = HexEncodedHash::from_content(r.to_captured().as_slice());
+impl From<&CurrentObject> for ReplacedObject {
+    fn from(current: &CurrentObject) -> Self {
+        let revocation = Revocation::from(current);
+        let hash = current.to_hex_hash();
         ReplacedObject { revocation, hash }
     }
 }

@@ -13,6 +13,7 @@ use rpki::x509::{Serial, Time};
 use crate::commons::api::{ObjectName, ReplacedObject, RoaDefinition, RoaDefinitionUpdates};
 use crate::daemon::ca::events::RoaUpdates;
 use crate::daemon::ca::{self, CertifiedKey, SignSupport, Signer};
+use commons::api::CurrentObject;
 
 //------------ RouteAuthorization ------------------------------------------
 
@@ -41,6 +42,8 @@ impl Deref for RouteAuthorization {
     }
 }
 
+/// We use RouteAuthorization as (json) map keys and therefore we need it
+/// to be serializable to a single simple string.
 impl Serialize for RouteAuthorization {
     fn serialize<S>(&self, s: S) -> Result<S::Ok, S::Error>
     where
@@ -50,6 +53,8 @@ impl Serialize for RouteAuthorization {
     }
 }
 
+/// We use RouteAuthorization as (json) map keys and therefore we need it
+/// to be deserializable from a single simple string.
 impl<'de> Deserialize<'de> for RouteAuthorization {
     fn deserialize<D>(d: D) -> Result<RouteAuthorization, D::Error>
     where
@@ -166,33 +171,42 @@ impl Default for RouteInfo {
 
 //------------ RoaInfo -----------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaInfo {
-    roa: Roa,                         // actual ROA
+    object: CurrentObject,            // actual ROA
+    name: ObjectName,                 // Name for object in repo
     since: Time,                      // first ROA in RC created
     replaces: Option<ReplacedObject>, // for revoking when re-newing
 }
 
 impl RoaInfo {
-    pub fn new_roa(roa: Roa) -> Self {
+    pub fn new_roa(roa: &Roa, name: ObjectName) -> Self {
+        let object = CurrentObject::from(roa);
         RoaInfo {
-            roa,
+            object,
+            name,
             since: Time::now(),
             replaces: None,
         }
     }
 
-    pub fn updated_roa(old: &RoaInfo, roa: Roa) -> Self {
-        let replaces = Some(ReplacedObject::from(&old.roa));
+    pub fn updated_roa(old: &RoaInfo, roa: &Roa, name: ObjectName) -> Self {
+        let object = CurrentObject::from(roa);
+        let replaces = Some(ReplacedObject::from(old.object()));
         RoaInfo {
-            roa,
+            object,
+            name,
             since: old.since,
             replaces,
         }
     }
 
-    pub fn roa(&self) -> &Roa {
-        &self.roa
+    pub fn object(&self) -> &CurrentObject {
+        &self.object
+    }
+
+    pub fn name(&self) -> &ObjectName {
+        &self.name
     }
 
     pub fn since(&self) -> Time {
@@ -203,16 +217,6 @@ impl RoaInfo {
         self.replaces.as_ref()
     }
 }
-
-impl PartialEq for RoaInfo {
-    fn eq(&self, other: &RoaInfo) -> bool {
-        self.roa.to_captured().as_slice() == other.roa.to_captured().as_slice()
-            && self.since == other.since
-            && self.replaces == other.replaces
-    }
-}
-
-impl Eq for RoaInfo {}
 
 //------------ Roas --------------------------------------------------------
 

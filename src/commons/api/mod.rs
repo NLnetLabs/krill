@@ -59,6 +59,10 @@ impl Base64 {
     pub fn size(&self) -> usize {
         self.0.len()
     }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        self.0.as_ref()
+    }
 }
 
 impl AsRef<str> for Base64 {

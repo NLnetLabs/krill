@@ -2,7 +2,7 @@
 use base64;
 use bytes::Bytes;
 use log::LevelFilter;
-use rpki::resources::IpBlocks;
+use rpki::resources::{AsBlocks, IpBlocks};
 use serde::de;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::str::FromStr;
@@ -24,6 +24,31 @@ where
     S: Serializer,
 {
     base64::encode(b).serialize(s)
+}
+
+//------------ AsBlocks ------------------------------------------------------
+
+pub fn ser_as_blocks_opt<S>(blocks: &Option<AsBlocks>, s: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match blocks {
+        None => "none".serialize(s),
+        Some(blocks) => blocks.to_string().serialize(s),
+    }
+}
+
+pub fn de_as_blocks_opt<'de, D>(d: D) -> Result<Option<AsBlocks>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let string = String::deserialize(d)?;
+    if string.as_str() == "none" {
+        return Ok(None);
+    }
+    let blocks = AsBlocks::from_str(string.as_str()).map_err(de::Error::custom)?;
+
+    Ok(Some(blocks))
 }
 
 //------------ IpBlocks ------------------------------------------------------

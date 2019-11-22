@@ -368,6 +368,10 @@ impl IssuanceResponse {
 /// See: https://tools.ietf.org/html/rfc6492#section-3.4.1
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RequestResourceLimit {
+    #[serde(
+        deserialize_with = "ext_serde::de_as_blocks_opt",
+        serialize_with = "ext_serde::ser_as_blocks_opt"
+    )]
     asn: Option<AsBlocks>,
 
     #[serde(

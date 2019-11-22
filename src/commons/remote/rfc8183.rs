@@ -11,6 +11,7 @@ use std::{fmt, io};
 use base64::DecodeError;
 use bcder::decode;
 use bytes::Bytes;
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::uri;
 use rpki::x509;
@@ -628,7 +629,7 @@ impl RepositoryResponse {
 //------------ ServiceUri ----------------------------------------------------
 
 /// The service URI where a child or publisher needs to send its
-#[derive(Clone, Debug, Deserialize, Eq, Serialize, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ServiceUri {
     Https(uri::Https),
     Http(String),
@@ -638,8 +639,7 @@ impl TryFrom<String> for ServiceUri {
     type Error = Error;
 
     fn try_from(value: String) -> Result<Self, Self::Error> {
-        if value.starts_with("http://") {
-            // TODO: Check a bit better? It will blow up when the uri is used..
+        if value.to_lowercase().starts_with("http://") {
             Ok(ServiceUri::Http(value))
         } else {
             Ok(ServiceUri::Https(uri::Https::from_str(&value)?))
@@ -653,6 +653,25 @@ impl fmt::Display for ServiceUri {
             ServiceUri::Http(string) => string.fmt(f),
             ServiceUri::Https(https) => https.fmt(f),
         }
+    }
+}
+
+impl Serialize for ServiceUri {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.to_string().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ServiceUri {
+    fn deserialize<D>(deserializer: D) -> Result<ServiceUri, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let string = String::deserialize(deserializer)?;
+        ServiceUri::try_from(string).map_err(de::Error::custom)
     }
 }
 

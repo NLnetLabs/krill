@@ -334,7 +334,7 @@ impl<S: Signer> CaServer<S> {
         let ca = self.ca_store.update(parent, ca, events)?;
 
         // The updated CA will now include the newly issued certificate.
-        let response = ca.issuance_response(child, &class_name, &pub_key)?;
+        let response = ca.issuance_response(child, &class_name, pub_key)?;
 
         Ok(response)
     }

@@ -29,7 +29,6 @@ impl LastResponse {}
 pub struct ChildDetails {
     id_cert: Option<IdCert>,
     resources: ResourceSet,
-    shrink_pending: Option<Time>,
     used_keys: HashMap<KeyIdentifier, LastResponse>,
 }
 
@@ -38,7 +37,6 @@ impl ChildDetails {
         ChildDetails {
             id_cert,
             resources,
-            shrink_pending: None,
             used_keys: HashMap::new(),
         }
     }
@@ -55,11 +53,7 @@ impl ChildDetails {
         &self.resources
     }
 
-    pub fn set_resources(&mut self, resources: ResourceSet, grace: Time) {
-        if !resources.contains(&self.resources) {
-            self.shrink_pending = Some(grace);
-        }
-
+    pub fn set_resources(&mut self, resources: ResourceSet) {
         self.resources = resources;
     }
 
