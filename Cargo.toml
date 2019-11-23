@@ -1,6 +1,6 @@
 [package]
 name    = "krill"
-version = "0.3.1-pre"
+version = "0.4.0-pre"
 authors = ["Tim Bruijnzeels <tim@nlnetlabs.nl>", "Martin Hoffmann <martin@nlnetlabs.nl>"]
 description = "Resource Public Key Infrastructure (RPKI) daemon"
 license = "MPL-2.0"
