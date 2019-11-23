@@ -1,0 +1,11 @@
+{
+  "id": "child",
+  "version": 19,
+  "details": {
+    "t": "KeyRollPendingKeyAdded",
+    "c": [
+      "0",
+      "5BE371D3BE032A6BD1C61C9FEE4A94B4091E4097"
+    ]
+  }
+}

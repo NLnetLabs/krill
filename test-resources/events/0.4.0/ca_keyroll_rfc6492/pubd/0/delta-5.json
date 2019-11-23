@@ -1,0 +1,68 @@
+{
+  "id": "0",
+  "version": 5,
+  "details": {
+    "t": "Published",
+    "c": [
+      "rfc6492",
+      {
+        "delta": {
+          "session": "a1c7307c-578e-4455-8191-95befe9231ad",
+          "serial": 3,
+          "time": "2019-11-23T03:33:28.065516Z",
+          "elements": {
+            "publishes": [
+              {
+                "base64": "MIIJSAYJKoZIhvcNAQcCoIIJOTCCCTUCAQMxDzANBglghkgBZQMEAgEFADCBmwYLKoZIhvcNAQkQARqggYsEgYgwgYUCAQEYDzIwMTkxMTIzMDMyODI3WhgPMjAxOTExMjQwMzMzMjdaBglghkgBZQMEAgEwUzBRFiw3NzU2Mzk2Nzg1MjQ5RDNCNjBCQ0RBNERBRTVGMTJEN0MxODdFNjc0LmNybAMhAEuCboK8O3pcP1Fzliy8DWlS82DQ2cYt4aaG2m44acDCoIIGzzCCBsswggWzoAMCAQICFAIkJtGw/b5lhQRqUFSPUqUOWtyTMA0GCSqGSIb3DQEBCwUAMDMxMTAvBgNVBAMTKDc3NTYzOTY3ODUyNDlEM0I2MEJDREE0REFFNUYxMkQ3QzE4N0U2NzQwHhcNMTkxMTIzMDMyODI3WhcNMTkxMTMwMDMzMzI3WjCCAi0xggIpMIICJQYDVQQDE4ICHDMwODIwMTBBMDI4MjAxMDEwMDk5NUFBMEEyNjkxOTgzNjQ4Mjg5ODY4QTdBNDhEOThFRjQ5RjYxOEI0RTE0NkY5MzY4RkUzREQ3MUI5OTE3RUM4NDc2MEU3NDQ2RjBDQURFOEQ3NDhENTM3N0ZENzJCRjEwRDFEOURBOEU1Mjk1RTc0QjRFRTkxMjAyMUFFMzcwMDE5MEZFMDYzM0UwNDkxNjFBQkIxNjVFNjFBMzU3MkM5OEVFRkU2RTREQzY3NURERjdERkMwMzg1QjNEMkZCNTZFMjc3NkE3QjBDRjQ1Rjk0RjkyNzE0QTAyQUM5QzMwRUQ2NzFDNTdDRjA1NTY3Q0IwMDAxMjJDQzNCMkYwOTQzNDI2OUZGMkNBRUI3RjlBQUNCQjgyMkNCNkMwRjQwNDUwRTNFQTRENTExNjJCQjVCQzVEODg2MEQ3QjNENzI3NEREODM2REJBQ0IwMzREMkQxODIwREE5REU5QkFEMzQxNjMxNDU2NjlBMDM2N0EwQ0YzRjI4NDE5QzA1MDA1MDIwRTUxMDIyQ0JDRDE5OTIwQTk4M0NFMkFFNjY4Nzg4NzUxODE4RTc5RTE5Njk5NzBFNzBFRDI1Q0JEOEZCMDA3MThGRjMxMDg3MkYxOENFMTdENTA1MjY3M0YxQTFBMDFDQzUwRTQ0RTJBQzMwOEIyNTMzM0QwM0FCMEE5OEQ5MDIwMzAxMDAwMTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAJlaoKJpGYNkgomGinpI2Y70n2GLThRvk2j+PdcbmRfshHYOdEbwyt6NdI1Td/1yvxDR2dqOUpXnS07pEgIa43ABkP4GM+BJFhq7Fl5ho1csmO7+bk3Gdd3338A4Wz0vtW4ndqewz0X5T5JxSgKsnDDtZxxXzwVWfLAAEizDsvCUNCaf8srrf5qsu4IstsD0BFDj6k1RFiu1vF2IYNez1ydN2DbbrLA00tGCDanem600FjFFZpoDZ6DPPyhBnAUAUCDlECLLzRmSCpg84q5mh4h1GBjnnhlplw5w7SXL2PsAcY/zEIcvGM4X1QUmc/GhoBzFDkTirDCLJTM9A6sKmNkCAwEAAaOCAdkwggHVMB0GA1UdDgQWBBSWzBJqds1WQzJUdL7gKeGgHp8wOTAfBgNVHSMEGDAWgBR3VjlnhSSdO2C82k2uXxLXwYfmdDAOBgNVHQ8BAf8EBAMCB4AwXgYDVR0fBFcwVTBToFGgT4ZNcnN5bmM6Ly9sb2NhbGhvc3QvcmVwby9yZmM2NDkyLzAvNzc1NjM5Njc4NTI0OUQzQjYwQkNEQTREQUU1RjEyRDdDMTg3RTY3NC5jcmwwZAYIKwYBBQUHAQEEWDBWMFQGCCsGAQUFBzAChkhyc3luYzovL2xvY2FsaG9zdC9yZXBvL3RhLzAvNzc1NjM5Njc4NTI0OUQzQjYwQkNEQTREQUU1RjEyRDdDMTg3RTY3NC5jZXIwaQYIKwYBBQUHAQsEXTBbMFkGCCsGAQUFBzALhk1yc3luYzovL2xvY2FsaG9zdC9yZXBvL3JmYzY0OTIvMC83NzU2Mzk2Nzg1MjQ5RDNCNjBCQ0RBNERBRTVGMTJEN0MxODdFNjc0Lm1mdDAYBgNVHSABAf8EDjAMMAoGCCsGAQUFBw4CMCEGCCsGAQUFBwEHAQH/BBIwEDAGBAIAAQUAMAYEAgACBQAwFQYIKwYBBQUHAQgBAf8EBjAEoAIFADANBgkqhkiG9w0BAQsFAAOCAQEAMBl2nNJDDy6SUTbkDODc5hggIKzVE4tepRg8NRFB/EZSBdr64PDIy1dml5llVZlcd2ECq8AWDJm+UM+XAZ76kNzcUPdYs74Xnq2c0Ty+FbDl/oxB45edn98jD4nRIVOSJTcDLXax/jN3X67Fe/n8JWA1/ybathzqiqN9DQ6V6LRgruaNv6muycerrsPhpH068q+6SUWHp9VrRk3tM+enBLwDx7Rf3d5tfxeIxd2SSAocXhcWviA+xpXvakX1ARElO2n4RkmvWjonsQySBEepmdX2zwMixQZYIJVYz7j7NsJ8AL1ol/TkIvfD6kFdTmZXtJgU5v1Rg8Vx/Ki7NkJPvzGCAawwggGoAgEDgBSWzBJqds1WQzJUdL7gKeGgHp8wOTANBglghkgBZQMEAgEFAKBrMBoGCSqGSIb3DQEJAzENBgsqhkiG9w0BCRABGjAcBgkqhkiG9w0BCQUxDxcNMTkxMTIzMDMzMzI3WjAvBgkqhkiG9w0BCQQxIgQgQpjUDkgYzGiGv/gm5iXiDcJTQMaHJmXztSYJgyWXFfAwDQYJKoZIhvcNAQEBBQAEggEAd1Idqp5Fa0WFHH4tS2ZwNgNWVvRWkfUfycrX4AP5s4mIZ1vfIFEsroc/yCtNczI+HkZ72U1n5OOLRbPkw2Wjtx2KtKCs8qaLezy+p1QjgcBoeIv3GQ2Zo95yOM2i/Z+5X9jWJVcFoDLveWP2YKublUxDWDFticuhpYMUDbqWqLRIZ6UvYaTI4/JUwPAoIF0D62ooycT6EGUYsKpOjndk0akqBSxHqS1D73ZzeQvIcixhboAuHXOfduFsBDmodinfk5iAbhtWAFU91Skl4DuXeRzcPyMYKARzkNdgDMgxSoairp8EYBXTZXZYAT+0l2nUWTzJxsAIt2XCkG1sZJ67/w==",
+                "uri": "rsync://localhost/repo/rfc6492/0/7756396785249D3B60BCDA4DAE5F12D7C187E674.mft"
+              },
+              {
+                "base64": "MIIBrzCBmAIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyg3NzU2Mzk2Nzg1MjQ5RDNCNjBCQ0RBNERBRTVGMTJEN0MxODdFNjc0Fw0xOTExMjMwMzI4MjdaFw0xOTExMjQwMzMzMjdaMACgLzAtMB8GA1UdIwQYMBaAFHdWOWeFJJ07YLzaTa5fEtfBh+Z0MAoGA1UdFAQDAgEBMA0GCSqGSIb3DQEBCwUAA4IBAQAMLgUtK0+HF9UDTfyAJVx5anelWXksg8hrHygg1eXtFf4jqKCx1t1yjQm4soLPEBGgUMRXbRN3slXw968YdM6GvM1FCpRy7l0V1FKG51KOQiU6s1tHGc+rydCQ1r70UF6xEgs6sKVi5wAO1o8w5d+R15x9gB+RJA3hEm5Ey00gfCdX6vozAKdcjcbFv1kIwE8hmGoyiGFqcS9vN3zQfzsawch6yQZpQLTbF5ATGOtEMmW5nGR/2jCQazj/67Y4b09hMJif3cHWlSSnAETcDGfOlgrk0FrqfCPWGTzy3muMv7qTB2VAcXYnswjgcZsJ3BdqTaDen4Yb6bV0JslE0WgB",
+                "uri": "rsync://localhost/repo/rfc6492/0/7756396785249D3B60BCDA4DAE5F12D7C187E674.crl"
+              }
+            ],
+            "updates": [],
+            "withdraws": []
+          }
+        },
+        "notification": {
+          "session": "a1c7307c-578e-4455-8191-95befe9231ad",
+          "serial": 3,
+          "time": "2019-11-23T03:33:28.069332Z",
+          "snapshot": {
+            "uri": "https://localhost:3000/rrdp/a1c7307c-578e-4455-8191-95befe9231ad/3/snapshot.xml",
+            "path": "work/2830401626/1629489103/repo/rrdp/a1c7307c-578e-4455-8191-95befe9231ad/3/snapshot.xml",
+            "hash": "7619fff23c66ba2ee98707263dae93deca8195fd606fc6665107958e57e0e5d4"
+          },
+          "deltas": [
+            {
+              "serial": 3,
+              "file_ref": {
+                "uri": "https://localhost:3000/rrdp/a1c7307c-578e-4455-8191-95befe9231ad/3/delta.xml",
+                "path": "work/2830401626/1629489103/repo/rrdp/a1c7307c-578e-4455-8191-95befe9231ad/3/delta.xml",
+                "hash": "81a96d8c9f276565747174d6b1d3d182594f95c586e2ffc65b8de144b8fd80f8"
+              }
+            },
+            {
+              "serial": 2,
+              "file_ref": {
+                "uri": "https://localhost:3000/rrdp/a1c7307c-578e-4455-8191-95befe9231ad/2/delta.xml",
+                "path": "work/2830401626/1629489103/repo/rrdp/a1c7307c-578e-4455-8191-95befe9231ad/2/delta.xml",
+                "hash": "ddd95cd917faf59f2dc52845d94ec1d559e679c7a588efa453a1750f44d15a69"
+              }
+            },
+            {
+              "serial": 1,
+              "file_ref": {
+                "uri": "https://localhost:3000/rrdp/a1c7307c-578e-4455-8191-95befe9231ad/1/delta.xml",
+                "path": "work/2830401626/1629489103/repo/rrdp/a1c7307c-578e-4455-8191-95befe9231ad/1/delta.xml",
+                "hash": "aebe997c549acf045fde83c1b8a19ceeb125a9ce05d960ade35bbb2043d3a712"
+              }
+            }
+          ],
+          "last_delta": 1
+        }
+      }
+    ]
+  }
+}

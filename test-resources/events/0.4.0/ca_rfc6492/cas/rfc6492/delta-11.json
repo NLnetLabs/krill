@@ -1,0 +1,32 @@
+{
+  "id": "rfc6492",
+  "version": 11,
+  "details": {
+    "t": "ResourceClassRemoved",
+    "c": [
+      "0",
+      {
+        "ca_repo": "rsync://localhost/repo/rfc6492/0",
+        "added": [],
+        "updated": [],
+        "withdrawn": [
+          {
+            "name": "C82E804808A1A2A063ACED227149084E32154B9B.mft",
+            "hash": "73ffa913fa2c81fb32728001d46c5dbc3e7217596628596d080792aabffd4b83"
+          },
+          {
+            "name": "C82E804808A1A2A063ACED227149084E32154B9B.crl",
+            "hash": "5904301ddf3692acf6e83df1e5a1374a1a174494802a369309174cf6c742fbb0"
+          }
+        ]
+      },
+      "ta",
+      [
+        {
+          "class_name": "0",
+          "key": "C82E804808A1A2A063ACED227149084E32154B9B"
+        }
+      ]
+    ]
+  }
+}

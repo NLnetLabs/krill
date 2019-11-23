@@ -1,0 +1,29 @@
+{
+  "id": "CA1",
+  "version": 2,
+  "details": {
+    "t": "ResourceClassAdded",
+    "c": [
+      "0",
+      {
+        "name": "0",
+        "name_space": "0",
+        "parent_handle": "ta",
+        "parent_rc_name": "0",
+        "roas": {
+          "inner": {}
+        },
+        "certificates": {
+          "inner": {}
+        },
+        "last_key_change": "2019-11-23T13:16:34.997845Z",
+        "key_state": {
+          "Pending": {
+            "key_id": "268E2B07BA9085917D27FA6F210081C0F450374D",
+            "request": null
+          }
+        }
+      }
+    ]
+  }
+}

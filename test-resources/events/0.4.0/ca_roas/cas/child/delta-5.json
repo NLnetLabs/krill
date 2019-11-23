@@ -1,0 +1,8 @@
+{
+  "id": "child",
+  "version": 5,
+  "details": {
+    "t": "RouteAuthorizationAdded",
+    "c": "2001:db8::/32-48 => 64496"
+  }
+}

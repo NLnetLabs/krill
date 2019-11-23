@@ -1,0 +1,14 @@
+{
+  "id": "child",
+  "version": 22,
+  "details": {
+    "t": "KeyRollActivated",
+    "c": [
+      "0",
+      {
+        "class_name": "0",
+        "key": "EFD829C95523438831AD18431DADFE9B952E15B1"
+      }
+    ]
+  }
+}

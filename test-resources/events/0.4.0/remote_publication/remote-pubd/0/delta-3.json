@@ -1,0 +1,60 @@
+{
+  "id": "0",
+  "version": 3,
+  "details": {
+    "t": "Published",
+    "c": [
+      "child",
+      {
+        "delta": {
+          "session": "400813b7-8ae8-40f6-a323-3e0c8592985a",
+          "serial": 2,
+          "time": "2019-11-23T13:21:35.989743Z",
+          "elements": {
+            "publishes": [],
+            "updates": [],
+            "withdraws": [
+              {
+                "uri": "rsync://localhost/repo/child/0/8C8038B425902517998978FF79FD6AE94E8061E8.crl",
+                "hash": "85b1fc6c6d129693ba6099735246297b733c6cf90b282cb890a27beacd550936"
+              },
+              {
+                "uri": "rsync://localhost/repo/child/0/8C8038B425902517998978FF79FD6AE94E8061E8.mft",
+                "hash": "2c6cea207fc1a188d0205d46ad8b2b1db5384170b41b18f4e2554eea35dc9359"
+              }
+            ]
+          }
+        },
+        "notification": {
+          "session": "400813b7-8ae8-40f6-a323-3e0c8592985a",
+          "serial": 2,
+          "time": "2019-11-23T13:21:35.990487Z",
+          "snapshot": {
+            "uri": "https://localhost:3001/rrdp/400813b7-8ae8-40f6-a323-3e0c8592985a/2/snapshot.xml",
+            "path": "work/2021963737/repo/rrdp/400813b7-8ae8-40f6-a323-3e0c8592985a/2/snapshot.xml",
+            "hash": "e9cc75a850746554f8c31ccc9c023f1b42c8dcbc82ff1a6f28dca68fc0069871"
+          },
+          "deltas": [
+            {
+              "serial": 2,
+              "file_ref": {
+                "uri": "https://localhost:3001/rrdp/400813b7-8ae8-40f6-a323-3e0c8592985a/2/delta.xml",
+                "path": "work/2021963737/repo/rrdp/400813b7-8ae8-40f6-a323-3e0c8592985a/2/delta.xml",
+                "hash": "62bf52ba20f0d365cc68b6c43ed0bbc2c60b9cc345a33fce37d4750f673357e6"
+              }
+            },
+            {
+              "serial": 1,
+              "file_ref": {
+                "uri": "https://localhost:3001/rrdp/400813b7-8ae8-40f6-a323-3e0c8592985a/1/delta.xml",
+                "path": "work/2021963737/repo/rrdp/400813b7-8ae8-40f6-a323-3e0c8592985a/1/delta.xml",
+                "hash": "b8b5f2e5633b5204547a10cd6dd4cc0f6944900e5f703a3e0d9663efde109f7e"
+              }
+            }
+          ],
+          "last_delta": 1
+        }
+      }
+    ]
+  }
+}

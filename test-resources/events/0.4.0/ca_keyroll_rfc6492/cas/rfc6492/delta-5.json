@@ -1,0 +1,11 @@
+{
+  "id": "rfc6492",
+  "version": 5,
+  "details": {
+    "t": "KeyRollPendingKeyAdded",
+    "c": [
+      "0",
+      "E23914CC441E9156B86B0547441EABA2A246DB2B"
+    ]
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "id": "CA3",
+  "version": 14,
+  "details": {
+    "t": "ChildCertificatesUpdated",
+    "c": [
+      "1",
+      {
+        "issued": [
+          {
+            "uri": "rsync://localhost/repo/CA3/1/CFAA962C41D52F868C7C066780E6E7CF758691DA.cer",
+            "limit": {
+              "asn": "none",
+              "v4": "none",
+              "v6": "none"
+            },
+            "resource_set": {
+              "asn": "",
+              "v4": "10.1.0.0-10.1.0.255",
+              "v6": ""
+            },
+            "cert": "MIIFPDCCBCSgAwIBAgIUN/trWjc12htqA0Hm+RuArGqjHUEwDQYJKoZIhvcNAQELBQAwMzExMC8GA1UEAxMoRkExQzcyRTI3QTkxODNFM0U3OUNBOEQzRDkxQzVGNDVFMjlDODgxQzAeFw0xOTExMjMxMzExNDRaFw0yMDExMjMxMzE2NDRaMDMxMTAvBgNVBAMTKENGQUE5NjJDNDFENTJGODY4QzdDMDY2NzgwRTZFN0NGNzU4NjkxREEwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQCpduujvNrPzy3BaEuzPNQBOHgOj3QGSLGTTs8N8TUu9ZrscMse53570DJnDL+1TXZN40chpt9NVk2fKRUOrWw+m49gCrd6qLXZSVU9ska+92li9Sta8ZI5qHCsTpL+Y5v90aWbq5QU1BpvlvTFbCUdSBl+tm+v1uXEedloUWCBo6tC8KoksXna2fP8/tjxXwRyAKYiIha51Vm9/aKYzm3CUvXqFTDNHcb4IUjkpLyspLcMtk/ikN0lJY+bryYkW9KtECX/lWJeWX4AQaLFGq5t99h7nXqcJa9h8Nnn5L4cuMTiYgaPkzDEbJLcEyH7lM+Ksll1jkpZO0FNmPHJv5EVAgMBAAGjggJGMIICQjAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBTPqpYsQdUvhox8BmeA5ufPdYaR2jAfBgNVHSMEGDAWgBT6HHLiepGD4+ecqNPZHF9F4pyIHDAOBgNVHQ8BAf8EBAMCAQYwWgYDVR0fBFMwUTBPoE2gS4ZJcnN5bmM6Ly9sb2NhbGhvc3QvcmVwby9DQTMvMS9GQTFDNzJFMjdBOTE4M0UzRTc5Q0E4RDNEOTFDNUY0NUUyOUM4ODFDLmNybDBlBggrBgEFBQcBAQRZMFcwVQYIKwYBBQUHMAKGSXJzeW5jOi8vbG9jYWxob3N0L3JlcG8vQ0EyLzAvRkExQzcyRTI3QTkxODNFM0U3OUNBOEQzRDkxQzVGNDVFMjlDODgxQy5jZXIwgcwGCCsGAQUFBwELBIG/MIG8MCkGCCsGAQUFBzAFhh1yc3luYzovL2xvY2FsaG9zdC9yZXBvL0NBNC8xLzBVBggrBgEFBQcwCoZJcnN5bmM6Ly9sb2NhbGhvc3QvcmVwby9DQTQvMS9DRkFBOTYyQzQxRDUyRjg2OEM3QzA2Njc4MEU2RTdDRjc1ODY5MURBLm1mdDA4BggrBgEFBQcwDYYsaHR0cHM6Ly9sb2NhbGhvc3Q6MzAwMC9ycmRwL25vdGlmaWNhdGlvbi54bWwwGAYDVR0gAQH/BA4wDDAKBggrBgEFBQcOAjAzBggrBgEFBQcBBwEB/wQkMCIwIAQCAAEwGjAYAwMACgEDEQAKAQD/AAAAAAAAAAAAAAAAMA0GCSqGSIb3DQEBCwUAA4IBAQBLG7JFdggs52SQuGKR+VPVq+PPbc3a+G8AUQBNTtDOFFO7cUewNc7xRtrM4A8IhdWV/ZqLpXm5VGizzfHQiz0WJxt/hXBlAf7XW76tnG4bW3feHeaS/LeO4aUzF+D7buqlt1U/voRIk9F+VokzbQJbHYksAkahvd2CYo0c0oi54qILhHrPn9VfMYd/ZP4N8ZhAbELnRd17+9V5xae/IRGxcxIrxzbVKFShFyhaYLcGklwe5uhxd0ByD2c7gwfqh636kiTRDwdnx05Kl/NA9sENpv+6bJPsevTfdv3D/CRq9QgxzhpRHdgc7NL6+OcODn9nxk41jXpx4+AsqA+ZzvwP",
+            "replaces": null
+          }
+        ],
+        "removed": []
+      }
+    ]
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "id": "rfc6492",
+  "version": 13,
+  "details": {
+    "t": "ResourceClassAdded",
+    "c": [
+      "1",
+      {
+        "name": "1",
+        "name_space": "1",
+        "parent_handle": "ta",
+        "parent_rc_name": "0",
+        "roas": {
+          "inner": {}
+        },
+        "certificates": {
+          "inner": {}
+        },
+        "last_key_change": "2019-11-23T13:11:08.660434Z",
+        "key_state": {
+          "Pending": {
+            "key_id": "90F3E6877DB483FA6F812E1EBAB92C2E4BC98CF9",
+            "request": null
+          }
+        }
+      }
+    ]
+  }
+}

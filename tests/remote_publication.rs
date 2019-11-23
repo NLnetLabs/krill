@@ -122,7 +122,7 @@ fn remote_publication() {
         // Child should now clean up the old repo
         wait_for(10, "Child should clean up at old repository", || {
             let details_at_main = details_publisher(&child, PubdTestContext::Main);
-            details_at_main.current_files().len() == 0
+            details_at_main.current_files().is_empty()
         });
 
         // Now let's migrate back, so that we see that works too.
@@ -145,7 +145,7 @@ fn remote_publication() {
         // Child should now clean up the old repo
         wait_for(10, "Child should clean up at old repository", || {
             let details_at_main = details_publisher(&child, PubdTestContext::Secondary);
-            details_at_main.current_files().len() == 0
+            details_at_main.current_files().is_empty()
         });
     });
 }

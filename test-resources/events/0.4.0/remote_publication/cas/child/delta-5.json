@@ -1,0 +1,20 @@
+{
+  "id": "child",
+  "version": 5,
+  "details": {
+    "t": "RepoUpdated",
+    "c": {
+      "t": "Rfc8181",
+      "c": {
+        "tag": null,
+        "publisher_handle": "child",
+        "id_cert": "MIIDPDCCAiSgAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyhCRTY5QzRGOTAzMzZDRUVFN0IzMTRCQ0I2QkE2RURDNzAyOEM3NzI2MCAXDTE5MTEyMzEzMTYzMVoYDzIxMTkxMTIzMTMyMTMxWjAzMTEwLwYDVQQDEyhCRTY5QzRGOTAzMzZDRUVFN0IzMTRCQ0I2QkE2RURDNzAyOEM3NzI2MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwDvJL1PQb6g3o5NbQcDMZ6xuaUE7vvfUY8rHT7e6TRXmK4R+QwLbTtVI3X29b7ihVwUMjdIr3mbFzTKQAlNAH2So1fwn4FM1SK6UH0c0v17WEf8oub3CEWgRLW6eD7Y3ByO71m2RVYN5u58viSaq8BsYBDu6BP0gck7U2/zihpei5Uyw2i1bkjmH9qgomxESvEFd0Vcq/jzj4a5M2V57WskjnYLX+SKRrl2wtSee1B7VLEeR7dhSUA3uey98prrXYBcfgwzP5Sac9B03ywMOYzC34KTZeIsyz6VnA13PwwjptcLIEcfRHK7grKM6PLnWS3t3BIlByeDatc80LomFuQIDAQABo1kwVzAPBgNVHRMBAf8EBTADAQH/MCAGA1UdDgEBAAQWBBS+acT5AzbO7nsxS8trpu3HAox3JjAiBgNVHSMBAQAEGDAWgBS+acT5AzbO7nsxS8trpu3HAox3JjANBgkqhkiG9w0BAQsFAAOCAQEAOCl5nufJ1wtAp6+PrvdFk5EEjFdjdhhTifMrpypdeaqgbR35PmGQJLVIYK9rwHaC+cfek8KLIp3dVtXWo3iniKz6XVFdNujp5MyTaylPha1mcfvFud0tVEHsRhKQQ8izI+EJah+dcdw700RMsWaGOZcrdFehSc6MHeTCsAboKi0DprDUg6FzHtgtgdHoIftvWTrGimgwKHQS9g52xnOt7Qd9uXAo+j/3TbbnicE4GLqaNqAnFGJHC59Y+Dta1UEINjWdzB540e1oPq75277Hill4gO2E4tHYAmrj5dMzh96K5bCcf9CWIwQqeuSUN/n3GjJeGmtdUdVIUE9pOuy9JQ==",
+        "service_uri": "https://localhost:3001/rfc8181/child",
+        "repo_info": {
+          "base_uri": "rsync://localhost/repo/child/",
+          "rpki_notify": "https://localhost:3001/rrdp/notification.xml"
+        }
+      }
+    }
+  }
+}

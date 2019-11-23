@@ -1,0 +1,25 @@
+{
+  "id": "rfc6492",
+  "version": 10,
+  "details": {
+    "t": "KeyRollFinished",
+    "c": [
+      "0",
+      {
+        "ca_repo": "rsync://localhost/repo/rfc6492/0",
+        "added": [],
+        "updated": [],
+        "withdrawn": [
+          {
+            "name": "7756396785249D3B60BCDA4DAE5F12D7C187E674.crl",
+            "hash": "90055b1eb078f713f783114520e75449d0fb139013ea84ba39268af943638003"
+          },
+          {
+            "name": "7756396785249D3B60BCDA4DAE5F12D7C187E674.mft",
+            "hash": "eb39b3e61f0e1b4c9c58a3983d8d37ade19b5edc19eea641d7051c32b97af677"
+          }
+        ]
+      }
+    ]
+  }
+}

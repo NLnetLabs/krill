@@ -1,0 +1,30 @@
+{
+  "id": "CA1",
+  "version": 7,
+  "details": {
+    "t": "ChildCertificatesUpdated",
+    "c": [
+      "0",
+      {
+        "issued": [
+          {
+            "uri": "rsync://localhost/repo/CA1/0/4583DE24A243B1C316886E0046B30A8DD4A4C0CC.cer",
+            "limit": {
+              "asn": "none",
+              "v4": "none",
+              "v6": "none"
+            },
+            "resource_set": {
+              "asn": "",
+              "v4": "10.0.0.0/16",
+              "v6": ""
+            },
+            "cert": "MIIFJjCCBA6gAwIBAgIUGzafCMZi2BR98jyD3NUppbfG6J0wDQYJKoZIhvcNAQELBQAwMzExMC8GA1UEAxMoMjY4RTJCMDdCQTkwODU5MTdEMjdGQTZGMjEwMDgxQzBGNDUwMzc0RDAeFw0xOTExMjMxMzExMzlaFw0yMDExMjMxMzE2MzlaMDMxMTAvBgNVBAMTKDQ1ODNERTI0QTI0M0IxQzMxNjg4NkUwMDQ2QjMwQThERDRBNEMwQ0MwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQDEBUI5NNmy6c/HAU3F9gdOtNGvew/tTf1blPlKZBhltbJjnpEpbCTSSxuCBPuepu5Ma/mEksFtsyvS3pQbfqnhM18MCc3/9vB5fnkl2SbVYyQq5s58I9i+OOzGHzqHc0+tw6PNfMGSxkeg4cSnbPNMQUEsfbbbCwd70GEsj/kBMWEJwof8P4IhhDnakypjt5lAUHrjOE8hKvHrroVFiDfgFSCXyc+c+sMDUSdUf6PNN293GnGkyhniIdiIyCex4ywVVGrBI0YJK4SgblcpeC0YVGr98ISkl3cLgcoapvMJCcKXi8Dyqtt14F0ZY/PPzWxzrpWjuNSNFDyPnb/G/rCjAgMBAAGjggIwMIICLDAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBRFg94kokOxwxaIbgBGswqN1KTAzDAfBgNVHSMEGDAWgBQmjisHupCFkX0n+m8hAIHA9FA3TTAOBgNVHQ8BAf8EBAMCAQYwWgYDVR0fBFMwUTBPoE2gS4ZJcnN5bmM6Ly9sb2NhbGhvc3QvcmVwby9DQTEvMC8yNjhFMkIwN0JBOTA4NTkxN0QyN0ZBNkYyMTAwODFDMEY0NTAzNzRELmNybDBkBggrBgEFBQcBAQRYMFYwVAYIKwYBBQUHMAKGSHJzeW5jOi8vbG9jYWxob3N0L3JlcG8vdGEvMC8yNjhFMkIwN0JBOTA4NTkxN0QyN0ZBNkYyMTAwODFDMEY0NTAzNzRELmNlcjCBzAYIKwYBBQUHAQsEgb8wgbwwKQYIKwYBBQUHMAWGHXJzeW5jOi8vbG9jYWxob3N0L3JlcG8vQ0EzLzAvMFUGCCsGAQUFBzAKhklyc3luYzovL2xvY2FsaG9zdC9yZXBvL0NBMy8wLzQ1ODNERTI0QTI0M0IxQzMxNjg4NkUwMDQ2QjMwQThERDRBNEMwQ0MubWZ0MDgGCCsGAQUFBzANhixodHRwczovL2xvY2FsaG9zdDozMDAwL3JyZHAvbm90aWZpY2F0aW9uLnhtbDAYBgNVHSABAf8EDjAMMAoGCCsGAQUFBw4CMB4GCCsGAQUFBwEHAQH/BA8wDTALBAIAATAFAwMACgAwDQYJKoZIhvcNAQELBQADggEBAKWYfj4cqjmIhbeSwDHMWqtMedPNo5n3TobazDkM/lR1EFZhFtA7tMrvavX17a9MV/olNtdxa21x6L44UG9UbxS7R7oPYF5zqiDsfIg2rtxY1i1n7WWBvFlftviqnK6dzKewR9/ItdewiX2OXATzpR4UVhmbQEF1xjv9EbhtAlvOQxCJ9gBSk3KOr9UA26u9T2rvYcYi4cHSsWpRywKOk2ZA7RB6F6qzEhyfseDwpmVpBVhDiJDQvD332s1JACekcm1y0rCbre4il6Kh5leP3sIE8A8c/byui3dIJIWUooQUTptJBBB9mjmtdAHEa6DzBRYKf2mCNF+eVuR7OSWdtLI=",
+            "replaces": null
+          }
+        ],
+        "removed": []
+      }
+    ]
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "id": "rfc6492",
+  "version": 21,
+  "details": {
+    "t": "ParentRemoved",
+    "c": [
+      "ta",
+      [
+        {
+          "ca_repo": "rsync://localhost/repo/rfc6492/1",
+          "added": [],
+          "updated": [],
+          "withdrawn": [
+            {
+              "name": "90F3E6877DB483FA6F812E1EBAB92C2E4BC98CF9.crl",
+              "hash": "7a3330c3db9772ee314e1e4a84efff0d2ff62992772941f41186c2c17a9208d0"
+            },
+            {
+              "name": "90F3E6877DB483FA6F812E1EBAB92C2E4BC98CF9.mft",
+              "hash": "9dcfbc974b10f5d63bcaa0d326a84b4e24931758a5a6f130118d010cf5b0ee92"
+            }
+          ]
+        }
+      ]
+    ]
+  }
+}

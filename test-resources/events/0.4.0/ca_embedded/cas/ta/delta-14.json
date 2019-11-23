@@ -1,0 +1,15 @@
+{
+  "id": "ta",
+  "version": 14,
+  "details": {
+    "t": "ChildUpdatedResources",
+    "c": [
+      "child",
+      {
+        "asn": "",
+        "v4": "",
+        "v6": ""
+      }
+    ]
+  }
+}

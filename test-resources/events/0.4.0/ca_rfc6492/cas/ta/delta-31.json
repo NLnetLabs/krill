@@ -1,0 +1,12 @@
+{
+  "id": "ta",
+  "version": 31,
+  "details": {
+    "t": "ChildCertificateIssued",
+    "c": [
+      "rfc6492",
+      "0",
+      "90F3E6877DB483FA6F812E1EBAB92C2E4BC98CF9"
+    ]
+  }
+}

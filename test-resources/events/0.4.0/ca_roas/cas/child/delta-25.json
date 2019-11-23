@@ -1,0 +1,25 @@
+{
+  "id": "child",
+  "version": 25,
+  "details": {
+    "t": "KeyRollFinished",
+    "c": [
+      "0",
+      {
+        "ca_repo": "rsync://localhost/repo/child/0",
+        "added": [],
+        "updated": [],
+        "withdrawn": [
+          {
+            "name": "EFD829C95523438831AD18431DADFE9B952E15B1.crl",
+            "hash": "7edd363fb320cd9421abbfe3ff35698204ea49b8665a391d85518f2789aeea5b"
+          },
+          {
+            "name": "EFD829C95523438831AD18431DADFE9B952E15B1.mft",
+            "hash": "bd70bf133bebc6f8620c47c123ab1b460408dbf7e44db1d85a9099f3e6f25b4e"
+          }
+        ]
+      }
+    ]
+  }
+}

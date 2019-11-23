@@ -1,0 +1,32 @@
+{
+  "id": "child",
+  "version": 11,
+  "details": {
+    "t": "ResourceClassRemoved",
+    "c": [
+      "0",
+      {
+        "ca_repo": "rsync://localhost/repo/child/0",
+        "added": [],
+        "updated": [],
+        "withdrawn": [
+          {
+            "name": "6052D8A3FCF0DE9E3B2BA955A5FFF36F62B26B1D.crl",
+            "hash": "4378893fd2530576468f9e9c368ddc8bbf21e7955ac34d21a0dd868d009369e4"
+          },
+          {
+            "name": "6052D8A3FCF0DE9E3B2BA955A5FFF36F62B26B1D.mft",
+            "hash": "6aee6f1d19aa8fe5e7f3f935822df457ae5a437701154b9db5b08c4d36bc2599"
+          }
+        ]
+      },
+      "ta",
+      [
+        {
+          "class_name": "0",
+          "key": "6052D8A3FCF0DE9E3B2BA955A5FFF36F62B26B1D"
+        }
+      ]
+    ]
+  }
+}

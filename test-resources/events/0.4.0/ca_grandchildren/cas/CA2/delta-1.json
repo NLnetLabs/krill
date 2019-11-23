@@ -1,0 +1,20 @@
+{
+  "id": "CA2",
+  "version": 1,
+  "details": {
+    "t": "ParentAdded",
+    "c": [
+      "ta",
+      {
+        "t": "Rfc6492",
+        "c": {
+          "tag": null,
+          "id_cert": "MIIDPDCCAiSgAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEygwRjJCODFGQzg2QTBENDFGNDI0QkRBMkFGMDQxMjRGMzk3NkJFOTFEMCAXDTE5MTEyMzEzMTEzM1oYDzIxMTkxMTIzMTMxNjMzWjAzMTEwLwYDVQQDEygwRjJCODFGQzg2QTBENDFGNDI0QkRBMkFGMDQxMjRGMzk3NkJFOTFEMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArgeLJsvKkTCwXc2vzj07Jd8zZZJanaKnvgZjGDtAwhPrYXz7cs7FEGEH42e8oxKPAS1mJRQ1Bm8oWCGv5LmI+seQmP4i6d4ztBDzdJ6MgTENV1AOww7daCvDWf/p76jAIEwsyVfNxQYIe3Z2704erpx9QLYsBPODQH8w0v0M6v7JyysrMkf8cTfftaumLx+Dc4tffLF+9K984flBpX5gwmmrMlItauiaA8Fo0NzjRsj/uBgYA5dmXhP0LQu/GMk7mcv0mFPAs0B/H7kHaBdceuk6KTBaoWDpGHsxvffRC/2jiUqRdHBFwDcMlstGNQw8YtjuX9o8gT6+omshdQSQZQIDAQABo1kwVzAPBgNVHRMBAf8EBTADAQH/MCAGA1UdDgEBAAQWBBQPK4H8hqDUH0JL2irwQSTzl2vpHTAiBgNVHSMBAQAEGDAWgBQPK4H8hqDUH0JL2irwQSTzl2vpHTANBgkqhkiG9w0BAQsFAAOCAQEAePjGR5ULLuhbi8Onpuk3hSR2QTA7ipBs3OW2L4bqXRG48HN3g8VuO/P3wMnNAtjYXmGr+TJAQWK5mTtEyckmi4BgzA9jSjp7hT2XYO2V4SHoKP58ZPNSjPNKHenfmj9gyJVNDn9NIdHJbSEA2aIr8JYyVWH37TqCs1VebA7GB2kf2e1Fdr984Tio8Cm+UjvYBubirpPhft83sFQPipKg+PORVR4XLCNkW+xNMEx+yCaSuDSKJguH4ciyQhm2ONlnqdkCqC5khGwPesyjFE3VhKxO4eje5TPdHILpRtkqwQHsJf/2+0wWAi5e1HiRrAFLfnW3Y7pnXEvf2RCFF8Kfgg==",
+          "parent_handle": "ta",
+          "child_handle": "CA2",
+          "service_uri": "https://localhost:3000/rfc6492/ta"
+        }
+      }
+    ]
+  }
+}

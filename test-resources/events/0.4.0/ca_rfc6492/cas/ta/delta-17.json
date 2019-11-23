@@ -1,0 +1,16 @@
+{
+  "id": "ta",
+  "version": 17,
+  "details": {
+    "t": "ChildCertificatesUpdated",
+    "c": [
+      "0",
+      {
+        "issued": [],
+        "removed": [
+          "C82E804808A1A2A063ACED227149084E32154B9B"
+        ]
+      }
+    ]
+  }
+}

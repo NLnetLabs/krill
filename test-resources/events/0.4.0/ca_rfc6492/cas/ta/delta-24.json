@@ -1,0 +1,15 @@
+{
+  "id": "ta",
+  "version": 24,
+  "details": {
+    "t": "ChildUpdatedResources",
+    "c": [
+      "rfc6492",
+      {
+        "asn": "AS65000",
+        "v4": "10.0.0.0/16",
+        "v6": ""
+      }
+    ]
+  }
+}

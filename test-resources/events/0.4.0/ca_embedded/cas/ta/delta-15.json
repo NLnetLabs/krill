@@ -1,0 +1,12 @@
+{
+  "id": "ta",
+  "version": 15,
+  "details": {
+    "t": "ChildKeyRevoked",
+    "c": [
+      "child",
+      "0",
+      "6052D8A3FCF0DE9E3B2BA955A5FFF36F62B26B1D"
+    ]
+  }
+}

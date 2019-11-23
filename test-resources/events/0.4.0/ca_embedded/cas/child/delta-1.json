@@ -1,0 +1,13 @@
+{
+  "id": "child",
+  "version": 1,
+  "details": {
+    "t": "ParentAdded",
+    "c": [
+      "ta",
+      {
+        "t": "Embedded"
+      }
+    ]
+  }
+}

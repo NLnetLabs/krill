@@ -1,0 +1,14 @@
+{
+  "id": "child",
+  "version": 9,
+  "details": {
+    "t": "RepoCleaned",
+    "c": {
+      "t": "Embedded",
+      "c": {
+        "base_uri": "rsync://localhost/repo/child/",
+        "rpki_notify": "https://localhost:3000/rrdp/notification.xml"
+      }
+    }
+  }
+}
