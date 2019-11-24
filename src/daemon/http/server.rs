@@ -102,7 +102,9 @@ pub fn start(config: &Config) -> Result<(), Error> {
                     // Force resyncing of all CAs at repo servers
                     .route("/cas/resync_all", post().to(resync_all))
                     // Force refresh of ALL CA certificates
-                    .route("/cas/refresh_all", post().to(refresh_all)),
+                    .route("/cas/refresh_all", post().to(refresh_all))
+                    // Methods that are not found should return a bad request and some explanation
+                    .default_service(web::route().to(api_bad_request)),
             )
             // Logged in users for the API
             .route("/ui/is_logged_in", get().to(is_logged_in))

@@ -47,7 +47,19 @@ fn render_empty_res(res: Result<(), krillserver::Error>) -> HttpResponse {
 
 /// A clean 404 result for the API (no content, not for humans)
 fn api_not_found() -> HttpResponse {
-    HttpResponse::build(StatusCode::NOT_FOUND).finish()
+    let code = ErrorCode::UnknownResource;
+    let res: ErrorResponse = code.into();
+    let msg = serde_json::to_string(&res).unwrap();
+    let status = StatusCode::NOT_FOUND;
+    HttpResponse::build(status).body(msg)
+}
+
+pub fn api_bad_request() -> HttpResponse {
+    let code = ErrorCode::UnknownMethod;
+    let res: ErrorResponse = code.into();
+    let msg = serde_json::to_string(&res).unwrap();
+    let status = StatusCode::BAD_REQUEST;
+    HttpResponse::build(status).body(msg)
 }
 
 pub fn not_found() -> HttpResponse {

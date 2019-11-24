@@ -280,6 +280,12 @@ pub enum ErrorCode {
     #[display(fmt = "Out of sync with server, please send requests for instances sequentially")]
     ConcurrentModification,
 
+    #[display(fmt = "unknown api method")]
+    UnknownMethod,
+
+    #[display(fmt = "unknown resource")]
+    UnknownResource,
+
     #[display(fmt = "Unknown publisher")]
     UnknownPublisher,
 
@@ -362,6 +368,8 @@ impl From<usize> for ErrorCode {
             // 2000s -> General client issues
             2001 => ErrorCode::CmsValidation,
             2002 => ErrorCode::ConcurrentModification,
+            2003 => ErrorCode::UnknownMethod,
+            2004 => ErrorCode::UnknownResource,
 
             // 2100s -> Pub Admin issues
             2101 => ErrorCode::InvalidBaseUri,
@@ -412,6 +420,8 @@ impl Into<ErrorResponse> for ErrorCode {
             // general errors
             ErrorCode::CmsValidation => 2001,
             ErrorCode::ConcurrentModification => 2002,
+            ErrorCode::UnknownMethod => 2003,
+            ErrorCode::UnknownResource => 2004,
 
             // pub admin errors
             ErrorCode::InvalidBaseUri => 2101,
@@ -470,7 +480,7 @@ mod tests {
             test_code(n)
         }
 
-        for n in 2001..2003 {
+        for n in 2001..2005 {
             test_code(n)
         }
 
