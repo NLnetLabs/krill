@@ -13,7 +13,7 @@ info:
     url: https://www.mozilla.org/en-US/MPL/2.0/
 
 servers:
-- url: https://x18openapitesting.do.nlnetlabs.nl/api/v1
+- url: https://localhost:3000/api/v1
   description: Test deployment.
 
 tags:
