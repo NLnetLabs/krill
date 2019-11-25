@@ -320,8 +320,11 @@ impl KrillServer {
     }
 
     /// Returns the public CA info for a CA, or NONE if the CA cannot be found.
-    pub fn ca_info(&self, handle: &Handle) -> Option<CertAuthInfo> {
-        self.caserver.get_ca(handle).map(|ca| ca.as_ca_info()).ok()
+    pub fn ca_info(&self, handle: &Handle) -> KrillRes<CertAuthInfo> {
+        self.caserver
+            .get_ca(handle)
+            .map(|ca| ca.as_ca_info())
+            .map_err(Error::CaServerError)
     }
 
     /// Returns the parent contact for a CA and parent, or NONE if either the CA or the parent cannot be found.

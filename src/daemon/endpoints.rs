@@ -45,6 +45,13 @@ fn render_empty_res(res: Result<(), krillserver::Error>) -> HttpResponse {
     }
 }
 
+fn render_json_res<O: Serialize>(res: Result<O, krillserver::Error>) -> HttpResponse {
+    match res {
+        Ok(o) => render_json(o),
+        Err(e) => server_error(&Error::ServerError(e)),
+    }
+}
+
 /// A clean 404 result for the API (no content, not for humans)
 fn api_not_found() -> HttpResponse {
     let code = ErrorCode::UnknownResource;
@@ -104,9 +111,13 @@ where
 
 /// Returns a json structure with all publishers in it.
 pub fn list_pbl(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
-    if_api_allowed(&server, &auth, || match server.read().publishers() {
-        Ok(publishers) => render_json(PublisherList::build(&publishers, "/api/v1/publishers")),
-        Err(e) => server_error(&Error::ServerError(e)),
+    if_api_allowed(&server, &auth, || {
+        render_json_res(
+            server
+                .read()
+                .publishers()
+                .map(|publishers| PublisherList::build(&publishers, "/api/v1/publishers")),
+        )
     })
 }
 
@@ -138,10 +149,7 @@ pub fn remove_pbl(
 #[allow(clippy::needless_pass_by_value)]
 pub fn show_pbl(server: web::Data<AppServer>, auth: Auth, publisher: Path<Handle>) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
-        match server.read().get_publisher(&publisher.into_inner()) {
-            Ok(publisher) => render_json(publisher),
-            Err(e) => server_error(&Error::ServerError(e)),
-        }
+        render_json_res(server.read().get_publisher(&publisher.into_inner()))
     })
 }
 
@@ -213,13 +221,11 @@ pub fn ca_add_child(
     auth: Auth,
 ) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
-        match server
-            .read()
-            .ca_add_child(&parent.into_inner(), req.into_inner())
-        {
-            Ok(info) => render_json(info),
-            Err(e) => server_error(&Error::ServerError(e)),
-        }
+        render_json_res(
+            server
+                .read()
+                .ca_add_child(&parent.into_inner(), req.into_inner()),
+        )
     })
 }
 
@@ -280,10 +286,7 @@ pub fn ca_parent_contact(
     let child = ca_and_child.1;
 
     if_api_allowed(&server, &auth, || {
-        match server.read().ca_parent_contact(&ca, child.clone()) {
-            Ok(contact) => render_json(contact),
-            Err(e) => server_error(&Error::ServerError(e)),
-        }
+        render_json_res(server.read().ca_parent_contact(&ca, child.clone()))
     })
 }
 
@@ -315,10 +318,7 @@ pub fn ca_update_id(
 
 pub fn ca_info(server: web::Data<AppServer>, auth: Auth, handle: Path<Handle>) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
-        match server.read().ca_info(&handle.into_inner()) {
-            Some(info) => render_json(info),
-            None => api_not_found(),
-        }
+        render_json_res(server.read().ca_info(&handle.into_inner()))
     })
 }
 
