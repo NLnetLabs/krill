@@ -210,22 +210,17 @@ impl<S: Signer> CaServer<S> {
         }
     }
 
-    /// Show details for a child under the TA. Returns Ok(None) if the TA is present,
-    /// but the child is not known.
+    /// Show details for a child under the TA.
     pub fn ca_show_child(
         &self,
         parent: &ParentHandle,
         child: &ChildHandle,
-    ) -> ServerResult<Option<ChildCaInfo>> {
+    ) -> ServerResult<ChildCaInfo> {
         trace!("Finding details for CA: {} under parent: {}", child, parent);
-
         let ca = self.get_ca(parent)?;
-        let child_opt = match ca.get_child(child) {
-            Err(_) => None,
-            Ok(child_details) => Some(child_details.clone().into()),
-        };
-
-        Ok(child_opt)
+        ca.get_child(child)
+            .map(|details| details.clone().into())
+            .map_err(ServerError::CertAuth)
     }
 
     /// Update a child under this CA.

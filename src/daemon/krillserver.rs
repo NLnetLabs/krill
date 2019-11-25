@@ -278,7 +278,7 @@ impl KrillServer {
         &self,
         parent: &ParentHandle,
         child: &ChildHandle,
-    ) -> KrillRes<Option<ChildCaInfo>> {
+    ) -> KrillRes<ChildCaInfo> {
         let child = self.caserver.ca_show_child(parent, child)?;
         Ok(child)
     }

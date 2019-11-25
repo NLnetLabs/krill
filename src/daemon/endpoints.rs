@@ -268,11 +268,7 @@ pub fn ca_show_child(
     let child = ca_and_child.1;
 
     if_api_allowed(&server, &auth, || {
-        match server.read().ca_show_child(&ca, &child) {
-            Ok(Some(child)) => render_json(child),
-            Ok(None) => api_not_found(),
-            Err(e) => server_error(&Error::ServerError(e)),
-        }
+        render_json_res(server.read().ca_show_child(&ca, &child))
     })
 }
 
