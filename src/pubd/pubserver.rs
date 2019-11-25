@@ -292,10 +292,7 @@ mod tests {
 
             server.create_publisher(publisher_req).unwrap();
 
-            let alice_found = server
-                .get_publisher_details(&alice_handle)
-                .unwrap()
-                .unwrap();
+            let alice_found = server.get_publisher_details(&alice_handle).unwrap();
 
             assert_eq!(alice_found.base_uri(), alice.base_uri());
             assert_eq!(alice_found.id_cert(), alice.id_cert());
