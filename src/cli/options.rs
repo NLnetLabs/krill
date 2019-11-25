@@ -1006,7 +1006,7 @@ impl Options {
     }
 
     fn parse_matches_cas_update(matches: &ArgMatches) -> Result<Options, Error> {
-        if let Some(_m) = matches.subcommand_matches("embedded") {
+        if let Some(matches) = matches.subcommand_matches("embedded") {
             let general_args = GeneralArgs::from_matches(matches)?;
             let my_ca = Self::parse_my_ca(matches)?;
             let update = RepositoryUpdate::embedded();

@@ -383,7 +383,7 @@ impl KrillServer {
 
     /// Return the info about the configure repository server for a given Ca,
     /// and the actual objects published there, as reported by a list reply.
-    pub fn ca_repo_details(&self, handle: &Handle) -> Option<CaRepoDetails> {
+    pub fn ca_repo_details(&self, handle: &Handle) -> KrillRes<CaRepoDetails> {
         self.caserver
             .get_ca(handle)
             .map(|ca| {
@@ -392,7 +392,7 @@ impl KrillServer {
                 let state = self.repo_state(handle, repo_opt);
                 CaRepoDetails::new(contact, state)
             })
-            .ok()
+            .map_err(Error::CaServerError)
     }
 
     /// Update the repository for a CA, or return an error. (see `CertAuth::repo_update`)

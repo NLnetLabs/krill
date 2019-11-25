@@ -353,6 +353,7 @@ impl Report for rfc8183::PublisherRequest {
 
                 Ok(xml.to_string())
             }
+            ReportFormat::Json => Ok(serde_json::to_string_pretty(self).unwrap()),
             _ => Err(ReportError::UnsupportedFormat),
         }
     }

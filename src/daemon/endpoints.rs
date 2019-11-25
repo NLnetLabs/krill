@@ -306,7 +306,7 @@ pub fn ca_init(
     })
 }
 
-pub fn ca_update_id(
+pub fn ca_regenerate_id(
     server: web::Data<AppServer>,
     auth: Auth,
     handle: Path<Handle>,
@@ -382,10 +382,7 @@ pub fn ca_repo_details(
 ) -> HttpResponse {
     let handle = handle.into_inner();
     if_api_allowed(&server, &auth, || {
-        match server.read().ca_repo_details(&handle) {
-            Some(req) => render_json(req),
-            None => api_not_found(),
-        }
+        render_json_res(server.read().ca_repo_details(&handle))
     })
 }
 
@@ -701,6 +698,8 @@ impl ToErrorCode for ca::Error {
             ca::Error::AuthorisationAlreadyPresent(_, _) => ErrorCode::RoaUpdateInvalidDuplicate,
             ca::Error::AuthorisationUnknown(_, _) => ErrorCode::RoaUpdateInvalidMissing,
             ca::Error::AuthorisationNotEntitled(_, _) => ErrorCode::RoaUpdateInvalidResources,
+            ca::Error::NewRepoUpdateNoChange => ErrorCode::NewRepoNoChange,
+            ca::Error::NewRepoUpdateNotResponsive(_) => ErrorCode::NewRepoNoResponse,
             _ => ErrorCode::CaServerError,
         }
     }

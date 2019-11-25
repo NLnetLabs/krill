@@ -288,6 +288,7 @@ impl PublisherClientRequest {
 //------------ RepositoryUpdate ----------------------------------------------
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
+#[serde(tag = "t", content = "c")]
 pub enum RepositoryUpdate {
     Embedded,
     Rfc8181(rfc8183::RepositoryResponse),

@@ -1656,6 +1656,7 @@ impl fmt::Display for ResourceClassKeysInfo {
 //------------ CaRepoDetails -------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "t", content = "c")]
 pub enum CurrentRepoState {
     List(ListReply),
     Error(String),

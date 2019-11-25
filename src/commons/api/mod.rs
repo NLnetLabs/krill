@@ -307,6 +307,12 @@ pub enum ErrorCode {
     #[display(fmt = "Publisher has been deactivated")]
     PublisherDeactivated,
 
+    #[display(fmt = "Already using this repository.")]
+    NewRepoNoChange,
+
+    #[display(fmt = "Target repository does not allow list query.")]
+    NewRepoNoResponse,
+
     // 2300s CA Admin Issues
     #[display(fmt = "Child with handle exists")]
     DuplicateChild,
@@ -388,6 +394,8 @@ impl From<usize> for ErrorCode {
             2203 => ErrorCode::ObjectAlreadyPresent,
             2204 => ErrorCode::NoObjectForHashAndOrUri,
             2205 => ErrorCode::PublisherDeactivated,
+            2206 => ErrorCode::NewRepoNoChange,
+            2207 => ErrorCode::NewRepoNoResponse,
 
             // 2300s -> CA Admin issues
             2301 => ErrorCode::DuplicateChild,
@@ -444,6 +452,8 @@ impl Into<ErrorResponse> for ErrorCode {
             ErrorCode::ObjectAlreadyPresent => 2203,
             ErrorCode::NoObjectForHashAndOrUri => 2204,
             ErrorCode::PublisherDeactivated => 2205,
+            ErrorCode::NewRepoNoChange => 2206,
+            ErrorCode::NewRepoNoResponse => 2207,
 
             // ca parent-child errors
             ErrorCode::DuplicateChild => 2301,
@@ -503,7 +513,7 @@ mod tests {
             test_code(n)
         }
 
-        for n in 2201..2206 {
+        for n in 2201..2208 {
             test_code(n)
         }
 
