@@ -181,13 +181,10 @@ impl KrillServer {
             .map_err(Error::PubServer)
     }
 
-    /// Returns an option for a publisher.
-    pub fn publisher(
-        &self,
-        publisher: &PublisherHandle,
-    ) -> Result<Option<PublisherDetails>, Error> {
+    /// Returns a publisher.
+    pub fn get_publisher(&self, publisher: &PublisherHandle) -> Result<PublisherDetails, Error> {
         self.pubserver
-            .publisher_details(publisher)
+            .get_publisher_details(publisher)
             .map_err(Error::PubServer)
     }
 

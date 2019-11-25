@@ -138,9 +138,8 @@ pub fn remove_pbl(
 #[allow(clippy::needless_pass_by_value)]
 pub fn show_pbl(server: web::Data<AppServer>, auth: Auth, publisher: Path<Handle>) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
-        match server.read().publisher(&publisher.into_inner()) {
-            Ok(Some(publisher)) => render_json(publisher),
-            Ok(None) => api_not_found(),
+        match server.read().get_publisher(&publisher.into_inner()) {
+            Ok(publisher) => render_json(publisher),
             Err(e) => server_error(&Error::ServerError(e)),
         }
     })
@@ -608,7 +607,7 @@ impl ErrorToStatus for pubd::Error {
     fn status(&self) -> StatusCode {
         match self {
             pubd::Error::DuplicatePublisher(_) => StatusCode::BAD_REQUEST,
-            pubd::Error::UnknownPublisher(_) => StatusCode::BAD_REQUEST,
+            pubd::Error::UnknownPublisher(_) => StatusCode::NOT_FOUND,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
