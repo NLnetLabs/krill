@@ -608,7 +608,7 @@ impl ErrorToStatus for pubd::Error {
     fn status(&self) -> StatusCode {
         match self {
             pubd::Error::DuplicatePublisher(_) => StatusCode::BAD_REQUEST,
-            pubd::Error::UnknownPublisher(_) => StatusCode::FORBIDDEN,
+            pubd::Error::UnknownPublisher(_) => StatusCode::BAD_REQUEST,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
