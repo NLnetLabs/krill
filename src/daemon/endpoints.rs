@@ -688,8 +688,8 @@ impl ToErrorCode for ca::ServerError {
     fn code(&self) -> ErrorCode {
         match self {
             ca::ServerError::CertAuth(e) => e.code(),
-            ca::ServerError::DuplicateCa(_) => ErrorCode::DuplicateChild,
-            ca::ServerError::UnknownCa(_) => ErrorCode::UnknownChild,
+            ca::ServerError::DuplicateCa(_) => ErrorCode::DuplicateCa,
+            ca::ServerError::UnknownCa(_) => ErrorCode::UnknownCa,
             _ => ErrorCode::CaServerError,
         }
     }

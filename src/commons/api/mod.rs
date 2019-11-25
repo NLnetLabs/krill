@@ -332,6 +332,13 @@ pub enum ErrorCode {
     #[display(fmt = "Invalid ROA delta: not all resources held.")]
     RoaUpdateInvalidResources,
 
+    // 2500s General CA issues
+    #[display(fmt = "Unknown CA.")]
+    UnknownCa,
+
+    #[display(fmt = "CA with handle exists.")]
+    DuplicateCa,
+
     // 3000s General server errors
     #[display(fmt = "Cannot update internal state, issue with work_dir?")]
     Persistence,
@@ -394,6 +401,10 @@ impl From<usize> for ErrorCode {
             2402 => ErrorCode::RoaUpdateInvalidMissing,
             2403 => ErrorCode::RoaUpdateInvalidResources,
 
+            // 2500s -> General CA issues
+            2501 => ErrorCode::DuplicateCa,
+            2502 => ErrorCode::UnknownCa,
+
             // 3000s -> Server issues, bugs or operational issues
             3001 => ErrorCode::Persistence,
             3002 => ErrorCode::RepositoryUpdate,
@@ -434,7 +445,7 @@ impl Into<ErrorResponse> for ErrorCode {
             ErrorCode::NoObjectForHashAndOrUri => 2204,
             ErrorCode::PublisherDeactivated => 2205,
 
-            // ca admin errors
+            // ca parent-child errors
             ErrorCode::DuplicateChild => 2301,
             ErrorCode::ChildNeedsResources => 2302,
             ErrorCode::ChildOverclaims => 2303,
@@ -445,6 +456,10 @@ impl Into<ErrorResponse> for ErrorCode {
             ErrorCode::RoaUpdateInvalidDuplicate => 2401,
             ErrorCode::RoaUpdateInvalidMissing => 2402,
             ErrorCode::RoaUpdateInvalidResources => 2403,
+
+            // general krill ca errors
+            ErrorCode::DuplicateCa => 2501,
+            ErrorCode::UnknownCa => 2502,
 
             // server errors
             ErrorCode::Persistence => 3001,
@@ -497,6 +512,10 @@ mod tests {
         }
 
         for n in 2401..2404 {
+            test_code(n)
+        }
+
+        for n in 2501..2503 {
             test_code(n)
         }
 
