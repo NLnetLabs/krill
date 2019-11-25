@@ -127,7 +127,7 @@ impl Report for CertAuthList {
             ReportFormat::Text => {
                 let mut res = String::new();
                 for ca in self.cas() {
-                    res.push_str(&format!("{}\n", ca.name()));
+                    res.push_str(&format!("{}\n", ca.handle()));
                 }
 
                 Ok(res)

@@ -107,8 +107,12 @@ impl<S: Signer> CaServer<S> {
     /// to their next update time.
     pub fn republish_all(&self) -> ServerResult<()> {
         for ca in self.cas().cas() {
-            if let Err(e) = self.republish(ca.name()) {
-                error!("ServerError publishing: {}, ServerError: {}", ca.name(), e)
+            if let Err(e) = self.republish(ca.handle()) {
+                error!(
+                    "ServerError publishing: {}, ServerError: {}",
+                    ca.handle(),
+                    e
+                )
             }
         }
         Ok(())

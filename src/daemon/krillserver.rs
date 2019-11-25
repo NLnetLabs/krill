@@ -294,8 +294,8 @@ impl KrillServer {
         let publisher = CaPublisher::new(self.caserver.clone(), self.pubserver.clone());
 
         for ca in self.caserver.cas().cas() {
-            if let Err(e) = publisher.publish(ca.name()) {
-                error!("Failed to sync ca: {}. Got error: {}", ca.name(), e)
+            if let Err(e) = publisher.publish(ca.handle()) {
+                error!("Failed to sync ca: {}. Got error: {}", ca.handle(), e)
             }
         }
 

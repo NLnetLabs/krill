@@ -1402,16 +1402,16 @@ impl CertAuthList {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthSummary {
-    name: Handle,
+    handle: Handle,
 }
 
 impl CertAuthSummary {
     pub fn new(name: Handle) -> Self {
-        CertAuthSummary { name }
+        CertAuthSummary { handle: name }
     }
 
-    pub fn name(&self) -> &Handle {
-        &self.name
+    pub fn handle(&self) -> &Handle {
+        &self.handle
     }
 }
 
