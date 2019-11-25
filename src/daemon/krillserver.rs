@@ -345,11 +345,11 @@ impl KrillServer {
     }
 
     /// Returns the child request for a CA, or NONE if the CA cannot be found.
-    pub fn ca_child_req(&self, handle: &Handle) -> Option<rfc8183::ChildRequest> {
+    pub fn ca_child_req(&self, handle: &Handle) -> KrillRes<rfc8183::ChildRequest> {
         self.caserver
             .get_ca(handle)
             .map(|ca| ca.child_request())
-            .ok()
+            .map_err(Error::CaServerError)
     }
 
     /// Returns the publisher request for a CA, or NONE of the CA cannot be found.

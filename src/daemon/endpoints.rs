@@ -359,10 +359,10 @@ pub fn ca_child_req(
     let handle = handle.into_inner();
     if_api_allowed(&server, &auth, || {
         match server.read().ca_child_req(&handle) {
-            Some(req) => HttpResponse::Ok()
+            Ok(req) => HttpResponse::Ok()
                 .content_type("application/xml")
                 .body(req.encode_vec()),
-            None => api_not_found(),
+            Err(e) => server_error(&Error::ServerError(e)),
         }
     })
 }
@@ -618,7 +618,7 @@ impl ErrorToStatus for ca::ServerError {
         match self {
             ca::ServerError::CertAuth(e) => e.status(),
             ca::ServerError::DuplicateCa(_) => StatusCode::BAD_REQUEST,
-            ca::ServerError::UnknownCa(_) => StatusCode::BAD_REQUEST,
+            ca::ServerError::UnknownCa(_) => StatusCode::NOT_FOUND,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
