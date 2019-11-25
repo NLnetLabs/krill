@@ -321,6 +321,97 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /publishers:
+    get:
+      tags:
+      - "Publishers"
+      summary: List the current publishers.
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  publishers:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          $ref: '#/components/schemas/Handle'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    post:
+      tags:
+      - "Publishers"
+      summary: Add a new publisher.
+      description: |
+        Adds an RFC8181 publisher. Expects a json representation of the
+        RFC 8183 XML. The CLI does this conversion, but the server does not
+        expect XML.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddPublisherRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /publishers/{publisher_handle}:
+    get:
+      tags:
+      - "Publishers"
+      summary: Shows the information for a publisher by a given handle.
+      parameters:
+        - $ref: '#/components/parameters/publisher_handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+    delete:
+      tags:
+      - "Publishers"
+      summary: This action also removes all the published content for a publisher.
+      parameters:
+        - $ref: '#/components/parameters/publisher_handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /publishers/{publisher_handle}/response.xml:
+    get:
+      tags:
+      - "Publishers"
+      summary: Gets the RFC 8183 XML Repository Response for a publisher.
+      parameters:
+        - $ref: '#/components/parameters/publisher_handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
 externalDocs:
   description: Read the Krill documentation
   url: https://rpki.readthedocs.io/en/latest/krill/
@@ -342,6 +433,12 @@ components:
     child_handle:
       in: path
       name: child_handle
+      schema:
+        $ref: '#/components/schemas/Handle'
+      required: true
+    publisher_handle:
+      in: path
+      name: publisher_handle
       schema:
         $ref: '#/components/schemas/Handle'
       required: true
@@ -424,6 +521,19 @@ components:
       required:
         - handle
         - contact
+    AddPublisherRequest:
+      type: object
+      properties:
+        publisher_handle:
+          $ref: '#/components/schemas/Handle'
+        tag:
+          type: string
+        id_cert:
+          type: string
+          format: byte
+      required:
+        - publisher_handle
+        - id_cert
 
     RFC8183RequestXML:
       type: object
