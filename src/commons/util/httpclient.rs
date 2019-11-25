@@ -14,17 +14,12 @@ use crate::constants::KRILL_CLI_API_ENV;
 
 const JSON_CONTENT: &str = "application/json";
 
-fn report_get(uri: &str, content_type: Option<&str>, token: Option<&Token>) {
-    if env::var(KRILL_CLI_API_ENV).is_ok() {
-        println!("GET: {}", uri);
-        if let Some(content_type) = content_type {
-            println!("Headers: content-type: {}", content_type);
-        }
-        if let Some(token) = token {
-            println!("Headers: Bearer: {}", token);
-        }
-        std::process::exit(0);
+fn report_get_and_exit(uri: &str, token: Option<&Token>) {
+    println!("GET: {}", uri);
+    if let Some(token) = token {
+        println!("Headers: Bearer: {}", token);
     }
+    std::process::exit(0);
 }
 
 enum PostBody<'a> {
@@ -48,18 +43,21 @@ impl<'a> fmt::Display for PostBody<'a> {
     }
 }
 
-fn report_post(uri: &str, content_type: Option<&str>, token: Option<&Token>, body: PostBody) {
-    if env::var(KRILL_CLI_API_ENV).is_ok() {
-        println!("POST: {}", uri);
-        if let Some(content_type) = content_type {
-            println!("Headers: content-type: {}", content_type);
-        }
-        if let Some(token) = token {
-            println!("Headers: Bearer: {}", token);
-        }
-        println!("Body: {}", body);
-        std::process::exit(0);
+fn report_post_and_exit(
+    uri: &str,
+    content_type: Option<&str>,
+    token: Option<&Token>,
+    body: PostBody,
+) {
+    println!("POST: {}", uri);
+    if let Some(content_type) = content_type {
+        println!("Headers: content-type: {}", content_type);
     }
+    if let Some(token) = token {
+        println!("Headers: Bearer: {}", token);
+    }
+    println!("Body: {}", body);
+    std::process::exit(0);
 }
 
 fn report_delete(uri: &str, content_type: Option<&str>, token: Option<&Token>) {
@@ -79,7 +77,9 @@ fn report_delete(uri: &str, content_type: Option<&str>, token: Option<&Token>) {
 /// deserialized into the an owned value of the expected type. Returns an error
 /// if nothing is returned.
 pub fn get_json<T: DeserializeOwned>(uri: &str, token: Option<&Token>) -> Result<T, Error> {
-    report_get(uri, None, token);
+    if env::var(KRILL_CLI_API_ENV).is_ok() {
+        report_get_and_exit(uri, token);
+    }
 
     let headers = headers(Some(JSON_CONTENT), token)?;
     let res = client(uri)?.get(uri).headers(headers).send()?;
@@ -89,7 +89,9 @@ pub fn get_json<T: DeserializeOwned>(uri: &str, token: Option<&Token>) -> Result
 /// Performs a get request and expects a response that can be turned
 /// into a string (in particular, not a binary response).
 pub fn get_text(uri: &str, content_type: &str, token: Option<&Token>) -> Result<String, Error> {
-    report_get(uri, Some(content_type), token);
+    if env::var(KRILL_CLI_API_ENV).is_ok() {
+        report_get_and_exit(uri, token);
+    }
 
     let headers = headers(Some(content_type), token)?;
     let res = client(uri)?.get(uri).headers(headers).send()?;
@@ -102,7 +104,9 @@ pub fn get_text(uri: &str, content_type: &str, token: Option<&Token>) -> Result<
 /// Checks that there is a 200 OK response at the given URI. Discards the
 /// response body.
 pub fn get_ok(uri: &str, token: Option<&Token>) -> Result<(), Error> {
-    report_get(uri, None, token);
+    if env::var(KRILL_CLI_API_ENV).is_ok() {
+        report_get_and_exit(uri, token);
+    }
 
     let headers = headers(None, token)?;
     let res = client(uri)?.get(uri).headers(headers).send()?;
@@ -113,9 +117,12 @@ pub fn get_ok(uri: &str, token: Option<&Token>) -> Result<(), Error> {
 /// Performs a POST of data that can be serialized into json, and expects
 /// a 200 OK response, without a body.
 pub fn post_json(uri: &str, data: impl Serialize, token: Option<&Token>) -> Result<(), Error> {
-    let body = serde_json::to_string(&data)?;
-    report_post(uri, None, token, PostBody::String(&body));
+    if env::var(KRILL_CLI_API_ENV).is_ok() {
+        let body = serde_json::to_string_pretty(&data)?;
+        report_post_and_exit(uri, Some(JSON_CONTENT), token, PostBody::String(&body));
+    }
 
+    let body = serde_json::to_string(&data)?;
     let headers = headers(Some(JSON_CONTENT), token)?;
 
     let res = client(uri)?.post(uri).headers(headers).body(body).send()?;
@@ -134,9 +141,12 @@ pub fn post_json_with_response<T: DeserializeOwned>(
     data: impl Serialize,
     token: Option<&Token>,
 ) -> Result<T, Error> {
-    let body = serde_json::to_string(&data)?;
-    report_post(uri, None, token, PostBody::String(&body));
+    if env::var(KRILL_CLI_API_ENV).is_ok() {
+        let body = serde_json::to_string_pretty(&data)?;
+        report_post_and_exit(uri, Some(JSON_CONTENT), token, PostBody::String(&body));
+    }
 
+    let body = serde_json::to_string(&data)?;
     let headers = headers(Some(JSON_CONTENT), token)?;
     let res = client(uri)?.post(uri).headers(headers).body(body).send()?;
     process_json_response(res)
@@ -144,7 +154,9 @@ pub fn post_json_with_response<T: DeserializeOwned>(
 
 /// Performs a POST with no data to the given URI and expects and empty 200 OK response.
 pub fn post_empty(uri: &str, token: Option<&Token>) -> Result<(), Error> {
-    report_post(uri, None, token, PostBody::String(&"<empty>".to_string()));
+    if env::var(KRILL_CLI_API_ENV).is_ok() {
+        report_post_and_exit(uri, None, token, PostBody::String(&"<empty>".to_string()));
+    }
 
     let headers = headers(Some(JSON_CONTENT), token)?;
     let res = client(uri)?.post(uri).headers(headers).send()?;
@@ -161,7 +173,9 @@ pub fn post_empty(uri: &str, token: Option<&Token>) -> Result<(), Error> {
 /// empty.
 pub fn post_binary(uri: &str, data: &Bytes, content_type: &str) -> Result<Bytes, Error> {
     let body = data.to_vec();
-    report_post(uri, None, None, PostBody::Bytes(&body));
+    if env::var(KRILL_CLI_API_ENV).is_ok() {
+        report_post_and_exit(uri, None, None, PostBody::Bytes(&body));
+    }
 
     let headers = headers(Some(content_type), None)?;
     let mut res = client(uri)?.post(uri).headers(headers).body(body).send()?;
