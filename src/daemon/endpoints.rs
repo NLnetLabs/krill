@@ -111,7 +111,6 @@ pub fn list_pbl(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
 }
 
 /// Adds a publisher
-#[allow(clippy::needless_pass_by_value)]
 pub fn add_pbl(
     server: web::Data<AppServer>,
     auth: Auth,
@@ -668,7 +667,7 @@ impl ToErrorCode for pubd::Error {
             pubd::Error::PublishingOutsideBaseUri(_, _) => ErrorCode::UriOutsideJail,
             pubd::Error::BaseUriNoDir(_) => ErrorCode::InvalidBaseUri,
             pubd::Error::RrdpVerificationError(e) => e.code(),
-            pubd::Error::NoRepository => ErrorCode::UnknownPublisher,
+            pubd::Error::NoRepository => ErrorCode::PubServerError,
             pubd::Error::Store(_) => ErrorCode::Persistence,
             pubd::Error::IoError(_) => ErrorCode::Persistence,
             pubd::Error::SignerError(_) => ErrorCode::SigningError,

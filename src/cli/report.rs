@@ -263,7 +263,7 @@ impl Report for PublisherList {
                     } else {
                         first = false;
                     }
-                    res.push_str(p.id());
+                    res.push_str(p.handle().as_str());
                 }
                 Ok(res)
             }

@@ -348,8 +348,8 @@ pub enum ErrorCode {
     #[display(fmt = "General CA Server issue.")]
     CaServerError,
 
-    #[display(fmt = "Publication Client Server issue.")]
-    PubClientServerError,
+    #[display(fmt = "General Publication Server error.")]
+    PubServerError,
 
     #[display(fmt = "Unrecognised error (this is a bug)")]
     Unknown,
@@ -400,7 +400,7 @@ impl From<usize> for ErrorCode {
             3003 => ErrorCode::SigningError,
             3004 => ErrorCode::ProxyError,
             3005 => ErrorCode::CaServerError,
-            3006 => ErrorCode::PubClientServerError,
+            3006 => ErrorCode::PubServerError,
 
             _ => ErrorCode::Unknown,
         }
@@ -452,7 +452,7 @@ impl Into<ErrorResponse> for ErrorCode {
             ErrorCode::SigningError => 3003,
             ErrorCode::ProxyError => 3004,
             ErrorCode::CaServerError => 3005,
-            ErrorCode::PubClientServerError => 3006,
+            ErrorCode::PubServerError => 3006,
 
             ErrorCode::Unknown => 65535,
         };

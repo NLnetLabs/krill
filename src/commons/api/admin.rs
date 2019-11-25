@@ -165,7 +165,7 @@ impl fmt::Display for Token {
 /// list.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublisherSummary {
-    id: String,
+    handle: PublisherHandle,
     links: Vec<Link>,
 }
 
@@ -179,13 +179,13 @@ impl PublisherSummary {
         links.push(self_link);
 
         PublisherSummary {
-            id: handle.to_string(),
+            handle: handle.clone(),
             links,
         }
     }
 
-    pub fn id(&self) -> &str {
-        &self.id
+    pub fn handle(&self) -> &PublisherHandle {
+        &self.handle
     }
 }
 
