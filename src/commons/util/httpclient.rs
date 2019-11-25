@@ -205,8 +205,21 @@ pub fn delete(uri: &str, token: Option<&Token>) -> Result<(), Error> {
     report_delete(uri, None, token);
 
     let headers = headers(None, token)?;
-    client(uri)?.delete(uri).headers(headers).send()?;
-    Ok(())
+    let mut res = client(uri)?.delete(uri).headers(headers).send()?;
+
+    match res.status() {
+        StatusCode::OK => Ok(()),
+        status => match res.text() {
+            Ok(body) => {
+                if body.is_empty() {
+                    Err(Error::BadStatus(status))
+                } else {
+                    Err(Error::ErrorWithBody(status, body))
+                }
+            }
+            _ => Err(Error::BadStatus(status)),
+        },
+    }
 }
 
 fn client(uri: &str) -> Result<Client, Error> {
