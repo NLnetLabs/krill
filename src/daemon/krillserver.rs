@@ -332,14 +332,11 @@ impl KrillServer {
         &self,
         handle: &Handle,
         parent: &ParentHandle,
-    ) -> Option<ParentCaContact> {
-        match self.caserver.get_ca(handle) {
-            Err(_) => None,
-            Ok(ca) => match ca.parent(parent) {
-                Err(_) => None,
-                Ok(parent) => Some(parent.clone()),
-            },
-        }
+    ) -> KrillRes<ParentCaContact> {
+        let ca = self.caserver.get_ca(handle)?;
+        ca.parent(parent)
+            .map(|p| p.clone())
+            .map_err(|e| Error::CaServerError(ca::ServerError::CertAuth(e)))
     }
 
     /// Returns the history for a CA, or NONE in case of issues (i.e. it does not exist).

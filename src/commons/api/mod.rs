@@ -323,11 +323,14 @@ pub enum ErrorCode {
     #[display(fmt = "Child cannot have resources not held by parent")]
     ChildOverclaims,
 
-    #[display(fmt = "Parent with name exists")]
+    #[display(fmt = "Parent with handle exists")]
     DuplicateParent,
 
     #[display(fmt = "Child unknown")]
     UnknownChild,
+
+    #[display(fmt = "No known parent for handle")]
+    UnknownParent,
 
     #[display(fmt = "Invalid ROA delta: adding a definition which is already present")]
     RoaUpdateInvalidDuplicate,
@@ -403,6 +406,7 @@ impl From<usize> for ErrorCode {
             2303 => ErrorCode::ChildOverclaims,
             2304 => ErrorCode::DuplicateParent,
             2305 => ErrorCode::UnknownChild,
+            2306 => ErrorCode::UnknownParent,
 
             // 2400s -> ROA issues
             2401 => ErrorCode::RoaUpdateInvalidDuplicate,
@@ -461,6 +465,7 @@ impl Into<ErrorResponse> for ErrorCode {
             ErrorCode::ChildOverclaims => 2303,
             ErrorCode::DuplicateParent => 2304,
             ErrorCode::UnknownChild => 2305,
+            ErrorCode::UnknownParent => 2306,
 
             // roa errors
             ErrorCode::RoaUpdateInvalidDuplicate => 2401,
@@ -517,7 +522,7 @@ mod tests {
             test_code(n)
         }
 
-        for n in 2301..2306 {
+        for n in 2301..2307 {
             test_code(n)
         }
 

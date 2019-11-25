@@ -329,10 +329,7 @@ pub fn ca_my_parent_contact(
 ) -> HttpResponse {
     let (ca, parent) = ca_and_parent.into_inner();
     if_api_allowed(&server, &auth, || {
-        match server.read().ca_my_parent_contact(&ca, &parent) {
-            Some(info) => render_json(info),
-            None => api_not_found(),
-        }
+        render_json_res(server.read().ca_my_parent_contact(&ca, &parent))
     })
 }
 
@@ -692,6 +689,7 @@ impl ToErrorCode for ca::Error {
         match self {
             ca::Error::DuplicateChild(_) => ErrorCode::DuplicateChild,
             ca::Error::UnknownChild(_) => ErrorCode::UnknownChild,
+            ca::Error::UnknownParent(_) => ErrorCode::UnknownParent,
             ca::Error::MustHaveResources => ErrorCode::ChildNeedsResources,
             ca::Error::MissingResources => ErrorCode::ChildOverclaims,
             ca::Error::DuplicateParent(_) => ErrorCode::DuplicateParent,
