@@ -1,7 +1,7 @@
 openapi: "3.0.2"
 info:
   title: Krill RPKI Server API
-  version: 0.2.1
+  version: 0.4.0
   description: |
     # API
     Welcome to the documentation for the Krill server API, a JSON based REST-like API for managing your Krill Certificate Authorities and Publishers.
@@ -13,7 +13,7 @@ info:
     url: https://www.mozilla.org/en-US/MPL/2.0/
 
 servers:
-- url: https://localhost:3000/api/v1
+- url: https://x18openapitesting.do.nlnetlabs.nl/api/v1
   description: Test deployment.
 
 tags:
@@ -49,21 +49,7 @@ paths:
       summary: List the current CAs.
       responses:
         '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  cas:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        name:
-                          allOf:
-                          - $ref: '#/components/schemas/Handle'
-                          - description: The RFC-8183 handle that uniquely identifies the CA in this Krill instance.
+          $ref: '#/components/responses/ListCertificateAuthoritiesResponse'
         '403':
           $ref: '#/components/responses/Forbidden'
         '500':
@@ -328,19 +314,7 @@ paths:
       summary: List the current publishers.
       responses:
         '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  publishers:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        id:
-                          $ref: '#/components/schemas/Handle'
+          $ref: '#/components/responses/ListPublishersResponse'
         '403':
           $ref: '#/components/responses/Forbidden'
         '500':
@@ -578,31 +552,151 @@ components:
             properties:
               handle:
                 $ref: '#/components/schemas/Handle'
-              base_repo:
+              repo_info:
                 type: object
                 properties:
                   base_uri:
                     type: string
-                    format: url
+                    format: uri
                   rpki_notify: 
                     type: string
-                    format: url
+                    format: uri
               parents:
-                type: object
-              resources:
-                type: object
-              children:
-                type: object
-              route_authorizations:
                 type: array
                 items:
-                  type: string
+                  type: object
+                  properties:
+                    handle:
+                      type: string
+                    kind:
+                      type: string
+              resources:
+                type: object
+                additionalProperties:
+                  type: object
+                  properties:
+                    name_space:
+                      type: string
+                    parent_handle:
+                      $ref: '#/components/schemas/Handle'
+                    keys:
+                      type: object
+                      additionalProperties:
+                        type: object
+                        properties:
+                          key_id:
+                            type: string
+                          incoming_cert:
+                            type: object
+                            properties:
+                              cert:
+                                type: string
+                                format: base64
+                              uri:
+                                type: string
+                                format: uri
+                              resources:
+                                type: object
+                                properties:
+                                  asn:
+                                    type: string
+                                  v4:
+                                    type: string
+                                  v6:
+                                    type: string
+                          request:
+                            type: string
+                            nullable: true
+                    current_objects:
+                      type: object
+                      additionalProperties:
+                        type: object
+                        properties:
+                          content:
+                            type: string
+                            format: base64
+                          serial:
+                            type: string
+                          expires:
+                            type: string
+                            format: date-time
+              children:
+                type: array
           example:
             handle: 'ca'
-            base_repo:
+            repo_info:
               base_uri: 'rsync://localhost/repo/ca/'
               rpki_notify: 'https://localhost:3000/rrdp/notification.xml'
-            parents: {}
-            resources: {}
-            children: {}
-            route_authorizations: []
+            parents:
+              - handle: 'ta'
+                kind: 'Ta'
+            resources:
+              '0':
+                name_space: '0'
+                parent_handle: 'ta'
+                keys:
+                  'Active':
+                    key_id: '9610..D6BD'
+                    incoming_cert:
+                      cert: 'MIII..89U='
+                      uri: 'rsync://localhost:3000/repo/ta/ta.cer'
+                      resources:
+                        asn: 'AS0-AS4294967295'
+                        v4: '0.0.0.0/0'
+                        v6: '::/0'
+                    request: null
+                current_objects:
+                  '9610..D6BD.crl':
+                    content: 'MIID..DDo='
+                    serial: '2'
+                    expires: '2019-11-26T15:00:32.158033036Z'
+                  '3534..672F.cer':
+                    content: 'MIIH..2bI='
+                    serial: '87065729750653489815092730763761996670858255271'
+                    expires: '2020-11-25T15:00:32Z'
+                  '9610..D6BD.mft':
+                    content: 'MIIL..EudG'
+                    serial: '302418467153739817428239791421164424712524512622'
+                    expires: '2019-11-26T15:00:32.161634834Z'
+            children:
+              - 'child'
+    ListCertificateAuthoritiesResponse:
+      description: Success
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              cas:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      allOf:
+                      - $ref: '#/components/schemas/Handle'
+                      - description: The RFC-8183 handle that uniquely identifies the CA in this Krill instance.
+    ListPublishersResponse:
+      description: Success
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              publishers:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    handle:
+                      $ref: '#/components/schemas/Handle'
+                    links:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          rel:
+                            type: string
+                          link:
+                            type: string
+                            format: uri
