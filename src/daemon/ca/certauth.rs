@@ -869,6 +869,8 @@ impl<S: Signer> CertAuth<S> {
 
     /// Removes a parent. Returns an error if it doesn't exist.
     fn remove_parent(&self, parent: Handle) -> ca::Result<Vec<Evt>> {
+        let _parent = self.parent(&parent)?;
+
         // remove the parent, the RCs and un-publish everything.
         let mut deltas = vec![];
         for rc in self
