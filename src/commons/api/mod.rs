@@ -308,7 +308,7 @@ pub enum ErrorCode {
     PublisherDeactivated,
 
     // 2300s CA Admin Issues
-    #[display(fmt = "Child with name exists")]
+    #[display(fmt = "Child with handle exists")]
     DuplicateChild,
 
     #[display(fmt = "Child MUST have resources")]

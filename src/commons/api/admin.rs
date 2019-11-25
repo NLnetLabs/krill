@@ -510,6 +510,7 @@ impl AddChildRequest {
 
 #[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
+#[serde(tag = "t", content = "c")]
 pub enum ChildAuthRequest {
     #[display(fmt = "embedded")]
     Embedded,

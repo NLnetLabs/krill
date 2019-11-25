@@ -282,13 +282,7 @@ pub fn ca_parent_contact(
     if_api_allowed(&server, &auth, || {
         match server.read().ca_parent_contact(&ca, child.clone()) {
             Ok(contact) => render_json(contact),
-            Err(e) => {
-                debug!(
-                    "Asked parent response from '{}' for '{}', but got error '{}'",
-                    ca, child, e
-                );
-                api_not_found()
-            }
+            Err(e) => server_error(&Error::ServerError(e)),
         }
     })
 }
@@ -629,6 +623,7 @@ impl ErrorToStatus for ca::Error {
         match self {
             ca::Error::Unauthorized(_) => StatusCode::FORBIDDEN,
             ca::Error::SignerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            ca::Error::UnknownChild(_) => StatusCode::NOT_FOUND,
             _ => StatusCode::BAD_REQUEST,
         }
     }
