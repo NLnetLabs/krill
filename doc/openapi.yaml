@@ -1373,11 +1373,11 @@ components:
                             type: string
                             format: uri
           example:
-            value:
-              handle: 'ca'
-              links:
-                rel: 'self'
-                link: '/api/v1/publishers/ca'
+            publishers:
+              - handle: 'ca'
+                links:
+                  rel: 'self'
+                  link: '/api/v1/publishers/ca'
     GetPublisher:
       description: Success.
       content:
