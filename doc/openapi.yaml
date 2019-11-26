@@ -370,7 +370,13 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
-          $ref: '#/components/responses/UnknownChild'
+          description: Unknown resource.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/UnknownChild'
+                  - $ref: '#/components/schemas/UnknownCA'
         '500':
           $ref: '#/components/responses/GeneralCAServerError'
 
