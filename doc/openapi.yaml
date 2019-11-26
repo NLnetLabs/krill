@@ -482,9 +482,13 @@ paths:
         - $ref: '#/components/parameters/ca_handle'
       responses:
         '200':
-          $ref: '#/components/responses/Success'
+          $ref: '#/components/responses/GetCAHistory'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
 
   /cas/{ca_handle}/id:
     post:
@@ -1529,6 +1533,33 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Rfc6492TagOrEmbeddedTag'
+    GetCAHistory:
+      description: Success.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              init:
+                type: object
+                properties:
+                  id:
+                    $ref: '#/components/schemas/Handle'
+                  version:
+                    type: integer
+                  details:
+                    type: object
+              events:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      $ref: '#/components/schemas/Handle'
+                    version:
+                      type: integer
+                    details:
+                      type: object
 
   examples:
     rfc6492:
