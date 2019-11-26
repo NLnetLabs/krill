@@ -11,16 +11,26 @@ info:
   license:
     name: Mozilla Public License 2.0
     url: https://www.mozilla.org/en-US/MPL/2.0/
+  x-logo:
+    url: https://nlnetlabs.nl/static/logos/Krill/Krill_Logo_FC.svg
+    backgroundColor: #FFFFFF
 
 servers:
-- url: https://localhost:3000/api/v1
-  description: Test deployment.
+- url: https://{domain}:{port}/api/v1
+  description: Your Krill server.
+  variables:
+    domain:
+      default: localhost
+    port:
+      enum:
+        - '443'
+        - '3000'
+      default: '3000'
 
 tags:
-- name: "Certificate Authorities"
-  description: "Managing ‘organisational’ CAs in Krill."
-
 - name: "Publishers"
+
+- name: "Certificate Authorities"
 
 - name: "Other"
   description: ""
@@ -39,26 +49,113 @@ paths:
           $ref: '#/components/responses/Success'
         '403':
           $ref: '#/components/responses/Forbidden'
+
+  /publishers:
+    get:
+      tags:
+      - "Publishers"
+      summary: List publishers.
+      responses:
+        '200':
+          $ref: '#/components/responses/ListPublishers'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '500':
-          $ref: '#/components/responses/InternalError'
+          $ref: '#/components/responses/GeneralPublicationServerError'
+
+    post:
+      tags:
+      - "Publishers"
+      summary: Add publisher.
+      description: |
+        Adds an RFC 8181 publisher. Expects a JSON representation of the
+        [RFC 8183 XML](https://tools.ietf.org/html/rfc8183#section-5.2.3).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddPublisherRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '400':
+          $ref: '#/components/responses/PublisherHandleAlreadyInUse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/GeneralPublicationServerError'
+
+  /publishers/{publisher_handle}:
+    get:
+      tags:
+      - "Publishers"
+      summary: Show details for publisher.
+      description: Shows the information for a publisher by a given handle.
+      parameters:
+        - $ref: '#/components/parameters/publisher_handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/GetPublisher'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnknownPublisher'
+        '500':
+          $ref: '#/components/responses/GeneralPublicationServerError'
+
+    delete:
+      tags:
+      - "Publishers"
+      summary: Delete a publisher.
+      description: This action also removes all the published content for a publisher.
+      parameters:
+        - $ref: '#/components/parameters/publisher_handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnknownPublisher'
+        '500':
+          $ref: '#/components/responses/GeneralPublicationServerError'
+
+  /publishers/{publisher_handle}/response.xml:
+    get:
+      tags:
+      - "Publishers"
+      summary: Get XML Response for publisher.
+      description: Gets the RFC 8183 XML Repository Response for a publisher.
+      parameters:
+        - $ref: '#/components/parameters/publisher_handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnknownPublisher'
+        '500':
+          $ref: '#/components/responses/GeneralPublicationServerError'
 
   /cas:
     get:
       tags:
       - "Certificate Authorities"
-      summary: List the current CAs.
+      summary: List CAs.
       responses:
         '200':
-          $ref: '#/components/responses/ListCertificateAuthoritiesResponse'
+          $ref: '#/components/responses/ListCAs'
         '403':
           $ref: '#/components/responses/Forbidden'
         '500':
-          $ref: '#/components/responses/InternalError'
+          $ref: '#/components/responses/GeneralCAServerError'
 
     post:
       tags:
       - "Certificate Authorities"
-      summary: Add a new CA.
+      summary: Add a CA.
       description: |
         When adding a CA you need to choose a “handle”, essentially just a
         name. The term “handle” comes from RFC 8183 and is used in the
@@ -74,35 +171,45 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AddCertificateAuthorityRequest'
+              $ref: '#/components/schemas/AddCARequest'
       responses:
         '200':
           $ref: '#/components/responses/Success'
+        '400':
+          $ref: '#/components/responses/CAHandleAlreadyInUse'
         '403':
           $ref: '#/components/responses/Forbidden'
         '500':
-          $ref: '#/components/responses/InternalError'
+          $ref: '#/components/responses/GeneralCAServerError'
 
   /cas/{ca_handle}:
     get:
       tags:
       - "Certificate Authorities"
-      summary: Show details of a CA.
+      summary: Show a CA.
+      description: Show CA details.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
       responses:
         '200':
-          $ref: '#/components/responses/GetCertificateAuthorityResponse'
+          $ref: '#/components/responses/GetCA'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
         '500':
-          $ref: '#/components/responses/InternalError'
+          $ref: '#/components/responses/GeneralCAServerError'
 
   /cas/{ca_handle}/children:
     post:
       tags:
       - "Certificate Authorities"
-      summary: Add a child to a CA.
+      summary: Add a child CA.
+      description: |
+        This adds an embedded (in the same Krill instance) or remote child CA.
+        For a remote child CA the request body must include a JSON
+        representation of the [RFC 8183 Child Request XML](https://tools.ietf.org/html/rfc8183#section-5.2.1),
+        though the 'tag' and 'child_handle' attributes are ignored.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
       requestBody:
@@ -110,29 +217,62 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AddCertificateAuthorityChildRequest'
+              $ref: '#/components/schemas/AddCAChildRequest'
+            examples:
+              embedded:
+                value:
+                  handle: 'ca'
+                  resources:
+                    asn: 'AS1'
+                    v4: '10.0.0.0/8'
+                    v6: '::'
+                  auth:
+                    t: 'Embedded'
+              remote:
+                value:
+                  handle: 'ca'
+                  resources:
+                    asn: 'AS1'
+                    v4: '10.0.0.0/8'
+                    v6: '::'
+                  auth:
+                    t: 'Rfc8183'
+                    c:
+                      tag: null
+                      child_handle: 'ca-from-req'
+                      id_cert: '<base64>'
       responses:
         '200':
           $ref: '#/components/responses/Success'
+        '400':
+          description: Bad request parameters.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ChildWithHandleExists'
+                  - $ref: '#/components/schemas/ChildMustHaveResources'
+                  - $ref: '#/components/schemas/ChildCannotHaveResourcesNotHeldByParent'
         '403':
           $ref: '#/components/responses/Forbidden'
         '500':
-          $ref: '#/components/responses/InternalError'
+          $ref: '#/components/responses/GeneralCAServerError'
 
   /cas/{ca_handle}/child_request:
     get:
       tags:
       - "Certificate Authorities"
-      summary: Show this CA's RFC8183 Request XML.
+      summary: Show CA RFC 8183 Request XML.
+      description: Shows the RFC 8181 Child Request for this CA.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
       responses:
         '200':
-          description: OK
-          content:
-            application/xml:
-              schema:
-                $ref: '#/components/schemas/RFC8183RequestXML'
+          $ref: '#/components/responses/GetChildRequestXML'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
 
   /cas/{ca_handle}/children/{child_handle}:
     post:
@@ -147,29 +287,51 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/UpdateCertificateAuthorityChildRequest'
+              $ref: '#/components/schemas/UpdateCAChildRequest'
       responses:
         '200':
           $ref: '#/components/responses/Success'
         '403':
           $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
 
     get:
       tags:
       - "Certificate Authorities"
-      summary: Show info for a child (id and resources).
+      summary: Show info for a child.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
         - $ref: '#/components/parameters/child_handle'
       responses:
         '200':
-          $ref: '#/components/responses/Success'
+          description: Success.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id_cert:
+                    type: object
+                    properties:
+                      pem:
+                        type: string
+                        format: PEM
+                      hash:
+                        type: string
+                        format: SHA256
+                  entitled_resources:
+                    $ref: '#/components/schemas/Resources'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Unknown resource.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/UnknownChild'
+                  - $ref: '#/components/schemas/UnknownCA'
         '500':
-          $ref: '#/components/responses/InternalError'
+          $ref: '#/components/responses/GeneralCAServerError'
 
     delete:
       tags:
@@ -183,24 +345,69 @@ paths:
           $ref: '#/components/responses/Success'
         '403':
           $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
 
   /cas/{ca_handle}/children/{child_handle}/contact:
     get:
       tags:
       - "Certificate Authorities"
-      summary: Get the RFC8183 response for a child.
+      summary: Show parent contact for a child.
+      description: |
+        This is the parent contact that a child can use when adding the parent.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
         - $ref: '#/components/parameters/child_handle'
       responses:
         '200':
-          $ref: '#/components/responses/Success'
+          description: Success.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  t:
+                    type: string
+                    enum: ['Rfc6492', 'Embedded']
+                  c:
+                    type: object
+                    properties:
+                      tag:
+                        type: string
+                        nullable: true
+                      id_cert:
+                        type: string
+                        format: base64
+                      parent_handle:
+                        $ref: '#/components/schemas/Handle'
+                      child_handle:
+                        $ref: '#/components/schemas/Handle'
+                      service_uri:
+                        type: string
+                        format: uri
+              examples:
+                rfc6492:
+                  value:
+                    t: 'Rfc6492'
+                    c:
+                      tag: null
+                      id_cert: '<base64>'
+                      parent_handle: 'ta'
+                      child_handle: 'ca'
+                      service_uri: 'https://localhost:3000/rfc6492/ta'
+                embedded:
+                  value:
+                    t: 'Embedded'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Unknown resource.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/UnknownChild'
+                  - $ref: '#/components/schemas/UnknownCA'
         '500':
-          $ref: '#/components/responses/InternalError'
+          $ref: '#/components/responses/GeneralCAServerError'
 
   /cas/{ca_handle}/history:
     get:
@@ -214,8 +421,26 @@ paths:
           $ref: '#/components/responses/Success'
         '403':
           $ref: '#/components/responses/Forbidden'
+
+  /cas/{ca_handle}/id:
+    post:
+      tags:
+      - "Certificate Authorities"
+      summary: Regenerate CA ID certificate.
+      description: |
+        Tells the CA to create a new ID certificate and forget its old ID. Note
+        that if you do this, you will have to create new RFC 8181 Child Request
+        and Publisher Request XML for the parent CA(s) and Repository. Don't
+        use this if you can avoid it.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
         '500':
-          $ref: '#/components/responses/InternalError'
+          $ref: '#/components/responses/GeneralCAServerError'
 
   /cas/{ca_handle}/parents:
     post:
@@ -229,14 +454,12 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AddParentCertificateAuthorityRequest'
+              $ref: '#/components/schemas/AddParentCARequest'
       responses:
         '200':
           $ref: '#/components/responses/Success'
         '403':
           $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
 
   /cas/{ca_handle}/keys/roll_activate:
     post:
@@ -250,8 +473,6 @@ paths:
           $ref: '#/components/responses/Success'
         '403':
           $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
 
   /cas/{ca_handle}/keys/roll_init:
     post:
@@ -265,8 +486,6 @@ paths:
           $ref: '#/components/responses/Success'
         '403':
           $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
 
   /cas/republish_all:
     post:
@@ -278,8 +497,6 @@ paths:
           $ref: '#/components/responses/Success'
         '403':
           $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
 
   /cas/refresh_all:
     post:
@@ -291,8 +508,6 @@ paths:
           $ref: '#/components/responses/Success'
         '403':
           $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
 
   /cas/resync_all:
     post:
@@ -304,87 +519,6 @@ paths:
           $ref: '#/components/responses/Success'
         '403':
           $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  /publishers:
-    get:
-      tags:
-      - "Publishers"
-      summary: List the current publishers.
-      responses:
-        '200':
-          $ref: '#/components/responses/ListPublishersResponse'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-    post:
-      tags:
-      - "Publishers"
-      summary: Add a new publisher.
-      description: |
-        Adds an RFC8181 publisher. Expects a json representation of the
-        RFC 8183 XML. The CLI does this conversion, but the server does not
-        expect XML.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AddPublisherRequest'
-      responses:
-        '200':
-          $ref: '#/components/responses/Success'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  /publishers/{publisher_handle}:
-    get:
-      tags:
-      - "Publishers"
-      summary: Shows the information for a publisher by a given handle.
-      parameters:
-        - $ref: '#/components/parameters/publisher_handle'
-      responses:
-        '200':
-          $ref: '#/components/responses/Success'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-    delete:
-      tags:
-      - "Publishers"
-      summary: This action also removes all the published content for a publisher.
-      parameters:
-        - $ref: '#/components/parameters/publisher_handle'
-      responses:
-        '200':
-          $ref: '#/components/responses/Success'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  /publishers/{publisher_handle}/response.xml:
-    get:
-      tags:
-      - "Publishers"
-      summary: Gets the RFC 8183 XML Repository Response for a publisher.
-      parameters:
-        - $ref: '#/components/parameters/publisher_handle'
-      responses:
-        '200':
-          $ref: '#/components/responses/Success'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/InternalError'
 
 externalDocs:
   description: Read the Krill documentation
@@ -422,23 +556,36 @@ components:
       type: string
       maxLength: 255
       pattern: '[\-_A-Za-z0-9/]*'
+      example:
+        value: 'ca'
     Auth:
-      oneOf:
-        - type: string
-          enum: [Embedded]
-        - type: object
+      type: object
+      required:
+        - t
+      properties:
+        t:
+          type: string
+          enum: ["Embedded","Rfc8183"]
+        c:
+          type: object
+          required:
+            - tag
+            - child_handle
+            - id_cert
           properties:
-            Rfc8183:
-              type: object
-              properties:
-                tag:
-                  type: string
-                child_handle:
-                  $ref: '#/components/schemas/Handle'
-                id_cert:
-                  type: string
-                  format: byte
-                  description: BASE64 of DER encoded X509 certificate.
+            tag:
+              allOf:
+                - type: string
+                  nullable: true
+                - description: Ignored.
+            child_handle:
+              allOf:
+                - $ref: '#/components/schemas/Handle'
+                - description: Ignored.
+            id_cert:
+              type: string
+              format: byte
+              description: Base64 of DER encoded X509 certificate.
     Resources:
       type: object
       properties:
@@ -452,62 +599,6 @@ components:
         asn: ""
         v4: "10.0.0.0/0"
         v6: "2001:db8::/32"
-
-    AddCertificateAuthorityRequest:
-      type: object
-      properties:
-        handle:
-          allOf:
-          - $ref: '#/components/schemas/Handle'
-          - description: The handle attribute uniquely identifies the new Certificate Authority within this Krill instance.
-      required:
-        - handle
-    AddCertificateAuthorityChildRequest:
-      type: object
-      properties:
-        handle:
-          allOf:
-          - $ref: '#/components/schemas/Handle'
-          - description: The handle attribute uniquely identifies the new Certificate Authority within this Krill instance.
-        resources:
-          $ref: '#/components/schemas/Resources'
-        auth:
-          $ref: '#/components/schemas/Auth'
-      required:
-        - handle
-        - resources
-    UpdateCertificateAuthorityChildRequest:
-      type: object
-      properties:
-        id_cert:
-          type: string
-        resources:
-          $ref: '#/components/schemas/Resources'
-    AddParentCertificateAuthorityRequest:
-      type: object
-      properties:
-        handle:
-          allOf:
-          - $ref: '#/components/schemas/Handle'
-          - description: The local handle by which your ca refers to this parent.
-        contact:
-          $ref: '#/components/schemas/Auth'
-      required:
-        - handle
-        - contact
-    AddPublisherRequest:
-      type: object
-      properties:
-        publisher_handle:
-          $ref: '#/components/schemas/Handle'
-        tag:
-          type: string
-        id_cert:
-          type: string
-          format: byte
-      required:
-        - publisher_handle
-        - id_cert
 
     RFC8183RequestXML:
       type: object
@@ -536,14 +627,215 @@ components:
         child_handle: child
         child_bpki_ta: 'MIIDPDCCAiSgAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyg4QzE0M0IxNTVBNTMyMDgwN0RBNjZFNDZGOEM1NjMxQTkwMjIyN0QyMCAXDTE5MTExNDIwMzA0NloYDzIxMTkxMTE0MjAzNTQ2WjAzMTEwLwYDVQQDEyg4QzE0M0IxNTVBNTMyMDgwN0RBNjZFNDZGOEM1NjMxQTkwMjIyN0QyMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAlgTWdF2X4cf83/TROhr3nZUP70PHGHe1edLiqf5wEmZIt8ucf2pSoLWkInCi0IgP3yZZR/HRw4aqlWtRHKfSMXwDNm7+F3aVi+vI/iGi7mITS+nbdln4oEEl8cEyjmRpVCp7f494mWR2fRwkeYiEqmVZriny7vh2mlQMRh8KSBVm7+PiG2Jn4Z2QGU/k0At+Wv2byeio53FXhgnEXRjt57IfBjKjzgO/Ckc9tjTVIIgO1hmXJL6TGu8aoFwGdYUKcRQTTrmfB9dm/nhmuhhm4T0/D+4M1yRpx56p1NIiFdjrnb3+rjP5goz5uQM2e0odOTt5D5RUIIJsZCUHtO5RdwIDAQABo1kwVzAPBgNVHRMBAf8EBTADAQH/MCAGA1UdDgEBAAQWBBSMFDsVWlMggH2mbkb4xWMakCIn0jAiBgNVHSMBAQAEGDAWgBSMFDsVWlMggH2mbkb4xWMakCIn0jANBgkqhkiG9w0BAQsFAAOCAQEAVdQV3sY38KdEUQEZGX8yjr0b86IVJEKBNNZ9mkD9bxuQ0KU5TjRdXB7iHOGOE5hj+tF5At/+4lvMgsw+1VDTmqCc2O7GnxU/P4+Zpbe6JUCPijomq6yJnxhK3zdqsWPiAT4WGmCr1gm3Hk9xK/Xg0k74yY1yf6tPOGN5JA627bK9MEdg6IMuYRkOs9Ja0oJuu0scgSNwvouxGTYIw175GwEIgICXFX0hSWDlyYhrxVQwjiHTDjNUe/4gfNx2mYuLtfGoNJU+7yGfAdMJBPahcgzpQnwRqVW4dtxJrd8EPQ/WGMn50lPDbeFRPtNCh+M6hD2xw4K0qVScOwFUCqMP6g=='
 
+    AddCARequest:
+      type: object
+      required:
+        - handle
+      properties:
+        handle:
+          allOf:
+          - $ref: '#/components/schemas/Handle'
+          - description: The handle attribute uniquely identifies the new Certificate Authority within this Krill instance.
+    AddCAChildRequest:
+      type: object
+      required:
+        - handle
+        - resources
+        - auth
+      properties:
+        handle:
+          allOf:
+          - $ref: '#/components/schemas/Handle'
+          - description: The handle attribute uniquely identifies the new Certificate Authority within this Krill instance.
+        resources:
+          $ref: '#/components/schemas/Resources'
+        auth:
+          $ref: '#/components/schemas/Auth'
+    UpdateCAChildRequest:
+      type: object
+      properties:
+        id_cert:
+          type: string
+        resources:
+          $ref: '#/components/schemas/Resources'
+    AddParentCARequest:
+      type: object
+      required:
+        - handle
+        - contact
+      properties:
+        handle:
+          allOf:
+          - $ref: '#/components/schemas/Handle'
+          - description: The local handle by which your ca refers to this parent.
+        contact:
+          $ref: '#/components/schemas/Auth'
+    AddPublisherRequest:
+      type: object
+      required:
+        - publisher_handle
+        - id_cert
+      properties:
+        publisher_handle:
+          $ref: '#/components/schemas/Handle'
+        tag:
+          type: string
+        id_cert:
+          type: string
+          format: byte
+    ChildWithHandleExists:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2301]
+        msg:
+          type: string
+    ChildMustHaveResources:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2302]
+        msg:
+          type: string
+    ChildCannotHaveResourcesNotHeldByParent:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2303]
+        msg:
+          type: string
+    UnknownChild:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2305]
+        msg:
+          type: string
+    CAHandleAlreadyInUse:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2501]
+        msg:
+          type: string
+    UnknownCA:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2502]
+        msg:
+          type: string
+
   responses:
     Success:
       description: Success.
     Forbidden:
       description: Forbidden (incorrect authentication token).
-    InternalError:
-      description: Internal error.
-    GetCertificateAuthorityResponse:
+    NotFound:
+      description: Not Found.
+    UnknownPublisher:
+      description: Unknown publisher.
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - code
+              - msg
+            properties:
+              code:
+                type: integer
+                enum: [2201]
+              msg:
+                type: string
+    UnknownCA:
+      description: Unknown CA.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/UnknownCA'
+    UnknownChild:
+      description: Unknown child.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/UnknownChild'
+    GeneralPublicationServerError:
+      description: General Publication Server error.
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - code
+              - msg
+            properties:
+              code:
+                type: integer
+                enum: [3006]
+              msg:
+                type: string
+    GeneralCAServerError:
+      description: General CA Server issue.
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - code
+              - msg
+            properties:
+              code:
+                type: integer
+                enum: [3005]
+              msg:
+                type: string
+    PublisherHandleAlreadyInUse:
+      description: Publisher handle already in use.
+      content:
+        application/json:
+          schema:
+            type: object
+            required:
+              - code
+              - msg
+            properties:
+              code:
+                type: integer
+                enum: [2102]
+              msg:
+                type: string
+    CAHandleAlreadyInUse:
+      description: CA handle already in use.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CAHandleAlreadyInUse'
+    GetCA:
       description: Success
       content:
         application/json:
@@ -622,6 +914,8 @@ components:
                             format: date-time
               children:
                 type: array
+                items:
+                  type: string
           example:
             handle: 'ca'
             repo_info:
@@ -660,7 +954,7 @@ components:
                     expires: '2019-11-26T15:00:32.161634834Z'
             children:
               - 'child'
-    ListCertificateAuthoritiesResponse:
+    ListCAs:
       description: Success
       content:
         application/json:
@@ -676,7 +970,7 @@ components:
                       allOf:
                       - $ref: '#/components/schemas/Handle'
                       - description: The RFC-8183 handle that uniquely identifies the CA in this Krill instance.
-    ListPublishersResponse:
+    ListPublishers:
       description: Success
       content:
         application/json:
@@ -697,6 +991,39 @@ components:
                         properties:
                           rel:
                             type: string
+                            enum: [self]
                           link:
                             type: string
                             format: uri
+    GetPublisher:
+      description: Success
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              handle:
+                $ref: '#/components/schemas/Handle'
+              id_cert:
+                type: string
+                format: base64
+              base_uri:
+                type: string
+                format: uri
+              current_files:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    base64:
+                      type: string
+                      format: base64
+                    uri:
+                      type: string
+                      format: uri
+    GetChildRequestXML:
+      description: OK
+      content:
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/RFC8183RequestXML'
