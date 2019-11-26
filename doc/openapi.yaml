@@ -129,7 +129,9 @@ paths:
       tags:
         - "Publishers"
       summary: Get XML Response for publisher.
-      description: Gets the RFC 8183 XML Repository Response for a publisher.
+      description: |
+        Gets the [RFC 8183 XML Repository Response](https://tools.ietf.org/html/rfc8183#section-5.2.4)
+        for a publisher.
       parameters:
         - $ref: '#/components/parameters/publisher_handle'
       responses:
