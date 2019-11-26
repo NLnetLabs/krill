@@ -246,7 +246,7 @@ paths:
                       id_cert: '<base64>'
       responses:
         '200':
-          $ref: '#/components/responses/Success'
+          $ref: '#/components/responses/AddChildCA'
         '400':
           description: Bad request parameters.
           content:
@@ -329,23 +329,7 @@ paths:
         - $ref: '#/components/parameters/child_handle'
       responses:
         '200':
-          description: Success.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  id_cert:
-                    type: object
-                    properties:
-                      pem:
-                        type: string
-                        format: pem
-                      hash:
-                        type: string
-                        format: hash
-                  entitled_resources:
-                    $ref: '#/components/schemas/Resources'
+          $ref: '#/components/responses/GetChildCA'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -402,25 +386,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  t:
-                    type: string
-                    enum: ['Rfc6492', 'Embedded']
-                  c:
-                    type: object
-                    properties:
-                      tag:
-                        type: string
-                        nullable: true
-                      id_cert:
-                        $ref: '#/components/schemas/IdCert'
-                      parent_handle:
-                        $ref: '#/components/schemas/Handle'
-                      child_handle:
-                        $ref: '#/components/schemas/Handle'
-                      service_uri:
-                        $ref: '#/components/schemas/ServiceUri'
+                $ref: '#/components/schemas/ParentContactForChildCA'
               examples:
                 rfc6492:
                   value:
@@ -486,7 +452,12 @@ paths:
     post:
       tags:
         - "Certificate Authorities"
-      summary: Add a parent to this CA.
+      summary: Add a parent to a CA.
+      description: |
+        Adds an embedded or remote parents. For remote parents the RFC 6492
+        will be used. In principle CAs can also use this to talk to a local
+        parent CA in the same krill server, but this is inefficient. Therefore
+        it is also possible to add an 'embedded' parent in this case.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
       requestBody:
@@ -500,6 +471,85 @@ paths:
           $ref: '#/components/responses/Success'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/schemas/ParentWithHandleExists'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+  /cas/{ca_handle}/parents/{parent_handle}:
+    get:
+      tags:
+        - "Certificate Authorities"
+      summary: Show parent contact for a CA.
+      description: |
+        Show the parent contact information that a CA has for a parent.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+        - $ref: '#/components/parameters/parent_handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/GetCAParentContactInfo'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/UnknownParent'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+    post:
+      tags:
+        - "Certificate Authorities"
+      summary: Update the contact information for an existing parent.
+      description: |
+        Should not be needed often, but say that your parent updates their ID
+        cert or service URI for RFC 6492, then you will need to tell the CA.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+        - $ref: '#/components/parameters/parent_handle'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Rfc6492TagOrEmbeddedTag'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '400':
+          $ref: '#/components/responses/UnknownParent'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+    delete:
+      tags:
+        - "Certificate Authorities"
+      summary: Remove a parent.
+      description: |
+        Remove a parent from a CA.
+        **Note:** this is just the child removing the parent, and this does not
+        remove the child from the parent.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+        - $ref: '#/components/parameters/parent_handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '400':
+          $ref: '#/components/responses/UnknownParent'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
 
   /cas/{ca_handle}/repo:
     get:
@@ -513,51 +563,7 @@ paths:
         - $ref: '#/components/parameters/ca_handle'
       responses:
         '200':
-          description: Success.
-          content:
-            application/json:
-              schema:
-                oneOf:
-                  - type: object
-                    properties:
-                      contact:
-                        type: object
-                        properties:
-                          t:
-                            type: string
-                            enum: ['Embedded','rfc8181']
-                          c:
-                            $ref: '#/components/schemas/RepoInfo'
-                      state:
-                        type: object
-                        properties:
-                          t:
-                            type: string
-                            enum: ['List']
-                          c:
-                            type: object
-                            properties:
-                              elements:
-                                type: array
-                                items:
-                                  type: object
-                                  properties:
-                                    uri:
-                                      type: string
-                                      format: uri
-                                    hash:
-                                      type: string
-                                      format: hash
-                  - type: object
-                    properties:
-                      state:
-                        type: object
-                        properties:
-                          t:
-                            type: string
-                            enum: ['Error']
-                          c:
-                            type: string
+          $ref: '#/components/responses/GetRepositoryForCA'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -579,7 +585,8 @@ paths:
           - Request new certificates with SIA entries pointing to the new
             locations.
           - (best effort) Clean up of the old repository.
-        The new repository can be embedded, or remote.
+        The new repository can be embedded, or remote. To use a remote
+        repository, the RFC 8181 Repository Response must be encoded into JSON.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
       requestBody:
@@ -722,6 +729,12 @@ components:
       schema:
         $ref: '#/components/schemas/Handle'
       required: true
+    parent_handle:
+      in: path
+      name: parent_handle
+      schema:
+        $ref: '#/components/schemas/Handle'
+      required: true
     publisher_handle:
       in: path
       name: publisher_handle
@@ -730,33 +743,22 @@ components:
       required: true
 
   schemas:
-    # Types ordered alphabetically
-    Auth:
+    # Types ordered fundamental to complex
+    Element:
       type: object
-      required:
-        - t
+      properties:
+        uri:
+          type: string
+          format: uri
+        hash:
+          type: string
+          format: hash
+    EmbeddedTag:
+      type: object
       properties:
         t:
           type: string
-          enum: ["Embedded","Rfc8183"]
-        c:
-          type: object
-          required:
-            - tag
-            - child_handle
-            - id_cert
-          properties:
-            tag:
-              allOf:
-                - type: string
-                  nullable: true
-                - description: Ignored.
-            child_handle:
-              allOf:
-                - $ref: '#/components/schemas/Handle'
-                - description: Ignored.
-            id_cert:
-              $ref: '#/components/schemas/IdCert'
+          enum: ['Embedded']
     Handle:
       type: string
       maxLength: 255
@@ -788,6 +790,65 @@ components:
         asn: ""
         v4: "10.0.0.0/0"
         v6: "2001:db8::/32"
+    ServiceUri:
+      type: string
+      format: uri
+    Rfc6492:
+      type: object
+      properties:
+        tag:
+          type: string
+          nullable: true
+        id_cert:
+          $ref: '#/components/schemas/IdCert'
+        parent_handle:
+          $ref: '#/components/schemas/Handle'
+        child_handle:
+          $ref: '#/components/schemas/Handle'
+        service_uri:
+          $ref: '#/components/schemas/ServiceUri'
+    Rfc8183:
+      type: object
+      required:
+        - tag
+        - child_handle
+        - id_cert
+      properties:
+        tag:
+          allOf:
+            - type: string
+              nullable: true
+            - description: Ignored.
+        child_handle:
+          allOf:
+            - $ref: '#/components/schemas/Handle'
+            - description: Ignored.
+        id_cert:
+          $ref: '#/components/schemas/IdCert'
+    Rfc6492Tag:
+      type: object
+      properties:
+        t:
+          type: string
+          enum: ['Rfc6492']
+        c:
+          $ref: '#/components/schemas/Rfc6492'
+    Rfc8183Tag:
+      type: object
+      properties:
+        t:
+          type: string
+          enum: ['Rfc8183']
+        c:
+          $ref: '#/components/schemas/Rfc8183'
+    Rfc6492TagOrEmbeddedTag:
+      oneOf:
+        - $ref: '#/components/schemas/EmbeddedTag'
+        - $ref: '#/components/schemas/Rfc6492Tag'
+    Rfc8183OrEmbedded:
+      oneOf:
+        - $ref: '#/components/schemas/EmbeddedTag'
+        - $ref: '#/components/schemas/Rfc8183Tag'
     RFC8183RequestXML:
       type: object
       properties:
@@ -814,9 +875,6 @@ components:
         version: 1
         child_handle: child
         child_bpki_ta: 'MIIDPDCCAiSgAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyg4QzE0M0IxNTVBNTMyMDgwN0RBNjZFNDZGOEM1NjMxQTkwMjIyN0QyMCAXDTE5MTExNDIwMzA0NloYDzIxMTkxMTE0MjAzNTQ2WjAzMTEwLwYDVQQDEyg4QzE0M0IxNTVBNTMyMDgwN0RBNjZFNDZGOEM1NjMxQTkwMjIyN0QyMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAlgTWdF2X4cf83/TROhr3nZUP70PHGHe1edLiqf5wEmZIt8ucf2pSoLWkInCi0IgP3yZZR/HRw4aqlWtRHKfSMXwDNm7+F3aVi+vI/iGi7mITS+nbdln4oEEl8cEyjmRpVCp7f494mWR2fRwkeYiEqmVZriny7vh2mlQMRh8KSBVm7+PiG2Jn4Z2QGU/k0At+Wv2byeio53FXhgnEXRjt57IfBjKjzgO/Ckc9tjTVIIgO1hmXJL6TGu8aoFwGdYUKcRQTTrmfB9dm/nhmuhhm4T0/D+4M1yRpx56p1NIiFdjrnb3+rjP5goz5uQM2e0odOTt5D5RUIIJsZCUHtO5RdwIDAQABo1kwVzAPBgNVHRMBAf8EBTADAQH/MCAGA1UdDgEBAAQWBBSMFDsVWlMggH2mbkb4xWMakCIn0jAiBgNVHSMBAQAEGDAWgBSMFDsVWlMggH2mbkb4xWMakCIn0jANBgkqhkiG9w0BAQsFAAOCAQEAVdQV3sY38KdEUQEZGX8yjr0b86IVJEKBNNZ9mkD9bxuQ0KU5TjRdXB7iHOGOE5hj+tF5At/+4lvMgsw+1VDTmqCc2O7GnxU/P4+Zpbe6JUCPijomq6yJnxhK3zdqsWPiAT4WGmCr1gm3Hk9xK/Xg0k74yY1yf6tPOGN5JA627bK9MEdg6IMuYRkOs9Ja0oJuu0scgSNwvouxGTYIw175GwEIgICXFX0hSWDlyYhrxVQwjiHTDjNUe/4gfNx2mYuLtfGoNJU+7yGfAdMJBPahcgzpQnwRqVW4dtxJrd8EPQ/WGMn50lPDbeFRPtNCh+M6hD2xw4K0qVScOwFUCqMP6g=='
-    ServiceUri:
-      type: string
-      format: uri
 
     # Request bodies
     AddCARequest:
@@ -842,7 +900,7 @@ components:
         resources:
           $ref: '#/components/schemas/Resources'
         auth:
-          $ref: '#/components/schemas/Auth'
+          $ref: '#/components/schemas/Rfc8183'
     UpdateCAChildRequest:
       type: object
       properties:
@@ -867,7 +925,7 @@ components:
           - $ref: '#/components/schemas/Handle'
           - description: The local handle by which your ca refers to this parent.
         contact:
-          $ref: '#/components/schemas/Auth'
+          $ref: '#/components/schemas/Rfc6492TagOrEmbeddedTag'
     AddPublisherRequest:
       type: object
       required:
@@ -913,6 +971,26 @@ components:
                   $ref: '#/components/schemas/ServiceUri'
                 repo_info:
                   $ref: '#/components/schemas/RepoInfo'
+    ParentContactForChildCA:
+      type: object
+      properties:
+        t:
+          type: string
+          enum: ['Rfc6492', 'Embedded']
+        c:
+          type: object
+          properties:
+            tag:
+              type: string
+              nullable: true
+            id_cert:
+              $ref: '#/components/schemas/IdCert'
+            parent_handle:
+              $ref: '#/components/schemas/Handle'
+            child_handle:
+              $ref: '#/components/schemas/Handle'
+            service_uri:
+              $ref: '#/components/schemas/ServiceUri'
 
     # Error codes ordered ascending by error code
     AlreadyUsingThisRepository:
@@ -970,6 +1048,17 @@ components:
           enum: [2303]
         msg:
           type: string
+    ParentWithHandleExists:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2304]
+        msg:
+          type: string
     UnknownChild:
       type: object
       required:
@@ -979,6 +1068,17 @@ components:
         code:
           type: integer
           enum: [2305]
+        msg:
+          type: string
+    UnknownParent:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2306]
         msg:
           type: string
     CAHandleAlreadyInUse:
@@ -1038,6 +1138,12 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/UnknownChild'
+    UnknownParent:
+      description: Unknown parent.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/UnknownParent'
     GeneralPublicationServerError:
       description: General Publication Server error.
       content:
@@ -1217,6 +1323,30 @@ components:
                       allOf:
                       - $ref: '#/components/schemas/Handle'
                       - description: The RFC-8183 handle that uniquely identifies the CA in this Krill instance.
+    AddChildCA:
+      description: Success.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Rfc6492TagOrEmbeddedTag'
+    GetChildCA:
+      description: Success.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              id_cert:
+                type: object
+                properties:
+                  pem:
+                    type: string
+                    format: pem
+                  hash:
+                    type: string
+                    format: hash
+              entitled_resources:
+                $ref: '#/components/schemas/Resources'
     ListPublishers:
       description: Success.
       content:
@@ -1273,3 +1403,59 @@ components:
         application/xml:
           schema:
             $ref: '#/components/schemas/RFC8183RequestXML'
+    GetRepositoryForCA:
+      description: Success.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - type: object
+                properties:
+                  contact:
+                    type: object
+                    properties:
+                      t:
+                        type: string
+                        enum: ['Embedded','rfc8181']
+                      c:
+                        $ref: '#/components/schemas/RepoInfo'
+                  state:
+                    type: object
+                    properties:
+                      t:
+                        type: string
+                        enum: ['List']
+                      c:
+                        type: object
+                        properties:
+                          elements:
+                            type: array
+                            items:
+                              $ref: '#/components/schemas/Element'
+              - type: object
+                properties:
+                  state:
+                    type: object
+                    properties:
+                      t:
+                        type: string
+                        enum: ['Error']
+                      c:
+                        type: string
+    GetCAParentContactInfo:
+      description: Success.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Rfc6492TagOrEmbeddedTag'
+
+  examples:
+    rfc6492:
+      value:
+        t: 'Rfc6492'
+        c:
+          tag: null
+          id_cert: '<base64>'
+          parent_handle: 'ta'
+          child_handle: 'ca'
+          service_uri: 'https://localhost:3000/rfc6492/ta'
