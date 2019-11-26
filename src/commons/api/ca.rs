@@ -1601,6 +1601,7 @@ impl ResourceClassInfo {
 /// Contains the current key status for a resource class.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
+#[serde(tag = "t", content = "c")]
 pub enum ResourceClassKeysInfo {
     Pending(PendingKeyInfo),
     Active(CurrentKeyInfo),
