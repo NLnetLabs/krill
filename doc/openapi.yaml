@@ -1307,14 +1307,7 @@ components:
                                   type: string
                                   format: uri
                                 resources:
-                                  type: object
-                                  properties:
-                                    asn:
-                                      type: string
-                                    v4:
-                                      type: string
-                                    v6:
-                                      type: string
+                                  $ref: '#/components/schemas/Resources'
                             request:
                               type: string
                               nullable: true
