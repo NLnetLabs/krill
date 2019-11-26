@@ -8,6 +8,9 @@ info:
     # Versioning
     The API path includes a version. The idea is that we may add functionality, but will not introduce breaking changes to existing functionality. You may expect additional resources, and you may see additional data (json members) within resources. So, please make sure that you ignore what you don’t understand when using this API.
     # References
+    - [RFC 6492: A Protocol for Provisioning Resource Certificates](https://tools.ietf.org/html/rfc6492)
+    - [RFC 8181: A Publication Protocol for the Resource Public Key Infrastructure (RPKI)](https://tools.ietf.org/html/rfc8181)
+    - [RFC 8183: An Out-of-Band Setup Protocol for Resource Public Key Infrastructure (RPKI) Production Services](https://tools.ietf.org/html/rfc8183)
   license:
     name: Mozilla Public License 2.0
     url: https://www.mozilla.org/en-US/MPL/2.0/
@@ -17,7 +20,7 @@ info:
 
 servers:
 - url: https://{domain}:{port}/api/v1
-  description: Your Krill server.
+  description: Krill server API URL.
   variables:
     domain:
       default: localhost
@@ -42,7 +45,7 @@ paths:
   /health:
     get:
       tags:
-      - "Other"
+        - "Other"
       summary: Perform an authenticated health check.
       responses:
         '200':
@@ -53,7 +56,7 @@ paths:
   /publishers:
     get:
       tags:
-      - "Publishers"
+        - "Publishers"
       summary: List publishers.
       responses:
         '200':
@@ -65,7 +68,7 @@ paths:
 
     post:
       tags:
-      - "Publishers"
+        - "Publishers"
       summary: Add publisher.
       description: |
         Adds an RFC 8181 publisher. Expects a JSON representation of the
@@ -89,7 +92,7 @@ paths:
   /publishers/{publisher_handle}:
     get:
       tags:
-      - "Publishers"
+        - "Publishers"
       summary: Show details for publisher.
       description: Shows the information for a publisher by a given handle.
       parameters:
@@ -106,7 +109,7 @@ paths:
 
     delete:
       tags:
-      - "Publishers"
+        - "Publishers"
       summary: Delete a publisher.
       description: This action also removes all the published content for a publisher.
       parameters:
@@ -124,7 +127,7 @@ paths:
   /publishers/{publisher_handle}/response.xml:
     get:
       tags:
-      - "Publishers"
+        - "Publishers"
       summary: Get XML Response for publisher.
       description: Gets the RFC 8183 XML Repository Response for a publisher.
       parameters:
@@ -142,7 +145,7 @@ paths:
   /cas:
     get:
       tags:
-      - "Certificate Authorities"
+        - "Certificate Authorities"
       summary: List CAs.
       responses:
         '200':
@@ -154,7 +157,7 @@ paths:
 
     post:
       tags:
-      - "Certificate Authorities"
+        - "Certificate Authorities"
       summary: Add a CA.
       description: |
         When adding a CA you need to choose a “handle”, essentially just a
@@ -185,7 +188,7 @@ paths:
   /cas/{ca_handle}:
     get:
       tags:
-      - "Certificate Authorities"
+        - "Certificate Authorities"
       summary: Show a CA.
       description: Show CA details.
       parameters:
@@ -203,7 +206,7 @@ paths:
   /cas/{ca_handle}/children:
     post:
       tags:
-      - "Certificate Authorities"
+        - "Certificate Authorities"
       summary: Add a child CA.
       description: |
         This adds an embedded (in the same Krill instance) or remote child CA.
@@ -261,7 +264,7 @@ paths:
   /cas/{ca_handle}/child_request:
     get:
       tags:
-      - "Certificate Authorities"
+        - "Certificate Authorities"
       summary: Show CA RFC 8183 Request XML.
       description: Shows the RFC 8181 Child Request for this CA.
       parameters:
@@ -277,8 +280,13 @@ paths:
   /cas/{ca_handle}/children/{child_handle}:
     post:
       tags:
-      - "Certificate Authorities"
+        - "Certificate Authorities"
       summary: Update an existing child of a CA.
+      description: |
+        This action is idempotent.
+        **Note:** You can only update the complete resource set! If you leave
+        out a resource - like asn in the example - then the child will lose all
+        resources of that type.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
         - $ref: '#/components/parameters/child_handle'
@@ -288,15 +296,33 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/UpdateCAChildRequest'
+            examples:
+              update_resources:
+                summary: Update the resources for a child.
+                value:
+                  id_cert: null
+                  resources:
+                    asn: ''
+                    v4: '10.0.0.0/8'
+                    v6: '::'
+              update_id_cert:
+                summary: Update the ID certificate for a remote child.
+                value:
+                  id_cert: '<base64>'
+                  resources: null
       responses:
         '200':
           $ref: '#/components/responses/Success'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnknownChild'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
 
     get:
       tags:
-      - "Certificate Authorities"
+        - "Certificate Authorities"
       summary: Show info for a child.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
@@ -314,10 +340,10 @@ paths:
                     properties:
                       pem:
                         type: string
-                        format: PEM
+                        format: pem
                       hash:
                         type: string
-                        format: SHA256
+                        format: hash
                   entitled_resources:
                     $ref: '#/components/schemas/Resources'
         '403':
@@ -335,8 +361,12 @@ paths:
 
     delete:
       tags:
-      - "Certificate Authorities"
-      summary: Remove an existing child from a CA.
+        - "Certificate Authorities"
+      summary: Remove a child CA.
+      description: |
+        Removes a child, revokes its certificates and removes them from the
+        repository. Use with care, although you can re-add a removed child,
+        this is probably best avoided.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
         - $ref: '#/components/parameters/child_handle'
@@ -345,11 +375,21 @@ paths:
           $ref: '#/components/responses/Success'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Unknown resource.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/UnknownChild'
+                  - $ref: '#/components/schemas/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
 
   /cas/{ca_handle}/children/{child_handle}/contact:
     get:
       tags:
-      - "Certificate Authorities"
+        - "Certificate Authorities"
       summary: Show parent contact for a child.
       description: |
         This is the parent contact that a child can use when adding the parent.
@@ -374,15 +414,13 @@ paths:
                         type: string
                         nullable: true
                       id_cert:
-                        type: string
-                        format: base64
+                        $ref: '#/components/schemas/IdCert'
                       parent_handle:
                         $ref: '#/components/schemas/Handle'
                       child_handle:
                         $ref: '#/components/schemas/Handle'
                       service_uri:
-                        type: string
-                        format: uri
+                        $ref: '#/components/schemas/ServiceUri'
               examples:
                 rfc6492:
                   value:
@@ -412,7 +450,7 @@ paths:
   /cas/{ca_handle}/history:
     get:
       tags:
-      - "Certificate Authorities"
+        - "Certificate Authorities"
       summary: Show full history of a CA.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
@@ -425,7 +463,7 @@ paths:
   /cas/{ca_handle}/id:
     post:
       tags:
-      - "Certificate Authorities"
+        - "Certificate Authorities"
       summary: Regenerate CA ID certificate.
       description: |
         Tells the CA to create a new ID certificate and forget its old ID. Note
@@ -437,6 +475,8 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/Success'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/UnknownCA'
         '500':
@@ -445,7 +485,7 @@ paths:
   /cas/{ca_handle}/parents:
     post:
       tags:
-      - "Certificate Authorities"
+        - "Certificate Authorities"
       summary: Add a parent to this CA.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
@@ -461,10 +501,148 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  /cas/{ca_handle}/repo:
+    get:
+      tags:
+        - "Certificate Authorities"
+      summary: Show Repository for a CA.
+      description: |
+        Returns details about the repository is available, or an indication of
+        why it is not available.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - type: object
+                    properties:
+                      contact:
+                        type: object
+                        properties:
+                          t:
+                            type: string
+                            enum: ['Embedded','rfc8181']
+                          c:
+                            $ref: '#/components/schemas/RepoInfo'
+                      state:
+                        type: object
+                        properties:
+                          t:
+                            type: string
+                            enum: ['List']
+                          c:
+                            type: object
+                            properties:
+                              elements:
+                                type: array
+                                items:
+                                  type: object
+                                  properties:
+                                    uri:
+                                      type: string
+                                      format: uri
+                                    hash:
+                                      type: string
+                                      format: hash
+                  - type: object
+                    properties:
+                      state:
+                        type: object
+                        properties:
+                          t:
+                            type: string
+                            enum: ['Error']
+                          c:
+                            type: string
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+    post:
+      tags:
+        - "Certificate Authorities"
+      summary: Update the Repository for a CA.
+      description: |
+        This will update the repository for a CA. I.e. it will trigger the
+        following:
+          - A check that the new Repository can be reached and allows the CA to
+            connect.
+          - Re-issue all objects using the base uri for the new repository.
+          - Publish the new objects.
+          - Request new certificates with SIA entries pointing to the new
+            locations.
+          - (best effort) Clean up of the old repository.
+        The new repository can be embedded, or remote.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRepositoryForCARequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '400':
+          description: Bad request parameters.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/AlreadyUsingThisRepository'
+                  - $ref: '#/components/schemas/TargetRepositoryDoesNotAllowListQuery'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+
+  /cas/{ca_handle}/repo/request:
+    get:
+      tags:
+        - "Certificate Authorities"
+      summary: Show the RFC 8181 Publisher Request for a CA.
+      description: |
+        Returns details about the repository is available, or an indication of
+        why it is not available.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tag:
+                    type: string
+                    nullable: true
+                  publisher_handle:
+                    $ref: '#/components/schemas/Handle'
+                  id_cert:
+                    $ref: '#/components/schemas/IdCert'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
   /cas/{ca_handle}/keys/roll_activate:
     post:
       tags:
-      - "Certificate Authorities"
+        - "Certificate Authorities"
       summary: Finish roll for all keys held by this CA.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
@@ -477,7 +655,7 @@ paths:
   /cas/{ca_handle}/keys/roll_init:
     post:
       tags:
-      - "Certificate Authorities"
+        - "Certificate Authorities"
       summary: Perform a manual key-roll in Krill.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
@@ -490,7 +668,7 @@ paths:
   /cas/republish_all:
     post:
       tags:
-      - "Certificate Authorities"
+        - "Certificate Authorities"
       summary: Force that all CAs create new objects if needed (in which case they will also sync).
       responses:
         '200':
@@ -501,7 +679,7 @@ paths:
   /cas/refresh_all:
     post:
       tags:
-      - "Certificate Authorities"
+        - "Certificate Authorities"
       summary: Force that all CAs ask their parents for updated certificates.
       responses:
         '200':
@@ -512,7 +690,7 @@ paths:
   /cas/resync_all:
     post:
       tags:
-      - "Certificate Authorities"
+        - "Certificate Authorities"
       summary: Force that all CAs sync with their repo server.
       responses:
         '200':
@@ -552,12 +730,7 @@ components:
       required: true
 
   schemas:
-    Handle:
-      type: string
-      maxLength: 255
-      pattern: '[\-_A-Za-z0-9/]*'
-      example:
-        value: 'ca'
+    # Types ordered alphabetically
     Auth:
       type: object
       required:
@@ -583,9 +756,25 @@ components:
                 - $ref: '#/components/schemas/Handle'
                 - description: Ignored.
             id_cert:
-              type: string
-              format: byte
-              description: Base64 of DER encoded X509 certificate.
+              $ref: '#/components/schemas/IdCert'
+    Handle:
+      type: string
+      maxLength: 255
+      pattern: '[\-_A-Za-z0-9/]*'
+      example:
+        value: 'ca'
+    IdCert:
+      type: string
+      format: base64
+    RepoInfo:
+      type: object
+      properties:
+        base_uri:
+          type: string
+          format: uri
+        rpki_notify: 
+          type: string
+          format: uri
     Resources:
       type: object
       properties:
@@ -599,7 +788,6 @@ components:
         asn: ""
         v4: "10.0.0.0/0"
         v6: "2001:db8::/32"
-
     RFC8183RequestXML:
       type: object
       properties:
@@ -626,7 +814,11 @@ components:
         version: 1
         child_handle: child
         child_bpki_ta: 'MIIDPDCCAiSgAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyg4QzE0M0IxNTVBNTMyMDgwN0RBNjZFNDZGOEM1NjMxQTkwMjIyN0QyMCAXDTE5MTExNDIwMzA0NloYDzIxMTkxMTE0MjAzNTQ2WjAzMTEwLwYDVQQDEyg4QzE0M0IxNTVBNTMyMDgwN0RBNjZFNDZGOEM1NjMxQTkwMjIyN0QyMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAlgTWdF2X4cf83/TROhr3nZUP70PHGHe1edLiqf5wEmZIt8ucf2pSoLWkInCi0IgP3yZZR/HRw4aqlWtRHKfSMXwDNm7+F3aVi+vI/iGi7mITS+nbdln4oEEl8cEyjmRpVCp7f494mWR2fRwkeYiEqmVZriny7vh2mlQMRh8KSBVm7+PiG2Jn4Z2QGU/k0At+Wv2byeio53FXhgnEXRjt57IfBjKjzgO/Ckc9tjTVIIgO1hmXJL6TGu8aoFwGdYUKcRQTTrmfB9dm/nhmuhhm4T0/D+4M1yRpx56p1NIiFdjrnb3+rjP5goz5uQM2e0odOTt5D5RUIIJsZCUHtO5RdwIDAQABo1kwVzAPBgNVHRMBAf8EBTADAQH/MCAGA1UdDgEBAAQWBBSMFDsVWlMggH2mbkb4xWMakCIn0jAiBgNVHSMBAQAEGDAWgBSMFDsVWlMggH2mbkb4xWMakCIn0jANBgkqhkiG9w0BAQsFAAOCAQEAVdQV3sY38KdEUQEZGX8yjr0b86IVJEKBNNZ9mkD9bxuQ0KU5TjRdXB7iHOGOE5hj+tF5At/+4lvMgsw+1VDTmqCc2O7GnxU/P4+Zpbe6JUCPijomq6yJnxhK3zdqsWPiAT4WGmCr1gm3Hk9xK/Xg0k74yY1yf6tPOGN5JA627bK9MEdg6IMuYRkOs9Ja0oJuu0scgSNwvouxGTYIw175GwEIgICXFX0hSWDlyYhrxVQwjiHTDjNUe/4gfNx2mYuLtfGoNJU+7yGfAdMJBPahcgzpQnwRqVW4dtxJrd8EPQ/WGMn50lPDbeFRPtNCh+M6hD2xw4K0qVScOwFUCqMP6g=='
+    ServiceUri:
+      type: string
+      format: uri
 
+    # Request bodies
     AddCARequest:
       type: object
       required:
@@ -655,9 +847,15 @@ components:
       type: object
       properties:
         id_cert:
-          type: string
+          allOf:
+            - $ref: '#/components/schemas/IdCert'
+            - description: |
+                Base64 of DER encoded is PEM encoded minus the BEGIN and END
+                markers.
+            - nullable: true
         resources:
           $ref: '#/components/schemas/Resources'
+          nullable: true
     AddParentCARequest:
       type: object
       required:
@@ -681,8 +879,64 @@ components:
         tag:
           type: string
         id_cert:
+          $ref: '#/components/schemas/IdCert'
+      externalDocs:
+        url: https://tools.ietf.org/html/rfc8183#section-5.2.3
+    UpdateRepositoryForCARequest:
+      oneOf:
+        - type: object
+          required:
+            - t
+          properties:
+            t:
+              type: string
+              enum: ['Embedded']
+        - type: object
+          required:
+            - t
+            - c
+          properties:
+            t:
+              type: string
+              enum: ['Rfc8181']
+            c:
+              type: object
+              properties:
+                tag:
+                  type: string
+                  nullable: true
+                publisher_handle:
+                  $ref: '#/components/schemas/Handle'
+                id_cert:
+                  $ref: '#/components/schemas/IdCert'
+                service_uri:
+                  $ref: '#/components/schemas/ServiceUri'
+                repo_info:
+                  $ref: '#/components/schemas/RepoInfo'
+
+    # Error codes ordered ascending by error code
+    AlreadyUsingThisRepository:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2206]
+        msg:
           type: string
-          format: byte
+    TargetRepositoryDoesNotAllowListQuery:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2207]
+        msg:
+          type: string
     ChildWithHandleExists:
       type: object
       required:
@@ -836,7 +1090,7 @@ components:
           schema:
             $ref: '#/components/schemas/CAHandleAlreadyInUse'
     GetCA:
-      description: Success
+      description: Success.
       content:
         application/json:
           schema:
@@ -845,14 +1099,7 @@ components:
               handle:
                 $ref: '#/components/schemas/Handle'
               repo_info:
-                type: object
-                properties:
-                  base_uri:
-                    type: string
-                    format: uri
-                  rpki_notify: 
-                    type: string
-                    format: uri
+                $ref: '#/components/schemas/RepoInfo'
               parents:
                 type: array
                 items:
@@ -955,7 +1202,7 @@ components:
             children:
               - 'child'
     ListCAs:
-      description: Success
+      description: Success.
       content:
         application/json:
           schema:
@@ -971,7 +1218,7 @@ components:
                       - $ref: '#/components/schemas/Handle'
                       - description: The RFC-8183 handle that uniquely identifies the CA in this Krill instance.
     ListPublishers:
-      description: Success
+      description: Success.
       content:
         application/json:
           schema:
@@ -996,7 +1243,7 @@ components:
                             type: string
                             format: uri
     GetPublisher:
-      description: Success
+      description: Success.
       content:
         application/json:
           schema:
@@ -1005,8 +1252,7 @@ components:
               handle:
                 $ref: '#/components/schemas/Handle'
               id_cert:
-                type: string
-                format: base64
+                $ref: '#/components/schemas/IdCert'
               base_uri:
                 type: string
                 format: uri
