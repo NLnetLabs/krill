@@ -257,6 +257,22 @@ paths:
         '500':
           $ref: '#/components/responses/GeneralCAServerError'
 
+  /cas/{ca_handle}/child_request:
+    get:
+      tags:
+        - "Certificate Authorities"
+      summary: Show CA RFC 8183 Request XML.
+      description: Shows the RFC 8181 Child Request for this CA.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/GetChildRequestXML'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
   /cas/{ca_handle}/children:
     post:
       tags:
@@ -315,23 +331,30 @@ paths:
         '500':
           $ref: '#/components/responses/GeneralCAServerError'
 
-  /cas/{ca_handle}/child_request:
+  /cas/{ca_handle}/children/{child_handle}:
     get:
       tags:
         - "Certificate Authorities"
-      summary: Show CA RFC 8183 Request XML.
-      description: Shows the RFC 8181 Child Request for this CA.
+      summary: Show info for a child.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
+        - $ref: '#/components/parameters/child_handle'
       responses:
         '200':
-          $ref: '#/components/responses/GetChildRequestXML'
+          $ref: '#/components/responses/GetChildCA'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
-          $ref: '#/components/responses/UnknownCA'
+          description: Unknown resource.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/UnknownChild'
+                  - $ref: '#/components/schemas/UnknownCA'
         '500':
           $ref: '#/components/responses/GeneralCAServerError'
 
-  /cas/{ca_handle}/children/{child_handle}:
     post:
       tags:
         - "Certificate Authorities"
@@ -367,29 +390,6 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/Success'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          description: Unknown resource.
-          content:
-            application/json:
-              schema:
-                oneOf:
-                  - $ref: '#/components/schemas/UnknownChild'
-                  - $ref: '#/components/schemas/UnknownCA'
-        '500':
-          $ref: '#/components/responses/GeneralCAServerError'
-
-    get:
-      tags:
-        - "Certificate Authorities"
-      summary: Show info for a child.
-      parameters:
-        - $ref: '#/components/parameters/ca_handle'
-        - $ref: '#/components/parameters/child_handle'
-      responses:
-        '200':
-          $ref: '#/components/responses/GetChildCA'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
