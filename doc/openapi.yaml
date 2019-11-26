@@ -1282,30 +1282,32 @@ components:
                       type: object
                       additionalProperties:
                         type: object
-                        properties:
-                          key_id:
-                            type: string
-                          incoming_cert:
-                            type: object
-                            properties:
-                              cert:
-                                type: string
-                                format: base64
-                              uri:
-                                type: string
-                                format: uri
-                              resources:
-                                type: object
-                                properties:
-                                  asn:
-                                    type: string
-                                  v4:
-                                    type: string
-                                  v6:
-                                    type: string
-                          request:
-                            type: string
-                            nullable: true
+                        additionalProperties:
+                          type: object
+                          properties:
+                            key_id:
+                              type: string
+                            incoming_cert:
+                              type: object
+                              properties:
+                                cert:
+                                  type: string
+                                  format: base64
+                                uri:
+                                  type: string
+                                  format: uri
+                                resources:
+                                  type: object
+                                  properties:
+                                    asn:
+                                      type: string
+                                    v4:
+                                      type: string
+                                    v6:
+                                      type: string
+                            request:
+                              type: string
+                              nullable: true
                     current_objects:
                       type: object
                       additionalProperties:
@@ -1336,16 +1338,17 @@ components:
                 name_space: '0'
                 parent_handle: 'ta'
                 keys:
-                  'Active':
-                    key_id: '9610..D6BD'
-                    incoming_cert:
-                      cert: 'MIII..89U='
-                      uri: 'rsync://localhost:3000/repo/ta/ta.cer'
-                      resources:
-                        asn: 'AS0-AS4294967295'
-                        v4: '0.0.0.0/0'
-                        v6: '::/0'
-                    request: null
+                  active:
+                    active_key: 
+                      key_id: '9610..D6BD'
+                      incoming_cert:
+                        cert: 'MIII..89U='
+                        uri: 'rsync://localhost:3000/repo/ta/ta.cer'
+                        resources:
+                          asn: 'AS0-AS4294967295'
+                          v4: '0.0.0.0/0'
+                          v6: '::/0'
+                      request: null
                 current_objects:
                   '9610..D6BD.crl':
                     content: 'MIID..DDo='
