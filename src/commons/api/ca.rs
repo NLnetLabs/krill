@@ -508,11 +508,13 @@ impl Eq for RepoInfo {}
 //------------ PendingKeyInfo ------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct PendingKeyInfo(KeyIdentifier);
+pub struct PendingKeyInfo {
+    key_id: KeyIdentifier,
+}
 
 impl PendingKeyInfo {
-    pub fn new(ki: KeyIdentifier) -> Self {
-        PendingKeyInfo(ki)
+    pub fn new(key_id: KeyIdentifier) -> Self {
+        PendingKeyInfo { key_id }
     }
 }
 
@@ -1417,6 +1419,7 @@ impl CertAuthSummary {
 
 //------------ ParentKindInfo ------------------------------------------------
 #[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ParentKindInfo {
     #[display(fmt = "This CA is a TA")]
     Ta,
@@ -1578,13 +1581,7 @@ impl ResourceClassInfo {
     }
 
     pub fn current_key(&self) -> Option<&CertifiedKeyInfo> {
-        match &self.keys {
-            ResourceClassKeysInfo::Active(current)
-            | ResourceClassKeysInfo::RollPending(_, current)
-            | ResourceClassKeysInfo::RollNew(_, current)
-            | ResourceClassKeysInfo::RollOld(current, _) => Some(current),
-            _ => None,
-        }
+        self.keys.current_key()
     }
 
     pub fn current_resources(&self) -> Option<&ResourceSet> {
@@ -1603,51 +1600,96 @@ impl ResourceClassInfo {
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
 pub enum ResourceClassKeysInfo {
-    Pending(PendingKeyInfo),
-    Active(CurrentKeyInfo),
-    RollPending(PendingKeyInfo, CurrentKeyInfo),
-    RollNew(NewKeyInfo, CurrentKeyInfo),
-    RollOld(CurrentKeyInfo, OldKeyInfo),
+    Pending(PendingInfo),
+    Active(ActiveInfo),
+    RollPending(RollPendingInfo),
+    RollNew(RollNewInfo),
+    RollOld(RollOldInfo),
 }
 
-type NewKeyInfo = CertifiedKeyInfo;
-type CurrentKeyInfo = CertifiedKeyInfo;
-type OldKeyInfo = CertifiedKeyInfo;
+#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
+#[display(fmt = "pending")]
+pub struct PendingInfo {
+    #[serde(rename = "pending_key")]
+    pub _pending_key: PendingKeyInfo,
+}
+
+#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
+#[display(fmt = "active")]
+pub struct ActiveInfo {
+    #[serde(rename = "active_key")]
+    pub _active_key: CertifiedKeyInfo,
+}
+
+#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
+#[display(fmt = "roll phase 1: pending and active key")]
+pub struct RollPendingInfo {
+    #[serde(rename = "pending_key")]
+    pub _pending_key: PendingKeyInfo,
+    #[serde(rename = "active_key")]
+    pub _active_key: CertifiedKeyInfo,
+}
+
+#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
+#[display(fmt = "roll phase 2: new and active key")]
+pub struct RollNewInfo {
+    #[serde(rename = "new_key")]
+    pub _new_key: CertifiedKeyInfo,
+    #[serde(rename = "active_key")]
+    pub _active_key: CertifiedKeyInfo,
+}
+
+#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
+#[display(fmt = "roll phase 3: active and old key")]
+pub struct RollOldInfo {
+    #[serde(rename = "active_key")]
+    pub _active_key: CertifiedKeyInfo,
+    #[serde(rename = "old_key")]
+    pub _old_key: CertifiedKeyInfo,
+}
+
+impl ResourceClassKeysInfo {
+    pub fn current_key(&self) -> Option<&CertifiedKeyInfo> {
+        match &self {
+            ResourceClassKeysInfo::Active(current) => Some(&current._active_key),
+            ResourceClassKeysInfo::RollPending(pending) => Some(&pending._active_key),
+            ResourceClassKeysInfo::RollNew(new) => Some(&new._active_key),
+            ResourceClassKeysInfo::RollOld(old) => Some(&old._active_key),
+            _ => None,
+        }
+    }
+}
 
 impl fmt::Display for ResourceClassKeysInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let mut res = String::new();
 
+        res.push_str("State: ");
+
         match &self {
-            ResourceClassKeysInfo::Pending(_) => {
-                res.push_str("State: pending\n");
+            ResourceClassKeysInfo::Pending(p) => {
+                res.push_str(&p.to_string());
             }
-            ResourceClassKeysInfo::Active(_) => {
-                res.push_str("State: active\n");
+            ResourceClassKeysInfo::Active(a) => {
+                res.push_str(&a.to_string());
             }
-            ResourceClassKeysInfo::RollPending(_, _) => {
-                res.push_str("State: key-roll phase 1: pending key for key roll\n");
+            ResourceClassKeysInfo::RollPending(r) => {
+                res.push_str(&r.to_string());
             }
-            ResourceClassKeysInfo::RollNew(_, _) => {
-                res.push_str("State: key-roll phase 2: new key with certificate\n");
+            ResourceClassKeysInfo::RollNew(r) => {
+                res.push_str(&r.to_string());
             }
-            ResourceClassKeysInfo::RollOld(_, _) => {
-                res.push_str("State: key-roll phase 3: old key pending revocation by parent\n");
+            ResourceClassKeysInfo::RollOld(r) => {
+                res.push_str(&r.to_string());
             }
         }
 
-        match &self {
-            ResourceClassKeysInfo::Active(current)
-            | ResourceClassKeysInfo::RollPending(_, current)
-            | ResourceClassKeysInfo::RollNew(_, current)
-            | ResourceClassKeysInfo::RollOld(current, _) => {
-                res.push_str("    Resources:\n");
-                let inrs = current.incoming_cert().resources();
-                res.push_str(&format!("    ASNs: {}\n", inrs.asn()));
-                res.push_str(&format!("    IPv4: {}\n", inrs.v4()));
-                res.push_str(&format!("    IPv6: {}\n", inrs.v6()));
-            }
-            _ => {}
+        if let Some(key) = self.current_key() {
+            let resources = key.incoming_cert().resources();
+            res.push_str("    Resources:\n");
+            res.push_str(&format!("    ASNs: {}\n", resources.asn()));
+            res.push_str(&format!("    IPv4: {}\n", resources.v4()));
+            res.push_str(&format!("    IPv6: {}\n", resources.v6()));
         }
 
         res.fmt(f)

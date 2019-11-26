@@ -8,8 +8,9 @@ use rpki::csr::Csr;
 use rpki::x509::Time;
 
 use crate::commons::api::{
-    CertifiedKeyInfo, EntitlementClass, IssuanceRequest, PendingKeyInfo, RcvdCert, RepoInfo,
-    RequestResourceLimit, ResourceClassKeysInfo, ResourceClassName, ResourceSet, RevocationRequest,
+    ActiveInfo, CertifiedKeyInfo, EntitlementClass, IssuanceRequest, PendingInfo, PendingKeyInfo,
+    RcvdCert, RepoInfo, RequestResourceLimit, ResourceClassKeysInfo, ResourceClassName,
+    ResourceSet, RevocationRequest, RollNewInfo, RollOldInfo, RollPendingInfo,
 };
 use crate::daemon::ca::{
     self, CurrentObjectSet, CurrentObjectSetDelta, Error, EvtDet, Result, Signer,
@@ -482,13 +483,24 @@ impl KeyState {
 
     pub fn as_info(&self) -> ResourceClassKeysInfo {
         match self.clone() {
-            KeyState::Pending(p) => ResourceClassKeysInfo::Pending(p.as_info()),
-            KeyState::Active(c) => ResourceClassKeysInfo::Active(c.as_info()),
-            KeyState::RollPending(p, c) => {
-                ResourceClassKeysInfo::RollPending(p.as_info(), c.as_info())
-            }
-            KeyState::RollNew(n, c) => ResourceClassKeysInfo::RollNew(n.as_info(), c.as_info()),
-            KeyState::RollOld(c, o) => ResourceClassKeysInfo::RollOld(c.as_info(), o.as_info()),
+            KeyState::Pending(p) => ResourceClassKeysInfo::Pending(PendingInfo {
+                _pending_key: p.as_info(),
+            }),
+            KeyState::Active(c) => ResourceClassKeysInfo::Active(ActiveInfo {
+                _active_key: c.as_info(),
+            }),
+            KeyState::RollPending(p, c) => ResourceClassKeysInfo::RollPending(RollPendingInfo {
+                _pending_key: p.as_info(),
+                _active_key: c.as_info(),
+            }),
+            KeyState::RollNew(n, c) => ResourceClassKeysInfo::RollNew(RollNewInfo {
+                _new_key: n.as_info(),
+                _active_key: c.as_info(),
+            }),
+            KeyState::RollOld(c, o) => ResourceClassKeysInfo::RollOld(RollOldInfo {
+                _old_key: o.as_info(),
+                _active_key: c.as_info(),
+            }),
         }
     }
 }
