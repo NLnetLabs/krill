@@ -338,7 +338,7 @@ pub fn wait_for_new_key(handle: &Handle) {
         let ca = ca_details(handle);
         if let Some(rc) = ca.resources().get(&ResourceClassName::default()) {
             match rc.keys() {
-                ResourceClassKeysInfo::RollNew(_, _) => return true,
+                ResourceClassKeysInfo::RollNew(_) => return true,
                 _ => return false,
             }
         }
@@ -386,14 +386,8 @@ pub fn ca_current_resources(handle: &Handle) -> ResourceSet {
     let mut res = ResourceSet::default();
 
     for rc in ca.resources().values() {
-        match rc.keys() {
-            ResourceClassKeysInfo::Active(current)
-            | ResourceClassKeysInfo::RollPending(_, current)
-            | ResourceClassKeysInfo::RollNew(_, current)
-            | ResourceClassKeysInfo::RollOld(current, _) => {
-                res = res.union(current.incoming_cert().resources());
-            }
-            _ => {}
+        if let Some(resources) = rc.current_resources() {
+            res = res.union(resources)
         }
     }
 
