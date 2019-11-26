@@ -75,12 +75,12 @@ pub fn start(config: &Config) -> Result<(), Error> {
                     .route("/cas", post().to(ca_init))
                     .route("/cas", get().to(cas))
                     .route("/cas/{ca}", get().to(ca_info))
-                    .route("/cas/{ca}/id", post().to(ca_update_id))
+                    .route("/cas/{ca}/id", post().to(ca_regenerate_id))
                     .route("/cas/{ca}/history", get().to(ca_history))
                     .route("/cas/{ca}/child_request", get().to(ca_child_req))
-                    .route("/cas/{ca}/repo/", get().to(ca_repo_details))
+                    .route("/cas/{ca}/repo", get().to(ca_repo_details))
                     .route("/cas/{ca}/repo/request", get().to(ca_publisher_req))
-                    .route("/cas/{ca}/repo/", post().to(ca_repo_update))
+                    .route("/cas/{ca}/repo", post().to(ca_repo_update))
                     .route("/cas/{ca}/parents", post().to(ca_add_parent))
                     .route("/cas/{ca}/parents/{parent}", get().to(ca_my_parent_contact))
                     .route("/cas/{ca}/parents/{parent}", post().to(ca_update_parent))
@@ -102,7 +102,9 @@ pub fn start(config: &Config) -> Result<(), Error> {
                     // Force resyncing of all CAs at repo servers
                     .route("/cas/resync_all", post().to(resync_all))
                     // Force refresh of ALL CA certificates
-                    .route("/cas/refresh_all", post().to(refresh_all)),
+                    .route("/cas/refresh_all", post().to(refresh_all))
+                    // Methods that are not found should return a bad request and some explanation
+                    .default_service(web::route().to(api_bad_request)),
             )
             // Logged in users for the API
             .route("/ui/is_logged_in", get().to(is_logged_in))

@@ -216,10 +216,10 @@ impl From<&IssuedCert> for ReplacedObject {
     }
 }
 
-impl From<&Roa> for ReplacedObject {
-    fn from(r: &Roa) -> Self {
-        let revocation = Revocation::from(r);
-        let hash = HexEncodedHash::from_content(r.to_captured().as_slice());
+impl From<&CurrentObject> for ReplacedObject {
+    fn from(current: &CurrentObject) -> Self {
+        let revocation = Revocation::from(current);
+        let hash = current.to_hex_hash();
         ReplacedObject { revocation, hash }
     }
 }
@@ -1402,16 +1402,16 @@ impl CertAuthList {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthSummary {
-    name: Handle,
+    handle: Handle,
 }
 
 impl CertAuthSummary {
     pub fn new(name: Handle) -> Self {
-        CertAuthSummary { name }
+        CertAuthSummary { handle: name }
     }
 
-    pub fn name(&self) -> &Handle {
-        &self.name
+    pub fn handle(&self) -> &Handle {
+        &self.handle
     }
 }
 
@@ -1448,7 +1448,7 @@ impl ParentInfo {
 
 impl fmt::Display for ParentInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} {}", self.handle, self.kind)
+        write!(f, "Handle: {} Kind: {}", self.handle, self.kind)
     }
 }
 
@@ -1601,6 +1601,7 @@ impl ResourceClassInfo {
 /// Contains the current key status for a resource class.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
+#[serde(rename_all = "snake_case")]
 pub enum ResourceClassKeysInfo {
     Pending(PendingKeyInfo),
     Active(CurrentKeyInfo),
@@ -1656,6 +1657,7 @@ impl fmt::Display for ResourceClassKeysInfo {
 //------------ CaRepoDetails -------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum CurrentRepoState {
     List(ListReply),
     Error(String),

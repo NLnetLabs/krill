@@ -9,10 +9,10 @@ use rpki::uri;
 use rpki::x509::{Serial, Time, Validity};
 
 use crate::commons::api::{
-    AddedObject, ChildHandle, CurrentObject, Handle, IssuanceRequest, IssuedCert, ObjectName,
-    ObjectsDelta, ParentCaContact, ParentHandle, RcvdCert, RepoInfo, RepositoryContact,
-    ResourceClassName, ResourceSet, Revocation, RevocationRequest, RevokedObject, TaCertDetails,
-    TrustAnchorLocator, UpdatedObject, WithdrawnObject,
+    AddedObject, ChildHandle, Handle, IssuanceRequest, IssuedCert, ObjectName, ObjectsDelta,
+    ParentCaContact, ParentHandle, RcvdCert, RepoInfo, RepositoryContact, ResourceClassName,
+    ResourceSet, Revocation, RevocationRequest, RevokedObject, TaCertDetails, TrustAnchorLocator,
+    UpdatedObject, WithdrawnObject,
 };
 use crate::commons::eventsourcing::StoredEvent;
 use crate::commons::remote::id::IdCert;
@@ -190,10 +190,10 @@ impl RoaUpdates {
 
     pub fn added(&self) -> Vec<AddedObject> {
         let mut res = vec![];
-        for (auth, info) in self.updated.iter() {
+        for (_auth, info) in self.updated.iter() {
             if info.replaces().is_none() {
-                let object = CurrentObject::from(info.roa());
-                let name = ObjectName::from(auth);
+                let object = info.object().clone();
+                let name = info.name().clone();
                 res.push(AddedObject::new(name, object));
             }
         }
@@ -202,10 +202,10 @@ impl RoaUpdates {
 
     pub fn updated(&self) -> Vec<UpdatedObject> {
         let mut res = vec![];
-        for (auth, info) in self.updated.iter() {
+        for (_auth, info) in self.updated.iter() {
             if let Some(replaced) = info.replaces() {
-                let object = CurrentObject::from(info.roa());
-                let name = ObjectName::from(auth);
+                let object = info.object().clone();
+                let name = info.name().clone();
                 res.push(UpdatedObject::new(name, object, replaced.hash().clone()));
             }
         }
@@ -286,6 +286,7 @@ pub type Evt = StoredEvent<EvtDet>;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
+#[serde(rename_all = "snake_case")]
 pub enum EvtDet {
     // Being a parent Events
     ChildAdded(ChildHandle, ChildDetails),
@@ -293,7 +294,7 @@ pub enum EvtDet {
     ChildKeyRevoked(ChildHandle, ResourceClassName, KeyIdentifier),
     ChildCertificatesUpdated(ResourceClassName, ChildCertificateUpdates),
     ChildUpdatedIdCert(ChildHandle, IdCert),
-    ChildUpdatedResources(ChildHandle, ResourceSet, Time),
+    ChildUpdatedResources(ChildHandle, ResourceSet),
     ChildRemoved(ChildHandle),
 
     // Being a child Events
@@ -427,12 +428,10 @@ impl EvtDet {
         child: ChildHandle,
         resources: ResourceSet,
     ) -> Evt {
-        let time = Time::now();
-
         StoredEvent::new(
             handle,
             version,
-            EvtDet::ChildUpdatedResources(child, resources, time),
+            EvtDet::ChildUpdatedResources(child, resources),
         )
     }
 
@@ -545,7 +544,7 @@ impl fmt::Display for EvtDet {
                 child,
                 id_crt.ski_hex()
             ),
-            EvtDet::ChildUpdatedResources(child, resources, _) => {
+            EvtDet::ChildUpdatedResources(child, resources) => {
                 write!(f, "updated child '{}' resources to '{}'", child, resources)
             }
             EvtDet::ChildRemoved(child) => {

@@ -59,6 +59,10 @@ impl Base64 {
     pub fn size(&self) -> usize {
         self.0.len()
     }
+
+    pub fn as_bytes(&self) -> &[u8] {
+        self.0.as_ref()
+    }
 }
 
 impl AsRef<str> for Base64 {
@@ -276,6 +280,12 @@ pub enum ErrorCode {
     #[display(fmt = "Out of sync with server, please send requests for instances sequentially")]
     ConcurrentModification,
 
+    #[display(fmt = "unknown api method")]
+    UnknownMethod,
+
+    #[display(fmt = "unknown resource")]
+    UnknownResource,
+
     #[display(fmt = "Unknown publisher")]
     UnknownPublisher,
 
@@ -297,8 +307,14 @@ pub enum ErrorCode {
     #[display(fmt = "Publisher has been deactivated")]
     PublisherDeactivated,
 
+    #[display(fmt = "Already using this repository.")]
+    NewRepoNoChange,
+
+    #[display(fmt = "Target repository does not allow list query.")]
+    NewRepoNoResponse,
+
     // 2300s CA Admin Issues
-    #[display(fmt = "Child with name exists")]
+    #[display(fmt = "Child with handle exists")]
     DuplicateChild,
 
     #[display(fmt = "Child MUST have resources")]
@@ -307,11 +323,14 @@ pub enum ErrorCode {
     #[display(fmt = "Child cannot have resources not held by parent")]
     ChildOverclaims,
 
-    #[display(fmt = "Parent with name exists")]
+    #[display(fmt = "Parent with handle exists")]
     DuplicateParent,
 
     #[display(fmt = "Child unknown")]
     UnknownChild,
+
+    #[display(fmt = "No known parent for handle")]
+    UnknownParent,
 
     #[display(fmt = "Invalid ROA delta: adding a definition which is already present")]
     RoaUpdateInvalidDuplicate,
@@ -321,6 +340,13 @@ pub enum ErrorCode {
 
     #[display(fmt = "Invalid ROA delta: not all resources held.")]
     RoaUpdateInvalidResources,
+
+    // 2500s General CA issues
+    #[display(fmt = "Unknown CA.")]
+    UnknownCa,
+
+    #[display(fmt = "CA with handle exists.")]
+    DuplicateCa,
 
     // 3000s General server errors
     #[display(fmt = "Cannot update internal state, issue with work_dir?")]
@@ -338,8 +364,8 @@ pub enum ErrorCode {
     #[display(fmt = "General CA Server issue.")]
     CaServerError,
 
-    #[display(fmt = "Publication Client Server issue.")]
-    PubClientServerError,
+    #[display(fmt = "General Publication Server error.")]
+    PubServerError,
 
     #[display(fmt = "Unrecognised error (this is a bug)")]
     Unknown,
@@ -358,6 +384,8 @@ impl From<usize> for ErrorCode {
             // 2000s -> General client issues
             2001 => ErrorCode::CmsValidation,
             2002 => ErrorCode::ConcurrentModification,
+            2003 => ErrorCode::UnknownMethod,
+            2004 => ErrorCode::UnknownResource,
 
             // 2100s -> Pub Admin issues
             2101 => ErrorCode::InvalidBaseUri,
@@ -369,6 +397,8 @@ impl From<usize> for ErrorCode {
             2203 => ErrorCode::ObjectAlreadyPresent,
             2204 => ErrorCode::NoObjectForHashAndOrUri,
             2205 => ErrorCode::PublisherDeactivated,
+            2206 => ErrorCode::NewRepoNoChange,
+            2207 => ErrorCode::NewRepoNoResponse,
 
             // 2300s -> CA Admin issues
             2301 => ErrorCode::DuplicateChild,
@@ -376,11 +406,16 @@ impl From<usize> for ErrorCode {
             2303 => ErrorCode::ChildOverclaims,
             2304 => ErrorCode::DuplicateParent,
             2305 => ErrorCode::UnknownChild,
+            2306 => ErrorCode::UnknownParent,
 
             // 2400s -> ROA issues
             2401 => ErrorCode::RoaUpdateInvalidDuplicate,
             2402 => ErrorCode::RoaUpdateInvalidMissing,
             2403 => ErrorCode::RoaUpdateInvalidResources,
+
+            // 2500s -> General CA issues
+            2501 => ErrorCode::DuplicateCa,
+            2502 => ErrorCode::UnknownCa,
 
             // 3000s -> Server issues, bugs or operational issues
             3001 => ErrorCode::Persistence,
@@ -388,7 +423,7 @@ impl From<usize> for ErrorCode {
             3003 => ErrorCode::SigningError,
             3004 => ErrorCode::ProxyError,
             3005 => ErrorCode::CaServerError,
-            3006 => ErrorCode::PubClientServerError,
+            3006 => ErrorCode::PubServerError,
 
             _ => ErrorCode::Unknown,
         }
@@ -408,6 +443,8 @@ impl Into<ErrorResponse> for ErrorCode {
             // general errors
             ErrorCode::CmsValidation => 2001,
             ErrorCode::ConcurrentModification => 2002,
+            ErrorCode::UnknownMethod => 2003,
+            ErrorCode::UnknownResource => 2004,
 
             // pub admin errors
             ErrorCode::InvalidBaseUri => 2101,
@@ -419,18 +456,25 @@ impl Into<ErrorResponse> for ErrorCode {
             ErrorCode::ObjectAlreadyPresent => 2203,
             ErrorCode::NoObjectForHashAndOrUri => 2204,
             ErrorCode::PublisherDeactivated => 2205,
+            ErrorCode::NewRepoNoChange => 2206,
+            ErrorCode::NewRepoNoResponse => 2207,
 
-            // ca admin errors
+            // ca parent-child errors
             ErrorCode::DuplicateChild => 2301,
             ErrorCode::ChildNeedsResources => 2302,
             ErrorCode::ChildOverclaims => 2303,
             ErrorCode::DuplicateParent => 2304,
             ErrorCode::UnknownChild => 2305,
+            ErrorCode::UnknownParent => 2306,
 
             // roa errors
             ErrorCode::RoaUpdateInvalidDuplicate => 2401,
             ErrorCode::RoaUpdateInvalidMissing => 2402,
             ErrorCode::RoaUpdateInvalidResources => 2403,
+
+            // general krill ca errors
+            ErrorCode::DuplicateCa => 2501,
+            ErrorCode::UnknownCa => 2502,
 
             // server errors
             ErrorCode::Persistence => 3001,
@@ -438,7 +482,7 @@ impl Into<ErrorResponse> for ErrorCode {
             ErrorCode::SigningError => 3003,
             ErrorCode::ProxyError => 3004,
             ErrorCode::CaServerError => 3005,
-            ErrorCode::PubClientServerError => 3006,
+            ErrorCode::PubServerError => 3006,
 
             ErrorCode::Unknown => 65535,
         };
@@ -466,7 +510,7 @@ mod tests {
             test_code(n)
         }
 
-        for n in 2001..2003 {
+        for n in 2001..2005 {
             test_code(n)
         }
 
@@ -474,15 +518,19 @@ mod tests {
             test_code(n)
         }
 
-        for n in 2201..2206 {
+        for n in 2201..2208 {
             test_code(n)
         }
 
-        for n in 2301..2306 {
+        for n in 2301..2307 {
             test_code(n)
         }
 
         for n in 2401..2404 {
+            test_code(n)
+        }
+
+        for n in 2501..2503 {
             test_code(n)
         }
 

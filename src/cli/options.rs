@@ -1006,7 +1006,7 @@ impl Options {
     }
 
     fn parse_matches_cas_update(matches: &ArgMatches) -> Result<Options, Error> {
-        if let Some(_m) = matches.subcommand_matches("embedded") {
+        if let Some(matches) = matches.subcommand_matches("embedded") {
             let general_args = GeneralArgs::from_matches(matches)?;
             let my_ca = Self::parse_my_ca(matches)?;
             let update = RepositoryUpdate::embedded();
@@ -1067,7 +1067,9 @@ impl Options {
         let bytes = file::read(&path)?;
         let mut req = rfc8183::PublisherRequest::validate(bytes.as_ref())?;
 
-        if let Ok(publisher) = Self::parse_publisher_arg(matches) {
+        if let Some(publisher_str) = matches.value_of("publisher") {
+            let publisher =
+                PublisherHandle::from_str(publisher_str).map_err(|_| Error::InvalidHandle)?;
             let (tag, _, cert) = req.unpack();
             req = rfc8183::PublisherRequest::new(tag, publisher, cert);
         }

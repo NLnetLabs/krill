@@ -1,0 +1,24 @@
+{
+  "id": "child",
+  "version": 25,
+  "details": {
+    "key_roll_finished": [
+      "0",
+      {
+        "ca_repo": "rsync://localhost/repo/child/0",
+        "added": [],
+        "updated": [],
+        "withdrawn": [
+          {
+            "name": "12BA87FAB2D73D466CDF6799E1AD675C4A930B7D.crl",
+            "hash": "b15eba4dcd6ad8b11de1de387691906e91a2127c3a2bbb79ac74c28067d8e4ba"
+          },
+          {
+            "name": "12BA87FAB2D73D466CDF6799E1AD675C4A930B7D.mft",
+            "hash": "d86b4455206e3124742b0a9da3b519ac84c4d3be3a72a32c397baa09b3c57209"
+          }
+        ]
+      }
+    ]
+  }
+}

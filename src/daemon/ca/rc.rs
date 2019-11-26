@@ -148,9 +148,8 @@ impl ResourceClass {
     pub fn current_objects(&self) -> CurrentObjects {
         let mut current_objects = CurrentObjects::default();
 
-        for (auth, roa_info) in self.roas.iter() {
-            let roa = roa_info.roa();
-            current_objects.insert(ObjectName::from(auth), CurrentObject::from(roa));
+        for roa_info in self.roas.current() {
+            current_objects.insert(roa_info.name().clone(), roa_info.object().clone());
         }
 
         for issued in self.certificates.current() {
@@ -159,11 +158,11 @@ impl ResourceClass {
         }
 
         fn add_mft_and_crl(objects: &mut CurrentObjects, key: &CertifiedKey) {
-            let mft = key.current_set().manifest();
-            objects.insert(ObjectName::from(mft), CurrentObject::from(mft));
+            let mft = key.current_set().manifest_info();
+            objects.insert(mft.name().clone(), mft.current().clone());
 
-            let crl = key.current_set().crl();
-            objects.insert(ObjectName::from(crl), CurrentObject::from(crl));
+            let crl = key.current_set().crl_info();
+            objects.insert(crl.name().clone(), crl.current().clone());
         }
 
         match &self.key_state {
@@ -540,12 +539,12 @@ impl ResourceClass {
         let current_revocations = current_set.revocations().clone();
         let number = current_set.number() + 1;
 
-        let current_mft = current_set.manifest();
-        let current_mft_hash = HexEncodedHash::from(current_mft);
-        let current_crl = current_set.crl();
-        let current_crl_hash = HexEncodedHash::from(current_crl);
+        let current_mft = current_set.manifest_info();
+        let current_mft_hash = current_mft.current().to_hex_hash();
+        let current_crl = current_set.crl_info();
+        let current_crl_hash = current_crl.current().to_hex_hash();
 
-        new_revocations.push(Revocation::from(current_mft));
+        new_revocations.push(Revocation::from(current_mft.current()));
 
         // Create a new CRL
         let (crl_info, revocations_delta) = CrlBuilder::build(
@@ -598,9 +597,9 @@ impl ResourceClass {
         let ns = self.name_space();
 
         // ROAs
-        for (authorization, info) in self.roas.iter() {
-            let base64 = Base64::from_content(info.roa().to_captured().as_slice());
-            let object_name = ObjectName::from(authorization);
+        for info in self.roas.current() {
+            let base64 = info.object().content().clone();
+            let object_name = info.name().clone();
             let uri = base_repo.resolve(ns, object_name.as_str());
             res.push(PublishElement::new(base64, uri));
         }
@@ -622,12 +621,12 @@ impl ResourceClass {
 
         for set in sets {
             let crl_info = set.crl_info();
-            let crl_base64 = Base64::from_content(crl_info.crl().to_captured().as_slice());
+            let crl_base64 = crl_info.current().content().clone();
             let crl_uri = base_repo.resolve(ns, crl_info.name());
             res.push(PublishElement::new(crl_base64, crl_uri));
 
             let mft_info = set.manifest_info();
-            let mft_base64 = Base64::from_content(mft_info.manifest().to_captured().as_slice());
+            let mft_base64 = mft_info.current().content().clone();
             let mft_uri = base_repo.resolve(ns, mft_info.name());
             res.push(PublishElement::new(mft_base64, mft_uri));
         }
@@ -984,7 +983,7 @@ impl ResourceClass {
         // Remove any ROAs no longer in auths, or no longer in resources.
         for (current_auth, roa_info) in self.roas.iter() {
             if !auths.contains(current_auth) || !resources.contains(&current_auth.prefix().into()) {
-                updates.remove(*current_auth, RevokedObject::from(roa_info.roa()));
+                updates.remove(*current_auth, RevokedObject::from(roa_info.object()));
             }
         }
 
@@ -998,18 +997,19 @@ impl ResourceClass {
                 None => {
                     // NO ROA yet, so create one.
                     let roa = Roas::make_roa(auth, key, new_repo.as_ref(), signer)?;
-                    updates.update(*auth, RoaInfo::new_roa(roa));
+                    let name = ObjectName::from(auth);
+                    updates.update(*auth, RoaInfo::new_roa(&roa, name));
                 }
                 Some(roa) => {
                     // Re-issue if the ROA is getting close to its expiration time, or if we are
                     //  activating the new key.
-                    let expiring =
-                        roa.roa().cert().validity().not_after() < Time::now() + Duration::weeks(4);
+                    let expiring = roa.object().expires() < Time::now() + Duration::weeks(4);
                     let activating = mode == &PublishMode::KeyRollActivation;
 
                     if expiring || activating || new_repo.is_some() {
                         let new_roa = Roas::make_roa(auth, key, new_repo.as_ref(), signer)?;
-                        updates.update(*auth, RoaInfo::updated_roa(roa, new_roa));
+                        let name = ObjectName::from(auth);
+                        updates.update(*auth, RoaInfo::updated_roa(roa, &new_roa, name));
                     }
                 }
             }

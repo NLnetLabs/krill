@@ -991,7 +991,7 @@ mod tests {
     }
 
     fn extract_xml(pdu: &[u8]) -> String {
-        let msg = SignedMessage::decode(pdu.as_ref(), false).unwrap();
+        let msg = SignedMessage::decode(pdu, false).unwrap();
         let content = msg.content().to_bytes();
         let xml = unsafe { from_utf8_unchecked(content.as_ref()) };
         xml.to_string()

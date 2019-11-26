@@ -1,0 +1,14 @@
+{
+  "id": "ta",
+  "version": 14,
+  "details": {
+    "child_updated_resources": [
+      "child",
+      {
+        "asn": "",
+        "v4": "",
+        "v6": ""
+      }
+    ]
+  }
+}

@@ -537,12 +537,9 @@ impl Repository {
         ))
     }
 
-    pub fn publisher(&self, publisher_handle: &PublisherHandle) -> Option<&Publisher> {
-        self.publishers.get(publisher_handle)
-    }
-
     pub fn get_publisher(&self, publisher_handle: &PublisherHandle) -> Result<&Publisher, Error> {
-        self.publisher(publisher_handle)
+        self.publishers
+            .get(publisher_handle)
             .ok_or_else(|| Error::UnknownPublisher(publisher_handle.clone()))
     }
 

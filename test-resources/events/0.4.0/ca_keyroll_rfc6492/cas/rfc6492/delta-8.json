@@ -1,0 +1,13 @@
+{
+  "id": "rfc6492",
+  "version": 8,
+  "details": {
+    "key_roll_activated": [
+      "0",
+      {
+        "class_name": "0",
+        "key": "6522C8C640A72E46C04F7310F605913FA1252B4D"
+      }
+    ]
+  }
+}

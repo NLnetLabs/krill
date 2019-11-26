@@ -1,0 +1,15 @@
+{
+  "id": "ta",
+  "version": 38,
+  "details": {
+    "child_certificates_updated": [
+      "0",
+      {
+        "issued": [],
+        "removed": [
+          "F2A8BE2FE4B0931F2674F2A90ACF09DFFB0EACE1"
+        ]
+      }
+    ]
+  }
+}

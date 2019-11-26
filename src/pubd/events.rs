@@ -113,6 +113,7 @@ pub type Evt = StoredEvent<EvtDet>;
 
 #[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
+#[serde(rename_all = "snake_case")]
 pub enum EvtDet {
     // Publisher related events
     #[display(fmt = "Publisher with handle '{}' added", _0)]

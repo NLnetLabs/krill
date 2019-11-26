@@ -25,25 +25,42 @@ pub enum AddedOrUpdated {
 
 //------------ ManifestInfo ------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ManifestInfo {
     name: ObjectName,
-    manifest: Manifest,
+    current: CurrentObject,
+    next_update: Time,
     old: Option<HexEncodedHash>,
 }
 
 impl ManifestInfo {
+    pub fn new(mft: &Manifest, old: Option<HexEncodedHash>) -> Self {
+        let name = ObjectName::from(mft);
+        let current = CurrentObject::from(mft);
+        let next_update = mft.next_update();
+        ManifestInfo {
+            name,
+            current,
+            next_update,
+            old,
+        }
+    }
+
     pub fn name(&self) -> &ObjectName {
         &self.name
     }
 
-    pub fn manifest(&self) -> &Manifest {
-        &self.manifest
+    pub fn current(&self) -> &CurrentObject {
+        &self.current
+    }
+
+    pub fn next_update(&self) -> Time {
+        self.next_update
     }
 
     pub fn added_or_updated(&self) -> AddedOrUpdated {
         let name = self.name.clone();
-        let object = CurrentObject::from(&self.manifest);
+        let object = self.current.clone();
         match self.old.clone() {
             None => AddedOrUpdated::Added(AddedObject::new(name, object)),
             Some(old) => AddedOrUpdated::Updated(UpdatedObject::new(name, object, old)),
@@ -52,41 +69,38 @@ impl ManifestInfo {
 
     pub fn withdraw(&self) -> WithdrawnObject {
         let name = self.name.clone();
-        let hash = HexEncodedHash::from(&self.manifest);
+        let hash = self.current.to_hex_hash();
         WithdrawnObject::new(name, hash)
     }
 }
 
-impl PartialEq for ManifestInfo {
-    fn eq(&self, other: &Self) -> bool {
-        self.manifest.to_captured().as_slice() == other.manifest.to_captured().as_slice()
-            && self.old == other.old
-    }
-}
-
-impl Eq for ManifestInfo {}
-
 //------------ CrlInfo -----------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CrlInfo {
     name: ObjectName, // can be derived from CRL, but keeping in mem saves cpu
-    crl: Crl,
+    current: CurrentObject,
     old: Option<HexEncodedHash>,
 }
 
 impl CrlInfo {
+    pub fn new(crl: &Crl, old: Option<HexEncodedHash>) -> Self {
+        let name = ObjectName::from(crl);
+        let current = CurrentObject::from(crl);
+        CrlInfo { name, current, old }
+    }
+
     pub fn name(&self) -> &ObjectName {
         &self.name
     }
 
-    pub fn crl(&self) -> &Crl {
-        &self.crl
+    pub fn current(&self) -> &CurrentObject {
+        &self.current
     }
 
     pub fn added_or_updated(&self) -> AddedOrUpdated {
         let name = self.name.clone();
-        let object = CurrentObject::from(&self.crl);
+        let object = self.current.clone();
         match self.old.clone() {
             None => AddedOrUpdated::Added(AddedObject::new(name, object)),
             Some(old) => AddedOrUpdated::Updated(UpdatedObject::new(name, object, old)),
@@ -95,19 +109,10 @@ impl CrlInfo {
 
     pub fn withdraw(&self) -> WithdrawnObject {
         let name = self.name.clone();
-        let hash = HexEncodedHash::from(&self.crl);
+        let hash = self.current.to_hex_hash();
         WithdrawnObject::new(name, hash)
     }
 }
-
-impl PartialEq for CrlInfo {
-    fn eq(&self, other: &Self) -> bool {
-        self.crl.to_captured().as_slice() == other.crl.to_captured().as_slice()
-            && self.old == other.old
-    }
-}
-
-impl Eq for CrlInfo {}
 
 //------------ PublicationDelta ----------------------------------------------
 
@@ -191,20 +196,12 @@ impl CurrentObjectSet {
         &self.manifest_info
     }
 
-    pub fn manifest(&self) -> &Manifest {
-        &self.manifest_info.manifest
-    }
-
     pub fn crl_info(&self) -> &CrlInfo {
         &self.crl_info
     }
 
-    pub fn crl(&self) -> &Crl {
-        &self.crl_info.crl
-    }
-
     pub fn next_update(&self) -> Time {
-        self.manifest().next_update()
+        self.manifest_info().next_update()
     }
 
     pub fn apply_delta(&mut self, delta: CurrentObjectSetDelta) {
@@ -231,7 +228,6 @@ impl CrlBuilder {
         let signing_key = signing_cert.cert().subject_public_key_info();
 
         let aki = KeyIdentifier::from_public_key(signing_key);
-        let name = ObjectName::new(&aki, "crl");
 
         let mut revocations_delta = RevocationsDelta::default();
         for revocation in new_revocations.into_iter() {
@@ -243,14 +239,14 @@ impl CrlBuilder {
             revocations_delta.drop(expired);
         }
 
-        let now = Time::five_minutes_ago();
+        let just_now = Time::five_minutes_ago();
         let tomorrow = Time::tomorrow();
         let serial_number = Serial::from(number);
 
         let mut crl = TbsCertList::new(
             Default::default(),
             signing_key.to_subject_name(),
-            now,
+            just_now,
             tomorrow,
             revocations.to_crl_entries(),
             aki,
@@ -260,7 +256,9 @@ impl CrlBuilder {
 
         let crl = crl.into_crl(signer, &aki).map_err(ca::Error::signer)?;
 
-        Ok((CrlInfo { name, crl, old }, revocations_delta))
+        let crl_info = CrlInfo::new(&crl, old);
+
+        Ok((crl_info, revocations_delta))
     }
 }
 
@@ -274,7 +272,7 @@ impl ManifestBuilder {
 
         entries.insert(
             crl_info.name.clone().into(),
-            Self::mft_hash(crl_info.crl.to_captured().as_slice()),
+            Self::mft_hash(crl_info.current().content().as_bytes()),
         );
 
         ManifestBuilder { entries }
@@ -291,7 +289,7 @@ impl ManifestBuilder {
         // Add the *new* CRL
         entries.insert(
             crl_info.name.clone().into(),
-            Self::mft_hash(crl_info.crl.to_captured().as_slice()),
+            Self::mft_hash(crl_info.current().content().as_bytes()),
         );
 
         // Add all *current* issued certs
@@ -304,10 +302,9 @@ impl ManifestBuilder {
         }
 
         // Add all *current* ROAs
-        for (auth, roa_info) in roas {
-            let roa = roa_info.roa();
-            let name = ObjectName::from(auth);
-            let hash = Self::mft_hash(roa.to_captured().as_slice());
+        for (_auth, roa_info) in roas {
+            let name = roa_info.name().clone();
+            let hash = Self::mft_hash(roa_info.object().content().as_bytes());
 
             entries.insert(name.into(), hash);
         }
@@ -381,13 +378,7 @@ impl ManifestBuilder {
                 .map_err(ca::Error::signer)?
         };
 
-        let name = ObjectName::from(&manifest);
-
-        Ok(ManifestInfo {
-            name,
-            manifest,
-            old,
-        })
+        Ok(ManifestInfo::new(&manifest, old))
     }
 
     fn mft_hash(bytes: &[u8]) -> Bytes {

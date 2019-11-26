@@ -1,0 +1,14 @@
+{
+  "id": "ta",
+  "version": 17,
+  "details": {
+    "child_updated_resources": [
+      "rfc6492",
+      {
+        "asn": "",
+        "v4": "",
+        "v6": ""
+      }
+    ]
+  }
+}

@@ -188,11 +188,11 @@ impl<S: Signer> Aggregate for CertAuth<S> {
                 self.children.get_mut(&child).unwrap().set_id_cert(cert)
             }
 
-            EvtDet::ChildUpdatedResources(child, resources, grace) => self
+            EvtDet::ChildUpdatedResources(child, resources) => self
                 .children
                 .get_mut(&child)
                 .unwrap()
-                .set_resources(resources, grace),
+                .set_resources(resources),
 
             EvtDet::ChildRemoved(child) => {
                 self.children.remove(&child);
@@ -869,6 +869,8 @@ impl<S: Signer> CertAuth<S> {
 
     /// Removes a parent. Returns an error if it doesn't exist.
     fn remove_parent(&self, parent: Handle) -> ca::Result<Vec<Evt>> {
+        let _parent = self.parent(&parent)?;
+
         // remove the parent, the RCs and un-publish everything.
         let mut deltas = vec![];
         for rc in self

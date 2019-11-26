@@ -1,0 +1,31 @@
+{
+  "id": "child",
+  "version": 11,
+  "details": {
+    "resource_class_removed": [
+      "0",
+      {
+        "ca_repo": "rsync://localhost/repo/child/0",
+        "added": [],
+        "updated": [],
+        "withdrawn": [
+          {
+            "name": "4C4313650E09F4539E2B17B2282C2D295295321F.crl",
+            "hash": "f0acd6338394c0fe5903712b979581814031247ae555dbc7fbf4d08b81abf93d"
+          },
+          {
+            "name": "4C4313650E09F4539E2B17B2282C2D295295321F.mft",
+            "hash": "8e8d771377209f4892dab5a187812b7103b445104aa7142b7b0ead6ccaeeb19a"
+          }
+        ]
+      },
+      "ta",
+      [
+        {
+          "class_name": "0",
+          "key": "4C4313650E09F4539E2B17B2282C2D295295321F"
+        }
+      ]
+    ]
+  }
+}

@@ -127,7 +127,7 @@ impl Report for CertAuthList {
             ReportFormat::Text => {
                 let mut res = String::new();
                 for ca in self.cas() {
-                    res.push_str(&format!("{}\n", ca.name()));
+                    res.push_str(&format!("{}\n", ca.handle()));
                 }
 
                 Ok(res)
@@ -167,6 +167,7 @@ impl Report for CertAuthInfo {
                     for parent in self.parents().iter() {
                         res.push_str(&format!("{}\n", parent));
                     }
+                    res.push_str("\n");
                 } else {
                     res.push_str("<none>\n")
                 }
@@ -262,7 +263,7 @@ impl Report for PublisherList {
                     } else {
                         first = false;
                     }
-                    res.push_str(p.id());
+                    res.push_str(p.handle().as_str());
                 }
                 Ok(res)
             }
@@ -352,6 +353,7 @@ impl Report for rfc8183::PublisherRequest {
 
                 Ok(xml.to_string())
             }
+            ReportFormat::Json => Ok(serde_json::to_string_pretty(self).unwrap()),
             _ => Err(ReportError::UnsupportedFormat),
         }
     }

@@ -169,14 +169,14 @@ impl PubServer {
         Ok(repository.repo_info_for(publisher))
     }
 
-    pub fn publisher_details(
+    pub fn get_publisher_details(
         &self,
         publisher_handle: &PublisherHandle,
-    ) -> Result<Option<PublisherDetails>, Error> {
+    ) -> Result<PublisherDetails, Error> {
         let repository = self.repository()?;
-        let publisher = repository.publisher(publisher_handle);
-
-        Ok(publisher.map(|p| p.as_api_details(publisher_handle)))
+        repository
+            .get_publisher(publisher_handle)
+            .map(|p| p.as_api_details(publisher_handle))
     }
 
     /// Returns the RFC8183 Repository Response for the publisher
@@ -292,7 +292,7 @@ mod tests {
 
             server.create_publisher(publisher_req).unwrap();
 
-            let alice_found = server.publisher_details(&alice_handle).unwrap().unwrap();
+            let alice_found = server.get_publisher_details(&alice_handle).unwrap();
 
             assert_eq!(alice_found.base_uri(), alice.base_uri());
             assert_eq!(alice_found.id_cert(), alice.id_cert());

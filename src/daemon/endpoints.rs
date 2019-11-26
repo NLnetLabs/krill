@@ -45,9 +45,28 @@ fn render_empty_res(res: Result<(), krillserver::Error>) -> HttpResponse {
     }
 }
 
+fn render_json_res<O: Serialize>(res: Result<O, krillserver::Error>) -> HttpResponse {
+    match res {
+        Ok(o) => render_json(o),
+        Err(e) => server_error(&Error::ServerError(e)),
+    }
+}
+
 /// A clean 404 result for the API (no content, not for humans)
 fn api_not_found() -> HttpResponse {
-    HttpResponse::build(StatusCode::NOT_FOUND).finish()
+    let code = ErrorCode::UnknownResource;
+    let res: ErrorResponse = code.into();
+    let msg = serde_json::to_string(&res).unwrap();
+    let status = StatusCode::NOT_FOUND;
+    HttpResponse::build(status).body(msg)
+}
+
+pub fn api_bad_request() -> HttpResponse {
+    let code = ErrorCode::UnknownMethod;
+    let res: ErrorResponse = code.into();
+    let msg = serde_json::to_string(&res).unwrap();
+    let status = StatusCode::BAD_REQUEST;
+    HttpResponse::build(status).body(msg)
 }
 
 pub fn not_found() -> HttpResponse {
@@ -92,14 +111,17 @@ where
 
 /// Returns a json structure with all publishers in it.
 pub fn list_pbl(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
-    if_api_allowed(&server, &auth, || match server.read().publishers() {
-        Ok(publishers) => render_json(PublisherList::build(&publishers, "/api/v1/publishers")),
-        Err(e) => server_error(&Error::ServerError(e)),
+    if_api_allowed(&server, &auth, || {
+        render_json_res(
+            server
+                .read()
+                .publishers()
+                .map(|publishers| PublisherList::build(&publishers, "/api/v1/publishers")),
+        )
     })
 }
 
 /// Adds a publisher
-#[allow(clippy::needless_pass_by_value)]
 pub fn add_pbl(
     server: web::Data<AppServer>,
     auth: Auth,
@@ -127,11 +149,7 @@ pub fn remove_pbl(
 #[allow(clippy::needless_pass_by_value)]
 pub fn show_pbl(server: web::Data<AppServer>, auth: Auth, publisher: Path<Handle>) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
-        match server.read().publisher(&publisher.into_inner()) {
-            Ok(Some(publisher)) => render_json(publisher),
-            Ok(None) => api_not_found(),
-            Err(e) => server_error(&Error::ServerError(e)),
-        }
+        render_json_res(server.read().get_publisher(&publisher.into_inner()))
     })
 }
 
@@ -203,13 +221,11 @@ pub fn ca_add_child(
     auth: Auth,
 ) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
-        match server
-            .read()
-            .ca_add_child(&parent.into_inner(), req.into_inner())
-        {
-            Ok(info) => render_json(info),
-            Err(e) => server_error(&Error::ServerError(e)),
-        }
+        render_json_res(
+            server
+                .read()
+                .ca_add_child(&parent.into_inner(), req.into_inner()),
+        )
     })
 }
 
@@ -252,11 +268,7 @@ pub fn ca_show_child(
     let child = ca_and_child.1;
 
     if_api_allowed(&server, &auth, || {
-        match server.read().ca_show_child(&ca, &child) {
-            Ok(Some(child)) => render_json(child),
-            Ok(None) => api_not_found(),
-            Err(e) => server_error(&Error::ServerError(e)),
-        }
+        render_json_res(server.read().ca_show_child(&ca, &child))
     })
 }
 
@@ -270,16 +282,7 @@ pub fn ca_parent_contact(
     let child = ca_and_child.1;
 
     if_api_allowed(&server, &auth, || {
-        match server.read().ca_parent_contact(&ca, child.clone()) {
-            Ok(contact) => render_json(contact),
-            Err(e) => {
-                debug!(
-                    "Asked parent response from '{}' for '{}', but got error '{}'",
-                    ca, child, e
-                );
-                api_not_found()
-            }
-        }
+        render_json_res(server.read().ca_parent_contact(&ca, child.clone()))
     })
 }
 
@@ -299,7 +302,7 @@ pub fn ca_init(
     })
 }
 
-pub fn ca_update_id(
+pub fn ca_regenerate_id(
     server: web::Data<AppServer>,
     auth: Auth,
     handle: Path<Handle>,
@@ -311,10 +314,7 @@ pub fn ca_update_id(
 
 pub fn ca_info(server: web::Data<AppServer>, auth: Auth, handle: Path<Handle>) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
-        match server.read().ca_info(&handle.into_inner()) {
-            Some(info) => render_json(info),
-            None => api_not_found(),
-        }
+        render_json_res(server.read().ca_info(&handle.into_inner()))
     })
 }
 
@@ -325,10 +325,7 @@ pub fn ca_my_parent_contact(
 ) -> HttpResponse {
     let (ca, parent) = ca_and_parent.into_inner();
     if_api_allowed(&server, &auth, || {
-        match server.read().ca_my_parent_contact(&ca, &parent) {
-            Some(info) => render_json(info),
-            None => api_not_found(),
-        }
+        render_json_res(server.read().ca_my_parent_contact(&ca, &parent))
     })
 }
 
@@ -349,10 +346,10 @@ pub fn ca_child_req(
     let handle = handle.into_inner();
     if_api_allowed(&server, &auth, || {
         match server.read().ca_child_req(&handle) {
-            Some(req) => HttpResponse::Ok()
+            Ok(req) => HttpResponse::Ok()
                 .content_type("application/xml")
                 .body(req.encode_vec()),
-            None => api_not_found(),
+            Err(e) => server_error(&Error::ServerError(e)),
         }
     })
 }
@@ -378,10 +375,7 @@ pub fn ca_repo_details(
 ) -> HttpResponse {
     let handle = handle.into_inner();
     if_api_allowed(&server, &auth, || {
-        match server.read().ca_repo_details(&handle) {
-            Some(req) => render_json(req),
-            None => api_not_found(),
-        }
+        render_json_res(server.read().ca_repo_details(&handle))
     })
 }
 
@@ -597,7 +591,7 @@ impl ErrorToStatus for pubd::Error {
     fn status(&self) -> StatusCode {
         match self {
             pubd::Error::DuplicatePublisher(_) => StatusCode::BAD_REQUEST,
-            pubd::Error::UnknownPublisher(_) => StatusCode::FORBIDDEN,
+            pubd::Error::UnknownPublisher(_) => StatusCode::NOT_FOUND,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -608,7 +602,7 @@ impl ErrorToStatus for ca::ServerError {
         match self {
             ca::ServerError::CertAuth(e) => e.status(),
             ca::ServerError::DuplicateCa(_) => StatusCode::BAD_REQUEST,
-            ca::ServerError::UnknownCa(_) => StatusCode::BAD_REQUEST,
+            ca::ServerError::UnknownCa(_) => StatusCode::NOT_FOUND,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -619,6 +613,7 @@ impl ErrorToStatus for ca::Error {
         match self {
             ca::Error::Unauthorized(_) => StatusCode::FORBIDDEN,
             ca::Error::SignerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            ca::Error::UnknownChild(_) => StatusCode::NOT_FOUND,
             _ => StatusCode::BAD_REQUEST,
         }
     }
@@ -656,7 +651,7 @@ impl ToErrorCode for pubd::Error {
             pubd::Error::PublishingOutsideBaseUri(_, _) => ErrorCode::UriOutsideJail,
             pubd::Error::BaseUriNoDir(_) => ErrorCode::InvalidBaseUri,
             pubd::Error::RrdpVerificationError(e) => e.code(),
-            pubd::Error::NoRepository => ErrorCode::UnknownPublisher,
+            pubd::Error::NoRepository => ErrorCode::PubServerError,
             pubd::Error::Store(_) => ErrorCode::Persistence,
             pubd::Error::IoError(_) => ErrorCode::Persistence,
             pubd::Error::SignerError(_) => ErrorCode::SigningError,
@@ -678,8 +673,8 @@ impl ToErrorCode for ca::ServerError {
     fn code(&self) -> ErrorCode {
         match self {
             ca::ServerError::CertAuth(e) => e.code(),
-            ca::ServerError::DuplicateCa(_) => ErrorCode::DuplicateChild,
-            ca::ServerError::UnknownCa(_) => ErrorCode::UnknownChild,
+            ca::ServerError::DuplicateCa(_) => ErrorCode::DuplicateCa,
+            ca::ServerError::UnknownCa(_) => ErrorCode::UnknownCa,
             _ => ErrorCode::CaServerError,
         }
     }
@@ -690,12 +685,15 @@ impl ToErrorCode for ca::Error {
         match self {
             ca::Error::DuplicateChild(_) => ErrorCode::DuplicateChild,
             ca::Error::UnknownChild(_) => ErrorCode::UnknownChild,
+            ca::Error::UnknownParent(_) => ErrorCode::UnknownParent,
             ca::Error::MustHaveResources => ErrorCode::ChildNeedsResources,
             ca::Error::MissingResources => ErrorCode::ChildOverclaims,
             ca::Error::DuplicateParent(_) => ErrorCode::DuplicateParent,
             ca::Error::AuthorisationAlreadyPresent(_, _) => ErrorCode::RoaUpdateInvalidDuplicate,
             ca::Error::AuthorisationUnknown(_, _) => ErrorCode::RoaUpdateInvalidMissing,
             ca::Error::AuthorisationNotEntitled(_, _) => ErrorCode::RoaUpdateInvalidResources,
+            ca::Error::NewRepoUpdateNoChange => ErrorCode::NewRepoNoChange,
+            ca::Error::NewRepoUpdateNotResponsive(_) => ErrorCode::NewRepoNoResponse,
             _ => ErrorCode::CaServerError,
         }
     }

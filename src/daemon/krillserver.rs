@@ -181,13 +181,10 @@ impl KrillServer {
             .map_err(Error::PubServer)
     }
 
-    /// Returns an option for a publisher.
-    pub fn publisher(
-        &self,
-        publisher: &PublisherHandle,
-    ) -> Result<Option<PublisherDetails>, Error> {
+    /// Returns a publisher.
+    pub fn get_publisher(&self, publisher: &PublisherHandle) -> Result<PublisherDetails, Error> {
         self.pubserver
-            .publisher_details(publisher)
+            .get_publisher_details(publisher)
             .map_err(Error::PubServer)
     }
 
@@ -281,7 +278,7 @@ impl KrillServer {
         &self,
         parent: &ParentHandle,
         child: &ChildHandle,
-    ) -> KrillRes<Option<ChildCaInfo>> {
+    ) -> KrillRes<ChildCaInfo> {
         let child = self.caserver.ca_show_child(parent, child)?;
         Ok(child)
     }
@@ -297,8 +294,8 @@ impl KrillServer {
         let publisher = CaPublisher::new(self.caserver.clone(), self.pubserver.clone());
 
         for ca in self.caserver.cas().cas() {
-            if let Err(e) = publisher.publish(ca.name()) {
-                error!("Failed to sync ca: {}. Got error: {}", ca.name(), e)
+            if let Err(e) = publisher.publish(ca.handle()) {
+                error!("Failed to sync ca: {}. Got error: {}", ca.handle(), e)
             }
         }
 
@@ -323,8 +320,11 @@ impl KrillServer {
     }
 
     /// Returns the public CA info for a CA, or NONE if the CA cannot be found.
-    pub fn ca_info(&self, handle: &Handle) -> Option<CertAuthInfo> {
-        self.caserver.get_ca(handle).map(|ca| ca.as_ca_info()).ok()
+    pub fn ca_info(&self, handle: &Handle) -> KrillRes<CertAuthInfo> {
+        self.caserver
+            .get_ca(handle)
+            .map(|ca| ca.as_ca_info())
+            .map_err(Error::CaServerError)
     }
 
     /// Returns the parent contact for a CA and parent, or NONE if either the CA or the parent cannot be found.
@@ -332,14 +332,11 @@ impl KrillServer {
         &self,
         handle: &Handle,
         parent: &ParentHandle,
-    ) -> Option<ParentCaContact> {
-        match self.caserver.get_ca(handle) {
-            Err(_) => None,
-            Ok(ca) => match ca.parent(parent) {
-                Err(_) => None,
-                Ok(parent) => Some(parent.clone()),
-            },
-        }
+    ) -> KrillRes<ParentCaContact> {
+        let ca = self.caserver.get_ca(handle)?;
+        ca.parent(parent)
+            .map(|p| p.clone())
+            .map_err(|e| Error::CaServerError(ca::ServerError::CertAuth(e)))
     }
 
     /// Returns the history for a CA, or NONE in case of issues (i.e. it does not exist).
@@ -348,11 +345,11 @@ impl KrillServer {
     }
 
     /// Returns the child request for a CA, or NONE if the CA cannot be found.
-    pub fn ca_child_req(&self, handle: &Handle) -> Option<rfc8183::ChildRequest> {
+    pub fn ca_child_req(&self, handle: &Handle) -> KrillRes<rfc8183::ChildRequest> {
         self.caserver
             .get_ca(handle)
             .map(|ca| ca.child_request())
-            .ok()
+            .map_err(Error::CaServerError)
     }
 
     /// Returns the publisher request for a CA, or NONE of the CA cannot be found.
@@ -383,7 +380,7 @@ impl KrillServer {
 
     /// Return the info about the configure repository server for a given Ca,
     /// and the actual objects published there, as reported by a list reply.
-    pub fn ca_repo_details(&self, handle: &Handle) -> Option<CaRepoDetails> {
+    pub fn ca_repo_details(&self, handle: &Handle) -> KrillRes<CaRepoDetails> {
         self.caserver
             .get_ca(handle)
             .map(|ca| {
@@ -392,7 +389,7 @@ impl KrillServer {
                 let state = self.repo_state(handle, repo_opt);
                 CaRepoDetails::new(contact, state)
             })
-            .ok()
+            .map_err(Error::CaServerError)
     }
 
     /// Update the repository for a CA, or return an error. (see `CertAuth::repo_update`)

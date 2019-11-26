@@ -1,0 +1,83 @@
+{
+  "id": "0",
+  "version": 8,
+  "details": {
+    "published": [
+      "CA2",
+      {
+        "delta": {
+          "session": "79bf9b75-f5f3-4152-a768-5483cfe99b63",
+          "serial": 5,
+          "time": "2019-11-26T13:55:29.029859Z",
+          "elements": {
+            "publishes": [
+              {
+                "base64": "MIIJQAYJKoZIhvcNAQcCoIIJMTCCCS0CAQMxDzANBglghkgBZQMEAgEFADCBmwYLKoZIhvcNAQkQARqggYsEgYgwgYUCAQEYDzIwMTkxMTI2MTM1MDI4WhgPMjAxOTExMjcxMzU1MjhaBglghkgBZQMEAgEwUzBRFiw4RDM3MDQxRkQ3MkVBQ0Y0Qzk4MEVEOEM0RUU3MjZDMjVGQTlBRDQyLmNybAMhAAYCA+fP6/2WSqOHEAld6+vH6/J0lEU5iE+rGOx/sbixoIIGxzCCBsMwggWroAMCAQICFAFhvOLi5AUOuOQ96IeAEU4UNiaUMA0GCSqGSIb3DQEBCwUAMDMxMTAvBgNVBAMTKDhEMzcwNDFGRDcyRUFDRjRDOTgwRUQ4QzRFRTcyNkMyNUZBOUFENDIwHhcNMTkxMTI2MTM1MDI4WhcNMTkxMjAzMTM1NTI4WjCCAi0xggIpMIICJQYDVQQDE4ICHDMwODIwMTBBMDI4MjAxMDEwMEQzNEYzMjZFMzMwQjREODYyMzQ5NDk0MzVFNjkyNDdCNUI2MkZDNDY3MzJBRTQyNzZBQjVEQUJFOUVDNkI0RUY1RDk4ODRBNDQ5RDVBRDdENTc0NUJFQTY2NDdDMUQ1QTEwMjM4QjZFQTlGNEZDOTgzRTAxQzFGRUYyQ0MzNUI3QzczOEYxMTdDNDFGMTczMzdCMkE0OTYwNkQ1QjQyRjA3RUNGNEVBMzAwNkVDODg2MzdGQzcyNUMwMDg5NDA0Mjg5RjA1MjJBQTA2RUMwQzJFMEYxOTM5MUMzNUE5Nzc5ODA1MUUwMzFFMzdGQTNEMUEwMUIwNERFNkQ2QzNGQ0VGQkQzRUNDNDE5QjJFNzJGNzYyQUM3MzJFNzgzN0Q4NUVBNUNERkQ0QTI1QTM2MTgxMUMyRjAzQzU3NjVDQjZDMDNDMTNDRjBCNkI1NDk4NDRCNkEzODdGOTRERThEMjFEMTYxNUE2QTQ0RTI3RUJGODYyQ0VGQ0IwQTlCQUUxQUYwRTgwRTk0MUZFNTcyQUNGNEY1NURBOEI0OEE2OTE1N0UyM0I2MEU5ODYyNjBEM0ZCQzc5NTY5RjI5RkY0NEE2MzY1M0UwNjIyRTZDM0YzRDQ1RjQxOUIyMzc4MTU0NTkzOEUzNTU4ODFDMkZBMEEwNzlCN0I5NTgxQUJCM0M5MDIwMzAxMDAwMTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBANNPMm4zC02GI0lJQ15pJHtbYvxGcyrkJ2q12r6exrTvXZiEpEnVrX1XRb6mZHwdWhAji26p9PyYPgHB/vLMNbfHOPEXxB8XM3sqSWBtW0Lwfs9OowBuyIY3/HJcAIlAQonwUiqgbsDC4PGTkcNal3mAUeAx43+j0aAbBN5tbD/O+9PsxBmy5y92Kscy54N9hepc39SiWjYYEcLwPFdly2wDwTzwtrVJhEtqOH+U3o0h0WFaakTifr+GLO/LCpuuGvDoDpQf5XKs9PVdqLSKaRV+I7YOmGJg0/vHlWnyn/RKY2U+BiLmw/PUX0GbI3gVRZOONViBwvoKB5t7lYGrs8kCAwEAAaOCAdEwggHNMB0GA1UdDgQWBBShQ3FML1ds3dciEAmfT2bLGpegDzAfBgNVHSMEGDAWgBSNNwQf1y6s9MmA7YxO5ybCX6mtQjAOBgNVHQ8BAf8EBAMCB4AwWgYDVR0fBFMwUTBPoE2gS4ZJcnN5bmM6Ly9sb2NhbGhvc3QvcmVwby9DQTIvMC84RDM3MDQxRkQ3MkVBQ0Y0Qzk4MEVEOEM0RUU3MjZDMjVGQTlBRDQyLmNybDBkBggrBgEFBQcBAQRYMFYwVAYIKwYBBQUHMAKGSHJzeW5jOi8vbG9jYWxob3N0L3JlcG8vdGEvMC84RDM3MDQxRkQ3MkVBQ0Y0Qzk4MEVEOEM0RUU3MjZDMjVGQTlBRDQyLmNlcjBlBggrBgEFBQcBCwRZMFcwVQYIKwYBBQUHMAuGSXJzeW5jOi8vbG9jYWxob3N0L3JlcG8vQ0EyLzAvOEQzNzA0MUZENzJFQUNGNEM5ODBFRDhDNEVFNzI2QzI1RkE5QUQ0Mi5tZnQwGAYDVR0gAQH/BA4wDDAKBggrBgEFBQcOAjAhBggrBgEFBQcBBwEB/wQSMBAwBgQCAAEFADAGBAIAAgUAMBUGCCsGAQUFBwEIAQH/BAYwBKACBQAwDQYJKoZIhvcNAQELBQADggEBAB74mNVSqjdoWewPTciPKGpZSk1jk5YoR5AUtLpmR4xrqfbQtmn7cdif9eEefslEyoyrS2wwH2ZIMfzF+U44p95rNYazyz9ze2nqht6FPZi8V40vGc+5jzQzbgklEk7dmxutmeiYBB80is+/0reBbgURVoZJBBwxKgJ5go9LpGr9KmqJVI77KSmoYc3UIfZZVKv15CqE5CSYRrQVEvtDavgTIhsreoKg4TBFUv24f9eCqUk9pl9+1um++HwXjLbrXfbw9JcSWWpDislJhUf1ehhWY/NQ8bEQ/fdFqhcDUD5hH/Yy9AgF0n8nvY55+59xjWMvHffG4oNoEv5mqDd4t1wxggGsMIIBqAIBA4AUoUNxTC9XbN3XIhAJn09myxqXoA8wDQYJYIZIAWUDBAIBBQCgazAaBgkqhkiG9w0BCQMxDQYLKoZIhvcNAQkQARowHAYJKoZIhvcNAQkFMQ8XDTE5MTEyNjEzNTUyOFowLwYJKoZIhvcNAQkEMSIEIF6dxP1gLy8GGfnbOiQx73PYf9q+LPTU1fEaz9yPwg42MA0GCSqGSIb3DQEBAQUABIIBAH7cqY0B7eT+SzGzRUZyRXa/DEzErwQxeB4VxKlDID5gcAm8C+ol4OcodZEzz+W+5OjbHfy0br1J4rWRKgR4HaEC6Iep+rlaIpSNXBmMzCHVQSgxXqLcuQEFn4lZs2g24WYr7mjKRJQYJXIDXqyrMR+HaZlugBVwqSzn4WCnm+gX8wISxNn+s3rTltm1EDiY3Ct20euoN9U1TLn1w8XTIHkbDd2VIervLMWVa7frSOaZqhGtziOaimA12d/83JxOw1AhFVnUyOSi8J7qKcWhmXMvtjDBZYaFMIfCCeMDFj/4UeKki9V9/VJVqQxZPzgX8oTusWzMVWRSsbUJ2bO1ai0=",
+                "uri": "rsync://localhost/repo/CA2/0/8D37041FD72EACF4C980ED8C4EE726C25FA9AD42.mft"
+              },
+              {
+                "base64": "MIIBrzCBmAIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyg4RDM3MDQxRkQ3MkVBQ0Y0Qzk4MEVEOEM0RUU3MjZDMjVGQTlBRDQyFw0xOTExMjYxMzUwMjhaFw0xOTExMjcxMzU1MjhaMACgLzAtMB8GA1UdIwQYMBaAFI03BB/XLqz0yYDtjE7nJsJfqa1CMAoGA1UdFAQDAgEBMA0GCSqGSIb3DQEBCwUAA4IBAQCh87ZSpt+oxSasF6MkntbLC+f7F0DukRKT038s6O2xEQ8p9j+8J2L6WQ2irGb2laZHtQC1CVk9x2PQXaDtlzyiy8XSEPeTyUIFsDicKFUeG3Do/xP2vM5L0sfExTmPqQjhzDKxr1k7s3u5UQNqwQkG4zfdI7p9rUK6zE5kP46U+ix4MB8bn5rG+2tNI7mQT0UOZU44HTCHlpXNvKyV5zY2jsUM3BjafY3PKVdkhFGjUT5WIS/W9leeh61Gc++VLOTlAwzt0rWe8xa7/VxwTiDmUFlbqGZMAjg0WV5pfcAbc8OzFpbgRRJIWOOZ4O1sIxrHfeIbg96R5fz+ScpeE/lZ",
+                "uri": "rsync://localhost/repo/CA2/0/8D37041FD72EACF4C980ED8C4EE726C25FA9AD42.crl"
+              }
+            ],
+            "updates": [],
+            "withdraws": []
+          }
+        },
+        "notification": {
+          "session": "79bf9b75-f5f3-4152-a768-5483cfe99b63",
+          "serial": 5,
+          "time": "2019-11-26T13:55:29.036329Z",
+          "snapshot": {
+            "uri": "https://localhost:3000/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/5/snapshot.xml",
+            "path": "work/4136241169/348791425/repo/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/5/snapshot.xml",
+            "hash": "da11e2d74e0f6d6d255de82c6f3e3039cd6afd23d53c5a6d41fb1c5e15f7c71c"
+          },
+          "deltas": [
+            {
+              "serial": 5,
+              "file_ref": {
+                "uri": "https://localhost:3000/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/5/delta.xml",
+                "path": "work/4136241169/348791425/repo/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/5/delta.xml",
+                "hash": "9a1d09666f6d35174b7b569f15d05dd34c05c422884689f69b76755b72511231"
+              }
+            },
+            {
+              "serial": 4,
+              "file_ref": {
+                "uri": "https://localhost:3000/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/4/delta.xml",
+                "path": "work/4136241169/348791425/repo/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/4/delta.xml",
+                "hash": "6952c835a9ac5e011d65c56aec35a48738bc6c2c976432c4299464195208901a"
+              }
+            },
+            {
+              "serial": 3,
+              "file_ref": {
+                "uri": "https://localhost:3000/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/3/delta.xml",
+                "path": "work/4136241169/348791425/repo/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/3/delta.xml",
+                "hash": "bea3be24e6304194a1a5b7c4995821d60ed2e3eea7178dec348f811373315f4b"
+              }
+            },
+            {
+              "serial": 2,
+              "file_ref": {
+                "uri": "https://localhost:3000/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/2/delta.xml",
+                "path": "work/4136241169/348791425/repo/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/2/delta.xml",
+                "hash": "cce481bf042a346bfbedf8ee15b2bbcd4d96fe12c807d779bf1827287a1c938a"
+              }
+            },
+            {
+              "serial": 1,
+              "file_ref": {
+                "uri": "https://localhost:3000/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/1/delta.xml",
+                "path": "work/4136241169/348791425/repo/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/1/delta.xml",
+                "hash": "64d1efb3152112bf57a72588b25e771646f94b933f547604f36fd0476402bee2"
+              }
+            }
+          ],
+          "last_delta": 1
+        }
+      }
+    ]
+  }
+}
