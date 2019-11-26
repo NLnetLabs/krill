@@ -63,7 +63,6 @@ info:
     - [RFC 6492: A Protocol for Provisioning Resource Certificates](https://tools.ietf.org/html/rfc6492)
     - [RFC 8181: A Publication Protocol for the Resource Public Key Infrastructure (RPKI)](https://tools.ietf.org/html/rfc8181)
     - [RFC 8183: An Out-of-Band Setup Protocol for Resource Public Key Infrastructure (RPKI) Production Services](https://tools.ietf.org/html/rfc8183)
-    # Additional Information
   license:
     name: Mozilla Public License 2.0
     url: https://www.mozilla.org/en-US/MPL/2.0/
