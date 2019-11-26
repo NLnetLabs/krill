@@ -112,13 +112,13 @@ impl KrillClient {
             }
 
             CaCommand::RepoDetails(handle) => {
-                let uri = format!("api/v1/cas/{}/repo/", handle);
+                let uri = format!("api/v1/cas/{}/repo", handle);
                 let details: CaRepoDetails = self.get_json(&uri)?;
                 Ok(ApiResponse::RepoDetails(details))
             }
 
             CaCommand::RepoUpdate(handle, update) => {
-                let uri = format!("api/v1/cas/{}/repo/", handle);
+                let uri = format!("api/v1/cas/{}/repo", handle);
                 self.post_json(&uri, update)?;
                 Ok(ApiResponse::Empty)
             }
