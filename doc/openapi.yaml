@@ -1403,6 +1403,17 @@ components:
                     uri:
                       type: string
                       format: uri
+          example:
+            handle: 'child'
+            id_cert: 'MIID..zw=='
+            base_uri: 'rsync://<KRILL_SERVER_FQDN>/repo/child/'
+            current_files:
+              - base64: 'MIIK..TZPZ'
+                uri: 'rsync://<KRILL_SERVER_FQDN>/repo/child/0/A815..A01C.mft'
+              - base64: 'MIIB..6Lg8'
+                uri: 'rsync://<KRILL_SERVER_FQDN>/repo/child/0/A815..A01C.crl'
+              - base64: 'MIIJ..Cg4='
+                uri: 'rsync://<KRILL_SERVER_FQDN>/repo/child/0/3130..3936.roa'
     GetChildRequestXML:
       description: OK
       content:
