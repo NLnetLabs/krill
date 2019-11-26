@@ -1395,6 +1395,7 @@ components:
             properties:
               id_cert:
                 type: object
+                nullable: true
                 properties:
                   pem:
                     type: string
