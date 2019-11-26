@@ -3,14 +3,67 @@ info:
   title: Krill RPKI Server API
   version: 0.4.0
   description: |
-    # API
-    Welcome to the documentation for the Krill server API, a JSON based REST-like API for managing your Krill Certificate Authorities and Publishers.
+    # Introduction
+    Welcome to the documentation for the Krill server API, a JSON based
+    REST-like API for managing your Krill Certificate Authorities and
+    Publishers.
+    # Clients
+    To interact with a Krill server using this API, either:
+    - Use the [Krill CLI](https://rpki.readthedocs.io/en/latest/krill/using-cli.html).
+    - Load this API specification into the Swagger [editor](https://editor.swagger.io/)
+      or [viewer](https://petstore.swagger.io/) and use it to submit requests to
+      a Krill server via your browser.
+    - Use an [OpenAPI 3 generator](https://openapi-generator.tech/docs/generators.html)
+      to generate client code based on this API specification.
+    - Write your own client code that adheres to this specification.
     # Versioning
-    The API path includes a version. The idea is that we may add functionality, but will not introduce breaking changes to existing functionality. You may expect additional resources, and you may see additional data (json members) within resources. So, please make sure that you ignore what you don’t understand when using this API.
+    The API path includes a version. The idea is that we may add functionality,
+    but will not introduce breaking changes to existing functionality. You may
+    expect additional resources, and you may see additional data (JSON members)
+    within resources. So, please make sure that you ignore what you don’t
+    understand when using this API.
+    # Authentication
+    Almost all Krill API endpoints are protected by [HTTP Bearer Authentication=](https://swagger.io/docs/specification/authentication/bearer-authentication/).
+    To use such endpoints the client must supply an HTTP Authorization header of the form:
+    ```
+    Authorization: bearer <KRILL AUTH TOKEN>
+    ```
+    The token to use is defined in the Krill server configuration. Do not include
+    the '<>' brackets in the request. For more information consult the [Krill documentation](https://rpki.readthedocs.io/en/latest/krill/running.html#admin-token).
+    # Errors
+    The format of and level of detail included in error reports from a Krill
+    server depend on the type of failure that occured:
+    - **5XX/Server Errors:** This type of failure occurs within or is caused
+      by the environment in which Krill operates, or by bugs within Krill itself.
+      Examples include network issues, resource starvation, access denied to
+      resources, etc. Such errors are outside the control of Krill and may result
+      in HTTP 5XX errors from a proxy in front of Krill or from Krill itself, or
+      could manifest themselves as TCP timeouts and/or connection failures.
+    - **4XX/Client Errors:** This type of failure occurs when the input provided
+      to Krill is incorrect, either due to user error, incorrect API documentation
+      or malicious activity. Krill responds with HTTP 4XX errors, where possible
+      with a HTTP response body in JSON format consisting of an error code and
+      error message. **Note:** Clients should decide which action to take based
+      on the error code, not on the error message. Such errors have the following
+      form:
+      ```
+      {
+          "code": <integer>,
+          "msg": "string"
+      }
+      ```
+    - **2XX/Normal Errors:** This type of failure is considered normal in the
+      sense that such issues are not an indication of a problem within Krill
+      itself but rather are issues which Krill has detected. The documentation
+      below will indicate when such errors are possible and how the HTTP 2XX
+      response will differ in such cases.
     # References
+    Information about many of the concepts and data types that Krill works with
+    can be found in the following Internet standards documents:
     - [RFC 6492: A Protocol for Provisioning Resource Certificates](https://tools.ietf.org/html/rfc6492)
     - [RFC 8181: A Publication Protocol for the Resource Public Key Infrastructure (RPKI)](https://tools.ietf.org/html/rfc8181)
     - [RFC 8183: An Out-of-Band Setup Protocol for Resource Public Key Infrastructure (RPKI) Production Services](https://tools.ietf.org/html/rfc8183)
+    # Additional Information
   license:
     name: Mozilla Public License 2.0
     url: https://www.mozilla.org/en-US/MPL/2.0/
