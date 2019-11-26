@@ -2,7 +2,6 @@
   "id": "child",
   "version": 16,
   "details": {
-    "t": "RouteAuthorizationAdded",
-    "c": "192.168.0.0/24 => 64496"
+    "route_authorization_added": "192.168.0.0/24 => 64496"
   }
 }

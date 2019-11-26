@@ -2,8 +2,7 @@
   "id": "rfc6492",
   "version": 10,
   "details": {
-    "t": "KeyRollFinished",
-    "c": [
+    "key_roll_finished": [
       "0",
       {
         "ca_repo": "rsync://localhost/repo/rfc6492/0",
@@ -11,12 +10,12 @@
         "updated": [],
         "withdrawn": [
           {
-            "name": "7756396785249D3B60BCDA4DAE5F12D7C187E674.crl",
-            "hash": "90055b1eb078f713f783114520e75449d0fb139013ea84ba39268af943638003"
+            "name": "6522C8C640A72E46C04F7310F605913FA1252B4D.crl",
+            "hash": "48202737675dbb850eb4b809250361a7b3c6b8439e8b28bd17ac207fcca0000b"
           },
           {
-            "name": "7756396785249D3B60BCDA4DAE5F12D7C187E674.mft",
-            "hash": "eb39b3e61f0e1b4c9c58a3983d8d37ade19b5edc19eea641d7051c32b97af677"
+            "name": "6522C8C640A72E46C04F7310F605913FA1252B4D.mft",
+            "hash": "33581985b80fcd4c283f70a08a289838632fcb6a2225094fc13efa206d9fd42a"
           }
         ]
       }

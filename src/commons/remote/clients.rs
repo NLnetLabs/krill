@@ -51,6 +51,7 @@ pub type ClientsInit = StoredEvent<ClientsInitDetails>;
 
 #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
+#[serde(rename_all = "snake_case")]
 pub enum ClientsEventDetails {
     AddedClient(Handle, ClientAuth),
     UpdatedClientCert(Handle, IdCert),
@@ -105,6 +106,7 @@ impl ClientsCommands {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[allow(clippy::large_enum_variant)]
+#[serde(rename_all = "snake_case")]
 pub enum ClientsCommandDetails {
     AddClient(Handle, ClientAuth),
     UpdateClientCert(Handle, IdCert),

@@ -2,12 +2,11 @@
   "id": "child",
   "version": 22,
   "details": {
-    "t": "KeyRollActivated",
-    "c": [
+    "key_roll_activated": [
       "0",
       {
         "class_name": "0",
-        "key": "EFD829C95523438831AD18431DADFE9B952E15B1"
+        "key": "12BA87FAB2D73D466CDF6799E1AD675C4A930B7D"
       }
     ]
   }

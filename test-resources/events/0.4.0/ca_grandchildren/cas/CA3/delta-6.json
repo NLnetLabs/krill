@@ -2,8 +2,7 @@
   "id": "CA3",
   "version": 6,
   "details": {
-    "t": "ResourceClassAdded",
-    "c": [
+    "resource_class_added": [
       "1",
       {
         "name": "1",
@@ -16,10 +15,10 @@
         "certificates": {
           "inner": {}
         },
-        "last_key_change": "2019-11-23T13:16:41.510857Z",
+        "last_key_change": "2019-11-26T13:55:32.855967Z",
         "key_state": {
-          "Pending": {
-            "key_id": "FA1C72E27A9183E3E79CA8D3D91C5F45E29C881C",
+          "pending": {
+            "key_id": "38FA8DE518FE41A88592E664C821D2F00E33E3E6",
             "request": null
           }
         }

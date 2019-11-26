@@ -286,7 +286,7 @@ pub type Evt = StoredEvent<EvtDet>;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
-#[serde(tag = "t", content = "c")]
+#[serde(rename_all = "snake_case")]
 pub enum EvtDet {
     // Being a parent Events
     ChildAdded(ChildHandle, ChildDetails),

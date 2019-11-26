@@ -2,14 +2,13 @@
   "id": "0",
   "version": 18,
   "details": {
-    "t": "Published",
-    "c": [
+    "published": [
       "CA4",
       {
         "delta": {
-          "session": "753d33d2-04d9-44d3-b676-096867462cc1",
+          "session": "79bf9b75-f5f3-4152-a768-5483cfe99b63",
           "serial": 13,
-          "time": "2019-11-23T13:16:45.384785Z",
+          "time": "2019-11-26T13:55:35.948138Z",
           "elements": {
             "publishes": [],
             "updates": [],
@@ -17,101 +16,101 @@
           }
         },
         "notification": {
-          "session": "753d33d2-04d9-44d3-b676-096867462cc1",
+          "session": "79bf9b75-f5f3-4152-a768-5483cfe99b63",
           "serial": 13,
-          "time": "2019-11-23T13:16:45.396299Z",
+          "time": "2019-11-26T13:55:35.961526Z",
           "snapshot": {
-            "uri": "https://localhost:3000/rrdp/753d33d2-04d9-44d3-b676-096867462cc1/13/snapshot.xml",
-            "path": "work/346383316/3122749785/repo/rrdp/753d33d2-04d9-44d3-b676-096867462cc1/13/snapshot.xml",
-            "hash": "c9ab22455bbec5da9a80e228d86a1c9a6936326c5972722053fcf0072e271230"
+            "uri": "https://localhost:3000/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/13/snapshot.xml",
+            "path": "work/4136241169/348791425/repo/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/13/snapshot.xml",
+            "hash": "aed0642eb102a2719b569aacf138ef49b9b50eb860164a8e89cdb4482c875306"
           },
           "deltas": [
             {
               "serial": 13,
               "file_ref": {
-                "uri": "https://localhost:3000/rrdp/753d33d2-04d9-44d3-b676-096867462cc1/13/delta.xml",
-                "path": "work/346383316/3122749785/repo/rrdp/753d33d2-04d9-44d3-b676-096867462cc1/13/delta.xml",
-                "hash": "2e5f6eaa2151d06ad91f3e13599978f89cd88a2bc2b268e334b83d6f05d203c7"
+                "uri": "https://localhost:3000/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/13/delta.xml",
+                "path": "work/4136241169/348791425/repo/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/13/delta.xml",
+                "hash": "ba085e238811a324efe4ce2a96c275cd1205174b82916b16571438c2ec301e5f"
               }
             },
             {
               "serial": 12,
               "file_ref": {
-                "uri": "https://localhost:3000/rrdp/753d33d2-04d9-44d3-b676-096867462cc1/12/delta.xml",
-                "path": "work/346383316/3122749785/repo/rrdp/753d33d2-04d9-44d3-b676-096867462cc1/12/delta.xml",
-                "hash": "21298680d40dfae19afd9e5eb042c287efb003ddb8dfc7f14fc5bcb930e49dfc"
+                "uri": "https://localhost:3000/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/12/delta.xml",
+                "path": "work/4136241169/348791425/repo/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/12/delta.xml",
+                "hash": "e26efbe753cc2cc6bb0a79ced8fd0187f153fa05ea357c7a77106efc9d93502d"
               }
             },
             {
               "serial": 11,
               "file_ref": {
-                "uri": "https://localhost:3000/rrdp/753d33d2-04d9-44d3-b676-096867462cc1/11/delta.xml",
-                "path": "work/346383316/3122749785/repo/rrdp/753d33d2-04d9-44d3-b676-096867462cc1/11/delta.xml",
-                "hash": "0f99d88971b953a9b87c0bdc3322c2edf1b83b9298f21f39b5fb397e0e85966d"
+                "uri": "https://localhost:3000/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/11/delta.xml",
+                "path": "work/4136241169/348791425/repo/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/11/delta.xml",
+                "hash": "ad86772a397519860598665f2eb353b993322d75bd7fca9c965a185408c0361b"
               }
             },
             {
               "serial": 10,
               "file_ref": {
-                "uri": "https://localhost:3000/rrdp/753d33d2-04d9-44d3-b676-096867462cc1/10/delta.xml",
-                "path": "work/346383316/3122749785/repo/rrdp/753d33d2-04d9-44d3-b676-096867462cc1/10/delta.xml",
-                "hash": "81e7e26f626243148fba43862c9fc3a9eb78e2789985c1b40a5b9475718a4a04"
+                "uri": "https://localhost:3000/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/10/delta.xml",
+                "path": "work/4136241169/348791425/repo/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/10/delta.xml",
+                "hash": "e19a340d910f539a72611572cd10f6a150bd5e1f53735517a21410876ff2f480"
               }
             },
             {
               "serial": 9,
               "file_ref": {
-                "uri": "https://localhost:3000/rrdp/753d33d2-04d9-44d3-b676-096867462cc1/9/delta.xml",
-                "path": "work/346383316/3122749785/repo/rrdp/753d33d2-04d9-44d3-b676-096867462cc1/9/delta.xml",
-                "hash": "ae8437da04fb0e81c65757ef20a9e3629495e92cb04091d95aede5aa1162587c"
+                "uri": "https://localhost:3000/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/9/delta.xml",
+                "path": "work/4136241169/348791425/repo/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/9/delta.xml",
+                "hash": "acf9876630e3dd3783ed102a7f42c8136a0631b5474ea82cf1634c2f32b57d04"
               }
             },
             {
               "serial": 8,
               "file_ref": {
-                "uri": "https://localhost:3000/rrdp/753d33d2-04d9-44d3-b676-096867462cc1/8/delta.xml",
-                "path": "work/346383316/3122749785/repo/rrdp/753d33d2-04d9-44d3-b676-096867462cc1/8/delta.xml",
-                "hash": "4631bc402e9dbb3ecda975cac80e1c5e8b406184218177e9ee7f86f831d10c9b"
+                "uri": "https://localhost:3000/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/8/delta.xml",
+                "path": "work/4136241169/348791425/repo/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/8/delta.xml",
+                "hash": "1e26cca55624715225c5fec41393cf45e8cd599cef6747152c3fc72a44d0d458"
               }
             },
             {
               "serial": 7,
               "file_ref": {
-                "uri": "https://localhost:3000/rrdp/753d33d2-04d9-44d3-b676-096867462cc1/7/delta.xml",
-                "path": "work/346383316/3122749785/repo/rrdp/753d33d2-04d9-44d3-b676-096867462cc1/7/delta.xml",
-                "hash": "2b3e351eebd91652f42e62dec22ff93c50f9cd29864d70cb9e52a1a961f717c7"
+                "uri": "https://localhost:3000/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/7/delta.xml",
+                "path": "work/4136241169/348791425/repo/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/7/delta.xml",
+                "hash": "e8947a793236bc0ba8bbd9c1fbdebf8a739a9b3725fb46c49c5615a5aa41793e"
               }
             },
             {
               "serial": 6,
               "file_ref": {
-                "uri": "https://localhost:3000/rrdp/753d33d2-04d9-44d3-b676-096867462cc1/6/delta.xml",
-                "path": "work/346383316/3122749785/repo/rrdp/753d33d2-04d9-44d3-b676-096867462cc1/6/delta.xml",
-                "hash": "48fd1bcd3f1e0575e5cbd68b5a176394374aac44a2a9efe31497b895b832a9c7"
+                "uri": "https://localhost:3000/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/6/delta.xml",
+                "path": "work/4136241169/348791425/repo/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/6/delta.xml",
+                "hash": "2da67cc6b0beca73ec7c8a63e3b891d1bc1214441a7b8a99b6ac12caa28dbbf9"
               }
             },
             {
               "serial": 5,
               "file_ref": {
-                "uri": "https://localhost:3000/rrdp/753d33d2-04d9-44d3-b676-096867462cc1/5/delta.xml",
-                "path": "work/346383316/3122749785/repo/rrdp/753d33d2-04d9-44d3-b676-096867462cc1/5/delta.xml",
-                "hash": "821e7ae7b88582521a95bf62d6f9a972794018bead94b5ba1827100f5cc82acc"
+                "uri": "https://localhost:3000/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/5/delta.xml",
+                "path": "work/4136241169/348791425/repo/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/5/delta.xml",
+                "hash": "9a1d09666f6d35174b7b569f15d05dd34c05c422884689f69b76755b72511231"
               }
             },
             {
               "serial": 4,
               "file_ref": {
-                "uri": "https://localhost:3000/rrdp/753d33d2-04d9-44d3-b676-096867462cc1/4/delta.xml",
-                "path": "work/346383316/3122749785/repo/rrdp/753d33d2-04d9-44d3-b676-096867462cc1/4/delta.xml",
-                "hash": "89a12cd78857ce8c33d2fa3887a455dc94c8d0543b74bcd910ab504192669696"
+                "uri": "https://localhost:3000/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/4/delta.xml",
+                "path": "work/4136241169/348791425/repo/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/4/delta.xml",
+                "hash": "6952c835a9ac5e011d65c56aec35a48738bc6c2c976432c4299464195208901a"
               }
             },
             {
               "serial": 3,
               "file_ref": {
-                "uri": "https://localhost:3000/rrdp/753d33d2-04d9-44d3-b676-096867462cc1/3/delta.xml",
-                "path": "work/346383316/3122749785/repo/rrdp/753d33d2-04d9-44d3-b676-096867462cc1/3/delta.xml",
-                "hash": "d463be9d8204734d19961b95e55032e7ff49255c2561356ae4ed55813727a7ae"
+                "uri": "https://localhost:3000/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/3/delta.xml",
+                "path": "work/4136241169/348791425/repo/rrdp/79bf9b75-f5f3-4152-a768-5483cfe99b63/3/delta.xml",
+                "hash": "bea3be24e6304194a1a5b7c4995821d60ed2e3eea7178dec348f811373315f4b"
               }
             }
           ],

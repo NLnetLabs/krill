@@ -2,8 +2,7 @@
   "id": "child",
   "version": 2,
   "details": {
-    "t": "ResourceClassAdded",
-    "c": [
+    "resource_class_added": [
       "0",
       {
         "name": "0",
@@ -16,10 +15,10 @@
         "certificates": {
           "inner": {}
         },
-        "last_key_change": "2019-11-23T12:52:54.895593Z",
+        "last_key_change": "2019-11-26T13:54:24.482008Z",
         "key_state": {
-          "Pending": {
-            "key_id": "6052D8A3FCF0DE9E3B2BA955A5FFF36F62B26B1D",
+          "pending": {
+            "key_id": "4C4313650E09F4539E2B17B2282C2D295295321F",
             "request": null
           }
         }

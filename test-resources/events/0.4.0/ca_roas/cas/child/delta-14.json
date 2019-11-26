@@ -2,18 +2,17 @@
   "id": "child",
   "version": 14,
   "details": {
-    "t": "RoasUpdated",
-    "c": [
+    "roas_updated": [
       "0",
       {
         "updated": {},
         "removed": {
           "2001:db8::/32-48 => 64496": {
             "revocation": {
-              "serial": "50581759737282255598344426722942139067182948434",
-              "expires": "2020-11-23T12:38:15Z"
+              "serial": "622444079976839212284715008675227732510066212223",
+              "expires": "2020-11-26T13:58:51Z"
             },
-            "hash": "d2f9f251e719a57654619a4d5cdb7b0df66c8982197803c019be800645a40a27"
+            "hash": "00d92a1d845041ff66822de790d473e33bfbf09d1ce80494ca2af359b1d563ed"
           }
         }
       }

@@ -2,11 +2,14 @@
   "id": "ta",
   "version": 20,
   "details": {
-    "t": "ChildCertificateIssued",
-    "c": [
-      "rfc6492",
+    "child_certificates_updated": [
       "0",
-      "90F3E6877DB483FA6F812E1EBAB92C2E4BC98CF9"
+      {
+        "issued": [],
+        "removed": [
+          "0C07717A3A40A863BC03B5A390D4C4EF2BFB9789"
+        ]
+      }
     ]
   }
 }

@@ -2,12 +2,9 @@
   "id": "child",
   "version": 1,
   "details": {
-    "t": "ParentAdded",
-    "c": [
+    "parent_added": [
       "ta",
-      {
-        "t": "Embedded"
-      }
+      "embedded"
     ]
   }
 }

@@ -2,13 +2,12 @@
   "id": "ta",
   "version": 17,
   "details": {
-    "t": "ChildCertificatesUpdated",
-    "c": [
+    "child_certificates_updated": [
       "0",
       {
         "issued": [],
         "removed": [
-          "6052D8A3FCF0DE9E3B2BA955A5FFF36F62B26B1D"
+          "4C4313650E09F4539E2B17B2282C2D295295321F"
         ]
       }
     ]

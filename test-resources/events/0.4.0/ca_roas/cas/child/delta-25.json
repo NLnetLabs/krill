@@ -2,8 +2,7 @@
   "id": "child",
   "version": 25,
   "details": {
-    "t": "KeyRollFinished",
-    "c": [
+    "key_roll_finished": [
       "0",
       {
         "ca_repo": "rsync://localhost/repo/child/0",
@@ -11,12 +10,12 @@
         "updated": [],
         "withdrawn": [
           {
-            "name": "EFD829C95523438831AD18431DADFE9B952E15B1.crl",
-            "hash": "7edd363fb320cd9421abbfe3ff35698204ea49b8665a391d85518f2789aeea5b"
+            "name": "12BA87FAB2D73D466CDF6799E1AD675C4A930B7D.crl",
+            "hash": "b15eba4dcd6ad8b11de1de387691906e91a2127c3a2bbb79ac74c28067d8e4ba"
           },
           {
-            "name": "EFD829C95523438831AD18431DADFE9B952E15B1.mft",
-            "hash": "bd70bf133bebc6f8620c47c123ab1b460408dbf7e44db1d85a9099f3e6f25b4e"
+            "name": "12BA87FAB2D73D466CDF6799E1AD675C4A930B7D.mft",
+            "hash": "d86b4455206e3124742b0a9da3b519ac84c4d3be3a72a32c397baa09b3c57209"
           }
         ]
       }

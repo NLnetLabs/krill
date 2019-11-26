@@ -12,6 +12,7 @@ use crate::daemon::ca;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
+#[serde(rename_all = "snake_case")]
 pub enum LastResponse {
     Current(ResourceClassName),
     Revoked,

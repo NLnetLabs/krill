@@ -2,11 +2,10 @@
   "id": "ta",
   "version": 3,
   "details": {
-    "t": "ChildCertificateIssued",
-    "c": [
+    "child_certificate_issued": [
       "child",
       "0",
-      "8C8038B425902517998978FF79FD6AE94E8061E8"
+      "9731D3E9BE54D3C94CDAFAD00689DEF28AC5D92E"
     ]
   }
 }

@@ -2,8 +2,7 @@
   "id": "ta",
   "version": 6,
   "details": {
-    "t": "ChildUpdatedResources",
-    "c": [
+    "child_updated_resources": [
       "child",
       {
         "asn": "AS65000",

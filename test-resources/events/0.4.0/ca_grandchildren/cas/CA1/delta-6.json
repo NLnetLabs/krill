@@ -2,11 +2,10 @@
   "id": "CA1",
   "version": 6,
   "details": {
-    "t": "ChildCertificateIssued",
-    "c": [
+    "child_certificate_issued": [
       "CA3",
       "0",
-      "4583DE24A243B1C316886E0046B30A8DD4A4C0CC"
+      "AF920C81333939B5B0B1F2B3D5F08730D3375321"
     ]
   }
 }

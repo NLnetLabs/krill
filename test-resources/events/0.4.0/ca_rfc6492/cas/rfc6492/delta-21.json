@@ -2,8 +2,7 @@
   "id": "rfc6492",
   "version": 21,
   "details": {
-    "t": "ParentRemoved",
-    "c": [
+    "parent_removed": [
       "ta",
       [
         {
@@ -12,12 +11,12 @@
           "updated": [],
           "withdrawn": [
             {
-              "name": "90F3E6877DB483FA6F812E1EBAB92C2E4BC98CF9.crl",
-              "hash": "7a3330c3db9772ee314e1e4a84efff0d2ff62992772941f41186c2c17a9208d0"
+              "name": "F2A8BE2FE4B0931F2674F2A90ACF09DFFB0EACE1.mft",
+              "hash": "4c6000b4ba3e29b62034b0b3ff7a7f8120ae14ffea02208250f1d2b40221cae7"
             },
             {
-              "name": "90F3E6877DB483FA6F812E1EBAB92C2E4BC98CF9.mft",
-              "hash": "9dcfbc974b10f5d63bcaa0d326a84b4e24931758a5a6f130118d010cf5b0ee92"
+              "name": "F2A8BE2FE4B0931F2674F2A90ACF09DFFB0EACE1.crl",
+              "hash": "5097095ec806ae954e1539d1b0010c028200e2eb06f31a3dcfdb04ab00fe37e7"
             }
           ]
         }

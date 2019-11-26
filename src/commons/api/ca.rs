@@ -1601,7 +1601,7 @@ impl ResourceClassInfo {
 /// Contains the current key status for a resource class.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
-#[serde(tag = "t", content = "c")]
+#[serde(rename_all = "snake_case")]
 pub enum ResourceClassKeysInfo {
     Pending(PendingKeyInfo),
     Active(CurrentKeyInfo),
@@ -1657,7 +1657,7 @@ impl fmt::Display for ResourceClassKeysInfo {
 //------------ CaRepoDetails -------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(tag = "t", content = "c")]
+#[serde(rename_all = "snake_case")]
 pub enum CurrentRepoState {
     List(ListReply),
     Error(String),

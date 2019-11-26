@@ -2,11 +2,10 @@
   "id": "ta",
   "version": 13,
   "details": {
-    "t": "ChildCertificateIssued",
-    "c": [
+    "child_key_revoked": [
       "child",
       "0",
-      "5BE371D3BE032A6BD1C61C9FEE4A94B4091E4097"
+      "12BA87FAB2D73D466CDF6799E1AD675C4A930B7D"
     ]
   }
 }

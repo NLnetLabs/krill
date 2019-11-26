@@ -215,6 +215,7 @@ impl DerefMut for OldKey {
 /// are created, activated, rolled and retired properly.
 #[derive(Clone, Debug, Deserialize, Eq, Serialize, PartialEq)]
 #[allow(clippy::large_enum_variant)]
+#[serde(rename_all = "snake_case")]
 pub enum KeyState {
     Pending(PendingKey),
     Active(CurrentKey),

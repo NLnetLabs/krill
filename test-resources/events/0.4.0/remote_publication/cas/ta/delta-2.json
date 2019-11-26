@@ -2,8 +2,7 @@
   "id": "ta",
   "version": 2,
   "details": {
-    "t": "ChildAdded",
-    "c": [
+    "child_added": [
       "child",
       {
         "id_cert": null,
