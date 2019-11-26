@@ -1373,7 +1373,7 @@ components:
                 items:
                   type: object
                   properties:
-                    name:
+                    handle:
                       allOf:
                       - $ref: '#/components/schemas/Handle'
                       - description: The RFC-8183 handle that uniquely identifies the CA in this Krill instance.
