@@ -1330,7 +1330,7 @@ components:
               rpki_notify: 'https://localhost:3000/rrdp/notification.xml'
             parents:
               - handle: 'ta'
-                kind: 'Ta'
+                kind: 'ta'
             resources:
               '0':
                 name_space: '0'
