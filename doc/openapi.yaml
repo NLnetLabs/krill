@@ -1760,12 +1760,6 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/rfc8181'
-    GetPublisherResponseXML:
-      description: Success.
-      content:
-        application/xml:
-          schema:
-            $ref: '#/components/schemas/RFC8183RepositoryResponseXML'
     GetRepositoryForCA:
       description: Success.
       content:
