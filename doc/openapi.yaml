@@ -1133,17 +1133,23 @@ components:
         service_uri:
           type: string
           format: uri
+          xml:
+            attribute: true
         sia_base:
           type: string
           format: uri
+          xml:
+            attribute: true
         rrdp_notification_uri:
           type: string
           format: uri
+          xml:
+            attribute: true
         repository_bpki_ta:
           type: string
           format: base64
       xml:
-        name: 'child_request'
+        name: 'repository_response'
       example:
         xmlns: http://www.hactrn.net/uris/rpki/rpki-setup/
         version: 1
