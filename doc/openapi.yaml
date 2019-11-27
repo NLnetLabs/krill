@@ -122,7 +122,7 @@ tags:
 - name: "Other"
 
 security: 
-- krillApiToken: []
+- KRILL_AUTH_TOKEN: []
 
 paths:
   /health:
@@ -910,7 +910,7 @@ externalDocs:
 
 components:
   securitySchemes:
-    krillApiToken:
+    KRILL_AUTH_TOKEN:
      type: http
      scheme: bearer
      bearerFormat: Krill API token
