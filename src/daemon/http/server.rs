@@ -69,7 +69,11 @@ pub fn start(config: &Config) -> Result<(), Error> {
                     .route("/publishers/{handle}", delete().to(remove_pbl))
                     .route(
                         "/publishers/{handle}/response.xml",
-                        get().to(repository_response),
+                        get().to(repository_response_xml),
+                    )
+                    .route(
+                        "/publishers/{handle}/response.json",
+                        get().to(repository_response_json),
                     )
                     // CAs (both embedded and remote)
                     .route("/cas", post().to(ca_init))
@@ -77,10 +81,15 @@ pub fn start(config: &Config) -> Result<(), Error> {
                     .route("/cas/{ca}", get().to(ca_info))
                     .route("/cas/{ca}/id", post().to(ca_regenerate_id))
                     .route("/cas/{ca}/history", get().to(ca_history))
-                    .route("/cas/{ca}/child_request.xml", get().to(ca_child_req))
+                    .route("/cas/{ca}/child_request.xml", get().to(ca_child_req_xml))
+                    .route("/cas/{ca}/child_request.json", get().to(ca_child_req_json))
                     .route("/cas/{ca}/repo", get().to(ca_repo_details))
                     .route("/cas/{ca}/repo/state", get().to(ca_repo_state))
-                    .route("/cas/{ca}/repo/request", get().to(ca_publisher_req))
+                    .route(
+                        "/cas/{ca}/repo/request.json",
+                        get().to(ca_publisher_req_json),
+                    )
+                    .route("/cas/{ca}/repo/request.xml", get().to(ca_publisher_req_xml))
                     .route("/cas/{ca}/repo", post().to(ca_repo_update))
                     .route("/cas/{ca}/parents", post().to(ca_add_parent))
                     .route("/cas/{ca}/parents/{parent}", get().to(ca_my_parent_contact))

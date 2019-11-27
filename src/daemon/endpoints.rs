@@ -180,20 +180,43 @@ pub fn rfc8181(
 
 //------------ repository_response ---------------------------------------------
 
-pub fn repository_response(
+pub fn repository_response_xml(
     server: web::Data<AppServer>,
     auth: Auth,
     publisher: Path<Handle>,
 ) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
-        match server.read().repository_response(&publisher.into_inner()) {
+        match repository_response(&server, &publisher.into_inner()) {
             Ok(res) => HttpResponse::Ok()
                 .content_type("application/xml")
                 .body(res.encode_vec()),
 
-            Err(e) => server_error(&Error::ServerError(e)),
+            Err(e) => server_error(&e),
         }
     })
+}
+
+pub fn repository_response_json(
+    server: web::Data<AppServer>,
+    auth: Auth,
+    publisher: Path<Handle>,
+) -> HttpResponse {
+    if_api_allowed(&server, &auth, || {
+        match repository_response(&server, &publisher.into_inner()) {
+            Ok(res) => render_json(res),
+            Err(e) => server_error(&e),
+        }
+    })
+}
+
+fn repository_response(
+    server: &web::Data<AppServer>,
+    publisher: &Handle,
+) -> Result<rfc8183::RepositoryResponse, Error> {
+    server
+        .read()
+        .repository_response(publisher)
+        .map_err(Error::ServerError)
 }
 
 //------------ Admin: TrustAnchor --------------------------------------------
@@ -338,23 +361,43 @@ pub fn ca_history(server: web::Data<AppServer>, auth: Auth, handle: Path<Handle>
     })
 }
 
-pub fn ca_child_req(
+pub fn ca_child_req_xml(
     server: web::Data<AppServer>,
     auth: Auth,
     handle: Path<Handle>,
 ) -> HttpResponse {
     let handle = handle.into_inner();
-    if_api_allowed(&server, &auth, || {
-        match server.read().ca_child_req(&handle) {
-            Ok(req) => HttpResponse::Ok()
-                .content_type("application/xml")
-                .body(req.encode_vec()),
-            Err(e) => server_error(&Error::ServerError(e)),
-        }
+    if_api_allowed(&server, &auth, || match ca_child_req(&server, &handle) {
+        Ok(req) => HttpResponse::Ok()
+            .content_type("application/xml")
+            .body(req.encode_vec()),
+        Err(e) => server_error(&e),
     })
 }
 
-pub fn ca_publisher_req(
+pub fn ca_child_req_json(
+    server: web::Data<AppServer>,
+    auth: Auth,
+    handle: Path<Handle>,
+) -> HttpResponse {
+    let handle = handle.into_inner();
+    if_api_allowed(&server, &auth, || match ca_child_req(&server, &handle) {
+        Ok(req) => render_json(req),
+        Err(e) => server_error(&e),
+    })
+}
+
+fn ca_child_req(
+    server: &web::Data<AppServer>,
+    handle: &Handle,
+) -> Result<rfc8183::ChildRequest, Error> {
+    server
+        .read()
+        .ca_child_req(handle)
+        .map_err(Error::ServerError)
+}
+
+pub fn ca_publisher_req_json(
     server: web::Data<AppServer>,
     auth: Auth,
     handle: Path<Handle>,
@@ -363,6 +406,22 @@ pub fn ca_publisher_req(
     if_api_allowed(&server, &auth, || {
         match server.read().ca_publisher_req(&handle) {
             Some(req) => render_json(req),
+            None => api_not_found(),
+        }
+    })
+}
+
+pub fn ca_publisher_req_xml(
+    server: web::Data<AppServer>,
+    auth: Auth,
+    handle: Path<Handle>,
+) -> HttpResponse {
+    let handle = handle.into_inner();
+    if_api_allowed(&server, &auth, || {
+        match server.read().ca_publisher_req(&handle) {
+            Some(req) => HttpResponse::Ok()
+                .content_type("application/xml")
+                .body(req.encode_vec()),
             None => api_not_found(),
         }
     })
