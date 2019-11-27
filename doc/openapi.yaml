@@ -184,7 +184,7 @@ paths:
         - $ref: '#/components/parameters/publisher_handle'
       responses:
         '200':
-          $ref: '#/components/responses/Success'
+          $ref: '#/components/responses/GetPublisherResponseXML'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -888,14 +888,52 @@ components:
             attribute: true
         child_bpki_ta:
           type: string
-          format: byte
+          format: base64
       xml:
         name: 'child_request'
       example:
         xmlns: http://www.hactrn.net/uris/rpki/rpki-setup/
         version: 1
-        child_handle: child
-        child_bpki_ta: 'MIIDPDCCAiSgAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyg4QzE0M0IxNTVBNTMyMDgwN0RBNjZFNDZGOEM1NjMxQTkwMjIyN0QyMCAXDTE5MTExNDIwMzA0NloYDzIxMTkxMTE0MjAzNTQ2WjAzMTEwLwYDVQQDEyg4QzE0M0IxNTVBNTMyMDgwN0RBNjZFNDZGOEM1NjMxQTkwMjIyN0QyMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAlgTWdF2X4cf83/TROhr3nZUP70PHGHe1edLiqf5wEmZIt8ucf2pSoLWkInCi0IgP3yZZR/HRw4aqlWtRHKfSMXwDNm7+F3aVi+vI/iGi7mITS+nbdln4oEEl8cEyjmRpVCp7f494mWR2fRwkeYiEqmVZriny7vh2mlQMRh8KSBVm7+PiG2Jn4Z2QGU/k0At+Wv2byeio53FXhgnEXRjt57IfBjKjzgO/Ckc9tjTVIIgO1hmXJL6TGu8aoFwGdYUKcRQTTrmfB9dm/nhmuhhm4T0/D+4M1yRpx56p1NIiFdjrnb3+rjP5goz5uQM2e0odOTt5D5RUIIJsZCUHtO5RdwIDAQABo1kwVzAPBgNVHRMBAf8EBTADAQH/MCAGA1UdDgEBAAQWBBSMFDsVWlMggH2mbkb4xWMakCIn0jAiBgNVHSMBAQAEGDAWgBSMFDsVWlMggH2mbkb4xWMakCIn0jANBgkqhkiG9w0BAQsFAAOCAQEAVdQV3sY38KdEUQEZGX8yjr0b86IVJEKBNNZ9mkD9bxuQ0KU5TjRdXB7iHOGOE5hj+tF5At/+4lvMgsw+1VDTmqCc2O7GnxU/P4+Zpbe6JUCPijomq6yJnxhK3zdqsWPiAT4WGmCr1gm3Hk9xK/Xg0k74yY1yf6tPOGN5JA627bK9MEdg6IMuYRkOs9Ja0oJuu0scgSNwvouxGTYIw175GwEIgICXFX0hSWDlyYhrxVQwjiHTDjNUe/4gfNx2mYuLtfGoNJU+7yGfAdMJBPahcgzpQnwRqVW4dtxJrd8EPQ/WGMn50lPDbeFRPtNCh+M6hD2xw4K0qVScOwFUCqMP6g=='
+        child_handle: 'child'
+        child_bpki_ta: 'MIID..6g=='
+    RFC8183RepositoryResponseXML:
+      type: object
+      properties:
+        xmlns:
+          type: string
+          format: url
+          xml:
+            attribute: true
+        version:
+          type: integer
+          xml:
+            attribute: true
+        publisher_handle:
+          type: string
+          xml:
+            attribute: true
+        service_uri:
+          type: string
+          format: uri
+        sia_base:
+          type: string
+          format: uri
+        rrdp_notification_uri:
+          type: string
+          format: uri
+        repository_bpki_ta:
+          type: string
+          format: base64
+      xml:
+        name: 'child_request'
+      example:
+        xmlns: http://www.hactrn.net/uris/rpki/rpki-setup/
+        version: 1
+        publisher_handle: 'ta'
+        service_uri: 'https://localhost:3000/rfc8181/ta'
+        sia_base: 'rsync://localhost/repo/ta/'
+        rrdp_notification_uri: 'https://localhost:3000/rrdp/notification.xml'
+        repository_bpki_ta: 'MIID..aQ=='
 
     # Request bodies
     AddCARequest:
@@ -1391,6 +1429,12 @@ components:
         application/xml:
           schema:
             $ref: '#/components/schemas/RFC8183RequestXML'
+    GetPublisherResponseXML:
+      description: OK
+      content:
+        application/xml:
+          schema:
+            $ref: '#/components/schemas/RFC8183RepositoryResponseXML'
     GetRepositoryForCA:
       description: Success.
       content:
