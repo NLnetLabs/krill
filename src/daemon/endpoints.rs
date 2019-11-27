@@ -180,20 +180,43 @@ pub fn rfc8181(
 
 //------------ repository_response ---------------------------------------------
 
-pub fn repository_response(
+pub fn repository_response_xml(
     server: web::Data<AppServer>,
     auth: Auth,
     publisher: Path<Handle>,
 ) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
-        match server.read().repository_response(&publisher.into_inner()) {
+        match repository_response(&server, &publisher.into_inner()) {
             Ok(res) => HttpResponse::Ok()
                 .content_type("application/xml")
                 .body(res.encode_vec()),
 
-            Err(e) => server_error(&Error::ServerError(e)),
+            Err(e) => server_error(&e),
         }
     })
+}
+
+pub fn repository_response_json(
+    server: web::Data<AppServer>,
+    auth: Auth,
+    publisher: Path<Handle>,
+) -> HttpResponse {
+    if_api_allowed(&server, &auth, || {
+        match repository_response(&server, &publisher.into_inner()) {
+            Ok(res) => render_json(res),
+            Err(e) => server_error(&e),
+        }
+    })
+}
+
+fn repository_response(
+    server: &web::Data<AppServer>,
+    publisher: &Handle,
+) -> Result<rfc8183::RepositoryResponse, Error> {
+    server
+        .read()
+        .repository_response(publisher)
+        .map_err(Error::ServerError)
 }
 
 //------------ Admin: TrustAnchor --------------------------------------------

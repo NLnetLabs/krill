@@ -69,7 +69,11 @@ pub fn start(config: &Config) -> Result<(), Error> {
                     .route("/publishers/{handle}", delete().to(remove_pbl))
                     .route(
                         "/publishers/{handle}/response.xml",
-                        get().to(repository_response),
+                        get().to(repository_response_xml),
+                    )
+                    .route(
+                        "/publishers/{handle}/response.json",
+                        get().to(repository_response_json),
                     )
                     // CAs (both embedded and remote)
                     .route("/cas", post().to(ca_init))
