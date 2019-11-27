@@ -207,19 +207,27 @@ paths:
         '500':
           $ref: '#/components/responses/GeneralPublicationServerError'
 
-  /publishers/{publisher_handle}/response.xml:
+  /publishers/{publisher_handle}/response.{format}:
     get:
       tags:
         - "Publishers"
-      summary: Get XML Response for publisher.
+      summary: Get Repository Response for publisher.
       description: |
-        Gets the [RFC 8183 XML Repository Response](https://tools.ietf.org/html/rfc8183#section-5.2.4)
+        Gets the [RFC 8183 Repository Response](https://tools.ietf.org/html/rfc8183#section-5.2.4)
         for a publisher.
       parameters:
         - $ref: '#/components/parameters/publisher_handle'
+        - $ref: '#/components/parameters/format'
       responses:
         '200':
-          $ref: '#/components/responses/GetPublisherResponseXML'
+          description: Success.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/rfc8181'
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/RFC8183RepositoryResponseXML'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -293,15 +301,10 @@ paths:
       tags:
         - "Certificate Authorities"
       summary: Get CA RFC 8183 Request.
-      description: Gets the RFC 8181 Child Request for this CA as XML or JSON.
+      description: Gets the RFC 8181 Child Request for this CA as JSON or XML.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
-        - in: path
-          name: format
-          schema:
-            type: string
-            enum: ['xml','json']
-          required: true
+        - $ref: '#/components/parameters/format'
       responses:
         '200':
           description: Success.
@@ -701,17 +704,14 @@ paths:
         '500':
           $ref: '#/components/responses/GeneralCAServerError'
 
-
-  /cas/{ca_handle}/repo/request:
+  /cas/{ca_handle}/repo/request.{format}:
     get:
       tags:
         - "Certificate Authorities"
-      summary: Get the RFC 8181 Publisher Request for a CA.
-      description: |
-        Returns details about the repository is available, or an indication of
-        why it is not available.
+      summary: Get the RFC 8183 Publisher Request for a CA.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
+        - $ref: '#/components/parameters/format'
       responses:
         '200':
           description: Success.
@@ -719,6 +719,9 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/rfc8181Base'
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/RFC8183PublisherRequestXML'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -940,6 +943,13 @@ components:
       schema:
         $ref: '#/components/schemas/Handle'
       required: true
+    format:
+      in: path
+      name: format
+      schema:
+        type: string
+        enum: ['json','xml']
+      required: true
 
   schemas:
     # Types ordered fundamental to complex
@@ -1052,6 +1062,32 @@ components:
       oneOf:
         - $ref: '#/components/schemas/embedded'
         - $ref: '#/components/schemas/rfc8183'
+    RFC8183PublisherRequestXML:
+      type: object
+      properties:
+        xmlns:
+          type: string
+          format: url
+          xml:
+            attribute: true
+        version:
+          type: integer
+          xml:
+            attribute: true
+        publisher_handle:
+          type: string
+          xml:
+            attribute: true
+        publisher_bpki_ta:
+          type: string
+          format: base64
+      xml:
+        name: 'publisher_request'
+      example:
+        xmlns: http://www.hactrn.net/uris/rpki/rpki-setup/
+        version: 1
+        publisher_handle: 'child'
+        publisher_bpki_ta: 'MIID..6g=='
     RFC8183RequestXML:
       type: object
       properties:
