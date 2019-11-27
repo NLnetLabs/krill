@@ -916,7 +916,7 @@ components:
     KRILL_AUTH_TOKEN:
      type: http
      scheme: bearer
-     bearerFormat: Krill API token
+     bearerFormat: KRILL_AUTH_TOKEN
 
   parameters:
     ca_handle:
