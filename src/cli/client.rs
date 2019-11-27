@@ -99,8 +99,8 @@ impl KrillClient {
             }
 
             CaCommand::ChildRequest(handle) => {
-                let uri = format!("api/v1/cas/{}/child_request", handle);
-                let xml = self.get_text(&uri, "application/xml")?;
+                let uri = format!("api/v1/cas/{}/child_request.xml", handle);
+                let xml = self.get_text(&uri)?;
                 let req = rfc8183::ChildRequest::validate(xml.as_bytes())?;
                 Ok(ApiResponse::Rfc8183ChildRequest(req))
             }
@@ -235,8 +235,7 @@ impl KrillClient {
             }
             PublishersCommand::RepositiryResponse(handle) => {
                 let uri = format!("api/v1/publishers/{}/response.xml", handle);
-                let ct = "application/xml";
-                let xml = self.get_text(&uri, ct)?;
+                let xml = self.get_text(&uri)?;
 
                 let res = rfc8183::RepositoryResponse::validate(xml.as_bytes())?;
                 Ok(ApiResponse::Rfc8183RepositoryResponse(res))
@@ -248,9 +247,9 @@ impl KrillClient {
         format!("{}{}", &self.server, path)
     }
 
-    fn get_text(&self, uri: &str, content_type: &str) -> Result<String, Error> {
+    fn get_text(&self, uri: &str) -> Result<String, Error> {
         let uri = self.resolve_uri(uri);
-        httpclient::get_text(&uri, content_type, Some(&self.token)).map_err(Error::HttpClientError)
+        httpclient::get_text(&uri, Some(&self.token)).map_err(Error::HttpClientError)
     }
 
     fn get_json<T: DeserializeOwned>(&self, uri: &str) -> Result<T, Error> {
