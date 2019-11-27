@@ -34,29 +34,25 @@ info:
     The format of and level of detail included in error reports from a Krill
     server depend on the type of failure that occured:
     - **5XX/Server Errors:** This type of failure occurs within or is caused
-      by the environment in which Krill operates, or by bugs within Krill itself.
-      Examples include network issues, resource starvation, access denied to
-      resources, etc. Such errors are outside the control of Krill and may result
-      in HTTP 5XX errors from a proxy in front of Krill or from Krill itself, or
-      could manifest themselves as TCP timeouts and/or connection failures.
-    - **4XX/Client Errors:** This type of failure occurs when the input provided
-      to Krill is incorrect, either due to user error, incorrect API documentation
-      or malicious activity. Krill responds with HTTP 4XX errors, where possible
-      with a HTTP response body in JSON format consisting of an error code and
-      error message. **Note:** Clients should decide which action to take based
-      on the error code, not on the error message. Such errors have the following
-      form:
+      by the environment in which Krill operates, or by bugs within Krill
+      itself. Examples include network issues, resource starvation, access
+      denied to resources, etc. Such errors are outside the control of Krill
+      and may result in HTTP 5XX errors from a proxy in front of Krill or from
+      Krill itself, or could manifest themselves as TCP timeouts and/or
+      connection failures.
+    - **4XX/Client Errors:** This type of failure occurs when the input
+      provided to Krill is incorrect, either due to user error, adherence by
+      the client to incorrect Krill API specifications, or malicious activity.
+      Krill responds with HTTP 4XX errors, where possible with a HTTP response
+      body in JSON format consisting of an error code and error message.
+      **Note:** Clients should decide which action to take based on the error
+      code, not on the error message. Such errors have the following form:
       ```
       {
           "code": <integer>,
           "msg": "string"
       }
       ```
-    - **2XX/Normal Errors:** This type of failure is considered normal in the
-      sense that such issues are not an indication of a problem within Krill
-      itself but rather are issues which Krill has detected. The documentation
-      below will indicate when such errors are possible and how the HTTP 2XX
-      response will differ in such cases.
     # References
     Information about many of the concepts and data types that Krill works with
     can be found in the following Internet standards documents:
@@ -299,8 +295,7 @@ paths:
                     asn: 'AS1'
                     v4: '10.0.0.0/8'
                     v6: '::'
-                  auth:
-                    t: 'Embedded'
+                  auth: 'embedded'
               remote:
                 value:
                   handle: 'ca'
@@ -309,8 +304,7 @@ paths:
                     v4: '10.0.0.0/8'
                     v6: '::'
                   auth:
-                    t: 'Rfc8183'
-                    c:
+                    rfc8183:
                       tag: null
                       child_handle: 'ca-from-req'
                       id_cert: '<base64>'
@@ -450,8 +444,7 @@ paths:
               examples:
                 rfc6492:
                   value:
-                    t: 'Rfc6492'
-                    c:
+                    rfc6492:
                       tag: null
                       id_cert: '<base64>'
                       parent_handle: 'ta'
@@ -459,7 +452,7 @@ paths:
                       service_uri: 'https://localhost:3000/rfc6492/ta'
                 embedded:
                   value:
-                    t: 'Embedded'
+                    'embedded'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -579,7 +572,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Rfc6492TagOrEmbeddedTag'
+              $ref: '#/components/schemas/Rfc6492OrEmbedded'
       responses:
         '200':
           $ref: '#/components/responses/Success'
@@ -621,8 +614,7 @@ paths:
         - "Certificate Authorities"
       summary: Show Repository for a CA.
       description: |
-        Returns details about the repository is available, or an indication of
-        why it is not available.
+        Returns details about the repository.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
       responses:
@@ -817,12 +809,6 @@ components:
         hash:
           type: string
           format: hash
-    EmbeddedTag:
-      type: object
-      properties:
-        t:
-          type: string
-          enum: ['Embedded']
     Handle:
       type: string
       maxLength: 255
@@ -857,7 +843,10 @@ components:
     ServiceUri:
       type: string
       format: uri
-    Rfc6492:
+    embedded:
+      type: string
+      enum: ['embedded']
+    rfc6492:
       type: object
       properties:
         tag:
@@ -871,7 +860,7 @@ components:
           $ref: '#/components/schemas/Handle'
         service_uri:
           $ref: '#/components/schemas/ServiceUri'
-    Rfc8183:
+    rfc8183:
       type: object
       required:
         - tag
@@ -889,30 +878,14 @@ components:
             - description: Ignored.
         id_cert:
           $ref: '#/components/schemas/IdCert'
-    Rfc6492Tag:
-      type: object
-      properties:
-        t:
-          type: string
-          enum: ['Rfc6492']
-        c:
-          $ref: '#/components/schemas/Rfc6492'
-    Rfc8183Tag:
-      type: object
-      properties:
-        t:
-          type: string
-          enum: ['Rfc8183']
-        c:
-          $ref: '#/components/schemas/Rfc8183'
-    Rfc6492TagOrEmbeddedTag:
+    Rfc6492OrEmbedded:
       oneOf:
-        - $ref: '#/components/schemas/EmbeddedTag'
-        - $ref: '#/components/schemas/Rfc6492Tag'
+        - $ref: '#/components/schemas/embedded'
+        - $ref: '#/components/schemas/rfc6492'
     Rfc8183OrEmbedded:
       oneOf:
-        - $ref: '#/components/schemas/EmbeddedTag'
-        - $ref: '#/components/schemas/Rfc8183Tag'
+        - $ref: '#/components/schemas/embedded'
+        - $ref: '#/components/schemas/rfc8183'
     RFC8183RequestXML:
       type: object
       properties:
@@ -964,7 +937,7 @@ components:
         resources:
           $ref: '#/components/schemas/Resources'
         auth:
-          $ref: '#/components/schemas/Rfc8183'
+          $ref: '#/components/schemas/Rfc8183OrEmbedded'
     UpdateCAChildRequest:
       type: object
       properties:
@@ -989,7 +962,7 @@ components:
           - $ref: '#/components/schemas/Handle'
           - description: The local handle by which your ca refers to this parent.
         contact:
-          $ref: '#/components/schemas/Rfc6492TagOrEmbeddedTag'
+          $ref: '#/components/schemas/Rfc6492OrEmbedded'
     AddPublisherRequest:
       type: object
       required:
@@ -1005,56 +978,9 @@ components:
       externalDocs:
         url: https://tools.ietf.org/html/rfc8183#section-5.2.3
     UpdateRepositoryForCARequest:
-      oneOf:
-        - type: object
-          required:
-            - t
-          properties:
-            t:
-              type: string
-              enum: ['Embedded']
-        - type: object
-          required:
-            - t
-            - c
-          properties:
-            t:
-              type: string
-              enum: ['Rfc8181']
-            c:
-              type: object
-              properties:
-                tag:
-                  type: string
-                  nullable: true
-                publisher_handle:
-                  $ref: '#/components/schemas/Handle'
-                id_cert:
-                  $ref: '#/components/schemas/IdCert'
-                service_uri:
-                  $ref: '#/components/schemas/ServiceUri'
-                repo_info:
-                  $ref: '#/components/schemas/RepoInfo'
+      $ref: '#/components/schemas/Rfc8183OrEmbedded'
     ParentContactForChildCA:
-      type: object
-      properties:
-        t:
-          type: string
-          enum: ['Rfc6492', 'Embedded']
-        c:
-          type: object
-          properties:
-            tag:
-              type: string
-              nullable: true
-            id_cert:
-              $ref: '#/components/schemas/IdCert'
-            parent_handle:
-              $ref: '#/components/schemas/Handle'
-            child_handle:
-              $ref: '#/components/schemas/Handle'
-            service_uri:
-              $ref: '#/components/schemas/ServiceUri'
+      $ref: '#/components/schemas/Rfc6492OrEmbedded'
 
     # Error codes ordered ascending by error code
     AlreadyUsingThisRepository:
@@ -1388,7 +1314,7 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Rfc6492TagOrEmbeddedTag'
+            $ref: '#/components/schemas/Rfc6492OrEmbedded'
     GetChildCA:
       description: Success.
       content:
@@ -1486,46 +1412,42 @@ components:
       content:
         application/json:
           schema:
-            oneOf:
-              - type: object
-                properties:
-                  contact:
-                    type: object
-                    properties:
-                      t:
-                        type: string
-                        enum: ['Embedded','rfc8181']
-                      c:
-                        $ref: '#/components/schemas/RepoInfo'
-                  state:
-                    type: object
-                    properties:
-                      t:
-                        type: string
-                        enum: ['List']
-                      c:
-                        type: object
-                        properties:
-                          elements:
-                            type: array
-                            items:
-                              $ref: '#/components/schemas/Element'
-              - type: object
-                properties:
-                  state:
-                    type: object
-                    properties:
-                      t:
-                        type: string
-                        enum: ['Error']
-                      c:
-                        type: string
+            type: object
+            properties:
+              contact:
+                oneOf:
+                - type: object
+                  properties:
+                    embedded:
+                      $ref: '#/components/schemas/RepoInfo'
+                - type: object
+                  properties:
+                    rfc8181:
+                      $ref: '#/components/schemas/RepoInfo'
+          examples:
+            embedded:
+              value:
+                contact:
+                  embedded:
+                    base_uri: 'rsync://localhost/repo/ca/'
+                    rpki_notify: 'https://localhost:3000/rrdp/notification.xml'
+            rfc8181:
+              value:
+                contact:
+                  rfc8181:
+                    tag: null
+                    publisher_handle: 'ca'
+                    id_cert: 'MIID..Vg=='
+                    service_uri: 'https://localhost:3000/rfc8181/ca'
+                    repo_info:
+                      base_uri: 'rsync://localhost/repo/ca/'
+                      rpki_notify: 'https://localhost:3000/rrdp/notification.xml'
     GetCAParentContactInfo:
       description: Success.
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Rfc6492TagOrEmbeddedTag'
+            $ref: '#/components/schemas/Rfc6492OrEmbedded'
     GetCAHistory:
       description: Success.
       content:
@@ -1557,8 +1479,7 @@ components:
   examples:
     rfc6492:
       value:
-        t: 'Rfc6492'
-        c:
+        rfc6492:
           tag: null
           id_cert: '<base64>'
           parent_handle: 'ta'
