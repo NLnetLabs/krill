@@ -35,7 +35,7 @@ info:
     Almost all Krill API endpoints are protected by [HTTP Bearer Authentication](https://swagger.io/docs/specification/authentication/bearer-authentication/).
     To use such endpoints the client must supply an HTTP Authorization header of the form:
     ```
-    Authorization: bearer <KRILL AUTH TOKEN>
+    Authorization: Bearer <KRILL AUTH TOKEN>
     ```
     The token to use is defined in the Krill server configuration. Do not include
     the '<>' brackets in the request. For more information consult the [Krill documentation](https://rpki.readthedocs.io/en/latest/krill/running.html#admin-token).
