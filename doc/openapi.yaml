@@ -116,6 +116,9 @@ tags:
     - RollPending
     - RollNew
     - RollOld
+- name: "Route Authorizations"
+  description: |
+    Managing Route Authorizations (ROA configs)
 - name: "Other"
 
 security: 
@@ -702,15 +705,7 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  tag:
-                    type: string
-                    nullable: true
-                  publisher_handle:
-                    $ref: '#/components/schemas/Handle'
-                  id_cert:
-                    $ref: '#/components/schemas/IdCert'
+                $ref: '#/components/schemas/rfc8181Base'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -821,6 +816,81 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  /cas/{ca_handle}/routes:
+    get:
+      tags:
+        - "Route Authorizations"
+      summary: List route authorizations.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ROA'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+    post:
+      tags:
+        - "Route Authorizations"
+      summary: Update route authorizations.
+      description: |
+        Updates the ROA configurations. Users of a CA can configure which
+        routes they want to be authorized, and Krill will then take care of
+        creating the actual ROA RPKI objects.
+
+        Updates are sent as a delta containing all additions and removals. This
+        is done because often it is needed to update multiple ROAs in a single
+        transaction in order to avoid invalidating certain announcements. E.g.
+        when you have announcements from more than one ASN, or when you also
+        announce more specific prefixes.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                added:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ROA'
+                removed:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ROA'
+
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '400':
+          description: Bad request parameters.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/InvalidROADeltaAddingDefinitionAlreadyPresent'
+                  - $ref: '#/components/schemas/InvalidROADeltaRemovingUnknownDefinition'
+                  - $ref: '#/components/schemas/InvalidROADeltaNotAllResourcesHeld'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+
 externalDocs:
   description: Read the Krill documentation
   url: https://rpki.readthedocs.io/en/latest/krill/
@@ -900,6 +970,15 @@ components:
         asn: ""
         v4: "10.0.0.0/0"
         v6: "2001:db8::/32"
+    ROA:
+      type: object
+      properties:
+        asn:
+          type: string
+        prefix:
+          type: string
+        max_length:
+          type: integer
     ServiceUri:
       type: string
       format: uri
@@ -925,13 +1004,18 @@ components:
             $ref: '#/components/schemas/Handle'
           service_uri:
             $ref: '#/components/schemas/ServiceUri'
-    rfc8181:
+    rfc8181Base:
       allOf:
       - $ref: '#/components/schemas/rfcCommon'
       - type: object
         properties:
           publisher_handle:
             $ref: '#/components/schemas/Handle'
+    rfc8181:
+      allOf:
+      - $ref: '#/components/schemas/rfc8181Base'
+      - type: object
+        properties:
           service_uri:
             $ref: '#/components/schemas/ServiceUri'     
           repo_info:
@@ -1019,6 +1103,30 @@ components:
         sia_base: 'rsync://localhost/repo/ta/'
         rrdp_notification_uri: 'https://localhost:3000/rrdp/notification.xml'
         repository_bpki_ta: 'MIID..aQ=='
+    PendingKey:
+      type: object
+      properties:
+        key_id:
+          type: string
+    CertifiedKey:
+      allOf:
+        - $ref: '#/components/schemas/PendingKey'
+        - type: object
+          properties:
+            incoming_cert:
+              type: object
+              properties:
+                cert:
+                  type: string
+                  format: base64
+                uri:
+                  type: string
+                  format: uri
+                resources:
+                  $ref: '#/components/schemas/Resources'
+            request:
+              type: string
+              nullable: true
 
     # Request bodies
     AddCARequest:
@@ -1086,6 +1194,30 @@ components:
         url: https://tools.ietf.org/html/rfc8183#section-5.2.3
 
     # Error codes ordered ascending by error code
+    PublisherHandleAlreadyInUse:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2102]
+        msg:
+          type: string
+          example: Handle already in use.
+    UnknownPublisher:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2201]
+        msg:
+          type: string
+          example: Unknown publisher.
     AlreadyUsingThisRepository:
       type: object
       required:
@@ -1182,6 +1314,42 @@ components:
         msg:
           type: string
           example: No known parent for handle.
+    InvalidROADeltaAddingDefinitionAlreadyPresent:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2401]
+        msg:
+          type: string
+          example: 'Invalid ROA delta: adding a definition which is already present.'
+    InvalidROADeltaRemovingUnknownDefinition:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2402]
+        msg:
+          type: string
+          example: 'Invalid ROA delta: removing a definition which is unknown.'
+    InvalidROADeltaNotAllResourcesHeld:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2403]
+        msg:
+          type: string
+          example: 'Invalid ROA delta: not all resources held.'
     CAHandleAlreadyInUse:
       type: object
       required:
@@ -1206,30 +1374,30 @@ components:
         msg:
           type: string
           example: Unknown CA.
-    PendingKey:
+    GeneralCAServerError:
       type: object
+      required:
+        - code
+        - msg
       properties:
-        key_id:
+        code:
+          type: integer
+          enum: [3005]
+        msg:
           type: string
-    CertifiedKey:
-      allOf:
-        - $ref: '#/components/schemas/PendingKey'
-        - type: object
-          properties:
-            incoming_cert:
-              type: object
-              properties:
-                cert:
-                  type: string
-                  format: base64
-                uri:
-                  type: string
-                  format: uri
-                resources:
-                  $ref: '#/components/schemas/Resources'
-            request:
-              type: string
-              nullable: true
+          example: General CA Server issue.
+    GeneralPublicationServerError:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [3006]
+        msg:
+          type: string
+          example: General Publication Server error.
 
   responses:
     Success:
@@ -1243,17 +1411,7 @@ components:
       content:
         application/json:
           schema:
-            type: object
-            required:
-              - code
-              - msg
-            properties:
-              code:
-                type: integer
-                enum: [2201]
-              msg:
-                type: string
-                example: Unknown publisher.
+            $ref: '#/components/schemas/UnknownPublisher'
     UnknownCA:
       description: Unknown CA.
       content:
@@ -1277,55 +1435,43 @@ components:
       content:
         application/json:
           schema:
-            type: object
-            required:
-              - code
-              - msg
-            properties:
-              code:
-                type: integer
-                enum: [3006]
-              msg:
-                type: string
-                example: General Publication Server error.
+            $ref: '#/components/schemas/GeneralPublicationServerError'
     GeneralCAServerError:
       description: General CA Server issue.
       content:
         application/json:
           schema:
-            type: object
-            required:
-              - code
-              - msg
-            properties:
-              code:
-                type: integer
-                enum: [3005]
-              msg:
-                type: string
-                example: General CA Server issue.
+            $ref: '#/components/schemas/GeneralCAServerError'
     PublisherHandleAlreadyInUse:
       description: Publisher handle already in use.
       content:
         application/json:
           schema:
-            type: object
-            required:
-              - code
-              - msg
-            properties:
-              code:
-                type: integer
-                enum: [2102]
-              msg:
-                type: string
-                example: Handle already in use.
+            $ref: '#/components/schemas/PublisherHandleAlreadyInUse'
     CAHandleAlreadyInUse:
       description: CA handle already in use.
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/CAHandleAlreadyInUse'
+    InvalidROADeltaAddingDefinitionAlreadyPresent:
+      description: 'Invalid ROA delta: adding a definition which is already present'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/InvalidROADeltaAddingDefinitionAlreadyPresent'
+    InvalidROADeltaRemovingUnknownDefinition:
+      description: 'Invalid ROA delta: removing a definition which is unknown'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/InvalidROADeltaRemovingUnknownDefinition'
+    InvalidROADeltaNotAllResourcesHeld:
+      description: 'Invalid ROA delta: not all resources held.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/InvalidROADeltaNotAllResourcesHeld'
     GetCA:
       description: Success.
       content:
