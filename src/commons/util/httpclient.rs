@@ -15,9 +15,9 @@ use crate::constants::KRILL_CLI_API_ENV;
 const JSON_CONTENT: &str = "application/json";
 
 fn report_get_and_exit(uri: &str, token: Option<&Token>) {
-    println!("GET: {}", uri);
+    println!("GET:\n  {}", uri);
     if let Some(token) = token {
-        println!("Headers: Bearer: {}", token);
+        println!("Headers:\n  Authorization: Bearer {}", token);
     }
     std::process::exit(0);
 }
@@ -49,25 +49,34 @@ fn report_post_and_exit(
     token: Option<&Token>,
     body: PostBody,
 ) {
-    println!("POST: {}", uri);
+    println!("POST:\n  {}", uri);
+
+    if content_type.is_some() || token.is_some() {
+        println!("Headers:");
+    }
+
     if let Some(content_type) = content_type {
-        println!("Headers: content-type: {}", content_type);
+        println!("  content-type: {}", content_type);
     }
     if let Some(token) = token {
-        println!("Headers: Bearer: {}", token);
+        println!("  Authorization: Bearer {}", token);
     }
-    println!("Body: {}", body);
+    println!("Body:\n{}", body);
     std::process::exit(0);
 }
 
 fn report_delete(uri: &str, content_type: Option<&str>, token: Option<&Token>) {
     if env::var(KRILL_CLI_API_ENV).is_ok() {
-        println!("DELETE: {}", uri);
+        println!("DELETE:\n  {}", uri);
+        if content_type.is_some() || token.is_some() {
+            println!("Headers:");
+        }
+
         if let Some(content_type) = content_type {
-            println!("Headers: content-type: {}", content_type);
+            println!("  content-type: {}", content_type);
         }
         if let Some(token) = token {
-            println!("Headers: Bearer: {}", token);
+            println!("  Authorization: Bearer {}", token);
         }
         std::process::exit(0);
     }

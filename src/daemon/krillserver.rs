@@ -168,10 +168,17 @@ impl KrillServer {
     }
 
     /// Adds the publishers, blows up if it already existed.
-    pub fn add_publisher(&mut self, req: rfc8183::PublisherRequest) -> EmptyRes {
+    pub fn add_publisher(
+        &mut self,
+        req: rfc8183::PublisherRequest,
+    ) -> KrillRes<rfc8183::RepositoryResponse> {
+        let publisher_handle = req.publisher_handle().clone();
+
         self.pubserver
             .create_publisher(req)
-            .map_err(Error::PubServer)
+            .map_err(Error::PubServer)?;
+
+        self.repository_response(&publisher_handle)
     }
 
     /// Removes a publisher, blows up if it didn't exist.
@@ -397,8 +404,7 @@ impl KrillServer {
             .map(|ca| {
                 let contact = ca.repository_contact().clone();
                 let repo_opt = contact.as_reponse_opt();
-                let state = self.repo_state(handle, repo_opt);
-                state
+                self.repo_state(handle, repo_opt)
             })
             .map_err(Error::CaServerError)
     }

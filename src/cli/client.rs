@@ -227,8 +227,8 @@ impl KrillClient {
                 Ok(ApiResponse::PublisherList(list))
             }
             PublishersCommand::AddPublisher(req) => {
-                self.post_json("api/v1/publishers", req)?;
-                Ok(ApiResponse::Empty)
+                let res = self.post_json_with_response("api/v1/publishers", req)?;
+                Ok(ApiResponse::Rfc8183RepositoryResponse(res))
             }
             PublishersCommand::RemovePublisher(handle) => {
                 let uri = format!("api/v1/publishers/{}", handle);
