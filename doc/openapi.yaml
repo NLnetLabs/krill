@@ -531,7 +531,7 @@ paths:
         - $ref: '#/components/parameters/parent_handle'
       responses:
         '200':
-          $ref: '#/components/responses/GetCAParentContactInfo'
+          $ref: '#/components/responses/Rfc8183OrEmbedded'
         '403':
           $ref: '#/components/responses/Forbidden'
         '400':
