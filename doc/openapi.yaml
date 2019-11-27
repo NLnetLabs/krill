@@ -1484,12 +1484,6 @@ components:
                     repo_info:
                       base_uri: 'rsync://localhost/repo/ca/'
                       rpki_notify: 'https://localhost:3000/rrdp/notification.xml'
-    GetCAParentContactInfo:
-      description: Success.
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Rfc6492OrEmbedded'
     GetCAHistory:
       description: Success.
       content:
