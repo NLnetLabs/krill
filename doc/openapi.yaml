@@ -37,8 +37,8 @@ info:
     creating a [Krill GitHub issue](https://github.com/NLnetLabs/krill/issues/new).
 
     # Authentication
-    Almost all Krill API endpoints are protected by [HTTP Bearer Authentication](https://swagger.io/docs/specification/authentication/bearer-authentication/).
-    To use such endpoints the client must supply an HTTP Authorization header of the form:
+    All Krill API endpoints are protected by [HTTP Bearer Authentication](https://swagger.io/docs/specification/authentication/bearer-authentication/).
+    To use the endpoints the client must supply an HTTP Authorization header of the form:
     ```
     Authorization: Bearer <KRILL AUTH TOKEN>
     ```
