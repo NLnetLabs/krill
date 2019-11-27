@@ -397,7 +397,7 @@ fn ca_child_req(
         .map_err(Error::ServerError)
 }
 
-pub fn ca_publisher_req(
+pub fn ca_publisher_req_json(
     server: web::Data<AppServer>,
     auth: Auth,
     handle: Path<Handle>,
@@ -406,6 +406,22 @@ pub fn ca_publisher_req(
     if_api_allowed(&server, &auth, || {
         match server.read().ca_publisher_req(&handle) {
             Some(req) => render_json(req),
+            None => api_not_found(),
+        }
+    })
+}
+
+pub fn ca_publisher_req_xml(
+    server: web::Data<AppServer>,
+    auth: Auth,
+    handle: Path<Handle>,
+) -> HttpResponse {
+    let handle = handle.into_inner();
+    if_api_allowed(&server, &auth, || {
+        match server.read().ca_publisher_req(&handle) {
+            Some(req) => HttpResponse::Ok()
+                .content_type("application/xml")
+                .body(req.encode_vec()),
             None => api_not_found(),
         }
     })
