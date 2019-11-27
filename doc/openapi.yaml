@@ -1361,6 +1361,7 @@ components:
                     keys:
                       oneOf:
                         - type: object
+                          title: pending
                           properties:
                             pending:
                               type: object
@@ -1368,6 +1369,7 @@ components:
                                 pending_key:
                                   $ref: '#/components/schemas/PendingKey'
                         - type: object
+                          title: active
                           properties:
                             active:
                               type: object
@@ -1375,6 +1377,7 @@ components:
                                 active_key:
                                   $ref: '#/components/schemas/CertifiedKey'
                         - type: object
+                          title: roll_pending
                           properties:
                             roll_pending:
                               type: object
@@ -1384,6 +1387,7 @@ components:
                                 pending_key:
                                   $ref: '#/components/schemas/CertifiedKey'
                         - type: object
+                          title: roll_new
                           properties:
                             roll_new:
                               type: object
@@ -1393,6 +1397,7 @@ components:
                                 active_key:
                                   $ref: '#/components/schemas/CertifiedKey'
                         - type: object
+                          title: roll_old
                           properties:
                             roll_old:
                               type: object
