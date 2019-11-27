@@ -164,7 +164,7 @@ paths:
               $ref: '#/components/schemas/AddPublisherRequest'
       responses:
         '200':
-          $ref: '#/components/responses/Success'
+          $ref: '#/components/responses/AddPublisher'
         '400':
           $ref: '#/components/responses/PublisherHandleAlreadyInUse'
         '403':
@@ -1705,14 +1705,20 @@ components:
                 uri: 'rsync://<KRILL_SERVER_FQDN>/repo/child/0/A815..A01C.crl'
               - base64: 'MIIJ..Cg4='
                 uri: 'rsync://<KRILL_SERVER_FQDN>/repo/child/0/3130..3936.roa'
+    AddPublisher:
+      description: Success.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/rfc8181'
     GetChildRequestXML:
-      description: OK
+      description: Success.
       content:
         application/xml:
           schema:
             $ref: '#/components/schemas/RFC8183RequestXML'
     GetPublisherResponseXML:
-      description: OK
+      description: Success.
       content:
         application/xml:
           schema:
