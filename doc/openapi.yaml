@@ -7,6 +7,7 @@ info:
     Welcome to the documentation for the Krill server API, a JSON based
     REST-like API for managing your Krill Certificate Authorities and
     Publishers.
+
     ## Clients
     To interact with a Krill server using this API, either:
     - Use the [Krill CLI](https://rpki.readthedocs.io/en/latest/krill/using-cli.html).
@@ -16,21 +17,25 @@ info:
     - Use an [OpenAPI 3 generator](https://openapi-generator.tech/docs/generators.html)
       to generate client code based on this API specification.
     - Write your own client code that adheres to this specification.
+
     ## Versioning
     The API path includes a version. The idea is that we may add functionality,
     but will not introduce breaking changes to existing functionality. You may
     expect additional resources, and you may see additional data (JSON members)
     within resources. So, please make sure that you ignore what you don’t
     understand when using this API.
+
     ## References
     Information about many of the concepts and data types that Krill works with
     can be found in the following Internet standards documents:
     - [RFC 6492: A Protocol for Provisioning Resource Certificates](https://tools.ietf.org/html/rfc6492)
     - [RFC 8181: A Publication Protocol for the Resource Public Key Infrastructure (RPKI)](https://tools.ietf.org/html/rfc8181)
     - [RFC 8183: An Out-of-Band Setup Protocol for Resource Public Key Infrastructure (RPKI) Production Services](https://tools.ietf.org/html/rfc8183)
+
     ## Feedback
     Please give feedback and report issues concerning this API specification by
     creating a [Krill GitHub issue](https://github.com/NLnetLabs/krill/issues/new).
+
     # Authentication
     Almost all Krill API endpoints are protected by [HTTP Bearer Authentication](https://swagger.io/docs/specification/authentication/bearer-authentication/).
     To use such endpoints the client must supply an HTTP Authorization header of the form:
@@ -39,6 +44,7 @@ info:
     ```
     The token to use is defined in the Krill server configuration. Do not include
     the '<>' brackets in the request. For more information consult the [Krill documentation](https://rpki.readthedocs.io/en/latest/krill/running.html#admin-token).
+
     # Errors
     The format of and level of detail included in error reports from a Krill
     server depend on the type of failure that occured:
@@ -84,6 +90,32 @@ servers:
 tags:
 - name: "Publishers"
 - name: "Certificate Authorities"
+- name: "Key Rolls"
+  description: |
+    Krill CAs can have 0 or more 'Resource Classes' under each of its (0 or
+    more) parents. Krill CAs will talk to all of their parents regularly and
+    ask them about their resource entitlements. Typically a CA will have one
+    parent and receive all their resources in a single resource class, but it's
+    also possible that resources are split into multiple resource classes.
+    Krill CAs can also have multiple parents and have resource classes under
+    each of them.
+
+    When a krill CA first gets a resource class it will:
+    - create a pending key pair
+    - request a certificate
+
+    The 'key state' of this resource class is then shown as type "Pending".
+
+    When the CA receives a certificate for this new pair it will be promoted to
+    "Active", and publishing of objects will start. I.e. the CA will start
+    publishing a manifest and CRL, and any configured ROAs for which the
+    prefixes are held by this class.
+
+    Resource classes in the state 'Active' can be rolled. The following phases
+    exist in a key roll:
+    - RollPending
+    - RollNew
+    - RollOld
 - name: "Other"
 
 security: 
@@ -258,7 +290,7 @@ paths:
       tags:
         - "Certificate Authorities"
       summary: Show CA RFC 8183 Request XML.
-      description: Shows the RFC 8181 Child Request for this CA.
+      description: Shows the RFC 8181 Child Request XML for this CA.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
       responses:
@@ -306,11 +338,11 @@ paths:
                   auth:
                     rfc8183:
                       tag: null
-                      child_handle: 'ca-from-req'
+                      child_handle: 'ca'
                       id_cert: '<base64>'
       responses:
         '200':
-          $ref: '#/components/responses/AddChildCA'
+          $ref: '#/components/responses/Rfc6492OrEmbedded'
         '400':
           description: Bad request parameters.
           content:
@@ -531,7 +563,7 @@ paths:
         - $ref: '#/components/parameters/parent_handle'
       responses:
         '200':
-          $ref: '#/components/responses/Rfc8183OrEmbedded'
+          $ref: '#/components/responses/Rfc6492OrEmbedded'
         '403':
           $ref: '#/components/responses/Forbidden'
         '400':
@@ -634,7 +666,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Rfc8183OrEmbedded'
+              $ref: '#/components/schemas/Rfc8181OrEmbedded'
       responses:
         '200':
           $ref: '#/components/responses/Success'
@@ -686,24 +718,23 @@ paths:
         '500':
           $ref: '#/components/responses/GeneralCAServerError'
 
-  /cas/{ca_handle}/keys/roll_activate:
-    post:
-      tags:
-        - "Certificate Authorities"
-      summary: Finish roll for all keys held by this CA.
-      parameters:
-        - $ref: '#/components/parameters/ca_handle'
-      responses:
-        '200':
-          $ref: '#/components/responses/Success'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
   /cas/{ca_handle}/keys/roll_init:
     post:
       tags:
-        - "Certificate Authorities"
-      summary: Perform a manual key-roll in Krill.
+        - "Key Rolls"
+      summary: Initiate a key roll.
+      description: |
+        When a key roll is initiated the following steps are executed:
+        - A new key pair is created in state 'pending'.
+        - A resource certificate is requested for the new key.
+
+        The resource class will now have state 'RollPending'
+
+        However, you may not observe this for long, as the request is sent to
+        the parent immediately, and as soon as a certificate is received for
+        the new key, the state moves from 'RollPending' to 'RollNew' and a MFT
+        and CRL are published for the new key. All other objects (ROAs,
+        delegated certificates) are still published under the active key.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
       responses:
@@ -711,6 +742,51 @@ paths:
           $ref: '#/components/responses/Success'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+  /cas/{ca_handle}/keys/roll_activate:
+    post:
+      tags:
+        - "Key Rolls"
+      summary: Finish a key roll.
+      description: |
+        According the RFC new keys can be activated only after 24 hours. In
+        practice however, this can also be done sooner. The main thing to keep
+        in mind is that is only done after the parent CA has *published* the
+        new certificate for the 'new' key - which might be some time after you
+        actually received the certificate.
+
+        In short: it's best to perform this step 24 hours after initialising a
+        key roll, but if your old key is really compromised then you should
+        probably just go ahead and do this asap.
+
+        When a key roll is finished, the following happens:
+        - The state is moved from 'RollNew' to 'RollOld'.
+        - The new key becomes 'active' and will now also publish ROAs and
+          delegates certs.
+        - The former 'active' key becomes 'old' and only publishes a manifest
+          and CRL, but no other objects.
+        - A revocation request for the 'old' key is created.
+
+        This state is also easy to miss, because Krill will immediately (but
+        asynchronously) send the revocation request to the applicable parent
+        and when it receives confirmation that the key is revoked it will:
+        - Withdraw the manifest and crl for that key.
+        - Move the state to 'Active' (and forget the old key).
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
 
   /cas/republish_all:
     post:
@@ -830,7 +906,7 @@ components:
     embedded:
       type: string
       enum: ['embedded']
-    rfc6492:
+    rfcCommon:
       type: object
       properties:
         tag:
@@ -838,34 +914,45 @@ components:
           nullable: true
         id_cert:
           $ref: '#/components/schemas/IdCert'
-        parent_handle:
-          $ref: '#/components/schemas/Handle'
-        child_handle:
-          $ref: '#/components/schemas/Handle'
-        service_uri:
-          $ref: '#/components/schemas/ServiceUri'
+    rfc6492:
+      allOf:
+      - $ref: '#/components/schemas/rfcCommon'
+      - type: object
+        properties:
+          parent_handle:
+            $ref: '#/components/schemas/Handle'
+          child_handle:
+            $ref: '#/components/schemas/Handle'
+          service_uri:
+            $ref: '#/components/schemas/ServiceUri'
+    rfc8181:
+      allOf:
+      - $ref: '#/components/schemas/rfcCommon'
+      - type: object
+        properties:
+          parent_handle:
+            $ref: '#/components/schemas/Handle'
+          child_handle:
+            $ref: '#/components/schemas/Handle'
+          service_uri:
+            $ref: '#/components/schemas/ServiceUri'     
+          repo_info:
+            $ref: '#/components/schemas/RepoInfo'   
     rfc8183:
-      type: object
-      required:
-        - tag
-        - child_handle
-        - id_cert
-      properties:
-        tag:
-          allOf:
-            - type: string
-              nullable: true
-            - description: Ignored.
-        child_handle:
-          allOf:
-            - $ref: '#/components/schemas/Handle'
-            - description: Ignored.
-        id_cert:
-          $ref: '#/components/schemas/IdCert'
+      allOf:
+      - $ref: '#/components/schemas/rfcCommon'
+      - type: object
+        properties:
+          child_handle:
+            $ref: '#/components/schemas/Handle'
     Rfc6492OrEmbedded:
       oneOf:
         - $ref: '#/components/schemas/embedded'
         - $ref: '#/components/schemas/rfc6492'
+    Rfc8181OrEmbedded:
+      oneOf:
+        - $ref: '#/components/schemas/embedded'
+        - $ref: '#/components/schemas/rfc8181'
     Rfc8183OrEmbedded:
       oneOf:
         - $ref: '#/components/schemas/embedded'
@@ -1121,6 +1208,30 @@ components:
         msg:
           type: string
           example: Unknown CA.
+    PendingKey:
+      type: object
+      properties:
+        key_id:
+          type: string
+    CertifiedKey:
+      allOf:
+        - $ref: '#/components/schemas/PendingKey'
+        - type: object
+          properties:
+            incoming_cert:
+              type: object
+              properties:
+                cert:
+                  type: string
+                  format: base64
+                uri:
+                  type: string
+                  format: uri
+                resources:
+                  $ref: '#/components/schemas/Resources'
+            request:
+              type: string
+              nullable: true
 
   responses:
     Success:
@@ -1234,7 +1345,7 @@ components:
                   type: object
                   properties:
                     handle:
-                      type: string
+                      $ref: '#/components/schemas/Handle'
                     kind:
                       type: string
               resources:
@@ -1248,30 +1359,48 @@ components:
                     parent_handle:
                       $ref: '#/components/schemas/Handle'
                     keys:
-                      type: object
-                      additionalProperties:
-                        x-additionalPropertiesName: key state
-                        type: object
-                        additionalProperties:
-                          x-additionalPropertiesName: key details
-                          type: object
+                      oneOf:
+                        - type: object
                           properties:
-                            key_id:
-                              type: string
-                            incoming_cert:
+                            pending:
                               type: object
                               properties:
-                                cert:
-                                  type: string
-                                  format: base64
-                                uri:
-                                  type: string
-                                  format: uri
-                                resources:
-                                  $ref: '#/components/schemas/Resources'
-                            request:
-                              type: string
-                              nullable: true
+                                pending_key:
+                                  $ref: '#/components/schemas/PendingKey'
+                        - type: object
+                          properties:
+                            active:
+                              type: object
+                              properties:
+                                active_key:
+                                  $ref: '#/components/schemas/CertifiedKey'
+                        - type: object
+                          properties:
+                            roll_pending:
+                              type: object
+                              properties:
+                                active_key:
+                                  $ref: '#/components/schemas/CertifiedKey'
+                                pending_key:
+                                  $ref: '#/components/schemas/CertifiedKey'
+                        - type: object
+                          properties:
+                            roll_new:
+                              type: object
+                              properties:
+                                new_key:
+                                  $ref: '#/components/schemas/CertifiedKey'
+                                active_key:
+                                  $ref: '#/components/schemas/CertifiedKey'
+                        - type: object
+                          properties:
+                            roll_old:
+                              type: object
+                              properties:
+                                old_key:
+                                  $ref: '#/components/schemas/CertifiedKey'
+                                active_key:
+                                  $ref: '#/components/schemas/CertifiedKey'
                     current_objects:
                       type: object
                       additionalProperties:
@@ -1304,29 +1433,25 @@ components:
                 parent_handle: 'ta'
                 keys:
                   active:
-                    active_key: 
-                      key_id: '9610..D6BD'
+                    active_key:
+                      key_id: 'B738..8820'
                       incoming_cert:
-                        cert: 'MIII..89U='
-                        uri: 'rsync://localhost:3000/repo/ta/ta.cer'
+                        cert: '<base64>'
+                        uri: 'rsync://localhost/repo/ta/0/B738..8820.cer'
                         resources:
-                          asn: 'AS0-AS4294967295'
-                          v4: '0.0.0.0/0'
-                          v6: '::/0'
+                          asn: 'AS0-AS10'
+                          v4: '10.0.0.0/8'
+                          v6: '::/128'
                       request: null
                 current_objects:
-                  '9610..D6BD.crl':
-                    content: 'MIID..DDo='
+                  '2DCE..5337.crl':
+                    content: '<base64>'
                     serial: '2'
-                    expires: '2019-11-26T15:00:32.158033036Z'
-                  '3534..672F.cer':
-                    content: 'MIIH..2bI='
+                    expires: '2019-11-27T10:56:16.166449Z'
+                  '2DCE..5337.mft':
+                    content: '<base64>'
                     serial: '87065729750653489815092730763761996670858255271'
-                    expires: '2020-11-25T15:00:32Z'
-                  '9610..D6BD.mft':
-                    content: 'MIIL..EudG'
-                    serial: '302418467153739817428239791421164424712524512622'
-                    expires: '2019-11-26T15:00:32.161634834Z'
+                    expires: '2019-11-27T10:56:16.172248Z'
             children:
               - 'child'
     ListCAs:
@@ -1345,12 +1470,6 @@ components:
                       allOf:
                       - $ref: '#/components/schemas/Handle'
                       - description: The RFC-8183 handle that uniquely identifies the CA in this Krill instance.
-    AddChildCA:
-      description: Success.
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Rfc6492OrEmbedded'
     GetChildCA:
       description: Success.
       content:
@@ -1465,7 +1584,7 @@ components:
                 - type: object
                   properties:
                     rfc8181:
-                      $ref: '#/components/schemas/RepoInfo'
+                      $ref: '#/components/schemas/rfc8181'
           examples:
             embedded:
               value:
@@ -1511,6 +1630,24 @@ components:
                       type: integer
                     details:
                       type: object
+    Rfc6492OrEmbedded:
+      description: Success.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Rfc6492OrEmbedded'
+          examples:
+            rfc6492:
+              value:
+                rfc6492:
+                  tag: null
+                  id_cert: '<base64>'
+                  parent_handle: 'ta'
+                  child_handle: 'ca'
+                  service_uri: 'https://localhost:3000/rfc6492/ta'
+            embedded:
+              value:
+                'embedded'
     Rfc8183OrEmbedded:
       description: Success.
       content:
