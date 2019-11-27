@@ -1012,6 +1012,7 @@ components:
           enum: [2206]
         msg:
           type: string
+          example: Already using this repository.
     TargetRepositoryDoesNotAllowListQuery:
       type: object
       required:
@@ -1023,6 +1024,7 @@ components:
           enum: [2207]
         msg:
           type: string
+          example: Target repository does not allow list query.
     ChildWithHandleExists:
       type: object
       required:
@@ -1034,6 +1036,7 @@ components:
           enum: [2301]
         msg:
           type: string
+          example: Child with handle exists.
     ChildMustHaveResources:
       type: object
       required:
@@ -1045,6 +1048,7 @@ components:
           enum: [2302]
         msg:
           type: string
+          example: Child MUST have resources.
     ChildCannotHaveResourcesNotHeldByParent:
       type: object
       required:
@@ -1056,6 +1060,7 @@ components:
           enum: [2303]
         msg:
           type: string
+          example: Child cannot have resources not held by parent.
     ParentWithHandleExists:
       type: object
       required:
@@ -1067,6 +1072,7 @@ components:
           enum: [2304]
         msg:
           type: string
+          example: Parent with handle exists.
     UnknownChild:
       type: object
       required:
@@ -1078,6 +1084,7 @@ components:
           enum: [2305]
         msg:
           type: string
+          example: Child unknown.
     UnknownParent:
       type: object
       required:
@@ -1089,6 +1096,7 @@ components:
           enum: [2306]
         msg:
           type: string
+          example: No known parent for handle.
     CAHandleAlreadyInUse:
       type: object
       required:
@@ -1100,6 +1108,7 @@ components:
           enum: [2501]
         msg:
           type: string
+          example: CA with handle exists.
     UnknownCA:
       type: object
       required:
@@ -1111,6 +1120,7 @@ components:
           enum: [2502]
         msg:
           type: string
+          example: Unknown CA.
 
   responses:
     Success:
@@ -1134,6 +1144,7 @@ components:
                 enum: [2201]
               msg:
                 type: string
+                example: Unknown publisher.
     UnknownCA:
       description: Unknown CA.
       content:
@@ -1167,6 +1178,7 @@ components:
                 enum: [3006]
               msg:
                 type: string
+                example: General Publication Server error.
     GeneralCAServerError:
       description: General CA Server issue.
       content:
@@ -1182,6 +1194,7 @@ components:
                 enum: [3005]
               msg:
                 type: string
+                example: General CA Server issue.
     PublisherHandleAlreadyInUse:
       description: Publisher handle already in use.
       content:
@@ -1197,6 +1210,7 @@ components:
                 enum: [2102]
               msg:
                 type: string
+                example: Handle already in use.
     CAHandleAlreadyInUse:
       description: CA handle already in use.
       content:
