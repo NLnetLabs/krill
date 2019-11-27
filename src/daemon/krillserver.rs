@@ -378,16 +378,27 @@ impl KrillServer {
         Ok(())
     }
 
-    /// Return the info about the configure repository server for a given Ca,
+    /// Return the info about the configured repository server for a given Ca.
     /// and the actual objects published there, as reported by a list reply.
     pub fn ca_repo_details(&self, handle: &Handle) -> KrillRes<CaRepoDetails> {
         self.caserver
             .get_ca(handle)
             .map(|ca| {
                 let contact = ca.repository_contact().clone();
+                CaRepoDetails::new(contact)
+            })
+            .map_err(Error::CaServerError)
+    }
+
+    /// Returns the state of the current configured repo for a ca
+    pub fn ca_repo_state(&self, handle: &Handle) -> KrillRes<CurrentRepoState> {
+        self.caserver
+            .get_ca(handle)
+            .map(|ca| {
+                let contact = ca.repository_contact().clone();
                 let repo_opt = contact.as_reponse_opt();
                 let state = self.repo_state(handle, repo_opt);
-                CaRepoDetails::new(contact, state)
+                state
             })
             .map_err(Error::CaServerError)
     }

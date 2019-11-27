@@ -5,8 +5,8 @@ extern crate rpki;
 use krill::cli::options::{CaCommand, Command, PublishersCommand};
 use krill::cli::report::ApiResponse;
 use krill::commons::api::{
-    CaRepoDetails, Handle, ParentCaReq, PublisherDetails, PublisherHandle, RepositoryUpdate,
-    ResourceSet,
+    CaRepoDetails, CurrentRepoState, Handle, ParentCaReq, PublisherDetails, PublisherHandle,
+    RepositoryUpdate, ResourceSet,
 };
 use krill::commons::remote::rfc8183;
 use krill::daemon::ca::ta_handle;
@@ -46,6 +46,14 @@ fn repo_details(ca: &Handle) -> CaRepoDetails {
     match krill_admin(command) {
         ApiResponse::RepoDetails(details) => details,
         _ => panic!("Expected repo details"),
+    }
+}
+
+fn repo_state(ca: &Handle) -> CurrentRepoState {
+    let command = Command::CertAuth(CaCommand::RepoState(ca.clone()));
+    match krill_admin(command) {
+        ApiResponse::RepoState(state) => state,
+        _ => panic!("Expected repo state"),
     }
 }
 
@@ -92,7 +100,9 @@ fn remote_publication() {
         wait_for(30, "Should see objects at embedded location", || {
             let child_repo_details = repo_details(&child);
             assert!(child_repo_details.contact().is_embedded());
-            let list = child_repo_details.state().as_list();
+
+            let state = repo_state(&child);
+            let list = state.as_list();
             list.elements().len() == 2
         });
 
@@ -115,7 +125,8 @@ fn remote_publication() {
         wait_for(30, "Should see objects at new location", || {
             let child_repo_details = repo_details(&child);
             assert!(child_repo_details.contact().is_rfc8183());
-            let list = child_repo_details.state().as_list();
+            let state = repo_state(&child);
+            let list = state.as_list();
             list.elements().len() == 2
         });
 
@@ -138,7 +149,8 @@ fn remote_publication() {
         wait_for(30, "Should see objects at new location", || {
             let child_repo_details = repo_details(&child);
             assert!(child_repo_details.contact().is_rfc8183());
-            let list = child_repo_details.state().as_list();
+            let state = repo_state(&child);
+            let list = state.as_list();
             list.elements().len() == 2
         });
 

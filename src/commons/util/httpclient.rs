@@ -88,12 +88,12 @@ pub fn get_json<T: DeserializeOwned>(uri: &str, token: Option<&Token>) -> Result
 
 /// Performs a get request and expects a response that can be turned
 /// into a string (in particular, not a binary response).
-pub fn get_text(uri: &str, content_type: &str, token: Option<&Token>) -> Result<String, Error> {
+pub fn get_text(uri: &str, token: Option<&Token>) -> Result<String, Error> {
     if env::var(KRILL_CLI_API_ENV).is_ok() {
         report_get_and_exit(uri, token);
     }
 
-    let headers = headers(Some(content_type), token)?;
+    let headers = headers(None, token)?;
     let res = client(uri)?.get(uri).headers(headers).send()?;
     match opt_text_response(res)? {
         Some(res) => Ok(res),

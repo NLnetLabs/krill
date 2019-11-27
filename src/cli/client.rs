@@ -13,6 +13,7 @@ use crate::commons::api::{
 use crate::commons::remote::rfc8183;
 use crate::commons::util::httpclient;
 use crate::constants::KRILL_CLI_API_ENV;
+use commons::api::CurrentRepoState;
 
 /// Command line tool for Krill admin tasks
 pub struct KrillClient {
@@ -99,8 +100,8 @@ impl KrillClient {
             }
 
             CaCommand::ChildRequest(handle) => {
-                let uri = format!("api/v1/cas/{}/child_request", handle);
-                let xml = self.get_text(&uri, "application/xml")?;
+                let uri = format!("api/v1/cas/{}/child_request.xml", handle);
+                let xml = self.get_text(&uri)?;
                 let req = rfc8183::ChildRequest::validate(xml.as_bytes())?;
                 Ok(ApiResponse::Rfc8183ChildRequest(req))
             }
@@ -115,6 +116,12 @@ impl KrillClient {
                 let uri = format!("api/v1/cas/{}/repo", handle);
                 let details: CaRepoDetails = self.get_json(&uri)?;
                 Ok(ApiResponse::RepoDetails(details))
+            }
+
+            CaCommand::RepoState(handle) => {
+                let uri = format!("api/v1/cas/{}/repo/state", handle);
+                let state: CurrentRepoState = self.get_json(&uri)?;
+                Ok(ApiResponse::RepoState(state))
             }
 
             CaCommand::RepoUpdate(handle, update) => {
@@ -235,8 +242,7 @@ impl KrillClient {
             }
             PublishersCommand::RepositiryResponse(handle) => {
                 let uri = format!("api/v1/publishers/{}/response.xml", handle);
-                let ct = "application/xml";
-                let xml = self.get_text(&uri, ct)?;
+                let xml = self.get_text(&uri)?;
 
                 let res = rfc8183::RepositoryResponse::validate(xml.as_bytes())?;
                 Ok(ApiResponse::Rfc8183RepositoryResponse(res))
@@ -248,9 +254,9 @@ impl KrillClient {
         format!("{}{}", &self.server, path)
     }
 
-    fn get_text(&self, uri: &str, content_type: &str) -> Result<String, Error> {
+    fn get_text(&self, uri: &str) -> Result<String, Error> {
         let uri = self.resolve_uri(uri);
-        httpclient::get_text(&uri, content_type, Some(&self.token)).map_err(Error::HttpClientError)
+        httpclient::get_text(&uri, Some(&self.token)).map_err(Error::HttpClientError)
     }
 
     fn get_json<T: DeserializeOwned>(&self, uri: &str) -> Result<T, Error> {

@@ -502,7 +502,16 @@ impl Options {
     }
 
     fn make_cas_repo_show_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("show").about("Show current repo config and state.");
+        let mut sub = SubCommand::with_name("show").about("Show current repo config.");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        app.subcommand(sub)
+    }
+
+    fn make_cas_repo_state_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("state").about("Show current repo state.");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -539,6 +548,7 @@ impl Options {
 
         sub = Self::make_cas_repo_request_sc(sub);
         sub = Self::make_cas_repo_show_sc(sub);
+        sub = Self::make_cas_repo_state_sc(sub);
         sub = Self::make_cas_repo_update_sc(sub);
 
         app.subcommand(sub)
@@ -1005,6 +1015,15 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
+    fn parse_matches_cas_repo_state(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let command = Command::CertAuth(CaCommand::RepoState(my_ca));
+
+        Ok(Options::make(general_args, command))
+    }
+
     fn parse_matches_cas_update(matches: &ArgMatches) -> Result<Options, Error> {
         if let Some(matches) = matches.subcommand_matches("embedded") {
             let general_args = GeneralArgs::from_matches(matches)?;
@@ -1041,6 +1060,8 @@ impl Options {
             Self::parse_matches_cas_repo_request(m)
         } else if let Some(m) = matches.subcommand_matches("show") {
             Self::parse_matches_cas_repo_details(m)
+        } else if let Some(m) = matches.subcommand_matches("state") {
+            Self::parse_matches_cas_repo_state(m)
         } else if let Some(m) = matches.subcommand_matches("update") {
             Self::parse_matches_cas_update(m)
         } else {
@@ -1204,6 +1225,7 @@ pub enum CaCommand {
     RepoPublisherRequest(Handle),
     RepoDetails(Handle),
     RepoUpdate(Handle, RepositoryUpdate),
+    RepoState(Handle),
 
     // Add a parent to this CA
     AddParent(Handle, ParentCaReq),

@@ -101,6 +101,8 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::service_uri")]
     service_uri: String,
 
+    rrdp_service_uri: Option<String>,
+
     #[serde(
         default = "ConfigDefaults::log_level",
         deserialize_with = "ext_serde::de_level_filter"
@@ -149,7 +151,10 @@ impl Config {
     }
 
     pub fn rrdp_base_uri(&self) -> uri::Https {
-        uri::Https::from_string(format!("{}rrdp/", &self.service_uri)).unwrap()
+        match &self.rrdp_service_uri {
+            None => uri::Https::from_string(format!("{}rrdp/", &self.service_uri)).unwrap(),
+            Some(uri) => uri::Https::from_str(uri).unwrap(),
+        }
     }
 
     pub fn ta_cert_uri(&self) -> uri::Https {
@@ -171,6 +176,7 @@ impl Config {
         let data_dir = data_dir.clone();
         let rsync_base = ConfigDefaults::rsync_base();
         let service_uri = ConfigDefaults::service_uri();
+        let rrdp_service_uri = Some("https://localhost:3000/test-rrdp/".to_string());
         let log_level = LevelFilter::Trace;
         let log_type = LogType::Stderr;
         let mut log_file = data_dir.clone();
@@ -186,6 +192,7 @@ impl Config {
             data_dir,
             rsync_base,
             service_uri,
+            rrdp_service_uri,
             log_level,
             log_type,
             log_file,
