@@ -176,8 +176,8 @@ paths:
     get:
       tags:
         - "Publishers"
-      summary: Show details for publisher.
-      description: Shows the information for a publisher by a given handle.
+      summary: Get details for publisher.
+      description: Gets the information for a publisher by a given handle.
       parameters:
         - $ref: '#/components/parameters/publisher_handle'
       responses:
@@ -274,8 +274,8 @@ paths:
     get:
       tags:
         - "Certificate Authorities"
-      summary: Show a CA.
-      description: Show CA details.
+      summary: Get CA.
+      description: Get CA details.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
       responses:
@@ -288,17 +288,30 @@ paths:
         '500':
           $ref: '#/components/responses/GeneralCAServerError'
 
-  /cas/{ca_handle}/child_request.xml:
+  /cas/{ca_handle}/child_request.{format}:
     get:
       tags:
         - "Certificate Authorities"
-      summary: Show CA RFC 8183 Request XML.
-      description: Shows the RFC 8181 Child Request XML for this CA.
+      summary: Get CA RFC 8183 Request.
+      description: Gets the RFC 8181 Child Request for this CA as XML or JSON.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
+        - in: path
+          name: format
+          schema:
+            type: string
+            enum: ['xml','json']
+          required: true
       responses:
         '200':
-          $ref: '#/components/responses/GetChildRequestXML'
+          description: Success.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/rfc8183'
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/RFC8183RequestXML'
         '404':
           $ref: '#/components/responses/UnknownCA'
         '500':
@@ -364,7 +377,7 @@ paths:
     get:
       tags:
         - "Certificate Authorities"
-      summary: Show info for a child.
+      summary: Get child details.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
         - $ref: '#/components/parameters/child_handle'
@@ -463,7 +476,7 @@ paths:
     get:
       tags:
         - "Certificate Authorities"
-      summary: Show parent contact for a child.
+      summary: Get parent contact for a child.
       description: |
         This is the parent contact that a child can use when adding the parent.
       parameters:
@@ -489,7 +502,7 @@ paths:
     get:
       tags:
         - "Certificate Authorities"
-      summary: Show full history of a CA.
+      summary: Get full history of a CA.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
       responses:
@@ -558,9 +571,9 @@ paths:
     get:
       tags:
         - "Certificate Authorities"
-      summary: Show parent contact for a CA.
+      summary: Get parent contact for a CA.
       description: |
-        Show the parent contact information that a CA has for a parent.
+        Get the parent contact information that a CA has for a parent.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
         - $ref: '#/components/parameters/parent_handle'
@@ -631,7 +644,7 @@ paths:
     get:
       tags:
         - "Certificate Authorities"
-      summary: Show Repository for a CA.
+      summary: Get Repository for a CA.
       description: |
         Returns details about the repository.
       parameters:
@@ -693,7 +706,7 @@ paths:
     get:
       tags:
         - "Certificate Authorities"
-      summary: Show the RFC 8181 Publisher Request for a CA.
+      summary: Get the RFC 8181 Publisher Request for a CA.
       description: |
         Returns details about the repository is available, or an indication of
         why it is not available.
@@ -1711,12 +1724,6 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/rfc8181'
-    GetChildRequestXML:
-      description: Success.
-      content:
-        application/xml:
-          schema:
-            $ref: '#/components/schemas/RFC8183RequestXML'
     GetPublisherResponseXML:
       description: Success.
       content:
