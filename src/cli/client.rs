@@ -13,6 +13,7 @@ use crate::commons::api::{
 use crate::commons::remote::rfc8183;
 use crate::commons::util::httpclient;
 use crate::constants::KRILL_CLI_API_ENV;
+use commons::api::CurrentRepoState;
 
 /// Command line tool for Krill admin tasks
 pub struct KrillClient {
@@ -115,6 +116,12 @@ impl KrillClient {
                 let uri = format!("api/v1/cas/{}/repo", handle);
                 let details: CaRepoDetails = self.get_json(&uri)?;
                 Ok(ApiResponse::RepoDetails(details))
+            }
+
+            CaCommand::RepoState(handle) => {
+                let uri = format!("api/v1/cas/{}/repo/state", handle);
+                let state: CurrentRepoState = self.get_json(&uri)?;
+                Ok(ApiResponse::RepoState(state))
             }
 
             CaCommand::RepoUpdate(handle, update) => {

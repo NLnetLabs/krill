@@ -1727,20 +1727,15 @@ impl CurrentRepoState {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CaRepoDetails {
     contact: RepositoryContact,
-    state: CurrentRepoState,
 }
 
 impl CaRepoDetails {
-    pub fn new(contact: RepositoryContact, state: CurrentRepoState) -> Self {
-        CaRepoDetails { contact, state }
+    pub fn new(contact: RepositoryContact) -> Self {
+        CaRepoDetails { contact }
     }
 
     pub fn contact(&self) -> &RepositoryContact {
         &self.contact
-    }
-
-    pub fn state(&self) -> &CurrentRepoState {
-        &self.state
     }
 }
 

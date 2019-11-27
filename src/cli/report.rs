@@ -2,11 +2,11 @@ use std::str::{from_utf8_unchecked, FromStr};
 
 use crate::commons::api::{
     CaRepoDetails, CertAuthHistory, CertAuthInfo, CertAuthList, ChildCaInfo, CurrentObjects,
-    CurrentRepoState, ParentCaContact, PublisherDetails, PublisherList, RepositoryContact,
-    RoaDefinition,
+    ParentCaContact, PublisherDetails, PublisherList, RepositoryContact, RoaDefinition,
 };
 use crate::commons::remote::api::ClientInfo;
 use crate::commons::remote::rfc8183;
+use commons::api::CurrentRepoState;
 
 //------------ ApiResponse ---------------------------------------------------
 
@@ -34,6 +34,7 @@ pub enum ApiResponse {
     Rfc8183PublisherRequest(rfc8183::PublisherRequest),
 
     RepoDetails(CaRepoDetails),
+    RepoState(CurrentRepoState),
 
     Empty,               // Typically a successful post just gets an empty 200 response
     GenericBody(String), // For when the server echos Json to a successful post
@@ -65,6 +66,7 @@ impl ApiResponse {
                 ApiResponse::Rfc8183PublisherRequest(req) => Ok(Some(req.report(fmt)?)),
                 ApiResponse::Rfc8183RepositoryResponse(res) => Ok(Some(res.report(fmt)?)),
                 ApiResponse::RepoDetails(details) => Ok(Some(details.report(fmt)?)),
+                ApiResponse::RepoState(state) => Ok(Some(state.report(fmt)?)),
                 ApiResponse::GenericBody(body) => Ok(Some(body.clone())),
                 ApiResponse::Empty => Ok(None),
             }
@@ -401,25 +403,34 @@ impl Report for CaRepoDetails {
                 }
 
                 res.push_str("\n");
-                res.push_str("Currently published:\n");
-                match self.state() {
-                    CurrentRepoState::Error(e) => {
-                        res.push_str(&format!("  Error contacting repo! => {}", e));
-                    }
-                    CurrentRepoState::List(list) => {
-                        let elements = list.elements();
-                        if elements.is_empty() {
-                            res.push_str("  <nothing>\n");
-                        } else {
-                            for el in elements.iter() {
-                                res.push_str(&format!("  {} {}\n", el.hash(), el.uri()));
-                            }
-                        }
-                    }
-                }
 
                 Ok(res)
             }
+            _ => Err(ReportError::UnsupportedFormat),
+        }
+    }
+}
+
+impl Report for CurrentRepoState {
+    fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
+        match format {
+            ReportFormat::Json => Ok(serde_json::to_string_pretty(self).unwrap()),
+            ReportFormat::Default | ReportFormat::Text => match &self {
+                CurrentRepoState::Error(e) => Ok(format!("Error contacting repo! => {}\n", e)),
+                CurrentRepoState::List(list) => {
+                    let mut res = String::new();
+                    res.push_str("Available and publishing objects:\n");
+                    let elements = list.elements();
+                    if elements.is_empty() {
+                        res.push_str("  <nothing>\n");
+                    } else {
+                        for el in elements.iter() {
+                            res.push_str(&format!("  {} {}\n", el.hash(), el.uri()));
+                        }
+                    }
+                    Ok(res)
+                }
+            },
             _ => Err(ReportError::UnsupportedFormat),
         }
     }

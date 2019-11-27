@@ -79,6 +79,7 @@ pub fn start(config: &Config) -> Result<(), Error> {
                     .route("/cas/{ca}/history", get().to(ca_history))
                     .route("/cas/{ca}/child_request.xml", get().to(ca_child_req))
                     .route("/cas/{ca}/repo", get().to(ca_repo_details))
+                    .route("/cas/{ca}/repo/state", get().to(ca_repo_state))
                     .route("/cas/{ca}/repo/request", get().to(ca_publisher_req))
                     .route("/cas/{ca}/repo", post().to(ca_repo_update))
                     .route("/cas/{ca}/parents", post().to(ca_add_parent))

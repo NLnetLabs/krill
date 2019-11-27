@@ -379,6 +379,17 @@ pub fn ca_repo_details(
     })
 }
 
+pub fn ca_repo_state(
+    server: web::Data<AppServer>,
+    auth: Auth,
+    handle: Path<Handle>,
+) -> HttpResponse {
+    let handle = handle.into_inner();
+    if_api_allowed(&server, &auth, || {
+        render_json_res(server.read().ca_repo_state(&handle))
+    })
+}
+
 pub fn ca_repo_update(
     server: web::Data<AppServer>,
     auth: Auth,
