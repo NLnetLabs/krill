@@ -1191,6 +1191,7 @@ components:
               resources:
                 type: object
                 additionalProperties:
+                  x-additionalPropertiesName: resource index
                   type: object
                   properties:
                     name_space:
@@ -1200,8 +1201,10 @@ components:
                     keys:
                       type: object
                       additionalProperties:
+                        x-additionalPropertiesName: key state
                         type: object
                         additionalProperties:
+                          x-additionalPropertiesName: key details
                           type: object
                           properties:
                             key_id:
@@ -1223,6 +1226,7 @@ components:
                     current_objects:
                       type: object
                       additionalProperties:
+                        x-additionalPropertiesName: object name
                         type: object
                         properties:
                           content:
