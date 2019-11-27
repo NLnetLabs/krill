@@ -128,7 +128,7 @@ pub fn add_pbl(
     pbl: Json<rfc8183::PublisherRequest>,
 ) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
-        render_empty_res(server.write().add_publisher(pbl.into_inner()))
+        render_json_res(server.write().add_publisher(pbl.into_inner()))
     })
 }
 
