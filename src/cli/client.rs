@@ -100,9 +100,8 @@ impl KrillClient {
             }
 
             CaCommand::ChildRequest(handle) => {
-                let uri = format!("api/v1/cas/{}/child_request.xml", handle);
-                let xml = self.get_text(&uri)?;
-                let req = rfc8183::ChildRequest::validate(xml.as_bytes())?;
+                let uri = format!("api/v1/cas/{}/child_request.json", handle);
+                let req = self.get_json(&uri)?;
                 Ok(ApiResponse::Rfc8183ChildRequest(req))
             }
 
@@ -241,10 +240,8 @@ impl KrillClient {
                 Ok(ApiResponse::PublisherDetails(details))
             }
             PublishersCommand::RepositiryResponse(handle) => {
-                let uri = format!("api/v1/publishers/{}/response.xml", handle);
-                let xml = self.get_text(&uri)?;
-
-                let res = rfc8183::RepositoryResponse::validate(xml.as_bytes())?;
+                let uri = format!("api/v1/publishers/{}/response.json", handle);
+                let res = self.get_json(&uri)?;
                 Ok(ApiResponse::Rfc8183RepositoryResponse(res))
             }
         }
