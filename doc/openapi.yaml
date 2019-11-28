@@ -125,11 +125,11 @@ security:
 - KRILL_AUTH_TOKEN: []
 
 paths:
-  /health:
+  /authorized:
     get:
       tags:
         - "Other"
-      summary: Perform an authenticated health check.
+      summary: Check if the client is authorized.
       responses:
         '200':
           $ref: '#/components/responses/Success'
