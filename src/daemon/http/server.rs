@@ -100,6 +100,14 @@ pub fn start(config: &Config) -> Result<(), Error> {
                         "/cas/{ca}/children/{child}/contact",
                         get().to(ca_parent_contact),
                     )
+                    .route(
+                        "/cas/{ca}/children/{child}/parent_response.json",
+                        get().to(ca_parent_res_json),
+                    )
+                    .route(
+                        "/cas/{ca}/children/{child}/parent_response.xml",
+                        get().to(ca_parent_res_xml),
+                    )
                     .route("/cas/{ca}/children/{child}", get().to(ca_show_child))
                     .route("/cas/{ca}/children/{child}", post().to(ca_child_update))
                     .route("/cas/{ca}/children/{child}", delete().to(ca_child_remove))

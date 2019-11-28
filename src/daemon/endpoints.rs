@@ -309,6 +309,40 @@ pub fn ca_parent_contact(
     })
 }
 
+pub fn ca_parent_res_json(
+    server: web::Data<AppServer>,
+    ca_and_child: Path<(Handle, Handle)>,
+    auth: Auth,
+) -> HttpResponse {
+    let ca_and_child = ca_and_child.into_inner();
+    let ca = ca_and_child.0;
+    let child = ca_and_child.1;
+
+    if_api_allowed(&server, &auth, || {
+        render_json_res(server.read().ca_parent_response(&ca, child.clone()))
+    })
+}
+
+pub fn ca_parent_res_xml(
+    server: web::Data<AppServer>,
+    ca_and_child: Path<(Handle, Handle)>,
+    auth: Auth,
+) -> HttpResponse {
+    let ca_and_child = ca_and_child.into_inner();
+    let ca = ca_and_child.0;
+    let child = ca_and_child.1;
+
+    if_api_allowed(&server, &auth, || {
+        match server.read().ca_parent_response(&ca, child.clone()) {
+            Ok(res) => HttpResponse::Ok()
+                .content_type("application/xml")
+                .body(res.encode_vec()),
+
+            Err(e) => server_error(&Error::ServerError(e)),
+        }
+    })
+}
+
 //------------ Admin: CertAuth -----------------------------------------------
 
 pub fn cas(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
