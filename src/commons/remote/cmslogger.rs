@@ -6,7 +6,7 @@ use rpki::x509::Time;
 
 use crate::commons::api::Handle;
 use crate::commons::util::file;
-use crate::constants::RFC6492_LOG_DIR;
+use crate::constants::{RFC6492_LOG_DIR, RFC8181_SENT_LOG_DIR};
 
 /// This type helps to log CMS (RFC8181 and RFC6492) protocol messages
 /// for auditing purposes.
@@ -28,6 +28,28 @@ impl CmsLogger {
         CmsLogger { path, now }
     }
 
+    pub fn for_rfc6492_sent(work_dir: &PathBuf, ca: &Handle, recipient: &Handle) -> Self {
+        let mut path = work_dir.clone();
+        path.push(RFC6492_LOG_DIR);
+        path.push(ca.as_str());
+        path.push("sent");
+        path.push(recipient.as_str());
+
+        let now = Time::now().timestamp_millis();
+
+        CmsLogger { path, now }
+    }
+
+    pub fn for_rfc8181_sent(work_dir: &PathBuf, ca: &Handle) -> Self {
+        let mut path = work_dir.clone();
+        path.push(RFC8181_SENT_LOG_DIR);
+        path.push(ca.as_str());
+
+        let now = Time::now().timestamp_millis();
+
+        CmsLogger { path, now }
+    }
+
     pub fn received(&self, msg: &Bytes) -> Result<(), io::Error> {
         let path = self.file_path("rcvd");
         file::save(msg, &path)
@@ -35,6 +57,11 @@ impl CmsLogger {
 
     pub fn reply(&self, msg: &Bytes) -> Result<(), io::Error> {
         let path = self.file_path("repl");
+        file::save(msg, &path)
+    }
+
+    pub fn sent(&self, msg: &Bytes) -> Result<(), io::Error> {
+        let path = self.file_path("sent");
         file::save(msg, &path)
     }
 

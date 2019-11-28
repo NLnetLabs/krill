@@ -12,6 +12,7 @@ pub const REPOSITORY_RRDP_DIR: &str = "rrdp";
 pub const REPOSITORY_RSYNC_DIR: &str = "rsync";
 
 pub const RFC6492_LOG_DIR: &str = "rfc6492";
+pub const RFC8181_SENT_LOG_DIR: &str = "rfc8181_sent";
 
 pub const KRILL_CLI_SERVER_ARG: &str = "server";
 pub const KRILL_CLI_SERVER_ENV: &str = "KRILL_CLI_SERVER";
