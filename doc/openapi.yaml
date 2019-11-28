@@ -524,7 +524,13 @@ paths:
       responses:
         '200':
           description: Success.
-          # TODO: Describe the response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/rfc6492'
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/RFC8183ParentResponseXML'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -1197,6 +1203,43 @@ components:
         sia_base: 'rsync://localhost/repo/ta/'
         rrdp_notification_uri: 'https://localhost:3000/rrdp/notification.xml'
         repository_bpki_ta: 'MIID..aQ=='
+    RFC8183ParentResponseXML:
+      type: object
+      properties:
+        xmlns:
+          type: string
+          format: url
+          xml:
+            attribute: true
+        version:
+          type: integer
+          xml:
+            attribute: true
+        service_uri:
+          type: string
+          format: uri
+          xml:
+            attribute: true
+        child_handle:
+          type: string
+          xml:
+            attribute: true
+        parent_handle:
+          type: string
+          xml:
+            attribute: true
+        parent_bpki_ta:
+          type: string
+          format: base64
+      xml:
+        name: 'parent_response'
+      example:
+        xmlns: http://www.hactrn.net/uris/rpki/rpki-setup/
+        version: 1
+        service_uri: 'https://localhost:3000/rfc6492/ta'
+        child_handle: 'child'
+        parent_handle: 'ta'
+        parent_bpki_ta: 'MIID..6g=='
     PendingKey:
       type: object
       properties:
