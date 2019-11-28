@@ -256,14 +256,20 @@ impl Config {
     pub fn create() -> Result<Self, ConfigError> {
         let config_file = Self::get_config_filename();
 
-        info!(
-            "{} uses configuration file: {}",
-            KRILL_SERVER_APP, config_file
-        );
-
-        let c = Self::read_config(&config_file)?;
-        c.init_logging()?;
-        Ok(c)
+        match Self::read_config(&config_file) {
+            Err(e) => Err(ConfigError::Other(format!(
+                "Error parsing config file: {}, error: {}",
+                config_file, e
+            ))),
+            Ok(config) => {
+                config.init_logging()?;
+                info!(
+                    "{} uses configuration file: {}",
+                    KRILL_SERVER_APP, config_file
+                );
+                Ok(config)
+            }
+        }
     }
 
     fn read_config(file: &str) -> Result<Self, ConfigError> {
