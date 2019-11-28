@@ -1009,8 +1009,6 @@ components:
       type: string
       maxLength: 255
       pattern: '[\-_A-Za-z0-9/]*'
-      example:
-        'ca'
     IdCert:
       type: string
       format: base64
