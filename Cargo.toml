@@ -17,7 +17,7 @@ clokwerk        = "^0.1"
 chrono          = { version = "^0.4", features = ["serde"] }
 clap            = "^2.32"
 derive_more     = "^0.13"
-fern            = "^0.5"
+fern            = { version = "^0.5", features = ["syslog-4"] }
 futures         = "0.1"
 hex             = "^0.3"
 lazy_static     = "^1.1"
@@ -34,6 +34,10 @@ toml            = "^0.4"
 tokio           = "^0.1"
 uuid            = "0.7"
 xml-rs          = "0.8.0"
+
+[target.'cfg(unix)'.dependencies]
+libc		    = "^0.2"
+syslog		    = "^4.0"
 
 [build-dependencies]
 ignore          = "^0.4"

@@ -7,9 +7,11 @@ use std::path::PathBuf;
 use std::str::FromStr;
 
 use clap::{App, Arg};
-use log::LevelFilter;
+use log::{error, LevelFilter};
 use serde::de;
 use serde::{Deserialize, Deserializer};
+#[cfg(unix)]
+use syslog::Facility;
 use toml;
 
 use rpki::uri;
@@ -57,6 +59,10 @@ impl ConfigDefaults {
     fn log_file() -> PathBuf {
         PathBuf::from("./krill.log")
     }
+    fn syslog_facility() -> String {
+        "daemon".to_string()
+    }
+
     fn auth_token() -> Token {
         match env::var("KRILL_AUTH_TOKEN") {
             Ok(token) => Token::from(token),
@@ -114,6 +120,9 @@ pub struct Config {
 
     #[serde(default = "ConfigDefaults::log_file")]
     log_file: PathBuf,
+
+    #[serde(default = "ConfigDefaults::syslog_facility")]
+    syslog_facility: String,
 
     #[serde(default = "ConfigDefaults::auth_token")]
     pub auth_token: Token,
@@ -181,6 +190,7 @@ impl Config {
         let log_type = LogType::Stderr;
         let mut log_file = data_dir.clone();
         log_file.push("krill.log");
+        let syslog_facility = ConfigDefaults::syslog_facility();
         let auth_token = Token::from("secret");
         let ca_refresh = 3600;
 
@@ -196,6 +206,7 @@ impl Config {
             log_level,
             log_type,
             log_file,
+            syslog_facility,
             auth_token,
             ca_refresh,
         }
@@ -273,6 +284,11 @@ impl Config {
         match self.log_type {
             LogType::File => self.file_logger(&self.log_file),
             LogType::Stderr => self.stderr_logger(),
+            LogType::Syslog => {
+                let facility = Facility::from_str(&self.syslog_facility)
+                    .map_err(|_| ConfigError::other("Invalid syslog_facility"))?;
+                self.syslog_logger(facility)
+            }
         }
     }
 
@@ -300,7 +316,41 @@ impl Config {
             .map_err(|e| ConfigError::Other(format!("Failed to init file logging: {}", e)))
     }
 
-    /// Creates and returns a fern logger
+    /// Creates a syslog logger and configures correctly.
+    #[cfg(unix)]
+    fn syslog_logger(&self, facility: syslog::Facility) -> Result<(), ConfigError> {
+        let process = env::current_exe()
+            .ok()
+            .and_then(|path| {
+                path.file_name()
+                    .and_then(std::ffi::OsStr::to_str)
+                    .map(ToString::to_string)
+            })
+            .unwrap_or_else(|| String::from("krill"));
+        let pid = unsafe { libc::getpid() };
+        let formatter = syslog::Formatter3164 {
+            facility,
+            hostname: None,
+            process,
+            pid,
+        };
+        let logger = syslog::unix(formatter.clone())
+            .or_else(|_| syslog::tcp(formatter.clone(), ("127.0.0.1", 601)))
+            .or_else(|_| syslog::udp(formatter, ("127.0.0.1", 0), ("127.0.0.1", 514)));
+        match logger {
+            Ok(logger) => self
+                .fern_logger()
+                .chain(logger)
+                .apply()
+                .map_err(|e| ConfigError::Other(format!("Failed to init syslog: {}", e))),
+            Err(err) => {
+                let msg = format!("Cannot connect to syslog: {}", err);
+                Err(ConfigError::Other(msg))
+            }
+        }
+    }
+
+    /// Creates and returns a fern logger with log level tweaks
     fn fern_logger(&self) -> fern::Dispatch {
         let framework_level = match self.log_level {
             LevelFilter::Off => LevelFilter::Off,
@@ -396,6 +446,7 @@ impl From<uri::Error> for ConfigError {
 pub enum LogType {
     Stderr,
     File,
+    Syslog,
 }
 
 impl<'de> Deserialize<'de> for LogType {
@@ -407,6 +458,7 @@ impl<'de> Deserialize<'de> for LogType {
         match string.as_str() {
             "stderr" => Ok(LogType::Stderr),
             "file" => Ok(LogType::File),
+            "syslog" => Ok(LogType::Syslog),
             _ => Err(de::Error::custom(format!(
                 "expected \"stderr\" or \"file\", found : \"{}\"",
                 string
