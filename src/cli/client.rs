@@ -59,7 +59,7 @@ impl KrillClient {
     }
 
     fn health(&self) -> Result<ApiResponse, Error> {
-        httpclient::get_ok(&self.resolve_uri("api/v1/health"), Some(&self.token))?;
+        httpclient::get_ok(&self.resolve_uri("api/v1/authorized"), Some(&self.token))?;
         Ok(ApiResponse::Health)
     }
 
@@ -249,11 +249,6 @@ impl KrillClient {
 
     fn resolve_uri(&self, path: &str) -> String {
         format!("{}{}", &self.server, path)
-    }
-
-    fn get_text(&self, uri: &str) -> Result<String, Error> {
-        let uri = self.resolve_uri(uri);
-        httpclient::get_text(&uri, Some(&self.token)).map_err(Error::HttpClientError)
     }
 
     fn get_json<T: DeserializeOwned>(&self, uri: &str) -> Result<T, Error> {
