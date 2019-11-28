@@ -61,7 +61,7 @@ pub fn start(config: &Config) -> Result<(), Error> {
             .service(
                 scope("/api/v1")
                     // Health
-                    .route("/health", get().to(api_health))
+                    .route("/authorized", get().to(api_authorized))
                     // Repositories and their publishers (both embedded and remote)
                     .route("/publishers", get().to(list_pbl))
                     .route("/publishers", post().to(add_pbl))

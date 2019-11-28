@@ -84,7 +84,7 @@ pub fn health() -> HttpResponse {
 }
 
 /// Returns the server health.
-pub fn api_health(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
+pub fn api_authorized(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
     if_api_allowed(&server, &auth, api_ok)
 }
 
