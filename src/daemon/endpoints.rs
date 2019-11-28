@@ -11,7 +11,6 @@ use crate::commons::api::{
     ParentHandle, PublisherHandle, PublisherList, RepositoryUpdate, RoaDefinitionUpdates,
     UpdateChildRequest,
 };
-use crate::commons::remote::sigmsg::SignedMessage;
 use crate::commons::remote::{rfc6492, rfc8181, rfc8183};
 use crate::daemon::auth::Auth;
 use crate::daemon::ca;
@@ -161,19 +160,13 @@ pub fn rfc8181(
     publisher: Path<PublisherHandle>,
     msg_bytes: Bytes,
 ) -> HttpResponse {
-    match SignedMessage::decode(msg_bytes, false) {
-        Ok(msg) => match server.read().rfc8181(publisher.into_inner(), msg) {
-            Ok(bytes) => HttpResponse::build(StatusCode::OK)
-                .content_type(rfc8181::CONTENT_TYPE)
-                .body(bytes),
-            Err(e) => {
-                error!("Error processing RFC8181 req: {}", e);
-                server_error(&Error::ServerError(e))
-            }
-        },
+    match server.read().rfc8181(publisher.into_inner(), msg_bytes) {
+        Ok(bytes) => HttpResponse::build(StatusCode::OK)
+            .content_type(rfc8181::CONTENT_TYPE)
+            .body(bytes),
         Err(e) => {
             error!("Error processing RFC8181 req: {}", e);
-            server_error(&Error::CmsError)
+            server_error(&Error::ServerError(e))
         }
     }
 }
@@ -742,7 +735,7 @@ impl ToErrorCode for krillserver::Error {
 impl ToErrorCode for pubd::Error {
     fn code(&self) -> ErrorCode {
         match self {
-            pubd::Error::Validation => ErrorCode::CmsValidation,
+            pubd::Error::Validation(_) => ErrorCode::CmsValidation,
             pubd::Error::Rfc8181MessageError(_) => ErrorCode::InvalidPublicationXml,
             pubd::Error::DuplicatePublisher(_) => ErrorCode::DuplicateHandle,
             pubd::Error::UnknownPublisher(_) => ErrorCode::UnknownPublisher,

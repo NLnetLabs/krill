@@ -26,8 +26,8 @@ pub enum Error {
     #[display(fmt = "There is no repository enabled in this Krill instance.")]
     NoRepository,
 
-    #[display(fmt = "Could not validate RFC8181 request")]
-    Validation,
+    #[display(fmt = "Could not decode or validate RFC8181 request: {}", _0)]
+    Validation(String),
 
     #[display(fmt = "{}", _0)]
     Rfc8181MessageError(rfc8181::MessageError),
@@ -54,9 +54,13 @@ impl Error {
         Error::SignerError(e.to_string())
     }
 
+    pub fn validation(e: impl fmt::Display) -> Self {
+        Error::Validation(e.to_string())
+    }
+
     pub fn to_rfc8181_error_code(&self) -> ReportErrorCode {
         match self {
-            Error::Validation | Error::UnknownPublisher(_) => ReportErrorCode::PermissionFailure,
+            Error::Validation(_) | Error::UnknownPublisher(_) => ReportErrorCode::PermissionFailure,
             Error::Rfc8181MessageError(_) => ReportErrorCode::XmlError,
             Error::RrdpVerificationError(e) => match e {
                 VerificationError::UriOutsideJail(_, _) => ReportErrorCode::PermissionFailure,
