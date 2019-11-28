@@ -35,8 +35,8 @@ impl ConfigDefaults {
     fn use_ta() -> bool {
         env::var("KRILL_USE_TA").is_ok()
     }
-    fn use_ssl() -> SslChoice {
-        SslChoice::Test
+    fn https_mode() -> HttpsMode {
+        HttpsMode::Generate
     }
     fn data_dir() -> PathBuf {
         PathBuf::from("./data")
@@ -95,8 +95,8 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::use_ta")]
     use_ta: bool,
 
-    #[serde(default = "ConfigDefaults::use_ssl")]
-    use_ssl: SslChoice,
+    #[serde(default = "ConfigDefaults::https_mode")]
+    https_mode: HttpsMode,
 
     #[serde(default = "ConfigDefaults::data_dir")]
     pub data_dir: PathBuf,
@@ -138,7 +138,7 @@ impl Config {
     }
 
     pub fn test_ssl(&self) -> bool {
-        self.use_ssl == SslChoice::Test
+        self.https_mode == HttpsMode::Generate
     }
 
     pub fn https_cert_file(&self) -> PathBuf {
@@ -181,7 +181,7 @@ impl Config {
         let ip = ConfigDefaults::ip();
         let port = ConfigDefaults::port();
         let use_ta = true;
-        let use_ssl = SslChoice::Test;
+        let use_ssl = HttpsMode::Generate;
         let data_dir = data_dir.clone();
         let rsync_base = ConfigDefaults::rsync_base();
         let service_uri = ConfigDefaults::service_uri();
@@ -198,7 +198,7 @@ impl Config {
             ip,
             port,
             use_ta,
-            use_ssl,
+            https_mode: use_ssl,
             data_dir,
             rsync_base,
             service_uri,
@@ -468,22 +468,22 @@ impl<'de> Deserialize<'de> for LogType {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum SslChoice {
-    Yes,
-    Test,
+pub enum HttpsMode {
+    Existing,
+    Generate,
 }
 
-impl<'de> Deserialize<'de> for SslChoice {
-    fn deserialize<D>(d: D) -> Result<SslChoice, D::Error>
+impl<'de> Deserialize<'de> for HttpsMode {
+    fn deserialize<D>(d: D) -> Result<HttpsMode, D::Error>
     where
         D: Deserializer<'de>,
     {
         let string = String::deserialize(d)?;
         match string.as_str() {
-            "yes" => Ok(SslChoice::Yes),
-            "test" => Ok(SslChoice::Test),
+            "existing" => Ok(HttpsMode::Existing),
+            "generate" => Ok(HttpsMode::Generate),
             _ => Err(de::Error::custom(format!(
-                "expected \"yes\", or \"test\", \
+                "expected \"existing\", or \"generate\", \
                  found: \"{}\"",
                 string
             ))),
