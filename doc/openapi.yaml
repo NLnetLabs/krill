@@ -501,6 +501,43 @@ paths:
         '500':
           $ref: '#/components/responses/GeneralCAServerError'
 
+  /cas/{ca_handle}/children/{child_handle}/parent_response.{format}:
+    get:
+      tags:
+        - "Certificate Authorities"
+      summary: Get the RFC 8183 Parent Response for a child.
+      description: |
+        To get the RFC 8183 Parent Response for a child, regardless of whether
+        the parent knows the ID Cert.
+
+        **Note:** You can use 'update child' to add a new ID cert to a child,
+        however, this is a real corner case that can only happen if you
+        mistakenly added a remote child as embedded, rather than using its
+        RFC 8183 Child Request.
+
+        For "embedded" CAs you will not need this parent response when you add
+        the "embedded" parent.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+        - $ref: '#/components/parameters/child_handle'
+        - $ref: '#/components/parameters/format'
+      responses:
+        '200':
+          description: Success.
+          # TODO: Describe the response body
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Unknown resource.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/UnknownChild'
+                  - $ref: '#/components/schemas/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
   /cas/{ca_handle}/history:
     get:
       tags:
@@ -1150,6 +1187,8 @@ components:
           format: base64
       xml:
         name: 'repository_response'
+      # The example below is not shown by ReDoc, presumably due to:
+      # https://github.com/Redocly/redoc/issues/492
       example:
         xmlns: http://www.hactrn.net/uris/rpki/rpki-setup/
         version: 1
