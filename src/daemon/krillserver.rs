@@ -492,8 +492,8 @@ impl KrillServer {
             .ca_keyroll_activate(handle, Duration::seconds(0))?)
     }
 
-    pub fn rfc6492(&self, handle: Handle, msg: SignedMessage) -> KrillRes<Bytes> {
-        Ok(self.caserver.rfc6492(&handle, msg)?)
+    pub fn rfc6492(&self, handle: Handle, msg_bytes: Bytes) -> KrillRes<Bytes> {
+        Ok(self.caserver.rfc6492(&handle, msg_bytes)?)
     }
 }
 

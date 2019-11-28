@@ -618,19 +618,13 @@ pub fn rfc6492(
     parent: Path<ParentHandle>,
     msg_bytes: Bytes,
 ) -> HttpResponse {
-    match SignedMessage::decode(msg_bytes, false) {
-        Ok(msg) => match server.read().rfc6492(parent.into_inner(), msg) {
-            Ok(bytes) => HttpResponse::build(StatusCode::OK)
-                .content_type(rfc6492::CONTENT_TYPE)
-                .body(bytes),
-            Err(e) => {
-                error!("Error processing RFC6492 req: {}", e);
-                server_error(&Error::ServerError(e))
-            }
-        },
+    match server.read().rfc6492(parent.into_inner(), msg_bytes) {
+        Ok(bytes) => HttpResponse::build(StatusCode::OK)
+            .content_type(rfc6492::CONTENT_TYPE)
+            .body(bytes),
         Err(e) => {
             error!("Error processing RFC6492 req: {}", e);
-            server_error(&Error::CmsError)
+            server_error(&Error::ServerError(e))
         }
     }
 }
