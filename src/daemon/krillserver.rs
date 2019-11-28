@@ -263,6 +263,18 @@ impl KrillServer {
         Ok(contact)
     }
 
+    /// Shows the parent contact for a child.
+    pub fn ca_parent_response(
+        &self,
+        parent: &ParentHandle,
+        child: ChildHandle,
+    ) -> KrillRes<rfc8183::ParentResponse> {
+        let contact = self
+            .caserver
+            .ca_parent_response(parent, child, None, &self.service_uri)?;
+        Ok(contact)
+    }
+
     /// Update IdCert or resources of a child.
     pub fn ca_child_update(
         &self,

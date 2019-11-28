@@ -181,7 +181,7 @@ impl<S: Signer> CaServer<S> {
         self.ca_parent_contact(parent, child_handle, tag, service_uri)
     }
 
-    /// Show a contact for a child.
+    /// Show a contact for a child. Shows "embedded" if the parent does not know any id cert for the child.
     pub fn ca_parent_contact(
         &self,
         parent: &ParentHandle,
@@ -191,23 +191,35 @@ impl<S: Signer> CaServer<S> {
     ) -> ServerResult<ParentCaContact> {
         let ca = self.get_ca(parent)?;
         let child = ca.get_child(&child_handle)?;
-
         if child.id_cert().is_some() {
-            let service_uri = format!("{}rfc6492/{}", service_uri.to_string(), ca.handle());
-            let service_uri = uri::Https::from_string(service_uri).unwrap();
-            let service_uri = rfc8183::ServiceUri::Https(service_uri);
-
-            let response = rfc8183::ParentResponse::new(
-                tag,
-                ca.id_cert().clone(),
-                ca.handle().clone(),
-                child_handle,
-                service_uri,
-            );
+            let response = self.ca_parent_response(parent, child_handle, tag, service_uri)?;
             Ok(ParentCaContact::for_rfc6492(response))
         } else {
             Ok(ParentCaContact::Embedded)
         }
+    }
+
+    /// Gets an RFC8183 Parent Response for the child, regardless of whether the parent knows the ID certificate
+    /// for this child. Note: a child can be updated and an ID cert can be added at all times.
+    pub fn ca_parent_response(
+        &self,
+        parent: &ParentHandle,
+        child_handle: ChildHandle,
+        tag: Option<String>,
+        service_uri: &uri::Https,
+    ) -> ServerResult<rfc8183::ParentResponse> {
+        let ca = self.get_ca(parent)?;
+        let service_uri = format!("{}rfc6492/{}", service_uri.to_string(), ca.handle());
+        let service_uri = uri::Https::from_string(service_uri).unwrap();
+        let service_uri = rfc8183::ServiceUri::Https(service_uri);
+
+        Ok(rfc8183::ParentResponse::new(
+            tag,
+            ca.id_cert().clone(),
+            ca.handle().clone(),
+            child_handle,
+            service_uri,
+        ))
     }
 
     /// Show details for a child under the TA.
