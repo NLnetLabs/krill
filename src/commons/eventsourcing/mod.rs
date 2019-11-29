@@ -160,6 +160,15 @@ mod tests {
     enum PersonError {
         #[display(fmt = "No person can live longer than 255 years")]
         TooOld,
+
+        #[display(fmt = "{}", _0)]
+        Custom(String),
+    }
+
+    impl From<AggregateStoreError> for PersonError {
+        fn from(e: AggregateStoreError) -> Self {
+            PersonError::Custom(e.to_string())
+        }
     }
 
     impl std::error::Error for PersonError {}
@@ -270,8 +279,7 @@ mod tests {
             let mut age = 0;
             loop {
                 let get_older = PersonCommand::go_around_sun(&id_alice, None);
-                let events = alice.process_command(get_older).unwrap();
-                alice = manager.update(&id_alice, alice, events).unwrap();
+                alice = manager.command(get_older).unwrap();
 
                 age += 1;
                 if age == 21 {
@@ -283,8 +291,7 @@ mod tests {
             assert_eq!(21, alice.age());
 
             let change_name = PersonCommand::change_name(&id_alice, Some(22), "alice smith-doe");
-            let events = alice.process_command(change_name).unwrap();
-            let alice = manager.update(&id_alice, alice, events).unwrap();
+            let alice = manager.command(change_name).unwrap();
             assert_eq!("alice smith-doe", alice.name());
             assert_eq!(21, alice.age());
 

@@ -1,8 +1,9 @@
 use std::fmt;
 
-use crate::commons::api::Handle;
+use rpki::x509::Time;
 
-use super::Event;
+use crate::commons::api::Handle;
+use crate::commons::eventsourcing::Event;
 
 //------------ Command -------------------------------------------------------
 
@@ -11,7 +12,7 @@ use super::Event;
 /// Think of this as the data container for your update API, plus some
 /// meta-data to ensure that the command is sent to the right instance of an
 /// Aggregate, and that concurrency issues are handled.
-pub trait Command {
+pub trait Command: fmt::Display {
     /// Identify the type of event returned by the aggregate that uses this
     /// command. This is needed because we may need to check whether a
     /// command conflicts with recent events.
@@ -25,6 +26,12 @@ pub trait Command {
     /// use None here.
     fn version(&self) -> Option<u64>;
 
+    /// The actor who sent the command. Defaults to "krill" so that it is not
+    /// mandatory to implement this.
+    fn actor(&self) -> &str {
+        "krill"
+    }
+
     /// In case of concurrent processing of commands, the aggregate may be
     /// outdated when a command is applied. In such cases this method expects
     /// the list of events that happened since the ['affected_version'] and
@@ -37,6 +44,9 @@ pub trait Command {
     fn conflicts(&self, _events: &[Self::Event]) -> bool {
         true
     }
+
+    /// Get a summary for the command audit log
+    fn summary(&self) -> String;
 }
 
 //------------ SentCommand ---------------------------------------------------
@@ -59,6 +69,10 @@ impl<C: CommandDetails> Command for SentCommand<C> {
 
     fn version(&self) -> Option<u64> {
         self.version
+    }
+
+    fn summary(&self) -> String {
+        self.details.to_string()
     }
 }
 
@@ -97,4 +111,88 @@ impl<C: CommandDetails> fmt::Display for SentCommand<C> {
 /// id and version boilerplate from ['SentCommand'].
 pub trait CommandDetails: fmt::Display + 'static {
     type Event: Event;
+}
+
+//------------ StoredCommand -------------------------------------------------
+
+/// A description of a command that was processed, and the events / or error
+/// that followed. Commands that turn out to be no-ops (no events, no errors)
+/// should not be stored.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct StoredCommand {
+    actor: String,
+    time: Time,
+    handle: Handle,
+    version: u64,
+    summary: String,
+    effect: StoredEffect,
+}
+
+impl StoredCommand {
+    pub fn time(&self) -> Time {
+        self.time
+    }
+
+    pub fn handle(&self) -> &Handle {
+        &self.handle
+    }
+}
+
+//------------ StoredEffect --------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StoredEffect {
+    Error(String),
+    Events(Vec<u64>),
+}
+
+//------------ StoredCommandBuilder ------------------------------------------
+
+/// Builder to avoid cloning commands, so they can be sent to the aggregate by value,
+/// and we can add the effect later.
+pub struct StoredCommandBuilder {
+    actor: String,
+    time: Time,
+    handle: Handle,
+    version: u64,
+    summary: String,
+}
+
+impl StoredCommandBuilder {
+    pub fn new<C: Command>(cmd: &C, version: u64) -> Self {
+        let actor = cmd.actor().to_string();
+        let time = Time::now();
+        let handle = cmd.handle().clone();
+        let summary = cmd.summary();
+        StoredCommandBuilder {
+            actor,
+            time,
+            handle,
+            version,
+            summary,
+        }
+    }
+
+    fn finish(self, effect: StoredEffect) -> StoredCommand {
+        StoredCommand {
+            actor: self.actor,
+            time: self.time,
+            handle: self.handle,
+            version: self.version,
+            summary: self.summary,
+            effect,
+        }
+    }
+
+    pub fn finish_with_events<E: Event>(self, events: &[E]) -> StoredCommand {
+        let events = events.iter().map(|e| e.version()).collect();
+        let effect = StoredEffect::Events(events);
+        self.finish(effect)
+    }
+
+    pub fn finish_with_error<E: fmt::Display>(self, err: &E) -> StoredCommand {
+        let effect = StoredEffect::Error(err.to_string());
+        self.finish(effect)
+    }
 }
