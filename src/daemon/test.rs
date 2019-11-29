@@ -305,7 +305,7 @@ pub fn ca_details(handle: &Handle) -> CertAuthInfo {
 
 pub fn ca_key_for_rcn(handle: &Handle, rcn: &ResourceClassName) -> CertifiedKeyInfo {
     ca_details(handle)
-        .resources()
+        .resource_classes()
         .get(rcn)
         .unwrap()
         .current_key()
@@ -338,7 +338,7 @@ pub fn wait_for_current_resources(handle: &Handle, resources: &ResourceSet) {
 pub fn wait_for_new_key(handle: &Handle) {
     wait_for(30, "No new key received", move || {
         let ca = ca_details(handle);
-        if let Some(rc) = ca.resources().get(&ResourceClassName::default()) {
+        if let Some(rc) = ca.resource_classes().get(&ResourceClassName::default()) {
             match rc.keys() {
                 ResourceClassKeysInfo::RollNew(_) => return true,
                 _ => return false,
@@ -353,7 +353,7 @@ pub fn wait_for_key_roll_complete(handle: &Handle) {
     wait_for(30, "Key roll did not complete", || {
         let ca = ca_details(handle);
 
-        if let Some(rc) = ca.resources().get(&ResourceClassName::default()) {
+        if let Some(rc) = ca.resource_classes().get(&ResourceClassName::default()) {
             match rc.keys() {
                 ResourceClassKeysInfo::Active(_) => return true,
                 _ => return false,
@@ -367,7 +367,9 @@ pub fn wait_for_key_roll_complete(handle: &Handle) {
 pub fn wait_for_resource_class_to_disappear(handle: &Handle) {
     wait_for(30, "Resource class not removed", || {
         let ca = ca_details(handle);
-        ca.resources().get(&ResourceClassName::default()).is_none()
+        ca.resource_classes()
+            .get(&ResourceClassName::default())
+            .is_none()
     })
 }
 
@@ -387,7 +389,7 @@ pub fn ca_current_resources(handle: &Handle) -> ResourceSet {
 
     let mut res = ResourceSet::default();
 
-    for rc in ca.resources().values() {
+    for rc in ca.resource_classes().values() {
         if let Some(resources) = rc.current_resources() {
             res = res.union(resources)
         }

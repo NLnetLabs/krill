@@ -13,10 +13,10 @@ use rpki::x509::Time;
 
 use crate::commons::api::rrdp::PublishElement;
 use crate::commons::api::{
-    self, CertAuthInfo, ChildHandle, EntitlementClass, Entitlements, Handle, IssuanceRequest,
-    IssuedCert, ObjectsDelta, ParentCaContact, ParentHandle, RcvdCert, RepositoryContact,
-    RequestResourceLimit, ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse,
-    RoaDefinition, SigningCert, UpdateChildRequest,
+    self, CertAuthInfo, ChildHandle, EntitlementClass, Entitlements, Handle, IdCertPem,
+    IssuanceRequest, IssuedCert, ObjectsDelta, ParentCaContact, ParentHandle, RcvdCert,
+    RepositoryContact, RequestResourceLimit, ResourceClassName, ResourceSet, RevocationRequest,
+    RevocationResponse, RoaDefinition, SigningCert, UpdateChildRequest,
 };
 use crate::commons::eventsourcing::{Aggregate, StoredEvent};
 use crate::commons::remote::builder::{IdCertBuilder, SignedMessageBuilder};
@@ -364,7 +364,9 @@ impl<S: Signer> CertAuth<S> {
         }
         let children: Vec<ChildHandle> = self.children.keys().cloned().collect();
 
-        CertAuthInfo::new(handle, repo_info, parents, resources, children)
+        let id_cert_pem = IdCertPem::from(&self.id.cert);
+
+        CertAuthInfo::new(handle, id_cert_pem, repo_info, parents, resources, children)
     }
 
     pub fn roa_definitions(&self) -> Vec<RoaDefinition> {
