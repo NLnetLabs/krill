@@ -1012,6 +1012,16 @@ components:
     IdCert:
       type: string
       format: base64
+    PemIdCert:
+      type: object
+      nullable: true
+      properties:
+        pem:
+          type: string
+          format: pem
+        hash:
+          type: string
+          format: hash
     RepoInfo:
       type: object
       properties:
@@ -1616,6 +1626,8 @@ components:
             properties:
               handle:
                 $ref: '#/components/schemas/Handle'
+              id_cert:
+                $ref: '#/components/schemas/PemIdCert'
               repo_info:
                 $ref: '#/components/schemas/RepoInfo'
               parents:
@@ -1628,6 +1640,8 @@ components:
                     kind:
                       type: string
               resources:
+                $ref: '#/components/schemas/Resources'
+              resources_classes:
                 type: object
                 additionalProperties:
                   x-additionalPropertiesName: resource index
@@ -1712,6 +1726,10 @@ components:
               - handle: 'ta'
                 kind: 'ta'
             resources:
+                asn: 'AS1-AS10'
+                v4: '10.0.0.0/8'
+                v6: '::/128'
+            resource_classes:
               '0':
                 name_space: '0'
                 parent_handle: 'ta'
@@ -1762,15 +1780,7 @@ components:
             type: object
             properties:
               id_cert:
-                type: object
-                nullable: true
-                properties:
-                  pem:
-                    type: string
-                    format: pem
-                  hash:
-                    type: string
-                    format: hash
+                $ref: '#/components/schemas/PemIdCert'
               entitled_resources:
                 $ref: '#/components/schemas/Resources'
     ListPublishers:
