@@ -155,7 +155,20 @@ impl Report for CertAuthInfo {
                 res.push_str("\n");
                 res.push_str(&format!("Base uri: {}\n", base_uri));
                 res.push_str(&format!("RRDP uri: {}\n", rrdp_uri));
+                res.push_str("\n");
+                res.push_str(&format!("ID cert PEM:\n{}\n", self.id_cert().pem()));
+                res.push_str(&format!("Hash: {}\n", self.id_cert().hash()));
+                res.push_str("\n");
 
+                let resources = self.resources();
+                if resources.is_empty() {
+                    res.push_str("Total resources: <none>\n");
+                } else {
+                    res.push_str("Total resources:\n");
+                    res.push_str(&format!("    ASNs: {}\n", resources.asn()));
+                    res.push_str(&format!("    IPv4: {}\n", resources.v4()));
+                    res.push_str(&format!("    IPv6: {}\n", resources.v6()));
+                }
                 res.push_str("\n");
 
                 fn print_objects(res: &mut String, objects: &CurrentObjects) {
@@ -174,7 +187,7 @@ impl Report for CertAuthInfo {
                     res.push_str("<none>\n")
                 }
 
-                for (name, rc) in self.resources() {
+                for (name, rc) in self.resource_classes() {
                     res.push_str(&format!("Resource Class: {}\n", name,));
                     res.push_str(&format!("Parent: {}\n", rc.parent_handle()));
                     res.push_str(&format!("{}", rc.keys()));

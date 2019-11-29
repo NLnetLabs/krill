@@ -102,11 +102,20 @@ pub enum Error {
 
     #[display(fmt = "Error getting list query from new repository: {}", _0)]
     NewRepoUpdateNotResponsive(String),
+
+    #[display(fmt = "{}", _0)]
+    Custom(String),
 }
 
 impl From<rfc6492::Error> for Error {
     fn from(e: rfc6492::Error) -> Self {
         Error::Rfc6492(e)
+    }
+}
+
+impl From<AggregateStoreError> for Error {
+    fn from(e: AggregateStoreError) -> Self {
+        Error::Custom(e.to_string())
     }
 }
 

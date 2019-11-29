@@ -9,11 +9,13 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json;
 
-use crate::commons::api::Handle;
-use crate::commons::util::file;
+use rpki::x509::Time;
 
-use super::{Aggregate, Event};
-use commons::eventsourcing::agg::AggregateHistory;
+use crate::commons::api::Handle;
+use crate::commons::eventsourcing::agg::AggregateHistory;
+use crate::commons::eventsourcing::cmd::StoredCommand;
+use crate::commons::eventsourcing::{Aggregate, Event};
+use crate::commons::util::file;
 
 //------------ Storable ------------------------------------------------------
 
@@ -28,9 +30,9 @@ pub trait KeyStore {
 
     fn key_for_snapshot() -> Self::Key;
     fn key_for_event(version: u64) -> Self::Key;
+    fn key_for_command(time: Time) -> Self::Key;
 
     /// Returns whether a key already exists.
-
     fn has_key(&self, id: &Handle, key: &Self::Key) -> bool;
 
     fn has_aggregate(&self, id: &Handle) -> bool;
@@ -59,6 +61,8 @@ pub trait KeyStore {
     fn get_event<V: Event>(&self, id: &Handle, version: u64) -> Result<Option<V>, KeyStoreError>;
 
     fn store_event<V: Event>(&self, event: &V) -> Result<(), KeyStoreError>;
+
+    fn store_command(&self, command: StoredCommand) -> Result<(), KeyStoreError>;
 
     /// Get the latest aggregate
 
@@ -125,6 +129,12 @@ impl KeyStore for DiskKeyStore {
 
     fn key_for_event(version: u64) -> Self::Key {
         PathBuf::from(format!("delta-{}.json", version))
+    }
+
+    fn key_for_command(time: Time) -> Self::Key {
+        let seconds = time.timestamp();
+        let micros = time.timestamp_subsec_micros();
+        PathBuf::from(format!("{}_{}.cmd", seconds, micros))
     }
 
     fn has_key(&self, id: &Handle, key: &Self::Key) -> bool {
@@ -222,6 +232,17 @@ impl KeyStore for DiskKeyStore {
             Err(KeyStoreError::KeyExists(key.to_string_lossy().to_string()))
         } else {
             self.store(id, &key, event)
+        }
+    }
+
+    fn store_command(&self, command: StoredCommand) -> Result<(), KeyStoreError> {
+        let id = command.handle();
+        let key = Self::key_for_command(command.time());
+
+        if self.has_key(id, &key) {
+            Err(KeyStoreError::KeyExists(key.to_string_lossy().to_string()))
+        } else {
+            self.store(id, &key, &command)
         }
     }
 

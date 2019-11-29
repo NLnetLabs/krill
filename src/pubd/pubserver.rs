@@ -8,9 +8,7 @@ use rpki::uri;
 use crate::commons::api::{
     Handle, ListReply, PublishDelta, PublisherDetails, PublisherHandle, RepoInfo, RepositoryHandle,
 };
-use crate::commons::eventsourcing::{
-    Aggregate, AggregateStore, AggregateStoreError, DiskAggregateStore,
-};
+use crate::commons::eventsourcing::{AggregateStore, AggregateStoreError, DiskAggregateStore};
 use crate::commons::remote::builder::SignedMessageBuilder;
 use crate::commons::remote::cmslogger::CmsLogger;
 use crate::commons::remote::rfc8181;
@@ -156,10 +154,7 @@ impl PubServer {
     pub fn publish(&self, publisher: PublisherHandle, delta: PublishDelta) -> Result<(), Error> {
         let repository_handle = Self::repository_handle();
         let cmd = CmdDet::publish(&repository_handle, publisher, delta);
-        let repository = self.repository()?;
-        let events = repository.process_command(cmd)?;
-        self.store.update(&repository_handle, repository, events)?;
-
+        self.store.command(cmd)?;
         self.write_repository()
     }
 
@@ -209,9 +204,7 @@ impl PubServer {
     pub fn create_publisher(&self, req: rfc8183::PublisherRequest) -> Result<(), Error> {
         let repository_handle = Self::repository_handle();
         let cmd = CmdDet::add_publisher(&repository_handle, req);
-        let repository = self.repository()?;
-        let events = repository.process_command(cmd)?;
-        self.store.update(&repository_handle, repository, events)?;
+        self.store.command(cmd)?;
         Ok(())
     }
 
@@ -222,13 +215,8 @@ impl PubServer {
     pub fn remove_publisher(&self, publisher: PublisherHandle) -> Result<(), Error> {
         let repository_handle = Self::repository_handle();
         let cmd = CmdDet::remove_publisher(&repository_handle, publisher);
-        let repository = self.repository()?;
-        let events = repository.process_command(cmd)?;
-        self.store.update(&repository_handle, repository, events)?;
-
-        self.write_repository()?;
-
-        Ok(())
+        self.store.command(cmd)?;
+        self.write_repository()
     }
 }
 

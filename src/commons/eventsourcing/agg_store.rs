@@ -6,6 +6,7 @@ use std::sync::RwLock;
 
 use crate::commons::api::Handle;
 use crate::commons::eventsourcing::agg::AggregateHistory;
+use crate::commons::eventsourcing::cmd::{Command, StoredCommandBuilder};
 use crate::commons::eventsourcing::{
     Aggregate, DiskKeyStore, Event, EventListener, KeyStore, KeyStoreError,
 };
@@ -14,7 +15,10 @@ const SNAPSHOT_FREQ: u64 = 5;
 
 pub type StoreResult<T> = Result<T, AggregateStoreError>;
 
-pub trait AggregateStore<A: Aggregate>: Send + Sync {
+pub trait AggregateStore<A: Aggregate>: Send + Sync
+where
+    A::Error: From<AggregateStoreError>,
+{
     /// Gets the latest version for the given aggregate. Returns
     /// an AggregateStoreError::UnknownAggregate in case the aggregate
     /// does not exist.
@@ -23,15 +27,11 @@ pub trait AggregateStore<A: Aggregate>: Send + Sync {
     /// Adds a new aggregate instance based on the init event.
     fn add(&self, init: A::InitEvent) -> StoreResult<Arc<A>>;
 
-    /// Updates the aggregate instance in the store. Expects that the
-    /// Arc<A> retrieved using 'get_latest' is moved here, so clone on
-    /// writes can be avoided, and a verification can be done that there
-    /// is no concurrent modification. Returns the updated instance if all
-    /// is well, or an `AggregateStoreError::ConcurrentModification` if you
-    /// try to update an outdated instance.
-    //
-    // TODO: Remove the `id` argument, it is also in the aggregate.
-    fn update(&self, id: &Handle, agg: Arc<A>, events: Vec<A::Event>) -> StoreResult<Arc<A>>;
+    /// Sends a command to the appropriate aggregate, and on
+    /// success: save command and events, return aggregate
+    /// no-op: do not save any thing, return aggregate
+    /// error: save command and error, return error
+    fn command(&self, cmd: A::Command) -> Result<Arc<A>, A::Error>;
 
     /// Returns true if an instance exists for the id
     fn has(&self, id: &Handle) -> bool;
@@ -146,7 +146,10 @@ impl<A: Aggregate> DiskAggregateStore<A> {
     }
 }
 
-impl<A: Aggregate> AggregateStore<A> for DiskAggregateStore<A> {
+impl<A: Aggregate> AggregateStore<A> for DiskAggregateStore<A>
+where
+    A::Error: From<AggregateStoreError>,
+{
     fn get_latest(&self, handle: &Handle) -> StoreResult<Arc<A>> {
         let _lock = self.outer_lock.read().unwrap();
         self.get_latest_no_lock(handle)
@@ -168,80 +171,107 @@ impl<A: Aggregate> AggregateStore<A> for DiskAggregateStore<A> {
         Ok(arc)
     }
 
-    fn update(&self, handle: &Handle, prev: Arc<A>, events: Vec<A::Event>) -> StoreResult<Arc<A>> {
+    fn command(&self, cmd: A::Command) -> Result<Arc<A>, A::Error> {
         let _lock = self.outer_lock.write().unwrap();
 
         // Get the latest arc.
-        let mut latest = self.get_latest_no_lock(handle)?;
-        {
-            // Verify whether there is a concurrency issue
-            if prev.version() != latest.version() {
-                let history = self.history(handle)?;
+        let handle = cmd.handle().clone();
 
-                let events_str: Vec<String> = events.iter().map(|evt| evt.to_string()).collect();
+        let mut latest = self.get_latest_no_lock(&handle)?;
 
+        if let Some(version) = cmd.version() {
+            if version != latest.version() {
                 error!(
-                    "Version conflict updating '{}'\n\tHistory:\n{}\n\tNew events:\n{}\n",
+                    "Version conflict updating '{}', expected version: {}, found: {}",
                     handle,
-                    history,
-                    events_str.join("\n")
+                    version,
+                    latest.version()
                 );
 
-                return Err(AggregateStoreError::ConcurrentModification(handle.clone()));
-            }
-
-            // forget the previous version
-            std::mem::forget(prev);
-
-            // make the arc mutable, hopefully forgetting prev will avoid the clone
-            let agg = Arc::make_mut(&mut latest);
-
-            // Using a lock on the hashmap here to ensure that all updates happen sequentially.
-            // It would be better to get a lock only for this specific aggregate. So it may be
-            // worth rethinking the structure.
-            //
-            // That said.. saving and applying events is really quick, so this should not hurt
-            // performance much.
-            //
-            // Also note that we don't need the lock to update the inner arc in the cache. We
-            // just need it to be in scope until we are done updating.
-            let mut cache = self.cache.write().unwrap();
-
-            // There is a possible race condition. We may only have obtained the lock
-            if self.has_updates(handle, &agg)? {
-                self.store.update_aggregate(handle, agg)?;
-            }
-
-            let version_before = agg.version();
-            let nr_events = events.len() as u64;
-
-            for i in 0..nr_events {
-                let event = &events[i as usize];
-                if event.version() != version_before + i || event.handle() != handle {
-                    return Err(AggregateStoreError::WrongEventForAggregate);
-                }
-            }
-
-            for event in &events {
-                self.store.store_event(event)?;
-
-                agg.apply(event.clone());
-                if agg.version() % SNAPSHOT_FREQ == 0 {
-                    self.store.store_aggregate(handle, agg)?;
-                }
-            }
-
-            cache.insert(handle.clone(), Arc::new(agg.clone()));
-
-            // Only send this to listeners after everything has been saved.
-            for event in events {
-                for listener in &self.listeners {
-                    listener.as_ref().listen(agg, &event);
-                }
+                return Err(A::Error::from(AggregateStoreError::ConcurrentModification(
+                    handle,
+                )));
             }
         }
 
-        Ok(latest)
+        let stored_command_builder = StoredCommandBuilder::new(&cmd, latest.version());
+
+        match latest.process_command(cmd) {
+            Err(e) => {
+                let stored_command = stored_command_builder.finish_with_error(&e);
+                self.store
+                    .store_command(stored_command)
+                    .map_err(AggregateStoreError::KeyStoreError)?;
+                Err(e)
+            }
+            Ok(events) => {
+                if events.is_empty() {
+                    Ok(latest)
+                } else {
+                    let agg = Arc::make_mut(&mut latest);
+
+                    // Using a lock on the hashmap here to ensure that all updates happen sequentially.
+                    // It would be better to get a lock only for this specific aggregate. So it may be
+                    // worth rethinking the structure.
+                    //
+                    // That said.. saving and applying events is really quick, so this should not hurt
+                    // performance much.
+                    //
+                    // Also note that we don't need the lock to update the inner arc in the cache. We
+                    // just need it to be in scope until we are done updating.
+                    let mut cache = self.cache.write().unwrap();
+
+                    // It should be impossible to get events for the wrong aggregate, and the wrong
+                    // versions, because we are doing the update here inside the outer lock, and aggregates
+                    // generally do not lie about who do they are.
+                    //
+                    // Still.. some defensive coding in case we do have some issue. Double check that the
+                    // events are for this aggregate, and are a contiguous sequence of version starting with
+                    // this version.
+                    let version_before = agg.version();
+                    let nr_events = events.len() as u64;
+                    for i in 0..nr_events {
+                        let event = &events[i as usize];
+                        if event.version() != version_before + i || event.handle() != &handle {
+                            return Err(A::Error::from(
+                                AggregateStoreError::WrongEventForAggregate,
+                            ));
+                        }
+                    }
+
+                    // Time to start saving things.
+                    let stored_command =
+                        stored_command_builder.finish_with_events(events.as_slice());
+                    self.store
+                        .store_command(stored_command)
+                        .map_err(AggregateStoreError::KeyStoreError)?;
+
+                    for event in &events {
+                        self.store
+                            .store_event(event)
+                            .map_err(AggregateStoreError::KeyStoreError)?;
+
+                        agg.apply(event.clone());
+                        if agg.version() % SNAPSHOT_FREQ == 0 {
+                            self.store
+                                .store_aggregate(&handle, agg)
+                                .map_err(AggregateStoreError::KeyStoreError)?;
+                        }
+                    }
+
+                    cache.insert(handle, Arc::new(agg.clone()));
+
+                    // Only send this to listeners after everything has been saved.
+                    for event in events {
+                        for listener in &self.listeners {
+                            listener.as_ref().listen(agg, &event);
+                        }
+                    }
+
+                    Ok(latest)
+                }
+            }
+        }
     }
 
     fn has(&self, id: &Handle) -> bool {
@@ -256,7 +286,6 @@ impl<A: Aggregate> AggregateStore<A> for DiskAggregateStore<A> {
 
     fn add_listener<L: EventListener<A>>(&mut self, listener: Arc<L>) {
         let _lock = self.outer_lock.write().unwrap();
-
         self.listeners.push(listener)
     }
 

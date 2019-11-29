@@ -1462,18 +1462,21 @@ impl fmt::Display for ParentInfo {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthInfo {
     handle: Handle,
+    id_cert: IdCertPem,
     repo_info: RepoInfo,
     parents: Vec<ParentInfo>,
-    resources: HashMap<ResourceClassName, ResourceClassInfo>,
+    resources: ResourceSet,
+    resource_classes: HashMap<ResourceClassName, ResourceClassInfo>,
     children: Vec<ChildHandle>,
 }
 
 impl CertAuthInfo {
     pub fn new(
         handle: Handle,
+        id_cert: IdCertPem,
         repo_info: RepoInfo,
         parents: HashMap<ParentHandle, ParentCaContact>,
-        resources: HashMap<ResourceClassName, ResourceClassInfo>,
+        resource_classes: HashMap<ResourceClassName, ResourceClassInfo>,
         children: Vec<ChildHandle>,
     ) -> Self {
         let parents = parents
@@ -1481,17 +1484,31 @@ impl CertAuthInfo {
             .map(|(handle, contact)| ParentInfo::new(handle, contact))
             .collect();
 
+        let empty = ResourceSet::default();
+        let resources = resource_classes
+            .values()
+            .fold(ResourceSet::default(), |res, rci| {
+                let rc_resouces = rci.current_resources().unwrap_or(&empty);
+                res.union(rc_resouces)
+            });
+
         CertAuthInfo {
             handle,
+            id_cert,
             repo_info,
             parents,
             resources,
+            resource_classes,
             children,
         }
     }
 
     pub fn handle(&self) -> &Handle {
         &self.handle
+    }
+
+    pub fn id_cert(&self) -> &IdCertPem {
+        &self.id_cert
     }
 
     pub fn repo_repo(&self) -> &RepoInfo {
@@ -1502,8 +1519,12 @@ impl CertAuthInfo {
         &self.parents
     }
 
-    pub fn resources(&self) -> &HashMap<ResourceClassName, ResourceClassInfo> {
+    pub fn resources(&self) -> &ResourceSet {
         &self.resources
+    }
+
+    pub fn resource_classes(&self) -> &HashMap<ResourceClassName, ResourceClassInfo> {
+        &self.resource_classes
     }
 
     pub fn children(&self) -> &Vec<ChildHandle> {
@@ -1512,7 +1533,7 @@ impl CertAuthInfo {
 
     pub fn published_objects(&self) -> Vec<Publish> {
         let mut res = vec![];
-        for (_rc_name, rc) in self.resources.iter() {
+        for (_rc_name, rc) in self.resource_classes.iter() {
             let name_space = rc.name_space();
             res.append(&mut rc.current_objects().publish(self.repo_repo(), name_space));
         }

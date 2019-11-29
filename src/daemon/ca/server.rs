@@ -16,7 +16,7 @@ use crate::commons::api::{
     PublishDelta, RcvdCert, RepoInfo, RepositoryContact, ResourceClassName, ResourceSet,
     RevocationRequest, RevocationResponse, UpdateChildRequest,
 };
-use crate::commons::eventsourcing::{Aggregate, AggregateStore, Command, DiskAggregateStore};
+use crate::commons::eventsourcing::{Aggregate, AggregateStore, DiskAggregateStore};
 use crate::commons::remote::builder::SignedMessageBuilder;
 use crate::commons::remote::cmslogger::CmsLogger;
 use crate::commons::remote::id::IdCert;
@@ -80,27 +80,24 @@ impl<S: Signer> CaServer<S> {
             let ta = self.ca_store.add(init)?;
 
             let ta_cert = ta.parent(&handle).unwrap().to_ta_cert();
-
             let rcvd_cert = RcvdCert::new(ta_cert.clone(), ta_aia, ResourceSet::all_resources());
 
-            let events = ta.process_command(CmdDet::upd_received_cert(
+            let command = CmdDet::upd_received_cert(
                 &handle,
                 ResourceClassName::default(),
                 rcvd_cert,
                 self.signer.clone(),
-            ))?;
+            );
 
-            self.ca_store.update(&handle, ta, events)?;
+            self.ca_store.command(command)?;
+
             Ok(())
         }
     }
 
     /// Send a command to a CA
     fn send_command(&self, cmd: Cmd<S>) -> ServerResult<()> {
-        let handle = cmd.handle().clone();
-        let ca = self.get_ca(&handle)?;
-        let events = ca.process_command(cmd)?;
-        self.ca_store.update(&handle, ca, events)?;
+        self.ca_store.command(cmd)?;
         Ok(())
     }
 
@@ -160,8 +157,6 @@ impl<S: Signer> CaServer<S> {
         service_uri: &uri::Https,
     ) -> ServerResult<ParentCaContact> {
         info!("CA '{}' process add child request: {}", &parent, &req);
-
-        let ca = self.get_ca(parent)?;
         let (child_handle, child_res, child_auth) = req.unwrap();
 
         let id_cert = match &child_auth {
@@ -170,9 +165,7 @@ impl<S: Signer> CaServer<S> {
         };
 
         let add_child = CmdDet::child_add(&parent, child_handle.clone(), id_cert, child_res);
-
-        let events = ca.process_command(add_child)?;
-        self.ca_store.update(&parent, ca, events)?;
+        self.ca_store.command(add_child)?;
 
         let tag = match child_auth {
             ChildAuthRequest::Rfc8183(req) => req.tag().cloned(),
@@ -355,8 +348,6 @@ impl<S: Signer> CaServer<S> {
         child: &ChildHandle,
         issue_req: IssuanceRequest,
     ) -> ServerResult<IssuanceResponse> {
-        let ca = self.get_ca(parent)?;
-
         let class_name = issue_req.class_name();
         let pub_key = issue_req.csr().public_key();
 
@@ -367,8 +358,7 @@ impl<S: Signer> CaServer<S> {
             self.signer.clone(),
         );
 
-        let events = ca.process_command(cmd)?;
-        let ca = self.ca_store.update(parent, ca, events)?;
+        let ca = self.ca_store.command(cmd)?;
 
         // The updated CA will now include the newly issued certificate.
         let response = ca.issuance_response(child, &class_name, pub_key)?;
@@ -386,10 +376,7 @@ impl<S: Signer> CaServer<S> {
         let res = (&revoke_request).into(); // response provided that no errors are returned earlier
 
         let cmd = CmdDet::child_revoke_key(ca_handle, child, revoke_request, self.signer.clone());
-
-        let ca = self.get_ca(ca_handle)?;
-        let events = ca.process_command(cmd)?;
-        self.ca_store.update(ca_handle, ca, events)?;
+        self.ca_store.command(cmd)?;
 
         Ok(res)
     }
@@ -417,27 +404,16 @@ impl<S: Signer> CaServer<S> {
     }
 
     pub fn ca_update_id(&self, handle: Handle) -> ServerResult<()> {
-        let ca = self.get_ca(&handle)?;
-
         let cmd = CmdDet::update_id(&handle, self.signer.clone());
-        let events = ca.process_command(cmd)?;
-
-        self.ca_store.update(&handle, ca, events)?;
-
-        Ok(())
+        self.send_command(cmd)
     }
 
     /// Adds a parent to a CA
     pub fn ca_add_parent(&self, handle: Handle, parent: ParentCaReq) -> ServerResult<()> {
-        let ca = self.get_ca(&handle)?;
         let (parent_handle, parent_contact) = parent.unwrap();
 
         let add = CmdDet::add_parent(&handle, parent_handle, parent_contact);
-        let events = ca.process_command(add)?;
-
-        self.ca_store.update(&handle, ca, events)?;
-
-        Ok(())
+        self.send_command(add)
     }
 
     /// Updates a parent of a CA
@@ -447,14 +423,8 @@ impl<S: Signer> CaServer<S> {
         parent: ParentHandle,
         contact: ParentCaContact,
     ) -> ServerResult<()> {
-        let ca = self.get_ca(&handle)?;
-
         let upd = CmdDet::update_parent(&handle, parent, contact);
-        let events = ca.process_command(upd)?;
-
-        self.ca_store.update(&handle, ca, events)?;
-
-        Ok(())
+        self.send_command(upd)
     }
 
     /// Removes a parent from a CA
@@ -539,7 +509,7 @@ impl<S: Signer> CaServer<S> {
         handle: &Handle,
         parent: &ParentHandle,
     ) -> ServerResult<()> {
-        let mut child = self.ca_store.get_latest(handle)?;
+        let child = self.ca_store.get_latest(handle)?;
         let requests = child.revoke_requests(parent);
 
         let revoke_responses = self.send_revoke_requests(handle, parent, requests)?;
@@ -547,8 +517,7 @@ impl<S: Signer> CaServer<S> {
         for (rcn, revoke_responses) in revoke_responses.into_iter() {
             for response in revoke_responses.into_iter() {
                 let cmd = CmdDet::key_roll_finish(handle, rcn.clone(), response);
-                let events = child.process_command(cmd)?;
-                child = self.ca_store.update(handle, child, events)?;
+                self.send_command(cmd)?;
             }
         }
 
@@ -581,7 +550,6 @@ impl<S: Signer> CaServer<S> {
         handle: &Handle,
         parent_h: &ParentHandle,
     ) -> ServerResult<HashMap<ResourceClassName, Vec<RevocationResponse>>> {
-        let mut parent = self.ca_store.get_latest(parent_h)?;
         let mut revoke_map = HashMap::new();
 
         for (rcn, revoke_requests) in revoke_requests.into_iter() {
@@ -592,8 +560,7 @@ impl<S: Signer> CaServer<S> {
                 let cmd =
                     CmdDet::child_revoke_key(parent_h, handle.clone(), req, self.signer.clone());
 
-                let events = parent.process_command(cmd)?;
-                parent = self.ca_store.update(parent_h, parent, events)?;
+                self.send_command(cmd)?;
             }
             revoke_map.insert(rcn, revocations);
         }
@@ -646,7 +613,7 @@ impl<S: Signer> CaServer<S> {
         handle: &Handle,
         parent: &ParentHandle,
     ) -> ServerResult<()> {
-        let mut child = self.ca_store.get_latest(handle)?;
+        let child = self.ca_store.get_latest(handle)?;
         let cert_requests = child.cert_requests(parent);
 
         let issued_certs = match child.parent(parent)? {
@@ -672,8 +639,7 @@ impl<S: Signer> CaServer<S> {
                     self.signer.clone(),
                 );
 
-                let evts = child.process_command(upd_rcvd_cmd)?;
-                child = self.ca_store.update(handle, child, evts)?;
+                self.send_command(upd_rcvd_cmd)?;
             }
         }
 
@@ -686,8 +652,6 @@ impl<S: Signer> CaServer<S> {
         handle: &Handle,
         parent_h: &ParentHandle,
     ) -> ServerResult<HashMap<ResourceClassName, Vec<IssuedCert>>> {
-        let mut parent = self.ca_store.get_latest(parent_h)?;
-
         let mut issued_map = HashMap::new();
 
         for (rcn, requests) in requests.into_iter() {
@@ -698,8 +662,7 @@ impl<S: Signer> CaServer<S> {
 
                 let cmd = CmdDet::child_certify(parent_h, handle.clone(), req, self.signer.clone());
 
-                let events = parent.process_command(cmd)?;
-                parent = self.ca_store.update(parent_h, parent, events)?;
+                let parent = self.ca_store.command(cmd)?;
 
                 let response = parent.issuance_response(handle, &parent_class, &pub_key)?;
 
@@ -769,18 +732,17 @@ impl<S: Signer> CaServer<S> {
         parent: ParentHandle,
         entitlements: Entitlements,
     ) -> ServerResult<bool> {
-        let child = self.ca_store.get_latest(handle)?;
+        let current_version = self.ca_store.get_latest(handle)?.version();
 
         let update_entitlements_command =
             CmdDet::upd_resource_classes(handle, parent, entitlements, self.signer.clone());
 
-        let events = child.process_command(update_entitlements_command)?;
-        if !events.is_empty() {
-            self.ca_store.update(handle, child, events)?;
-            Ok(true)
-        } else {
-            Ok(false)
-        }
+        let new_version = self
+            .ca_store
+            .command(update_entitlements_command)?
+            .version();
+
+        Ok(new_version > current_version)
     }
 
     fn get_entitlements_from_parent(
@@ -981,16 +943,8 @@ impl<S: Signer> CaServer<S> {
         handle: Handle,
         updates: RouteAuthorizationUpdates,
     ) -> ServerResult<()> {
-        let ca = self.get_ca(&handle)?;
-
         let cmd = CmdDet::route_authorizations_update(&handle, updates, self.signer.clone());
-        let events = ca.process_command(cmd)?;
-
-        if !events.is_empty() {
-            self.ca_store.update(&handle, ca, events)?;
-        }
-
-        Ok(())
+        self.send_command(cmd)
     }
 }
 
