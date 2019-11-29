@@ -16,7 +16,6 @@ use crate::commons::api::{
     UpdateChildRequest,
 };
 use crate::commons::remote::rfc8183;
-use crate::commons::remote::sigmsg::SignedMessage;
 use crate::commons::util::softsigner::{OpenSslSigner, SignerError};
 use crate::constants::*;
 use crate::daemon::auth::{Auth, Authorizer};
@@ -217,9 +216,9 @@ impl KrillServer {
             .map_err(Error::PubServer)
     }
 
-    pub fn rfc8181(&self, publisher: PublisherHandle, msg: SignedMessage) -> KrillRes<Bytes> {
+    pub fn rfc8181(&self, publisher: PublisherHandle, msg_bytes: Bytes) -> KrillRes<Bytes> {
         self.pubserver
-            .rfc8181(publisher, msg)
+            .rfc8181(publisher, msg_bytes)
             .map_err(Error::PubServer)
     }
 }
@@ -492,8 +491,8 @@ impl KrillServer {
             .ca_keyroll_activate(handle, Duration::seconds(0))?)
     }
 
-    pub fn rfc6492(&self, handle: Handle, msg: SignedMessage) -> KrillRes<Bytes> {
-        Ok(self.caserver.rfc6492(&handle, msg)?)
+    pub fn rfc6492(&self, handle: Handle, msg_bytes: Bytes) -> KrillRes<Bytes> {
+        Ok(self.caserver.rfc6492(&handle, msg_bytes)?)
     }
 }
 

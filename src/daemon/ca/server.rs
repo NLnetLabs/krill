@@ -9,27 +9,26 @@ use chrono::Duration;
 use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 
-use crate::commons::api::CertAuthHistory;
 use crate::commons::api::{
-    self, AddChildRequest, CertAuthList, CertAuthSummary, ChildAuthRequest, ChildCaInfo,
-    ChildHandle, Entitlements, Handle, IssuanceRequest, IssuanceResponse, IssuedCert, ListReply,
-    ParentCaContact, ParentCaReq, ParentHandle, PublishDelta, RcvdCert, RepoInfo,
-    RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse,
-    UpdateChildRequest,
+    self, AddChildRequest, Base64, CertAuthHistory, CertAuthList, CertAuthSummary,
+    ChildAuthRequest, ChildCaInfo, ChildHandle, Entitlements, Handle, IssuanceRequest,
+    IssuanceResponse, IssuedCert, ListReply, ParentCaContact, ParentCaReq, ParentHandle,
+    PublishDelta, RcvdCert, RepoInfo, RepositoryContact, ResourceClassName, ResourceSet,
+    RevocationRequest, RevocationResponse, UpdateChildRequest,
 };
 use crate::commons::eventsourcing::{Aggregate, AggregateStore, Command, DiskAggregateStore};
 use crate::commons::remote::builder::SignedMessageBuilder;
+use crate::commons::remote::cmslogger::CmsLogger;
 use crate::commons::remote::id::IdCert;
 use crate::commons::remote::sigmsg::SignedMessage;
 use crate::commons::remote::{rfc6492, rfc8181, rfc8183};
 use crate::commons::util::httpclient;
+use crate::constants::CASERVER_DIR;
 use crate::daemon::ca::{
     self, ta_handle, CertAuth, Cmd, CmdDet, IniDet, RouteAuthorizationUpdates, ServerError,
     ServerResult, Signer,
 };
 use crate::daemon::mq::EventQueueListener;
-
-const CA_NS: &str = "cas";
 
 //------------ CaServer ------------------------------------------------------
 
@@ -37,6 +36,7 @@ const CA_NS: &str = "cas";
 pub struct CaServer<S: Signer> {
     signer: Arc<RwLock<S>>,
     ca_store: Arc<DiskAggregateStore<CertAuth<S>>>,
+    cms_logger_work_dir: PathBuf,
 }
 
 impl<S: Signer> CaServer<S> {
@@ -47,12 +47,13 @@ impl<S: Signer> CaServer<S> {
         events_queue: Arc<EventQueueListener>,
         signer: Arc<RwLock<S>>,
     ) -> ServerResult<Self> {
-        let mut ca_store = DiskAggregateStore::<CertAuth<S>>::new(work_dir, CA_NS)?;
+        let mut ca_store = DiskAggregateStore::<CertAuth<S>>::new(work_dir, CASERVER_DIR)?;
         ca_store.add_listener(events_queue);
 
         Ok(CaServer {
             signer,
             ca_store: Arc::new(ca_store),
+            cms_logger_work_dir: work_dir.clone(),
         })
     }
 
@@ -276,18 +277,32 @@ impl<S: Signer> CaServer<S> {
         self.ca_store.has(handle)
     }
 
-    /// Verifies an RFC6492 message and returns the child handle, token,
-    /// and content of the request, so that the simple 'list' and 'issue'
-    /// functions can be called.
-    pub fn rfc6492(&self, ca_handle: &Handle, msg: SignedMessage) -> ServerResult<Bytes> {
-        trace!("RFC6492 Request: will check");
+    /// Processes an RFC6492 sent to this CA.
+    pub fn rfc6492(&self, ca_handle: &Handle, msg_bytes: Bytes) -> ServerResult<Bytes> {
         let ca = self.ca_store.get_latest(ca_handle)?;
+
+        let msg = match SignedMessage::decode(msg_bytes.clone(), false) {
+            Ok(msg) => msg,
+            Err(e) => {
+                let msg = format!(
+                    "Could not decode RFC6492 message for: {}, msg: {}, err: {}",
+                    ca_handle,
+                    Base64::from_content(msg_bytes.as_ref()),
+                    e
+                );
+                return Err(ServerError::custom(msg));
+            }
+        };
+
         let content = ca.verify_rfc6492(msg)?;
-        trace!("RFC6492 Request: verified");
 
         let (child, recipient, content) = content.unwrap();
 
-        match content {
+        let cms_logger = CmsLogger::for_rfc6492_rcvd(&self.cms_logger_work_dir, &recipient, &child);
+
+        cms_logger.received(&msg_bytes)?;
+
+        let res = match content {
             rfc6492::Content::Qry(rfc6492::Qry::Revoke(req)) => {
                 let res = self.revoke(ca_handle, child.clone(), req)?;
                 let msg = rfc6492::Message::revoke_response(child, recipient, res);
@@ -304,7 +319,18 @@ impl<S: Signer> CaServer<S> {
                 self.wrap_rfc6492_response(ca_handle, msg)
             }
             _ => Err(ServerError::custom("Unsupported RFC6492 message")),
+        };
+
+        match &res {
+            Ok(msg_bytes) => {
+                cms_logger.reply(msg_bytes)?;
+            }
+            Err(e) => {
+                cms_logger.err(e)?;
+            }
         }
+
+        res
     }
 
     fn wrap_rfc6492_response(&self, handle: &Handle, msg: rfc6492::Message) -> ServerResult<Bytes> {
@@ -588,12 +614,16 @@ impl<S: Signer> CaServer<S> {
             for req in revoke_requests.into_iter() {
                 let sender = parent_res.child_handle().clone();
                 let recipient = parent_res.parent_handle().clone();
+                let cms_logger =
+                    CmsLogger::for_rfc6492_sent(&self.cms_logger_work_dir, &sender, &recipient);
+
                 let revoke = rfc6492::Message::revoke(sender, recipient, req.clone());
 
                 match self.send_rfc6492_and_validate_response(
                     signing_key,
                     parent_res,
                     revoke.into_bytes(),
+                    cms_logger,
                 ) {
                     Err(e) => error!("Could not send/validate revoke: {}", e),
                     Ok(response) => match response {
@@ -698,12 +728,17 @@ impl<S: Signer> CaServer<S> {
             for req in requests.into_iter() {
                 let sender = parent_res.child_handle().clone();
                 let recipient = parent_res.parent_handle().clone();
+
+                let cms_logger =
+                    CmsLogger::for_rfc6492_sent(&self.cms_logger_work_dir, &sender, &recipient);
+
                 let issue = rfc6492::Message::issue(sender, recipient, req);
 
                 match self.send_rfc6492_and_validate_response(
                     signing_key,
                     parent_res,
                     issue.into_bytes(),
+                    cms_logger,
                 ) {
                     Err(e) => error!("Could not send/validate csr: {}", e),
                     Ok(response) => match response {
@@ -781,10 +816,17 @@ impl<S: Signer> CaServer<S> {
         // create a list request
         let sender = parent_res.child_handle().clone();
         let recipient = parent_res.parent_handle().clone();
+        let cms_logger =
+            CmsLogger::for_rfc6492_sent(&self.cms_logger_work_dir, &sender, &recipient);
+
         let list = rfc6492::Message::list(sender, recipient);
 
-        let response =
-            self.send_rfc6492_and_validate_response(child.id_key(), parent_res, list.into_bytes())?;
+        let response = self.send_rfc6492_and_validate_response(
+            child.id_key(),
+            parent_res,
+            list.into_bytes(),
+            cms_logger,
+        )?;
 
         match response {
             rfc6492::Res::NotPerformed(np) => {
@@ -800,6 +842,7 @@ impl<S: Signer> CaServer<S> {
         signing_key: &KeyIdentifier,
         parent_res: &rfc8183::ParentResponse,
         msg: Bytes,
+        cms_logger: CmsLogger,
     ) -> ServerResult<rfc6492::Res> {
         let response = self.send_procotol_msg_and_validate(
             signing_key,
@@ -807,6 +850,7 @@ impl<S: Signer> CaServer<S> {
             parent_res.id_cert(),
             rfc6492::CONTENT_TYPE,
             msg,
+            cms_logger,
         )?;
 
         rfc6492::Message::from_signed_message(&response)
@@ -826,26 +870,21 @@ impl<S: Signer> CaServer<S> {
         service_id: &IdCert,
         content_type: &str,
         msg: Bytes,
+        cms_logger: CmsLogger,
     ) -> ServerResult<SignedMessage> {
         let signed_msg =
             SignedMessageBuilder::create(signing_key, self.signer.read().unwrap().deref(), msg)
                 .map_err(ServerError::signer)?
                 .as_bytes();
-        let uri = service_uri.to_string();
 
-        debug!(
-            "Sending protocol message to: {}\n{}",
-            &uri,
-            base64::encode(&signed_msg)
-        );
+        cms_logger.sent(&signed_msg)?;
+
+        let uri = service_uri.to_string();
 
         let res = httpclient::post_binary(&uri, &signed_msg, content_type)
             .map_err(ServerError::HttpClientError)?;
 
-        debug!(
-            "Received protocol response: {}",
-            base64::encode(res.as_ref())
-        );
+        cms_logger.reply(&res)?;
 
         // unpack and validate response
         let msg = match SignedMessage::decode(res.as_ref(), false).map_err(ServerError::custom) {
@@ -875,12 +914,15 @@ impl<S: Signer> CaServer<S> {
     ) -> ServerResult<rfc8181::ReplyMessage> {
         let ca = self.get_ca(ca_handle)?;
 
+        let cms_logger = CmsLogger::for_rfc8181_sent(&self.cms_logger_work_dir, ca_handle);
+
         let response = self.send_procotol_msg_and_validate(
             ca.id_key(),
             repository.service_uri(),
             repository.id_cert(),
             rfc8181::CONTENT_TYPE,
             msg,
+            cms_logger,
         )?;
 
         rfc8181::Message::from_signed_message(&response)

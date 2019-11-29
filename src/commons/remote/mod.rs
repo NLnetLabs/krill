@@ -3,6 +3,7 @@
 pub mod api;
 pub mod builder;
 pub mod clients;
+pub mod cmslogger;
 pub mod id;
 pub mod rfc6492;
 pub mod rfc8181;

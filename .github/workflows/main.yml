@@ -6,6 +6,7 @@ jobs:
   krill_e2e_test:
     env:
       TF_VAR_size: s-8vcpu-32gb
+      TF_VAR_domain: krill.cloud
 
     name: deploy_and_test
     runs-on: ubuntu-18.04

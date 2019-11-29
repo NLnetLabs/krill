@@ -58,7 +58,7 @@ where
     })
 }
 
-pub fn start_krill_pubd_server() {
+pub fn start_krill_pubd_server() -> PathBuf {
     let data_dir = test::sub_dir(&PathBuf::from("work"));
     let server_conf = Config::pubd_test(&data_dir);
 
@@ -77,6 +77,8 @@ pub fn start_krill_pubd_server() {
             panic!("Server is not coming up")
         }
     }
+
+    data_dir
 }
 
 pub fn wait_seconds(s: u64) {

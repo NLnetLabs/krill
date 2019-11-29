@@ -102,9 +102,11 @@ impl From<&Crl> for Base64 {
     }
 }
 
-impl ToString for Base64 {
-    fn to_string(&self) -> String {
-        unsafe { String::from_utf8_unchecked(self.0.to_vec()) }
+impl fmt::Display for Base64 {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", unsafe {
+            std::str::from_utf8_unchecked(self.0.as_ref())
+        })
     }
 }
 

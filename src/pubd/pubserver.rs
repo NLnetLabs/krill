@@ -12,6 +12,7 @@ use crate::commons::eventsourcing::{
     Aggregate, AggregateStore, AggregateStoreError, DiskAggregateStore,
 };
 use crate::commons::remote::builder::SignedMessageBuilder;
+use crate::commons::remote::cmslogger::CmsLogger;
 use crate::commons::remote::rfc8181;
 use crate::commons::remote::rfc8183;
 use crate::commons::remote::sigmsg::SignedMessage;
@@ -35,6 +36,7 @@ use crate::pubd::{self, CmdDet, Error, Repository};
 pub struct PubServer {
     store: Arc<DiskAggregateStore<Repository>>,
     signer: Arc<RwLock<OpenSslSigner>>,
+    cms_logger_work_dir: PathBuf,
 }
 
 /// # Constructing
@@ -67,7 +69,13 @@ impl PubServer {
             store.add(ini)?;
         }
 
-        Ok(PubServer { store, signer })
+        let cms_logger_work_dir = work_dir.clone();
+
+        Ok(PubServer {
+            store,
+            signer,
+            cms_logger_work_dir,
+        })
     }
 }
 
@@ -94,14 +102,18 @@ impl PubServer {
     pub fn rfc8181(
         &self,
         publisher_handle: PublisherHandle,
-        msg: SignedMessage,
+        msg_bytes: Bytes,
     ) -> Result<Bytes, Error> {
-        trace!("RFC8181 Request: will check");
         let repository = self.repository()?;
         let publisher = repository.get_publisher(&publisher_handle)?;
+
+        let cms_logger = CmsLogger::for_rfc8181_rcvd(&self.cms_logger_work_dir, &publisher_handle);
+        cms_logger.received(&msg_bytes)?;
+
+        let msg = SignedMessage::decode(msg_bytes, false).map_err(Error::validation)?;
+
         msg.validate(publisher.id_cert())
-            .map_err(|_| Error::Validation)?;
-        trace!("RFC8181 Request: verified");
+            .map_err(Error::validation)?;
 
         let content = rfc8181::Message::from_signed_message(&msg)?;
         let query = content.into_query()?;
@@ -134,7 +146,10 @@ impl PubServer {
         )
         .map_err(Error::signer)?;
 
-        Ok(response_builder.as_bytes())
+        let response_bytes = response_builder.as_bytes();
+        cms_logger.reply(&response_bytes)?;
+
+        Ok(response_bytes)
     }
 
     /// Let a known publisher publish in a repository.

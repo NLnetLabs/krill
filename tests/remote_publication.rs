@@ -2,6 +2,8 @@ extern crate krill;
 extern crate pretty;
 extern crate rpki;
 
+use std::fs;
+
 use krill::cli::options::{CaCommand, Command, PublishersCommand};
 use krill::cli::report::ApiResponse;
 use krill::commons::api::{
@@ -76,7 +78,7 @@ fn publisher_request(ca: &Handle) -> rfc8183::PublisherRequest {
 #[test]
 fn remote_publication() {
     test_with_krill_server(|_d| {
-        start_krill_pubd_server();
+        let pubd_dir = start_krill_pubd_server();
 
         let ta_handle = ta_handle();
 
@@ -159,5 +161,7 @@ fn remote_publication() {
             let details_at_main = details_publisher(&child, PubdTestContext::Secondary);
             details_at_main.current_files().is_empty()
         });
+
+        fs::remove_dir_all(pubd_dir).unwrap();
     });
 }
