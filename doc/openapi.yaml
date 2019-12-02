@@ -1,0 +1,1966 @@
+openapi: "3.0.2"
+info:
+  title: Krill RPKI Server API
+  version: 0.4.0
+  description: |
+    # Introduction
+    Welcome to the documentation for the Krill server API, a JSON based
+    REST-like API for managing your Krill Certificate Authorities and
+    Publishers. For more information read the [Krill documentation](https://rpki.readthedocs.io/en/latest/krill/).
+
+    ## Clients
+    To interact with a Krill server using this API, either:
+    - Use the [Krill CLI](https://rpki.readthedocs.io/en/latest/krill/using-cli.html).
+    - Load this API specification into the Swagger [editor](https://editor.swagger.io/)
+      or [viewer](https://petstore.swagger.io/) and use it to submit requests to
+      a Krill server via your browser.
+    - Use an [OpenAPI 3 generator](https://openapi-generator.tech/docs/generators.html)
+      to generate client code based on this API specification.
+    - Write your own client code that adheres to this specification.
+
+    ## Versioning
+    The API path includes a version. The idea is that we may add functionality,
+    but will not introduce breaking changes to existing functionality. You may
+    expect additional resources, and you may see additional data (JSON members)
+    within resources. So, please make sure that you ignore what you don’t
+    understand when using this API.
+
+    ## References
+    Information about many of the concepts and data types that Krill works with
+    can be found in the following Internet standards documents:
+    - [RFC 6492: A Protocol for Provisioning Resource Certificates](https://tools.ietf.org/html/rfc6492)
+    - [RFC 8181: A Publication Protocol for the Resource Public Key Infrastructure (RPKI)](https://tools.ietf.org/html/rfc8181)
+    - [RFC 8183: An Out-of-Band Setup Protocol for Resource Public Key Infrastructure (RPKI) Production Services](https://tools.ietf.org/html/rfc8183)
+
+    ## Feedback
+    Please give feedback and report issues concerning this API specification by
+    creating a [Krill GitHub issue](https://github.com/NLnetLabs/krill/issues/new).
+
+    # Authentication
+    All Krill API endpoints are protected by [HTTP Bearer Authentication](https://swagger.io/docs/specification/authentication/bearer-authentication/).
+    To use the endpoints the client must supply an HTTP Authorization header of the form:
+    ```
+    Authorization: Bearer <KRILL AUTH TOKEN>
+    ```
+    The token to use is defined in the Krill server configuration. Do not include
+    the '<>' brackets in the request. For more information consult the [Krill documentation](https://rpki.readthedocs.io/en/latest/krill/running.html#admin-token).
+
+    # Errors
+    The format of and level of detail included in error reports from a Krill
+    server depend on the type of failure that occured:
+    - **5XX/Server Errors:** This type of failure occurs within or is caused
+      by the environment in which Krill operates, or by bugs within Krill
+      itself. Examples include network issues, resource starvation, access
+      denied to resources, etc. Such errors are outside the control of Krill
+      and may result in HTTP 5XX errors from a proxy in front of Krill or from
+      Krill itself, or could manifest themselves as TCP timeouts and/or
+      connection failures.
+    - **4XX/Client Errors:** This type of failure occurs when the input
+      provided to Krill is incorrect, either due to user error, adherence by
+      the client to incorrect Krill API specifications, or malicious activity.
+      Krill responds with HTTP 4XX errors, where possible with a HTTP response
+      body in JSON format consisting of an error code and error message.
+      **Note:** Clients should decide which action to take based on the error
+      code, not on the error message. Such errors have the following form:
+      ```
+      {
+          "code": <integer>,
+          "msg": "string"
+      }
+      ```
+  license:
+    name: Mozilla Public License 2.0
+    url: https://www.mozilla.org/en-US/MPL/2.0/
+  x-logo:
+    url: https://nlnetlabs.nl/static/logos/Krill/Krill_Logo_FC.svg
+    backgroundColor: #FFFFFF
+
+servers:
+- url: https://{domain}:{port}/api/v1
+  description: Krill server API URL.
+  variables:
+    domain:
+      default: localhost
+    port:
+      enum:
+        - '443'
+        - '3000'
+      default: '3000'
+
+tags:
+- name: "Publishers"
+- name: "Certificate Authorities"
+- name: "Key Rolls"
+  description: |
+    Krill CAs can have 0 or more 'Resource Classes' under each of its (0 or
+    more) parents. Krill CAs will talk to all of their parents regularly and
+    ask them about their resource entitlements. Typically a CA will have one
+    parent and receive all their resources in a single resource class, but it's
+    also possible that resources are split into multiple resource classes.
+    Krill CAs can also have multiple parents and have resource classes under
+    each of them.
+
+    When a krill CA first gets a resource class it will:
+    - create a pending key pair
+    - request a certificate
+
+    The 'key state' of this resource class is then shown as type "Pending".
+
+    When the CA receives a certificate for this new pair it will be promoted to
+    "Active", and publishing of objects will start. I.e. the CA will start
+    publishing a manifest and CRL, and any configured ROAs for which the
+    prefixes are held by this class.
+
+    Resource classes in the state 'Active' can be rolled. The following phases
+    exist in a key roll:
+    - RollPending
+    - RollNew
+    - RollOld
+- name: "Route Authorizations"
+  description: |
+    Managing Route Authorizations (ROA configs)
+- name: "Other"
+
+security: 
+- KRILL_AUTH_TOKEN: []
+
+paths:
+  /authorized:
+    get:
+      tags:
+        - "Other"
+      summary: Check if the client is authorized.
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /publishers:
+    get:
+      tags:
+        - "Publishers"
+      summary: List publishers.
+      responses:
+        '200':
+          $ref: '#/components/responses/ListPublishers'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/GeneralPublicationServerError'
+
+    post:
+      tags:
+        - "Publishers"
+      summary: Add publisher.
+      description: |
+        Adds an RFC 8181 publisher. Expects a JSON representation of the
+        [RFC 8183 XML](https://tools.ietf.org/html/rfc8183#section-5.2.3).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddPublisherRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/AddPublisher'
+        '400':
+          $ref: '#/components/responses/PublisherHandleAlreadyInUse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/GeneralPublicationServerError'
+
+  /publishers/{publisher_handle}:
+    get:
+      tags:
+        - "Publishers"
+      summary: Get details for publisher.
+      description: Gets the information for a publisher by a given handle.
+      parameters:
+        - $ref: '#/components/parameters/publisher_handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/GetPublisher'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnknownPublisher'
+        '500':
+          $ref: '#/components/responses/GeneralPublicationServerError'
+
+    delete:
+      tags:
+        - "Publishers"
+      summary: Delete a publisher.
+      description: This action also removes all the published content for a publisher.
+      parameters:
+        - $ref: '#/components/parameters/publisher_handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnknownPublisher'
+        '500':
+          $ref: '#/components/responses/GeneralPublicationServerError'
+
+  /publishers/{publisher_handle}/response.{format}:
+    get:
+      tags:
+        - "Publishers"
+      summary: Get Repository Response for publisher.
+      description: |
+        Gets the [RFC 8183 Repository Response](https://tools.ietf.org/html/rfc8183#section-5.2.4)
+        for a publisher.
+      parameters:
+        - $ref: '#/components/parameters/publisher_handle'
+        - $ref: '#/components/parameters/format'
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/rfc8181'
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/RFC8183RepositoryResponseXML'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnknownPublisher'
+        '500':
+          $ref: '#/components/responses/GeneralPublicationServerError'
+
+  /cas:
+    get:
+      tags:
+        - "Certificate Authorities"
+      summary: List CAs.
+      responses:
+        '200':
+          $ref: '#/components/responses/ListCAs'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+    post:
+      tags:
+        - "Certificate Authorities"
+      summary: Add a CA.
+      description: |
+        When adding a CA you need to choose a “handle”, essentially just a
+        name. The term “handle” comes from RFC 8183 and is used in the
+        communication protocol between CAs and CAs and publication servers.
+
+        When a CA has been added, it is registered to publish locally in the
+        Krill instance where it exists, but other than that it has no
+        configuration yet. In order to do anything useful with a CA you will
+        first have to add at least one parent to it, and then most likely some
+        Route Authorizations and/or Child CAs.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddCARequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '400':
+          $ref: '#/components/responses/CAHandleAlreadyInUse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+  /cas/{ca_handle}:
+    get:
+      tags:
+        - "Certificate Authorities"
+      summary: Get CA.
+      description: Get CA details.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/GetCA'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+  /cas/{ca_handle}/child_request.{format}:
+    get:
+      tags:
+        - "Certificate Authorities"
+      summary: Get CA RFC 8183 Request.
+      description: Gets the RFC 8181 Child Request for this CA as JSON or XML.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+        - $ref: '#/components/parameters/format'
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/rfc8183'
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/RFC8183RequestXML'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+  /cas/{ca_handle}/children:
+    post:
+      tags:
+        - "Certificate Authorities"
+      summary: Add a child CA.
+      description: |
+        This adds an embedded (in the same Krill instance) or remote child CA.
+        For a remote child CA the request body must include a JSON
+        representation of the [RFC 8183 Child Request XML](https://tools.ietf.org/html/rfc8183#section-5.2.1),
+        though the 'tag' and 'child_handle' attributes are ignored.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddCAChildRequest'
+            examples:
+              embedded:
+                value:
+                  handle: 'ca'
+                  resources:
+                    asn: 'AS1'
+                    v4: '10.0.0.0/8'
+                    v6: '::'
+                  auth: 'embedded'
+              remote:
+                value:
+                  handle: 'ca'
+                  resources:
+                    asn: 'AS1'
+                    v4: '10.0.0.0/8'
+                    v6: '::'
+                  auth:
+                    rfc8183:
+                      tag: null
+                      child_handle: 'ca'
+                      id_cert: '<base64>'
+      responses:
+        '200':
+          $ref: '#/components/responses/Rfc6492OrEmbedded'
+        '400':
+          description: Bad request parameters.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ChildWithHandleExists'
+                  - $ref: '#/components/schemas/ChildMustHaveResources'
+                  - $ref: '#/components/schemas/ChildCannotHaveResourcesNotHeldByParent'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+  /cas/{ca_handle}/children/{child_handle}:
+    get:
+      tags:
+        - "Certificate Authorities"
+      summary: Get child details.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+        - $ref: '#/components/parameters/child_handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/GetChildCA'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Unknown resource.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/UnknownChild'
+                  - $ref: '#/components/schemas/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+    post:
+      tags:
+        - "Certificate Authorities"
+      summary: Update an existing child of a CA.
+      description: |
+        This action is idempotent.
+        **Note:** You can only update the complete resource set! If you leave
+        out a resource - like asn in the example - then the child will lose all
+        resources of that type.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+        - $ref: '#/components/parameters/child_handle'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCAChildRequest'
+            examples:
+              update_resources:
+                summary: Update the resources for a child.
+                value:
+                  id_cert: null
+                  resources:
+                    asn: ''
+                    v4: '10.0.0.0/8'
+                    v6: '::'
+              update_id_cert:
+                summary: Update the ID certificate for a remote child.
+                value:
+                  id_cert: '<base64>'
+                  resources: null
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Unknown resource.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/UnknownChild'
+                  - $ref: '#/components/schemas/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+    delete:
+      tags:
+        - "Certificate Authorities"
+      summary: Remove a child CA.
+      description: |
+        Removes a child, revokes its certificates and removes them from the
+        repository. Use with care, although you can re-add a removed child,
+        this is probably best avoided.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+        - $ref: '#/components/parameters/child_handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Unknown resource.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/UnknownChild'
+                  - $ref: '#/components/schemas/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+  /cas/{ca_handle}/children/{child_handle}/contact:
+    get:
+      tags:
+        - "Certificate Authorities"
+      summary: Get parent contact for a child.
+      description: |
+        This is the parent contact that a child can use when adding the parent.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+        - $ref: '#/components/parameters/child_handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/Rfc8183OrEmbedded'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Unknown resource.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/UnknownChild'
+                  - $ref: '#/components/schemas/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+  /cas/{ca_handle}/children/{child_handle}/parent_response.{format}:
+    get:
+      tags:
+        - "Certificate Authorities"
+      summary: Get the RFC 8183 Parent Response for a child.
+      description: |
+        To get the RFC 8183 Parent Response for a child, regardless of whether
+        the parent knows the ID Cert.
+
+        **Note:** You can use 'update child' to add a new ID cert to a child,
+        however, this is a real corner case that can only happen if you
+        mistakenly added a remote child as embedded, rather than using its
+        RFC 8183 Child Request.
+
+        For "embedded" CAs you will not need this parent response when you add
+        the "embedded" parent.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+        - $ref: '#/components/parameters/child_handle'
+        - $ref: '#/components/parameters/format'
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/rfc6492'
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/RFC8183ParentResponseXML'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Unknown resource.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/UnknownChild'
+                  - $ref: '#/components/schemas/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+  /cas/{ca_handle}/history:
+    get:
+      tags:
+        - "Certificate Authorities"
+      summary: Get full history of a CA.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/GetCAHistory'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+  /cas/{ca_handle}/id:
+    post:
+      tags:
+        - "Certificate Authorities"
+      summary: Regenerate CA ID certificate.
+      description: |
+        Tells the CA to create a new ID certificate and forget its old ID. Note
+        that if you do this, you will have to create new RFC 8181 Child Request
+        and Publisher Request XML for the parent CA(s) and Repository. Don't
+        use this if you can avoid it.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+  /cas/{ca_handle}/parents:
+    post:
+      tags:
+        - "Certificate Authorities"
+      summary: Add a parent to a CA.
+      description: |
+        Adds an embedded or remote parents. For remote parents the RFC 6492
+        will be used. In principle CAs can also use this to talk to a local
+        parent CA in the same krill server, but this is inefficient. Therefore
+        it is also possible to add an 'embedded' parent in this case.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddParentCARequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/schemas/ParentWithHandleExists'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+  /cas/{ca_handle}/parents/{parent_handle}:
+    get:
+      tags:
+        - "Certificate Authorities"
+      summary: Get parent contact for a CA.
+      description: |
+        Get the parent contact information that a CA has for a parent.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+        - $ref: '#/components/parameters/parent_handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/Rfc6492OrEmbedded'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '400':
+          $ref: '#/components/responses/UnknownParent'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+    post:
+      tags:
+        - "Certificate Authorities"
+      summary: Update the contact information for an existing parent.
+      description: |
+        Should not be needed often, but say that your parent updates their ID
+        cert or service URI for RFC 6492, then you will need to tell the CA.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+        - $ref: '#/components/parameters/parent_handle'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Rfc6492OrEmbedded'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '400':
+          $ref: '#/components/responses/UnknownParent'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+    delete:
+      tags:
+        - "Certificate Authorities"
+      summary: Remove a parent.
+      description: |
+        Remove a parent from a CA.
+        **Note:** this is just the child removing the parent, and this does not
+        remove the child from the parent.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+        - $ref: '#/components/parameters/parent_handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '400':
+          $ref: '#/components/responses/UnknownParent'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+  /cas/{ca_handle}/repo:
+    get:
+      tags:
+        - "Certificate Authorities"
+      summary: Get Repository for a CA.
+      description: |
+        Returns details about the repository.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/GetRepositoryForCA'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+    post:
+      tags:
+        - "Certificate Authorities"
+      summary: Update the Repository for a CA.
+      description: |
+        This will update the repository for a CA. I.e. it will trigger the
+        following:
+          - A check that the new Repository can be reached and allows the CA to
+            connect.
+          - Re-issue all objects using the base uri for the new repository.
+          - Publish the new objects.
+          - Request new certificates with SIA entries pointing to the new
+            locations.
+          - (best effort) Clean up of the old repository.
+        The new repository can be embedded, or remote. To use a remote
+        repository, the RFC 8181 Repository Response must be encoded into JSON.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Rfc8181OrEmbedded'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '400':
+          description: Bad request parameters.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/AlreadyUsingThisRepository'
+                  - $ref: '#/components/schemas/TargetRepositoryDoesNotAllowListQuery'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+  /cas/{ca_handle}/repo/request.{format}:
+    get:
+      tags:
+        - "Certificate Authorities"
+      summary: Get the RFC 8183 Publisher Request for a CA.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+        - $ref: '#/components/parameters/format'
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/rfc8181Base'
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/RFC8183PublisherRequestXML'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+  /cas/{ca_handle}/keys/roll_init:
+    post:
+      tags:
+        - "Key Rolls"
+      summary: Initiate a key roll.
+      description: |
+        When a key roll is initiated the following steps are executed:
+        - A new key pair is created in state 'pending'.
+        - A resource certificate is requested for the new key.
+
+        The resource class will now have state 'RollPending'
+
+        However, you may not observe this for long, as the request is sent to
+        the parent immediately, and as soon as a certificate is received for
+        the new key, the state moves from 'RollPending' to 'RollNew' and a MFT
+        and CRL are published for the new key. All other objects (ROAs,
+        delegated certificates) are still published under the active key.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+  /cas/{ca_handle}/keys/roll_activate:
+    post:
+      tags:
+        - "Key Rolls"
+      summary: Finish a key roll.
+      description: |
+        According the RFC new keys can be activated only after 24 hours. In
+        practice however, this can also be done sooner. The main thing to keep
+        in mind is that is only done after the parent CA has *published* the
+        new certificate for the 'new' key - which might be some time after you
+        actually received the certificate.
+
+        In short: it's best to perform this step 24 hours after initialising a
+        key roll, but if your old key is really compromised then you should
+        probably just go ahead and do this asap.
+
+        When a key roll is finished, the following happens:
+        - The state is moved from 'RollNew' to 'RollOld'.
+        - The new key becomes 'active' and will now also publish ROAs and
+          delegates certs.
+        - The former 'active' key becomes 'old' and only publishes a manifest
+          and CRL, but no other objects.
+        - A revocation request for the 'old' key is created.
+
+        This state is also easy to miss, because Krill will immediately (but
+        asynchronously) send the revocation request to the applicable parent
+        and when it receives confirmation that the key is revoked it will:
+        - Withdraw the manifest and crl for that key.
+        - Move the state to 'Active' (and forget the old key).
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+  /cas/republish_all:
+    post:
+      tags:
+        - "Certificate Authorities"
+      summary: Force that all CAs create new objects if needed (in which case they will also sync).
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /cas/refresh_all:
+    post:
+      tags:
+        - "Certificate Authorities"
+      summary: Force that all CAs ask their parents for updated certificates.
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /cas/resync_all:
+    post:
+      tags:
+        - "Certificate Authorities"
+      summary: Force that all CAs sync with their repo server.
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /cas/{ca_handle}/routes:
+    get:
+      tags:
+        - "Route Authorizations"
+      summary: List route authorizations.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ROA'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+    post:
+      tags:
+        - "Route Authorizations"
+      summary: Update route authorizations.
+      description: |
+        Updates the ROA configurations. Users of a CA can configure which
+        routes they want to be authorized, and Krill will then take care of
+        creating the actual ROA RPKI objects.
+
+        Updates are sent as a delta containing all additions and removals. This
+        is done because often it is needed to update multiple ROAs in a single
+        transaction in order to avoid invalidating certain announcements. E.g.
+        when you have announcements from more than one ASN, or when you also
+        announce more specific prefixes.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                added:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ROA'
+                removed:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ROA'
+
+      responses:
+        '200':
+          $ref: '#/components/responses/Success'
+        '400':
+          description: Bad request parameters.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/InvalidROADeltaAddingDefinitionAlreadyPresent'
+                  - $ref: '#/components/schemas/InvalidROADeltaRemovingUnknownDefinition'
+                  - $ref: '#/components/schemas/InvalidROADeltaNotAllResourcesHeld'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/UnknownCA'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
+
+
+externalDocs:
+  description: Read the Krill documentation
+  url: https://rpki.readthedocs.io/en/latest/krill/
+
+components:
+  securitySchemes:
+    KRILL_AUTH_TOKEN:
+     type: http
+     scheme: bearer
+     bearerFormat: KRILL_AUTH_TOKEN
+
+  parameters:
+    ca_handle:
+      in: path
+      name: ca_handle
+      schema:
+        $ref: '#/components/schemas/Handle'
+      required: true
+    child_handle:
+      in: path
+      name: child_handle
+      schema:
+        $ref: '#/components/schemas/Handle'
+      required: true
+    parent_handle:
+      in: path
+      name: parent_handle
+      schema:
+        $ref: '#/components/schemas/Handle'
+      required: true
+    publisher_handle:
+      in: path
+      name: publisher_handle
+      schema:
+        $ref: '#/components/schemas/Handle'
+      required: true
+    format:
+      in: path
+      name: format
+      schema:
+        type: string
+        enum: ['json','xml']
+      required: true
+
+  schemas:
+    # Types ordered fundamental to complex
+    Element:
+      type: object
+      properties:
+        uri:
+          type: string
+          format: uri
+        hash:
+          type: string
+          format: hash
+    Handle:
+      type: string
+      maxLength: 255
+      pattern: '[\-_A-Za-z0-9/]*'
+    IdCert:
+      type: string
+      format: base64
+    PemIdCert:
+      type: object
+      nullable: true
+      properties:
+        pem:
+          type: string
+          format: pem
+        hash:
+          type: string
+          format: hash
+    RepoInfo:
+      type: object
+      properties:
+        base_uri:
+          type: string
+          format: uri
+        rpki_notify: 
+          type: string
+          format: uri
+    Resources:
+      type: object
+      properties:
+        asn:
+          type: string
+        v4:
+          type: string
+        v6:
+          type: string
+      example:
+        asn: ""
+        v4: "10.0.0.0/0"
+        v6: "2001:db8::/32"
+    ROA:
+      type: object
+      properties:
+        asn:
+          type: string
+        prefix:
+          type: string
+        max_length:
+          type: integer
+    ServiceUri:
+      type: string
+      format: uri
+    embedded:
+      type: string
+      enum: ['embedded']
+    rfcCommon:
+      type: object
+      properties:
+        tag:
+          type: string
+          nullable: true
+        id_cert:
+          $ref: '#/components/schemas/IdCert'
+    rfc6492:
+      allOf:
+      - $ref: '#/components/schemas/rfcCommon'
+      - type: object
+        properties:
+          parent_handle:
+            $ref: '#/components/schemas/Handle'
+          child_handle:
+            $ref: '#/components/schemas/Handle'
+          service_uri:
+            $ref: '#/components/schemas/ServiceUri'
+    rfc8181Base:
+      allOf:
+      - $ref: '#/components/schemas/rfcCommon'
+      - type: object
+        properties:
+          publisher_handle:
+            $ref: '#/components/schemas/Handle'
+    rfc8181:
+      allOf:
+      - $ref: '#/components/schemas/rfc8181Base'
+      - type: object
+        properties:
+          service_uri:
+            $ref: '#/components/schemas/ServiceUri'     
+          repo_info:
+            $ref: '#/components/schemas/RepoInfo'   
+    rfc8183:
+      allOf:
+      - $ref: '#/components/schemas/rfcCommon'
+      - type: object
+        properties:
+          child_handle:
+            $ref: '#/components/schemas/Handle'
+    Rfc6492OrEmbedded:
+      oneOf:
+        - $ref: '#/components/schemas/embedded'
+        - $ref: '#/components/schemas/rfc6492'
+    Rfc8181OrEmbedded:
+      oneOf:
+        - $ref: '#/components/schemas/embedded'
+        - $ref: '#/components/schemas/rfc8181'
+    Rfc8183OrEmbedded:
+      oneOf:
+        - $ref: '#/components/schemas/embedded'
+        - $ref: '#/components/schemas/rfc8183'
+    RFC8183PublisherRequestXML:
+      type: object
+      properties:
+        xmlns:
+          type: string
+          format: url
+          xml:
+            attribute: true
+        version:
+          type: integer
+          xml:
+            attribute: true
+        publisher_handle:
+          type: string
+          xml:
+            attribute: true
+        publisher_bpki_ta:
+          type: string
+          format: base64
+      xml:
+        name: 'publisher_request'
+      example:
+        xmlns: http://www.hactrn.net/uris/rpki/rpki-setup/
+        version: 1
+        publisher_handle: 'child'
+        publisher_bpki_ta: 'MIID..6g=='
+    RFC8183RequestXML:
+      type: object
+      properties:
+        xmlns:
+          type: string
+          format: url
+          xml:
+            attribute: true
+        version:
+          type: integer
+          xml:
+            attribute: true
+        child_handle:
+          type: string
+          xml:
+            attribute: true
+        child_bpki_ta:
+          type: string
+          format: base64
+      xml:
+        name: 'child_request'
+      example:
+        xmlns: http://www.hactrn.net/uris/rpki/rpki-setup/
+        version: 1
+        child_handle: 'child'
+        child_bpki_ta: 'MIID..6g=='
+    RFC8183RepositoryResponseXML:
+      type: object
+      properties:
+        xmlns:
+          type: string
+          format: url
+          xml:
+            attribute: true
+        version:
+          type: integer
+          xml:
+            attribute: true
+        publisher_handle:
+          type: string
+          xml:
+            attribute: true
+        service_uri:
+          type: string
+          format: uri
+          xml:
+            attribute: true
+        sia_base:
+          type: string
+          format: uri
+          xml:
+            attribute: true
+        rrdp_notification_uri:
+          type: string
+          format: uri
+          xml:
+            attribute: true
+        repository_bpki_ta:
+          type: string
+          format: base64
+      xml:
+        name: 'repository_response'
+      # The example below is not shown by ReDoc, presumably due to:
+      # https://github.com/Redocly/redoc/issues/492
+      example:
+        xmlns: http://www.hactrn.net/uris/rpki/rpki-setup/
+        version: 1
+        publisher_handle: 'ta'
+        service_uri: 'https://localhost:3000/rfc8181/ta'
+        sia_base: 'rsync://localhost/repo/ta/'
+        rrdp_notification_uri: 'https://localhost:3000/rrdp/notification.xml'
+        repository_bpki_ta: 'MIID..aQ=='
+    RFC8183ParentResponseXML:
+      type: object
+      properties:
+        xmlns:
+          type: string
+          format: url
+          xml:
+            attribute: true
+        version:
+          type: integer
+          xml:
+            attribute: true
+        service_uri:
+          type: string
+          format: uri
+          xml:
+            attribute: true
+        child_handle:
+          type: string
+          xml:
+            attribute: true
+        parent_handle:
+          type: string
+          xml:
+            attribute: true
+        parent_bpki_ta:
+          type: string
+          format: base64
+      xml:
+        name: 'parent_response'
+      example:
+        xmlns: http://www.hactrn.net/uris/rpki/rpki-setup/
+        version: 1
+        service_uri: 'https://localhost:3000/rfc6492/ta'
+        child_handle: 'child'
+        parent_handle: 'ta'
+        parent_bpki_ta: 'MIID..6g=='
+    PendingKey:
+      type: object
+      properties:
+        key_id:
+          type: string
+    CertifiedKey:
+      allOf:
+        - $ref: '#/components/schemas/PendingKey'
+        - type: object
+          properties:
+            incoming_cert:
+              type: object
+              properties:
+                cert:
+                  type: string
+                  format: base64
+                uri:
+                  type: string
+                  format: uri
+                resources:
+                  $ref: '#/components/schemas/Resources'
+            request:
+              type: string
+              nullable: true
+
+    # Request bodies
+    AddCARequest:
+      type: object
+      required:
+        - handle
+      properties:
+        handle:
+          allOf:
+          - $ref: '#/components/schemas/Handle'
+          - description: The handle attribute uniquely identifies the new Certificate Authority within this Krill instance.
+    AddCAChildRequest:
+      type: object
+      required:
+        - handle
+        - resources
+        - auth
+      properties:
+        handle:
+          allOf:
+          - $ref: '#/components/schemas/Handle'
+          - description: The handle attribute uniquely identifies the new Certificate Authority within this Krill instance.
+        resources:
+          $ref: '#/components/schemas/Resources'
+        auth:
+          $ref: '#/components/schemas/Rfc8183OrEmbedded'
+    UpdateCAChildRequest:
+      type: object
+      properties:
+        id_cert:
+          allOf:
+            - $ref: '#/components/schemas/IdCert'
+            - description: |
+                Base64 of DER encoded is PEM encoded minus the BEGIN and END
+                markers.
+            - nullable: true
+        resources:
+          $ref: '#/components/schemas/Resources'
+          nullable: true
+    AddParentCARequest:
+      type: object
+      required:
+        - handle
+        - contact
+      properties:
+        handle:
+          allOf:
+          - $ref: '#/components/schemas/Handle'
+          - description: The local handle by which your ca refers to this parent.
+        contact:
+          $ref: '#/components/schemas/Rfc6492OrEmbedded'
+    AddPublisherRequest:
+      type: object
+      required:
+        - publisher_handle
+        - id_cert
+      properties:
+        publisher_handle:
+          $ref: '#/components/schemas/Handle'
+        tag:
+          type: string
+        id_cert:
+          $ref: '#/components/schemas/IdCert'
+      externalDocs:
+        url: https://tools.ietf.org/html/rfc8183#section-5.2.3
+
+    # Error codes ordered ascending by error code
+    PublisherHandleAlreadyInUse:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2102]
+        msg:
+          type: string
+          example: Handle already in use.
+    UnknownPublisher:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2201]
+        msg:
+          type: string
+          example: Unknown publisher.
+    AlreadyUsingThisRepository:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2206]
+        msg:
+          type: string
+          example: Already using this repository.
+    TargetRepositoryDoesNotAllowListQuery:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2207]
+        msg:
+          type: string
+          example: Target repository does not allow list query.
+    ChildWithHandleExists:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2301]
+        msg:
+          type: string
+          example: Child with handle exists.
+    ChildMustHaveResources:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2302]
+        msg:
+          type: string
+          example: Child MUST have resources.
+    ChildCannotHaveResourcesNotHeldByParent:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2303]
+        msg:
+          type: string
+          example: Child cannot have resources not held by parent.
+    ParentWithHandleExists:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2304]
+        msg:
+          type: string
+          example: Parent with handle exists.
+    UnknownChild:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2305]
+        msg:
+          type: string
+          example: Child unknown.
+    UnknownParent:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2306]
+        msg:
+          type: string
+          example: No known parent for handle.
+    InvalidROADeltaAddingDefinitionAlreadyPresent:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2401]
+        msg:
+          type: string
+          example: 'Invalid ROA delta: adding a definition which is already present.'
+    InvalidROADeltaRemovingUnknownDefinition:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2402]
+        msg:
+          type: string
+          example: 'Invalid ROA delta: removing a definition which is unknown.'
+    InvalidROADeltaNotAllResourcesHeld:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2403]
+        msg:
+          type: string
+          example: 'Invalid ROA delta: not all resources held.'
+    CAHandleAlreadyInUse:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2501]
+        msg:
+          type: string
+          example: CA with handle exists.
+    UnknownCA:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2502]
+        msg:
+          type: string
+          example: Unknown CA.
+    GeneralCAServerError:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [3005]
+        msg:
+          type: string
+          example: General CA Server issue.
+    GeneralPublicationServerError:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [3006]
+        msg:
+          type: string
+          example: General Publication Server error.
+
+  responses:
+    Success:
+      description: Success.
+    Forbidden:
+      description: Forbidden (incorrect authentication token).
+    NotFound:
+      description: Not Found.
+    UnknownPublisher:
+      description: Unknown publisher.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/UnknownPublisher'
+    UnknownCA:
+      description: Unknown CA.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/UnknownCA'
+    UnknownChild:
+      description: Unknown child.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/UnknownChild'
+    UnknownParent:
+      description: Unknown parent.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/UnknownParent'
+    GeneralPublicationServerError:
+      description: General Publication Server error.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/GeneralPublicationServerError'
+    GeneralCAServerError:
+      description: General CA Server issue.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/GeneralCAServerError'
+    PublisherHandleAlreadyInUse:
+      description: Publisher handle already in use.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/PublisherHandleAlreadyInUse'
+    CAHandleAlreadyInUse:
+      description: CA handle already in use.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CAHandleAlreadyInUse'
+    InvalidROADeltaAddingDefinitionAlreadyPresent:
+      description: 'Invalid ROA delta: adding a definition which is already present'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/InvalidROADeltaAddingDefinitionAlreadyPresent'
+    InvalidROADeltaRemovingUnknownDefinition:
+      description: 'Invalid ROA delta: removing a definition which is unknown'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/InvalidROADeltaRemovingUnknownDefinition'
+    InvalidROADeltaNotAllResourcesHeld:
+      description: 'Invalid ROA delta: not all resources held.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/InvalidROADeltaNotAllResourcesHeld'
+    GetCA:
+      description: Success.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              handle:
+                $ref: '#/components/schemas/Handle'
+              id_cert:
+                $ref: '#/components/schemas/PemIdCert'
+              repo_info:
+                $ref: '#/components/schemas/RepoInfo'
+              parents:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    handle:
+                      $ref: '#/components/schemas/Handle'
+                    kind:
+                      type: string
+              resources:
+                $ref: '#/components/schemas/Resources'
+              resources_classes:
+                type: object
+                additionalProperties:
+                  x-additionalPropertiesName: resource index
+                  type: object
+                  properties:
+                    name_space:
+                      type: string
+                    parent_handle:
+                      $ref: '#/components/schemas/Handle'
+                    keys:
+                      oneOf:
+                        - type: object
+                          title: pending
+                          properties:
+                            pending:
+                              type: object
+                              properties:
+                                pending_key:
+                                  $ref: '#/components/schemas/PendingKey'
+                        - type: object
+                          title: active
+                          properties:
+                            active:
+                              type: object
+                              properties:
+                                active_key:
+                                  $ref: '#/components/schemas/CertifiedKey'
+                        - type: object
+                          title: roll_pending
+                          properties:
+                            roll_pending:
+                              type: object
+                              properties:
+                                active_key:
+                                  $ref: '#/components/schemas/CertifiedKey'
+                                pending_key:
+                                  $ref: '#/components/schemas/CertifiedKey'
+                        - type: object
+                          title: roll_new
+                          properties:
+                            roll_new:
+                              type: object
+                              properties:
+                                new_key:
+                                  $ref: '#/components/schemas/CertifiedKey'
+                                active_key:
+                                  $ref: '#/components/schemas/CertifiedKey'
+                        - type: object
+                          title: roll_old
+                          properties:
+                            roll_old:
+                              type: object
+                              properties:
+                                old_key:
+                                  $ref: '#/components/schemas/CertifiedKey'
+                                active_key:
+                                  $ref: '#/components/schemas/CertifiedKey'
+                    current_objects:
+                      type: object
+                      additionalProperties:
+                        x-additionalPropertiesName: object name
+                        type: object
+                        properties:
+                          content:
+                            type: string
+                            format: base64
+                          serial:
+                            type: string
+                          expires:
+                            type: string
+                            format: date-time
+              children:
+                type: array
+                items:
+                  type: string
+          example:
+            handle: 'ca'
+            repo_info:
+              base_uri: 'rsync://localhost/repo/ca/'
+              rpki_notify: 'https://localhost:3000/rrdp/notification.xml'
+            parents:
+              - handle: 'ta'
+                kind: 'ta'
+            resources:
+                asn: 'AS1-AS10'
+                v4: '10.0.0.0/8'
+                v6: '::/128'
+            resource_classes:
+              '0':
+                name_space: '0'
+                parent_handle: 'ta'
+                keys:
+                  active:
+                    active_key:
+                      key_id: 'B738..8820'
+                      incoming_cert:
+                        cert: '<base64>'
+                        uri: 'rsync://localhost/repo/ta/0/B738..8820.cer'
+                        resources:
+                          asn: 'AS0-AS10'
+                          v4: '10.0.0.0/8'
+                          v6: '::/128'
+                      request: null
+                current_objects:
+                  '2DCE..5337.crl':
+                    content: '<base64>'
+                    serial: '2'
+                    expires: '2019-11-27T10:56:16.166449Z'
+                  '2DCE..5337.mft':
+                    content: '<base64>'
+                    serial: '87065729750653489815092730763761996670858255271'
+                    expires: '2019-11-27T10:56:16.172248Z'
+            children:
+              - 'child'
+    ListCAs:
+      description: Success.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              cas:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    handle:
+                      allOf:
+                      - $ref: '#/components/schemas/Handle'
+                      - description: The RFC-8183 handle that uniquely identifies the CA in this Krill instance.
+    GetChildCA:
+      description: Success.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              id_cert:
+                $ref: '#/components/schemas/PemIdCert'
+              entitled_resources:
+                $ref: '#/components/schemas/Resources'
+    ListPublishers:
+      description: Success.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              publishers:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    handle:
+                      $ref: '#/components/schemas/Handle'
+                    links:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          rel:
+                            type: string
+                            enum: [self]
+                          link:
+                            type: string
+                            format: uri
+          example:
+            publishers:
+              - handle: 'ca'
+                links:
+                  rel: 'self'
+                  link: '/api/v1/publishers/ca'
+    GetPublisher:
+      description: Success.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              handle:
+                $ref: '#/components/schemas/Handle'
+              id_cert:
+                $ref: '#/components/schemas/IdCert'
+              base_uri:
+                type: string
+                format: uri
+              current_files:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    base64:
+                      type: string
+                      format: base64
+                    uri:
+                      type: string
+                      format: uri
+          example:
+            handle: 'child'
+            id_cert: 'MIID..zw=='
+            base_uri: 'rsync://<KRILL_SERVER_FQDN>/repo/child/'
+            current_files:
+              - base64: 'MIIK..TZPZ'
+                uri: 'rsync://<KRILL_SERVER_FQDN>/repo/child/0/A815..A01C.mft'
+              - base64: 'MIIB..6Lg8'
+                uri: 'rsync://<KRILL_SERVER_FQDN>/repo/child/0/A815..A01C.crl'
+              - base64: 'MIIJ..Cg4='
+                uri: 'rsync://<KRILL_SERVER_FQDN>/repo/child/0/3130..3936.roa'
+    AddPublisher:
+      description: Success.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/rfc8181'
+    GetRepositoryForCA:
+      description: Success.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              contact:
+                oneOf:
+                - type: object
+                  properties:
+                    embedded:
+                      $ref: '#/components/schemas/RepoInfo'
+                - type: object
+                  properties:
+                    rfc8181:
+                      $ref: '#/components/schemas/rfc8181'
+          examples:
+            embedded:
+              value:
+                contact:
+                  embedded:
+                    base_uri: 'rsync://localhost/repo/ca/'
+                    rpki_notify: 'https://localhost:3000/rrdp/notification.xml'
+            rfc8181:
+              value:
+                contact:
+                  rfc8181:
+                    tag: null
+                    publisher_handle: 'ca'
+                    id_cert: 'MIID..Vg=='
+                    service_uri: 'https://localhost:3000/rfc8181/ca'
+                    repo_info:
+                      base_uri: 'rsync://localhost/repo/ca/'
+                      rpki_notify: 'https://localhost:3000/rrdp/notification.xml'
+    GetCAHistory:
+      description: Success.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              init:
+                type: object
+                properties:
+                  id:
+                    $ref: '#/components/schemas/Handle'
+                  version:
+                    type: integer
+                  details:
+                    type: object
+              events:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      $ref: '#/components/schemas/Handle'
+                    version:
+                      type: integer
+                    details:
+                      type: object
+    Rfc6492OrEmbedded:
+      description: Success.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Rfc6492OrEmbedded'
+          examples:
+            rfc6492:
+              value:
+                rfc6492:
+                  tag: null
+                  id_cert: '<base64>'
+                  parent_handle: 'ta'
+                  child_handle: 'ca'
+                  service_uri: 'https://localhost:3000/rfc6492/ta'
+            embedded:
+              value:
+                'embedded'
+    Rfc8183OrEmbedded:
+      description: Success.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Rfc8183OrEmbedded'
+          examples:
+            rfc6492:
+              value:
+                rfc6492:
+                  tag: null
+                  id_cert: '<base64>'
+                  parent_handle: 'ta'
+                  child_handle: 'ca'
+                  service_uri: 'https://localhost:3000/rfc6492/ta'
+            embedded:
+              value:
+                'embedded'
+
+  examples:
+    rfc6492:
+      value:
+        rfc6492:
+          tag: null
+          id_cert: '<base64>'
+          parent_handle: 'ta'
+          child_handle: 'ca'
+          service_uri: 'https://localhost:3000/rfc6492/ta'
