@@ -214,10 +214,12 @@ impl ResourceClass {
 
         fn create_active_key_and_delta<S: Signer>(
             rcvd_cert: RcvdCert,
+            repo_info: &RepoInfo,
+            name_space: &str,
             signer: &S,
         ) -> ca::Result<(CertifiedKey, ObjectsDelta)> {
             let mut delta = ObjectsDelta::new(rcvd_cert.ca_repository().clone());
-            let active_key = CertifiedKey::create(rcvd_cert, signer)?;
+            let active_key = CertifiedKey::create(rcvd_cert, repo_info, name_space, signer)?;
 
             match active_key.current_set().manifest_info().added_or_updated() {
                 AddedOrUpdated::Added(added) => delta.add(added),
@@ -236,7 +238,12 @@ impl ResourceClass {
                 if rcvd_cert_ki != pending.key_id() {
                     Err(ca::Error::NoKeyMatch(rcvd_cert_ki))
                 } else {
-                    let (active_key, delta) = create_active_key_and_delta(rcvd_cert, signer)?;
+                    let (active_key, delta) = create_active_key_and_delta(
+                        rcvd_cert,
+                        repo_info,
+                        self.name_space(),
+                        signer,
+                    )?;
                     Ok(vec![EvtDet::KeyPendingToActive(
                         self.name.clone(),
                         active_key,
@@ -249,7 +256,12 @@ impl ResourceClass {
             }
             KeyState::RollPending(pending, current) => {
                 if rcvd_cert_ki == pending.key_id() {
-                    let (active_key, delta) = create_active_key_and_delta(rcvd_cert, signer)?;
+                    let (active_key, delta) = create_active_key_and_delta(
+                        rcvd_cert,
+                        repo_info,
+                        self.name_space(),
+                        signer,
+                    )?;
                     Ok(vec![EvtDet::KeyPendingToNew(
                         self.name.clone(),
                         active_key,
@@ -395,7 +407,13 @@ impl ResourceClass {
         };
 
         let publish_key_delta = self
-            .make_current_set_delta(publish_key, objects_delta, publish_key_revocations, signer)
+            .make_current_set_delta(
+                publish_key,
+                repo_info,
+                objects_delta,
+                publish_key_revocations,
+                signer,
+            )
             .map_err(Error::signer)?;
 
         key_pub_map.insert(publish_key.key_id().clone(), publish_key_delta);
@@ -405,7 +423,7 @@ impl ResourceClass {
             let delta = ObjectsDelta::new(repo_info.ca_repository(ns));
 
             let other_delta = self
-                .make_current_set_delta(other_key, delta, other_key_revocations, signer)
+                .make_current_set_delta(other_key, repo_info, delta, other_key_revocations, signer)
                 .map_err(ca::Error::signer)?;
 
             key_pub_map.insert(other_key.key_id().clone(), other_delta);
@@ -519,7 +537,7 @@ impl ResourceClass {
         }
 
         let set_delta = self
-            .make_current_set_delta(issuing_key, objects_delta, revocations, signer)
+            .make_current_set_delta(issuing_key, repo_info, objects_delta, revocations, signer)
             .map_err(Error::signer)?;
 
         let mut res = HashMap::new();
@@ -530,6 +548,7 @@ impl ResourceClass {
     fn make_current_set_delta<S: Signer>(
         &self,
         signing_key: &CertifiedKey,
+        repo_info: &RepoInfo,
         mut objects_delta: ObjectsDelta,
         mut new_revocations: Vec<Revocation>,
         signer: &S,
@@ -573,6 +592,8 @@ impl ResourceClass {
 
         let manifest_info = ManifestBuilder::new(&crl_info, issued, roas, &objects_delta).build(
             signing_cert,
+            repo_info,
+            self.name_space(),
             number,
             Some(current_mft_hash),
             signer,

@@ -12,7 +12,7 @@ use rpki::x509::{Serial, Time, Validity};
 
 use crate::commons::api::{
     AddedObject, CurrentObject, HexEncodedHash, IssuedCert, ObjectName, ObjectsDelta, RcvdCert,
-    Revocation, Revocations, RevocationsDelta, UpdatedObject, WithdrawnObject,
+    RepoInfo, Revocation, Revocations, RevocationsDelta, UpdatedObject, WithdrawnObject,
 };
 use crate::daemon::ca::{self, RoaInfo, RouteAuthorization, Signer};
 
@@ -160,7 +160,12 @@ pub struct CurrentObjectSet {
 }
 
 impl CurrentObjectSet {
-    pub fn create<S: Signer>(signing_cert: &RcvdCert, signer: &S) -> ca::Result<Self> {
+    pub fn create<S: Signer>(
+        signing_cert: &RcvdCert,
+        repo_info: &RepoInfo,
+        name_space: &str,
+        signer: &S,
+    ) -> ca::Result<Self> {
         let number = 1;
         let revocations = Revocations::default();
         let (crl_info, _) = CrlBuilder::build(
@@ -172,8 +177,14 @@ impl CurrentObjectSet {
             signer,
         )?;
 
-        let manifest_info =
-            ManifestBuilder::with_crl_only(&crl_info).build(signing_cert, number, None, signer)?;
+        let manifest_info = ManifestBuilder::with_crl_only(&crl_info).build(
+            signing_cert,
+            repo_info,
+            name_space,
+            number,
+            None,
+            signer,
+        )?;
 
         Ok(CurrentObjectSet {
             number,
@@ -272,7 +283,7 @@ impl ManifestBuilder {
 
         entries.insert(
             crl_info.name.clone().into(),
-            Self::mft_hash(crl_info.current().content().as_bytes()),
+            Self::mft_hash(&crl_info.current().content().to_bytes()),
         );
 
         ManifestBuilder { entries }
@@ -289,7 +300,7 @@ impl ManifestBuilder {
         // Add the *new* CRL
         entries.insert(
             crl_info.name.clone().into(),
-            Self::mft_hash(crl_info.current().content().as_bytes()),
+            Self::mft_hash(&crl_info.current().content().to_bytes()),
         );
 
         // Add all *current* issued certs
@@ -304,7 +315,7 @@ impl ManifestBuilder {
         // Add all *current* ROAs
         for (_auth, roa_info) in roas {
             let name = roa_info.name().clone();
-            let hash = Self::mft_hash(roa_info.object().content().as_bytes());
+            let hash = Self::mft_hash(&roa_info.object().content().to_bytes());
 
             entries.insert(name.into(), hash);
         }
@@ -339,11 +350,19 @@ impl ManifestBuilder {
     pub fn build<S: Signer>(
         self,
         signing_cert: &RcvdCert,
+        repo_info: &RepoInfo,
+        name_space: &str,
         number: u64,
         old: Option<HexEncodedHash>,
         signer: &S,
     ) -> ca::Result<ManifestInfo> {
         let signing_key = signing_cert.cert().subject_public_key_info();
+
+        let signing_ki = signing_key.key_identifier();
+
+        let crl_uri = repo_info.crl_distribution_point(name_space, &signing_ki);
+        let mft_uri = repo_info.rpki_manifest(name_space, &signing_ki);
+
         let aia = signing_cert.uri();
         let aki = KeyIdentifier::from_public_key(signing_key);
         let serial_number = Serial::from(number);
@@ -366,9 +385,9 @@ impl ManifestBuilder {
             let mut object_builder = SignedObjectBuilder::new(
                 Serial::random(signer).map_err(ca::Error::signer)?,
                 Validity::new(just_now, next_week),
-                signing_cert.crl_uri(),
+                crl_uri,
                 aia.clone(),
-                signing_cert.mft_uri(),
+                mft_uri,
             );
             object_builder.set_issuer(Some(signing_cert.cert().subject().clone()));
             object_builder.set_signing_time(Some(now));

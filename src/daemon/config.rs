@@ -223,6 +223,7 @@ impl Config {
         config.port = 3001;
         config.use_ta = false;
         config.service_uri = "https://localhost:3001/".to_string();
+        config.rsync_base = uri::Rsync::from_str("rsync://remotehost/repo/").unwrap();
         config
     }
 

@@ -478,6 +478,16 @@ impl RepoInfo {
         self.resolve(name_space, &Self::mft_name(signing_key))
     }
 
+    /// Returns the CRL Distribution Point (rsync URI) for this RepoInfo, given the
+    /// namespace and signing key.
+    pub fn crl_distribution_point(
+        &self,
+        name_space: &str,
+        signing_key: &KeyIdentifier,
+    ) -> uri::Rsync {
+        self.resolve(name_space, &Self::crl_name(signing_key))
+    }
+
     /// Returns the rpki notify uri.
     /// (Note that this is the same for all namespaces).
     pub fn rpki_notify(&self) -> uri::Https {

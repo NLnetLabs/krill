@@ -3,19 +3,23 @@ extern crate pretty;
 extern crate rpki;
 
 use std::fs;
+use std::str::FromStr;
+
+use rpki::manifest::Manifest;
+use rpki::roa::Roa;
 
 use krill::cli::options::{CaCommand, Command, PublishersCommand};
 use krill::cli::report::ApiResponse;
 use krill::commons::api::{
     CaRepoDetails, CurrentRepoState, Handle, ParentCaReq, PublisherDetails, PublisherHandle,
-    RepositoryUpdate, ResourceSet,
+    RepositoryUpdate, ResourceSet, RoaDefinition, RoaDefinitionUpdates,
 };
 use krill::commons::remote::rfc8183;
 use krill::daemon::ca::ta_handle;
 use krill::daemon::test::{
-    add_child_to_ta_embedded, add_parent_to_ca, init_child, krill_admin, krill_pubd_admin,
-    start_krill_pubd_server, test_with_krill_server, wait_for, wait_for_current_resources,
-    PubdTestContext,
+    add_child_to_ta_embedded, add_parent_to_ca, ca_route_authorizations_update, init_child,
+    krill_admin, krill_pubd_admin, start_krill_pubd_server, test_with_krill_server, wait_for,
+    wait_for_current_resources, PubdTestContext,
 };
 
 fn repository_response(
@@ -108,6 +112,14 @@ fn remote_publication() {
             list.elements().len() == 2
         });
 
+        // Add some roas to have more to migrate when moving publication servers
+        let route_1 = RoaDefinition::from_str("10.0.0.0/24 => 64496").unwrap();
+        let route_2 = RoaDefinition::from_str("10.0.2.0/23 => 64496").unwrap();
+        let mut updates = RoaDefinitionUpdates::empty();
+        updates.add(route_1);
+        updates.add(route_2);
+        ca_route_authorizations_update(&child, updates);
+
         // Add child to the secondary publication server
         let publisher_request = publisher_request(&child);
         add_publisher(publisher_request, PubdTestContext::Secondary);
@@ -129,8 +141,38 @@ fn remote_publication() {
             assert!(child_repo_details.contact().is_rfc8183());
             let state = repo_state(&child);
             let list = state.as_list();
-            list.elements().len() == 2
+
+            list.elements().len() == 4
         });
+
+        {
+            // Test that the new repo URI is used in newly published objects
+
+            let details = details_publisher(&child, PubdTestContext::Secondary);
+
+            let mft = details
+                .current_files()
+                .iter()
+                .find(|e| e.uri().ends_with(".mft"))
+                .unwrap();
+            let mft = Manifest::decode(mft.base64().to_bytes(), true).unwrap();
+            let mft_uri = mft.cert().signed_object().unwrap();
+            let crl_uri = mft.cert().crl_uri().unwrap();
+            assert!(mft_uri.to_string().starts_with("rsync://remotehost/repo/"));
+            assert!(crl_uri.to_string().starts_with("rsync://remotehost/repo/"));
+
+            for roa in details
+                .current_files()
+                .iter()
+                .filter(|e| e.uri().ends_with(".roa"))
+            {
+                let roa = Roa::decode(roa.base64().to_bytes(), true).unwrap();
+                let roa_uri = roa.cert().signed_object().unwrap();
+                let crl_uri = roa.cert().crl_uri().unwrap();
+                assert!(roa_uri.to_string().starts_with("rsync://remotehost/repo/"));
+                assert!(crl_uri.to_string().starts_with("rsync://remotehost/repo/"));
+            }
+        }
 
         // Child should now clean up the old repo
         wait_for(10, "Child should clean up at old repository", || {
@@ -153,7 +195,7 @@ fn remote_publication() {
             assert!(child_repo_details.contact().is_rfc8183());
             let state = repo_state(&child);
             let list = state.as_list();
-            list.elements().len() == 2
+            list.elements().len() == 4
         });
 
         // Child should now clean up the old repo

@@ -1266,12 +1266,13 @@ impl<S: Signer> CertAuth<S> {
                 let auths: Vec<RouteAuthorization> =
                     self.routes.authorizations().cloned().collect();
 
-                res.append(&mut rc.republish(
-                    auths.as_slice(),
-                    self.repository.repo_info(),
-                    mode,
-                    signer,
-                )?);
+                let repo_info = if let PublishMode::NewRepo(info) = mode {
+                    info
+                } else {
+                    self.repository.repo_info()
+                };
+
+                res.append(&mut rc.republish(auths.as_slice(), repo_info, mode, signer)?);
             }
         }
 
