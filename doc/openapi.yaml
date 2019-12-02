@@ -6,7 +6,7 @@ info:
     # Introduction
     Welcome to the documentation for the Krill server API, a JSON based
     REST-like API for managing your Krill Certificate Authorities and
-    Publishers.
+    Publishers. For more information read the [Krill documentation](https://rpki.readthedocs.io/en/latest/krill/).
 
     ## Clients
     To interact with a Krill server using this API, either:
