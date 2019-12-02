@@ -3,6 +3,26 @@
 Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
 for planned releases. 
 
+## 0.4.0 'The Krill Factor'
+
+This release focuses on stabilising the API and internal data format, which allows upgrades to 
+future versions of Krill without the need for complicated data migrations. We do not expect to
+introduce breaking changes to the API from this point forward. Please note however, that in some
+cases the JSON structure in API responses might be extended with additional information in new
+JSON members.
+
+Overview of changes:
+* Document the Krill server API using OpenAPI 3 (#148)
+* Stabilise JSON API (#141)
+* Better API response when a method does not exist (#146)
+* Support upgrading, preserving data (#53)
+* Set up automated end-to-end testing (TA-CA-ROAs-validation) (#66)
+* Add config option allowing to serve RRDP from a different host (#147)
+* Let Krill log to syslog (#121)
+* Audit commands and errors (#142)
+* Log all RFC 8181 and 6492 protocol messages (#143)
+
+
 ## 0.3.0 'The Krilling is on the wall'
 
 This release focused on remote publication.
