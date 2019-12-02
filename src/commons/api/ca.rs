@@ -134,7 +134,7 @@ impl From<&IdCert> for IdCertPem {
 
         pem.push_str("-----END CERTIFICATE-----\n");
 
-        let hash = HexEncodedHash::from_content(pem.as_bytes());
+        let hash = HexEncodedHash::from_content(&cer.to_bytes());
 
         IdCertPem { pem, hash }
     }
