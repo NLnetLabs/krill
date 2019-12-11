@@ -851,15 +851,21 @@ impl ResourceClass {
         signer: &S,
     ) -> ca::Result<IssuedCert> {
         let signing_key = self.get_current_key()?;
-        let parent_resources = signing_key.incoming_cert().resources();
-        let resources = parent_resources.intersection(child_resources);
+        //        let parent_resources = signing_key.incoming_cert().resources();
+        //        let resources = parent_resources.intersection(child_resources);
         let replaces = self
             .certificates
             .get(&csr.key_id())
             .map(ReplacedObject::from);
 
-        let issued =
-            SignSupport::make_issued_cert(csr, &resources, limit, replaces, signing_key, signer)?;
+        let issued = SignSupport::make_issued_cert(
+            csr,
+            &child_resources,
+            limit,
+            replaces,
+            signing_key,
+            signer,
+        )?;
 
         Ok(issued)
     }

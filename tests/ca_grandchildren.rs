@@ -17,6 +17,7 @@ use krill::daemon::test::*;
 ///                  CA4 (two resource classes)
 ///
 /// Also tests that everything is published properly.
+#[ignore]
 fn ca_grandchildren() {
     test_with_krill_server(|_d| {
         let rcn_0 = ResourceClassName::from(0);
