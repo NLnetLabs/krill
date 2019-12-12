@@ -457,4 +457,31 @@ mod tests {
         parse_ser_de_print_definition("2001:db8::/32-48 => 64496");
     }
 
+    #[test]
+    fn roa_max_length() {
+        fn valid_max_length(s: &str) {
+            let def = RoaDefinition::from_str(s).unwrap();
+            assert!(def.max_length_valid())
+        }
+
+        fn invalid_max_length(s: &str) {
+            let def = RoaDefinition::from_str(s).unwrap();
+            assert!(!def.max_length_valid())
+        }
+
+        valid_max_length("192.168.0.0/16 => 64496");
+        valid_max_length("192.168.0.0/16-16 => 64496");
+        valid_max_length("192.168.0.0/16-24 => 64496");
+        valid_max_length("192.168.0.0/16-32 => 64496");
+        valid_max_length("2001:db8::/32 => 64496");
+        valid_max_length("2001:db8::/32-32 => 64496");
+        valid_max_length("2001:db8::/32-48 => 64496");
+        valid_max_length("2001:db8::/32-128 => 64496");
+
+        invalid_max_length("192.168.0.0/16-15 => 64496");
+        invalid_max_length("192.168.0.0/16-33 => 64496");
+        invalid_max_length("2001:db8::/32-31 => 64496");
+        invalid_max_length("2001:db8::/32-129 => 64496");
+    }
+
 }

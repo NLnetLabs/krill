@@ -83,5 +83,10 @@ fn ca_roas() {
         ca_roll_activate(&child);
         wait_for_key_roll_complete(&child);
         wait_for_published_objects(&child, &[crl_file, mft_file, route3_file]);
+
+        let route_invalid_length = RoaDefinition::from_str("10.0.0.0/24-33 => 64496").unwrap();
+        let mut updates = RoaDefinitionUpdates::empty();
+        updates.add(route_invalid_length);
+        ca_route_authorizations_update_expect_error(&child, updates);
     });
 }
