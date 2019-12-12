@@ -783,6 +783,7 @@ impl ToErrorCode for ca::Error {
             ca::Error::AuthorisationAlreadyPresent(_, _) => ErrorCode::RoaUpdateInvalidDuplicate,
             ca::Error::AuthorisationUnknown(_, _) => ErrorCode::RoaUpdateInvalidMissing,
             ca::Error::AuthorisationNotEntitled(_, _) => ErrorCode::RoaUpdateInvalidResources,
+            ca::Error::AuthorisationInvalidMaxlength(_, _) => ErrorCode::RoaUpdateInvalidMaxlength,
             ca::Error::NewRepoUpdateNoChange => ErrorCode::NewRepoNoChange,
             ca::Error::NewRepoUpdateNotResponsive(_) => ErrorCode::NewRepoNoResponse,
             _ => ErrorCode::CaServerError,

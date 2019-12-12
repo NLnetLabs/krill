@@ -42,6 +42,17 @@ impl RoaDefinition {
     pub fn max_length(&self) -> Option<u8> {
         self.max_length
     }
+
+    pub fn max_length_valid(&self) -> bool {
+        if let Some(max_length) = self.max_length {
+            match self.prefix {
+                TypedPrefix::V4(_) => max_length >= self.prefix.addr_len() && max_length <= 32,
+                TypedPrefix::V6(_) => max_length >= self.prefix.addr_len() && max_length <= 128,
+            }
+        } else {
+            true
+        }
+    }
 }
 
 impl FromStr for RoaDefinition {

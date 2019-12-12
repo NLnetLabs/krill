@@ -1364,6 +1364,12 @@ impl<S: Signer> CertAuth<S> {
             self.routes.authorizations().cloned().collect();
 
         for auth in added {
+            if !auth.max_length_valid() {
+                return Err(Error::AuthorisationInvalidMaxlength(
+                    auth,
+                    self.handle.clone(),
+                ));
+            }
             if current_auths.contains(&auth) {
                 return Err(Error::AuthorisationAlreadyPresent(
                     auth,

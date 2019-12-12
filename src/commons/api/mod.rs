@@ -339,6 +339,9 @@ pub enum ErrorCode {
     #[display(fmt = "Invalid ROA delta: not all resources held.")]
     RoaUpdateInvalidResources,
 
+    #[display(fmt = "Invalid ROA definition: max length not legal for prefix")]
+    RoaUpdateInvalidMaxlength,
+
     // 2500s General CA issues
     #[display(fmt = "Unknown CA.")]
     UnknownCa,
@@ -410,6 +413,7 @@ impl From<usize> for ErrorCode {
             2401 => ErrorCode::RoaUpdateInvalidDuplicate,
             2402 => ErrorCode::RoaUpdateInvalidMissing,
             2403 => ErrorCode::RoaUpdateInvalidResources,
+            2404 => ErrorCode::RoaUpdateInvalidMaxlength,
 
             // 2500s -> General CA issues
             2501 => ErrorCode::DuplicateCa,
@@ -469,6 +473,7 @@ impl Into<ErrorResponse> for ErrorCode {
             ErrorCode::RoaUpdateInvalidDuplicate => 2401,
             ErrorCode::RoaUpdateInvalidMissing => 2402,
             ErrorCode::RoaUpdateInvalidResources => 2403,
+            ErrorCode::RoaUpdateInvalidMaxlength => 2404,
 
             // general krill ca errors
             ErrorCode::DuplicateCa => 2501,
@@ -524,7 +529,7 @@ mod tests {
             test_code(n)
         }
 
-        for n in 2401..2404 {
+        for n in 2401..2405 {
             test_code(n)
         }
 
