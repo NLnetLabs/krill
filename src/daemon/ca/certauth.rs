@@ -507,8 +507,7 @@ impl<S: Signer> CertAuth<S> {
             Err(_) => return None,
         };
 
-        //        let child_resources = my_rcvd_cert.resources().intersection(child.resources());
-        let child_resources = child.resources().clone();
+        let child_resources = my_rcvd_cert.resources().intersection(child.resources());
         if child_resources.is_empty() {
             return None;
         }

@@ -131,9 +131,9 @@ impl SignSupport {
             .apply_limit(&limit)
             .map_err(|_| ca::Error::MissingResources)?;
 
-        //        if !signing_cert.resources().contains(&resources) {
-        //            return Err(ca::Error::MissingResources);
-        //        }
+        if !signing_cert.resources().contains(&resources) {
+            return Err(ca::Error::MissingResources);
+        }
 
         let serial = { Serial::random(signer).map_err(ca::Error::signer)? };
         let issuer = signing_cert.cert().subject().clone();

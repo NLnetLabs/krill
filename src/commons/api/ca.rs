@@ -1951,7 +1951,6 @@ mod test {
     }
 
     #[test]
-    #[ignore]
     fn test_resource_set_intersection() {
         let child_resources_json =
             include_str!("../../../test-resources/resources/child_resources.json");
