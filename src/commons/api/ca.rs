@@ -1949,4 +1949,20 @@ mod test {
 
         assert_eq!(ncc_id_pem.pem(), ncc_id_openssl_pem);
     }
+
+    #[test]
+    fn test_resource_set_intersection() {
+        let child_resources_json =
+            include_str!("../../../test-resources/resources/child_resources.json");
+        let child_resources: ResourceSet = serde_json::from_str(child_resources_json).unwrap();
+
+        let parent_resources_json =
+            include_str!("../../../test-resources/resources/parent_resources.json");
+        let parent_resouces: ResourceSet = serde_json::from_str(parent_resources_json).unwrap();
+
+        let intersection = parent_resouces.intersection(&child_resources);
+
+        assert_eq!(intersection, child_resources);
+    }
+
 }

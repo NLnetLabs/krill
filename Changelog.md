@@ -3,6 +3,15 @@
 Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
 for planned releases. 
 
+## 0.4.1 'Fogo de Krill'
+
+This release fixes two issues:
+* Certain resource sets were handled incorrectly (#152)
+* Krill should not allow impossible max length values for ROAs (#153)
+
+We recommend that all users upgrade to this release. There were no configuration or data model
+changes introduced, so the binary can just be used to replace any installed 0.4.0 release.  
+
 ## 0.4.0 'The Krill Factor'
 
 This release focuses on stabilising the API and internal data format, which allows upgrades to 

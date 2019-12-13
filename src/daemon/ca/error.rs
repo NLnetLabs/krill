@@ -91,6 +91,13 @@ pub enum Error {
     AuthorisationAlreadyPresent(RouteAuthorization, Handle),
 
     #[display(
+        fmt = "Invalid max length for prefix in authorization: '{}' for CA '{}",
+        _0,
+        _1
+    )]
+    AuthorisationInvalidMaxlength(RouteAuthorization, Handle),
+
+    #[display(
         fmt = "User tries to add authorization '{}' for resource not held by CA '{}'",
         _0,
         _1
