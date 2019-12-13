@@ -942,6 +942,7 @@ paths:
                   - $ref: '#/components/schemas/InvalidROADeltaAddingDefinitionAlreadyPresent'
                   - $ref: '#/components/schemas/InvalidROADeltaRemovingUnknownDefinition'
                   - $ref: '#/components/schemas/InvalidROADeltaNotAllResourcesHeld'
+                  - $ref: '#/components/schemas/InvalidROADeltaInvalidMaxLength'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -1495,6 +1496,18 @@ components:
         msg:
           type: string
           example: 'Invalid ROA delta: not all resources held.'
+    InvalidROADeltaInvalidMaxLength:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2404]
+        msg:
+          type: string
+          example: 'Invalid ROA definition: max length not legal for prefix.'
     CAHandleAlreadyInUse:
       type: object
       required:
@@ -1617,6 +1630,12 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/InvalidROADeltaNotAllResourcesHeld'
+    InvalidROADeltaInvalidMaxLength:
+      description: 'Invalid ROA delta: not all resources held.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/InvalidROADeltaInvalidMaxLength'
     GetCA:
       description: Success.
       content:
