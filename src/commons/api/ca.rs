@@ -1962,9 +1962,9 @@ mod test {
 
         let parent_resources_json =
             include_str!("../../../test-resources/resources/parent_resources.json");
-        let parent_resouces: ResourceSet = serde_json::from_str(parent_resources_json).unwrap();
+        let parent_resources: ResourceSet = serde_json::from_str(parent_resources_json).unwrap();
 
-        let intersection = parent_resouces.intersection(&child_resources);
+        let intersection = parent_resources.intersection(&child_resources);
 
         assert_eq!(intersection, child_resources);
     }
