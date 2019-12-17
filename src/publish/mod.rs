@@ -34,7 +34,14 @@ impl CaPublisher {
     pub fn publish(&self, ca_handle: &Handle) -> Result<(), Error> {
         let ca = self.caserver.get_ca(ca_handle)?;
 
-        let list_reply = match ca.repository_contact() {
+        // Since this is called by the schedular, this should act as a no-op for
+        // new CAs which do not yet have any repository configured.
+        let repo_contact = match ca.repository_contact() {
+            Some(repo) => repo,
+            None => return Ok(()),
+        };
+
+        let list_reply = match &repo_contact {
             RepositoryContact::Embedded(_) => self.pubserver.list(ca_handle)?,
             RepositoryContact::Rfc8181(repo) => self.caserver.send_rfc8181_list(ca_handle, repo)?,
         };
@@ -69,7 +76,7 @@ impl CaPublisher {
             PublishDelta::new(publishes, updates, withdraws)
         };
 
-        match ca.repository_contact() {
+        match &repo_contact {
             RepositoryContact::Embedded(_) => self.pubserver.publish(ca_handle.clone(), delta)?,
             RepositoryContact::Rfc8181(repo) => {
                 self.caserver.send_rfc8181_delta(ca_handle, repo, delta)?

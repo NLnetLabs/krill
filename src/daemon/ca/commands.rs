@@ -3,6 +3,8 @@ use std::sync::{Arc, RwLock};
 
 use chrono::Duration;
 
+use rpki::uri;
+
 use crate::commons::api::{
     ChildHandle, Entitlements, Handle, IssuanceRequest, ParentCaContact, ParentHandle, RcvdCert,
     RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse,
@@ -21,6 +23,11 @@ pub type Cmd<S> = eventsourcing::SentCommand<CmdDet<S>>;
 #[derive(Clone, Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum CmdDet<S: Signer> {
+    // ------------------------------------------------------------
+    // Being a TA
+    // ------------------------------------------------------------
+    MakeTrustAnchor(Vec<uri::Https>, Arc<RwLock<S>>),
+
     // ------------------------------------------------------------
     // Being a parent
     // ------------------------------------------------------------
@@ -109,6 +116,11 @@ impl<S: Signer> fmt::Display for CmdDet<S> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             // ------------------------------------------------------------
+            // Becoming a trust anchor
+            // ------------------------------------------------------------
+            CmdDet::MakeTrustAnchor(_, _) => write!(f, "Turn into Trust Anchor"),
+
+            // ------------------------------------------------------------
             // Being a parent
             // ------------------------------------------------------------
             CmdDet::ChildAdd(child, id_cert_opt, res) => write!(
@@ -196,6 +208,15 @@ impl<S: Signer> eventsourcing::CommandDetails for CmdDet<S> {
 }
 
 impl<S: Signer> CmdDet<S> {
+    /// Turns this CA into a TrustAnchor
+    pub fn make_trust_anchor(
+        handle: &Handle,
+        uris: Vec<uri::Https>,
+        signer: Arc<RwLock<S>>,
+    ) -> Cmd<S> {
+        eventsourcing::SentCommand::new(handle, None, CmdDet::MakeTrustAnchor(uris, signer))
+    }
+
     /// Adds a child to this CA. Will return an error in case you try
     /// to give the child resources not held by the CA.
     pub fn child_add(

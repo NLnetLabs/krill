@@ -18,7 +18,7 @@ fn ca_roas() {
         let child = Handle::from_str_unsafe("child");
         let child_resources = ResourceSet::from_strs("", "10.0.0.0/16", "2001:DB8::/32").unwrap();
 
-        init_child(&child);
+        init_child_with_embedded_repo(&child);
 
         // Set up under parent  ----------------------------------------------------------------
         {

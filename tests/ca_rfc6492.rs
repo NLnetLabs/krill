@@ -12,7 +12,7 @@ fn ca_rfc6492() {
         let child = Handle::from_str_unsafe("rfc6492");
         let child_resources = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
 
-        init_child(&child);
+        init_child_with_embedded_repo(&child);
 
         // Add child to parent (ta)
         let parent = {

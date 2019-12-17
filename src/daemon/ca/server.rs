@@ -75,21 +75,30 @@ impl<S: Signer> CaServer<S> {
         if self.ca_store.has(&handle) {
             Err(ServerError::TrustAnchorInitialisedError)
         } else {
-            let init = IniDet::init_ta(&handle, info, ta_uris, self.signer.clone())?;
+            // init normal CA
+            let init = IniDet::init(&handle, self.signer.clone())?;
+            self.ca_store.add(init)?;
 
-            let ta = self.ca_store.add(init)?;
+            // add embedded repo
+            let embedded = RepositoryContact::embedded(info);
+            let upd_repo_cmd = CmdDet::update_repo(&handle, embedded, self.signer.clone());
+            self.ca_store.command(upd_repo_cmd)?;
 
+            // make trust anchor
+            let make_ta_cmd = CmdDet::make_trust_anchor(&handle, ta_uris, self.signer.clone());
+            let ta = self.ca_store.command(make_ta_cmd)?;
+
+            // receive the self signed cert (now as child of self)
             let ta_cert = ta.parent(&handle).unwrap().to_ta_cert();
             let rcvd_cert = RcvdCert::new(ta_cert.clone(), ta_aia, ResourceSet::all_resources());
 
-            let command = CmdDet::upd_received_cert(
+            let rcv_cert = CmdDet::upd_received_cert(
                 &handle,
                 ResourceClassName::default(),
                 rcvd_cert,
                 self.signer.clone(),
             );
-
-            self.ca_store.command(command)?;
+            self.ca_store.command(rcv_cert)?;
 
             Ok(())
         }
@@ -392,12 +401,12 @@ impl<S: Signer> CaServer<S> {
         )
     }
 
-    /// Initialises an embedded CA, without any parents (for now).
-    pub fn init_ca(&self, handle: &Handle, repo_info: RepoInfo) -> ServerResult<()> {
+    /// Initialises a CA without a repo, no parents, no children, no nothing
+    pub fn init_ca(&self, handle: &Handle) -> ServerResult<()> {
         if self.ca_store.has(handle) {
             Err(ServerError::DuplicateCa(handle.to_string()))
         } else {
-            let init = IniDet::init(handle, repo_info, self.signer.clone())?;
+            let init = IniDet::init(handle, self.signer.clone())?;
             self.ca_store.add(init)?;
             Ok(())
         }

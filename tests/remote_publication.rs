@@ -17,9 +17,9 @@ use krill::commons::api::{
 use krill::commons::remote::rfc8183;
 use krill::daemon::ca::ta_handle;
 use krill::daemon::test::{
-    add_child_to_ta_embedded, add_parent_to_ca, ca_route_authorizations_update, init_child,
-    krill_admin, krill_pubd_admin, start_krill_pubd_server, test_with_krill_server, wait_for,
-    wait_for_current_resources, PubdTestContext,
+    add_child_to_ta_embedded, add_parent_to_ca, ca_route_authorizations_update,
+    init_child_with_embedded_repo, krill_admin, krill_pubd_admin, start_krill_pubd_server,
+    test_with_krill_server, wait_for, wait_for_current_resources, PubdTestContext,
 };
 
 fn repository_response(
@@ -90,7 +90,7 @@ fn remote_publication() {
 
         // Set up child as a child of the TA
         {
-            init_child(&child);
+            init_child_with_embedded_repo(&child);
             let child_resources = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
 
             let parent = {

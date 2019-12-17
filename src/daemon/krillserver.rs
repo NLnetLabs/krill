@@ -168,7 +168,7 @@ impl KrillServer {
 
     /// Adds the publishers, blows up if it already existed.
     pub fn add_publisher(
-        &mut self,
+        &self,
         req: rfc8183::PublisherRequest,
     ) -> KrillRes<rfc8183::RepositoryResponse> {
         let publisher_handle = req.publisher_handle().clone();
@@ -381,64 +381,64 @@ impl KrillServer {
     pub fn ca_init(&mut self, init: CertAuthInit) -> EmptyRes {
         let handle = init.unpack();
 
-        let repo_info = self.pubserver.repo_info_for(&handle)?;
-
         // Create CA
-        self.caserver.init_ca(&handle, repo_info)?;
-
-        let ca = self.caserver.get_ca(&handle)?;
-        let id_cert = ca.id_cert().clone();
-
-        // Add publisher
-        let req = rfc8183::PublisherRequest::new(None, handle.clone(), id_cert);
-        self.add_publisher(req)?;
+        self.caserver.init_ca(&handle)?;
 
         Ok(())
     }
 
     /// Return the info about the configured repository server for a given Ca.
     /// and the actual objects published there, as reported by a list reply.
-    pub fn ca_repo_details(&self, handle: &Handle) -> KrillRes<CaRepoDetails> {
+    pub fn ca_repo_details(&self, handle: &Handle) -> KrillRes<Option<CaRepoDetails>> {
         self.caserver
             .get_ca(handle)
             .map(|ca| {
-                let contact = ca.repository_contact().clone();
-                CaRepoDetails::new(contact)
+                ca.repository_contact()
+                    .map(|repo| CaRepoDetails::new(repo.clone()))
             })
             .map_err(Error::CaServerError)
     }
 
     /// Returns the state of the current configured repo for a ca
-    pub fn ca_repo_state(&self, handle: &Handle) -> KrillRes<CurrentRepoState> {
+    pub fn ca_repo_state(&self, handle: &Handle) -> KrillRes<Option<CurrentRepoState>> {
         self.caserver
             .get_ca(handle)
             .map(|ca| {
-                let contact = ca.repository_contact().clone();
-                let repo_opt = contact.as_reponse_opt();
-                self.repo_state(handle, repo_opt)
+                ca.repository_contact()
+                    .map(|repo| self.repo_state(handle, repo.as_reponse_opt()))
             })
             .map_err(Error::CaServerError)
     }
 
     /// Update the repository for a CA, or return an error. (see `CertAuth::repo_update`)
     pub fn ca_update_repo(&self, handle: Handle, update: RepositoryUpdate) -> EmptyRes {
-        // first check that the new repo can be contacted
-        let repo = update.as_response_opt();
+        let contact = match update {
+            RepositoryUpdate::Embedded => {
+                // Add to embedded publication server if not present
+                if self.pubserver.get_publisher_details(&handle).is_err() {
+                    let ca = self.caserver.get_ca(&handle)?;
+                    let id_cert = ca.id_cert().clone();
 
-        if let CurrentRepoState::Error(msg) = self.repo_state(&handle, repo) {
-            Err(Error::CaServerError(ca::ServerError::CertAuth(
-                ca::Error::NewRepoUpdateNotResponsive(msg),
-            )))
-        } else {
-            let contact = match update {
-                RepositoryUpdate::Embedded => {
-                    RepositoryContact::embedded(self.pubserver.repo_info_for(&handle)?)
+                    // Add publisher
+                    let req = rfc8183::PublisherRequest::new(None, handle.clone(), id_cert);
+                    self.add_publisher(req)?;
                 }
-                RepositoryUpdate::Rfc8181(res) => RepositoryContact::Rfc8181(res),
-            };
 
-            Ok(self.caserver.update_repo(handle, contact)?)
-        }
+                RepositoryContact::embedded(self.pubserver.repo_info_for(&handle)?)
+            }
+            RepositoryUpdate::Rfc8181(response) => {
+                // first check that the new repo can be contacted
+                if let CurrentRepoState::Error(msg) = self.repo_state(&handle, Some(&response)) {
+                    return Err(Error::CaServerError(ca::ServerError::CertAuth(
+                        ca::Error::NewRepoUpdateNotResponsive(msg),
+                    )));
+                }
+
+                RepositoryContact::Rfc8181(response)
+            }
+        };
+
+        Ok(self.caserver.update_repo(handle, contact)?)
     }
 
     fn repo_state(

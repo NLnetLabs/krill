@@ -7,9 +7,9 @@ use std::sync::{Arc, RwLock};
 use bytes::Bytes;
 use chrono::Duration;
 
-use rpki::cert::Cert;
+use rpki::cert::{Cert, KeyUsage, Overclaim, TbsCert};
 use rpki::crypto::{KeyIdentifier, PublicKey, PublicKeyFormat};
-use rpki::x509::Time;
+use rpki::x509::{Serial, Time, Validity};
 
 use crate::commons::api::rrdp::PublishElement;
 use crate::commons::api::{
@@ -32,6 +32,8 @@ use crate::daemon::ca::{
     self, ta_handle, ChildDetails, Cmd, CmdDet, CurrentObjectSetDelta, Error, Evt, EvtDet, Ini,
     ResourceClass, Result, RouteAuthorization, RouteAuthorizationUpdates, Routes, Signer,
 };
+use commons::api::{TaCertDetails, TrustAnchorLocator};
+use rpki::uri;
 
 //------------ Rfc8183Id ---------------------------------------------------
 
@@ -69,7 +71,7 @@ pub struct CertAuth<S: Signer> {
 
     id: Rfc8183Id, // Used for RFC 6492 (up-down) and RFC 8181 (publication)
 
-    repository: RepositoryContact,
+    repository: Option<RepositoryContact>,
     repository_pending_withdraw: Option<RepositoryContact>,
 
     parents: HashMap<ParentHandle, ParentCaContact>,
@@ -94,11 +96,12 @@ impl<S: Signer> Aggregate for CertAuth<S> {
         let (handle, _version, details) = event.unwrap();
         let (id, repo_info, ta_opt) = details.unwrap();
 
-        let pubserver = RepositoryContact::embedded(repo_info);
-
         let mut parents = HashMap::new();
         let mut resources = HashMap::new();
         let mut next_class_name = 0;
+
+        let children = HashMap::new();
+        let routes = Routes::default();
 
         if let Some(ta_details) = ta_opt {
             let key_id = ta_details.cert().subject_key_identifier();
@@ -109,8 +112,7 @@ impl<S: Signer> Aggregate for CertAuth<S> {
             resources.insert(rcn.clone(), ResourceClass::for_ta(rcn, key_id));
         }
 
-        let children = HashMap::new();
-        let routes = Routes::default();
+        let repository = repo_info.map(RepositoryContact::embedded);
 
         Ok(CertAuth {
             handle,
@@ -118,7 +120,7 @@ impl<S: Signer> Aggregate for CertAuth<S> {
 
             id,
 
-            repository: pubserver,
+            repository,
             repository_pending_withdraw: None,
 
             parents,
@@ -141,6 +143,19 @@ impl<S: Signer> Aggregate for CertAuth<S> {
     fn apply(&mut self, event: Evt) {
         self.version += 1;
         match event.into_details() {
+            //-----------------------------------------------------------------------
+            // Being a trust anchor
+            //-----------------------------------------------------------------------
+            EvtDet::TrustAnchorMade(details) => {
+                let key_id = details.cert().subject_key_identifier();
+                self.parents
+                    .insert(ta_handle(), ParentCaContact::Ta(details));
+                let rcn = ResourceClassName::from(self.next_class_name);
+                self.next_class_name += 1;
+                self.resources
+                    .insert(rcn.clone(), ResourceClass::for_ta(rcn, key_id));
+            }
+
             //-----------------------------------------------------------------------
             // Being a parent
             //-----------------------------------------------------------------------
@@ -288,8 +303,10 @@ impl<S: Signer> Aggregate for CertAuth<S> {
                 }
             }
             EvtDet::RepoUpdated(contact) => {
-                self.repository_pending_withdraw = Some(self.repository.clone());
-                self.repository = contact;
+                if let Some(current) = &self.repository {
+                    self.repository_pending_withdraw = Some(current.clone())
+                }
+                self.repository = Some(contact);
             }
             EvtDet::RepoCleaned(_) => {
                 self.repository_pending_withdraw = None;
@@ -304,6 +321,9 @@ impl<S: Signer> Aggregate for CertAuth<S> {
         );
 
         match command.into_details() {
+            // trust anchor
+            CmdDet::MakeTrustAnchor(uris, signer) => self.trust_anchor_make(uris, signer),
+
             // being a parent
             CmdDet::ChildAdd(child, id_cert_opt, resources) => {
                 self.child_add(child, id_cert_opt, resources)
@@ -353,7 +373,10 @@ impl<S: Signer> Aggregate for CertAuth<S> {
 impl<S: Signer> CertAuth<S> {
     pub fn as_ca_info(&self) -> CertAuthInfo {
         let handle = self.handle.clone();
-        let repo_info = self.repository.repo_info().clone();
+        let repo_info = self
+            .repository
+            .as_ref()
+            .map(|repo| repo.repo_info().clone());
 
         let parents = self.parents.clone();
 
@@ -411,18 +434,92 @@ impl<S: Signer> CertAuth<S> {
 impl<S: Signer> CertAuth<S> {
     pub fn all_objects(&self) -> Vec<PublishElement> {
         let mut res = vec![];
-        for rc in self.resources.values() {
-            res.append(&mut rc.all_objects(self.repository.repo_info()));
+        if let Some(repo_info) = self.repository.as_ref().map(|r| r.repo_info()) {
+            for rc in self.resources.values() {
+                res.append(&mut rc.all_objects(repo_info));
+            }
         }
         res
     }
 
-    pub fn repository_contact(&self) -> &RepositoryContact {
-        &self.repository
+    pub fn repository_contact(&self) -> Option<&RepositoryContact> {
+        self.repository.as_ref()
+    }
+
+    fn get_repository_contact(&self) -> Result<&RepositoryContact> {
+        self.repository.as_ref().ok_or(Error::RepoNotSet)
     }
 
     pub fn old_repository_contact(&self) -> Option<&RepositoryContact> {
         self.repository_pending_withdraw.as_ref()
+    }
+}
+
+/// # Being a trustanchor
+///
+impl<S: Signer> CertAuth<S> {
+    fn trust_anchor_make(
+        &self,
+        uris: Vec<uri::Https>,
+        signer: Arc<RwLock<S>>,
+    ) -> ca::Result<Vec<Evt>> {
+        let mut signer = signer.write().unwrap();
+
+        if !self.resources.is_empty() {
+            return Err(Error::custom("Cannot turn CA with resources into TA"));
+        }
+
+        let repo_info = self.get_repository_contact()?.repo_info();
+
+        let key = signer
+            .create_key(PublicKeyFormat::default())
+            .map_err(Error::signer)?;
+
+        let resources = ResourceSet::all_resources();
+
+        let cert = {
+            let serial: Serial = Serial::random(signer.deref()).map_err(Error::signer)?;
+
+            let pub_key = signer.get_key_info(&key).map_err(Error::signer)?;
+            let name = pub_key.to_subject_name();
+
+            let mut cert = TbsCert::new(
+                serial,
+                name.clone(),
+                Validity::new(Time::five_minutes_ago(), Time::years_from_now(100)),
+                Some(name),
+                pub_key.clone(),
+                KeyUsage::Ca,
+                Overclaim::Refuse,
+            );
+
+            cert.set_basic_ca(Some(true));
+
+            let ns = ResourceClassName::default().to_string();
+
+            cert.set_ca_repository(Some(repo_info.ca_repository(&ns)));
+            cert.set_rpki_manifest(Some(
+                repo_info.rpki_manifest(&ns, &pub_key.key_identifier()),
+            ));
+            cert.set_rpki_notify(Some(repo_info.rpki_notify()));
+
+            cert.set_as_resources(Some(resources.to_as_resources()));
+            cert.set_v4_resources(Some(resources.to_ip_resources_v4()));
+            cert.set_v6_resources(Some(resources.to_ip_resources_v6()));
+
+            cert.into_cert(signer.deref(), &key)
+                .map_err(Error::signer)?
+        };
+
+        let tal = TrustAnchorLocator::new(uris, &cert);
+
+        let ta_details = TaCertDetails::new(cert, resources, tal);
+
+        Ok(vec![StoredEvent::new(
+            &self.handle,
+            self.version,
+            EvtDet::TrustAnchorMade(ta_details),
+        )])
     }
 }
 
@@ -656,15 +753,12 @@ impl<S: Signer> CertAuth<S> {
         removed_certs: &[&Cert],
         signer: &S,
     ) -> Result<HashMap<KeyIdentifier, CurrentObjectSetDelta>> {
+        let repo = self.get_repository_contact()?;
+
         self.resources
             .get(&class_name)
             .ok_or_else(|| Error::unknown_resource_class(&class_name))?
-            .republish_certs(
-                issued_certs,
-                removed_certs,
-                self.repository.repo_info(),
-                signer,
-            )
+            .republish_certs(issued_certs, removed_certs, repo.repo_info(), signer)
     }
 
     /// Updates child IdCert and/or Resource entitlements.
@@ -855,7 +949,9 @@ impl<S: Signer> CertAuth<S> {
     /// Adds a parent. This method will return an error in case a parent
     /// by this name (handle) is already known.
     fn add_parent(&self, parent: Handle, info: ParentCaContact) -> ca::Result<Vec<Evt>> {
-        if self.has_parent(&parent) {
+        if self.repository.is_none() {
+            Err(Error::RepoNotSet)
+        } else if self.has_parent(&parent) {
             Err(Error::DuplicateParent(parent))
         } else if self.is_ta() {
             Err(Error::NotAllowedForTa)
@@ -872,6 +968,7 @@ impl<S: Signer> CertAuth<S> {
     /// Removes a parent. Returns an error if it doesn't exist.
     fn remove_parent(&self, parent: Handle) -> ca::Result<Vec<Evt>> {
         let _parent = self.parent(&parent)?;
+        let repo = self.get_repository_contact()?;
 
         // remove the parent, the RCs and un-publish everything.
         let mut deltas = vec![];
@@ -880,7 +977,7 @@ impl<S: Signer> CertAuth<S> {
             .values()
             .filter(|rc| rc.parent_handle() == &parent)
         {
-            deltas.push(rc.withdraw(self.repository.repo_info()));
+            deltas.push(rc.withdraw(repo.repo_info()));
         }
 
         Ok(vec![EvtDet::parent_removed(
@@ -947,9 +1044,9 @@ impl<S: Signer> CertAuth<S> {
         rc: &ResourceClass,
         signer: &S,
     ) -> Result<Vec<Evt>> {
+        let repo = self.get_repository_contact()?;
         let parent_class_name = entitlement.class_name().clone();
-        let req_details_list =
-            rc.make_request_events(entitlement, self.repository.repo_info(), signer)?;
+        let req_details_list = rc.make_request_events(entitlement, repo.repo_info(), signer)?;
 
         let mut res = vec![];
         for details in req_details_list.into_iter() {
@@ -1027,7 +1124,8 @@ impl<S: Signer> CertAuth<S> {
         }) {
             let signer = signer.read().unwrap();
 
-            let delta = rc.withdraw(self.repository.repo_info());
+            let repo = self.get_repository_contact()?;
+            let delta = rc.withdraw(repo.repo_info());
             let revocations = rc.revoke(signer.deref())?;
 
             debug!(
@@ -1135,8 +1233,10 @@ impl<S: Signer> CertAuth<S> {
             .resources
             .get(&rcn)
             .ok_or_else(|| Error::unknown_resource_class(&rcn))?;
-        let evt_details =
-            rc.update_received_cert(rcvd_cert, self.repository.repo_info(), signer.deref())?;
+
+        let repo = self.get_repository_contact()?;
+
+        let evt_details = rc.update_received_cert(rcvd_cert, repo.repo_info(), signer.deref())?;
 
         let mut res = vec![];
         let mut version = self.version;
@@ -1164,8 +1264,9 @@ impl<S: Signer> CertAuth<S> {
 
         for (rcn, rc) in self.resources.iter() {
             let mut started = false;
+            let repo = self.get_repository_contact()?;
             for details in rc
-                .keyroll_initiate(self.repository.repo_info(), duration, signer.deref_mut())?
+                .keyroll_initiate(repo.repo_info(), duration, signer.deref_mut())?
                 .into_iter()
             {
                 started = true;
@@ -1193,8 +1294,10 @@ impl<S: Signer> CertAuth<S> {
         for (rcn, rc) in self.resources.iter() {
             let mut activated = false;
 
+            let repo = self.get_repository_contact()?;
+
             for details in rc
-                .keyroll_activate(self.repository.repo_info(), staging, signer.deref())?
+                .keyroll_activate(repo.repo_info(), staging, signer.deref())?
                 .into_iter()
             {
                 activated = true;
@@ -1223,7 +1326,9 @@ impl<S: Signer> CertAuth<S> {
             .get(&rcn)
             .ok_or_else(|| Error::unknown_resource_class(&rcn))?;
 
-        let finish_details = my_rc.keyroll_finish(self.repository.repo_info())?;
+        let repo = self.get_repository_contact()?;
+
+        let finish_details = my_rc.keyroll_finish(repo.repo_info())?;
 
         info!("Finished key roll for ca: {}, rc: {}", &self.handle, rcn);
 
@@ -1269,7 +1374,7 @@ impl<S: Signer> CertAuth<S> {
                 let repo_info = if let PublishMode::NewRepo(info) = mode {
                     info
                 } else {
-                    self.repository.repo_info()
+                    self.get_repository_contact()?.repo_info()
                 };
 
                 res.append(&mut rc.republish(auths.as_slice(), repo_info, mode, signer)?);
@@ -1296,9 +1401,12 @@ impl<S: Signer> CertAuth<S> {
         let signer = signer.deref();
 
         // check that it is indeed different
-        if self.repository == new_contact {
-            return Err(Error::NewRepoUpdateNoChange);
+        if let Some(contact) = &self.repository {
+            if contact == &new_contact {
+                return Err(Error::NewRepoUpdateNoChange);
+            }
         }
+
         let info = new_contact.repo_info().clone();
 
         let mut evt_dts = vec![];
@@ -1356,6 +1464,8 @@ impl<S: Signer> CertAuth<S> {
         let signer = signer.read().unwrap();
         let mode = PublishMode::Normal;
 
+        let repo = self.get_repository_contact()?;
+
         let mut res = vec![];
         let mut version = self.version;
         let all_resources = self.all_resources();
@@ -1410,8 +1520,7 @@ impl<S: Signer> CertAuth<S> {
         for (rcn, rc) in self.resources.iter() {
             let updates = rc.update_roas(current_auths.as_slice(), &mode, signer.deref())?;
             if updates.contains_changes() {
-                let mut delta =
-                    ObjectsDelta::new(self.repository.repo_info().ca_repository(rc.name_space()));
+                let mut delta = ObjectsDelta::new(repo.repo_info().ca_repository(rc.name_space()));
 
                 for added in updates.added().into_iter() {
                     delta.add(added);
@@ -1440,13 +1549,8 @@ impl<S: Signer> CertAuth<S> {
         for (rcn, (delta, revocations)) in deltas.into_iter() {
             let rc = self.resources.get(&rcn).unwrap();
 
-            let pub_detail = rc.publish_objects(
-                self.repository.repo_info(),
-                delta,
-                revocations,
-                &mode,
-                signer.deref(),
-            )?;
+            let pub_detail =
+                rc.publish_objects(repo.repo_info(), delta, revocations, &mode, signer.deref())?;
 
             res.push(StoredEvent::new(&self.handle, version, pub_detail));
             version += 1;

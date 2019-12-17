@@ -1,25 +1,22 @@
 use std::collections::HashMap;
 use std::fmt;
-use std::ops::{Deref, DerefMut};
+use std::ops::DerefMut;
 use std::sync::{Arc, RwLock};
 
-use rpki::cert::{Cert, KeyUsage, Overclaim, TbsCert};
-use rpki::crypto::{KeyIdentifier, PublicKeyFormat};
-use rpki::uri;
-use rpki::x509::{Serial, Time, Validity};
+use rpki::crypto::KeyIdentifier;
 
 use crate::commons::api::{
     AddedObject, ChildHandle, Handle, IssuanceRequest, IssuedCert, ObjectName, ObjectsDelta,
     ParentCaContact, ParentHandle, RcvdCert, RepoInfo, RepositoryContact, ResourceClassName,
-    ResourceSet, Revocation, RevocationRequest, RevokedObject, TaCertDetails, TrustAnchorLocator,
-    UpdatedObject, WithdrawnObject,
+    ResourceSet, Revocation, RevocationRequest, RevokedObject, TaCertDetails, UpdatedObject,
+    WithdrawnObject,
 };
 use crate::commons::eventsourcing::StoredEvent;
 use crate::commons::remote::id::IdCert;
 use crate::daemon::ca::signing::Signer;
 use crate::daemon::ca::{
-    CertifiedKey, ChildDetails, CurrentObjectSetDelta, Error, ResourceClass, Result, Rfc8183Id,
-    RoaInfo, RouteAuthorization,
+    CertifiedKey, ChildDetails, CurrentObjectSetDelta, ResourceClass, Result, Rfc8183Id, RoaInfo,
+    RouteAuthorization,
 };
 
 //------------ Ini -----------------------------------------------------------
@@ -31,18 +28,27 @@ pub type Ini = StoredEvent<IniDet>;
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct IniDet {
     id: Rfc8183Id,
-    info: RepoInfo,
+
+    // The following two fields need to be kept to maintain data compatibility
+    // with Krill 0.4.2 installations.
+    //
+    // Newer versions of krill will no longer include these fields. I.e. there
+    // will be no default embedded repository, and trust anchors will be created
+    // through an explicit command and events.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    info: Option<RepoInfo>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     ta_details: Option<TaCertDetails>,
 }
 
 impl IniDet {
-    pub fn unwrap(self) -> (Rfc8183Id, RepoInfo, Option<TaCertDetails>) {
+    pub fn unwrap(self) -> (Rfc8183Id, Option<RepoInfo>, Option<TaCertDetails>) {
         (self.id, self.info, self.ta_details)
     }
 }
 
 impl IniDet {
-    pub fn init<S: Signer>(handle: &Handle, info: RepoInfo, signer: Arc<RwLock<S>>) -> Result<Ini> {
+    pub fn init<S: Signer>(handle: &Handle, signer: Arc<RwLock<S>>) -> Result<Ini> {
         let mut signer = signer.write().unwrap();
         let id = Rfc8183Id::generate(signer.deref_mut())?;
         Ok(Ini::new(
@@ -50,98 +56,16 @@ impl IniDet {
             0,
             IniDet {
                 id,
-                info,
+                info: None,
                 ta_details: None,
             },
         ))
-    }
-
-    pub fn init_ta<S: Signer>(
-        handle: &Handle,
-        info: RepoInfo,
-        ta_uris: Vec<uri::Https>,
-        signer: Arc<RwLock<S>>,
-    ) -> Result<Ini> {
-        let mut signer = signer.write().unwrap();
-        let id = Rfc8183Id::generate(signer.deref_mut())?;
-
-        let ta = {
-            let resources = ResourceSet::all_resources();
-            let ta_cert = {
-                let key = signer
-                    .create_key(PublicKeyFormat::default())
-                    .map_err(|e| Error::SignerError(e.to_string()))?;
-
-                Self::mk_ta_cer(&info, &resources, &key, signer.deref())?
-            };
-
-            let tal = TrustAnchorLocator::new(ta_uris, &ta_cert);
-
-            TaCertDetails::new(ta_cert, resources, tal)
-        };
-
-        Ok(Ini::new(
-            handle,
-            0,
-            IniDet {
-                id,
-                info,
-                ta_details: Some(ta),
-            },
-        ))
-    }
-
-    fn mk_ta_cer<S: Signer>(
-        repo_info: &RepoInfo,
-        resources: &ResourceSet,
-        key: &S::KeyId,
-        signer: &S,
-    ) -> Result<Cert> {
-        let serial: Serial = Serial::random(signer).map_err(Error::signer)?;
-
-        let pub_key = signer.get_key_info(&key).map_err(Error::signer)?;
-        let name = pub_key.to_subject_name();
-
-        let mut cert = TbsCert::new(
-            serial,
-            name.clone(),
-            Validity::new(Time::now(), Time::years_from_now(100)),
-            Some(name),
-            pub_key.clone(),
-            KeyUsage::Ca,
-            Overclaim::Refuse,
-        );
-
-        cert.set_basic_ca(Some(true));
-
-        let ns = ResourceClassName::default().to_string();
-
-        cert.set_ca_repository(Some(repo_info.ca_repository(&ns)));
-        cert.set_rpki_manifest(Some(
-            repo_info.rpki_manifest(&ns, &pub_key.key_identifier()),
-        ));
-        cert.set_rpki_notify(Some(repo_info.rpki_notify()));
-
-        cert.set_as_resources(Some(resources.to_as_resources()));
-        cert.set_v4_resources(Some(resources.to_ip_resources_v4()));
-        cert.set_v6_resources(Some(resources.to_ip_resources_v6()));
-
-        cert.into_cert(signer.deref(), key).map_err(Error::signer)
     }
 }
 
 impl fmt::Display for IniDet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "Initialised with cert (hash): {}, base_uri: {}, rpki notify: {}",
-            self.id.key_hash(),
-            self.info.base_uri(),
-            self.info.rpki_notify()
-        )?;
-        if self.ta_details.is_some() {
-            write!(f, " AS TA")?;
-        }
+        write!(f, "Initialised with ID key hash: {}", self.id.key_hash())?;
         Ok(())
     }
 }
@@ -288,6 +212,9 @@ pub type Evt = StoredEvent<EvtDet>;
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
 pub enum EvtDet {
+    // Being a Trust Anchor
+    TrustAnchorMade(TaCertDetails),
+
     // Being a parent Events
     ChildAdded(ChildHandle, ChildDetails),
     ChildCertificateIssued(ChildHandle, ResourceClassName, KeyIdentifier),
@@ -489,6 +416,11 @@ impl EvtDet {
 impl fmt::Display for EvtDet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
+            // Being a Trust Anchor
+            EvtDet::TrustAnchorMade(details) => {
+                write!(f, "turn into TA with key (hash) {}", details.cert().subject_key_identifier())
+            },
+
             // Being a parent Events
             EvtDet::ChildAdded(child, details) => {
                 write!(

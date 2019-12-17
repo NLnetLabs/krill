@@ -2,11 +2,11 @@ use std::str::{from_utf8_unchecked, FromStr};
 
 use crate::commons::api::{
     CaRepoDetails, CertAuthHistory, CertAuthInfo, CertAuthList, ChildCaInfo, CurrentObjects,
-    ParentCaContact, PublisherDetails, PublisherList, RepositoryContact, RoaDefinition,
+    CurrentRepoState, ParentCaContact, PublisherDetails, PublisherList, RepositoryContact,
+    RoaDefinition,
 };
 use crate::commons::remote::api::ClientInfo;
 use crate::commons::remote::rfc8183;
-use commons::api::CurrentRepoState;
 
 //------------ ApiResponse ---------------------------------------------------
 
@@ -148,14 +148,19 @@ impl Report for CertAuthInfo {
             ReportFormat::Text => {
                 let mut res = String::new();
 
-                let base_uri = self.repo_repo().base_uri();
-                let rrdp_uri = self.repo_repo().rpki_notify();
-
                 res.push_str(&format!("Name:     {}\n", self.handle()));
                 res.push_str("\n");
-                res.push_str(&format!("Base uri: {}\n", base_uri));
-                res.push_str(&format!("RRDP uri: {}\n", rrdp_uri));
+
+                if let Some(repo_info) = self.repo_info() {
+                    let base_uri = repo_info.base_uri();
+                    let rrdp_uri = repo_info.rpki_notify();
+                    res.push_str(&format!("Base uri: {}\n", base_uri));
+                    res.push_str(&format!("RRDP uri: {}\n", rrdp_uri));
+                } else {
+                    res.push_str("No repository configured.")
+                }
                 res.push_str("\n");
+
                 res.push_str(&format!("ID cert PEM:\n{}\n", self.id_cert().pem()));
                 res.push_str(&format!("Hash: {}\n", self.id_cert().hash()));
                 res.push_str("\n");

@@ -786,6 +786,7 @@ impl ToErrorCode for ca::Error {
             ca::Error::AuthorisationInvalidMaxlength(_, _) => ErrorCode::RoaUpdateInvalidMaxlength,
             ca::Error::NewRepoUpdateNoChange => ErrorCode::NewRepoNoChange,
             ca::Error::NewRepoUpdateNotResponsive(_) => ErrorCode::NewRepoNoResponse,
+            ca::Error::RepoNotSet => ErrorCode::NoRepositorySet,
             _ => ErrorCode::CaServerError,
         }
     }
