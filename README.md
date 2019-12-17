@@ -26,7 +26,7 @@ Please have a look at the Changelog.md file, our
 ), and/or [issues](https://github.com/NLnetLabs/krill/issues). 
 
 If you have any questions, comments or ideas, you are welcome
- to discuss them on our [RPKI mailing list](https://nlnetlabs.nl/mailman/listinfo/rpki), or feel 
+ to discuss them on our [RPKI mailing list](https://lists.nlnetlabs.nl/mailman/listinfo/rpki), or feel 
 free to create an issue right here on GitHub.
 
 ## License
