@@ -95,7 +95,7 @@ pub fn start(config: &Config) -> Result<(), Error> {
                     .route("/cas/{ca}/parents/{parent}", get().to(ca_my_parent_contact))
                     .route("/cas/{ca}/parents/{parent}", post().to(ca_update_parent))
                     .route("/cas/{ca}/parents/{parent}", delete().to(ca_remove_parent))
-                    .route("/cas/{ca}/children", post().to(ca_add_child))
+                    .route("/cas/{ca}/children", post().to(ca_add_child)).data(web::JsonConfig::default().limit(1 << 25))
                     .route(
                         "/cas/{ca}/children/{child}/contact",
                         get().to(ca_parent_contact),
