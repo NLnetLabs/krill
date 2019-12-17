@@ -607,7 +607,13 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '400':
-          $ref: '#/components/schemas/ParentWithHandleExists'
+          description: Bad request parameters.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ParentWithHandleExists'
+                  - $ref: '#/components/schemas/NoRepositoryConfiguredYetForCA'
         '404':
           $ref: '#/components/responses/UnknownCA'
         '500':
@@ -1460,6 +1466,18 @@ components:
         msg:
           type: string
           example: No known parent for handle.
+    NoRepositoryConfiguredYetForCA:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2307]
+        msg:
+          type: string
+          example: No repository configured yet for CA.
     InvalidROADeltaAddingDefinitionAlreadyPresent:
       type: object
       required:
