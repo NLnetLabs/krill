@@ -40,7 +40,8 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         ca-certificates \
         openssl \
-        uuid-runtime
+        uuid-runtime \
+        tzdata
 
 RUN groupadd -g ${RUN_USER_GID} ${RUN_USER} && \
     useradd -g ${RUN_USER_GID} -u ${RUN_USER_UID} ${RUN_USER}
