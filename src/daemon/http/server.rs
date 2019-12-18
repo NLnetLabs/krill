@@ -45,6 +45,8 @@ pub fn start(config: &Config) -> Result<(), Error> {
 
     let https_builder = https_builder(config)?;
 
+    let post_limit_api = config.post_limit_api;
+
     HttpServer::new(move || {
         App::new()
             .data(server.clone())
@@ -53,7 +55,8 @@ pub fn start(config: &Config) -> Result<(), Error> {
             // API end-points
             .service(
                 scope("/api/v1")
-                    // Health
+                    .data(web::JsonConfig::default().limit(post_limit_api))
+                    // Let the UI check if it's authorized
                     .route("/authorized", get().to(api_authorized))
                     // Repositories and their publishers (both embedded and remote)
                     .route("/publishers", get().to(list_pbl))
@@ -89,7 +92,6 @@ pub fn start(config: &Config) -> Result<(), Error> {
                     .route("/cas/{ca}/parents/{parent}", post().to(ca_update_parent))
                     .route("/cas/{ca}/parents/{parent}", delete().to(ca_remove_parent))
                     .route("/cas/{ca}/children", post().to(ca_add_child))
-                    .data(web::JsonConfig::default().limit(1 << 25))
                     .route(
                         "/cas/{ca}/children/{child}/contact",
                         get().to(ca_parent_contact),

@@ -75,6 +75,10 @@ impl ConfigDefaults {
     fn ca_refresh() -> u32 {
         600
     }
+
+    fn post_limit_api() -> usize {
+        256 * 1024 // 256kB - some
+    }
 }
 
 //------------ Config --------------------------------------------------------
@@ -129,6 +133,9 @@ pub struct Config {
 
     #[serde(default = "ConfigDefaults::ca_refresh")]
     pub ca_refresh: u32,
+
+    #[serde(default = "ConfigDefaults::post_limit_api")]
+    pub post_limit_api: usize,
 }
 
 /// # Accessors
@@ -181,7 +188,7 @@ impl Config {
         let ip = ConfigDefaults::ip();
         let port = ConfigDefaults::port();
         let use_ta = true;
-        let use_ssl = HttpsMode::Generate;
+        let https_mode = HttpsMode::Generate;
         let data_dir = data_dir.clone();
         let rsync_base = ConfigDefaults::rsync_base();
         let service_uri = ConfigDefaults::service_uri();
@@ -193,12 +200,13 @@ impl Config {
         let syslog_facility = ConfigDefaults::syslog_facility();
         let auth_token = Token::from("secret");
         let ca_refresh = 3600;
+        let post_limit_api = ConfigDefaults::post_limit_api();
 
         Config {
             ip,
             port,
             use_ta,
-            https_mode: use_ssl,
+            https_mode,
             data_dir,
             rsync_base,
             service_uri,
@@ -209,6 +217,7 @@ impl Config {
             syslog_facility,
             auth_token,
             ca_refresh,
+            post_limit_api,
         }
     }
 
