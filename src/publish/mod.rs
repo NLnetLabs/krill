@@ -34,11 +34,11 @@ impl CaPublisher {
     pub fn publish(&self, ca_handle: &Handle) -> Result<(), Error> {
         let ca = self.caserver.get_ca(ca_handle)?;
 
-        // Since this is called by the schedular, this should act as a no-op for
+        // Since this is called by the scheduler, this should act as a no-op for
         // new CAs which do not yet have any repository configured.
-        let repo_contact = match ca.repository_contact() {
-            Some(repo) => repo,
-            None => return Ok(()),
+        let repo_contact = match ca.get_repository_contact() {
+            Ok(repo) => repo,
+            Err(_) => return Ok(()),
         };
 
         let list_reply = match &repo_contact {

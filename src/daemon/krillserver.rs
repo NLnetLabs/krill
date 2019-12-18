@@ -381,25 +381,21 @@ impl KrillServer {
 
     /// Return the info about the configured repository server for a given Ca.
     /// and the actual objects published there, as reported by a list reply.
-    pub fn ca_repo_details(&self, handle: &Handle) -> KrillRes<Option<CaRepoDetails>> {
-        self.caserver
-            .get_ca(handle)
-            .map(|ca| {
-                ca.repository_contact()
-                    .map(|repo| CaRepoDetails::new(repo.clone()))
-            })
-            .map_err(Error::CaServerError)
+    pub fn ca_repo_details(&self, handle: &Handle) -> KrillRes<CaRepoDetails> {
+        let ca = self.caserver.get_ca(handle).map_err(Error::CaServerError)?;
+        let contact = ca
+            .get_repository_contact()
+            .map_err(|e| Error::CaServerError(ca::ServerError::CertAuth(e)))?;
+        Ok(CaRepoDetails::new(contact.clone()))
     }
 
     /// Returns the state of the current configured repo for a ca
-    pub fn ca_repo_state(&self, handle: &Handle) -> KrillRes<Option<CurrentRepoState>> {
-        self.caserver
-            .get_ca(handle)
-            .map(|ca| {
-                ca.repository_contact()
-                    .map(|repo| self.repo_state(handle, repo.as_reponse_opt()))
-            })
-            .map_err(Error::CaServerError)
+    pub fn ca_repo_state(&self, handle: &Handle) -> KrillRes<CurrentRepoState> {
+        let ca = self.caserver.get_ca(handle).map_err(Error::CaServerError)?;
+        let contact = ca
+            .get_repository_contact()
+            .map_err(|e| Error::CaServerError(ca::ServerError::CertAuth(e)))?;
+        Ok(self.repo_state(handle, contact.as_reponse_opt()))
     }
 
     /// Update the repository for a CA, or return an error. (see `CertAuth::repo_update`)

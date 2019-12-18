@@ -9,6 +9,7 @@ use chrono::Duration;
 
 use rpki::cert::{Cert, KeyUsage, Overclaim, TbsCert};
 use rpki::crypto::{KeyIdentifier, PublicKey, PublicKeyFormat};
+use rpki::uri;
 use rpki::x509::{Serial, Time, Validity};
 
 use crate::commons::api::rrdp::PublishElement;
@@ -16,7 +17,8 @@ use crate::commons::api::{
     self, CertAuthInfo, ChildHandle, EntitlementClass, Entitlements, Handle, IdCertPem,
     IssuanceRequest, IssuedCert, ObjectsDelta, ParentCaContact, ParentHandle, RcvdCert,
     RepositoryContact, RequestResourceLimit, ResourceClassName, ResourceSet, RevocationRequest,
-    RevocationResponse, RoaDefinition, SigningCert, UpdateChildRequest,
+    RevocationResponse, RoaDefinition, SigningCert, TaCertDetails, TrustAnchorLocator,
+    UpdateChildRequest,
 };
 use crate::commons::eventsourcing::{Aggregate, StoredEvent};
 use crate::commons::remote::builder::{IdCertBuilder, SignedMessageBuilder};
@@ -32,8 +34,6 @@ use crate::daemon::ca::{
     self, ta_handle, ChildDetails, Cmd, CmdDet, CurrentObjectSetDelta, Error, Evt, EvtDet, Ini,
     ResourceClass, Result, RouteAuthorization, RouteAuthorizationUpdates, Routes, Signer,
 };
-use commons::api::{TaCertDetails, TrustAnchorLocator};
-use rpki::uri;
 
 //------------ Rfc8183Id ---------------------------------------------------
 
@@ -442,11 +442,7 @@ impl<S: Signer> CertAuth<S> {
         res
     }
 
-    pub fn repository_contact(&self) -> Option<&RepositoryContact> {
-        self.repository.as_ref()
-    }
-
-    fn get_repository_contact(&self) -> Result<&RepositoryContact> {
+    pub fn get_repository_contact(&self) -> Result<&RepositoryContact> {
         self.repository.as_ref().ok_or(Error::RepoNotSet)
     }
 
