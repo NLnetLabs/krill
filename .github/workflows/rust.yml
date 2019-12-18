@@ -2,6 +2,7 @@ name: CI
 on: [push, pull_request]
 jobs:
   build:
+    name: build
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -9,7 +10,7 @@ jobs:
         rust: [stable, beta]
     steps:
     - name: Checkout repository
-    - uses: actions/checkout@v1
+      uses: actions/checkout@v1
     - name: Install Rust
       uses: hecrj/setup-rust-action@v1
       with:
