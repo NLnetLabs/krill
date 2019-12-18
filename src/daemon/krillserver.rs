@@ -215,7 +215,7 @@ impl KrillServer {
     }
 }
 
-/// # Admin CA as parent
+/// # Being a parent
 ///
 impl KrillServer {
     pub fn ta(&self) -> KrillRes<TaCertDetails> {
@@ -292,7 +292,60 @@ impl KrillServer {
         let child = self.caserver.ca_show_child(parent, child)?;
         Ok(child)
     }
+}
 
+/// # Being a child
+///
+impl KrillServer {
+    /// Returns the child request for a CA, or NONE if the CA cannot be found.
+    pub fn ca_child_req(&self, handle: &Handle) -> KrillRes<rfc8183::ChildRequest> {
+        self.caserver
+            .get_ca(handle)
+            .map(|ca| ca.child_request())
+            .map_err(Error::CaServerError)
+    }
+
+    /// Adds a parent to a CA, will check first if the parent can be reached.
+    pub fn ca_parent_add(&self, handle: Handle, parent: ParentCaReq) -> EmptyRes {
+        self.ca_parent_reachable(&handle, parent.handle(), parent.contact())?;
+        Ok(self.caserver.ca_parent_add(handle, parent)?)
+    }
+
+    /// Updates a parent contact for a CA
+    pub fn ca_parent_update(
+        &self,
+        handle: Handle,
+        parent: ParentHandle,
+        contact: ParentCaContact,
+    ) -> EmptyRes {
+        self.ca_parent_reachable(&handle, &parent, &contact)?;
+        Ok(self.caserver.ca_parent_update(handle, parent, contact)?)
+    }
+
+    fn ca_parent_reachable(
+        &self,
+        handle: &Handle,
+        parent: &ParentHandle,
+        contact: &ParentCaContact,
+    ) -> EmptyRes {
+        self.caserver
+            .get_entitlements_from_parent_and_contact(handle, parent, contact)
+            .map_err(|e| {
+                Error::CaServerError(ca::ServerError::CertAuth(ca::Error::ParentNotResponsive(
+                    e.to_string(),
+                )))
+            })?;
+        Ok(())
+    }
+
+    pub fn ca_parent_remove(&self, handle: Handle, parent: ParentHandle) -> EmptyRes {
+        Ok(self.caserver.ca_parent_remove(handle, parent)?)
+    }
+}
+
+/// # Bulk background operations CAS
+///
+impl KrillServer {
     /// Republish all CAs that need it.
     pub fn republish_all(&self) -> EmptyRes {
         self.caserver.republish_all()?;
@@ -352,14 +405,6 @@ impl KrillServer {
     /// Returns the history for a CA, or NONE in case of issues (i.e. it does not exist).
     pub fn ca_history(&self, handle: &Handle) -> Option<CertAuthHistory> {
         self.caserver.get_ca_history(handle).ok()
-    }
-
-    /// Returns the child request for a CA, or NONE if the CA cannot be found.
-    pub fn ca_child_req(&self, handle: &Handle) -> KrillRes<rfc8183::ChildRequest> {
-        self.caserver
-            .get_ca(handle)
-            .map(|ca| ca.child_request())
-            .map_err(Error::CaServerError)
     }
 
     /// Returns the publisher request for a CA, or NONE of the CA cannot be found.
@@ -448,23 +493,6 @@ impl KrillServer {
 
     pub fn ca_update_id(&self, handle: Handle) -> EmptyRes {
         Ok(self.caserver.ca_update_id(handle)?)
-    }
-
-    pub fn ca_add_parent(&self, handle: Handle, parent: ParentCaReq) -> EmptyRes {
-        Ok(self.caserver.ca_add_parent(handle, parent)?)
-    }
-
-    pub fn ca_update_parent(
-        &self,
-        handle: Handle,
-        parent: ParentHandle,
-        contact: ParentCaContact,
-    ) -> EmptyRes {
-        Ok(self.caserver.ca_update_parent(handle, parent, contact)?)
-    }
-
-    pub fn ca_remove_parent(&self, handle: Handle, parent: ParentHandle) -> EmptyRes {
-        Ok(self.caserver.ca_remove_parent(handle, parent)?)
     }
 
     pub fn ca_keyroll_init(&self, handle: Handle) -> EmptyRes {

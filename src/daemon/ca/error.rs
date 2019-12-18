@@ -110,6 +110,9 @@ pub enum Error {
     #[display(fmt = "Error getting list query from new repository: {}", _0)]
     NewRepoUpdateNotResponsive(String),
 
+    #[display(fmt = "Error getting entitlements from parent: {}", _0)]
+    ParentNotResponsive(String),
+
     #[display(fmt = "No repository configured.")]
     RepoNotSet,
 

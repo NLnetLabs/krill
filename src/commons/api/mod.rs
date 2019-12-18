@@ -333,6 +333,9 @@ pub enum ErrorCode {
     #[display(fmt = "No repository configured yet for CA")]
     NoRepositorySet,
 
+    #[display(fmt = "No response from parent")]
+    ParentNoResponse,
+
     #[display(fmt = "Invalid ROA delta: adding a definition which is already present")]
     RoaUpdateInvalidDuplicate,
 
@@ -412,6 +415,7 @@ impl From<usize> for ErrorCode {
             2305 => ErrorCode::UnknownChild,
             2306 => ErrorCode::UnknownParent,
             2307 => ErrorCode::NoRepositorySet,
+            2308 => ErrorCode::ParentNoResponse,
 
             // 2400s -> ROA issues
             2401 => ErrorCode::RoaUpdateInvalidDuplicate,
@@ -473,6 +477,7 @@ impl Into<ErrorResponse> for ErrorCode {
             ErrorCode::UnknownChild => 2305,
             ErrorCode::UnknownParent => 2306,
             ErrorCode::NoRepositorySet => 2307,
+            ErrorCode::ParentNoResponse => 2308,
 
             // roa errors
             ErrorCode::RoaUpdateInvalidDuplicate => 2401,
@@ -530,7 +535,7 @@ mod tests {
             test_code(n)
         }
 
-        for n in 2301..2308 {
+        for n in 2301..2309 {
             test_code(n)
         }
 

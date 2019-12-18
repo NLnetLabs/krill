@@ -418,7 +418,7 @@ impl<S: Signer> CaServer<S> {
     }
 
     /// Adds a parent to a CA
-    pub fn ca_add_parent(&self, handle: Handle, parent: ParentCaReq) -> ServerResult<()> {
+    pub fn ca_parent_add(&self, handle: Handle, parent: ParentCaReq) -> ServerResult<()> {
         let (parent_handle, parent_contact) = parent.unwrap();
 
         let add = CmdDet::add_parent(&handle, parent_handle, parent_contact);
@@ -426,7 +426,7 @@ impl<S: Signer> CaServer<S> {
     }
 
     /// Updates a parent of a CA
-    pub fn ca_update_parent(
+    pub fn ca_parent_update(
         &self,
         handle: Handle,
         parent: ParentHandle,
@@ -437,7 +437,7 @@ impl<S: Signer> CaServer<S> {
     }
 
     /// Removes a parent from a CA
-    pub fn ca_remove_parent(&self, handle: Handle, parent: ParentHandle) -> ServerResult<()> {
+    pub fn ca_parent_remove(&self, handle: Handle, parent: ParentHandle) -> ServerResult<()> {
         let upd = CmdDet::remove_parent(&handle, parent);
         self.send_command(upd)
     }
@@ -759,7 +759,25 @@ impl<S: Signer> CaServer<S> {
         handle: &Handle,
         parent: &ParentHandle,
     ) -> ServerResult<api::Entitlements> {
-        match self.get_ca(&handle)?.parent(parent)? {
+        let ca = self.get_ca(&handle)?;
+        let contact = ca.parent(parent)?;
+        self.get_entitlements_from_parent_and_contact(handle, parent, contact)
+        //        match self.get_ca(&handle)?.parent(parent)? {
+        //            ParentCaContact::Ta(_) => {
+        //                Err(ca::Error::NotAllowedForTa).map_err(ServerError::CertAuth)
+        //            }
+        //            ParentCaContact::Embedded => self.get_entitlements_embedded(handle, parent),
+        //            ParentCaContact::Rfc6492(res) => self.get_entitlements_rfc6492(handle, res),
+        //        }
+    }
+
+    pub fn get_entitlements_from_parent_and_contact(
+        &self,
+        handle: &Handle,
+        parent: &ParentHandle,
+        contact: &ParentCaContact,
+    ) -> ServerResult<api::Entitlements> {
+        match contact {
             ParentCaContact::Ta(_) => {
                 Err(ca::Error::NotAllowedForTa).map_err(ServerError::CertAuth)
             }

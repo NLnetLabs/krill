@@ -373,13 +373,21 @@ impl fmt::Display for RepositoryContact {
 /// This type defines all parent ca details needed to add a parent to a CA
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentCaReq {
-    handle: Handle,           // the local name the child gave to the parent
+    handle: ParentHandle,     // the local name the child gave to the parent
     contact: ParentCaContact, // where the parent can be contacted
 }
 
 impl ParentCaReq {
     pub fn new(handle: Handle, contact: ParentCaContact) -> Self {
         ParentCaReq { handle, contact }
+    }
+
+    pub fn handle(&self) -> &ParentHandle {
+        &self.handle
+    }
+
+    pub fn contact(&self) -> &ParentCaContact {
+        &self.contact
     }
 
     pub fn unwrap(self) -> (Handle, ParentCaContact) {
