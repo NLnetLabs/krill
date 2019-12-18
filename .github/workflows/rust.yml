@@ -1,0 +1,18 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-16.04]
+        rust: [stable, beta]
+    steps:
+    - name: Checkout repository
+    - uses: actions/checkout@v1
+    - name: Install Rust
+      uses: hecrj/setup-rust-action@v1
+      with:
+        rust-version: ${{ matrix.rust }}
+    - run: cargo build --verbose
+    - run: cargo test --verbose
