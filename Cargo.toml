@@ -6,10 +6,7 @@ description = "Resource Public Key Infrastructure (RPKI) daemon"
 license = "MPL-2.0"
 
 [dependencies]
-actix-identity  = "0.1.0"
 actix-web       = { version = "1.0.3", features = ["ssl"] }
-actix-session   = "0.1.0"
-actix-service   = "0.4.0"
 base64          = "^0.10"
 bcder           = "0.4.0"
 bytes           = "^0.4"

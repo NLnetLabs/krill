@@ -12,8 +12,7 @@ use crate::commons::api::{
     AddChildRequest, CaRepoDetails, CertAuthHistory, CertAuthInfo, CertAuthInit, CertAuthList,
     ChildCaInfo, ChildHandle, CurrentRepoState, Handle, ListReply, ParentCaContact, ParentCaReq,
     ParentHandle, PublishDelta, PublisherDetails, PublisherHandle, RepoInfo, RepositoryContact,
-    RepositoryUpdate, RoaDefinition, RoaDefinitionUpdates, TaCertDetails, Token,
-    UpdateChildRequest,
+    RepositoryUpdate, RoaDefinition, RoaDefinitionUpdates, TaCertDetails, UpdateChildRequest,
 };
 use crate::commons::remote::rfc8183;
 use crate::commons::util::softsigner::{OpenSslSigner, SignerError};
@@ -147,15 +146,8 @@ impl KrillServer {
 
 /// # Authentication
 impl KrillServer {
-    pub fn login(&self, token: Token) -> bool {
-        self.authorizer.is_api_allowed(&token)
-    }
-
     pub fn is_api_allowed(&self, auth: &Auth) -> bool {
-        match auth {
-            Auth::Bearer(token) => self.authorizer.is_api_allowed(token),
-            Auth::User(_) => true,
-        }
+        self.authorizer.is_api_allowed(auth)
     }
 }
 

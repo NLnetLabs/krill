@@ -7,7 +7,6 @@ use std::fs::File;
 use std::io;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use actix_session::CookieSession;
 use actix_web::http::StatusCode;
 use actix_web::web::{delete, get, post, scope, Path};
 use actix_web::{guard, middleware, web};
@@ -16,7 +15,6 @@ use openssl::ssl::{SslAcceptor, SslAcceptorBuilder, SslFiletype, SslMethod};
 
 use bcder::decode;
 
-use crate::daemon::auth::{is_logged_in, login, logout, AUTH_COOKIE_NAME};
 use crate::daemon::config::Config;
 use crate::daemon::endpoints;
 use crate::daemon::endpoints::*;
@@ -51,11 +49,6 @@ pub fn start(config: &Config) -> Result<(), Error> {
         App::new()
             .data(server.clone())
             .wrap(middleware::Logger::default())
-            .wrap(
-                CookieSession::signed(&[0; 32])
-                    .name(AUTH_COOKIE_NAME)
-                    .secure(true),
-            )
             .route("/health", get().to(endpoints::health))
             // API end-points
             .service(
@@ -95,7 +88,8 @@ pub fn start(config: &Config) -> Result<(), Error> {
                     .route("/cas/{ca}/parents/{parent}", get().to(ca_my_parent_contact))
                     .route("/cas/{ca}/parents/{parent}", post().to(ca_update_parent))
                     .route("/cas/{ca}/parents/{parent}", delete().to(ca_remove_parent))
-                    .route("/cas/{ca}/children", post().to(ca_add_child)).data(web::JsonConfig::default().limit(1 << 25))
+                    .route("/cas/{ca}/children", post().to(ca_add_child))
+                    .data(web::JsonConfig::default().limit(1 << 25))
                     .route(
                         "/cas/{ca}/children/{child}/contact",
                         get().to(ca_parent_contact),
@@ -124,10 +118,6 @@ pub fn start(config: &Config) -> Result<(), Error> {
                     // Methods that are not found should return a bad request and some explanation
                     .default_service(web::route().to(api_bad_request)),
             )
-            // Logged in users for the API
-            .route("/ui/is_logged_in", get().to(is_logged_in))
-            .route("/ui/login", post().to(login))
-            .route("/ui/logout", post().to(logout))
             // Identity exchanges for remote publishers
             .route("/rfc8181/{handle}", post().to(rfc8181))
             // Provisioning for remote krill clients
