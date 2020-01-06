@@ -96,7 +96,6 @@ Known issues:
 Work for the next release has already started. [Release 0.3](https://github.com/NLnetLabs/krill/projects/6)
 will focus on (remote) publication, and will also solve the out-of-sync issue.
 
-
 ## 0.1.0 'A View to a Krill'
 
 This is the first version of Krill that we are testing in the real world. Please note that the
