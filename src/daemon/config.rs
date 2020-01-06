@@ -75,6 +75,18 @@ impl ConfigDefaults {
     fn ca_refresh() -> u32 {
         600
     }
+
+    fn post_limit_api() -> usize {
+        256 * 1024 // 256kB
+    }
+
+    fn post_limit_rfc8181() -> usize {
+        32 * 1024 * 1024 // 32MB (roughly 8000 issued certificates, so a key roll for nicbr and 100% uptake should be okay)
+    }
+
+    fn post_limit_rfc6492() -> usize {
+        1024 * 1024 // 1MB (for ref. the NIC br cert is about 200kB)
+    }
 }
 
 //------------ Config --------------------------------------------------------
@@ -129,6 +141,15 @@ pub struct Config {
 
     #[serde(default = "ConfigDefaults::ca_refresh")]
     pub ca_refresh: u32,
+
+    #[serde(default = "ConfigDefaults::post_limit_api")]
+    pub post_limit_api: usize,
+
+    #[serde(default = "ConfigDefaults::post_limit_rfc8181")]
+    pub post_limit_rfc8181: usize,
+
+    #[serde(default = "ConfigDefaults::post_limit_rfc6492")]
+    pub post_limit_rfc6492: usize,
 }
 
 /// # Accessors
@@ -181,7 +202,7 @@ impl Config {
         let ip = ConfigDefaults::ip();
         let port = ConfigDefaults::port();
         let use_ta = true;
-        let use_ssl = HttpsMode::Generate;
+        let https_mode = HttpsMode::Generate;
         let data_dir = data_dir.clone();
         let rsync_base = ConfigDefaults::rsync_base();
         let service_uri = ConfigDefaults::service_uri();
@@ -193,12 +214,15 @@ impl Config {
         let syslog_facility = ConfigDefaults::syslog_facility();
         let auth_token = Token::from("secret");
         let ca_refresh = 3600;
+        let post_limit_api = ConfigDefaults::post_limit_api();
+        let post_limit_rfc8181 = ConfigDefaults::post_limit_rfc8181();
+        let post_limit_rfc6492 = ConfigDefaults::post_limit_rfc6492();
 
         Config {
             ip,
             port,
             use_ta,
-            https_mode: use_ssl,
+            https_mode,
             data_dir,
             rsync_base,
             service_uri,
@@ -209,6 +233,9 @@ impl Config {
             syslog_facility,
             auth_token,
             ca_refresh,
+            post_limit_api,
+            post_limit_rfc8181,
+            post_limit_rfc6492,
         }
     }
 

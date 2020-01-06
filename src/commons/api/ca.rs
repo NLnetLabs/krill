@@ -1473,7 +1473,7 @@ impl fmt::Display for ParentInfo {
 pub struct CertAuthInfo {
     handle: Handle,
     id_cert: IdCertPem,
-    repo_info: RepoInfo,
+    repo_info: Option<RepoInfo>,
     parents: Vec<ParentInfo>,
     resources: ResourceSet,
     resource_classes: HashMap<ResourceClassName, ResourceClassInfo>,
@@ -1484,7 +1484,7 @@ impl CertAuthInfo {
     pub fn new(
         handle: Handle,
         id_cert: IdCertPem,
-        repo_info: RepoInfo,
+        repo_info: Option<RepoInfo>,
         parents: HashMap<ParentHandle, ParentCaContact>,
         resource_classes: HashMap<ResourceClassName, ResourceClassInfo>,
         children: Vec<ChildHandle>,
@@ -1521,8 +1521,8 @@ impl CertAuthInfo {
         &self.id_cert
     }
 
-    pub fn repo_repo(&self) -> &RepoInfo {
-        &self.repo_info
+    pub fn repo_info(&self) -> Option<&RepoInfo> {
+        self.repo_info.as_ref()
     }
 
     pub fn parents(&self) -> &Vec<ParentInfo> {
@@ -1543,10 +1543,14 @@ impl CertAuthInfo {
 
     pub fn published_objects(&self) -> Vec<Publish> {
         let mut res = vec![];
-        for (_rc_name, rc) in self.resource_classes.iter() {
-            let name_space = rc.name_space();
-            res.append(&mut rc.current_objects().publish(self.repo_repo(), name_space));
+
+        if let Some(repo_info) = &self.repo_info {
+            for (_rc_name, rc) in self.resource_classes.iter() {
+                let name_space = rc.name_space();
+                res.append(&mut rc.current_objects().publish(repo_info, name_space));
+            }
         }
+
         res
     }
 }
@@ -1958,9 +1962,9 @@ mod test {
 
         let parent_resources_json =
             include_str!("../../../test-resources/resources/parent_resources.json");
-        let parent_resouces: ResourceSet = serde_json::from_str(parent_resources_json).unwrap();
+        let parent_resources: ResourceSet = serde_json::from_str(parent_resources_json).unwrap();
 
-        let intersection = parent_resouces.intersection(&child_resources);
+        let intersection = parent_resources.intersection(&child_resources);
 
         assert_eq!(intersection, child_resources);
     }

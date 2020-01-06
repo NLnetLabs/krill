@@ -1,15 +1,12 @@
 [package]
 name    = "krill"
-version = "0.4.2-pre"
+version = "0.4.2"
 authors = [ "The NLnet Labs RPKI team <rpki-team@nlnetlabs.nl>" ]
 description = "Resource Public Key Infrastructure (RPKI) daemon"
 license = "MPL-2.0"
 
 [dependencies]
-actix-identity  = "0.1.0"
 actix-web       = { version = "1.0.3", features = ["ssl"] }
-actix-session   = "0.1.0"
-actix-service   = "0.4.0"
 base64          = "^0.10"
 bcder           = "0.4.0"
 bytes           = "^0.4"
@@ -26,7 +23,7 @@ openssl         = { version = "^0.10", features = ["v110"] }
 pretty          = "0.5.2"
 rand            = "^0.5"
 reqwest         = "^0.9.17"
-rpki            = "0.8.2"
+rpki            = "0.8.3"
 serde           = { version = "^1.0", features = ["derive"] }
 serde_json      = "^1.0"
 syslog          = "^4.0"
@@ -45,7 +42,3 @@ ignore          = "^0.4"
 [features]
 default = []
 extra-debug = [ "rpki/extra-debug" ]
-
-# Used when depending on development branches of rpki-rs or bcder
-#[patch.crates-io]
-#rpki = { git = "https://github.com/NLnetLabs/rpki-rs.git", branch = "resource-set-fix" }

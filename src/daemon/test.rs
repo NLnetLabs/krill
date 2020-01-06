@@ -11,7 +11,7 @@ use crate::cli::{Error, KrillClient};
 use crate::commons::api::{
     AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildAuthRequest, ChildHandle,
     Handle, ParentCaContact, ParentCaReq, ParentHandle, Publish, PublisherDetails, PublisherHandle,
-    ResourceClassKeysInfo, ResourceClassName, ResourceSet, RoaDefinitionUpdates,
+    RepositoryUpdate, ResourceClassKeysInfo, ResourceClassName, ResourceSet, RoaDefinitionUpdates,
     UpdateChildRequest,
 };
 use crate::commons::remote::rfc8183;
@@ -155,9 +155,14 @@ fn refresh_all() {
     krill_admin(Command::Bulk(BulkCaCommand::Refresh));
 }
 
-pub fn init_child(handle: &Handle) {
-    let init = CertAuthInit::new(handle.clone());
-    krill_admin(Command::CertAuth(CaCommand::Init(init)));
+pub fn init_child_with_embedded_repo(handle: &Handle) {
+    krill_admin(Command::CertAuth(CaCommand::Init(CertAuthInit::new(
+        handle.clone(),
+    ))));
+    krill_admin(Command::CertAuth(CaCommand::RepoUpdate(
+        handle.clone(),
+        RepositoryUpdate::Embedded,
+    )));
 }
 
 pub fn generate_new_id(handle: &Handle) {

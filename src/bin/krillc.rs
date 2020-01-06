@@ -2,7 +2,8 @@ extern crate krill;
 
 use krill::cli::options::Options;
 use krill::cli::report::ReportFormat;
-use krill::cli::KrillClient;
+use krill::cli::{Error, KrillClient};
+use krill::commons::util::httpclient;
 
 fn main() {
     match Options::from_args() {
@@ -12,7 +13,21 @@ fn main() {
                 Ok(()) => {} //,
                 Err(e) => {
                     if format != ReportFormat::None {
-                        eprintln!("{}", e);
+                        match &e {
+                            Error::HttpClientError(httpclient::Error::ErrorWithJson(
+                                _code,
+                                res,
+                            )) => {
+                                if format == ReportFormat::Json {
+                                    eprintln!("{}", e);
+                                } else {
+                                    eprintln!("Error {}: {}", res.code(), res.msg());
+                                }
+                            }
+                            _ => {
+                                eprintln!("{}", e);
+                            }
+                        }
                     }
                     ::std::process::exit(1);
                 }

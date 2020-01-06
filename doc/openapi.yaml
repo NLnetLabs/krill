@@ -593,6 +593,9 @@ paths:
         will be used. In principle CAs can also use this to talk to a local
         parent CA in the same krill server, but this is inefficient. Therefore
         it is also possible to add an 'embedded' parent in this case.
+
+        Note that you MUST specify a repository for your CA before you are
+        allowed to add a parent to it.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
       requestBody:
@@ -607,7 +610,14 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '400':
-          $ref: '#/components/schemas/ParentWithHandleExists'
+          description: Bad request parameters.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ParentWithHandleExists'
+                  - $ref: '#/components/responses/ParentNoResponse'
+                  - $ref: '#/components/schemas/NoRepositoryConfiguredYetForCA'
         '404':
           $ref: '#/components/responses/UnknownCA'
         '500':
@@ -655,7 +665,13 @@ paths:
         '200':
           $ref: '#/components/responses/Success'
         '400':
-          $ref: '#/components/responses/UnknownParent'
+          description: Bad request parameters.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/responses/UnknownParent'
+                  - $ref: '#/components/responses/ParentNoResponse'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -719,8 +735,12 @@ paths:
           - Request new certificates with SIA entries pointing to the new
             locations.
           - (best effort) Clean up of the old repository.
+
         The new repository can be embedded, or remote. To use a remote
         repository, the RFC 8181 Repository Response must be encoded into JSON.
+
+        Note: for most users it's better to use a remote repository, e.g. provided
+        by your RIR or NIR.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
       requestBody:
@@ -1436,6 +1456,18 @@ components:
         msg:
           type: string
           example: Parent with handle exists.
+    ParentNoResponse:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2308]
+        msg:
+          type: string
+          example: No response from parent.
     UnknownChild:
       type: object
       required:
@@ -1460,6 +1492,18 @@ components:
         msg:
           type: string
           example: No known parent for handle.
+    NoRepositoryConfiguredYetForCA:
+      type: object
+      required:
+        - code
+        - msg
+      properties:
+        code:
+          type: integer
+          enum: [2307]
+        msg:
+          type: string
+          example: No repository configured yet for CA.
     InvalidROADeltaAddingDefinitionAlreadyPresent:
       type: object
       required:
@@ -1588,6 +1632,12 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/UnknownParent'
+    ParentNoResponse:
+      description: No response from parent.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ParentNoResponse'
     GeneralPublicationServerError:
       description: General Publication Server error.
       content:

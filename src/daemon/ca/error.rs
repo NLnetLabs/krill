@@ -110,6 +110,12 @@ pub enum Error {
     #[display(fmt = "Error getting list query from new repository: {}", _0)]
     NewRepoUpdateNotResponsive(String),
 
+    #[display(fmt = "Error getting entitlements from parent: {}", _0)]
+    ParentNotResponsive(String),
+
+    #[display(fmt = "No repository configured.")]
+    RepoNotSet,
+
     #[display(fmt = "{}", _0)]
     Custom(String),
 }
@@ -137,6 +143,10 @@ impl Error {
 
     pub fn unknown_resource_class(class: impl Display) -> Self {
         Error::UnknownResourceClass(class.to_string())
+    }
+
+    pub fn custom(msg: impl fmt::Display) -> Self {
+        Error::Custom(msg.to_string())
     }
 }
 

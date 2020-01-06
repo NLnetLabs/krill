@@ -1,7 +1,21 @@
 # Change Log
 
 Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
-for planned releases. 
+for planned releases.
+
+## 0.4.2 'Finer Things'
+
+This release fixes a bug, and introduces minor usability improvements:
+* Certain adjacent resources were encoded incorrectly (#161)
+* Let users explicitly specify a repository before adding a parent (#160)
+* Allow timezone to be set on the Docker container (#156)
+* Improve error messaging when failing to start Krill (#155)
+* Improve readability for CLI error responses (#162)
+* Introduce configurable size limits for data submitted to Krill (#158)
+
+Note that contrary to previous versions a new CA is set up without a default repository. For most
+users we recommend that a remote (RFC 8181) repository is used, e.g. provided by their RIR or NIR.
+A repository MUST be configured before a parent can be added to a CA.
 
 ## 0.4.1 'Fogo de Krill'
 
@@ -81,7 +95,6 @@ Known issues:
 
 Work for the next release has already started. [Release 0.3](https://github.com/NLnetLabs/krill/projects/6)
 will focus on (remote) publication, and will also solve the out-of-sync issue.
-
 
 ## 0.1.0 'A View to a Krill'
 

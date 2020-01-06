@@ -498,7 +498,7 @@ pub fn ca_add_parent(
         render_empty_res(
             server
                 .read()
-                .ca_add_parent(handle.into_inner(), parent.into_inner()),
+                .ca_parent_add(handle.into_inner(), parent.into_inner()),
         )
     })
 }
@@ -514,7 +514,7 @@ pub fn ca_update_parent(
         render_empty_res(
             server
                 .read()
-                .ca_update_parent(ca, parent, contact.into_inner()),
+                .ca_parent_update(ca, parent, contact.into_inner()),
         )
     })
 }
@@ -526,7 +526,7 @@ pub fn ca_remove_parent(
 ) -> HttpResponse {
     let (ca, parent) = ca_and_parent.into_inner();
     if_api_allowed(&server, &auth, || {
-        render_empty_res(server.read().ca_remove_parent(ca, parent))
+        render_empty_res(server.read().ca_parent_remove(ca, parent))
     })
 }
 
@@ -786,6 +786,8 @@ impl ToErrorCode for ca::Error {
             ca::Error::AuthorisationInvalidMaxlength(_, _) => ErrorCode::RoaUpdateInvalidMaxlength,
             ca::Error::NewRepoUpdateNoChange => ErrorCode::NewRepoNoChange,
             ca::Error::NewRepoUpdateNotResponsive(_) => ErrorCode::NewRepoNoResponse,
+            ca::Error::RepoNotSet => ErrorCode::NoRepositorySet,
+            ca::Error::ParentNotResponsive(_) => ErrorCode::ParentNoResponse,
             _ => ErrorCode::CaServerError,
         }
     }

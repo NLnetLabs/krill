@@ -61,8 +61,7 @@ if [ "$1" == "krill" ]; then
         # RSYNC and RRDP endpoints to the correct FQDN. We cannot know know the
         # FQDN which clients use to reach us so the operator must inform this
         # script via a "-e KRILL_FQDN=some.domain.name" argument to
-        # "docker run". If KRILL_FQDN is not set assume that the user is
-        # managing the Krill configuration themselves.
+        # "docker run".
         cat << EOF >> ${KRILL_CONF}
 rsync_base  = "rsync://${KRILL_FQDN}/repo/" ${MAGIC}
 service_uri = "https://${KRILL_FQDN}/" ${MAGIC}

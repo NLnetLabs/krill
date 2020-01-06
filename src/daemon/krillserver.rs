@@ -12,8 +12,7 @@ use crate::commons::api::{
     AddChildRequest, CaRepoDetails, CertAuthHistory, CertAuthInfo, CertAuthInit, CertAuthList,
     ChildCaInfo, ChildHandle, CurrentRepoState, Handle, ListReply, ParentCaContact, ParentCaReq,
     ParentHandle, PublishDelta, PublisherDetails, PublisherHandle, RepoInfo, RepositoryContact,
-    RepositoryUpdate, RoaDefinition, RoaDefinitionUpdates, TaCertDetails, Token,
-    UpdateChildRequest,
+    RepositoryUpdate, RoaDefinition, RoaDefinitionUpdates, TaCertDetails, UpdateChildRequest,
 };
 use crate::commons::remote::rfc8183;
 use crate::commons::util::softsigner::{OpenSslSigner, SignerError};
@@ -147,15 +146,8 @@ impl KrillServer {
 
 /// # Authentication
 impl KrillServer {
-    pub fn login(&self, token: Token) -> bool {
-        self.authorizer.is_api_allowed(&token)
-    }
-
     pub fn is_api_allowed(&self, auth: &Auth) -> bool {
-        match auth {
-            Auth::Bearer(token) => self.authorizer.is_api_allowed(token),
-            Auth::User(_) => true,
-        }
+        self.authorizer.is_api_allowed(auth)
     }
 }
 
@@ -168,7 +160,7 @@ impl KrillServer {
 
     /// Adds the publishers, blows up if it already existed.
     pub fn add_publisher(
-        &mut self,
+        &self,
         req: rfc8183::PublisherRequest,
     ) -> KrillRes<rfc8183::RepositoryResponse> {
         let publisher_handle = req.publisher_handle().clone();
@@ -223,7 +215,7 @@ impl KrillServer {
     }
 }
 
-/// # Admin CA as parent
+/// # Being a parent
 ///
 impl KrillServer {
     pub fn ta(&self) -> KrillRes<TaCertDetails> {
@@ -300,7 +292,60 @@ impl KrillServer {
         let child = self.caserver.ca_show_child(parent, child)?;
         Ok(child)
     }
+}
 
+/// # Being a child
+///
+impl KrillServer {
+    /// Returns the child request for a CA, or NONE if the CA cannot be found.
+    pub fn ca_child_req(&self, handle: &Handle) -> KrillRes<rfc8183::ChildRequest> {
+        self.caserver
+            .get_ca(handle)
+            .map(|ca| ca.child_request())
+            .map_err(Error::CaServerError)
+    }
+
+    /// Adds a parent to a CA, will check first if the parent can be reached.
+    pub fn ca_parent_add(&self, handle: Handle, parent: ParentCaReq) -> EmptyRes {
+        self.ca_parent_reachable(&handle, parent.handle(), parent.contact())?;
+        Ok(self.caserver.ca_parent_add(handle, parent)?)
+    }
+
+    /// Updates a parent contact for a CA
+    pub fn ca_parent_update(
+        &self,
+        handle: Handle,
+        parent: ParentHandle,
+        contact: ParentCaContact,
+    ) -> EmptyRes {
+        self.ca_parent_reachable(&handle, &parent, &contact)?;
+        Ok(self.caserver.ca_parent_update(handle, parent, contact)?)
+    }
+
+    fn ca_parent_reachable(
+        &self,
+        handle: &Handle,
+        parent: &ParentHandle,
+        contact: &ParentCaContact,
+    ) -> EmptyRes {
+        self.caserver
+            .get_entitlements_from_parent_and_contact(handle, parent, contact)
+            .map_err(|e| {
+                Error::CaServerError(ca::ServerError::CertAuth(ca::Error::ParentNotResponsive(
+                    e.to_string(),
+                )))
+            })?;
+        Ok(())
+    }
+
+    pub fn ca_parent_remove(&self, handle: Handle, parent: ParentHandle) -> EmptyRes {
+        Ok(self.caserver.ca_parent_remove(handle, parent)?)
+    }
+}
+
+/// # Bulk background operations CAS
+///
+impl KrillServer {
     /// Republish all CAs that need it.
     pub fn republish_all(&self) -> EmptyRes {
         self.caserver.republish_all()?;
@@ -362,14 +407,6 @@ impl KrillServer {
         self.caserver.get_ca_history(handle).ok()
     }
 
-    /// Returns the child request for a CA, or NONE if the CA cannot be found.
-    pub fn ca_child_req(&self, handle: &Handle) -> KrillRes<rfc8183::ChildRequest> {
-        self.caserver
-            .get_ca(handle)
-            .map(|ca| ca.child_request())
-            .map_err(Error::CaServerError)
-    }
-
     /// Returns the publisher request for a CA, or NONE of the CA cannot be found.
     pub fn ca_publisher_req(&self, handle: &Handle) -> Option<rfc8183::PublisherRequest> {
         self.caserver
@@ -381,17 +418,8 @@ impl KrillServer {
     pub fn ca_init(&mut self, init: CertAuthInit) -> EmptyRes {
         let handle = init.unpack();
 
-        let repo_info = self.pubserver.repo_info_for(&handle)?;
-
         // Create CA
-        self.caserver.init_ca(&handle, repo_info)?;
-
-        let ca = self.caserver.get_ca(&handle)?;
-        let id_cert = ca.id_cert().clone();
-
-        // Add publisher
-        let req = rfc8183::PublisherRequest::new(None, handle.clone(), id_cert);
-        self.add_publisher(req)?;
+        self.caserver.init_ca(&handle)?;
 
         Ok(())
     }
@@ -399,46 +427,51 @@ impl KrillServer {
     /// Return the info about the configured repository server for a given Ca.
     /// and the actual objects published there, as reported by a list reply.
     pub fn ca_repo_details(&self, handle: &Handle) -> KrillRes<CaRepoDetails> {
-        self.caserver
-            .get_ca(handle)
-            .map(|ca| {
-                let contact = ca.repository_contact().clone();
-                CaRepoDetails::new(contact)
-            })
-            .map_err(Error::CaServerError)
+        let ca = self.caserver.get_ca(handle).map_err(Error::CaServerError)?;
+        let contact = ca
+            .get_repository_contact()
+            .map_err(|e| Error::CaServerError(ca::ServerError::CertAuth(e)))?;
+        Ok(CaRepoDetails::new(contact.clone()))
     }
 
     /// Returns the state of the current configured repo for a ca
     pub fn ca_repo_state(&self, handle: &Handle) -> KrillRes<CurrentRepoState> {
-        self.caserver
-            .get_ca(handle)
-            .map(|ca| {
-                let contact = ca.repository_contact().clone();
-                let repo_opt = contact.as_reponse_opt();
-                self.repo_state(handle, repo_opt)
-            })
-            .map_err(Error::CaServerError)
+        let ca = self.caserver.get_ca(handle).map_err(Error::CaServerError)?;
+        let contact = ca
+            .get_repository_contact()
+            .map_err(|e| Error::CaServerError(ca::ServerError::CertAuth(e)))?;
+        Ok(self.repo_state(handle, contact.as_reponse_opt()))
     }
 
     /// Update the repository for a CA, or return an error. (see `CertAuth::repo_update`)
     pub fn ca_update_repo(&self, handle: Handle, update: RepositoryUpdate) -> EmptyRes {
-        // first check that the new repo can be contacted
-        let repo = update.as_response_opt();
+        let contact = match update {
+            RepositoryUpdate::Embedded => {
+                // Add to embedded publication server if not present
+                if self.pubserver.get_publisher_details(&handle).is_err() {
+                    let ca = self.caserver.get_ca(&handle)?;
+                    let id_cert = ca.id_cert().clone();
 
-        if let CurrentRepoState::Error(msg) = self.repo_state(&handle, repo) {
-            Err(Error::CaServerError(ca::ServerError::CertAuth(
-                ca::Error::NewRepoUpdateNotResponsive(msg),
-            )))
-        } else {
-            let contact = match update {
-                RepositoryUpdate::Embedded => {
-                    RepositoryContact::embedded(self.pubserver.repo_info_for(&handle)?)
+                    // Add publisher
+                    let req = rfc8183::PublisherRequest::new(None, handle.clone(), id_cert);
+                    self.add_publisher(req)?;
                 }
-                RepositoryUpdate::Rfc8181(res) => RepositoryContact::Rfc8181(res),
-            };
 
-            Ok(self.caserver.update_repo(handle, contact)?)
-        }
+                RepositoryContact::embedded(self.pubserver.repo_info_for(&handle)?)
+            }
+            RepositoryUpdate::Rfc8181(response) => {
+                // first check that the new repo can be contacted
+                if let CurrentRepoState::Error(msg) = self.repo_state(&handle, Some(&response)) {
+                    return Err(Error::CaServerError(ca::ServerError::CertAuth(
+                        ca::Error::NewRepoUpdateNotResponsive(msg),
+                    )));
+                }
+
+                RepositoryContact::Rfc8181(response)
+            }
+        };
+
+        Ok(self.caserver.update_repo(handle, contact)?)
     }
 
     fn repo_state(
@@ -460,23 +493,6 @@ impl KrillServer {
 
     pub fn ca_update_id(&self, handle: Handle) -> EmptyRes {
         Ok(self.caserver.ca_update_id(handle)?)
-    }
-
-    pub fn ca_add_parent(&self, handle: Handle, parent: ParentCaReq) -> EmptyRes {
-        Ok(self.caserver.ca_add_parent(handle, parent)?)
-    }
-
-    pub fn ca_update_parent(
-        &self,
-        handle: Handle,
-        parent: ParentHandle,
-        contact: ParentCaContact,
-    ) -> EmptyRes {
-        Ok(self.caserver.ca_update_parent(handle, parent, contact)?)
-    }
-
-    pub fn ca_remove_parent(&self, handle: Handle, parent: ParentHandle) -> EmptyRes {
-        Ok(self.caserver.ca_remove_parent(handle, parent)?)
     }
 
     pub fn ca_keyroll_init(&self, handle: Handle) -> EmptyRes {

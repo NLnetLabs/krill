@@ -5,9 +5,14 @@ use krill::daemon::http::server;
 
 fn main() {
     match Config::create() {
-        Ok(config) => server::start(&config).unwrap(),
+        Ok(config) => {
+            if let Err(e) = server::start(&config) {
+                eprintln!("Krill failed to start: {}", e);
+                ::std::process::exit(1);
+            }
+        }
         Err(e) => {
-            eprintln!("{}", e);
+            eprintln!("Krill failed to start: {}", e);
             ::std::process::exit(1);
         }
     }

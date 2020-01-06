@@ -1,4 +1,4 @@
-pub const KRILL_VERSION: &str = "0.4.1";
+pub const KRILL_VERSION: &str = "0.4.2";
 pub const KRILL_SERVER_APP: &str = "Krill";
 pub const KRILL_CLIENT_APP: &str = "Krill Client";
 

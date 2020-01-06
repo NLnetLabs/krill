@@ -7,16 +7,14 @@ use std::fs::File;
 use std::io;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use actix_session::CookieSession;
 use actix_web::http::StatusCode;
 use actix_web::web::{delete, get, post, scope, Path};
-use actix_web::{guard, middleware, web};
+use actix_web::{guard, middleware, web, Resource};
 use actix_web::{App, HttpResponse, HttpServer};
 use openssl::ssl::{SslAcceptor, SslAcceptorBuilder, SslFiletype, SslMethod};
 
 use bcder::decode;
 
-use crate::daemon::auth::{is_logged_in, login, logout, AUTH_COOKIE_NAME};
 use crate::daemon::config::Config;
 use crate::daemon::endpoints;
 use crate::daemon::endpoints::*;
@@ -47,20 +45,20 @@ pub fn start(config: &Config) -> Result<(), Error> {
 
     let https_builder = https_builder(config)?;
 
+    let post_limit_api = config.post_limit_api;
+    let post_limit_rfc8181 = config.post_limit_rfc8181;
+    let post_limit_rfc6492 = config.post_limit_rfc6492;
+
     HttpServer::new(move || {
         App::new()
             .data(server.clone())
             .wrap(middleware::Logger::default())
-            .wrap(
-                CookieSession::signed(&[0; 32])
-                    .name(AUTH_COOKIE_NAME)
-                    .secure(true),
-            )
             .route("/health", get().to(endpoints::health))
             // API end-points
             .service(
                 scope("/api/v1")
-                    // Health
+                    .data(web::JsonConfig::default().limit(post_limit_api))
+                    // Let the UI check if it's authorized
                     .route("/authorized", get().to(api_authorized))
                     // Repositories and their publishers (both embedded and remote)
                     .route("/publishers", get().to(list_pbl))
@@ -124,14 +122,18 @@ pub fn start(config: &Config) -> Result<(), Error> {
                     // Methods that are not found should return a bad request and some explanation
                     .default_service(web::route().to(api_bad_request)),
             )
-            // Logged in users for the API
-            .route("/ui/is_logged_in", get().to(is_logged_in))
-            .route("/ui/login", post().to(login))
-            .route("/ui/logout", post().to(logout))
-            // Identity exchanges for remote publishers
-            .route("/rfc8181/{handle}", post().to(rfc8181))
-            // Provisioning for remote krill clients
-            .route("/rfc6492/{handle}", post().to(rfc6492))
+            // Publication Protocol (RFC 8181)
+            .service(
+                Resource::new("/rfc8181/{handle}")
+                    .data(web::PayloadConfig::default().limit(post_limit_rfc8181))
+                    .route(post().to(rfc8181)),
+            )
+            // Uo-Down Protocol (RFC 6492)
+            .service(
+                Resource::new("/rfc6492/{handle}")
+                    .data(web::PayloadConfig::default().limit(post_limit_rfc6492))
+                    .route(post().to(rfc6492)),
+            )
             // Public TA related methods
             .route("/ta/ta.tal", get().to(tal))
             .route("/ta/ta.cer", get().to(ta_cer))
