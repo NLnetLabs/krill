@@ -34,6 +34,7 @@ use crate::daemon::ca::{
     self, ta_handle, ChildDetails, Cmd, CmdDet, CurrentObjectSetDelta, Error, Evt, EvtDet, Ini,
     ResourceClass, Result, RouteAuthorization, RouteAuthorizationUpdates, Routes, Signer,
 };
+use std::env;
 
 //------------ Rfc8183Id ---------------------------------------------------
 
@@ -693,6 +694,12 @@ impl<S: Signer> CertAuth<S> {
 
         let (rcn, limit, csr) = request.unwrap();
         let csr_info = CsrInfo::try_from(&csr)?;
+
+        if csr_info.contains_localhost() && env::var("KRILL_TEST").is_err() {
+            return Err(Error::invalid_csr(
+                "Cannot use localhost in certificate requests unless server uses TEST mode.",
+            ));
+        }
 
         let issued = self.issue_child_certificate(&child, rcn.clone(), csr_info, limit, signer)?;
 

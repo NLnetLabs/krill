@@ -258,6 +258,7 @@ impl Config {
     pub fn test(data_dir: &PathBuf) -> Self {
         let config = Self::test_config(data_dir);
         config.init_logging().unwrap();
+        config.verify().unwrap();
         config
     }
 
@@ -300,7 +301,7 @@ impl Config {
     pub fn create() -> Result<Self, ConfigError> {
         let config_file = Self::get_config_filename();
 
-        match Self::read_config(&config_file) {
+        let config = match Self::read_config(&config_file) {
             Err(e) => Err(ConfigError::Other(format!(
                 "Error parsing config file: {}, error: {}",
                 config_file, e
@@ -313,7 +314,43 @@ impl Config {
                 );
                 Ok(config)
             }
+        }?;
+        config.verify()?;
+        Ok(config)
+    }
+
+    fn verify(&self) -> Result<(), ConfigError> {
+        if self.port < 1024 {
+            return Err(ConfigError::other("Port number must be >1024"));
         }
+
+        if self.test_mode {
+            // Set KRILL_TEST env var so that it can easily be accessed without the need to pass
+            // this setting down all over the application. Used by CertAuth in particular to allow
+            // the use of 'localhost' in Certificate Sign Requests in test mode only.
+            env::set_var("KRILL_TEST", "1");
+        }
+
+        // Check against the use of localhost in non-test use.
+        if !self.test_mode
+            && self
+                .rsync_base
+                .to_string()
+                .to_lowercase()
+                .starts_with("rsync://localhost")
+        {
+            return Err(ConfigError::other(
+                "Cannot use localhost in rsync base unless test mode is used (KRILL_TEST)",
+            ));
+        }
+
+        if self.use_ta && !self.repo_enabled {
+            return Err(ConfigError::other(
+                "Cannot use embedded TA without embedded repository",
+            ));
+        }
+
+        Ok(())
     }
 
     fn read_config(file: &str) -> Result<Self, ConfigError> {
@@ -322,11 +359,6 @@ impl Config {
         f.read_to_end(&mut v)?;
 
         let c: Config = toml::from_slice(v.as_slice())?;
-
-        if c.port < 1024 {
-            return Err(ConfigError::other("Port number must be >1024"));
-        }
-
         Ok(c)
     }
 
@@ -554,6 +586,7 @@ mod tests {
         // file, then an environment variable must be set.
         use std::env;
         env::set_var("KRILL_AUTH_TOKEN", "secret");
+        env::set_var("KRILL_TEST", "1");
 
         let c = Config::read_config("./defaults/krill.conf").unwrap();
         let expected_socket_addr = ([127, 0, 0, 1], 3000).into();
