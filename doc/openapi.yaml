@@ -127,6 +127,7 @@ security:
 paths:
   /authorized:
     get:
+      operationId: is_authorized
       tags:
         - "Other"
       summary: Check if the client is authorized.
@@ -138,6 +139,7 @@ paths:
 
   /publishers:
     get:
+      operationId: list_publishers
       tags:
         - "Publishers"
       summary: List publishers.
@@ -150,6 +152,7 @@ paths:
           $ref: '#/components/responses/GeneralPublicationServerError'
 
     post:
+      operationId: add_publisher
       tags:
         - "Publishers"
       summary: Add publisher.
@@ -174,6 +177,7 @@ paths:
 
   /publishers/{publisher_handle}:
     get:
+      operationId: get_publisher
       tags:
         - "Publishers"
       summary: Get details for publisher.
@@ -191,6 +195,7 @@ paths:
           $ref: '#/components/responses/GeneralPublicationServerError'
 
     delete:
+      operationId: delete_publisher
       tags:
         - "Publishers"
       summary: Delete a publisher.
@@ -209,6 +214,7 @@ paths:
 
   /publishers/{publisher_handle}/response.{format}:
     get:
+      operationId: get_publisher_repository_response
       tags:
         - "Publishers"
       summary: Get Repository Response for publisher.
@@ -237,6 +243,7 @@ paths:
 
   /cas:
     get:
+      operationId: list_cas
       tags:
         - "Certificate Authorities"
       summary: List CAs.
@@ -249,6 +256,7 @@ paths:
           $ref: '#/components/responses/GeneralCAServerError'
 
     post:
+      operationId: add_ca
       tags:
         - "Certificate Authorities"
       summary: Add a CA.
@@ -280,6 +288,7 @@ paths:
 
   /cas/{ca_handle}:
     get:
+      operationId: get_ca
       tags:
         - "Certificate Authorities"
       summary: Get CA.
@@ -298,6 +307,7 @@ paths:
 
   /cas/{ca_handle}/child_request.{format}:
     get:
+      operationId: get_ca_child_request
       tags:
         - "Certificate Authorities"
       summary: Get CA RFC 8183 Request.
@@ -322,6 +332,7 @@ paths:
 
   /cas/{ca_handle}/children:
     post:
+      operationId: add_child_ca
       tags:
         - "Certificate Authorities"
       summary: Add a child CA.
@@ -378,6 +389,7 @@ paths:
 
   /cas/{ca_handle}/children/{child_handle}:
     get:
+      operationId: get_child_ca
       tags:
         - "Certificate Authorities"
       summary: Get child details.
@@ -401,6 +413,7 @@ paths:
           $ref: '#/components/responses/GeneralCAServerError'
 
     post:
+      operationId: update_child_ca
       tags:
         - "Certificate Authorities"
       summary: Update an existing child of a CA.
@@ -449,6 +462,7 @@ paths:
           $ref: '#/components/responses/GeneralCAServerError'
 
     delete:
+      operationId: delete_child_ca
       tags:
         - "Certificate Authorities"
       summary: Remove a child CA.
@@ -477,6 +491,7 @@ paths:
 
   /cas/{ca_handle}/children/{child_handle}/contact:
     get:
+      operationId: get_child_ca_parent_contact
       tags:
         - "Certificate Authorities"
       summary: Get parent contact for a child.
@@ -503,6 +518,7 @@ paths:
 
   /cas/{ca_handle}/children/{child_handle}/parent_response.{format}:
     get:
+      operationId: get_child_ca_parent_response
       tags:
         - "Certificate Authorities"
       summary: Get the RFC 8183 Parent Response for a child.
@@ -546,6 +562,7 @@ paths:
 
   /cas/{ca_handle}/history:
     get:
+      operationId: get_ca_history
       tags:
         - "Certificate Authorities"
       summary: Get full history of a CA.
@@ -563,6 +580,7 @@ paths:
 
   /cas/{ca_handle}/id:
     post:
+      operationId: regenerate_ca_id_cert
       tags:
         - "Certificate Authorities"
       summary: Regenerate CA ID certificate.
@@ -585,6 +603,7 @@ paths:
 
   /cas/{ca_handle}/parents:
     post:
+      operationId: add_ca_parent
       tags:
         - "Certificate Authorities"
       summary: Add a parent to a CA.
@@ -625,6 +644,7 @@ paths:
 
   /cas/{ca_handle}/parents/{parent_handle}:
     get:
+      operationId: get_ca_parent_contact
       tags:
         - "Certificate Authorities"
       summary: Get parent contact for a CA.
@@ -646,6 +666,7 @@ paths:
           $ref: '#/components/responses/GeneralCAServerError'
 
     post:
+      operationId: update_ca_parent_contact
       tags:
         - "Certificate Authorities"
       summary: Update the contact information for an existing parent.
@@ -680,6 +701,7 @@ paths:
           $ref: '#/components/responses/GeneralCAServerError'
 
     delete:
+      operationId: delete_ca_parent
       tags:
         - "Certificate Authorities"
       summary: Remove a parent.
@@ -704,6 +726,7 @@ paths:
 
   /cas/{ca_handle}/repo:
     get:
+      operationId: get_ca_repository
       tags:
         - "Certificate Authorities"
       summary: Get Repository for a CA.
@@ -722,6 +745,7 @@ paths:
           $ref: '#/components/responses/GeneralCAServerError'
 
     post:
+      operationId: update_ca_repository
       tags:
         - "Certificate Authorities"
       summary: Update the Repository for a CA.
@@ -769,6 +793,7 @@ paths:
 
   /cas/{ca_handle}/repo/request.{format}:
     get:
+      operationId: get_ca_publisher_request
       tags:
         - "Certificate Authorities"
       summary: Get the RFC 8183 Publisher Request for a CA.
@@ -794,6 +819,7 @@ paths:
 
   /cas/{ca_handle}/keys/roll_init:
     post:
+      operationId: init_key_roll
       tags:
         - "Key Rolls"
       summary: Initiate a key roll.
@@ -823,6 +849,7 @@ paths:
 
   /cas/{ca_handle}/keys/roll_activate:
     post:
+      operationId: activate_key_roll
       tags:
         - "Key Rolls"
       summary: Finish a key roll.
@@ -864,6 +891,7 @@ paths:
 
   /cas/republish_all:
     post:
+      operationId: republish_all_cas
       tags:
         - "Certificate Authorities"
       summary: Force that all CAs create new objects if needed (in which case they will also sync).
@@ -875,6 +903,7 @@ paths:
 
   /cas/refresh_all:
     post:
+      operationId: refresh_all_cas
       tags:
         - "Certificate Authorities"
       summary: Force that all CAs ask their parents for updated certificates.
@@ -886,6 +915,7 @@ paths:
 
   /cas/resync_all:
     post:
+      operationId: resync_all_cas
       tags:
         - "Certificate Authorities"
       summary: Force that all CAs sync with their repo server.
@@ -897,6 +927,7 @@ paths:
 
   /cas/{ca_handle}/routes:
     get:
+      operationId: list_route_authorizations
       tags:
         - "Route Authorizations"
       summary: List route authorizations.
@@ -919,6 +950,7 @@ paths:
           $ref: '#/components/responses/GeneralCAServerError'
 
     post:
+      operationId: update_route_authorizations
       tags:
         - "Route Authorizations"
       summary: Update route authorizations.
