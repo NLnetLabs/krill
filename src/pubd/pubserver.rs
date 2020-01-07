@@ -127,10 +127,8 @@ impl PubServer {
         let repository = self.repository()?;
         let publisher = repository.get_publisher(&publisher_handle)?;
 
+        let msg = SignedMessage::decode(msg_bytes.clone(), false).map_err(Error::validation)?;
         let cms_logger = CmsLogger::for_rfc8181_rcvd(&self.cms_logger_work_dir, &publisher_handle);
-        cms_logger.received(&msg_bytes)?;
-
-        let msg = SignedMessage::decode(msg_bytes, false).map_err(Error::validation)?;
 
         msg.validate(publisher.id_cert())
             .map_err(Error::validation)?;
@@ -138,20 +136,20 @@ impl PubServer {
         let content = rfc8181::Message::from_signed_message(&msg)?;
         let query = content.into_query()?;
 
-        let response = match query {
+        let (response, should_log_cms) = match query {
             rfc8181::QueryMessage::ListQuery => {
                 let list_reply = publisher.list_current();
-                rfc8181::Message::list_reply(list_reply)
+                (rfc8181::Message::list_reply(list_reply), false)
             }
             rfc8181::QueryMessage::PublishDelta(delta) => {
                 match self.publish(publisher_handle, delta) {
-                    Ok(()) => rfc8181::Message::success_reply(),
+                    Ok(()) => (rfc8181::Message::success_reply(), true),
                     Err(e) => {
                         let error_code = e.to_rfc8181_error_code();
                         let report_error = rfc8181::ReportError::reply(error_code, None);
                         let mut builder = rfc8181::ErrorReply::build_with_capacity(1);
                         builder.add(report_error);
-                        builder.build_message()
+                        (builder.build_message(), true)
                     }
                 }
             }
@@ -167,7 +165,10 @@ impl PubServer {
         .map_err(Error::signer)?;
 
         let response_bytes = response_builder.as_bytes();
-        cms_logger.reply(&response_bytes)?;
+        if should_log_cms {
+            cms_logger.received(&msg_bytes)?;
+            cms_logger.reply(&response_bytes)?;
+        }
 
         Ok(response_bytes)
     }
