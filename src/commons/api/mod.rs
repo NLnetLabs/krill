@@ -290,6 +290,9 @@ pub enum ErrorCode {
     #[display(fmt = "Handle already in use")]
     DuplicateHandle,
 
+    #[display(fmt = "No embedded repository configured")]
+    NoEmbeddedRepo,
+
     #[display(fmt = "Base URI for publisher is outside of publisher base URI")]
     InvalidBaseUri,
 
@@ -397,6 +400,7 @@ impl From<usize> for ErrorCode {
             // 2100s -> Pub Admin issues
             2101 => ErrorCode::InvalidBaseUri,
             2102 => ErrorCode::DuplicateHandle,
+            2103 => ErrorCode::NoEmbeddedRepo,
 
             // 2200s -> Pub Client issues
             2201 => ErrorCode::UnknownPublisher,
@@ -459,6 +463,7 @@ impl Into<ErrorResponse> for ErrorCode {
             // pub admin errors
             ErrorCode::InvalidBaseUri => 2101,
             ErrorCode::DuplicateHandle => 2102,
+            ErrorCode::NoEmbeddedRepo => 2103,
 
             // pub client errors
             ErrorCode::UnknownPublisher => 2201,
@@ -527,7 +532,7 @@ mod tests {
             test_code(n)
         }
 
-        for n in 2101..2103 {
+        for n in 2101..2104 {
             test_code(n)
         }
 

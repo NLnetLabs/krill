@@ -51,7 +51,7 @@ pub struct KrillServer {
     authorizer: Authorizer,
 
     // Publication server, with configured publishers
-    pubserver: Arc<PubServer>,
+    pubserver: Option<Arc<PubServer>>,
 
     // Handles the internal TA and/or CAs
     caserver: Arc<ca::CaServer<OpenSslSigner>>,
@@ -84,10 +84,24 @@ impl KrillServer {
 
         let authorizer = Authorizer::new(token);
 
-        let pubserver =
-            PubServer::build(&base_uri, rrdp_base_uri.clone(), work_dir, signer.clone())?;
-
-        let pubserver: Arc<PubServer> = Arc::new(pubserver);
+        let pubserver = {
+            if config.repo_enabled {
+                Some(PubServer::build(
+                    &base_uri,
+                    rrdp_base_uri.clone(),
+                    work_dir,
+                    signer.clone(),
+                )?)
+            } else {
+                PubServer::remove_if_empty(
+                    &base_uri,
+                    rrdp_base_uri.clone(),
+                    work_dir,
+                    signer.clone(),
+                )?
+            }
+        };
+        let pubserver: Option<Arc<PubServer>> = pubserver.map(Arc::new);
 
         let event_queue = Arc::new(EventQueueListener::in_mem());
         let caserver = Arc::new(ca::CaServer::build(work_dir, event_queue.clone(), signer)?);
@@ -97,6 +111,7 @@ impl KrillServer {
             if !caserver.has_ca(&ta_handle) {
                 info!("Creating embedded Trust Anchor");
 
+                let pubserver = pubserver.as_ref().ok_or_else(|| Error::NoEmbeddedRepo)?;
                 let repo_info: RepoInfo = pubserver.repo_info_for(&ta_handle)?;
 
                 let ta_uri = config.ta_cert_uri();
@@ -153,9 +168,13 @@ impl KrillServer {
 
 /// # Configure publishers
 impl KrillServer {
+    fn get_embedded(&self) -> Result<&Arc<PubServer>, Error> {
+        self.pubserver.as_ref().ok_or_else(|| Error::NoEmbeddedRepo)
+    }
+
     /// Returns all currently configured publishers. (excludes deactivated)
     pub fn publishers(&self) -> Result<Vec<Handle>, Error> {
-        self.pubserver.publishers().map_err(Error::PubServer)
+        self.get_embedded()?.publishers().map_err(Error::PubServer)
     }
 
     /// Adds the publishers, blows up if it already existed.
@@ -165,7 +184,7 @@ impl KrillServer {
     ) -> KrillRes<rfc8183::RepositoryResponse> {
         let publisher_handle = req.publisher_handle().clone();
 
-        self.pubserver
+        self.get_embedded()?
             .create_publisher(req)
             .map_err(Error::PubServer)?;
 
@@ -174,14 +193,14 @@ impl KrillServer {
 
     /// Removes a publisher, blows up if it didn't exist.
     pub fn remove_publisher(&mut self, publisher: PublisherHandle) -> EmptyRes {
-        self.pubserver
+        self.get_embedded()?
             .remove_publisher(publisher)
             .map_err(Error::PubServer)
     }
 
     /// Returns a publisher.
     pub fn get_publisher(&self, publisher: &PublisherHandle) -> Result<PublisherDetails, Error> {
-        self.pubserver
+        self.get_embedded()?
             .get_publisher_details(publisher)
             .map_err(Error::PubServer)
     }
@@ -203,13 +222,13 @@ impl KrillServer {
         let rfc8181_uri =
             uri::Https::from_string(format!("{}rfc8181/{}", self.service_uri, publisher)).unwrap();
 
-        self.pubserver
+        self.get_embedded()?
             .repository_response(rfc8181_uri, publisher)
             .map_err(Error::PubServer)
     }
 
     pub fn rfc8181(&self, publisher: PublisherHandle, msg_bytes: Bytes) -> KrillRes<Bytes> {
-        self.pubserver
+        self.get_embedded()?
             .rfc8181(publisher, msg_bytes)
             .map_err(Error::PubServer)
     }
@@ -448,7 +467,7 @@ impl KrillServer {
         let contact = match update {
             RepositoryUpdate::Embedded => {
                 // Add to embedded publication server if not present
-                if self.pubserver.get_publisher_details(&handle).is_err() {
+                if self.get_embedded()?.get_publisher_details(&handle).is_err() {
                     let ca = self.caserver.get_ca(&handle)?;
                     let id_cert = ca.id_cert().clone();
 
@@ -457,7 +476,7 @@ impl KrillServer {
                     self.add_publisher(req)?;
                 }
 
-                RepositoryContact::embedded(self.pubserver.repo_info_for(&handle)?)
+                RepositoryContact::embedded(self.get_embedded()?.repo_info_for(&handle)?)
             }
             RepositoryUpdate::Rfc8181(response) => {
                 // first check that the new repo can be contacted
@@ -480,9 +499,12 @@ impl KrillServer {
         repo: Option<&rfc8183::RepositoryResponse>,
     ) -> CurrentRepoState {
         match repo {
-            None => match self.pubserver.list(handle) {
+            None => match self.get_embedded() {
                 Err(e) => CurrentRepoState::error(e),
-                Ok(list) => CurrentRepoState::list(list),
+                Ok(repo) => match repo.list(handle) {
+                    Err(e) => CurrentRepoState::error(e),
+                    Ok(list) => CurrentRepoState::list(list),
+                },
             },
             Some(repo) => match self.caserver.send_rfc8181_list(handle, repo) {
                 Err(e) => CurrentRepoState::error(e),
@@ -531,14 +553,16 @@ impl KrillServer {
     /// Handles a publish delta request sent to the API, or.. through
     /// the CmsProxy.
     pub fn handle_delta(&self, publisher: PublisherHandle, delta: PublishDelta) -> EmptyRes {
-        self.pubserver
+        self.get_embedded()?
             .publish(publisher, delta)
             .map_err(Error::PubServer)
     }
 
     /// Handles a list request sent to the API, or.. through the CmsProxy.
     pub fn handle_list(&self, publisher: &PublisherHandle) -> Result<ListReply, Error> {
-        self.pubserver.list(publisher).map_err(Error::PubServer)
+        self.get_embedded()?
+            .list(publisher)
+            .map_err(Error::PubServer)
     }
 }
 
@@ -563,6 +587,9 @@ pub enum Error {
 
     #[display(fmt = "{}", _0)]
     CaServerError(ca::ServerError),
+
+    #[display(fmt = "No embedded repository configured")]
+    NoEmbeddedRepo,
 }
 
 impl From<io::Error> for Error {

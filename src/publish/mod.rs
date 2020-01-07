@@ -16,13 +16,13 @@ use crate::pubd::PubServer;
 /// remote, repositories.
 pub struct CaPublisher {
     caserver: Arc<CaServer<OpenSslSigner>>,
-    pubserver: Arc<PubServer>,
+    pubserver: Option<Arc<PubServer>>,
 }
 
 /// # Construct
 ///
 impl CaPublisher {
-    pub fn new(caserver: Arc<CaServer<OpenSslSigner>>, pubserver: Arc<PubServer>) -> Self {
+    pub fn new(caserver: Arc<CaServer<OpenSslSigner>>, pubserver: Option<Arc<PubServer>>) -> Self {
         CaPublisher {
             caserver,
             pubserver,
@@ -31,6 +31,10 @@ impl CaPublisher {
 }
 
 impl CaPublisher {
+    fn get_embedded(&self) -> Result<&Arc<PubServer>, Error> {
+        self.pubserver.as_ref().ok_or_else(|| Error::NoEmbeddedRepo)
+    }
+
     pub fn publish(&self, ca_handle: &Handle) -> Result<(), Error> {
         let ca = self.caserver.get_ca(ca_handle)?;
 
@@ -42,7 +46,7 @@ impl CaPublisher {
         };
 
         let list_reply = match &repo_contact {
-            RepositoryContact::Embedded(_) => self.pubserver.list(ca_handle)?,
+            RepositoryContact::Embedded(_) => self.get_embedded()?.list(ca_handle)?,
             RepositoryContact::Rfc8181(repo) => self.caserver.send_rfc8181_list(ca_handle, repo)?,
         };
 
@@ -77,7 +81,9 @@ impl CaPublisher {
         };
 
         match &repo_contact {
-            RepositoryContact::Embedded(_) => self.pubserver.publish(ca_handle.clone(), delta)?,
+            RepositoryContact::Embedded(_) => {
+                self.get_embedded()?.publish(ca_handle.clone(), delta)?
+            }
             RepositoryContact::Rfc8181(repo) => {
                 self.caserver.send_rfc8181_delta(ca_handle, repo, delta)?
             }
@@ -100,14 +106,16 @@ impl CaPublisher {
         );
 
         let list_reply = match repo {
-            RepositoryContact::Embedded(_) => self.pubserver.list(ca_handle)?,
+            RepositoryContact::Embedded(_) => self.get_embedded()?.list(ca_handle)?,
             RepositoryContact::Rfc8181(repo) => self.caserver.send_rfc8181_list(ca_handle, repo)?,
         };
 
         let delta = list_reply.into_withdraw_delta();
 
         match repo {
-            RepositoryContact::Embedded(_) => self.pubserver.publish(ca_handle.clone(), delta)?,
+            RepositoryContact::Embedded(_) => {
+                self.get_embedded()?.publish(ca_handle.clone(), delta)?
+            }
             RepositoryContact::Rfc8181(res) => {
                 self.caserver.send_rfc8181_delta(ca_handle, res, delta)?
             }
@@ -120,12 +128,16 @@ impl CaPublisher {
 //------------ Error ---------------------------------------------------------
 
 #[derive(Debug, Display)]
+#[allow(clippy::large_enum_variant)]
 pub enum Error {
     #[display(fmt = "{}", _0)]
     CaServer(ca::ServerError),
 
     #[display(fmt = "{}", _0)]
     PubServer(pubd::Error),
+
+    #[display(fmt = "No embedded repository configured")]
+    NoEmbeddedRepo,
 }
 
 impl From<ca::ServerError> for Error {

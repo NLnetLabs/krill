@@ -674,6 +674,7 @@ impl ErrorToStatus for krillserver::Error {
             krillserver::Error::PubServer(e) => e.status(),
             krillserver::Error::SignerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             krillserver::Error::CaServerError(e) => e.status(),
+            krillserver::Error::NoEmbeddedRepo => StatusCode::BAD_REQUEST,
         }
     }
 }
@@ -728,6 +729,7 @@ impl ToErrorCode for krillserver::Error {
             krillserver::Error::PubServer(e) => e.code(),
             krillserver::Error::SignerError(_) => ErrorCode::SigningError,
             krillserver::Error::CaServerError(e) => e.code(),
+            krillserver::Error::NoEmbeddedRepo => ErrorCode::NoEmbeddedRepo,
         }
     }
 }

@@ -32,6 +32,12 @@ impl ConfigDefaults {
     fn port() -> u16 {
         3000
     }
+    fn test_mode() -> bool {
+        env::var("KRILL_TEST").is_ok()
+    }
+    fn repo_enabled() -> bool {
+        env::var("KRILL_REPO_ENABLED").is_ok()
+    }
     fn use_ta() -> bool {
         env::var("KRILL_USE_TA").is_ok()
     }
@@ -104,8 +110,14 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::port")]
     port: u16,
 
+    #[serde(default = "ConfigDefaults::test_mode")]
+    pub test_mode: bool,
+
     #[serde(default = "ConfigDefaults::use_ta")]
     use_ta: bool,
+
+    #[serde(default = "ConfigDefaults::repo_enabled")]
+    pub repo_enabled: bool,
 
     #[serde(default = "ConfigDefaults::https_mode")]
     https_mode: HttpsMode,
@@ -201,7 +213,9 @@ impl Config {
     fn test_config(data_dir: &PathBuf) -> Self {
         let ip = ConfigDefaults::ip();
         let port = ConfigDefaults::port();
+        let test_mode = true;
         let use_ta = true;
+        let repo_enabled = true;
         let https_mode = HttpsMode::Generate;
         let data_dir = data_dir.clone();
         let rsync_base = ConfigDefaults::rsync_base();
@@ -221,7 +235,9 @@ impl Config {
         Config {
             ip,
             port,
+            test_mode,
             use_ta,
+            repo_enabled,
             https_mode,
             data_dir,
             rsync_base,

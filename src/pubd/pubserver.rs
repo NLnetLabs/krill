@@ -17,6 +17,7 @@ use crate::commons::remote::sigmsg::SignedMessage;
 use crate::commons::util::softsigner::OpenSslSigner;
 use crate::constants::*;
 use crate::pubd::{self, CmdDet, Error, Repository};
+use std::fs;
 
 //------------ PubServer -----------------------------------------------------
 
@@ -40,6 +41,27 @@ pub struct PubServer {
 /// # Constructing
 ///
 impl PubServer {
+    pub fn remove_if_empty(
+        rsync_base: &uri::Rsync,
+        rrdp_base_uri: uri::Https, // for the RRDP files
+        work_dir: &PathBuf,        // for the aggregate stores
+        signer: Arc<RwLock<OpenSslSigner>>,
+    ) -> Result<Option<Self>, Error> {
+        let mut pub_server_dir = work_dir.clone();
+        pub_server_dir.push(PUBSERVER_DIR);
+        if pub_server_dir.exists() {
+            let server = PubServer::build(rsync_base, rrdp_base_uri, work_dir, signer)?;
+            if server.publishers()?.is_empty() {
+                let _result = fs::remove_dir_all(pub_server_dir);
+                Ok(None)
+            } else {
+                Ok(Some(server))
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
     pub fn build(
         rsync_base: &uri::Rsync,
         rrdp_base_uri: uri::Https, // for the RRDP files

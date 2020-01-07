@@ -33,7 +33,7 @@ impl Scheduler {
     pub fn build(
         event_queue: Arc<EventQueueListener>,
         caserver: Arc<CaServer<OpenSslSigner>>,
-        pubserver: Arc<PubServer>,
+        pubserver: Option<Arc<PubServer>>,
         ca_refresh_rate: u32,
     ) -> Self {
         let event_sh = make_event_sh(event_queue, caserver.clone(), pubserver);
@@ -51,7 +51,7 @@ impl Scheduler {
 fn make_event_sh(
     event_queue: Arc<EventQueueListener>,
     caserver: Arc<CaServer<OpenSslSigner>>,
-    pubserver: Arc<PubServer>,
+    pubserver: Option<Arc<PubServer>>,
 ) -> ScheduleHandle {
     let mut scheduler = clokwerk::Scheduler::new();
     scheduler.every(1.seconds()).run(move || {
