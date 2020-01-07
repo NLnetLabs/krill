@@ -971,16 +971,7 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                added:
-                  type: array
-                  items:
-                    $ref: '#/components/schemas/ROA'
-                removed:
-                  type: array
-                  items:
-                    $ref: '#/components/schemas/ROA'
+              $ref: '#/components/schemas/ROADelta'
 
       responses:
         '200':
@@ -1106,6 +1097,17 @@ components:
           type: string
         max_length:
           type: integer
+    ROADelta:
+      type: object
+      properties:
+        added:
+          type: array
+          items:
+            $ref: '#/components/schemas/ROA'
+        removed:
+          type: array
+          items:
+            $ref: '#/components/schemas/ROA'
     ServiceUri:
       type: string
       format: uri
