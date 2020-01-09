@@ -20,6 +20,7 @@ use crate::commons::remote::id::IdCert;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
 use crate::constants::*;
+use rpki::uri::Https;
 
 struct GeneralArgs {
     server: uri::Https,
@@ -40,9 +41,7 @@ impl GeneralArgs {
                 server = Some(uri::Https::from_str(server_str)?);
             }
 
-            server.ok_or_else(|| {
-                Error::missing_arg_with_env(KRILL_CLI_SERVER_ARG, KRILL_CLI_SERVER_ENV)
-            })?
+            server.unwrap_or_else(|| Https::from_str(KRILL_CLI_SERVER_DFLT).unwrap())
         };
 
         let token = {
@@ -245,6 +244,74 @@ impl Options {
                     .value_name("<XML file>")
                     .required(false),
             )
+    }
+
+    fn make_config_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut config_sub = SubCommand::with_name("config")
+            .about("Creates a configuration file for krill and prints it to STDOUT.");
+
+        fn add_data_dir_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+            app.arg(
+                Arg::with_name("data")
+                    .long("data")
+                    .short("d")
+                    .value_name("path")
+                    .help("Override the default path (./data/) for the data directory (must end with slash).")
+                    .required(false),
+            )
+        }
+
+        fn add_log_file_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+            app.arg(
+                Arg::with_name("logfile")
+                    .long("logfile")
+                    .short("l")
+                    .value_name("path")
+                    .help("Override the default path (./krill.log) for the log file.")
+                    .required(false),
+            )
+        }
+
+        fn add_rsync_base_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+            app.arg(
+                Arg::with_name("rsync")
+                    .long("rsync")
+                    .value_name("uri")
+                    .help("Specify the base rsync URI for your repository. must end with '/'.")
+                    .required(true),
+            )
+        }
+
+        fn add_rrdp_service_uri_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+            app.arg(
+                Arg::with_name("rrdp")
+                    .long("rrdp")
+                    .value_name("uri")
+                    .help("Specify the base https URI for your RRDP (excluding notify.xml), must end with '/'")
+                    .required(true),
+            )
+        }
+
+        let mut with_repo =
+            SubCommand::with_name("repo").about("Use a self-hosted repository (not recommended)");
+
+        with_repo = Self::add_general_args(with_repo);
+        with_repo = add_data_dir_arg(with_repo);
+        with_repo = add_log_file_arg(with_repo);
+        with_repo = add_rsync_base_arg(with_repo);
+        with_repo = add_rrdp_service_uri_arg(with_repo);
+
+        let mut with_3rd =
+            SubCommand::with_name("simple").about("Use a 3rd party repository for publishing");
+
+        with_3rd = Self::add_general_args(with_3rd);
+        with_3rd = add_data_dir_arg(with_3rd);
+        with_3rd = add_log_file_arg(with_3rd);
+
+        config_sub = config_sub.subcommand(with_3rd);
+        config_sub = config_sub.subcommand(with_repo);
+
+        app.subcommand(config_sub)
     }
 
     fn make_cas_list_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
@@ -661,6 +728,7 @@ impl Options {
     fn make_matches<'a>() -> ArgMatches<'a> {
         let mut app = App::new(KRILL_CLIENT_APP).version(KRILL_VERSION);
 
+        app = Self::make_config_sc(app);
         app = Self::make_cas_list_sc(app);
         app = Self::make_cas_show_ca_sc(app);
         app = Self::make_cas_show_history_sc(app);
@@ -715,6 +783,56 @@ impl Options {
             Ok(Some(ResourceSet::from_strs(asn, v4, v6)?))
         } else {
             Ok(None)
+        }
+    }
+
+    fn parse_matches_repo_config(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let rrdp_base = matches
+            .value_of("rrdp")
+            .map(uri::Https::from_str)
+            .unwrap()?;
+        let rsync_base = matches
+            .value_of("rsync")
+            .map(uri::Rsync::from_str)
+            .unwrap()?;
+
+        let mut details = KrillInitDetails::default();
+        details.with_rsync_base(rsync_base);
+        details.with_rrdp_service_uri(rrdp_base);
+
+        if let Some(data) = matches.value_of("data") {
+            details.with_data_dir(data);
+        }
+        if let Some(log_file) = matches.value_of("logfile") {
+            details.with_log_file(log_file);
+        }
+
+        let command = Command::Init(details);
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_simple_config(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let mut details = KrillInitDetails::default();
+        if let Some(data) = matches.value_of("data") {
+            details.with_data_dir(data);
+        }
+        if let Some(log_file) = matches.value_of("logfile") {
+            details.with_log_file(log_file);
+        }
+
+        let command = Command::Init(details);
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_config(matches: &ArgMatches) -> Result<Options, Error> {
+        if let Some(m) = matches.subcommand_matches("repo") {
+            Self::parse_matches_repo_config(m)
+        } else if let Some(m) = matches.subcommand_matches("simple") {
+            Self::parse_matches_simple_config(m)
+        } else {
+            Err(Error::UnrecognisedSubCommand)
         }
     }
 
@@ -1116,7 +1234,7 @@ impl Options {
     fn parse_matches_publishers_repo_response(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let publisher = Self::parse_publisher_arg(matches)?;
-        let command = Command::Publishers(PublishersCommand::RepositiryResponse(publisher));
+        let command = Command::Publishers(PublishersCommand::RepositoryResponse(publisher));
         Ok(Options::make(general_args, command))
     }
 
@@ -1161,7 +1279,9 @@ impl Options {
     }
 
     fn parse_matches(matches: ArgMatches) -> Result<Options, Error> {
-        if let Some(m) = matches.subcommand_matches("list") {
+        if let Some(m) = matches.subcommand_matches("config") {
+            Self::parse_matches_config(m)
+        } else if let Some(m) = matches.subcommand_matches("list") {
             Self::parse_matches_cas_list(m)
         } else if let Some(m) = matches.subcommand_matches("add") {
             Self::parse_matches_cas_add(m)
@@ -1204,6 +1324,7 @@ pub enum Command {
     Bulk(BulkCaCommand),
     CertAuth(CaCommand),
     Publishers(PublishersCommand),
+    Init(KrillInitDetails),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1279,8 +1400,61 @@ pub enum PublishersCommand {
     AddPublisher(rfc8183::PublisherRequest),
     ShowPublisher(PublisherHandle),
     RemovePublisher(PublisherHandle),
-    RepositiryResponse(PublisherHandle),
+    RepositoryResponse(PublisherHandle),
     PublisherList,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct KrillInitDetails {
+    rsync_base: Option<uri::Rsync>,
+    rrdp_service_uri: Option<uri::Https>,
+    data_dir: Option<String>,
+    log_file: Option<String>,
+}
+
+impl KrillInitDetails {
+    pub fn with_rsync_base(&mut self, rsync_base: uri::Rsync) {
+        self.rsync_base = Some(rsync_base);
+    }
+
+    pub fn with_rrdp_service_uri(&mut self, rrdp_service_uri: uri::Https) {
+        self.rrdp_service_uri = Some(rrdp_service_uri);
+    }
+
+    pub fn with_data_dir(&mut self, data_dir: &str) {
+        self.data_dir = Some(data_dir.to_string())
+    }
+
+    pub fn with_log_file(&mut self, log_file: &str) {
+        self.log_file = Some(log_file.to_string())
+    }
+
+    pub fn rsync_base(&self) -> Option<&uri::Rsync> {
+        self.rsync_base.as_ref()
+    }
+
+    pub fn rrdp_service_uri(&self) -> Option<&uri::Https> {
+        self.rrdp_service_uri.as_ref()
+    }
+
+    pub fn data_dir(&self) -> Option<&String> {
+        self.data_dir.as_ref()
+    }
+
+    pub fn log_file(&self) -> Option<&String> {
+        self.log_file.as_ref()
+    }
+}
+
+impl Default for KrillInitDetails {
+    fn default() -> Self {
+        KrillInitDetails {
+            rsync_base: None,
+            rrdp_service_uri: None,
+            data_dir: None,
+            log_file: None,
+        }
+    }
 }
 
 //------------ Error ---------------------------------------------------------

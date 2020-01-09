@@ -1,19 +1,22 @@
-use std::{env, io};
+use std::{env, fmt, io};
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 use rpki::uri;
 
-use crate::cli::options::{BulkCaCommand, CaCommand, Command, Options, PublishersCommand};
+use crate::cli::options::{
+    BulkCaCommand, CaCommand, Command, KrillInitDetails, Options, PublishersCommand,
+};
 use crate::cli::report::{ApiResponse, ReportError};
 use crate::commons::api::{
-    CaRepoDetails, ChildCaInfo, ParentCaContact, PublisherDetails, PublisherList, Token,
+    CaRepoDetails, ChildCaInfo, CurrentRepoState, ParentCaContact, PublisherDetails, PublisherList,
+    Token,
 };
 use crate::commons::remote::rfc8183;
 use crate::commons::util::httpclient;
 use crate::constants::KRILL_CLI_API_ENV;
-use commons::api::CurrentRepoState;
+use crate::daemon::config::Config;
 
 /// Command line tool for Krill admin tasks
 pub struct KrillClient {
@@ -54,6 +57,7 @@ impl KrillClient {
             Command::Bulk(cmd) => client.bulk(cmd),
             Command::CertAuth(cmd) => client.certauth(cmd),
             Command::Publishers(cmd) => client.publishers(cmd),
+            Command::Init(details) => client.init(details),
             Command::NotSet => Err(Error::MissingCommand),
         }
     }
@@ -239,7 +243,7 @@ impl KrillClient {
                 let details: PublisherDetails = self.get_json(&uri)?;
                 Ok(ApiResponse::PublisherDetails(details))
             }
-            PublishersCommand::RepositiryResponse(handle) => {
+            PublishersCommand::RepositoryResponse(handle) => {
                 let uri = format!("api/v1/publishers/{}/response.json", handle);
                 let res = self.get_json(&uri)?;
                 Ok(ApiResponse::Rfc8183RepositoryResponse(res))
@@ -249,6 +253,56 @@ impl KrillClient {
 
     fn resolve_uri(&self, path: &str) -> String {
         format!("{}{}", &self.server, path)
+    }
+
+    fn init(&self, details: KrillInitDetails) -> Result<ApiResponse, Error> {
+        let defaults = include_str!("../../defaults/krill.conf");
+
+        let mut config = defaults.to_string();
+        config = config.replace(
+            "### auth_token =",
+            &format!("auth_token = \"{}\"", self.token),
+        );
+
+        config = config.replace(
+            "### service_uri = \"https://localhost:3000/\"",
+            &format!("service_uri = \"{}\"", self.server),
+        );
+
+        if let Some(rsync_base) = details.rsync_base() {
+            config = config.replace("### repo_enabled = false", "repo_enabled = true");
+
+            config = config.replace(
+                "### rsync_base = \"rsync://localhost/repo/\"",
+                &format!("rsync_base = \"{}\"", rsync_base),
+            )
+        }
+
+        if let Some(rrdp_service_uri) = details.rrdp_service_uri() {
+            config = config.replace(
+                "### rrdp_service_uri = \"$service_uri/rrdp/\"",
+                &format!("rrdp_service_uri = \"{}\"", rrdp_service_uri),
+            )
+        }
+
+        if let Some(data_dir) = details.data_dir() {
+            config = config.replace(
+                "### data_dir = \"./data\"",
+                &format!("data_dir = \"{}\"", data_dir),
+            )
+        }
+
+        if let Some(log_file) = details.log_file() {
+            config = config.replace(
+                "### log_file = \"./krill.log\"",
+                &format!("log_file = \"{}\"", log_file),
+            )
+        }
+
+        let c: Config = toml::from_slice(config.as_ref()).map_err(Error::init)?;
+        c.verify().map_err(Error::init)?;
+
+        Ok(ApiResponse::GenericBody(config.to_string()))
     }
 
     fn get_json<T: DeserializeOwned>(&self, uri: &str) -> Result<T, Error> {
@@ -306,6 +360,15 @@ pub enum Error {
 
     #[display(fmt = "{}", _0)]
     Rfc8183(rfc8183::Error),
+
+    #[display(fmt = "{}", _0)]
+    InitError(String),
+}
+
+impl Error {
+    fn init(msg: impl fmt::Display) -> Self {
+        Error::InitError(msg.to_string())
+    }
 }
 
 impl From<httpclient::Error> for Error {
@@ -330,4 +393,39 @@ impl From<rfc8183::Error> for Error {
     fn from(e: rfc8183::Error) -> Error {
         Error::Rfc8183(e)
     }
+}
+
+//------------ Tests ---------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+    use crate::cli::options::KrillInitDetails;
+    use crate::commons::util::test;
+
+    #[test]
+    fn init_config_file() {
+        let mut details = KrillInitDetails::default();
+        details.with_rsync_base(test::rsync("rsync://myhost/repo/"));
+        details.with_rrdp_service_uri(test::https("https://myhost/rrdp/"));
+        details.with_data_dir("/var/lib/krill/data/");
+        details.with_log_file("/var/log/krill/krill.log");
+
+        let client = KrillClient {
+            server: test::https("https://localhost:3001/"),
+            token: Token::from("secret"),
+        };
+
+        let res = client.init(details).unwrap();
+
+        match res {
+            ApiResponse::GenericBody(body) => {
+                let expected = include_str!("../../test-resources/krill-init.conf");
+                assert_eq!(expected, &body)
+            }
+            _ => panic!("Expected body"),
+        }
+    }
+
 }

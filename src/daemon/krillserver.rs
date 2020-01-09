@@ -69,7 +69,7 @@ impl KrillServer {
         let work_dir = &config.data_dir;
         let base_uri = &config.rsync_base;
         let service_uri = config.service_uri();
-        let rrdp_base_uri = &config.rrdp_base_uri();
+        let rrdp_base_uri = &config.rrdp_service_uri();
         let token = &config.auth_token;
         let ca_refresh_rate = config.ca_refresh;
 

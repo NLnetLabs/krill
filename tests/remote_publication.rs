@@ -26,7 +26,7 @@ fn repository_response(
     publisher: &PublisherHandle,
     server: PubdTestContext,
 ) -> rfc8183::RepositoryResponse {
-    let command = Command::Publishers(PublishersCommand::RepositiryResponse(publisher.clone()));
+    let command = Command::Publishers(PublishersCommand::RepositoryResponse(publisher.clone()));
     match krill_pubd_admin(command, server) {
         ApiResponse::Rfc8183RepositoryResponse(response) => response,
         _ => panic!("Expected repository response."),

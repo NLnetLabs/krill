@@ -192,7 +192,7 @@ impl Config {
         uri::Https::from_str(&self.service_uri).unwrap()
     }
 
-    pub fn rrdp_base_uri(&self) -> uri::Https {
+    pub fn rrdp_service_uri(&self) -> uri::Https {
         match &self.rrdp_service_uri {
             None => uri::Https::from_string(format!("{}rrdp/", &self.service_uri)).unwrap(),
             Some(uri) => uri::Https::from_str(uri).unwrap(),
@@ -319,7 +319,7 @@ impl Config {
         Ok(config)
     }
 
-    fn verify(&self) -> Result<(), ConfigError> {
+    pub fn verify(&self) -> Result<(), ConfigError> {
         if self.port < 1024 {
             return Err(ConfigError::other("Port number must be >1024"));
         }
@@ -331,8 +331,8 @@ impl Config {
             env::set_var("KRILL_TEST", "1");
         }
 
-        // Check against the use of localhost in non-test use.
         if !self.test_mode
+            && self.repo_enabled
             && self
                 .rsync_base
                 .to_string()
@@ -344,6 +344,31 @@ impl Config {
             ));
         }
 
+        if !self.test_mode
+            && self.repo_enabled
+            && self
+                .rrdp_service_uri()
+                .to_string()
+                .to_lowercase()
+                .starts_with("https://localhost")
+        {
+            return Err(ConfigError::other(
+                "Cannot use localhost in RRDP service URI unless test mode is used (KRILL_TEST)",
+            ));
+        }
+
+        if !self.rsync_base.to_string().ends_with('/') {
+            return Err(ConfigError::other("rsync base URI must end with a slash"));
+        }
+
+        if !self.service_uri.ends_with('/') {
+            return Err(ConfigError::other("service URI must end with a slash"));
+        }
+
+        if !self.rrdp_service_uri().to_string().ends_with('/') {
+            return Err(ConfigError::other("service URI must end with a slash"));
+        }
+
         if self.use_ta && !self.repo_enabled {
             return Err(ConfigError::other(
                 "Cannot use embedded TA without embedded repository",
@@ -353,7 +378,7 @@ impl Config {
         Ok(())
     }
 
-    fn read_config(file: &str) -> Result<Self, ConfigError> {
+    pub fn read_config(file: &str) -> Result<Self, ConfigError> {
         let mut v = Vec::new();
         let mut f = File::open(file)?;
         f.read_to_end(&mut v)?;

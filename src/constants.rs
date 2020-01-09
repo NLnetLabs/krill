@@ -17,6 +17,8 @@ pub const RFC8181_RCVD_LOG_DIR: &str = "rfc8181_repo";
 
 pub const KRILL_CLI_SERVER_ARG: &str = "server";
 pub const KRILL_CLI_SERVER_ENV: &str = "KRILL_CLI_SERVER";
+pub const KRILL_CLI_SERVER_DFLT: &str = "https://localhost:3000/";
+
 pub const KRILL_CLI_TOKEN_ARG: &str = "token";
 pub const KRILL_CLI_TOKEN_ENV: &str = "KRILL_CLI_TOKEN";
 pub const KRILL_CLI_FORMAT_ARG: &str = "format";
