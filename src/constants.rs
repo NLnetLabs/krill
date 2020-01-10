@@ -2,6 +2,8 @@ pub const KRILL_VERSION: &str = "0.5.0-pre";
 pub const KRILL_SERVER_APP: &str = "Krill";
 pub const KRILL_CLIENT_APP: &str = "Krill Client";
 
+pub const KRILL_DEFAULT_CONFIG_FILE: &str = "./defaults/krill.conf";
+
 pub const CASERVER_DIR: &str = "cas";
 
 pub const PUBSERVER_DFLT: &str = "0";

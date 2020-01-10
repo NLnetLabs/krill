@@ -12,7 +12,7 @@ fn main() {
             }
         }
         Err(e) => {
-            eprintln!("Krill failed to start: {}", e);
+            eprintln!("{}", e);
             ::std::process::exit(1);
         }
     }

@@ -292,7 +292,7 @@ impl Config {
 
         let config_file = matches
             .value_of("config")
-            .unwrap_or("./defaults/krill.conf");
+            .unwrap_or(KRILL_DEFAULT_CONFIG_FILE);
 
         config_file.to_string()
     }
@@ -302,10 +302,18 @@ impl Config {
         let config_file = Self::get_config_filename();
 
         let config = match Self::read_config(&config_file) {
-            Err(e) => Err(ConfigError::Other(format!(
-                "Error parsing config file: {}, error: {}",
-                config_file, e
-            ))),
+            Err(e) => {
+                if &config_file == KRILL_DEFAULT_CONFIG_FILE {
+                    Err(ConfigError::other(
+                        "Cannot find config file. Please use --config to specify its location.",
+                    ))
+                } else {
+                    Err(ConfigError::Other(format!(
+                        "Error parsing config file: {}, error: {}",
+                        config_file, e
+                    )))
+                }
+            }
             Ok(config) => {
                 config.init_logging()?;
                 info!(
@@ -315,7 +323,12 @@ impl Config {
                 Ok(config)
             }
         }?;
-        config.verify()?;
+        config.verify().map_err(|e| {
+            ConfigError::Other(format!(
+                "Error parsing config file: {}, error: {}",
+                config_file, e
+            ))
+        })?;
         Ok(config)
     }
 
