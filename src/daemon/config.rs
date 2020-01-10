@@ -303,7 +303,7 @@ impl Config {
 
         let config = match Self::read_config(&config_file) {
             Err(e) => {
-                if &config_file == KRILL_DEFAULT_CONFIG_FILE {
+                if config_file == KRILL_DEFAULT_CONFIG_FILE {
                     Err(ConfigError::other(
                         "Cannot find config file. Please use --config to specify its location.",
                     ))

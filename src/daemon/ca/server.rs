@@ -424,7 +424,7 @@ impl<S: Signer> CaServer<S> {
 
     /// Adds a parent to a CA
     pub fn ca_parent_add(&self, handle: Handle, parent: ParentCaReq) -> ServerResult<()> {
-        let (parent_handle, parent_contact) = parent.unwrap();
+        let (parent_handle, parent_contact) = parent.unpack();
 
         let add = CmdDet::add_parent(&handle, parent_handle, parent_contact);
         self.send_command(add)

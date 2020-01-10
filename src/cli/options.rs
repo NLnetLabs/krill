@@ -993,7 +993,7 @@ impl Options {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
         let parent_req = Self::parse_parent_ca_req(matches)?;
-        let (parent, contact) = parent_req.unwrap();
+        let (parent, contact) = parent_req.unpack();
 
         let command = Command::CertAuth(CaCommand::UpdateParentContact(my_ca, parent, contact));
         Ok(Options::make(general_args, command))
@@ -1155,15 +1155,15 @@ impl Options {
 
             let response = if let Some(path) = matches.value_of("file") {
                 let path = PathBuf::from(path);
-                let bytes = file::read(&path).unwrap();
+                let bytes = file::read(&path)?;
 
-                rfc8183::RepositoryResponse::validate(bytes.as_ref()).unwrap()
+                rfc8183::RepositoryResponse::validate(bytes.as_ref())
             } else {
                 let mut buffer = String::new();
                 io::stdin().read_to_string(&mut buffer)?;
 
-                rfc8183::RepositoryResponse::validate(buffer.as_bytes()).unwrap()
-            };
+                rfc8183::RepositoryResponse::validate(buffer.as_bytes())
+            }?;
 
             let update = RepositoryUpdate::rfc8181(response);
             let command = Command::CertAuth(CaCommand::RepoUpdate(my_ca, update));

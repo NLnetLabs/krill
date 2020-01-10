@@ -390,7 +390,7 @@ impl ParentCaReq {
         &self.contact
     }
 
-    pub fn unwrap(self) -> (Handle, ParentCaContact) {
+    pub fn unpack(self) -> (Handle, ParentCaContact) {
         (self.handle, self.contact)
     }
 }
