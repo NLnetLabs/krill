@@ -16,8 +16,7 @@ RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
 ENV PATH "/root/.cargo/bin:$PATH"
 
 WORKDIR /tmp/krill
-COPY Cargo.toml /tmp/krill/
-COPY src /tmp/krill/src/
+COPY . /tmp/krill/
 RUN cargo build --release
 
 #
