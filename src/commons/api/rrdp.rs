@@ -217,8 +217,16 @@ impl Notification {
         }
     }
 
+    pub fn time(&self) -> Time {
+        self.time
+    }
+
     pub fn serial(&self) -> u64 {
         self.serial
+    }
+
+    pub fn session(&self) -> RrdpSession {
+        self.session
     }
 
     pub fn last_delta(&self) -> Option<u64> {
@@ -527,6 +535,10 @@ impl CurrentObjects {
 
     pub fn len(&self) -> usize {
         self.0.len()
+    }
+
+    pub fn size(&self) -> usize {
+        self.0.values().fold(0, |tot, el| tot + el.size())
     }
 
     pub fn is_empty(&self) -> bool {

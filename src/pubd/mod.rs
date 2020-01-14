@@ -10,4 +10,5 @@ pub use self::error::Error;
 pub use self::events::{Evt, EvtDet, Ini, IniDet, RrdpUpdate};
 pub use self::publishers::Publisher;
 pub use self::pubserver::PubServer;
+pub use self::repository::RepoStats;
 pub use self::repository::Repository;

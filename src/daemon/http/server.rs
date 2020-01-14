@@ -54,6 +54,8 @@ pub fn start(config: &Config) -> Result<(), Error> {
             .data(server.clone())
             .wrap(middleware::Logger::default())
             .route("/health", get().to(endpoints::health))
+            .route("/metrics", get().to(metrics))
+            .route("/stats/repo", get().to(repo_stats))
             // API end-points
             .service(
                 scope("/api/v1")

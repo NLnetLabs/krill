@@ -5,6 +5,7 @@ use std::str::{from_utf8_unchecked, FromStr};
 
 use rpki::crypto::KeyIdentifier;
 use rpki::uri;
+use rpki::x509::Time;
 
 use crate::commons::api::rrdp::{
     CurrentObjects, Delta, DeltaElements, DeltaRef, FileRef, Notification, RrdpSession, Snapshot,
@@ -390,6 +391,8 @@ pub struct Repository {
 
     rrdp: RrdpServer,
     rsync: RsyncdStore,
+
+    stats: RepoStats,
 }
 
 impl Repository {
@@ -412,6 +415,8 @@ impl Aggregate for Repository {
 
         let key_id = id_cert.subject_public_key_info().key_identifier();
 
+        let stats = RepoStats::new(session);
+
         let rrdp = RrdpServer::new(rrdp_base_uri, &repo_base_dir, session);
         let rsync = RsyncdStore::new(rsync_jail, &repo_base_dir);
 
@@ -423,6 +428,7 @@ impl Aggregate for Repository {
             publishers: HashMap::new(),
             rrdp,
             rsync,
+            stats,
         })
     }
 
@@ -434,18 +440,31 @@ impl Aggregate for Repository {
         self.version += 1;
         match event.into_details() {
             EvtDet::PublisherAdded(publisher_handle, publisher) => {
+                self.stats.new_publisher(&publisher_handle);
                 self.publishers.insert(publisher_handle, publisher);
             }
             EvtDet::PublisherRemoved(publisher_handle, update) => {
                 self.publishers.remove(&publisher_handle);
                 self.rrdp.apply_update(update);
+                self.stats
+                    .remove_publisher(&publisher_handle, &self.rrdp.notification);
             }
             EvtDet::Published(publisher_handle, update) => {
                 // update content for publisher
                 self.update_publisher(&publisher_handle, &update);
 
+                let time = update.time();
+
                 // update RRDP server
                 self.rrdp.apply_update(update);
+
+                let publisher = self.get_publisher(&publisher_handle).unwrap();
+                let publisher_stats = PublisherStats::new(publisher, time);
+
+                let notification = &self.rrdp.notification;
+
+                self.stats
+                    .publish(&publisher_handle, publisher_stats, notification)
             }
         }
     }
@@ -543,6 +562,10 @@ impl Repository {
             .ok_or_else(|| Error::UnknownPublisher(publisher_handle.clone()))
     }
 
+    pub fn stats(&self) -> &RepoStats {
+        &self.stats
+    }
+
     pub fn publishers(&self) -> Vec<PublisherHandle> {
         self.publishers.keys().cloned().collect()
     }
@@ -586,5 +609,105 @@ impl Repository {
         self.rsync.write(snapshot)?;
 
         Ok(())
+    }
+}
+
+//------------ RepoStats -----------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RepoStats {
+    publishers: HashMap<PublisherHandle, PublisherStats>,
+    session: RrdpSession,
+    serial: u64,
+    last_update: Option<Time>,
+}
+
+impl RepoStats {
+    pub fn new(session: RrdpSession) -> Self {
+        RepoStats {
+            publishers: HashMap::new(),
+            session,
+            serial: 0,
+            last_update: None,
+        }
+    }
+
+    pub fn publish(
+        &mut self,
+        publisher: &PublisherHandle,
+        publisher_stats: PublisherStats,
+        notification: &Notification,
+    ) {
+        self.publishers.insert(publisher.clone(), publisher_stats);
+        self.serial = notification.serial();
+        self.last_update = Some(notification.time());
+    }
+
+    pub fn new_publisher(&mut self, publisher: &PublisherHandle) {
+        self.publishers
+            .insert(publisher.clone(), PublisherStats::default());
+    }
+
+    pub fn remove_publisher(&mut self, publisher: &PublisherHandle, notification: &Notification) {
+        self.publishers.remove(publisher);
+        self.serial = notification.serial();
+        self.last_update = Some(notification.time())
+    }
+
+    pub fn get_publishers(&self) -> &HashMap<PublisherHandle, PublisherStats> {
+        &self.publishers
+    }
+
+    pub fn last_update(&self) -> Option<Time> {
+        self.last_update
+    }
+
+    pub fn serial(&self) -> u64 {
+        self.serial
+    }
+
+    pub fn session(&self) -> RrdpSession {
+        self.session
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct PublisherStats {
+    objects: usize,
+    size: usize,
+    last_update: Option<Time>,
+}
+
+impl PublisherStats {
+    pub fn new(publisher: &Publisher, last_update: Time) -> Self {
+        let objects = publisher.current_objects().len();
+        let size = publisher.current_objects().size();
+        PublisherStats {
+            objects,
+            size,
+            last_update: Some(last_update),
+        }
+    }
+
+    pub fn objects(&self) -> usize {
+        self.objects
+    }
+
+    pub fn size(&self) -> usize {
+        self.size
+    }
+
+    pub fn last_update(&self) -> Option<Time> {
+        self.last_update
+    }
+}
+
+impl Default for PublisherStats {
+    fn default() -> Self {
+        PublisherStats {
+            objects: 0,
+            size: 0,
+            last_update: None,
+        }
     }
 }

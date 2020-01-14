@@ -5,6 +5,8 @@ use actix_web::{HttpResponse, ResponseError};
 use bytes::Bytes;
 use serde::Serialize;
 
+use rpki::x509::Time;
+
 use crate::commons::api::rrdp::VerificationError;
 use crate::commons::api::{
     AddChildRequest, CertAuthInit, ErrorCode, ErrorResponse, Handle, ParentCaContact, ParentCaReq,
@@ -106,7 +108,82 @@ where
     if_allowed(allowed, op)
 }
 
+/// Produce prometheus style metrics
+pub fn metrics(server: web::Data<AppServer>) -> HttpResponse {
+    let mut res = String::new();
+    if let Ok(stats) = server.read().repo_stats() {
+        let publishers = stats.get_publishers();
+
+        res.push_str("# HELP krill_repo_publisher number of publishers in repository\n");
+        res.push_str("# TYPE krill_repo_publisher gauge\n");
+        res.push_str(&format!("krill_repo_publisher {}\n", publishers.len()));
+
+        if let Some(last_update) = stats.last_update() {
+            let seconds = Time::now().timestamp() - last_update.timestamp();
+            res.push_str("\n");
+            res.push_str(
+                "# HELP krill_repo_rrdp_last_update seconds since last update by any publisher\n",
+            );
+            res.push_str("# TYPE krill_repo_rrdp_last_update gauge\n");
+            res.push_str(&format!("krill_repo_rrdp_last_update {}\n", seconds));
+        }
+
+        res.push_str("\n");
+        res.push_str("# HELP krill_repo_rrdp_serial RRDP serial\n");
+        res.push_str("# TYPE krill_repo_rrdp_serial gauge\n");
+        res.push_str(&format!("krill_repo_rrdp_serial {}\n", stats.serial()));
+
+        res.push_str("\n");
+        res.push_str("# HELP krill_repo_rrdp_session RRDP session ID\n");
+        res.push_str("# TYPE krill_repo_rrdp_session gauge\n");
+        res.push_str(&format!("krill_repo_rrdp_session {}\n", stats.session()));
+
+        res.push_str("\n");
+        res.push_str("# HELP krill_repo_objects number of objects in repository for publisher\n");
+        res.push_str("# TYPE krill_repo_objects gauge\n");
+        for (publisher, stats) in publishers {
+            res.push_str(&format!(
+                "krill_repo_objects{{publisher=\"{}\"}} {}\n",
+                publisher,
+                stats.objects()
+            ));
+        }
+
+        res.push_str("\n");
+        res.push_str(
+            "# HELP krill_repo_size size of objects in bytes in repository for publisher\n",
+        );
+        res.push_str("# TYPE krill_repo_size gauge\n");
+        for (publisher, stats) in publishers {
+            res.push_str(&format!(
+                "krill_repo_size{{publisher=\"{}\"}} {}\n",
+                publisher,
+                stats.size()
+            ));
+        }
+
+        res.push_str("\n");
+        res.push_str("# HELP krill_repo_last_update seconds since last update for publisher\n");
+        res.push_str("# TYPE krill_repo_last_update gauge\n");
+        for (publisher, stats) in publishers {
+            if let Some(last_update) = stats.last_update() {
+                let seconds = Time::now().timestamp() - last_update.timestamp();
+                res.push_str(&format!(
+                    "krill_repo_last_update{{publisher=\"{}\"}} {}\n",
+                    publisher, seconds
+                ));
+            }
+        }
+    }
+
+    HttpResponse::Ok().body(res)
+}
+
 //------------ Admin: Publishers ---------------------------------------------
+
+pub fn repo_stats(server: web::Data<AppServer>) -> HttpResponse {
+    render_json_res(server.read().repo_stats())
+}
 
 /// Returns a json structure with all publishers in it.
 pub fn list_pbl(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {

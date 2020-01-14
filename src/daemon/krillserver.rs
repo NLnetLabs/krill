@@ -24,6 +24,7 @@ use crate::daemon::mq::EventQueueListener;
 use crate::daemon::scheduler::Scheduler;
 use crate::pubd;
 use crate::pubd::PubServer;
+use crate::pubd::RepoStats;
 use crate::publish::CaPublisher;
 
 //------------ KrillServer ---------------------------------------------------
@@ -170,6 +171,11 @@ impl KrillServer {
 impl KrillServer {
     fn get_embedded(&self) -> Result<&Arc<PubServer>, Error> {
         self.pubserver.as_ref().ok_or_else(|| Error::NoEmbeddedRepo)
+    }
+
+    /// Returns the repository server stats
+    pub fn repo_stats(&self) -> Result<RepoStats, Error> {
+        self.get_embedded()?.repo_stats().map_err(Error::PubServer)
     }
 
     /// Returns all currently configured publishers. (excludes deactivated)

@@ -3,6 +3,7 @@ use std::{fmt, fs};
 
 use rpki::crypto::PublicKeyFormat;
 use rpki::uri;
+use rpki::x509::Time;
 
 use crate::commons::api::rrdp::{Delta, DeltaElements, Notification, RrdpSession};
 use crate::commons::api::{Handle, PublisherHandle, RepositoryHandle};
@@ -97,6 +98,10 @@ impl RrdpUpdate {
             delta,
             notification,
         }
+    }
+
+    pub fn time(&self) -> Time {
+        self.notification.time()
     }
 
     pub fn unpack(self) -> (Delta, Notification) {

@@ -1,3 +1,4 @@
+use std::fs;
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
@@ -16,8 +17,7 @@ use crate::commons::remote::rfc8183;
 use crate::commons::remote::sigmsg::SignedMessage;
 use crate::commons::util::softsigner::OpenSslSigner;
 use crate::constants::*;
-use crate::pubd::{self, CmdDet, Error, Repository};
-use std::fs;
+use crate::pubd::{self, CmdDet, Error, RepoStats, Repository};
 
 //------------ PubServer -----------------------------------------------------
 
@@ -179,6 +179,11 @@ impl PubServer {
         let cmd = CmdDet::publish(&repository_handle, publisher, delta);
         self.store.command(cmd)?;
         self.write_repository()
+    }
+
+    pub fn repo_stats(&self) -> Result<RepoStats, Error> {
+        let repo = self.repository()?;
+        Ok(repo.stats().clone())
     }
 
     pub fn publishers(&self) -> Result<Vec<PublisherHandle>, Error> {
