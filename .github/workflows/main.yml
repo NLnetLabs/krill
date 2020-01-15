@@ -5,8 +5,9 @@ on: push
 jobs:
   krill_e2e_test:
     env:
-      TF_VAR_size: s-8vcpu-32gb
-      TF_VAR_domain: krill.cloud
+      TF_VAR_size: 's-4vcpu-8gb'
+      TF_VAR_domain: 'krill.cloud'
+      TF_VAR_tags: '["krill", "e2etest"]'
 
     name: deploy_and_test
     runs-on: ubuntu-18.04
