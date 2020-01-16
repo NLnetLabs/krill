@@ -124,19 +124,14 @@ pub fn metrics(server: web::Data<AppServer>) -> HttpResponse {
             res.push_str(
                 "# HELP krill_repo_rrdp_last_update seconds since last update by any publisher\n",
             );
-            res.push_str("# TYPE krill_repo_rrdp_last_update gauge\n");
+            res.push_str("# TYPE krill_repo_rrdp_last_update counter\n");
             res.push_str(&format!("krill_repo_rrdp_last_update {}\n", seconds));
         }
 
         res.push_str("\n");
         res.push_str("# HELP krill_repo_rrdp_serial RRDP serial\n");
-        res.push_str("# TYPE krill_repo_rrdp_serial gauge\n");
+        res.push_str("# TYPE krill_repo_rrdp_serial counter\n");
         res.push_str(&format!("krill_repo_rrdp_serial {}\n", stats.serial()));
-
-        res.push_str("\n");
-        res.push_str("# HELP krill_repo_rrdp_session RRDP session ID\n");
-        res.push_str("# TYPE krill_repo_rrdp_session gauge\n");
-        res.push_str(&format!("krill_repo_rrdp_session {}\n", stats.session()));
 
         res.push_str("\n");
         res.push_str("# HELP krill_repo_objects number of objects in repository for publisher\n");
@@ -164,7 +159,7 @@ pub fn metrics(server: web::Data<AppServer>) -> HttpResponse {
 
         res.push_str("\n");
         res.push_str("# HELP krill_repo_last_update seconds since last update for publisher\n");
-        res.push_str("# TYPE krill_repo_last_update gauge\n");
+        res.push_str("# TYPE krill_repo_last_update counter\n");
         for (publisher, stats) in publishers {
             if let Some(last_update) = stats.last_update() {
                 let seconds = Time::now().timestamp() - last_update.timestamp();
@@ -174,6 +169,36 @@ pub fn metrics(server: web::Data<AppServer>) -> HttpResponse {
                 ));
             }
         }
+    }
+
+    let cas_status = server.read().cas_stats();
+
+    let number_cas = cas_status.len();
+    res.push_str("\n");
+    res.push_str("# HELP krill_cas number of cas in krill\n");
+    res.push_str("# TYPE krill_cas gauge\n");
+    res.push_str(&format!("krill_cas {}\n", number_cas));
+
+    res.push_str("\n");
+    res.push_str("# HELP krill_cas_roas number of roas for CA\n");
+    res.push_str("# TYPE krill_cas_roas gauge\n");
+    for (ca, status) in cas_status.iter() {
+        res.push_str(&format!(
+            "krill_cas_roas{{ca=\"{}\"}} {}\n",
+            ca,
+            status.roa_count()
+        ));
+    }
+
+    res.push_str("\n");
+    res.push_str("# HELP krill_cas_children number of children for CA\n");
+    res.push_str("# TYPE krill_cas_children gauge\n");
+    for (ca, status) in cas_status.iter() {
+        res.push_str(&format!(
+            "krill_cas_children{{ca=\"{}\"}} {}\n",
+            ca,
+            status.child_count()
+        ));
     }
 
     HttpResponse::Ok().body(res)
@@ -414,6 +439,10 @@ pub fn ca_parent_res_xml(
 }
 
 //------------ Admin: CertAuth -----------------------------------------------
+
+pub fn cas_status(server: web::Data<AppServer>) -> HttpResponse {
+    render_json(server.read().cas_stats())
+}
 
 pub fn cas(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
     if_api_allowed(&server, &auth, || render_json(server.read().cas()))

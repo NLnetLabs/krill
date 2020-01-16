@@ -1774,6 +1774,31 @@ impl CaRepoDetails {
     }
 }
 
+//------------ CertAuthStatus ------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CertAuthStats {
+    roa_count: usize,
+    child_count: usize,
+}
+
+impl CertAuthStats {
+    pub fn new(roa_count: usize, child_count: usize) -> Self {
+        CertAuthStats {
+            roa_count,
+            child_count,
+        }
+    }
+
+    pub fn roa_count(&self) -> usize {
+        self.roa_count
+    }
+
+    pub fn child_count(&self) -> usize {
+        self.child_count
+    }
+}
+
 //------------ ResSetErr -----------------------------------------------------
 
 #[derive(Clone, Debug, Display, Eq, PartialEq)]

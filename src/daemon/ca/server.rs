@@ -113,7 +113,7 @@ impl<S: Signer> CaServer<S> {
     /// Republish the embedded TA and CAs if needed, i.e. if they are close
     /// to their next update time.
     pub fn republish_all(&self) -> ServerResult<()> {
-        for ca in self.cas().cas() {
+        for ca in self.ca_list().cas() {
             if let Err(e) = self.republish(ca.handle()) {
                 error!(
                     "ServerError publishing: {}, ServerError: {}",
@@ -396,7 +396,7 @@ impl<S: Signer> CaServer<S> {
     }
 
     /// Get the current CAs
-    pub fn cas(&self) -> CertAuthList {
+    pub fn ca_list(&self) -> CertAuthList {
         CertAuthList::new(
             self.ca_store
                 .list()

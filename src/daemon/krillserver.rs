@@ -1,4 +1,5 @@
 //! An RPKI publication protocol server.
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::{io, thread};
@@ -10,9 +11,10 @@ use rpki::uri;
 
 use crate::commons::api::{
     AddChildRequest, CaRepoDetails, CertAuthHistory, CertAuthInfo, CertAuthInit, CertAuthList,
-    ChildCaInfo, ChildHandle, CurrentRepoState, Handle, ListReply, ParentCaContact, ParentCaReq,
-    ParentHandle, PublishDelta, PublisherDetails, PublisherHandle, RepoInfo, RepositoryContact,
-    RepositoryUpdate, RoaDefinition, RoaDefinitionUpdates, TaCertDetails, UpdateChildRequest,
+    CertAuthStats, ChildCaInfo, ChildHandle, CurrentRepoState, Handle, ListReply, ParentCaContact,
+    ParentCaReq, ParentHandle, PublishDelta, PublisherDetails, PublisherHandle, RepoInfo,
+    RepositoryContact, RepositoryUpdate, RoaDefinition, RoaDefinitionUpdates, TaCertDetails,
+    UpdateChildRequest,
 };
 use crate::commons::remote::rfc8183;
 use crate::commons::util::softsigner::{OpenSslSigner, SignerError};
@@ -22,9 +24,7 @@ use crate::daemon::ca::{self, ta_handle};
 use crate::daemon::config::Config;
 use crate::daemon::mq::EventQueueListener;
 use crate::daemon::scheduler::Scheduler;
-use crate::pubd;
-use crate::pubd::PubServer;
-use crate::pubd::RepoStats;
+use crate::pubd::{self, PubServer, RepoStats};
 use crate::publish::CaPublisher;
 
 //------------ KrillServer ---------------------------------------------------
@@ -371,6 +371,29 @@ impl KrillServer {
 /// # Bulk background operations CAS
 ///
 impl KrillServer {
+    pub fn cas_stats(&self) -> HashMap<Handle, CertAuthStats> {
+        let mut res = HashMap::new();
+
+        for ca in self.caserver.ca_list().cas() {
+            // can't fail really, but to be sure
+            if let Ok(ca) = self.caserver.get_ca(ca.handle()) {
+                let roa_count = ca.roa_definitions().len();
+                let child_count = ca.children().count();
+
+                res.insert(
+                    ca.handle().clone(),
+                    CertAuthStats::new(roa_count, child_count),
+                );
+            }
+        }
+
+        res
+    }
+}
+
+/// # Bulk background operations CAS
+///
+impl KrillServer {
     /// Republish all CAs that need it.
     pub fn republish_all(&self) -> EmptyRes {
         self.caserver.republish_all()?;
@@ -381,7 +404,7 @@ impl KrillServer {
     pub fn resync_all(&self) -> EmptyRes {
         let publisher = CaPublisher::new(self.caserver.clone(), self.pubserver.clone());
 
-        for ca in self.caserver.cas().cas() {
+        for ca in self.caserver.ca_list().cas() {
             if let Err(e) = publisher.publish(ca.handle()) {
                 error!("Failed to sync ca: {}. Got error: {}", ca.handle(), e)
             }
@@ -404,7 +427,7 @@ impl KrillServer {
 ///
 impl KrillServer {
     pub fn cas(&self) -> CertAuthList {
-        self.caserver.cas()
+        self.caserver.ca_list()
     }
 
     /// Returns the public CA info for a CA, or NONE if the CA cannot be found.
