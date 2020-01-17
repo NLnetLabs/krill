@@ -5,8 +5,6 @@ use actix_web::{HttpResponse, ResponseError};
 use bytes::Bytes;
 use serde::Serialize;
 
-use rpki::x509::Time;
-
 use crate::commons::api::rrdp::VerificationError;
 use crate::commons::api::{
     AddChildRequest, CertAuthInit, ErrorCode, ErrorResponse, Handle, ParentCaContact, ParentCaReq,
@@ -119,13 +117,15 @@ pub fn metrics(server: web::Data<AppServer>) -> HttpResponse {
         res.push_str(&format!("krill_repo_publisher {}\n", publishers.len()));
 
         if let Some(last_update) = stats.last_update() {
-            let seconds = Time::now().timestamp() - last_update.timestamp();
             res.push_str("\n");
             res.push_str(
-                "# HELP krill_repo_rrdp_last_update seconds since last update by any publisher\n",
+                "# HELP krill_repo_rrdp_last_update timestamp of last update by any publisher\n",
             );
-            res.push_str("# TYPE krill_repo_rrdp_last_update counter\n");
-            res.push_str(&format!("krill_repo_rrdp_last_update {}\n", seconds));
+            res.push_str("# TYPE krill_repo_rrdp_last_update gauge\n");
+            res.push_str(&format!(
+                "krill_repo_rrdp_last_update {}\n",
+                last_update.timestamp()
+            ));
         }
 
         res.push_str("\n");
@@ -158,14 +158,14 @@ pub fn metrics(server: web::Data<AppServer>) -> HttpResponse {
         }
 
         res.push_str("\n");
-        res.push_str("# HELP krill_repo_last_update seconds since last update for publisher\n");
-        res.push_str("# TYPE krill_repo_last_update counter\n");
+        res.push_str("# HELP krill_repo_last_update timestamp of last update for publisher\n");
+        res.push_str("# TYPE krill_repo_last_update gauge\n");
         for (publisher, stats) in publishers {
             if let Some(last_update) = stats.last_update() {
-                let seconds = Time::now().timestamp() - last_update.timestamp();
                 res.push_str(&format!(
                     "krill_repo_last_update{{publisher=\"{}\"}} {}\n",
-                    publisher, seconds
+                    publisher,
+                    last_update.timestamp()
                 ));
             }
         }

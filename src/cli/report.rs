@@ -2,12 +2,12 @@ use std::str::{from_utf8_unchecked, FromStr};
 
 use crate::commons::api::{
     CaRepoDetails, CertAuthHistory, CertAuthInfo, CertAuthList, ChildCaInfo, CurrentObjects,
-    CurrentRepoState, ParentCaContact, PublisherDetails, PublisherList, RepositoryContact,
-    RoaDefinition,
+    CurrentRepoState, ParentCaContact, PublisherDetails, PublisherHandle, PublisherList,
+    RepositoryContact, RoaDefinition,
 };
 use crate::commons::remote::api::ClientInfo;
 use crate::commons::remote::rfc8183;
-use commons::api::PublisherHandle;
+use crate::pubd::RepoStats;
 
 //------------ ApiResponse ---------------------------------------------------
 
@@ -29,6 +29,7 @@ pub enum ApiResponse {
     PublisherDetails(PublisherDetails),
     PublisherList(PublisherList),
     PublisherStaleList(Vec<PublisherHandle>),
+    RepoStats(RepoStats),
 
     Rfc8181ClientList(Vec<ClientInfo>),
     Rfc8183RepositoryResponse(rfc8183::RepositoryResponse),
@@ -64,6 +65,7 @@ impl ApiResponse {
                 ApiResponse::PublisherList(list) => Ok(Some(list.report(fmt)?)),
                 ApiResponse::PublisherDetails(details) => Ok(Some(details.report(fmt)?)),
                 ApiResponse::PublisherStaleList(stale) => Ok(Some(stale.report(fmt)?)),
+                ApiResponse::RepoStats(stats) => Ok(Some(stats.report(fmt)?)),
                 ApiResponse::Rfc8181ClientList(list) => Ok(Some(list.report(fmt)?)),
                 ApiResponse::Rfc8183ChildRequest(req) => Ok(Some(req.report(fmt)?)),
                 ApiResponse::Rfc8183PublisherRequest(req) => Ok(Some(req.report(fmt)?)),
@@ -288,6 +290,40 @@ impl Report for PublisherList {
                     }
                     res.push_str(p.handle().as_str());
                 }
+                Ok(res)
+            }
+            _ => Err(ReportError::UnsupportedFormat),
+        }
+    }
+}
+
+impl Report for RepoStats {
+    fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
+        match format {
+            ReportFormat::Json => Ok(serde_json::to_string_pretty(self).unwrap()),
+            ReportFormat::Default | ReportFormat::Text => {
+                let mut res = String::new();
+
+                if let Some(update) = self.last_update() {
+                    res.push_str(&format!("RRDP updated: {}\n", update.to_rfc3339()));
+                }
+                res.push_str(&format!("RRDP session: {}\n", self.session()));
+                res.push_str(&format!("RRDP serial:  {}\n", self.serial()));
+                res.push_str("\n");
+                res.push_str("Publisher, Objects, Size, Last Updated\n");
+                for (publisher, stats) in self.get_publishers() {
+                    res.push_str(&format!(
+                        "{}, {}, {}, ",
+                        publisher,
+                        stats.objects(),
+                        stats.size()
+                    ));
+                    match stats.last_update() {
+                        None => res.push_str("never\n"),
+                        Some(update) => res.push_str(&format!("{}\n", update.to_rfc3339())),
+                    }
+                }
+
                 Ok(res)
             }
             _ => Err(ReportError::UnsupportedFormat),

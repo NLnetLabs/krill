@@ -234,6 +234,10 @@ impl KrillClient {
                 let stales = self.get_json(&uri)?;
                 Ok(ApiResponse::PublisherStaleList(stales))
             }
+            PublishersCommand::Stats => {
+                let stats = self.get_json("stats/repo")?;
+                Ok(ApiResponse::RepoStats(stats))
+            }
             PublishersCommand::AddPublisher(req) => {
                 let res = self.post_json_with_response("api/v1/publishers", req)?;
                 Ok(ApiResponse::Rfc8183RepositoryResponse(res))

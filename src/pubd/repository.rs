@@ -614,7 +614,7 @@ impl Repository {
 
 //------------ RepoStats -----------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RepoStats {
     publishers: HashMap<PublisherHandle, PublisherStats>,
     session: RrdpSession,
@@ -685,7 +685,7 @@ impl RepoStats {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublisherStats {
     objects: usize,
     size: usize,

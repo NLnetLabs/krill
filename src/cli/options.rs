@@ -640,6 +640,12 @@ impl Options {
         app.subcommand(sub)
     }
 
+    fn make_publishers_stats_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("stats").about("Show publication server stats.");
+        sub = Self::add_general_args(sub);
+        app.subcommand(sub)
+    }
+
     fn add_publisher_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         app.arg(
             Arg::with_name("publisher")
@@ -700,6 +706,7 @@ impl Options {
 
         sub = Self::make_publishers_list_sc(sub);
         sub = Self::make_publishers_stale_sc(sub);
+        sub = Self::make_publishers_stats_sc(sub);
         sub = Self::make_publishers_add_sc(sub);
         sub = Self::make_publishers_remove_sc(sub);
         sub = Self::make_publishers_show_sc(sub);
@@ -1220,6 +1227,12 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
+    fn parse_matches_publishers_stats(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let command = Command::Publishers(PublishersCommand::Stats);
+        Ok(Options::make(general_args, command))
+    }
+
     fn parse_matches_publishers_add(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
 
@@ -1265,6 +1278,8 @@ impl Options {
             Self::parse_matches_publishers_list(m)
         } else if let Some(m) = matches.subcommand_matches("stale") {
             Self::parse_matches_publishers_stale(m)
+        } else if let Some(m) = matches.subcommand_matches("stats") {
+            Self::parse_matches_publishers_stats(m)
         } else if let Some(m) = matches.subcommand_matches("add") {
             Self::parse_matches_publishers_add(m)
         } else if let Some(m) = matches.subcommand_matches("remove") {
@@ -1426,6 +1441,7 @@ pub enum PublishersCommand {
     RemovePublisher(PublisherHandle),
     RepositoryResponse(PublisherHandle),
     StalePublishers(i64),
+    Stats,
     PublisherList,
 }
 
