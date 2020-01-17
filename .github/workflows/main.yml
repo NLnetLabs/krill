@@ -1,6 +1,16 @@
 name: E2E Test
 
 on: push
+  paths-ignore:
+    - '.dockerignore'
+    - 'Changelog.md'
+    - 'doc/**'
+    - 'docker/**'
+    - 'Dockerfile'
+    - 'LICENSE'
+    - 'README.md'
+    - 'tests/**'
+    - 'test-resources/**'
 
 jobs:
   krill_e2e_test:
