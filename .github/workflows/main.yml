@@ -1,13 +1,14 @@
 name: E2E Test
 
-on: push
-  paths-ignore:
-    - 'Changelog.md'
-    - 'doc/**'
-    - 'LICENSE'
-    - 'README.md'
-    - 'tests/**'
-    - 'test-resources/**'
+on:
+  push
+    paths-ignore:
+      - 'Changelog.md'
+      - 'doc/**'
+      - 'LICENSE'
+      - 'README.md'
+      - 'tests/**'
+      - 'test-resources/**'
 
 jobs:
   krill_e2e_test:
