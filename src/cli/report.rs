@@ -7,6 +7,7 @@ use crate::commons::api::{
 };
 use crate::commons::remote::api::ClientInfo;
 use crate::commons::remote::rfc8183;
+use commons::api::PublisherHandle;
 
 //------------ ApiResponse ---------------------------------------------------
 
@@ -27,6 +28,7 @@ pub enum ApiResponse {
 
     PublisherDetails(PublisherDetails),
     PublisherList(PublisherList),
+    PublisherStaleList(Vec<PublisherHandle>),
 
     Rfc8181ClientList(Vec<ClientInfo>),
     Rfc8183RepositoryResponse(rfc8183::RepositoryResponse),
@@ -61,6 +63,7 @@ impl ApiResponse {
                 ApiResponse::ChildInfo(info) => Ok(Some(info.report(fmt)?)),
                 ApiResponse::PublisherList(list) => Ok(Some(list.report(fmt)?)),
                 ApiResponse::PublisherDetails(details) => Ok(Some(details.report(fmt)?)),
+                ApiResponse::PublisherStaleList(stale) => Ok(Some(stale.report(fmt)?)),
                 ApiResponse::Rfc8181ClientList(list) => Ok(Some(list.report(fmt)?)),
                 ApiResponse::Rfc8183ChildRequest(req) => Ok(Some(req.report(fmt)?)),
                 ApiResponse::Rfc8183PublisherRequest(req) => Ok(Some(req.report(fmt)?)),
@@ -286,6 +289,19 @@ impl Report for PublisherList {
                     res.push_str(p.handle().as_str());
                 }
                 Ok(res)
+            }
+            _ => Err(ReportError::UnsupportedFormat),
+        }
+    }
+}
+
+impl Report for Vec<PublisherHandle> {
+    fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
+        match format {
+            ReportFormat::Json => Ok(serde_json::to_string_pretty(self).unwrap()),
+            ReportFormat::Default | ReportFormat::Text => {
+                let strs: Vec<&str> = self.iter().map(|h| h.as_str()).collect();
+                Ok(strs.join(", "))
             }
             _ => Err(ReportError::UnsupportedFormat),
         }

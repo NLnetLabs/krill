@@ -20,7 +20,6 @@ use crate::commons::remote::id::IdCert;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
 use crate::constants::*;
-use rpki::uri::Https;
 
 struct GeneralArgs {
     server: uri::Https,
@@ -41,7 +40,7 @@ impl GeneralArgs {
                 server = Some(uri::Https::from_str(server_str)?);
             }
 
-            server.unwrap_or_else(|| Https::from_str(KRILL_CLI_SERVER_DFLT).unwrap())
+            server.unwrap_or_else(|| uri::Https::from_str(KRILL_CLI_SERVER_DFLT).unwrap())
         };
 
         let token = {
@@ -627,6 +626,20 @@ impl Options {
         app.subcommand(sub)
     }
 
+    fn make_publishers_stale_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("stale")
+            .about("List all publishers which have not published in a while.");
+        sub = Self::add_general_args(sub);
+        sub = sub.arg(
+            Arg::with_name("seconds")
+                .value_name("seconds")
+                .long("seconds")
+                .help("The number of seconds since last publication.")
+                .required(true),
+        );
+        app.subcommand(sub)
+    }
+
     fn add_publisher_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         app.arg(
             Arg::with_name("publisher")
@@ -686,6 +699,7 @@ impl Options {
         let mut sub = SubCommand::with_name("publishers").about("Manage publishers in Krill.");
 
         sub = Self::make_publishers_list_sc(sub);
+        sub = Self::make_publishers_stale_sc(sub);
         sub = Self::make_publishers_add_sc(sub);
         sub = Self::make_publishers_remove_sc(sub);
         sub = Self::make_publishers_show_sc(sub);
@@ -1198,6 +1212,14 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
+    fn parse_matches_publishers_stale(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let seconds = i64::from_str(matches.value_of("seconds").unwrap())
+            .map_err(|_| Error::InvalidSeconds)?;
+        let command = Command::Publishers(PublishersCommand::StalePublishers(seconds));
+        Ok(Options::make(general_args, command))
+    }
+
     fn parse_matches_publishers_add(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
 
@@ -1241,6 +1263,8 @@ impl Options {
     fn parse_matches_publishers(matches: &ArgMatches) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("list") {
             Self::parse_matches_publishers_list(m)
+        } else if let Some(m) = matches.subcommand_matches("stale") {
+            Self::parse_matches_publishers_stale(m)
         } else if let Some(m) = matches.subcommand_matches("add") {
             Self::parse_matches_publishers_add(m)
         } else if let Some(m) = matches.subcommand_matches("remove") {
@@ -1401,6 +1425,7 @@ pub enum PublishersCommand {
     ShowPublisher(PublisherHandle),
     RemovePublisher(PublisherHandle),
     RepositoryResponse(PublisherHandle),
+    StalePublishers(i64),
     PublisherList,
 }
 
@@ -1481,6 +1506,9 @@ pub enum Error {
 
     #[display(fmt = "The publisher handle may only contain -_A-Za-z0-9, (\\ /) see issue #83")]
     InvalidHandle,
+
+    #[display(fmt = "Use a number of 0 or more seconds.")]
+    InvalidSeconds,
 
     #[display(
         fmt = "Missing argument: --{}, alternatively you may use env var: {}",

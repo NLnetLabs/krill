@@ -210,6 +210,19 @@ pub fn repo_stats(server: web::Data<AppServer>) -> HttpResponse {
     render_json_res(server.read().repo_stats())
 }
 
+/// Returns a list of publisher which have not updated for more
+/// than the given number of seconds.
+pub fn stale_publishers(server: web::Data<AppServer>, seconds: web::Path<i64>) -> HttpResponse {
+    let seconds = seconds.into_inner();
+
+    render_json_res(
+        server
+            .read()
+            .repo_stats()
+            .map(|stats| stats.stale_publishers(seconds)),
+    )
+}
+
 /// Returns a json structure with all publishers in it.
 pub fn list_pbl(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
