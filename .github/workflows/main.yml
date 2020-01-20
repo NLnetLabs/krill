@@ -30,7 +30,6 @@ jobs:
       uses: actions/checkout@v2
       with:
         repository: nlnetlabs/rpki-deploy
-        ref: own-ca
         path: rpki-deploy
         fetch-depth: 1
 
