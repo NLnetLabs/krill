@@ -20,18 +20,13 @@ jobs:
     name: deploy_and_test
     runs-on: ubuntu-18.04
     steps:
-    - name: Debug
-      run: |
-        echo "current working directory: $(pwd)"
-        echo "ls -la GITHUB_WORKSPACE (${GITHUB_WORKSPACE}):"
-        ls -la ${GITHUB_WORKSPACE}
-
-    - name: checkout Krill
+    - name: Checkout Krill
       uses: actions/checkout@v2
       with:
+        path: krill
         fetch-depth: 1
 
-    - name: checkout the E2E test framework
+    - name: Checkout the E2E test framework
       uses: actions/checkout@v2
       with:
         repository: nlnetlabs/rpki-deploy
