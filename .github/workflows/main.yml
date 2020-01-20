@@ -20,6 +20,12 @@ jobs:
     name: deploy_and_test
     runs-on: ubuntu-18.04
     steps:
+    - name: Debug
+      run: |
+        echo "current working directory: $(pwd)"
+        echo "ls -la GITHUB_WORKSPACE (${GITHUB_WORKSPACE}):"
+        ls -la ${GITHUB_WORKSPACE}
+
     - name: checkout Krill
       uses: actions/checkout@v2
       with:
