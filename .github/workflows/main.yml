@@ -21,82 +21,122 @@ jobs:
     runs-on: ubuntu-18.04
     steps:
     - name: checkout Krill
-      uses: actions/checkout@v1
+      uses: actions/checkout@v2
       with:
         fetch-depth: 1
 
     - name: checkout the E2E test framework
-      uses: actions/checkout@v1
+      uses: actions/checkout@v2
       with:
         repository: nlnetlabs/rpki-deploy
-        ref: master
+        ref: own-ca
         fetch-depth: 1
+
+    - name: Checkout RTRLIB (v0.7.0 tag)
+      uses: actions/checkout@v2
+      with:
+        repository: rtrlib/rtrlib
+        ref: v0.7.0
+        path: rtrlib
 
     # Use a modified Dockerfile which builds off a partially built base image
     # to leverage an existing Cargo cache and thus speed up deployment.
     - name: Install modified Dockerfile into Krill checkout
       run: |
-        cp ${GITHUB_WORKSPACE}/../rpki-deploy/terraform/krill-e2e-test/lib/docker/krill/Dockerfile ${GITHUB_WORKSPACE}/../krill/Dockerfile
+        set -x
+        cp ${GITHUB_WORKSPACE}/rpki-deploy/terraform/krill-e2e-test/lib/docker/krill/Dockerfile ${GITHUB_WORKSPACE}/krill/Dockerfile
+
+    - name: Install Python 3 venv package
+      run: |
+        set -x
+        sudo apt-get install -y python3-venv
+
+    - name: Install RTRLIB with NDEBUG
+      working-directory: ./rtrlib
+      run: |
+        set -x
+        cmake -D CMAKE_C_FLAGS='-DNDEBUG' -D CMAKE_BUILD_TYPE=Release -D RTRLIB_TRANSPORT_SSH=No .
+        make
+        sudo make install
+        sudo ldconfig
 
     - name: Install Terraform
       uses: marocchino/setup-terraform@v1
       with:
-        version: "0.12.13"
+        version: "0.12.19"
 
     - name: Install Terraform plugins
       run: |
+        set -x
         mkdir -p $HOME/.terraform.d/plugins/
-        cp ${GITHUB_WORKSPACE}/../rpki-deploy/terraform/plugins/terraform-provider-dockermachine $HOME/.terraform.d/plugins/
+        cp ${GITHUB_WORKSPACE}/rpki-deploy/terraform/plugins/terraform-provider-dockermachine $HOME/.terraform.d/plugins/
+
+    - name: Print application versions
+      run: |
+        set -x
+        docker --version
+        docker-compose --version
+        python3 --version
+        terraform --version
 
     - name: Decrypt SSH key
-      working-directory: ../rpki-deploy/terraform/krill-e2e-test
+      working-directory: ./rpki-deploy/terraform/krill-e2e-test
       run: |
-        ./decrypt-ssh-key.sh
-        ls -la $HOME/secrets/
+        mkdir $HOME/secrets/
+        echo "$SSH_KEY" > $HOME/secrets/ssh_key
+        head -n 2 $HOME/secrets/ssh_key
+        chmod 400 $HOME/secrets/ssh_key
       env:
-        DECRYPT_PW: ${{ secrets.DECRYPT_PW }}
+        SSH_KEY: ${{ secrets.SSH_KEY }}
 
     # Don't lock the state file, otherwise if the user cancels the build via the
     # GitHub Actions UI the terraform destroy cleanup step will fail.
     - name: Deploy
-      working-directory: ../rpki-deploy/terraform/krill-e2e-test/run_on_do
+      working-directory: ./rpki-deploy/terraform/krill-e2e-test/run_on_do
       timeout-minutes: 30
       run: |
+        set -x
         terraform init
-        terraform apply -lock=false -auto-approve -var "ssh_key_path=$HOME/secrets/ssh_key" -var "krill_build_path=${GITHUB_WORKSPACE}/../krill"
+        terraform apply -lock=false -auto-approve -var "ssh_key_path=$HOME/secrets/ssh_key" -var "krill_build_path=${GITHUB_WORKSPACE}/krill"
       env:
         # Don't embed env var references in env var definitions here, instead
         # pass those using -var on the command line.
-        TF_VAR_do_token: ${{ secrets.DO_TOKEN }}
+        TF_VAR_do_token: ${{ secrets.E2E_TEST_DO_TOKEN }}
         TF_VAR_run_tests: false
 
     - name: Run tests
-      working-directory: ../rpki-deploy/terraform/krill-e2e-test/run_on_do
-      run: terraform apply -auto-approve -var "ssh_key_path=$HOME/secrets/ssh_key" -var "krill_build_path=${GITHUB_WORKSPACE}/../krill"
+      working-directory: ./rpki-deploy/terraform/krill-e2e-test/run_on_do
+      run: |
+        set -x
+        terraform apply -auto-approve -var "ssh_key_path=$HOME/secrets/ssh_key" -var "krill_build_path=${GITHUB_WORKSPACE}/krill"
       env:
         # Don't embed env var references in env var definitions here, instead
         # pass those using -var on the command line.
-        TF_VAR_do_token: ${{ secrets.DO_TOKEN }}
+        TF_VAR_do_token: ${{ secrets.E2E_TEST_DO_TOKEN }}
         TF_VAR_run_tests: true
+
+    - name: Upload HTML test report
+      uses: actions/upload-artifact@v1
+      with:
+        name: test-report
+        path: /tmp/report.html
 
     - name: Dump diagnostics on failure
       if: failure()
-      working-directory: ../rpki-deploy/terraform/krill-e2e-test/run_on_do
+      working-directory: ./rpki-deploy/terraform/krill-e2e-test/run_on_do
       run: |
+        set -x
         terraform output docker_env_vars
         eval $(terraform output docker_env_vars)
         pushd ../lib/docker
-        docker-compose ps
-        docker-compose logs
         docker system info
         docker system events --since 60m --until 1s
-        docker exec -e KRILL_CLI_SERVER=https://localhost:3000/ -e KRILL_CLI_TOKEN=$(docker logs krill 2>&1 | tac | grep -Eom 1 'token [a-z0-9-]+' | cut -d ' ' -f 2) krill krillc list
 
     - name: Undeploy
       if: always()
-      working-directory: ../rpki-deploy/terraform/krill-e2e-test/run_on_do
-      run: terraform destroy -auto-approve -var "ssh_key_path=$HOME/secrets/ssh_key" -var "krill_build_path=${GITHUB_WORKSPACE}/../krill"
+      working-directory: ./rpki-deploy/terraform/krill-e2e-test/run_on_do
+      run: terraform destroy -auto-approve -var "ssh_key_path=$HOME/secrets/ssh_key" -var "krill_build_path=${GITHUB_WORKSPACE}/krill"
       env:
         # Don't embed env var references in env var definitions here, instead
         # pass those using -var on the command line.
-        TF_VAR_do_token: ${{ secrets.DO_TOKEN }}
+        TF_VAR_do_token: ${{ secrets.E2E_TEST_DO_TOKEN }}
