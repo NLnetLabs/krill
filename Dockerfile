@@ -1,8 +1,14 @@
 #
-# -- stage 1: build krill and krillc
+# Make the base image configurable so that the E2E test can use a base image
+# with a prepopulated Cargo build cache to accelerate the build process.
 # Use Ubuntu 16.04 because this is what the Travis CI Krill build uses.
 #
-FROM ubuntu:16.04 AS builder
+ARG BASE_IMG=ubuntu:16.04
+
+#
+# -- stage 1: build krill and krillc
+#
+FROM ${BASE_IMG} AS builder
 
 # Install Rust
 RUN apt-get update && apt-get install -y --no-install-recommends \
