@@ -41,11 +41,8 @@ jobs:
         ref: v0.7.0
         path: rtrlib
 
-    - name: Debug
-      run: |
-        echo "current working directory: $(pwd)"
-        echo "ls -la GITHUB_WORKSPACE (${GITHUB_WORKSPACE}):"
-        ls -la ${GITHUB_WORKSPACE}
+    - name: Print GITHUB_WORKSPACE contents
+      run: ls -la ${GITHUB_WORKSPACE}
 
     # Use a modified Dockerfile which builds off a partially built base image
     # to leverage an existing Cargo cache and thus speed up deployment.
@@ -95,7 +92,7 @@ jobs:
         head -n 2 $HOME/secrets/ssh_key
         chmod 400 $HOME/secrets/ssh_key
       env:
-        SSH_KEY: ${{ secrets.SSH_KEY }}
+        SSH_KEY: ${{ secrets.E2E_TEST_SSH_KEY }}
 
     # Don't lock the state file, otherwise if the user cancels the build via the
     # GitHub Actions UI the terraform destroy cleanup step will fail.
