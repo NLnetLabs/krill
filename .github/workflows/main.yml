@@ -40,6 +40,12 @@ jobs:
         ref: v0.7.0
         path: rtrlib
 
+    - name: Debug
+      run: |
+        echo "current working directory: $(pwd)"
+        echo "ls -la GITHUB_WORKSPACE (${GITHUB_WORKSPACE}):"
+        ls -la ${GITHUB_WORKSPACE}
+
     # Use a modified Dockerfile which builds off a partially built base image
     # to leverage an existing Cargo cache and thus speed up deployment.
     - name: Install modified Dockerfile into Krill checkout
