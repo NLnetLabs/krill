@@ -106,13 +106,15 @@ jobs:
       working-directory: ./rpki-deploy/terraform/krill-e2e-test/run_on_do
       run: |
         set -x
-        terraform apply -auto-approve -var "ssh_key_path=$HOME/secrets/ssh_key" -var "krill_build_path=${GITHUB_WORKSPACE}/krill"
+        terraform apply -auto-approve \
+          -var "ssh_key_path=$HOME/secrets/ssh_key" \
+          -var "krill_build_path=${GITHUB_WORKSPACE}/krill" \
+          -var "test_suite_path=${GITHUB_WORKSPACE}/krill/tests/e2e"
       env:
         # Don't embed env var references in env var definitions here, instead
         # pass those using -var on the command line.
         TF_VAR_do_token: ${{ secrets.E2E_TEST_DO_TOKEN }}
         TF_VAR_run_tests: true
-        TF_VAR_test_suite_path: ${GITHUB_WORKSPACE}/krill/tests/e2e
 
     - name: Upload HTML test report
       uses: actions/upload-artifact@v1
