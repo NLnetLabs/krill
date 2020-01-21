@@ -54,10 +54,6 @@ pub fn start(config: &Config) -> Result<(), Error> {
             .data(server.clone())
             .wrap(middleware::Logger::default())
             .route("/health", get().to(endpoints::health))
-            .route(
-                "/health/publishers/stale/{seconds}",
-                get().to(stale_publishers),
-            )
             .route("/metrics", get().to(metrics))
             .route("/stats/repo", get().to(repo_stats))
             .route("/stats/cas", get().to(cas_stats))
@@ -80,6 +76,7 @@ pub fn start(config: &Config) -> Result<(), Error> {
                         "/publishers/{handle}/response.json",
                         get().to(repository_response_json),
                     )
+                    .route("/publishers/stale/{seconds}", get().to(stale_publishers))
                     // CAs (both embedded and remote)
                     .route("/cas", post().to(ca_init))
                     .route("/cas", get().to(cas))

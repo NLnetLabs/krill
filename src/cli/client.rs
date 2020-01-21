@@ -242,7 +242,7 @@ impl KrillClient {
                 Ok(ApiResponse::PublisherList(list))
             }
             PublishersCommand::StalePublishers(seconds) => {
-                let uri = format!("health/publishers/stale/{}", seconds);
+                let uri = format!("api/v1/publishers/stale/{}", seconds);
                 let stales = self.get_json(&uri)?;
                 Ok(ApiResponse::PublisherStaleList(stales))
             }
