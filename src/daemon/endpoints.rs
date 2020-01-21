@@ -453,7 +453,16 @@ pub fn ca_parent_res_xml(
 
 //------------ Admin: CertAuth -----------------------------------------------
 
-pub fn cas_status(server: web::Data<AppServer>) -> HttpResponse {
+pub fn all_ca_issues(server: web::Data<AppServer>) -> HttpResponse {
+    render_json_res(server.read().all_ca_issues())
+}
+
+/// Returns the health (state) for a given CA.
+pub fn ca_issues(server: web::Data<AppServer>, ca: Path<Handle>) -> HttpResponse {
+    render_json_res(server.read().ca_issues(&ca.into_inner()))
+}
+
+pub fn cas_stats(server: web::Data<AppServer>) -> HttpResponse {
     render_json(server.read().cas_stats())
 }
 

@@ -1774,7 +1774,62 @@ impl CaRepoDetails {
     }
 }
 
-//------------ CertAuthStatus ------------------------------------------------
+//------------ AllCertAuthIssues ---------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AllCertAuthIssues {
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    cas: HashMap<Handle, CertAuthIssues>,
+}
+
+impl Default for AllCertAuthIssues {
+    fn default() -> Self {
+        AllCertAuthIssues {
+            cas: HashMap::new(),
+        }
+    }
+}
+
+impl AllCertAuthIssues {
+    pub fn add(&mut self, ca: Handle, ca_issues: CertAuthIssues) {
+        self.cas.insert(ca, ca_issues);
+    }
+}
+
+//------------ CertAuthIssues ------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CertAuthIssues {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    repo: Option<String>,
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    parents: HashMap<ParentHandle, String>,
+}
+
+impl Default for CertAuthIssues {
+    fn default() -> Self {
+        CertAuthIssues {
+            repo: None,
+            parents: HashMap::new(),
+        }
+    }
+}
+
+impl CertAuthIssues {
+    pub fn add_repo_issue(&mut self, issue: String) {
+        self.repo = Some(issue);
+    }
+
+    pub fn add_parent_issue(&mut self, parent: ParentHandle, issue: String) {
+        self.parents.insert(parent, issue);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.repo.is_none() && self.parents.is_empty()
+    }
+}
+
+//------------ CertAuthStats -------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthStats {
@@ -1992,6 +2047,40 @@ mod test {
         let intersection = parent_resources.intersection(&child_resources);
 
         assert_eq!(intersection, child_resources);
+    }
+
+    #[test]
+    fn cert_auth_issues_json() {
+        let mut issues = CertAuthIssues::default();
+        issues.add_repo_issue("the sky is falling".to_string());
+        issues.add_parent_issue(Handle::from_str_unsafe("p1"), "oh no!".to_string());
+
+        let expected = "{\"repo\":\"the sky is falling\",\"parents\":{\"p1\":\"oh no!\"}}";
+        assert_eq!(expected, serde_json::to_string(&issues).unwrap());
+
+        let issues = CertAuthIssues::default();
+        let expected = "{}";
+        assert_eq!(expected, serde_json::to_string(&issues).unwrap());
+    }
+
+    #[test]
+    fn all_cert_auth_issues_json() {
+        let mut issues = CertAuthIssues::default();
+        issues.add_repo_issue("the sky is falling".to_string());
+        issues.add_parent_issue(Handle::from_str_unsafe("p1"), "oh no!".to_string());
+
+        let mut all = AllCertAuthIssues::default();
+        all.add(Handle::from_str_unsafe("ca"), issues);
+
+        let expected =
+            "{\"cas\":{\"ca\":{\"repo\":\"the sky is falling\",\"parents\":{\"p1\":\"oh no!\"}}}}";
+
+        assert_eq!(expected, serde_json::to_string(&all).unwrap());
+
+        let all = AllCertAuthIssues::default();
+        let expected = "{}";
+
+        assert_eq!(expected, serde_json::to_string(&all).unwrap());
     }
 
 }

@@ -10,11 +10,11 @@ use rpki::cert::Cert;
 use rpki::uri;
 
 use crate::commons::api::{
-    AddChildRequest, CaRepoDetails, CertAuthHistory, CertAuthInfo, CertAuthInit, CertAuthList,
-    CertAuthStats, ChildCaInfo, ChildHandle, CurrentRepoState, Handle, ListReply, ParentCaContact,
-    ParentCaReq, ParentHandle, PublishDelta, PublisherDetails, PublisherHandle, RepoInfo,
-    RepositoryContact, RepositoryUpdate, RoaDefinition, RoaDefinitionUpdates, TaCertDetails,
-    UpdateChildRequest,
+    AddChildRequest, AllCertAuthIssues, CaRepoDetails, CertAuthHistory, CertAuthInfo, CertAuthInit,
+    CertAuthIssues, CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, CurrentRepoState,
+    Handle, ListReply, ParentCaContact, ParentCaReq, ParentHandle, PublishDelta, PublisherDetails,
+    PublisherHandle, RepoInfo, RepositoryContact, RepositoryUpdate, RoaDefinition,
+    RoaDefinitionUpdates, TaCertDetails, UpdateChildRequest,
 };
 use crate::commons::remote::rfc8183;
 use crate::commons::util::softsigner::{OpenSslSigner, SignerError};
@@ -368,7 +368,7 @@ impl KrillServer {
     }
 }
 
-/// # Bulk background operations CAS
+/// # Stats and status of CAS
 ///
 impl KrillServer {
     pub fn cas_stats(&self) -> HashMap<Handle, CertAuthStats> {
@@ -388,6 +388,38 @@ impl KrillServer {
         }
 
         res
+    }
+    pub fn all_ca_issues(&self) -> KrillRes<AllCertAuthIssues> {
+        let mut all_issues = AllCertAuthIssues::default();
+        for ca in self.cas().cas() {
+            let issues = self.ca_issues(ca.handle())?;
+            if !issues.is_empty() {
+                all_issues.add(ca.handle().clone(), issues);
+            }
+        }
+
+        Ok(all_issues)
+    }
+
+    pub fn ca_issues(&self, ca_handle: &Handle) -> KrillRes<CertAuthIssues> {
+        let mut issues = CertAuthIssues::default();
+
+        if let CurrentRepoState::Error(msg) = self.ca_repo_state(ca_handle)? {
+            issues.add_repo_issue(msg);
+        }
+
+        let ca = self.caserver.get_ca(ca_handle)?;
+
+        for parent_handle in ca.parents() {
+            let contact = ca.parent(parent_handle).unwrap(); // parent is always known
+            if !contact.is_ta() {
+                if let Err(e) = self.ca_parent_reachable(ca_handle, parent_handle, contact) {
+                    issues.add_parent_issue(parent_handle.clone(), e.to_string());
+                }
+            }
+        }
+
+        Ok(issues)
     }
 }
 
