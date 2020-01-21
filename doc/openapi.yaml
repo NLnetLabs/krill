@@ -1989,12 +1989,32 @@ components:
       content:
         application/json:
           schema:
-            type: array
-            items:
-              type: string
+            type: object
+            properties:
+              publishers:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    handle:
+                      $ref: '#/components/schemas/Handle'
+                    links:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          rel:
+                            type: string
+                            enum: [self]
+                          link:
+                            type: string
+                            format: uri
           example:
-            - 'a'
-            - 'b'
+            publishers:
+              - handle: 'ca'
+                links:
+                  rel: 'self'
+                  link: '/api/v1/publishers/ca'
     GetRepositoryForCA:
       description: Success.
       content:
