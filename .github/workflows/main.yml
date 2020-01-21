@@ -111,6 +111,7 @@ jobs:
         # pass those using -var on the command line.
         TF_VAR_do_token: ${{ secrets.E2E_TEST_DO_TOKEN }}
         TF_VAR_run_tests: true
+        TF_VAR_test_suite_path: ${GITHUB_WORKSPACE}/krill/tests/e2e
 
     - name: Upload HTML test report
       uses: actions/upload-artifact@v1
