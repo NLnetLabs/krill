@@ -7,12 +7,13 @@ from time import time
 from krill_api import *
 
 import tests.util.rpkivalidator3
-from tests.data.data import *
 from tests.util import krill
 from tests.util.docker import docker_project, class_service_manager, function_service_manager, run_command, docker_host_fqdn
 from tests.util.krill import krill_api_config
 from tests.util.rtr import rtr_fetch_one, roa_to_roa_string
 from tests.util.relyingparties import *
+
+from data import *
 
 
 # Test classes that use this fixture will cause Krill and its dependencies to
