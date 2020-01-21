@@ -620,6 +620,15 @@ impl Options {
         app.subcommand(sub)
     }
 
+    fn make_cas_issues_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("issues").about("Show issues for CAs.");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        app.subcommand(sub)
+    }
+
     fn make_publishers_list_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("list").about("List all publishers.");
         sub = Self::add_general_args(sub);
@@ -759,6 +768,7 @@ impl Options {
         app = Self::make_cas_keyroll_sc(app);
         app = Self::make_cas_routes_sc(app);
         app = Self::make_cas_repo_sc(app);
+        app = Self::make_cas_issues_sc(app);
 
         app = Self::make_publishers_sc(app);
 
@@ -1208,6 +1218,16 @@ impl Options {
         }
     }
 
+    fn parse_matches_cas_issues(matches: &ArgMatches) -> Result<Options, Error> {
+        let general = GeneralArgs::from_matches(matches)?;
+        let command = if let Ok(ca) = Self::parse_my_ca(matches) {
+            Command::CertAuth(CaCommand::Issues(Some(ca)))
+        } else {
+            Command::CertAuth(CaCommand::Issues(None))
+        };
+        Ok(Options::make(general, command))
+    }
+
     fn parse_publisher_arg(matches: &ArgMatches) -> Result<PublisherHandle, Error> {
         let publisher_str = matches.value_of("publisher").unwrap();
         PublisherHandle::from_str(publisher_str).map_err(|_| Error::InvalidHandle)
@@ -1338,6 +1358,8 @@ impl Options {
             Self::parse_matches_cas_routes(m)
         } else if let Some(m) = matches.subcommand_matches("repo") {
             Self::parse_matches_cas_repo(m)
+        } else if let Some(m) = matches.subcommand_matches("issues") {
+            Self::parse_matches_cas_issues(m)
         } else if let Some(m) = matches.subcommand_matches("publishers") {
             Self::parse_matches_publishers(m)
         } else if let Some(m) = matches.subcommand_matches("bulk") {
@@ -1421,6 +1443,9 @@ pub enum CaCommand {
 
     // Show the history for this CA
     ShowHistory(Handle),
+
+    // Show issues for all, or a specific, CA
+    Issues(Option<Handle>),
 
     // List all CAs
     List,

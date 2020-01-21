@@ -1794,6 +1794,10 @@ impl AllCertAuthIssues {
     pub fn add(&mut self, ca: Handle, ca_issues: CertAuthIssues) {
         self.cas.insert(ca, ca_issues);
     }
+
+    pub fn cas(&self) -> &HashMap<Handle, CertAuthIssues> {
+        &self.cas
+    }
 }
 
 //------------ CertAuthIssues ------------------------------------------------
@@ -1802,7 +1806,7 @@ impl AllCertAuthIssues {
 pub struct CertAuthIssues {
     #[serde(skip_serializing_if = "Option::is_none")]
     repo: Option<String>,
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
     parents: HashMap<ParentHandle, String>,
 }
 
@@ -1820,8 +1824,16 @@ impl CertAuthIssues {
         self.repo = Some(issue);
     }
 
+    pub fn repo_issue(&self) -> Option<&String> {
+        self.repo.as_ref()
+    }
+
     pub fn add_parent_issue(&mut self, parent: ParentHandle, issue: String) {
         self.parents.insert(parent, issue);
+    }
+
+    pub fn parent_issues(&self) -> &HashMap<ParentHandle, String> {
+        &self.parents
     }
 
     pub fn is_empty(&self) -> bool {

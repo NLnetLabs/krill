@@ -1,9 +1,9 @@
 use std::str::{from_utf8_unchecked, FromStr};
 
 use crate::commons::api::{
-    CaRepoDetails, CertAuthHistory, CertAuthInfo, CertAuthList, ChildCaInfo, CurrentObjects,
-    CurrentRepoState, ParentCaContact, PublisherDetails, PublisherHandle, PublisherList,
-    RepositoryContact, RoaDefinition,
+    AllCertAuthIssues, CaRepoDetails, CertAuthHistory, CertAuthInfo, CertAuthIssues, CertAuthList,
+    ChildCaInfo, CurrentObjects, CurrentRepoState, ParentCaContact, PublisherDetails,
+    PublisherHandle, PublisherList, RepositoryContact, RoaDefinition,
 };
 use crate::commons::remote::api::ClientInfo;
 use crate::commons::remote::rfc8183;
@@ -39,6 +39,9 @@ pub enum ApiResponse {
     RepoDetails(CaRepoDetails),
     RepoState(CurrentRepoState),
 
+    CertAuthIssues(CertAuthIssues),
+    AllCertAuthIssues(AllCertAuthIssues),
+
     Empty,               // Typically a successful post just gets an empty 200 response
     GenericBody(String), // For when the server echos Json to a successful post
 }
@@ -59,6 +62,8 @@ impl ApiResponse {
                 ApiResponse::CertAuths(list) => Ok(Some(list.report(fmt)?)),
                 ApiResponse::CertAuthInfo(info) => Ok(Some(info.report(fmt)?)),
                 ApiResponse::CertAuthHistory(history) => Ok(Some(history.report(fmt)?)),
+                ApiResponse::CertAuthIssues(issues) => Ok(Some(issues.report(fmt)?)),
+                ApiResponse::AllCertAuthIssues(issues) => Ok(Some(issues.report(fmt)?)),
                 ApiResponse::RouteAuthorizations(auths) => Ok(Some(auths.report(fmt)?)),
                 ApiResponse::ParentCaContact(contact) => Ok(Some(contact.report(fmt)?)),
                 ApiResponse::ChildInfo(info) => Ok(Some(info.report(fmt)?)),
@@ -503,6 +508,66 @@ impl Report for CurrentRepoState {
                     Ok(res)
                 }
             },
+            _ => Err(ReportError::UnsupportedFormat),
+        }
+    }
+}
+
+impl Report for CertAuthIssues {
+    fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
+        match format {
+            ReportFormat::Default | ReportFormat::Text => {
+                let mut res = String::new();
+                if self.is_empty() {
+                    res.push_str("no issues found\n")
+                } else {
+                    if let Some(repo_issue) = self.repo_issue() {
+                        res.push_str(&format!("Repository Issue: {}\n", repo_issue));
+                    }
+                    let parent_issues = self.parent_issues();
+                    if !parent_issues.is_empty() {
+                        for (parent, issue) in parent_issues.iter() {
+                            res.push_str(&format!("Parent '{}' has issue: {}\n", parent, issue));
+                        }
+                    }
+                }
+                Ok(res)
+            }
+            ReportFormat::Json => Ok(serde_json::to_string_pretty(self).unwrap()),
+            _ => Err(ReportError::UnsupportedFormat),
+        }
+    }
+}
+
+impl Report for AllCertAuthIssues {
+    fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
+        match format {
+            ReportFormat::Default | ReportFormat::Text => {
+                let cas = self.cas();
+                let mut res = String::new();
+                if cas.is_empty() {
+                    res.push_str("no issues found\n");
+                } else {
+                    for (ca, issues) in cas.iter() {
+                        res.push_str(&format!("Found issue for CA '{}':\n", ca));
+
+                        if let Some(repo_issue) = issues.repo_issue() {
+                            res.push_str(&format!("   Repository Issue: {}\n", repo_issue));
+                        }
+                        let parent_issues = issues.parent_issues();
+                        if !parent_issues.is_empty() {
+                            for (parent, issue) in parent_issues.iter() {
+                                res.push_str(&format!(
+                                    "   Parent '{}' has issue: {}\n",
+                                    parent, issue
+                                ));
+                            }
+                        }
+                    }
+                }
+                Ok(res)
+            }
+            ReportFormat::Json => Ok(serde_json::to_string_pretty(self).unwrap()),
             _ => Err(ReportError::UnsupportedFormat),
         }
     }

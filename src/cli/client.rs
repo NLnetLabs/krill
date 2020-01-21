@@ -10,8 +10,8 @@ use crate::cli::options::{
 };
 use crate::cli::report::{ApiResponse, ReportError};
 use crate::commons::api::{
-    CaRepoDetails, ChildCaInfo, CurrentRepoState, ParentCaContact, PublisherDetails, PublisherList,
-    Token,
+    AllCertAuthIssues, CaRepoDetails, CertAuthIssues, ChildCaInfo, CurrentRepoState,
+    ParentCaContact, PublisherDetails, PublisherList, Token,
 };
 use crate::commons::remote::rfc8183;
 use crate::commons::util::httpclient;
@@ -215,6 +215,18 @@ impl KrillClient {
 
                 Ok(ApiResponse::CertAuthHistory(history))
             }
+
+            CaCommand::Issues(ca_opt) => match ca_opt {
+                Some(ca) => {
+                    let uri = format!("api/v1/cas/issues/{}", ca);
+                    let issues: CertAuthIssues = self.get_json(&uri)?;
+                    Ok(ApiResponse::CertAuthIssues(issues))
+                }
+                None => {
+                    let issues: AllCertAuthIssues = self.get_json("api/v1/cas/issues")?;
+                    Ok(ApiResponse::AllCertAuthIssues(issues))
+                }
+            },
 
             CaCommand::List => {
                 let cas = self.get_json("api/v1/cas")?;
