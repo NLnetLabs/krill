@@ -31,6 +31,7 @@ jobs:
       with:
         repository: nlnetlabs/rpki-deploy
         path: rpki-deploy
+        ref: externalize-tests
         fetch-depth: 1
 
     - name: Checkout RTRLIB (v0.7.0 tag)
