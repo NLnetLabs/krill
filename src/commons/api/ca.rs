@@ -1778,7 +1778,6 @@ impl CaRepoDetails {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AllCertAuthIssues {
-    #[serde(skip_serializing_if = "HashMap::is_empty")]
     cas: HashMap<Handle, CertAuthIssues>,
 }
 
@@ -1804,9 +1803,7 @@ impl AllCertAuthIssues {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthIssues {
-    #[serde(skip_serializing_if = "Option::is_none")]
     repo: Option<String>,
-    #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
     parents: HashMap<ParentHandle, String>,
 }
 
@@ -2068,11 +2065,11 @@ mod test {
         issues.add_parent_issue(Handle::from_str_unsafe("p1"), "oh no!".to_string());
 
         let expected = "{\"repo\":\"the sky is falling\",\"parents\":{\"p1\":\"oh no!\"}}";
-        assert_eq!(expected, serde_json::to_string(&issues).unwrap());
+        assert_eq!(serde_json::to_string(&issues).unwrap(), expected);
 
         let issues = CertAuthIssues::default();
-        let expected = "{}";
-        assert_eq!(expected, serde_json::to_string(&issues).unwrap());
+        let expected = "{\"repo\":null,\"parents\":{}}";
+        assert_eq!(serde_json::to_string(&issues).unwrap(), expected);
     }
 
     #[test]
@@ -2087,12 +2084,12 @@ mod test {
         let expected =
             "{\"cas\":{\"ca\":{\"repo\":\"the sky is falling\",\"parents\":{\"p1\":\"oh no!\"}}}}";
 
-        assert_eq!(expected, serde_json::to_string(&all).unwrap());
+        assert_eq!(serde_json::to_string(&all).unwrap(), expected);
 
         let all = AllCertAuthIssues::default();
-        let expected = "{}";
+        let expected = "{\"cas\":{}}";
 
-        assert_eq!(expected, serde_json::to_string(&all).unwrap());
+        assert_eq!(serde_json::to_string(&all).unwrap(), expected);
     }
 
 }

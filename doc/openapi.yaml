@@ -76,53 +76,53 @@ info:
     backgroundColor: #FFFFFF
 
 servers:
-- url: https://{domain}:{port}/api/v1
-  description: Krill server API URL.
-  variables:
-    domain:
-      default: localhost
-    port:
-      enum:
-        - '443'
-        - '3000'
-      default: '3000'
+  - url: https://{domain}:{port}/api/v1
+    description: Krill server API URL.
+    variables:
+      domain:
+        default: localhost
+      port:
+        enum:
+          - '443'
+          - '3000'
+        default: '3000'
 
 tags:
-- name: "Publishers"
-- name: "Certificate Authorities"
-- name: "Key Rolls"
-  description: |
-    Krill CAs can have 0 or more 'Resource Classes' under each of its (0 or
-    more) parents. Krill CAs will talk to all of their parents regularly and
-    ask them about their resource entitlements. Typically a CA will have one
-    parent and receive all their resources in a single resource class, but it's
-    also possible that resources are split into multiple resource classes.
-    Krill CAs can also have multiple parents and have resource classes under
-    each of them.
+  - name: "Publishers"
+  - name: "Certificate Authorities"
+  - name: "Key Rolls"
+    description: |
+      Krill CAs can have 0 or more 'Resource Classes' under each of its (0 or
+      more) parents. Krill CAs will talk to all of their parents regularly and
+      ask them about their resource entitlements. Typically a CA will have one
+      parent and receive all their resources in a single resource class, but it's
+      also possible that resources are split into multiple resource classes.
+      Krill CAs can also have multiple parents and have resource classes under
+      each of them.
 
-    When a krill CA first gets a resource class it will:
-    - create a pending key pair
-    - request a certificate
+      When a krill CA first gets a resource class it will:
+      - create a pending key pair
+      - request a certificate
 
-    The 'key state' of this resource class is then shown as type "Pending".
+      The 'key state' of this resource class is then shown as type "Pending".
 
-    When the CA receives a certificate for this new pair it will be promoted to
-    "Active", and publishing of objects will start. I.e. the CA will start
-    publishing a manifest and CRL, and any configured ROAs for which the
-    prefixes are held by this class.
+      When the CA receives a certificate for this new pair it will be promoted to
+      "Active", and publishing of objects will start. I.e. the CA will start
+      publishing a manifest and CRL, and any configured ROAs for which the
+      prefixes are held by this class.
 
-    Resource classes in the state 'Active' can be rolled. The following phases
-    exist in a key roll:
-    - RollPending
-    - RollNew
-    - RollOld
-- name: "Route Authorizations"
-  description: |
-    Managing Route Authorizations (ROA configs)
-- name: "Other"
+      Resource classes in the state 'Active' can be rolled. The following phases
+      exist in a key roll:
+      - RollPending
+      - RollNew
+      - RollOld
+  - name: "Route Authorizations"
+    description: |
+      Managing Route Authorizations (ROA configs)
+  - name: "Other"
 
-security: 
-- KRILL_AUTH_TOKEN: []
+security:
+  - KRILL_AUTH_TOKEN: []
 
 paths:
   /authorized:
@@ -238,6 +238,25 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/UnknownPublisher'
+        '500':
+          $ref: '#/components/responses/GeneralPublicationServerError'
+
+  /publishers/stale/{seconds}:
+    get:
+      operationId: list_publishers_stale_seconds
+      tags:
+        - "Publishers"
+      summary: List all publishers which have not published for X seconds.
+      description: |
+        Lists all publishers which have not published for the given time (seconds). Typically one
+        might expect updates from Krill publishers every 16 hours.
+      parameters:
+        - $ref: '#/components/parameters/seconds'
+      responses:
+        '200':
+          $ref: '#/components/responses/StalePublishers'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '500':
           $ref: '#/components/responses/GeneralPublicationServerError'
 
@@ -993,6 +1012,25 @@ paths:
         '500':
           $ref: '#/components/responses/GeneralCAServerError'
 
+  /cas/issues/{ca_handle}:
+    get:
+      operationId: show_ca_issues
+      tags:
+        - "Certificate Authorities"
+      summary: Show issues for a CA.
+      description: |
+        Issues currently include reachability or authentication
+        issues between the CA and its repository and/or parents. This may be
+        extended with other issues in future.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/CertAuthIssues'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
 
 externalDocs:
   description: Read the Krill documentation
@@ -1001,9 +1039,9 @@ externalDocs:
 components:
   securitySchemes:
     KRILL_AUTH_TOKEN:
-     type: http
-     scheme: bearer
-     bearerFormat: KRILL_AUTH_TOKEN
+      type: http
+      scheme: bearer
+      bearerFormat: KRILL_AUTH_TOKEN
 
   parameters:
     ca_handle:
@@ -1036,6 +1074,12 @@ components:
       schema:
         type: string
         enum: ['json','xml']
+      required: true
+    seconds:
+      in: path
+      name: seconds
+      schema:
+        type: integer
       required: true
 
   schemas:
@@ -1072,7 +1116,7 @@ components:
         base_uri:
           type: string
           format: uri
-        rpki_notify: 
+        rpki_notify:
           type: string
           format: uri
     Resources:
@@ -1124,38 +1168,38 @@ components:
           $ref: '#/components/schemas/IdCert'
     rfc6492:
       allOf:
-      - $ref: '#/components/schemas/rfcCommon'
-      - type: object
-        properties:
-          parent_handle:
-            $ref: '#/components/schemas/Handle'
-          child_handle:
-            $ref: '#/components/schemas/Handle'
-          service_uri:
-            $ref: '#/components/schemas/ServiceUri'
+        - $ref: '#/components/schemas/rfcCommon'
+        - type: object
+          properties:
+            parent_handle:
+              $ref: '#/components/schemas/Handle'
+            child_handle:
+              $ref: '#/components/schemas/Handle'
+            service_uri:
+              $ref: '#/components/schemas/ServiceUri'
     rfc8181Base:
       allOf:
-      - $ref: '#/components/schemas/rfcCommon'
-      - type: object
-        properties:
-          publisher_handle:
-            $ref: '#/components/schemas/Handle'
+        - $ref: '#/components/schemas/rfcCommon'
+        - type: object
+          properties:
+            publisher_handle:
+              $ref: '#/components/schemas/Handle'
     rfc8181:
       allOf:
-      - $ref: '#/components/schemas/rfc8181Base'
-      - type: object
-        properties:
-          service_uri:
-            $ref: '#/components/schemas/ServiceUri'     
-          repo_info:
-            $ref: '#/components/schemas/RepoInfo'   
+        - $ref: '#/components/schemas/rfc8181Base'
+        - type: object
+          properties:
+            service_uri:
+              $ref: '#/components/schemas/ServiceUri'
+            repo_info:
+              $ref: '#/components/schemas/RepoInfo'
     rfc8183:
       allOf:
-      - $ref: '#/components/schemas/rfcCommon'
-      - type: object
-        properties:
-          child_handle:
-            $ref: '#/components/schemas/Handle'
+        - $ref: '#/components/schemas/rfcCommon'
+        - type: object
+          properties:
+            child_handle:
+              $ref: '#/components/schemas/Handle'
     Rfc6492OrEmbedded:
       oneOf:
         - $ref: '#/components/schemas/embedded'
@@ -1336,8 +1380,8 @@ components:
       properties:
         handle:
           allOf:
-          - $ref: '#/components/schemas/Handle'
-          - description: The handle attribute uniquely identifies the new Certificate Authority within this Krill instance.
+            - $ref: '#/components/schemas/Handle'
+            - description: The handle attribute uniquely identifies the new Certificate Authority within this Krill instance.
     AddCAChildRequest:
       type: object
       required:
@@ -1347,8 +1391,8 @@ components:
       properties:
         handle:
           allOf:
-          - $ref: '#/components/schemas/Handle'
-          - description: The handle attribute uniquely identifies the new Certificate Authority within this Krill instance.
+            - $ref: '#/components/schemas/Handle'
+            - description: The handle attribute uniquely identifies the new Certificate Authority within this Krill instance.
         resources:
           $ref: '#/components/schemas/Resources'
         auth:
@@ -1374,8 +1418,8 @@ components:
       properties:
         handle:
           allOf:
-          - $ref: '#/components/schemas/Handle'
-          - description: The local handle by which your ca refers to this parent.
+            - $ref: '#/components/schemas/Handle'
+            - description: The local handle by which your ca refers to this parent.
         contact:
           $ref: '#/components/schemas/Rfc6492OrEmbedded'
     AddPublisherRequest:
@@ -1642,6 +1686,28 @@ components:
       description: Forbidden (incorrect authentication token).
     NotFound:
       description: Not Found.
+    CertAuthIssues:
+      description: Issues for a CA (e.g. cannot reach parent)
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              repo:
+                type: string
+              parents:
+                type: array
+                items:
+                  type: string
+                  additionalProperties:
+                    type: string
+            example:
+              repo: "repostory unreachable"
+              parents:
+                "rir": "denied!"
+                "nir": "cannot connect"
+
+
     UnknownPublisher:
       description: Unknown publisher.
       content:
@@ -1829,9 +1895,9 @@ components:
               - handle: 'ta'
                 kind: 'ta'
             resources:
-                asn: 'AS1-AS10'
-                v4: '10.0.0.0/8'
-                v6: '::/128'
+              asn: 'AS1-AS10'
+              v4: '10.0.0.0/8'
+              v6: '::/128'
             resource_classes:
               '0':
                 name_space: '0'
@@ -1873,8 +1939,8 @@ components:
                   properties:
                     handle:
                       allOf:
-                      - $ref: '#/components/schemas/Handle'
-                      - description: The RFC-8183 handle that uniquely identifies the CA in this Krill instance.
+                        - $ref: '#/components/schemas/Handle'
+                        - description: The RFC-8183 handle that uniquely identifies the CA in this Krill instance.
     GetChildCA:
       description: Success.
       content:
@@ -1959,6 +2025,37 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/rfc8181'
+    StalePublishers:
+      description: Success.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              publishers:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    handle:
+                      $ref: '#/components/schemas/Handle'
+                    links:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          rel:
+                            type: string
+                            enum: [self]
+                          link:
+                            type: string
+                            format: uri
+          example:
+            publishers:
+              - handle: 'ca'
+                links:
+                  rel: 'self'
+                  link: '/api/v1/publishers/ca'
     GetRepositoryForCA:
       description: Success.
       content:
@@ -1968,14 +2065,14 @@ components:
             properties:
               contact:
                 oneOf:
-                - type: object
-                  properties:
-                    embedded:
-                      $ref: '#/components/schemas/RepoInfo'
-                - type: object
-                  properties:
-                    rfc8181:
-                      $ref: '#/components/schemas/rfc8181'
+                  - type: object
+                    properties:
+                      embedded:
+                        $ref: '#/components/schemas/RepoInfo'
+                  - type: object
+                    properties:
+                      rfc8181:
+                        $ref: '#/components/schemas/rfc8181'
           examples:
             embedded:
               value:

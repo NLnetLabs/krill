@@ -3,7 +3,7 @@ use std::str::{from_utf8_unchecked, FromStr};
 use crate::commons::api::{
     AllCertAuthIssues, CaRepoDetails, CertAuthHistory, CertAuthInfo, CertAuthIssues, CertAuthList,
     ChildCaInfo, CurrentObjects, CurrentRepoState, ParentCaContact, PublisherDetails,
-    PublisherHandle, PublisherList, RepositoryContact, RoaDefinition,
+    PublisherList, RepositoryContact, RoaDefinition,
 };
 use crate::commons::remote::api::ClientInfo;
 use crate::commons::remote::rfc8183;
@@ -28,7 +28,6 @@ pub enum ApiResponse {
 
     PublisherDetails(PublisherDetails),
     PublisherList(PublisherList),
-    PublisherStaleList(Vec<PublisherHandle>),
     RepoStats(RepoStats),
 
     Rfc8181ClientList(Vec<ClientInfo>),
@@ -69,7 +68,6 @@ impl ApiResponse {
                 ApiResponse::ChildInfo(info) => Ok(Some(info.report(fmt)?)),
                 ApiResponse::PublisherList(list) => Ok(Some(list.report(fmt)?)),
                 ApiResponse::PublisherDetails(details) => Ok(Some(details.report(fmt)?)),
-                ApiResponse::PublisherStaleList(stale) => Ok(Some(stale.report(fmt)?)),
                 ApiResponse::RepoStats(stats) => Ok(Some(stats.report(fmt)?)),
                 ApiResponse::Rfc8181ClientList(list) => Ok(Some(list.report(fmt)?)),
                 ApiResponse::Rfc8183ChildRequest(req) => Ok(Some(req.report(fmt)?)),
@@ -330,19 +328,6 @@ impl Report for RepoStats {
                 }
 
                 Ok(res)
-            }
-            _ => Err(ReportError::UnsupportedFormat),
-        }
-    }
-}
-
-impl Report for Vec<PublisherHandle> {
-    fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
-        match format {
-            ReportFormat::Json => Ok(serde_json::to_string_pretty(self).unwrap()),
-            ReportFormat::Default | ReportFormat::Text => {
-                let strs: Vec<&str> = self.iter().map(|h| h.as_str()).collect();
-                Ok(strs.join(", "))
             }
             _ => Err(ReportError::UnsupportedFormat),
         }
