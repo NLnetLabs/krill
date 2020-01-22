@@ -1,5 +1,16 @@
 name: CI
-on: [push, pull_request]
+on:
+  [push, pull_request]:
+    paths-ignore:
+      - '.dockerignore'
+      - '.github/workflosw/main.yml'
+      - 'Changelog.md'
+        'Dockerfile'
+      - 'doc/**'
+      - 'docker/**'
+      - 'LICENSE'
+      - 'README.md'
+      - 'tests/e2e/**'
 jobs:
   build:
     name: build
