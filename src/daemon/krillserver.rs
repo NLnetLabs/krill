@@ -12,9 +12,9 @@ use rpki::uri;
 use crate::commons::api::{
     AddChildRequest, AllCertAuthIssues, CaRepoDetails, CertAuthHistory, CertAuthInfo, CertAuthInit,
     CertAuthIssues, CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, CurrentRepoState,
-    Handle, ListReply, ParentCaContact, ParentCaReq, ParentHandle, PublishDelta, PublisherDetails,
-    PublisherHandle, RepoInfo, RepositoryContact, RepositoryUpdate, RoaDefinition,
-    RoaDefinitionUpdates, TaCertDetails, UpdateChildRequest,
+    ErrorCode, Handle, ListReply, ParentCaContact, ParentCaReq, ParentHandle, PublishDelta,
+    PublisherDetails, PublisherHandle, RepoInfo, RepositoryContact, RepositoryUpdate,
+    RoaDefinition, RoaDefinitionUpdates, TaCertDetails, UpdateChildRequest,
 };
 use crate::commons::remote::rfc8183;
 use crate::commons::util::softsigner::{OpenSslSigner, SignerError};
@@ -22,6 +22,7 @@ use crate::constants::*;
 use crate::daemon::auth::{Auth, Authorizer};
 use crate::daemon::ca::{self, ta_handle};
 use crate::daemon::config::Config;
+use crate::daemon::endpoints::ToErrorCode;
 use crate::daemon::mq::EventQueueListener;
 use crate::daemon::scheduler::Scheduler;
 use crate::pubd::{self, PubServer, RepoStats};
@@ -414,7 +415,8 @@ impl KrillServer {
             let contact = ca.parent(parent_handle).unwrap(); // parent is always known
             if !contact.is_ta() {
                 if let Err(e) = self.ca_parent_reachable(ca_handle, parent_handle, contact) {
-                    issues.add_parent_issue(parent_handle.clone(), e.to_string());
+                    let code: ErrorCode = e.code();
+                    issues.add_parent_issue(parent_handle.clone(), code.into());
                 }
             }
         }
@@ -541,9 +543,9 @@ impl KrillServer {
             }
             RepositoryUpdate::Rfc8181(response) => {
                 // first check that the new repo can be contacted
-                if let CurrentRepoState::Error(msg) = self.repo_state(&handle, Some(&response)) {
+                if let CurrentRepoState::Error(error) = self.repo_state(&handle, Some(&response)) {
                     return Err(Error::CaServerError(ca::ServerError::CertAuth(
-                        ca::Error::NewRepoUpdateNotResponsive(msg),
+                        ca::Error::NewRepoUpdateNotResponsive(error.msg().to_string()),
                     )));
                 }
 
@@ -561,14 +563,14 @@ impl KrillServer {
     ) -> CurrentRepoState {
         match repo {
             None => match self.get_embedded() {
-                Err(e) => CurrentRepoState::error(e),
+                Err(e) => CurrentRepoState::error(e.code().into()),
                 Ok(repo) => match repo.list(handle) {
-                    Err(e) => CurrentRepoState::error(e),
+                    Err(e) => CurrentRepoState::error(e.code().into()),
                     Ok(list) => CurrentRepoState::list(list),
                 },
             },
             Some(repo) => match self.caserver.send_rfc8181_list(handle, repo) {
-                Err(e) => CurrentRepoState::error(e),
+                Err(e) => CurrentRepoState::error(e.code().into()),
                 Ok(list) => CurrentRepoState::list(list),
             },
         }

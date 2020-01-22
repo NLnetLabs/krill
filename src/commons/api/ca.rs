@@ -22,8 +22,8 @@ use rpki::x509::{Serial, Time};
 use crate::commons::api::publication;
 use crate::commons::api::publication::Publish;
 use crate::commons::api::{
-    Base64, ChildHandle, Handle, HexEncodedHash, IssuanceRequest, ListReply, ParentCaContact,
-    ParentHandle, RepositoryContact, RequestResourceLimit, RoaDefinition,
+    Base64, ChildHandle, ErrorResponse, Handle, HexEncodedHash, IssuanceRequest, ListReply,
+    ParentCaContact, ParentHandle, RepositoryContact, RequestResourceLimit, RoaDefinition,
 };
 use crate::commons::eventsourcing::AggregateHistory;
 use crate::commons::remote::id::IdCert;
@@ -1737,7 +1737,7 @@ impl fmt::Display for ResourceClassKeysInfo {
 #[serde(rename_all = "snake_case")]
 pub enum CurrentRepoState {
     List(ListReply),
-    Error(String),
+    Error(ErrorResponse),
 }
 
 impl CurrentRepoState {
@@ -1745,8 +1745,8 @@ impl CurrentRepoState {
         CurrentRepoState::List(list)
     }
 
-    pub fn error(e: impl fmt::Display) -> Self {
-        CurrentRepoState::Error(e.to_string())
+    pub fn error(response: ErrorResponse) -> Self {
+        CurrentRepoState::Error(response)
     }
 
     pub fn as_list(&self) -> &ListReply {
@@ -1803,8 +1803,8 @@ impl AllCertAuthIssues {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthIssues {
-    repo: Option<String>,
-    parents: HashMap<ParentHandle, String>,
+    repo: Option<ErrorResponse>,
+    parents: HashMap<ParentHandle, ErrorResponse>,
 }
 
 impl Default for CertAuthIssues {
@@ -1817,19 +1817,19 @@ impl Default for CertAuthIssues {
 }
 
 impl CertAuthIssues {
-    pub fn add_repo_issue(&mut self, issue: String) {
+    pub fn add_repo_issue(&mut self, issue: ErrorResponse) {
         self.repo = Some(issue);
     }
 
-    pub fn repo_issue(&self) -> Option<&String> {
+    pub fn repo_issue(&self) -> Option<&ErrorResponse> {
         self.repo.as_ref()
     }
 
-    pub fn add_parent_issue(&mut self, parent: ParentHandle, issue: String) {
+    pub fn add_parent_issue(&mut self, parent: ParentHandle, issue: ErrorResponse) {
         self.parents.insert(parent, issue);
     }
 
-    pub fn parent_issues(&self) -> &HashMap<ParentHandle, String> {
+    pub fn parent_issues(&self) -> &HashMap<ParentHandle, ErrorResponse> {
         &self.parents
     }
 
@@ -1899,6 +1899,7 @@ mod test {
     use crate::commons::util::test;
 
     use super::*;
+    use commons::api::ErrorCode;
 
     fn base_uri() -> uri::Rsync {
         test::rsync("rsync://localhost/repo/ta/")
@@ -2061,10 +2062,13 @@ mod test {
     #[test]
     fn cert_auth_issues_json() {
         let mut issues = CertAuthIssues::default();
-        issues.add_repo_issue("the sky is falling".to_string());
-        issues.add_parent_issue(Handle::from_str_unsafe("p1"), "oh no!".to_string());
+        issues.add_repo_issue(ErrorCode::PubServerError.into());
+        issues.add_parent_issue(
+            Handle::from_str_unsafe("p1"),
+            ErrorCode::ParentNoResponse.into(),
+        );
 
-        let expected = "{\"repo\":\"the sky is falling\",\"parents\":{\"p1\":\"oh no!\"}}";
+        let expected = "{\"repo\":{\"code\":3006,\"msg\":\"General Publication Server error (check log).\"},\"parents\":{\"p1\":{\"code\":2308,\"msg\":\"No response from parent\"}}}";
         assert_eq!(serde_json::to_string(&issues).unwrap(), expected);
 
         let issues = CertAuthIssues::default();
@@ -2075,14 +2079,17 @@ mod test {
     #[test]
     fn all_cert_auth_issues_json() {
         let mut issues = CertAuthIssues::default();
-        issues.add_repo_issue("the sky is falling".to_string());
-        issues.add_parent_issue(Handle::from_str_unsafe("p1"), "oh no!".to_string());
+        issues.add_repo_issue(ErrorCode::PubServerError.into());
+        issues.add_parent_issue(
+            Handle::from_str_unsafe("p1"),
+            ErrorCode::ParentNoResponse.into(),
+        );
 
         let mut all = AllCertAuthIssues::default();
         all.add(Handle::from_str_unsafe("ca"), issues);
 
         let expected =
-            "{\"cas\":{\"ca\":{\"repo\":\"the sky is falling\",\"parents\":{\"p1\":\"oh no!\"}}}}";
+            "{\"cas\":{\"ca\":{\"repo\":{\"code\":3006,\"msg\":\"General Publication Server error (check log).\"},\"parents\":{\"p1\":{\"code\":2308,\"msg\":\"No response from parent\"}}}}}";
 
         assert_eq!(serde_json::to_string(&all).unwrap(), expected);
 

@@ -772,7 +772,7 @@ trait ErrorToStatus {
 }
 
 /// Translate an error to an error code to include in a json response.
-trait ToErrorCode {
+pub trait ToErrorCode {
     fn code(&self) -> ErrorCode;
 }
 

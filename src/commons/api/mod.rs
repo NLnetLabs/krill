@@ -224,7 +224,7 @@ pub struct Link {
 
 /// Defines an error response. Codes are unique and documented here:
 /// https://rpki.readthedocs.io/en/latest/krill/pub/api.html#error-responses
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ErrorResponse {
     code: usize,
     msg: String,
@@ -257,22 +257,22 @@ impl Into<ErrorCode> for ErrorResponse {
 /// This type defines externally visible errors that the API may return.
 #[derive(Clone, Debug, Display, Eq, PartialEq)]
 pub enum ErrorCode {
-    #[display(fmt = "Submitted Json cannot be parsed")]
+    #[display(fmt = "Json cannot be parsed")]
     InvalidJson,
 
     #[display(fmt = "Invalid RFC8183 Publisher Request")]
     InvalidPublisherRequest,
 
-    #[display(fmt = "Issue with submitted publication XML")]
+    #[display(fmt = "Invalid publication XML")]
     InvalidPublicationXml,
 
     #[display(fmt = "Invalid handle name")]
     InvalidHandle,
 
-    #[display(fmt = "Submitted protocol CMS cannot be parsed")]
+    #[display(fmt = "protocol CMS cannot be parsed")]
     InvalidCms,
 
-    #[display(fmt = "2001: Submitted protocol CMS does not validate")]
+    #[display(fmt = "protocol CMS does not validate")]
     CmsValidation,
 
     #[display(fmt = "Out of sync with server, please send requests for instances sequentially")]
@@ -371,10 +371,10 @@ pub enum ErrorCode {
     #[display(fmt = "Proxy server error.")]
     ProxyError,
 
-    #[display(fmt = "General CA Server issue.")]
+    #[display(fmt = "General CA Server issue (check log).")]
     CaServerError,
 
-    #[display(fmt = "General Publication Server error.")]
+    #[display(fmt = "General Publication Server error (check log).")]
     PubServerError,
 
     #[display(fmt = "Unrecognised error (this is a bug)")]
