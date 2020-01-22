@@ -15,7 +15,7 @@ on:
   pull_request:
     paths-ignore:
       - '.dockerignore'
-      - '.github/workflos/main.yml'
+      - '.github/workflow/main.yml'
       - 'Changelog.md'
       - 'Dockerfile'
       - 'doc/**'
