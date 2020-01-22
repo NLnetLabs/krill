@@ -5,7 +5,7 @@ on:
       - '.dockerignore'
       - '.github/workflosw/main.yml'
       - 'Changelog.md'
-        'Dockerfile'
+      - 'Dockerfile'
       - 'doc/**'
       - 'docker/**'
       - 'LICENSE'
