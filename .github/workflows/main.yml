@@ -42,7 +42,6 @@ jobs:
       with:
         repository: nlnetlabs/rpki-deploy
         path: rpki-deploy
-        ref: alpine-linux
         fetch-depth: 1
         ref: ${{ steps.pick_e2e_branch.outputs.branch }}
 
