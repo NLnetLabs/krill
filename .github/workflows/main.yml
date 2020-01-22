@@ -26,12 +26,24 @@ jobs:
         path: krill
         fetch-depth: 1
 
+    - name: Determine E2E test framework branch to use
+      id: pick_e2e_branch
+      shell: bash
+      run: |
+        BRANCH=${GITHUB_REF#refs/heads/}
+        if git ls-remote --exit-code --heads https://github.com/NLnetLabs/rpki-deploy ${BRANCH}; then
+          echo "::set-output name=branch::${BRANCH}"
+        else
+          echo "::set-output name=success::master"
+        fi
+
     - name: Checkout the E2E test framework
       uses: actions/checkout@v2
       with:
         repository: nlnetlabs/rpki-deploy
         path: rpki-deploy
         fetch-depth: 1
+        ref: ${{ steps.pick_e2e_branch.outputs.branch }}
 
     - name: Checkout RTRLIB (v0.7.0 tag)
       uses: actions/checkout@v2

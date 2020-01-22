@@ -1012,6 +1012,25 @@ paths:
         '500':
           $ref: '#/components/responses/GeneralCAServerError'
 
+  /cas/issues/{ca_handle}:
+    get:
+      operationId: show_ca_issues
+      tags:
+        - "Certificate Authorities"
+      summary: Show issues for a CA.
+      description: |
+        Issues currently include reachability or authentication
+        issues between the CA and its repository and/or parents. This may be
+        extended with other issues in future.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/CertAuthIssues'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/GeneralCAServerError'
 
 externalDocs:
   description: Read the Krill documentation
@@ -1667,6 +1686,28 @@ components:
       description: Forbidden (incorrect authentication token).
     NotFound:
       description: Not Found.
+    CertAuthIssues:
+      description: Issues for a CA (e.g. cannot reach parent)
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              repo:
+                type: string
+              parents:
+                type: array
+                items:
+                  type: string
+                  additionalProperties:
+                    type: string
+            example:
+              repo: "repostory unreachable"
+              parents:
+                "rir": "denied!"
+                "nir": "cannot connect"
+
+
     UnknownPublisher:
       description: Unknown publisher.
       content:
