@@ -32,6 +32,7 @@ jobs:
         fetch-depth: 1
 
     - name: Checkout the E2E test framework (matching branch if exists)
+      # Don't fail the job if this checkout fails
       continue-on-error: true
       uses: actions/checkout@v2
       with:
@@ -39,21 +40,24 @@ jobs:
         path: rpki-deploy
         fetch-depth: 1
         ref: ${{ steps.extract_branch.outputs.branch }}
-    
-    # Only if previous checkout attempt fails
+      # set an output we can conditionally depend on in the next step
+      run: |
+        if [ -d ${GITHUB_WORKSPACE}/rpki-deploy ]; then
+          echo "::set-output name=success::true"
+        fi
+      id: checkout_specific
+
+    # Only if previous checkout attempt fails. We can't use failure() as
+    # continue-on-error: true causes failure() to be false even on failure.
     - name: Checkout the E2E test framework (master)
-      if: failure()
+      if: not ${{ steps.checkout_specific.outputs.success }}
       uses: actions/checkout@v2
       with:
         repository: nlnetlabs/rpki-deploy
         path: rpki-deploy
         fetch-depth: 1
 
-    # Force this step to run by checking for success, otherwise GH Actions refuses
-    # to run this or any subsequent steps when the specific E2E test branch checkout
-    # fails but the master E2E test branch checkout succeeds.
     - name: Checkout RTRLIB (v0.7.0 tag)
-      if: success()
       uses: actions/checkout@v2
       with:
         repository: rtrlib/rtrlib
