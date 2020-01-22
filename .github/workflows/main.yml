@@ -54,7 +54,7 @@ jobs:
     # Only if previous checkout attempt fails. We can't use failure() as
     # continue-on-error: true causes failure() to be false even on failure.
     - name: Checkout the E2E test framework (master)
-      if: not ${{ steps.verify_checkout.outputs.success }}
+      if: not steps.verify_checkout.outputs.success
       uses: actions/checkout@v2
       with:
         repository: nlnetlabs/rpki-deploy
