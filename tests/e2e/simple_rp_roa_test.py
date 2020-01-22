@@ -184,15 +184,6 @@ class TestKrillWithRelyingParties:
     def test_rtr(self, docker_host_fqdn, docker_project, function_service_manager, service, metadata):
         function_service_manager.start_services_with_dependencies(docker_project, service.name)
 
-        logging.info(f"Running command '{service.version_cmd}'' in container for service {service.name}..")
-        (exit_code, output) = run_command(docker_project, service.name, service.version_cmd)
-        output = output.decode('utf-8').strip()
-        logging.info(f"Command exit code={exit_code}, output={output}")
-
-        # Add a row to the pytest-html metadata table at the top of the
-        # report showing the version string for this relying party.
-        metadata[f"{service.name} version"] = output
-
         try:
             rtr_start_time = int(time())
             logging.info(f'Connecting RTR client to {docker_host_fqdn}:{service.rtr_port}')
