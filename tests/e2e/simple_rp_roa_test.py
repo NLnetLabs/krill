@@ -6,7 +6,6 @@ from retrying import retry
 from time import time
 from krill_api import *
 
-import tests.util.rpkivalidator3
 from tests.util import krill
 from tests.util.docker import docker_project, class_service_manager, function_service_manager, run_command, docker_host_fqdn
 from tests.util.krill import krill_api_config
