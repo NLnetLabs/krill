@@ -56,6 +56,7 @@ pub fn start(config: &Config) -> Result<(), Error> {
             .route("/health", get().to(endpoints::health))
             .route("/metrics", get().to(metrics))
             .route("/stats/repo", get().to(repo_stats))
+            .route("/stats/cas", get().to(cas_stats))
             // API end-points
             .service(
                 scope("/api/v1")
@@ -75,9 +76,12 @@ pub fn start(config: &Config) -> Result<(), Error> {
                         "/publishers/{handle}/response.json",
                         get().to(repository_response_json),
                     )
+                    .route("/publishers/stale/{seconds}", get().to(stale_publishers))
                     // CAs (both embedded and remote)
                     .route("/cas", post().to(ca_init))
                     .route("/cas", get().to(cas))
+                    .route("/cas/issues", get().to(endpoints::all_ca_issues))
+                    .route("/cas/issues/{ca}", get().to(endpoints::ca_issues))
                     .route("/cas/{ca}", get().to(ca_info))
                     .route("/cas/{ca}/id", post().to(ca_regenerate_id))
                     .route("/cas/{ca}/history", get().to(ca_history))

@@ -20,7 +20,6 @@ use crate::commons::remote::id::IdCert;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
 use crate::constants::*;
-use rpki::uri::Https;
 
 struct GeneralArgs {
     server: uri::Https,
@@ -41,7 +40,7 @@ impl GeneralArgs {
                 server = Some(uri::Https::from_str(server_str)?);
             }
 
-            server.unwrap_or_else(|| Https::from_str(KRILL_CLI_SERVER_DFLT).unwrap())
+            server.unwrap_or_else(|| uri::Https::from_str(KRILL_CLI_SERVER_DFLT).unwrap())
         };
 
         let token = {
@@ -621,8 +620,37 @@ impl Options {
         app.subcommand(sub)
     }
 
+    fn make_cas_issues_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("issues").about("Show issues for CAs.");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        app.subcommand(sub)
+    }
+
     fn make_publishers_list_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("list").about("List all publishers.");
+        sub = Self::add_general_args(sub);
+        app.subcommand(sub)
+    }
+
+    fn make_publishers_stale_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("stale")
+            .about("List all publishers which have not published in a while.");
+        sub = Self::add_general_args(sub);
+        sub = sub.arg(
+            Arg::with_name("seconds")
+                .value_name("seconds")
+                .long("seconds")
+                .help("The number of seconds since last publication.")
+                .required(true),
+        );
+        app.subcommand(sub)
+    }
+
+    fn make_publishers_stats_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("stats").about("Show publication server stats.");
         sub = Self::add_general_args(sub);
         app.subcommand(sub)
     }
@@ -686,6 +714,8 @@ impl Options {
         let mut sub = SubCommand::with_name("publishers").about("Manage publishers in Krill.");
 
         sub = Self::make_publishers_list_sc(sub);
+        sub = Self::make_publishers_stale_sc(sub);
+        sub = Self::make_publishers_stats_sc(sub);
         sub = Self::make_publishers_add_sc(sub);
         sub = Self::make_publishers_remove_sc(sub);
         sub = Self::make_publishers_show_sc(sub);
@@ -738,6 +768,7 @@ impl Options {
         app = Self::make_cas_keyroll_sc(app);
         app = Self::make_cas_routes_sc(app);
         app = Self::make_cas_repo_sc(app);
+        app = Self::make_cas_issues_sc(app);
 
         app = Self::make_publishers_sc(app);
 
@@ -1187,6 +1218,16 @@ impl Options {
         }
     }
 
+    fn parse_matches_cas_issues(matches: &ArgMatches) -> Result<Options, Error> {
+        let general = GeneralArgs::from_matches(matches)?;
+        let command = if let Ok(ca) = Self::parse_my_ca(matches) {
+            Command::CertAuth(CaCommand::Issues(Some(ca)))
+        } else {
+            Command::CertAuth(CaCommand::Issues(None))
+        };
+        Ok(Options::make(general, command))
+    }
+
     fn parse_publisher_arg(matches: &ArgMatches) -> Result<PublisherHandle, Error> {
         let publisher_str = matches.value_of("publisher").unwrap();
         PublisherHandle::from_str(publisher_str).map_err(|_| Error::InvalidHandle)
@@ -1195,6 +1236,20 @@ impl Options {
     fn parse_matches_publishers_list(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let command = Command::Publishers(PublishersCommand::PublisherList);
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_publishers_stale(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let seconds = i64::from_str(matches.value_of("seconds").unwrap())
+            .map_err(|_| Error::InvalidSeconds)?;
+        let command = Command::Publishers(PublishersCommand::StalePublishers(seconds));
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_publishers_stats(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let command = Command::Publishers(PublishersCommand::Stats);
         Ok(Options::make(general_args, command))
     }
 
@@ -1241,6 +1296,10 @@ impl Options {
     fn parse_matches_publishers(matches: &ArgMatches) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("list") {
             Self::parse_matches_publishers_list(m)
+        } else if let Some(m) = matches.subcommand_matches("stale") {
+            Self::parse_matches_publishers_stale(m)
+        } else if let Some(m) = matches.subcommand_matches("stats") {
+            Self::parse_matches_publishers_stats(m)
         } else if let Some(m) = matches.subcommand_matches("add") {
             Self::parse_matches_publishers_add(m)
         } else if let Some(m) = matches.subcommand_matches("remove") {
@@ -1299,6 +1358,8 @@ impl Options {
             Self::parse_matches_cas_routes(m)
         } else if let Some(m) = matches.subcommand_matches("repo") {
             Self::parse_matches_cas_repo(m)
+        } else if let Some(m) = matches.subcommand_matches("issues") {
+            Self::parse_matches_cas_issues(m)
         } else if let Some(m) = matches.subcommand_matches("publishers") {
             Self::parse_matches_publishers(m)
         } else if let Some(m) = matches.subcommand_matches("bulk") {
@@ -1383,6 +1444,9 @@ pub enum CaCommand {
     // Show the history for this CA
     ShowHistory(Handle),
 
+    // Show issues for all, or a specific, CA
+    Issues(Option<Handle>),
+
     // List all CAs
     List,
 }
@@ -1401,6 +1465,8 @@ pub enum PublishersCommand {
     ShowPublisher(PublisherHandle),
     RemovePublisher(PublisherHandle),
     RepositoryResponse(PublisherHandle),
+    StalePublishers(i64),
+    Stats,
     PublisherList,
 }
 
@@ -1481,6 +1547,9 @@ pub enum Error {
 
     #[display(fmt = "The publisher handle may only contain -_A-Za-z0-9, (\\ /) see issue #83")]
     InvalidHandle,
+
+    #[display(fmt = "Use a number of 0 or more seconds.")]
+    InvalidSeconds,
 
     #[display(
         fmt = "Missing argument: --{}, alternatively you may use env var: {}",

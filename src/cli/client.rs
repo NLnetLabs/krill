@@ -10,8 +10,8 @@ use crate::cli::options::{
 };
 use crate::cli::report::{ApiResponse, ReportError};
 use crate::commons::api::{
-    CaRepoDetails, ChildCaInfo, CurrentRepoState, ParentCaContact, PublisherDetails, PublisherList,
-    Token,
+    AllCertAuthIssues, CaRepoDetails, CertAuthIssues, ChildCaInfo, CurrentRepoState,
+    ParentCaContact, PublisherDetails, PublisherList, Token,
 };
 use crate::commons::remote::rfc8183;
 use crate::commons::util::httpclient;
@@ -216,6 +216,18 @@ impl KrillClient {
                 Ok(ApiResponse::CertAuthHistory(history))
             }
 
+            CaCommand::Issues(ca_opt) => match ca_opt {
+                Some(ca) => {
+                    let uri = format!("api/v1/cas/issues/{}", ca);
+                    let issues: CertAuthIssues = self.get_json(&uri)?;
+                    Ok(ApiResponse::CertAuthIssues(issues))
+                }
+                None => {
+                    let issues: AllCertAuthIssues = self.get_json("api/v1/cas/issues")?;
+                    Ok(ApiResponse::AllCertAuthIssues(issues))
+                }
+            },
+
             CaCommand::List => {
                 let cas = self.get_json("api/v1/cas")?;
                 Ok(ApiResponse::CertAuths(cas))
@@ -228,6 +240,15 @@ impl KrillClient {
             PublishersCommand::PublisherList => {
                 let list: PublisherList = self.get_json("api/v1/publishers")?;
                 Ok(ApiResponse::PublisherList(list))
+            }
+            PublishersCommand::StalePublishers(seconds) => {
+                let uri = format!("api/v1/publishers/stale/{}", seconds);
+                let stales = self.get_json(&uri)?;
+                Ok(ApiResponse::PublisherList(stales))
+            }
+            PublishersCommand::Stats => {
+                let stats = self.get_json("stats/repo")?;
+                Ok(ApiResponse::RepoStats(stats))
             }
             PublishersCommand::AddPublisher(req) => {
                 let res = self.post_json_with_response("api/v1/publishers", req)?;

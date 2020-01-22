@@ -465,6 +465,13 @@ impl ParentCaContact {
             _ => panic!("Not a TA parent"),
         }
     }
+
+    pub fn is_ta(&self) -> bool {
+        match *self {
+            ParentCaContact::Ta(_) => true,
+            _ => false,
+        }
+    }
 }
 
 //------------ CertAuthInit --------------------------------------------------

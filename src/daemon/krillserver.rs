@@ -1,4 +1,5 @@
 //! An RPKI publication protocol server.
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::{io, thread};
@@ -9,10 +10,11 @@ use rpki::cert::Cert;
 use rpki::uri;
 
 use crate::commons::api::{
-    AddChildRequest, CaRepoDetails, CertAuthHistory, CertAuthInfo, CertAuthInit, CertAuthList,
-    ChildCaInfo, ChildHandle, CurrentRepoState, Handle, ListReply, ParentCaContact, ParentCaReq,
-    ParentHandle, PublishDelta, PublisherDetails, PublisherHandle, RepoInfo, RepositoryContact,
-    RepositoryUpdate, RoaDefinition, RoaDefinitionUpdates, TaCertDetails, UpdateChildRequest,
+    AddChildRequest, AllCertAuthIssues, CaRepoDetails, CertAuthHistory, CertAuthInfo, CertAuthInit,
+    CertAuthIssues, CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, CurrentRepoState,
+    Handle, ListReply, ParentCaContact, ParentCaReq, ParentHandle, PublishDelta, PublisherDetails,
+    PublisherHandle, RepoInfo, RepositoryContact, RepositoryUpdate, RoaDefinition,
+    RoaDefinitionUpdates, TaCertDetails, UpdateChildRequest,
 };
 use crate::commons::remote::rfc8183;
 use crate::commons::util::softsigner::{OpenSslSigner, SignerError};
@@ -22,9 +24,7 @@ use crate::daemon::ca::{self, ta_handle};
 use crate::daemon::config::Config;
 use crate::daemon::mq::EventQueueListener;
 use crate::daemon::scheduler::Scheduler;
-use crate::pubd;
-use crate::pubd::PubServer;
-use crate::pubd::RepoStats;
+use crate::pubd::{self, PubServer, RepoStats};
 use crate::publish::CaPublisher;
 
 //------------ KrillServer ---------------------------------------------------
@@ -368,6 +368,61 @@ impl KrillServer {
     }
 }
 
+/// # Stats and status of CAS
+///
+impl KrillServer {
+    pub fn cas_stats(&self) -> HashMap<Handle, CertAuthStats> {
+        let mut res = HashMap::new();
+
+        for ca in self.caserver.ca_list().cas() {
+            // can't fail really, but to be sure
+            if let Ok(ca) = self.caserver.get_ca(ca.handle()) {
+                let roa_count = ca.roa_definitions().len();
+                let child_count = ca.children().count();
+
+                res.insert(
+                    ca.handle().clone(),
+                    CertAuthStats::new(roa_count, child_count),
+                );
+            }
+        }
+
+        res
+    }
+    pub fn all_ca_issues(&self) -> KrillRes<AllCertAuthIssues> {
+        let mut all_issues = AllCertAuthIssues::default();
+        for ca in self.cas().cas() {
+            let issues = self.ca_issues(ca.handle())?;
+            if !issues.is_empty() {
+                all_issues.add(ca.handle().clone(), issues);
+            }
+        }
+
+        Ok(all_issues)
+    }
+
+    pub fn ca_issues(&self, ca_handle: &Handle) -> KrillRes<CertAuthIssues> {
+        let mut issues = CertAuthIssues::default();
+
+        if let CurrentRepoState::Error(msg) = self.ca_repo_state(ca_handle)? {
+            issues.add_repo_issue(msg);
+        }
+
+        let ca = self.caserver.get_ca(ca_handle)?;
+
+        for parent_handle in ca.parents() {
+            let contact = ca.parent(parent_handle).unwrap(); // parent is always known
+            if !contact.is_ta() {
+                if let Err(e) = self.ca_parent_reachable(ca_handle, parent_handle, contact) {
+                    issues.add_parent_issue(parent_handle.clone(), e.to_string());
+                }
+            }
+        }
+
+        Ok(issues)
+    }
+}
+
 /// # Bulk background operations CAS
 ///
 impl KrillServer {
@@ -381,7 +436,7 @@ impl KrillServer {
     pub fn resync_all(&self) -> EmptyRes {
         let publisher = CaPublisher::new(self.caserver.clone(), self.pubserver.clone());
 
-        for ca in self.caserver.cas().cas() {
+        for ca in self.caserver.ca_list().cas() {
             if let Err(e) = publisher.publish(ca.handle()) {
                 error!("Failed to sync ca: {}. Got error: {}", ca.handle(), e)
             }
@@ -404,7 +459,7 @@ impl KrillServer {
 ///
 impl KrillServer {
     pub fn cas(&self) -> CertAuthList {
-        self.caserver.cas()
+        self.caserver.ca_list()
     }
 
     /// Returns the public CA info for a CA, or NONE if the CA cannot be found.

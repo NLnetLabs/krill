@@ -614,7 +614,7 @@ impl Repository {
 
 //------------ RepoStats -----------------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RepoStats {
     publishers: HashMap<PublisherHandle, PublisherStats>,
     session: RrdpSession,
@@ -658,6 +658,20 @@ impl RepoStats {
         &self.publishers
     }
 
+    pub fn stale_publishers(&self, seconds: i64) -> Vec<PublisherHandle> {
+        let mut res = vec![];
+        for (publisher, stats) in self.publishers.iter() {
+            if let Some(update_time) = stats.last_update {
+                if Time::now().timestamp() - update_time.timestamp() >= seconds {
+                    res.push(publisher.clone())
+                }
+            } else {
+                res.push(publisher.clone())
+            }
+        }
+        res
+    }
+
     pub fn last_update(&self) -> Option<Time> {
         self.last_update
     }
@@ -671,7 +685,7 @@ impl RepoStats {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublisherStats {
     objects: usize,
     size: usize,

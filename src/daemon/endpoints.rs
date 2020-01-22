@@ -5,8 +5,6 @@ use actix_web::{HttpResponse, ResponseError};
 use bytes::Bytes;
 use serde::Serialize;
 
-use rpki::x509::Time;
-
 use crate::commons::api::rrdp::VerificationError;
 use crate::commons::api::{
     AddChildRequest, CertAuthInit, ErrorCode, ErrorResponse, Handle, ParentCaContact, ParentCaReq,
@@ -119,24 +117,21 @@ pub fn metrics(server: web::Data<AppServer>) -> HttpResponse {
         res.push_str(&format!("krill_repo_publisher {}\n", publishers.len()));
 
         if let Some(last_update) = stats.last_update() {
-            let seconds = Time::now().timestamp() - last_update.timestamp();
             res.push_str("\n");
             res.push_str(
-                "# HELP krill_repo_rrdp_last_update seconds since last update by any publisher\n",
+                "# HELP krill_repo_rrdp_last_update timestamp of last update by any publisher\n",
             );
             res.push_str("# TYPE krill_repo_rrdp_last_update gauge\n");
-            res.push_str(&format!("krill_repo_rrdp_last_update {}\n", seconds));
+            res.push_str(&format!(
+                "krill_repo_rrdp_last_update {}\n",
+                last_update.timestamp()
+            ));
         }
 
         res.push_str("\n");
         res.push_str("# HELP krill_repo_rrdp_serial RRDP serial\n");
-        res.push_str("# TYPE krill_repo_rrdp_serial gauge\n");
+        res.push_str("# TYPE krill_repo_rrdp_serial counter\n");
         res.push_str(&format!("krill_repo_rrdp_serial {}\n", stats.serial()));
-
-        res.push_str("\n");
-        res.push_str("# HELP krill_repo_rrdp_session RRDP session ID\n");
-        res.push_str("# TYPE krill_repo_rrdp_session gauge\n");
-        res.push_str(&format!("krill_repo_rrdp_session {}\n", stats.session()));
 
         res.push_str("\n");
         res.push_str("# HELP krill_repo_objects number of objects in repository for publisher\n");
@@ -163,17 +158,47 @@ pub fn metrics(server: web::Data<AppServer>) -> HttpResponse {
         }
 
         res.push_str("\n");
-        res.push_str("# HELP krill_repo_last_update seconds since last update for publisher\n");
+        res.push_str("# HELP krill_repo_last_update timestamp of last update for publisher\n");
         res.push_str("# TYPE krill_repo_last_update gauge\n");
         for (publisher, stats) in publishers {
             if let Some(last_update) = stats.last_update() {
-                let seconds = Time::now().timestamp() - last_update.timestamp();
                 res.push_str(&format!(
                     "krill_repo_last_update{{publisher=\"{}\"}} {}\n",
-                    publisher, seconds
+                    publisher,
+                    last_update.timestamp()
                 ));
             }
         }
+    }
+
+    let cas_status = server.read().cas_stats();
+
+    let number_cas = cas_status.len();
+    res.push_str("\n");
+    res.push_str("# HELP krill_cas number of cas in krill\n");
+    res.push_str("# TYPE krill_cas gauge\n");
+    res.push_str(&format!("krill_cas {}\n", number_cas));
+
+    res.push_str("\n");
+    res.push_str("# HELP krill_cas_roas number of roas for CA\n");
+    res.push_str("# TYPE krill_cas_roas gauge\n");
+    for (ca, status) in cas_status.iter() {
+        res.push_str(&format!(
+            "krill_cas_roas{{ca=\"{}\"}} {}\n",
+            ca,
+            status.roa_count()
+        ));
+    }
+
+    res.push_str("\n");
+    res.push_str("# HELP krill_cas_children number of children for CA\n");
+    res.push_str("# TYPE krill_cas_children gauge\n");
+    for (ca, status) in cas_status.iter() {
+        res.push_str(&format!(
+            "krill_cas_children{{ca=\"{}\"}} {}\n",
+            ca,
+            status.child_count()
+        ));
     }
 
     HttpResponse::Ok().body(res)
@@ -183,6 +208,17 @@ pub fn metrics(server: web::Data<AppServer>) -> HttpResponse {
 
 pub fn repo_stats(server: web::Data<AppServer>) -> HttpResponse {
     render_json_res(server.read().repo_stats())
+}
+
+/// Returns a list of publisher which have not updated for more
+/// than the given number of seconds.
+pub fn stale_publishers(server: web::Data<AppServer>, seconds: web::Path<i64>) -> HttpResponse {
+    render_json_res(server.read().repo_stats().map(|stats| {
+        PublisherList::build(
+            &stats.stale_publishers(seconds.into_inner()),
+            "/api/v1/publishers",
+        )
+    }))
 }
 
 /// Returns a json structure with all publishers in it.
@@ -414,6 +450,19 @@ pub fn ca_parent_res_xml(
 }
 
 //------------ Admin: CertAuth -----------------------------------------------
+
+pub fn all_ca_issues(server: web::Data<AppServer>) -> HttpResponse {
+    render_json_res(server.read().all_ca_issues())
+}
+
+/// Returns the health (state) for a given CA.
+pub fn ca_issues(server: web::Data<AppServer>, ca: Path<Handle>) -> HttpResponse {
+    render_json_res(server.read().ca_issues(&ca.into_inner()))
+}
+
+pub fn cas_stats(server: web::Data<AppServer>) -> HttpResponse {
+    render_json(server.read().cas_stats())
+}
 
 pub fn cas(server: web::Data<AppServer>, auth: Auth) -> HttpResponse {
     if_api_allowed(&server, &auth, || render_json(server.read().cas()))
