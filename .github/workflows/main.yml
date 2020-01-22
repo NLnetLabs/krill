@@ -20,13 +20,28 @@ jobs:
     name: deploy_and_test
     runs-on: ubuntu-18.04
     steps:
+    - name: Extract branch name
+      shell: bash
+      run: echo "##[set-output name=branch;]$(echo ${GITHUB_REF#refs/heads/})"
+      id: extract_branch
+
     - name: Checkout Krill
       uses: actions/checkout@v2
       with:
         path: krill
         fetch-depth: 1
 
-    - name: Checkout the E2E test framework
+    - name: Checkout the E2E test framework (matching branch if exists)
+      uses: actions/checkout@v2
+      with:
+        repository: nlnetlabs/rpki-deploy
+        path: rpki-deploy
+        fetch-depth: 1
+        ref: ${{ steps.extract_branch.outputs.branch }}
+    
+    # Only if previous checkout attempt fails
+    - name: Checkout the E2E test framework (master)
+      if: failure()
       uses: actions/checkout@v2
       with:
         repository: nlnetlabs/rpki-deploy
