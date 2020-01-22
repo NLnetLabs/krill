@@ -20,11 +20,6 @@ jobs:
     name: deploy_and_test
     runs-on: ubuntu-18.04
     steps:
-    - name: Extract branch name
-      id: extract_branch
-      shell: bash
-      run: echo "##[set-output name=branch;]$(echo ${GITHUB_REF#refs/heads/})"
-
     - name: Checkout Krill
       uses: actions/checkout@v2
       with:
@@ -36,7 +31,7 @@ jobs:
       shell: bash
       run: |
         BRANCH=${GITHUB_REF#refs/heads/}
-        if git ls-remote --exit-code --heads https://github.com/NLnetLabs/rpki-deploy; then
+        if git ls-remote --exit-code --heads https://github.com/NLnetLabs/rpki-deploy ${BRANCH}; then
           echo "::set-output name=branch::${BRANCH}"
         else
           echo "::set-output name=success::master"
