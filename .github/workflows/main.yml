@@ -48,7 +48,11 @@ jobs:
         path: rpki-deploy
         fetch-depth: 1
 
+    # Force this step to run by checking for success, otherwise GH Actions refuses
+    # to run this or any subsequent steps when the specific E2E test branch checkout
+    # fails but the master E2E test branch checkout succeeds.
     - name: Checkout RTRLIB (v0.7.0 tag)
+      if: success()
       uses: actions/checkout@v2
       with:
         repository: rtrlib/rtrlib
