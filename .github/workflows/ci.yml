@@ -1,6 +1,18 @@
 name: CI
 on:
-  [push, pull_request]:
+  push:
+    paths-ignore:
+      - '.dockerignore'
+      - '.github/workflosw/main.yml'
+      - 'Changelog.md'
+      - 'Dockerfile'
+      - 'doc/**'
+      - 'docker/**'
+      - 'LICENSE'
+      - 'README.md'
+      - 'tests/e2e/**'
+  # Hmm, annoying, do we really have to duplicate this?
+  pull_request:
     paths-ignore:
       - '.dockerignore'
       - '.github/workflosw/main.yml'
