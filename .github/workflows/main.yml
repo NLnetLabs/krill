@@ -32,6 +32,7 @@ jobs:
         fetch-depth: 1
 
     - name: Checkout the E2E test framework (matching branch if exists)
+      continue-on-error: true
       uses: actions/checkout@v2
       with:
         repository: nlnetlabs/rpki-deploy
