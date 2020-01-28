@@ -484,7 +484,7 @@ impl<S: Signer> CaServer<S> {
         parent: &ParentHandle,
     ) -> KrillResult<()> {
         if handle == &ta_handle() {
-            Ok(())
+            Ok(()) // The (test) TA never needs updates.
         } else {
             let entitlements = self.get_entitlements_from_parent(handle, parent)?;
 
@@ -492,7 +492,7 @@ impl<S: Signer> CaServer<S> {
                 return Ok(()); // Nothing to do
             }
 
-            self.send_requests(handle, parent)
+            Ok(()) // Pending requests will be picked up by the scheduler.
         }
     }
 
