@@ -8,11 +8,6 @@ ARG BASE_IMG=alpine:3.11
 #
 # -- stage 1: build krill and krillc
 #
-FROM ${BASE_IMG} AS builder
-
-#
-# -- stage 1: build krill and krillc
-#
 FROM ${BASE_IMG} AS build
 
 RUN apk add rust cargo openssl-dev
