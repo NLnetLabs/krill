@@ -13,6 +13,8 @@ use rpki::uri;
 use rpki::x509::{Name, Serial, Time, Validity};
 
 use crate::commons::api::{IssuedCert, ReplacedObject, RequestResourceLimit, ResourceSet};
+use crate::commons::error::Error;
+use crate::commons::KrillResult;
 use crate::daemon::ca::{self, CertifiedKey};
 
 //------------ Signer --------------------------------------------------------
@@ -88,17 +90,17 @@ impl CsrInfo {
 impl TryFrom<&Csr> for CsrInfo {
     type Error = ca::Error;
 
-    fn try_from(csr: &Csr) -> ca::Result<CsrInfo> {
+    fn try_from(csr: &Csr) -> KrillResult<CsrInfo> {
         csr.validate()
-            .map_err(|_| ca::Error::invalid_csr("invalid signature"))?;
+            .map_err(|_| Error::invalid_csr("invalid signature"))?;
         let ca_repository = csr
             .ca_repository()
             .cloned()
-            .ok_or_else(|| ca::Error::invalid_csr("missing ca repository"))?;
+            .ok_or_else(|| Error::invalid_csr("missing ca repository"))?;
         let rpki_manifest = csr
             .rpki_manifest()
             .cloned()
-            .ok_or_else(|| ca::Error::invalid_csr("missing rpki manifest"))?;
+            .ok_or_else(|| Error::invalid_csr("missing rpki manifest"))?;
         let rpki_notify = csr.rpki_notify().cloned();
         let key = csr.public_key().clone();
         Ok(CsrInfo {
@@ -139,17 +141,15 @@ impl SignSupport {
         replaces: Option<ReplacedObject>,
         signing_key: &CertifiedKey,
         signer: &S,
-    ) -> ca::Result<IssuedCert> {
+    ) -> KrillResult<IssuedCert> {
         let (ca_repository, rpki_manifest, rpki_notify, pub_key) = csr.unpack();
 
         let signing_cert = signing_key.incoming_cert();
 
-        let resources = resources
-            .apply_limit(&limit)
-            .map_err(|_| ca::Error::MissingResources)?;
+        let resources = resources.apply_limit(&limit)?;
 
         if !signing_cert.resources().contains(&resources) {
-            return Err(ca::Error::MissingResources);
+            return Err(Error::MissingResources);
         }
 
         let serial = { Serial::random(signer).map_err(ca::Error::signer)? };

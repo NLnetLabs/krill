@@ -6,9 +6,10 @@ use rpki::crypto::KeyIdentifier;
 use rpki::x509::Time;
 
 use crate::commons::api::{ChildCaInfo, ChildHandle, IssuedCert, ResourceClassName, ResourceSet};
+use crate::commons::error::Error;
 use crate::commons::remote::id::IdCert;
+use crate::commons::KrillResult;
 use crate::constants::CHILD_CERTIFICATE_REISSUE_WEEKS;
-use crate::daemon::ca;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
@@ -93,14 +94,14 @@ impl ChildDetails {
         &self,
         ki: &KeyIdentifier,
         rcn: &ResourceClassName,
-    ) -> ca::Result<()> {
+    ) -> KrillResult<()> {
         if let Some(last_response) = self.used_keys.get(ki) {
             let allowed = match last_response {
                 LastResponse::Revoked => false,
                 LastResponse::Current(found) => found == rcn,
             };
             if !allowed {
-                return Err(ca::Error::ResourceClassKeyReused);
+                return Err(Error::KeyUseAttemptReuse);
             }
         }
         Ok(())

@@ -7,17 +7,21 @@ use rpki::x509::Time;
 
 use crate::commons::api::rrdp::{Delta, DeltaElements, Notification, RrdpSession};
 use crate::commons::api::{Handle, PublisherHandle, RepositoryHandle};
+use crate::commons::error::Error;
 use crate::commons::eventsourcing::StoredEvent;
 use crate::commons::remote::builder::IdCertBuilder;
 use crate::commons::remote::id::IdCert;
+use crate::commons::KrillResult;
 use crate::constants::REPOSITORY_DIR;
 use crate::daemon::ca::Signer;
-use crate::pubd::{Error, Publisher};
+use crate::pubd::Publisher;
 
 //------------ Ini -----------------------------------------------------------
+
 pub type Ini = StoredEvent<IniDet>;
 
 //------------ IniDet --------------------------------------------------------
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct IniDet {
     id_cert: IdCert,
@@ -46,7 +50,7 @@ impl IniDet {
         rrdp_base_uri: uri::Https,
         work_dir: &PathBuf,
         signer: &mut S,
-    ) -> Result<Ini, Error> {
+    ) -> KrillResult<Ini> {
         let key = signer
             .create_key(PublicKeyFormat::default())
             .map_err(Error::signer)?;
@@ -85,7 +89,8 @@ impl fmt::Display for IniDet {
     }
 }
 
-//------------ Event ---------------------------------------------------------
+//------------ RrdpUpdate ----------------------------------------------------
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RrdpUpdate {
     delta: Delta,
@@ -113,7 +118,8 @@ impl RrdpUpdate {
     }
 }
 
-//------------ Event ---------------------------------------------------------
+//------------ EvtDet --------------------------------------------------------
+
 pub type Evt = StoredEvent<EvtDet>;
 
 #[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]

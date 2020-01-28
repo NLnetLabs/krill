@@ -1209,13 +1209,13 @@ impl ResourceSet {
         ResourceSet { asn, v4, v6 }
     }
 
-    pub fn from_strs(asn: &str, v4: &str, v6: &str) -> Result<Self, ResSetErr> {
-        let asn = AsBlocks::from_str(asn).map_err(|_| ResSetErr::Asn)?;
+    pub fn from_strs(asn: &str, v4: &str, v6: &str) -> Result<Self, ResourceSetError> {
+        let asn = AsBlocks::from_str(asn).map_err(|_| ResourceSetError::asn(asn))?;
         if v4.contains(':') || v6.contains('.') {
-            return Err(ResSetErr::Mix);
+            return Err(ResourceSetError::Mix);
         }
-        let v4 = IpBlocks::from_str(v4).map_err(|_| ResSetErr::V4)?;
-        let v6 = IpBlocks::from_str(v6).map_err(|_| ResSetErr::V6)?;
+        let v4 = IpBlocks::from_str(v4).map_err(|_| ResourceSetError::v4(v4))?;
+        let v6 = IpBlocks::from_str(v6).map_err(|_| ResourceSetError::v6(v6))?;
         Ok(ResourceSet { asn, v4, v6 })
     }
 
@@ -1256,7 +1256,7 @@ impl ResourceSet {
 
     /// Apply a limit to this set, will return an error in case the limit
     /// exceeds the set.
-    pub fn apply_limit(&self, limit: &RequestResourceLimit) -> Result<Self, ResSetErr> {
+    pub fn apply_limit(&self, limit: &RequestResourceLimit) -> Result<Self, ResourceSetError> {
         if limit.is_empty() {
             return Ok(self.clone());
         }
@@ -1268,7 +1268,7 @@ impl ResourceSet {
                     if self.asn.contains(asn) {
                         asn.clone()
                     } else {
-                        return Err(ResSetErr::LimitExceedsResources);
+                        return Err(ResourceSetError::Limit);
                     }
                 }
             }
@@ -1281,7 +1281,7 @@ impl ResourceSet {
                     if self.v4.contains(v4) {
                         v4.clone()
                     } else {
-                        return Err(ResSetErr::LimitExceedsResources);
+                        return Err(ResourceSetError::Limit);
                     }
                 }
             }
@@ -1294,7 +1294,7 @@ impl ResourceSet {
                     if self.v6.contains(v6) {
                         v6.clone()
                     } else {
-                        return Err(ResSetErr::LimitExceedsResources);
+                        return Err(ResourceSetError::Limit);
                     }
                 }
             }
@@ -1341,14 +1341,14 @@ impl Default for ResourceSet {
 }
 
 impl TryFrom<&Cert> for ResourceSet {
-    type Error = ResSetErr;
+    type Error = ResourceSetError;
 
     fn try_from(cert: &Cert) -> Result<Self, Self::Error> {
         let asn = match cert.as_resources() {
             None => AsBlocks::empty(),
             Some(as_resources) => match as_resources.to_blocks() {
                 Ok(as_blocks) => as_blocks,
-                Err(_) => return Err(ResSetErr::InheritOnCaCert),
+                Err(_) => return Err(ResourceSetError::InheritOnCaCert),
             },
         };
 
@@ -1356,7 +1356,7 @@ impl TryFrom<&Cert> for ResourceSet {
             None => IpBlocks::empty(),
             Some(res) => match res.to_blocks() {
                 Ok(blocks) => blocks,
-                Err(_) => return Err(ResSetErr::InheritOnCaCert),
+                Err(_) => return Err(ResourceSetError::InheritOnCaCert),
             },
         };
 
@@ -1364,7 +1364,7 @@ impl TryFrom<&Cert> for ResourceSet {
             None => IpBlocks::empty(),
             Some(res) => match res.to_blocks() {
                 Ok(blocks) => blocks,
-                Err(_) => return Err(ResSetErr::InheritOnCaCert),
+                Err(_) => return Err(ResourceSetError::InheritOnCaCert),
             },
         };
 
@@ -1866,15 +1866,15 @@ impl CertAuthStats {
 //------------ ResSetErr -----------------------------------------------------
 
 #[derive(Clone, Debug, Display, Eq, PartialEq)]
-pub enum ResSetErr {
-    #[display(fmt = "Cannot parse ASN resources")]
-    Asn,
+pub enum ResourceSetError {
+    #[display(fmt = "Cannot parse ASN resource: {}", _0)]
+    Asn(String),
 
-    #[display(fmt = "Cannot parse IPv4 resources")]
-    V4,
+    #[display(fmt = "Cannot parse IPv4 resource: {}", _0)]
+    V4(String),
 
-    #[display(fmt = "Cannot parse IPv6 resources")]
-    V6,
+    #[display(fmt = "Cannot parse IPv6 resource: {}", _0)]
+    V6(String),
 
     #[display(fmt = "Mixed Address Families in configured resource set")]
     Mix,
@@ -1882,8 +1882,22 @@ pub enum ResSetErr {
     #[display(fmt = "Found inherited resources on CA certificate")]
     InheritOnCaCert,
 
-    #[display(fmt = "RequestResourceLimit exceeds resources")]
-    LimitExceedsResources,
+    #[display(fmt = "Limit in CSR exceeds resource entitlements.")]
+    Limit,
+}
+
+impl ResourceSetError {
+    fn asn(asn: impl fmt::Display) -> Self {
+        ResourceSetError::Asn(asn.to_string())
+    }
+
+    fn v4(v4: impl fmt::Display) -> Self {
+        ResourceSetError::V4(v4.to_string())
+    }
+
+    fn v6(v6: impl fmt::Display) -> Self {
+        ResourceSetError::V6(v6.to_string())
+    }
 }
 
 //============ Tests =========================================================
@@ -1899,7 +1913,7 @@ mod test {
     use crate::commons::util::test;
 
     use super::*;
-    use commons::api::ErrorCode;
+    use commons::error::Error;
 
     fn base_uri() -> uri::Rsync {
         test::rsync("rsync://localhost/repo/ta/")
@@ -2061,14 +2075,20 @@ mod test {
 
     #[test]
     fn cert_auth_issues_json() {
+        let ca = Handle::from_str_unsafe("CA");
+        let p1 = Handle::from_str_unsafe("p1");
+
         let mut issues = CertAuthIssues::default();
-        issues.add_repo_issue(ErrorCode::PubServerError.into());
+        issues.add_repo_issue(
+            Error::CaRepoNotResponsive(ca.clone(), "unreachable".to_string()).to_error_response(),
+        );
         issues.add_parent_issue(
-            Handle::from_str_unsafe("p1"),
-            ErrorCode::ParentNoResponse.into(),
+            p1.clone(),
+            Error::CaParentNotResponsive(ca.clone(), p1, "unreachable".to_string())
+                .to_error_response(),
         );
 
-        let expected = "{\"repo\":{\"code\":3006,\"msg\":\"General Publication Server error (check log).\"},\"parents\":{\"p1\":{\"code\":2308,\"msg\":\"No response from parent\"}}}";
+        let expected = "{\"repo\":{\"code\":2311,\"msg\":\"CA 'CA' got error from repository: unreachable\",\"args\":[\"CA\",\"unreachable\"]},\"parents\":{\"p1\":{\"code\":2322,\"msg\":\"CA 'CA' got error from parent 'p1': unreachable\",\"args\":[\"CA\",\"p1\",\"unreachable\"]}}}";
         assert_eq!(serde_json::to_string(&issues).unwrap(), expected);
 
         let issues = CertAuthIssues::default();
@@ -2078,18 +2098,24 @@ mod test {
 
     #[test]
     fn all_cert_auth_issues_json() {
+        let ca = Handle::from_str_unsafe("ca");
+        let p1 = Handle::from_str_unsafe("p1");
+
         let mut issues = CertAuthIssues::default();
-        issues.add_repo_issue(ErrorCode::PubServerError.into());
+        issues.add_repo_issue(
+            Error::CaRepoNotResponsive(ca.clone(), "unreachable".to_string()).to_error_response(),
+        );
         issues.add_parent_issue(
-            Handle::from_str_unsafe("p1"),
-            ErrorCode::ParentNoResponse.into(),
+            p1.clone(),
+            Error::CaParentNotResponsive(ca.clone(), p1, "unreachable".to_string())
+                .to_error_response(),
         );
 
         let mut all = AllCertAuthIssues::default();
-        all.add(Handle::from_str_unsafe("ca"), issues);
+        all.add(ca, issues);
 
         let expected =
-            "{\"cas\":{\"ca\":{\"repo\":{\"code\":3006,\"msg\":\"General Publication Server error (check log).\"},\"parents\":{\"p1\":{\"code\":2308,\"msg\":\"No response from parent\"}}}}}";
+            "{\"cas\":{\"ca\":{\"repo\":{\"code\":2311,\"msg\":\"CA 'ca' got error from repository: unreachable\",\"args\":[\"ca\",\"unreachable\"]},\"parents\":{\"p1\":{\"code\":2322,\"msg\":\"CA 'ca' got error from parent 'p1': unreachable\",\"args\":[\"ca\",\"p1\",\"unreachable\"]}}}}}";
 
         assert_eq!(serde_json::to_string(&all).unwrap(), expected);
 

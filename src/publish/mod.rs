@@ -4,10 +4,9 @@ use std::sync::Arc;
 
 use crate::commons::api::Handle;
 use crate::commons::api::{Publish, PublishDelta, RepositoryContact, Update, Withdraw};
+use crate::commons::error::Error;
 use crate::commons::util::softsigner::OpenSslSigner;
-use crate::daemon::ca;
 use crate::daemon::ca::CaServer;
-use crate::pubd;
 use crate::pubd::PubServer;
 
 //------------ CaPublisher ---------------------------------------------------
@@ -32,7 +31,9 @@ impl CaPublisher {
 
 impl CaPublisher {
     fn get_embedded(&self) -> Result<&Arc<PubServer>, Error> {
-        self.pubserver.as_ref().ok_or_else(|| Error::NoEmbeddedRepo)
+        self.pubserver
+            .as_ref()
+            .ok_or_else(|| Error::PublisherNoEmbeddedRepo)
     }
 
     pub fn publish(&self, ca_handle: &Handle) -> Result<(), Error> {
@@ -122,32 +123,5 @@ impl CaPublisher {
         }
 
         Ok(())
-    }
-}
-
-//------------ Error ---------------------------------------------------------
-
-#[derive(Debug, Display)]
-#[allow(clippy::large_enum_variant)]
-pub enum Error {
-    #[display(fmt = "{}", _0)]
-    CaServer(ca::ServerError),
-
-    #[display(fmt = "{}", _0)]
-    PubServer(pubd::Error),
-
-    #[display(fmt = "No embedded repository configured")]
-    NoEmbeddedRepo,
-}
-
-impl From<ca::ServerError> for Error {
-    fn from(e: ca::ServerError) -> Self {
-        Error::CaServer(e)
-    }
-}
-
-impl From<pubd::Error> for Error {
-    fn from(e: pubd::Error) -> Self {
-        Error::PubServer(e)
     }
 }

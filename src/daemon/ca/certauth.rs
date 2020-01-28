@@ -1,5 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
+use std::env;
 use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::sync::{Arc, RwLock};
@@ -20,21 +21,22 @@ use crate::commons::api::{
     RevocationResponse, RoaDefinition, SigningCert, TaCertDetails, TrustAnchorLocator,
     UpdateChildRequest,
 };
+use crate::commons::error::Error;
 use crate::commons::eventsourcing::{Aggregate, StoredEvent};
 use crate::commons::remote::builder::{IdCertBuilder, SignedMessageBuilder};
 use crate::commons::remote::id::IdCert;
 use crate::commons::remote::rfc6492;
 use crate::commons::remote::rfc8183;
 use crate::commons::remote::sigmsg::SignedMessage;
+use crate::commons::KrillResult;
 use crate::constants::CHILD_CERTIFICATE_REISSUE_WEEKS;
 use crate::daemon::ca::events::ChildCertificateUpdates;
 use crate::daemon::ca::rc::PublishMode;
 use crate::daemon::ca::signing::CsrInfo;
 use crate::daemon::ca::{
-    self, ta_handle, ChildDetails, Cmd, CmdDet, CurrentObjectSetDelta, Error, Evt, EvtDet, Ini,
-    ResourceClass, Result, RouteAuthorization, RouteAuthorizationUpdates, Routes, Signer,
+    ta_handle, ChildDetails, Cmd, CmdDet, CurrentObjectSetDelta, Evt, EvtDet, Ini, ResourceClass,
+    RouteAuthorization, RouteAuthorizationUpdates, Routes, Signer,
 };
-use std::env;
 
 //------------ Rfc8183Id ---------------------------------------------------
 
@@ -45,7 +47,7 @@ pub struct Rfc8183Id {
 }
 
 impl Rfc8183Id {
-    pub fn generate<S: Signer>(signer: &mut S) -> Result<Self> {
+    pub fn generate<S: Signer>(signer: &mut S) -> KrillResult<Self> {
         let key = signer
             .create_key(PublicKeyFormat::default())
             .map_err(|e| Error::SignerError(e.to_string()))?;
@@ -93,7 +95,7 @@ impl<S: Signer> Aggregate for CertAuth<S> {
     type InitEvent = Ini;
     type Error = Error;
 
-    fn init(event: Ini) -> Result<Self> {
+    fn init(event: Ini) -> KrillResult<Self> {
         let (handle, _version, details) = event.unwrap();
         let (id, repo_info, ta_opt) = details.unwrap();
 
@@ -315,7 +317,7 @@ impl<S: Signer> Aggregate for CertAuth<S> {
         }
     }
 
-    fn process_command(&self, command: Cmd<S>) -> ca::Result<Vec<Evt>> {
+    fn process_command(&self, command: Cmd<S>) -> KrillResult<Vec<Evt>> {
         info!(
             "Sending command to CA '{}', version: {}: {}",
             self.handle, self.version, command
@@ -443,7 +445,7 @@ impl<S: Signer> CertAuth<S> {
         res
     }
 
-    pub fn get_repository_contact(&self) -> Result<&RepositoryContact> {
+    pub fn get_repository_contact(&self) -> KrillResult<&RepositoryContact> {
         self.repository.as_ref().ok_or(Error::RepoNotSet)
     }
 
@@ -459,7 +461,7 @@ impl<S: Signer> CertAuth<S> {
         &self,
         uris: Vec<uri::Https>,
         signer: Arc<RwLock<S>>,
-    ) -> ca::Result<Vec<Evt>> {
+    ) -> KrillResult<Vec<Evt>> {
         let mut signer = signer.write().unwrap();
 
         if !self.resources.is_empty() {
@@ -523,7 +525,7 @@ impl<S: Signer> CertAuth<S> {
 /// # Being a parent
 ///
 impl<S: Signer> CertAuth<S> {
-    pub fn verify_rfc6492(&self, msg: SignedMessage) -> Result<rfc6492::Message> {
+    pub fn verify_rfc6492(&self, msg: SignedMessage) -> KrillResult<rfc6492::Message> {
         let content = rfc6492::Message::from_signed_message(&msg)?;
 
         let child_handle = content.sender();
@@ -531,15 +533,15 @@ impl<S: Signer> CertAuth<S> {
 
         let child_cert = child
             .id_cert()
-            .ok_or_else(|| Error::Unauthorized(child_handle.clone()))?;
+            .ok_or_else(|| Error::CaChildUnauthorised(self.handle.clone(), child_handle.clone()))?;
 
         msg.validate(child_cert)
-            .map_err(|_| Error::InvalidRfc6492)?;
+            .map_err(|_| Error::Rfc6492SignatureInvalid)?;
 
         Ok(content)
     }
 
-    pub fn sign_rfc6492_response(&self, msg: rfc6492::Message, signer: &S) -> Result<Bytes> {
+    pub fn sign_rfc6492_response(&self, msg: rfc6492::Message, signer: &S) -> KrillResult<Bytes> {
         let key = &self.id.key;
         Ok(SignedMessageBuilder::create(key, signer, msg.into_bytes())
             .map_err(Error::signer)?
@@ -548,7 +550,7 @@ impl<S: Signer> CertAuth<S> {
 
     /// List entitlements (section 3.3.2 of RFC6492). Return an error if
     /// the child is not authorized -- or unknown etc.
-    pub fn list(&self, child_handle: &Handle) -> Result<api::Entitlements> {
+    pub fn list(&self, child_handle: &Handle) -> KrillResult<api::Entitlements> {
         let mut classes = vec![];
 
         for rcn in self.resources.keys() {
@@ -567,14 +569,14 @@ impl<S: Signer> CertAuth<S> {
         child_handle: &Handle,
         class_name: &ResourceClassName,
         pub_key: &PublicKey,
-    ) -> Result<api::IssuanceResponse> {
+    ) -> KrillResult<api::IssuanceResponse> {
         let entitlement_class = self
             .entitlement_class(child_handle, class_name)
-            .ok_or_else(|| Error::NoIssuedCert)?;
+            .ok_or_else(|| Error::KeyUseNoIssuedCert)?;
 
         entitlement_class
             .into_issuance_response(pub_key)
-            .ok_or_else(|| Error::NoIssuedCert)
+            .ok_or_else(|| Error::KeyUseNoIssuedCert)
     }
 
     /// Returns the EntitlementClass for this child for the given class name.
@@ -640,9 +642,9 @@ impl<S: Signer> CertAuth<S> {
     }
 
     /// Returns a child, or an error if the child is unknown.
-    pub fn get_child(&self, child: &Handle) -> Result<&ChildDetails> {
+    pub fn get_child(&self, child: &Handle) -> KrillResult<&ChildDetails> {
         match self.children.get(child) {
-            None => Err(Error::UnknownChild(child.clone())),
+            None => Err(Error::CaChildUnknown(self.handle.clone(), child.clone())),
             Some(child) => Ok(child),
         }
     }
@@ -659,22 +661,21 @@ impl<S: Signer> CertAuth<S> {
         child: ChildHandle,
         id_cert: Option<IdCert>,
         resources: ResourceSet,
-    ) -> ca::Result<Vec<Evt>> {
+    ) -> KrillResult<Vec<Evt>> {
         if resources.is_empty() {
-            return Err(Error::MustHaveResources);
-        }
-        if self.has_child(&child) {
-            return Err(Error::DuplicateChild(child));
-        }
+            Err(Error::CaChildMustHaveResources(self.handle.clone(), child))
+        } else if self.has_child(&child) {
+            Err(Error::CaChildDuplicate(self.handle.clone(), child))
+        } else {
+            let child_details = ChildDetails::new(id_cert, resources);
 
-        let child_details = ChildDetails::new(id_cert, resources);
-
-        Ok(vec![EvtDet::child_added(
-            &self.handle,
-            self.version,
-            child,
-            child_details,
-        )])
+            Ok(vec![EvtDet::child_added(
+                &self.handle,
+                self.version,
+                child,
+                child_details,
+            )])
+        }
     }
 
     /// Certifies a child, unless:
@@ -688,11 +689,11 @@ impl<S: Signer> CertAuth<S> {
         child: Handle,
         request: IssuanceRequest,
         signer: Arc<RwLock<S>>,
-    ) -> ca::Result<Vec<Evt>> {
+    ) -> KrillResult<Vec<Evt>> {
         let signer = signer.read().unwrap();
         let signer = signer.deref();
 
-        let (rcn, limit, csr) = request.unwrap();
+        let (rcn, limit, csr) = request.unpack();
         let csr_info = CsrInfo::try_from(&csr)?;
 
         if csr_info.contains_localhost() && env::var("KRILL_TEST").is_err() {
@@ -736,13 +737,14 @@ impl<S: Signer> CertAuth<S> {
         csr_info: CsrInfo,
         limit: RequestResourceLimit,
         signer: &S,
-    ) -> Result<IssuedCert> {
+    ) -> KrillResult<IssuedCert> {
         let my_rc = self
             .resources
             .get(&rcn)
             .ok_or_else(|| Error::unknown_resource_class(&rcn))?;
 
         let child = self.get_child(&child)?;
+        child.resources().apply_limit(&limit)?;
 
         my_rc.issue_cert(csr_info, child.resources(), limit, signer)
     }
@@ -755,7 +757,7 @@ impl<S: Signer> CertAuth<S> {
         issued_certs: &[&IssuedCert],
         removed_certs: &[&Cert],
         signer: &S,
-    ) -> Result<HashMap<KeyIdentifier, CurrentObjectSetDelta>> {
+    ) -> KrillResult<HashMap<KeyIdentifier, CurrentObjectSetDelta>> {
         let repo = self.get_repository_contact()?;
 
         self.resources
@@ -769,7 +771,11 @@ impl<S: Signer> CertAuth<S> {
     /// Note: this does not yet revoke / reissue / republish anything. If the 'force' option was
     /// used in the update request, then shrink_child should be called with a grace period that
     /// is effective immediately.
-    fn child_update(&self, child_handle: &Handle, req: UpdateChildRequest) -> ca::Result<Vec<Evt>> {
+    fn child_update(
+        &self,
+        child_handle: &Handle,
+        req: UpdateChildRequest,
+    ) -> KrillResult<Vec<Evt>> {
         let (cert_opt, resources_opt) = req.unpack();
 
         let mut version = self.version;
@@ -810,7 +816,7 @@ impl<S: Signer> CertAuth<S> {
         child_handle: ChildHandle,
         request: RevocationRequest,
         signer: Arc<RwLock<S>>,
-    ) -> ca::Result<Vec<Evt>> {
+    ) -> KrillResult<Vec<Evt>> {
         let signer = signer.read().unwrap();
         let signer = signer.deref();
 
@@ -819,16 +825,16 @@ impl<S: Signer> CertAuth<S> {
         let child = self.get_child(&child_handle)?;
 
         if !child.is_issued(&key) {
-            return Err(Error::NoIssuedCert);
+            return Err(Error::KeyUseNoIssuedCert);
         }
 
         let my_rc = self
             .resources
             .get(&rcn)
-            .ok_or_else(|| Error::NoIssuedCert)?;
+            .ok_or_else(|| Error::KeyUseNoIssuedCert)?;
         let removed = my_rc
             .issued(&key)
-            .ok_or_else(|| Error::NoIssuedCert)?
+            .ok_or_else(|| Error::KeyUseNoIssuedCert)?
             .cert();
 
         let handle = &self.handle;
@@ -851,7 +857,7 @@ impl<S: Signer> CertAuth<S> {
         &self,
         child_handle: &ChildHandle,
         signer: Arc<RwLock<S>>,
-    ) -> ca::Result<Vec<Evt>> {
+    ) -> KrillResult<Vec<Evt>> {
         let signer = signer.read().unwrap();
         let signer = signer.deref();
         let child = self.get_child(&child_handle)?;
@@ -914,7 +920,7 @@ impl<S: Signer> CertAuth<S> {
 ///
 impl<S: Signer> CertAuth<S> {
     /// Generates a new ID key for this CA.
-    fn generate_new_id_key(&self, signer: Arc<RwLock<S>>) -> ca::Result<Vec<Evt>> {
+    fn generate_new_id_key(&self, signer: Arc<RwLock<S>>) -> KrillResult<Vec<Evt>> {
         let mut signer = signer.write().unwrap();
         let id = Rfc8183Id::generate(signer.deref_mut())?;
 
@@ -943,21 +949,21 @@ impl<S: Signer> CertAuth<S> {
 
     /// Gets the ParentCaContact for this ParentHandle. Returns an Err when the
     /// parent does not exist.
-    pub fn parent(&self, parent: &ParentHandle) -> Result<&ParentCaContact> {
+    pub fn parent(&self, parent: &ParentHandle) -> KrillResult<&ParentCaContact> {
         self.parents
             .get(parent)
-            .ok_or_else(|| Error::UnknownParent(parent.clone()))
+            .ok_or_else(|| Error::CaParentUnknown(self.handle.clone(), parent.clone()))
     }
 
     /// Adds a parent. This method will return an error in case a parent
     /// by this name (handle) is already known.
-    fn add_parent(&self, parent: Handle, info: ParentCaContact) -> ca::Result<Vec<Evt>> {
+    fn add_parent(&self, parent: Handle, info: ParentCaContact) -> KrillResult<Vec<Evt>> {
         if self.repository.is_none() {
             Err(Error::RepoNotSet)
         } else if self.has_parent(&parent) {
-            Err(Error::DuplicateParent(parent))
+            Err(Error::CaParentDuplicate(self.handle.clone(), parent))
         } else if self.is_ta() {
-            Err(Error::NotAllowedForTa)
+            Err(Error::TaNotAllowed)
         } else {
             Ok(vec![EvtDet::parent_added(
                 &self.handle,
@@ -969,7 +975,7 @@ impl<S: Signer> CertAuth<S> {
     }
 
     /// Removes a parent. Returns an error if it doesn't exist.
-    fn remove_parent(&self, parent: Handle) -> ca::Result<Vec<Evt>> {
+    fn remove_parent(&self, parent: Handle) -> KrillResult<Vec<Evt>> {
         let _parent = self.parent(&parent)?;
         let repo = self.get_repository_contact()?;
 
@@ -993,11 +999,11 @@ impl<S: Signer> CertAuth<S> {
 
     /// Updates an existing parent's contact. This will return an error if
     /// the parent is not known.
-    fn update_parent(&self, parent: Handle, info: ParentCaContact) -> ca::Result<Vec<Evt>> {
+    fn update_parent(&self, parent: Handle, info: ParentCaContact) -> KrillResult<Vec<Evt>> {
         if !self.has_parent(&parent) {
-            Err(Error::UnknownParent(parent))
+            Err(Error::CaParentUnknown(self.handle.clone(), parent))
         } else if self.is_ta() {
-            Err(Error::NotAllowedForTa)
+            Err(Error::TaNotAllowed)
         } else {
             Ok(vec![EvtDet::parent_updated(
                 &self.handle,
@@ -1046,7 +1052,7 @@ impl<S: Signer> CertAuth<S> {
         entitlement: &EntitlementClass,
         rc: &ResourceClass,
         signer: &S,
-    ) -> Result<Vec<Evt>> {
+    ) -> KrillResult<Vec<Evt>> {
         let repo = self.get_repository_contact()?;
         let parent_class_name = entitlement.class_name().clone();
         let req_details_list = rc.make_request_events(entitlement, repo.repo_info(), signer)?;
@@ -1102,7 +1108,7 @@ impl<S: Signer> CertAuth<S> {
         parent_handle: Handle,
         entitlements: Entitlements,
         signer: Arc<RwLock<S>>,
-    ) -> ca::Result<Vec<Evt>> {
+    ) -> KrillResult<Vec<Evt>> {
         let mut res = vec![];
 
         // Check if there is a resource class for each entitlement
@@ -1224,7 +1230,7 @@ impl<S: Signer> CertAuth<S> {
         rcn: ResourceClassName,
         rcvd_cert: RcvdCert,
         signer: Arc<RwLock<S>>,
-    ) -> ca::Result<Vec<Evt>> {
+    ) -> KrillResult<Vec<Evt>> {
         debug!(
             "CA {}: Updating received cert for class: {}",
             self.handle, rcn
@@ -1256,7 +1262,11 @@ impl<S: Signer> CertAuth<S> {
 /// # Key Rolls
 ///
 impl<S: Signer> CertAuth<S> {
-    fn keyroll_initiate(&self, duration: Duration, signer: Arc<RwLock<S>>) -> ca::Result<Vec<Evt>> {
+    fn keyroll_initiate(
+        &self,
+        duration: Duration,
+        signer: Arc<RwLock<S>>,
+    ) -> KrillResult<Vec<Evt>> {
         if self.is_ta() {
             return Ok(vec![]);
         }
@@ -1285,7 +1295,7 @@ impl<S: Signer> CertAuth<S> {
         Ok(res)
     }
 
-    fn keyroll_activate(&self, staging: Duration, signer: Arc<RwLock<S>>) -> ca::Result<Vec<Evt>> {
+    fn keyroll_activate(&self, staging: Duration, signer: Arc<RwLock<S>>) -> KrillResult<Vec<Evt>> {
         if self.is_ta() {
             return Ok(vec![]);
         }
@@ -1320,7 +1330,7 @@ impl<S: Signer> CertAuth<S> {
         &self,
         rcn: ResourceClassName,
         _response: RevocationResponse,
-    ) -> ca::Result<Vec<Evt>> {
+    ) -> KrillResult<Vec<Evt>> {
         if self.is_ta() {
             return Ok(vec![]);
         }
@@ -1347,7 +1357,7 @@ impl<S: Signer> CertAuth<S> {
 ///
 impl<S: Signer> CertAuth<S> {
     /// Republish objects for this CA
-    pub fn republish(&self, signer: Arc<RwLock<S>>) -> ca::Result<Vec<Evt>> {
+    pub fn republish(&self, signer: Arc<RwLock<S>>) -> KrillResult<Vec<Evt>> {
         let signer = signer.read().unwrap();
         let signer = signer.deref();
 
@@ -1366,7 +1376,7 @@ impl<S: Signer> CertAuth<S> {
         &self,
         mode: &PublishMode,
         signer: &S,
-    ) -> ca::Result<Vec<EvtDet>> {
+    ) -> KrillResult<Vec<EvtDet>> {
         let mut res = vec![];
 
         for rc in self.resources.values() {
@@ -1399,14 +1409,14 @@ impl<S: Signer> CertAuth<S> {
         &self,
         new_contact: RepositoryContact,
         signer: Arc<RwLock<S>>,
-    ) -> ca::Result<Vec<Evt>> {
+    ) -> KrillResult<Vec<Evt>> {
         let signer = signer.read().unwrap();
         let signer = signer.deref();
 
         // check that it is indeed different
         if let Some(contact) = &self.repository {
             if contact == &new_contact {
-                return Err(Error::NewRepoUpdateNoChange);
+                return Err(Error::CaRepoInUse(self.handle.clone()));
             }
         }
 
@@ -1436,7 +1446,7 @@ impl<S: Signer> CertAuth<S> {
         Ok(res)
     }
 
-    fn clean_repo(&self, _signer: Arc<RwLock<S>>) -> ca::Result<Vec<Evt>> {
+    fn clean_repo(&self, _signer: Arc<RwLock<S>>) -> KrillResult<Vec<Evt>> {
         match &self.repository_pending_withdraw {
             None => Ok(vec![]),
             Some(repo) => Ok(vec![StoredEvent::new(
@@ -1462,7 +1472,7 @@ impl<S: Signer> CertAuth<S> {
         &self,
         updates: RouteAuthorizationUpdates,
         signer: Arc<RwLock<S>>,
-    ) -> ca::Result<Vec<Evt>> {
+    ) -> KrillResult<Vec<Evt>> {
         let (added, removed) = updates.unpack();
         let signer = signer.read().unwrap();
         let mode = PublishMode::Normal;
@@ -1478,18 +1488,15 @@ impl<S: Signer> CertAuth<S> {
 
         for auth in added {
             if !auth.max_length_valid() {
-                return Err(Error::AuthorisationInvalidMaxlength(
-                    auth,
+                return Err(Error::CaAuthorisationInvalidMaxlength(
                     self.handle.clone(),
+                    auth,
                 ));
             }
             if current_auths.contains(&auth) {
-                return Err(Error::AuthorisationAlreadyPresent(
-                    auth,
-                    self.handle.clone(),
-                ));
+                return Err(Error::CaAuthorisationDuplicate(self.handle.clone(), auth));
             } else if !all_resources.contains(&auth.prefix().into()) {
-                return Err(Error::AuthorisationNotEntitled(auth, self.handle.clone()));
+                return Err(Error::CaAuthorisationNotEntitled(self.handle.clone(), auth));
             } else {
                 current_auths.insert(auth);
                 res.push(StoredEvent::new(
@@ -1511,7 +1518,7 @@ impl<S: Signer> CertAuth<S> {
                 ));
                 version += 1;
             } else {
-                return Err(Error::AuthorisationUnknown(auth, self.handle.clone()));
+                return Err(Error::CaAuthorisationUnknown(self.handle.clone(), auth));
             }
         }
 

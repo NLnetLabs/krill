@@ -1,22 +1,18 @@
 //! Process requests received, delegate, and wrap up the responses.
 use actix_web::http::StatusCode;
 use actix_web::web::{self, Json, Path};
-use actix_web::{HttpResponse, ResponseError};
+use actix_web::HttpResponse;
 use bytes::Bytes;
 use serde::Serialize;
 
-use crate::commons::api::rrdp::VerificationError;
 use crate::commons::api::{
-    AddChildRequest, CertAuthInit, ErrorCode, ErrorResponse, Handle, ParentCaContact, ParentCaReq,
-    ParentHandle, PublisherHandle, PublisherList, RepositoryUpdate, RoaDefinitionUpdates,
-    UpdateChildRequest,
+    AddChildRequest, CertAuthInit, Handle, ParentCaContact, ParentCaReq, ParentHandle,
+    PublisherHandle, PublisherList, RepositoryUpdate, RoaDefinitionUpdates, UpdateChildRequest,
 };
+use crate::commons::error::Error;
 use crate::commons::remote::{rfc6492, rfc8181, rfc8183};
 use crate::daemon::auth::Auth;
-use crate::daemon::ca;
 use crate::daemon::http::server::AppServer;
-use crate::daemon::krillserver;
-use crate::pubd;
 
 //------------ Support Functions ---------------------------------------------
 
@@ -26,46 +22,39 @@ fn render_json<O: Serialize>(object: O) -> HttpResponse {
         Ok(enc) => HttpResponse::Ok()
             .content_type("application/json")
             .body(enc),
-        Err(e) => server_error(&Error::JsonError(e)),
+        Err(e) => server_error(Error::JsonError(e)),
     }
 }
 
 /// Helper function to render server side errors. Also responsible for
 /// logging the errors.
-fn server_error(error: &Error) -> HttpResponse {
+fn server_error(error: Error) -> HttpResponse {
     error!("{}", error);
-    error.error_response()
+    HttpResponse::build(error.status())
+        .body(serde_json::to_string(&error.to_error_response()).unwrap())
 }
 
-fn render_empty_res(res: Result<(), krillserver::Error>) -> HttpResponse {
+fn render_empty_res(res: Result<(), Error>) -> HttpResponse {
     match res {
         Ok(()) => api_ok(),
-        Err(e) => server_error(&Error::ServerError(e)),
+        Err(e) => server_error(e),
     }
 }
 
-fn render_json_res<O: Serialize>(res: Result<O, krillserver::Error>) -> HttpResponse {
+fn render_json_res<O: Serialize>(res: Result<O, Error>) -> HttpResponse {
     match res {
         Ok(o) => render_json(o),
-        Err(e) => server_error(&Error::ServerError(e)),
+        Err(e) => server_error(e),
     }
 }
 
 /// A clean 404 result for the API (no content, not for humans)
 fn api_not_found() -> HttpResponse {
-    let code = ErrorCode::UnknownResource;
-    let res: ErrorResponse = code.into();
-    let msg = serde_json::to_string(&res).unwrap();
-    let status = StatusCode::NOT_FOUND;
-    HttpResponse::build(status).body(msg)
+    server_error(Error::ApiUnknownResource)
 }
 
 pub fn api_bad_request() -> HttpResponse {
-    let code = ErrorCode::UnknownMethod;
-    let res: ErrorResponse = code.into();
-    let msg = serde_json::to_string(&res).unwrap();
-    let status = StatusCode::BAD_REQUEST;
-    HttpResponse::build(status).body(msg)
+    server_error(Error::ApiUnknownMethod)
 }
 
 pub fn not_found() -> HttpResponse {
@@ -277,10 +266,7 @@ pub fn rfc8181(
         Ok(bytes) => HttpResponse::build(StatusCode::OK)
             .content_type(rfc8181::CONTENT_TYPE)
             .body(bytes),
-        Err(e) => {
-            error!("Error processing RFC8181 req: {}", e);
-            server_error(&Error::ServerError(e))
-        }
+        Err(e) => server_error(e),
     }
 }
 
@@ -297,7 +283,7 @@ pub fn repository_response_xml(
                 .content_type("application/xml")
                 .body(res.encode_vec()),
 
-            Err(e) => server_error(&e),
+            Err(e) => server_error(e),
         }
     })
 }
@@ -310,7 +296,7 @@ pub fn repository_response_json(
     if_api_allowed(&server, &auth, || {
         match repository_response(&server, &publisher.into_inner()) {
             Ok(res) => render_json(res),
-            Err(e) => server_error(&e),
+            Err(e) => server_error(e),
         }
     })
 }
@@ -319,10 +305,7 @@ fn repository_response(
     server: &web::Data<AppServer>,
     publisher: &Handle,
 ) -> Result<rfc8183::RepositoryResponse, Error> {
-    server
-        .read()
-        .repository_response(publisher)
-        .map_err(Error::ServerError)
+    server.read().repository_response(publisher)
 }
 
 //------------ Admin: TrustAnchor --------------------------------------------
@@ -444,7 +427,7 @@ pub fn ca_parent_res_xml(
                 .content_type("application/xml")
                 .body(res.encode_vec()),
 
-            Err(e) => server_error(&Error::ServerError(e)),
+            Err(e) => server_error(e),
         }
     })
 }
@@ -524,7 +507,7 @@ pub fn ca_child_req_xml(
         Ok(req) => HttpResponse::Ok()
             .content_type("application/xml")
             .body(req.encode_vec()),
-        Err(e) => server_error(&e),
+        Err(e) => server_error(e),
     })
 }
 
@@ -536,7 +519,7 @@ pub fn ca_child_req_json(
     let handle = handle.into_inner();
     if_api_allowed(&server, &auth, || match ca_child_req(&server, &handle) {
         Ok(req) => render_json(req),
-        Err(e) => server_error(&e),
+        Err(e) => server_error(e),
     })
 }
 
@@ -544,10 +527,7 @@ fn ca_child_req(
     server: &web::Data<AppServer>,
     handle: &Handle,
 ) -> Result<rfc8183::ChildRequest, Error> {
-    server
-        .read()
-        .ca_child_req(handle)
-        .map_err(Error::ServerError)
+    server.read().ca_child_req(handle)
 }
 
 pub fn ca_publisher_req_json(
@@ -741,195 +721,6 @@ pub fn rfc6492(
         Ok(bytes) => HttpResponse::build(StatusCode::OK)
             .content_type(rfc6492::CONTENT_TYPE)
             .body(bytes),
-        Err(e) => {
-            error!("Error processing RFC6492 req: {}", e);
-            server_error(&Error::ServerError(e))
-        }
-    }
-}
-
-//------------ Error ---------------------------------------------------------
-
-#[derive(Debug, Display)]
-#[allow(clippy::large_enum_variant)]
-pub enum Error {
-    #[display(fmt = "{}", _0)]
-    ServerError(krillserver::Error),
-
-    #[display(fmt = "{}", _0)]
-    JsonError(serde_json::Error),
-
-    #[display(fmt = "Could not decode protocol CMS")]
-    CmsError,
-
-    #[display(fmt = "Invalid publisher request")]
-    PublisherRequestError,
-}
-
-/// Translate an error to an HTTP Status Code
-trait ErrorToStatus {
-    fn status(&self) -> StatusCode;
-}
-
-/// Translate an error to an error code to include in a json response.
-pub trait ToErrorCode {
-    fn code(&self) -> ErrorCode;
-}
-
-impl std::error::Error for Error {
-    fn description(&self) -> &str {
-        "Error happened"
-    }
-}
-
-impl ErrorToStatus for Error {
-    fn status(&self) -> StatusCode {
-        match self {
-            Error::ServerError(e) => e.status(),
-            Error::JsonError(_) => StatusCode::BAD_REQUEST,
-            Error::CmsError => StatusCode::BAD_REQUEST,
-            Error::PublisherRequestError => StatusCode::BAD_REQUEST,
-        }
-    }
-}
-
-impl ErrorToStatus for krillserver::Error {
-    fn status(&self) -> StatusCode {
-        match self {
-            krillserver::Error::IoError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            krillserver::Error::PubServer(e) => e.status(),
-            krillserver::Error::SignerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            krillserver::Error::CaServerError(e) => e.status(),
-            krillserver::Error::NoEmbeddedRepo => StatusCode::BAD_REQUEST,
-        }
-    }
-}
-
-impl ErrorToStatus for pubd::Error {
-    fn status(&self) -> StatusCode {
-        match self {
-            pubd::Error::DuplicatePublisher(_) => StatusCode::BAD_REQUEST,
-            pubd::Error::UnknownPublisher(_) => StatusCode::NOT_FOUND,
-            _ => StatusCode::INTERNAL_SERVER_ERROR,
-        }
-    }
-}
-
-impl ErrorToStatus for ca::ServerError {
-    fn status(&self) -> StatusCode {
-        match self {
-            ca::ServerError::CertAuth(e) => e.status(),
-            ca::ServerError::DuplicateCa(_) => StatusCode::BAD_REQUEST,
-            ca::ServerError::UnknownCa(_) => StatusCode::NOT_FOUND,
-            _ => StatusCode::INTERNAL_SERVER_ERROR,
-        }
-    }
-}
-
-impl ErrorToStatus for ca::Error {
-    fn status(&self) -> StatusCode {
-        match self {
-            ca::Error::Unauthorized(_) => StatusCode::FORBIDDEN,
-            ca::Error::SignerError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            ca::Error::UnknownChild(_) => StatusCode::NOT_FOUND,
-            _ => StatusCode::BAD_REQUEST,
-        }
-    }
-}
-
-impl ToErrorCode for Error {
-    fn code(&self) -> ErrorCode {
-        match self {
-            Error::ServerError(e) => e.code(),
-            Error::JsonError(_) => ErrorCode::InvalidJson,
-            Error::CmsError => ErrorCode::InvalidCms,
-            Error::PublisherRequestError => ErrorCode::InvalidPublisherRequest,
-        }
-    }
-}
-
-impl ToErrorCode for krillserver::Error {
-    fn code(&self) -> ErrorCode {
-        match self {
-            krillserver::Error::IoError(_) => ErrorCode::Persistence,
-            krillserver::Error::PubServer(e) => e.code(),
-            krillserver::Error::SignerError(_) => ErrorCode::SigningError,
-            krillserver::Error::CaServerError(e) => e.code(),
-            krillserver::Error::NoEmbeddedRepo => ErrorCode::NoEmbeddedRepo,
-        }
-    }
-}
-
-impl ToErrorCode for pubd::Error {
-    fn code(&self) -> ErrorCode {
-        match self {
-            pubd::Error::Validation(_) => ErrorCode::CmsValidation,
-            pubd::Error::Rfc8181MessageError(_) => ErrorCode::InvalidPublicationXml,
-            pubd::Error::DuplicatePublisher(_) => ErrorCode::DuplicateHandle,
-            pubd::Error::UnknownPublisher(_) => ErrorCode::UnknownPublisher,
-            pubd::Error::PublishingOutsideBaseUri(_, _) => ErrorCode::UriOutsideJail,
-            pubd::Error::BaseUriNoDir(_) => ErrorCode::InvalidBaseUri,
-            pubd::Error::RrdpVerificationError(e) => e.code(),
-            pubd::Error::NoRepository => ErrorCode::PubServerError,
-            pubd::Error::Store(_) => ErrorCode::Persistence,
-            pubd::Error::IoError(_) => ErrorCode::Persistence,
-            pubd::Error::SignerError(_) => ErrorCode::SigningError,
-        }
-    }
-}
-
-impl ToErrorCode for VerificationError {
-    fn code(&self) -> ErrorCode {
-        match self {
-            VerificationError::NoObjectForHashAndOrUri(_) => ErrorCode::NoObjectForHashAndOrUri,
-            VerificationError::ObjectAlreadyPresent(_) => ErrorCode::ObjectAlreadyPresent,
-            VerificationError::UriOutsideJail(_, _) => ErrorCode::UriOutsideJail,
-        }
-    }
-}
-
-impl ToErrorCode for ca::ServerError {
-    fn code(&self) -> ErrorCode {
-        match self {
-            ca::ServerError::CertAuth(e) => e.code(),
-            ca::ServerError::DuplicateCa(_) => ErrorCode::DuplicateCa,
-            ca::ServerError::UnknownCa(_) => ErrorCode::UnknownCa,
-            _ => ErrorCode::CaServerError,
-        }
-    }
-}
-
-impl ToErrorCode for ca::Error {
-    fn code(&self) -> ErrorCode {
-        match self {
-            ca::Error::DuplicateChild(_) => ErrorCode::DuplicateChild,
-            ca::Error::UnknownChild(_) => ErrorCode::UnknownChild,
-            ca::Error::UnknownParent(_) => ErrorCode::UnknownParent,
-            ca::Error::MustHaveResources => ErrorCode::ChildNeedsResources,
-            ca::Error::MissingResources => ErrorCode::ChildOverclaims,
-            ca::Error::DuplicateParent(_) => ErrorCode::DuplicateParent,
-            ca::Error::AuthorisationAlreadyPresent(_, _) => ErrorCode::RoaUpdateInvalidDuplicate,
-            ca::Error::AuthorisationUnknown(_, _) => ErrorCode::RoaUpdateInvalidMissing,
-            ca::Error::AuthorisationNotEntitled(_, _) => ErrorCode::RoaUpdateInvalidResources,
-            ca::Error::AuthorisationInvalidMaxlength(_, _) => ErrorCode::RoaUpdateInvalidMaxlength,
-            ca::Error::NewRepoUpdateNoChange => ErrorCode::NewRepoNoChange,
-            ca::Error::NewRepoUpdateNotResponsive(_) => ErrorCode::NewRepoNoResponse,
-            ca::Error::RepoNotSet => ErrorCode::NoRepositorySet,
-            ca::Error::ParentNotResponsive(_) => ErrorCode::ParentNoResponse,
-            _ => ErrorCode::CaServerError,
-        }
-    }
-}
-
-impl Error {
-    fn to_error_response(&self) -> ErrorResponse {
-        self.code().clone().into()
-    }
-}
-
-impl actix_web::ResponseError for Error {
-    fn error_response(&self) -> HttpResponse {
-        HttpResponse::build(self.status())
-            .body(serde_json::to_string(&self.to_error_response()).unwrap())
+        Err(e) => server_error(e),
     }
 }

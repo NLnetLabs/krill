@@ -43,6 +43,13 @@ impl RoaDefinition {
         self.max_length
     }
 
+    pub fn effective_max_length(&self) -> u8 {
+        match self.max_length {
+            None => self.prefix.addr_len(),
+            Some(len) => len,
+        }
+    }
+
     pub fn max_length_valid(&self) -> bool {
         if let Some(max_length) = self.max_length {
             match self.prefix {

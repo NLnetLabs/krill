@@ -13,7 +13,7 @@ use crate::cli::report::{ReportError, ReportFormat};
 use crate::commons::api::RepositoryUpdate;
 use crate::commons::api::{
     AddChildRequest, AuthorizationFmtError, CertAuthInit, ChildAuthRequest, ChildHandle, Handle,
-    ParentCaContact, ParentCaReq, ParentHandle, PublisherHandle, ResSetErr, ResourceSet,
+    ParentCaContact, ParentCaReq, ParentHandle, PublisherHandle, ResourceSet, ResourceSetError,
     RoaDefinitionUpdates, Token, UpdateChildRequest,
 };
 use crate::commons::remote::id::IdCert;
@@ -1540,7 +1540,7 @@ pub enum Error {
     Rfc8183(rfc8183::Error),
 
     #[display(fmt = "Invalid resources requested: {}", _0)]
-    ResSetErr(ResSetErr),
+    ResSetErr(ResourceSetError),
 
     #[display(fmt = "{}", _0)]
     InvalidRouteDelta(AuthorizationFmtError),
@@ -1601,8 +1601,8 @@ impl From<ReportError> for Error {
     }
 }
 
-impl From<ResSetErr> for Error {
-    fn from(e: ResSetErr) -> Self {
+impl From<ResourceSetError> for Error {
+    fn from(e: ResourceSetError) -> Self {
         Error::ResSetErr(e)
     }
 }

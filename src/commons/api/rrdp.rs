@@ -444,7 +444,7 @@ impl CurrentObjects {
 
 /// Issues with relation to verifying deltas.
 #[derive(Clone, Debug, Display)]
-pub enum VerificationError {
+pub enum PublicationDeltaError {
     #[display(
         fmt = "Publishing ({}) outside of jail URI ({}) is not allowed.",
         _0,
@@ -459,17 +459,17 @@ pub enum VerificationError {
     NoObjectForHashAndOrUri(uri::Rsync),
 }
 
-impl VerificationError {
+impl PublicationDeltaError {
     fn outside(jail: &uri::Rsync, uri: &uri::Rsync) -> Self {
-        VerificationError::UriOutsideJail(uri.clone(), jail.clone())
+        PublicationDeltaError::UriOutsideJail(uri.clone(), jail.clone())
     }
 
     fn present(uri: &uri::Rsync) -> Self {
-        VerificationError::ObjectAlreadyPresent(uri.clone())
+        PublicationDeltaError::ObjectAlreadyPresent(uri.clone())
     }
 
     fn no_match(uri: &uri::Rsync) -> Self {
-        VerificationError::NoObjectForHashAndOrUri(uri.clone())
+        PublicationDeltaError::NoObjectForHashAndOrUri(uri.clone())
     }
 }
 
@@ -485,26 +485,26 @@ impl CurrentObjects {
         &self,
         delta: &DeltaElements,
         jail: &uri::Rsync,
-    ) -> Result<(), VerificationError> {
+    ) -> Result<(), PublicationDeltaError> {
         for p in delta.publishes() {
             if !jail.is_parent_of(p.uri()) {
-                return Err(VerificationError::outside(jail, p.uri()));
+                return Err(PublicationDeltaError::outside(jail, p.uri()));
             }
             let hash = p.base64().to_encoded_hash();
             if self.0.contains_key(&hash) {
-                return Err(VerificationError::present(p.uri()));
+                return Err(PublicationDeltaError::present(p.uri()));
             }
         }
 
         for u in delta.updates() {
             if !self.has_match(u.hash(), u.uri()) {
-                return Err(VerificationError::no_match(u.uri()));
+                return Err(PublicationDeltaError::no_match(u.uri()));
             }
         }
 
         for w in delta.withdraws() {
             if !self.has_match(w.hash(), w.uri()) {
-                return Err(VerificationError::no_match(w.uri()));
+                return Err(PublicationDeltaError::no_match(w.uri()));
             }
         }
 

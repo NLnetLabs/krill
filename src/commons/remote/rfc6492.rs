@@ -15,7 +15,7 @@ use rpki::x509::Time;
 
 use crate::commons::api::{
     EntitlementClass, Entitlements, Handle, IssuanceRequest, IssuanceResponse, IssuedCert,
-    RequestResourceLimit, ResSetErr, ResourceClassName, ResourceSet, RevocationRequest,
+    RequestResourceLimit, ResourceClassName, ResourceSet, ResourceSetError, RevocationRequest,
     RevocationResponse, SigningCert,
 };
 use crate::commons::util::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
@@ -907,7 +907,7 @@ pub enum Error {
     UriError(uri::Error),
 
     #[display(fmt = "{}", _0)]
-    ResSetErr(ResSetErr),
+    ResSetErr(ResourceSetError),
 
     #[display(fmt = "Invalid date time syntax: {}", _0)]
     Time(chrono::ParseError),
@@ -955,8 +955,8 @@ impl From<uri::Error> for Error {
     }
 }
 
-impl From<ResSetErr> for Error {
-    fn from(e: ResSetErr) -> Self {
+impl From<ResourceSetError> for Error {
+    fn from(e: ResourceSetError) -> Self {
         Error::ResSetErr(e)
     }
 }

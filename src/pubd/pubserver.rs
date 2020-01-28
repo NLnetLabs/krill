@@ -9,6 +9,7 @@ use rpki::uri;
 use crate::commons::api::{
     Handle, ListReply, PublishDelta, PublisherDetails, PublisherHandle, RepoInfo, RepositoryHandle,
 };
+use crate::commons::error::Error;
 use crate::commons::eventsourcing::{AggregateStore, AggregateStoreError, DiskAggregateStore};
 use crate::commons::remote::builder::SignedMessageBuilder;
 use crate::commons::remote::cmslogger::CmsLogger;
@@ -16,8 +17,9 @@ use crate::commons::remote::rfc8181;
 use crate::commons::remote::rfc8183;
 use crate::commons::remote::sigmsg::SignedMessage;
 use crate::commons::util::softsigner::OpenSslSigner;
+use crate::commons::KrillResult;
 use crate::constants::*;
-use crate::pubd::{self, CmdDet, Error, RepoStats, Repository};
+use crate::pubd::{self, CmdDet, RepoStats, Repository};
 
 //------------ PubServer -----------------------------------------------------
 
@@ -106,14 +108,14 @@ impl PubServer {
         Handle::from_str_unsafe(PUBSERVER_DFLT)
     }
 
-    fn repository(&self) -> Result<Arc<Repository>, Error> {
+    fn repository(&self) -> KrillResult<Arc<Repository>> {
         let handle = Self::repository_handle();
 
         match self.store.get_latest(&handle) {
             Ok(repo) => Ok(repo),
             Err(e) => match e {
-                AggregateStoreError::UnknownAggregate(_) => Err(Error::NoRepository),
-                _ => Err(Error::Store(e)),
+                AggregateStoreError::UnknownAggregate(_) => Err(Error::PublisherNoEmbeddedRepo),
+                _ => Err(Error::AggregateStoreError(e)),
             },
         }
     }
@@ -123,15 +125,16 @@ impl PubServer {
         &self,
         publisher_handle: PublisherHandle,
         msg_bytes: Bytes,
-    ) -> Result<Bytes, Error> {
+    ) -> KrillResult<Bytes> {
         let repository = self.repository()?;
         let publisher = repository.get_publisher(&publisher_handle)?;
 
-        let msg = SignedMessage::decode(msg_bytes.clone(), false).map_err(Error::validation)?;
+        let msg =
+            SignedMessage::decode(msg_bytes.clone(), false).map_err(Error::rfc8181_validation)?;
         let cms_logger = CmsLogger::for_rfc8181_rcvd(&self.cms_logger_work_dir, &publisher_handle);
 
         msg.validate(publisher.id_cert())
-            .map_err(Error::validation)?;
+            .map_err(Error::rfc8181_validation)?;
 
         let content = rfc8181::Message::from_signed_message(&msg)?;
         let query = content.into_query()?;
@@ -174,25 +177,25 @@ impl PubServer {
     }
 
     /// Let a known publisher publish in a repository.
-    pub fn publish(&self, publisher: PublisherHandle, delta: PublishDelta) -> Result<(), Error> {
+    pub fn publish(&self, publisher: PublisherHandle, delta: PublishDelta) -> KrillResult<()> {
         let repository_handle = Self::repository_handle();
         let cmd = CmdDet::publish(&repository_handle, publisher, delta);
         self.store.command(cmd)?;
         self.write_repository()
     }
 
-    pub fn repo_stats(&self) -> Result<RepoStats, Error> {
+    pub fn repo_stats(&self) -> KrillResult<RepoStats> {
         let repo = self.repository()?;
         Ok(repo.stats().clone())
     }
 
-    pub fn publishers(&self) -> Result<Vec<PublisherHandle>, Error> {
+    pub fn publishers(&self) -> KrillResult<Vec<PublisherHandle>> {
         let repository = self.repository()?;
         Ok(repository.publishers())
     }
 
     /// Returns a list reply for a known publisher in a repository
-    pub fn list(&self, publisher: &PublisherHandle) -> Result<ListReply, Error> {
+    pub fn list(&self, publisher: &PublisherHandle) -> KrillResult<ListReply> {
         let repository = self.repository()?;
         let publisher = repository.get_publisher(publisher)?;
         Ok(publisher.list_current())
@@ -202,7 +205,7 @@ impl PubServer {
 /// # Manage publishers
 ///
 impl PubServer {
-    pub fn repo_info_for(&self, publisher: &PublisherHandle) -> Result<RepoInfo, Error> {
+    pub fn repo_info_for(&self, publisher: &PublisherHandle) -> KrillResult<RepoInfo> {
         let repository = self.repository()?;
         Ok(repository.repo_info_for(publisher))
     }
@@ -210,7 +213,7 @@ impl PubServer {
     pub fn get_publisher_details(
         &self,
         publisher_handle: &PublisherHandle,
-    ) -> Result<PublisherDetails, Error> {
+    ) -> KrillResult<PublisherDetails> {
         let repository = self.repository()?;
         repository
             .get_publisher(publisher_handle)
@@ -222,14 +225,14 @@ impl PubServer {
         &self,
         rfc8181_uri: uri::Https,
         publisher: &PublisherHandle,
-    ) -> Result<rfc8183::RepositoryResponse, Error> {
+    ) -> KrillResult<rfc8183::RepositoryResponse> {
         let repository = self.repository()?;
         repository.repository_response(rfc8181_uri, publisher)
     }
 
     /// Adds a publisher. Will complain if a publisher already exists for this
     /// handle. Will also verify that the base_uri is allowed.
-    pub fn create_publisher(&self, req: rfc8183::PublisherRequest) -> Result<(), Error> {
+    pub fn create_publisher(&self, req: rfc8183::PublisherRequest) -> KrillResult<()> {
         let repository_handle = Self::repository_handle();
         let cmd = CmdDet::add_publisher(&repository_handle, req);
         self.store.command(cmd)?;
@@ -240,7 +243,7 @@ impl PubServer {
     /// re-activation in future. Reason is that we never forget the history
     /// of the old publisher, and if handles are re-used by different
     /// entities that would get confusing.
-    pub fn remove_publisher(&self, publisher: PublisherHandle) -> Result<(), Error> {
+    pub fn remove_publisher(&self, publisher: PublisherHandle) -> KrillResult<()> {
         let repository_handle = Self::repository_handle();
         let cmd = CmdDet::remove_publisher(&repository_handle, publisher);
         self.store.command(cmd)?;
@@ -252,7 +255,7 @@ impl PubServer {
 ///
 impl PubServer {
     /// Update the RRDP files and rsync content on disk.
-    pub fn write_repository(&self) -> Result<(), Error> {
+    pub fn write_repository(&self) -> KrillResult<()> {
         let repository = self.repository()?;
         repository.write()
     }
@@ -278,7 +281,7 @@ mod tests {
     use crate::pubd::Publisher;
 
     use super::*;
-    use commons::api::rrdp::VerificationError;
+    use commons::api::rrdp::PublicationDeltaError;
 
     fn server_base_uri() -> uri::Rsync {
         test::rsync("rsync://localhost/repo/")
@@ -344,7 +347,7 @@ mod tests {
             server.create_publisher(publisher_req.clone()).unwrap();
 
             match server.create_publisher(publisher_req) {
-                Err(Error::DuplicatePublisher(name)) => assert_eq!(name, alice_handle),
+                Err(Error::PublisherDuplicate(name)) => assert_eq!(name, alice_handle),
                 _ => panic!("Expected error"),
             }
         })
@@ -475,7 +478,7 @@ mod tests {
             let delta = builder.finish();
 
             match server.publish(alice_handle.clone(), delta) {
-                Err(Error::RrdpVerificationError(VerificationError::UriOutsideJail(_, _))) => {} // ok
+                Err(Error::Rfc8181Delta(PublicationDeltaError::UriOutsideJail(_, _))) => {} // ok
                 _ => panic!("Expected error publishing outside of base uri jail"),
             }
 
@@ -489,9 +492,7 @@ mod tests {
             let delta = builder.finish();
 
             match server.publish(alice_handle.clone(), delta) {
-                Err(Error::RrdpVerificationError(VerificationError::NoObjectForHashAndOrUri(
-                    _,
-                ))) => {}
+                Err(Error::Rfc8181Delta(PublicationDeltaError::NoObjectForHashAndOrUri(_))) => {}
                 _ => panic!("Expected error when file for update can't be found"),
             }
 
@@ -501,9 +502,7 @@ mod tests {
             let delta = builder.finish();
 
             match server.publish(alice_handle.clone(), delta) {
-                Err(Error::RrdpVerificationError(VerificationError::NoObjectForHashAndOrUri(
-                    _,
-                ))) => {} // ok
+                Err(Error::Rfc8181Delta(PublicationDeltaError::NoObjectForHashAndOrUri(_))) => {} // ok
                 _ => panic!("Expected error withdrawing file that does not exist"),
             }
 
@@ -513,7 +512,7 @@ mod tests {
             let delta = builder.finish();
 
             match server.publish(alice_handle.clone(), delta) {
-                Err(Error::RrdpVerificationError(VerificationError::ObjectAlreadyPresent(uri))) => {
+                Err(Error::Rfc8181Delta(PublicationDeltaError::ObjectAlreadyPresent(uri))) => {
                     assert_eq!(uri, test::rsync("rsync://localhost/repo/alice/file3.txt"))
                 }
                 _ => panic!("Expected error publishing file that already exists"),
