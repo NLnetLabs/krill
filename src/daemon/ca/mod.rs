@@ -1,6 +1,7 @@
 //! Certificate Authority related code.
 //!
 use crate::commons::api::Handle;
+use crate::commons::error::Error;
 
 mod certauth;
 pub use self::certauth::CertAuth;
@@ -37,13 +38,6 @@ pub use self::server::CaServer;
 mod signing;
 pub use self::signing::SignSupport;
 pub use self::signing::Signer;
-
-mod error;
-pub use self::error::Error;
-pub use self::error::ServerError;
-
-pub type Result<T> = std::result::Result<T, Error>;
-pub type ServerResult<R> = std::result::Result<R, ServerError>;
 
 pub const TA_NAME: &str = "ta"; // reserved for TA
 

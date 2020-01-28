@@ -10,10 +10,12 @@ use rpki::sigobj::SignedObjectBuilder;
 use rpki::uri;
 use rpki::x509::{Serial, Time};
 
-use crate::commons::api::{ObjectName, ReplacedObject, RoaDefinition, RoaDefinitionUpdates};
+use crate::commons::api::{
+    CurrentObject, ObjectName, ReplacedObject, RoaDefinition, RoaDefinitionUpdates,
+};
+use crate::commons::KrillResult;
 use crate::daemon::ca::events::RoaUpdates;
 use crate::daemon::ca::{self, CertifiedKey, SignSupport, Signer};
-use commons::api::CurrentObject;
 
 //------------ RouteAuthorization ------------------------------------------
 
@@ -268,7 +270,7 @@ impl Roas {
         certified_key: &CertifiedKey,
         new_repo: Option<&uri::Rsync>,
         signer: &S,
-    ) -> ca::Result<Roa> {
+    ) -> KrillResult<Roa> {
         let prefix = auth.prefix();
 
         let incoming_cert = certified_key.incoming_cert();

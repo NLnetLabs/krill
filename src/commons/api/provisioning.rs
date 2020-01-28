@@ -245,7 +245,7 @@ impl IssuanceRequest {
         }
     }
 
-    pub fn unwrap(self) -> (ResourceClassName, RequestResourceLimit, Csr) {
+    pub fn unpack(self) -> (ResourceClassName, RequestResourceLimit, Csr) {
         (self.class_name, self.limit, self.csr)
     }
 

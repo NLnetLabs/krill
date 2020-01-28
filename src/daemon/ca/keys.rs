@@ -12,9 +12,9 @@ use crate::commons::api::{
     RcvdCert, RepoInfo, RequestResourceLimit, ResourceClassKeysInfo, ResourceClassName,
     ResourceSet, RevocationRequest, RollNewInfo, RollOldInfo, RollPendingInfo,
 };
-use crate::daemon::ca::{
-    self, CurrentObjectSet, CurrentObjectSetDelta, Error, EvtDet, Result, Signer,
-};
+use crate::commons::error::Error;
+use crate::commons::KrillResult;
+use crate::daemon::ca::{CurrentObjectSet, CurrentObjectSetDelta, EvtDet, Signer};
 
 //------------ CertifiedKey --------------------------------------------------
 
@@ -34,7 +34,7 @@ impl CertifiedKey {
         repo_info: &RepoInfo,
         name_space: &str,
         signer: &S,
-    ) -> ca::Result<Self> {
+    ) -> KrillResult<Self> {
         let key_id = incoming_cert.cert().subject_key_identifier();
         let current_set = CurrentObjectSet::create(&incoming_cert, repo_info, name_space, signer)?;
 
@@ -268,7 +268,7 @@ impl KeyState {
         &self,
         class_name: ResourceClassName,
         signer: &S,
-    ) -> ca::Result<Vec<RevocationRequest>> {
+    ) -> KrillResult<Vec<RevocationRequest>> {
         match self {
             KeyState::Pending(_pending) => Ok(vec![]), // nothing to revoke
             KeyState::Active(current) | KeyState::RollPending(_, current) => {
@@ -292,7 +292,7 @@ impl KeyState {
         class_name: ResourceClassName,
         key_id: &KeyIdentifier,
         signer: &S,
-    ) -> ca::Result<RevocationRequest> {
+    ) -> KrillResult<RevocationRequest> {
         let ki = signer
             .get_key_info(key_id)
             .map_err(Error::signer)?
@@ -330,7 +330,7 @@ impl KeyState {
         base_repo: &RepoInfo,
         name_space: &str,
         signer: &S,
-    ) -> Result<Vec<EvtDet>> {
+    ) -> KrillResult<Vec<EvtDet>> {
         let mut keys_for_requests = vec![];
         match self {
             KeyState::Pending(pending) => {
@@ -388,7 +388,7 @@ impl KeyState {
         base_repo: &RepoInfo,
         name_space: &str,
         signer: &S,
-    ) -> Result<Vec<EvtDet>> {
+    ) -> KrillResult<Vec<EvtDet>> {
         let mut res = vec![];
 
         let keys = match self {
@@ -457,7 +457,7 @@ impl KeyState {
         class_name: ResourceClassName,
         key: &KeyIdentifier,
         signer: &S,
-    ) -> Result<IssuanceRequest> {
+    ) -> KrillResult<IssuanceRequest> {
         let pub_key = signer.get_key_info(key).map_err(Error::signer)?;
 
         let enc = Csr::construct(
@@ -522,7 +522,7 @@ impl KeyState {
         base_repo: &RepoInfo,
         name_space: &str,
         signer: &mut S,
-    ) -> ca::Result<Vec<EvtDet>> {
+    ) -> KrillResult<Vec<EvtDet>> {
         match self {
             KeyState::Active(_current) => {
                 let key_id = {
@@ -555,13 +555,13 @@ impl KeyState {
         class_name: ResourceClassName,
         parent_class_name: ResourceClassName,
         signer: &S,
-    ) -> ca::Result<EvtDet> {
+    ) -> KrillResult<EvtDet> {
         match self {
             KeyState::RollNew(_new, current) => {
                 let revoke_req = Self::revoke_key(parent_class_name, current.key_id(), signer)?;
                 Ok(EvtDet::KeyRollActivated(class_name, revoke_req))
             }
-            _ => Err(Error::ResourceClassNoNewKey),
+            _ => Err(Error::KeyUseNoNewKey),
         }
     }
 

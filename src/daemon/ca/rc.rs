@@ -15,12 +15,14 @@ use crate::commons::api::{
     RequestResourceLimit, ResourceClassInfo, ResourceClassName, ResourceSet, Revocation,
     RevocationRequest, RevokedObject, UpdatedObject, WithdrawnObject,
 };
+use crate::commons::error::Error;
+use crate::commons::KrillResult;
 use crate::daemon::ca::events::{ChildCertificateUpdates, RoaUpdates};
 use crate::daemon::ca::signing::CsrInfo;
 use crate::daemon::ca::{
     self, ta_handle, AddedOrUpdated, CertifiedKey, ChildCertificates, CrlBuilder, CurrentKey,
-    CurrentObjectSetDelta, Error, EvtDet, KeyState, ManifestBuilder, NewKey, OldKey, PendingKey,
-    Result, RoaInfo, Roas, RouteAuthorization, SignSupport, Signer,
+    CurrentObjectSetDelta, EvtDet, KeyState, ManifestBuilder, NewKey, OldKey, PendingKey, RoaInfo,
+    Roas, RouteAuthorization, SignSupport, Signer,
 };
 
 //------------ ResourceClass -----------------------------------------------
@@ -131,17 +133,16 @@ impl ResourceClass {
         }
     }
 
-    pub fn get_current_key(&self) -> Result<&CurrentKey> {
-        self.current_key()
-            .ok_or_else(|| Error::ResourceClassNoCurrentKey)
+    pub fn get_current_key(&self) -> KrillResult<&CurrentKey> {
+        self.current_key().ok_or_else(|| Error::KeyUseNoCurrentKey)
     }
 
     /// Gets the new key for a key roll, or returns an error if there is none.
-    pub fn get_new_key(&self) -> Result<&NewKey> {
+    pub fn get_new_key(&self) -> KrillResult<&NewKey> {
         if let KeyState::RollNew(new_key, _) = &self.key_state {
             Ok(new_key)
         } else {
-            Err(Error::ResourceClassNoNewKey)
+            Err(Error::KeyUseNoNewKey)
         }
     }
 
@@ -207,7 +208,7 @@ impl ResourceClass {
         rcvd_cert: RcvdCert,
         repo_info: &RepoInfo,
         signer: &S,
-    ) -> ca::Result<Vec<EvtDet>> {
+    ) -> KrillResult<Vec<EvtDet>> {
         // If this is for a pending key, then we need to promote this key
 
         let rcvd_cert_ki = rcvd_cert.cert().subject_key_identifier();
@@ -217,7 +218,7 @@ impl ResourceClass {
             repo_info: &RepoInfo,
             name_space: &str,
             signer: &S,
-        ) -> ca::Result<(CertifiedKey, ObjectsDelta)> {
+        ) -> KrillResult<(CertifiedKey, ObjectsDelta)> {
             let mut delta = ObjectsDelta::new(rcvd_cert.ca_repository().clone());
             let active_key = CertifiedKey::create(rcvd_cert, repo_info, name_space, signer)?;
 
@@ -236,7 +237,7 @@ impl ResourceClass {
         match &self.key_state {
             KeyState::Pending(pending) => {
                 if rcvd_cert_ki != pending.key_id() {
-                    Err(ca::Error::NoKeyMatch(rcvd_cert_ki))
+                    Err(Error::KeyUseNoMatch(rcvd_cert_ki))
                 } else {
                     let (active_key, delta) = create_active_key_and_delta(
                         rcvd_cert,
@@ -295,10 +296,10 @@ impl ResourceClass {
         rcvd_cert: RcvdCert,
         repo_info: &RepoInfo,
         signer: &S,
-    ) -> ca::Result<Vec<EvtDet>> {
+    ) -> KrillResult<Vec<EvtDet>> {
         let rcvd_cert_ki = rcvd_cert.cert().subject_key_identifier();
         if rcvd_cert_ki != current.key_id() {
-            return Err(ca::Error::NoKeyMatch(rcvd_cert_ki));
+            return Err(ca::Error::KeyUseNoMatch(rcvd_cert_ki));
         }
 
         let rcvd_resources = rcvd_cert.resources().clone();
@@ -331,7 +332,7 @@ impl ResourceClass {
         entitlement: &EntitlementClass,
         base_repo: &RepoInfo,
         signer: &S,
-    ) -> Result<Vec<EvtDet>> {
+    ) -> KrillResult<Vec<EvtDet>> {
         self.key_state.request_certs(
             self.name.clone(),
             entitlement,
@@ -346,7 +347,7 @@ impl ResourceClass {
         &self,
         base_repo: &RepoInfo,
         signer: &S,
-    ) -> Result<Vec<EvtDet>> {
+    ) -> KrillResult<Vec<EvtDet>> {
         self.key_state.request_certs_new_repo(
             self.name.clone(),
             base_repo,
@@ -386,7 +387,7 @@ impl ResourceClass {
         new_revocations: Vec<Revocation>,
         mode: &PublishMode,
         signer: &S,
-    ) -> ca::Result<EvtDet> {
+    ) -> KrillResult<EvtDet> {
         let mut key_pub_map = HashMap::new();
 
         let (publish_key, other_key_opt) = match mode {
@@ -447,7 +448,7 @@ impl ResourceClass {
         repo_info: &RepoInfo,
         mode: &PublishMode,
         signer: &S,
-    ) -> ca::Result<Vec<EvtDet>> {
+    ) -> KrillResult<Vec<EvtDet>> {
         let mut res = vec![];
 
         let ns = self.name_space();
@@ -506,7 +507,7 @@ impl ResourceClass {
         removed_certs: &[&Cert],
         repo_info: &RepoInfo,
         signer: &S,
-    ) -> Result<HashMap<KeyIdentifier, CurrentObjectSetDelta>> {
+    ) -> KrillResult<HashMap<KeyIdentifier, CurrentObjectSetDelta>> {
         let issuing_key = self.get_current_key()?;
         let name_space = self.name_space();
 
@@ -552,7 +553,7 @@ impl ResourceClass {
         mut objects_delta: ObjectsDelta,
         mut new_revocations: Vec<Revocation>,
         signer: &S,
-    ) -> ca::Result<CurrentObjectSetDelta> {
+    ) -> KrillResult<CurrentObjectSetDelta> {
         let signing_cert = signing_key.incoming_cert();
         let current_set = signing_key.current_set();
         let current_revocations = current_set.revocations().clone();
@@ -672,7 +673,7 @@ impl ResourceClass {
     }
 
     /// Returns revocation requests for all certified keys in this resource class.
-    pub fn revoke<S: Signer>(&self, signer: &S) -> ca::Result<Vec<RevocationRequest>> {
+    pub fn revoke<S: Signer>(&self, signer: &S) -> KrillResult<Vec<RevocationRequest>> {
         self.key_state.revoke(self.name.clone(), signer)
     }
 }
@@ -766,7 +767,7 @@ impl ResourceClass {
         base_repo: &RepoInfo,
         duration: Duration,
         signer: &mut S,
-    ) -> ca::Result<Vec<EvtDet>> {
+    ) -> KrillResult<Vec<EvtDet>> {
         if self.last_key_change + duration > Time::now() {
             return Ok(vec![]);
         }
@@ -786,7 +787,7 @@ impl ResourceClass {
         repo_info: &RepoInfo,
         staging: Duration,
         signer: &S,
-    ) -> ca::Result<Vec<EvtDet>> {
+    ) -> KrillResult<Vec<EvtDet>> {
         if !self.key_state.has_new_key() || self.last_key_change + staging > Time::now() {
             return Ok(vec![]);
         }
@@ -812,7 +813,7 @@ impl ResourceClass {
     }
 
     /// Finish a key roll, withdraw the old key
-    pub fn keyroll_finish(&self, base_repo: &RepoInfo) -> ca::Result<EvtDet> {
+    pub fn keyroll_finish(&self, base_repo: &RepoInfo) -> KrillResult<EvtDet> {
         match &self.key_state {
             KeyState::RollOld(_current, old) => {
                 let mut objects_delta =
@@ -826,7 +827,7 @@ impl ResourceClass {
 
                 Ok(EvtDet::KeyRollFinished(self.name.clone(), objects_delta))
             }
-            _ => Err(Error::InvalidKeyStatus),
+            _ => Err(Error::KeyUseNoOldKey),
         }
     }
 }
@@ -849,7 +850,7 @@ impl ResourceClass {
         child_resources: &ResourceSet,
         limit: RequestResourceLimit,
         signer: &S,
-    ) -> ca::Result<IssuedCert> {
+    ) -> KrillResult<IssuedCert> {
         let signing_key = self.get_current_key()?;
         let parent_resources = signing_key.incoming_cert().resources();
         let resources = parent_resources.intersection(child_resources);
@@ -871,7 +872,7 @@ impl ResourceClass {
         signing_key: &CertifiedKey,
         csr_info_opt: Option<CsrInfo>,
         signer: &S,
-    ) -> ca::Result<IssuedCert> {
+    ) -> KrillResult<IssuedCert> {
         let (_uri, limit, resource_set, cert) = previous.clone().unpack();
         let csr = csr_info_opt.unwrap_or_else(|| CsrInfo::from(&cert));
         let resource_set = updated_resources.unwrap_or(resource_set);
@@ -893,7 +894,7 @@ impl ResourceClass {
         &self,
         mode: &PublishMode,
         signer: &S,
-    ) -> ca::Result<ChildCertificateUpdates> {
+    ) -> KrillResult<ChildCertificateUpdates> {
         let mut updates = ChildCertificateUpdates::default();
 
         let signing_key = match mode {
@@ -982,7 +983,7 @@ impl ResourceClass {
         auths: &[RouteAuthorization],
         mode: &PublishMode,
         signer: &S,
-    ) -> ca::Result<RoaUpdates> {
+    ) -> KrillResult<RoaUpdates> {
         let mut updates = RoaUpdates::default();
 
         let key = match mode {

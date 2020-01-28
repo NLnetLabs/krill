@@ -2,14 +2,16 @@ name: E2E Test
 
 on:
   push:
-    paths-ignore:
-      - '.github/workflows/ci.yml'
-      - 'Changelog.md'
-      - 'doc/**'
-      - 'LICENSE'
-      - 'README.md'
-      - 'tests/**'
-      - 'test-resources/**'
+    paths:
+      - '**'
+      - '!.github/workflows/ci.yml'
+      - '!Changelog.md'
+      - '!doc/**'
+      - '!LICENSE'
+      - '!README.md'
+      - '!tests/**'
+      - 'tests/e2e/**'
+      - '!test-resources/**'
 
 jobs:
   krill_e2e_test:
@@ -118,7 +120,10 @@ jobs:
       working-directory: ./rpki-deploy/terraform/krill-e2e-test/run_on_do
       run: |
         set -x
-        terraform apply -auto-approve -var "ssh_key_path=$HOME/secrets/ssh_key" -var "krill_build_path=${GITHUB_WORKSPACE}/krill"
+        terraform apply -auto-approve \
+          -var "ssh_key_path=$HOME/secrets/ssh_key" \
+          -var "krill_build_path=${GITHUB_WORKSPACE}/krill" \
+          -var "test_suite_path=${GITHUB_WORKSPACE}/krill/tests/e2e"
       env:
         # Don't embed env var references in env var definitions here, instead
         # pass those using -var on the command line.

@@ -2,8 +2,9 @@ use rpki::uri;
 
 use crate::commons::api::rrdp::{CurrentObjects, DeltaElements};
 use crate::commons::api::{ListReply, PublisherDetails, PublisherHandle};
+use crate::commons::error::Error;
 use crate::commons::remote::id::IdCert;
-use crate::pubd::Error;
+use crate::commons::KrillResult;
 
 //------------ Publisher -----------------------------------------------------
 
@@ -70,10 +71,10 @@ impl Publisher {
 
     /// Verifies a delta command and returns an event containing the delta,
     /// provided that it's legitimate.
-    pub fn verify_delta(&self, delta_elements: &DeltaElements) -> Result<(), Error> {
+    pub fn verify_delta(&self, delta_elements: &DeltaElements) -> KrillResult<()> {
         self.current_objects
             .verify_delta(delta_elements, &self.base_uri)
-            .map_err(Error::RrdpVerificationError)
+            .map_err(Error::Rfc8181Delta)
     }
 
     pub fn apply_delta(&mut self, delta: DeltaElements) {

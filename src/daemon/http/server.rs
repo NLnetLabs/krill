@@ -4,7 +4,6 @@
 //! arguments and routing of requests, typically handing off to the
 //! daemon::api::endpoints functions for processing and responding.
 use std::fs::File;
-use std::io;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use actix_web::http::StatusCode;
@@ -13,13 +12,11 @@ use actix_web::{guard, middleware, web, Resource};
 use actix_web::{App, HttpResponse, HttpServer};
 use openssl::ssl::{SslAcceptor, SslAcceptorBuilder, SslFiletype, SslMethod};
 
-use bcder::decode;
-
+use crate::commons::error::Error;
 use crate::daemon::config::Config;
 use crate::daemon::endpoints;
 use crate::daemon::endpoints::*;
 use crate::daemon::http::ssl;
-use crate::daemon::krillserver;
 use crate::daemon::krillserver::KrillServer;
 
 //------------ AppServer -----------------------------------------------------
@@ -169,19 +166,19 @@ pub fn start(config: &Config) -> Result<(), Error> {
 fn https_builder(config: &Config) -> Result<SslAcceptorBuilder, Error> {
     if config.test_ssl() {
         ssl::create_key_cert_if_needed(&config.data_dir)
-            .map_err(|e| Error::Other(format!("{}", e)))?;
+            .map_err(|e| Error::HttpsSetup(format!("{}", e)))?;
     }
 
     let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls())
-        .map_err(|e| Error::Other(format!("{}", e)))?;
+        .map_err(|e| Error::HttpsSetup(format!("{}", e)))?;
 
     builder
         .set_private_key_file(config.https_key_file(), SslFiletype::PEM)
-        .map_err(|e| Error::Other(format!("{}", e)))?;
+        .map_err(|e| Error::HttpsSetup(format!("{}", e)))?;
 
     builder
         .set_certificate_chain_file(config.https_cert_file())
-        .map_err(|e| Error::Other(format!("{}", e)))?;
+        .map_err(|e| Error::HttpsSetup(format!("{}", e)))?;
 
     Ok(builder)
 }
@@ -203,60 +200,6 @@ fn serve_rrdp_files(server: web::Data<AppServer>, path: Path<String>) -> HttpRes
             HttpResponse::build(StatusCode::OK).body(buffer)
         }
         _ => HttpResponse::build(StatusCode::NOT_FOUND).finish(),
-    }
-}
-
-//------------ Error ---------------------------------------------------------
-
-#[derive(Debug, Display)]
-#[allow(clippy::large_enum_variant)]
-pub enum Error {
-    #[display(fmt = "{}", _0)]
-    ServerError(krillserver::Error),
-
-    #[display(fmt = "{}", _0)]
-    JsonError(serde_json::Error),
-
-    #[display(fmt = "Cannot decode request: {}", _0)]
-    DecodeError(decode::Error),
-
-    #[display(fmt = "Wrong path")]
-    WrongPath,
-
-    #[display(fmt = "{}", _0)]
-    IoError(io::Error),
-
-    #[display(fmt = "{}", _0)]
-    Other(String),
-}
-
-impl From<serde_json::Error> for Error {
-    fn from(e: serde_json::Error) -> Self {
-        Error::JsonError(e)
-    }
-}
-
-impl From<io::Error> for Error {
-    fn from(e: io::Error) -> Self {
-        Error::IoError(e)
-    }
-}
-
-impl From<krillserver::Error> for Error {
-    fn from(e: krillserver::Error) -> Self {
-        Error::ServerError(e)
-    }
-}
-
-impl std::error::Error for Error {
-    fn description(&self) -> &str {
-        "An error happened"
-    }
-}
-
-impl actix_web::ResponseError for Error {
-    fn error_response(&self) -> HttpResponse {
-        HttpResponse::build(StatusCode::INTERNAL_SERVER_ERROR).body(format!("{}", self))
     }
 }
 

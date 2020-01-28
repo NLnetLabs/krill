@@ -14,6 +14,7 @@ use crate::commons::api::{
     AddedObject, CurrentObject, HexEncodedHash, IssuedCert, ObjectName, ObjectsDelta, RcvdCert,
     RepoInfo, Revocation, Revocations, RevocationsDelta, UpdatedObject, WithdrawnObject,
 };
+use crate::commons::KrillResult;
 use crate::daemon::ca::{self, RoaInfo, RouteAuthorization, Signer};
 
 //------------ AddedOrUpdated ----------------------------------------------
@@ -165,7 +166,7 @@ impl CurrentObjectSet {
         repo_info: &RepoInfo,
         name_space: &str,
         signer: &S,
-    ) -> ca::Result<Self> {
+    ) -> KrillResult<Self> {
         let number = 1;
         let revocations = Revocations::default();
         let (crl_info, _) = CrlBuilder::build(
@@ -235,7 +236,7 @@ impl CrlBuilder {
         old: Option<HexEncodedHash>,
         signing_cert: &RcvdCert,
         signer: &S,
-    ) -> ca::Result<(CrlInfo, RevocationsDelta)> {
+    ) -> KrillResult<(CrlInfo, RevocationsDelta)> {
         let signing_key = signing_cert.cert().subject_public_key_info();
 
         let aki = KeyIdentifier::from_public_key(signing_key);
@@ -355,7 +356,7 @@ impl ManifestBuilder {
         number: u64,
         old: Option<HexEncodedHash>,
         signer: &S,
-    ) -> ca::Result<ManifestInfo> {
+    ) -> KrillResult<ManifestInfo> {
         let signing_key = signing_cert.cert().subject_public_key_info();
 
         let signing_ki = signing_key.key_identifier();

@@ -2,7 +2,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
-use std::{io, thread};
+use std::thread;
 
 use bytes::Bytes;
 use chrono::Duration;
@@ -16,15 +16,17 @@ use crate::commons::api::{
     PublisherHandle, RepoInfo, RepositoryContact, RepositoryUpdate, RoaDefinition,
     RoaDefinitionUpdates, TaCertDetails, UpdateChildRequest,
 };
+use crate::commons::error::Error;
 use crate::commons::remote::rfc8183;
-use crate::commons::util::softsigner::{OpenSslSigner, SignerError};
+use crate::commons::util::softsigner::OpenSslSigner;
+use crate::commons::{KrillEmptyResult, KrillResult};
 use crate::constants::*;
 use crate::daemon::auth::{Auth, Authorizer};
 use crate::daemon::ca::{self, ta_handle};
 use crate::daemon::config::Config;
 use crate::daemon::mq::EventQueueListener;
 use crate::daemon::scheduler::Scheduler;
-use crate::pubd::{self, PubServer, RepoStats};
+use crate::pubd::{PubServer, RepoStats};
 use crate::publish::CaPublisher;
 
 //------------ KrillServer ---------------------------------------------------
@@ -66,7 +68,7 @@ pub struct KrillServer {
 impl KrillServer {
     /// Creates a new publication server. Note that state is preserved
     /// on disk in the work_dir provided.
-    pub fn build(config: &Config) -> KrillRes<Self> {
+    pub fn build(config: &Config) -> KrillResult<Self> {
         let work_dir = &config.data_dir;
         let base_uri = &config.rsync_base;
         let service_uri = config.service_uri();
@@ -112,7 +114,9 @@ impl KrillServer {
             if !caserver.has_ca(&ta_handle) {
                 info!("Creating embedded Trust Anchor");
 
-                let pubserver = pubserver.as_ref().ok_or_else(|| Error::NoEmbeddedRepo)?;
+                let pubserver = pubserver
+                    .as_ref()
+                    .ok_or_else(|| Error::PublisherNoEmbeddedRepo)?;
                 let repo_info: RepoInfo = pubserver.repo_info_for(&ta_handle)?;
 
                 let ta_uri = config.ta_cert_uri();
@@ -121,9 +125,7 @@ impl KrillServer {
                 let ta_aia = uri::Rsync::from_string(ta_aia).unwrap();
 
                 // Add TA
-                caserver
-                    .init_ta(repo_info.clone(), ta_aia, vec![ta_uri])
-                    .map_err(Error::CaServerError)?;
+                caserver.init_ta(repo_info.clone(), ta_aia, vec![ta_uri])?;
 
                 let ta = caserver.get_trust_anchor()?;
 
@@ -169,46 +171,42 @@ impl KrillServer {
 
 /// # Configure publishers
 impl KrillServer {
-    fn get_embedded(&self) -> Result<&Arc<PubServer>, Error> {
-        self.pubserver.as_ref().ok_or_else(|| Error::NoEmbeddedRepo)
+    fn get_embedded(&self) -> KrillResult<&Arc<PubServer>> {
+        self.pubserver
+            .as_ref()
+            .ok_or_else(|| Error::PublisherNoEmbeddedRepo)
     }
 
     /// Returns the repository server stats
-    pub fn repo_stats(&self) -> Result<RepoStats, Error> {
-        self.get_embedded()?.repo_stats().map_err(Error::PubServer)
+    pub fn repo_stats(&self) -> KrillResult<RepoStats> {
+        self.get_embedded()?.repo_stats()
     }
 
     /// Returns all currently configured publishers. (excludes deactivated)
-    pub fn publishers(&self) -> Result<Vec<Handle>, Error> {
-        self.get_embedded()?.publishers().map_err(Error::PubServer)
+    pub fn publishers(&self) -> KrillResult<Vec<Handle>> {
+        self.get_embedded()?.publishers()
     }
 
     /// Adds the publishers, blows up if it already existed.
     pub fn add_publisher(
         &self,
         req: rfc8183::PublisherRequest,
-    ) -> KrillRes<rfc8183::RepositoryResponse> {
+    ) -> KrillResult<rfc8183::RepositoryResponse> {
         let publisher_handle = req.publisher_handle().clone();
 
-        self.get_embedded()?
-            .create_publisher(req)
-            .map_err(Error::PubServer)?;
+        self.get_embedded()?.create_publisher(req)?;
 
         self.repository_response(&publisher_handle)
     }
 
     /// Removes a publisher, blows up if it didn't exist.
-    pub fn remove_publisher(&mut self, publisher: PublisherHandle) -> EmptyRes {
-        self.get_embedded()?
-            .remove_publisher(publisher)
-            .map_err(Error::PubServer)
+    pub fn remove_publisher(&mut self, publisher: PublisherHandle) -> KrillEmptyResult {
+        self.get_embedded()?.remove_publisher(publisher)
     }
 
     /// Returns a publisher.
-    pub fn get_publisher(&self, publisher: &PublisherHandle) -> Result<PublisherDetails, Error> {
-        self.get_embedded()?
-            .get_publisher_details(publisher)
-            .map_err(Error::PubServer)
+    pub fn get_publisher(&self, publisher: &PublisherHandle) -> KrillResult<PublisherDetails> {
+        self.get_embedded()?.get_publisher_details(publisher)
     }
 
     pub fn rrdp_base_path(&self) -> PathBuf {
@@ -224,26 +222,23 @@ impl KrillServer {
     pub fn repository_response(
         &self,
         publisher: &PublisherHandle,
-    ) -> Result<rfc8183::RepositoryResponse, Error> {
+    ) -> KrillResult<rfc8183::RepositoryResponse> {
         let rfc8181_uri =
             uri::Https::from_string(format!("{}rfc8181/{}", self.service_uri, publisher)).unwrap();
 
         self.get_embedded()?
             .repository_response(rfc8181_uri, publisher)
-            .map_err(Error::PubServer)
     }
 
-    pub fn rfc8181(&self, publisher: PublisherHandle, msg_bytes: Bytes) -> KrillRes<Bytes> {
-        self.get_embedded()?
-            .rfc8181(publisher, msg_bytes)
-            .map_err(Error::PubServer)
+    pub fn rfc8181(&self, publisher: PublisherHandle, msg_bytes: Bytes) -> KrillResult<Bytes> {
+        self.get_embedded()?.rfc8181(publisher, msg_bytes)
     }
 }
 
 /// # Being a parent
 ///
 impl KrillServer {
-    pub fn ta(&self) -> KrillRes<TaCertDetails> {
+    pub fn ta(&self) -> KrillResult<TaCertDetails> {
         let ta = self.caserver.get_ca(&ta_handle())?;
         if let ParentCaContact::Ta(ta) = ta.parent(&ta_handle()).unwrap() {
             Ok(ta.clone())
@@ -262,7 +257,7 @@ impl KrillServer {
         &self,
         parent: &ParentHandle,
         req: AddChildRequest,
-    ) -> KrillRes<ParentCaContact> {
+    ) -> KrillResult<ParentCaContact> {
         let contact = self.caserver.ca_add_child(parent, req, &self.service_uri)?;
         Ok(contact)
     }
@@ -272,7 +267,7 @@ impl KrillServer {
         &self,
         parent: &ParentHandle,
         child: ChildHandle,
-    ) -> KrillRes<ParentCaContact> {
+    ) -> KrillResult<ParentCaContact> {
         let contact = self
             .caserver
             .ca_parent_contact(parent, child, None, &self.service_uri)?;
@@ -284,7 +279,7 @@ impl KrillServer {
         &self,
         parent: &ParentHandle,
         child: ChildHandle,
-    ) -> KrillRes<rfc8183::ParentResponse> {
+    ) -> KrillResult<rfc8183::ParentResponse> {
         let contact = self
             .caserver
             .ca_parent_response(parent, child, None, &self.service_uri)?;
@@ -297,13 +292,13 @@ impl KrillServer {
         parent: &ParentHandle,
         child: ChildHandle,
         req: UpdateChildRequest,
-    ) -> EmptyRes {
+    ) -> KrillEmptyResult {
         self.caserver.ca_child_update(parent, child, req)?;
         Ok(())
     }
 
     /// Update IdCert or resources of a child.
-    pub fn ca_child_remove(&self, handle: &Handle, child: ChildHandle) -> EmptyRes {
+    pub fn ca_child_remove(&self, handle: &Handle, child: ChildHandle) -> KrillEmptyResult {
         self.caserver.ca_child_remove(handle, child)?;
         Ok(())
     }
@@ -313,7 +308,7 @@ impl KrillServer {
         &self,
         parent: &ParentHandle,
         child: &ChildHandle,
-    ) -> KrillRes<ChildCaInfo> {
+    ) -> KrillResult<ChildCaInfo> {
         let child = self.caserver.ca_show_child(parent, child)?;
         Ok(child)
     }
@@ -323,15 +318,12 @@ impl KrillServer {
 ///
 impl KrillServer {
     /// Returns the child request for a CA, or NONE if the CA cannot be found.
-    pub fn ca_child_req(&self, handle: &Handle) -> KrillRes<rfc8183::ChildRequest> {
-        self.caserver
-            .get_ca(handle)
-            .map(|ca| ca.child_request())
-            .map_err(Error::CaServerError)
+    pub fn ca_child_req(&self, handle: &Handle) -> KrillResult<rfc8183::ChildRequest> {
+        self.caserver.get_ca(handle).map(|ca| ca.child_request())
     }
 
     /// Adds a parent to a CA, will check first if the parent can be reached.
-    pub fn ca_parent_add(&self, handle: Handle, parent: ParentCaReq) -> EmptyRes {
+    pub fn ca_parent_add(&self, handle: Handle, parent: ParentCaReq) -> KrillEmptyResult {
         self.ca_parent_reachable(&handle, parent.handle(), parent.contact())?;
         Ok(self.caserver.ca_parent_add(handle, parent)?)
     }
@@ -342,7 +334,7 @@ impl KrillServer {
         handle: Handle,
         parent: ParentHandle,
         contact: ParentCaContact,
-    ) -> EmptyRes {
+    ) -> KrillEmptyResult {
         self.ca_parent_reachable(&handle, &parent, &contact)?;
         Ok(self.caserver.ca_parent_update(handle, parent, contact)?)
     }
@@ -352,18 +344,13 @@ impl KrillServer {
         handle: &Handle,
         parent: &ParentHandle,
         contact: &ParentCaContact,
-    ) -> EmptyRes {
+    ) -> KrillEmptyResult {
         self.caserver
-            .get_entitlements_from_parent_and_contact(handle, parent, contact)
-            .map_err(|e| {
-                Error::CaServerError(ca::ServerError::CertAuth(ca::Error::ParentNotResponsive(
-                    e.to_string(),
-                )))
-            })?;
+            .get_entitlements_from_parent_and_contact(handle, parent, contact)?;
         Ok(())
     }
 
-    pub fn ca_parent_remove(&self, handle: Handle, parent: ParentHandle) -> EmptyRes {
+    pub fn ca_parent_remove(&self, handle: Handle, parent: ParentHandle) -> KrillEmptyResult {
         Ok(self.caserver.ca_parent_remove(handle, parent)?)
     }
 }
@@ -389,7 +376,7 @@ impl KrillServer {
 
         res
     }
-    pub fn all_ca_issues(&self) -> KrillRes<AllCertAuthIssues> {
+    pub fn all_ca_issues(&self) -> KrillResult<AllCertAuthIssues> {
         let mut all_issues = AllCertAuthIssues::default();
         for ca in self.cas().cas() {
             let issues = self.ca_issues(ca.handle())?;
@@ -401,7 +388,7 @@ impl KrillServer {
         Ok(all_issues)
     }
 
-    pub fn ca_issues(&self, ca_handle: &Handle) -> KrillRes<CertAuthIssues> {
+    pub fn ca_issues(&self, ca_handle: &Handle) -> KrillResult<CertAuthIssues> {
         let mut issues = CertAuthIssues::default();
 
         if let CurrentRepoState::Error(msg) = self.ca_repo_state(ca_handle)? {
@@ -414,7 +401,7 @@ impl KrillServer {
             let contact = ca.parent(parent_handle).unwrap(); // parent is always known
             if !contact.is_ta() {
                 if let Err(e) = self.ca_parent_reachable(ca_handle, parent_handle, contact) {
-                    issues.add_parent_issue(parent_handle.clone(), e.to_string());
+                    issues.add_parent_issue(parent_handle.clone(), e.to_error_response());
                 }
             }
         }
@@ -427,13 +414,13 @@ impl KrillServer {
 ///
 impl KrillServer {
     /// Republish all CAs that need it.
-    pub fn republish_all(&self) -> EmptyRes {
+    pub fn republish_all(&self) -> KrillEmptyResult {
         self.caserver.republish_all()?;
         Ok(())
     }
 
     /// Re-sync all CAs with their repositories
-    pub fn resync_all(&self) -> EmptyRes {
+    pub fn resync_all(&self) -> KrillEmptyResult {
         let publisher = CaPublisher::new(self.caserver.clone(), self.pubserver.clone());
 
         for ca in self.caserver.ca_list().cas() {
@@ -446,7 +433,7 @@ impl KrillServer {
     }
 
     /// Refresh all CAs: ask for updates and shrink as needed.
-    pub fn refresh_all(&self) -> EmptyRes {
+    pub fn refresh_all(&self) -> KrillEmptyResult {
         let server = self.caserver.clone();
         thread::spawn(move || {
             server.refresh_all();
@@ -463,11 +450,8 @@ impl KrillServer {
     }
 
     /// Returns the public CA info for a CA, or NONE if the CA cannot be found.
-    pub fn ca_info(&self, handle: &Handle) -> KrillRes<CertAuthInfo> {
-        self.caserver
-            .get_ca(handle)
-            .map(|ca| ca.as_ca_info())
-            .map_err(Error::CaServerError)
+    pub fn ca_info(&self, handle: &Handle) -> KrillResult<CertAuthInfo> {
+        self.caserver.get_ca(handle).map(|ca| ca.as_ca_info())
     }
 
     /// Returns the parent contact for a CA and parent, or NONE if either the CA or the parent cannot be found.
@@ -475,11 +459,9 @@ impl KrillServer {
         &self,
         handle: &Handle,
         parent: &ParentHandle,
-    ) -> KrillRes<ParentCaContact> {
+    ) -> KrillResult<ParentCaContact> {
         let ca = self.caserver.get_ca(handle)?;
-        ca.parent(parent)
-            .map(|p| p.clone())
-            .map_err(|e| Error::CaServerError(ca::ServerError::CertAuth(e)))
+        ca.parent(parent).map(|p| p.clone())
     }
 
     /// Returns the history for a CA, or NONE in case of issues (i.e. it does not exist).
@@ -495,7 +477,7 @@ impl KrillServer {
             .ok()
     }
 
-    pub fn ca_init(&mut self, init: CertAuthInit) -> EmptyRes {
+    pub fn ca_init(&mut self, init: CertAuthInit) -> KrillEmptyResult {
         let handle = init.unpack();
 
         // Create CA
@@ -506,25 +488,21 @@ impl KrillServer {
 
     /// Return the info about the configured repository server for a given Ca.
     /// and the actual objects published there, as reported by a list reply.
-    pub fn ca_repo_details(&self, handle: &Handle) -> KrillRes<CaRepoDetails> {
-        let ca = self.caserver.get_ca(handle).map_err(Error::CaServerError)?;
-        let contact = ca
-            .get_repository_contact()
-            .map_err(|e| Error::CaServerError(ca::ServerError::CertAuth(e)))?;
+    pub fn ca_repo_details(&self, handle: &Handle) -> KrillResult<CaRepoDetails> {
+        let ca = self.caserver.get_ca(handle)?;
+        let contact = ca.get_repository_contact()?;
         Ok(CaRepoDetails::new(contact.clone()))
     }
 
     /// Returns the state of the current configured repo for a ca
-    pub fn ca_repo_state(&self, handle: &Handle) -> KrillRes<CurrentRepoState> {
-        let ca = self.caserver.get_ca(handle).map_err(Error::CaServerError)?;
-        let contact = ca
-            .get_repository_contact()
-            .map_err(|e| Error::CaServerError(ca::ServerError::CertAuth(e)))?;
+    pub fn ca_repo_state(&self, handle: &Handle) -> KrillResult<CurrentRepoState> {
+        let ca = self.caserver.get_ca(handle)?;
+        let contact = ca.get_repository_contact()?;
         Ok(self.repo_state(handle, contact.as_reponse_opt()))
     }
 
     /// Update the repository for a CA, or return an error. (see `CertAuth::repo_update`)
-    pub fn ca_update_repo(&self, handle: Handle, update: RepositoryUpdate) -> EmptyRes {
+    pub fn ca_update_repo(&self, handle: Handle, update: RepositoryUpdate) -> KrillEmptyResult {
         let contact = match update {
             RepositoryUpdate::Embedded => {
                 // Add to embedded publication server if not present
@@ -541,10 +519,8 @@ impl KrillServer {
             }
             RepositoryUpdate::Rfc8181(response) => {
                 // first check that the new repo can be contacted
-                if let CurrentRepoState::Error(msg) = self.repo_state(&handle, Some(&response)) {
-                    return Err(Error::CaServerError(ca::ServerError::CertAuth(
-                        ca::Error::NewRepoUpdateNotResponsive(msg),
-                    )));
+                if let CurrentRepoState::Error(error) = self.repo_state(&handle, Some(&response)) {
+                    return Err(Error::CaRepoNotResponsive(handle, error.msg().to_string()));
                 }
 
                 RepositoryContact::Rfc8181(response)
@@ -561,36 +537,36 @@ impl KrillServer {
     ) -> CurrentRepoState {
         match repo {
             None => match self.get_embedded() {
-                Err(e) => CurrentRepoState::error(e),
+                Err(e) => CurrentRepoState::error(e.to_error_response()),
                 Ok(repo) => match repo.list(handle) {
-                    Err(e) => CurrentRepoState::error(e),
+                    Err(e) => CurrentRepoState::error(e.to_error_response()),
                     Ok(list) => CurrentRepoState::list(list),
                 },
             },
             Some(repo) => match self.caserver.send_rfc8181_list(handle, repo) {
-                Err(e) => CurrentRepoState::error(e),
+                Err(e) => CurrentRepoState::error(e.to_error_response()),
                 Ok(list) => CurrentRepoState::list(list),
             },
         }
     }
 
-    pub fn ca_update_id(&self, handle: Handle) -> EmptyRes {
+    pub fn ca_update_id(&self, handle: Handle) -> KrillEmptyResult {
         Ok(self.caserver.ca_update_id(handle)?)
     }
 
-    pub fn ca_keyroll_init(&self, handle: Handle) -> EmptyRes {
+    pub fn ca_keyroll_init(&self, handle: Handle) -> KrillEmptyResult {
         Ok(self
             .caserver
             .ca_keyroll_init(handle, Duration::seconds(0))?)
     }
 
-    pub fn ca_keyroll_activate(&self, handle: Handle) -> EmptyRes {
+    pub fn ca_keyroll_activate(&self, handle: Handle) -> KrillEmptyResult {
         Ok(self
             .caserver
             .ca_keyroll_activate(handle, Duration::seconds(0))?)
     }
 
-    pub fn rfc6492(&self, handle: Handle, msg_bytes: Bytes) -> KrillRes<Bytes> {
+    pub fn rfc6492(&self, handle: Handle, msg_bytes: Bytes) -> KrillResult<Bytes> {
         Ok(self.caserver.rfc6492(&handle, msg_bytes)?)
     }
 }
@@ -598,11 +574,15 @@ impl KrillServer {
 /// # Handle route authorization requests
 ///
 impl KrillServer {
-    pub fn ca_routes_update(&self, handle: Handle, updates: RoaDefinitionUpdates) -> EmptyRes {
+    pub fn ca_routes_update(
+        &self,
+        handle: Handle,
+        updates: RoaDefinitionUpdates,
+    ) -> KrillEmptyResult {
         Ok(self.caserver.ca_routes_update(handle, updates.into())?)
     }
 
-    pub fn ca_routes_show(&self, handle: &Handle) -> Result<Vec<RoaDefinition>, Error> {
+    pub fn ca_routes_show(&self, handle: &Handle) -> KrillResult<Vec<RoaDefinition>> {
         let ca = self.caserver.get_ca(handle)?;
         Ok(ca.roa_definitions())
     }
@@ -613,67 +593,17 @@ impl KrillServer {
 impl KrillServer {
     /// Handles a publish delta request sent to the API, or.. through
     /// the CmsProxy.
-    pub fn handle_delta(&self, publisher: PublisherHandle, delta: PublishDelta) -> EmptyRes {
-        self.get_embedded()?
-            .publish(publisher, delta)
-            .map_err(Error::PubServer)
+    pub fn handle_delta(
+        &self,
+        publisher: PublisherHandle,
+        delta: PublishDelta,
+    ) -> KrillEmptyResult {
+        self.get_embedded()?.publish(publisher, delta)
     }
 
     /// Handles a list request sent to the API, or.. through the CmsProxy.
-    pub fn handle_list(&self, publisher: &PublisherHandle) -> Result<ListReply, Error> {
-        self.get_embedded()?
-            .list(publisher)
-            .map_err(Error::PubServer)
-    }
-}
-
-//------------ Response Aliases ----------------------------------------------
-
-type KrillRes<T> = Result<T, Error>;
-type EmptyRes = KrillRes<()>;
-
-//------------ Error ---------------------------------------------------------
-
-#[derive(Debug, Display)]
-#[allow(clippy::large_enum_variant)]
-pub enum Error {
-    #[display(fmt = "{}", _0)]
-    IoError(io::Error),
-
-    #[display(fmt = "{}", _0)]
-    PubServer(pubd::Error),
-
-    #[display(fmt = "{}", _0)]
-    SignerError(SignerError),
-
-    #[display(fmt = "{}", _0)]
-    CaServerError(ca::ServerError),
-
-    #[display(fmt = "No embedded repository configured")]
-    NoEmbeddedRepo,
-}
-
-impl From<io::Error> for Error {
-    fn from(e: io::Error) -> Self {
-        Error::IoError(e)
-    }
-}
-
-impl From<pubd::Error> for Error {
-    fn from(e: pubd::Error) -> Self {
-        Error::PubServer(e)
-    }
-}
-
-impl From<SignerError> for Error {
-    fn from(e: SignerError) -> Self {
-        Error::SignerError(e)
-    }
-}
-
-impl From<ca::ServerError> for Error {
-    fn from(e: ca::ServerError) -> Self {
-        Error::CaServerError(e)
+    pub fn handle_list(&self, publisher: &PublisherHandle) -> KrillResult<ListReply> {
+        self.get_embedded()?.list(publisher)
     }
 }
 

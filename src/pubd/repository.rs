@@ -12,13 +12,15 @@ use crate::commons::api::rrdp::{
     SnapshotRef,
 };
 use crate::commons::api::{Handle, HexEncodedHash, PublishDelta, PublisherHandle, RepoInfo};
+use crate::commons::error::Error;
 use crate::commons::eventsourcing::Aggregate;
 use crate::commons::remote::id::IdCert;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
+use crate::commons::KrillResult;
 use crate::constants::{REPOSITORY_RRDP_DIR, REPOSITORY_RSYNC_DIR};
 use crate::pubd::publishers::Publisher;
-use crate::pubd::{Cmd, CmdDet, Error, Evt, EvtDet, Ini, RrdpUpdate};
+use crate::pubd::{Cmd, CmdDet, Evt, EvtDet, Ini, RrdpUpdate};
 
 //------------ RsyncdStore ---------------------------------------------------
 
@@ -52,7 +54,7 @@ impl RsyncdStore {
     /// Write all the files to disk for rsync to a tmp-dir, then switch
     /// things over in an effort to minimise the chance of people getting
     /// inconsistent syncs..
-    pub fn write(&self, snapshot: &Snapshot) -> Result<(), Error> {
+    pub fn write(&self, snapshot: &Snapshot) -> KrillResult<()> {
         let mut new_dir = self.rsync_dir.clone();
         new_dir.push(&format!("tmp-{}", snapshot.serial()));
         fs::create_dir_all(&new_dir)?;
@@ -493,7 +495,7 @@ impl Repository {
         let (_tag, handle, id_cert) = publisher_request.unpack();
 
         if self.publishers.contains_key(&handle) {
-            Err(Error::DuplicatePublisher(handle))
+            Err(Error::PublisherDuplicate(handle))
         } else {
             let base_uri =
                 uri::Rsync::from_string(format!("{}{}/", self.rsync.base_uri, handle)).unwrap();
@@ -559,7 +561,7 @@ impl Repository {
     pub fn get_publisher(&self, publisher_handle: &PublisherHandle) -> Result<&Publisher, Error> {
         self.publishers
             .get(publisher_handle)
-            .ok_or_else(|| Error::UnknownPublisher(publisher_handle.clone()))
+            .ok_or_else(|| Error::PublisherUnknown(publisher_handle.clone()))
     }
 
     pub fn stats(&self) -> &RepoStats {

@@ -13,9 +13,10 @@ use crate::commons::api::{
 };
 use crate::commons::eventsourcing::StoredEvent;
 use crate::commons::remote::id::IdCert;
+use crate::commons::KrillResult;
 use crate::daemon::ca::signing::Signer;
 use crate::daemon::ca::{
-    CertifiedKey, ChildDetails, CurrentObjectSetDelta, ResourceClass, Result, Rfc8183Id, RoaInfo,
+    CertifiedKey, ChildDetails, CurrentObjectSetDelta, ResourceClass, Rfc8183Id, RoaInfo,
     RouteAuthorization,
 };
 
@@ -48,7 +49,7 @@ impl IniDet {
 }
 
 impl IniDet {
-    pub fn init<S: Signer>(handle: &Handle, signer: Arc<RwLock<S>>) -> Result<Ini> {
+    pub fn init<S: Signer>(handle: &Handle, signer: Arc<RwLock<S>>) -> KrillResult<Ini> {
         let mut signer = signer.write().unwrap();
         let id = Rfc8183Id::generate(signer.deref_mut())?;
         Ok(Ini::new(
