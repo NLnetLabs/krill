@@ -582,15 +582,37 @@ pub fn ca_repo_state(
     })
 }
 
+fn extract_repository_update(handle: &Handle, bytes: Bytes) -> Result<RepositoryUpdate, Error> {
+    let string = String::from_utf8(bytes.to_vec()).map_err(Error::custom)?;
+
+    // TODO: Switch based on Content-Type header
+    if string.starts_with('<') {
+        if string.contains("<parent_response") {
+            Err(Error::CaRepoResponseWrongXml(handle.clone()))
+        } else {
+            let response = rfc8183::RepositoryResponse::validate(string.as_bytes())
+                .map_err(|e| Error::CaRepoResponseInvalidXml(handle.clone(), e.to_string()))?;
+            Ok(RepositoryUpdate::Rfc8181(response))
+        }
+    } else {
+        serde_json::from_str(&string).map_err(Error::JsonError)
+    }
+}
+
 pub fn ca_repo_update(
     server: web::Data<AppServer>,
     auth: Auth,
     handle: Path<Handle>,
-    update: Json<RepositoryUpdate>,
+    bytes: Bytes,
 ) -> HttpResponse {
     let handle = handle.into_inner();
+    let update = match extract_repository_update(&handle, bytes) {
+        Ok(update) => update,
+        Err(e) => return server_error(e),
+    };
+
     if_api_allowed(&server, &auth, || {
-        render_empty_res(server.read().ca_update_repo(handle, update.into_inner()))
+        render_empty_res(server.read().ca_update_repo(handle, update))
     })
 }
 

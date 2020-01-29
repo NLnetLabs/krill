@@ -132,6 +132,17 @@ pub enum Error {
     #[display(fmt = "CA '{}' got error from repository: {}", _0, _1)]
     CaRepoNotResponsive(Handle, String),
 
+    // 2312
+    #[display(fmt = "CA '{}' got invalid repository response xml: {}", _0, _1)]
+    CaRepoResponseInvalidXml(Handle, String),
+
+    // 2312
+    #[display(
+        fmt = "CA '{}' parent response xml uploaded instead of repository response.",
+        _0
+    )]
+    CaRepoResponseWrongXml(Handle),
+
     // CA Parent Issues (2320-2329)
 
     // 2320
@@ -445,6 +456,14 @@ impl Error {
 
             Error::CaRepoNotResponsive(ca, err) => {
                 ErrorResponse::with_args(2311, self.to_string(), vec![ca.to_string(), err.clone()])
+            }
+
+            Error::CaRepoResponseInvalidXml(ca, err) => {
+                ErrorResponse::with_args(2312, self.to_string(), vec![ca.to_string(), err.clone()])
+            }
+
+            Error::CaRepoResponseWrongXml(ca) => {
+                ErrorResponse::with_args(2313, self.to_string(), vec![ca.to_string()])
             }
 
             Error::CaParentDuplicate(ca, parent) => ErrorResponse::with_args(
