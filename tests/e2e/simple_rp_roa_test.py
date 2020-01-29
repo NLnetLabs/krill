@@ -4,6 +4,7 @@ import rtrlib
 
 from retrying import retry, RetryError
 from time import time
+from operator import attrgetter
 from krill_api import *
 
 from tests.util import krill
@@ -51,7 +52,9 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
         wrap_exception=True)
     def wait_until_ca_has_at_least_one(ca_handle, property):
         ca = krill_ca_api.get_ca(ca_handle)
-        return getattr(ca, property) is not None
+        f = attrgetter(property)
+        return f(ca)
+
 
     #
     # Go!
