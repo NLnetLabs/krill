@@ -184,6 +184,7 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
             @retry(
                 stop_max_attempt_number=3,
                 wait_exponential_multiplier=1000,
+                    wait_exponential_max=10000,
                     wrap_exception=True)
             def update_roas():
                 logging.debug('Updating ROAs...')
