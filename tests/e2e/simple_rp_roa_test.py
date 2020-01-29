@@ -2,7 +2,7 @@ import logging
 import pytest
 import rtrlib
 
-from retrying import retry
+from retrying import retry, RetryError
 from time import time
 from krill_api import *
 
@@ -37,7 +37,8 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
     @retry(
         stop_max_attempt_number=10,
         wait_fixed=2000,
-        retry_on_exception=no_retry_if_forbidden)
+        retry_on_exception=no_retry_if_forbidden,
+        wrap_exception=True)
     def wait_until_ready():
         return krill_other_api.is_authorized()
 
@@ -45,7 +46,8 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
         stop_max_attempt_number=3,
         wait_exponential_multiplier=1000,
         wait_exponential_max=10000,
-        retry_on_exception=retry_if_zero)
+        retry_on_result=retry_if_zero,
+        wrap_exception=True)
     def wait_until_ca_has_at_least_one(ca_handle, property):
         ca = krill_ca_api.get_ca(ca_handle)
         return getattr(ca, property) is not None
@@ -54,6 +56,7 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
     # Go!
     #
 
+    try:
     # Bring up Krill and its dependencies
     krill.select_krill_config_file(docker_project, 'krill.conf')
     class_service_manager.start_services_with_dependencies(docker_project, ['krill'])
@@ -160,7 +163,7 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
             @retry(
                 stop_max_attempt_number=3,
                 wait_exponential_multiplier=1000,
-                wait_exponential_max=10000)
+                    wrap_exception=True)
             def update_roas():
                 logging.debug('Updating ROAs...')
                 krill_roa_api.update_route_authorizations(child_handle, delta)
@@ -168,6 +171,12 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
             update_roas()
 
     logging.info('Krill configuration complete')
+    except RetryError as e:
+        if e.last_attempt.has_exception:
+            (ex_type, ex_value, traceback) = e.last_attempt.value
+            pytest.fail(f'Retries exhausted while configuring Krill: {ex_value} caused by {e}')
+        else:
+            pytest.fail(f'Retries exhausted while configuring Krill: {e}')
 
     yield krill_api_client
 
