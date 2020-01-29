@@ -3,53 +3,38 @@
 # with a prepopulated Cargo build cache to accelerate the build process.
 # Use Ubuntu 16.04 because this is what the Travis CI Krill build uses.
 #
-ARG BASE_IMG=ubuntu:16.04
+ARG BASE_IMG=alpine:3.11
 
 #
 # -- stage 1: build krill and krillc
 #
-FROM ${BASE_IMG} AS builder
+FROM ${BASE_IMG} AS build
 
-# Install Rust
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential \
-        ca-certificates \
-        curl \
-        libssl-dev \
-        pkg-config
-
-RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
-ENV PATH "/root/.cargo/bin:$PATH"
+RUN apk add rust cargo openssl-dev
 
 WORKDIR /tmp/krill
-COPY . /tmp/krill/
-RUN cargo build --release
+COPY . .
+
+RUN cargo build --target x86_64-alpine-linux-musl --release
 
 #
 # -- stage 2: create an image containing just the binaries, configs &
 #             scripts needed to run Krill, and not the things needed to build
 #             it.
 #
-FROM ubuntu:16.04
-COPY --from=builder /tmp/krill/target/release/krill /usr/local/bin/
-COPY --from=builder /tmp/krill/target/release/krillc /usr/local/bin/
+FROM alpine:3.11
+COPY --from=build /tmp/krill/target/x86_64-alpine-linux-musl/release/krill /usr/local/bin/
+COPY --from=build /tmp/krill/target/x86_64-alpine-linux-musl/release/krillc /usr/local/bin/
 
 # Build variables for uid and guid of user to run container
 ARG RUN_USER=krill
 ARG RUN_USER_UID=1012
 ARG RUN_USER_GID=1012
 
-# Install openssl as Krill depends on it.
-# Install uuid-runtime for generating an authorization token on startup.
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        ca-certificates \
-        openssl \
-        uuid-runtime \
-        tzdata
+RUN apk add bash libgcc openssl tzdata util-linux
 
-RUN groupadd -g ${RUN_USER_GID} ${RUN_USER} && \
-    useradd -g ${RUN_USER_GID} -u ${RUN_USER_UID} ${RUN_USER}
+RUN addgroup -g ${RUN_USER_GID} ${RUN_USER} && \
+    adduser -D -u ${RUN_USER_UID} -G ${RUN_USER} ${RUN_USER}
 
 # Create the data directory structure and install a config file that uses it
 WORKDIR /var/krill/data
