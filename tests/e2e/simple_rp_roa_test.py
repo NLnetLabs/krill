@@ -72,127 +72,127 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
     #
 
     try:
-    # Bring up Krill and its dependencies
-    krill.select_krill_config_file(docker_project, 'krill.conf')
-    class_service_manager.start_services_with_dependencies(docker_project, ['krill'])
+        # Bring up Krill and its dependencies
+        krill.select_krill_config_file(docker_project, 'krill.conf')
+        class_service_manager.start_services_with_dependencies(docker_project, ['krill'])
 
-    # Strategy: Test then add, don't add then handle failure because that will
-    # cause errors to appear in the Krill server log which can be confusing
-    # when investigating problems.
+        # Strategy: Test then add, don't add then handle failure because that will
+        # cause errors to appear in the Krill server log which can be confusing
+        # when investigating problems.
 
-    # Get the API helper objects we need
-    krill_api_client = ApiClient(krill_api_config)
-    krill_ca_api = CertificateAuthoritiesApi(krill_api_client)
-    krill_roa_api = RouteAuthorizationsApi(krill_api_client)
-    krill_other_api = OtherApi(krill_api_client)
+        # Get the API helper objects we need
+        krill_api_client = ApiClient(krill_api_config)
+        krill_ca_api = CertificateAuthoritiesApi(krill_api_client)
+        krill_roa_api = RouteAuthorizationsApi(krill_api_client)
+        krill_other_api = OtherApi(krill_api_client)
 
-    # Define the CA handles that we will work with
-    ta_handle = 'ta'
-    parent_handle = 'parent'
-    child_handle = 'child'
+        # Define the CA handles that we will work with
+        ta_handle = 'ta'
+        parent_handle = 'parent'
+        child_handle = 'child'
 
-    # Ensure that Krill is ready for our attempts to communicate with it
-    logging.info('Wait till we can connect to Krill...')
-    wait_until_ready()
+        # Ensure that Krill is ready for our attempts to communicate with it
+        logging.info('Wait till we can connect to Krill...')
+        wait_until_ready()
 
-    #
-    # Create the desired state inside Krill
-    #
+        #
+        # Create the desired state inside Krill
+        #
 
-    logging.info('Checking if Krill has an embedded TA')
-    ca_handles = [ca.handle for ca in krill_ca_api.list_cas().cas]
+        logging.info('Checking if Krill has an embedded TA')
+        ca_handles = [ca.handle for ca in krill_ca_api.list_cas().cas]
 
-    if ta_handle in ca_handles:
-        logging.info('Configuring Krill for use with embedded TA')
+        if ta_handle in ca_handles:
+            logging.info('Configuring Krill for use with embedded TA')
 
-        logging.info('Adding CA if not already present')
-        if not parent_handle in ca_handles:
-            logging.debug('No CA, adding...')
-            krill_ca_api.add_ca(AddCARequest(parent_handle))
-            krill_ca_api.update_ca_repository(parent_handle, 'embedded')
-            logging.debug('Added')
+            logging.info('Adding CA if not already present')
+            if not parent_handle in ca_handles:
+                logging.debug('No CA, adding...')
+                krill_ca_api.add_ca(AddCARequest(parent_handle))
+                krill_ca_api.update_ca_repository(parent_handle, 'embedded')
+                logging.debug('Added')
 
-        logging.info('Creating TA -> CA relationship if not already present')
-        if len(krill_ca_api.get_ca(ta_handle).children) == 0:
-            logging.debug('No children, adding...')
-            req = AddCAChildRequest(
-                parent_handle,
-                Resources(
-                    asn=KRILL_PARENT_ASNS,
-                    v4=KRILL_PARENT_IPV4S,
-                    v6=KRILL_PARENT_IPV6S),
-                'embedded')
-            krill_ca_api.add_child_ca(ta_handle, req)
-            logging.debug('Added')
+            logging.info('Creating TA -> CA relationship if not already present')
+            if len(krill_ca_api.get_ca(ta_handle).children) == 0:
+                logging.debug('No children, adding...')
+                req = AddCAChildRequest(
+                    parent_handle,
+                    Resources(
+                        asn=KRILL_PARENT_ASNS,
+                        v4=KRILL_PARENT_IPV4S,
+                        v6=KRILL_PARENT_IPV6S),
+                    'embedded')
+                krill_ca_api.add_child_ca(ta_handle, req)
+                logging.debug('Added')
 
-            logging.debug('Waiting for children to be registered')
-            wait_until_ca_has_at_least_one(ta_handle, 'children')
+                logging.debug('Waiting for children to be registered')
+                wait_until_ca_has_at_least_one(ta_handle, 'children')
 
                 logging.debug('Waiting for child resources to be registered')
                 wait_until_child_ca_has_at_least_one(ta_handle, parent_handle, 'entitled_resources.asn')
 
-        logging.info('Creating TA <- CA relationship if not already present')
-        if len(krill_ca_api.get_ca(parent_handle).parents) == 0:
-            logging.debug('No parents, adding...')
-            req = AddParentCARequest(ta_handle, 'embedded')
-            krill_ca_api.add_ca_parent(parent_handle, req)
-            logging.debug('Added')
+            logging.info('Creating TA <- CA relationship if not already present')
+            if len(krill_ca_api.get_ca(parent_handle).parents) == 0:
+                logging.debug('No parents, adding...')
+                req = AddParentCARequest(ta_handle, 'embedded')
+                krill_ca_api.add_ca_parent(parent_handle, req)
+                logging.debug('Added')
 
-            logging.debug('Waiting for parents to be registered')
-            wait_until_ca_has_at_least_one(parent_handle, 'parents')
+                logging.debug('Waiting for parents to be registered')
+                wait_until_ca_has_at_least_one(parent_handle, 'parents')
 
-        logging.info('Adding child CA if not already present')
-        if not child_handle in ca_handles:
-            logging.debug('No CA, adding...')
-            krill_ca_api.add_ca(AddCARequest(child_handle))
-            krill_ca_api.update_ca_repository(child_handle, 'embedded')
-            logging.debug('Added')
+            logging.info('Adding child CA if not already present')
+            if not child_handle in ca_handles:
+                logging.debug('No CA, adding...')
+                krill_ca_api.add_ca(AddCARequest(child_handle))
+                krill_ca_api.update_ca_repository(child_handle, 'embedded')
+                logging.debug('Added')
 
-        logging.info('Creating CA -> CA relationship if not already present')
-        if len(krill_ca_api.get_ca(parent_handle).children) == 0:
-            logging.debug('No children, adding...')
-            req = AddCAChildRequest(
-                child_handle,
-                Resources(
-                    asn=KRILL_CHILD_ASNS,
-                    v4=KRILL_CHILD_IPV4S,
-                    v6=KRILL_CHILD_IPV6S),
-                'embedded')
-            krill_ca_api.add_child_ca(parent_handle, req)
-            logging.debug('Added')
+            logging.info('Creating CA -> CA relationship if not already present')
+            if len(krill_ca_api.get_ca(parent_handle).children) == 0:
+                logging.debug('No children, adding...')
+                req = AddCAChildRequest(
+                    child_handle,
+                    Resources(
+                        asn=KRILL_CHILD_ASNS,
+                        v4=KRILL_CHILD_IPV4S,
+                        v6=KRILL_CHILD_IPV6S),
+                    'embedded')
+                krill_ca_api.add_child_ca(parent_handle, req)
+                logging.debug('Added')
 
-            logging.debug('Waiting for children to be registered')
-            wait_until_ca_has_at_least_one(parent_handle, 'children')
+                logging.debug('Waiting for children to be registered')
+                wait_until_ca_has_at_least_one(parent_handle, 'children')
 
                 logging.debug('Waiting for child resources to be registered')
                 wait_until_child_ca_has_at_least_one(parent_handle, child_handle, 'entitled_resources.asn')
 
-        logging.info('Creating CA <- CA relationship if not already present')
-        if len(krill_ca_api.get_ca(child_handle).parents) == 0:
-            logging.debug('No parents, adding...')
-            req = AddParentCARequest(parent_handle, 'embedded')
-            krill_ca_api.add_ca_parent(child_handle, req)
-            logging.debug('Added')
+            logging.info('Creating CA <- CA relationship if not already present')
+            if len(krill_ca_api.get_ca(child_handle).parents) == 0:
+                logging.debug('No parents, adding...')
+                req = AddParentCARequest(parent_handle, 'embedded')
+                krill_ca_api.add_ca_parent(child_handle, req)
+                logging.debug('Added')
 
-            logging.debug('Waiting for parents to be registered')
-            wait_until_ca_has_at_least_one(child_handle, 'parents')
+                logging.debug('Waiting for parents to be registered')
+                wait_until_ca_has_at_least_one(child_handle, 'parents')
 
-        logging.info('Creating CA ROAs if not already present')
-        if len(krill_roa_api.list_route_authorizations(child_handle)) == 0:
-            delta = ROADelta(added=TEST_ROAS, removed=[])
+            logging.info('Creating CA ROAs if not already present')
+            if len(krill_roa_api.list_route_authorizations(child_handle)) == 0:
+                delta = ROADelta(added=TEST_ROAS, removed=[])
 
-            @retry(
-                stop_max_attempt_number=3,
-                wait_exponential_multiplier=1000,
+                @retry(
+                    stop_max_attempt_number=3,
+                    wait_exponential_multiplier=1000,
                     wait_exponential_max=10000,
                     wrap_exception=True)
-            def update_roas():
-                logging.debug('Updating ROAs...')
-                krill_roa_api.update_route_authorizations(child_handle, delta)
+                def update_roas():
+                    logging.debug('Updating ROAs...')
+                    krill_roa_api.update_route_authorizations(child_handle, delta)
 
-            update_roas()
+                update_roas()
 
-    logging.info('Krill configuration complete')
+        logging.info('Krill configuration complete')
     except RetryError as e:
         if e.last_attempt.has_exception:
             (ex_type, ex_value, traceback) = e.last_attempt.value
