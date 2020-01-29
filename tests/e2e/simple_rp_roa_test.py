@@ -30,9 +30,10 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
         """Return True if we should retry, False otherwise"""
         return not (isinstance(e, ApiException) and e.status == 403)
 
-    def retry_if_zero(result):
+    def retry_if_not(result):
         """Return True if we should retry, False otherwise"""
-        return result == 0
+        # e.g. return True for empty lists, empty strings, None
+        return not bool(result)
 
     @retry(
         stop_max_attempt_number=10,
@@ -46,7 +47,7 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
         stop_max_attempt_number=3,
         wait_exponential_multiplier=1000,
         wait_exponential_max=10000,
-        retry_on_result=retry_if_zero,
+        retry_on_result=retry_if_not,
         wrap_exception=True)
     def wait_until_ca_has_at_least_one(ca_handle, property):
         ca = krill_ca_api.get_ca(ca_handle)
