@@ -631,19 +631,41 @@ pub fn ca_add_parent(
     })
 }
 
+fn extract_parent_ca_contact(
+    ca: &Handle,
+    parent: &ParentHandle,
+    bytes: Bytes,
+) -> Result<ParentCaContact, Error> {
+    let string = String::from_utf8(bytes.to_vec()).map_err(Error::custom)?;
+
+    // TODO: Switch based on Content-Type header
+    if string.starts_with('<') {
+        if string.starts_with("<repository") {
+            Err(Error::CaParentResponseWrongXml(ca.clone(), parent.clone()))
+        } else {
+            let res = rfc8183::ParentResponse::validate(string.as_bytes()).map_err(|e| {
+                Error::CaParentResponseInvalidXml(ca.clone(), parent.clone(), e.to_string())
+            })?;
+            Ok(ParentCaContact::Rfc6492(res))
+        }
+    } else {
+        serde_json::from_str(&string).map_err(Error::JsonError)
+    }
+}
+
 pub fn ca_update_parent(
     server: web::Data<AppServer>,
     auth: Auth,
     ca_and_parent: Path<(Handle, Handle)>,
-    contact: Json<ParentCaContact>,
+    bytes: Bytes,
 ) -> HttpResponse {
     let (ca, parent) = ca_and_parent.into_inner();
+    let contact = match extract_parent_ca_contact(&ca, &parent, bytes) {
+        Ok(contact) => contact,
+        Err(e) => return server_error(e),
+    };
     if_api_allowed(&server, &auth, || {
-        render_empty_res(
-            server
-                .read()
-                .ca_parent_update(ca, parent, contact.into_inner()),
-        )
+        render_empty_res(server.read().ca_parent_update(ca, parent, contact))
     })
 }
 
