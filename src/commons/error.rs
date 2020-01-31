@@ -155,12 +155,12 @@ pub enum Error {
     CaParentNotResponsive(Handle, ParentHandle, String),
 
     // 2323
-    #[display(fmt = "CA '{}' got invalid parent response xml for {}: {}", _0, _1, _2)]
-    CaParentResponseInvalidXml(Handle, ParentHandle, String),
+    #[display(fmt = "CA '{}' got invalid parent response xml: {}", _0, _1)]
+    CaParentResponseInvalidXml(Handle, String),
 
     // 2334
-    #[display(fmt = "CA '{}' got repository response for parent {}.", _0, _1)]
-    CaParentResponseWrongXml(Handle, ParentHandle),
+    #[display(fmt = "CA '{}' got repository response when adding parent.", _0)]
+    CaParentResponseWrongXml(Handle),
 
     //-----------------------------------------------------------------
     // RFC6492 (requesting resources, not on JSON api)
@@ -489,17 +489,13 @@ impl Error {
                 vec![ca.to_string(), parent.to_string(), err.clone()],
             ),
 
-            Error::CaParentResponseInvalidXml(ca, parent, err) => ErrorResponse::with_args(
-                2323,
-                self.to_string(),
-                vec![ca.to_string(), parent.to_string(), err.clone()],
-            ),
+            Error::CaParentResponseInvalidXml(ca, err) => {
+                ErrorResponse::with_args(2323, self.to_string(), vec![ca.to_string(), err.clone()])
+            }
 
-            Error::CaParentResponseWrongXml(ca, parent) => ErrorResponse::with_args(
-                2324,
-                self.to_string(),
-                vec![ca.to_string(), parent.to_string()],
-            ),
+            Error::CaParentResponseWrongXml(ca) => {
+                ErrorResponse::with_args(2324, self.to_string(), vec![ca.to_string()])
+            }
 
             //-----------------------------------------------------------------
             // RFC6492 (requesting resources, not on JSON api)
