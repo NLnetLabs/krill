@@ -372,19 +372,15 @@ impl Error {
             //-----------------------------------------------------------------
 
             // 1000, internal server error
-            Error::IoError(e) => {
-                ErrorResponse::with_args(1000, self.to_string(), vec![e.to_string()])
-            }
+            Error::IoError(e) => ErrorResponse::new(1000, self.to_string()).with_cause(e),
 
             // 1001, internal server error
             Error::AggregateStoreError(e) => {
-                ErrorResponse::with_args(1001, self.to_string(), vec![e.to_string()])
+                ErrorResponse::new(1001, self.to_string()).with_cause(e)
             }
 
             // 1002, internal server error
-            Error::SignerError(e) => {
-                ErrorResponse::with_args(1002, self.to_string(), vec![e.to_string()])
-            }
+            Error::SignerError(e) => ErrorResponse::new(1002, self.to_string()).with_cause(e),
 
             // not on api (fails at start up)
             Error::HttpsSetup(_) => not_in_api(),
@@ -397,45 +393,41 @@ impl Error {
             //-----------------------------------------------------------------
 
             // 2000
-            Error::JsonError(e) => {
-                ErrorResponse::with_args(2000, self.to_string(), vec![e.to_string()])
-            }
+            Error::JsonError(e) => ErrorResponse::new(2000, self.to_string()).with_cause(e),
 
             // 2001, BAD REQUEST
-            Error::ApiUnknownMethod => ErrorResponse::no_args(2001, &self),
+            Error::ApiUnknownMethod => ErrorResponse::new(2001, &self),
 
             // 2002, NOT FOUND (generic API not found)
-            Error::ApiUnknownResource => ErrorResponse::no_args(2002, &self),
+            Error::ApiUnknownResource => ErrorResponse::new(2002, &self),
 
             //-----------------------------------------------------------------
             // Repository Issues (2100-2199)
             //-----------------------------------------------------------------
 
             // 2100
-            Error::RepoNotSet => ErrorResponse::no_args(2100, &self),
+            Error::RepoNotSet => ErrorResponse::new(2100, &self),
 
             //-----------------------------------------------------------------
             // Publisher Issues (2200-2299)
             //-----------------------------------------------------------------
             Error::PublisherUnknown(p) => {
-                ErrorResponse::with_args(2200, self.to_string(), vec![p.to_string()])
-            }
-
-            Error::PublisherUriOutsideBase(uri, base) => ErrorResponse::with_args(
-                2201,
-                self.to_string(),
-                vec![uri.to_string(), base.to_string()],
-            ),
-
-            Error::PublisherBaseUriNoSlash(uri) => {
-                ErrorResponse::with_args(2202, self.to_string(), vec![uri.to_string()])
+                ErrorResponse::new(2200, self.to_string()).with_publisher(p)
             }
 
             Error::PublisherDuplicate(p) => {
-                ErrorResponse::with_args(2203, self.to_string(), vec![p.to_string()])
+                ErrorResponse::new(2201, self.to_string()).with_publisher(p)
             }
 
-            Error::PublisherNoEmbeddedRepo => ErrorResponse::no_args(2204, &self),
+            Error::PublisherUriOutsideBase(uri, base) => ErrorResponse::new(2202, self.to_string())
+                .with_uri(uri)
+                .with_base_uri(base),
+
+            Error::PublisherBaseUriNoSlash(uri) => {
+                ErrorResponse::new(2203, self.to_string()).with_uri(uri)
+            }
+
+            Error::PublisherNoEmbeddedRepo => ErrorResponse::new(2204, &self),
 
             //-----------------------------------------------------------------
             // RF8181 (publishing, not on json API so no error responses)
@@ -447,54 +439,47 @@ impl Error {
             //-----------------------------------------------------------------
             // CA Issues (2300-2399)
             //-----------------------------------------------------------------
-            Error::CaDuplicate(ca) => {
-                ErrorResponse::with_args(2300, self.to_string(), vec![ca.to_string()])
-            }
+            Error::CaDuplicate(ca) => ErrorResponse::new(2300, self.to_string()).with_ca(ca),
 
-            Error::CaUnknown(ca) => {
-                ErrorResponse::with_args(2301, self.to_string(), vec![ca.to_string()])
-            }
+            Error::CaUnknown(ca) => ErrorResponse::new(2301, self.to_string()).with_ca(ca),
 
-            Error::CaRepoInUse(ca) => {
-                ErrorResponse::with_args(2302, self.to_string(), vec![ca.to_string()])
-            }
+            Error::CaRepoInUse(ca) => ErrorResponse::new(2302, self.to_string()).with_ca(ca),
 
-            Error::CaRepoNotResponsive(ca, err) => {
-                ErrorResponse::with_args(2311, self.to_string(), vec![ca.to_string(), err.clone()])
-            }
+            Error::CaRepoNotResponsive(ca, err) => ErrorResponse::new(2310, self.to_string())
+                .with_ca(ca)
+                .with_cause(err),
 
-            Error::CaRepoResponseInvalidXml(ca, err) => {
-                ErrorResponse::with_args(2312, self.to_string(), vec![ca.to_string(), err.clone()])
-            }
+            Error::CaRepoResponseInvalidXml(ca, err) => ErrorResponse::new(2311, self.to_string())
+                .with_ca(ca)
+                .with_cause(err),
 
             Error::CaRepoResponseWrongXml(ca) => {
-                ErrorResponse::with_args(2313, self.to_string(), vec![ca.to_string()])
+                ErrorResponse::new(2312, self.to_string()).with_ca(ca)
             }
 
-            Error::CaParentDuplicate(ca, parent) => ErrorResponse::with_args(
-                2320,
-                self.to_string(),
-                vec![ca.to_string(), parent.to_string()],
-            ),
+            Error::CaParentDuplicate(ca, parent) => ErrorResponse::new(2320, self.to_string())
+                .with_ca(ca)
+                .with_parent(parent),
 
-            Error::CaParentUnknown(ca, parent) => ErrorResponse::with_args(
-                2321,
-                self.to_string(),
-                vec![ca.to_string(), parent.to_string()],
-            ),
+            Error::CaParentUnknown(ca, parent) => ErrorResponse::new(2321, self.to_string())
+                .with_ca(ca)
+                .with_parent(parent),
 
-            Error::CaParentNotResponsive(ca, parent, err) => ErrorResponse::with_args(
-                2322,
-                self.to_string(),
-                vec![ca.to_string(), parent.to_string(), err.clone()],
-            ),
+            Error::CaParentNotResponsive(ca, parent, err) => {
+                ErrorResponse::new(2322, self.to_string())
+                    .with_ca(ca)
+                    .with_parent(parent)
+                    .with_cause(err)
+            }
 
             Error::CaParentResponseInvalidXml(ca, err) => {
-                ErrorResponse::with_args(2323, self.to_string(), vec![ca.to_string(), err.clone()])
+                ErrorResponse::new(2323, self.to_string())
+                    .with_ca(ca)
+                    .with_cause(err)
             }
 
             Error::CaParentResponseWrongXml(ca) => {
-                ErrorResponse::with_args(2324, self.to_string(), vec![ca.to_string()])
+                ErrorResponse::new(2324, self.to_string()).with_ca(ca)
             }
 
             //-----------------------------------------------------------------
@@ -505,74 +490,44 @@ impl Error {
             Error::Rfc6492SignatureInvalid => not_in_api(),
 
             // CA Child Issues (2330-2339)
-            Error::CaChildDuplicate(ca, child) => ErrorResponse::with_args(
-                2330,
-                self.to_string(),
-                vec![ca.to_string(), child.to_string()],
-            ),
+            Error::CaChildDuplicate(ca, child) => ErrorResponse::new(2330, self.to_string())
+                .with_ca(ca)
+                .with_child(child),
 
-            Error::CaChildUnknown(ca, child) => ErrorResponse::with_args(
-                2331,
-                self.to_string(),
-                vec![ca.to_string(), child.to_string()],
-            ),
+            Error::CaChildUnknown(ca, child) => ErrorResponse::new(2331, self.to_string())
+                .with_ca(ca)
+                .with_child(child),
 
-            Error::CaChildMustHaveResources(ca, child) => ErrorResponse::with_args(
-                2332,
-                self.to_string(),
-                vec![ca.to_string(), child.to_string()],
-            ),
+            Error::CaChildMustHaveResources(ca, child) => {
+                ErrorResponse::new(2332, self.to_string())
+                    .with_ca(ca)
+                    .with_child(child)
+            }
 
-            Error::CaChildUnauthorised(ca, child) => ErrorResponse::with_args(
-                2333,
-                self.to_string(),
-                vec![ca.to_string(), child.to_string()],
-            ),
+            Error::CaChildUnauthorised(ca, child) => ErrorResponse::new(2333, self.to_string())
+                .with_ca(ca)
+                .with_child(child),
 
             // RouteAuthorizations (2340-2349)
-            Error::CaAuthorisationUnknown(ca, auth) => ErrorResponse::with_args(
-                2340,
-                self.to_string(),
-                vec![
-                    ca.to_string(),
-                    auth.prefix().to_string(),
-                    auth.effective_max_length().to_string(),
-                    auth.asn().to_string(),
-                ],
-            ),
+            Error::CaAuthorisationUnknown(ca, auth) => ErrorResponse::new(2340, self.to_string())
+                .with_ca(ca)
+                .with_auth(auth),
 
-            Error::CaAuthorisationDuplicate(ca, auth) => ErrorResponse::with_args(
-                2341,
-                self.to_string(),
-                vec![
-                    ca.to_string(),
-                    auth.prefix().to_string(),
-                    auth.effective_max_length().to_string(),
-                    auth.asn().to_string(),
-                ],
-            ),
+            Error::CaAuthorisationDuplicate(ca, auth) => ErrorResponse::new(2341, self.to_string())
+                .with_ca(ca)
+                .with_auth(auth),
 
-            Error::CaAuthorisationInvalidMaxlength(ca, auth) => ErrorResponse::with_args(
-                2342,
-                self.to_string(),
-                vec![
-                    ca.to_string(),
-                    auth.prefix().to_string(),
-                    auth.effective_max_length().to_string(),
-                    auth.asn().to_string(),
-                ],
-            ),
+            Error::CaAuthorisationInvalidMaxlength(ca, auth) => {
+                ErrorResponse::new(2342, self.to_string())
+                    .with_ca(ca)
+                    .with_auth(auth)
+            }
 
-            Error::CaAuthorisationNotEntitled(ca, auth) => ErrorResponse::with_args(
-                2343,
-                self.to_string(),
-                vec![
-                    ca.to_string(),
-                    auth.prefix().to_string(),
-                    auth.effective_max_length().to_string(),
-                    auth.asn().to_string(),
-                ],
-            ),
+            Error::CaAuthorisationNotEntitled(ca, auth) => {
+                ErrorResponse::new(2343, self.to_string())
+                    .with_ca(ca)
+                    .with_auth(auth)
+            }
 
             //-----------------------------------------------------------------
             // Key Usage Issues (2400-2499)
@@ -596,14 +551,14 @@ impl Error {
             //-----------------------------------------------------------------
             // Embedded (test) TA issues (2600-2699)
             //-----------------------------------------------------------------
-            Error::TaNotAllowed => ErrorResponse::no_args(2600, &self),
-            Error::TaNameReserved => ErrorResponse::no_args(2601, &self),
+            Error::TaNotAllowed => ErrorResponse::new(2600, &self),
+            Error::TaNameReserved => ErrorResponse::new(2601, &self),
             Error::TaAlreadyInitialised => not_in_api(),
 
             //-----------------------------------------------------------------
             // If we really don't know any more..
             //-----------------------------------------------------------------
-            Error::Custom(_msg) => ErrorResponse::no_args(65535, &self),
+            Error::Custom(_msg) => ErrorResponse::new(65535, &self),
         }
 
         //        self.code().clone().into()

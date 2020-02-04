@@ -1913,7 +1913,6 @@ mod test {
     use crate::commons::util::test;
 
     use super::*;
-    use commons::error::Error;
 
     fn base_uri() -> uri::Rsync {
         test::rsync("rsync://localhost/repo/ta/")
@@ -2071,58 +2070,6 @@ mod test {
         let intersection = parent_resources.intersection(&child_resources);
 
         assert_eq!(intersection, child_resources);
-    }
-
-    #[test]
-    fn cert_auth_issues_json() {
-        let ca = Handle::from_str_unsafe("CA");
-        let p1 = Handle::from_str_unsafe("p1");
-
-        let mut issues = CertAuthIssues::default();
-        issues.add_repo_issue(
-            Error::CaRepoNotResponsive(ca.clone(), "unreachable".to_string()).to_error_response(),
-        );
-        issues.add_parent_issue(
-            p1.clone(),
-            Error::CaParentNotResponsive(ca.clone(), p1, "unreachable".to_string())
-                .to_error_response(),
-        );
-
-        let expected = "{\"repo\":{\"code\":2311,\"msg\":\"CA 'CA' got error from repository: unreachable\",\"args\":[\"CA\",\"unreachable\"]},\"parents\":{\"p1\":{\"code\":2322,\"msg\":\"CA 'CA' got error from parent 'p1': unreachable\",\"args\":[\"CA\",\"p1\",\"unreachable\"]}}}";
-        assert_eq!(serde_json::to_string(&issues).unwrap(), expected);
-
-        let issues = CertAuthIssues::default();
-        let expected = "{\"repo\":null,\"parents\":{}}";
-        assert_eq!(serde_json::to_string(&issues).unwrap(), expected);
-    }
-
-    #[test]
-    fn all_cert_auth_issues_json() {
-        let ca = Handle::from_str_unsafe("ca");
-        let p1 = Handle::from_str_unsafe("p1");
-
-        let mut issues = CertAuthIssues::default();
-        issues.add_repo_issue(
-            Error::CaRepoNotResponsive(ca.clone(), "unreachable".to_string()).to_error_response(),
-        );
-        issues.add_parent_issue(
-            p1.clone(),
-            Error::CaParentNotResponsive(ca.clone(), p1, "unreachable".to_string())
-                .to_error_response(),
-        );
-
-        let mut all = AllCertAuthIssues::default();
-        all.add(ca, issues);
-
-        let expected =
-            "{\"cas\":{\"ca\":{\"repo\":{\"code\":2311,\"msg\":\"CA 'ca' got error from repository: unreachable\",\"args\":[\"ca\",\"unreachable\"]},\"parents\":{\"p1\":{\"code\":2322,\"msg\":\"CA 'ca' got error from parent 'p1': unreachable\",\"args\":[\"ca\",\"p1\",\"unreachable\"]}}}}}";
-
-        assert_eq!(serde_json::to_string(&all).unwrap(), expected);
-
-        let all = AllCertAuthIssues::default();
-        let expected = "{\"cas\":{}}";
-
-        assert_eq!(serde_json::to_string(&all).unwrap(), expected);
     }
 
 }

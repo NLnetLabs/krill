@@ -17,6 +17,7 @@ pub use self::roas::*;
 
 pub mod rrdp;
 
+use std::collections::HashMap;
 use std::fmt;
 
 use bytes::Bytes;
@@ -28,6 +29,7 @@ use rpki::manifest::Manifest;
 use rpki::roa::Roa;
 
 use crate::commons::util::sha256;
+use crate::daemon::ca::RouteAuthorization;
 
 //------------ Base64 --------------------------------------------------------
 
@@ -228,21 +230,63 @@ pub struct Link {
 pub struct ErrorResponse {
     code: usize,
     msg: String,
-    args: Vec<String>,
+    args: HashMap<String, String>,
 }
 
 impl ErrorResponse {
-    pub fn with_args(code: usize, msg: String, args: Vec<String>) -> Self {
-        ErrorResponse { code, msg, args }
-    }
-
-    pub fn no_args(code: usize, msg: impl fmt::Display) -> Self {
+    pub fn new(code: usize, msg: impl fmt::Display) -> Self {
         ErrorResponse {
             code,
             msg: msg.to_string(),
-            args: vec![],
+            args: HashMap::new(),
         }
     }
+
+    fn with_arg(mut self, key: &str, value: impl fmt::Display) -> Self {
+        self.args.insert(key.to_string(), value.to_string());
+        self
+    }
+
+    pub fn with_cause(self, cause: impl fmt::Display) -> Self {
+        self.with_arg("cause", cause)
+    }
+
+    pub fn with_publisher(self, publisher: &PublisherHandle) -> Self {
+        self.with_arg("publisher", publisher)
+    }
+
+    pub fn with_uri(self, uri: impl fmt::Display) -> Self {
+        self.with_arg("uri", uri)
+    }
+
+    pub fn with_base_uri(self, base_uri: impl fmt::Display) -> Self {
+        self.with_arg("base_uri", base_uri)
+    }
+
+    pub fn with_ca(self, ca: &Handle) -> Self {
+        self.with_arg("ca", ca)
+    }
+
+    pub fn with_parent(self, parent: &ParentHandle) -> Self {
+        self.with_arg("parent", parent)
+    }
+
+    pub fn with_child(self, child: &ChildHandle) -> Self {
+        self.with_arg("child", child)
+    }
+
+    pub fn with_auth(self, auth: &RouteAuthorization) -> Self {
+        let mut res = self
+            .with_arg("prefix", auth.prefix())
+            .with_arg("asn", auth.asn());
+
+        if let Some(max) = auth.max_length() {
+            res = res.with_arg("max_length", max)
+        }
+
+        res
+    }
+
     pub fn code(&self) -> usize {
         self.code
     }
