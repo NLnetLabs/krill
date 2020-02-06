@@ -21,7 +21,7 @@ fn main() {
                                 if format == ReportFormat::Json {
                                     eprintln!("{}", e);
                                 } else {
-                                    eprintln!("Error {}: {}", res.code(), res.msg());
+                                    eprintln!("Error: {}", res.msg());
                                 }
                             }
                             _ => {

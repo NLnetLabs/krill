@@ -3,6 +3,19 @@
 Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
 for planned releases.
 
+## Unreleased Changes
+
+Features / improvements:
+* Added option to CLI to generate a Krill config file.
+* Added simple Prometheus endpoint (/metrics)
+* Added check for reporting status between CAs and their parents and repository
+* Disable the embedded repository by default (see docs for info)
+* Added guards against using 'localhost' in non-test environments 
+
+Breaking changes:
+* The error responses have been overhauled. 
+
+
 ## 0.4.2 'Finer Things'
 
 This release fixes a bug, and introduces minor usability improvements:

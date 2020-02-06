@@ -1,0 +1,1 @@
+{"label":"ca-child-unauthorised","msg":"CA 'ca' does not know id certificate for child 'child'","args":{"ca":"ca","child":"child"}}

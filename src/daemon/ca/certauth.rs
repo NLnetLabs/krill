@@ -741,7 +741,7 @@ impl<S: Signer> CertAuth<S> {
         let my_rc = self
             .resources
             .get(&rcn)
-            .ok_or_else(|| Error::unknown_resource_class(&rcn))?;
+            .ok_or_else(|| Error::ResourceClassUnknown(rcn))?;
 
         let child = self.get_child(&child)?;
         child.resources().apply_limit(&limit)?;
@@ -753,7 +753,7 @@ impl<S: Signer> CertAuth<S> {
     /// for updating child certificates.
     fn republish_certs(
         &self,
-        class_name: &ResourceClassName,
+        rcn: &ResourceClassName,
         issued_certs: &[&IssuedCert],
         removed_certs: &[&Cert],
         signer: &S,
@@ -761,8 +761,8 @@ impl<S: Signer> CertAuth<S> {
         let repo = self.get_repository_contact()?;
 
         self.resources
-            .get(&class_name)
-            .ok_or_else(|| Error::unknown_resource_class(&class_name))?
+            .get(&rcn)
+            .ok_or_else(|| Error::ResourceClassUnknown(rcn.clone()))?
             .republish_certs(issued_certs, removed_certs, repo.repo_info(), signer)
     }
 
@@ -959,7 +959,7 @@ impl<S: Signer> CertAuth<S> {
     /// by this name (handle) is already known.
     fn add_parent(&self, parent: Handle, info: ParentCaContact) -> KrillResult<Vec<Evt>> {
         if self.repository.is_none() {
-            Err(Error::RepoNotSet)
+            Err(Error::CaParentWithoutRepo(self.handle.clone()))
         } else if self.has_parent(&parent) {
             Err(Error::CaParentDuplicate(self.handle.clone(), parent))
         } else if self.is_ta() {
@@ -1241,7 +1241,7 @@ impl<S: Signer> CertAuth<S> {
         let rc = self
             .resources
             .get(&rcn)
-            .ok_or_else(|| Error::unknown_resource_class(&rcn))?;
+            .ok_or_else(|| Error::ResourceClassUnknown(rcn))?;
 
         let repo = self.get_repository_contact()?;
 
@@ -1337,7 +1337,7 @@ impl<S: Signer> CertAuth<S> {
         let my_rc = self
             .resources
             .get(&rcn)
-            .ok_or_else(|| Error::unknown_resource_class(&rcn))?;
+            .ok_or_else(|| Error::ResourceClassUnknown(rcn.clone()))?;
 
         let repo = self.get_repository_contact()?;
 

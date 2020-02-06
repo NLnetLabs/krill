@@ -520,7 +520,7 @@ impl KrillServer {
             RepositoryUpdate::Rfc8181(response) => {
                 // first check that the new repo can be contacted
                 if let CurrentRepoState::Error(error) = self.repo_state(&handle, Some(&response)) {
-                    return Err(Error::CaRepoNotResponsive(handle, error.msg().to_string()));
+                    return Err(Error::CaRepoIssue(handle, error.msg().to_string()));
                 }
 
                 RepositoryContact::Rfc8181(response)

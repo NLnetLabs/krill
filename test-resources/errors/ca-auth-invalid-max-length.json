@@ -1,0 +1,1 @@
+{"label":"ca-auth-invalid-max-length","msg":"Invalid max length in authorization: '192.168.0.0/16-24 => 64496' for CA 'ca","args":{"ca":"ca","prefix":"192.168.0.0/16","max_length":"24","asn":"64496"}}

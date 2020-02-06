@@ -25,6 +25,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::cert::Cert;
 use rpki::crl::Crl;
+use rpki::crypto::KeyIdentifier;
 use rpki::manifest::Manifest;
 use rpki::roa::Roa;
 
@@ -228,15 +229,15 @@ pub struct Link {
 /// https://rpki.readthedocs.io/en/latest/krill/pub/api.html#error-responses
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ErrorResponse {
-    code: usize,
+    label: String,
     msg: String,
     args: HashMap<String, String>,
 }
 
 impl ErrorResponse {
-    pub fn new(code: usize, msg: impl fmt::Display) -> Self {
+    pub fn new(label: &str, msg: impl fmt::Display) -> Self {
         ErrorResponse {
-            code,
+            label: label.to_string(),
             msg: msg.to_string(),
             args: HashMap::new(),
         }
@@ -287,8 +288,16 @@ impl ErrorResponse {
         res
     }
 
-    pub fn code(&self) -> usize {
-        self.code
+    pub fn with_key_identifier(self, ki: &KeyIdentifier) -> Self {
+        self.with_arg("key_id", ki)
+    }
+
+    pub fn with_resource_class(self, class_name: &ResourceClassName) -> Self {
+        self.with_arg("class_name", class_name)
+    }
+
+    pub fn label(&self) -> &str {
+        &self.label
     }
     pub fn msg(&self) -> &str {
         &self.msg

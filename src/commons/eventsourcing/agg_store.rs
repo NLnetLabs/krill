@@ -53,16 +53,16 @@ pub enum AggregateStoreError {
     #[display(fmt = "{}", _0)]
     KeyStoreError(KeyStoreError),
 
-    #[display(fmt = "Unknown aggregate: {}", _0)]
+    #[display(fmt = "unknown entity: {}", _0)]
     UnknownAggregate(Handle),
 
-    #[display(fmt = "Aggregate init event exists, but cannot be applied")]
+    #[display(fmt = "init event exists, but cannot be applied")]
     InitError,
 
-    #[display(fmt = "Event not applicable to aggregate, id or version is off")]
+    #[display(fmt = "event not applicable to entity, id or version is off")]
     WrongEventForAggregate,
 
-    #[display(fmt = "Trying to update outdated aggregate '{}'", _0)]
+    #[display(fmt = "concurrent modifcation attempt for entity: '{}'", _0)]
     ConcurrentModification(Handle),
 }
 

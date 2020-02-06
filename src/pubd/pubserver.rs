@@ -129,12 +129,12 @@ impl PubServer {
         let repository = self.repository()?;
         let publisher = repository.get_publisher(&publisher_handle)?;
 
-        let msg =
-            SignedMessage::decode(msg_bytes.clone(), false).map_err(Error::rfc8181_validation)?;
+        let msg = SignedMessage::decode(msg_bytes.clone(), false)
+            .map_err(|e| Error::Rfc8181Decode(e.to_string()))?;
         let cms_logger = CmsLogger::for_rfc8181_rcvd(&self.cms_logger_work_dir, &publisher_handle);
 
         msg.validate(publisher.id_cert())
-            .map_err(Error::rfc8181_validation)?;
+            .map_err(Error::Rfc8181Validation)?;
 
         let content = rfc8181::Message::from_signed_message(&msg)?;
         let query = content.into_query()?;

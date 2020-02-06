@@ -1,0 +1,1 @@
+{"label":"ca-auth-duplicate","msg":"Duplicate authorization '192.168.0.0/16-24 => 64496' for CA 'ca'","args":{"asn":"64496","ca":"ca","prefix":"192.168.0.0/16","max_length":"24"}}
