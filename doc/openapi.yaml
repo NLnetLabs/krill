@@ -64,10 +64,28 @@ info:
       code, not on the error message. Such errors have the following form:
       ```
       {
-          "code": <integer>,
-          "msg": "string"
+          "label": "string",
+          "msg": "string",
+          "args": {
+              "key1": "string",
+              "key2": "string"
+          }
       }
       ```
+
+    Possible keys in the error response json are:
+    ```
+       "cause":      "The underlying error, usually a system error"
+       "publisher":  "The handle of the publisher"
+       "ca":         "The handle of the CA that encountered an error"
+       "parent":     "The handle by which the CA knows a parent involved in an error"
+       "child":      "The handle by which the CA knows its child involved in an error"
+       "class_name": "The name of the RFC 6492 Resource Class involved in an error"
+       "key_id":     "A Key Identifier for a key involved in an error"
+       "prefix":     "The IPv4 or IPv6 prefix in a ROA with issues"
+       "asn":        "The ASN in a ROA with issues"
+       "max_length": "The max length (if present) for a ROA with issues"
+    ```
   license:
     name: Mozilla Public License 2.0
     url: https://www.mozilla.org/en-US/MPL/2.0/
