@@ -958,9 +958,7 @@ impl<S: Signer> CertAuth<S> {
     /// Adds a parent. This method will return an error in case a parent
     /// by this name (handle) is already known.
     fn add_parent(&self, parent: Handle, info: ParentCaContact) -> KrillResult<Vec<Evt>> {
-        if self.repository.is_none() {
-            Err(Error::CaParentWithoutRepo(self.handle.clone()))
-        } else if self.has_parent(&parent) {
+        if self.has_parent(&parent) {
             Err(Error::CaParentDuplicate(self.handle.clone(), parent))
         } else if self.is_ta() {
             Err(Error::TaNotAllowed)

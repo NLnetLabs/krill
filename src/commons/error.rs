@@ -127,12 +127,6 @@ pub enum Error {
     #[display(fmt = "CA '{}' got repository response when adding parent", _0)]
     CaParentResponseWrongXml(Handle),
 
-    #[display(
-        fmt = "Please configure the repository for CA '{}' before adding parents",
-        _0
-    )]
-    CaParentWithoutRepo(Handle),
-
     //-----------------------------------------------------------------
     // RFC6492 (requesting resources)
     //-----------------------------------------------------------------
@@ -417,10 +411,6 @@ impl Error {
 
             Error::CaParentResponseWrongXml(ca) => {
                 ErrorResponse::new("ca-parent-response-wrong-xml", &self).with_ca(ca)
-            }
-
-            Error::CaParentWithoutRepo(ca) => {
-                ErrorResponse::new("ca-parent-no-repo", &self).with_ca(ca)
             }
 
             //-----------------------------------------------------------------
@@ -715,10 +705,6 @@ mod tests {
         verify(
             include_str!("../../test-resources/errors/ca-parent-response-wrong-xml.json"),
             Error::CaParentResponseWrongXml(ca.clone()),
-        );
-        verify(
-            include_str!("../../test-resources/errors/ca-parent-no-repo.json"),
-            Error::CaParentWithoutRepo(ca.clone()),
         );
 
         verify(

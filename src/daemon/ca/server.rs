@@ -486,13 +486,19 @@ impl<S: Signer> CaServer<S> {
         if handle == &ta_handle() {
             Ok(()) // The (test) TA never needs updates.
         } else {
-            let entitlements = self.get_entitlements_from_parent(handle, parent)?;
+            let ca = self.get_ca(&handle)?;
+            if ca.get_repository_contact().is_err() {
+                // No repo set, yet. So, skip updating.
+                Ok(())
+            } else {
+                let entitlements = self.get_entitlements_from_parent(handle, parent)?;
 
-            if !self.update_resource_classes(handle, parent.clone(), entitlements)? {
-                return Ok(()); // Nothing to do
+                if !self.update_resource_classes(handle, parent.clone(), entitlements)? {
+                    return Ok(()); // Nothing to do
+                }
+
+                Ok(()) // Pending requests will be picked up by the scheduler.
             }
-
-            Ok(()) // Pending requests will be picked up by the scheduler.
         }
     }
 
