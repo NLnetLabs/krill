@@ -559,12 +559,12 @@ impl fmt::Display for EvtDet {
             // Route Authorizations
             EvtDet::RouteAuthorizationAdded(route) => write!(
                 f,
-                "added route authorization: '{}'",
+                "added ROA: '{}'",
                 route
             ),
             EvtDet::RouteAuthorizationRemoved(route) => write!(
                 f,
-                "removed route authorization: '{}'",
+                "removed ROA: '{}'",
                 route
             ),
             EvtDet::RoasUpdated(rcn, roa_updates) => {

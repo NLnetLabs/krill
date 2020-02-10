@@ -7,10 +7,12 @@ use actix_web::http::StatusCode;
 
 use rpki::crypto::KeyIdentifier;
 use rpki::uri;
+use rpki::x509::ValidationError;
 
 use crate::commons::api::rrdp::PublicationDeltaError;
 use crate::commons::api::{
-    ChildHandle, ErrorResponse, Handle, ParentHandle, PublisherHandle, ResourceSetError,
+    ChildHandle, ErrorResponse, Handle, ParentHandle, PublisherHandle, ResourceClassName,
+    ResourceSetError,
 };
 use crate::commons::eventsourcing::AggregateStoreError;
 use crate::commons::remote::rfc6492;
@@ -19,8 +21,6 @@ use crate::commons::remote::rfc8181::ReportErrorCode;
 use crate::commons::util::httpclient;
 use crate::commons::util::softsigner::SignerError;
 use crate::daemon::ca::RouteAuthorization;
-use commons::api::ResourceClassName;
-use rpki::x509::ValidationError;
 
 #[derive(Debug, Display)]
 pub enum Error {
@@ -114,14 +114,19 @@ pub enum Error {
     // CA Parent Issues
     #[display(fmt = "CA '{}' already has a parent named '{}'", _0, _1)]
     CaParentDuplicate(Handle, ParentHandle),
+
     #[display(fmt = "CA '{}' does not have parent named '{}'", _0, _1)]
     CaParentUnknown(Handle, ParentHandle),
+
     #[display(fmt = "CA '{}' got error from parent '{}': {}", _0, _1, _2)]
     CaParentIssue(Handle, ParentHandle, String),
+
     #[display(fmt = "CA '{}' got invalid parent response xml: {}", _0, _1)]
     CaParentResponseInvalidXml(Handle, String),
+
     #[display(fmt = "CA '{}' got repository response when adding parent", _0)]
     CaParentResponseWrongXml(Handle),
+
     #[display(
         fmt = "Please configure the repository for CA '{}' before adding parents",
         _0
@@ -133,111 +138,87 @@ pub enum Error {
     //-----------------------------------------------------------------
     #[display(fmt = "RFC 6492 Issue: {}", _0)]
     Rfc6492(rfc6492::Error),
+
     #[display(fmt = "Invalid CSR received: {}", _0)]
     Rfc6492InvalidCsrSent(String),
+
     #[display(fmt = "Invalidly signed RFC 6492 CMS")]
     Rfc6492SignatureInvalid,
 
-    // CA Child Issues (2330-2339)
-
-    // 2330
-    #[display(fmt = "CA '{}' already has child named '{}'", _0, _1)]
+    // CA Child Issues
+    #[display(fmt = "CA '{}' already has a child named '{}'", _0, _1)]
     CaChildDuplicate(Handle, ChildHandle),
 
-    // 2331
     #[display(fmt = "CA '{}' does not have child named '{}'", _0, _1)]
     CaChildUnknown(Handle, ChildHandle),
 
-    // 2332
     #[display(fmt = "Child '{}' for CA '{}' MUST have resources specified", _1, _0)]
     CaChildMustHaveResources(Handle, ChildHandle),
 
-    // 2333
     #[display(fmt = "CA '{}' does not know id certificate for child '{}'", _0, _1)]
     CaChildUnauthorised(Handle, ChildHandle),
 
-    // RouteAuthorizations (2340-2349)
-
-    // 2340
-    #[display(fmt = "Cannot remove unknown authorization '{}' from CA '{}'", _0, _1)]
+    // RouteAuthorizations - ROAs
+    #[display(fmt = "Cannot remove unknown ROA '{}' from CA '{}'", _0, _1)]
     CaAuthorisationUnknown(Handle, RouteAuthorization),
 
-    // 2341
-    #[display(fmt = "Duplicate authorization '{}' for CA '{}'", _1, _0)]
+    #[display(fmt = "Duplicate ROA '{}' for CA '{}'", _1, _0)]
     CaAuthorisationDuplicate(Handle, RouteAuthorization),
 
-    // 2342
-    #[display(fmt = "Invalid max length in authorization: '{}' for CA '{}", _1, _0)]
+    #[display(fmt = "Invalid max length in ROA: '{}' for CA '{}", _1, _0)]
     CaAuthorisationInvalidMaxlength(Handle, RouteAuthorization),
 
-    // 2343
-    #[display(fmt = "Authorisation '{}' resource not held by CA '{}'.", _1, _0)]
+    #[display(fmt = "Prefix in ROA '{}' not held by CA '{}'.", _1, _0)]
     CaAuthorisationNotEntitled(Handle, RouteAuthorization),
 
     //-----------------------------------------------------------------
-    // Key Usage Issues (2400-2499)
+    // Key Usage Issues
     //-----------------------------------------------------------------
-
-    // not on api
     #[display(fmt = "Attempt at re-using keys")]
     KeyUseAttemptReuse,
 
-    // not on api
     #[display(fmt = "No new key in resource class")]
     KeyUseNoNewKey,
 
-    // not on api
     #[display(fmt = "No current key in resource class")]
     KeyUseNoCurrentKey,
 
-    // not on api
     #[display(fmt = "No old key in resource class")]
     KeyUseNoOldKey,
 
-    // not on api
     #[display(fmt = "No issued cert matching pub key")]
     KeyUseNoIssuedCert,
 
-    // not on api
     #[display(fmt = "No key found matching key identifier: '{}'", _0)]
     KeyUseNoMatch(KeyIdentifier),
 
     //-----------------------------------------------------------------
-    // Resource Issues (2500-2599)
+    // Resource Issues
     //-----------------------------------------------------------------
-
-    // not on api
     #[display(fmt = "Unknown resource class: '{}'", _0)]
     ResourceClassUnknown(ResourceClassName),
 
-    // not on api
     #[display(fmt = "{}", _0)]
     ResourceSetError(ResourceSetError),
 
-    // not on api
     #[display(fmt = "Requester is not entitled to all requested resources")]
     MissingResources,
 
     //-----------------------------------------------------------------
-    // Embedded (test) TA issues (2600-2699)
+    // Embedded (test) TA issues
     //-----------------------------------------------------------------
-
-    // 2600
     #[display(fmt = "Functionality not supported for Trust Anchor")]
     TaNotAllowed,
 
-    // 2601
     #[display(fmt = "Name reserved for embedded Trust Anchor")]
     TaNameReserved,
 
-    // not on api
     #[display(fmt = "TrustAnchor was already initialised")]
     TaAlreadyInitialised,
 
     //-----------------------------------------------------------------
     // If we really don't know any more..
     //-----------------------------------------------------------------
-    // 65535  - but should not occur on API
     #[display(fmt = "{}", _0)]
     Custom(String),
 }
@@ -472,24 +453,24 @@ impl Error {
             }
 
             // RouteAuthorizations
-            Error::CaAuthorisationUnknown(ca, auth) => ErrorResponse::new("ca-auth-unknown", &self)
+            Error::CaAuthorisationUnknown(ca, auth) => ErrorResponse::new("ca-roa-unknown", &self)
                 .with_ca(ca)
                 .with_auth(auth),
 
             Error::CaAuthorisationDuplicate(ca, auth) => {
-                ErrorResponse::new("ca-auth-duplicate", &self)
+                ErrorResponse::new("ca-roa-duplicate", &self)
                     .with_ca(ca)
                     .with_auth(auth)
             }
 
             Error::CaAuthorisationInvalidMaxlength(ca, auth) => {
-                ErrorResponse::new("ca-auth-invalid-max-length", &self)
+                ErrorResponse::new("ca-roa-invalid-max-length", &self)
                     .with_ca(ca)
                     .with_auth(auth)
             }
 
             Error::CaAuthorisationNotEntitled(ca, auth) => {
-                ErrorResponse::new("ca-auth-not-entitled", &self)
+                ErrorResponse::new("ca-roa-not-entitled", &self)
                     .with_ca(ca)
                     .with_auth(auth)
             }
@@ -562,7 +543,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn error_response_json_regressiongit() {
+    fn error_response_json_regression() {
         let ca = Handle::from_str_unsafe("ca");
         let parent = ParentHandle::from_str_unsafe("parent");
         let child = ChildHandle::from_str_unsafe("child");
@@ -771,19 +752,19 @@ mod tests {
         );
 
         verify(
-            include_str!("../../test-resources/errors/ca-auth-unknown.json"),
+            include_str!("../../test-resources/errors/ca-roa-unknown.json"),
             Error::CaAuthorisationUnknown(ca.clone(), auth),
         );
         verify(
-            include_str!("../../test-resources/errors/ca-auth-duplicate.json"),
+            include_str!("../../test-resources/errors/ca-roa-duplicate.json"),
             Error::CaAuthorisationDuplicate(ca.clone(), auth),
         );
         verify(
-            include_str!("../../test-resources/errors/ca-auth-invalid-max-length.json"),
+            include_str!("../../test-resources/errors/ca-roa-invalid-max-length.json"),
             Error::CaAuthorisationInvalidMaxlength(ca.clone(), auth),
         );
         verify(
-            include_str!("../../test-resources/errors/ca-auth-not-entitled.json"),
+            include_str!("../../test-resources/errors/ca-roa-not-entitled.json"),
             Error::CaAuthorisationNotEntitled(ca.clone(), auth),
         );
 
