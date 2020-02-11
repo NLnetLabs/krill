@@ -98,6 +98,13 @@ where
 /// Produce prometheus style metrics
 pub fn metrics(server: web::Data<AppServer>) -> HttpResponse {
     let mut res = String::new();
+
+    let info = server.read().server_info();
+    res.push_str("# HELP krill_server_start timestamp of last krill server start\n");
+    res.push_str("# TYPE krill_server_start gauge\n");
+    res.push_str(&format!("krill_server_start {}\n", info.started()));
+    res.push_str("\n");
+
     if let Ok(stats) = server.read().repo_stats() {
         let publishers = stats.get_publishers();
 
