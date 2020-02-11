@@ -674,7 +674,7 @@ impl ResourceClass {
 
     /// Returns revocation requests for all certified keys in this resource class.
     pub fn revoke<S: Signer>(&self, signer: &S) -> KrillResult<Vec<RevocationRequest>> {
-        self.key_state.revoke(self.name.clone(), signer)
+        self.key_state.revoke(self.parent_rc_name.clone(), signer)
     }
 }
 
