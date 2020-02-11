@@ -1,9 +1,13 @@
 use std::str::{from_utf8_unchecked, FromStr};
 
+use chrono::{DateTime, NaiveDateTime, Utc};
+
+use rpki::x509::Time;
+
 use crate::commons::api::{
     AllCertAuthIssues, CaRepoDetails, CertAuthHistory, CertAuthInfo, CertAuthIssues, CertAuthList,
     ChildCaInfo, CurrentObjects, CurrentRepoState, ParentCaContact, PublisherDetails,
-    PublisherList, RepositoryContact, RoaDefinition,
+    PublisherList, RepositoryContact, RoaDefinition, ServerInfo,
 };
 use crate::commons::remote::api::ClientInfo;
 use crate::commons::remote::rfc8183;
@@ -16,6 +20,7 @@ use crate::pubd::RepoStats;
 #[allow(clippy::large_enum_variant)]
 pub enum ApiResponse {
     Health,
+    Info(ServerInfo),
 
     CertAuthInfo(CertAuthInfo),
     CertAuthHistory(CertAuthHistory),
@@ -58,6 +63,7 @@ impl ApiResponse {
                         Err(ReportError::UnsupportedFormat)
                     }
                 }
+                ApiResponse::Info(info) => Ok(Some(info.report(fmt)?)),
                 ApiResponse::CertAuths(list) => Ok(Some(list.report(fmt)?)),
                 ApiResponse::CertAuthInfo(info) => Ok(Some(info.report(fmt)?)),
                 ApiResponse::CertAuthHistory(history) => Ok(Some(history.report(fmt)?)),
@@ -551,6 +557,27 @@ impl Report for AllCertAuthIssues {
                     }
                 }
                 Ok(res)
+            }
+            ReportFormat::Json => Ok(serde_json::to_string_pretty(self).unwrap()),
+            _ => Err(ReportError::UnsupportedFormat),
+        }
+    }
+}
+
+impl Report for ServerInfo {
+    fn report(&self, format: ReportFormat) -> Result<String, ReportError> {
+        match format {
+            ReportFormat::Default | ReportFormat::Text => {
+                let dt = DateTime::<Utc>::from_utc(
+                    NaiveDateTime::from_timestamp(self.started(), 0),
+                    Utc,
+                );
+                let started = Time::new(dt);
+                Ok(format!(
+                    "Version: {}\nStarted: {}",
+                    self.version(),
+                    started.to_rfc3339()
+                ))
             }
             ReportFormat::Json => Ok(serde_json::to_string_pretty(self).unwrap()),
             _ => Err(ReportError::UnsupportedFormat),

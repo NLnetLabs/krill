@@ -54,6 +54,7 @@ impl KrillClient {
 
         match options.command {
             Command::Health => client.health(),
+            Command::Info => client.info(),
             Command::Bulk(cmd) => client.bulk(cmd),
             Command::CertAuth(cmd) => client.certauth(cmd),
             Command::Publishers(cmd) => client.publishers(cmd),
@@ -65,6 +66,11 @@ impl KrillClient {
     fn health(&self) -> Result<ApiResponse, Error> {
         httpclient::get_ok(&self.resolve_uri("api/v1/authorized"), Some(&self.token))?;
         Ok(ApiResponse::Health)
+    }
+
+    fn info(&self) -> Result<ApiResponse, Error> {
+        let info = httpclient::get_json(&self.resolve_uri("stats/info"), Some(&self.token))?;
+        Ok(ApiResponse::Info(info))
     }
 
     fn bulk(&self, command: BulkCaCommand) -> Result<ApiResponse, Error> {

@@ -750,9 +750,15 @@ impl Options {
     }
 
     fn make_health_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        app.subcommand(
-            SubCommand::with_name("health").about("Perform an authenticated health check"),
-        )
+        let health = SubCommand::with_name("health").about("Perform an authenticated health check");
+        let health = Self::add_general_args(health);
+        app.subcommand(health)
+    }
+
+    fn make_info_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let info = SubCommand::with_name("info").about("Show server info");
+        let info = Self::add_general_args(info);
+        app.subcommand(info)
     }
 
     fn make_matches<'a>() -> ArgMatches<'a> {
@@ -773,6 +779,8 @@ impl Options {
         app = Self::make_publishers_sc(app);
 
         app = Self::make_health_sc(app);
+
+        app = Self::make_info_sc(app);
 
         app = Self::make_bulk_sc(app);
 
@@ -1337,6 +1345,12 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
+    fn parse_matches_info(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let command = Command::Info;
+        Ok(Options::make(general_args, command))
+    }
+
     fn parse_matches(matches: ArgMatches) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("config") {
             Self::parse_matches_config(m)
@@ -1366,6 +1380,8 @@ impl Options {
             Self::parse_matches_bulk(m)
         } else if let Some(m) = matches.subcommand_matches("health") {
             Self::parse_matches_health(m)
+        } else if let Some(m) = matches.subcommand_matches("info") {
+            Self::parse_matches_info(m)
         } else {
             Err(Error::UnrecognisedSubCommand)
         }
@@ -1382,6 +1398,7 @@ impl Options {
 pub enum Command {
     NotSet,
     Health,
+    Info,
     Bulk(BulkCaCommand),
     CertAuth(CaCommand),
     Publishers(PublishersCommand),
