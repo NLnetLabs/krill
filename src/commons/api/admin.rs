@@ -11,6 +11,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use rpki::cert::Cert;
 use rpki::crypto::Signer;
 use rpki::uri;
+use rpki::x509::Time;
 
 use crate::commons::api::ca::{ResourceSet, TrustAnchorLocator};
 use crate::commons::api::rrdp::PublishElement;
@@ -575,6 +576,31 @@ impl fmt::Display for UpdateChildRequest {
             write!(f, "new resources: {} ", resources)?;
         }
         Ok(())
+    }
+}
+
+//------------ ServerInfo ----------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ServerInfo {
+    version: String,
+    started: i64,
+}
+
+impl ServerInfo {
+    pub fn new(version: &str, started: Time) -> Self {
+        ServerInfo {
+            version: version.to_string(),
+            started: started.timestamp(),
+        }
+    }
+
+    pub fn version(&self) -> &str {
+        &self.version
+    }
+
+    pub fn started(&self) -> i64 {
+        self.started
     }
 }
 

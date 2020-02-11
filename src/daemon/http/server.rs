@@ -52,6 +52,7 @@ pub fn start(config: &Config) -> Result<(), Error> {
             .wrap(middleware::Logger::default())
             .route("/health", get().to(endpoints::health))
             .route("/metrics", get().to(metrics))
+            .route("/stats/info", get().to(server_info))
             .route("/stats/repo", get().to(repo_stats))
             .route("/stats/cas", get().to(cas_stats))
             // API end-points

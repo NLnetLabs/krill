@@ -193,6 +193,11 @@ pub fn metrics(server: web::Data<AppServer>) -> HttpResponse {
     HttpResponse::Ok().body(res)
 }
 
+// Return general server info
+pub fn server_info(server: web::Data<AppServer>) -> HttpResponse {
+    render_json(server.read().server_info())
+}
+
 //------------ Admin: Publishers ---------------------------------------------
 
 pub fn repo_stats(server: web::Data<AppServer>) -> HttpResponse {

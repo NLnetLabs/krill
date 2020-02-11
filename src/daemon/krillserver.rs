@@ -6,15 +6,17 @@ use std::thread;
 
 use bytes::Bytes;
 use chrono::Duration;
+
 use rpki::cert::Cert;
 use rpki::uri;
+use rpki::x509::Time;
 
 use crate::commons::api::{
     AddChildRequest, AllCertAuthIssues, CaRepoDetails, CertAuthHistory, CertAuthInfo, CertAuthInit,
     CertAuthIssues, CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, CurrentRepoState,
     Handle, ListReply, ParentCaContact, ParentCaReq, ParentHandle, PublishDelta, PublisherDetails,
     PublisherHandle, RepoInfo, RepositoryContact, RepositoryUpdate, RoaDefinition,
-    RoaDefinitionUpdates, TaCertDetails, UpdateChildRequest,
+    RoaDefinitionUpdates, ServerInfo, TaCertDetails, UpdateChildRequest,
 };
 use crate::commons::error::Error;
 use crate::commons::remote::rfc8183;
@@ -62,6 +64,9 @@ pub struct KrillServer {
     // Responsible for background tasks, e.g. re-publishing
     #[allow(dead_code)] // just need to keep this in scope
     scheduler: Scheduler,
+
+    // Time this server was started
+    started: Time,
 }
 
 /// # Set up and initialisation
@@ -154,11 +159,16 @@ impl KrillServer {
             pubserver,
             caserver,
             scheduler,
+            started: Time::now(),
         })
     }
 
     pub fn service_base_uri(&self) -> &uri::Https {
         &self.service_uri
+    }
+
+    pub fn server_info(&self) -> ServerInfo {
+        ServerInfo::new(KRILL_VERSION, self.started)
     }
 }
 
