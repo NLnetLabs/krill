@@ -827,22 +827,35 @@ impl Options {
 
     fn parse_matches_repo_config(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
-        let rrdp_base = matches
+        let rrdp_base: uri::Https = matches
             .value_of("rrdp")
             .map(uri::Https::from_str)
             .unwrap()?;
+
+        if !rrdp_base.as_str().ends_with('/') {
+            return Err(Error::general("URI for --rrdp MUST end with a '/'"));
+        }
+
         let rsync_base = matches
             .value_of("rsync")
             .map(uri::Rsync::from_str)
             .unwrap()?;
+
+        if !rsync_base.ends_with("/") {
+            return Err(Error::general("URI for --rsync MUST end with a '/'"));
+        }
 
         let mut details = KrillInitDetails::default();
         details.with_rsync_base(rsync_base);
         details.with_rrdp_service_uri(rrdp_base);
 
         if let Some(data) = matches.value_of("data") {
+            if !data.ends_with('/') {
+                return Err(Error::general("Path for --data MUST end with a '/'"));
+            }
             details.with_data_dir(data);
         }
+
         if let Some(log_file) = matches.value_of("logfile") {
             details.with_log_file(log_file);
         }
@@ -855,6 +868,9 @@ impl Options {
         let general_args = GeneralArgs::from_matches(matches)?;
         let mut details = KrillInitDetails::default();
         if let Some(data) = matches.value_of("data") {
+            if !data.ends_with('/') {
+                return Err(Error::general("Path for --data MUST end with a '/'"));
+            }
             details.with_data_dir(data);
         }
         if let Some(log_file) = matches.value_of("logfile") {
@@ -1586,11 +1602,18 @@ pub enum Error {
 
     #[display(fmt = "Unrecognised sub-command. Use 'help'.")]
     UnrecognisedSubCommand,
+
+    #[display(fmt = "{}", _0)]
+    GeneralArgumentError(String),
 }
 
 impl Error {
     fn missing_arg_with_env(arg: &str, env_var: &str) -> Self {
         Error::MissingArgWithEnv(arg.to_string(), env_var.to_string())
+    }
+
+    fn general(msg: &str) -> Self {
+        Error::GeneralArgumentError(msg.to_string())
     }
 }
 
