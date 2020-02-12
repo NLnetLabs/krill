@@ -841,7 +841,7 @@ impl Options {
             .map(uri::Rsync::from_str)
             .unwrap()?;
 
-        if !rsync_base.ends_with("/") {
+        if !rsync_base.to_string().ends_with("/") {
             return Err(Error::general("URI for --rsync MUST end with a '/'"));
         }
 
