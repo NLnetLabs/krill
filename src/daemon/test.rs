@@ -89,7 +89,7 @@ fn health_check() -> Result<ApiResponse, Error> {
     let krillc_opts = Options::new(
         test::https("https://localhost:3000/"),
         "secret",
-        ReportFormat::Default,
+        ReportFormat::Text,
         Command::Health,
     );
 
@@ -113,7 +113,7 @@ fn krill_pubd_health() -> Result<ApiResponse, Error> {
     let krillc_opts = Options::new(
         test::https("https://localhost:3001/"),
         "secret",
-        ReportFormat::Default,
+        ReportFormat::Text,
         Command::Health,
     );
 
