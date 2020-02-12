@@ -30,5 +30,7 @@ pub const KRILL_CLI_API_ENV: &str = "KRILL_CLI_API";
 pub const KRILL_CLI_MY_CA_ARG: &str = "ca";
 pub const KRILL_CLI_MY_CA_ENV: &str = "KRILL_CLI_MY_CA";
 
+pub const KRILL_HTTPS_ROOT_CERTS_ENV: &str = "KRILL_HTTPS_ROOT_CERTS";
+
 pub const CHILD_CERTIFICATE_VALIDITY_WEEKS: i64 = 52;
 pub const CHILD_CERTIFICATE_REISSUE_WEEKS: i64 = 4;

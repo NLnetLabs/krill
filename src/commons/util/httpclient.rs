@@ -1,5 +1,7 @@
 //! Some helper functions for HTTP calls
 use std::io::Read;
+use std::path::PathBuf;
+use std::str::FromStr;
 use std::time::Duration;
 use std::{env, fmt};
 
@@ -10,7 +12,8 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 use crate::commons::api::{ErrorResponse, Token};
-use crate::constants::KRILL_CLI_API_ENV;
+use crate::commons::util::file;
+use crate::constants::{KRILL_CLI_API_ENV, KRILL_HTTPS_ROOT_CERTS_ENV};
 
 const JSON_CONTENT: &str = "application/json";
 
@@ -91,6 +94,7 @@ pub fn get_json<T: DeserializeOwned>(uri: &str, token: Option<&Token>) -> Result
     }
 
     let headers = headers(Some(JSON_CONTENT), token)?;
+
     let res = client(uri)?.get(uri).headers(headers).send()?;
     process_json_response(res)
 }
@@ -231,10 +235,23 @@ pub fn delete(uri: &str, token: Option<&Token>) -> Result<(), Error> {
     }
 }
 
+fn load_root_cert(path: &str) -> Result<reqwest::Certificate, Error> {
+    let path = PathBuf::from_str(path).map_err(Error::https_root_cert_error)?;
+    let file = file::read(&path).map_err(Error::https_root_cert_error)?;
+    reqwest::Certificate::from_pem(file.as_ref()).map_err(Error::https_root_cert_error)
+}
+
 fn client(uri: &str) -> Result<Client, Error> {
-    let builder = Client::builder()
+    let mut builder = Client::builder()
         .gzip(true)
         .timeout(Duration::from_secs(300));
+
+    if let Ok(cert_list) = env::var(KRILL_HTTPS_ROOT_CERTS_ENV) {
+        for path in cert_list.split(':') {
+            let cert = load_root_cert(path)?;
+            builder = builder.add_root_certificate(cert);
+        }
+    }
 
     if uri.starts_with("https://localhost") || uri.starts_with("https://127.0.0.1") {
         builder
@@ -328,6 +345,12 @@ pub enum Error {
 
     #[display(fmt = "Unexpected response: {}", _0)]
     UnexpectedResponse(String),
+
+    #[display(
+        fmt = "HTTPS root cert error, check files under dir defined in KRILL_HTTPS_ROOT_CERTS: {}",
+        _0
+    )]
+    HttpsRootCertError(String),
 }
 
 impl Error {
@@ -336,6 +359,10 @@ impl Error {
             Ok(res) => Error::ErrorWithJson(code, res),
             Err(_) => Error::ErrorWithBody(code, content),
         }
+    }
+
+    fn https_root_cert_error(e: impl fmt::Display) -> Self {
+        Error::HttpsRootCertError(e.to_string())
     }
 }
 
