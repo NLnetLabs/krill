@@ -195,13 +195,7 @@ impl SignSupport {
             .map_err(ca::Error::signer)?;
         let cert_uri = signing_cert.uri_for_object(&cert);
 
-        Ok(IssuedCert::new(
-            cert_uri,
-            limit,
-            resources.clone(),
-            cert,
-            replaces,
-        ))
+        Ok(IssuedCert::new(cert_uri, limit, resources, cert, replaces))
     }
 
     /// Returns a validity period from 5 minutes ago (in case of NTP mess-up), to

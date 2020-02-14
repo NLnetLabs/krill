@@ -111,7 +111,7 @@ fn ca_grandchildren() {
         let ca_3_res = ca_3_res_under_ca_1.union(&ca_3_res_under_ca_2);
         let req = child_request(&ca3);
         let parent = {
-            let contact = add_child_rfc6492(&ca2, &ca3, req, ca_3_res_under_ca_2.clone());
+            let contact = add_child_rfc6492(&ca2, &ca3, req, ca_3_res_under_ca_2);
             ParentCaReq::new(ca2.clone(), contact)
         };
         add_parent_to_ca(&ca3, parent);

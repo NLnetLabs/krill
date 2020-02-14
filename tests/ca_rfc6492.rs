@@ -76,7 +76,7 @@ fn ca_rfc6492() {
         let parent = {
             let req = child_request(&child);
             let contact = add_child_to_ta_rfc6492(&child, req, child_resources.clone());
-            ParentCaReq::new(ta_handle.clone(), contact)
+            ParentCaReq::new(ta_handle, contact)
         };
 
         // And can add the parent back to the child, and it will request resources again.

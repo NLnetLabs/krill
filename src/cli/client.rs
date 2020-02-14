@@ -329,7 +329,7 @@ impl KrillClient {
         let c: Config = toml::from_slice(config.as_ref()).map_err(Error::init)?;
         c.verify().map_err(Error::init)?;
 
-        Ok(ApiResponse::GenericBody(config.to_string()))
+        Ok(ApiResponse::GenericBody(config))
     }
 
     fn get_json<T: DeserializeOwned>(&self, uri: &str) -> Result<T, Error> {
@@ -454,5 +454,4 @@ mod tests {
             _ => panic!("Expected body"),
         }
     }
-
 }

@@ -130,7 +130,7 @@ impl KrillServer {
                 let ta_aia = uri::Rsync::from_string(ta_aia).unwrap();
 
                 // Add TA
-                caserver.init_ta(repo_info.clone(), ta_aia, vec![ta_uri])?;
+                caserver.init_ta(repo_info, ta_aia, vec![ta_uri])?;
 
                 let ta = caserver.get_trust_anchor()?;
 

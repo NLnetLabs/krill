@@ -617,7 +617,7 @@ mod tests {
         );
         verify(
             include_str!("../../test-resources/errors/pub-duplicate.json"),
-            Error::PublisherDuplicate(publisher.clone()),
+            Error::PublisherDuplicate(publisher),
         );
         verify(
             include_str!("../../test-resources/errors/pub-outside-jail.json"),
@@ -696,7 +696,7 @@ mod tests {
         );
         verify(
             include_str!("../../test-resources/errors/ca-parent-issue.json"),
-            Error::CaParentIssue(ca.clone(), parent.clone(), "connection refused".to_string()),
+            Error::CaParentIssue(ca.clone(), parent, "connection refused".to_string()),
         );
         verify(
             include_str!("../../test-resources/errors/ca-parent-response-invalid-xml.json"),
@@ -734,7 +734,7 @@ mod tests {
         );
         verify(
             include_str!("../../test-resources/errors/ca-child-unauthorised.json"),
-            Error::CaChildUnauthorised(ca.clone(), child.clone()),
+            Error::CaChildUnauthorised(ca.clone(), child),
         );
 
         verify(
@@ -751,7 +751,7 @@ mod tests {
         );
         verify(
             include_str!("../../test-resources/errors/ca-roa-not-entitled.json"),
-            Error::CaAuthorisationNotEntitled(ca.clone(), auth),
+            Error::CaAuthorisationNotEntitled(ca, auth),
         );
 
         verify(
@@ -823,5 +823,4 @@ mod tests {
         //            file::save_json(&error_response, &path).unwrap();
         //        }
     }
-
 }

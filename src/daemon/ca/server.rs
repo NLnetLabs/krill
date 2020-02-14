@@ -999,9 +999,7 @@ mod tests {
 
             assert!(server.get_trust_anchor().is_err());
 
-            server
-                .init_ta(repo_info.clone(), ta_aia, vec![ta_uri])
-                .unwrap();
+            server.init_ta(repo_info, ta_aia, vec![ta_uri]).unwrap();
 
             assert!(server.get_trust_anchor().is_ok());
         })

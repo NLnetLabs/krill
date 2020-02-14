@@ -39,7 +39,7 @@ fn ca_roas() {
         let mft_file = ".mft";
         let route1_file = ObjectName::from(&route_1).to_string();
         let route1_file = route1_file.as_str();
-        let route2_file = ObjectName::from(&route_2).to_string();;
+        let route2_file = ObjectName::from(&route_2).to_string();
         let route2_file = route2_file.as_str();
         let route3_file = ObjectName::from(&route_3).to_string();
         let route3_file = route3_file.as_str();

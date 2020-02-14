@@ -511,7 +511,7 @@ mod tests {
             builder.add_publish(file3.as_publish());
             let delta = builder.finish();
 
-            match server.publish(alice_handle.clone(), delta) {
+            match server.publish(alice_handle, delta) {
                 Err(Error::Rfc8181Delta(PublicationDeltaError::ObjectAlreadyPresent(uri))) => {
                     assert_eq!(uri, test::rsync("rsync://localhost/repo/alice/file3.txt"))
                 }

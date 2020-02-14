@@ -203,9 +203,6 @@ mod tests {
         pub fn id(&self) -> &Handle {
             &self.id
         }
-        pub fn version(&self) -> u64 {
-            self.version
-        }
         pub fn name(&self) -> &String {
             &self.name
         }
@@ -335,5 +332,4 @@ mod tests {
             assert_eq!(history.to_string().as_str(), expected_history);
         })
     }
-
 }

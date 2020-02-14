@@ -18,7 +18,7 @@ fn ca_keyroll_rfc6492() {
         // RFC6492 parent --------------------------------------------------------------------
         let parent = {
             let contact = add_child_to_ta_rfc6492(&child, req, child_resources.clone());
-            ParentCaReq::new(ta_handle.clone(), contact)
+            ParentCaReq::new(ta_handle, contact)
         };
 
         add_parent_to_ca(&child, parent);

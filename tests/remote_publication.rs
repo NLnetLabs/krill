@@ -95,7 +95,7 @@ fn remote_publication() {
 
             let parent = {
                 let parent_contact = add_child_to_ta_embedded(&child, child_resources.clone());
-                ParentCaReq::new(ta_handle.clone(), parent_contact)
+                ParentCaReq::new(ta_handle, parent_contact)
             };
 
             add_parent_to_ca(&child, parent);
