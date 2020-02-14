@@ -18,6 +18,7 @@ use crate::daemon::endpoints;
 use crate::daemon::endpoints::*;
 use crate::daemon::http::ssl;
 use crate::daemon::krillserver::KrillServer;
+use daemon::http::statics::WithStaticContent;
 
 //------------ AppServer -----------------------------------------------------
 
@@ -143,6 +144,16 @@ pub fn start(config: &Config) -> Result<(), Error> {
             .route("/ta/ta.cer", get().to(ta_cer))
             // RRDP repository
             .route("/rrdp/{path:.*}", get().to(serve_rrdp_files))
+            // UI
+            .route(
+                "/",
+                get().to(|| {
+                    HttpResponse::Found()
+                        .header("location", "/index.html")
+                        .finish()
+                }),
+            )
+            .add_statics()
             // Catch all (not found or not allowed)
             .default_service(
                 // 404 for GET request
