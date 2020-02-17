@@ -477,6 +477,27 @@ impl<S: Signer> CaServer<S> {
         Ok(())
     }
 
+    /// Try to get update for parents, if they were delayed because there was no repository configured
+    /// when they were added
+    pub fn get_delayed_updates(&self, ca_handle: &Handle) -> KrillResult<()> {
+        if ca_handle == &ta_handle() {
+            Ok(()) // The (test) TA never needs updates.
+        } else {
+            let ca = self.get_ca(ca_handle)?;
+            // If this is the first time the repo was configured, then the current resources will be
+            // empty and certs should now be requested from parents. If there *are* current resources,
+            // then there was a repository, and new certificates have already been requested for the
+            // new repository as part of the update repository process. So, in that case we do *not*
+            // need to request anything now.
+            if ca.all_resources().is_empty() {
+                for parent in ca.parents() {
+                    self.get_updates_from_parent(ca_handle, parent)?;
+                }
+            }
+            Ok(())
+        }
+    }
+
     /// Try to update a specific CA
     pub fn get_updates_from_parent(
         &self,

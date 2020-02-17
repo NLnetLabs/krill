@@ -24,6 +24,9 @@ pub enum QueueEvent {
     #[display(fmt = "parent added to '{}' version '{}'", _0, _1)]
     ParentAdded(Handle, u64, ParentHandle),
 
+    #[display(fmt = "configured repository for '{}' version '{}'", _0, _1)]
+    RepositoryConfigured(Handle, u64),
+
     #[display(fmt = "requests pending for '{}' version '{}'", _0, _1)]
     RequestsPending(Handle, u64),
 
@@ -100,7 +103,10 @@ impl<S: Signer> eventsourcing::EventListener<CertAuth<S>> for EventQueueListener
                 let evt = QueueEvent::ParentAdded(handle.clone(), version, parent.clone());
                 self.push_back(evt);
             }
-
+            EvtDet::RepoUpdated(_) => {
+                let evt = QueueEvent::RepositoryConfigured(handle.clone(), version);
+                self.push_back(evt)
+            }
             EvtDet::CertificateRequested(_, _, _) => {
                 let evt = QueueEvent::RequestsPending(handle.clone(), version);
                 self.push_back(evt);

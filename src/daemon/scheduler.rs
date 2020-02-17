@@ -93,6 +93,16 @@ fn make_event_sh(
                         )
                     }
                 }
+                QueueEvent::RepositoryConfigured(ca, _) => {
+                    trace!("Repository configured for '{}'", ca);
+                    if let Err(e) = caserver.get_delayed_updates(&ca) {
+                        error!(
+                            "Error getting updates after configuring repository for '{}',  error: '{}'",
+                            &ca, e
+                        )
+                    }
+                }
+
                 QueueEvent::RequestsPending(handle, _) => {
                     trace!("Get updates for pending requests for '{}'.", handle);
                     if let Err(e) = caserver.send_all_requests(&handle) {
