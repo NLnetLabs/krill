@@ -628,65 +628,50 @@ pub fn ca_repo_update(
     })
 }
 
-fn extract_parent_ca_req(ca: &Handle, bytes: Bytes) -> Result<ParentCaReq, Error> {
-    let string = String::from_utf8(bytes.to_vec()).map_err(Error::custom)?;
-
-    // TODO: Switch based on Content-Type header
-    if string.starts_with('<') {
-        if string.starts_with("<repository") {
-            Err(Error::CaParentResponseWrongXml(ca.clone()))
-        } else {
-            let res = rfc8183::ParentResponse::validate(string.as_bytes())
-                .map_err(|e| Error::CaParentResponseInvalidXml(ca.clone(), e.to_string()))?;
-            let parent_handle = res.parent_handle().clone();
-            let contact = ParentCaContact::Rfc6492(res);
-
-            Ok(ParentCaReq::new(parent_handle, contact))
-        }
-    } else {
-        serde_json::from_str(&string).map_err(Error::JsonError)
-    }
-}
-
-fn ca_add_parent_general(
-    server: web::Data<AppServer>,
-    auth: Auth,
-    ca: Handle,
-    parent: Option<Handle>,
-    bytes: Bytes,
-) -> HttpResponse {
-    let mut parent_req = match extract_parent_ca_req(&ca, bytes) {
-        Ok(req) => req,
-        Err(e) => return server_error(e),
-    };
-
-    if let Some(parent) = parent {
-        let (_handle, contact) = parent_req.unpack();
-        parent_req = ParentCaReq::new(parent, contact);
-    }
-
-    if_api_allowed(&server, &auth, || {
-        render_empty_res(server.read().ca_parent_add(ca, parent_req))
-    })
-}
-
 pub fn ca_add_parent(
     server: web::Data<AppServer>,
     auth: Auth,
     ca: Path<Handle>,
-    bytes: Bytes,
+    req: Json<ParentCaReq>,
 ) -> HttpResponse {
-    ca_add_parent_general(server, auth, ca.into_inner(), None, bytes)
+    if_api_allowed(&server, &auth, || {
+        render_empty_res(
+            server
+                .read()
+                .ca_parent_add(ca.into_inner(), req.into_inner()),
+        )
+    })
 }
 
-pub fn ca_add_parent_with_name(
+pub fn ca_add_parent_xml(
     server: web::Data<AppServer>,
     auth: Auth,
     ca_and_parent: Path<(Handle, Handle)>,
     bytes: Bytes,
 ) -> HttpResponse {
     let (ca, parent) = ca_and_parent.into_inner();
-    ca_add_parent_general(server, auth, ca, Some(parent), bytes)
+    let string = match String::from_utf8(bytes.to_vec()).map_err(Error::custom) {
+        Ok(string) => string,
+        Err(e) => return server_error(e),
+    };
+
+    let req = if string.starts_with("<repository") {
+        return server_error(Error::CaParentResponseWrongXml(ca.clone()));
+    } else {
+        let res = match rfc8183::ParentResponse::validate(string.as_bytes())
+            .map_err(|e| Error::CaParentResponseInvalidXml(ca.clone(), e.to_string()))
+        {
+            Ok(res) => res,
+            Err(e) => return server_error(e),
+        };
+        let contact = ParentCaContact::Rfc6492(res);
+
+        ParentCaReq::new(parent, contact)
+    };
+
+    if_api_allowed(&server, &auth, || {
+        render_empty_res(server.read().ca_parent_add(ca, req))
+    })
 }
 
 fn extract_parent_ca_contact(ca: &Handle, bytes: Bytes) -> Result<ParentCaContact, Error> {

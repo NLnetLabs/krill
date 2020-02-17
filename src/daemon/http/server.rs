@@ -96,8 +96,8 @@ pub fn start(config: &Config) -> Result<(), Error> {
                     .route("/cas/{ca}/repo", post().to(ca_repo_update))
                     .route("/cas/{ca}/parents", post().to(ca_add_parent))
                     .route(
-                        "/cas/{ca}/parents/{parent}",
-                        post().to(ca_add_parent_with_name),
+                        "/cas/{ca}/parents-xml/{parent}",
+                        post().to(ca_add_parent_xml),
                     )
                     .route("/cas/{ca}/parents/{parent}", get().to(ca_my_parent_contact))
                     .route("/cas/{ca}/parents/{parent}", post().to(ca_update_parent))
