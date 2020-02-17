@@ -226,6 +226,114 @@ impl ParentResponse {
 /// # Validation
 ///
 impl ParentResponse {
+    fn validate_rfc_xml_at<R>(r: &mut XmlReader<R>, now: x509::Time) -> Result<Self, Error>
+    where
+        R: io::Read,
+    {
+        r.take_named_element("parent_response", |mut a, r| {
+            if a.take_req("version")? != VERSION {
+                return Err(Error::InvalidVersion);
+            }
+
+            let tag = a.take_opt("tag");
+            let parent_handle = Handle::from_str(&a.take_req("parent_handle")?)
+                .map_err(|_| Error::InvalidHandle)?;
+
+            let child_handle =
+                Handle::from_str(&a.take_req("child_handle")?).map_err(|_| Error::InvalidHandle)?;
+            let service_uri = ServiceUri::try_from(a.take_req("service_uri")?)?;
+
+            if a.take_opt("valid_until").is_some() {
+                warn!(
+                    "Found deprecated attribute 'valid_until' used by \
+                         old rpkid implementations. Ignoring this, but other \
+                         things may break."
+                )
+            }
+
+            a.exhausted()?;
+
+            let bytes = r.take_named_element("parent_bpki_ta", |a, r| {
+                a.exhausted()?;
+                r.take_bytes_std()
+            })?;
+            let id_cert = IdCert::decode(bytes)?;
+            id_cert.validate_ta_at(now)?;
+
+            /// We don't do anything with <offer/> or <referral /> in
+            /// responses given to us, and we do not include them in
+            /// our own responses given to children.
+            ///
+            /// I.e. the child needs to set up their publication server
+            /// exchange separately, and explicitly.
+            fn ignore_offer_or_referral<R>(r: &mut XmlReader<R>) -> Result<(), Error>
+            where
+                R: io::Read,
+            {
+                r.take_opt_element(|tag, _a, r| {
+                    match tag.name.as_str() {
+                        "offer" => {
+                            r.take_empty()?;
+                            Ok(None)
+                        }
+                        "referral" => {
+                            let chars = r.take_chars()?;
+                            Ok(Some(chars)) // help return type inference.
+                        }
+                        _ => Err(Error::InvalidXml),
+                    }
+                })?;
+                Ok(())
+            }
+
+            while r.next_start_name().is_some() {
+                ignore_offer_or_referral(r)?;
+            }
+
+            Ok(ParentResponse {
+                tag,
+                id_cert,
+                parent_handle,
+                child_handle,
+                service_uri,
+            })
+        })
+    }
+
+    // Sloppy best effort interpretation of pre RFC 8183 XML used by ARIN
+    fn validate_pre_rfc_xml_at<R>(r: &mut XmlReader<R>, now: x509::Time) -> Result<Self, Error>
+    where
+        R: io::Read,
+    {
+        r.take_named_element("parent", |mut a, r| {
+            let parent_handle = Handle::from_str(&a.take_req("parent_handle")?)
+                .map_err(|_| Error::InvalidHandle)?;
+
+            let child_handle =
+                Handle::from_str(&a.take_req("child_handle")?).map_err(|_| Error::InvalidHandle)?;
+
+            let service_uri = ServiceUri::try_from(a.take_req("service_uri")?)?;
+
+            let bytes = r.take_named_element("bpki_resource_ta", |a, r| {
+                a.exhausted()?;
+                r.take_bytes_std()
+            })?;
+            let id_cert = IdCert::decode(bytes)?;
+            id_cert.validate_ta_at(now)?;
+
+            r.take_named_element("bpki_child_ta", |_a, r| r.take_bytes_std())?;
+            r.take_named_element("repository", |_a, r| r.take_empty())?;
+
+            Ok(ParentResponse {
+                tag: None,
+                id_cert,
+                parent_handle,
+                child_handle,
+                service_uri,
+            })
+        })
+    }
+
     pub fn validate<R>(reader: R) -> Result<Self, Error>
     where
         R: io::Read,
@@ -238,74 +346,13 @@ impl ParentResponse {
         R: io::Read,
     {
         XmlReader::decode(reader, |r| {
-            r.take_named_element("parent_response", |mut a, r| {
-                if a.take_req("version")? != VERSION {
-                    return Err(Error::InvalidVersion);
-                }
-
-                let tag = a.take_opt("tag");
-                let parent_handle = Handle::from_str(&a.take_req("parent_handle")?)
-                    .map_err(|_| Error::InvalidHandle)?;
-
-                let child_handle = Handle::from_str(&a.take_req("child_handle")?)
-                    .map_err(|_| Error::InvalidHandle)?;
-                let service_uri = ServiceUri::try_from(a.take_req("service_uri")?)?;
-
-                if a.take_opt("valid_until").is_some() {
-                    warn!(
-                        "Found deprecated attribute 'valid_until' used by \
-                         old rpkid implementations. Ignoring this, but other \
-                         things may break."
-                    )
-                }
-
-                a.exhausted()?;
-
-                let bytes = r.take_named_element("parent_bpki_ta", |a, r| {
-                    a.exhausted()?;
-                    r.take_bytes_std()
-                })?;
-                let id_cert = IdCert::decode(bytes)?;
-                id_cert.validate_ta_at(now)?;
-
-                /// We don't do anything with <offer/> or <referral /> in
-                /// responses given to us, and we do not include them in
-                /// our own responses given to children.
-                ///
-                /// I.e. the child needs to set up their publication server
-                /// exchange separately, and explicitly.
-                fn ignore_offer_or_referral<R>(r: &mut XmlReader<R>) -> Result<(), Error>
-                where
-                    R: io::Read,
-                {
-                    r.take_opt_element(|tag, _a, r| {
-                        match tag.name.as_str() {
-                            "offer" => {
-                                r.take_empty()?;
-                                Ok(None)
-                            }
-                            "referral" => {
-                                let chars = r.take_chars()?;
-                                Ok(Some(chars)) // help return type inference.
-                            }
-                            _ => Err(Error::InvalidXml),
-                        }
-                    })?;
-                    Ok(())
-                }
-
-                while r.next_start_name().is_some() {
-                    ignore_offer_or_referral(r)?;
-                }
-
-                Ok(ParentResponse {
-                    tag,
-                    id_cert,
-                    parent_handle,
-                    child_handle,
-                    service_uri,
-                })
-            })
+            if r.next_start_name() == Some("parent_response") {
+                Self::validate_rfc_xml_at(r, now)
+            } else if r.next_start_name() == Some("parent") {
+                Self::validate_pre_rfc_xml_at(r, now)
+            } else {
+                Err(Error::InvalidXml)
+            }
         })
     }
 }
@@ -852,5 +899,19 @@ mod tests {
         let decoded = ParentResponse::validate_at(encoded.as_slice(), rpkid_time()).unwrap();
 
         assert_eq!(res, decoded);
+    }
+
+    #[test]
+    fn pre_rfc8183_response() {
+        let pre_rfc8183_xml =
+            include_str!("../../../test-resources/remote/arin-pre-rfc8183-parent-response.xml");
+        let pre_rfc_res =
+            ParentResponse::validate_at(pre_rfc8183_xml.as_bytes(), rpkid_time()).unwrap();
+
+        let rfc8183_xml =
+            include_str!("../../../test-resources/remote/rpkid-parent-response-offer.xml");
+        let rfc_res = ParentResponse::validate_at(rfc8183_xml.as_bytes(), rpkid_time()).unwrap();
+
+        assert_eq!(pre_rfc_res, rfc_res)
     }
 }
