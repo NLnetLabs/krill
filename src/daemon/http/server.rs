@@ -17,8 +17,8 @@ use crate::daemon::config::Config;
 use crate::daemon::endpoints;
 use crate::daemon::endpoints::*;
 use crate::daemon::http::ssl;
+use crate::daemon::http::statics::WithStaticContent;
 use crate::daemon::krillserver::KrillServer;
-use daemon::http::statics::WithStaticContent;
 
 //------------ AppServer -----------------------------------------------------
 
@@ -95,6 +95,10 @@ pub fn start(config: &Config) -> Result<(), Error> {
                     .route("/cas/{ca}/repo/request.xml", get().to(ca_publisher_req_xml))
                     .route("/cas/{ca}/repo", post().to(ca_repo_update))
                     .route("/cas/{ca}/parents", post().to(ca_add_parent))
+                    .route(
+                        "/cas/{ca}/parents/{parent}",
+                        post().to(ca_add_parent_with_name),
+                    )
                     .route("/cas/{ca}/parents/{parent}", get().to(ca_my_parent_contact))
                     .route("/cas/{ca}/parents/{parent}", post().to(ca_update_parent))
                     .route("/cas/{ca}/parents/{parent}", delete().to(ca_remove_parent))

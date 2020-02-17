@@ -648,20 +648,45 @@ fn extract_parent_ca_req(ca: &Handle, bytes: Bytes) -> Result<ParentCaReq, Error
     }
 }
 
+fn ca_add_parent_general(
+    server: web::Data<AppServer>,
+    auth: Auth,
+    ca: Handle,
+    parent: Option<Handle>,
+    bytes: Bytes,
+) -> HttpResponse {
+    let mut parent_req = match extract_parent_ca_req(&ca, bytes) {
+        Ok(req) => req,
+        Err(e) => return server_error(e),
+    };
+
+    if let Some(parent) = parent {
+        let (_handle, contact) = parent_req.unpack();
+        parent_req = ParentCaReq::new(parent, contact);
+    }
+
+    if_api_allowed(&server, &auth, || {
+        render_empty_res(server.read().ca_parent_add(ca, parent_req))
+    })
+}
+
 pub fn ca_add_parent(
     server: web::Data<AppServer>,
     auth: Auth,
     ca: Path<Handle>,
     bytes: Bytes,
 ) -> HttpResponse {
-    let ca = ca.into_inner();
-    let parent_req = match extract_parent_ca_req(&ca, bytes) {
-        Ok(req) => req,
-        Err(e) => return server_error(e),
-    };
-    if_api_allowed(&server, &auth, || {
-        render_empty_res(server.read().ca_parent_add(ca, parent_req))
-    })
+    ca_add_parent_general(server, auth, ca.into_inner(), None, bytes)
+}
+
+pub fn ca_add_parent_with_name(
+    server: web::Data<AppServer>,
+    auth: Auth,
+    ca_and_parent: Path<(Handle, Handle)>,
+    bytes: Bytes,
+) -> HttpResponse {
+    let (ca, parent) = ca_and_parent.into_inner();
+    ca_add_parent_general(server, auth, ca, Some(parent), bytes)
 }
 
 fn extract_parent_ca_contact(ca: &Handle, bytes: Bytes) -> Result<ParentCaContact, Error> {
