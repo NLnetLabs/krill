@@ -282,8 +282,10 @@ impl Error {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
             Error::PublisherUnknown(_)
+            | Error::CaUnknown(_)
             | Error::CaChildUnknown(_, _)
-            | Error::CaParentUnknown(_, _) => StatusCode::NOT_FOUND,
+            | Error::CaParentUnknown(_, _)
+            | Error::ApiUnknownResource => StatusCode::NOT_FOUND,
 
             _ => StatusCode::BAD_REQUEST,
         }
