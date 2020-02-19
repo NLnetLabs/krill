@@ -578,6 +578,20 @@ impl<S: Signer> CaServer<S> {
         }
     }
 
+    pub fn send_revoke_unexpected_key(
+        &self,
+        handle: &Handle,
+        rcn: ResourceClassName,
+        revocation: RevocationRequest,
+    ) -> KrillResult<HashMap<ResourceClassName, Vec<RevocationResponse>>> {
+        let child = self.ca_store.get_latest(handle)?;
+        let parent = child.parent_for_rc(&rcn)?;
+        let mut requests = HashMap::new();
+        requests.insert(rcn, vec![revocation]);
+
+        self.send_revoke_requests(handle, parent, requests)
+    }
+
     fn send_revoke_requests_embedded(
         &self,
         revoke_requests: HashMap<ResourceClassName, Vec<RevocationRequest>>,

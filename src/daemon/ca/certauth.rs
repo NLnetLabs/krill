@@ -286,6 +286,9 @@ impl<S: Signer> Aggregate for CertAuth<S> {
                     .unwrap()
                     .old_key_removed();
             }
+            EvtDet::UnexpectedKeyFound(_, _) => {
+                // no action needed, this is marked to flag that a key may be removed
+            }
 
             //-----------------------------------------------------------------------
             // Route Authorizations
@@ -955,6 +958,15 @@ impl<S: Signer> CertAuth<S> {
             .ok_or_else(|| Error::CaParentUnknown(self.handle.clone(), parent.clone()))
     }
 
+    /// Find the parent for a given resource class name.
+    pub fn parent_for_rc(&self, rcn: &ResourceClassName) -> KrillResult<&ParentHandle> {
+        let rc = self
+            .resources
+            .get(rcn)
+            .ok_or_else(|| Error::ResourceClassUnknown(rcn.clone()))?;
+        Ok(rc.parent_handle())
+    }
+
     /// Adds a parent. This method will return an error in case a parent
     /// by this name (handle) is already known.
     fn add_parent(&self, parent: Handle, info: ParentCaContact) -> KrillResult<Vec<Evt>> {
@@ -1053,7 +1065,7 @@ impl<S: Signer> CertAuth<S> {
     ) -> KrillResult<Vec<Evt>> {
         let repo = self.get_repository_contact()?;
         let parent_class_name = entitlement.class_name().clone();
-        let req_details_list = rc.make_request_events(entitlement, repo.repo_info(), signer)?;
+        let req_details_list = rc.make_entitlement_events(entitlement, repo.repo_info(), signer)?;
 
         let mut res = vec![];
         for details in req_details_list.into_iter() {

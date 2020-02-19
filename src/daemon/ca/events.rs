@@ -247,6 +247,7 @@ pub enum EvtDet {
     KeyPendingToActive(ResourceClassName, CertifiedKey, ObjectsDelta),
     KeyRollActivated(ResourceClassName, RevocationRequest),
     KeyRollFinished(ResourceClassName, ObjectsDelta),
+    UnexpectedKeyFound(ResourceClassName, RevocationRequest),
 
     // Route Authorizations
     RouteAuthorizationAdded(RouteAuthorization),
@@ -554,6 +555,11 @@ impl fmt::Display for EvtDet {
                 f,
                 "key roll: finished for resource class '{}'",
                 rcn
+            ),
+            EvtDet::UnexpectedKeyFound(rcn, revoke) => write!(
+                f,
+                "Found unexpected key in resource class '{}', will try to revoke key id: '{}'",
+                rcn, revoke.key()
             ),
 
             // Route Authorizations

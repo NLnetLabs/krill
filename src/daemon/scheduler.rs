@@ -80,6 +80,19 @@ fn make_event_sh(
                         just before removing the resource class entitlements.");
                     }
                 }
+                QueueEvent::UnexpectedKey(handle, _, rcn, revocation) => {
+                    trace!(
+                        "Trigger sending revocation requests for unexpected key with id '{}' in RC '{}'",
+                        revocation.key(),
+                        rcn
+                    );
+                    if caserver
+                        .send_revoke_unexpected_key(&handle, rcn, revocation)
+                        .is_err()
+                    {
+                        debug!("Could not revoke unexpected surplus key at parent.");
+                    }
+                }
                 QueueEvent::ParentAdded(handle, _, parent) => {
                     trace!(
                         "Get updates for '{}' from added parent '{}'.",

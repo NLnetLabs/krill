@@ -656,7 +656,7 @@ pub fn ca_add_parent_xml(
     };
 
     let req = if string.starts_with("<repository") {
-        return server_error(Error::CaParentResponseWrongXml(ca.clone()));
+        return server_error(Error::CaParentResponseWrongXml(ca));
     } else {
         let res = match rfc8183::ParentResponse::validate(string.as_bytes())
             .map_err(|e| Error::CaParentResponseInvalidXml(ca.clone(), e.to_string()))

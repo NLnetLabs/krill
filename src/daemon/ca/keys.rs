@@ -323,7 +323,7 @@ impl KeyState {
         }
     }
 
-    pub fn request_certs<S: Signer>(
+    pub fn make_entitlement_events<S: Signer>(
         &self,
         rcn: ResourceClassName,
         entitlement: &EntitlementClass,
@@ -377,6 +377,17 @@ impl KeyState {
             )?;
 
             res.push(EvtDet::CertificateRequested(rcn.clone(), req, *key_id));
+        }
+
+        for key in entitlement
+            .issued()
+            .iter()
+            .map(|c| c.subject_key_identifier())
+        {
+            if !self.knows_key(key) {
+                let revocation = RevocationRequest::new(entitlement.class_name().clone(), key);
+                res.push(EvtDet::UnexpectedKeyFound(rcn.clone(), revocation));
+            }
         }
 
         Ok(res)
@@ -570,6 +581,18 @@ impl KeyState {
         match self {
             KeyState::RollNew(_, _) => true,
             _ => false,
+        }
+    }
+
+    fn knows_key(&self, key_id: KeyIdentifier) -> bool {
+        match self {
+            KeyState::Pending(pending) => pending.key_id == key_id,
+            KeyState::Active(current) => current.key_id == key_id,
+            KeyState::RollPending(pending, current) => {
+                pending.key_id == key_id || current.key_id == key_id
+            }
+            KeyState::RollNew(new, current) => new.key_id == key_id || current.key_id == key_id,
+            KeyState::RollOld(current, old) => current.key_id == key_id || old.key_id == key_id,
         }
     }
 }

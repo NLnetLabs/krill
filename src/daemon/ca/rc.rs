@@ -327,13 +327,18 @@ impl ResourceClass {
     }
 
     /// Request certificates for any key that needs it.
-    pub fn make_request_events<S: Signer>(
+    /// Also, create revocation events for any unexpected keys to recover from
+    /// issues where the parent believes we have keys that we do not know. This
+    /// can happen in corner cases where re-initialisation of Krill as a child
+    /// is done without proper revocation at the parent, or as is the case with
+    /// ARIN - Krill is sometimes told to just drop all resources.
+    pub fn make_entitlement_events<S: Signer>(
         &self,
         entitlement: &EntitlementClass,
         base_repo: &RepoInfo,
         signer: &S,
     ) -> KrillResult<Vec<EvtDet>> {
-        self.key_state.request_certs(
+        self.key_state.make_entitlement_events(
             self.name.clone(),
             entitlement,
             base_repo,

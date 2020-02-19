@@ -38,6 +38,14 @@ pub enum QueueEvent {
         HashMap<ResourceClassName, Vec<RevocationRequest>>,
     ),
 
+    #[display(
+        fmt = "unexpected key found for '{}' version '{}' resource class: '{}'",
+        _0,
+        _1,
+        _2
+    )]
+    UnexpectedKey(Handle, u64, ResourceClassName, RevocationRequest),
+
     #[display(fmt = "clean up old repo *if it exists* for '{}' version '{}'", _0, _1)]
     CleanOldRepo(Handle, u64),
 }
