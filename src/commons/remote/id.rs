@@ -254,8 +254,12 @@ impl IdCert {
         }
 
         // Verify that this is self signed
-        self.signed_data
-            .verify_signature(&self.subject_public_key_info)?;
+        if let Err(_e) = self
+            .signed_data
+            .verify_signature(&self.subject_public_key_info)
+        {
+            debug!("ID certificate is not self-signed. This should not be an issue, but is against the RFC.")
+        }
 
         Ok(())
     }

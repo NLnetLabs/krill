@@ -17,6 +17,7 @@ use rpki::x509::{Name, Time, Validity};
 
 use crate::commons::remote::id::{IdCert, IdExtensions};
 use crate::commons::remote::sigmsg::SigMsgCrl;
+use crate::constants::ID_CERTIFICATE_VALIDITY_YEARS;
 
 //------------ TbsCertificate ------------------------------------------------
 
@@ -143,7 +144,10 @@ impl IdCertBuilder {
         ext: IdExtensions,
     ) -> RpkiTbsCertificate {
         let issuer = Name::from_pub_key(issuing_key);
-        let validity = Validity::new(Time::five_minutes_ago(), Time::years_from_now(100));
+        let validity = Validity::new(
+            Time::five_minutes_ago(),
+            Time::years_from_now(ID_CERTIFICATE_VALIDITY_YEARS),
+        );
         let subject = Name::from_pub_key(subject_key);
 
         RpkiTbsCertificate {
@@ -619,5 +623,4 @@ pub mod tests {
             assert_eq!(message, parsed_message);
         });
     }
-
 }
