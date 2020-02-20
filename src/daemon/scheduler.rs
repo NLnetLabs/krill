@@ -58,7 +58,7 @@ fn make_event_sh(
         while let Some(evt) = event_queue.pop() {
             match evt {
                 QueueEvent::Delta(handle, version) => {
-                    trace!("Trigger publication for '{}' version '{}'", handle, version);
+                    info!("Trigger publication for '{}' version '{}'", handle, version);
                     let publisher = CaPublisher::new(caserver.clone(), pubserver.clone());
 
                     if let Err(e) = publisher.publish(&handle) {
@@ -66,7 +66,7 @@ fn make_event_sh(
                     }
                 }
                 QueueEvent::ResourceClassRemoved(handle, _, parent, revocations) => {
-                    trace!(
+                    info!(
                         "Trigger send revoke requests for removed RC for '{}' under '{}'",
                         handle,
                         parent
@@ -75,26 +75,25 @@ fn make_event_sh(
                         .send_revoke_requests(&handle, &parent, revocations)
                         .is_err()
                     {
-                        debug!("Could not revoke key for removed resource class. This is not \
+                        warn!("Could not revoke key for removed resource class. This is not \
                         an issue, because typically the parent will revoke our keys pro-actively, \
                         just before removing the resource class entitlements.");
                     }
                 }
                 QueueEvent::UnexpectedKey(handle, _, rcn, revocation) => {
-                    trace!(
+                    info!(
                         "Trigger sending revocation requests for unexpected key with id '{}' in RC '{}'",
                         revocation.key(),
                         rcn
                     );
-                    if caserver
+                    if let Err(e) = caserver
                         .send_revoke_unexpected_key(&handle, rcn, revocation)
-                        .is_err()
                     {
-                        debug!("Could not revoke unexpected surplus key at parent.");
+                        error!("Could not revoke unexpected surplus key at parent: {}", e);
                     }
                 }
                 QueueEvent::ParentAdded(handle, _, parent) => {
-                    trace!(
+                    info!(
                         "Get updates for '{}' from added parent '{}'.",
                         handle,
                         parent
@@ -107,7 +106,7 @@ fn make_event_sh(
                     }
                 }
                 QueueEvent::RepositoryConfigured(ca, _) => {
-                    trace!("Repository configured for '{}'", ca);
+                    info!("Repository configured for '{}'", ca);
                     if let Err(e) = caserver.get_delayed_updates(&ca) {
                         error!(
                             "Error getting updates after configuring repository for '{}',  error: '{}'",
@@ -117,7 +116,7 @@ fn make_event_sh(
                 }
 
                 QueueEvent::RequestsPending(handle, _) => {
-                    trace!("Get updates for pending requests for '{}'.", handle);
+                    info!("Get updates for pending requests for '{}'.", handle);
                     if let Err(e) = caserver.send_all_requests(&handle) {
                         error!(
                             "Failed to send pending requests for '{}', error '{}'",
