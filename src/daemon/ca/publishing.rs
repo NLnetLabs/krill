@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use bytes::Bytes;
+use chrono::Duration;
 
 use rpki::crl::{Crl, TbsCertList};
 use rpki::crypto::{DigestAlgorithm, KeyIdentifier};
@@ -15,6 +16,7 @@ use crate::commons::api::{
     RepoInfo, Revocation, Revocations, RevocationsDelta, UpdatedObject, WithdrawnObject,
 };
 use crate::commons::KrillResult;
+use crate::constants::{PUBLISH_NEXT_HOURS, PUBLISH_VALID_DAYS};
 use crate::daemon::ca::{self, RoaInfo, RouteAuthorization, Signer};
 
 //------------ AddedOrUpdated ----------------------------------------------
@@ -251,15 +253,15 @@ impl CrlBuilder {
             revocations_delta.drop(expired);
         }
 
-        let just_now = Time::five_minutes_ago();
-        let tomorrow = Time::tomorrow();
+        let this_update = Time::five_minutes_ago();
+        let next_update = Time::now() + Duration::hours(PUBLISH_NEXT_HOURS);
         let serial_number = Serial::from(number);
 
         let mut crl = TbsCertList::new(
             Default::default(),
             signing_key.to_subject_name(),
-            just_now,
-            tomorrow,
+            this_update,
+            next_update,
             revocations.to_crl_entries(),
             aki,
             serial_number,
@@ -368,24 +370,24 @@ impl ManifestBuilder {
         let aki = KeyIdentifier::from_public_key(signing_key);
         let serial_number = Serial::from(number);
 
-        let just_now = Time::five_minutes_ago();
+        let this_update = Time::five_minutes_ago();
         let now = Time::now();
-        let tomorrow = Time::tomorrow();
-        let next_week = Time::next_week();
+        let next_update = Time::now() + Duration::hours(PUBLISH_NEXT_HOURS);
+        let valid_until = Time::now() + Duration::days(PUBLISH_VALID_DAYS);
 
         let entries = self.entries.iter().map(|(k, v)| FileAndHash::new(k, v));
 
         let manifest: Manifest = {
             let mft_content = ManifestContent::new(
                 serial_number,
-                just_now,
-                tomorrow,
+                this_update,
+                next_update,
                 DigestAlgorithm::default(),
                 entries,
             );
             let mut object_builder = SignedObjectBuilder::new(
                 Serial::random(signer).map_err(ca::Error::signer)?,
-                Validity::new(just_now, next_week),
+                Validity::new(this_update, valid_until),
                 crl_uri,
                 aia.clone(),
                 mft_uri,

@@ -14,6 +14,7 @@ use crate::commons::api::{
 };
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
+use crate::constants::PUBLISH_THRESHOLD_HOURS;
 use crate::daemon::ca::{CurrentObjectSet, CurrentObjectSetDelta, EvtDet, Signer};
 
 //------------ CertifiedKey --------------------------------------------------
@@ -123,7 +124,7 @@ impl CertifiedKey {
     }
 
     pub fn close_to_next_update(&self) -> bool {
-        self.current_set.next_update() < Time::now() + Duration::hours(8)
+        self.current_set.next_update() < Time::now() + Duration::hours(PUBLISH_THRESHOLD_HOURS)
     }
 
     pub fn with_new_cert(mut self, cert: RcvdCert) -> Self {

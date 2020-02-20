@@ -9,6 +9,10 @@ pub const CASERVER_DIR: &str = "cas";
 pub const PUBSERVER_DFLT: &str = "0";
 pub const PUBSERVER_DIR: &str = "pubd";
 
+pub const PUBLISH_VALID_DAYS: i64 = 7; // mft is valid for 7 days
+pub const PUBLISH_NEXT_HOURS: i64 = 24; // next update in 24 hours (otherwise mft and crl will become stale)
+pub const PUBLISH_THRESHOLD_HOURS: i64 = 8; // republish 8 hours before stale
+
 pub const REPOSITORY_DIR: &str = "repo";
 pub const REPOSITORY_RRDP_DIR: &str = "rrdp";
 pub const REPOSITORY_RSYNC_DIR: &str = "rsync";
