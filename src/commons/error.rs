@@ -115,7 +115,7 @@ pub enum Error {
     #[display(fmt = "CA '{}' already has a parent named '{}'", _0, _1)]
     CaParentDuplicate(Handle, ParentHandle),
 
-    #[display(fmt = "CA '{}' does not have parent named '{}'", _0, _1)]
+    #[display(fmt = "CA '{}' does not have a parent named '{}'", _0, _1)]
     CaParentUnknown(Handle, ParentHandle),
 
     #[display(fmt = "CA '{}' got error from parent '{}': {}", _0, _1, _2)]
@@ -143,11 +143,14 @@ pub enum Error {
     #[display(fmt = "CA '{}' already has a child named '{}'", _0, _1)]
     CaChildDuplicate(Handle, ChildHandle),
 
-    #[display(fmt = "CA '{}' does not have child named '{}'", _0, _1)]
+    #[display(fmt = "CA '{}' does not have a child named '{}'", _0, _1)]
     CaChildUnknown(Handle, ChildHandle),
 
     #[display(fmt = "Child '{}' for CA '{}' MUST have resources specified", _1, _0)]
     CaChildMustHaveResources(Handle, ChildHandle),
+
+    #[display(fmt = "Child '{}' cannot have resources not held by CA '{}'", _1, _0)]
+    CaChildExtraResources(Handle, ChildHandle),
 
     #[display(fmt = "CA '{}' does not know id certificate for child '{}'", _0, _1)]
     CaChildUnauthorised(Handle, ChildHandle),
@@ -435,6 +438,11 @@ impl Error {
                 .with_child(child),
             Error::CaChildMustHaveResources(ca, child) => {
                 ErrorResponse::new("ca-child-resources-required", &self)
+                    .with_ca(ca)
+                    .with_child(child)
+            }
+            Error::CaChildExtraResources(ca, child) => {
+                ErrorResponse::new("ca-child-resources-extra", &self)
                     .with_ca(ca)
                     .with_child(child)
             }
@@ -733,6 +741,10 @@ mod tests {
         verify(
             include_str!("../../test-resources/errors/ca-child-resources-required.json"),
             Error::CaChildMustHaveResources(ca.clone(), child.clone()),
+        );
+        verify(
+            include_str!("../../test-resources/errors/ca-child-resources-extra.json"),
+            Error::CaChildExtraResources(ca.clone(), child.clone()),
         );
         verify(
             include_str!("../../test-resources/errors/ca-child-unauthorised.json"),

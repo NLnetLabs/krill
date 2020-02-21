@@ -667,6 +667,8 @@ impl<S: Signer> CertAuth<S> {
     ) -> KrillResult<Vec<Evt>> {
         if resources.is_empty() {
             Err(Error::CaChildMustHaveResources(self.handle.clone(), child))
+        } else if !self.all_resources().contains(&resources) {
+            Err(Error::CaChildExtraResources(self.handle.clone(), child))
         } else if self.has_child(&child) {
             Err(Error::CaChildDuplicate(self.handle.clone(), child))
         } else {
