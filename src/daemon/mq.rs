@@ -107,6 +107,15 @@ impl<S: Signer> eventsourcing::EventListener<CertAuth<S>> for EventQueueListener
                 ))
             }
 
+            EvtDet::UnexpectedKeyFound(rcn, revocation) => {
+                self.push_back(QueueEvent::UnexpectedKey(
+                    handle.clone(),
+                    version,
+                    rcn.clone(),
+                    revocation.clone(),
+                ));
+            }
+
             EvtDet::ParentAdded(parent, _contact) => {
                 let evt = QueueEvent::ParentAdded(handle.clone(), version, parent.clone());
                 self.push_back(evt);
