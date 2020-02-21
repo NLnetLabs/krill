@@ -22,8 +22,8 @@ info:
     The API path includes a version. The idea is that we may add functionality,
     but will not introduce breaking changes to existing functionality. You may
     expect additional resources, and you may see additional data (JSON members)
-    within resources. So, please make sure that you ignore what you don’t
-    understand when using this API.
+    within resources. So, please make sure that you ignore any JSON members that
+    you don’t support or need when using this API.
 
     ## References
     Information about many of the concepts and data types that Krill works with
@@ -167,7 +167,7 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '500':
-          $ref: '#/components/responses/GeneralPublicationServerError'
+          $ref: '#/components/responses/GeneralErrorResponse'
 
     post:
       operationId: add_publisher
@@ -187,11 +187,11 @@ paths:
         '200':
           $ref: '#/components/responses/AddPublisher'
         '400':
-          $ref: '#/components/responses/PublisherHandleAlreadyInUse'
+          $ref: '#/components/responses/PubDuplicateResponse'
         '403':
           $ref: '#/components/responses/Forbidden'
         '500':
-          $ref: '#/components/responses/GeneralPublicationServerError'
+          $ref: '#/components/responses/GeneralErrorResponse'
 
   /publishers/{publisher_handle}:
     get:
@@ -208,9 +208,9 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
-          $ref: '#/components/responses/UnknownPublisher'
+          $ref: '#/components/responses/PubUnknownResponse'
         '500':
-          $ref: '#/components/responses/GeneralPublicationServerError'
+          $ref: '#/components/responses/GeneralErrorResponse'
 
     delete:
       operationId: delete_publisher
@@ -226,9 +226,9 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
-          $ref: '#/components/responses/UnknownPublisher'
+          $ref: '#/components/responses/PubUnknownResponse'
         '500':
-          $ref: '#/components/responses/GeneralPublicationServerError'
+          $ref: '#/components/responses/GeneralErrorResponse'
 
   /publishers/{publisher_handle}/response.{format}:
     get:
@@ -255,9 +255,9 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
-          $ref: '#/components/responses/UnknownPublisher'
+          $ref: '#/components/responses/PubUnknownResponse'
         '500':
-          $ref: '#/components/responses/GeneralPublicationServerError'
+          $ref: '#/components/responses/GeneralErrorResponse'
 
   /publishers/stale/{seconds}:
     get:
@@ -276,7 +276,7 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '500':
-          $ref: '#/components/responses/GeneralPublicationServerError'
+          $ref: '#/components/responses/GeneralErrorResponse'
 
   /cas:
     get:
@@ -290,7 +290,7 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '500':
-          $ref: '#/components/responses/GeneralCAServerError'
+          $ref: '#/components/responses/GeneralErrorResponse'
 
     post:
       operationId: add_ca
@@ -317,11 +317,11 @@ paths:
         '200':
           $ref: '#/components/responses/Success'
         '400':
-          $ref: '#/components/responses/CAHandleAlreadyInUse'
+          $ref: '#/components/responses/CaDuplicateResponse'
         '403':
           $ref: '#/components/responses/Forbidden'
         '500':
-          $ref: '#/components/responses/GeneralCAServerError'
+          $ref: '#/components/responses/GeneralErrorResponse'
 
   /cas/{ca_handle}:
     get:
@@ -338,9 +338,9 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
-          $ref: '#/components/responses/UnknownCA'
+          $ref: '#/components/responses/CaUnknownResponse'
         '500':
-          $ref: '#/components/responses/GeneralCAServerError'
+          $ref: '#/components/responses/GeneralErrorResponse'
 
   /cas/{ca_handle}/child_request.{format}:
     get:
@@ -363,9 +363,9 @@ paths:
               schema:
                 $ref: '#/components/schemas/RFC8183RequestXML'
         '404':
-          $ref: '#/components/responses/UnknownCA'
+          $ref: '#/components/responses/CaUnknownResponse'
         '500':
-          $ref: '#/components/responses/GeneralCAServerError'
+          $ref: '#/components/responses/GeneralErrorResponse'
 
   /cas/{ca_handle}/children:
     post:
@@ -416,13 +416,13 @@ paths:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/schemas/ChildWithHandleExists'
-                  - $ref: '#/components/schemas/ChildMustHaveResources'
-                  - $ref: '#/components/schemas/ChildCannotHaveResourcesNotHeldByParent'
+                  - $ref: '#/components/responses/CaChildDuplicateResponse'
+                  - $ref: '#/components/responses/CaChildResourcesRequiredResponse'
+                  - $ref: '#/components/responses/CaChildResourcesExtraResponse'
         '403':
           $ref: '#/components/responses/Forbidden'
         '500':
-          $ref: '#/components/responses/GeneralCAServerError'
+          $ref: '#/components/responses/GeneralErrorResponse'
 
   /cas/{ca_handle}/children/{child_handle}:
     get:
@@ -444,10 +444,10 @@ paths:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/schemas/UnknownChild'
-                  - $ref: '#/components/schemas/UnknownCA'
+                  - $ref: '#/components/responses/CaChildUnknownResponse'
+                  - $ref: '#/components/responses/CaUnknownResponse'
         '500':
-          $ref: '#/components/responses/GeneralCAServerError'
+          $ref: '#/components/responses/GeneralErrorResponse'
 
     post:
       operationId: update_child_ca
@@ -493,10 +493,10 @@ paths:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/schemas/UnknownChild'
-                  - $ref: '#/components/schemas/UnknownCA'
+                  - $ref: '#/components/responses/CaChildUnknownResponse'
+                  - $ref: '#/components/responses/CaUnknownResponse'
         '500':
-          $ref: '#/components/responses/GeneralCAServerError'
+          $ref: '#/components/responses/GeneralErrorResponse'
 
     delete:
       operationId: delete_child_ca
@@ -521,10 +521,10 @@ paths:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/schemas/UnknownChild'
-                  - $ref: '#/components/schemas/UnknownCA'
+                  - $ref: '#/components/responses/CaChildUnknownResponse'
+                  - $ref: '#/components/responses/CaUnknownResponse'
         '500':
-          $ref: '#/components/responses/GeneralCAServerError'
+          $ref: '#/components/responses/GeneralErrorResponse'
 
   /cas/{ca_handle}/children/{child_handle}/contact:
     get:
@@ -548,10 +548,10 @@ paths:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/schemas/UnknownChild'
-                  - $ref: '#/components/schemas/UnknownCA'
+                  - $ref: '#/components/responses/CaChildUnknownResponse'
+                  - $ref: '#/components/responses/CaUnknownResponse'
         '500':
-          $ref: '#/components/responses/GeneralCAServerError'
+          $ref: '#/components/responses/GeneralErrorResponse'
 
   /cas/{ca_handle}/children/{child_handle}/parent_response.{format}:
     get:
@@ -592,10 +592,10 @@ paths:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/schemas/UnknownChild'
-                  - $ref: '#/components/schemas/UnknownCA'
+                  - $ref: '#/components/responses/CaChildUnknownResponse'
+                  - $ref: '#/components/responses/CaUnknownResponse'
         '500':
-          $ref: '#/components/responses/GeneralCAServerError'
+          $ref: '#/components/responses/GeneralErrorResponse'
 
   /cas/{ca_handle}/history:
     get:
@@ -611,9 +611,9 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
-          $ref: '#/components/responses/UnknownCA'
+          $ref: '#/components/responses/CaUnknownResponse'
         '500':
-          $ref: '#/components/responses/GeneralCAServerError'
+          $ref: '#/components/responses/GeneralErrorResponse'
 
   /cas/{ca_handle}/id:
     post:
@@ -634,9 +634,9 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
-          $ref: '#/components/responses/UnknownCA'
+          $ref: '#/components/responses/CaUnknownResponse'
         '500':
-          $ref: '#/components/responses/GeneralCAServerError'
+          $ref: '#/components/responses/GeneralErrorResponse'
 
   /cas/{ca_handle}/parents:
     post:
@@ -671,13 +671,12 @@ paths:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/schemas/ParentWithHandleExists'
-                  - $ref: '#/components/responses/ParentNoResponse'
-                  - $ref: '#/components/schemas/NoRepositoryConfiguredYetForCA'
+                  - $ref: '#/components/responses/CaParentDuplicateResponse'
+                  - $ref: '#/components/responses/CaParentIssueResponse'
         '404':
-          $ref: '#/components/responses/UnknownCA'
+          $ref: '#/components/responses/CaUnknownResponse'
         '500':
-          $ref: '#/components/responses/GeneralCAServerError'
+          $ref: '#/components/responses/GeneralErrorResponse'
 
   /cas/{ca_handle}/parents/{parent_handle}:
     get:
@@ -696,11 +695,11 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '400':
-          $ref: '#/components/responses/UnknownParent'
+          $ref: '#/components/responses/CaParentUnknownResponse'
         '404':
-          $ref: '#/components/responses/UnknownCA'
+          $ref: '#/components/responses/CaUnknownResponse'
         '500':
-          $ref: '#/components/responses/GeneralCAServerError'
+          $ref: '#/components/responses/GeneralErrorResponse'
 
     post:
       operationId: update_ca_parent_contact
@@ -728,14 +727,14 @@ paths:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/responses/UnknownParent'
-                  - $ref: '#/components/responses/ParentNoResponse'
+                  - $ref: '#/components/responses/CaParentUnknownResponse'
+                  - $ref: '#/components/responses/CaParentIssueResponse'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
-          $ref: '#/components/responses/UnknownCA'
+          $ref: '#/components/responses/CaUnknownResponse'
         '500':
-          $ref: '#/components/responses/GeneralCAServerError'
+          $ref: '#/components/responses/GeneralErrorResponse'
 
     delete:
       operationId: delete_ca_parent
@@ -753,13 +752,13 @@ paths:
         '200':
           $ref: '#/components/responses/Success'
         '400':
-          $ref: '#/components/responses/UnknownParent'
+          $ref: '#/components/responses/CaParentUnknownResponse'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
-          $ref: '#/components/responses/UnknownCA'
+          $ref: '#/components/responses/CaUnknownResponse'
         '500':
-          $ref: '#/components/responses/GeneralCAServerError'
+          $ref: '#/components/responses/GeneralErrorResponse'
 
   /cas/{ca_handle}/repo:
     get:
@@ -777,9 +776,9 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
-          $ref: '#/components/responses/UnknownCA'
+          $ref: '#/components/responses/CaUnknownResponse'
         '500':
-          $ref: '#/components/responses/GeneralCAServerError'
+          $ref: '#/components/responses/GeneralErrorResponse'
 
     post:
       operationId: update_ca_repository
@@ -819,14 +818,14 @@ paths:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/schemas/AlreadyUsingThisRepository'
-                  - $ref: '#/components/schemas/TargetRepositoryDoesNotAllowListQuery'
+                  - $ref: '#/components/responses/CaRepoSameResponse'
+                  - $ref: '#/components/responses/CaRepoIssueResponse'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
-          $ref: '#/components/responses/UnknownCA'
+          $ref: '#/components/responses/CaUnknownResponse'
         '500':
-          $ref: '#/components/responses/GeneralCAServerError'
+          $ref: '#/components/responses/GeneralErrorResponse'
 
   /cas/{ca_handle}/repo/request.{format}:
     get:
@@ -850,9 +849,9 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
-          $ref: '#/components/responses/UnknownCA'
+          $ref: '#/components/responses/CaUnknownResponse'
         '500':
-          $ref: '#/components/responses/GeneralCAServerError'
+          $ref: '#/components/responses/GeneralErrorResponse'
 
   /cas/{ca_handle}/keys/roll_init:
     post:
@@ -880,9 +879,9 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
-          $ref: '#/components/responses/UnknownCA'
+          $ref: '#/components/responses/CaUnknownResponse'
         '500':
-          $ref: '#/components/responses/GeneralCAServerError'
+          $ref: '#/components/responses/GeneralErrorResponse'
 
   /cas/{ca_handle}/keys/roll_activate:
     post:
@@ -922,9 +921,9 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
-          $ref: '#/components/responses/UnknownCA'
+          $ref: '#/components/responses/CaUnknownResponse'
         '500':
-          $ref: '#/components/responses/GeneralCAServerError'
+          $ref: '#/components/responses/GeneralErrorResponse'
 
   /cas/republish_all:
     post:
@@ -982,9 +981,9 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
-          $ref: '#/components/responses/UnknownCA'
+          $ref: '#/components/responses/CaUnknownResponse'
         '500':
-          $ref: '#/components/responses/GeneralCAServerError'
+          $ref: '#/components/responses/GeneralErrorResponse'
 
     post:
       operationId: update_route_authorizations
@@ -1019,16 +1018,16 @@ paths:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/schemas/InvalidROADeltaAddingDefinitionAlreadyPresent'
-                  - $ref: '#/components/schemas/InvalidROADeltaRemovingUnknownDefinition'
-                  - $ref: '#/components/schemas/InvalidROADeltaNotAllResourcesHeld'
-                  - $ref: '#/components/schemas/InvalidROADeltaInvalidMaxLength'
+                  - $ref: '#/components/responses/CaRoaDuplicateResponse'
+                  - $ref: '#/components/responses/CaRoaUnknownResponse'
+                  - $ref: '#/components/responses/CaRoaNotEntitledResponse'
+                  - $ref: '#/components/responses/CaRoaInvalidMaxLengthResponse'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
-          $ref: '#/components/responses/UnknownCA'
+          $ref: '#/components/responses/CaUnknownResponse'
         '500':
-          $ref: '#/components/responses/GeneralCAServerError'
+          $ref: '#/components/responses/GeneralErrorResponse'
 
   /cas/issues/{ca_handle}:
     get:
@@ -1048,7 +1047,7 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '500':
-          $ref: '#/components/responses/GeneralCAServerError'
+          $ref: '#/components/responses/GeneralErrorResponse'
 
 externalDocs:
   description: Read the Krill documentation
@@ -1456,246 +1455,470 @@ components:
         url: https://tools.ietf.org/html/rfc8183#section-5.2.3
 
     # Error codes ordered ascending by error code
-    PublisherHandleAlreadyInUse:
+    PubDuplicateResponse:
       type: object
       required:
-        - code
+        - label
         - msg
+        - args
       properties:
-        code:
-          type: integer
-          enum: [2102]
+        label:
+          type: string
+          enum: [pub-duplicate]
         msg:
           type: string
-          example: Handle already in use.
-    UnknownPublisher:
+          example: Duplicate publisher 'ca'
+        args:
+          type: object
+          required:
+            - publisher
+          properties:
+            publisher:
+              type: string
+              example: ca
+    PubUnknownResponse:
       type: object
       required:
-        - code
+        - label
         - msg
+        - args
       properties:
-        code:
-          type: integer
-          enum: [2201]
+        label:
+          type: string
+          enum: [pub-unknown]
         msg:
           type: string
-          example: Unknown publisher.
-    AlreadyUsingThisRepository:
+          example: Unknown publisher 'ca'
+        args:
+          required:
+            - publisher
+          properties:
+            publisher:
+              type: string
+              example: ca
+    CaRepoSameResponse:
       type: object
       required:
-        - code
+        - label
         - msg
+        - args
       properties:
-        code:
-          type: integer
-          enum: [2206]
+        label:
+          type: string
+          enum: [ca-repo-same]
         msg:
           type: string
-          example: Already using this repository.
-    TargetRepositoryDoesNotAllowListQuery:
+          example: CA 'ca' already using this repository
+        args:
+          required:
+            - ca
+          properties:
+            ca:
+              type: string
+              example: ca
+    CaRepoIssueResponse:
       type: object
       required:
-        - code
+        - label
         - msg
+        - args
       properties:
-        code:
-          type: integer
-          enum: [2207]
+        label:
+          type: string
+          enum: [ca-repo-issue]
         msg:
           type: string
-          example: Target repository does not allow list query.
-    ChildWithHandleExists:
+          example: CA 'ca' got error from repository 'cannot connect'
+        args:
+          required:
+            - ca
+            - cause
+          properties:
+            ca:
+              type: string
+              example: ca
+            cause:
+              type: string
+              example: cannot connect
+    CaChildDuplicateResponse:
       type: object
       required:
-        - code
+        - label
         - msg
+        - args
       properties:
-        code:
-          type: integer
-          enum: [2301]
+        label:
+          type: string
+          enum: [ca-child-duplicate]
         msg:
           type: string
-          example: Child with handle exists.
-    ChildMustHaveResources:
+          example: CA 'ca' already has a child named 'child'
+        args:
+          required:
+            - ca
+            - child
+          properties:
+            ca:
+              type: string
+              example: ca
+            child:
+              type: string
+              example: child
+
+
+    CaChildUnknownResponse:
       type: object
       required:
-        - code
+        - label
         - msg
+        - args
       properties:
-        code:
-          type: integer
-          enum: [2302]
+        label:
+          type: string
+          enum: [ca-child-unknown]
         msg:
           type: string
-          example: Child MUST have resources.
-    ChildCannotHaveResourcesNotHeldByParent:
+          example: CA 'ca' does not have a child named 'child'
+        args:
+          required:
+            - ca
+            - child
+          properties:
+            ca:
+              type: string
+              example: ca
+            child:
+              type: string
+              example: child
+
+    CaChildResourcesRequiredResponse:
       type: object
       required:
-        - code
+        - label
         - msg
+        - args
       properties:
-        code:
-          type: integer
-          enum: [2303]
+        label:
+          type: string
+          enum: [ca-child-resources-required]
+        msg:
+          type: string
+          example: Child 'child' for CA 'ca' MUST have resources specified
+        args:
+          required:
+            - ca
+            - child
+          properties:
+            ca:
+              type: string
+              example: ca
+            child:
+              type: string
+              example: child
+
+    CaChildResourcesExtraResponse:
+      type: object
+      required:
+        - label
+        - msg
+        - args
+      properties:
+        label:
+          type: string
+          enum: [ca-child-resources-extra]
         msg:
           type: string
           example: Child cannot have resources not held by parent.
-    ParentWithHandleExists:
+        args:
+          required:
+            - ca
+            - child
+          properties:
+            ca:
+              type: string
+              example: ca
+            child:
+              type: string
+              example: child
+
+    CaParentDuplicateResponse:
       type: object
       required:
-        - code
+        - label
         - msg
+        - args
       properties:
-        code:
-          type: integer
-          enum: [2304]
+        label:
+          type: string
+          enum: [ca-parent-duplicate]
         msg:
           type: string
-          example: Parent with handle exists.
-    ParentNoResponse:
+          example: CA 'ca' already has a parent named 'parent'
+        args:
+          required:
+            - ca
+            - parent
+          properties:
+            ca:
+              type: string
+              example: ca
+            parent:
+              type: string
+              example: parent
+
+    CaParentUnknownResponse:
       type: object
       required:
-        - code
+        - label
         - msg
+        - args
       properties:
-        code:
-          type: integer
-          enum: [2308]
+        label:
+          type: string
+          enum: [ca-parent-unknown]
         msg:
           type: string
-          example: No response from parent.
-    UnknownChild:
+          example: CA 'ca' does not have a parent named 'parent'
+        args:
+          required:
+            - ca
+            - parent
+          properties:
+            ca:
+              type: string
+              example: ca
+            parent:
+              type: string
+              example: parent
+
+    CaParentIssueResponse:
       type: object
       required:
-        - code
+        - label
         - msg
+        - args
       properties:
-        code:
-          type: integer
-          enum: [2305]
+        label:
+          type: string
+          enum: [ca-parent-issue]
         msg:
           type: string
-          example: Child unknown.
-    UnknownParent:
+          example: CA 'ca' got error from parent 'parent' cause
+        args:
+          required:
+            - ca
+            - parent
+            - cause
+          properties:
+            ca:
+              type: string
+              example: ca
+            parent:
+              type: string
+              example: parent
+            cause:
+              type: string
+              example: cause
+
+    CaRoaUnknownResponse:
       type: object
       required:
-        - code
+        - label
         - msg
+        - args
       properties:
-        code:
-          type: integer
-          enum: [2306]
+        label:
+          type: string
+          enum: [ca-roa-unknown]
         msg:
           type: string
-          example: No known parent for handle.
-    NoRepositoryConfiguredYetForCA:
+          example: Cannot remove unknown ROA '10.0.0.0/20-24 => 65536' from CA 'ca'
+        args:
+          required:
+            - ca
+            - asn
+            - prefix
+            - max_length
+          properties:
+            ca:
+              type: string
+              example: ca
+            asn:
+              type: string
+              example: 65536
+            prefix:
+              type: string
+              example: 10.0.0.0/20
+            max_length:
+              type: string
+              nullable: true
+              example: 24
+              
+
+    CaRoaDuplicateResponse:
       type: object
       required:
-        - code
+        - label
         - msg
+        - args
       properties:
-        code:
-          type: integer
-          enum: [2307]
+        label:
+          type: string
+          enum: [ca-roa-duplicate]
         msg:
           type: string
-          example: No repository configured yet for CA.
-    InvalidROADeltaAddingDefinitionAlreadyPresent:
+          example: Duplicate ROA '10.0.0.0/20-24 => 65536' for CA 'ca'
+        args:
+          required:
+            - ca
+            - asn
+            - prefix
+            - max_length
+          properties:
+            ca:
+              type: string
+              example: ca
+            asn:
+              type: string
+              example: 65536
+            prefix:
+              type: string
+              example: 10.0.0.0/20
+            max_length:
+              type: string
+              nullable: true
+              example: 24
+
+    CaRoaInvalidMaxLengthResponse:
       type: object
       required:
-        - code
+        - label
         - msg
+        - args
       properties:
-        code:
-          type: integer
-          enum: [2401]
+        label:
+          type: string
+          enum: [ca-roa-invalid-max-length]
         msg:
           type: string
-          example: 'Invalid ROA delta: adding a definition which is already present.'
-    InvalidROADeltaRemovingUnknownDefinition:
+          example: Invalid max length in ROA '10.0.0.0/20-24 => 65536' for CA 'ca'
+        args:
+          required:
+            - ca
+            - asn
+            - prefix
+            - max_length
+          properties:
+            ca:
+              type: string
+              example: ca
+            asn:
+              type: string
+              example: 65536
+            prefix:
+              type: string
+              example: 10.0.0.0/20
+            max_length:
+              type: string
+              nullable: true
+              example: 24          
+          
+    CaRoaNotEntitledResponse:
       type: object
       required:
-        - code
+        - label
         - msg
+        - args
       properties:
-        code:
-          type: integer
-          enum: [2402]
+        label:
+          type: string
+          enum: [ca-roa-not-entitled]
         msg:
           type: string
-          example: 'Invalid ROA delta: removing a definition which is unknown.'
-    InvalidROADeltaNotAllResourcesHeld:
+          example: Prefix in ROA '10.0.0.0/20-24 => 65536' not held by CA 'ca'
+        args:
+          required:
+            - ca
+            - asn
+            - prefix
+            - max_length
+          properties:
+            ca:
+              type: string
+              example: ca
+            asn:
+              type: string
+              example: 65536
+            prefix:
+              type: string
+              example: 10.0.0.0/20
+            max_length:
+              type: string
+              nullable: true
+              example: 24
+
+    CaDuplicateResponse:
       type: object
       required:
-        - code
+        - label
         - msg
+        - args
       properties:
-        code:
-          type: integer
-          enum: [2403]
+        label:
+          type: string
+          enum: [ca-duplicate]
         msg:
           type: string
-          example: 'Invalid ROA delta: not all resources held.'
-    InvalidROADeltaInvalidMaxLength:
+          example: CA 'ca' was already initialised
+        args:
+          required:
+            - ca
+          properties:
+            ca:
+              type: string
+              example: ca
+          
+    CaUnknownResponse:
       type: object
       required:
-        - code
+        - label
         - msg
+        - args
       properties:
-        code:
-          type: integer
-          enum: [2404]
+        label:
+          type: string
+          enum: [ca-unknown]
         msg:
           type: string
-          example: 'Invalid ROA definition: max length not legal for prefix.'
-    CAHandleAlreadyInUse:
+          example: CA 'ca' is unknown
+        args:
+          required:
+            - ca
+          properties:
+            ca:
+              type: string
+              example: ca
+
+    GeneralErrorResponse:
       type: object
       required:
-        - code
+        - label
         - msg
+        - args
       properties:
-        code:
-          type: integer
-          enum: [2501]
+        label:
+          type: string
+          enum: [general-error]
         msg:
           type: string
-          example: CA with handle exists.
-    UnknownCA:
-      type: object
-      required:
-        - code
-        - msg
-      properties:
-        code:
-          type: integer
-          enum: [2502]
-        msg:
-          type: string
-          example: Unknown CA.
-    GeneralCAServerError:
-      type: object
-      required:
-        - code
-        - msg
-      properties:
-        code:
-          type: integer
-          enum: [3005]
-        msg:
-          type: string
-          example: General CA Server issue.
-    GeneralPublicationServerError:
-      type: object
-      required:
-        - code
-        - msg
-      properties:
-        code:
-          type: integer
-          enum: [3006]
-        msg:
-          type: string
-          example: General Publication Server error.
+          example: cause
+        args:
+          required:
+            - cause
+          properties:
+            cause:
+              type: string
+              example: cause
 
   responses:
     Success:
@@ -1726,84 +1949,133 @@ components:
                 "nir": "cannot connect"
 
 
-    UnknownPublisher:
-      description: Unknown publisher.
+    PubDuplicateResponse:
+      description: Publisher handle already in use
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/UnknownPublisher'
-    UnknownCA:
-      description: Unknown CA.
+            $ref: '#/components/schemas/PubDuplicateResponse'
+    PubUnknownResponse:
+      description: Unknown publisher
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/UnknownCA'
-    UnknownChild:
-      description: Unknown child.
+            $ref: '#/components/schemas/PubUnknownResponse'
+
+
+    CaRepoSameResponse:
+      description: Same Repository
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/UnknownChild'
-    UnknownParent:
-      description: Unknown parent.
+            $ref: '#/components/schemas/CaRepoSameResponse'
+
+    CaRepoIssueResponse:
+      description: Issue from repository for CA
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/UnknownParent'
-    ParentNoResponse:
-      description: No response from parent.
+            $ref: '#/components/schemas/CaRepoIssueResponse'
+
+    CaChildDuplicateResponse:
+      description: Duplicate child
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/ParentNoResponse'
-    GeneralPublicationServerError:
-      description: General Publication Server error.
+            $ref: '#/components/schemas/CaChildDuplicateResponse'
+
+    CaChildUnknownResponse:
+      description: Unknown child
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/GeneralPublicationServerError'
-    GeneralCAServerError:
-      description: General CA Server issue.
+            $ref: '#/components/schemas/CaChildUnknownResponse'
+
+    CaChildResourcesRequiredResponse:
+      description: Child requires resources
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/GeneralCAServerError'
-    PublisherHandleAlreadyInUse:
-      description: Publisher handle already in use.
+            $ref: '#/components/schemas/CaChildResourcesRequiredResponse'
+
+    CaChildResourcesExtraResponse:
+      description: Child resources not held by CA
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/PublisherHandleAlreadyInUse'
-    CAHandleAlreadyInUse:
-      description: CA handle already in use.
+            $ref: '#/components/schemas/CaChildResourcesExtraResponse'
+
+    CaParentDuplicateResponse:
+      description: Duplicate parent
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/CAHandleAlreadyInUse'
-    InvalidROADeltaAddingDefinitionAlreadyPresent:
-      description: 'Invalid ROA delta: adding a definition which is already present'
+            $ref: '#/components/schemas/CaParentDuplicateResponse'
+
+    CaParentUnknownResponse:
+      description: Unknown parent
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/InvalidROADeltaAddingDefinitionAlreadyPresent'
-    InvalidROADeltaRemovingUnknownDefinition:
+            $ref: '#/components/schemas/CaParentUnknownResponse'
+
+    CaParentIssueResponse:
+      description: Issue communicating with parent
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CaParentIssueResponse'
+
+    CaRoaUnknownResponse:
       description: 'Invalid ROA delta: removing a definition which is unknown'
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/InvalidROADeltaRemovingUnknownDefinition'
-    InvalidROADeltaNotAllResourcesHeld:
+            $ref: '#/components/schemas/CaRoaUnknownResponse'
+
+    CaRoaDuplicateResponse:
+      description: 'Invalid ROA delta: adding a definition which is already present'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CaRoaDuplicateResponse'
+
+    CaRoaInvalidMaxLengthResponse:
       description: 'Invalid ROA delta: not all resources held.'
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/InvalidROADeltaNotAllResourcesHeld'
-    InvalidROADeltaInvalidMaxLength:
+            $ref: '#/components/schemas/CaRoaInvalidMaxLengthResponse'
+
+    CaRoaNotEntitledResponse:
       description: 'Invalid ROA delta: not all resources held.'
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/InvalidROADeltaInvalidMaxLength'
+            $ref: '#/components/schemas/CaRoaNotEntitledResponse'
+
+    CaDuplicateResponse:
+      description: CA handle already in use.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CaDuplicateResponse'
+
+    CaUnknownResponse:
+      description: Unknown CA
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/CaUnknownResponse'
+
+    GeneralErrorResponse:
+      description: General CA Server issue.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/GeneralErrorResponse'
+
+
     GetCA:
       description: Success.
       content:
