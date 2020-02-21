@@ -67,6 +67,18 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
         a = f(ca)
         return a
 
+    @retry(
+        stop_max_attempt_number=3,
+        wait_exponential_multiplier=1000,
+        wait_exponential_max=10000,
+        retry_on_result=retry_if_not,
+        wrap_exception=True)
+    def wait_until_ca_has_resources(ca_handle, asn, v4, v6):
+        ca = krill_ca_api.get_ca(ca_handle)
+        f = attrgetter("resources")
+        res = f(ca)
+        return res.asn == asn and res.v4 == v4 and res.v6 == v6
+
     #
     # Go!
     #
@@ -141,6 +153,9 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
                 logging.debug('Waiting for parents to be registered')
                 wait_until_ca_has_at_least_one(parent_handle, 'parents')
 
+                logging.debug('Waiting for parent resources to be issued')
+                wait_until_ca_has_resources(parent_handle, KRILL_PARENT_ASNS,  KRILL_PARENT_IPV4S, KRILL_PARENT_IPV6S)
+
             logging.info('Adding child CA if not already present')
             if not child_handle in ca_handles:
                 logging.debug('No CA, adding...')
@@ -166,6 +181,9 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
 
                 logging.debug('Waiting for child resources to be registered')
                 wait_until_child_ca_has_at_least_one(parent_handle, child_handle, 'entitled_resources.asn')
+
+                logging.debug('Waiting for child resources to be issued')
+                wait_until_ca_has_resources(child_handle, KRILL_CHILD_ASNS,  KRILL_CHILD_IPV4S, KRILL_CHILD_IPV6S)
 
             logging.info('Creating CA <- CA relationship if not already present')
             if len(krill_ca_api.get_ca(child_handle).parents) == 0:
