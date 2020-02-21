@@ -3,18 +3,34 @@
 Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
 for planned releases.
 
-## Unreleased Changes
+## 0.5.0 'Serve no Turf'
 
-Features / improvements:
+The most striking change in this release is the inclusion of a new front-end: Lagosta.
+
+Lagosta 0.1 'Fritto misto' supports the following features:
+* Set up your Krill CA under an RIR/NIR parent
+* Configure your CA to publish at a remote repository
+* Maintain ROAs
+* Internationalisation (English and Portuguese)
+
+Please talk to us if you want to contribute other languages! Many advanced features are currently available in the CLI only, but we will continue to extend the front-end functionality.
+ 
+On a technical note: the front-end is based on static HTML/CSS and JS (Vue) which is served as static files to your browser by Krill. This front-end application then uses the same API back-end as the CLI. 
+
+The following features and improvements were introduced to the core Krill and CLI:
 * Added option to CLI to generate a Krill config file.
-* Added simple Prometheus endpoint (/metrics)
 * Added check for reporting status between CAs and their parents and repository
+* Added simple Prometheus endpoint (/metrics)
 * Disable the embedded repository by default (see docs for info)
 * Added guards against using 'localhost' in non-test environments 
 
 Breaking changes:
-* The error responses have been overhauled. 
+* The error responses have been overhauled.
+* Some CLI options have been changed to make naming and behaviour more consistent.
 
+For more information please have a look at [Read the Docs](https://rpki.readthedocs.io/en/latest/krill/index.html).
+
+We wish to thank Cynthia Revström for the great help she provided in ironing out some issues we found when setting up Krill under ARIN.
 
 ## 0.4.2 'Finer Things'
 
