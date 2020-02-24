@@ -1416,8 +1416,9 @@ components:
                 markers.
             - nullable: true
         resources:
-          $ref: '#/components/schemas/Resources'
-          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/Resources'
+            - nullable: true
     AddParentCARequest:
       type: object
       required:
