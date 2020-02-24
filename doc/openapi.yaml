@@ -416,9 +416,9 @@ paths:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/responses/CaChildDuplicateResponse'
-                  - $ref: '#/components/responses/CaChildResourcesRequiredResponse'
-                  - $ref: '#/components/responses/CaChildResourcesExtraResponse'
+                  - $ref: '#/components/schemas/CaChildDuplicateResponse'
+                  - $ref: '#/components/schemas/CaChildResourcesRequiredResponse'
+                  - $ref: '#/components/schemas/CaChildResourcesExtraResponse'
         '403':
           $ref: '#/components/responses/Forbidden'
         '500':
@@ -444,8 +444,8 @@ paths:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/responses/CaChildUnknownResponse'
-                  - $ref: '#/components/responses/CaUnknownResponse'
+                  - $ref: '#/components/schemas/CaChildUnknownResponse'
+                  - $ref: '#/components/schemas/CaUnknownResponse'
         '500':
           $ref: '#/components/responses/GeneralErrorResponse'
 
@@ -493,8 +493,8 @@ paths:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/responses/CaChildUnknownResponse'
-                  - $ref: '#/components/responses/CaUnknownResponse'
+                  - $ref: '#/components/schemas/CaChildUnknownResponse'
+                  - $ref: '#/components/schemas/CaUnknownResponse'
         '500':
           $ref: '#/components/responses/GeneralErrorResponse'
 
@@ -521,8 +521,8 @@ paths:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/responses/CaChildUnknownResponse'
-                  - $ref: '#/components/responses/CaUnknownResponse'
+                  - $ref: '#/components/schemas/CaChildUnknownResponse'
+                  - $ref: '#/components/schemas/CaUnknownResponse'
         '500':
           $ref: '#/components/responses/GeneralErrorResponse'
 
@@ -548,8 +548,8 @@ paths:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/responses/CaChildUnknownResponse'
-                  - $ref: '#/components/responses/CaUnknownResponse'
+                  - $ref: '#/components/schemas/CaChildUnknownResponse'
+                  - $ref: '#/components/schemas/CaUnknownResponse'
         '500':
           $ref: '#/components/responses/GeneralErrorResponse'
 
@@ -592,8 +592,8 @@ paths:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/responses/CaChildUnknownResponse'
-                  - $ref: '#/components/responses/CaUnknownResponse'
+                  - $ref: '#/components/schemas/CaChildUnknownResponse'
+                  - $ref: '#/components/schemas/CaUnknownResponse'
         '500':
           $ref: '#/components/responses/GeneralErrorResponse'
 
@@ -671,8 +671,8 @@ paths:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/responses/CaParentDuplicateResponse'
-                  - $ref: '#/components/responses/CaParentIssueResponse'
+                  - $ref: '#/components/schemas/CaParentDuplicateResponse'
+                  - $ref: '#/components/schemas/CaParentIssueResponse'
         '404':
           $ref: '#/components/responses/CaUnknownResponse'
         '500':
@@ -727,8 +727,8 @@ paths:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/responses/CaParentUnknownResponse'
-                  - $ref: '#/components/responses/CaParentIssueResponse'
+                  - $ref: '#/components/schemas/CaParentUnknownResponse'
+                  - $ref: '#/components/schemas/CaParentIssueResponse'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -818,8 +818,8 @@ paths:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/responses/CaRepoSameResponse'
-                  - $ref: '#/components/responses/CaRepoIssueResponse'
+                  - $ref: '#/components/schemas/CaRepoSameResponse'
+                  - $ref: '#/components/schemas/CaRepoIssueResponse'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -1018,10 +1018,10 @@ paths:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/responses/CaRoaDuplicateResponse'
-                  - $ref: '#/components/responses/CaRoaUnknownResponse'
-                  - $ref: '#/components/responses/CaRoaNotEntitledResponse'
-                  - $ref: '#/components/responses/CaRoaInvalidMaxLengthResponse'
+                  - $ref: '#/components/schemas/CaRoaDuplicateResponse'
+                  - $ref: '#/components/schemas/CaRoaUnknownResponse'
+                  - $ref: '#/components/schemas/CaRoaNotEntitledResponse'
+                  - $ref: '#/components/schemas/CaRoaInvalidMaxLengthResponse'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
