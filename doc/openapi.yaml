@@ -1101,15 +1101,6 @@ components:
 
   schemas:
     # Types ordered fundamental to complex
-    Element:
-      type: object
-      properties:
-        uri:
-          type: string
-          format: uri
-        hash:
-          type: string
-          format: hash
     Handle:
       type: string
       maxLength: 255
