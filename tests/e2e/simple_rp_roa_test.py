@@ -182,9 +182,6 @@ def krill_with_roas(docker_project, krill_api_config, class_service_manager):
                 logging.debug('Waiting for child resources to be registered')
                 wait_until_child_ca_has_at_least_one(parent_handle, child_handle, 'entitled_resources.asn')
 
-                logging.debug('Waiting for child resources to be issued')
-                wait_until_ca_has_resources(child_handle, KRILL_CHILD_ASNS,  KRILL_CHILD_IPV4S, KRILL_CHILD_IPV6S)
-
             logging.info('Creating CA <- CA relationship if not already present')
             if len(krill_ca_api.get_ca(child_handle).parents) == 0:
                 logging.debug('No parents, adding...')
