@@ -1,8 +1,9 @@
 //! Authorization for the API
-use actix_web::dev::Payload;
-use actix_web::{Error, FromRequest, HttpRequest, HttpResponse, ResponseError};
+// use actix_web::dev::Payload;
+// use actix_web::{Error, FromRequest, HttpRequest, HttpResponse, ResponseError};
 
 use crate::commons::api::Token;
+use crate::daemon::http::Response;
 
 //------------ Authorizer ----------------------------------------------------
 
@@ -49,22 +50,22 @@ impl Auth {
     }
 }
 
-impl FromRequest for Auth {
-    type Error = Error;
-    type Future = Result<Auth, Error>;
-    type Config = ();
-
-    fn from_request(req: &HttpRequest, _payload: &mut Payload) -> Self::Future {
-        if let Some(header) = req.headers().get("Authorization") {
-            let token =
-                Auth::extract_bearer_token(header.to_str().map_err(|_| AuthError::InvalidToken)?)?;
-
-            Ok(Auth::Bearer(token))
-        } else {
-            Err(AuthError::Unauthorised.into())
-        }
-    }
-}
+// impl FromRequest for Auth {
+//     type Error = Error;
+//     type Future = Result<Auth, Error>;
+//     type Config = ();
+//
+//     fn from_request(req: &HttpRequest, _payload: &mut Payload) -> Self::Future {
+//         if let Some(header) = req.headers().get("Authorization") {
+//             let token =
+//                 Auth::extract_bearer_token(header.to_str().map_err(|_| AuthError::InvalidToken)?)?;
+//
+//             Ok(Auth::Bearer(token))
+//         } else {
+//             Err(AuthError::Unauthorised.into())
+//         }
+//     }
+// }
 
 #[derive(Debug, Display)]
 pub enum AuthError {
@@ -75,8 +76,8 @@ pub enum AuthError {
     InvalidToken,
 }
 
-impl ResponseError for AuthError {
-    fn error_response(&self) -> HttpResponse {
-        HttpResponse::Forbidden().finish()
-    }
-}
+// impl ResponseError for AuthError {
+//     fn error_response(&self) -> Response {
+//         unimplemented!("#189")
+//     }
+// }

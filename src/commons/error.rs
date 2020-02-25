@@ -3,7 +3,8 @@
 use std::fmt::Display;
 use std::{fmt, io};
 
-use actix_web::http::StatusCode;
+// use actix_web::http::StatusCode;
+use hyper::StatusCode;
 
 use rpki::crypto::KeyIdentifier;
 use rpki::uri;

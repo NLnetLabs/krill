@@ -13,9 +13,10 @@ extern crate futures;
 extern crate hex;
 #[macro_use]
 extern crate log;
-extern crate actix_service;
-extern crate actix_web;
+// extern crate actix_service;
+// extern crate actix_web;
 extern crate clokwerk;
+extern crate hyper;
 extern crate openssl;
 extern crate rand;
 extern crate reqwest;

@@ -284,7 +284,7 @@ impl From<std::io::Error> for Error {
 
 #[cfg(test)]
 mod tests {
-    use actix_web::*;
+    // use actix_web::*;
     use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
 
     use crate::commons::util::test;
@@ -312,10 +312,11 @@ mod tests {
 
             builder.set_certificate_chain_file(cert_file_path).unwrap();
 
-            HttpServer::new(App::new)
-                .bind_ssl("localhost:8443", builder)
-                .unwrap();
+            unimplemented!("#189")
+
+            // HttpServer::new(App::new)
+            //     .bind_ssl("localhost:8443", builder)
+            //     .unwrap();
         });
     }
-
 }
