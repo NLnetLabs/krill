@@ -3,13 +3,8 @@
 //! Here we deal with booting and setup, and once active deal with parsing
 //! arguments and routing of requests, typically handing off to the
 //! daemon::api::endpoints functions for processing and responding.
-use std::fs::File;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-// use actix_web::http::StatusCode;
-// use actix_web::web::{delete, get, post, scope, Path};
-// use actix_web::{guard, middleware, web, Resource};
-// use actix_web::{App, HttpResponse, HttpServer};
 use openssl::ssl::{SslAcceptor, SslAcceptorBuilder, SslFiletype, SslMethod};
 
 use crate::commons::error::Error;

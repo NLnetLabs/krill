@@ -1,9 +1,6 @@
 //! Authorization for the API
-// use actix_web::dev::Payload;
-// use actix_web::{Error, FromRequest, HttpRequest, HttpResponse, ResponseError};
 
 use crate::commons::api::Token;
-use crate::daemon::http::Response;
 
 //------------ Authorizer ----------------------------------------------------
 
