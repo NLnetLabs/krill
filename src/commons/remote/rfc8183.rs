@@ -805,6 +805,10 @@ mod tests {
         Time::utc(2012, 1, 1, 0, 0, 0)
     }
 
+    fn apnic_oob_time() -> Time {
+        Time::utc(2020, 3, 3, 0, 0, 0)
+    }
+
     fn example_rrdp_uri() -> uri::Https {
         test::https("https://rpki.example/rrdp/notify.xml")
     }
@@ -913,5 +917,29 @@ mod tests {
         let rfc_res = ParentResponse::validate_at(rfc8183_xml.as_bytes(), rpkid_time()).unwrap();
 
         assert_eq!(pre_rfc_res, rfc_res)
+    }
+
+    #[test]
+    fn apnic_child_request() {
+        let xml = include_str!("../../../test-resources/oob/apnic/child_request.xml");
+        ChildRequest::validate_at(xml.as_bytes(), apnic_oob_time()).unwrap();
+    }
+
+    #[test]
+    fn apnic_parent_response() {
+        let xml = include_str!("../../../test-resources/oob/apnic/parent.response.xml");
+        ParentResponse::validate_at(xml.as_bytes(), apnic_oob_time()).unwrap();
+    }
+
+    #[test]
+    fn apnic_publisher_request() {
+        let xml = include_str!("../../../test-resources/oob/apnic/publisher_request.xml");
+        PublisherRequest::validate_at(xml.as_bytes(), apnic_oob_time()).unwrap();
+    }
+
+    #[test]
+    fn apnic_repository_response() {
+        let xml = include_str!("../../../test-resources/oob/apnic/repository.response.xml");
+        RepositoryResponse::validate_at(xml.as_bytes(), apnic_oob_time()).unwrap();
     }
 }

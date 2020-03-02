@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<ns0:repository_response xmlns:ns0="http://www.hactrn.net/uris/rpki/rpki-setup/" version="1"
+        service_uri="http://rpki.apnic.net/publication/APNIC-AP/A91872ED0000" publisher_handle="A91872ED0000"
+        sia_base="rsync://rpki.sub.apnic.net/repository/A91872ED0000" rrdp_notification_uri="https://rrdp.sub.apnic.net/notification.xml">
+<ns0:repository_bpki_ta>
+MIID4zCCAsugAwIBAgIITKrO/XzCs0IwDQYJKoZIhvcNAQELBQAwgYgxKzApBgNV
+BAMMIkFQTklDIFJvb3QgQ2VydGlmaWNhdGlvbiBBdXRob3JpdHkxIDAeBgNVBAsM
+F0luZnJhc3RydWN0dXJlIFNlcnZpY2VzMRYwFAYDVQQKDA1BUE5JQyBQdHkgTHRk
+MRIwEAYKCZImiZPyLGQBGRYCQ0ExCzAJBgNVBAYTAkFVMB4XDTE0MDcxNjAzMzc1
+MFoXDTI0MDcxMzAzMzc1MFowdTEYMBYGA1UEAwwPQVBOSUMgU2VydmVyIENBMSAw
+HgYDVQQLDBdJbmZyYXN0cnVjdHVyZSBTZXJ2aWNlczEWMBQGA1UECgwNQVBOSUMg
+UHR5IEx0ZDESMBAGCgmSJomT8ixkARkWAkNBMQswCQYDVQQGEwJBVTCCASIwDQYJ
+KoZIhvcNAQEBBQADggEPADCCAQoCggEBALMGsE2/26JMANdhX+kUEOl4nD5UkrZd
+7pfWy1wne1ZJ2p4EJsUpZRpqcwDdYt41eYEet4bKNZSzourwgav0N+LXSSA8VWB/
+kKX14s/jXmghZtglE5+b9RsY6O/AldSrSiDuTOhQv3LTz3E3VxS1NchvxShoAUz0
+rZsuIPU1+DaIKjSEuWdQc98s9O1tmeP92kYmfLAqxNoMpMSgi+W2VtrMgf9+zql2
+2gyqb3/tl3CLX7sX/l5uOTdX8ysK04MyjkUlOh7ciD1pGP0GvlT+oLnr00TFXnHM
+bmo+o/MXcX9bKH+St9CBoKzy+c6kn4AmrY/N9NZL4R41QT7K+tPsRz8CAwEAAaNj
+MGEwHQYDVR0OBBYEFBlb9K/QxXnAPlRSTHpwPPkxWlNvMA8GA1UdEwEB/wQFMAMB
+Af8wHwYDVR0jBBgwFoAU9cbRu559RBE43B+iF/zNow/zxn8wDgYDVR0PAQH/BAQD
+AgGGMA0GCSqGSIb3DQEBCwUAA4IBAQAJcmBFknIHX7qwDkcsq/banAhL7ug66V09
+ecfTcmj6kjxuAehQ3QqQ2DLE8L4nTCtBbIxw1BeAw4tYp8BS7UssIXcL562hUBxP
+j95bNhCb/WozG7/6dQ6C7y3piwtE11XyT/FTxOgUAx/Ncg6TK/+HfsSqBxBolB5j
+Uc6aWUYkDTZQj+0v4hugCNLyIIBFE47K49uaS95R4ETUADVSFVtPZ9wlkrlvbIJn
+ejtJIBHBJZHAK0S5RBgM99XOXuRpW6aCM4pyZgQ4EUF4BzHAFqbSpV/tyORtM8sF
+iiq12E3yr53JYYzR+/OnOUv/vXFiPpJCdCKip89JOVT+e0M9v6Kn
+</ns0:repository_bpki_ta>
+</ns0:repository_response>
