@@ -92,6 +92,10 @@ impl HttpResponse {
         .finalize()
     }
 
+    pub fn res(self) -> Result<hyper::Response<Body>, Error> {
+        Ok(self.0)
+    }
+
     pub fn json<O: Serialize>(object: &O) -> Self {
         match serde_json::to_string(object) {
             Ok(json) => Self::ok_response(ContentType::Json, json.into_bytes()),

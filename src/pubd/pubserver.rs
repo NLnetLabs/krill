@@ -273,6 +273,7 @@ mod tests {
     use rpki::crypto::{PublicKeyFormat, Signer};
 
     use crate::commons::api::rrdp::CurrentObjects;
+    use crate::commons::api::rrdp::PublicationDeltaError;
     use crate::commons::api::{ListElement, PublishDeltaBuilder};
     use crate::commons::remote::builder::IdCertBuilder;
     use crate::commons::remote::id::IdCert;
@@ -281,7 +282,6 @@ mod tests {
     use crate::pubd::Publisher;
 
     use super::*;
-    use commons::api::rrdp::PublicationDeltaError;
 
     fn server_base_uri() -> uri::Rsync {
         test::rsync("rsync://localhost/repo/")

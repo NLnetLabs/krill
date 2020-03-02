@@ -1,6 +1,5 @@
 //! Some helper stuff for creating a private key and certificate for HTTPS
 //! in case they are not provided
-use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 
@@ -17,41 +16,113 @@ use rpki::crypto::{PublicKey, Signature, SignatureAlgorithm};
 use rpki::x509::{Name, Validity};
 
 use crate::commons::util::file;
+use futures::task::Context;
+use hyper::server::accept::Accept;
+use hyper::server::conn::{AddrIncoming, AddrStream};
+use native_tls::Identity;
+use openssl::stack::Stack;
+use openssl::{pkcs12, x509};
+use std::net::SocketAddr;
+use tokio::macros::support::{Pin, Poll};
 
 const KEY_SIZE: u32 = 2048;
 pub const HTTPS_SUB_DIR: &str = "ssl";
 pub const KEY_FILE: &str = "key.pem";
 pub const CERT_FILE: &str = "cert.pem";
 
+fn key_file_path(data_dir: &PathBuf) -> PathBuf {
+    let mut https_dir = data_dir.clone();
+    https_dir.push(HTTPS_SUB_DIR);
+    file::file_path(&https_dir, KEY_FILE)
+}
+
+fn cert_file_path(data_dir: &PathBuf) -> PathBuf {
+    let mut https_dir = data_dir.clone();
+    https_dir.push(HTTPS_SUB_DIR);
+    file::file_path(&https_dir, CERT_FILE)
+}
+
 /// Creates a new private key and certificate file if either is found to be
 /// missing in the base_path directory.
 pub fn create_key_cert_if_needed(data_dir: &PathBuf) -> Result<(), Error> {
-    let mut https_dir = data_dir.clone();
-    https_dir.push(HTTPS_SUB_DIR);
-
-    let key_file_path = file::file_path(&https_dir, KEY_FILE);
-    let cert_file_path = file::file_path(&https_dir, CERT_FILE);
+    let key_file_path = key_file_path(data_dir);
+    let cert_file_path = cert_file_path(data_dir);
 
     if !key_file_path.exists() || !cert_file_path.exists() {
-        create_key_and_cert(&https_dir)
+        create_key_and_cert(data_dir)
     } else {
         Ok(())
     }
 }
 
+/// Load the PKC12 context from disk
+pub fn load_identity(data_dir: &PathBuf) -> Result<Identity, Error> {
+    let key_file_path = key_file_path(data_dir);
+    let key_bytes = file::read(&key_file_path)?;
+    let pkey = PKey::private_key_from_pem(&key_bytes)?;
+
+    let cert_file_path = cert_file_path(data_dir);
+    let cert_bytes = file::read(&cert_file_path)?;
+    let mut certs = x509::X509::stack_from_pem(&cert_bytes)?;
+
+    if certs.is_empty() {
+        return Err(Error::EmptyCertStack);
+    }
+    let cert = certs.remove(0);
+
+    let mut pkcs12_builder = pkcs12::Pkcs12::builder();
+
+    if !certs.is_empty() {
+        let mut cert_stack = Stack::new().unwrap();
+        for add_cert in certs {
+            cert_stack.push(add_cert)?;
+        }
+
+        pkcs12_builder.ca(cert_stack);
+    }
+
+    let pkcs12 = pkcs12_builder.build("mypass", "krill", &pkey, &cert)?;
+
+    let der = pkcs12.to_der()?;
+
+    Identity::from_pkcs12(&der, "mypass").map_err(|e| Error::Pkcs12(e.to_string()))
+}
+
 /// Creates a new private key and certificate to be used when serving HTTPS.
 /// Only call this in case there is no current key and certificate file
 /// present, or have your files ruthlessly overwritten!
-fn create_key_and_cert(https_dir: &PathBuf) -> Result<(), Error> {
-    if !https_dir.exists() {
-        file::create_dir(&https_dir)?;
-    }
-
+fn create_key_and_cert(data_dir: &PathBuf) -> Result<(), Error> {
     let mut signer = HttpsSigner::build()?;
-    signer.save_private_key(&https_dir)?;
-    signer.save_certificate(&https_dir)?;
+    signer.save_private_key(data_dir)?;
+    signer.save_certificate(data_dir)?;
 
     Ok(())
+}
+
+//------------ TlsAddrIncoming -----------------------------------------------
+
+pub struct TlsAddrIncoming(AddrIncoming);
+
+impl TlsAddrIncoming {
+    pub fn new(addr: &SocketAddr) -> Result<Self, Error> {
+        let inner = AddrIncoming::bind(addr).map_err(Error::conn)?;
+        Ok(TlsAddrIncoming(inner))
+    }
+}
+
+impl Accept for TlsAddrIncoming {
+    type Conn = AddrStream;
+    type Error = Error;
+
+    fn poll_accept(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Self::Conn, Self::Error>>> {
+        // self.0
+        //     .poll_accept(cx)
+        //     .map(|opt| opt.map(|res| res.map_err(Error::conn())))
+        unimplemented!()
+    }
 }
 
 //------------ HttpsSigner ---------------------------------------------------
@@ -70,12 +141,10 @@ impl HttpsSigner {
     }
 
     /// Saves the private key in PEM format so that actix can use it.
-    fn save_private_key(&self, https_dir: &PathBuf) -> Result<(), Error> {
-        let path = file::file_path(https_dir, KEY_FILE);
-        let mut pkey_file = File::create(path)?;
-
-        let pem = self.private.private_key_to_pem_pkcs8()?;
-        pkey_file.write_all(&pem)?;
+    fn save_private_key(&self, data_dir: &PathBuf) -> Result<(), Error> {
+        let key_file_path = key_file_path(data_dir);
+        let bytes = Bytes::from(self.private.private_key_to_pem_pkcs8()?);
+        file::save(&bytes, &key_file_path)?;
         Ok(())
     }
 
@@ -103,7 +172,7 @@ impl HttpsSigner {
     }
 
     /// Saves a self-signed certificate so that actix can use it.
-    fn save_certificate(&mut self, https_dir: &PathBuf) -> Result<(), Error> {
+    fn save_certificate(&mut self, data_dir: &PathBuf) -> Result<(), Error> {
         let pub_key = self.public_key_info()?;
         let tbs_cert = TbsHttpsCertificate::from(&pub_key);
 
@@ -121,12 +190,13 @@ impl HttpsSigner {
 
         let cert_pem = base64::encode(&encoded_cert);
 
-        let path = file::file_path(https_dir, CERT_FILE);
-        let mut pem_file = File::create(path)?;
-
-        pem_file.write_all("-----BEGIN CERTIFICATE-----\n".as_ref())?;
-        pem_file.write_all(cert_pem.as_bytes())?;
-        pem_file.write_all("\n-----END CERTIFICATE-----\n".as_ref())?;
+        let path = cert_file_path(data_dir);
+        let pem_file = format!(
+            "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n",
+            cert_pem
+        );
+        let bytes: Bytes = Bytes::from(pem_file);
+        file::save(&bytes, &path)?;
 
         Ok(())
     }
@@ -266,6 +336,21 @@ pub enum Error {
 
     #[display(fmt = "Could not make certificate")]
     BuildError,
+
+    #[display(fmt = "Certificate PEM file contains no certificates")]
+    EmptyCertStack,
+
+    #[display(fmt = "Cannot create PKCS12 Identity: {}", _0)]
+    Pkcs12(String),
+
+    #[display(fmt = "Connection error: {}", _0)]
+    Connection(String),
+}
+
+impl Error {
+    fn conn(e: impl std::fmt::Display) -> Self {
+        Error::Connection(e.to_string())
+    }
 }
 
 impl From<openssl::error::ErrorStack> for Error {
@@ -280,19 +365,19 @@ impl From<std::io::Error> for Error {
     }
 }
 
+impl std::error::Error for Error {}
+
 //------------ Tests ---------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     // use actix_web::*;
-    use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
-
     use crate::commons::util::test;
 
     use super::*;
 
     #[test]
-    fn should_create_key_and_cert_and_start_server() {
+    fn should_create_identity() {
         test::test_under_tmp(|d| {
             let mut p_key_file_path = d.clone();
             p_key_file_path.push("ssl");
@@ -304,19 +389,7 @@ mod tests {
 
             create_key_cert_if_needed(&d).unwrap();
 
-            let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls()).unwrap();
-
-            builder
-                .set_private_key_file(p_key_file_path, SslFiletype::PEM)
-                .unwrap();
-
-            builder.set_certificate_chain_file(cert_file_path).unwrap();
-
-            unimplemented!("#189")
-
-            // HttpServer::new(App::new)
-            //     .bind_ssl("localhost:8443", builder)
-            //     .unwrap();
+            let _id: Identity = load_identity(&d).unwrap();
         });
     }
 }

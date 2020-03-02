@@ -3,16 +3,28 @@
 //! Here we deal with booting and setup, and once active deal with parsing
 //! arguments and routing of requests, typically handing off to the
 //! daemon::api::endpoints functions for processing and responding.
+use std::io;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use openssl::ssl::{SslAcceptor, SslAcceptorBuilder, SslFiletype, SslMethod};
+use futures::future::ok;
+use futures::Future;
+use futures::TryFutureExt;
+
+use hyper::server::conn::{AddrIncoming, Http};
+use hyper::service::{make_service_fn, service_fn};
+use hyper::{Body, Request, Server};
+
+use tokio::net::TcpListener;
+use tokio_proto::TcpServer;
+use tokio_tls::TlsAcceptor;
 
 use crate::commons::error::Error;
 use crate::daemon::config::Config;
 use crate::daemon::endpoints;
 use crate::daemon::endpoints::*;
 use crate::daemon::http::ssl;
-// use crate::daemon::http::statics::WithStaticContent;
+use crate::daemon::http::ssl::TlsAddrIncoming;
+use crate::daemon::http::HttpResponse;
 use crate::daemon::krillserver::KrillServer;
 
 //------------ AppServer -----------------------------------------------------
@@ -31,12 +43,11 @@ impl AppServer {
 }
 
 pub fn start(config: &Config) -> Result<(), Error> {
-    // let server = {
-    //     let krill = KrillServer::build(config)?;
-    //     AppServer(Arc::new(RwLock::new(krill)))
-    // };
+    let krill_app = {
+        let krill = KrillServer::build(config)?;
+        AppServer(Arc::new(RwLock::new(krill)))
+    };
 
-    // let https_builder = https_builder(config)?;
     //
     // let post_limit_api = config.post_limit_api;
     // let post_limit_rfc8181 = config.post_limit_rfc8181;
@@ -169,30 +180,71 @@ pub fn start(config: &Config) -> Result<(), Error> {
     // .bind_ssl(config.socket_addr(), https_builder)?
     // .run()?;
 
-    // Ok(())
-    unimplemented!("#189")
+    //
+    let new_service = service_fn(|_req: Request<Body>| async move {
+        HttpResponse::text("hello world".to_string().into_bytes()).res()
+    });
+    let make_service = make_service_fn(|_| async move { Ok::<_, Error>(new_service) });
+
+    // let ai = TlsAddrIncoming::new(&config.socket_addr())?;
+    let ai =
+        AddrIncoming::bind(&config.socket_addr()).map_err(|e| Error::HttpsSetup(e.to_string()))?;
+
+    let server = Server::builder(ai)
+        .serve(make_service)
+        .map_err(|e| eprintln!("Server error: {}", e));
+
+    async {
+        if let Err(_) = server.await {
+            eprintln!("Server oops")
+        }
+    };
+
+    // TcpServer::new(
+    //     tokio_proto::Server::new(Http::new(), tls_cx),
+    //     config.socket_addr(),
+    // )
+    // .serve(new_service);
+
+    //
+    // async {
+    //     let listener = TcpListener::bind(&config.socket_addr()).await.unwrap();
+    //     //
+    //     let http = Http::new();
+    //     let conn = http.serve_connection(
+    //         listener.incoming().and_then(move |socket| {
+    //             tls_cx
+    //                 .accept(socket)
+    //                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+    //         }),
+    //         new_service,
+    //     );
+    // }?;
+    //
+    // async {
+    //     if let Err(e) = conn.await {
+    //         eprintln!("server connection error: {}", e);
+    //     }
+    // };
+
+    Ok(())
 }
 
 /// Used to set up HTTPS. Creates keypair and self signed certificate
 /// if config has 'use_ssl=test'.
-fn https_builder(config: &Config) -> Result<SslAcceptorBuilder, Error> {
+fn tls_acceptor(config: &Config) -> Result<TlsAcceptor, Error> {
     if config.test_ssl() {
         ssl::create_key_cert_if_needed(&config.data_dir)
             .map_err(|e| Error::HttpsSetup(format!("{}", e)))?;
     }
 
-    let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls())
-        .map_err(|e| Error::HttpsSetup(format!("{}", e)))?;
+    let id = ssl::load_identity(&config.data_dir).map_err(|e| Error::HttpsSetup(e.to_string()))?;
 
-    builder
-        .set_private_key_file(config.https_key_file(), SslFiletype::PEM)
-        .map_err(|e| Error::HttpsSetup(format!("{}", e)))?;
+    let tls_cx = native_tls::TlsAcceptor::builder(id)
+        .build()
+        .map_err(|e| Error::HttpsSetup(e.to_string()))?;
 
-    builder
-        .set_certificate_chain_file(config.https_cert_file())
-        .map_err(|e| Error::HttpsSetup(format!("{}", e)))?;
-
-    Ok(builder)
+    Ok(TlsAcceptor::from(tls_cx))
 }
 
 // XXX TODO: use a better handler that does not load everything into
