@@ -19,7 +19,7 @@ use rpki::uri;
 use crate::commons::api::Token;
 use crate::commons::util::ext_serde;
 use crate::constants::*;
-use crate::daemon::http::ssl;
+use crate::daemon::http::tls_keys;
 
 //------------ ConfigDefaults ------------------------------------------------
 
@@ -176,15 +176,15 @@ impl Config {
 
     pub fn https_cert_file(&self) -> PathBuf {
         let mut path = self.data_dir.clone();
-        path.push(ssl::HTTPS_SUB_DIR);
-        path.push(ssl::CERT_FILE);
+        path.push(tls_keys::HTTPS_SUB_DIR);
+        path.push(tls_keys::CERT_FILE);
         path
     }
 
     pub fn https_key_file(&self) -> PathBuf {
         let mut path = self.data_dir.clone();
-        path.push(ssl::HTTPS_SUB_DIR);
-        path.push(ssl::KEY_FILE);
+        path.push(tls_keys::HTTPS_SUB_DIR);
+        path.push(tls_keys::KEY_FILE);
         path
     }
 
@@ -630,5 +630,4 @@ mod tests {
         let expected_socket_addr = ([127, 0, 0, 1], 3000).into();
         assert_eq!(c.socket_addr(), expected_socket_addr);
     }
-
 }

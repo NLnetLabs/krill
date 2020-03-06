@@ -49,7 +49,7 @@ pub fn https(s: &str) -> uri::Https {
 }
 
 pub fn as_bytes(s: &str) -> Bytes {
-    Bytes::from(s)
+    Bytes::copy_from_slice(s.as_bytes())
 }
 
 pub fn save_file(base_dir: &PathBuf, file_name: &str, content: &[u8]) {

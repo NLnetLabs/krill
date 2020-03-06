@@ -7,6 +7,7 @@ use std::io;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use futures::future::ok;
+use futures::task::SpawnExt;
 use futures::Future;
 use futures::TryFutureExt;
 
@@ -16,15 +17,13 @@ use hyper::{Body, Request, Server};
 
 use tokio::net::TcpListener;
 use tokio_proto::TcpServer;
-use tokio_tls::TlsAcceptor;
 
 use crate::commons::error::Error;
 use crate::daemon::config::Config;
 use crate::daemon::endpoints;
 use crate::daemon::endpoints::*;
-use crate::daemon::http::ssl;
-use crate::daemon::http::ssl::TlsAddrIncoming;
 use crate::daemon::http::HttpResponse;
+use crate::daemon::http::{tls, tls_keys};
 use crate::daemon::krillserver::KrillServer;
 
 //------------ AppServer -----------------------------------------------------
@@ -42,9 +41,9 @@ impl AppServer {
     }
 }
 
-pub fn start(config: &Config) -> Result<(), Error> {
+pub async fn start(config: Config) -> Result<(), Error> {
     let krill_app = {
-        let krill = KrillServer::build(config)?;
+        let krill = KrillServer::build(&config)?;
         AppServer(Arc::new(RwLock::new(krill)))
     };
 
@@ -180,25 +179,38 @@ pub fn start(config: &Config) -> Result<(), Error> {
     // .bind_ssl(config.socket_addr(), https_builder)?
     // .run()?;
 
-    //
     let new_service = service_fn(|_req: Request<Body>| async move {
         HttpResponse::text("hello world".to_string().into_bytes()).res()
     });
-    let make_service = make_service_fn(|_| async move { Ok::<_, Error>(new_service) });
+    let service = make_service_fn(|_| async move { Ok::<_, Error>(new_service) });
 
-    // let ai = TlsAddrIncoming::new(&config.socket_addr())?;
-    let ai =
-        AddrIncoming::bind(&config.socket_addr()).map_err(|e| Error::HttpsSetup(e.to_string()))?;
+    // let ai =
+    //     AddrIncoming::bind(&config.socket_addr()).map_err(|e| Error::HttpsSetup(e.to_string()))?;
 
-    let server = Server::builder(ai)
-        .serve(make_service)
+    // let id = load_identity(&config.data_dir)?;
+    // let ai = TlsAcceptor::new(&config.socket_addr(), id)?;
+
+    tls_keys::create_key_cert_if_needed(&config.data_dir)
+        .map_err(|e| Error::HttpsSetup(format!("{}", e)))?;
+
+    let mut server_config_builder = tls::TlsConfigBuilder::new()
+        .cert_path(tls_keys::cert_file_path(&config.data_dir))
+        .key_path(tls_keys::key_file_path(&config.data_dir));
+    let server_config = server_config_builder.build().unwrap();
+
+    let acceptor = tls::TlsAcceptor::new(
+        server_config,
+        AddrIncoming::bind(&config.socket_addr()).unwrap(),
+    );
+
+    let server = Server::builder(acceptor)
+        .serve(service)
         .map_err(|e| eprintln!("Server error: {}", e));
 
-    async {
-        if let Err(_) = server.await {
-            eprintln!("Server oops")
-        }
-    };
+    if let Err(_) = server.await {
+        eprintln!("Krill failed to start");
+        ::std::process::exit(1);
+    }
 
     // TcpServer::new(
     //     tokio_proto::Server::new(Http::new(), tls_cx),
@@ -230,43 +242,34 @@ pub fn start(config: &Config) -> Result<(), Error> {
     Ok(())
 }
 
-/// Used to set up HTTPS. Creates keypair and self signed certificate
-/// if config has 'use_ssl=test'.
-fn tls_acceptor(config: &Config) -> Result<TlsAcceptor, Error> {
-    if config.test_ssl() {
-        ssl::create_key_cert_if_needed(&config.data_dir)
-            .map_err(|e| Error::HttpsSetup(format!("{}", e)))?;
-    }
-
-    let id = ssl::load_identity(&config.data_dir).map_err(|e| Error::HttpsSetup(e.to_string()))?;
-
-    let tls_cx = native_tls::TlsAcceptor::builder(id)
-        .build()
-        .map_err(|e| Error::HttpsSetup(e.to_string()))?;
-
-    Ok(TlsAcceptor::from(tls_cx))
-}
-
-// XXX TODO: use a better handler that does not load everything into
-// memory first, and set the correct headers for caching.
-// See also:
-// https://github.com/actix/actix-website/blob/master/content/docs/static-files.md
-// https://www.keycdn.com/blog/http-cache-headers
-// fn serve_rrdp_files(server: web::Data<AppServer>, path: Path<String>) -> HttpResponse {
-//     let mut full_path = server.read().rrdp_base_path();
-//     full_path.push(path.into_inner());
-//     match File::open(full_path) {
-//         Ok(mut file) => {
-//             use std::io::Read;
-//             let mut buffer = Vec::new();
-//             file.read_to_end(&mut buffer).unwrap();
-//
-//             HttpResponse::build(StatusCode::OK).body(buffer)
-//         }
-//         _ => HttpResponse::build(StatusCode::NOT_FOUND).finish(),
-//     }
-// }
-
 //------------ Tests ---------------------------------------------------------
 
 // Tested in tests/integration_test.rs
+
+#[cfg(test)]
+mod tests {
+
+    use std::path::PathBuf;
+    use std::time::Duration;
+
+    use tokio::time::{delay_for, timeout};
+
+    use crate::commons::util::{httpclient, test};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn hello_world() {
+        let dir = test::sub_dir(&PathBuf::from("work"));
+
+        let server_conf = {
+            // Use a data dir for the storage
+            let data_dir = test::sub_dir(&dir);
+            Config::test(&data_dir)
+        };
+
+        tokio::spawn(super::start(server_conf));
+
+        assert!(crate::daemon::test::server_ready().await);
+    }
+}

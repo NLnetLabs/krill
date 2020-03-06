@@ -1,42 +1,49 @@
 //! Some helper stuff for creating a private key and certificate for HTTPS
 //! in case they are not provided
+use std::io;
 use std::io::Write;
+use std::net::{SocketAddr, TcpListener};
 use std::path::PathBuf;
+use std::sync::Arc;
+
+use bytes::Bytes;
+
+use futures::lock::Mutex;
+use futures::task::Context;
+use futures::{ready, Future, TryFutureExt};
+use tokio::macros::support::{Pin, Poll};
+
+use hyper::server::accept::Accept;
+use hyper::server::conn::{AddrIncoming, AddrStream};
+
+use openssl::hash::MessageDigest;
+use openssl::pkey::{PKey, Private};
+use openssl::rsa::Rsa;
+use openssl::stack::Stack;
+use openssl::{pkcs12, x509};
 
 use bcder::encode::{Constructed, PrimitiveContent, Values};
 use bcder::{decode, encode};
 use bcder::{BitString, Mode, Tag};
-use bytes::Bytes;
-use openssl::hash::MessageDigest;
-use openssl::pkey::{PKey, Private};
-use openssl::rsa::Rsa;
 
 use rpki::cert::ext::{AuthorityKeyIdentifier, BasicCa, SubjectKeyIdentifier};
 use rpki::crypto::{PublicKey, Signature, SignatureAlgorithm};
 use rpki::x509::{Name, Validity};
 
 use crate::commons::util::file;
-use futures::task::Context;
-use hyper::server::accept::Accept;
-use hyper::server::conn::{AddrIncoming, AddrStream};
-use native_tls::Identity;
-use openssl::stack::Stack;
-use openssl::{pkcs12, x509};
-use std::net::SocketAddr;
-use tokio::macros::support::{Pin, Poll};
 
 const KEY_SIZE: u32 = 2048;
 pub const HTTPS_SUB_DIR: &str = "ssl";
 pub const KEY_FILE: &str = "key.pem";
 pub const CERT_FILE: &str = "cert.pem";
 
-fn key_file_path(data_dir: &PathBuf) -> PathBuf {
+pub fn key_file_path(data_dir: &PathBuf) -> PathBuf {
     let mut https_dir = data_dir.clone();
     https_dir.push(HTTPS_SUB_DIR);
     file::file_path(&https_dir, KEY_FILE)
 }
 
-fn cert_file_path(data_dir: &PathBuf) -> PathBuf {
+pub fn cert_file_path(data_dir: &PathBuf) -> PathBuf {
     let mut https_dir = data_dir.clone();
     https_dir.push(HTTPS_SUB_DIR);
     file::file_path(&https_dir, CERT_FILE)
@@ -55,39 +62,6 @@ pub fn create_key_cert_if_needed(data_dir: &PathBuf) -> Result<(), Error> {
     }
 }
 
-/// Load the PKC12 context from disk
-pub fn load_identity(data_dir: &PathBuf) -> Result<Identity, Error> {
-    let key_file_path = key_file_path(data_dir);
-    let key_bytes = file::read(&key_file_path)?;
-    let pkey = PKey::private_key_from_pem(&key_bytes)?;
-
-    let cert_file_path = cert_file_path(data_dir);
-    let cert_bytes = file::read(&cert_file_path)?;
-    let mut certs = x509::X509::stack_from_pem(&cert_bytes)?;
-
-    if certs.is_empty() {
-        return Err(Error::EmptyCertStack);
-    }
-    let cert = certs.remove(0);
-
-    let mut pkcs12_builder = pkcs12::Pkcs12::builder();
-
-    if !certs.is_empty() {
-        let mut cert_stack = Stack::new().unwrap();
-        for add_cert in certs {
-            cert_stack.push(add_cert)?;
-        }
-
-        pkcs12_builder.ca(cert_stack);
-    }
-
-    let pkcs12 = pkcs12_builder.build("mypass", "krill", &pkey, &cert)?;
-
-    let der = pkcs12.to_der()?;
-
-    Identity::from_pkcs12(&der, "mypass").map_err(|e| Error::Pkcs12(e.to_string()))
-}
-
 /// Creates a new private key and certificate to be used when serving HTTPS.
 /// Only call this in case there is no current key and certificate file
 /// present, or have your files ruthlessly overwritten!
@@ -97,32 +71,6 @@ fn create_key_and_cert(data_dir: &PathBuf) -> Result<(), Error> {
     signer.save_certificate(data_dir)?;
 
     Ok(())
-}
-
-//------------ TlsAddrIncoming -----------------------------------------------
-
-pub struct TlsAddrIncoming(AddrIncoming);
-
-impl TlsAddrIncoming {
-    pub fn new(addr: &SocketAddr) -> Result<Self, Error> {
-        let inner = AddrIncoming::bind(addr).map_err(Error::conn)?;
-        Ok(TlsAddrIncoming(inner))
-    }
-}
-
-impl Accept for TlsAddrIncoming {
-    type Conn = AddrStream;
-    type Error = Error;
-
-    fn poll_accept(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Conn, Self::Error>>> {
-        // self.0
-        //     .poll_accept(cx)
-        //     .map(|opt| opt.map(|res| res.map_err(Error::conn())))
-        unimplemented!()
-    }
 }
 
 //------------ HttpsSigner ---------------------------------------------------
@@ -377,19 +325,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn should_create_identity() {
+    fn should_create_key_and_cert() {
         test::test_under_tmp(|d| {
-            let mut p_key_file_path = d.clone();
-            p_key_file_path.push("ssl");
-            p_key_file_path.push("key.pem");
-
-            let mut cert_file_path = d.clone();
-            cert_file_path.push("ssl");
-            cert_file_path.push("cert.pem");
-
             create_key_cert_if_needed(&d).unwrap();
-
-            let _id: Identity = load_identity(&d).unwrap();
         });
     }
 }

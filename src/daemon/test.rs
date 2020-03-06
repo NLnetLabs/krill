@@ -1,7 +1,10 @@
 //! Support for tests in other modules using a running krill server
 
 use std::path::PathBuf;
+use std::time::Duration;
 use std::{thread, time};
+
+use tokio::time::{delay_for, timeout};
 
 use rpki::uri::Rsync;
 
@@ -16,7 +19,7 @@ use crate::commons::api::{
 };
 use crate::commons::remote::rfc8183;
 use crate::commons::remote::rfc8183::ChildRequest;
-use crate::commons::util::test;
+use crate::commons::util::{httpclient, test};
 use crate::daemon::ca::ta_handle;
 use crate::daemon::config::Config;
 use crate::daemon::http::server;
@@ -26,59 +29,79 @@ pub enum PubdTestContext {
     Secondary,
 }
 
+pub async fn server_ready() -> bool {
+    let uri = "https://localhost:3000/";
+
+    for _ in 0..30_u8 {
+        match httpclient::async_client(uri).await {
+            Ok(client) => {
+                let res = timeout(Duration::from_secs(1), client.get(uri).send()).await;
+                if res.is_ok() {
+                    return true;
+                }
+            }
+            Err(_) => return false,
+        }
+    }
+
+    return false;
+}
+
 pub fn test_with_krill_server<F>(op: F)
 where
     F: FnOnce(PathBuf) -> (),
 {
-    test::test_under_tmp(|dir| {
-        // Set up a test PubServer Config
-        let server_conf = {
-            // Use a data dir for the storage
-            let data_dir = test::sub_dir(&dir);
-            Config::test(&data_dir)
-        };
-
-        // Start the server
-        thread::spawn(move || server::start(&server_conf).unwrap());
-
-        let mut tries = 0;
-        loop {
-            thread::sleep(time::Duration::from_millis(100));
-            if let Ok(_res) = health_check() {
-                break;
-            }
-
-            tries += 1;
-            if tries > 20 {
-                panic!("Server is not coming up")
-            }
-        }
-
-        op(dir)
-    })
+    // test::test_under_tmp(|dir| {
+    //     // Set up a test PubServer Config
+    //     let server_conf = {
+    //         // Use a data dir for the storage
+    //         let data_dir = test::sub_dir(&dir);
+    //         Config::test(&data_dir)
+    //     };
+    //
+    //     // Start the server
+    //     thread::spawn(move || server::start(&server_conf).unwrap());
+    //
+    //     let mut tries = 0;
+    //     loop {
+    //         thread::sleep(time::Duration::from_millis(100));
+    //         if let Ok(_res) = health_check() {
+    //             break;
+    //         }
+    //
+    //         tries += 1;
+    //         if tries > 20 {
+    //             panic!("Server is not coming up")
+    //         }
+    //     }
+    //
+    //     op(dir)
+    // })
+    unimplemented!()
 }
 
 pub fn start_krill_pubd_server() -> PathBuf {
-    let data_dir = test::sub_dir(&PathBuf::from("work"));
-    let server_conf = Config::pubd_test(&data_dir);
-
-    // Start the server
-    thread::spawn(move || server::start(&server_conf).unwrap());
-
-    let mut tries = 0;
-    loop {
-        thread::sleep(time::Duration::from_millis(100));
-        if let Ok(_res) = krill_pubd_health() {
-            break;
-        }
-
-        tries += 1;
-        if tries > 20 {
-            panic!("Server is not coming up")
-        }
-    }
-
-    data_dir
+    // let data_dir = test::sub_dir(&PathBuf::from("work"));
+    // let server_conf = Config::pubd_test(&data_dir);
+    //
+    // // Start the server
+    // thread::spawn(move || server::start(&server_conf).unwrap());
+    //
+    // let mut tries = 0;
+    // loop {
+    //     thread::sleep(time::Duration::from_millis(100));
+    //     if let Ok(_res) = krill_pubd_health() {
+    //         break;
+    //     }
+    //
+    //     tries += 1;
+    //     if tries > 20 {
+    //         panic!("Server is not coming up")
+    //     }
+    // }
+    //
+    // data_dir
+    unimplemented!()
 }
 
 pub fn wait_seconds(s: u64) {

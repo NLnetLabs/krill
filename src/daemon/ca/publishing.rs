@@ -404,6 +404,7 @@ impl ManifestBuilder {
     }
 
     fn mft_hash(bytes: &[u8]) -> Bytes {
-        Bytes::from(DigestAlgorithm::default().digest(bytes).as_ref())
+        let digest = DigestAlgorithm::default().digest(bytes);
+        Bytes::copy_from_slice(digest.as_ref())
     }
 }

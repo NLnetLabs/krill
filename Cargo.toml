@@ -8,8 +8,8 @@ license = "MPL-2.0"
 
 [dependencies]
 base64          = "^0.10"
-bcder           = "0.4.0"
-bytes           = "^0.4"
+bcder           = { version = "0.5.0-pre", git = "https://github.com/NLnetLabs/bcder.git" }
+bytes           = "^0.5"
 chrono          = { version = "^0.4", features = ["serde"] }
 clap            = "^2.32"
 clokwerk        = "^0.1"
@@ -18,22 +18,20 @@ fern            = { version = "^0.5", features = ["syslog-4"] }
 futures         = "0.3.4"
 hex             = "^0.3"
 hyper           = "^0.13"
-hyper-tls-hack  = { version = "0.1.0", git = "https://github.com/miquels/hyper-tls-hack" }
 log             = "^0.4"
-native-tls      = "0.2.3"
 openssl         = { version = "^0.10", features = ["v110"] }
 pretty          = "0.5.2" # for testing
 rand            = "^0.5"
-reqwest         = "^0.9.17"
-rpki            = "0.8.3"
+reqwest         = { version = "0.10.4", features = ["blocking", "json"] }
+rpki            = { version = "0.9.0-pre", git = "https://github.com/NLnetLabs/rpki-rs.git", branch = "bytes-0.5" }
 serde           = { version = "^1.0", features = ["derive"] }
 serde_json      = "^1.0"
 syslog          = "^4.0"
-tokio           = "^0.2"
+tokio           = { version = "^0.2", features = ["rt-core", "macros", "time"] }
 tokio-proto     = "0.1.1"
-tokio-tls       = { version="0.3.0" }
+tokio-rustls    = "0.13.0"
 toml            = "^0.4"
-uuid            = "0.7"
+uuid            = { version = "0.7", features = [ "v4"] }
 xml-rs          = "0.8.0"
 
 [target.'cfg(unix)'.dependencies]

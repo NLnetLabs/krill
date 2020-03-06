@@ -72,7 +72,7 @@ impl FromStr for Handle {
             && s.len() < 256
         {
             Ok(Handle {
-                name: Bytes::from(s),
+                name: Bytes::copy_from_slice(s.as_bytes()),
             })
         } else {
             Err(InvalidHandle)

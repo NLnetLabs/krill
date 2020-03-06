@@ -6,8 +6,9 @@ use std::time::Duration;
 use std::{env, fmt};
 
 use bytes::Bytes;
+use reqwest::blocking::{Client, Response};
 use reqwest::header::{HeaderMap, HeaderValue, InvalidHeaderValue, CONTENT_TYPE, USER_AGENT};
-use reqwest::{Client, Response, StatusCode};
+use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
@@ -241,10 +242,21 @@ fn load_root_cert(path: &str) -> Result<reqwest::Certificate, Error> {
     reqwest::Certificate::from_pem(file.as_ref()).map_err(Error::https_root_cert_error)
 }
 
+pub async fn async_client(uri: &str) -> Result<reqwest::Client, Error> {
+    let mut builder = reqwest::ClientBuilder::new();
+
+    if uri.starts_with("https://localhost") || uri.starts_with("https://127.0.0.1") {
+        builder.danger_accept_invalid_certs(true).build()
+    } else {
+        builder.build()
+    }
+    .map_err(Error::RequestError)
+}
+
 fn client(uri: &str) -> Result<Client, Error> {
-    let mut builder = Client::builder()
-        .gzip(true)
-        .timeout(Duration::from_secs(300));
+    let mut builder = Client::builder().timeout(Duration::from_secs(300));
+
+    let mut builder = reqwest::blocking::ClientBuilder::from(builder);
 
     if let Ok(cert_list) = env::var(KRILL_HTTPS_ROOT_CERTS_ENV) {
         for path in cert_list.split(':') {
@@ -254,13 +266,11 @@ fn client(uri: &str) -> Result<Client, Error> {
     }
 
     if uri.starts_with("https://localhost") || uri.starts_with("https://127.0.0.1") {
-        builder
-            .danger_accept_invalid_certs(true)
-            .build()
-            .map_err(Error::RequestError)
+        builder.danger_accept_invalid_certs(true).build()
     } else {
-        builder.build().map_err(Error::RequestError)
+        builder.build()
     }
+    .map_err(Error::RequestError)
 }
 
 fn headers(content_type: Option<&str>, token: Option<&Token>) -> Result<HeaderMap, Error> {

@@ -60,7 +60,7 @@ impl From<u32> for ResourceClassName {
 impl From<&str> for ResourceClassName {
     fn from(s: &str) -> ResourceClassName {
         ResourceClassName {
-            name: Bytes::from(s),
+            name: Bytes::copy_from_slice(s.as_bytes()),
         }
     }
 }
@@ -780,7 +780,7 @@ impl CurrentObjects {
             .keys()
             .filter(|k| !k.as_ref().ends_with("mft"))
             .map(|k| {
-                let name_bytes = Bytes::from(k.as_str());
+                let name_bytes = k.clone().into();
                 let hash_bytes = self.0[k].content.to_encoded_hash().into();
                 FileAndHash::new(name_bytes, hash_bytes)
             })
@@ -2071,5 +2071,4 @@ mod test {
 
         assert_eq!(intersection, child_resources);
     }
-
 }

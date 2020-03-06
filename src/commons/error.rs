@@ -22,7 +22,7 @@ use crate::commons::remote::rfc8181::ReportErrorCode;
 use crate::commons::util::httpclient;
 use crate::commons::util::softsigner::SignerError;
 use crate::daemon::ca::RouteAuthorization;
-use crate::daemon::http::ssl;
+use crate::daemon::http::tls_keys;
 
 #[derive(Debug, Display)]
 pub enum Error {
@@ -258,8 +258,8 @@ impl From<ResourceSetError> for Error {
     }
 }
 
-impl From<ssl::Error> for Error {
-    fn from(e: ssl::Error) -> Self {
+impl From<tls_keys::Error> for Error {
+    fn from(e: tls_keys::Error) -> Self {
         Error::HttpsSetup(e.to_string())
     }
 }
