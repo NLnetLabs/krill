@@ -198,11 +198,11 @@ pub fn metrics(req: Request) -> Result<HttpResponse, Request> {
 pub fn stats(req: Request) -> Result<HttpResponse, Request> {
     if !req.is_get() {
         Err(req)
-    } else if req.path().segment() == "stats/info" {
+    } else if req.path().full() == "/stats/info" {
         Ok(render_json(req.read().server_info()))
-    } else if req.path().segment() == "stats/repo" {
+    } else if req.path().full() == "/stats/repo" {
         Ok(render_json_res(req.read().repo_stats()))
-    } else if req.path().segment() == "stats/cas" {
+    } else if req.path().full() == "/stats/cas" {
         Ok(render_json(req.read().cas_stats()))
     } else {
         Err(req)
@@ -220,17 +220,32 @@ pub fn api(mut req: Request) -> Result<HttpResponse, Request> {
         }
 
         // Eat the first two segments of the path "api/v1"
-        let mut path = req.path_mut();
+        let mut path = req.path().clone();
         path.next();
 
         match path.next() {
-            Some("authorized") => Ok(HttpResponse::ok()),
-            Some(path) => {
-                error!("Got strange path: {}", path);
-                Ok(HttpResponse::error(Error::ApiUnknownMethod))
+            Some("authorized") => {
+                if req.is_get() {
+                    return Ok(HttpResponse::ok());
+                }
             }
-            _ => Ok(HttpResponse::error(Error::ApiUnknownMethod)),
+            Some("publishers") => {
+                if req.is_get() {
+                    if let Some(publisher_str) = path.next() {
+                        unimplemented!()
+                    } else {
+                        return Ok(list_pbl(req));
+                    }
+
+                    return Ok(HttpResponse::ok());
+                } else if req.is_post() {
+                    unimplemented!("Get post body")
+                }
+            }
+            _ => {}
         }
+
+        Ok(HttpResponse::error(Error::ApiUnknownMethod))
     }
 }
 
@@ -247,15 +262,12 @@ pub fn stale_publishers(server: State, seconds: i64) -> HttpResponse {
 }
 
 /// Returns a json structure with all publishers in it.
-pub fn list_pbl(server: State, auth: Auth) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        render_json_res(
-            server
-                .read()
-                .publishers()
-                .map(|publishers| PublisherList::build(&publishers, "/api/v1/publishers")),
-        )
-    })
+pub fn list_pbl(req: Request) -> HttpResponse {
+    render_json_res(
+        req.read()
+            .publishers()
+            .map(|publishers| PublisherList::build(&publishers, "/api/v1/publishers")),
+    )
 }
 
 /// Adds a publisher

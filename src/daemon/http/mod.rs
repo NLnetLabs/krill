@@ -183,10 +183,6 @@ impl Request {
         &self.path
     }
 
-    pub fn path_mut(&mut self) -> &mut RequestPath {
-        &mut self.path
-    }
-
     /// Get the application State
     fn state(&self) -> &State {
         &self.state
@@ -233,6 +229,7 @@ impl Request {
 
 //------------ RequestPath ---------------------------------------------------
 
+#[derive(Clone)]
 pub struct RequestPath {
     path: PathAndQuery,
     segment: (usize, usize),
