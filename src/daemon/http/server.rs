@@ -88,8 +88,13 @@ fn map_requests(
     mut state: State,
 ) -> Result<hyper::Response<hyper::Body>, Error> {
     let req = Request::new(req, state);
+
+    debug!("Got request for: {}", req.path.full());
+
     health(req)
         .or_else(metrics)
+        .or_else(stats)
+        .or_else(api)
         .or_else(not_found)
         .map_err(|_| Error::custom("should have received not found response"))?
         .res()
@@ -100,11 +105,6 @@ fn map_requests(
 
     // HttpServer::new(move || {
     //         .wrap(middleware::Logger::default())
-    //         .route("/health", get().to(endpoints::health))
-    //         .route("/metrics", get().to(metrics))
-    //         .route("/stats/info", get().to(server_info))
-    //         .route("/stats/repo", get().to(repo_stats))
-    //         .route("/stats/cas", get().to(cas_stats))
     //         // API end-points
     //         .service(
     //             scope("/api/v1")

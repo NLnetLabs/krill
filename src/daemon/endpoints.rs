@@ -8,6 +8,7 @@ use crate::commons::api::{
 };
 use crate::commons::error::Error;
 use crate::commons::remote::rfc8183;
+use crate::commons::remote::rfc8183::ServiceUri::Http;
 use crate::daemon::auth::Auth;
 use crate::daemon::http::server::State;
 use crate::daemon::http::{HttpResponse, Request};
@@ -19,6 +20,10 @@ fn render_empty_res(res: Result<(), Error>) -> HttpResponse {
         Ok(()) => api_ok(),
         Err(e) => HttpResponse::error(e),
     }
+}
+
+fn render_json<O: Serialize>(obj: O) -> HttpResponse {
+    HttpResponse::json(&obj)
 }
 
 fn render_json_res<O: Serialize>(res: Result<O, Error>) -> HttpResponse {
@@ -33,10 +38,6 @@ fn api_not_found() -> HttpResponse {
     HttpResponse::error(Error::ApiUnknownResource)
 }
 
-pub fn api_bad_request() -> HttpResponse {
-    HttpResponse::error(Error::ApiUnknownMethod)
-}
-
 /// A clean 200 result for the API (no content, not for humans)
 pub fn api_ok() -> HttpResponse {
     HttpResponse::ok()
@@ -49,7 +50,7 @@ pub fn not_found(_req: Request) -> Result<HttpResponse, Request> {
 
 /// Returns the server health.
 pub fn health(req: Request) -> Result<HttpResponse, Request> {
-    if req.path().segment() == "health" {
+    if req.is_get() && req.path().segment() == "health" {
         Ok(api_ok())
     } else {
         Err(req)
@@ -82,12 +83,12 @@ where
 
 /// Produce prometheus style metrics
 pub fn metrics(req: Request) -> Result<HttpResponse, Request> {
-    if req.path().segment().starts_with("metrics") {
-        let server = req.state().read();
+    if req.is_get() && req.path().segment().starts_with("metrics") {
+        let server = req.read();
 
         let mut res = String::new();
 
-        let info = req.state().read().server_info();
+        let info = server.server_info();
         res.push_str("# HELP krill_server_start timestamp of last krill server start\n");
         res.push_str("# TYPE krill_server_start gauge\n");
         res.push_str(&format!("krill_server_start {}\n", info.started()));
@@ -193,16 +194,47 @@ pub fn metrics(req: Request) -> Result<HttpResponse, Request> {
     }
 }
 
-// Return general server info
-pub fn server_info(server: State) -> HttpResponse {
-    HttpResponse::json(&server.read().server_info())
+/// Return various stats as json
+pub fn stats(req: Request) -> Result<HttpResponse, Request> {
+    if !req.is_get() {
+        Err(req)
+    } else if req.path().segment() == "stats/info" {
+        Ok(render_json(req.read().server_info()))
+    } else if req.path().segment() == "stats/repo" {
+        Ok(render_json_res(req.read().repo_stats()))
+    } else if req.path().segment() == "stats/cas" {
+        Ok(render_json(req.read().cas_stats()))
+    } else {
+        Err(req)
+    }
+}
+
+/// Maps the API methods
+pub fn api(mut req: Request) -> Result<HttpResponse, Request> {
+    if !req.path().full().starts_with("/api/v1") {
+        Err(req) // Not for us
+    } else {
+        // Make sure access is allowed
+        if !req.is_authorized() {
+            return Ok(HttpResponse::forbidden());
+        }
+
+        // Eat the first two segments of the path "api/v1"
+        let mut path = req.path_mut();
+        path.next();
+
+        match path.next() {
+            Some("authorized") => Ok(HttpResponse::ok()),
+            Some(path) => {
+                error!("Got strange path: {}", path);
+                Ok(HttpResponse::error(Error::ApiUnknownMethod))
+            }
+            _ => Ok(HttpResponse::error(Error::ApiUnknownMethod)),
+        }
+    }
 }
 
 //------------ Admin: Publishers ---------------------------------------------
-
-pub fn repo_stats(server: State) -> HttpResponse {
-    render_json_res(server.read().repo_stats())
-}
 
 /// Returns a list of publisher which have not updated for more
 /// than the given number of seconds.
@@ -383,10 +415,6 @@ pub fn all_ca_issues(server: State) -> HttpResponse {
 /// Returns the health (state) for a given CA.
 pub fn ca_issues(server: State, ca: Handle) -> HttpResponse {
     render_json_res(server.read().ca_issues(&ca))
-}
-
-pub fn cas_stats(server: State) -> HttpResponse {
-    HttpResponse::json(&server.read().cas_stats())
 }
 
 pub fn cas(server: State, auth: Auth) -> HttpResponse {

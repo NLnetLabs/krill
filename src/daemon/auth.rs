@@ -30,51 +30,7 @@ pub enum Auth {
 }
 
 impl Auth {
-    /// Extracts the bearer token from header string,
-    /// returns an invalid token error if parsing fails
-    fn extract_bearer_token(header: &str) -> Result<Token, AuthError> {
-        if header.len() > 6 {
-            let (bearer, token) = header.split_at(6);
-            let bearer = bearer.trim();
-            let token = Token::from(token.trim());
-
-            if "Bearer" == bearer {
-                return Ok(token);
-            }
-        }
-
-        Err(AuthError::InvalidToken)
+    pub fn bearer(token: Token) -> Self {
+        Auth::Bearer(token)
     }
 }
-
-// impl FromRequest for Auth {
-//     type Error = Error;
-//     type Future = Result<Auth, Error>;
-//     type Config = ();
-//
-//     fn from_request(req: &HttpRequest, _payload: &mut Payload) -> Self::Future {
-//         if let Some(header) = req.headers().get("Authorization") {
-//             let token =
-//                 Auth::extract_bearer_token(header.to_str().map_err(|_| AuthError::InvalidToken)?)?;
-//
-//             Ok(Auth::Bearer(token))
-//         } else {
-//             Err(AuthError::Unauthorised.into())
-//         }
-//     }
-// }
-
-#[derive(Debug, Display)]
-pub enum AuthError {
-    #[display(fmt = "No bearer token found")]
-    Unauthorised,
-
-    #[display(fmt = "Invalid token")]
-    InvalidToken,
-}
-
-// impl ResponseError for AuthError {
-//     fn error_response(&self) -> Response {
-//         unimplemented!("#189")
-//     }
-// }

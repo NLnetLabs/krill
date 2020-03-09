@@ -1,14 +1,18 @@
 use std::borrow::Cow;
 use std::io;
+use std::sync::RwLockReadGuard;
 
 use serde::Serialize;
 
 use hyper::http::uri::PathAndQuery;
 use hyper::{Body, Method, StatusCode};
 
+use crate::commons::api::Token;
 use crate::commons::error::Error;
 use crate::commons::remote::{rfc6492, rfc8181};
+use crate::daemon::auth::Auth;
 use crate::daemon::http::server::State;
+use crate::daemon::krillserver::KrillServer;
 
 pub mod server;
 pub mod statics;
@@ -184,8 +188,13 @@ impl Request {
     }
 
     /// Get the application State
-    pub fn state(&self) -> &State {
+    fn state(&self) -> &State {
         &self.state
+    }
+
+    /// Get read_status
+    pub fn read(&self) -> RwLockReadGuard<KrillServer> {
+        self.state.read()
     }
 
     /// Returns the method of this request.
@@ -201,6 +210,24 @@ impl Request {
     /// Returns whether the request is a GET request.
     pub fn is_post(&self) -> bool {
         self.request.method() == Method::POST
+    }
+
+    /// Checks whether the Bearer token is set to what we expect
+    pub fn is_authorized(&self) -> bool {
+        if let Some(header) = self.request.headers().get("Authorization") {
+            if let Ok(header) = header.to_str() {
+                if header.len() > 6 {
+                    let (bearer, token) = header.split_at(6);
+                    let bearer = bearer.trim();
+                    let token = Token::from(token.trim());
+
+                    if "Bearer" == bearer {
+                        return self.read().is_api_allowed(&Auth::bearer(token));
+                    }
+                }
+            }
+        }
+        false
     }
 }
 
