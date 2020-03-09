@@ -1,16 +1,19 @@
+use std::borrow::Cow;
 use std::io;
 
-use hyper::{Body, StatusCode};
 use serde::Serialize;
+
+use hyper::http::uri::PathAndQuery;
+use hyper::{Body, Method, StatusCode};
 
 use crate::commons::error::Error;
 use crate::commons::remote::{rfc6492, rfc8181};
+use crate::daemon::http::server::State;
 
 pub mod server;
 pub mod statics;
 pub mod tls;
 pub mod tls_keys;
-// pub mod transport;
 
 //----------- ContentType ----------------------------------------------------
 
@@ -148,5 +151,109 @@ impl HttpResponse {
 
     pub fn forbidden() -> Self {
         Response::new(StatusCode::FORBIDDEN).finalize()
+    }
+}
+
+//------------ Request -------------------------------------------------------
+
+pub struct Request {
+    request: hyper::Request<Body>,
+    path: RequestPath,
+    state: State,
+}
+
+impl Request {
+    pub fn new(request: hyper::Request<Body>, state: State) -> Self {
+        let path = RequestPath::from_request(&request);
+        Request {
+            request,
+            path,
+            state,
+        }
+    }
+
+    /// Returns the complete path.
+    pub fn path(&self) -> &RequestPath {
+        &self.path
+    }
+
+    pub fn path_mut(&mut self) -> &mut RequestPath {
+        &mut self.path
+    }
+
+    /// Returns the method of this request.
+    pub fn method(&self) -> &Method {
+        self.request.method()
+    }
+
+    /// Returns whether the request is a GET request.
+    pub fn is_get(&self) -> bool {
+        self.request.method() == Method::GET
+    }
+
+    /// Returns whether the request is a GET request.
+    pub fn is_post(&self) -> bool {
+        self.request.method() == Method::POST
+    }
+}
+
+//------------ RequestPath ---------------------------------------------------
+
+pub struct RequestPath {
+    path: PathAndQuery,
+    segment: (usize, usize),
+}
+
+impl RequestPath {
+    fn from_request<B>(request: &hyper::Request<B>) -> Self {
+        let path = request.uri().path_and_query().unwrap().clone();
+        let mut res = RequestPath {
+            path,
+            segment: (0, 0),
+        };
+        res.next_segment();
+        res
+    }
+
+    pub fn full(&self) -> &str {
+        self.path.path()
+    }
+
+    pub fn remaining(&self) -> &str {
+        &self.full()[self.segment.1..]
+    }
+
+    pub fn segment(&self) -> &str {
+        &self.full()[self.segment.0..self.segment.1]
+    }
+
+    fn next_segment(&mut self) -> bool {
+        let mut start = self.segment.1;
+        let path = self.full();
+        // Start beyond the length of the path signals the end.
+        if start >= path.len() {
+            return false;
+        }
+        // Skip any leading slashes. There may be multiple which should be
+        // folded into one (or at least that’s what we do).
+        while path.split_at(start).1.starts_with('/') {
+            start += 1
+        }
+        // Find the next slash. If we have one, that’s the end of
+        // our segment, otherwise, we go all the way to the end of the path.
+        let end = path[start..]
+            .find('/')
+            .map(|x| x + start)
+            .unwrap_or(path.len());
+        self.segment = (start, end);
+        true
+    }
+
+    pub fn next(&mut self) -> Option<&str> {
+        if self.next_segment() {
+            Some(self.segment())
+        } else {
+            None
+        }
     }
 }

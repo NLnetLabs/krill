@@ -11,9 +11,9 @@ use futures::task::SpawnExt;
 use futures::Future;
 use futures::TryFutureExt;
 
+use hyper;
 use hyper::server::conn::{AddrIncoming, Http};
 use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Request, Server};
 
 use tokio::net::TcpListener;
 use tokio_proto::TcpServer;
@@ -22,8 +22,8 @@ use crate::commons::error::Error;
 use crate::daemon::config::Config;
 use crate::daemon::endpoints;
 use crate::daemon::endpoints::*;
-use crate::daemon::http::HttpResponse;
 use crate::daemon::http::{tls, tls_keys};
+use crate::daemon::http::{HttpResponse, Request};
 use crate::daemon::krillserver::KrillServer;
 use std::convert::Infallible;
 
@@ -51,7 +51,7 @@ pub async fn start(config: Config) -> Result<(), Error> {
     let service = make_service_fn(move |_| {
         let mut state = state.clone();
         async move {
-            Ok::<_, Infallible>(service_fn(move |req: Request<Body>| {
+            Ok::<_, Infallible>(service_fn(move |req: hyper::Request<hyper::Body>| {
                 let mut state = state.clone();
                 async move { map_requests(req, state) }
             }))
@@ -71,7 +71,7 @@ pub async fn start(config: Config) -> Result<(), Error> {
         AddrIncoming::bind(&config.socket_addr()).unwrap(),
     );
 
-    let server = Server::builder(acceptor)
+    let server = hyper::Server::builder(acceptor)
         .serve(service)
         .map_err(|e| eprintln!("Server error: {}", e));
 
@@ -83,16 +83,21 @@ pub async fn start(config: Config) -> Result<(), Error> {
     Ok(())
 }
 
-fn map_requests(_req: Request<Body>, mut _state: State) -> Result<hyper::Response<Body>, Error> {
-    HttpResponse::text("hello world".to_string().into_bytes()).res()
+fn map_requests(
+    req: hyper::Request<hyper::Body>,
+    mut state: State,
+) -> Result<hyper::Response<hyper::Body>, Error> {
+    let req = Request::new(req, state);
+    health(req)
+        .or_else(not_found)
+        .map_err(|_| Error::custom("should have received not found response"))?
+        .res()
     //
     // let post_limit_api = config.post_limit_api;
     // let post_limit_rfc8181 = config.post_limit_rfc8181;
     // let post_limit_rfc6492 = config.post_limit_rfc6492;
 
     // HttpServer::new(move || {
-    //     App::new()
-    //         .data(server.clone())
     //         .wrap(middleware::Logger::default())
     //         .route("/health", get().to(endpoints::health))
     //         .route("/metrics", get().to(metrics))

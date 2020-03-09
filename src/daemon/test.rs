@@ -23,6 +23,7 @@ use crate::commons::util::{httpclient, test};
 use crate::daemon::ca::ta_handle;
 use crate::daemon::config::Config;
 use crate::daemon::http::server;
+use hyper::StatusCode;
 
 pub enum PubdTestContext {
     Main,
@@ -30,14 +31,16 @@ pub enum PubdTestContext {
 }
 
 pub async fn server_ready() -> bool {
-    let uri = "https://localhost:3000/";
+    let uri = "https://localhost:3000/health";
 
     for _ in 0..30_u8 {
         match httpclient::async_client(uri).await {
             Ok(client) => {
                 let res = timeout(Duration::from_secs(1), client.get(uri).send()).await;
-                if res.is_ok() {
-                    return true;
+                if let Ok(Ok(res)) = res {
+                    if res.status() == StatusCode::OK {
+                        return true;
+                    }
                 }
             }
             Err(_) => return false,

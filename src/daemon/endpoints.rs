@@ -10,7 +10,7 @@ use crate::commons::error::Error;
 use crate::commons::remote::rfc8183;
 use crate::daemon::auth::Auth;
 use crate::daemon::http::server::State;
-use crate::daemon::http::HttpResponse;
+use crate::daemon::http::{HttpResponse, Request};
 
 //------------ Support Functions ---------------------------------------------
 
@@ -42,9 +42,18 @@ pub fn api_ok() -> HttpResponse {
     HttpResponse::ok()
 }
 
+/// A clean 404 response
+pub fn not_found(_req: Request) -> Result<HttpResponse, Request> {
+    Ok(HttpResponse::not_found())
+}
+
 /// Returns the server health.
-pub fn health() -> HttpResponse {
-    api_ok()
+pub fn health(req: Request) -> Result<HttpResponse, Request> {
+    if req.path().segment() == "health" {
+        Ok(api_ok())
+    } else {
+        Err(req)
+    }
 }
 
 /// Returns the server health.
