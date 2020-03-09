@@ -20,6 +20,7 @@ pub mod tls_keys;
 enum ContentType {
     Cert,
     Json,
+    Html,
     Rfc8181,
     Rfc6492,
     Text,
@@ -31,9 +32,10 @@ impl AsRef<str> for ContentType {
         match self {
             ContentType::Cert => "application/x-x509-ca-cert",
             ContentType::Json => "application/json",
+            ContentType::Html => "text/html;charset=utf-8",
             ContentType::Rfc8181 => rfc8181::CONTENT_TYPE,
             ContentType::Rfc6492 => rfc6492::CONTENT_TYPE,
-            ContentType::Text => "text/html;charset=utf-8",
+            ContentType::Text => "text/plain",
             ContentType::Xml => "application/xml",
         }
     }
@@ -179,6 +181,11 @@ impl Request {
 
     pub fn path_mut(&mut self) -> &mut RequestPath {
         &mut self.path
+    }
+
+    /// Get the application State
+    pub fn state(&self) -> &State {
+        &self.state
     }
 
     /// Returns the method of this request.

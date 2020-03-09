@@ -81,108 +81,116 @@ where
 }
 
 /// Produce prometheus style metrics
-pub fn metrics(server: State) -> HttpResponse {
-    let mut res = String::new();
+pub fn metrics(req: Request) -> Result<HttpResponse, Request> {
+    if req.path().segment().starts_with("metrics") {
+        let server = req.state().read();
 
-    let info = server.read().server_info();
-    res.push_str("# HELP krill_server_start timestamp of last krill server start\n");
-    res.push_str("# TYPE krill_server_start gauge\n");
-    res.push_str(&format!("krill_server_start {}\n", info.started()));
-    res.push_str("\n");
+        let mut res = String::new();
 
-    if let Ok(stats) = server.read().repo_stats() {
-        let publishers = stats.get_publishers();
-
-        res.push_str("# HELP krill_repo_publisher number of publishers in repository\n");
-        res.push_str("# TYPE krill_repo_publisher gauge\n");
-        res.push_str(&format!("krill_repo_publisher {}\n", publishers.len()));
-
-        if let Some(last_update) = stats.last_update() {
-            res.push_str("\n");
-            res.push_str(
-                "# HELP krill_repo_rrdp_last_update timestamp of last update by any publisher\n",
-            );
-            res.push_str("# TYPE krill_repo_rrdp_last_update gauge\n");
-            res.push_str(&format!(
-                "krill_repo_rrdp_last_update {}\n",
-                last_update.timestamp()
-            ));
-        }
-
+        let info = req.state().read().server_info();
+        res.push_str("# HELP krill_server_start timestamp of last krill server start\n");
+        res.push_str("# TYPE krill_server_start gauge\n");
+        res.push_str(&format!("krill_server_start {}\n", info.started()));
         res.push_str("\n");
-        res.push_str("# HELP krill_repo_rrdp_serial RRDP serial\n");
-        res.push_str("# TYPE krill_repo_rrdp_serial counter\n");
-        res.push_str(&format!("krill_repo_rrdp_serial {}\n", stats.serial()));
 
-        res.push_str("\n");
-        res.push_str("# HELP krill_repo_objects number of objects in repository for publisher\n");
-        res.push_str("# TYPE krill_repo_objects gauge\n");
-        for (publisher, stats) in publishers {
-            res.push_str(&format!(
-                "krill_repo_objects{{publisher=\"{}\"}} {}\n",
-                publisher,
-                stats.objects()
-            ));
-        }
+        if let Ok(stats) = server.repo_stats() {
+            let publishers = stats.get_publishers();
 
-        res.push_str("\n");
-        res.push_str(
-            "# HELP krill_repo_size size of objects in bytes in repository for publisher\n",
-        );
-        res.push_str("# TYPE krill_repo_size gauge\n");
-        for (publisher, stats) in publishers {
-            res.push_str(&format!(
-                "krill_repo_size{{publisher=\"{}\"}} {}\n",
-                publisher,
-                stats.size()
-            ));
-        }
+            res.push_str("# HELP krill_repo_publisher number of publishers in repository\n");
+            res.push_str("# TYPE krill_repo_publisher gauge\n");
+            res.push_str(&format!("krill_repo_publisher {}\n", publishers.len()));
 
-        res.push_str("\n");
-        res.push_str("# HELP krill_repo_last_update timestamp of last update for publisher\n");
-        res.push_str("# TYPE krill_repo_last_update gauge\n");
-        for (publisher, stats) in publishers {
             if let Some(last_update) = stats.last_update() {
+                res.push_str("\n");
+                res.push_str(
+                    "# HELP krill_repo_rrdp_last_update timestamp of last update by any publisher\n",
+                );
+                res.push_str("# TYPE krill_repo_rrdp_last_update gauge\n");
                 res.push_str(&format!(
-                    "krill_repo_last_update{{publisher=\"{}\"}} {}\n",
-                    publisher,
+                    "krill_repo_rrdp_last_update {}\n",
                     last_update.timestamp()
                 ));
             }
+
+            res.push_str("\n");
+            res.push_str("# HELP krill_repo_rrdp_serial RRDP serial\n");
+            res.push_str("# TYPE krill_repo_rrdp_serial counter\n");
+            res.push_str(&format!("krill_repo_rrdp_serial {}\n", stats.serial()));
+
+            res.push_str("\n");
+            res.push_str(
+                "# HELP krill_repo_objects number of objects in repository for publisher\n",
+            );
+            res.push_str("# TYPE krill_repo_objects gauge\n");
+            for (publisher, stats) in publishers {
+                res.push_str(&format!(
+                    "krill_repo_objects{{publisher=\"{}\"}} {}\n",
+                    publisher,
+                    stats.objects()
+                ));
+            }
+
+            res.push_str("\n");
+            res.push_str(
+                "# HELP krill_repo_size size of objects in bytes in repository for publisher\n",
+            );
+            res.push_str("# TYPE krill_repo_size gauge\n");
+            for (publisher, stats) in publishers {
+                res.push_str(&format!(
+                    "krill_repo_size{{publisher=\"{}\"}} {}\n",
+                    publisher,
+                    stats.size()
+                ));
+            }
+
+            res.push_str("\n");
+            res.push_str("# HELP krill_repo_last_update timestamp of last update for publisher\n");
+            res.push_str("# TYPE krill_repo_last_update gauge\n");
+            for (publisher, stats) in publishers {
+                if let Some(last_update) = stats.last_update() {
+                    res.push_str(&format!(
+                        "krill_repo_last_update{{publisher=\"{}\"}} {}\n",
+                        publisher,
+                        last_update.timestamp()
+                    ));
+                }
+            }
         }
+
+        let cas_status = server.cas_stats();
+
+        let number_cas = cas_status.len();
+        res.push_str("\n");
+        res.push_str("# HELP krill_cas number of cas in krill\n");
+        res.push_str("# TYPE krill_cas gauge\n");
+        res.push_str(&format!("krill_cas {}\n", number_cas));
+
+        res.push_str("\n");
+        res.push_str("# HELP krill_cas_roas number of roas for CA\n");
+        res.push_str("# TYPE krill_cas_roas gauge\n");
+        for (ca, status) in cas_status.iter() {
+            res.push_str(&format!(
+                "krill_cas_roas{{ca=\"{}\"}} {}\n",
+                ca,
+                status.roa_count()
+            ));
+        }
+
+        res.push_str("\n");
+        res.push_str("# HELP krill_cas_children number of children for CA\n");
+        res.push_str("# TYPE krill_cas_children gauge\n");
+        for (ca, status) in cas_status.iter() {
+            res.push_str(&format!(
+                "krill_cas_children{{ca=\"{}\"}} {}\n",
+                ca,
+                status.child_count()
+            ));
+        }
+
+        Ok(HttpResponse::text(res.into_bytes()))
+    } else {
+        Err(req)
     }
-
-    let cas_status = server.read().cas_stats();
-
-    let number_cas = cas_status.len();
-    res.push_str("\n");
-    res.push_str("# HELP krill_cas number of cas in krill\n");
-    res.push_str("# TYPE krill_cas gauge\n");
-    res.push_str(&format!("krill_cas {}\n", number_cas));
-
-    res.push_str("\n");
-    res.push_str("# HELP krill_cas_roas number of roas for CA\n");
-    res.push_str("# TYPE krill_cas_roas gauge\n");
-    for (ca, status) in cas_status.iter() {
-        res.push_str(&format!(
-            "krill_cas_roas{{ca=\"{}\"}} {}\n",
-            ca,
-            status.roa_count()
-        ));
-    }
-
-    res.push_str("\n");
-    res.push_str("# HELP krill_cas_children number of children for CA\n");
-    res.push_str("# TYPE krill_cas_children gauge\n");
-    for (ca, status) in cas_status.iter() {
-        res.push_str(&format!(
-            "krill_cas_children{{ca=\"{}\"}} {}\n",
-            ca,
-            status.child_count()
-        ));
-    }
-
-    HttpResponse::text(res.into_bytes())
 }
 
 // Return general server info

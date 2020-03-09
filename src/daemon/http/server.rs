@@ -3,6 +3,7 @@
 //! Here we deal with booting and setup, and once active deal with parsing
 //! arguments and routing of requests, typically handing off to the
 //! daemon::api::endpoints functions for processing and responding.
+use std::convert::Infallible;
 use std::io;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
@@ -25,7 +26,6 @@ use crate::daemon::endpoints::*;
 use crate::daemon::http::{tls, tls_keys};
 use crate::daemon::http::{HttpResponse, Request};
 use crate::daemon::krillserver::KrillServer;
-use std::convert::Infallible;
 
 //------------ AppServer -----------------------------------------------------
 
@@ -89,6 +89,7 @@ fn map_requests(
 ) -> Result<hyper::Response<hyper::Body>, Error> {
     let req = Request::new(req, state);
     health(req)
+        .or_else(metrics)
         .or_else(not_found)
         .map_err(|_| Error::custom("should have received not found response"))?
         .res()
