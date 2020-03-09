@@ -9,7 +9,7 @@ use crate::commons::api::{
 use crate::commons::error::Error;
 use crate::commons::remote::rfc8183;
 use crate::daemon::auth::Auth;
-use crate::daemon::http::server::AppServer;
+use crate::daemon::http::server::State;
 use crate::daemon::http::HttpResponse;
 
 //------------ Support Functions ---------------------------------------------
@@ -48,7 +48,7 @@ pub fn health() -> HttpResponse {
 }
 
 /// Returns the server health.
-pub fn api_authorized(server: AppServer, auth: Auth) -> HttpResponse {
+pub fn api_authorized(server: State, auth: Auth) -> HttpResponse {
     if_api_allowed(&server, &auth, api_ok)
 }
 
@@ -63,7 +63,7 @@ where
     }
 }
 
-fn if_api_allowed<F>(server: &AppServer, auth: &Auth, op: F) -> HttpResponse
+fn if_api_allowed<F>(server: &State, auth: &Auth, op: F) -> HttpResponse
 where
     F: FnOnce() -> HttpResponse,
 {
@@ -72,7 +72,7 @@ where
 }
 
 /// Produce prometheus style metrics
-pub fn metrics(server: AppServer) -> HttpResponse {
+pub fn metrics(server: State) -> HttpResponse {
     let mut res = String::new();
 
     let info = server.read().server_info();
@@ -177,19 +177,19 @@ pub fn metrics(server: AppServer) -> HttpResponse {
 }
 
 // Return general server info
-pub fn server_info(server: AppServer) -> HttpResponse {
+pub fn server_info(server: State) -> HttpResponse {
     HttpResponse::json(&server.read().server_info())
 }
 
 //------------ Admin: Publishers ---------------------------------------------
 
-pub fn repo_stats(server: AppServer) -> HttpResponse {
+pub fn repo_stats(server: State) -> HttpResponse {
     render_json_res(server.read().repo_stats())
 }
 
 /// Returns a list of publisher which have not updated for more
 /// than the given number of seconds.
-pub fn stale_publishers(server: AppServer, seconds: i64) -> HttpResponse {
+pub fn stale_publishers(server: State, seconds: i64) -> HttpResponse {
     render_json_res(
         server.read().repo_stats().map(|stats| {
             PublisherList::build(&stats.stale_publishers(seconds), "/api/v1/publishers")
@@ -198,7 +198,7 @@ pub fn stale_publishers(server: AppServer, seconds: i64) -> HttpResponse {
 }
 
 /// Returns a json structure with all publishers in it.
-pub fn list_pbl(server: AppServer, auth: Auth) -> HttpResponse {
+pub fn list_pbl(server: State, auth: Auth) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_json_res(
             server
@@ -210,7 +210,7 @@ pub fn list_pbl(server: AppServer, auth: Auth) -> HttpResponse {
 }
 
 /// Adds a publisher
-pub fn add_pbl(server: AppServer, auth: Auth, pbl: rfc8183::PublisherRequest) -> HttpResponse {
+pub fn add_pbl(server: State, auth: Auth, pbl: rfc8183::PublisherRequest) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_json_res(server.write().add_publisher(pbl))
     })
@@ -219,7 +219,7 @@ pub fn add_pbl(server: AppServer, auth: Auth, pbl: rfc8183::PublisherRequest) ->
 /// Removes a publisher. Should be idempotent! If if did not exist then
 /// that's just fine.
 #[allow(clippy::needless_pass_by_value)]
-pub fn remove_pbl(server: AppServer, auth: Auth, publisher: Handle) -> HttpResponse {
+pub fn remove_pbl(server: State, auth: Auth, publisher: Handle) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_empty_res(server.write().remove_publisher(publisher))
     })
@@ -227,7 +227,7 @@ pub fn remove_pbl(server: AppServer, auth: Auth, publisher: Handle) -> HttpRespo
 
 /// Returns a json structure with publisher details
 #[allow(clippy::needless_pass_by_value)]
-pub fn show_pbl(server: AppServer, auth: Auth, publisher: Handle) -> HttpResponse {
+pub fn show_pbl(server: State, auth: Auth, publisher: Handle) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_json_res(server.read().get_publisher(&publisher))
     })
@@ -236,7 +236,7 @@ pub fn show_pbl(server: AppServer, auth: Auth, publisher: Handle) -> HttpRespons
 //------------ Publication ---------------------------------------------------
 
 /// Processes an RFC8181 query and returns the appropriate response.
-pub fn rfc8181(server: AppServer, publisher: PublisherHandle, msg_bytes: Bytes) -> HttpResponse {
+pub fn rfc8181(server: State, publisher: PublisherHandle, msg_bytes: Bytes) -> HttpResponse {
     match server.read().rfc8181(publisher, msg_bytes) {
         Ok(bytes) => HttpResponse::rfc8181(bytes.to_vec()),
         Err(e) => HttpResponse::error(e),
@@ -245,7 +245,7 @@ pub fn rfc8181(server: AppServer, publisher: PublisherHandle, msg_bytes: Bytes) 
 
 //------------ repository_response ---------------------------------------------
 
-pub fn repository_response_xml(server: AppServer, auth: Auth, publisher: Handle) -> HttpResponse {
+pub fn repository_response_xml(server: State, auth: Auth, publisher: Handle) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         match repository_response(&server, &publisher) {
             Ok(res) => HttpResponse::xml(res.encode_vec()),
@@ -254,7 +254,7 @@ pub fn repository_response_xml(server: AppServer, auth: Auth, publisher: Handle)
     })
 }
 
-pub fn repository_response_json(server: AppServer, auth: Auth, publisher: Handle) -> HttpResponse {
+pub fn repository_response_json(server: State, auth: Auth, publisher: Handle) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         match repository_response(&server, &publisher) {
             Ok(res) => HttpResponse::json(&res),
@@ -264,7 +264,7 @@ pub fn repository_response_json(server: AppServer, auth: Auth, publisher: Handle
 }
 
 fn repository_response(
-    server: &AppServer,
+    server: &State,
     publisher: &Handle,
 ) -> Result<rfc8183::RepositoryResponse, Error> {
     server.read().repository_response(publisher)
@@ -272,14 +272,14 @@ fn repository_response(
 
 //------------ Admin: TrustAnchor --------------------------------------------
 
-pub fn tal(server: AppServer) -> HttpResponse {
+pub fn tal(server: State) -> HttpResponse {
     match server.read().ta() {
         Ok(ta) => HttpResponse::text(format!("{}", ta.tal()).into_bytes()),
         Err(_) => api_not_found(),
     }
 }
 
-pub fn ta_cer(server: AppServer) -> HttpResponse {
+pub fn ta_cer(server: State) -> HttpResponse {
     match server.read().trust_anchor_cert() {
         Some(cert) => HttpResponse::cert(cert.to_captured().to_vec()),
         None => api_not_found(),
@@ -287,7 +287,7 @@ pub fn ta_cer(server: AppServer) -> HttpResponse {
 }
 
 pub fn ca_add_child(
-    server: AppServer,
+    server: State,
     parent: ParentHandle,
     req: AddChildRequest,
     auth: Auth,
@@ -298,7 +298,7 @@ pub fn ca_add_child(
 }
 
 pub fn ca_child_update(
-    server: AppServer,
+    server: State,
     ca: Handle,
     child: ChildHandle,
     req: UpdateChildRequest,
@@ -309,30 +309,20 @@ pub fn ca_child_update(
     })
 }
 
-pub fn ca_child_remove(
-    server: AppServer,
-    ca: Handle,
-    child: ChildHandle,
-    auth: Auth,
-) -> HttpResponse {
+pub fn ca_child_remove(server: State, ca: Handle, child: ChildHandle, auth: Auth) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_empty_res(server.read().ca_child_remove(&ca, child))
     })
 }
 
-pub fn ca_show_child(
-    server: AppServer,
-    ca: Handle,
-    child: ChildHandle,
-    auth: Auth,
-) -> HttpResponse {
+pub fn ca_show_child(server: State, ca: Handle, child: ChildHandle, auth: Auth) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_json_res(server.read().ca_show_child(&ca, &child))
     })
 }
 
 pub fn ca_parent_contact(
-    server: AppServer,
+    server: State,
     ca: Handle,
     child: ChildHandle,
     auth: Auth,
@@ -343,7 +333,7 @@ pub fn ca_parent_contact(
 }
 
 pub fn ca_parent_res_json(
-    server: AppServer,
+    server: State,
     ca: Handle,
     child: ChildHandle,
     auth: Auth,
@@ -354,7 +344,7 @@ pub fn ca_parent_res_json(
 }
 
 pub fn ca_parent_res_xml(
-    server: AppServer,
+    server: State,
     ca: Handle,
     child: ChildHandle,
     auth: Auth,
@@ -369,43 +359,43 @@ pub fn ca_parent_res_xml(
 
 //------------ Admin: CertAuth -----------------------------------------------
 
-pub fn all_ca_issues(server: AppServer) -> HttpResponse {
+pub fn all_ca_issues(server: State) -> HttpResponse {
     render_json_res(server.read().all_ca_issues())
 }
 
 /// Returns the health (state) for a given CA.
-pub fn ca_issues(server: AppServer, ca: Handle) -> HttpResponse {
+pub fn ca_issues(server: State, ca: Handle) -> HttpResponse {
     render_json_res(server.read().ca_issues(&ca))
 }
 
-pub fn cas_stats(server: AppServer) -> HttpResponse {
+pub fn cas_stats(server: State) -> HttpResponse {
     HttpResponse::json(&server.read().cas_stats())
 }
 
-pub fn cas(server: AppServer, auth: Auth) -> HttpResponse {
+pub fn cas(server: State, auth: Auth) -> HttpResponse {
     if_api_allowed(&server, &auth, || HttpResponse::json(&server.read().cas()))
 }
 
-pub fn ca_init(server: AppServer, auth: Auth, ca_init: CertAuthInit) -> HttpResponse {
+pub fn ca_init(server: State, auth: Auth, ca_init: CertAuthInit) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_empty_res(server.write().ca_init(ca_init))
     })
 }
 
-pub fn ca_regenerate_id(server: AppServer, auth: Auth, handle: Handle) -> HttpResponse {
+pub fn ca_regenerate_id(server: State, auth: Auth, handle: Handle) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_empty_res(server.read().ca_update_id(handle))
     })
 }
 
-pub fn ca_info(server: AppServer, auth: Auth, handle: Handle) -> HttpResponse {
+pub fn ca_info(server: State, auth: Auth, handle: Handle) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_json_res(server.read().ca_info(&handle))
     })
 }
 
 pub fn ca_my_parent_contact(
-    server: AppServer,
+    server: State,
     auth: Auth,
     ca: Handle,
     parent: ParentHandle,
@@ -415,32 +405,32 @@ pub fn ca_my_parent_contact(
     })
 }
 
-pub fn ca_history(server: AppServer, auth: Auth, handle: Handle) -> HttpResponse {
+pub fn ca_history(server: State, auth: Auth, handle: Handle) -> HttpResponse {
     if_api_allowed(&server, &auth, || match server.read().ca_history(&handle) {
         Some(history) => HttpResponse::json(&history),
         None => api_not_found(),
     })
 }
 
-pub fn ca_child_req_xml(server: AppServer, auth: Auth, handle: Handle) -> HttpResponse {
+pub fn ca_child_req_xml(server: State, auth: Auth, handle: Handle) -> HttpResponse {
     if_api_allowed(&server, &auth, || match ca_child_req(&server, &handle) {
         Ok(req) => HttpResponse::xml(req.encode_vec()),
         Err(e) => HttpResponse::error(e),
     })
 }
 
-pub fn ca_child_req_json(server: AppServer, auth: Auth, handle: Handle) -> HttpResponse {
+pub fn ca_child_req_json(server: State, auth: Auth, handle: Handle) -> HttpResponse {
     if_api_allowed(&server, &auth, || match ca_child_req(&server, &handle) {
         Ok(req) => HttpResponse::json(&req),
         Err(e) => HttpResponse::error(e),
     })
 }
 
-fn ca_child_req(server: &AppServer, handle: &Handle) -> Result<rfc8183::ChildRequest, Error> {
+fn ca_child_req(server: &State, handle: &Handle) -> Result<rfc8183::ChildRequest, Error> {
     server.read().ca_child_req(handle)
 }
 
-pub fn ca_publisher_req_json(server: AppServer, auth: Auth, handle: Handle) -> HttpResponse {
+pub fn ca_publisher_req_json(server: State, auth: Auth, handle: Handle) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         match server.read().ca_publisher_req(&handle) {
             Some(req) => HttpResponse::json(&req),
@@ -449,7 +439,7 @@ pub fn ca_publisher_req_json(server: AppServer, auth: Auth, handle: Handle) -> H
     })
 }
 
-pub fn ca_publisher_req_xml(server: AppServer, auth: Auth, handle: Handle) -> HttpResponse {
+pub fn ca_publisher_req_xml(server: State, auth: Auth, handle: Handle) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         match server.read().ca_publisher_req(&handle) {
             Some(req) => HttpResponse::xml(req.encode_vec()),
@@ -458,13 +448,13 @@ pub fn ca_publisher_req_xml(server: AppServer, auth: Auth, handle: Handle) -> Ht
     })
 }
 
-pub fn ca_repo_details(server: AppServer, auth: Auth, handle: Handle) -> HttpResponse {
+pub fn ca_repo_details(server: State, auth: Auth, handle: Handle) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_json_res(server.read().ca_repo_details(&handle))
     })
 }
 
-pub fn ca_repo_state(server: AppServer, auth: Auth, handle: Handle) -> HttpResponse {
+pub fn ca_repo_state(server: State, auth: Auth, handle: Handle) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_json_res(server.read().ca_repo_state(&handle))
     })
@@ -487,7 +477,7 @@ fn extract_repository_update(handle: &Handle, bytes: Bytes) -> Result<Repository
     }
 }
 
-pub fn ca_repo_update(server: AppServer, auth: Auth, handle: Handle, bytes: Bytes) -> HttpResponse {
+pub fn ca_repo_update(server: State, auth: Auth, handle: Handle, bytes: Bytes) -> HttpResponse {
     let update = match extract_repository_update(&handle, bytes) {
         Ok(update) => update,
         Err(e) => return HttpResponse::error(e),
@@ -498,14 +488,14 @@ pub fn ca_repo_update(server: AppServer, auth: Auth, handle: Handle, bytes: Byte
     })
 }
 
-pub fn ca_add_parent(server: AppServer, auth: Auth, ca: Handle, req: ParentCaReq) -> HttpResponse {
+pub fn ca_add_parent(server: State, auth: Auth, ca: Handle, req: ParentCaReq) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_empty_res(server.read().ca_parent_add(ca, req))
     })
 }
 
 pub fn ca_add_parent_xml(
-    server: AppServer,
+    server: State,
     auth: Auth,
     ca_and_parent: (Handle, Handle),
     bytes: Bytes,
@@ -553,7 +543,7 @@ fn extract_parent_ca_contact(ca: &Handle, bytes: Bytes) -> Result<ParentCaContac
 }
 
 pub fn ca_update_parent(
-    server: AppServer,
+    server: State,
     auth: Auth,
     ca: Handle,
     parent: Handle,
@@ -568,21 +558,21 @@ pub fn ca_update_parent(
     })
 }
 
-pub fn ca_remove_parent(server: AppServer, auth: Auth, ca: Handle, parent: Handle) -> HttpResponse {
+pub fn ca_remove_parent(server: State, auth: Auth, ca: Handle, parent: Handle) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_empty_res(server.read().ca_parent_remove(ca, parent))
     })
 }
 
 /// Force a key roll for a CA, i.e. use a max key age of 0 seconds.
-pub fn ca_kr_init(server: AppServer, auth: Auth, handle: Handle) -> HttpResponse {
+pub fn ca_kr_init(server: State, auth: Auth, handle: Handle) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_empty_res(server.read().ca_keyroll_init(handle))
     })
 }
 
 /// Force key activation for all new keys, i.e. use a staging period of 0 seconds.
-pub fn ca_kr_activate(server: AppServer, auth: Auth, handle: Handle) -> HttpResponse {
+pub fn ca_kr_activate(server: State, auth: Auth, handle: Handle) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_empty_res(server.read().ca_keyroll_activate(handle))
     })
@@ -592,7 +582,7 @@ pub fn ca_kr_activate(server: AppServer, auth: Auth, handle: Handle) -> HttpResp
 
 /// Update the route authorizations for this CA
 pub fn ca_routes_update(
-    server: AppServer,
+    server: State,
     auth: Auth,
     handle: Handle,
     updates: RoaDefinitionUpdates,
@@ -603,7 +593,7 @@ pub fn ca_routes_update(
 }
 
 /// show the route authorizations for this CA
-pub fn ca_routes_show(server: AppServer, auth: Auth, handle: Handle) -> HttpResponse {
+pub fn ca_routes_show(server: State, auth: Auth, handle: Handle) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         match server.read().ca_routes_show(&handle) {
             Ok(roas) => HttpResponse::json(&roas),
@@ -614,20 +604,20 @@ pub fn ca_routes_show(server: AppServer, auth: Auth, handle: Handle) -> HttpResp
 
 //------------ Admin: Force republish ----------------------------------------
 
-pub fn republish_all(server: AppServer, auth: Auth) -> HttpResponse {
+pub fn republish_all(server: State, auth: Auth) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_empty_res(server.read().republish_all())
     })
 }
 
-pub fn resync_all(server: AppServer, auth: Auth) -> HttpResponse {
+pub fn resync_all(server: State, auth: Auth) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_empty_res(server.read().resync_all())
     })
 }
 
 /// Refresh all CAs
-pub fn refresh_all(server: AppServer, auth: Auth) -> HttpResponse {
+pub fn refresh_all(server: State, auth: Auth) -> HttpResponse {
     if_api_allowed(&server, &auth, || {
         render_empty_res(server.read().refresh_all())
     })
@@ -637,7 +627,7 @@ pub fn refresh_all(server: AppServer, auth: Auth) -> HttpResponse {
 
 /// Process an RFC 6492 request
 ///
-pub fn rfc6492(server: AppServer, parent: ParentHandle, msg_bytes: Bytes) -> HttpResponse {
+pub fn rfc6492(server: State, parent: ParentHandle, msg_bytes: Bytes) -> HttpResponse {
     match server.read().rfc6492(parent, msg_bytes) {
         Ok(bytes) => HttpResponse::rfc6492(bytes.to_vec()),
         Err(e) => HttpResponse::error(e),

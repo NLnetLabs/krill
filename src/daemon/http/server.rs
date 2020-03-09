@@ -25,13 +25,14 @@ use crate::daemon::endpoints::*;
 use crate::daemon::http::HttpResponse;
 use crate::daemon::http::{tls, tls_keys};
 use crate::daemon::krillserver::KrillServer;
+use std::convert::Infallible;
 
 //------------ AppServer -----------------------------------------------------
 
 #[derive(Clone)]
-pub struct AppServer(Arc<RwLock<KrillServer>>);
+pub struct State(Arc<RwLock<KrillServer>>);
 
-impl AppServer {
+impl State {
     pub fn read(&self) -> RwLockReadGuard<KrillServer> {
         self.0.read().unwrap()
     }
@@ -42,11 +43,48 @@ impl AppServer {
 }
 
 pub async fn start(config: Config) -> Result<(), Error> {
-    let krill_app = {
+    let state = {
         let krill = KrillServer::build(&config)?;
-        AppServer(Arc::new(RwLock::new(krill)))
+        State(Arc::new(RwLock::new(krill)))
     };
 
+    let service = make_service_fn(move |_| {
+        let mut state = state.clone();
+        async move {
+            Ok::<_, Infallible>(service_fn(move |req: Request<Body>| {
+                let mut state = state.clone();
+                async move { map_requests(req, state) }
+            }))
+        }
+    });
+
+    tls_keys::create_key_cert_if_needed(&config.data_dir)
+        .map_err(|e| Error::HttpsSetup(format!("{}", e)))?;
+
+    let mut server_config_builder = tls::TlsConfigBuilder::new()
+        .cert_path(tls_keys::cert_file_path(&config.data_dir))
+        .key_path(tls_keys::key_file_path(&config.data_dir));
+    let server_config = server_config_builder.build().unwrap();
+
+    let acceptor = tls::TlsAcceptor::new(
+        server_config,
+        AddrIncoming::bind(&config.socket_addr()).unwrap(),
+    );
+
+    let server = Server::builder(acceptor)
+        .serve(service)
+        .map_err(|e| eprintln!("Server error: {}", e));
+
+    if let Err(_) = server.await {
+        eprintln!("Krill failed to start");
+        ::std::process::exit(1);
+    }
+
+    Ok(())
+}
+
+fn map_requests(_req: Request<Body>, mut _state: State) -> Result<hyper::Response<Body>, Error> {
+    HttpResponse::text("hello world".to_string().into_bytes()).res()
     //
     // let post_limit_api = config.post_limit_api;
     // let post_limit_rfc8181 = config.post_limit_rfc8181;
@@ -176,70 +214,6 @@ pub async fn start(config: Config) -> Result<(), Error> {
     //                 ),
     //         )
     // })
-    // .bind_ssl(config.socket_addr(), https_builder)?
-    // .run()?;
-
-    let new_service = service_fn(|_req: Request<Body>| async move {
-        HttpResponse::text("hello world".to_string().into_bytes()).res()
-    });
-    let service = make_service_fn(|_| async move { Ok::<_, Error>(new_service) });
-
-    // let ai =
-    //     AddrIncoming::bind(&config.socket_addr()).map_err(|e| Error::HttpsSetup(e.to_string()))?;
-
-    // let id = load_identity(&config.data_dir)?;
-    // let ai = TlsAcceptor::new(&config.socket_addr(), id)?;
-
-    tls_keys::create_key_cert_if_needed(&config.data_dir)
-        .map_err(|e| Error::HttpsSetup(format!("{}", e)))?;
-
-    let mut server_config_builder = tls::TlsConfigBuilder::new()
-        .cert_path(tls_keys::cert_file_path(&config.data_dir))
-        .key_path(tls_keys::key_file_path(&config.data_dir));
-    let server_config = server_config_builder.build().unwrap();
-
-    let acceptor = tls::TlsAcceptor::new(
-        server_config,
-        AddrIncoming::bind(&config.socket_addr()).unwrap(),
-    );
-
-    let server = Server::builder(acceptor)
-        .serve(service)
-        .map_err(|e| eprintln!("Server error: {}", e));
-
-    if let Err(_) = server.await {
-        eprintln!("Krill failed to start");
-        ::std::process::exit(1);
-    }
-
-    // TcpServer::new(
-    //     tokio_proto::Server::new(Http::new(), tls_cx),
-    //     config.socket_addr(),
-    // )
-    // .serve(new_service);
-
-    //
-    // async {
-    //     let listener = TcpListener::bind(&config.socket_addr()).await.unwrap();
-    //     //
-    //     let http = Http::new();
-    //     let conn = http.serve_connection(
-    //         listener.incoming().and_then(move |socket| {
-    //             tls_cx
-    //                 .accept(socket)
-    //                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
-    //         }),
-    //         new_service,
-    //     );
-    // }?;
-    //
-    // async {
-    //     if let Err(e) = conn.await {
-    //         eprintln!("server connection error: {}", e);
-    //     }
-    // };
-
-    Ok(())
 }
 
 //------------ Tests ---------------------------------------------------------
