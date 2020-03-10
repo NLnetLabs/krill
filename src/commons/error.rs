@@ -56,6 +56,12 @@ pub enum Error {
     #[display(fmt = "Unknown resource")]
     ApiUnknownResource,
 
+    #[display(fmt = "Invalid path argument for handle")]
+    ApiInvalidHandle,
+
+    #[display(fmt = "Invalid path argument for seconds")]
+    ApiInvalidSeconds,
+
     //-----------------------------------------------------------------
     // Repository Issues
     //-----------------------------------------------------------------
@@ -326,15 +332,16 @@ impl Error {
             //-----------------------------------------------------------------
             // General API Client Issues (label: api-*)
             //-----------------------------------------------------------------
-
-            // BAD REQUEST
             Error::JsonError(e) => ErrorResponse::new("api-json", &self).with_cause(e),
 
-            // BAD REQUEST
             Error::ApiUnknownMethod => ErrorResponse::new("api-unknown-method", &self),
 
             // NOT FOUND (generic API not found)
             Error::ApiUnknownResource => ErrorResponse::new("api-unknown-resource", &self),
+
+            Error::ApiInvalidHandle => ErrorResponse::new("api-invalid-path-handle", &self),
+
+            Error::ApiInvalidSeconds => ErrorResponse::new("api-invalid-path-seconds", &self),
 
             //-----------------------------------------------------------------
             // Repository Issues (label: repo-*)

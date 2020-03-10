@@ -1,6 +1,5 @@
-use std::borrow::Cow;
 use std::io;
-use std::sync::RwLockReadGuard;
+use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 
 use serde::Serialize;
 
@@ -188,9 +187,14 @@ impl Request {
         &self.state
     }
 
-    /// Get read_status
+    /// Get a read lock on the server state
     pub fn read(&self) -> RwLockReadGuard<KrillServer> {
         self.state.read()
+    }
+
+    /// Get a write lock on the server state
+    pub fn write(&self) -> RwLockWriteGuard<KrillServer> {
+        self.state.write()
     }
 
     /// Returns the method of this request.

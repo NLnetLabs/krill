@@ -4,27 +4,18 @@
 //! arguments and routing of requests, typically handing off to the
 //! daemon::api::endpoints functions for processing and responding.
 use std::convert::Infallible;
-use std::io;
 use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use futures::future::ok;
-use futures::task::SpawnExt;
-use futures::Future;
 use futures::TryFutureExt;
 
 use hyper;
-use hyper::server::conn::{AddrIncoming, Http};
+use hyper::server::conn::AddrIncoming;
 use hyper::service::{make_service_fn, service_fn};
-
-use tokio::net::TcpListener;
-use tokio_proto::TcpServer;
 
 use crate::commons::error::Error;
 use crate::daemon::config::Config;
-use crate::daemon::endpoints;
 use crate::daemon::endpoints::*;
-use crate::daemon::http::{tls, tls_keys};
-use crate::daemon::http::{HttpResponse, Request};
+use crate::daemon::http::{tls, tls_keys, Request};
 use crate::daemon::krillserver::KrillServer;
 
 //------------ AppServer -----------------------------------------------------
@@ -95,7 +86,7 @@ fn map_requests(
         .or_else(metrics)
         .or_else(stats)
         .or_else(api)
-        .or_else(not_found)
+        .or_else(render_not_found)
         .map_err(|_| Error::custom("should have received not found response"))?
         .res()
     //
@@ -110,21 +101,9 @@ fn map_requests(
     //             scope("/api/v1")
     //                 .data(web::JsonConfig::default().limit(post_limit_api))
     //                 // Let the UI check if it's authorized
-    //                 .route("/authorized", get().to(api_authorized))
     //                 // Repositories and their publishers (both embedded and remote)
-    //                 .route("/publishers", get().to(list_pbl))
     //                 .route("/publishers", post().to(add_pbl))
-    //                 .route("/publishers/{handle}", get().to(show_pbl))
     //                 .route("/publishers/{handle}", delete().to(remove_pbl))
-    //                 .route(
-    //                     "/publishers/{handle}/response.xml",
-    //                     get().to(repository_response_xml),
-    //                 )
-    //                 .route(
-    //                     "/publishers/{handle}/response.json",
-    //                     get().to(repository_response_json),
-    //                 )
-    //                 .route("/publishers/stale/{seconds}", get().to(stale_publishers))
     //                 // CAs (both embedded and remote)
     //                 .route("/cas", post().to(ca_init))
     //                 .route("/cas", get().to(cas))

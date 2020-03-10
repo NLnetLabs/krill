@@ -1,25 +1,12 @@
 //! Some helper stuff for creating a private key and certificate for HTTPS
 //! in case they are not provided
-use std::io;
-use std::net::{SocketAddr, TcpListener};
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use bytes::Bytes;
-
-use futures::lock::Mutex;
-use futures::task::Context;
-use futures::{ready, Future};
-use tokio::macros::support::{Pin, Poll};
-
-use hyper::server::accept::Accept;
-use hyper::server::conn::{AddrIncoming, AddrStream};
 
 use openssl::hash::MessageDigest;
 use openssl::pkey::{PKey, Private};
 use openssl::rsa::Rsa;
-use openssl::stack::Stack;
-use openssl::{pkcs12, x509};
 
 use bcder::encode::{Constructed, PrimitiveContent, Values};
 use bcder::{decode, encode};

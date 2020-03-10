@@ -8,81 +8,67 @@ use crate::commons::api::{
 };
 use crate::commons::error::Error;
 use crate::commons::remote::rfc8183;
-use crate::commons::remote::rfc8183::ServiceUri::Http;
 use crate::daemon::auth::Auth;
 use crate::daemon::http::server::State;
-use crate::daemon::http::{HttpResponse, Request};
+use crate::daemon::http::{HttpResponse, Request, RequestPath};
+use std::str::FromStr;
+
+pub type RoutingResult = Result<HttpResponse, Request>;
 
 //------------ Support Functions ---------------------------------------------
 
-fn render_empty_res(res: Result<(), Error>) -> HttpResponse {
+fn render_empty_res(res: Result<(), Error>) -> RoutingResult {
     match res {
-        Ok(()) => api_ok(),
-        Err(e) => HttpResponse::error(e),
+        Ok(()) => render_ok(),
+        Err(e) => render_error(e),
     }
 }
 
-fn render_json<O: Serialize>(obj: O) -> HttpResponse {
-    HttpResponse::json(&obj)
+fn render_error(e: Error) -> RoutingResult {
+    Ok(HttpResponse::error(e))
 }
 
-fn render_json_res<O: Serialize>(res: Result<O, Error>) -> HttpResponse {
+fn render_json<O: Serialize>(obj: O) -> RoutingResult {
+    Ok(HttpResponse::json(&obj))
+}
+
+fn render_json_res<O: Serialize>(res: Result<O, Error>) -> RoutingResult {
     match res {
-        Ok(o) => HttpResponse::json(&o),
-        Err(e) => HttpResponse::error(e),
+        Ok(o) => render_json(o),
+        Err(e) => render_error(e),
     }
 }
 
 /// A clean 404 result for the API (no content, not for humans)
-fn api_not_found() -> HttpResponse {
-    HttpResponse::error(Error::ApiUnknownResource)
+fn render_unknown_resource() -> RoutingResult {
+    Ok(HttpResponse::error(Error::ApiUnknownResource))
 }
 
 /// A clean 200 result for the API (no content, not for humans)
-pub fn api_ok() -> HttpResponse {
-    HttpResponse::ok()
+pub fn render_ok() -> RoutingResult {
+    Ok(HttpResponse::ok())
+}
+
+fn render_unknown_method() -> RoutingResult {
+    Ok(HttpResponse::error(Error::ApiUnknownMethod))
 }
 
 /// A clean 404 response
-pub fn not_found(_req: Request) -> Result<HttpResponse, Request> {
+pub fn render_not_found(_req: Request) -> RoutingResult {
     Ok(HttpResponse::not_found())
 }
 
 /// Returns the server health.
-pub fn health(req: Request) -> Result<HttpResponse, Request> {
+pub fn health(req: Request) -> RoutingResult {
     if req.is_get() && req.path().segment() == "health" {
-        Ok(api_ok())
+        render_ok()
     } else {
         Err(req)
     }
 }
 
-/// Returns the server health.
-pub fn api_authorized(server: State, auth: Auth) -> HttpResponse {
-    if_api_allowed(&server, &auth, api_ok)
-}
-
-fn if_allowed<F>(allowed: bool, op: F) -> HttpResponse
-where
-    F: FnOnce() -> HttpResponse,
-{
-    if allowed {
-        op()
-    } else {
-        HttpResponse::forbidden()
-    }
-}
-
-fn if_api_allowed<F>(server: &State, auth: &Auth, op: F) -> HttpResponse
-where
-    F: FnOnce() -> HttpResponse,
-{
-    let allowed = server.read().is_api_allowed(auth);
-    if_allowed(allowed, op)
-}
-
 /// Produce prometheus style metrics
-pub fn metrics(req: Request) -> Result<HttpResponse, Request> {
+pub fn metrics(req: Request) -> RoutingResult {
     if req.is_get() && req.path().segment().starts_with("metrics") {
         let server = req.read();
 
@@ -195,22 +181,22 @@ pub fn metrics(req: Request) -> Result<HttpResponse, Request> {
 }
 
 /// Return various stats as json
-pub fn stats(req: Request) -> Result<HttpResponse, Request> {
+pub fn stats(req: Request) -> RoutingResult {
     if !req.is_get() {
         Err(req)
     } else if req.path().full() == "/stats/info" {
-        Ok(render_json(req.read().server_info()))
+        render_json(req.read().server_info())
     } else if req.path().full() == "/stats/repo" {
-        Ok(render_json_res(req.read().repo_stats()))
+        render_json_res(req.read().repo_stats())
     } else if req.path().full() == "/stats/cas" {
-        Ok(render_json(req.read().cas_stats()))
+        render_json(req.read().cas_stats())
     } else {
         Err(req)
     }
 }
 
 /// Maps the API methods
-pub fn api(mut req: Request) -> Result<HttpResponse, Request> {
+pub fn api(mut req: Request) -> RoutingResult {
     if !req.path().full().starts_with("/api/v1") {
         Err(req) // Not for us
     } else {
@@ -221,31 +207,46 @@ pub fn api(mut req: Request) -> Result<HttpResponse, Request> {
 
         // Eat the first two segments of the path "api/v1"
         let mut path = req.path().clone();
-        path.next();
+        path.next(); // gets 'v1' and drops it.
 
         match path.next() {
-            Some("authorized") => {
-                if req.is_get() {
-                    return Ok(HttpResponse::ok());
-                }
-            }
-            Some("publishers") => {
-                if req.is_get() {
-                    if let Some(publisher_str) = path.next() {
-                        unimplemented!()
-                    } else {
-                        return Ok(list_pbl(req));
-                    }
-
-                    return Ok(HttpResponse::ok());
-                } else if req.is_post() {
-                    unimplemented!("Get post body")
-                }
-            }
-            _ => {}
+            Some("authorized") => api_authorized(req),
+            Some("publishers") => api_publishers(req, &mut path),
+            _ => render_unknown_method(),
         }
+    }
+}
 
-        Ok(HttpResponse::error(Error::ApiUnknownMethod))
+fn api_authorized(mut req: Request) -> RoutingResult {
+    if req.is_get() {
+        render_ok()
+    } else {
+        render_unknown_method()
+    }
+}
+
+fn api_publishers(mut req: Request, path: &mut RequestPath) -> RoutingResult {
+    if req.is_get() {
+        if let Some(publisher_str) = path.next() {
+            let publisher = match PublisherHandle::from_str(publisher_str) {
+                Ok(handle) => handle,
+                Err(e) => return render_error(Error::ApiInvalidHandle),
+            };
+
+            match path.next() {
+                None => show_pbl(req, publisher),
+                Some("response.xml") => repository_response_xml(req, publisher),
+                Some("response.json") => repository_response_json(req, publisher),
+                Some("stale") => stale_publishers(req, path.next()),
+                _ => render_unknown_method(),
+            }
+        } else {
+            list_pbl(req)
+        }
+    } else if req.is_post() {
+        unimplemented!("Get post body")
+    } else {
+        render_unknown_method()
     }
 }
 
@@ -253,16 +254,18 @@ pub fn api(mut req: Request) -> Result<HttpResponse, Request> {
 
 /// Returns a list of publisher which have not updated for more
 /// than the given number of seconds.
-pub fn stale_publishers(server: State, seconds: i64) -> HttpResponse {
-    render_json_res(
-        server.read().repo_stats().map(|stats| {
+pub fn stale_publishers(req: Request, seconds: Option<&str>) -> RoutingResult {
+    let seconds = seconds.unwrap_or("");
+    match i64::from_str(seconds) {
+        Ok(seconds) => render_json_res(req.read().repo_stats().map(|stats| {
             PublisherList::build(&stats.stale_publishers(seconds), "/api/v1/publishers")
-        }),
-    )
+        })),
+        Err(_) => render_error(Error::ApiInvalidSeconds),
+    }
 }
 
 /// Returns a json structure with all publishers in it.
-pub fn list_pbl(req: Request) -> HttpResponse {
+pub fn list_pbl(req: Request) -> RoutingResult {
     render_json_res(
         req.read()
             .publishers()
@@ -271,250 +274,188 @@ pub fn list_pbl(req: Request) -> HttpResponse {
 }
 
 /// Adds a publisher
-pub fn add_pbl(server: State, auth: Auth, pbl: rfc8183::PublisherRequest) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        render_json_res(server.write().add_publisher(pbl))
-    })
+pub fn add_pbl(req: Request, pbl: rfc8183::PublisherRequest) -> RoutingResult {
+    render_json_res(req.write().add_publisher(pbl))
 }
 
 /// Removes a publisher. Should be idempotent! If if did not exist then
 /// that's just fine.
 #[allow(clippy::needless_pass_by_value)]
-pub fn remove_pbl(server: State, auth: Auth, publisher: Handle) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        render_empty_res(server.write().remove_publisher(publisher))
-    })
+pub fn remove_pbl(req: Request, publisher: Handle) -> RoutingResult {
+    render_empty_res(req.write().remove_publisher(publisher))
 }
 
 /// Returns a json structure with publisher details
 #[allow(clippy::needless_pass_by_value)]
-pub fn show_pbl(server: State, auth: Auth, publisher: Handle) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        render_json_res(server.read().get_publisher(&publisher))
-    })
+pub fn show_pbl(req: Request, publisher: Handle) -> RoutingResult {
+    render_json_res(req.read().get_publisher(&publisher))
 }
 
 //------------ Publication ---------------------------------------------------
 
 /// Processes an RFC8181 query and returns the appropriate response.
-pub fn rfc8181(server: State, publisher: PublisherHandle, msg_bytes: Bytes) -> HttpResponse {
-    match server.read().rfc8181(publisher, msg_bytes) {
-        Ok(bytes) => HttpResponse::rfc8181(bytes.to_vec()),
-        Err(e) => HttpResponse::error(e),
+pub fn rfc8181(req: Request, publisher: PublisherHandle, msg_bytes: Bytes) -> RoutingResult {
+    match req.read().rfc8181(publisher, msg_bytes) {
+        Ok(bytes) => Ok(HttpResponse::rfc8181(bytes.to_vec())),
+        Err(e) => render_error(e),
     }
 }
 
 //------------ repository_response ---------------------------------------------
 
-pub fn repository_response_xml(server: State, auth: Auth, publisher: Handle) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        match repository_response(&server, &publisher) {
-            Ok(res) => HttpResponse::xml(res.encode_vec()),
-            Err(e) => HttpResponse::error(e),
-        }
-    })
+pub fn repository_response_xml(req: Request, publisher: Handle) -> RoutingResult {
+    match repository_response(&req, &publisher) {
+        Ok(res) => Ok(HttpResponse::xml(res.encode_vec())),
+        Err(e) => render_error(e),
+    }
 }
 
-pub fn repository_response_json(server: State, auth: Auth, publisher: Handle) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        match repository_response(&server, &publisher) {
-            Ok(res) => HttpResponse::json(&res),
-            Err(e) => HttpResponse::error(e),
-        }
-    })
+pub fn repository_response_json(req: Request, publisher: Handle) -> RoutingResult {
+    match repository_response(&req, &publisher) {
+        Ok(res) => render_json(res),
+        Err(e) => render_error(e),
+    }
 }
 
 fn repository_response(
-    server: &State,
+    req: &Request,
     publisher: &Handle,
 ) -> Result<rfc8183::RepositoryResponse, Error> {
-    server.read().repository_response(publisher)
+    req.read().repository_response(publisher)
 }
 
 //------------ Admin: TrustAnchor --------------------------------------------
 
-pub fn tal(server: State) -> HttpResponse {
-    match server.read().ta() {
-        Ok(ta) => HttpResponse::text(format!("{}", ta.tal()).into_bytes()),
-        Err(_) => api_not_found(),
+pub fn tal(req: Request) -> RoutingResult {
+    match req.read().ta() {
+        Ok(ta) => Ok(HttpResponse::text(format!("{}", ta.tal()).into_bytes())),
+        Err(_) => render_unknown_resource(),
     }
 }
 
-pub fn ta_cer(server: State) -> HttpResponse {
-    match server.read().trust_anchor_cert() {
-        Some(cert) => HttpResponse::cert(cert.to_captured().to_vec()),
-        None => api_not_found(),
+pub fn ta_cer(req: Request) -> RoutingResult {
+    match req.read().trust_anchor_cert() {
+        Some(cert) => Ok(HttpResponse::cert(cert.to_captured().to_vec())),
+        None => render_unknown_resource(),
     }
 }
 
 pub fn ca_add_child(
-    server: State,
+    req: Request,
     parent: ParentHandle,
-    req: AddChildRequest,
-    auth: Auth,
-) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        render_json_res(server.read().ca_add_child(&parent, req))
-    })
+    child_req: AddChildRequest,
+) -> RoutingResult {
+    render_json_res(req.read().ca_add_child(&parent, child_req))
 }
 
 pub fn ca_child_update(
-    server: State,
+    req: Request,
     ca: Handle,
     child: ChildHandle,
-    req: UpdateChildRequest,
-    auth: Auth,
-) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        render_empty_res(server.read().ca_child_update(&ca, child, req))
-    })
+    child_req: UpdateChildRequest,
+) -> RoutingResult {
+    render_empty_res(req.read().ca_child_update(&ca, child, child_req))
 }
 
-pub fn ca_child_remove(server: State, ca: Handle, child: ChildHandle, auth: Auth) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        render_empty_res(server.read().ca_child_remove(&ca, child))
-    })
+pub fn ca_child_remove(req: Request, ca: Handle, child: ChildHandle) -> RoutingResult {
+    render_empty_res(req.read().ca_child_remove(&ca, child))
 }
 
-pub fn ca_show_child(server: State, ca: Handle, child: ChildHandle, auth: Auth) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        render_json_res(server.read().ca_show_child(&ca, &child))
-    })
+pub fn ca_show_child(req: Request, ca: Handle, child: ChildHandle) -> RoutingResult {
+    render_json_res(req.read().ca_show_child(&ca, &child))
 }
 
-pub fn ca_parent_contact(
-    server: State,
-    ca: Handle,
-    child: ChildHandle,
-    auth: Auth,
-) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        render_json_res(server.read().ca_parent_contact(&ca, child.clone()))
-    })
+pub fn ca_parent_contact(req: Request, ca: Handle, child: ChildHandle) -> RoutingResult {
+    render_json_res(req.read().ca_parent_contact(&ca, child.clone()))
 }
 
-pub fn ca_parent_res_json(
-    server: State,
-    ca: Handle,
-    child: ChildHandle,
-    auth: Auth,
-) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        render_json_res(server.read().ca_parent_response(&ca, child.clone()))
-    })
+pub fn ca_parent_res_json(req: Request, ca: Handle, child: ChildHandle) -> RoutingResult {
+    render_json_res(req.read().ca_parent_response(&ca, child.clone()))
 }
 
-pub fn ca_parent_res_xml(
-    server: State,
-    ca: Handle,
-    child: ChildHandle,
-    auth: Auth,
-) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        match server.read().ca_parent_response(&ca, child.clone()) {
-            Ok(res) => HttpResponse::xml(res.encode_vec()),
-            Err(e) => HttpResponse::error(e),
-        }
-    })
+pub fn ca_parent_res_xml(req: Request, ca: Handle, child: ChildHandle) -> RoutingResult {
+    match req.read().ca_parent_response(&ca, child.clone()) {
+        Ok(res) => Ok(HttpResponse::xml(res.encode_vec())),
+        Err(e) => render_error(e),
+    }
 }
 
 //------------ Admin: CertAuth -----------------------------------------------
 
-pub fn all_ca_issues(server: State) -> HttpResponse {
-    render_json_res(server.read().all_ca_issues())
+pub fn all_ca_issues(req: Request) -> RoutingResult {
+    render_json_res(req.read().all_ca_issues())
 }
 
 /// Returns the health (state) for a given CA.
-pub fn ca_issues(server: State, ca: Handle) -> HttpResponse {
-    render_json_res(server.read().ca_issues(&ca))
+pub fn ca_issues(req: Request, ca: Handle) -> RoutingResult {
+    render_json_res(req.read().ca_issues(&ca))
 }
 
-pub fn cas(server: State, auth: Auth) -> HttpResponse {
-    if_api_allowed(&server, &auth, || HttpResponse::json(&server.read().cas()))
+pub fn cas(req: Request) -> RoutingResult {
+    render_json(req.read().cas())
 }
 
-pub fn ca_init(server: State, auth: Auth, ca_init: CertAuthInit) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        render_empty_res(server.write().ca_init(ca_init))
-    })
+pub fn ca_init(req: Request, ca_init: CertAuthInit) -> RoutingResult {
+    render_empty_res(req.write().ca_init(ca_init))
 }
 
-pub fn ca_regenerate_id(server: State, auth: Auth, handle: Handle) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        render_empty_res(server.read().ca_update_id(handle))
-    })
+pub fn ca_regenerate_id(req: Request, handle: Handle) -> RoutingResult {
+    render_empty_res(req.read().ca_update_id(handle))
 }
 
-pub fn ca_info(server: State, auth: Auth, handle: Handle) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        render_json_res(server.read().ca_info(&handle))
-    })
+pub fn ca_info(req: Request, handle: Handle) -> RoutingResult {
+    render_json_res(req.read().ca_info(&handle))
 }
 
-pub fn ca_my_parent_contact(
-    server: State,
-    auth: Auth,
-    ca: Handle,
-    parent: ParentHandle,
-) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        render_json_res(server.read().ca_my_parent_contact(&ca, &parent))
-    })
+pub fn ca_my_parent_contact(req: Request, ca: Handle, parent: ParentHandle) -> RoutingResult {
+    render_json_res(req.read().ca_my_parent_contact(&ca, &parent))
 }
 
-pub fn ca_history(server: State, auth: Auth, handle: Handle) -> HttpResponse {
-    if_api_allowed(&server, &auth, || match server.read().ca_history(&handle) {
-        Some(history) => HttpResponse::json(&history),
-        None => api_not_found(),
-    })
+pub fn ca_history(req: Request, handle: Handle) -> RoutingResult {
+    match req.read().ca_history(&handle) {
+        Some(history) => render_json(history),
+        None => render_unknown_resource(),
+    }
 }
 
-pub fn ca_child_req_xml(server: State, auth: Auth, handle: Handle) -> HttpResponse {
-    if_api_allowed(&server, &auth, || match ca_child_req(&server, &handle) {
-        Ok(req) => HttpResponse::xml(req.encode_vec()),
-        Err(e) => HttpResponse::error(e),
-    })
+pub fn ca_child_req_xml(req: Request, handle: Handle) -> RoutingResult {
+    match ca_child_req(&req, &handle) {
+        Ok(req) => Ok(HttpResponse::xml(req.encode_vec())),
+        Err(e) => render_error(e),
+    }
 }
 
-pub fn ca_child_req_json(server: State, auth: Auth, handle: Handle) -> HttpResponse {
-    if_api_allowed(&server, &auth, || match ca_child_req(&server, &handle) {
-        Ok(req) => HttpResponse::json(&req),
-        Err(e) => HttpResponse::error(e),
-    })
+pub fn ca_child_req_json(req: Request, handle: Handle) -> RoutingResult {
+    match ca_child_req(&req, &handle) {
+        Ok(req) => render_json(req),
+        Err(e) => render_error(e),
+    }
 }
 
-fn ca_child_req(server: &State, handle: &Handle) -> Result<rfc8183::ChildRequest, Error> {
-    server.read().ca_child_req(handle)
+fn ca_child_req(req: &Request, handle: &Handle) -> Result<rfc8183::ChildRequest, Error> {
+    req.read().ca_child_req(handle)
 }
 
-pub fn ca_publisher_req_json(server: State, auth: Auth, handle: Handle) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        match server.read().ca_publisher_req(&handle) {
-            Some(req) => HttpResponse::json(&req),
-            None => api_not_found(),
-        }
-    })
+pub fn ca_publisher_req_json(req: Request, handle: Handle) -> RoutingResult {
+    match req.read().ca_publisher_req(&handle) {
+        Some(req) => render_json(req),
+        None => render_unknown_resource(),
+    }
 }
 
-pub fn ca_publisher_req_xml(server: State, auth: Auth, handle: Handle) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        match server.read().ca_publisher_req(&handle) {
-            Some(req) => HttpResponse::xml(req.encode_vec()),
-            None => api_not_found(),
-        }
-    })
+pub fn ca_publisher_req_xml(req: Request, handle: Handle) -> RoutingResult {
+    match req.read().ca_publisher_req(&handle) {
+        Some(req) => Ok(HttpResponse::xml(req.encode_vec())),
+        None => render_unknown_resource(),
+    }
 }
 
-pub fn ca_repo_details(server: State, auth: Auth, handle: Handle) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        render_json_res(server.read().ca_repo_details(&handle))
-    })
+pub fn ca_repo_details(req: Request, handle: Handle) -> RoutingResult {
+    render_json_res(req.read().ca_repo_details(&handle))
 }
 
-pub fn ca_repo_state(server: State, auth: Auth, handle: Handle) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        render_json_res(server.read().ca_repo_state(&handle))
-    })
+pub fn ca_repo_state(req: Request, handle: Handle) -> RoutingResult {
+    render_json_res(req.read().ca_repo_state(&handle))
 }
 
 fn extract_repository_update(handle: &Handle, bytes: Bytes) -> Result<RepositoryUpdate, Error> {
@@ -534,52 +475,45 @@ fn extract_repository_update(handle: &Handle, bytes: Bytes) -> Result<Repository
     }
 }
 
-pub fn ca_repo_update(server: State, auth: Auth, handle: Handle, bytes: Bytes) -> HttpResponse {
+pub fn ca_repo_update(req: Request, handle: Handle, bytes: Bytes) -> RoutingResult {
     let update = match extract_repository_update(&handle, bytes) {
         Ok(update) => update,
-        Err(e) => return HttpResponse::error(e),
+        Err(e) => return render_error(e),
     };
 
-    if_api_allowed(&server, &auth, || {
-        render_empty_res(server.read().ca_update_repo(handle, update))
-    })
+    render_empty_res(req.read().ca_update_repo(handle, update))
 }
 
-pub fn ca_add_parent(server: State, auth: Auth, ca: Handle, req: ParentCaReq) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        render_empty_res(server.read().ca_parent_add(ca, req))
-    })
+pub fn ca_add_parent(req: Request, ca: Handle, parent_req: ParentCaReq) -> RoutingResult {
+    render_empty_res(req.read().ca_parent_add(ca, parent_req))
 }
 
 pub fn ca_add_parent_xml(
-    server: State,
-    auth: Auth,
-    ca_and_parent: (Handle, Handle),
+    req: Request,
+    ca: Handle,
+    parent: ParentHandle,
     bytes: Bytes,
-) -> HttpResponse {
-    let (ca, parent) = ca_and_parent;
+) -> RoutingResult {
     let string = match String::from_utf8(bytes.to_vec()).map_err(Error::custom) {
         Ok(string) => string,
-        Err(e) => return HttpResponse::error(e),
+        Err(e) => return render_error(e),
     };
 
-    let req = if string.starts_with("<repository") {
-        return HttpResponse::error(Error::CaParentResponseWrongXml(ca));
+    let parent_req = if string.starts_with("<repository") {
+        return render_error(Error::CaParentResponseWrongXml(ca));
     } else {
         let res = match rfc8183::ParentResponse::validate(string.as_bytes())
             .map_err(|e| Error::CaParentResponseInvalidXml(ca.clone(), e.to_string()))
         {
             Ok(res) => res,
-            Err(e) => return HttpResponse::error(e),
+            Err(e) => return render_error(e),
         };
         let contact = ParentCaContact::Rfc6492(res);
 
         ParentCaReq::new(parent, contact)
     };
 
-    if_api_allowed(&server, &auth, || {
-        render_empty_res(server.read().ca_parent_add(ca, req))
-    })
+    render_empty_res(req.read().ca_parent_add(ca, parent_req))
 }
 
 fn extract_parent_ca_contact(ca: &Handle, bytes: Bytes) -> Result<ParentCaContact, Error> {
@@ -600,93 +534,72 @@ fn extract_parent_ca_contact(ca: &Handle, bytes: Bytes) -> Result<ParentCaContac
 }
 
 pub fn ca_update_parent(
-    server: State,
-    auth: Auth,
+    req: Request,
     ca: Handle,
-    parent: Handle,
+    parent: ParentHandle,
     bytes: Bytes,
-) -> HttpResponse {
-    let contact = match extract_parent_ca_contact(&ca, bytes) {
-        Ok(contact) => contact,
-        Err(e) => return HttpResponse::error(e),
-    };
-    if_api_allowed(&server, &auth, || {
-        render_empty_res(server.read().ca_parent_update(ca, parent, contact))
-    })
+) -> RoutingResult {
+    match extract_parent_ca_contact(&ca, bytes) {
+        Ok(contact) => render_empty_res(req.read().ca_parent_update(ca, parent, contact)),
+        Err(e) => return render_error(e),
+    }
 }
 
-pub fn ca_remove_parent(server: State, auth: Auth, ca: Handle, parent: Handle) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        render_empty_res(server.read().ca_parent_remove(ca, parent))
-    })
+pub fn ca_remove_parent(req: Request, ca: Handle, parent: Handle) -> RoutingResult {
+    render_empty_res(req.read().ca_parent_remove(ca, parent))
 }
 
 /// Force a key roll for a CA, i.e. use a max key age of 0 seconds.
-pub fn ca_kr_init(server: State, auth: Auth, handle: Handle) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        render_empty_res(server.read().ca_keyroll_init(handle))
-    })
+pub fn ca_kr_init(req: Request, handle: Handle) -> RoutingResult {
+    render_empty_res(req.read().ca_keyroll_init(handle))
 }
 
 /// Force key activation for all new keys, i.e. use a staging period of 0 seconds.
-pub fn ca_kr_activate(server: State, auth: Auth, handle: Handle) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        render_empty_res(server.read().ca_keyroll_activate(handle))
-    })
+pub fn ca_kr_activate(req: Request, handle: Handle) -> RoutingResult {
+    render_empty_res(req.read().ca_keyroll_activate(handle))
 }
 
 //------------ Admin: Force republish ----------------------------------------
 
 /// Update the route authorizations for this CA
 pub fn ca_routes_update(
-    server: State,
-    auth: Auth,
+    req: Request,
     handle: Handle,
     updates: RoaDefinitionUpdates,
-) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        render_empty_res(server.read().ca_routes_update(handle, updates))
-    })
+) -> RoutingResult {
+    render_empty_res(req.read().ca_routes_update(handle, updates))
 }
 
 /// show the route authorizations for this CA
-pub fn ca_routes_show(server: State, auth: Auth, handle: Handle) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        match server.read().ca_routes_show(&handle) {
-            Ok(roas) => HttpResponse::json(&roas),
-            Err(_) => api_not_found(),
-        }
-    })
+pub fn ca_routes_show(req: Request, handle: Handle) -> RoutingResult {
+    match req.read().ca_routes_show(&handle) {
+        Ok(roas) => render_json(roas),
+        Err(_) => render_unknown_resource(),
+    }
 }
 
 //------------ Admin: Force republish ----------------------------------------
 
-pub fn republish_all(server: State, auth: Auth) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        render_empty_res(server.read().republish_all())
-    })
+pub fn republish_all(req: Request) -> RoutingResult {
+    render_empty_res(req.read().republish_all())
 }
 
-pub fn resync_all(server: State, auth: Auth) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        render_empty_res(server.read().resync_all())
-    })
+pub fn resync_all(req: Request) -> RoutingResult {
+    render_empty_res(req.read().resync_all())
 }
 
 /// Refresh all CAs
-pub fn refresh_all(server: State, auth: Auth) -> HttpResponse {
-    if_api_allowed(&server, &auth, || {
-        render_empty_res(server.read().refresh_all())
-    })
+pub fn refresh_all(req: Request) -> RoutingResult {
+    render_empty_res(req.read().refresh_all())
 }
 
 //------------ Provisioning (RFC6492) ----------------------------------------
 
 /// Process an RFC 6492 request
 ///
-pub fn rfc6492(server: State, parent: ParentHandle, msg_bytes: Bytes) -> HttpResponse {
-    match server.read().rfc6492(parent, msg_bytes) {
-        Ok(bytes) => HttpResponse::rfc6492(bytes.to_vec()),
-        Err(e) => HttpResponse::error(e),
+pub fn rfc6492(req: Request, parent: ParentHandle, msg_bytes: Bytes) -> RoutingResult {
+    match req.read().rfc6492(parent, msg_bytes) {
+        Ok(bytes) => Ok(HttpResponse::rfc6492(bytes.to_vec())),
+        Err(e) => render_error(e),
     }
 }

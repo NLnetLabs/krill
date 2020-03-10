@@ -2,9 +2,6 @@ extern crate krill;
 
 use krill::daemon::config::Config;
 use krill::daemon::http::server;
-use tokio::prelude::*;
-
-use krill::commons::error::Error;
 
 #[tokio::main]
 async fn main() {
