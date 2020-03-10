@@ -34,17 +34,7 @@ use crate::publish::CaPublisher;
 //------------ KrillServer ---------------------------------------------------
 
 /// This is the master krill server that is doing all the orchestration
-/// for all the components, like:
-/// * Admin tasks:
-///    * Verify (admin) API access
-///    * Manage known publishers
-/// * CMS proxy:
-///    * Decodes and validates CMS sent by known publishers using CMS
-///    * Encodes and signs CMS responses for remote publishers using CMS
-/// * Repository:
-///    * Process publish / list requests by known publishers
-///    * Updates the repository on disk
-///    * Updates the RRDP files
+/// for all the components.
 pub struct KrillServer {
     // The base URI for this service
     service_uri: uri::Https,
@@ -67,6 +57,35 @@ pub struct KrillServer {
 
     // Time this server was started
     started: Time,
+
+    // Global size constraints on things which can be posted
+    post_limits: PostLimits,
+}
+
+pub struct PostLimits {
+    api: usize,
+    rfc6492: usize,
+    rfc8181: usize,
+}
+
+impl PostLimits {
+    fn new(api: usize, rfc6492: usize, rfc8181: usize) -> Self {
+        PostLimits {
+            api,
+            rfc8181,
+            rfc6492,
+        }
+    }
+
+    pub fn api(&self) -> usize {
+        self.api
+    }
+    pub fn rfc6492(&self) -> usize {
+        self.rfc6492
+    }
+    pub fn rfc8181(&self) -> usize {
+        self.rfc8181
+    }
 }
 
 /// # Set up and initialisation
@@ -152,6 +171,12 @@ impl KrillServer {
             ca_refresh_rate,
         );
 
+        let post_limits = PostLimits::new(
+            config.post_limit_api,
+            config.post_limit_rfc6492,
+            config.post_limit_rfc8181,
+        );
+
         Ok(KrillServer {
             service_uri,
             work_dir: work_dir.clone(),
@@ -160,6 +185,7 @@ impl KrillServer {
             caserver,
             scheduler,
             started: Time::now(),
+            post_limits,
         })
     }
 
@@ -172,10 +198,14 @@ impl KrillServer {
     }
 }
 
-/// # Authentication
+/// # Authentication and Access
 impl KrillServer {
     pub fn is_api_allowed(&self, auth: &Auth) -> bool {
         self.authorizer.is_api_allowed(auth)
+    }
+
+    pub fn limit_api(&self) -> usize {
+        self.post_limits.api()
     }
 }
 

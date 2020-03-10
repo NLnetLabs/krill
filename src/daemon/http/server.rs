@@ -44,7 +44,7 @@ pub async fn start(config: Config) -> Result<(), Error> {
         async move {
             Ok::<_, Infallible>(service_fn(move |req: hyper::Request<hyper::Body>| {
                 let mut state = state.clone();
-                async move { map_requests(req, state) }
+                map_requests(req, state)
             }))
         }
     });
@@ -74,7 +74,7 @@ pub async fn start(config: Config) -> Result<(), Error> {
     Ok(())
 }
 
-fn map_requests(
+async fn map_requests(
     req: hyper::Request<hyper::Body>,
     mut state: State,
 ) -> Result<hyper::Response<hyper::Body>, Error> {
@@ -87,7 +87,8 @@ fn map_requests(
         .or_else(stats)
         .or_else(api)
         .or_else(render_not_found)
-        .map_err(|_| Error::custom("should have received not found response"))?
+        .map_err(|_| Error::custom("should have received not found response"))
+        .await?
         .res()
     //
     // let post_limit_api = config.post_limit_api;

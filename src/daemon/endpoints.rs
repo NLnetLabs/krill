@@ -39,6 +39,13 @@ fn render_json_res<O: Serialize>(res: Result<O, Error>) -> RoutingResult {
     }
 }
 
+fn render_json_res_res<O: Serialize>(res: Result<Result<O, Error>, Error>) -> RoutingResult {
+    match res {
+        Ok(res) => render_json_res(res),
+        Err(e) => render_error(e),
+    }
+}
+
 /// A clean 404 result for the API (no content, not for humans)
 fn render_unknown_resource() -> RoutingResult {
     Ok(HttpResponse::error(Error::ApiUnknownResource))
@@ -54,12 +61,12 @@ fn render_unknown_method() -> RoutingResult {
 }
 
 /// A clean 404 response
-pub fn render_not_found(_req: Request) -> RoutingResult {
+pub async fn render_not_found(_req: Request) -> RoutingResult {
     Ok(HttpResponse::not_found())
 }
 
 /// Returns the server health.
-pub fn health(req: Request) -> RoutingResult {
+pub async fn health(req: Request) -> RoutingResult {
     if req.is_get() && req.path().segment() == "health" {
         render_ok()
     } else {
@@ -68,7 +75,7 @@ pub fn health(req: Request) -> RoutingResult {
 }
 
 /// Produce prometheus style metrics
-pub fn metrics(req: Request) -> RoutingResult {
+pub async fn metrics(req: Request) -> RoutingResult {
     if req.is_get() && req.path().segment().starts_with("metrics") {
         let server = req.read();
 
@@ -181,7 +188,7 @@ pub fn metrics(req: Request) -> RoutingResult {
 }
 
 /// Return various stats as json
-pub fn stats(req: Request) -> RoutingResult {
+pub async fn stats(req: Request) -> RoutingResult {
     if !req.is_get() {
         Err(req)
     } else if req.path().full() == "/stats/info" {
@@ -196,7 +203,7 @@ pub fn stats(req: Request) -> RoutingResult {
 }
 
 /// Maps the API methods
-pub fn api(mut req: Request) -> RoutingResult {
+pub async fn api(req: Request) -> RoutingResult {
     if !req.path().full().starts_with("/api/v1") {
         Err(req) // Not for us
     } else {
@@ -211,13 +218,13 @@ pub fn api(mut req: Request) -> RoutingResult {
 
         match path.next() {
             Some("authorized") => api_authorized(req),
-            Some("publishers") => api_publishers(req, &mut path),
+            Some("publishers") => api_publishers(req, &mut path).await,
             _ => render_unknown_method(),
         }
     }
 }
 
-fn api_authorized(mut req: Request) -> RoutingResult {
+fn api_authorized(req: Request) -> RoutingResult {
     if req.is_get() {
         render_ok()
     } else {
@@ -225,7 +232,7 @@ fn api_authorized(mut req: Request) -> RoutingResult {
     }
 }
 
-fn api_publishers(mut req: Request, path: &mut RequestPath) -> RoutingResult {
+async fn api_publishers(req: Request, path: &mut RequestPath) -> RoutingResult {
     if req.is_get() {
         if let Some(publisher_str) = path.next() {
             let publisher = match PublisherHandle::from_str(publisher_str) {
@@ -244,7 +251,10 @@ fn api_publishers(mut req: Request, path: &mut RequestPath) -> RoutingResult {
             list_pbl(req)
         }
     } else if req.is_post() {
-        unimplemented!("Get post body")
+        match path.next() {
+            None => add_pbl(req).await,
+            _ => render_unknown_method(),
+        }
     } else {
         render_unknown_method()
     }
@@ -274,8 +284,13 @@ pub fn list_pbl(req: Request) -> RoutingResult {
 }
 
 /// Adds a publisher
-pub fn add_pbl(req: Request, pbl: rfc8183::PublisherRequest) -> RoutingResult {
-    render_json_res(req.write().add_publisher(pbl))
+async fn add_pbl(req: Request) -> RoutingResult {
+    let server = req.state().clone();
+    render_json_res_res(
+        req.json()
+            .await
+            .map(|pbl| server.write().add_publisher(pbl)),
+    )
 }
 
 /// Removes a publisher. Should be idempotent! If if did not exist then

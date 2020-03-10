@@ -1,8 +1,12 @@
-use std::io;
 use std::sync::{RwLockReadGuard, RwLockWriteGuard};
+use std::{fmt, io};
 
+use serde::de::DeserializeOwned;
 use serde::Serialize;
 
+use bytes::{Buf, BufMut, Bytes};
+
+use hyper::body::HttpBody;
 use hyper::http::uri::PathAndQuery;
 use hyper::{Body, Method, StatusCode};
 
@@ -162,13 +166,13 @@ impl HttpResponse {
 //------------ Request -------------------------------------------------------
 
 pub struct Request {
-    request: hyper::Request<Body>,
+    request: hyper::Request<hyper::Body>,
     path: RequestPath,
     state: State,
 }
 
 impl Request {
-    pub fn new(request: hyper::Request<Body>, state: State) -> Self {
+    pub fn new(request: hyper::Request<hyper::Body>, state: State) -> Self {
         let path = RequestPath::from_request(&request);
         Request {
             request,
@@ -183,7 +187,7 @@ impl Request {
     }
 
     /// Get the application State
-    fn state(&self) -> &State {
+    pub fn state(&self) -> &State {
         &self.state
     }
 
@@ -212,6 +216,79 @@ impl Request {
         self.request.method() == Method::POST
     }
 
+    /// Get a json object from a post body
+    pub async fn json<O: DeserializeOwned>(mut self) -> Result<O, Error> {
+        let limit = self.read().limit_api();
+        let body = self.request.into_body();
+
+        let bytes = Self::to_bytes_limited(body, limit)
+            .await
+            .map_err(|_| Error::custom("Error reading body"))?;
+        serde_json::from_slice(&bytes).map_err(Error::JsonError)
+    }
+
+    /// See hyper::body::to_bytes
+    ///
+    /// Here we want to limit the bytes consumed to a maximum. So, the
+    /// code below is adapted from the method in the hyper crate.
+    async fn to_bytes_limited<T>(body: T, limit: usize) -> Result<Bytes, RequestError>
+    where
+        T: HttpBody,
+    {
+        futures_util::pin_mut!(body);
+
+        let mut size_processed = 0;
+
+        fn assert_body_size(size: usize, limit: usize) -> Result<(), io::Error> {
+            if size > limit {
+                Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    "Post exceeds max length",
+                ))
+            } else {
+                Ok(())
+            }
+        }
+
+        // If there's only 1 chunk, we can just return Buf::to_bytes()
+        let mut first = if let Some(buf) = body.data().await {
+            let buf = buf.map_err(|_| RequestError::Hyper)?;
+            let size = buf.bytes().len();
+            size_processed += size;
+            assert_body_size(size_processed, limit)?;
+            buf
+        } else {
+            return Ok(Bytes::new());
+        };
+
+        let second = if let Some(buf) = body.data().await {
+            let buf = buf.map_err(|_| RequestError::Hyper)?;
+            let size = buf.bytes().len();
+            size_processed += size;
+            assert_body_size(size_processed, limit)?;
+            buf
+        } else {
+            return Ok(first.to_bytes());
+        };
+
+        // With more than 1 buf, we gotta flatten into a Vec first.
+        let cap = first.remaining() + second.remaining() + body.size_hint().lower() as usize;
+        let mut vec = Vec::with_capacity(cap);
+        vec.put(first);
+        vec.put(second);
+
+        while let Some(buf) = body.data().await {
+            let buf = buf.map_err(|_| RequestError::Hyper)?;
+            let size = buf.bytes().len();
+            size_processed += size;
+            assert_body_size(size_processed, limit)?;
+
+            vec.put(buf);
+        }
+
+        Ok(vec.into())
+    }
+
     /// Checks whether the Bearer token is set to what we expect
     pub fn is_authorized(&self) -> bool {
         if let Some(header) = self.request.headers().get("Authorization") {
@@ -228,6 +305,17 @@ impl Request {
             }
         }
         false
+    }
+}
+
+pub enum RequestError {
+    Hyper,
+    Io(io::Error),
+}
+
+impl From<io::Error> for RequestError {
+    fn from(e: io::Error) -> Self {
+        RequestError::Io(e)
     }
 }
 
