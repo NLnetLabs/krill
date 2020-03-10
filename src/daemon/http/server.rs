@@ -100,11 +100,8 @@ async fn map_requests(
     //         // API end-points
     //         .service(
     //             scope("/api/v1")
-    //                 .data(web::JsonConfig::default().limit(post_limit_api))
     //                 // Let the UI check if it's authorized
     //                 // Repositories and their publishers (both embedded and remote)
-    //                 .route("/publishers", post().to(add_pbl))
-    //                 .route("/publishers/{handle}", delete().to(remove_pbl))
     //                 // CAs (both embedded and remote)
     //                 .route("/cas", post().to(ca_init))
     //                 .route("/cas", get().to(cas))

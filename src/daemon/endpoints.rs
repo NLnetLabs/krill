@@ -234,26 +234,25 @@ fn api_authorized(req: Request) -> RoutingResult {
 
 async fn api_publishers(req: Request, path: &mut RequestPath) -> RoutingResult {
     if req.is_get() {
-        if let Some(publisher_str) = path.next() {
-            let publisher = match PublisherHandle::from_str(publisher_str) {
-                Ok(handle) => handle,
-                Err(e) => return render_error(Error::ApiInvalidHandle),
-            };
-
-            match path.next() {
+        match path.path_arg() {
+            Some(publisher) => match path.next() {
                 None => show_pbl(req, publisher),
                 Some("response.xml") => repository_response_xml(req, publisher),
                 Some("response.json") => repository_response_json(req, publisher),
                 Some("stale") => stale_publishers(req, path.next()),
                 _ => render_unknown_method(),
-            }
-        } else {
-            list_pbl(req)
+            },
+            None => list_pbl(req),
         }
     } else if req.is_post() {
         match path.next() {
             None => add_pbl(req).await,
             _ => render_unknown_method(),
+        }
+    } else if req.is_delete() {
+        match path.path_arg() {
+            Some(publisher) => remove_pbl(req, publisher),
+            None => render_error(Error::ApiInvalidHandle),
         }
     } else {
         render_unknown_method()

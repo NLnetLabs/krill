@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::sync::{RwLockReadGuard, RwLockWriteGuard};
 use std::{fmt, io};
 
@@ -216,6 +217,11 @@ impl Request {
         self.request.method() == Method::POST
     }
 
+    /// Returns whether the request is a DELETE request.
+    pub fn is_delete(&self) -> bool {
+        self.request.method() == Method::DELETE
+    }
+
     /// Get a json object from a post body
     pub async fn json<O: DeserializeOwned>(mut self) -> Result<O, Error> {
         let limit = self.read().limit_api();
@@ -378,5 +384,12 @@ impl RequestPath {
         } else {
             None
         }
+    }
+
+    pub fn path_arg<T>(&mut self) -> Option<T>
+    where
+        T: FromStr,
+    {
+        self.next().map(|s| T::from_str(s).ok()).flatten()
     }
 }
