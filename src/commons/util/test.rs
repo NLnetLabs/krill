@@ -1,11 +1,13 @@
-use bytes::Bytes;
-use rand::{thread_rng, Rng};
-use rpki::uri;
 use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::str::FromStr;
+
+use bytes::Bytes;
+use rand::{thread_rng, Rng};
+
+use rpki::uri;
 
 /// This method sets up a test directory with a random name (a number)
 /// under 'work', relative to where cargo is running. It then runs the
@@ -23,6 +25,22 @@ where
     op(dir);
 
     let _result = fs::remove_dir_all(path);
+}
+
+pub async fn test_under_tmp_async<F>(op: F)
+where
+    F: FnOnce(PathBuf) -> (),
+{
+    let dir = tmp_dir();
+    let path = PathBuf::from(&dir);
+
+    op(dir);
+
+    let _result = fs::remove_dir_all(path);
+}
+
+pub fn tmp_dir() -> PathBuf {
+    sub_dir(&PathBuf::from("work"))
 }
 
 /// This method sets up a random subdirectory and returns it. It is

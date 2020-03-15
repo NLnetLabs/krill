@@ -372,7 +372,8 @@ impl fmt::Display for RepositoryContact {
 //------------ ParentCaReq ---------------------------------------------------
 
 /// This type defines all parent ca details needed to add a parent to a CA
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
+#[display(fmt = "parent '{}' contact '{}'", handle, contact)]
 pub struct ParentCaReq {
     handle: ParentHandle,     // the local name the child gave to the parent
     contact: ParentCaContact, // where the parent can be contacted
@@ -480,6 +481,12 @@ impl ParentCaContact {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CertAuthInit {
     handle: Handle,
+}
+
+impl fmt::Display for CertAuthInit {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.handle)
+    }
 }
 
 impl CertAuthInit {

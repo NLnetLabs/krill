@@ -1,11 +1,9 @@
-use std::str::FromStr;
-use std::sync::{RwLockReadGuard, RwLockWriteGuard};
-use std::{fmt, io};
-
 use serde::de::DeserializeOwned;
-use serde::Serialize;
+use std::io;
+use std::str::FromStr;
 
 use bytes::{Buf, BufMut, Bytes};
+use serde::Serialize;
 
 use hyper::body::HttpBody;
 use hyper::http::uri::PathAndQuery;
@@ -16,7 +14,6 @@ use crate::commons::error::Error;
 use crate::commons::remote::{rfc6492, rfc8181};
 use crate::daemon::auth::Auth;
 use crate::daemon::http::server::State;
-use crate::daemon::krillserver::KrillServer;
 
 pub mod server;
 pub mod statics;
@@ -28,7 +25,6 @@ pub mod tls_keys;
 enum ContentType {
     Cert,
     Json,
-    Html,
     Rfc8181,
     Rfc6492,
     Text,
@@ -40,7 +36,6 @@ impl AsRef<str> for ContentType {
         match self {
             ContentType::Cert => "application/x-x509-ca-cert",
             ContentType::Json => "application/json",
-            ContentType::Html => "text/html;charset=utf-8",
             ContentType::Rfc8181 => rfc8181::CONTENT_TYPE,
             ContentType::Rfc6492 => rfc6492::CONTENT_TYPE,
             ContentType::Text => "text/plain",
@@ -107,8 +102,8 @@ impl HttpResponse {
         .finalize()
     }
 
-    pub fn res(self) -> Result<hyper::Response<Body>, Error> {
-        Ok(self.0)
+    pub fn response(self) -> hyper::Response<Body> {
+        self.0
     }
 
     pub fn json<O: Serialize>(object: &O) -> Self {
@@ -131,7 +126,7 @@ impl HttpResponse {
     }
 
     pub fn rfc6492(body: Vec<u8>) -> Self {
-        Self::ok_response(ContentType::Rfc8181, body)
+        Self::ok_response(ContentType::Rfc6492, body)
     }
 
     pub fn cert(body: Vec<u8>) -> Self {
@@ -192,16 +187,6 @@ impl Request {
         &self.state
     }
 
-    /// Get a read lock on the server state
-    pub fn read(&self) -> RwLockReadGuard<KrillServer> {
-        self.state.read()
-    }
-
-    /// Get a write lock on the server state
-    pub fn write(&self) -> RwLockWriteGuard<KrillServer> {
-        self.state.write()
-    }
-
     /// Returns the method of this request.
     pub fn method(&self) -> &Method {
         self.request.method()
@@ -223,24 +208,33 @@ impl Request {
     }
 
     /// Get a json object from a post body
-    pub async fn json<O: DeserializeOwned>(mut self) -> Result<O, Error> {
-        let limit = self.read().limit_api();
-        let body = self.request.into_body();
-
-        let bytes = Self::to_bytes_limited(body, limit)
-            .await
-            .map_err(|_| Error::custom("Error reading body"))?;
+    pub async fn json<O: DeserializeOwned>(self) -> Result<O, Error> {
+        let bytes = self.api_bytes().await?;
         serde_json::from_slice(&bytes).map_err(Error::JsonError)
+    }
+
+    pub async fn api_bytes(self) -> Result<Bytes, Error> {
+        let limit = self.state().read().await.limit_api();
+        self.read_bytes(limit).await
+    }
+
+    pub async fn rfc6492_bytes(self) -> Result<Bytes, Error> {
+        let limit = self.state().read().await.limit_rfc6492();
+        self.read_bytes(limit).await
+    }
+
+    pub async fn rfc8181_bytes(self) -> Result<Bytes, Error> {
+        let limit = self.state().read().await.limit_rfc8181();
+        self.read_bytes(limit).await
     }
 
     /// See hyper::body::to_bytes
     ///
     /// Here we want to limit the bytes consumed to a maximum. So, the
     /// code below is adapted from the method in the hyper crate.
-    async fn to_bytes_limited<T>(body: T, limit: usize) -> Result<Bytes, RequestError>
-    where
-        T: HttpBody,
-    {
+    pub async fn read_bytes(self, limit: usize) -> Result<Bytes, Error> {
+        let body = self.request.into_body();
+
         futures_util::pin_mut!(body);
 
         let mut size_processed = 0;
@@ -258,7 +252,7 @@ impl Request {
 
         // If there's only 1 chunk, we can just return Buf::to_bytes()
         let mut first = if let Some(buf) = body.data().await {
-            let buf = buf.map_err(|_| RequestError::Hyper)?;
+            let buf = buf.map_err(|_| Error::custom("Error reading body"))?;
             let size = buf.bytes().len();
             size_processed += size;
             assert_body_size(size_processed, limit)?;
@@ -268,7 +262,7 @@ impl Request {
         };
 
         let second = if let Some(buf) = body.data().await {
-            let buf = buf.map_err(|_| RequestError::Hyper)?;
+            let buf = buf.map_err(|_| Error::custom("Error reading body"))?;
             let size = buf.bytes().len();
             size_processed += size;
             assert_body_size(size_processed, limit)?;
@@ -284,7 +278,7 @@ impl Request {
         vec.put(second);
 
         while let Some(buf) = body.data().await {
-            let buf = buf.map_err(|_| RequestError::Hyper)?;
+            let buf = buf.map_err(|_| Error::custom("Error reading body"))?;
             let size = buf.bytes().len();
             size_processed += size;
             assert_body_size(size_processed, limit)?;
@@ -296,7 +290,7 @@ impl Request {
     }
 
     /// Checks whether the Bearer token is set to what we expect
-    pub fn is_authorized(&self) -> bool {
+    pub async fn is_authorized(&self) -> bool {
         if let Some(header) = self.request.headers().get("Authorization") {
             if let Ok(header) = header.to_str() {
                 if header.len() > 6 {
@@ -305,23 +299,12 @@ impl Request {
                     let token = Token::from(token.trim());
 
                     if "Bearer" == bearer {
-                        return self.read().is_api_allowed(&Auth::bearer(token));
+                        return self.state.read().await.is_api_allowed(&Auth::bearer(token));
                     }
                 }
             }
         }
         false
-    }
-}
-
-pub enum RequestError {
-    Hyper,
-    Io(io::Error),
-}
-
-impl From<io::Error> for RequestError {
-    fn from(e: io::Error) -> Self {
-        RequestError::Io(e)
     }
 }
 
@@ -373,11 +356,12 @@ impl RequestPath {
         let end = path[start..]
             .find('/')
             .map(|x| x + start)
-            .unwrap_or(path.len());
+            .unwrap_or_else(|| path.len());
         self.segment = (start, end);
         true
     }
 
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Option<&str> {
         if self.next_segment() {
             Some(self.segment())

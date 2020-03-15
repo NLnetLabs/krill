@@ -27,9 +27,9 @@ pub struct KrillClient {
 impl KrillClient {
     /// Delegates the options to be processed, and reports the response
     /// back to the user. Note that error reporting is handled by CLI.
-    pub fn report(options: Options) -> Result<(), Error> {
+    pub async fn report(options: Options) -> Result<(), Error> {
         let format = options.format;
-        let res = Self::process(options)?;
+        let res = Self::process(options).await?;
 
         if let Some(string) = res.report(format)? {
             println!("{}", string)
@@ -40,7 +40,7 @@ impl KrillClient {
     /// Processes the options, and returns a response ready for formatting.
     /// Note that this function is public to help integration testing the API
     /// and client.
-    pub fn process(options: Options) -> Result<ApiResponse, Error> {
+    pub async fn process(options: Options) -> Result<ApiResponse, Error> {
         let client = KrillClient {
             server: options.server,
             token: options.token,
@@ -52,172 +52,175 @@ impl KrillClient {
             env::set_var(KRILL_CLI_API_ENV, "1")
         }
 
+        trace!("Sending command: {}", options.command);
+
         match options.command {
-            Command::Health => client.health(),
-            Command::Info => client.info(),
-            Command::Bulk(cmd) => client.bulk(cmd),
-            Command::CertAuth(cmd) => client.certauth(cmd),
-            Command::Publishers(cmd) => client.publishers(cmd),
+            Command::Health => client.health().await,
+            Command::Info => client.info().await,
+            Command::Bulk(cmd) => client.bulk(cmd).await,
+            Command::CertAuth(cmd) => client.certauth(cmd).await,
+            Command::Publishers(cmd) => client.publishers(cmd).await,
             Command::Init(details) => client.init(details),
             Command::NotSet => Err(Error::MissingCommand),
         }
     }
 
-    fn health(&self) -> Result<ApiResponse, Error> {
-        httpclient::get_ok(&self.resolve_uri("api/v1/authorized"), Some(&self.token))?;
+    async fn health(&self) -> Result<ApiResponse, Error> {
+        httpclient::get_ok(&self.resolve_uri("api/v1/authorized"), Some(&self.token)).await?;
         Ok(ApiResponse::Health)
     }
 
-    fn info(&self) -> Result<ApiResponse, Error> {
-        let info = httpclient::get_json(&self.resolve_uri("stats/info"), Some(&self.token))?;
+    async fn info(&self) -> Result<ApiResponse, Error> {
+        let info = httpclient::get_json(&self.resolve_uri("stats/info"), Some(&self.token)).await?;
         Ok(ApiResponse::Info(info))
     }
 
-    fn bulk(&self, command: BulkCaCommand) -> Result<ApiResponse, Error> {
+    async fn bulk(&self, command: BulkCaCommand) -> Result<ApiResponse, Error> {
         match command {
             BulkCaCommand::Refresh => {
-                self.post_empty("api/v1/cas/refresh_all")?;
+                self.post_empty("api/v1/bulk/cas/sync/parent").await?;
                 Ok(ApiResponse::Empty)
             }
             BulkCaCommand::Publish => {
-                self.post_empty("api/v1/cas/republish_all")?;
+                self.post_empty("api/v1/bulk/cas/publish").await?;
                 Ok(ApiResponse::Empty)
             }
             BulkCaCommand::Sync => {
-                self.post_empty("api/v1/cas/resync_all")?;
+                self.post_empty("api/v1/bulk/cas/sync/repo").await?;
                 Ok(ApiResponse::Empty)
             }
         }
     }
 
-    fn certauth(&self, command: CaCommand) -> Result<ApiResponse, Error> {
+    #[allow(clippy::cognitive_complexity)]
+    async fn certauth(&self, command: CaCommand) -> Result<ApiResponse, Error> {
         match command {
             CaCommand::Init(init) => {
-                self.post_json("api/v1/cas", init)?;
+                self.post_json("api/v1/cas", init).await?;
                 Ok(ApiResponse::Empty)
             }
 
             CaCommand::UpdateId(handle) => {
                 let uri = format!("api/v1/cas/{}/id", handle);
-                self.post_empty(&uri)?;
+                self.post_empty(&uri).await?;
                 Ok(ApiResponse::Empty)
             }
 
             CaCommand::ParentResponse(handle, child) => {
                 let uri = format!("api/v1/cas/{}/children/{}/contact", handle, child);
-                let info: ParentCaContact = self.get_json(&uri)?;
+                let info: ParentCaContact = self.get_json(&uri).await?;
                 Ok(ApiResponse::ParentCaContact(info))
             }
 
             CaCommand::ChildRequest(handle) => {
                 let uri = format!("api/v1/cas/{}/child_request.json", handle);
-                let req = self.get_json(&uri)?;
+                let req = self.get_json(&uri).await?;
                 Ok(ApiResponse::Rfc8183ChildRequest(req))
             }
 
             CaCommand::RepoPublisherRequest(handle) => {
                 let uri = format!("api/v1/cas/{}/repo/request.json", handle);
-                let req: rfc8183::PublisherRequest = self.get_json(&uri)?;
+                let req: rfc8183::PublisherRequest = self.get_json(&uri).await?;
                 Ok(ApiResponse::Rfc8183PublisherRequest(req))
             }
 
             CaCommand::RepoDetails(handle) => {
                 let uri = format!("api/v1/cas/{}/repo", handle);
-                let details: CaRepoDetails = self.get_json(&uri)?;
+                let details: CaRepoDetails = self.get_json(&uri).await?;
                 Ok(ApiResponse::RepoDetails(details))
             }
 
             CaCommand::RepoState(handle) => {
                 let uri = format!("api/v1/cas/{}/repo/state", handle);
-                let state: CurrentRepoState = self.get_json(&uri)?;
+                let state: CurrentRepoState = self.get_json(&uri).await?;
                 Ok(ApiResponse::RepoState(state))
             }
 
             CaCommand::RepoUpdate(handle, update) => {
                 let uri = format!("api/v1/cas/{}/repo", handle);
-                self.post_json(&uri, update)?;
+                self.post_json(&uri, update).await?;
                 Ok(ApiResponse::Empty)
             }
 
             CaCommand::AddParent(handle, parent) => {
                 let uri = format!("api/v1/cas/{}/parents", handle);
-                self.post_json(&uri, parent)?;
+                self.post_json(&uri, parent).await?;
                 Ok(ApiResponse::Empty)
             }
 
             CaCommand::UpdateParentContact(handle, parent, contact) => {
                 let uri = format!("api/v1/cas/{}/parents/{}", handle, parent);
-                self.post_json(&uri, contact)?;
+                self.post_json(&uri, contact).await?;
                 Ok(ApiResponse::Empty)
             }
 
             CaCommand::RemoveParent(handle, parent) => {
                 let uri = format!("api/v1/cas/{}/parents/{}", handle, parent);
-                self.delete(&uri)?;
+                self.delete(&uri).await?;
                 Ok(ApiResponse::Empty)
             }
 
             CaCommand::MyParentCaContact(handle, parent) => {
                 let uri = format!("api/v1/cas/{}/parents/{}", handle, parent);
-                let parent: ParentCaContact = self.get_json(&uri)?;
+                let parent: ParentCaContact = self.get_json(&uri).await?;
                 Ok(ApiResponse::ParentCaContact(parent))
             }
 
             CaCommand::ChildInfo(handle, child) => {
                 let uri = format!("api/v1/cas/{}/children/{}", handle, child);
-                let info: ChildCaInfo = self.get_json(&uri)?;
+                let info: ChildCaInfo = self.get_json(&uri).await?;
                 Ok(ApiResponse::ChildInfo(info))
             }
 
             CaCommand::ChildAdd(handle, req) => {
                 let uri = format!("api/v1/cas/{}/children", handle);
-                let info: ParentCaContact = self.post_json_with_response(&uri, req)?;
+                let info: ParentCaContact = self.post_json_with_response(&uri, req).await?;
                 Ok(ApiResponse::ParentCaContact(info))
             }
             CaCommand::ChildUpdate(handle, child, req) => {
                 let uri = format!("api/v1/cas/{}/children/{}", handle, child);
-                self.post_json(&uri, req)?;
+                self.post_json(&uri, req).await?;
                 Ok(ApiResponse::Empty)
             }
             CaCommand::ChildDelete(handle, child) => {
                 let uri = format!("api/v1/cas/{}/children/{}", handle, child);
-                self.delete(&uri)?;
+                self.delete(&uri).await?;
                 Ok(ApiResponse::Empty)
             }
 
             CaCommand::KeyRollInit(handle) => {
                 let uri = format!("api/v1/cas/{}/keys/roll_init", handle);
-                self.post_empty(&uri)?;
+                self.post_empty(&uri).await?;
                 Ok(ApiResponse::Empty)
             }
             CaCommand::KeyRollActivate(handle) => {
                 let uri = format!("api/v1/cas/{}/keys/roll_activate", handle);
-                self.post_empty(&uri)?;
+                self.post_empty(&uri).await?;
                 Ok(ApiResponse::Empty)
             }
 
             CaCommand::RouteAuthorizationsList(handle) => {
                 let uri = format!("api/v1/cas/{}/routes", handle);
-                let roas = self.get_json(&uri)?;
+                let roas = self.get_json(&uri).await?;
                 Ok(ApiResponse::RouteAuthorizations(roas))
             }
 
             CaCommand::RouteAuthorizationsUpdate(handle, updates) => {
                 let uri = format!("api/v1/cas/{}/routes", handle);
-                self.post_json(&uri, updates)?;
+                self.post_json(&uri, updates).await?;
                 Ok(ApiResponse::Empty)
             }
 
             CaCommand::Show(handle) => {
                 let uri = format!("api/v1/cas/{}", handle);
-                let ca_info = self.get_json(&uri)?;
+                let ca_info = self.get_json(&uri).await?;
 
                 Ok(ApiResponse::CertAuthInfo(ca_info))
             }
 
             CaCommand::ShowHistory(handle) => {
                 let uri = format!("api/v1/cas/{}/history", handle);
-                let history = self.get_json(&uri)?;
+                let history = self.get_json(&uri).await?;
 
                 Ok(ApiResponse::CertAuthHistory(history))
             }
@@ -225,54 +228,56 @@ impl KrillClient {
             CaCommand::Issues(ca_opt) => match ca_opt {
                 Some(ca) => {
                     let uri = format!("api/v1/cas/issues/{}", ca);
-                    let issues: CertAuthIssues = self.get_json(&uri)?;
+                    let issues: CertAuthIssues = self.get_json(&uri).await?;
                     Ok(ApiResponse::CertAuthIssues(issues))
                 }
                 None => {
-                    let issues: AllCertAuthIssues = self.get_json("api/v1/cas/issues")?;
+                    let issues: AllCertAuthIssues = self.get_json("api/v1/cas/issues").await?;
                     Ok(ApiResponse::AllCertAuthIssues(issues))
                 }
             },
 
             CaCommand::List => {
-                let cas = self.get_json("api/v1/cas")?;
+                let cas = self.get_json("api/v1/cas").await?;
                 Ok(ApiResponse::CertAuths(cas))
             }
         }
     }
 
-    fn publishers(&self, command: PublishersCommand) -> Result<ApiResponse, Error> {
+    async fn publishers(&self, command: PublishersCommand) -> Result<ApiResponse, Error> {
         match command {
             PublishersCommand::PublisherList => {
-                let list: PublisherList = self.get_json("api/v1/publishers")?;
+                let list: PublisherList = self.get_json("api/v1/publishers").await?;
                 Ok(ApiResponse::PublisherList(list))
             }
             PublishersCommand::StalePublishers(seconds) => {
                 let uri = format!("api/v1/publishers/stale/{}", seconds);
-                let stales = self.get_json(&uri)?;
+                let stales = self.get_json(&uri).await?;
                 Ok(ApiResponse::PublisherList(stales))
             }
             PublishersCommand::Stats => {
-                let stats = self.get_json("stats/repo")?;
+                let stats = self.get_json("stats/repo").await?;
                 Ok(ApiResponse::RepoStats(stats))
             }
             PublishersCommand::AddPublisher(req) => {
-                let res = self.post_json_with_response("api/v1/publishers", req)?;
+                let res = self
+                    .post_json_with_response("api/v1/publishers", req)
+                    .await?;
                 Ok(ApiResponse::Rfc8183RepositoryResponse(res))
             }
             PublishersCommand::RemovePublisher(handle) => {
                 let uri = format!("api/v1/publishers/{}", handle);
-                self.delete(&uri)?;
+                self.delete(&uri).await?;
                 Ok(ApiResponse::Empty)
             }
             PublishersCommand::ShowPublisher(handle) => {
                 let uri = format!("api/v1/publishers/{}", handle);
-                let details: PublisherDetails = self.get_json(&uri)?;
+                let details: PublisherDetails = self.get_json(&uri).await?;
                 Ok(ApiResponse::PublisherDetails(details))
             }
             PublishersCommand::RepositoryResponse(handle) => {
                 let uri = format!("api/v1/publishers/{}/response.json", handle);
-                let res = self.get_json(&uri)?;
+                let res = self.get_json(&uri).await?;
                 Ok(ApiResponse::Rfc8183RepositoryResponse(res))
             }
         }
@@ -332,34 +337,43 @@ impl KrillClient {
         Ok(ApiResponse::GenericBody(config))
     }
 
-    fn get_json<T: DeserializeOwned>(&self, uri: &str) -> Result<T, Error> {
+    async fn get_json<T: DeserializeOwned>(&self, uri: &str) -> Result<T, Error> {
         let uri = self.resolve_uri(uri);
-        httpclient::get_json(&uri, Some(&self.token)).map_err(Error::HttpClientError)
+        httpclient::get_json(&uri, Some(&self.token))
+            .await
+            .map_err(Error::HttpClientError)
     }
 
-    fn post_empty(&self, uri: &str) -> Result<(), Error> {
+    async fn post_empty(&self, uri: &str) -> Result<(), Error> {
         let uri = self.resolve_uri(uri);
-        httpclient::post_empty(&uri, Some(&self.token)).map_err(Error::HttpClientError)
+        httpclient::post_empty(&uri, Some(&self.token))
+            .await
+            .map_err(Error::HttpClientError)
     }
 
-    fn post_json(&self, uri: &str, data: impl Serialize) -> Result<(), Error> {
+    async fn post_json(&self, uri: &str, data: impl Serialize) -> Result<(), Error> {
         let uri = self.resolve_uri(uri);
-        httpclient::post_json(&uri, data, Some(&self.token)).map_err(Error::HttpClientError)
+        httpclient::post_json(&uri, data, Some(&self.token))
+            .await
+            .map_err(Error::HttpClientError)
     }
 
-    fn post_json_with_response<T: DeserializeOwned>(
+    async fn post_json_with_response<T: DeserializeOwned>(
         &self,
         uri: &str,
         data: impl Serialize,
     ) -> Result<T, Error> {
         let uri = self.resolve_uri(uri);
         httpclient::post_json_with_response(&uri, data, Some(&self.token))
+            .await
             .map_err(Error::HttpClientError)
     }
 
-    fn delete(&self, uri: &str) -> Result<(), Error> {
+    async fn delete(&self, uri: &str) -> Result<(), Error> {
         let uri = self.resolve_uri(uri);
-        httpclient::delete(&uri, Some(&self.token)).map_err(Error::HttpClientError)
+        httpclient::delete(&uri, Some(&self.token))
+            .await
+            .map_err(Error::HttpClientError)
     }
 }
 
@@ -373,7 +387,7 @@ pub enum Error {
     #[display(fmt = "Server is not available.")]
     ServerDown,
 
-    #[display(fmt = "{}", _0)]
+    #[display(fmt = "Http client error: {}", _0)]
     HttpClientError(httpclient::Error),
 
     #[display(fmt = "{}", _0)]

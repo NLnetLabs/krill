@@ -281,12 +281,6 @@ pub enum Error {
     Connection(String),
 }
 
-impl Error {
-    fn conn(e: impl std::fmt::Display) -> Self {
-        Error::Connection(e.to_string())
-    }
-}
-
 impl From<openssl::error::ErrorStack> for Error {
     fn from(e: openssl::error::ErrorStack) -> Self {
         Error::OpenSslError(e)

@@ -1428,97 +1428,152 @@ impl Options {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Display, Eq, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 pub enum Command {
+    #[display(fmt = "not set")]
     NotSet,
+
+    #[display(fmt = "health")]
     Health,
+
+    #[display(fmt = "info")]
     Info,
+
+    #[display(fmt = "bulk: {}", _0)]
     Bulk(BulkCaCommand),
+
+    #[display(fmt = "ca: {}", _0)]
     CertAuth(CaCommand),
+
+    #[display(fmt = "publishers: {}", _0)]
     Publishers(PublishersCommand),
+
+    #[display(fmt = "init")]
     Init(KrillInitDetails),
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Display, Eq, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 pub enum CaCommand {
     // Initialise a CA
+    #[display(fmt = "init ca: '{}'", _0)]
     Init(CertAuthInit),
 
     // Update CA id
+    #[display(fmt = "update id for ca: '{}'", _0)]
     UpdateId(Handle),
 
     // Get an RFC8183 parent response for a child
+    #[display(fmt = "parent response from ca: '{}' for child '{}'", _0, _1)]
     ParentResponse(Handle, ChildHandle),
 
     // Get the RFC8183 child request
+    #[display(fmt = "get child request for ca: '{}'", _0)]
     ChildRequest(Handle),
 
     // Get the RFC8183 publisher request
+    #[display(fmt = "get repo request for ca: '{}'", _0)]
     RepoPublisherRequest(Handle),
+
+    #[display(fmt = "get repo details for ca: '{}'", _0)]
     RepoDetails(Handle),
+
+    #[display(fmt = "update repo details for ca: '{}'", _0)]
     RepoUpdate(Handle, RepositoryUpdate),
+
+    #[display(fmt = "get repo state for ca: '{}'", _0)]
     RepoState(Handle),
 
-    // Add a parent to this CA
+    #[display(fmt = "add parent '{}' to ca: '{}'", _0, _1)]
     AddParent(Handle, ParentCaReq),
-    // Show my parent's contact
+
+    #[display(fmt = "add parent to ca: '{}'", _0)]
     MyParentCaContact(Handle, ParentHandle),
 
-    // Update parent contact
+    #[display(fmt = "update contact for parent {} of ca: '{}' to: {}", _1, _0, _2)]
     UpdateParentContact(Handle, ParentHandle, ParentCaContact),
 
-    // Remove a parent
+    #[display(fmt = "remove parent {} of ca: '{}'", _1, _0)]
     RemoveParent(Handle, ParentHandle),
 
     // Children
+    #[display(fmt = "show child {} of ca: '{}'", _1, _0)]
     ChildInfo(Handle, ChildHandle),
+
+    #[display(fmt = "add child {} to ca: '{}'", _1, _0)]
     ChildAdd(Handle, AddChildRequest),
+
+    #[display(fmt = "update child {} of ca: '{}'", _1, _0)]
     ChildUpdate(Handle, ChildHandle, UpdateChildRequest),
+
+    #[display(fmt = "delete child {} of ca: '{}'", _1, _0)]
     ChildDelete(Handle, ChildHandle),
 
-    // Initialise a manual key-roll now
+    #[display(fmt = "initialise key roll for ca: '{}'", _0)]
     KeyRollInit(Handle),
 
-    // Activate all new keys now (finish key roll, provided new key was certified)
+    #[display(fmt = "activate key roll for ca: '{}'", _0)]
     KeyRollActivate(Handle),
 
-    // List the current RouteAuthorizations
+    #[display(fmt = "list ROAS for ca: '{}'", _0)]
     RouteAuthorizationsList(Handle),
 
-    // Update the Route Authorizations for this CA
+    #[display(fmt = "Update ROAS for ca: '{}' -> {}", _0, _1)]
     RouteAuthorizationsUpdate(Handle, RoaDefinitionUpdates),
 
     // Show details for this CA
+    #[display(fmt = "Show details for ca: '{}'", _0)]
     Show(Handle),
 
-    // Show the history for this CA
+    #[display(fmt = "Show history for ca: '{}'", _0)]
     ShowHistory(Handle),
 
-    // Show issues for all, or a specific, CA
+    #[display(fmt = "Show issues for ca: '{:?}'", _0)]
     Issues(Option<Handle>),
 
     // List all CAs
+    #[display(fmt = "List all cas")]
     List,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Display, Eq, PartialEq)]
 pub enum BulkCaCommand {
+    #[display(fmt = "refresh")]
     Refresh,
+
+    #[display(fmt = "publish")]
     Publish,
+
+    #[display(fmt = "sync")]
     Sync,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Display, Eq, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 pub enum PublishersCommand {
+    #[display(fmt = "Add publisher")]
     AddPublisher(rfc8183::PublisherRequest),
+
+    #[display(fmt = "Show publisher '{}", _0)]
     ShowPublisher(PublisherHandle),
+
+    #[display(fmt = "Remove publisher '{}", _0)]
     RemovePublisher(PublisherHandle),
+
+    #[display(fmt = "reposisitory response for publisher '{}'", _0)]
     RepositoryResponse(PublisherHandle),
+
+    #[display(
+        fmt = "Show publishers which last published longer than '{}' seconds ago",
+        _0
+    )]
     StalePublishers(i64),
+
+    #[display(fmt = "Show server stats")]
     Stats,
+
+    #[display(fmt = "Show publisher list")]
     PublisherList,
 }
 

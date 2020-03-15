@@ -507,9 +507,7 @@ impl Config {
                 }
             })
             .level(self.log_level)
-            .level_for("actix_web", framework_level)
-            .level_for("actix_server", framework_level)
-            .level_for("actix_http", framework_level)
+            .level_for("rustls", framework_level)
             .level_for("hyper", framework_level)
             .level_for("mio", framework_level)
             .level_for("reqwest", framework_level)

@@ -16,7 +16,7 @@
 
 use std::fs::File;
 use std::future::Future;
-use std::io::{self, BufReader, Cursor, Read};
+use std::io::{self, BufReader, Read};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -137,24 +137,12 @@ impl TlsConfigBuilder {
         self
     }
 
-    /// sets the Tls key via bytes slice
-    pub(crate) fn key(mut self, key: &[u8]) -> Self {
-        self.key = Box::new(Cursor::new(Vec::from(key)));
-        self
-    }
-
     /// Specify the file path for the TLS certificate to use.
     pub(crate) fn cert_path(mut self, path: impl AsRef<Path>) -> Self {
         self.cert = Box::new(LazyFile {
             path: path.as_ref().into(),
             file: None,
         });
-        self
-    }
-
-    /// sets the Tls certificate via bytes slice
-    pub(crate) fn cert(mut self, cert: &[u8]) -> Self {
-        self.cert = Box::new(Cursor::new(Vec::from(cert)));
         self
     }
 
@@ -198,7 +186,7 @@ impl TlsConfigBuilder {
         let mut config = ServerConfig::new(NoClientAuth::new());
         config
             .set_single_cert(cert, key)
-            .map_err(|err| TlsConfigError::InvalidKey(err))?;
+            .map_err(TlsConfigError::InvalidKey)?;
         config.set_protocols(&["h2".into(), "http/1.1".into()]);
         Ok(config)
     }
