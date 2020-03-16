@@ -23,12 +23,9 @@ use crate::commons::api::{
 use crate::commons::error::Error;
 use crate::commons::remote::rfc8183;
 use crate::daemon::config::Config;
-use crate::daemon::http::{tls, tls_keys, HttpResponse, Request, RequestPath};
+use crate::daemon::http::statics::statics;
+use crate::daemon::http::{tls, tls_keys, HttpResponse, Request, RequestPath, RoutingResult};
 use crate::daemon::krillserver::KrillServer;
-
-//------------ RoutingResult ---------------------------------------------
-
-pub type RoutingResult = Result<HttpResponse, Request>;
 
 //------------ State -----------------------------------------------------
 
@@ -89,6 +86,7 @@ async fn map_requests(
         .or_else(stats)
         .or_else(rfc8181)
         .or_else(rfc6492)
+        .or_else(statics)
         .or_else(render_not_found)
         .map_err(|_| Error::custom("should have received not found response"))
         .await;
@@ -106,32 +104,9 @@ async fn map_requests(
         }
     }
 
-    //
-    // let post_limit_api = config.post_limit_api;
-    // let post_limit_rfc8181 = config.post_limit_rfc8181;
-    // let post_limit_rfc6492 = config.post_limit_rfc6492;
-
-    // HttpServer::new(move || {
-    //         .wrap(middleware::Logger::default())
-
     //         // Public TA related methods
     //         .route("/ta/ta.tal", get().to(tal))
     //         .route("/ta/ta.cer", get().to(ta_cer))
-
-    //         .add_statics()
-    //         // Catch all (not found or not allowed)
-    //         .default_service(
-    //             // 404 for GET request
-    //             web::resource("")
-    //                 .route(web::get().to(not_found))
-    //                 // all requests that are not `GET`
-    //                 .route(
-    //                     web::route()
-    //                         .guard(guard::Not(guard::Get()))
-    //                         .to(HttpResponse::MethodNotAllowed),
-    //                 ),
-    //         )
-    // })
 }
 
 //------------ Support Functions ---------------------------------------------
@@ -357,7 +332,7 @@ pub async fn rfc6492(req: Request) -> RoutingResult {
 }
 
 /// Return various stats as json
-pub async fn stats(req: Request) -> RoutingResult {
+async fn stats(req: Request) -> RoutingResult {
     match *req.method() {
         Method::GET => match req.path().full() {
             "/stats/info" => render_json(req.state().read().await.server_info()),
@@ -370,7 +345,7 @@ pub async fn stats(req: Request) -> RoutingResult {
 }
 
 /// Maps the API methods
-pub async fn api(req: Request) -> RoutingResult {
+async fn api(req: Request) -> RoutingResult {
     if !req.path().full().starts_with("/api/v1") {
         Err(req) // Not for us
     } else {

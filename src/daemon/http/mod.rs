@@ -1,4 +1,5 @@
 use serde::de::DeserializeOwned;
+use std::convert::TryInto;
 use std::io;
 use std::str::FromStr;
 
@@ -14,15 +15,19 @@ use crate::commons::error::Error;
 use crate::commons::remote::{rfc6492, rfc8181};
 use crate::daemon::auth::Auth;
 use crate::daemon::http::server::State;
-use std::convert::TryInto;
 
 pub mod server;
 pub mod statics;
 pub mod tls;
 pub mod tls_keys;
 
+//------------ RoutingResult ---------------------------------------------
+
+pub type RoutingResult = Result<HttpResponse, Request>;
+
 //----------- ContentType ----------------------------------------------------
 
+#[derive(Clone, Copy)]
 enum ContentType {
     Cert,
     Json,
@@ -30,6 +35,13 @@ enum ContentType {
     Rfc6492,
     Text,
     Xml,
+    Html,
+    Fav,
+    Js,
+    Css,
+    Svg,
+    Woff,
+    Woff2,
 }
 
 impl AsRef<str> for ContentType {
@@ -41,6 +53,14 @@ impl AsRef<str> for ContentType {
             ContentType::Rfc6492 => rfc6492::CONTENT_TYPE,
             ContentType::Text => "text/plain",
             ContentType::Xml => "application/xml",
+
+            ContentType::Html => "text/html",
+            ContentType::Fav => "image/x-icon",
+            ContentType::Js => "application/javascript",
+            ContentType::Css => "text/css",
+            ContentType::Svg => "image/svg+xml",
+            ContentType::Woff => "font/woff",
+            ContentType::Woff2 => "font/woff2",
         }
     }
 }
@@ -132,6 +152,34 @@ impl HttpResponse {
 
     pub fn cert(body: Vec<u8>) -> Self {
         Self::ok_response(ContentType::Cert, body)
+    }
+
+    pub fn html(content: &[u8]) -> Self {
+        Self::ok_response(ContentType::Html, content.to_vec())
+    }
+
+    pub fn fav(content: &[u8]) -> Self {
+        Self::ok_response(ContentType::Fav, content.to_vec())
+    }
+
+    pub fn js(content: &[u8]) -> Self {
+        Self::ok_response(ContentType::Js, content.to_vec())
+    }
+
+    pub fn css(content: &[u8]) -> Self {
+        Self::ok_response(ContentType::Css, content.to_vec())
+    }
+
+    pub fn svg(content: &[u8]) -> Self {
+        Self::ok_response(ContentType::Svg, content.to_vec())
+    }
+
+    pub fn woff(content: &[u8]) -> Self {
+        Self::ok_response(ContentType::Woff, content.to_vec())
+    }
+
+    pub fn woff2(content: &[u8]) -> Self {
+        Self::ok_response(ContentType::Woff2, content.to_vec())
     }
 
     pub fn error(error: Error) -> Self {
