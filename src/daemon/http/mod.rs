@@ -14,6 +14,7 @@ use crate::commons::error::Error;
 use crate::commons::remote::{rfc6492, rfc8181};
 use crate::daemon::auth::Auth;
 use crate::daemon::http::server::State;
+use std::convert::TryInto;
 
 pub mod server;
 pub mod statics;
@@ -232,45 +233,60 @@ impl Request {
     ///
     /// Here we want to limit the bytes consumed to a maximum. So, the
     /// code below is adapted from the method in the hyper crate.
-    pub async fn read_bytes(self, limit: usize) -> Result<Bytes, Error> {
+    pub async fn read_bytes(self, limit: u64) -> Result<Bytes, Error> {
         let body = self.request.into_body();
 
         futures_util::pin_mut!(body);
 
+        if body.size_hint().lower() > limit {
+            return Err(Error::PostTooBig);
+        }
+
         let mut size_processed = 0;
 
-        fn assert_body_size(size: usize, limit: usize) -> Result<(), io::Error> {
-            if size > limit {
-                Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    "Post exceeds max length",
-                ))
+        fn assert_body_size(
+            size_processed: u64,
+            body_lower_hint: u64,
+            post_limit: u64,
+        ) -> Result<(), Error> {
+            if size_processed + body_lower_hint > post_limit {
+                Err(Error::PostTooBig)
             } else {
                 Ok(())
             }
         }
 
+        assert_body_size(size_processed, body.size_hint().lower(), limit)?;
+
         // If there's only 1 chunk, we can just return Buf::to_bytes()
         let mut first = if let Some(buf) = body.data().await {
-            let buf = buf.map_err(|_| Error::custom("Error reading body"))?;
-            let size = buf.bytes().len();
+            let buf = buf.map_err(|_| Error::PostCannotRead)?;
+            let size: u64 = buf
+                .bytes()
+                .len()
+                .try_into()
+                .map_err(|_| Error::PostTooBig)?;
             size_processed += size;
-            assert_body_size(size_processed, limit)?;
             buf
         } else {
             return Ok(Bytes::new());
         };
 
+        assert_body_size(size_processed, body.size_hint().lower(), limit)?;
         let second = if let Some(buf) = body.data().await {
-            let buf = buf.map_err(|_| Error::custom("Error reading body"))?;
-            let size = buf.bytes().len();
+            let buf = buf.map_err(|_| Error::PostCannotRead)?;
+            let size: u64 = buf
+                .bytes()
+                .len()
+                .try_into()
+                .map_err(|_| Error::PostTooBig)?;
             size_processed += size;
-            assert_body_size(size_processed, limit)?;
             buf
         } else {
             return Ok(first.to_bytes());
         };
 
+        assert_body_size(size_processed, body.size_hint().lower(), limit)?;
         // With more than 1 buf, we gotta flatten into a Vec first.
         let cap = first.remaining() + second.remaining() + body.size_hint().lower() as usize;
         let mut vec = Vec::with_capacity(cap);
@@ -278,11 +294,14 @@ impl Request {
         vec.put(second);
 
         while let Some(buf) = body.data().await {
-            let buf = buf.map_err(|_| Error::custom("Error reading body"))?;
-            let size = buf.bytes().len();
+            let buf = buf.map_err(|_| Error::PostCannotRead)?;
+            let size: u64 = buf
+                .bytes()
+                .len()
+                .try_into()
+                .map_err(|_| Error::PostTooBig)?;
             size_processed += size;
-            assert_body_size(size_processed, limit)?;
-
+            assert_body_size(size_processed, body.size_hint().lower(), limit)?;
             vec.put(buf);
         }
 

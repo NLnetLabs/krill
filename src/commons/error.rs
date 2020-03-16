@@ -62,6 +62,12 @@ pub enum Error {
     #[display(fmt = "Invalid path argument for seconds")]
     ApiInvalidSeconds,
 
+    #[display(fmt = "POST body exceeds configured limit")]
+    PostTooBig,
+
+    #[display(fmt = "POST body cannot be read")]
+    PostCannotRead,
+
     //-----------------------------------------------------------------
     // Repository Issues
     //-----------------------------------------------------------------
@@ -342,6 +348,10 @@ impl Error {
             Error::ApiInvalidHandle => ErrorResponse::new("api-invalid-path-handle", &self),
 
             Error::ApiInvalidSeconds => ErrorResponse::new("api-invalid-path-seconds", &self),
+
+            Error::PostTooBig => ErrorResponse::new("api-post-body-exceeds-limit", &self),
+
+            Error::PostCannotRead => ErrorResponse::new("api-post-body-cannot-read", &self),
 
             //-----------------------------------------------------------------
             // Repository Issues (label: repo-*)

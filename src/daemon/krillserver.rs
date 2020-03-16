@@ -62,13 +62,13 @@ pub struct KrillServer {
 }
 
 pub struct PostLimits {
-    api: usize,
-    rfc6492: usize,
-    rfc8181: usize,
+    api: u64,
+    rfc6492: u64,
+    rfc8181: u64,
 }
 
 impl PostLimits {
-    fn new(api: usize, rfc6492: usize, rfc8181: usize) -> Self {
+    fn new(api: u64, rfc6492: u64, rfc8181: u64) -> Self {
         PostLimits {
             api,
             rfc8181,
@@ -76,13 +76,13 @@ impl PostLimits {
         }
     }
 
-    pub fn api(&self) -> usize {
+    pub fn api(&self) -> u64 {
         self.api
     }
-    pub fn rfc6492(&self) -> usize {
+    pub fn rfc6492(&self) -> u64 {
         self.rfc6492
     }
-    pub fn rfc8181(&self) -> usize {
+    pub fn rfc8181(&self) -> u64 {
         self.rfc8181
     }
 }
@@ -203,15 +203,15 @@ impl KrillServer {
         self.authorizer.is_api_allowed(auth)
     }
 
-    pub fn limit_api(&self) -> usize {
+    pub fn limit_api(&self) -> u64 {
         self.post_limits.api()
     }
 
-    pub fn limit_rfc8181(&self) -> usize {
+    pub fn limit_rfc8181(&self) -> u64 {
         self.post_limits.rfc8181()
     }
 
-    pub fn limit_rfc6492(&self) -> usize {
+    pub fn limit_rfc6492(&self) -> u64 {
         self.post_limits.rfc6492()
     }
 }

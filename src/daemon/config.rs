@@ -82,15 +82,15 @@ impl ConfigDefaults {
         600
     }
 
-    fn post_limit_api() -> usize {
+    fn post_limit_api() -> u64 {
         256 * 1024 // 256kB
     }
 
-    fn post_limit_rfc8181() -> usize {
+    fn post_limit_rfc8181() -> u64 {
         32 * 1024 * 1024 // 32MB (roughly 8000 issued certificates, so a key roll for nicbr and 100% uptake should be okay)
     }
 
-    fn post_limit_rfc6492() -> usize {
+    fn post_limit_rfc6492() -> u64 {
         1024 * 1024 // 1MB (for ref. the NIC br cert is about 200kB)
     }
 }
@@ -155,13 +155,13 @@ pub struct Config {
     pub ca_refresh: u32,
 
     #[serde(default = "ConfigDefaults::post_limit_api")]
-    pub post_limit_api: usize,
+    pub post_limit_api: u64,
 
     #[serde(default = "ConfigDefaults::post_limit_rfc8181")]
-    pub post_limit_rfc8181: usize,
+    pub post_limit_rfc8181: u64,
 
     #[serde(default = "ConfigDefaults::post_limit_rfc6492")]
-    pub post_limit_rfc6492: usize,
+    pub post_limit_rfc6492: u64,
 }
 
 /// # Accessors
