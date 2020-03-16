@@ -87,6 +87,7 @@ async fn map_requests(
         .or_else(rfc8181)
         .or_else(rfc6492)
         .or_else(statics)
+        .or_else(ta)
         .or_else(render_not_found)
         .map_err(|_| Error::custom("should have received not found response"))
         .await;
@@ -103,10 +104,6 @@ async fn map_requests(
             Err(e)
         }
     }
-
-    //         // Public TA related methods
-    //         .route("/ta/ta.tal", get().to(tal))
-    //         .route("/ta/ta.cer", get().to(ta_cer))
 }
 
 //------------ Support Functions ---------------------------------------------
@@ -300,6 +297,32 @@ pub async fn rfc8181(req: Request) -> RoutingResult {
         }
     } else {
         Err(req)
+    }
+}
+
+//------------ Embedded TA  --------------------------------------------------
+async fn ta(req: Request) -> RoutingResult {
+    match *req.method() {
+        Method::GET => match req.path.full() {
+            "/ta/ta.tal" => tal(req).await,
+            "/ta/ta.cer" => ta_cer(req).await,
+            _ => Err(req),
+        },
+        _ => Err(req),
+    }
+}
+
+pub async fn tal(req: Request) -> RoutingResult {
+    match req.state().read().await.ta() {
+        Ok(ta) => Ok(HttpResponse::text(format!("{}", ta.tal()).into_bytes())),
+        Err(_) => render_unknown_resource(),
+    }
+}
+
+pub async fn ta_cer(req: Request) -> RoutingResult {
+    match req.state().read().await.trust_anchor_cert() {
+        Some(cert) => Ok(HttpResponse::cert(cert.to_captured().to_vec())),
+        None => render_unknown_resource(),
     }
 }
 
@@ -554,22 +577,6 @@ async fn repository_response(
     publisher: &Handle,
 ) -> Result<rfc8183::RepositoryResponse, Error> {
     req.state().read().await.repository_response(publisher)
-}
-
-//------------ Admin: TrustAnchor --------------------------------------------
-
-pub async fn tal(req: Request) -> RoutingResult {
-    match req.state().read().await.ta() {
-        Ok(ta) => Ok(HttpResponse::text(format!("{}", ta.tal()).into_bytes())),
-        Err(_) => render_unknown_resource(),
-    }
-}
-
-pub async fn ta_cer(req: Request) -> RoutingResult {
-    match req.state().read().await.trust_anchor_cert() {
-        Some(cert) => Ok(HttpResponse::cert(cert.to_captured().to_vec())),
-        None => render_unknown_resource(),
-    }
 }
 
 async fn ca_add_child(req: Request, parent: ParentHandle) -> RoutingResult {
