@@ -6,9 +6,9 @@ pub mod ext_serde;
 pub mod file;
 pub mod httpclient;
 pub mod softsigner;
-pub mod test;
 pub mod xml;
 
 pub fn sha256(object: &[u8]) -> Bytes {
-    Bytes::from(DigestAlgorithm::default().digest(object).as_ref())
+    let digest = DigestAlgorithm::default().digest(object);
+    Bytes::copy_from_slice(digest.as_ref())
 }

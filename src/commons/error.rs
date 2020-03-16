@@ -3,7 +3,8 @@
 use std::fmt::Display;
 use std::{fmt, io};
 
-use actix_web::http::StatusCode;
+// use actix_web::http::StatusCode;
+use hyper::StatusCode;
 
 use rpki::crypto::KeyIdentifier;
 use rpki::uri;
@@ -21,6 +22,7 @@ use crate::commons::remote::rfc8181::ReportErrorCode;
 use crate::commons::util::httpclient;
 use crate::commons::util::softsigner::SignerError;
 use crate::daemon::ca::RouteAuthorization;
+use crate::daemon::http::tls_keys;
 
 #[derive(Debug, Display)]
 pub enum Error {
@@ -53,6 +55,18 @@ pub enum Error {
 
     #[display(fmt = "Unknown resource")]
     ApiUnknownResource,
+
+    #[display(fmt = "Invalid path argument for handle")]
+    ApiInvalidHandle,
+
+    #[display(fmt = "Invalid path argument for seconds")]
+    ApiInvalidSeconds,
+
+    #[display(fmt = "POST body exceeds configured limit")]
+    PostTooBig,
+
+    #[display(fmt = "POST body cannot be read")]
+    PostCannotRead,
 
     //-----------------------------------------------------------------
     // Repository Issues
@@ -256,6 +270,12 @@ impl From<ResourceSetError> for Error {
     }
 }
 
+impl From<tls_keys::Error> for Error {
+    fn from(e: tls_keys::Error) -> Self {
+        Error::HttpsSetup(e.to_string())
+    }
+}
+
 impl Error {
     pub fn signer(e: impl Display) -> Self {
         Error::SignerError(e.to_string())
@@ -318,15 +338,20 @@ impl Error {
             //-----------------------------------------------------------------
             // General API Client Issues (label: api-*)
             //-----------------------------------------------------------------
-
-            // BAD REQUEST
             Error::JsonError(e) => ErrorResponse::new("api-json", &self).with_cause(e),
 
-            // BAD REQUEST
             Error::ApiUnknownMethod => ErrorResponse::new("api-unknown-method", &self),
 
             // NOT FOUND (generic API not found)
             Error::ApiUnknownResource => ErrorResponse::new("api-unknown-resource", &self),
+
+            Error::ApiInvalidHandle => ErrorResponse::new("api-invalid-path-handle", &self),
+
+            Error::ApiInvalidSeconds => ErrorResponse::new("api-invalid-path-seconds", &self),
+
+            Error::PostTooBig => ErrorResponse::new("api-post-body-exceeds-limit", &self),
+
+            Error::PostCannotRead => ErrorResponse::new("api-post-body-cannot-read", &self),
 
             //-----------------------------------------------------------------
             // Repository Issues (label: repo-*)

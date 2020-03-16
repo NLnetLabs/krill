@@ -2,7 +2,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
-use std::thread;
 
 use bytes::Bytes;
 use chrono::Duration;
@@ -34,17 +33,7 @@ use crate::publish::CaPublisher;
 //------------ KrillServer ---------------------------------------------------
 
 /// This is the master krill server that is doing all the orchestration
-/// for all the components, like:
-/// * Admin tasks:
-///    * Verify (admin) API access
-///    * Manage known publishers
-/// * CMS proxy:
-///    * Decodes and validates CMS sent by known publishers using CMS
-///    * Encodes and signs CMS responses for remote publishers using CMS
-/// * Repository:
-///    * Process publish / list requests by known publishers
-///    * Updates the repository on disk
-///    * Updates the RRDP files
+/// for all the components.
 pub struct KrillServer {
     // The base URI for this service
     service_uri: uri::Https,
@@ -67,6 +56,35 @@ pub struct KrillServer {
 
     // Time this server was started
     started: Time,
+
+    // Global size constraints on things which can be posted
+    post_limits: PostLimits,
+}
+
+pub struct PostLimits {
+    api: u64,
+    rfc6492: u64,
+    rfc8181: u64,
+}
+
+impl PostLimits {
+    fn new(api: u64, rfc6492: u64, rfc8181: u64) -> Self {
+        PostLimits {
+            api,
+            rfc8181,
+            rfc6492,
+        }
+    }
+
+    pub fn api(&self) -> u64 {
+        self.api
+    }
+    pub fn rfc6492(&self) -> u64 {
+        self.rfc6492
+    }
+    pub fn rfc8181(&self) -> u64 {
+        self.rfc8181
+    }
 }
 
 /// # Set up and initialisation
@@ -152,6 +170,12 @@ impl KrillServer {
             ca_refresh_rate,
         );
 
+        let post_limits = PostLimits::new(
+            config.post_limit_api,
+            config.post_limit_rfc6492,
+            config.post_limit_rfc8181,
+        );
+
         Ok(KrillServer {
             service_uri,
             work_dir: work_dir.clone(),
@@ -160,6 +184,7 @@ impl KrillServer {
             caserver,
             scheduler,
             started: Time::now(),
+            post_limits,
         })
     }
 
@@ -172,10 +197,22 @@ impl KrillServer {
     }
 }
 
-/// # Authentication
+/// # Authentication and Access
 impl KrillServer {
     pub fn is_api_allowed(&self, auth: &Auth) -> bool {
         self.authorizer.is_api_allowed(auth)
+    }
+
+    pub fn limit_api(&self) -> u64 {
+        self.post_limits.api()
+    }
+
+    pub fn limit_rfc8181(&self) -> u64 {
+        self.post_limits.rfc8181()
+    }
+
+    pub fn limit_rfc6492(&self) -> u64 {
+        self.post_limits.rfc6492()
     }
 }
 
@@ -314,7 +351,7 @@ impl KrillServer {
     }
 
     /// Show details for a child under the TA.
-    pub fn ca_show_child(
+    pub fn ca_child_show(
         &self,
         parent: &ParentHandle,
         child: &ChildHandle,
@@ -333,30 +370,32 @@ impl KrillServer {
     }
 
     /// Adds a parent to a CA, will check first if the parent can be reached.
-    pub fn ca_parent_add(&self, handle: Handle, parent: ParentCaReq) -> KrillEmptyResult {
-        self.ca_parent_reachable(&handle, parent.handle(), parent.contact())?;
+    pub async fn ca_parent_add(&self, handle: Handle, parent: ParentCaReq) -> KrillEmptyResult {
+        self.ca_parent_reachable(&handle, parent.handle(), parent.contact())
+            .await?;
         Ok(self.caserver.ca_parent_add(handle, parent)?)
     }
 
     /// Updates a parent contact for a CA
-    pub fn ca_parent_update(
+    pub async fn ca_parent_update(
         &self,
         handle: Handle,
         parent: ParentHandle,
         contact: ParentCaContact,
     ) -> KrillEmptyResult {
-        self.ca_parent_reachable(&handle, &parent, &contact)?;
+        self.ca_parent_reachable(&handle, &parent, &contact).await?;
         Ok(self.caserver.ca_parent_update(handle, parent, contact)?)
     }
 
-    fn ca_parent_reachable(
+    async fn ca_parent_reachable(
         &self,
         handle: &Handle,
         parent: &ParentHandle,
         contact: &ParentCaContact,
     ) -> KrillEmptyResult {
         self.caserver
-            .get_entitlements_from_parent_and_contact(handle, parent, contact)?;
+            .get_entitlements_from_parent_and_contact(handle, parent, contact)
+            .await?;
         Ok(())
     }
 
@@ -386,10 +425,10 @@ impl KrillServer {
 
         res
     }
-    pub fn all_ca_issues(&self) -> KrillResult<AllCertAuthIssues> {
+    pub async fn all_ca_issues(&self) -> KrillResult<AllCertAuthIssues> {
         let mut all_issues = AllCertAuthIssues::default();
         for ca in self.cas().cas() {
-            let issues = self.ca_issues(ca.handle())?;
+            let issues = self.ca_issues(ca.handle()).await?;
             if !issues.is_empty() {
                 all_issues.add(ca.handle().clone(), issues);
             }
@@ -398,10 +437,10 @@ impl KrillServer {
         Ok(all_issues)
     }
 
-    pub fn ca_issues(&self, ca_handle: &Handle) -> KrillResult<CertAuthIssues> {
+    pub async fn ca_issues(&self, ca_handle: &Handle) -> KrillResult<CertAuthIssues> {
         let mut issues = CertAuthIssues::default();
 
-        if let CurrentRepoState::Error(msg) = self.ca_repo_state(ca_handle)? {
+        if let CurrentRepoState::Error(msg) = self.ca_repo_state(ca_handle).await? {
             issues.add_repo_issue(msg);
         }
 
@@ -410,7 +449,10 @@ impl KrillServer {
         for parent_handle in ca.parents() {
             let contact = ca.parent(parent_handle).unwrap(); // parent is always known
             if !contact.is_ta() {
-                if let Err(e) = self.ca_parent_reachable(ca_handle, parent_handle, contact) {
+                if let Err(e) = self
+                    .ca_parent_reachable(ca_handle, parent_handle, contact)
+                    .await
+                {
                     issues.add_parent_issue(parent_handle.clone(), e.to_error_response());
                 }
             }
@@ -430,11 +472,11 @@ impl KrillServer {
     }
 
     /// Re-sync all CAs with their repositories
-    pub fn resync_all(&self) -> KrillEmptyResult {
+    pub async fn resync_all(&self) -> KrillEmptyResult {
         let publisher = CaPublisher::new(self.caserver.clone(), self.pubserver.clone());
 
         for ca in self.caserver.ca_list().cas() {
-            if let Err(e) = publisher.publish(ca.handle()) {
+            if let Err(e) = publisher.publish(ca.handle()).await {
                 error!("Failed to sync ca: {}. Got error: {}", ca.handle(), e)
             }
         }
@@ -443,11 +485,9 @@ impl KrillServer {
     }
 
     /// Refresh all CAs: ask for updates and shrink as needed.
-    pub fn refresh_all(&self) -> KrillEmptyResult {
+    pub async fn refresh_all(&self) -> KrillEmptyResult {
         let server = self.caserver.clone();
-        thread::spawn(move || {
-            server.refresh_all();
-        });
+        server.refresh_all().await;
         Ok(())
     }
 }
@@ -505,14 +545,18 @@ impl KrillServer {
     }
 
     /// Returns the state of the current configured repo for a ca
-    pub fn ca_repo_state(&self, handle: &Handle) -> KrillResult<CurrentRepoState> {
+    pub async fn ca_repo_state(&self, handle: &Handle) -> KrillResult<CurrentRepoState> {
         let ca = self.caserver.get_ca(handle)?;
         let contact = ca.get_repository_contact()?;
-        Ok(self.repo_state(handle, contact.as_reponse_opt()))
+        Ok(self.repo_state(handle, contact.as_reponse_opt()).await)
     }
 
     /// Update the repository for a CA, or return an error. (see `CertAuth::repo_update`)
-    pub fn ca_update_repo(&self, handle: Handle, update: RepositoryUpdate) -> KrillEmptyResult {
+    pub async fn ca_update_repo(
+        &self,
+        handle: Handle,
+        update: RepositoryUpdate,
+    ) -> KrillEmptyResult {
         let contact = match update {
             RepositoryUpdate::Embedded => {
                 // Add to embedded publication server if not present
@@ -529,7 +573,9 @@ impl KrillServer {
             }
             RepositoryUpdate::Rfc8181(response) => {
                 // first check that the new repo can be contacted
-                if let CurrentRepoState::Error(error) = self.repo_state(&handle, Some(&response)) {
+                if let CurrentRepoState::Error(error) =
+                    self.repo_state(&handle, Some(&response)).await
+                {
                     return Err(Error::CaRepoIssue(handle, error.msg().to_string()));
                 }
 
@@ -540,7 +586,7 @@ impl KrillServer {
         Ok(self.caserver.update_repo(handle, contact)?)
     }
 
-    fn repo_state(
+    async fn repo_state(
         &self,
         handle: &Handle,
         repo: Option<&rfc8183::RepositoryResponse>,
@@ -553,7 +599,7 @@ impl KrillServer {
                     Ok(list) => CurrentRepoState::list(list),
                 },
             },
-            Some(repo) => match self.caserver.send_rfc8181_list(handle, repo) {
+            Some(repo) => match self.caserver.send_rfc8181_list(handle, repo).await {
                 Err(e) => CurrentRepoState::error(e.to_error_response()),
                 Ok(list) => CurrentRepoState::list(list),
             },

@@ -5,11 +5,12 @@ use krill::cli::report::ReportFormat;
 use krill::cli::{Error, KrillClient};
 use krill::commons::util::httpclient;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     match Options::from_args() {
         Ok(options) => {
             let format = options.format();
-            match KrillClient::report(options) {
+            match KrillClient::report(options).await {
                 Ok(()) => {} //,
                 Err(e) => {
                     if format != ReportFormat::None {

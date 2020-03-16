@@ -19,7 +19,7 @@ use rpki::uri;
 use crate::commons::api::Token;
 use crate::commons::util::ext_serde;
 use crate::constants::*;
-use crate::daemon::http::ssl;
+use crate::daemon::http::tls_keys;
 
 //------------ ConfigDefaults ------------------------------------------------
 
@@ -82,15 +82,15 @@ impl ConfigDefaults {
         600
     }
 
-    fn post_limit_api() -> usize {
+    fn post_limit_api() -> u64 {
         256 * 1024 // 256kB
     }
 
-    fn post_limit_rfc8181() -> usize {
+    fn post_limit_rfc8181() -> u64 {
         32 * 1024 * 1024 // 32MB (roughly 8000 issued certificates, so a key roll for nicbr and 100% uptake should be okay)
     }
 
-    fn post_limit_rfc6492() -> usize {
+    fn post_limit_rfc6492() -> u64 {
         1024 * 1024 // 1MB (for ref. the NIC br cert is about 200kB)
     }
 }
@@ -155,13 +155,13 @@ pub struct Config {
     pub ca_refresh: u32,
 
     #[serde(default = "ConfigDefaults::post_limit_api")]
-    pub post_limit_api: usize,
+    pub post_limit_api: u64,
 
     #[serde(default = "ConfigDefaults::post_limit_rfc8181")]
-    pub post_limit_rfc8181: usize,
+    pub post_limit_rfc8181: u64,
 
     #[serde(default = "ConfigDefaults::post_limit_rfc6492")]
-    pub post_limit_rfc6492: usize,
+    pub post_limit_rfc6492: u64,
 }
 
 /// # Accessors
@@ -176,15 +176,15 @@ impl Config {
 
     pub fn https_cert_file(&self) -> PathBuf {
         let mut path = self.data_dir.clone();
-        path.push(ssl::HTTPS_SUB_DIR);
-        path.push(ssl::CERT_FILE);
+        path.push(tls_keys::HTTPS_SUB_DIR);
+        path.push(tls_keys::CERT_FILE);
         path
     }
 
     pub fn https_key_file(&self) -> PathBuf {
         let mut path = self.data_dir.clone();
-        path.push(ssl::HTTPS_SUB_DIR);
-        path.push(ssl::KEY_FILE);
+        path.push(tls_keys::HTTPS_SUB_DIR);
+        path.push(tls_keys::KEY_FILE);
         path
     }
 
@@ -507,9 +507,7 @@ impl Config {
                 }
             })
             .level(self.log_level)
-            .level_for("actix_web", framework_level)
-            .level_for("actix_server", framework_level)
-            .level_for("actix_http", framework_level)
+            .level_for("rustls", framework_level)
             .level_for("hyper", framework_level)
             .level_for("mio", framework_level)
             .level_for("reqwest", framework_level)
@@ -630,5 +628,4 @@ mod tests {
         let expected_socket_addr = ([127, 0, 0, 1], 3000).into();
         assert_eq!(c.socket_addr(), expected_socket_addr);
     }
-
 }

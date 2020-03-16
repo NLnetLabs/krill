@@ -210,14 +210,11 @@ impl SignSupport {
 trait ManifestEntry {
     fn mft_bytes(&self) -> Bytes;
     fn mft_hash(&self) -> Bytes {
-        Bytes::from(
-            DigestAlgorithm::default()
-                .digest(self.mft_bytes().as_ref())
-                .as_ref(),
-        )
+        let digest = DigestAlgorithm::default().digest(self.mft_bytes().as_ref());
+        Bytes::copy_from_slice(digest.as_ref())
     }
     fn mft_entry(&self, name: &str) -> FileAndHash<Bytes, Bytes> {
-        FileAndHash::new(Bytes::from(name), self.mft_hash())
+        FileAndHash::new(Bytes::copy_from_slice(name.as_bytes()), self.mft_hash())
     }
 }
 

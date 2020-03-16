@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use clokwerk::{self, ScheduleHandle, TimeUnits};
+use tokio::runtime::Runtime;
 
 use crate::commons::util::softsigner::OpenSslSigner;
 use crate::daemon::ca::CaServer;
@@ -56,88 +57,102 @@ fn make_event_sh(
     let mut scheduler = clokwerk::Scheduler::new();
     scheduler.every(1.seconds()).run(move || {
         while let Some(evt) = event_queue.pop() {
+            let mut rt = Runtime::new().unwrap();
             match evt {
                 QueueEvent::Delta(handle, version) => {
-                    info!("Trigger publication for '{}' version '{}'", handle, version);
-                    let publisher = CaPublisher::new(caserver.clone(), pubserver.clone());
+                    rt.block_on(async {
+                        info!("Trigger publication for '{}' version '{}'", handle, version);
+                        let publisher = CaPublisher::new(caserver.clone(), pubserver.clone());
 
-                    if let Err(e) = publisher.publish(&handle) {
-                        error!("Failed to publish for CA: {}, error: {}", handle, e);
-                    }
+                        if let Err(e) = publisher.publish(&handle).await {
+                            error!("Failed to publish for CA: {}, error: {}", handle, e);
+                        }
+                    })
                 }
                 QueueEvent::ResourceClassRemoved(handle, _, parent, revocations) => {
-                    info!(
-                        "Trigger send revoke requests for removed RC for '{}' under '{}'",
-                        handle,
-                        parent
-                    );
-                    if caserver
-                        .send_revoke_requests(&handle, &parent, revocations)
-                        .is_err()
-                    {
-                        warn!("Could not revoke key for removed resource class. This is not \
-                        an issue, because typically the parent will revoke our keys pro-actively, \
-                        just before removing the resource class entitlements.");
-                    }
+                    rt.block_on(async {
+                        info!(
+                            "Trigger send revoke requests for removed RC for '{}' under '{}'",
+                            handle,
+                            parent
+                        );
+                        if caserver
+                            .send_revoke_requests(&handle, &parent, revocations).await
+                            .is_err()
+                        {
+                            warn!("Could not revoke key for removed resource class. This is not \
+                            an issue, because typically the parent will revoke our keys pro-actively, \
+                            just before removing the resource class entitlements.");
+                        }
+                    })
                 }
                 QueueEvent::UnexpectedKey(handle, _, rcn, revocation) => {
-                    info!(
-                        "Trigger sending revocation requests for unexpected key with id '{}' in RC '{}'",
-                        revocation.key(),
-                        rcn
-                    );
-                    if let Err(e) = caserver
-                        .send_revoke_unexpected_key(&handle, rcn, revocation)
-                    {
-                        error!("Could not revoke unexpected surplus key at parent: {}", e);
-                    }
+                    rt.block_on(async {
+                        info!(
+                            "Trigger sending revocation requests for unexpected key with id '{}' in RC '{}'",
+                            revocation.key(),
+                            rcn
+                        );
+                        if let Err(e) = caserver
+                            .send_revoke_unexpected_key(&handle, rcn, revocation).await {
+                            error!("Could not revoke unexpected surplus key at parent: {}", e);
+                        }
+                    })
                 }
                 QueueEvent::ParentAdded(handle, _, parent) => {
-                    info!(
-                        "Get updates for '{}' from added parent '{}'.",
-                        handle,
-                        parent
-                    );
-                    if let Err(e) = caserver.get_updates_from_parent(&handle, &parent) {
-                        error!(
-                            "Error getting updates for '{}', from parent '{}',  error: '{}'",
-                            &handle, &parent, e
-                        )
-                    }
+                    rt.block_on(async {
+                        info!(
+                            "Get updates for '{}' from added parent '{}'.",
+                            handle,
+                            parent
+                        );
+                        if let Err(e) = caserver.get_updates_from_parent(&handle, &parent).await {
+                            error!(
+                                "Error getting updates for '{}', from parent '{}',  error: '{}'",
+                                &handle, &parent, e
+                            )
+                        }
+                    })
                 }
                 QueueEvent::RepositoryConfigured(ca, _) => {
-                    info!("Repository configured for '{}'", ca);
-                    if let Err(e) = caserver.get_delayed_updates(&ca) {
-                        error!(
-                            "Error getting updates after configuring repository for '{}',  error: '{}'",
-                            &ca, e
-                        )
-                    }
+                    rt.block_on(async {
+                        info!("Repository configured for '{}'", ca);
+                        if let Err(e) = caserver.get_delayed_updates(&ca).await {
+                            error!(
+                                "Error getting updates after configuring repository for '{}',  error: '{}'",
+                                &ca, e
+                            )
+                        }
+                    })
                 }
 
                 QueueEvent::RequestsPending(handle, _) => {
-                    info!("Get updates for pending requests for '{}'.", handle);
-                    if let Err(e) = caserver.send_all_requests(&handle) {
-                        error!(
-                            "Failed to send pending requests for '{}', error '{}'",
-                            &handle, e
-                        );
-                    }
+                    rt.block_on(async {
+                        info!("Get updates for pending requests for '{}'.", handle);
+                        if let Err(e) = caserver.send_all_requests(&handle).await {
+                            error!(
+                                "Failed to send pending requests for '{}', error '{}'",
+                                &handle, e
+                            );
+                        }
+                    })
                 }
                 QueueEvent::CleanOldRepo(handle, _) => {
-                    let publisher = CaPublisher::new(caserver.clone(), pubserver.clone());
-                    if let Err(e) = publisher.clean_up(&handle) {
-                        info!(
-                            "Could not clean up old repo for '{}', it may be that it's no longer available. Got error '{}'",
-                            &handle, e
-                        );
-                    }
-                    if let Err(e) = caserver.remove_old_repo(&handle) {
-                        error!(
-                            "Failed to remove old repo from ca '{}', error '{}'",
-                            &handle, e
-                        );
-                    }
+                    rt.block_on(async {
+                        let publisher = CaPublisher::new(caserver.clone(), pubserver.clone());
+                        if let Err(e) = publisher.clean_up(&handle).await {
+                            info!(
+                                "Could not clean up old repo for '{}', it may be that it's no longer available. Got error '{}'",
+                                &handle, e
+                            );
+                        }
+                        if let Err(e) = caserver.remove_old_repo(&handle) {
+                            error!(
+                                "Failed to remove old repo from ca '{}', error '{}'",
+                                &handle, e
+                            );
+                        }
+                    })
                 }
             }
         }
@@ -159,8 +174,11 @@ fn make_republish_sh(caserver: Arc<CaServer<OpenSslSigner>>) -> ScheduleHandle {
 fn make_ca_refresh_sh(caserver: Arc<CaServer<OpenSslSigner>>, refresh_rate: u32) -> ScheduleHandle {
     let mut scheduler = clokwerk::Scheduler::new();
     scheduler.every(refresh_rate.seconds()).run(move || {
-        info!("Triggering background refresh for all CAs");
-        caserver.refresh_all()
+        let mut rt = Runtime::new().unwrap();
+        rt.block_on(async {
+            info!("Triggering background refresh for all CAs");
+            caserver.refresh_all().await
+        })
     });
     scheduler.watch_thread(Duration::from_millis(100))
 }

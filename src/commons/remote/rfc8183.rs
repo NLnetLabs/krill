@@ -797,7 +797,7 @@ mod tests {
     use rpki::x509::Time;
 
     use crate::commons::remote::id::tests::test_id_certificate;
-    use crate::commons::util::test;
+    use crate::test;
 
     use super::*;
 

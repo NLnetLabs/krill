@@ -782,7 +782,7 @@ mod tests {
     use crate::commons::api::{
         HexEncodedHash, ListElement, ListReply, Publish, PublishDeltaBuilder, Update, Withdraw,
     };
-    use crate::commons::util::test::rsync;
+    use crate::test::rsync;
 
     struct ListReplyBuilder {
         elements: Vec<ListElement>,

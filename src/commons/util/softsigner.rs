@@ -242,7 +242,7 @@ impl From<io::Error> for SignerError {
 
 #[cfg(test)]
 pub mod tests {
-    use crate::commons::util::test;
+    use crate::test;
 
     use super::*;
 

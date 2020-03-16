@@ -339,7 +339,7 @@ impl SignedAttributes {
     pub fn new(content_type: &'static Oid<&'static [u8]>, content: &Bytes) -> Self {
         let content_digest = DigestAlgorithm::default().digest(content);
 
-        let digest = Bytes::from(content_digest.as_ref());
+        let digest = Bytes::copy_from_slice(content_digest.as_ref());
         let digest = OctetString::new(digest);
 
         Self {

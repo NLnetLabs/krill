@@ -1,16 +1,16 @@
 //! Some helper stuff for creating a private key and certificate for HTTPS
 //! in case they are not provided
-use std::fs::File;
-use std::io::Write;
 use std::path::PathBuf;
+
+use bytes::Bytes;
+
+use openssl::hash::MessageDigest;
+use openssl::pkey::{PKey, Private};
+use openssl::rsa::Rsa;
 
 use bcder::encode::{Constructed, PrimitiveContent, Values};
 use bcder::{decode, encode};
 use bcder::{BitString, Mode, Tag};
-use bytes::Bytes;
-use openssl::hash::MessageDigest;
-use openssl::pkey::{PKey, Private};
-use openssl::rsa::Rsa;
 
 use rpki::cert::ext::{AuthorityKeyIdentifier, BasicCa, SubjectKeyIdentifier};
 use rpki::crypto::{PublicKey, Signature, SignatureAlgorithm};
@@ -23,17 +23,26 @@ pub const HTTPS_SUB_DIR: &str = "ssl";
 pub const KEY_FILE: &str = "key.pem";
 pub const CERT_FILE: &str = "cert.pem";
 
+pub fn key_file_path(data_dir: &PathBuf) -> PathBuf {
+    let mut https_dir = data_dir.clone();
+    https_dir.push(HTTPS_SUB_DIR);
+    file::file_path(&https_dir, KEY_FILE)
+}
+
+pub fn cert_file_path(data_dir: &PathBuf) -> PathBuf {
+    let mut https_dir = data_dir.clone();
+    https_dir.push(HTTPS_SUB_DIR);
+    file::file_path(&https_dir, CERT_FILE)
+}
+
 /// Creates a new private key and certificate file if either is found to be
 /// missing in the base_path directory.
 pub fn create_key_cert_if_needed(data_dir: &PathBuf) -> Result<(), Error> {
-    let mut https_dir = data_dir.clone();
-    https_dir.push(HTTPS_SUB_DIR);
-
-    let key_file_path = file::file_path(&https_dir, KEY_FILE);
-    let cert_file_path = file::file_path(&https_dir, CERT_FILE);
+    let key_file_path = key_file_path(data_dir);
+    let cert_file_path = cert_file_path(data_dir);
 
     if !key_file_path.exists() || !cert_file_path.exists() {
-        create_key_and_cert(&https_dir)
+        create_key_and_cert(data_dir)
     } else {
         Ok(())
     }
@@ -42,14 +51,10 @@ pub fn create_key_cert_if_needed(data_dir: &PathBuf) -> Result<(), Error> {
 /// Creates a new private key and certificate to be used when serving HTTPS.
 /// Only call this in case there is no current key and certificate file
 /// present, or have your files ruthlessly overwritten!
-fn create_key_and_cert(https_dir: &PathBuf) -> Result<(), Error> {
-    if !https_dir.exists() {
-        file::create_dir(&https_dir)?;
-    }
-
+fn create_key_and_cert(data_dir: &PathBuf) -> Result<(), Error> {
     let mut signer = HttpsSigner::build()?;
-    signer.save_private_key(&https_dir)?;
-    signer.save_certificate(&https_dir)?;
+    signer.save_private_key(data_dir)?;
+    signer.save_certificate(data_dir)?;
 
     Ok(())
 }
@@ -70,12 +75,10 @@ impl HttpsSigner {
     }
 
     /// Saves the private key in PEM format so that actix can use it.
-    fn save_private_key(&self, https_dir: &PathBuf) -> Result<(), Error> {
-        let path = file::file_path(https_dir, KEY_FILE);
-        let mut pkey_file = File::create(path)?;
-
-        let pem = self.private.private_key_to_pem_pkcs8()?;
-        pkey_file.write_all(&pem)?;
+    fn save_private_key(&self, data_dir: &PathBuf) -> Result<(), Error> {
+        let key_file_path = key_file_path(data_dir);
+        let bytes = Bytes::from(self.private.private_key_to_pem_pkcs8()?);
+        file::save(&bytes, &key_file_path)?;
         Ok(())
     }
 
@@ -103,7 +106,7 @@ impl HttpsSigner {
     }
 
     /// Saves a self-signed certificate so that actix can use it.
-    fn save_certificate(&mut self, https_dir: &PathBuf) -> Result<(), Error> {
+    fn save_certificate(&mut self, data_dir: &PathBuf) -> Result<(), Error> {
         let pub_key = self.public_key_info()?;
         let tbs_cert = TbsHttpsCertificate::from(&pub_key);
 
@@ -121,12 +124,13 @@ impl HttpsSigner {
 
         let cert_pem = base64::encode(&encoded_cert);
 
-        let path = file::file_path(https_dir, CERT_FILE);
-        let mut pem_file = File::create(path)?;
-
-        pem_file.write_all("-----BEGIN CERTIFICATE-----\n".as_ref())?;
-        pem_file.write_all(cert_pem.as_bytes())?;
-        pem_file.write_all("\n-----END CERTIFICATE-----\n".as_ref())?;
+        let path = cert_file_path(data_dir);
+        let pem_file = format!(
+            "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n",
+            cert_pem
+        );
+        let bytes: Bytes = Bytes::from(pem_file);
+        file::save(&bytes, &path)?;
 
         Ok(())
     }
@@ -266,6 +270,15 @@ pub enum Error {
 
     #[display(fmt = "Could not make certificate")]
     BuildError,
+
+    #[display(fmt = "Certificate PEM file contains no certificates")]
+    EmptyCertStack,
+
+    #[display(fmt = "Cannot create PKCS12 Identity: {}", _0)]
+    Pkcs12(String),
+
+    #[display(fmt = "Connection error: {}", _0)]
+    Connection(String),
 }
 
 impl From<openssl::error::ErrorStack> for Error {
@@ -280,42 +293,21 @@ impl From<std::io::Error> for Error {
     }
 }
 
+impl std::error::Error for Error {}
+
 //------------ Tests ---------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
-    use actix_web::*;
-    use openssl::ssl::{SslAcceptor, SslFiletype, SslMethod};
-
-    use crate::commons::util::test;
+    // use actix_web::*;
+    use crate::test;
 
     use super::*;
 
     #[test]
-    fn should_create_key_and_cert_and_start_server() {
+    fn should_create_key_and_cert() {
         test::test_under_tmp(|d| {
-            let mut p_key_file_path = d.clone();
-            p_key_file_path.push("ssl");
-            p_key_file_path.push("key.pem");
-
-            let mut cert_file_path = d.clone();
-            cert_file_path.push("ssl");
-            cert_file_path.push("cert.pem");
-
             create_key_cert_if_needed(&d).unwrap();
-
-            let mut builder = SslAcceptor::mozilla_intermediate(SslMethod::tls()).unwrap();
-
-            builder
-                .set_private_key_file(p_key_file_path, SslFiletype::PEM)
-                .unwrap();
-
-            builder.set_certificate_chain_file(cert_file_path).unwrap();
-
-            HttpServer::new(App::new)
-                .bind_ssl("localhost:8443", builder)
-                .unwrap();
         });
     }
-
 }
