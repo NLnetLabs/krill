@@ -245,20 +245,19 @@ impl IdCert {
         self.validate_basics(now)?;
         self.validate_ca_basics()?;
 
-        // Authority Key Identifier. May be present, if so, must be
-        // equal to the subject key identifier.
+        // RFC says that the ID certificate ought to be (no normative language) self-signed.. just log if it isn't
         if let Some(aki) = self.extensions.authority_key_id() {
             if aki != self.extensions.subject_key_id() {
-                return Err(ValidationError);
+                debug!("ID certificate is not self-signed.")
             }
         }
 
-        // Verify that this is self signed
+        // RFC says that the ID certificate ought to be (no normative language) self-signed.. just log if it isn't
         if let Err(_e) = self
             .signed_data
             .verify_signature(&self.subject_public_key_info)
         {
-            debug!("ID certificate is not self-signed. This should not be an issue, but is against the RFC.")
+            debug!("ID certificate is not self-signed.")
         }
 
         Ok(())
