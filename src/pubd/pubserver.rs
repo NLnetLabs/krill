@@ -278,8 +278,8 @@ mod tests {
     use crate::commons::remote::builder::IdCertBuilder;
     use crate::commons::remote::id::IdCert;
     use crate::commons::util::file::CurrentFile;
-    use crate::commons::util::test;
     use crate::pubd::Publisher;
+    use crate::test;
 
     use super::*;
 

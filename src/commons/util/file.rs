@@ -320,7 +320,7 @@ impl From<Error> for io::Error {
 
 #[cfg(test)]
 mod tests {
-    use crate::commons::util::test;
+    use crate::test;
 
     use super::*;
 
@@ -357,5 +357,4 @@ mod tests {
             assert!(files.contains(&file_4));
         });
     }
-
 }

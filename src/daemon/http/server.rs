@@ -977,9 +977,11 @@ async fn refresh_all(req: Request) -> RoutingResult {
 #[cfg(test)]
 mod tests {
 
-    use super::*;
-    use crate::commons::util::test;
     use std::path::PathBuf;
+
+    use crate::test;
+
+    use super::*;
 
     #[tokio::test]
     async fn start_tls_server() {
@@ -993,6 +995,6 @@ mod tests {
 
         tokio::spawn(super::start(server_conf));
 
-        assert!(crate::daemon::test::primary_server_ready().await);
+        assert!(test::primary_server_ready().await);
     }
 }

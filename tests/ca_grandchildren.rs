@@ -1,9 +1,10 @@
 extern crate krill;
 
+use std::fs;
+
 use krill::commons::api::{Handle, ObjectName, ParentCaReq, ResourceClassName, ResourceSet};
 use krill::daemon::ca::ta_handle;
-use krill::daemon::test::*;
-use std::fs;
+use krill::test::*;
 
 #[tokio::test]
 /// Test that we can delegate from normal CAs to child CAs, and that these child CAs

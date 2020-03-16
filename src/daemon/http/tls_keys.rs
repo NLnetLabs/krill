@@ -300,7 +300,7 @@ impl std::error::Error for Error {}
 #[cfg(test)]
 mod tests {
     // use actix_web::*;
-    use crate::commons::util::test;
+    use crate::test;
 
     use super::*;
 

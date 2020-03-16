@@ -443,7 +443,7 @@ mod tests {
 
     use super::*;
     use crate::cli::options::KrillInitDetails;
-    use crate::commons::util::test;
+    use crate::test;
 
     #[test]
     fn init_config_file() {

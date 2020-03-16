@@ -33,3 +33,4 @@ pub mod constants;
 pub mod daemon;
 pub mod pubd;
 pub mod publish;
+pub mod test;

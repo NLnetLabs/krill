@@ -1,9 +1,10 @@
 extern crate krill;
 
+use std::fs;
+
 use krill::commons::api::{Handle, ParentCaReq, ResourceSet};
 use krill::daemon::ca::ta_handle;
-use krill::daemon::test::*;
-use std::fs;
+use krill::test::*;
 
 #[tokio::test]
 async fn ca_embedded() {

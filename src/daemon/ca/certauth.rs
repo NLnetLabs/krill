@@ -1588,7 +1588,7 @@ impl<S: Signer> CertAuth<S> {
 mod tests {
     use super::*;
     use crate::commons::util::softsigner::OpenSslSigner;
-    use crate::commons::util::test;
+    use crate::test;
 
     #[test]
     fn generate_id_cert() {

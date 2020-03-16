@@ -19,7 +19,7 @@ use krill::commons::api::{
 };
 use krill::commons::remote::rfc8183;
 use krill::daemon::ca::ta_handle;
-use krill::daemon::test::{
+use krill::test::{
     add_child_to_ta_embedded, add_parent_to_ca, ca_gets_resources, ca_route_authorizations_update,
     init_child_with_embedded_repo, krill_admin, krill_pubd_admin, start_krill,
     start_secondary_krill, PubdTestContext,

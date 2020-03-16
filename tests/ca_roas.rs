@@ -1,13 +1,13 @@
 extern crate krill;
 
+use std::fs;
 use std::str::FromStr;
 
 use krill::commons::api::{
     Handle, ObjectName, ParentCaReq, ResourceSet, RoaDefinition, RoaDefinitionUpdates,
 };
 use krill::daemon::ca::ta_handle;
-use krill::daemon::test::*;
-use std::fs;
+use krill::test::*;
 
 #[tokio::test]
 /// Test the CAs can issue and publish ROAs for their resources, and that

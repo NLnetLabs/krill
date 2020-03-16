@@ -1910,7 +1910,7 @@ mod test {
     use rpki::crypto::PublicKeyFormat;
 
     use crate::commons::util::softsigner::OpenSslSigner;
-    use crate::commons::util::test;
+    use crate::test;
 
     use super::*;
 

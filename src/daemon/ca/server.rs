@@ -1028,7 +1028,7 @@ mod tests {
 
     use crate::commons::api::RepoInfo;
     use crate::commons::util::softsigner::OpenSslSigner;
-    use crate::commons::util::test;
+    use crate::test;
 
     #[test]
     fn add_ta() {

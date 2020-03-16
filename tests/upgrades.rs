@@ -1,12 +1,13 @@
 extern crate krill;
 
+use std::path::PathBuf;
+
 use krill::commons::api::Handle;
 use krill::commons::eventsourcing::{AggregateStore, DiskAggregateStore};
 use krill::commons::util::softsigner::OpenSslSigner;
 use krill::constants::PUBSERVER_DFLT;
 use krill::daemon::ca::CertAuth;
 use krill::pubd::Repository;
-use std::path::PathBuf;
 
 /// This tests that we can understand all events as they have been implemented since 0.4.0,
 /// in order to guarantee that upgrades will work.

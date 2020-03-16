@@ -35,7 +35,7 @@ mod tests {
     use serde::Serialize;
 
     use crate::commons::api::Handle;
-    use crate::commons::util::test;
+    use crate::test;
 
     use super::*;
 
