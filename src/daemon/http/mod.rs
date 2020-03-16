@@ -393,6 +393,14 @@ impl RequestPath {
     where
         T: FromStr,
     {
-        self.next().map(|s| T::from_str(s).ok()).flatten()
+        // TODO change to .flatten() when rust 1.40 is more commonplace,
+        //      it seems a bit over the top to require 1.40 for this only.
+        match self.next().map(|s| T::from_str(s).ok()) {
+            None => None,
+            Some(opt) => match opt {
+                None => None,
+                Some(t) => Some(t),
+            },
+        }
     }
 }
