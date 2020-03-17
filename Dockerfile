@@ -51,8 +51,7 @@ EXPOSE 3000/tcp
 # Use Tini to ensure that krillc responds to CTRL-C when run in the
 # foreground without the Docker argument "--init" (which is actually another
 # way of activating Tini, but cannot be enabled from inside the Docker image).
-ADD https://github.com/krallin/tini/releases/download/v0.18.0/tini /tini
-RUN chmod +x /tini
-
-ENTRYPOINT ["/tini", "--", "/opt/entrypoint.sh"]
+RUN apk add --no-cache tini
+# Tini is now available at /sbin/tini
+ENTRYPOINT ["/sbin/tini", "--", "/opt/entrypoint.sh"]
 CMD ["krill", "-c", "/var/krill/data/krill.conf"]
