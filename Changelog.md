@@ -3,6 +3,27 @@
 Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
 for planned releases.
 
+## Upcoming Release 'Hang Loose'
+
+In this release we migrated from actix-web to Hyper. Hyper is a fast, safe and fully asynchronous
+web framework which has a lot of momentum behind it. This change also meant that we needed to
+ensure that Krill itself uses safe asynchronous code whenever it connects to a remote system, like
+a parent or repository, or in case of the CLI the Krill API itself.
+
+In addition this release includes several small improvements to the Lagosta UI and Krill back-end.
+
+Lagosta:
+* Now includes Spanish and Greek translations
+* Minor improvements in functionality
+
+Krill back-end:
+* Migrated from actix-web to hyper.
+* Krill now uses asynchronous code where applicable.
+
+Breaking changes:
+* The API end-points for bulk operations changed to /api/v1/bulk/*
+
+
 ## 0.5.0 'Serve no Turf'
 
 The most striking change in this release is the inclusion of a new front-end: Lagosta.
