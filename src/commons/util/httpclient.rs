@@ -1,6 +1,7 @@
 //! Some helper functions for HTTP calls
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::time::Duration;
 use std::{env, fmt};
 
 use bytes::Bytes;
@@ -11,7 +12,7 @@ use serde::Serialize;
 
 use crate::commons::api::{ErrorResponse, Token};
 use crate::commons::util::file;
-use crate::constants::{KRILL_CLI_API_ENV, KRILL_HTTPS_ROOT_CERTS_ENV};
+use crate::constants::{HTTTP_CLIENT_TIMEOUT_SECS, KRILL_CLI_API_ENV, KRILL_HTTPS_ROOT_CERTS_ENV};
 
 const JSON_CONTENT: &str = "application/json";
 
@@ -265,7 +266,8 @@ fn load_root_cert(path: &str) -> Result<reqwest::Certificate, Error> {
 }
 
 pub async fn client(uri: &str) -> Result<reqwest::Client, Error> {
-    let mut builder = reqwest::ClientBuilder::new();
+    let mut builder =
+        reqwest::ClientBuilder::new().timeout(Duration::from_secs(HTTTP_CLIENT_TIMEOUT_SECS));
 
     if let Ok(cert_list) = env::var(KRILL_HTTPS_ROOT_CERTS_ENV) {
         for path in cert_list.split(':') {
