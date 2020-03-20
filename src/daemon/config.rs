@@ -125,6 +125,8 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::data_dir")]
     pub data_dir: PathBuf,
 
+    pub pid_file: Option<PathBuf>,
+
     #[serde(default = "ConfigDefaults::rsync_base")]
     pub rsync_base: uri::Rsync,
 
@@ -206,6 +208,17 @@ impl Config {
     pub fn use_ta(&self) -> bool {
         self.use_ta
     }
+
+    pub fn pid_file(&self) -> PathBuf {
+        match &self.pid_file {
+            None => {
+                let mut path = self.data_dir.clone();
+                path.push("krill.pid");
+                path
+            }
+            Some(file) => file.clone(),
+        }
+    }
 }
 
 /// # Create
@@ -213,6 +226,7 @@ impl Config {
     fn test_config(data_dir: &PathBuf) -> Self {
         let ip = ConfigDefaults::ip();
         let port = ConfigDefaults::port();
+        let pid_file = None;
         let test_mode = true;
         let use_ta = true;
         let repo_enabled = true;
@@ -235,6 +249,7 @@ impl Config {
         Config {
             ip,
             port,
+            pid_file,
             test_mode,
             use_ta,
             repo_enabled,

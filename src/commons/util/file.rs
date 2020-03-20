@@ -45,7 +45,7 @@ pub fn file_path(base_path: &PathBuf, file_name: &str) -> PathBuf {
 }
 
 /// Saves a file, creating parent dirs as needed
-pub fn save(content: &Bytes, full_path: &PathBuf) -> Result<(), io::Error> {
+pub fn save(content: &[u8], full_path: &PathBuf) -> Result<(), io::Error> {
     let mut f = create_file_with_path(full_path)?;
     f.write_all(content)?;
 
