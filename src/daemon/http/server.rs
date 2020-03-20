@@ -1,6 +1,8 @@
 //! Hyper based HTTP server for Krill.
 //!
 use std::convert::Infallible;
+use std::fs::File;
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -88,6 +90,7 @@ async fn map_requests(
         .or_else(rfc6492)
         .or_else(statics)
         .or_else(ta)
+        .or_else(rrdp)
         .or_else(render_not_found)
         .map_err(|_| Error::custom("should have received not found response"))
         .await;
@@ -952,6 +955,29 @@ async fn refresh_all(req: Request) -> RoutingResult {
     match *req.method() {
         Method::POST => render_empty_res(req.state().read().await.refresh_all().await),
         _ => render_unknown_method(),
+    }
+}
+
+//------------ Serve RRDP Files ----------------------------------------------
+
+async fn rrdp(req: Request) -> RoutingResult {
+    if !req.path().full().starts_with("/rrdp/") {
+        Err(req) // Not for us
+    } else {
+        let mut full_path: PathBuf = req.state.read().await.rrdp_base_path();
+        let (_, path) = req.path.remaining().split_at(1);
+        full_path.push(path);
+
+        match File::open(full_path) {
+            Ok(mut file) => {
+                use std::io::Read;
+                let mut buffer = Vec::new();
+                file.read_to_end(&mut buffer).unwrap();
+
+                Ok(HttpResponse::xml(buffer))
+            }
+            _ => Ok(HttpResponse::not_found()),
+        }
     }
 }
 
