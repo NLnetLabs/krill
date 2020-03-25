@@ -1,4 +1,4 @@
-[![GitHub Actions Build Status](https://github.com/NLnetLabs/routinator/workflows/ci/badge.svg)](https://github.com/NLnetLabs/krill/actions?query=workflow%3Aci)
+[![GitHub Actions Build Status](https://github.com/NLnetLabs/krill/workflows/CI/badge.svg)](https://github.com/NLnetLabs/krill/actions?query=workflow%3ACI)
 [![Rust Crate Status](https://img.shields.io/crates/v/krill.svg?color=brightgreen)](https://crates.io/crates/krill)
 [![Docker Build Status](https://img.shields.io/docker/cloud/build/nlnetlabs/krill.svg)](https://hub.docker.com/r/nlnetlabs/krill)
 [![Documentation Status](https://readthedocs.org/projects/rpki/badge/?version=latest)](https://rpki.readthedocs.io/en/latest/?badge=latest)
