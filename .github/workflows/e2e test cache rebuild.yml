@@ -8,8 +8,7 @@ name: E2E Test Cache Image Builder
 # Run every Sunday
 on:
   schedule:
-    - cron: '30 * * * *'
-#    - cron: '0 0 * * SUN'
+    - cron: '0 0 * * SUN'
 
 jobs:
   build-and-push:
