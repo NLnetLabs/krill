@@ -37,10 +37,9 @@ pub trait KeyStore {
 
     fn has_aggregate(&self, id: &Handle) -> bool;
 
-    fn aggregates(&self) -> Vec<Handle>; // Use Iterator?
+    fn aggregates(&self) -> Vec<Handle>;
 
     /// Throws an error if the key already exists.
-
     fn store<V: Any + Serialize>(
         &self,
         id: &Handle,
@@ -49,7 +48,6 @@ pub trait KeyStore {
     ) -> Result<(), KeyStoreError>;
 
     /// Get the value for this key, if any exists.
-
     fn get<V: Any + Storable>(
         &self,
         id: &Handle,
@@ -57,7 +55,6 @@ pub trait KeyStore {
     ) -> Result<Option<V>, KeyStoreError>;
 
     /// Get the value for this key, if any exists.
-
     fn get_event<V: Event>(&self, id: &Handle, version: u64) -> Result<Option<V>, KeyStoreError>;
 
     fn store_event<V: Event>(&self, event: &V) -> Result<(), KeyStoreError>;
@@ -65,11 +62,9 @@ pub trait KeyStore {
     fn store_command(&self, command: StoredCommand) -> Result<(), KeyStoreError>;
 
     /// Get the latest aggregate
-
     fn get_aggregate<V: Aggregate>(&self, id: &Handle) -> Result<Option<V>, KeyStoreError>;
 
     /// Saves the latest snapshot - overwrites any previous snapshot.
-
     fn store_aggregate<V: Aggregate>(
         &self,
         id: &Handle,
