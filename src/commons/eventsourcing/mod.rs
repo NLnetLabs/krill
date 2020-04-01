@@ -128,7 +128,7 @@ mod tests {
     /// implementation for this type alias providing some convenience methods.
     type PersonCommand = SentCommand<PersonCommandDetails>;
 
-    #[derive(Clone, Deserialize, Display, Serialize)]
+    #[derive(Clone, Deserialize, Display, Eq, PartialEq, Serialize)]
     enum PersonCommandDetails {
         #[display(fmt = "Change name to {}", _0)]
         ChangeName(String),
@@ -139,6 +139,11 @@ mod tests {
 
     impl CommandDetails for PersonCommandDetails {
         type Event = PersonEvent;
+        type StorableDetails = Self;
+
+        fn store(&self) -> Self::StorableDetails {
+            self.clone()
+        }
     }
 
     impl PersonCommand {
@@ -213,6 +218,7 @@ mod tests {
 
     impl Aggregate for Person {
         type Command = PersonCommand;
+        type StorableCommandDetails = PersonCommandDetails;
         type Event = PersonEvent;
         type InitEvent = InitPersonEvent;
         type Error = PersonError;

@@ -20,7 +20,8 @@ use super::{Command, Event, Storable};
 /// 'events' are returned that contain state changes to the aggregate. These events
 /// still need to be applied to become persisted.
 pub trait Aggregate: Storable + Send + Sync + 'static {
-    type Command: Command<Event = Self::Event>;
+    type Command: Command<Event = Self::Event, StorableDetails = Self::StorableCommandDetails>;
+    type StorableCommandDetails: Storable;
     type Event: Event;
     type InitEvent: Event;
     type Error: std::error::Error;

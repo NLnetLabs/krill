@@ -59,7 +59,7 @@ pub trait KeyStore {
 
     fn store_event<V: Event>(&self, event: &V) -> Result<(), KeyStoreError>;
 
-    fn store_command(&self, command: StoredCommand) -> Result<(), KeyStoreError>;
+    fn store_command<S: Storable>(&self, command: StoredCommand<S>) -> Result<(), KeyStoreError>;
 
     /// Get the latest aggregate
     fn get_aggregate<V: Aggregate>(&self, id: &Handle) -> Result<Option<V>, KeyStoreError>;
@@ -230,7 +230,7 @@ impl KeyStore for DiskKeyStore {
         }
     }
 
-    fn store_command(&self, command: StoredCommand) -> Result<(), KeyStoreError> {
+    fn store_command<S: Storable>(&self, command: StoredCommand<S>) -> Result<(), KeyStoreError> {
         let id = command.handle();
         let key = Self::key_for_command(command.time());
 

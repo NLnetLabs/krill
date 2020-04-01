@@ -30,6 +30,7 @@ use crate::commons::remote::rfc8183;
 use crate::commons::remote::sigmsg::SignedMessage;
 use crate::commons::KrillResult;
 use crate::constants::CHILD_CERTIFICATE_REISSUE_WEEKS;
+use crate::daemon::ca::commands::StorableCaCommand;
 use crate::daemon::ca::events::ChildCertificateUpdates;
 use crate::daemon::ca::rc::PublishMode;
 use crate::daemon::ca::signing::CsrInfo;
@@ -91,6 +92,7 @@ pub struct CertAuth<S: Signer> {
 
 impl<S: Signer> Aggregate for CertAuth<S> {
     type Command = Cmd<S>;
+    type StorableCommandDetails = StorableCaCommand;
     type Event = Evt;
     type InitEvent = Ini;
     type Error = Error;

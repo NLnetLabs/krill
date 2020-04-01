@@ -3,7 +3,7 @@ use std::fmt;
 use rpki::x509::Time;
 
 use crate::commons::api::Handle;
-use crate::commons::eventsourcing::Event;
+use crate::commons::eventsourcing::{Event, Storable};
 
 //------------ Command -------------------------------------------------------
 
@@ -17,6 +17,11 @@ pub trait Command: fmt::Display {
     /// command. This is needed because we may need to check whether a
     /// command conflicts with recent events.
     type Event: Event;
+
+    /// Identify the type of storable component for this command. Commands
+    /// may contain short-lived things (e.g. an Arc<Signer>) or even secrets
+    /// which should not be persisted.
+    type StorableDetails: Storable;
 
     /// Identifies the aggregate, useful when storing and retrieving the event.
     fn handle(&self) -> &Handle;
@@ -47,6 +52,9 @@ pub trait Command: fmt::Display {
 
     /// Get a summary for the command audit log
     fn summary(&self) -> String;
+
+    /// Get the storable information for this command
+    fn store(&self) -> Self::StorableDetails;
 }
 
 //------------ SentCommand ---------------------------------------------------
@@ -62,6 +70,7 @@ pub struct SentCommand<C: CommandDetails> {
 
 impl<C: CommandDetails> Command for SentCommand<C> {
     type Event = C::Event;
+    type StorableDetails = C::StorableDetails;
 
     fn handle(&self) -> &Handle {
         &self.handle
@@ -73,6 +82,10 @@ impl<C: CommandDetails> Command for SentCommand<C> {
 
     fn summary(&self) -> String {
         self.details.to_string()
+    }
+
+    fn store(&self) -> Self::StorableDetails {
+        self.details.store()
     }
 }
 
@@ -111,6 +124,9 @@ impl<C: CommandDetails> fmt::Display for SentCommand<C> {
 /// id and version boilerplate from ['SentCommand'].
 pub trait CommandDetails: fmt::Display + 'static {
     type Event: Event;
+    type StorableDetails: Storable;
+
+    fn store(&self) -> Self::StorableDetails;
 }
 
 //------------ StoredCommand -------------------------------------------------
@@ -119,16 +135,17 @@ pub trait CommandDetails: fmt::Display + 'static {
 /// that followed. Commands that turn out to be no-ops (no events, no errors)
 /// should not be stored.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct StoredCommand {
+pub struct StoredCommand<S: Storable> {
     actor: String,
     time: Time,
     handle: Handle,
     version: u64,
-    summary: String,
+    #[serde(deserialize_with = "S::deserialize")]
+    details: S,
     effect: StoredEffect,
 }
 
-impl StoredCommand {
+impl<S: Storable> StoredCommand<S> {
     pub fn time(&self) -> Time {
         self.time
     }
@@ -151,47 +168,47 @@ pub enum StoredEffect {
 
 /// Builder to avoid cloning commands, so they can be sent to the aggregate by value,
 /// and we can add the effect later.
-pub struct StoredCommandBuilder {
+pub struct StoredCommandBuilder<C: Command> {
     actor: String,
     time: Time,
     handle: Handle,
     version: u64,
-    summary: String,
+    details: C::StorableDetails,
 }
 
-impl StoredCommandBuilder {
-    pub fn new<C: Command>(cmd: &C, version: u64) -> Self {
+impl<C: Command> StoredCommandBuilder<C> {
+    pub fn new(cmd: &C, version: u64) -> StoredCommandBuilder<C> {
         let actor = cmd.actor().to_string();
         let time = Time::now();
         let handle = cmd.handle().clone();
-        let summary = cmd.summary();
+        let details = cmd.store();
         StoredCommandBuilder {
             actor,
             time,
             handle,
             version,
-            summary,
+            details,
         }
     }
 
-    fn finish(self, effect: StoredEffect) -> StoredCommand {
+    fn finish(self, effect: StoredEffect) -> StoredCommand<C::StorableDetails> {
         StoredCommand {
             actor: self.actor,
             time: self.time,
             handle: self.handle,
             version: self.version,
-            summary: self.summary,
+            details: self.details,
             effect,
         }
     }
 
-    pub fn finish_with_events<E: Event>(self, events: &[E]) -> StoredCommand {
+    pub fn finish_with_events<E: Event>(self, events: &[E]) -> StoredCommand<C::StorableDetails> {
         let events = events.iter().map(|e| e.version()).collect();
         let effect = StoredEffect::Events(events);
         self.finish(effect)
     }
 
-    pub fn finish_with_error<E: fmt::Display>(self, err: &E) -> StoredCommand {
+    pub fn finish_with_error<E: fmt::Display>(self, err: &E) -> StoredCommand<C::StorableDetails> {
         let effect = StoredEffect::Error(err.to_string());
         self.finish(effect)
     }

@@ -10,8 +10,9 @@ use crate::pubd::Evt;
 pub type Cmd = SentCommand<CmdDet>;
 
 //------------ CmdDet ------------------------------------------------------
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
+#[serde(rename_all = "snake_case")]
 pub enum CmdDet {
     AddPublisher(rfc8183::PublisherRequest),
     RemovePublisher(PublisherHandle),
@@ -20,6 +21,11 @@ pub enum CmdDet {
 
 impl CommandDetails for CmdDet {
     type Event = Evt;
+    type StorableDetails = Self;
+
+    fn store(&self) -> Self::StorableDetails {
+        self.clone()
+    }
 }
 
 impl CmdDet {

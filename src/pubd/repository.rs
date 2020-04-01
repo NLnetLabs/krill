@@ -407,6 +407,7 @@ impl Repository {
 ///
 impl Aggregate for Repository {
     type Command = Cmd;
+    type StorableCommandDetails = CmdDet;
     type Event = Evt;
     type InitEvent = Ini;
     type Error = Error;
