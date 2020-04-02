@@ -4,6 +4,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::RwLock;
 
+use rpki::x509::Time;
+
 use crate::commons::api::Handle;
 use crate::commons::eventsourcing::agg::AggregateHistory;
 use crate::commons::eventsourcing::cmd::{Command, StoredCommandBuilder};
@@ -163,7 +165,7 @@ where
         let handle = init.handle().clone();
 
         let aggregate = A::init(init).map_err(|_| AggregateStoreError::InitError)?;
-        self.store.store_aggregate(&handle, &aggregate)?;
+        self.store.store_snapshot(&handle, &aggregate)?;
 
         let arc = Arc::new(aggregate);
         self.cache_update(&handle, arc.clone());
@@ -176,6 +178,13 @@ where
 
         // Get the latest arc.
         let handle = cmd.handle().clone();
+
+        let mut info = self
+            .store
+            .get_info(&handle)
+            .map_err(AggregateStoreError::KeyStoreError)?;
+        info.last_update = Time::now();
+        info.last_command += 1;
 
         let mut latest = self.get_latest_no_lock(&handle)?;
 
@@ -196,17 +205,17 @@ where
 
         let stored_command_builder = StoredCommandBuilder::new(&cmd, latest.version());
 
-        match latest.process_command(cmd) {
+        let res = match latest.process_command(cmd) {
             Err(e) => {
                 let stored_command = stored_command_builder.finish_with_error(&e);
                 self.store
-                    .store_command(stored_command)
+                    .store_command(stored_command, info.last_command)
                     .map_err(AggregateStoreError::KeyStoreError)?;
                 Err(e)
             }
             Ok(events) => {
                 if events.is_empty() {
-                    Ok(latest)
+                    return Ok(latest); // otherwise the version info will be updated
                 } else {
                     let agg = Arc::make_mut(&mut latest);
 
@@ -230,6 +239,9 @@ where
                     // this version.
                     let version_before = agg.version();
                     let nr_events = events.len() as u64;
+
+                    info.last_event += nr_events;
+
                     for i in 0..nr_events {
                         let event = &events[i as usize];
                         if event.version() != version_before + i || event.handle() != &handle {
@@ -243,7 +255,7 @@ where
                     let stored_command =
                         stored_command_builder.finish_with_events(events.as_slice());
                     self.store
-                        .store_command(stored_command)
+                        .store_command(stored_command, info.last_command)
                         .map_err(AggregateStoreError::KeyStoreError)?;
 
                     for event in &events {
@@ -253,13 +265,15 @@ where
 
                         agg.apply(event.clone());
                         if agg.version() % SNAPSHOT_FREQ == 0 {
+                            info.snapshot_version = agg.version();
+
                             self.store
-                                .store_aggregate(&handle, agg)
+                                .store_snapshot(&handle, agg)
                                 .map_err(AggregateStoreError::KeyStoreError)?;
                         }
                     }
 
-                    cache.insert(handle, Arc::new(agg.clone()));
+                    cache.insert(handle.clone(), Arc::new(agg.clone()));
 
                     // Only send this to listeners after everything has been saved.
                     for event in events {
@@ -271,7 +285,13 @@ where
                     Ok(latest)
                 }
             }
-        }
+        };
+
+        self.store
+            .save_info(&handle, &info)
+            .map_err(AggregateStoreError::KeyStoreError)?;
+
+        res
     }
 
     fn has(&self, id: &Handle) -> bool {

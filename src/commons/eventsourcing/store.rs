@@ -22,15 +22,35 @@ use crate::commons::util::file;
 pub trait Storable: Clone + Serialize + DeserializeOwned + Sized + 'static {}
 impl<T: Clone + Serialize + DeserializeOwned + Sized + 'static> Storable for T {}
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct StoredValueInfo {
+    pub snapshot_version: u64,
+    pub last_event: u64,
+    pub last_command: u64,
+    pub last_update: Time,
+}
+
+impl Default for StoredValueInfo {
+    fn default() -> Self {
+        StoredValueInfo {
+            snapshot_version: 0,
+            last_event: 0,
+            last_command: 0,
+            last_update: Time::now(),
+        }
+    }
+}
+
 //------------ KeyStore ------------------------------------------------------
 
 /// Generic KeyStore for AggregateManager
 pub trait KeyStore {
     type Key;
 
+    fn key_for_info() -> Self::Key;
     fn key_for_snapshot() -> Self::Key;
     fn key_for_event(version: u64) -> Self::Key;
-    fn key_for_command(time: Time) -> Self::Key;
+    fn key_for_command(seq: u64) -> Self::Key;
 
     /// Returns whether a key already exists.
     fn has_key(&self, id: &Handle, key: &Self::Key) -> bool;
@@ -39,7 +59,19 @@ pub trait KeyStore {
 
     fn aggregates(&self) -> Vec<Handle>;
 
-    /// Throws an error if the key already exists.
+    fn get_info(&self, id: &Handle) -> Result<StoredValueInfo, KeyStoreError> {
+        let key = Self::key_for_info();
+        let info = self.get(id, &key)?;
+        Ok(info.unwrap_or_else(StoredValueInfo::default))
+    }
+
+    fn save_info(&self, id: &Handle, info: &StoredValueInfo) -> Result<(), KeyStoreError> {
+        let key = Self::key_for_info();
+        self.store(id, &key, info)
+    }
+
+    /// Write or overwrite the value for an existing. Must not
+    /// throw an error if the key already exists.
     fn store<V: Any + Serialize>(
         &self,
         id: &Handle,
@@ -57,19 +89,21 @@ pub trait KeyStore {
     /// Get the value for this key, if any exists.
     fn get_event<V: Event>(&self, id: &Handle, version: u64) -> Result<Option<V>, KeyStoreError>;
 
+    /// MUST check if the event already exists and return an error if it does.
     fn store_event<V: Event>(&self, event: &V) -> Result<(), KeyStoreError>;
 
-    fn store_command<S: Storable>(&self, command: StoredCommand<S>) -> Result<(), KeyStoreError>;
+    fn store_command<S: Storable>(
+        &self,
+        command: StoredCommand<S>,
+        seq: u64,
+    ) -> Result<(), KeyStoreError>;
 
     /// Get the latest aggregate
     fn get_aggregate<V: Aggregate>(&self, id: &Handle) -> Result<Option<V>, KeyStoreError>;
 
     /// Saves the latest snapshot - overwrites any previous snapshot.
-    fn store_aggregate<V: Aggregate>(
-        &self,
-        id: &Handle,
-        aggregate: &V,
-    ) -> Result<(), KeyStoreError>;
+    fn store_snapshot<V: Aggregate>(&self, id: &Handle, aggregate: &V)
+        -> Result<(), KeyStoreError>;
 }
 
 //------------ KeyStoreError -------------------------------------------------
@@ -118,6 +152,10 @@ pub struct DiskKeyStore {
 impl KeyStore for DiskKeyStore {
     type Key = PathBuf;
 
+    fn key_for_info() -> Self::Key {
+        PathBuf::from("info.json")
+    }
+
     fn key_for_snapshot() -> Self::Key {
         PathBuf::from("snapshot.json")
     }
@@ -126,10 +164,8 @@ impl KeyStore for DiskKeyStore {
         PathBuf::from(format!("delta-{}.json", version))
     }
 
-    fn key_for_command(time: Time) -> Self::Key {
-        let seconds = time.timestamp();
-        let micros = time.timestamp_subsec_micros();
-        PathBuf::from(format!("{}_{}.cmd", seconds, micros))
+    fn key_for_command(seq: u64) -> Self::Key {
+        PathBuf::from(format!("command-{}.json", seq))
     }
 
     fn has_key(&self, id: &Handle, key: &Self::Key) -> bool {
@@ -230,9 +266,14 @@ impl KeyStore for DiskKeyStore {
         }
     }
 
-    fn store_command<S: Storable>(&self, command: StoredCommand<S>) -> Result<(), KeyStoreError> {
+    fn store_command<S: Storable>(
+        &self,
+        command: StoredCommand<S>,
+        seq: u64,
+    ) -> Result<(), KeyStoreError> {
         let id = command.handle();
-        let key = Self::key_for_command(command.time());
+
+        let key = Self::key_for_command(seq);
 
         if self.has_key(id, &key) {
             Err(KeyStoreError::KeyExists(key.to_string_lossy().to_string()))
@@ -263,7 +304,7 @@ impl KeyStore for DiskKeyStore {
         }
     }
 
-    fn store_aggregate<V: Aggregate>(
+    fn store_snapshot<V: Aggregate>(
         &self,
         id: &Handle,
         aggregate: &V,
