@@ -1,0 +1,21 @@
+{
+  "id": "ca",
+  "version": 108,
+  "details": {
+    "roas_updated": [
+      "0",
+      {
+        "updated": {},
+        "removed": {
+          "185.49.140.0/22-22 => 8587": {
+            "revocation": {
+              "serial": "708488573242946021899790359599693737872079201099",
+              "expires": "2021-01-29T09:32:05Z"
+            },
+            "hash": "8ee5d1f09cba97c5c608f6e9ad08d2657796af532818bdafd8aacb0dd6da877a"
+          }
+        }
+      }
+    ]
+  }
+}

@@ -9,6 +9,7 @@ use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use rpki::resources::{AsBlocks, AsId, IpBlocks, IpBlocksBuilder, Prefix};
 
 use crate::commons::api::ResourceSet;
+use crate::daemon::ca::RouteAuthorizationUpdates;
 
 //------------ RoaDefinition -----------------------------------------------
 
@@ -142,6 +143,14 @@ impl RoaDefinitionUpdates {
         self.added.insert(add);
     }
 
+    pub fn added(&self) -> &HashSet<RoaDefinition> {
+        &self.added
+    }
+
+    pub fn removed(&self) -> &HashSet<RoaDefinition> {
+        &self.removed
+    }
+
     pub fn remove(&mut self, rem: RoaDefinition) {
         self.removed.insert(rem);
     }
@@ -200,6 +209,15 @@ impl FromStr for RoaDefinitionUpdates {
         }
 
         Ok(RoaDefinitionUpdates { added, removed })
+    }
+}
+
+impl From<RouteAuthorizationUpdates> for RoaDefinitionUpdates {
+    fn from(auth_updates: RouteAuthorizationUpdates) -> Self {
+        let (auth_added, auth_removed) = auth_updates.unpack();
+        let added = auth_added.into_iter().map(|a| a.into()).collect();
+        let removed = auth_removed.into_iter().map(|a| a.into()).collect();
+        RoaDefinitionUpdates { added, removed }
     }
 }
 
@@ -490,5 +508,4 @@ mod tests {
         invalid_max_length("2001:db8::/32-31 => 64496");
         invalid_max_length("2001:db8::/32-129 => 64496");
     }
-
 }

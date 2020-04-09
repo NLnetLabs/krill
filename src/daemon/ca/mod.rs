@@ -25,6 +25,8 @@ pub use self::routes::*;
 mod commands;
 pub use self::commands::Cmd;
 pub use self::commands::CmdDet;
+pub use self::commands::StorableCaCommand;
+pub use self::commands::StorableParentContact;
 
 mod events;
 pub use self::events::Evt;

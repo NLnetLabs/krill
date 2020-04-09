@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fs;
 use std::fs::File;
 use std::io::{self, Read, Write};
@@ -206,6 +207,48 @@ fn derive_uri(
     Ok(uri)
 }
 
+/// Recursively copy a base_path (if it's a dir that is), and preserve the permissions
+/// timestamps and all that goodness..
+///
+/// This is needed when making a back-up copy when we need to do upgrades on data, which
+/// could in theory fail, in which case we want to leave teh old data in place.
+pub fn backup_dir(base_path: &PathBuf, target_path: &PathBuf) -> Result<(), Error> {
+    if base_path.to_string_lossy() == Cow::Borrowed("/")
+        || target_path.to_string_lossy() == Cow::Borrowed("/")
+    {
+        Err(Error::BackupExcessive)
+    } else if base_path.is_file() {
+        let mut target = target_path.clone();
+        target.push(base_path.file_name().unwrap());
+
+        if target.exists() {
+            Err(Error::backup_target_exists(target_path))
+        } else {
+            fs::copy(base_path, target_path)?;
+            Ok(())
+        }
+    } else if base_path.is_dir() {
+        for entry in fs::read_dir(base_path)? {
+            let path = entry?.path();
+            let mut target = target_path.clone();
+            target.push(path.file_name().unwrap());
+            if path.is_dir() {
+                backup_dir(&path, &target)?;
+            } else if path.is_file() {
+                if let Some(parent) = target.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                fs::copy(&path, &target)?;
+            } else {
+                return Err(Error::backup_cannot_read(&path));
+            }
+        }
+        Ok(())
+    } else {
+        Err(Error::backup_cannot_read(base_path))
+    }
+}
+
 //------------ CurrentFile ---------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -299,6 +342,18 @@ pub enum Error {
 
     #[display(fmt = "Cannot use path outside of rsync jail")]
     PathOutsideBasePath,
+
+    #[display(fmt = "Do not ever use '/' as the source or target for backups")]
+    BackupExcessive,
+
+    #[display(fmt = "Source for backup cannot be read: {}", _0)]
+    BackupCannotReadSource(String),
+
+    #[display(fmt = "Target for backup already exists: {}", _0)]
+    BackupTargetExists(String),
+
+    #[display(fmt = "{}", _0)]
+    Io(io::Error),
 }
 
 impl Error {
@@ -306,13 +361,32 @@ impl Error {
         let str = path.to_string_lossy().to_string();
         Error::CannotRead(str)
     }
+
+    fn backup_cannot_read(path: &PathBuf) -> Error {
+        let str = path.to_string_lossy().to_string();
+        Error::BackupCannotReadSource(str)
+    }
+
+    fn backup_target_exists(path: &PathBuf) -> Error {
+        let str = path.to_string_lossy().to_string();
+        Error::BackupTargetExists(str)
+    }
 }
 
 impl std::error::Error for Error {}
 
+impl From<io::Error> for Error {
+    fn from(e: io::Error) -> Self {
+        Error::Io(e)
+    }
+}
+
 impl From<Error> for io::Error {
     fn from(e: Error) -> Self {
-        io::Error::new(io::ErrorKind::Other, e)
+        match e {
+            Error::Io(ioe) => ioe,
+            _ => io::Error::new(io::ErrorKind::Other, e),
+        }
     }
 }
 

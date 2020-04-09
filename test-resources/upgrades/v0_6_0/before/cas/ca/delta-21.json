@@ -1,0 +1,7 @@
+{
+  "id": "ca",
+  "version": 21,
+  "details": {
+    "route_authorization_removed": "10.0.1.0/25-25 => 123"
+  }
+}

@@ -169,6 +169,13 @@ pub enum Error {
     #[display(fmt = "CA '{}' does not know id certificate for child '{}'", _0, _1)]
     CaChildUnauthorised(Handle, ChildHandle),
 
+    #[display(
+        fmt = "You can only update one aspect for child '{}' of CA '{}' at a time - i.e. either resources or ID cert",
+        _1,
+        _0
+    )]
+    CaChildUpdateOneThing(Handle, ChildHandle),
+
     // RouteAuthorizations - ROAs
     #[display(fmt = "Cannot remove unknown ROA '{}' from CA '{}'", _0, _1)]
     CaAuthorisationUnknown(Handle, RouteAuthorization),
@@ -473,6 +480,12 @@ impl Error {
             }
             Error::CaChildUnauthorised(ca, child) => {
                 ErrorResponse::new("ca-child-unauthorised", &self)
+                    .with_ca(ca)
+                    .with_child(child)
+            }
+
+            Error::CaChildUpdateOneThing(ca, child) => {
+                ErrorResponse::new("ca-child-update-one-thing", &self)
                     .with_ca(ca)
                     .with_child(child)
             }

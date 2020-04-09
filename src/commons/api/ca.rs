@@ -1340,6 +1340,31 @@ impl Default for ResourceSet {
     }
 }
 
+impl FromStr for ResourceSet {
+    type Err = ResourceSetError;
+
+    // Expects formatting like we use in Display, i.e.:
+    // asn: AS1-2, v4: 10.0.0.0/16, v6: ::0/128
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // min len for empty set is 12: 'asn: , v4: ,v6: '
+        if s.len() < 16 || !s.starts_with("asn: ") {
+            return Err(ResourceSetError::FromString);
+        }
+        let v4_start = s
+            .find(", v4: ")
+            .ok_or_else(|| ResourceSetError::FromString)?;
+        let v6_start = s
+            .find(", v6: ")
+            .ok_or_else(|| ResourceSetError::FromString)?;
+
+        let asn = &s[5..v4_start];
+        let v4 = &s[v4_start + 6..v6_start];
+        let v6 = &s[v6_start + 6..];
+
+        ResourceSet::from_strs(asn, v4, v6)
+    }
+}
+
 impl TryFrom<&Cert> for ResourceSet {
     type Error = ResourceSetError;
 
@@ -1884,6 +1909,11 @@ pub enum ResourceSetError {
 
     #[display(fmt = "Limit in CSR exceeds resource entitlements.")]
     Limit,
+
+    #[display(
+        fmt = "Cannot parse resource set string, expected: 'asn: <ASNs>, ipv4: <IPv4s>, ipv6: <IPv6s>'."
+    )]
+    FromString,
 }
 
 impl ResourceSetError {
@@ -2070,5 +2100,23 @@ mod test {
         let intersection = parent_resources.intersection(&child_resources);
 
         assert_eq!(intersection, child_resources);
+    }
+
+    #[test]
+    fn resource_set_to_from_string() {
+        let asns = "AS65000-AS65003, AS65005";
+        let ipv4s = "10.0.0.0/8, 192.168.0.0";
+        let ipv6s = "::1, 2001:db8::/32";
+
+        let set_string = format!("asn: {}, v4: {}, v6: {}", asns, ipv4s, ipv6s);
+
+        let set = ResourceSet::from_str(set_string.as_str()).unwrap();
+        let to_string = set.to_string();
+        assert_eq!(set_string, to_string);
+
+        let empty_set = ResourceSet::default();
+        let empty_set_string = empty_set.to_string();
+        let empty_set_from_string = ResourceSet::from_str(&empty_set_string).unwrap();
+        assert_eq!(empty_set, empty_set_from_string);
     }
 }

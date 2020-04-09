@@ -8,10 +8,12 @@ mod evt;
 pub use self::evt::{Event, StoredEvent};
 
 mod cmd;
-pub use self::cmd::{Command, CommandDetails, SentCommand};
+pub use self::cmd::{Command, CommandDetails, SentCommand, StoredCommand, StoredEffect};
 
 mod store;
-pub use self::store::{DiskKeyStore, KeyStore, KeyStoreError, Storable};
+pub use self::store::{
+    DiskKeyStore, KeyStore, KeyStoreError, KeyStoreVersion, Storable, StoredValueInfo,
+};
 
 mod agg_store;
 pub use self::agg_store::{AggregateStore, AggregateStoreError, DiskAggregateStore};

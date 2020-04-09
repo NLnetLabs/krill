@@ -41,16 +41,28 @@ impl Default for StoredValueInfo {
     }
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum KeyStoreVersion {
+    Pre0_6,
+    V0_6,
+}
+
 //------------ KeyStore ------------------------------------------------------
 
 /// Generic KeyStore for AggregateManager
 pub trait KeyStore {
     type Key;
 
+    fn get_version(&self) -> Result<KeyStoreVersion, KeyStoreError>;
+    fn set_version(&self, version: &KeyStoreVersion) -> Result<(), KeyStoreError>;
+
     fn key_for_info() -> Self::Key;
     fn key_for_snapshot() -> Self::Key;
     fn key_for_event(version: u64) -> Self::Key;
     fn key_for_command(seq: u64) -> Self::Key;
+
+    /// Returns all keys for a Handle in the store, matching a &str, sorted ascending
+    fn keys_ascending_matching(&self, id: &Handle, matching: &str) -> Vec<Self::Key>;
 
     /// Returns whether a key already exists.
     fn has_key(&self, id: &Handle, key: &Self::Key) -> bool;
@@ -86,6 +98,9 @@ pub trait KeyStore {
         key: &Self::Key,
     ) -> Result<Option<V>, KeyStoreError>;
 
+    /// Drop the value for this key
+    fn drop(&self, id: &Handle, key: &Self::Key) -> Result<(), KeyStoreError>;
+
     /// Get the value for this key, if any exists.
     fn get_event<V: Event>(&self, id: &Handle, version: u64) -> Result<Option<V>, KeyStoreError>;
 
@@ -120,11 +135,17 @@ pub enum KeyStoreError {
     #[display(fmt = "Key '{}' already exists", _0)]
     KeyExists(String),
 
+    #[display(fmt = "Key '{}' does not exist", _0)]
+    KeyUnknown(String),
+
     #[display(fmt = "Aggregate init event exists, but cannot be applied")]
     InitError,
 
     #[display(fmt = "No history for aggregate with key '{}'", _0)]
     NoHistory(Handle),
+
+    #[display(fmt = "This keystore is not initialised")]
+    NotInitialised,
 }
 
 impl From<io::Error> for KeyStoreError {
@@ -152,6 +173,36 @@ pub struct DiskKeyStore {
 impl KeyStore for DiskKeyStore {
     type Key = PathBuf;
 
+    fn get_version(&self) -> Result<KeyStoreVersion, KeyStoreError> {
+        if !self.dir.exists() {
+            Err(KeyStoreError::NotInitialised)
+        } else {
+            let path = self.version_path();
+            if path.exists() {
+                let f = File::open(path)?;
+
+                match serde_json::from_reader(f) {
+                    Err(e) => {
+                        error!("Could not read current version of keystore");
+                        Err(KeyStoreError::JsonError(e))
+                    }
+                    Ok(v) => Ok(v),
+                }
+            } else {
+                debug!("No previous version info of keystore found, so assuming pre 0.6");
+                Ok(KeyStoreVersion::Pre0_6)
+            }
+        }
+    }
+
+    fn set_version(&self, version: &KeyStoreVersion) -> Result<(), KeyStoreError> {
+        let path = self.version_path();
+        let mut f = file::create_file_with_path(&path)?;
+        let json = serde_json::to_string_pretty(version)?;
+        f.write_all(json.as_ref())?;
+        Ok(())
+    }
+
     fn key_for_info() -> Self::Key {
         PathBuf::from("info.json")
     }
@@ -168,6 +219,25 @@ impl KeyStore for DiskKeyStore {
         PathBuf::from(format!("command-{}.json", seq))
     }
 
+    fn keys_ascending_matching(&self, id: &Handle, matching: &str) -> Vec<Self::Key> {
+        let mut res = vec![];
+        let dir = self.dir_for_aggregate(id);
+        if let Ok(entry_results) = fs::read_dir(dir) {
+            for entry_result in entry_results {
+                if let Ok(dir_entry) = entry_result {
+                    let file_name = dir_entry.file_name();
+                    if file_name.to_string_lossy().contains(matching) {
+                        res.push(PathBuf::from(file_name));
+                    }
+                }
+            }
+        }
+
+        res.sort_by(|a, b| a.to_string_lossy().cmp(&b.to_string_lossy()));
+
+        res
+    }
+
     fn has_key(&self, id: &Handle, key: &Self::Key) -> bool {
         self.file_path(id, key).exists()
     }
@@ -182,8 +252,10 @@ impl KeyStore for DiskKeyStore {
         if let Ok(dir) = fs::read_dir(&self.dir) {
             for d in dir {
                 let path = d.unwrap().path();
-                let id = Handle::from_path_unsafe(&path);
-                res.push(id);
+                if path.is_dir() {
+                    let id = Handle::from_path_unsafe(&path);
+                    res.push(id);
+                }
             }
         }
 
@@ -228,6 +300,16 @@ impl KeyStore for DiskKeyStore {
         } else {
             trace!("Could not find file at: {}", path_str);
             Ok(None)
+        }
+    }
+
+    fn drop(&self, id: &Handle, key: &Self::Key) -> Result<(), KeyStoreError> {
+        let path = self.file_path(id, key);
+        if !path.exists() {
+            Err(KeyStoreError::KeyUnknown(key.to_string_lossy().to_string()))
+        } else {
+            fs::remove_file(path)?;
+            Ok(())
         }
     }
 
@@ -329,6 +411,12 @@ impl DiskKeyStore {
             fs::create_dir_all(&path)?;
         }
         Ok(Self::new(work_dir, name_space))
+    }
+
+    fn version_path(&self) -> PathBuf {
+        let mut path = self.dir.clone();
+        path.push("version");
+        path
     }
 
     fn file_path(&self, id: &Handle, key: &<Self as KeyStore>::Key) -> PathBuf {

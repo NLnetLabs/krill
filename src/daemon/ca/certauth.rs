@@ -19,7 +19,6 @@ use crate::commons::api::{
     IssuanceRequest, IssuedCert, ObjectsDelta, ParentCaContact, ParentHandle, RcvdCert,
     RepositoryContact, RequestResourceLimit, ResourceClassName, ResourceSet, RevocationRequest,
     RevocationResponse, RoaDefinition, SigningCert, TaCertDetails, TrustAnchorLocator,
-    UpdateChildRequest,
 };
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::{Aggregate, StoredEvent};
@@ -336,7 +335,8 @@ impl<S: Signer> Aggregate for CertAuth<S> {
             CmdDet::ChildAdd(child, id_cert_opt, resources) => {
                 self.child_add(child, id_cert_opt, resources)
             }
-            CmdDet::ChildUpdate(child, req) => self.child_update(&child, req),
+            CmdDet::ChildUpdateResources(child, res) => self.child_update_resources(&child, res),
+            CmdDet::ChildUpdateId(child, id) => self.child_update_id(&child, id),
             CmdDet::ChildCertify(child, request, signer) => {
                 self.child_certify(child, request, signer)
             }
@@ -773,44 +773,44 @@ impl<S: Signer> CertAuth<S> {
             .republish_certs(issued_certs, removed_certs, repo.repo_info(), signer)
     }
 
-    /// Updates child IdCert and/or Resource entitlements.
+    /// Updates child Resource entitlements.
     ///
-    /// Note: this does not yet revoke / reissue / republish anything. If the 'force' option was
-    /// used in the update request, then shrink_child should be called with a grace period that
-    /// is effective immediately.
-    fn child_update(
+    /// This does not yet revoke / reissue / republish anything.
+    /// Also, this is a no-op if the child already has these resources.
+    fn child_update_resources(
         &self,
         child_handle: &Handle,
-        req: UpdateChildRequest,
+        resources: ResourceSet,
     ) -> KrillResult<Vec<Evt>> {
-        let (cert_opt, resources_opt) = req.unpack();
-
-        let mut version = self.version;
         let mut res = vec![];
 
         let child = self.get_child(child_handle)?;
 
-        if let Some(id_cert) = cert_opt {
-            if Some(&id_cert) != child.id_cert() {
-                res.push(EvtDet::child_updated_cert(
-                    &self.handle,
-                    version,
-                    child_handle.clone(),
-                    id_cert,
-                ));
-                version += 1;
-            }
+        if &resources != child.resources() {
+            res.push(EvtDet::child_updated_resources(
+                &self.handle,
+                self.version,
+                child_handle.clone(),
+                resources,
+            ));
         }
 
-        if let Some(resources) = resources_opt {
-            if &resources != child.resources() {
-                res.push(EvtDet::child_updated_resources(
-                    &self.handle,
-                    version,
-                    child_handle.clone(),
-                    resources,
-                ));
-            }
+        Ok(res)
+    }
+
+    /// Updates child IdCert
+    fn child_update_id(&self, child_handle: &Handle, id_cert: IdCert) -> KrillResult<Vec<Evt>> {
+        let mut res = vec![];
+
+        let child = self.get_child(child_handle)?;
+
+        if Some(&id_cert) != child.id_cert() {
+            res.push(EvtDet::child_updated_cert(
+                &self.handle,
+                self.version,
+                child_handle.clone(),
+                id_cert,
+            ));
         }
 
         Ok(res)

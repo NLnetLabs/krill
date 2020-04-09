@@ -244,7 +244,18 @@ impl<S: Signer> CaServer<S> {
         child: ChildHandle,
         req: UpdateChildRequest,
     ) -> KrillResult<()> {
-        self.send_command(CmdDet::child_update(handle, child, req))
+        let (id_opt, resources_opt) = req.unpack();
+
+        if (id_opt.is_some() && resources_opt.is_some())
+            || (id_opt.is_none() && resources_opt.is_none())
+        {
+            Err(Error::CaChildUpdateOneThing(handle.clone(), child))
+        } else if let Some(id) = id_opt {
+            self.send_command(CmdDet::child_update_id(handle, child, id))
+        } else {
+            let resources = resources_opt.unwrap();
+            self.send_command(CmdDet::child_update_resources(handle, child, resources))
+        }
     }
 
     /// Update a child under this CA.
@@ -403,7 +414,9 @@ impl<S: Signer> CaServer<S> {
 
     /// Initialises a CA without a repo, no parents, no children, no nothing
     pub fn init_ca(&self, handle: &Handle) -> KrillResult<()> {
-        if self.ca_store.has(handle) {
+        if handle == &ta_handle() || handle.as_str() == "version" {
+            Err(Error::TaNameReserved)
+        } else if self.ca_store.has(handle) {
             Err(Error::CaDuplicate(handle.clone()))
         } else {
             let init = IniDet::init(handle, self.signer.clone())?;

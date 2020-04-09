@@ -1,0 +1,28 @@
+{
+  "id": "ca",
+  "version": 2,
+  "details": {
+    "resource_class_added": [
+      "0",
+      {
+        "name": "0",
+        "name_space": "0",
+        "parent_handle": "ripencc",
+        "parent_rc_name": "DEFAULT",
+        "roas": {
+          "inner": {}
+        },
+        "certificates": {
+          "inner": {}
+        },
+        "last_key_change": "2019-12-02T15:47:16.867060380Z",
+        "key_state": {
+          "pending": {
+            "key_id": "D5EE85EF047010771547FE3ACFE4316503B8EC6F",
+            "request": null
+          }
+        }
+      }
+    ]
+  }
+}

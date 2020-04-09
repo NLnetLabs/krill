@@ -146,6 +146,24 @@ pub struct StoredCommand<S: Storable> {
 }
 
 impl<S: Storable> StoredCommand<S> {
+    pub fn new(
+        actor: String,
+        time: Time,
+        handle: Handle,
+        version: u64,
+        details: S,
+        effect: StoredEffect,
+    ) -> Self {
+        StoredCommand {
+            actor,
+            time,
+            handle,
+            version,
+            details,
+            effect,
+        }
+    }
+
     pub fn time(&self) -> Time {
         self.time
     }
