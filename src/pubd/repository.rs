@@ -20,7 +20,7 @@ use crate::commons::util::file;
 use crate::commons::KrillResult;
 use crate::constants::{REPOSITORY_RRDP_DIR, REPOSITORY_RSYNC_DIR};
 use crate::pubd::publishers::Publisher;
-use crate::pubd::{Cmd, CmdDet, Evt, EvtDet, Ini, RrdpUpdate};
+use crate::pubd::{Cmd, CmdDet, Evt, EvtDet, Ini, RrdpUpdate, StorableRepositoryCommand};
 
 //------------ RsyncdStore ---------------------------------------------------
 
@@ -407,7 +407,7 @@ impl Repository {
 ///
 impl Aggregate for Repository {
     type Command = Cmd;
-    type StorableCommandDetails = CmdDet;
+    type StorableCommandDetails = StorableRepositoryCommand;
     type Event = Evt;
     type InitEvent = Ini;
     type Error = Error;

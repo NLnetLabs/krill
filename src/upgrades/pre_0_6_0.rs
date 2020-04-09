@@ -17,6 +17,7 @@ use crate::commons::eventsourcing::{
 use crate::commons::remote::rfc8183::ServiceUri;
 use crate::commons::util::softsigner::OpenSslSigner;
 use crate::daemon::ca::{CertAuth, StorableCaCommand, StorableParentContact};
+use crate::pubd::{Repository, StorableRepositoryCommand};
 use crate::upgrades::{UpgradeError, UpgradeStore};
 
 //------------ UpgradeCas --------------------------------------------------
@@ -51,7 +52,8 @@ impl UpgradeStore for UpgradeCas {
                     // Parse as PreviousCommand
                     if let Some(previous) = store.get::<PreviousCommand>(&ca_handle, &old_key)? {
                         // Convert to new command, save it, remove the old command and increase the sequence
-                        let command = previous.into_new_stored_command()?;
+                        let previous = previous.with_handle(ca_handle.clone());
+                        let command = previous.into_new_stored_ca_command()?;
                         last_update = command.time();
                         store.store_command(command, seq)?;
                         store.drop(&ca_handle, &old_key)?;
@@ -91,6 +93,83 @@ impl UpgradeStore for UpgradeCas {
     }
 }
 
+//------------ UpgradePubd -------------------------------------------------
+
+pub struct UpgradePubd;
+
+impl UpgradeStore for UpgradePubd {
+    fn needs_migrate<S: KeyStore>(&self, store: &S) -> Result<bool, UpgradeError> {
+        if store.aggregates().len() == 0 {
+            Ok(false)
+        } else {
+            match store.get_version() {
+                Ok(version) => match version {
+                    KeyStoreVersion::V0_6 => Ok(false),
+                    KeyStoreVersion::Pre0_6 => Ok(true),
+                },
+                Err(e) => match e {
+                    KeyStoreError::NotInitialised => Ok(false),
+                    _ => Err(UpgradeError::KeyStoreError(e)),
+                },
+            }
+        }
+    }
+
+    fn migrate<S: KeyStore>(&self, store: &S) -> Result<(), UpgradeError> {
+        if self.needs_migrate(store)? {
+            // For each aggregate
+            for pubd_handle in store.aggregates() {
+                //   Find all commands keys and migrate them
+                let mut seq = 1;
+
+                let mut last_command = 1;
+                let mut last_update: Time = Time::now();
+
+                for old_key in store.keys_ascending_matching(&pubd_handle, ".cmd") {
+                    // Parse as PreviousCommand
+                    if let Some(previous) = store.get::<PreviousCommand>(&pubd_handle, &old_key)? {
+                        // Convert to new command, save it, remove the old command and increase the sequence
+                        let previous = previous.with_handle(pubd_handle.clone());
+                        let command = previous.into_new_stored_pubd_command()?;
+                        last_update = command.time();
+                        store.store_command(command, seq)?;
+                        store.drop(&pubd_handle, &old_key)?;
+                        last_command = seq;
+                        seq += 1;
+                    }
+                }
+
+                // Load CA, then save a new snapshot and info for the CA
+                let repository: Repository = store
+                    .get_aggregate(&pubd_handle)
+                    .map_err(|e| {
+                        UpgradeError::Custom(format!(
+                            "Cannot load ca '{}' error: {}",
+                            pubd_handle.clone(),
+                            e
+                        ))
+                    })?
+                    .ok_or_else(|| UpgradeError::CannotLoadAggregate(pubd_handle.clone()))?;
+
+                store.store_snapshot(&pubd_handle, &repository)?;
+
+                let info = StoredValueInfo {
+                    snapshot_version: repository.version(),
+                    last_event: repository.version(),
+                    last_command,
+                    last_update,
+                };
+                store.save_info(&pubd_handle, &info)?;
+            }
+
+            store.set_version(&KeyStoreVersion::V0_6)?;
+            Ok(())
+        } else {
+            Ok(())
+        }
+    }
+}
+
 //------------ PreviousCommand ---------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -104,8 +183,13 @@ struct PreviousCommand {
 }
 
 impl PreviousCommand {
-    fn into_new_stored_command(self) -> Result<StoredCommand<StorableCaCommand>, UpgradeError> {
-        let details = Self::details_from_string(self.summary)?;
+    fn with_handle(mut self, handle: Handle) -> Self {
+        self.handle = handle;
+        self
+    }
+
+    fn into_new_stored_ca_command(self) -> Result<StoredCommand<StorableCaCommand>, UpgradeError> {
+        let details = Self::storable_ca_command(self.summary)?;
 
         Ok(StoredCommand::new(
             self.actor,
@@ -117,7 +201,22 @@ impl PreviousCommand {
         ))
     }
 
-    fn details_from_string(s: String) -> Result<StorableCaCommand, UpgradeError> {
+    fn into_new_stored_pubd_command(
+        self,
+    ) -> Result<StoredCommand<StorableRepositoryCommand>, UpgradeError> {
+        let details = Self::storable_pubd_command(self.summary)?;
+
+        Ok(StoredCommand::new(
+            self.actor,
+            self.time,
+            self.handle,
+            self.version,
+            details,
+            self.effect,
+        ))
+    }
+
+    fn storable_ca_command(s: String) -> Result<StorableCaCommand, UpgradeError> {
         if s.starts_with("Turn into Trust Anchor") {
             Ok(StorableCaCommand::MakeTrustAnchor)
         } else if s.starts_with("Add child") {
@@ -156,6 +255,18 @@ impl PreviousCommand {
             PreviousCommand::extract_update_repo(&s)
         } else if s.starts_with("Clean up old repository") {
             Ok(StorableCaCommand::RepoRemoveOld)
+        } else {
+            Err(UpgradeError::unrecognised(s))
+        }
+    }
+
+    fn storable_pubd_command(s: String) -> Result<StorableRepositoryCommand, UpgradeError> {
+        if s.starts_with("Added publisher") {
+            PreviousCommand::extract_add_publisher(&s)
+        } else if s.starts_with("Remove publisher") {
+            PreviousCommand::extract_remove_publisher(&s)
+        } else if s.starts_with("Publish for") {
+            PreviousCommand::extract_publish_for(&s)
         } else {
             Err(UpgradeError::unrecognised(s))
         }
@@ -507,6 +618,62 @@ impl PreviousCommand {
         }
 
         Ok(())
+    }
+
+    fn extract_add_publisher(s: &str) -> Result<StorableRepositoryCommand, UpgradeError> {
+        // Added publisher '{}' with id cert hash '{}'
+        let parts = Self::split_string(s, 2)?;
+        let publisher = Self::extract_handle(&parts[0])?;
+        let ski = &parts[1];
+        Ok(StorableRepositoryCommand::AddPublisher(
+            publisher,
+            ski.clone(),
+        ))
+    }
+
+    fn extract_remove_publisher(s: &str) -> Result<StorableRepositoryCommand, UpgradeError> {
+        // Remove publisher '{}' and all its objects
+        let parts = Self::split_string(s, 1)?;
+        let publisher = Self::extract_handle(&parts[0])?;
+        Ok(StorableRepositoryCommand::RemovePublisher(publisher))
+    }
+
+    fn extract_publish_for(s: &str) -> Result<StorableRepositoryCommand, UpgradeError> {
+        // Publish for '{}': {} new, {} updated, {} withdrawn objects
+        let lead = "Publish for '";
+        let lead_published = "': ";
+        let lead_updated = " new, ";
+        let lead_withdrawn = " updated, ";
+        let tail = " withdrawn objects";
+
+        if !s.starts_with(lead) {
+            return Err(UpgradeError::unrecognised(s));
+        }
+
+        let lead_published_start = s
+            .find(lead_published)
+            .ok_or_else(|| UpgradeError::unrecognised(s))?;
+        let lead_updated_start = s
+            .find(lead_updated)
+            .ok_or_else(|| UpgradeError::unrecognised(s))?;
+        let lead_withdrawn_start = s
+            .find(lead_withdrawn)
+            .ok_or_else(|| UpgradeError::unrecognised(s))?;
+        let tail_start = s.find(tail).ok_or_else(|| UpgradeError::unrecognised(s))?;
+
+        let publisher = Self::extract_handle(&s[lead.len()..lead_published_start])?;
+
+        let published_str = &s[lead_published_start + lead_published.len()..lead_updated_start];
+        let updated_str = &s[lead_updated_start + lead_updated.len()..lead_withdrawn_start];
+        let withdrawn_str = &s[lead_withdrawn_start + lead_withdrawn.len()..tail_start];
+
+        let published = Self::extract_i64(published_str)? as usize;
+        let updated = Self::extract_i64(updated_str)? as usize;
+        let withdrawn = Self::extract_i64(withdrawn_str)? as usize;
+
+        Ok(StorableRepositoryCommand::Publish(
+            publisher, published, updated, withdrawn,
+        ))
     }
 
     fn extract_handle(s: &str) -> Result<Handle, UpgradeError> {
