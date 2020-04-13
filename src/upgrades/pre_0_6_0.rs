@@ -99,7 +99,7 @@ pub struct UpgradePubd;
 
 impl UpgradeStore for UpgradePubd {
     fn needs_migrate<S: KeyStore>(&self, store: &S) -> Result<bool, UpgradeError> {
-        if store.aggregates().len() == 0 {
+        if store.aggregates().is_empty() {
             Ok(false)
         } else {
             match store.get_version() {
@@ -597,7 +597,7 @@ impl PreviousCommand {
         // 2a04:b900::/29 => 199664 2a04:b900::/29 => 8587 185.49.140.0/22 => 8587 185.49.140.0/22 => 199664
         let mut remaining = s.trim();
 
-        while remaining.len() > 0 {
+        while !remaining.is_empty() {
             let sep_start = remaining.find(" => ").ok_or_else(|| {
                 UpgradeError::Custom(format!("Invalid ROA string: {}", remaining))
             })?;
