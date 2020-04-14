@@ -1,6 +1,6 @@
 use std::str::{from_utf8_unchecked, FromStr};
 
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, SecondsFormat, Utc};
 use serde::Serialize;
 
 use rpki::x509::Time;
@@ -8,7 +8,7 @@ use rpki::x509::Time;
 use crate::commons::api::{
     AllCertAuthIssues, CaRepoDetails, CertAuthInfo, CertAuthIssues, CertAuthList, ChildCaInfo,
     CommandHistory, CurrentObjects, CurrentRepoState, ParentCaContact, PublisherDetails,
-    PublisherList, RepositoryContact, RoaDefinition, ServerInfo,
+    PublisherList, RepositoryContact, RoaDefinition, ServerInfo, StoredEffect,
 };
 use crate::commons::remote::api::ClientInfo;
 use crate::commons::remote::rfc8183;
@@ -227,14 +227,13 @@ impl Report for CommandHistory {
         res.push_str("time::command::success\n");
 
         for command in self.commands() {
-            let success_string = if command.effect.successful() {
-                "OK"
-            } else {
-                "FAILED"
+            let success_string = match &command.effect {
+                StoredEffect::Error(msg) => format!("ERROR -> {}", msg),
+                StoredEffect::Events(_) => "OK".to_string(),
             };
             res.push_str(&format!(
                 "{}::{}::{}\n",
-                command.time.to_rfc3339(),
+                command.time().to_rfc3339_opts(SecondsFormat::Secs, true),
                 command.summary.msg,
                 success_string
             ))

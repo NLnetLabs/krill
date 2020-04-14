@@ -188,7 +188,7 @@ impl<S: WithStorableDetails> Into<CommandHistoryRecord> for StoredCommand<S> {
     fn into(self) -> CommandHistoryRecord {
         CommandHistoryRecord {
             actor: self.actor,
-            time: self.time,
+            timestamp: self.time.timestamp_millis(),
             handle: self.handle,
             version: self.version,
             sequence: self.sequence,

@@ -4,6 +4,9 @@ use std::fmt;
 use rpki::crypto::KeyIdentifier;
 use rpki::x509::Time;
 
+use chrono::Utc;
+use chrono::{DateTime, NaiveDateTime};
+
 use crate::commons::api::{
     ArgKey, ArgVal, ChildHandle, Handle, Label, Message, ParentHandle, PublisherHandle,
     RequestResourceLimit, ResourceClassName, ResourceSet, RevocationRequest, RoaDefinitionUpdates,
@@ -51,12 +54,20 @@ impl CommandHistory {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CommandHistoryRecord {
     pub actor: String,
-    pub time: Time,
+    pub timestamp: i64,
     pub handle: Handle,
     pub version: u64,
     pub sequence: u64,
     pub summary: CommandSummary,
     pub effect: StoredEffect,
+}
+
+impl CommandHistoryRecord {
+    pub fn time(&self) -> Time {
+        let seconds = self.timestamp / 1000;
+        let time = NaiveDateTime::from_timestamp(seconds, 0);
+        Time::from(DateTime::from_utc(time, Utc))
+    }
 }
 
 //------------ StoredEffect --------------------------------------------------
@@ -162,9 +173,9 @@ pub struct CommandHistoryCriteria {
     #[serde(skip_serializing_if = "Option::is_none")]
     actor: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    before: Option<Time>,
+    before: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    after: Option<Time>,
+    after: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     label_includes: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -195,13 +206,13 @@ impl CommandHistoryCriteria {
                 return false;
             }
         }
-        if let Some(before) = &self.before {
-            if record.time.timestamp() > before.timestamp() {
+        if let Some(before) = self.before {
+            if record.timestamp > before {
                 return false;
             }
         }
-        if let Some(after) = &self.after {
-            if record.time.timestamp() < after.timestamp() {
+        if let Some(after) = self.after {
+            if record.timestamp < after {
                 return false;
             }
         }
