@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -9,8 +8,9 @@ use rpki::x509::Time;
 use crate::commons::api::{CommandHistory, CommandHistoryCriteria, Handle};
 use crate::commons::eventsourcing::cmd::{Command, StoredCommandBuilder};
 use crate::commons::eventsourcing::{
-    Aggregate, DiskKeyStore, Event, EventListener, KeyStore, KeyStoreError,
+    Aggregate, DiskKeyStore, Event, EventListener, KeyStore, KeyStoreError, KeyStoreVersion,
 };
+use std::io;
 
 const SNAPSHOT_FREQ: u64 = 5;
 
@@ -58,6 +58,9 @@ pub enum AggregateStoreError {
     #[display(fmt = "{}", _0)]
     KeyStoreError(KeyStoreError),
 
+    #[display(fmt = "{}", _0)]
+    IoError(io::Error),
+
     #[display(fmt = "unknown entity: {}", _0)]
     UnknownAggregate(Handle),
 
@@ -96,8 +99,16 @@ pub struct DiskAggregateStore<A: Aggregate> {
 }
 
 impl<A: Aggregate> DiskAggregateStore<A> {
-    pub fn new(work_dir: &PathBuf, name_space: &str) -> Result<Self, io::Error> {
-        let store = DiskKeyStore::under_work_dir(work_dir, name_space)?;
+    pub fn new(work_dir: &PathBuf, name_space: &str) -> StoreResult<Self> {
+        let store = DiskKeyStore::under_work_dir(work_dir, name_space)
+            .map_err(AggregateStoreError::IoError)?;
+
+        if store.aggregates().is_empty() {
+            store
+                .set_version(&KeyStoreVersion::V0_6)
+                .map_err(AggregateStoreError::KeyStoreError)?;
+        }
+
         let cache = RwLock::new(HashMap::new());
         let use_cache = true;
         let listeners = vec![];
