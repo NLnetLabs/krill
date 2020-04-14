@@ -4,188 +4,20 @@ use std::sync::{Arc, RwLock};
 
 use chrono::Duration;
 
-use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 
 use crate::commons::api::{
     ChildHandle, Entitlements, Handle, IssuanceRequest, ParentCaContact, ParentHandle, RcvdCert,
-    RepositoryContact, RequestResourceLimit, ResourceClassName, ResourceSet, RevocationRequest,
-    RevocationResponse, RoaDefinitionUpdates,
+    RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse,
+    StorableCaCommand,
 };
 use crate::commons::eventsourcing;
 use crate::commons::remote::id::IdCert;
-use crate::commons::remote::rfc8183::ServiceUri;
 use crate::daemon::ca::{Evt, RouteAuthorizationUpdates, Signer};
 
 //------------ Command -----------------------------------------------------
 
 pub type Cmd<S> = eventsourcing::SentCommand<CmdDet<S>>;
-
-#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum StorableParentContact {
-    #[display(fmt = "This CA is a TA")]
-    Ta,
-
-    #[display(fmt = "Embedded parent")]
-    Embedded,
-
-    #[display(fmt = "RFC 6492 Parent")]
-    Rfc6492,
-}
-
-impl From<ParentCaContact> for StorableParentContact {
-    fn from(parent: ParentCaContact) -> Self {
-        match parent {
-            ParentCaContact::Ta(_) => StorableParentContact::Ta,
-            ParentCaContact::Embedded => StorableParentContact::Embedded,
-            ParentCaContact::Rfc6492(_) => StorableParentContact::Rfc6492,
-        }
-    }
-}
-
-//------------ StorableCaCommand -------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[allow(clippy::large_enum_variant)]
-#[serde(rename_all = "snake_case")]
-pub enum StorableCaCommand {
-    MakeTrustAnchor,
-    ChildAdd(ChildHandle, Option<String>, ResourceSet),
-    ChildUpdateResources(ChildHandle, ResourceSet),
-    ChildUpdateId(ChildHandle),
-    ChildCertify(
-        ChildHandle,
-        ResourceClassName,
-        RequestResourceLimit,
-        KeyIdentifier,
-    ),
-    ChildRevokeKey(ChildHandle, RevocationRequest),
-    ChildRemove(ChildHandle),
-    GenerateNewIdKey,
-    AddParent(ParentHandle, StorableParentContact),
-    UpdateParentContact(ParentHandle, StorableParentContact),
-    RemoveParent(ParentHandle),
-    UpdateResourceClasses(ParentHandle, HashMap<ResourceClassName, ResourceSet>),
-    UpdateRcvdCert(ResourceClassName, ResourceSet),
-    KeyRollInitiate(i64),
-    KeyRollActivate(i64),
-    KeyRollFinish(ResourceClassName),
-    RoaDefinitionUpdates(RoaDefinitionUpdates),
-    Republish,
-    RepoUpdate(Option<ServiceUri>),
-    RepoRemoveOld,
-}
-
-impl fmt::Display for StorableCaCommand {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            // ------------------------------------------------------------
-            // Becoming a trust anchor
-            // ------------------------------------------------------------
-            StorableCaCommand::MakeTrustAnchor => write!(f, "Turn into Trust Anchor"),
-
-            // ------------------------------------------------------------
-            // Being a parent
-            // ------------------------------------------------------------
-            StorableCaCommand::ChildAdd(child, id_ski_opt, res) => write!(
-                f,
-                "Add child '{}' with RFC8183 key '{}' and resources '{}'",
-                child,
-                id_ski_opt
-                    .as_ref()
-                    .map(|ski| ski.as_str())
-                    .unwrap_or_else(|| "<none>"),
-                res
-            ),
-            StorableCaCommand::ChildUpdateResources(child, resources) => {
-                write!(f, "Update child '{}' resources to: {}", child, resources)
-            }
-            StorableCaCommand::ChildUpdateId(child) => {
-                write!(f, "Update child '{}' ID certificate", child)
-            }
-            StorableCaCommand::ChildCertify(child, _rcn, _limit, key) => {
-                write!(f, "Issue certificate to child '{}' for key '{}", child, key)
-            }
-            StorableCaCommand::ChildRevokeKey(child, req) => write!(
-                f,
-                "Revoke certificates for child '{}' for key '{}' in RC {}",
-                child,
-                req.key(),
-                req.class_name()
-            ),
-            StorableCaCommand::ChildRemove(child) => {
-                write!(f, "Remove child '{}' and revoke&remove its certs", child)
-            }
-
-            // ------------------------------------------------------------
-            // Being a child (only allowed if this CA is not self-signed)
-            // ------------------------------------------------------------
-            StorableCaCommand::GenerateNewIdKey => write!(f, "Generate a new RFC8183 ID."),
-            StorableCaCommand::AddParent(parent, contact) => {
-                write!(f, "Add parent '{}' as '{}'", parent, contact)
-            }
-            StorableCaCommand::UpdateParentContact(parent, contact) => {
-                write!(f, "Update contact for parent '{}' to '{}'", parent, contact)
-            }
-            StorableCaCommand::RemoveParent(parent) => write!(f, "Remove parent '{}'", parent),
-
-            StorableCaCommand::UpdateResourceClasses(parent, classes) => {
-                let mut summary = format!("Update entitlements under parent '{}': ", parent);
-
-                for (class_name, resource_set) in classes.iter() {
-                    summary.push_str(&format!("{} => {} ", class_name, resource_set))
-                }
-
-                write!(f, "{}", summary)
-            }
-            // Process a new certificate received from a parent.
-            StorableCaCommand::UpdateRcvdCert(rcn, resources) => write!(
-                f,
-                "Update received cert in RC '{}', with resources '{}'",
-                rcn, resources
-            ),
-
-            // ------------------------------------------------------------
-            // Key rolls
-            // ------------------------------------------------------------
-            StorableCaCommand::KeyRollInitiate(duration) => write!(
-                f,
-                "Initiate key roll for keys older than '{}' seconds",
-                duration
-            ),
-            StorableCaCommand::KeyRollActivate(duration) => write!(
-                f,
-                "Activate new keys staging longer than '{}' seconds",
-                duration
-            ),
-
-            StorableCaCommand::KeyRollFinish(rcn) => {
-                write!(f, "Retire old revoked key in RC '{}'", rcn)
-            }
-
-            // ------------------------------------------------------------
-            // ROA Support
-            // ------------------------------------------------------------
-            StorableCaCommand::RoaDefinitionUpdates(updates) => write!(
-                f,
-                "Update ROAs add: {} remove: '{}'",
-                updates.added().len(),
-                updates.removed().len()
-            ),
-
-            // ------------------------------------------------------------
-            // Publishing
-            // ------------------------------------------------------------
-            StorableCaCommand::Republish => write!(f, "Republish"),
-            StorableCaCommand::RepoUpdate(service_uri_opt) => match service_uri_opt {
-                None => write!(f, "Update repo to embedded server"),
-                Some(uri) => write!(f, "Update repo to server at: {}", uri),
-            },
-            StorableCaCommand::RepoRemoveOld => write!(f, "Clean up old repository"),
-        }
-    }
-}
 
 //------------ CommandDetails ----------------------------------------------
 
@@ -308,7 +140,9 @@ impl<S: Signer> From<CmdDet<S>> for StorableCaCommand {
             CmdDet::ChildUpdateResources(child, res) => {
                 StorableCaCommand::ChildUpdateResources(child, res)
             }
-            CmdDet::ChildUpdateId(child, _) => StorableCaCommand::ChildUpdateId(child),
+            CmdDet::ChildUpdateId(child, id) => {
+                StorableCaCommand::ChildUpdateId(child, id.ski_hex())
+            }
             CmdDet::ChildCertify(child, req, _) => {
                 let (rcn, limit, csr) = req.unpack();
                 let ki = csr.public_key().key_identifier();

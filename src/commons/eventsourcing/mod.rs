@@ -2,13 +2,12 @@
 
 mod agg;
 pub use self::agg::Aggregate;
-pub use self::agg::AggregateHistory;
 
 mod evt;
 pub use self::evt::{Event, StoredEvent};
 
 mod cmd;
-pub use self::cmd::{Command, CommandDetails, SentCommand, StoredCommand, StoredEffect};
+pub use self::cmd::{Command, CommandDetails, SentCommand, StoredCommand, WithStorableDetails};
 
 mod store;
 pub use self::store::{
@@ -36,7 +35,7 @@ mod tests {
 
     use serde::Serialize;
 
-    use crate::commons::api::Handle;
+    use crate::commons::api::{CommandHistoryCriteria, CommandSummary, Handle};
     use crate::test;
 
     use super::*;
@@ -137,6 +136,19 @@ mod tests {
 
         #[display(fmt = "Go around the sun")]
         GoAroundTheSun,
+    }
+
+    impl WithStorableDetails for PersonCommandDetails {
+        fn summary(&self) -> CommandSummary {
+            match self {
+                PersonCommandDetails::ChangeName(name) => {
+                    CommandSummary::new("person-change-name", &self).with_arg("name", name)
+                }
+                PersonCommandDetails::GoAroundTheSun => {
+                    CommandSummary::new("person-around-sun", &self)
+                }
+            }
+        }
     }
 
     impl CommandDetails for PersonCommandDetails {
@@ -309,35 +321,18 @@ mod tests {
 
             assert_eq!(22, counter.total());
 
-            let history = manager.history(&id_alice).unwrap();
+            // Get paginated history
+            let crit = CommandHistoryCriteria::default().paginate(3, 10);
+            let history = manager.command_history(&id_alice, crit).unwrap();
+            assert_eq!(history.total(), 22);
+            assert_eq!(history.offset(), 3);
+            assert_eq!(history.commands().len(), 10);
+            assert_eq!(history.commands().first().unwrap().sequence, 4);
 
-            let expected_history = concat!(
-                "id: alice version: 0 details: person initialised with name 'alice smith'\n",
-                "id: alice version: 1 details: went around the sun.\n",
-                "id: alice version: 2 details: went around the sun.\n",
-                "id: alice version: 3 details: went around the sun.\n",
-                "id: alice version: 4 details: went around the sun.\n",
-                "id: alice version: 5 details: went around the sun.\n",
-                "id: alice version: 6 details: went around the sun.\n",
-                "id: alice version: 7 details: went around the sun.\n",
-                "id: alice version: 8 details: went around the sun.\n",
-                "id: alice version: 9 details: went around the sun.\n",
-                "id: alice version: 10 details: went around the sun.\n",
-                "id: alice version: 11 details: went around the sun.\n",
-                "id: alice version: 12 details: went around the sun.\n",
-                "id: alice version: 13 details: went around the sun.\n",
-                "id: alice version: 14 details: went around the sun.\n",
-                "id: alice version: 15 details: went around the sun.\n",
-                "id: alice version: 16 details: went around the sun.\n",
-                "id: alice version: 17 details: went around the sun.\n",
-                "id: alice version: 18 details: went around the sun.\n",
-                "id: alice version: 19 details: went around the sun.\n",
-                "id: alice version: 20 details: went around the sun.\n",
-                "id: alice version: 21 details: went around the sun.\n",
-                "id: alice version: 22 details: changed name to 'alice smith-doe'\n"
-            );
-
-            assert_eq!(history.to_string().as_str(), expected_history);
+            // Get history excluding 'around the sun' commands
+            let crit = CommandHistoryCriteria::default().exclude(&["person-around-sun"]);
+            let history = manager.command_history(&id_alice, crit).unwrap();
+            assert_eq!(history.total(), 1);
         })
     }
 }

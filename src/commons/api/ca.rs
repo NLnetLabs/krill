@@ -25,10 +25,9 @@ use crate::commons::api::{
     Base64, ChildHandle, ErrorResponse, Handle, HexEncodedHash, IssuanceRequest, ListReply,
     ParentCaContact, ParentHandle, RepositoryContact, RequestResourceLimit, RoaDefinition,
 };
-use crate::commons::eventsourcing::AggregateHistory;
 use crate::commons::remote::id::IdCert;
 use crate::commons::util::ext_serde;
-use crate::daemon::ca::{self, CertAuth, RouteAuthorization, Signer};
+use crate::daemon::ca::RouteAuthorization;
 
 //------------ ResourceClassName -------------------------------------------
 
@@ -1577,31 +1576,6 @@ impl CertAuthInfo {
         }
 
         res
-    }
-}
-
-//------------ CertAuthHistory -----------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CertAuthHistory {
-    init: ca::Ini,
-    events: Vec<ca::Evt>,
-}
-
-impl<S: Signer> From<AggregateHistory<CertAuth<S>>> for CertAuthHistory {
-    fn from(history: AggregateHistory<CertAuth<S>>) -> Self {
-        let (init, events) = history.unpack();
-        CertAuthHistory { init, events }
-    }
-}
-
-impl fmt::Display for CertAuthHistory {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "{}", self.init)?;
-        for evt in &self.events {
-            writeln!(f, "{}", evt)?;
-        }
-        Ok(())
     }
 }
 

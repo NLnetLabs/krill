@@ -10,8 +10,8 @@ use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 
 use crate::commons::api::{
-    self, AddChildRequest, Base64, CertAuthHistory, CertAuthList, CertAuthSummary,
-    ChildAuthRequest, ChildCaInfo, ChildHandle, Entitlements, Handle, IssuanceRequest,
+    self, AddChildRequest, Base64, CertAuthList, CertAuthSummary, ChildAuthRequest, ChildCaInfo,
+    ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, Handle, IssuanceRequest,
     IssuanceResponse, IssuedCert, ListReply, ParentCaContact, ParentCaReq, ParentHandle,
     PublishDelta, RcvdCert, RepoInfo, RepositoryContact, ResourceClassName, ResourceSet,
     RevocationRequest, RevocationResponse, UpdateChildRequest,
@@ -277,10 +277,9 @@ impl<S: Signer> CaServer<S> {
     }
 
     /// Gets the history for a CA.
-    pub fn get_ca_history(&self, handle: &Handle) -> KrillResult<CertAuthHistory> {
+    pub fn get_ca_history(&self, handle: &Handle) -> KrillResult<CommandHistory> {
         self.ca_store
-            .history(handle)
-            .map(CertAuthHistory::from)
+            .command_history(handle, CommandHistoryCriteria::default())
             .map_err(|_| Error::CaUnknown(handle.clone()))
     }
 

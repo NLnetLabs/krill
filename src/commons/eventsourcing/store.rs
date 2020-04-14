@@ -11,10 +11,8 @@ use serde_json;
 
 use rpki::x509::Time;
 
-use crate::commons::api::Handle;
-use crate::commons::eventsourcing::agg::AggregateHistory;
-use crate::commons::eventsourcing::cmd::StoredCommand;
-use crate::commons::eventsourcing::{Aggregate, Event};
+use crate::commons::api::{CommandHistory, CommandHistoryCriteria, CommandHistoryRecord, Handle};
+use crate::commons::eventsourcing::{Aggregate, Event, StoredCommand, WithStorableDetails};
 use crate::commons::util::file;
 
 //------------ Storable ------------------------------------------------------
@@ -107,10 +105,9 @@ pub trait KeyStore {
     /// MUST check if the event already exists and return an error if it does.
     fn store_event<V: Event>(&self, event: &V) -> Result<(), KeyStoreError>;
 
-    fn store_command<S: Storable>(
+    fn store_command<S: WithStorableDetails>(
         &self,
         command: StoredCommand<S>,
-        seq: u64,
     ) -> Result<(), KeyStoreError>;
 
     /// Get the latest aggregate
@@ -119,6 +116,47 @@ pub trait KeyStore {
     /// Saves the latest snapshot - overwrites any previous snapshot.
     fn store_snapshot<V: Aggregate>(&self, id: &Handle, aggregate: &V)
         -> Result<(), KeyStoreError>;
+
+    /// Find all commands that fit the criteria and return history
+    fn command_history<A: Aggregate>(
+        &self,
+        id: &Handle,
+        crit: CommandHistoryCriteria,
+    ) -> Result<CommandHistory, KeyStoreError> {
+        let info = self.get_info(id)?;
+        let mut commands: Vec<CommandHistoryRecord> = vec![];
+
+        for seq in 1..=info.last_command {
+            let stored: StoredCommand<A::StorableCommandDetails> = self
+                .get(id, &Self::key_for_command(seq))?
+                .ok_or_else(|| KeyStoreError::CommandNotFound)?;
+
+            let stored = stored.into();
+
+            if crit.should_include(&stored) {
+                commands.push(stored);
+            }
+        }
+
+        let offset = crit.offset();
+        let total = commands.len();
+
+        if offset >= total {
+            return Err(KeyStoreError::CommandOffSetError);
+        }
+
+        if offset > 0 {
+            commands = commands.split_off(offset);
+        }
+
+        if let Some(rows) = crit.rows() {
+            if rows < commands.len() {
+                commands.split_off(rows);
+            }
+        }
+
+        Ok(CommandHistory::new(offset, total, commands))
+    }
 }
 
 //------------ KeyStoreError -------------------------------------------------
@@ -146,6 +184,12 @@ pub enum KeyStoreError {
 
     #[display(fmt = "This keystore is not initialised")]
     NotInitialised,
+
+    #[display(fmt = "StoredCommand cannot be found")]
+    CommandNotFound,
+
+    #[display(fmt = "StoredCommand offset out of bounds")]
+    CommandOffSetError,
 }
 
 impl From<io::Error> for KeyStoreError {
@@ -348,14 +392,13 @@ impl KeyStore for DiskKeyStore {
         }
     }
 
-    fn store_command<S: Storable>(
+    fn store_command<S: WithStorableDetails>(
         &self,
         command: StoredCommand<S>,
-        seq: u64,
     ) -> Result<(), KeyStoreError> {
         let id = command.handle();
 
-        let key = Self::key_for_command(seq);
+        let key = Self::key_for_command(command.sequence());
 
         if self.has_key(id, &key) {
             Err(KeyStoreError::KeyExists(key.to_string_lossy().to_string()))
@@ -446,20 +489,5 @@ impl DiskKeyStore {
             aggregate.apply(e);
         }
         Ok(())
-    }
-
-    pub fn history<A: Aggregate>(&self, id: &Handle) -> Result<AggregateHistory<A>, KeyStoreError> {
-        let init = self
-            .get_event::<A::InitEvent>(id, 0)?
-            .ok_or_else(|| KeyStoreError::NoHistory(id.clone()))?;
-
-        let mut events: Vec<A::Event> = vec![];
-        let mut version = 1;
-        while let Some(e) = self.get_event(id, version)? {
-            events.push(e);
-            version += 1;
-        }
-
-        Ok(AggregateHistory::new(init, events))
     }
 }

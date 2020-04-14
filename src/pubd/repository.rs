@@ -11,7 +11,9 @@ use crate::commons::api::rrdp::{
     CurrentObjects, Delta, DeltaElements, DeltaRef, FileRef, Notification, RrdpSession, Snapshot,
     SnapshotRef,
 };
-use crate::commons::api::{Handle, HexEncodedHash, PublishDelta, PublisherHandle, RepoInfo};
+use crate::commons::api::{
+    Handle, HexEncodedHash, PublishDelta, PublisherHandle, RepoInfo, StorableRepositoryCommand,
+};
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::Aggregate;
 use crate::commons::remote::id::IdCert;
@@ -20,7 +22,7 @@ use crate::commons::util::file;
 use crate::commons::KrillResult;
 use crate::constants::{REPOSITORY_RRDP_DIR, REPOSITORY_RSYNC_DIR};
 use crate::pubd::publishers::Publisher;
-use crate::pubd::{Cmd, CmdDet, Evt, EvtDet, Ini, RrdpUpdate, StorableRepositoryCommand};
+use crate::pubd::{Cmd, CmdDet, Evt, EvtDet, Ini, RrdpUpdate};
 
 //------------ RsyncdStore ---------------------------------------------------
 

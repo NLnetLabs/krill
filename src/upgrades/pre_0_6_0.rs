@@ -8,16 +8,16 @@ use rpki::x509::Time;
 
 use crate::commons::api::{
     Handle, RequestResourceLimit, ResourceClassName, ResourceSet, RevocationRequest, RoaDefinition,
-    RoaDefinitionUpdates,
+    RoaDefinitionUpdates, StorableCaCommand, StorableParentContact, StorableRepositoryCommand,
+    StoredEffect,
 };
 use crate::commons::eventsourcing::{
-    Aggregate, KeyStore, KeyStoreError, KeyStoreVersion, StoredCommand, StoredEffect,
-    StoredValueInfo,
+    Aggregate, KeyStore, KeyStoreError, KeyStoreVersion, StoredCommand, StoredValueInfo,
 };
 use crate::commons::remote::rfc8183::ServiceUri;
 use crate::commons::util::softsigner::OpenSslSigner;
-use crate::daemon::ca::{CertAuth, StorableCaCommand, StorableParentContact};
-use crate::pubd::{Repository, StorableRepositoryCommand};
+use crate::daemon::ca::CertAuth;
+use crate::pubd::Repository;
 use crate::upgrades::{UpgradeError, UpgradeStore};
 
 //------------ UpgradeCas --------------------------------------------------
@@ -53,9 +53,9 @@ impl UpgradeStore for UpgradeCas {
                     if let Some(previous) = store.get::<PreviousCommand>(&ca_handle, &old_key)? {
                         // Convert to new command, save it, remove the old command and increase the sequence
                         let previous = previous.with_handle(ca_handle.clone());
-                        let command = previous.into_new_stored_ca_command()?;
+                        let command = previous.into_new_stored_ca_command(seq)?;
                         last_update = command.time();
-                        store.store_command(command, seq)?;
+                        store.store_command(command)?;
                         store.drop(&ca_handle, &old_key)?;
                         last_command = seq;
                         seq += 1;
@@ -130,9 +130,9 @@ impl UpgradeStore for UpgradePubd {
                     if let Some(previous) = store.get::<PreviousCommand>(&pubd_handle, &old_key)? {
                         // Convert to new command, save it, remove the old command and increase the sequence
                         let previous = previous.with_handle(pubd_handle.clone());
-                        let command = previous.into_new_stored_pubd_command()?;
+                        let command = previous.into_new_stored_pubd_command(seq)?;
                         last_update = command.time();
-                        store.store_command(command, seq)?;
+                        store.store_command(command)?;
                         store.drop(&pubd_handle, &old_key)?;
                         last_command = seq;
                         seq += 1;
@@ -188,7 +188,10 @@ impl PreviousCommand {
         self
     }
 
-    fn into_new_stored_ca_command(self) -> Result<StoredCommand<StorableCaCommand>, UpgradeError> {
+    fn into_new_stored_ca_command(
+        self,
+        seq: u64,
+    ) -> Result<StoredCommand<StorableCaCommand>, UpgradeError> {
         let details = Self::storable_ca_command(self.summary)?;
 
         Ok(StoredCommand::new(
@@ -196,6 +199,7 @@ impl PreviousCommand {
             self.time,
             self.handle,
             self.version,
+            seq,
             details,
             self.effect,
         ))
@@ -203,6 +207,7 @@ impl PreviousCommand {
 
     fn into_new_stored_pubd_command(
         self,
+        seq: u64,
     ) -> Result<StoredCommand<StorableRepositoryCommand>, UpgradeError> {
         let details = Self::storable_pubd_command(self.summary)?;
 
@@ -211,6 +216,7 @@ impl PreviousCommand {
             self.time,
             self.handle,
             self.version,
+            seq,
             details,
             self.effect,
         ))
@@ -309,7 +315,10 @@ impl PreviousCommand {
             let res = Self::extract_resource_set(res_str)?;
             Ok(StorableCaCommand::ChildUpdateResources(child, res))
         } else if s.contains(id_cert_txt) {
-            Ok(StorableCaCommand::ChildUpdateId(child))
+            Ok(StorableCaCommand::ChildUpdateId(
+                child,
+                "<unsaved see events>".to_string(),
+            ))
         } else {
             Err(UpgradeError::unrecognised(s))
         }

@@ -476,6 +476,30 @@ impl ParentCaContact {
     }
 }
 
+/// This type is used when saving and presenting command history
+#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StorableParentContact {
+    #[display(fmt = "This CA is a TA")]
+    Ta,
+
+    #[display(fmt = "Embedded parent")]
+    Embedded,
+
+    #[display(fmt = "RFC 6492 Parent")]
+    Rfc6492,
+}
+
+impl From<ParentCaContact> for StorableParentContact {
+    fn from(parent: ParentCaContact) -> Self {
+        match parent {
+            ParentCaContact::Ta(_) => StorableParentContact::Ta,
+            ParentCaContact::Embedded => StorableParentContact::Embedded,
+            ParentCaContact::Rfc6492(_) => StorableParentContact::Rfc6492,
+        }
+    }
+}
+
 //------------ CertAuthInit --------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

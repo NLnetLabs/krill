@@ -6,8 +6,7 @@ use std::sync::RwLock;
 
 use rpki::x509::Time;
 
-use crate::commons::api::Handle;
-use crate::commons::eventsourcing::agg::AggregateHistory;
+use crate::commons::api::{CommandHistory, CommandHistoryCriteria, Handle};
 use crate::commons::eventsourcing::cmd::{Command, StoredCommandBuilder};
 use crate::commons::eventsourcing::{
     Aggregate, DiskKeyStore, Event, EventListener, KeyStore, KeyStoreError,
@@ -45,8 +44,12 @@ where
     /// are stored.
     fn add_listener<L: EventListener<A>>(&mut self, listener: Arc<L>);
 
-    /// Lists the complete history for an aggregate.
-    fn history(&self, id: &Handle) -> StoreResult<AggregateHistory<A>>;
+    /// Lists the history for an aggregate.
+    fn command_history(
+        &self,
+        id: &Handle,
+        crit: CommandHistoryCriteria,
+    ) -> StoreResult<CommandHistory>;
 }
 
 /// This type defines possible Errors for the AggregateStore
@@ -66,6 +69,16 @@ pub enum AggregateStoreError {
 
     #[display(fmt = "concurrent modifcation attempt for entity: '{}'", _0)]
     ConcurrentModification(Handle),
+
+    #[display(
+        fmt = "Aggregate '{}' does not have command with sequence '{}'",
+        _0,
+        _1
+    )]
+    UnknownCommand(Handle, u64),
+
+    #[display(fmt = "Offset '{}' exceeds total '{}'", _0, _1)]
+    CommandOffsetTooLarge(u64, u64),
 }
 
 impl From<KeyStoreError> for AggregateStoreError {
@@ -203,13 +216,14 @@ where
             }
         }
 
-        let stored_command_builder = StoredCommandBuilder::new(&cmd, latest.version());
+        let stored_command_builder =
+            StoredCommandBuilder::new(&cmd, latest.version(), info.last_command);
 
         let res = match latest.process_command(cmd) {
             Err(e) => {
                 let stored_command = stored_command_builder.finish_with_error(&e);
                 self.store
-                    .store_command(stored_command, info.last_command)
+                    .store_command(stored_command)
                     .map_err(AggregateStoreError::KeyStoreError)?;
                 Err(e)
             }
@@ -255,7 +269,7 @@ where
                     let stored_command =
                         stored_command_builder.finish_with_events(events.as_slice());
                     self.store
-                        .store_command(stored_command, info.last_command)
+                        .store_command(stored_command)
                         .map_err(AggregateStoreError::KeyStoreError)?;
 
                     for event in &events {
@@ -309,9 +323,13 @@ where
         self.listeners.push(listener)
     }
 
-    fn history(&self, id: &Handle) -> StoreResult<AggregateHistory<A>> {
+    fn command_history(
+        &self,
+        id: &Handle,
+        crit: CommandHistoryCriteria,
+    ) -> StoreResult<CommandHistory> {
         self.store
-            .history::<A>(id)
+            .command_history::<A>(id, crit)
             .map_err(AggregateStoreError::KeyStoreError)
     }
 }

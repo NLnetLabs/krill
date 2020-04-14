@@ -2,8 +2,19 @@ use std::fmt;
 
 use rpki::x509::Time;
 
-use crate::commons::api::Handle;
+use crate::commons::api::{CommandHistoryRecord, CommandSummary, Handle, StoredEffect};
 use crate::commons::eventsourcing::{Event, Storable};
+
+//------------ WithStorableDetails -------------------------------------------
+
+/// Must be implemented for all 'StorableDetails' used in Commands.
+///
+/// In addition to implementing Storable so that the details can be stored
+/// *and* retrieved, the details also need to be able to present a generic
+/// CommandSummer for use in history.
+pub trait WithStorableDetails: Storable {
+    fn summary(&self) -> CommandSummary;
+}
 
 //------------ Command -------------------------------------------------------
 
@@ -21,7 +32,7 @@ pub trait Command: fmt::Display {
     /// Identify the type of storable component for this command. Commands
     /// may contain short-lived things (e.g. an Arc<Signer>) or even secrets
     /// which should not be persisted.
-    type StorableDetails: Storable;
+    type StorableDetails: WithStorableDetails;
 
     /// Identifies the aggregate, useful when storing and retrieving the event.
     fn handle(&self) -> &Handle;
@@ -50,9 +61,6 @@ pub trait Command: fmt::Display {
         true
     }
 
-    /// Get a summary for the command audit log
-    fn summary(&self) -> String;
-
     /// Get the storable information for this command
     fn store(&self) -> Self::StorableDetails;
 }
@@ -78,10 +86,6 @@ impl<C: CommandDetails> Command for SentCommand<C> {
 
     fn version(&self) -> Option<u64> {
         self.version
-    }
-
-    fn summary(&self) -> String {
-        self.details.to_string()
     }
 
     fn store(&self) -> Self::StorableDetails {
@@ -124,7 +128,7 @@ impl<C: CommandDetails> fmt::Display for SentCommand<C> {
 /// id and version boilerplate from ['SentCommand'].
 pub trait CommandDetails: fmt::Display + 'static {
     type Event: Event;
-    type StorableDetails: Storable;
+    type StorableDetails: WithStorableDetails;
 
     fn store(&self) -> Self::StorableDetails;
 }
@@ -135,22 +139,24 @@ pub trait CommandDetails: fmt::Display + 'static {
 /// that followed. Commands that turn out to be no-ops (no events, no errors)
 /// should not be stored.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct StoredCommand<S: Storable> {
+pub struct StoredCommand<S: WithStorableDetails> {
     actor: String,
     time: Time,
     handle: Handle,
-    version: u64,
+    version: u64,  // version of aggregate this was applied to (successful or not)
+    sequence: u64, // command sequence (i.e. also incremented for failed commands)
     #[serde(deserialize_with = "S::deserialize")]
     details: S,
     effect: StoredEffect,
 }
 
-impl<S: Storable> StoredCommand<S> {
+impl<S: WithStorableDetails> StoredCommand<S> {
     pub fn new(
         actor: String,
         time: Time,
         handle: Handle,
         version: u64,
+        sequence: u64,
         details: S,
         effect: StoredEffect,
     ) -> Self {
@@ -159,6 +165,7 @@ impl<S: Storable> StoredCommand<S> {
             time,
             handle,
             version,
+            sequence,
             details,
             effect,
         }
@@ -171,15 +178,24 @@ impl<S: Storable> StoredCommand<S> {
     pub fn handle(&self) -> &Handle {
         &self.handle
     }
+
+    pub fn sequence(&self) -> u64 {
+        self.sequence
+    }
 }
 
-//------------ StoredEffect --------------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum StoredEffect {
-    Error(String),
-    Events(Vec<u64>),
+impl<S: WithStorableDetails> Into<CommandHistoryRecord> for StoredCommand<S> {
+    fn into(self) -> CommandHistoryRecord {
+        CommandHistoryRecord {
+            actor: self.actor,
+            time: self.time,
+            handle: self.handle,
+            version: self.version,
+            sequence: self.sequence,
+            summary: self.details.summary(),
+            effect: self.effect,
+        }
+    }
 }
 
 //------------ StoredCommandBuilder ------------------------------------------
@@ -191,11 +207,12 @@ pub struct StoredCommandBuilder<C: Command> {
     time: Time,
     handle: Handle,
     version: u64,
+    sequence: u64,
     details: C::StorableDetails,
 }
 
 impl<C: Command> StoredCommandBuilder<C> {
-    pub fn new(cmd: &C, version: u64) -> StoredCommandBuilder<C> {
+    pub fn new(cmd: &C, version: u64, sequence: u64) -> StoredCommandBuilder<C> {
         let actor = cmd.actor().to_string();
         let time = Time::now();
         let handle = cmd.handle().clone();
@@ -205,6 +222,7 @@ impl<C: Command> StoredCommandBuilder<C> {
             time,
             handle,
             version,
+            sequence,
             details,
         }
     }
@@ -215,6 +233,7 @@ impl<C: Command> StoredCommandBuilder<C> {
             time: self.time,
             handle: self.handle,
             version: self.version,
+            sequence: self.sequence,
             details: self.details,
             effect,
         }

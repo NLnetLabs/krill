@@ -18,7 +18,8 @@ use crate::commons::api::{
     self, CertAuthInfo, ChildHandle, EntitlementClass, Entitlements, Handle, IdCertPem,
     IssuanceRequest, IssuedCert, ObjectsDelta, ParentCaContact, ParentHandle, RcvdCert,
     RepositoryContact, RequestResourceLimit, ResourceClassName, ResourceSet, RevocationRequest,
-    RevocationResponse, RoaDefinition, SigningCert, TaCertDetails, TrustAnchorLocator,
+    RevocationResponse, RoaDefinition, SigningCert, StorableCaCommand, TaCertDetails,
+    TrustAnchorLocator,
 };
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::{Aggregate, StoredEvent};
@@ -29,7 +30,6 @@ use crate::commons::remote::rfc8183;
 use crate::commons::remote::sigmsg::SignedMessage;
 use crate::commons::KrillResult;
 use crate::constants::CHILD_CERTIFICATE_REISSUE_WEEKS;
-use crate::daemon::ca::commands::StorableCaCommand;
 use crate::daemon::ca::events::ChildCertificateUpdates;
 use crate::daemon::ca::rc::PublishMode;
 use crate::daemon::ca::signing::CsrInfo;

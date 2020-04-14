@@ -1,6 +1,8 @@
 use std::fmt;
 
-use crate::commons::api::{PublishDelta, PublisherHandle, RepositoryHandle};
+use crate::commons::api::{
+    PublishDelta, PublisherHandle, RepositoryHandle, StorableRepositoryCommand,
+};
 use crate::commons::eventsourcing::CommandDetails;
 use crate::commons::eventsourcing::SentCommand;
 use crate::commons::remote::rfc8183;
@@ -52,17 +54,6 @@ impl fmt::Display for CmdDet {
     }
 }
 
-//------------ StorableRepositoryCommand -----------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[allow(clippy::large_enum_variant)]
-#[serde(rename_all = "snake_case")]
-pub enum StorableRepositoryCommand {
-    AddPublisher(PublisherHandle, String),
-    RemovePublisher(PublisherHandle),
-    Publish(PublisherHandle, usize, usize, usize),
-}
-
 impl From<CmdDet> for StorableRepositoryCommand {
     fn from(d: CmdDet) -> Self {
         match d {
@@ -76,24 +67,6 @@ impl From<CmdDet> for StorableRepositoryCommand {
                 delta.publishes().len(),
                 delta.updates().len(),
                 delta.withdraws().len(),
-            ),
-        }
-    }
-}
-
-impl fmt::Display for StorableRepositoryCommand {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            StorableRepositoryCommand::AddPublisher(pbl, ski) => {
-                write!(f, "Added publisher '{}' with RFC8183 key '{}'", pbl, ski)
-            }
-            StorableRepositoryCommand::RemovePublisher(pbl) => {
-                write!(f, "Removed publisher '{}'", pbl)
-            }
-            StorableRepositoryCommand::Publish(pbl, published, updated, withdrawn) => write!(
-                f,
-                "Published for '{}': {} published, {} updated, {} withdrawn",
-                pbl, published, updated, withdrawn
             ),
         }
     }

@@ -11,8 +11,8 @@ use rpki::uri;
 use rpki::x509::Time;
 
 use crate::commons::api::{
-    AddChildRequest, AllCertAuthIssues, CaRepoDetails, CertAuthHistory, CertAuthInfo, CertAuthInit,
-    CertAuthIssues, CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, CurrentRepoState,
+    AddChildRequest, AllCertAuthIssues, CaRepoDetails, CertAuthInfo, CertAuthInit, CertAuthIssues,
+    CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, CommandHistory, CurrentRepoState,
     Handle, ListReply, ParentCaContact, ParentCaReq, ParentHandle, PublishDelta, PublisherDetails,
     PublisherHandle, RepoInfo, RepositoryContact, RepositoryUpdate, RoaDefinition,
     RoaDefinitionUpdates, ServerInfo, TaCertDetails, UpdateChildRequest,
@@ -515,7 +515,7 @@ impl KrillServer {
     }
 
     /// Returns the history for a CA, or NONE in case of issues (i.e. it does not exist).
-    pub fn ca_history(&self, handle: &Handle) -> Option<CertAuthHistory> {
+    pub fn ca_history(&self, handle: &Handle) -> Option<CommandHistory> {
         self.caserver.get_ca_history(handle).ok()
     }
 

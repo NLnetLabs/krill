@@ -6,8 +6,8 @@ use serde::Serialize;
 use rpki::x509::Time;
 
 use crate::commons::api::{
-    AllCertAuthIssues, CaRepoDetails, CertAuthHistory, CertAuthInfo, CertAuthIssues, CertAuthList,
-    ChildCaInfo, CurrentObjects, CurrentRepoState, ParentCaContact, PublisherDetails,
+    AllCertAuthIssues, CaRepoDetails, CertAuthInfo, CertAuthIssues, CertAuthList, ChildCaInfo,
+    CommandHistory, CurrentObjects, CurrentRepoState, ParentCaContact, PublisherDetails,
     PublisherList, RepositoryContact, RoaDefinition, ServerInfo,
 };
 use crate::commons::remote::api::ClientInfo;
@@ -24,7 +24,7 @@ pub enum ApiResponse {
     Info(ServerInfo),
 
     CertAuthInfo(CertAuthInfo),
-    CertAuthHistory(CertAuthHistory),
+    CertAuthHistory(CommandHistory),
     CertAuths(CertAuthList),
     RouteAuthorizations(Vec<RoaDefinition>),
 
@@ -220,9 +220,27 @@ impl Report for CertAuthInfo {
     }
 }
 
-impl Report for CertAuthHistory {
+impl Report for CommandHistory {
     fn text(&self) -> Result<String, ReportError> {
-        Ok(format!("{}", self))
+        let mut res = String::new();
+
+        res.push_str("time::command::success\n");
+
+        for command in self.commands() {
+            let success_string = if command.effect.successful() {
+                "OK"
+            } else {
+                "FAILED"
+            };
+            res.push_str(&format!(
+                "{}::{}::{}\n",
+                command.time.to_rfc3339(),
+                command.summary.msg,
+                success_string
+            ))
+        }
+
+        Ok(res)
     }
 }
 
