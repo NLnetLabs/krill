@@ -330,7 +330,7 @@ mod tests {
             assert_eq!(history.commands().first().unwrap().sequence, 4);
 
             // Get history excluding 'around the sun' commands
-            let crit = CommandHistoryCriteria::default().exclude(&["person-around-sun"]);
+            let crit = CommandHistoryCriteria::default().set_exclude(&["person-around-sun"]);
             let history = manager.command_history(&id_alice, crit).unwrap();
             assert_eq!(history.total(), 1);
         })

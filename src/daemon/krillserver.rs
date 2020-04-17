@@ -12,10 +12,10 @@ use rpki::x509::Time;
 
 use crate::commons::api::{
     AddChildRequest, AllCertAuthIssues, CaRepoDetails, CertAuthInfo, CertAuthInit, CertAuthIssues,
-    CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, CommandHistory, CurrentRepoState,
-    Handle, ListReply, ParentCaContact, ParentCaReq, ParentHandle, PublishDelta, PublisherDetails,
-    PublisherHandle, RepoInfo, RepositoryContact, RepositoryUpdate, RoaDefinition,
-    RoaDefinitionUpdates, ServerInfo, TaCertDetails, UpdateChildRequest,
+    CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria,
+    CurrentRepoState, Handle, ListReply, ParentCaContact, ParentCaReq, ParentHandle, PublishDelta,
+    PublisherDetails, PublisherHandle, RepoInfo, RepositoryContact, RepositoryUpdate,
+    RoaDefinition, RoaDefinitionUpdates, ServerInfo, TaCertDetails, UpdateChildRequest,
 };
 use crate::commons::error::Error;
 use crate::commons::remote::rfc8183;
@@ -515,8 +515,12 @@ impl KrillServer {
     }
 
     /// Returns the history for a CA, or NONE in case of issues (i.e. it does not exist).
-    pub fn ca_history(&self, handle: &Handle) -> Option<CommandHistory> {
-        self.caserver.get_ca_history(handle).ok()
+    pub fn ca_history(
+        &self,
+        handle: &Handle,
+        crit: CommandHistoryCriteria,
+    ) -> Option<CommandHistory> {
+        self.caserver.get_ca_history(handle, crit).ok()
     }
 
     /// Returns the publisher request for a CA, or NONE of the CA cannot be found.

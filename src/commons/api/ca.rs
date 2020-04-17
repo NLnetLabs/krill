@@ -1180,6 +1180,50 @@ impl From<&Cert> for WithdrawnObject {
     }
 }
 
+//------------ ResourceSetSummary --------------------------------------------
+/// This type defines a summary of a set of Internet Number Resources, for
+/// use in concise reporting.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ResourceSetSummary {
+    asns: usize,
+    ipv4: usize,
+    ipv6: usize,
+}
+
+impl ResourceSetSummary {
+    pub fn asn_bloks(&self) -> usize {
+        self.asns
+    }
+    pub fn ipv4_bloks(&self) -> usize {
+        self.ipv4
+    }
+    pub fn ipv6_bloks(&self) -> usize {
+        self.ipv6
+    }
+}
+
+impl From<&ResourceSet> for ResourceSetSummary {
+    fn from(rs: &ResourceSet) -> Self {
+        let asns: Vec<_> = rs.asn.iter().collect();
+        let asns = asns.len();
+        let ipv4: Vec<_> = rs.v4.iter().collect();
+        let ipv4 = ipv4.len();
+        let ipv6: Vec<_> = rs.v6.iter().collect();
+        let ipv6 = ipv6.len();
+        ResourceSetSummary { asns, ipv4, ipv6 }
+    }
+}
+
+impl fmt::Display for ResourceSetSummary {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "asn: {} blocks, v4: {} blocks, v6: {} blocks",
+            self.asns, self.ipv4, self.ipv6
+        )
+    }
+}
+
 //------------ ResourceSet ---------------------------------------------------
 
 /// This type defines a set of Internet Number Resources.
@@ -1227,6 +1271,10 @@ impl ResourceSet {
 
     pub fn is_empty(&self) -> bool {
         self == &ResourceSet::default()
+    }
+
+    pub fn summary(&self) -> ResourceSetSummary {
+        ResourceSetSummary::from(self)
     }
 
     pub fn asn(&self) -> &AsBlocks {

@@ -130,7 +130,11 @@ impl CommandSummary {
     }
 
     pub fn with_resources(self, resources: &ResourceSet) -> Self {
+        let summary = resources.summary();
         self.with_arg("resources", resources)
+            .with_arg("asn_blocks", summary.asn_bloks())
+            .with_arg("ipv4_blocks", summary.ipv4_bloks())
+            .with_arg("ipv6_blocks", summary.ipv6_bloks())
     }
 
     pub fn with_rcn(self, rcn: &ResourceClassName) -> Self {
@@ -171,8 +175,6 @@ impl CommandSummary {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CommandHistoryCriteria {
     #[serde(skip_serializing_if = "Option::is_none")]
-    actor: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     before: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     after: Option<i64>,
@@ -181,56 +183,59 @@ pub struct CommandHistoryCriteria {
     #[serde(skip_serializing_if = "Option::is_none")]
     label_excludes: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    result: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     offset: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     rows: Option<usize>,
 }
 
 impl CommandHistoryCriteria {
-    pub fn exclude(mut self, labels: &[&str]) -> Self {
+    pub fn set_exclude(&mut self, labels: &[&str]) {
         self.label_excludes = Some(labels.iter().map(|s| (*s).to_string()).collect());
-        self
     }
 
-    pub fn paginate(mut self, offset: usize, rows: usize) -> Self {
-        self.offset = Some(offset);
+    pub fn set_after(&mut self, timestamp: i64) {
+        self.after = Some(timestamp);
+    }
+
+    pub fn set_before(&mut self, timestamp: i64) {
+        self.before = Some(timestamp);
+    }
+
+    pub fn set_rows(&mut self, rows: usize) {
         self.rows = Some(rows);
-        self
     }
 
-    pub fn should_include(&self, record: &CommandHistoryRecord) -> bool {
-        if let Some(actor) = &self.actor {
-            if &record.actor != actor {
-                return false;
-            }
-        }
+    pub fn set_offset(&mut self, offset: usize) {
+        self.offset = Some(offset);
+    }
+
+    pub fn matches_timestamp_secs(&self, stamp: i64) -> bool {
         if let Some(before) = self.before {
-            if record.timestamp > before {
+            if stamp > before {
                 return false;
             }
         }
         if let Some(after) = self.after {
-            if record.timestamp < after {
+            if stamp < after {
                 return false;
             }
         }
+        true
+    }
+
+    #[allow(clippy::ptr_arg)]
+    pub fn matches_label(&self, label: &Label) -> bool {
         if let Some(includes) = &self.label_includes {
-            if !includes.contains(&record.summary.label) {
+            if !includes.contains(label) {
                 return false;
             }
         }
         if let Some(excludes) = &self.label_excludes {
-            if excludes.contains(&record.summary.label) {
+            if excludes.contains(label) {
                 return false;
             }
         }
-        if let Some(result) = self.result {
-            if result != record.effect.successful() {
-                return false;
-            }
-        }
+
         true
     }
 
@@ -238,22 +243,20 @@ impl CommandHistoryCriteria {
         self.offset.unwrap_or_else(|| 0)
     }
 
-    pub fn rows(&self) -> Option<usize> {
-        self.rows
+    pub fn rows(&self) -> usize {
+        self.rows.unwrap_or_else(|| 100)
     }
 }
 
 impl Default for CommandHistoryCriteria {
     fn default() -> Self {
         CommandHistoryCriteria {
-            actor: None,
             before: None,
             after: None,
             label_includes: None,
             label_excludes: None,
             offset: None,
             rows: None,
-            result: None,
         }
     }
 }
@@ -393,11 +396,14 @@ impl fmt::Display for StorableCaCommand {
                     .as_ref()
                     .map(|ski| ski.as_str())
                     .unwrap_or_else(|| "<none>"),
-                res
+                res.summary()
             ),
-            StorableCaCommand::ChildUpdateResources(child, resources) => {
-                write!(f, "Update child '{}' resources to: {}", child, resources)
-            }
+            StorableCaCommand::ChildUpdateResources(child, resources) => write!(
+                f,
+                "Update resources for child '{}' to: {}",
+                child,
+                resources.summary()
+            ),
             StorableCaCommand::ChildUpdateId(child, id_ski) => {
                 write!(f, "Update child '{}' RFC 8183 key '{}'", child, id_ski)
             }
@@ -431,7 +437,7 @@ impl fmt::Display for StorableCaCommand {
                 let mut summary = format!("Update entitlements under parent '{}': ", parent);
 
                 for (class_name, resource_set) in classes.iter() {
-                    summary.push_str(&format!("{} => {} ", class_name, resource_set))
+                    summary.push_str(&format!("{} => {} ", class_name, resource_set.summary()))
                 }
 
                 write!(f, "{}", summary)
@@ -440,7 +446,8 @@ impl fmt::Display for StorableCaCommand {
             StorableCaCommand::UpdateRcvdCert(rcn, resources) => write!(
                 f,
                 "Update received cert in RC '{}', with resources '{}'",
-                rcn, resources
+                rcn,
+                resources.summary()
             ),
 
             // ------------------------------------------------------------

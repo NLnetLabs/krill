@@ -19,8 +19,8 @@ use hyper::service::{make_service_fn, service_fn};
 use hyper::Method;
 
 use crate::commons::api::{
-    ChildHandle, Handle, ParentCaContact, ParentCaReq, ParentHandle, PublisherList,
-    RepositoryUpdate,
+    ChildHandle, CommandHistoryCriteria, Handle, ParentCaContact, ParentCaReq, ParentHandle,
+    PublisherList, RepositoryUpdate,
 };
 use crate::commons::error::Error;
 use crate::commons::remote::rfc8183;
@@ -423,7 +423,7 @@ async fn api_cas(req: Request, path: &mut RequestPath) -> RoutingResult {
             Some("child_request.xml") => ca_child_req_xml(req, ca).await,
             Some("child_request.json") => ca_child_req_json(req, ca).await,
             Some("children") => ca_children(req, path, ca).await,
-            Some("history") => ca_history(req, ca).await,
+            Some("history") => ca_history(req, path, ca).await,
             Some("id") => ca_regenerate_id(req, ca).await,
             Some("issues") => ca_issues(req, ca).await,
             Some("keys") => ca_keys(req, path, ca).await,
@@ -712,14 +712,54 @@ async fn ca_children(req: Request, path: &mut RequestPath, ca: Handle) -> Routin
     }
 }
 
-async fn ca_history(req: Request, handle: Handle) -> RoutingResult {
+async fn ca_history(req: Request, path: &mut RequestPath, handle: Handle) -> RoutingResult {
+    let crit = match parse_history_path(path) {
+        Some(crit) => crit,
+        None => return render_unknown_method(),
+    };
+
     match *req.method() {
-        Method::GET => match req.state().read().await.ca_history(&handle) {
+        Method::GET => match req.state().read().await.ca_history(&handle, crit) {
             Some(history) => render_json(history),
             None => render_unknown_resource(),
         },
         _ => render_unknown_method(),
     }
+}
+
+fn parse_history_path(path: &mut RequestPath) -> Option<CommandHistoryCriteria> {
+    // /api/v1/cas/{ca}/history/short|full/<rows>/<offset>/<after>/<before>
+    let mut crit = CommandHistoryCriteria::default();
+
+    match path.next() {
+        Some("short") => crit.set_exclude(&["cmd-ca-publish"]),
+        Some("full") => {}
+        _ => return None,
+    };
+
+    if let Some(rows) = path.path_arg() {
+        crit.set_rows(rows);
+    } else {
+        return Some(crit);
+    }
+
+    if let Some(offset) = path.path_arg() {
+        crit.set_offset(offset);
+    } else {
+        return Some(crit);
+    }
+
+    if let Some(after) = path.path_arg() {
+        crit.set_after(after);
+    } else {
+        return Some(crit);
+    }
+
+    if let Some(before) = path.path_arg() {
+        crit.set_before(before);
+    }
+
+    Some(crit)
 }
 
 async fn ca_child_req_xml(req: Request, handle: Handle) -> RoutingResult {

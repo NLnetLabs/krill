@@ -1,9 +1,11 @@
 use std::any::Any;
-use std::fs;
+use std::convert::{TryFrom, TryInto};
 use std::fs::File;
 use std::io;
 use std::io::Write;
 use std::path::PathBuf;
+use std::str::FromStr;
+use std::{fmt, fs};
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -11,7 +13,9 @@ use serde_json;
 
 use rpki::x509::Time;
 
-use crate::commons::api::{CommandHistory, CommandHistoryCriteria, CommandHistoryRecord, Handle};
+use crate::commons::api::{
+    CommandHistory, CommandHistoryCriteria, CommandHistoryRecord, Handle, Label,
+};
 use crate::commons::eventsourcing::{Aggregate, Event, StoredCommand, WithStorableDetails};
 use crate::commons::util::file;
 
@@ -45,11 +49,86 @@ pub enum KeyStoreVersion {
     V0_6,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CommandKey {
+    sequence: u64,
+    timestamp_secs: i64,
+    label: Label,
+}
+
+impl CommandKey {
+    pub fn new(sequence: u64, time: Time, label: Label) -> Self {
+        CommandKey {
+            sequence,
+            timestamp_secs: time.timestamp(),
+            label,
+        }
+    }
+
+    pub fn matches_crit(&self, crit: &CommandHistoryCriteria) -> bool {
+        crit.matches_timestamp_secs(self.timestamp_secs) && crit.matches_label(&self.label)
+    }
+}
+
+impl fmt::Display for CommandKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "command--{}--{}--{}",
+            self.timestamp_secs, self.sequence, self.label
+        )
+    }
+}
+
+impl FromStr for CommandKey {
+    type Err = CommandKeyError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.split("--").collect();
+        if parts.len() != 4 || parts[0] != "command" {
+            Err(CommandKeyError)
+        } else {
+            let timestamp_secs = i64::from_str(&parts[1]).map_err(|_| CommandKeyError)?;
+            let sequence = u64::from_str(&parts[2]).map_err(|_| CommandKeyError)?;
+            let label = parts[3].to_string();
+            Ok(CommandKey {
+                sequence,
+                timestamp_secs,
+                label,
+            })
+        }
+    }
+}
+
+impl From<CommandKey> for PathBuf {
+    fn from(ck: CommandKey) -> Self {
+        PathBuf::from(format!("{}.json", ck))
+    }
+}
+
+impl TryFrom<PathBuf> for CommandKey {
+    type Error = CommandKeyError;
+
+    fn try_from(path: PathBuf) -> Result<Self, Self::Error> {
+        let s = path.file_name().ok_or_else(|| CommandKeyError)?;
+        let s = s.to_string_lossy().to_string();
+        let s = s.as_str();
+        if !s.ends_with(".json") {
+            Err(CommandKeyError)
+        } else {
+            let s = &s[0..s.len() - 5];
+            CommandKey::from_str(s)
+        }
+    }
+}
+
+pub struct CommandKeyError;
+
 //------------ KeyStore ------------------------------------------------------
 
 /// Generic KeyStore for AggregateManager
 pub trait KeyStore {
-    type Key;
+    type Key: From<CommandKey> + TryInto<CommandKey>;
 
     fn get_version(&self) -> Result<KeyStoreVersion, KeyStoreError>;
     fn set_version(&self, version: &KeyStoreVersion) -> Result<(), KeyStoreError>;
@@ -57,10 +136,13 @@ pub trait KeyStore {
     fn key_for_info() -> Self::Key;
     fn key_for_snapshot() -> Self::Key;
     fn key_for_event(version: u64) -> Self::Key;
-    fn key_for_command(seq: u64) -> Self::Key;
+    fn key_for_command<S: WithStorableDetails>(command: &StoredCommand<S>) -> CommandKey;
 
     /// Returns all keys for a Handle in the store, matching a &str, sorted ascending
-    fn keys_ascending_matching(&self, id: &Handle, matching: &str) -> Vec<Self::Key>;
+    fn keys_ascending(&self, id: &Handle, matching: &str) -> Vec<Self::Key>;
+
+    fn command_keys_ascending(&self, id: &Handle, crit: &CommandHistoryCriteria)
+        -> Vec<CommandKey>;
 
     /// Returns whether a key already exists.
     fn has_key(&self, id: &Handle, key: &Self::Key) -> bool;
@@ -123,38 +205,26 @@ pub trait KeyStore {
         id: &Handle,
         crit: CommandHistoryCriteria,
     ) -> Result<CommandHistory, KeyStoreError> {
-        let info = self.get_info(id)?;
-        let mut commands: Vec<CommandHistoryRecord> = vec![];
+        let offset = crit.offset();
+        let rows = crit.rows();
 
-        for seq in 1..=info.last_command {
-            let stored: StoredCommand<A::StorableCommandDetails> = self
-                .get(id, &Self::key_for_command(seq))?
-                .ok_or_else(|| KeyStoreError::CommandNotFound)?;
+        let mut commands: Vec<CommandHistoryRecord> = Vec::with_capacity(rows);
+        let mut skipped = 0;
+        let mut total = 0;
 
-            let stored = stored.into();
+        for key in self.command_keys_ascending(id, &crit) {
+            total += 1;
+            if skipped < offset {
+                skipped += 1;
+            } else if commands.len() < rows {
+                let stored: StoredCommand<A::StorableCommandDetails> =
+                    self.get(id, &key.into())?
+                        .ok_or_else(|| KeyStoreError::CommandNotFound)?;
 
-            if crit.should_include(&stored) {
+                let stored = stored.into();
                 commands.push(stored);
             }
         }
-
-        let offset = crit.offset();
-        let total = commands.len();
-
-        if offset >= total {
-            return Err(KeyStoreError::CommandOffSetError);
-        }
-
-        if offset > 0 {
-            commands = commands.split_off(offset);
-        }
-
-        if let Some(rows) = crit.rows() {
-            if rows < commands.len() {
-                commands.split_off(rows);
-            }
-        }
-
         Ok(CommandHistory::new(offset, total, commands))
     }
 }
@@ -259,11 +329,15 @@ impl KeyStore for DiskKeyStore {
         PathBuf::from(format!("delta-{}.json", version))
     }
 
-    fn key_for_command(seq: u64) -> Self::Key {
-        PathBuf::from(format!("command-{}.json", seq))
+    fn key_for_command<S: WithStorableDetails>(command: &StoredCommand<S>) -> CommandKey {
+        CommandKey::new(
+            command.sequence(),
+            command.time(),
+            command.details().summary().label,
+        )
     }
 
-    fn keys_ascending_matching(&self, id: &Handle, matching: &str) -> Vec<Self::Key> {
+    fn keys_ascending(&self, id: &Handle, matching: &str) -> Vec<Self::Key> {
         let mut res = vec![];
         let dir = self.dir_for_aggregate(id);
         if let Ok(entry_results) = fs::read_dir(dir) {
@@ -280,6 +354,24 @@ impl KeyStore for DiskKeyStore {
         res.sort_by(|a, b| a.to_string_lossy().cmp(&b.to_string_lossy()));
 
         res
+    }
+
+    fn command_keys_ascending(
+        &self,
+        id: &Handle,
+        crit: &CommandHistoryCriteria,
+    ) -> Vec<CommandKey> {
+        let mut command_keys = vec![];
+
+        for key in self.keys_ascending(id, "command--") {
+            if let Ok(command_key) = CommandKey::try_from(key) {
+                if command_key.matches_crit(crit) {
+                    command_keys.push(command_key);
+                }
+            }
+        }
+
+        command_keys
     }
 
     fn has_key(&self, id: &Handle, key: &Self::Key) -> bool {
@@ -398,7 +490,7 @@ impl KeyStore for DiskKeyStore {
     ) -> Result<(), KeyStoreError> {
         let id = command.handle();
 
-        let key = Self::key_for_command(command.sequence());
+        let key = Self::key_for_command(&command).into();
 
         if self.has_key(id, &key) {
             Err(KeyStoreError::KeyExists(key.to_string_lossy().to_string()))

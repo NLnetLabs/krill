@@ -277,9 +277,13 @@ impl<S: Signer> CaServer<S> {
     }
 
     /// Gets the history for a CA.
-    pub fn get_ca_history(&self, handle: &Handle) -> KrillResult<CommandHistory> {
+    pub fn get_ca_history(
+        &self,
+        handle: &Handle,
+        crit: CommandHistoryCriteria,
+    ) -> KrillResult<CommandHistory> {
         self.ca_store
-            .command_history(handle, CommandHistoryCriteria::default())
+            .command_history(handle, crit)
             .map_err(|_| Error::CaUnknown(handle.clone()))
     }
 

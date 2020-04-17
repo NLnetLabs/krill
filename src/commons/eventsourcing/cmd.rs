@@ -182,6 +182,10 @@ impl<S: WithStorableDetails> StoredCommand<S> {
     pub fn sequence(&self) -> u64 {
         self.sequence
     }
+
+    pub fn details(&self) -> &S {
+        &self.details
+    }
 }
 
 impl<S: WithStorableDetails> Into<CommandHistoryRecord> for StoredCommand<S> {

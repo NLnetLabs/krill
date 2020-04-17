@@ -48,7 +48,10 @@ impl UpgradeStore for UpgradeCas {
                 let mut last_command = 1;
                 let mut last_update: Time = Time::now();
 
-                for old_key in store.keys_ascending_matching(&ca_handle, ".cmd") {
+                let keys = store.keys_ascending(&ca_handle, ".cmd");
+                info!("Migrating {} commands for CA: {}", keys.len(), ca_handle);
+
+                for old_key in keys {
                     // Parse as PreviousCommand
                     if let Some(previous) = store.get::<PreviousCommand>(&ca_handle, &old_key)? {
                         // Convert to new command, save it, remove the old command and increase the sequence
@@ -60,8 +63,14 @@ impl UpgradeStore for UpgradeCas {
                         last_command = seq;
                         seq += 1;
                     }
-                }
 
+                    if seq % 100 == 0 {
+                        info!(".. {} done", seq)
+                    }
+                }
+                info!("Done migrating commands for CA: {}", ca_handle);
+
+                info!("Regenerating latest snapshot, this can take a while");
                 // Load CA, then save a new snapshot and info for the CA
                 let ca: CertAuth<OpenSslSigner> = store
                     .get_aggregate(&ca_handle)
@@ -83,9 +92,11 @@ impl UpgradeStore for UpgradeCas {
                     last_update,
                 };
                 store.save_info(&ca_handle, &info)?;
+                info!("Saved updated snapshot for CA: {}", ca_handle);
             }
 
             store.set_version(&KeyStoreVersion::V0_6)?;
+            info!("Finished migrating commands");
             Ok(())
         } else {
             Ok(())
@@ -125,7 +136,7 @@ impl UpgradeStore for UpgradePubd {
                 let mut last_command = 1;
                 let mut last_update: Time = Time::now();
 
-                for old_key in store.keys_ascending_matching(&pubd_handle, ".cmd") {
+                for old_key in store.keys_ascending(&pubd_handle, ".cmd") {
                     // Parse as PreviousCommand
                     if let Some(previous) = store.get::<PreviousCommand>(&pubd_handle, &old_key)? {
                         // Convert to new command, save it, remove the old command and increase the sequence
