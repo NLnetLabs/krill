@@ -138,6 +138,9 @@ pub trait KeyStore {
     fn key_for_event(version: u64) -> Self::Key;
     fn key_for_command<S: WithStorableDetails>(command: &StoredCommand<S>) -> CommandKey;
 
+    /// Returns all keys for a Handle in the store, matching a &str
+    fn keys(&self, id: &Handle, matching: &str) -> Vec<Self::Key>;
+
     /// Returns all keys for a Handle in the store, matching a &str, sorted ascending
     fn keys_ascending(&self, id: &Handle, matching: &str) -> Vec<Self::Key>;
 
@@ -337,7 +340,7 @@ impl KeyStore for DiskKeyStore {
         )
     }
 
-    fn keys_ascending(&self, id: &Handle, matching: &str) -> Vec<Self::Key> {
+    fn keys(&self, id: &Handle, matching: &str) -> Vec<Self::Key> {
         let mut res = vec![];
         let dir = self.dir_for_aggregate(id);
         if let Ok(entry_results) = fs::read_dir(dir) {
@@ -351,8 +354,12 @@ impl KeyStore for DiskKeyStore {
             }
         }
 
-        res.sort_by(|a, b| a.to_string_lossy().cmp(&b.to_string_lossy()));
+        res
+    }
 
+    fn keys_ascending(&self, id: &Handle, matching: &str) -> Vec<Self::Key> {
+        let mut res = self.keys(id, matching);
+        res.sort_by(|a, b| a.to_string_lossy().cmp(&b.to_string_lossy()));
         res
     }
 
@@ -363,7 +370,7 @@ impl KeyStore for DiskKeyStore {
     ) -> Vec<CommandKey> {
         let mut command_keys = vec![];
 
-        for key in self.keys_ascending(id, "command--") {
+        for key in self.keys(id, "command--") {
             if let Ok(command_key) = CommandKey::try_from(key) {
                 if command_key.matches_crit(crit) {
                     command_keys.push(command_key);
@@ -371,6 +378,7 @@ impl KeyStore for DiskKeyStore {
             }
         }
 
+        command_keys.sort_by(|a, b| a.sequence.cmp(&b.sequence));
         command_keys
     }
 

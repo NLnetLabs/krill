@@ -322,7 +322,10 @@ mod tests {
             assert_eq!(22, counter.total());
 
             // Get paginated history
-            let crit = CommandHistoryCriteria::default().paginate(3, 10);
+            let mut crit = CommandHistoryCriteria::default();
+            crit.set_offset(3);
+            crit.set_rows(10);
+
             let history = manager.command_history(&id_alice, crit).unwrap();
             assert_eq!(history.total(), 22);
             assert_eq!(history.offset(), 3);
@@ -330,7 +333,8 @@ mod tests {
             assert_eq!(history.commands().first().unwrap().sequence, 4);
 
             // Get history excluding 'around the sun' commands
-            let crit = CommandHistoryCriteria::default().set_exclude(&["person-around-sun"]);
+            let mut crit = CommandHistoryCriteria::default();
+            crit.set_exclude(&["person-around-sun"]);
             let history = manager.command_history(&id_alice, crit).unwrap();
             assert_eq!(history.total(), 1);
         })

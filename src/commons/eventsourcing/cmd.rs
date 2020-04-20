@@ -3,6 +3,7 @@ use std::fmt;
 use rpki::x509::Time;
 
 use crate::commons::api::{CommandHistoryRecord, CommandSummary, Handle, StoredEffect};
+use crate::commons::eventsourcing::store::CommandKey;
 use crate::commons::eventsourcing::{Event, Storable};
 
 //------------ WithStorableDetails -------------------------------------------
@@ -190,13 +191,17 @@ impl<S: WithStorableDetails> StoredCommand<S> {
 
 impl<S: WithStorableDetails> Into<CommandHistoryRecord> for StoredCommand<S> {
     fn into(self) -> CommandHistoryRecord {
+        let summary = self.details.summary();
+        let command_key = CommandKey::new(self.sequence, self.time, summary.label.clone());
+
         CommandHistoryRecord {
+            key: command_key.to_string(),
             actor: self.actor,
             timestamp: self.time.timestamp_millis(),
             handle: self.handle,
             version: self.version,
             sequence: self.sequence,
-            summary: self.details.summary(),
+            summary,
             effect: self.effect,
         }
     }
