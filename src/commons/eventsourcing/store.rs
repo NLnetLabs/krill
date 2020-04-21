@@ -312,7 +312,6 @@ impl KeyStore for DiskKeyStore {
                     Ok(v) => Ok(v),
                 }
             } else {
-                debug!("No previous version info of keystore found, so assuming pre 0.6");
                 Ok(KeyStoreVersion::Pre0_6)
             }
         }

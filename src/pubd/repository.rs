@@ -396,6 +396,7 @@ pub struct Repository {
     rrdp: RrdpServer,
     rsync: RsyncdStore,
 
+    #[serde(default = "RepoStats::default")]
     stats: RepoStats,
 }
 
@@ -583,7 +584,7 @@ impl Repository {
     }
 }
 
-/// Publish
+/// # Publish
 ///
 impl Repository {
     fn publish(
@@ -617,6 +618,22 @@ impl Repository {
     }
 }
 
+/// # Miscellaneous
+///
+impl Repository {
+    pub fn regenerate_stats(&mut self) {
+        let mut stats = RepoStats::default();
+        for (handle, details) in &self.publishers {
+            let publisher_stats: PublisherStats = details.current_objects().into();
+            stats.publishers.insert(handle.clone(), publisher_stats);
+        }
+        stats.serial = self.rrdp.serial;
+        stats.session = self.rrdp.session;
+
+        self.stats = stats;
+    }
+}
+
 //------------ RepoStats -----------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -625,6 +642,17 @@ pub struct RepoStats {
     session: RrdpSession,
     serial: u64,
     last_update: Option<Time>,
+}
+
+impl Default for RepoStats {
+    fn default() -> Self {
+        RepoStats {
+            publishers: HashMap::new(),
+            session: RrdpSession::default(),
+            serial: 0,
+            last_update: None,
+        }
+    }
 }
 
 impl RepoStats {
@@ -721,6 +749,16 @@ impl PublisherStats {
     }
 }
 
+impl From<&CurrentObjects> for PublisherStats {
+    fn from(objects: &CurrentObjects) -> Self {
+        PublisherStats {
+            objects: objects.len(),
+            size: objects.size(),
+            last_update: None,
+        }
+    }
+}
+
 impl Default for PublisherStats {
     fn default() -> Self {
         PublisherStats {
@@ -728,5 +766,19 @@ impl Default for PublisherStats {
             size: 0,
             last_update: None,
         }
+    }
+}
+
+//------------ Tests ---------------------------------------------------------
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn deserialize_0_4_2_snapshot() {
+        let json = include_str!("../../test-resources/repository/snapshot-v042.json");
+        let mut repo: Repository = serde_json::from_str(json).unwrap();
+        repo.regenerate_stats();
     }
 }

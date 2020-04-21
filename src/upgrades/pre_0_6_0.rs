@@ -70,7 +70,7 @@ impl UpgradeStore for UpgradeCas {
                 }
                 info!("Done migrating commands for CA: {}", ca_handle);
 
-                info!("Regenerating latest snapshot, this can take a while");
+                info!("Regenerating latest snapshot, this can take a moment");
                 // Load CA, then save a new snapshot and info for the CA
                 let ca: CertAuth<OpenSslSigner> = store
                     .get_aggregate(&ca_handle)
@@ -135,8 +135,11 @@ impl UpgradeStore for UpgradePubd {
 
                 let mut last_command = 1;
                 let mut last_update: Time = Time::now();
+                let keys = store.keys_ascending(&pubd_handle, ".cmd");
 
-                for old_key in store.keys_ascending(&pubd_handle, ".cmd") {
+                info!("Migrating {} commands for Repository server", keys.len());
+
+                for old_key in keys {
                     // Parse as PreviousCommand
                     if let Some(previous) = store.get::<PreviousCommand>(&pubd_handle, &old_key)? {
                         // Convert to new command, save it, remove the old command and increase the sequence
@@ -150,8 +153,11 @@ impl UpgradeStore for UpgradePubd {
                     }
                 }
 
+                info!("Done migrating commands for Repository server");
+
+                info!("Regenerating repository and stats, this can take a moment");
                 // Load CA, then save a new snapshot and info for the CA
-                let repository: Repository = store
+                let mut repository: Repository = store
                     .get_aggregate(&pubd_handle)
                     .map_err(|e| {
                         UpgradeError::Custom(format!(
@@ -162,7 +168,10 @@ impl UpgradeStore for UpgradePubd {
                     })?
                     .ok_or_else(|| UpgradeError::CannotLoadAggregate(pubd_handle.clone()))?;
 
+                repository.regenerate_stats();
+
                 store.store_snapshot(&pubd_handle, &repository)?;
+                info!("Saved updated snapshot for Repository server");
 
                 let info = StoredValueInfo {
                     snapshot_version: repository.version(),
