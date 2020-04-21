@@ -187,6 +187,10 @@ impl<S: WithStorableDetails> StoredCommand<S> {
     pub fn details(&self) -> &S {
         &self.details
     }
+
+    pub fn effect(&self) -> &StoredEffect {
+        &self.effect
+    }
 }
 
 impl<S: WithStorableDetails> Into<CommandHistoryRecord> for StoredCommand<S> {

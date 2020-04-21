@@ -106,6 +106,12 @@ impl From<CommandKey> for PathBuf {
     }
 }
 
+impl From<&CommandKey> for PathBuf {
+    fn from(ck: &CommandKey) -> Self {
+        PathBuf::from(format!("{}.json", ck))
+    }
+}
+
 impl TryFrom<PathBuf> for CommandKey {
     type Error = CommandKeyError;
 
@@ -128,7 +134,7 @@ pub struct CommandKeyError;
 
 /// Generic KeyStore for AggregateManager
 pub trait KeyStore {
-    type Key: From<CommandKey> + TryInto<CommandKey>;
+    type Key: From<CommandKey> + From<&'static CommandKey> + TryInto<CommandKey>;
 
     fn get_version(&self) -> Result<KeyStoreVersion, KeyStoreError>;
     fn set_version(&self, version: &KeyStoreVersion) -> Result<(), KeyStoreError>;

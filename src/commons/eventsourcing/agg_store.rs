@@ -8,7 +8,8 @@ use rpki::x509::Time;
 use crate::commons::api::{CommandHistory, CommandHistoryCriteria, Handle};
 use crate::commons::eventsourcing::cmd::{Command, StoredCommandBuilder};
 use crate::commons::eventsourcing::{
-    Aggregate, DiskKeyStore, Event, EventListener, KeyStore, KeyStoreError, KeyStoreVersion,
+    Aggregate, CommandKey, DiskKeyStore, Event, EventListener, KeyStore, KeyStoreError,
+    KeyStoreVersion, StoredCommand,
 };
 use std::io;
 
@@ -50,6 +51,16 @@ where
         id: &Handle,
         crit: CommandHistoryCriteria,
     ) -> StoreResult<CommandHistory>;
+
+    /// Returns a stored command if it can be found.
+    fn stored_command(
+        &self,
+        id: &Handle,
+        key: &CommandKey,
+    ) -> StoreResult<Option<StoredCommand<A::StorableCommandDetails>>>;
+
+    /// Returns a stored event if it can be found.
+    fn stored_event(&self, id: &Handle, version: u64) -> StoreResult<Option<A::Event>>;
 }
 
 /// This type defines possible Errors for the AggregateStore
@@ -341,6 +352,27 @@ where
     ) -> StoreResult<CommandHistory> {
         self.store
             .command_history::<A>(id, crit)
+            .map_err(AggregateStoreError::KeyStoreError)
+    }
+
+    fn stored_command(
+        &self,
+        id: &Handle,
+        key: &CommandKey,
+    ) -> StoreResult<Option<StoredCommand<<A as Aggregate>::StorableCommandDetails>>> {
+        self.store
+            .get(id, &key.into())
+            .map_err(AggregateStoreError::KeyStoreError)
+    }
+
+    fn stored_event(
+        &self,
+        id: &Handle,
+        version: u64,
+    ) -> StoreResult<Option<<A as Aggregate>::Event>> {
+        let key = DiskKeyStore::key_for_event(version);
+        self.store
+            .get(id, &key)
             .map_err(AggregateStoreError::KeyStoreError)
     }
 }

@@ -12,8 +12,38 @@ use crate::commons::api::{
     RequestResourceLimit, ResourceClassName, ResourceSet, RevocationRequest, RoaDefinitionUpdates,
     StorableParentContact,
 };
-use crate::commons::eventsourcing::WithStorableDetails;
+use crate::commons::eventsourcing::{StoredCommand, WithStorableDetails};
 use crate::commons::remote::rfc8183::ServiceUri;
+use crate::daemon::ca;
+
+//------------ CaCommandDetails ----------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CaCommandDetails {
+    command: StoredCommand<StorableCaCommand>,
+    result: CaCommandResult,
+}
+
+impl CaCommandDetails {
+    pub fn new(command: StoredCommand<StorableCaCommand>, result: CaCommandResult) -> Self {
+        CaCommandDetails { command, result }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum CaCommandResult {
+    Error(String),
+    Events(Vec<ca::Evt>),
+}
+
+impl CaCommandResult {
+    pub fn error(msg: String) -> Self {
+        CaCommandResult::Error(msg)
+    }
+    pub fn events(events: Vec<ca::Evt>) -> Self {
+        CaCommandResult::Events(events)
+    }
+}
 
 //------------ CommandHistory ------------------------------------------------
 
@@ -53,6 +83,7 @@ impl CommandHistory {
 /// the summary which is shown in the history response.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CommandHistoryRecord {
+    pub key: String,
     pub actor: String,
     pub timestamp: i64,
     pub handle: Handle,

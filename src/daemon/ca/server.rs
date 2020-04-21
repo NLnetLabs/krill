@@ -10,14 +10,15 @@ use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 
 use crate::commons::api::{
-    self, AddChildRequest, Base64, CertAuthList, CertAuthSummary, ChildAuthRequest, ChildCaInfo,
-    ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, Handle, IssuanceRequest,
-    IssuanceResponse, IssuedCert, ListReply, ParentCaContact, ParentCaReq, ParentHandle,
-    PublishDelta, RcvdCert, RepoInfo, RepositoryContact, ResourceClassName, ResourceSet,
-    RevocationRequest, RevocationResponse, UpdateChildRequest,
+    self, AddChildRequest, Base64, CaCommandDetails, CaCommandResult, CertAuthList,
+    CertAuthSummary, ChildAuthRequest, ChildCaInfo, ChildHandle, CommandHistory,
+    CommandHistoryCriteria, Entitlements, Handle, IssuanceRequest, IssuanceResponse, IssuedCert,
+    ListReply, ParentCaContact, ParentCaReq, ParentHandle, PublishDelta, RcvdCert, RepoInfo,
+    RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse,
+    StoredEffect, UpdateChildRequest,
 };
 use crate::commons::error::Error;
-use crate::commons::eventsourcing::{Aggregate, AggregateStore, DiskAggregateStore};
+use crate::commons::eventsourcing::{Aggregate, AggregateStore, CommandKey, DiskAggregateStore};
 use crate::commons::remote::builder::SignedMessageBuilder;
 use crate::commons::remote::cmslogger::CmsLogger;
 use crate::commons::remote::id::IdCert;
@@ -285,6 +286,45 @@ impl<S: Signer> CaServer<S> {
         self.ca_store
             .command_history(handle, crit)
             .map_err(|_| Error::CaUnknown(handle.clone()))
+    }
+
+    /// Shows the details for a CA command
+    pub fn get_ca_command_details(
+        &self,
+        handle: &Handle,
+        command: CommandKey,
+    ) -> KrillResult<Option<CaCommandDetails>> {
+        if let Some(command) = self.ca_store.stored_command(handle, &command)? {
+            let effect = command.effect().clone();
+            match effect {
+                StoredEffect::Error(msg) => Ok(Some(CaCommandDetails::new(
+                    command,
+                    CaCommandResult::error(msg),
+                ))),
+                StoredEffect::Events(versions) => {
+                    let mut stored_events = vec![];
+                    for version in versions {
+                        let evt =
+                            self.ca_store
+                                .stored_event(handle, version)?
+                                .ok_or_else(|| {
+                                    Error::Custom(format!(
+                                        "Cannot find evt: {} in history for CA: {}",
+                                        version, handle
+                                    ))
+                                })?;
+                        stored_events.push(evt);
+                    }
+
+                    Ok(Some(CaCommandDetails::new(
+                        command,
+                        CaCommandResult::events(stored_events),
+                    )))
+                }
+            }
+        } else {
+            Ok(None)
+        }
     }
 
     /// Checks whether a CA by the given handle exists.

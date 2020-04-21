@@ -424,6 +424,7 @@ async fn api_cas(req: Request, path: &mut RequestPath) -> RoutingResult {
             Some("child_request.json") => ca_child_req_json(req, ca).await,
             Some("children") => ca_children(req, path, ca).await,
             Some("history") => ca_history(req, path, ca).await,
+            Some("command") => ca_command_details(req, path, ca).await,
             Some("id") => ca_regenerate_id(req, ca).await,
             Some("issues") => ca_issues(req, ca).await,
             Some("keys") => ca_keys(req, path, ca).await,
@@ -760,6 +761,21 @@ fn parse_history_path(path: &mut RequestPath) -> Option<CommandHistoryCriteria> 
     }
 
     Some(crit)
+}
+
+async fn ca_command_details(req: Request, path: &mut RequestPath, handle: Handle) -> RoutingResult {
+    // /api/v1/cas/{ca}/command/<command-key>
+    match path.path_arg() {
+        Some(key) => match *req.method() {
+            Method::GET => match req.state().read().await.ca_command_details(&handle, key) {
+                Ok(Some(details)) => render_json(details),
+                Ok(None) => render_unknown_resource(),
+                Err(e) => render_error(e),
+            },
+            _ => render_unknown_method(),
+        },
+        None => render_unknown_resource(),
+    }
 }
 
 async fn ca_child_req_xml(req: Request, handle: Handle) -> RoutingResult {
