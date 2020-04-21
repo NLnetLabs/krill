@@ -13,7 +13,7 @@ any feedback, we would love to hear from you. Don’t hesitate to [create an iss
 on Github](https://github.com/NLnetLabs/krill/issues/new) or post a message on
 our [RPKI mailing list](https://lists.nlnetlabs.nl/mailman/listinfo/rpki). You
 can lean more about Krill and RPKI technology by reading our documentation on
-[Read the Docs](https://rpki.readthedocs.io/).
+[Read the Docs](https://rpki.readthedocs.io/en/latest/krill/index.html).
 
 ## 1-Click App
 
