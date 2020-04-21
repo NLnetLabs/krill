@@ -28,6 +28,14 @@ impl CaCommandDetails {
     pub fn new(command: StoredCommand<StorableCaCommand>, result: CaCommandResult) -> Self {
         CaCommandDetails { command, result }
     }
+
+    pub fn command(&self) -> &StoredCommand<StorableCaCommand> {
+        &self.command
+    }
+
+    pub fn effect(&self) -> &CaCommandResult {
+        &self.result
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]

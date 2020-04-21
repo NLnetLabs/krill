@@ -343,6 +343,24 @@ impl Options {
         app.subcommand(sub)
     }
 
+    fn make_cas_show_action_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub =
+            SubCommand::with_name("action").about("Show details for a specific CA action.");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        sub = sub.arg(
+            Arg::with_name("key")
+                .long("key")
+                .value_name("action key string")
+                .help("The action key (as shown in the history).")
+                .required(true),
+        );
+
+        app.subcommand(sub)
+    }
+
     fn make_cas_add_ca_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("add").about("Add a new CA.");
 
@@ -810,6 +828,7 @@ impl Options {
         app = Self::make_cas_list_sc(app);
         app = Self::make_cas_show_ca_sc(app);
         app = Self::make_cas_show_history_sc(app);
+        app = Self::make_cas_show_action_sc(app);
         app = Self::make_cas_add_ca_sc(app);
         app = Self::make_cas_children_sc(app);
         app = Self::make_cas_parents_sc(app);
@@ -1000,6 +1019,15 @@ impl Options {
         }
 
         let command = Command::CertAuth(CaCommand::ShowHistory(my_ca, options));
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_action(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+        let key = matches.value_of("key").unwrap();
+
+        let command = Command::CertAuth(CaCommand::ShowAction(my_ca, key.to_string()));
         Ok(Options::make(general_args, command))
     }
 
@@ -1469,6 +1497,8 @@ impl Options {
             Self::parse_matches_cas_show(m)
         } else if let Some(m) = matches.subcommand_matches("history") {
             Self::parse_matches_cas_history(m)
+        } else if let Some(m) = matches.subcommand_matches("action") {
+            Self::parse_matches_cas_action(m)
         } else if let Some(m) = matches.subcommand_matches("children") {
             Self::parse_matches_cas_children(m)
         } else if let Some(m) = matches.subcommand_matches("parents") {
@@ -1600,6 +1630,9 @@ pub enum CaCommand {
 
     #[display(fmt = "Show history for ca: '{}', mode: {}", _0, _1)]
     ShowHistory(Handle, HistoryOptions),
+
+    #[display(fmt = "Show action details for ca: '{}', action key: {}", _0, _1)]
+    ShowAction(Handle, String),
 
     #[display(fmt = "Show issues for ca: '{:?}'", _0)]
     Issues(Option<Handle>),
