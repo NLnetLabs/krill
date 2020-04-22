@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt;
 use std::sync::{Arc, RwLock};
 
@@ -8,7 +9,7 @@ use rpki::uri;
 use crate::commons::api::{
     ChildHandle, Entitlements, Handle, IssuanceRequest, ParentCaContact, ParentHandle, RcvdCert,
     RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse,
-    UpdateChildRequest,
+    StorableCaCommand,
 };
 use crate::commons::eventsourcing;
 use crate::commons::remote::id::IdCert;
@@ -35,7 +36,9 @@ pub enum CmdDet<S: Signer> {
     // Add a new child under this parent CA
     ChildAdd(ChildHandle, Option<IdCert>, ResourceSet),
     // Update some details for an existing child, e.g. resources.
-    ChildUpdate(ChildHandle, UpdateChildRequest),
+    ChildUpdateResources(ChildHandle, ResourceSet),
+    // Update some details for an existing child, e.g. resources.
+    ChildUpdateId(ChildHandle, IdCert),
     // Process an issuance request by an existing child.
     ChildCertify(ChildHandle, IssuanceRequest, Arc<RwLock<S>>),
     // Process a revoke request by an existing child.
@@ -112,99 +115,84 @@ pub enum CmdDet<S: Signer> {
     RepoRemoveOld(Arc<RwLock<S>>),
 }
 
-impl<S: Signer> fmt::Display for CmdDet<S> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            // ------------------------------------------------------------
-            // Becoming a trust anchor
-            // ------------------------------------------------------------
-            CmdDet::MakeTrustAnchor(_, _) => write!(f, "Turn into Trust Anchor"),
+impl<S: Signer> eventsourcing::CommandDetails for CmdDet<S> {
+    type Event = Evt;
+    type StorableDetails = StorableCaCommand;
 
-            // ------------------------------------------------------------
-            // Being a parent
-            // ------------------------------------------------------------
-            CmdDet::ChildAdd(child, id_cert_opt, res) => write!(
-                f,
-                "Add child '{}' with RFC8183 key '{}' and resources '{}'",
-                child,
-                id_cert_opt
-                    .as_ref()
-                    .map(|c| c.ski_hex())
-                    .unwrap_or_else(|| "<none>".to_string()),
-                res
-            ),
-            CmdDet::ChildUpdate(child, update_req) => {
-                write!(f, "Update child '{}' with {}", child, update_req)
-            }
-            CmdDet::ChildCertify(child, req, _) => {
-                write!(f, "Certify child '{}' for request '{}'", child, req)
-            }
-            CmdDet::ChildRevokeKey(child, req, _) => {
-                write!(f, "Revoke child '{}' request '{}'", child, req)
-            }
-            CmdDet::ChildRemove(child, _) => {
-                write!(f, "Remove child '{}' and revoke&remove its certs", child)
-            }
-
-            // ------------------------------------------------------------
-            // Being a child (only allowed if this CA is not self-signed)
-            // ------------------------------------------------------------
-            CmdDet::GenerateNewIdKey(_) => write!(f, "Generate a new RFC8183 ID."),
-            CmdDet::AddParent(parent, contact) => {
-                write!(f, "Add parent '{}' as '{}'", parent, contact)
-            }
-            CmdDet::UpdateParentContact(parent, contact) => {
-                write!(f, "Update contact for parent '{}' to '{}'", parent, contact)
-            }
-            CmdDet::RemoveParent(parent) => write!(f, "Remove parent '{}'", parent),
-
-            CmdDet::UpdateResourceClasses(parent, entitlements, _) => write!(
-                f,
-                "Update entitlements under parent '{}' to '{}",
-                parent, entitlements
-            ),
-            // Process a new certificate received from a parent.
-            CmdDet::UpdateRcvdCert(rcn, rcvd_cert, _) => write!(
-                f,
-                "Update received cert in RC '{}', with resources '{}'",
-                rcn,
-                rcvd_cert.resources()
-            ),
-
-            // ------------------------------------------------------------
-            // Key rolls
-            // ------------------------------------------------------------
-            CmdDet::KeyRollInitiate(duration, _) => {
-                write!(f, "Initiate key roll for keys older than '{}'", duration)
-            }
-            CmdDet::KeyRollActivate(duration, _) => {
-                write!(f, "Activate new keys older than '{}' in key roll", duration)
-            }
-
-            CmdDet::KeyRollFinish(rcn, _) => write!(f, "Retire old revoked key in RC '{}'", rcn),
-
-            // ------------------------------------------------------------
-            // ROA Support
-            // ------------------------------------------------------------
-            CmdDet::RouteAuthorizationsUpdate(updates, _) => write!(f, "Update ROAs '{}'", updates),
-
-            // ------------------------------------------------------------
-            // Publishing
-            // ------------------------------------------------------------
-            CmdDet::Republish(_) => write!(f, "Republish (if needed)"),
-            CmdDet::RepoUpdate(update, _) => match update {
-                RepositoryContact::Embedded(_) => write!(f, "Update repo to embedded server"),
-                RepositoryContact::Rfc8181(res) => {
-                    write!(f, "Update repo to server at: {}", res.service_uri())
-                }
-            },
-            CmdDet::RepoRemoveOld(_) => write!(f, "Clean up old repository (if present)."),
-        }
+    fn store(&self) -> Self::StorableDetails {
+        self.clone().into()
     }
 }
 
-impl<S: Signer> eventsourcing::CommandDetails for CmdDet<S> {
-    type Event = Evt;
+impl<S: Signer> fmt::Display for CmdDet<S> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        StorableCaCommand::from(self.clone()).fmt(f)
+    }
+}
+
+impl<S: Signer> From<CmdDet<S>> for StorableCaCommand {
+    fn from(d: CmdDet<S>) -> Self {
+        match d {
+            CmdDet::MakeTrustAnchor(_, _) => StorableCaCommand::MakeTrustAnchor,
+            CmdDet::ChildAdd(child, id_cert_opt, res) => {
+                StorableCaCommand::ChildAdd(child, id_cert_opt.map(|c| c.ski_hex()), res)
+            }
+            CmdDet::ChildUpdateResources(child, res) => {
+                StorableCaCommand::ChildUpdateResources(child, res)
+            }
+            CmdDet::ChildUpdateId(child, id) => {
+                StorableCaCommand::ChildUpdateId(child, id.ski_hex())
+            }
+            CmdDet::ChildCertify(child, req, _) => {
+                let (rcn, limit, csr) = req.unpack();
+                let ki = csr.public_key().key_identifier();
+                StorableCaCommand::ChildCertify(child, rcn, limit, ki)
+            }
+            CmdDet::ChildRevokeKey(child, req, _) => StorableCaCommand::ChildRevokeKey(child, req),
+            CmdDet::ChildRemove(child, _) => StorableCaCommand::ChildRemove(child),
+            CmdDet::GenerateNewIdKey(_) => StorableCaCommand::GenerateNewIdKey,
+            CmdDet::AddParent(parent, contact) => {
+                StorableCaCommand::AddParent(parent, contact.into())
+            }
+            CmdDet::UpdateParentContact(parent, contact) => {
+                StorableCaCommand::UpdateParentContact(parent, contact.into())
+            }
+            CmdDet::RemoveParent(parent) => StorableCaCommand::RemoveParent(parent),
+            CmdDet::UpdateResourceClasses(parent, entitlements, _) => {
+                let mut classes = HashMap::new();
+                for entitlement in entitlements.classes() {
+                    classes.insert(
+                        entitlement.class_name().clone(),
+                        entitlement.resource_set().clone(),
+                    );
+                }
+
+                StorableCaCommand::UpdateResourceClasses(parent, classes)
+            }
+            CmdDet::UpdateRcvdCert(rcn, rcvd_cert, _) => {
+                StorableCaCommand::UpdateRcvdCert(rcn, rcvd_cert.resources().clone())
+            }
+            CmdDet::KeyRollInitiate(duration, _) => {
+                StorableCaCommand::KeyRollInitiate(duration.num_seconds())
+            }
+            CmdDet::KeyRollActivate(duration, _) => {
+                StorableCaCommand::KeyRollActivate(duration.num_seconds())
+            }
+            CmdDet::KeyRollFinish(rcn, _) => StorableCaCommand::KeyRollFinish(rcn),
+            CmdDet::RouteAuthorizationsUpdate(updates, _) => {
+                StorableCaCommand::RoaDefinitionUpdates(updates.into())
+            }
+            CmdDet::Republish(_) => StorableCaCommand::Republish,
+            CmdDet::RepoUpdate(update, _) => {
+                let service_uri_opt = match update {
+                    RepositoryContact::Embedded(_) => None,
+                    RepositoryContact::Rfc8181(res) => Some(res.service_uri().clone()),
+                };
+                StorableCaCommand::RepoUpdate(service_uri_opt)
+            }
+            CmdDet::RepoRemoveOld(_) => StorableCaCommand::RepoRemoveOld,
+        }
+    }
 }
 
 impl<S: Signer> CmdDet<S> {
@@ -232,12 +220,20 @@ impl<S: Signer> CmdDet<S> {
         )
     }
 
-    pub fn child_update(
+    pub fn child_update_resources(
         handle: &Handle,
         child_handle: ChildHandle,
-        req: UpdateChildRequest,
+        resources: ResourceSet,
     ) -> Cmd<S> {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::ChildUpdate(child_handle, req))
+        eventsourcing::SentCommand::new(
+            handle,
+            None,
+            CmdDet::ChildUpdateResources(child_handle, resources),
+        )
+    }
+
+    pub fn child_update_id(handle: &Handle, child_handle: ChildHandle, id: IdCert) -> Cmd<S> {
+        eventsourcing::SentCommand::new(handle, None, CmdDet::ChildUpdateId(child_handle, id))
     }
 
     /// Certify a child. Will return an error in case the child is

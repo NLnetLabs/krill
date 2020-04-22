@@ -10,14 +10,15 @@ use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 
 use crate::commons::api::{
-    self, AddChildRequest, Base64, CertAuthHistory, CertAuthList, CertAuthSummary,
-    ChildAuthRequest, ChildCaInfo, ChildHandle, Entitlements, Handle, IssuanceRequest,
-    IssuanceResponse, IssuedCert, ListReply, ParentCaContact, ParentCaReq, ParentHandle,
-    PublishDelta, RcvdCert, RepoInfo, RepositoryContact, ResourceClassName, ResourceSet,
-    RevocationRequest, RevocationResponse, UpdateChildRequest,
+    self, AddChildRequest, Base64, CaCommandDetails, CaCommandResult, CertAuthList,
+    CertAuthSummary, ChildAuthRequest, ChildCaInfo, ChildHandle, CommandHistory,
+    CommandHistoryCriteria, Entitlements, Handle, IssuanceRequest, IssuanceResponse, IssuedCert,
+    ListReply, ParentCaContact, ParentCaReq, ParentHandle, PublishDelta, RcvdCert, RepoInfo,
+    RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse,
+    StoredEffect, UpdateChildRequest,
 };
 use crate::commons::error::Error;
-use crate::commons::eventsourcing::{Aggregate, AggregateStore, DiskAggregateStore};
+use crate::commons::eventsourcing::{Aggregate, AggregateStore, CommandKey, DiskAggregateStore};
 use crate::commons::remote::builder::SignedMessageBuilder;
 use crate::commons::remote::cmslogger::CmsLogger;
 use crate::commons::remote::id::IdCert;
@@ -244,7 +245,18 @@ impl<S: Signer> CaServer<S> {
         child: ChildHandle,
         req: UpdateChildRequest,
     ) -> KrillResult<()> {
-        self.send_command(CmdDet::child_update(handle, child, req))
+        let (id_opt, resources_opt) = req.unpack();
+
+        if (id_opt.is_some() && resources_opt.is_some())
+            || (id_opt.is_none() && resources_opt.is_none())
+        {
+            Err(Error::CaChildUpdateOneThing(handle.clone(), child))
+        } else if let Some(id) = id_opt {
+            self.send_command(CmdDet::child_update_id(handle, child, id))
+        } else {
+            let resources = resources_opt.unwrap();
+            self.send_command(CmdDet::child_update_resources(handle, child, resources))
+        }
     }
 
     /// Update a child under this CA.
@@ -266,11 +278,53 @@ impl<S: Signer> CaServer<S> {
     }
 
     /// Gets the history for a CA.
-    pub fn get_ca_history(&self, handle: &Handle) -> KrillResult<CertAuthHistory> {
+    pub fn get_ca_history(
+        &self,
+        handle: &Handle,
+        crit: CommandHistoryCriteria,
+    ) -> KrillResult<CommandHistory> {
         self.ca_store
-            .history(handle)
-            .map(CertAuthHistory::from)
+            .command_history(handle, crit)
             .map_err(|_| Error::CaUnknown(handle.clone()))
+    }
+
+    /// Shows the details for a CA command
+    pub fn get_ca_command_details(
+        &self,
+        handle: &Handle,
+        command: CommandKey,
+    ) -> KrillResult<Option<CaCommandDetails>> {
+        if let Some(command) = self.ca_store.stored_command(handle, &command)? {
+            let effect = command.effect().clone();
+            match effect {
+                StoredEffect::Error(msg) => Ok(Some(CaCommandDetails::new(
+                    command,
+                    CaCommandResult::error(msg),
+                ))),
+                StoredEffect::Events(versions) => {
+                    let mut stored_events = vec![];
+                    for version in versions {
+                        let evt =
+                            self.ca_store
+                                .stored_event(handle, version)?
+                                .ok_or_else(|| {
+                                    Error::Custom(format!(
+                                        "Cannot find evt: {} in history for CA: {}",
+                                        version, handle
+                                    ))
+                                })?;
+                        stored_events.push(evt);
+                    }
+
+                    Ok(Some(CaCommandDetails::new(
+                        command,
+                        CaCommandResult::events(stored_events),
+                    )))
+                }
+            }
+        } else {
+            Ok(None)
+        }
     }
 
     /// Checks whether a CA by the given handle exists.
@@ -403,7 +457,9 @@ impl<S: Signer> CaServer<S> {
 
     /// Initialises a CA without a repo, no parents, no children, no nothing
     pub fn init_ca(&self, handle: &Handle) -> KrillResult<()> {
-        if self.ca_store.has(handle) {
+        if handle == &ta_handle() || handle.as_str() == "version" {
+            Err(Error::TaNameReserved)
+        } else if self.ca_store.has(handle) {
             Err(Error::CaDuplicate(handle.clone()))
         } else {
             let init = IniDet::init(handle, self.signer.clone())?;

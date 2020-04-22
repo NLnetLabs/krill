@@ -1,13 +1,14 @@
 use std::convert::TryFrom;
-use std::env;
 use std::io;
 use std::path::PathBuf;
 use std::str::{from_utf8_unchecked, FromStr};
+use std::{env, fmt};
 
 use bytes::Bytes;
 use clap::{App, Arg, ArgMatches, SubCommand};
 
 use rpki::uri;
+use rpki::x509::Time;
 
 use crate::cli::report::{ReportError, ReportFormat};
 use crate::commons::api::RepositoryUpdate;
@@ -299,6 +300,63 @@ impl Options {
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
+
+        sub = sub.arg(
+            Arg::with_name("full")
+                .long("full")
+                .help("Show history including publication.")
+                .required(false),
+        );
+
+        sub = sub.arg(
+            Arg::with_name("rows")
+                .long("rows")
+                .help("Number of rows (max 250)")
+                .value_name("<number>")
+                .required(false),
+        );
+
+        sub = sub.arg(
+            Arg::with_name("offset")
+                .long("offset")
+                .help("Number of results to skip")
+                .value_name("<number>")
+                .required(false),
+        );
+
+        sub = sub.arg(
+            Arg::with_name("after")
+                .long("after")
+                .help("Show commands issued after date/time in RFC 3339 format, e.g. 2020-04-09T19:37:02Z")
+                .value_name("<RFC 3339 DateTime>")
+                .required(false),
+        );
+
+        sub = sub.arg(
+            Arg::with_name("before")
+                .long("before")
+                .help("Show commands issued after date/time in RFC 3339 format, e.g. 2020-04-09T19:37:02Z")
+                .value_name("<RFC 3339 DateTime>")
+                .required(false),
+        );
+
+        app.subcommand(sub)
+    }
+
+    fn make_cas_show_action_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub =
+            SubCommand::with_name("action").about("Show details for a specific CA action.");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        sub = sub.arg(
+            Arg::with_name("key")
+                .long("key")
+                .value_name("action key string")
+                .help("The action key (as shown in the history).")
+                .required(true),
+        );
 
         app.subcommand(sub)
     }
@@ -770,6 +828,7 @@ impl Options {
         app = Self::make_cas_list_sc(app);
         app = Self::make_cas_show_ca_sc(app);
         app = Self::make_cas_show_history_sc(app);
+        app = Self::make_cas_show_action_sc(app);
         app = Self::make_cas_add_ca_sc(app);
         app = Self::make_cas_children_sc(app);
         app = Self::make_cas_parents_sc(app);
@@ -927,7 +986,48 @@ impl Options {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
-        let command = Command::CertAuth(CaCommand::ShowHistory(my_ca));
+        let mut options = HistoryOptions::default();
+        if matches.is_present("full") {
+            options.short = false;
+        }
+
+        if let Some(offset) = matches.value_of("offset") {
+            let offset = u64::from_str(offset)
+                .map_err(|e| Error::general(&format!("invalid number: {}", e.to_string())))?;
+            options.offset = offset
+        }
+
+        if let Some(rows) = matches.value_of("rows") {
+            let rows = u64::from_str(rows)
+                .map_err(|e| Error::general(&format!("invalid number: {}", e.to_string())))?;
+            if rows > 250 {
+                return Err(Error::general("No more than 250 rows allowed in history"));
+            }
+            options.rows = rows
+        }
+
+        if let Some(after) = matches.value_of("after") {
+            let time = Time::from_str(after)
+                .map_err(|e| Error::general(&format!("invalid date format: {}", e.to_string())))?;
+            options.after = Some(time);
+        }
+
+        if let Some(after) = matches.value_of("before") {
+            let time = Time::from_str(after)
+                .map_err(|e| Error::general(&format!("invalid date format: {}", e.to_string())))?;
+            options.before = Some(time);
+        }
+
+        let command = Command::CertAuth(CaCommand::ShowHistory(my_ca, options));
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_action(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+        let key = matches.value_of("key").unwrap();
+
+        let command = Command::CertAuth(CaCommand::ShowAction(my_ca, key.to_string()));
         Ok(Options::make(general_args, command))
     }
 
@@ -1397,6 +1497,8 @@ impl Options {
             Self::parse_matches_cas_show(m)
         } else if let Some(m) = matches.subcommand_matches("history") {
             Self::parse_matches_cas_history(m)
+        } else if let Some(m) = matches.subcommand_matches("action") {
+            Self::parse_matches_cas_action(m)
         } else if let Some(m) = matches.subcommand_matches("children") {
             Self::parse_matches_cas_children(m)
         } else if let Some(m) = matches.subcommand_matches("parents") {
@@ -1526,8 +1628,11 @@ pub enum CaCommand {
     #[display(fmt = "Show details for ca: '{}'", _0)]
     Show(Handle),
 
-    #[display(fmt = "Show history for ca: '{}'", _0)]
-    ShowHistory(Handle),
+    #[display(fmt = "Show history for ca: '{}', mode: {}", _0, _1)]
+    ShowHistory(Handle, HistoryOptions),
+
+    #[display(fmt = "Show action details for ca: '{}', action key: {}", _0, _1)]
+    ShowAction(Handle, String),
 
     #[display(fmt = "Show issues for ca: '{:?}'", _0)]
     Issues(Option<Handle>),
@@ -1535,6 +1640,57 @@ pub enum CaCommand {
     // List all CAs
     #[display(fmt = "List all cas")]
     List,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HistoryOptions {
+    pub short: bool,
+    pub offset: u64,
+    pub rows: u64,
+    pub after: Option<Time>,
+    pub before: Option<Time>,
+}
+
+impl Default for HistoryOptions {
+    fn default() -> Self {
+        HistoryOptions {
+            short: true,
+            offset: 0,
+            rows: 100,
+            after: None,
+            before: None,
+        }
+    }
+}
+
+impl fmt::Display for HistoryOptions {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let mut s = if self.short { "short" } else { "full" }.to_string();
+
+        if let Some(before) = self.before {
+            let after = self.after.map(|t| t.timestamp()).unwrap_or_else(|| 0);
+            s.push_str(&format!(
+                "/{}/{}/{}/{}",
+                self.rows,
+                self.offset,
+                after,
+                before.timestamp()
+            ));
+        } else if let Some(after) = self.after {
+            s.push_str(&format!(
+                "/{}/{}/{}",
+                self.rows,
+                self.offset,
+                after.timestamp()
+            ));
+        } else if self.offset != 0 {
+            s.push_str(&format!("/{}/{}", self.rows, self.offset));
+        } else if self.rows != 100 {
+            s.push_str(&format!("/{}", self.rows));
+        }
+
+        write!(f, "{}", s)
+    }
 }
 
 #[derive(Clone, Debug, Display, Eq, PartialEq)]

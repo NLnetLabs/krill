@@ -1,0 +1,24 @@
+{
+  "id": "ca",
+  "version": 38,
+  "details": {
+    "key_roll_finished": [
+      "0",
+      {
+        "ca_repo": "rsync://rsync.rpki.nlnetlabs.nl/repo/ca/0",
+        "added": [],
+        "updated": [],
+        "withdrawn": [
+          {
+            "name": "D5EE85EF047010771547FE3ACFE4316503B8EC6F.crl",
+            "hash": "f42fa6dd68ebd2aa86063f6c0316112875fd401687237478e694a0db0b5a3842"
+          },
+          {
+            "name": "D5EE85EF047010771547FE3ACFE4316503B8EC6F.mft",
+            "hash": "9ae5833237d7571181a0de906eef89b8ed599cc4618e4309bc0ce95b378d749b"
+          }
+        ]
+      }
+    ]
+  }
+}

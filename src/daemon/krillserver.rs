@@ -11,13 +11,15 @@ use rpki::uri;
 use rpki::x509::Time;
 
 use crate::commons::api::{
-    AddChildRequest, AllCertAuthIssues, CaRepoDetails, CertAuthHistory, CertAuthInfo, CertAuthInit,
-    CertAuthIssues, CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, CurrentRepoState,
-    Handle, ListReply, ParentCaContact, ParentCaReq, ParentHandle, PublishDelta, PublisherDetails,
-    PublisherHandle, RepoInfo, RepositoryContact, RepositoryUpdate, RoaDefinition,
-    RoaDefinitionUpdates, ServerInfo, TaCertDetails, UpdateChildRequest,
+    AddChildRequest, AllCertAuthIssues, CaCommandDetails, CaRepoDetails, CertAuthInfo,
+    CertAuthInit, CertAuthIssues, CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle,
+    CommandHistory, CommandHistoryCriteria, CurrentRepoState, Handle, ListReply, ParentCaContact,
+    ParentCaReq, ParentHandle, PublishDelta, PublisherDetails, PublisherHandle, RepoInfo,
+    RepositoryContact, RepositoryUpdate, RoaDefinition, RoaDefinitionUpdates, ServerInfo,
+    TaCertDetails, UpdateChildRequest,
 };
 use crate::commons::error::Error;
+use crate::commons::eventsourcing::CommandKey;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::softsigner::OpenSslSigner;
 use crate::commons::{KrillEmptyResult, KrillResult};
@@ -515,8 +517,20 @@ impl KrillServer {
     }
 
     /// Returns the history for a CA, or NONE in case of issues (i.e. it does not exist).
-    pub fn ca_history(&self, handle: &Handle) -> Option<CertAuthHistory> {
-        self.caserver.get_ca_history(handle).ok()
+    pub fn ca_history(
+        &self,
+        handle: &Handle,
+        crit: CommandHistoryCriteria,
+    ) -> Option<CommandHistory> {
+        self.caserver.get_ca_history(handle, crit).ok()
+    }
+
+    pub fn ca_command_details(
+        &self,
+        handle: &Handle,
+        command: CommandKey,
+    ) -> KrillResult<Option<CaCommandDetails>> {
+        self.caserver.get_ca_command_details(handle, command)
     }
 
     /// Returns the publisher request for a CA, or NONE of the CA cannot be found.

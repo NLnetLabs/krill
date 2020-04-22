@@ -1,15 +1,17 @@
 use std::collections::HashMap;
-use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::RwLock;
 
-use crate::commons::api::Handle;
-use crate::commons::eventsourcing::agg::AggregateHistory;
+use rpki::x509::Time;
+
+use crate::commons::api::{CommandHistory, CommandHistoryCriteria, Handle};
 use crate::commons::eventsourcing::cmd::{Command, StoredCommandBuilder};
 use crate::commons::eventsourcing::{
-    Aggregate, DiskKeyStore, Event, EventListener, KeyStore, KeyStoreError,
+    Aggregate, CommandKey, DiskKeyStore, Event, EventListener, KeyStore, KeyStoreError,
+    KeyStoreVersion, StoredCommand,
 };
+use std::io;
 
 const SNAPSHOT_FREQ: u64 = 5;
 
@@ -43,8 +45,22 @@ where
     /// are stored.
     fn add_listener<L: EventListener<A>>(&mut self, listener: Arc<L>);
 
-    /// Lists the complete history for an aggregate.
-    fn history(&self, id: &Handle) -> StoreResult<AggregateHistory<A>>;
+    /// Lists the history for an aggregate.
+    fn command_history(
+        &self,
+        id: &Handle,
+        crit: CommandHistoryCriteria,
+    ) -> StoreResult<CommandHistory>;
+
+    /// Returns a stored command if it can be found.
+    fn stored_command(
+        &self,
+        id: &Handle,
+        key: &CommandKey,
+    ) -> StoreResult<Option<StoredCommand<A::StorableCommandDetails>>>;
+
+    /// Returns a stored event if it can be found.
+    fn stored_event(&self, id: &Handle, version: u64) -> StoreResult<Option<A::Event>>;
 }
 
 /// This type defines possible Errors for the AggregateStore
@@ -52,6 +68,9 @@ where
 pub enum AggregateStoreError {
     #[display(fmt = "{}", _0)]
     KeyStoreError(KeyStoreError),
+
+    #[display(fmt = "{}", _0)]
+    IoError(io::Error),
 
     #[display(fmt = "unknown entity: {}", _0)]
     UnknownAggregate(Handle),
@@ -64,6 +83,16 @@ pub enum AggregateStoreError {
 
     #[display(fmt = "concurrent modifcation attempt for entity: '{}'", _0)]
     ConcurrentModification(Handle),
+
+    #[display(
+        fmt = "Aggregate '{}' does not have command with sequence '{}'",
+        _0,
+        _1
+    )]
+    UnknownCommand(Handle, u64),
+
+    #[display(fmt = "Offset '{}' exceeds total '{}'", _0, _1)]
+    CommandOffsetTooLarge(u64, u64),
 }
 
 impl From<KeyStoreError> for AggregateStoreError {
@@ -81,8 +110,16 @@ pub struct DiskAggregateStore<A: Aggregate> {
 }
 
 impl<A: Aggregate> DiskAggregateStore<A> {
-    pub fn new(work_dir: &PathBuf, name_space: &str) -> Result<Self, io::Error> {
-        let store = DiskKeyStore::under_work_dir(work_dir, name_space)?;
+    pub fn new(work_dir: &PathBuf, name_space: &str) -> StoreResult<Self> {
+        let store = DiskKeyStore::under_work_dir(work_dir, name_space)
+            .map_err(AggregateStoreError::IoError)?;
+
+        if store.aggregates().is_empty() {
+            store
+                .set_version(&KeyStoreVersion::V0_6)
+                .map_err(AggregateStoreError::KeyStoreError)?;
+        }
+
         let cache = RwLock::new(HashMap::new());
         let use_cache = true;
         let listeners = vec![];
@@ -163,7 +200,7 @@ where
         let handle = init.handle().clone();
 
         let aggregate = A::init(init).map_err(|_| AggregateStoreError::InitError)?;
-        self.store.store_aggregate(&handle, &aggregate)?;
+        self.store.store_snapshot(&handle, &aggregate)?;
 
         let arc = Arc::new(aggregate);
         self.cache_update(&handle, arc.clone());
@@ -176,6 +213,13 @@ where
 
         // Get the latest arc.
         let handle = cmd.handle().clone();
+
+        let mut info = self
+            .store
+            .get_info(&handle)
+            .map_err(AggregateStoreError::KeyStoreError)?;
+        info.last_update = Time::now();
+        info.last_command += 1;
 
         let mut latest = self.get_latest_no_lock(&handle)?;
 
@@ -194,9 +238,10 @@ where
             }
         }
 
-        let stored_command_builder = StoredCommandBuilder::new(&cmd, latest.version());
+        let stored_command_builder =
+            StoredCommandBuilder::new(&cmd, latest.version(), info.last_command);
 
-        match latest.process_command(cmd) {
+        let res = match latest.process_command(cmd) {
             Err(e) => {
                 let stored_command = stored_command_builder.finish_with_error(&e);
                 self.store
@@ -206,7 +251,7 @@ where
             }
             Ok(events) => {
                 if events.is_empty() {
-                    Ok(latest)
+                    return Ok(latest); // otherwise the version info will be updated
                 } else {
                     let agg = Arc::make_mut(&mut latest);
 
@@ -230,6 +275,9 @@ where
                     // this version.
                     let version_before = agg.version();
                     let nr_events = events.len() as u64;
+
+                    info.last_event += nr_events;
+
                     for i in 0..nr_events {
                         let event = &events[i as usize];
                         if event.version() != version_before + i || event.handle() != &handle {
@@ -253,13 +301,15 @@ where
 
                         agg.apply(event.clone());
                         if agg.version() % SNAPSHOT_FREQ == 0 {
+                            info.snapshot_version = agg.version();
+
                             self.store
-                                .store_aggregate(&handle, agg)
+                                .store_snapshot(&handle, agg)
                                 .map_err(AggregateStoreError::KeyStoreError)?;
                         }
                     }
 
-                    cache.insert(handle, Arc::new(agg.clone()));
+                    cache.insert(handle.clone(), Arc::new(agg.clone()));
 
                     // Only send this to listeners after everything has been saved.
                     for event in events {
@@ -271,7 +321,13 @@ where
                     Ok(latest)
                 }
             }
-        }
+        };
+
+        self.store
+            .save_info(&handle, &info)
+            .map_err(AggregateStoreError::KeyStoreError)?;
+
+        res
     }
 
     fn has(&self, id: &Handle) -> bool {
@@ -289,9 +345,34 @@ where
         self.listeners.push(listener)
     }
 
-    fn history(&self, id: &Handle) -> StoreResult<AggregateHistory<A>> {
+    fn command_history(
+        &self,
+        id: &Handle,
+        crit: CommandHistoryCriteria,
+    ) -> StoreResult<CommandHistory> {
         self.store
-            .history::<A>(id)
+            .command_history::<A>(id, crit)
+            .map_err(AggregateStoreError::KeyStoreError)
+    }
+
+    fn stored_command(
+        &self,
+        id: &Handle,
+        key: &CommandKey,
+    ) -> StoreResult<Option<StoredCommand<<A as Aggregate>::StorableCommandDetails>>> {
+        self.store
+            .get(id, &key.into())
+            .map_err(AggregateStoreError::KeyStoreError)
+    }
+
+    fn stored_event(
+        &self,
+        id: &Handle,
+        version: u64,
+    ) -> StoreResult<Option<<A as Aggregate>::Event>> {
+        let key = DiskKeyStore::key_for_event(version);
+        self.store
+            .get(id, &key)
             .map_err(AggregateStoreError::KeyStoreError)
     }
 }

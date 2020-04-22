@@ -1,0 +1,19 @@
+{
+  "id": "CA1",
+  "version": 5,
+  "details": {
+    "certificate_requested": [
+      "0",
+      {
+        "class_name": "0",
+        "limit": {
+          "asn": "none",
+          "v4": "none",
+          "v6": "none"
+        },
+        "csr": "MIIDgjCCAmoCAQAwMzExMC8GA1UEAxMoMzhGMjc4MDdCNkY2NDQ5ODgxOTJDQTgxMUNBMkQ3MDA3NTkwOTMxMjCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBANrFovuBVEq5ggb8Oz/0b91mmM+LjORsIlRu4GINS5GJw3ZVVkaePEoj22DQNDuZuSlmhdxefariVyWKgynjYKJSO9rl6nsD4PJcD2Zs4zGeZmuagc+Uo1VcnxxDLyTlsmoH91i/2EY+SsZQvRzXCe2on/8pbEqOaOIKKqy00ELnXqCAg6M8D/aP6r9qLQFFvQlIDYdOCtxteQMN1ClqLcJTI2Wm30LV3dmIeR3NjI3nIbBlB5hdae+cU+ovVqs9u/ODlgRvG+CyVFozDidOxo1o+r/PLz8AYmSUDVmWPYLHWlSwhw3JASUwxE5w1thUcwiqKvZd0miOOiMjtx9ZGcMCAwEAAaCCAQgwggEEBgkqhkiG9w0BCQ4xgfYwgfMwDwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMCAQYwgc8GCCsGAQUFBwELAQEABIG/MIG8MCkGCCsGAQUFBzAFhh1yc3luYzovL2xvY2FsaG9zdC9yZXBvL0NBMS8wLzBVBggrBgEFBQcwCoZJcnN5bmM6Ly9sb2NhbGhvc3QvcmVwby9DQTEvMC8zOEYyNzgwN0I2RjY0NDk4ODE5MkNBODExQ0EyRDcwMDc1OTA5MzEyLm1mdDA4BggrBgEFBQcwDYYsaHR0cHM6Ly9sb2NhbGhvc3Q6MzAwMC9ycmRwL25vdGlmaWNhdGlvbi54bWwwDQYJKoZIhvcNAQELBQADggEBAIsQGzLiPKFQ760VKGWjyGd8E0+fy+qjixOqS05miCI7Ew6O8jDieqLEW7WG4vY2fzuqW5AzaP2cwfGKojhUtCtO1lq8w37aQyKSJ6bCAHdoi9oAAMeovtZrgFIzYEeeyF3lZodj0JBfjAsFohRoLr8hUay7G9rBMMHSQy5hZICb4OidmJ0TjxbBWkJOUuo3g0v5XMyccSFoMsX4/rWV/AGBsptC/uh8GSLqF444+xoFd+gQCgqD4VML3sSSP4P9BM+OcflXJb5mML+J6sfA7rZQ6NveOWE9Mu1j6AeL3laoiggKdBN6uGzxdmtMr5HBIPOoAycViSKp0YxfJXIe39c="
+      },
+      "38F27807B6F644988192CA811CA2D70075909312"
+    ]
+  }
+}

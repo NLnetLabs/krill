@@ -1,0 +1,18 @@
+{
+  "id": "ca",
+  "version": 1,
+  "details": {
+    "parent_added": [
+      "evil-ai-overlord",
+      {
+        "rfc6492": {
+          "tag": null,
+          "id_cert": "MIIDPDCCAiSgAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEyg1REU0MTgyRjc3MTJBNTgyQ0IxNDAzREZGMzhENEEwRkI2RjBFNTk3MCAXDTIwMDIxOTExMTE0MVoYDzIxMjAwMjE5MTExNjQxWjAzMTEwLwYDVQQDEyg1REU0MTgyRjc3MTJBNTgyQ0IxNDAzREZGMzhENEEwRkI2RjBFNTk3MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwOn0xAaqfZg6rgeaCPBoMQHu5KxQYoJoQCX+W9JPvYwmX/gYTQKpqOlcRbwW5Uu9kWkpiqQ9ccBBC/dlcKZmUHwMy+MZL6OxPTm/JehnxQeMLsavyRDshyCZ0zl8NLgIQU+nzy49DyIx9cv5bdPQ6+9X5PNYuFRxcKbd/94gfZoSVxxHdALUzv8MUtyYPEvJ72Zb1nzmWh7jT7F/8j7q2XAV2YRuYV4vviKKDKXGM3C43qD92tgstQpDMIFXt3w8Fu46VgJUUV1zLaLksajxp26+wSTB/14BtD/fNjdofCUi0SIKukq1HKHE1kT2+H2pNvurG326qm3LRKw10LoF/wIDAQABo1kwVzAPBgNVHRMBAf8EBTADAQH/MCAGA1UdDgEBAAQWBBRd5BgvdxKlgssUA9/zjUoPtvDllzAiBgNVHSMBAQAEGDAWgBRd5BgvdxKlgssUA9/zjUoPtvDllzANBgkqhkiG9w0BAQsFAAOCAQEAXTLdT6apC58OzO0QTy6cj3I/TNJL+4brmT2lagomNAVmhfu7cYvkAUWqbuC44ip/u/p4wDtsukWB1vnGcjoHBp33IZNdzQ2p7SRUKQima1X6dWHZ/zBNC3MknUR4kpON4TZltK2cYS7JxlCneZzsA+ZCXE/wXQJ1FaHKObIR+QSkZxE4Lissj9o/CsKzwpcYxbbf0qYVnGqdUcAs6PctimPxNQtlYTRudjUjH/M8wjmo+MpnxD8HxQRrkEa3bjcwDFbCVFzYPKB9k50bo003q91Hu3C3QMJwh+63JPkD/pkjWMM/eeFqW7B2syA/yDF5xgVga63M3MFuNO3eJI/HuA==",
+          "parent_handle": "ta",
+          "child_handle": "ca",
+          "service_uri": "https://localhost:3000/rfc6492/ta"
+        }
+      }
+    ]
+  }
+}

@@ -1,15 +1,17 @@
 use std::str::{from_utf8_unchecked, FromStr};
 
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, SecondsFormat, Utc};
 use serde::Serialize;
 
 use rpki::x509::Time;
 
 use crate::commons::api::{
-    AllCertAuthIssues, CaRepoDetails, CertAuthHistory, CertAuthInfo, CertAuthIssues, CertAuthList,
-    ChildCaInfo, CurrentObjects, CurrentRepoState, ParentCaContact, PublisherDetails,
-    PublisherList, RepositoryContact, RoaDefinition, ServerInfo,
+    AllCertAuthIssues, CaCommandDetails, CaCommandResult, CaRepoDetails, CertAuthInfo,
+    CertAuthIssues, CertAuthList, ChildCaInfo, CommandHistory, CurrentObjects, CurrentRepoState,
+    ParentCaContact, PublisherDetails, PublisherList, RepositoryContact, RoaDefinition, ServerInfo,
+    StoredEffect,
 };
+use crate::commons::eventsourcing::WithStorableDetails;
 use crate::commons::remote::api::ClientInfo;
 use crate::commons::remote::rfc8183;
 use crate::pubd::RepoStats;
@@ -24,7 +26,8 @@ pub enum ApiResponse {
     Info(ServerInfo),
 
     CertAuthInfo(CertAuthInfo),
-    CertAuthHistory(CertAuthHistory),
+    CertAuthHistory(CommandHistory),
+    CertAuthAction(CaCommandDetails),
     CertAuths(CertAuthList),
     RouteAuthorizations(Vec<RoaDefinition>),
 
@@ -62,6 +65,7 @@ impl ApiResponse {
                 ApiResponse::CertAuths(list) => Ok(Some(list.report(fmt)?)),
                 ApiResponse::CertAuthInfo(info) => Ok(Some(info.report(fmt)?)),
                 ApiResponse::CertAuthHistory(history) => Ok(Some(history.report(fmt)?)),
+                ApiResponse::CertAuthAction(details) => Ok(Some(details.report(fmt)?)),
                 ApiResponse::CertAuthIssues(issues) => Ok(Some(issues.report(fmt)?)),
                 ApiResponse::AllCertAuthIssues(issues) => Ok(Some(issues.report(fmt)?)),
                 ApiResponse::RouteAuthorizations(auths) => Ok(Some(auths.report(fmt)?)),
@@ -220,9 +224,52 @@ impl Report for CertAuthInfo {
     }
 }
 
-impl Report for CertAuthHistory {
+impl Report for CommandHistory {
     fn text(&self) -> Result<String, ReportError> {
-        Ok(format!("{}", self))
+        let mut res = String::new();
+
+        res.push_str("time::command::key::success\n");
+
+        for command in self.commands() {
+            let success_string = match &command.effect {
+                StoredEffect::Error(msg) => format!("ERROR -> {}", msg),
+                StoredEffect::Events(_) => "OK".to_string(),
+            };
+            res.push_str(&format!(
+                "{}::{} ::{}::{}\n",
+                command.time().to_rfc3339_opts(SecondsFormat::Secs, true),
+                command.summary.msg,
+                command.key,
+                success_string
+            ))
+        }
+
+        Ok(res)
+    }
+}
+
+impl Report for CaCommandDetails {
+    fn text(&self) -> Result<String, ReportError> {
+        let mut res = String::new();
+
+        let command = self.command();
+        res.push_str(&format!(
+            "Time:   {}\n",
+            command.time().to_rfc3339_opts(SecondsFormat::Secs, true)
+        ));
+        res.push_str(&format!("Action: {}\n", command.details().summary().msg));
+
+        match self.effect() {
+            CaCommandResult::Error(msg) => res.push_str(&format!("Error:  {}\n", msg)),
+            CaCommandResult::Events(evts) => {
+                res.push_str("Changes:\n");
+                for evt in evts {
+                    res.push_str(&format!("  {}\n", evt.details().to_string()));
+                }
+            }
+        }
+
+        Ok(res)
     }
 }
 

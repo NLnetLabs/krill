@@ -1,0 +1,18 @@
+{
+  "id": "ca",
+  "version": 1,
+  "details": {
+    "parent_added": [
+      "ripencc",
+      {
+        "rfc6492": {
+          "tag": null,
+          "id_cert": "MIIDWDCCAkCgAwIBAgIBATANBgkqhkiG9w0BAQsFADA9MQswCQYDVQQGEwJOTDERMA8GA1UEChMIUklQRSBOQ0MxGzAZBgNVBAMTElJJUEUgTkNDIFJlc291cmNlczAeFw0xNjA1MDQwODM3MzNaFw0yNjA1MDQwODM3MzNaMD0xCzAJBgNVBAYTAk5MMREwDwYDVQQKEwhSSVBFIE5DQzEbMBkGA1UEAxMSUklQRSBOQ0MgUmVzb3VyY2VzMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzAGmYpyIdKw8z+37zYscdLLipXG8JuMIXFXuSdqD/VbXbe0suShfoX8Mdy2IEhij/R/ZNHLodbTxIBcdDBlYJmXPjVqW5RvTaUaHal+dWwVUE2XwoX2MVtZB7hiaHqCxxpY/61SzR50L8u/QzRhIsYbZR0QE++ouWPSZQ18nLFGy677iCVfkHFcRyHDJjv3qQjeheMOPBWZ1Dqi9Ya2avzNNhVRD+ugcrnptA/pHPt9dppuagosDmST4+0HxADNVT/Vgp9SUpoomyxp8cb/EEihxrtgZ9UNDlfcL7bT2dyiZAl/vRvpFy6RaDYflYwAe9zUExLZ09qfM42FxOIwqZwIDAQABo2MwYTAdBgNVHQ4EFgQUlpWf/heCRVS4L/DcuNpS8covrRYwHwYDVR0jBBgwFoAUlpWf/heCRVS4L/DcuNpS8covrRYwDwYDVR0TAQH/BAUwAwEB/zAOBgNVHQ8BAf8EBAMCAQYwDQYJKoZIhvcNAQELBQADggEBAGOD+ao23VT1F9QCdJr9RlhEmtVWLrqy1HooxHf/lghXeQGKu0k0MCzLb8VkPcAtPUlYzl/fSh3+gW/Pt95VMIFF4OfQdyyDnSB324q+AjwxyDzIFck/KW9RINe/w9IfTPtOFXWWcp5szrqIzhyZAhuVDckeuKxwlD8UZM58BwavQCCSvuz97o8QdtHgMebiv+xUWRpGd0V/9uIjY0iC741RIgpp8WzOxaFUAkadKFC/5JTSQd3bb6y3gdUFGYotDLLZsX4j/b8ZSzn5+E+NyzGR/lsxVfpxPGRtYGZp65W7V1nYWK8ZB8SY2nefS5ITrc7MyymTvC8p4Db3s0lEa0E=",
+          "parent_handle": "3336711f-25e1-4b5c-9748-e6c58bef82a5",
+          "child_handle": "fb32c8c3-431e-47ff-bc81-65bd98f0cbc4",
+          "service_uri": "http://lirportal.ripe.net/certification/updown"
+        }
+      }
+    ]
+  }
+}

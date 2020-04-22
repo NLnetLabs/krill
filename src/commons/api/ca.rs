@@ -25,10 +25,9 @@ use crate::commons::api::{
     Base64, ChildHandle, ErrorResponse, Handle, HexEncodedHash, IssuanceRequest, ListReply,
     ParentCaContact, ParentHandle, RepositoryContact, RequestResourceLimit, RoaDefinition,
 };
-use crate::commons::eventsourcing::AggregateHistory;
 use crate::commons::remote::id::IdCert;
 use crate::commons::util::ext_serde;
-use crate::daemon::ca::{self, CertAuth, RouteAuthorization, Signer};
+use crate::daemon::ca::RouteAuthorization;
 
 //------------ ResourceClassName -------------------------------------------
 
@@ -1181,6 +1180,50 @@ impl From<&Cert> for WithdrawnObject {
     }
 }
 
+//------------ ResourceSetSummary --------------------------------------------
+/// This type defines a summary of a set of Internet Number Resources, for
+/// use in concise reporting.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct ResourceSetSummary {
+    asns: usize,
+    ipv4: usize,
+    ipv6: usize,
+}
+
+impl ResourceSetSummary {
+    pub fn asn_bloks(&self) -> usize {
+        self.asns
+    }
+    pub fn ipv4_bloks(&self) -> usize {
+        self.ipv4
+    }
+    pub fn ipv6_bloks(&self) -> usize {
+        self.ipv6
+    }
+}
+
+impl From<&ResourceSet> for ResourceSetSummary {
+    fn from(rs: &ResourceSet) -> Self {
+        let asns: Vec<_> = rs.asn.iter().collect();
+        let asns = asns.len();
+        let ipv4: Vec<_> = rs.v4.iter().collect();
+        let ipv4 = ipv4.len();
+        let ipv6: Vec<_> = rs.v6.iter().collect();
+        let ipv6 = ipv6.len();
+        ResourceSetSummary { asns, ipv4, ipv6 }
+    }
+}
+
+impl fmt::Display for ResourceSetSummary {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "asn: {} blocks, v4: {} blocks, v6: {} blocks",
+            self.asns, self.ipv4, self.ipv6
+        )
+    }
+}
+
 //------------ ResourceSet ---------------------------------------------------
 
 /// This type defines a set of Internet Number Resources.
@@ -1228,6 +1271,10 @@ impl ResourceSet {
 
     pub fn is_empty(&self) -> bool {
         self == &ResourceSet::default()
+    }
+
+    pub fn summary(&self) -> ResourceSetSummary {
+        ResourceSetSummary::from(self)
     }
 
     pub fn asn(&self) -> &AsBlocks {
@@ -1337,6 +1384,31 @@ impl Default for ResourceSet {
             v4: IpBlocks::empty(),
             v6: IpBlocks::empty(),
         }
+    }
+}
+
+impl FromStr for ResourceSet {
+    type Err = ResourceSetError;
+
+    // Expects formatting like we use in Display, i.e.:
+    // asn: AS1-2, v4: 10.0.0.0/16, v6: ::0/128
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // min len for empty set is 12: 'asn: , v4: ,v6: '
+        if s.len() < 16 || !s.starts_with("asn: ") {
+            return Err(ResourceSetError::FromString);
+        }
+        let v4_start = s
+            .find(", v4: ")
+            .ok_or_else(|| ResourceSetError::FromString)?;
+        let v6_start = s
+            .find(", v6: ")
+            .ok_or_else(|| ResourceSetError::FromString)?;
+
+        let asn = &s[5..v4_start];
+        let v4 = &s[v4_start + 6..v6_start];
+        let v6 = &s[v6_start + 6..];
+
+        ResourceSet::from_strs(asn, v4, v6)
     }
 }
 
@@ -1552,31 +1624,6 @@ impl CertAuthInfo {
         }
 
         res
-    }
-}
-
-//------------ CertAuthHistory -----------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct CertAuthHistory {
-    init: ca::Ini,
-    events: Vec<ca::Evt>,
-}
-
-impl<S: Signer> From<AggregateHistory<CertAuth<S>>> for CertAuthHistory {
-    fn from(history: AggregateHistory<CertAuth<S>>) -> Self {
-        let (init, events) = history.unpack();
-        CertAuthHistory { init, events }
-    }
-}
-
-impl fmt::Display for CertAuthHistory {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "{}", self.init)?;
-        for evt in &self.events {
-            writeln!(f, "{}", evt)?;
-        }
-        Ok(())
     }
 }
 
@@ -1884,6 +1931,11 @@ pub enum ResourceSetError {
 
     #[display(fmt = "Limit in CSR exceeds resource entitlements.")]
     Limit,
+
+    #[display(
+        fmt = "Cannot parse resource set string, expected: 'asn: <ASNs>, ipv4: <IPv4s>, ipv6: <IPv6s>'."
+    )]
+    FromString,
 }
 
 impl ResourceSetError {
@@ -2070,5 +2122,23 @@ mod test {
         let intersection = parent_resources.intersection(&child_resources);
 
         assert_eq!(intersection, child_resources);
+    }
+
+    #[test]
+    fn resource_set_to_from_string() {
+        let asns = "AS65000-AS65003, AS65005";
+        let ipv4s = "10.0.0.0/8, 192.168.0.0";
+        let ipv6s = "::1, 2001:db8::/32";
+
+        let set_string = format!("asn: {}, v4: {}, v6: {}", asns, ipv4s, ipv6s);
+
+        let set = ResourceSet::from_str(set_string.as_str()).unwrap();
+        let to_string = set.to_string();
+        assert_eq!(set_string, to_string);
+
+        let empty_set = ResourceSet::default();
+        let empty_set_string = empty_set.to_string();
+        let empty_set_from_string = ResourceSet::from_str(&empty_set_string).unwrap();
+        assert_eq!(empty_set, empty_set_from_string);
     }
 }

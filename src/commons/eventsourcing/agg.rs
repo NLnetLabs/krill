@@ -1,6 +1,5 @@
-use std::fmt;
-
 use super::{Command, Event, Storable};
+use crate::commons::eventsourcing::WithStorableDetails;
 
 //------------ Aggregate -----------------------------------------------------
 
@@ -20,7 +19,8 @@ use super::{Command, Event, Storable};
 /// 'events' are returned that contain state changes to the aggregate. These events
 /// still need to be applied to become persisted.
 pub trait Aggregate: Storable + Send + Sync + 'static {
-    type Command: Command<Event = Self::Event>;
+    type Command: Command<Event = Self::Event, StorableDetails = Self::StorableCommandDetails>;
+    type StorableCommandDetails: WithStorableDetails;
     type Event: Event;
     type InitEvent: Event;
     type Error: std::error::Error;
@@ -59,32 +59,4 @@ pub trait Aggregate: Storable + Send + Sync + 'static {
     /// The command is moved, because we want to enable moving its data
     /// without reallocating.
     fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error>;
-}
-
-//------------ AggregateHistory ----------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct AggregateHistory<A: Aggregate> {
-    init: A::InitEvent,
-    events: Vec<A::Event>,
-}
-
-impl<A: Aggregate> AggregateHistory<A> {
-    pub fn new(init: A::InitEvent, events: Vec<A::Event>) -> Self {
-        AggregateHistory { init, events }
-    }
-
-    pub fn unpack(self) -> (A::InitEvent, Vec<A::Event>) {
-        (self.init, self.events)
-    }
-}
-
-impl<A: Aggregate> fmt::Display for AggregateHistory<A> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        writeln!(f, "{}", self.init)?;
-        for evt in &self.events {
-            writeln!(f, "{}", evt)?;
-        }
-        Ok(())
-    }
 }

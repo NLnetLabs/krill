@@ -74,6 +74,12 @@ impl From<RoaDefinition> for RouteAuthorization {
     }
 }
 
+impl From<RouteAuthorization> for RoaDefinition {
+    fn from(auth: RouteAuthorization) -> Self {
+        auth.0
+    }
+}
+
 //------------ RouteAuthorizationUpdates -----------------------------------
 
 ///
@@ -84,6 +90,10 @@ pub struct RouteAuthorizationUpdates {
 }
 
 impl RouteAuthorizationUpdates {
+    pub fn new(added: HashSet<RouteAuthorization>, removed: HashSet<RouteAuthorization>) -> Self {
+        RouteAuthorizationUpdates { added, removed }
+    }
+
     pub fn unpack(self) -> (HashSet<RouteAuthorization>, HashSet<RouteAuthorization>) {
         (self.added, self.removed)
     }

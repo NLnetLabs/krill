@@ -1,6 +1,8 @@
 use std::fmt;
 
-use crate::commons::api::{PublishDelta, PublisherHandle, RepositoryHandle};
+use crate::commons::api::{
+    PublishDelta, PublisherHandle, RepositoryHandle, StorableRepositoryCommand,
+};
 use crate::commons::eventsourcing::CommandDetails;
 use crate::commons::eventsourcing::SentCommand;
 use crate::commons::remote::rfc8183;
@@ -10,8 +12,9 @@ use crate::pubd::Evt;
 pub type Cmd = SentCommand<CmdDet>;
 
 //------------ CmdDet ------------------------------------------------------
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
+#[serde(rename_all = "snake_case")]
 pub enum CmdDet {
     AddPublisher(rfc8183::PublisherRequest),
     RemovePublisher(PublisherHandle),
@@ -20,6 +23,11 @@ pub enum CmdDet {
 
 impl CommandDetails for CmdDet {
     type Event = Evt;
+    type StorableDetails = StorableRepositoryCommand;
+
+    fn store(&self) -> Self::StorableDetails {
+        self.clone().into()
+    }
 }
 
 impl CmdDet {
@@ -42,23 +50,23 @@ impl CmdDet {
 
 impl fmt::Display for CmdDet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            CmdDet::AddPublisher(request) => write!(
-                f,
-                "Added publisher '{}' with id cert hash '{}'",
-                request.publisher_handle(),
-                request.id_cert().ski_hex(),
-            ),
-            CmdDet::RemovePublisher(publisher) => {
-                write!(f, "Remove publisher '{}' and all its objects", publisher)
+        StorableRepositoryCommand::from(self.clone()).fmt(f)
+    }
+}
+
+impl From<CmdDet> for StorableRepositoryCommand {
+    fn from(d: CmdDet) -> Self {
+        match d {
+            CmdDet::AddPublisher(req) => {
+                let (_, pbl, id) = req.unpack();
+                StorableRepositoryCommand::AddPublisher(pbl, id.ski_hex())
             }
-            CmdDet::Publish(handle, delta) => write!(
-                f,
-                "Publish for '{}': {} new, {} updated, {} withdrawn objects",
-                handle,
+            CmdDet::RemovePublisher(pbl) => StorableRepositoryCommand::RemovePublisher(pbl),
+            CmdDet::Publish(pbl, delta) => StorableRepositoryCommand::Publish(
+                pbl,
                 delta.publishes().len(),
                 delta.updates().len(),
-                delta.withdraws().len()
+                delta.withdraws().len(),
             ),
         }
     }

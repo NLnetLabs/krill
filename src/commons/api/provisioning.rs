@@ -1,4 +1,5 @@
 use std::fmt;
+use std::str::FromStr;
 
 use rpki::cert::Cert;
 use rpki::crypto::{KeyIdentifier, PublicKey};
@@ -428,6 +429,51 @@ impl Default for RequestResourceLimit {
             v4: None,
             v6: None,
         }
+    }
+}
+
+impl FromStr for RequestResourceLimit {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let v4_lead = "v4 '";
+        let v6_lead = "' v6 '";
+        let asn_lead = "' asn '";
+
+        if !s.starts_with(v4_lead) {
+            return Err(());
+        }
+
+        if s.len() < v4_lead.len() + v6_lead.len() + asn_lead.len() + 1 {
+            return Err(());
+        }
+
+        let v6_lead_start = s.find(v6_lead).ok_or_else(|| ())?;
+        let asn_lead_start = s.find(asn_lead).ok_or_else(|| ())?;
+
+        let v4_str = &s[v4_lead.len()..v6_lead_start];
+        let v6_str = &s[v6_lead_start + v6_lead.len()..asn_lead_start];
+        let asn_str = &s[asn_lead_start + asn_lead.len()..s.len() - 1];
+
+        let v4 = if v4_str == "all" {
+            None
+        } else {
+            Some(IpBlocks::from_str(v4_str).map_err(|_| ())?)
+        };
+
+        let v6 = if v6_str == "all" {
+            None
+        } else {
+            Some(IpBlocks::from_str(v6_str).map_err(|_| ())?)
+        };
+
+        let asn = if asn_str == "all" {
+            None
+        } else {
+            Some(AsBlocks::from_str(asn_str).map_err(|_| ())?)
+        };
+
+        Ok(RequestResourceLimit { v4, v6, asn })
     }
 }
 

@@ -1,0 +1,18 @@
+{
+  "id": "ca",
+  "version": 2,
+  "details": {
+    "repo_updated": {
+      "rfc8181": {
+        "tag": null,
+        "publisher_handle": "ca",
+        "id_cert": "MIIDPDCCAiSgAwIBAgIBATANBgkqhkiG9w0BAQsFADAzMTEwLwYDVQQDEygxRjJDRTA1REZENDM0MTU2MTQ5Qjg2MzJFNEQ1QkEwOTdENkJBNDU2MCAXDTIwMDIxOTExMTE0MVoYDzIxMjAwMjE5MTExNjQxWjAzMTEwLwYDVQQDEygxRjJDRTA1REZENDM0MTU2MTQ5Qjg2MzJFNEQ1QkEwOTdENkJBNDU2MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvnmNgvJ3i2w126GwPDlyeB68SEN22cgmNYseP4ihIwJyVUzDftGZviFypddz81G2TV5jWyEI7M9D23FVElyM2qSOwtql9Dhmy4tfvEMKrgUBfIpxbnG4dtp1oieuglpbFixFjrEdM6ZcAjZht7/hIqrEVRexCzWgK6lskBuz8LUkuk4ulxceljnREXLHZleEQTSQvz2k70Ohx1BN5hUP26T5SpZP7qITMY9vhEzMImkAeUea6KWiwsgr9Dk1Yj7ssFRh2aXRPeR5p8p1xK8Anfaww0U2gVKgWvYzTqI4PGM6iPwzlUZ+wWtAJdTlnbw1zAud9NunHrx4gA3IYP/46wIDAQABo1kwVzAPBgNVHRMBAf8EBTADAQH/MCAGA1UdDgEBAAQWBBQfLOBd/UNBVhSbhjLk1boJfWukVjAiBgNVHSMBAQAEGDAWgBQfLOBd/UNBVhSbhjLk1boJfWukVjANBgkqhkiG9w0BAQsFAAOCAQEAvHE+4hUQdkOlX3aa+GLH82U6haw93AaAOOifUaRafoXcouEqVjzXd/ybRyeNB9+TfIJuJc9ew5CtrZKMzN7AOEqtDuFWYcyl8Diqati6ZyKhTQRfRt5cTbU96c10eShYZRqMe6sXRQf4vRWVNsy9PCcoXmIYSOXBsbIGG994DJzMXULh44p69x8uoV5/AwgTsyXKHp44A+YycBgkT8lx5y0B18HboB3izJ3IUv9nkpiA8wzSiyVDs2Iyav+8bv1WyZrUDdk5kDoqUIITgrGgapetvNrx7NX6e2zGqZubhMTiYxj0UnfROw6+hZuiO28Q+TW8C+kaWXYnbEXd+10LKA==",
+        "service_uri": "https://localhost:3000/rfc8181/ca",
+        "repo_info": {
+          "base_uri": "rsync://localhost/repo/ca/",
+          "rpki_notify": "https://localhost:3000/rrdp/notification.xml"
+        }
+      }
+    }
+  }
+}

@@ -6,6 +6,9 @@ pub use self::admin::*;
 mod ca;
 pub use self::ca::*;
 
+mod history;
+pub use self::history::*;
+
 mod provisioning;
 pub use self::provisioning::*;
 
@@ -31,6 +34,12 @@ use rpki::roa::Roa;
 
 use crate::commons::util::sha256;
 use crate::daemon::ca::RouteAuthorization;
+
+// Some syntactic sugar to help this old coder's brain deal with the mess of Strings
+pub type Message = String;
+pub type Label = String;
+pub type ArgKey = String;
+pub type ArgVal = String;
 
 //------------ Base64 --------------------------------------------------------
 
