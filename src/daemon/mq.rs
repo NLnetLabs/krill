@@ -10,6 +10,7 @@ use std::sync::RwLock;
 use crate::commons::api::{Handle, ParentHandle, ResourceClassName, RevocationRequest};
 use crate::commons::eventsourcing::{self, Event};
 use crate::daemon::ca::{CertAuth, Evt, EvtDet, Signer};
+use rpki::x509::Time;
 
 //------------ QueueEvent ----------------------------------------------------
 
@@ -48,6 +49,9 @@ pub enum QueueEvent {
 
     #[display(fmt = "clean up old repo *if it exists* for '{}' version '{}'", _0, _1)]
     CleanOldRepo(Handle, u64),
+
+    #[display(fmt = "reschedule failed publication for '{}'", _0)]
+    ReschedulePublish(Handle, Time),
 }
 
 #[derive(Debug)]
@@ -68,7 +72,7 @@ impl EventQueueListener {
         self.q.write().unwrap().pop()
     }
 
-    fn push_back(&self, evt: QueueEvent) {
+    pub fn push_back(&self, evt: QueueEvent) {
         self.q.write().unwrap().push_back(evt)
     }
 }

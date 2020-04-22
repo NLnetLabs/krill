@@ -7,6 +7,9 @@ use std::time::Duration;
 use clokwerk::{self, ScheduleHandle, TimeUnits};
 use tokio::runtime::Runtime;
 
+use rpki::x509::Time;
+
+use crate::commons::api::Handle;
 use crate::commons::util::softsigner::OpenSslSigner;
 use crate::daemon::ca::CaServer;
 use crate::daemon::mq::{EventQueueListener, QueueEvent};
@@ -59,15 +62,19 @@ fn make_event_sh(
         while let Some(evt) = event_queue.pop() {
             let mut rt = Runtime::new().unwrap();
             match evt {
-                QueueEvent::Delta(handle, version) => {
-                    rt.block_on(async {
-                        info!("Trigger publication for '{}' version '{}'", handle, version);
-                        let publisher = CaPublisher::new(caserver.clone(), pubserver.clone());
-
-                        if let Err(e) = publisher.publish(&handle).await {
-                            error!("Failed to publish for CA: {}, error: {}", handle, e);
-                        }
-                    })
+                QueueEvent::Delta(handle, _version) => {
+                    rt.block_on(
+                        try_publish(&event_queue, caserver.clone(), pubserver.clone(), handle)
+                    )
+                }
+                QueueEvent::ReschedulePublish(handle, last_try) => {
+                    if Time::five_minutes_ago().timestamp() > last_try.timestamp() {
+                        rt.block_on(
+                            try_publish(&event_queue, caserver.clone(), pubserver.clone(), handle)
+                        )
+                    } else {
+                        event_queue.push_back(QueueEvent::ReschedulePublish(handle, last_try));
+                    }
                 }
                 QueueEvent::ResourceClassRemoved(handle, _, parent, revocations) => {
                     rt.block_on(async {
@@ -158,6 +165,24 @@ fn make_event_sh(
         }
     });
     scheduler.watch_thread(Duration::from_millis(100))
+}
+
+async fn try_publish(
+    event_queue: &Arc<EventQueueListener>,
+    caserver: Arc<CaServer<OpenSslSigner>>,
+    pubserver: Option<Arc<PubServer>>,
+    ca: Handle,
+) {
+    info!("Try to publish for '{}'", ca);
+    let publisher = CaPublisher::new(caserver, pubserver);
+
+    if let Err(e) = publisher.publish(&ca).await {
+        error!(
+            "Failed to publish for '{}' will reschedule, error: {}",
+            ca, e
+        );
+        event_queue.push_back(QueueEvent::ReschedulePublish(ca, Time::now()))
+    }
 }
 
 fn make_republish_sh(caserver: Arc<CaServer<OpenSslSigner>>) -> ScheduleHandle {
