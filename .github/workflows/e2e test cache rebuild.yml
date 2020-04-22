@@ -1,0 +1,25 @@
+# The krillbuildbase image is used by the Krill E2E Test to accelerate the Rust compilation of Krill
+# by including already built cargo crates for most if not all of Krills dependencies. We don't need
+# to rebuild it all the time, but rebuilding it every now and again helps to keep the build time down.
+# Ideally we'd use a different approach, e.g. some way of using a Rust build cache from within the
+# Docker image build process, but for now we have this.
+name: E2E Test Cache Image Builder
+
+# Run every Sunday
+on:
+  schedule:
+    - cron: '0 0 * * SUN'
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+
+      - uses: docker/build-push-action@v1
+        with:
+          username: ${{ secrets.XE_DOCKER_USER }}
+          password: ${{ secrets.XE_DOCKER_PASS }}
+          repository: ximoneighteen/krillbuildbase
+          tags: latest
+          target: build

@@ -1,4 +1,4 @@
-[![GitHub Actions Build Status](https://github.com/NLnetLabs/routinator/workflows/ci/badge.svg)](https://github.com/NLnetLabs/krill/actions?query=workflow%3Aci)
+[![GitHub Actions Build Status](https://github.com/NLnetLabs/krill/workflows/CI/badge.svg)](https://github.com/NLnetLabs/krill/actions?query=workflow%3ACI)
 [![Rust Crate Status](https://img.shields.io/crates/v/krill.svg?color=brightgreen)](https://crates.io/crates/krill)
 [![Docker Build Status](https://img.shields.io/docker/cloud/build/nlnetlabs/krill.svg)](https://hub.docker.com/r/nlnetlabs/krill)
 [![Documentation Status](https://readthedocs.org/projects/rpki/badge/?version=latest)](https://rpki.readthedocs.io/en/latest/?badge=latest)
@@ -13,7 +13,14 @@ any feedback, we would love to hear from you. Don’t hesitate to [create an iss
 on Github](https://github.com/NLnetLabs/krill/issues/new) or post a message on
 our [RPKI mailing list](https://lists.nlnetlabs.nl/mailman/listinfo/rpki). You
 can lean more about Krill and RPKI technology by reading our documentation on
-[Read the Docs](https://rpki.readthedocs.io/).
+[Read the Docs](https://rpki.readthedocs.io/en/latest/krill/index.html).
+
+## 1-Click App
+
+Krill is available as a 1-Click App on the [DigitalOcean Marketplace](https://marketplace.digitalocean.com/apps/krill?refcode=cab39584666c).
+This offers a fully automated installation of Krill and adds NGINX, Rsyncd, 
+Docker, Gluster, automated TLS configuration, Prometheus monitoring, log streaming
+and clustering capabilities out-of-the-box. Watch the [introduction video](https://youtu.be/qunvH2t6rqU).
 
 ## Quick Start
 
