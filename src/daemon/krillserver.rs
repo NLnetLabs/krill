@@ -374,7 +374,10 @@ impl KrillServer {
     /// Adds a parent to a CA, will check first if the parent can be reached.
     pub async fn ca_parent_add(&self, handle: Handle, parent: ParentCaReq) -> KrillEmptyResult {
         self.ca_parent_reachable(&handle, parent.handle(), parent.contact())
-            .await?;
+            .await
+            .map_err(|_| {
+                Error::CaParentAddNotResponsive(handle.clone(), parent.handle().clone())
+            })?;
         Ok(self.caserver.ca_parent_add(handle, parent)?)
     }
 

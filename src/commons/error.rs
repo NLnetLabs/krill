@@ -118,7 +118,12 @@ pub enum Error {
     // CA Repo Issues
     #[display(fmt = "CA '{}' already uses this repository", _0)]
     CaRepoInUse(Handle),
-    #[display(fmt = "CA '{}' got error from repository: {}", _0, _1)]
+
+    #[display(
+        fmt = "CA '{}' cannot get response from repository '{}'. Is the 'service_uri' in the XML reachable? Note that when upgrading Krill you should re-use existing configuration and data. For a fresh re-install of Krill you will need to send XML to all other parties again: parent(s), children, and repository",
+        _0,
+        _1
+    )]
     CaRepoIssue(Handle, String),
     #[display(fmt = "CA '{}' got invalid repository response xml: {}", _0, _1)]
     CaRepoResponseInvalidXml(Handle, String),
@@ -140,6 +145,13 @@ pub enum Error {
 
     #[display(fmt = "CA '{}' got repository response when adding parent", _0)]
     CaParentResponseWrongXml(Handle),
+
+    #[display(
+        fmt = "CA '{}' cannot get response from parent '{}'. Is the 'service_uri' in the XML reachable? Note that when upgrading Krill you should re-use existing configuration and data. For a fresh re-install of Krill you will need to send XML to all other parties again: parent(s), children, and repository",
+        _0,
+        _1
+    )]
+    CaParentAddNotResponsive(Handle, ParentHandle),
 
     //-----------------------------------------------------------------
     // RFC6492 (requesting resources)
@@ -448,6 +460,12 @@ impl Error {
 
             Error::CaParentResponseWrongXml(ca) => {
                 ErrorResponse::new("ca-parent-response-wrong-xml", &self).with_ca(ca)
+            }
+
+            Error::CaParentAddNotResponsive(ca, parent) => {
+                ErrorResponse::new("ca-parent-add-unresponsive", &self)
+                    .with_ca(ca)
+                    .with_parent(parent)
             }
 
             //-----------------------------------------------------------------
