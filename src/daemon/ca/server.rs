@@ -38,7 +38,8 @@ use crate::daemon::mq::EventQueueListener;
 pub struct CaServer<S: Signer> {
     signer: Arc<RwLock<S>>,
     ca_store: Arc<DiskAggregateStore<CertAuth<S>>>,
-    cms_logger_work_dir: PathBuf,
+    rfc8181_log_dir: Option<PathBuf>,
+    rfc6492_log_dir: Option<PathBuf>,
 }
 
 impl<S: Signer> CaServer<S> {
@@ -46,6 +47,8 @@ impl<S: Signer> CaServer<S> {
     /// initialised.
     pub fn build(
         work_dir: &PathBuf,
+        rfc8181_log_dir: Option<&PathBuf>,
+        rfc6492_log_dir: Option<&PathBuf>,
         events_queue: Arc<EventQueueListener>,
         signer: Arc<RwLock<S>>,
     ) -> KrillResult<Self> {
@@ -55,7 +58,8 @@ impl<S: Signer> CaServer<S> {
         Ok(CaServer {
             signer,
             ca_store: Arc::new(ca_store),
-            cms_logger_work_dir: work_dir.clone(),
+            rfc6492_log_dir: rfc6492_log_dir.cloned(),
+            rfc8181_log_dir: rfc8181_log_dir.cloned(),
         })
     }
 
@@ -353,7 +357,8 @@ impl<S: Signer> CaServer<S> {
 
         let (child, recipient, content) = content.unwrap();
 
-        let cms_logger = CmsLogger::for_rfc6492_rcvd(&self.cms_logger_work_dir, &recipient, &child);
+        let cms_logger =
+            CmsLogger::for_rfc6492_rcvd(self.rfc6492_log_dir.as_ref(), &recipient, &child);
 
         let (res, should_log_cms) = match content {
             rfc6492::Content::Qry(rfc6492::Qry::Revoke(req)) => {
@@ -690,7 +695,7 @@ impl<S: Signer> CaServer<S> {
                 let sender = parent_res.child_handle().clone();
                 let recipient = parent_res.parent_handle().clone();
                 let cms_logger =
-                    CmsLogger::for_rfc6492_sent(&self.cms_logger_work_dir, &sender, &recipient);
+                    CmsLogger::for_rfc6492_sent(self.rfc6492_log_dir.as_ref(), &sender, &recipient);
 
                 let revoke = rfc6492::Message::revoke(sender, recipient, req.clone());
 
@@ -803,7 +808,7 @@ impl<S: Signer> CaServer<S> {
                 let recipient = parent_res.parent_handle().clone();
 
                 let cms_logger =
-                    CmsLogger::for_rfc6492_sent(&self.cms_logger_work_dir, &sender, &recipient);
+                    CmsLogger::for_rfc6492_sent(self.rfc6492_log_dir.as_ref(), &sender, &recipient);
 
                 let issue = rfc6492::Message::issue(sender, recipient, req);
 
@@ -996,7 +1001,7 @@ impl<S: Signer> CaServer<S> {
     ) -> KrillResult<rfc8181::ReplyMessage> {
         let ca = self.get_ca(ca_handle)?;
 
-        let cms_logger = CmsLogger::for_rfc8181_sent(&self.cms_logger_work_dir, ca_handle);
+        let cms_logger = CmsLogger::for_rfc8181_sent(self.rfc8181_log_dir.as_ref(), ca_handle);
 
         let response = self
             .send_procotol_msg_and_validate(
@@ -1094,7 +1099,8 @@ mod tests {
 
             let event_queue = Arc::new(EventQueueListener::in_mem());
 
-            let server = CaServer::<OpenSslSigner>::build(&d, event_queue, signer).unwrap();
+            let server =
+                CaServer::<OpenSslSigner>::build(&d, None, None, event_queue, signer).unwrap();
 
             let repo_info = {
                 let base_uri = test::rsync("rsync://localhost/repo/ta/");

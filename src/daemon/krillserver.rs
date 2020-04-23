@@ -118,6 +118,7 @@ impl KrillServer {
                     &base_uri,
                     rrdp_base_uri.clone(),
                     work_dir,
+                    config.rfc8181_log_dir.as_ref(),
                     signer.clone(),
                 )?)
             } else {
@@ -125,6 +126,7 @@ impl KrillServer {
                     &base_uri,
                     rrdp_base_uri.clone(),
                     work_dir,
+                    config.rfc8181_log_dir.as_ref(),
                     signer.clone(),
                 )?
             }
@@ -132,7 +134,13 @@ impl KrillServer {
         let pubserver: Option<Arc<PubServer>> = pubserver.map(Arc::new);
 
         let event_queue = Arc::new(EventQueueListener::in_mem());
-        let caserver = Arc::new(ca::CaServer::build(work_dir, event_queue.clone(), signer)?);
+        let caserver = Arc::new(ca::CaServer::build(
+            work_dir,
+            config.rfc8181_log_dir.as_ref(),
+            config.rfc6492_log_dir.as_ref(),
+            event_queue.clone(),
+            signer,
+        )?);
 
         if config.use_ta() {
             let ta_handle = ta_handle();

@@ -161,9 +161,11 @@ pub struct Config {
 
     #[serde(default = "ConfigDefaults::post_limit_rfc8181")]
     pub post_limit_rfc8181: u64,
+    pub rfc8181_log_dir: Option<PathBuf>,
 
     #[serde(default = "ConfigDefaults::post_limit_rfc6492")]
     pub post_limit_rfc6492: u64,
+    pub rfc6492_log_dir: Option<PathBuf>,
 }
 
 /// # Accessors
@@ -244,7 +246,17 @@ impl Config {
         let ca_refresh = 3600;
         let post_limit_api = ConfigDefaults::post_limit_api();
         let post_limit_rfc8181 = ConfigDefaults::post_limit_rfc8181();
+        let rfc8181_log_dir = {
+            let mut dir = data_dir.clone();
+            dir.push("rfc8181");
+            Some(dir)
+        };
         let post_limit_rfc6492 = ConfigDefaults::post_limit_rfc6492();
+        let rfc6492_log_dir = {
+            let mut dir = data_dir.clone();
+            dir.push("rfc6492");
+            Some(dir)
+        };
 
         Config {
             ip,
@@ -266,7 +278,9 @@ impl Config {
             ca_refresh,
             post_limit_api,
             post_limit_rfc8181,
+            rfc8181_log_dir,
             post_limit_rfc6492,
+            rfc6492_log_dir,
         }
     }
 

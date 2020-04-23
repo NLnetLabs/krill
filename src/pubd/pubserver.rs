@@ -37,7 +37,7 @@ use crate::pubd::{self, CmdDet, RepoStats, Repository};
 pub struct PubServer {
     store: Arc<DiskAggregateStore<Repository>>,
     signer: Arc<RwLock<OpenSslSigner>>,
-    cms_logger_work_dir: PathBuf,
+    rfc8181_log_dir: Option<PathBuf>,
 }
 
 /// # Constructing
@@ -45,14 +45,16 @@ pub struct PubServer {
 impl PubServer {
     pub fn remove_if_empty(
         rsync_base: &uri::Rsync,
-        rrdp_base_uri: uri::Https, // for the RRDP files
-        work_dir: &PathBuf,        // for the aggregate stores
+        rrdp_base_uri: uri::Https,         // for the RRDP files
+        work_dir: &PathBuf,                // for the aggregate stores
+        rfc8181_log_dir: Option<&PathBuf>, // for optional CMS exchange logging
         signer: Arc<RwLock<OpenSslSigner>>,
     ) -> Result<Option<Self>, Error> {
         let mut pub_server_dir = work_dir.clone();
         pub_server_dir.push(PUBSERVER_DIR);
         if pub_server_dir.exists() {
-            let server = PubServer::build(rsync_base, rrdp_base_uri, work_dir, signer)?;
+            let server =
+                PubServer::build(rsync_base, rrdp_base_uri, work_dir, rfc8181_log_dir, signer)?;
             if server.publishers()?.is_empty() {
                 let _result = fs::remove_dir_all(pub_server_dir);
                 Ok(None)
@@ -66,8 +68,9 @@ impl PubServer {
 
     pub fn build(
         rsync_base: &uri::Rsync,
-        rrdp_base_uri: uri::Https, // for the RRDP files
-        work_dir: &PathBuf,        // for the aggregate stores
+        rrdp_base_uri: uri::Https,         // for the RRDP files
+        work_dir: &PathBuf,                // for the aggregate stores
+        rfc8181_log_dir: Option<&PathBuf>, // for optional CMS exchange logging
         signer: Arc<RwLock<OpenSslSigner>>,
     ) -> Result<Self, Error> {
         let default = Self::repository_handle();
@@ -91,12 +94,10 @@ impl PubServer {
             store.add(ini)?;
         }
 
-        let cms_logger_work_dir = work_dir.clone();
-
         Ok(PubServer {
             store,
             signer,
-            cms_logger_work_dir,
+            rfc8181_log_dir: rfc8181_log_dir.cloned(),
         })
     }
 }
@@ -131,7 +132,8 @@ impl PubServer {
 
         let msg = SignedMessage::decode(msg_bytes.clone(), false)
             .map_err(|e| Error::Rfc8181Decode(e.to_string()))?;
-        let cms_logger = CmsLogger::for_rfc8181_rcvd(&self.cms_logger_work_dir, &publisher_handle);
+        let cms_logger =
+            CmsLogger::for_rfc8181_rcvd(self.rfc8181_log_dir.as_ref(), &publisher_handle);
 
         msg.validate(publisher.id_cert())
             .map_err(Error::Rfc8181Validation)?;
@@ -311,7 +313,14 @@ mod tests {
         let signer = OpenSslSigner::build(work_dir).unwrap();
         let signer = Arc::new(RwLock::new(signer));
 
-        PubServer::build(&server_base_uri(), server_base_http_uri(), work_dir, signer).unwrap()
+        PubServer::build(
+            &server_base_uri(),
+            server_base_http_uri(),
+            work_dir,
+            None,
+            signer,
+        )
+        .unwrap()
     }
 
     #[test]

@@ -6,82 +6,92 @@ use rpki::x509::Time;
 
 use crate::commons::api::{Handle, PublisherHandle};
 use crate::commons::util::file;
-use crate::constants::{RFC6492_LOG_DIR, RFC8181_RCVD_LOG_DIR, RFC8181_SENT_LOG_DIR};
 
 /// This type helps to log CMS (RFC8181 and RFC6492) protocol messages
 /// for auditing purposes.
 pub struct CmsLogger {
-    path: PathBuf,
+    path: Option<PathBuf>,
     now: i64,
 }
 
 impl CmsLogger {
-    fn new(path: PathBuf) -> Self {
+    fn new(path: Option<PathBuf>) -> Self {
         CmsLogger {
             path,
             now: Time::now().timestamp_millis(),
         }
     }
 
-    pub fn for_rfc6492_rcvd(work_dir: &PathBuf, ca: &Handle, sender: &Handle) -> Self {
-        let mut path = work_dir.clone();
-        path.push(RFC6492_LOG_DIR);
-        path.push(ca.as_str());
-        path.push("rcvd");
-        path.push(sender.as_str());
+    pub fn for_rfc6492_rcvd(log_dir: Option<&PathBuf>, ca: &Handle, sender: &Handle) -> Self {
+        let path = log_dir.map(|dir| {
+            let mut path = dir.clone();
+            path.push(ca.as_str());
+            path.push("rcvd");
+            path.push(sender.as_str());
+            path
+        });
 
         Self::new(path)
     }
 
-    pub fn for_rfc6492_sent(work_dir: &PathBuf, ca: &Handle, recipient: &Handle) -> Self {
-        let mut path = work_dir.clone();
-        path.push(RFC6492_LOG_DIR);
-        path.push(ca.as_str());
-        path.push("sent");
-        path.push(recipient.as_str());
+    pub fn for_rfc6492_sent(log_dir: Option<&PathBuf>, ca: &Handle, recipient: &Handle) -> Self {
+        let path = log_dir.map(|dir| {
+            let mut path = dir.clone();
+            path.push(ca.as_str());
+            path.push("sent");
+            path.push(recipient.as_str());
+            path
+        });
 
         Self::new(path)
     }
 
-    pub fn for_rfc8181_sent(work_dir: &PathBuf, ca: &Handle) -> Self {
-        let mut path = work_dir.clone();
-        path.push(RFC8181_SENT_LOG_DIR);
-        path.push(ca.as_str());
+    pub fn for_rfc8181_sent(log_dir: Option<&PathBuf>, ca: &Handle) -> Self {
+        let path = log_dir.map(|dir| {
+            let mut path = dir.clone();
+            path.push(ca.as_str());
+            path.push("sent");
+            path
+        });
 
         Self::new(path)
     }
 
-    pub fn for_rfc8181_rcvd(work_dir: &PathBuf, publisher: &PublisherHandle) -> Self {
-        let mut path = work_dir.clone();
-        path.push(RFC8181_RCVD_LOG_DIR);
-        path.push(publisher.as_str());
+    pub fn for_rfc8181_rcvd(log_dir: Option<&PathBuf>, publisher: &PublisherHandle) -> Self {
+        let path = log_dir.map(|dir| {
+            let mut path = dir.clone();
+            path.push(publisher.as_str());
+            path.push("rcvd");
+            path
+        });
 
         Self::new(path)
     }
 
     pub fn received(&self, msg: &Bytes) -> Result<(), io::Error> {
-        let path = self.file_path("rcvd");
-        file::save(msg, &path)
+        self.save(msg, "rcvd")
     }
 
     pub fn reply(&self, msg: &Bytes) -> Result<(), io::Error> {
-        let path = self.file_path("repl");
-        file::save(msg, &path)
+        self.save(msg, "repl")
     }
 
     pub fn sent(&self, msg: &Bytes) -> Result<(), io::Error> {
-        let path = self.file_path("sent");
-        file::save(msg, &path)
+        self.save(msg, "sent")
     }
 
     pub fn err(&self, msg: impl fmt::Display) -> Result<(), io::Error> {
-        let path = self.file_path("err");
-        file::save(&Bytes::from(msg.to_string()), &path)
+        self.save(msg.to_string().as_bytes(), "err")
     }
 
-    fn file_path(&self, ext: &str) -> PathBuf {
-        let mut path = self.path.clone();
-        path.push(&format!("{}.{}", self.now, ext));
-        path
+    fn save(&self, content: &[u8], ext: &str) -> Result<(), io::Error> {
+        if let Some(path) = self.path.as_ref() {
+            let mut path = path.clone();
+            path.push(&format!("{}.{}", self.now, ext));
+
+            file::save(content, &path)
+        } else {
+            Ok(())
+        }
     }
 }
