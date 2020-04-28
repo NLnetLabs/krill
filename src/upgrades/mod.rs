@@ -158,12 +158,14 @@ mod tests {
     #[test]
     fn upgrade_pre_0_6() {
         test::test_under_tmp(|tmp| {
-            let cas_source = PathBuf::from("test-resources/upgrades/v0_6_0/before/cas");
+            let cas_source =
+                PathBuf::from("test-resources/api/regressions/v0_6_0/commands/migration/cas");
             let mut cas_test = tmp.clone();
             cas_test.push("cas");
             file::backup_dir(&cas_source, &cas_test).unwrap();
 
-            let pubd_source = PathBuf::from("test-resources/upgrades/v0_6_0/before/pubd");
+            let pubd_source =
+                PathBuf::from("test-resources/api/regressions/v0_6_0/commands/migration/pubd");
             let mut pubd_test = tmp.clone();
             pubd_test.push("pubd");
             file::backup_dir(&pubd_source, &pubd_test).unwrap();
