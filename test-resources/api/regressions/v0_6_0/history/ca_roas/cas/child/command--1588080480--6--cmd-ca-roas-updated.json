@@ -1,0 +1,31 @@
+{
+  "actor": "krill",
+  "time": "2020-04-28T13:28:00.459017Z",
+  "handle": "child",
+  "version": 7,
+  "sequence": 6,
+  "details": {
+    "roa_definition_updates": {
+      "added": [
+        {
+          "asn": 64496,
+          "prefix": "2001:db8::/32",
+          "max_length": 48
+        },
+        {
+          "asn": 64496,
+          "prefix": "10.0.0.0/24"
+        }
+      ],
+      "removed": []
+    }
+  },
+  "effect": {
+    "events": [
+      7,
+      8,
+      9,
+      10
+    ]
+  }
+}

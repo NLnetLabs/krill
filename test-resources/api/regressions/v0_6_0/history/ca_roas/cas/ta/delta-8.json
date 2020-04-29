@@ -1,0 +1,14 @@
+{
+  "id": "ta",
+  "version": 8,
+  "details": {
+    "child_updated_resources": [
+      "child",
+      {
+        "asn": "",
+        "v4": "192.168.0.0/16",
+        "v6": ""
+      }
+    ]
+  }
+}

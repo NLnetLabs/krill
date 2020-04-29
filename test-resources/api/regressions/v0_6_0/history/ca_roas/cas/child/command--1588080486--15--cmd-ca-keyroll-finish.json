@@ -1,0 +1,15 @@
+{
+  "actor": "krill",
+  "time": "2020-04-28T13:28:06.697038Z",
+  "handle": "child",
+  "version": 27,
+  "sequence": 15,
+  "details": {
+    "key_roll_finish": "0"
+  },
+  "effect": {
+    "events": [
+      27
+    ]
+  }
+}

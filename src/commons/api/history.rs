@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::str::FromStr;
 
 use rpki::crypto::KeyIdentifier;
 use rpki::x509::Time;
@@ -12,7 +13,9 @@ use crate::commons::api::{
     RequestResourceLimit, ResourceClassName, ResourceSet, RevocationRequest, RoaDefinitionUpdates,
     StorableParentContact,
 };
-use crate::commons::eventsourcing::{StoredCommand, WithStorableDetails};
+use crate::commons::eventsourcing::{
+    CommandKey, CommandKeyError, StoredCommand, WithStorableDetails,
+};
 use crate::commons::remote::rfc8183::ServiceUri;
 use crate::daemon::ca;
 
@@ -106,6 +109,10 @@ impl CommandHistoryRecord {
         let seconds = self.timestamp / 1000;
         let time = NaiveDateTime::from_timestamp(seconds, 0);
         Time::from(DateTime::from_utc(time, Utc))
+    }
+
+    pub fn command_key(&self) -> Result<CommandKey, CommandKeyError> {
+        CommandKey::from_str(&self.key)
     }
 }
 

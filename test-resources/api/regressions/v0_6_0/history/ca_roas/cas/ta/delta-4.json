@@ -1,0 +1,18 @@
+{
+  "id": "ta",
+  "version": 4,
+  "details": {
+    "child_added": [
+      "child",
+      {
+        "id_cert": null,
+        "resources": {
+          "asn": "",
+          "v4": "10.0.0.0/16",
+          "v6": "2001:db8::/32"
+        },
+        "used_keys": {}
+      }
+    ]
+  }
+}

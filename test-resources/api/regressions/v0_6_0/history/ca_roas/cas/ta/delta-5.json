@@ -1,0 +1,11 @@
+{
+  "id": "ta",
+  "version": 5,
+  "details": {
+    "child_certificate_issued": [
+      "child",
+      "0",
+      "77AA69E9571D1DD092F7331CF7157D07B5E8997B"
+    ]
+  }
+}

@@ -128,6 +128,7 @@ impl TryFrom<PathBuf> for CommandKey {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CommandKeyError;
 
 //------------ KeyStore ------------------------------------------------------

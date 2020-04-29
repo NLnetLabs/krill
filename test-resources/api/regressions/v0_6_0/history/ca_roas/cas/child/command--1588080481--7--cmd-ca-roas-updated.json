@@ -1,0 +1,25 @@
+{
+  "actor": "krill",
+  "time": "2020-04-28T13:28:01.257796Z",
+  "handle": "child",
+  "version": 11,
+  "sequence": 7,
+  "details": {
+    "roa_definition_updates": {
+      "added": [],
+      "removed": [
+        {
+          "asn": 64496,
+          "prefix": "10.0.0.0/24"
+        }
+      ]
+    }
+  },
+  "effect": {
+    "events": [
+      11,
+      12,
+      13
+    ]
+  }
+}
