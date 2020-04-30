@@ -1,0 +1,47 @@
+{
+  "command": {
+    "actor": "krill",
+    "time": "2020-04-30T14:14:17.417942Z",
+    "handle": "rfc6492",
+    "version": 22,
+    "sequence": 17,
+    "details": {
+      "remove_parent": "ta"
+    },
+    "effect": {
+      "events": [
+        22
+      ]
+    }
+  },
+  "result": {
+    "Events": [
+      {
+        "id": "rfc6492",
+        "version": 22,
+        "details": {
+          "parent_removed": [
+            "ta",
+            [
+              {
+                "ca_repo": "rsync://localhost/repo/rfc6492/1",
+                "added": [],
+                "updated": [],
+                "withdrawn": [
+                  {
+                    "name": "9F29B373BC1B3D173E815841AE492E3E64CC6325.mft",
+                    "hash": "8d3e8caf2c4fab6beeb5886a8343a31af6e3a12dca2acb24c6c7cbdd8a480727"
+                  },
+                  {
+                    "name": "9F29B373BC1B3D173E815841AE492E3E64CC6325.crl",
+                    "hash": "67abb7e409efd75f43f3ac419eef9cd6129b9548ad8ef0c101a02d8e5ab3d558"
+                  }
+                ]
+              }
+            ]
+          ]
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "actor": "krill",
+  "time": "2020-04-30T14:14:17.925575Z",
+  "handle": "ta",
+  "version": 30,
+  "sequence": 18,
+  "details": {
+    "child_remove": "rfc6492"
+  },
+  "effect": {
+    "events": [
+      30,
+      31,
+      32
+    ]
+  }
+}

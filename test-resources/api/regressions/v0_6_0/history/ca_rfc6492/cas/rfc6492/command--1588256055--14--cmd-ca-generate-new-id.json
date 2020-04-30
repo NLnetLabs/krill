@@ -1,0 +1,13 @@
+{
+  "actor": "krill",
+  "time": "2020-04-30T14:14:15.843668Z",
+  "handle": "rfc6492",
+  "version": 18,
+  "sequence": 14,
+  "details": "generate_new_id_key",
+  "effect": {
+    "events": [
+      18
+    ]
+  }
+}

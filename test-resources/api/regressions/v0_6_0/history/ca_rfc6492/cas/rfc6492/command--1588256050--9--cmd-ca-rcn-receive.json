@@ -1,0 +1,23 @@
+{
+  "actor": "krill",
+  "time": "2020-04-30T14:14:10.829294Z",
+  "handle": "rfc6492",
+  "version": 11,
+  "sequence": 9,
+  "details": {
+    "update_rcvd_cert": [
+      "0",
+      {
+        "asn": "",
+        "v4": "10.0.0.0/24",
+        "v6": ""
+      }
+    ]
+  },
+  "effect": {
+    "events": [
+      11,
+      12
+    ]
+  }
+}

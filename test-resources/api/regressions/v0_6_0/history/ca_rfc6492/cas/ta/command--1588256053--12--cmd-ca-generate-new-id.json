@@ -1,0 +1,13 @@
+{
+  "actor": "krill",
+  "time": "2020-04-30T14:14:13.261078Z",
+  "handle": "ta",
+  "version": 20,
+  "sequence": 12,
+  "details": "generate_new_id_key",
+  "effect": {
+    "events": [
+      20
+    ]
+  }
+}
