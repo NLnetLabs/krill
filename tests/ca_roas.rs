@@ -92,7 +92,5 @@ async fn ca_roas() {
     updates.add(route_invalid_length);
     ca_route_authorizations_update_expect_error(&child, updates).await;
 
-    unimplemented!();
-
     let _ = fs::remove_dir_all(dir);
 }

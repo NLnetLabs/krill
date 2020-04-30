@@ -1,0 +1,351 @@
+{
+  "offset": 0,
+  "total": 16,
+  "commands": [
+    {
+      "key": "command--1588080479--1--cmd-ca-repo-update",
+      "actor": "krill",
+      "timestamp": 1588080479330,
+      "handle": "child",
+      "version": 1,
+      "sequence": 1,
+      "summary": {
+        "msg": "Update repo to embedded server",
+        "label": "cmd-ca-repo-update",
+        "args": {}
+      },
+      "effect": {
+        "events": [
+          1
+        ]
+      }
+    },
+    {
+      "key": "command--1588080479--2--cmd-ca-parent-add",
+      "actor": "krill",
+      "timestamp": 1588080479358,
+      "handle": "child",
+      "version": 2,
+      "sequence": 2,
+      "summary": {
+        "msg": "Add parent 'ta' as 'Embedded parent'",
+        "label": "cmd-ca-parent-add",
+        "args": {
+          "parent": "ta",
+          "parent_contact": "Embedded parent"
+        }
+      },
+      "effect": {
+        "events": [
+          2
+        ]
+      }
+    },
+    {
+      "key": "command--1588080480--3--cmd-ca-parent-entitlements",
+      "actor": "krill",
+      "timestamp": 1588080480125,
+      "handle": "child",
+      "version": 3,
+      "sequence": 3,
+      "summary": {
+        "msg": "Update entitlements under parent 'ta': 0 => asn: 0 blocks, v4: 1 blocks, v6: 1 blocks ",
+        "label": "cmd-ca-parent-entitlements",
+        "args": {
+          "parent": "ta"
+        }
+      },
+      "effect": {
+        "events": [
+          3,
+          4
+        ]
+      }
+    },
+    {
+      "key": "command--1588080480--4--cmd-ca-parent-entitlements",
+      "actor": "krill",
+      "timestamp": 1588080480213,
+      "handle": "child",
+      "version": 5,
+      "sequence": 4,
+      "summary": {
+        "msg": "Update entitlements under parent 'ta': 0 => asn: 0 blocks, v4: 1 blocks, v6: 1 blocks ",
+        "label": "cmd-ca-parent-entitlements",
+        "args": {
+          "parent": "ta"
+        }
+      },
+      "effect": {
+        "events": [
+          5
+        ]
+      }
+    },
+    {
+      "key": "command--1588080480--5--cmd-ca-rcn-receive",
+      "actor": "krill",
+      "timestamp": 1588080480316,
+      "handle": "child",
+      "version": 6,
+      "sequence": 5,
+      "summary": {
+        "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 1 blocks'",
+        "label": "cmd-ca-rcn-receive",
+        "args": {
+          "class_name": "0",
+          "resources": "asn: , v4: 10.0.0.0/16, v6: 2001:db8::/32",
+          "asn_blocks": "0",
+          "ipv6_blocks": "1",
+          "ipv4_blocks": "1"
+        }
+      },
+      "effect": {
+        "events": [
+          6
+        ]
+      }
+    },
+    {
+      "key": "command--1588080480--6--cmd-ca-roas-updated",
+      "actor": "krill",
+      "timestamp": 1588080480459,
+      "handle": "child",
+      "version": 7,
+      "sequence": 6,
+      "summary": {
+        "msg": "Update ROAs add: 2 remove: '0'",
+        "label": "cmd-ca-roas-updated",
+        "args": {
+          "removed": "0",
+          "added": "2"
+        }
+      },
+      "effect": {
+        "events": [
+          7,
+          8,
+          9,
+          10
+        ]
+      }
+    },
+    {
+      "key": "command--1588080481--7--cmd-ca-roas-updated",
+      "actor": "krill",
+      "timestamp": 1588080481257,
+      "handle": "child",
+      "version": 11,
+      "sequence": 7,
+      "summary": {
+        "msg": "Update ROAs add: 0 remove: '1'",
+        "label": "cmd-ca-roas-updated",
+        "args": {
+          "added": "0",
+          "removed": "1"
+        }
+      },
+      "effect": {
+        "events": [
+          11,
+          12,
+          13
+        ]
+      }
+    },
+    {
+      "key": "command--1588080482--8--cmd-ca-roas-updated",
+      "actor": "krill",
+      "timestamp": 1588080482333,
+      "handle": "child",
+      "version": 14,
+      "sequence": 8,
+      "summary": {
+        "msg": "Update ROAs add: 1 remove: '0'",
+        "label": "cmd-ca-roas-updated",
+        "args": {
+          "added": "1",
+          "removed": "0"
+        }
+      },
+      "effect": {
+        "error": "Prefix in ROA '192.168.0.0/24 => 64496' not held by CA 'child'."
+      }
+    },
+    {
+      "key": "command--1588080482--9--cmd-ca-parent-entitlements",
+      "actor": "krill",
+      "timestamp": 1588080482359,
+      "handle": "child",
+      "version": 14,
+      "sequence": 9,
+      "summary": {
+        "msg": "Update entitlements under parent 'ta': 0 => asn: 0 blocks, v4: 1 blocks, v6: 0 blocks ",
+        "label": "cmd-ca-parent-entitlements",
+        "args": {
+          "parent": "ta"
+        }
+      },
+      "effect": {
+        "events": [
+          14
+        ]
+      }
+    },
+    {
+      "key": "command--1588080483--10--cmd-ca-rcn-receive",
+      "actor": "krill",
+      "timestamp": 1588080483364,
+      "handle": "child",
+      "version": 15,
+      "sequence": 10,
+      "summary": {
+        "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
+        "label": "cmd-ca-rcn-receive",
+        "args": {
+          "resources": "asn: , v4: 192.168.0.0/16, v6: ",
+          "ipv6_blocks": "0",
+          "class_name": "0",
+          "asn_blocks": "0",
+          "ipv4_blocks": "1"
+        }
+      },
+      "effect": {
+        "events": [
+          15,
+          16,
+          17
+        ]
+      }
+    },
+    {
+      "key": "command--1588080483--11--cmd-ca-roas-updated",
+      "actor": "krill",
+      "timestamp": 1588080483528,
+      "handle": "child",
+      "version": 18,
+      "sequence": 11,
+      "summary": {
+        "msg": "Update ROAs add: 1 remove: '0'",
+        "label": "cmd-ca-roas-updated",
+        "args": {
+          "added": "1",
+          "removed": "0"
+        }
+      },
+      "effect": {
+        "events": [
+          18,
+          19,
+          20
+        ]
+      }
+    },
+    {
+      "key": "command--1588080484--12--cmd-ca-keyroll-init",
+      "actor": "krill",
+      "timestamp": 1588080484446,
+      "handle": "child",
+      "version": 21,
+      "sequence": 12,
+      "summary": {
+        "msg": "Initiate key roll for keys older than '0' seconds",
+        "label": "cmd-ca-keyroll-init",
+        "args": {
+          "seconds": "0"
+        }
+      },
+      "effect": {
+        "events": [
+          21,
+          22
+        ]
+      }
+    },
+    {
+      "key": "command--1588080485--13--cmd-ca-rcn-receive",
+      "actor": "krill",
+      "timestamp": 1588080485488,
+      "handle": "child",
+      "version": 23,
+      "sequence": 13,
+      "summary": {
+        "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
+        "label": "cmd-ca-rcn-receive",
+        "args": {
+          "resources": "asn: , v4: 192.168.0.0/16, v6: ",
+          "class_name": "0",
+          "ipv4_blocks": "1",
+          "ipv6_blocks": "0",
+          "asn_blocks": "0"
+        }
+      },
+      "effect": {
+        "events": [
+          23
+        ]
+      }
+    },
+    {
+      "key": "command--1588080485--14--cmd-ca-keyroll-activate",
+      "actor": "krill",
+      "timestamp": 1588080485667,
+      "handle": "child",
+      "version": 24,
+      "sequence": 14,
+      "summary": {
+        "msg": "Activate new keys staging longer than '0' seconds",
+        "label": "cmd-ca-keyroll-activate",
+        "args": {
+          "seconds": "0"
+        }
+      },
+      "effect": {
+        "events": [
+          24,
+          25,
+          26
+        ]
+      }
+    },
+    {
+      "key": "command--1588080486--15--cmd-ca-keyroll-finish",
+      "actor": "krill",
+      "timestamp": 1588080486697,
+      "handle": "child",
+      "version": 27,
+      "sequence": 15,
+      "summary": {
+        "msg": "Retire old revoked key in RC '0'",
+        "label": "cmd-ca-keyroll-finish",
+        "args": {
+          "class_name": "0"
+        }
+      },
+      "effect": {
+        "events": [
+          27
+        ]
+      }
+    },
+    {
+      "key": "command--1588080486--16--cmd-ca-roas-updated",
+      "actor": "krill",
+      "timestamp": 1588080486881,
+      "handle": "child",
+      "version": 28,
+      "sequence": 16,
+      "summary": {
+        "msg": "Update ROAs add: 1 remove: '0'",
+        "label": "cmd-ca-roas-updated",
+        "args": {
+          "removed": "0",
+          "added": "1"
+        }
+      },
+      "effect": {
+        "error": "Invalid max length in ROA: '10.0.0.0/24-33 => 64496' for CA 'child"
+      }
+    }
+  ]
+}

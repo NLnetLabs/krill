@@ -49,11 +49,11 @@
         "msg": "Update received cert in RC '0', with resources 'asn: 1 blocks, v4: 1 blocks, v6: 1 blocks'",
         "label": "cmd-ca-rcn-receive",
         "args": {
-          "class_name": "0",
           "asn_blocks": "1",
+          "resources": "asn: AS0-AS4294967295, v4: 0.0.0.0/0, v6: ::/0",
           "ipv4_blocks": "1",
-          "ipv6_blocks": "1",
-          "resources": "asn: AS0-AS4294967295, v4: 0.0.0.0/0, v6: ::/0"
+          "class_name": "0",
+          "ipv6_blocks": "1"
         }
       },
       "effect": {
@@ -73,12 +73,12 @@
         "msg": "Add child 'child' with RFC8183 key '<none>' and resources 'asn: 0 blocks, v4: 1 blocks, v6: 1 blocks'",
         "label": "cmd-ca-child-add",
         "args": {
-          "asn_blocks": "0",
-          "ipv4_blocks": "1",
           "ipv6_blocks": "1",
+          "resources": "asn: , v4: 10.0.0.0/16, v6: 2001:db8::/32",
+          "asn_blocks": "0",
           "id_key": "<none>",
           "child": "child",
-          "resources": "asn: , v4: 10.0.0.0/16, v6: 2001:db8::/32"
+          "ipv4_blocks": "1"
         }
       },
       "effect": {
@@ -98,9 +98,9 @@
         "msg": "Issue certificate to child 'child' for key '77AA69E9571D1DD092F7331CF7157D07B5E8997B",
         "label": "cmd-ca-child-certify",
         "args": {
+          "class_name": "0",
           "key": "77AA69E9571D1DD092F7331CF7157D07B5E8997B",
-          "child": "child",
-          "class_name": "0"
+          "child": "child"
         }
       },
       "effect": {
@@ -122,11 +122,11 @@
         "msg": "Update resources for child 'child' to: asn: 0 blocks, v4: 1 blocks, v6: 0 blocks",
         "label": "cmd-ca-child-update-res",
         "args": {
-          "ipv4_blocks": "1",
           "resources": "asn: , v4: 192.168.0.0/16, v6: ",
+          "ipv4_blocks": "1",
+          "ipv6_blocks": "0",
           "asn_blocks": "0",
-          "child": "child",
-          "ipv6_blocks": "0"
+          "child": "child"
         }
       },
       "effect": {
@@ -146,9 +146,9 @@
         "msg": "Issue certificate to child 'child' for key '77AA69E9571D1DD092F7331CF7157D07B5E8997B",
         "label": "cmd-ca-child-certify",
         "args": {
-          "class_name": "0",
           "key": "77AA69E9571D1DD092F7331CF7157D07B5E8997B",
-          "child": "child"
+          "child": "child",
+          "class_name": "0"
         }
       },
       "effect": {
@@ -170,9 +170,9 @@
         "msg": "Issue certificate to child 'child' for key '4591FF2F94D01E45DA3A20F62579431DEED5B038",
         "label": "cmd-ca-child-certify",
         "args": {
+          "key": "4591FF2F94D01E45DA3A20F62579431DEED5B038",
           "child": "child",
-          "class_name": "0",
-          "key": "4591FF2F94D01E45DA3A20F62579431DEED5B038"
+          "class_name": "0"
         }
       },
       "effect": {
@@ -194,9 +194,9 @@
         "msg": "Revoke certificates for child 'child' for key '77AA69E9571D1DD092F7331CF7157D07B5E8997B' in RC 0",
         "label": "cmd-ca-child-revoke",
         "args": {
-          "class_name": "0",
           "key": "77AA69E9571D1DD092F7331CF7157D07B5E8997B",
-          "child": "child"
+          "child": "child",
+          "class_name": "0"
         }
       },
       "effect": {
