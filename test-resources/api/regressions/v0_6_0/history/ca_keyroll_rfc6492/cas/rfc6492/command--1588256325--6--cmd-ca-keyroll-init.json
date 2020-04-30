@@ -1,0 +1,16 @@
+{
+  "actor": "krill",
+  "time": "2020-04-30T14:18:45.978612Z",
+  "handle": "rfc6492",
+  "version": 7,
+  "sequence": 6,
+  "details": {
+    "key_roll_initiate": 0
+  },
+  "effect": {
+    "events": [
+      7,
+      8
+    ]
+  }
+}

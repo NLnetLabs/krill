@@ -24,6 +24,7 @@ fn history() {
     // for missing files
     assert_scenario("ca_roas", &["ta", "child"]);
     assert_scenario("ca_rfc6492", &["ta", "rfc6492"]);
+    assert_scenario("ca_keyroll_rfc6492", &["ta", "rfc6492"]);
 }
 
 fn assert_scenario(scenario: &str, cas: &[&str]) {
