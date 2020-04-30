@@ -1,5 +1,5 @@
 //! Responsible for migrating commands predating Krill v0.6.0
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::convert::TryFrom;
 use std::str::FromStr;
 
@@ -509,7 +509,7 @@ impl PreviousCommand {
         let parent = Self::extract_handle(&s[34..start_quote_to])?;
         let update_str = &s[start_quote_to + 6..s.len()];
 
-        let mut classes = HashMap::new();
+        let mut classes = BTreeMap::new();
         if !update_str.starts_with("class name ") {
             return Err(UpgradeError::unrecognised(s));
         }

@@ -1,0 +1,15 @@
+{
+  "actor": "krill",
+  "time": "2020-04-30T14:22:28.697883Z",
+  "handle": "CA4",
+  "version": 1,
+  "sequence": 1,
+  "details": {
+    "repo_update": null
+  },
+  "effect": {
+    "events": [
+      1
+    ]
+  }
+}

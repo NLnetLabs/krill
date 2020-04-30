@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::{Arc, RwLock};
 
@@ -159,7 +159,7 @@ impl<S: Signer> From<CmdDet<S>> for StorableCaCommand {
             }
             CmdDet::RemoveParent(parent) => StorableCaCommand::RemoveParent(parent),
             CmdDet::UpdateResourceClasses(parent, entitlements, _) => {
-                let mut classes = HashMap::new();
+                let mut classes = BTreeMap::new();
                 for entitlement in entitlements.classes() {
                     classes.insert(
                         entitlement.class_name().clone(),

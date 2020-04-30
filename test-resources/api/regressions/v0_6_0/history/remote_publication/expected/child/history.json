@@ -1,0 +1,264 @@
+{
+  "offset": 0,
+  "total": 12,
+  "commands": [
+    {
+      "key": "command--1588257441--1--cmd-ca-repo-update",
+      "actor": "krill",
+      "timestamp": 1588257441234,
+      "handle": "child",
+      "version": 1,
+      "sequence": 1,
+      "summary": {
+        "msg": "Update repo to embedded server",
+        "label": "cmd-ca-repo-update",
+        "args": {}
+      },
+      "effect": {
+        "events": [
+          1
+        ]
+      }
+    },
+    {
+      "key": "command--1588257441--2--cmd-ca-parent-add",
+      "actor": "krill",
+      "timestamp": 1588257441262,
+      "handle": "child",
+      "version": 2,
+      "sequence": 2,
+      "summary": {
+        "msg": "Add parent 'ta' as 'Embedded parent'",
+        "label": "cmd-ca-parent-add",
+        "args": {
+          "parent_contact": "Embedded parent",
+          "parent": "ta"
+        }
+      },
+      "effect": {
+        "events": [
+          2
+        ]
+      }
+    },
+    {
+      "key": "command--1588257441--3--cmd-ca-parent-entitlements",
+      "actor": "krill",
+      "timestamp": 1588257441942,
+      "handle": "child",
+      "version": 3,
+      "sequence": 3,
+      "summary": {
+        "msg": "Update entitlements under parent 'ta': 0 => asn: 0 blocks, v4: 1 blocks, v6: 0 blocks ",
+        "label": "cmd-ca-parent-entitlements",
+        "args": {
+          "parent": "ta"
+        }
+      },
+      "effect": {
+        "events": [
+          3,
+          4
+        ]
+      }
+    },
+    {
+      "key": "command--1588257441--4--cmd-ca-parent-entitlements",
+      "actor": "krill",
+      "timestamp": 1588257441983,
+      "handle": "child",
+      "version": 5,
+      "sequence": 4,
+      "summary": {
+        "msg": "Update entitlements under parent 'ta': 0 => asn: 0 blocks, v4: 1 blocks, v6: 0 blocks ",
+        "label": "cmd-ca-parent-entitlements",
+        "args": {
+          "parent": "ta"
+        }
+      },
+      "effect": {
+        "events": [
+          5
+        ]
+      }
+    },
+    {
+      "key": "command--1588257442--5--cmd-ca-rcn-receive",
+      "actor": "krill",
+      "timestamp": 1588257442106,
+      "handle": "child",
+      "version": 6,
+      "sequence": 5,
+      "summary": {
+        "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
+        "label": "cmd-ca-rcn-receive",
+        "args": {
+          "asn_blocks": "0",
+          "ipv6_blocks": "0",
+          "class_name": "0",
+          "resources": "asn: , v4: 10.0.0.0/16, v6: ",
+          "ipv4_blocks": "1"
+        }
+      },
+      "effect": {
+        "events": [
+          6
+        ]
+      }
+    },
+    {
+      "key": "command--1588257442--6--cmd-ca-roas-updated",
+      "actor": "krill",
+      "timestamp": 1588257442337,
+      "handle": "child",
+      "version": 7,
+      "sequence": 6,
+      "summary": {
+        "msg": "Update ROAs add: 2 remove: '0'",
+        "label": "cmd-ca-roas-updated",
+        "args": {
+          "added": "2",
+          "removed": "0"
+        }
+      },
+      "effect": {
+        "events": [
+          7,
+          8,
+          9,
+          10
+        ]
+      }
+    },
+    {
+      "key": "command--1588257442--7--cmd-ca-repo-update",
+      "actor": "krill",
+      "timestamp": 1588257442708,
+      "handle": "child",
+      "version": 11,
+      "sequence": 7,
+      "summary": {
+        "msg": "Update repo to server at: https://localhost:3001/rfc8181/child",
+        "label": "cmd-ca-repo-update",
+        "args": {
+          "service_uri": "https://localhost:3001/rfc8181/child"
+        }
+      },
+      "effect": {
+        "events": [
+          11,
+          12,
+          13,
+          14
+        ]
+      }
+    },
+    {
+      "key": "command--1588257444--8--cmd-ca-rcn-receive",
+      "actor": "krill",
+      "timestamp": 1588257444143,
+      "handle": "child",
+      "version": 15,
+      "sequence": 8,
+      "summary": {
+        "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
+        "label": "cmd-ca-rcn-receive",
+        "args": {
+          "asn_blocks": "0",
+          "ipv6_blocks": "0",
+          "resources": "asn: , v4: 10.0.0.0/16, v6: ",
+          "ipv4_blocks": "1",
+          "class_name": "0"
+        }
+      },
+      "effect": {
+        "events": [
+          15
+        ]
+      }
+    },
+    {
+      "key": "command--1588257444--9--cmd-ca-repo-clean",
+      "actor": "krill",
+      "timestamp": 1588257444169,
+      "handle": "child",
+      "version": 16,
+      "sequence": 9,
+      "summary": {
+        "msg": "Clean up old repository",
+        "label": "cmd-ca-repo-clean",
+        "args": {}
+      },
+      "effect": {
+        "events": [
+          16
+        ]
+      }
+    },
+    {
+      "key": "command--1588257444--10--cmd-ca-repo-update",
+      "actor": "krill",
+      "timestamp": 1588257444541,
+      "handle": "child",
+      "version": 17,
+      "sequence": 10,
+      "summary": {
+        "msg": "Update repo to server at: https://localhost:3000/rfc8181/child",
+        "label": "cmd-ca-repo-update",
+        "args": {
+          "service_uri": "https://localhost:3000/rfc8181/child"
+        }
+      },
+      "effect": {
+        "events": [
+          17,
+          18,
+          19,
+          20
+        ]
+      }
+    },
+    {
+      "key": "command--1588257445--11--cmd-ca-rcn-receive",
+      "actor": "krill",
+      "timestamp": 1588257445837,
+      "handle": "child",
+      "version": 21,
+      "sequence": 11,
+      "summary": {
+        "msg": "Update received cert in RC '0', with resources 'asn: 0 blocks, v4: 1 blocks, v6: 0 blocks'",
+        "label": "cmd-ca-rcn-receive",
+        "args": {
+          "resources": "asn: , v4: 10.0.0.0/16, v6: ",
+          "ipv4_blocks": "1",
+          "class_name": "0",
+          "asn_blocks": "0",
+          "ipv6_blocks": "0"
+        }
+      },
+      "effect": {
+        "events": [
+          21
+        ]
+      }
+    },
+    {
+      "key": "command--1588257446--12--cmd-ca-repo-clean",
+      "actor": "krill",
+      "timestamp": 1588257446682,
+      "handle": "child",
+      "version": 22,
+      "sequence": 12,
+      "summary": {
+        "msg": "Clean up old repository",
+        "label": "cmd-ca-repo-clean",
+        "args": {}
+      },
+      "effect": {
+        "events": [
+          22
+        ]
+      }
+    }
+  ]
+}

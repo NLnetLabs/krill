@@ -1,0 +1,18 @@
+{
+  "actor": "krill",
+  "time": "2020-04-30T14:22:28.935747Z",
+  "handle": "CA4",
+  "version": 2,
+  "sequence": 2,
+  "details": {
+    "add_parent": [
+      "CA3",
+      "rfc6492"
+    ]
+  },
+  "effect": {
+    "events": [
+      2
+    ]
+  }
+}

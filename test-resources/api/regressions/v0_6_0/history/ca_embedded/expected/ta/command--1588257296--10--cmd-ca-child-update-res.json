@@ -1,0 +1,42 @@
+{
+  "command": {
+    "actor": "krill",
+    "time": "2020-04-30T14:34:56.743620Z",
+    "handle": "ta",
+    "version": 16,
+    "sequence": 10,
+    "details": {
+      "child_update_resources": [
+        "child",
+        {
+          "asn": "",
+          "v4": "",
+          "v6": ""
+        }
+      ]
+    },
+    "effect": {
+      "events": [
+        16
+      ]
+    }
+  },
+  "result": {
+    "Events": [
+      {
+        "id": "ta",
+        "version": 16,
+        "details": {
+          "child_updated_resources": [
+            "child",
+            {
+              "asn": "",
+              "v4": "",
+              "v6": ""
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

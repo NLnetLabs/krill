@@ -1,0 +1,13 @@
+{
+  "actor": "krill",
+  "time": "2020-04-30T14:37:20.770567Z",
+  "handle": "ta",
+  "version": 2,
+  "sequence": 2,
+  "details": "make_trust_anchor",
+  "effect": {
+    "events": [
+      2
+    ]
+  }
+}

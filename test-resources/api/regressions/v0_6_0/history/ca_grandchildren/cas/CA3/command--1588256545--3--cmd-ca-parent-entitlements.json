@@ -1,0 +1,25 @@
+{
+  "actor": "krill",
+  "time": "2020-04-30T14:22:25.381315Z",
+  "handle": "CA3",
+  "version": 3,
+  "sequence": 3,
+  "details": {
+    "update_resource_classes": [
+      "CA1",
+      {
+        "0": {
+          "asn": "",
+          "v4": "10.0.0.0/16",
+          "v6": ""
+        }
+      }
+    ]
+  },
+  "effect": {
+    "events": [
+      3,
+      4
+    ]
+  }
+}

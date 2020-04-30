@@ -1,0 +1,15 @@
+{
+  "actor": "krill",
+  "time": "2020-04-30T14:37:21.234506Z",
+  "handle": "child",
+  "version": 1,
+  "sequence": 1,
+  "details": {
+    "repo_update": null
+  },
+  "effect": {
+    "events": [
+      1
+    ]
+  }
+}

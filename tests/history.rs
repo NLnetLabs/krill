@@ -22,9 +22,12 @@ const KRILL_HISTORY_JSON_GENERATE: &str = "KRILL_HISTORY_JSON_GENERATE";
 fn history() {
     // Run this test with ENV variable KRILL_HISTORY_JSON_GENERATE = 1 in order to generate json
     // for missing files
+    assert_scenario("ca_embedded", &["ta", "child"]);
     assert_scenario("ca_roas", &["ta", "child"]);
     assert_scenario("ca_rfc6492", &["ta", "rfc6492"]);
     assert_scenario("ca_keyroll_rfc6492", &["ta", "rfc6492"]);
+    assert_scenario("ca_grandchildren", &["ta", "CA1", "CA2", "CA3", "CA4"]);
+    assert_scenario("remote_publication", &["ta", "child"]);
 }
 
 fn assert_scenario(scenario: &str, cas: &[&str]) {

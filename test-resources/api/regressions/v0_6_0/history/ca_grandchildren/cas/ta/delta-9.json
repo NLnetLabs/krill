@@ -1,0 +1,11 @@
+{
+  "id": "ta",
+  "version": 9,
+  "details": {
+    "child_certificate_issued": [
+      "CA2",
+      "0",
+      "FE7805B8F0C16A0BF93B6CC8E53D57D39D856018"
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "id": "CA1",
+  "version": 1,
+  "details": {
+    "repo_updated": {
+      "embedded": {
+        "base_uri": "rsync://localhost/repo/CA1/",
+        "rpki_notify": "https://localhost:3000/test-rrdp/notification.xml"
+      }
+    }
+  }
+}

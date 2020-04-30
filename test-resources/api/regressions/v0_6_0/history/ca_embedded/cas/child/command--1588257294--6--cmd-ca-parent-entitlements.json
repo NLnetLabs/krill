@@ -1,0 +1,24 @@
+{
+  "actor": "krill",
+  "time": "2020-04-30T14:34:54.554584Z",
+  "handle": "child",
+  "version": 7,
+  "sequence": 6,
+  "details": {
+    "update_resource_classes": [
+      "ta",
+      {
+        "0": {
+          "asn": "AS65000",
+          "v4": "10.0.0.0/16",
+          "v6": ""
+        }
+      }
+    ]
+  },
+  "effect": {
+    "events": [
+      7
+    ]
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "id": "child",
+  "version": 7,
+  "details": {
+    "route_authorization_added": "10.0.2.0/23 => 64496"
+  }
+}

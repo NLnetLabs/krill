@@ -37,7 +37,7 @@ use crate::daemon::ca::RouteAuthorization;
 ///
 /// We store the name in a Bytes for cheap cloning, as these names need to be passed
 /// around quite a bit and end up being stored as owned values in events.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialOrd, PartialEq)]
 pub struct ResourceClassName {
     name: Bytes,
 }

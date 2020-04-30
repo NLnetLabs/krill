@@ -1,0 +1,26 @@
+{
+  "actor": "krill",
+  "time": "2020-04-30T14:22:25.806233Z",
+  "handle": "CA1",
+  "version": 8,
+  "sequence": 7,
+  "details": {
+    "child_certify": [
+      "CA3",
+      "0",
+      {
+        "asn": "none",
+        "v4": "none",
+        "v6": "none"
+      },
+      "96BE452BC9A7092E4156D96DB8CFC7C89094FE5A"
+    ]
+  },
+  "effect": {
+    "events": [
+      8,
+      9,
+      10
+    ]
+  }
+}

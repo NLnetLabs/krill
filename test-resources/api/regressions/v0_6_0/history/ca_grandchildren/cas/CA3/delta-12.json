@@ -1,0 +1,11 @@
+{
+  "id": "CA3",
+  "version": 12,
+  "details": {
+    "child_certificate_issued": [
+      "CA4",
+      "0",
+      "AB90119164402C965DC5544B54E30B6A7014CDB6"
+    ]
+  }
+}

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::fmt;
 use std::str::FromStr;
 
@@ -142,7 +142,7 @@ impl StoredEffect {
 pub struct CommandSummary {
     pub msg: Message,
     pub label: Label,
-    pub args: HashMap<ArgKey, ArgVal>,
+    pub args: BTreeMap<ArgKey, ArgVal>,
 }
 
 impl CommandSummary {
@@ -150,7 +150,7 @@ impl CommandSummary {
         CommandSummary {
             msg: msg.to_string(),
             label: label.to_string(),
-            args: HashMap::new(),
+            args: BTreeMap::new(),
         }
     }
 
@@ -329,7 +329,7 @@ pub enum StorableCaCommand {
     AddParent(ParentHandle, StorableParentContact),
     UpdateParentContact(ParentHandle, StorableParentContact),
     RemoveParent(ParentHandle),
-    UpdateResourceClasses(ParentHandle, HashMap<ResourceClassName, ResourceSet>),
+    UpdateResourceClasses(ParentHandle, BTreeMap<ResourceClassName, ResourceSet>),
     UpdateRcvdCert(ResourceClassName, ResourceSet),
     KeyRollInitiate(i64),
     KeyRollActivate(i64),

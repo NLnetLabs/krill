@@ -1,0 +1,31 @@
+{
+  "command": {
+    "actor": "krill",
+    "time": "2020-04-30T14:37:24.169869Z",
+    "handle": "child",
+    "version": 16,
+    "sequence": 9,
+    "details": "repo_remove_old",
+    "effect": {
+      "events": [
+        16
+      ]
+    }
+  },
+  "result": {
+    "Events": [
+      {
+        "id": "child",
+        "version": 16,
+        "details": {
+          "repo_cleaned": {
+            "embedded": {
+              "base_uri": "rsync://localhost/repo/child/",
+              "rpki_notify": "https://localhost:3000/test-rrdp/notification.xml"
+            }
+          }
+        }
+      }
+    ]
+  }
+}
