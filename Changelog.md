@@ -3,25 +3,35 @@
 Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
 for planned releases.
 
-## Upcoming Release 'Hang Loose'
+## 0.6.0 Release 'Go with the Flow'
 
-In this release we migrated from actix-web to Hyper. Hyper is a fast, safe and fully asynchronous
-web framework which has a lot of momentum behind it. This change also meant that we needed to
-ensure that Krill itself uses safe asynchronous code whenever it connects to a remote system, like
-a parent or repository, or in case of the CLI the Krill API itself.
+The most visible change in this release is that the embedded Lagosta UI now includes French, Greek
+and Spanish translations. But, the vast majority of the work went into making Krill use asynchronous
+code.
 
-In addition this release includes several small improvements to the Lagosta UI and Krill back-end.
+We migrated from actix-web to Hyper. Hyper is a fast, safe and fully asynchronous web framework
+which has a lot of momentum behind it. This change also meant that we needed to ensure that
+Krill itself uses safe asynchronous code whenever it connects to a remote system, like a parent
+or repository, or in case of the CLI the Krill API itself.
+
+In addition to this we improved the history API to ensure that Krill will no longer use an
+excessive amount of history in cases where a CA has a long history. The API is still subject to
+change, and therefore we will only document this in future. In the meantime however, the CLI
+may be used to show the history of your CA.
 
 Lagosta:
-* Now includes Spanish and Greek translations
+* Now includes French, Greek and Spanish translations
 * Minor improvements in functionality
 
 Krill back-end:
 * Migrated from actix-web to hyper.
 * Krill now uses asynchronous code where applicable.
+* Krill CA history improved. (prevent server crash due to excessive memory usage) 
 
 Breaking changes:
 * The API end-points for bulk operations changed to /api/v1/bulk/*
+* The API end-point for CA issues moved to /api/v1/cas/{handle}/issues
+* The history API changed, this is not yet stable and therefore undocumented
 
 
 ## 0.5.0 'Serve no Turf'
