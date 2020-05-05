@@ -82,8 +82,8 @@ info:
        "child":      "The handle by which the CA knows its child involved in an error"
        "class_name": "The name of the RFC 6492 Resource Class involved in an error"
        "key_id":     "A Key Identifier for a key involved in an error"
-       "prefix":     "The IPv4 or IPv6 prefix in a ROA with issues"
-       "asn":        "The ASN in a ROA with issues"
+       "prefix":     "The IPv4 or IPv6 prefix in a ROA"
+       "asn":        "The ASN in a ROA"
        "max_length": "The max length (if present) for a ROA with issues"
     ```
   license:
@@ -597,24 +597,6 @@ paths:
         '500':
           $ref: '#/components/responses/GeneralErrorResponse'
 
-  /cas/{ca_handle}/history:
-    get:
-      operationId: get_ca_history
-      tags:
-        - "Certificate Authorities"
-      summary: Get full history of a CA.
-      parameters:
-        - $ref: '#/components/parameters/ca_handle'
-      responses:
-        '200':
-          $ref: '#/components/responses/GetCAHistory'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/CaUnknownResponse'
-        '500':
-          $ref: '#/components/responses/GeneralErrorResponse'
-
   /cas/{ca_handle}/id:
     post:
       operationId: regenerate_ca_id_cert
@@ -925,7 +907,7 @@ paths:
         '500':
           $ref: '#/components/responses/GeneralErrorResponse'
 
-  /cas/republish_all:
+  /bulk/cas/publish:
     post:
       operationId: republish_all_cas
       tags:
@@ -937,7 +919,7 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
-  /cas/refresh_all:
+  /bulk/cas/sync/parents:
     post:
       operationId: refresh_all_cas
       tags:
@@ -949,7 +931,7 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
-  /cas/resync_all:
+  /bulk/cas/sync/repo:
     post:
       operationId: resync_all_cas
       tags:
@@ -1029,7 +1011,7 @@ paths:
         '500':
           $ref: '#/components/responses/GeneralErrorResponse'
 
-  /cas/issues/{ca_handle}:
+  /cas/{ca_handle}/issues:
     get:
       operationId: show_ca_issues
       tags:
