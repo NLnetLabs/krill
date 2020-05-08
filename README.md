@@ -17,10 +17,12 @@ can lean more about Krill and RPKI technology by reading our documentation on
 
 ## 1-Click App
 
-Krill is available as a 1-Click App on the [DigitalOcean Marketplace](https://marketplace.digitalocean.com/apps/krill?refcode=cab39584666c).
+Krill is available as a 1-Click App on the 
+[AWS Marketplace](https://aws.amazon.com/marketplace/pp/B0886F8GNJ) and 
+[DigitalOcean Marketplace](https://marketplace.digitalocean.com/apps/krill?refcode=cab39584666c).
 This offers a fully automated installation of Krill and adds NGINX, Rsyncd, 
 Docker, Gluster, automated TLS configuration, Prometheus monitoring, log streaming
-and clustering capabilities out-of-the-box. Watch the [introduction video](https://youtu.be/qunvH2t6rqU).
+and clustering capabilities out-of-the-box.
 
 ## Quick Start
 
