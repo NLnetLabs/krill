@@ -199,11 +199,11 @@ impl SignSupport {
     }
 
     /// Returns a validity period from 5 minutes ago (in case of NTP mess-up), to
-    /// one year from now.
-    pub fn sign_validity_year() -> Validity {
-        let just_now = Time::five_minutes_ago();
-        let one_year = Time::next_year();
-        Validity::new(just_now, one_year)
+    /// X year from now.
+    pub fn sign_validity_years(years: i32) -> Validity {
+        let from = Time::five_minutes_ago();
+        let until = Time::years_from_now(years);
+        Validity::new(from, until)
     }
 }
 

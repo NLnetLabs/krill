@@ -14,6 +14,7 @@ use crate::commons::api::{
     CurrentObject, ObjectName, ReplacedObject, RoaDefinition, RoaDefinitionUpdates,
 };
 use crate::commons::KrillResult;
+use crate::constants::ROA_CERTIFICATE_VALIDITY_YEARS;
 use crate::daemon::ca::events::RoaUpdates;
 use crate::daemon::ca::{self, CertifiedKey, SignSupport, Signer};
 
@@ -302,7 +303,7 @@ impl Roas {
         roa_builder.push_addr(prefix.ip_addr(), prefix.addr_len(), auth.max_length());
         let mut object_builder = SignedObjectBuilder::new(
             Serial::random(signer).map_err(ca::Error::signer)?,
-            SignSupport::sign_validity_year(),
+            SignSupport::sign_validity_years(ROA_CERTIFICATE_VALIDITY_YEARS),
             crl_uri,
             aia.clone(),
             roa_uri,

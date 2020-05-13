@@ -29,7 +29,7 @@ use crate::commons::remote::rfc6492;
 use crate::commons::remote::rfc8183;
 use crate::commons::remote::sigmsg::SignedMessage;
 use crate::commons::KrillResult;
-use crate::constants::CHILD_CERTIFICATE_REISSUE_WEEKS;
+use crate::constants::{CHILD_CERTIFICATE_REISSUE_WEEKS, CHILD_CERTIFICATE_VALIDITY_YEARS};
 use crate::daemon::ca::events::ChildCertificateUpdates;
 use crate::daemon::ca::rc::PublishMode;
 use crate::daemon::ca::signing::CsrInfo;
@@ -642,7 +642,7 @@ impl<S: Signer> CertAuth<S> {
         {
             expiration_time
         } else {
-            Time::next_year()
+            Time::years_from_now(CHILD_CERTIFICATE_VALIDITY_YEARS)
         }
     }
 

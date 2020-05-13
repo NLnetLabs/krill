@@ -17,6 +17,7 @@ use crate::commons::api::{
 };
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
+use crate::constants::ROA_CERTIFICATE_REISSUE_WEEKS;
 use crate::daemon::ca::events::{ChildCertificateUpdates, RoaUpdates};
 use crate::daemon::ca::signing::CsrInfo;
 use crate::daemon::ca::{
@@ -1030,7 +1031,8 @@ impl ResourceClass {
                 Some(roa) => {
                     // Re-issue if the ROA is getting close to its expiration time, or if we are
                     //  activating the new key.
-                    let expiring = roa.object().expires() < Time::now() + Duration::weeks(4);
+                    let expiring = roa.object().expires()
+                        < Time::now() + Duration::weeks(ROA_CERTIFICATE_REISSUE_WEEKS);
                     let activating = mode == &PublishMode::KeyRollActivation;
 
                     if expiring || activating || new_repo.is_some() {
