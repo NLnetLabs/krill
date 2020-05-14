@@ -329,6 +329,12 @@ impl From<TypedPrefix> for ResourceSet {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Ipv4Prefix(Prefix);
 
+impl AsRef<Prefix> for Ipv4Prefix {
+    fn as_ref(&self) -> &Prefix {
+        &self.0
+    }
+}
+
 impl fmt::Display for Ipv4Prefix {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}/{}", self.0.to_v4(), self.0.addr_len())
@@ -338,6 +344,12 @@ impl fmt::Display for Ipv4Prefix {
 //------------ Ipv6Prefix --------------------------------------------------
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct Ipv6Prefix(Prefix);
+
+impl AsRef<Prefix> for Ipv6Prefix {
+    fn as_ref(&self) -> &Prefix {
+        &self.0
+    }
+}
 
 impl fmt::Display for Ipv6Prefix {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {

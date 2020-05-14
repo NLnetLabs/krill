@@ -626,6 +626,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "intervaltree"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "566d5aa3b5cc5c5809cc1a9c9588d917a634248bfc58f7ea14e354e71595a32c"
+dependencies = [
+ "smallvec 1.2.0",
+]
+
+[[package]]
 name = "iovec"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -676,6 +685,7 @@ dependencies = [
  "hex",
  "hyper",
  "ignore",
+ "intervaltree",
  "libc",
  "log 0.4.8",
  "openssl",
