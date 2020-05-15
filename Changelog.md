@@ -3,6 +3,14 @@
 Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
 for planned releases.
 
+## 0.6.2 Release 'That was even faster!'
+
+So, as it turns out.. the code used to determine the age of snapshot files used in the previous
+release was not safe on all platforms. This release fixes this!
+
+Users who upgraded to 0.6.1 and see messages like: "Creation time is not available on this
+platform currently" in their logs, please upgrade!
+
 ## 0.6.1 Release 'That was fast!'
 
 This release fixes an issue where the Krill Repository Server deleted RRDP snapshot files as soon

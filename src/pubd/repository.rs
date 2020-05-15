@@ -264,7 +264,7 @@ impl RrdpServer {
             } else {
                 let path = entry.path();
                 if path.is_dir() {
-                    fs::remove_dir_all(path)?;
+                    let _best_effort_rm = fs::remove_dir_all(path);
                 }
             }
         }
@@ -286,9 +286,9 @@ impl RrdpServer {
                 if let Some(last) = self.notification.last_delta() {
                     if serial < last {
                         if path.is_dir() {
-                            fs::remove_dir_all(path)?;
+                            let _best_effort_rm = fs::remove_dir_all(path);
                         } else {
-                            fs::remove_file(path)?;
+                            let _best_effort_rm = fs::remove_file(path);
                         }
 
                         continue;
@@ -301,14 +301,15 @@ impl RrdpServer {
                     let snapshot_path =
                         Self::new_snapshot_path(&self.rrdp_base_dir, &self.session, serial);
                     if snapshot_path.exists() {
-                        let meta = fs::metadata(&snapshot_path)?;
-                        let created = meta.created()?;
-
-                        let now = SystemTime::now();
-                        if let Ok(duration) = now.duration_since(created) {
-                            let minutes_old = duration.as_secs() / 60;
-                            if minutes_old >= REPOSITORY_RRDP_SNAPSHOT_RETAIN_MINS {
-                                fs::remove_file(snapshot_path)?;
+                        if let Ok(meta) = fs::metadata(&snapshot_path) {
+                            if let Ok(created) = meta.created() {
+                                let now = SystemTime::now();
+                                if let Ok(duration) = now.duration_since(created) {
+                                    let minutes_old = duration.as_secs() / 60;
+                                    if minutes_old >= REPOSITORY_RRDP_SNAPSHOT_RETAIN_MINS {
+                                        let _best_effort_rm = fs::remove_file(snapshot_path);
+                                    }
+                                }
                             }
                         }
                     }
@@ -316,9 +317,9 @@ impl RrdpServer {
             } else {
                 // clean up dirs or files under the base dir which are not sessions
                 if path.is_dir() {
-                    fs::remove_dir_all(path)?;
+                    let _best_effort_rm = fs::remove_dir_all(path);
                 } else {
-                    fs::remove_file(path)?;
+                    let _best_effort_rm = fs::remove_file(path);
                 }
             }
         }
