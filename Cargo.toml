@@ -4,6 +4,9 @@ version = "0.6.1"
 edition = "2018"
 authors = [ "The NLnet Labs RPKI team <rpki-team@nlnetlabs.nl>" ]
 description = "Resource Public Key Infrastructure (RPKI) daemon"
+repository = "https://github.com/NLnetLabs/krill"
+keywords = ["rpki", "routing-security", "bgp"]
+readme = "README.md"
 license = "MPL-2.0"
 
 [dependencies]
