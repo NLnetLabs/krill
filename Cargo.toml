@@ -46,4 +46,3 @@ ignore          = "^0.4"
 [features]
 default = []
 extra-debug = [ "rpki/extra-debug" ]
-
