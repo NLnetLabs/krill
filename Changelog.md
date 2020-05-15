@@ -3,6 +3,17 @@
 Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
 for planned releases.
 
+## 0.6.1 Release 'That was fast!'
+
+This release fixes an issue where the Krill Repository Server deleted RRDP snapshot files as soon
+as a new notification file was published. This leads to issues in case a cached notification file
+is served to validators. 
+
+Users who use Krill as their own Repository Server are advised to upgrade.
+
+Users who publish at a repository provided to them by a third party (e.g. nic.br) can safely skip
+this release.  
+
 ## 0.6.0 Release 'Go with the Flow'
 
 The most visible change in this release is that the embedded Lagosta UI now includes French, Greek
@@ -32,7 +43,6 @@ Breaking changes:
 * The API end-points for bulk operations changed to /api/v1/bulk/*
 * The API end-point for CA issues moved to /api/v1/cas/{handle}/issues
 * The history API changed, this is not yet stable and therefore undocumented
-
 
 ## 0.5.0 'Serve no Turf'
 
