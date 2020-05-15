@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::str::{from_utf8_unchecked, FromStr};
+use std::time::SystemTime;
 
 use rpki::crypto::KeyIdentifier;
 use rpki::uri;
@@ -20,14 +21,16 @@ use crate::commons::remote::id::IdCert;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
 use crate::commons::KrillResult;
-use crate::constants::{REPOSITORY_RRDP_DIR, REPOSITORY_RSYNC_DIR};
+use crate::constants::{
+    REPOSITORY_RRDP_DIR, REPOSITORY_RRDP_SNAPSHOT_RETAIN_MINS, REPOSITORY_RSYNC_DIR,
+};
 use crate::pubd::publishers::Publisher;
 use crate::pubd::{Cmd, CmdDet, Evt, EvtDet, Ini, RrdpUpdate};
 
 //------------ RsyncdStore ---------------------------------------------------
 
 /// This type is responsible for publishing files on disk in a structure so
-/// that an rscynd can be set up to serve this (RPKI) data. Note that the
+/// that an rsyncd can be set up to serve this (RPKI) data. Note that the
 /// rsync host name and module are part of the path, so make sure that the
 /// rsyncd modules and paths are setup properly for each supported rsync
 /// base uri used.
@@ -293,11 +296,21 @@ impl RrdpServer {
                 }
 
                 // Clean up snapshots in all dirs except the current
+                // *IF* the snapshot is older than REPOSITORY_RRDP_SNAPSHOT_RETAIN_MINS
                 if serial != self.serial {
                     let snapshot_path =
                         Self::new_snapshot_path(&self.rrdp_base_dir, &self.session, serial);
                     if snapshot_path.exists() {
-                        fs::remove_file(snapshot_path)?;
+                        let meta = fs::metadata(&snapshot_path)?;
+                        let created = meta.created()?;
+
+                        let now = SystemTime::now();
+                        if let Ok(duration) = now.duration_since(created) {
+                            let minutes_old = duration.as_secs() / 60;
+                            if minutes_old >= REPOSITORY_RRDP_SNAPSHOT_RETAIN_MINS {
+                                fs::remove_file(snapshot_path)?;
+                            }
+                        }
                     }
                 }
             } else {

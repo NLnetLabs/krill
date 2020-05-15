@@ -16,6 +16,7 @@ pub const PUBLISH_THRESHOLD_HOURS: i64 = 8; // republish 8 hours before stale
 pub const REPOSITORY_DIR: &str = "repo";
 pub const REPOSITORY_RRDP_DIR: &str = "rrdp";
 pub const REPOSITORY_RSYNC_DIR: &str = "rsync";
+pub const REPOSITORY_RRDP_SNAPSHOT_RETAIN_MINS: u64 = 10;
 
 pub const KRILL_CLI_SERVER_ARG: &str = "server";
 pub const KRILL_CLI_SERVER_ENV: &str = "KRILL_CLI_SERVER";
