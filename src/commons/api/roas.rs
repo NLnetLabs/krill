@@ -108,6 +108,12 @@ impl fmt::Display for RoaDefinition {
     }
 }
 
+impl AsRef<TypedPrefix> for RoaDefinition {
+    fn as_ref(&self) -> &TypedPrefix {
+        &self.prefix
+    }
+}
+
 //------------ RouteAuthorizationUpdates -----------------------------------
 
 /// This type defines a delta of Route Authorizations, i.e. additions or removals
@@ -238,6 +244,23 @@ impl TypedPrefix {
             TypedPrefix::V4(v4) => IpAddr::V4(v4.0.to_v4()),
             TypedPrefix::V6(v6) => IpAddr::V6(v6.0.to_v6()),
         }
+    }
+
+    fn matches_type(&self, other: &TypedPrefix) -> bool {
+        match &self {
+            TypedPrefix::V4(_) => match other {
+                TypedPrefix::V4(_) => true,
+                TypedPrefix::V6(_) => false,
+            },
+            TypedPrefix::V6(_) => match other {
+                TypedPrefix::V4(_) => false,
+                TypedPrefix::V6(_) => true,
+            },
+        }
+    }
+
+    pub fn covers(&self, other: &TypedPrefix) -> bool {
+        self.matches_type(other) && self.min().le(&other.min()) && self.max().ge(&other.max())
     }
 }
 

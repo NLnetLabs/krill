@@ -20,6 +20,7 @@ futures-util    = "0.3.4"
 hex             = "^0.3"
 hyper           = "^0.13"
 intervaltree    = "0.2.6"
+libflate        = "1.0.0"
 log             = "^0.4"
 openssl         = { version = "^0.10", features = ["v110"] }
 pretty          = "0.5.2" # for testing

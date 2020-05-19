@@ -93,6 +93,18 @@ impl ConfigDefaults {
     fn post_limit_rfc6492() -> u64 {
         1024 * 1024 // 1MB (for ref. the NIC br cert is about 200kB)
     }
+
+    fn bgp_risdumps_enabled() -> bool {
+        false
+    }
+
+    fn bgp_risdumps_v4_uri() -> String {
+        "http://www.ris.ripe.net/dumps/riswhoisdump.IPv4.gz".to_string()
+    }
+
+    fn bgp_risdumps_v6_uri() -> String {
+        "http://www.ris.ripe.net/dumps/riswhoisdump.IPv6.gz".to_string()
+    }
 }
 
 //------------ Config --------------------------------------------------------
@@ -166,6 +178,14 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::post_limit_rfc6492")]
     pub post_limit_rfc6492: u64,
     pub rfc6492_log_dir: Option<PathBuf>,
+
+    // RIS BGP
+    #[serde(default = "ConfigDefaults::bgp_risdumps_enabled")]
+    pub bgp_risdumps_enabled: bool,
+    #[serde(default = "ConfigDefaults::bgp_risdumps_v4_uri")]
+    pub bgp_risdumps_v4_uri: String,
+    #[serde(default = "ConfigDefaults::bgp_risdumps_v6_uri")]
+    pub bgp_risdumps_v6_uri: String,
 }
 
 /// # Accessors
@@ -258,6 +278,10 @@ impl Config {
             Some(dir)
         };
 
+        let bgp_risdumps_enabled = false;
+        let bgp_risdumps_v4_uri = ConfigDefaults::bgp_risdumps_v4_uri();
+        let bgp_risdumps_v6_uri = ConfigDefaults::bgp_risdumps_v6_uri();
+
         Config {
             ip,
             port,
@@ -281,6 +305,9 @@ impl Config {
             rfc8181_log_dir,
             post_limit_rfc6492,
             rfc6492_log_dir,
+            bgp_risdumps_enabled,
+            bgp_risdumps_v4_uri,
+            bgp_risdumps_v6_uri,
         }
     }
 

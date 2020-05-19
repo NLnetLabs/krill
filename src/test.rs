@@ -22,9 +22,10 @@ use crate::cli::{Error, KrillClient};
 use crate::commons::api::{
     AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildAuthRequest, ChildHandle,
     Handle, ParentCaContact, ParentCaReq, ParentHandle, Publish, PublisherDetails, PublisherHandle,
-    RepositoryUpdate, ResourceClassKeysInfo, ResourceClassName, ResourceSet, RoaDefinitionUpdates,
-    UpdateChildRequest,
+    RepositoryUpdate, ResourceClassKeysInfo, ResourceClassName, ResourceSet, RoaDefinition,
+    RoaDefinitionUpdates, UpdateChildRequest,
 };
+use crate::commons::bgp::Announcement;
 use crate::commons::remote::rfc8183;
 use crate::commons::remote::rfc8183::ChildRequest;
 use crate::commons::util::httpclient;
@@ -514,4 +515,15 @@ pub fn save_file(base_dir: &PathBuf, file_name: &str, content: &[u8]) {
     full_name.push(PathBuf::from(file_name));
     let mut f = File::create(full_name).unwrap();
     f.write_all(content).unwrap();
+}
+
+// Support testing announcements and ROAs etc
+
+pub fn announcement(s: &str) -> Announcement {
+    let def = definition(s);
+    Announcement::from(def)
+}
+
+pub fn definition(s: &str) -> RoaDefinition {
+    RoaDefinition::from_str(s).unwrap()
 }

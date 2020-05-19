@@ -70,6 +70,17 @@ impl<V: AsRef<TypedPrefix>> TypedPrefixTree<V> {
         }
         res
     }
+
+    pub fn size(&self) -> usize {
+        self.tree.iter().count()
+    }
+
+    pub fn all(&self) -> Vec<&V> {
+        self.tree
+            .iter()
+            .flat_map(|el| el.value.as_slice())
+            .collect()
+    }
 }
 
 //------------ TypedPrefixTreeBuilder --------------------------------------

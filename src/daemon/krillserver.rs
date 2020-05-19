@@ -18,6 +18,7 @@ use crate::commons::api::{
     RepositoryContact, RepositoryUpdate, RoaDefinition, RoaDefinitionUpdates, ServerInfo,
     TaCertDetails, UpdateChildRequest,
 };
+use crate::commons::bgp::BgpAnalyser;
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::CommandKey;
 use crate::commons::remote::rfc8183;
@@ -172,6 +173,12 @@ impl KrillServer {
                 caserver.republish(&ta_handle)?;
             }
         }
+
+        let _bgpanalyser = Arc::new(BgpAnalyser::new(
+            config.bgp_risdumps_enabled,
+            &config.bgp_risdumps_v4_uri,
+            &config.bgp_risdumps_v6_uri,
+        ));
 
         let scheduler = Scheduler::build(
             event_queue,
