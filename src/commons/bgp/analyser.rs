@@ -4,10 +4,11 @@ use chrono::Duration;
 
 use rpki::x509::Time;
 
-use crate::commons::api::RoaDefinition;
+use crate::commons::api::{ResourceSet, RoaDefinition};
 use crate::commons::bgp::{
     make_roa_tree, make_validated_announcement_tree, Announcement, AnnouncementValidity,
-    Announcements, RisDumpError, RisDumpLoader, RoaTable, RoaTableEntry, ValidatedAnnouncement,
+    Announcements, IpRange, RisDumpError, RisDumpLoader, RoaTable, RoaTableEntry,
+    ValidatedAnnouncement,
 };
 use crate::constants::BGP_RIS_REFRESH_MINUTES;
 
@@ -44,7 +45,7 @@ impl BgpAnalyser {
         Ok(())
     }
 
-    pub fn analyse(&self, roas: &[RoaDefinition]) -> RoaTable {
+    pub fn analyse(&self, roas: &[RoaDefinition], scope: &ResourceSet) -> RoaTable {
         let seen = self.seen.read().unwrap();
         let mut entries = vec![];
 
@@ -56,9 +57,19 @@ impl BgpAnalyser {
         } else {
             let roa_tree = make_roa_tree(roas);
 
-            // TODO: Narrow scope to announcements for this CA
-            let validated: Vec<ValidatedAnnouncement> = seen
-                .all()
+            let (v4_scope, v6_scope) = IpRange::for_resource_set(&scope);
+
+            let mut scoped_announcements = vec![];
+
+            for block in v4_scope.into_iter() {
+                scoped_announcements.append(&mut seen.contained_by(block));
+            }
+
+            for block in v6_scope.into_iter() {
+                scoped_announcements.append(&mut seen.contained_by(block));
+            }
+
+            let validated: Vec<ValidatedAnnouncement> = scoped_announcements
                 .into_iter()
                 .map(|a| a.validate(&roa_tree))
                 .collect();
@@ -156,6 +167,9 @@ impl From<RisDumpError> for BgpAnalyserError {
 #[cfg(test)]
 mod tests {
 
+    use std::collections::HashSet;
+    use std::iter::FromIterator;
+
     use crate::commons::bgp::RoaTableEntryState;
     use crate::test::*;
 
@@ -185,9 +199,13 @@ mod tests {
         let ann_invalid_2 = announcement("10.0.1.0/24 => 64497");
         let ann_invalid_3 = announcement("10.0.4.0/24 => 64497");
 
+        let ann_irrelevant = announcement("192.168.0.0/26 => 64497");
+
         let ann_not_found = announcement("10.0.2.0/24 => 64497");
         let roa_stale = definition("10.0.3.0/24 => 64497");
         let roa_disallowing = definition("10.0.4.0/24 => 0");
+
+        let resources = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
 
         let analyser = BgpAnalyser::with_test_announcements(vec![
             ann_authz_1,
@@ -196,15 +214,22 @@ mod tests {
             ann_invalid_2,
             ann_invalid_3,
             ann_not_found,
+            ann_irrelevant,
         ]);
-        let table = analyser.analyse(&[roa_authorizing, roa_stale, roa_disallowing]);
+        let table = analyser.analyse(&[roa_authorizing, roa_stale, roa_disallowing], &resources);
 
-        let expected_table = serde_json::from_str(include_str!(
+        let expected_table: RoaTable = serde_json::from_str(include_str!(
             "../../../test-resources/bgp/expected_roa_table.json"
         ))
         .unwrap();
 
-        assert_eq!(table, expected_table);
+        let entries = table.entries();
+        let entries_set: HashSet<&RoaTableEntry> = HashSet::from_iter(entries.iter());
+
+        let expected = expected_table.entries();
+        let expected_set: HashSet<&RoaTableEntry> = HashSet::from_iter(expected.iter());
+
+        assert_eq!(entries_set, expected_set);
     }
 
     #[test]
@@ -213,8 +238,10 @@ mod tests {
         let roa2 = definition("10.0.3.0/24 => 64497");
         let roa3 = definition("10.0.4.0/24 => 0");
 
+        let resources = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
+
         let analyser = BgpAnalyser::with_test_announcements(vec![]);
-        let table = analyser.analyse(&[roa1, roa2, roa3]);
+        let table = analyser.analyse(&[roa1, roa2, roa3], &resources);
         let table_entries = table.entries();
         assert_eq!(3, table_entries.len());
 

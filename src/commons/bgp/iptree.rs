@@ -3,18 +3,44 @@ use std::ops::Range;
 
 use intervaltree::IntervalTree;
 
-use crate::commons::api::TypedPrefix;
+use crate::commons::api::{ResourceSet, TypedPrefix};
 
 //------------ IpRange -----------------------------------------------------
 
-struct IpRange(Range<u128>);
+#[derive(Clone, Debug)]
+pub struct IpRange(Range<u128>);
 
 impl IpRange {
-    fn contains(&self, other: &Range<u128>) -> bool {
+    /// Returns the IPv4 (left) and IPv6 (right) ranges as a tuple.
+    pub fn for_resource_set(set: &ResourceSet) -> (Vec<IpRange>, Vec<IpRange>) {
+        let mut v4_ranges = vec![];
+        let mut v6_ranges = vec![];
+        if let Some(v4) = set.to_ip_resources_v4().as_blocks() {
+            for block in v4.iter() {
+                let min = block.min();
+                let max = block.max();
+                let start = min.to_v4().to_ipv6_mapped().into();
+                let end = max.to_v4().to_ipv6_mapped().into();
+                v4_ranges.push(IpRange(Range { start, end }))
+            }
+        }
+        if let Some(v6) = set.to_ip_resources_v6().as_blocks() {
+            for block in v6.iter() {
+                let min = block.min();
+                let max = block.max();
+                let start = min.to_v6().into();
+                let end = max.to_v6().into();
+                v6_ranges.push(IpRange(Range { start, end }))
+            }
+        }
+        (v4_ranges, v6_ranges)
+    }
+
+    pub fn contains(&self, other: &Range<u128>) -> bool {
         self.0.start <= other.start && self.0.end >= other.end
     }
 
-    fn is_contained_by(&self, other: &Range<u128>) -> bool {
+    pub fn is_contained_by(&self, other: &Range<u128>) -> bool {
         other.start <= self.0.start && other.end >= self.0.end
     }
 }
@@ -45,9 +71,9 @@ pub struct TypedPrefixTree<V: AsRef<TypedPrefix>> {
 }
 
 impl<V: AsRef<TypedPrefix>> TypedPrefixTree<V> {
-    pub fn matching_or_more_specific(&self, pfx: &TypedPrefix) -> Vec<&V> {
+    pub fn matching_or_more_specific(&self, range: impl Into<IpRange>) -> Vec<&V> {
+        let range: IpRange = range.into();
         let mut res = vec![];
-        let range = IpRange::from(pfx);
         for el in self.tree.query(range.0.clone()) {
             if range.contains(&el.range) {
                 for v in &el.value {
@@ -58,9 +84,9 @@ impl<V: AsRef<TypedPrefix>> TypedPrefixTree<V> {
         res
     }
 
-    pub fn matching_or_less_specific(&self, pfx: &TypedPrefix) -> Vec<&V> {
+    pub fn matching_or_less_specific(&self, range: impl Into<IpRange>) -> Vec<&V> {
+        let range: IpRange = range.into();
         let mut res = vec![];
-        let range = IpRange::from(pfx);
         for el in self.tree.query(range.0.clone()) {
             if range.is_contained_by(&el.range) {
                 for v in &el.value {
@@ -115,6 +141,7 @@ impl<V: AsRef<TypedPrefix>> Default for TypedPrefixTreeBuilder<V> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commons::api::ResourceSet;
     use crate::commons::bgp::Announcement;
     use std::str::FromStr;
 
@@ -174,5 +201,17 @@ mod tests {
 
         let search = TypedPrefix::from_str("10.0.0.0/15").unwrap();
         assert_eq!(0, tree.matching_or_less_specific(&search).len());
+    }
+
+    #[test]
+    fn set_to_ranges() {
+        let asns = "AS65000-AS65003, AS65005";
+        let ipv4s = "10.0.0.0/8, 192.168.0.0";
+        let ipv6s = "::1, 2001:db8::/32";
+        let set = ResourceSet::from_strs(asns, ipv4s, ipv6s).unwrap();
+
+        let (v4_ranges, v6_ranges) = IpRange::for_resource_set(&set);
+        assert_eq!(2, v4_ranges.len());
+        assert_eq!(2, v6_ranges.len());
     }
 }

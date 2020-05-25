@@ -4,7 +4,7 @@ use std::str::FromStr;
 use rpki::x509::Time;
 
 use crate::commons::api::{AsNumber, RoaDefinition, TypedPrefix};
-use crate::commons::bgp::{TypedPrefixTree, TypedPrefixTreeBuilder};
+use crate::commons::bgp::{IpRange, TypedPrefixTree, TypedPrefixTreeBuilder};
 
 //------------ AnnouncementTree ----------------------------------------------
 
@@ -171,8 +171,8 @@ impl Announcements {
         self.seen.all()
     }
 
-    pub fn contained_by_prefix(&self, pfx: &TypedPrefix) -> Vec<&Announcement> {
-        self.seen.matching_or_more_specific(pfx)
+    pub fn contained_by(&self, range: impl Into<IpRange>) -> Vec<&Announcement> {
+        self.seen.matching_or_more_specific(range)
     }
 
     pub fn size(&self) -> usize {
@@ -264,11 +264,11 @@ mod tests {
         let mut announcements = Announcements::default();
         announcements.update(vec![ann_v4.clone(), ann_v6.clone()]);
 
-        let matches = announcements.contained_by_prefix(ann_v4.prefix());
+        let matches = announcements.contained_by(ann_v4.prefix());
         assert_eq!(1, matches.len());
         assert!(matches.contains(&&ann_v4));
 
-        let matches = announcements.contained_by_prefix(ann_v6.prefix());
+        let matches = announcements.contained_by(ann_v6.prefix());
         assert_eq!(1, matches.len());
         assert!(matches.contains(&&ann_v6));
     }
