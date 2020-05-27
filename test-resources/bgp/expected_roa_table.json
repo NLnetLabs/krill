@@ -1,26 +1,26 @@
 [
   {
     "asn": 64496,
-    "prefix": "10.0.0.0/23",
-    "max_length": 24,
+    "prefix": "10.0.0.0/22",
+    "max_length": 23,
     "state": "roa_authorizing",
     "authorizes": [
       {
         "asn": 64496,
-        "prefix": "10.0.1.0/24"
+        "prefix": "10.0.2.0/23"
       },
       {
         "asn": 64496,
-        "prefix": "10.0.0.0/24"
+        "prefix": "10.0.0.0/22"
       }
     ],
     "disallows": [
       {
         "asn": 64497,
-        "prefix": "10.0.1.0/24"
+        "prefix": "10.0.0.0/22"
       },
       {
-        "asn": 64497,
+        "asn": 64496,
         "prefix": "10.0.0.0/24"
       }
     ]
@@ -33,51 +33,34 @@
   {
     "asn": 0,
     "prefix": "10.0.4.0/24",
-    "state": "roa_disallowing",
-    "disallows": [
-      {
-        "asn": 64497,
-        "prefix": "10.0.4.0/24"
-      }
-    ]
+    "state": "roa_stale"
   },
   {
     "asn": 64497,
-    "prefix": "10.0.0.0/24",
-    "state": "announcement_invalid_asn",
-    "disallowed_by": [
-      {
-        "asn": 64496,
-        "prefix": "10.0.0.0/23",
-        "max_length": 24
-      }
-    ]
-  },
-  {
-    "asn": 64497,
-    "prefix": "10.0.1.0/24",
-    "state": "announcement_invalid_asn",
-    "disallowed_by": [
-      {
-        "asn": 64496,
-        "prefix": "10.0.0.0/23",
-        "max_length": 24
-      }
-    ]
-  },
-  {
-    "asn": 64497,
-    "prefix": "10.0.2.0/24",
+    "prefix": "10.0.0.0/21",
     "state": "announcement_not_found"
   },
   {
+    "asn": 64496,
+    "prefix": "10.0.0.0/24",
+    "state": "announcement_invalid_length",
+    "disallowed_by": [
+      {
+        "asn": 64496,
+        "prefix": "10.0.0.0/22",
+        "max_length": 23
+      }
+    ]
+  },
+  {
     "asn": 64497,
-    "prefix": "10.0.4.0/24",
+    "prefix": "10.0.0.0/22",
     "state": "announcement_invalid_asn",
     "disallowed_by": [
       {
-        "asn": 0,
-        "prefix": "10.0.4.0/24"
+        "asn": 64496,
+        "prefix": "10.0.0.0/22",
+        "max_length": 23
       }
     ]
   }

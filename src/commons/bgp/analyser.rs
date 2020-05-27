@@ -207,16 +207,15 @@ mod tests {
 
     #[test]
     fn analyse_bgp() {
-        let roa_authorizing = definition("10.0.0.0/23-24 => 64496");
-        let ann_authz_1 = announcement("10.0.0.0/24 => 64496");
-        let ann_authz_2 = announcement("10.0.1.0/24 => 64496");
-        let ann_invalid_1 = announcement("10.0.0.0/24 => 64497");
-        let ann_invalid_2 = announcement("10.0.1.0/24 => 64497");
-        let ann_invalid_3 = announcement("10.0.4.0/24 => 64497");
+        let roa_authorizing = definition("10.0.0.0/22-23 => 64496");
+        let ann_authz_1 = announcement("10.0.0.0/22 => 64496");
+        let ann_authz_2 = announcement("10.0.2.0/23 => 64496");
+        let ann_invalid_l = announcement("10.0.0.0/24 => 64496");
+        let ann_invalid_a = announcement("10.0.0.0/22 => 64497");
 
         let ann_irrelevant = announcement("192.168.0.0/26 => 64497");
 
-        let ann_not_found = announcement("10.0.2.0/24 => 64497");
+        let ann_not_found = announcement("10.0.0.0/21 => 64497");
         let roa_stale = definition("10.0.3.0/24 => 64497");
         let roa_disallowing = definition("10.0.4.0/24 => 0");
 
@@ -225,9 +224,8 @@ mod tests {
         let analyser = BgpAnalyser::with_test_announcements(vec![
             ann_authz_1,
             ann_authz_2,
-            ann_invalid_1,
-            ann_invalid_2,
-            ann_invalid_3,
+            ann_invalid_l,
+            ann_invalid_a,
             ann_not_found,
             ann_irrelevant,
         ]);

@@ -86,9 +86,8 @@ impl Announcement {
                     } else {
                         same_asn_found = true;
                     }
-                } else {
-                    invalidating.push(roa.clone());
                 }
+                invalidating.push(roa.clone());
             }
 
             let validity = if same_asn_found {

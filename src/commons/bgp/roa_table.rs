@@ -353,20 +353,24 @@ impl fmt::Display for RoaSummary {
 mod tests {
     use crate::commons::bgp::{RoaSummary, RoaTable};
 
-    // #[test]
-    // fn print_roa_table() {
-    //     let json = include_str!("../../../test-resources/bgp/expected_roa_table.json");
-    //     let table: RoaTable = serde_json::from_str(json).unwrap();
-    //
-    //     println!("{}", table)
-    // }
-    //
-    // #[test]
-    // fn print_roa_table_summary() {
-    //     let json = include_str!("../../../test-resources/bgp/expected_roa_table.json");
-    //     let table: RoaTable = serde_json::from_str(json).unwrap();
-    //     let summary: RoaSummary = table.into();
-    //
-    //     println!("{}", summary)
-    // }
+    #[test]
+    fn print_roa_table() {
+        let json = include_str!("../../../test-resources/bgp/expected_roa_table.json");
+        let table: RoaTable = serde_json::from_str(json).unwrap();
+
+        println!("{}", table);
+
+        let expected_text = include_str!("../../../test-resources/bgp/expected_full_details.txt");
+        assert_eq!(table.to_string(), expected_text);
+    }
+
+    #[test]
+    fn print_roa_table_summary() {
+        let json = include_str!("../../../test-resources/bgp/expected_roa_table.json");
+        let table: RoaTable = serde_json::from_str(json).unwrap();
+        let summary: RoaSummary = table.into();
+
+        let expected_text = include_str!("../../../test-resources/bgp/expected_summary.txt");
+        assert_eq!(summary.to_string(), expected_text);
+    }
 }
