@@ -358,8 +358,6 @@ mod tests {
         let json = include_str!("../../../test-resources/bgp/expected_roa_table.json");
         let table: RoaTable = serde_json::from_str(json).unwrap();
 
-        println!("{}", table);
-
         let expected_text = include_str!("../../../test-resources/bgp/expected_full_details.txt");
         assert_eq!(table.to_string(), expected_text);
     }

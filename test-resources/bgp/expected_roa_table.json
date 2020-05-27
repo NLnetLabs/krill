@@ -16,12 +16,12 @@
     ],
     "disallows": [
       {
-        "asn": 64497,
-        "prefix": "10.0.0.0/22"
-      },
-      {
         "asn": 64496,
         "prefix": "10.0.0.0/24"
+      },
+      {
+        "asn": 64497,
+        "prefix": "10.0.0.0/22"
       }
     ]
   },
@@ -36,11 +36,6 @@
     "state": "roa_stale"
   },
   {
-    "asn": 64497,
-    "prefix": "10.0.0.0/21",
-    "state": "announcement_not_found"
-  },
-  {
     "asn": 64496,
     "prefix": "10.0.0.0/24",
     "state": "announcement_invalid_length",
@@ -51,6 +46,11 @@
         "max_length": 23
       }
     ]
+  },
+  {
+    "asn": 64497,
+    "prefix": "10.0.0.0/21",
+    "state": "announcement_not_found"
   },
   {
     "asn": 64497,

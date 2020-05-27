@@ -7,8 +7,8 @@ Authorizations causing VALID announcements:
 		10.0.0.0/22 => 64496
 
 		Disallows:
-		10.0.0.0/22 => 64497
 		10.0.0.0/24 => 64496
+		10.0.0.0/22 => 64497
 
 Authorizations for which no announcements are found (possibly stale):
 
