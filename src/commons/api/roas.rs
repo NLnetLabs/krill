@@ -122,7 +122,7 @@ impl AsRef<TypedPrefix> for RoaDefinition {
 /// on its resource certificates.
 ///
 /// Multiple updates are sent as a single delta, because it's important that
-/// all authorisations for a given prefix are published together in order to
+/// all authorizations for a given prefix are published together in order to
 /// avoid invalidating announcements.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaDefinitionUpdates {
@@ -423,10 +423,10 @@ pub enum AuthorizationFmtError {
     #[display(fmt = "Invalid asn in string: {}", _0)]
     Asn(String),
 
-    #[display(fmt = "Invalid authorisation string: {}", _0)]
+    #[display(fmt = "Invalid authorization string: {}", _0)]
     Auth(String),
 
-    #[display(fmt = "Invalid authorisation delta string: {}", _0)]
+    #[display(fmt = "Invalid authorization delta string: {}", _0)]
     Delta(String),
 }
 

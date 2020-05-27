@@ -36,11 +36,11 @@ log_info() {
 }
 
 if [ "$1" == "krill" ]; then
-    # Does the opreator want to use their own API token? If so they must
+    # Does the operator want to use their own API token? If so they must
     # supply the KRILL_AUTH_TOKEN env var.
     if [ "${KRILL_AUTH_TOKEN}" == "None" ]; then
-        # Generate a unique hard to guess authorisation token and export it
-        # so that the Krill daemon uses it (unless overriden by the Krill
+        # Generate a unique hard to guess authorization token and export it
+        # so that the Krill daemon uses it (unless overridden by the Krill
         # daemon config file). Only do this if the operator didn't already
         # supply a token when launching the Docker container.
         export KRILL_AUTH_TOKEN=$(uuidgen)

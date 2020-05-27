@@ -165,7 +165,7 @@ impl fmt::Display for RoaTable {
                     writeln!(f)?;
                     writeln!(f, "\tDefinition: {}", roa.definition)?;
                     writeln!(f)?;
-                    writeln!(f, "\t\tAuthorises:")?;
+                    writeln!(f, "\t\tAuthorizes:")?;
                     for ann in roa.authorizes.iter() {
                         writeln!(f, "\t\t{}", ann)?;
                     }
@@ -265,7 +265,7 @@ impl fmt::Display for RoaSummmaryEntry {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let state_str = match self.state {
             RoaSummaryState::Valid => "announcement 'valid'",
-            RoaSummaryState::InvalidAsn => "announcement 'invalid': unauthorised asn",
+            RoaSummaryState::InvalidAsn => "announcement 'invalid': unauthorized asn",
             RoaSummaryState::InvalidLength => "announcement 'invalid': more specific than allowed",
             RoaSummaryState::NotFound => "announcement 'not found': not covered by your ROAs",
             RoaSummaryState::Stale => {

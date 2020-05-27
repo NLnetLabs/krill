@@ -538,7 +538,7 @@ impl<S: Signer> CertAuth<S> {
 
         let child_cert = child
             .id_cert()
-            .ok_or_else(|| Error::CaChildUnauthorised(self.handle.clone(), child_handle.clone()))?;
+            .ok_or_else(|| Error::CaChildUnauthorized(self.handle.clone(), child_handle.clone()))?;
 
         msg.validate(child_cert)
             .map_err(|_| Error::Rfc6492SignatureInvalid)?;
@@ -687,7 +687,7 @@ impl<S: Signer> CertAuth<S> {
 
     /// Certifies a child, unless:
     /// = the child is unknown,
-    /// = the child is not authorised,
+    /// = the child is not authorized,
     /// = the csr is invalid,
     /// = the limit exceeds the child allocation,
     /// = the signer throws up..
@@ -1480,7 +1480,7 @@ impl<S: Signer> CertAuth<S> {
 ///
 impl<S: Signer> CertAuth<S> {
     /// Updates the route authorizations for this CA, and update ROAs. Will return
-    /// an error in case authorisations are added for which this CA does not hold
+    /// an error in case authorizations are added for which this CA does not hold
     /// the prefix.
     fn route_authorizations_update(
         &self,
@@ -1502,15 +1502,15 @@ impl<S: Signer> CertAuth<S> {
 
         for auth in added {
             if !auth.max_length_valid() {
-                return Err(Error::CaAuthorisationInvalidMaxlength(
+                return Err(Error::CaAuthorizationInvalidMaxlength(
                     self.handle.clone(),
                     auth,
                 ));
             }
             if current_auths.contains(&auth) {
-                return Err(Error::CaAuthorisationDuplicate(self.handle.clone(), auth));
+                return Err(Error::CaAuthorizationDuplicate(self.handle.clone(), auth));
             } else if !all_resources.contains(&auth.prefix().into()) {
-                return Err(Error::CaAuthorisationNotEntitled(self.handle.clone(), auth));
+                return Err(Error::CaAuthorizationNotEntitled(self.handle.clone(), auth));
             } else {
                 current_auths.insert(auth);
                 res.push(StoredEvent::new(
@@ -1532,7 +1532,7 @@ impl<S: Signer> CertAuth<S> {
                 ));
                 version += 1;
             } else {
-                return Err(Error::CaAuthorisationUnknown(self.handle.clone(), auth));
+                return Err(Error::CaAuthorizationUnknown(self.handle.clone(), auth));
             }
         }
 

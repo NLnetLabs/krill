@@ -44,7 +44,7 @@ pub struct KrillServer {
     // The base working directory, used for various storage
     work_dir: PathBuf,
 
-    // Component responsible for API authorisation checks
+    // Component responsible for API authorization checks
     authorizer: Authorizer,
 
     // Publication server, with configured publishers

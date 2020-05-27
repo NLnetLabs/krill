@@ -179,7 +179,7 @@ pub enum Error {
     CaChildExtraResources(Handle, ChildHandle),
 
     #[display(fmt = "CA '{}' does not know id certificate for child '{}'", _0, _1)]
-    CaChildUnauthorised(Handle, ChildHandle),
+    CaChildUnauthorized(Handle, ChildHandle),
 
     #[display(
         fmt = "You can only update one aspect for child '{}' of CA '{}' at a time - i.e. either resources or ID cert",
@@ -190,16 +190,16 @@ pub enum Error {
 
     // RouteAuthorizations - ROAs
     #[display(fmt = "Cannot remove unknown ROA '{}' from CA '{}'", _0, _1)]
-    CaAuthorisationUnknown(Handle, RouteAuthorization),
+    CaAuthorizationUnknown(Handle, RouteAuthorization),
 
     #[display(fmt = "Duplicate ROA '{}' for CA '{}'", _1, _0)]
-    CaAuthorisationDuplicate(Handle, RouteAuthorization),
+    CaAuthorizationDuplicate(Handle, RouteAuthorization),
 
     #[display(fmt = "Invalid max length in ROA: '{}' for CA '{}", _1, _0)]
-    CaAuthorisationInvalidMaxlength(Handle, RouteAuthorization),
+    CaAuthorizationInvalidMaxlength(Handle, RouteAuthorization),
 
     #[display(fmt = "Prefix in ROA '{}' not held by CA '{}'.", _1, _0)]
-    CaAuthorisationNotEntitled(Handle, RouteAuthorization),
+    CaAuthorizationNotEntitled(Handle, RouteAuthorization),
 
     //-----------------------------------------------------------------
     // Key Usage Issues
@@ -496,8 +496,8 @@ impl Error {
                     .with_ca(ca)
                     .with_child(child)
             }
-            Error::CaChildUnauthorised(ca, child) => {
-                ErrorResponse::new("ca-child-unauthorised", &self)
+            Error::CaChildUnauthorized(ca, child) => {
+                ErrorResponse::new("ca-child-unauthorized", &self)
                     .with_ca(ca)
                     .with_child(child)
             }
@@ -509,23 +509,23 @@ impl Error {
             }
 
             // RouteAuthorizations
-            Error::CaAuthorisationUnknown(ca, auth) => ErrorResponse::new("ca-roa-unknown", &self)
+            Error::CaAuthorizationUnknown(ca, auth) => ErrorResponse::new("ca-roa-unknown", &self)
                 .with_ca(ca)
                 .with_auth(auth),
 
-            Error::CaAuthorisationDuplicate(ca, auth) => {
+            Error::CaAuthorizationDuplicate(ca, auth) => {
                 ErrorResponse::new("ca-roa-duplicate", &self)
                     .with_ca(ca)
                     .with_auth(auth)
             }
 
-            Error::CaAuthorisationInvalidMaxlength(ca, auth) => {
+            Error::CaAuthorizationInvalidMaxlength(ca, auth) => {
                 ErrorResponse::new("ca-roa-invalid-max-length", &self)
                     .with_ca(ca)
                     .with_auth(auth)
             }
 
-            Error::CaAuthorisationNotEntitled(ca, auth) => {
+            Error::CaAuthorizationNotEntitled(ca, auth) => {
                 ErrorResponse::new("ca-roa-not-entitled", &self)
                     .with_ca(ca)
                     .with_auth(auth)
@@ -834,32 +834,32 @@ mod tests {
         );
         verify(
             include_str!(
-                "../../test-resources/api/regressions/v0_6_0/errors/ca-child-unauthorised.json"
+                "../../test-resources/api/regressions/v0_6_0/errors/ca-child-unauthorized.json"
             ),
-            Error::CaChildUnauthorised(ca.clone(), child),
+            Error::CaChildUnauthorized(ca.clone(), child),
         );
 
         verify(
             include_str!("../../test-resources/api/regressions/v0_6_0/errors/ca-roa-unknown.json"),
-            Error::CaAuthorisationUnknown(ca.clone(), auth),
+            Error::CaAuthorizationUnknown(ca.clone(), auth),
         );
         verify(
             include_str!(
                 "../../test-resources/api/regressions/v0_6_0/errors/ca-roa-duplicate.json"
             ),
-            Error::CaAuthorisationDuplicate(ca.clone(), auth),
+            Error::CaAuthorizationDuplicate(ca.clone(), auth),
         );
         verify(
             include_str!(
                 "../../test-resources/api/regressions/v0_6_0/errors/ca-roa-invalid-max-length.json"
             ),
-            Error::CaAuthorisationInvalidMaxlength(ca.clone(), auth),
+            Error::CaAuthorizationInvalidMaxlength(ca.clone(), auth),
         );
         verify(
             include_str!(
                 "../../test-resources/api/regressions/v0_6_0/errors/ca-roa-not-entitled.json"
             ),
-            Error::CaAuthorisationNotEntitled(ca, auth),
+            Error::CaAuthorizationNotEntitled(ca, auth),
         );
 
         verify(
