@@ -490,6 +490,10 @@ async fn api_ca_routes(req: Request, path: &mut RequestPath, ca: Handle) -> Rout
             Method::POST => ca_routes_update(req, ca).await,
             _ => render_unknown_method(),
         },
+        Some("bgp") => match *req.method() {
+            Method::GET => ca_routes_bgp_analysis(req, ca).await,
+            _ => render_unknown_method(),
+        },
         _ => render_unknown_method(),
     }
 }
@@ -975,8 +979,6 @@ async fn ca_kr_activate(req: Request, handle: Handle) -> RoutingResult {
     render_empty_res(req.state().read().await.ca_keyroll_activate(handle))
 }
 
-//------------ Admin: Force republish ----------------------------------------
-
 /// Update the route authorizations for this CA
 async fn ca_routes_update(req: Request, handle: Handle) -> RoutingResult {
     let state = req.state().clone();
@@ -993,6 +995,11 @@ async fn ca_routes_show(req: Request, handle: Handle) -> RoutingResult {
         Ok(roas) => render_json(roas),
         Err(_) => render_unknown_resource(),
     }
+}
+
+/// Show the state of ROAs vs BGP for this CA
+async fn ca_routes_bgp_analysis(req: Request, handle: Handle) -> RoutingResult {
+    render_json_res(req.state().read().await.ca_routes_bgp_analysis(&handle))
 }
 
 //------------ Admin: Force republish ----------------------------------------

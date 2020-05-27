@@ -13,6 +13,7 @@ use crate::commons::api::{
     AllCertAuthIssues, CaRepoDetails, CertAuthIssues, ChildCaInfo, CurrentRepoState,
     ParentCaContact, PublisherDetails, PublisherList, Token,
 };
+use crate::commons::bgp::{RoaSummary, RoaTable};
 use crate::commons::remote::rfc8183;
 use crate::commons::util::httpclient;
 use crate::constants::KRILL_CLI_API_ENV;
@@ -209,6 +210,19 @@ impl KrillClient {
                 let uri = format!("api/v1/cas/{}/routes", handle);
                 self.post_json(&uri, updates).await?;
                 Ok(ApiResponse::Empty)
+            }
+
+            CaCommand::RouteAuthorizationsBgpDetails(handle) => {
+                let uri = format!("api/v1/cas/{}/routes/bgp", handle);
+                let roa_table = self.get_json(&uri).await?;
+                Ok(ApiResponse::RouteAuthorizationsBgpDetails(roa_table))
+            }
+
+            CaCommand::RouteAuthorizationsBgpSummary(handle) => {
+                let uri = format!("api/v1/cas/{}/routes/bgp", handle);
+                let roa_table: RoaTable = self.get_json(&uri).await?;
+                let summary: RoaSummary = roa_table.into();
+                Ok(ApiResponse::RouteAuthorizationsBgpSummary(summary))
             }
 
             CaCommand::Show(handle) => {

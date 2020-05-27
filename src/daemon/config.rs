@@ -95,7 +95,7 @@ impl ConfigDefaults {
     }
 
     fn bgp_risdumps_enabled() -> bool {
-        false
+        true
     }
 
     fn bgp_risdumps_v4_uri() -> String {

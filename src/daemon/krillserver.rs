@@ -18,7 +18,7 @@ use crate::commons::api::{
     RepositoryContact, RepositoryUpdate, RoaDefinition, RoaDefinitionUpdates, ServerInfo,
     TaCertDetails, UpdateChildRequest,
 };
-use crate::commons::bgp::BgpAnalyser;
+use crate::commons::bgp::{BgpAnalyser, RoaTable};
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::CommandKey;
 use crate::commons::remote::rfc8183;
@@ -52,6 +52,9 @@ pub struct KrillServer {
 
     // Handles the internal TA and/or CAs
     caserver: Arc<ca::CaServer<OpenSslSigner>>,
+
+    // Handles the internal TA and/or CAs
+    bgp_analyser: Arc<BgpAnalyser>,
 
     // Responsible for background tasks, e.g. re-publishing
     #[allow(dead_code)] // just need to keep this in scope
@@ -174,7 +177,7 @@ impl KrillServer {
             }
         }
 
-        let _bgpanalyser = Arc::new(BgpAnalyser::new(
+        let bgp_analyser = Arc::new(BgpAnalyser::new(
             config.bgp_risdumps_enabled,
             &config.bgp_risdumps_v4_uri,
             &config.bgp_risdumps_v6_uri,
@@ -184,6 +187,7 @@ impl KrillServer {
             event_queue,
             caserver.clone(),
             pubserver.clone(),
+            bgp_analyser.clone(),
             ca_refresh_rate,
         );
 
@@ -199,6 +203,7 @@ impl KrillServer {
             authorizer,
             pubserver,
             caserver,
+            bgp_analyser,
             scheduler,
             started: Time::now(),
             post_limits,
@@ -673,6 +678,15 @@ impl KrillServer {
     pub fn ca_routes_show(&self, handle: &Handle) -> KrillResult<Vec<RoaDefinition>> {
         let ca = self.caserver.get_ca(handle)?;
         Ok(ca.roa_definitions())
+    }
+
+    pub fn ca_routes_bgp_analysis(&self, handle: &Handle) -> KrillResult<RoaTable> {
+        let ca = self.caserver.get_ca(handle)?;
+        let definitions = ca.roa_definitions();
+        let resources = ca.all_resources();
+        Ok(self
+            .bgp_analyser
+            .analyse(definitions.as_slice(), &resources))
     }
 }
 

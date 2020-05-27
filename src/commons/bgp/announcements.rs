@@ -1,4 +1,6 @@
+use std::collections::HashSet;
 use std::fmt;
+use std::iter::FromIterator;
 use std::str::FromStr;
 
 use rpki::x509::Time;
@@ -165,6 +167,12 @@ impl Announcements {
         let tree = builder.build();
         self.seen = tree;
         self.last_updated = Some(Time::now());
+    }
+
+    pub fn equivalent(&self, announcements: &Vec<Announcement>) -> bool {
+        let current_set: HashSet<&Announcement> = HashSet::from_iter(self.seen.all().into_iter());
+        let new_set: HashSet<&Announcement> = HashSet::from_iter(announcements.iter());
+        current_set == new_set
     }
 
     pub fn all(&self) -> Vec<&Announcement> {

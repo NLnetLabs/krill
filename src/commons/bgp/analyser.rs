@@ -31,18 +31,30 @@ impl BgpAnalyser {
         }
     }
 
-    pub async fn update(&self) -> Result<(), BgpAnalyserError> {
+    pub async fn update(&self) -> Result<bool, BgpAnalyserError> {
         if let Some(loader) = &self.dumploader {
             let mut seen = self.seen.write().unwrap();
             if let Some(last_time) = seen.last_updated() {
                 if (last_time + Duration::minutes(BGP_RIS_REFRESH_MINUTES)) > Time::now() {
-                    return Ok(()); // no need to update yet
+                    debug!("Will not check BGP Ris Dumps until the refresh interval has passed");
+                    return Ok(false); // no need to update yet
                 }
             }
             let announcements = loader.download_updates().await?;
-            seen.update(announcements);
+            if seen.equivalent(&announcements) {
+                info!("BGP Ris Dumps unchanged");
+                Ok(false)
+            } else {
+                info!(
+                    "Found {} announcements based on BGP Ris Dumps",
+                    announcements.len()
+                );
+                seen.update(announcements);
+                Ok(true)
+            }
+        } else {
+            Ok(false)
         }
-        Ok(())
     }
 
     pub fn analyse(&self, roas: &[RoaDefinition], scope: &ResourceSet) -> RoaTable {
@@ -83,7 +95,10 @@ impl BgpAnalyser {
                 } else {
                     let allows: Vec<Announcement> = covered
                         .iter()
-                        .filter(|va| va.validity() == AnnouncementValidity::Valid)
+                        .filter(|va| {
+                            va.validity() == AnnouncementValidity::Valid
+                                && va.announcement().asn() == &roa.asn() // and covered by *this* ROA
+                        })
                         .map(|va| va.announcement())
                         .collect();
 

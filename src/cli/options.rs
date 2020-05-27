@@ -607,11 +607,29 @@ impl Options {
         app.subcommand(sub)
     }
 
+    fn make_cas_routes_bgp_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("bgp")
+            .about("Show current authorizations in relation to known announcements.");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        sub = sub.arg(
+            Arg::with_name("full")
+                .long("full")
+                .help("Show detailed view instead of summary")
+                .required(false),
+        );
+
+        app.subcommand(sub)
+    }
+
     fn make_cas_routes_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("roas").about("Manage ROAs for your CA.");
 
         sub = Self::make_cas_routes_list_sc(sub);
         sub = Self::make_cas_routes_update_sc(sub);
+        sub = Self::make_cas_routes_bgp_sc(sub);
 
         app.subcommand(sub)
     }
@@ -1287,11 +1305,26 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
+    fn parse_matches_cas_routes_bgp(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let command = if matches.is_present("full") {
+            Command::CertAuth(CaCommand::RouteAuthorizationsBgpDetails(my_ca))
+        } else {
+            Command::CertAuth(CaCommand::RouteAuthorizationsBgpSummary(my_ca))
+        };
+
+        Ok(Options::make(general_args, command))
+    }
+
     fn parse_matches_cas_routes(matches: &ArgMatches) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("list") {
             Self::parse_matches_cas_routes_list(m)
         } else if let Some(m) = matches.subcommand_matches("update") {
             Self::parse_matches_cas_routes_update(m)
+        } else if let Some(m) = matches.subcommand_matches("bgp") {
+            Self::parse_matches_cas_routes_bgp(m)
         } else {
             Err(Error::UnrecognisedSubCommand)
         }
@@ -1618,11 +1651,18 @@ pub enum CaCommand {
     #[display(fmt = "activate key roll for ca: '{}'", _0)]
     KeyRollActivate(Handle),
 
+    // Authorizations
     #[display(fmt = "list ROAS for ca: '{}'", _0)]
     RouteAuthorizationsList(Handle),
 
     #[display(fmt = "Update ROAS for ca: '{}' -> {}", _0, _1)]
     RouteAuthorizationsUpdate(Handle, RoaDefinitionUpdates),
+
+    #[display(fmt = "Show detailed ROA vs BGP analysis for ca: '{}'", _0)]
+    RouteAuthorizationsBgpDetails(Handle),
+
+    #[display(fmt = "Show summary of ROA vs BGP analysis for ca: '{}'", _0)]
+    RouteAuthorizationsBgpSummary(Handle),
 
     // Show details for this CA
     #[display(fmt = "Show details for ca: '{}'", _0)]
