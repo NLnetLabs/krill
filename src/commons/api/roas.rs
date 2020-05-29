@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::fmt;
 use std::net::IpAddr;
@@ -15,7 +16,7 @@ use crate::daemon::ca::RouteAuthorizationUpdates;
 
 /// This type defines the definition of a Route Origin Authorization (ROA), i.e.
 /// the originating asn, IPv4 or IPv6 prefix, and optionally a max length.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Copy, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct RoaDefinition {
     asn: AsNumber,
     prefix: TypedPrefix,
@@ -99,12 +100,42 @@ impl FromStr for RoaDefinition {
     }
 }
 
+impl fmt::Debug for RoaDefinition {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", &self)
+    }
+}
+
 impl fmt::Display for RoaDefinition {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.max_length {
             None => write!(f, "{} => {}", self.prefix, self.asn),
             Some(length) => write!(f, "{}-{} => {}", self.prefix, length, self.asn),
         }
+    }
+}
+
+impl Ord for RoaDefinition {
+    fn cmp(&self, other: &Self) -> Ordering {
+        let mut ordering = self.prefix.cmp(&other.prefix);
+
+        if ordering == Ordering::Equal {
+            ordering = self
+                .effective_max_length()
+                .cmp(&other.effective_max_length());
+        }
+
+        if ordering == Ordering::Equal {
+            ordering = self.asn.cmp(&other.asn);
+        }
+
+        ordering
+    }
+}
+
+impl PartialOrd for RoaDefinition {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -228,7 +259,7 @@ impl From<RouteAuthorizationUpdates> for RoaDefinitionUpdates {
 }
 
 //------------ TypedPrefix -------------------------------------------------
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub enum TypedPrefix {
     V4(Ipv4Prefix),
     V6(Ipv6Prefix),
@@ -260,7 +291,9 @@ impl TypedPrefix {
     }
 
     pub fn covers(&self, other: &TypedPrefix) -> bool {
-        self.matches_type(other) && self.min().le(&other.min()) && self.max().ge(&other.max())
+        self.matches_type(other)
+            && self.prefix().min().le(&other.prefix().min())
+            && self.prefix().max().ge(&other.prefix().max())
     }
 }
 
@@ -282,12 +315,34 @@ impl FromStr for TypedPrefix {
     }
 }
 
+impl fmt::Debug for TypedPrefix {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", &self)
+    }
+}
+
 impl fmt::Display for TypedPrefix {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             TypedPrefix::V4(pfx) => pfx.fmt(f),
             TypedPrefix::V6(pfx) => pfx.fmt(f),
         }
+    }
+}
+
+impl Ord for TypedPrefix {
+    fn cmp(&self, other: &Self) -> Ordering {
+        let mut ordering = self.addr().cmp(&other.addr());
+        if ordering == Ordering::Equal {
+            ordering = self.addr_len().cmp(&other.addr_len())
+        }
+        ordering
+    }
+}
+
+impl PartialOrd for TypedPrefix {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -349,7 +404,7 @@ impl From<TypedPrefix> for ResourceSet {
 }
 
 //------------ Ipv4Prefix --------------------------------------------------
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub struct Ipv4Prefix(Prefix);
 
 impl AsRef<Prefix> for Ipv4Prefix {
@@ -364,8 +419,14 @@ impl fmt::Display for Ipv4Prefix {
     }
 }
 
+impl fmt::Debug for Ipv4Prefix {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", &self)
+    }
+}
+
 //------------ Ipv6Prefix --------------------------------------------------
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub struct Ipv6Prefix(Prefix);
 
 impl AsRef<Prefix> for Ipv6Prefix {
@@ -380,9 +441,15 @@ impl fmt::Display for Ipv6Prefix {
     }
 }
 
+impl fmt::Debug for Ipv6Prefix {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", &self)
+    }
+}
+
 //------------ AsNumber ----------------------------------------------------
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Copy, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct AsNumber(u32);
 
 impl AsNumber {
@@ -407,9 +474,27 @@ impl FromStr for AsNumber {
     }
 }
 
+impl fmt::Debug for AsNumber {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", &self)
+    }
+}
+
 impl fmt::Display for AsNumber {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl Ord for AsNumber {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
+impl PartialOrd for AsNumber {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 

@@ -182,9 +182,6 @@ impl From<RisDumpError> for BgpAnalyserError {
 #[cfg(test)]
 mod tests {
 
-    use std::collections::HashSet;
-    use std::iter::FromIterator;
-
     use crate::commons::bgp::RoaTableEntryState;
     use crate::test::*;
 
@@ -236,13 +233,7 @@ mod tests {
         ))
         .unwrap();
 
-        let entries = table.entries();
-        let entries_set: HashSet<&RoaTableEntry> = HashSet::from_iter(entries.iter());
-
-        let expected = expected_table.entries();
-        let expected_set: HashSet<&RoaTableEntry> = HashSet::from_iter(expected.iter());
-
-        assert_eq!(entries_set, expected_set);
+        assert_eq!(table, expected_table);
     }
 
     #[test]

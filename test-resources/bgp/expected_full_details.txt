@@ -3,12 +3,12 @@ Authorizations causing VALID announcements:
 	Definition: 10.0.0.0/22-23 => 64496
 
 		Authorizes:
-		10.0.2.0/23 => 64496
 		10.0.0.0/22 => 64496
+		10.0.2.0/23 => 64496
 
 		Disallows:
-		10.0.0.0/24 => 64496
 		10.0.0.0/22 => 64497
+		10.0.0.0/24 => 64496
 
 Authorizations for which no announcements are found (possibly stale):
 

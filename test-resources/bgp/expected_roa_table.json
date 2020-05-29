@@ -7,21 +7,21 @@
     "authorizes": [
       {
         "asn": 64496,
-        "prefix": "10.0.2.0/23"
+        "prefix": "10.0.0.0/22"
       },
       {
         "asn": 64496,
-        "prefix": "10.0.0.0/22"
+        "prefix": "10.0.2.0/23"
       }
     ],
     "disallows": [
       {
-        "asn": 64496,
-        "prefix": "10.0.0.0/24"
-      },
-      {
         "asn": 64497,
         "prefix": "10.0.0.0/22"
+      },
+      {
+        "asn": 64496,
+        "prefix": "10.0.0.0/24"
       }
     ]
   },
@@ -49,11 +49,6 @@
   },
   {
     "asn": 64497,
-    "prefix": "10.0.0.0/21",
-    "state": "announcement_not_found"
-  },
-  {
-    "asn": 64497,
     "prefix": "10.0.0.0/22",
     "state": "announcement_invalid_asn",
     "disallowed_by": [
@@ -63,5 +58,10 @@
         "max_length": 23
       }
     ]
+  },
+  {
+    "asn": 64497,
+    "prefix": "10.0.0.0/21",
+    "state": "announcement_not_found"
   }
 ]

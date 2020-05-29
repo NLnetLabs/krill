@@ -1,10 +1,11 @@
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt;
 
 use crate::commons::api::RoaDefinition;
 use crate::commons::bgp::Announcement;
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialOrd, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RoaTableEntryState {
     RoaAuthorizing,
@@ -40,9 +41,11 @@ impl RoaTableEntry {
 
     pub fn roa_authorizing(
         definition: RoaDefinition,
-        authorizes: Vec<Announcement>,
-        disallows: Vec<Announcement>,
+        mut authorizes: Vec<Announcement>,
+        mut disallows: Vec<Announcement>,
     ) -> Self {
+        authorizes.sort();
+        disallows.sort();
         RoaTableEntry {
             definition,
             state: RoaTableEntryState::RoaAuthorizing,
@@ -52,7 +55,8 @@ impl RoaTableEntry {
         }
     }
 
-    pub fn roa_disallowing(definition: RoaDefinition, disallows: Vec<Announcement>) -> Self {
+    pub fn roa_disallowing(definition: RoaDefinition, mut disallows: Vec<Announcement>) -> Self {
+        disallows.sort();
         RoaTableEntry {
             definition,
             state: RoaTableEntryState::RoaDisallowing,
@@ -84,8 +88,9 @@ impl RoaTableEntry {
 
     pub fn announcement_invalid_asn(
         announcement: Announcement,
-        disallowed_by: Vec<RoaDefinition>,
+        mut disallowed_by: Vec<RoaDefinition>,
     ) -> Self {
+        disallowed_by.sort();
         RoaTableEntry {
             definition: RoaDefinition::from(announcement),
             state: RoaTableEntryState::AnnouncementInvalidAsn,
@@ -97,8 +102,9 @@ impl RoaTableEntry {
 
     pub fn announcement_invalid_length(
         announcement: Announcement,
-        disallowed_by: Vec<RoaDefinition>,
+        mut disallowed_by: Vec<RoaDefinition>,
     ) -> Self {
+        disallowed_by.sort();
         RoaTableEntry {
             definition: RoaDefinition::from(announcement),
             state: RoaTableEntryState::AnnouncementInvalidLength,
@@ -119,11 +125,28 @@ impl RoaTableEntry {
     }
 }
 
+impl Ord for RoaTableEntry {
+    fn cmp(&self, other: &Self) -> Ordering {
+        let mut ordering = self.state.cmp(&other.state);
+        if ordering == Ordering::Equal {
+            ordering = self.definition.cmp(&other.definition);
+        }
+        ordering
+    }
+}
+
+impl PartialOrd for RoaTableEntry {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct RoaTable(Vec<RoaTableEntry>);
 
 impl RoaTable {
-    pub fn new(roas: Vec<RoaTableEntry>) -> Self {
+    pub fn new(mut roas: Vec<RoaTableEntry>) -> Self {
+        roas.sort();
         RoaTable(roas)
     }
 

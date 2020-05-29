@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::fmt;
 use std::iter::FromIterator;
@@ -126,6 +127,22 @@ impl FromStr for Announcement {
 impl fmt::Display for Announcement {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{} => {}", self.prefix, self.asn)
+    }
+}
+
+impl Ord for Announcement {
+    fn cmp(&self, other: &Self) -> Ordering {
+        let mut ordering = self.prefix.cmp(&other.prefix());
+        if ordering == Ordering::Equal {
+            ordering = self.asn.cmp(&other.asn);
+        }
+        ordering
+    }
+}
+
+impl PartialOrd for Announcement {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 

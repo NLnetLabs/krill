@@ -1,5 +1,5 @@
-10.0.2.0/23 => 64496	announcement 'valid'
 10.0.0.0/22 => 64496	announcement 'valid'
+10.0.2.0/23 => 64496	announcement 'valid'
 10.0.0.0/22 => 64497	announcement 'invalid': unauthorized asn
 10.0.0.0/24 => 64496	announcement 'invalid': more specific than allowed
 10.0.0.0/21 => 64497	announcement 'not found': not covered by your ROAs
