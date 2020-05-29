@@ -607,19 +607,29 @@ impl Options {
         app.subcommand(sub)
     }
 
+    fn make_cas_routes_bgp_full_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("full").about("Show full report.");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+        app.subcommand(sub)
+    }
+
+    fn make_cas_routes_bgp_announcements_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub =
+            SubCommand::with_name("announcements").about("Show announcement centric report.");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+        app.subcommand(sub)
+    }
+
     fn make_cas_routes_bgp_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("bgp")
             .about("Show current authorizations in relation to known announcements.");
 
-        sub = Self::add_general_args(sub);
-        sub = Self::add_my_ca_arg(sub);
-
-        sub = sub.arg(
-            Arg::with_name("full")
-                .long("full")
-                .help("Show detailed view instead of summary")
-                .required(false),
-        );
+        sub = Self::make_cas_routes_bgp_full_sc(sub);
+        sub = Self::make_cas_routes_bgp_announcements_sc(sub);
 
         app.subcommand(sub)
     }
@@ -1305,17 +1315,32 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_routes_bgp(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_routes_bgp_full(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
+        Ok(Options::make(
+            general_args,
+            Command::CertAuth(CaCommand::BgpAnalysisFull(my_ca)),
+        ))
+    }
 
-        let command = if matches.is_present("full") {
-            Command::CertAuth(CaCommand::RouteAuthorizationsBgpDetails(my_ca))
+    fn parse_matches_cas_routes_bgp_announcements(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+        Ok(Options::make(
+            general_args,
+            Command::CertAuth(CaCommand::BgpAnalysisAnnouncements(my_ca)),
+        ))
+    }
+
+    fn parse_matches_cas_routes_bgp(matches: &ArgMatches) -> Result<Options, Error> {
+        if let Some(m) = matches.subcommand_matches("full") {
+            Self::parse_matches_cas_routes_bgp_full(m)
+        } else if let Some(m) = matches.subcommand_matches("announcements") {
+            Self::parse_matches_cas_routes_bgp_announcements(m)
         } else {
-            Command::CertAuth(CaCommand::RouteAuthorizationsBgpSummary(my_ca))
-        };
-
-        Ok(Options::make(general_args, command))
+            Err(Error::UnrecognisedSubCommand)
+        }
     }
 
     fn parse_matches_cas_routes(matches: &ArgMatches) -> Result<Options, Error> {
@@ -1659,10 +1684,10 @@ pub enum CaCommand {
     RouteAuthorizationsUpdate(Handle, RoaDefinitionUpdates),
 
     #[display(fmt = "Show detailed ROA vs BGP analysis for ca: '{}'", _0)]
-    RouteAuthorizationsBgpDetails(Handle),
+    BgpAnalysisFull(Handle),
 
     #[display(fmt = "Show summary of ROA vs BGP analysis for ca: '{}'", _0)]
-    RouteAuthorizationsBgpSummary(Handle),
+    BgpAnalysisAnnouncements(Handle),
 
     // Show details for this CA
     #[display(fmt = "Show details for ca: '{}'", _0)]

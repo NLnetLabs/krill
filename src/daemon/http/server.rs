@@ -490,8 +490,8 @@ async fn api_ca_routes(req: Request, path: &mut RequestPath, ca: Handle) -> Rout
             Method::POST => ca_routes_update(req, ca).await,
             _ => render_unknown_method(),
         },
-        Some("bgp") => match *req.method() {
-            Method::GET => ca_routes_bgp_analysis(req, ca).await,
+        Some("analysis") => match *req.method() {
+            Method::GET => ca_routes_analysis(req, path, ca).await,
             _ => render_unknown_method(),
         },
         _ => render_unknown_method(),
@@ -998,8 +998,18 @@ async fn ca_routes_show(req: Request, handle: Handle) -> RoutingResult {
 }
 
 /// Show the state of ROAs vs BGP for this CA
-async fn ca_routes_bgp_analysis(req: Request, handle: Handle) -> RoutingResult {
-    render_json_res(req.state().read().await.ca_routes_bgp_analysis(&handle))
+async fn ca_routes_analysis(req: Request, path: &mut RequestPath, handle: Handle) -> RoutingResult {
+    match path.next() {
+        Some("full") => render_json_res(req.state().read().await.ca_routes_bgp_analysis(&handle)),
+        Some("announcements") => render_json_res(
+            req.state()
+                .read()
+                .await
+                .ca_routes_bgp_analysis_announcements(&handle),
+        ),
+        Some("roas") => unimplemented!(),
+        _ => render_unknown_method(),
+    }
 }
 
 //------------ Admin: Force republish ----------------------------------------

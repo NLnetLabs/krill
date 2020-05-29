@@ -37,6 +37,26 @@
   },
   {
     "asn": 64496,
+    "prefix": "10.0.0.0/22",
+    "state": "announcement_valid",
+    "allowed_by": {
+      "asn": 64496,
+      "prefix": "10.0.0.0/22",
+      "max_length": 23
+    }
+  },
+  {
+    "asn": 64496,
+    "prefix": "10.0.2.0/23",
+    "state": "announcement_valid",
+    "allowed_by": {
+      "asn": 64496,
+      "prefix": "10.0.0.0/22",
+      "max_length": 23
+    }
+  },
+  {
+    "asn": 64496,
     "prefix": "10.0.0.0/24",
     "state": "announcement_invalid_length",
     "disallowed_by": [

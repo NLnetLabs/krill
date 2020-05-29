@@ -15,6 +15,11 @@ Authorizations for which no announcements are found (possibly stale):
 	Definition: 10.0.3.0/24 => 64497
 	Definition: 10.0.4.0/24 => 0
 
+Announcements which are valid:
+
+	Announcement: 10.0.0.0/22 => 64496
+	Announcement: 10.0.2.0/23 => 64496
+
 Announcements from an unauthorized ASN:
 
 	Announcement: 10.0.0.0/22 => 64497
@@ -30,5 +35,6 @@ Announcements from an authorized ASN, which are too specific (not allowed by max
 		10.0.0.0/22-23 => 64496
 
 Announcements which are 'not found' (not covered by any of your authorizations):
+
 	Announcement: 10.0.0.0/21 => 64497
 

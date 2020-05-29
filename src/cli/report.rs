@@ -11,7 +11,7 @@ use crate::commons::api::{
     ParentCaContact, PublisherDetails, PublisherList, RepositoryContact, RoaDefinition, ServerInfo,
     StoredEffect,
 };
-use crate::commons::bgp::{RoaSummary, RoaTable};
+use crate::commons::bgp::{AnnouncementReport, BgpAnalysisReport};
 use crate::commons::eventsourcing::WithStorableDetails;
 use crate::commons::remote::api::ClientInfo;
 use crate::commons::remote::rfc8183;
@@ -31,8 +31,8 @@ pub enum ApiResponse {
     CertAuthAction(CaCommandDetails),
     CertAuths(CertAuthList),
     RouteAuthorizations(Vec<RoaDefinition>),
-    RouteAuthorizationsBgpDetails(RoaTable),
-    RouteAuthorizationsBgpSummary(RoaSummary),
+    BgpAnalysisFull(BgpAnalysisReport),
+    BgpAnalysisAnnouncements(AnnouncementReport),
 
     ParentCaContact(ParentCaContact),
 
@@ -72,10 +72,8 @@ impl ApiResponse {
                 ApiResponse::CertAuthIssues(issues) => Ok(Some(issues.report(fmt)?)),
                 ApiResponse::AllCertAuthIssues(issues) => Ok(Some(issues.report(fmt)?)),
                 ApiResponse::RouteAuthorizations(auths) => Ok(Some(auths.report(fmt)?)),
-                ApiResponse::RouteAuthorizationsBgpDetails(table) => Ok(Some(table.report(fmt)?)),
-                ApiResponse::RouteAuthorizationsBgpSummary(summary) => {
-                    Ok(Some(summary.report(fmt)?))
-                }
+                ApiResponse::BgpAnalysisFull(table) => Ok(Some(table.report(fmt)?)),
+                ApiResponse::BgpAnalysisAnnouncements(summary) => Ok(Some(summary.report(fmt)?)),
                 ApiResponse::ParentCaContact(contact) => Ok(Some(contact.report(fmt)?)),
                 ApiResponse::ChildInfo(info) => Ok(Some(info.report(fmt)?)),
                 ApiResponse::PublisherList(list) => Ok(Some(list.report(fmt)?)),
@@ -414,13 +412,13 @@ impl Report for Vec<RoaDefinition> {
     }
 }
 
-impl Report for RoaTable {
+impl Report for BgpAnalysisReport {
     fn text(&self) -> Result<String, ReportError> {
         Ok(self.to_string())
     }
 }
 
-impl Report for RoaSummary {
+impl Report for AnnouncementReport {
     fn text(&self) -> Result<String, ReportError> {
         Ok(self.to_string())
     }

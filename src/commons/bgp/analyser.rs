@@ -7,10 +7,12 @@ use rpki::x509::Time;
 use crate::commons::api::{ResourceSet, RoaDefinition};
 use crate::commons::bgp::{
     make_roa_tree, make_validated_announcement_tree, Announcement, AnnouncementValidity,
-    Announcements, IpRange, RisDumpError, RisDumpLoader, RoaTable, RoaTableEntry,
+    Announcements, BgpAnalysisEntry, BgpAnalysisReport, IpRange, RisDumpError, RisDumpLoader,
     ValidatedAnnouncement,
 };
 use crate::constants::BGP_RIS_REFRESH_MINUTES;
+
+//------------ BgpAnalyser -------------------------------------------------
 
 /// This type helps analyse ROAs vs BGP and vice versa.
 pub struct BgpAnalyser {
@@ -57,14 +59,14 @@ impl BgpAnalyser {
         }
     }
 
-    pub fn analyse(&self, roas: &[RoaDefinition], scope: &ResourceSet) -> RoaTable {
+    pub fn analyse(&self, roas: &[RoaDefinition], scope: &ResourceSet) -> BgpAnalysisReport {
         let seen = self.seen.read().unwrap();
         let mut entries = vec![];
 
         if seen.last_updated().is_none() {
             // nothing to analyse, just push all ROAs as 'no announcement info'
             for roa in roas {
-                entries.push(RoaTableEntry::roa_no_announcement_info(roa.clone()));
+                entries.push(BgpAnalysisEntry::roa_no_announcement_info(roa.clone()));
             }
         } else {
             let roa_tree = make_roa_tree(roas);
@@ -91,7 +93,7 @@ impl BgpAnalyser {
             for roa in roas {
                 let covered = validated_tree.matching_or_more_specific(&roa.prefix());
                 if covered.is_empty() {
-                    entries.push(RoaTableEntry::roa_stale(roa.clone()))
+                    entries.push(BgpAnalysisEntry::roa_stale(roa.clone()))
                 } else {
                     let allows: Vec<Announcement> = covered
                         .iter()
@@ -113,9 +115,9 @@ impl BgpAnalyser {
                         .collect();
 
                     if allows.is_empty() {
-                        entries.push(RoaTableEntry::roa_disallowing(roa.clone(), disallows));
+                        entries.push(BgpAnalysisEntry::roa_disallowing(roa.clone(), disallows));
                     } else {
-                        entries.push(RoaTableEntry::roa_authorizing(
+                        entries.push(BgpAnalysisEntry::roa_authorizing(
                             roa.clone(),
                             allows,
                             disallows,
@@ -126,28 +128,33 @@ impl BgpAnalyser {
 
             // Loop over all validated announcements and report
             for v in validated.into_iter() {
-                let (announcement, validity, _, invalidating_roas) = v.unpack();
+                let (announcement, validity, allowed_by, invalidating_roas) = v.unpack();
                 match validity {
-                    AnnouncementValidity::Valid => {} // will show up under ROAs
+                    AnnouncementValidity::Valid => {
+                        entries.push(BgpAnalysisEntry::announcement_valid(
+                            announcement,
+                            allowed_by.unwrap(), // always set for valid announcements
+                        ))
+                    }
                     AnnouncementValidity::InvalidLength => {
-                        entries.push(RoaTableEntry::announcement_invalid_length(
+                        entries.push(BgpAnalysisEntry::announcement_invalid_length(
                             announcement,
                             invalidating_roas,
                         ));
                     }
                     AnnouncementValidity::InvalidAsn => {
-                        entries.push(RoaTableEntry::announcement_invalid_asn(
+                        entries.push(BgpAnalysisEntry::announcement_invalid_asn(
                             announcement,
                             invalidating_roas,
                         ));
                     }
                     AnnouncementValidity::NotFound => {
-                        entries.push(RoaTableEntry::announcement_not_found(announcement));
+                        entries.push(BgpAnalysisEntry::announcement_not_found(announcement));
                     }
                 }
             }
         }
-        RoaTable::new(entries)
+        BgpAnalysisReport::new(entries)
     }
 
     #[cfg(test)]
@@ -182,7 +189,7 @@ impl From<RisDumpError> for BgpAnalyserError {
 #[cfg(test)]
 mod tests {
 
-    use crate::commons::bgp::RoaTableEntryState;
+    use crate::commons::bgp::BgpAnalysisState;
     use crate::test::*;
 
     use super::*;
@@ -226,14 +233,15 @@ mod tests {
             ann_not_found,
             ann_irrelevant,
         ]);
-        let table = analyser.analyse(&[roa_authorizing, roa_stale, roa_disallowing], &resources);
 
-        let expected_table: RoaTable = serde_json::from_str(include_str!(
-            "../../../test-resources/bgp/expected_roa_table.json"
+        let report = analyser.analyse(&[roa_authorizing, roa_stale, roa_disallowing], &resources);
+
+        let expected: BgpAnalysisReport = serde_json::from_str(include_str!(
+            "../../../test-resources/bgp/expected_bgp_analyis_report.json"
         ))
         .unwrap();
 
-        assert_eq!(table, expected_table);
+        assert_eq!(report, expected);
     }
 
     #[test]
@@ -251,7 +259,7 @@ mod tests {
 
         let roas_no_info: Vec<&RoaDefinition> = table_entries
             .iter()
-            .filter(|e| e.state() == RoaTableEntryState::RoaNoAnnouncementInfo)
+            .filter(|e| e.state() == BgpAnalysisState::RoaNoAnnouncementInfo)
             .map(|e| e.definition())
             .collect();
 

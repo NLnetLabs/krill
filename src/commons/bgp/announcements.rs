@@ -67,8 +67,8 @@ impl Announcement {
             ValidatedAnnouncement {
                 announcement: self.clone(),
                 validity: AnnouncementValidity::NotFound,
-                validating: None,
-                invalidating: vec![],
+                authorizing: None,
+                disallowing: vec![],
             }
         } else {
             let mut invalidating = vec![];
@@ -81,8 +81,8 @@ impl Announcement {
                         return ValidatedAnnouncement {
                             announcement: self.clone(),
                             validity: AnnouncementValidity::Valid,
-                            validating: Some(roa.clone()),
-                            invalidating: vec![],
+                            authorizing: Some(roa.clone()),
+                            disallowing: vec![],
                         };
                     } else {
                         same_asn_found = true;
@@ -100,8 +100,8 @@ impl Announcement {
             ValidatedAnnouncement {
                 announcement: self.clone(),
                 validity,
-                validating: None,
-                invalidating,
+                authorizing: None,
+                disallowing: invalidating,
             }
         }
     }
@@ -227,8 +227,8 @@ impl Default for Announcements {
 pub struct ValidatedAnnouncement {
     announcement: Announcement,
     validity: AnnouncementValidity,
-    validating: Option<RoaDefinition>,
-    invalidating: Vec<RoaDefinition>,
+    authorizing: Option<RoaDefinition>,
+    disallowing: Vec<RoaDefinition>,
 }
 
 impl ValidatedAnnouncement {
@@ -251,8 +251,8 @@ impl ValidatedAnnouncement {
         (
             self.announcement,
             self.validity,
-            self.validating,
-            self.invalidating,
+            self.authorizing,
+            self.disallowing,
         )
     }
 }
