@@ -3,6 +3,10 @@
 Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
 for planned releases.
 
+## Unreleased Changes
+
+* `krillc issues` fails with `Error: Unknown API method` (#248)
+
 ## 0.6.2 Release 'That was even faster!'
 
 So, as it turns out.. the code used to determine the age of snapshot files used in the previous
