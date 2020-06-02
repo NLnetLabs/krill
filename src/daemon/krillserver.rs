@@ -18,7 +18,7 @@ use crate::commons::api::{
     RepositoryContact, RepositoryUpdate, RoaDefinition, RoaDefinitionUpdates, ServerInfo,
     TaCertDetails, UpdateChildRequest,
 };
-use crate::commons::bgp::{AnnouncementReport, BgpAnalyser, BgpAnalysisReport};
+use crate::commons::bgp::{AnnouncementReport, BgpAnalyser, BgpAnalysisReport, RoaReport};
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::CommandKey;
 use crate::commons::remote::rfc8183;
@@ -693,6 +693,11 @@ impl KrillServer {
         &self,
         handle: &Handle,
     ) -> KrillResult<AnnouncementReport> {
+        let full = self.ca_routes_bgp_analysis(handle)?;
+        Ok(full.into())
+    }
+
+    pub fn ca_routes_bgp_analysis_roas(&self, handle: &Handle) -> KrillResult<RoaReport> {
         let full = self.ca_routes_bgp_analysis(handle)?;
         Ok(full.into())
     }

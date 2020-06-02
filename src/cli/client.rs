@@ -223,6 +223,12 @@ impl KrillClient {
                 Ok(ApiResponse::BgpAnalysisAnnouncements(report))
             }
 
+            CaCommand::BgpAnalysisRoas(handle) => {
+                let uri = format!("api/v1/cas/{}/routes/analysis/roas", handle);
+                let report = self.get_json(&uri).await?;
+                Ok(ApiResponse::BgpAnalysisRoas(report))
+            }
+
             CaCommand::Show(handle) => {
                 let uri = format!("api/v1/cas/{}", handle);
                 let ca_info = self.get_json(&uri).await?;

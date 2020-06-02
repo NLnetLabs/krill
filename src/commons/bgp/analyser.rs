@@ -237,7 +237,7 @@ mod tests {
         let report = analyser.analyse(&[roa_authorizing, roa_stale, roa_disallowing], &resources);
 
         let expected: BgpAnalysisReport = serde_json::from_str(include_str!(
-            "../../../test-resources/bgp/expected_bgp_analyis_report.json"
+            "../../../test-resources/bgp/expected_full_report.json"
         ))
         .unwrap();
 

@@ -1,0 +1,51 @@
+[
+  {
+    "definition": {
+      "asn": 64496,
+      "prefix": "10.0.0.0/22"
+    },
+    "state": "valid"
+  },
+  {
+    "definition": {
+      "asn": 64496,
+      "prefix": "10.0.2.0/23"
+    },
+    "state": "valid"
+  },
+  {
+    "definition": {
+      "asn": 64497,
+      "prefix": "10.0.0.0/22"
+    },
+    "state": "invalid_asn"
+  },
+  {
+    "definition": {
+      "asn": 64496,
+      "prefix": "10.0.0.0/24"
+    },
+    "state": "invalid_length"
+  },
+  {
+    "definition": {
+      "asn": 64497,
+      "prefix": "10.0.0.0/21"
+    },
+    "state": "not_found"
+  },
+  {
+    "definition": {
+      "asn": 64497,
+      "prefix": "10.0.3.0/24"
+    },
+    "state": "stale"
+  },
+  {
+    "definition": {
+      "asn": 0,
+      "prefix": "10.0.4.0/24"
+    },
+    "state": "stale"
+  }
+]

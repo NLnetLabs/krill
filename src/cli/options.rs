@@ -624,12 +624,21 @@ impl Options {
         app.subcommand(sub)
     }
 
+    fn make_cas_routes_bgp_roas_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("roas").about("Show ROA centric report.");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+        app.subcommand(sub)
+    }
+
     fn make_cas_routes_bgp_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("bgp")
             .about("Show current authorizations in relation to known announcements.");
 
         sub = Self::make_cas_routes_bgp_full_sc(sub);
         sub = Self::make_cas_routes_bgp_announcements_sc(sub);
+        sub = Self::make_cas_routes_bgp_roas_sc(sub);
 
         app.subcommand(sub)
     }
@@ -1333,11 +1342,22 @@ impl Options {
         ))
     }
 
+    fn parse_matches_cas_routes_bgp_roas(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+        Ok(Options::make(
+            general_args,
+            Command::CertAuth(CaCommand::BgpAnalysisRoas(my_ca)),
+        ))
+    }
+
     fn parse_matches_cas_routes_bgp(matches: &ArgMatches) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("full") {
             Self::parse_matches_cas_routes_bgp_full(m)
         } else if let Some(m) = matches.subcommand_matches("announcements") {
             Self::parse_matches_cas_routes_bgp_announcements(m)
+        } else if let Some(m) = matches.subcommand_matches("roas") {
+            Self::parse_matches_cas_routes_bgp_roas(m)
         } else {
             Err(Error::UnrecognisedSubCommand)
         }
@@ -1686,8 +1706,17 @@ pub enum CaCommand {
     #[display(fmt = "Show detailed ROA vs BGP analysis for ca: '{}'", _0)]
     BgpAnalysisFull(Handle),
 
-    #[display(fmt = "Show summary of ROA vs BGP analysis for ca: '{}'", _0)]
+    #[display(
+        fmt = "Show announcement centric summary of ROA vs BGP analysis for ca: '{}'",
+        _0
+    )]
     BgpAnalysisAnnouncements(Handle),
+
+    #[display(
+        fmt = "Show ROA centric summary of ROA vs BGP analysis for ca: '{}'",
+        _0
+    )]
+    BgpAnalysisRoas(Handle),
 
     // Show details for this CA
     #[display(fmt = "Show details for ca: '{}'", _0)]

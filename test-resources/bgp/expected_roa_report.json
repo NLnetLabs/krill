@@ -1,0 +1,51 @@
+[
+  {
+    "definition": {
+      "asn": 64496,
+      "prefix": "10.0.0.0/22",
+      "max_length": 23
+    },
+    "state": "authorising",
+    "authorizes": [
+      {
+        "asn": 64496,
+        "prefix": "10.0.0.0/22"
+      },
+      {
+        "asn": 64496,
+        "prefix": "10.0.2.0/23"
+      }
+    ],
+    "disallows": [
+      {
+        "asn": 64497,
+        "prefix": "10.0.0.0/22"
+      },
+      {
+        "asn": 64496,
+        "prefix": "10.0.0.0/24"
+      }
+    ]
+  },
+  {
+    "definition": {
+      "asn": 64497,
+      "prefix": "10.0.3.0/24"
+    },
+    "state": "stale"
+  },
+  {
+    "definition": {
+      "asn": 0,
+      "prefix": "10.0.4.0/24"
+    },
+    "state": "stale"
+  },
+  {
+    "definition": {
+      "asn": 64497,
+      "prefix": "10.0.0.0/21"
+    },
+    "state": "not_found"
+  }
+]

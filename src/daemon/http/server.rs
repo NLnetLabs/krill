@@ -1007,7 +1007,12 @@ async fn ca_routes_analysis(req: Request, path: &mut RequestPath, handle: Handle
                 .await
                 .ca_routes_bgp_analysis_announcements(&handle),
         ),
-        Some("roas") => unimplemented!(),
+        Some("roas") => render_json_res(
+            req.state()
+                .read()
+                .await
+                .ca_routes_bgp_analysis_roas(&handle),
+        ),
         _ => render_unknown_method(),
     }
 }

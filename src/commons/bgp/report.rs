@@ -423,6 +423,112 @@ impl fmt::Display for AnnouncementReport {
     }
 }
 
+//------------ RoaReport ---------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct RoaReport(Vec<RoaReportEntry>);
+
+impl fmt::Display for RoaReport {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for e in self.0.iter() {
+            writeln!(f, "{}", e)?;
+        }
+        Ok(())
+    }
+}
+
+impl From<BgpAnalysisReport> for RoaReport {
+    fn from(table: BgpAnalysisReport) -> Self {
+        let mut entries: Vec<RoaReportEntry> = vec![];
+
+        // for def in table.matching_defs(BgpAnalysisState::RoaStale) {
+        //     entries.push(AnnouncementReportEntry {
+        //         definition: def.clone(),
+        //         state: AnnouncementReportState::Stale,
+        //     })
+        // }
+
+        for entry in table.0 {
+            match &entry.state {
+                BgpAnalysisState::RoaAuthorizing => entries.push(RoaReportEntry {
+                    definition: entry.definition,
+                    state: RoaReportEntryState::Authorising,
+                    authorizes: entry.authorizes,
+                    disallows: entry.disallows,
+                }),
+                BgpAnalysisState::RoaDisallowing => entries.push(RoaReportEntry {
+                    definition: entry.definition,
+                    state: RoaReportEntryState::Disallowing,
+                    authorizes: entry.authorizes,
+                    disallows: entry.disallows,
+                }),
+                BgpAnalysisState::RoaStale => entries.push(RoaReportEntry {
+                    definition: entry.definition,
+                    state: RoaReportEntryState::Stale,
+                    authorizes: entry.authorizes,
+                    disallows: entry.disallows,
+                }),
+                BgpAnalysisState::RoaNoAnnouncementInfo => entries.push(RoaReportEntry {
+                    definition: entry.definition,
+                    state: RoaReportEntryState::NoInfo,
+                    authorizes: entry.authorizes,
+                    disallows: entry.disallows,
+                }),
+                BgpAnalysisState::AnnouncementNotFound => entries.push(RoaReportEntry {
+                    definition: entry.definition,
+                    state: RoaReportEntryState::NotFound,
+                    authorizes: entry.authorizes,
+                    disallows: entry.disallows,
+                }),
+                _ => {}
+            }
+        }
+
+        RoaReport(entries)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct RoaReportEntry {
+    definition: RoaDefinition,
+    state: RoaReportEntryState,
+    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
+    authorizes: Vec<Announcement>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
+    disallows: Vec<Announcement>,
+}
+
+impl fmt::Display for RoaReportEntry {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let state_str = match self.state {
+            RoaReportEntryState::Authorising
+            | RoaReportEntryState::Disallowing
+            | RoaReportEntryState::Stale => format!(
+                "roa authorizes {}, disallows {} announcements",
+                self.authorizes.len(),
+                self.disallows.len()
+            ),
+            RoaReportEntryState::NotFound => {
+                "announcement 'not found': not covered by your ROAs".to_string()
+            }
+            RoaReportEntryState::NoInfo => {
+                "ROA exists, but no bgp info currently available".to_string()
+            }
+        };
+        write!(f, "{}\t{}", self.definition, state_str)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RoaReportEntryState {
+    Authorising,
+    Disallowing,
+    Stale,
+    NotFound,
+    NoInfo,
+}
+
 //------------ Tests --------------------------------------------------------
 
 #[cfg(test)]
@@ -430,24 +536,44 @@ mod tests {
     use super::*;
 
     #[test]
-    fn print_bgp_report() {
-        let json = include_str!("../../../test-resources/bgp/expected_bgp_analyis_report.json");
+    fn print_bgp_report_full() {
+        let json = include_str!("../../../test-resources/bgp/expected_full_report.json");
         let report: BgpAnalysisReport = serde_json::from_str(json).unwrap();
 
-        let expected = include_str!("../../../test-resources/bgp/expected_bgp_analysis_report.txt");
-
-        print!("{}", report);
+        let expected = include_str!("../../../test-resources/bgp/expected_full_report.txt");
 
         assert_eq!(report.to_string(), expected);
     }
 
     #[test]
-    fn print_roa_table_summary() {
-        let json = include_str!("../../../test-resources/bgp/expected_bgp_analyis_report.json");
+    fn print_bgp_report_announcements() {
+        let json = include_str!("../../../test-resources/bgp/expected_full_report.json");
         let report: BgpAnalysisReport = serde_json::from_str(json).unwrap();
-        let summary: AnnouncementReport = report.into();
+        let report: AnnouncementReport = report.into();
 
-        let expected_text = include_str!("../../../test-resources/bgp/expected_summary.txt");
-        assert_eq!(summary.to_string(), expected_text);
+        let expected_json =
+            include_str!("../../../test-resources/bgp/expected_announcement_report.json");
+        let expected: AnnouncementReport = serde_json::from_str(expected_json).unwrap();
+
+        assert_eq!(report, expected);
+
+        let expected_text =
+            include_str!("../../../test-resources/bgp/expected_announcement_report.txt");
+        assert_eq!(report.to_string(), expected_text);
+    }
+
+    #[test]
+    fn print_bgp_report_roas() {
+        let json = include_str!("../../../test-resources/bgp/expected_full_report.json");
+        let report: BgpAnalysisReport = serde_json::from_str(json).unwrap();
+        let report: RoaReport = report.into();
+
+        let expected_json = include_str!("../../../test-resources/bgp/expected_roa_report.json");
+        let expected: RoaReport = serde_json::from_str(expected_json).unwrap();
+
+        assert_eq!(report, expected);
+
+        let expected_text = include_str!("../../../test-resources/bgp/expected_roa_report.txt");
+        assert_eq!(report.to_string(), expected_text);
     }
 }
