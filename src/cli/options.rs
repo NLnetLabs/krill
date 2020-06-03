@@ -140,7 +140,7 @@ impl Options {
                 .short("f")
                 .long(KRILL_CLI_FORMAT_ARG)
                 .value_name("type")
-                .help("Report format: none|json|text (default) |xml. Or set env: KRILL_CLI_FORMAT")
+                .help("Report format: none|json|text (default). Or set env: KRILL_CLI_FORMAT")
                 .required(false),
         )
         .arg(
