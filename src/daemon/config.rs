@@ -654,7 +654,7 @@ mod tests {
         env::set_var("KRILL_TEST", "1");
 
         let c = Config::read_config("./defaults/krill.conf").unwrap();
-        let expected_socket_addr = ([127, 0, 0, 1], 3000).into();
+        let expected_socket_addr: SocketAddr = ([127, 0, 0, 1], 3000).into();
         assert_eq!(c.socket_addr(), expected_socket_addr);
     }
 }
