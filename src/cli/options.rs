@@ -417,7 +417,7 @@ impl Options {
 
     fn make_cas_children_response_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub =
-            SubCommand::with_name("response").about("Get the RFC8183 response for a child.");
+            SubCommand::with_name("response").about("Show the RFC8183 Parent Response XML.");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -460,7 +460,7 @@ impl Options {
     }
 
     fn make_cas_parents_request_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("request").about("Show RFC8183 Child Request XML");
+        let mut sub = SubCommand::with_name("request").about("Show RFC8183 Child Request XML.");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -617,7 +617,7 @@ impl Options {
     }
 
     fn make_cas_repo_request_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("request").about("Show RFC8183 Publisher Request.");
+        let mut sub = SubCommand::with_name("request").about("Show RFC8183 Publisher Request XML.");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -764,7 +764,7 @@ impl Options {
 
     fn make_publishers_response_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("response")
-            .about("Show RFC8183 Repository Response for a publisher.");
+            .about("Show RFC8183 Repository Response XML.");
         sub = Self::add_general_args(sub);
         sub = Self::add_publisher_arg(sub);
         app.subcommand(sub)
