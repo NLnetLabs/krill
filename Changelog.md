@@ -6,6 +6,7 @@ for planned releases.
 ## Unreleased Changes
 
 * `krillc issues` fails with `Error: Unknown API method` (#248)
+* `krillc parents` help text refers incorrectly to publisher request instead of child request (#251)
 
 ## 0.6.2 Release 'That was even faster!'
 

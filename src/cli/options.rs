@@ -460,7 +460,7 @@ impl Options {
     }
 
     fn make_cas_parents_request_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("request").about("Show RFC8183 Publisher Request XML");
+        let mut sub = SubCommand::with_name("request").about("Show RFC8183 Child Request XML");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
