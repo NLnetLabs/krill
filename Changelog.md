@@ -9,6 +9,7 @@ for planned releases.
 * `krillc parents` help text refers incorrectly to publisher request instead of child request (#251)
 * Normalize request/response `krillc help` texts (#252)
 * `krillc` incorrectly reports XML as a supported output format (#253)
+* Inconsistent use of "cas" in `krillc bulk` subcommand summary text (#254)
 
 ## 0.6.2 Release 'That was even faster!'
 

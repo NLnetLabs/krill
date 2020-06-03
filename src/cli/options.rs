@@ -786,7 +786,7 @@ impl Options {
 
     fn make_bulk_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("bulk")
-            .about("Manually trigger refresh/republish/resync for all cas");
+            .about("Manually trigger refresh/republish/resync for all CAs.");
 
         let mut refresh = SubCommand::with_name("refresh")
             .about("Force that all CAs ask their parents for updated certificates");
@@ -810,7 +810,7 @@ impl Options {
     }
 
     fn make_health_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let health = SubCommand::with_name("health").about("Perform an authenticated health check");
+        let health = SubCommand::with_name("health").about("Perform an authenticated health check.");
         let health = Self::add_general_args(health);
         app.subcommand(health)
     }
