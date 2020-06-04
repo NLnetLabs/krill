@@ -62,6 +62,14 @@ impl RoaDefinition {
             true
         }
     }
+
+    /// Returns `true` if the this definition covers the other or vice versa. Only one of
+    /// the two should be included.
+    pub fn conflicts(&self, other: &RoaDefinition) -> bool {
+        &self.asn == &other.asn
+            && (self.prefix.matching_or_less_specific(&other.prefix)
+                || other.prefix.matching_or_less_specific(&self.prefix))
+    }
 }
 
 impl FromStr for RoaDefinition {
@@ -290,7 +298,7 @@ impl TypedPrefix {
         }
     }
 
-    pub fn covers(&self, other: &TypedPrefix) -> bool {
+    pub fn matching_or_less_specific(&self, other: &TypedPrefix) -> bool {
         self.matches_type(other)
             && self.prefix().min().le(&other.prefix().min())
             && self.prefix().max().ge(&other.prefix().max())
@@ -539,6 +547,8 @@ impl AuthorizationFmtError {
 mod tests {
     use super::*;
 
+    use crate::test::definition;
+
     #[test]
     fn parse_delta() {
         let delta = concat!(
@@ -552,11 +562,11 @@ mod tests {
 
         let expected = {
             let mut added = HashSet::new();
-            added.insert(RoaDefinition::from_str("192.168.0.0/16 => 64496").unwrap());
-            added.insert(RoaDefinition::from_str("192.168.1.0/24 => 64496").unwrap());
+            added.insert(definition("192.168.0.0/16 => 64496"));
+            added.insert(definition("192.168.1.0/24 => 64496"));
 
             let mut removed = HashSet::new();
-            removed.insert(RoaDefinition::from_str("192.168.3.0/24 => 64496").unwrap());
+            removed.insert(definition("192.168.3.0/24 => 64496"));
             RoaDefinitionUpdates::new(added, removed)
         };
 
@@ -575,12 +585,12 @@ mod tests {
 
     #[test]
     fn normalize_roa_definition_json() {
-        let def = RoaDefinition::from_str("192.168.0.0/16 => 64496").unwrap();
+        let def = definition("192.168.0.0/16 => 64496");
         let json = serde_json::to_string(&def).unwrap();
         let expected = "{\"asn\":64496,\"prefix\":\"192.168.0.0/16\"}";
         assert_eq!(json, expected);
 
-        let def = RoaDefinition::from_str("192.168.0.0/16-24 => 64496").unwrap();
+        let def = definition("192.168.0.0/16-24 => 64496");
         let json = serde_json::to_string(&def).unwrap();
         let expected = "{\"asn\":64496,\"prefix\":\"192.168.0.0/16\",\"max_length\":24}";
         assert_eq!(json, expected);
@@ -589,7 +599,7 @@ mod tests {
     #[test]
     fn serde_roa_definition() {
         fn parse_ser_de_print_definition(s: &str) {
-            let def = RoaDefinition::from_str(s).unwrap();
+            let def = definition(s);
             let ser = serde_json::to_string(&def).unwrap();
             let de = serde_json::from_str(&ser).unwrap();
             assert_eq!(def, de);
@@ -627,5 +637,21 @@ mod tests {
         invalid_max_length("192.168.0.0/16-33 => 64496");
         invalid_max_length("2001:db8::/32-31 => 64496");
         invalid_max_length("2001:db8::/32-129 => 64496");
+    }
+
+    #[test]
+    fn roa_conflicts() {
+        let covering = definition("192.168.0.0/16 => 64496");
+
+        let explicit_max_l = definition("192.168.0.0/16-16 => 64496");
+        let allowing_more_specific = definition("192.168.0.0/16-24 => 64496");
+        let more_specific = definition("192.168.3.0/24 => 64496");
+
+        let other_asn = definition("192.168.3.0/24 => 64497");
+
+        assert!(covering.conflicts(&explicit_max_l));
+        assert!(covering.conflicts(&more_specific));
+        assert!(covering.conflicts(&allowing_more_specific));
+        assert!(!covering.conflicts(&other_asn));
     }
 }

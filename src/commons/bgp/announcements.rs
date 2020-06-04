@@ -75,7 +75,7 @@ impl Announcement {
             let mut same_asn_found = false;
             for roa in covering {
                 if roa.asn() == self.asn {
-                    if roa.prefix().covers(&self.prefix)
+                    if roa.prefix().matching_or_less_specific(&self.prefix)
                         && roa.effective_max_length() >= self.prefix.addr_len()
                     {
                         return ValidatedAnnouncement {

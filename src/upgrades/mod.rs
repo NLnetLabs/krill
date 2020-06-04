@@ -10,6 +10,7 @@ use crate::commons::eventsourcing::{DiskKeyStore, KeyStore, KeyStoreError};
 use crate::commons::util::file;
 
 pub mod pre_0_6_0;
+pub mod roa_cleanup_0_7_0;
 
 //------------ UpgradeError --------------------------------------------------
 
