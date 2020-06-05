@@ -220,7 +220,7 @@ impl Options {
                     .long("data")
                     .short("d")
                     .value_name("path")
-                    .help("Override the default path (./data/) for the data directory (must end with slash).")
+                    .help("Override the default path (./data/) for the data directory (must end with '/').")
                     .required(false),
             )
         }
@@ -241,7 +241,7 @@ impl Options {
                 Arg::with_name("rsync")
                     .long("rsync")
                     .value_name("uri")
-                    .help("Specify the base rsync URI for your repository. must end with '/'.")
+                    .help("Specify the base rsync URI for your repository, must end with '/'.")
                     .required(true),
             )
         }

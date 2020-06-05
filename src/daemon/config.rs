@@ -400,15 +400,15 @@ impl Config {
         }
 
         if !self.rsync_base.to_string().ends_with('/') {
-            return Err(ConfigError::other("rsync base URI must end with a slash"));
+            return Err(ConfigError::other("rsync base URI must end with '/'"));
         }
 
         if !self.service_uri.ends_with('/') {
-            return Err(ConfigError::other("service URI must end with a slash"));
+            return Err(ConfigError::other("service URI must end with '/'"));
         }
 
         if !self.rrdp_service_uri().to_string().ends_with('/') {
-            return Err(ConfigError::other("service URI must end with a slash"));
+            return Err(ConfigError::other("service URI must end with '/'"));
         }
 
         if self.use_ta && !self.repo_enabled {
