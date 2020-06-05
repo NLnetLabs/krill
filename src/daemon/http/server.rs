@@ -28,7 +28,7 @@ use crate::daemon::config::Config;
 use crate::daemon::http::statics::statics;
 use crate::daemon::http::{tls, tls_keys, HttpResponse, Request, RequestPath, RoutingResult};
 use crate::daemon::krillserver::KrillServer;
-use crate::upgrades::upgrade;
+use crate::upgrades::{post_start_upgrade, pre_start_upgrade};
 
 //------------ State -----------------------------------------------------
 
@@ -36,13 +36,16 @@ pub type State = Arc<RwLock<KrillServer>>;
 
 pub async fn start(config: Config) -> Result<(), Error> {
     // Call upgrade, this will only do actual work if needed.
-    upgrade(&config.data_dir).map_err(|_| Error::custom("Could not upgrade Krill, check logs!"))?;
+    pre_start_upgrade(&config.data_dir)
+        .map_err(|_| Error::custom("Could not upgrade Krill, check logs!"))?;
 
     // Create the server, this will create the necessary data sub-directories if needed
-    let state = {
-        let krill = KrillServer::build(&config)?;
-        Arc::new(RwLock::new(krill))
-    };
+    let krill = KrillServer::build(&config)?;
+
+    post_start_upgrade(&config.data_dir, &krill)
+        .map_err(|_| Error::custom("Could not upgrade Krill, check logs!"))?;
+
+    let state = Arc::new(RwLock::new(krill));
 
     let service = make_service_fn(move |_| {
         let state = state.clone();

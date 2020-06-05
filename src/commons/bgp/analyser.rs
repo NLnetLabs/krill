@@ -66,7 +66,7 @@ impl BgpAnalyser {
         if seen.last_updated().is_none() {
             // nothing to analyse, just push all ROAs as 'no announcement info'
             for roa in roas {
-                entries.push(BgpAnalysisEntry::roa_no_announcement_info(roa.clone()));
+                entries.push(BgpAnalysisEntry::roa_no_announcement_info(*roa));
             }
         } else {
             let roa_tree = make_roa_tree(roas);
@@ -93,7 +93,7 @@ impl BgpAnalyser {
             for roa in roas {
                 let covered = validated_tree.matching_or_more_specific(&roa.prefix());
                 if covered.is_empty() {
-                    entries.push(BgpAnalysisEntry::roa_stale(roa.clone()))
+                    entries.push(BgpAnalysisEntry::roa_stale(*roa))
                 } else {
                     let allows: Vec<Announcement> = covered
                         .iter()
@@ -115,13 +115,9 @@ impl BgpAnalyser {
                         .collect();
 
                     if allows.is_empty() {
-                        entries.push(BgpAnalysisEntry::roa_disallowing(roa.clone(), disallows));
+                        entries.push(BgpAnalysisEntry::roa_disallowing(*roa, disallows));
                     } else {
-                        entries.push(BgpAnalysisEntry::roa_authorizing(
-                            roa.clone(),
-                            allows,
-                            disallows,
-                        ))
+                        entries.push(BgpAnalysisEntry::roa_authorizing(*roa, allows, disallows))
                     }
                 }
             }

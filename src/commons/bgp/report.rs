@@ -37,11 +37,9 @@ impl fmt::Display for BgpAnalysisReport {
         let entries = self.entries();
 
         let mut entry_map: HashMap<BgpAnalysisState, Vec<&BgpAnalysisEntry>> = HashMap::new();
-        for entry in entries.into_iter() {
+        for entry in entries.iter() {
             let state = entry.state();
-            if !entry_map.contains_key(&state) {
-                entry_map.insert(state, vec![]);
-            }
+            entry_map.entry(state).or_insert_with(|| vec![]);
             entry_map.get_mut(&state).unwrap().push(entry);
         }
 
@@ -373,40 +371,40 @@ impl From<BgpAnalysisReport> for AnnouncementReport {
         let mut entries: Vec<AnnouncementReportEntry> = vec![];
         for def in table.matching_defs(BgpAnalysisState::AnnouncementValid) {
             entries.push(AnnouncementReportEntry {
-                definition: def.clone(),
+                definition: *def,
                 state: AnnouncementReportState::Valid,
             })
         }
 
         for def in table.matching_defs(BgpAnalysisState::AnnouncementInvalidAsn) {
             entries.push(AnnouncementReportEntry {
-                definition: def.clone(),
+                definition: *def,
                 state: AnnouncementReportState::InvalidAsn,
             })
         }
 
         for def in table.matching_defs(BgpAnalysisState::AnnouncementInvalidLength) {
             entries.push(AnnouncementReportEntry {
-                definition: def.clone(),
+                definition: *def,
                 state: AnnouncementReportState::InvalidLength,
             })
         }
 
         for def in table.matching_defs(BgpAnalysisState::AnnouncementNotFound) {
             entries.push(AnnouncementReportEntry {
-                definition: def.clone(),
+                definition: *def,
                 state: AnnouncementReportState::NotFound,
             })
         }
         for def in table.matching_defs(BgpAnalysisState::RoaStale) {
             entries.push(AnnouncementReportEntry {
-                definition: def.clone(),
+                definition: *def,
                 state: AnnouncementReportState::Stale,
             })
         }
         for def in table.matching_defs(BgpAnalysisState::RoaNoAnnouncementInfo) {
             entries.push(AnnouncementReportEntry {
-                definition: def.clone(),
+                definition: *def,
                 state: AnnouncementReportState::NoInfo,
             })
         }

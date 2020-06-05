@@ -3,6 +3,27 @@
 Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
 for planned releases.
 
+## To be released
+
+On upgrade Krill will clean up redundant authorizations for ROAs. For example if the following
+authorizations would exist:
+
+ 192.168.0.0/16      => 64496
+ 192.168.0.0/24      => 64496
+ 192.168.0.0/16-24   => 64496
+ 
+Then only this last authorization needs to be kept, the first two are also covered by it.
+
+Before this release it was also possible to have the same authorization with, and without, using
+an explicit max length. For example:
+
+ 192.168.0.0/16      => 64496
+ 192.168.0.0/16-16   => 64496
+
+Now Krill will *always* use an explicit max length in the definitions. Not however, that it is
+still best practice to use the same max length as the announced prefix length, so Krill will just
+set this by default if it is not specified.
+
 ## 0.6.0 Release 'Go with the Flow'
 
 The most visible change in this release is that the embedded Lagosta UI now includes French, Greek

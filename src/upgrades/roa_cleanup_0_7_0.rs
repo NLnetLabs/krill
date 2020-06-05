@@ -1,15 +1,10 @@
 use std::collections::HashSet;
-use std::sync::{Arc, RwLock};
 
 use crate::commons::api::{RoaDefinition, RoaDefinitionUpdates};
 use crate::commons::bgp::make_roa_tree;
 use crate::daemon::krillserver::KrillServer;
 
-pub fn roa_cleanup(server: &Arc<RwLock<KrillServer>>) -> Result<(), RoaCleanupError> {
-    let server = server.read().unwrap();
-
-    // check version of store
-
+pub fn roa_cleanup(server: &KrillServer) -> Result<(), RoaCleanupError> {
     for ca in server.cas().cas() {
         let roas = server.ca_routes_show(ca.handle())?;
 
@@ -17,8 +12,6 @@ pub fn roa_cleanup(server: &Arc<RwLock<KrillServer>>) -> Result<(), RoaCleanupEr
             server.ca_routes_update(ca.handle().clone(), updates)?;
         }
     }
-
-    // set version of store
 
     Ok(())
 }
@@ -74,6 +67,8 @@ fn clean(roas: Vec<RoaDefinition>) -> Option<RoaDefinitionUpdates> {
     }
 }
 
+#[derive(Debug, Display)]
+#[display(fmt = "{}", _0)]
 pub struct RoaCleanupError(String);
 
 impl From<crate::commons::error::Error> for RoaCleanupError {

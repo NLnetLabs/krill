@@ -66,7 +66,7 @@ impl RoaDefinition {
     /// Returns `true` if the this definition covers the other or vice versa. Only one of
     /// the two should be included.
     pub fn conflicts(&self, other: &RoaDefinition) -> bool {
-        &self.asn == &other.asn
+        self.asn == other.asn
             && (self.prefix.matching_or_less_specific(&other.prefix)
                 || other.prefix.matching_or_less_specific(&self.prefix))
     }

@@ -65,7 +65,7 @@ impl Announcement {
         let covering = roas.matching_or_less_specific(&self.prefix);
         if covering.is_empty() {
             ValidatedAnnouncement {
-                announcement: self.clone(),
+                announcement: *self,
                 validity: AnnouncementValidity::NotFound,
                 authorizing: None,
                 disallowing: vec![],
@@ -79,16 +79,16 @@ impl Announcement {
                         && roa.effective_max_length() >= self.prefix.addr_len()
                     {
                         return ValidatedAnnouncement {
-                            announcement: self.clone(),
+                            announcement: *self,
                             validity: AnnouncementValidity::Valid,
-                            authorizing: Some(roa.clone()),
+                            authorizing: Some(*roa),
                             disallowing: vec![],
                         };
                     } else {
                         same_asn_found = true;
                     }
                 }
-                invalidating.push(roa.clone());
+                invalidating.push(*roa);
             }
 
             let validity = if same_asn_found {
@@ -98,7 +98,7 @@ impl Announcement {
             };
 
             ValidatedAnnouncement {
-                announcement: self.clone(),
+                announcement: *self,
                 validity,
                 authorizing: None,
                 disallowing: invalidating,
@@ -185,7 +185,7 @@ impl Announcements {
         self.last_updated = Some(Time::now());
     }
 
-    pub fn equivalent(&self, announcements: &Vec<Announcement>) -> bool {
+    pub fn equivalent(&self, announcements: &[Announcement]) -> bool {
         let current_set: HashSet<&Announcement> = HashSet::from_iter(self.seen.all().into_iter());
         let new_set: HashSet<&Announcement> = HashSet::from_iter(announcements.iter());
         current_set == new_set
