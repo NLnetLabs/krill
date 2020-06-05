@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::{fmt, fs, io};
 
 use crate::commons::api::Handle;
-use crate::commons::eventsourcing::{DiskKeyStore, KeyStore, KeyStoreError};
+use crate::commons::eventsourcing::{DiskKeyStore, KeyStoreError};
 use crate::commons::util::file;
 
 pub mod pre_0_6_0;
@@ -63,8 +63,8 @@ impl From<io::Error> for UpgradeError {
 
 /// Implement this for automatic upgrades to key stores
 pub trait UpgradeStore {
-    fn needs_migrate<S: KeyStore>(&self, store: &S) -> Result<bool, UpgradeError>;
-    fn migrate<S: KeyStore>(&self, store: &S) -> Result<(), UpgradeError>;
+    fn needs_migrate(&self, store: &DiskKeyStore) -> Result<bool, UpgradeError>;
+    fn migrate(&self, store: &DiskKeyStore) -> Result<(), UpgradeError>;
 }
 
 /// Should be called when Krill starts

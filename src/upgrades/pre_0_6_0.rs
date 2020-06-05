@@ -12,7 +12,8 @@ use crate::commons::api::{
     StoredEffect,
 };
 use crate::commons::eventsourcing::{
-    Aggregate, KeyStore, KeyStoreError, KeyStoreVersion, StoredCommand, StoredValueInfo,
+    Aggregate, DiskKeyStore, KeyStore, KeyStoreError, KeyStoreVersion, StoredCommand,
+    StoredValueInfo,
 };
 use crate::commons::remote::rfc8183::ServiceUri;
 use crate::commons::util::softsigner::OpenSslSigner;
@@ -25,7 +26,7 @@ use crate::upgrades::{UpgradeError, UpgradeStore};
 pub struct UpgradeCas;
 
 impl UpgradeStore for UpgradeCas {
-    fn needs_migrate<S: KeyStore>(&self, store: &S) -> Result<bool, UpgradeError> {
+    fn needs_migrate(&self, store: &DiskKeyStore) -> Result<bool, UpgradeError> {
         match store.get_version() {
             Ok(version) => match version {
                 KeyStoreVersion::V0_6 => Ok(false),
@@ -38,7 +39,7 @@ impl UpgradeStore for UpgradeCas {
         }
     }
 
-    fn migrate<S: KeyStore>(&self, store: &S) -> Result<(), UpgradeError> {
+    fn migrate(&self, store: &DiskKeyStore) -> Result<(), UpgradeError> {
         if self.needs_migrate(store)? {
             // For each aggregate
             for ca_handle in store.aggregates() {
@@ -56,12 +57,24 @@ impl UpgradeStore for UpgradeCas {
                     if let Some(previous) = store.get::<PreviousCommand>(&ca_handle, &old_key)? {
                         // Convert to new command, save it, remove the old command and increase the sequence
                         let previous = previous.with_handle(ca_handle.clone());
-                        let command = previous.into_new_stored_ca_command(seq)?;
-                        last_update = command.time();
-                        store.store_command(command)?;
-                        store.drop(&ca_handle, &old_key)?;
-                        last_command = seq;
-                        seq += 1;
+                        match previous.into_new_stored_ca_command(seq) {
+                            Ok(command) => {
+                                last_update = command.time();
+                                store.store_command(command)?;
+                                store.drop(&ca_handle, &old_key)?;
+                                last_command = seq;
+                                seq += 1;
+                            }
+                            Err(e) => {
+                                error!(
+                                    "Could not migrate command {} for CA {}, got error: {}",
+                                    old_key.to_string_lossy().to_string(),
+                                    ca_handle,
+                                    e
+                                );
+                                return Err(e);
+                            }
+                        }
                     }
 
                     if seq % 100 == 0 {
@@ -109,7 +122,7 @@ impl UpgradeStore for UpgradeCas {
 pub struct UpgradePubd;
 
 impl UpgradeStore for UpgradePubd {
-    fn needs_migrate<S: KeyStore>(&self, store: &S) -> Result<bool, UpgradeError> {
+    fn needs_migrate(&self, store: &DiskKeyStore) -> Result<bool, UpgradeError> {
         if store.aggregates().is_empty() {
             Ok(false)
         } else {
@@ -126,7 +139,7 @@ impl UpgradeStore for UpgradePubd {
         }
     }
 
-    fn migrate<S: KeyStore>(&self, store: &S) -> Result<(), UpgradeError> {
+    fn migrate(&self, store: &DiskKeyStore) -> Result<(), UpgradeError> {
         if self.needs_migrate(store)? {
             // For each aggregate
             for pubd_handle in store.aggregates() {
@@ -418,7 +431,7 @@ impl PreviousCommand {
         let child = Self::extract_handle(&s[lead.len()..lead_rcn_start])?;
         let rcn = ResourceClassName::from(&s[lead_rcn_start + lead_rcn.len()..lead_ki_start]);
 
-        let ki_str = &s[lead_ki_start + lead_ki.len()..s.len() - 1];
+        let ki_str = &s[lead_ki_start + lead_ki.len()..s.len() - 2];
         let ki = KeyIdentifier::from_str(ki_str).map_err(|_| {
             UpgradeError::Custom(format!("Cannot parse key identifier: {}", ki_str))
         })?;
