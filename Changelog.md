@@ -3,8 +3,14 @@
 Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
 for planned releases.
 
-## Unreleased Changes
+## 0.6.3 Release 'Play it again, Sam'
 
+This release addresses an issue where users with a CA that has delegated children, which in turn
+had performed a key roll over in the past, could not upgrade to Release 0.6.2.
+
+Users who already successfully upgraded to Release 0.6.2 do not need to upgrade urgently. This
+release includes a number of fixes for minor issues, which will also be included in the 0.7.0
+Release which is due in 2-4 weeks:
 * `krillc issues` fails with `Error: Unknown API method` (#248)
 * `krillc parents` help text refers incorrectly to publisher request instead of child request (#251)
 * Normalize request/response `krillc help` texts (#252)
