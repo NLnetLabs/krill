@@ -29,6 +29,10 @@ impl RouteAuthorization {
     pub fn new(definition: RoaDefinition) -> Self {
         RouteAuthorization(definition)
     }
+
+    pub fn explicit_length(self) -> Self {
+        RouteAuthorization(self.0.explicit_max_length())
+    }
 }
 
 impl AsRef<RoaDefinition> for RouteAuthorization {

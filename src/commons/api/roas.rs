@@ -33,6 +33,14 @@ impl RoaDefinition {
         }
     }
 
+    pub fn explicit_max_length(self) -> Self {
+        RoaDefinition {
+            asn: self.asn,
+            prefix: self.prefix,
+            max_length: Some(self.effective_max_length()),
+        }
+    }
+
     pub fn asn(&self) -> AsNumber {
         self.asn
     }
@@ -63,12 +71,11 @@ impl RoaDefinition {
         }
     }
 
-    /// Returns `true` if the this definition covers the other or vice versa. Only one of
-    /// the two should be included.
-    pub fn conflicts(&self, other: &RoaDefinition) -> bool {
+    /// Returns `true` if the this definition includes the other definition.
+    pub fn includes(&self, other: &RoaDefinition) -> bool {
         self.asn == other.asn
-            && (self.prefix.matching_or_less_specific(&other.prefix)
-                || other.prefix.matching_or_less_specific(&self.prefix))
+            && self.prefix.matching_or_less_specific(&other.prefix)
+            && self.effective_max_length() >= other.effective_max_length()
     }
 }
 
@@ -640,18 +647,21 @@ mod tests {
     }
 
     #[test]
-    fn roa_conflicts() {
-        let covering = definition("192.168.0.0/16 => 64496");
+    fn roa_includes() {
+        let covering = definition("192.168.0.0/16-20 => 64496");
 
-        let explicit_max_l = definition("192.168.0.0/16-16 => 64496");
+        let included_no_ml = definition("192.168.0.0/16 => 64496");
+        let included_more_specific = definition("192.168.0.0/20 => 64496");
+
         let allowing_more_specific = definition("192.168.0.0/16-24 => 64496");
         let more_specific = definition("192.168.3.0/24 => 64496");
-
         let other_asn = definition("192.168.3.0/24 => 64497");
 
-        assert!(covering.conflicts(&explicit_max_l));
-        assert!(covering.conflicts(&more_specific));
-        assert!(covering.conflicts(&allowing_more_specific));
-        assert!(!covering.conflicts(&other_asn));
+        assert!(covering.includes(&included_no_ml));
+        assert!(covering.includes(&included_more_specific));
+
+        assert!(!covering.includes(&more_specific));
+        assert!(!covering.includes(&allowing_more_specific));
+        assert!(!covering.includes(&other_asn));
     }
 }

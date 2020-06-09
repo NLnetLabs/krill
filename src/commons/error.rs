@@ -189,16 +189,25 @@ pub enum Error {
     CaChildUpdateOneThing(Handle, ChildHandle),
 
     // RouteAuthorizations - ROAs
-    #[display(fmt = "Cannot remove unknown ROA '{}' from CA '{}'", _0, _1)]
+    #[display(fmt = "Cannot remove unknown ROA '{}'", _1)]
     CaAuthorizationUnknown(Handle, RouteAuthorization),
 
-    #[display(fmt = "Duplicate ROA '{}' for CA '{}'", _1, _0)]
+    #[display(fmt = "ROA '{}' already present", _1)]
     CaAuthorizationDuplicate(Handle, RouteAuthorization),
 
-    #[display(fmt = "Invalid max length in ROA: '{}' for CA '{}", _1, _0)]
+    #[display(fmt = "ROA '{}' was not added because it is redundant", _1)]
+    CaAuthorizationRedundant(Handle, RouteAuthorization),
+
+    #[display(
+        fmt = "ROA '{}' was not added because it would make existing ROAs redundant",
+        _1
+    )]
+    CaAuthorizationIncludes(Handle, RouteAuthorization),
+
+    #[display(fmt = "Invalid max length in ROA: '{}'", _1)]
     CaAuthorizationInvalidMaxlength(Handle, RouteAuthorization),
 
-    #[display(fmt = "Prefix in ROA '{}' not held by CA '{}'.", _1, _0)]
+    #[display(fmt = "Prefix in ROA '{}' not held by you", _1)]
     CaAuthorizationNotEntitled(Handle, RouteAuthorization),
 
     //-----------------------------------------------------------------
@@ -519,6 +528,18 @@ impl Error {
                     .with_auth(auth)
             }
 
+            Error::CaAuthorizationRedundant(ca, auth) => {
+                ErrorResponse::new("ca-roa-redundant", &self)
+                    .with_ca(ca)
+                    .with_auth(auth)
+            }
+
+            Error::CaAuthorizationIncludes(ca, auth) => {
+                ErrorResponse::new("ca-roa-includes", &self)
+                    .with_ca(ca)
+                    .with_auth(auth)
+            }
+
             Error::CaAuthorizationInvalidMaxlength(ca, auth) => {
                 ErrorResponse::new("ca-roa-invalid-max-length", &self)
                     .with_ca(ca)
@@ -611,7 +632,7 @@ mod tests {
         fn verify(expected_json: &str, e: Error) {
             let actual = e.to_error_response();
             let expected: ErrorResponse = serde_json::from_str(expected_json).unwrap();
-            assert_eq!(expected, actual);
+            assert_eq!(actual, expected);
 
             // check that serde works too
             let serialized = serde_json::to_string(&actual).unwrap();
@@ -625,24 +646,24 @@ mod tests {
 
         let io_err = io::Error::new(io::ErrorKind::Other, "can't read file");
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/sys-io.json"),
+            include_str!("../../test-resources/api/regressions/errors/sys-io.json"),
             Error::IoError(io_err),
         );
 
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/sys-store.json"),
+            include_str!("../../test-resources/api/regressions/errors/sys-store.json"),
             Error::AggregateStoreError(AggregateStoreError::InitError),
         );
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/sys-signer.json"),
+            include_str!("../../test-resources/api/regressions/errors/sys-signer.json"),
             Error::SignerError("signer issue".to_string()),
         );
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/sys-https.json"),
+            include_str!("../../test-resources/api/regressions/errors/sys-https.json"),
             Error::HttpsSetup("can't find pem file".to_string()),
         );
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/sys-http-client.json"),
+            include_str!("../../test-resources/api/regressions/errors/sys-http-client.json"),
             Error::HttpClientError(httpclient::Error::Forbidden),
         );
 
@@ -654,19 +675,15 @@ mod tests {
             .err()
             .unwrap();
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/api-json.json"),
+            include_str!("../../test-resources/api/regressions/errors/api-json.json"),
             Error::JsonError(json_err),
         );
         verify(
-            include_str!(
-                "../../test-resources/api/regressions/v0_6_0/errors/api-unknown-method.json"
-            ),
+            include_str!("../../test-resources/api/regressions/errors/api-unknown-method.json"),
             Error::ApiUnknownMethod,
         );
         verify(
-            include_str!(
-                "../../test-resources/api/regressions/v0_6_0/errors/api-unknown-resource.json"
-            ),
+            include_str!("../../test-resources/api/regressions/errors/api-unknown-resource.json"),
             Error::ApiUnknownResource,
         );
 
@@ -674,7 +691,7 @@ mod tests {
         // Repository Issues
         //-----------------------------------------------------------------
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/repo-not-set.json"),
+            include_str!("../../test-resources/api/regressions/errors/repo-not-set.json"),
             Error::RepoNotSet,
         );
 
@@ -682,32 +699,26 @@ mod tests {
         // Publisher Issues
         //-----------------------------------------------------------------
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/pub-unknown.json"),
+            include_str!("../../test-resources/api/regressions/errors/pub-unknown.json"),
             Error::PublisherUnknown(publisher.clone()),
         );
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/pub-duplicate.json"),
+            include_str!("../../test-resources/api/regressions/errors/pub-duplicate.json"),
             Error::PublisherDuplicate(publisher),
         );
         verify(
-            include_str!(
-                "../../test-resources/api/regressions/v0_6_0/errors/pub-outside-jail.json"
-            ),
+            include_str!("../../test-resources/api/regressions/errors/pub-outside-jail.json"),
             Error::PublisherUriOutsideBase(
                 "rsync://somehost/module/folder".to_string(),
                 "rsync://otherhost/module/folder".to_string(),
             ),
         );
         verify(
-            include_str!(
-                "../../test-resources/api/regressions/v0_6_0/errors/pub-uri-no-slash.json"
-            ),
+            include_str!("../../test-resources/api/regressions/errors/pub-uri-no-slash.json"),
             Error::PublisherBaseUriNoSlash("rsync://host/module/folder".to_string()),
         );
         verify(
-            include_str!(
-                "../../test-resources/api/regressions/v0_6_0/errors/pub-no-embedded-repo.json"
-            ),
+            include_str!("../../test-resources/api/regressions/errors/pub-no-embedded-repo.json"),
             Error::PublisherNoEmbeddedRepo,
         );
 
@@ -715,23 +726,21 @@ mod tests {
         // RFC 8181
         //-----------------------------------------------------------------
         verify(
-            include_str!(
-                "../../test-resources/api/regressions/v0_6_0/errors/rfc8181-validation.json"
-            ),
+            include_str!("../../test-resources/api/regressions/errors/rfc8181-validation.json"),
             Error::Rfc8181Validation(ValidationError),
         );
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/rfc8181-decode.json"),
+            include_str!("../../test-resources/api/regressions/errors/rfc8181-decode.json"),
             Error::Rfc8181Decode("could not parse CMS".to_string()),
         );
         verify(
             include_str!(
-                "../../test-resources/api/regressions/v0_6_0/errors/rfc8181-protocol-message.json"
+                "../../test-resources/api/regressions/errors/rfc8181-protocol-message.json"
             ),
             Error::Rfc8181MessageError(rfc8181::MessageError::InvalidVersion),
         );
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/rfc8181-delta.json"),
+            include_str!("../../test-resources/api/regressions/errors/rfc8181-delta.json"),
             Error::Rfc8181Delta(PublicationDeltaError::ObjectAlreadyPresent(
                 uri::Rsync::from_str("rsync://host/module/file.cer").unwrap(),
             )),
@@ -741,187 +750,184 @@ mod tests {
         // CA Issues (label: ca-*)
         //-----------------------------------------------------------------
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/ca-duplicate.json"),
+            include_str!("../../test-resources/api/regressions/errors/ca-duplicate.json"),
             Error::CaDuplicate(ca.clone()),
         );
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/ca-unknown.json"),
+            include_str!("../../test-resources/api/regressions/errors/ca-unknown.json"),
             Error::CaUnknown(ca.clone()),
         );
 
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/ca-repo-same.json"),
+            include_str!("../../test-resources/api/regressions/errors/ca-repo-same.json"),
             Error::CaRepoInUse(ca.clone()),
         );
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/ca-repo-issue.json"),
+            include_str!("../../test-resources/api/regressions/errors/ca-repo-issue.json"),
             Error::CaRepoIssue(ca.clone(), "cannot connect".to_string()),
         );
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/ca-repo-response-invalid-xml.json"),
+            include_str!(
+                "../../test-resources/api/regressions/errors/ca-repo-response-invalid-xml.json"
+            ),
             Error::CaRepoResponseInvalidXml(ca.clone(), "expected some tag".to_string()),
         );
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/ca-repo-response-wrong-xml.json"),
+            include_str!(
+                "../../test-resources/api/regressions/errors/ca-repo-response-wrong-xml.json"
+            ),
             Error::CaRepoResponseWrongXml(ca.clone()),
         );
 
         verify(
-            include_str!(
-                "../../test-resources/api/regressions/v0_6_0/errors/ca-parent-duplicate.json"
-            ),
+            include_str!("../../test-resources/api/regressions/errors/ca-parent-duplicate.json"),
             Error::CaParentDuplicate(ca.clone(), parent.clone()),
         );
         verify(
-            include_str!(
-                "../../test-resources/api/regressions/v0_6_0/errors/ca-parent-unknown.json"
-            ),
+            include_str!("../../test-resources/api/regressions/errors/ca-parent-unknown.json"),
             Error::CaParentUnknown(ca.clone(), parent.clone()),
         );
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/ca-parent-issue.json"),
+            include_str!("../../test-resources/api/regressions/errors/ca-parent-issue.json"),
             Error::CaParentIssue(ca.clone(), parent, "connection refused".to_string()),
         );
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/ca-parent-response-invalid-xml.json"),
+            include_str!(
+                "../../test-resources/api/regressions/errors/ca-parent-response-invalid-xml.json"
+            ),
             Error::CaParentResponseInvalidXml(ca.clone(), "expected something".to_string()),
         );
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/ca-parent-response-wrong-xml.json"),
+            include_str!(
+                "../../test-resources/api/regressions/errors/ca-parent-response-wrong-xml.json"
+            ),
             Error::CaParentResponseWrongXml(ca.clone()),
         );
 
         verify(
-            include_str!(
-                "../../test-resources/api/regressions/v0_6_0/errors/rfc6492-protocol.json"
-            ),
+            include_str!("../../test-resources/api/regressions/errors/rfc6492-protocol.json"),
             Error::Rfc6492(rfc6492::Error::InvalidVersion),
         );
         verify(
-            include_str!(
-                "../../test-resources/api/regressions/v0_6_0/errors/rfc6492-invalid-csr.json"
-            ),
+            include_str!("../../test-resources/api/regressions/errors/rfc6492-invalid-csr.json"),
             Error::Rfc6492InvalidCsrSent("invalid signature".to_string()),
         );
         verify(
             include_str!(
-                "../../test-resources/api/regressions/v0_6_0/errors/rfc6492-invalid-signature.json"
+                "../../test-resources/api/regressions/errors/rfc6492-invalid-signature.json"
             ),
             Error::Rfc6492SignatureInvalid,
         );
 
         verify(
-            include_str!(
-                "../../test-resources/api/regressions/v0_6_0/errors/ca-child-duplicate.json"
-            ),
+            include_str!("../../test-resources/api/regressions/errors/ca-child-duplicate.json"),
             Error::CaChildDuplicate(ca.clone(), child.clone()),
         );
         verify(
-            include_str!(
-                "../../test-resources/api/regressions/v0_6_0/errors/ca-child-unknown.json"
-            ),
+            include_str!("../../test-resources/api/regressions/errors/ca-child-unknown.json"),
             Error::CaChildUnknown(ca.clone(), child.clone()),
         );
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/ca-child-resources-required.json"),
+            include_str!(
+                "../../test-resources/api/regressions/errors/ca-child-resources-required.json"
+            ),
             Error::CaChildMustHaveResources(ca.clone(), child.clone()),
         );
         verify(
             include_str!(
-                "../../test-resources/api/regressions/v0_6_0/errors/ca-child-resources-extra.json"
+                "../../test-resources/api/regressions/errors/ca-child-resources-extra.json"
             ),
             Error::CaChildExtraResources(ca.clone(), child.clone()),
         );
         verify(
-            include_str!(
-                "../../test-resources/api/regressions/v0_6_0/errors/ca-child-unauthorized.json"
-            ),
+            include_str!("../../test-resources/api/regressions/errors/ca-child-unauthorized.json"),
             Error::CaChildUnauthorized(ca.clone(), child),
         );
 
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/ca-roa-unknown.json"),
+            include_str!("../../test-resources/api/regressions/errors/ca-roa-unknown.json"),
             Error::CaAuthorizationUnknown(ca.clone(), auth),
         );
         verify(
-            include_str!(
-                "../../test-resources/api/regressions/v0_6_0/errors/ca-roa-duplicate.json"
-            ),
+            include_str!("../../test-resources/api/regressions/errors/ca-roa-duplicate.json"),
             Error::CaAuthorizationDuplicate(ca.clone(), auth),
         );
         verify(
+            include_str!("../../test-resources/api/regressions/errors/ca-roa-redundant.json"),
+            Error::CaAuthorizationRedundant(ca.clone(), auth),
+        );
+        verify(
+            include_str!("../../test-resources/api/regressions/errors/ca-roa-includes.json"),
+            Error::CaAuthorizationIncludes(ca.clone(), auth),
+        );
+
+        verify(
             include_str!(
-                "../../test-resources/api/regressions/v0_6_0/errors/ca-roa-invalid-max-length.json"
+                "../../test-resources/api/regressions/errors/ca-roa-invalid-max-length.json"
             ),
             Error::CaAuthorizationInvalidMaxlength(ca.clone(), auth),
         );
         verify(
-            include_str!(
-                "../../test-resources/api/regressions/v0_6_0/errors/ca-roa-not-entitled.json"
-            ),
+            include_str!("../../test-resources/api/regressions/errors/ca-roa-not-entitled.json"),
             Error::CaAuthorizationNotEntitled(ca, auth),
         );
 
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/key-re-use.json"),
+            include_str!("../../test-resources/api/regressions/errors/key-re-use.json"),
             Error::KeyUseAttemptReuse,
         );
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/key-no-new.json"),
+            include_str!("../../test-resources/api/regressions/errors/key-no-new.json"),
             Error::KeyUseNoNewKey,
         );
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/key-no-current.json"),
+            include_str!("../../test-resources/api/regressions/errors/key-no-current.json"),
             Error::KeyUseNoCurrentKey,
         );
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/key-no-old.json"),
+            include_str!("../../test-resources/api/regressions/errors/key-no-old.json"),
             Error::KeyUseNoOldKey,
         );
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/key-no-cert.json"),
+            include_str!("../../test-resources/api/regressions/errors/key-no-cert.json"),
             Error::KeyUseNoIssuedCert,
         );
         let ki = test_id_certificate()
             .subject_public_key_info()
             .key_identifier();
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/key-no-match.json"),
+            include_str!("../../test-resources/api/regressions/errors/key-no-match.json"),
             Error::KeyUseNoMatch(ki),
         );
 
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/rc-unknown.json"),
+            include_str!("../../test-resources/api/regressions/errors/rc-unknown.json"),
             Error::ResourceClassUnknown(ResourceClassName::from("RC0")),
         );
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/rc-resources.json"),
+            include_str!("../../test-resources/api/regressions/errors/rc-resources.json"),
             Error::ResourceSetError(ResourceSetError::Mix),
         );
         verify(
-            include_str!(
-                "../../test-resources/api/regressions/v0_6_0/errors/rc-missing-resources.json"
-            ),
+            include_str!("../../test-resources/api/regressions/errors/rc-missing-resources.json"),
             Error::MissingResources,
         );
 
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/ta-not-allowed.json"),
+            include_str!("../../test-resources/api/regressions/errors/ta-not-allowed.json"),
             Error::TaNotAllowed,
         );
         verify(
-            include_str!(
-                "../../test-resources/api/regressions/v0_6_0/errors/ta-name-reserved.json"
-            ),
+            include_str!("../../test-resources/api/regressions/errors/ta-name-reserved.json"),
             Error::TaNameReserved,
         );
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/ta-initialised.json"),
+            include_str!("../../test-resources/api/regressions/errors/ta-initialised.json"),
             Error::TaAlreadyInitialised,
         );
 
         verify(
-            include_str!("../../test-resources/api/regressions/v0_6_0/errors/general-error.json"),
+            include_str!("../../test-resources/api/regressions/errors/general-error.json"),
             Error::custom("some unlikely corner case"),
         );
 
@@ -929,7 +935,7 @@ mod tests {
         //        for e in errs {
         //            let error_response = e.to_error_response();
         //
-        //            let path = format!("test-resources/api/regressions/v0_6_0/errors/{}.json", error_response.label());
+        //            let path = format!("test-resources/api/regressions/errors/{}.json", error_response.label());
         //            let path = PathBuf::from(&path);
         //
         //            file::save_json(&error_response, &path).unwrap();

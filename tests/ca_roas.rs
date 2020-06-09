@@ -33,9 +33,9 @@ async fn ca_roas() {
     }
 
     // Add some Route Authorizations
-    let route_1 = RoaDefinition::from_str("10.0.0.0/24 => 64496").unwrap();
+    let route_1 = RoaDefinition::from_str("10.0.0.0/16-24 => 64496").unwrap();
     let route_2 = RoaDefinition::from_str("2001:DB8::/32-48 => 64496").unwrap();
-    let route_3 = RoaDefinition::from_str("192.168.0.0/24 => 64496").unwrap();
+    let route_3 = RoaDefinition::from_str("192.168.0.0/20-24 => 64496").unwrap();
 
     let crl_file = ".crl";
     let mft_file = ".mft";
@@ -87,9 +87,27 @@ async fn ca_roas() {
     rc_state_becomes_active(&child).await;
     will_publish_objects(&child, &[crl_file, mft_file, route3_file]).await;
 
-    let route_invalid_length = RoaDefinition::from_str("10.0.0.0/24-33 => 64496").unwrap();
+    // Do not allow adding a ROA with invalid length
+    let route_invalid_length = RoaDefinition::from_str("192.168.0.0/24-33 => 64496").unwrap();
     let mut updates = RoaDefinitionUpdates::empty();
     updates.add(route_invalid_length);
+    ca_route_authorizations_update_expect_error(&child, updates).await;
+
+    // Do not allow adding a ROA that is duplicate
+    let mut updates = RoaDefinitionUpdates::empty();
+    updates.add(route_3);
+    ca_route_authorizations_update_expect_error(&child, updates).await;
+
+    // Do not allow adding a ROA that is made redundant by an existing ROA
+    let route_redundant = RoaDefinition::from_str("192.168.0.0/24 => 64496").unwrap();
+    let mut updates = RoaDefinitionUpdates::empty();
+    updates.add(route_redundant);
+    ca_route_authorizations_update_expect_error(&child, updates).await;
+
+    // Do not allow adding a ROA that would make an existing ROA redundant
+    let route_including = RoaDefinition::from_str("192.168.0.0/16-24 => 64496").unwrap();
+    let mut updates = RoaDefinitionUpdates::empty();
+    updates.add(route_including);
     ca_route_authorizations_update_expect_error(&child, updates).await;
 
     let _ = fs::remove_dir_all(dir);

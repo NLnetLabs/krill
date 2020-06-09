@@ -1511,8 +1511,12 @@ impl<S: Signer> CertAuth<S> {
                 return Err(Error::CaAuthorizationDuplicate(self.handle.clone(), auth));
             } else if !all_resources.contains(&auth.prefix().into()) {
                 return Err(Error::CaAuthorizationNotEntitled(self.handle.clone(), auth));
+            } else if current_auths.iter().any(|a| a.includes(auth.as_ref())) {
+                return Err(Error::CaAuthorizationRedundant(self.handle.clone(), auth));
+            } else if current_auths.iter().any(|a| auth.includes(a.as_ref())) {
+                return Err(Error::CaAuthorizationIncludes(self.handle.clone(), auth));
             } else {
-                current_auths.insert(auth);
+                current_auths.insert(auth.explicit_length());
                 res.push(StoredEvent::new(
                     self.handle(),
                     version,
