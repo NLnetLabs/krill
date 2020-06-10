@@ -1891,13 +1891,15 @@ impl CertAuthIssues {
 pub struct CertAuthStats {
     roa_count: usize,
     child_count: usize,
+    bgp_stats: BgpStats,
 }
 
 impl CertAuthStats {
-    pub fn new(roa_count: usize, child_count: usize) -> Self {
+    pub fn new(roa_count: usize, child_count: usize, bgp_stats: BgpStats) -> Self {
         CertAuthStats {
             roa_count,
             child_count,
+            bgp_stats,
         }
     }
 
@@ -1907,6 +1909,55 @@ impl CertAuthStats {
 
     pub fn child_count(&self) -> usize {
         self.child_count
+    }
+
+    pub fn bgp_stats(&self) -> &BgpStats {
+        &self.bgp_stats
+    }
+}
+
+//------------ BgpStats ------------------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct BgpStats {
+    pub announcements_valid: usize,
+    pub announcements_invalid_asn: usize,
+    pub announcements_invalid_length: usize,
+    pub announcements_not_found: usize,
+    pub roas_stale: usize,
+}
+
+impl Default for BgpStats {
+    fn default() -> Self {
+        BgpStats {
+            announcements_valid: 0,
+            announcements_invalid_asn: 0,
+            announcements_invalid_length: 0,
+            announcements_not_found: 0,
+            roas_stale: 0,
+        }
+    }
+}
+
+impl BgpStats {
+    pub fn increment_valid(&mut self) {
+        self.announcements_valid += 1;
+    }
+
+    pub fn increment_invalid_asn(&mut self) {
+        self.announcements_invalid_asn += 1;
+    }
+
+    pub fn increment_invalid_length(&mut self) {
+        self.announcements_invalid_length += 1;
+    }
+
+    pub fn increment_not_found(&mut self) {
+        self.announcements_not_found += 1;
+    }
+
+    pub fn increment_stale(&mut self) {
+        self.roas_stale += 1;
     }
 }
 

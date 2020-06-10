@@ -438,12 +438,17 @@ impl KrillServer {
         for ca in self.caserver.ca_list().cas() {
             // can't fail really, but to be sure
             if let Ok(ca) = self.caserver.get_ca(ca.handle()) {
-                let roa_count = ca.roa_definitions().len();
+                let roas = ca.roa_definitions();
+                let roa_count = roas.len();
                 let child_count = ca.children().count();
+
+                let bgp_report = self
+                    .bgp_analyser
+                    .analyse(roas.as_slice(), &ca.all_resources());
 
                 res.insert(
                     ca.handle().clone(),
-                    CertAuthStats::new(roa_count, child_count),
+                    CertAuthStats::new(roa_count, child_count, bgp_report.into()),
                 );
             }
         }

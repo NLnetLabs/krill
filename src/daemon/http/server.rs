@@ -19,8 +19,8 @@ use hyper::service::{make_service_fn, service_fn};
 use hyper::Method;
 
 use crate::commons::api::{
-    ChildHandle, CommandHistoryCriteria, Handle, ParentCaContact, ParentCaReq, ParentHandle,
-    PublisherList, RepositoryUpdate,
+    BgpStats, ChildHandle, CommandHistoryCriteria, Handle, ParentCaContact, ParentCaReq,
+    ParentHandle, PublisherList, RepositoryUpdate,
 };
 use crate::commons::error::Error;
 use crate::commons::remote::rfc8183;
@@ -29,6 +29,7 @@ use crate::daemon::http::statics::statics;
 use crate::daemon::http::{tls, tls_keys, HttpResponse, Request, RequestPath, RoutingResult};
 use crate::daemon::krillserver::KrillServer;
 use crate::upgrades::{post_start_upgrade, pre_start_upgrade};
+use std::collections::HashMap;
 
 //------------ State -----------------------------------------------------
 
@@ -175,6 +176,28 @@ pub async fn metrics(req: Request) -> RoutingResult {
         let server = req.state();
         let server = server.read().await;
 
+        struct AllBgpStats {
+            announcements_valid: HashMap<Handle, usize>,
+            announcements_invalid_asn: HashMap<Handle, usize>,
+            announcements_invalid_length: HashMap<Handle, usize>,
+            announcements_not_found: HashMap<Handle, usize>,
+            roas_stale: HashMap<Handle, usize>,
+        }
+
+        impl AllBgpStats {
+            fn add_ca(&mut self, ca: &Handle, stats: &BgpStats) {
+                self.announcements_valid
+                    .insert(ca.clone(), stats.announcements_valid);
+                self.announcements_invalid_asn
+                    .insert(ca.clone(), stats.announcements_invalid_asn);
+                self.announcements_invalid_length
+                    .insert(ca.clone(), stats.announcements_invalid_length);
+                self.announcements_not_found
+                    .insert(ca.clone(), stats.announcements_not_found);
+                self.roas_stale.insert(ca.clone(), stats.roas_stale);
+            }
+        }
+
         let mut res = String::new();
 
         let info = server.server_info();
@@ -274,6 +297,76 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 "krill_cas_children{{ca=\"{}\"}} {}\n",
                 ca,
                 status.child_count()
+            ));
+        }
+
+        // Aggregate ROA vs BGP stats per status
+        let mut all_bgp_stats = AllBgpStats {
+            announcements_valid: HashMap::new(),
+            announcements_invalid_asn: HashMap::new(),
+            announcements_invalid_length: HashMap::new(),
+            announcements_not_found: HashMap::new(),
+            roas_stale: HashMap::new(),
+        };
+        for (ca, status) in cas_status.iter() {
+            all_bgp_stats.add_ca(ca, status.bgp_stats());
+        }
+
+        res.push_str("\n");
+        res.push_str("# HELP krill_cas_bgp_announcements_valid number of valid announcements\n");
+        res.push_str("# TYPE krill_cas_bgp_announcements_valid gauge\n");
+        for (ca, nr) in all_bgp_stats.announcements_valid.iter() {
+            res.push_str(&format!(
+                "krill_cas_bgp_announcements_valid{{ca=\"{}\"}} {}\n",
+                ca, nr
+            ));
+        }
+
+        res.push_str("\n");
+        res.push_str(
+            "# HELP krill_cas_bgp_announcements_invalid_asn number of announcements from an invalid asn\n",
+        );
+        res.push_str("# TYPE krill_cas_bgp_announcements_invalid_asn gauge\n");
+        for (ca, nr) in all_bgp_stats.announcements_invalid_asn.iter() {
+            res.push_str(&format!(
+                "krill_cas_bgp_announcements_invalid_asn{{ca=\"{}\"}} {}\n",
+                ca, nr
+            ));
+        }
+
+        res.push_str("\n");
+        res.push_str(
+            "# HELP krill_cas_bgp_announcements_invalid_length number of announcements which are too specific for asn\n",
+        );
+        res.push_str("# TYPE krill_cas_bgp_announcements_invalid_length gauge\n");
+        for (ca, nr) in all_bgp_stats.announcements_invalid_length.iter() {
+            res.push_str(&format!(
+                "krill_cas_bgp_announcements_invalid_length{{ca=\"{}\"}} {}\n",
+                ca, nr
+            ));
+        }
+
+        res.push_str("\n");
+        res.push_str(
+            "# HELP krill_cas_bgp_announcements_not_found number of announcements which are not covered by ROAs by this CA\n",
+        );
+        res.push_str("# TYPE krill_cas_bgp_announcements_not_found gauge\n");
+        for (ca, nr) in all_bgp_stats.announcements_not_found.iter() {
+            res.push_str(&format!(
+                "krill_cas_bgp_announcements_not_found{{ca=\"{}\"}} {}\n",
+                ca, nr
+            ));
+        }
+
+        res.push_str("\n");
+        res.push_str(
+            "# HELP krill_cas_bgp_roas_stale number of ROAs for this CA for which no announcements are seen\n",
+        );
+        res.push_str("# TYPE krill_cas_bgp_roas_stale gauge\n");
+        for (ca, nr) in all_bgp_stats.roas_stale.iter() {
+            res.push_str(&format!(
+                "krill_cas_bgp_roas_stale{{ca=\"{}\"}} {}\n",
+                ca, nr
             ));
         }
 

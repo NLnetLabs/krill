@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::commons::api::RoaDefinition;
+use crate::commons::api::{BgpStats, RoaDefinition};
 use crate::commons::bgp::Announcement;
 
 //------------ BgpAnalysisReport -------------------------------------------
@@ -29,6 +29,23 @@ impl BgpAnalysisReport {
 
     pub fn matching_entries(&self, state: BgpAnalysisState) -> Vec<&BgpAnalysisEntry> {
         self.0.iter().filter(|e| e.state == state).collect()
+    }
+}
+
+impl From<BgpAnalysisReport> for BgpStats {
+    fn from(r: BgpAnalysisReport) -> BgpStats {
+        let mut stats = BgpStats::default();
+        for e in r.0.iter() {
+            match e.state {
+                BgpAnalysisState::AnnouncementValid => stats.increment_valid(),
+                BgpAnalysisState::AnnouncementInvalidAsn => stats.increment_invalid_asn(),
+                BgpAnalysisState::AnnouncementInvalidLength => stats.increment_invalid_length(),
+                BgpAnalysisState::AnnouncementNotFound => stats.increment_not_found(),
+                BgpAnalysisState::RoaStale => stats.increment_stale(),
+                _ => {} // nothing to see, move along
+            }
+        }
+        stats
     }
 }
 
