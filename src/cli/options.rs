@@ -251,7 +251,11 @@ impl Options {
                 Arg::with_name("rrdp")
                     .long("rrdp")
                     .value_name("uri")
-                    .help("Specify the base https URI for your RRDP (excluding notify.xml), must end with '/'")
+                    .help(
+                        "Specify the base https URI for your RRDP (excluding notification.xml), \
+                    must \
+                    end with '/'",
+                    )
                     .required(true),
             )
         }
@@ -800,8 +804,8 @@ impl Options {
     }
 
     fn make_publishers_response_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("response")
-            .about("Show RFC8183 Repository Response XML.");
+        let mut sub =
+            SubCommand::with_name("response").about("Show RFC8183 Repository Response XML.");
         sub = Self::add_general_args(sub);
         sub = Self::add_publisher_arg(sub);
         app.subcommand(sub)
@@ -847,7 +851,8 @@ impl Options {
     }
 
     fn make_health_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let health = SubCommand::with_name("health").about("Perform an authenticated health check.");
+        let health =
+            SubCommand::with_name("health").about("Perform an authenticated health check.");
         let health = Self::add_general_args(health);
         app.subcommand(health)
     }
