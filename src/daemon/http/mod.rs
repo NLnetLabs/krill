@@ -70,6 +70,7 @@ impl AsRef<str> for ContentType {
 struct Response {
     status: StatusCode,
     content_type: ContentType,
+    max_age: Option<usize>,
     body: Vec<u8>,
 }
 
@@ -78,18 +79,22 @@ impl Response {
         Response {
             status,
             content_type: ContentType::Text,
+            max_age: None,
             body: Vec::new(),
         }
     }
 
     fn finalize(self) -> HttpResponse {
-        HttpResponse(
-            hyper::Response::builder()
-                .status(self.status)
-                .header("Content-Type", self.content_type.as_ref())
-                .body(self.body.into())
-                .unwrap(),
-        )
+        let mut builder = hyper::Response::builder()
+            .status(self.status)
+            .header("Content-Type", self.content_type.as_ref());
+        if let Some(max_age) = self.max_age {
+            builder = builder.header("Cache-Control", &format!("max-age={}", max_age));
+        }
+
+        let response = builder.body(self.body.into()).unwrap();
+
+        HttpResponse(response)
     }
 }
 
@@ -118,6 +123,7 @@ impl HttpResponse {
         Response {
             status: StatusCode::OK,
             content_type,
+            max_age: None,
             body,
         }
         .finalize()
@@ -140,6 +146,16 @@ impl HttpResponse {
 
     pub fn xml(body: Vec<u8>) -> Self {
         Self::ok_response(ContentType::Xml, body)
+    }
+
+    pub fn xml_with_cache(body: Vec<u8>, seconds: usize) -> Self {
+        Response {
+            status: StatusCode::OK,
+            content_type: ContentType::Xml,
+            max_age: Some(seconds),
+            body,
+        }
+        .finalize()
     }
 
     pub fn rfc8181(body: Vec<u8>) -> Self {
@@ -190,6 +206,7 @@ impl HttpResponse {
         Response {
             status,
             content_type: ContentType::Json,
+            max_age: None,
             body: body.into_bytes(),
         }
         .finalize()

@@ -1145,6 +1145,11 @@ async fn rrdp(req: Request) -> RoutingResult {
     } else {
         let mut full_path: PathBuf = req.state.read().await.rrdp_base_path();
         let (_, path) = req.path.remaining().split_at(1);
+        let cache_seconds = if path.ends_with("notification.xml") {
+            60
+        } else {
+            86400
+        };
         full_path.push(path);
 
         match File::open(full_path) {
@@ -1153,7 +1158,7 @@ async fn rrdp(req: Request) -> RoutingResult {
                 let mut buffer = Vec::new();
                 file.read_to_end(&mut buffer).unwrap();
 
-                Ok(HttpResponse::xml(buffer))
+                Ok(HttpResponse::xml_with_cache(buffer, cache_seconds))
             }
             _ => Ok(HttpResponse::not_found()),
         }
