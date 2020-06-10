@@ -313,7 +313,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
         }
 
         res.push_str("\n");
-        res.push_str("# HELP krill_cas_bgp_announcements_valid number of valid announcements\n");
+        res.push_str("# HELP krill_cas_bgp_announcements_valid number of announcements seen for CA resources with RPKI state VALID\n");
         res.push_str("# TYPE krill_cas_bgp_announcements_valid gauge\n");
         for (ca, nr) in all_bgp_stats.announcements_valid.iter() {
             res.push_str(&format!(
@@ -324,7 +324,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
 
         res.push_str("\n");
         res.push_str(
-            "# HELP krill_cas_bgp_announcements_invalid_asn number of announcements from an invalid asn\n",
+            "# HELP krill_cas_bgp_announcements_invalid_asn number of announcements seen for CA resources with RPKI state INVALID (ASN mismatch)\n",
         );
         res.push_str("# TYPE krill_cas_bgp_announcements_invalid_asn gauge\n");
         for (ca, nr) in all_bgp_stats.announcements_invalid_asn.iter() {
@@ -336,7 +336,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
 
         res.push_str("\n");
         res.push_str(
-            "# HELP krill_cas_bgp_announcements_invalid_length number of announcements which are too specific for asn\n",
+            "# HELP krill_cas_bgp_announcements_invalid_length number of announcements seen for CA resources with RPKI state INVALID (prefix exceeds max length)\n",
         );
         res.push_str("# TYPE krill_cas_bgp_announcements_invalid_length gauge\n");
         for (ca, nr) in all_bgp_stats.announcements_invalid_length.iter() {
@@ -348,7 +348,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
 
         res.push_str("\n");
         res.push_str(
-            "# HELP krill_cas_bgp_announcements_not_found number of announcements which are not covered by ROAs by this CA\n",
+            "# HELP krill_cas_bgp_announcements_not_found number of announcements seen for CA resources with RPKI state NOT FOUND (none of the CA's ROAs cover this)\n",
         );
         res.push_str("# TYPE krill_cas_bgp_announcements_not_found gauge\n");
         for (ca, nr) in all_bgp_stats.announcements_not_found.iter() {
@@ -360,7 +360,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
 
         res.push_str("\n");
         res.push_str(
-            "# HELP krill_cas_bgp_roas_stale number of ROAs for this CA for which no announcements are seen\n",
+            "# HELP krill_cas_bgp_roas_stale number of ROAs for this CA for which no announcements are seen (0 may also indicate that no BGP info is available)\n",
         );
         res.push_str("# TYPE krill_cas_bgp_roas_stale gauge\n");
         for (ca, nr) in all_bgp_stats.roas_stale.iter() {
