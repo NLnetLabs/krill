@@ -335,13 +335,7 @@ impl Config {
                     .short("c")
                     .long("config")
                     .value_name("FILE")
-                    .help(
-                        "Specify non-default config file. If no file is \
-                         specified './daemon/defaults/krill.conf' will be used to \
-                         determine default values for all settings. Note that you \
-                         can use any of the following options to override any of \
-                         these values..",
-                    )
+                    .help("Override the path to the config file (default: './defaults/krill.conf')")
                     .required(false),
             )
             .get_matches();
