@@ -140,7 +140,7 @@ impl Options {
                 .short("f")
                 .long(KRILL_CLI_FORMAT_ARG)
                 .value_name("type")
-                .help("Report format: none|json|text (default) |xml. Or set env: KRILL_CLI_FORMAT")
+                .help("Report format: none|json|text (default). Or set env: KRILL_CLI_FORMAT")
                 .required(false),
         )
         .arg(
@@ -220,7 +220,7 @@ impl Options {
                     .long("data")
                     .short("d")
                     .value_name("path")
-                    .help("Override the default path (./data/) for the data directory (must end with slash).")
+                    .help("Override the default path (./data/) for the data directory (must end with '/').")
                     .required(false),
             )
         }
@@ -241,7 +241,7 @@ impl Options {
                 Arg::with_name("rsync")
                     .long("rsync")
                     .value_name("uri")
-                    .help("Specify the base rsync URI for your repository. must end with '/'.")
+                    .help("Specify the base rsync URI for your repository, must end with '/'.")
                     .required(true),
             )
         }
@@ -417,7 +417,7 @@ impl Options {
 
     fn make_cas_children_response_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub =
-            SubCommand::with_name("response").about("Get the RFC8183 response for a child.");
+            SubCommand::with_name("response").about("Show the RFC8183 Parent Response XML.");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -460,7 +460,7 @@ impl Options {
     }
 
     fn make_cas_parents_request_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("request").about("Show RFC8183 Publisher Request XML");
+        let mut sub = SubCommand::with_name("request").about("Show RFC8183 Child Request XML.");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -654,7 +654,7 @@ impl Options {
     }
 
     fn make_cas_repo_request_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("request").about("Show RFC8183 Publisher Request.");
+        let mut sub = SubCommand::with_name("request").about("Show RFC8183 Publisher Request XML.");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -801,7 +801,7 @@ impl Options {
 
     fn make_publishers_response_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("response")
-            .about("Show RFC8183 Repository Response for a publisher.");
+            .about("Show RFC8183 Repository Response XML.");
         sub = Self::add_general_args(sub);
         sub = Self::add_publisher_arg(sub);
         app.subcommand(sub)
@@ -823,7 +823,7 @@ impl Options {
 
     fn make_bulk_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("bulk")
-            .about("Manually trigger refresh/republish/resync for all cas");
+            .about("Manually trigger refresh/republish/resync for all CAs.");
 
         let mut refresh = SubCommand::with_name("refresh")
             .about("Force that all CAs ask their parents for updated certificates");
@@ -847,7 +847,7 @@ impl Options {
     }
 
     fn make_health_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let health = SubCommand::with_name("health").about("Perform an authenticated health check");
+        let health = SubCommand::with_name("health").about("Perform an authenticated health check.");
         let health = Self::add_general_args(health);
         app.subcommand(health)
     }

@@ -24,6 +24,40 @@ Now Krill will *always* use an explicit max length in the definitions. Not howev
 still best practice to use the same max length as the announced prefix length, so Krill will just
 set this by default if it is not specified.
 
+## 0.6.3 Release 'Play it again, Sam'
+
+This release addresses an issue where users with a CA that has delegated children, which in turn
+had performed a key roll over in the past, could not upgrade to Release 0.6.2.
+
+Users who already successfully upgraded to Release 0.6.2 do not need to upgrade urgently. This
+release includes a number of fixes for minor issues, which will also be included in the 0.7.0
+Release which is due in 2-4 weeks:
+* `krillc issues` fails with `Error: Unknown API method` (#248)
+* `krillc parents` help text refers incorrectly to publisher request instead of child request (#251)
+* Normalize request/response `krillc help` texts (#252)
+* `krillc` incorrectly reports XML as a supported output format (#253)
+* Inconsistent use of "cas" in `krillc bulk` subcommand summary text (#254)
+* Be consistent when referring to ending with a / (#255)
+
+## 0.6.2 Release 'That was even faster!'
+
+So, as it turns out.. the code used to determine the age of snapshot files used in the previous
+release was not safe on all platforms. This release fixes this!
+
+Users who upgraded to 0.6.1 and see messages like: "Creation time is not available on this
+platform currently" in their logs, please upgrade!
+
+## 0.6.1 Release 'That was fast!'
+
+This release fixes an issue where the Krill Repository Server deleted RRDP snapshot files as soon
+as a new notification file was published. This leads to issues in case a cached notification file
+is served to validators. 
+
+Users who use Krill as their own Repository Server are advised to upgrade.
+
+Users who publish at a repository provided to them by a third party (e.g. nic.br) can safely skip
+this release.  
+
 ## 0.6.0 Release 'Go with the Flow'
 
 The most visible change in this release is that the embedded Lagosta UI now includes French, Greek
@@ -53,7 +87,6 @@ Breaking changes:
 * The API end-points for bulk operations changed to /api/v1/bulk/*
 * The API end-point for CA issues moved to /api/v1/cas/{handle}/issues
 * The history API changed, this is not yet stable and therefore undocumented
-
 
 ## 0.5.0 'Serve no Turf'
 

@@ -75,8 +75,8 @@ impl From<RoaCleanupError> for UpgradeError {
 
 /// Implement this for automatic upgrades to key stores
 pub trait UpgradeStore {
-    fn needs_migrate<S: KeyStore>(&self, store: &S) -> Result<bool, UpgradeError>;
-    fn migrate<S: KeyStore>(&self, store: &S) -> Result<(), UpgradeError>;
+    fn needs_migrate(&self, store: &DiskKeyStore) -> Result<bool, UpgradeError>;
+    fn migrate(&self, store: &DiskKeyStore) -> Result<(), UpgradeError>;
 }
 
 /// Should be called when Krill starts, before the KrillServer is initiated

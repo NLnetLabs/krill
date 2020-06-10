@@ -252,12 +252,12 @@ impl KrillClient {
 
             CaCommand::Issues(ca_opt) => match ca_opt {
                 Some(ca) => {
-                    let uri = format!("api/v1/cas/issues/{}", ca);
+                    let uri = format!("api/v1/cas/{}/issues", ca);
                     let issues: CertAuthIssues = self.get_json(&uri).await?;
                     Ok(ApiResponse::CertAuthIssues(issues))
                 }
                 None => {
-                    let issues: AllCertAuthIssues = self.get_json("api/v1/cas/issues").await?;
+                    let issues: AllCertAuthIssues = self.get_json("api/v1/bulk/cas/issues").await?;
                     Ok(ApiResponse::AllCertAuthIssues(issues))
                 }
             },
