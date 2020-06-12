@@ -375,30 +375,22 @@ impl Options {
     }
 
     fn make_cas_children_add_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let sub = SubCommand::with_name("add").about("Add a child to a CA.");
+        let mut sub = SubCommand::with_name("add").about("Add a child to a CA.");
 
-        let mut embedded =
-            SubCommand::with_name("embedded").about("Add a child in *this* Krill server");
-        embedded = Self::add_general_args(embedded);
-        embedded = Self::add_my_ca_arg(embedded);
-        embedded = Self::add_child_arg(embedded);
-        embedded = Self::add_child_resource_args(embedded);
-
-        let mut remote = SubCommand::with_name("remote")
-            .about("Add a remote child, and return the parent response");
-        remote = Self::add_general_args(remote);
-        remote = Self::add_my_ca_arg(remote);
-        remote = Self::add_child_arg(remote);
-        remote = Self::add_child_resource_args(remote);
-        let remote = remote.arg(
-            Arg::with_name("rfc8183")
-                .long("rfc8183")
-                .help("The RFC8183 Child Request XML file.")
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+        sub = Self::add_child_arg(sub);
+        sub = Self::add_child_resource_args(sub);
+        let sub = sub.arg(
+            Arg::with_name("request")
+                .long("request")
+                .short("r")
+                .help("The location of the RFC8183 Child Request XML file.")
                 .value_name("<XML file>")
                 .required(true),
         );
 
-        app.subcommand(sub.subcommand(embedded).subcommand(remote))
+        app.subcommand(sub)
     }
 
     fn make_cas_children_update_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
@@ -473,40 +465,35 @@ impl Options {
     }
 
     fn make_cas_parents_add_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let sub = SubCommand::with_name("add").about("Add a parent to this CA.");
-
-        let mut embedded = SubCommand::with_name("embedded")
-            .about("Add a parent that you manage in *this* Krill server");
-        embedded = Self::add_general_args(embedded);
-        embedded = Self::add_my_ca_arg(embedded);
-        embedded = Self::add_parent_arg(embedded);
-
-        let mut remote = SubCommand::with_name("remote").about("Add a remote parent");
-        remote = Self::add_general_args(remote);
-        remote = Self::add_my_ca_arg(remote);
-        remote = Self::add_parent_arg(remote);
-        remote = remote.arg(
-            Arg::with_name("rfc8183")
-                .long("rfc8183")
-                .help("The RFC8183 Parent Response XML")
-                .value_name("<XML file>")
-                .required(true),
-        );
-
-        app.subcommand(sub.subcommand(remote).subcommand(embedded))
-    }
-
-    fn make_cas_parents_update_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub =
-            SubCommand::with_name("update").about("Update an existing remote parent of this CA.");
+        let mut sub = SubCommand::with_name("add").about("Add a parent to this CA.");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
         sub = Self::add_parent_arg(sub);
         sub = sub.arg(
-            Arg::with_name("rfc8183")
-                .long("rfc8183")
-                .help("The RFC8183 Parent Response XML")
+            Arg::with_name("response")
+                .long("response")
+                .short("r")
+                .help("The location of the RFC8183 Parent Response XML file.")
+                .value_name("<XML file>")
+                .required(true),
+        );
+
+        app.subcommand(sub)
+    }
+
+    fn make_cas_parents_update_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub =
+            SubCommand::with_name("update").about("Update an existing parent of this CA.");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+        sub = Self::add_parent_arg(sub);
+        sub = sub.arg(
+            Arg::with_name("response")
+                .long("response")
+                .short("r")
+                .help("The location of the RFC8183 Parent Response XML file.")
                 .value_name("<XML file>")
                 .required(true),
         );
@@ -688,24 +675,16 @@ impl Options {
         let mut sub =
             SubCommand::with_name("update").about("Change which repository this CA uses.");
 
-        let mut embedded =
-            SubCommand::with_name("embedded").about("Use the embedded server in krill");
-        embedded = Self::add_general_args(embedded);
-        embedded = Self::add_my_ca_arg(embedded);
-
-        let mut remote = SubCommand::with_name("remote").about("Use a remote server (RECOMMENDED)");
-        remote = Self::add_general_args(remote);
-        remote = Self::add_my_ca_arg(remote);
-        remote = remote.arg(
-            Arg::with_name("rfc8183")
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+        sub = sub.arg(
+            Arg::with_name("response")
                 .value_name("file")
-                .long("rfc8183")
-                .help("File containing the RFC8183 XML. Defaults to reading from STDIN")
+                .long("response")
+                .short("r")
+                .help("The location of the RFC8183 Publisher Response XML file. Defaults to reading from STDIN")
                 .required(false),
         );
-
-        sub = sub.subcommand(embedded);
-        sub = sub.subcommand(remote);
 
         app.subcommand(sub)
     }
@@ -771,20 +750,23 @@ impl Options {
         let mut sub = SubCommand::with_name("add").about("Add a publisher.");
         sub = Self::add_general_args(sub);
 
-        sub = sub.arg(
-            Arg::with_name("rfc8183")
-                .value_name("file")
-                .long("rfc8183")
-                .help("RFC8183 Publisher Request XML file containing a certificate (tag is ignored)")
-                .required(true)
-        ).arg(
-            Arg::with_name("publisher")
-                .value_name("handle")
-                .short("p")
-                .long("publisher")
-                .help("Override the publisher handle in the XML.")
-                .required(false),
-        );
+        sub = sub
+            .arg(
+                Arg::with_name("request")
+                    .value_name("file")
+                    .long("request")
+                    .short("r")
+                    .help("The location of the RFC8183 Publisher Request XML file.")
+                    .required(true),
+            )
+            .arg(
+                Arg::with_name("publisher")
+                    .value_name("handle")
+                    .short("p")
+                    .long("publisher")
+                    .help("Override the publisher handle in the XML.")
+                    .required(false),
+            );
 
         app.subcommand(sub)
     }
@@ -1073,10 +1055,12 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_children_add_general(
-        matches: &ArgMatches,
-        rfc8183_opt: Option<rfc8183::ChildRequest>,
-    ) -> Result<Options, Error> {
+    fn parse_matches_cas_children_add(matches: &ArgMatches) -> Result<Options, Error> {
+        let path = matches.value_of("request").unwrap();
+        let bytes = Self::read_file_arg(path)?;
+        let request = rfc8183::ChildRequest::validate(bytes.as_ref())?;
+        let auth_request = ChildAuthRequest::Rfc8183(request);
+
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
@@ -1086,27 +1070,9 @@ impl Options {
         let resources =
             Self::parse_resource_args(matches)?.ok_or_else(|| Error::MissingResources)?;
 
-        let auth_request = match rfc8183_opt {
-            Some(rfc8183) => ChildAuthRequest::Rfc8183(rfc8183),
-            None => ChildAuthRequest::Embedded,
-        };
-
         let child_request = AddChildRequest::new(child, resources, auth_request);
         let command = Command::CertAuth(CaCommand::ChildAdd(my_ca, child_request));
         Ok(Options::make(general_args, command))
-    }
-
-    fn parse_matches_cas_children_add(matches: &ArgMatches) -> Result<Options, Error> {
-        if let Some(m) = matches.subcommand_matches("embedded") {
-            Self::parse_matches_cas_children_add_general(m, None)
-        } else if let Some(m) = matches.subcommand_matches("remote") {
-            let path = m.value_of("rfc8183").unwrap();
-            let bytes = Self::read_file_arg(path)?;
-            let request = rfc8183::ChildRequest::validate(bytes.as_ref())?;
-            Self::parse_matches_cas_children_add_general(m, Some(request))
-        } else {
-            Err(Error::UnrecognisedSubCommand)
-        }
     }
 
     fn parse_matches_cas_children_update(matches: &ArgMatches) -> Result<Options, Error> {
@@ -1191,36 +1157,21 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_parents_add_general(
-        matches: &ArgMatches,
-        response_opt: Option<rfc8183::ParentResponse>,
-    ) -> Result<Options, Error> {
+    fn parse_matches_cas_parents_add(matches: &ArgMatches) -> Result<Options, Error> {
+        let path = matches.value_of("response").unwrap();
+        let bytes = Self::read_file_arg(path)?;
+        let response = rfc8183::ParentResponse::validate(bytes.as_ref())?;
+
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
         let parent = matches.value_of("parent").unwrap();
         let parent = Handle::from_str(parent).map_err(|_| Error::InvalidHandle)?;
-        let contact = match response_opt {
-            Some(response) => ParentCaContact::for_rfc6492(response),
-            None => ParentCaContact::Embedded,
-        };
+        let contact = ParentCaContact::for_rfc6492(response);
         let parent_req = ParentCaReq::new(parent, contact);
 
         let command = Command::CertAuth(CaCommand::AddParent(my_ca, parent_req));
         Ok(Options::make(general_args, command))
-    }
-
-    fn parse_matches_cas_parents_add(matches: &ArgMatches) -> Result<Options, Error> {
-        if let Some(m) = matches.subcommand_matches("embedded") {
-            Self::parse_matches_cas_parents_add_general(m, None)
-        } else if let Some(m) = matches.subcommand_matches("remote") {
-            let path = m.value_of("rfc8183").unwrap();
-            let bytes = Self::read_file_arg(path)?;
-            let response = rfc8183::ParentResponse::validate(bytes.as_ref())?;
-            Self::parse_matches_cas_parents_add_general(m, Some(response))
-        } else {
-            Err(Error::UnrecognisedSubCommand)
-        }
     }
 
     fn parse_matches_cas_parents_update(matches: &ArgMatches) -> Result<Options, Error> {
@@ -1230,7 +1181,7 @@ impl Options {
         let parent = matches.value_of("parent").unwrap();
         let parent = Handle::from_str(parent).map_err(|_| Error::InvalidHandle)?;
 
-        let path = matches.value_of("rfc8183").unwrap();
+        let path = matches.value_of("response").unwrap();
         let bytes = Self::read_file_arg(path)?;
         let response = rfc8183::ParentResponse::validate(bytes.as_ref())?;
 
@@ -1408,26 +1359,16 @@ impl Options {
     }
 
     fn parse_matches_cas_repo_update(matches: &ArgMatches) -> Result<Options, Error> {
-        if let Some(matches) = matches.subcommand_matches("embedded") {
-            let general_args = GeneralArgs::from_matches(matches)?;
-            let my_ca = Self::parse_my_ca(matches)?;
-            let update = RepositoryUpdate::embedded();
-            let command = Command::CertAuth(CaCommand::RepoUpdate(my_ca, update));
-            Ok(Options::make(general_args, command))
-        } else if let Some(matches) = matches.subcommand_matches("remote") {
-            let general_args = GeneralArgs::from_matches(matches)?;
-            let my_ca = Self::parse_my_ca(matches)?;
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
 
-            let path = matches.value_of("rfc8183").unwrap();
-            let bytes = Self::read_file_arg(path)?;
-            let response = rfc8183::RepositoryResponse::validate(bytes.as_ref())?;
+        let path = matches.value_of("response").unwrap();
+        let bytes = Self::read_file_arg(path)?;
+        let response = rfc8183::RepositoryResponse::validate(bytes.as_ref())?;
 
-            let update = RepositoryUpdate::rfc8181(response);
-            let command = Command::CertAuth(CaCommand::RepoUpdate(my_ca, update));
-            Ok(Options::make(general_args, command))
-        } else {
-            Err(Error::UnrecognisedSubCommand)
-        }
+        let update = RepositoryUpdate::rfc8181(response);
+        let command = Command::CertAuth(CaCommand::RepoUpdate(my_ca, update));
+        Ok(Options::make(general_args, command))
     }
 
     fn parse_matches_cas_repo(matches: &ArgMatches) -> Result<Options, Error> {
@@ -1482,7 +1423,7 @@ impl Options {
     fn parse_matches_publishers_add(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
 
-        let path = matches.value_of("rfc8183").unwrap();
+        let path = matches.value_of("request").unwrap();
         let path = PathBuf::from(path);
         let bytes = file::read(&path)?;
         let mut req = rfc8183::PublisherRequest::validate(bytes.as_ref())?;
@@ -1922,9 +1863,6 @@ pub enum Error {
 
     #[display(fmt = "You must specify resources when adding a CA (--asn, --ipv4, --ipv6)")]
     MissingResources,
-
-    #[display(fmt = "You must specify either --embedded or --rfc8183 when adding a child")]
-    MissingChildAuth,
 
     #[display(fmt = "Invalid ID cert for child.")]
     InvalidChildIdCert,
