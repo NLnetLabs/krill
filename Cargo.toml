@@ -4,6 +4,7 @@ version = "0.6.3"
 edition = "2018"
 authors = [ "The NLnet Labs RPKI team <rpki-team@nlnetlabs.nl>" ]
 description = "Resource Public Key Infrastructure (RPKI) daemon"
+homepage = "https://www.nlnetlabs.nl/projects/rpki/krill/"
 repository = "https://github.com/NLnetLabs/krill"
 keywords = ["rpki", "routing-security", "bgp"]
 readme = "README.md"
@@ -45,7 +46,22 @@ syslog		    = "^4.0"
 [build-dependencies]
 ignore          = "^0.4"
 
-
 [features]
 default = []
 extra-debug = [ "rpki/extra-debug" ]
+deb-pkg = [ "openssl/vendored" ]
+
+[package.metadata.deb]
+features = [ "deb-pkg" ]
+priority = "extra"
+section = "net"
+depends = "libc6 (>= 2.23), libgcc1 (>= 1:6.0.1)"
+extended-description = """\
+Krill is a free, open source RPKI Certificate Authority that lets you run
+delegated RPKI under one or multiple Regional Internet Registries (RIRs).
+Through its built-in publication server, Krill can publish Route Origin
+Authorisations (ROAs) on your own servers or with a third party.
+
+This package contains the krill daemon and krillc CLI binaries.
+
+For more information visit https://rpki.readthedocs.io/en/latest/krill/."""

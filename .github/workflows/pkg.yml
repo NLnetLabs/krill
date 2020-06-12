@@ -1,0 +1,93 @@
+name: Packaging
+on:
+  push:
+    paths-ignore:
+      - '.dockerignore'
+      - '.github/workflow/pkg.yml'
+      - 'Changelog.md'
+      - 'Dockerfile'
+      - 'doc/**'
+      - 'docker/**'
+      - 'LICENSE'
+      - 'README.md'
+      - 'tests/e2e/**'
+  # Hmm, annoying, do we really have to duplicate this?
+  pull_request:
+    paths-ignore:
+      - '.dockerignore'
+      - '.github/workflow/pkg.yml'
+      - 'Changelog.md'
+      - 'Dockerfile'
+      - 'doc/**'
+      - 'docker/**'
+      - 'LICENSE'
+      - 'README.md'
+      - 'tests/e2e/**'
+
+jobs:
+  deb-pkg:
+    env:
+      CARGO_DEB_VER: 1.23.1
+    name: deb-pkg
+    runs-on: [ubuntu-16.04]
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v1
+
+    - name: Install Rust
+      uses: hecrj/setup-rust-action@v1
+      with:
+        rust-version: stable
+
+    - name: Cache Dot Cargo
+      uses: actions/cache@v2
+      with:
+        path: |
+          ~/.cargo/registry
+          ~/.cargo/git
+          target
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Cache Cargo Deb binary
+      id: cache-cargo-deb
+      uses: actions/cache@v2
+      with:
+        path: ~/.cargo/bin/cargo-deb
+        key: ${{ runner.os }}-${{ env.CARGO_DEB_VER }}-cargo-deb
+
+    - name: Install Cargo Deb
+      if: steps.cache-cargo-deb.outputs.cache-hit != 'true'
+      run: |
+        cargo install cargo-deb --version=$CARGO_DEB_VER
+
+    - name: Create the package
+      run: |
+        cargo deb --verbose
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v2
+      with:
+        name: debian-package
+        path: target/debian/*.deb
+
+  deb-pkg-test:
+    name: test
+    needs: deb-pkg
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-16.04, ubuntu-18.04, ubuntu-20.04]
+    steps:
+    - name: Download DEB package
+      uses: actions/download-artifact@v2
+
+    - name: Install DEB package
+      run: |
+        sudo apt-get -y install ./debian-package/*.deb
+      shell: bash
+
+    - name: Test installed binaries
+      run: |
+        krillc --version
+        krill --version
+      shell: bash
