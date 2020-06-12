@@ -4,6 +4,13 @@ pub const KRILL_CLIENT_APP: &str = "Krill Client";
 
 pub const KRILL_DEFAULT_CONFIG_FILE: &str = "./defaults/krill.conf";
 
+pub const KRILL_ENV_TEST: &str = "KRILL_TEST";
+pub const KRILL_ENV_TEST_ANN: &str = "KRILL_TEST_ANN";
+pub const KRILL_ENV_REPO_ENABLED: &str = "KRILL_REPO_ENABLED";
+pub const KRILL_ENV_USE_TA: &str = "KRILL_USE_TA";
+pub const KRILL_ENV_LOG_LEVEL: &str = "KRILL_LOG_LEVEL";
+pub const KRILL_ENV_AUTH_TOKEN: &str = "KRILL_AUTH_TOKEN";
+
 pub const CASERVER_DIR: &str = "cas";
 
 pub const PUBSERVER_DFLT: &str = "0";

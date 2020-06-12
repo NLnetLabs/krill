@@ -1,3 +1,4 @@
+use std::env;
 use std::sync::RwLock;
 
 use chrono::Duration;
@@ -10,7 +11,7 @@ use crate::commons::bgp::{
     Announcements, BgpAnalysisEntry, BgpAnalysisReport, IpRange, RisDumpError, RisDumpLoader,
     ValidatedAnnouncement,
 };
-use crate::constants::BGP_RIS_REFRESH_MINUTES;
+use crate::constants::{BGP_RIS_REFRESH_MINUTES, KRILL_ENV_TEST_ANN};
 
 //------------ BgpAnalyser -------------------------------------------------
 
@@ -22,14 +23,18 @@ pub struct BgpAnalyser {
 
 impl BgpAnalyser {
     pub fn new(ris_enabled: bool, ris_v4_uri: &str, ris_v6_uri: &str) -> Self {
-        let dumploader = if ris_enabled {
-            Some(RisDumpLoader::new(ris_v4_uri, ris_v6_uri))
+        if env::var(KRILL_ENV_TEST_ANN).is_ok() {
+            Self::with_test_announcements()
         } else {
-            None
-        };
-        BgpAnalyser {
-            dumploader,
-            seen: RwLock::new(Announcements::default()),
+            let dumploader = if ris_enabled {
+                Some(RisDumpLoader::new(ris_v4_uri, ris_v6_uri))
+            } else {
+                None
+            };
+            BgpAnalyser {
+                dumploader,
+                seen: RwLock::new(Announcements::default()),
+            }
         }
     }
 
@@ -153,12 +158,28 @@ impl BgpAnalyser {
         BgpAnalysisReport::new(entries)
     }
 
-    #[cfg(test)]
-    fn with_test_announcements(test_announcements: Vec<Announcement>) -> Self {
+    fn test_announcements() -> Vec<Announcement> {
+        use crate::test::announcement;
+
+        let mut res = vec![];
+
+        res.push(announcement("10.0.0.0/22 => 64496"));
+        res.push(announcement("10.0.2.0/23 => 64496"));
+        res.push(announcement("10.0.0.0/24 => 64496"));
+        res.push(announcement("10.0.0.0/22 => 64497"));
+        res.push(announcement("10.0.0.0/21 => 64497"));
+
+        res.push(announcement("192.168.0.0/26 => 64497"));
+        res.push(announcement("192.168.0.0/26 => 64496"));
+
+        res.push(announcement("2001:DB8::/32 => 64498"));
+
+        res
+    }
+
+    fn with_test_announcements() -> Self {
         let mut announcements = Announcements::default();
-        if !test_announcements.is_empty() {
-            announcements.update(test_announcements);
-        }
+        announcements.update(Self::test_announcements());
         BgpAnalyser {
             dumploader: None,
             seen: RwLock::new(announcements),
@@ -208,27 +229,12 @@ mod tests {
     #[test]
     fn analyse_bgp() {
         let roa_authorizing = definition("10.0.0.0/22-23 => 64496");
-        let ann_authz_1 = announcement("10.0.0.0/22 => 64496");
-        let ann_authz_2 = announcement("10.0.2.0/23 => 64496");
-        let ann_invalid_l = announcement("10.0.0.0/24 => 64496");
-        let ann_invalid_a = announcement("10.0.0.0/22 => 64497");
-
-        let ann_irrelevant = announcement("192.168.0.0/26 => 64497");
-
-        let ann_not_found = announcement("10.0.0.0/21 => 64497");
         let roa_stale = definition("10.0.3.0/24 => 64497");
         let roa_disallowing = definition("10.0.4.0/24 => 0");
 
         let resources = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
 
-        let analyser = BgpAnalyser::with_test_announcements(vec![
-            ann_authz_1,
-            ann_authz_2,
-            ann_invalid_l,
-            ann_invalid_a,
-            ann_not_found,
-            ann_irrelevant,
-        ]);
+        let analyser = BgpAnalyser::with_test_announcements();
 
         let report = analyser.analyse(&[roa_authorizing, roa_stale, roa_disallowing], &resources);
 
@@ -248,7 +254,7 @@ mod tests {
 
         let resources = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
 
-        let analyser = BgpAnalyser::with_test_announcements(vec![]);
+        let analyser = BgpAnalyser::new(false, "", "");
         let table = analyser.analyse(&[roa1, roa2, roa3], &resources);
         let table_entries = table.entries();
         assert_eq!(3, table_entries.len());

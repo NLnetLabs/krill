@@ -29,7 +29,9 @@ use crate::commons::remote::rfc6492;
 use crate::commons::remote::rfc8183;
 use crate::commons::remote::sigmsg::SignedMessage;
 use crate::commons::KrillResult;
-use crate::constants::{CHILD_CERTIFICATE_REISSUE_WEEKS, CHILD_CERTIFICATE_VALIDITY_YEARS};
+use crate::constants::{
+    CHILD_CERTIFICATE_REISSUE_WEEKS, CHILD_CERTIFICATE_VALIDITY_YEARS, KRILL_ENV_TEST,
+};
 use crate::daemon::ca::events::ChildCertificateUpdates;
 use crate::daemon::ca::rc::PublishMode;
 use crate::daemon::ca::signing::CsrInfo;
@@ -703,7 +705,7 @@ impl<S: Signer> CertAuth<S> {
         let (rcn, limit, csr) = request.unpack();
         let csr_info = CsrInfo::try_from(&csr)?;
 
-        if csr_info.contains_localhost() && env::var("KRILL_TEST").is_err() {
+        if csr_info.contains_localhost() && env::var(KRILL_ENV_TEST).is_err() {
             return Err(Error::invalid_csr(
                 "Cannot use localhost in certificate requests unless server uses TEST mode.",
             ));

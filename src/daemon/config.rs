@@ -33,13 +33,13 @@ impl ConfigDefaults {
         3000
     }
     fn test_mode() -> bool {
-        env::var("KRILL_TEST").is_ok()
+        env::var(KRILL_ENV_TEST).is_ok()
     }
     fn repo_enabled() -> bool {
-        env::var("KRILL_REPO_ENABLED").is_ok()
+        env::var(KRILL_ENV_REPO_ENABLED).is_ok()
     }
     fn use_ta() -> bool {
-        env::var("KRILL_USE_TA").is_ok()
+        env::var(KRILL_ENV_USE_TA).is_ok()
     }
     fn https_mode() -> HttpsMode {
         HttpsMode::Generate
@@ -54,7 +54,7 @@ impl ConfigDefaults {
         "https://localhost:3000/".to_string()
     }
     fn log_level() -> LevelFilter {
-        match env::var("KRILL_LOG_LEVEL") {
+        match env::var(KRILL_ENV_LOG_LEVEL) {
             Ok(level) => LevelFilter::from_str(&level).unwrap(),
             _ => LevelFilter::Info,
         }
@@ -70,7 +70,7 @@ impl ConfigDefaults {
     }
 
     fn auth_token() -> Token {
-        match env::var("KRILL_AUTH_TOKEN") {
+        match env::var(KRILL_ENV_AUTH_TOKEN) {
             Ok(token) => Token::from(token),
             Err(_) => {
                 eprintln!("You MUST provide a value for the master API key, either by setting \"auth_token\" in the config file, or by setting the KRILL_AUTH_TOKEN environment variable.");
@@ -391,7 +391,7 @@ impl Config {
             // Set KRILL_TEST env var so that it can easily be accessed without the need to pass
             // this setting down all over the application. Used by CertAuth in particular to allow
             // the use of 'localhost' in Certificate Sign Requests in test mode only.
-            env::set_var("KRILL_TEST", "1");
+            env::set_var(KRILL_ENV_TEST, "1");
         }
 
         if !self.test_mode
@@ -671,8 +671,8 @@ mod tests {
         // Config for auth token is required! If there is nothing in the conf
         // file, then an environment variable must be set.
         use std::env;
-        env::set_var("KRILL_AUTH_TOKEN", "secret");
-        env::set_var("KRILL_TEST", "1");
+        env::set_var(KRILL_ENV_AUTH_TOKEN, "secret");
+        env::set_var(KRILL_ENV_TEST, "1");
 
         let c = Config::read_config("./defaults/krill.conf").unwrap();
         let expected_socket_addr: SocketAddr = ([127, 0, 0, 1], 3000).into();
