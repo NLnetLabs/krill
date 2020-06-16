@@ -1,3 +1,11 @@
+# GitHub Actions workflow for building and testing Krill O/S packages.
+# Uses GitHub Actions caching to avoid rebuilding Rust cargo-deb and
+# Krill dependencies on every run.
+#
+# Note: at the time of writing the GH cache contents expire after a
+# week if not used so the next build may be much slower as it will
+# have to re-download/build/install lots of Rust crates.
+
 name: Packaging
 on:
   push:
@@ -25,6 +33,8 @@ on:
       - 'tests/e2e/**'
 
 jobs:
+  # Use the cargo-deb Rust create to build a Debian package for installing
+  # Krill. See: https://github.com/mmstick/cargo-deb
   deb-pkg:
     env:
       CARGO_DEB_VER: 1.23.1
@@ -39,6 +49,8 @@ jobs:
       with:
         rust-version: stable
 
+    # Speed up Krill Rust builds by caching unchanged built dependencies.
+    # See: https://github.com/actions/cache/blob/master/examples.md#rust---cargo
     - name: Cache Dot Cargo
       uses: actions/cache@v2
       with:
@@ -48,6 +60,9 @@ jobs:
           target
         key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
+    # Speed up cargo-deb installation by only re-downloading it and
+    # re-building its dependent crates if we change the version of
+    # cargo-deb that we are using.
     - name: Cache Cargo Deb binary
       id: cache-cargo-deb
       uses: actions/cache@v2
@@ -64,12 +79,24 @@ jobs:
       run: |
         cargo deb --verbose
 
+    # Upload the produced DEB package. The artifact will be available
+    # via the GH Actions job summary and build log pages, but only to
+    # users logged in to GH with sufficient rights in this project. The
+    # uploaded artifact is also downloaded by the next job (see below)
+    # to sanity check that it can be installed and results in a working
+    # Krill installation.
     - name: Upload artifacts
       uses: actions/upload-artifact@v2
       with:
         name: debian-package
         path: target/debian/*.deb
 
+  # Download and sanity check on target operating systems the packages
+  # created by previous jobs (see above).
+  # TODO: test on actual VMs or Docker containers, not on GH runner
+  # images as GH runners come with lots of software and libraries
+  # pre-installed and are not representative of the actual deployment
+  # targets nor do GH runners support all targets that we want to test.
   deb-pkg-test:
     name: test
     needs: deb-pkg
