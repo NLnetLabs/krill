@@ -84,11 +84,11 @@ jobs:
       with:
         version: "0.12.19"
 
-#     - name: Install Terraform plugins
-#       run: |
-#         set -x
-#         mkdir -p $HOME/.terraform.d/plugins/
-#         cp ${GITHUB_WORKSPACE}/rpki-deploy/terraform/plugins/terraform-provider-dockermachine $HOME/.terraform.d/plugins/
+    - name: Install Terraform plugins
+      run: |
+        set -x
+        mkdir -p $HOME/.terraform.d/plugins/
+        cp ${GITHUB_WORKSPACE}/rpki-deploy/terraform/plugins/terraform-provider-dockermachine $HOME/.terraform.d/plugins/
 
     - name: Print application versions
       run: |
