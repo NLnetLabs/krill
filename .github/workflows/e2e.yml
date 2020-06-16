@@ -1,3 +1,20 @@
+# This workflow deploys Krill and various Relying Parties (such as Routinator)
+# in a local Docker private network and verifies that, for example, ROAs
+# published by Krill can be retrieved by the RPs.
+#
+# This test was originally designed to work on remote cloud VMs such as
+# DigitalOcean or Amazon Web  Services as the GitHub Runner hosts were too
+# small. However, the test now  works on GH Runners, but for historical reasons
+# the test is still orchestrated by Terraform even though there is no longer any
+# cloud deployment involved.
+#
+# Commit 9a88f9c is the last version of this workflow that was configured to
+# use cloud deployment.
+#
+# The actual E2E test framework is not part of the Krill repository as it is
+# quite big. The framework is at https://github.com/NLnetLabs/rpki-deploy in the
+# terraform/krill-e2e-test subdirectory.
+
 name: E2E Test
 
 on:
@@ -20,12 +37,6 @@ on:
 
 jobs:
   krill_e2e_test:
-#     env:
-      # RIPE NCC validator fails with OOM without at least 2gb RAM
-#       TF_VAR_size: 's-1vcpu-2gb'
-#       TF_VAR_domain: 'krill.cloud'
-#       TF_VAR_tags: '["krill", "e2etest"]'
-
     name: deploy_and_test
     runs-on: ubuntu-18.04
     steps:
@@ -84,6 +95,8 @@ jobs:
       with:
         version: "0.12.19"
 
+    # Strictly speaking this is not required when testing locally, but currently
+    # the test fails without it.
     - name: Install Terraform plugins
       run: |
         set -x
@@ -98,16 +111,6 @@ jobs:
         python3 --version
         terraform --version
 
-#     - name: Decrypt SSH key
-#       working-directory: ./rpki-deploy/terraform/krill-e2e-test
-#       run: |
-#         mkdir $HOME/secrets/
-#         echo "$SSH_KEY" > $HOME/secrets/ssh_key
-#         head -n 2 $HOME/secrets/ssh_key
-#         chmod 400 $HOME/secrets/ssh_key
-#       env:
-#         SSH_KEY: ${{ secrets.E2E_TEST_SSH_KEY }}
-
     # Don't lock the state file, otherwise if the user cancels the build via the
     # GitHub Actions UI the terraform destroy cleanup step will fail.
     - name: Deploy
@@ -118,9 +121,6 @@ jobs:
         terraform init
         terraform apply -lock=false -auto-approve -var "krill_build_path=${GITHUB_WORKSPACE}/krill"
       env:
-        # Don't embed env var references in env var definitions here, instead
-        # pass those using -var on the command line.
-#         TF_VAR_do_token: ${{ secrets.E2E_TEST_DO_TOKEN }}
         TF_VAR_run_tests: false
 
     - name: Run tests
@@ -131,9 +131,6 @@ jobs:
           -var "krill_build_path=${GITHUB_WORKSPACE}/krill" \
           -var "test_suite_path=${GITHUB_WORKSPACE}/krill/tests/e2e"
       env:
-        # Don't embed env var references in env var definitions here, instead
-        # pass those using -var on the command line.
-#         TF_VAR_do_token: ${{ secrets.E2E_TEST_DO_TOKEN }}
         TF_VAR_run_tests: true
 
     - name: Upload HTML test report
@@ -157,7 +154,3 @@ jobs:
       if: always()
       working-directory: ./rpki-deploy/terraform/krill-e2e-test/run_on_localhost
       run: terraform destroy -auto-approve -var "krill_build_path=${GITHUB_WORKSPACE}/krill"
-#       env:
-        # Don't embed env var references in env var definitions here, instead
-        # pass those using -var on the command line.
-#         TF_VAR_do_token: ${{ secrets.E2E_TEST_DO_TOKEN }}
