@@ -2,6 +2,8 @@ name: E2E Test
 
 on:
   push:
+    branches: 
+      - master
     paths:
       - '**'
       - '!.github/workflows/ci.yml'
@@ -12,6 +14,9 @@ on:
       - '!tests/**'
       - 'tests/e2e/**'
       - '!test-resources/**'
+  pull_request:
+    branches: 
+      - master
 
 jobs:
   krill_e2e_test:
