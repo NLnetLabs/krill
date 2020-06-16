@@ -158,7 +158,7 @@ jobs:
       if: always()
       working-directory: ./rpki-deploy/terraform/krill-e2e-test/run_on_localhost
       run: terraform destroy -auto-approve -var "ssh_key_path=$HOME/secrets/ssh_key" -var "krill_build_path=${GITHUB_WORKSPACE}/krill"
-      env:
+#       env:
         # Don't embed env var references in env var definitions here, instead
         # pass those using -var on the command line.
 #         TF_VAR_do_token: ${{ secrets.E2E_TEST_DO_TOKEN }}
