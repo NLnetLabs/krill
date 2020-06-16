@@ -1,4 +1,6 @@
 [package]
+# Note: some of these values are also used when building operating
+# system packages. See below.
 name    = "krill"
 version = "0.6.3"
 edition = "2018"
