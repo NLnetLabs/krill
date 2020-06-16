@@ -49,13 +49,28 @@ ignore          = "^0.4"
 [features]
 default = []
 extra-debug = [ "rpki/extra-debug" ]
-deb-pkg = [ "openssl/vendored" ]
+static-openssl = [ "openssl/vendored" ]
 
+# Configuration for cargo-deb (https://github.com/mmstick/cargo-deb)
+# Builds a Debian package in target/debian/ when invoked with: cargo deb
+# Configuration valid as of cargo-deb v1.23.1.
 [package.metadata.deb]
-features = [ "deb-pkg" ]
-priority = "extra"
+priority = "optional"
 section = "net"
+
+# Sstatically link with OpenSSL when building a Debian package because the
+# newest OpenSSL available on Ubuntu 16.04 at the time of writing is 1.0.2g
+# (see: https://packages.ubuntu.com/xenial/openssl) while Krill requires
+# OpenSSL >= 1.1.0.
+features = [ "static-openssl" ]
+
+# Manually specify depends instead of using "$auto" because when building
+# on a GitHub Actions Ubuntu 16.04 runner cargo-deb detects much newer
+# versions of these libraries than are available when testing apt-get install
+# on stock (Docker/DigitalOcean) Ubuntu 16.04, causing installation to fail
+# if "$auto" is used.
 depends = "libc6 (>= 2.23), libgcc1 (>= 1:6.0.1)"
+
 extended-description = """\
 Krill is a free, open source RPKI Certificate Authority that lets you run
 delegated RPKI under one or multiple Regional Internet Registries (RIRs).
