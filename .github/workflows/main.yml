@@ -116,7 +116,7 @@ jobs:
       run: |
         set -x
         terraform init
-        terraform apply -lock=false -auto-approve -var "ssh_key_path=$HOME/secrets/ssh_key" -var "krill_build_path=${GITHUB_WORKSPACE}/krill"
+        terraform apply -lock=false -auto-approve -var "krill_build_path=${GITHUB_WORKSPACE}/krill"
       env:
         # Don't embed env var references in env var definitions here, instead
         # pass those using -var on the command line.
@@ -128,7 +128,6 @@ jobs:
       run: |
         set -x
         terraform apply -auto-approve \
-          -var "ssh_key_path=$HOME/secrets/ssh_key" \
           -var "krill_build_path=${GITHUB_WORKSPACE}/krill" \
           -var "test_suite_path=${GITHUB_WORKSPACE}/krill/tests/e2e"
       env:
@@ -157,7 +156,7 @@ jobs:
     - name: Undeploy
       if: always()
       working-directory: ./rpki-deploy/terraform/krill-e2e-test/run_on_localhost
-      run: terraform destroy -auto-approve -var "ssh_key_path=$HOME/secrets/ssh_key" -var "krill_build_path=${GITHUB_WORKSPACE}/krill"
+      run: terraform destroy -auto-approve -var "krill_build_path=${GITHUB_WORKSPACE}/krill"
 #       env:
         # Don't embed env var references in env var definitions here, instead
         # pass those using -var on the command line.
