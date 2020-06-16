@@ -21,7 +21,7 @@ on:
 jobs:
   krill_e2e_test:
     env:
-      TF_VAR_size: 's-2vcpu-2gb'
+      TF_VAR_size: 's-1vcpu-1gb'
       TF_VAR_domain: 'krill.cloud'
       TF_VAR_tags: '["krill", "e2etest"]'
 
