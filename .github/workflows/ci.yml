@@ -3,7 +3,7 @@ on:
   push:
     paths-ignore:
       - '.dockerignore'
-      - '.github/workflow/main.yml'
+      - '.github/workflow/e2e.yml'
       - 'Changelog.md'
       - 'Dockerfile'
       - 'doc/**'
@@ -15,7 +15,7 @@ on:
   pull_request:
     paths-ignore:
       - '.dockerignore'
-      - '.github/workflow/main.yml'
+      - '.github/workflow/e2e.yml'
       - 'Changelog.md'
       - 'Dockerfile'
       - 'doc/**'
