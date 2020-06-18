@@ -982,6 +982,26 @@ paths:
         '500':
           $ref: '#/components/responses/GeneralErrorResponse'
 
+  /cas/{ca_handle}/routes/analysis/full:
+    get:
+      operationId: bgp_analysis_full
+      tags:
+        - "Route Authorizations"
+      summary: Show full analysis of all ROAs and Announcments for CA resources
+      description: |
+        Show all known announcements for the CA's resources and their RPKI validity
+        state compared to the CA's ROAs, as well as all the CA's ROAs and how they
+        affect the validatity state of known announcements.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/BgpFull'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/GeneralErrorResponse'
+
   /cas/{ca_handle}/issues:
     get:
       operationId: show_ca_issues
@@ -1650,6 +1670,86 @@ components:
               type: string
               example: cause
 
+    BgpFullSchema:
+      type: array
+      items:
+        type: object
+        required:
+          - asn
+          - prefix
+          - max_length
+          - state
+          - allowed_by
+          - disallowed_by
+          - authorizes
+          - disallows
+        properties:
+          asn:
+            type: integer
+          prefix:
+            type: string
+          max_length:
+            type: integer
+            nullable: true
+          state:
+            type: string
+          allowed_by:
+            type: array
+            items:
+              type: object
+              required:
+                - asn
+                - prefix
+                - max_length
+              properties:
+                asn:
+                  type: integer
+                prefix:
+                  type: string
+                max_length:
+                  type: integer
+                  nullable: true
+          disallowed_by:
+            type: array
+            items:
+              type: object
+              required:
+                - asn
+                - prefix
+                - max_length
+              properties:
+                asn:
+                  type: integer
+                prefix:
+                  type: string
+                max_length:
+                  type: integer
+                  nullable: true
+          allows:
+            type: array
+            items:
+              type: object
+              required:
+                - asn
+                - prefix
+              properties:
+                asn:
+                  type: integer
+                prefix:
+                  type: string
+          disallows:
+            type: array
+            items:
+              type: object
+              required:
+                - asn
+                - prefix
+              properties:
+                asn:
+                  type: integer
+                prefix:
+                  type: string
+
     CaRoaUnknownResponse:
       type: object
       required:
@@ -1853,10 +1953,13 @@ components:
   responses:
     Success:
       description: Success.
+
     Forbidden:
       description: Forbidden (incorrect authentication token).
+
     NotFound:
       description: Not Found.
+
     CertAuthIssues:
       description: Issues for a CA (e.g. cannot reach parent)
       content:
@@ -1885,6 +1988,7 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/PubDuplicateResponse'
+
     PubUnknownResponse:
       description: Unknown publisher
       content:
@@ -1956,6 +2060,27 @@ components:
           schema:
             $ref: '#/components/schemas/CaParentIssueResponse'
 
+    BgpFull:
+      description: |
+        Full BGP vs known Announcements report for CA. This is an array of both
+        ROAs and Announcements, including all optional information that may be
+        applicable to either. I.e. even though the schema includes max_length
+        this value will not be present for announcements. The arrays for 'allows'
+        and 'disallows' will always be empty for announcements, as will the arrays
+        for 'allowed_by' and 'disallowed_by' for ROAs.
+
+        Confusing as this might be, this allows for parsing all kinds of states
+        in a single table. If you want to look at announcements or ROAs only, please
+        look at the other more specific BGP analysis endpoints for those.
+
+        Possible state values are: roa_seen, roa_stale, announcement_valid,
+        announcement_invalid_length, announcement_invalid_asn, announcement_not_found,
+        roa_no_announcement_info
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/BgpFullSchema'
+
     CaRoaUnknownResponse:
       description: 'Invalid ROA delta: removing a definition which is unknown'
       content:
@@ -2004,7 +2129,6 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/GeneralErrorResponse'
-
 
     GetCA:
       description: Success.
@@ -2145,6 +2269,7 @@ components:
                     expires: '2019-11-27T10:56:16.172248Z'
             children:
               - 'child'
+
     ListCAs:
       description: Success.
       content:
@@ -2161,6 +2286,7 @@ components:
                       allOf:
                         - $ref: '#/components/schemas/Handle'
                         - description: The RFC-8183 handle that uniquely identifies the CA in this Krill instance.
+
     GetChildCA:
       description: Success.
       content:
@@ -2172,6 +2298,7 @@ components:
                 $ref: '#/components/schemas/PemIdCert'
               entitled_resources:
                 $ref: '#/components/schemas/Resources'
+
     ListPublishers:
       description: Success.
       content:
@@ -2203,6 +2330,7 @@ components:
                 links:
                   rel: 'self'
                   link: '/api/v1/publishers/ca'
+
     GetPublisher:
       description: Success.
       content:
@@ -2239,12 +2367,14 @@ components:
                 uri: 'rsync://<KRILL_SERVER_FQDN>/repo/child/0/A815..A01C.crl'
               - base64: 'MIIJ..Cg4='
                 uri: 'rsync://<KRILL_SERVER_FQDN>/repo/child/0/3130..3936.roa'
+
     AddPublisher:
       description: Success.
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/Rfc8181'
+
     StalePublishers:
       description: Success.
       content:
@@ -2276,6 +2406,7 @@ components:
                 links:
                   rel: 'self'
                   link: '/api/v1/publishers/ca'
+
     GetRepositoryForCA:
       description: Success.
       content:
@@ -2300,6 +2431,7 @@ components:
                     repo_info:
                       base_uri: 'rsync://localhost/repo/ca/'
                       rpki_notify: 'https://localhost:3000/rrdp/notificati.xml'
+
     GetCAHistory:
       description: Success.
       content:
@@ -2327,6 +2459,7 @@ components:
                       type: integer
                     details:
                       type: object
+
     Rfc6492:
       description: Success.
       content:

@@ -1,5 +1,6 @@
 //! Hyper based HTTP server for Krill.
 //!
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::fs::File;
 use std::path::PathBuf;
@@ -29,7 +30,6 @@ use crate::daemon::http::statics::statics;
 use crate::daemon::http::{tls, tls_keys, HttpResponse, Request, RequestPath, RoutingResult};
 use crate::daemon::krillserver::KrillServer;
 use crate::upgrades::{post_start_upgrade, pre_start_upgrade};
-use std::collections::HashMap;
 
 //------------ State -----------------------------------------------------
 
