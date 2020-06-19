@@ -119,11 +119,7 @@ impl BgpAnalyser {
                         .map(|va| va.announcement())
                         .collect();
 
-                    if allows.is_empty() {
-                        entries.push(BgpAnalysisEntry::roa_disallowing(*roa, disallows));
-                    } else {
-                        entries.push(BgpAnalysisEntry::roa_authorizing(*roa, allows, disallows))
-                    }
+                    entries.push(BgpAnalysisEntry::roa_seen(*roa, allows, disallows))
                 }
             }
 

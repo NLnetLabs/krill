@@ -5,7 +5,7 @@
       "prefix": "10.0.0.0/22",
       "max_length": 23
     },
-    "state": "authorising",
+    "state": "covering",
     "authorizes": [
       {
         "asn": 64496,

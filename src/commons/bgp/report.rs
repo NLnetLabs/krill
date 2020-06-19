@@ -63,8 +63,8 @@ impl fmt::Display for BgpAnalysisReport {
         if entry_map.contains_key(&BgpAnalysisState::RoaNoAnnouncementInfo) {
             write!(f, "no BGP announcements known")
         } else {
-            if let Some(authorizing) = entry_map.get(&BgpAnalysisState::RoaAuthorizing) {
-                writeln!(f, "Authorizations causing VALID announcements:")?;
+            if let Some(authorizing) = entry_map.get(&BgpAnalysisState::RoaSeen) {
+                writeln!(f, "Authorizations covering announcements seen:")?;
                 for roa in authorizing {
                     writeln!(f)?;
                     writeln!(f, "\tDefinition: {}", roa.definition)?;
@@ -85,24 +85,10 @@ impl fmt::Display for BgpAnalysisReport {
                 writeln!(f)?;
             }
 
-            if let Some(disallowing) = entry_map.get(&BgpAnalysisState::RoaDisallowing) {
-                writeln!(f, "Authorizations causing INVALID announcements only:")?;
-                for roa in disallowing {
-                    writeln!(f)?;
-                    writeln!(f, "\tDefinition: {}", roa.definition)?;
-                    writeln!(f)?;
-                    writeln!(f, "\t\tDisallows:")?;
-                    for ann in roa.disallows.iter() {
-                        writeln!(f, "\t\t{}", ann)?;
-                    }
-                }
-                writeln!(f)?;
-            }
-
             if let Some(stales) = entry_map.get(&BgpAnalysisState::RoaStale) {
                 writeln!(
                     f,
-                    "Authorizations for which no announcements are found (possibly stale):"
+                    "Authorizations for which no announcements are seen (possibly stale):"
                 )?;
                 writeln!(f)?;
                 for roa in stales {
@@ -206,7 +192,7 @@ impl BgpAnalysisEntry {
         &self.disallows
     }
 
-    pub fn roa_authorizing(
+    pub fn roa_seen(
         definition: RoaDefinition,
         mut authorizes: Vec<Announcement>,
         mut disallows: Vec<Announcement>,
@@ -215,22 +201,10 @@ impl BgpAnalysisEntry {
         disallows.sort();
         BgpAnalysisEntry {
             definition,
-            state: BgpAnalysisState::RoaAuthorizing,
+            state: BgpAnalysisState::RoaSeen,
             allowed_by: None,
             disallowed_by: vec![],
             authorizes,
-            disallows,
-        }
-    }
-
-    pub fn roa_disallowing(definition: RoaDefinition, mut disallows: Vec<Announcement>) -> Self {
-        disallows.sort();
-        BgpAnalysisEntry {
-            definition,
-            state: BgpAnalysisState::RoaDisallowing,
-            allowed_by: None,
-            disallowed_by: vec![],
-            authorizes: vec![],
             disallows,
         }
     }
@@ -331,8 +305,7 @@ impl PartialOrd for BgpAnalysisEntry {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialOrd, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BgpAnalysisState {
-    RoaAuthorizing,
-    RoaDisallowing,
+    RoaSeen,
     RoaStale,
     AnnouncementValid,
     AnnouncementInvalidLength,
@@ -465,15 +438,9 @@ impl From<BgpAnalysisReport> for RoaReport {
 
         for entry in table.0 {
             match &entry.state {
-                BgpAnalysisState::RoaAuthorizing => entries.push(RoaReportEntry {
+                BgpAnalysisState::RoaSeen => entries.push(RoaReportEntry {
                     definition: entry.definition,
-                    state: RoaReportEntryState::Authorising,
-                    authorizes: entry.authorizes,
-                    disallows: entry.disallows,
-                }),
-                BgpAnalysisState::RoaDisallowing => entries.push(RoaReportEntry {
-                    definition: entry.definition,
-                    state: RoaReportEntryState::Disallowing,
+                    state: RoaReportEntryState::Covering,
                     authorizes: entry.authorizes,
                     disallows: entry.disallows,
                 }),
@@ -516,9 +483,7 @@ pub struct RoaReportEntry {
 impl fmt::Display for RoaReportEntry {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let state_str = match self.state {
-            RoaReportEntryState::Authorising
-            | RoaReportEntryState::Disallowing
-            | RoaReportEntryState::Stale => format!(
+            RoaReportEntryState::Covering | RoaReportEntryState::Stale => format!(
                 "roa authorizes {}, disallows {} announcements",
                 self.authorizes.len(),
                 self.disallows.len()
@@ -537,8 +502,7 @@ impl fmt::Display for RoaReportEntry {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RoaReportEntryState {
-    Authorising,
-    Disallowing,
+    Covering,
     Stale,
     NotFound,
     NoInfo,

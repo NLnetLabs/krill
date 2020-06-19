@@ -3,7 +3,7 @@
     "asn": 64496,
     "prefix": "10.0.0.0/22",
     "max_length": 23,
-    "state": "roa_authorizing",
+    "state": "roa_seen",
     "authorizes": [
       {
         "asn": 64496,

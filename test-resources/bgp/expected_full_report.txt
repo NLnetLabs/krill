@@ -1,4 +1,4 @@
-Authorizations causing VALID announcements:
+Authorizations covering announcements seen:
 
 	Definition: 10.0.0.0/22-23 => 64496
 
@@ -10,7 +10,7 @@ Authorizations causing VALID announcements:
 		10.0.0.0/22 => 64497
 		10.0.0.0/24 => 64496
 
-Authorizations for which no announcements are found (possibly stale):
+Authorizations for which no announcements are seen (possibly stale):
 
 	Definition: 10.0.3.0/24 => 64497
 	Definition: 10.0.4.0/24 => 0
