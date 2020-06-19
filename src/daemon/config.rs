@@ -426,6 +426,14 @@ impl Config {
 
         if !self.service_uri.ends_with('/') {
             return Err(ConfigError::other("service URI must end with '/'"));
+        } else {
+            uri::Https::from_str(&self.service_uri).map_err(|_| {
+                ConfigError::Other(format!("Invalid service uri: {}", self.service_uri))
+            })?;
+
+            if self.service_uri.as_str().matches('/').count() != 3 {
+                return Err(ConfigError::other("Service URI MUST specify a host name only, e.g. https://rpki.example.com:3000/"));
+            }
         }
 
         if !self.rrdp_service_uri().to_string().ends_with('/') {
