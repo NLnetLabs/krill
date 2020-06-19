@@ -2062,12 +2062,13 @@ components:
 
     BgpFull:
       description: |
-        Full BGP vs known Announcements report for CA. This is an array of both
-        ROAs and Announcements, including all optional information that may be
-        applicable to either. I.e. even though the schema includes max_length
-        this value will not be present for announcements. The arrays for 'allows'
-        and 'disallows' will always be empty for announcements, as will the arrays
-        for 'allowed_by' and 'disallowed_by' for ROAs.
+        Full ROAs vs known BGP Announcements report for this CA.
+
+        This is an array of both ROAs and Announcements, including all optional
+        information that may be applicable to either. I.e. even though the schema
+        includes max_length this value will not be present for announcements. The
+        arrays for 'allows' and 'disallows' will always be empty for announcements,
+        as will the arrays for 'allowed_by' and 'disallowed_by' for ROAs.
 
         Confusing as this might be, this allows for parsing all kinds of states
         in a single table. If you want to look at announcements or ROAs only, please
