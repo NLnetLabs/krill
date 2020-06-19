@@ -103,8 +103,14 @@ impl BgpAnalyser {
                     let allows: Vec<Announcement> = covered
                         .iter()
                         .filter(|va| {
+                            // VALID announcements under THIS ROA
+                            // Already covered so it's under this ROA's prefix
+                            // ASN must match
+                            // Prefix length must be allowed under this ROA (it could be allowed by another ROA and therefore valid)
                             va.validity() == AnnouncementValidity::Valid
-                                && va.announcement().asn() == &roa.asn() // and covered by *this* ROA
+                                && va.announcement().prefix().addr_len()
+                                    <= roa.effective_max_length()
+                                && va.announcement().asn() == &roa.asn()
                         })
                         .map(|va| va.announcement())
                         .collect();
