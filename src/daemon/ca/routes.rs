@@ -304,7 +304,13 @@ impl Roas {
         let signing_key = certified_key.key_id();
 
         let mut roa_builder = RoaBuilder::new(auth.asn().into());
-        roa_builder.push_addr(prefix.ip_addr(), prefix.addr_len(), auth.max_length());
+
+        if auth.effective_max_length() > auth.prefix().prefix().addr_len() {
+            roa_builder.push_addr(prefix.ip_addr(), prefix.addr_len(), auth.max_length());
+        } else {
+            roa_builder.push_addr(prefix.ip_addr(), prefix.addr_len(), None);
+        }
+
         let mut object_builder = SignedObjectBuilder::new(
             Serial::random(signer).map_err(ca::Error::signer)?,
             SignSupport::sign_validity_years(ROA_CERTIFICATE_VALIDITY_YEARS),
