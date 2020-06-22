@@ -164,6 +164,10 @@ impl UpgradeStore for UpgradePubd {
                         last_command = seq;
                         seq += 1;
                     }
+
+                    if seq % 100 == 0 {
+                        info!(".. {} done", seq)
+                    }
                 }
 
                 info!("Done migrating commands for Repository server");
