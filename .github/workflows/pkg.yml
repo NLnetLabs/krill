@@ -199,17 +199,27 @@ jobs:
       run: |
         sg lxd -c "lxc launch $LXC_IMAGE testcon"
 
+    # Run apt-get update and install man support (missing in some LXC/LXD O/S
+    # images) but first wait for cloud-init to finish otherwise the network
+    # isn't yet ready.
     - name: Prepare container
       shell: bash
       run: |
         while true; do
           case ${LXC_IMAGE} in
-            ubuntu:16.04|ubuntu:18.04|ubuntu:20.04|images:debian/10/cloud)
-              OUTPUT=$(sg lxd -c "lxc exec testcon -- cloud-init status")
+            # ubuntu:16.04|ubuntu:18.04|ubuntu:20.04|images:debian/10/cloud)
+            ubuntu:16.04|ubuntu:18.04|ubuntu:20.04|images)
+            OUTPUT=$(sg lxd -c "lxc exec testcon -- cloud-init status")
               [[ "$OUTPUT" == "status: done" ]] && break
               ;;
-            images:debian/9/cloud)
-              [ -f /run/cloud-init/result.json ] && echo "Debian 9 extra pause" && sleep 2s && break
+            # images:debian/9/cloud)
+            #   [ -f /run/cloud-init/result.json ] && echo "Debian 9 extra pause" && sleep 2s && break
+            
+            images:debian/9/cloud|images:debian/10/cloud)
+              # Not sure why the above don't work for Debian 9 and 10. Just
+              # sleep for now instead to avoid the name resolution failures that
+              # otherwise happen during apt-get update below.
+              sleep 60s && break
               ;;
             *)
               echo >&2 "ERROR: Unknown LXC image $LXC_IMAGE"
