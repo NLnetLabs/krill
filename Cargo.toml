@@ -54,16 +54,27 @@ static-openssl = [ "openssl/vendored" ]
 
 # ------------------------------------------------------------------------------
 # START DEBIAN PACKAGING
-
-# Configurations for cargo-deb. Builds Debian packages in target/debian/ when
-# invoked with: cargo deb. Configuration valid as of cargo-deb v1.23.1. Use
-# `--variant` to select which section below to use. Variant sections inherit and
-# override the settings in the non-variant section. The postinst script uses the
-# adduser command so we depend on that too. krill.conf is deliberately NOT
-# specified as a "conf-file" because it is generated. See:
+#
+# Configurations for the cargo-deb cargo plugin which builds Debian packages in
+# target/debian/ when invoked with: cargo deb. Tested with cargo-deb v1.23.1.
+# Use `--variant` to select which section below to use. Variant sections inherit
+# and override the settings in the base [package.metadata.deb] section. The
+# configs vary because of differing degrees of OpenSSL and systemd support
+# across operating systems.
+#
+# Note that as the postinst script uses the adduser command we declare a
+# dependency on the adduser package to keep the lintian tool happy.
+# Note: krill.conf is deliberately NOT specified as a "conf-file" because it is
+# generated.
+#
+# The GitHub Actions pkg.yml workflow definition file uses these configurations
+# to build and test Ubuntu/Debian packages for Krill.
+# 
+# See:
 #   - https://github.com/mmstick/cargo-deb
 #   - https://lintian.debian.org/tags/systemd-service-file-outside-lib.html
 #   - https://www.debian.org/doc/debian-policy/ch-files.html#behavior
+#   - .github/workflows/pkg.yml
 [package.metadata.deb]
 name = "krill"
 priority = "optional"
