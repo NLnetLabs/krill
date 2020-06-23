@@ -183,9 +183,18 @@ jobs:
       shell: bash
       run: |
         while true; do
-          OUTPUT=$(sg lxd -c "lxc exec testcon -- sh -c 'cloud-init status || true'")
-          [[ "$OUTPUT" == "status: done" ]] && break
-          [ -f /run/cloud-init/result.json ] && break
+          case ${LXC_IMAGE} in
+            ubuntu:16.04|ubuntu:18.04|ubuntu:20.04|images:debian/10/cloud)
+              OUTPUT=$(sg lxd -c "lxc exec testcon -- cloud-init status")
+              [[ "$OUTPUT" == "status: done" ]] && break
+              ;;
+            images:debian/9/cloud)
+              [ -f /run/cloud-init/result.json ] && break
+              ;;
+            *)
+              echo >&2 "ERROR: Unknown LXC image $LXC_IMAGE"
+              ;;
+          esac
           echo "Waiting for cloud-init.."
           sleep 1s
         done
