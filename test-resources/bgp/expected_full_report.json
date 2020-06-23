@@ -1,0 +1,87 @@
+[
+  {
+    "asn": 64496,
+    "prefix": "10.0.0.0/22",
+    "max_length": 23,
+    "state": "roa_seen",
+    "authorizes": [
+      {
+        "asn": 64496,
+        "prefix": "10.0.0.0/22"
+      },
+      {
+        "asn": 64496,
+        "prefix": "10.0.2.0/23"
+      }
+    ],
+    "disallows": [
+      {
+        "asn": 64497,
+        "prefix": "10.0.0.0/22"
+      },
+      {
+        "asn": 64496,
+        "prefix": "10.0.0.0/24"
+      }
+    ]
+  },
+  {
+    "asn": 64497,
+    "prefix": "10.0.3.0/24",
+    "state": "roa_stale"
+  },
+  {
+    "asn": 0,
+    "prefix": "10.0.4.0/24",
+    "state": "roa_stale"
+  },
+  {
+    "asn": 64496,
+    "prefix": "10.0.0.0/22",
+    "state": "announcement_valid",
+    "allowed_by": {
+      "asn": 64496,
+      "prefix": "10.0.0.0/22",
+      "max_length": 23
+    }
+  },
+  {
+    "asn": 64496,
+    "prefix": "10.0.2.0/23",
+    "state": "announcement_valid",
+    "allowed_by": {
+      "asn": 64496,
+      "prefix": "10.0.0.0/22",
+      "max_length": 23
+    }
+  },
+  {
+    "asn": 64496,
+    "prefix": "10.0.0.0/24",
+    "state": "announcement_invalid_length",
+    "disallowed_by": [
+      {
+        "asn": 64496,
+        "prefix": "10.0.0.0/22",
+        "max_length": 23
+      }
+    ]
+  },
+  {
+    "asn": 64497,
+    "prefix": "10.0.0.0/22",
+    "state": "announcement_invalid_asn",
+    "disallowed_by": [
+      {
+        "asn": 64496,
+        "prefix": "10.0.0.0/22",
+        "max_length": 23
+      }
+    ]
+  },
+  {
+    "asn": 64497,
+    "prefix": "10.0.0.0/21",
+    "state": "announcement_not_found"
+  }
+]

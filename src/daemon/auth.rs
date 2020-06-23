@@ -4,7 +4,7 @@ use crate::commons::api::Token;
 
 //------------ Authorizer ----------------------------------------------------
 
-/// This type is responsible for checking authorisations when the API is
+/// This type is responsible for checking authorizations when the API is
 /// accessed.
 #[derive(Clone, Debug)]
 pub struct Authorizer {

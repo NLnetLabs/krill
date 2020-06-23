@@ -1,1 +1,0 @@
-{"label":"ca-child-resources-required","msg":"Child 'child' for CA 'ca' MUST have resources specified","args":{"child":"child","ca":"ca"}}

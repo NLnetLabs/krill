@@ -33,13 +33,13 @@ impl ConfigDefaults {
         3000
     }
     fn test_mode() -> bool {
-        env::var("KRILL_TEST").is_ok()
+        env::var(KRILL_ENV_TEST).is_ok()
     }
     fn repo_enabled() -> bool {
-        env::var("KRILL_REPO_ENABLED").is_ok()
+        env::var(KRILL_ENV_REPO_ENABLED).is_ok()
     }
     fn use_ta() -> bool {
-        env::var("KRILL_USE_TA").is_ok()
+        env::var(KRILL_ENV_USE_TA).is_ok()
     }
     fn https_mode() -> HttpsMode {
         HttpsMode::Generate
@@ -54,7 +54,7 @@ impl ConfigDefaults {
         "https://localhost:3000/".to_string()
     }
     fn log_level() -> LevelFilter {
-        match env::var("KRILL_LOG_LEVEL") {
+        match env::var(KRILL_ENV_LOG_LEVEL) {
             Ok(level) => LevelFilter::from_str(&level).unwrap(),
             _ => LevelFilter::Info,
         }
@@ -70,7 +70,7 @@ impl ConfigDefaults {
     }
 
     fn auth_token() -> Token {
-        match env::var("KRILL_AUTH_TOKEN") {
+        match env::var(KRILL_ENV_AUTH_TOKEN) {
             Ok(token) => Token::from(token),
             Err(_) => {
                 eprintln!("You MUST provide a value for the master API key, either by setting \"auth_token\" in the config file, or by setting the KRILL_AUTH_TOKEN environment variable.");
@@ -92,6 +92,18 @@ impl ConfigDefaults {
 
     fn post_limit_rfc6492() -> u64 {
         1024 * 1024 // 1MB (for ref. the NIC br cert is about 200kB)
+    }
+
+    fn bgp_risdumps_enabled() -> bool {
+        true
+    }
+
+    fn bgp_risdumps_v4_uri() -> String {
+        "http://www.ris.ripe.net/dumps/riswhoisdump.IPv4.gz".to_string()
+    }
+
+    fn bgp_risdumps_v6_uri() -> String {
+        "http://www.ris.ripe.net/dumps/riswhoisdump.IPv6.gz".to_string()
     }
 }
 
@@ -166,6 +178,14 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::post_limit_rfc6492")]
     pub post_limit_rfc6492: u64,
     pub rfc6492_log_dir: Option<PathBuf>,
+
+    // RIS BGP
+    #[serde(default = "ConfigDefaults::bgp_risdumps_enabled")]
+    pub bgp_risdumps_enabled: bool,
+    #[serde(default = "ConfigDefaults::bgp_risdumps_v4_uri")]
+    pub bgp_risdumps_v4_uri: String,
+    #[serde(default = "ConfigDefaults::bgp_risdumps_v6_uri")]
+    pub bgp_risdumps_v6_uri: String,
 }
 
 /// # Accessors
@@ -258,6 +278,10 @@ impl Config {
             Some(dir)
         };
 
+        let bgp_risdumps_enabled = false;
+        let bgp_risdumps_v4_uri = ConfigDefaults::bgp_risdumps_v4_uri();
+        let bgp_risdumps_v6_uri = ConfigDefaults::bgp_risdumps_v6_uri();
+
         Config {
             ip,
             port,
@@ -281,6 +305,9 @@ impl Config {
             rfc8181_log_dir,
             post_limit_rfc6492,
             rfc6492_log_dir,
+            bgp_risdumps_enabled,
+            bgp_risdumps_v4_uri,
+            bgp_risdumps_v6_uri,
         }
     }
 
@@ -308,13 +335,7 @@ impl Config {
                     .short("c")
                     .long("config")
                     .value_name("FILE")
-                    .help(
-                        "Specify non-default config file. If no file is \
-                         specified './daemon/defaults/krill.conf' will be used to \
-                         determine default values for all settings. Note that you \
-                         can use any of the following options to override any of \
-                         these values..",
-                    )
+                    .help("Override the path to the config file (default: './defaults/krill.conf')")
                     .required(false),
             )
             .get_matches();
@@ -370,7 +391,7 @@ impl Config {
             // Set KRILL_TEST env var so that it can easily be accessed without the need to pass
             // this setting down all over the application. Used by CertAuth in particular to allow
             // the use of 'localhost' in Certificate Sign Requests in test mode only.
-            env::set_var("KRILL_TEST", "1");
+            env::set_var(KRILL_ENV_TEST, "1");
         }
 
         if !self.test_mode
@@ -405,6 +426,14 @@ impl Config {
 
         if !self.service_uri.ends_with('/') {
             return Err(ConfigError::other("service URI must end with '/'"));
+        } else {
+            uri::Https::from_str(&self.service_uri).map_err(|_| {
+                ConfigError::Other(format!("Invalid service uri: {}", self.service_uri))
+            })?;
+
+            if self.service_uri.as_str().matches('/').count() != 3 {
+                return Err(ConfigError::other("Service URI MUST specify a host name only, e.g. https://rpki.example.com:3000/"));
+            }
         }
 
         if !self.rrdp_service_uri().to_string().ends_with('/') {
@@ -650,8 +679,8 @@ mod tests {
         // Config for auth token is required! If there is nothing in the conf
         // file, then an environment variable must be set.
         use std::env;
-        env::set_var("KRILL_AUTH_TOKEN", "secret");
-        env::set_var("KRILL_TEST", "1");
+        env::set_var(KRILL_ENV_AUTH_TOKEN, "secret");
+        env::set_var(KRILL_ENV_TEST, "1");
 
         let c = Config::read_config("./defaults/krill.conf").unwrap();
         let expected_socket_addr: SocketAddr = ([127, 0, 0, 1], 3000).into();

@@ -18,6 +18,7 @@ use crate::commons::api::{
     RepositoryContact, RepositoryUpdate, RoaDefinition, RoaDefinitionUpdates, ServerInfo,
     TaCertDetails, UpdateChildRequest,
 };
+use crate::commons::bgp::{BgpAnalyser, BgpAnalysisReport};
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::CommandKey;
 use crate::commons::remote::rfc8183;
@@ -43,7 +44,7 @@ pub struct KrillServer {
     // The base working directory, used for various storage
     work_dir: PathBuf,
 
-    // Component responsible for API authorisation checks
+    // Component responsible for API authorization checks
     authorizer: Authorizer,
 
     // Publication server, with configured publishers
@@ -51,6 +52,9 @@ pub struct KrillServer {
 
     // Handles the internal TA and/or CAs
     caserver: Arc<ca::CaServer<OpenSslSigner>>,
+
+    // Handles the internal TA and/or CAs
+    bgp_analyser: Arc<BgpAnalyser>,
 
     // Responsible for background tasks, e.g. re-publishing
     #[allow(dead_code)] // just need to keep this in scope
@@ -173,10 +177,17 @@ impl KrillServer {
             }
         }
 
+        let bgp_analyser = Arc::new(BgpAnalyser::new(
+            config.bgp_risdumps_enabled,
+            &config.bgp_risdumps_v4_uri,
+            &config.bgp_risdumps_v6_uri,
+        ));
+
         let scheduler = Scheduler::build(
             event_queue,
             caserver.clone(),
             pubserver.clone(),
+            bgp_analyser.clone(),
             ca_refresh_rate,
         );
 
@@ -192,6 +203,7 @@ impl KrillServer {
             authorizer,
             pubserver,
             caserver,
+            bgp_analyser,
             scheduler,
             started: Time::now(),
             post_limits,
@@ -426,12 +438,17 @@ impl KrillServer {
         for ca in self.caserver.ca_list().cas() {
             // can't fail really, but to be sure
             if let Ok(ca) = self.caserver.get_ca(ca.handle()) {
-                let roa_count = ca.roa_definitions().len();
+                let roas = ca.roa_definitions();
+                let roa_count = roas.len();
                 let child_count = ca.children().count();
+
+                let bgp_report = self
+                    .bgp_analyser
+                    .analyse(roas.as_slice(), &ca.all_resources());
 
                 res.insert(
                     ca.handle().clone(),
-                    CertAuthStats::new(roa_count, child_count),
+                    CertAuthStats::new(roa_count, child_count, bgp_report.into()),
                 );
             }
         }
@@ -666,6 +683,15 @@ impl KrillServer {
     pub fn ca_routes_show(&self, handle: &Handle) -> KrillResult<Vec<RoaDefinition>> {
         let ca = self.caserver.get_ca(handle)?;
         Ok(ca.roa_definitions())
+    }
+
+    pub fn ca_routes_bgp_analysis(&self, handle: &Handle) -> KrillResult<BgpAnalysisReport> {
+        let ca = self.caserver.get_ca(handle)?;
+        let definitions = ca.roa_definitions();
+        let resources = ca.all_resources();
+        Ok(self
+            .bgp_analyser
+            .analyse(definitions.as_slice(), &resources))
     }
 }
 

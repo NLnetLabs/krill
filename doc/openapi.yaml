@@ -1,7 +1,7 @@
 openapi: "3.0.2"
 info:
   title: Krill RPKI Server API
-  version: 0.6.3
+  version: 0.7.0
   description: |
     # Introduction
     Welcome to the documentation for the Krill server API, a JSON based
@@ -248,7 +248,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/rfc8181'
+                $ref: '#/components/schemas/Rfc8181'
             application/xml:
               schema:
                 $ref: '#/components/schemas/RFC8183RepositoryResponseXML'
@@ -358,7 +358,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/rfc8183'
+                $ref: '#/components/schemas/Rfc8183'
             application/xml:
               schema:
                 $ref: '#/components/schemas/RFC8183RequestXML'
@@ -374,8 +374,7 @@ paths:
         - "Certificate Authorities"
       summary: Add a child CA.
       description: |
-        This adds an embedded (in the same Krill instance) or remote child CA.
-        For a remote child CA the request body must include a JSON
+        This adds a child CA. The request body must include a JSON
         representation of the [RFC 8183 Child Request XML](https://tools.ietf.org/html/rfc8183#section-5.2.1),
         though the 'tag' and 'child_handle' attributes are ignored.
       parameters:
@@ -387,15 +386,7 @@ paths:
             schema:
               $ref: '#/components/schemas/AddCAChildRequest'
             examples:
-              embedded:
-                value:
-                  handle: 'ca'
-                  resources:
-                    asn: 'AS1'
-                    v4: '10.0.0.0/8'
-                    v6: '::'
-                  auth: 'embedded'
-              remote:
+              child:
                 value:
                   handle: 'ca'
                   resources:
@@ -409,7 +400,7 @@ paths:
                       id_cert: '<base64>'
       responses:
         '200':
-          $ref: '#/components/responses/Rfc6492OrEmbedded'
+          $ref: '#/components/responses/Rfc6492'
         '400':
           description: Bad request parameters.
           content:
@@ -539,7 +530,7 @@ paths:
         - $ref: '#/components/parameters/child_handle'
       responses:
         '200':
-          $ref: '#/components/responses/Rfc8183OrEmbedded'
+          $ref: '#/components/responses/Rfc8183O'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -560,16 +551,7 @@ paths:
         - "Certificate Authorities"
       summary: Get the RFC 8183 Parent Response for a child.
       description: |
-        To get the RFC 8183 Parent Response for a child, regardless of whether
-        the parent knows the ID Cert.
-
-        **Note:** You can use 'update child' to add a new ID cert to a child,
-        however, this is a real corner case that can only happen if you
-        mistakenly added a remote child as embedded, rather than using its
-        RFC 8183 Child Request.
-
-        For "embedded" CAs you will not need this parent response when you add
-        the "embedded" parent.
+        To get the RFC 8183 Parent Response for a child.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
         - $ref: '#/components/parameters/child_handle'
@@ -580,7 +562,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/rfc6492'
+                $ref: '#/components/schemas/Rfc6492'
             application/xml:
               schema:
                 $ref: '#/components/schemas/RFC8183ParentResponseXML'
@@ -627,13 +609,8 @@ paths:
         - "Certificate Authorities"
       summary: Add a parent to a CA.
       description: |
-        Adds an embedded or remote parents. For remote parents the RFC 6492
-        will be used. In principle CAs can also use this to talk to a local
-        parent CA in the same krill server, but this is inefficient. Therefore
-        it is also possible to add an 'embedded' parent in this case.
-
-        Note that you MUST specify a repository for your CA before you are
-        allowed to add a parent to it.
+        Add a parent to the CA. Note that your CA will only request a certificate
+        from any of its parents after a repository has been configured for it.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
       requestBody:
@@ -673,7 +650,7 @@ paths:
         - $ref: '#/components/parameters/parent_handle'
       responses:
         '200':
-          $ref: '#/components/responses/Rfc6492OrEmbedded'
+          $ref: '#/components/responses/Rfc6492'
         '403':
           $ref: '#/components/responses/Forbidden'
         '400':
@@ -699,7 +676,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Rfc6492OrEmbedded'
+              $ref: '#/components/schemas/Rfc6492'
       responses:
         '200':
           $ref: '#/components/responses/Success'
@@ -777,12 +754,6 @@ paths:
           - Request new certificates with SIA entries pointing to the new
             locations.
           - (best effort) Clean up of the old repository.
-
-        The new repository can be embedded, or remote. To use a remote
-        repository, the RFC 8181 Repository Response must be encoded into JSON.
-
-        Note: for most users it's better to use a remote repository, e.g. provided
-        by your RIR or NIR.
       parameters:
         - $ref: '#/components/parameters/ca_handle'
       requestBody:
@@ -790,7 +761,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Rfc8181OrEmbedded'
+              $ref: '#/components/schemas/Rfc8181'
       responses:
         '200':
           $ref: '#/components/responses/Success'
@@ -1011,6 +982,26 @@ paths:
         '500':
           $ref: '#/components/responses/GeneralErrorResponse'
 
+  /cas/{ca_handle}/routes/analysis/full:
+    get:
+      operationId: bgp_analysis_full
+      tags:
+        - "Route Authorizations"
+      summary: Show full analysis of all ROAs and Announcments for CA resources
+      description: |
+        Show all known announcements for the CA's resources and their RPKI validity
+        state compared to the CA's ROAs, as well as all the CA's ROAs and how they
+        affect the validatity state of known announcements.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/BgpFull'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/GeneralErrorResponse'
+
   /cas/{ca_handle}/issues:
     get:
       operationId: show_ca_issues
@@ -1145,9 +1136,6 @@ components:
     ServiceUri:
       type: string
       format: uri
-    embedded:
-      type: string
-      enum: ['embedded']
     rfcCommon:
       type: object
       properties:
@@ -1156,7 +1144,7 @@ components:
           nullable: true
         id_cert:
           $ref: '#/components/schemas/IdCert'
-    rfc6492:
+    Rfc6492:
       allOf:
         - $ref: '#/components/schemas/rfcCommon'
         - type: object
@@ -1174,7 +1162,7 @@ components:
           properties:
             publisher_handle:
               $ref: '#/components/schemas/Handle'
-    rfc8181:
+    Rfc8181:
       allOf:
         - $ref: '#/components/schemas/rfc8181Base'
         - type: object
@@ -1183,25 +1171,13 @@ components:
               $ref: '#/components/schemas/ServiceUri'
             repo_info:
               $ref: '#/components/schemas/RepoInfo'
-    rfc8183:
+    Rfc8183:
       allOf:
         - $ref: '#/components/schemas/rfcCommon'
         - type: object
           properties:
             child_handle:
               $ref: '#/components/schemas/Handle'
-    Rfc6492OrEmbedded:
-      oneOf:
-        - $ref: '#/components/schemas/embedded'
-        - $ref: '#/components/schemas/rfc6492'
-    Rfc8181OrEmbedded:
-      oneOf:
-        - $ref: '#/components/schemas/embedded'
-        - $ref: '#/components/schemas/rfc8181'
-    Rfc8183OrEmbedded:
-      oneOf:
-        - $ref: '#/components/schemas/embedded'
-        - $ref: '#/components/schemas/rfc8183'
     RFC8183PublisherRequestXML:
       type: object
       properties:
@@ -1386,7 +1362,7 @@ components:
         resources:
           $ref: '#/components/schemas/Resources'
         auth:
-          $ref: '#/components/schemas/Rfc8183OrEmbedded'
+          $ref: '#/components/schemas/Rfc8183'
     UpdateCAChildRequest:
       type: object
       properties:
@@ -1412,7 +1388,7 @@ components:
             - $ref: '#/components/schemas/Handle'
             - description: The local handle by which your ca refers to this parent.
         contact:
-          $ref: '#/components/schemas/Rfc6492OrEmbedded'
+          $ref: '#/components/schemas/Rfc6492'
     AddPublisherRequest:
       type: object
       required:
@@ -1694,6 +1670,86 @@ components:
               type: string
               example: cause
 
+    BgpFullSchema:
+      type: array
+      items:
+        type: object
+        required:
+          - asn
+          - prefix
+          - max_length
+          - state
+          - allowed_by
+          - disallowed_by
+          - authorizes
+          - disallows
+        properties:
+          asn:
+            type: integer
+          prefix:
+            type: string
+          max_length:
+            type: integer
+            nullable: true
+          state:
+            type: string
+          allowed_by:
+            type: array
+            items:
+              type: object
+              required:
+                - asn
+                - prefix
+                - max_length
+              properties:
+                asn:
+                  type: integer
+                prefix:
+                  type: string
+                max_length:
+                  type: integer
+                  nullable: true
+          disallowed_by:
+            type: array
+            items:
+              type: object
+              required:
+                - asn
+                - prefix
+                - max_length
+              properties:
+                asn:
+                  type: integer
+                prefix:
+                  type: string
+                max_length:
+                  type: integer
+                  nullable: true
+          allows:
+            type: array
+            items:
+              type: object
+              required:
+                - asn
+                - prefix
+              properties:
+                asn:
+                  type: integer
+                prefix:
+                  type: string
+          disallows:
+            type: array
+            items:
+              type: object
+              required:
+                - asn
+                - prefix
+              properties:
+                asn:
+                  type: integer
+                prefix:
+                  type: string
+
     CaRoaUnknownResponse:
       type: object
       required:
@@ -1727,7 +1783,7 @@ components:
               type: string
               nullable: true
               example: 24
-              
+
 
     CaRoaDuplicateResponse:
       type: object
@@ -1795,8 +1851,8 @@ components:
             max_length:
               type: string
               nullable: true
-              example: 24          
-          
+              example: 24
+
     CaRoaNotEntitledResponse:
       type: object
       required:
@@ -1851,7 +1907,7 @@ components:
             ca:
               type: string
               example: ca
-          
+
     CaUnknownResponse:
       type: object
       required:
@@ -1897,10 +1953,13 @@ components:
   responses:
     Success:
       description: Success.
+
     Forbidden:
       description: Forbidden (incorrect authentication token).
+
     NotFound:
       description: Not Found.
+
     CertAuthIssues:
       description: Issues for a CA (e.g. cannot reach parent)
       content:
@@ -1929,6 +1988,7 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/PubDuplicateResponse'
+
     PubUnknownResponse:
       description: Unknown publisher
       content:
@@ -2000,6 +2060,28 @@ components:
           schema:
             $ref: '#/components/schemas/CaParentIssueResponse'
 
+    BgpFull:
+      description: |
+        Full ROAs vs known BGP Announcements report for this CA.
+
+        This is an array of both ROAs and Announcements, including all optional
+        information that may be applicable to either. I.e. even though the schema
+        includes max_length this value will not be present for announcements. The
+        arrays for 'allows' and 'disallows' will always be empty for announcements,
+        as will the arrays for 'allowed_by' and 'disallowed_by' for ROAs.
+
+        Confusing as this might be, this allows for parsing all kinds of states
+        in a single table. If you want to look at announcements or ROAs only, please
+        look at the other more specific BGP analysis endpoints for those.
+
+        Possible state values are: roa_seen, roa_stale, announcement_valid,
+        announcement_invalid_length, announcement_invalid_asn, announcement_not_found,
+        roa_no_announcement_info
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/BgpFullSchema'
+
     CaRoaUnknownResponse:
       description: 'Invalid ROA delta: removing a definition which is unknown'
       content:
@@ -2048,7 +2130,6 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/GeneralErrorResponse'
-
 
     GetCA:
       description: Success.
@@ -2189,6 +2270,7 @@ components:
                     expires: '2019-11-27T10:56:16.172248Z'
             children:
               - 'child'
+
     ListCAs:
       description: Success.
       content:
@@ -2205,6 +2287,7 @@ components:
                       allOf:
                         - $ref: '#/components/schemas/Handle'
                         - description: The RFC-8183 handle that uniquely identifies the CA in this Krill instance.
+
     GetChildCA:
       description: Success.
       content:
@@ -2216,6 +2299,7 @@ components:
                 $ref: '#/components/schemas/PemIdCert'
               entitled_resources:
                 $ref: '#/components/schemas/Resources'
+
     ListPublishers:
       description: Success.
       content:
@@ -2247,6 +2331,7 @@ components:
                 links:
                   rel: 'self'
                   link: '/api/v1/publishers/ca'
+
     GetPublisher:
       description: Success.
       content:
@@ -2283,12 +2368,14 @@ components:
                 uri: 'rsync://<KRILL_SERVER_FQDN>/repo/child/0/A815..A01C.crl'
               - base64: 'MIIJ..Cg4='
                 uri: 'rsync://<KRILL_SERVER_FQDN>/repo/child/0/3130..3936.roa'
+
     AddPublisher:
       description: Success.
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/rfc8181'
+            $ref: '#/components/schemas/Rfc8181'
+
     StalePublishers:
       description: Success.
       content:
@@ -2320,6 +2407,7 @@ components:
                 links:
                   rel: 'self'
                   link: '/api/v1/publishers/ca'
+
     GetRepositoryForCA:
       description: Success.
       content:
@@ -2328,23 +2416,12 @@ components:
             type: object
             properties:
               contact:
-                oneOf:
-                  - type: object
-                    properties:
-                      embedded:
-                        $ref: '#/components/schemas/RepoInfo'
-                  - type: object
-                    properties:
-                      rfc8181:
-                        $ref: '#/components/schemas/rfc8181'
+                type: object
+                properties:
+                  rfc8181:
+                    $ref: '#/components/schemas/Rfc8181'
           examples:
-            embedded:
-              value:
-                contact:
-                  embedded:
-                    base_uri: 'rsync://localhost/repo/ca/'
-                    rpki_notify: 'https://localhost:3000/rrdp/notification.xml'
-            rfc8181:
+            contact:
               value:
                 contact:
                   rfc8181:
@@ -2354,7 +2431,8 @@ components:
                     service_uri: 'https://localhost:3000/rfc8181/ca'
                     repo_info:
                       base_uri: 'rsync://localhost/repo/ca/'
-                      rpki_notify: 'https://localhost:3000/rrdp/notification.xml'
+                      rpki_notify: 'https://localhost:3000/rrdp/notificati.xml'
+
     GetCAHistory:
       description: Success.
       content:
@@ -2382,49 +2460,17 @@ components:
                       type: integer
                     details:
                       type: object
-    Rfc6492OrEmbedded:
-      description: Success.
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Rfc6492OrEmbedded'
-          examples:
-            rfc6492:
-              value:
-                rfc6492:
-                  tag: null
-                  id_cert: '<base64>'
-                  parent_handle: 'ta'
-                  child_handle: 'ca'
-                  service_uri: 'https://localhost:3000/rfc6492/ta'
-            embedded:
-              value:
-                'embedded'
-    Rfc8183OrEmbedded:
-      description: Success.
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Rfc8183OrEmbedded'
-          examples:
-            rfc6492:
-              value:
-                rfc6492:
-                  tag: null
-                  id_cert: '<base64>'
-                  parent_handle: 'ta'
-                  child_handle: 'ca'
-                  service_uri: 'https://localhost:3000/rfc6492/ta'
-            embedded:
-              value:
-                'embedded'
 
-  examples:
-    rfc6492:
-      value:
-        rfc6492:
-          tag: null
-          id_cert: '<base64>'
-          parent_handle: 'ta'
-          child_handle: 'ca'
-          service_uri: 'https://localhost:3000/rfc6492/ta'
+    Rfc6492:
+      description: Success.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Rfc6492'
+
+    Rfc8183O:
+      description: Success.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Rfc8183'

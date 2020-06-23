@@ -6,10 +6,13 @@ use std::path::PathBuf;
 use std::{fmt, fs, io};
 
 use crate::commons::api::Handle;
-use crate::commons::eventsourcing::{DiskKeyStore, KeyStoreError};
+use crate::commons::eventsourcing::{DiskKeyStore, KeyStore, KeyStoreError, KeyStoreVersion};
 use crate::commons::util::file;
+use crate::daemon::krillserver::KrillServer;
+use crate::upgrades::roa_cleanup_0_7_0::RoaCleanupError;
 
 pub mod pre_0_6_0;
+pub mod roa_cleanup_0_7_0;
 
 //------------ UpgradeError --------------------------------------------------
 
@@ -26,6 +29,9 @@ pub enum UpgradeError {
 
     #[display(fmt = "Cannot load: {}", _0)]
     CannotLoadAggregate(Handle),
+
+    #[display(fmt = "Cannot clean up redundant roas: {}", _0)]
+    RoaCleanup(RoaCleanupError),
 
     #[display(fmt = "{}", _0)]
     Custom(String),
@@ -59,6 +65,12 @@ impl From<io::Error> for UpgradeError {
     }
 }
 
+impl From<RoaCleanupError> for UpgradeError {
+    fn from(e: RoaCleanupError) -> Self {
+        UpgradeError::RoaCleanup(e)
+    }
+}
+
 //------------ UpgradeStore --------------------------------------------------
 
 /// Implement this for automatic upgrades to key stores
@@ -67,10 +79,25 @@ pub trait UpgradeStore {
     fn migrate(&self, store: &DiskKeyStore) -> Result<(), UpgradeError>;
 }
 
-/// Should be called when Krill starts
-pub fn upgrade(work_dir: &PathBuf) -> Result<(), UpgradeError> {
+/// Should be called when Krill starts, before the KrillServer is initiated
+pub fn pre_start_upgrade(work_dir: &PathBuf) -> Result<(), UpgradeError> {
     upgrade_pre_0_6_0_cas_commands(work_dir)?;
     upgrade_pre_0_6_0_pubd_commands(work_dir)
+}
+
+/// Should be called right after the KrillServer is initiated
+pub fn post_start_upgrade(work_dir: &PathBuf, server: &KrillServer) -> Result<(), UpgradeError> {
+    let version_0_7 = KeyStoreVersion::V0_7;
+    let ca_store = DiskKeyStore::new(work_dir, "cas");
+    let pubd_store = DiskKeyStore::new(work_dir, "pubd");
+    if ca_store.get_version()? != version_0_7 {
+        info!("Will clean up redundant ROAs for all CAs and update version of storage dirs");
+        roa_cleanup_0_7_0::roa_cleanup(server)?;
+        ca_store.set_version(&version_0_7)?;
+        pubd_store.set_version(&version_0_7)?;
+    }
+
+    Ok(())
 }
 
 fn upgrade_pre_0_6_0_cas_commands(work_dir: &PathBuf) -> Result<(), UpgradeError> {
@@ -115,10 +142,10 @@ fn upgrade_pre_0_6_0_pubd_commands(work_dir: &PathBuf) -> Result<(), UpgradeErro
     // Prepare to do the work on the real "cas" directory
     let mut pubd_dir = work_dir.clone();
     pubd_dir.push("pubd");
-    let ca_store = DiskKeyStore::new(work_dir, "pubd");
+    let pubd_store = DiskKeyStore::new(work_dir, "pubd");
 
     // bail out if there is nothing to do
-    if !pre_0_6_0_pubd_commands.needs_migrate(&ca_store)? {
+    if !pre_0_6_0_pubd_commands.needs_migrate(&pubd_store)? {
         return Ok(());
     }
 
@@ -128,7 +155,7 @@ fn upgrade_pre_0_6_0_pubd_commands(work_dir: &PathBuf) -> Result<(), UpgradeErro
     backup_dir.push("pubd_bk");
     file::backup_dir(&pubd_dir, &backup_dir)?;
 
-    if let Err(e) = pre_0_6_0_pubd_commands.migrate(&ca_store) {
+    if let Err(e) = pre_0_6_0_pubd_commands.migrate(&pubd_store) {
         // If the upgrade failed, then rename the now broken directory for inspection,
         // and restore the backup directory by renaming it.
         let mut failed = work_dir.clone();
@@ -170,7 +197,7 @@ mod tests {
             pubd_test.push("pubd");
             file::backup_dir(&pubd_source, &pubd_test).unwrap();
 
-            upgrade(&tmp).unwrap();
+            pre_start_upgrade(&tmp).unwrap();
         })
     }
 }

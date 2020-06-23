@@ -810,7 +810,7 @@ mod tests {
     }
 
     fn example_rrdp_uri() -> uri::Https {
-        test::https("https://rpki.example/rrdp/notify.xml")
+        test::https("https://rpki.example/rrdp/notification.xml")
     }
 
     fn example_sia_base() -> uri::Rsync {

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -11,7 +12,6 @@ use crate::commons::eventsourcing::{
     Aggregate, CommandKey, DiskKeyStore, Event, EventListener, KeyStore, KeyStoreError,
     KeyStoreVersion, StoredCommand,
 };
-use std::io;
 
 const SNAPSHOT_FREQ: u64 = 5;
 
@@ -116,7 +116,7 @@ impl<A: Aggregate> DiskAggregateStore<A> {
 
         if store.aggregates().is_empty() {
             store
-                .set_version(&KeyStoreVersion::V0_6)
+                .set_version(&KeyStoreVersion::V0_7)
                 .map_err(AggregateStoreError::KeyStoreError)?;
         }
 

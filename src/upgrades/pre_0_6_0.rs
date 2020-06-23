@@ -29,8 +29,8 @@ impl UpgradeStore for UpgradeCas {
     fn needs_migrate(&self, store: &DiskKeyStore) -> Result<bool, UpgradeError> {
         match store.get_version() {
             Ok(version) => match version {
-                KeyStoreVersion::V0_6 => Ok(false),
                 KeyStoreVersion::Pre0_6 => Ok(true),
+                _ => Ok(false),
             },
             Err(e) => match e {
                 KeyStoreError::NotInitialised => Ok(false),
@@ -128,8 +128,8 @@ impl UpgradeStore for UpgradePubd {
         } else {
             match store.get_version() {
                 Ok(version) => match version {
-                    KeyStoreVersion::V0_6 => Ok(false),
                     KeyStoreVersion::Pre0_6 => Ok(true),
+                    _ => Ok(false),
                 },
                 Err(e) => match e {
                     KeyStoreError::NotInitialised => Ok(false),
@@ -163,6 +163,10 @@ impl UpgradeStore for UpgradePubd {
                         store.drop(&pubd_handle, &old_key)?;
                         last_command = seq;
                         seq += 1;
+                    }
+
+                    if seq % 100 == 0 {
+                        info!(".. {} done", seq)
                     }
                 }
 

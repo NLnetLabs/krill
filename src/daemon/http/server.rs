@@ -1,5 +1,6 @@
 //! Hyper based HTTP server for Krill.
 //!
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::fs::File;
 use std::path::PathBuf;
@@ -19,8 +20,8 @@ use hyper::service::{make_service_fn, service_fn};
 use hyper::Method;
 
 use crate::commons::api::{
-    ChildHandle, CommandHistoryCriteria, Handle, ParentCaContact, ParentCaReq, ParentHandle,
-    PublisherList, RepositoryUpdate,
+    BgpStats, ChildHandle, CommandHistoryCriteria, Handle, ParentCaContact, ParentCaReq,
+    ParentHandle, PublisherList, RepositoryUpdate,
 };
 use crate::commons::error::Error;
 use crate::commons::remote::rfc8183;
@@ -28,7 +29,7 @@ use crate::daemon::config::Config;
 use crate::daemon::http::statics::statics;
 use crate::daemon::http::{tls, tls_keys, HttpResponse, Request, RequestPath, RoutingResult};
 use crate::daemon::krillserver::KrillServer;
-use crate::upgrades::upgrade;
+use crate::upgrades::{post_start_upgrade, pre_start_upgrade};
 
 //------------ State -----------------------------------------------------
 
@@ -36,13 +37,16 @@ pub type State = Arc<RwLock<KrillServer>>;
 
 pub async fn start(config: Config) -> Result<(), Error> {
     // Call upgrade, this will only do actual work if needed.
-    upgrade(&config.data_dir).map_err(|_| Error::custom("Could not upgrade Krill, check logs!"))?;
+    pre_start_upgrade(&config.data_dir)
+        .map_err(|_| Error::custom("Could not upgrade Krill, check logs!"))?;
 
     // Create the server, this will create the necessary data sub-directories if needed
-    let state = {
-        let krill = KrillServer::build(&config)?;
-        Arc::new(RwLock::new(krill))
-    };
+    let krill = KrillServer::build(&config)?;
+
+    post_start_upgrade(&config.data_dir, &krill)
+        .map_err(|_| Error::custom("Could not upgrade Krill, check logs!"))?;
+
+    let state = Arc::new(RwLock::new(krill));
 
     let service = make_service_fn(move |_| {
         let state = state.clone();
@@ -172,6 +176,28 @@ pub async fn metrics(req: Request) -> RoutingResult {
         let server = req.state();
         let server = server.read().await;
 
+        struct AllBgpStats {
+            announcements_valid: HashMap<Handle, usize>,
+            announcements_invalid_asn: HashMap<Handle, usize>,
+            announcements_invalid_length: HashMap<Handle, usize>,
+            announcements_not_found: HashMap<Handle, usize>,
+            roas_stale: HashMap<Handle, usize>,
+        }
+
+        impl AllBgpStats {
+            fn add_ca(&mut self, ca: &Handle, stats: &BgpStats) {
+                self.announcements_valid
+                    .insert(ca.clone(), stats.announcements_valid);
+                self.announcements_invalid_asn
+                    .insert(ca.clone(), stats.announcements_invalid_asn);
+                self.announcements_invalid_length
+                    .insert(ca.clone(), stats.announcements_invalid_length);
+                self.announcements_not_found
+                    .insert(ca.clone(), stats.announcements_not_found);
+                self.roas_stale.insert(ca.clone(), stats.roas_stale);
+            }
+        }
+
         let mut res = String::new();
 
         let info = server.server_info();
@@ -271,6 +297,76 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 "krill_cas_children{{ca=\"{}\"}} {}\n",
                 ca,
                 status.child_count()
+            ));
+        }
+
+        // Aggregate ROA vs BGP stats per status
+        let mut all_bgp_stats = AllBgpStats {
+            announcements_valid: HashMap::new(),
+            announcements_invalid_asn: HashMap::new(),
+            announcements_invalid_length: HashMap::new(),
+            announcements_not_found: HashMap::new(),
+            roas_stale: HashMap::new(),
+        };
+        for (ca, status) in cas_status.iter() {
+            all_bgp_stats.add_ca(ca, status.bgp_stats());
+        }
+
+        res.push_str("\n");
+        res.push_str("# HELP krill_cas_bgp_announcements_valid number of announcements seen for CA resources with RPKI state VALID\n");
+        res.push_str("# TYPE krill_cas_bgp_announcements_valid gauge\n");
+        for (ca, nr) in all_bgp_stats.announcements_valid.iter() {
+            res.push_str(&format!(
+                "krill_cas_bgp_announcements_valid{{ca=\"{}\"}} {}\n",
+                ca, nr
+            ));
+        }
+
+        res.push_str("\n");
+        res.push_str(
+            "# HELP krill_cas_bgp_announcements_invalid_asn number of announcements seen for CA resources with RPKI state INVALID (ASN mismatch)\n",
+        );
+        res.push_str("# TYPE krill_cas_bgp_announcements_invalid_asn gauge\n");
+        for (ca, nr) in all_bgp_stats.announcements_invalid_asn.iter() {
+            res.push_str(&format!(
+                "krill_cas_bgp_announcements_invalid_asn{{ca=\"{}\"}} {}\n",
+                ca, nr
+            ));
+        }
+
+        res.push_str("\n");
+        res.push_str(
+            "# HELP krill_cas_bgp_announcements_invalid_length number of announcements seen for CA resources with RPKI state INVALID (prefix exceeds max length)\n",
+        );
+        res.push_str("# TYPE krill_cas_bgp_announcements_invalid_length gauge\n");
+        for (ca, nr) in all_bgp_stats.announcements_invalid_length.iter() {
+            res.push_str(&format!(
+                "krill_cas_bgp_announcements_invalid_length{{ca=\"{}\"}} {}\n",
+                ca, nr
+            ));
+        }
+
+        res.push_str("\n");
+        res.push_str(
+            "# HELP krill_cas_bgp_announcements_not_found number of announcements seen for CA resources with RPKI state NOT FOUND (none of the CA's ROAs cover this)\n",
+        );
+        res.push_str("# TYPE krill_cas_bgp_announcements_not_found gauge\n");
+        for (ca, nr) in all_bgp_stats.announcements_not_found.iter() {
+            res.push_str(&format!(
+                "krill_cas_bgp_announcements_not_found{{ca=\"{}\"}} {}\n",
+                ca, nr
+            ));
+        }
+
+        res.push_str("\n");
+        res.push_str(
+            "# HELP krill_cas_bgp_roas_stale number of ROAs for this CA for which no announcements are seen (0 may also indicate that no BGP info is available)\n",
+        );
+        res.push_str("# TYPE krill_cas_bgp_roas_stale gauge\n");
+        for (ca, nr) in all_bgp_stats.roas_stale.iter() {
+            res.push_str(&format!(
+                "krill_cas_bgp_roas_stale{{ca=\"{}\"}} {}\n",
+                ca, nr
             ));
         }
 
@@ -488,6 +584,10 @@ async fn api_ca_routes(req: Request, path: &mut RequestPath, ca: Handle) -> Rout
         None => match *req.method() {
             Method::GET => ca_routes_show(req, ca).await,
             Method::POST => ca_routes_update(req, ca).await,
+            _ => render_unknown_method(),
+        },
+        Some("analysis") => match *req.method() {
+            Method::GET => ca_routes_analysis(req, path, ca).await,
             _ => render_unknown_method(),
         },
         _ => render_unknown_method(),
@@ -975,8 +1075,6 @@ async fn ca_kr_activate(req: Request, handle: Handle) -> RoutingResult {
     render_empty_res(req.state().read().await.ca_keyroll_activate(handle))
 }
 
-//------------ Admin: Force republish ----------------------------------------
-
 /// Update the route authorizations for this CA
 async fn ca_routes_update(req: Request, handle: Handle) -> RoutingResult {
     let state = req.state().clone();
@@ -992,6 +1090,14 @@ async fn ca_routes_show(req: Request, handle: Handle) -> RoutingResult {
     match req.state().read().await.ca_routes_show(&handle) {
         Ok(roas) => render_json(roas),
         Err(_) => render_unknown_resource(),
+    }
+}
+
+/// Show the state of ROAs vs BGP for this CA
+async fn ca_routes_analysis(req: Request, path: &mut RequestPath, handle: Handle) -> RoutingResult {
+    match path.next() {
+        Some("full") => render_json_res(req.state().read().await.ca_routes_bgp_analysis(&handle)),
+        _ => render_unknown_method(),
     }
 }
 
@@ -1027,6 +1133,11 @@ async fn rrdp(req: Request) -> RoutingResult {
     } else {
         let mut full_path: PathBuf = req.state.read().await.rrdp_base_path();
         let (_, path) = req.path.remaining().split_at(1);
+        let cache_seconds = if path.ends_with("notification.xml") {
+            60
+        } else {
+            86400
+        };
         full_path.push(path);
 
         match File::open(full_path) {
@@ -1035,7 +1146,7 @@ async fn rrdp(req: Request) -> RoutingResult {
                 let mut buffer = Vec::new();
                 file.read_to_end(&mut buffer).unwrap();
 
-                Ok(HttpResponse::xml(buffer))
+                Ok(HttpResponse::xml_with_cache(buffer, cache_seconds))
             }
             _ => Ok(HttpResponse::not_found()),
         }

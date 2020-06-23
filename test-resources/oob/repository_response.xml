@@ -5,7 +5,7 @@
         service_uri="https://a.example/publication/Alice/Bob-42"
         publisher_handle="Alice/Bob-42"
         sia_base="rsync://a.example/rpki/Alice/Bob-42/"
-        rrdp_notification_uri="https://rpki.example/rrdp/notify.xml">
+        rrdp_notification_uri="https://rpki.example/rrdp/notification.xml">
     <repository_bpki_ta>
         MIIDJDCCAgygAwIBAgIBATANBgkqhkiG9w0BAQsFADArMSkwJwYDVQQDEyBBbGlj
         ZSBCUEtJIFJlc291cmNlIFRydXN0IEFuY2hvcjAeFw0xMTA3MDEwNDA3MTlaFw0x

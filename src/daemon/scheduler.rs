@@ -10,6 +10,7 @@ use tokio::runtime::Runtime;
 use rpki::x509::Time;
 
 use crate::commons::api::Handle;
+use crate::commons::bgp::BgpAnalyser;
 use crate::commons::util::softsigner::OpenSslSigner;
 use crate::daemon::ca::CaServer;
 use crate::daemon::mq::{EventQueueListener, QueueEvent};
@@ -31,6 +32,10 @@ pub struct Scheduler {
     /// they are not renewed within the configured grace period.
     #[allow(dead_code)] // just need to keep this in scope
     ca_refresh_sh: ScheduleHandle,
+
+    /// Responsible for refreshing announcement information
+    #[allow(dead_code)] // just need to keep this in scope
+    announcements_refresh_sh: ScheduleHandle,
 }
 
 impl Scheduler {
@@ -38,16 +43,19 @@ impl Scheduler {
         event_queue: Arc<EventQueueListener>,
         caserver: Arc<CaServer<OpenSslSigner>>,
         pubserver: Option<Arc<PubServer>>,
+        bgp_analyser: Arc<BgpAnalyser>,
         ca_refresh_rate: u32,
     ) -> Self {
         let event_sh = make_event_sh(event_queue, caserver.clone(), pubserver);
         let republish_sh = make_republish_sh(caserver.clone());
         let ca_refresh_sh = make_ca_refresh_sh(caserver, ca_refresh_rate);
+        let announcements_refresh_sh = make_announcements_refresh_sh(bgp_analyser);
 
         Scheduler {
             event_sh,
             republish_sh,
             ca_refresh_sh,
+            announcements_refresh_sh,
         }
     }
 }
@@ -203,6 +211,19 @@ fn make_ca_refresh_sh(caserver: Arc<CaServer<OpenSslSigner>>, refresh_rate: u32)
         rt.block_on(async {
             info!("Triggering background refresh for all CAs");
             caserver.refresh_all().await
+        })
+    });
+    scheduler.watch_thread(Duration::from_millis(100))
+}
+
+fn make_announcements_refresh_sh(bgp_analyser: Arc<BgpAnalyser>) -> ScheduleHandle {
+    let mut scheduler = clokwerk::Scheduler::new();
+    scheduler.every(1.seconds()).run(move || {
+        let mut rt = Runtime::new().unwrap();
+        rt.block_on(async {
+            if let Err(e) = bgp_analyser.update().await {
+                error!("Failed to update BGP announcements: {}", e)
+            }
         })
     });
     scheduler.watch_thread(Duration::from_millis(100))

@@ -11,6 +11,8 @@ extern crate futures;
 extern crate futures_util;
 extern crate hex;
 extern crate hyper;
+extern crate intervaltree;
+extern crate libflate;
 #[macro_use]
 extern crate log;
 extern crate openssl;

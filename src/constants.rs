@@ -1,8 +1,15 @@
-pub const KRILL_VERSION: &str = "0.6.3";
+pub const KRILL_VERSION: &str = "0.7.0";
 pub const KRILL_SERVER_APP: &str = "Krill";
 pub const KRILL_CLIENT_APP: &str = "Krill Client";
 
 pub const KRILL_DEFAULT_CONFIG_FILE: &str = "./defaults/krill.conf";
+
+pub const KRILL_ENV_TEST: &str = "KRILL_TEST";
+pub const KRILL_ENV_TEST_ANN: &str = "KRILL_TEST_ANN";
+pub const KRILL_ENV_REPO_ENABLED: &str = "KRILL_REPO_ENABLED";
+pub const KRILL_ENV_USE_TA: &str = "KRILL_USE_TA";
+pub const KRILL_ENV_LOG_LEVEL: &str = "KRILL_LOG_LEVEL";
+pub const KRILL_ENV_AUTH_TOKEN: &str = "KRILL_AUTH_TOKEN";
 
 pub const CASERVER_DIR: &str = "cas";
 
@@ -38,5 +45,7 @@ pub const CHILD_CERTIFICATE_REISSUE_WEEKS: i64 = 4;
 pub const ROA_CERTIFICATE_VALIDITY_YEARS: i32 = 1;
 pub const ROA_CERTIFICATE_REISSUE_WEEKS: i64 = 4;
 pub const ID_CERTIFICATE_VALIDITY_YEARS: i32 = 15;
+
+pub const BGP_RIS_REFRESH_MINUTES: i64 = 60;
 
 pub const HTTTP_CLIENT_TIMEOUT_SECS: u64 = 120;

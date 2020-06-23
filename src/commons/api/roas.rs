@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::fmt;
 use std::net::IpAddr;
@@ -15,7 +16,7 @@ use crate::daemon::ca::RouteAuthorizationUpdates;
 
 /// This type defines the definition of a Route Origin Authorization (ROA), i.e.
 /// the originating asn, IPv4 or IPv6 prefix, and optionally a max length.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Copy, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct RoaDefinition {
     asn: AsNumber,
     prefix: TypedPrefix,
@@ -29,6 +30,14 @@ impl RoaDefinition {
             asn,
             prefix,
             max_length,
+        }
+    }
+
+    pub fn explicit_max_length(self) -> Self {
+        RoaDefinition {
+            asn: self.asn,
+            prefix: self.prefix,
+            max_length: Some(self.effective_max_length()),
         }
     }
 
@@ -60,6 +69,13 @@ impl RoaDefinition {
         } else {
             true
         }
+    }
+
+    /// Returns `true` if the this definition includes the other definition.
+    pub fn includes(&self, other: &RoaDefinition) -> bool {
+        self.asn == other.asn
+            && self.prefix.matching_or_less_specific(&other.prefix)
+            && self.effective_max_length() >= other.effective_max_length()
     }
 }
 
@@ -99,12 +115,48 @@ impl FromStr for RoaDefinition {
     }
 }
 
+impl fmt::Debug for RoaDefinition {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", &self)
+    }
+}
+
 impl fmt::Display for RoaDefinition {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self.max_length {
             None => write!(f, "{} => {}", self.prefix, self.asn),
             Some(length) => write!(f, "{}-{} => {}", self.prefix, length, self.asn),
         }
+    }
+}
+
+impl Ord for RoaDefinition {
+    fn cmp(&self, other: &Self) -> Ordering {
+        let mut ordering = self.prefix.cmp(&other.prefix);
+
+        if ordering == Ordering::Equal {
+            ordering = self
+                .effective_max_length()
+                .cmp(&other.effective_max_length());
+        }
+
+        if ordering == Ordering::Equal {
+            ordering = self.asn.cmp(&other.asn);
+        }
+
+        ordering
+    }
+}
+
+impl PartialOrd for RoaDefinition {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl AsRef<TypedPrefix> for RoaDefinition {
+    fn as_ref(&self) -> &TypedPrefix {
+        &self.prefix
     }
 }
 
@@ -116,7 +168,7 @@ impl fmt::Display for RoaDefinition {
 /// on its resource certificates.
 ///
 /// Multiple updates are sent as a single delta, because it's important that
-/// all authorisations for a given prefix are published together in order to
+/// all authorizations for a given prefix are published together in order to
 /// avoid invalidating announcements.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaDefinitionUpdates {
@@ -222,7 +274,7 @@ impl From<RouteAuthorizationUpdates> for RoaDefinitionUpdates {
 }
 
 //------------ TypedPrefix -------------------------------------------------
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub enum TypedPrefix {
     V4(Ipv4Prefix),
     V6(Ipv6Prefix),
@@ -238,6 +290,25 @@ impl TypedPrefix {
             TypedPrefix::V4(v4) => IpAddr::V4(v4.0.to_v4()),
             TypedPrefix::V6(v6) => IpAddr::V6(v6.0.to_v6()),
         }
+    }
+
+    fn matches_type(&self, other: &TypedPrefix) -> bool {
+        match &self {
+            TypedPrefix::V4(_) => match other {
+                TypedPrefix::V4(_) => true,
+                TypedPrefix::V6(_) => false,
+            },
+            TypedPrefix::V6(_) => match other {
+                TypedPrefix::V4(_) => false,
+                TypedPrefix::V6(_) => true,
+            },
+        }
+    }
+
+    pub fn matching_or_less_specific(&self, other: &TypedPrefix) -> bool {
+        self.matches_type(other)
+            && self.prefix().min().le(&other.prefix().min())
+            && self.prefix().max().ge(&other.prefix().max())
     }
 }
 
@@ -259,12 +330,34 @@ impl FromStr for TypedPrefix {
     }
 }
 
+impl fmt::Debug for TypedPrefix {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", &self)
+    }
+}
+
 impl fmt::Display for TypedPrefix {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             TypedPrefix::V4(pfx) => pfx.fmt(f),
             TypedPrefix::V6(pfx) => pfx.fmt(f),
         }
+    }
+}
+
+impl Ord for TypedPrefix {
+    fn cmp(&self, other: &Self) -> Ordering {
+        let mut ordering = self.addr().cmp(&other.addr());
+        if ordering == Ordering::Equal {
+            ordering = self.addr_len().cmp(&other.addr_len())
+        }
+        ordering
+    }
+}
+
+impl PartialOrd for TypedPrefix {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -326,8 +419,14 @@ impl From<TypedPrefix> for ResourceSet {
 }
 
 //------------ Ipv4Prefix --------------------------------------------------
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub struct Ipv4Prefix(Prefix);
+
+impl AsRef<Prefix> for Ipv4Prefix {
+    fn as_ref(&self) -> &Prefix {
+        &self.0
+    }
+}
 
 impl fmt::Display for Ipv4Prefix {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -335,9 +434,21 @@ impl fmt::Display for Ipv4Prefix {
     }
 }
 
+impl fmt::Debug for Ipv4Prefix {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", &self)
+    }
+}
+
 //------------ Ipv6Prefix --------------------------------------------------
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub struct Ipv6Prefix(Prefix);
+
+impl AsRef<Prefix> for Ipv6Prefix {
+    fn as_ref(&self) -> &Prefix {
+        &self.0
+    }
+}
 
 impl fmt::Display for Ipv6Prefix {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -345,9 +456,15 @@ impl fmt::Display for Ipv6Prefix {
     }
 }
 
+impl fmt::Debug for Ipv6Prefix {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", &self)
+    }
+}
+
 //------------ AsNumber ----------------------------------------------------
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Copy, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct AsNumber(u32);
 
 impl AsNumber {
@@ -372,9 +489,27 @@ impl FromStr for AsNumber {
     }
 }
 
+impl fmt::Debug for AsNumber {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", &self)
+    }
+}
+
 impl fmt::Display for AsNumber {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl Ord for AsNumber {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.0.cmp(&other.0)
+    }
+}
+
+impl PartialOrd for AsNumber {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
@@ -388,10 +523,10 @@ pub enum AuthorizationFmtError {
     #[display(fmt = "Invalid asn in string: {}", _0)]
     Asn(String),
 
-    #[display(fmt = "Invalid authorisation string: {}", _0)]
+    #[display(fmt = "Invalid authorization string: {}", _0)]
     Auth(String),
 
-    #[display(fmt = "Invalid authorisation delta string: {}", _0)]
+    #[display(fmt = "Invalid authorization delta string: {}", _0)]
     Delta(String),
 }
 
@@ -419,6 +554,8 @@ impl AuthorizationFmtError {
 mod tests {
     use super::*;
 
+    use crate::test::definition;
+
     #[test]
     fn parse_delta() {
         let delta = concat!(
@@ -432,11 +569,11 @@ mod tests {
 
         let expected = {
             let mut added = HashSet::new();
-            added.insert(RoaDefinition::from_str("192.168.0.0/16 => 64496").unwrap());
-            added.insert(RoaDefinition::from_str("192.168.1.0/24 => 64496").unwrap());
+            added.insert(definition("192.168.0.0/16 => 64496"));
+            added.insert(definition("192.168.1.0/24 => 64496"));
 
             let mut removed = HashSet::new();
-            removed.insert(RoaDefinition::from_str("192.168.3.0/24 => 64496").unwrap());
+            removed.insert(definition("192.168.3.0/24 => 64496"));
             RoaDefinitionUpdates::new(added, removed)
         };
 
@@ -455,12 +592,12 @@ mod tests {
 
     #[test]
     fn normalize_roa_definition_json() {
-        let def = RoaDefinition::from_str("192.168.0.0/16 => 64496").unwrap();
+        let def = definition("192.168.0.0/16 => 64496");
         let json = serde_json::to_string(&def).unwrap();
         let expected = "{\"asn\":64496,\"prefix\":\"192.168.0.0/16\"}";
         assert_eq!(json, expected);
 
-        let def = RoaDefinition::from_str("192.168.0.0/16-24 => 64496").unwrap();
+        let def = definition("192.168.0.0/16-24 => 64496");
         let json = serde_json::to_string(&def).unwrap();
         let expected = "{\"asn\":64496,\"prefix\":\"192.168.0.0/16\",\"max_length\":24}";
         assert_eq!(json, expected);
@@ -469,7 +606,7 @@ mod tests {
     #[test]
     fn serde_roa_definition() {
         fn parse_ser_de_print_definition(s: &str) {
-            let def = RoaDefinition::from_str(s).unwrap();
+            let def = definition(s);
             let ser = serde_json::to_string(&def).unwrap();
             let de = serde_json::from_str(&ser).unwrap();
             assert_eq!(def, de);
@@ -507,5 +644,24 @@ mod tests {
         invalid_max_length("192.168.0.0/16-33 => 64496");
         invalid_max_length("2001:db8::/32-31 => 64496");
         invalid_max_length("2001:db8::/32-129 => 64496");
+    }
+
+    #[test]
+    fn roa_includes() {
+        let covering = definition("192.168.0.0/16-20 => 64496");
+
+        let included_no_ml = definition("192.168.0.0/16 => 64496");
+        let included_more_specific = definition("192.168.0.0/20 => 64496");
+
+        let allowing_more_specific = definition("192.168.0.0/16-24 => 64496");
+        let more_specific = definition("192.168.3.0/24 => 64496");
+        let other_asn = definition("192.168.3.0/24 => 64497");
+
+        assert!(covering.includes(&included_no_ml));
+        assert!(covering.includes(&included_more_specific));
+
+        assert!(!covering.includes(&more_specific));
+        assert!(!covering.includes(&allowing_more_specific));
+        assert!(!covering.includes(&other_asn));
     }
 }

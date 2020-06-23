@@ -29,7 +29,9 @@ use crate::commons::remote::rfc6492;
 use crate::commons::remote::rfc8183;
 use crate::commons::remote::sigmsg::SignedMessage;
 use crate::commons::KrillResult;
-use crate::constants::{CHILD_CERTIFICATE_REISSUE_WEEKS, CHILD_CERTIFICATE_VALIDITY_YEARS};
+use crate::constants::{
+    CHILD_CERTIFICATE_REISSUE_WEEKS, CHILD_CERTIFICATE_VALIDITY_YEARS, KRILL_ENV_TEST,
+};
 use crate::daemon::ca::events::ChildCertificateUpdates;
 use crate::daemon::ca::rc::PublishMode;
 use crate::daemon::ca::signing::CsrInfo;
@@ -538,7 +540,7 @@ impl<S: Signer> CertAuth<S> {
 
         let child_cert = child
             .id_cert()
-            .ok_or_else(|| Error::CaChildUnauthorised(self.handle.clone(), child_handle.clone()))?;
+            .ok_or_else(|| Error::CaChildUnauthorized(self.handle.clone(), child_handle.clone()))?;
 
         msg.validate(child_cert)
             .map_err(|_| Error::Rfc6492SignatureInvalid)?;
@@ -687,7 +689,7 @@ impl<S: Signer> CertAuth<S> {
 
     /// Certifies a child, unless:
     /// = the child is unknown,
-    /// = the child is not authorised,
+    /// = the child is not authorized,
     /// = the csr is invalid,
     /// = the limit exceeds the child allocation,
     /// = the signer throws up..
@@ -703,7 +705,7 @@ impl<S: Signer> CertAuth<S> {
         let (rcn, limit, csr) = request.unpack();
         let csr_info = CsrInfo::try_from(&csr)?;
 
-        if csr_info.contains_localhost() && env::var("KRILL_TEST").is_err() {
+        if csr_info.contains_localhost() && env::var(KRILL_ENV_TEST).is_err() {
             return Err(Error::invalid_csr(
                 "Cannot use localhost in certificate requests unless server uses TEST mode.",
             ));
@@ -1480,7 +1482,7 @@ impl<S: Signer> CertAuth<S> {
 ///
 impl<S: Signer> CertAuth<S> {
     /// Updates the route authorizations for this CA, and update ROAs. Will return
-    /// an error in case authorisations are added for which this CA does not hold
+    /// an error in case authorizations are added for which this CA does not hold
     /// the prefix.
     fn route_authorizations_update(
         &self,
@@ -1502,17 +1504,21 @@ impl<S: Signer> CertAuth<S> {
 
         for auth in added {
             if !auth.max_length_valid() {
-                return Err(Error::CaAuthorisationInvalidMaxlength(
+                return Err(Error::CaAuthorizationInvalidMaxlength(
                     self.handle.clone(),
                     auth,
                 ));
             }
             if current_auths.contains(&auth) {
-                return Err(Error::CaAuthorisationDuplicate(self.handle.clone(), auth));
+                return Err(Error::CaAuthorizationDuplicate(self.handle.clone(), auth));
             } else if !all_resources.contains(&auth.prefix().into()) {
-                return Err(Error::CaAuthorisationNotEntitled(self.handle.clone(), auth));
+                return Err(Error::CaAuthorizationNotEntitled(self.handle.clone(), auth));
+            } else if current_auths.iter().any(|a| a.includes(auth.as_ref())) {
+                return Err(Error::CaAuthorizationRedundant(self.handle.clone(), auth));
+            } else if current_auths.iter().any(|a| auth.includes(a.as_ref())) {
+                return Err(Error::CaAuthorizationIncludes(self.handle.clone(), auth));
             } else {
-                current_auths.insert(auth);
+                current_auths.insert(auth.explicit_length());
                 res.push(StoredEvent::new(
                     self.handle(),
                     version,
@@ -1532,7 +1538,7 @@ impl<S: Signer> CertAuth<S> {
                 ));
                 version += 1;
             } else {
-                return Err(Error::CaAuthorisationUnknown(self.handle.clone(), auth));
+                return Err(Error::CaAuthorizationUnknown(self.handle.clone(), auth));
             }
         }
 

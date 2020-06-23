@@ -3,7 +3,41 @@
 Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
 for planned releases.
 
-## 0.6.3 Release 'Play it again, Sam'
+## 0.7.0 'Escondidinho de Lagosta'
+
+This release brings significant improvements aimed at maintaining your ROAs. For now, Krill
+will download aggregated BGP dumps from the RIPE NCC Routing Information Service (*) and
+analyse how your ROAs affect announcements seen for your resources. In future we will extend
+this system, so that it can use near-real-time data, or even a local feed with your own BGP
+information instead. 
+
+For these changes to work well we needed to do some work on cleaning up existing ROAs. Until
+now Krill has allowed the creation of essentially duplicate, or nonsensical ROAs, such as:
+* ROAs for an ASN and prefix with and without an explicit max length matching the prefix 
+* ROAs for a prefix and ASN which were already permitted by another ROA.  
+
+On upgrade Krill will clean up such redundant authorizations for ROAs. For example if the
+following authorizations would exist:
+
+ 192.168.0.0/16      => 64496
+ 192.168.0.0/24      => 64496
+ 192.168.0.0/16-24   => 64496
+ 
+Then only this last authorization needs to be kept, the first two are also covered by it.
+
+Before this release it was also possible to have the same authorization with, and without, using
+an explicit max length. For example:
+
+ 192.168.0.0/16      => 64496
+ 192.168.0.0/16-16   => 64496
+
+Now Krill will *always* use an explicit max length in the definitions. Note however, that it is
+still best practice to use the same max length as the announced prefix length, so Krill will just
+set this by default if it is not specified.
+
+*: https://www.ripe.net/analyse/internet-measurements/routing-information-service-ris
+
+## 0.6.3 'Play it again, Sam'
 
 This release addresses an issue where users with a CA that has delegated children, which in turn
 had performed a key roll over in the past, could not upgrade to Release 0.6.2.
@@ -18,7 +52,7 @@ Release which is due in 2-4 weeks:
 * Inconsistent use of "cas" in `krillc bulk` subcommand summary text (#254)
 * Be consistent when referring to ending with a / (#255)
 
-## 0.6.2 Release 'That was even faster!'
+## 0.6.2 'That was even faster!'
 
 So, as it turns out.. the code used to determine the age of snapshot files used in the previous
 release was not safe on all platforms. This release fixes this!
@@ -26,7 +60,7 @@ release was not safe on all platforms. This release fixes this!
 Users who upgraded to 0.6.1 and see messages like: "Creation time is not available on this
 platform currently" in their logs, please upgrade!
 
-## 0.6.1 Release 'That was fast!'
+## 0.6.1 'That was fast!'
 
 This release fixes an issue where the Krill Repository Server deleted RRDP snapshot files as soon
 as a new notification file was published. This leads to issues in case a cached notification file
@@ -37,7 +71,7 @@ Users who use Krill as their own Repository Server are advised to upgrade.
 Users who publish at a repository provided to them by a third party (e.g. nic.br) can safely skip
 this release.  
 
-## 0.6.0 Release 'Go with the Flow'
+## 0.6.0 'Go with the Flow'
 
 The most visible change in this release is that the embedded Lagosta UI now includes French, Greek
 and Spanish translations. But, the vast majority of the work went into making Krill use asynchronous
