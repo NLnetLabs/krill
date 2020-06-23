@@ -5,6 +5,15 @@
 # Note: at the time of writing the GH cache contents expire after a
 # week if not used so the next build may be much slower as it will
 # have to re-download/build/install lots of Rust crates.
+#
+# Packages are built inside Docker containers as GH Runners have extra libraries
+# and packages installed which can cause package building to succeed but package
+# installation on a real target O/S to fail, due to being built against too
+# recent version of a package such as libssl or glibc.
+#
+# Packages are tested inside LXC/LXD containers because Docker containers don't
+# by default support init managers such as systemd but we want to test systemd
+# service unit installation and activation.
 
 name: Packaging
 on:
@@ -50,9 +59,13 @@ jobs:
     name: deb-pkg
     runs-on: ubuntu-latest
     # Build on the oldest platform we are targeting in order to avoid
-    # https://github.com/rust-lang/rust/issues/57497.
+    # https://github.com/rust-lang/rust/issues/57497. Specifying container
+    # causes all of the steps in this job to run inside a Docker container.
     container: ${{ matrix.image }}
     steps:
+    # Set an environment variable that will be available to later steps in
+    # run commands, and a GH Actions output variable that can be used in later
+    # step definitions.
     - name: Set vars
       id: setvars
       shell: bash
@@ -61,10 +74,13 @@ jobs:
         echo ::set-output name=pkgname::$(echo $MATRIX_IMAGE | tr -d ':.')
       env:
         MATRIX_IMAGE: ${{ matrix.image }}
-        
+
+    # Git clone the Krill code in the branch we were invoked on.
     - name: Checkout repository
       uses: actions/checkout@v1
 
+    # Install Rust the hard way rather than using a GH Action because the action
+    # doesn't work inside a Docker container.
     - name: Install Rust
       run: |
         apt-get update
@@ -73,7 +89,7 @@ jobs:
         echo "::add-path::$HOME/.cargo/bin"
       env:
         DEBIAN_FRONTEND: noninteractive
-  
+
     - name: Install compilation dependencies
       run: |
           apt-get install -y build-essential libssl-dev pkg-config
@@ -91,9 +107,8 @@ jobs:
           target
         key: ${{ job.container.image }}-${{ matrix.image }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
-    # Speed up cargo-deb installation by only re-downloading it and
-    # re-building its dependent crates if we change the version of
-    # cargo-deb that we are using.
+    # Speed up cargo-deb installation by only re-downloading and re-building its
+    # dependent crates if we change the version of cargo-deb that we are using.
     - name: Cache Cargo Deb binary
       id: cache-cargo-deb
       uses: actions/cache@v2
@@ -101,11 +116,14 @@ jobs:
         path: ~/.cargo/bin/cargo-deb
         key: ${{ job.container.image }}-${{ matrix.image }}-cargo-deb-${{ env.CARGO_DEB_VER }}
 
+    # Only install cargo-deb if not already fetched from the cache.
     - name: Install Cargo Deb
       if: steps.cache-cargo-deb.outputs.cache-hit != 'true'
       run: |
         cargo install cargo-deb --version=$CARGO_DEB_VER
 
+    # Instruct cargo-deb to build the Debian package using the config section
+    # in Cargo.toml for the specified "variant".
     - name: Create the DEB package
       run: |
         cargo deb --variant $DEB_NAME
@@ -122,11 +140,12 @@ jobs:
         name: ${{ steps.setvars.outputs.pkgname }}
         path: target/debian/*.deb
 
-  # Download and sanity check on target operating systems the packages
-  # created by previous jobs (see above). Don't test on GH runners as
-  # they come with lots of software and libraries pre-installed and thus
-  # are not representative of the actual deployment targets, nor do GH
-  # runners support all targets that we want to test.
+  # Download and sanity check on target operating systems the packages created
+  # by previous jobs (see above). Don't test on GH runners as they come with
+  # lots of software and libraries pre-installed and thus are not representative
+  # of the actual deployment targets, nor do GH runners support all targets that
+  # we want to test. Don't test in Docker containers as they do not support
+  # systemd.
   deb-pkg-test:
     name: deb-pkg-test
     needs: deb-pkg
@@ -141,6 +160,9 @@ jobs:
           - 'debian:9'
           - 'debian:10'
     steps:
+    # Set some environment variables that will be available to "run" steps below
+    # in this job, and some output variables that will be available in GH Action
+    # step definitions below.
     - name: Set vars
       id: setvars
       shell: bash
@@ -177,8 +199,6 @@ jobs:
       run: |
         sg lxd -c "lxc launch $LXC_IMAGE testcon"
 
-    # ubuntu 16.04 cloud-init doesn't support the status --wait argument
-    # so loop instead.
     - name: Prepare container
       shell: bash
       run: |
@@ -189,7 +209,7 @@ jobs:
               [[ "$OUTPUT" == "status: done" ]] && break
               ;;
             images:debian/9/cloud)
-              [ -f /run/cloud-init/result.json ] && break
+              [ -f /run/cloud-init/result.json ] && echo "Debian 9 extra pause" && sleep 2s && break
               ;;
             *)
               echo >&2 "ERROR: Unknown LXC image $LXC_IMAGE"
