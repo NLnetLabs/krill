@@ -1,9 +1,11 @@
 [package]
+# Note: some of these values are also used when building Debian packages below.
 name    = "krill"
 version = "0.6.3"
 edition = "2018"
 authors = [ "The NLnet Labs RPKI team <rpki-team@nlnetlabs.nl>" ]
 description = "Resource Public Key Infrastructure (RPKI) daemon"
+homepage = "https://www.nlnetlabs.nl/projects/rpki/krill/"
 repository = "https://github.com/NLnetLabs/krill"
 keywords = ["rpki", "routing-security", "bgp"]
 readme = "README.md"
@@ -45,7 +47,107 @@ syslog		    = "^4.0"
 [build-dependencies]
 ignore          = "^0.4"
 
-
 [features]
 default = []
 extra-debug = [ "rpki/extra-debug" ]
+static-openssl = [ "openssl/vendored" ]
+
+# ------------------------------------------------------------------------------
+# START DEBIAN PACKAGING
+#
+# Configurations for the cargo-deb cargo plugin which builds Debian packages in
+# target/debian/ when invoked with: cargo deb. Tested with cargo-deb v1.23.1.
+# Use `--variant` to select which section below to use. Variant sections inherit
+# and override the settings in the base [package.metadata.deb] section. The
+# configs vary because of differing degrees of OpenSSL and systemd support
+# across operating systems.
+#
+# Note that as the postinst script uses the adduser command we declare a
+# dependency on the adduser package to keep the lintian tool happy.
+# Note: krill.conf is deliberately NOT specified as a "conf-file" because it is
+# generated.
+#
+# The GitHub Actions pkg.yml workflow definition file uses these configurations
+# to build and test Ubuntu/Debian packages for Krill.
+# 
+# See:
+#   - https://github.com/mmstick/cargo-deb
+#   - https://lintian.debian.org/tags/systemd-service-file-outside-lib.html
+#   - https://www.debian.org/doc/debian-policy/ch-files.html#behavior
+#   - .github/workflows/pkg.yml
+[package.metadata.deb]
+name = "krill"
+priority = "optional"
+section = "net"
+extended-description-file = "debian/description.txt"
+maintainer-scripts = "debian/scripts/"
+depends = "$auto, adduser, libssl1.1"
+
+[package.metadata.deb.variants.ubuntu2004]
+assets = [
+    ["target/release/krill", "/usr/bin/krill", "755"],
+    ["target/release/krillc", "/usr/bin/krillc", "755"],
+    ["defaults/krill.conf", "/usr/share/doc/krill/krill.conf", "644"],
+    ["doc/krill.1", "/usr/share/man/man1/krill.1", "644"],
+    ["doc/krillc.1", "/usr/share/man/man1/krillc.1", "644"],
+    ["debian/assets/krill.service.ubuntu2004", "/lib/systemd/system/krill.service", "644"]
+]
+
+# Variant of the Debian packaging configuration that uses a slightly simpler
+# systemd service unit file because Ubuntu 18.04 doesn't support newer features
+# supported by Ubuntu 20.04.
+[package.metadata.deb.variants.ubuntu1804]
+assets = [
+    ["target/release/krill", "/usr/bin/krill", "755"],
+    ["target/release/krillc", "/usr/bin/krillc", "755"],
+    ["defaults/krill.conf", "/usr/share/doc/krill/krill.conf", "644"],
+    ["doc/krill.1", "/usr/share/man/man1/krill.1", "644"],
+    ["doc/krillc.1", "/usr/share/man/man1/krillc.1", "644"],
+    ["debian/assets/krill.service.ubuntu1804", "/lib/systemd/system/krill.service", "644"]
+]
+
+# Variant of the Debian packaging configuration that:
+#   a) statically links with OpenSSL when building a Debian package because the
+#      newest OpenSSL available on Ubuntu 16.04 at the time of writing is 1.0.2g
+#      (see: https://packages.ubuntu.com/xenial/openssl) while Krill requires
+#      OpenSSL >= 1.1.0.
+#   b) uses a simpler systemd service unit file because Ubuntu 16.04 doesn't
+#      support newer features supported by Ubuntu 18.04 and 20.04.
+[package.metadata.deb.variants.ubuntu1604]
+features = [ "static-openssl" ]
+depends = "$auto, adduser"
+assets = [
+    ["target/release/krill", "/usr/bin/krill", "755"],
+    ["target/release/krillc", "/usr/bin/krillc", "755"],
+    ["defaults/krill.conf", "/usr/share/doc/krill/krill.conf", "644"],
+    ["doc/krill.1", "/usr/share/man/man1/krill.1", "644"],
+    ["doc/krillc.1", "/usr/share/man/man1/krillc.1", "644"],
+    ["debian/assets/krill.service.ubuntu1604", "/lib/systemd/system/krill.service", "644"]
+]
+
+# Debian 10 variant, identical to the Ubuntu 1804 variant.
+[package.metadata.deb.variants.debian10]
+assets = [
+    ["target/release/krill", "/usr/bin/krill", "755"],
+    ["target/release/krillc", "/usr/bin/krillc", "755"],
+    ["defaults/krill.conf", "/usr/share/doc/krill/krill.conf", "644"],
+    ["doc/krill.1", "/usr/share/man/man1/krill.1", "644"],
+    ["doc/krillc.1", "/usr/share/man/man1/krillc.1", "644"],
+    ["debian/assets/krill.service.ubuntu1804", "/lib/systemd/system/krill.service", "644"]
+]
+
+# Debian 9 variant, identical to the Ubuntu 1604 variant.
+[package.metadata.deb.variants.debian9]
+features = [ "static-openssl" ]
+depends = "$auto, adduser"
+assets = [
+    ["target/release/krill", "/usr/bin/krill", "755"],
+    ["target/release/krillc", "/usr/bin/krillc", "755"],
+    ["defaults/krill.conf", "/usr/share/doc/krill/krill.conf", "644"],
+    ["doc/krill.1", "/usr/share/man/man1/krill.1", "644"],
+    ["doc/krillc.1", "/usr/share/man/man1/krillc.1", "644"],
+    ["debian/assets/krill.service.ubuntu1604", "/lib/systemd/system/krill.service", "644"]
+]
+
+# END DEBIAN PACKAGING
+# ------------------------------------------------------------------------------

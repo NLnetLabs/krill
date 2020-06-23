@@ -4,6 +4,8 @@ on:
     paths-ignore:
       - '.dockerignore'
       - '.github/workflow/e2e.yml'
+      - '.github/workflow/pkg.yml'
+      - '.github/workflow/e2e test cache rebuild.yml'
       - 'Changelog.md'
       - 'Dockerfile'
       - 'doc/**'
@@ -16,6 +18,8 @@ on:
     paths-ignore:
       - '.dockerignore'
       - '.github/workflow/e2e.yml'
+      - '.github/workflow/pkg.yml'
+      - '.github/workflow/e2e test cache rebuild.yml'
       - 'Changelog.md'
       - 'Dockerfile'
       - 'doc/**'
