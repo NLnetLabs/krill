@@ -1,6 +1,5 @@
 [package]
-# Note: some of these values are also used when building operating
-# system packages. See below.
+# Note: some of these values are also used when building Debian packages below.
 name    = "krill"
 version = "0.6.3"
 edition = "2018"
@@ -52,6 +51,9 @@ ignore          = "^0.4"
 default = []
 extra-debug = [ "rpki/extra-debug" ]
 static-openssl = [ "openssl/vendored" ]
+
+# ------------------------------------------------------------------------------
+# START DEBIAN PACKAGING
 
 # Configurations for cargo-deb. Builds Debian packages in target/debian/ when
 # invoked with: cargo deb. Configuration valid as of cargo-deb v1.23.1. Use
@@ -136,17 +138,5 @@ assets = [
     ["debian/assets/krill.service.ubuntu1604", "/lib/systemd/system/krill.service", "644"]
 ]
 
-# Configuration for cargo-rpm (https://github.com/iqlusioninc/cargo-rpm)
-# Builds an RPM package in target/release/rpmbuild/RPMS/x86_64/ when invoked
-# with: cargo rpm build
-# Configuration valid as of cargo-rpm v0.7.0
-[package.metadata.rpm.cargo]
-# Statically link with OpenSSL when building an RPM package because the
-# newest OpenSSL available on CentOS 7 at the time of writing is 1.0.2k
-# (see: http://mirror.centos.org/centos/7/os/x86_64/Packages/) while Krill
-# requires OpenSSL >= 1.1.0.
-buildflags = ["--release", "--features", "static-openssl"]
-
-[package.metadata.rpm.targets]
-krill = { path = "/usr/bin/krill" }
-krillc = { path = "/usr/bin/krillc" }
+# END DEBIAN PACKAGING
+# ------------------------------------------------------------------------------
