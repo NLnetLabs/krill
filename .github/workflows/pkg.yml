@@ -36,18 +36,49 @@ jobs:
   # Use the cargo-deb Rust create to build a Debian package for installing
   # Krill. See: https://github.com/mmstick/cargo-deb
   deb-pkg:
+    strategy:
+      matrix:
+        image: [
+          "ubuntu:16.04",
+          "ubuntu:18.04",
+          "ubuntu:20.04",
+          "debian:9",
+          "debian:10",
+        ]
     env:
       CARGO_DEB_VER: 1.23.1
     name: deb-pkg
-    runs-on: [ubuntu-16.04]
+    runs-on: ubuntu-latest
+    # Build on the oldest platform we are targeting in order to avoid
+    # https://github.com/rust-lang/rust/issues/57497.
+    container: ${{ matrix.image }}
     steps:
+    - name: Set vars
+      id: setvars
+      shell: bash
+      run: |
+        echo ::set-env name=DEB_NAME::$(echo $MATRIX_IMAGE | tr -d ':.')
+        echo ::set-output name=pkgname::$(echo $MATRIX_IMAGE | tr -d ':.')
+      env:
+        MATRIX_IMAGE: ${{ matrix.image }}
+        
     - name: Checkout repository
       uses: actions/checkout@v1
 
     - name: Install Rust
-      uses: hecrj/setup-rust-action@v1
-      with:
-        rust-version: stable
+      run: |
+        apt-get update
+        apt-get install -y curl
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --profile minimal -y
+        echo "::add-path::$HOME/.cargo/bin"
+      env:
+        DEBIAN_FRONTEND: noninteractive
+  
+    - name: Install compilation dependencies
+      run: |
+          apt-get install -y build-essential libssl-dev pkg-config
+      env:
+        DEBIAN_FRONTEND: noninteractive
 
     # Speed up Krill Rust builds by caching unchanged built dependencies.
     # See: https://github.com/actions/cache/blob/master/examples.md#rust---cargo
@@ -58,7 +89,7 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ job.container.image }}-${{ matrix.image }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
     # Speed up cargo-deb installation by only re-downloading it and
     # re-building its dependent crates if we change the version of
@@ -68,16 +99,16 @@ jobs:
       uses: actions/cache@v2
       with:
         path: ~/.cargo/bin/cargo-deb
-        key: ${{ runner.os }}-${{ env.CARGO_DEB_VER }}-cargo-deb
+        key: ${{ job.container.image }}-${{ matrix.image }}-cargo-deb-${{ env.CARGO_DEB_VER }}
 
     - name: Install Cargo Deb
       if: steps.cache-cargo-deb.outputs.cache-hit != 'true'
       run: |
         cargo install cargo-deb --version=$CARGO_DEB_VER
 
-    - name: Create the package
+    - name: Create the DEB package
       run: |
-        cargo deb --verbose
+        cargo deb --variant $DEB_NAME
 
     # Upload the produced DEB package. The artifact will be available
     # via the GH Actions job summary and build log pages, but only to
@@ -85,36 +116,213 @@ jobs:
     # uploaded artifact is also downloaded by the next job (see below)
     # to sanity check that it can be installed and results in a working
     # Krill installation.
-    - name: Upload artifacts
+    - name: Upload DEB package
       uses: actions/upload-artifact@v2
       with:
-        name: debian-package
+        name: ${{ steps.setvars.outputs.pkgname }}
         path: target/debian/*.deb
 
-  # Download and sanity check on target operating systems the packages
-  # created by previous jobs (see above).
-  # TODO: test on actual VMs or Docker containers, not on GH runner
-  # images as GH runners come with lots of software and libraries
-  # pre-installed and are not representative of the actual deployment
-  # targets nor do GH runners support all targets that we want to test.
-  deb-pkg-test:
-    name: test
-    needs: deb-pkg
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-16.04, ubuntu-18.04, ubuntu-20.04]
+  # Use the cargo-rpm Rust create to build an RPM package for installing
+  # Krill. See: https://github.com/iqlusioninc/cargo-rpm
+  rpm-pkg:
+    env:
+      CARGO_RPM_VER: 0.7.0
+    name: rpm-pkg
+    runs-on: ubuntu-latest
+    # Build on the oldest platform we are targeting in order to avoid
+    # https://github.com/rust-lang/rust/issues/57497.
+    container: "centos:7"
     steps:
+    - name: Checkout repository
+      uses: actions/checkout@v1
+
+    - name: Install Rust
+      run: |
+        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --profile minimal -y
+        echo "::add-path::$HOME/.cargo/bin"
+
+    - name: Install compilation dependencies
+      run: |
+        yum -y install gcc gcc-c++ make openssl-devel perl rpm-build
+
+    # # Speed up Krill Rust builds by caching unchanged built dependencies.
+    # # See: https://github.com/actions/cache/blob/master/examples.md#rust---cargo
+    # - name: Cache Dot Cargo
+    #   uses: actions/cache@v2
+    #   with:
+    #     path: |
+    #       ~/.cargo/registry
+    #       ~/.cargo/git
+    #       target
+    #     key: ${{ job.container.image }}-cargo-${{ hashFiles('**/Cargo.lock') }}-20200617
+
+    # # Speed up cargo-rpm installation by only re-downloading it and
+    # # re-building its dependent crates if we change the version of
+    # # cargo-rpm that we are using.
+    # - name: Cache Cargo RPM binary
+    #   id: cache-cargo-rpm
+    #   uses: actions/cache@v2
+    #   with:
+    #     path: ~/.cargo/bin/cargo-rpm
+    #     key: ${{ job.container.image }}-cargo-rpm-${{ env.CARGO_RPM_VER }}
+
+    - name: Install Cargo RPM
+      # if: steps.cache-cargo-rpm.outputs.cache-hit != 'true'
+      run: |
+        cargo install cargo-rpm --version=$CARGO_RPM_VER
+
+    - name: Create the RPM package
+      run: |
+        mkdir -p target
+        cargo rpm build --verbose
+
+    # Upload the produced DEB package. The artifact will be available
+    - name: Upload RPM package
+      uses: actions/upload-artifact@v2
+      with:
+        name: rpm-package
+        path: target/release/rpmbuild/RPMS/x86_64/*.rpm
+
+  # Download and sanity check on target operating systems the packages
+  # created by previous jobs (see above). Don't test on GH runners as
+  # they come with lots of software and libraries pre-installed and thus
+  # are not representative of the actual deployment targets, nor do GH
+  # runners support all targets that we want to test.
+  deb-pkg-test:
+    name: deb-pkg-test
+    needs: deb-pkg
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - 'ubuntu:16.04'
+          - 'ubuntu:18.04'
+          - 'ubuntu:20.04'
+          - 'debian:9'
+          - 'debian:10'
+    steps:
+    - name: Set vars
+      id: setvars
+      shell: bash
+      run: |
+        if [[ $MATRIX_IMAGE == *debian* ]]; then
+          SLASHED=$(echo $MATRIX_IMAGE | tr ':' '/')
+          echo ::set-env name=LXC_IMAGE::$(echo "images:${SLASHED}/cloud")
+        else
+          echo ::set-env name=LXC_IMAGE::$(echo $MATRIX_IMAGE)
+        fi
+        echo ::set-env name=DEB_NAME::$(echo $MATRIX_IMAGE | tr -d ':.')
+        echo ::set-output name=pkgname::$(echo $MATRIX_IMAGE | tr -d ':.')
+      env:
+        MATRIX_IMAGE: ${{ matrix.image }}
+
     - name: Download DEB package
       uses: actions/download-artifact@v2
+      with:
+        name: ${{ steps.setvars.outputs.pkgname }}
+
+    - name: Add current user to LXD group
+      run: |
+        sudo usermod --append --groups lxd $(whoami)
+
+    - name: Initialize LXD
+      run: |
+        sudo lxd init --auto
+
+    - name: Check LXD configuration
+      run: |
+        sg lxd -c "lxc info"
+
+    - name: Launch LXC container
+      run: |
+        sg lxd -c "lxc launch $LXC_IMAGE testcon"
+
+    # ubuntu 16.04 cloud-init doesn't support the status --wait argument
+    # so loop instead.
+    - name: Prepare container
+      shell: bash
+      run: |
+        while true; do
+          OUTPUT=$(sg lxd -c "lxc exec testcon -- sh -c 'cloud-init status || true'")
+          [[ "$OUTPUT" == "status: done" ]] && break
+          [ -f /run/cloud-init/result.json ] && break
+          echo "Waiting for cloud-init.."
+          sleep 1s
+        done
+        sg lxd -c "lxc exec testcon -- apt-get update"
+        sg lxd -c "lxc exec testcon -- apt-get install -y man"
+
+    - name: Copy DEB into LXC container
+      run: |
+        DEB_FILE=$(ls -1 *.deb)
+        echo ::set-env name=DEB_FILE::$DEB_FILE
+        sg lxd -c "lxc file push ${DEB_FILE} testcon/tmp/"
 
     - name: Install DEB package
       run: |
-        sudo apt-get -y install ./debian-package/*.deb
-      shell: bash
+        sg lxd -c "lxc exec testcon -- apt-get -y install /tmp/$DEB_FILE"
 
-    - name: Test installed binaries
+    - name: Test installed packages
+      run: |
+        echo -e "\nKRILLC VERSION:"
+        sg lxd -c "lxc exec testcon -- krillc --version"
+
+        echo -e "\nKRILL VERSION:"
+        sg lxd -c "lxc exec testcon -- krill --version"
+
+        echo -e "\nKRILL CONF:"
+        sg lxd -c "lxc exec testcon -- cat /etc/krill.conf"
+
+        echo -e "\nKRILL DATA DIR:"
+        sg lxd -c "lxc exec testcon -- ls -la /var/lib/krill"
+
+        echo -e "\nKRILL SERVICE STATUS BEFORE ENABLE:"
+        sg lxd -c "lxc exec testcon -- systemctl status krill || true"
+
+        echo -e "\nENABLE KRILL SERVICE:"
+        sg lxd -c "lxc exec testcon -- systemctl enable krill"
+
+        echo -e "\nKRILL SERVICE STATUS AFTER ENABLE:"
+        sg lxd -c "lxc exec testcon -- systemctl status krill || true"
+
+        echo -e "\nSTART KRILL SERVICE:"
+        sg lxd -c "lxc exec testcon -- systemctl start krill"
+        
+        echo -e "\nKRILL SERVICE STATUS AFTER START:"
+        sleep 1s
+        sg lxd -c "lxc exec testcon -- systemctl status krill"
+
+        echo -e "\nKRILL MAN PAGE:"
+        sg lxd -c "lxc exec testcon -- man -P cat krill"
+
+  # Download and sanity check on target operating systems the packages
+  # created by previous jobs (see above). Don't test on GH runners as
+  # they come with lots of software and libraries pre-installed and thus
+  # are not representative of the actual deployment targets, nor do GH
+  # runners support all targets that we want to test.
+  rpm-pkg-test:
+    name: rpm-pkg-test
+    needs: rpm-pkg
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - 'centos:7'
+          - 'centos:8'
+    container: ${{ matrix.image }}
+    steps:
+    - name: Download RPM package
+      uses: actions/download-artifact@v2
+      with:
+        name: rpm-package
+
+    - name: Install RPM package
+      run: yum install -y ./*.rpm
+
+    - name: Test installed packages
+      shell: bash
       run: |
         krillc --version
         krill --version
-      shell: bash

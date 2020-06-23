@@ -53,32 +53,100 @@ default = []
 extra-debug = [ "rpki/extra-debug" ]
 static-openssl = [ "openssl/vendored" ]
 
-# Configuration for cargo-deb (https://github.com/mmstick/cargo-deb)
-# Builds a Debian package in target/debian/ when invoked with: cargo deb
-# Configuration valid as of cargo-deb v1.23.1.
+# Configurations for cargo-deb. Builds Debian packages in target/debian/ when
+# invoked with: cargo deb. Configuration valid as of cargo-deb v1.23.1. Use
+# `--variant` to select which section below to use. Variant sections inherit and
+# override the settings in the non-variant section. The postinst script uses the
+# adduser command so we depend on that too. krill.conf is deliberately NOT
+# specified as a "conf-file" because it is generated. See:
+#   - https://github.com/mmstick/cargo-deb
+#   - https://lintian.debian.org/tags/systemd-service-file-outside-lib.html
+#   - https://www.debian.org/doc/debian-policy/ch-files.html#behavior
 [package.metadata.deb]
+name = "krill"
 priority = "optional"
 section = "net"
+extended-description-file = "debian/description.txt"
+maintainer-scripts = "debian/scripts/"
+depends = "$auto, adduser, libssl1.1"
 
-# Sstatically link with OpenSSL when building a Debian package because the
-# newest OpenSSL available on Ubuntu 16.04 at the time of writing is 1.0.2g
-# (see: https://packages.ubuntu.com/xenial/openssl) while Krill requires
-# OpenSSL >= 1.1.0.
+[package.metadata.deb.variants.ubuntu2004]
+assets = [
+    ["target/release/krill", "/usr/bin/krill", "755"],
+    ["target/release/krillc", "/usr/bin/krillc", "755"],
+    ["defaults/krill.conf", "/usr/share/doc/krill/krill.conf", "644"],
+    ["doc/krill.1", "/usr/share/man/man1/krill.1", "644"],
+    ["doc/krillc.1", "/usr/share/man/man1/krillc.1", "644"],
+    ["debian/assets/krill.service.ubuntu2004", "/lib/systemd/system/krill.service", "644"]
+]
+
+# Variant of the Debian packaging configuration that uses a slightly simpler
+# systemd service unit file because Ubuntu 18.04 doesn't support newer features
+# supported by Ubuntu 20.04.
+[package.metadata.deb.variants.ubuntu1804]
+assets = [
+    ["target/release/krill", "/usr/bin/krill", "755"],
+    ["target/release/krillc", "/usr/bin/krillc", "755"],
+    ["defaults/krill.conf", "/usr/share/doc/krill/krill.conf", "644"],
+    ["doc/krill.1", "/usr/share/man/man1/krill.1", "644"],
+    ["doc/krillc.1", "/usr/share/man/man1/krillc.1", "644"],
+    ["debian/assets/krill.service.ubuntu1804", "/lib/systemd/system/krill.service", "644"]
+]
+
+# Variant of the Debian packaging configuration that:
+#   a) statically links with OpenSSL when building a Debian package because the
+#      newest OpenSSL available on Ubuntu 16.04 at the time of writing is 1.0.2g
+#      (see: https://packages.ubuntu.com/xenial/openssl) while Krill requires
+#      OpenSSL >= 1.1.0.
+#   b) uses a simpler systemd service unit file because Ubuntu 16.04 doesn't
+#      support newer features supported by Ubuntu 18.04 and 20.04.
+[package.metadata.deb.variants.ubuntu1604]
 features = [ "static-openssl" ]
+depends = "$auto, adduser"
+assets = [
+    ["target/release/krill", "/usr/bin/krill", "755"],
+    ["target/release/krillc", "/usr/bin/krillc", "755"],
+    ["defaults/krill.conf", "/usr/share/doc/krill/krill.conf", "644"],
+    ["doc/krill.1", "/usr/share/man/man1/krill.1", "644"],
+    ["doc/krillc.1", "/usr/share/man/man1/krillc.1", "644"],
+    ["debian/assets/krill.service.ubuntu1604", "/lib/systemd/system/krill.service", "644"]
+]
 
-# Manually specify depends instead of using "$auto" because when building
-# on a GitHub Actions Ubuntu 16.04 runner cargo-deb detects much newer
-# versions of these libraries than are available when testing apt-get install
-# on stock (Docker/DigitalOcean) Ubuntu 16.04, causing installation to fail
-# if "$auto" is used.
-depends = "libc6 (>= 2.23), libgcc1 (>= 1:6.0.1)"
+# Debian 10 variant, identical to the Ubuntu 1804 variant.
+[package.metadata.deb.variants.debian10]
+assets = [
+    ["target/release/krill", "/usr/bin/krill", "755"],
+    ["target/release/krillc", "/usr/bin/krillc", "755"],
+    ["defaults/krill.conf", "/usr/share/doc/krill/krill.conf", "644"],
+    ["doc/krill.1", "/usr/share/man/man1/krill.1", "644"],
+    ["doc/krillc.1", "/usr/share/man/man1/krillc.1", "644"],
+    ["debian/assets/krill.service.ubuntu1804", "/lib/systemd/system/krill.service", "644"]
+]
 
-extended-description = """\
-Krill is a free, open source RPKI Certificate Authority that lets you run
-delegated RPKI under one or multiple Regional Internet Registries (RIRs).
-Through its built-in publication server, Krill can publish Route Origin
-Authorisations (ROAs) on your own servers or with a third party.
+# Debian 9 variant, identical to the Ubuntu 1604 variant.
+[package.metadata.deb.variants.debian9]
+features = [ "static-openssl" ]
+depends = "$auto, adduser"
+assets = [
+    ["target/release/krill", "/usr/bin/krill", "755"],
+    ["target/release/krillc", "/usr/bin/krillc", "755"],
+    ["defaults/krill.conf", "/usr/share/doc/krill/krill.conf", "644"],
+    ["doc/krill.1", "/usr/share/man/man1/krill.1", "644"],
+    ["doc/krillc.1", "/usr/share/man/man1/krillc.1", "644"],
+    ["debian/assets/krill.service.ubuntu1604", "/lib/systemd/system/krill.service", "644"]
+]
 
-This package contains the krill daemon and krillc CLI binaries.
+# Configuration for cargo-rpm (https://github.com/iqlusioninc/cargo-rpm)
+# Builds an RPM package in target/release/rpmbuild/RPMS/x86_64/ when invoked
+# with: cargo rpm build
+# Configuration valid as of cargo-rpm v0.7.0
+[package.metadata.rpm.cargo]
+# Statically link with OpenSSL when building an RPM package because the
+# newest OpenSSL available on CentOS 7 at the time of writing is 1.0.2k
+# (see: http://mirror.centos.org/centos/7/os/x86_64/Packages/) while Krill
+# requires OpenSSL >= 1.1.0.
+buildflags = ["--release", "--features", "static-openssl"]
 
-For more information visit https://rpki.readthedocs.io/en/latest/krill/."""
+[package.metadata.rpm.targets]
+krill = { path = "/usr/bin/krill" }
+krillc = { path = "/usr/bin/krillc" }
