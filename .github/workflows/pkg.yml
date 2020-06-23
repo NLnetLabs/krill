@@ -52,7 +52,7 @@ jobs:
           "ubuntu:18.04",
           "ubuntu:20.04",
           "debian:9",
-          # "debian:10",
+          "debian:10",
         ]
     env:
       CARGO_DEB_VER: 1.23.1
@@ -158,7 +158,7 @@ jobs:
           - 'ubuntu:18.04'
           - 'ubuntu:20.04'
           - 'debian:9'
-          # - 'debian:10'
+          - 'debian:10'
     steps:
     # Set some environment variables that will be available to "run" steps below
     # in this job, and some output variables that will be available in GH Action
@@ -197,7 +197,9 @@ jobs:
 
     - name: Launch LXC container
       run: |
-        sg lxd -c "lxc launch $LXC_IMAGE testcon"
+        # security.nesting=true is needed to avoid error "Failed to set up mount
+        # namespacing: Permission denied" in a Debian 10 container.
+        sg lxd -c "lxc launch $LXC_IMAGE -c security.nesting=true testcon"
 
     # Run apt-get update and install man support (missing in some LXC/LXD O/S
     # images) but first wait for cloud-init to finish otherwise the network
