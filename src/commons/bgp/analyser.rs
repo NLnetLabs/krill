@@ -98,7 +98,7 @@ impl BgpAnalyser {
             for roa in roas {
                 let covered = validated_tree.matching_or_more_specific(&roa.prefix());
                 if covered.is_empty() {
-                    entries.push(BgpAnalysisEntry::roa_stale(*roa))
+                    entries.push(BgpAnalysisEntry::roa_unseen(*roa))
                 } else {
                     let allows: Vec<Announcement> = covered
                         .iter()

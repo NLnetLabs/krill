@@ -1956,7 +1956,7 @@ impl BgpStats {
         self.announcements_not_found += 1;
     }
 
-    pub fn increment_stale(&mut self) {
+    pub fn increment_unseen(&mut self) {
         self.roas_stale += 1;
     }
 }

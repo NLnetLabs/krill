@@ -28,12 +28,12 @@
   {
     "asn": 64497,
     "prefix": "10.0.3.0/24",
-    "state": "roa_stale"
+    "state": "roa_unseen"
   },
   {
     "asn": 0,
     "prefix": "10.0.4.0/24",
-    "state": "roa_stale"
+    "state": "roa_unseen"
   },
   {
     "asn": 64496,
