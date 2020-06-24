@@ -2074,7 +2074,7 @@ components:
         in a single table. If you want to look at announcements or ROAs only, please
         look at the other more specific BGP analysis endpoints for those.
 
-        Possible state values are: roa_seen, roa_stale, announcement_valid,
+        Possible state values are: roa_seen, roa_seen, announcement_valid,
         announcement_invalid_length, announcement_invalid_asn, announcement_not_found,
         roa_no_announcement_info
       content:

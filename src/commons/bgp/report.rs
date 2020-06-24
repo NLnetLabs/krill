@@ -41,7 +41,7 @@ impl From<BgpAnalysisReport> for BgpStats {
                 BgpAnalysisState::AnnouncementInvalidAsn => stats.increment_invalid_asn(),
                 BgpAnalysisState::AnnouncementInvalidLength => stats.increment_invalid_length(),
                 BgpAnalysisState::AnnouncementNotFound => stats.increment_not_found(),
-                BgpAnalysisState::RoaStale => stats.increment_stale(),
+                BgpAnalysisState::RoaUnseen => stats.increment_unseen(),
                 _ => {} // nothing to see, move along
             }
         }
@@ -85,13 +85,13 @@ impl fmt::Display for BgpAnalysisReport {
                 writeln!(f)?;
             }
 
-            if let Some(stales) = entry_map.get(&BgpAnalysisState::RoaStale) {
+            if let Some(unseens) = entry_map.get(&BgpAnalysisState::RoaUnseen) {
                 writeln!(
                     f,
-                    "Authorizations for which no announcements are seen (possibly stale):"
+                    "Authorizations for which no announcements are seen (you may wish to remove these):"
                 )?;
                 writeln!(f)?;
-                for roa in stales {
+                for roa in unseens {
                     writeln!(f, "\tDefinition: {}", roa.definition)?;
                 }
                 writeln!(f)?;
@@ -209,10 +209,10 @@ impl BgpAnalysisEntry {
         }
     }
 
-    pub fn roa_stale(definition: RoaDefinition) -> Self {
+    pub fn roa_unseen(definition: RoaDefinition) -> Self {
         BgpAnalysisEntry {
             definition,
-            state: BgpAnalysisState::RoaStale,
+            state: BgpAnalysisState::RoaUnseen,
             allowed_by: None,
             disallowed_by: vec![],
             authorizes: vec![],
@@ -306,7 +306,7 @@ impl PartialOrd for BgpAnalysisEntry {
 #[serde(rename_all = "snake_case")]
 pub enum BgpAnalysisState {
     RoaSeen,
-    RoaStale,
+    RoaUnseen,
     AnnouncementValid,
     AnnouncementInvalidLength,
     AnnouncementInvalidAsn,
@@ -336,8 +336,8 @@ impl fmt::Display for AnnouncementReportEntry {
             AnnouncementReportState::NotFound => {
                 "announcement 'not found': not covered by your ROAs"
             }
-            AnnouncementReportState::Stale => {
-                "ROA does not cover any known announcement (stale or backup?)"
+            AnnouncementReportState::Unseen => {
+                "ROA does not cover any known announcement (obsolete or backup?)"
             }
             AnnouncementReportState::NoInfo => "ROA exists, but no bgp info currently available",
         };
@@ -352,7 +352,7 @@ pub enum AnnouncementReportState {
     InvalidAsn,
     InvalidLength,
     NotFound,
-    Stale,
+    Unseen,
     NoInfo,
 }
 
@@ -386,10 +386,10 @@ impl From<BgpAnalysisReport> for AnnouncementReport {
                 state: AnnouncementReportState::NotFound,
             })
         }
-        for def in table.matching_defs(BgpAnalysisState::RoaStale) {
+        for def in table.matching_defs(BgpAnalysisState::RoaUnseen) {
             entries.push(AnnouncementReportEntry {
                 definition: *def,
-                state: AnnouncementReportState::Stale,
+                state: AnnouncementReportState::Unseen,
             })
         }
         for def in table.matching_defs(BgpAnalysisState::RoaNoAnnouncementInfo) {
@@ -429,13 +429,6 @@ impl From<BgpAnalysisReport> for RoaReport {
     fn from(table: BgpAnalysisReport) -> Self {
         let mut entries: Vec<RoaReportEntry> = vec![];
 
-        // for def in table.matching_defs(BgpAnalysisState::RoaStale) {
-        //     entries.push(AnnouncementReportEntry {
-        //         definition: def.clone(),
-        //         state: AnnouncementReportState::Stale,
-        //     })
-        // }
-
         for entry in table.0 {
             match &entry.state {
                 BgpAnalysisState::RoaSeen => entries.push(RoaReportEntry {
@@ -444,9 +437,9 @@ impl From<BgpAnalysisReport> for RoaReport {
                     authorizes: entry.authorizes,
                     disallows: entry.disallows,
                 }),
-                BgpAnalysisState::RoaStale => entries.push(RoaReportEntry {
+                BgpAnalysisState::RoaUnseen => entries.push(RoaReportEntry {
                     definition: entry.definition,
-                    state: RoaReportEntryState::Stale,
+                    state: RoaReportEntryState::Unseen,
                     authorizes: entry.authorizes,
                     disallows: entry.disallows,
                 }),
@@ -483,7 +476,7 @@ pub struct RoaReportEntry {
 impl fmt::Display for RoaReportEntry {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let state_str = match self.state {
-            RoaReportEntryState::Covering | RoaReportEntryState::Stale => format!(
+            RoaReportEntryState::Covering | RoaReportEntryState::Unseen => format!(
                 "roa authorizes {}, disallows {} announcements",
                 self.authorizes.len(),
                 self.disallows.len()
@@ -503,7 +496,7 @@ impl fmt::Display for RoaReportEntry {
 #[serde(rename_all = "snake_case")]
 pub enum RoaReportEntryState {
     Covering,
-    Stale,
+    Unseen,
     NotFound,
     NoInfo,
 }

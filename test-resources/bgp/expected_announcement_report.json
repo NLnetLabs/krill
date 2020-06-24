@@ -39,13 +39,13 @@
       "asn": 64497,
       "prefix": "10.0.3.0/24"
     },
-    "state": "stale"
+    "state": "unseen"
   },
   {
     "definition": {
       "asn": 0,
       "prefix": "10.0.4.0/24"
     },
-    "state": "stale"
+    "state": "unseen"
   }
 ]

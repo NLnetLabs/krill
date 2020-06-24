@@ -3,5 +3,5 @@
 10.0.0.0/22 => 64497	announcement 'invalid': unauthorized asn
 10.0.0.0/24 => 64496	announcement 'invalid': more specific than allowed
 10.0.0.0/21 => 64497	announcement 'not found': not covered by your ROAs
-10.0.3.0/24 => 64497	ROA does not cover any known announcement (stale or backup?)
-10.0.4.0/24 => 0	ROA does not cover any known announcement (stale or backup?)
+10.0.3.0/24 => 64497	ROA does not cover any known announcement (obsolete or backup?)
+10.0.4.0/24 => 0	ROA does not cover any known announcement (obsolete or backup?)
