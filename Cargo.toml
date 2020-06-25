@@ -78,6 +78,7 @@ static-openssl = [ "openssl/vendored" ]
 #   - https://www.debian.org/doc/debian-policy/ch-files.html#behavior
 #   - .github/workflows/pkg.yml
 [package.metadata.deb]
+name = "krill"
 priority = "optional"
 section = "net"
 extended-description-file = "debian/description.txt"
