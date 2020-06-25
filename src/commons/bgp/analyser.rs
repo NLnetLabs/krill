@@ -43,17 +43,17 @@ impl BgpAnalyser {
             let mut seen = self.seen.write().unwrap();
             if let Some(last_time) = seen.last_updated() {
                 if (last_time + Duration::minutes(BGP_RIS_REFRESH_MINUTES)) > Time::now() {
-                    debug!("Will not check BGP Ris Dumps until the refresh interval has passed");
+                    trace!("Will not check BGP Ris Dumps until the refresh interval has passed");
                     return Ok(false); // no need to update yet
                 }
             }
             let announcements = loader.download_updates().await?;
             if seen.equivalent(&announcements) {
-                info!("BGP Ris Dumps unchanged");
+                debug!("BGP Ris Dumps unchanged");
                 Ok(false)
             } else {
                 info!(
-                    "Found {} announcements based on BGP Ris Dumps",
+                    "Updated announcements ({}) based on BGP Ris Dumps",
                     announcements.len()
                 );
                 seen.update(announcements);
