@@ -1,7 +1,7 @@
 [package]
 # Note: some of these values are also used when building Debian packages below.
 name    = "krill"
-version = "0.7.1"
+version = "0.8.0-dev"
 edition = "2018"
 authors = [ "The NLnet Labs RPKI team <rpki-team@nlnetlabs.nl>" ]
 description = "Resource Public Key Infrastructure (RPKI) daemon"
@@ -10,6 +10,10 @@ repository = "https://github.com/NLnetLabs/krill"
 keywords = ["rpki", "routing-security", "bgp"]
 readme = "README.md"
 license = "MPL-2.0"
+exclude = [
+  "test-resources/*",
+  "tests/*",
+]
 
 [dependencies]
 base64          = "^0.10"
