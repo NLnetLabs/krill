@@ -6,6 +6,7 @@ pub const KRILL_DEFAULT_CONFIG_FILE: &str = "./defaults/krill.conf";
 
 pub const KRILL_ENV_TEST: &str = "KRILL_TEST";
 pub const KRILL_ENV_TEST_ANN: &str = "KRILL_TEST_ANN";
+pub const KRILL_ENV_UPGRADE_ONLY: &str = "KRILL_UPGRADE_ONLY";
 pub const KRILL_ENV_REPO_ENABLED: &str = "KRILL_REPO_ENABLED";
 pub const KRILL_ENV_USE_TA: &str = "KRILL_USE_TA";
 pub const KRILL_ENV_LOG_LEVEL: &str = "KRILL_LOG_LEVEL";

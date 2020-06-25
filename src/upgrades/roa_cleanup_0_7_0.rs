@@ -6,10 +6,24 @@ use crate::daemon::krillserver::KrillServer;
 
 pub fn roa_cleanup(server: &KrillServer) -> Result<(), RoaCleanupError> {
     for ca in server.cas().cas() {
+        info!("Will check ROAs for CA: {}", ca.handle());
+
         let roas = server.ca_routes_show(ca.handle())?;
 
+        if roas.is_empty() {
+            info!("No ROAs found for CA: {}", ca.handle());
+        } else {
+            info!("ROAs found for CA: {}", ca.handle());
+            for def in roas.iter() {
+                info!("{}", def);
+            }
+        }
+
         if let Some(updates) = clean(roas) {
+            info!("Will clean up ROAs as follows:\n{}", updates);
             server.ca_routes_update(ca.handle().clone(), updates)?;
+        } else {
+            info!("No clean up needed");
         }
     }
 

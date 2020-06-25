@@ -2,6 +2,7 @@
 //!
 use std::collections::HashMap;
 use std::convert::Infallible;
+use std::env;
 use std::fs::File;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -25,6 +26,7 @@ use crate::commons::api::{
 };
 use crate::commons::error::Error;
 use crate::commons::remote::rfc8183;
+use crate::constants::KRILL_ENV_UPGRADE_ONLY;
 use crate::daemon::config::Config;
 use crate::daemon::http::statics::statics;
 use crate::daemon::http::{tls, tls_keys, HttpResponse, Request, RequestPath, RoutingResult};
@@ -38,13 +40,18 @@ pub type State = Arc<RwLock<KrillServer>>;
 pub async fn start(config: Config) -> Result<(), Error> {
     // Call upgrade, this will only do actual work if needed.
     pre_start_upgrade(&config.data_dir)
-        .map_err(|_| Error::custom("Could not upgrade Krill, check logs!"))?;
+        .map_err(|e| Error::Custom(format!("Could not upgrade Krill: {}", e)))?;
 
     // Create the server, this will create the necessary data sub-directories if needed
     let krill = KrillServer::build(&config)?;
 
     post_start_upgrade(&config.data_dir, &krill)
-        .map_err(|_| Error::custom("Could not upgrade Krill, check logs!"))?;
+        .map_err(|e| Error::Custom(format!("Could not upgrade Krill: {}", e)))?;
+
+    if env::var(KRILL_ENV_UPGRADE_ONLY).is_ok() {
+        println!("Krill upgrade successful");
+        ::std::process::exit(0);
+    }
 
     let state = Arc::new(RwLock::new(krill));
 
