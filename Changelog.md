@@ -3,6 +3,12 @@
 Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
 for planned releases.
 
+## 0.7.1 'Sobremesa'
+
+This release fixes the ROA migration introduced in 0.7.0. We identified an issue where the
+clean up of ROAs would fail because Krill tried adding explicit forms of ROAs - with max
+length set - before removing the implicit definitions.
+
 ## 0.7.0 'Escondidinho de Lagosta'
 
 This release brings significant improvements aimed at maintaining your ROAs. For now, Krill
