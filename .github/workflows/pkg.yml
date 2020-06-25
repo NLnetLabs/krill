@@ -148,7 +148,7 @@ jobs:
           debian:10)    OS_REL=buster ;;
           *)            echo 2>&1 "ERROR: Unexpected matrix image"; exit 1 ;;
         esac
-        DEB_VER="krill_${KRILL_VER}-1${OS_REL}_amd64"
+        DEB_VER="${KRILL_VER}-1${OS_REL}"
         cargo deb --variant $DEB_NAME --deb-version $DEB_VER
       env:
         MATRIX_IMAGE: ${{ matrix.image }}
