@@ -150,6 +150,8 @@ jobs:
         esac
         DEB_VER="krill_${KRILL_VER}-1${OS_REL}_amd64"
         cargo deb --variant $DEB_NAME --deb-version $DEB_VER
+      env:
+        MATRIX_IMAGE: ${{ matrix.image }}
 
     # Upload the produced DEB package. The artifact will be available
     # via the GH Actions job summary and build log pages, but only to
