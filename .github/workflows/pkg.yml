@@ -92,7 +92,7 @@ jobs:
 
     - name: Install compilation dependencies
       run: |
-          apt-get install -y build-essential libssl-dev pkg-config
+          apt-get install -y build-essential jq libssl-dev pkg-config
       env:
         DEBIAN_FRONTEND: noninteractive
 
