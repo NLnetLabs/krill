@@ -1502,6 +1502,20 @@ impl<S: Signer> CertAuth<S> {
         let mut current_auths: HashSet<RouteAuthorization> =
             self.routes.authorizations().cloned().collect();
 
+        for auth in removed {
+            if current_auths.contains(&auth) {
+                current_auths.remove(&auth);
+                res.push(StoredEvent::new(
+                    self.handle(),
+                    version,
+                    EvtDet::RouteAuthorizationRemoved(auth),
+                ));
+                version += 1;
+            } else {
+                return Err(Error::CaAuthorizationUnknown(self.handle.clone(), auth));
+            }
+        }
+
         for auth in added {
             if !auth.max_length_valid() {
                 return Err(Error::CaAuthorizationInvalidMaxlength(
@@ -1525,20 +1539,6 @@ impl<S: Signer> CertAuth<S> {
                     EvtDet::RouteAuthorizationAdded(auth),
                 ));
                 version += 1;
-            }
-        }
-
-        for auth in removed {
-            if current_auths.contains(&auth) {
-                current_auths.remove(&auth);
-                res.push(StoredEvent::new(
-                    self.handle(),
-                    version,
-                    EvtDet::RouteAuthorizationRemoved(auth),
-                ));
-                version += 1;
-            } else {
-                return Err(Error::CaAuthorizationUnknown(self.handle.clone(), auth));
             }
         }
 
