@@ -114,7 +114,7 @@ async fn remote_publication() {
 
     let ta_handle = ta_handle();
 
-    let child = Handle::from_str_unsafe("child");
+    let child = unsafe { Handle::from_str_unsafe("child") };
 
     // Set up child as a child of the TA
     init_child_with_embedded_repo(&child).await;

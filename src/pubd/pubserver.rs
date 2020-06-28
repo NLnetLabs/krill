@@ -106,7 +106,7 @@ impl PubServer {
 ///
 impl PubServer {
     fn repository_handle() -> RepositoryHandle {
-        Handle::from_str_unsafe(PUBSERVER_DFLT)
+        unsafe { Handle::from_str_unsafe(PUBSERVER_DFLT) }
     }
 
     fn repository(&self) -> KrillResult<Arc<Repository>> {
@@ -330,7 +330,7 @@ mod tests {
 
             let alice = publisher_alice(&d);
 
-            let alice_handle = Handle::from_str_unsafe("alice");
+            let alice_handle = unsafe { Handle::from_str_unsafe("alice") };
             let publisher_req = make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
             server.create_publisher(publisher_req).unwrap();
@@ -350,7 +350,7 @@ mod tests {
 
             let alice = publisher_alice(&d);
 
-            let alice_handle = Handle::from_str_unsafe("alice");
+            let alice_handle = unsafe { Handle::from_str_unsafe("alice") };
             let publisher_req = make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
             server.create_publisher(publisher_req.clone()).unwrap();
@@ -368,7 +368,7 @@ mod tests {
             let server = make_server(&d);
             let alice = publisher_alice(&d);
 
-            let alice_handle = Handle::from_str_unsafe("alice");
+            let alice_handle = unsafe { Handle::from_str_unsafe("alice") };
             let publisher_req = make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
             server.create_publisher(publisher_req).unwrap();
@@ -385,7 +385,7 @@ mod tests {
             let server = make_server(&d);
             let alice = publisher_alice(&d);
 
-            let alice_handle = Handle::from_str_unsafe("alice");
+            let alice_handle = unsafe { Handle::from_str_unsafe("alice") };
             let publisher_req = make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
             server.create_publisher(publisher_req).unwrap();

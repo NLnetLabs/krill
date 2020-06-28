@@ -156,7 +156,7 @@ impl Publish {
         &self.content
     }
 
-    pub fn unwrap(self) -> (Option<String>, uri::Rsync, Base64) {
+    pub fn unpack(self) -> (Option<String>, uri::Rsync, Base64) {
         (self.tag, self.uri, self.content)
     }
 }

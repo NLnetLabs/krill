@@ -112,7 +112,7 @@ impl PublishElement {
 
 impl From<publication::Publish> for PublishElement {
     fn from(p: publication::Publish) -> Self {
-        let (_tag, uri, base64) = p.unwrap();
+        let (_tag, uri, base64) = p.unpack();
         PublishElement { uri, base64 }
     }
 }

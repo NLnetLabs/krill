@@ -42,7 +42,7 @@ impl<E: fmt::Display + Eq + PartialEq + Storable + 'static> StoredEvent<E> {
     }
 
     /// Return the parts of this event.
-    pub fn unwrap(self) -> (Handle, u64, E) {
+    pub fn unpack(self) -> (Handle, u64, E) {
         (self.id, self.version, self.details)
     }
 }

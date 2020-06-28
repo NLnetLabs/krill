@@ -35,7 +35,7 @@ fn assert_scenario(scenario: &str, cas: &[&str]) {
         let server = make_server(&d, scenario);
 
         for ca in cas {
-            let handle = Handle::from_str_unsafe(ca);
+            let handle = unsafe { Handle::from_str_unsafe(ca) };
             assert_history(&server, scenario, &handle);
         }
     })

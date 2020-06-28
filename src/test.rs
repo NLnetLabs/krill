@@ -224,7 +224,7 @@ pub async fn update_child(ca: &Handle, child: &ChildHandle, resources: &Resource
 }
 
 pub async fn update_child_id(ca: &Handle, child: &ChildHandle, req: ChildRequest) {
-    let (_, _, id) = req.unwrap();
+    let (_, _, id) = req.unpack();
     let req = UpdateChildRequest::id_cert(id);
     send_child_request(ca, child, req).await
 }
