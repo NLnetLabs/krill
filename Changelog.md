@@ -3,6 +3,15 @@
 Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
 for planned releases.
 
+## 0.7.2 'Small Bites'
+
+This release fixes an issue where BGP RIS Dump files that were not properly retrieved would
+cause a thread to choke. As this can lead to lock poisoning this type of event could cause
+other Krill processes to stop functioning properly. All users of Krill 0.7.0 and 0.7.1 are
+advised to upgrade.
+
+In addition to this German translations have been added to the UI.
+
 ## 0.7.1 'Sobremesa'
 
 This release fixes the ROA migration introduced in 0.7.0. We identified an issue where the
