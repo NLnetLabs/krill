@@ -37,5 +37,5 @@ pub use self::signing::*;
 pub const TA_NAME: &str = "ta"; // reserved for TA
 
 pub fn ta_handle() -> Handle {
-    Handle::from_str_unsafe(TA_NAME)
+    unsafe { Handle::from_str_unsafe(TA_NAME) }
 }

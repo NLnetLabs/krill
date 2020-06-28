@@ -99,8 +99,8 @@ impl<S: Signer> Aggregate for CertAuth<S> {
     type Error = Error;
 
     fn init(event: Ini) -> KrillResult<Self> {
-        let (handle, _version, details) = event.unwrap();
-        let (id, repo_info, ta_opt) = details.unwrap();
+        let (handle, _version, details) = event.unpack();
+        let (id, repo_info, ta_opt) = details.unpack();
 
         let mut parents = HashMap::new();
         let mut resources = HashMap::new();

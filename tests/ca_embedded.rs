@@ -12,7 +12,7 @@ async fn ca_embedded() {
 
     let ta_handle = ta_handle();
 
-    let child = Handle::from_str_unsafe("child");
+    let child = unsafe { Handle::from_str_unsafe("child") };
     let child_resources = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
 
     init_child_with_embedded_repo(&child).await;

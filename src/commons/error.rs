@@ -621,10 +621,10 @@ mod tests {
 
     #[test]
     fn error_response_json_regression() {
-        let ca = Handle::from_str_unsafe("ca");
-        let parent = ParentHandle::from_str_unsafe("parent");
-        let child = ChildHandle::from_str_unsafe("child");
-        let publisher = PublisherHandle::from_str_unsafe("publisher");
+        let ca = unsafe { Handle::from_str_unsafe("ca") };
+        let parent = unsafe { ParentHandle::from_str_unsafe("parent") };
+        let child = unsafe { ChildHandle::from_str_unsafe("child") };
+        let publisher = unsafe { PublisherHandle::from_str_unsafe("publisher") };
 
         let auth =
             RouteAuthorization::new(RoaDefinition::from_str("192.168.0.0/16-24 => 64496").unwrap());

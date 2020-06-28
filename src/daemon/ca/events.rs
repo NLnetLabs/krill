@@ -43,7 +43,7 @@ pub struct IniDet {
 }
 
 impl IniDet {
-    pub fn unwrap(self) -> (Rfc8183Id, Option<RepoInfo>, Option<TaCertDetails>) {
+    pub fn unpack(self) -> (Rfc8183Id, Option<RepoInfo>, Option<TaCertDetails>) {
         (self.id, self.info, self.ta_details)
     }
 }

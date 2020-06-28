@@ -219,7 +219,7 @@ impl RrdpServer {
         snapshot.apply_delta(delta.clone());
         self.snapshot = snapshot;
 
-        let last_delta = self.notification.last_delta().unwrap(); // always at least 1 delta
+        let last_delta = self.notification.last_delta().unwrap(); // always at least 1 delta for updates
         self.deltas.insert(0, delta);
         self.deltas.retain(|d| d.serial() >= last_delta);
     }
@@ -430,7 +430,7 @@ impl Aggregate for Repository {
     type Error = Error;
 
     fn init(event: Self::InitEvent) -> Result<Self, Self::Error> {
-        let (handle, _version, details) = event.unwrap();
+        let (handle, _version, details) = event.unpack();
         let (id_cert, session, rrdp_base_uri, rsync_jail, repo_base_dir) = details.unpack();
 
         let key_id = id_cert.subject_public_key_info().key_identifier();
@@ -478,6 +478,7 @@ impl Aggregate for Repository {
                 // update RRDP server
                 self.rrdp.apply_update(update);
 
+                // Can only have events for existing publishers, so unwrap is okay
                 let publisher = self.get_publisher(&publisher_handle).unwrap();
                 let publisher_stats = PublisherStats::new(publisher, time);
 

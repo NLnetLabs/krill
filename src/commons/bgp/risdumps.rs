@@ -3,6 +3,7 @@
 //! http://www.ris.ripe.net/dumps/riswhoisdump.IPv4.gz
 
 use std::fmt;
+use std::io;
 use std::io::{BufRead, Read};
 use std::num::ParseIntError;
 use std::str::FromStr;
@@ -50,8 +51,8 @@ impl RisDumpLoader {
 
     fn gunzip(bytes: Bytes) -> Result<Vec<u8>, RisDumpError> {
         let mut gunzipped: Vec<u8> = vec![];
-        let mut decoder = Decoder::new(bytes.as_ref()).unwrap();
-        decoder.read_to_end(&mut gunzipped).unwrap();
+        let mut decoder = Decoder::new(bytes.as_ref())?;
+        decoder.read_to_end(&mut gunzipped)?;
 
         Ok(gunzipped)
     }
@@ -100,6 +101,9 @@ pub enum RisDumpError {
 
     #[display(fmt = "Error parsing announcements: {}", _0)]
     ParseError(String),
+
+    #[display(fmt = "IO error: {}", _0)]
+    IoError(io::Error),
 }
 
 impl RisDumpError {
@@ -123,6 +127,12 @@ impl From<ParseIntError> for RisDumpError {
 impl From<reqwest::Error> for RisDumpError {
     fn from(e: reqwest::Error) -> RisDumpError {
         RisDumpError::ReqwestError(e)
+    }
+}
+
+impl From<io::Error> for RisDumpError {
+    fn from(e: io::Error) -> Self {
+        RisDumpError::IoError(e)
     }
 }
 

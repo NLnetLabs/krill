@@ -37,11 +37,11 @@ impl Handle {
         self.as_ref()
     }
 
-    pub fn from_str_unsafe(s: &str) -> Self {
+    pub unsafe fn from_str_unsafe(s: &str) -> Self {
         Self::from_str(s).unwrap()
     }
 
-    pub fn from_path_unsafe(path: &PathBuf) -> Self {
+    pub unsafe fn from_path_unsafe(path: &PathBuf) -> Self {
         let path = path.file_name().unwrap();
         let s = path.to_string_lossy().to_string();
         let s = s.replace("+", "/");
@@ -666,7 +666,7 @@ mod tests {
     #[test]
     fn should_make_handle_from_dir() {
         let path = PathBuf::from("a/b/abcDEF012+=-_");
-        let handle = Handle::from_path_unsafe(&path);
+        let handle = unsafe { Handle::from_path_unsafe(&path) };
         let expected_handle = Handle::from_str("abcDEF012/\\-_").unwrap();
         assert_eq!(handle, expected_handle);
     }

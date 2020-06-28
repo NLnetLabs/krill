@@ -239,7 +239,7 @@ mod tests {
         type Error = PersonError;
 
         fn init(event: InitPersonEvent) -> Result<Self, PersonError> {
-            let (id, _version, init) = event.unwrap();
+            let (id, _version, init) = event.unpack();
             Ok(Person {
                 id,
                 version: 1,
@@ -285,7 +285,7 @@ mod tests {
             let mut manager = DiskAggregateStore::<Person>::new(&d, "person").unwrap();
             manager.add_listener(counter.clone());
 
-            let id_alice = Handle::from_str_unsafe("alice");
+            let id_alice = unsafe { Handle::from_str_unsafe("alice") };
             let alice_init = InitPersonEvent::init(&id_alice, "alice smith");
 
             manager.add(alice_init).unwrap();

@@ -441,7 +441,13 @@ impl ResourceClass {
 
     fn needs_publication(&self, mode: &PublishMode) -> bool {
         match mode {
-            PublishMode::Normal => self.get_current_key().unwrap().close_to_next_update(),
+            PublishMode::Normal => {
+                if let Ok(key) = self.get_current_key() {
+                    key.close_to_next_update()
+                } else {
+                    false
+                }
+            }
             _ => true,
         }
     }
@@ -488,9 +494,10 @@ impl ResourceClass {
                 }
             }
             for key in child_cert_updates.removed() {
-                let issued = self.certificates.get(key).unwrap();
-                delta.withdraw(WithdrawnObject::from(issued.cert()));
-                revocations.push(Revocation::from(issued.cert()));
+                if let Some(issued) = self.certificates.get(key) {
+                    delta.withdraw(WithdrawnObject::from(issued.cert()));
+                    revocations.push(Revocation::from(issued.cert()));
+                }
             }
             res.push(EvtDet::ChildCertificatesUpdated(
                 self.name.clone(),
