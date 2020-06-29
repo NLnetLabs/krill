@@ -95,13 +95,6 @@ rustup update
 cargo install -f krill
 ```
 
-If you want to try the master branch from the repository instead of a release
-version, you can run:
-
-```bash
-cargo install --git https://github.com/NLnetLabs/krill.git
-```
-
 ## Introduction
 
 The Resource Public Key Infrastructure provides cryptographically signed
