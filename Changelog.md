@@ -3,6 +3,10 @@
 Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
 for planned releases.
 
+## To be released
+
+See [here](https://github.com/NLnetLabs/krill/projects/14)
+
 ## 0.7.2 'Small Bites'
 
 This release fixes an issue where BGP RIS Dump files that were not properly retrieved would
