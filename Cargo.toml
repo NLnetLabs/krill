@@ -86,6 +86,7 @@ name = "krill"
 priority = "optional"
 section = "net"
 extended-description-file = "debian/description.txt"
+license-file = ["LICENSE", "0"]
 maintainer-scripts = "debian/scripts/"
 depends = "$auto, adduser, libssl1.1"
 
