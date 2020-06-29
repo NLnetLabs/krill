@@ -24,7 +24,44 @@ This offers a fully automated installation of Krill and adds NGINX, Rsyncd,
 Docker, Gluster, automated TLS configuration, Prometheus monitoring, log streaming
 and clustering capabilities out-of-the-box.
 
-## Quick Start
+## Quick Start with Pre-built Packages
+
+Assuming you have a machine running a recent Debian or Ubuntu distribution, you 
+can install Krill from our [software package repository](https://packages.nlnetlabs.nl).
+To use this repository, add the line below that corresponds to your operating system to 
+your `/etc/apt/sources.list` or `/etc/apt/sources.list.d/`
+
+```bash
+deb [arch=amd64] https://packages.nlnetlabs.nl/linux/debian/ stretch main
+deb [arch=amd64] https://packages.nlnetlabs.nl/linux/debian/ buster main
+deb [arch=amd64] https://packages.nlnetlabs.nl/linux/ubuntu/ xenial main
+deb [arch=amd64] https://packages.nlnetlabs.nl/linux/ubuntu/ bionic main
+deb [arch=amd64] https://packages.nlnetlabs.nl/linux/ubuntu/ focal main
+```
+Then run the following commands.
+
+```bash
+sudo apt update && apt-get install -y gnupg2
+wget -qO- https://packages.nlnetlabs.nl/aptkey.asc | sudo apt-key add -
+sudo apt update
+```
+
+You can then install, enable and start Krill by running
+
+```bash
+sudo apt install krill
+systemctl enable --now krill
+
+```
+
+Krill's home directory will be in `/var/lib/krill/` and the configuration file,
+which already has an auto-generated authentication token is stored in 
+`/etc/krill.conf`. Krill now exposes its user interface and API on 
+`https://localhost:3000` using a self-signed TLS certificate. You can go to this 
+address in a web browser, accept the certificate warning and start configuring 
+your RPKI Certificate Authority. A Prometheus endpoint is available at `/metrics`.
+
+## Quick Start with Cargo
 
 Assuming you have a newly installed Debian or Ubuntu machine, you will need to
 install the C toolchain, OpenSSL, curl and Rust. You can then install Krill
