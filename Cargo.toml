@@ -97,6 +97,7 @@ assets = [
     ["defaults/krill.conf", "/usr/share/doc/krill/krill.conf", "644"],
     ["doc/krill.1", "/usr/share/man/man1/krill.1", "644"],
     ["doc/krillc.1", "/usr/share/man/man1/krillc.1", "644"],
+    ["debian/assets/krill.service.preset", "/lib/systemd/system-preset/50-krill.preset", "644"],
     ["debian/assets/krill.service.ubuntu2004", "/lib/systemd/system/krill.service", "644"]
 ]
 
@@ -110,6 +111,7 @@ assets = [
     ["defaults/krill.conf", "/usr/share/doc/krill/krill.conf", "644"],
     ["doc/krill.1", "/usr/share/man/man1/krill.1", "644"],
     ["doc/krillc.1", "/usr/share/man/man1/krillc.1", "644"],
+    ["debian/assets/krill.service.preset", "/lib/systemd/system-preset/50-krill.preset", "644"],
     ["debian/assets/krill.service.ubuntu1804", "/lib/systemd/system/krill.service", "644"]
 ]
 
@@ -129,6 +131,7 @@ assets = [
     ["defaults/krill.conf", "/usr/share/doc/krill/krill.conf", "644"],
     ["doc/krill.1", "/usr/share/man/man1/krill.1", "644"],
     ["doc/krillc.1", "/usr/share/man/man1/krillc.1", "644"],
+    ["debian/assets/krill.service.preset", "/lib/systemd/system-preset/50-krill.preset", "644"],
     ["debian/assets/krill.service.ubuntu1604", "/lib/systemd/system/krill.service", "644"]
 ]
 
@@ -140,6 +143,7 @@ assets = [
     ["defaults/krill.conf", "/usr/share/doc/krill/krill.conf", "644"],
     ["doc/krill.1", "/usr/share/man/man1/krill.1", "644"],
     ["doc/krillc.1", "/usr/share/man/man1/krillc.1", "644"],
+    ["debian/assets/krill.service.preset", "/lib/systemd/system-preset/50-krill.preset", "644"],
     ["debian/assets/krill.service.ubuntu1804", "/lib/systemd/system/krill.service", "644"]
 ]
 
@@ -153,6 +157,7 @@ assets = [
     ["defaults/krill.conf", "/usr/share/doc/krill/krill.conf", "644"],
     ["doc/krill.1", "/usr/share/man/man1/krill.1", "644"],
     ["doc/krillc.1", "/usr/share/man/man1/krillc.1", "644"],
+    ["debian/assets/krill.service.preset", "/lib/systemd/system-preset/50-krill.preset", "644"],
     ["debian/assets/krill.service.ubuntu1604", "/lib/systemd/system/krill.service", "644"]
 ]
 
