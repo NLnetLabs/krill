@@ -1,17 +1,11 @@
 #!/bin/sh -e
-
-# lintian warns maintainer-script-calls-systemctl.
-# at https://lintian.debian.org/tags/maintainer-script-calls-systemctl.html it
-# explains that deb-systemd-helper should be used instead, but we are not using 
-# debhelper, we are using cargo-deb, so we have to manage systemd ourselves.
-uninstall_service_unit() {
-    if systemctl is-enabled krill.service >/dev/null; then
-        systemctl disable --now krill.service
+# See: https://salsa.debian.org/debian/debhelper/-/blob/debian/13.1/autoscripts/prerm-systemd
+# This is what dh_installsystemd would add but Cargo Deb doesn't use debhelper
+# so we have to add it ourselves manually.
+manage_systemd() {
+    if [ -d /run/systemd/system ]; then
+        deb-systemd-invoke stop 'krill.service' >/dev/null || true
     fi
 }
 
-case "$1" in
-remove|purge)
-  uninstall_service_unit
-  ;;
-esac
+manage_systemd $1

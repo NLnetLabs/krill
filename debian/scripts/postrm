@@ -2,6 +2,24 @@
 
 KRILL_CONF="/etc/krill.conf"
 
+# See: https://salsa.debian.org/debian/debhelper/-/blob/debian/13.1/autoscripts/postrm-systemd
+# This is what dh_installsystemd would add but Cargo Deb doesn't use debhelper
+# so we have to add it ourselves manually.
+manage_systemd() {
+    if [ "$1" = "remove" ]; then
+        if [ -x "/usr/bin/deb-systemd-helper" ]; then
+            deb-systemd-helper mask 'krill.service' >/dev/null || true
+        fi
+    fi
+    
+    if [ "$1" = "purge" ]; then
+        if [ -x "/usr/bin/deb-systemd-helper" ]; then
+            deb-systemd-helper purge 'krill.service' >/dev/null || true
+            deb-systemd-helper unmask 'krill.service' >/dev/null || true
+        fi
+    fi
+}
+
 case "$1" in
 purge)
     # Per https://www.debian.org/doc/debian-policy/ch-files.html#behavior
@@ -12,3 +30,5 @@ purge)
     fi
     ;;
 esac
+
+manage_systemd $1
