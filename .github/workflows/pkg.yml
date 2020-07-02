@@ -18,6 +18,8 @@
 name: Packaging
 on:
   push:
+    branches:
+    - master
     paths-ignore:
       - '.dockerignore'
       - '.github/workflow/pkg.yml'
@@ -30,6 +32,8 @@ on:
       - 'tests/e2e/**'
   # Hmm, annoying, do we really have to duplicate this?
   pull_request:
+    branches:
+    - master
     paths-ignore:
       - '.dockerignore'
       - '.github/workflow/pkg.yml'
