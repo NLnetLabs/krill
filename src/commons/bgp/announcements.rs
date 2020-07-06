@@ -172,6 +172,7 @@ impl AsRef<TypedPrefix> for Announcement {
 pub struct Announcements {
     seen: TypedPrefixTree<Announcement>,
     last_updated: Option<Time>,
+    last_checked: Option<Time>,
 }
 
 impl Announcements {
@@ -182,7 +183,13 @@ impl Announcements {
         }
         let tree = builder.build();
         self.seen = tree;
-        self.last_updated = Some(Time::now());
+        let now = Time::now();
+        self.last_updated = Some(now);
+        self.last_checked = Some(now);
+    }
+
+    pub fn update_checked(&mut self) {
+        self.last_checked = Some(Time::now())
     }
 
     pub fn equivalent(&self, announcements: &[Announcement]) -> bool {
@@ -207,6 +214,10 @@ impl Announcements {
         self.size() == 0
     }
 
+    pub fn last_checked(&self) -> Option<Time> {
+        self.last_checked
+    }
+
     pub fn last_updated(&self) -> Option<Time> {
         self.last_updated
     }
@@ -217,6 +228,7 @@ impl Default for Announcements {
         Announcements {
             seen: TypedPrefixTreeBuilder::default().build(),
             last_updated: None,
+            last_checked: None,
         }
     }
 }
