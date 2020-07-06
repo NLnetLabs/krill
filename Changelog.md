@@ -3,6 +3,11 @@
 Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
 for planned releases.
 
+## 0.7.3 'Slow Food'
+
+This release fixes an issue where the BGP Ris Dump files were reloaded and checked too
+frequently causing high CPU and bandwidth usage.
+
 ## 0.7.2 'Small Bites'
 
 This release fixes an issue where BGP RIS Dump files that were not properly retrieved would
