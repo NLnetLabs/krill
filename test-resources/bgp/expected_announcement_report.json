@@ -16,6 +16,13 @@
   {
     "definition": {
       "asn": 64497,
+      "prefix": "192.168.1.0/24"
+    },
+    "state": "valid"
+  },
+  {
+    "definition": {
+      "asn": 64497,
       "prefix": "10.0.0.0/22"
     },
     "state": "invalid_asn"
@@ -36,6 +43,20 @@
   },
   {
     "definition": {
+      "asn": 64496,
+      "prefix": "192.168.0.0/24"
+    },
+    "state": "not_found"
+  },
+  {
+    "definition": {
+      "asn": 64497,
+      "prefix": "192.168.0.0/24"
+    },
+    "state": "not_found"
+  },
+  {
+    "definition": {
       "asn": 64497,
       "prefix": "10.0.3.0/24"
     },
@@ -45,6 +66,13 @@
     "definition": {
       "asn": 0,
       "prefix": "10.0.4.0/24"
+    },
+    "state": "unseen"
+  },
+  {
+    "definition": {
+      "asn": 64498,
+      "prefix": "192.168.1.0/24"
     },
     "state": "unseen"
   }

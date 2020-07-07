@@ -10,15 +10,22 @@ Authorizations covering announcements seen:
 		10.0.0.0/22 => 64497
 		10.0.0.0/24 => 64496
 
+	Definition: 192.168.1.0/24 => 64497
+
+		Authorizes:
+		192.168.1.0/24 => 64497
+
 Authorizations for which no announcements are seen (you may wish to remove these):
 
 	Definition: 10.0.3.0/24 => 64497
 	Definition: 10.0.4.0/24 => 0
+	Definition: 192.168.1.0/24 => 64498
 
 Announcements which are valid:
 
 	Announcement: 10.0.0.0/22 => 64496
 	Announcement: 10.0.2.0/23 => 64496
+	Announcement: 192.168.1.0/24 => 64497
 
 Announcements from an unauthorized ASN:
 
@@ -37,4 +44,6 @@ Announcements from an authorized ASN, which are too specific (not allowed by max
 Announcements which are 'not found' (not covered by any of your authorizations):
 
 	Announcement: 10.0.0.0/21 => 64497
+	Announcement: 192.168.0.0/24 => 64496
+	Announcement: 192.168.0.0/24 => 64497
 

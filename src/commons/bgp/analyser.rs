@@ -125,7 +125,11 @@ impl BgpAnalyser {
                         .map(|va| va.announcement())
                         .collect();
 
-                    entries.push(BgpAnalysisEntry::roa_seen(*roa, allows, disallows))
+                    if allows.is_empty() && disallows.is_empty() {
+                        entries.push(BgpAnalysisEntry::roa_unseen(*roa))
+                    } else {
+                        entries.push(BgpAnalysisEntry::roa_seen(*roa, allows, disallows))
+                    }
                 }
             }
 
@@ -171,8 +175,10 @@ impl BgpAnalyser {
         res.push(announcement("10.0.0.0/22 => 64497"));
         res.push(announcement("10.0.0.0/21 => 64497"));
 
-        res.push(announcement("192.168.0.0/26 => 64497"));
-        res.push(announcement("192.168.0.0/26 => 64496"));
+        res.push(announcement("192.168.0.0/24 => 64497"));
+        res.push(announcement("192.168.0.0/24 => 64496"));
+
+        res.push(announcement("192.168.1.0/24 => 64497"));
 
         res.push(announcement("2001:DB8::/32 => 64498"));
 
@@ -231,14 +237,26 @@ mod tests {
     #[test]
     fn analyse_bgp() {
         let roa_authorizing = definition("10.0.0.0/22-23 => 64496");
-        let roa_stale = definition("10.0.3.0/24 => 64497");
         let roa_disallowing = definition("10.0.4.0/24 => 0");
+        let roa_unseen_completely = definition("10.0.3.0/24 => 64497");
 
-        let resources = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
+        let roa_authorizing_single = definition("192.168.1.0/24 => 64497");
+        let roa_unseen_redundant = definition("192.168.1.0/24 => 64498");
+
+        let resources = ResourceSet::from_strs("", "10.0.0.0/8, 192.168.0.0/16", "").unwrap();
 
         let analyser = BgpAnalyser::with_test_announcements();
 
-        let report = analyser.analyse(&[roa_authorizing, roa_stale, roa_disallowing], &resources);
+        let report = analyser.analyse(
+            &[
+                roa_authorizing,
+                roa_disallowing,
+                roa_unseen_completely,
+                roa_authorizing_single,
+                roa_unseen_redundant,
+            ],
+            &resources,
+        );
 
         let expected: BgpAnalysisReport = serde_json::from_str(include_str!(
             "../../../test-resources/bgp/expected_full_report.json"
