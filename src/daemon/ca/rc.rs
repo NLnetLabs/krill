@@ -13,17 +13,16 @@ use crate::commons::api::{
     AddedObject, CurrentObject, CurrentObjects, EntitlementClass, HexEncodedHash, IssuanceRequest,
     IssuedCert, ObjectName, ObjectsDelta, ParentHandle, RcvdCert, ReplacedObject, RepoInfo,
     RequestResourceLimit, ResourceClassInfo, ResourceClassName, ResourceSet, Revocation,
-    RevocationRequest, RevokedObject, UpdatedObject, WithdrawnObject,
+    RevocationRequest, UpdatedObject, WithdrawnObject,
 };
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
-use crate::constants::ROA_CERTIFICATE_REISSUE_WEEKS;
 use crate::daemon::ca::events::{ChildCertificateUpdates, RoaUpdates};
 use crate::daemon::ca::signing::CsrInfo;
 use crate::daemon::ca::{
     self, ta_handle, AddedOrUpdated, CertifiedKey, ChildCertificates, CrlBuilder, CurrentKey,
-    CurrentObjectSetDelta, EvtDet, KeyState, ManifestBuilder, NewKey, OldKey, PendingKey, RoaInfo,
-    Roas, RouteAuthorization, SignSupport, Signer,
+    CurrentObjectSetDelta, EvtDet, KeyState, ManifestBuilder, NewKey, OldKey, PendingKey, Roas,
+    Routes, SignSupport, Signer,
 };
 
 //------------ ResourceClass -----------------------------------------------
@@ -148,11 +147,7 @@ impl ResourceClass {
     }
 
     pub fn current_objects(&self) -> CurrentObjects {
-        let mut current_objects = CurrentObjects::default();
-
-        for roa_info in self.roas.current() {
-            current_objects.insert(roa_info.name().clone(), roa_info.object().clone());
-        }
+        let mut current_objects = self.roas.current_objects();
 
         for issued in self.certificates.current() {
             let cert = issued.cert();
@@ -314,14 +309,7 @@ impl ResourceClass {
 
         if &rcvd_resources != current.incoming_cert().resources() {
             let publish_mode = PublishMode::UpdatedResources(rcvd_resources);
-            let authorizations: Vec<RouteAuthorization> =
-                self.roas.authorizations().cloned().collect();
-            res.append(&mut self.republish(
-                authorizations.as_slice(),
-                repo_info,
-                &publish_mode,
-                signer,
-            )?)
+            res.append(&mut self.republish(repo_info, &publish_mode, signer)?)
         }
 
         Ok(res)
@@ -456,7 +444,6 @@ impl ResourceClass {
     /// ROAs as needed.
     pub fn republish<S: Signer>(
         &self,
-        authorizations: &[RouteAuthorization],
         repo_info: &RepoInfo,
         mode: &PublishMode,
         signer: &S,
@@ -467,7 +454,13 @@ impl ResourceClass {
         let mut delta = ObjectsDelta::new(repo_info.ca_repository(ns));
         let mut revocations = vec![];
 
-        let roa_updates = self.update_roas(authorizations, mode, signer)?;
+        let roa_updates = match mode {
+            PublishMode::Normal => self.renew_roas(signer),
+            PublishMode::KeyRollActivation => self.active_key_roas(signer),
+            PublishMode::NewRepo(info) => self.migrate_roas(info, signer),
+            PublishMode::UpdatedResources(resources) => self.shrink_roas(resources, signer),
+        }?;
+
         if roa_updates.contains_changes() {
             for added in roa_updates.added().into_iter() {
                 delta.add(added);
@@ -632,12 +625,11 @@ impl ResourceClass {
         let ns = self.name_space();
 
         // ROAs
-        for info in self.roas.current() {
-            let base64 = info.object().content().clone();
-            let object_name = info.name().clone();
-            let uri = base_repo.resolve(ns, object_name.as_str());
-            res.push(PublishElement::new(base64, uri));
+        let roas = self.roas.current_objects();
+        for p in roas.publish(base_repo, ns) {
+            res.push(p.into());
         }
+
         // Certs
         for cert in self.certificates.current() {
             let base64 = Base64::from_content(cert.to_captured().as_slice());
@@ -807,20 +799,13 @@ impl ResourceClass {
 
         let mut res = vec![];
 
-        let authorizations: Vec<RouteAuthorization> = self.roas.authorizations().cloned().collect();
-
         res.push(self.key_state.keyroll_activate(
             self.name.clone(),
             self.parent_rc_name.clone(),
             signer,
         )?);
 
-        res.append(&mut self.republish(
-            authorizations.as_slice(),
-            repo_info,
-            &PublishMode::KeyRollActivation,
-            signer,
-        )?);
+        res.append(&mut self.republish(repo_info, &PublishMode::KeyRollActivation, signer)?);
 
         Ok(res)
     }
@@ -989,69 +974,42 @@ impl ResourceClass {
 /// # ROAs
 ///
 impl ResourceClass {
-    /// Updates the ROAs in accordance with the current authorizations, and
-    /// the target resources and key determined by the PublishMode.
-    pub fn update_roas<S: Signer>(
+    /// Renew all ROAs under the current for which the not-after time closer
+    /// than [`ROA_CERTIFICATE_REISSUE_WEEKS`]
+    pub fn renew_roas<S: Signer>(&self, signer: &S) -> KrillResult<RoaUpdates> {
+        let key = self.get_current_key()?;
+        self.roas.renew(key, signer)
+    }
+
+    /// Migrate all ROAs to a new repository
+    pub fn migrate_roas<S: Signer>(&self, repo: &RepoInfo, signer: &S) -> KrillResult<RoaUpdates> {
+        let key = self.get_current_key()?;
+        self.roas
+            .migrate_repo(&repo.ca_repository(self.name_space()), key, signer)
+    }
+
+    /// Publish all ROAs under the new key
+    pub fn active_key_roas<S: Signer>(&self, signer: &S) -> KrillResult<RoaUpdates> {
+        let key = self.get_new_key()?;
+        self.roas.activate_key(key, signer)
+    }
+
+    /// Shrink ROAs if needed
+    pub fn shrink_roas<S: Signer>(
         &self,
-        auths: &[RouteAuthorization],
-        mode: &PublishMode,
+        resources: &ResourceSet,
         signer: &S,
     ) -> KrillResult<RoaUpdates> {
-        let mut updates = RoaUpdates::default();
+        let key = self.get_current_key()?;
+        self.roas.shrink_roas(resources, key, signer)
+    }
 
-        let key = match mode {
-            PublishMode::KeyRollActivation => self.get_new_key()?,
-            _ => self.get_current_key()?,
-        };
-
-        let resources = match mode {
-            PublishMode::Normal | PublishMode::NewRepo(_) => key.incoming_cert().resources(),
-            PublishMode::UpdatedResources(resources) => resources,
-            PublishMode::KeyRollActivation => self.get_current_key()?.incoming_cert().resources(),
-        };
-
-        let new_repo = match &mode {
-            PublishMode::NewRepo(info) => Some(info.ca_repository(self.name_space())),
-            _ => None,
-        };
-
-        // Remove any ROAs no longer in auths, or no longer in resources.
-        for (current_auth, roa_info) in self.roas.iter() {
-            if !auths.contains(current_auth) || !resources.contains(&current_auth.prefix().into()) {
-                updates.remove(*current_auth, RevokedObject::from(roa_info.object()));
-            }
-        }
-
-        for auth in auths {
-            // if the auth is not in this resource class, just skip it.
-            if !resources.contains(&auth.prefix().into()) {
-                continue;
-            }
-
-            match self.roas.get(auth) {
-                None => {
-                    // NO ROA yet, so create one.
-                    let roa = Roas::make_roa(auth, key, new_repo.as_ref(), signer)?;
-                    let name = ObjectName::from(auth);
-                    updates.update(*auth, RoaInfo::new_roa(&roa, name));
-                }
-                Some(roa) => {
-                    // Re-issue if the ROA is getting close to its expiration time, or if we are
-                    //  activating the new key.
-                    let expiring = roa.object().expires()
-                        < Time::now() + Duration::weeks(ROA_CERTIFICATE_REISSUE_WEEKS);
-                    let activating = mode == &PublishMode::KeyRollActivation;
-
-                    if expiring || activating || new_repo.is_some() {
-                        let new_roa = Roas::make_roa(auth, key, new_repo.as_ref(), signer)?;
-                        let name = ObjectName::from(auth);
-                        updates.update(*auth, RoaInfo::updated_roa(roa, &new_roa, name));
-                    }
-                }
-            }
-        }
-
-        Ok(updates)
+    /// Updates the ROAs in accordance with the current authorizations, and
+    /// the target resources and key determined by the PublishMode.
+    pub fn update_roas<S: Signer>(&self, routes: &Routes, signer: &S) -> KrillResult<RoaUpdates> {
+        let key = self.get_current_key()?;
+        let routes = routes.filter(key.incoming_cert().resources());
+        self.roas.update(&routes, key, signer)
     }
 
     /// Marks the ROAs as updated from a RoaUpdated event.
@@ -1070,11 +1028,10 @@ impl ResourceClass {
 /// UpdatedResources: Use the current key, but with the new resource set that
 ///         this key is about to be updated with.
 ///
-/// PendingKeyActivation: The pending key will be activated, to either a new
-///         (init) or the current (roll) key, and needs to be published.
-///
-/// KeyActivation: Publish ROAs and certificates under the new key, and revoke
+/// KeyRollActivation: Publish ROAs and certificates under the new key, and revoke
 ///         them under the old key - which will be revoked shortly.
+///
+/// NewRepo: Publish ROAs and certificates under a new repository.
 ///
 #[derive(Clone, Eq, PartialEq)]
 #[allow(clippy::large_enum_variant)]

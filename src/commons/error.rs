@@ -3,7 +3,6 @@
 use std::fmt::Display;
 use std::{fmt, io};
 
-// use actix_web::http::StatusCode;
 use hyper::StatusCode;
 
 use rpki::crypto::KeyIdentifier;
@@ -13,7 +12,7 @@ use rpki::x509::ValidationError;
 use crate::commons::api::rrdp::PublicationDeltaError;
 use crate::commons::api::{
     ChildHandle, ErrorResponse, Handle, ParentHandle, PublisherHandle, ResourceClassName,
-    ResourceSetError,
+    ResourceSetError, RoaDefinition,
 };
 use crate::commons::eventsourcing::AggregateStoreError;
 use crate::commons::remote::rfc6492;
@@ -23,6 +22,139 @@ use crate::commons::util::httpclient;
 use crate::commons::util::softsigner::SignerError;
 use crate::daemon::ca::RouteAuthorization;
 use crate::daemon::http::tls_keys;
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct RoaDeltaError {
+    duplicates: Vec<RoaDefinition>,
+    covered: Vec<CoveredRoa>,
+    notheld: Vec<RoaDefinition>,
+    unknowns: Vec<RoaDefinition>,
+    invalid_length: Vec<RoaDefinition>,
+    covering: Vec<CoveringRoa>,
+}
+
+impl Default for RoaDeltaError {
+    fn default() -> Self {
+        RoaDeltaError {
+            duplicates: vec![],
+            covered: vec![],
+            notheld: vec![],
+            unknowns: vec![],
+            invalid_length: vec![],
+            covering: vec![],
+        }
+    }
+}
+
+impl RoaDeltaError {
+    pub fn add_duplicate(&mut self, addition: RoaDefinition) {
+        self.notheld.push(addition);
+    }
+
+    pub fn add_covered(&mut self, addition: RoaDefinition, covered_by: RoaDefinition) {
+        self.covered.push(CoveredRoa {
+            addition,
+            covered_by,
+        });
+    }
+
+    pub fn add_notheld(&mut self, addition: RoaDefinition) {
+        self.notheld.push(addition);
+    }
+
+    pub fn add_unknown(&mut self, removal: RoaDefinition) {
+        self.unknowns.push(removal);
+    }
+
+    pub fn add_invalid_length(&mut self, invalid: RoaDefinition) {
+        self.invalid_length.push(invalid);
+    }
+
+    pub fn add_covering(&mut self, addition: RoaDefinition, covering: RoaDefinition) {
+        self.covering.push(CoveringRoa { addition, covering })
+    }
+
+    pub fn combine(&mut self, mut other: Self) {
+        self.duplicates.append(&mut other.duplicates);
+        self.covered.append(&mut other.covered);
+        self.notheld.append(&mut other.notheld);
+        self.unknowns.append(&mut other.unknowns);
+        self.invalid_length.append(&mut other.invalid_length);
+        self.covering.append(&mut other.covering);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.duplicates.is_empty()
+            && self.covered.is_empty()
+            && self.notheld.is_empty()
+            && self.unknowns.is_empty()
+            && self.invalid_length.is_empty()
+            && self.covering.is_empty()
+    }
+}
+
+impl fmt::Display for RoaDeltaError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if !self.duplicates.is_empty() {
+            writeln!(f, "Cannot add the following duplicate ROAs:")?;
+            for dup in self.duplicates.iter() {
+                writeln!(f, "  {}", dup)?;
+            }
+        }
+        if !self.covered.is_empty() {
+            writeln!(f, "Cannot add the following covered ROAs:")?;
+            for cov in self.covered.iter() {
+                writeln!(f, "  {} covered by: {}", cov.addition, cov.covered_by)?;
+            }
+        }
+        if !self.notheld.is_empty() {
+            writeln!(
+                f,
+                "Cannot add the following ROAs with prefixes not on any of your certificates:"
+            )?;
+            for not in self.notheld.iter() {
+                writeln!(f, "  {}", not)?;
+            }
+        }
+        if !self.unknowns.is_empty() {
+            writeln!(f, "Cannot remove the following unknown ROAs:")?;
+            for unk in self.unknowns.iter() {
+                writeln!(f, "  {}", unk)?;
+            }
+        }
+        if !self.invalid_length.is_empty() {
+            writeln!(
+                f,
+                "The following ROAs have a max length which is invalid for the prefix:"
+            )?;
+            for unk in self.unknowns.iter() {
+                writeln!(f, "  {}", unk)?;
+            }
+        }
+        if !self.covering.is_empty() {
+            writeln!(
+                f,
+                "Cannot add the following ROAs which would include a currently defined ROA:"
+            )?;
+            for cov in self.covering.iter() {
+                writeln!(f, "  {} covering existing: {}", cov.addition, cov.covering)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CoveredRoa {
+    addition: RoaDefinition,
+    covered_by: RoaDefinition,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct CoveringRoa {
+    addition: RoaDefinition,
+    covering: RoaDefinition,
+}
 
 #[derive(Debug, Display)]
 pub enum Error {
@@ -209,6 +341,9 @@ pub enum Error {
 
     #[display(fmt = "Prefix in ROA '{}' not held by you", _1)]
     CaAuthorizationNotEntitled(Handle, RouteAuthorization),
+
+    #[display(fmt = "ROA delta rejected:\n\n'{}' ", _0)]
+    RoaDeltaError(RoaDeltaError),
 
     //-----------------------------------------------------------------
     // Key Usage Issues
@@ -550,6 +685,11 @@ impl Error {
                 ErrorResponse::new("ca-roa-not-entitled", &self)
                     .with_ca(ca)
                     .with_auth(auth)
+            }
+
+            Error::RoaDeltaError(roa_delta_error) => {
+                ErrorResponse::new("ca-roa-delta-error", &self)
+                    .with_roa_delta_error(roa_delta_error)
             }
 
             //-----------------------------------------------------------------

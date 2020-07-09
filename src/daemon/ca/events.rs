@@ -8,16 +8,16 @@ use rpki::crypto::KeyIdentifier;
 use crate::commons::api::{
     AddedObject, ChildHandle, Handle, IssuanceRequest, IssuedCert, ObjectName, ObjectsDelta,
     ParentCaContact, ParentHandle, RcvdCert, RepoInfo, RepositoryContact, ResourceClassName,
-    ResourceSet, Revocation, RevocationRequest, RevokedObject, TaCertDetails, UpdatedObject,
-    WithdrawnObject,
+    ResourceSet, Revocation, RevocationRequest, RevokedObject, RoaAggregateKey, TaCertDetails,
+    UpdatedObject, WithdrawnObject,
 };
 use crate::commons::eventsourcing::StoredEvent;
 use crate::commons::remote::id::IdCert;
 use crate::commons::KrillResult;
 use crate::daemon::ca::signing::Signer;
 use crate::daemon::ca::{
-    CertifiedKey, ChildDetails, CurrentObjectSetDelta, ResourceClass, Rfc8183Id, RoaInfo,
-    RouteAuthorization,
+    AggregateRoaInfo, CertifiedKey, ChildDetails, CurrentObjectSetDelta, ResourceClass, Rfc8183Id,
+    RoaInfo, RouteAuthorization,
 };
 
 //------------ Ini -----------------------------------------------------------
@@ -76,8 +76,17 @@ impl fmt::Display for IniDet {
 /// Describes an update to the set of ROAs under a ResourceClass.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaUpdates {
+    #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
     updated: HashMap<RouteAuthorization, RoaInfo>,
+
+    #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
     removed: HashMap<RouteAuthorization, RevokedObject>,
+
+    #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
+    aggregate_updated: HashMap<RoaAggregateKey, AggregateRoaInfo>,
+
+    #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
+    aggregate_removed: HashMap<RoaAggregateKey, RevokedObject>,
 }
 
 impl Default for RoaUpdates {
@@ -85,18 +94,13 @@ impl Default for RoaUpdates {
         RoaUpdates {
             updated: HashMap::new(),
             removed: HashMap::new(),
+            aggregate_updated: HashMap::new(),
+            aggregate_removed: HashMap::new(),
         }
     }
 }
 
 impl RoaUpdates {
-    pub fn new(
-        updated: HashMap<RouteAuthorization, RoaInfo>,
-        removed: HashMap<RouteAuthorization, RevokedObject>,
-    ) -> Self {
-        RoaUpdates { updated, removed }
-    }
-
     pub fn is_empty(&self) -> bool {
         self.updated.is_empty() && self.removed.is_empty()
     }
@@ -113,6 +117,14 @@ impl RoaUpdates {
         self.removed.insert(auth, revoke);
     }
 
+    pub fn remove_aggregate(&mut self, key: RoaAggregateKey, revoke: RevokedObject) {
+        self.aggregate_removed.insert(key, revoke);
+    }
+
+    pub fn update_aggregate(&mut self, key: RoaAggregateKey, aggregate: AggregateRoaInfo) {
+        self.aggregate_updated.insert(key, aggregate);
+    }
+
     pub fn added(&self) -> Vec<AddedObject> {
         let mut res = vec![];
         for (_auth, info) in self.updated.iter() {
@@ -122,6 +134,14 @@ impl RoaUpdates {
                 res.push(AddedObject::new(name, object));
             }
         }
+        for (_, info) in self.aggregate_updated.iter() {
+            if info.roa().replaces().is_none() {
+                let object = info.roa().object().clone();
+                let name = info.roa().name().clone();
+                res.push(AddedObject::new(name, object));
+            }
+        }
+
         res
     }
 
@@ -131,6 +151,13 @@ impl RoaUpdates {
             if let Some(replaced) = info.replaces() {
                 let object = info.object().clone();
                 let name = info.name().clone();
+                res.push(UpdatedObject::new(name, object, replaced.hash().clone()));
+            }
+        }
+        for (_, info) in self.aggregate_updated.iter() {
+            if let Some(replaced) = info.roa().replaces() {
+                let object = info.roa().object().clone();
+                let name = info.roa().name().clone();
                 res.push(UpdatedObject::new(name, object, replaced.hash().clone()));
             }
         }
@@ -144,6 +171,11 @@ impl RoaUpdates {
             let hash = revoked.hash().clone();
             res.push(WithdrawnObject::new(name, hash));
         }
+        for (key, revoked) in self.aggregate_removed.iter() {
+            let name = ObjectName::from(key);
+            let hash = revoked.hash().clone();
+            res.push(WithdrawnObject::new(name, hash));
+        }
         res
     }
 
@@ -151,7 +183,13 @@ impl RoaUpdates {
         let mut res = vec![];
         for info in self.updated.values() {
             if let Some(old) = info.replaces() {
-                res.push(old.revocation())
+                res.push(old.revocation());
+            }
+        }
+
+        for agg in self.aggregate_updated.values() {
+            if let Some(old) = agg.roa().replaces() {
+                res.push(old.revocation());
             }
         }
 
@@ -159,16 +197,28 @@ impl RoaUpdates {
             res.push(revoked.revocation())
         }
 
+        for revoked in self.aggregate_removed.values() {
+            res.push(revoked.revocation());
+        }
+
         res
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn unpack(
         self,
     ) -> (
         HashMap<RouteAuthorization, RoaInfo>,
         HashMap<RouteAuthorization, RevokedObject>,
+        HashMap<RoaAggregateKey, AggregateRoaInfo>,
+        HashMap<RoaAggregateKey, RevokedObject>,
     ) {
-        (self.updated, self.removed)
+        (
+            self.updated,
+            self.removed,
+            self.aggregate_updated,
+            self.aggregate_removed,
+        )
     }
 }
 

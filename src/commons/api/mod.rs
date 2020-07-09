@@ -32,6 +32,7 @@ use rpki::crypto::KeyIdentifier;
 use rpki::manifest::Manifest;
 use rpki::roa::Roa;
 
+use crate::commons::error::RoaDeltaError;
 use crate::commons::util::sha256;
 use crate::daemon::ca::RouteAuthorization;
 
@@ -295,6 +296,13 @@ impl ErrorResponse {
         }
 
         res
+    }
+
+    pub fn with_roa_delta_error(self, roa_delta_error: &RoaDeltaError) -> Self {
+        self.with_arg(
+            "roa_delta_error_json",
+            serde_json::to_string_pretty(roa_delta_error).unwrap(),
+        )
     }
 
     pub fn with_key_identifier(self, ki: &KeyIdentifier) -> Self {

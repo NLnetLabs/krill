@@ -15,12 +15,12 @@ use rpki::crl::{Crl, CrlEntry};
 use rpki::crypto::KeyIdentifier;
 use rpki::manifest::{FileAndHash, Manifest};
 use rpki::resources::{AsBlocks, AsResources, IpBlocks, IpBlocksForFamily, IpResources};
-use rpki::roa::Roa;
+use rpki::roa::{Roa, RoaIpAddress};
 use rpki::uri;
 use rpki::x509::{Serial, Time};
 
-use crate::commons::api::publication;
 use crate::commons::api::publication::Publish;
+use crate::commons::api::{publication, RoaAggregateKey};
 use crate::commons::api::{
     Base64, ChildHandle, ErrorResponse, Handle, HexEncodedHash, IssuanceRequest, ListReply,
     ParentCaContact, ParentHandle, RepositoryContact, RequestResourceLimit, RoaDefinition,
@@ -356,7 +356,10 @@ impl RcvdCert {
     }
 
     pub fn uri_for_object(&self, name: impl Into<ObjectName>) -> uri::Rsync {
-        let name: ObjectName = name.into();
+        self.uri_for_name(&name.into())
+    }
+
+    pub fn uri_for_name(&self, name: &ObjectName) -> uri::Rsync {
         self.cert.ca_repository().unwrap().join(name.as_bytes())
     }
 
@@ -679,6 +682,15 @@ impl From<&RouteAuthorization> for ObjectName {
 impl From<&RoaDefinition> for ObjectName {
     fn from(def: &RoaDefinition) -> Self {
         ObjectName(format!("{}.roa", hex::encode(def.to_string())))
+    }
+}
+
+impl From<&RoaAggregateKey> for ObjectName {
+    fn from(roa_group: &RoaAggregateKey) -> Self {
+        ObjectName(match roa_group.group() {
+            None => format!("AS{}.roa", roa_group.asn()),
+            Some(number) => format!("AS{}-{}.roa", roa_group.asn(), number),
+        })
     }
 }
 
@@ -1374,6 +1386,10 @@ impl ResourceSet {
         let v4 = self.v4.intersection(&other.v4);
         let v6 = self.v6.intersection(&other.v6);
         ResourceSet { asn, v4, v6 }
+    }
+
+    pub fn contains_roa_address(&self, roa_address: &RoaIpAddress) -> bool {
+        self.v4.contains_roa(roa_address) || self.v6.contains_roa(roa_address)
     }
 }
 

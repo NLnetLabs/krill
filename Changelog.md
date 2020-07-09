@@ -7,6 +7,9 @@ for planned releases.
 
 See [here](https://github.com/NLnetLabs/krill/projects/14)
 
+* Breaking change in ROA delta error reporting, the response will now include a full
+  report of all issues (attempt to add duplicate ROA or remove unknown ROA, etc, etc)
+  
 ## 0.7.2 'Small Bites'
 
 This release fixes an issue where BGP RIS Dump files that were not properly retrieved would

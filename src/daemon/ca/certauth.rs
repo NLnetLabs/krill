@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::env;
 use std::marker::PhantomData;
@@ -21,7 +21,7 @@ use crate::commons::api::{
     RevocationResponse, RoaDefinition, SigningCert, StorableCaCommand, TaCertDetails,
     TrustAnchorLocator,
 };
-use crate::commons::error::Error;
+use crate::commons::error::{Error, RoaDeltaError};
 use crate::commons::eventsourcing::{Aggregate, StoredEvent};
 use crate::commons::remote::builder::{IdCertBuilder, SignedMessageBuilder};
 use crate::commons::remote::id::IdCert;
@@ -297,7 +297,9 @@ impl<S: Signer> Aggregate for CertAuth<S> {
             // Route Authorizations
             //-----------------------------------------------------------------------
             EvtDet::RouteAuthorizationAdded(update) => self.routes.add(update),
-            EvtDet::RouteAuthorizationRemoved(removal) => self.routes.remove(&removal),
+            EvtDet::RouteAuthorizationRemoved(removal) => {
+                self.routes.remove(&removal);
+            }
             EvtDet::RoasUpdated(rcn, updates) => {
                 self.resources.get_mut(&rcn).unwrap().roas_updated(updates)
             }
@@ -1397,16 +1399,13 @@ impl<S: Signer> CertAuth<S> {
 
         for rc in self.resources.values() {
             if rc.current_key().is_some() {
-                let auths: Vec<RouteAuthorization> =
-                    self.routes.authorizations().cloned().collect();
-
                 let repo_info = if let PublishMode::NewRepo(info) = mode {
                     info
                 } else {
                     self.get_repository_contact()?.repo_info()
                 };
 
-                res.append(&mut rc.republish(auths.as_slice(), repo_info, mode, signer)?);
+                res.append(&mut rc.republish(repo_info, mode, signer)?);
             }
         }
 
@@ -1486,69 +1485,19 @@ impl<S: Signer> CertAuth<S> {
     /// the prefix.
     fn route_authorizations_update(
         &self,
-        updates: RouteAuthorizationUpdates,
+        route_auth_updates: RouteAuthorizationUpdates,
         signer: Arc<RwLock<S>>,
     ) -> KrillResult<Vec<Evt>> {
-        let (added, removed) = updates.unpack();
         let signer = signer.read().unwrap();
-        let mode = PublishMode::Normal;
+
+        let (routes, mut evts) = self.update_authorizations(&route_auth_updates)?;
 
         let repo = self.get_repository_contact()?;
-
-        let mut res = vec![];
-        let mut version = self.version;
-        let all_resources = self.all_resources();
-
-        let mut current_auths: HashSet<RouteAuthorization> =
-            self.routes.authorizations().cloned().collect();
-
-        for auth in removed {
-            if current_auths.contains(&auth) {
-                current_auths.remove(&auth);
-                res.push(StoredEvent::new(
-                    self.handle(),
-                    version,
-                    EvtDet::RouteAuthorizationRemoved(auth),
-                ));
-                version += 1;
-            } else {
-                return Err(Error::CaAuthorizationUnknown(self.handle.clone(), auth));
-            }
-        }
-
-        for auth in added {
-            if !auth.max_length_valid() {
-                return Err(Error::CaAuthorizationInvalidMaxlength(
-                    self.handle.clone(),
-                    auth,
-                ));
-            }
-            if current_auths.contains(&auth) {
-                return Err(Error::CaAuthorizationDuplicate(self.handle.clone(), auth));
-            } else if !all_resources.contains(&auth.prefix().into()) {
-                return Err(Error::CaAuthorizationNotEntitled(self.handle.clone(), auth));
-            } else if current_auths.iter().any(|a| a.includes(auth.as_ref())) {
-                return Err(Error::CaAuthorizationRedundant(self.handle.clone(), auth));
-            } else if current_auths.iter().any(|a| auth.includes(a.as_ref())) {
-                return Err(Error::CaAuthorizationIncludes(self.handle.clone(), auth));
-            } else {
-                current_auths.insert(auth.explicit_length());
-                res.push(StoredEvent::new(
-                    self.handle(),
-                    version,
-                    EvtDet::RouteAuthorizationAdded(auth),
-                ));
-                version += 1;
-            }
-        }
-
-        let current_auths: Vec<RouteAuthorization> = current_auths.into_iter().collect();
-
         let mut deltas = HashMap::new();
 
-        // Update ROAs, and derive deltas and revocations for publishing.
+        // for rc in self.resources
         for (rcn, rc) in self.resources.iter() {
-            let updates = rc.update_roas(current_auths.as_slice(), &mode, signer.deref())?;
+            let updates = rc.update_roas(&routes, signer.deref())?;
             if updates.contains_changes() {
                 let mut delta = ObjectsDelta::new(repo.repo_info().ca_repository(rc.name_space()));
 
@@ -1563,30 +1512,99 @@ impl<S: Signer> CertAuth<S> {
                 }
 
                 let revocations = updates.revocations();
-
                 deltas.insert(rcn, (delta, revocations));
 
-                res.push(StoredEvent::new(
-                    self.handle(),
-                    version,
-                    EvtDet::RoasUpdated(rcn.clone(), updates),
-                ));
-                version += 1;
+                evts.push(EvtDet::RoasUpdated(rcn.clone(), updates));
             }
         }
 
         // Create publication delta with all additions/updates/withdraws as a single delta
         for (rcn, (delta, revocations)) in deltas.into_iter() {
             let rc = self.resources.get(&rcn).unwrap();
-
-            let pub_detail =
-                rc.publish_objects(repo.repo_info(), delta, revocations, &mode, signer.deref())?;
-
-            res.push(StoredEvent::new(&self.handle, version, pub_detail));
-            version += 1;
+            evts.push(rc.publish_objects(
+                repo.repo_info(),
+                delta,
+                revocations,
+                &PublishMode::Normal,
+                signer.deref(),
+            )?);
         }
 
+        let mut res = vec![];
+        let mut version = self.version;
+        for e in evts {
+            res.push(StoredEvent::new(&self.handle, version, e));
+            version += 1;
+        }
         Ok(res)
+    }
+
+    /// Verifies that the updates are correct, i.e.:
+    /// - additions are for prefixes held by this CA
+    /// - removals are for known authorizations
+    /// - additions are new
+    ///   - no duplicates, or
+    ///   - not covered by remaining after the removals
+    ///
+    /// Returns the desired Routes and the event details for
+    /// persisting the changes, or an error in case of issues.
+    ///
+    /// Note: this does not re-issue the actual ROAs, for
+    ///       this the caller needs to send the updates
+    ///       the relevant ResourceClasses
+    fn update_authorizations(
+        &self,
+        updates: &RouteAuthorizationUpdates,
+    ) -> KrillResult<(Routes, Vec<EvtDet>)> {
+        let mut delta_errors = RoaDeltaError::default();
+        let mut res = vec![];
+
+        let all_resources = self.all_resources();
+
+        let mut desired_routes = self.routes.clone();
+
+        // make sure that all removals are held
+        for auth in updates.removed() {
+            if desired_routes.remove(auth) {
+                res.push(EvtDet::RouteAuthorizationRemoved(*auth));
+            } else {
+                delta_errors.add_unknown((*auth).into())
+            }
+        }
+
+        // make sure that all new additions are for resources held by this CA
+        for addition in updates.added() {
+            let roa_def: RoaDefinition = (*addition).into();
+            let authorizations: Vec<&RouteAuthorization> =
+                desired_routes.authorizations().collect();
+
+            if !addition.max_length_valid() {
+                delta_errors.add_invalid_length(roa_def);
+            } else if !all_resources.contains_roa_address(&addition.as_roa_ip_address()) {
+                delta_errors.add_notheld(roa_def);
+            } else if authorizations.iter().any(|existing| *existing == addition) {
+                delta_errors.add_duplicate(roa_def);
+            } else if let Some(covering) = authorizations
+                .iter()
+                .find(|existing| existing.includes(&roa_def))
+            {
+                delta_errors.add_covered(roa_def, (**covering).into());
+            } else if let Some(covered) = authorizations
+                .iter()
+                .find(|existing| roa_def.includes(existing))
+            {
+                delta_errors.add_covering(roa_def, (**covered).into())
+            } else {
+                desired_routes.add(*addition);
+                res.push(EvtDet::RouteAuthorizationAdded(*addition));
+            }
+        }
+
+        if !delta_errors.is_empty() {
+            Err(Error::RoaDeltaError(delta_errors))
+        } else {
+            Ok((desired_routes, res))
+        }
     }
 }
 
