@@ -117,6 +117,14 @@ impl ConfigDefaults {
     fn bgp_risdumps_v6_uri() -> String {
         "http://www.ris.ripe.net/dumps/riswhoisdump.IPv6.gz".to_string()
     }
+
+    fn roa_aggregate_threshold() -> usize {
+        100
+    }
+
+    fn roa_deaggregate_threshold() -> usize {
+        90
+    }
 }
 
 //------------ Config --------------------------------------------------------
@@ -198,6 +206,13 @@ pub struct Config {
     pub bgp_risdumps_v4_uri: String,
     #[serde(default = "ConfigDefaults::bgp_risdumps_v6_uri")]
     pub bgp_risdumps_v6_uri: String,
+
+    // ROA Aggregation per ASN
+    #[serde(default = "ConfigDefaults::roa_aggregate_threshold")]
+    pub roa_aggregate_threshold: usize,
+
+    #[serde(default = "ConfigDefaults::roa_deaggregate_threshold")]
+    pub roa_deaggregate_threshold: usize,
 }
 
 /// # Accessors
@@ -294,6 +309,9 @@ impl Config {
         let bgp_risdumps_v4_uri = ConfigDefaults::bgp_risdumps_v4_uri();
         let bgp_risdumps_v6_uri = ConfigDefaults::bgp_risdumps_v6_uri();
 
+        let roa_aggregate_threshold = 3;
+        let roa_deaggregate_threshold = 2;
+
         Config {
             ip,
             port,
@@ -320,6 +338,8 @@ impl Config {
             bgp_risdumps_enabled,
             bgp_risdumps_v4_uri,
             bgp_risdumps_v6_uri,
+            roa_aggregate_threshold,
+            roa_deaggregate_threshold,
         }
     }
 

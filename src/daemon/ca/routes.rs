@@ -18,12 +18,10 @@ use crate::commons::api::{
 };
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
-use crate::constants::{
-    ROA_AGG_THRESHOLD, ROA_CERTIFICATE_REISSUE_WEEKS, ROA_CERTIFICATE_VALIDITY_YEARS,
-    ROA_DEAGG_THRESHOLD,
-};
+use crate::constants::{ROA_CERTIFICATE_REISSUE_WEEKS, ROA_CERTIFICATE_VALIDITY_YEARS};
 use crate::daemon::ca::events::RoaUpdates;
 use crate::daemon::ca::{self, CertifiedKey, SignSupport, Signer};
+use crate::daemon::config::CONFIG;
 
 //------------ RouteAuthorization ------------------------------------------
 
@@ -449,12 +447,12 @@ impl Roas {
                 RoaMode::Simple
             }
         } else if self.is_currently_aggregating() {
-            if total < ROA_DEAGG_THRESHOLD {
+            if total < CONFIG.roa_deaggregate_threshold {
                 RoaMode::StopAggregating
             } else {
                 RoaMode::Aggregate
             }
-        } else if total > ROA_AGG_THRESHOLD {
+        } else if total > CONFIG.roa_aggregate_threshold {
             RoaMode::StartAggregating
         } else {
             RoaMode::Simple

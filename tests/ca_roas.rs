@@ -50,13 +50,13 @@ async fn ca_roas() {
     updates.add(route_1);
     updates.add(route_2);
     ca_route_authorizations_update(&child, updates).await;
-    will_publish_objects(&child, &[crl_file, mft_file, route1_file, route2_file]).await;
+    assert!(will_publish_objects(&child, &[crl_file, mft_file, route1_file, route2_file]).await);
 
     // Remove a Route Authorization
     let mut updates = RoaDefinitionUpdates::empty();
     updates.remove(route_1);
     ca_route_authorizations_update(&child, updates).await;
-    will_publish_objects(&child, &[crl_file, mft_file, route2_file]).await;
+    assert!(will_publish_objects(&child, &[crl_file, mft_file, route2_file]).await);
 
     // Refuse authorization for prefix not held by CA
     let mut updates = RoaDefinitionUpdates::empty();
@@ -72,20 +72,22 @@ async fn ca_roas() {
     let mut updates = RoaDefinitionUpdates::empty();
     updates.add(route_3);
     ca_route_authorizations_update(&child, updates).await;
-    will_publish_objects(&child, &[crl_file, mft_file, route3_file]).await;
+    assert!(will_publish_objects(&child, &[crl_file, mft_file, route3_file]).await);
 
     // And route3 should remain there during a roll.
     ca_roll_init(&child).await;
     rc_state_becomes_new_key(&child).await;
-    will_publish_objects(
-        &child,
-        &[crl_file, mft_file, crl_file, mft_file, route3_file],
-    )
-    .await;
+    assert!(
+        will_publish_objects(
+            &child,
+            &[crl_file, mft_file, crl_file, mft_file, route3_file],
+        )
+        .await
+    );
 
     ca_roll_activate(&child).await;
     rc_state_becomes_active(&child).await;
-    will_publish_objects(&child, &[crl_file, mft_file, route3_file]).await;
+    assert!(will_publish_objects(&child, &[crl_file, mft_file, route3_file]).await);
 
     // Do not allow adding a ROA with invalid length
     let route_invalid_length = RoaDefinition::from_str("192.168.0.0/24-33 => 64496").unwrap();
@@ -109,6 +111,38 @@ async fn ca_roas() {
     let mut updates = RoaDefinitionUpdates::empty();
     updates.add(route_including);
     ca_route_authorizations_update_expect_error(&child, updates).await;
+
+    // Above the ROA aggregation threshold (3 in testing, 100 normal, see Config)
+    // we should see that prefixes are aggregated per ASN
+    let child_resources =
+        ResourceSet::from_strs("", "10.0.0.0/8,192.168.0.0/16", "2001:DB8::/32").unwrap();
+    update_child(&ta_handle, &child, &child_resources).await;
+    assert!(ca_gets_resources(&child, &child_resources).await);
+
+    let route_4 = RoaDefinition::from_str("10.0.0.0/16-24 => 64497").unwrap();
+    let mut updates = RoaDefinitionUpdates::empty();
+    updates.add(route_1);
+    updates.add(route_4);
+    ca_route_authorizations_update(&child, updates).await;
+
+    let asn_64496_roa_file = "AS64496.roa";
+    let asn_64497_roa_file = "AS64497.roa";
+    assert!(
+        will_publish_objects(
+            &child,
+            &[crl_file, mft_file, asn_64496_roa_file, asn_64497_roa_file],
+        )
+        .await
+    );
+
+    // Below the de-aggregation threshold (2 in case of testing) we should expect per prefix
+    // ROAs again
+    let mut updates = RoaDefinitionUpdates::empty();
+    updates.remove(route_4);
+    updates.remove(route_3);
+    updates.remove(route_2);
+    ca_route_authorizations_update(&child, updates).await;
+    assert!(will_publish_objects(&child, &[crl_file, mft_file, route1_file],).await);
 
     let _ = fs::remove_dir_all(dir);
 }
