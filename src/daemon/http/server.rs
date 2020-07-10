@@ -5,6 +5,7 @@ use std::convert::Infallible;
 use std::env;
 use std::fs::File;
 use std::path::PathBuf;
+use std::process;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -14,7 +15,6 @@ use serde::Serialize;
 use tokio::sync::RwLock;
 
 use futures::TryFutureExt;
-
 use hyper;
 use hyper::server::conn::AddrIncoming;
 use hyper::service::{make_service_fn, service_fn};
@@ -26,8 +26,9 @@ use crate::commons::api::{
 };
 use crate::commons::error::Error;
 use crate::commons::remote::rfc8183;
+use crate::commons::util::file;
 use crate::constants::KRILL_ENV_UPGRADE_ONLY;
-use crate::daemon::config::Config;
+use crate::daemon::config::CONFIG;
 use crate::daemon::http::statics::statics;
 use crate::daemon::http::{tls, tls_keys, HttpResponse, Request, RequestPath, RoutingResult};
 use crate::daemon::krillserver::KrillServer;
@@ -37,15 +38,21 @@ use crate::upgrades::{post_start_upgrade, pre_start_upgrade};
 
 pub type State = Arc<RwLock<KrillServer>>;
 
-pub async fn start(config: Config) -> Result<(), Error> {
+pub async fn start() -> Result<(), Error> {
+    let pid_file = CONFIG.pid_file();
+    if let Err(e) = file::save(process::id().to_string().as_bytes(), &pid_file) {
+        eprintln!("Could not write PID file: {}", e);
+        ::std::process::exit(1);
+    }
+
     // Call upgrade, this will only do actual work if needed.
-    pre_start_upgrade(&config.data_dir)
+    pre_start_upgrade(&CONFIG.data_dir)
         .map_err(|e| Error::Custom(format!("Could not upgrade Krill: {}", e)))?;
 
     // Create the server, this will create the necessary data sub-directories if needed
-    let krill = KrillServer::build(&config)?;
+    let krill = KrillServer::build()?;
 
-    post_start_upgrade(&config.data_dir, &krill)
+    post_start_upgrade(&CONFIG.data_dir, &krill)
         .map_err(|e| Error::Custom(format!("Could not upgrade Krill: {}", e)))?;
 
     if env::var(KRILL_ENV_UPGRADE_ONLY).is_ok() {
@@ -65,17 +72,17 @@ pub async fn start(config: Config) -> Result<(), Error> {
         }
     });
 
-    tls_keys::create_key_cert_if_needed(&config.data_dir)
+    tls_keys::create_key_cert_if_needed(&CONFIG.data_dir)
         .map_err(|e| Error::HttpsSetup(format!("{}", e)))?;
 
     let server_config_builder = tls::TlsConfigBuilder::new()
-        .cert_path(tls_keys::cert_file_path(&config.data_dir))
-        .key_path(tls_keys::key_file_path(&config.data_dir));
+        .cert_path(tls_keys::cert_file_path(&CONFIG.data_dir))
+        .key_path(tls_keys::key_file_path(&CONFIG.data_dir));
     let server_config = server_config_builder.build().unwrap();
 
     let acceptor = tls::TlsAcceptor::new(
         server_config,
-        AddrIncoming::bind(&config.socket_addr()).unwrap(),
+        AddrIncoming::bind(&CONFIG.socket_addr()).unwrap(),
     );
 
     let server = hyper::Server::builder(acceptor)
@@ -1169,19 +1176,20 @@ mod tests {
     use crate::test;
 
     use super::*;
+    use crate::constants::KRILL_ENV_TEST_UNIT_DATA;
 
     #[tokio::test]
     async fn start_tls_server() {
         let dir = test::sub_dir(&PathBuf::from("work"));
 
-        let server_conf = {
-            // Use a data dir for the storage
-            let data_dir = test::sub_dir(&dir);
-            Config::test(&data_dir)
-        };
+        let data_dir = test::sub_dir(&dir);
+        env::set_var(
+            KRILL_ENV_TEST_UNIT_DATA,
+            data_dir.to_string_lossy().to_string(),
+        );
 
-        tokio::spawn(super::start(server_conf));
+        tokio::spawn(super::start());
 
-        assert!(test::primary_server_ready().await);
+        assert!(test::server_ready().await);
     }
 }

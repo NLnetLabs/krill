@@ -1,11 +1,11 @@
 //! Helper functions for testing Krill.
 
-use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
+use std::{env, fs};
 
 use bytes::Bytes;
 use rand::{thread_rng, Rng};
@@ -29,29 +29,17 @@ use crate::commons::bgp::Announcement;
 use crate::commons::remote::rfc8183;
 use crate::commons::remote::rfc8183::ChildRequest;
 use crate::commons::util::httpclient;
+use crate::constants::KRILL_ENV_TEST_UNIT_DATA;
 use crate::daemon::ca::ta_handle;
-use crate::daemon::config::Config;
 use crate::daemon::http::server;
 
-#[derive(Clone, Copy)]
-pub enum PubdTestContext {
-    Main,
-    Secondary,
-}
+const SERVER_URI: &str = "https://localhost:3000/";
 
-pub async fn primary_server_ready() -> bool {
-    server_ready("https://localhost:3000/health").await
-}
-
-pub async fn secondary_server_ready() -> bool {
-    server_ready("https://localhost:3001/health").await
-}
-
-pub async fn server_ready(uri: &str) -> bool {
+pub async fn server_ready() -> bool {
     for _ in 0..300 {
-        match httpclient::client(uri).await {
+        match httpclient::client(SERVER_URI).await {
             Ok(client) => {
-                let res = timeout(Duration::from_millis(100), client.get(uri).send()).await;
+                let res = timeout(Duration::from_millis(100), client.get(SERVER_URI).send()).await;
                 if let Ok(Ok(res)) = res {
                     if res.status() == StatusCode::OK {
                         return true;
@@ -71,67 +59,29 @@ pub async fn server_ready(uri: &str) -> bool {
 pub async fn start_krill() -> PathBuf {
     let dir = tmp_dir();
 
-    let server_conf = {
-        // Use a data dir for the storage
-        let data_dir = sub_dir(&dir);
-        Config::test(&data_dir)
-    };
+    let data_dir = sub_dir(&dir);
 
-    tokio::spawn(server::start(server_conf));
+    env::set_var(
+        KRILL_ENV_TEST_UNIT_DATA,
+        data_dir.to_string_lossy().to_string(),
+    );
 
-    assert!(primary_server_ready().await);
+    tokio::spawn(server::start());
+
+    assert!(server_ready().await);
     dir
 }
 
-pub async fn start_secondary_krill(base_dir: &PathBuf) {
-    let data_dir = sub_dir(base_dir);
-    let server_conf = Config::pubd_test(&data_dir);
-
-    tokio::spawn(server::start(server_conf));
-
-    assert!(secondary_server_ready().await);
-}
-
 pub async fn krill_admin(command: Command) -> ApiResponse {
-    let krillc_opts = Options::new(
-        https("https://localhost:3000/"),
-        "secret",
-        ReportFormat::Json,
-        command,
-    );
+    let krillc_opts = Options::new(https(SERVER_URI), "secret", ReportFormat::Json, command);
     match KrillClient::process(krillc_opts).await {
         Ok(res) => res, // ok
         Err(e) => panic!("{}", e),
-    }
-}
-
-pub async fn krill_admin_secondary(command: Command) -> ApiResponse {
-    let krillc_opts = Options::new(
-        https("https://localhost:3001/"),
-        "secret",
-        ReportFormat::Json,
-        command,
-    );
-    match KrillClient::process(krillc_opts).await {
-        Ok(res) => res, // ok
-        Err(e) => panic!("{}", e),
-    }
-}
-
-pub async fn krill_pubd_admin(command: Command, server: PubdTestContext) -> ApiResponse {
-    match server {
-        PubdTestContext::Main => krill_admin(command).await,
-        PubdTestContext::Secondary => krill_admin_secondary(command).await,
     }
 }
 
 pub async fn krill_admin_expect_error(command: Command) -> Error {
-    let krillc_opts = Options::new(
-        https("https://localhost:3000/"),
-        "secret",
-        ReportFormat::Json,
-        command,
-    );
+    let krillc_opts = Options::new(https(SERVER_URI), "secret", ReportFormat::Json, command);
     match KrillClient::process(krillc_opts).await {
         Ok(_res) => panic!("Expected error"),
         Err(e) => e,
@@ -140,6 +90,13 @@ pub async fn krill_admin_expect_error(command: Command) -> Error {
 
 async fn refresh_all() {
     krill_admin(Command::Bulk(BulkCaCommand::Refresh)).await;
+}
+
+pub async fn init_child(handle: &Handle) {
+    krill_admin(Command::CertAuth(CaCommand::Init(CertAuthInit::new(
+        handle.clone(),
+    ))))
+    .await;
 }
 
 pub async fn init_child_with_embedded_repo(handle: &Handle) {

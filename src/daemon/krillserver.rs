@@ -27,7 +27,7 @@ use crate::commons::{KrillEmptyResult, KrillResult};
 use crate::constants::*;
 use crate::daemon::auth::{Auth, Authorizer};
 use crate::daemon::ca::{self, ta_handle};
-use crate::daemon::config::Config;
+use crate::daemon::config::CONFIG;
 use crate::daemon::mq::EventQueueListener;
 use crate::daemon::scheduler::Scheduler;
 use crate::pubd::{PubServer, RepoStats};
@@ -47,7 +47,7 @@ pub struct KrillServer {
     // Component responsible for API authorization checks
     authorizer: Authorizer,
 
-    // Publication server, with configured publishers
+    // Publication server, with CONFIGured publishers
     pubserver: Option<Arc<PubServer>>,
 
     // Handles the internal TA and/or CAs
@@ -97,13 +97,13 @@ impl PostLimits {
 impl KrillServer {
     /// Creates a new publication server. Note that state is preserved
     /// on disk in the work_dir provided.
-    pub fn build(config: &Config) -> KrillResult<Self> {
-        let work_dir = &config.data_dir;
-        let base_uri = &config.rsync_base;
-        let service_uri = config.service_uri();
-        let rrdp_base_uri = &config.rrdp_service_uri();
-        let token = &config.auth_token;
-        let ca_refresh_rate = config.ca_refresh;
+    pub fn build() -> KrillResult<Self> {
+        let work_dir = &CONFIG.data_dir;
+        let base_uri = &CONFIG.rsync_base;
+        let service_uri = CONFIG.service_uri();
+        let rrdp_base_uri = &CONFIG.rrdp_service_uri();
+        let token = &CONFIG.auth_token;
+        let ca_refresh_rate = CONFIG.ca_refresh;
 
         info!("Starting {} v{}", KRILL_SERVER_APP, KRILL_VERSION);
         info!("{} uses service uri: {}", KRILL_SERVER_APP, service_uri);
@@ -117,12 +117,12 @@ impl KrillServer {
         let authorizer = Authorizer::new(token);
 
         let pubserver = {
-            if config.repo_enabled {
+            if CONFIG.repo_enabled {
                 Some(PubServer::build(
                     &base_uri,
                     rrdp_base_uri.clone(),
                     work_dir,
-                    config.rfc8181_log_dir.as_ref(),
+                    CONFIG.rfc8181_log_dir.as_ref(),
                     signer.clone(),
                 )?)
             } else {
@@ -130,7 +130,7 @@ impl KrillServer {
                     &base_uri,
                     rrdp_base_uri.clone(),
                     work_dir,
-                    config.rfc8181_log_dir.as_ref(),
+                    CONFIG.rfc8181_log_dir.as_ref(),
                     signer.clone(),
                 )?
             }
@@ -140,13 +140,13 @@ impl KrillServer {
         let event_queue = Arc::new(EventQueueListener::in_mem());
         let caserver = Arc::new(ca::CaServer::build(
             work_dir,
-            config.rfc8181_log_dir.as_ref(),
-            config.rfc6492_log_dir.as_ref(),
+            CONFIG.rfc8181_log_dir.as_ref(),
+            CONFIG.rfc6492_log_dir.as_ref(),
             event_queue.clone(),
             signer,
         )?);
 
-        if config.use_ta() {
+        if CONFIG.use_ta() {
             let ta_handle = ta_handle();
             if !caserver.has_ca(&ta_handle) {
                 info!("Creating embedded Trust Anchor");
@@ -156,9 +156,9 @@ impl KrillServer {
                     .ok_or_else(|| Error::PublisherNoEmbeddedRepo)?;
                 let repo_info: RepoInfo = pubserver.repo_info_for(&ta_handle)?;
 
-                let ta_uri = config.ta_cert_uri();
+                let ta_uri = CONFIG.ta_cert_uri();
 
-                let ta_aia = format!("{}ta/ta.cer", config.rsync_base.to_string());
+                let ta_aia = format!("{}ta/ta.cer", CONFIG.rsync_base.to_string());
                 let ta_aia = uri::Rsync::from_string(ta_aia).unwrap();
 
                 // Add TA
@@ -178,9 +178,9 @@ impl KrillServer {
         }
 
         let bgp_analyser = Arc::new(BgpAnalyser::new(
-            config.bgp_risdumps_enabled,
-            &config.bgp_risdumps_v4_uri,
-            &config.bgp_risdumps_v6_uri,
+            CONFIG.bgp_risdumps_enabled,
+            &CONFIG.bgp_risdumps_v4_uri,
+            &CONFIG.bgp_risdumps_v6_uri,
         ));
 
         let scheduler = Scheduler::build(
@@ -192,9 +192,9 @@ impl KrillServer {
         );
 
         let post_limits = PostLimits::new(
-            config.post_limit_api,
-            config.post_limit_rfc6492,
-            config.post_limit_rfc8181,
+            CONFIG.post_limit_api,
+            CONFIG.post_limit_rfc6492,
+            CONFIG.post_limit_rfc8181,
         );
 
         Ok(KrillServer {
@@ -238,7 +238,7 @@ impl KrillServer {
     }
 }
 
-/// # Configure publishers
+/// # CONFIGure publishers
 impl KrillServer {
     fn get_embedded(&self) -> KrillResult<&Arc<PubServer>> {
         self.pubserver
@@ -251,7 +251,7 @@ impl KrillServer {
         self.get_embedded()?.repo_stats()
     }
 
-    /// Returns all currently configured publishers. (excludes deactivated)
+    /// Returns all currently CONFIGured publishers. (excludes deactivated)
     pub fn publishers(&self) -> KrillResult<Vec<Handle>> {
         self.get_embedded()?.publishers()
     }
@@ -578,7 +578,7 @@ impl KrillServer {
         Ok(())
     }
 
-    /// Return the info about the configured repository server for a given Ca.
+    /// Return the info about the CONFIGured repository server for a given Ca.
     /// and the actual objects published there, as reported by a list reply.
     pub fn ca_repo_details(&self, handle: &Handle) -> KrillResult<CaRepoDetails> {
         let ca = self.caserver.get_ca(handle)?;
@@ -586,7 +586,7 @@ impl KrillServer {
         Ok(CaRepoDetails::new(contact.clone()))
     }
 
-    /// Returns the state of the current configured repo for a ca
+    /// Returns the state of the current CONFIGured repo for a ca
     pub async fn ca_repo_state(&self, handle: &Handle) -> KrillResult<CurrentRepoState> {
         let ca = self.caserver.get_ca(handle)?;
         let contact = ca.get_repository_contact()?;

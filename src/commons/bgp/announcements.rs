@@ -286,7 +286,7 @@ mod tests {
         let ann_v6 = Announcement::from_str("2001:4:112::/48 => 112").unwrap();
 
         let mut announcements = Announcements::default();
-        announcements.update(vec![ann_v4.clone(), ann_v6.clone()]);
+        announcements.update(vec![ann_v4, ann_v6]);
 
         let matches = announcements.contained_by(ann_v4.prefix());
         assert_eq!(1, matches.len());

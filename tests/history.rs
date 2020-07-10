@@ -53,16 +53,12 @@ fn make_server(work_dir: &PathBuf, scenario: &str) -> CaServer<OpenSslSigner> {
     server_cas_dir.push("cas");
     file::backup_dir(&source, &server_cas_dir).unwrap();
 
-    let server = {
-        let signer = OpenSslSigner::build(&server_dir).unwrap();
-        let signer = Arc::new(RwLock::new(signer));
+    let signer = OpenSslSigner::build(&server_dir).unwrap();
+    let signer = Arc::new(RwLock::new(signer));
 
-        let event_queue = Arc::new(EventQueueListener::in_mem());
+    let event_queue = Arc::new(EventQueueListener::in_mem());
 
-        CaServer::<OpenSslSigner>::build(&server_dir, None, None, event_queue, signer).unwrap()
-    };
-
-    server
+    CaServer::<OpenSslSigner>::build(&server_dir, None, None, event_queue, signer).unwrap()
 }
 
 fn assert_history(server: &CaServer<OpenSslSigner>, scenario: &str, ca: &Handle) {

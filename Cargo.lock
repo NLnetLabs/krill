@@ -701,6 +701,7 @@ dependencies = [
  "hyper",
  "ignore",
  "intervaltree",
+ "lazy_static",
  "libc",
  "libflate",
  "log 0.4.8",

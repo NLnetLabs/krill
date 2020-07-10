@@ -21,6 +21,18 @@ use crate::commons::util::ext_serde;
 use crate::constants::*;
 use crate::daemon::http::tls_keys;
 
+lazy_static! {
+    pub static ref CONFIG: Config = {
+        match Config::create() {
+            Ok(config) => config,
+            Err(e) => {
+                eprintln!("{}", e);
+                ::std::process::exit(1);
+            }
+        }
+    };
+}
+
 //------------ ConfigDefaults ------------------------------------------------
 
 pub struct ConfigDefaults;
@@ -349,37 +361,42 @@ impl Config {
 
     /// Creates the config (at startup). Panics in case of issues.
     pub fn create() -> Result<Self, ConfigError> {
-        let config_file = Self::get_config_filename();
+        if let Ok(test_dir) = env::var(KRILL_ENV_TEST_UNIT_DATA) {
+            let data_dir = PathBuf::from(test_dir);
+            Ok(Config::test(&data_dir))
+        } else {
+            let config_file = Self::get_config_filename();
 
-        let config = match Self::read_config(&config_file) {
-            Err(e) => {
-                if config_file == KRILL_DEFAULT_CONFIG_FILE {
-                    Err(ConfigError::other(
-                        "Cannot find config file. Please use --config to specify its location.",
-                    ))
-                } else {
-                    Err(ConfigError::Other(format!(
-                        "Error parsing config file: {}, error: {}",
-                        config_file, e
-                    )))
+            let config = match Self::read_config(&config_file) {
+                Err(e) => {
+                    if config_file == KRILL_DEFAULT_CONFIG_FILE {
+                        Err(ConfigError::other(
+                            "Cannot find config file. Please use --config to specify its location.",
+                        ))
+                    } else {
+                        Err(ConfigError::Other(format!(
+                            "Error parsing config file: {}, error: {}",
+                            config_file, e
+                        )))
+                    }
                 }
-            }
-            Ok(config) => {
-                config.init_logging()?;
-                info!(
-                    "{} uses configuration file: {}",
-                    KRILL_SERVER_APP, config_file
-                );
-                Ok(config)
-            }
-        }?;
-        config.verify().map_err(|e| {
-            ConfigError::Other(format!(
-                "Error parsing config file: {}, error: {}",
-                config_file, e
-            ))
-        })?;
-        Ok(config)
+                Ok(config) => {
+                    config.init_logging()?;
+                    info!(
+                        "{} uses configuration file: {}",
+                        KRILL_SERVER_APP, config_file
+                    );
+                    Ok(config)
+                }
+            }?;
+            config.verify().map_err(|e| {
+                ConfigError::Other(format!(
+                    "Error parsing config file: {}, error: {}",
+                    config_file, e
+                ))
+            })?;
+            Ok(config)
+        }
     }
 
     pub fn verify(&self) -> Result<(), ConfigError> {
