@@ -18,7 +18,6 @@ use crate::commons::api::{
 };
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
-use crate::constants::{ROA_CERTIFICATE_REISSUE_WEEKS, ROA_CERTIFICATE_VALIDITY_YEARS};
 use crate::daemon::ca::events::RoaUpdates;
 use crate::daemon::ca::{self, CertifiedKey, SignSupport, Signer};
 use crate::daemon::config::CONFIG;
@@ -599,7 +598,7 @@ impl Roas {
     ) -> KrillResult<RoaUpdates> {
         let mut updates = RoaUpdates::default();
 
-        let renew_threshold = Time::now() + Duration::weeks(ROA_CERTIFICATE_REISSUE_WEEKS);
+        let renew_threshold = Time::now() + Duration::weeks(CONFIG.timing_roa_reissue_weeks_before);
 
         for (auth, roa) in self.simple.iter() {
             if roa.object().expires() < renew_threshold {
@@ -795,7 +794,7 @@ impl Roas {
 
         let mut object_builder = SignedObjectBuilder::new(
             Serial::random(signer).map_err(ca::Error::signer)?,
-            SignSupport::sign_validity_years(ROA_CERTIFICATE_VALIDITY_YEARS),
+            SignSupport::sign_validity_weeks(CONFIG.timing_roa_valid_weeks),
             crl_uri,
             aia.clone(),
             roa_uri,

@@ -9,7 +9,7 @@ use crate::commons::api::{ChildCaInfo, ChildHandle, IssuedCert, ResourceClassNam
 use crate::commons::error::Error;
 use crate::commons::remote::id::IdCert;
 use crate::commons::KrillResult;
-use crate::constants::CHILD_CERTIFICATE_REISSUE_WEEKS;
+use crate::daemon::config::CONFIG;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
@@ -153,7 +153,8 @@ impl ChildCertificates {
             .values()
             .filter(|issued| {
                 issued.validity().not_after()
-                    < Time::now() + Duration::weeks(CHILD_CERTIFICATE_REISSUE_WEEKS)
+                    < Time::now()
+                        + Duration::weeks(CONFIG.timing_child_certificate_reissue_weeks_before)
             })
             .collect()
     }

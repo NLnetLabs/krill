@@ -29,9 +29,7 @@ use crate::commons::remote::rfc6492;
 use crate::commons::remote::rfc8183;
 use crate::commons::remote::sigmsg::SignedMessage;
 use crate::commons::KrillResult;
-use crate::constants::{
-    CHILD_CERTIFICATE_REISSUE_WEEKS, CHILD_CERTIFICATE_VALIDITY_YEARS, KRILL_ENV_TEST,
-};
+use crate::constants::KRILL_ENV_TEST;
 use crate::daemon::ca::events::ChildCertificateUpdates;
 use crate::daemon::ca::rc::PublishMode;
 use crate::daemon::ca::signing::CsrInfo;
@@ -39,6 +37,7 @@ use crate::daemon::ca::{
     ta_handle, ChildDetails, Cmd, CmdDet, CurrentObjectSetDelta, Evt, EvtDet, Ini, ResourceClass,
     RouteAuthorization, RouteAuthorizationUpdates, Routes, Signer,
 };
+use crate::daemon::config::CONFIG;
 
 //------------ Rfc8183Id ---------------------------------------------------
 
@@ -624,7 +623,7 @@ impl<S: Signer> CertAuth<S> {
         for ki in child_keys {
             if let Some(issued) = my_rc.issued(&ki) {
                 issued_certs.push(issued.clone());
-                let eligble_not_after = Self::eligible_not_after(issued);
+                let eligble_not_after = Self::child_cert_eligible_not_after(issued);
                 if eligble_not_after > not_after {
                     not_after = eligble_not_after
                 }
@@ -640,13 +639,15 @@ impl<S: Signer> CertAuth<S> {
         ))
     }
 
-    fn eligible_not_after(issued: &IssuedCert) -> Time {
+    fn child_cert_eligible_not_after(issued: &IssuedCert) -> Time {
         let expiration_time = issued.validity().not_after();
-        if expiration_time > Time::now() + chrono::Duration::weeks(CHILD_CERTIFICATE_REISSUE_WEEKS)
+        if expiration_time
+            > Time::now()
+                + chrono::Duration::weeks(CONFIG.timing_child_certificate_reissue_weeks_before)
         {
             expiration_time
         } else {
-            Time::years_from_now(CHILD_CERTIFICATE_VALIDITY_YEARS)
+            Time::now() + chrono::Duration::weeks(CONFIG.timing_child_certificate_valid_weeks)
         }
     }
 

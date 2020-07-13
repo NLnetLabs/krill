@@ -125,6 +125,34 @@ impl ConfigDefaults {
     fn roa_deaggregate_threshold() -> usize {
         90
     }
+
+    fn timing_publish_valid_days() -> i64 {
+        7
+    }
+
+    fn timing_publish_next_hours() -> i64 {
+        24
+    }
+
+    fn timing_publish_hours_before_next() -> i64 {
+        8
+    }
+
+    fn timing_child_certificate_valid_weeks() -> i64 {
+        52
+    }
+
+    fn timing_child_certificate_reissue_weeks_before() -> i64 {
+        4
+    }
+
+    fn timing_roa_valid_weeks() -> i64 {
+        52
+    }
+
+    fn timing_roa_reissue_weeks_before() -> i64 {
+        4
+    }
 }
 
 //------------ Config --------------------------------------------------------
@@ -213,6 +241,22 @@ pub struct Config {
 
     #[serde(default = "ConfigDefaults::roa_deaggregate_threshold")]
     pub roa_deaggregate_threshold: usize,
+
+    // Timing settings for publication and certificate / ROA (re-)issuance
+    #[serde(default = "ConfigDefaults::timing_publish_valid_days")]
+    pub timing_publish_valid_days: i64,
+    #[serde(default = "ConfigDefaults::timing_publish_next_hours")]
+    pub timing_publish_next_hours: i64,
+    #[serde(default = "ConfigDefaults::timing_publish_hours_before_next")]
+    pub timing_publish_hours_before_next: i64,
+    #[serde(default = "ConfigDefaults::timing_child_certificate_valid_weeks")]
+    pub timing_child_certificate_valid_weeks: i64,
+    #[serde(default = "ConfigDefaults::timing_child_certificate_reissue_weeks_before")]
+    pub timing_child_certificate_reissue_weeks_before: i64,
+    #[serde(default = "ConfigDefaults::timing_roa_valid_weeks")]
+    pub timing_roa_valid_weeks: i64,
+    #[serde(default = "ConfigDefaults::timing_roa_reissue_weeks_before")]
+    pub timing_roa_reissue_weeks_before: i64,
 }
 
 /// # Accessors
@@ -312,6 +356,16 @@ impl Config {
         let roa_aggregate_threshold = 3;
         let roa_deaggregate_threshold = 2;
 
+        let timing_publish_valid_days = ConfigDefaults::timing_publish_valid_days();
+        let timing_publish_next_hours = ConfigDefaults::timing_publish_next_hours();
+        let timing_publish_hours_before_next = ConfigDefaults::timing_publish_hours_before_next();
+        let timing_child_certificate_valid_weeks =
+            ConfigDefaults::timing_child_certificate_valid_weeks();
+        let timing_child_certificate_reissue_weeks_before =
+            ConfigDefaults::timing_child_certificate_reissue_weeks_before();
+        let timing_roa_valid_weeks = ConfigDefaults::timing_roa_valid_weeks();
+        let timing_roa_reissue_weeks_before = ConfigDefaults::timing_roa_reissue_weeks_before();
+
         Config {
             ip,
             port,
@@ -340,6 +394,13 @@ impl Config {
             bgp_risdumps_v6_uri,
             roa_aggregate_threshold,
             roa_deaggregate_threshold,
+            timing_publish_valid_days,
+            timing_publish_next_hours,
+            timing_publish_hours_before_next,
+            timing_child_certificate_valid_weeks,
+            timing_child_certificate_reissue_weeks_before,
+            timing_roa_valid_weeks,
+            timing_roa_reissue_weeks_before,
         }
     }
 

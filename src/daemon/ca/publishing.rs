@@ -16,8 +16,8 @@ use crate::commons::api::{
     RepoInfo, Revocation, Revocations, RevocationsDelta, UpdatedObject, WithdrawnObject,
 };
 use crate::commons::KrillResult;
-use crate::constants::{PUBLISH_NEXT_HOURS, PUBLISH_VALID_DAYS};
 use crate::daemon::ca::{self, RoaInfo, RouteAuthorization, Signer};
+use crate::daemon::config::CONFIG;
 
 //------------ AddedOrUpdated ----------------------------------------------
 
@@ -254,7 +254,7 @@ impl CrlBuilder {
         }
 
         let this_update = Time::five_minutes_ago();
-        let next_update = Time::now() + Duration::hours(PUBLISH_NEXT_HOURS);
+        let next_update = Time::now() + Duration::hours(CONFIG.timing_publish_next_hours);
         let serial_number = Serial::from(number);
 
         let mut crl = TbsCertList::new(
@@ -372,8 +372,8 @@ impl ManifestBuilder {
 
         let this_update = Time::five_minutes_ago();
         let now = Time::now();
-        let next_update = Time::now() + Duration::hours(PUBLISH_NEXT_HOURS);
-        let valid_until = Time::now() + Duration::days(PUBLISH_VALID_DAYS);
+        let next_update = Time::now() + Duration::hours(CONFIG.timing_publish_next_hours);
+        let valid_until = Time::now() + Duration::days(CONFIG.timing_publish_valid_days);
 
         let entries = self.entries.iter().map(|(k, v)| FileAndHash::new(k, v));
 
