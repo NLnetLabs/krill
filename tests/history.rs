@@ -1,6 +1,7 @@
 extern crate krill;
 
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
 use krill::commons::api::{CaCommandDetails, CommandHistoryCriteria, Handle};
@@ -35,7 +36,7 @@ fn assert_scenario(scenario: &str, cas: &[&str]) {
         let server = make_server(&d, scenario);
 
         for ca in cas {
-            let handle = unsafe { Handle::from_str_unsafe(ca) };
+            let handle = Handle::from_str(ca).unwrap();
             assert_history(&server, scenario, &handle);
         }
     })

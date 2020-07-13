@@ -40,6 +40,7 @@ mod tests {
     use crate::test;
 
     use super::*;
+    use std::str::FromStr;
 
     //------------ InitPersonEvent -----------------------------------------------
 
@@ -285,7 +286,7 @@ mod tests {
             let mut manager = DiskAggregateStore::<Person>::new(&d, "person").unwrap();
             manager.add_listener(counter.clone());
 
-            let id_alice = unsafe { Handle::from_str_unsafe("alice") };
+            let id_alice = Handle::from_str("alice").unwrap();
             let alice_init = InitPersonEvent::init(&id_alice, "alice smith");
 
             manager.add(alice_init).unwrap();

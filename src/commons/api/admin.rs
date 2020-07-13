@@ -1,5 +1,6 @@
 //! Support for admin tasks, such as managing publishers and RFC8181 clients
 
+use std::convert::TryFrom;
 use std::fmt;
 use std::path::PathBuf;
 use std::str::{from_utf8_unchecked, FromStr};
@@ -37,18 +38,6 @@ impl Handle {
         self.as_ref()
     }
 
-    pub unsafe fn from_str_unsafe(s: &str) -> Self {
-        Self::from_str(s).unwrap()
-    }
-
-    pub unsafe fn from_path_unsafe(path: &PathBuf) -> Self {
-        let path = path.file_name().unwrap();
-        let s = path.to_string_lossy().to_string();
-        let s = s.replace("+", "/");
-        let s = s.replace("=", "\\");
-        Self::from_str(&s).unwrap()
-    }
-
     /// We replace "/" with "+" and "\" with "=" to make file system
     /// safe names.
     pub fn to_path_buf(&self) -> PathBuf {
@@ -56,6 +45,18 @@ impl Handle {
         let s = s.replace("/", "+");
         let s = s.replace("\\", "=");
         PathBuf::from(s)
+    }
+}
+
+impl TryFrom<&PathBuf> for Handle {
+    type Error = InvalidHandle;
+
+    fn try_from(path: &PathBuf) -> Result<Self, Self::Error> {
+        let path = path.file_name().unwrap();
+        let s = path.to_string_lossy().to_string();
+        let s = s.replace("+", "/");
+        let s = s.replace("=", "\\");
+        Self::from_str(&s)
     }
 }
 
@@ -666,7 +667,7 @@ mod tests {
     #[test]
     fn should_make_handle_from_dir() {
         let path = PathBuf::from("a/b/abcDEF012+=-_");
-        let handle = unsafe { Handle::from_path_unsafe(&path) };
+        let handle = Handle::try_from(&path).unwrap();
         let expected_handle = Handle::from_str("abcDEF012/\\-_").unwrap();
         assert_eq!(handle, expected_handle);
     }

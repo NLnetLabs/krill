@@ -1116,8 +1116,8 @@ mod tests {
         // reading the XML based on the RFC spec only.
         let cert = test_id_certificate();
 
-        let sender = unsafe { Handle::from_str_unsafe("child") };
-        let rcpt = unsafe { Handle::from_str_unsafe("parent") };
+        let sender = Handle::from_str("child").unwrap();
+        let rcpt = Handle::from_str("parent").unwrap();
         let class = ResourceClassName::default();
 
         let ski = cert.subject_public_key_info().key_identifier();
@@ -1136,8 +1136,8 @@ mod tests {
         // reading the XML based on the RFC spec only.
         let cert = test_id_certificate();
 
-        let sender = unsafe { Handle::from_str_unsafe("child") };
-        let rcpt = unsafe { Handle::from_str_unsafe("parent") };
+        let sender = Handle::from_str("child").unwrap();
+        let rcpt = Handle::from_str("parent").unwrap();
         let class = ResourceClassName::default();
 
         let ski = cert.subject_public_key_info().key_identifier();
@@ -1153,8 +1153,8 @@ mod tests {
     fn encode_and_parse_error_response() {
         // No example CMS found for this one, so just composing and
         // reading the XML based on the RFC spec only.
-        let sender = unsafe { Handle::from_str_unsafe("child") };
-        let rcpt = unsafe { Handle::from_str_unsafe("parent") };
+        let sender = Handle::from_str("child").unwrap();
+        let rcpt = Handle::from_str("parent").unwrap();
         let err = NotPerformedResponse::_1101();
 
         let err = Message::not_performed_response(sender, rcpt, err).unwrap();

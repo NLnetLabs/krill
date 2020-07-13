@@ -1,6 +1,7 @@
 extern crate krill;
 
 use std::fs;
+use std::str::FromStr;
 
 use krill::commons::api::{Handle, ParentCaReq, ResourceSet};
 use krill::daemon::ca::ta_handle;
@@ -11,7 +12,7 @@ async fn ca_rfc6492() {
     let dir = start_krill().await;
     let ta_handle = ta_handle();
 
-    let child = unsafe { Handle::from_str_unsafe("rfc6492") };
+    let child = Handle::from_str("rfc6492").unwrap();
     let child_resources = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
 
     init_child_with_embedded_repo(&child).await;

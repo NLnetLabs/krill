@@ -7,10 +7,11 @@ use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::sync::RwLock;
 
+use rpki::x509::Time;
+
 use crate::commons::api::{Handle, ParentHandle, ResourceClassName, RevocationRequest};
 use crate::commons::eventsourcing::{self, Event};
 use crate::daemon::ca::{CertAuth, Evt, EvtDet, Signer};
-use rpki::x509::Time;
 
 //------------ QueueEvent ----------------------------------------------------
 
@@ -77,7 +78,6 @@ impl EventQueueListener {
     }
 }
 
-// TODO: Is this unsafe here? I would think the RwLock is safe, but..
 unsafe impl Send for EventQueueListener {}
 unsafe impl Sync for EventQueueListener {}
 

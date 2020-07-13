@@ -1,6 +1,7 @@
 extern crate krill;
 
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use krill::commons::api::Handle;
 use krill::commons::eventsourcing::{AggregateStore, DiskAggregateStore};
@@ -70,7 +71,7 @@ fn test_cas(work_dir: &PathBuf, cas: &[&str]) {
 
     for ca in cas {
         assert_no_snapshot(work_dir, &format!("cas/{}", ca));
-        let ca_handle = unsafe { Handle::from_str_unsafe(ca) };
+        let ca_handle = Handle::from_str(ca).unwrap();
         if let Err(e) = ca_store.get_latest(&ca_handle) {
             panic!("Could not rebuild state for ca '{}', error: {}", ca, e);
         }
@@ -80,7 +81,7 @@ fn test_cas(work_dir: &PathBuf, cas: &[&str]) {
 fn test_repo(work_dir: &PathBuf, repo: &str) {
     let repo_store = DiskAggregateStore::<Repository>::new(&work_dir, repo).unwrap();
     assert_no_snapshot(work_dir, &format!("{}/{}", repo, PUBSERVER_DFLT));
-    let handle = unsafe { Handle::from_str_unsafe(PUBSERVER_DFLT) };
+    let handle = Handle::from_str(PUBSERVER_DFLT).unwrap();
     if let Err(e) = repo_store.get_latest(&handle) {
         panic!("Could not rebuild state for repository: {}", e)
     }

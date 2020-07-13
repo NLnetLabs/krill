@@ -17,7 +17,7 @@ async fn ca_roas() {
     let dir = start_krill().await;
 
     let ta_handle = ta_handle();
-    let child = unsafe { Handle::from_str_unsafe("child") };
+    let child = Handle::from_str("child").unwrap();
     let child_resources = ResourceSet::from_strs("", "10.0.0.0/16", "2001:DB8::/32").unwrap();
 
     init_child_with_embedded_repo(&child).await;

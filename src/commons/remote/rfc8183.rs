@@ -825,10 +825,7 @@ mod tests {
     fn validate_rpkid_publisher_request() {
         let xml = include_str!("../../../test-resources/oob/publisher_request.xml");
         let pr = PublisherRequest::validate_at(xml.as_bytes(), rpkid_time()).unwrap();
-        assert_eq!(
-            unsafe { Handle::from_str_unsafe("Bob") },
-            pr.publisher_handle
-        );
+        assert_eq!(Handle::from_str("Bob").unwrap(), pr.publisher_handle);
         assert_eq!(Some("A0001".to_string()), pr.tag);
     }
 
@@ -838,7 +835,7 @@ mod tests {
         let rr = RepositoryResponse::validate_at(xml.as_bytes(), rpkid_time()).unwrap();
         assert_eq!(Some("A0001".to_string()), rr.tag);
         assert_eq!(
-            unsafe { Handle::from_str_unsafe("Alice/Bob-42") },
+            Handle::from_str("Alice/Bob-42").unwrap(),
             rr.publisher_handle
         );
         assert_eq!(example_service_uri(), rr.service_uri);
@@ -852,7 +849,7 @@ mod tests {
 
         let pr = PublisherRequest {
             tag: Some("tag".to_string()),
-            publisher_handle: unsafe { Handle::from_str_unsafe("tim") },
+            publisher_handle: Handle::from_str("tim").unwrap(),
             id_cert: cert,
         };
 
@@ -869,7 +866,7 @@ mod tests {
 
         let pr = RepositoryResponse {
             tag: Some("tag".to_string()),
-            publisher_handle: unsafe { Handle::from_str_unsafe("tim") },
+            publisher_handle: Handle::from_str("tim").unwrap(),
             repo_info,
             service_uri: example_service_uri(),
             id_cert: cert,
@@ -885,10 +882,7 @@ mod tests {
         let xml = include_str!("../../../test-resources/remote/rpkid-child-id.xml");
         let req = ChildRequest::validate_at(xml.as_bytes(), rpkid_time()).unwrap();
 
-        assert_eq!(
-            &unsafe { Handle::from_str_unsafe("Carol") },
-            req.child_handle()
-        );
+        assert_eq!(&Handle::from_str("Carol").unwrap(), req.child_handle());
         assert_eq!(None, req.tag());
 
         let encoded = req.encode_vec();

@@ -91,7 +91,7 @@ async fn remote_publication() {
 
     let ta_handle = ta_handle();
 
-    let child = unsafe { Handle::from_str_unsafe("child") };
+    let child = Handle::from_str("child").unwrap();
 
     // Set up child as a child of the TA
     init_child(&child).await;

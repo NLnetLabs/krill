@@ -1,6 +1,7 @@
 use std::fs;
 use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::{Arc, RwLock};
 
 use bytes::Bytes;
@@ -106,7 +107,7 @@ impl PubServer {
 ///
 impl PubServer {
     fn repository_handle() -> RepositoryHandle {
-        unsafe { Handle::from_str_unsafe(PUBSERVER_DFLT) }
+        Handle::from_str(PUBSERVER_DFLT).unwrap()
     }
 
     fn repository(&self) -> KrillResult<Arc<Repository>> {
@@ -330,7 +331,7 @@ mod tests {
 
             let alice = publisher_alice(&d);
 
-            let alice_handle = unsafe { Handle::from_str_unsafe("alice") };
+            let alice_handle = Handle::from_str("alice").unwrap();
             let publisher_req = make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
             server.create_publisher(publisher_req).unwrap();
@@ -350,7 +351,7 @@ mod tests {
 
             let alice = publisher_alice(&d);
 
-            let alice_handle = unsafe { Handle::from_str_unsafe("alice") };
+            let alice_handle = Handle::from_str("alice").unwrap();
             let publisher_req = make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
             server.create_publisher(publisher_req.clone()).unwrap();
@@ -368,7 +369,7 @@ mod tests {
             let server = make_server(&d);
             let alice = publisher_alice(&d);
 
-            let alice_handle = unsafe { Handle::from_str_unsafe("alice") };
+            let alice_handle = Handle::from_str("alice").unwrap();
             let publisher_req = make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
             server.create_publisher(publisher_req).unwrap();
@@ -385,7 +386,7 @@ mod tests {
             let server = make_server(&d);
             let alice = publisher_alice(&d);
 
-            let alice_handle = unsafe { Handle::from_str_unsafe("alice") };
+            let alice_handle = Handle::from_str("alice").unwrap();
             let publisher_req = make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
             server.create_publisher(publisher_req).unwrap();

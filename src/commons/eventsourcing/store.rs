@@ -404,8 +404,7 @@ impl KeyStore for DiskKeyStore {
             for d in dir {
                 let path = d.unwrap().path();
                 if path.is_dir() {
-                    unsafe {
-                        let id = Handle::from_path_unsafe(&path);
+                    if let Ok(id) = Handle::try_from(&path) {
                         res.push(id);
                     }
                 }
