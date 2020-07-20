@@ -30,7 +30,7 @@ use crate::commons::remote::rfc8183;
 use crate::commons::remote::rfc8183::ChildRequest;
 use crate::commons::util::httpclient;
 use crate::constants::KRILL_ENV_TEST_UNIT_DATA;
-use crate::daemon::ca::ta_handle;
+use crate::daemon::ca::{ta_handle, ResourceTaggedAttestation, RtaRequest, SignSupport};
 use crate::daemon::http::server;
 
 const SERVER_URI: &str = "https://localhost:3000/";
@@ -263,6 +263,26 @@ pub async fn ca_details(handle: &Handle) -> CertAuthInfo {
     match krill_admin(Command::CertAuth(CaCommand::Show(handle.clone()))).await {
         ApiResponse::CertAuthInfo(inf) => inf,
         _ => panic!("Expected cert auth info"),
+    }
+}
+
+pub async fn sign_one_off_rta(
+    ca: Handle,
+    resources: ResourceSet,
+    content: Bytes,
+    out: Option<PathBuf>,
+) -> ResourceTaggedAttestation {
+    let request = RtaRequest::new(
+        resources,
+        SignSupport::sign_validity_days(14),
+        vec![],
+        content,
+    );
+    let command = Command::CertAuth(CaCommand::RtaOneOff(ca, request, out));
+
+    match krill_admin(command).await {
+        ApiResponse::Rta(rta) => rta,
+        _ => panic!("Expected RTA"),
     }
 }
 

@@ -12,10 +12,13 @@ use rpki::manifest::FileAndHash;
 use rpki::uri;
 use rpki::x509::{Name, Serial, Time, Validity};
 
-use crate::commons::api::{IssuedCert, ReplacedObject, RequestResourceLimit, ResourceSet};
+use crate::commons::api::{
+    IssuedCert, RcvdCert, ReplacedObject, RequestResourceLimit, ResourceSet,
+};
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
 use crate::daemon::ca::{self, CertifiedKey};
+use crate::daemon::config::CONFIG;
 
 //------------ Signer --------------------------------------------------------
 
@@ -142,36 +145,77 @@ impl SignSupport {
         signing_key: &CertifiedKey,
         signer: &S,
     ) -> KrillResult<IssuedCert> {
-        let (ca_repository, rpki_manifest, rpki_notify, pub_key) = csr.unpack();
-
         let signing_cert = signing_key.incoming_cert();
-
         let resources = resources.apply_limit(&limit)?;
-
         if !signing_cert.resources().contains(&resources) {
             return Err(Error::MissingResources);
         }
 
+        let request = CertRequest::Ca(csr);
+
+        let cert = Self::make_tbs_cert(&resources, signing_cert, request, signer)?;
+
+        let cert = cert
+            .into_cert(signer, &signing_key.key_id())
+            .map_err(ca::Error::signer)?;
+        let cert_uri = signing_cert.uri_for_object(&cert);
+
+        Ok(IssuedCert::new(cert_uri, limit, resources, cert, replaces))
+    }
+
+    /// Create an EE certificate for use in ResourceTaggedAttestations.
+    /// Note that for RPKI signed objects such as ROAs and Manifests, the
+    /// EE certificate is created by the rpki.rs library instead.
+    pub fn make_rta_ee_cert<S: Signer>(
+        resources: &ResourceSet,
+        signing_key: &CertifiedKey,
+        validity: Validity,
+        pub_key: PublicKey,
+        signer: &S,
+    ) -> KrillResult<Cert> {
+        let signing_cert = signing_key.incoming_cert();
+        let request = CertRequest::Ee(pub_key, validity);
+        let cert = Self::make_tbs_cert(resources, signing_cert, request, signer)?;
+        let cert = cert
+            .into_cert(signer, &signing_key.key_id())
+            .map_err(ca::Error::signer)?;
+
+        Ok(cert)
+    }
+
+    fn make_tbs_cert<S: Signer>(
+        resources: &ResourceSet,
+        signing_cert: &RcvdCert,
+        request: CertRequest,
+        signer: &S,
+    ) -> KrillResult<TbsCert> {
         let serial = { Serial::random(signer).map_err(ca::Error::signer)? };
         let issuer = signing_cert.cert().subject().clone();
 
-        let validity = Validity::new(Time::five_minutes_ago(), Time::next_year());
+        let validity = match &request {
+            CertRequest::Ca(_) => {
+                Self::sign_validity_weeks(CONFIG.timing_child_certificate_valid_weeks)
+            }
+            CertRequest::Ee(_, validity) => *validity,
+        };
+
+        let pub_key = match &request {
+            CertRequest::Ca(info) => info.key.clone(),
+            CertRequest::Ee(key, _) => key.clone(),
+        };
 
         let subject = Some(Name::from_pub_key(&pub_key));
 
-        let key_usage = KeyUsage::Ca;
+        let key_usage = match &request {
+            CertRequest::Ca(_) => KeyUsage::Ca,
+            CertRequest::Ee(_, _) => KeyUsage::Ee,
+        };
+
         let overclaim = Overclaim::Refuse;
 
         let mut cert = TbsCert::new(
             serial, issuer, validity, subject, pub_key, key_usage, overclaim,
         );
-        cert.set_basic_ca(Some(true));
-
-        cert.set_ca_issuer(Some(signing_cert.uri().clone()));
-        cert.set_crl_uri(Some(signing_cert.crl_uri()));
-        cert.set_ca_repository(Some(ca_repository));
-        cert.set_rpki_manifest(Some(rpki_manifest));
-        cert.set_rpki_notify(rpki_notify);
 
         let asns = resources.to_as_resources();
         if asns.is_inherited() || !asns.as_blocks().unwrap().is_empty() {
@@ -189,22 +233,44 @@ impl SignSupport {
         }
 
         cert.set_authority_key_identifier(Some(signing_cert.cert().subject_key_identifier()));
+        cert.set_ca_issuer(Some(signing_cert.uri().clone()));
+        cert.set_crl_uri(Some(signing_cert.crl_uri()));
 
-        let cert = cert
-            .into_cert(signer, &signing_key.key_id())
-            .map_err(ca::Error::signer)?;
-        let cert_uri = signing_cert.uri_for_object(&cert);
+        match request {
+            CertRequest::Ca(csr) => {
+                let (ca_repository, rpki_manifest, rpki_notify, _pub_key) = csr.unpack();
+                cert.set_basic_ca(Some(true));
+                cert.set_ca_repository(Some(ca_repository));
+                cert.set_rpki_manifest(Some(rpki_manifest));
+                cert.set_rpki_notify(rpki_notify);
+            }
+            CertRequest::Ee(_, _) => {
+                // cert.set_signed_object() ??
+            }
+        }
 
-        Ok(IssuedCert::new(cert_uri, limit, resources, cert, replaces))
+        Ok(cert)
     }
 
     /// Returns a validity period from 5 minutes ago (in case of NTP mess-up), to
-    /// X year from now.
+    /// X weeks from now.
     pub fn sign_validity_weeks(weeks: i64) -> Validity {
         let from = Time::five_minutes_ago();
         let until = Time::now() + chrono::Duration::weeks(weeks);
         Validity::new(from, until)
     }
+
+    pub fn sign_validity_days(days: i64) -> Validity {
+        let from = Time::five_minutes_ago();
+        let until = Time::now() + chrono::Duration::days(days);
+        Validity::new(from, until)
+    }
+}
+
+#[allow(clippy::large_enum_variant)]
+enum CertRequest {
+    Ca(CsrInfo),
+    Ee(PublicKey, Validity),
 }
 
 trait ManifestEntry {

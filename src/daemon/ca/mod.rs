@@ -34,6 +34,9 @@ pub use self::server::CaServer;
 mod signing;
 pub use self::signing::*;
 
+mod rta;
+pub use self::rta::*;
+
 pub const TA_NAME: &str = "ta"; // reserved for TA
 
 pub fn ta_handle() -> Handle {

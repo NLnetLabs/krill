@@ -21,6 +21,7 @@ use crate::commons::remote::id::IdCert;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
 use crate::constants::*;
+use crate::daemon::ca::{RtaRequest, SignSupport};
 
 struct GeneralArgs {
     server: uri::Https,
@@ -172,13 +173,13 @@ impl Options {
         )
     }
 
-    fn add_child_resource_args<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+    fn add_resource_args<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         app.arg(
             Arg::with_name("asn")
                 .short("a")
                 .long("asn")
                 .value_name("AS resources")
-                .help("The delegated AS resources: e.g. AS1, AS3-4")
+                .help("The AS resources: e.g. AS1, AS3-4")
                 .required(false),
         )
         .arg(
@@ -186,7 +187,7 @@ impl Options {
                 .short("4")
                 .long("ipv4")
                 .value_name("IPv4 resources")
-                .help("The delegated IPv4 resources: e.g. 192.168.0.0/16")
+                .help("The IPv4 resources: e.g. 192.168.0.0/16")
                 .required(false),
         )
         .arg(
@@ -194,7 +195,7 @@ impl Options {
                 .short("6")
                 .long("ipv6")
                 .value_name("IPv6 resources")
-                .help("The delegated IPv6 resources: e.g. 2001:db8::/32")
+                .help("The IPv6 resources: e.g. 2001:db8::/32")
                 .required(false),
         )
     }
@@ -380,7 +381,7 @@ impl Options {
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
         sub = Self::add_child_arg(sub);
-        sub = Self::add_child_resource_args(sub);
+        sub = Self::add_resource_args(sub);
         let sub = sub.arg(
             Arg::with_name("request")
                 .long("request")
@@ -399,7 +400,7 @@ impl Options {
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
         sub = Self::add_child_arg(sub);
-        sub = Self::add_child_resource_args(sub);
+        sub = Self::add_resource_args(sub);
         sub = sub.arg(
             Arg::with_name("idcert")
                 .long("idcert")
@@ -709,6 +710,50 @@ impl Options {
         app.subcommand(sub)
     }
 
+    fn make_cas_rta_oneoff_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("oneoff").about("Create one-off RTA");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        sub = Self::add_resource_args(sub);
+
+        sub = sub.arg(
+            Arg::with_name("days")
+                .long("days")
+                .short("d")
+                .value_name("number of days")
+                .help("Validity time of the RTA in days")
+                .required(true),
+        );
+
+        sub = sub.arg(
+            Arg::with_name("in")
+                .long("in")
+                .short("i")
+                .value_name("path")
+                .help("Content which needs to be signed")
+                .required(true),
+        );
+
+        sub = sub.arg(
+            Arg::with_name("out")
+                .long("out")
+                .short("o")
+                .value_name("path")
+                .help("Path where the RTA signature should be written to")
+                .required(true),
+        );
+
+        app.subcommand(sub)
+    }
+
+    fn make_cas_rta_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("rta").about("Manage Resource Tagged Attestations");
+        sub = Self::make_cas_rta_oneoff_sc(sub);
+        app.subcommand(sub)
+    }
+
     fn make_publishers_list_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("list").about("List all publishers.");
         sub = Self::add_general_args(sub);
@@ -860,6 +905,7 @@ impl Options {
         app = Self::make_cas_routes_sc(app);
         app = Self::make_cas_repo_sc(app);
         app = Self::make_cas_issues_sc(app);
+        app = Self::make_cas_rta_sc(app);
 
         app = Self::make_publishers_sc(app);
 
@@ -1395,6 +1441,57 @@ impl Options {
         Ok(Options::make(general, command))
     }
 
+    fn parse_matches_cas_rta_oneoff(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let ca = Self::parse_my_ca(matches)?;
+
+        let days = matches.value_of("days").unwrap();
+        let days = i64::from_str(days)
+            .map_err(|e| Error::GeneralArgumentError(format!("Invalid number of days: {}", e)))?;
+
+        let in_file = matches.value_of("in").unwrap();
+        let in_file = PathBuf::from_str(in_file)
+            .map_err(|_| Error::GeneralArgumentError(format!("Invalid filename: {}", in_file)))?;
+
+        let content = file::read(&in_file).map_err(|e| {
+            Error::GeneralArgumentError(format!(
+                "Can't read file '{}', error: {}",
+                in_file.to_string_lossy().to_string(),
+                e,
+            ))
+        })?;
+
+        let out_file = matches.value_of("out").unwrap();
+        let out_file = PathBuf::from_str(out_file)
+            .map_err(|_| Error::GeneralArgumentError(format!("Invalid filename: {}", out_file)))?;
+
+        file::save(&[], &out_file).map_err(|e| {
+            Error::GeneralArgumentError(format!(
+                "Cannot save to file: {}, error: {}",
+                out_file.to_string_lossy(),
+                e
+            ))
+        })?;
+
+        let validity = SignSupport::sign_validity_days(days);
+
+        let resources = Self::parse_resource_args(matches)?.ok_or_else(|| {
+            Error::general("You must specify at least one of --ipv4, --ipv6 or --asn.")
+        })?;
+
+        let request = RtaRequest::new(resources, validity, vec![], content);
+        let command = Command::CertAuth(CaCommand::RtaOneOff(ca, request, Some(out_file)));
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_rta(matches: &ArgMatches) -> Result<Options, Error> {
+        if let Some(m) = matches.subcommand_matches("oneoff") {
+            Self::parse_matches_cas_rta_oneoff(m)
+        } else {
+            Err(Error::UnrecognisedSubCommand)
+        }
+    }
+
     fn parse_publisher_arg(matches: &ArgMatches) -> Result<PublisherHandle, Error> {
         let publisher_str = matches.value_of("publisher").unwrap();
         PublisherHandle::from_str(publisher_str).map_err(|_| Error::InvalidHandle)
@@ -1535,6 +1632,8 @@ impl Options {
             Self::parse_matches_cas_repo(m)
         } else if let Some(m) = matches.subcommand_matches("issues") {
             Self::parse_matches_cas_issues(m)
+        } else if let Some(m) = matches.subcommand_matches("rta") {
+            Self::parse_matches_cas_rta(m)
         } else if let Some(m) = matches.subcommand_matches("publishers") {
             Self::parse_matches_publishers(m)
         } else if let Some(m) = matches.subcommand_matches("bulk") {
@@ -1676,6 +1775,9 @@ pub enum CaCommand {
 
     #[display(fmt = "Show issues for ca: '{:?}'", _0)]
     Issues(Option<Handle>),
+
+    #[display(fmt = "One-off RTA request for CA: '{}'", _0)]
+    RtaOneOff(Handle, RtaRequest, Option<PathBuf>),
 
     // List all CAs
     #[display(fmt = "List all cas")]

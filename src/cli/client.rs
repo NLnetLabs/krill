@@ -15,8 +15,9 @@ use crate::commons::api::{
 };
 use crate::commons::bgp::BgpAnalysisReport;
 use crate::commons::remote::rfc8183;
-use crate::commons::util::httpclient;
+use crate::commons::util::{file, httpclient};
 use crate::constants::KRILL_CLI_API_ENV;
+use crate::daemon::ca::ResourceTaggedAttestation;
 use crate::daemon::config::Config;
 
 /// Command line tool for Krill admin tasks
@@ -262,6 +263,18 @@ impl KrillClient {
                     Ok(ApiResponse::AllCertAuthIssues(issues))
                 }
             },
+
+            CaCommand::RtaOneOff(ca, request, out_opt) => {
+                let uri = format!("api/v1/cas/{}/rta/oneoff", ca);
+                let rta: ResourceTaggedAttestation =
+                    self.post_json_with_response(&uri, request).await?;
+
+                if let Some(out) = out_opt {
+                    file::save(rta.as_ref(), &out)?;
+                }
+
+                Ok(ApiResponse::Rta(rta))
+            }
 
             CaCommand::List => {
                 let cas = self.get_json("api/v1/cas").await?;

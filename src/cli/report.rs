@@ -6,7 +6,7 @@ use serde::Serialize;
 use rpki::x509::Time;
 
 use crate::commons::api::{
-    AllCertAuthIssues, CaCommandDetails, CaCommandResult, CaRepoDetails, CertAuthInfo,
+    AllCertAuthIssues, Base64, CaCommandDetails, CaCommandResult, CaRepoDetails, CertAuthInfo,
     CertAuthIssues, CertAuthList, ChildCaInfo, CommandHistory, CurrentObjects, CurrentRepoState,
     ParentCaContact, PublisherDetails, PublisherList, RepositoryContact, RoaDefinition, ServerInfo,
     StoredEffect,
@@ -15,6 +15,7 @@ use crate::commons::bgp::{AnnouncementReport, BgpAnalysisReport, RoaReport};
 use crate::commons::eventsourcing::WithStorableDetails;
 use crate::commons::remote::api::ClientInfo;
 use crate::commons::remote::rfc8183;
+use crate::daemon::ca::ResourceTaggedAttestation;
 use crate::pubd::RepoStats;
 
 //------------ ApiResponse ---------------------------------------------------
@@ -54,6 +55,8 @@ pub enum ApiResponse {
     CertAuthIssues(CertAuthIssues),
     AllCertAuthIssues(AllCertAuthIssues),
 
+    Rta(ResourceTaggedAttestation),
+
     Empty,               // Typically a successful post just gets an empty 200 response
     GenericBody(String), // For when the server echos Json to a successful post
 }
@@ -87,6 +90,7 @@ impl ApiResponse {
                 ApiResponse::Rfc8183RepositoryResponse(res) => Ok(Some(res.report(fmt)?)),
                 ApiResponse::RepoDetails(details) => Ok(Some(details.report(fmt)?)),
                 ApiResponse::RepoState(state) => Ok(Some(state.report(fmt)?)),
+                ApiResponse::Rta(rta) => Ok(Some(rta.report(fmt)?)),
                 ApiResponse::GenericBody(body) => Ok(Some(body.clone())),
                 ApiResponse::Empty => Ok(None),
             }
@@ -533,5 +537,11 @@ impl Report for ServerInfo {
             self.version(),
             started.to_rfc3339()
         ))
+    }
+}
+
+impl Report for ResourceTaggedAttestation {
+    fn text(&self) -> Result<String, ReportError> {
+        Ok(Base64::from_content(self.as_ref()).to_string())
     }
 }

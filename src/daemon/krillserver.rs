@@ -26,7 +26,7 @@ use crate::commons::util::softsigner::OpenSslSigner;
 use crate::commons::{KrillEmptyResult, KrillResult};
 use crate::constants::*;
 use crate::daemon::auth::{Auth, Authorizer};
-use crate::daemon::ca::{self, ta_handle};
+use crate::daemon::ca::{self, ta_handle, ResourceTaggedAttestation, RtaRequest};
 use crate::daemon::config::CONFIG;
 use crate::daemon::mq::EventQueueListener;
 use crate::daemon::scheduler::Scheduler;
@@ -711,6 +711,20 @@ impl KrillServer {
     /// Handles a list request sent to the API, or.. through the CmsProxy.
     pub fn handle_list(&self, publisher: &PublisherHandle) -> KrillResult<ListReply> {
         self.get_embedded()?.list(publisher)
+    }
+}
+
+/// # Handle Resource Tagged Attestation requests
+///
+impl KrillServer {
+    /// Sign a one-off single-signed RTA and return it
+    /// and forget it
+    pub fn rta_one_off(
+        &self,
+        ca: Handle,
+        request: RtaRequest,
+    ) -> KrillResult<ResourceTaggedAttestation> {
+        self.caserver.rta_one_off(ca, request)
     }
 }
 

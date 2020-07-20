@@ -542,6 +542,7 @@ async fn api_cas(req: Request, path: &mut RequestPath) -> RoutingResult {
             Some("parents-xml") => ca_add_parent_xml(req, path, ca).await,
             Some("repo") => api_ca_repo(req, path, ca).await,
             Some("routes") => api_ca_routes(req, path, ca).await,
+            Some("rta") => api_ca_rta(req, path, ca).await,
             _ => render_unknown_method(),
         },
         None => match *req.method() {
@@ -1167,9 +1168,33 @@ async fn rrdp(req: Request) -> RoutingResult {
     }
 }
 
+//------------ Support Resource Tagged Attestions (RTA) ----------------------
+
+async fn api_ca_rta(req: Request, path: &mut RequestPath, ca: Handle) -> RoutingResult {
+    match path.next() {
+        Some("oneoff") => api_ca_rta_oneoff(req, path, ca).await,
+        _ => render_unknown_method(),
+    }
+}
+
+async fn api_ca_rta_oneoff(req: Request, path: &mut RequestPath, ca: Handle) -> RoutingResult {
+    if req.method() != Method::POST || path.next().is_some() {
+        render_unknown_method()
+    } else {
+        let state = req.state().clone();
+        match req.json().await {
+            Err(e) => render_error(e),
+            Ok(request) => render_json_res(state.read().await.rta_one_off(ca, request)),
+        }
+    }
+}
+
 //------------ Tests ---------------------------------------------------------
 #[cfg(test)]
 mod tests {
+
+    // NOTE: This is extensively tested through the functional and e2e tests found under
+    //       the $project/tests dir
 
     use std::path::PathBuf;
 

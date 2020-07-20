@@ -391,6 +391,12 @@ pub enum Error {
     TaAlreadyInitialised,
 
     //-----------------------------------------------------------------
+    // Resource Tagged Attestation issues
+    //-----------------------------------------------------------------
+    #[display(fmt = "Your CA does not hold the requested resources")]
+    RtaResourcesNotHeld,
+
+    //-----------------------------------------------------------------
     // If we really don't know any more..
     //-----------------------------------------------------------------
     #[display(fmt = "{}", _0)]
@@ -719,6 +725,11 @@ impl Error {
             Error::TaNotAllowed => ErrorResponse::new("ta-not-allowed", &self),
             Error::TaNameReserved => ErrorResponse::new("ta-name-reserved", &self),
             Error::TaAlreadyInitialised => ErrorResponse::new("ta-initialised", &self),
+
+            //-----------------------------------------------------------------
+            // Resource Tagged Attestation issues
+            //-----------------------------------------------------------------
+            Error::RtaResourcesNotHeld => ErrorResponse::new("rta-resources-not-held", &self),
 
             //-----------------------------------------------------------------
             // If we really don't know any more..

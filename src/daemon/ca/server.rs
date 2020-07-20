@@ -28,7 +28,8 @@ use crate::commons::util::httpclient;
 use crate::commons::KrillResult;
 use crate::constants::CASERVER_DIR;
 use crate::daemon::ca::{
-    self, ta_handle, CertAuth, Cmd, CmdDet, IniDet, RouteAuthorizationUpdates, Signer,
+    self, ta_handle, CertAuth, Cmd, CmdDet, IniDet, ResourceTaggedAttestation,
+    RouteAuthorizationUpdates, RtaRequest, Signer,
 };
 use crate::daemon::mq::EventQueueListener;
 
@@ -1075,6 +1076,21 @@ impl<S: Signer> CaServer<S> {
     ) -> KrillResult<()> {
         let cmd = CmdDet::route_authorizations_update(&handle, updates, self.signer.clone());
         self.send_command(cmd)
+    }
+}
+
+/// # Support Resource Tagged Attestation functions
+///
+impl<S: Signer> CaServer<S> {
+    /// Sign a one-off single-signed RTA and return it
+    /// and forget it
+    pub fn rta_one_off(
+        &self,
+        ca: Handle,
+        request: RtaRequest,
+    ) -> KrillResult<ResourceTaggedAttestation> {
+        let ca = self.get_ca(&ca)?;
+        ca.rta_one_off(request, self.signer.clone())
     }
 }
 

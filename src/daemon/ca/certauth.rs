@@ -35,7 +35,8 @@ use crate::daemon::ca::rc::PublishMode;
 use crate::daemon::ca::signing::CsrInfo;
 use crate::daemon::ca::{
     ta_handle, ChildDetails, Cmd, CmdDet, CurrentObjectSetDelta, Evt, EvtDet, Ini, ResourceClass,
-    RouteAuthorization, RouteAuthorizationUpdates, Routes, Signer,
+    ResourceTaggedAttestation, RouteAuthorization, RouteAuthorizationUpdates, Routes, RtaRequest,
+    Signer,
 };
 use crate::daemon::config::CONFIG;
 
@@ -1606,6 +1607,59 @@ impl<S: Signer> CertAuth<S> {
         } else {
             Ok((desired_routes, res))
         }
+    }
+}
+
+/// # Resource Tagged Attestations
+///
+impl<S: Signer> CertAuth<S> {
+    /// Sign a one-off single-signed RTA, return it, then forget it
+    pub fn rta_one_off(
+        &self,
+        request: RtaRequest,
+        signer: Arc<RwLock<S>>,
+    ) -> KrillResult<ResourceTaggedAttestation> {
+        let (resources, validity, mut keys, content) = request.unpack();
+
+        if !self.all_resources().contains(&resources) {
+            return Err(Error::RtaResourcesNotHeld);
+        }
+
+        // Create an EE for each RC that contains part of the resources
+        let mut rc_ee: HashMap<ResourceClassName, Cert> = HashMap::new();
+        for (rcn, rc) in self.resources.iter() {
+            if let Some(cert) = rc.create_rta_ee(&resources, validity, &signer)? {
+                rc_ee.insert(rcn.clone(), cert);
+            }
+        }
+
+        let one_of_keys: Vec<KeyIdentifier> = rc_ee
+            .values()
+            .map(|ee| ee.subject_key_identifier())
+            .collect();
+
+        // Add all one-off keys to the list of Key Identifiers
+        // Note that list includes possible keys by other CAs in the RtaRequest
+        for key in one_of_keys.iter() {
+            keys.push(*key);
+        }
+
+        let mut rta_builder = ResourceTaggedAttestation::rta_builder(&resources, content, keys)?;
+
+        // Then sign the content with all those RCs and all keys (including submitted keys) and add the cert
+        for (_rcn, ee) in rc_ee.into_iter() {
+            let signer = signer.read().unwrap();
+            ResourceTaggedAttestation::sign_with_ee(&mut rta_builder, ee, signer.deref())?;
+        }
+
+        // Destroy the keys
+        let mut signer = signer.write().unwrap();
+        for key in one_of_keys.iter() {
+            signer.destroy_key(key).map_err(Error::signer)?;
+        }
+
+        // Return the RTA
+        Ok(ResourceTaggedAttestation::finalize(rta_builder))
     }
 }
 
