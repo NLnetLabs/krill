@@ -28,6 +28,7 @@ use crate::commons::error::Error;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
 use crate::constants::KRILL_ENV_UPGRADE_ONLY;
+use crate::constants::{KRILL_VERSION_MAJOR, KRILL_VERSION_MINOR, KRILL_VERSION_PATCH};
 use crate::daemon::config::CONFIG;
 use crate::daemon::http::statics::statics;
 use crate::daemon::http::{tls, tls_keys, HttpResponse, Request, RequestPath, RoutingResult};
@@ -218,6 +219,21 @@ pub async fn metrics(req: Request) -> RoutingResult {
         res.push_str("# HELP krill_server_start timestamp of last krill server start\n");
         res.push_str("# TYPE krill_server_start gauge\n");
         res.push_str(&format!("krill_server_start {}\n", info.started()));
+        res.push_str("\n");
+
+        res.push_str("# HELP krill_version_major krill server major version number\n");
+        res.push_str("# TYPE krill_version_major gauge\n");
+        res.push_str(&format!("krill_version_major {}\n", KRILL_VERSION_MAJOR));
+        res.push_str("\n");
+
+        res.push_str("# HELP krill_version_minor krill server minor version number\n");
+        res.push_str("# TYPE krill_version_minor gauge\n");
+        res.push_str(&format!("krill_version_minor {}\n", KRILL_VERSION_MINOR));
+        res.push_str("\n");
+
+        res.push_str("# HELP krill_version_patch krill server patch version number\n");
+        res.push_str("# TYPE krill_version_patch gauge\n");
+        res.push_str(&format!("krill_version_patch {}\n", KRILL_VERSION_PATCH));
         res.push_str("\n");
 
         if let Ok(stats) = server.repo_stats() {

@@ -1,4 +1,7 @@
-pub const KRILL_VERSION: &str = "0.8.0-RC-dev";
+pub const KRILL_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const KRILL_VERSION_MAJOR: &str = env!("CARGO_PKG_VERSION_MAJOR");
+pub const KRILL_VERSION_MINOR: &str = env!("CARGO_PKG_VERSION_MINOR");
+pub const KRILL_VERSION_PATCH: &str = env!("CARGO_PKG_VERSION_PATCH");
 pub const KRILL_SERVER_APP: &str = "Krill";
 pub const KRILL_CLIENT_APP: &str = "Krill Client";
 
