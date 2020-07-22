@@ -9,9 +9,8 @@ use crate::commons::api::{
     Base64, HexEncodedHash, ListElement, ListReply, Publish, PublishDelta, PublishDeltaBuilder,
     PublishRequest, Update, Withdraw,
 };
+use crate::commons::remote::crypto::ProtocolCms;
 use crate::commons::util::xml::{Attributes, AttributesError, XmlReader, XmlReaderErr, XmlWriter};
-
-use super::sigmsg::SignedMessage;
 
 pub const VERSION: &str = "4";
 pub const NS: &str = "http://www.hactrn.net/uris/rpki/publication-spec/";
@@ -75,8 +74,8 @@ impl Message {
         Bytes::from(self.encode_vec())
     }
 
-    /// Parses the content of a SignedMessage as a Message.
-    pub fn from_signed_message(msg: &SignedMessage) -> Result<Message, MessageError> {
+    /// Parses the content of a ProtocolCms as a Message.
+    pub fn from_signed_message(msg: &ProtocolCms) -> Result<Message, MessageError> {
         Message::decode(msg.content().to_bytes().as_ref())
     }
 

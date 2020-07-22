@@ -18,9 +18,8 @@ use crate::commons::api::{
     RequestResourceLimit, ResourceClassName, ResourceSet, ResourceSetError, RevocationRequest,
     RevocationResponse, SigningCert,
 };
+use crate::commons::remote::crypto::ProtocolCms;
 use crate::commons::util::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
-
-use super::sigmsg::SignedMessage;
 
 //------------ Consts --------------------------------------------------------
 
@@ -221,7 +220,7 @@ impl Message {
     }
 
     /// Parses the content of a SignedMessage as a Message.
-    pub fn from_signed_message(msg: &SignedMessage) -> Result<Message, Error> {
+    pub fn from_signed_message(msg: &ProtocolCms) -> Result<Message, Error> {
         Message::decode(msg.content().to_bytes().as_ref())
     }
 
@@ -975,9 +974,9 @@ mod tests {
     use std::str;
     use std::str::from_utf8_unchecked;
 
-    use crate::commons::remote::id::tests::test_id_certificate;
-    use crate::commons::remote::id::IdCert;
-    use crate::commons::remote::sigmsg::SignedMessage;
+    use crate::commons::remote::crypto::test_id_certificate;
+    use crate::commons::remote::crypto::IdCert;
+    use crate::commons::remote::crypto::ProtocolCms;
 
     use super::*;
 
@@ -991,7 +990,7 @@ mod tests {
     }
 
     fn extract_xml(pdu: &[u8]) -> String {
-        let msg = SignedMessage::decode(pdu, false).unwrap();
+        let msg = ProtocolCms::decode(pdu, false).unwrap();
         let content = msg.content().to_bytes();
         let xml = unsafe { from_utf8_unchecked(content.as_ref()) };
         xml.to_string()
@@ -1019,7 +1018,7 @@ mod tests {
     fn parse_and_validate_apnic_response() {
         let pdu = include_bytes!("../../../test-resources/remote/apnic-list-response.der");
 
-        let msg = SignedMessage::decode(pdu.as_ref(), false).unwrap();
+        let msg = ProtocolCms::decode(pdu.as_ref(), false).unwrap();
         let content = msg.content().to_bytes();
         let xml = unsafe { from_utf8_unchecked(content.as_ref()) };
 
@@ -1034,7 +1033,7 @@ mod tests {
     #[test]
     fn parse_and_validate_ncc_response() {
         let pdu = include_bytes!("../../../test-resources/remote/ncc-response.ber");
-        let msg = SignedMessage::decode(pdu.as_ref(), false).unwrap();
+        let msg = ProtocolCms::decode(pdu.as_ref(), false).unwrap();
 
         let content = msg.content().to_bytes();
         let xml = unsafe { from_utf8_unchecked(content.as_ref()) };
@@ -1050,7 +1049,7 @@ mod tests {
     #[test]
     fn parse_and_validate_lacnic_response() {
         let pdu = include_bytes!("../../../test-resources/remote/lacnic-valid.ber");
-        let msg = SignedMessage::decode(pdu.as_ref(), false).unwrap();
+        let msg = ProtocolCms::decode(pdu.as_ref(), false).unwrap();
 
         let content = msg.content().to_bytes();
         let xml = unsafe { from_utf8_unchecked(content.as_ref()) };
@@ -1067,7 +1066,7 @@ mod tests {
     #[test]
     fn parse_invalid_lacnic_response() {
         let pdu = include_bytes!("../../../test-resources/remote/lacnic-invalid-response.ber");
-        let msg = SignedMessage::decode(pdu.as_ref(), false).unwrap();
+        let msg = ProtocolCms::decode(pdu.as_ref(), false).unwrap();
 
         let content = msg.content().to_bytes();
         let xml = unsafe { from_utf8_unchecked(content.as_ref()) };

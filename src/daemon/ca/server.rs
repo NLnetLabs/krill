@@ -19,10 +19,8 @@ use crate::commons::api::{
 };
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::{Aggregate, AggregateStore, CommandKey, DiskAggregateStore};
-use crate::commons::remote::builder::SignedMessageBuilder;
 use crate::commons::remote::cmslogger::CmsLogger;
-use crate::commons::remote::id::IdCert;
-use crate::commons::remote::sigmsg::SignedMessage;
+use crate::commons::remote::crypto::{IdCert, ProtocolCms, ProtocolCmsBuilder};
 use crate::commons::remote::{rfc6492, rfc8181, rfc8183};
 use crate::commons::util::httpclient;
 use crate::commons::KrillResult;
@@ -341,7 +339,7 @@ impl<S: Signer> CaServer<S> {
     pub fn rfc6492(&self, ca_handle: &Handle, msg_bytes: Bytes) -> KrillResult<Bytes> {
         let ca = self.ca_store.get_latest(ca_handle)?;
 
-        let msg = match SignedMessage::decode(msg_bytes.clone(), false) {
+        let msg = match ProtocolCms::decode(msg_bytes.clone(), false) {
             Ok(msg) => msg,
             Err(e) => {
                 let msg = format!(
@@ -957,9 +955,9 @@ impl<S: Signer> CaServer<S> {
         content_type: &str,
         msg: Bytes,
         cms_logger: Option<CmsLogger>,
-    ) -> KrillResult<SignedMessage> {
+    ) -> KrillResult<ProtocolCms> {
         let signed_msg =
-            SignedMessageBuilder::create(signing_key, self.signer.read().unwrap().deref(), msg)
+            ProtocolCmsBuilder::create(signing_key, self.signer.read().unwrap().deref(), msg)
                 .map_err(Error::signer)?
                 .as_bytes();
 
@@ -975,7 +973,7 @@ impl<S: Signer> CaServer<S> {
         }
 
         // unpack and validate response
-        let msg = match SignedMessage::decode(res.as_ref(), false).map_err(Error::custom) {
+        let msg = match ProtocolCms::decode(res.as_ref(), false).map_err(Error::custom) {
             Ok(msg) => msg,
             Err(e) => {
                 error!("Could not parse protocol response");

@@ -12,7 +12,7 @@ use crate::commons::api::{
     UpdatedObject, WithdrawnObject,
 };
 use crate::commons::eventsourcing::StoredEvent;
-use crate::commons::remote::id::IdCert;
+use crate::commons::remote::crypto::IdCert;
 use crate::commons::KrillResult;
 use crate::daemon::ca::signing::Signer;
 use crate::daemon::ca::{

@@ -12,11 +12,10 @@ use crate::commons::api::{
 };
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::{AggregateStore, AggregateStoreError, DiskAggregateStore};
-use crate::commons::remote::builder::SignedMessageBuilder;
 use crate::commons::remote::cmslogger::CmsLogger;
+use crate::commons::remote::crypto::{ProtocolCms, ProtocolCmsBuilder};
 use crate::commons::remote::rfc8181;
 use crate::commons::remote::rfc8183;
-use crate::commons::remote::sigmsg::SignedMessage;
 use crate::commons::util::softsigner::OpenSslSigner;
 use crate::commons::KrillResult;
 use crate::constants::*;
@@ -131,7 +130,7 @@ impl PubServer {
         let repository = self.repository()?;
         let publisher = repository.get_publisher(&publisher_handle)?;
 
-        let msg = SignedMessage::decode(msg_bytes.clone(), false)
+        let msg = ProtocolCms::decode(msg_bytes.clone(), false)
             .map_err(|e| Error::Rfc8181Decode(e.to_string()))?;
         let cms_logger =
             CmsLogger::for_rfc8181_rcvd(self.rfc8181_log_dir.as_ref(), &publisher_handle);
@@ -163,12 +162,9 @@ impl PubServer {
 
         let signer = self.signer.read().map_err(Error::signer)?;
 
-        let response_builder = SignedMessageBuilder::create(
-            repository.key_id(),
-            signer.deref(),
-            response.into_bytes(),
-        )
-        .map_err(Error::signer)?;
+        let response_builder =
+            ProtocolCmsBuilder::create(repository.key_id(), signer.deref(), response.into_bytes())
+                .map_err(Error::signer)?;
 
         let response_bytes = response_builder.as_bytes();
         if should_log_cms {
@@ -278,8 +274,7 @@ mod tests {
     use crate::commons::api::rrdp::CurrentObjects;
     use crate::commons::api::rrdp::PublicationDeltaError;
     use crate::commons::api::{ListElement, PublishDeltaBuilder};
-    use crate::commons::remote::builder::IdCertBuilder;
-    use crate::commons::remote::id::IdCert;
+    use crate::commons::remote::crypto::{IdCert, IdCertBuilder};
     use crate::commons::util::file::CurrentFile;
     use crate::pubd::Publisher;
     use crate::test;

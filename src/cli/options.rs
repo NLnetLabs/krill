@@ -17,7 +17,7 @@ use crate::commons::api::{
     ParentCaContact, ParentCaReq, ParentHandle, PublisherHandle, ResourceSet, ResourceSetError,
     RoaDefinitionUpdates, Token, UpdateChildRequest,
 };
-use crate::commons::remote::id::IdCert;
+use crate::commons::remote::crypto::IdCert;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
 use crate::constants::*;

@@ -17,7 +17,7 @@ use crate::commons::api::{
 };
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::Aggregate;
-use crate::commons::remote::id::IdCert;
+use crate::commons::remote::crypto::IdCert;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
 use crate::commons::KrillResult;

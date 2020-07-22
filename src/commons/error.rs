@@ -766,7 +766,7 @@ mod tests {
     use std::str::FromStr;
 
     use crate::commons::api::RoaDefinition;
-    use crate::commons::remote::id::tests::test_id_certificate;
+    use crate::commons::remote::crypto::test_id_certificate;
 
     use super::*;
 

@@ -12,10 +12,10 @@ use bcder::encode::{Constructed, PrimitiveContent, Values};
 use bcder::{decode, encode};
 use bcder::{BitString, Mode, Tag};
 
-use rpki::cert::ext::{AuthorityKeyIdentifier, BasicCa, SubjectKeyIdentifier};
 use rpki::crypto::{PublicKey, Signature, SignatureAlgorithm};
 use rpki::x509::{Name, Validity};
 
+use crate::commons::remote::crypto::IdExtensions;
 use crate::commons::util::file;
 
 const KEY_SIZE: u32 = 2048;
@@ -164,7 +164,7 @@ struct TbsHttpsCertificate {
     subject_public_key_info: PublicKey,
     // issuerUniqueID is not used
     // subjectUniqueID is not used
-    extensions: HttpsCertExtensions,
+    extensions: IdExtensions,
 }
 
 impl From<&PublicKey> for TbsHttpsCertificate {
@@ -176,7 +176,7 @@ impl From<&PublicKey> for TbsHttpsCertificate {
         };
         let subject = issuer.clone();
         let subject_public_key_info = pk.clone();
-        let extensions = HttpsCertExtensions::from(pk);
+        let extensions = IdExtensions::from(pk);
 
         TbsHttpsCertificate {
             issuer,
@@ -207,51 +207,6 @@ impl TbsHttpsCertificate {
                 self.extensions.encode(),
             ),
         ))
-    }
-}
-
-//------------ IdExtensions --------------------------------------------------
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct HttpsCertExtensions {
-    /// Basic Constraints.
-    ///
-    /// The field indicates whether the extension is present and, if so,
-    /// whether the "cA" boolean is set. See 4.8.1. of RFC 6487.
-    basic_ca: BasicCa,
-
-    /// Subject Key Identifier.
-    subject_key_id: SubjectKeyIdentifier,
-
-    /// Authority Key Identifier
-    authority_key_id: AuthorityKeyIdentifier,
-}
-
-impl From<&PublicKey> for HttpsCertExtensions {
-    fn from(pk: &PublicKey) -> Self {
-        let basic_ca = BasicCa::new(true, true);
-        let subject_key_id = SubjectKeyIdentifier::new(pk);
-        let authority_key_id = AuthorityKeyIdentifier::new(pk);
-
-        HttpsCertExtensions {
-            basic_ca,
-            subject_key_id,
-            authority_key_id,
-        }
-    }
-}
-
-/// # Encoding
-impl HttpsCertExtensions {
-    pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
-        Constructed::new(
-            Tag::CTX_3,
-            encode::sequence((
-                self.basic_ca.encode(),
-                self.subject_key_id.clone().encode(),
-                self.authority_key_id.clone().encode(),
-            )),
-        )
     }
 }
 

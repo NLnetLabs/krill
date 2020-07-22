@@ -12,7 +12,7 @@ use crate::commons::api::{
     StorableCaCommand,
 };
 use crate::commons::eventsourcing;
-use crate::commons::remote::id::IdCert;
+use crate::commons::remote::crypto::IdCert;
 use crate::daemon::ca::{Evt, RouteAuthorizationUpdates, Signer};
 
 //------------ Command -----------------------------------------------------

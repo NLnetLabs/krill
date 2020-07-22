@@ -7,7 +7,7 @@ use rpki::x509::Time;
 
 use crate::commons::api::{ChildCaInfo, ChildHandle, IssuedCert, ResourceClassName, ResourceSet};
 use crate::commons::error::Error;
-use crate::commons::remote::id::IdCert;
+use crate::commons::remote::crypto::IdCert;
 use crate::commons::KrillResult;
 use crate::daemon::config::CONFIG;
 

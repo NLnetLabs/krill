@@ -23,11 +23,9 @@ use crate::commons::api::{
 };
 use crate::commons::error::{Error, RoaDeltaError};
 use crate::commons::eventsourcing::{Aggregate, StoredEvent};
-use crate::commons::remote::builder::{IdCertBuilder, SignedMessageBuilder};
-use crate::commons::remote::id::IdCert;
+use crate::commons::remote::crypto::{IdCert, IdCertBuilder, ProtocolCms, ProtocolCmsBuilder};
 use crate::commons::remote::rfc6492;
 use crate::commons::remote::rfc8183;
-use crate::commons::remote::sigmsg::SignedMessage;
 use crate::commons::KrillResult;
 use crate::constants::KRILL_ENV_TEST;
 use crate::daemon::ca::events::ChildCertificateUpdates;
@@ -534,7 +532,7 @@ impl<S: Signer> CertAuth<S> {
 /// # Being a parent
 ///
 impl<S: Signer> CertAuth<S> {
-    pub fn verify_rfc6492(&self, msg: SignedMessage) -> KrillResult<rfc6492::Message> {
+    pub fn verify_rfc6492(&self, msg: ProtocolCms) -> KrillResult<rfc6492::Message> {
         let content = rfc6492::Message::from_signed_message(&msg)?;
 
         let child_handle = content.sender();
@@ -552,7 +550,7 @@ impl<S: Signer> CertAuth<S> {
 
     pub fn sign_rfc6492_response(&self, msg: rfc6492::Message, signer: &S) -> KrillResult<Bytes> {
         let key = &self.id.key;
-        Ok(SignedMessageBuilder::create(key, signer, msg.into_bytes())
+        Ok(ProtocolCmsBuilder::create(key, signer, msg.into_bytes())
             .map_err(Error::signer)?
             .as_bytes())
     }

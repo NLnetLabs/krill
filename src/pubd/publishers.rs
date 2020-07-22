@@ -3,7 +3,7 @@ use rpki::uri;
 use crate::commons::api::rrdp::{CurrentObjects, DeltaElements};
 use crate::commons::api::{ListReply, PublisherDetails, PublisherHandle};
 use crate::commons::error::Error;
-use crate::commons::remote::id::IdCert;
+use crate::commons::remote::crypto::IdCert;
 use crate::commons::KrillResult;
 
 //------------ Publisher -----------------------------------------------------

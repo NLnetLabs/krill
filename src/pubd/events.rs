@@ -9,8 +9,7 @@ use crate::commons::api::rrdp::{Delta, DeltaElements, Notification, RrdpSession}
 use crate::commons::api::{Handle, PublisherHandle, RepositoryHandle};
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::StoredEvent;
-use crate::commons::remote::builder::IdCertBuilder;
-use crate::commons::remote::id::IdCert;
+use crate::commons::remote::crypto::{IdCert, IdCertBuilder};
 use crate::commons::KrillResult;
 use crate::constants::REPOSITORY_DIR;
 use crate::daemon::ca::Signer;
