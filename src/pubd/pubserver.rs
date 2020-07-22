@@ -91,7 +91,8 @@ impl PubServer {
                 work_dir,
                 signer.deref_mut(),
             )?;
-            store.add(ini)?;
+            let repo = store.add(ini)?;
+            repo.write()?;
         }
 
         Ok(PubServer {
