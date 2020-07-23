@@ -240,9 +240,9 @@ jobs:
         # namespacing: Permission denied" in a Debian 10 container.
         sg lxd -c "lxc launch $LXC_IMAGE -c security.nesting=true testcon"
 
-    # Run apt-get update and install man support (missing in some LXC/LXD O/S
-    # images) but first wait for cloud-init to finish otherwise the network
-    # isn't yet ready.
+    # Run apt-get update and install packages missing in some O/S images that
+    # are needed by later steps, but first wait for cloud-init to finish
+    # otherwise the network isn't yet ready.
     - name: Prepare container
       shell: bash
       run: |
@@ -270,7 +270,7 @@ jobs:
           sleep 1s
         done
         sg lxd -c "lxc exec testcon -- apt-get update"
-        sg lxd -c "lxc exec testcon -- apt-get install -y man"
+        sg lxd -c "lxc exec testcon -- apt-get install -y apt-transport-https gnupg2 man wget"
 
     - name: Copy DEB into LXC container
       run: |
