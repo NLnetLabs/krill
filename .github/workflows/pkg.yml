@@ -143,7 +143,14 @@ jobs:
         #   - https://unix.stackexchange.com/a/190899
         #   - https://www.debian.org/doc/debian-policy/ch-controlfields.html#version
         # Therefore we generate the version ourselves.
-        KRILL_VER=$(cargo read-manifest | jq -r '.version')
+        #
+        # In addition, Semantic Versioning and Debian version policy cannot
+        # express a pre-release label in the same way. For example 0.8.0-rc.1
+        # is a valid Cargo.toml [package].version value but when used as a
+        # Debian package version 0.8.0-rc.1 would be considered _NEWER_ than
+        # the final 0.8.0 release. To express this in a Debian compatible way we
+        # must replace the dash '-' with a tilda '~'.
+        KRILL_VER=$(cargo read-manifest | jq -r '.version' | tr '-' '~')
         case ${MATRIX_IMAGE} in
           ubuntu:16.04) OS_REL=xenial ;;
           ubuntu:18.04) OS_REL=bionic ;;
