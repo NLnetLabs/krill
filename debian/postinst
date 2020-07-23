@@ -42,3 +42,5 @@ configure)
     create_first_time_configuration
     ;;
 esac
+
+#DEBHELPER#

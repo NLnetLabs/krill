@@ -1,7 +1,7 @@
 [package]
 # Note: some of these values are also used when building Debian packages below.
 name    = "krill"
-version = "0.7.3"
+version = "0.8.0-rc.1"
 edition = "2018"
 authors = [ "The NLnet Labs RPKI team <rpki-team@nlnetlabs.nl>" ]
 description = "Resource Public Key Infrastructure (RPKI) daemon"
@@ -87,31 +87,22 @@ priority = "optional"
 section = "net"
 extended-description-file = "debian/description.txt"
 license-file = ["LICENSE", "0"]
-maintainer-scripts = "debian/scripts/"
 depends = "$auto, adduser, libssl1.1"
-
-[package.metadata.deb.variants.ubuntu2004]
+maintainer-scripts = "debian/"
 assets = [
     ["target/release/krill", "/usr/bin/krill", "755"],
     ["target/release/krillc", "/usr/bin/krillc", "755"],
     ["defaults/krill.conf", "/usr/share/doc/krill/krill.conf", "644"],
     ["doc/krill.1", "/usr/share/man/man1/krill.1", "644"],
     ["doc/krillc.1", "/usr/share/man/man1/krillc.1", "644"],
-    ["debian/assets/krill.service.ubuntu2004", "/lib/systemd/system/krill.service", "644"]
 ]
 
-# Variant of the Debian packaging configuration that uses a slightly simpler
-# systemd service unit file because Ubuntu 18.04 doesn't support newer features
-# supported by Ubuntu 20.04.
-[package.metadata.deb.variants.ubuntu1804]
-assets = [
-    ["target/release/krill", "/usr/bin/krill", "755"],
-    ["target/release/krillc", "/usr/bin/krillc", "755"],
-    ["defaults/krill.conf", "/usr/share/doc/krill/krill.conf", "644"],
-    ["doc/krill.1", "/usr/share/man/man1/krill.1", "644"],
-    ["doc/krillc.1", "/usr/share/man/man1/krillc.1", "644"],
-    ["debian/assets/krill.service.ubuntu1804", "/lib/systemd/system/krill.service", "644"]
-]
+[package.metadata.deb.systemd-units]
+unit-name = "krill"
+enable = false
+start = true
+restart-after-upgrade = false
+stop-on-upgrade = true
 
 # Variant of the Debian packaging configuration that:
 #   a) statically links with OpenSSL when building a Debian package because the
@@ -123,38 +114,16 @@ assets = [
 [package.metadata.deb.variants.ubuntu1604]
 features = [ "static-openssl" ]
 depends = "$auto, adduser"
-assets = [
-    ["target/release/krill", "/usr/bin/krill", "755"],
-    ["target/release/krillc", "/usr/bin/krillc", "755"],
-    ["defaults/krill.conf", "/usr/share/doc/krill/krill.conf", "644"],
-    ["doc/krill.1", "/usr/share/man/man1/krill.1", "644"],
-    ["doc/krillc.1", "/usr/share/man/man1/krillc.1", "644"],
-    ["debian/assets/krill.service.ubuntu1604", "/lib/systemd/system/krill.service", "644"]
-]
 
-# Debian 10 variant, identical to the Ubuntu 1804 variant.
-[package.metadata.deb.variants.debian10]
-assets = [
-    ["target/release/krill", "/usr/bin/krill", "755"],
-    ["target/release/krillc", "/usr/bin/krillc", "755"],
-    ["defaults/krill.conf", "/usr/share/doc/krill/krill.conf", "644"],
-    ["doc/krill.1", "/usr/share/man/man1/krill.1", "644"],
-    ["doc/krillc.1", "/usr/share/man/man1/krillc.1", "644"],
-    ["debian/assets/krill.service.ubuntu1804", "/lib/systemd/system/krill.service", "644"]
-]
+[package.metadata.deb.variants.ubuntu1804]
 
-# Debian 9 variant, identical to the Ubuntu 1604 variant.
+[package.metadata.deb.variants.ubuntu2004]
+
 [package.metadata.deb.variants.debian9]
 features = [ "static-openssl" ]
 depends = "$auto, adduser"
-assets = [
-    ["target/release/krill", "/usr/bin/krill", "755"],
-    ["target/release/krillc", "/usr/bin/krillc", "755"],
-    ["defaults/krill.conf", "/usr/share/doc/krill/krill.conf", "644"],
-    ["doc/krill.1", "/usr/share/man/man1/krill.1", "644"],
-    ["doc/krillc.1", "/usr/share/man/man1/krillc.1", "644"],
-    ["debian/assets/krill.service.ubuntu1604", "/lib/systemd/system/krill.service", "644"]
-]
+
+[package.metadata.deb.variants.debian10]
 
 # END DEBIAN PACKAGING
 # ------------------------------------------------------------------------------
