@@ -59,7 +59,7 @@ jobs:
           "debian:10",
         ]
     env:
-      CARGO_DEB_VER: 1.23.1
+      CARGO_DEB_VER: CUSTOM
     name: deb-pkg
     runs-on: ubuntu-latest
     # Build on the oldest platform we are targeting in order to avoid
