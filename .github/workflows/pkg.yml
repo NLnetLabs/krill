@@ -356,21 +356,8 @@ jobs:
         echo -e "\nKRILL DATA DIR:"
         sg lxd -c "lxc exec testcon -- ls -la /var/lib/krill"
 
-        echo -e "\nKRILL SERVICE STATUS BEFORE ENABLE:"
+        echo -e "\nKRILL SERVICE STATUS:"
         sg lxd -c "lxc exec testcon -- systemctl status krill || true"
-
-        echo -e "\nENABLE KRILL SERVICE:"
-        sg lxd -c "lxc exec testcon -- systemctl enable krill"
-
-        echo -e "\nKRILL SERVICE STATUS AFTER ENABLE:"
-        sg lxd -c "lxc exec testcon -- systemctl status krill || true"
-
-        echo -e "\nSTART KRILL SERVICE:"
-        sg lxd -c "lxc exec testcon -- systemctl start krill"
-        
-        echo -e "\nKRILL SERVICE STATUS AFTER START:"
-        sleep 1s
-        sg lxd -c "lxc exec testcon -- systemctl status krill"
 
         echo -e "\nKRILL MAN PAGE:"
         sg lxd -c "lxc exec testcon -- man -P cat krill"
