@@ -23,7 +23,7 @@ use crate::commons::api::{
     AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildAuthRequest, ChildHandle,
     Handle, ParentCaContact, ParentCaReq, ParentHandle, Publish, PublisherDetails, PublisherHandle,
     RepositoryUpdate, ResourceClassKeysInfo, ResourceClassName, ResourceSet, RoaDefinition,
-    RoaDefinitionUpdates, UpdateChildRequest,
+    RoaDefinitionUpdates, TypedPrefix, UpdateChildRequest,
 };
 use crate::commons::bgp::Announcement;
 use crate::commons::remote::rfc8183;
@@ -503,4 +503,8 @@ pub fn announcement(s: &str) -> Announcement {
 
 pub fn definition(s: &str) -> RoaDefinition {
     RoaDefinition::from_str(s).unwrap()
+}
+
+pub fn typed_prefix(s: &str) -> TypedPrefix {
+    TypedPrefix::from_str(s).unwrap()
 }

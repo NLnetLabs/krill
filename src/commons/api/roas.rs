@@ -180,6 +180,14 @@ impl RoaDefinition {
             && self.prefix.matching_or_less_specific(&other.prefix)
             && self.effective_max_length() >= other.effective_max_length()
     }
+
+    /// Returns all prefixes covered by the max length of this definition.
+    /// Note that if the effective max length equals the prefix length, this
+    /// means that the single prefix in this definition is returned.
+    pub fn to_specific_prefixes(&self) -> Vec<TypedPrefix> {
+        self.prefix
+            .to_specific_prefixes(self.effective_max_length())
+    }
 }
 
 impl FromStr for RoaDefinition {
@@ -412,6 +420,31 @@ impl TypedPrefix {
         self.matches_type(other)
             && self.prefix().min().le(&other.prefix().min())
             && self.prefix().max().ge(&other.prefix().max())
+    }
+
+    pub fn to_specific_prefixes(&self, len: u8) -> Vec<TypedPrefix> {
+        let mut res = vec![];
+
+        let nr_specifics = 1 << len - self.addr_len();
+
+        // note that the lower 12 bytes are disregarded for IPv4
+        // by our implementation, so the increment here is the
+        // same for both address families.
+        let increment: u128 = 1 << (128 - len);
+
+        for i in 0..nr_specifics {
+            let base = self.addr().to_bits() + i * increment;
+            let pfx = Prefix::new(base, len);
+
+            let pfx = match self {
+                TypedPrefix::V4(_) => TypedPrefix::V4(Ipv4Prefix(pfx)),
+                TypedPrefix::V6(_) => TypedPrefix::V6(Ipv6Prefix(pfx)),
+            };
+
+            res.push(pfx);
+        }
+
+        res
     }
 }
 
@@ -658,6 +691,7 @@ mod tests {
     use super::*;
 
     use crate::test::definition;
+    use crate::test::typed_prefix;
 
     #[test]
     fn parse_delta() {
@@ -784,5 +818,24 @@ mod tests {
         let roa_group_asn_only_expected =
             RoaAggregateKey::from_str(roa_group_asn_only_expected_str).unwrap();
         assert_eq!(roa_group_asn_only, roa_group_asn_only_expected)
+    }
+
+    #[test]
+    fn split_definition_to_specifics() {
+        fn check(def: &str, pfxs: &[&str]) {
+            let def = definition(def);
+            let expected: Vec<TypedPrefix> = pfxs.iter().map(|s| typed_prefix(s)).collect();
+            let seen = def.to_specific_prefixes();
+            assert_eq!(seen, expected);
+        }
+
+        check("10.0.0.0/16-16 => 64496", &["10.0.0.0/16"]);
+        check("10.0.0.0/15-16 => 64496", &["10.0.0.0/16", "10.1.0.0/16"]);
+
+        check("2001:db8::/32-32 => 64496", &["2001:db8::/32"]);
+        check(
+            "2001:db8::/32-33 => 64496",
+            &["2001:db8::/33", "2001:db8:8000::/33"],
+        );
     }
 }
