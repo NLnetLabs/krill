@@ -195,6 +195,9 @@ jobs:
           - 'ubuntu:20.04'
           - 'debian:9'
           - 'debian:10'
+        mode:
+          - 'fresh-install'
+          - 'upgrade-from-published'
     steps:
     # Set some environment variables that will be available to "run" steps below
     # in this job, and some output variables that will be available in GH Action
@@ -275,11 +278,70 @@ jobs:
         echo ::set-env name=DEB_FILE::$DEB_FILE
         sg lxd -c "lxc file push ${DEB_FILE} testcon/tmp/"
 
-    - name: Install DEB package
+    - name: Install published DEB package
+      if: ${{ matrix.mode == 'upgrade-from-published' }}
+      run: |
+        case ${MATRIX_IMAGE} in
+          ubuntu:16.04) OS=ubuntu; OS_REL=xenial ;;
+          ubuntu:18.04) OS=ubuntu; OS_REL=bionic ;;
+          ubuntu:20.04) OS=ubuntu; OS_REL=focal ;;
+          debian:9)     OS=debian; OS_REL=stretch ;;
+          debian:10)    OS=debian; OS_REL=buster ;;
+          *)            echo 2>&1 "ERROR: Unexpected matrix image"; exit 1 ;;
+        esac
+        echo "deb [arch=amd64] https://packages.nlnetlabs.nl/linux/${OS}/ ${OS_REL} main" >$HOME/nlnetlabs.list
+        sg lxd -c "lxc file push $HOME/nlnetlabs.list testcon/etc/apt/sources.list.d/"
+        sg lxd -c "lxc exec testcon -- wget -qO- https://packages.nlnetlabs.nl/aptkey.asc | apt-key add -"
+        sg lxd -c "lxc exec testcon -- apt update"
+        sg lxd -c "lxc exec testcon -- apt install -y krill"
+      env:
+        MATRIX_IMAGE: ${{ matrix.image }}
+
+    - name: Install new DEB package
+      if: ${{ matrix.mode == 'fresh-install' }}
       run: |
         sg lxd -c "lxc exec testcon -- apt-get -y install /tmp/$DEB_FILE"
 
     - name: Test installed packages
+      run: |
+        echo -e "\nKRILLC VERSION:"
+        sg lxd -c "lxc exec testcon -- krillc --version"
+
+        echo -e "\nKRILL VERSION:"
+        sg lxd -c "lxc exec testcon -- krill --version"
+
+        echo -e "\nKRILL CONF:"
+        sg lxd -c "lxc exec testcon -- cat /etc/krill.conf"
+
+        echo -e "\nKRILL DATA DIR:"
+        sg lxd -c "lxc exec testcon -- ls -la /var/lib/krill"
+
+        echo -e "\nKRILL SERVICE STATUS BEFORE ENABLE:"
+        sg lxd -c "lxc exec testcon -- systemctl status krill || true"
+
+        echo -e "\nENABLE KRILL SERVICE:"
+        sg lxd -c "lxc exec testcon -- systemctl enable krill"
+
+        echo -e "\nKRILL SERVICE STATUS AFTER ENABLE:"
+        sg lxd -c "lxc exec testcon -- systemctl status krill || true"
+
+        echo -e "\nSTART KRILL SERVICE:"
+        sg lxd -c "lxc exec testcon -- systemctl start krill"
+        
+        echo -e "\nKRILL SERVICE STATUS AFTER START:"
+        sleep 1s
+        sg lxd -c "lxc exec testcon -- systemctl status krill"
+
+        echo -e "\nKRILL MAN PAGE:"
+        sg lxd -c "lxc exec testcon -- man -P cat krill"
+
+    - name: Install new DEB package
+      if: ${{ matrix.mode == 'upgrade-from-published' }}
+      run: |
+        sg lxd -c "lxc exec testcon -- apt-get -y install /tmp/$DEB_FILE"
+
+    - name: Test installed packages
+      if: ${{ matrix.mode == 'upgrade-from-published' }}
       run: |
         echo -e "\nKRILLC VERSION:"
         sg lxd -c "lxc exec testcon -- krillc --version"
