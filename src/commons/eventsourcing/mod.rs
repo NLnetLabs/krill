@@ -11,8 +11,7 @@ pub use self::cmd::{Command, CommandDetails, SentCommand, StoredCommand, WithSto
 
 mod store;
 pub use self::store::{
-    CommandKey, CommandKeyError, DiskKeyStore, KeyStore, KeyStoreError, KeyStoreVersion, Storable,
-    StoredValueInfo,
+    CommandKey, CommandKeyError, DiskKeyStore, KeyStore, KeyStoreError, KeyStoreVersion, Storable, StoredValueInfo,
 };
 
 mod agg_store;
@@ -53,13 +52,7 @@ mod tests {
 
     impl InitPersonEvent {
         pub fn init(id: &Handle, name: &str) -> Self {
-            StoredEvent::new(
-                id,
-                0,
-                InitPersonDetails {
-                    name: name.to_string(),
-                },
-            )
+            StoredEvent::new(id, 0, InitPersonDetails { name: name.to_string() })
         }
     }
 
@@ -106,9 +99,7 @@ mod tests {
     impl fmt::Display for PersonEventDetails {
         fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             match self {
-                PersonEventDetails::NameChanged(new_name) => {
-                    write!(f, "changed name to '{}'", new_name)
-                }
+                PersonEventDetails::NameChanged(new_name) => write!(f, "changed name to '{}'", new_name),
                 PersonEventDetails::HadBirthday => write!(f, "went around the sun."),
             }
         }
@@ -146,9 +137,7 @@ mod tests {
                 PersonCommandDetails::ChangeName(name) => {
                     CommandSummary::new("person-change-name", &self).with_arg("name", name)
                 }
-                PersonCommandDetails::GoAroundTheSun => {
-                    CommandSummary::new("person-around-sun", &self)
-                }
+                PersonCommandDetails::GoAroundTheSun => CommandSummary::new("person-around-sun", &self),
             }
         }
     }

@@ -14,9 +14,7 @@ use serde::{de, ser};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::crypto::signer::KeyError;
-use rpki::crypto::{
-    KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
-};
+use rpki::crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError};
 
 //------------ OpenSslSigner -------------------------------------------------
 
@@ -46,17 +44,11 @@ impl OpenSslSigner {
 }
 
 impl OpenSslSigner {
-    fn sign_with_key<D: AsRef<[u8]> + ?Sized>(
-        pkey: &PKeyRef<Private>,
-        data: &D,
-    ) -> Result<Signature, SignerError> {
+    fn sign_with_key<D: AsRef<[u8]> + ?Sized>(pkey: &PKeyRef<Private>, data: &D) -> Result<Signature, SignerError> {
         let mut signer = ::openssl::sign::Signer::new(MessageDigest::sha256(), pkey)?;
         signer.update(data.as_ref())?;
 
-        let signature = Signature::new(
-            SignatureAlgorithm::default(),
-            Bytes::from(signer.sign_to_vec()?),
-        );
+        let signature = Signature::new(SignatureAlgorithm::default(), Bytes::from(signer.sign_to_vec()?));
 
         Ok(signature)
     }
@@ -152,11 +144,7 @@ impl Serialize for OpenSslKeyPair {
     where
         S: Serializer,
     {
-        let bytes: Vec<u8> = self
-            .pkey
-            .as_ref()
-            .private_key_to_der()
-            .map_err(ser::Error::custom)?;
+        let bytes: Vec<u8> = self.pkey.as_ref().private_key_to_der().map_err(ser::Error::custom)?;
 
         base64::encode(&bytes).serialize(s)
     }

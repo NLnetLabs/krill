@@ -12,9 +12,7 @@ use rpki::manifest::FileAndHash;
 use rpki::uri;
 use rpki::x509::{Name, Serial, Time, Validity};
 
-use crate::commons::api::{
-    IssuedCert, RcvdCert, ReplacedObject, RequestResourceLimit, ResourceSet,
-};
+use crate::commons::api::{IssuedCert, RcvdCert, ReplacedObject, RequestResourceLimit, ResourceSet};
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
 use crate::daemon::ca::{self, CertifiedKey};
@@ -22,14 +20,8 @@ use crate::daemon::config::CONFIG;
 
 //------------ Signer --------------------------------------------------------
 
-pub trait Signer:
-    crypto::Signer<KeyId = KeyIdentifier> + Clone + Sized + Sync + Send + 'static
-{
-}
-impl<T: crypto::Signer<KeyId = KeyIdentifier> + Clone + Sized + Sync + Send + 'static> Signer
-    for T
-{
-}
+pub trait Signer: crypto::Signer<KeyId = KeyIdentifier> + Clone + Sized + Sync + Send + 'static {}
+impl<T: crypto::Signer<KeyId = KeyIdentifier> + Clone + Sized + Sync + Send + 'static> Signer for T {}
 
 //------------ CsrInfo -------------------------------------------------------
 
@@ -77,12 +69,7 @@ impl CsrInfo {
     }
 
     pub fn unpack(self) -> (CaRepository, RpkiManifest, Option<RpkiNotify>, PublicKey) {
-        (
-            self.ca_repository,
-            self.rpki_manifest,
-            self.rpki_notify,
-            self.key,
-        )
+        (self.ca_repository, self.rpki_manifest, self.rpki_notify, self.key)
     }
 
     pub fn key_id(&self) -> KeyIdentifier {
@@ -94,8 +81,7 @@ impl TryFrom<&Csr> for CsrInfo {
     type Error = ca::Error;
 
     fn try_from(csr: &Csr) -> KrillResult<CsrInfo> {
-        csr.validate()
-            .map_err(|_| Error::invalid_csr("invalid signature"))?;
+        csr.validate().map_err(|_| Error::invalid_csr("invalid signature"))?;
         let ca_repository = csr
             .ca_repository()
             .cloned()
@@ -193,9 +179,7 @@ impl SignSupport {
         let issuer = signing_cert.cert().subject().clone();
 
         let validity = match &request {
-            CertRequest::Ca(_) => {
-                Self::sign_validity_weeks(CONFIG.timing_child_certificate_valid_weeks)
-            }
+            CertRequest::Ca(_) => Self::sign_validity_weeks(CONFIG.timing_child_certificate_valid_weeks),
             CertRequest::Ee(_, validity) => *validity,
         };
 
@@ -213,9 +197,7 @@ impl SignSupport {
 
         let overclaim = Overclaim::Refuse;
 
-        let mut cert = TbsCert::new(
-            serial, issuer, validity, subject, pub_key, key_usage, overclaim,
-        );
+        let mut cert = TbsCert::new(serial, issuer, validity, subject, pub_key, key_usage, overclaim);
 
         let asns = resources.to_as_resources();
         if asns.is_inherited() || !asns.as_blocks().unwrap().is_empty() {

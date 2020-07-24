@@ -66,14 +66,9 @@ impl<R: io::Read> XmlReader<R> {
     /// Takes the next element and expects a start element with the given name.
     fn expect_element(&mut self) -> Result<(Tag, Attributes), XmlReaderErr> {
         match self.next() {
-            Ok(reader::XmlEvent::StartElement {
-                name, attributes, ..
-            }) => Ok((
-                Tag {
-                    name: name.local_name,
-                },
-                Attributes { attributes },
-            )),
+            Ok(reader::XmlEvent::StartElement { name, attributes, .. }) => {
+                Ok((Tag { name: name.local_name }, Attributes { attributes }))
+            }
             _ => Err(XmlReaderErr::ExpectedStart),
         }
     }
@@ -191,12 +186,8 @@ impl<R: io::Read> XmlReader<R> {
     {
         let n = self.next()?;
         match n {
-            XmlEvent::StartElement {
-                name, attributes, ..
-            } => {
-                let tag = Tag {
-                    name: name.local_name,
-                };
+            XmlEvent::StartElement { name, attributes, .. } => {
+                let tag = Tag { name: name.local_name };
                 let res = op(&tag, Attributes { attributes }, self)?;
                 self.expect_close(tag)?;
                 Ok(res)
@@ -344,10 +335,7 @@ pub struct Attributes {
 impl Attributes {
     /// Takes an optional attribute by name
     pub fn take_opt(&mut self, name: &str) -> Option<String> {
-        let i = self
-            .attributes
-            .iter()
-            .position(|a| a.name.local_name == name);
+        let i = self.attributes.iter().position(|a| a.name.local_name == name);
         match i {
             Some(i) => {
                 let a = self.attributes.swap_remove(i);
@@ -445,12 +433,7 @@ impl<W: io::Write> XmlWriter<W> {
     }
 
     /// Adds an element
-    pub fn put_element<F>(
-        &mut self,
-        name: &str,
-        attr: Option<&[(&str, &str)]>,
-        op: F,
-    ) -> Result<(), io::Error>
+    pub fn put_element<F>(&mut self, name: &str, attr: Option<&[(&str, &str)]>, op: F) -> Result<(), io::Error>
     where
         F: FnOnce(&mut Self) -> Result<(), io::Error>,
     {

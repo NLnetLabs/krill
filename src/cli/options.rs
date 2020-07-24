@@ -13,9 +13,9 @@ use rpki::x509::Time;
 use crate::cli::report::{ReportError, ReportFormat};
 use crate::commons::api::RepositoryUpdate;
 use crate::commons::api::{
-    AddChildRequest, AuthorizationFmtError, CertAuthInit, ChildAuthRequest, ChildHandle, Handle,
-    ParentCaContact, ParentCaReq, ParentHandle, PublisherHandle, ResourceSet, ResourceSetError,
-    RoaDefinitionUpdates, Token, UpdateChildRequest,
+    AddChildRequest, AuthorizationFmtError, CertAuthInit, ChildAuthRequest, ChildHandle, Handle, ParentCaContact,
+    ParentCaReq, ParentHandle, PublisherHandle, ResourceSet, ResourceSetError, RoaDefinitionUpdates, Token,
+    UpdateChildRequest,
 };
 use crate::commons::remote::crypto::IdCert;
 use crate::commons::remote::rfc8183;
@@ -52,9 +52,7 @@ impl GeneralArgs {
                 token = Some(Token::from(token_str));
             }
 
-            token.ok_or_else(|| {
-                Error::missing_arg_with_env(KRILL_CLI_TOKEN_ARG, KRILL_CLI_TOKEN_ENV)
-            })?
+            token.ok_or_else(|| Error::missing_arg_with_env(KRILL_CLI_TOKEN_ARG, KRILL_CLI_TOKEN_ENV))?
         };
 
         let format = {
@@ -212,8 +210,8 @@ impl Options {
     }
 
     fn make_config_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut config_sub = SubCommand::with_name("config")
-            .about("Creates a configuration file for krill and prints it to STDOUT.");
+        let mut config_sub =
+            SubCommand::with_name("config").about("Creates a configuration file for krill and prints it to STDOUT.");
 
         fn add_data_dir_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
             app.arg(
@@ -261,8 +259,7 @@ impl Options {
             )
         }
 
-        let mut with_repo =
-            SubCommand::with_name("repo").about("Use a self-hosted repository (not recommended)");
+        let mut with_repo = SubCommand::with_name("repo").about("Use a self-hosted repository (not recommended)");
 
         with_repo = Self::add_general_args(with_repo);
         with_repo = add_data_dir_arg(with_repo);
@@ -270,8 +267,7 @@ impl Options {
         with_repo = add_rsync_base_arg(with_repo);
         with_repo = add_rrdp_service_uri_arg(with_repo);
 
-        let mut with_3rd =
-            SubCommand::with_name("simple").about("Use a 3rd party repository for publishing");
+        let mut with_3rd = SubCommand::with_name("simple").about("Use a 3rd party repository for publishing");
 
         with_3rd = Self::add_general_args(with_3rd);
         with_3rd = add_data_dir_arg(with_3rd);
@@ -349,8 +345,7 @@ impl Options {
     }
 
     fn make_cas_show_action_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub =
-            SubCommand::with_name("action").about("Show details for a specific CA action.");
+        let mut sub = SubCommand::with_name("action").about("Show details for a specific CA action.");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -413,8 +408,7 @@ impl Options {
     }
 
     fn make_cas_children_response_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub =
-            SubCommand::with_name("response").about("Show the RFC8183 Parent Response XML.");
+        let mut sub = SubCommand::with_name("response").about("Show the RFC8183 Parent Response XML.");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -424,8 +418,7 @@ impl Options {
     }
 
     fn make_cas_children_info_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub =
-            SubCommand::with_name("info").about("Show info for a child (id and resources).");
+        let mut sub = SubCommand::with_name("info").about("Show info for a child (id and resources).");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -484,8 +477,7 @@ impl Options {
     }
 
     fn make_cas_parents_update_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub =
-            SubCommand::with_name("update").about("Update an existing parent of this CA.");
+        let mut sub = SubCommand::with_name("update").about("Update an existing parent of this CA.");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -503,8 +495,7 @@ impl Options {
     }
 
     fn make_cas_parents_contact_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("contact")
-            .about("Show contact information for a parent of this CA.");
+        let mut sub = SubCommand::with_name("contact").about("Show contact information for a parent of this CA.");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -514,8 +505,7 @@ impl Options {
     }
 
     fn make_cas_parents_remove_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub =
-            SubCommand::with_name("remove").about("Remove an existing parent from this CA.");
+        let mut sub = SubCommand::with_name("remove").about("Remove an existing parent from this CA.");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -537,8 +527,7 @@ impl Options {
     }
 
     fn make_cas_keyroll_init_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub =
-            SubCommand::with_name("init").about("Initialise roll for all keys held by this CA.");
+        let mut sub = SubCommand::with_name("init").about("Initialise roll for all keys held by this CA.");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -547,8 +536,7 @@ impl Options {
     }
 
     fn make_cas_keyroll_activate_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub =
-            SubCommand::with_name("activate").about("Finish roll for all keys held by this CA.");
+        let mut sub = SubCommand::with_name("activate").about("Finish roll for all keys held by this CA.");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -608,8 +596,7 @@ impl Options {
     }
 
     fn make_cas_routes_bgp_announcements_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub =
-            SubCommand::with_name("announcements").about("Show announcement centric report.");
+        let mut sub = SubCommand::with_name("announcements").about("Show announcement centric report.");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -625,8 +612,8 @@ impl Options {
     }
 
     fn make_cas_routes_bgp_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("bgp")
-            .about("Show current authorizations in relation to known announcements.");
+        let mut sub =
+            SubCommand::with_name("bgp").about("Show current authorizations in relation to known announcements.");
 
         sub = Self::make_cas_routes_bgp_full_sc(sub);
         sub = Self::make_cas_routes_bgp_announcements_sc(sub);
@@ -673,8 +660,7 @@ impl Options {
     }
 
     fn make_cas_repo_update_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub =
-            SubCommand::with_name("update").about("Change which repository this CA uses.");
+        let mut sub = SubCommand::with_name("update").about("Change which repository this CA uses.");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -761,8 +747,7 @@ impl Options {
     }
 
     fn make_publishers_stale_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("stale")
-            .about("List all publishers which have not published in a while.");
+        let mut sub = SubCommand::with_name("stale").about("List all publishers which have not published in a while.");
         sub = Self::add_general_args(sub);
         sub = sub.arg(
             Arg::with_name("seconds")
@@ -831,8 +816,7 @@ impl Options {
     }
 
     fn make_publishers_response_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub =
-            SubCommand::with_name("response").about("Show RFC8183 Repository Response XML.");
+        let mut sub = SubCommand::with_name("response").about("Show RFC8183 Repository Response XML.");
         sub = Self::add_general_args(sub);
         sub = Self::add_publisher_arg(sub);
         app.subcommand(sub)
@@ -853,33 +837,26 @@ impl Options {
     }
 
     fn make_bulk_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("bulk")
-            .about("Manually trigger refresh/republish/resync for all CAs.");
+        let mut sub = SubCommand::with_name("bulk").about("Manually trigger refresh/republish/resync for all CAs.");
 
-        let mut refresh = SubCommand::with_name("refresh")
-            .about("Force that all CAs ask their parents for updated certificates");
+        let mut refresh =
+            SubCommand::with_name("refresh").about("Force that all CAs ask their parents for updated certificates");
         refresh = Self::add_general_args(refresh);
 
-        let mut republish = SubCommand::with_name("publish").about(
-            "Force that all CAs create new objects if needed (in which case they will also sync)",
-        );
+        let mut republish = SubCommand::with_name("publish")
+            .about("Force that all CAs create new objects if needed (in which case they will also sync)");
         republish = Self::add_general_args(republish);
 
-        let mut resync =
-            SubCommand::with_name("sync").about("Force that all CAs sync with their repo server");
+        let mut resync = SubCommand::with_name("sync").about("Force that all CAs sync with their repo server");
         resync = Self::add_general_args(resync);
 
-        sub = sub
-            .subcommand(refresh)
-            .subcommand(republish)
-            .subcommand(resync);
+        sub = sub.subcommand(refresh).subcommand(republish).subcommand(resync);
 
         app.subcommand(sub)
     }
 
     fn make_health_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let health =
-            SubCommand::with_name("health").about("Perform an authenticated health check.");
+        let health = SubCommand::with_name("health").about("Perform an authenticated health check.");
         let health = Self::add_general_args(health);
         app.subcommand(health)
     }
@@ -937,9 +914,7 @@ impl Options {
                 my_ca = Some(Handle::from_str(my_ca_str).map_err(|_| Error::InvalidHandle)?);
             }
 
-            my_ca.ok_or_else(|| {
-                Error::missing_arg_with_env(KRILL_CLI_MY_CA_ARG, KRILL_CLI_MY_CA_ENV)
-            })?
+            my_ca.ok_or_else(|| Error::missing_arg_with_env(KRILL_CLI_MY_CA_ARG, KRILL_CLI_MY_CA_ENV))?
         };
 
         Ok(my_ca)
@@ -963,19 +938,13 @@ impl Options {
 
     fn parse_matches_repo_config(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
-        let rrdp_base: uri::Https = matches
-            .value_of("rrdp")
-            .map(uri::Https::from_str)
-            .unwrap()?;
+        let rrdp_base: uri::Https = matches.value_of("rrdp").map(uri::Https::from_str).unwrap()?;
 
         if !rrdp_base.as_str().ends_with('/') {
             return Err(Error::general("URI for --rrdp MUST end with a '/'"));
         }
 
-        let rsync_base = matches
-            .value_of("rsync")
-            .map(uri::Rsync::from_str)
-            .unwrap()?;
+        let rsync_base = matches.value_of("rsync").map(uri::Rsync::from_str).unwrap()?;
 
         if !rsync_base.to_string().ends_with('/') {
             return Err(Error::general("URI for --rsync MUST end with a '/'"));
@@ -1062,14 +1031,14 @@ impl Options {
         }
 
         if let Some(offset) = matches.value_of("offset") {
-            let offset = u64::from_str(offset)
-                .map_err(|e| Error::general(&format!("invalid number: {}", e.to_string())))?;
+            let offset =
+                u64::from_str(offset).map_err(|e| Error::general(&format!("invalid number: {}", e.to_string())))?;
             options.offset = offset
         }
 
         if let Some(rows) = matches.value_of("rows") {
-            let rows = u64::from_str(rows)
-                .map_err(|e| Error::general(&format!("invalid number: {}", e.to_string())))?;
+            let rows =
+                u64::from_str(rows).map_err(|e| Error::general(&format!("invalid number: {}", e.to_string())))?;
             if rows > 250 {
                 return Err(Error::general("No more than 250 rows allowed in history"));
             }
@@ -1113,8 +1082,7 @@ impl Options {
         let child = matches.value_of("child").unwrap();
         let child = Handle::from_str(child).map_err(|_| Error::InvalidHandle)?;
 
-        let resources =
-            Self::parse_resource_args(matches)?.ok_or_else(|| Error::MissingResources)?;
+        let resources = Self::parse_resource_args(matches)?.ok_or_else(|| Error::MissingResources)?;
 
         let child_request = AddChildRequest::new(child, resources, auth_request);
         let command = Command::CertAuth(CaCommand::ChildAdd(my_ca, child_request));
@@ -1446,8 +1414,8 @@ impl Options {
         let ca = Self::parse_my_ca(matches)?;
 
         let days = matches.value_of("days").unwrap();
-        let days = i64::from_str(days)
-            .map_err(|e| Error::GeneralArgumentError(format!("Invalid number of days: {}", e)))?;
+        let days =
+            i64::from_str(days).map_err(|e| Error::GeneralArgumentError(format!("Invalid number of days: {}", e)))?;
 
         let in_file = matches.value_of("in").unwrap();
         let in_file = PathBuf::from_str(in_file)
@@ -1475,9 +1443,8 @@ impl Options {
 
         let validity = SignSupport::sign_validity_days(days);
 
-        let resources = Self::parse_resource_args(matches)?.ok_or_else(|| {
-            Error::general("You must specify at least one of --ipv4, --ipv6 or --asn.")
-        })?;
+        let resources = Self::parse_resource_args(matches)?
+            .ok_or_else(|| Error::general("You must specify at least one of --ipv4, --ipv6 or --asn."))?;
 
         let request = RtaRequest::new(resources, validity, vec![], content);
         let command = Command::CertAuth(CaCommand::RtaOneOff(ca, request, Some(out_file)));
@@ -1505,8 +1472,7 @@ impl Options {
 
     fn parse_matches_publishers_stale(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
-        let seconds = i64::from_str(matches.value_of("seconds").unwrap())
-            .map_err(|_| Error::InvalidSeconds)?;
+        let seconds = i64::from_str(matches.value_of("seconds").unwrap()).map_err(|_| Error::InvalidSeconds)?;
         let command = Command::Publishers(PublishersCommand::StalePublishers(seconds));
         Ok(Options::make(general_args, command))
     }
@@ -1526,8 +1492,7 @@ impl Options {
         let mut req = rfc8183::PublisherRequest::validate(bytes.as_ref())?;
 
         if let Some(publisher_str) = matches.value_of("publisher") {
-            let publisher =
-                PublisherHandle::from_str(publisher_str).map_err(|_| Error::InvalidHandle)?;
+            let publisher = PublisherHandle::from_str(publisher_str).map_err(|_| Error::InvalidHandle)?;
             let (tag, _, cert) = req.unpack();
             req = rfc8183::PublisherRequest::new(tag, publisher, cert);
         }
@@ -1751,16 +1716,10 @@ pub enum CaCommand {
     #[display(fmt = "Show detailed ROA vs BGP analysis for ca: '{}'", _0)]
     BgpAnalysisFull(Handle),
 
-    #[display(
-        fmt = "Show announcement centric summary of ROA vs BGP analysis for ca: '{}'",
-        _0
-    )]
+    #[display(fmt = "Show announcement centric summary of ROA vs BGP analysis for ca: '{}'", _0)]
     BgpAnalysisAnnouncements(Handle),
 
-    #[display(
-        fmt = "Show ROA centric summary of ROA vs BGP analysis for ca: '{}'",
-        _0
-    )]
+    #[display(fmt = "Show ROA centric summary of ROA vs BGP analysis for ca: '{}'", _0)]
     BgpAnalysisRoas(Handle),
 
     // Show details for this CA
@@ -1819,12 +1778,7 @@ impl fmt::Display for HistoryOptions {
                 before.timestamp()
             ));
         } else if let Some(after) = self.after {
-            s.push_str(&format!(
-                "/{}/{}/{}",
-                self.rows,
-                self.offset,
-                after.timestamp()
-            ));
+            s.push_str(&format!("/{}/{}/{}", self.rows, self.offset, after.timestamp()));
         } else if self.offset != 0 {
             s.push_str(&format!("/{}/{}", self.rows, self.offset));
         } else if self.rows != 100 {
@@ -1862,10 +1816,7 @@ pub enum PublishersCommand {
     #[display(fmt = "reposisitory response for publisher '{}'", _0)]
     RepositoryResponse(PublisherHandle),
 
-    #[display(
-        fmt = "Show publishers which last published longer than '{}' seconds ago",
-        _0
-    )]
+    #[display(fmt = "Show publishers which last published longer than '{}' seconds ago", _0)]
     StalePublishers(i64),
 
     #[display(fmt = "Show server stats")]
@@ -1956,11 +1907,7 @@ pub enum Error {
     #[display(fmt = "Use a number of 0 or more seconds.")]
     InvalidSeconds,
 
-    #[display(
-        fmt = "Missing argument: --{}, alternatively you may use env var: {}",
-        _0,
-        _1
-    )]
+    #[display(fmt = "Missing argument: --{}, alternatively you may use env var: {}", _0, _1)]
     MissingArgWithEnv(String, String),
 
     #[display(fmt = "You must specify resources when adding a CA (--asn, --ipv4, --ipv6)")]

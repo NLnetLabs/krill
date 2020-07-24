@@ -102,10 +102,7 @@ impl<V: AsRef<TypedPrefix>> TypedPrefixTree<V> {
     }
 
     pub fn all(&self) -> Vec<&V> {
-        self.tree
-            .iter()
-            .flat_map(|el| el.value.as_slice())
-            .collect()
+        self.tree.iter().flat_map(|el| el.value.as_slice()).collect()
     }
 }
 
@@ -130,9 +127,7 @@ impl<V: AsRef<TypedPrefix>> TypedPrefixTreeBuilder<V> {
 
 impl<V: AsRef<TypedPrefix>> Default for TypedPrefixTreeBuilder<V> {
     fn default() -> Self {
-        TypedPrefixTreeBuilder {
-            values: HashMap::new(),
-        }
+        TypedPrefixTreeBuilder { values: HashMap::new() }
     }
 }
 

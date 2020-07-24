@@ -92,8 +92,7 @@ fn assert_history(server: &CaServer<OpenSslSigner>, scenario: &str, ca: &Handle)
     for record in history.commands() {
         let key = record.command_key().unwrap();
 
-        let mut expected_command_file =
-            PathBuf::from("test-resources/api/regressions/v0_6_0/history/");
+        let mut expected_command_file = PathBuf::from("test-resources/api/regressions/v0_6_0/history/");
         expected_command_file.push(scenario);
         expected_command_file.push("expected");
         expected_command_file.push(ca.as_str());
@@ -102,8 +101,7 @@ fn assert_history(server: &CaServer<OpenSslSigner>, scenario: &str, ca: &Handle)
         let details = server.get_ca_command_details(&ca, key).unwrap().unwrap();
 
         if let Ok(bytes) = file::read(&expected_command_file) {
-            let expected_details: CaCommandDetails =
-                serde_json::from_slice(bytes.as_ref()).unwrap();
+            let expected_details: CaCommandDetails = serde_json::from_slice(bytes.as_ref()).unwrap();
             assert_eq!(details, expected_details);
         } else {
             let content = serde_json::to_string_pretty(&details).unwrap();

@@ -51,10 +51,7 @@ fn upgrades() {
 }
 
 fn since_0_4_0(scenario: &str, cas: &[&str]) {
-    let work_dir = PathBuf::from(format!(
-        "test-resources/api/regressions/0.4.0/events/{}/",
-        scenario
-    ));
+    let work_dir = PathBuf::from(format!("test-resources/api/regressions/0.4.0/events/{}/", scenario));
     test_cas(&work_dir, cas);
     test_repo(&work_dir, "pubd");
 }

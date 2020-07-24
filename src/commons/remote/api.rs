@@ -59,12 +59,7 @@ pub struct CmsClientInfo {
 }
 
 impl CmsClientInfo {
-    pub fn new(
-        handle: Handle,
-        cert: IdCert,
-        key_id: KeyIdentifier,
-        publication_uri: uri::Https,
-    ) -> Self {
+    pub fn new(handle: Handle, cert: IdCert, key_id: KeyIdentifier, publication_uri: uri::Https) -> Self {
         CmsClientInfo {
             handle,
             server_cert: cert,

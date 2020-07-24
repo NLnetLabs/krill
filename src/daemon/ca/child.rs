@@ -90,11 +90,7 @@ impl ChildDetails {
     }
 
     /// Returns an error in case the key is already in use in another class.
-    pub fn verify_key_allowed(
-        &self,
-        ki: &KeyIdentifier,
-        rcn: &ResourceClassName,
-    ) -> KrillResult<()> {
+    pub fn verify_key_allowed(&self, ki: &KeyIdentifier, rcn: &ResourceClassName) -> KrillResult<()> {
         if let Some(last_response) = self.used_keys.get(ki) {
             let allowed = match last_response {
                 LastResponse::Revoked => false,
@@ -132,8 +128,7 @@ pub struct ChildCertificates {
 
 impl ChildCertificates {
     pub fn certificate_issued(&mut self, issued: IssuedCert) {
-        self.inner
-            .insert(issued.cert().subject_key_identifier(), issued);
+        self.inner.insert(issued.cert().subject_key_identifier(), issued);
     }
 
     pub fn key_revoked(&mut self, key: &KeyIdentifier) {
@@ -153,8 +148,7 @@ impl ChildCertificates {
             .values()
             .filter(|issued| {
                 issued.validity().not_after()
-                    < Time::now()
-                        + Duration::weeks(CONFIG.timing_child_certificate_reissue_weeks_before)
+                    < Time::now() + Duration::weeks(CONFIG.timing_child_certificate_reissue_weeks_before)
             })
             .collect()
     }
@@ -173,8 +167,6 @@ impl ChildCertificates {
 
 impl Default for ChildCertificates {
     fn default() -> Self {
-        ChildCertificates {
-            inner: HashMap::new(),
-        }
+        ChildCertificates { inner: HashMap::new() }
     }
 }

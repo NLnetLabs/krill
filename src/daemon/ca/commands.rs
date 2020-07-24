@@ -7,9 +7,8 @@ use chrono::Duration;
 use rpki::uri;
 
 use crate::commons::api::{
-    ChildHandle, Entitlements, Handle, IssuanceRequest, ParentCaContact, ParentHandle, RcvdCert,
-    RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse,
-    StorableCaCommand,
+    ChildHandle, Entitlements, Handle, IssuanceRequest, ParentCaContact, ParentHandle, RcvdCert, RepositoryContact,
+    ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse, StorableCaCommand,
 };
 use crate::commons::eventsourcing;
 use crate::commons::remote::crypto::IdCert;
@@ -137,12 +136,8 @@ impl<S: Signer> From<CmdDet<S>> for StorableCaCommand {
             CmdDet::ChildAdd(child, id_cert_opt, res) => {
                 StorableCaCommand::ChildAdd(child, id_cert_opt.map(|c| c.ski_hex()), res)
             }
-            CmdDet::ChildUpdateResources(child, res) => {
-                StorableCaCommand::ChildUpdateResources(child, res)
-            }
-            CmdDet::ChildUpdateId(child, id) => {
-                StorableCaCommand::ChildUpdateId(child, id.ski_hex())
-            }
+            CmdDet::ChildUpdateResources(child, res) => StorableCaCommand::ChildUpdateResources(child, res),
+            CmdDet::ChildUpdateId(child, id) => StorableCaCommand::ChildUpdateId(child, id.ski_hex()),
             CmdDet::ChildCertify(child, req, _) => {
                 let (rcn, limit, csr) = req.unpack();
                 let ki = csr.public_key().key_identifier();
@@ -151,9 +146,7 @@ impl<S: Signer> From<CmdDet<S>> for StorableCaCommand {
             CmdDet::ChildRevokeKey(child, req, _) => StorableCaCommand::ChildRevokeKey(child, req),
             CmdDet::ChildRemove(child, _) => StorableCaCommand::ChildRemove(child),
             CmdDet::GenerateNewIdKey(_) => StorableCaCommand::GenerateNewIdKey,
-            CmdDet::AddParent(parent, contact) => {
-                StorableCaCommand::AddParent(parent, contact.into())
-            }
+            CmdDet::AddParent(parent, contact) => StorableCaCommand::AddParent(parent, contact.into()),
             CmdDet::UpdateParentContact(parent, contact) => {
                 StorableCaCommand::UpdateParentContact(parent, contact.into())
             }
@@ -161,10 +154,7 @@ impl<S: Signer> From<CmdDet<S>> for StorableCaCommand {
             CmdDet::UpdateResourceClasses(parent, entitlements, _) => {
                 let mut classes = BTreeMap::new();
                 for entitlement in entitlements.classes() {
-                    classes.insert(
-                        entitlement.class_name().clone(),
-                        entitlement.resource_set().clone(),
-                    );
+                    classes.insert(entitlement.class_name().clone(), entitlement.resource_set().clone());
                 }
 
                 StorableCaCommand::UpdateResourceClasses(parent, classes)
@@ -172,16 +162,10 @@ impl<S: Signer> From<CmdDet<S>> for StorableCaCommand {
             CmdDet::UpdateRcvdCert(rcn, rcvd_cert, _) => {
                 StorableCaCommand::UpdateRcvdCert(rcn, rcvd_cert.resources().clone())
             }
-            CmdDet::KeyRollInitiate(duration, _) => {
-                StorableCaCommand::KeyRollInitiate(duration.num_seconds())
-            }
-            CmdDet::KeyRollActivate(duration, _) => {
-                StorableCaCommand::KeyRollActivate(duration.num_seconds())
-            }
+            CmdDet::KeyRollInitiate(duration, _) => StorableCaCommand::KeyRollInitiate(duration.num_seconds()),
+            CmdDet::KeyRollActivate(duration, _) => StorableCaCommand::KeyRollActivate(duration.num_seconds()),
             CmdDet::KeyRollFinish(rcn, _) => StorableCaCommand::KeyRollFinish(rcn),
-            CmdDet::RouteAuthorizationsUpdate(updates, _) => {
-                StorableCaCommand::RoaDefinitionUpdates(updates.into())
-            }
+            CmdDet::RouteAuthorizationsUpdate(updates, _) => StorableCaCommand::RoaDefinitionUpdates(updates.into()),
             CmdDet::Republish(_) => StorableCaCommand::Republish,
             CmdDet::RepoUpdate(update, _) => {
                 let service_uri_opt = match update {
@@ -197,11 +181,7 @@ impl<S: Signer> From<CmdDet<S>> for StorableCaCommand {
 
 impl<S: Signer> CmdDet<S> {
     /// Turns this CA into a TrustAnchor
-    pub fn make_trust_anchor(
-        handle: &Handle,
-        uris: Vec<uri::Https>,
-        signer: Arc<RwLock<S>>,
-    ) -> Cmd<S> {
+    pub fn make_trust_anchor(handle: &Handle, uris: Vec<uri::Https>, signer: Arc<RwLock<S>>) -> Cmd<S> {
         eventsourcing::SentCommand::new(handle, None, CmdDet::MakeTrustAnchor(uris, signer))
     }
 
@@ -220,16 +200,8 @@ impl<S: Signer> CmdDet<S> {
         )
     }
 
-    pub fn child_update_resources(
-        handle: &Handle,
-        child_handle: ChildHandle,
-        resources: ResourceSet,
-    ) -> Cmd<S> {
-        eventsourcing::SentCommand::new(
-            handle,
-            None,
-            CmdDet::ChildUpdateResources(child_handle, resources),
-        )
+    pub fn child_update_resources(handle: &Handle, child_handle: ChildHandle, resources: ResourceSet) -> Cmd<S> {
+        eventsourcing::SentCommand::new(handle, None, CmdDet::ChildUpdateResources(child_handle, resources))
     }
 
     pub fn child_update_id(handle: &Handle, child_handle: ChildHandle, id: IdCert) -> Cmd<S> {
@@ -244,11 +216,7 @@ impl<S: Signer> CmdDet<S> {
         request: IssuanceRequest,
         signer: Arc<RwLock<S>>,
     ) -> Cmd<S> {
-        eventsourcing::SentCommand::new(
-            handle,
-            None,
-            CmdDet::ChildCertify(child_handle, request, signer),
-        )
+        eventsourcing::SentCommand::new(handle, None, CmdDet::ChildCertify(child_handle, request, signer))
     }
 
     /// Revoke a key for a child.
@@ -258,18 +226,10 @@ impl<S: Signer> CmdDet<S> {
         request: RevocationRequest,
         signer: Arc<RwLock<S>>,
     ) -> Cmd<S> {
-        eventsourcing::SentCommand::new(
-            handle,
-            None,
-            CmdDet::ChildRevokeKey(child_handle, request, signer),
-        )
+        eventsourcing::SentCommand::new(handle, None, CmdDet::ChildRevokeKey(child_handle, request, signer))
     }
 
-    pub fn child_remove(
-        handle: &Handle,
-        child_handle: ChildHandle,
-        signer: Arc<RwLock<S>>,
-    ) -> Cmd<S> {
+    pub fn child_remove(handle: &Handle, child_handle: ChildHandle, signer: Arc<RwLock<S>>) -> Cmd<S> {
         eventsourcing::SentCommand::new(handle, None, CmdDet::ChildRemove(child_handle, signer))
     }
 
@@ -308,11 +268,7 @@ impl<S: Signer> CmdDet<S> {
         cert: RcvdCert,
         signer: Arc<RwLock<S>>,
     ) -> Cmd<S> {
-        eventsourcing::SentCommand::new(
-            handle,
-            None,
-            CmdDet::UpdateRcvdCert(class_name, cert, signer),
-        )
+        eventsourcing::SentCommand::new(handle, None, CmdDet::UpdateRcvdCert(class_name, cert, signer))
     }
 
     //-------------------------------------------------------------------------------
@@ -327,11 +283,7 @@ impl<S: Signer> CmdDet<S> {
         eventsourcing::SentCommand::new(handle, None, CmdDet::KeyRollActivate(staging, signer))
     }
 
-    pub fn key_roll_finish(
-        handle: &Handle,
-        rcn: ResourceClassName,
-        res: RevocationResponse,
-    ) -> Cmd<S> {
+    pub fn key_roll_finish(handle: &Handle, rcn: ResourceClassName, res: RevocationResponse) -> Cmd<S> {
         eventsourcing::SentCommand::new(handle, None, CmdDet::KeyRollFinish(rcn, res))
     }
 
@@ -339,11 +291,7 @@ impl<S: Signer> CmdDet<S> {
         eventsourcing::SentCommand::new(handle, None, CmdDet::Republish(signer))
     }
 
-    pub fn update_repo(
-        handle: &Handle,
-        contact: RepositoryContact,
-        signer: Arc<RwLock<S>>,
-    ) -> Cmd<S> {
+    pub fn update_repo(handle: &Handle, contact: RepositoryContact, signer: Arc<RwLock<S>>) -> Cmd<S> {
         eventsourcing::SentCommand::new(handle, None, CmdDet::RepoUpdate(contact, signer))
     }
 
@@ -359,10 +307,6 @@ impl<S: Signer> CmdDet<S> {
         updates: RouteAuthorizationUpdates,
         signer: Arc<RwLock<S>>,
     ) -> Cmd<S> {
-        eventsourcing::SentCommand::new(
-            handle,
-            None,
-            CmdDet::RouteAuthorizationsUpdate(updates, signer),
-        )
+        eventsourcing::SentCommand::new(handle, None, CmdDet::RouteAuthorizationsUpdate(updates, signer))
     }
 }

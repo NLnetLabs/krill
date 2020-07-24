@@ -9,9 +9,8 @@ use rpki::x509::Time;
 
 use crate::commons::api::{ResourceSet, RoaDefinition, TypedPrefix};
 use crate::commons::bgp::{
-    make_roa_tree, make_validated_announcement_tree, Announcement, AnnouncementValidity,
-    Announcements, BgpAnalysisEntry, BgpAnalysisReport, IpRange, RisDumpError, RisDumpLoader,
-    ValidatedAnnouncement,
+    make_roa_tree, make_validated_announcement_tree, Announcement, AnnouncementValidity, Announcements,
+    BgpAnalysisEntry, BgpAnalysisReport, IpRange, RisDumpError, RisDumpLoader, ValidatedAnnouncement,
 };
 use crate::constants::{BGP_RIS_REFRESH_MINUTES, KRILL_ENV_TEST_ANN};
 
@@ -54,10 +53,7 @@ impl BgpAnalyser {
                 debug!("BGP Ris Dumps unchanged");
                 Ok(false)
             } else {
-                info!(
-                    "Updated announcements ({}) based on BGP Ris Dumps",
-                    announcements.len()
-                );
+                info!("Updated announcements ({}) based on BGP Ris Dumps", announcements.len());
                 seen.update(announcements);
                 Ok(true)
             }
@@ -111,8 +107,7 @@ impl BgpAnalyser {
                             // ASN must match
                             // Prefix length must be allowed under this ROA (it could be allowed by another ROA and therefore valid)
                             va.validity() == AnnouncementValidity::Valid
-                                && va.announcement().prefix().addr_len()
-                                    <= roa.effective_max_length()
+                                && va.announcement().prefix().addr_len() <= roa.effective_max_length()
                                 && va.announcement().asn() == &roa.asn()
                         })
                         .map(|va| va.announcement())
@@ -284,10 +279,8 @@ mod tests {
             &resources,
         );
 
-        let expected: BgpAnalysisReport = serde_json::from_str(include_str!(
-            "../../../test-resources/bgp/expected_full_report.json"
-        ))
-        .unwrap();
+        let expected: BgpAnalysisReport =
+            serde_json::from_str(include_str!("../../../test-resources/bgp/expected_full_report.json")).unwrap();
 
         assert_eq!(report, expected);
     }

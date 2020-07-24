@@ -236,11 +236,7 @@ pub struct Request {
 impl Request {
     pub fn new(request: hyper::Request<hyper::Body>, state: State) -> Self {
         let path = RequestPath::from_request(&request);
-        Request {
-            request,
-            path,
-            state,
-        }
+        Request { request, path, state }
     }
 
     /// Returns the complete path.
@@ -309,11 +305,7 @@ impl Request {
 
         let mut size_processed = 0;
 
-        fn assert_body_size(
-            size_processed: u64,
-            body_lower_hint: u64,
-            post_limit: u64,
-        ) -> Result<(), Error> {
+        fn assert_body_size(size_processed: u64, body_lower_hint: u64, post_limit: u64) -> Result<(), Error> {
             if size_processed + body_lower_hint > post_limit {
                 Err(Error::PostTooBig)
             } else {
@@ -326,11 +318,7 @@ impl Request {
         // If there's only 1 chunk, we can just return Buf::to_bytes()
         let mut first = if let Some(buf) = body.data().await {
             let buf = buf.map_err(|_| Error::PostCannotRead)?;
-            let size: u64 = buf
-                .bytes()
-                .len()
-                .try_into()
-                .map_err(|_| Error::PostTooBig)?;
+            let size: u64 = buf.bytes().len().try_into().map_err(|_| Error::PostTooBig)?;
             size_processed += size;
             buf
         } else {
@@ -340,11 +328,7 @@ impl Request {
         assert_body_size(size_processed, body.size_hint().lower(), limit)?;
         let second = if let Some(buf) = body.data().await {
             let buf = buf.map_err(|_| Error::PostCannotRead)?;
-            let size: u64 = buf
-                .bytes()
-                .len()
-                .try_into()
-                .map_err(|_| Error::PostTooBig)?;
+            let size: u64 = buf.bytes().len().try_into().map_err(|_| Error::PostTooBig)?;
             size_processed += size;
             buf
         } else {
@@ -360,11 +344,7 @@ impl Request {
 
         while let Some(buf) = body.data().await {
             let buf = buf.map_err(|_| Error::PostCannotRead)?;
-            let size: u64 = buf
-                .bytes()
-                .len()
-                .try_into()
-                .map_err(|_| Error::PostTooBig)?;
+            let size: u64 = buf.bytes().len().try_into().map_err(|_| Error::PostTooBig)?;
             size_processed += size;
             assert_body_size(size_processed, body.size_hint().lower(), limit)?;
             vec.put(buf);
@@ -403,10 +383,7 @@ pub struct RequestPath {
 impl RequestPath {
     fn from_request<B>(request: &hyper::Request<B>) -> Self {
         let path = request.uri().path_and_query().unwrap().clone();
-        let mut res = RequestPath {
-            path,
-            segment: (0, 0),
-        };
+        let mut res = RequestPath { path, segment: (0, 0) };
         res.next_segment();
         res
     }
@@ -437,10 +414,7 @@ impl RequestPath {
         }
         // Find the next slash. If we have one, that’s the end of
         // our segment, otherwise, we go all the way to the end of the path.
-        let end = path[start..]
-            .find('/')
-            .map(|x| x + start)
-            .unwrap_or_else(|| path.len());
+        let end = path[start..].find('/').map(|x| x + start).unwrap_or_else(|| path.len());
         self.segment = (start, end);
         true
     }

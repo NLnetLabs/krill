@@ -6,10 +6,9 @@ use serde::Serialize;
 use rpki::x509::Time;
 
 use crate::commons::api::{
-    AllCertAuthIssues, Base64, CaCommandDetails, CaCommandResult, CaRepoDetails, CertAuthInfo,
-    CertAuthIssues, CertAuthList, ChildCaInfo, CommandHistory, CurrentObjects, CurrentRepoState,
-    ParentCaContact, PublisherDetails, PublisherList, RepositoryContact, RoaDefinition, ServerInfo,
-    StoredEffect,
+    AllCertAuthIssues, Base64, CaCommandDetails, CaCommandResult, CaRepoDetails, CertAuthInfo, CertAuthIssues,
+    CertAuthList, ChildCaInfo, CommandHistory, CurrentObjects, CurrentRepoState, ParentCaContact, PublisherDetails,
+    PublisherList, RepositoryContact, RoaDefinition, ServerInfo, StoredEffect,
 };
 use crate::commons::bgp::{AnnouncementReport, BgpAnalysisReport, RoaReport};
 use crate::commons::eventsourcing::WithStorableDetails;
@@ -340,12 +339,7 @@ impl Report for RepoStats {
         res.push_str("\n");
         res.push_str("Publisher, Objects, Size, Last Updated\n");
         for (publisher, stats) in self.get_publishers() {
-            res.push_str(&format!(
-                "{}, {}, {}, ",
-                publisher,
-                stats.objects(),
-                stats.size()
-            ));
+            res.push_str(&format!("{}, {}, {}, ", publisher, stats.objects(), stats.size()));
             match stats.last_update() {
                 None => res.push_str("never\n"),
                 Some(update) => res.push_str(&format!("{}\n", update.to_rfc3339())),

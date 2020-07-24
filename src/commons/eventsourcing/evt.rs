@@ -59,10 +59,6 @@ impl<E: fmt::Display + Eq + PartialEq + Storable + 'static> Event for StoredEven
 
 impl<E: fmt::Display + Eq + PartialEq + Storable + 'static> fmt::Display for StoredEvent<E> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "id: {} version: {} details: {}",
-            self.id, self.version, self.details
-        )
+        write!(f, "id: {} version: {} details: {}", self.id, self.version, self.details)
     }
 }

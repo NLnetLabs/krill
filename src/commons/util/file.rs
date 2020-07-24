@@ -64,8 +64,7 @@ pub fn save_json<O: Serialize>(object: &O, full_path: &PathBuf) -> Result<(), io
 /// errors to io::Error
 pub fn load_json<O: DeserializeOwned>(full_path: &PathBuf) -> Result<O, io::Error> {
     let bytes = read(full_path)?;
-    serde_json::from_slice(&bytes)
-        .map_err(|_| io::Error::new(io::ErrorKind::Other, "could not deserialize json"))
+    serde_json::from_slice(&bytes).map_err(|_| io::Error::new(io::ErrorKind::Other, "could not deserialize json"))
 }
 
 /// Saves a file, creating parent dirs as needed
@@ -77,11 +76,7 @@ pub fn save_in_dir(content: &Bytes, base_path: &PathBuf, name: &str) -> Result<(
 
 /// Saves a file under a base directory, using the rsync uri to create
 /// sub-directories preserving the rsync authority and module in dir names.
-pub fn save_with_rsync_uri(
-    content: &Bytes,
-    base_path: &PathBuf,
-    uri: &uri::Rsync,
-) -> Result<(), io::Error> {
+pub fn save_with_rsync_uri(content: &Bytes, base_path: &PathBuf, uri: &uri::Rsync) -> Result<(), io::Error> {
     let path = path_with_rsync(base_path, uri);
     save(content, &path)
 }
@@ -146,10 +141,7 @@ fn path_with_rsync(base_path: &PathBuf, uri: &uri::Rsync) -> PathBuf {
 /// using the provided rsync_base URI as the rsync prefix.
 /// Allows a publication client to publish the contents below some base
 /// dir, in their own designated rsync URI name space.
-pub fn crawl_incl_rsync_base(
-    base_path: &PathBuf,
-    rsync_base: &uri::Rsync,
-) -> Result<Vec<CurrentFile>, Error> {
+pub fn crawl_incl_rsync_base(base_path: &PathBuf, rsync_base: &uri::Rsync) -> Result<Vec<CurrentFile>, Error> {
     crawl_disk(base_path, base_path, Some(rsync_base))
 }
 
@@ -161,11 +153,7 @@ pub fn crawl_derive_rsync_uri(base_path: &PathBuf) -> Result<Vec<CurrentFile>, E
     crawl_disk(base_path, base_path, None)
 }
 
-fn crawl_disk(
-    base_path: &PathBuf,
-    path: &PathBuf,
-    rsync_base: Option<&uri::Rsync>,
-) -> Result<Vec<CurrentFile>, Error> {
+fn crawl_disk(base_path: &PathBuf, path: &PathBuf, rsync_base: Option<&uri::Rsync>) -> Result<Vec<CurrentFile>, Error> {
     let mut res = Vec::new();
 
     for entry in fs::read_dir(path).map_err(|_| Error::cannot_read(path))? {
@@ -186,14 +174,8 @@ fn crawl_disk(
     Ok(res)
 }
 
-fn derive_uri(
-    base_path: &PathBuf,
-    path: &PathBuf,
-    rsync_base: Option<&uri::Rsync>,
-) -> Result<uri::Rsync, Error> {
-    let rel = path
-        .strip_prefix(base_path)
-        .map_err(|_| Error::PathOutsideBasePath)?;
+fn derive_uri(base_path: &PathBuf, path: &PathBuf, rsync_base: Option<&uri::Rsync>) -> Result<uri::Rsync, Error> {
+    let rel = path.strip_prefix(base_path).map_err(|_| Error::PathOutsideBasePath)?;
 
     let rel_string = rel.to_string_lossy().to_string();
 
@@ -202,8 +184,7 @@ fn derive_uri(
         None => format!("rsync://{}", rel_string),
     };
 
-    let uri =
-        uri::Rsync::from_str(&uri_string).map_err(|_| Error::UnsupportedFileName(uri_string))?;
+    let uri = uri::Rsync::from_str(&uri_string).map_err(|_| Error::UnsupportedFileName(uri_string))?;
     Ok(uri)
 }
 
@@ -213,9 +194,7 @@ fn derive_uri(
 /// This is needed when making a back-up copy when we need to do upgrades on data, which
 /// could in theory fail, in which case we want to leave teh old data in place.
 pub fn backup_dir(base_path: &PathBuf, target_path: &PathBuf) -> Result<(), Error> {
-    if base_path.to_string_lossy() == Cow::Borrowed("/")
-        || target_path.to_string_lossy() == Cow::Borrowed("/")
-    {
+    if base_path.to_string_lossy() == Cow::Borrowed("/") || target_path.to_string_lossy() == Cow::Borrowed("/") {
         Err(Error::BackupExcessive)
     } else if base_path.is_file() {
         let mut target = target_path.clone();

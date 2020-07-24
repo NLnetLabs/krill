@@ -5,13 +5,9 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use bcder::encode::{Constructed, PrimitiveContent, Values};
 use bcder::{decode, encode, Unsigned};
 use bcder::{BitString, Mode, OctetString, Oid, Tag};
-use rpki::crypto::{
-    DigestAlgorithm, KeyIdentifier, PublicKey, Signature, SignatureAlgorithm, Signer, SigningError,
-};
+use rpki::crypto::{DigestAlgorithm, KeyIdentifier, PublicKey, Signature, SignatureAlgorithm, Signer, SigningError};
 use rpki::oid;
-use rpki::x509::{
-    encode_extension, update_once, Name, SignedData, Time, ValidationError, Validity,
-};
+use rpki::x509::{encode_extension, update_once, Name, SignedData, Time, ValidationError, Validity};
 
 use crate::commons::remote::crypto::Error;
 use crate::constants::ID_CERTIFICATE_VALIDITY_YEARS;
@@ -162,10 +158,7 @@ impl IdCertBuilder {
     ///
     /// Essentially this all the content that goes into the SignedData
     /// component.
-    pub fn new_ta_id_cert<S: Signer>(
-        issuing_key: &S::KeyId,
-        signer: &S,
-    ) -> Result<IdCert, Error<S::Error>> {
+    pub fn new_ta_id_cert<S: Signer>(issuing_key: &S::KeyId, signer: &S) -> Result<IdCert, Error<S::Error>> {
         let issuing_key_info = signer.get_key_info(issuing_key)?;
         let ext = IdExtensions::for_id_ta_cert(&issuing_key_info);
         let cert = IdCertBuilder::create_signed_cert(issuing_key, &issuing_key_info, ext, signer)?;
@@ -232,10 +225,7 @@ impl SignedAttributes {
     /// Encodes the SignedAttributes for inclusion in a CMS.
     pub fn encode<'a>(&'a self) -> impl encode::Values + 'a {
         (
-            encode::sequence((
-                oid::CONTENT_TYPE.encode(),
-                encode::set(self.content_type.encode()),
-            )),
+            encode::sequence((oid::CONTENT_TYPE.encode(), encode::set(self.content_type.encode()))),
             encode::sequence((
                 // This implementation will include a signing-time
                 // attribute using the time that the SignedAttributes
@@ -243,10 +233,7 @@ impl SignedAttributes {
                 oid::SIGNING_TIME.encode(),
                 encode::set(self.signing_time.encode_varied()),
             )),
-            encode::sequence((
-                oid::MESSAGE_DIGEST.encode(),
-                encode::set(self.digest.clone().encode()),
-            )),
+            encode::sequence((oid::MESSAGE_DIGEST.encode(), encode::set(self.digest.clone().encode()))),
         )
     }
 
@@ -350,9 +337,7 @@ impl IdCert {
     }
 
     /// Parses the content of a Certificate sequence.
-    pub fn from_constructed<S: decode::Source>(
-        cons: &mut decode::Constructed<S>,
-    ) -> Result<Self, S::Err> {
+    pub fn from_constructed<S: decode::Source>(cons: &mut decode::Constructed<S>) -> Result<Self, S::Err> {
         let signed_data = SignedData::from_constructed(cons)?;
 
         signed_data
@@ -373,8 +358,7 @@ impl IdCert {
                         validity: Validity::take_from(cons)?,
                         subject: Name::take_from(cons)?,
                         subject_public_key_info: PublicKey::take_from(cons)?,
-                        extensions: cons
-                            .take_constructed_if(Tag::CTX_3, IdExtensions::take_from)?,
+                        extensions: cons.take_constructed_if(Tag::CTX_3, IdExtensions::take_from)?,
                     })
                 })
             })
@@ -414,10 +398,7 @@ impl IdCert {
         }
 
         // RFC says that the ID certificate ought to be (no normative language) self-signed.. just log if it isn't
-        if let Err(_e) = self
-            .signed_data
-            .verify_signature(&self.subject_public_key_info)
-        {
+        if let Err(_e) = self.signed_data.verify_signature(&self.subject_public_key_info) {
             debug!("ID certificate is not self-signed.")
         }
 
@@ -507,8 +488,7 @@ impl IdCert {
 
     /// Validates the certificate’s signature.
     fn validate_signature(&self, issuer: &IdCert) -> Result<(), ValidationError> {
-        self.signed_data
-            .verify_signature(issuer.subject_public_key_info())
+        self.signed_data.verify_signature(issuer.subject_public_key_info())
     }
 }
 
@@ -691,11 +671,7 @@ impl IdExtensions {
                     )
                 }),
                 // Subject Key Identifier
-                encode_extension(
-                    &oid::CE_SUBJECT_KEY_IDENTIFIER,
-                    false,
-                    self.subject_key_id.encode_ref(),
-                ),
+                encode_extension(&oid::CE_SUBJECT_KEY_IDENTIFIER, false, self.subject_key_id.encode_ref()),
                 // Authority Key Identifier
                 self.authority_key_id.as_ref().map(|id| {
                     encode_extension(

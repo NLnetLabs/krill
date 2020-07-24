@@ -185,10 +185,7 @@ async fn try_publish(
     let publisher = CaPublisher::new(caserver, pubserver);
 
     if let Err(e) = publisher.publish(&ca).await {
-        error!(
-            "Failed to publish for '{}' will reschedule, error: {}",
-            ca, e
-        );
+        error!("Failed to publish for '{}' will reschedule, error: {}", ca, e);
         event_queue.push_back(QueueEvent::ReschedulePublish(ca, Time::now()))
     }
 }

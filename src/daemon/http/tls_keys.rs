@@ -125,10 +125,7 @@ impl HttpsSigner {
         let cert_pem = base64::encode(&encoded_cert);
 
         let path = cert_file_path(data_dir);
-        let pem_file = format!(
-            "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n",
-            cert_pem
-        );
+        let pem_file = format!("-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n", cert_pem);
         let bytes: Bytes = Bytes::from(pem_file);
         file::save(&bytes, &path)?;
 

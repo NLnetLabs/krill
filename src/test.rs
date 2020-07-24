@@ -20,10 +20,10 @@ use crate::cli::options::{BulkCaCommand, CaCommand, Command, Options, Publishers
 use crate::cli::report::{ApiResponse, ReportFormat};
 use crate::cli::{Error, KrillClient};
 use crate::commons::api::{
-    AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildAuthRequest, ChildHandle,
-    Handle, ParentCaContact, ParentCaReq, ParentHandle, Publish, PublisherDetails, PublisherHandle,
-    RepositoryUpdate, ResourceClassKeysInfo, ResourceClassName, ResourceSet, RoaDefinition,
-    RoaDefinitionUpdates, TypedPrefix, UpdateChildRequest,
+    AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildAuthRequest, ChildHandle, Handle,
+    ParentCaContact, ParentCaReq, ParentHandle, Publish, PublisherDetails, PublisherHandle, RepositoryUpdate,
+    ResourceClassKeysInfo, ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates, TypedPrefix,
+    UpdateChildRequest,
 };
 use crate::commons::bgp::Announcement;
 use crate::commons::remote::rfc8183;
@@ -61,10 +61,7 @@ pub async fn start_krill() -> PathBuf {
 
     let data_dir = sub_dir(&dir);
 
-    env::set_var(
-        KRILL_ENV_TEST_UNIT_DATA,
-        data_dir.to_string_lossy().to_string(),
-    );
+    env::set_var(KRILL_ENV_TEST_UNIT_DATA, data_dir.to_string_lossy().to_string());
 
     tokio::spawn(server::start());
 
@@ -93,17 +90,11 @@ async fn refresh_all() {
 }
 
 pub async fn init_child(handle: &Handle) {
-    krill_admin(Command::CertAuth(CaCommand::Init(CertAuthInit::new(
-        handle.clone(),
-    ))))
-    .await;
+    krill_admin(Command::CertAuth(CaCommand::Init(CertAuthInit::new(handle.clone())))).await;
 }
 
 pub async fn init_child_with_embedded_repo(handle: &Handle) {
-    krill_admin(Command::CertAuth(CaCommand::Init(CertAuthInit::new(
-        handle.clone(),
-    ))))
-    .await;
+    krill_admin(Command::CertAuth(CaCommand::Init(CertAuthInit::new(handle.clone())))).await;
     krill_admin(Command::CertAuth(CaCommand::RepoUpdate(
         handle.clone(),
         RepositoryUpdate::Embedded,
@@ -187,11 +178,7 @@ pub async fn update_child_id(ca: &Handle, child: &ChildHandle, req: ChildRequest
 }
 
 pub async fn delete_child(ca: &Handle, child: &ChildHandle) {
-    krill_admin(Command::CertAuth(CaCommand::ChildDelete(
-        ca.clone(),
-        child.clone(),
-    )))
-    .await;
+    krill_admin(Command::CertAuth(CaCommand::ChildDelete(ca.clone(), child.clone()))).await;
 }
 
 async fn send_child_request(ca: &Handle, child: &Handle, req: UpdateChildRequest) {
@@ -222,11 +209,7 @@ pub async fn update_parent_contact(ca: &Handle, parent: &ParentHandle, contact: 
 }
 
 pub async fn delete_parent(ca: &Handle, parent: &ParentHandle) {
-    krill_admin(Command::CertAuth(CaCommand::RemoveParent(
-        ca.clone(),
-        parent.clone(),
-    )))
-    .await;
+    krill_admin(Command::CertAuth(CaCommand::RemoveParent(ca.clone(), parent.clone()))).await;
 }
 
 pub async fn ca_roll_init(handle: &Handle) {
@@ -234,10 +217,7 @@ pub async fn ca_roll_init(handle: &Handle) {
 }
 
 pub async fn ca_roll_activate(handle: &Handle) {
-    krill_admin(Command::CertAuth(CaCommand::KeyRollActivate(
-        handle.clone(),
-    )))
-    .await;
+    krill_admin(Command::CertAuth(CaCommand::KeyRollActivate(handle.clone()))).await;
 }
 
 pub async fn ca_route_authorizations_update(handle: &Handle, updates: RoaDefinitionUpdates) {
@@ -248,10 +228,7 @@ pub async fn ca_route_authorizations_update(handle: &Handle, updates: RoaDefinit
     .await;
 }
 
-pub async fn ca_route_authorizations_update_expect_error(
-    handle: &Handle,
-    updates: RoaDefinitionUpdates,
-) {
+pub async fn ca_route_authorizations_update_expect_error(handle: &Handle, updates: RoaDefinitionUpdates) {
     krill_admin_expect_error(Command::CertAuth(CaCommand::RouteAuthorizationsUpdate(
         handle.clone(),
         updates,
@@ -272,12 +249,7 @@ pub async fn sign_one_off_rta(
     content: Bytes,
     out: Option<PathBuf>,
 ) -> ResourceTaggedAttestation {
-    let request = RtaRequest::new(
-        resources,
-        SignSupport::sign_validity_days(14),
-        vec![],
-        content,
-    );
+    let request = RtaRequest::new(resources, SignSupport::sign_validity_days(14), vec![], content);
     let command = Command::CertAuth(CaCommand::RtaOneOff(ca, request, out));
 
     match krill_admin(command).await {
@@ -336,11 +308,7 @@ pub async fn rc_state_becomes_active(handle: &Handle) -> bool {
 pub async fn rc_is_removed(handle: &Handle) -> bool {
     for _ in 0..300 {
         let ca = ca_details(handle).await;
-        if ca
-            .resource_classes()
-            .get(&ResourceClassName::default())
-            .is_none()
-        {
+        if ca.resource_classes().get(&ResourceClassName::default()).is_none() {
             return true;
         }
         delay_for(Duration::from_millis(100)).await
@@ -379,11 +347,7 @@ pub async fn ca_current_objects(handle: &Handle) -> Vec<Publish> {
 }
 
 pub async fn publisher_details(publisher: &PublisherHandle) -> PublisherDetails {
-    match krill_admin(Command::Publishers(PublishersCommand::ShowPublisher(
-        publisher.clone(),
-    )))
-    .await
-    {
+    match krill_admin(Command::Publishers(PublishersCommand::ShowPublisher(publisher.clone()))).await {
         ApiResponse::PublisherDetails(pub_details) => pub_details,
         _ => panic!("Expected publisher details"),
     }

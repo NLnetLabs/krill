@@ -113,9 +113,7 @@ impl From<&Crl> for Base64 {
 
 impl fmt::Display for Base64 {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", unsafe {
-            std::str::from_utf8_unchecked(self.0.as_ref())
-        })
+        write!(f, "{}", unsafe { std::str::from_utf8_unchecked(self.0.as_ref()) })
     }
 }
 
@@ -287,9 +285,7 @@ impl ErrorResponse {
     }
 
     pub fn with_auth(self, auth: &RouteAuthorization) -> Self {
-        let mut res = self
-            .with_arg("prefix", auth.prefix())
-            .with_arg("asn", auth.asn());
+        let mut res = self.with_arg("prefix", auth.prefix()).with_arg("asn", auth.asn());
 
         if let Some(max) = auth.max_length() {
             res = res.with_arg("max_length", max)

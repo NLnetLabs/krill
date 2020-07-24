@@ -160,6 +160,5 @@ where
     D: Deserializer<'de>,
 {
     let string = String::deserialize(d)?;
-    Facility::from_str(&string)
-        .map_err(|_| de::Error::custom(format!("Unsupported syslog_facility: \"{}\"", string)))
+    Facility::from_str(&string).map_err(|_| de::Error::custom(format!("Unsupported syslog_facility: \"{}\"", string)))
 }

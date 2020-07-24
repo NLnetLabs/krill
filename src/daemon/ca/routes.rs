@@ -13,8 +13,8 @@ use rpki::uri;
 use rpki::x509::{Serial, Time};
 
 use crate::commons::api::{
-    CurrentObject, CurrentObjects, ObjectName, ReplacedObject, ResourceSet, RoaAggregateKey,
-    RoaDefinition, RoaDefinitionUpdates,
+    CurrentObject, CurrentObjects, ObjectName, ReplacedObject, ResourceSet, RoaAggregateKey, RoaDefinition,
+    RoaDefinitionUpdates,
 };
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
@@ -194,9 +194,7 @@ pub struct Routes {
 
 impl Default for Routes {
     fn default() -> Self {
-        Routes {
-            map: HashMap::new(),
-        }
+        Routes { map: HashMap::new() }
     }
 }
 
@@ -298,10 +296,7 @@ pub struct AggregateRoaInfo {
 
 impl AggregateRoaInfo {
     pub fn new(authorizations: Vec<RouteAuthorization>, roa: RoaInfo) -> Self {
-        AggregateRoaInfo {
-            authorizations,
-            roa,
-        }
+        AggregateRoaInfo { authorizations, roa }
     }
 
     pub fn authorizations(&self) -> &Vec<RouteAuthorization> {
@@ -383,11 +378,7 @@ enum RoaMode {
 /// ROAs held by a resource class in a CA.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Roas {
-    #[serde(
-        alias = "inner",
-        skip_serializing_if = "HashMap::is_empty",
-        default = "HashMap::new"
-    )]
+    #[serde(alias = "inner", skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
     simple: HashMap<RouteAuthorization, RoaInfo>,
 
     #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
@@ -545,19 +536,13 @@ impl Roas {
 
                 if authzs != &existing_authzs {
                     // replace ROA
-                    let aggregate = Self::make_aggregate_roa(
-                        key,
-                        authzs.clone(),
-                        Some(existing.roa()),
-                        certified_key,
-                        signer,
-                    )?;
+                    let aggregate =
+                        Self::make_aggregate_roa(key, authzs.clone(), Some(existing.roa()), certified_key, signer)?;
                     roa_updates.update_aggregate(*key, aggregate);
                 }
             } else {
                 // new ROA
-                let aggregate =
-                    Self::make_aggregate_roa(key, authzs.clone(), None, certified_key, signer)?;
+                let aggregate = Self::make_aggregate_roa(key, authzs.clone(), None, certified_key, signer)?;
                 roa_updates.update_aggregate(*key, aggregate);
             }
         }
@@ -583,19 +568,13 @@ impl Roas {
         match self.mode(routes.len()) {
             RoaMode::Simple => self.update_simple(routes, certified_key, signer),
             RoaMode::StopAggregating => self.update_stop_aggregating(routes, certified_key, signer),
-            RoaMode::StartAggregating => {
-                self.update_start_aggregating(routes, certified_key, signer)
-            }
+            RoaMode::StartAggregating => self.update_start_aggregating(routes, certified_key, signer),
             RoaMode::Aggregate => self.update_aggregate(routes, certified_key, signer),
         }
     }
 
     /// Re-new ROAs before they would expire
-    pub fn renew<S: Signer>(
-        &self,
-        certified_key: &CertifiedKey,
-        signer: &S,
-    ) -> KrillResult<RoaUpdates> {
+    pub fn renew<S: Signer>(&self, certified_key: &CertifiedKey, signer: &S) -> KrillResult<RoaUpdates> {
         let mut updates = RoaUpdates::default();
 
         let renew_threshold = Time::now() + Duration::weeks(CONFIG.timing_roa_reissue_weeks_before);
@@ -627,11 +606,7 @@ impl Roas {
     }
 
     /// Re-generate all ROAs when a new key is being activated
-    pub fn activate_key<S: Signer>(
-        &self,
-        certified_key: &CertifiedKey,
-        signer: &S,
-    ) -> KrillResult<RoaUpdates> {
+    pub fn activate_key<S: Signer>(&self, certified_key: &CertifiedKey, signer: &S) -> KrillResult<RoaUpdates> {
         let mut updates = RoaUpdates::default();
 
         for (auth, roa) in self.simple.iter() {
@@ -677,13 +652,7 @@ impl Roas {
 
             let authzs = aggregate.authorizations().clone();
             let name = roa.name();
-            let new_roa = Self::make_roa(
-                authzs.as_slice(),
-                name,
-                Some(new_repo),
-                certified_key,
-                signer,
-            )?;
+            let new_roa = Self::make_roa(authzs.as_slice(), name, Some(new_repo), certified_key, signer)?;
             let new_roa = RoaInfo::updated_roa(roa, &new_roa, name.clone());
             let aggregate = AggregateRoaInfo::new(authzs, new_roa);
 

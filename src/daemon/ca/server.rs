@@ -10,12 +10,11 @@ use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 
 use crate::commons::api::{
-    self, AddChildRequest, Base64, CaCommandDetails, CaCommandResult, CertAuthList,
-    CertAuthSummary, ChildAuthRequest, ChildCaInfo, ChildHandle, CommandHistory,
-    CommandHistoryCriteria, Entitlements, Handle, IssuanceRequest, IssuanceResponse, IssuedCert,
-    ListReply, ParentCaContact, ParentCaReq, ParentHandle, PublishDelta, RcvdCert, RepoInfo,
-    RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse,
-    StoredEffect, UpdateChildRequest,
+    self, AddChildRequest, Base64, CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary, ChildAuthRequest,
+    ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, Handle, IssuanceRequest,
+    IssuanceResponse, IssuedCert, ListReply, ParentCaContact, ParentCaReq, ParentHandle, PublishDelta, RcvdCert,
+    RepoInfo, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse, StoredEffect,
+    UpdateChildRequest,
 };
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::{Aggregate, AggregateStore, CommandKey, DiskAggregateStore};
@@ -26,8 +25,8 @@ use crate::commons::util::httpclient;
 use crate::commons::KrillResult;
 use crate::constants::CASERVER_DIR;
 use crate::daemon::ca::{
-    self, ta_handle, CertAuth, Cmd, CmdDet, IniDet, ResourceTaggedAttestation,
-    RouteAuthorizationUpdates, RtaRequest, Signer,
+    self, ta_handle, CertAuth, Cmd, CmdDet, IniDet, ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaRequest,
+    Signer,
 };
 use crate::daemon::mq::EventQueueListener;
 
@@ -70,12 +69,7 @@ impl<S: Signer> CaServer<S> {
     }
 
     /// Initialises an embedded trust anchor with all resources.
-    pub fn init_ta(
-        &self,
-        info: RepoInfo,
-        ta_aia: uri::Rsync,
-        ta_uris: Vec<uri::Https>,
-    ) -> KrillResult<()> {
+    pub fn init_ta(&self, info: RepoInfo, ta_aia: uri::Rsync, ta_uris: Vec<uri::Https>) -> KrillResult<()> {
         let handle = ca::ta_handle();
         if self.ca_store.has(&handle) {
             Err(Error::TaAlreadyInitialised)
@@ -97,12 +91,8 @@ impl<S: Signer> CaServer<S> {
             let ta_cert = ta.parent(&handle).unwrap().to_ta_cert();
             let rcvd_cert = RcvdCert::new(ta_cert.clone(), ta_aia, ResourceSet::all_resources());
 
-            let rcv_cert = CmdDet::upd_received_cert(
-                &handle,
-                ResourceClassName::default(),
-                rcvd_cert,
-                self.signer.clone(),
-            );
+            let rcv_cert =
+                CmdDet::upd_received_cert(&handle, ResourceClassName::default(), rcvd_cert, self.signer.clone());
             self.ca_store.command(rcv_cert)?;
 
             Ok(())
@@ -120,11 +110,7 @@ impl<S: Signer> CaServer<S> {
     pub fn republish_all(&self) -> KrillResult<()> {
         for ca in self.ca_list().cas() {
             if let Err(e) = self.republish(ca.handle()) {
-                error!(
-                    "ServerError publishing: {}, ServerError: {}",
-                    ca.handle(),
-                    e
-                )
+                error!("ServerError publishing: {}, ServerError: {}", ca.handle(), e)
             }
         }
         Ok(())
@@ -231,28 +217,17 @@ impl<S: Signer> CaServer<S> {
     }
 
     /// Show details for a child under the TA.
-    pub fn ca_show_child(
-        &self,
-        parent: &ParentHandle,
-        child: &ChildHandle,
-    ) -> KrillResult<ChildCaInfo> {
+    pub fn ca_show_child(&self, parent: &ParentHandle, child: &ChildHandle) -> KrillResult<ChildCaInfo> {
         trace!("Finding details for CA: {} under parent: {}", child, parent);
         let ca = self.get_ca(parent)?;
         ca.get_child(child).map(|details| details.clone().into())
     }
 
     /// Update a child under this CA.
-    pub fn ca_child_update(
-        &self,
-        handle: &Handle,
-        child: ChildHandle,
-        req: UpdateChildRequest,
-    ) -> KrillResult<()> {
+    pub fn ca_child_update(&self, handle: &Handle, child: ChildHandle, req: UpdateChildRequest) -> KrillResult<()> {
         let (id_opt, resources_opt) = req.unpack();
 
-        if (id_opt.is_some() && resources_opt.is_some())
-            || (id_opt.is_none() && resources_opt.is_none())
-        {
+        if (id_opt.is_some() && resources_opt.is_some()) || (id_opt.is_none() && resources_opt.is_none()) {
             Err(Error::CaChildUpdateOneThing(handle.clone(), child))
         } else if let Some(id) = id_opt {
             self.send_command(CmdDet::child_update_id(handle, child, id))
@@ -281,11 +256,7 @@ impl<S: Signer> CaServer<S> {
     }
 
     /// Gets the history for a CA.
-    pub fn get_ca_history(
-        &self,
-        handle: &Handle,
-        crit: CommandHistoryCriteria,
-    ) -> KrillResult<CommandHistory> {
+    pub fn get_ca_history(&self, handle: &Handle, crit: CommandHistoryCriteria) -> KrillResult<CommandHistory> {
         self.ca_store
             .command_history(handle, crit)
             .map_err(|_| Error::CaUnknown(handle.clone()))
@@ -300,22 +271,13 @@ impl<S: Signer> CaServer<S> {
         if let Some(command) = self.ca_store.stored_command(handle, &command)? {
             let effect = command.effect().clone();
             match effect {
-                StoredEffect::Error(msg) => Ok(Some(CaCommandDetails::new(
-                    command,
-                    CaCommandResult::error(msg),
-                ))),
+                StoredEffect::Error(msg) => Ok(Some(CaCommandDetails::new(command, CaCommandResult::error(msg)))),
                 StoredEffect::Events(versions) => {
                     let mut stored_events = vec![];
                     for version in versions {
-                        let evt =
-                            self.ca_store
-                                .stored_event(handle, version)?
-                                .ok_or_else(|| {
-                                    Error::Custom(format!(
-                                        "Cannot find evt: {} in history for CA: {}",
-                                        version, handle
-                                    ))
-                                })?;
+                        let evt = self.ca_store.stored_event(handle, version)?.ok_or_else(|| {
+                            Error::Custom(format!("Cannot find evt: {} in history for CA: {}", version, handle))
+                        })?;
                         stored_events.push(evt);
                     }
 
@@ -356,8 +318,7 @@ impl<S: Signer> CaServer<S> {
 
         let (child, recipient, content) = content.unwrap();
 
-        let cms_logger =
-            CmsLogger::for_rfc6492_rcvd(self.rfc6492_log_dir.as_ref(), &recipient, &child);
+        let cms_logger = CmsLogger::for_rfc6492_rcvd(self.rfc6492_log_dir.as_ref(), &recipient, &child);
 
         let (res, should_log_cms) = match content {
             rfc6492::Content::Qry(rfc6492::Qry::Revoke(req)) => {
@@ -418,12 +379,7 @@ impl<S: Signer> CaServer<S> {
         let class_name = issue_req.class_name();
         let pub_key = issue_req.csr().public_key();
 
-        let cmd = CmdDet::child_certify(
-            parent,
-            child.clone(),
-            issue_req.clone(),
-            self.signer.clone(),
-        );
+        let cmd = CmdDet::child_certify(parent, child.clone(), issue_req.clone(), self.signer.clone());
 
         let ca = self.ca_store.command(cmd)?;
 
@@ -450,13 +406,7 @@ impl<S: Signer> CaServer<S> {
 
     /// Get the current CAs
     pub fn ca_list(&self) -> CertAuthList {
-        CertAuthList::new(
-            self.ca_store
-                .list()
-                .into_iter()
-                .map(CertAuthSummary::new)
-                .collect(),
-        )
+        CertAuthList::new(self.ca_store.list().into_iter().map(CertAuthSummary::new).collect())
     }
 
     /// Initialises a CA without a repo, no parents, no children, no nothing
@@ -486,12 +436,7 @@ impl<S: Signer> CaServer<S> {
     }
 
     /// Updates a parent of a CA
-    pub fn ca_parent_update(
-        &self,
-        handle: Handle,
-        parent: ParentHandle,
-        contact: ParentCaContact,
-    ) -> KrillResult<()> {
+    pub fn ca_parent_update(&self, handle: Handle, parent: ParentHandle, contact: ParentCaContact) -> KrillResult<()> {
         let upd = CmdDet::update_parent(&handle, parent, contact);
         self.send_command(upd)
     }
@@ -525,10 +470,7 @@ impl<S: Signer> CaServer<S> {
             if let Ok(ca) = self.get_ca(&handle) {
                 for parent in ca.parents() {
                     if let Err(e) = self.get_updates_from_parent(&handle, &parent).await {
-                        error!(
-                            "Failed to refresh CA certificates for {}, error: {}",
-                            &handle, e
-                        );
+                        error!("Failed to refresh CA certificates for {}, error: {}", &handle, e);
                     }
                 }
             }
@@ -559,11 +501,7 @@ impl<S: Signer> CaServer<S> {
     }
 
     /// Try to update a specific CA
-    pub async fn get_updates_from_parent(
-        &self,
-        handle: &Handle,
-        parent: &ParentHandle,
-    ) -> KrillResult<()> {
+    pub async fn get_updates_from_parent(&self, handle: &Handle, parent: &ParentHandle) -> KrillResult<()> {
         if handle == &ta_handle() {
             Ok(()) // The (test) TA never needs updates.
         } else {
@@ -585,10 +523,8 @@ impl<S: Signer> CaServer<S> {
 
     /// Sends requests to a specific parent for the CA matching handle.
     pub async fn send_requests(&self, handle: &Handle, parent: &ParentHandle) -> KrillResult<()> {
-        self.send_revoke_requests_handle_responses(handle, parent)
-            .await?;
-        self.send_cert_requests_handle_responses(handle, parent)
-            .await
+        self.send_revoke_requests_handle_responses(handle, parent).await?;
+        self.send_cert_requests_handle_responses(handle, parent).await
     }
 
     /// Sends requests to all parents for the CA matching the handle.
@@ -602,11 +538,7 @@ impl<S: Signer> CaServer<S> {
         Ok(())
     }
 
-    async fn send_revoke_requests_handle_responses(
-        &self,
-        handle: &Handle,
-        parent: &ParentHandle,
-    ) -> KrillResult<()> {
+    async fn send_revoke_requests_handle_responses(&self, handle: &Handle, parent: &ParentHandle) -> KrillResult<()> {
         let child = self.ca_store.get_latest(handle)?;
         let requests = child.revoke_requests(parent);
 
@@ -669,8 +601,7 @@ impl<S: Signer> CaServer<S> {
             for req in revoke_requests.into_iter() {
                 revocations.push((&req).into());
 
-                let cmd =
-                    CmdDet::child_revoke_key(parent_h, handle.clone(), req, self.signer.clone());
+                let cmd = CmdDet::child_revoke_key(parent_h, handle.clone(), req, self.signer.clone());
 
                 self.send_command(cmd)?;
             }
@@ -693,18 +624,12 @@ impl<S: Signer> CaServer<S> {
             for req in revoke_requests.into_iter() {
                 let sender = parent_res.child_handle().clone();
                 let recipient = parent_res.parent_handle().clone();
-                let cms_logger =
-                    CmsLogger::for_rfc6492_sent(self.rfc6492_log_dir.as_ref(), &sender, &recipient);
+                let cms_logger = CmsLogger::for_rfc6492_sent(self.rfc6492_log_dir.as_ref(), &sender, &recipient);
 
                 let revoke = rfc6492::Message::revoke(sender, recipient, req.clone());
 
                 match self
-                    .send_rfc6492_and_validate_response(
-                        signing_key,
-                        parent_res,
-                        revoke.into_bytes(),
-                        Some(cms_logger),
-                    )
+                    .send_rfc6492_and_validate_response(signing_key, parent_res, revoke.into_bytes(), Some(cms_logger))
                     .await
                 {
                     Err(e) => error!("Could not send/validate revoke: {}", e),
@@ -723,19 +648,13 @@ impl<S: Signer> CaServer<S> {
         Ok(revoke_map)
     }
 
-    async fn send_cert_requests_handle_responses(
-        &self,
-        handle: &Handle,
-        parent: &ParentHandle,
-    ) -> KrillResult<()> {
+    async fn send_cert_requests_handle_responses(&self, handle: &Handle, parent: &ParentHandle) -> KrillResult<()> {
         let child = self.ca_store.get_latest(handle)?;
         let cert_requests = child.cert_requests(parent);
 
         let issued_certs = match child.parent(parent)? {
             ParentCaContact::Ta(_) => Err(Error::TaNotAllowed),
-            ParentCaContact::Embedded => {
-                self.send_cert_requests_embedded(cert_requests, handle, parent)
-            }
+            ParentCaContact::Embedded => self.send_cert_requests_embedded(cert_requests, handle, parent),
             ParentCaContact::Rfc6492(parent_res) => {
                 self.send_cert_requests_rfc6492(cert_requests, child.id_key(), &parent_res)
                     .await
@@ -746,12 +665,7 @@ impl<S: Signer> CaServer<S> {
             for issued in issued_certs.into_iter() {
                 let received = RcvdCert::from(issued);
 
-                let upd_rcvd_cmd = CmdDet::upd_received_cert(
-                    handle,
-                    class_name.clone(),
-                    received,
-                    self.signer.clone(),
-                );
+                let upd_rcvd_cmd = CmdDet::upd_received_cert(handle, class_name.clone(), received, self.signer.clone());
 
                 self.send_command(upd_rcvd_cmd)?;
             }
@@ -806,18 +720,12 @@ impl<S: Signer> CaServer<S> {
                 let sender = parent_res.child_handle().clone();
                 let recipient = parent_res.parent_handle().clone();
 
-                let cms_logger =
-                    CmsLogger::for_rfc6492_sent(self.rfc6492_log_dir.as_ref(), &sender, &recipient);
+                let cms_logger = CmsLogger::for_rfc6492_sent(self.rfc6492_log_dir.as_ref(), &sender, &recipient);
 
                 let issue = rfc6492::Message::issue(sender, recipient, req);
 
                 match self
-                    .send_rfc6492_and_validate_response(
-                        signing_key,
-                        parent_res,
-                        issue.into_bytes(),
-                        Some(cms_logger),
-                    )
+                    .send_rfc6492_and_validate_response(signing_key, parent_res, issue.into_bytes(), Some(cms_logger))
                     .await
                 {
                     Err(e) => error!("Could not send/validate csr: {}", e),
@@ -854,10 +762,7 @@ impl<S: Signer> CaServer<S> {
         let update_entitlements_command =
             CmdDet::upd_resource_classes(handle, parent, entitlements, self.signer.clone());
 
-        let new_version = self
-            .ca_store
-            .command(update_entitlements_command)?
-            .version();
+        let new_version = self.ca_store.command(update_entitlements_command)?.version();
 
         Ok(new_version > current_version)
     }
@@ -886,11 +791,7 @@ impl<S: Signer> CaServer<S> {
         }
     }
 
-    fn get_entitlements_embedded(
-        &self,
-        handle: &Handle,
-        parent: &ParentHandle,
-    ) -> KrillResult<api::Entitlements> {
+    fn get_entitlements_embedded(&self, handle: &Handle, parent: &ParentHandle) -> KrillResult<api::Entitlements> {
         let parent = self.ca_store.get_latest(parent)?;
         parent.list(handle)
     }
@@ -956,10 +857,9 @@ impl<S: Signer> CaServer<S> {
         msg: Bytes,
         cms_logger: Option<CmsLogger>,
     ) -> KrillResult<ProtocolCms> {
-        let signed_msg =
-            ProtocolCmsBuilder::create(signing_key, self.signer.read().unwrap().deref(), msg)
-                .map_err(Error::signer)?
-                .as_bytes();
+        let signed_msg = ProtocolCmsBuilder::create(signing_key, self.signer.read().unwrap().deref(), msg)
+            .map_err(Error::signer)?
+            .as_bytes();
 
         let uri = service_uri.to_string();
 
@@ -982,10 +882,7 @@ impl<S: Signer> CaServer<S> {
         };
 
         if let Err(e) = msg.validate(service_id) {
-            error!(
-                "Could not validate protocol response: {}",
-                base64::encode(res.as_ref())
-            );
+            error!("Could not validate protocol response: {}", base64::encode(res.as_ref()));
             return Err(Error::custom(e));
         }
 
@@ -1025,18 +922,12 @@ impl<S: Signer> CaServer<S> {
         repository: &rfc8183::RepositoryResponse,
     ) -> KrillResult<ListReply> {
         let reply = self
-            .send_rfc8181_and_validate_response(
-                ca_handle,
-                repository,
-                rfc8181::Message::list_query().into_bytes(),
-            )
+            .send_rfc8181_and_validate_response(ca_handle, repository, rfc8181::Message::list_query().into_bytes())
             .await?;
 
         match reply {
             rfc8181::ReplyMessage::ListReply(list_reply) => Ok(list_reply),
-            rfc8181::ReplyMessage::SuccessReply => {
-                Err(Error::custom("Got success reply to list query?!"))
-            }
+            rfc8181::ReplyMessage::SuccessReply => Err(Error::custom("Got success reply to list query?!")),
             rfc8181::ReplyMessage::ErrorReply(e) => Err(Error::custom(e)),
         }
     }
@@ -1056,9 +947,7 @@ impl<S: Signer> CaServer<S> {
         match reply {
             rfc8181::ReplyMessage::SuccessReply => Ok(()),
             rfc8181::ReplyMessage::ErrorReply(e) => Err(Error::custom(e)),
-            rfc8181::ReplyMessage::ListReply(_) => {
-                Err(Error::custom("Got list reply to delta query?!"))
-            }
+            rfc8181::ReplyMessage::ListReply(_) => Err(Error::custom("Got list reply to delta query?!")),
         }
     }
 }
@@ -1067,11 +956,7 @@ impl<S: Signer> CaServer<S> {
 ///
 impl<S: Signer> CaServer<S> {
     /// Update the routes authorized by a CA
-    pub fn ca_routes_update(
-        &self,
-        handle: Handle,
-        updates: RouteAuthorizationUpdates,
-    ) -> KrillResult<()> {
+    pub fn ca_routes_update(&self, handle: Handle, updates: RouteAuthorizationUpdates) -> KrillResult<()> {
         let cmd = CmdDet::route_authorizations_update(&handle, updates, self.signer.clone());
         self.send_command(cmd)
     }
@@ -1082,11 +967,7 @@ impl<S: Signer> CaServer<S> {
 impl<S: Signer> CaServer<S> {
     /// Sign a one-off single-signed RTA and return it
     /// and forget it
-    pub fn rta_one_off(
-        &self,
-        ca: Handle,
-        request: RtaRequest,
-    ) -> KrillResult<ResourceTaggedAttestation> {
+    pub fn rta_one_off(&self, ca: Handle, request: RtaRequest) -> KrillResult<ResourceTaggedAttestation> {
         let ca = self.get_ca(&ca)?;
         ca.rta_one_off(request, self.signer.clone())
     }
@@ -1113,8 +994,7 @@ mod tests {
 
             let event_queue = Arc::new(EventQueueListener::in_mem());
 
-            let server =
-                CaServer::<OpenSslSigner>::build(&d, None, None, event_queue, signer).unwrap();
+            let server = CaServer::<OpenSslSigner>::build(&d, None, None, event_queue, signer).unwrap();
 
             let repo_info = {
                 let base_uri = test::rsync("rsync://localhost/repo/ta/");

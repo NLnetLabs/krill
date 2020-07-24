@@ -109,12 +109,12 @@ mod tests {
             definition("192.168.0.0/16-20 => 64496"),   // keep
             definition("192.168.0.0/16-18 => 64496"),   // remove there is a longer ml
             definition("192.168.0.0/18-20 => 64496"),   // remove covering has longer ml
-            definition("192.168.0.0/18-24 => 64496"), // keep, this is more permissive for specific bit
+            definition("192.168.0.0/18-24 => 64496"),   // keep, this is more permissive for specific bit
             definition("192.168.127.0/24-24 => 64496"), // keep, this is more specific
-            definition("192.168.0.0/16-20 => 64497"), // different asn -> keep
-            definition("10.0.0.0/8 => 64496"),        // replace with one with max length
-            definition("10.0.1.0/24 => 64498"),       // remove, there is one with explicit ml
-            definition("10.0.1.0/24-24 => 64498"),    // keep
+            definition("192.168.0.0/16-20 => 64497"),   // different asn -> keep
+            definition("10.0.0.0/8 => 64496"),          // replace with one with max length
+            definition("10.0.1.0/24 => 64498"),         // remove, there is one with explicit ml
+            definition("10.0.1.0/24-24 => 64498"),      // keep
         ];
 
         let update = clean(roas).unwrap();

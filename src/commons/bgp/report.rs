@@ -99,10 +99,7 @@ impl fmt::Display for BgpAnalysisReport {
                     }
 
                     writeln!(f)?;
-                    writeln!(
-                        f,
-                        "\t\tAuthorizes additional *invisible* more specific announcements:"
-                    )?;
+                    writeln!(f, "\t\tAuthorizes additional *invisible* more specific announcements:")?;
                     for ann in roa.authorizes_excess.iter() {
                         writeln!(f, "\t\t{}", ann)?;
                     }
@@ -153,10 +150,11 @@ impl fmt::Display for BgpAnalysisReport {
                 writeln!(f)?;
             }
 
-            if let Some(invalid_length) =
-                entry_map.get(&BgpAnalysisState::AnnouncementInvalidLength)
-            {
-                writeln!(f, "Announcements from an authorized ASN, which are too specific (not allowed by max length):")?;
+            if let Some(invalid_length) = entry_map.get(&BgpAnalysisState::AnnouncementInvalidLength) {
+                writeln!(
+                    f,
+                    "Announcements from an authorized ASN, which are too specific (not allowed by max length):"
+                )?;
                 for ann in invalid_length {
                     writeln!(f)?;
                     writeln!(f, "\tAnnouncement: {}", ann.definition)?;
@@ -170,7 +168,10 @@ impl fmt::Display for BgpAnalysisReport {
             }
 
             if let Some(not_found) = entry_map.get(&BgpAnalysisState::AnnouncementNotFound) {
-                writeln!(f, "Announcements which are 'not found' (not covered by any of your authorizations):")?;
+                writeln!(
+                    f,
+                    "Announcements which are 'not found' (not covered by any of your authorizations):"
+                )?;
                 writeln!(f)?;
                 for ann in not_found {
                     writeln!(f, "\tAnnouncement: {}", ann.definition)?;
@@ -301,10 +302,7 @@ impl BgpAnalysisEntry {
         }
     }
 
-    pub fn announcement_invalid_asn(
-        announcement: Announcement,
-        mut disallowed_by: Vec<RoaDefinition>,
-    ) -> Self {
+    pub fn announcement_invalid_asn(announcement: Announcement, mut disallowed_by: Vec<RoaDefinition>) -> Self {
         disallowed_by.sort();
         BgpAnalysisEntry {
             definition: RoaDefinition::from(announcement),
@@ -317,10 +315,7 @@ impl BgpAnalysisEntry {
         }
     }
 
-    pub fn announcement_invalid_length(
-        announcement: Announcement,
-        mut disallowed_by: Vec<RoaDefinition>,
-    ) -> Self {
+    pub fn announcement_invalid_length(announcement: Announcement, mut disallowed_by: Vec<RoaDefinition>) -> Self {
         disallowed_by.sort();
         BgpAnalysisEntry {
             definition: RoaDefinition::from(announcement),
@@ -393,15 +388,9 @@ impl fmt::Display for AnnouncementReportEntry {
         let state_str = match self.state {
             AnnouncementReportState::Valid => "announcement 'valid'",
             AnnouncementReportState::InvalidAsn => "announcement 'invalid': unauthorized asn",
-            AnnouncementReportState::InvalidLength => {
-                "announcement 'invalid': more specific than allowed"
-            }
-            AnnouncementReportState::NotFound => {
-                "announcement 'not found': not covered by your ROAs"
-            }
-            AnnouncementReportState::Unseen => {
-                "ROA does not cover any known announcement (obsolete or backup?)"
-            }
+            AnnouncementReportState::InvalidLength => "announcement 'invalid': more specific than allowed",
+            AnnouncementReportState::NotFound => "announcement 'not found': not covered by your ROAs",
+            AnnouncementReportState::Unseen => "ROA does not cover any known announcement (obsolete or backup?)",
             AnnouncementReportState::NoInfo => "ROA exists, but no bgp info currently available",
         };
         write!(f, "{}\t{}", self.definition, state_str)
@@ -563,12 +552,8 @@ impl fmt::Display for RoaReportEntry {
                 self.authorizes_excess.len(),
                 self.disallows.len()
             ),
-            RoaReportEntryState::NotFound => {
-                "announcement 'not found': not covered by your ROAs".to_string()
-            }
-            RoaReportEntryState::NoInfo => {
-                "ROA exists, but no bgp info currently available".to_string()
-            }
+            RoaReportEntryState::NotFound => "announcement 'not found': not covered by your ROAs".to_string(),
+            RoaReportEntryState::NoInfo => "ROA exists, but no bgp info currently available".to_string(),
         };
         write!(f, "{}\t{}", self.definition, state_str)
     }
@@ -606,14 +591,12 @@ mod tests {
         let report: BgpAnalysisReport = serde_json::from_str(json).unwrap();
         let report: AnnouncementReport = report.into();
 
-        let expected_json =
-            include_str!("../../../test-resources/bgp/expected_announcement_report.json");
+        let expected_json = include_str!("../../../test-resources/bgp/expected_announcement_report.json");
         let expected: AnnouncementReport = serde_json::from_str(expected_json).unwrap();
 
         assert_eq!(report, expected);
 
-        let expected_text =
-            include_str!("../../../test-resources/bgp/expected_announcement_report.txt");
+        let expected_text = include_str!("../../../test-resources/bgp/expected_announcement_report.txt");
         assert_eq!(report.to_string(), expected_text);
     }
 

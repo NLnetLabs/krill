@@ -22,8 +22,8 @@ use rpki::x509::{Serial, Time};
 use crate::commons::api::publication::Publish;
 use crate::commons::api::{publication, RoaAggregateKey};
 use crate::commons::api::{
-    Base64, ChildHandle, ErrorResponse, Handle, HexEncodedHash, IssuanceRequest, ListReply,
-    ParentCaContact, ParentHandle, RepositoryContact, RequestResourceLimit, RoaDefinition,
+    Base64, ChildHandle, ErrorResponse, Handle, HexEncodedHash, IssuanceRequest, ListReply, ParentCaContact,
+    ParentHandle, RepositoryContact, RequestResourceLimit, RoaDefinition,
 };
 use crate::commons::remote::crypto::IdCert;
 use crate::commons::util::ext_serde;
@@ -66,9 +66,7 @@ impl From<&str> for ResourceClassName {
 
 impl From<String> for ResourceClassName {
     fn from(s: String) -> ResourceClassName {
-        ResourceClassName {
-            name: Bytes::from(s),
-        }
+        ResourceClassName { name: Bytes::from(s) }
     }
 }
 
@@ -315,11 +313,7 @@ pub struct RcvdCert {
 
 impl RcvdCert {
     pub fn new(cert: Cert, uri: uri::Rsync, resources: ResourceSet) -> Self {
-        RcvdCert {
-            cert,
-            uri,
-            resources,
-        }
+        RcvdCert { cert, uri, resources }
     }
 
     pub fn cert(&self) -> &Cert {
@@ -390,8 +384,7 @@ impl AsRef<Cert> for RcvdCert {
 
 impl PartialEq for RcvdCert {
     fn eq(&self, other: &RcvdCert) -> bool {
-        self.cert.to_captured().into_bytes() == other.cert.to_captured().into_bytes()
-            && self.uri == other.uri
+        self.cert.to_captured().into_bytes() == other.cert.to_captured().into_bytes() && self.uri == other.uri
     }
 }
 
@@ -403,10 +396,7 @@ impl Eq for RcvdCert {}
 pub struct TrustAnchorLocator {
     uris: Vec<uri::Https>, // We won't create TALs with rsync, this is not for parsing.
 
-    #[serde(
-        deserialize_with = "ext_serde::de_bytes",
-        serialize_with = "ext_serde::ser_bytes"
-    )]
+    #[serde(deserialize_with = "ext_serde::de_bytes", serialize_with = "ext_serde::ser_bytes")]
     encoded_ski: Bytes,
 }
 
@@ -455,10 +445,7 @@ pub struct RepoInfo {
 
 impl RepoInfo {
     pub fn new(base_uri: uri::Rsync, rpki_notify: uri::Https) -> Self {
-        RepoInfo {
-            base_uri,
-            rpki_notify,
-        }
+        RepoInfo { base_uri, rpki_notify }
     }
 
     pub fn base_uri(&self) -> &uri::Rsync {
@@ -482,11 +469,7 @@ impl RepoInfo {
 
     /// Returns the CRL Distribution Point (rsync URI) for this RepoInfo, given the
     /// namespace and signing key.
-    pub fn crl_distribution_point(
-        &self,
-        name_space: &str,
-        signing_key: &KeyIdentifier,
-    ) -> uri::Rsync {
+    pub fn crl_distribution_point(&self, name_space: &str, signing_key: &KeyIdentifier) -> uri::Rsync {
         self.resolve(name_space, &Self::crl_name(signing_key))
     }
 
@@ -779,9 +762,7 @@ impl CurrentObjects {
         let ca_repo = base_uri.ca_repository(name_space);
         self.0
             .iter()
-            .map(|(name, object)| {
-                Publish::new(None, ca_repo.join(name.as_bytes()), object.content.clone())
-            })
+            .map(|(name, object)| Publish::new(None, ca_repo.join(name.as_bytes()), object.content.clone()))
             .collect()
     }
 
@@ -858,10 +839,7 @@ pub struct Revocations(Vec<Revocation>);
 
 impl Revocations {
     pub fn to_crl_entries(&self) -> Vec<CrlEntry> {
-        self.0
-            .iter()
-            .map(|r| CrlEntry::new(r.serial, r.expires))
-            .collect()
+        self.0.iter().map(|r| CrlEntry::new(r.serial, r.expires)).collect()
     }
 
     /// Purges all expired revocations, and returns them.
@@ -1064,25 +1042,15 @@ impl Into<publication::PublishDelta> for ObjectsDelta {
         let mut builder = publication::PublishDeltaBuilder::new();
 
         for a in self.added.into_iter() {
-            let publish = publication::Publish::new(
-                None,
-                self.ca_repo.join(a.name.as_bytes()),
-                a.object.content,
-            );
+            let publish = publication::Publish::new(None, self.ca_repo.join(a.name.as_bytes()), a.object.content);
             builder.add_publish(publish);
         }
         for u in self.updated.into_iter() {
-            let update = publication::Update::new(
-                None,
-                self.ca_repo.join(u.name.as_bytes()),
-                u.object.content,
-                u.old,
-            );
+            let update = publication::Update::new(None, self.ca_repo.join(u.name.as_bytes()), u.object.content, u.old);
             builder.add_update(update);
         }
         for w in self.withdrawn.into_iter() {
-            let withdraw =
-                publication::Withdraw::new(None, self.ca_repo.join(w.name.as_bytes()), w.hash);
+            let withdraw = publication::Withdraw::new(None, self.ca_repo.join(w.name.as_bytes()), w.hash);
             builder.add_withdraw(withdraw);
         }
         builder.finish()
@@ -1413,12 +1381,8 @@ impl FromStr for ResourceSet {
         if s.len() < 16 || !s.starts_with("asn: ") {
             return Err(ResourceSetError::FromString);
         }
-        let v4_start = s
-            .find(", v4: ")
-            .ok_or_else(|| ResourceSetError::FromString)?;
-        let v6_start = s
-            .find(", v6: ")
-            .ok_or_else(|| ResourceSetError::FromString)?;
+        let v4_start = s.find(", v4: ").ok_or_else(|| ResourceSetError::FromString)?;
+        let v6_start = s.find(", v6: ").ok_or_else(|| ResourceSetError::FromString)?;
 
         let asn = &s[5..v4_start];
         let v4 = &s[v4_start + 6..v6_start];
@@ -1469,9 +1433,7 @@ impl fmt::Display for ResourceSet {
 // TODO: Implement equals better on enclosed AsBlocks and IpBlocks, and check corner cases
 impl PartialEq for ResourceSet {
     fn eq(&self, other: &Self) -> bool {
-        if let (Ok(self_str), Ok(other_str)) =
-            (serde_json::to_string(&self), serde_json::to_string(other))
-        {
+        if let (Ok(self_str), Ok(other_str)) = (serde_json::to_string(&self), serde_json::to_string(other)) {
             self_str == other_str
         } else {
             false
@@ -1583,12 +1545,10 @@ impl CertAuthInfo {
             .collect();
 
         let empty = ResourceSet::default();
-        let resources = resource_classes
-            .values()
-            .fold(ResourceSet::default(), |res, rci| {
-                let rc_resouces = rci.current_resources().unwrap_or(&empty);
-                res.union(rc_resouces)
-            });
+        let resources = resource_classes.values().fold(ResourceSet::default(), |res, rci| {
+            let rc_resouces = rci.current_resources().unwrap_or(&empty);
+            res.union(rc_resouces)
+        });
 
         CertAuthInfo {
             handle,
@@ -1846,9 +1806,7 @@ pub struct AllCertAuthIssues {
 
 impl Default for AllCertAuthIssues {
     fn default() -> Self {
-        AllCertAuthIssues {
-            cas: HashMap::new(),
-        }
+        AllCertAuthIssues { cas: HashMap::new() }
     }
 }
 
@@ -1999,9 +1957,7 @@ pub enum ResourceSetError {
     #[display(fmt = "Limit in CSR exceeds resource entitlements.")]
     Limit,
 
-    #[display(
-        fmt = "Cannot parse resource set string, expected: 'asn: <ASNs>, ipv4: <IPv4s>, ipv6: <IPv6s>'."
-    )]
+    #[display(fmt = "Cannot parse resource set string, expected: 'asn: <ASNs>, ipv4: <IPv4s>, ipv6: <IPv6s>'.")]
     FromString,
 }
 
@@ -2153,12 +2109,8 @@ mod test {
         assert_ne!(resource_set, resource_set_2);
 
         let default_set = ResourceSet::default();
-        let certified = ResourceSet::from_strs(
-            "",
-            "10.0.0.0/16, 192.168.0.0/16",
-            "2001:db8::/32, 2000:db8::/32",
-        )
-        .unwrap();
+        let certified =
+            ResourceSet::from_strs("", "10.0.0.0/16, 192.168.0.0/16", "2001:db8::/32, 2000:db8::/32").unwrap();
         assert_ne!(default_set, certified);
         assert_ne!(resource_set, certified);
     }
@@ -2178,12 +2130,10 @@ mod test {
 
     #[test]
     fn test_resource_set_intersection() {
-        let child_resources_json =
-            include_str!("../../../test-resources/resources/child_resources.json");
+        let child_resources_json = include_str!("../../../test-resources/resources/child_resources.json");
         let child_resources: ResourceSet = serde_json::from_str(child_resources_json).unwrap();
 
-        let parent_resources_json =
-            include_str!("../../../test-resources/resources/parent_resources.json");
+        let parent_resources_json = include_str!("../../../test-resources/resources/parent_resources.json");
         let parent_resources: ResourceSet = serde_json::from_str(parent_resources_json).unwrap();
 
         let intersection = parent_resources.intersection(&child_resources);

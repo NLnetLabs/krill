@@ -53,8 +53,7 @@ impl PubServer {
         let mut pub_server_dir = work_dir.clone();
         pub_server_dir.push(PUBSERVER_DIR);
         if pub_server_dir.exists() {
-            let server =
-                PubServer::build(rsync_base, rrdp_base_uri, work_dir, rfc8181_log_dir, signer)?;
+            let server = PubServer::build(rsync_base, rrdp_base_uri, work_dir, rfc8181_log_dir, signer)?;
             if server.publishers()?.is_empty() {
                 let _result = fs::remove_dir_all(pub_server_dir);
                 Ok(None)
@@ -75,10 +74,7 @@ impl PubServer {
     ) -> Result<Self, Error> {
         let default = Self::repository_handle();
 
-        let store = Arc::new(DiskAggregateStore::<Repository>::new(
-            work_dir,
-            PUBSERVER_DIR,
-        )?);
+        let store = Arc::new(DiskAggregateStore::<Repository>::new(work_dir, PUBSERVER_DIR)?);
 
         if !store.has(&default) {
             info!("Creating default repository");
@@ -123,21 +119,14 @@ impl PubServer {
     }
 
     /// Handle an RFC8181 request and sign the response
-    pub fn rfc8181(
-        &self,
-        publisher_handle: PublisherHandle,
-        msg_bytes: Bytes,
-    ) -> KrillResult<Bytes> {
+    pub fn rfc8181(&self, publisher_handle: PublisherHandle, msg_bytes: Bytes) -> KrillResult<Bytes> {
         let repository = self.repository()?;
         let publisher = repository.get_publisher(&publisher_handle)?;
 
-        let msg = ProtocolCms::decode(msg_bytes.clone(), false)
-            .map_err(|e| Error::Rfc8181Decode(e.to_string()))?;
-        let cms_logger =
-            CmsLogger::for_rfc8181_rcvd(self.rfc8181_log_dir.as_ref(), &publisher_handle);
+        let msg = ProtocolCms::decode(msg_bytes.clone(), false).map_err(|e| Error::Rfc8181Decode(e.to_string()))?;
+        let cms_logger = CmsLogger::for_rfc8181_rcvd(self.rfc8181_log_dir.as_ref(), &publisher_handle);
 
-        msg.validate(publisher.id_cert())
-            .map_err(Error::Rfc8181Validation)?;
+        msg.validate(publisher.id_cert()).map_err(Error::Rfc8181Validation)?;
 
         let content = rfc8181::Message::from_signed_message(&msg)?;
         let query = content.into_query()?;
@@ -147,25 +136,22 @@ impl PubServer {
                 let list_reply = publisher.list_current();
                 (rfc8181::Message::list_reply(list_reply), false)
             }
-            rfc8181::QueryMessage::PublishDelta(delta) => {
-                match self.publish(publisher_handle, delta) {
-                    Ok(()) => (rfc8181::Message::success_reply(), true),
-                    Err(e) => {
-                        let error_code = e.to_rfc8181_error_code();
-                        let report_error = rfc8181::ReportError::reply(error_code, None);
-                        let mut builder = rfc8181::ErrorReply::build_with_capacity(1);
-                        builder.add(report_error);
-                        (builder.build_message(), true)
-                    }
+            rfc8181::QueryMessage::PublishDelta(delta) => match self.publish(publisher_handle, delta) {
+                Ok(()) => (rfc8181::Message::success_reply(), true),
+                Err(e) => {
+                    let error_code = e.to_rfc8181_error_code();
+                    let report_error = rfc8181::ReportError::reply(error_code, None);
+                    let mut builder = rfc8181::ErrorReply::build_with_capacity(1);
+                    builder.add(report_error);
+                    (builder.build_message(), true)
                 }
-            }
+            },
         };
 
         let signer = self.signer.read().map_err(Error::signer)?;
 
-        let response_builder =
-            ProtocolCmsBuilder::create(repository.key_id(), signer.deref(), response.into_bytes())
-                .map_err(Error::signer)?;
+        let response_builder = ProtocolCmsBuilder::create(repository.key_id(), signer.deref(), response.into_bytes())
+            .map_err(Error::signer)?;
 
         let response_bytes = response_builder.as_bytes();
         if should_log_cms {
@@ -210,10 +196,7 @@ impl PubServer {
         Ok(repository.repo_info_for(publisher))
     }
 
-    pub fn get_publisher_details(
-        &self,
-        publisher_handle: &PublisherHandle,
-    ) -> KrillResult<PublisherDetails> {
+    pub fn get_publisher_details(&self, publisher_handle: &PublisherHandle) -> KrillResult<PublisherDetails> {
         let repository = self.repository()?;
         repository
             .get_publisher(publisher_handle)
@@ -310,14 +293,7 @@ mod tests {
         let signer = OpenSslSigner::build(work_dir).unwrap();
         let signer = Arc::new(RwLock::new(signer));
 
-        PubServer::build(
-            &server_base_uri(),
-            server_base_http_uri(),
-            work_dir,
-            None,
-            signer,
-        )
-        .unwrap()
+        PubServer::build(&server_base_uri(), server_base_http_uri(), work_dir, None, signer).unwrap()
     }
 
     #[test]
@@ -388,10 +364,7 @@ mod tests {
             server.create_publisher(publisher_req).unwrap();
 
             // get the file out of a list_reply
-            fn find_in_reply<'a>(
-                reply: &'a ListReply,
-                uri: &uri::Rsync,
-            ) -> Option<&'a ListElement> {
+            fn find_in_reply<'a>(reply: &'a ListReply, uri: &uri::Rsync) -> Option<&'a ListElement> {
                 reply.elements().iter().find(|e| e.uri() == uri)
             }
 
@@ -416,16 +389,8 @@ mod tests {
             // Two files should now appear in the list
             let list_reply = server.list(&alice_handle).unwrap();
             assert_eq!(2, list_reply.elements().len());
-            assert!(find_in_reply(
-                &list_reply,
-                &test::rsync("rsync://localhost/repo/alice/file.txt")
-            )
-            .is_some());
-            assert!(find_in_reply(
-                &list_reply,
-                &test::rsync("rsync://localhost/repo/alice/file2.txt")
-            )
-            .is_some());
+            assert!(find_in_reply(&list_reply, &test::rsync("rsync://localhost/repo/alice/file.txt")).is_some());
+            assert!(find_in_reply(&list_reply, &test::rsync("rsync://localhost/repo/alice/file2.txt")).is_some());
 
             // Update
             // - update file
@@ -454,25 +419,14 @@ mod tests {
             let list_reply = server.list(&alice_handle).unwrap();
 
             assert_eq!(2, list_reply.elements().len());
-            assert!(find_in_reply(
-                &list_reply,
-                &test::rsync("rsync://localhost/repo/alice/file.txt")
-            )
-            .is_some());
+            assert!(find_in_reply(&list_reply, &test::rsync("rsync://localhost/repo/alice/file.txt")).is_some());
             assert_eq!(
-                find_in_reply(
-                    &list_reply,
-                    &test::rsync("rsync://localhost/repo/alice/file.txt")
-                )
-                .unwrap()
-                .hash(),
+                find_in_reply(&list_reply, &test::rsync("rsync://localhost/repo/alice/file.txt"))
+                    .unwrap()
+                    .hash(),
                 file1_update.hash()
             );
-            assert!(find_in_reply(
-                &list_reply,
-                &test::rsync("rsync://localhost/repo/alice/file3.txt")
-            )
-            .is_some());
+            assert!(find_in_reply(&list_reply, &test::rsync("rsync://localhost/repo/alice/file3.txt")).is_some());
 
             // Should reject publish outside of base uri
             let file_outside = CurrentFile::new(

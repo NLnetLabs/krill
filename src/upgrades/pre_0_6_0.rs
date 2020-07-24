@@ -8,12 +8,10 @@ use rpki::x509::Time;
 
 use crate::commons::api::{
     Handle, RequestResourceLimit, ResourceClassName, ResourceSet, RevocationRequest, RoaDefinition,
-    RoaDefinitionUpdates, StorableCaCommand, StorableParentContact, StorableRepositoryCommand,
-    StoredEffect,
+    RoaDefinitionUpdates, StorableCaCommand, StorableParentContact, StorableRepositoryCommand, StoredEffect,
 };
 use crate::commons::eventsourcing::{
-    Aggregate, DiskKeyStore, KeyStore, KeyStoreError, KeyStoreVersion, StoredCommand,
-    StoredValueInfo,
+    Aggregate, DiskKeyStore, KeyStore, KeyStoreError, KeyStoreVersion, StoredCommand, StoredValueInfo,
 };
 use crate::commons::remote::rfc8183::ServiceUri;
 use crate::commons::util::softsigner::OpenSslSigner;
@@ -87,13 +85,7 @@ impl UpgradeStore for UpgradeCas {
                 // Load CA, then save a new snapshot and info for the CA
                 let ca: CertAuth<OpenSslSigner> = store
                     .get_aggregate(&ca_handle)
-                    .map_err(|e| {
-                        UpgradeError::Custom(format!(
-                            "Cannot load ca '{}' error: {}",
-                            ca_handle.clone(),
-                            e
-                        ))
-                    })?
+                    .map_err(|e| UpgradeError::Custom(format!("Cannot load ca '{}' error: {}", ca_handle.clone(), e)))?
                     .ok_or_else(|| UpgradeError::CannotLoadAggregate(ca_handle.clone()))?;
 
                 store.store_snapshot(&ca_handle, &ca)?;
@@ -177,11 +169,7 @@ impl UpgradeStore for UpgradePubd {
                 let mut repository: Repository = store
                     .get_aggregate(&pubd_handle)
                     .map_err(|e| {
-                        UpgradeError::Custom(format!(
-                            "Cannot load ca '{}' error: {}",
-                            pubd_handle.clone(),
-                            e
-                        ))
+                        UpgradeError::Custom(format!("Cannot load ca '{}' error: {}", pubd_handle.clone(), e))
                     })?
                     .ok_or_else(|| UpgradeError::CannotLoadAggregate(pubd_handle.clone()))?;
 
@@ -225,10 +213,7 @@ impl PreviousCommand {
         self
     }
 
-    fn into_new_stored_ca_command(
-        self,
-        seq: u64,
-    ) -> Result<StoredCommand<StorableCaCommand>, UpgradeError> {
+    fn into_new_stored_ca_command(self, seq: u64) -> Result<StoredCommand<StorableCaCommand>, UpgradeError> {
         let details = Self::storable_ca_command(self.summary)?;
 
         Ok(StoredCommand::new(
@@ -242,10 +227,7 @@ impl PreviousCommand {
         ))
     }
 
-    fn into_new_stored_pubd_command(
-        self,
-        seq: u64,
-    ) -> Result<StoredCommand<StorableRepositoryCommand>, UpgradeError> {
+    fn into_new_stored_pubd_command(self, seq: u64) -> Result<StoredCommand<StorableRepositoryCommand>, UpgradeError> {
         let details = Self::storable_pubd_command(self.summary)?;
 
         Ok(StoredCommand::new(
@@ -341,9 +323,7 @@ impl PreviousCommand {
             return Err(UpgradeError::unrecognised(s));
         }
 
-        let with_new_start = s
-            .find(with_new)
-            .ok_or_else(|| UpgradeError::unrecognised(s))?;
+        let with_new_start = s.find(with_new).ok_or_else(|| UpgradeError::unrecognised(s))?;
 
         let child = Self::extract_handle(&s[lead.len()..with_new_start])?;
 
@@ -373,27 +353,17 @@ impl PreviousCommand {
             return Err(UpgradeError::unrecognised(s));
         }
 
-        if s.len()
-            < lead.len() + lead_rcn.len() + lead_limit.len() + lead_ki.len() + tail_start.len()
-        {
+        if s.len() < lead.len() + lead_rcn.len() + lead_limit.len() + lead_ki.len() + tail_start.len() {
             return Err(UpgradeError::unrecognised(s));
         }
 
-        let lead_rcn_start = s
-            .find(lead_rcn)
-            .ok_or_else(|| UpgradeError::unrecognised(s))?;
+        let lead_rcn_start = s.find(lead_rcn).ok_or_else(|| UpgradeError::unrecognised(s))?;
 
-        let lead_limit_start = s
-            .find(lead_limit)
-            .ok_or_else(|| UpgradeError::unrecognised(s))?;
+        let lead_limit_start = s.find(lead_limit).ok_or_else(|| UpgradeError::unrecognised(s))?;
 
-        let lead_ki_start = s
-            .find(lead_ki)
-            .ok_or_else(|| UpgradeError::unrecognised(s))?;
+        let lead_ki_start = s.find(lead_ki).ok_or_else(|| UpgradeError::unrecognised(s))?;
 
-        let tail_starts = s
-            .find(tail_start)
-            .ok_or_else(|| UpgradeError::unrecognised(s))?;
+        let tail_starts = s.find(tail_start).ok_or_else(|| UpgradeError::unrecognised(s))?;
 
         let child = Self::extract_handle(&s[lead.len()..lead_rcn_start])?;
         let rcn = ResourceClassName::from(&s[lead_rcn_start + lead_rcn.len()..lead_limit_start]);
@@ -403,9 +373,8 @@ impl PreviousCommand {
             .map_err(|_| UpgradeError::Custom(format!("Cannot parse limit: {}", limit_str)))?;
 
         let ki_str = &s[lead_ki_start + lead_ki.len()..tail_starts];
-        let ki = KeyIdentifier::from_str(ki_str).map_err(|_| {
-            UpgradeError::Custom(format!("Cannot parse key identifier: {}", ki_str))
-        })?;
+        let ki = KeyIdentifier::from_str(ki_str)
+            .map_err(|_| UpgradeError::Custom(format!("Cannot parse key identifier: {}", ki_str)))?;
 
         Ok(StorableCaCommand::ChildCertify(child, rcn, limit, ki))
     }
@@ -424,21 +393,16 @@ impl PreviousCommand {
             return Err(UpgradeError::unrecognised(s));
         }
 
-        let lead_rcn_start = s
-            .find(lead_rcn)
-            .ok_or_else(|| UpgradeError::unrecognised(s))?;
+        let lead_rcn_start = s.find(lead_rcn).ok_or_else(|| UpgradeError::unrecognised(s))?;
 
-        let lead_ki_start = s
-            .find(lead_ki)
-            .ok_or_else(|| UpgradeError::unrecognised(s))?;
+        let lead_ki_start = s.find(lead_ki).ok_or_else(|| UpgradeError::unrecognised(s))?;
 
         let child = Self::extract_handle(&s[lead.len()..lead_rcn_start])?;
         let rcn = ResourceClassName::from(&s[lead_rcn_start + lead_rcn.len()..lead_ki_start]);
 
         let ki_str = &s[lead_ki_start + lead_ki.len()..s.len() - 2];
-        let ki = KeyIdentifier::from_str(ki_str).map_err(|_| {
-            UpgradeError::Custom(format!("Cannot parse key identifier: {}", ki_str))
-        })?;
+        let ki = KeyIdentifier::from_str(ki_str)
+            .map_err(|_| UpgradeError::Custom(format!("Cannot parse key identifier: {}", ki_str)))?;
 
         let revocation_request = RevocationRequest::new(rcn, ki);
 
@@ -460,12 +424,7 @@ impl PreviousCommand {
             "This CA is a TA" => StorableParentContact::Ta,
             "Embedded parent" => StorableParentContact::Embedded,
             "RFC 6492 Parent" => StorableParentContact::Rfc6492,
-            _ => {
-                return Err(UpgradeError::Custom(format!(
-                    "Unrecognised parent: {}",
-                    parts[1]
-                )))
-            }
+            _ => return Err(UpgradeError::Custom(format!("Unrecognised parent: {}", parts[1]))),
         };
         Ok(StorableCaCommand::AddParent(parent, contact))
     }
@@ -478,12 +437,7 @@ impl PreviousCommand {
             "This CA is a TA" => StorableParentContact::Ta,
             "Embedded parent" => StorableParentContact::Embedded,
             "RFC 6492 Parent" => StorableParentContact::Rfc6492,
-            _ => {
-                return Err(UpgradeError::Custom(format!(
-                    "Unrecognised parent: {}",
-                    parts[1]
-                )))
-            }
+            _ => return Err(UpgradeError::Custom(format!("Unrecognised parent: {}", parts[1]))),
         };
         Ok(StorableCaCommand::UpdateParentContact(parent, contact))
     }
@@ -520,9 +474,7 @@ impl PreviousCommand {
             return Err(UpgradeError::unrecognised(s));
         }
 
-        let start_quote_to = s
-            .find("' to '")
-            .ok_or_else(|| UpgradeError::unrecognised(s))?;
+        let start_quote_to = s.find("' to '").ok_or_else(|| UpgradeError::unrecognised(s))?;
         let parent = Self::extract_handle(&s[34..start_quote_to])?;
         let update_str = &s[start_quote_to + 6..s.len()];
 
@@ -536,12 +488,8 @@ impl PreviousCommand {
         for class_update_str in class_update_strings {
             let parts = Self::split_string(class_update_str, 4)?;
             let class_name = ResourceClassName::from(parts[0].as_str());
-            let resources = ResourceSet::from_str(&parts[2]).map_err(|e| {
-                UpgradeError::Custom(format!(
-                    "Cannot parse resources in update entitlements: {}",
-                    e
-                ))
-            })?;
+            let resources = ResourceSet::from_str(&parts[2])
+                .map_err(|e| UpgradeError::Custom(format!("Cannot parse resources in update entitlements: {}", e)))?;
             classes.insert(class_name, resources);
         }
 
@@ -611,32 +559,24 @@ impl PreviousCommand {
         let mut removed = HashSet::new();
 
         if update_str.starts_with("added: ") {
-            let end = update_str
-                .find("removed: ")
-                .unwrap_or_else(|| update_str.len());
+            let end = update_str.find("removed: ").unwrap_or_else(|| update_str.len());
             let added_str = &update_str[7..end];
 
             Self::extract_roas(added_str, &mut added).map_err(|e| {
-                UpgradeError::Custom(format!(
-                    "Could not parse added ROAs in summary: {}, Error: {}",
-                    s, e
-                ))
+                UpgradeError::Custom(format!("Could not parse added ROAs in summary: {}, Error: {}", s, e))
             })?;
         }
 
         if let Some(start) = update_str.find("removed: ") {
             let removed_str = &update_str[start + 9..];
             Self::extract_roas(removed_str, &mut removed).map_err(|e| {
-                UpgradeError::Custom(format!(
-                    "Could not parse removed ROAs in summary: {}, Error: {}",
-                    s, e
-                ))
+                UpgradeError::Custom(format!("Could not parse removed ROAs in summary: {}, Error: {}", s, e))
             })?;
         }
 
-        Ok(StorableCaCommand::RoaDefinitionUpdates(
-            RoaDefinitionUpdates::new(added, removed),
-        ))
+        Ok(StorableCaCommand::RoaDefinitionUpdates(RoaDefinitionUpdates::new(
+            added, removed,
+        )))
     }
 
     fn extract_roas(s: &str, set: &mut HashSet<RoaDefinition>) -> Result<(), UpgradeError> {
@@ -644,9 +584,9 @@ impl PreviousCommand {
         let mut remaining = s.trim();
 
         while !remaining.is_empty() {
-            let sep_start = remaining.find(" => ").ok_or_else(|| {
-                UpgradeError::Custom(format!("Invalid ROA string: {}", remaining))
-            })?;
+            let sep_start = remaining
+                .find(" => ")
+                .ok_or_else(|| UpgradeError::Custom(format!("Invalid ROA string: {}", remaining)))?;
 
             let prefix = &remaining[0..sep_start];
 
@@ -671,10 +611,7 @@ impl PreviousCommand {
         let parts = Self::split_string(s, 2)?;
         let publisher = Self::extract_handle(&parts[0])?;
         let ski = &parts[1];
-        Ok(StorableRepositoryCommand::AddPublisher(
-            publisher,
-            ski.clone(),
-        ))
+        Ok(StorableRepositoryCommand::AddPublisher(publisher, ski.clone()))
     }
 
     fn extract_remove_publisher(s: &str) -> Result<StorableRepositoryCommand, UpgradeError> {
@@ -696,15 +633,9 @@ impl PreviousCommand {
             return Err(UpgradeError::unrecognised(s));
         }
 
-        let lead_published_start = s
-            .find(lead_published)
-            .ok_or_else(|| UpgradeError::unrecognised(s))?;
-        let lead_updated_start = s
-            .find(lead_updated)
-            .ok_or_else(|| UpgradeError::unrecognised(s))?;
-        let lead_withdrawn_start = s
-            .find(lead_withdrawn)
-            .ok_or_else(|| UpgradeError::unrecognised(s))?;
+        let lead_published_start = s.find(lead_published).ok_or_else(|| UpgradeError::unrecognised(s))?;
+        let lead_updated_start = s.find(lead_updated).ok_or_else(|| UpgradeError::unrecognised(s))?;
+        let lead_withdrawn_start = s.find(lead_withdrawn).ok_or_else(|| UpgradeError::unrecognised(s))?;
         let tail_start = s.find(tail).ok_or_else(|| UpgradeError::unrecognised(s))?;
 
         let publisher = Self::extract_handle(&s[lead.len()..lead_published_start])?;
@@ -727,9 +658,8 @@ impl PreviousCommand {
     }
 
     fn extract_resource_set(s: &str) -> Result<ResourceSet, UpgradeError> {
-        ResourceSet::from_str(s).map_err(|e| {
-            UpgradeError::Custom(format!("Cannot parse resources: {}, Error: {}", s, e))
-        })
+        ResourceSet::from_str(s)
+            .map_err(|e| UpgradeError::Custom(format!("Cannot parse resources: {}, Error: {}", s, e)))
     }
 
     /// Extract the quoted strings in the command string. Wants to know how many quoted

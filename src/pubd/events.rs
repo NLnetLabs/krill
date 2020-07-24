@@ -50,9 +50,7 @@ impl IniDet {
         work_dir: &PathBuf,
         signer: &mut S,
     ) -> KrillResult<Ini> {
-        let key = signer
-            .create_key(PublicKeyFormat::default())
-            .map_err(Error::signer)?;
+        let key = signer.create_key(PublicKeyFormat::default()).map_err(Error::signer)?;
 
         let id_cert = IdCertBuilder::new_ta_id_cert(&key, signer).map_err(Error::signer)?;
         let session = RrdpSession::new();
@@ -83,7 +81,10 @@ impl fmt::Display for IniDet {
         write!(
             f,
             "Initialised publication server with cert(hash): {}, session: {}, RRDP base uri: {}, repo dir: {}",
-            self.id_cert.ski_hex(), self.session, self.rrdp_base_uri, self.repo_base_dir.to_string_lossy().as_ref()
+            self.id_cert.ski_hex(),
+            self.session,
+            self.rrdp_base_uri,
+            self.repo_base_dir.to_string_lossy().as_ref()
         )
     }
 }
@@ -98,10 +99,7 @@ pub struct RrdpUpdate {
 
 impl RrdpUpdate {
     pub fn new(delta: Delta, notification: Notification) -> Self {
-        RrdpUpdate {
-            delta,
-            notification,
-        }
+        RrdpUpdate { delta, notification }
     }
 
     pub fn time(&self) -> Time {
@@ -144,11 +142,7 @@ impl EvtDet {
         publisher_handle: PublisherHandle,
         publisher: Publisher,
     ) -> Evt {
-        StoredEvent::new(
-            handle,
-            version,
-            EvtDet::PublisherAdded(publisher_handle, publisher),
-        )
+        StoredEvent::new(handle, version, EvtDet::PublisherAdded(publisher_handle, publisher))
     }
 
     pub(super) fn publisher_removed(
@@ -157,11 +151,7 @@ impl EvtDet {
         publisher_handle: PublisherHandle,
         update: RrdpUpdate,
     ) -> Evt {
-        StoredEvent::new(
-            handle,
-            version,
-            EvtDet::PublisherRemoved(publisher_handle, update),
-        )
+        StoredEvent::new(handle, version, EvtDet::PublisherRemoved(publisher_handle, update))
     }
 
     pub(super) fn published(

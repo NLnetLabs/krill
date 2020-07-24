@@ -12,8 +12,8 @@ use rpki::sigobj::SignedObjectBuilder;
 use rpki::x509::{Serial, Time, Validity};
 
 use crate::commons::api::{
-    AddedObject, CurrentObject, HexEncodedHash, IssuedCert, ObjectName, ObjectsDelta, RcvdCert,
-    RepoInfo, Revocation, Revocations, RevocationsDelta, UpdatedObject, WithdrawnObject,
+    AddedObject, CurrentObject, HexEncodedHash, IssuedCert, ObjectName, ObjectsDelta, RcvdCert, RepoInfo, Revocation,
+    Revocations, RevocationsDelta, UpdatedObject, WithdrawnObject,
 };
 use crate::commons::KrillResult;
 use crate::daemon::ca::{self, RoaInfo, RouteAuthorization, Signer};
@@ -171,14 +171,7 @@ impl CurrentObjectSet {
     ) -> KrillResult<Self> {
         let number = 1;
         let revocations = Revocations::default();
-        let (crl_info, _) = CrlBuilder::build(
-            revocations.clone(),
-            vec![],
-            number,
-            None,
-            signing_cert,
-            signer,
-        )?;
+        let (crl_info, _) = CrlBuilder::build(revocations.clone(), vec![], number, None, signing_cert, signer)?;
 
         let manifest_info = ManifestBuilder::with_crl_only(&crl_info).build(
             signing_cert,

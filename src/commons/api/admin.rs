@@ -227,12 +227,7 @@ pub struct PublisherDetails {
 }
 
 impl PublisherDetails {
-    pub fn new(
-        handle: &Handle,
-        id_cert: IdCert,
-        base_uri: &uri::Rsync,
-        current_files: Vec<PublishElement>,
-    ) -> Self {
+    pub fn new(handle: &Handle, id_cert: IdCert, base_uri: &uri::Rsync, current_files: Vec<PublishElement>) -> Self {
         PublisherDetails {
             handle: handle.clone(),
             id_cert,
@@ -268,18 +263,12 @@ pub struct PublisherClientRequest {
 impl PublisherClientRequest {
     pub fn rfc8183(handle: Handle, response: rfc8183::RepositoryResponse) -> Self {
         let server_info = RepositoryContact::rfc8183(response);
-        PublisherClientRequest {
-            handle,
-            server_info,
-        }
+        PublisherClientRequest { handle, server_info }
     }
 
     pub fn embedded(handle: Handle, repo_info: RepoInfo) -> Self {
         let server_info = RepositoryContact::embedded(repo_info);
-        PublisherClientRequest {
-            handle,
-            server_info,
-        }
+        PublisherClientRequest { handle, server_info }
     }
 
     pub fn unwrap(self) -> (Handle, RepositoryContact) {
@@ -362,9 +351,7 @@ impl fmt::Display for RepositoryContact {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let msg = match self {
             RepositoryContact::Embedded(_) => "embedded publication server".to_string(),
-            RepositoryContact::Rfc8181(res) => {
-                format!("remote publication server at {}", res.service_uri())
-            }
+            RepositoryContact::Rfc8181(res) => format!("remote publication server at {}", res.service_uri()),
         };
         write!(f, "{}", msg)
     }
@@ -409,11 +396,7 @@ pub struct TaCertDetails {
 
 impl TaCertDetails {
     pub fn new(cert: Cert, resources: ResourceSet, tal: TrustAnchorLocator) -> Self {
-        TaCertDetails {
-            cert,
-            resources,
-            tal,
-        }
+        TaCertDetails { cert, resources, tal }
     }
 
     pub fn cert(&self) -> &Cert {

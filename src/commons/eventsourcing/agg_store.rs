@@ -9,8 +9,7 @@ use rpki::x509::Time;
 use crate::commons::api::{CommandHistory, CommandHistoryCriteria, Handle};
 use crate::commons::eventsourcing::cmd::{Command, StoredCommandBuilder};
 use crate::commons::eventsourcing::{
-    Aggregate, CommandKey, DiskKeyStore, Event, EventListener, KeyStore, KeyStoreError,
-    KeyStoreVersion, StoredCommand,
+    Aggregate, CommandKey, DiskKeyStore, Event, EventListener, KeyStore, KeyStoreError, KeyStoreVersion, StoredCommand,
 };
 
 const SNAPSHOT_FREQ: u64 = 5;
@@ -46,11 +45,7 @@ where
     fn add_listener<L: EventListener<A>>(&mut self, listener: Arc<L>);
 
     /// Lists the history for an aggregate.
-    fn command_history(
-        &self,
-        id: &Handle,
-        crit: CommandHistoryCriteria,
-    ) -> StoreResult<CommandHistory>;
+    fn command_history(&self, id: &Handle, crit: CommandHistoryCriteria) -> StoreResult<CommandHistory>;
 
     /// Returns a stored command if it can be found.
     fn stored_command(
@@ -84,11 +79,7 @@ pub enum AggregateStoreError {
     #[display(fmt = "concurrent modifcation attempt for entity: '{}'", _0)]
     ConcurrentModification(Handle),
 
-    #[display(
-        fmt = "Aggregate '{}' does not have command with sequence '{}'",
-        _0,
-        _1
-    )]
+    #[display(fmt = "Aggregate '{}' does not have command with sequence '{}'", _0, _1)]
     UnknownCommand(Handle, u64),
 
     #[display(fmt = "Offset '{}' exceeds total '{}'", _0, _1)]
@@ -111,8 +102,7 @@ pub struct DiskAggregateStore<A: Aggregate> {
 
 impl<A: Aggregate> DiskAggregateStore<A> {
     pub fn new(work_dir: &PathBuf, name_space: &str) -> StoreResult<Self> {
-        let store = DiskKeyStore::under_work_dir(work_dir, name_space)
-            .map_err(AggregateStoreError::IoError)?;
+        let store = DiskKeyStore::under_work_dir(work_dir, name_space).map_err(AggregateStoreError::IoError)?;
 
         if store.aggregates().is_empty() {
             store
@@ -136,10 +126,7 @@ impl<A: Aggregate> DiskAggregateStore<A> {
 
 impl<A: Aggregate> DiskAggregateStore<A> {
     fn has_updates(&self, id: &Handle, aggregate: &A) -> StoreResult<bool> {
-        Ok(self
-            .store
-            .get_event::<A::Event>(id, aggregate.version())?
-            .is_some())
+        Ok(self.store.get_event::<A::Event>(id, aggregate.version())?.is_some())
     }
 
     fn cache_get(&self, id: &Handle) -> Option<Arc<A>> {
@@ -232,14 +219,11 @@ where
                     latest.version()
                 );
 
-                return Err(A::Error::from(AggregateStoreError::ConcurrentModification(
-                    handle,
-                )));
+                return Err(A::Error::from(AggregateStoreError::ConcurrentModification(handle)));
             }
         }
 
-        let stored_command_builder =
-            StoredCommandBuilder::new(&cmd, latest.version(), info.last_command);
+        let stored_command_builder = StoredCommandBuilder::new(&cmd, latest.version(), info.last_command);
 
         let res = match latest.process_command(cmd) {
             Err(e) => {
@@ -281,15 +265,12 @@ where
                     for i in 0..nr_events {
                         let event = &events[i as usize];
                         if event.version() != version_before + i || event.handle() != &handle {
-                            return Err(A::Error::from(
-                                AggregateStoreError::WrongEventForAggregate,
-                            ));
+                            return Err(A::Error::from(AggregateStoreError::WrongEventForAggregate));
                         }
                     }
 
                     // Time to start saving things.
-                    let stored_command =
-                        stored_command_builder.finish_with_events(events.as_slice());
+                    let stored_command = stored_command_builder.finish_with_events(events.as_slice());
                     self.store
                         .store_command(stored_command)
                         .map_err(AggregateStoreError::KeyStoreError)?;
@@ -345,11 +326,7 @@ where
         self.listeners.push(listener)
     }
 
-    fn command_history(
-        &self,
-        id: &Handle,
-        crit: CommandHistoryCriteria,
-    ) -> StoreResult<CommandHistory> {
+    fn command_history(&self, id: &Handle, crit: CommandHistoryCriteria) -> StoreResult<CommandHistory> {
         self.store
             .command_history::<A>(id, crit)
             .map_err(AggregateStoreError::KeyStoreError)
@@ -365,14 +342,8 @@ where
             .map_err(AggregateStoreError::KeyStoreError)
     }
 
-    fn stored_event(
-        &self,
-        id: &Handle,
-        version: u64,
-    ) -> StoreResult<Option<<A as Aggregate>::Event>> {
+    fn stored_event(&self, id: &Handle, version: u64) -> StoreResult<Option<<A as Aggregate>::Event>> {
         let key = DiskKeyStore::key_for_event(version);
-        self.store
-            .get(id, &key)
-            .map_err(AggregateStoreError::KeyStoreError)
+        self.store.get(id, &key).map_err(AggregateStoreError::KeyStoreError)
     }
 }

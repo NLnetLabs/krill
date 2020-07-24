@@ -12,19 +12,17 @@ use rpki::x509::{Time, Validity};
 use crate::commons::api::rrdp::PublishElement;
 use crate::commons::api::Base64;
 use crate::commons::api::{
-    AddedObject, CurrentObject, CurrentObjects, EntitlementClass, HexEncodedHash, IssuanceRequest,
-    IssuedCert, ObjectName, ObjectsDelta, ParentHandle, RcvdCert, ReplacedObject, RepoInfo,
-    RequestResourceLimit, ResourceClassInfo, ResourceClassName, ResourceSet, Revocation,
-    RevocationRequest, UpdatedObject, WithdrawnObject,
+    AddedObject, CurrentObject, CurrentObjects, EntitlementClass, HexEncodedHash, IssuanceRequest, IssuedCert,
+    ObjectName, ObjectsDelta, ParentHandle, RcvdCert, ReplacedObject, RepoInfo, RequestResourceLimit,
+    ResourceClassInfo, ResourceClassName, ResourceSet, Revocation, RevocationRequest, UpdatedObject, WithdrawnObject,
 };
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
 use crate::daemon::ca::events::{ChildCertificateUpdates, RoaUpdates};
 use crate::daemon::ca::signing::CsrInfo;
 use crate::daemon::ca::{
-    self, ta_handle, AddedOrUpdated, CertifiedKey, ChildCertificates, CrlBuilder, CurrentKey,
-    CurrentObjectSetDelta, EvtDet, KeyState, ManifestBuilder, NewKey, OldKey, PendingKey, Roas,
-    Routes, SignSupport, Signer,
+    self, ta_handle, AddedOrUpdated, CertifiedKey, ChildCertificates, CrlBuilder, CurrentKey, CurrentObjectSetDelta,
+    EvtDet, KeyState, ManifestBuilder, NewKey, OldKey, PendingKey, Roas, Routes, SignSupport, Signer,
 };
 
 //------------ ResourceClass -----------------------------------------------
@@ -237,35 +235,17 @@ impl ResourceClass {
                 if rcvd_cert_ki != pending.key_id() {
                     Err(Error::KeyUseNoMatch(rcvd_cert_ki))
                 } else {
-                    let (active_key, delta) = create_active_key_and_delta(
-                        rcvd_cert,
-                        repo_info,
-                        self.name_space(),
-                        signer,
-                    )?;
-                    Ok(vec![EvtDet::KeyPendingToActive(
-                        self.name.clone(),
-                        active_key,
-                        delta,
-                    )])
+                    let (active_key, delta) =
+                        create_active_key_and_delta(rcvd_cert, repo_info, self.name_space(), signer)?;
+                    Ok(vec![EvtDet::KeyPendingToActive(self.name.clone(), active_key, delta)])
                 }
             }
-            KeyState::Active(current) => {
-                self.update_rcvd_cert_current(current, rcvd_cert, repo_info, signer)
-            }
+            KeyState::Active(current) => self.update_rcvd_cert_current(current, rcvd_cert, repo_info, signer),
             KeyState::RollPending(pending, current) => {
                 if rcvd_cert_ki == pending.key_id() {
-                    let (active_key, delta) = create_active_key_and_delta(
-                        rcvd_cert,
-                        repo_info,
-                        self.name_space(),
-                        signer,
-                    )?;
-                    Ok(vec![EvtDet::KeyPendingToNew(
-                        self.name.clone(),
-                        active_key,
-                        delta,
-                    )])
+                    let (active_key, delta) =
+                        create_active_key_and_delta(rcvd_cert, repo_info, self.name_space(), signer)?;
+                    Ok(vec![EvtDet::KeyPendingToNew(self.name.clone(), active_key, delta)])
                 } else {
                     self.update_rcvd_cert_current(current, rcvd_cert, repo_info, signer)
                 }
@@ -303,11 +283,7 @@ impl ResourceClass {
         let rcvd_resources = rcvd_cert.resources().clone();
 
         let mut res = vec![];
-        res.push(EvtDet::CertificateReceived(
-            self.name.clone(),
-            rcvd_cert_ki,
-            rcvd_cert,
-        ));
+        res.push(EvtDet::CertificateReceived(self.name.clone(), rcvd_cert_ki, rcvd_cert));
 
         if &rcvd_resources != current.incoming_cert().resources() {
             let publish_mode = PublishMode::UpdatedResources(rcvd_resources);
@@ -329,13 +305,8 @@ impl ResourceClass {
         base_repo: &RepoInfo,
         signer: &S,
     ) -> KrillResult<Vec<EvtDet>> {
-        self.key_state.make_entitlement_events(
-            self.name.clone(),
-            entitlement,
-            base_repo,
-            &self.name_space,
-            signer,
-        )
+        self.key_state
+            .make_entitlement_events(self.name.clone(), entitlement, base_repo, &self.name_space, signer)
     }
 
     /// Request new certificates for all keys when the base repo changes.
@@ -344,12 +315,8 @@ impl ResourceClass {
         base_repo: &RepoInfo,
         signer: &S,
     ) -> KrillResult<Vec<EvtDet>> {
-        self.key_state.request_certs_new_repo(
-            self.name.clone(),
-            base_repo,
-            &self.name_space,
-            signer,
-        )
+        self.key_state
+            .request_certs_new_repo(self.name.clone(), base_repo, &self.name_space, signer)
     }
 
     /// This function returns all current certificate requests.
@@ -404,13 +371,7 @@ impl ResourceClass {
         };
 
         let publish_key_delta = self
-            .make_current_set_delta(
-                publish_key,
-                repo_info,
-                objects_delta,
-                publish_key_revocations,
-                signer,
-            )
+            .make_current_set_delta(publish_key, repo_info, objects_delta, publish_key_revocations, signer)
             .map_err(Error::signer)?;
 
         key_pub_map.insert(publish_key.key_id().clone(), publish_key_delta);
@@ -483,9 +444,7 @@ impl ResourceClass {
             for issued in child_cert_updates.issued() {
                 match issued.replaces() {
                     None => delta.add(AddedObject::from(issued.cert())),
-                    Some(old) => {
-                        delta.update(UpdatedObject::for_cert(issued.cert(), old.hash().clone()))
-                    }
+                    Some(old) => delta.update(UpdatedObject::for_cert(issued.cert(), old.hash().clone())),
                 }
             }
             for key in child_cert_updates.removed() {
@@ -494,10 +453,7 @@ impl ResourceClass {
                     revocations.push(Revocation::from(issued.cert()));
                 }
             }
-            res.push(EvtDet::ChildCertificatesUpdated(
-                self.name.clone(),
-                child_cert_updates,
-            ));
+            res.push(EvtDet::ChildCertificatesUpdated(self.name.clone(), child_cert_updates));
         }
 
         if !delta.is_empty() || !revocations.is_empty() || self.needs_publication(mode) {
@@ -538,10 +494,7 @@ impl ResourceClass {
         for issued in issued_certs {
             match issued.replaces() {
                 None => objects_delta.add(AddedObject::from(issued.cert())),
-                Some(replaced) => objects_delta.update(UpdatedObject::for_cert(
-                    issued.cert(),
-                    replaced.hash().clone(),
-                )),
+                Some(replaced) => objects_delta.update(UpdatedObject::for_cert(issued.cert(), replaced.hash().clone())),
             }
         }
 
@@ -801,11 +754,10 @@ impl ResourceClass {
 
         let mut res = vec![];
 
-        res.push(self.key_state.keyroll_activate(
-            self.name.clone(),
-            self.parent_rc_name.clone(),
-            signer,
-        )?);
+        res.push(
+            self.key_state
+                .keyroll_activate(self.name.clone(), self.parent_rc_name.clone(), signer)?,
+        );
 
         res.append(&mut self.republish(repo_info, &PublishMode::KeyRollActivation, signer)?);
 
@@ -816,8 +768,7 @@ impl ResourceClass {
     pub fn keyroll_finish(&self, base_repo: &RepoInfo) -> KrillResult<EvtDet> {
         match &self.key_state {
             KeyState::RollOld(_current, old) => {
-                let mut objects_delta =
-                    ObjectsDelta::new(base_repo.ca_repository(self.name_space()));
+                let mut objects_delta = ObjectsDelta::new(base_repo.ca_repository(self.name_space()));
 
                 let crl_info = old.current_set().crl_info();
                 objects_delta.withdraw(crl_info.withdraw());
@@ -854,13 +805,9 @@ impl ResourceClass {
         let signing_key = self.get_current_key()?;
         let parent_resources = signing_key.incoming_cert().resources();
         let resources = parent_resources.intersection(child_resources);
-        let replaces = self
-            .certificates
-            .get(&csr.key_id())
-            .map(ReplacedObject::from);
+        let replaces = self.certificates.get(&csr.key_id()).map(ReplacedObject::from);
 
-        let issued =
-            SignSupport::make_issued_cert(csr, &resources, limit, replaces, signing_key, signer)?;
+        let issued = SignSupport::make_issued_cert(csr, &resources, limit, replaces, signing_key, signer)?;
 
         Ok(issued)
     }
@@ -878,14 +825,7 @@ impl ResourceClass {
         let resource_set = updated_resources.unwrap_or(resource_set);
         let replaced = ReplacedObject::new(Revocation::from(&cert), HexEncodedHash::from(&cert));
 
-        let re_issued = SignSupport::make_issued_cert(
-            csr,
-            &resource_set,
-            limit,
-            Some(replaced),
-            signing_key,
-            signer,
-        )?;
+        let re_issued = SignSupport::make_issued_cert(csr, &resource_set, limit, Some(replaced), signing_key, signer)?;
 
         Ok(re_issued)
     }
@@ -921,13 +861,7 @@ impl ResourceClass {
                         updates.remove(issued.subject_key_identifier());
                     } else {
                         // re-issue
-                        let re_issued = self.re_issue(
-                            issued,
-                            Some(remaining_resources),
-                            signing_key,
-                            None,
-                            signer,
-                        )?;
+                        let re_issued = self.re_issue(issued, Some(remaining_resources), signing_key, None, signer)?;
                         updates.issue(re_issued);
                     }
                 }
@@ -947,8 +881,7 @@ impl ResourceClass {
                         issued.subject_public_key_info().clone(),
                     );
 
-                    let re_issued =
-                        self.re_issue(issued, None, signing_key, Some(csr_info_update), signer)?;
+                    let re_issued = self.re_issue(issued, None, signing_key, Some(csr_info_update), signer)?;
                     updates.issue(re_issued);
                 }
             }
@@ -997,11 +930,7 @@ impl ResourceClass {
     }
 
     /// Shrink ROAs if needed
-    pub fn shrink_roas<S: Signer>(
-        &self,
-        resources: &ResourceSet,
-        signer: &S,
-    ) -> KrillResult<RoaUpdates> {
+    pub fn shrink_roas<S: Signer>(&self, resources: &ResourceSet, signer: &S) -> KrillResult<RoaUpdates> {
         let key = self.get_current_key()?;
         self.roas.shrink_roas(resources, key, signer)
     }
@@ -1038,22 +967,14 @@ impl ResourceClass {
             if !intersection.is_empty() {
                 let key = {
                     let mut signer = signer.write().unwrap();
-                    signer
-                        .create_key(PublicKeyFormat::default())
-                        .map_err(Error::signer)?
+                    signer.create_key(PublicKeyFormat::default()).map_err(Error::signer)?
                 };
 
                 let signer = signer.read().unwrap();
 
                 let pub_key = signer.get_key_info(&key).map_err(Error::signer)?;
 
-                let ee = SignSupport::make_rta_ee_cert(
-                    &intersection,
-                    &current,
-                    validity,
-                    pub_key,
-                    signer.deref(),
-                )?;
+                let ee = SignSupport::make_rta_ee_cert(&intersection, &current, validity, pub_key, signer.deref())?;
 
                 Ok(Some(ee))
             } else {

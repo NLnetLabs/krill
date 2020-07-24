@@ -50,16 +50,13 @@ impl FromStr for RoaAggregateKey {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut parts = s.split('-');
 
-        let asn_part = parts
-            .next()
-            .ok_or_else(|| RoaAggregateKeyFmtError::string(s))?;
+        let asn_part = parts.next().ok_or_else(|| RoaAggregateKeyFmtError::string(s))?;
 
         if !asn_part.starts_with("AS") || asn_part.len() < 3 {
             return Err(RoaAggregateKeyFmtError::string(s));
         }
 
-        let asn =
-            AsNumber::from_str(&asn_part[2..]).map_err(|_| RoaAggregateKeyFmtError::string(s))?;
+        let asn = AsNumber::from_str(&asn_part[2..]).map_err(|_| RoaAggregateKeyFmtError::string(s))?;
 
         let group = if let Some(group) = parts.next() {
             let group = u32::from_str(group).map_err(|_| RoaAggregateKeyFmtError::string(s))?;
@@ -185,8 +182,7 @@ impl RoaDefinition {
     /// Note that if the effective max length equals the prefix length, this
     /// means that the single prefix in this definition is returned.
     pub fn to_specific_prefixes(&self) -> Vec<TypedPrefix> {
-        self.prefix
-            .to_specific_prefixes(self.effective_max_length())
+        self.prefix.to_specific_prefixes(self.effective_max_length())
     }
 }
 
@@ -199,17 +195,13 @@ impl FromStr for RoaDefinition {
 
         let prefix_part = parts.next().ok_or_else(|| AuthorizationFmtError::auth(s))?;
         let mut prefix_parts = prefix_part.split('-');
-        let prefix_str = prefix_parts
-            .next()
-            .ok_or_else(|| AuthorizationFmtError::auth(s))?;
+        let prefix_str = prefix_parts.next().ok_or_else(|| AuthorizationFmtError::auth(s))?;
 
         let prefix = TypedPrefix::from_str(&prefix_str.trim())?;
 
         let max_length = match prefix_parts.next() {
             None => None,
-            Some(length_str) => {
-                Some(u8::from_str(&length_str.trim()).map_err(|_| AuthorizationFmtError::auth(s))?)
-            }
+            Some(length_str) => Some(u8::from_str(&length_str.trim()).map_err(|_| AuthorizationFmtError::auth(s))?),
         };
 
         let asn_str = parts.next().ok_or_else(|| AuthorizationFmtError::auth(s))?;
@@ -246,9 +238,7 @@ impl Ord for RoaDefinition {
         let mut ordering = self.prefix.cmp(&other.prefix);
 
         if ordering == Ordering::Equal {
-            ordering = self
-                .effective_max_length()
-                .cmp(&other.effective_max_length());
+            ordering = self.effective_max_length().cmp(&other.effective_max_length());
         }
 
         if ordering == Ordering::Equal {
@@ -454,13 +444,11 @@ impl FromStr for TypedPrefix {
     fn from_str(prefix: &str) -> Result<Self, Self::Err> {
         if prefix.contains('.') {
             Ok(TypedPrefix::V4(Ipv4Prefix(
-                Prefix::from_v4_str(prefix.trim())
-                    .map_err(|_| AuthorizationFmtError::pfx(prefix))?,
+                Prefix::from_v4_str(prefix.trim()).map_err(|_| AuthorizationFmtError::pfx(prefix))?,
             )))
         } else {
             Ok(TypedPrefix::V6(Ipv6Prefix(
-                Prefix::from_v6_str(prefix.trim())
-                    .map_err(|_| AuthorizationFmtError::pfx(prefix))?,
+                Prefix::from_v6_str(prefix.trim()).map_err(|_| AuthorizationFmtError::pfx(prefix))?,
             )))
         }
     }
@@ -810,13 +798,9 @@ mod tests {
         };
 
         let roa_group_asn_only_expected_str = "AS0";
-        assert_eq!(
-            roa_group_asn_only.to_string().as_str(),
-            roa_group_asn_only_expected_str
-        );
+        assert_eq!(roa_group_asn_only.to_string().as_str(), roa_group_asn_only_expected_str);
 
-        let roa_group_asn_only_expected =
-            RoaAggregateKey::from_str(roa_group_asn_only_expected_str).unwrap();
+        let roa_group_asn_only_expected = RoaAggregateKey::from_str(roa_group_asn_only_expected_str).unwrap();
         assert_eq!(roa_group_asn_only, roa_group_asn_only_expected)
     }
 
@@ -833,9 +817,6 @@ mod tests {
         check("10.0.0.0/15-16 => 64496", &["10.0.0.0/16", "10.1.0.0/16"]);
 
         check("2001:db8::/32-32 => 64496", &["2001:db8::/32"]);
-        check(
-            "2001:db8::/32-33 => 64496",
-            &["2001:db8::/33", "2001:db8:8000::/33"],
-        );
+        check("2001:db8::/32-33 => 64496", &["2001:db8::/33", "2001:db8:8000::/33"]);
     }
 }

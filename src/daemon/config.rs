@@ -359,8 +359,7 @@ impl Config {
         let timing_publish_valid_days = ConfigDefaults::timing_publish_valid_days();
         let timing_publish_next_hours = ConfigDefaults::timing_publish_next_hours();
         let timing_publish_hours_before_next = ConfigDefaults::timing_publish_hours_before_next();
-        let timing_child_certificate_valid_weeks =
-            ConfigDefaults::timing_child_certificate_valid_weeks();
+        let timing_child_certificate_valid_weeks = ConfigDefaults::timing_child_certificate_valid_weeks();
         let timing_child_certificate_reissue_weeks_before =
             ConfigDefaults::timing_child_certificate_reissue_weeks_before();
         let timing_roa_valid_weeks = ConfigDefaults::timing_roa_valid_weeks();
@@ -433,9 +432,7 @@ impl Config {
             )
             .get_matches();
 
-        let config_file = matches
-            .value_of("config")
-            .unwrap_or(KRILL_DEFAULT_CONFIG_FILE);
+        let config_file = matches.value_of("config").unwrap_or(KRILL_DEFAULT_CONFIG_FILE);
 
         config_file.to_string()
     }
@@ -463,19 +460,13 @@ impl Config {
                 }
                 Ok(config) => {
                     config.init_logging()?;
-                    info!(
-                        "{} uses configuration file: {}",
-                        KRILL_SERVER_APP, config_file
-                    );
+                    info!("{} uses configuration file: {}", KRILL_SERVER_APP, config_file);
                     Ok(config)
                 }
             }?;
-            config.verify().map_err(|e| {
-                ConfigError::Other(format!(
-                    "Error parsing config file: {}, error: {}",
-                    config_file, e
-                ))
-            })?;
+            config
+                .verify()
+                .map_err(|e| ConfigError::Other(format!("Error parsing config file: {}, error: {}", config_file, e)))?;
             Ok(config)
         }
     }
@@ -525,12 +516,13 @@ impl Config {
         if !self.service_uri.ends_with('/') {
             return Err(ConfigError::other("service URI must end with '/'"));
         } else {
-            uri::Https::from_str(&self.service_uri).map_err(|_| {
-                ConfigError::Other(format!("Invalid service uri: {}", self.service_uri))
-            })?;
+            uri::Https::from_str(&self.service_uri)
+                .map_err(|_| ConfigError::Other(format!("Invalid service uri: {}", self.service_uri)))?;
 
             if self.service_uri.as_str().matches('/').count() != 3 {
-                return Err(ConfigError::other("Service URI MUST specify a host name only, e.g. https://rpki.example.com:3000/"));
+                return Err(ConfigError::other(
+                    "Service URI MUST specify a host name only, e.g. https://rpki.example.com:3000/",
+                ));
             }
         }
 
@@ -539,9 +531,7 @@ impl Config {
         }
 
         if self.use_ta && !self.repo_enabled {
-            return Err(ConfigError::other(
-                "Cannot use embedded TA without embedded repository",
-            ));
+            return Err(ConfigError::other("Cannot use embedded TA without embedded repository"));
         }
 
         Ok(())
@@ -641,8 +631,7 @@ impl Config {
             _ => LevelFilter::Debug, // more becomes too noisy
         };
 
-        let show_target =
-            self.log_level == LevelFilter::Trace || self.log_level == LevelFilter::Debug;
+        let show_target = self.log_level == LevelFilter::Trace || self.log_level == LevelFilter::Debug;
         fern::Dispatch::new()
             .format(move |out, message, record| {
                 if show_target {

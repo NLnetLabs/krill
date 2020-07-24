@@ -5,13 +5,11 @@ use serde::Serialize;
 
 use rpki::uri;
 
-use crate::cli::options::{
-    BulkCaCommand, CaCommand, Command, KrillInitDetails, Options, PublishersCommand,
-};
+use crate::cli::options::{BulkCaCommand, CaCommand, Command, KrillInitDetails, Options, PublishersCommand};
 use crate::cli::report::{ApiResponse, ReportError};
 use crate::commons::api::{
-    AllCertAuthIssues, CaRepoDetails, CertAuthIssues, ChildCaInfo, CurrentRepoState,
-    ParentCaContact, PublisherDetails, PublisherList, Token,
+    AllCertAuthIssues, CaRepoDetails, CertAuthIssues, ChildCaInfo, CurrentRepoState, ParentCaContact, PublisherDetails,
+    PublisherList, Token,
 };
 use crate::commons::bgp::BgpAnalysisReport;
 use crate::commons::remote::rfc8183;
@@ -266,8 +264,7 @@ impl KrillClient {
 
             CaCommand::RtaOneOff(ca, request, out_opt) => {
                 let uri = format!("api/v1/cas/{}/rta/oneoff", ca);
-                let rta: ResourceTaggedAttestation =
-                    self.post_json_with_response(&uri, request).await?;
+                let rta: ResourceTaggedAttestation = self.post_json_with_response(&uri, request).await?;
 
                 if let Some(out) = out_opt {
                     file::save(rta.as_ref(), &out)?;
@@ -299,9 +296,7 @@ impl KrillClient {
                 Ok(ApiResponse::RepoStats(stats))
             }
             PublishersCommand::AddPublisher(req) => {
-                let res = self
-                    .post_json_with_response("api/v1/publishers", req)
-                    .await?;
+                let res = self.post_json_with_response("api/v1/publishers", req).await?;
                 Ok(ApiResponse::Rfc8183RepositoryResponse(res))
             }
             PublishersCommand::RemovePublisher(handle) => {
@@ -330,10 +325,7 @@ impl KrillClient {
         let defaults = include_str!("../../defaults/krill.conf");
 
         let mut config = defaults.to_string();
-        config = config.replace(
-            "### auth_token =",
-            &format!("auth_token = \"{}\"", self.token),
-        );
+        config = config.replace("### auth_token =", &format!("auth_token = \"{}\"", self.token));
 
         config = config.replace(
             "### service_uri = \"https://localhost:3000/\"",
@@ -357,10 +349,7 @@ impl KrillClient {
         }
 
         if let Some(data_dir) = details.data_dir() {
-            config = config.replace(
-                "### data_dir = \"./data\"",
-                &format!("data_dir = \"{}\"", data_dir),
-            )
+            config = config.replace("### data_dir = \"./data\"", &format!("data_dir = \"{}\"", data_dir))
         }
 
         if let Some(log_file) = details.log_file() {
@@ -397,11 +386,7 @@ impl KrillClient {
             .map_err(Error::HttpClientError)
     }
 
-    async fn post_json_with_response<T: DeserializeOwned>(
-        &self,
-        uri: &str,
-        data: impl Serialize,
-    ) -> Result<T, Error> {
+    async fn post_json_with_response<T: DeserializeOwned>(&self, uri: &str, data: impl Serialize) -> Result<T, Error> {
         let uri = self.resolve_uri(uri);
         httpclient::post_json_with_response(&uri, data, Some(&self.token))
             .await

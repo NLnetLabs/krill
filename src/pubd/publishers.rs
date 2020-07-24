@@ -34,12 +34,7 @@ impl Publisher {
     }
 
     pub fn as_api_details(&self, handle: &PublisherHandle) -> PublisherDetails {
-        let objects = self
-            .current_objects
-            .elements()
-            .into_iter()
-            .cloned()
-            .collect();
+        let objects = self.current_objects.elements().into_iter().cloned().collect();
 
         PublisherDetails::new(handle, self.id_cert.clone(), &self.base_uri(), objects)
     }

@@ -82,13 +82,7 @@ async fn ca_grandchildren() {
     let ca2_crl_file = ca2_crl_file.as_str();
 
     // Check that the TA publishes the certificate
-    assert!(
-        will_publish_objects(
-            &ta_handle,
-            &[ta_crl_file, ta_mft_file, ca1_cert_file, ca2_cert_file],
-        )
-        .await
-    );
+    assert!(will_publish_objects(&ta_handle, &[ta_crl_file, ta_mft_file, ca1_cert_file, ca2_cert_file],).await);
 
     // -------------------- CA3 -----------------------------------------------
     let ca3 = Handle::from_str("CA3").unwrap();
@@ -181,18 +175,7 @@ async fn ca_grandchildren() {
     );
 
     // Check that CA4 publishes two resource classes, with only crls and mfts
-    assert!(
-        will_publish_objects(
-            &ca4,
-            &[
-                ca4_1_mft_file,
-                ca4_1_crl_file,
-                ca4_2_mft_file,
-                ca4_2_crl_file,
-            ],
-        )
-        .await
-    );
+    assert!(will_publish_objects(&ca4, &[ca4_1_mft_file, ca4_1_crl_file, ca4_2_mft_file, ca4_2_crl_file,],).await);
 
     let _ = fs::remove_dir_all(dir);
 }

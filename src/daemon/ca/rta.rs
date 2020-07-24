@@ -20,20 +20,12 @@ pub struct RtaRequest {
     resources: ResourceSet,
     validity: Validity,
     subject_keys: Vec<KeyIdentifier>,
-    #[serde(
-        deserialize_with = "ext_serde::de_bytes",
-        serialize_with = "ext_serde::ser_bytes"
-    )]
+    #[serde(deserialize_with = "ext_serde::de_bytes", serialize_with = "ext_serde::ser_bytes")]
     content: Bytes,
 }
 
 impl RtaRequest {
-    pub fn new(
-        resources: ResourceSet,
-        validity: Validity,
-        subject_keys: Vec<KeyIdentifier>,
-        content: Bytes,
-    ) -> Self {
+    pub fn new(resources: ResourceSet, validity: Validity, subject_keys: Vec<KeyIdentifier>, content: Bytes) -> Self {
         RtaRequest {
             resources,
             validity,
@@ -43,12 +35,7 @@ impl RtaRequest {
     }
 
     pub fn unpack(self) -> (ResourceSet, Validity, Vec<KeyIdentifier>, Bytes) {
-        (
-            self.resources,
-            self.validity,
-            self.subject_keys,
-            self.content,
-        )
+        (self.resources, self.validity, self.subject_keys, self.content)
     }
 }
 
@@ -67,11 +54,7 @@ impl fmt::Display for RtaRequest {
             write!(f, "{} ", key)?;
         }
         writeln!(f)?;
-        writeln!(
-            f,
-            "content (base64): {}",
-            Base64::from_content(self.content.as_ref())
-        )?;
+        writeln!(f, "content (base64): {}", Base64::from_content(self.content.as_ref()))?;
 
         Ok(())
     }
@@ -82,10 +65,7 @@ impl fmt::Display for RtaRequest {
 /// See: https://tools.ietf.org/id/draft-michaelson-rpki-rta-01.html
 #[derive(Clone, Debug, Deserialize, Eq, Serialize, PartialEq)]
 pub struct ResourceTaggedAttestation {
-    #[serde(
-        deserialize_with = "ext_serde::de_bytes",
-        serialize_with = "ext_serde::ser_bytes"
-    )]
+    #[serde(deserialize_with = "ext_serde::de_bytes", serialize_with = "ext_serde::ser_bytes")]
     bytes: Bytes,
 }
 
@@ -135,16 +115,10 @@ impl ResourceTaggedAttestation {
         ))
     }
 
-    pub fn sign_with_ee<S: Signer>(
-        rta_builder: &mut rta::RtaBuilder,
-        ee: Cert,
-        signer: &S,
-    ) -> KrillResult<()> {
+    pub fn sign_with_ee<S: Signer>(rta_builder: &mut rta::RtaBuilder, ee: Cert, signer: &S) -> KrillResult<()> {
         let key = ee.subject_key_identifier();
         rta_builder.push_cert(ee);
-        rta_builder
-            .sign(signer, &key, None, None)
-            .map_err(Error::signer)?;
+        rta_builder.sign(signer, &key, None, None).map_err(Error::signer)?;
 
         Ok(())
     }

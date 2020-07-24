@@ -3,9 +3,7 @@ extern crate krill;
 use std::fs;
 use std::str::FromStr;
 
-use krill::commons::api::{
-    Handle, ObjectName, ParentCaReq, ResourceSet, RoaDefinition, RoaDefinitionUpdates,
-};
+use krill::commons::api::{Handle, ObjectName, ParentCaReq, ResourceSet, RoaDefinition, RoaDefinitionUpdates};
 use krill::daemon::ca::ta_handle;
 use krill::test::*;
 
@@ -77,13 +75,7 @@ async fn ca_roas() {
     // And route3 should remain there during a roll.
     ca_roll_init(&child).await;
     rc_state_becomes_new_key(&child).await;
-    assert!(
-        will_publish_objects(
-            &child,
-            &[crl_file, mft_file, crl_file, mft_file, route3_file],
-        )
-        .await
-    );
+    assert!(will_publish_objects(&child, &[crl_file, mft_file, crl_file, mft_file, route3_file],).await);
 
     ca_roll_activate(&child).await;
     rc_state_becomes_active(&child).await;
@@ -114,8 +106,7 @@ async fn ca_roas() {
 
     // Above the ROA aggregation threshold (3 in testing, 100 normal, see Config)
     // we should see that prefixes are aggregated per ASN
-    let child_resources =
-        ResourceSet::from_strs("", "10.0.0.0/8,192.168.0.0/16", "2001:DB8::/32").unwrap();
+    let child_resources = ResourceSet::from_strs("", "10.0.0.0/8,192.168.0.0/16", "2001:DB8::/32").unwrap();
     update_child(&ta_handle, &child, &child_resources).await;
     assert!(ca_gets_resources(&child, &child_resources).await);
 
@@ -127,13 +118,7 @@ async fn ca_roas() {
 
     let asn_64496_roa_file = "AS64496.roa";
     let asn_64497_roa_file = "AS64497.roa";
-    assert!(
-        will_publish_objects(
-            &child,
-            &[crl_file, mft_file, asn_64496_roa_file, asn_64497_roa_file],
-        )
-        .await
-    );
+    assert!(will_publish_objects(&child, &[crl_file, mft_file, asn_64496_roa_file, asn_64497_roa_file],).await);
 
     // Below the de-aggregation threshold (2 in case of testing) we should expect per prefix
     // ROAs again

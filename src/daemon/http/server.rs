@@ -21,8 +21,8 @@ use hyper::service::{make_service_fn, service_fn};
 use hyper::Method;
 
 use crate::commons::api::{
-    BgpStats, ChildHandle, CommandHistoryCriteria, Handle, ParentCaContact, ParentCaReq,
-    ParentHandle, PublisherList, RepositoryUpdate,
+    BgpStats, ChildHandle, CommandHistoryCriteria, Handle, ParentCaContact, ParentCaReq, ParentHandle, PublisherList,
+    RepositoryUpdate,
 };
 use crate::commons::error::Error;
 use crate::commons::remote::rfc8183;
@@ -47,8 +47,7 @@ pub async fn start() -> Result<(), Error> {
     }
 
     // Call upgrade, this will only do actual work if needed.
-    pre_start_upgrade(&CONFIG.data_dir)
-        .map_err(|e| Error::Custom(format!("Could not upgrade Krill: {}", e)))?;
+    pre_start_upgrade(&CONFIG.data_dir).map_err(|e| Error::Custom(format!("Could not upgrade Krill: {}", e)))?;
 
     // Create the server, this will create the necessary data sub-directories if needed
     let krill = KrillServer::build()?;
@@ -73,18 +72,14 @@ pub async fn start() -> Result<(), Error> {
         }
     });
 
-    tls_keys::create_key_cert_if_needed(&CONFIG.data_dir)
-        .map_err(|e| Error::HttpsSetup(format!("{}", e)))?;
+    tls_keys::create_key_cert_if_needed(&CONFIG.data_dir).map_err(|e| Error::HttpsSetup(format!("{}", e)))?;
 
     let server_config_builder = tls::TlsConfigBuilder::new()
         .cert_path(tls_keys::cert_file_path(&CONFIG.data_dir))
         .key_path(tls_keys::key_file_path(&CONFIG.data_dir));
     let server_config = server_config_builder.build().unwrap();
 
-    let acceptor = tls::TlsAcceptor::new(
-        server_config,
-        AddrIncoming::bind(&CONFIG.socket_addr()).unwrap(),
-    );
+    let acceptor = tls::TlsAcceptor::new(server_config, AddrIncoming::bind(&CONFIG.socket_addr()).unwrap());
 
     let server = hyper::Server::builder(acceptor)
         .serve(service)
@@ -98,10 +93,7 @@ pub async fn start() -> Result<(), Error> {
     Ok(())
 }
 
-async fn map_requests(
-    req: hyper::Request<hyper::Body>,
-    state: State,
-) -> Result<hyper::Response<hyper::Body>, Error> {
+async fn map_requests(req: hyper::Request<hyper::Body>, state: State) -> Result<hyper::Response<hyper::Body>, Error> {
     let req = Request::new(req, state);
 
     let log_req = format!("{} {}", req.method(), req.path.full());
@@ -201,8 +193,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
 
         impl AllBgpStats {
             fn add_ca(&mut self, ca: &Handle, stats: &BgpStats) {
-                self.announcements_valid
-                    .insert(ca.clone(), stats.announcements_valid);
+                self.announcements_valid.insert(ca.clone(), stats.announcements_valid);
                 self.announcements_invalid_asn
                     .insert(ca.clone(), stats.announcements_invalid_asn);
                 self.announcements_invalid_length
@@ -245,14 +236,9 @@ pub async fn metrics(req: Request) -> RoutingResult {
 
             if let Some(last_update) = stats.last_update() {
                 res.push_str("\n");
-                res.push_str(
-                    "# HELP krill_repo_rrdp_last_update timestamp of last update by any publisher\n",
-                );
+                res.push_str("# HELP krill_repo_rrdp_last_update timestamp of last update by any publisher\n");
                 res.push_str("# TYPE krill_repo_rrdp_last_update gauge\n");
-                res.push_str(&format!(
-                    "krill_repo_rrdp_last_update {}\n",
-                    last_update.timestamp()
-                ));
+                res.push_str(&format!("krill_repo_rrdp_last_update {}\n", last_update.timestamp()));
             }
 
             res.push_str("\n");
@@ -261,9 +247,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
             res.push_str(&format!("krill_repo_rrdp_serial {}\n", stats.serial()));
 
             res.push_str("\n");
-            res.push_str(
-                "# HELP krill_repo_objects number of objects in repository for publisher\n",
-            );
+            res.push_str("# HELP krill_repo_objects number of objects in repository for publisher\n");
             res.push_str("# TYPE krill_repo_objects gauge\n");
             for (publisher, stats) in publishers {
                 res.push_str(&format!(
@@ -274,9 +258,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
             }
 
             res.push_str("\n");
-            res.push_str(
-                "# HELP krill_repo_size size of objects in bytes in repository for publisher\n",
-            );
+            res.push_str("# HELP krill_repo_size size of objects in bytes in repository for publisher\n");
             res.push_str("# TYPE krill_repo_size gauge\n");
             for (publisher, stats) in publishers {
                 res.push_str(&format!(
@@ -312,11 +294,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
         res.push_str("# HELP krill_cas_roas number of roas for CA\n");
         res.push_str("# TYPE krill_cas_roas gauge\n");
         for (ca, status) in cas_status.iter() {
-            res.push_str(&format!(
-                "krill_cas_roas{{ca=\"{}\"}} {}\n",
-                ca,
-                status.roa_count()
-            ));
+            res.push_str(&format!("krill_cas_roas{{ca=\"{}\"}} {}\n", ca, status.roa_count()));
         }
 
         res.push_str("\n");
@@ -346,10 +324,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
         res.push_str("# HELP krill_cas_bgp_announcements_valid number of announcements seen for CA resources with RPKI state VALID\n");
         res.push_str("# TYPE krill_cas_bgp_announcements_valid gauge\n");
         for (ca, nr) in all_bgp_stats.announcements_valid.iter() {
-            res.push_str(&format!(
-                "krill_cas_bgp_announcements_valid{{ca=\"{}\"}} {}\n",
-                ca, nr
-            ));
+            res.push_str(&format!("krill_cas_bgp_announcements_valid{{ca=\"{}\"}} {}\n", ca, nr));
         }
 
         res.push_str("\n");
@@ -394,10 +369,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
         );
         res.push_str("# TYPE krill_cas_bgp_roas_stale gauge\n");
         for (ca, nr) in all_bgp_stats.roas_stale.iter() {
-            res.push_str(&format!(
-                "krill_cas_bgp_roas_stale{{ca=\"{}\"}} {}\n",
-                ca, nr
-            ));
+            res.push_str(&format!("krill_cas_bgp_roas_stale{{ca=\"{}\"}} {}\n", ca, nr));
         }
 
         Ok(HttpResponse::text(res.into_bytes()))
@@ -656,9 +628,13 @@ async fn api_publishers(req: Request, path: &mut RequestPath) -> RoutingResult {
 pub async fn stale_publishers(req: Request, seconds: Option<&str>) -> RoutingResult {
     let seconds = seconds.unwrap_or("");
     match i64::from_str(seconds) {
-        Ok(seconds) => render_json_res(req.state().read().await.repo_stats().map(|stats| {
-            PublisherList::build(&stats.stale_publishers(seconds), "/api/v1/publishers")
-        })),
+        Ok(seconds) => render_json_res(
+            req.state()
+                .read()
+                .await
+                .repo_stats()
+                .map(|stats| PublisherList::build(&stats.stale_publishers(seconds), "/api/v1/publishers")),
+        ),
         Err(_) => render_error(Error::ApiInvalidSeconds),
     }
 }
@@ -712,10 +688,7 @@ pub async fn repository_response_json(req: Request, publisher: Handle) -> Routin
     }
 }
 
-async fn repository_response(
-    req: &Request,
-    publisher: &Handle,
-) -> Result<rfc8183::RepositoryResponse, Error> {
+async fn repository_response(req: &Request, publisher: &Handle) -> Result<rfc8183::RepositoryResponse, Error> {
     req.state().read().await.repository_response(publisher)
 }
 
@@ -730,9 +703,7 @@ async fn ca_add_child(req: Request, parent: ParentHandle) -> RoutingResult {
 async fn ca_child_update(req: Request, ca: Handle, child: ChildHandle) -> RoutingResult {
     let server = req.state().clone();
     match req.json().await {
-        Ok(child_req) => {
-            render_empty_res(server.read().await.ca_child_update(&ca, child, child_req))
-        }
+        Ok(child_req) => render_empty_res(server.read().await.ca_child_update(&ca, child, child_req)),
         Err(e) => render_error(e),
     }
 }
@@ -746,30 +717,15 @@ async fn ca_child_show(req: Request, ca: Handle, child: ChildHandle) -> RoutingR
 }
 
 async fn ca_parent_contact(req: Request, ca: Handle, child: ChildHandle) -> RoutingResult {
-    render_json_res(
-        req.state()
-            .read()
-            .await
-            .ca_parent_contact(&ca, child.clone()),
-    )
+    render_json_res(req.state().read().await.ca_parent_contact(&ca, child.clone()))
 }
 
 async fn ca_parent_res_json(req: Request, ca: Handle, child: ChildHandle) -> RoutingResult {
-    render_json_res(
-        req.state()
-            .read()
-            .await
-            .ca_parent_response(&ca, child.clone()),
-    )
+    render_json_res(req.state().read().await.ca_parent_response(&ca, child.clone()))
 }
 
 async fn ca_parent_res_xml(req: Request, ca: Handle, child: ChildHandle) -> RoutingResult {
-    match req
-        .state()
-        .read()
-        .await
-        .ca_parent_response(&ca, child.clone())
-    {
+    match req.state().read().await.ca_parent_response(&ca, child.clone()) {
         Ok(res) => Ok(HttpResponse::xml(res.encode_vec())),
         Err(e) => render_error(e),
     }
@@ -989,9 +945,7 @@ pub async fn ca_repo_update(req: Request, handle: Handle) -> RoutingResult {
         .await
         .map(|bytes| extract_repository_update(&handle, bytes))
     {
-        Ok(Ok(update)) => {
-            render_empty_res(server.read().await.ca_update_repo(handle, update).await)
-        }
+        Ok(Ok(update)) => render_empty_res(server.read().await.ca_update_repo(handle, update).await),
         Ok(Err(e)) | Err(e) => render_error(e),
     }
 }
@@ -1081,11 +1035,7 @@ async fn ca_update_parent(req: Request, ca: Handle, parent: ParentHandle) -> Rou
 
     match extract_parent_ca_contact(&ca, bytes) {
         Ok(contact) => {
-            let res = server
-                .read()
-                .await
-                .ca_parent_update(ca, parent, contact)
-                .await;
+            let res = server.read().await.ca_parent_update(ca, parent, contact).await;
             render_empty_res(res)
         }
         Err(e) => render_error(e),
@@ -1164,11 +1114,7 @@ async fn rrdp(req: Request) -> RoutingResult {
     } else {
         let mut full_path: PathBuf = req.state.read().await.rrdp_base_path();
         let (_, path) = req.path.remaining().split_at(1);
-        let cache_seconds = if path.ends_with("notification.xml") {
-            60
-        } else {
-            86400
-        };
+        let cache_seconds = if path.ends_with("notification.xml") { 60 } else { 86400 };
         full_path.push(path);
 
         match File::open(full_path) {
@@ -1224,10 +1170,7 @@ mod tests {
         let dir = test::sub_dir(&PathBuf::from("work"));
 
         let data_dir = test::sub_dir(&dir);
-        env::set_var(
-            KRILL_ENV_TEST_UNIT_DATA,
-            data_dir.to_string_lossy().to_string(),
-        );
+        env::set_var(KRILL_ENV_TEST_UNIT_DATA, data_dir.to_string_lossy().to_string());
 
         tokio::spawn(super::start());
 

@@ -64,10 +64,7 @@ pub struct MyRepoInfo {
 
 impl MyRepoInfo {
     pub fn new(sia_base: uri::Rsync, notify_sia: uri::Https) -> Self {
-        MyRepoInfo {
-            sia_base,
-            notify_sia,
-        }
+        MyRepoInfo { sia_base, notify_sia }
     }
 
     /// The base rsync directory under which the publisher may publish.

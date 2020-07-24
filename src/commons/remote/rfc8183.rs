@@ -91,8 +91,7 @@ impl ChildRequest {
                 }
 
                 let tag = a.take_opt("tag");
-                let child_handle = Handle::from_str(&a.take_req("child_handle")?)
-                    .map_err(|_| Error::InvalidHandle)?;
+                let child_handle = Handle::from_str(&a.take_req("child_handle")?).map_err(|_| Error::InvalidHandle)?;
 
                 if a.take_opt("valid_until").is_some() {
                     warn!(
@@ -138,9 +137,7 @@ impl ChildRequest {
             }
 
             w.put_element("child_request", Some(a.as_ref()), |w| {
-                w.put_element("child_bpki_ta", None, |w| {
-                    w.put_base64_std(&self.id_cert.to_bytes())
-                })
+                w.put_element("child_bpki_ta", None, |w| w.put_base64_std(&self.id_cert.to_bytes()))
             })
         })
     }
@@ -236,11 +233,9 @@ impl ParentResponse {
             }
 
             let tag = a.take_opt("tag");
-            let parent_handle = Handle::from_str(&a.take_req("parent_handle")?)
-                .map_err(|_| Error::InvalidHandle)?;
+            let parent_handle = Handle::from_str(&a.take_req("parent_handle")?).map_err(|_| Error::InvalidHandle)?;
 
-            let child_handle =
-                Handle::from_str(&a.take_req("child_handle")?).map_err(|_| Error::InvalidHandle)?;
+            let child_handle = Handle::from_str(&a.take_req("child_handle")?).map_err(|_| Error::InvalidHandle)?;
             let service_uri = ServiceUri::try_from(a.take_req("service_uri")?)?;
 
             if a.take_opt("valid_until").is_some() {
@@ -306,11 +301,9 @@ impl ParentResponse {
         R: io::Read,
     {
         r.take_named_element("parent", |mut a, r| {
-            let parent_handle = Handle::from_str(&a.take_req("parent_handle")?)
-                .map_err(|_| Error::InvalidHandle)?;
+            let parent_handle = Handle::from_str(&a.take_req("parent_handle")?).map_err(|_| Error::InvalidHandle)?;
 
-            let child_handle =
-                Handle::from_str(&a.take_req("child_handle")?).map_err(|_| Error::InvalidHandle)?;
+            let child_handle = Handle::from_str(&a.take_req("child_handle")?).map_err(|_| Error::InvalidHandle)?;
 
             let service_uri = ServiceUri::try_from(a.take_req("service_uri")?)?;
 
@@ -378,9 +371,7 @@ impl ParentResponse {
             }
 
             w.put_element("parent_response", Some(a.as_ref()), |w| {
-                w.put_element("parent_bpki_ta", None, |w| {
-                    w.put_base64_std(&self.id_cert.to_bytes())
-                })
+                w.put_element("parent_bpki_ta", None, |w| w.put_base64_std(&self.id_cert.to_bytes()))
             })
         })
     }
@@ -453,8 +444,7 @@ impl PublisherRequest {
 
                 let tag = a.take_opt("tag");
                 let publisher_handle = a.take_req("publisher_handle")?;
-                let publisher_handle =
-                    Handle::from_str(&publisher_handle).map_err(|_| Error::InvalidHandle)?;
+                let publisher_handle = Handle::from_str(&publisher_handle).map_err(|_| Error::InvalidHandle)?;
                 a.exhausted()?;
 
                 let bytes = r.take_named_element("publisher_bpki_ta", |a, r| {
@@ -603,13 +593,11 @@ impl RepositoryResponse {
 
                 let tag = a.take_opt("tag");
                 let publisher_handle = a.take_req("publisher_handle")?;
-                let publisher_handle =
-                    Handle::from_str(&publisher_handle).map_err(|_| Error::InvalidHandle)?;
+                let publisher_handle = Handle::from_str(&publisher_handle).map_err(|_| Error::InvalidHandle)?;
 
                 let service_uri = ServiceUri::try_from(a.take_req("service_uri")?)?;
                 let sia_base = uri::Rsync::from_string(a.take_req("sia_base")?)?;
-                let rrdp_notification_uri =
-                    uri::Https::from_string(a.take_req("rrdp_notification_uri")?)?;
+                let rrdp_notification_uri = uri::Https::from_string(a.take_req("rrdp_notification_uri")?)?;
 
                 a.exhausted()?;
 
@@ -834,10 +822,7 @@ mod tests {
         let xml = include_str!("../../../test-resources/oob/repository_response.xml");
         let rr = RepositoryResponse::validate_at(xml.as_bytes(), rpkid_time()).unwrap();
         assert_eq!(Some("A0001".to_string()), rr.tag);
-        assert_eq!(
-            Handle::from_str("Alice/Bob-42").unwrap(),
-            rr.publisher_handle
-        );
+        assert_eq!(Handle::from_str("Alice/Bob-42").unwrap(), rr.publisher_handle);
         assert_eq!(example_service_uri(), rr.service_uri);
         assert_eq!(example_rrdp_uri(), rr.repo_info().rpki_notify());
         assert_eq!(&example_sia_base(), rr.repo_info().base_uri());
@@ -910,13 +895,10 @@ mod tests {
 
     #[test]
     fn pre_rfc8183_response() {
-        let pre_rfc8183_xml =
-            include_str!("../../../test-resources/remote/arin-pre-rfc8183-parent-response.xml");
-        let pre_rfc_res =
-            ParentResponse::validate_at(pre_rfc8183_xml.as_bytes(), rpkid_time()).unwrap();
+        let pre_rfc8183_xml = include_str!("../../../test-resources/remote/arin-pre-rfc8183-parent-response.xml");
+        let pre_rfc_res = ParentResponse::validate_at(pre_rfc8183_xml.as_bytes(), rpkid_time()).unwrap();
 
-        let rfc8183_xml =
-            include_str!("../../../test-resources/remote/rpkid-parent-response-offer.xml");
+        let rfc8183_xml = include_str!("../../../test-resources/remote/rpkid-parent-response-offer.xml");
         let rfc_res = ParentResponse::validate_at(rfc8183_xml.as_bytes(), rpkid_time()).unwrap();
 
         assert_eq!(pre_rfc_res, rfc_res)

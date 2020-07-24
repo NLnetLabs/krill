@@ -9,21 +9,16 @@ use rpki::uri;
 use rpki::x509::Time;
 
 use crate::commons::api::rrdp::{
-    CurrentObjects, Delta, DeltaElements, DeltaRef, FileRef, Notification, RrdpSession, Snapshot,
-    SnapshotRef,
+    CurrentObjects, Delta, DeltaElements, DeltaRef, FileRef, Notification, RrdpSession, Snapshot, SnapshotRef,
 };
-use crate::commons::api::{
-    Handle, HexEncodedHash, PublishDelta, PublisherHandle, RepoInfo, StorableRepositoryCommand,
-};
+use crate::commons::api::{Handle, HexEncodedHash, PublishDelta, PublisherHandle, RepoInfo, StorableRepositoryCommand};
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::Aggregate;
 use crate::commons::remote::crypto::IdCert;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
 use crate::commons::KrillResult;
-use crate::constants::{
-    REPOSITORY_RRDP_DIR, REPOSITORY_RRDP_SNAPSHOT_RETAIN_MINS, REPOSITORY_RSYNC_DIR,
-};
+use crate::constants::{REPOSITORY_RRDP_DIR, REPOSITORY_RRDP_SNAPSHOT_RETAIN_MINS, REPOSITORY_RSYNC_DIR};
 use crate::pubd::publishers::Publisher;
 use crate::pubd::{Cmd, CmdDet, Evt, EvtDet, Ini, RrdpUpdate};
 
@@ -46,10 +41,7 @@ impl RsyncdStore {
     pub fn new(base_uri: uri::Rsync, repo_dir: &PathBuf) -> Self {
         let mut rsync_dir = PathBuf::from(repo_dir);
         rsync_dir.push(REPOSITORY_RSYNC_DIR);
-        RsyncdStore {
-            base_uri,
-            rsync_dir,
-        }
+        RsyncdStore { base_uri, rsync_dir }
     }
 }
 
@@ -298,8 +290,7 @@ impl RrdpServer {
                 // Clean up snapshots in all dirs except the current
                 // *IF* the snapshot is older than REPOSITORY_RRDP_SNAPSHOT_RETAIN_MINS
                 if serial != self.serial {
-                    let snapshot_path =
-                        Self::new_snapshot_path(&self.rrdp_base_dir, &self.session, serial);
+                    let snapshot_path = Self::new_snapshot_path(&self.rrdp_base_dir, &self.session, serial);
                     if snapshot_path.exists() {
                         if let Ok(meta) = fs::metadata(&snapshot_path) {
                             if let Ok(created) = meta.created() {
@@ -332,11 +323,8 @@ impl RrdpServer {
 ///
 impl RrdpServer {
     pub fn notification_uri(&self) -> uri::Https {
-        uri::Https::from_string(format!(
-            "{}notification.xml",
-            self.rrdp_base_uri.to_string()
-        ))
-        .unwrap() // Cannot fail. Config checked at startup.
+        uri::Https::from_string(format!("{}notification.xml", self.rrdp_base_uri.to_string())).unwrap()
+        // Cannot fail. Config checked at startup.
     }
 
     fn notification_path(&self) -> PathBuf {
@@ -360,12 +348,8 @@ impl RrdpServer {
     }
 
     fn new_snapshot_uri(base: &uri::Https, session: &RrdpSession, serial: u64) -> uri::Https {
-        uri::Https::from_string(format!(
-            "{}{}",
-            base.to_string(),
-            Self::snapshot_rel(session, serial)
-        ))
-        .unwrap() // Cannot fail. Config checked at startup.
+        uri::Https::from_string(format!("{}{}", base.to_string(), Self::snapshot_rel(session, serial))).unwrap()
+        // Cannot fail. Config checked at startup.
     }
 
     fn snapshot_uri(&self, serial: u64) -> uri::Https {
@@ -466,8 +450,7 @@ impl Aggregate for Repository {
             EvtDet::PublisherRemoved(publisher_handle, update) => {
                 self.publishers.remove(&publisher_handle);
                 self.rrdp.apply_update(update);
-                self.stats
-                    .remove_publisher(&publisher_handle, &self.rrdp.notification);
+                self.stats.remove_publisher(&publisher_handle, &self.rrdp.notification);
             }
             EvtDet::Published(publisher_handle, update) => {
                 // update content for publisher
@@ -484,8 +467,7 @@ impl Aggregate for Repository {
 
                 let notification = &self.rrdp.notification;
 
-                self.stats
-                    .publish(&publisher_handle, publisher_stats, notification)
+                self.stats.publish(&publisher_handle, publisher_stats, notification)
             }
         }
     }
@@ -507,17 +489,13 @@ impl Aggregate for Repository {
 /// # Manage publishers
 ///
 impl Repository {
-    fn add_publisher(
-        &self,
-        publisher_request: rfc8183::PublisherRequest,
-    ) -> Result<Vec<Evt>, Error> {
+    fn add_publisher(&self, publisher_request: rfc8183::PublisherRequest) -> Result<Vec<Evt>, Error> {
         let (_tag, handle, id_cert) = publisher_request.unpack();
 
         if self.publishers.contains_key(&handle) {
             Err(Error::PublisherDuplicate(handle))
         } else {
-            let base_uri =
-                uri::Rsync::from_string(format!("{}{}/", self.rsync.base_uri, handle)).unwrap();
+            let base_uri = uri::Rsync::from_string(format!("{}{}/", self.rsync.base_uri, handle)).unwrap();
             let publisher = Publisher::new(id_cert, base_uri, CurrentObjects::default());
 
             Ok(vec![EvtDet::publisher_added(
@@ -551,8 +529,7 @@ impl Repository {
     }
 
     pub fn repo_info_for(&self, publisher: &PublisherHandle) -> RepoInfo {
-        let publisher_rsync_base =
-            uri::Rsync::from_str(&format!("{}{}/", self.rsync.base_uri, publisher)).unwrap();
+        let publisher_rsync_base = uri::Rsync::from_str(&format!("{}{}/", self.rsync.base_uri, publisher)).unwrap();
 
         RepoInfo::new(publisher_rsync_base, self.rrdp.notification_uri())
     }
@@ -602,11 +579,7 @@ impl Repository {
 /// # Publish
 ///
 impl Repository {
-    fn publish(
-        &self,
-        publisher_handle: PublisherHandle,
-        delta: PublishDelta,
-    ) -> Result<Vec<Evt>, Error> {
+    fn publish(&self, publisher_handle: PublisherHandle, delta: PublishDelta) -> Result<Vec<Evt>, Error> {
         let publisher = self.get_publisher(&publisher_handle)?;
         let delta_elements = DeltaElements::from(delta);
         publisher.verify_delta(&delta_elements)?;
@@ -692,8 +665,7 @@ impl RepoStats {
     }
 
     pub fn new_publisher(&mut self, publisher: &PublisherHandle) {
-        self.publishers
-            .insert(publisher.clone(), PublisherStats::default());
+        self.publishers.insert(publisher.clone(), PublisherStats::default());
     }
 
     pub fn remove_publisher(&mut self, publisher: &PublisherHandle, notification: &Notification) {

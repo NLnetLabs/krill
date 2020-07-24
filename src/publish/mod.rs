@@ -22,18 +22,13 @@ pub struct CaPublisher {
 ///
 impl CaPublisher {
     pub fn new(caserver: Arc<CaServer<OpenSslSigner>>, pubserver: Option<Arc<PubServer>>) -> Self {
-        CaPublisher {
-            caserver,
-            pubserver,
-        }
+        CaPublisher { caserver, pubserver }
     }
 }
 
 impl CaPublisher {
     fn get_embedded(&self) -> Result<&Arc<PubServer>, Error> {
-        self.pubserver
-            .as_ref()
-            .ok_or_else(|| Error::PublisherNoEmbeddedRepo)
+        self.pubserver.as_ref().ok_or_else(|| Error::PublisherNoEmbeddedRepo)
     }
 
     pub async fn publish(&self, ca_handle: &Handle) -> Result<(), Error> {
@@ -48,20 +43,13 @@ impl CaPublisher {
 
         let list_reply = match &repo_contact {
             RepositoryContact::Embedded(_) => self.get_embedded()?.list(ca_handle)?,
-            RepositoryContact::Rfc8181(repo) => {
-                self.caserver.send_rfc8181_list(ca_handle, repo).await?
-            }
+            RepositoryContact::Rfc8181(repo) => self.caserver.send_rfc8181_list(ca_handle, repo).await?,
         };
 
         let delta = {
-            let elements: HashMap<_, _> = list_reply
-                .into_elements()
-                .into_iter()
-                .map(|el| el.unpack())
-                .collect();
+            let elements: HashMap<_, _> = list_reply.into_elements().into_iter().map(|el| el.unpack()).collect();
 
-            let mut all_objects: HashMap<_, _> =
-                ca.all_objects().into_iter().map(|el| el.unpack()).collect();
+            let mut all_objects: HashMap<_, _> = ca.all_objects().into_iter().map(|el| el.unpack()).collect();
 
             let mut withdraws = vec![];
             let mut updates = vec![];
@@ -84,14 +72,8 @@ impl CaPublisher {
         };
 
         match &repo_contact {
-            RepositoryContact::Embedded(_) => {
-                self.get_embedded()?.publish(ca_handle.clone(), delta)?
-            }
-            RepositoryContact::Rfc8181(repo) => {
-                self.caserver
-                    .send_rfc8181_delta(ca_handle, repo, delta)
-                    .await?
-            }
+            RepositoryContact::Embedded(_) => self.get_embedded()?.publish(ca_handle.clone(), delta)?,
+            RepositoryContact::Rfc8181(repo) => self.caserver.send_rfc8181_delta(ca_handle, repo, delta).await?,
         };
 
         Ok(())
@@ -105,29 +87,18 @@ impl CaPublisher {
             Some(contact) => contact,
         };
 
-        info!(
-            "Will perform best effort clean up of old repository: {}",
-            repo
-        );
+        info!("Will perform best effort clean up of old repository: {}", repo);
 
         let list_reply = match repo {
             RepositoryContact::Embedded(_) => self.get_embedded()?.list(ca_handle)?,
-            RepositoryContact::Rfc8181(repo) => {
-                self.caserver.send_rfc8181_list(ca_handle, repo).await?
-            }
+            RepositoryContact::Rfc8181(repo) => self.caserver.send_rfc8181_list(ca_handle, repo).await?,
         };
 
         let delta = list_reply.into_withdraw_delta();
 
         match repo {
-            RepositoryContact::Embedded(_) => {
-                self.get_embedded()?.publish(ca_handle.clone(), delta)?
-            }
-            RepositoryContact::Rfc8181(res) => {
-                self.caserver
-                    .send_rfc8181_delta(ca_handle, res, delta)
-                    .await?
-            }
+            RepositoryContact::Embedded(_) => self.get_embedded()?.publish(ca_handle.clone(), delta)?,
+            RepositoryContact::Rfc8181(res) => self.caserver.send_rfc8181_delta(ca_handle, res, delta).await?,
         }
 
         Ok(())

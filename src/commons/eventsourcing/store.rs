@@ -13,9 +13,7 @@ use serde_json;
 
 use rpki::x509::Time;
 
-use crate::commons::api::{
-    CommandHistory, CommandHistoryCriteria, CommandHistoryRecord, Handle, Label,
-};
+use crate::commons::api::{CommandHistory, CommandHistoryCriteria, CommandHistoryRecord, Handle, Label};
 use crate::commons::eventsourcing::{Aggregate, Event, StoredCommand, WithStorableDetails};
 use crate::commons::util::file;
 
@@ -73,11 +71,7 @@ impl CommandKey {
 
 impl fmt::Display for CommandKey {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "command--{}--{}--{}",
-            self.timestamp_secs, self.sequence, self.label
-        )
+        write!(f, "command--{}--{}--{}", self.timestamp_secs, self.sequence, self.label)
     }
 }
 
@@ -152,8 +146,7 @@ pub trait KeyStore {
     /// Returns all keys for a Handle in the store, matching a &str, sorted ascending
     fn keys_ascending(&self, id: &Handle, matching: &str) -> Vec<Self::Key>;
 
-    fn command_keys_ascending(&self, id: &Handle, crit: &CommandHistoryCriteria)
-        -> Vec<CommandKey>;
+    fn command_keys_ascending(&self, id: &Handle, crit: &CommandHistoryCriteria) -> Vec<CommandKey>;
 
     /// Returns whether a key already exists.
     fn has_key(&self, id: &Handle, key: &Self::Key) -> bool;
@@ -175,19 +168,10 @@ pub trait KeyStore {
 
     /// Write or overwrite the value for an existing. Must not
     /// throw an error if the key already exists.
-    fn store<V: Any + Serialize>(
-        &self,
-        id: &Handle,
-        key: &Self::Key,
-        value: &V,
-    ) -> Result<(), KeyStoreError>;
+    fn store<V: Any + Serialize>(&self, id: &Handle, key: &Self::Key, value: &V) -> Result<(), KeyStoreError>;
 
     /// Get the value for this key, if any exists.
-    fn get<V: Any + Storable>(
-        &self,
-        id: &Handle,
-        key: &Self::Key,
-    ) -> Result<Option<V>, KeyStoreError>;
+    fn get<V: Any + Storable>(&self, id: &Handle, key: &Self::Key) -> Result<Option<V>, KeyStoreError>;
 
     /// Drop the value for this key
     fn drop(&self, id: &Handle, key: &Self::Key) -> Result<(), KeyStoreError>;
@@ -198,17 +182,13 @@ pub trait KeyStore {
     /// MUST check if the event already exists and return an error if it does.
     fn store_event<V: Event>(&self, event: &V) -> Result<(), KeyStoreError>;
 
-    fn store_command<S: WithStorableDetails>(
-        &self,
-        command: StoredCommand<S>,
-    ) -> Result<(), KeyStoreError>;
+    fn store_command<S: WithStorableDetails>(&self, command: StoredCommand<S>) -> Result<(), KeyStoreError>;
 
     /// Get the latest aggregate
     fn get_aggregate<V: Aggregate>(&self, id: &Handle) -> Result<Option<V>, KeyStoreError>;
 
     /// Saves the latest snapshot - overwrites any previous snapshot.
-    fn store_snapshot<V: Aggregate>(&self, id: &Handle, aggregate: &V)
-        -> Result<(), KeyStoreError>;
+    fn store_snapshot<V: Aggregate>(&self, id: &Handle, aggregate: &V) -> Result<(), KeyStoreError>;
 
     /// Find all commands that fit the criteria and return history
     fn command_history<A: Aggregate>(
@@ -228,9 +208,9 @@ pub trait KeyStore {
             if skipped < offset {
                 skipped += 1;
             } else if commands.len() < rows {
-                let stored: StoredCommand<A::StorableCommandDetails> =
-                    self.get(id, &key.into())?
-                        .ok_or_else(|| KeyStoreError::CommandNotFound)?;
+                let stored: StoredCommand<A::StorableCommandDetails> = self
+                    .get(id, &key.into())?
+                    .ok_or_else(|| KeyStoreError::CommandNotFound)?;
 
                 let stored = stored.into();
                 commands.push(stored);
@@ -340,11 +320,7 @@ impl KeyStore for DiskKeyStore {
     }
 
     fn key_for_command<S: WithStorableDetails>(command: &StoredCommand<S>) -> CommandKey {
-        CommandKey::new(
-            command.sequence(),
-            command.time(),
-            command.details().summary().label,
-        )
+        CommandKey::new(command.sequence(), command.time(), command.details().summary().label)
     }
 
     fn keys(&self, id: &Handle, matching: &str) -> Vec<Self::Key> {
@@ -370,11 +346,7 @@ impl KeyStore for DiskKeyStore {
         res
     }
 
-    fn command_keys_ascending(
-        &self,
-        id: &Handle,
-        crit: &CommandHistoryCriteria,
-    ) -> Vec<CommandKey> {
+    fn command_keys_ascending(&self, id: &Handle, crit: &CommandHistoryCriteria) -> Vec<CommandKey> {
         let mut command_keys = vec![];
 
         for key in self.keys(id, "command--") {
@@ -414,23 +386,14 @@ impl KeyStore for DiskKeyStore {
         res
     }
 
-    fn store<V: Any + Serialize>(
-        &self,
-        id: &Handle,
-        key: &Self::Key,
-        value: &V,
-    ) -> Result<(), KeyStoreError> {
+    fn store<V: Any + Serialize>(&self, id: &Handle, key: &Self::Key, value: &V) -> Result<(), KeyStoreError> {
         let mut f = file::create_file_with_path(&self.file_path(id, key))?;
         let json = serde_json::to_string_pretty(value)?;
         f.write_all(json.as_ref())?;
         Ok(())
     }
 
-    fn get<V: Any + Storable>(
-        &self,
-        id: &Handle,
-        key: &Self::Key,
-    ) -> Result<Option<V>, KeyStoreError> {
+    fn get<V: Any + Storable>(&self, id: &Handle, key: &Self::Key) -> Result<Option<V>, KeyStoreError> {
         let path = self.file_path(id, key);
         let path_str = path.to_string_lossy().into_owned();
 
@@ -500,10 +463,7 @@ impl KeyStore for DiskKeyStore {
         }
     }
 
-    fn store_command<S: WithStorableDetails>(
-        &self,
-        command: StoredCommand<S>,
-    ) -> Result<(), KeyStoreError> {
+    fn store_command<S: WithStorableDetails>(&self, command: StoredCommand<S>) -> Result<(), KeyStoreError> {
         let id = command.handle();
 
         let key = Self::key_for_command(&command).into();
@@ -537,11 +497,7 @@ impl KeyStore for DiskKeyStore {
         }
     }
 
-    fn store_snapshot<V: Aggregate>(
-        &self,
-        id: &Handle,
-        aggregate: &V,
-    ) -> Result<(), KeyStoreError> {
+    fn store_snapshot<V: Aggregate>(&self, id: &Handle, aggregate: &V) -> Result<(), KeyStoreError> {
         let key = Self::key_for_snapshot();
         self.store(id, &key, aggregate)
     }
@@ -588,11 +544,7 @@ impl DiskKeyStore {
         file_path
     }
 
-    pub fn update_aggregate<A: Aggregate>(
-        &self,
-        id: &Handle,
-        aggregate: &mut A,
-    ) -> Result<(), KeyStoreError> {
+    pub fn update_aggregate<A: Aggregate>(&self, id: &Handle, aggregate: &mut A) -> Result<(), KeyStoreError> {
         while let Some(e) = self.get_event(id, aggregate.version())? {
             aggregate.apply(e);
         }

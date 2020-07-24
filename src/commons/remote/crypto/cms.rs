@@ -148,9 +148,7 @@ impl ProtocolCms {
 /// # Parsing
 ///
 impl ProtocolCms {
-    fn take_signed_data<S: decode::Source>(
-        cons: &mut decode::Constructed<S>,
-    ) -> Result<Self, S::Err> {
+    fn take_signed_data<S: decode::Source>(cons: &mut decode::Constructed<S>) -> Result<Self, S::Err> {
         cons.take_sequence(|cons| {
             cons.skip_u8_if(3)?; // version -- must be 3
 
@@ -178,9 +176,7 @@ impl ProtocolCms {
                 cons.take_set(|cons| {
                     cons.take_sequence(|cons| {
                         cons.skip_u8_if(3)?;
-                        let sid = cons.take_value_if(Tag::CTX_0, |content| {
-                            KeyIdentifier::from_content(content)
-                        })?;
+                        let sid = cons.take_value_if(Tag::CTX_0, |content| KeyIdentifier::from_content(content))?;
                         let alg = DigestAlgorithm::take_from(cons)?;
                         if alg != digest_algorithm {
                             return Err(decode::Malformed.into());
@@ -222,9 +218,7 @@ impl ProtocolCms {
         })
     }
 
-    fn take_certificates<S: decode::Source>(
-        cons: &mut decode::Constructed<S>,
-    ) -> Result<IdCert, S::Err> {
+    fn take_certificates<S: decode::Source>(cons: &mut decode::Constructed<S>) -> Result<IdCert, S::Err> {
         cons.take_constructed_if(Tag::CTX_0, |cons| {
             cons.take_constructed(|tag, cons| match tag {
                 Tag::SEQUENCE => IdCert::from_constructed(cons),
@@ -238,9 +232,7 @@ impl ProtocolCms {
     // In theory there could be multiple CRLs, one for each CA certificate included in signing
     // this object. However, nobody seems to do this, and it's rather poorly defined how (and why)
     // this would be done. So.. just expecting 1 CRL here.
-    fn take_crl<S: decode::Source>(
-        cons: &mut decode::Constructed<S>,
-    ) -> Result<ProtocolCrl, S::Err> {
+    fn take_crl<S: decode::Source>(cons: &mut decode::Constructed<S>) -> Result<ProtocolCrl, S::Err> {
         cons.take_constructed_if(Tag::CTX_1, |cons| ProtocolCrl::take_from(cons))
     }
 }
@@ -345,10 +337,7 @@ impl ProtocolSignerInfoBuilder {
     ///
     /// A lot of this is pretty well restricted in RFCs 6488 amd 6492. We
     /// really only require some bits.
-    fn create<S: Signer>(
-        signer: &S,
-        message: &Bytes,
-    ) -> Result<ProtocolSignerInfo, Error<S::Error>> {
+    fn create<S: Signer>(signer: &S, message: &Bytes) -> Result<ProtocolSignerInfo, Error<S::Error>> {
         let signed_attributes = SignedAttributes::new(
             &oid::PROTOCOL_CONTENT_TYPE, // XXX TODO: derive from message
             message,
@@ -375,10 +364,7 @@ struct ProtocolCrlBuilder;
 impl ProtocolCrlBuilder {
     /// Creates a CRL for use with protocol messages. This revokes nothing,
     /// because we use single use keys for EE certs.
-    fn create<S: Signer>(
-        issuing_key: &S::KeyId,
-        signer: &S,
-    ) -> Result<ProtocolCrl, Error<S::Error>> {
+    fn create<S: Signer>(issuing_key: &S::KeyId, signer: &S) -> Result<ProtocolCrl, Error<S::Error>> {
         let pub_key = signer.get_key_info(issuing_key)?;
         let name = Name::from_pub_key(&pub_key);
         let just_now = Time::new(Utc::now()) - ::chrono::Duration::minutes(5);
@@ -449,9 +435,7 @@ impl ProtocolCrl {
     }
 
     /// Parses the content of a certificate revocation list.
-    pub fn from_constructed<S: decode::Source>(
-        cons: &mut decode::Constructed<S>,
-    ) -> Result<Self, S::Err> {
+    pub fn from_constructed<S: decode::Source>(cons: &mut decode::Constructed<S>) -> Result<Self, S::Err> {
         let signed_data = SignedData::from_constructed(cons)?;
         Ok(Self { signed_data })
     }
@@ -486,9 +470,7 @@ pub struct CrlNumber {
 ///
 impl CrlNumber {
     pub fn new(number: u32) -> Self {
-        CrlNumber {
-            number: number.into(),
-        }
+        CrlNumber { number: number.into() }
     }
 }
 
@@ -542,8 +524,7 @@ mod tests {
         let b = include_bytes!("../../../../test-resources/remote/cms_ta.cer");
         let id_cert = IdCert::decode(Bytes::from_static(b)).unwrap();
 
-        msg.validate_at(&id_cert, Time::utc(2012, 1, 1, 0, 0, 0))
-            .unwrap();
+        msg.validate_at(&id_cert, Time::utc(2012, 1, 1, 0, 0, 0)).unwrap();
     }
 
     #[test]
@@ -555,8 +536,7 @@ mod tests {
         let id_cert = IdCert::decode(Bytes::from_static(b)).unwrap();
 
         assert_eq!(
-            msg.validate_at(&id_cert, Time::utc(2012, 1, 1, 0, 0, 0))
-                .unwrap_err(),
+            msg.validate_at(&id_cert, Time::utc(2012, 1, 1, 0, 0, 0)).unwrap_err(),
             ValidationError,
         );
     }
@@ -585,8 +565,7 @@ mod tests {
 
             let message = Message::list(sender, rcpt);
 
-            let builder =
-                ProtocolCmsBuilder::create(&key_id, &s, message.clone().into_bytes()).unwrap();
+            let builder = ProtocolCmsBuilder::create(&key_id, &s, message.clone().into_bytes()).unwrap();
 
             let encoded_cms = builder.encode().to_captured(Mode::Der);
 

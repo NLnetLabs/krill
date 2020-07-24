@@ -73,11 +73,7 @@ impl Entitlements {
 
 impl fmt::Display for Entitlements {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let classes: Vec<String> = self
-            .classes
-            .iter()
-            .map(EntitlementClass::to_string)
-            .collect();
+        let classes: Vec<String> = self.classes.iter().map(EntitlementClass::to_string).collect();
 
         let classes = classes.join(", ");
 
@@ -113,15 +109,7 @@ impl EntitlementClass {
         }
     }
 
-    fn unwrap(
-        self,
-    ) -> (
-        ResourceClassName,
-        SigningCert,
-        ResourceSet,
-        Time,
-        Vec<IssuedCert>,
-    ) {
+    fn unwrap(self) -> (ResourceClassName, SigningCert, ResourceSet, Time, Vec<IssuedCert>) {
         (
             self.class_name,
             self.issuer,
@@ -160,9 +148,7 @@ impl EntitlementClass {
         issued
             .into_iter()
             .find(|issued| issued.cert().subject_public_key_info() == key)
-            .map(|issued| {
-                IssuanceResponse::new(class_name, issuer, resource_set, not_after, issued)
-            })
+            .map(|issued| IssuanceResponse::new(class_name, issuer, resource_set, not_after, issued))
     }
 }
 
@@ -210,8 +196,7 @@ impl SigningCert {
 
 impl PartialEq for SigningCert {
     fn eq(&self, other: &SigningCert) -> bool {
-        self.uri == other.uri
-            && self.cert.to_captured().as_slice() == other.cert.to_captured().as_slice()
+        self.uri == other.uri && self.cert.to_captured().as_slice() == other.cert.to_captured().as_slice()
     }
 }
 
@@ -239,11 +224,7 @@ pub struct IssuanceRequest {
 
 impl IssuanceRequest {
     pub fn new(class_name: ResourceClassName, limit: RequestResourceLimit, csr: Csr) -> Self {
-        IssuanceRequest {
-            class_name,
-            limit,
-            csr,
-        }
+        IssuanceRequest { class_name, limit, csr }
     }
 
     pub fn unpack(self) -> (ResourceClassName, RequestResourceLimit, Csr) {
@@ -490,17 +471,9 @@ impl fmt::Display for RequestResourceLimit {
             .as_ref()
             .map(|blocks| IpBlocksForFamily::v6(blocks).to_string())
             .unwrap_or_else(|| all.clone());
-        let asn_string = self
-            .asn
-            .as_ref()
-            .map(AsBlocks::to_string)
-            .unwrap_or_else(|| all);
+        let asn_string = self.asn.as_ref().map(AsBlocks::to_string).unwrap_or_else(|| all);
 
-        write!(
-            f,
-            "v4 '{}' v6 '{}' asn '{}'",
-            v4_string, v6_string, asn_string
-        )
+        write!(f, "v4 '{}' v6 '{}' asn '{}'", v4_string, v6_string, asn_string)
     }
 }
 
