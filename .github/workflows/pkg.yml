@@ -94,9 +94,9 @@ jobs:
       env:
         DEBIAN_FRONTEND: noninteractive
 
-    - name: Install compilation dependencies
+    - name: Install compilation and other dependencies
       run: |
-          apt-get install -y build-essential jq libssl-dev pkg-config
+          apt-get install -y build-essential jq libssl-dev lintian pkg-config
       env:
         DEBIAN_FRONTEND: noninteractive
 
@@ -153,9 +153,13 @@ jobs:
           *)            echo 2>&1 "ERROR: Unexpected matrix image"; exit 1 ;;
         esac
         DEB_VER="${KRILL_VER}-1${OS_REL}"
-        cargo deb --variant $DEB_NAME --deb-version $DEB_VER
+        cargo deb --variant $DEB_NAME --deb-version $DEB_VER -v
       env:
         MATRIX_IMAGE: ${{ matrix.image }}
+
+    - name: Verify the DEB package
+      run: |
+        lintian -v target/debian/*.deb
 
     # Upload the produced DEB package. The artifact will be available
     # via the GH Actions job summary and build log pages, but only to
