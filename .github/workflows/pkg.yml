@@ -60,6 +60,9 @@ jobs:
         ]
     env:
       CARGO_DEB_VER: 1.23.1
+      # A Krill version of the form 'x.y.z-plus' denotes a dev build that is
+      # newer than the released x.y.z version but is not yet a new release.
+      NEXT_VER_LABEL: plus
     name: deb-pkg
     runs-on: ubuntu-latest
     # Build on the oldest platform we are targeting in order to avoid
@@ -142,6 +145,7 @@ jobs:
         # See:
         #   - https://unix.stackexchange.com/a/190899
         #   - https://www.debian.org/doc/debian-policy/ch-controlfields.html#version
+        #   - https://readme.phys.ethz.ch/documentation/debian_version_numbers/
         # Therefore we generate the version ourselves.
         #
         # In addition, Semantic Versioning and Debian version policy cannot
@@ -150,7 +154,13 @@ jobs:
         # Debian package version 0.8.0-rc.1 would be considered _NEWER_ than
         # the final 0.8.0 release. To express this in a Debian compatible way we
         # must replace the dash '-' with a tilda '~'.
+        #
+        # Finally, sometimes we want a version to be NEWER than the latest
+        # release but without having to decide what higher semver number to bump
+        # to. In this case we do NOT want dash '-' to become '~' because `-`
+        # is treated as higher and tilda is treated as lower.
         KRILL_VER=$(cargo read-manifest | jq -r '.version' | tr '-' '~')
+        KRILL_VER=$(echo $KRILL_VER | sed -e "s/~$NEXT_VER_LABEL/-$NEXT_VER_LABEL/")
         case ${MATRIX_IMAGE} in
           ubuntu:16.04) OS_REL=xenial ;;
           ubuntu:18.04) OS_REL=bionic ;;
