@@ -1,31 +1,5 @@
 [
   {
-    "asn": 64496,
-    "prefix": "10.0.0.0/22",
-    "max_length": 23,
-    "state": "roa_seen",
-    "authorizes": [
-      {
-        "asn": 64496,
-        "prefix": "10.0.0.0/22"
-      },
-      {
-        "asn": 64496,
-        "prefix": "10.0.2.0/23"
-      }
-    ],
-    "disallows": [
-      {
-        "asn": 64497,
-        "prefix": "10.0.0.0/22"
-      },
-      {
-        "asn": 64496,
-        "prefix": "10.0.0.0/24"
-      }
-    ]
-  },
-  {
     "asn": 64497,
     "prefix": "192.168.1.0/24",
     "state": "roa_seen",
@@ -50,6 +24,38 @@
     "asn": 64498,
     "prefix": "192.168.1.0/24",
     "state": "roa_unseen"
+  },
+  {
+    "asn": 64496,
+    "prefix": "10.0.0.0/22",
+    "max_length": 23,
+    "state": "roa_too_permissive",
+    "authorizes": [
+      {
+        "asn": 64496,
+        "prefix": "10.0.0.0/22"
+      },
+      {
+        "asn": 64496,
+        "prefix": "10.0.2.0/23"
+      }
+    ],
+    "authorizes_excess": [
+      {
+        "asn": 64496,
+        "prefix": "10.0.0.0/23"
+      }
+    ],
+    "disallows": [
+      {
+        "asn": 64497,
+        "prefix": "10.0.0.0/22"
+      },
+      {
+        "asn": 64496,
+        "prefix": "10.0.0.0/24"
+      }
+    ]
   },
   {
     "asn": 64496,

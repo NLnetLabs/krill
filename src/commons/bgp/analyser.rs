@@ -1,11 +1,13 @@
+use std::collections::HashSet;
 use std::env;
+use std::iter::FromIterator;
 use std::sync::RwLock;
 
 use chrono::Duration;
 
 use rpki::x509::Time;
 
-use crate::commons::api::{ResourceSet, RoaDefinition};
+use crate::commons::api::{ResourceSet, RoaDefinition, TypedPrefix};
 use crate::commons::bgp::{
     make_roa_tree, make_validated_announcement_tree, Announcement, AnnouncementValidity,
     Announcements, BgpAnalysisEntry, BgpAnalysisReport, IpRange, RisDumpError, RisDumpLoader,
@@ -97,10 +99,11 @@ impl BgpAnalyser {
             let validated_tree = make_validated_announcement_tree(validated.as_slice());
             for roa in roas {
                 let covered = validated_tree.matching_or_more_specific(&roa.prefix());
+
                 if covered.is_empty() {
                     entries.push(BgpAnalysisEntry::roa_unseen(*roa))
                 } else {
-                    let allows: Vec<Announcement> = covered
+                    let authorizes: Vec<Announcement> = covered
                         .iter()
                         .filter(|va| {
                             // VALID announcements under THIS ROA
@@ -115,6 +118,22 @@ impl BgpAnalyser {
                         .map(|va| va.announcement())
                         .collect();
 
+                    let authorizes_excess: Vec<Announcement> = {
+                        let mut unannounced_specifics: HashSet<TypedPrefix> =
+                            HashSet::from_iter(roa.to_specific_prefixes().into_iter());
+
+                        for authorized_pfx in authorizes.iter().map(|a| a.prefix()) {
+                            if authorized_pfx.addr_len() == roa.effective_max_length() {
+                                unannounced_specifics.remove(authorized_pfx);
+                            }
+                        }
+
+                        unannounced_specifics
+                            .into_iter()
+                            .map(|tp| Announcement::new(roa.asn(), tp))
+                            .collect()
+                    };
+
                     let disallows: Vec<Announcement> = covered
                         .iter()
                         .filter(|va| {
@@ -125,10 +144,17 @@ impl BgpAnalyser {
                         .map(|va| va.announcement())
                         .collect();
 
-                    if allows.is_empty() && disallows.is_empty() {
+                    if authorizes.is_empty() && disallows.is_empty() {
                         entries.push(BgpAnalysisEntry::roa_unseen(*roa))
+                    } else if !authorizes_excess.is_empty() {
+                        entries.push(BgpAnalysisEntry::roa_too_permissive(
+                            *roa,
+                            authorizes,
+                            disallows,
+                            authorizes_excess,
+                        ))
                     } else {
-                        entries.push(BgpAnalysisEntry::roa_seen(*roa, allows, disallows))
+                        entries.push(BgpAnalysisEntry::roa_seen(*roa, authorizes, disallows))
                     }
                 }
             }
@@ -236,7 +262,7 @@ mod tests {
 
     #[test]
     fn analyse_bgp() {
-        let roa_authorizing = definition("10.0.0.0/22-23 => 64496");
+        let roa_too_permissive = definition("10.0.0.0/22-23 => 64496");
         let roa_disallowing = definition("10.0.4.0/24 => 0");
         let roa_unseen_completely = definition("10.0.3.0/24 => 64497");
 
@@ -249,7 +275,7 @@ mod tests {
 
         let report = analyser.analyse(
             &[
-                roa_authorizing,
+                roa_too_permissive,
                 roa_disallowing,
                 roa_unseen_completely,
                 roa_authorizing_single,

@@ -49,6 +49,7 @@ impl From<BgpAnalysisReport> for BgpStats {
     }
 }
 
+#[allow(clippy::cognitive_complexity)]
 impl fmt::Display for BgpAnalysisReport {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let entries = self.entries();
@@ -71,6 +72,38 @@ impl fmt::Display for BgpAnalysisReport {
                     writeln!(f)?;
                     writeln!(f, "\t\tAuthorizes:")?;
                     for ann in roa.authorizes.iter() {
+                        writeln!(f, "\t\t{}", ann)?;
+                    }
+
+                    if !roa.disallows.is_empty() {
+                        writeln!(f)?;
+                        writeln!(f, "\t\tDisallows:")?;
+                        for ann in roa.disallows.iter() {
+                            writeln!(f, "\t\t{}", ann)?;
+                        }
+                    }
+                }
+                writeln!(f)?;
+            }
+
+            if let Some(too_permissive) = entry_map.get(&BgpAnalysisState::RoaTooPermissive) {
+                writeln!(f, "Authorizations which may be too permissive:")?;
+
+                for roa in too_permissive {
+                    writeln!(f)?;
+                    writeln!(f, "\tDefinition: {}", roa.definition)?;
+                    writeln!(f)?;
+                    writeln!(f, "\t\tAuthorizes visible announcements:")?;
+                    for ann in roa.authorizes.iter() {
+                        writeln!(f, "\t\t{}", ann)?;
+                    }
+
+                    writeln!(f)?;
+                    writeln!(
+                        f,
+                        "\t\tAuthorizes additional *invisible* more specific announcements:"
+                    )?;
+                    for ann in roa.authorizes_excess.iter() {
                         writeln!(f, "\t\t{}", ann)?;
                     }
 
@@ -164,6 +197,8 @@ pub struct BgpAnalysisEntry {
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
     authorizes: Vec<Announcement>,
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
+    authorizes_excess: Vec<Announcement>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
     disallows: Vec<Announcement>,
 }
 
@@ -205,6 +240,27 @@ impl BgpAnalysisEntry {
             allowed_by: None,
             disallowed_by: vec![],
             authorizes,
+            authorizes_excess: vec![],
+            disallows,
+        }
+    }
+
+    pub fn roa_too_permissive(
+        definition: RoaDefinition,
+        mut authorizes: Vec<Announcement>,
+        mut disallows: Vec<Announcement>,
+        mut authorizes_excess: Vec<Announcement>,
+    ) -> Self {
+        authorizes.sort();
+        disallows.sort();
+        authorizes_excess.sort();
+        BgpAnalysisEntry {
+            definition,
+            state: BgpAnalysisState::RoaTooPermissive,
+            allowed_by: None,
+            disallowed_by: vec![],
+            authorizes,
+            authorizes_excess,
             disallows,
         }
     }
@@ -216,6 +272,7 @@ impl BgpAnalysisEntry {
             allowed_by: None,
             disallowed_by: vec![],
             authorizes: vec![],
+            authorizes_excess: vec![],
             disallows: vec![],
         }
     }
@@ -227,6 +284,7 @@ impl BgpAnalysisEntry {
             allowed_by: None,
             disallowed_by: vec![],
             authorizes: vec![],
+            authorizes_excess: vec![],
             disallows: vec![],
         }
     }
@@ -238,6 +296,7 @@ impl BgpAnalysisEntry {
             allowed_by: Some(allowed_by),
             disallowed_by: vec![],
             authorizes: vec![],
+            authorizes_excess: vec![],
             disallows: vec![],
         }
     }
@@ -253,6 +312,7 @@ impl BgpAnalysisEntry {
             allowed_by: None,
             disallowed_by,
             authorizes: vec![],
+            authorizes_excess: vec![],
             disallows: vec![],
         }
     }
@@ -268,6 +328,7 @@ impl BgpAnalysisEntry {
             allowed_by: None,
             disallowed_by,
             authorizes: vec![],
+            authorizes_excess: vec![],
             disallows: vec![],
         }
     }
@@ -279,6 +340,7 @@ impl BgpAnalysisEntry {
             allowed_by: None,
             disallowed_by: vec![],
             authorizes: vec![],
+            authorizes_excess: vec![],
             disallows: vec![],
         }
     }
@@ -307,6 +369,7 @@ impl PartialOrd for BgpAnalysisEntry {
 pub enum BgpAnalysisState {
     RoaSeen,
     RoaUnseen,
+    RoaTooPermissive,
     AnnouncementValid,
     AnnouncementInvalidLength,
     AnnouncementInvalidAsn,
@@ -435,24 +498,35 @@ impl From<BgpAnalysisReport> for RoaReport {
                     definition: entry.definition,
                     state: RoaReportEntryState::Covering,
                     authorizes: entry.authorizes,
+                    authorizes_excess: entry.authorizes_excess,
+                    disallows: entry.disallows,
+                }),
+                BgpAnalysisState::RoaTooPermissive => entries.push(RoaReportEntry {
+                    definition: entry.definition,
+                    state: RoaReportEntryState::TooPermissive,
+                    authorizes: entry.authorizes,
+                    authorizes_excess: entry.authorizes_excess,
                     disallows: entry.disallows,
                 }),
                 BgpAnalysisState::RoaUnseen => entries.push(RoaReportEntry {
                     definition: entry.definition,
                     state: RoaReportEntryState::Unseen,
                     authorizes: entry.authorizes,
+                    authorizes_excess: entry.authorizes_excess,
                     disallows: entry.disallows,
                 }),
                 BgpAnalysisState::RoaNoAnnouncementInfo => entries.push(RoaReportEntry {
                     definition: entry.definition,
                     state: RoaReportEntryState::NoInfo,
                     authorizes: entry.authorizes,
+                    authorizes_excess: entry.authorizes_excess,
                     disallows: entry.disallows,
                 }),
                 BgpAnalysisState::AnnouncementNotFound => entries.push(RoaReportEntry {
                     definition: entry.definition,
                     state: RoaReportEntryState::NotFound,
                     authorizes: entry.authorizes,
+                    authorizes_excess: entry.authorizes_excess,
                     disallows: entry.disallows,
                 }),
                 _ => {}
@@ -470,6 +544,8 @@ pub struct RoaReportEntry {
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
     authorizes: Vec<Announcement>,
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
+    authorizes_excess: Vec<Announcement>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
     disallows: Vec<Announcement>,
 }
 
@@ -479,6 +555,12 @@ impl fmt::Display for RoaReportEntry {
             RoaReportEntryState::Covering | RoaReportEntryState::Unseen => format!(
                 "roa authorizes {}, disallows {} announcements",
                 self.authorizes.len(),
+                self.disallows.len()
+            ),
+            RoaReportEntryState::TooPermissive => format!(
+                "roa authorizes {}, authorizes in excess {}, disallows {} announcements",
+                self.authorizes.len(),
+                self.authorizes_excess.len(),
                 self.disallows.len()
             ),
             RoaReportEntryState::NotFound => {
@@ -496,6 +578,7 @@ impl fmt::Display for RoaReportEntry {
 #[serde(rename_all = "snake_case")]
 pub enum RoaReportEntryState {
     Covering,
+    TooPermissive,
     Unseen,
     NotFound,
     NoInfo,

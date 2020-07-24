@@ -1,19 +1,24 @@
 Authorizations covering announcements seen:
 
-	Definition: 10.0.0.0/22-23 => 64496
-
-		Authorizes:
-		10.0.0.0/22 => 64496
-		10.0.2.0/23 => 64496
-
-		Disallows:
-		10.0.0.0/22 => 64497
-		10.0.0.0/24 => 64496
-
 	Definition: 192.168.1.0/24 => 64497
 
 		Authorizes:
 		192.168.1.0/24 => 64497
+
+Authorizations which may be too permissive:
+
+	Definition: 10.0.0.0/22-23 => 64496
+
+		Authorizes visible announcements:
+		10.0.0.0/22 => 64496
+		10.0.2.0/23 => 64496
+
+		Authorizes additional *invisible* more specific announcements:
+		10.0.0.0/23 => 64496
+
+		Disallows:
+		10.0.0.0/22 => 64497
+		10.0.0.0/24 => 64496
 
 Authorizations for which no announcements are seen (you may wish to remove these):
 

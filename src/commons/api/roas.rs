@@ -425,7 +425,7 @@ impl TypedPrefix {
     pub fn to_specific_prefixes(&self, len: u8) -> Vec<TypedPrefix> {
         let mut res = vec![];
 
-        let nr_specifics = 1 << len - self.addr_len();
+        let nr_specifics = 1 << (len - self.addr_len());
 
         // note that the lower 12 bytes are disregarded for IPv4
         // by our implementation, so the increment here is the
