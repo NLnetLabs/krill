@@ -60,6 +60,9 @@ jobs:
         ]
     env:
       CARGO_DEB_VER: CUSTOM
+      # A Krill version of the form 'x.y.z-plus' denotes a dev build that is
+      # newer than the released x.y.z version but is not yet a new release.
+      NEXT_VER_LABEL: plus
     name: deb-pkg
     runs-on: ubuntu-latest
     # Build on the oldest platform we are targeting in order to avoid
@@ -94,9 +97,9 @@ jobs:
       env:
         DEBIAN_FRONTEND: noninteractive
 
-    - name: Install compilation dependencies
+    - name: Install compilation and other dependencies
       run: |
-          apt-get install -y build-essential jq libssl-dev pkg-config
+          apt-get install -y build-essential jq libssl-dev lintian pkg-config
       env:
         DEBIAN_FRONTEND: noninteractive
 
@@ -142,6 +145,7 @@ jobs:
         # See:
         #   - https://unix.stackexchange.com/a/190899
         #   - https://www.debian.org/doc/debian-policy/ch-controlfields.html#version
+        #   - https://readme.phys.ethz.ch/documentation/debian_version_numbers/
         # Therefore we generate the version ourselves.
         #
         # In addition, Semantic Versioning and Debian version policy cannot
@@ -150,7 +154,13 @@ jobs:
         # Debian package version 0.8.0-rc.1 would be considered _NEWER_ than
         # the final 0.8.0 release. To express this in a Debian compatible way we
         # must replace the dash '-' with a tilda '~'.
+        #
+        # Finally, sometimes we want a version to be NEWER than the latest
+        # release but without having to decide what higher semver number to bump
+        # to. In this case we do NOT want dash '-' to become '~' because `-`
+        # is treated as higher and tilda is treated as lower.
         KRILL_VER=$(cargo read-manifest | jq -r '.version' | tr '-' '~')
+        KRILL_VER=$(echo $KRILL_VER | sed -e "s/~$NEXT_VER_LABEL/-$NEXT_VER_LABEL/")
         case ${MATRIX_IMAGE} in
           ubuntu:16.04) OS_REL=xenial ;;
           ubuntu:18.04) OS_REL=bionic ;;
@@ -160,9 +170,16 @@ jobs:
           *)            echo 2>&1 "ERROR: Unexpected matrix image"; exit 1 ;;
         esac
         DEB_VER="${KRILL_VER}-1${OS_REL}"
-        cargo deb --variant $DEB_NAME --deb-version $DEB_VER
+        cargo deb --variant $DEB_NAME --deb-version $DEB_VER -v
       env:
         MATRIX_IMAGE: ${{ matrix.image }}
+
+    # See what Lintian thinks of our package but don't fail the build because of
+    # it. E.g. Cargo Deb doesn't compress man pages but Lintian (and Debian
+    # Policy) say they should be compressed.
+    - name: Verify the DEB package
+      run: |
+        lintian -v target/debian/*.deb || true
 
     # Upload the produced DEB package. The artifact will be available
     # via the GH Actions job summary and build log pages, but only to
