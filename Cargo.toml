@@ -95,6 +95,7 @@ assets = [
     ["defaults/krill.conf", "/usr/share/doc/krill/krill.conf", "644"],
     ["doc/krill.1", "/usr/share/man/man1/krill.1", "644"],
     ["doc/krillc.1", "/usr/share/man/man1/krillc.1", "644"],
+    ["debian/krill.service.preset", "/lib/systemd/system-preset/50-krill.preset", "644"],
 ]
 
 [package.metadata.deb.systemd-units]
