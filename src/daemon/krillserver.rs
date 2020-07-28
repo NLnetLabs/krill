@@ -25,7 +25,7 @@ use crate::commons::util::softsigner::OpenSslSigner;
 use crate::commons::{KrillEmptyResult, KrillResult};
 use crate::constants::*;
 use crate::daemon::auth::{Auth, Authorizer};
-use crate::daemon::ca::{self, ta_handle, ResourceTaggedAttestation, RtaRequest};
+use crate::daemon::ca::{self, ta_handle, ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaRequest};
 use crate::daemon::config::CONFIG;
 use crate::daemon::mq::EventQueueListener;
 use crate::daemon::scheduler::Scheduler;
@@ -620,6 +620,27 @@ impl KrillServer {
         let definitions = ca.roa_definitions();
         let resources = ca.all_resources();
         Ok(self.bgp_analyser.analyse(definitions.as_slice(), &resources))
+    }
+
+    pub fn ca_routes_bgp_dry_run(
+        &self,
+        handle: &Handle,
+        updates: RoaDefinitionUpdates,
+    ) -> KrillResult<BgpAnalysisReport> {
+        let ca = self.caserver.get_ca(handle)?;
+
+        let updates: RouteAuthorizationUpdates = updates.into();
+        let updates = updates.into_explicit();
+        let resources = updates.affected_prefixes();
+
+        let (would_be_routes, _) = ca.update_authorizations(&updates)?;
+        let roas: Vec<RoaDefinition> = would_be_routes
+            .into_authorizations()
+            .into_iter()
+            .map(|a| a.into())
+            .collect();
+
+        Ok(self.bgp_analyser.analyse(roas.as_slice(), &resources))
     }
 
     pub fn ca_routes_bgp_suggest(

@@ -4,6 +4,7 @@ use std::fs;
 use std::str::FromStr;
 
 use krill::commons::api::{Handle, ObjectName, ParentCaReq, ResourceSet, RoaDefinition, RoaDefinitionUpdates};
+use krill::commons::bgp::BgpAnalysisState;
 use krill::daemon::ca::ta_handle;
 use krill::test::*;
 
@@ -140,6 +141,15 @@ async fn ca_roas() {
     let remaining_suggestion = ca_route_authorizations_suggestions(&child).await;
     let updates: RoaDefinitionUpdates = remaining_suggestion.into();
     assert!(updates.is_empty());
+
+    // Try to remove a ROA and see the dry-run effect.
+    let mut updates = RoaDefinitionUpdates::empty();
+    let roa_to_remove = definition("192.168.0.0/24 => 64496");
+    updates.remove(roa_to_remove);
+
+    let report = ca_route_authorization_dryrun(&child, updates).await;
+    let invalid_asn = report.matching_defs(BgpAnalysisState::AnnouncementInvalidAsn);
+    assert_eq!(invalid_asn, vec![&roa_to_remove]);
 
     let _ = fs::remove_dir_all(dir);
 }

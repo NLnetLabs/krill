@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::convert::TryFrom;
 use std::io;
 use std::path::PathBuf;
@@ -11,12 +12,12 @@ use rpki::uri;
 use rpki::x509::Time;
 
 use crate::cli::report::{ReportError, ReportFormat};
-use crate::commons::api::RepositoryUpdate;
 use crate::commons::api::{
     AddChildRequest, AuthorizationFmtError, CertAuthInit, ChildAuthRequest, ChildHandle, Handle, ParentCaContact,
     ParentCaReq, ParentHandle, PublisherHandle, ResourceSet, ResourceSetError, RoaDefinitionUpdates, Token,
     UpdateChildRequest,
 };
+use crate::commons::api::{RepositoryUpdate, RoaDefinition};
 use crate::commons::remote::crypto::IdCert;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
@@ -581,7 +582,32 @@ impl Options {
                     "R: 192.168.3.0/24 => 64496\n",
                 ))
                 .value_name("<file>")
-                .required(true),
+                .required(false),
+        );
+
+        sub = sub.arg(
+            Arg::with_name("add")
+                .long("add")
+                .help("One or more ROAs to add, e.g.: 192.168.0.0/16 => 64496")
+                .value_name("<roa definition>")
+                .multiple(true)
+                .required(false),
+        );
+
+        sub = sub.arg(
+            Arg::with_name("remove")
+                .long("remove")
+                .help("One or more ROAs to remove, e.g.: 192.168.0.0/16 => 64496")
+                .value_name("<roa definition>")
+                .multiple(true)
+                .required(false),
+        );
+
+        sub = sub.arg(
+            Arg::with_name("dryrun")
+                .long("dryrun")
+                .help("Perform a dry run of the update and return the BGP analysis for the scoped to the update")
+                .required(false),
         );
 
         app.subcommand(sub)
@@ -1310,14 +1336,46 @@ impl Options {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
-        let updates = {
-            let path = matches.value_of("delta").unwrap();
+        let updates = if let Some(path) = matches.value_of("delta") {
+            if matches.is_present("add") || matches.is_present("remove") {
+                return Err(Error::general("Cannot use --add or --remove if --delta is specified"));
+            }
+
             let bytes = Self::read_file_arg(path)?;
             let updates_str = unsafe { from_utf8_unchecked(&bytes) };
             RoaDefinitionUpdates::from_str(updates_str)?
+        } else {
+            let mut added = HashSet::new();
+            let mut removed = HashSet::new();
+
+            if let Some(add) = matches.values_of("add") {
+                for roa_str in add {
+                    let roa: RoaDefinition = RoaDefinition::from_str(roa_str)?;
+                    added.insert(roa);
+                }
+            }
+
+            if let Some(remove) = matches.values_of("remove") {
+                for roa_str in remove {
+                    let roa: RoaDefinition = RoaDefinition::from_str(roa_str)?;
+                    removed.insert(roa);
+                }
+            }
+
+            if added.is_empty() && removed.is_empty() {
+                return Err(Error::general(
+                    "You MUST specify either --delta, or --add and/or --remove",
+                ));
+            }
+
+            RoaDefinitionUpdates::new(added, removed)
         };
 
-        let command = Command::CertAuth(CaCommand::RouteAuthorizationsUpdate(my_ca, updates));
+        let command = if matches.is_present("dryrun") {
+            Command::CertAuth(CaCommand::RouteAuthorizationsDryRunUpdate(my_ca, updates))
+        } else {
+            Command::CertAuth(CaCommand::RouteAuthorizationsUpdate(my_ca, updates))
+        };
 
         Ok(Options::make(general_args, command))
     }
@@ -1760,6 +1818,9 @@ pub enum CaCommand {
 
     #[display(fmt = "Update ROAS for ca: '{}' -> {}", _0, _1)]
     RouteAuthorizationsUpdate(Handle, RoaDefinitionUpdates),
+
+    #[display(fmt = "Perform a dry-run update of ROAS for ca: '{}' -> {}", _0, _1)]
+    RouteAuthorizationsDryRunUpdate(Handle, RoaDefinitionUpdates),
 
     #[display(fmt = "Show detailed ROA vs BGP analysis for ca: '{}'", _0)]
     BgpAnalysisFull(Handle),

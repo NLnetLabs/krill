@@ -261,7 +261,7 @@ impl fmt::Display for BgpAnalysisReport {
                     }
 
                     writeln!(f)?;
-                    writeln!(f, "\t\tAuthorizes additional *invisible* more specific announcements:")?;
+                    writeln!(f, "\t\tAuthorizes additional *invisible* announcements:")?;
                     for ann in roa.authorizes_excess.iter() {
                         writeln!(f, "\t\t{}", ann)?;
                     }

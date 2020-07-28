@@ -48,7 +48,7 @@ impl Default for RoaDeltaError {
 
 impl RoaDeltaError {
     pub fn add_duplicate(&mut self, addition: RoaDefinition) {
-        self.notheld.push(addition);
+        self.duplicates.push(addition);
     }
 
     pub fn add_covered(&mut self, addition: RoaDefinition, covered_by: RoaDefinition) {

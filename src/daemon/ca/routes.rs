@@ -121,6 +121,22 @@ impl Default for RouteAuthorizationUpdates {
 }
 
 impl RouteAuthorizationUpdates {
+    /// Use this when receiving updates through the API, until the v0.7 ROA clean up can be deprecated,
+    /// which would imply that pre-0.7 versions can not longer be directly updated.
+    pub fn into_explicit(self) -> Self {
+        let mut added = HashSet::new();
+        for add in self.added.into_iter() {
+            added.insert(add.explicit_length());
+        }
+
+        let mut removed = HashSet::new();
+        for rem in self.removed.into_iter() {
+            removed.insert(rem.explicit_length());
+        }
+
+        RouteAuthorizationUpdates { added, removed }
+    }
+
     pub fn new(added: HashSet<RouteAuthorization>, removed: HashSet<RouteAuthorization>) -> Self {
         RouteAuthorizationUpdates { added, removed }
     }
@@ -153,6 +169,17 @@ impl RouteAuthorizationUpdates {
         }
 
         RouteAuthorizationUpdates { added, removed }
+    }
+
+    pub fn affected_prefixes(&self) -> ResourceSet {
+        let mut resources = ResourceSet::default();
+        for roa in &self.added {
+            resources = resources.union(&roa.prefix().clone().into());
+        }
+        for roa in &self.removed {
+            resources = resources.union(&roa.prefix().clone().into());
+        }
+        resources
     }
 }
 
@@ -220,6 +247,10 @@ impl Routes {
 
     pub fn authorizations(&self) -> impl Iterator<Item = &RouteAuthorization> {
         self.map.keys()
+    }
+
+    pub fn into_authorizations(self) -> Vec<RouteAuthorization> {
+        self.map.into_iter().map(|(auth, _)| auth).collect()
     }
 
     pub fn as_aggregates(&self) -> HashMap<RoaAggregateKey, Vec<RouteAuthorization>> {

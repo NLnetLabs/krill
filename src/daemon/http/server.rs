@@ -1075,6 +1075,16 @@ async fn ca_routes_show(req: Request, handle: Handle) -> RoutingResult {
 async fn ca_routes_analysis(req: Request, path: &mut RequestPath, handle: Handle) -> RoutingResult {
     match path.next() {
         Some("full") => render_json_res(req.state().read().await.ca_routes_bgp_analysis(&handle)),
+        Some("dryrun") => match *req.method() {
+            Method::POST => {
+                let state = req.state.clone();
+                match req.json().await {
+                    Err(e) => render_error(e),
+                    Ok(updates) => render_json_res(state.read().await.ca_routes_bgp_dry_run(&handle, updates)),
+                }
+            }
+            _ => render_unknown_method(),
+        },
         Some("suggest") => match *req.method() {
             Method::GET => render_json_res(req.state().read().await.ca_routes_bgp_suggest(&handle, None)),
             Method::POST => {

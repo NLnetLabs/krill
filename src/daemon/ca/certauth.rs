@@ -1314,6 +1314,8 @@ impl<S: Signer> CertAuth<S> {
     ) -> KrillResult<Vec<Evt>> {
         let signer = signer.read().unwrap();
 
+        let route_auth_updates = route_auth_updates.into_explicit();
+
         let (routes, mut evts) = self.update_authorizations(&route_auth_updates)?;
 
         let repo = self.get_repository_contact()?;
@@ -1373,10 +1375,9 @@ impl<S: Signer> CertAuth<S> {
     /// Returns the desired Routes and the event details for
     /// persisting the changes, or an error in case of issues.
     ///
-    /// Note: this does not re-issue the actual ROAs, for
-    ///       this the caller needs to send the updates
-    ///       the relevant ResourceClasses
-    fn update_authorizations(&self, updates: &RouteAuthorizationUpdates) -> KrillResult<(Routes, Vec<EvtDet>)> {
+    /// Note: this does not re-issue the actual ROAs, this
+    ///       can be used for the 'dry-run' option.
+    pub fn update_authorizations(&self, updates: &RouteAuthorizationUpdates) -> KrillResult<(Routes, Vec<EvtDet>)> {
         let mut delta_errors = RoaDeltaError::default();
         let mut res = vec![];
 

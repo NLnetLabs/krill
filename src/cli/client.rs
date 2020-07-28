@@ -211,6 +211,12 @@ impl KrillClient {
                 Ok(ApiResponse::Empty)
             }
 
+            CaCommand::RouteAuthorizationsDryRunUpdate(handle, updates) => {
+                let uri = format!("api/v1/cas/{}/routes/analysis/dryrun", handle);
+                let report = self.post_json_with_response(&uri, updates).await?;
+                Ok(ApiResponse::BgpAnalysisFull(report))
+            }
+
             CaCommand::BgpAnalysisFull(handle) => {
                 let uri = format!("api/v1/cas/{}/routes/analysis/full", handle);
                 let report = self.get_json(&uri).await?;

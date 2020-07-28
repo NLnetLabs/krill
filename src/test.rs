@@ -25,7 +25,7 @@ use crate::commons::api::{
     ResourceClassKeysInfo, ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates, TypedPrefix,
     UpdateChildRequest,
 };
-use crate::commons::bgp::{Announcement, BgpAnalysisSuggestion};
+use crate::commons::bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::remote::rfc8183;
 use crate::commons::remote::rfc8183::ChildRequest;
 use crate::commons::util::httpclient;
@@ -243,6 +243,18 @@ pub async fn ca_route_authorizations_suggestions(handle: &Handle) -> BgpAnalysis
     match krill_admin(Command::CertAuth(CaCommand::BgpAnalysisSuggest(handle.clone(), None))).await {
         ApiResponse::BgpAnalysisSuggestions(suggestion) => suggestion,
         _ => panic!("Expected ROA suggestion"),
+    }
+}
+
+pub async fn ca_route_authorization_dryrun(handle: &Handle, updates: RoaDefinitionUpdates) -> BgpAnalysisReport {
+    match krill_admin(Command::CertAuth(CaCommand::RouteAuthorizationsDryRunUpdate(
+        handle.clone(),
+        updates,
+    )))
+    .await
+    {
+        ApiResponse::BgpAnalysisFull(report) => report,
+        _ => panic!("Expected BGP analysis report"),
     }
 }
 

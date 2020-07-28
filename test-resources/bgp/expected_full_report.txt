@@ -13,7 +13,7 @@ Authorizations which may be too permissive:
 		10.0.0.0/22 => 64496
 		10.0.2.0/23 => 64496
 
-		Authorizes additional *invisible* more specific announcements:
+		Authorizes additional *invisible* announcements:
 		10.0.0.0/23 => 64496
 
 		Disallows:
