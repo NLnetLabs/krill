@@ -611,6 +611,33 @@ impl Options {
         app.subcommand(sub)
     }
 
+    fn make_cas_routes_bgp_suggestions_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("suggest").about("Show ROA suggestions.");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        sub = sub
+            .arg(
+                Arg::with_name("ipv4")
+                    .short("4")
+                    .long("ipv4")
+                    .value_name("IPv4 resources")
+                    .help("Scope to these IPv4 resources")
+                    .required(false),
+            )
+            .arg(
+                Arg::with_name("ipv6")
+                    .short("6")
+                    .long("ipv6")
+                    .value_name("IPv6 resources")
+                    .help("Scope to these IPv6 resources")
+                    .required(false),
+            );
+
+        app.subcommand(sub)
+    }
+
     fn make_cas_routes_bgp_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub =
             SubCommand::with_name("bgp").about("Show current authorizations in relation to known announcements.");
@@ -618,6 +645,7 @@ impl Options {
         sub = Self::make_cas_routes_bgp_full_sc(sub);
         sub = Self::make_cas_routes_bgp_announcements_sc(sub);
         sub = Self::make_cas_routes_bgp_roas_sc(sub);
+        sub = Self::make_cas_routes_bgp_suggestions_sc(sub);
 
         app.subcommand(sub)
     }
@@ -1321,6 +1349,24 @@ impl Options {
         ))
     }
 
+    fn parse_matches_cas_routes_bgp_suggest(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let v4 = matches.value_of("ipv4").unwrap_or("");
+        let v6 = matches.value_of("ipv6").unwrap_or("");
+
+        let resources = ResourceSet::from_strs("", v4, v6)
+            .map_err(|e| Error::GeneralArgumentError(format!("Could not parse IP resources: {}", e)))?;
+
+        let resources = if resources.is_empty() { None } else { Some(resources) };
+
+        Ok(Options::make(
+            general_args,
+            Command::CertAuth(CaCommand::BgpAnalysisSuggest(my_ca, resources)),
+        ))
+    }
+
     fn parse_matches_cas_routes_bgp(matches: &ArgMatches) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("full") {
             Self::parse_matches_cas_routes_bgp_full(m)
@@ -1328,6 +1374,8 @@ impl Options {
             Self::parse_matches_cas_routes_bgp_announcements(m)
         } else if let Some(m) = matches.subcommand_matches("roas") {
             Self::parse_matches_cas_routes_bgp_roas(m)
+        } else if let Some(m) = matches.subcommand_matches("suggest") {
+            Self::parse_matches_cas_routes_bgp_suggest(m)
         } else {
             Err(Error::UnrecognisedSubCommand)
         }
@@ -1721,6 +1769,9 @@ pub enum CaCommand {
 
     #[display(fmt = "Show ROA centric summary of ROA vs BGP analysis for ca: '{}'", _0)]
     BgpAnalysisRoas(Handle),
+
+    #[display(fmt = "Show ROA suggestions based on BGP analysis for ca: '{}'", _0)]
+    BgpAnalysisSuggest(Handle, Option<ResourceSet>),
 
     // Show details for this CA
     #[display(fmt = "Show details for ca: '{}'", _0)]

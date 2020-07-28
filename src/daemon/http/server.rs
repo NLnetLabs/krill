@@ -589,10 +589,7 @@ async fn api_ca_routes(req: Request, path: &mut RequestPath, ca: Handle) -> Rout
             Method::POST => ca_routes_update(req, ca).await,
             _ => render_unknown_method(),
         },
-        Some("analysis") => match *req.method() {
-            Method::GET => ca_routes_analysis(req, path, ca).await,
-            _ => render_unknown_method(),
-        },
+        Some("analysis") => ca_routes_analysis(req, path, ca).await,
         _ => render_unknown_method(),
     }
 }
@@ -1078,6 +1075,19 @@ async fn ca_routes_show(req: Request, handle: Handle) -> RoutingResult {
 async fn ca_routes_analysis(req: Request, path: &mut RequestPath, handle: Handle) -> RoutingResult {
     match path.next() {
         Some("full") => render_json_res(req.state().read().await.ca_routes_bgp_analysis(&handle)),
+        Some("suggest") => match *req.method() {
+            Method::GET => render_json_res(req.state().read().await.ca_routes_bgp_suggest(&handle, None)),
+            Method::POST => {
+                let server = req.state().clone();
+                match req.json().await {
+                    Err(e) => render_error(e),
+                    Ok(resources) => {
+                        render_json_res(server.read().await.ca_routes_bgp_suggest(&handle, Some(resources)))
+                    }
+                }
+            }
+            _ => render_unknown_method(),
+        },
         _ => render_unknown_method(),
     }
 }

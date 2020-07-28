@@ -25,11 +25,11 @@ use crate::commons::api::{
     ResourceClassKeysInfo, ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates, TypedPrefix,
     UpdateChildRequest,
 };
-use crate::commons::bgp::Announcement;
+use crate::commons::bgp::{Announcement, BgpAnalysisSuggestion};
 use crate::commons::remote::rfc8183;
 use crate::commons::remote::rfc8183::ChildRequest;
 use crate::commons::util::httpclient;
-use crate::constants::KRILL_ENV_TEST_UNIT_DATA;
+use crate::constants::{KRILL_ENV_TEST_ANN, KRILL_ENV_TEST_UNIT_DATA};
 use crate::daemon::ca::{ta_handle, ResourceTaggedAttestation, RtaRequest, SignSupport};
 use crate::daemon::http::server;
 
@@ -62,6 +62,7 @@ pub async fn start_krill() -> PathBuf {
     let data_dir = sub_dir(&dir);
 
     env::set_var(KRILL_ENV_TEST_UNIT_DATA, data_dir.to_string_lossy().to_string());
+    env::set_var(KRILL_ENV_TEST_ANN, "1");
 
     tokio::spawn(server::start());
 
@@ -93,6 +94,7 @@ pub async fn init_child(handle: &Handle) {
     krill_admin(Command::CertAuth(CaCommand::Init(CertAuthInit::new(handle.clone())))).await;
 }
 
+// We use embedded when not testing RFC 8181 - so that the CMS signing/verification overhead can be reduced.
 pub async fn init_child_with_embedded_repo(handle: &Handle) {
     krill_admin(Command::CertAuth(CaCommand::Init(CertAuthInit::new(handle.clone())))).await;
     krill_admin(Command::CertAuth(CaCommand::RepoUpdate(
@@ -125,6 +127,7 @@ pub async fn child_request(handle: &Handle) -> rfc8183::ChildRequest {
     }
 }
 
+// We use embedded when not testing RFC 6492 - so that the CMS signing/verification overhead can be reduced.
 pub async fn add_child_to_ta_embedded(handle: &Handle, resources: ResourceSet) -> ParentCaContact {
     let auth = ChildAuthRequest::Embedded;
     let req = AddChildRequest::new(handle.clone(), resources, auth);
@@ -234,6 +237,13 @@ pub async fn ca_route_authorizations_update_expect_error(handle: &Handle, update
         updates,
     )))
     .await;
+}
+
+pub async fn ca_route_authorizations_suggestions(handle: &Handle) -> BgpAnalysisSuggestion {
+    match krill_admin(Command::CertAuth(CaCommand::BgpAnalysisSuggest(handle.clone(), None))).await {
+        ApiResponse::BgpAnalysisSuggestions(suggestion) => suggestion,
+        _ => panic!("Expected ROA suggestion"),
+    }
 }
 
 pub async fn ca_details(handle: &Handle) -> CertAuthInfo {

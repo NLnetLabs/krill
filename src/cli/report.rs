@@ -10,7 +10,7 @@ use crate::commons::api::{
     CertAuthList, ChildCaInfo, CommandHistory, CurrentObjects, CurrentRepoState, ParentCaContact, PublisherDetails,
     PublisherList, RepositoryContact, RoaDefinition, ServerInfo, StoredEffect,
 };
-use crate::commons::bgp::{AnnouncementReport, BgpAnalysisReport, RoaReport};
+use crate::commons::bgp::{AnnouncementReport, BgpAnalysisReport, BgpAnalysisSuggestion, RoaReport};
 use crate::commons::eventsourcing::WithStorableDetails;
 use crate::commons::remote::api::ClientInfo;
 use crate::commons::remote::rfc8183;
@@ -34,6 +34,7 @@ pub enum ApiResponse {
     BgpAnalysisFull(BgpAnalysisReport),
     BgpAnalysisAnnouncements(AnnouncementReport),
     BgpAnalysisRoas(RoaReport),
+    BgpAnalysisSuggestions(BgpAnalysisSuggestion),
 
     ParentCaContact(ParentCaContact),
 
@@ -78,6 +79,7 @@ impl ApiResponse {
                 ApiResponse::BgpAnalysisFull(table) => Ok(Some(table.report(fmt)?)),
                 ApiResponse::BgpAnalysisAnnouncements(summary) => Ok(Some(summary.report(fmt)?)),
                 ApiResponse::BgpAnalysisRoas(summary) => Ok(Some(summary.report(fmt)?)),
+                ApiResponse::BgpAnalysisSuggestions(suggestions) => Ok(Some(suggestions.report(fmt)?)),
                 ApiResponse::ParentCaContact(contact) => Ok(Some(contact.report(fmt)?)),
                 ApiResponse::ChildInfo(info) => Ok(Some(info.report(fmt)?)),
                 ApiResponse::PublisherList(list) => Ok(Some(list.report(fmt)?)),
@@ -425,6 +427,12 @@ impl Report for AnnouncementReport {
 }
 
 impl Report for RoaReport {
+    fn text(&self) -> Result<String, ReportError> {
+        Ok(self.to_string())
+    }
+}
+
+impl Report for BgpAnalysisSuggestion {
     fn text(&self) -> Result<String, ReportError> {
         Ok(self.to_string())
     }

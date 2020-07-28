@@ -129,5 +129,17 @@ async fn ca_roas() {
     ca_route_authorizations_update(&child, updates).await;
     assert!(will_publish_objects(&child, &[crl_file, mft_file, route1_file],).await);
 
+    // Get ROA suggestions, expect that we can submit the suggestions as an update, and then we
+    // should see no more suggestions.
+    let suggestion = ca_route_authorizations_suggestions(&child).await;
+    let updates: RoaDefinitionUpdates = suggestion.into();
+    assert!(!updates.is_empty());
+
+    ca_route_authorizations_update(&child, updates).await;
+
+    let remaining_suggestion = ca_route_authorizations_suggestions(&child).await;
+    let updates: RoaDefinitionUpdates = remaining_suggestion.into();
+    assert!(updates.is_empty());
+
     let _ = fs::remove_dir_all(dir);
 }

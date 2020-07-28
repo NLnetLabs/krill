@@ -278,6 +278,10 @@ pub struct RoaDefinitionUpdates {
 }
 
 impl RoaDefinitionUpdates {
+    pub fn is_empty(&self) -> bool {
+        self.added.is_empty() && self.removed.is_empty()
+    }
+
     pub fn new(added: HashSet<RoaDefinition>, removed: HashSet<RoaDefinition>) -> Self {
         RoaDefinitionUpdates { added, removed }
     }

@@ -14,10 +14,10 @@ use crate::commons::api::{
     AddChildRequest, AllCertAuthIssues, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthInit, CertAuthIssues,
     CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, CurrentRepoState,
     Handle, ListReply, ParentCaContact, ParentCaReq, ParentHandle, PublishDelta, PublisherDetails, PublisherHandle,
-    RepoInfo, RepositoryContact, RepositoryUpdate, RoaDefinition, RoaDefinitionUpdates, ServerInfo, TaCertDetails,
-    UpdateChildRequest,
+    RepoInfo, RepositoryContact, RepositoryUpdate, ResourceSet, RoaDefinition, RoaDefinitionUpdates, ServerInfo,
+    TaCertDetails, UpdateChildRequest,
 };
-use crate::commons::bgp::{BgpAnalyser, BgpAnalysisReport};
+use crate::commons::bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::CommandKey;
 use crate::commons::remote::rfc8183;
@@ -620,6 +620,22 @@ impl KrillServer {
         let definitions = ca.roa_definitions();
         let resources = ca.all_resources();
         Ok(self.bgp_analyser.analyse(definitions.as_slice(), &resources))
+    }
+
+    pub fn ca_routes_bgp_suggest(
+        &self,
+        handle: &Handle,
+        scope: Option<ResourceSet>,
+    ) -> KrillResult<BgpAnalysisSuggestion> {
+        let ca = self.caserver.get_ca(handle)?;
+        let definitions = ca.roa_definitions();
+        let mut resources = ca.all_resources();
+
+        if let Some(scope) = scope {
+            resources = resources.intersection(&scope);
+        }
+
+        Ok(self.bgp_analyser.suggest(definitions.as_slice(), &resources))
     }
 }
 

@@ -1,9 +1,167 @@
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
-use crate::commons::api::{BgpStats, RoaDefinition};
+use crate::commons::api::{BgpStats, RoaDefinition, RoaDefinitionUpdates};
 use crate::commons::bgp::Announcement;
+
+//------------ BgpAnalysisSuggestion ---------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct BgpAnalysisSuggestion {
+    stale: Vec<RoaDefinition>,
+    not_found: Vec<RoaDefinition>,
+    invalid_asn: Vec<RoaDefinition>,
+    invalid_length: Vec<RoaDefinition>,
+    too_permissive: Vec<ReplacementRoaSuggestion>,
+    keep: Vec<RoaDefinition>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct ReplacementRoaSuggestion {
+    current: RoaDefinition,
+    new: Vec<RoaDefinition>,
+}
+
+impl From<BgpAnalysisSuggestion> for RoaDefinitionUpdates {
+    fn from(suggestion: BgpAnalysisSuggestion) -> Self {
+        let (stale, not_found, invalid_asn, invalid_length, too_permissive) = (
+            suggestion.stale,
+            suggestion.not_found,
+            suggestion.invalid_asn,
+            suggestion.invalid_length,
+            suggestion.too_permissive,
+        );
+
+        let mut added = HashSet::new();
+        let mut removed = HashSet::new();
+
+        for auth in not_found
+            .into_iter()
+            .chain(invalid_asn.into_iter())
+            .chain(invalid_length.into_iter())
+        {
+            added.insert(auth);
+        }
+
+        for auth in stale.into_iter() {
+            removed.insert(auth);
+        }
+
+        for suggestion in too_permissive.into_iter() {
+            removed.insert(suggestion.current);
+            for auth in suggestion.new.into_iter() {
+                added.insert(auth);
+            }
+        }
+
+        RoaDefinitionUpdates::new(added, removed)
+    }
+}
+
+impl Default for BgpAnalysisSuggestion {
+    fn default() -> Self {
+        BgpAnalysisSuggestion {
+            stale: vec![],
+            not_found: vec![],
+            invalid_asn: vec![],
+            invalid_length: vec![],
+            too_permissive: vec![],
+            keep: vec![],
+        }
+    }
+}
+
+impl BgpAnalysisSuggestion {
+    pub fn add_stale(&mut self, authorization: RoaDefinition) {
+        self.stale.push(authorization)
+    }
+
+    pub fn add_too_permissive(&mut self, current: RoaDefinition, new: Vec<RoaDefinition>) {
+        let replacement = ReplacementRoaSuggestion { current, new };
+        self.too_permissive.push(replacement)
+    }
+
+    pub fn add_not_found(&mut self, authorization: RoaDefinition) {
+        self.not_found.push(authorization)
+    }
+
+    pub fn add_invalid_asn(&mut self, authorization: RoaDefinition) {
+        self.invalid_asn.push(authorization)
+    }
+
+    pub fn add_invalid_length(&mut self, authorization: RoaDefinition) {
+        self.invalid_length.push(authorization)
+    }
+
+    pub fn add_keep(&mut self, authorization: RoaDefinition) {
+        self.keep.push(authorization)
+    }
+}
+
+#[allow(clippy::cognitive_complexity)]
+impl fmt::Display for BgpAnalysisSuggestion {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if !self.stale.is_empty() {
+            writeln!(f, "Remove the following stale entries:")?;
+            for auth in &self.stale {
+                writeln!(f, "  {}", auth)?;
+            }
+            writeln!(f)?;
+        }
+
+        if !self.too_permissive.is_empty() {
+            writeln!(f, "Replace the following too permissive entries:")?;
+            for entry in &self.too_permissive {
+                writeln!(f, "  Remove: {}", entry.current)?;
+                for replace in &entry.new {
+                    writeln!(f, "  Add: {}", replace)?;
+                }
+                writeln!(f)?;
+            }
+        }
+
+        if !self.not_found.is_empty() {
+            writeln!(f, "Authorize these announcements which are currently not covered:")?;
+            for auth in &self.not_found {
+                writeln!(f, "  {}", auth)?;
+            }
+            writeln!(f)?;
+        }
+
+        if !self.invalid_length.is_empty() {
+            writeln!(
+                f,
+                "Authorize these announcements which are currently invalid because they are too specific:"
+            )?;
+            for auth in &self.invalid_length {
+                writeln!(f, "  {}", auth)?;
+            }
+            writeln!(f)?;
+        }
+
+        if !self.invalid_asn.is_empty() {
+            writeln!(
+                f,
+                "Authorize these announcements which are currently invalid because they are not allowed for these ASNs:"
+            )?;
+            for auth in &self.invalid_asn {
+                writeln!(f, "  {}", auth)?;
+            }
+            writeln!(f)?;
+        }
+
+        if !self.keep.is_empty() {
+            writeln!(f, "Keep the following entries:")?;
+            for auth in &self.keep {
+                writeln!(f, "  {}", auth)?;
+            }
+            writeln!(f)?;
+        }
+
+        Ok(())
+    }
+}
 
 //------------ BgpAnalysisReport -------------------------------------------
 
@@ -18,6 +176,10 @@ impl BgpAnalysisReport {
 
     pub fn entries(&self) -> &Vec<BgpAnalysisEntry> {
         &self.0
+    }
+
+    pub fn into_entries(self) -> Vec<BgpAnalysisEntry> {
+        self.0
     }
 
     pub fn matching_defs(&self, state: BgpAnalysisState) -> Vec<&RoaDefinition> {
@@ -206,6 +368,10 @@ pub struct BgpAnalysisEntry {
 impl BgpAnalysisEntry {
     pub fn definition(&self) -> &RoaDefinition {
         &self.definition
+    }
+
+    pub fn into_definition(self) -> RoaDefinition {
+        self.definition
     }
 
     pub fn state(&self) -> BgpAnalysisState {
