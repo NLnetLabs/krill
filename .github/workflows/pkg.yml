@@ -185,7 +185,7 @@ jobs:
         # See: https://www.debian.org/doc/manuals/maint-guide/dreq.en.html#changelog
         echo "krill (${DEB_KRILL_VER}) unstable; urgency=medium" >debian/changelog
         echo "  * See: https://github.com/NLnetLabs/krill/releases/tag/v${KRILL_VER}" >>debian/changelog
-        echo "-- maintainer ${MAINTAINER}  $(date --rfc-email)" >>debian/changelog
+        echo " -- maintainer ${MAINTAINER}  $(date --rfc-email)" >>debian/changelog
 
         DEB_VER="${DEB_KRILL_VER}-1${OS_REL}"
         cargo deb --variant $DEB_NAME --deb-version $DEB_VER -v
