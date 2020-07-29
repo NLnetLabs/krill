@@ -176,7 +176,7 @@ jobs:
         esac
 
         case ${{ github.event_name }} in
-          pull_request) MAINTAINER="${{ github.event.pull_request.sender.name }} ${{ github.event.pull_request.sender.email }}" ;;
+          pull_request) MAINTAINER="${{ github.actor }} <unknown@email.address>" ;;
           push)         MAINTAINER="${{ github.event.pusher.name }} <${{ github.event.pusher.email }}>" ;;
           *)            echo 2>&1 "ERROR: Unexpected GitHub Actions event"; exit 1 ;;
         esac
