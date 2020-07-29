@@ -77,6 +77,7 @@ jobs:
       id: setvars
       shell: bash
       run: |
+        set -x
         echo ::set-env name=DEB_NAME::$(echo $MATRIX_IMAGE | tr -d ':.')
         echo ::set-output name=pkgname::$(echo $MATRIX_IMAGE | tr -d ':.')
       env:
@@ -90,6 +91,7 @@ jobs:
     # doesn't work inside a Docker container.
     - name: Install Rust
       run: |
+        set -x
         apt-get update
         apt-get install -y curl
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- --profile minimal -y
@@ -99,7 +101,8 @@ jobs:
 
     - name: Install compilation and other dependencies
       run: |
-          apt-get install -y build-essential jq libssl-dev lintian pkg-config
+        set -x
+        apt-get install -y build-essential jq libssl-dev lintian pkg-config
       env:
         DEBIAN_FRONTEND: noninteractive
 
@@ -127,12 +130,14 @@ jobs:
     - name: Install Cargo Deb
       if: steps.cache-cargo-deb.outputs.cache-hit != 'true'
       run: |
+        set -x
         cargo install --git https://github.com/ximon18/cargo-deb.git --branch dh_installsystemd --rev $CARGO_DEB_VER cargo-deb
 
     # Instruct cargo-deb to build the Debian package using the config section
     # in Cargo.toml for the specified "variant".
     - name: Create the DEB package
       run: |
+        set -x
         # Packages for different distributions (e.g. Stretch, Buster) of the same
         # O/S (e.g. Debian) when served from a single package repository MUST have
         # unique package_ver_architecture triples. Cargo deb can vary the name based
@@ -192,6 +197,7 @@ jobs:
     # Policy) say they should be compressed.
     - name: Verify the DEB package
       run: |
+        set -x
         lintian -v target/debian/*.deb || true
 
     # Upload the produced DEB package. The artifact will be available
@@ -236,6 +242,7 @@ jobs:
       id: setvars
       shell: bash
       run: |
+        set -x
         if [[ $MATRIX_IMAGE == *debian* ]]; then
           SLASHED=$(echo $MATRIX_IMAGE | tr ':' '/')
           echo ::set-env name=LXC_IMAGE::$(echo "images:${SLASHED}/cloud")
@@ -254,18 +261,23 @@ jobs:
 
     - name: Add current user to LXD group
       run: |
+        set -x
         sudo usermod --append --groups lxd $(whoami)
 
     - name: Initialize LXD
       run: |
+        set -x
         sudo lxd init --auto
 
     - name: Check LXD configuration
       run: |
+        set -x
         sg lxd -c "lxc info"
 
     - name: Launch LXC container
       run: |
+        set -x
+
         # security.nesting=true is needed to avoid error "Failed to set up mount
         # namespacing: Permission denied" in a Debian 10 container.
         sg lxd -c "lxc launch $LXC_IMAGE -c security.nesting=true testcon"
@@ -276,6 +288,7 @@ jobs:
     - name: Prepare container
       shell: bash
       run: |
+        set -x
         while true; do
           case ${LXC_IMAGE} in
             # ubuntu:16.04|ubuntu:18.04|ubuntu:20.04|images:debian/10/cloud)
@@ -304,6 +317,7 @@ jobs:
 
     - name: Copy DEB into LXC container
       run: |
+        set -x
         DEB_FILE=$(ls -1 *.deb)
         echo ::set-env name=DEB_FILE::$DEB_FILE
         sg lxd -c "lxc file push ${DEB_FILE} testcon/tmp/"
@@ -311,6 +325,7 @@ jobs:
     - name: Install published DEB package
       if: ${{ matrix.mode == 'upgrade-from-published' }}
       run: |
+        set -x
         case ${MATRIX_IMAGE} in
           ubuntu:16.04) OS=ubuntu; OS_REL=xenial ;;
           ubuntu:18.04) OS=ubuntu; OS_REL=bionic ;;
@@ -331,10 +346,12 @@ jobs:
     - name: Install new DEB package
       if: ${{ matrix.mode == 'fresh-install' }}
       run: |
+        set -x
         sg lxd -c "lxc exec testcon -- apt-get -y install /tmp/$DEB_FILE"
 
     - name: Test installed packages
       run: |
+        set -x
         echo -e "\nKRILLC VERSION:"
         sg lxd -c "lxc exec testcon -- krillc --version"
 
@@ -369,11 +386,13 @@ jobs:
     - name: Install new DEB package
       if: ${{ matrix.mode == 'upgrade-from-published' }}
       run: |
+        set -x
         sg lxd -c "lxc exec testcon -- apt-get -y install /tmp/$DEB_FILE"
 
     - name: Test installed packages
       if: ${{ matrix.mode == 'upgrade-from-published' }}
       run: |
+        set -x
         echo -e "\nKRILLC VERSION:"
         sg lxd -c "lxc exec testcon -- krillc --version"
 
