@@ -197,7 +197,7 @@ jobs:
     # Policy) say they should be compressed.
     - name: Verify the DEB package
       run: |
-        lintian -v target/debian/*.deb || true
+        lintian -v target/debian/*.deb
 
     # Upload the produced DEB package. The artifact will be available
     # via the GH Actions job summary and build log pages, but only to
