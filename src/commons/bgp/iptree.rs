@@ -64,6 +64,12 @@ impl From<&TypedPrefix> for IpRange {
     }
 }
 
+impl From<TypedPrefix> for IpRange {
+    fn from(tp: TypedPrefix) -> Self {
+        (&tp).into()
+    }
+}
+
 //------------ TypedPrefixTree ---------------------------------------------
 
 pub struct TypedPrefixTree<V: AsRef<TypedPrefix>> {

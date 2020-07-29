@@ -599,6 +599,10 @@ impl AsNumber {
     pub fn new(number: u32) -> Self {
         AsNumber(number)
     }
+
+    pub fn zero() -> Self {
+        AsNumber(0)
+    }
 }
 
 impl From<AsNumber> for AsId {

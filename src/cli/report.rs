@@ -10,7 +10,7 @@ use crate::commons::api::{
     CertAuthList, ChildCaInfo, CommandHistory, CurrentObjects, CurrentRepoState, ParentCaContact, PublisherDetails,
     PublisherList, RepositoryContact, RoaDefinition, ServerInfo, StoredEffect,
 };
-use crate::commons::bgp::{AnnouncementReport, BgpAnalysisReport, BgpAnalysisSuggestion, RoaReport};
+use crate::commons::bgp::{BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::eventsourcing::WithStorableDetails;
 use crate::commons::remote::api::ClientInfo;
 use crate::commons::remote::rfc8183;
@@ -32,8 +32,6 @@ pub enum ApiResponse {
     CertAuths(CertAuthList),
     RouteAuthorizations(Vec<RoaDefinition>),
     BgpAnalysisFull(BgpAnalysisReport),
-    BgpAnalysisAnnouncements(AnnouncementReport),
-    BgpAnalysisRoas(RoaReport),
     BgpAnalysisSuggestions(BgpAnalysisSuggestion),
 
     ParentCaContact(ParentCaContact),
@@ -77,8 +75,6 @@ impl ApiResponse {
                 ApiResponse::AllCertAuthIssues(issues) => Ok(Some(issues.report(fmt)?)),
                 ApiResponse::RouteAuthorizations(auths) => Ok(Some(auths.report(fmt)?)),
                 ApiResponse::BgpAnalysisFull(table) => Ok(Some(table.report(fmt)?)),
-                ApiResponse::BgpAnalysisAnnouncements(summary) => Ok(Some(summary.report(fmt)?)),
-                ApiResponse::BgpAnalysisRoas(summary) => Ok(Some(summary.report(fmt)?)),
                 ApiResponse::BgpAnalysisSuggestions(suggestions) => Ok(Some(suggestions.report(fmt)?)),
                 ApiResponse::ParentCaContact(contact) => Ok(Some(contact.report(fmt)?)),
                 ApiResponse::ChildInfo(info) => Ok(Some(info.report(fmt)?)),
@@ -415,18 +411,6 @@ impl Report for Vec<RoaDefinition> {
 }
 
 impl Report for BgpAnalysisReport {
-    fn text(&self) -> Result<String, ReportError> {
-        Ok(self.to_string())
-    }
-}
-
-impl Report for AnnouncementReport {
-    fn text(&self) -> Result<String, ReportError> {
-        Ok(self.to_string())
-    }
-}
-
-impl Report for RoaReport {
     fn text(&self) -> Result<String, ReportError> {
         Ok(self.to_string())
     }

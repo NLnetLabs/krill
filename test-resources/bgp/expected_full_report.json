@@ -16,11 +16,6 @@
     "state": "roa_unseen"
   },
   {
-    "asn": 0,
-    "prefix": "10.0.4.0/24",
-    "state": "roa_unseen"
-  },
-  {
     "asn": 64498,
     "prefix": "192.168.1.0/24",
     "state": "roa_unseen"
@@ -54,6 +49,26 @@
       {
         "asn": 64496,
         "prefix": "10.0.0.0/24"
+      }
+    ]
+  },
+  {
+    "asn": 0,
+    "prefix": "10.0.4.0/24",
+    "state": "roa_as0"
+  },
+  {
+    "asn": 0,
+    "prefix": "192.168.1.0/24",
+    "state": "roa_as0_redundant",
+    "made_redundant_by": [
+      {
+        "asn": 64497,
+        "prefix": "192.168.1.0/24"
+      },
+      {
+        "asn": 64498,
+        "prefix": "192.168.1.0/24"
       }
     ]
   },

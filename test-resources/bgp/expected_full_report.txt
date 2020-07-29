@@ -23,8 +23,19 @@ Authorizations which may be too permissive:
 Authorizations for which no announcements are seen (you may wish to remove these):
 
 	Definition: 10.0.3.0/24 => 64497
-	Definition: 10.0.4.0/24 => 0
 	Definition: 192.168.1.0/24 => 64498
+
+AS0 Authorizations disallowing announcements for prefixes
+
+	Definition: 10.0.4.0/24 => 0
+
+AS0 Authorization which are made redundant by authorizations for the prefix from real ASNs
+
+	Definition: 192.168.1.0/24 => 0
+
+		Made redundant by:
+		192.168.1.0/24 => 64497
+		192.168.1.0/24 => 64498
 
 Announcements which are valid:
 

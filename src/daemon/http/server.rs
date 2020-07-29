@@ -188,7 +188,10 @@ pub async fn metrics(req: Request) -> RoutingResult {
             announcements_invalid_asn: HashMap<Handle, usize>,
             announcements_invalid_length: HashMap<Handle, usize>,
             announcements_not_found: HashMap<Handle, usize>,
+            roas_too_permissive: HashMap<Handle, usize>,
+            roas_redundant: HashMap<Handle, usize>,
             roas_stale: HashMap<Handle, usize>,
+            roas_total: HashMap<Handle, usize>,
         }
 
         impl AllBgpStats {
@@ -200,7 +203,10 @@ pub async fn metrics(req: Request) -> RoutingResult {
                     .insert(ca.clone(), stats.announcements_invalid_length);
                 self.announcements_not_found
                     .insert(ca.clone(), stats.announcements_not_found);
+                self.roas_too_permissive.insert(ca.clone(), stats.roas_too_permissive);
+                self.roas_redundant.insert(ca.clone(), stats.roas_redundant);
                 self.roas_stale.insert(ca.clone(), stats.roas_stale);
+                self.roas_total.insert(ca.clone(), stats.roas_total);
             }
         }
 
@@ -314,7 +320,10 @@ pub async fn metrics(req: Request) -> RoutingResult {
             announcements_invalid_asn: HashMap::new(),
             announcements_invalid_length: HashMap::new(),
             announcements_not_found: HashMap::new(),
+            roas_too_permissive: HashMap::new(),
+            roas_redundant: HashMap::new(),
             roas_stale: HashMap::new(),
+            roas_total: HashMap::new(),
         };
         for (ca, status) in cas_status.iter() {
             all_bgp_stats.add_ca(ca, status.bgp_stats());
@@ -365,11 +374,36 @@ pub async fn metrics(req: Request) -> RoutingResult {
 
         res.push_str("\n");
         res.push_str(
+            "# HELP krill_cas_bgp_roas_too_permissive number of ROAs for this CA which allow excess announcements (0 may also indicate that no BGP info is available)\n",
+        );
+        res.push_str("# TYPE krill_cas_bgp_roas_too_permissive gauge\n");
+        for (ca, nr) in all_bgp_stats.roas_too_permissive.iter() {
+            res.push_str(&format!("krill_cas_bgp_roas_too_permissive{{ca=\"{}\"}} {}\n", ca, nr));
+        }
+
+        res.push_str("\n");
+        res.push_str(
+            "# HELP krill_cas_bgp_roas_redundant number of ROAs for this CA which are redundant (0 may also indicate that no BGP info is available)\n",
+        );
+        res.push_str("# TYPE krill_cas_bgp_roas_redundant gauge\n");
+        for (ca, nr) in all_bgp_stats.roas_redundant.iter() {
+            res.push_str(&format!("krill_cas_bgp_roas_redundant{{ca=\"{}\"}} {}\n", ca, nr));
+        }
+
+        res.push_str("\n");
+        res.push_str(
             "# HELP krill_cas_bgp_roas_stale number of ROAs for this CA for which no announcements are seen (0 may also indicate that no BGP info is available)\n",
         );
         res.push_str("# TYPE krill_cas_bgp_roas_stale gauge\n");
         for (ca, nr) in all_bgp_stats.roas_stale.iter() {
             res.push_str(&format!("krill_cas_bgp_roas_stale{{ca=\"{}\"}} {}\n", ca, nr));
+        }
+
+        res.push_str("\n");
+        res.push_str("# HELP krill_cas_bgp_roas_total total number of ROAs for this CA\n");
+        res.push_str("# TYPE krill_cas_bgp_roas_stale gauge\n");
+        for (ca, nr) in all_bgp_stats.roas_total.iter() {
+            res.push_str(&format!("krill_cas_bgp_roas_total{{ca=\"{}\"}} {}\n", ca, nr));
         }
 
         Ok(HttpResponse::text(res.into_bytes()))

@@ -1898,7 +1898,10 @@ pub struct BgpStats {
     pub announcements_invalid_asn: usize,
     pub announcements_invalid_length: usize,
     pub announcements_not_found: usize,
+    pub roas_too_permissive: usize,
+    pub roas_redundant: usize,
     pub roas_stale: usize,
+    pub roas_total: usize,
 }
 
 impl Default for BgpStats {
@@ -1908,7 +1911,10 @@ impl Default for BgpStats {
             announcements_invalid_asn: 0,
             announcements_invalid_length: 0,
             announcements_not_found: 0,
+            roas_too_permissive: 0,
+            roas_redundant: 0,
             roas_stale: 0,
+            roas_total: 0,
         }
     }
 }
@@ -1930,8 +1936,20 @@ impl BgpStats {
         self.announcements_not_found += 1;
     }
 
-    pub fn increment_unseen(&mut self) {
+    pub fn increment_roas_too_permissive(&mut self) {
+        self.roas_too_permissive += 1;
+    }
+
+    pub fn increment_roas_redundant(&mut self) {
+        self.roas_redundant += 1;
+    }
+
+    pub fn increment_roas_stale(&mut self) {
         self.roas_stale += 1;
+    }
+
+    pub fn increment_roas_total(&mut self) {
+        self.roas_total += 1;
     }
 }
 

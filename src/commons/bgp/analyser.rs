@@ -7,7 +7,7 @@ use chrono::Duration;
 
 use rpki::x509::Time;
 
-use crate::commons::api::{ResourceSet, RoaDefinition, TypedPrefix};
+use crate::commons::api::{AsNumber, ResourceSet, RoaDefinition, TypedPrefix};
 use crate::commons::bgp::{
     make_roa_tree, make_validated_announcement_tree, Announcement, AnnouncementValidity, Announcements,
     BgpAnalysisEntry, BgpAnalysisReport, BgpAnalysisState, BgpAnalysisSuggestion, IpRange, RisDumpError, RisDumpLoader,
@@ -79,8 +79,6 @@ impl BgpAnalyser {
                 entries.push(BgpAnalysisEntry::roa_no_announcement_info(roa));
             }
         } else {
-            let roa_tree = make_roa_tree(roas.as_ref());
-
             let (v4_scope, v6_scope) = IpRange::for_resource_set(&scope);
 
             let mut scoped_announcements = vec![];
@@ -93,6 +91,7 @@ impl BgpAnalyser {
                 scoped_announcements.append(&mut seen.contained_by(block));
             }
 
+            let roa_tree = make_roa_tree(roas.as_ref());
             let validated: Vec<ValidatedAnnouncement> = scoped_announcements
                 .into_iter()
                 .map(|a| a.validate(&roa_tree))
@@ -103,7 +102,23 @@ impl BgpAnalyser {
             for roa in roas {
                 let covered = validated_tree.matching_or_more_specific(&roa.prefix());
 
-                if covered.is_empty() {
+                if roa.asn() == AsNumber::zero() {
+                    // see if this AS0 ROA is redundant, if it is mark it as such
+                    let made_redundant_by: Vec<RoaDefinition> = roa_tree
+                        .matching_or_less_specific(roa.prefix())
+                        .into_iter()
+                        .cloned()
+                        .filter(|other| roa != *other)
+                        .collect();
+
+                    if made_redundant_by.is_empty() {
+                        // will disallow all covered announcements by definition (because AS0 announcements cannot exist)
+                        let announcements = covered.iter().map(|va| va.announcement()).collect();
+                        entries.push(BgpAnalysisEntry::roa_as0(roa, announcements));
+                    } else {
+                        entries.push(BgpAnalysisEntry::roa_as0_redundant(roa, made_redundant_by));
+                    }
+                } else if covered.is_empty() {
                     entries.push(BgpAnalysisEntry::roa_unseen(roa))
                 } else {
                     let authorizes: Vec<Announcement> = covered
@@ -207,12 +222,13 @@ impl BgpAnalyser {
                         .collect();
                     suggestion.add_too_permissive(entry.into_definition(), replace_with);
                 }
-                BgpAnalysisState::AnnouncementNotFound => suggestion.add_not_found(entry.into_definition()),
-                BgpAnalysisState::AnnouncementInvalidAsn => suggestion.add_invalid_asn(entry.into_definition()),
-                BgpAnalysisState::AnnouncementInvalidLength => suggestion.add_invalid_length(entry.into_definition()),
-                BgpAnalysisState::RoaSeen => suggestion.add_keep(entry.into_definition()),
+                BgpAnalysisState::RoaSeen | BgpAnalysisState::RoaAs0 => suggestion.add_keep(entry.into_definition()),
+                BgpAnalysisState::RoaAs0Redundant => suggestion.add_as0_redundant(entry.into_definition()),
+                BgpAnalysisState::AnnouncementValid => {}
+                BgpAnalysisState::AnnouncementNotFound => suggestion.add_not_found(entry.into_announcement()),
+                BgpAnalysisState::AnnouncementInvalidAsn => suggestion.add_invalid_asn(entry.into_announcement()),
+                BgpAnalysisState::AnnouncementInvalidLength => suggestion.add_invalid_length(entry.into_announcement()),
                 BgpAnalysisState::RoaNoAnnouncementInfo => suggestion.add_keep(entry.into_definition()),
-                _ => {}
             }
         }
 
@@ -292,11 +308,12 @@ mod tests {
     #[test]
     fn analyse_bgp() {
         let roa_too_permissive = definition("10.0.0.0/22-23 => 64496");
-        let roa_disallowing = definition("10.0.4.0/24 => 0");
+        let roa_as0 = definition("10.0.4.0/24 => 0");
         let roa_unseen_completely = definition("10.0.3.0/24 => 64497");
 
         let roa_authorizing_single = definition("192.168.1.0/24 => 64497");
         let roa_unseen_redundant = definition("192.168.1.0/24 => 64498");
+        let roa_as0_redundant = definition("192.168.1.0/24 => 0");
 
         let resources = ResourceSet::from_strs("", "10.0.0.0/8, 192.168.0.0/16", "").unwrap();
 
@@ -305,10 +322,11 @@ mod tests {
         let report = analyser.analyse(
             &[
                 roa_too_permissive,
-                roa_disallowing,
+                roa_as0,
                 roa_unseen_completely,
                 roa_authorizing_single,
                 roa_unseen_redundant,
+                roa_as0_redundant,
             ],
             &resources,
         );
@@ -344,9 +362,11 @@ mod tests {
     #[test]
     fn make_bgp_analysis_suggestion() {
         let roa_too_permissive = definition("10.0.0.0/22-23 => 64496");
-        let roa_disallowing = definition("10.0.4.0/24 => 0");
+        let roa_as0 = definition("10.0.4.0/24 => 0");
         let roa_unseen_completely = definition("10.0.3.0/24 => 64497");
         let roa_authorizing_single = definition("192.168.1.0/24 => 64497");
+        let roa_unseen_redundant = definition("192.168.1.0/24 => 64498");
+        let roa_as0_redundant = definition("192.168.1.0/24 => 0");
 
         let analyser = BgpAnalyser::with_test_announcements();
 
@@ -354,9 +374,11 @@ mod tests {
         let suggestion_resource_subset = analyser.suggest(
             &[
                 roa_too_permissive,
-                roa_disallowing,
+                roa_as0,
                 roa_unseen_completely,
                 roa_authorizing_single,
+                roa_unseen_redundant,
+                roa_as0_redundant,
             ],
             &scope,
         );
@@ -371,12 +393,15 @@ mod tests {
         let suggestion_all_roas_in_scope = analyser.suggest(
             &[
                 roa_too_permissive,
-                roa_disallowing,
+                roa_as0,
                 roa_unseen_completely,
                 roa_authorizing_single,
+                roa_unseen_redundant,
+                roa_as0_redundant,
             ],
             &scope,
         );
+
         let expected: BgpAnalysisSuggestion = serde_json::from_str(include_str!(
             "../../../test-resources/bgp/expected_suggestion_all_roas.json"
         ))

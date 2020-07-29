@@ -11,7 +11,6 @@ use crate::commons::api::{
     AllCertAuthIssues, CaRepoDetails, CertAuthIssues, ChildCaInfo, CurrentRepoState, ParentCaContact, PublisherDetails,
     PublisherList, Token,
 };
-use crate::commons::bgp::BgpAnalysisReport;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::{file, httpclient};
 use crate::constants::KRILL_CLI_API_ENV;
@@ -221,18 +220,6 @@ impl KrillClient {
                 let uri = format!("api/v1/cas/{}/routes/analysis/full", handle);
                 let report = self.get_json(&uri).await?;
                 Ok(ApiResponse::BgpAnalysisFull(report))
-            }
-
-            CaCommand::BgpAnalysisAnnouncements(handle) => {
-                let uri = format!("api/v1/cas/{}/routes/analysis/full", handle);
-                let report: BgpAnalysisReport = self.get_json(&uri).await?;
-                Ok(ApiResponse::BgpAnalysisAnnouncements(report.into()))
-            }
-
-            CaCommand::BgpAnalysisRoas(handle) => {
-                let uri = format!("api/v1/cas/{}/routes/analysis/full", handle);
-                let report: BgpAnalysisReport = self.get_json(&uri).await?;
-                Ok(ApiResponse::BgpAnalysisRoas(report.into()))
             }
 
             CaCommand::BgpAnalysisSuggest(handle, resources) => {

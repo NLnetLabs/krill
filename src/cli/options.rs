@@ -614,23 +614,7 @@ impl Options {
     }
 
     fn make_cas_routes_bgp_full_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("full").about("Show full report.");
-
-        sub = Self::add_general_args(sub);
-        sub = Self::add_my_ca_arg(sub);
-        app.subcommand(sub)
-    }
-
-    fn make_cas_routes_bgp_announcements_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("announcements").about("Show announcement centric report.");
-
-        sub = Self::add_general_args(sub);
-        sub = Self::add_my_ca_arg(sub);
-        app.subcommand(sub)
-    }
-
-    fn make_cas_routes_bgp_roas_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("roas").about("Show ROA centric report.");
+        let mut sub = SubCommand::with_name("analyze").about("Show full report of ROAs vs known BGP announcements.");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -638,7 +622,7 @@ impl Options {
     }
 
     fn make_cas_routes_bgp_suggestions_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("suggest").about("Show ROA suggestions.");
+        let mut sub = SubCommand::with_name("suggest").about("Show ROA suggestions based on known BGP announcements.");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -669,8 +653,6 @@ impl Options {
             SubCommand::with_name("bgp").about("Show current authorizations in relation to known announcements.");
 
         sub = Self::make_cas_routes_bgp_full_sc(sub);
-        sub = Self::make_cas_routes_bgp_announcements_sc(sub);
-        sub = Self::make_cas_routes_bgp_roas_sc(sub);
         sub = Self::make_cas_routes_bgp_suggestions_sc(sub);
 
         app.subcommand(sub)
@@ -1389,24 +1371,6 @@ impl Options {
         ))
     }
 
-    fn parse_matches_cas_routes_bgp_announcements(matches: &ArgMatches) -> Result<Options, Error> {
-        let general_args = GeneralArgs::from_matches(matches)?;
-        let my_ca = Self::parse_my_ca(matches)?;
-        Ok(Options::make(
-            general_args,
-            Command::CertAuth(CaCommand::BgpAnalysisAnnouncements(my_ca)),
-        ))
-    }
-
-    fn parse_matches_cas_routes_bgp_roas(matches: &ArgMatches) -> Result<Options, Error> {
-        let general_args = GeneralArgs::from_matches(matches)?;
-        let my_ca = Self::parse_my_ca(matches)?;
-        Ok(Options::make(
-            general_args,
-            Command::CertAuth(CaCommand::BgpAnalysisRoas(my_ca)),
-        ))
-    }
-
     fn parse_matches_cas_routes_bgp_suggest(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
@@ -1426,12 +1390,8 @@ impl Options {
     }
 
     fn parse_matches_cas_routes_bgp(matches: &ArgMatches) -> Result<Options, Error> {
-        if let Some(m) = matches.subcommand_matches("full") {
+        if let Some(m) = matches.subcommand_matches("analyze") {
             Self::parse_matches_cas_routes_bgp_full(m)
-        } else if let Some(m) = matches.subcommand_matches("announcements") {
-            Self::parse_matches_cas_routes_bgp_announcements(m)
-        } else if let Some(m) = matches.subcommand_matches("roas") {
-            Self::parse_matches_cas_routes_bgp_roas(m)
         } else if let Some(m) = matches.subcommand_matches("suggest") {
             Self::parse_matches_cas_routes_bgp_suggest(m)
         } else {
@@ -1824,12 +1784,6 @@ pub enum CaCommand {
 
     #[display(fmt = "Show detailed ROA vs BGP analysis for ca: '{}'", _0)]
     BgpAnalysisFull(Handle),
-
-    #[display(fmt = "Show announcement centric summary of ROA vs BGP analysis for ca: '{}'", _0)]
-    BgpAnalysisAnnouncements(Handle),
-
-    #[display(fmt = "Show ROA centric summary of ROA vs BGP analysis for ca: '{}'", _0)]
-    BgpAnalysisRoas(Handle),
 
     #[display(fmt = "Show ROA suggestions based on BGP analysis for ca: '{}'", _0)]
     BgpAnalysisSuggest(Handle, Option<ResourceSet>),
