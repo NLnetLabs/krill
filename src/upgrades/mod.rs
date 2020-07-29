@@ -9,10 +9,10 @@ use crate::commons::api::Handle;
 use crate::commons::eventsourcing::{DiskKeyStore, KeyStore, KeyStoreError, KeyStoreVersion};
 use crate::commons::util::file;
 use crate::daemon::krillserver::KrillServer;
-use crate::upgrades::roa_cleanup_0_7_0::RoaCleanupError;
+use crate::upgrades::roa_cleanup_0_8_0::RoaCleanupError;
 
 pub mod pre_0_6_0;
-pub mod roa_cleanup_0_7_0;
+pub mod roa_cleanup_0_8_0;
 
 //------------ UpgradeError --------------------------------------------------
 
@@ -87,14 +87,14 @@ pub fn pre_start_upgrade(work_dir: &PathBuf) -> Result<(), UpgradeError> {
 
 /// Should be called right after the KrillServer is initiated
 pub fn post_start_upgrade(work_dir: &PathBuf, server: &KrillServer) -> Result<(), UpgradeError> {
-    let version_0_7 = KeyStoreVersion::V0_7;
+    let version_0_8 = KeyStoreVersion::V0_8;
     let ca_store = DiskKeyStore::new(work_dir, "cas");
     let pubd_store = DiskKeyStore::new(work_dir, "pubd");
-    if ca_store.get_version()? != version_0_7 {
+    if ca_store.get_version()? != version_0_8 {
         info!("Will clean up redundant ROAs for all CAs and update version of storage dirs");
-        roa_cleanup_0_7_0::roa_cleanup(server)?;
-        ca_store.set_version(&version_0_7)?;
-        pubd_store.set_version(&version_0_7)?;
+        roa_cleanup_0_8_0::roa_cleanup(server)?;
+        ca_store.set_version(&version_0_8)?;
+        pubd_store.set_version(&version_0_8)?;
     }
 
     Ok(())

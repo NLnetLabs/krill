@@ -46,6 +46,7 @@ pub enum KeyStoreVersion {
     Pre0_6,
     V0_6,
     V0_7,
+    V0_8,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
