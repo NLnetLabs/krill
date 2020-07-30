@@ -10,11 +10,11 @@ use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 
 use crate::commons::api::{
-    self, AddChildRequest, Base64, CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary, ChildAuthRequest,
-    ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, Handle, IssuanceRequest,
-    IssuanceResponse, IssuedCert, ListReply, ParentCaContact, ParentCaReq, ParentHandle, PublishDelta, RcvdCert,
-    RepoInfo, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse, StoredEffect,
-    UpdateChildRequest,
+    self, AddChildRequest, AllParentStatuses, Base64, CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary,
+    ChildAuthRequest, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, ErrorResponse,
+    Handle, IssuanceRequest, IssuanceResponse, IssuedCert, ListReply, ParentCaContact, ParentCaReq, ParentHandle,
+    PublishDelta, RcvdCert, RepoInfo, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest,
+    RevocationResponse, StoredEffect, UpdateChildRequest,
 };
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::{Aggregate, AggregateStore, CommandKey, DiskAggregateStore};
@@ -36,6 +36,7 @@ use crate::daemon::mq::EventQueueListener;
 pub struct CaServer<S: Signer> {
     signer: Arc<RwLock<S>>,
     ca_store: Arc<DiskAggregateStore<CertAuth<S>>>,
+    parents_statuses: Arc<RwLock<AllParentStatuses>>,
     rfc8181_log_dir: Option<PathBuf>,
     rfc6492_log_dir: Option<PathBuf>,
 }
@@ -56,6 +57,7 @@ impl<S: Signer> CaServer<S> {
         Ok(CaServer {
             signer,
             ca_store: Arc::new(ca_store),
+            parents_statuses: Arc::new(RwLock::new(AllParentStatuses::default())),
             rfc6492_log_dir: rfc6492_log_dir.cloned(),
             rfc8181_log_dir: rfc8181_log_dir.cloned(),
         })
@@ -510,13 +512,20 @@ impl<S: Signer> CaServer<S> {
                 // No repo set, yet. So, skip updating.
                 Ok(())
             } else {
-                let entitlements = self.get_entitlements_from_parent(handle, parent).await?;
+                match self.get_entitlements_from_parent(handle, parent).await {
+                    Err(e) => {
+                        self.set_parent_status_failure(handle, parent, e.to_error_response());
+                        Err(e)
+                    }
+                    Ok(entitlements) => {
+                        self.set_parent_status_entitlements(handle, parent, &entitlements);
+                        if !self.update_resource_classes(handle, parent.clone(), entitlements)? {
+                            return Ok(()); // Nothing to do
+                        }
 
-                if !self.update_resource_classes(handle, parent.clone(), entitlements)? {
-                    return Ok(()); // Nothing to do
+                        Ok(()) // Pending requests will be picked up by the scheduler.
+                    }
                 }
-
-                Ok(()) // Pending requests will be picked up by the scheduler.
             }
         }
     }
@@ -568,8 +577,19 @@ impl<S: Signer> CaServer<S> {
                     .await
             }
             ParentCaContact::Rfc6492(parent_res) => {
-                self.send_revoke_requests_rfc6492(revoke_requests, child.id_key(), parent_res)
+                match self
+                    .send_revoke_requests_rfc6492(revoke_requests, child.id_key(), parent_res)
                     .await
+                {
+                    Err(e) => {
+                        self.set_parent_status_failure(handle, parent, e.to_error_response());
+                        Err(e)
+                    }
+                    Ok(res) => {
+                        self.set_parent_status_updated(handle, parent);
+                        Ok(res)
+                    }
+                }
             }
         }
     }
@@ -628,17 +648,15 @@ impl<S: Signer> CaServer<S> {
 
                 let revoke = rfc6492::Message::revoke(sender, recipient, req.clone());
 
-                match self
+                let response = self
                     .send_rfc6492_and_validate_response(signing_key, parent_res, revoke.into_bytes(), Some(cms_logger))
-                    .await
-                {
-                    Err(e) => error!("Could not send/validate revoke: {}", e),
-                    Ok(response) => match response {
-                        rfc6492::Res::Revoke(revoke_response) => revocations.push(revoke_response),
-                        rfc6492::Res::NotPerformed(e) => error!("We got an error response: {}", e),
-                        rfc6492::Res::List(_) => error!("List response to revoke request??"),
-                        rfc6492::Res::Issue(_) => error!("Issue response to revoke request??"),
-                    },
+                    .await?;
+
+                match response {
+                    rfc6492::Res::Revoke(revoke_response) => revocations.push(revoke_response),
+                    rfc6492::Res::NotPerformed(e) => return Err(Error::Rfc6492NotPerformed(e)),
+                    rfc6492::Res::List(_) => return Err(Error::custom("Got a List response to revoke request??")),
+                    rfc6492::Res::Issue(_) => return Err(Error::custom("Issue response to revoke request??")),
                 }
             }
 
@@ -656,8 +674,19 @@ impl<S: Signer> CaServer<S> {
             ParentCaContact::Ta(_) => Err(Error::TaNotAllowed),
             ParentCaContact::Embedded => self.send_cert_requests_embedded(cert_requests, handle, parent),
             ParentCaContact::Rfc6492(parent_res) => {
-                self.send_cert_requests_rfc6492(cert_requests, child.id_key(), &parent_res)
+                match self
+                    .send_cert_requests_rfc6492(cert_requests, child.id_key(), &parent_res)
                     .await
+                {
+                    Err(e) => {
+                        self.set_parent_status_failure(handle, parent, e.to_error_response());
+                        Err(e)
+                    }
+                    Ok(res) => {
+                        self.set_parent_status_updated(handle, parent);
+                        Ok(res)
+                    }
+                }
             }
         }?;
 
@@ -724,20 +753,18 @@ impl<S: Signer> CaServer<S> {
 
                 let issue = rfc6492::Message::issue(sender, recipient, req);
 
-                match self
+                let response = self
                     .send_rfc6492_and_validate_response(signing_key, parent_res, issue.into_bytes(), Some(cms_logger))
-                    .await
-                {
-                    Err(e) => error!("Could not send/validate csr: {}", e),
-                    Ok(response) => match response {
-                        rfc6492::Res::NotPerformed(e) => error!("We got an error response: {}", e),
-                        rfc6492::Res::Issue(issue_response) => {
-                            let (_, _, _, issued) = issue_response.unwrap();
-                            issued_certs.push(issued);
-                        }
-                        rfc6492::Res::List(_) => error!("List reply to issue request??"),
-                        rfc6492::Res::Revoke(_) => error!("Revoke reply to issue request??"),
-                    },
+                    .await?;
+
+                match response {
+                    rfc6492::Res::NotPerformed(e) => return Err(Error::Rfc6492NotPerformed(e)),
+                    rfc6492::Res::Issue(issue_response) => {
+                        let (_, _, _, issued) = issue_response.unwrap();
+                        issued_certs.push(issued);
+                    }
+                    rfc6492::Res::List(_) => return Err(Error::custom("List reply to issue request??")),
+                    rfc6492::Res::Revoke(_) => return Err(Error::custom("Revoke reply to issue request??")),
                 }
             }
 
@@ -842,6 +869,21 @@ impl<S: Signer> CaServer<S> {
             .map_err(Error::custom)?
             .into_reply()
             .map_err(Error::custom)
+    }
+
+    fn set_parent_status_failure(&self, ca: &Handle, parent: &ParentHandle, error: ErrorResponse) {
+        self.parents_statuses.write().unwrap().set_failure(ca, parent, error);
+    }
+
+    fn set_parent_status_entitlements(&self, ca: &Handle, parent: &ParentHandle, entitlements: &Entitlements) {
+        self.parents_statuses
+            .write()
+            .unwrap()
+            .set_entitlements(ca, parent, entitlements);
+    }
+
+    fn set_parent_status_updated(&self, ca: &Handle, parent: &ParentHandle) {
+        self.parents_statuses.write().unwrap().set_last_updated(ca, parent);
     }
 }
 

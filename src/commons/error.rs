@@ -16,6 +16,7 @@ use crate::commons::api::{
 };
 use crate::commons::eventsourcing::AggregateStoreError;
 use crate::commons::remote::rfc6492;
+use crate::commons::remote::rfc6492::NotPerformedResponse;
 use crate::commons::remote::rfc8181;
 use crate::commons::remote::rfc8181::ReportErrorCode;
 use crate::commons::util::httpclient;
@@ -287,6 +288,9 @@ pub enum Error {
     //-----------------------------------------------------------------
     #[display(fmt = "RFC 6492 Issue: {}", _0)]
     Rfc6492(rfc6492::Error),
+
+    #[display(fmt = "RFC 6492 Not Performed: {}", _0)]
+    Rfc6492NotPerformed(NotPerformedResponse),
 
     #[display(fmt = "Invalid CSR received: {}", _0)]
     Rfc6492InvalidCsrSent(String),
@@ -592,6 +596,7 @@ impl Error {
             // RFC6492 (requesting resources, not on JSON api)
             //-----------------------------------------------------------------
             Error::Rfc6492(e) => ErrorResponse::new("rfc6492-protocol", &self).with_cause(e),
+            Error::Rfc6492NotPerformed(e) => ErrorResponse::new("rfc6492-not-performed-response", &self).with_cause(e),
             Error::Rfc6492InvalidCsrSent(e) => ErrorResponse::new("rfc6492-invalid-csr", &self).with_cause(e),
             Error::Rfc6492SignatureInvalid => ErrorResponse::new("rfc6492-invalid-signature", &self),
 

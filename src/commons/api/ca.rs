@@ -20,7 +20,7 @@ use rpki::uri;
 use rpki::x509::{Serial, Time};
 
 use crate::commons::api::publication::Publish;
-use crate::commons::api::{publication, RoaAggregateKey};
+use crate::commons::api::{publication, Entitlements, RoaAggregateKey};
 use crate::commons::api::{
     Base64, ChildHandle, ErrorResponse, Handle, HexEncodedHash, IssuanceRequest, ListReply, ParentCaContact,
     ParentHandle, RepositoryContact, RequestResourceLimit, RoaDefinition,
@@ -1492,6 +1492,7 @@ pub enum ParentKindInfo {
 }
 
 //------------ ParentInfo ----------------------------------------------------
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentInfo {
     handle: ParentHandle,
@@ -1513,6 +1514,122 @@ impl fmt::Display for ParentInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Handle: {} Kind: {}", self.handle, self.kind)
     }
+}
+
+//------------ ParentStatus --------------------------------------------------
+
+pub struct AllParentStatuses(HashMap<Handle, ParentStatuses>);
+
+impl AllParentStatuses {
+    pub fn set_failure(&mut self, ca: &Handle, parent: &ParentHandle, error: ErrorResponse) {
+        let status = self.get_mut_status(ca);
+        status.set_failure(parent, error);
+    }
+
+    pub fn set_last_updated(&mut self, ca: &Handle, parent: &ParentHandle) {
+        self.get_mut_status(ca).set_last_updated(parent);
+    }
+
+    pub fn set_entitlements(&mut self, ca: &Handle, parent: &ParentHandle, entitlements: &Entitlements) {
+        self.get_mut_status(ca).set_entitlements(parent, entitlements)
+    }
+
+    fn get_mut_status(&mut self, ca: &Handle) -> &mut ParentStatuses {
+        if !self.0.contains_key(ca) {
+            self.0.insert(ca.clone(), ParentStatuses::default());
+        }
+
+        self.0.get_mut(ca).unwrap()
+    }
+}
+
+impl Default for AllParentStatuses {
+    fn default() -> Self {
+        AllParentStatuses(HashMap::new())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ParentStatuses(HashMap<ParentHandle, ParentStatus>);
+
+impl ParentStatuses {
+    fn set_failure(&mut self, parent: &ParentHandle, error: ErrorResponse) {
+        self.get_mut_status(parent).set_failure(error);
+    }
+
+    fn set_entitlements(&mut self, parent: &ParentHandle, entitlements: &Entitlements) {
+        self.get_mut_status(parent).set_entitlements(entitlements);
+    }
+
+    fn set_last_updated(&mut self, parent: &ParentHandle) {
+        self.get_mut_status(parent).set_last_updated();
+    }
+
+    fn get_mut_status(&mut self, parent: &ParentHandle) -> &mut ParentStatus {
+        if !self.0.contains_key(parent) {
+            self.0.insert(parent.clone(), ParentStatus::default());
+        }
+
+        self.0.get_mut(parent).unwrap()
+    }
+}
+
+impl Default for ParentStatuses {
+    fn default() -> Self {
+        ParentStatuses(HashMap::new())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ParentStatus {
+    last_exchange: Option<ParentExchange>,
+    resources: HashMap<ResourceClassName, ResourceSet>,
+}
+
+impl ParentStatus {
+    fn set_failure(&mut self, error: ErrorResponse) {
+        self.last_exchange = Some(ParentExchange {
+            time: Time::now(),
+            result: ParentExchangeResult::Failure(error),
+        })
+    }
+
+    fn set_entitlements(&mut self, entitlements: &Entitlements) {
+        self.set_last_updated();
+        self.resources = entitlements
+            .classes()
+            .iter()
+            .map(|rc| (rc.class_name().clone(), rc.resource_set().clone()))
+            .collect();
+    }
+
+    fn set_last_updated(&mut self) {
+        self.last_exchange = Some(ParentExchange {
+            time: Time::now(),
+            result: ParentExchangeResult::Success,
+        });
+    }
+}
+
+impl Default for ParentStatus {
+    fn default() -> Self {
+        ParentStatus {
+            last_exchange: None,
+            resources: HashMap::new(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ParentExchange {
+    time: Time,
+    result: ParentExchangeResult,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum ParentExchangeResult {
+    Success,
+    Failure(ErrorResponse),
 }
 
 //------------ CertAuthInfo --------------------------------------------------
