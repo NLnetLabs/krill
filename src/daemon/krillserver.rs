@@ -230,7 +230,7 @@ impl KrillServer {
     }
 }
 
-/// # CONFIGure publishers
+/// # Configure publishers
 impl KrillServer {
     fn get_embedded(&self) -> KrillResult<&Arc<PubServer>> {
         self.pubserver.as_ref().ok_or_else(|| Error::PublisherNoEmbeddedRepo)
