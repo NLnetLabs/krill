@@ -13,3 +13,5 @@ purge)
     fi
     ;;
 esac
+
+#DEBHELPER#
