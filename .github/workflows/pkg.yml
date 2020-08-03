@@ -64,7 +64,7 @@ jobs:
           "debian:10",
         ]
     env:
-      CARGO_DEB_VER: 05545d4
+      CARGO_DEB_VER: 51b7259
       # A Krill version of the form 'x.y.z-plus' denotes a dev build that is
       # newer than the released x.y.z version but is not yet a new release.
       NEXT_VER_LABEL: plus
@@ -132,7 +132,7 @@ jobs:
     - name: Install Cargo Deb
       if: steps.cache-cargo-deb.outputs.cache-hit != 'true'
       run: |
-        cargo install --git https://github.com/ximon18/cargo-deb.git --branch dh_installsystemd_and_changelog_fix --rev $CARGO_DEB_VER cargo-deb
+        cargo install --git https://github.com/mmstick/cargo-deb.git --rev $CARGO_DEB_VER cargo-deb
 
     # Instruct cargo-deb to build the Debian package using the config section
     # in Cargo.toml for the specified "variant".
