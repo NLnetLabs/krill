@@ -952,7 +952,7 @@ mod tests {
         let cer_der = include_bytes!("../../../test-resources/remote/apnic-id.der");
         let cer = IdCert::decode(cer_der.as_ref()).unwrap();
 
-        msg.validate(&cer).unwrap();
+        msg.validate_at(&cer, Time::utc(2019, 07, 25, 0, 0, 0)).unwrap();
     }
 
     #[test]
