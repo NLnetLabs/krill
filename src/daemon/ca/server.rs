@@ -13,8 +13,8 @@ use crate::commons::api::{
     self, AddChildRequest, AllParentStatuses, Base64, CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary,
     ChildAuthRequest, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, ErrorResponse,
     Handle, IssuanceRequest, IssuanceResponse, IssuedCert, ListReply, ParentCaContact, ParentCaReq, ParentHandle,
-    PublishDelta, RcvdCert, RepoInfo, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest,
-    RevocationResponse, StoredEffect, UpdateChildRequest,
+    ParentStatuses, PublishDelta, RcvdCert, RepoInfo, RepositoryContact, ResourceClassName, ResourceSet,
+    RevocationRequest, RevocationResponse, StoredEffect, UpdateChildRequest,
 };
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::{Aggregate, AggregateStore, CommandKey, DiskAggregateStore};
@@ -447,6 +447,15 @@ impl<S: Signer> CaServer<S> {
     pub fn ca_parent_remove(&self, handle: Handle, parent: ParentHandle) -> KrillResult<()> {
         let upd = CmdDet::remove_parent(&handle, parent);
         self.send_command(upd)
+    }
+
+    /// Returns the parent statuses for this CA
+    pub fn ca_parent_statuses(&self, ca: Handle) -> KrillResult<ParentStatuses> {
+        if self.ca_store.has(&ca) {
+            Ok(self.get_parent_statuses(&ca))
+        } else {
+            Err(Error::CaUnknown(ca))
+        }
     }
 
     /// Perform a key roll for all active keys in a CA older than the specified duration.
@@ -884,6 +893,10 @@ impl<S: Signer> CaServer<S> {
 
     fn set_parent_status_updated(&self, ca: &Handle, parent: &ParentHandle) {
         self.parents_statuses.write().unwrap().set_last_updated(ca, parent);
+    }
+
+    fn get_parent_statuses(&self, ca: &Handle) -> ParentStatuses {
+        self.parents_statuses.read().unwrap().get_parent_statuses(ca)
     }
 }
 

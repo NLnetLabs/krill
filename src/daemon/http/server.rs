@@ -596,6 +596,7 @@ async fn api_ca_parents(req: Request, path: &mut RequestPath, ca: Handle) -> Rou
         }
     } else {
         match *req.method() {
+            Method::GET => ca_my_parent_statuses(req, ca).await,
             Method::POST => ca_add_parent(req, ca).await,
             _ => render_unknown_method(),
         }
@@ -808,6 +809,10 @@ async fn ca_info(req: Request, handle: Handle) -> RoutingResult {
 
 async fn ca_my_parent_contact(req: Request, ca: Handle, parent: ParentHandle) -> RoutingResult {
     render_json_res(req.state().read().await.ca_my_parent_contact(&ca, &parent))
+}
+
+async fn ca_my_parent_statuses(req: Request, ca: Handle) -> RoutingResult {
+    render_json_res(req.state().read().await.ca_my_parent_statuses(ca))
 }
 
 async fn ca_children(req: Request, path: &mut RequestPath, ca: Handle) -> RoutingResult {

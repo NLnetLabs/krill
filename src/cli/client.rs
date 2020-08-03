@@ -8,8 +8,8 @@ use rpki::uri;
 use crate::cli::options::{BulkCaCommand, CaCommand, Command, KrillInitDetails, Options, PublishersCommand};
 use crate::cli::report::{ApiResponse, ReportError};
 use crate::commons::api::{
-    AllCertAuthIssues, CaRepoDetails, CertAuthIssues, ChildCaInfo, CurrentRepoState, ParentCaContact, PublisherDetails,
-    PublisherList, Token,
+    AllCertAuthIssues, CaRepoDetails, CertAuthIssues, ChildCaInfo, CurrentRepoState, ParentCaContact, ParentStatuses,
+    PublisherDetails, PublisherList, Token,
 };
 use crate::commons::remote::rfc8183;
 use crate::commons::util::{file, httpclient};
@@ -157,6 +157,12 @@ impl KrillClient {
                 let uri = format!("api/v1/cas/{}/parents/{}", handle, parent);
                 self.delete(&uri).await?;
                 Ok(ApiResponse::Empty)
+            }
+
+            CaCommand::ParentStatuses(handle) => {
+                let uri = format!("api/v1/cas/{}/parents", handle);
+                let statuses: ParentStatuses = self.get_json(&uri).await?;
+                Ok(ApiResponse::ParentStatuses(statuses))
             }
 
             CaCommand::MyParentCaContact(handle, parent) => {

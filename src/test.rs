@@ -21,9 +21,9 @@ use crate::cli::report::{ApiResponse, ReportFormat};
 use crate::cli::{Error, KrillClient};
 use crate::commons::api::{
     AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildAuthRequest, ChildHandle, Handle,
-    ParentCaContact, ParentCaReq, ParentHandle, Publish, PublisherDetails, PublisherHandle, RepositoryUpdate,
-    ResourceClassKeysInfo, ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates, TypedPrefix,
-    UpdateChildRequest,
+    ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, Publish, PublisherDetails, PublisherHandle,
+    RepositoryUpdate, ResourceClassKeysInfo, ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates,
+    TypedPrefix, UpdateChildRequest,
 };
 use crate::commons::bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::remote::rfc8183;
@@ -200,6 +200,13 @@ async fn send_child_request(ca: &Handle, child: &Handle, req: UpdateChildRequest
 
 pub async fn add_parent_to_ca(ca: &Handle, parent: ParentCaReq) {
     krill_admin(Command::CertAuth(CaCommand::AddParent(ca.clone(), parent))).await;
+}
+
+pub async fn parent_statuses(ca: &Handle) -> ParentStatuses {
+    match krill_admin(Command::CertAuth(CaCommand::ParentStatuses(ca.clone()))).await {
+        ApiResponse::ParentStatuses(status) => status,
+        _ => panic!("Expected parent statuses"),
+    }
 }
 
 pub async fn update_parent_contact(ca: &Handle, parent: &ParentHandle, contact: ParentCaContact) {

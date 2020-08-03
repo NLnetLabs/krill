@@ -29,6 +29,12 @@ async fn ca_rfc6492() {
     assert!(ca_gets_resources(&child, &child_resources).await);
     assert!(ta_will_have_issued_n_certs(1).await);
 
+    // See that the CA has the status for this parent
+    let statuses = parent_statuses(&child).await;
+    assert_eq!(1, statuses.len());
+    assert!(statuses.get(&ta_handle).is_some());
+    assert!(statuses.get(&ta_handle).unwrap().last_exchange().unwrap().was_success());
+
     // When the parent adds resources to a CA, it can request a new resource certificate.
     let new_child_resources = ResourceSet::from_strs("AS65000", "10.0.0.0/16", "").unwrap();
     update_child(&ta_handle, &child, &new_child_resources).await;

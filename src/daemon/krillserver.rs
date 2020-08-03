@@ -13,9 +13,9 @@ use rpki::x509::Time;
 use crate::commons::api::{
     AddChildRequest, AllCertAuthIssues, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthInit, CertAuthIssues,
     CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, CurrentRepoState,
-    Handle, ListReply, ParentCaContact, ParentCaReq, ParentHandle, PublishDelta, PublisherDetails, PublisherHandle,
-    RepoInfo, RepositoryContact, RepositoryUpdate, ResourceSet, RoaDefinition, RoaDefinitionUpdates, ServerInfo,
-    TaCertDetails, UpdateChildRequest,
+    Handle, ListReply, ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublishDelta, PublisherDetails,
+    PublisherHandle, RepoInfo, RepositoryContact, RepositoryUpdate, ResourceSet, RoaDefinition, RoaDefinitionUpdates,
+    ServerInfo, TaCertDetails, UpdateChildRequest,
 };
 use crate::commons::bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::error::Error;
@@ -501,6 +501,10 @@ impl KrillServer {
     pub fn ca_my_parent_contact(&self, handle: &Handle, parent: &ParentHandle) -> KrillResult<ParentCaContact> {
         let ca = self.caserver.get_ca(handle)?;
         ca.parent(parent).map(|p| p.clone())
+    }
+
+    pub fn ca_my_parent_statuses(&self, ca: Handle) -> KrillResult<ParentStatuses> {
+        self.caserver.ca_parent_statuses(ca)
     }
 
     /// Returns the history for a CA, or NONE in case of issues (i.e. it does not exist).

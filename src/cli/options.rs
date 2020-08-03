@@ -495,6 +495,15 @@ impl Options {
         app.subcommand(sub)
     }
 
+    fn make_cas_parents_statuses_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("statuses").about("Show overview of all parent statuses of this CA.");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        app.subcommand(sub)
+    }
+
     fn make_cas_parents_contact_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("contact").about("Show contact information for a parent of this CA.");
 
@@ -522,6 +531,7 @@ impl Options {
         sub = Self::make_cas_parents_add_sc(sub);
         sub = Self::make_cas_parents_update_sc(sub);
         sub = Self::make_cas_parents_contact_sc(sub);
+        sub = Self::make_cas_parents_statuses_sc(sub);
         sub = Self::make_cas_parents_remove_sc(sub);
 
         app.subcommand(sub)
@@ -1251,6 +1261,14 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
+    fn parse_matches_cas_parents_statuses(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let command = Command::CertAuth(CaCommand::ParentStatuses(my_ca));
+        Ok(Options::make(general_args, command))
+    }
+
     fn parse_matches_cas_parents_remove(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
@@ -1270,6 +1288,8 @@ impl Options {
             Self::parse_matches_cas_parents_update(m)
         } else if let Some(m) = matches.subcommand_matches("contact") {
             Self::parse_matches_cas_parents_info(m)
+        } else if let Some(m) = matches.subcommand_matches("statuses") {
+            Self::parse_matches_cas_parents_statuses(m)
         } else if let Some(m) = matches.subcommand_matches("remove") {
             Self::parse_matches_cas_parents_remove(m)
         } else {
@@ -1746,6 +1766,9 @@ pub enum CaCommand {
 
     #[display(fmt = "add parent to ca: '{}'", _0)]
     MyParentCaContact(Handle, ParentHandle),
+
+    #[display(fmt = "show parents status overview for ca: '{}'", _0)]
+    ParentStatuses(Handle),
 
     #[display(fmt = "update contact for parent {} of ca: '{}' to: {}", _1, _0, _2)]
     UpdateParentContact(Handle, ParentHandle, ParentCaContact),

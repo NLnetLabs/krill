@@ -1534,6 +1534,10 @@ impl AllParentStatuses {
         self.get_mut_status(ca).set_entitlements(parent, entitlements)
     }
 
+    pub fn get_parent_statuses(&self, ca: &Handle) -> ParentStatuses {
+        self.0.get(ca).cloned().unwrap_or_default()
+    }
+
     fn get_mut_status(&mut self, ca: &Handle) -> &mut ParentStatuses {
         if !self.0.contains_key(ca) {
             self.0.insert(ca.clone(), ParentStatuses::default());
@@ -1553,6 +1557,14 @@ impl Default for AllParentStatuses {
 pub struct ParentStatuses(HashMap<ParentHandle, ParentStatus>);
 
 impl ParentStatuses {
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn get(&self, parent: &ParentHandle) -> Option<&ParentStatus> {
+        self.0.get(parent)
+    }
+
     fn set_failure(&mut self, parent: &ParentHandle, error: ErrorResponse) {
         self.get_mut_status(parent).set_failure(error);
     }
@@ -1580,13 +1592,41 @@ impl Default for ParentStatuses {
     }
 }
 
+impl fmt::Display for ParentStatuses {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for (parent, status) in self.0.iter() {
+            writeln!(f, "Parent: {}", parent)?;
+            match &status.last_exchange {
+                None => writeln!(f, "Status: no connection since krill was started")?,
+                Some(exchange) => {
+                    writeln!(f, "Status: {}", exchange.result)?;
+                    writeln!(f, "Last contacted: {}", exchange.time.to_rfc3339())?;
+                    writeln!(f, "Resource Entitlements:")?;
+                    for (rc, set) in status.entitlements.iter() {
+                        writeln!(f, "  resource class: {} entitled resources: {}", rc, set)?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentStatus {
     last_exchange: Option<ParentExchange>,
-    resources: HashMap<ResourceClassName, ResourceSet>,
+    entitlements: HashMap<ResourceClassName, ResourceSet>,
 }
 
 impl ParentStatus {
+    pub fn last_exchange(&self) -> Option<&ParentExchange> {
+        self.last_exchange.as_ref()
+    }
+
+    pub fn entitlements(&self) -> &HashMap<ResourceClassName, ResourceSet> {
+        &self.entitlements
+    }
+
     fn set_failure(&mut self, error: ErrorResponse) {
         self.last_exchange = Some(ParentExchange {
             time: Time::now(),
@@ -1596,7 +1636,7 @@ impl ParentStatus {
 
     fn set_entitlements(&mut self, entitlements: &Entitlements) {
         self.set_last_updated();
-        self.resources = entitlements
+        self.entitlements = entitlements
             .classes()
             .iter()
             .map(|rc| (rc.class_name().clone(), rc.resource_set().clone()))
@@ -1615,7 +1655,7 @@ impl Default for ParentStatus {
     fn default() -> Self {
         ParentStatus {
             last_exchange: None,
-            resources: HashMap::new(),
+            entitlements: HashMap::new(),
         }
     }
 }
@@ -1626,10 +1666,32 @@ pub struct ParentExchange {
     result: ParentExchangeResult,
 }
 
+impl ParentExchange {
+    pub fn time(&self) -> Time {
+        self.time
+    }
+
+    pub fn was_success(&self) -> bool {
+        match &self.result {
+            ParentExchangeResult::Success => true,
+            ParentExchangeResult::Failure(_) => false,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum ParentExchangeResult {
     Success,
     Failure(ErrorResponse),
+}
+
+impl fmt::Display for ParentExchangeResult {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ParentExchangeResult::Success => write!(f, "success"),
+            ParentExchangeResult::Failure(e) => write!(f, "failure: {}", e.to_string()),
+        }
+    }
 }
 
 //------------ CertAuthInfo --------------------------------------------------

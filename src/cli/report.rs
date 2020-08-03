@@ -7,8 +7,8 @@ use rpki::x509::Time;
 
 use crate::commons::api::{
     AllCertAuthIssues, Base64, CaCommandDetails, CaCommandResult, CaRepoDetails, CertAuthInfo, CertAuthIssues,
-    CertAuthList, ChildCaInfo, CommandHistory, CurrentObjects, CurrentRepoState, ParentCaContact, PublisherDetails,
-    PublisherList, RepositoryContact, RoaDefinition, ServerInfo, StoredEffect,
+    CertAuthList, ChildCaInfo, CommandHistory, CurrentObjects, CurrentRepoState, ParentCaContact, ParentStatuses,
+    PublisherDetails, PublisherList, RepositoryContact, RoaDefinition, ServerInfo, StoredEffect,
 };
 use crate::commons::bgp::{BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::eventsourcing::WithStorableDetails;
@@ -35,6 +35,7 @@ pub enum ApiResponse {
     BgpAnalysisSuggestions(BgpAnalysisSuggestion),
 
     ParentCaContact(ParentCaContact),
+    ParentStatuses(ParentStatuses),
 
     ChildInfo(ChildCaInfo),
 
@@ -77,6 +78,7 @@ impl ApiResponse {
                 ApiResponse::BgpAnalysisFull(table) => Ok(Some(table.report(fmt)?)),
                 ApiResponse::BgpAnalysisSuggestions(suggestions) => Ok(Some(suggestions.report(fmt)?)),
                 ApiResponse::ParentCaContact(contact) => Ok(Some(contact.report(fmt)?)),
+                ApiResponse::ParentStatuses(statuses) => Ok(Some(statuses.report(fmt)?)),
                 ApiResponse::ChildInfo(info) => Ok(Some(info.report(fmt)?)),
                 ApiResponse::PublisherList(list) => Ok(Some(list.report(fmt)?)),
                 ApiResponse::PublisherDetails(details) => Ok(Some(details.report(fmt)?)),
@@ -298,6 +300,12 @@ impl Report for ParentCaContact {
             }
         }
         Ok(res)
+    }
+}
+
+impl Report for ParentStatuses {
+    fn text(&self) -> Result<String, ReportError> {
+        Ok(self.to_string())
     }
 }
 
