@@ -43,7 +43,7 @@ impl CaPublisher {
 
         let list_reply = match &repo_contact {
             RepositoryContact::Embedded(_) => self.get_embedded()?.list(ca_handle)?,
-            RepositoryContact::Rfc8181(repo) => self.caserver.send_rfc8181_list(ca_handle, repo).await?,
+            RepositoryContact::Rfc8181(repo) => self.caserver.send_rfc8181_list(ca_handle, repo, false).await?,
         };
 
         let delta = {
@@ -73,7 +73,7 @@ impl CaPublisher {
 
         match &repo_contact {
             RepositoryContact::Embedded(_) => self.get_embedded()?.publish(ca_handle.clone(), delta)?,
-            RepositoryContact::Rfc8181(repo) => self.caserver.send_rfc8181_delta(ca_handle, repo, delta).await?,
+            RepositoryContact::Rfc8181(repo) => self.caserver.send_rfc8181_delta(ca_handle, repo, delta, false).await?,
         };
 
         Ok(())
@@ -91,14 +91,14 @@ impl CaPublisher {
 
         let list_reply = match repo {
             RepositoryContact::Embedded(_) => self.get_embedded()?.list(ca_handle)?,
-            RepositoryContact::Rfc8181(repo) => self.caserver.send_rfc8181_list(ca_handle, repo).await?,
+            RepositoryContact::Rfc8181(repo) => self.caserver.send_rfc8181_list(ca_handle, repo, true).await?,
         };
 
         let delta = list_reply.into_withdraw_delta();
 
         match repo {
             RepositoryContact::Embedded(_) => self.get_embedded()?.publish(ca_handle.clone(), delta)?,
-            RepositoryContact::Rfc8181(res) => self.caserver.send_rfc8181_delta(ca_handle, res, delta).await?,
+            RepositoryContact::Rfc8181(res) => self.caserver.send_rfc8181_delta(ca_handle, res, delta, true).await?,
         }
 
         Ok(())

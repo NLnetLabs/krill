@@ -583,7 +583,7 @@ impl KrillServer {
                     Ok(list) => CurrentRepoState::list(list),
                 },
             },
-            Some(repo) => match self.caserver.send_rfc8181_list(handle, repo).await {
+            Some(repo) => match self.caserver.send_rfc8181_list(handle, repo, false).await {
                 Err(e) => CurrentRepoState::error(e.to_error_response()),
                 Ok(list) => CurrentRepoState::list(list),
             },

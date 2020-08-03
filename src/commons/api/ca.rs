@@ -20,6 +20,7 @@ use rpki::uri;
 use rpki::x509::{Serial, Time};
 
 use crate::commons::api::publication::Publish;
+use crate::commons::api::rrdp::PublishElement;
 use crate::commons::api::{publication, Entitlements, RoaAggregateKey};
 use crate::commons::api::{
     Base64, ChildHandle, ErrorResponse, Handle, HexEncodedHash, IssuanceRequest, ListReply, ParentCaContact,
@@ -1516,40 +1517,64 @@ impl fmt::Display for ParentInfo {
     }
 }
 
-//------------ ParentStatus --------------------------------------------------
+//------------ RemoteStatuses ------------------------------------------------
 
-pub struct AllParentStatuses(HashMap<Handle, ParentStatuses>);
+pub struct RemoteStatuses {
+    ca_parents: HashMap<Handle, ParentStatuses>,
+    ca_repos: HashMap<Handle, RepoStatus>,
+}
 
-impl AllParentStatuses {
-    pub fn set_failure(&mut self, ca: &Handle, parent: &ParentHandle, error: ErrorResponse) {
-        let status = self.get_mut_status(ca);
+impl RemoteStatuses {
+    pub fn set_parent_failure(&mut self, ca: &Handle, parent: &ParentHandle, error: ErrorResponse) {
+        let status = self.get_mut_parent_status(ca);
         status.set_failure(parent, error);
     }
 
-    pub fn set_last_updated(&mut self, ca: &Handle, parent: &ParentHandle) {
-        self.get_mut_status(ca).set_last_updated(parent);
+    pub fn set_parent_last_updated(&mut self, ca: &Handle, parent: &ParentHandle) {
+        self.get_mut_parent_status(ca).set_last_updated(parent);
     }
 
-    pub fn set_entitlements(&mut self, ca: &Handle, parent: &ParentHandle, entitlements: &Entitlements) {
-        self.get_mut_status(ca).set_entitlements(parent, entitlements)
+    pub fn set_parent_entitlements(&mut self, ca: &Handle, parent: &ParentHandle, entitlements: &Entitlements) {
+        self.get_mut_parent_status(ca).set_entitlements(parent, entitlements)
     }
 
     pub fn get_parent_statuses(&self, ca: &Handle) -> ParentStatuses {
-        self.0.get(ca).cloned().unwrap_or_default()
+        self.ca_parents.get(ca).cloned().unwrap_or_default()
     }
 
-    fn get_mut_status(&mut self, ca: &Handle) -> &mut ParentStatuses {
-        if !self.0.contains_key(ca) {
-            self.0.insert(ca.clone(), ParentStatuses::default());
+    fn get_mut_parent_status(&mut self, ca: &Handle) -> &mut ParentStatuses {
+        if !self.ca_parents.contains_key(ca) {
+            self.ca_parents.insert(ca.clone(), ParentStatuses::default());
         }
 
-        self.0.get_mut(ca).unwrap()
+        self.ca_parents.get_mut(ca).unwrap()
+    }
+
+    pub fn set_status_repo_failure(&mut self, ca: &Handle, error: ErrorResponse) {
+        let status = self.get_mut_repo_status(ca);
+        status.set_failure(error);
+    }
+
+    pub fn set_status_repo_success(&mut self, ca: &Handle, objects: Vec<PublishElement>) {
+        let status = self.get_mut_repo_status(ca);
+        status.set_success(objects);
+    }
+
+    fn get_mut_repo_status(&mut self, ca: &Handle) -> &mut RepoStatus {
+        if !self.ca_repos.contains_key(ca) {
+            self.ca_repos.insert(ca.clone(), RepoStatus::default());
+        }
+
+        self.ca_repos.get_mut(ca).unwrap()
     }
 }
 
-impl Default for AllParentStatuses {
+impl Default for RemoteStatuses {
     fn default() -> Self {
-        AllParentStatuses(HashMap::new())
+        RemoteStatuses {
+            ca_parents: HashMap::new(),
+            ca_repos: HashMap::new(),
+        }
     }
 }
 
@@ -1559,6 +1584,10 @@ pub struct ParentStatuses(HashMap<ParentHandle, ParentStatus>);
 impl ParentStatuses {
     pub fn len(&self) -> usize {
         self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 
     pub fn get(&self, parent: &ParentHandle) -> Option<&ParentStatus> {
@@ -1657,6 +1686,38 @@ impl Default for ParentStatus {
             last_exchange: None,
             entitlements: HashMap::new(),
         }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RepoStatus {
+    last_exchange: Option<ParentExchange>,
+    published_objects: Vec<PublishElement>,
+}
+
+impl Default for RepoStatus {
+    fn default() -> Self {
+        RepoStatus {
+            last_exchange: None,
+            published_objects: vec![],
+        }
+    }
+}
+
+impl RepoStatus {
+    fn set_failure(&mut self, error: ErrorResponse) {
+        self.last_exchange = Some(ParentExchange {
+            time: Time::now(),
+            result: ParentExchangeResult::Failure(error),
+        })
+    }
+
+    fn set_success(&mut self, objects: Vec<PublishElement>) {
+        self.last_exchange = Some(ParentExchange {
+            time: Time::now(),
+            result: ParentExchangeResult::Success,
+        });
+        self.published_objects = objects;
     }
 }
 

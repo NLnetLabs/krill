@@ -9,12 +9,13 @@ use chrono::Duration;
 use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 
+use crate::commons::api::rrdp::PublishElement;
 use crate::commons::api::{
-    self, AddChildRequest, AllParentStatuses, Base64, CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary,
-    ChildAuthRequest, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, ErrorResponse,
-    Handle, IssuanceRequest, IssuanceResponse, IssuedCert, ListReply, ParentCaContact, ParentCaReq, ParentHandle,
-    ParentStatuses, PublishDelta, RcvdCert, RepoInfo, RepositoryContact, ResourceClassName, ResourceSet,
-    RevocationRequest, RevocationResponse, StoredEffect, UpdateChildRequest,
+    self, AddChildRequest, Base64, CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary, ChildAuthRequest,
+    ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, ErrorResponse, Handle,
+    IssuanceRequest, IssuanceResponse, IssuedCert, ListReply, ParentCaContact, ParentCaReq, ParentHandle,
+    ParentStatuses, PublishDelta, RcvdCert, RemoteStatuses, RepoInfo, RepositoryContact, ResourceClassName,
+    ResourceSet, RevocationRequest, RevocationResponse, StoredEffect, UpdateChildRequest,
 };
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::{Aggregate, AggregateStore, CommandKey, DiskAggregateStore};
@@ -36,7 +37,7 @@ use crate::daemon::mq::EventQueueListener;
 pub struct CaServer<S: Signer> {
     signer: Arc<RwLock<S>>,
     ca_store: Arc<DiskAggregateStore<CertAuth<S>>>,
-    parents_statuses: Arc<RwLock<AllParentStatuses>>,
+    remote_statuses: Arc<RwLock<RemoteStatuses>>,
     rfc8181_log_dir: Option<PathBuf>,
     rfc6492_log_dir: Option<PathBuf>,
 }
@@ -57,7 +58,7 @@ impl<S: Signer> CaServer<S> {
         Ok(CaServer {
             signer,
             ca_store: Arc::new(ca_store),
-            parents_statuses: Arc::new(RwLock::new(AllParentStatuses::default())),
+            remote_statuses: Arc::new(RwLock::new(RemoteStatuses::default())),
             rfc6492_log_dir: rfc6492_log_dir.cloned(),
             rfc8181_log_dir: rfc8181_log_dir.cloned(),
         })
@@ -881,22 +882,39 @@ impl<S: Signer> CaServer<S> {
     }
 
     fn set_parent_status_failure(&self, ca: &Handle, parent: &ParentHandle, error: ErrorResponse) {
-        self.parents_statuses.write().unwrap().set_failure(ca, parent, error);
+        self.remote_statuses
+            .write()
+            .unwrap()
+            .set_parent_failure(ca, parent, error);
     }
 
     fn set_parent_status_entitlements(&self, ca: &Handle, parent: &ParentHandle, entitlements: &Entitlements) {
-        self.parents_statuses
+        self.remote_statuses
             .write()
             .unwrap()
-            .set_entitlements(ca, parent, entitlements);
+            .set_parent_entitlements(ca, parent, entitlements);
     }
 
     fn set_parent_status_updated(&self, ca: &Handle, parent: &ParentHandle) {
-        self.parents_statuses.write().unwrap().set_last_updated(ca, parent);
+        self.remote_statuses
+            .write()
+            .unwrap()
+            .set_parent_last_updated(ca, parent);
     }
 
     fn get_parent_statuses(&self, ca: &Handle) -> ParentStatuses {
-        self.parents_statuses.read().unwrap().get_parent_statuses(ca)
+        self.remote_statuses.read().unwrap().get_parent_statuses(ca)
+    }
+
+    fn set_status_repo_failure(&self, ca: &Handle, error: ErrorResponse) {
+        self.remote_statuses.write().unwrap().set_status_repo_failure(ca, error);
+    }
+
+    fn set_status_repo_success(&self, ca: &Handle, objects: Vec<PublishElement>) {
+        self.remote_statuses
+            .write()
+            .unwrap()
+            .set_status_repo_success(ca, objects);
     }
 }
 
@@ -975,15 +993,37 @@ impl<S: Signer> CaServer<S> {
         &self,
         ca_handle: &Handle,
         repository: &rfc8183::RepositoryResponse,
+        cleanup: bool,
     ) -> KrillResult<ListReply> {
-        let reply = self
+        let reply = match self
             .send_rfc8181_and_validate_response(ca_handle, repository, rfc8181::Message::list_query().into_bytes())
-            .await?;
+            .await
+        {
+            Err(e) => {
+                if !cleanup {
+                    self.set_status_repo_failure(ca_handle, e.to_error_response());
+                }
+                return Err(e);
+            }
+            Ok(reply) => reply,
+        };
 
         match reply {
             rfc8181::ReplyMessage::ListReply(list_reply) => Ok(list_reply),
-            rfc8181::ReplyMessage::SuccessReply => Err(Error::custom("Got success reply to list query?!")),
-            rfc8181::ReplyMessage::ErrorReply(e) => Err(Error::custom(e)),
+            rfc8181::ReplyMessage::SuccessReply => {
+                let err = Error::custom("Got success reply to list query?!");
+                if !cleanup {
+                    self.set_status_repo_failure(ca_handle, err.to_error_response());
+                }
+                Err(err)
+            }
+            rfc8181::ReplyMessage::ErrorReply(e) => {
+                let err = Error::Custom(format!("Got error reply: {}", e));
+                if !cleanup {
+                    self.set_status_repo_failure(ca_handle, err.to_error_response());
+                }
+                Err(err)
+            }
         }
     }
 
@@ -992,17 +1032,45 @@ impl<S: Signer> CaServer<S> {
         ca_handle: &Handle,
         repository: &rfc8183::RepositoryResponse,
         delta: PublishDelta,
+        cleanup: bool,
     ) -> KrillResult<()> {
         let message = rfc8181::Message::publish_delta_query(delta);
 
-        let reply = self
+        let reply = match self
             .send_rfc8181_and_validate_response(ca_handle, repository, message.into_bytes())
-            .await?;
+            .await
+        {
+            Ok(reply) => reply,
+            Err(e) => {
+                if !cleanup {
+                    self.set_status_repo_failure(ca_handle, e.to_error_response());
+                }
+                return Err(e);
+            }
+        };
 
         match reply {
-            rfc8181::ReplyMessage::SuccessReply => Ok(()),
-            rfc8181::ReplyMessage::ErrorReply(e) => Err(Error::custom(e)),
-            rfc8181::ReplyMessage::ListReply(_) => Err(Error::custom("Got list reply to delta query?!")),
+            rfc8181::ReplyMessage::SuccessReply => {
+                if !cleanup {
+                    let ca = self.get_ca(ca_handle)?;
+                    self.set_status_repo_success(ca_handle, ca.all_objects());
+                }
+                Ok(())
+            }
+            rfc8181::ReplyMessage::ErrorReply(e) => {
+                let err = Error::Custom(format!("Got error reply: {}", e));
+                if !cleanup {
+                    self.set_status_repo_failure(ca_handle, err.to_error_response());
+                }
+                Err(err)
+            }
+            rfc8181::ReplyMessage::ListReply(_) => {
+                let err = Error::custom("Got list reply to delta query?!");
+                if !cleanup {
+                    self.set_status_repo_failure(ca_handle, err.to_error_response());
+                }
+                Err(err)
+            }
         }
     }
 }
