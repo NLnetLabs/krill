@@ -192,9 +192,7 @@ jobs:
       env:
         MATRIX_IMAGE: ${{ matrix.image }}
 
-    # See what Lintian thinks of our package but don't fail the build because of
-    # it. E.g. Cargo Deb doesn't compress man pages but Lintian (and Debian
-    # Policy) say they should be compressed.
+    # See what Lintian thinks of our package.
     - name: Verify the DEB package
       run: |
         lintian -v target/debian/*.deb
