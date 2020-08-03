@@ -51,7 +51,7 @@ defaults:
     shell: bash --noprofile --norc -eo pipefail -x {0}
 
 jobs:
-  # Use the cargo-deb Rust create to build a Debian package for installing
+  # Use the cargo-deb Rust crate to build a Debian package for installing
   # Krill. See: https://github.com/mmstick/cargo-deb
   deb-pkg:
     strategy:
