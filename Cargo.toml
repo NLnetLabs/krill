@@ -99,13 +99,7 @@ assets = [
     ["doc/krillc.1", "/usr/share/man/man1/krillc.1", "644"],
     ["debian/krill.service.preset", "/lib/systemd/system-preset/50-krill.preset", "644"],
 ]
-
-[package.metadata.deb.systemd-units]
-unit-name = "krill"
-enable = false
-start = true
-restart-after-upgrade = false
-stop-on-upgrade = true
+systemd-units = { unit-name = "krill", enable = false }
 
 # Variant of the Debian packaging configuration that:
 #   a) statically links with OpenSSL when building a Debian package because the
