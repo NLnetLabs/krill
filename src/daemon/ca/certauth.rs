@@ -1407,8 +1407,17 @@ impl<S: Signer> CertAuth<S> {
                 delta_errors.add_duplicate(roa_def);
             } else if let Some(covering) = authorizations.iter().find(|existing| existing.includes(&roa_def)) {
                 delta_errors.add_covered(roa_def, (**covering).into());
-            } else if let Some(covered) = authorizations.iter().find(|existing| roa_def.includes(existing)) {
-                delta_errors.add_covering(roa_def, (**covered).into())
+            } else if authorizations
+                .iter()
+                .find(|existing| roa_def.includes(existing))
+                .is_some()
+            {
+                let covered = authorizations
+                    .iter()
+                    .filter(|existing| roa_def.includes(existing))
+                    .map(|covered| (**covered).into())
+                    .collect();
+                delta_errors.add_covering(roa_def, covered)
             } else {
                 desired_routes.add(*addition);
                 res.push(EvtDet::RouteAuthorizationAdded(*addition));

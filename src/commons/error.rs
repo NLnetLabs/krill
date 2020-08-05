@@ -68,7 +68,7 @@ impl RoaDeltaError {
         self.invalid_length.push(invalid);
     }
 
-    pub fn add_covering(&mut self, addition: RoaDefinition, covering: RoaDefinition) {
+    pub fn add_covering(&mut self, addition: RoaDefinition, covering: Vec<RoaDefinition>) {
         self.covering.push(CoveringRoa { addition, covering })
     }
 
@@ -135,7 +135,11 @@ impl fmt::Display for RoaDeltaError {
                 "Cannot add the following ROAs which would include a currently defined ROA:"
             )?;
             for cov in self.covering.iter() {
-                writeln!(f, "  {} covering existing: {}", cov.addition, cov.covering)?;
+                write!(f, "  {} covering existing:", cov.addition)?;
+                for covered in &cov.covering {
+                    write!(f, " {}", covered)?;
+                }
+                writeln!(f)?;
             }
         }
         Ok(())
@@ -151,7 +155,7 @@ pub struct CoveredRoa {
 #[derive(Debug, Deserialize, Serialize)]
 pub struct CoveringRoa {
     addition: RoaDefinition,
-    covering: RoaDefinition,
+    covering: Vec<RoaDefinition>,
 }
 
 #[derive(Debug, Display)]
@@ -711,6 +715,7 @@ mod tests {
     use crate::commons::remote::crypto::test_id_certificate;
 
     use super::*;
+    use crate::test::definition;
 
     #[test]
     fn error_response_json_regression() {
@@ -1010,5 +1015,29 @@ mod tests {
         //
         //            file::save_json(&error_response, &path).unwrap();
         //        }
+    }
+
+    #[test]
+    fn roa_delta_json() {
+        let mut error = RoaDeltaError::default();
+
+        let small = definition("10.0.0.0/24 => 1");
+        let middle = definition("10.0.0.0/20-24 => 1");
+        let big = definition("10.0.0.0/16-24 => 1");
+
+        let not_held = definition("10.128.0.0/9 => 1");
+        let invalid_length = definition("10.0.1.0/25 => 1");
+
+        let unknown = definition("192.168.0.0/16 => 1");
+
+        error.add_covered(small, middle);
+        error.add_covering(big, vec![middle]);
+        error.add_duplicate(middle);
+
+        error.add_notheld(not_held);
+        error.add_invalid_length(invalid_length);
+        error.add_unknown(unknown);
+
+        println!("{}", serde_json::to_string_pretty(&error).unwrap());
     }
 }
