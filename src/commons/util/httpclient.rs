@@ -299,6 +299,7 @@ async fn opt_text_response(res: Response) -> Result<Option<String>, Error> {
 //------------ Error ---------------------------------------------------------
 
 #[derive(Debug, Display)]
+#[allow(clippy::large_enum_variant)]
 pub enum Error {
     #[display(fmt = "Request Error: {}", _0)]
     RequestError(reqwest::Error),

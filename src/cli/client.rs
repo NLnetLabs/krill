@@ -415,6 +415,7 @@ impl KrillClient {
 //------------ Error ---------------------------------------------------------
 
 #[derive(Debug, Display)]
+#[allow(clippy::large_enum_variant)]
 pub enum Error {
     #[display(fmt = "No valid command given, see --help")]
     MissingCommand,

@@ -1741,6 +1741,7 @@ impl ParentExchange {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[allow(clippy::large_enum_variant)]
 pub enum ParentExchangeResult {
     Success,
     Failure(ErrorResponse),
@@ -1998,6 +1999,7 @@ impl fmt::Display for ResourceClassKeysInfo {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[allow(clippy::large_enum_variant)]
 pub enum CurrentRepoState {
     List(ListReply),
     Error(ErrorResponse),

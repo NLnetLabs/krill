@@ -1407,11 +1407,7 @@ impl<S: Signer> CertAuth<S> {
                 delta_errors.add_duplicate(roa_def);
             } else if let Some(covering) = authorizations.iter().find(|existing| existing.includes(&roa_def)) {
                 delta_errors.add_covered(roa_def, (**covering).into());
-            } else if authorizations
-                .iter()
-                .find(|existing| roa_def.includes(existing))
-                .is_some()
-            {
+            } else if authorizations.iter().any(|existing| roa_def.includes(existing)) {
                 let covered = authorizations
                     .iter()
                     .filter(|existing| roa_def.includes(existing))
