@@ -240,6 +240,8 @@ pub struct ErrorResponse {
     label: String,
     msg: String,
     args: HashMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    delta_error: Option<RoaDeltaError>,
 }
 
 impl ErrorResponse {
@@ -248,6 +250,7 @@ impl ErrorResponse {
             label: label.to_string(),
             msg: msg.to_string(),
             args: HashMap::new(),
+            delta_error: None,
         }
     }
 
@@ -294,11 +297,9 @@ impl ErrorResponse {
         res
     }
 
-    pub fn with_roa_delta_error(self, roa_delta_error: &RoaDeltaError) -> Self {
-        self.with_arg(
-            "roa_delta_error_json",
-            serde_json::to_string_pretty(roa_delta_error).unwrap(),
-        )
+    pub fn with_roa_delta_error(mut self, roa_delta_error: &RoaDeltaError) -> Self {
+        self.delta_error = Some(roa_delta_error.clone());
+        self
     }
 
     pub fn with_key_identifier(self, ki: &KeyIdentifier) -> Self {

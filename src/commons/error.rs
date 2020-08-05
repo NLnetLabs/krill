@@ -24,7 +24,7 @@ use crate::commons::util::softsigner::SignerError;
 use crate::daemon::ca::RouteAuthorization;
 use crate::daemon::http::tls_keys;
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaDeltaError {
     duplicates: Vec<RoaDefinition>,
     covered: Vec<CoveredRoa>,
@@ -125,7 +125,7 @@ impl fmt::Display for RoaDeltaError {
                 f,
                 "The following ROAs have a max length which is invalid for the prefix:"
             )?;
-            for unk in self.unknowns.iter() {
+            for unk in self.invalid_length.iter() {
                 writeln!(f, "  {}", unk)?;
             }
         }
@@ -146,13 +146,13 @@ impl fmt::Display for RoaDeltaError {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CoveredRoa {
     addition: RoaDefinition,
     covered_by: RoaDefinition,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CoveringRoa {
     addition: RoaDefinition,
     covering: Vec<RoaDefinition>,
@@ -651,7 +651,8 @@ impl Error {
                 .with_auth(auth),
 
             Error::RoaDeltaError(roa_delta_error) => {
-                ErrorResponse::new("ca-roa-delta-error", &self).with_roa_delta_error(roa_delta_error)
+                ErrorResponse::new("ca-roa-delta-error", "Delta rejected, see included json")
+                    .with_roa_delta_error(roa_delta_error)
             }
 
             //-----------------------------------------------------------------
@@ -717,6 +718,17 @@ mod tests {
     use super::*;
     use crate::test::definition;
 
+    fn verify(expected_json: &str, e: Error) {
+        let actual = e.to_error_response();
+        let expected: ErrorResponse = serde_json::from_str(expected_json).unwrap();
+        assert_eq!(actual, expected);
+
+        // check that serde works too
+        let serialized = serde_json::to_string(&actual).unwrap();
+        let des = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(actual, des);
+    }
+
     #[test]
     fn error_response_json_regression() {
         let ca = Handle::from_str("ca").unwrap();
@@ -725,17 +737,6 @@ mod tests {
         let publisher = PublisherHandle::from_str("publisher").unwrap();
 
         let auth = RouteAuthorization::new(RoaDefinition::from_str("192.168.0.0/16-24 => 64496").unwrap());
-
-        fn verify(expected_json: &str, e: Error) {
-            let actual = e.to_error_response();
-            let expected: ErrorResponse = serde_json::from_str(expected_json).unwrap();
-            assert_eq!(actual, expected);
-
-            // check that serde works too
-            let serialized = serde_json::to_string(&actual).unwrap();
-            let des = serde_json::from_str(&serialized).unwrap();
-            assert_eq!(actual, des);
-        }
 
         //-----------------------------------------------------------------
         // System Issues
@@ -1023,6 +1024,7 @@ mod tests {
 
         let small = definition("10.0.0.0/24 => 1");
         let middle = definition("10.0.0.0/20-24 => 1");
+        let neighbour = definition("10.0.128.0/24 => 1");
         let big = definition("10.0.0.0/16-24 => 1");
 
         let not_held = definition("10.128.0.0/9 => 1");
@@ -1031,13 +1033,21 @@ mod tests {
         let unknown = definition("192.168.0.0/16 => 1");
 
         error.add_covered(small, middle);
-        error.add_covering(big, vec![middle]);
+        error.add_covering(big, vec![middle, neighbour]);
         error.add_duplicate(middle);
 
         error.add_notheld(not_held);
         error.add_invalid_length(invalid_length);
         error.add_unknown(unknown);
 
-        println!("{}", serde_json::to_string_pretty(&error).unwrap());
+        // println!(
+        //     "{}",
+        //     serde_json::to_string_pretty(&Error::RoaDeltaError(error).to_error_response()).unwrap()
+        // );
+
+        verify(
+            include_str!("../../test-resources/api/regressions/errors/ca-roa-delta-error.json"),
+            Error::RoaDeltaError(error),
+        );
     }
 }
