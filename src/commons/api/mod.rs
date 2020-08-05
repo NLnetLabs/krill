@@ -254,6 +254,10 @@ impl ErrorResponse {
         }
     }
 
+    pub fn delta_error(&self) -> Option<&RoaDeltaError> {
+        self.delta_error.as_ref()
+    }
+
     fn with_arg(mut self, key: &str, value: impl fmt::Display) -> Self {
         self.args.insert(key.to_string(), value.to_string());
         self

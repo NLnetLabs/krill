@@ -19,7 +19,11 @@ async fn main() {
                                 if format == ReportFormat::Json {
                                     eprintln!("{}", e);
                                 } else {
-                                    eprintln!("Error: {}", res.msg());
+                                    if let Some(delta_error) = res.delta_error() {
+                                        eprintln!("Delta rejected:\n\n{}", delta_error);
+                                    } else {
+                                        eprintln!("Error: {}", res.msg());
+                                    }
                                 }
                             }
                             _ => {

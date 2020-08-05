@@ -11,6 +11,7 @@ use crate::commons::api::{
     AllCertAuthIssues, CaRepoDetails, CertAuthIssues, ChildCaInfo, CurrentRepoState, ParentCaContact, ParentStatuses,
     PublisherDetails, PublisherList, Token,
 };
+use crate::commons::bgp::BgpAnalysisAdvice;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::{file, httpclient};
 use crate::constants::KRILL_CLI_API_ENV;
@@ -216,6 +217,15 @@ impl KrillClient {
                 Ok(ApiResponse::Empty)
             }
 
+            CaCommand::RouteAuthorizationsTryUpdate(handle, updates) => {
+                let uri = format!("api/v1/cas/{}/routes/try", handle);
+                let advice_opt: Option<BgpAnalysisAdvice> = self.post_json_with_opt_response(&uri, updates).await?;
+                match advice_opt {
+                    None => Ok(ApiResponse::Empty),
+                    Some(advice) => Ok(ApiResponse::BgpAnalysisAdvice(advice)),
+                }
+            }
+
             CaCommand::RouteAuthorizationsDryRunUpdate(handle, updates) => {
                 let uri = format!("api/v1/cas/{}/routes/analysis/dryrun", handle);
                 let report = self.post_json_with_response(&uri, updates).await?;
@@ -400,6 +410,17 @@ impl KrillClient {
     async fn post_json_with_response<T: DeserializeOwned>(&self, uri: &str, data: impl Serialize) -> Result<T, Error> {
         let uri = self.resolve_uri(uri);
         httpclient::post_json_with_response(&uri, data, Some(&self.token))
+            .await
+            .map_err(Error::HttpClientError)
+    }
+
+    async fn post_json_with_opt_response<T: DeserializeOwned>(
+        &self,
+        uri: &str,
+        data: impl Serialize,
+    ) -> Result<Option<T>, Error> {
+        let uri = self.resolve_uri(uri);
+        httpclient::post_json_with_opt_response(&uri, data, Some(&self.token))
             .await
             .map_err(Error::HttpClientError)
     }

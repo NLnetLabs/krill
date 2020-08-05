@@ -22,13 +22,15 @@ use hyper::Method;
 
 use crate::commons::api::{
     BgpStats, ChildHandle, CommandHistoryCriteria, Handle, ParentCaContact, ParentCaReq, ParentHandle, PublisherList,
-    RepositoryUpdate,
+    RepositoryUpdate, RoaDefinitionUpdates,
 };
+use crate::commons::bgp::BgpAnalysisAdvice;
 use crate::commons::error::Error;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
 use crate::constants::KRILL_ENV_UPGRADE_ONLY;
 use crate::constants::{KRILL_VERSION_MAJOR, KRILL_VERSION_MINOR, KRILL_VERSION_PATCH};
+use crate::daemon::ca::RouteAuthorizationUpdates;
 use crate::daemon::config::CONFIG;
 use crate::daemon::http::statics::statics;
 use crate::daemon::http::{tls, tls_keys, HttpResponse, Request, RequestPath, RoutingResult};
@@ -624,6 +626,10 @@ async fn api_ca_routes(req: Request, path: &mut RequestPath, ca: Handle) -> Rout
             Method::POST => ca_routes_update(req, ca).await,
             _ => render_unknown_method(),
         },
+        Some("try") => match *req.method() {
+            Method::POST => ca_routes_try_update(req, ca).await,
+            _ => render_unknown_method(),
+        },
         Some("analysis") => ca_routes_analysis(req, path, ca).await,
         _ => render_unknown_method(),
     }
@@ -1099,6 +1105,42 @@ async fn ca_routes_update(req: Request, handle: Handle) -> RoutingResult {
     match req.json().await {
         Err(e) => render_error(e),
         Ok(updates) => render_empty_res(state.read().await.ca_routes_update(handle, updates)),
+    }
+}
+
+/// Tries an update. If the dry-run for it would be successful, and the analysis
+/// for the resources in the update have no remaining invalids, apply it. Otherwise
+/// return the analysis and a suggestion.
+async fn ca_routes_try_update(req: Request, ca: Handle) -> RoutingResult {
+    let state = req.state().clone();
+
+    match req.json::<RoaDefinitionUpdates>().await {
+        Err(e) => render_error(e),
+        Ok(updates) => {
+            let server = state.read().await;
+            match server.ca_routes_bgp_dry_run(&ca, updates.clone()) {
+                Err(e) => {
+                    // update was rejected, return error
+                    render_error(e)
+                }
+                Ok(effect) => {
+                    if !effect.contains_invalids() {
+                        // no issues found, apply
+                        render_empty_res(server.ca_routes_update(ca, updates))
+                    } else {
+                        // remaining invalids exist, advise user
+                        let updates: RouteAuthorizationUpdates = updates.into();
+                        let updates = updates.into_explicit();
+                        let resources = updates.affected_prefixes();
+
+                        match server.ca_routes_bgp_suggest(&ca, Some(resources)) {
+                            Err(e) => render_error(e), // should not fail after dryrun, but hey..
+                            Ok(suggestion) => render_json(BgpAnalysisAdvice::new(effect, suggestion)),
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

@@ -620,6 +620,13 @@ impl Options {
                 .required(false),
         );
 
+        sub = sub.arg(
+            Arg::with_name("try")
+                .long("try")
+                .help("Try to perform the update, advice in case it would result in errors or invalids.")
+                .required(false),
+        );
+
         app.subcommand(sub)
     }
 
@@ -1373,8 +1380,14 @@ impl Options {
             RoaDefinitionUpdates::new(added, removed)
         };
 
+        if matches.is_present("dryrun") && matches.is_present("try") {
+            return Err(Error::general("You cannot use both --dryrun and --try"));
+        }
+
         let command = if matches.is_present("dryrun") {
             Command::CertAuth(CaCommand::RouteAuthorizationsDryRunUpdate(my_ca, updates))
+        } else if matches.is_present("try") {
+            Command::CertAuth(CaCommand::RouteAuthorizationsTryUpdate(my_ca, updates))
         } else {
             Command::CertAuth(CaCommand::RouteAuthorizationsUpdate(my_ca, updates))
         };
@@ -1801,6 +1814,9 @@ pub enum CaCommand {
 
     #[display(fmt = "Update ROAS for ca: '{}' -> {}", _0, _1)]
     RouteAuthorizationsUpdate(Handle, RoaDefinitionUpdates),
+
+    #[display(fmt = "Try to update ROAS for ca: '{}' -> {}", _0, _1)]
+    RouteAuthorizationsTryUpdate(Handle, RoaDefinitionUpdates),
 
     #[display(fmt = "Perform a dry-run update of ROAS for ca: '{}' -> {}", _0, _1)]
     RouteAuthorizationsDryRunUpdate(Handle, RoaDefinitionUpdates),

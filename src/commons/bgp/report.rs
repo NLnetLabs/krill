@@ -5,6 +5,28 @@ use std::fmt;
 use crate::commons::api::{BgpStats, RoaDefinition, RoaDefinitionUpdates};
 use crate::commons::bgp::Announcement;
 
+//------------ BgpAnalysisAdvice -------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct BgpAnalysisAdvice {
+    effect: BgpAnalysisReport,
+    suggestion: BgpAnalysisSuggestion,
+}
+
+impl BgpAnalysisAdvice {
+    pub fn new(effect: BgpAnalysisReport, suggestion: BgpAnalysisSuggestion) -> Self {
+        BgpAnalysisAdvice { effect, suggestion }
+    }
+
+    pub fn effect(&self) -> &BgpAnalysisReport {
+        &self.effect
+    }
+
+    pub fn suggestion(&self) -> &BgpAnalysisSuggestion {
+        &self.suggestion
+    }
+}
+
 //------------ BgpAnalysisSuggestion ---------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -226,6 +248,10 @@ impl BgpAnalysisReport {
 
     pub fn matching_entries(&self, state: BgpAnalysisState) -> Vec<&BgpAnalysisEntry> {
         self.0.iter().filter(|e| e.state == state).collect()
+    }
+
+    pub fn contains_invalids(&self) -> bool {
+        self.0.iter().any(|el| el.state().is_invalid())
     }
 }
 
@@ -658,6 +684,15 @@ pub enum BgpAnalysisState {
     AnnouncementInvalidAsn,
     AnnouncementNotFound,
     RoaNoAnnouncementInfo,
+}
+
+impl BgpAnalysisState {
+    pub fn is_invalid(self) -> bool {
+        match self {
+            BgpAnalysisState::AnnouncementInvalidAsn | BgpAnalysisState::AnnouncementInvalidLength => true,
+            _ => false,
+        }
+    }
 }
 
 //------------ Tests --------------------------------------------------------

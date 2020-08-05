@@ -10,7 +10,7 @@ use crate::commons::api::{
     CertAuthList, ChildCaInfo, CommandHistory, CurrentObjects, CurrentRepoState, ParentCaContact, ParentStatuses,
     PublisherDetails, PublisherList, RepositoryContact, RoaDefinition, ServerInfo, StoredEffect,
 };
-use crate::commons::bgp::{BgpAnalysisReport, BgpAnalysisSuggestion};
+use crate::commons::bgp::{BgpAnalysisAdvice, BgpAnalysisReport, BgpAnalysisState, BgpAnalysisSuggestion};
 use crate::commons::eventsourcing::WithStorableDetails;
 use crate::commons::remote::api::ClientInfo;
 use crate::commons::remote::rfc8183;
@@ -31,6 +31,7 @@ pub enum ApiResponse {
     CertAuthAction(CaCommandDetails),
     CertAuths(CertAuthList),
     RouteAuthorizations(Vec<RoaDefinition>),
+    BgpAnalysisAdvice(BgpAnalysisAdvice),
     BgpAnalysisFull(BgpAnalysisReport),
     BgpAnalysisSuggestions(BgpAnalysisSuggestion),
 
@@ -75,6 +76,7 @@ impl ApiResponse {
                 ApiResponse::CertAuthIssues(issues) => Ok(Some(issues.report(fmt)?)),
                 ApiResponse::AllCertAuthIssues(issues) => Ok(Some(issues.report(fmt)?)),
                 ApiResponse::RouteAuthorizations(auths) => Ok(Some(auths.report(fmt)?)),
+                ApiResponse::BgpAnalysisAdvice(analysis) => Ok(Some(analysis.report(fmt)?)),
                 ApiResponse::BgpAnalysisFull(table) => Ok(Some(table.report(fmt)?)),
                 ApiResponse::BgpAnalysisSuggestions(suggestions) => Ok(Some(suggestions.report(fmt)?)),
                 ApiResponse::ParentCaContact(contact) => Ok(Some(contact.report(fmt)?)),
@@ -414,6 +416,37 @@ impl Report for Vec<RoaDefinition> {
         for a in self.iter() {
             res.push_str(&format!("{}\n", a));
         }
+        Ok(res)
+    }
+}
+
+impl Report for BgpAnalysisAdvice {
+    fn text(&self) -> Result<String, ReportError> {
+        let mut res = String::new();
+        res.push_str("Unsafe update, please review\n\n");
+        res.push_str("Effect would leave the following invalids:\n");
+
+        let invalid_asns = self.effect().matching_defs(BgpAnalysisState::AnnouncementInvalidAsn);
+        if !invalid_asns.is_empty() {
+            res.push_str("\n  Announcements from invalid ASNs:\n");
+            for invalid in invalid_asns {
+                res.push_str(&format!("    {}\n", invalid));
+            }
+        }
+
+        let invalid_length = self.effect().matching_defs(BgpAnalysisState::AnnouncementInvalidLength);
+        if !invalid_length.is_empty() {
+            res.push_str("\n  Announcements too specific for their ASNs:\n");
+            for invalid in invalid_length {
+                res.push_str(&format!("    {}\n", invalid));
+            }
+        }
+
+        res.push_str(&format!(
+            "\nYou may want to consider this alternative:\n{}",
+            self.suggestion()
+        ));
+
         Ok(res)
     }
 }

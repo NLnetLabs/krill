@@ -144,6 +144,20 @@ pub async fn post_json_with_response<T: DeserializeOwned>(
     data: impl Serialize,
     token: Option<&Token>,
 ) -> Result<T, Error> {
+    match post_json_with_opt_response(uri, data, token).await? {
+        None => Err(Error::EmptyResponse),
+        Some(res) => Ok(res),
+    }
+}
+
+/// Performs a POST of data that can be serialized into json, and expects
+/// an optional json response that can be deserialized into the an owned
+/// value of the expected type.
+pub async fn post_json_with_opt_response<T: DeserializeOwned>(
+    uri: &str,
+    data: impl Serialize,
+    token: Option<&Token>,
+) -> Result<Option<T>, Error> {
     if env::var(KRILL_CLI_API_ENV).is_ok() {
         let body = serde_json::to_string_pretty(&data)?;
         report_post_and_exit(uri, Some(JSON_CONTENT), token, PostBody::String(&body));
@@ -152,7 +166,7 @@ pub async fn post_json_with_response<T: DeserializeOwned>(
     let body = serde_json::to_string(&data)?;
     let headers = headers(Some(JSON_CONTENT), token)?;
     let res = client(uri).await?.post(uri).headers(headers).body(body).send().await?;
-    process_json_response(res).await
+    process_opt_json_response(res).await
 }
 
 /// Performs a POST with no data to the given URI and expects and empty 200 OK response.
@@ -260,12 +274,19 @@ fn headers(content_type: Option<&str>, token: Option<&Token>) -> Result<HeaderMa
 }
 
 async fn process_json_response<T: DeserializeOwned>(res: Response) -> Result<T, Error> {
+    match process_opt_json_response(res).await? {
+        None => Err(Error::EmptyResponse),
+        Some(res) => Ok(res),
+    }
+}
+
+async fn process_opt_json_response<T: DeserializeOwned>(res: Response) -> Result<Option<T>, Error> {
     match opt_text_response(res).await {
         Err(e) => Err(e),
-        Ok(None) => Err(Error::EmptyResponse),
+        Ok(None) => Ok(None),
         Ok(Some(s)) => {
             let res: T = serde_json::from_str(&s)?;
-            Ok(res)
+            Ok(Some(res))
         }
     }
 }
