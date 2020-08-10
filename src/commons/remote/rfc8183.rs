@@ -152,12 +152,9 @@ impl ChildRequest {
 
 impl fmt::Display for ChildRequest {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "handle '{}' id (key) '{}'",
-            self.child_handle,
-            self.id_cert.ski_hex()
-        )
+        let bytes = self.encode_vec();
+        let xml = unsafe { from_utf8_unchecked(&bytes) };
+        write!(f, "{}", xml)
     }
 }
 
@@ -465,7 +462,7 @@ impl PublisherRequest {
     }
 }
 
-/// Encoding
+/// # Encoding
 ///
 impl PublisherRequest {
     /// Encodes a <publisher_request> to a Vec
@@ -493,6 +490,16 @@ impl PublisherRequest {
     pub fn save(&self, full_path: &PathBuf) -> Result<(), io::Error> {
         let xml = self.encode_vec();
         file::save(&Bytes::from(xml), full_path)
+    }
+}
+
+/// # Display
+///
+impl fmt::Display for PublisherRequest {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let bytes = self.encode_vec();
+        let xml = unsafe { from_utf8_unchecked(&bytes) };
+        write!(f, "{}", xml)
     }
 }
 
@@ -661,6 +668,15 @@ impl RepositoryResponse {
     }
 }
 
+/// # Printing (as XML)
+///
+impl fmt::Display for RepositoryResponse {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let bytes = self.encode_vec();
+        let xml = unsafe { from_utf8_unchecked(&bytes) };
+        write!(f, "{}", xml)
+    }
+}
 //------------ ServiceUri ----------------------------------------------------
 
 /// The service URI where a child or publisher needs to send its

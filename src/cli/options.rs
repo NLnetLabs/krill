@@ -1774,6 +1774,9 @@ pub enum CaCommand {
     #[display(fmt = "get repo state for ca: '{}'", _0)]
     RepoState(Handle),
 
+    #[display(fmt = "get repo status for ca: '{}'", _0)]
+    RepoStatus(Handle),
+
     #[display(fmt = "add parent '{}' to ca: '{}'", _0, _1)]
     AddParent(Handle, ParentCaReq),
 

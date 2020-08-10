@@ -28,8 +28,7 @@ use crate::commons::bgp::BgpAnalysisAdvice;
 use crate::commons::error::Error;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
-use crate::constants::KRILL_ENV_UPGRADE_ONLY;
-use crate::constants::{KRILL_VERSION_MAJOR, KRILL_VERSION_MINOR, KRILL_VERSION_PATCH};
+use crate::constants::{KRILL_ENV_UPGRADE_ONLY, KRILL_VERSION_MAJOR, KRILL_VERSION_MINOR, KRILL_VERSION_PATCH};
 use crate::daemon::ca::RouteAuthorizationUpdates;
 use crate::daemon::config::CONFIG;
 use crate::daemon::http::statics::statics;
@@ -615,6 +614,7 @@ async fn api_ca_repo(req: Request, path: &mut RequestPath, ca: Handle) -> Routin
         Some("request.json") => ca_publisher_req_json(req, ca).await,
         Some("request.xml") => ca_publisher_req_xml(req, ca).await,
         Some("state") => ca_repo_state(req, ca).await,
+        Some("status") => ca_repo_status(req, ca).await,
         _ => render_unknown_method(),
     }
 }
@@ -958,6 +958,13 @@ async fn ca_repo_details(req: Request, handle: Handle) -> RoutingResult {
 async fn ca_repo_state(req: Request, handle: Handle) -> RoutingResult {
     match *req.method() {
         Method::GET => render_json_res(req.state().read().await.ca_repo_state(&handle).await),
+        _ => render_unknown_method(),
+    }
+}
+
+async fn ca_repo_status(req: Request, handle: Handle) -> RoutingResult {
+    match *req.method() {
+        Method::GET => render_json_res(req.state().read().await.ca_repo_status(&handle)),
         _ => render_unknown_method(),
     }
 }

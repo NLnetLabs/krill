@@ -1461,6 +1461,16 @@ impl CertAuthList {
     }
 }
 
+impl fmt::Display for CertAuthList {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for ca in self.cas() {
+            writeln!(f, "{}", ca.handle())?;
+        }
+
+        Ok(())
+    }
+}
+
 //------------ CertAuthSummary -----------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1540,6 +1550,10 @@ impl RemoteStatuses {
 
     pub fn get_parent_statuses(&self, ca: &Handle) -> ParentStatuses {
         self.ca_parents.get(ca).cloned().unwrap_or_default()
+    }
+
+    pub fn get_repo_status(&self, ca: &Handle) -> RepoStatus {
+        self.ca_repos.get(ca).cloned().unwrap_or_default()
     }
 
     fn get_mut_parent_status(&mut self, ca: &Handle) -> &mut ParentStatuses {
@@ -1626,7 +1640,7 @@ impl fmt::Display for ParentStatuses {
         for (parent, status) in self.0.iter() {
             writeln!(f, "Parent: {}", parent)?;
             match &status.last_exchange {
-                None => writeln!(f, "Status: no connection since krill was started")?,
+                None => writeln!(f, "Status: connection still pending")?,
                 Some(exchange) => {
                     writeln!(f, "Status: {}", exchange.result)?;
                     writeln!(f, "Last contacted: {}", exchange.time.to_rfc3339())?;
@@ -1718,6 +1732,23 @@ impl RepoStatus {
             result: ParentExchangeResult::Success,
         });
         self.published_objects = objects;
+    }
+}
+
+impl fmt::Display for RepoStatus {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match &self.last_exchange {
+            None => writeln!(f, "Status: connection still pending")?,
+            Some(exchange) => {
+                writeln!(f, "Status: {}", exchange.result)?;
+                writeln!(f, "Last contacted: {}", exchange.time.to_rfc3339())?;
+                writeln!(f, "Published Objects:")?;
+                for object in &self.published_objects {
+                    writeln!(f, "  {} {}", object.base64().to_encoded_hash(), object.uri())?;
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -1841,6 +1872,71 @@ impl CertAuthInfo {
         }
 
         res
+    }
+}
+
+impl fmt::Display for CertAuthInfo {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "Name:     {}", self.handle())?;
+        writeln!(f)?;
+
+        if let Some(repo_info) = self.repo_info() {
+            let base_uri = repo_info.base_uri();
+            let rrdp_uri = repo_info.rpki_notify();
+            writeln!(f, "Base uri: {}", base_uri)?;
+            writeln!(f, "RRDP uri: {}", rrdp_uri)?;
+        } else {
+            writeln!(f, "No repository configured.")?;
+        }
+        writeln!(f)?;
+
+        writeln!(f, "ID cert PEM:\n{}", self.id_cert().pem())?;
+        writeln!(f, "Hash: {}", self.id_cert().hash())?;
+        writeln!(f)?;
+
+        let resources = self.resources();
+        if resources.is_empty() {
+            writeln!(f, "Total resources: <none>")?;
+        } else {
+            writeln!(f, "Total resources:")?;
+            writeln!(f, "    ASNs: {}", resources.asn())?;
+            writeln!(f, "    IPv4: {}", resources.v4())?;
+            writeln!(f, "    IPv6: {}", resources.v6())?;
+        }
+        writeln!(f)?;
+
+        writeln!(f, "Parents:")?;
+        if !self.parents().is_empty() {
+            for parent in self.parents().iter() {
+                writeln!(f, "{}", parent)?;
+            }
+            writeln!(f)?;
+        } else {
+            writeln!(f, "<none>")?;
+        }
+
+        for (name, rc) in self.resource_classes() {
+            writeln!(f, "Resource Class: {}", name,)?;
+            writeln!(f, "Parent: {}", rc.parent_handle())?;
+            writeln!(f, "{}", rc.keys())?;
+
+            writeln!(f, "Current objects:")?;
+            for object in rc.current_objects().names() {
+                writeln!(f, "  {}", object)?;
+            }
+            writeln!(f)?;
+        }
+
+        writeln!(f, "Children:")?;
+        if !self.children().is_empty() {
+            for child_handle in self.children() {
+                writeln!(f, "{}", child_handle)?;
+            }
+        } else {
+            writeln!(f, "<none>")?;
+        }
+
+        Ok(())
     }
 }
 
@@ -2022,6 +2118,26 @@ impl CurrentRepoState {
     }
 }
 
+impl fmt::Display for CurrentRepoState {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match &self {
+            CurrentRepoState::Error(e) => writeln!(f, "Error contacting repo! => {}", e),
+            CurrentRepoState::List(list) => {
+                writeln!(f, "Available and publishing objects:")?;
+                let elements = list.elements();
+                if elements.is_empty() {
+                    writeln!(f, "  <nothing>")?;
+                } else {
+                    for el in elements.iter() {
+                        writeln!(f, "  {} {}", el.hash(), el.uri())?;
+                    }
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
 /// This struct contains the API details for the configure Repository server,
 /// and objects published there, for a CA.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -2036,6 +2152,30 @@ impl CaRepoDetails {
 
     pub fn contact(&self) -> &RepositoryContact {
         &self.contact
+    }
+}
+
+impl fmt::Display for CaRepoDetails {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "Repository Details:")?;
+        match self.contact() {
+            RepositoryContact::Embedded(repo_info) => {
+                writeln!(f, "  type:        embedded")?;
+                writeln!(f, "  base_uri:    {}", repo_info.base_uri())?;
+                writeln!(f, "  rpki_notify: {}", repo_info.rpki_notify())?;
+            }
+            RepositoryContact::Rfc8181(response) => {
+                writeln!(f, "  type:        remote")?;
+                writeln!(f, "  service uri: {}", response.service_uri())?;
+                let repo_info = response.repo_info();
+                writeln!(f, "  base_uri:    {}", repo_info.base_uri())?;
+                writeln!(f, "  rpki_notify: {}", repo_info.rpki_notify())?;
+            }
+        }
+
+        writeln!(f)?;
+
+        Ok(())
     }
 }
 
@@ -2059,6 +2199,30 @@ impl AllCertAuthIssues {
 
     pub fn cas(&self) -> &HashMap<Handle, CertAuthIssues> {
         &self.cas
+    }
+}
+
+impl fmt::Display for AllCertAuthIssues {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let cas = self.cas();
+        if cas.is_empty() {
+            writeln!(f, "no issues found")?;
+        } else {
+            for (ca, issues) in cas.iter() {
+                writeln!(f, "Found issue for CA '{}':", ca)?;
+
+                if let Some(repo_issue) = issues.repo_issue() {
+                    writeln!(f, "   Repository Issue: {}", repo_issue)?;
+                }
+                let parent_issues = issues.parent_issues();
+                if !parent_issues.is_empty() {
+                    for (parent, issue) in parent_issues.iter() {
+                        writeln!(f, "   Parent '{}' has issue: {}", parent, issue)?;
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 
@@ -2098,6 +2262,25 @@ impl CertAuthIssues {
 
     pub fn is_empty(&self) -> bool {
         self.repo.is_none() && self.parents.is_empty()
+    }
+}
+
+impl fmt::Display for CertAuthIssues {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if self.is_empty() {
+            writeln!(f, "no issues found")?;
+        } else {
+            if let Some(repo_issue) = self.repo_issue() {
+                writeln!(f, "Repository Issue: {}", repo_issue)?;
+            }
+            let parent_issues = self.parent_issues();
+            if !parent_issues.is_empty() {
+                for (parent, issue) in parent_issues.iter() {
+                    writeln!(f, "Parent '{}' has issue: {}", parent, issue)?;
+                }
+            }
+        }
+        Ok(())
     }
 }
 

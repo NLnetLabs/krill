@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use std::str::{from_utf8_unchecked, FromStr};
 
 use bytes::Bytes;
+use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::de;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -214,6 +215,22 @@ impl PublisherList {
     }
 }
 
+impl fmt::Display for PublisherList {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Publishers: ")?;
+        let mut first = true;
+        for p in self.publishers() {
+            if !first {
+                write!(f, ", ")?;
+            } else {
+                first = false;
+            }
+            write!(f, "{}", p.handle().as_str())?;
+        }
+        Ok(())
+    }
+}
+
 //------------ PublisherDetails ----------------------------------------------
 
 /// This type defines the publisher details for:
@@ -247,6 +264,16 @@ impl PublisherDetails {
     }
     pub fn current_files(&self) -> &Vec<PublishElement> {
         &self.current_files
+    }
+}
+
+impl fmt::Display for PublisherDetails {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "handle: {}", self.handle())?;
+        writeln!(f, "id: {}", self.id_cert().ski_hex())?;
+        writeln!(f, "base uri: {}", self.base_uri().to_string())?;
+
+        Ok(())
     }
 }
 
@@ -426,17 +453,12 @@ impl Eq for TaCertDetails {}
 
 /// This type contains the information needed to contact the parent ca
 /// for resource provisioning requests (RFC6492).
-#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
 pub enum ParentCaContact {
-    #[display(fmt = "This CA is a TA")]
     Ta(TaCertDetails),
-
-    #[display(fmt = "Embedded parent")]
     Embedded,
-
-    #[display(fmt = "RFC 6492 Parent")]
     Rfc6492(rfc8183::ParentResponse),
 }
 
@@ -456,6 +478,20 @@ impl ParentCaContact {
         match *self {
             ParentCaContact::Ta(_) => true,
             _ => false,
+        }
+    }
+}
+
+impl fmt::Display for ParentCaContact {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ParentCaContact::Ta(details) => write!(f, "{}", details.tal()),
+            ParentCaContact::Embedded => write!(f, "Embedded parent"),
+            ParentCaContact::Rfc6492(response) => {
+                let bytes = response.encode_vec();
+                let xml = unsafe { from_utf8_unchecked(&bytes) };
+                write!(f, "{}", xml)
+            }
         }
     }
 }
@@ -616,6 +652,14 @@ impl ServerInfo {
 
     pub fn started(&self) -> i64 {
         self.started
+    }
+}
+
+impl fmt::Display for ServerInfo {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let dt = DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(self.started(), 0), Utc);
+        let started = Time::new(dt);
+        write!(f, "Version: {}\nStarted: {}", self.version(), started.to_rfc3339())
     }
 }
 

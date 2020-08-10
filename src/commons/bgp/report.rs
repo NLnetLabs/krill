@@ -27,6 +27,38 @@ impl BgpAnalysisAdvice {
     }
 }
 
+impl fmt::Display for BgpAnalysisAdvice {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "Unsafe update, please review")?;
+        writeln!(f)?;
+        writeln!(f, "Effect would leave the following invalids:")?;
+
+        let invalid_asns = self.effect().matching_defs(BgpAnalysisState::AnnouncementInvalidAsn);
+        if !invalid_asns.is_empty() {
+            writeln!(f)?;
+            writeln!(f, "  Announcements from invalid ASNs:")?;
+            for invalid in invalid_asns {
+                writeln!(f, "    {}\n", invalid)?;
+            }
+        }
+
+        let invalid_length = self.effect().matching_defs(BgpAnalysisState::AnnouncementInvalidLength);
+        if !invalid_length.is_empty() {
+            writeln!(f)?;
+            writeln!(f, "  Announcements too specific for their ASNs:\n")?;
+            for invalid in invalid_length {
+                writeln!(f, "    {}", invalid)?;
+            }
+        }
+
+        writeln!(f)?;
+        writeln!(f, "You may want to consider this alternative:")?;
+        writeln!(f, "{}", self.suggestion())?;
+
+        Ok(())
+    }
+}
+
 //------------ BgpAnalysisSuggestion ---------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]

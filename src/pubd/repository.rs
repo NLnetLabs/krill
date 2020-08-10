@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::fs;
 use std::path::PathBuf;
 use std::str::{from_utf8_unchecked, FromStr};
@@ -702,6 +703,34 @@ impl RepoStats {
 
     pub fn session(&self) -> RrdpSession {
         self.session
+    }
+}
+
+impl fmt::Display for RepoStats {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some(update) = self.last_update() {
+            writeln!(f, "RRDP updated: {}", update.to_rfc3339())?;
+        }
+        writeln!(f, "RRDP session: {}", self.session())?;
+        writeln!(f, "RRDP serial:  {}", self.serial())?;
+        writeln!(f)?;
+        writeln!(f, "Publisher, Objects, Size, Last Updated")?;
+        for (publisher, stats) in self.get_publishers() {
+            let update_str = match stats.last_update() {
+                None => "never".to_string(),
+                Some(update) => update.to_rfc3339(),
+            };
+            writeln!(
+                f,
+                "{}, {}, {}, {}",
+                publisher,
+                stats.objects(),
+                stats.size(),
+                update_str
+            )?;
+        }
+
+        Ok(())
     }
 }
 

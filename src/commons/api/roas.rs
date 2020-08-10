@@ -261,6 +261,18 @@ impl AsRef<TypedPrefix> for RoaDefinition {
     }
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct RoaDefinitions(Vec<RoaDefinition>);
+
+impl fmt::Display for RoaDefinitions {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for def in self.0.iter() {
+            writeln!(f, "{}", def)?;
+        }
+        Ok(())
+    }
+}
+
 //------------ RouteAuthorizationUpdates -----------------------------------
 
 /// This type defines a delta of Route Authorizations, i.e. additions or removals

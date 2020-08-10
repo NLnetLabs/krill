@@ -9,7 +9,7 @@ use crate::cli::options::{BulkCaCommand, CaCommand, Command, KrillInitDetails, O
 use crate::cli::report::{ApiResponse, ReportError};
 use crate::commons::api::{
     AllCertAuthIssues, CaRepoDetails, CertAuthIssues, ChildCaInfo, CurrentRepoState, ParentCaContact, ParentStatuses,
-    PublisherDetails, PublisherList, Token,
+    PublisherDetails, PublisherList, RepoStatus, Token,
 };
 use crate::commons::bgp::BgpAnalysisAdvice;
 use crate::commons::remote::rfc8183;
@@ -134,6 +134,12 @@ impl KrillClient {
                 let uri = format!("api/v1/cas/{}/repo/state", handle);
                 let state: CurrentRepoState = self.get_json(&uri).await?;
                 Ok(ApiResponse::RepoState(state))
+            }
+
+            CaCommand::RepoStatus(ca) => {
+                let uri = format!("api/v1/cas/{}/repo/state", ca);
+                let status: RepoStatus = self.get_json(&uri).await?;
+                Ok(ApiResponse::RepoStatus(status))
             }
 
             CaCommand::RepoUpdate(handle, update) => {

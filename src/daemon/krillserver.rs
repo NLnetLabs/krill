@@ -14,8 +14,8 @@ use crate::commons::api::{
     AddChildRequest, AllCertAuthIssues, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthInit, CertAuthIssues,
     CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, CurrentRepoState,
     Handle, ListReply, ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublishDelta, PublisherDetails,
-    PublisherHandle, RepoInfo, RepositoryContact, RepositoryUpdate, ResourceSet, RoaDefinition, RoaDefinitionUpdates,
-    ServerInfo, TaCertDetails, UpdateChildRequest,
+    PublisherHandle, RepoInfo, RepoStatus, RepositoryContact, RepositoryUpdate, ResourceSet, RoaDefinition,
+    RoaDefinitionUpdates, ServerInfo, TaCertDetails, UpdateChildRequest,
 };
 use crate::commons::bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::error::Error;
@@ -543,6 +543,10 @@ impl KrillServer {
         let ca = self.caserver.get_ca(handle)?;
         let contact = ca.get_repository_contact()?;
         Ok(self.repo_state(handle, contact.as_reponse_opt()).await)
+    }
+
+    pub fn ca_repo_status(&self, ca: &Handle) -> KrillResult<RepoStatus> {
+        self.caserver.ca_repo_status(ca)
     }
 
     /// Update the repository for a CA, or return an error. (see `CertAuth::repo_update`)

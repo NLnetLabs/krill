@@ -14,7 +14,7 @@ use crate::commons::api::{
     self, AddChildRequest, Base64, CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary, ChildAuthRequest,
     ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, ErrorResponse, Handle,
     IssuanceRequest, IssuanceResponse, IssuedCert, ListReply, ParentCaContact, ParentCaReq, ParentHandle,
-    ParentStatuses, PublishDelta, RcvdCert, RemoteStatuses, RepoInfo, RepositoryContact, ResourceClassName,
+    ParentStatuses, PublishDelta, RcvdCert, RemoteStatuses, RepoInfo, RepoStatus, RepositoryContact, ResourceClassName,
     ResourceSet, RevocationRequest, RevocationResponse, StoredEffect, UpdateChildRequest,
 };
 use crate::commons::error::Error;
@@ -141,6 +141,15 @@ impl<S: Signer> CaServer<S> {
             self.send_command(cmd)
         } else {
             Ok(())
+        }
+    }
+
+    /// Returns the RepoStatus for a CA
+    pub fn ca_repo_status(&self, ca: &Handle) -> KrillResult<RepoStatus> {
+        if self.ca_store.has(ca) {
+            Ok(self.remote_statuses.read().unwrap().get_repo_status(ca))
+        } else {
+            Err(Error::CaUnknown(ca.clone()))
         }
     }
 

@@ -2,11 +2,11 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::str::FromStr;
 
+use chrono::{DateTime, NaiveDateTime};
+use chrono::{SecondsFormat, Utc};
+
 use rpki::crypto::KeyIdentifier;
 use rpki::x509::Time;
-
-use chrono::Utc;
-use chrono::{DateTime, NaiveDateTime};
 
 use crate::commons::api::{
     ArgKey, ArgVal, ChildHandle, Handle, Label, Message, ParentHandle, PublisherHandle, RequestResourceLimit,
@@ -35,6 +35,30 @@ impl CaCommandDetails {
 
     pub fn effect(&self) -> &CaCommandResult {
         &self.result
+    }
+}
+
+impl fmt::Display for CaCommandDetails {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let command = self.command();
+        writeln!(
+            f,
+            "Time:   {}",
+            command.time().to_rfc3339_opts(SecondsFormat::Secs, true)
+        )?;
+        writeln!(f, "Action: {}", command.details().summary().msg)?;
+
+        match self.effect() {
+            CaCommandResult::Error(msg) => writeln!(f, "Error:  {}", msg)?,
+            CaCommandResult::Events(evts) => {
+                writeln!(f, "Changes:")?;
+                for evt in evts {
+                    writeln!(f, "  {}", evt.details().to_string())?;
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -81,6 +105,29 @@ impl CommandHistory {
 
     pub fn commands(&self) -> &Vec<CommandHistoryRecord> {
         &self.commands
+    }
+}
+
+impl fmt::Display for CommandHistory {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "time::command::key::success")?;
+
+        for command in self.commands() {
+            let success_string = match &command.effect {
+                StoredEffect::Error(msg) => format!("ERROR -> {}", msg),
+                StoredEffect::Events(_) => "OK".to_string(),
+            };
+            writeln!(
+                f,
+                "{}::{} ::{}::{}",
+                command.time().to_rfc3339_opts(SecondsFormat::Secs, true),
+                command.summary.msg,
+                command.key,
+                success_string
+            )?;
+        }
+
+        Ok(())
     }
 }
 

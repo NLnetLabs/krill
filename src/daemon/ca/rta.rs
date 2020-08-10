@@ -130,3 +130,9 @@ impl ResourceTaggedAttestation {
         }
     }
 }
+
+impl fmt::Display for ResourceTaggedAttestation {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", Base64::from_content(self.as_ref()))
+    }
+}
