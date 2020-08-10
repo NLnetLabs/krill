@@ -30,7 +30,7 @@ where
 
     /// Sends a command to the appropriate aggregate, and on
     /// success: save command and events, return aggregate
-    /// no-op: do not save any thing, return aggregate
+    /// no-op: do not save anything, return aggregate
     /// error: save command and error, return error
     fn command(&self, cmd: A::Command) -> Result<Arc<A>, A::Error>;
 
@@ -76,7 +76,7 @@ pub enum AggregateStoreError {
     #[display(fmt = "event not applicable to entity, id or version is off")]
     WrongEventForAggregate,
 
-    #[display(fmt = "concurrent modifcation attempt for entity: '{}'", _0)]
+    #[display(fmt = "concurrent modification attempt for entity: '{}'", _0)]
     ConcurrentModification(Handle),
 
     #[display(fmt = "Aggregate '{}' does not have command with sequence '{}'", _0, _1)]
