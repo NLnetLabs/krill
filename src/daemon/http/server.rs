@@ -415,7 +415,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
 
 //------------ Publication ---------------------------------------------------
 
-/// Handle RFC8181 queroes and return the appropriate response.
+/// Handle RFC8181 queries and return the appropriate response.
 pub async fn rfc8181(req: Request) -> RoutingResult {
     if req.path().segment() == "rfc8181" {
         let mut path = req.path().clone();
@@ -1141,7 +1141,7 @@ async fn ca_routes_try_update(req: Request, ca: Handle) -> RoutingResult {
                         let resources = updates.affected_prefixes();
 
                         match server.ca_routes_bgp_suggest(&ca, Some(resources)) {
-                            Err(e) => render_error(e), // should not fail after dryrun, but hey..
+                            Err(e) => render_error(e), // should not fail after dry run, but hey..
                             Ok(suggestion) => render_json(BgpAnalysisAdvice::new(effect, suggestion)),
                         }
                     }
@@ -1238,7 +1238,7 @@ async fn rrdp(req: Request) -> RoutingResult {
     }
 }
 
-//------------ Support Resource Tagged Attestions (RTA) ----------------------
+//------------ Support Resource Tagged Attestations (RTA) ----------------------
 
 async fn api_ca_rta(req: Request, path: &mut RequestPath, ca: Handle) -> RoutingResult {
     match path.next() {
