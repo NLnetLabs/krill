@@ -503,8 +503,8 @@ impl KrillServer {
         ca.parent(parent).map(|p| p.clone())
     }
 
-    pub fn ca_my_parent_statuses(&self, ca: Handle) -> KrillResult<ParentStatuses> {
-        self.caserver.ca_parent_statuses(ca)
+    pub async fn ca_my_parent_statuses(&self, ca: Handle) -> KrillResult<ParentStatuses> {
+        self.caserver.ca_parent_statuses(ca).await
     }
 
     /// Returns the history for a CA, or NONE in case of issues (i.e. it does not exist).
@@ -545,8 +545,8 @@ impl KrillServer {
         Ok(self.repo_state(handle, contact.as_reponse_opt()).await)
     }
 
-    pub fn ca_repo_status(&self, ca: &Handle) -> KrillResult<RepoStatus> {
-        self.caserver.ca_repo_status(ca)
+    pub async fn ca_repo_status(&self, ca: &Handle) -> KrillResult<RepoStatus> {
+        self.caserver.ca_repo_status(ca).await
     }
 
     /// Update the repository for a CA, or return an error. (see `CertAuth::repo_update`)

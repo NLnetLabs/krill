@@ -1466,7 +1466,7 @@ impl Options {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
-        let command = Command::CertAuth(CaCommand::RepoState(my_ca));
+        let command = Command::CertAuth(CaCommand::RepoStatus(my_ca));
 
         Ok(Options::make(general_args, command))
     }

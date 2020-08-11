@@ -1706,15 +1706,25 @@ impl Default for ParentStatus {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RepoStatus {
     last_exchange: Option<ParentExchange>,
-    published_objects: Vec<PublishElement>,
+    published: Vec<PublishElement>,
 }
 
 impl Default for RepoStatus {
     fn default() -> Self {
         RepoStatus {
             last_exchange: None,
-            published_objects: vec![],
+            published: vec![],
         }
+    }
+}
+
+impl RepoStatus {
+    pub fn last_exchange(&self) -> Option<&ParentExchange> {
+        self.last_exchange.as_ref()
+    }
+
+    pub fn published(&self) -> &Vec<PublishElement> {
+        &self.published
     }
 }
 
@@ -1726,12 +1736,12 @@ impl RepoStatus {
         })
     }
 
-    fn set_success(&mut self, objects: Vec<PublishElement>) {
+    fn set_success(&mut self, published: Vec<PublishElement>) {
         self.last_exchange = Some(ParentExchange {
             time: Time::now(),
             result: ParentExchangeResult::Success,
         });
-        self.published_objects = objects;
+        self.published = published;
     }
 }
 
@@ -1743,7 +1753,7 @@ impl fmt::Display for RepoStatus {
                 writeln!(f, "Status: {}", exchange.result)?;
                 writeln!(f, "Last contacted: {}", exchange.time.to_rfc3339())?;
                 writeln!(f, "Published Objects:")?;
-                for object in &self.published_objects {
+                for object in &self.published {
                     writeln!(f, "  {} {}", object.base64().to_encoded_hash(), object.uri())?;
                 }
             }
@@ -1761,6 +1771,10 @@ pub struct ParentExchange {
 impl ParentExchange {
     pub fn time(&self) -> Time {
         self.time
+    }
+
+    pub fn result(&self) -> &ParentExchangeResult {
+        &self.result
     }
 
     pub fn was_success(&self) -> bool {

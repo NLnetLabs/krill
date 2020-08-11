@@ -137,7 +137,7 @@ impl KrillClient {
             }
 
             CaCommand::RepoStatus(ca) => {
-                let uri = format!("api/v1/cas/{}/repo/state", ca);
+                let uri = format!("api/v1/cas/{}/repo/status", ca);
                 let status: RepoStatus = self.get_json(&uri).await?;
                 Ok(ApiResponse::RepoStatus(status))
             }

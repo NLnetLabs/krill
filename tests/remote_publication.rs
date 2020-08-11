@@ -11,8 +11,8 @@ use tokio::time::delay_for;
 use krill::cli::options::{CaCommand, Command, PublishersCommand};
 use krill::cli::report::ApiResponse;
 use krill::commons::api::{
-    CaRepoDetails, CurrentRepoState, Handle, ParentCaReq, PublisherDetails, PublisherHandle, RepositoryUpdate,
-    ResourceSet, RoaDefinition, RoaDefinitionUpdates,
+    CaRepoDetails, CurrentRepoState, Handle, ParentCaReq, PublisherDetails, PublisherHandle, RepoStatus,
+    RepositoryUpdate, ResourceSet, RoaDefinition, RoaDefinitionUpdates,
 };
 use krill::commons::remote::rfc8183;
 use krill::daemon::ca::ta_handle;
@@ -54,6 +54,14 @@ async fn repo_state(ca: &Handle) -> CurrentRepoState {
     let command = Command::CertAuth(CaCommand::RepoState(ca.clone()));
     match krill_admin(command).await {
         ApiResponse::RepoState(state) => state,
+        _ => panic!("Expected repo state"),
+    }
+}
+
+async fn repo_status(ca: &Handle) -> RepoStatus {
+    let command = Command::CertAuth(CaCommand::RepoStatus(ca.clone()));
+    match krill_admin(command).await {
+        ApiResponse::RepoStatus(state) => state,
         _ => panic!("Expected repo state"),
     }
 }
