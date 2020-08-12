@@ -55,7 +55,7 @@ pub struct Message {
 /// # Data Access
 ///
 impl Message {
-    pub fn unwrap(self) -> (Sender, Recipient, Content) {
+    pub fn unpack(self) -> (Sender, Recipient, Content) {
         (self.sender, self.recipient, self.content)
     }
 

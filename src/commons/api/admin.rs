@@ -11,7 +11,6 @@ use serde::de;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::cert::Cert;
-use rpki::crypto::Signer;
 use rpki::uri;
 use rpki::x509::Time;
 
@@ -53,11 +52,14 @@ impl TryFrom<&PathBuf> for Handle {
     type Error = InvalidHandle;
 
     fn try_from(path: &PathBuf) -> Result<Self, Self::Error> {
-        let path = path.file_name().unwrap();
-        let s = path.to_string_lossy().to_string();
-        let s = s.replace("+", "/");
-        let s = s.replace("=", "\\");
-        Self::from_str(&s)
+        if let Some(path) = path.file_name() {
+            let s = path.to_string_lossy().to_string();
+            let s = s.replace("+", "/");
+            let s = s.replace("=", "\\");
+            Self::from_str(&s)
+        } else {
+            Err(InvalidHandle)
+        }
     }
 }
 
@@ -128,15 +130,6 @@ pub struct InvalidHandle;
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct Token(String);
-
-impl Token {
-    pub fn random<S: Signer>(signer: &S) -> Self {
-        let mut res = <[u8; 20]>::default();
-        signer.rand(&mut res).unwrap();
-        let string = hex::encode(res);
-        Token(string)
-    }
-}
 
 impl From<&str> for Token {
     fn from(s: &str) -> Self {

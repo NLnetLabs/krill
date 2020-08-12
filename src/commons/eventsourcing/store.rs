@@ -375,10 +375,12 @@ impl KeyStore for DiskKeyStore {
 
         if let Ok(dir) = fs::read_dir(&self.dir) {
             for d in dir {
-                let path = d.unwrap().path();
-                if path.is_dir() {
-                    if let Ok(id) = Handle::try_from(&path) {
-                        res.push(id);
+                if let Ok(d) = d {
+                    let path = d.path();
+                    if path.is_dir() {
+                        if let Ok(id) = Handle::try_from(&path) {
+                            res.push(id);
+                        }
                     }
                 }
             }

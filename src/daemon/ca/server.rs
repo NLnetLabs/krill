@@ -329,7 +329,7 @@ impl<S: Signer> CaServer<S> {
 
         let content = ca.verify_rfc6492(msg)?;
 
-        let (child, recipient, content) = content.unwrap();
+        let (child, recipient, content) = content.unpack();
 
         let cms_logger = CmsLogger::for_rfc6492_rcvd(self.rfc6492_log_dir.as_ref(), &recipient, &child);
 
