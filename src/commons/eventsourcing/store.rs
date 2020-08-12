@@ -402,10 +402,7 @@ impl KeyStore for DiskKeyStore {
             let f = File::open(path)?;
             match serde_json::from_reader(f) {
                 Err(e) => {
-                    warn!(
-                        "Could not deserialize snapshot json '{}', got error: '{}'. Will fall back to events.",
-                        path_str, e
-                    );
+                    warn!("Ignoring file '{}', could not deserialize json: '{}'.", path_str, e);
                     Ok(None)
                 }
                 Ok(v) => {

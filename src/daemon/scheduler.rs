@@ -13,6 +13,7 @@ use crate::commons::api::Handle;
 use crate::commons::bgp::BgpAnalyser;
 use crate::commons::util::softsigner::OpenSslSigner;
 use crate::daemon::ca::CaServer;
+use crate::daemon::config::CONFIG;
 use crate::daemon::mq::{EventQueueListener, QueueEvent};
 use crate::pubd::PubServer;
 use crate::publish::CaPublisher;
@@ -76,7 +77,7 @@ fn make_event_sh(
                     )
                 }
                 QueueEvent::ReschedulePublish(handle, last_try) => {
-                    if Time::five_minutes_ago().timestamp() > last_try.timestamp() {
+                    if CONFIG.test_mode || Time::five_minutes_ago().timestamp() > last_try.timestamp() {
                         rt.block_on(
                             try_publish(&event_queue, caserver.clone(), pubserver.clone(), handle)
                         )

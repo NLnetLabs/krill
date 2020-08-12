@@ -81,8 +81,11 @@ async fn publisher_request(ca: &Handle) -> rfc8183::PublisherRequest {
 
 async fn will_publish(ca: &Handle, number: usize) -> bool {
     for _ in 0..300 {
-        let repo_state = repo_state(ca).await;
-        if repo_state.as_list().elements().len() == number {
+        // let repo_state = repo_state(ca).await;
+        // if repo_state.as_list().elements().len() == number {
+        let repo_state = repo_status(ca).await;
+        if repo_state.published().len() == number {
+            eprintln!("==========================FOUND all published items");
             return true;
         }
         delay_for(Duration::from_millis(100)).await
@@ -104,15 +107,7 @@ async fn remote_publication() {
     // Set up child as a child of the TA
     init_child(&child).await;
 
-    let child_resources = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
-
-    let parent = {
-        let parent_contact = add_child_to_ta_embedded(&child, child_resources.clone()).await;
-        ParentCaReq::new(ta_handle, parent_contact)
-    };
-    add_parent_to_ca(&child, parent).await;
-
-    // Let child use the remote protocol instead
+    // Let child use the remote protocol
     let publisher_request = publisher_request(&child).await;
     add_publisher(publisher_request).await;
 
@@ -123,6 +118,15 @@ async fn remote_publication() {
     let update = RepositoryUpdate::Rfc8181(response);
     repo_update(&child, update).await;
 
+    // Give some resources to the child.
+    let child_resources = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
+
+    let parent = {
+        let parent_contact = add_child_to_ta_embedded(&child, child_resources.clone()).await;
+        ParentCaReq::new(ta_handle, parent_contact)
+    };
+    add_parent_to_ca(&child, parent).await;
+
     assert!(ca_gets_resources(&child, &child_resources).await);
 
     // Add some roas to have more to migrate when moving publication servers
@@ -132,6 +136,8 @@ async fn remote_publication() {
     updates.add(route_1);
     updates.add(route_2);
     ca_route_authorizations_update(&child, updates).await;
+
+    delay_for(Duration::from_millis(1000)).await;
 
     // Child should now publish using the remote repo
     let child_repo_details = repo_details(&child).await;

@@ -26,6 +26,8 @@ pub const REPOSITORY_RRDP_DIR: &str = "rrdp";
 pub const REPOSITORY_RSYNC_DIR: &str = "rsync";
 pub const REPOSITORY_RRDP_SNAPSHOT_RETAIN_MINS: u64 = 10;
 
+pub const STATUS_DIR: &str = "status";
+
 pub const KRILL_CLI_SERVER_ARG: &str = "server";
 pub const KRILL_CLI_SERVER_ENV: &str = "KRILL_CLI_SERVER";
 pub const KRILL_CLI_SERVER_DFLT: &str = "https://localhost:3000/";

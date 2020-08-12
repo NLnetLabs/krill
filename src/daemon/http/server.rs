@@ -136,6 +136,7 @@ fn render_empty_res(res: Result<(), Error>) -> RoutingResult {
 }
 
 fn render_error(e: Error) -> RoutingResult {
+    error!("Respond with error: {}", e);
     Ok(HttpResponse::error(e))
 }
 

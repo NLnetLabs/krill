@@ -37,6 +37,9 @@ pub use self::signing::*;
 mod rta;
 pub use self::rta::*;
 
+mod status;
+pub use self::status::*;
+
 pub const TA_NAME: &str = "ta"; // reserved for TA
 
 pub fn ta_handle() -> Handle {

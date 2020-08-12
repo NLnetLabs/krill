@@ -1527,70 +1527,7 @@ impl fmt::Display for ParentInfo {
     }
 }
 
-//------------ RemoteStatuses ------------------------------------------------
-
-pub struct RemoteStatuses {
-    ca_parents: HashMap<Handle, ParentStatuses>,
-    ca_repos: HashMap<Handle, RepoStatus>,
-}
-
-impl RemoteStatuses {
-    pub fn set_parent_failure(&mut self, ca: &Handle, parent: &ParentHandle, error: ErrorResponse) {
-        let status = self.get_mut_parent_status(ca);
-        status.set_failure(parent, error);
-    }
-
-    pub fn set_parent_last_updated(&mut self, ca: &Handle, parent: &ParentHandle) {
-        self.get_mut_parent_status(ca).set_last_updated(parent);
-    }
-
-    pub fn set_parent_entitlements(&mut self, ca: &Handle, parent: &ParentHandle, entitlements: &Entitlements) {
-        self.get_mut_parent_status(ca).set_entitlements(parent, entitlements)
-    }
-
-    pub fn get_parent_statuses(&self, ca: &Handle) -> ParentStatuses {
-        self.ca_parents.get(ca).cloned().unwrap_or_default()
-    }
-
-    pub fn get_repo_status(&self, ca: &Handle) -> RepoStatus {
-        self.ca_repos.get(ca).cloned().unwrap_or_default()
-    }
-
-    fn get_mut_parent_status(&mut self, ca: &Handle) -> &mut ParentStatuses {
-        if !self.ca_parents.contains_key(ca) {
-            self.ca_parents.insert(ca.clone(), ParentStatuses::default());
-        }
-
-        self.ca_parents.get_mut(ca).unwrap()
-    }
-
-    pub fn set_status_repo_failure(&mut self, ca: &Handle, error: ErrorResponse) {
-        let status = self.get_mut_repo_status(ca);
-        status.set_failure(error);
-    }
-
-    pub fn set_status_repo_success(&mut self, ca: &Handle, objects: Vec<PublishElement>) {
-        let status = self.get_mut_repo_status(ca);
-        status.set_success(objects);
-    }
-
-    fn get_mut_repo_status(&mut self, ca: &Handle) -> &mut RepoStatus {
-        if !self.ca_repos.contains_key(ca) {
-            self.ca_repos.insert(ca.clone(), RepoStatus::default());
-        }
-
-        self.ca_repos.get_mut(ca).unwrap()
-    }
-}
-
-impl Default for RemoteStatuses {
-    fn default() -> Self {
-        RemoteStatuses {
-            ca_parents: HashMap::new(),
-            ca_repos: HashMap::new(),
-        }
-    }
-}
+//------------ ParentStatuses ------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentStatuses(HashMap<ParentHandle, ParentStatus>);
@@ -1608,15 +1545,15 @@ impl ParentStatuses {
         self.0.get(parent)
     }
 
-    fn set_failure(&mut self, parent: &ParentHandle, error: ErrorResponse) {
+    pub fn set_failure(&mut self, parent: &ParentHandle, error: ErrorResponse) {
         self.get_mut_status(parent).set_failure(error);
     }
 
-    fn set_entitlements(&mut self, parent: &ParentHandle, entitlements: &Entitlements) {
+    pub fn set_entitlements(&mut self, parent: &ParentHandle, entitlements: &Entitlements) {
         self.get_mut_status(parent).set_entitlements(entitlements);
     }
 
-    fn set_last_updated(&mut self, parent: &ParentHandle) {
+    pub fn set_last_updated(&mut self, parent: &ParentHandle) {
         self.get_mut_status(parent).set_last_updated();
     }
 
@@ -1729,14 +1666,14 @@ impl RepoStatus {
 }
 
 impl RepoStatus {
-    fn set_failure(&mut self, error: ErrorResponse) {
+    pub fn set_failure(&mut self, error: ErrorResponse) {
         self.last_exchange = Some(ParentExchange {
             time: Time::now(),
             result: ParentExchangeResult::Failure(error),
         })
     }
 
-    fn set_success(&mut self, published: Vec<PublishElement>) {
+    pub fn set_success(&mut self, published: Vec<PublishElement>) {
         self.last_exchange = Some(ParentExchange {
             time: Time::now(),
             result: ParentExchangeResult::Success,

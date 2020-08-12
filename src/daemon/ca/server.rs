@@ -9,13 +9,12 @@ use chrono::Duration;
 use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 
-use crate::commons::api::rrdp::PublishElement;
 use crate::commons::api::{
     self, AddChildRequest, Base64, CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary, ChildAuthRequest,
-    ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, ErrorResponse, Handle,
-    IssuanceRequest, IssuanceResponse, IssuedCert, ListReply, ParentCaContact, ParentCaReq, ParentHandle,
-    ParentStatuses, PublishDelta, RcvdCert, RemoteStatuses, RepoInfo, RepoStatus, RepositoryContact, ResourceClassName,
-    ResourceSet, RevocationRequest, RevocationResponse, StoredEffect, UpdateChildRequest,
+    ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, Handle, IssuanceRequest,
+    IssuanceResponse, IssuedCert, ListReply, ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublishDelta,
+    RcvdCert, RepoInfo, RepoStatus, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest,
+    RevocationResponse, StoredEffect, UpdateChildRequest,
 };
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::{Aggregate, AggregateStore, CommandKey, DiskAggregateStore};
@@ -24,10 +23,10 @@ use crate::commons::remote::crypto::{IdCert, ProtocolCms, ProtocolCmsBuilder};
 use crate::commons::remote::{rfc6492, rfc8181, rfc8183};
 use crate::commons::util::httpclient;
 use crate::commons::KrillResult;
-use crate::constants::CASERVER_DIR;
+use crate::constants::{CASERVER_DIR, STATUS_DIR};
 use crate::daemon::ca::{
     self, ta_handle, CertAuth, Cmd, CmdDet, IniDet, ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaRequest,
-    Signer,
+    Signer, StatusStore,
 };
 use crate::daemon::mq::EventQueueListener;
 
@@ -37,7 +36,7 @@ use crate::daemon::mq::EventQueueListener;
 pub struct CaServer<S: Signer> {
     signer: Arc<RwLock<S>>,
     ca_store: Arc<DiskAggregateStore<CertAuth<S>>>,
-    remote_statuses: Arc<tokio::sync::RwLock<RemoteStatuses>>,
+    status_store: Arc<StatusStore>,
     rfc8181_log_dir: Option<PathBuf>,
     rfc6492_log_dir: Option<PathBuf>,
 }
@@ -55,10 +54,12 @@ impl<S: Signer> CaServer<S> {
         let mut ca_store = DiskAggregateStore::<CertAuth<S>>::new(work_dir, CASERVER_DIR)?;
         ca_store.add_listener(events_queue);
 
+        let status_store = StatusStore::new(work_dir, STATUS_DIR);
+
         Ok(CaServer {
             signer,
             ca_store: Arc::new(ca_store),
-            remote_statuses: Arc::new(tokio::sync::RwLock::new(RemoteStatuses::default())),
+            status_store: Arc::new(status_store),
             rfc6492_log_dir: rfc6492_log_dir.cloned(),
             rfc8181_log_dir: rfc8181_log_dir.cloned(),
         })
@@ -147,7 +148,7 @@ impl<S: Signer> CaServer<S> {
     /// Returns the RepoStatus for a CA
     pub async fn ca_repo_status(&self, ca: &Handle) -> KrillResult<RepoStatus> {
         if self.ca_store.has(ca) {
-            Ok(self.remote_statuses.read().await.get_repo_status(ca))
+            self.status_store.get_repo_status(ca)
         } else {
             Err(Error::CaUnknown(ca.clone()))
         }
@@ -462,7 +463,7 @@ impl<S: Signer> CaServer<S> {
     /// Returns the parent statuses for this CA
     pub async fn ca_parent_statuses(&self, ca: Handle) -> KrillResult<ParentStatuses> {
         if self.ca_store.has(&ca) {
-            Ok(self.get_parent_statuses(&ca).await)
+            self.status_store.get_parent_statuses(&ca)
         } else {
             Err(Error::CaUnknown(ca))
         }
@@ -533,12 +534,13 @@ impl<S: Signer> CaServer<S> {
             } else {
                 match self.get_entitlements_from_parent(handle, parent).await {
                     Err(e) => {
-                        self.set_parent_status_failure(handle, parent, e.to_error_response())
-                            .await;
+                        self.status_store
+                            .set_parent_failure(handle, parent, e.to_error_response())?;
                         Err(e)
                     }
                     Ok(entitlements) => {
-                        self.set_parent_status_entitlements(handle, parent, &entitlements).await;
+                        self.status_store
+                            .set_parent_entitlements(handle, parent, &entitlements)?;
                         if !self.update_resource_classes(handle, parent.clone(), entitlements)? {
                             return Ok(()); // Nothing to do
                         }
@@ -602,12 +604,12 @@ impl<S: Signer> CaServer<S> {
                     .await
                 {
                     Err(e) => {
-                        self.set_parent_status_failure(handle, parent, e.to_error_response())
-                            .await;
+                        self.status_store
+                            .set_parent_failure(handle, parent, e.to_error_response())?;
                         Err(e)
                     }
                     Ok(res) => {
-                        self.set_parent_status_updated(handle, parent).await;
+                        self.status_store.set_parent_last_updated(handle, parent)?;
                         Ok(res)
                     }
                 }
@@ -700,12 +702,12 @@ impl<S: Signer> CaServer<S> {
                     .await
                 {
                     Err(e) => {
-                        self.set_parent_status_failure(handle, parent, e.to_error_response())
-                            .await;
+                        self.status_store
+                            .set_parent_failure(handle, parent, e.to_error_response())?;
                         Err(e)
                     }
                     Ok(res) => {
-                        self.set_parent_status_updated(handle, parent).await;
+                        self.status_store.set_parent_last_updated(handle, parent)?;
                         Ok(res)
                     }
                 }
@@ -892,33 +894,6 @@ impl<S: Signer> CaServer<S> {
             .into_reply()
             .map_err(Error::custom)
     }
-
-    async fn set_parent_status_failure(&self, ca: &Handle, parent: &ParentHandle, error: ErrorResponse) {
-        self.remote_statuses.write().await.set_parent_failure(ca, parent, error);
-    }
-
-    async fn set_parent_status_entitlements(&self, ca: &Handle, parent: &ParentHandle, entitlements: &Entitlements) {
-        self.remote_statuses
-            .write()
-            .await
-            .set_parent_entitlements(ca, parent, entitlements);
-    }
-
-    async fn set_parent_status_updated(&self, ca: &Handle, parent: &ParentHandle) {
-        self.remote_statuses.write().await.set_parent_last_updated(ca, parent);
-    }
-
-    async fn get_parent_statuses(&self, ca: &Handle) -> ParentStatuses {
-        self.remote_statuses.read().await.get_parent_statuses(ca)
-    }
-
-    async fn set_status_repo_failure(&self, ca: &Handle, error: ErrorResponse) {
-        self.remote_statuses.write().await.set_status_repo_failure(ca, error);
-    }
-
-    async fn set_status_repo_success(&self, ca: &Handle, objects: Vec<PublishElement>) {
-        self.remote_statuses.write().await.set_status_repo_success(ca, objects);
-    }
 }
 
 /// # Support sending publication messages, and verifying responses.
@@ -1004,7 +979,8 @@ impl<S: Signer> CaServer<S> {
         {
             Err(e) => {
                 if !cleanup {
-                    self.set_status_repo_failure(ca_handle, e.to_error_response()).await;
+                    self.status_store
+                        .set_status_repo_failure(ca_handle, e.to_error_response())?;
                 }
                 return Err(e);
             }
@@ -1016,14 +992,16 @@ impl<S: Signer> CaServer<S> {
             rfc8181::ReplyMessage::SuccessReply => {
                 let err = Error::custom("Got success reply to list query?!");
                 if !cleanup {
-                    self.set_status_repo_failure(ca_handle, err.to_error_response()).await;
+                    self.status_store
+                        .set_status_repo_failure(ca_handle, err.to_error_response())?;
                 }
                 Err(err)
             }
             rfc8181::ReplyMessage::ErrorReply(e) => {
                 let err = Error::Custom(format!("Got error reply: {}", e));
                 if !cleanup {
-                    self.set_status_repo_failure(ca_handle, err.to_error_response()).await;
+                    self.status_store
+                        .set_status_repo_failure(ca_handle, err.to_error_response())?;
                 }
                 Err(err)
             }
@@ -1046,7 +1024,8 @@ impl<S: Signer> CaServer<S> {
             Ok(reply) => reply,
             Err(e) => {
                 if !cleanup {
-                    self.set_status_repo_failure(ca_handle, e.to_error_response()).await;
+                    self.status_store
+                        .set_status_repo_failure(ca_handle, e.to_error_response())?;
                 }
                 return Err(e);
             }
@@ -1056,21 +1035,23 @@ impl<S: Signer> CaServer<S> {
             rfc8181::ReplyMessage::SuccessReply => {
                 if !cleanup {
                     let ca = self.get_ca(ca_handle)?;
-                    self.set_status_repo_success(ca_handle, ca.all_objects()).await;
+                    self.status_store.set_status_repo_success(ca_handle, ca.all_objects())?;
                 }
                 Ok(())
             }
             rfc8181::ReplyMessage::ErrorReply(e) => {
                 let err = Error::Custom(format!("Got error reply: {}", e));
                 if !cleanup {
-                    self.set_status_repo_failure(ca_handle, err.to_error_response()).await;
+                    self.status_store
+                        .set_status_repo_failure(ca_handle, err.to_error_response())?;
                 }
                 Err(err)
             }
             rfc8181::ReplyMessage::ListReply(_) => {
                 let err = Error::custom("Got list reply to delta query?!");
                 if !cleanup {
-                    self.set_status_repo_failure(ca_handle, err.to_error_response()).await;
+                    self.status_store
+                        .set_status_repo_failure(ca_handle, err.to_error_response())?;
                 }
                 Err(err)
             }
