@@ -53,6 +53,9 @@ impl ConfigDefaults {
     fn use_ta() -> bool {
         env::var(KRILL_ENV_USE_TA).is_ok()
     }
+    fn testbed_enabled() -> bool {
+        env::var(KRILL_ENV_TESTBED_ENABLED).is_ok()
+    }
     fn https_mode() -> HttpsMode {
         HttpsMode::Generate
     }
@@ -178,6 +181,9 @@ pub struct Config {
 
     #[serde(default = "ConfigDefaults::repo_enabled")]
     pub repo_enabled: bool,
+
+    #[serde(default = "ConfigDefaults::testbed_enabled")]
+    pub testbed_enabled: bool,
 
     #[serde(default = "ConfigDefaults::https_mode")]
     https_mode: HttpsMode,
@@ -323,6 +329,7 @@ impl Config {
         let test_mode = true;
         let use_ta = true;
         let repo_enabled = true;
+        let testbed_enabled = false;
         let https_mode = HttpsMode::Generate;
         let data_dir = data_dir.clone();
         let rsync_base = ConfigDefaults::rsync_base();
@@ -372,6 +379,7 @@ impl Config {
             test_mode,
             use_ta,
             repo_enabled,
+            testbed_enabled,
             https_mode,
             data_dir,
             rsync_base,
@@ -532,6 +540,10 @@ impl Config {
 
         if self.use_ta && !self.repo_enabled {
             return Err(ConfigError::other("Cannot use embedded TA without embedded repository"));
+        }
+
+        if self.testbed_enabled && !self.use_ta {
+            return Err(ConfigError::other("Cannot use testedbed without embedded TA"));
         }
 
         Ok(())

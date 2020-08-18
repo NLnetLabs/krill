@@ -509,13 +509,38 @@ async fn stats(req: Request) -> RoutingResult {
     }
 }
 
+/// Don't require certain requests to be authorized when running as a testbed
+/// so that clients can add and remove themselves without needing to know the
+/// server API token and without having access to other parts of the server API.
+fn is_auth_required(req: &Request) -> bool {
+    match CONFIG.testbed_enabled {
+        false => true,
+        true  => {
+            let path = req.path().full();
+            match *req.method() {
+                Method::GET|Method::POST if path.starts_with("/api/v1/publishers") => false,
+                Method::DELETE if path.starts_with("/api/v1/publishers") => {
+                    match path {
+                        "/api/v1/publishers/ta" => true,
+                        "/api/v1/publishers/testbed" => true,
+                        _ => false
+                    }
+                },
+                Method::POST if path == "/api/v1/cas/testbed/children" => false,
+                Method::GET|Method::DELETE if path.starts_with("/api/v1/cas/testbed/children") => false,
+                _ => true
+            }
+        }
+    }
+}
+
 /// Maps the API methods
 async fn api(req: Request) -> RoutingResult {
     if !req.path().full().starts_with("/api/v1") {
         Err(req) // Not for us
     } else {
         // Make sure access is allowed
-        if !req.is_authorized().await {
+        if is_auth_required(&req) && !req.is_authorized().await {
             return Ok(HttpResponse::forbidden());
         }
 
