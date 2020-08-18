@@ -32,7 +32,7 @@ impl CaPublisher {
     }
 
     pub async fn publish(&self, ca_handle: &Handle) -> Result<(), Error> {
-        let ca = self.caserver.get_ca(ca_handle)?;
+        let ca = self.caserver.get_ca(ca_handle).await?;
 
         // Since this is called by the scheduler, this should act as a no-op for
         // new CAs which do not yet have any repository configured.
@@ -80,7 +80,7 @@ impl CaPublisher {
     }
 
     pub async fn clean_up(&self, ca_handle: &Handle) -> Result<(), Error> {
-        let ca = self.caserver.get_ca(ca_handle)?;
+        let ca = self.caserver.get_ca(ca_handle).await?;
 
         let repo = match ca.old_repository_contact() {
             None => return Ok(()),

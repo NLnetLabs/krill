@@ -162,7 +162,7 @@ fn make_event_sh(
                                 &handle, e
                             );
                         }
-                        if let Err(e) = caserver.remove_old_repo(&handle) {
+                        if let Err(e) = caserver.remove_old_repo(&handle).await {
                             error!(
                                 "Failed to remove old repo from ca '{}', error '{}'",
                                 &handle, e
@@ -183,7 +183,7 @@ async fn try_publish(
     ca: Handle,
 ) {
     info!("Try to publish for '{}'", ca);
-    let publisher = CaPublisher::new(caserver, pubserver);
+    let publisher = CaPublisher::new(caserver.clone(), pubserver);
 
     if let Err(e) = publisher.publish(&ca).await {
         error!("Failed to publish for '{}' will reschedule, error: {}", ca, e);
@@ -194,10 +194,13 @@ async fn try_publish(
 fn make_republish_sh(caserver: Arc<CaServer<OpenSslSigner>>) -> ScheduleHandle {
     let mut scheduler = clokwerk::Scheduler::new();
     scheduler.every(1.hours()).run(move || {
-        info!("Triggering background republication for all CAs");
-        if let Err(e) = caserver.republish_all() {
-            error!("Background republishing failed: {}", e);
-        }
+        let mut rt = Runtime::new().unwrap();
+        rt.block_on(async {
+            info!("Triggering background republication for all CAs");
+            if let Err(e) = caserver.republish_all().await {
+                error!("Background republishing failed: {}", e);
+            }
+        })
     });
     scheduler.watch_thread(Duration::from_millis(100))
 }

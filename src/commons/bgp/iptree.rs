@@ -15,7 +15,7 @@ impl IpRange {
     pub fn for_resource_set(set: &ResourceSet) -> (Vec<IpRange>, Vec<IpRange>) {
         let mut v4_ranges = vec![];
         let mut v6_ranges = vec![];
-        if let Some(v4) = set.to_ip_resources_v4().as_blocks() {
+        if let Ok(v4) = set.to_ip_resources_v4().to_blocks() {
             for block in v4.iter() {
                 let min = block.min();
                 let max = block.max();
@@ -24,7 +24,7 @@ impl IpRange {
                 v4_ranges.push(IpRange(Range { start, end }))
             }
         }
-        if let Some(v6) = set.to_ip_resources_v6().as_blocks() {
+        if let Ok(v6) = set.to_ip_resources_v6().to_blocks() {
             for block in v6.iter() {
                 let min = block.min();
                 let max = block.max();

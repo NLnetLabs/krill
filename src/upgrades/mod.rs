@@ -86,13 +86,13 @@ pub fn pre_start_upgrade(work_dir: &PathBuf) -> Result<(), UpgradeError> {
 }
 
 /// Should be called right after the KrillServer is initiated
-pub fn post_start_upgrade(work_dir: &PathBuf, server: &KrillServer) -> Result<(), UpgradeError> {
+pub async fn post_start_upgrade(work_dir: &PathBuf, server: &KrillServer) -> Result<(), UpgradeError> {
     let version_0_8 = KeyStoreVersion::V0_8;
     let ca_store = DiskKeyStore::new(work_dir, "cas");
     let pubd_store = DiskKeyStore::new(work_dir, "pubd");
     if ca_store.get_version()? != version_0_8 {
         info!("Will clean up redundant ROAs for all CAs and update version of storage dirs");
-        roa_cleanup_0_8_0::roa_cleanup(server)?;
+        roa_cleanup_0_8_0::roa_cleanup(server).await?;
         ca_store.set_version(&version_0_8)?;
         pubd_store.set_version(&version_0_8)?;
     }

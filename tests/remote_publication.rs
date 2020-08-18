@@ -11,14 +11,14 @@ use tokio::time::delay_for;
 use krill::cli::options::{CaCommand, Command, PublishersCommand};
 use krill::cli::report::ApiResponse;
 use krill::commons::api::{
-    CaRepoDetails, CurrentRepoState, Handle, ParentCaReq, PublisherDetails, PublisherHandle, RepoStatus,
-    RepositoryUpdate, ResourceSet, RoaDefinition, RoaDefinitionUpdates,
+    Handle, ParentCaReq, PublisherDetails, PublisherHandle, RepoStatus, RepositoryUpdate, ResourceSet, RoaDefinition,
+    RoaDefinitionUpdates,
 };
 use krill::commons::remote::rfc8183;
 use krill::daemon::ca::ta_handle;
 use krill::test::{
-    add_child_to_ta_embedded, add_parent_to_ca, ca_gets_resources, ca_route_authorizations_update, init_child,
-    krill_admin, start_krill,
+    add_child_to_ta_rfc6492, add_parent_to_ca, ca_gets_resources, ca_route_authorizations_update, child_request,
+    init_child, krill_admin, start_krill,
 };
 
 async fn repository_response(publisher: &PublisherHandle) -> rfc8183::RepositoryResponse {
@@ -39,22 +39,6 @@ async fn details_publisher(publisher: &PublisherHandle) -> PublisherDetails {
     match krill_admin(command).await {
         ApiResponse::PublisherDetails(details) => details,
         _ => panic!("Expected publisher details"),
-    }
-}
-
-async fn repo_details(ca: &Handle) -> CaRepoDetails {
-    let command = Command::CertAuth(CaCommand::RepoDetails(ca.clone()));
-    match krill_admin(command).await {
-        ApiResponse::RepoDetails(details) => details,
-        _ => panic!("Expected repo details"),
-    }
-}
-
-async fn repo_state(ca: &Handle) -> CurrentRepoState {
-    let command = Command::CertAuth(CaCommand::RepoState(ca.clone()));
-    match krill_admin(command).await {
-        ApiResponse::RepoState(state) => state,
-        _ => panic!("Expected repo state"),
     }
 }
 
@@ -79,13 +63,27 @@ async fn publisher_request(ca: &Handle) -> rfc8183::PublisherRequest {
     }
 }
 
+async fn repo_ready(ca: &Handle) -> bool {
+    for _ in 0..300 {
+        // let repo_state = repo_state(ca).await;
+        // if repo_state.as_list().elements().len() == number {
+        let repo_state = repo_status(ca).await;
+        if let Some(exchange) = repo_state.last_exchange() {
+            if exchange.was_success() {
+                return true;
+            }
+        }
+        delay_for(Duration::from_millis(100)).await
+    }
+    false
+}
+
 async fn will_publish(ca: &Handle, number: usize) -> bool {
     for _ in 0..300 {
         // let repo_state = repo_state(ca).await;
         // if repo_state.as_list().elements().len() == number {
         let repo_state = repo_status(ca).await;
         if repo_state.published().len() == number {
-            eprintln!("==========================FOUND all published items");
             return true;
         }
         delay_for(Duration::from_millis(100)).await
@@ -99,10 +97,10 @@ async fn will_publish(ca: &Handle, number: usize) -> bool {
 #[tokio::test]
 async fn remote_publication() {
     let dir = start_krill().await;
-
     let ta_handle = ta_handle();
 
     let child = Handle::from_str("child").unwrap();
+    let child_resources = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
 
     // Set up child as a child of the TA
     init_child(&child).await;
@@ -117,17 +115,18 @@ async fn remote_publication() {
     // Update the repo for the child
     let update = RepositoryUpdate::Rfc8181(response);
     repo_update(&child, update).await;
-
-    // Give some resources to the child.
-    let child_resources = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
+    assert!(repo_ready(&child).await);
 
     let parent = {
-        let parent_contact = add_child_to_ta_embedded(&child, child_resources.clone()).await;
-        ParentCaReq::new(ta_handle, parent_contact)
+        let req = child_request(&child).await;
+        let contact = add_child_to_ta_rfc6492(&child, req, child_resources.clone()).await;
+        ParentCaReq::new(ta_handle, contact)
     };
     add_parent_to_ca(&child, parent).await;
-
     assert!(ca_gets_resources(&child, &child_resources).await);
+
+    // work-around.. something is not ready.. not clear what.
+    delay_for(Duration::from_secs(5)).await;
 
     // Add some roas to have more to migrate when moving publication servers
     let route_1 = RoaDefinition::from_str("10.0.0.0/24 => 64496").unwrap();
@@ -137,11 +136,7 @@ async fn remote_publication() {
     updates.add(route_2);
     ca_route_authorizations_update(&child, updates).await;
 
-    delay_for(Duration::from_millis(1000)).await;
-
-    // Child should now publish using the remote repo
-    let child_repo_details = repo_details(&child).await;
-    assert!(child_repo_details.contact().is_rfc8183());
+    // Child should now publish
     assert!(will_publish(&child, 4).await);
 
     let details = details_publisher(&child).await;

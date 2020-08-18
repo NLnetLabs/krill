@@ -59,9 +59,7 @@ pub async fn server_ready() -> bool {
 pub async fn start_krill() -> PathBuf {
     let dir = tmp_dir();
 
-    let data_dir = sub_dir(&dir);
-
-    env::set_var(KRILL_ENV_TEST_UNIT_DATA, data_dir.to_string_lossy().to_string());
+    env::set_var(KRILL_ENV_TEST_UNIT_DATA, dir.to_string_lossy().to_string());
     env::set_var(KRILL_ENV_TEST_ANN, "1");
 
     tokio::spawn(server::start());
@@ -430,18 +428,6 @@ where
     F: FnOnce(PathBuf) -> (),
 {
     let dir = sub_dir(&PathBuf::from("work"));
-    let path = PathBuf::from(&dir);
-
-    op(dir);
-
-    let _result = fs::remove_dir_all(path);
-}
-
-pub async fn test_under_tmp_async<F>(op: F)
-where
-    F: FnOnce(PathBuf) -> (),
-{
-    let dir = tmp_dir();
     let path = PathBuf::from(&dir);
 
     op(dir);

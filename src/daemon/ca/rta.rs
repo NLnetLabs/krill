@@ -96,16 +96,16 @@ impl ResourceTaggedAttestation {
 
         let v4_resources = resources.to_ip_resources_v4();
         let v4_blocks = v4_resources
-            .as_blocks()
-            .ok_or_else(|| Error::custom("Cannot inherit IPv4 on RTA"))?;
+            .to_blocks()
+            .map_err(|_| Error::custom("Cannot inherit IPv4 on RTA"))?;
         for v4 in v4_blocks.iter() {
             attestation_builder.push_v4(v4.clone())
         }
 
         let v6_resources = resources.to_ip_resources_v6();
         let v6_blocks = v6_resources
-            .as_blocks()
-            .ok_or_else(|| Error::custom("Cannot inherit IPv6 on RTA"))?;
+            .to_blocks()
+            .map_err(|_| Error::custom("Cannot inherit IPv6 on RTA"))?;
         for v6 in v6_blocks.iter() {
             attestation_builder.push_v6(v6.clone())
         }

@@ -452,9 +452,9 @@ impl<S: Signer> CertAuth<S> {
             cert.set_rpki_manifest(Some(repo_info.rpki_manifest(&ns, &pub_key.key_identifier())));
             cert.set_rpki_notify(Some(repo_info.rpki_notify()));
 
-            cert.set_as_resources(Some(resources.to_as_resources()));
-            cert.set_v4_resources(Some(resources.to_ip_resources_v4()));
-            cert.set_v6_resources(Some(resources.to_ip_resources_v6()));
+            cert.set_as_resources(resources.to_as_resources());
+            cert.set_v4_resources(resources.to_ip_resources_v4());
+            cert.set_v6_resources(resources.to_ip_resources_v6());
 
             cert.into_cert(signer.deref(), &key).map_err(Error::signer)?
         };

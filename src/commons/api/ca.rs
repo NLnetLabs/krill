@@ -1397,28 +1397,19 @@ impl TryFrom<&Cert> for ResourceSet {
     type Error = ResourceSetError;
 
     fn try_from(cert: &Cert) -> Result<Self, Self::Error> {
-        let asn = match cert.as_resources() {
-            None => AsBlocks::empty(),
-            Some(as_resources) => match as_resources.to_blocks() {
-                Ok(as_blocks) => as_blocks,
-                Err(_) => return Err(ResourceSetError::InheritOnCaCert),
-            },
+        let asn = match cert.as_resources().to_blocks() {
+            Ok(as_blocks) => as_blocks,
+            Err(_) => return Err(ResourceSetError::InheritOnCaCert),
         };
 
-        let v4 = match cert.v4_resources() {
-            None => IpBlocks::empty(),
-            Some(res) => match res.to_blocks() {
-                Ok(blocks) => blocks,
-                Err(_) => return Err(ResourceSetError::InheritOnCaCert),
-            },
+        let v4 = match cert.v4_resources().to_blocks() {
+            Ok(blocks) => blocks,
+            Err(_) => return Err(ResourceSetError::InheritOnCaCert),
         };
 
-        let v6 = match cert.v6_resources() {
-            None => IpBlocks::empty(),
-            Some(res) => match res.to_blocks() {
-                Ok(blocks) => blocks,
-                Err(_) => return Err(ResourceSetError::InheritOnCaCert),
-            },
+        let v6 = match cert.v6_resources().to_blocks() {
+            Ok(blocks) => blocks,
+            Err(_) => return Err(ResourceSetError::InheritOnCaCert),
         };
 
         Ok(ResourceSet { asn, v4, v6 })
@@ -1679,6 +1670,13 @@ impl RepoStatus {
             result: ParentExchangeResult::Success,
         });
         self.published = published;
+    }
+
+    pub fn set_last_updated(&mut self) {
+        self.last_exchange = Some(ParentExchange {
+            time: Time::now(),
+            result: ParentExchangeResult::Success,
+        });
     }
 }
 

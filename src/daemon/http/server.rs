@@ -51,10 +51,11 @@ pub async fn start() -> Result<(), Error> {
     pre_start_upgrade(&CONFIG.data_dir).map_err(|e| Error::Custom(format!("Could not upgrade Krill: {}", e)))?;
 
     // Create the server, this will create the necessary data sub-directories if needed
-    let krill = KrillServer::build()?;
+    let krill = KrillServer::build().await?;
 
     post_start_upgrade(&CONFIG.data_dir, &krill)
-        .map_err(|e| Error::Custom(format!("Could not upgrade Krill: {}", e)))?;
+        .map_err(|e| Error::Custom(format!("Could not upgrade Krill: {}", e)))
+        .await?;
 
     if env::var(KRILL_ENV_UPGRADE_ONLY).is_ok() {
         println!("Krill upgrade successful");
@@ -290,7 +291,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
             }
         }
 
-        let cas_status = server.cas_stats();
+        let cas_status = server.cas_stats().await;
 
         let number_cas = cas_status.len();
         res.push_str("\n");
@@ -455,14 +456,14 @@ async fn ta(req: Request) -> RoutingResult {
 }
 
 pub async fn tal(req: Request) -> RoutingResult {
-    match req.state().read().await.ta() {
+    match req.state().read().await.ta().await {
         Ok(ta) => Ok(HttpResponse::text(format!("{}", ta.tal()).into_bytes())),
         Err(_) => render_unknown_resource(),
     }
 }
 
 pub async fn ta_cer(req: Request) -> RoutingResult {
-    match req.state().read().await.trust_anchor_cert() {
+    match req.state().read().await.trust_anchor_cert().await {
         Some(cert) => Ok(HttpResponse::cert(cert.to_captured().to_vec())),
         None => render_unknown_resource(),
     }
@@ -487,7 +488,7 @@ pub async fn rfc6492(req: Request) -> RoutingResult {
             Err(e) => return render_error(e),
         };
         let lock = state.read().await;
-        match lock.rfc6492(ca, bytes) {
+        match lock.rfc6492(ca, bytes).await {
             Ok(bytes) => Ok(HttpResponse::rfc6492(bytes.to_vec())),
             Err(e) => render_error(e),
         }
@@ -502,7 +503,7 @@ async fn stats(req: Request) -> RoutingResult {
         Method::GET => match req.path().full() {
             "/stats/info" => render_json(req.state().read().await.server_info()),
             "/stats/repo" => render_json_res(req.state().read().await.repo_stats()),
-            "/stats/cas" => render_json(req.state().read().await.cas_stats()),
+            "/stats/cas" => render_json(req.state().read().await.cas_stats().await),
             _ => Err(req),
         },
         _ => Err(req),
@@ -734,7 +735,7 @@ async fn repository_response(req: &Request, publisher: &Handle) -> Result<rfc818
 async fn ca_add_child(req: Request, parent: ParentHandle) -> RoutingResult {
     let server = req.state().clone();
     match req.json().await {
-        Ok(child_req) => render_json_res(server.read().await.ca_add_child(&parent, child_req)),
+        Ok(child_req) => render_json_res(server.read().await.ca_add_child(&parent, child_req).await),
         Err(e) => render_error(e),
     }
 }
@@ -742,29 +743,29 @@ async fn ca_add_child(req: Request, parent: ParentHandle) -> RoutingResult {
 async fn ca_child_update(req: Request, ca: Handle, child: ChildHandle) -> RoutingResult {
     let server = req.state().clone();
     match req.json().await {
-        Ok(child_req) => render_empty_res(server.read().await.ca_child_update(&ca, child, child_req)),
+        Ok(child_req) => render_empty_res(server.read().await.ca_child_update(&ca, child, child_req).await),
         Err(e) => render_error(e),
     }
 }
 
 async fn ca_child_remove(req: Request, ca: Handle, child: ChildHandle) -> RoutingResult {
-    render_empty_res(req.state().read().await.ca_child_remove(&ca, child))
+    render_empty_res(req.state().read().await.ca_child_remove(&ca, child).await)
 }
 
 async fn ca_child_show(req: Request, ca: Handle, child: ChildHandle) -> RoutingResult {
-    render_json_res(req.state().read().await.ca_child_show(&ca, &child))
+    render_json_res(req.state().read().await.ca_child_show(&ca, &child).await)
 }
 
 async fn ca_parent_contact(req: Request, ca: Handle, child: ChildHandle) -> RoutingResult {
-    render_json_res(req.state().read().await.ca_parent_contact(&ca, child.clone()))
+    render_json_res(req.state().read().await.ca_parent_contact(&ca, child.clone()).await)
 }
 
 async fn ca_parent_res_json(req: Request, ca: Handle, child: ChildHandle) -> RoutingResult {
-    render_json_res(req.state().read().await.ca_parent_response(&ca, child.clone()))
+    render_json_res(req.state().read().await.ca_parent_response(&ca, child.clone()).await)
 }
 
 async fn ca_parent_res_xml(req: Request, ca: Handle, child: ChildHandle) -> RoutingResult {
-    match req.state().read().await.ca_parent_response(&ca, child.clone()) {
+    match req.state().read().await.ca_parent_response(&ca, child.clone()).await {
         Ok(res) => Ok(HttpResponse::xml(res.encode_vec())),
         Err(e) => render_error(e),
     }
@@ -788,34 +789,34 @@ async fn ca_issues(req: Request, ca: Handle) -> RoutingResult {
 }
 
 async fn cas(req: Request) -> RoutingResult {
-    render_json(req.state().read().await.cas())
+    render_json(req.state().read().await.cas().await)
 }
 
 pub async fn ca_init(req: Request) -> RoutingResult {
     let state = req.state().clone();
 
     match req.json().await {
-        Ok(ca_init) => render_empty_res(state.write().await.ca_init(ca_init)),
+        Ok(ca_init) => render_empty_res(state.write().await.ca_init(ca_init).await),
         Err(e) => render_error(e),
     }
 }
 
 async fn ca_regenerate_id(req: Request, handle: Handle) -> RoutingResult {
     match *req.method() {
-        Method::POST => render_empty_res(req.state().read().await.ca_update_id(handle)),
+        Method::POST => render_empty_res(req.state().read().await.ca_update_id(handle).await),
         _ => render_unknown_method(),
     }
 }
 
 async fn ca_info(req: Request, handle: Handle) -> RoutingResult {
     match *req.method() {
-        Method::GET => render_json_res(req.state().read().await.ca_info(&handle)),
+        Method::GET => render_json_res(req.state().read().await.ca_info(&handle).await),
         _ => render_unknown_method(),
     }
 }
 
 async fn ca_my_parent_contact(req: Request, ca: Handle, parent: ParentHandle) -> RoutingResult {
-    render_json_res(req.state().read().await.ca_my_parent_contact(&ca, &parent))
+    render_json_res(req.state().read().await.ca_my_parent_contact(&ca, &parent).await)
 }
 
 async fn ca_my_parent_statuses(req: Request, ca: Handle) -> RoutingResult {
@@ -850,7 +851,7 @@ async fn ca_history(req: Request, path: &mut RequestPath, handle: Handle) -> Rou
     };
 
     match *req.method() {
-        Method::GET => match req.state().read().await.ca_history(&handle, crit) {
+        Method::GET => match req.state().read().await.ca_history(&handle, crit).await {
             Some(history) => render_json(history),
             None => render_unknown_resource(),
         },
@@ -929,12 +930,12 @@ async fn ca_child_req_json(req: Request, handle: Handle) -> RoutingResult {
 }
 
 async fn ca_child_req(req: &Request, handle: &Handle) -> Result<rfc8183::ChildRequest, Error> {
-    req.state().read().await.ca_child_req(handle)
+    req.state().read().await.ca_child_req(handle).await
 }
 
 async fn ca_publisher_req_json(req: Request, handle: Handle) -> RoutingResult {
     match *req.method() {
-        Method::GET => match req.state().read().await.ca_publisher_req(&handle) {
+        Method::GET => match req.state().read().await.ca_publisher_req(&handle).await {
             Some(req) => render_json(req),
             None => render_unknown_resource(),
         },
@@ -944,7 +945,7 @@ async fn ca_publisher_req_json(req: Request, handle: Handle) -> RoutingResult {
 
 async fn ca_publisher_req_xml(req: Request, handle: Handle) -> RoutingResult {
     match *req.method() {
-        Method::GET => match req.state().read().await.ca_publisher_req(&handle) {
+        Method::GET => match req.state().read().await.ca_publisher_req(&handle).await {
             Some(req) => Ok(HttpResponse::xml(req.encode_vec())),
             None => render_unknown_resource(),
         },
@@ -953,7 +954,7 @@ async fn ca_publisher_req_xml(req: Request, handle: Handle) -> RoutingResult {
 }
 
 async fn ca_repo_details(req: Request, handle: Handle) -> RoutingResult {
-    render_json_res(req.state().read().await.ca_repo_details(&handle))
+    render_json_res(req.state().read().await.ca_repo_details(&handle).await)
 }
 
 async fn ca_repo_state(req: Request, handle: Handle) -> RoutingResult {
@@ -1093,17 +1094,17 @@ async fn ca_update_parent(req: Request, ca: Handle, parent: ParentHandle) -> Rou
 }
 
 async fn ca_remove_parent(req: Request, ca: Handle, parent: Handle) -> RoutingResult {
-    render_empty_res(req.state().read().await.ca_parent_remove(ca, parent))
+    render_empty_res(req.state().read().await.ca_parent_remove(ca, parent).await)
 }
 
 /// Force a key roll for a CA, i.e. use a max key age of 0 seconds.
 async fn ca_kr_init(req: Request, handle: Handle) -> RoutingResult {
-    render_empty_res(req.state().read().await.ca_keyroll_init(handle))
+    render_empty_res(req.state().read().await.ca_keyroll_init(handle).await)
 }
 
 /// Force key activation for all new keys, i.e. use a staging period of 0 seconds.
 async fn ca_kr_activate(req: Request, handle: Handle) -> RoutingResult {
-    render_empty_res(req.state().read().await.ca_keyroll_activate(handle))
+    render_empty_res(req.state().read().await.ca_keyroll_activate(handle).await)
 }
 
 /// Update the route authorizations for this CA
@@ -1112,7 +1113,7 @@ async fn ca_routes_update(req: Request, handle: Handle) -> RoutingResult {
 
     match req.json().await {
         Err(e) => render_error(e),
-        Ok(updates) => render_empty_res(state.read().await.ca_routes_update(handle, updates)),
+        Ok(updates) => render_empty_res(state.read().await.ca_routes_update(handle, updates).await),
     }
 }
 
@@ -1126,7 +1127,7 @@ async fn ca_routes_try_update(req: Request, ca: Handle) -> RoutingResult {
         Err(e) => render_error(e),
         Ok(updates) => {
             let server = state.read().await;
-            match server.ca_routes_bgp_dry_run(&ca, updates.clone()) {
+            match server.ca_routes_bgp_dry_run(&ca, updates.clone()).await {
                 Err(e) => {
                     // update was rejected, return error
                     render_error(e)
@@ -1134,14 +1135,14 @@ async fn ca_routes_try_update(req: Request, ca: Handle) -> RoutingResult {
                 Ok(effect) => {
                     if !effect.contains_invalids() {
                         // no issues found, apply
-                        render_empty_res(server.ca_routes_update(ca, updates))
+                        render_empty_res(server.ca_routes_update(ca, updates).await)
                     } else {
                         // remaining invalids exist, advise user
                         let updates: RouteAuthorizationUpdates = updates.into();
                         let updates = updates.into_explicit();
                         let resources = updates.affected_prefixes();
 
-                        match server.ca_routes_bgp_suggest(&ca, Some(resources)) {
+                        match server.ca_routes_bgp_suggest(&ca, Some(resources)).await {
                             Err(e) => render_error(e), // should not fail after dry run, but hey..
                             Ok(suggestion) => render_json(BgpAnalysisAdvice::new(effect, suggestion)),
                         }
@@ -1154,7 +1155,7 @@ async fn ca_routes_try_update(req: Request, ca: Handle) -> RoutingResult {
 
 /// show the route authorizations for this CA
 async fn ca_routes_show(req: Request, handle: Handle) -> RoutingResult {
-    match req.state().read().await.ca_routes_show(&handle) {
+    match req.state().read().await.ca_routes_show(&handle).await {
         Ok(roas) => render_json(roas),
         Err(_) => render_unknown_resource(),
     }
@@ -1163,26 +1164,30 @@ async fn ca_routes_show(req: Request, handle: Handle) -> RoutingResult {
 /// Show the state of ROAs vs BGP for this CA
 async fn ca_routes_analysis(req: Request, path: &mut RequestPath, handle: Handle) -> RoutingResult {
     match path.next() {
-        Some("full") => render_json_res(req.state().read().await.ca_routes_bgp_analysis(&handle)),
+        Some("full") => render_json_res(req.state().read().await.ca_routes_bgp_analysis(&handle).await),
         Some("dryrun") => match *req.method() {
             Method::POST => {
                 let state = req.state.clone();
                 match req.json().await {
                     Err(e) => render_error(e),
-                    Ok(updates) => render_json_res(state.read().await.ca_routes_bgp_dry_run(&handle, updates)),
+                    Ok(updates) => render_json_res(state.read().await.ca_routes_bgp_dry_run(&handle, updates).await),
                 }
             }
             _ => render_unknown_method(),
         },
         Some("suggest") => match *req.method() {
-            Method::GET => render_json_res(req.state().read().await.ca_routes_bgp_suggest(&handle, None)),
+            Method::GET => render_json_res(req.state().read().await.ca_routes_bgp_suggest(&handle, None).await),
             Method::POST => {
                 let server = req.state().clone();
                 match req.json().await {
                     Err(e) => render_error(e),
-                    Ok(resources) => {
-                        render_json_res(server.read().await.ca_routes_bgp_suggest(&handle, Some(resources)))
-                    }
+                    Ok(resources) => render_json_res(
+                        server
+                            .read()
+                            .await
+                            .ca_routes_bgp_suggest(&handle, Some(resources))
+                            .await,
+                    ),
                 }
             }
             _ => render_unknown_method(),
@@ -1195,7 +1200,7 @@ async fn ca_routes_analysis(req: Request, path: &mut RequestPath, handle: Handle
 
 async fn republish_all(req: Request) -> RoutingResult {
     match *req.method() {
-        Method::POST => render_empty_res(req.state().read().await.republish_all()),
+        Method::POST => render_empty_res(req.state().read().await.republish_all().await),
         _ => render_unknown_method(),
     }
 }
@@ -1255,7 +1260,7 @@ async fn api_ca_rta_oneoff(req: Request, path: &mut RequestPath, ca: Handle) -> 
         let state = req.state().clone();
         match req.json().await {
             Err(e) => render_error(e),
-            Ok(request) => render_json_res(state.read().await.rta_one_off(ca, request)),
+            Ok(request) => render_json_res(state.read().await.rta_one_off(ca, request).await),
         }
     }
 }
