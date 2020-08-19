@@ -2397,6 +2397,15 @@ mod test {
     }
 
     #[test]
+    fn all_resources() {
+        let asns = "0-4294967295";
+        let v4 = "0.0.0.0-255.255.255.255";
+        let v6 = "::0/0";
+
+        let _set = ResourceSet::from_strs(asns, v4, v6).unwrap();
+    }
+
+    #[test]
     fn signed_objects_uri() {
         let signed_objects_uri = info().ca_repository("");
         assert_eq!(base_uri(), signed_objects_uri)
