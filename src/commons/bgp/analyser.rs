@@ -1,7 +1,8 @@
 use std::collections::HashSet;
 use std::env;
 use std::iter::FromIterator;
-use std::sync::RwLock;
+
+use tokio::sync::RwLock;
 
 use chrono::Duration;
 
@@ -42,7 +43,7 @@ impl BgpAnalyser {
 
     pub async fn update(&self) -> Result<bool, BgpAnalyserError> {
         if let Some(loader) = &self.dumploader {
-            let mut seen = self.seen.write().unwrap();
+            let mut seen = self.seen.write().await;
             if let Some(last_time) = seen.last_updated() {
                 if (last_time + Duration::minutes(BGP_RIS_REFRESH_MINUTES)) > Time::now() {
                     trace!("Will not check BGP Ris Dumps until the refresh interval has passed");
@@ -63,8 +64,8 @@ impl BgpAnalyser {
         }
     }
 
-    pub fn analyse(&self, roas: &[RoaDefinition], scope: &ResourceSet) -> BgpAnalysisReport {
-        let seen = self.seen.read().unwrap();
+    pub async fn analyse(&self, roas: &[RoaDefinition], scope: &ResourceSet) -> BgpAnalysisReport {
+        let seen = self.seen.read().await;
         let mut entries = vec![];
 
         let roas: Vec<RoaDefinition> = roas
@@ -207,11 +208,11 @@ impl BgpAnalyser {
         BgpAnalysisReport::new(entries)
     }
 
-    pub fn suggest(&self, roas: &[RoaDefinition], scope: &ResourceSet) -> BgpAnalysisSuggestion {
+    pub async fn suggest(&self, roas: &[RoaDefinition], scope: &ResourceSet) -> BgpAnalysisSuggestion {
         let mut suggestion = BgpAnalysisSuggestion::default();
 
         // perform analysis
-        for entry in self.analyse(roas, scope).into_entries() {
+        for entry in self.analyse(roas, scope).await.into_entries() {
             match entry.state() {
                 BgpAnalysisState::RoaUnseen => suggestion.add_stale(entry.into_definition()),
                 BgpAnalysisState::RoaTooPermissive => {
@@ -298,15 +299,15 @@ mod tests {
 
         let analyser = BgpAnalyser::new(true, bgp_risdump_v4_uri, bgp_risdump_v6_uri);
 
-        assert!(analyser.seen.read().unwrap().is_empty());
-        assert!(analyser.seen.read().unwrap().last_updated().is_none());
+        assert!(analyser.seen.read().await.is_empty());
+        assert!(analyser.seen.read().await.last_updated().is_none());
         analyser.update().await.unwrap();
-        assert!(!analyser.seen.read().unwrap().is_empty());
-        assert!(analyser.seen.read().unwrap().last_updated().is_some());
+        assert!(!analyser.seen.read().await.is_empty());
+        assert!(analyser.seen.read().await.last_updated().is_some());
     }
 
-    #[test]
-    fn analyse_bgp() {
+    #[tokio::test]
+    async fn analyse_bgp() {
         let roa_too_permissive = definition("10.0.0.0/22-23 => 64496");
         let roa_as0 = definition("10.0.4.0/24 => 0");
         let roa_unseen_completely = definition("10.0.3.0/24 => 64497");
@@ -319,17 +320,19 @@ mod tests {
 
         let analyser = BgpAnalyser::with_test_announcements();
 
-        let report = analyser.analyse(
-            &[
-                roa_too_permissive,
-                roa_as0,
-                roa_unseen_completely,
-                roa_authorizing_single,
-                roa_unseen_redundant,
-                roa_as0_redundant,
-            ],
-            &resources,
-        );
+        let report = analyser
+            .analyse(
+                &[
+                    roa_too_permissive,
+                    roa_as0,
+                    roa_unseen_completely,
+                    roa_authorizing_single,
+                    roa_unseen_redundant,
+                    roa_as0_redundant,
+                ],
+                &resources,
+            )
+            .await;
 
         let expected: BgpAnalysisReport =
             serde_json::from_str(include_str!("../../../test-resources/bgp/expected_full_report.json")).unwrap();
@@ -337,8 +340,8 @@ mod tests {
         assert_eq!(report, expected);
     }
 
-    #[test]
-    fn analyse_bgp_no_announcements() {
+    #[tokio::test]
+    async fn analyse_bgp_no_announcements() {
         let roa1 = definition("10.0.0.0/23-24 => 64496");
         let roa2 = definition("10.0.3.0/24 => 64497");
         let roa3 = definition("10.0.4.0/24 => 0");
@@ -346,7 +349,7 @@ mod tests {
         let resources = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
 
         let analyser = BgpAnalyser::new(false, "", "");
-        let table = analyser.analyse(&[roa1, roa2, roa3], &resources);
+        let table = analyser.analyse(&[roa1, roa2, roa3], &resources).await;
         let table_entries = table.entries();
         assert_eq!(3, table_entries.len());
 
@@ -359,8 +362,8 @@ mod tests {
         assert_eq!(roas_no_info.as_slice(), &[&roa1, &roa2, &roa3]);
     }
 
-    #[test]
-    fn make_bgp_analysis_suggestion() {
+    #[tokio::test]
+    async fn make_bgp_analysis_suggestion() {
         let roa_too_permissive = definition("10.0.0.0/22-23 => 64496");
         let roa_as0 = definition("10.0.4.0/24 => 0");
         let roa_unseen_completely = definition("10.0.3.0/24 => 64497");
@@ -371,17 +374,19 @@ mod tests {
         let analyser = BgpAnalyser::with_test_announcements();
 
         let scope = ResourceSet::from_strs("", "10.0.0.0/22", "").unwrap();
-        let suggestion_resource_subset = analyser.suggest(
-            &[
-                roa_too_permissive,
-                roa_as0,
-                roa_unseen_completely,
-                roa_authorizing_single,
-                roa_unseen_redundant,
-                roa_as0_redundant,
-            ],
-            &scope,
-        );
+        let suggestion_resource_subset = analyser
+            .suggest(
+                &[
+                    roa_too_permissive,
+                    roa_as0,
+                    roa_unseen_completely,
+                    roa_authorizing_single,
+                    roa_unseen_redundant,
+                    roa_as0_redundant,
+                ],
+                &scope,
+            )
+            .await;
 
         let expected: BgpAnalysisSuggestion = serde_json::from_str(include_str!(
             "../../../test-resources/bgp/expected_suggestion_some_roas.json"
@@ -390,17 +395,19 @@ mod tests {
         assert_eq!(suggestion_resource_subset, expected);
 
         let scope = ResourceSet::from_strs("", "10.0.0.0/8,192.168.0.0/16", "").unwrap();
-        let suggestion_all_roas_in_scope = analyser.suggest(
-            &[
-                roa_too_permissive,
-                roa_as0,
-                roa_unseen_completely,
-                roa_authorizing_single,
-                roa_unseen_redundant,
-                roa_as0_redundant,
-            ],
-            &scope,
-        );
+        let suggestion_all_roas_in_scope = analyser
+            .suggest(
+                &[
+                    roa_too_permissive,
+                    roa_as0,
+                    roa_unseen_completely,
+                    roa_authorizing_single,
+                    roa_unseen_redundant,
+                    roa_as0_redundant,
+                ],
+                &scope,
+            )
+            .await;
 
         let expected: BgpAnalysisSuggestion = serde_json::from_str(include_str!(
             "../../../test-resources/bgp/expected_suggestion_all_roas.json"

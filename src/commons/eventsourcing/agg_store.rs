@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::RwLock;
+
+use tokio::sync::RwLock;
 
 use rpki::x509::Time;
 
@@ -16,6 +17,7 @@ const SNAPSHOT_FREQ: u64 = 5;
 
 pub type StoreResult<T> = Result<T, AggregateStoreError>;
 
+#[async_trait]
 pub trait AggregateStore<A: Aggregate>: Send + Sync
 where
     A::Error: From<AggregateStoreError>,
@@ -23,26 +25,26 @@ where
     /// Gets the latest version for the given aggregate. Returns
     /// an AggregateStoreError::UnknownAggregate in case the aggregate
     /// does not exist.
-    fn get_latest(&self, id: &Handle) -> StoreResult<Arc<A>>;
+    async fn get_latest(&self, id: &Handle) -> StoreResult<Arc<A>>;
 
     /// Adds a new aggregate instance based on the init event.
-    fn add(&self, init: A::InitEvent) -> StoreResult<Arc<A>>;
+    async fn add(&self, init: A::InitEvent) -> StoreResult<Arc<A>>;
 
     /// Sends a command to the appropriate aggregate, and on
     /// success: save command and events, return aggregate
     /// no-op: do not save anything, return aggregate
     /// error: save command and error, return error
-    fn command(&self, cmd: A::Command) -> Result<Arc<A>, A::Error>;
+    async fn command(&self, cmd: A::Command) -> Result<Arc<A>, A::Error>;
 
     /// Returns true if an instance exists for the id
-    fn has(&self, id: &Handle) -> bool;
+    async fn has(&self, id: &Handle) -> bool;
 
     /// Lists all known ids.
-    fn list(&self) -> Vec<Handle>;
+    async fn list(&self) -> Vec<Handle>;
 
     /// Adds a listener that will receive a reference to all events as they
     /// are stored.
-    fn add_listener<L: EventListener<A>>(&mut self, listener: Arc<L>);
+    async fn add_listener<L: EventListener<A>>(&mut self, listener: Arc<L>);
 
     /// Lists the history for an aggregate.
     fn command_history(&self, id: &Handle, crit: CommandHistoryCriteria) -> StoreResult<CommandHistory>;
@@ -129,23 +131,23 @@ impl<A: Aggregate> DiskAggregateStore<A> {
         Ok(self.store.get_event::<A::Event>(id, aggregate.version())?.is_some())
     }
 
-    fn cache_get(&self, id: &Handle) -> Option<Arc<A>> {
+    async fn cache_get(&self, id: &Handle) -> Option<Arc<A>> {
         if self.use_cache {
-            self.cache.read().unwrap().get(id).cloned()
+            self.cache.read().await.get(id).cloned()
         } else {
             None
         }
     }
 
-    fn cache_update(&self, id: &Handle, arc: Arc<A>) {
+    async fn cache_update(&self, id: &Handle, arc: Arc<A>) {
         if self.use_cache {
-            self.cache.write().unwrap().insert(id.clone(), arc);
+            self.cache.write().await.insert(id.clone(), arc);
         }
     }
 
-    fn get_latest_no_lock(&self, handle: &Handle) -> StoreResult<Arc<A>> {
+    async fn get_latest_no_lock(&self, handle: &Handle) -> StoreResult<Arc<A>> {
         trace!("Trying to load aggregate id: {}", handle);
-        match self.cache_get(handle) {
+        match self.cache_get(handle).await {
             None => match self.store.get_aggregate(handle)? {
                 None => {
                     error!("Could not load aggregate with id: {} from disk", handle);
@@ -153,7 +155,7 @@ impl<A: Aggregate> DiskAggregateStore<A> {
                 }
                 Some(agg) => {
                     let arc: Arc<A> = Arc::new(agg);
-                    self.cache_update(handle, arc.clone());
+                    self.cache_update(handle, arc.clone()).await;
                     trace!("Loaded aggregate id: {} from disk", handle);
                     Ok(arc)
                 }
@@ -170,17 +172,18 @@ impl<A: Aggregate> DiskAggregateStore<A> {
     }
 }
 
+#[async_trait]
 impl<A: Aggregate> AggregateStore<A> for DiskAggregateStore<A>
 where
     A::Error: From<AggregateStoreError>,
 {
-    fn get_latest(&self, handle: &Handle) -> StoreResult<Arc<A>> {
-        let _lock = self.outer_lock.read().unwrap();
-        self.get_latest_no_lock(handle)
+    async fn get_latest(&self, handle: &Handle) -> StoreResult<Arc<A>> {
+        let _lock = self.outer_lock.read().await;
+        self.get_latest_no_lock(handle).await
     }
 
-    fn add(&self, init: A::InitEvent) -> StoreResult<Arc<A>> {
-        let _lock = self.outer_lock.write().unwrap();
+    async fn add(&self, init: A::InitEvent) -> StoreResult<Arc<A>> {
+        let _lock = self.outer_lock.write().await;
 
         self.store.store_event(&init)?;
 
@@ -190,13 +193,13 @@ where
         self.store.store_snapshot(&handle, &aggregate)?;
 
         let arc = Arc::new(aggregate);
-        self.cache_update(&handle, arc.clone());
+        self.cache_update(&handle, arc.clone()).await;
 
         Ok(arc)
     }
 
-    fn command(&self, cmd: A::Command) -> Result<Arc<A>, A::Error> {
-        let _lock = self.outer_lock.write().unwrap();
+    async fn command(&self, cmd: A::Command) -> Result<Arc<A>, A::Error> {
+        let _lock = self.outer_lock.write().await;
 
         // Get the latest arc.
         let handle = cmd.handle().clone();
@@ -208,7 +211,7 @@ where
         info.last_update = Time::now();
         info.last_command += 1;
 
-        let mut latest = self.get_latest_no_lock(&handle)?;
+        let mut latest = self.get_latest_no_lock(&handle).await?;
 
         if let Some(version) = cmd.version() {
             if version != latest.version() {
@@ -225,7 +228,7 @@ where
 
         let stored_command_builder = StoredCommandBuilder::new(&cmd, latest.version(), info.last_command);
 
-        let res = match latest.process_command(cmd) {
+        let res = match latest.process_command(cmd).await {
             Err(e) => {
                 let stored_command = stored_command_builder.finish_with_error(&e);
                 self.store
@@ -248,7 +251,7 @@ where
                     //
                     // Also note that we don't need the lock to update the inner arc in the cache. We
                     // just need it to be in scope until we are done updating.
-                    let mut cache = self.cache.write().unwrap();
+                    let mut cache = self.cache.write().await;
 
                     // It should be impossible to get events for the wrong aggregate, and the wrong
                     // versions, because we are doing the update here inside the outer lock, and aggregates
@@ -295,7 +298,7 @@ where
                     // Only send this to listeners after everything has been saved.
                     for event in events {
                         for listener in &self.listeners {
-                            listener.as_ref().listen(agg, &event);
+                            listener.as_ref().listen(agg, &event).await;
                         }
                     }
 
@@ -311,18 +314,18 @@ where
         res
     }
 
-    fn has(&self, id: &Handle) -> bool {
-        let _lock = self.outer_lock.read().unwrap();
+    async fn has(&self, id: &Handle) -> bool {
+        let _lock = self.outer_lock.read().await;
         self.store.has_aggregate(id)
     }
 
-    fn list(&self) -> Vec<Handle> {
-        let _lock = self.outer_lock.read().unwrap();
+    async fn list(&self) -> Vec<Handle> {
+        let _lock = self.outer_lock.read().await;
         self.store.aggregates()
     }
 
-    fn add_listener<L: EventListener<A>>(&mut self, listener: Arc<L>) {
-        let _lock = self.outer_lock.write().unwrap();
+    async fn add_listener<L: EventListener<A>>(&mut self, listener: Arc<L>) {
+        let _lock = self.outer_lock.write().await;
         self.listeners.push(listener)
     }
 

@@ -2,8 +2,10 @@ extern crate krill;
 
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::{env, fs};
+
+use tokio::sync::RwLock;
 
 use krill::commons::api::{CaCommandDetails, CommandHistoryCriteria, Handle};
 use krill::commons::util::file;
@@ -33,7 +35,7 @@ async fn history() {
 
 async fn assert_scenario(scenario: &str, cas: &[&str]) {
     let d = tmp_dir();
-    let server = make_server(&d, scenario);
+    let server = make_server(&d, scenario).await;
 
     for ca in cas {
         let handle = Handle::from_str(ca).unwrap();
@@ -42,7 +44,7 @@ async fn assert_scenario(scenario: &str, cas: &[&str]) {
     let _ = fs::remove_dir_all(d);
 }
 
-fn make_server(work_dir: &PathBuf, scenario: &str) -> CaServer<OpenSslSigner> {
+async fn make_server(work_dir: &PathBuf, scenario: &str) -> CaServer<OpenSslSigner> {
     let mut source = PathBuf::from("test-resources/api/regressions/v0_6_0/history/");
     source.push(scenario);
     source.push("cas");
@@ -57,9 +59,11 @@ fn make_server(work_dir: &PathBuf, scenario: &str) -> CaServer<OpenSslSigner> {
     let signer = OpenSslSigner::build(&server_dir).unwrap();
     let signer = Arc::new(RwLock::new(signer));
 
-    let event_queue = Arc::new(EventQueueListener::in_mem());
+    let event_queue = Arc::new(EventQueueListener::default());
 
-    CaServer::<OpenSslSigner>::build(&server_dir, None, None, event_queue, signer).unwrap()
+    CaServer::<OpenSslSigner>::build(&server_dir, None, None, event_queue, signer)
+        .await
+        .unwrap()
 }
 
 async fn assert_history(server: &CaServer<OpenSslSigner>, scenario: &str, ca: &Handle) {

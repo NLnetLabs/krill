@@ -61,6 +61,7 @@ impl Scheduler {
     }
 }
 
+#[allow(clippy::cognitive_complexity)]
 fn make_event_sh(
     event_queue: Arc<EventQueueListener>,
     caserver: Arc<CaServer<OpenSslSigner>>,
@@ -68,110 +69,93 @@ fn make_event_sh(
 ) -> ScheduleHandle {
     let mut scheduler = clokwerk::Scheduler::new();
     scheduler.every(1.seconds()).run(move || {
-        while let Some(evt) = event_queue.pop() {
-            let mut rt = Runtime::new().unwrap();
-            match evt {
-                QueueEvent::Delta(handle, _version) => {
-                    rt.block_on(
-                        try_publish(&event_queue, caserver.clone(), pubserver.clone(), handle)
-                    )
-                }
-                QueueEvent::ReschedulePublish(handle, last_try) => {
-                    if CONFIG.test_mode || Time::five_minutes_ago().timestamp() > last_try.timestamp() {
-                        rt.block_on(
-                            try_publish(&event_queue, caserver.clone(), pubserver.clone(), handle)
-                        )
-                    } else {
-                        event_queue.push_back(QueueEvent::ReschedulePublish(handle, last_try));
+        let mut rt = Runtime::new().unwrap();
+
+        rt.block_on( async {
+            for evt in event_queue.pop_all().await {
+                match evt {
+                    QueueEvent::Delta(handle, _version) => {
+                        try_publish(&event_queue, caserver.clone(), pubserver.clone(), handle).await
                     }
-                }
-                QueueEvent::ResourceClassRemoved(handle, _, parent, revocations) => {
-                    rt.block_on(async {
-                        info!(
-                            "Trigger send revoke requests for removed RC for '{}' under '{}'",
-                            handle,
-                            parent
-                        );
-                        if caserver
-                            .send_revoke_requests(&handle, &parent, revocations).await
-                            .is_err()
-                        {
+                    QueueEvent::ReschedulePublish(handle, last_try) => {
+                        if Time::five_minutes_ago().timestamp() > last_try.timestamp() {
+                            try_publish(&event_queue, caserver.clone(), pubserver.clone(), handle).await
+                        } else {
+                            event_queue.push_back(QueueEvent::ReschedulePublish(handle, last_try)).await;
+                        }
+                    }
+                    QueueEvent::ResourceClassRemoved(handle, _, parent, revocations) => {
+                        info!("Trigger send revoke requests for removed RC for '{}' under '{}'",handle,parent);
+
+                        if caserver.send_revoke_requests(&handle, &parent, revocations).await.is_err() {
                             warn!("Could not revoke key for removed resource class. This is not \
                             an issue, because typically the parent will revoke our keys pro-actively, \
                             just before removing the resource class entitlements.");
                         }
-                    })
-                }
-                QueueEvent::UnexpectedKey(handle, _, rcn, revocation) => {
-                    rt.block_on(async {
-                        info!(
-                            "Trigger sending revocation requests for unexpected key with id '{}' in RC '{}'",
-                            revocation.key(),
-                            rcn
-                        );
-                        if let Err(e) = caserver
-                            .send_revoke_unexpected_key(&handle, rcn, revocation).await {
-                            error!("Could not revoke unexpected surplus key at parent: {}", e);
-                        }
-                    })
-                }
-                QueueEvent::ParentAdded(handle, _, parent) => {
-                    rt.block_on(async {
-                        info!(
-                            "Get updates for '{}' from added parent '{}'.",
-                            handle,
-                            parent
-                        );
-                        if let Err(e) = caserver.get_updates_from_parent(&handle, &parent).await {
-                            error!(
-                                "Error getting updates for '{}', from parent '{}',  error: '{}'",
-                                &handle, &parent, e
-                            )
-                        }
-                    })
-                }
-                QueueEvent::RepositoryConfigured(ca, _) => {
-                    rt.block_on(async {
-                        info!("Repository configured for '{}'", ca);
-                        if let Err(e) = caserver.get_delayed_updates(&ca).await {
-                            error!(
-                                "Error getting updates after configuring repository for '{}',  error: '{}'",
-                                &ca, e
-                            )
-                        }
-                    })
-                }
-
-                QueueEvent::RequestsPending(handle, _) => {
-                    rt.block_on(async {
-                        info!("Get updates for pending requests for '{}'.", handle);
-                        if let Err(e) = caserver.send_all_requests(&handle).await {
-                            error!(
-                                "Failed to send pending requests for '{}', error '{}'",
-                                &handle, e
-                            );
-                        }
-                    })
-                }
-                QueueEvent::CleanOldRepo(handle, _) => {
-                    rt.block_on(async {
-                        let publisher = CaPublisher::new(caserver.clone(), pubserver.clone());
-                        if let Err(e) = publisher.clean_up(&handle).await {
+                    }
+                    QueueEvent::UnexpectedKey(handle, _, rcn, revocation) => {
                             info!(
-                                "Could not clean up old repo for '{}', it may be that it's no longer available. Got error '{}'",
-                                &handle, e
+                                "Trigger sending revocation requests for unexpected key with id '{}' in RC '{}'",
+                                revocation.key(),
+                                rcn
                             );
-                        }
-                        if let Err(e) = caserver.remove_old_repo(&handle).await {
-                            error!(
-                                "Failed to remove old repo from ca '{}', error '{}'",
-                                &handle, e
+                            if let Err(e) = caserver
+                                .send_revoke_unexpected_key(&handle, rcn, revocation).await {
+                                error!("Could not revoke unexpected surplus key at parent: {}", e);
+                            }
+                    }
+                    QueueEvent::ParentAdded(handle, _, parent) => {
+                            info!(
+                                "Get updates for '{}' from added parent '{}'.",
+                                handle,
+                                parent
                             );
-                        }
-                    })
+                            if let Err(e) = caserver.get_updates_from_parent(&handle, &parent).await {
+                                error!(
+                                    "Error getting updates for '{}', from parent '{}',  error: '{}'",
+                                    &handle, &parent, e
+                                )
+                            }
+                    }
+                    QueueEvent::RepositoryConfigured(ca, _) => {
+                            info!("Repository configured for '{}'", ca);
+                            if let Err(e) = caserver.get_delayed_updates(&ca).await {
+                                error!(
+                                    "Error getting updates after configuring repository for '{}',  error: '{}'",
+                                    &ca, e
+                                )
+                            }
+                    }
+
+                    QueueEvent::RequestsPending(handle, _) => {
+                            info!("Get updates for pending requests for '{}'.", handle);
+                            if let Err(e) = caserver.send_all_requests(&handle).await {
+                                error!(
+                                    "Failed to send pending requests for '{}', error '{}'",
+                                    &handle, e
+                                );
+                            }
+                    }
+                    QueueEvent::CleanOldRepo(handle, _) => {
+                            let publisher = CaPublisher::new(caserver.clone(), pubserver.clone());
+                            if let Err(e) = publisher.clean_up(&handle).await {
+                                info!(
+                                    "Could not clean up old repo for '{}', it may be that it's no longer available. Got error '{}'",
+                                    &handle, e
+                                );
+                            }
+                            if let Err(e) = caserver.remove_old_repo(&handle).await {
+                                error!(
+                                    "Failed to remove old repo from ca '{}', error '{}'",
+                                    &handle, e
+                                );
+                            }
+                    }
                 }
             }
-        }
+        });
+
+
     });
     scheduler.watch_thread(Duration::from_millis(100))
 }
@@ -186,8 +170,14 @@ async fn try_publish(
     let publisher = CaPublisher::new(caserver.clone(), pubserver);
 
     if let Err(e) = publisher.publish(&ca).await {
-        error!("Failed to publish for '{}' will reschedule, error: {}", ca, e);
-        event_queue.push_back(QueueEvent::ReschedulePublish(ca, Time::now()))
+        if CONFIG.test_mode {
+            error!("Failed to publish for '{}', error: {}", ca, e);
+        } else {
+            error!("Failed to publish for '{}' will reschedule, error: {}", ca, e);
+            event_queue
+                .push_back(QueueEvent::ReschedulePublish(ca, Time::now()))
+                .await;
+        }
     }
 }
 

@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::ops::DerefMut;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+
+use tokio::sync::RwLock;
 
 use rpki::crypto::KeyIdentifier;
 
@@ -48,8 +50,8 @@ impl IniDet {
 }
 
 impl IniDet {
-    pub fn init<S: Signer>(handle: &Handle, signer: Arc<RwLock<S>>) -> KrillResult<Ini> {
-        let mut signer = signer.write().unwrap();
+    pub async fn init<S: Signer>(handle: &Handle, signer: &Arc<RwLock<S>>) -> KrillResult<Ini> {
+        let mut signer = signer.write().await;
         let id = Rfc8183Id::generate(signer.deref_mut())?;
         Ok(Ini::new(
             handle,

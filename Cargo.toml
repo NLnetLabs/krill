@@ -16,6 +16,7 @@ exclude = [
 ]
 
 [dependencies]
+async-trait     = "0.1.38"
 base64          = "^0.10"
 bcder           = "0.5.0"
 bytes           = "^0.5"

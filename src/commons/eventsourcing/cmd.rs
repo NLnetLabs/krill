@@ -13,7 +13,7 @@ use crate::commons::eventsourcing::{Event, Storable};
 /// In addition to implementing Storable so that the details can be stored
 /// *and* retrieved, the details also need to be able to present a generic
 /// CommandSummer for use in history.
-pub trait WithStorableDetails: Storable {
+pub trait WithStorableDetails: Storable + Send + Sync {
     fn summary(&self) -> CommandSummary;
 }
 
@@ -24,7 +24,7 @@ pub trait WithStorableDetails: Storable {
 /// Think of this as the data container for your update API, plus some
 /// meta-data to ensure that the command is sent to the right instance of an
 /// Aggregate, and that concurrency issues are handled.
-pub trait Command: fmt::Display {
+pub trait Command: fmt::Display + Send + Sync {
     /// Identify the type of event returned by the aggregate that uses this
     /// command. This is needed because we may need to check whether a
     /// command conflicts with recent events.
@@ -127,7 +127,7 @@ impl<C: CommandDetails> fmt::Display for SentCommand<C> {
 
 /// Implement this for an enum with CommandDetails, so you you can reuse the
 /// id and version boilerplate from ['SentCommand'].
-pub trait CommandDetails: fmt::Display + 'static {
+pub trait CommandDetails: fmt::Display + Send + Sync + 'static {
     type Event: Event;
     type StorableDetails: WithStorableDetails;
 

@@ -236,7 +236,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
         res.push_str(&format!("krill_version_patch {}\n", KRILL_VERSION_PATCH));
         res.push_str("\n");
 
-        if let Ok(stats) = server.repo_stats() {
+        if let Ok(stats) = server.repo_stats().await {
             let publishers = stats.get_publishers();
 
             res.push_str("# HELP krill_repo_publisher number of publishers in repository\n");
@@ -434,7 +434,7 @@ pub async fn rfc8181(req: Request) -> RoutingResult {
         };
 
         let read = state.read().await;
-        match read.rfc8181(publisher, bytes) {
+        match read.rfc8181(publisher, bytes).await {
             Ok(bytes) => Ok(HttpResponse::rfc8181(bytes.to_vec())),
             Err(e) => render_error(e),
         }
@@ -502,7 +502,7 @@ async fn stats(req: Request) -> RoutingResult {
     match *req.method() {
         Method::GET => match req.path().full() {
             "/stats/info" => render_json(req.state().read().await.server_info()),
-            "/stats/repo" => render_json_res(req.state().read().await.repo_stats()),
+            "/stats/repo" => render_json_res(req.state().read().await.repo_stats().await),
             "/stats/cas" => render_json(req.state().read().await.cas_stats().await),
             _ => Err(req),
         },
@@ -673,6 +673,7 @@ pub async fn stale_publishers(req: Request, seconds: Option<&str>) -> RoutingRes
                 .read()
                 .await
                 .repo_stats()
+                .await
                 .map(|stats| PublisherList::build(&stats.stale_publishers(seconds), "/api/v1/publishers")),
         ),
         Err(_) => render_error(Error::ApiInvalidSeconds),
@@ -686,6 +687,7 @@ pub async fn list_pbl(req: Request) -> RoutingResult {
             .read()
             .await
             .publishers()
+            .await
             .map(|publishers| PublisherList::build(&publishers, "/api/v1/publishers")),
     )
 }
@@ -694,7 +696,7 @@ pub async fn list_pbl(req: Request) -> RoutingResult {
 async fn add_pbl(req: Request) -> RoutingResult {
     let server = req.state().clone();
     match req.json().await {
-        Ok(pbl) => render_json_res(server.write().await.add_publisher(pbl)),
+        Ok(pbl) => render_json_res(server.write().await.add_publisher(pbl).await),
         Err(e) => render_error(e),
     }
 }
@@ -703,13 +705,13 @@ async fn add_pbl(req: Request) -> RoutingResult {
 /// that's just fine.
 #[allow(clippy::needless_pass_by_value)]
 pub async fn remove_pbl(req: Request, publisher: Handle) -> RoutingResult {
-    render_empty_res(req.state().write().await.remove_publisher(publisher))
+    render_empty_res(req.state().write().await.remove_publisher(publisher).await)
 }
 
 /// Returns a json structure with publisher details
 #[allow(clippy::needless_pass_by_value)]
 pub async fn show_pbl(req: Request, publisher: Handle) -> RoutingResult {
-    render_json_res(req.state().read().await.get_publisher(&publisher))
+    render_json_res(req.state().read().await.get_publisher(&publisher).await)
 }
 
 //------------ repository_response ---------------------------------------------
@@ -729,7 +731,7 @@ pub async fn repository_response_json(req: Request, publisher: Handle) -> Routin
 }
 
 async fn repository_response(req: &Request, publisher: &Handle) -> Result<rfc8183::RepositoryResponse, Error> {
-    req.state().read().await.repository_response(publisher)
+    req.state().read().await.repository_response(publisher).await
 }
 
 async fn ca_add_child(req: Request, parent: ParentHandle) -> RoutingResult {
@@ -789,7 +791,7 @@ async fn ca_issues(req: Request, ca: Handle) -> RoutingResult {
 }
 
 async fn cas(req: Request) -> RoutingResult {
-    render_json(req.state().read().await.cas().await)
+    render_json(req.state().read().await.ca_list().await)
 }
 
 pub async fn ca_init(req: Request) -> RoutingResult {

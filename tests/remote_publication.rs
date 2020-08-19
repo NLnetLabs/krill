@@ -125,9 +125,6 @@ async fn remote_publication() {
     add_parent_to_ca(&child, parent).await;
     assert!(ca_gets_resources(&child, &child_resources).await);
 
-    // work-around.. something is not ready.. not clear what.
-    delay_for(Duration::from_secs(5)).await;
-
     // Add some roas to have more to migrate when moving publication servers
     let route_1 = RoaDefinition::from_str("10.0.0.0/24 => 64496").unwrap();
     let route_2 = RoaDefinition::from_str("10.0.2.0/23 => 64496").unwrap();

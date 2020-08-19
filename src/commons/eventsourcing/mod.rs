@@ -30,8 +30,8 @@ mod tests {
     //! Goal is two-fold: document using a simple domain, and test the module.
     //!
 
-    use std::fmt;
     use std::sync::Arc;
+    use std::{fmt, fs};
 
     use serde::Serialize;
 
@@ -221,6 +221,7 @@ mod tests {
         }
     }
 
+    #[async_trait]
     impl Aggregate for Person {
         type Command = PersonCommand;
         type StorableCommandDetails = PersonCommandDetails;
@@ -250,7 +251,7 @@ mod tests {
             self.version += 1;
         }
 
-        fn process_command(&self, command: Self::Command) -> PersonResult {
+        async fn process_command(&self, command: Self::Command) -> PersonResult {
             match command.into_details() {
                 PersonCommandDetails::ChangeName(name) => {
                     let event = PersonEvent::name_changed(&self, name);
@@ -268,66 +269,68 @@ mod tests {
         }
     }
 
-    #[test]
-    fn event_sourcing_framework() {
-        test::test_under_tmp(|d| {
-            let counter = Arc::new(EventCounter::default());
-            let mut manager = DiskAggregateStore::<Person>::new(&d, "person").unwrap();
-            manager.add_listener(counter.clone());
+    #[tokio::test]
+    async fn event_sourcing_framework() {
+        let d = test::tmp_dir();
 
-            let id_alice = Handle::from_str("alice").unwrap();
-            let alice_init = InitPersonEvent::init(&id_alice, "alice smith");
+        let counter = Arc::new(EventCounter::default());
+        let mut manager = DiskAggregateStore::<Person>::new(&d, "person").unwrap();
+        manager.add_listener(counter.clone()).await;
 
-            manager.add(alice_init).unwrap();
+        let id_alice = Handle::from_str("alice").unwrap();
+        let alice_init = InitPersonEvent::init(&id_alice, "alice smith");
 
-            let mut alice = manager.get_latest(&id_alice).unwrap();
-            assert_eq!("alice smith", alice.name());
-            assert_eq!(0, alice.age());
+        manager.add(alice_init).await.unwrap();
 
-            let mut age = 0;
-            loop {
-                let get_older = PersonCommand::go_around_sun(&id_alice, None);
-                alice = manager.command(get_older).unwrap();
+        let mut alice = manager.get_latest(&id_alice).await.unwrap();
+        assert_eq!("alice smith", alice.name());
+        assert_eq!(0, alice.age());
 
-                age += 1;
-                if age == 21 {
-                    break;
-                }
+        let mut age = 0;
+        loop {
+            let get_older = PersonCommand::go_around_sun(&id_alice, None);
+            alice = manager.command(get_older).await.unwrap();
+
+            age += 1;
+            if age == 21 {
+                break;
             }
+        }
 
-            assert_eq!("alice smith", alice.name());
-            assert_eq!(21, alice.age());
+        assert_eq!("alice smith", alice.name());
+        assert_eq!(21, alice.age());
 
-            let change_name = PersonCommand::change_name(&id_alice, Some(22), "alice smith-doe");
-            let alice = manager.command(change_name).unwrap();
-            assert_eq!("alice smith-doe", alice.name());
-            assert_eq!(21, alice.age());
+        let change_name = PersonCommand::change_name(&id_alice, Some(22), "alice smith-doe");
+        let alice = manager.command(change_name).await.unwrap();
+        assert_eq!("alice smith-doe", alice.name());
+        assert_eq!(21, alice.age());
 
-            // Should read state from disk
-            let manager = DiskAggregateStore::<Person>::new(&d, "person").unwrap();
+        // Should read state from disk
+        let manager = DiskAggregateStore::<Person>::new(&d, "person").unwrap();
 
-            let alice = manager.get_latest(&id_alice).unwrap();
-            assert_eq!("alice smith-doe", alice.name());
-            assert_eq!(21, alice.age());
+        let alice = manager.get_latest(&id_alice).await.unwrap();
+        assert_eq!("alice smith-doe", alice.name());
+        assert_eq!(21, alice.age());
 
-            assert_eq!(22, counter.total());
+        assert_eq!(22, counter.total().await);
 
-            // Get paginated history
-            let mut crit = CommandHistoryCriteria::default();
-            crit.set_offset(3);
-            crit.set_rows(10);
+        // Get paginated history
+        let mut crit = CommandHistoryCriteria::default();
+        crit.set_offset(3);
+        crit.set_rows(10);
 
-            let history = manager.command_history(&id_alice, crit).unwrap();
-            assert_eq!(history.total(), 22);
-            assert_eq!(history.offset(), 3);
-            assert_eq!(history.commands().len(), 10);
-            assert_eq!(history.commands().first().unwrap().sequence, 4);
+        let history = manager.command_history(&id_alice, crit).unwrap();
+        assert_eq!(history.total(), 22);
+        assert_eq!(history.offset(), 3);
+        assert_eq!(history.commands().len(), 10);
+        assert_eq!(history.commands().first().unwrap().sequence, 4);
 
-            // Get history excluding 'around the sun' commands
-            let mut crit = CommandHistoryCriteria::default();
-            crit.set_exclude(&["person-around-sun"]);
-            let history = manager.command_history(&id_alice, crit).unwrap();
-            assert_eq!(history.total(), 1);
-        })
+        // Get history excluding 'around the sun' commands
+        let mut crit = CommandHistoryCriteria::default();
+        crit.set_exclude(&["person-around-sun"]);
+        let history = manager.command_history(&id_alice, crit).unwrap();
+        assert_eq!(history.total(), 1);
+
+        let _ = fs::remove_dir_all(d);
     }
 }

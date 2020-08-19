@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::ops::Deref;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+
+use tokio::sync::RwLock;
 
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
@@ -956,7 +958,7 @@ impl ResourceClass {
     /// returns None if there is no overlap in resources
     /// between the desired resources on the RTA and this
     /// RC's current resources.
-    pub fn create_rta_ee<S: Signer>(
+    pub async fn create_rta_ee<S: Signer>(
         &self,
         resources: &ResourceSet,
         validity: Validity,
@@ -966,11 +968,11 @@ impl ResourceClass {
             let intersection = current.incoming_cert().resources().intersection(resources);
             if !intersection.is_empty() {
                 let key = {
-                    let mut signer = signer.write().unwrap();
+                    let mut signer = signer.write().await;
                     signer.create_key(PublicKeyFormat::default()).map_err(Error::signer)?
                 };
 
-                let signer = signer.read().unwrap();
+                let signer = signer.read().await;
 
                 let pub_key = signer.get_key_info(&key).map_err(Error::signer)?;
 
