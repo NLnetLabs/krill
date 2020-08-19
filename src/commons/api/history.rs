@@ -472,7 +472,7 @@ impl fmt::Display for StorableCaCommand {
                 write!(f, "Update child '{}' RFC 8183 key '{}'", child, id_ski)
             }
             StorableCaCommand::ChildCertify(child, _rcn, _limit, key) => {
-                write!(f, "Issue certificate to child '{}' for key '{}", child, key)
+                write!(f, "Issue certificate to child '{}' for key '{}'", child, key)
             }
             StorableCaCommand::ChildRevokeKey(child, req) => write!(
                 f,
