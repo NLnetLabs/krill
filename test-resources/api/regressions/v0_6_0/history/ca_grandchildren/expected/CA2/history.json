@@ -139,7 +139,7 @@
       "version": 8,
       "sequence": 7,
       "summary": {
-        "msg": "Issue certificate to child 'CA3' for key 'C34B56BECCC089081C76560E8F7A41DB1C078150",
+        "msg": "Issue certificate to child 'CA3' for key 'C34B56BECCC089081C76560E8F7A41DB1C078150'",
         "label": "cmd-ca-child-certify",
         "args": {
           "child": "CA3",

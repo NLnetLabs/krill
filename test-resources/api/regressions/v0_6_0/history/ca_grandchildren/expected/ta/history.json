@@ -95,7 +95,7 @@
       "version": 5,
       "sequence": 5,
       "summary": {
-        "msg": "Issue certificate to child 'CA1' for key '4D58715553FB5864C9172AEC973B042ACEB413B5",
+        "msg": "Issue certificate to child 'CA1' for key '4D58715553FB5864C9172AEC973B042ACEB413B5'",
         "label": "cmd-ca-child-certify",
         "args": {
           "child": "CA1",
@@ -144,7 +144,7 @@
       "version": 9,
       "sequence": 7,
       "summary": {
-        "msg": "Issue certificate to child 'CA2' for key 'FE7805B8F0C16A0BF93B6CC8E53D57D39D856018",
+        "msg": "Issue certificate to child 'CA2' for key 'FE7805B8F0C16A0BF93B6CC8E53D57D39D856018'",
         "label": "cmd-ca-child-certify",
         "args": {
           "child": "CA2",

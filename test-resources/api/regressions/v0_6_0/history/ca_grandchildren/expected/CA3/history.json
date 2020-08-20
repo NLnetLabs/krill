@@ -205,7 +205,7 @@
       "version": 12,
       "sequence": 10,
       "summary": {
-        "msg": "Issue certificate to child 'CA4' for key 'AB90119164402C965DC5544B54E30B6A7014CDB6",
+        "msg": "Issue certificate to child 'CA4' for key 'AB90119164402C965DC5544B54E30B6A7014CDB6'",
         "label": "cmd-ca-child-certify",
         "args": {
           "child": "CA4",
@@ -229,7 +229,7 @@
       "version": 15,
       "sequence": 11,
       "summary": {
-        "msg": "Issue certificate to child 'CA4' for key '33EF547F08298CEE8D3C6C41B24550496C5E3ED6",
+        "msg": "Issue certificate to child 'CA4' for key '33EF547F08298CEE8D3C6C41B24550496C5E3ED6'",
         "label": "cmd-ca-child-certify",
         "args": {
           "child": "CA4",

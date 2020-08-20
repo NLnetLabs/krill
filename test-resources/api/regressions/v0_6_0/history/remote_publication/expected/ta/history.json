@@ -95,7 +95,7 @@
       "version": 5,
       "sequence": 5,
       "summary": {
-        "msg": "Issue certificate to child 'child' for key 'A2C397B77EC1FABAF612E2DB5790E17BA1D8E7F0",
+        "msg": "Issue certificate to child 'child' for key 'A2C397B77EC1FABAF612E2DB5790E17BA1D8E7F0'",
         "label": "cmd-ca-child-certify",
         "args": {
           "child": "child",
@@ -119,7 +119,7 @@
       "version": 8,
       "sequence": 6,
       "summary": {
-        "msg": "Issue certificate to child 'child' for key 'A2C397B77EC1FABAF612E2DB5790E17BA1D8E7F0",
+        "msg": "Issue certificate to child 'child' for key 'A2C397B77EC1FABAF612E2DB5790E17BA1D8E7F0'",
         "label": "cmd-ca-child-certify",
         "args": {
           "child": "child",
@@ -143,7 +143,7 @@
       "version": 11,
       "sequence": 7,
       "summary": {
-        "msg": "Issue certificate to child 'child' for key 'A2C397B77EC1FABAF612E2DB5790E17BA1D8E7F0",
+        "msg": "Issue certificate to child 'child' for key 'A2C397B77EC1FABAF612E2DB5790E17BA1D8E7F0'",
         "label": "cmd-ca-child-certify",
         "args": {
           "class_name": "0",
