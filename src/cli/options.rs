@@ -1771,9 +1771,6 @@ pub enum CaCommand {
     #[display(fmt = "update repo details for ca: '{}'", _0)]
     RepoUpdate(Handle, RepositoryUpdate),
 
-    #[display(fmt = "get repo state for ca: '{}'", _0)]
-    RepoState(Handle),
-
     #[display(fmt = "get repo status for ca: '{}'", _0)]
     RepoStatus(Handle),
 

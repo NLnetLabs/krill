@@ -14,10 +14,10 @@ use rpki::x509::Time;
 
 use crate::commons::api::{
     AddChildRequest, AllCertAuthIssues, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthInit, CertAuthIssues,
-    CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, CurrentRepoState,
-    Handle, ListReply, ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublishDelta, PublisherDetails,
-    PublisherHandle, RepoInfo, RepoStatus, RepositoryContact, RepositoryUpdate, ResourceSet, RoaDefinition,
-    RoaDefinitionUpdates, ServerInfo, TaCertDetails, UpdateChildRequest,
+    CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Handle, ListReply,
+    ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublishDelta, PublisherDetails, PublisherHandle,
+    RepoInfo, RepoStatus, RepositoryContact, RepositoryUpdate, ResourceSet, RoaDefinition, RoaDefinitionUpdates,
+    ServerInfo, TaCertDetails, UpdateChildRequest,
 };
 use crate::commons::bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::error::Error;
@@ -448,18 +448,16 @@ impl KrillServer {
     pub async fn ca_issues(&self, ca_handle: &Handle) -> KrillResult<CertAuthIssues> {
         let mut issues = CertAuthIssues::default();
 
-        if let CurrentRepoState::Error(msg) = self.ca_repo_state(ca_handle).await? {
-            issues.add_repo_issue(msg);
+        let status = self.ca_repo_status(ca_handle).await?;
+
+        if let Some(error) = status.into_failure_opt() {
+            issues.add_repo_issue(error)
         }
 
-        let ca = self.caserver.get_ca(ca_handle).await?;
-
-        for parent_handle in ca.parents() {
-            let contact = ca.parent(parent_handle).unwrap(); // parent is always known
-            if !contact.is_ta() {
-                if let Err(e) = self.ca_parent_reachable(ca_handle, parent_handle, contact).await {
-                    issues.add_parent_issue(parent_handle.clone(), e.to_error_response());
-                }
+        let parent_statuses = self.caserver.ca_parent_statuses(ca_handle).await?;
+        for (parent, status) in parent_statuses.into_iter() {
+            if let Some(error) = status.into_failure_opt() {
+                issues.add_parent_issue(parent, error)
             }
         }
 
@@ -514,7 +512,7 @@ impl KrillServer {
         ca.parent(parent).map(|p| p.clone())
     }
 
-    pub async fn ca_my_parent_statuses(&self, ca: Handle) -> KrillResult<ParentStatuses> {
+    pub async fn ca_my_parent_statuses(&self, ca: &Handle) -> KrillResult<ParentStatuses> {
         self.caserver.ca_parent_statuses(ca).await
     }
 
@@ -549,13 +547,6 @@ impl KrillServer {
         Ok(CaRepoDetails::new(contact.clone()))
     }
 
-    /// Returns the state of the current Configured repo for a ca
-    pub async fn ca_repo_state(&self, handle: &Handle) -> KrillResult<CurrentRepoState> {
-        let ca = self.caserver.get_ca(handle).await?;
-        let contact = ca.get_repository_contact()?;
-        Ok(self.repo_state(handle, contact.as_reponse_opt()).await)
-    }
-
     pub async fn ca_repo_status(&self, ca: &Handle) -> KrillResult<RepoStatus> {
         self.caserver.ca_repo_status(ca).await
     }
@@ -580,8 +571,8 @@ impl KrillServer {
             }
             RepositoryUpdate::Rfc8181(response) => {
                 // first check that the new repo can be contacted
-                if let CurrentRepoState::Error(error) = self.repo_state(&handle, Some(&response)).await {
-                    return Err(Error::CaRepoIssue(handle, error.msg().to_string()));
+                if let Err(error) = self.caserver.send_rfc8181_list(&handle, &response, false).await {
+                    return Err(Error::CaRepoIssue(handle, error.to_error_response().msg().to_string()));
                 }
 
                 RepositoryContact::Rfc8181(response)
@@ -589,22 +580,6 @@ impl KrillServer {
         };
 
         Ok(self.caserver.update_repo(handle, contact).await?)
-    }
-
-    async fn repo_state(&self, handle: &Handle, repo: Option<&rfc8183::RepositoryResponse>) -> CurrentRepoState {
-        match repo {
-            None => match self.get_embedded() {
-                Err(e) => CurrentRepoState::error(e.to_error_response()),
-                Ok(repo) => match repo.list(handle).await {
-                    Err(e) => CurrentRepoState::error(e.to_error_response()),
-                    Ok(list) => CurrentRepoState::list(list),
-                },
-            },
-            Some(repo) => match self.caserver.send_rfc8181_list(handle, repo, false).await {
-                Err(e) => CurrentRepoState::error(e.to_error_response()),
-                Ok(list) => CurrentRepoState::list(list),
-            },
-        }
     }
 
     pub async fn ca_update_id(&self, handle: Handle) -> KrillEmptyResult {

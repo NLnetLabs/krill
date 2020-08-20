@@ -615,7 +615,6 @@ async fn api_ca_repo(req: Request, path: &mut RequestPath, ca: Handle) -> Routin
         },
         Some("request.json") => ca_publisher_req_json(req, ca).await,
         Some("request.xml") => ca_publisher_req_xml(req, ca).await,
-        Some("state") => ca_repo_state(req, ca).await,
         Some("status") => ca_repo_status(req, ca).await,
         _ => render_unknown_method(),
     }
@@ -822,7 +821,7 @@ async fn ca_my_parent_contact(req: Request, ca: Handle, parent: ParentHandle) ->
 }
 
 async fn ca_my_parent_statuses(req: Request, ca: Handle) -> RoutingResult {
-    render_json_res(req.state().read().await.ca_my_parent_statuses(ca).await)
+    render_json_res(req.state().read().await.ca_my_parent_statuses(&ca).await)
 }
 
 async fn ca_children(req: Request, path: &mut RequestPath, ca: Handle) -> RoutingResult {
@@ -957,13 +956,6 @@ async fn ca_publisher_req_xml(req: Request, handle: Handle) -> RoutingResult {
 
 async fn ca_repo_details(req: Request, handle: Handle) -> RoutingResult {
     render_json_res(req.state().read().await.ca_repo_details(&handle).await)
-}
-
-async fn ca_repo_state(req: Request, handle: Handle) -> RoutingResult {
-    match *req.method() {
-        Method::GET => render_json_res(req.state().read().await.ca_repo_state(&handle).await),
-        _ => render_unknown_method(),
-    }
 }
 
 async fn ca_repo_status(req: Request, handle: Handle) -> RoutingResult {

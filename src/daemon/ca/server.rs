@@ -575,11 +575,11 @@ impl<S: Signer> CaServer<S> {
     }
 
     /// Returns the parent statuses for this CA
-    pub async fn ca_parent_statuses(&self, ca: Handle) -> KrillResult<ParentStatuses> {
-        if self.ca_store.has(&ca).await {
-            self.status_store.lock().await.get_parent_statuses(&ca).await
+    pub async fn ca_parent_statuses(&self, ca: &Handle) -> KrillResult<ParentStatuses> {
+        if self.ca_store.has(ca).await {
+            self.status_store.lock().await.get_parent_statuses(ca).await
         } else {
-            Err(Error::CaUnknown(ca))
+            Err(Error::CaUnknown(ca.clone()))
         }
     }
 

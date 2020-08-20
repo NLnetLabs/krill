@@ -4,8 +4,8 @@ use serde::Serialize;
 
 use crate::commons::api::{
     AllCertAuthIssues, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthIssues, CertAuthList, ChildCaInfo,
-    CommandHistory, CurrentRepoState, ParentCaContact, ParentStatuses, PublisherDetails, PublisherList, RepoStatus,
-    RoaDefinitions, ServerInfo,
+    CommandHistory, ParentCaContact, ParentStatuses, PublisherDetails, PublisherList, RepoStatus, RoaDefinitions,
+    ServerInfo,
 };
 use crate::commons::bgp::{BgpAnalysisAdvice, BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::remote::api::ClientInfos;
@@ -46,7 +46,6 @@ pub enum ApiResponse {
     Rfc8183PublisherRequest(rfc8183::PublisherRequest),
 
     RepoDetails(CaRepoDetails),
-    RepoState(CurrentRepoState),
     RepoStatus(RepoStatus),
 
     CertAuthIssues(CertAuthIssues),
@@ -87,7 +86,6 @@ impl ApiResponse {
                 ApiResponse::Rfc8183PublisherRequest(req) => Ok(Some(req.report(fmt)?)),
                 ApiResponse::Rfc8183RepositoryResponse(res) => Ok(Some(res.report(fmt)?)),
                 ApiResponse::RepoDetails(details) => Ok(Some(details.report(fmt)?)),
-                ApiResponse::RepoState(state) => Ok(Some(state.report(fmt)?)),
                 ApiResponse::RepoStatus(status) => Ok(Some(status.report(fmt)?)),
                 ApiResponse::Rta(rta) => Ok(Some(rta.report(fmt)?)),
                 ApiResponse::GenericBody(body) => Ok(Some(body.clone())),
@@ -184,7 +182,6 @@ impl Report for BgpAnalysisReport {}
 impl Report for BgpAnalysisSuggestion {}
 
 impl Report for CaRepoDetails {}
-impl Report for CurrentRepoState {}
 impl Report for RepoStatus {}
 
 impl Report for CertAuthIssues {}

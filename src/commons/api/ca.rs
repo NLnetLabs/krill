@@ -23,8 +23,8 @@ use crate::commons::api::publication::Publish;
 use crate::commons::api::rrdp::PublishElement;
 use crate::commons::api::{publication, Entitlements, RoaAggregateKey};
 use crate::commons::api::{
-    Base64, ChildHandle, ErrorResponse, Handle, HexEncodedHash, IssuanceRequest, ListReply, ParentCaContact,
-    ParentHandle, RepositoryContact, RequestResourceLimit, RoaDefinition,
+    Base64, ChildHandle, ErrorResponse, Handle, HexEncodedHash, IssuanceRequest, ParentCaContact, ParentHandle,
+    RepositoryContact, RequestResourceLimit, RoaDefinition,
 };
 use crate::commons::remote::crypto::IdCert;
 use crate::commons::util::ext_serde;
@@ -1557,6 +1557,15 @@ impl ParentStatuses {
     }
 }
 
+impl IntoIterator for ParentStatuses {
+    type Item = (ParentHandle, ParentStatus);
+    type IntoIter = std::collections::hash_map::IntoIter<ParentHandle, ParentStatus>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
 impl Default for ParentStatuses {
     fn default() -> Self {
         ParentStatuses(HashMap::new())
@@ -1596,6 +1605,10 @@ impl ParentStatus {
 
     pub fn entitlements(&self) -> &HashMap<ResourceClassName, ResourceSet> {
         &self.entitlements
+    }
+
+    pub fn into_failure_opt(self) -> Option<ErrorResponse> {
+        self.last_exchange.map(|e| e.into_failure_opt()).flatten()
     }
 
     fn set_failure(&mut self, error: ErrorResponse) {
@@ -1653,6 +1666,10 @@ impl RepoStatus {
 
     pub fn published(&self) -> &Vec<PublishElement> {
         &self.published
+    }
+
+    pub fn into_failure_opt(self) -> Option<ErrorResponse> {
+        self.last_exchange.map(|e| e.into_failure_opt()).flatten()
     }
 }
 
@@ -1716,6 +1733,13 @@ impl ParentExchange {
         match &self.result {
             ParentExchangeResult::Success => true,
             ParentExchangeResult::Failure(_) => false,
+        }
+    }
+
+    pub fn into_failure_opt(self) -> Option<ErrorResponse> {
+        match self.result {
+            ParentExchangeResult::Success => None,
+            ParentExchangeResult::Failure(error) => Some(error),
         }
     }
 }
@@ -2037,53 +2061,6 @@ impl fmt::Display for ResourceClassKeysInfo {
         }
 
         res.fmt(f)
-    }
-}
-
-//------------ CaRepoDetails -------------------------------------------------
-
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-#[allow(clippy::large_enum_variant)]
-pub enum CurrentRepoState {
-    List(ListReply),
-    Error(ErrorResponse),
-}
-
-impl CurrentRepoState {
-    pub fn list(list: ListReply) -> Self {
-        CurrentRepoState::List(list)
-    }
-
-    pub fn error(response: ErrorResponse) -> Self {
-        CurrentRepoState::Error(response)
-    }
-
-    pub fn as_list(&self) -> &ListReply {
-        match &self {
-            CurrentRepoState::List(list) => list,
-            CurrentRepoState::Error(e) => panic!("{}", e),
-        }
-    }
-}
-
-impl fmt::Display for CurrentRepoState {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match &self {
-            CurrentRepoState::Error(e) => writeln!(f, "Error contacting repo! => {}", e),
-            CurrentRepoState::List(list) => {
-                writeln!(f, "Available and publishing objects:")?;
-                let elements = list.elements();
-                if elements.is_empty() {
-                    writeln!(f, "  <nothing>")?;
-                } else {
-                    for el in elements.iter() {
-                        writeln!(f, "  {} {}", el.hash(), el.uri())?;
-                    }
-                }
-                Ok(())
-            }
-        }
     }
 }
 
