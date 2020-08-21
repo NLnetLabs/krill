@@ -447,6 +447,7 @@ async fn ta(req: Request) -> RoutingResult {
     match *req.method() {
         Method::GET => match req.path.full() {
             "/ta/ta.tal" => tal(req).await,
+            "/testbed.tal" if CONFIG.testbed_enabled => tal(req).await,
             "/ta/ta.cer" => ta_cer(req).await,
             _ => Err(req),
         },
