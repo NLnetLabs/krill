@@ -102,8 +102,24 @@ impl ConfigDefaults {
         32 * 1024 * 1024 // 32MB (roughly 8000 issued certificates, so a key roll for nicbr and 100% uptake should be okay)
     }
 
+    fn rfc8181_log_dir() -> Option<PathBuf> {
+        if Self::test_mode() {
+            Some(PathBuf::from("./data/rfc8181_msgs"))
+        } else {
+            None
+        }
+    }
+
     fn post_limit_rfc6492() -> u64 {
         1024 * 1024 // 1MB (for ref. the NIC br cert is about 200kB)
+    }
+
+    fn rfc6492_log_dir() -> Option<PathBuf> {
+        if Self::test_mode() {
+            Some(PathBuf::from("./data/rfc6492_msgs"))
+        } else {
+            None
+        }
     }
 
     fn bgp_risdumps_enabled() -> bool {
@@ -221,10 +237,14 @@ pub struct Config {
 
     #[serde(default = "ConfigDefaults::post_limit_rfc8181")]
     pub post_limit_rfc8181: u64,
+
+    #[serde(default = "ConfigDefaults::rfc8181_log_dir")]
     pub rfc8181_log_dir: Option<PathBuf>,
 
     #[serde(default = "ConfigDefaults::post_limit_rfc6492")]
     pub post_limit_rfc6492: u64,
+
+    #[serde(default = "ConfigDefaults::rfc6492_log_dir")]
     pub rfc6492_log_dir: Option<PathBuf>,
 
     // RIS BGP
@@ -310,6 +330,14 @@ impl Config {
                 path
             }
             Some(file) => file.clone(),
+        }
+    }
+
+    pub fn republish_hours(&self) -> i64 {
+        if self.timing_publish_hours_before_next < self.timing_publish_next_hours {
+            self.timing_publish_next_hours - self.timing_publish_hours_before_next
+        } else {
+            0
         }
     }
 }
@@ -532,6 +560,57 @@ impl Config {
 
         if self.use_ta && !self.repo_enabled {
             return Err(ConfigError::other("Cannot use embedded TA without embedded repository"));
+        }
+
+        if self.timing_publish_next_hours < 2 {
+            return Err(ConfigError::other("timing_publish_next_hours must be at least 2"));
+        }
+
+        if self.timing_publish_hours_before_next < 1 {
+            return Err(ConfigError::other(
+                "timing_publish_hours_before_next must be at least 1",
+            ));
+        }
+
+        if self.timing_publish_hours_before_next >= self.timing_publish_next_hours {
+            return Err(ConfigError::other(
+                "timing_publish_hours_before_next must be smaller than timing_publish_hours",
+            ));
+        }
+
+        if self.timing_publish_valid_days < 1 || self.timing_publish_valid_days < (self.timing_publish_next_hours / 24)
+        {
+            return Err(ConfigError::other("timing_publish_valid_days must be 1 or bigger, and must be at least as long as timing_publish_next_hours"));
+        }
+
+        if self.timing_child_certificate_valid_weeks < 2 {
+            return Err(ConfigError::other(
+                "timing_child_certificate_valid_weeks must be at least 2",
+            ));
+        }
+
+        if self.timing_child_certificate_reissue_weeks_before < 1 {
+            return Err(ConfigError::other(
+                "timing_child_certificate_reissue_weeks_before must be at least 1",
+            ));
+        }
+
+        if self.timing_child_certificate_reissue_weeks_before >= self.timing_child_certificate_valid_weeks {
+            return Err(ConfigError::other("timing_child_certificate_reissue_weeks_before must be smaller than timing_child_certificate_valid_weeks"));
+        }
+
+        if self.timing_roa_valid_weeks < 2 {
+            return Err(ConfigError::other("timing_roa_valid_weeks must be at least 2"));
+        }
+
+        if self.timing_roa_reissue_weeks_before < 1 {
+            return Err(ConfigError::other("timing_roa_reissue_weeks_before must be at least 1"));
+        }
+
+        if self.timing_roa_reissue_weeks_before >= self.timing_roa_valid_weeks {
+            return Err(ConfigError::other(
+                "timing_roa_reissue_weeks_before must be smaller than timing_roa_valid_week",
+            ));
         }
 
         Ok(())

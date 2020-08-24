@@ -8,6 +8,7 @@ use std::str::{from_utf8_unchecked, FromStr};
 use std::{fmt, ops, str};
 
 use bytes::Bytes;
+use chrono::Duration;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::cert::Cert;
@@ -21,7 +22,7 @@ use rpki::x509::{Serial, Time};
 
 use crate::commons::api::publication::Publish;
 use crate::commons::api::rrdp::PublishElement;
-use crate::commons::api::{publication, Entitlements, RoaAggregateKey};
+use crate::commons::api::{publication, EntitlementClass, Entitlements, RoaAggregateKey};
 use crate::commons::api::{
     Base64, ChildHandle, ErrorResponse, Handle, HexEncodedHash, IssuanceRequest, ParentCaContact, ParentHandle,
     RepositoryContact, RequestResourceLimit, RoaDefinition,
@@ -29,6 +30,7 @@ use crate::commons::api::{
 use crate::commons::remote::crypto::IdCert;
 use crate::commons::util::ext_serde;
 use crate::daemon::ca::RouteAuthorization;
+use crate::daemon::config::CONFIG;
 
 //------------ ResourceClassName -------------------------------------------
 
@@ -1536,16 +1538,16 @@ impl ParentStatuses {
         self.0.get(parent)
     }
 
-    pub fn set_failure(&mut self, parent: &ParentHandle, error: ErrorResponse) {
-        self.get_mut_status(parent).set_failure(error);
+    pub fn set_failure(&mut self, parent: &ParentHandle, uri: String, error: ErrorResponse) {
+        self.get_mut_status(parent).set_failure(uri, error);
     }
 
-    pub fn set_entitlements(&mut self, parent: &ParentHandle, entitlements: &Entitlements) {
-        self.get_mut_status(parent).set_entitlements(entitlements);
+    pub fn set_entitlements(&mut self, parent: &ParentHandle, uri: String, entitlements: &Entitlements) {
+        self.get_mut_status(parent).set_entitlements(uri, entitlements);
     }
 
-    pub fn set_last_updated(&mut self, parent: &ParentHandle) {
-        self.get_mut_status(parent).set_last_updated();
+    pub fn set_last_updated(&mut self, parent: &ParentHandle, uri: String) {
+        self.get_mut_status(parent).set_last_updated(uri);
     }
 
     fn get_mut_status(&mut self, parent: &ParentHandle) -> &mut ParentStatus {
@@ -1579,11 +1581,28 @@ impl fmt::Display for ParentStatuses {
             match &status.last_exchange {
                 None => writeln!(f, "Status: connection still pending")?,
                 Some(exchange) => {
+                    writeln!(f, "URI: {}", exchange.uri)?;
                     writeln!(f, "Status: {}", exchange.result)?;
                     writeln!(f, "Last contacted: {}", exchange.time.to_rfc3339())?;
-                    writeln!(f, "Resource Entitlements:")?;
-                    for (rc, set) in status.entitlements.iter() {
-                        writeln!(f, "  resource class: {} entitled resources: {}", rc, set)?;
+                    writeln!(
+                        f,
+                        "Next contact on or before: {}",
+                        status.next_exchange_before.to_rfc3339()
+                    )?;
+
+                    if exchange.was_success() {
+                        write!(f, "Resource Entitlements:")?;
+                    } else {
+                        write!(f, "LAST KNOWN Resource Entitlements:")?;
+                    }
+
+                    if status.entitlements.is_empty() {
+                        writeln!(f, " None")?;
+                    } else {
+                        writeln!(f, " {}", status.all_resources)?;
+                        for (rc, set) in status.entitlements.iter() {
+                            writeln!(f, "  resource class: {} entitled resources: {}", rc, set)?;
+                        }
                     }
                 }
             }
@@ -1595,7 +1614,9 @@ impl fmt::Display for ParentStatuses {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentStatus {
     last_exchange: Option<ParentExchange>,
-    entitlements: HashMap<ResourceClassName, ResourceSet>,
+    next_exchange_before: Time,
+    all_resources: ResourceSet,
+    entitlements: HashMap<ResourceClassName, EntitlementClass>,
 }
 
 impl ParentStatus {
@@ -1603,7 +1624,7 @@ impl ParentStatus {
         self.last_exchange.as_ref()
     }
 
-    pub fn entitlements(&self) -> &HashMap<ResourceClassName, ResourceSet> {
+    pub fn entitlements(&self) -> &HashMap<ResourceClassName, EntitlementClass> {
         &self.entitlements
     }
 
@@ -1611,27 +1632,43 @@ impl ParentStatus {
         self.last_exchange.map(|e| e.into_failure_opt()).flatten()
     }
 
-    fn set_failure(&mut self, error: ErrorResponse) {
-        self.last_exchange = Some(ParentExchange {
-            time: Time::now(),
-            result: ParentExchangeResult::Failure(error),
-        })
+    fn set_next_exchange_plus_one_hour(&mut self) {
+        self.next_exchange_before = Time::now() + Duration::hours(1);
     }
 
-    fn set_entitlements(&mut self, entitlements: &Entitlements) {
-        self.set_last_updated();
+    fn set_failure(&mut self, uri: String, error: ErrorResponse) {
+        self.last_exchange = Some(ParentExchange {
+            time: Time::now(),
+            uri,
+            result: ParentExchangeResult::Failure(error),
+        });
+        self.set_next_exchange_plus_one_hour();
+    }
+
+    fn set_entitlements(&mut self, uri: String, entitlements: &Entitlements) {
+        self.set_last_updated(uri);
         self.entitlements = entitlements
             .classes()
             .iter()
-            .map(|rc| (rc.class_name().clone(), rc.resource_set().clone()))
+            .map(|rc| (rc.class_name().clone(), rc.clone()))
             .collect();
+
+        let mut all_resources = ResourceSet::default();
+        for entitlement in self.entitlements.values() {
+            all_resources = all_resources.union(entitlement.resource_set())
+        }
+
+        self.all_resources = all_resources;
+        self.set_next_exchange_plus_one_hour();
     }
 
-    fn set_last_updated(&mut self) {
+    fn set_last_updated(&mut self, uri: String) {
         self.last_exchange = Some(ParentExchange {
             time: Time::now(),
+            uri,
             result: ParentExchangeResult::Success,
         });
+        self.set_next_exchange_plus_one_hour();
     }
 }
 
@@ -1639,6 +1676,8 @@ impl Default for ParentStatus {
     fn default() -> Self {
         ParentStatus {
             last_exchange: None,
+            all_resources: ResourceSet::default(),
+            next_exchange_before: Time::now() + Duration::hours(1),
             entitlements: HashMap::new(),
         }
     }
@@ -1647,6 +1686,7 @@ impl Default for ParentStatus {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RepoStatus {
     last_exchange: Option<ParentExchange>,
+    next_exchange_before: Time,
     published: Vec<PublishElement>,
 }
 
@@ -1654,6 +1694,7 @@ impl Default for RepoStatus {
     fn default() -> Self {
         RepoStatus {
             last_exchange: None,
+            next_exchange_before: Self::now_plus_republish_hours(),
             published: vec![],
         }
     }
@@ -1674,26 +1715,36 @@ impl RepoStatus {
 }
 
 impl RepoStatus {
-    pub fn set_failure(&mut self, error: ErrorResponse) {
-        self.last_exchange = Some(ParentExchange {
-            time: Time::now(),
-            result: ParentExchangeResult::Failure(error),
-        })
+    fn now_plus_republish_hours() -> Time {
+        Time::now() + Duration::hours(CONFIG.republish_hours())
     }
 
-    pub fn set_success(&mut self, published: Vec<PublishElement>) {
+    pub fn set_failure(&mut self, uri: String, error: ErrorResponse) {
         self.last_exchange = Some(ParentExchange {
             time: Time::now(),
+            uri,
+            result: ParentExchangeResult::Failure(error),
+        });
+        self.next_exchange_before = Time::now() + Duration::minutes(5);
+    }
+
+    pub fn set_success(&mut self, uri: String, published: Vec<PublishElement>) {
+        self.last_exchange = Some(ParentExchange {
+            time: Time::now(),
+            uri,
             result: ParentExchangeResult::Success,
         });
         self.published = published;
+        self.next_exchange_before = Self::now_plus_republish_hours();
     }
 
-    pub fn set_last_updated(&mut self) {
+    pub fn set_last_updated(&mut self, uri: String) {
         self.last_exchange = Some(ParentExchange {
             time: Time::now(),
+            uri,
             result: ParentExchangeResult::Success,
         });
+        self.next_exchange_before = Self::now_plus_republish_hours();
     }
 }
 
@@ -1702,9 +1753,27 @@ impl fmt::Display for RepoStatus {
         match &self.last_exchange {
             None => writeln!(f, "Status: connection still pending")?,
             Some(exchange) => {
+                writeln!(f, "URI: {}", exchange.uri())?;
                 writeln!(f, "Status: {}", exchange.result)?;
                 writeln!(f, "Last contacted: {}", exchange.time.to_rfc3339())?;
-                writeln!(f, "Published Objects:")?;
+                writeln!(
+                    f,
+                    "Next contact on or before: {}",
+                    self.next_exchange_before.to_rfc3339()
+                )?;
+
+                if exchange.was_success() {
+                    write!(f, "Published Objects:")?;
+                } else {
+                    write!(f, "LAST KNOWN Published Objects:")?;
+                }
+
+                if self.published.is_empty() {
+                    writeln!(f, " None")?;
+                } else {
+                    writeln!(f)?;
+                }
+
                 for object in &self.published {
                     writeln!(f, "  {} {}", object.base64().to_encoded_hash(), object.uri())?;
                 }
@@ -1717,12 +1786,17 @@ impl fmt::Display for RepoStatus {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentExchange {
     time: Time,
+    uri: String,
     result: ParentExchangeResult,
 }
 
 impl ParentExchange {
     pub fn time(&self) -> Time {
         self.time
+    }
+
+    pub fn uri(&self) -> &str {
+        &self.uri
     }
 
     pub fn result(&self) -> &ParentExchangeResult {
@@ -1755,7 +1829,7 @@ impl fmt::Display for ParentExchangeResult {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             ParentExchangeResult::Success => write!(f, "success"),
-            ParentExchangeResult::Failure(e) => write!(f, "failure: {}", e.to_string()),
+            ParentExchangeResult::Failure(e) => write!(f, "failure: {}", e.msg()),
         }
     }
 }

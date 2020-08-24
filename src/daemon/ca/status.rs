@@ -7,6 +7,7 @@ use crate::commons::api::rrdp::PublishElement;
 use crate::commons::api::{Entitlements, ErrorResponse, Handle, ParentHandle, ParentStatuses, RepoStatus};
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::{DiskKeyStore, KeyStore};
+use crate::commons::util::httpclient;
 use crate::commons::KrillResult;
 
 //------------ CaStatus ------------------------------------------------------
@@ -85,18 +86,22 @@ impl StatusStore {
         &self,
         ca: &Handle,
         parent: &ParentHandle,
-        error: ErrorResponse,
+        uri: String,
+        error: &Error,
     ) -> KrillResult<()> {
         let _lock = self.lock.write().await;
         let mut status = self.get_ca_status(ca)?;
-        status.parents.set_failure(parent, error);
+
+        let error_response = Self::error_to_error_res(&error);
+
+        status.parents.set_failure(parent, uri, error_response);
         self.set_ca_status(ca, &status)
     }
 
-    pub async fn set_parent_last_updated(&self, ca: &Handle, parent: &ParentHandle) -> KrillResult<()> {
+    pub async fn set_parent_last_updated(&self, ca: &Handle, parent: &ParentHandle, uri: String) -> KrillResult<()> {
         let _lock = self.lock.write().await;
         let mut status = self.get_ca_status(ca)?;
-        status.parents.set_last_updated(parent);
+        status.parents.set_last_updated(parent, uri);
         self.set_ca_status(ca, &status)
     }
 
@@ -104,32 +109,51 @@ impl StatusStore {
         &self,
         ca: &Handle,
         parent: &ParentHandle,
+        uri: String,
         entitlements: &Entitlements,
     ) -> KrillResult<()> {
         let _lock = self.lock.write().await;
         let mut status = self.get_ca_status(ca)?;
-        status.parents.set_entitlements(parent, entitlements);
+        status.parents.set_entitlements(parent, uri, entitlements);
         self.set_ca_status(ca, &status)
     }
 
-    pub async fn set_status_repo_failure(&self, ca: &Handle, error: ErrorResponse) -> KrillResult<()> {
+    pub async fn set_status_repo_failure(&self, ca: &Handle, uri: String, error: &Error) -> KrillResult<()> {
         let _lock = self.lock.write().await;
         let mut status = self.get_ca_status(ca)?;
-        status.repo.set_failure(error);
+
+        let error_response = Self::error_to_error_res(&error);
+
+        status.repo.set_failure(uri, error_response);
         self.set_ca_status(ca, &status)
     }
 
-    pub async fn set_status_repo_success(&self, ca: &Handle) -> KrillResult<()> {
+    pub async fn set_status_repo_success(&self, ca: &Handle, uri: String) -> KrillResult<()> {
         let _lock = self.lock.write().await;
         let mut status = self.get_ca_status(ca)?;
-        status.repo.set_last_updated();
+        status.repo.set_last_updated(uri);
         self.set_ca_status(ca, &status)
     }
 
-    pub async fn set_status_repo_elements(&self, ca: &Handle, objects: Vec<PublishElement>) -> KrillResult<()> {
+    pub async fn set_status_repo_elements(
+        &self,
+        ca: &Handle,
+        uri: String,
+        objects: Vec<PublishElement>,
+    ) -> KrillResult<()> {
         let _lock = self.lock.write().await;
         let mut status = self.get_ca_status(ca)?;
-        status.repo.set_success(objects);
+        status.repo.set_success(uri, objects);
         self.set_ca_status(ca, &status)
+    }
+
+    fn error_to_error_res(error: &Error) -> ErrorResponse {
+        match error {
+            Error::HttpClientError(http_error) => match http_error {
+                httpclient::Error::ErrorWithJson(_, res) => res.clone(),
+                _ => error.to_error_response(),
+            },
+            _ => error.to_error_response(),
+        }
     }
 }
