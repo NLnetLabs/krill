@@ -2,12 +2,6 @@ use hyper::{Method, StatusCode};
 
 use crate::daemon::http::RoutingResult;
 use crate::daemon::http::{HttpResponse, Request};
-use crate::daemon::config::CONFIG;
-
-#[derive(Serialize)]
-struct ConfigJson {
-    testbed_enabled: bool
-}
 
 pub async fn statics(req: Request) -> RoutingResult {
     match *req.method() {
@@ -20,9 +14,6 @@ pub async fn statics(req: Request) -> RoutingResult {
                     .unwrap(),
             )),
             "/index.html" => Ok(HttpResponse::html(INDEX)),
-            "/config" if CONFIG.testbed_enabled => Ok(HttpResponse::json(&ConfigJson {
-                testbed_enabled: true
-            })),
             "/favicon.ico" => Ok(HttpResponse::fav(FAVICON)),
             "/js/app.js" => Ok(HttpResponse::js(APP_JS)),
             "/js/app.js.map" => Ok(HttpResponse::js(APP_JS_MAP)),

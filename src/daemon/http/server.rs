@@ -109,6 +109,7 @@ async fn map_requests(req: hyper::Request<hyper::Body>, state: State) -> Result<
         .or_else(statics)
         .or_else(ta)
         .or_else(rrdp)
+        .or_else(testbed)
         .or_else(render_not_found)
         .map_err(|_| Error::custom("should have received not found response"))
         .await;
@@ -511,38 +512,13 @@ async fn stats(req: Request) -> RoutingResult {
     }
 }
 
-/// Don't require certain requests to be authorized when running as a testbed
-/// so that clients can add and remove themselves without needing to know the
-/// server API token and without having access to other parts of the server API.
-fn is_auth_required(req: &Request) -> bool {
-    match CONFIG.testbed_enabled {
-        false => true,
-        true  => {
-            let path = req.path().full();
-            match *req.method() {
-                Method::GET|Method::POST if path.starts_with("/api/v1/publishers") => false,
-                Method::DELETE if path.starts_with("/api/v1/publishers") => {
-                    match path {
-                        "/api/v1/publishers/ta" => true,
-                        "/api/v1/publishers/testbed" => true,
-                        _ => false
-                    }
-                },
-                Method::POST if path == "/api/v1/cas/testbed/children" => false,
-                Method::GET|Method::DELETE if path.starts_with("/api/v1/cas/testbed/children") => false,
-                _ => true
-            }
-        }
-    }
-}
-
 /// Maps the API methods
 async fn api(req: Request) -> RoutingResult {
     if !req.path().full().starts_with("/api/v1") {
         Err(req) // Not for us
     } else {
         // Make sure access is allowed
-        if is_auth_required(&req) && !req.is_authorized().await {
+        if !req.is_authorized().await {
             return Ok(HttpResponse::forbidden());
         }
 
@@ -1282,6 +1258,61 @@ async fn api_ca_rta_oneoff(req: Request, path: &mut RequestPath, ca: Handle) -> 
             Err(e) => render_error(e),
             Ok(request) => render_json_res(state.read().await.rta_one_off(ca, request).await),
         }
+    }
+}
+
+//------------ Support acting as a testbed -------------------------------------
+
+async fn testbed(req: Request) -> RoutingResult {
+    if !CONFIG.testbed_enabled {
+        render_not_found(req).await
+    } else {
+        let mut path = req.path().clone();
+        match path.next() {
+            Some("enabled")    => testbed_enabled(req).await,
+            Some("children")   => testbed_children(req, &mut path).await,
+            Some("publishers") => testbed_publishers(req, &mut path).await,
+            _                  => render_not_found(req).await,
+        }
+    }
+}
+
+async fn testbed_enabled(req: Request) -> RoutingResult {
+    match *req.method() {
+        Method::GET => render_ok(),
+        _           => render_unknown_method(),
+    }
+}
+
+async fn testbed_children(req: Request, path: &mut RequestPath) -> RoutingResult {
+    let testbed = ParentHandle::from_str("testbed").unwrap();
+    match (req.method().clone(), path.path_arg()) {
+        (Method::GET,    Some(child)) => match path.next() {
+            Some("parent_response.xml") => ca_parent_res_xml(req, testbed, child).await,
+            _                           => render_unknown_method(),
+        },
+        (Method::DELETE, Some(child)) => ca_child_remove(req, testbed, child).await,
+        (Method::POST,   None)        => ca_add_child(req, testbed).await,
+        _                             => render_unknown_method(),
+    }
+}
+
+async fn testbed_publishers(req: Request, path: &mut RequestPath) -> RoutingResult {
+    match (req.method().clone(), path.path_arg()) {
+        (Method::GET, Some(publisher))    => match path.next() {
+            Some("response.xml") => repository_response_xml(req, publisher).await,
+            _                    => render_unknown_method(),
+        },
+        (Method::DELETE, Some(publisher)) => testbed_remove_pbl(req, publisher).await,
+        (Method::POST, None)              => add_pbl(req).await,
+        _                                 => render_unknown_method(),
+    }
+}
+
+async fn testbed_remove_pbl(req: Request, publisher: Handle) -> RoutingResult {
+    match publisher.as_str() {
+        "ta"|"testbed" => Ok(HttpResponse::forbidden()),
+        _              => remove_pbl(req, publisher).await,
     }
 }
 
