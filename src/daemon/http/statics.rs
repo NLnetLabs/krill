@@ -20,8 +20,8 @@ pub async fn statics(req: Request) -> RoutingResult {
                     .unwrap(),
             )),
             "/index.html" => Ok(HttpResponse::html(INDEX)),
-            "/config" => Ok(HttpResponse::json(&ConfigJson {
-                testbed_enabled: CONFIG.testbed_enabled
+            "/config" if CONFIG.testbed_enabled => Ok(HttpResponse::json(&ConfigJson {
+                testbed_enabled: true
             })),
             "/favicon.ico" => Ok(HttpResponse::fav(FAVICON)),
             "/js/app.js" => Ok(HttpResponse::js(APP_JS)),
