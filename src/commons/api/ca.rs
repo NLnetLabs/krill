@@ -8,7 +8,7 @@ use std::str::{from_utf8_unchecked, FromStr};
 use std::{fmt, ops, str};
 
 use bytes::Bytes;
-use chrono::Duration;
+use chrono::{Duration, TimeZone, Utc};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::cert::Cert;
@@ -1583,11 +1583,11 @@ impl fmt::Display for ParentStatuses {
                 Some(exchange) => {
                     writeln!(f, "URI: {}", exchange.uri)?;
                     writeln!(f, "Status: {}", exchange.result)?;
-                    writeln!(f, "Last contacted: {}", exchange.time.to_rfc3339())?;
+                    writeln!(f, "Last contacted: {}", exchange.time().to_rfc3339())?;
                     writeln!(
                         f,
                         "Next contact on or before: {}",
-                        status.next_exchange_before.to_rfc3339()
+                        status.next_exchange_before().to_rfc3339()
                     )?;
 
                     if exchange.was_success() {
@@ -1614,12 +1614,16 @@ impl fmt::Display for ParentStatuses {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentStatus {
     last_exchange: Option<ParentExchange>,
-    next_exchange_before: Time,
+    next_exchange_before: i64,
     all_resources: ResourceSet,
     entitlements: HashMap<ResourceClassName, EntitlementClass>,
 }
 
 impl ParentStatus {
+    fn next_exchange_before(&self) -> Time {
+        Time::new(Utc.timestamp(self.next_exchange_before, 0))
+    }
+
     pub fn last_exchange(&self) -> Option<&ParentExchange> {
         self.last_exchange.as_ref()
     }
@@ -1633,12 +1637,12 @@ impl ParentStatus {
     }
 
     fn set_next_exchange_plus_one_hour(&mut self) {
-        self.next_exchange_before = Time::now() + Duration::hours(1);
+        self.next_exchange_before = (Time::now() + Duration::hours(1)).timestamp();
     }
 
     fn set_failure(&mut self, uri: String, error: ErrorResponse) {
         self.last_exchange = Some(ParentExchange {
-            time: Time::now(),
+            timestamp: Time::now().timestamp(),
             uri,
             result: ParentExchangeResult::Failure(error),
         });
@@ -1664,7 +1668,7 @@ impl ParentStatus {
 
     fn set_last_updated(&mut self, uri: String) {
         self.last_exchange = Some(ParentExchange {
-            time: Time::now(),
+            timestamp: Time::now().timestamp(),
             uri,
             result: ParentExchangeResult::Success,
         });
@@ -1677,7 +1681,7 @@ impl Default for ParentStatus {
         ParentStatus {
             last_exchange: None,
             all_resources: ResourceSet::default(),
-            next_exchange_before: Time::now() + Duration::hours(1),
+            next_exchange_before: (Time::now() + Duration::hours(1)).timestamp(),
             entitlements: HashMap::new(),
         }
     }
@@ -1686,7 +1690,7 @@ impl Default for ParentStatus {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RepoStatus {
     last_exchange: Option<ParentExchange>,
-    next_exchange_before: Time,
+    next_exchange_before: i64,
     published: Vec<PublishElement>,
 }
 
@@ -1701,6 +1705,10 @@ impl Default for RepoStatus {
 }
 
 impl RepoStatus {
+    fn next_exchange_before(&self) -> Time {
+        Time::new(Utc.timestamp(self.next_exchange_before, 0))
+    }
+
     pub fn last_exchange(&self) -> Option<&ParentExchange> {
         self.last_exchange.as_ref()
     }
@@ -1715,22 +1723,22 @@ impl RepoStatus {
 }
 
 impl RepoStatus {
-    fn now_plus_republish_hours() -> Time {
-        Time::now() + Duration::hours(CONFIG.republish_hours())
+    fn now_plus_republish_hours() -> i64 {
+        (Time::now() + Duration::hours(CONFIG.republish_hours())).timestamp()
     }
 
     pub fn set_failure(&mut self, uri: String, error: ErrorResponse) {
         self.last_exchange = Some(ParentExchange {
-            time: Time::now(),
+            timestamp: Time::now().timestamp(),
             uri,
             result: ParentExchangeResult::Failure(error),
         });
-        self.next_exchange_before = Time::now() + Duration::minutes(5);
+        self.next_exchange_before = (Time::now() + Duration::minutes(5)).timestamp();
     }
 
     pub fn set_success(&mut self, uri: String, published: Vec<PublishElement>) {
         self.last_exchange = Some(ParentExchange {
-            time: Time::now(),
+            timestamp: Time::now().timestamp(),
             uri,
             result: ParentExchangeResult::Success,
         });
@@ -1740,7 +1748,7 @@ impl RepoStatus {
 
     pub fn set_last_updated(&mut self, uri: String) {
         self.last_exchange = Some(ParentExchange {
-            time: Time::now(),
+            timestamp: Time::now().timestamp(),
             uri,
             result: ParentExchangeResult::Success,
         });
@@ -1755,11 +1763,11 @@ impl fmt::Display for RepoStatus {
             Some(exchange) => {
                 writeln!(f, "URI: {}", exchange.uri())?;
                 writeln!(f, "Status: {}", exchange.result)?;
-                writeln!(f, "Last contacted: {}", exchange.time.to_rfc3339())?;
+                writeln!(f, "Last contacted: {}", exchange.time().to_rfc3339())?;
                 writeln!(
                     f,
                     "Next contact on or before: {}",
-                    self.next_exchange_before.to_rfc3339()
+                    self.next_exchange_before().to_rfc3339()
                 )?;
 
                 if exchange.was_success() {
@@ -1785,14 +1793,14 @@ impl fmt::Display for RepoStatus {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentExchange {
-    time: Time,
+    timestamp: i64,
     uri: String,
     result: ParentExchangeResult,
 }
 
 impl ParentExchange {
     pub fn time(&self) -> Time {
-        self.time
+        Time::new(Utc.timestamp(self.timestamp, 0))
     }
 
     pub fn uri(&self) -> &str {
