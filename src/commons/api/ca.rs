@@ -22,7 +22,7 @@ use rpki::x509::{Serial, Time};
 
 use crate::commons::api::publication::Publish;
 use crate::commons::api::rrdp::PublishElement;
-use crate::commons::api::{publication, EntitlementClass, Entitlements, RoaAggregateKey};
+use crate::commons::api::{publication, EntitlementClass, Entitlements, RoaAggregateKey, SigningCert};
 use crate::commons::api::{
     Base64, ChildHandle, ErrorResponse, Handle, HexEncodedHash, IssuanceRequest, ParentCaContact, ParentHandle,
     RepositoryContact, RequestResourceLimit, RoaDefinition,
@@ -1601,7 +1601,14 @@ impl fmt::Display for ParentStatuses {
                     } else {
                         writeln!(f, " {}", status.all_resources)?;
                         for (rc, set) in status.entitlements.iter() {
-                            writeln!(f, "  resource class: {} entitled resources: {}", rc, set)?;
+                            writeln!(f, "  resource class: {}", rc)?;
+                            writeln!(f, "  issuing cert uri: {}", set.parent_cert.uri)?;
+                            writeln!(f, "  received certificate(s):")?;
+                            for rcvd in set.received.iter() {
+                                writeln!(f, "    published at: {}", rcvd.uri)?;
+                                writeln!(f, "    resources:    {}", rcvd.resources)?;
+                                writeln!(f, "    cert PEM:\n\n{}\n", rcvd.cert_pem)?;
+                            }
                         }
                     }
                 }
@@ -1612,11 +1619,73 @@ impl fmt::Display for ParentStatuses {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct KnownEntitlement {
+    parent_cert: ParentStatusIssuingCert,
+    received: Vec<ParentStatusCert>,
+}
+
+impl KnownEntitlement {
+    fn resource_set(&self) -> ResourceSet {
+        let mut resources = ResourceSet::default();
+        for rcvd in &self.received {
+            resources = resources.union(&rcvd.resources)
+        }
+        resources
+    }
+}
+
+impl From<&EntitlementClass> for KnownEntitlement {
+    fn from(entitlement: &EntitlementClass) -> Self {
+        let parent_cert = entitlement.issuer().into();
+        let received = entitlement.issued().iter().map(|issued| issued.into()).collect();
+
+        KnownEntitlement { parent_cert, received }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ParentStatusIssuingCert {
+    uri: uri::Rsync,
+    cert_pem: String,
+}
+
+impl From<&SigningCert> for ParentStatusIssuingCert {
+    fn from(signing: &SigningCert) -> Self {
+        let cert = base64::encode(signing.cert().to_captured().as_slice());
+        let cert_pem = format!("-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n", cert);
+
+        ParentStatusIssuingCert {
+            uri: signing.uri().clone(),
+            cert_pem,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ParentStatusCert {
+    uri: uri::Rsync,
+    resources: ResourceSet,
+    cert_pem: String,
+}
+
+impl From<&IssuedCert> for ParentStatusCert {
+    fn from(issued: &IssuedCert) -> Self {
+        let cert = base64::encode(issued.cert.to_captured().as_slice());
+        let cert_pem = format!("-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n", cert);
+        ParentStatusCert {
+            uri: issued.uri().clone(),
+            resources: issued.resource_set().clone(),
+            cert_pem,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentStatus {
     last_exchange: Option<ParentExchange>,
     next_exchange_before: i64,
     all_resources: ResourceSet,
-    entitlements: HashMap<ResourceClassName, EntitlementClass>,
+    entitlements: HashMap<ResourceClassName, KnownEntitlement>,
 }
 
 impl ParentStatus {
@@ -1628,7 +1697,7 @@ impl ParentStatus {
         self.last_exchange.as_ref()
     }
 
-    pub fn entitlements(&self) -> &HashMap<ResourceClassName, EntitlementClass> {
+    pub fn entitlements(&self) -> &HashMap<ResourceClassName, KnownEntitlement> {
         &self.entitlements
     }
 
@@ -1651,15 +1720,20 @@ impl ParentStatus {
 
     fn set_entitlements(&mut self, uri: String, entitlements: &Entitlements) {
         self.set_last_updated(uri);
+
         self.entitlements = entitlements
             .classes()
             .iter()
-            .map(|rc| (rc.class_name().clone(), rc.clone()))
+            .map(|rc| {
+                let resource_class_name = rc.class_name().clone();
+                let known_entitlements = rc.into();
+                (resource_class_name, known_entitlements)
+            })
             .collect();
 
         let mut all_resources = ResourceSet::default();
         for entitlement in self.entitlements.values() {
-            all_resources = all_resources.union(entitlement.resource_set())
+            all_resources = all_resources.union(&entitlement.resource_set())
         }
 
         self.all_resources = all_resources;
