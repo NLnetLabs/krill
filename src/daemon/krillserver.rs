@@ -14,7 +14,7 @@ use rpki::x509::Time;
 
 use crate::commons::api::{
     AddChildRequest, AllCertAuthIssues, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthInit, CertAuthIssues,
-    CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Handle, ListReply,
+    CertAuthList, CertAuthStats, ChildAuthRequest, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Handle, ListReply,
     ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublishDelta, PublisherDetails, PublisherHandle,
     RepoInfo, RepoStatus, RepositoryContact, RepositoryUpdate, ResourceSet, RoaDefinition, RoaDefinitionUpdates,
     ServerInfo, TaCertDetails, UpdateChildRequest,
@@ -27,7 +27,7 @@ use crate::commons::util::softsigner::OpenSslSigner;
 use crate::commons::{KrillEmptyResult, KrillResult};
 use crate::constants::*;
 use crate::daemon::auth::{Auth, Authorizer};
-use crate::daemon::ca::{self, ta_handle, ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaRequest};
+use crate::daemon::ca::{self, ta_handle, testbed_ca_handle, ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaRequest};
 use crate::daemon::config::CONFIG;
 use crate::daemon::mq::EventQueueListener;
 use crate::daemon::scheduler::Scheduler;
@@ -173,8 +173,39 @@ impl KrillServer {
 
                 pubserver.create_publisher(req).await?;
 
-                // Force initial  publication
+                // Force initial publication
                 caserver.republish(&ta_handle).await?;
+            }
+        }
+
+        if CONFIG.testbed_enabled {
+            let ta_handle = ta_handle();
+            if caserver.has_ca(&ta_handle).await {
+                let testbed_ca_handle = testbed_ca_handle();
+                if !caserver.has_ca(&testbed_ca_handle).await {
+                    info!("Creating embedded Testbed CA");
+
+                    // Add the new testbed CA
+                    let asns = "0-4294967295";
+                    let v4 = "0.0.0.0-255.255.255.255";
+                    let v6 = "::0/0";
+                    let testbed_ca_resources = ResourceSet::from_strs(asns, v4, v6).unwrap();
+                    caserver.init_ca(&testbed_ca_handle).await?;
+                    let testbed_ca = caserver.get_ca(&testbed_ca_handle).await?;
+
+                    // Add the new testbed publisher
+                    let pubserver = pubserver.as_ref().ok_or_else(|| Error::PublisherNoEmbeddedRepo)?;
+                    let pub_req = rfc8183::PublisherRequest::new(None, testbed_ca_handle.clone(), testbed_ca.id_cert().clone());
+                    pubserver.create_publisher(pub_req).await?;
+                    caserver.republish(&testbed_ca_handle).await?;
+                    
+                    // Establish the TA (parent) <-> testbed CA (child) relationship
+                    let child_req = ChildAuthRequest::Rfc8183(testbed_ca.child_request());
+                    let child_req = AddChildRequest::new(testbed_ca_handle.clone(), testbed_ca_resources, child_req);
+                    let parent_ca_contact = caserver.ca_add_child(&ta_handle, child_req, &service_uri).await?;
+                    let parent_req = ParentCaReq::new(ta_handle.clone(), parent_ca_contact);
+                    caserver.ca_parent_add(testbed_ca_handle, parent_req).await?;
+                }
             }
         }
 
