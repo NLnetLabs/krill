@@ -35,6 +35,7 @@ use crate::daemon::http::statics::statics;
 use crate::daemon::http::{tls, tls_keys, HttpResponse, Request, RequestPath, RoutingResult};
 use crate::daemon::krillserver::KrillServer;
 use crate::upgrades::{post_start_upgrade, pre_start_upgrade};
+use crate::daemon::ca::{ta_handle, testbed_ca_handle};
 
 //------------ State -----------------------------------------------------
 
@@ -1315,11 +1316,11 @@ async fn testbed_enabled(req: Request) -> RoutingResult {
 async fn testbed_children(req: Request, path: &mut RequestPath) -> RoutingResult {
     match (req.method().clone(), path.path_arg()) {
         (Method::GET,    Some(child)) => match path.next() {
-            Some("parent_response.xml") => ca_parent_res_xml(req, testbed, child).await,
+            Some("parent_response.xml") => ca_parent_res_xml(req, testbed_ca_handle(), child).await,
             _                           => render_unknown_method(),
         },
-        (Method::DELETE, Some(child)) => ca_child_remove(req, testbed, child).await,
-        (Method::POST,   None)        => ca_add_child(req, testbed).await,
+        (Method::DELETE, Some(child)) => ca_child_remove(req, testbed_ca_handle(), child).await,
+        (Method::POST,   None)        => ca_add_child(req, testbed_ca_handle()).await,
         _                             => render_unknown_method(),
     }
 }
@@ -1341,9 +1342,12 @@ async fn testbed_publishers(req: Request, path: &mut RequestPath) -> RoutingResu
 
 // Prevent deletion of the built-in TA and testbed repositories.
 async fn testbed_remove_pbl(req: Request, publisher: Handle) -> RoutingResult {
-    match publisher.as_str() {
-        "ta"|"testbed" => Ok(HttpResponse::forbidden()),
-        _              => remove_pbl(req, publisher).await,
+    if publisher == ta_handle() {
+        Ok(HttpResponse::forbidden())
+    } else if publisher == testbed_ca_handle() {
+        Ok(HttpResponse::forbidden())
+    } else {
+        remove_pbl(req, publisher).await
     }
 }
 
