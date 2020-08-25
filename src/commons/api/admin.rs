@@ -333,6 +333,13 @@ pub enum RepositoryContact {
 }
 
 impl RepositoryContact {
+    pub fn uri(&self) -> String {
+        match self {
+            RepositoryContact::Embedded(_) => "embedded".to_string(),
+            RepositoryContact::Rfc8181(res) => res.service_uri().to_string(),
+        }
+    }
+
     pub fn embedded(info: RepoInfo) -> Self {
         RepositoryContact::Embedded(info)
     }

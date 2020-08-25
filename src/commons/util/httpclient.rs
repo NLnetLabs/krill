@@ -202,16 +202,7 @@ pub async fn post_binary(uri: &str, data: &Bytes, content_type: &str) -> Result<
             let bytes = res.bytes().await?;
             Ok(bytes)
         }
-        status => match res.text().await {
-            Ok(body) => {
-                if body.is_empty() {
-                    Err(Error::BadStatus(status))
-                } else {
-                    Err(Error::ErrorWithBody(status, body))
-                }
-            }
-            _ => Err(Error::BadStatus(status)),
-        },
+        _ => Err(Error::from_res(res).await),
     }
 }
 
@@ -224,16 +215,7 @@ pub async fn delete(uri: &str, token: Option<&Token>) -> Result<(), Error> {
 
     match res.status() {
         StatusCode::OK => Ok(()),
-        status => match res.text().await {
-            Ok(body) => {
-                if body.is_empty() {
-                    Err(Error::BadStatus(status))
-                } else {
-                    Err(Error::ErrorWithBody(status, body))
-                }
-            }
-            _ => Err(Error::BadStatus(status)),
-        },
+        _ => Err(Error::from_res(res).await),
     }
 }
 
@@ -304,16 +286,7 @@ async fn opt_text_response(res: Response) -> Result<Option<String>, Error> {
             }
         },
         StatusCode::FORBIDDEN => Err(Error::Forbidden),
-        status => match res.text().await {
-            Ok(body) => {
-                if body.is_empty() {
-                    Err(Error::BadStatus(status))
-                } else {
-                    Err(Error::wrap_err_res(status, body))
-                }
-            }
-            _ => Err(Error::BadStatus(status)),
-        },
+        _ => Err(Error::from_res(res).await),
     }
 }
 
@@ -334,7 +307,7 @@ pub enum Error {
     #[display(fmt = "Status: {}, Error: {}", _0, _1)]
     ErrorWithBody(StatusCode, String),
 
-    #[display(fmt = "Status: {}, Error: {}", _0, _1)]
+    #[display(fmt = "Status: {}, ErrorResponse: {}", _0, _1)]
     ErrorWithJson(StatusCode, ErrorResponse),
 
     #[display(fmt = "{}", _0)]
@@ -357,10 +330,20 @@ pub enum Error {
 }
 
 impl Error {
-    fn wrap_err_res(code: StatusCode, content: String) -> Error {
-        match serde_json::from_str::<ErrorResponse>(&content) {
-            Ok(res) => Error::ErrorWithJson(code, res),
-            Err(_) => Error::ErrorWithBody(code, content),
+    async fn from_res(res: Response) -> Error {
+        let status = res.status();
+        match res.text().await {
+            Ok(body) => {
+                if body.is_empty() {
+                    Error::BadStatus(status)
+                } else {
+                    match serde_json::from_str::<ErrorResponse>(&body) {
+                        Ok(res) => Error::ErrorWithJson(status, res),
+                        Err(_) => Error::ErrorWithBody(status, body),
+                    }
+                }
+            }
+            _ => Error::BadStatus(status),
         }
     }
 

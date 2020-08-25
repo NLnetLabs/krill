@@ -644,35 +644,37 @@ impl<S: Signer> CaServer<S> {
             Ok(()) // The (test) TA never needs updates.
         } else {
             let ca = self.get_ca(&handle).await?;
-            if ca.get_repository_contact().is_err() {
-                // No repo set, yet. So, skip updating.
-                Ok(())
-            } else {
-                match self.get_entitlements_from_parent(handle, parent).await {
-                    Err(e) => {
-                        self.status_store
-                            .lock()
-                            .await
-                            .set_parent_failure(handle, parent, e.to_error_response())
-                            .await?;
-                        Err(e)
-                    }
-                    Ok(entitlements) => {
-                        self.status_store
-                            .lock()
-                            .await
-                            .set_parent_entitlements(handle, parent, &entitlements)
-                            .await?;
-                        if !self
-                            .update_resource_classes(handle, parent.clone(), entitlements)
-                            .await?
-                        {
-                            return Ok(()); // Nothing to do
-                        }
 
-                        Ok(()) // Pending requests will be picked up by the scheduler.
+            match ca.get_repository_contact() {
+                Ok(contact) => {
+                    let uri = contact.uri();
+                    match self.get_entitlements_from_parent(handle, parent).await {
+                        Err(e) => {
+                            self.status_store
+                                .lock()
+                                .await
+                                .set_parent_failure(handle, parent, uri, &e)
+                                .await?;
+                            Err(e)
+                        }
+                        Ok(entitlements) => {
+                            self.status_store
+                                .lock()
+                                .await
+                                .set_parent_entitlements(handle, parent, uri, &entitlements)
+                                .await?;
+                            if !self
+                                .update_resource_classes(handle, parent.clone(), entitlements)
+                                .await?
+                            {
+                                return Ok(()); // Nothing to do
+                            }
+
+                            Ok(()) // Pending requests will be picked up by the scheduler.
+                        }
                     }
                 }
+                Err(_) => Ok(()),
             }
         }
     }
@@ -724,6 +726,8 @@ impl<S: Signer> CaServer<S> {
                     .await
             }
             ParentCaContact::Rfc6492(parent_res) => {
+                let uri = parent_res.service_uri().to_string();
+
                 match self
                     .send_revoke_requests_rfc6492(revoke_requests, child.id_key(), parent_res)
                     .await
@@ -732,7 +736,7 @@ impl<S: Signer> CaServer<S> {
                         self.status_store
                             .lock()
                             .await
-                            .set_parent_failure(handle, parent, e.to_error_response())
+                            .set_parent_failure(handle, parent, uri, &e)
                             .await?;
                         Err(e)
                     }
@@ -740,7 +744,7 @@ impl<S: Signer> CaServer<S> {
                         self.status_store
                             .lock()
                             .await
-                            .set_parent_last_updated(handle, parent)
+                            .set_parent_last_updated(handle, parent, uri)
                             .await?;
                         Ok(res)
                     }
@@ -829,6 +833,7 @@ impl<S: Signer> CaServer<S> {
             ParentCaContact::Ta(_) => Err(Error::TaNotAllowed),
             ParentCaContact::Embedded => self.send_cert_requests_embedded(cert_requests, handle, parent).await,
             ParentCaContact::Rfc6492(parent_res) => {
+                let uri = parent_res.service_uri().to_string();
                 match self
                     .send_cert_requests_rfc6492(cert_requests, child.id_key(), &parent_res)
                     .await
@@ -837,7 +842,7 @@ impl<S: Signer> CaServer<S> {
                         self.status_store
                             .lock()
                             .await
-                            .set_parent_failure(handle, parent, e.to_error_response())
+                            .set_parent_failure(handle, parent, uri, &e)
                             .await?;
                         Err(e)
                     }
@@ -845,7 +850,7 @@ impl<S: Signer> CaServer<S> {
                         self.status_store
                             .lock()
                             .await
-                            .set_parent_last_updated(handle, parent)
+                            .set_parent_last_updated(handle, parent, uri)
                             .await?;
                         Ok(res)
                     }
@@ -1114,6 +1119,8 @@ impl<S: Signer> CaServer<S> {
         repository: &rfc8183::RepositoryResponse,
         cleanup: bool,
     ) -> KrillResult<ListReply> {
+        let uri = repository.service_uri().to_string();
+
         let reply = match self
             .send_rfc8181_and_validate_response(ca_handle, repository, rfc8181::Message::list_query().into_bytes())
             .await
@@ -1123,7 +1130,7 @@ impl<S: Signer> CaServer<S> {
                     self.status_store
                         .lock()
                         .await
-                        .set_status_repo_failure(ca_handle, e.to_error_response())
+                        .set_status_repo_failure(ca_handle, uri, &e)
                         .await?;
                 }
                 return Err(e);
@@ -1136,7 +1143,7 @@ impl<S: Signer> CaServer<S> {
                 self.status_store
                     .lock()
                     .await
-                    .set_status_repo_success(ca_handle)
+                    .set_status_repo_success(ca_handle, uri)
                     .await?;
                 Ok(list_reply)
             }
@@ -1146,7 +1153,7 @@ impl<S: Signer> CaServer<S> {
                     self.status_store
                         .lock()
                         .await
-                        .set_status_repo_failure(ca_handle, err.to_error_response())
+                        .set_status_repo_failure(ca_handle, uri, &err)
                         .await?;
                 }
                 Err(err)
@@ -1157,7 +1164,7 @@ impl<S: Signer> CaServer<S> {
                     self.status_store
                         .lock()
                         .await
-                        .set_status_repo_failure(ca_handle, err.to_error_response())
+                        .set_status_repo_failure(ca_handle, uri, &err)
                         .await?;
                 }
                 Err(err)
@@ -1173,6 +1180,7 @@ impl<S: Signer> CaServer<S> {
         cleanup: bool,
     ) -> KrillResult<()> {
         let message = rfc8181::Message::publish_delta_query(delta);
+        let uri = repository.service_uri().to_string();
 
         let reply = match self
             .send_rfc8181_and_validate_response(ca_handle, repository, message.into_bytes())
@@ -1184,7 +1192,7 @@ impl<S: Signer> CaServer<S> {
                     self.status_store
                         .lock()
                         .await
-                        .set_status_repo_failure(ca_handle, e.to_error_response())
+                        .set_status_repo_failure(ca_handle, uri, &e)
                         .await?;
                 }
                 return Err(e);
@@ -1198,7 +1206,7 @@ impl<S: Signer> CaServer<S> {
                     self.status_store
                         .lock()
                         .await
-                        .set_status_repo_elements(ca_handle, ca.all_objects())
+                        .set_status_repo_elements(ca_handle, uri, ca.all_objects())
                         .await?;
                 }
                 Ok(())
@@ -1209,7 +1217,7 @@ impl<S: Signer> CaServer<S> {
                     self.status_store
                         .lock()
                         .await
-                        .set_status_repo_failure(ca_handle, err.to_error_response())
+                        .set_status_repo_failure(ca_handle, uri, &err)
                         .await?;
                 }
                 Err(err)
@@ -1220,7 +1228,7 @@ impl<S: Signer> CaServer<S> {
                     self.status_store
                         .lock()
                         .await
-                        .set_status_repo_failure(ca_handle, err.to_error_response())
+                        .set_status_repo_failure(ca_handle, uri, &err)
                         .await?;
                 }
                 Err(err)

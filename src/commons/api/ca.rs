@@ -8,6 +8,7 @@ use std::str::{from_utf8_unchecked, FromStr};
 use std::{fmt, ops, str};
 
 use bytes::Bytes;
+use chrono::{Duration, TimeZone, Utc};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::cert::Cert;
@@ -21,7 +22,7 @@ use rpki::x509::{Serial, Time};
 
 use crate::commons::api::publication::Publish;
 use crate::commons::api::rrdp::PublishElement;
-use crate::commons::api::{publication, Entitlements, RoaAggregateKey};
+use crate::commons::api::{publication, EntitlementClass, Entitlements, RoaAggregateKey, SigningCert};
 use crate::commons::api::{
     Base64, ChildHandle, ErrorResponse, Handle, HexEncodedHash, IssuanceRequest, ParentCaContact, ParentHandle,
     RepositoryContact, RequestResourceLimit, RoaDefinition,
@@ -29,6 +30,7 @@ use crate::commons::api::{
 use crate::commons::remote::crypto::IdCert;
 use crate::commons::util::ext_serde;
 use crate::daemon::ca::RouteAuthorization;
+use crate::daemon::config::CONFIG;
 
 //------------ ResourceClassName -------------------------------------------
 
@@ -1536,16 +1538,16 @@ impl ParentStatuses {
         self.0.get(parent)
     }
 
-    pub fn set_failure(&mut self, parent: &ParentHandle, error: ErrorResponse) {
-        self.get_mut_status(parent).set_failure(error);
+    pub fn set_failure(&mut self, parent: &ParentHandle, uri: String, error: ErrorResponse) {
+        self.get_mut_status(parent).set_failure(uri, error);
     }
 
-    pub fn set_entitlements(&mut self, parent: &ParentHandle, entitlements: &Entitlements) {
-        self.get_mut_status(parent).set_entitlements(entitlements);
+    pub fn set_entitlements(&mut self, parent: &ParentHandle, uri: String, entitlements: &Entitlements) {
+        self.get_mut_status(parent).set_entitlements(uri, entitlements);
     }
 
-    pub fn set_last_updated(&mut self, parent: &ParentHandle) {
-        self.get_mut_status(parent).set_last_updated();
+    pub fn set_last_updated(&mut self, parent: &ParentHandle, uri: String) {
+        self.get_mut_status(parent).set_last_updated(uri);
     }
 
     fn get_mut_status(&mut self, parent: &ParentHandle) -> &mut ParentStatus {
@@ -1579,11 +1581,35 @@ impl fmt::Display for ParentStatuses {
             match &status.last_exchange {
                 None => writeln!(f, "Status: connection still pending")?,
                 Some(exchange) => {
+                    writeln!(f, "URI: {}", exchange.uri)?;
                     writeln!(f, "Status: {}", exchange.result)?;
-                    writeln!(f, "Last contacted: {}", exchange.time.to_rfc3339())?;
-                    writeln!(f, "Resource Entitlements:")?;
-                    for (rc, set) in status.entitlements.iter() {
-                        writeln!(f, "  resource class: {} entitled resources: {}", rc, set)?;
+                    writeln!(f, "Last contacted: {}", exchange.time().to_rfc3339())?;
+                    writeln!(
+                        f,
+                        "Next contact on or before: {}",
+                        status.next_exchange_before().to_rfc3339()
+                    )?;
+
+                    if exchange.was_success() {
+                        write!(f, "Resource Entitlements:")?;
+                    } else {
+                        write!(f, "LAST KNOWN Resource Entitlements:")?;
+                    }
+
+                    if status.entitlements.is_empty() {
+                        writeln!(f, " None")?;
+                    } else {
+                        writeln!(f, " {}", status.all_resources)?;
+                        for (rc, set) in status.entitlements.iter() {
+                            writeln!(f, "  resource class: {}", rc)?;
+                            writeln!(f, "  issuing cert uri: {}", set.parent_cert.uri)?;
+                            writeln!(f, "  received certificate(s):")?;
+                            for rcvd in set.received.iter() {
+                                writeln!(f, "    published at: {}", rcvd.uri)?;
+                                writeln!(f, "    resources:    {}", rcvd.resources)?;
+                                writeln!(f, "    cert PEM:\n\n{}\n", rcvd.cert_pem)?;
+                            }
+                        }
                     }
                 }
             }
@@ -1593,17 +1619,85 @@ impl fmt::Display for ParentStatuses {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct KnownEntitlement {
+    parent_cert: ParentStatusIssuingCert,
+    received: Vec<ParentStatusCert>,
+}
+
+impl KnownEntitlement {
+    fn resource_set(&self) -> ResourceSet {
+        let mut resources = ResourceSet::default();
+        for rcvd in &self.received {
+            resources = resources.union(&rcvd.resources)
+        }
+        resources
+    }
+}
+
+impl From<&EntitlementClass> for KnownEntitlement {
+    fn from(entitlement: &EntitlementClass) -> Self {
+        let parent_cert = entitlement.issuer().into();
+        let received = entitlement.issued().iter().map(|issued| issued.into()).collect();
+
+        KnownEntitlement { parent_cert, received }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ParentStatusIssuingCert {
+    uri: uri::Rsync,
+    cert_pem: String,
+}
+
+impl From<&SigningCert> for ParentStatusIssuingCert {
+    fn from(signing: &SigningCert) -> Self {
+        let cert = base64::encode(signing.cert().to_captured().as_slice());
+        let cert_pem = format!("-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n", cert);
+
+        ParentStatusIssuingCert {
+            uri: signing.uri().clone(),
+            cert_pem,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ParentStatusCert {
+    uri: uri::Rsync,
+    resources: ResourceSet,
+    cert_pem: String,
+}
+
+impl From<&IssuedCert> for ParentStatusCert {
+    fn from(issued: &IssuedCert) -> Self {
+        let cert = base64::encode(issued.cert.to_captured().as_slice());
+        let cert_pem = format!("-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n", cert);
+        ParentStatusCert {
+            uri: issued.uri().clone(),
+            resources: issued.resource_set().clone(),
+            cert_pem,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentStatus {
     last_exchange: Option<ParentExchange>,
-    entitlements: HashMap<ResourceClassName, ResourceSet>,
+    next_exchange_before: i64,
+    all_resources: ResourceSet,
+    entitlements: HashMap<ResourceClassName, KnownEntitlement>,
 }
 
 impl ParentStatus {
+    fn next_exchange_before(&self) -> Time {
+        Time::new(Utc.timestamp(self.next_exchange_before, 0))
+    }
+
     pub fn last_exchange(&self) -> Option<&ParentExchange> {
         self.last_exchange.as_ref()
     }
 
-    pub fn entitlements(&self) -> &HashMap<ResourceClassName, ResourceSet> {
+    pub fn entitlements(&self) -> &HashMap<ResourceClassName, KnownEntitlement> {
         &self.entitlements
     }
 
@@ -1611,27 +1705,48 @@ impl ParentStatus {
         self.last_exchange.map(|e| e.into_failure_opt()).flatten()
     }
 
-    fn set_failure(&mut self, error: ErrorResponse) {
-        self.last_exchange = Some(ParentExchange {
-            time: Time::now(),
-            result: ParentExchangeResult::Failure(error),
-        })
+    fn set_next_exchange_plus_one_hour(&mut self) {
+        self.next_exchange_before = (Time::now() + Duration::hours(1)).timestamp();
     }
 
-    fn set_entitlements(&mut self, entitlements: &Entitlements) {
-        self.set_last_updated();
+    fn set_failure(&mut self, uri: String, error: ErrorResponse) {
+        self.last_exchange = Some(ParentExchange {
+            timestamp: Time::now().timestamp(),
+            uri,
+            result: ParentExchangeResult::Failure(error),
+        });
+        self.set_next_exchange_plus_one_hour();
+    }
+
+    fn set_entitlements(&mut self, uri: String, entitlements: &Entitlements) {
+        self.set_last_updated(uri);
+
         self.entitlements = entitlements
             .classes()
             .iter()
-            .map(|rc| (rc.class_name().clone(), rc.resource_set().clone()))
+            .map(|rc| {
+                let resource_class_name = rc.class_name().clone();
+                let known_entitlements = rc.into();
+                (resource_class_name, known_entitlements)
+            })
             .collect();
+
+        let mut all_resources = ResourceSet::default();
+        for entitlement in self.entitlements.values() {
+            all_resources = all_resources.union(&entitlement.resource_set())
+        }
+
+        self.all_resources = all_resources;
+        self.set_next_exchange_plus_one_hour();
     }
 
-    fn set_last_updated(&mut self) {
+    fn set_last_updated(&mut self, uri: String) {
         self.last_exchange = Some(ParentExchange {
-            time: Time::now(),
+            timestamp: Time::now().timestamp(),
+            uri,
             result: ParentExchangeResult::Success,
         });
+        self.set_next_exchange_plus_one_hour();
     }
 }
 
@@ -1639,6 +1754,8 @@ impl Default for ParentStatus {
     fn default() -> Self {
         ParentStatus {
             last_exchange: None,
+            all_resources: ResourceSet::default(),
+            next_exchange_before: (Time::now() + Duration::hours(1)).timestamp(),
             entitlements: HashMap::new(),
         }
     }
@@ -1647,6 +1764,7 @@ impl Default for ParentStatus {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RepoStatus {
     last_exchange: Option<ParentExchange>,
+    next_exchange_before: i64,
     published: Vec<PublishElement>,
 }
 
@@ -1654,12 +1772,17 @@ impl Default for RepoStatus {
     fn default() -> Self {
         RepoStatus {
             last_exchange: None,
+            next_exchange_before: Self::now_plus_republish_hours(),
             published: vec![],
         }
     }
 }
 
 impl RepoStatus {
+    fn next_exchange_before(&self) -> Time {
+        Time::new(Utc.timestamp(self.next_exchange_before, 0))
+    }
+
     pub fn last_exchange(&self) -> Option<&ParentExchange> {
         self.last_exchange.as_ref()
     }
@@ -1674,26 +1797,36 @@ impl RepoStatus {
 }
 
 impl RepoStatus {
-    pub fn set_failure(&mut self, error: ErrorResponse) {
-        self.last_exchange = Some(ParentExchange {
-            time: Time::now(),
-            result: ParentExchangeResult::Failure(error),
-        })
+    fn now_plus_republish_hours() -> i64 {
+        (Time::now() + Duration::hours(CONFIG.republish_hours())).timestamp()
     }
 
-    pub fn set_success(&mut self, published: Vec<PublishElement>) {
+    pub fn set_failure(&mut self, uri: String, error: ErrorResponse) {
         self.last_exchange = Some(ParentExchange {
-            time: Time::now(),
+            timestamp: Time::now().timestamp(),
+            uri,
+            result: ParentExchangeResult::Failure(error),
+        });
+        self.next_exchange_before = (Time::now() + Duration::minutes(5)).timestamp();
+    }
+
+    pub fn set_success(&mut self, uri: String, published: Vec<PublishElement>) {
+        self.last_exchange = Some(ParentExchange {
+            timestamp: Time::now().timestamp(),
+            uri,
             result: ParentExchangeResult::Success,
         });
         self.published = published;
+        self.next_exchange_before = Self::now_plus_republish_hours();
     }
 
-    pub fn set_last_updated(&mut self) {
+    pub fn set_last_updated(&mut self, uri: String) {
         self.last_exchange = Some(ParentExchange {
-            time: Time::now(),
+            timestamp: Time::now().timestamp(),
+            uri,
             result: ParentExchangeResult::Success,
         });
+        self.next_exchange_before = Self::now_plus_republish_hours();
     }
 }
 
@@ -1702,9 +1835,27 @@ impl fmt::Display for RepoStatus {
         match &self.last_exchange {
             None => writeln!(f, "Status: connection still pending")?,
             Some(exchange) => {
+                writeln!(f, "URI: {}", exchange.uri())?;
                 writeln!(f, "Status: {}", exchange.result)?;
-                writeln!(f, "Last contacted: {}", exchange.time.to_rfc3339())?;
-                writeln!(f, "Published Objects:")?;
+                writeln!(f, "Last contacted: {}", exchange.time().to_rfc3339())?;
+                writeln!(
+                    f,
+                    "Next contact on or before: {}",
+                    self.next_exchange_before().to_rfc3339()
+                )?;
+
+                if exchange.was_success() {
+                    write!(f, "Published Objects:")?;
+                } else {
+                    write!(f, "LAST KNOWN Published Objects:")?;
+                }
+
+                if self.published.is_empty() {
+                    writeln!(f, " None")?;
+                } else {
+                    writeln!(f)?;
+                }
+
                 for object in &self.published {
                     writeln!(f, "  {} {}", object.base64().to_encoded_hash(), object.uri())?;
                 }
@@ -1716,13 +1867,18 @@ impl fmt::Display for RepoStatus {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentExchange {
-    time: Time,
+    timestamp: i64,
+    uri: String,
     result: ParentExchangeResult,
 }
 
 impl ParentExchange {
     pub fn time(&self) -> Time {
-        self.time
+        Time::new(Utc.timestamp(self.timestamp, 0))
+    }
+
+    pub fn uri(&self) -> &str {
+        &self.uri
     }
 
     pub fn result(&self) -> &ParentExchangeResult {
@@ -1755,7 +1911,7 @@ impl fmt::Display for ParentExchangeResult {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             ParentExchangeResult::Success => write!(f, "success"),
-            ParentExchangeResult::Failure(e) => write!(f, "failure: {}", e.to_string()),
+            ParentExchangeResult::Failure(e) => write!(f, "failure: {}", e.msg()),
         }
     }
 }

@@ -703,8 +703,8 @@ impl Options {
         app.subcommand(sub)
     }
 
-    fn make_cas_repo_state_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("state").about("Show current repo state.");
+    fn make_cas_repo_status_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("status").about("Show current repo status.");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -734,7 +734,7 @@ impl Options {
 
         sub = Self::make_cas_repo_request_sc(sub);
         sub = Self::make_cas_repo_show_sc(sub);
-        sub = Self::make_cas_repo_state_sc(sub);
+        sub = Self::make_cas_repo_status_sc(sub);
         sub = Self::make_cas_repo_update_sc(sub);
 
         app.subcommand(sub)
@@ -1462,7 +1462,7 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_repo_state(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_repo_status(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let my_ca = Self::parse_my_ca(matches)?;
 
@@ -1489,8 +1489,8 @@ impl Options {
             Self::parse_matches_cas_repo_request(m)
         } else if let Some(m) = matches.subcommand_matches("show") {
             Self::parse_matches_cas_repo_details(m)
-        } else if let Some(m) = matches.subcommand_matches("state") {
-            Self::parse_matches_cas_repo_state(m)
+        } else if let Some(m) = matches.subcommand_matches("status") {
+            Self::parse_matches_cas_repo_status(m)
         } else if let Some(m) = matches.subcommand_matches("update") {
             Self::parse_matches_cas_repo_update(m)
         } else {
