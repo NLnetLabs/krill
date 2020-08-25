@@ -198,7 +198,7 @@ impl KrillServer {
                     let pub_req = rfc8183::PublisherRequest::new(None, testbed_ca_handle.clone(), testbed_ca.id_cert().clone());
                     pubserver.create_publisher(pub_req).await?;
                     caserver.republish(&testbed_ca_handle).await?;
-                    
+
                     // Establish the TA (parent) <-> testbed CA (child) relationship
                     let child_req = ChildAuthRequest::Rfc8183(testbed_ca.child_request());
                     let child_req = AddChildRequest::new(testbed_ca_handle.clone(), testbed_ca_resources, child_req);
