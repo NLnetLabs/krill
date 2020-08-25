@@ -1265,14 +1265,14 @@ async fn api_ca_rta_oneoff(req: Request, path: &mut RequestPath, ca: Handle) -> 
 
 async fn testbed(req: Request) -> RoutingResult {
     if !CONFIG.testbed_enabled {
-        render_not_found(req).await
+        Err(req) // Not for us
     } else {
         let mut path = req.path().clone();
         match path.next() {
             Some("enabled")    => testbed_enabled(req).await,
             Some("children")   => testbed_children(req, &mut path).await,
             Some("publishers") => testbed_publishers(req, &mut path).await,
-            _                  => render_not_found(req).await,
+            _                  => render_unknown_method(),
         }
     }
 }
