@@ -235,7 +235,7 @@ impl BgpAnalyser {
                 BgpAnalysisState::AnnouncementNotFound => suggestion.add_not_found(entry.into_announcement()),
                 BgpAnalysisState::AnnouncementInvalidAsn => suggestion.add_invalid_asn(entry.into_announcement()),
                 BgpAnalysisState::AnnouncementInvalidLength => suggestion.add_invalid_length(entry.into_announcement()),
-                BgpAnalysisState::AnnouncementDisallowed => suggestion.add_disallowed(entry.into_announcement()),
+                BgpAnalysisState::AnnouncementDisallowed => suggestion.add_keep_disallowing(entry.into_announcement()),
                 BgpAnalysisState::RoaNoAnnouncementInfo => suggestion.add_keep(entry.into_definition()),
             }
         }
@@ -293,6 +293,7 @@ impl From<RisDumpError> for BgpAnalyserError {
 #[cfg(test)]
 mod tests {
 
+    use crate::commons::api::RoaDefinitionUpdates;
     use crate::commons::bgp::BgpAnalysisState;
     use crate::test::*;
 
@@ -368,6 +369,14 @@ mod tests {
         expected.sort();
 
         assert_eq!(disallowed, expected);
+
+        let suggestion = analyser.suggest(&[roa], &resources).await;
+        let updates = RoaDefinitionUpdates::from(suggestion);
+
+        let added = updates.added();
+        for def in disallowed {
+            assert!(!added.contains(def))
+        }
     }
 
     #[tokio::test]

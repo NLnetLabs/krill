@@ -76,9 +76,6 @@ pub struct BgpAnalysisSuggestion {
     invalid_length: Vec<Announcement>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
-    disallowed: Vec<Announcement>,
-
-    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
     too_permissive: Vec<ReplacementRoaSuggestion>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
@@ -86,6 +83,9 @@ pub struct BgpAnalysisSuggestion {
 
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
     keep: Vec<RoaDefinition>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
+    keep_disallowing: Vec<Announcement>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
@@ -142,10 +142,10 @@ impl Default for BgpAnalysisSuggestion {
             not_found: vec![],
             invalid_asn: vec![],
             invalid_length: vec![],
-            disallowed: vec![],
             too_permissive: vec![],
             keep: vec![],
             as0_redundant: vec![],
+            keep_disallowing: vec![],
         }
     }
 }
@@ -172,16 +172,16 @@ impl BgpAnalysisSuggestion {
         self.invalid_length.push(announcement);
     }
 
-    pub fn add_disallowed(&mut self, announcement: Announcement) {
-        self.disallowed.push(announcement);
-    }
-
     pub fn add_as0_redundant(&mut self, authorization: RoaDefinition) {
         self.as0_redundant.push(authorization);
     }
 
     pub fn add_keep(&mut self, authorization: RoaDefinition) {
         self.keep.push(authorization);
+    }
+
+    pub fn add_keep_disallowing(&mut self, announcement: Announcement) {
+        self.keep_disallowing.push(announcement);
     }
 }
 
