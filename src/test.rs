@@ -21,19 +21,19 @@ use crate::cli::report::{ApiResponse, ReportFormat};
 use crate::cli::{Error, KrillClient};
 use crate::commons::api::{
     AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildAuthRequest, ChildHandle, Handle,
-    ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, Publish, PublisherDetails, PublisherHandle,
+    ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, Publish, PublisherDetails, PublisherList, PublisherHandle,
     RepositoryUpdate, ResourceClassKeysInfo, ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates,
     TypedPrefix, UpdateChildRequest,
 };
 use crate::commons::bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::remote::rfc8183;
-use crate::commons::remote::rfc8183::ChildRequest;
+use crate::commons::remote::rfc8183::{ChildRequest, RepositoryResponse};
 use crate::commons::util::httpclient;
-use crate::constants::{KRILL_ENV_TEST_ANN, KRILL_ENV_TEST_UNIT_DATA};
+use crate::constants::{KRILL_ENV_TEST, KRILL_ENV_TEST_ANN, KRILL_ENV_TEST_UNIT_DATA};
 use crate::daemon::ca::{ta_handle, ResourceTaggedAttestation, RtaRequest, SignSupport};
 use crate::daemon::http::server;
 
-const SERVER_URI: &str = "https://localhost:3000/";
+pub const SERVER_URI: &str = "https://localhost:3000/";
 
 pub async fn server_ready() -> bool {
     for _ in 0..300 {
@@ -61,6 +61,7 @@ pub async fn start_krill() -> PathBuf {
 
     env::set_var(KRILL_ENV_TEST_UNIT_DATA, dir.to_string_lossy().to_string());
     env::set_var(KRILL_ENV_TEST_ANN, "1");
+    env::set_var(KRILL_ENV_TEST, "1");
 
     tokio::spawn(server::start());
 
@@ -98,6 +99,14 @@ pub async fn init_child_with_embedded_repo(handle: &Handle) {
     krill_admin(Command::CertAuth(CaCommand::RepoUpdate(
         handle.clone(),
         RepositoryUpdate::Embedded,
+    )))
+    .await;
+}
+
+pub async fn ca_repo_update_rfc8181(handle: &Handle, response: RepositoryResponse) {
+    krill_admin(Command::CertAuth(CaCommand::RepoUpdate(
+        handle.clone(),
+        RepositoryUpdate::Rfc8181(response)
     )))
     .await;
 }
@@ -373,10 +382,24 @@ pub async fn ca_current_objects(handle: &Handle) -> Vec<Publish> {
     ca.published_objects()
 }
 
+pub async fn list_publishers() -> PublisherList {
+    match krill_admin(Command::Publishers(PublishersCommand::PublisherList)).await {
+        ApiResponse::PublisherList(pub_list) => pub_list,
+        _ => panic!("Expected publisher list"),
+    }
+}
+
 pub async fn publisher_details(publisher: &PublisherHandle) -> PublisherDetails {
     match krill_admin(Command::Publishers(PublishersCommand::ShowPublisher(publisher.clone()))).await {
         ApiResponse::PublisherDetails(pub_details) => pub_details,
         _ => panic!("Expected publisher details"),
+    }
+}
+
+pub async fn publisher_request(handle: &Handle) -> rfc8183::PublisherRequest {
+    match krill_admin(Command::CertAuth(CaCommand::RepoPublisherRequest(handle.clone()))).await {
+        ApiResponse::Rfc8183PublisherRequest(req) => req,
+        _ => panic!("Expected publisher request"),
     }
 }
 
