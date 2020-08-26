@@ -187,6 +187,12 @@ impl BgpAnalyser {
                             allowed_by.unwrap(), // always set for valid announcements
                         ))
                     }
+                    AnnouncementValidity::Disallowed => {
+                        entries.push(BgpAnalysisEntry::announcement_disallowed(
+                            announcement,
+                            invalidating_roas,
+                        ));
+                    }
                     AnnouncementValidity::InvalidLength => {
                         entries.push(BgpAnalysisEntry::announcement_invalid_length(
                             announcement,
@@ -229,6 +235,7 @@ impl BgpAnalyser {
                 BgpAnalysisState::AnnouncementNotFound => suggestion.add_not_found(entry.into_announcement()),
                 BgpAnalysisState::AnnouncementInvalidAsn => suggestion.add_invalid_asn(entry.into_announcement()),
                 BgpAnalysisState::AnnouncementInvalidLength => suggestion.add_invalid_length(entry.into_announcement()),
+                BgpAnalysisState::AnnouncementDisallowed => suggestion.add_keep_disallowing(entry.into_announcement()),
                 BgpAnalysisState::RoaNoAnnouncementInfo => suggestion.add_keep(entry.into_definition()),
             }
         }
@@ -286,6 +293,7 @@ impl From<RisDumpError> for BgpAnalyserError {
 #[cfg(test)]
 mod tests {
 
+    use crate::commons::api::RoaDefinitionUpdates;
     use crate::commons::bgp::BgpAnalysisState;
     use crate::test::*;
 
@@ -338,6 +346,37 @@ mod tests {
             serde_json::from_str(include_str!("../../../test-resources/bgp/expected_full_report.json")).unwrap();
 
         assert_eq!(report, expected);
+    }
+
+    #[tokio::test]
+    async fn analyse_bgp_disallowed_announcements() {
+        let roa = definition("10.0.0.0/22 => 0");
+        let analyser = BgpAnalyser::with_test_announcements();
+
+        let resources = ResourceSet::from_strs("", "10.0.0.0/8, 192.168.0.0/16", "").unwrap();
+        let report = analyser.analyse(&[roa], &resources).await;
+
+        assert!(!report.contains_invalids());
+
+        let mut disallowed = report.matching_defs(BgpAnalysisState::AnnouncementDisallowed);
+        disallowed.sort();
+
+        let disallowed_1 = definition("10.0.0.0/22 => 64496");
+        let disallowed_2 = definition("10.0.0.0/22 => 64497");
+        let disallowed_3 = definition("10.0.0.0/24 => 64496");
+        let disallowed_4 = definition("10.0.2.0/23 => 64496");
+        let mut expected = vec![&disallowed_1, &disallowed_2, &disallowed_3, &disallowed_4];
+        expected.sort();
+
+        assert_eq!(disallowed, expected);
+
+        let suggestion = analyser.suggest(&[roa], &resources).await;
+        let updates = RoaDefinitionUpdates::from(suggestion);
+
+        let added = updates.added();
+        for def in disallowed {
+            assert!(!added.contains(def))
+        }
     }
 
     #[tokio::test]
