@@ -864,4 +864,20 @@ mod tests {
         let expected_socket_addr: SocketAddr = ([127, 0, 0, 1], 3000).into();
         assert_eq!(c.socket_addr(), expected_socket_addr);
     }
+
+    #[test]
+    fn testbed_enable_should_require_use_ta() {
+        use std::env;
+        env::set_var(KRILL_ENV_AUTH_TOKEN, "secret");
+        env::set_var(KRILL_ENV_REPO_ENABLED, "1");
+        env::set_var(KRILL_ENV_TESTBED_ENABLED, "1");
+
+        let c = Config::read_config("./defaults/krill.conf").unwrap();
+        assert!(c.verify().is_err());
+
+        env::set_var(KRILL_ENV_USE_TA, "1");
+
+        let c = Config::read_config("./defaults/krill.conf").unwrap();
+        assert!(c.verify().is_ok());
+    }
 }
