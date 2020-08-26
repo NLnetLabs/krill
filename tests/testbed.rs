@@ -158,5 +158,15 @@ async fn add_and_remove_certificate_authority() {
     // verify that the testbed shows that it no longer has any children
     assert_eq!(0, ca_details(&testbed_ca_handle).await.children().len());
 
+    // -------------------------------------------------------------------------
+    // verify that the testbed TAL can be downloaded at the alternate location
+    // that results in a more helpful name on the Relying Party (assuming that
+    // the RP, like Routinator, uses the TAL filename by default to identify the
+    // RPKI hierarchy being queried).
+    // -------------------------------------------------------------------------
+    let org_tal     = get_text(&format!("{}ta/ta.tal", SERVER_URI), None).await.unwrap();
+    let renamed_tal = get_text(&format!("{}testbed.tal", SERVER_URI), None).await.unwrap();
+    assert_eq!(org_tal, renamed_tal);
+
     let _ = fs::remove_dir_all(dir);
 }
