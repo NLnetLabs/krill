@@ -71,6 +71,7 @@ impl Announcement {
         } else {
             let mut invalidating = vec![];
             let mut same_asn_found = false;
+            let mut none_as0_found = false;
             for roa in covering {
                 if roa.asn() == self.asn {
                     if roa.prefix().matching_or_less_specific(&self.prefix)
@@ -86,13 +87,20 @@ impl Announcement {
                         same_asn_found = true;
                     }
                 }
+                if roa.asn() != AsNumber::zero() {
+                    none_as0_found = true;
+                }
                 invalidating.push(*roa);
             }
 
+            // NOTE: Valid announcments already returned, we only have invalids left
+
             let validity = if same_asn_found {
                 AnnouncementValidity::InvalidLength
-            } else {
+            } else if none_as0_found {
                 AnnouncementValidity::InvalidAsn
+            } else {
+                AnnouncementValidity::Disallowed
             };
 
             ValidatedAnnouncement {
@@ -259,6 +267,7 @@ pub enum AnnouncementValidity {
     Valid,
     InvalidLength,
     InvalidAsn,
+    Disallowed,
     NotFound,
 }
 

@@ -2404,6 +2404,7 @@ pub struct BgpStats {
     pub announcements_valid: usize,
     pub announcements_invalid_asn: usize,
     pub announcements_invalid_length: usize,
+    pub announcements_disallowed: usize,
     pub announcements_not_found: usize,
     pub roas_too_permissive: usize,
     pub roas_redundant: usize,
@@ -2417,6 +2418,7 @@ impl Default for BgpStats {
             announcements_valid: 0,
             announcements_invalid_asn: 0,
             announcements_invalid_length: 0,
+            announcements_disallowed: 0,
             announcements_not_found: 0,
             roas_too_permissive: 0,
             roas_redundant: 0,
@@ -2437,6 +2439,10 @@ impl BgpStats {
 
     pub fn increment_invalid_length(&mut self) {
         self.announcements_invalid_length += 1;
+    }
+
+    pub fn increment_disallowed(&mut self) {
+        self.announcements_disallowed += 1;
     }
 
     pub fn increment_not_found(&mut self) {

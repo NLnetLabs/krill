@@ -76,6 +76,9 @@ pub struct BgpAnalysisSuggestion {
     invalid_length: Vec<Announcement>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
+    disallowed: Vec<Announcement>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
     too_permissive: Vec<ReplacementRoaSuggestion>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
@@ -139,6 +142,7 @@ impl Default for BgpAnalysisSuggestion {
             not_found: vec![],
             invalid_asn: vec![],
             invalid_length: vec![],
+            disallowed: vec![],
             too_permissive: vec![],
             keep: vec![],
             as0_redundant: vec![],
@@ -166,6 +170,10 @@ impl BgpAnalysisSuggestion {
 
     pub fn add_invalid_length(&mut self, announcement: Announcement) {
         self.invalid_length.push(announcement);
+    }
+
+    pub fn add_disallowed(&mut self, announcement: Announcement) {
+        self.disallowed.push(announcement);
     }
 
     pub fn add_as0_redundant(&mut self, authorization: RoaDefinition) {
@@ -295,6 +303,7 @@ impl From<BgpAnalysisReport> for BgpStats {
                 BgpAnalysisState::AnnouncementValid => stats.increment_valid(),
                 BgpAnalysisState::AnnouncementInvalidAsn => stats.increment_invalid_asn(),
                 BgpAnalysisState::AnnouncementInvalidLength => stats.increment_invalid_length(),
+                BgpAnalysisState::AnnouncementDisallowed => stats.increment_disallowed(),
                 BgpAnalysisState::AnnouncementNotFound => stats.increment_not_found(),
                 BgpAnalysisState::RoaUnseen => {
                     stats.increment_roas_total();
@@ -473,6 +482,15 @@ impl fmt::Display for BgpAnalysisReport {
                 writeln!(f)?;
             }
 
+            if let Some(disallowed) = entry_map.get(&BgpAnalysisState::AnnouncementDisallowed) {
+                writeln!(f, "Announcements disallowed by 'AS0' ROAs:")?;
+                writeln!(f)?;
+                for ann in disallowed {
+                    writeln!(f, "\tAnnouncement: {}", ann.definition)?;
+                }
+                writeln!(f)?;
+            }
+
             Ok(())
         }
     }
@@ -643,25 +661,27 @@ impl BgpAnalysisEntry {
         }
     }
 
-    pub fn announcement_invalid_asn(announcement: Announcement, mut disallowed_by: Vec<RoaDefinition>) -> Self {
-        disallowed_by.sort();
-        BgpAnalysisEntry {
-            definition: RoaDefinition::from(announcement),
-            state: BgpAnalysisState::AnnouncementInvalidAsn,
-            allowed_by: None,
-            disallowed_by,
-            made_redundant_by: vec![],
-            authorizes: vec![],
-            authorizes_excess: vec![],
-            disallows: vec![],
-        }
+    pub fn announcement_invalid_asn(announcement: Announcement, disallowed_by: Vec<RoaDefinition>) -> Self {
+        Self::announcement_invalid(announcement, BgpAnalysisState::AnnouncementInvalidAsn, disallowed_by)
     }
 
-    pub fn announcement_invalid_length(announcement: Announcement, mut disallowed_by: Vec<RoaDefinition>) -> Self {
+    pub fn announcement_invalid_length(announcement: Announcement, disallowed_by: Vec<RoaDefinition>) -> Self {
+        Self::announcement_invalid(announcement, BgpAnalysisState::AnnouncementInvalidLength, disallowed_by)
+    }
+
+    pub fn announcement_disallowed(announcement: Announcement, disallowed_by: Vec<RoaDefinition>) -> Self {
+        Self::announcement_invalid(announcement, BgpAnalysisState::AnnouncementDisallowed, disallowed_by)
+    }
+
+    fn announcement_invalid(
+        announcement: Announcement,
+        state: BgpAnalysisState,
+        mut disallowed_by: Vec<RoaDefinition>,
+    ) -> Self {
         disallowed_by.sort();
         BgpAnalysisEntry {
             definition: RoaDefinition::from(announcement),
-            state: BgpAnalysisState::AnnouncementInvalidLength,
+            state,
             allowed_by: None,
             disallowed_by,
             made_redundant_by: vec![],
@@ -714,6 +734,7 @@ pub enum BgpAnalysisState {
     AnnouncementValid,
     AnnouncementInvalidLength,
     AnnouncementInvalidAsn,
+    AnnouncementDisallowed,
     AnnouncementNotFound,
     RoaNoAnnouncementInfo,
 }
