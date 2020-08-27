@@ -44,7 +44,7 @@ impl BgpAnalyser {
     pub async fn update(&self) -> Result<bool, BgpAnalyserError> {
         if let Some(loader) = &self.dumploader {
             let mut seen = self.seen.write().await;
-            if let Some(last_time) = seen.last_updated() {
+            if let Some(last_time) = seen.last_checked() {
                 if (last_time + Duration::minutes(BGP_RIS_REFRESH_MINUTES)) > Time::now() {
                     trace!("Will not check BGP Ris Dumps until the refresh interval has passed");
                     return Ok(false); // no need to update yet
@@ -53,6 +53,7 @@ impl BgpAnalyser {
             let announcements = loader.download_updates().await?;
             if seen.equivalent(&announcements) {
                 debug!("BGP Ris Dumps unchanged");
+                seen.update_checked();
                 Ok(false)
             } else {
                 info!("Updated announcements ({}) based on BGP Ris Dumps", announcements.len());
@@ -74,7 +75,7 @@ impl BgpAnalyser {
             .cloned()
             .collect();
 
-        if seen.last_updated().is_none() {
+        if seen.last_checked().is_none() {
             // nothing to analyse, just push all ROAs as 'no announcement info'
             for roa in roas {
                 entries.push(BgpAnalysisEntry::roa_no_announcement_info(roa));
@@ -308,10 +309,10 @@ mod tests {
         let analyser = BgpAnalyser::new(true, bgp_risdump_v4_uri, bgp_risdump_v6_uri);
 
         assert!(analyser.seen.read().await.is_empty());
-        assert!(analyser.seen.read().await.last_updated().is_none());
+        assert!(analyser.seen.read().await.last_checked().is_none());
         analyser.update().await.unwrap();
         assert!(!analyser.seen.read().await.is_empty());
-        assert!(analyser.seen.read().await.last_updated().is_some());
+        assert!(analyser.seen.read().await.last_checked().is_some());
     }
 
     #[tokio::test]
