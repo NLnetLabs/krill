@@ -32,6 +32,8 @@ pub struct RoaDeltaError {
     unknowns: Vec<RoaDefinition>,
     invalid_length: Vec<RoaDefinition>,
     covering: Vec<CoveringRoa>,
+    as0_exists: Vec<ExistingAs0Roa>,
+    as0_overlaps: Vec<OverlappingAs0Roa>,
 }
 
 impl Default for RoaDeltaError {
@@ -43,6 +45,8 @@ impl Default for RoaDeltaError {
             unknowns: vec![],
             invalid_length: vec![],
             covering: vec![],
+            as0_exists: vec![],
+            as0_overlaps: vec![],
         }
     }
 }
@@ -72,6 +76,14 @@ impl RoaDeltaError {
         self.covering.push(CoveringRoa { addition, covering })
     }
 
+    pub fn add_as0_exists(&mut self, addition: RoaDefinition, existing_as0: RoaDefinition) {
+        self.as0_exists.push(ExistingAs0Roa { addition, existing_as0 });
+    }
+
+    pub fn add_as0_overlaps(&mut self, addition: RoaDefinition, existing: Vec<RoaDefinition>) {
+        self.as0_overlaps.push(OverlappingAs0Roa { addition, existing });
+    }
+
     pub fn combine(&mut self, mut other: Self) {
         self.duplicates.append(&mut other.duplicates);
         self.covered.append(&mut other.covered);
@@ -79,6 +91,8 @@ impl RoaDeltaError {
         self.unknowns.append(&mut other.unknowns);
         self.invalid_length.append(&mut other.invalid_length);
         self.covering.append(&mut other.covering);
+        self.as0_exists.append(&mut other.as0_exists);
+        self.as0_overlaps.append(&mut other.as0_overlaps);
     }
 
     pub fn is_empty(&self) -> bool {
@@ -88,6 +102,8 @@ impl RoaDeltaError {
             && self.unknowns.is_empty()
             && self.invalid_length.is_empty()
             && self.covering.is_empty()
+            && self.as0_exists.is_empty()
+            && self.as0_overlaps.is_empty()
     }
 }
 
@@ -150,6 +166,18 @@ impl fmt::Display for RoaDeltaError {
 pub struct CoveredRoa {
     addition: RoaDefinition,
     covered_by: RoaDefinition,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ExistingAs0Roa {
+    addition: RoaDefinition,
+    existing_as0: RoaDefinition,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OverlappingAs0Roa {
+    addition: RoaDefinition,
+    existing: Vec<RoaDefinition>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1007,16 +1035,6 @@ mod tests {
             include_str!("../../test-resources/api/regressions/errors/general-error.json"),
             Error::custom("some unlikely corner case"),
         );
-
-        //        let mut res = String::new();
-        //        for e in errs {
-        //            let error_response = e.to_error_response();
-        //
-        //            let path = format!("test-resources/api/regressions/errors/{}.json", error_response.label());
-        //            let path = PathBuf::from(&path);
-        //
-        //            file::save_json(&error_response, &path).unwrap();
-        //        }
     }
 
     #[test]
@@ -1033,6 +1051,13 @@ mod tests {
 
         let unknown = definition("192.168.0.0/16 => 1");
 
+        let existing_as0 = definition("10.1.0.0/24 => 0");
+        let existing_as0_addition = definition("10.1.0.0/24 => 1");
+
+        let existing_for_as0_1 = definition("10.2.0.0/24 => 1");
+        let existing_for_as0_2 = definition("10.2.1.0/24 => 1");
+        let as0_for_existing = definition("10.2.0.0/16 => 0");
+
         error.add_covered(small, middle);
         error.add_covering(big, vec![middle, neighbour]);
         error.add_duplicate(middle);
@@ -1040,6 +1065,9 @@ mod tests {
         error.add_notheld(not_held);
         error.add_invalid_length(invalid_length);
         error.add_unknown(unknown);
+
+        error.add_as0_exists(existing_as0_addition, existing_as0);
+        error.add_as0_overlaps(as0_for_existing, vec![existing_for_as0_1, existing_for_as0_2]);
 
         // println!(
         //     "{}",

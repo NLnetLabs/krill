@@ -5,7 +5,7 @@ After=network.target
 
 [Service]
 ExecStart=/usr/bin/krill --config=/etc/krill.conf
-Type=exec
+Type=simple
 Restart=on-failure
 User=krill
 AmbientCapabilities=CAP_NET_BIND_SERVICE
@@ -20,14 +20,12 @@ ProtectKernelModules=yes
 ProtectKernelTunables=yes
 ProtectSystem=strict
 ReadWritePaths=/var/lib/krill/
-ConfigurationDirectory=krill
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 RestrictNamespaces=yes
 RestrictRealtime=yes
 StateDirectory=krill
 SystemCallArchitectures=native
 SystemCallErrorNumber=EPERM
-SystemCallFilter=@system-service
 RestartSec=10
 StartLimitInterval=10m
 StartLimitBurst=5

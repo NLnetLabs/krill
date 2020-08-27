@@ -178,6 +178,11 @@ impl RoaDefinition {
             && self.effective_max_length() >= other.effective_max_length()
     }
 
+    /// Returns `true` if this is an AS0 definition which overlaps the other.
+    pub fn overlaps(&self, other: &RoaDefinition) -> bool {
+        self.prefix.matching_or_less_specific(&other.prefix) || other.prefix.matching_or_less_specific(&self.prefix)
+    }
+
     /// Returns all prefixes covered by the max length of this definition.
     /// Note that if the effective max length equals the prefix length, this
     /// means that the single prefix in this definition is returned.
