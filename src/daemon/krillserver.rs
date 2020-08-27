@@ -456,7 +456,11 @@ impl KrillServer {
                 let roa_count = roas.len();
                 let child_count = ca.children().count();
 
-                let bgp_report = self.bgp_analyser.analyse(roas.as_slice(), &ca.all_resources()).await;
+                let bgp_report = if ca.handle().as_str() == "ta" || ca.handle().as_str() == "testbed" {
+                    BgpAnalysisReport::new(vec![])
+                } else {
+                    self.bgp_analyser.analyse(roas.as_slice(), &ca.all_resources()).await
+                };
 
                 res.insert(
                     ca.handle().clone(),
