@@ -3,6 +3,16 @@
 Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
 for planned releases.
 
+## 0.7.4 'Multipass!'
+
+There is no need to upgrade to this version. It was created only so that you can continue
+to compile Krill locally using the latest Rust compiler.
+
+As it turns out the use of many asynchronous calls, the cool stuff which make Krill thread safe,
+cause the compiler to do quite a bit of work in a process called 'Monomorphization'. The latest
+compiler version will go on strike as a result, unless we instruct it beforehand that more work
+is coming its way.
+
 ## 0.7.3 'Slow Food'
 
 This release fixes an issue where the BGP Ris Dump files were reloaded and checked too
