@@ -3,7 +3,7 @@
 # with a prepopulated Cargo build cache to accelerate the build process.
 # Use Ubuntu 16.04 because this is what the Travis CI Krill build uses.
 #
-ARG BASE_IMG=alpine:3.11
+ARG BASE_IMG=alpine:3.12
 
 #
 # -- stage 1: build krill and krillc
