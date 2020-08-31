@@ -1,3 +1,5 @@
+#![type_length_limit = "1500000"]
+
 extern crate krill;
 
 use std::path::PathBuf;
