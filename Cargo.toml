@@ -37,7 +37,7 @@ openssl         = { version = "^0.10", features = ["v110"] }
 pretty          = "0.5.2" # for testing
 rand            = "^0.5"
 reqwest         = { version = "0.10.8", features = [ "json"] }
-rpki            = { git = "https://github.com/NLnetLabs/rpki-rs.git", branch = "rta-01", version = "0.9.2-bis" }
+rpki            = { git = "https://github.com/NLnetLabs/rpki-rs.git", rev = "2d0597f" }
 serde           = { version = "^1.0", features = ["derive"] }
 serde_json      = "^1.0"
 syslog          = "^4.0"
