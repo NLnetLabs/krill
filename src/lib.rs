@@ -1,3 +1,5 @@
+#![type_length_limit = "5000000"]
+
 #[macro_use]
 extern crate async_trait;
 extern crate base64;

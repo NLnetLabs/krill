@@ -3,13 +3,21 @@
 Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
 for planned releases.
 
-## To be released
+## 0.7.4 'Multipass!'
 
-See [here](https://github.com/NLnetLabs/krill/projects/14)
+There is no need to upgrade to this version. It was created only so that you can continue
+to compile Krill locally using the latest Rust compiler.
 
-* Breaking change in ROA delta error reporting, the response will now include a full
-  report of all issues (attempt to add duplicate ROA or remove unknown ROA, etc, etc)
-  
+As it turns out the use of many asynchronous calls, the cool stuff which make Krill thread safe,
+cause the compiler to do quite a bit of work in a process called 'Monomorphization'. The latest
+compiler version will go on strike as a result, unless we instruct it beforehand that more work
+is coming its way.
+
+## 0.7.3 'Slow Food'
+
+This release fixes an issue where the BGP Ris Dump files were reloaded and checked too
+frequently causing high CPU and bandwidth usage.
+
 ## 0.7.2 'Small Bites'
 
 This release fixes an issue where BGP RIS Dump files that were not properly retrieved would

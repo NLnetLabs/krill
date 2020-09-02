@@ -1,3 +1,5 @@
+#![type_length_limit = "5000000"]
+
 extern crate krill;
 extern crate pretty;
 extern crate rpki;
