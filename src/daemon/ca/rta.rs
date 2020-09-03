@@ -2,7 +2,6 @@ use std::fmt;
 
 use bytes::Bytes;
 
-use bcder::OctetString;
 use rpki::cert::Cert;
 use rpki::crypto::{DigestAlgorithm, KeyIdentifier};
 use rpki::rta;
@@ -81,10 +80,9 @@ impl ResourceTaggedAttestation {
         content: Bytes,
         keys: Vec<KeyIdentifier>,
     ) -> KrillResult<rta::RtaBuilder> {
-        let mut attestation_builder = rta::AttestationBuilder::new(
-            DigestAlgorithm::default(),
-            MessageDigest::from(OctetString::new(content)),
-        );
+        let algo = DigestAlgorithm::default();
+        let digest = algo.digest(content.as_ref());
+        let mut attestation_builder = rta::AttestationBuilder::new(algo, MessageDigest::from(digest));
 
         for key in keys.into_iter() {
             attestation_builder.push_key(key);
