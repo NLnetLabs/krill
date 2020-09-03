@@ -1439,7 +1439,7 @@ checksum = "cabe4fa914dec5870285fa7f71f602645da47c486e68486d2b4ceb4a343e90ac"
 [[package]]
 name = "rpki"
 version = "0.9.2-bis"
-source = "git+https://github.com/NLnetLabs/rpki-rs.git?branch=rta-01#75a65168b6c24eb2d2c8ec2b264ea584dd2069ba"
+source = "git+https://github.com/NLnetLabs/rpki-rs.git?branch=rta-01#1d2b8cea00fd3f94732108ed48a9094ee8642722"
 dependencies = [
  "base64 0.12.3",
  "bcder",
