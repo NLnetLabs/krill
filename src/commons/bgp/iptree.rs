@@ -121,7 +121,7 @@ pub struct TypedPrefixTreeBuilder<V: AsRef<TypedPrefix>> {
 impl<V: AsRef<TypedPrefix>> TypedPrefixTreeBuilder<V> {
     pub fn add(&mut self, value: V) {
         let range = IpRange::from(value.as_ref()).0;
-        let entry = self.values.entry(range).or_insert_with(|| vec![]);
+        let entry = self.values.entry(range).or_insert_with(Vec::new);
         entry.push(value);
     }
 

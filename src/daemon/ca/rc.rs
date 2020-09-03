@@ -376,7 +376,7 @@ impl ResourceClass {
             .make_current_set_delta(publish_key, repo_info, objects_delta, publish_key_revocations, signer)
             .map_err(Error::signer)?;
 
-        key_pub_map.insert(publish_key.key_id().clone(), publish_key_delta);
+        key_pub_map.insert(*publish_key.key_id(), publish_key_delta);
 
         if let Some(other_key) = other_key_opt {
             let ns = self.name_space();
@@ -386,7 +386,7 @@ impl ResourceClass {
                 .make_current_set_delta(other_key, repo_info, delta, other_key_revocations, signer)
                 .map_err(ca::Error::signer)?;
 
-            key_pub_map.insert(other_key.key_id().clone(), other_delta);
+            key_pub_map.insert(*other_key.key_id(), other_delta);
         }
 
         Ok(EvtDet::ObjectSetUpdated(self.name.clone(), key_pub_map))
@@ -505,7 +505,7 @@ impl ResourceClass {
             .map_err(Error::signer)?;
 
         let mut res = HashMap::new();
-        res.insert(issuing_key.key_id().clone(), set_delta);
+        res.insert(*issuing_key.key_id(), set_delta);
         Ok(res)
     }
 

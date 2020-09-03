@@ -35,6 +35,7 @@ use rpki::roa::Roa;
 use crate::commons::error::RoaDeltaError;
 use crate::commons::util::sha256;
 use crate::daemon::ca::RouteAuthorization;
+use std::sync::Arc;
 
 // Some syntactic sugar to help this old coder's brain deal with the mess of Strings
 pub type Message = String;
@@ -139,35 +140,30 @@ impl<'de> Deserialize<'de> for Base64 {
 //------------ HexEncodedHash ------------------------------------------------
 
 /// This type contains a hex encoded sha256 hash.
-///
-/// Note that we store this in a Bytes for cheap cloning.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct HexEncodedHash(Bytes);
+pub struct HexEncodedHash(Arc<String>);
 
 impl HexEncodedHash {
     pub fn from_content(content: &[u8]) -> Self {
         let sha256 = sha256(content);
         let hex = hex::encode(sha256);
-        HexEncodedHash::from(hex)
+        HexEncodedHash(Arc::new(hex))
     }
-}
 
-impl Into<Bytes> for HexEncodedHash {
-    fn into(self) -> Bytes {
-        self.0
+    pub fn as_bytes(&self) -> Bytes {
+        Bytes::from(self.to_string())
     }
 }
 
 impl AsRef<str> for HexEncodedHash {
     fn as_ref(&self) -> &str {
-        use std::str;
-        str::from_utf8(&self.0).unwrap()
+        self.0.as_str()
     }
 }
 
-impl AsRef<Bytes> for HexEncodedHash {
-    fn as_ref(&self) -> &Bytes {
-        &self.0
+impl AsRef<[u8]> for HexEncodedHash {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_bytes()
     }
 }
 
@@ -191,7 +187,7 @@ impl From<&Cert> for HexEncodedHash {
 
 impl From<String> for HexEncodedHash {
     fn from(s: String) -> Self {
-        HexEncodedHash(Bytes::from(s.to_lowercase()))
+        HexEncodedHash(Arc::new(s))
     }
 }
 
@@ -200,7 +196,7 @@ impl Serialize for HexEncodedHash {
     where
         S: Serializer,
     {
-        self.to_string().serialize(serializer)
+        self.0.serialize(serializer)
     }
 }
 
@@ -210,14 +206,13 @@ impl<'de> Deserialize<'de> for HexEncodedHash {
         D: Deserializer<'de>,
     {
         let string = String::deserialize(deserializer)?;
-        Ok(HexEncodedHash::from(string))
+        Ok(HexEncodedHash(Arc::new(string)))
     }
 }
 
 impl fmt::Display for HexEncodedHash {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let string = unsafe { String::from_utf8_unchecked(self.0.to_vec()) };
-        write!(f, "{}", string)
+        write!(f, "{}", self.0)
     }
 }
 

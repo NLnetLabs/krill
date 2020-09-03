@@ -334,7 +334,7 @@ impl fmt::Display for BgpAnalysisReport {
         let mut entry_map: HashMap<BgpAnalysisState, Vec<&BgpAnalysisEntry>> = HashMap::new();
         for entry in entries.iter() {
             let state = entry.state();
-            entry_map.entry(state).or_insert_with(|| vec![]);
+            entry_map.entry(state).or_insert_with(Vec::new);
             entry_map.get_mut(&state).unwrap().push(entry);
         }
 

@@ -12,7 +12,6 @@ use serde::de;
 use serde::{Deserialize, Deserializer};
 #[cfg(unix)]
 use syslog::Facility;
-use toml;
 
 use rpki::uri;
 

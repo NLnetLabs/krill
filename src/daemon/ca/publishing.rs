@@ -269,11 +269,13 @@ impl CrlBuilder {
     }
 }
 
+#[allow(clippy::mutable_key_type)]
 pub struct ManifestBuilder {
     entries: HashMap<Bytes, Bytes>,
 }
 
 impl ManifestBuilder {
+    #[allow(clippy::mutable_key_type)]
     pub fn with_crl_only(crl_info: &CrlInfo) -> Self {
         let mut entries: HashMap<Bytes, Bytes> = HashMap::new();
 
@@ -291,6 +293,7 @@ impl ManifestBuilder {
         roas: impl Iterator<Item = (&'a RouteAuthorization, &'a RoaInfo)>,
         delta: &ObjectsDelta,
     ) -> Self {
+        #[allow(clippy::mutable_key_type)]
         let mut entries: HashMap<Bytes, Bytes> = HashMap::new();
 
         // Add the *new* CRL

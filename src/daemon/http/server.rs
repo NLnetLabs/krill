@@ -15,7 +15,6 @@ use serde::Serialize;
 use tokio::sync::RwLock;
 
 use futures::TryFutureExt;
-use hyper;
 use hyper::server::conn::AddrIncoming;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::Method;

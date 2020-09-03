@@ -89,7 +89,7 @@ impl ResourceTaggedAttestation {
         }
 
         for asn in resources.asn().iter() {
-            attestation_builder.push_as(asn.clone());
+            attestation_builder.push_as(asn);
         }
 
         let v4_resources = resources.to_ip_resources_v4();
@@ -97,7 +97,7 @@ impl ResourceTaggedAttestation {
             .to_blocks()
             .map_err(|_| Error::custom("Cannot inherit IPv4 on RTA"))?;
         for v4 in v4_blocks.iter() {
-            attestation_builder.push_v4(v4.clone())
+            attestation_builder.push_v4(v4)
         }
 
         let v6_resources = resources.to_ip_resources_v6();
@@ -105,7 +105,7 @@ impl ResourceTaggedAttestation {
             .to_blocks()
             .map_err(|_| Error::custom("Cannot inherit IPv6 on RTA"))?;
         for v6 in v6_blocks.iter() {
-            attestation_builder.push_v6(v6.clone())
+            attestation_builder.push_v6(v6)
         }
 
         Ok(rta::RtaBuilder::from_attestation(

@@ -4,7 +4,8 @@
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::ops::Deref;
-use std::str::{from_utf8_unchecked, FromStr};
+use std::str::FromStr;
+use std::sync::Arc;
 use std::{fmt, ops, str};
 
 use bytes::Bytes;
@@ -37,12 +38,9 @@ use crate::daemon::config::CONFIG;
 /// This type represents a resource class name, as used in RFC6492. The protocol
 /// allows for any arbitrary set of utf8 characters to be used as the name, though
 /// in practice names can be expected to be short and plain ascii or even numbers.
-///
-/// We store the name in a Bytes for cheap cloning, as these names need to be passed
-/// around quite a bit and end up being stored as owned values in events.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialOrd, PartialEq)]
 pub struct ResourceClassName {
-    name: Bytes,
+    name: Arc<String>,
 }
 
 impl Default for ResourceClassName {
@@ -54,7 +52,7 @@ impl Default for ResourceClassName {
 impl From<u32> for ResourceClassName {
     fn from(nr: u32) -> ResourceClassName {
         ResourceClassName {
-            name: Bytes::from(format!("{}", nr)),
+            name: Arc::new(format!("{}", nr)),
         }
     }
 }
@@ -62,21 +60,20 @@ impl From<u32> for ResourceClassName {
 impl From<&str> for ResourceClassName {
     fn from(s: &str) -> ResourceClassName {
         ResourceClassName {
-            name: Bytes::copy_from_slice(s.as_bytes()),
+            name: Arc::new(s.to_string()),
         }
     }
 }
 
 impl From<String> for ResourceClassName {
     fn from(s: String) -> ResourceClassName {
-        ResourceClassName { name: Bytes::from(s) }
+        ResourceClassName { name: Arc::new(s) }
     }
 }
 
 impl fmt::Display for ResourceClassName {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        let s = unsafe { from_utf8_unchecked(self.name.as_ref()) };
-        write!(f, "{}", s)
+        write!(f, "{}", self.name)
     }
 }
 
@@ -776,7 +773,7 @@ impl CurrentObjects {
             .filter(|k| !k.as_ref().ends_with("mft"))
             .map(|k| {
                 let name_bytes = k.clone().into();
-                let hash_bytes = self.0[k].content.to_encoded_hash().into();
+                let hash_bytes = self.0[k].content.to_encoded_hash().as_bytes();
                 FileAndHash::new(name_bytes, hash_bytes)
             })
             .collect()

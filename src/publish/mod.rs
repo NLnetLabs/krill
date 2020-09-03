@@ -46,6 +46,7 @@ impl CaPublisher {
             RepositoryContact::Rfc8181(repo) => self.caserver.send_rfc8181_list(ca_handle, repo, false).await?,
         };
 
+        #[allow(clippy::mutable_key_type)]
         let delta = {
             let elements: HashMap<_, _> = list_reply.into_elements().into_iter().map(|el| el.unpack()).collect();
 

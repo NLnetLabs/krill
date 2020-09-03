@@ -467,9 +467,8 @@ impl<S: Signer> CaServer<S> {
 
     async fn wrap_rfc6492_response(&self, handle: &Handle, msg: rfc6492::Message) -> KrillResult<Bytes> {
         trace!("RFC6492 Response wrapping for {}", handle);
-        self.get_ca(handle)
-            .await?
-            .sign_rfc6492_response(msg, self.signer.read().await.deref())
+        let signer = self.signer.read().await;
+        self.get_ca(handle).await?.sign_rfc6492_response(msg, signer.deref())
     }
 
     /// List the entitlements for a child: 3.3.2 of RFC6492

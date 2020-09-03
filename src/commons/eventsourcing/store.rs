@@ -9,7 +9,6 @@ use std::{fmt, fs};
 
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use serde_json;
 
 use rpki::x509::Time;
 
@@ -343,6 +342,7 @@ impl KeyStore for DiskKeyStore {
 
     fn keys_ascending(&self, id: &Handle, matching: &str) -> Vec<Self::Key> {
         let mut res = self.keys(id, matching);
+        #[allow(clippy::unnecessary_sort_by)]
         res.sort_by(|a, b| a.to_string_lossy().cmp(&b.to_string_lossy()));
         res
     }

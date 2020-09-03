@@ -425,7 +425,7 @@ pub async fn will_publish_objects(publisher: &PublisherHandle, objects: &[&str])
 /// Note that if your test fails the directory is not cleaned up.
 pub fn test_under_tmp<F>(op: F)
 where
-    F: FnOnce(PathBuf) -> (),
+    F: FnOnce(PathBuf),
 {
     let dir = sub_dir(&PathBuf::from("work"));
     let path = PathBuf::from(&dir);
