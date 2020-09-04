@@ -7,8 +7,6 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::{env, fs};
 
-use tokio::sync::RwLock;
-
 use krill::commons::api::{CaCommandDetails, CommandHistoryCriteria, Handle};
 use krill::commons::util::file;
 use krill::commons::util::softsigner::OpenSslSigner;
@@ -59,7 +57,6 @@ async fn make_server(work_dir: &PathBuf, scenario: &str) -> CaServer<OpenSslSign
     file::backup_dir(&source, &server_cas_dir).unwrap();
 
     let signer = OpenSslSigner::build(&server_dir).unwrap();
-    let signer = Arc::new(RwLock::new(signer));
 
     let event_queue = Arc::new(EventQueueListener::default());
 

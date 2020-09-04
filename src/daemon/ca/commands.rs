@@ -1,8 +1,5 @@
 use std::collections::BTreeMap;
 use std::fmt;
-use std::sync::Arc;
-
-use tokio::sync::RwLock;
 
 use chrono::Duration;
 
@@ -28,7 +25,7 @@ pub enum CmdDet<S: Signer> {
     // ------------------------------------------------------------
     // Being a TA
     // ------------------------------------------------------------
-    MakeTrustAnchor(Vec<uri::Https>, Arc<RwLock<S>>),
+    MakeTrustAnchor(Vec<uri::Https>, Box<S>),
 
     // ------------------------------------------------------------
     // Being a parent
@@ -41,11 +38,11 @@ pub enum CmdDet<S: Signer> {
     // Update some details for an existing child, e.g. resources.
     ChildUpdateId(ChildHandle, IdCert),
     // Process an issuance request by an existing child.
-    ChildCertify(ChildHandle, IssuanceRequest, Arc<RwLock<S>>),
+    ChildCertify(ChildHandle, IssuanceRequest, Box<S>),
     // Process a revoke request by an existing child.
-    ChildRevokeKey(ChildHandle, RevocationRequest, Arc<RwLock<S>>),
+    ChildRevokeKey(ChildHandle, RevocationRequest, Box<S>),
     // Remove child (also revokes, and removes issued certs, and republishes)
-    ChildRemove(ChildHandle, Arc<RwLock<S>>),
+    ChildRemove(ChildHandle, Box<S>),
 
     // ------------------------------------------------------------
     // Being a child (only allowed if this CA is not self-signed)
@@ -57,7 +54,7 @@ pub enum CmdDet<S: Signer> {
     // for parents, and children. In practice however, one may not
     // want to use this until RFC8183 is extended with some words
     // on how to re-do the ID exchange.
-    GenerateNewIdKey(Arc<RwLock<S>>),
+    GenerateNewIdKey(Box<S>),
 
     // Add a parent to this CA. Can have multiple parents.
     AddParent(ParentHandle, ParentCaContact),
@@ -69,9 +66,9 @@ pub enum CmdDet<S: Signer> {
     // Process new entitlements from a parent and remove/create/update
     // ResourceClasses and certificate requests or key revocation requests
     // as needed.
-    UpdateResourceClasses(ParentHandle, Entitlements, Arc<RwLock<S>>),
+    UpdateResourceClasses(ParentHandle, Entitlements, Box<S>),
     // Process a new certificate received from a parent.
-    UpdateRcvdCert(ResourceClassName, RcvdCert, Arc<RwLock<S>>),
+    UpdateRcvdCert(ResourceClassName, RcvdCert, Box<S>),
 
     // ------------------------------------------------------------
     // Key rolls
@@ -80,7 +77,7 @@ pub enum CmdDet<S: Signer> {
     // Initiate a key roll for all resource classes under each parent, where there is
     // a current active key only, i.e. there is no roll in progress, and this key's age
     // exceeds the given duration.
-    KeyRollInitiate(Duration, Arc<RwLock<S>>),
+    KeyRollInitiate(Duration, Box<S>),
 
     // For all resource classes with a 'new' key with an age exceeding the duration:
     //  - Promote the new key to current key
@@ -91,7 +88,7 @@ pub enum CmdDet<S: Signer> {
     //
     // RFC6489 dictates that 24 hours MUST be observed. However, shorter time frames can
     // be used for testing, and in case of emergency rolls.
-    KeyRollActivate(Duration, Arc<RwLock<S>>),
+    KeyRollActivate(Duration, Box<S>),
 
     // Finish the keyroll after the parent confirmed that a key for a parent and resource
     // class has been revoked. I.e. remove the old key, and withdraw the crl and mft for it.
@@ -100,20 +97,20 @@ pub enum CmdDet<S: Signer> {
     // ------------------------------------------------------------
     // ROA Support
     // ------------------------------------------------------------
-    RouteAuthorizationsUpdate(RouteAuthorizationUpdates, Arc<RwLock<S>>),
+    RouteAuthorizationsUpdate(RouteAuthorizationUpdates, Box<S>),
 
     // ------------------------------------------------------------
     // Publishing
     // ------------------------------------------------------------
 
     // Republish, if needed, may be a no-op if everything is still fresh.
-    Republish(Arc<RwLock<S>>),
+    Republish(Box<S>),
 
     // Update the repository where this CA publishes
-    RepoUpdate(RepositoryContact, Arc<RwLock<S>>),
+    RepoUpdate(RepositoryContact, Box<S>),
 
     // Clean up the old pending to withdraw repo.
-    RepoRemoveOld(Arc<RwLock<S>>),
+    RepoRemoveOld(Box<S>),
 }
 
 impl<S: Signer> eventsourcing::CommandDetails for CmdDet<S> {
@@ -183,7 +180,7 @@ impl<S: Signer> From<CmdDet<S>> for StorableCaCommand {
 
 impl<S: Signer> CmdDet<S> {
     /// Turns this CA into a TrustAnchor
-    pub fn make_trust_anchor(handle: &Handle, uris: Vec<uri::Https>, signer: Arc<RwLock<S>>) -> Cmd<S> {
+    pub fn make_trust_anchor(handle: &Handle, uris: Vec<uri::Https>, signer: Box<S>) -> Cmd<S> {
         eventsourcing::SentCommand::new(handle, None, CmdDet::MakeTrustAnchor(uris, signer))
     }
 
@@ -216,7 +213,7 @@ impl<S: Signer> CmdDet<S> {
         handle: &Handle,
         child_handle: ChildHandle,
         request: IssuanceRequest,
-        signer: Arc<RwLock<S>>,
+        signer: Box<S>,
     ) -> Cmd<S> {
         eventsourcing::SentCommand::new(handle, None, CmdDet::ChildCertify(child_handle, request, signer))
     }
@@ -226,16 +223,16 @@ impl<S: Signer> CmdDet<S> {
         handle: &Handle,
         child_handle: ChildHandle,
         request: RevocationRequest,
-        signer: Arc<RwLock<S>>,
+        signer: Box<S>,
     ) -> Cmd<S> {
         eventsourcing::SentCommand::new(handle, None, CmdDet::ChildRevokeKey(child_handle, request, signer))
     }
 
-    pub fn child_remove(handle: &Handle, child_handle: ChildHandle, signer: Arc<RwLock<S>>) -> Cmd<S> {
+    pub fn child_remove(handle: &Handle, child_handle: ChildHandle, signer: Box<S>) -> Cmd<S> {
         eventsourcing::SentCommand::new(handle, None, CmdDet::ChildRemove(child_handle, signer))
     }
 
-    pub fn update_id(handle: &Handle, signer: Arc<RwLock<S>>) -> Cmd<S> {
+    pub fn update_id(handle: &Handle, signer: Box<S>) -> Cmd<S> {
         eventsourcing::SentCommand::new(handle, None, CmdDet::GenerateNewIdKey(signer))
     }
 
@@ -255,7 +252,7 @@ impl<S: Signer> CmdDet<S> {
         handle: &Handle,
         parent: ParentHandle,
         entitlements: Entitlements,
-        signer: Arc<RwLock<S>>,
+        signer: Box<S>,
     ) -> Cmd<S> {
         eventsourcing::SentCommand::new(
             handle,
@@ -264,12 +261,7 @@ impl<S: Signer> CmdDet<S> {
         )
     }
 
-    pub fn upd_received_cert(
-        handle: &Handle,
-        class_name: ResourceClassName,
-        cert: RcvdCert,
-        signer: Arc<RwLock<S>>,
-    ) -> Cmd<S> {
+    pub fn upd_received_cert(handle: &Handle, class_name: ResourceClassName, cert: RcvdCert, signer: Box<S>) -> Cmd<S> {
         eventsourcing::SentCommand::new(handle, None, CmdDet::UpdateRcvdCert(class_name, cert, signer))
     }
 
@@ -277,11 +269,11 @@ impl<S: Signer> CmdDet<S> {
     // Key Rolls
     //-------------------------------------------------------------------------------
 
-    pub fn key_roll_init(handle: &Handle, duration: Duration, signer: Arc<RwLock<S>>) -> Cmd<S> {
+    pub fn key_roll_init(handle: &Handle, duration: Duration, signer: Box<S>) -> Cmd<S> {
         eventsourcing::SentCommand::new(handle, None, CmdDet::KeyRollInitiate(duration, signer))
     }
 
-    pub fn key_roll_activate(handle: &Handle, staging: Duration, signer: Arc<RwLock<S>>) -> Cmd<S> {
+    pub fn key_roll_activate(handle: &Handle, staging: Duration, signer: Box<S>) -> Cmd<S> {
         eventsourcing::SentCommand::new(handle, None, CmdDet::KeyRollActivate(staging, signer))
     }
 
@@ -289,26 +281,22 @@ impl<S: Signer> CmdDet<S> {
         eventsourcing::SentCommand::new(handle, None, CmdDet::KeyRollFinish(rcn, res))
     }
 
-    pub fn publish(handle: &Handle, signer: Arc<RwLock<S>>) -> Cmd<S> {
+    pub fn publish(handle: &Handle, signer: Box<S>) -> Cmd<S> {
         eventsourcing::SentCommand::new(handle, None, CmdDet::Republish(signer))
     }
 
-    pub fn update_repo(handle: &Handle, contact: RepositoryContact, signer: Arc<RwLock<S>>) -> Cmd<S> {
+    pub fn update_repo(handle: &Handle, contact: RepositoryContact, signer: Box<S>) -> Cmd<S> {
         eventsourcing::SentCommand::new(handle, None, CmdDet::RepoUpdate(contact, signer))
     }
 
-    pub fn remove_old_repo(handle: &Handle, signer: Arc<RwLock<S>>) -> Cmd<S> {
+    pub fn remove_old_repo(handle: &Handle, signer: Box<S>) -> Cmd<S> {
         eventsourcing::SentCommand::new(handle, None, CmdDet::RepoRemoveOld(signer))
     }
 
     //-------------------------------------------------------------------------------
     // Route Authorizations
     //-------------------------------------------------------------------------------
-    pub fn route_authorizations_update(
-        handle: &Handle,
-        updates: RouteAuthorizationUpdates,
-        signer: Arc<RwLock<S>>,
-    ) -> Cmd<S> {
+    pub fn route_authorizations_update(handle: &Handle, updates: RouteAuthorizationUpdates, signer: Box<S>) -> Cmd<S> {
         eventsourcing::SentCommand::new(handle, None, CmdDet::RouteAuthorizationsUpdate(updates, signer))
     }
 }

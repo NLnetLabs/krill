@@ -109,7 +109,7 @@ impl KrillServer {
         repo_dir.push("repo");
 
         let signer = OpenSslSigner::build(work_dir)?;
-        let signer = Arc::new(RwLock::new(signer));
+        // let signer = Arc::new(RwLock::new(signer));
 
         let authorizer = Authorizer::new(token);
 
@@ -121,7 +121,7 @@ impl KrillServer {
                         rrdp_base_uri.clone(),
                         work_dir,
                         CONFIG.rfc8181_log_dir.as_ref(),
-                        signer.clone(),
+                        Arc::new(RwLock::new(signer.clone())),
                     )
                     .await?,
                 )
@@ -131,7 +131,7 @@ impl KrillServer {
                     rrdp_base_uri.clone(),
                     work_dir,
                     CONFIG.rfc8181_log_dir.as_ref(),
-                    signer.clone(),
+                    Arc::new(RwLock::new(signer.clone())),
                 )
                 .await?
             }

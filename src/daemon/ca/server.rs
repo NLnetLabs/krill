@@ -3,7 +3,7 @@ use std::ops::Deref;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::Mutex;
 
 use bytes::Bytes;
 use chrono::Duration;
@@ -103,7 +103,7 @@ impl CaLocks {
 
 #[derive(Clone)]
 pub struct CaServer<S: Signer> {
-    signer: Arc<RwLock<S>>,
+    signer: Box<S>,
     ca_store: Arc<DiskAggregateStore<CertAuth<S>>>,
     locks: Arc<CaLocks>,
     status_store: Arc<Mutex<StatusStore>>,
@@ -119,7 +119,7 @@ impl<S: Signer> CaServer<S> {
         rfc8181_log_dir: Option<&PathBuf>,
         rfc6492_log_dir: Option<&PathBuf>,
         events_queue: Arc<EventQueueListener>,
-        signer: Arc<RwLock<S>>,
+        signer: S,
     ) -> KrillResult<Self> {
         let mut ca_store = DiskAggregateStore::<CertAuth<S>>::new(work_dir, CASERVER_DIR)?;
         ca_store.add_listener(events_queue).await;
@@ -127,6 +127,8 @@ impl<S: Signer> CaServer<S> {
         let status_store = StatusStore::new(work_dir, STATUS_DIR)?;
 
         let locks = Arc::new(CaLocks::default());
+
+        let signer = Box::new(signer);
 
         Ok(CaServer {
             signer,
@@ -158,7 +160,7 @@ impl<S: Signer> CaServer<S> {
             Err(Error::TaAlreadyInitialised)
         } else {
             // init normal CA
-            let init = IniDet::init(&ta_handle, &self.signer).await?;
+            let init = IniDet::init(&ta_handle, self.signer.clone()).await?;
             self.ca_store.add(init).await?;
 
             // add embedded repo
@@ -467,8 +469,9 @@ impl<S: Signer> CaServer<S> {
 
     async fn wrap_rfc6492_response(&self, handle: &Handle, msg: rfc6492::Message) -> KrillResult<Bytes> {
         trace!("RFC6492 Response wrapping for {}", handle);
-        let signer = self.signer.read().await;
-        self.get_ca(handle).await?.sign_rfc6492_response(msg, signer.deref())
+        self.get_ca(handle)
+            .await?
+            .sign_rfc6492_response(msg, self.signer.deref())
     }
 
     /// List the entitlements for a child: 3.3.2 of RFC6492
@@ -533,7 +536,7 @@ impl<S: Signer> CaServer<S> {
         } else if self.ca_store.has(handle).await {
             Err(Error::CaDuplicate(handle.clone()))
         } else {
-            let init = IniDet::init(handle, &self.signer).await?;
+            let init = IniDet::init(handle, self.signer.clone()).await?;
             self.ca_store.add(init).await?;
             Ok(())
         }
@@ -1053,7 +1056,7 @@ impl<S: Signer> CaServer<S> {
         msg: Bytes,
         cms_logger: Option<CmsLogger>,
     ) -> KrillResult<ProtocolCms> {
-        let signed_msg = ProtocolCmsBuilder::create(signing_key, self.signer.read().await.deref(), msg)
+        let signed_msg = ProtocolCmsBuilder::create(signing_key, self.signer.deref(), msg)
             .map_err(Error::signer)?
             .as_bytes();
 
@@ -1254,7 +1257,7 @@ impl<S: Signer> CaServer<S> {
     /// and forget it
     pub async fn rta_one_off(&self, ca: Handle, request: RtaRequest) -> KrillResult<ResourceTaggedAttestation> {
         let ca = self.get_ca(&ca).await?;
-        ca.rta_one_off(request, self.signer.clone()).await
+        ca.rta_one_off(request, self.signer.clone())
     }
 }
 
@@ -1265,8 +1268,6 @@ mod tests {
 
     use std::fs;
     use std::sync::Arc;
-
-    use tokio::sync::RwLock;
 
     use crate::commons::api::RepoInfo;
     use crate::commons::util::softsigner::OpenSslSigner;
@@ -1279,7 +1280,6 @@ mod tests {
     async fn add_ta() {
         let d = tmp_dir();
         let signer = OpenSslSigner::build(&d).unwrap();
-        let signer = Arc::new(RwLock::new(signer));
 
         let event_queue = Arc::new(EventQueueListener::default());
 

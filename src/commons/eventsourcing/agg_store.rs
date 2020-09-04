@@ -228,7 +228,7 @@ where
 
         let stored_command_builder = StoredCommandBuilder::new(&cmd, latest.version(), info.last_command);
 
-        let res = match latest.process_command(cmd).await {
+        let res = match latest.process_command(cmd) {
             Err(e) => {
                 let stored_command = stored_command_builder.finish_with_error(&e);
                 self.store

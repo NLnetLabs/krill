@@ -221,7 +221,6 @@ mod tests {
         }
     }
 
-    #[async_trait]
     impl Aggregate for Person {
         type Command = PersonCommand;
         type StorableCommandDetails = PersonCommandDetails;
@@ -251,7 +250,7 @@ mod tests {
             self.version += 1;
         }
 
-        async fn process_command(&self, command: Self::Command) -> PersonResult {
+        fn process_command(&self, command: Self::Command) -> PersonResult {
             match command.into_details() {
                 PersonCommandDetails::ChangeName(name) => {
                     let event = PersonEvent::name_changed(&self, name);

@@ -3,6 +3,7 @@
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::{fs, io};
 
 use bytes::Bytes;
@@ -19,11 +20,9 @@ use rpki::crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, Signatu
 //------------ OpenSslSigner -------------------------------------------------
 
 /// An openssl based signer.
-///
-/// Keeps the keys in memory (for now).
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug)]
 pub struct OpenSslSigner {
-    keys_dir: PathBuf,
+    keys_dir: Arc<PathBuf>,
 }
 
 impl OpenSslSigner {
@@ -35,6 +34,8 @@ impl OpenSslSigner {
             if !keys_dir.is_dir() {
                 fs::create_dir_all(&keys_dir)?;
             }
+
+            let keys_dir = Arc::new(keys_dir);
 
             Ok(OpenSslSigner { keys_dir })
         } else {
@@ -65,7 +66,7 @@ impl OpenSslSigner {
     }
 
     fn key_path(&self, key_id: &KeyIdentifier) -> PathBuf {
-        let mut path = self.keys_dir.clone();
+        let mut path = self.keys_dir.to_path_buf();
         path.push(&key_id.to_string());
         path
     }

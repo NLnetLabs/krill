@@ -407,7 +407,6 @@ impl Repository {
 
 /// # Event Sourcing support
 ///
-#[async_trait]
 impl Aggregate for Repository {
     type Command = Cmd;
     type StorableCommandDetails = StorableRepositoryCommand;
@@ -474,7 +473,7 @@ impl Aggregate for Repository {
         }
     }
 
-    async fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
+    fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
         info!(
             "Sending command to publisher '{}', version: {}: {}",
             self.handle, self.version, command

@@ -1,8 +1,4 @@
 use std::collections::HashMap;
-use std::ops::Deref;
-use std::sync::Arc;
-
-use tokio::sync::RwLock;
 
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
@@ -958,25 +954,19 @@ impl ResourceClass {
     /// returns None if there is no overlap in resources
     /// between the desired resources on the RTA and this
     /// RC's current resources.
-    pub async fn create_rta_ee<S: Signer>(
+    pub fn create_rta_ee<S: Signer>(
         &self,
         resources: &ResourceSet,
         validity: Validity,
-        signer: &Arc<RwLock<S>>,
+        signer: &mut S,
     ) -> KrillResult<Option<Cert>> {
         if let Some(current) = self.current_key() {
             let intersection = current.incoming_cert().resources().intersection(resources);
             if !intersection.is_empty() {
-                let key = {
-                    let mut signer = signer.write().await;
-                    signer.create_key(PublicKeyFormat::default()).map_err(Error::signer)?
-                };
-
-                let signer = signer.read().await;
+                let key = { signer.create_key(PublicKeyFormat::default()).map_err(Error::signer)? };
 
                 let pub_key = signer.get_key_info(&key).map_err(Error::signer)?;
-
-                let ee = SignSupport::make_rta_ee_cert(&intersection, &current, validity, pub_key, signer.deref())?;
+                let ee = SignSupport::make_rta_ee_cert(&intersection, &current, validity, pub_key, signer)?;
 
                 Ok(Some(ee))
             } else {
