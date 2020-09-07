@@ -26,11 +26,12 @@ use crate::commons::api::{
     TypedPrefix, UpdateChildRequest,
 };
 use crate::commons::bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion};
+use crate::commons::crypto::SignSupport;
 use crate::commons::remote::rfc8183;
 use crate::commons::remote::rfc8183::ChildRequest;
 use crate::commons::util::httpclient;
 use crate::constants::{KRILL_ENV_TEST_ANN, KRILL_ENV_TEST_UNIT_DATA};
-use crate::daemon::ca::{ta_handle, ResourceTaggedAttestation, RtaRequest, SignSupport};
+use crate::daemon::ca::{ta_handle, ResourceTaggedAttestation, RtaRequest};
 use crate::daemon::http::server;
 
 const SERVER_URI: &str = "https://localhost:3000/";

@@ -31,9 +31,6 @@ pub use self::events::*;
 mod server;
 pub use self::server::CaServer;
 
-mod signing;
-pub use self::signing::*;
-
 mod rta;
 pub use self::rta::*;
 

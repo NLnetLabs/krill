@@ -28,7 +28,7 @@ use crate::commons::api::{
     Base64, ChildHandle, ErrorResponse, Handle, HexEncodedHash, IssuanceRequest, ParentCaContact, ParentHandle,
     RepositoryContact, RequestResourceLimit, RoaDefinition,
 };
-use crate::commons::remote::crypto::IdCert;
+use crate::commons::crypto::IdCert;
 use crate::commons::util::ext_serde;
 use crate::daemon::ca::RouteAuthorization;
 use crate::daemon::config::CONFIG;

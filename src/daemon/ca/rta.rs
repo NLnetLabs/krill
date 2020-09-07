@@ -2,7 +2,6 @@ use std::fmt;
 
 use bytes::Bytes;
 
-use rpki::cert::Cert;
 use rpki::crypto::{DigestAlgorithm, KeyIdentifier};
 use rpki::rta;
 use rpki::sigobj::MessageDigest;
@@ -12,7 +11,6 @@ use crate::commons::api::{Base64, ResourceSet};
 use crate::commons::error::Error;
 use crate::commons::util::ext_serde;
 use crate::commons::KrillResult;
-use crate::daemon::ca::Signer;
 
 #[derive(Clone, Debug, Deserialize, Eq, Serialize, PartialEq)]
 pub struct RtaRequest {
@@ -111,14 +109,6 @@ impl ResourceTaggedAttestation {
         Ok(rta::RtaBuilder::from_attestation(
             attestation_builder.into_attestation(),
         ))
-    }
-
-    pub fn sign_with_ee<S: Signer>(rta_builder: &mut rta::RtaBuilder, ee: Cert, signer: &S) -> KrillResult<()> {
-        let key = ee.subject_key_identifier();
-        rta_builder.push_cert(ee);
-        rta_builder.sign(signer, &key, None, None).map_err(Error::signer)?;
-
-        Ok(())
     }
 
     pub fn finalize(rta_builder: rta::RtaBuilder) -> Self {

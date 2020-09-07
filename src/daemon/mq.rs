@@ -11,7 +11,7 @@ use rpki::x509::Time;
 
 use crate::commons::api::{Handle, ParentHandle, ResourceClassName, RevocationRequest};
 use crate::commons::eventsourcing::{self, Event};
-use crate::daemon::ca::{CertAuth, Evt, EvtDet, Signer};
+use crate::daemon::ca::{CertAuth, Evt, EvtDet};
 
 //------------ QueueEvent ----------------------------------------------------
 
@@ -83,8 +83,8 @@ unsafe impl Sync for EventQueueListener {}
 
 /// Implement listening for CertAuth Published events.
 #[async_trait]
-impl<S: Signer> eventsourcing::EventListener<CertAuth<S>> for EventQueueListener {
-    async fn listen(&self, _ca: &CertAuth<S>, event: &Evt) {
+impl eventsourcing::EventListener<CertAuth> for EventQueueListener {
+    async fn listen(&self, _ca: &CertAuth, event: &Evt) {
         trace!("Seen CertAuth event '{}'", event);
 
         let handle = event.handle();

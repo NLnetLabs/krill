@@ -17,7 +17,7 @@ use rpki::x509::Time;
 use crate::commons::api::ca::{ResourceSet, TrustAnchorLocator};
 use crate::commons::api::rrdp::PublishElement;
 use crate::commons::api::{Link, RepoInfo};
-use crate::commons::remote::crypto::IdCert;
+use crate::commons::crypto::IdCert;
 use crate::commons::remote::rfc8183;
 
 //------------ Handle --------------------------------------------------------

@@ -18,11 +18,11 @@ use crate::commons::api::{
     UpdateChildRequest,
 };
 use crate::commons::api::{RepositoryUpdate, RoaDefinition};
-use crate::commons::remote::crypto::IdCert;
+use crate::commons::crypto::{IdCert, SignSupport};
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
 use crate::constants::*;
-use crate::daemon::ca::{RtaRequest, SignSupport};
+use crate::daemon::ca::RtaRequest;
 
 struct GeneralArgs {
     server: uri::Https,

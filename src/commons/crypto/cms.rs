@@ -14,9 +14,7 @@ use rpki::oid;
 use rpki::sigobj::{MessageDigest, SignedAttrs};
 use rpki::x509::{update_once, Name, SignedData, Time, ValidationError};
 
-use super::IdCert;
-use crate::commons::remote::crypto::{Error, IdCertBuilder, SignedAttributes};
-use crate::daemon::ca::Signer;
+use crate::commons::crypto::{CryptoResult, IdCert, IdCertBuilder, KrillSigner, SignedAttributes};
 
 //------------ ProtocolCmsBuilder ------------------------------------------
 
@@ -28,11 +26,11 @@ pub struct ProtocolCmsBuilder {
 }
 
 impl ProtocolCmsBuilder {
-    pub fn create<S: Signer>(
-        issuing_key: &S::KeyId,
-        signer: &S,
+    pub fn create(
+        issuing_key: &KeyIdentifier,
+        signer: &KrillSigner,
         message: Bytes,
-    ) -> Result<ProtocolCmsBuilder, Error<S::Error>> {
+    ) -> CryptoResult<ProtocolCmsBuilder> {
         let content = OctetString::new(message);
 
         let signer_info = ProtocolSignerInfoBuilder::create(signer, &content.to_bytes())?;
@@ -337,7 +335,7 @@ impl ProtocolSignerInfoBuilder {
     ///
     /// A lot of this is pretty well restricted in RFCs 6488 amd 6492. We
     /// really only require some bits.
-    fn create<S: Signer>(signer: &S, message: &Bytes) -> Result<ProtocolSignerInfo, Error<S::Error>> {
+    fn create(signer: &KrillSigner, message: &Bytes) -> CryptoResult<ProtocolSignerInfo> {
         let signed_attributes = SignedAttributes::new(
             &oid::PROTOCOL_CONTENT_TYPE, // XXX TODO: derive from message
             message,
@@ -364,7 +362,7 @@ struct ProtocolCrlBuilder;
 impl ProtocolCrlBuilder {
     /// Creates a CRL for use with protocol messages. This revokes nothing,
     /// because we use single use keys for EE certs.
-    fn create<S: Signer>(issuing_key: &S::KeyId, signer: &S) -> Result<ProtocolCrl, Error<S::Error>> {
+    fn create(issuing_key: &KeyIdentifier, signer: &KrillSigner) -> CryptoResult<ProtocolCrl> {
         let pub_key = signer.get_key_info(issuing_key)?;
         let name = Name::from_pub_key(&pub_key);
         let just_now = Time::new(Utc::now()) - ::chrono::Duration::minutes(5);
@@ -390,11 +388,7 @@ impl ProtocolCrlBuilder {
         let signature = BitString::new(
             0,
             signer
-                .sign(
-                    issuing_key,
-                    SignatureAlgorithm::default(),
-                    crl_data.to_captured(Mode::Der).as_slice(),
-                )?
+                .sign(issuing_key, crl_data.to_captured(Mode::Der).as_slice())?
                 .value()
                 .clone(),
         );
@@ -508,20 +502,20 @@ impl CrlNumber {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::str::FromStr;
+
     use crate::commons::api::Handle;
     use crate::commons::remote::rfc6492::Message;
-    use crate::commons::util::softsigner::OpenSslSigner;
     use crate::test::test_under_tmp;
-    use rpki::crypto::{PublicKeyFormat, Signer};
-    use std::str::FromStr;
+
+    use super::*;
 
     #[test]
     fn should_parse_and_validate_signed_message() {
-        let der = include_bytes!("../../../../test-resources/remote/pdu_200.der");
+        let der = include_bytes!("../../../test-resources/remote/pdu_200.der");
         let msg = ProtocolCms::decode(Bytes::from_static(der), false).unwrap();
 
-        let b = include_bytes!("../../../../test-resources/remote/cms_ta.cer");
+        let b = include_bytes!("../../../test-resources/remote/cms_ta.cer");
         let id_cert = IdCert::decode(Bytes::from_static(b)).unwrap();
 
         msg.validate_at(&id_cert, Time::utc(2012, 1, 1, 0, 0, 0)).unwrap();
@@ -529,10 +523,10 @@ mod tests {
 
     #[test]
     fn should_reject_invalid_signed_message() {
-        let der = include_bytes!("../../../../test-resources/remote/pdu_200.der");
+        let der = include_bytes!("../../../test-resources/remote/pdu_200.der");
         let msg = ProtocolCms::decode(Bytes::from_static(der), false).unwrap();
 
-        let b = include_bytes!("../../../../test-resources/oob/id_publisher_ta.cer");
+        let b = include_bytes!("../../../test-resources/oob/id_publisher_ta.cer");
         let id_cert = IdCert::decode(Bytes::from_static(b)).unwrap();
 
         assert_eq!(
@@ -544,8 +538,8 @@ mod tests {
     #[test]
     fn should_create_crl_for_protocol() {
         test_under_tmp(|d| {
-            let mut s = OpenSslSigner::build(&d).unwrap();
-            let key_id = s.create_key(PublicKeyFormat::default()).unwrap();
+            let s = KrillSigner::build(&d).unwrap();
+            let key_id = s.create_key().unwrap();
             let key_info = s.get_key_info(&key_id).unwrap();
 
             let crl = ProtocolCrlBuilder::create(&key_id, &s).unwrap();
@@ -556,8 +550,8 @@ mod tests {
     #[test]
     fn should_create_signed_publication_message() {
         test_under_tmp(|d| {
-            let mut s = OpenSslSigner::build(&d).unwrap();
-            let key_id = s.create_key(PublicKeyFormat::default()).unwrap();
+            let s = KrillSigner::build(&d).unwrap();
+            let key_id = s.create_key().unwrap();
             let id_cert = IdCertBuilder::new_ta_id_cert(&key_id, &s).unwrap();
 
             let sender = Handle::from_str("sender").unwrap();

@@ -10,16 +10,17 @@ use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use rpki::roa::{Roa, RoaBuilder};
 use rpki::sigobj::SignedObjectBuilder;
 use rpki::uri;
-use rpki::x509::{Serial, Time};
+use rpki::x509::Time;
 
 use crate::commons::api::{
     CurrentObject, CurrentObjects, ObjectName, ReplacedObject, ResourceSet, RoaAggregateKey, RoaDefinition,
     RoaDefinitionUpdates,
 };
+use crate::commons::crypto::{KrillSigner, SignSupport};
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
 use crate::daemon::ca::events::RoaUpdates;
-use crate::daemon::ca::{self, CertifiedKey, SignSupport, Signer};
+use crate::daemon::ca::CertifiedKey;
 use crate::daemon::config::CONFIG;
 
 //------------ RouteAuthorization ------------------------------------------
@@ -481,11 +482,11 @@ impl Roas {
     }
 
     /// Process authorization updates below the aggregation threshold
-    fn update_simple<S: Signer>(
+    fn update_simple(
         &self,
         routes: &Routes,
         certified_key: &CertifiedKey,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<RoaUpdates> {
         let mut roa_updates = RoaUpdates::default();
 
@@ -510,11 +511,11 @@ impl Roas {
     }
 
     /// Process authorization updates that triggered de-aggregating ROAs
-    fn update_stop_aggregating<S: Signer>(
+    fn update_stop_aggregating(
         &self,
         routes: &Routes,
         certified_key: &CertifiedKey,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<RoaUpdates> {
         // First trigger the simple update, this will make sure that all current routes
         // are added as simple (one prefix) ROAs
@@ -529,11 +530,11 @@ impl Roas {
     }
 
     /// Process authorization updates that triggered aggregating ROAs
-    fn update_start_aggregating<S: Signer>(
+    fn update_start_aggregating(
         &self,
         routes: &Routes,
         certified_key: &CertifiedKey,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<RoaUpdates> {
         // First trigger the aggregate update, this will make sure that all current routes
         // are added as aggregate ROAs
@@ -548,11 +549,11 @@ impl Roas {
     }
 
     /// Process authorization updates in aggregation mode
-    fn update_aggregate<S: Signer>(
+    fn update_aggregate(
         &self,
         routes: &Routes,
         certified_key: &CertifiedKey,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<RoaUpdates> {
         let mut roa_updates = RoaUpdates::default();
 
@@ -590,11 +591,11 @@ impl Roas {
 
     /// Process updates, return [`RoaUpdates`] and create new ROA objects if
     /// authorizations change, or if ROAs are about to expire.
-    pub fn update<S: Signer>(
+    pub fn update(
         &self,
         routes: &Routes,
         certified_key: &CertifiedKey,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<RoaUpdates> {
         match self.mode(routes.len()) {
             RoaMode::Simple => self.update_simple(routes, certified_key, signer),
@@ -605,7 +606,7 @@ impl Roas {
     }
 
     /// Re-new ROAs before they would expire
-    pub fn renew<S: Signer>(&self, certified_key: &CertifiedKey, signer: &S) -> KrillResult<RoaUpdates> {
+    pub fn renew(&self, certified_key: &CertifiedKey, signer: &KrillSigner) -> KrillResult<RoaUpdates> {
         let mut updates = RoaUpdates::default();
 
         let renew_threshold = Time::now() + Duration::weeks(CONFIG.timing_roa_reissue_weeks_before);
@@ -637,7 +638,7 @@ impl Roas {
     }
 
     /// Re-generate all ROAs when a new key is being activated
-    pub fn activate_key<S: Signer>(&self, certified_key: &CertifiedKey, signer: &S) -> KrillResult<RoaUpdates> {
+    pub fn activate_key(&self, certified_key: &CertifiedKey, signer: &KrillSigner) -> KrillResult<RoaUpdates> {
         let mut updates = RoaUpdates::default();
 
         for (auth, roa) in self.simple.iter() {
@@ -663,11 +664,11 @@ impl Roas {
     }
 
     /// Re-generate all ROAs to be published in a new repository
-    pub fn migrate_repo<S: Signer>(
+    pub fn migrate_repo(
         &self,
         new_repo: &uri::Rsync,
         certified_key: &CertifiedKey,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<RoaUpdates> {
         let mut updates = RoaUpdates::default();
 
@@ -695,11 +696,11 @@ impl Roas {
 
     /// Withdraw or re-issue shrunk aggregate ROAs as needed when resources
     /// are reduced.
-    pub fn shrink_roas<S: Signer>(
+    pub fn shrink_roas(
         &self,
         resources: &ResourceSet,
         certified_key: &CertifiedKey,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<RoaUpdates> {
         let mut updates = RoaUpdates::default();
 
@@ -751,12 +752,12 @@ impl Roas {
         self.simple.keys()
     }
 
-    pub fn make_roa<S: Signer>(
+    pub fn make_roa(
         authzs: &[RouteAuthorization],
         name: &ObjectName,
         new_repo: Option<&uri::Rsync>,
         certified_key: &CertifiedKey,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<Roa> {
         let incoming_cert = certified_key.incoming_cert();
         let crl_uri = match &new_repo {
@@ -793,7 +794,7 @@ impl Roas {
         }
 
         let mut object_builder = SignedObjectBuilder::new(
-            Serial::random(signer).map_err(ca::Error::signer)?,
+            signer.random_serial()?,
             SignSupport::sign_validity_weeks(CONFIG.timing_roa_valid_weeks),
             crl_uri,
             aia.clone(),
@@ -802,17 +803,15 @@ impl Roas {
         object_builder.set_issuer(Some(incoming_cert.cert().subject().clone()));
         object_builder.set_signing_time(Some(Time::now()));
 
-        roa_builder
-            .finalize(object_builder, signer, signing_key)
-            .map_err(ca::Error::signer)
+        Ok(signer.sign_roa(roa_builder, object_builder, signing_key)?)
     }
 
-    pub fn make_aggregate_roa<S: Signer>(
+    pub fn make_aggregate_roa(
         key: &RoaAggregateKey,
         authzs: Vec<RouteAuthorization>,
         old_roa: Option<&RoaInfo>,
         certified_key: &CertifiedKey,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<AggregateRoaInfo> {
         let name = ObjectName::from(key);
         let roa = Self::make_roa(authzs.as_slice(), &name, None, certified_key, signer)?;

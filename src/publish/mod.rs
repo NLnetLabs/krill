@@ -5,7 +5,6 @@ use std::sync::Arc;
 use crate::commons::api::Handle;
 use crate::commons::api::{Publish, PublishDelta, RepositoryContact, Update, Withdraw};
 use crate::commons::error::Error;
-use crate::commons::util::softsigner::OpenSslSigner;
 use crate::daemon::ca::CaServer;
 use crate::pubd::PubServer;
 
@@ -14,14 +13,14 @@ use crate::pubd::PubServer;
 /// A helper which orchestrates publishing by CAs at either local, or
 /// remote, repositories.
 pub struct CaPublisher {
-    caserver: Arc<CaServer<OpenSslSigner>>,
+    caserver: Arc<CaServer>,
     pubserver: Option<Arc<PubServer>>,
 }
 
 /// # Construct
 ///
 impl CaPublisher {
-    pub fn new(caserver: Arc<CaServer<OpenSslSigner>>, pubserver: Option<Arc<PubServer>>) -> Self {
+    pub fn new(caserver: Arc<CaServer>, pubserver: Option<Arc<PubServer>>) -> Self {
         CaPublisher { caserver, pubserver }
     }
 }

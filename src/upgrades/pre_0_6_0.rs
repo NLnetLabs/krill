@@ -14,7 +14,6 @@ use crate::commons::eventsourcing::{
     Aggregate, DiskKeyStore, KeyStore, KeyStoreError, KeyStoreVersion, StoredCommand, StoredValueInfo,
 };
 use crate::commons::remote::rfc8183::ServiceUri;
-use crate::commons::util::softsigner::OpenSslSigner;
 use crate::daemon::ca::CertAuth;
 use crate::pubd::Repository;
 use crate::upgrades::{UpgradeError, UpgradeStore};
@@ -83,7 +82,7 @@ impl UpgradeStore for UpgradeCas {
 
                 info!("Regenerating latest snapshot, this can take a moment");
                 // Load CA, then save a new snapshot and info for the CA
-                let ca: CertAuth<OpenSslSigner> = store
+                let ca: CertAuth = store
                     .get_aggregate(&ca_handle)
                     .map_err(|e| UpgradeError::Custom(format!("Cannot load ca '{}' error: {}", ca_handle.clone(), e)))?
                     .ok_or_else(|| UpgradeError::CannotLoadAggregate(ca_handle.clone()))?;

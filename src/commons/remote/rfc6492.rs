@@ -17,7 +17,7 @@ use crate::commons::api::{
     EntitlementClass, Entitlements, Handle, IssuanceRequest, IssuanceResponse, IssuedCert, RequestResourceLimit,
     ResourceClassName, ResourceSet, ResourceSetError, RevocationRequest, RevocationResponse, SigningCert,
 };
-use crate::commons::remote::crypto::ProtocolCms;
+use crate::commons::crypto::ProtocolCms;
 use crate::commons::util::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
 
 //------------ Consts --------------------------------------------------------
@@ -901,9 +901,9 @@ mod tests {
     use std::str;
     use std::str::from_utf8_unchecked;
 
-    use crate::commons::remote::crypto::test_id_certificate;
-    use crate::commons::remote::crypto::IdCert;
-    use crate::commons::remote::crypto::ProtocolCms;
+    use crate::commons::crypto::test_id_certificate;
+    use crate::commons::crypto::IdCert;
+    use crate::commons::crypto::ProtocolCms;
 
     use super::*;
 

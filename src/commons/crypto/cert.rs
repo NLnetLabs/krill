@@ -5,11 +5,11 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use bcder::encode::{Constructed, PrimitiveContent, Values};
 use bcder::{decode, encode, Unsigned};
 use bcder::{BitString, Mode, OctetString, Oid, Tag};
-use rpki::crypto::{DigestAlgorithm, KeyIdentifier, PublicKey, Signature, SignatureAlgorithm, Signer, SigningError};
+use rpki::crypto::{DigestAlgorithm, KeyIdentifier, PublicKey, Signature, SignatureAlgorithm};
 use rpki::oid;
 use rpki::x509::{encode_extension, update_once, Name, SignedData, Time, ValidationError, Validity};
 
-use crate::commons::remote::crypto::Error;
+use crate::commons::crypto::{CryptoResult, KrillSigner};
 use crate::constants::ID_CERTIFICATE_VALIDITY_YEARS;
 
 //------------ IdTbsCertificate ------------------------------------------------
@@ -119,12 +119,12 @@ impl IdCertBuilder {
         }
     }
 
-    fn create_signed_cert<S: Signer>(
-        issuing_key: &S::KeyId,
+    fn create_signed_cert(
+        issuing_key: &KeyIdentifier,
         subject_key: &PublicKey,
         ext: IdExtensions,
-        signer: &S,
-    ) -> Result<IdCert, SigningError<S::Error>> {
+        signer: &KrillSigner,
+    ) -> CryptoResult<IdCert> {
         let issuing_key_info = signer.get_key_info(issuing_key)?;
 
         let tbs = Self::make_tbs_certificate_request(1, &issuing_key_info, &subject_key, ext);
@@ -133,13 +133,7 @@ impl IdCertBuilder {
         let enc_cert_c = enc_cert.to_captured(Mode::Der);
         let enc_cert_b: &Bytes = enc_cert_c.as_ref();
 
-        let signature = BitString::new(
-            0,
-            signer
-                .sign(issuing_key, SignatureAlgorithm::default(), enc_cert_b)?
-                .value()
-                .clone(),
-        );
+        let signature = BitString::new(0, signer.sign(issuing_key, enc_cert_b)?.value().clone());
 
         let captured_cert = encode::sequence((
             enc_cert,
@@ -158,18 +152,18 @@ impl IdCertBuilder {
     ///
     /// Essentially this all the content that goes into the SignedData
     /// component.
-    pub fn new_ta_id_cert<S: Signer>(issuing_key: &S::KeyId, signer: &S) -> Result<IdCert, Error<S::Error>> {
+    pub fn new_ta_id_cert(issuing_key: &KeyIdentifier, signer: &KrillSigner) -> CryptoResult<IdCert> {
         let issuing_key_info = signer.get_key_info(issuing_key)?;
         let ext = IdExtensions::for_id_ta_cert(&issuing_key_info);
         let cert = IdCertBuilder::create_signed_cert(issuing_key, &issuing_key_info, ext, signer)?;
         Ok(cert)
     }
 
-    pub fn new_ee_cert<S: Signer>(
-        issuing_key: &S::KeyId,
+    pub fn new_ee_cert(
+        issuing_key: &KeyIdentifier,
         subject_key: &PublicKey,
-        signer: &S,
-    ) -> Result<IdCert, Error<S::Error>> {
+        signer: &KrillSigner,
+    ) -> CryptoResult<IdCert> {
         let issuing_key_info = signer.get_key_info(issuing_key)?;
         let ext = IdExtensions::for_id_ee_cert(subject_key, &issuing_key_info);
         let cert = IdCertBuilder::create_signed_cert(issuing_key, subject_key, ext, signer)?;
@@ -238,14 +232,12 @@ impl SignedAttributes {
     }
 
     /// Generates a signature using a one time key
-    pub fn sign<S: Signer>(&self, signer: &S) -> Result<(Signature, PublicKey), Error<S::Error>> {
+    pub fn sign(&self, signer: &KrillSigner) -> CryptoResult<(Signature, PublicKey)> {
         // See section 5.4 of RFC 5652
         //  ...The IMPLICIT [0] tag in the signedAttrs is not used for the DER
         //  encoding, rather an EXPLICIT SET OF tag is used...
         let encode_in_set = encode::set(self.encode()).to_captured(Mode::Der);
-        signer
-            .sign_one_off(SignatureAlgorithm::default(), encode_in_set.as_slice())
-            .map_err(Error::SignerError)
+        signer.sign_one_off(encode_in_set.as_slice())
     }
 }
 
@@ -740,10 +732,7 @@ impl From<&PublicKey> for IdExtensions {
 #[cfg(test)]
 pub mod tests {
 
-    use rpki::crypto::PublicKeyFormat;
-
-    use crate::commons::remote::crypto::test_id_certificate;
-    use crate::commons::util::softsigner::OpenSslSigner;
+    use crate::commons::crypto::test_id_certificate;
     use crate::test::*;
 
     use super::*;
@@ -758,8 +747,8 @@ pub mod tests {
     #[test]
     fn should_create_self_signed_ta_id_cert() {
         test_under_tmp(|d| {
-            let mut s = OpenSslSigner::build(&d).unwrap();
-            let key_id = s.create_key(PublicKeyFormat::default()).unwrap();
+            let s = KrillSigner::build(&d).unwrap();
+            let key_id = s.create_key().unwrap();
 
             let id_cert = IdCertBuilder::new_ta_id_cert(&key_id, &s).unwrap();
             id_cert.validate_ta().unwrap();

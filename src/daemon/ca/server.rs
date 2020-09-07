@@ -18,17 +18,17 @@ use crate::commons::api::{
     RcvdCert, RepoInfo, RepoStatus, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest,
     RevocationResponse, StoredEffect, UpdateChildRequest,
 };
+use crate::commons::crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder};
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::{Aggregate, AggregateStore, Command, CommandKey, DiskAggregateStore};
 use crate::commons::remote::cmslogger::CmsLogger;
-use crate::commons::remote::crypto::{IdCert, ProtocolCms, ProtocolCmsBuilder};
 use crate::commons::remote::{rfc6492, rfc8181, rfc8183};
 use crate::commons::util::httpclient;
 use crate::commons::KrillResult;
 use crate::constants::{CASERVER_DIR, STATUS_DIR};
 use crate::daemon::ca::{
     self, ta_handle, CertAuth, Cmd, CmdDet, IniDet, ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaRequest,
-    Signer, StatusStore,
+    StatusStore,
 };
 use crate::daemon::mq::EventQueueListener;
 
@@ -102,16 +102,16 @@ impl CaLocks {
 //------------ CaServer ------------------------------------------------------
 
 #[derive(Clone)]
-pub struct CaServer<S: Signer> {
-    signer: Box<S>,
-    ca_store: Arc<DiskAggregateStore<CertAuth<S>>>,
+pub struct CaServer {
+    signer: Arc<KrillSigner>,
+    ca_store: Arc<DiskAggregateStore<CertAuth>>,
     locks: Arc<CaLocks>,
     status_store: Arc<Mutex<StatusStore>>,
     rfc8181_log_dir: Option<PathBuf>,
     rfc6492_log_dir: Option<PathBuf>,
 }
 
-impl<S: Signer> CaServer<S> {
+impl CaServer {
     /// Builds a new CaServer. Will return an error if the TA store cannot be
     /// initialised.
     pub async fn build(
@@ -119,16 +119,16 @@ impl<S: Signer> CaServer<S> {
         rfc8181_log_dir: Option<&PathBuf>,
         rfc6492_log_dir: Option<&PathBuf>,
         events_queue: Arc<EventQueueListener>,
-        signer: S,
+        signer: KrillSigner,
     ) -> KrillResult<Self> {
-        let mut ca_store = DiskAggregateStore::<CertAuth<S>>::new(work_dir, CASERVER_DIR)?;
+        let mut ca_store = DiskAggregateStore::<CertAuth>::new(work_dir, CASERVER_DIR)?;
         ca_store.add_listener(events_queue).await;
 
         let status_store = StatusStore::new(work_dir, STATUS_DIR)?;
 
         let locks = Arc::new(CaLocks::default());
 
-        let signer = Box::new(signer);
+        let signer = Arc::new(signer);
 
         Ok(CaServer {
             signer,
@@ -141,7 +141,7 @@ impl<S: Signer> CaServer<S> {
     }
 
     /// Gets the TrustAnchor, if present. Returns an error if the TA is uninitialized.
-    pub async fn get_trust_anchor(&self) -> KrillResult<Arc<CertAuth<S>>> {
+    pub async fn get_trust_anchor(&self) -> KrillResult<Arc<CertAuth>> {
         let ta_handle = ca::ta_handle();
         let lock = self.locks.ca(&ta_handle).await;
         let _ = lock.read().await;
@@ -160,7 +160,7 @@ impl<S: Signer> CaServer<S> {
             Err(Error::TaAlreadyInitialised)
         } else {
             // init normal CA
-            let init = IniDet::init(&ta_handle, self.signer.clone()).await?;
+            let init = IniDet::init(&ta_handle, self.signer.deref()).await?;
             self.ca_store.add(init).await?;
 
             // add embedded repo
@@ -185,7 +185,7 @@ impl<S: Signer> CaServer<S> {
     }
 
     /// Send a command to a CA
-    async fn send_command(&self, cmd: Cmd<S>) -> KrillResult<Arc<CertAuth<S>>> {
+    async fn send_command(&self, cmd: Cmd) -> KrillResult<Arc<CertAuth>> {
         let lock = self.locks.ca(cmd.handle()).await;
         let _ = lock.write().await;
         self.ca_store.command(cmd).await
@@ -353,10 +353,10 @@ impl<S: Signer> CaServer<S> {
 
 /// # CA support
 ///
-impl<S: Signer> CaServer<S> {
+impl CaServer {
     /// Gets a CA by the given handle, returns an `Err(ServerError::UnknownCA)` if it
     /// does not exist.
-    pub async fn get_ca(&self, handle: &Handle) -> KrillResult<Arc<CertAuth<S>>> {
+    pub async fn get_ca(&self, handle: &Handle) -> KrillResult<Arc<CertAuth>> {
         let lock = self.locks.ca(handle).await;
         let _ = lock.read().await;
         self.ca_store
@@ -536,7 +536,7 @@ impl<S: Signer> CaServer<S> {
         } else if self.ca_store.has(handle).await {
             Err(Error::CaDuplicate(handle.clone()))
         } else {
-            let init = IniDet::init(handle, self.signer.clone()).await?;
+            let init = IniDet::init(handle, self.signer.deref()).await?;
             self.ca_store.add(init).await?;
             Ok(())
         }
@@ -1046,7 +1046,7 @@ impl<S: Signer> CaServer<S> {
 
 /// # Support sending publication messages, and verifying responses.
 ///
-impl<S: Signer> CaServer<S> {
+impl CaServer {
     async fn send_procotol_msg_and_validate(
         &self,
         signing_key: &KeyIdentifier,
@@ -1241,7 +1241,7 @@ impl<S: Signer> CaServer<S> {
 
 /// # Support Route Authorization functions
 ///
-impl<S: Signer> CaServer<S> {
+impl CaServer {
     /// Update the routes authorized by a CA
     pub async fn ca_routes_update(&self, handle: Handle, updates: RouteAuthorizationUpdates) -> KrillResult<()> {
         let cmd = CmdDet::route_authorizations_update(&handle, updates, self.signer.clone());
@@ -1252,12 +1252,12 @@ impl<S: Signer> CaServer<S> {
 
 /// # Support Resource Tagged Attestation functions
 ///
-impl<S: Signer> CaServer<S> {
+impl CaServer {
     /// Sign a one-off single-signed RTA and return it
     /// and forget it
     pub async fn rta_one_off(&self, ca: Handle, request: RtaRequest) -> KrillResult<ResourceTaggedAttestation> {
         let ca = self.get_ca(&ca).await?;
-        ca.rta_one_off(request, self.signer.clone())
+        ca.rta_one_off(request, self.signer.deref())
     }
 }
 
@@ -1270,7 +1270,6 @@ mod tests {
     use std::sync::Arc;
 
     use crate::commons::api::RepoInfo;
-    use crate::commons::util::softsigner::OpenSslSigner;
     use crate::test;
     use crate::test::tmp_dir;
 
@@ -1279,13 +1278,11 @@ mod tests {
     #[tokio::test]
     async fn add_ta() {
         let d = tmp_dir();
-        let signer = OpenSslSigner::build(&d).unwrap();
+        let signer = KrillSigner::build(&d).unwrap();
 
         let event_queue = Arc::new(EventQueueListener::default());
 
-        let server = CaServer::<OpenSslSigner>::build(&d, None, None, event_queue, signer)
-            .await
-            .unwrap();
+        let server = CaServer::build(&d, None, None, event_queue, signer).await.unwrap();
 
         let repo_info = {
             let base_uri = test::rsync("rsync://localhost/repo/ta/");

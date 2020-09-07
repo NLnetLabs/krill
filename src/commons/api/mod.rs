@@ -22,6 +22,7 @@ pub mod rrdp;
 
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::Arc;
 
 use bytes::Bytes;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -35,7 +36,6 @@ use rpki::roa::Roa;
 use crate::commons::error::RoaDeltaError;
 use crate::commons::util::sha256;
 use crate::daemon::ca::RouteAuthorization;
-use std::sync::Arc;
 
 // Some syntactic sugar to help this old coder's brain deal with the mess of Strings
 pub type Message = String;

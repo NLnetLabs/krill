@@ -15,7 +15,7 @@ use bcder::{BitString, Mode, Tag};
 use rpki::crypto::{PublicKey, Signature, SignatureAlgorithm};
 use rpki::x509::{Name, Validity};
 
-use crate::commons::remote::crypto::IdExtensions;
+use crate::commons::crypto::IdExtensions;
 use crate::commons::util::file;
 
 const KEY_SIZE: u32 = 2048;

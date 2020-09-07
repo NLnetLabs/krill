@@ -11,7 +11,6 @@ use rpki::x509::Time;
 
 use crate::commons::api::Handle;
 use crate::commons::bgp::BgpAnalyser;
-use crate::commons::util::softsigner::OpenSslSigner;
 use crate::daemon::ca::CaServer;
 use crate::daemon::config::CONFIG;
 use crate::daemon::mq::{EventQueueListener, QueueEvent};
@@ -42,7 +41,7 @@ pub struct Scheduler {
 impl Scheduler {
     pub fn build(
         event_queue: Arc<EventQueueListener>,
-        caserver: Arc<CaServer<OpenSslSigner>>,
+        caserver: Arc<CaServer>,
         pubserver: Option<Arc<PubServer>>,
         bgp_analyser: Arc<BgpAnalyser>,
         ca_refresh_rate: u32,
@@ -64,7 +63,7 @@ impl Scheduler {
 #[allow(clippy::cognitive_complexity)]
 fn make_event_sh(
     event_queue: Arc<EventQueueListener>,
-    caserver: Arc<CaServer<OpenSslSigner>>,
+    caserver: Arc<CaServer>,
     pubserver: Option<Arc<PubServer>>,
 ) -> ScheduleHandle {
     let mut scheduler = clokwerk::Scheduler::new();
@@ -162,7 +161,7 @@ fn make_event_sh(
 
 async fn try_publish(
     event_queue: &Arc<EventQueueListener>,
-    caserver: Arc<CaServer<OpenSslSigner>>,
+    caserver: Arc<CaServer>,
     pubserver: Option<Arc<PubServer>>,
     ca: Handle,
 ) {
@@ -181,7 +180,7 @@ async fn try_publish(
     }
 }
 
-fn make_republish_sh(caserver: Arc<CaServer<OpenSslSigner>>) -> ScheduleHandle {
+fn make_republish_sh(caserver: Arc<CaServer>) -> ScheduleHandle {
     let mut scheduler = clokwerk::Scheduler::new();
     scheduler.every(1.hours()).run(move || {
         let mut rt = Runtime::new().unwrap();
@@ -195,7 +194,7 @@ fn make_republish_sh(caserver: Arc<CaServer<OpenSslSigner>>) -> ScheduleHandle {
     scheduler.watch_thread(Duration::from_millis(100))
 }
 
-fn make_ca_refresh_sh(caserver: Arc<CaServer<OpenSslSigner>>, refresh_rate: u32) -> ScheduleHandle {
+fn make_ca_refresh_sh(caserver: Arc<CaServer>, refresh_rate: u32) -> ScheduleHandle {
     let mut scheduler = clokwerk::Scheduler::new();
     scheduler.every(refresh_rate.seconds()).run(move || {
         let mut rt = Runtime::new().unwrap();

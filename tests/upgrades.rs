@@ -7,7 +7,6 @@ use std::str::FromStr;
 
 use krill::commons::api::Handle;
 use krill::commons::eventsourcing::{AggregateStore, DiskAggregateStore};
-use krill::commons::util::softsigner::OpenSslSigner;
 use krill::constants::PUBSERVER_DFLT;
 use krill::daemon::ca::CertAuth;
 use krill::pubd::Repository;
@@ -66,7 +65,7 @@ async fn publication_since_0_4_0() {
 }
 
 async fn test_cas(work_dir: &PathBuf, cas: &[&str]) {
-    let ca_store = DiskAggregateStore::<CertAuth<OpenSslSigner>>::new(&work_dir, "cas").unwrap();
+    let ca_store = DiskAggregateStore::<CertAuth>::new(&work_dir, "cas").unwrap();
 
     for ca in cas {
         assert_no_snapshot(work_dir, &format!("cas/{}", ca));

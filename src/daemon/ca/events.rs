@@ -8,10 +8,9 @@ use crate::commons::api::{
     ParentHandle, RcvdCert, RepoInfo, RepositoryContact, ResourceClassName, ResourceSet, Revocation, RevocationRequest,
     RevokedObject, RoaAggregateKey, TaCertDetails, UpdatedObject, WithdrawnObject,
 };
+use crate::commons::crypto::{IdCert, KrillSigner};
 use crate::commons::eventsourcing::StoredEvent;
-use crate::commons::remote::crypto::IdCert;
 use crate::commons::KrillResult;
-use crate::daemon::ca::signing::Signer;
 use crate::daemon::ca::{
     AggregateRoaInfo, CertifiedKey, ChildDetails, CurrentObjectSetDelta, ResourceClass, Rfc8183Id, RoaInfo,
     RouteAuthorization,
@@ -46,8 +45,8 @@ impl IniDet {
 }
 
 impl IniDet {
-    pub async fn init<S: Signer>(handle: &Handle, mut signer: Box<S>) -> KrillResult<Ini> {
-        let id = Rfc8183Id::generate(signer.as_mut())?;
+    pub async fn init(handle: &Handle, signer: &KrillSigner) -> KrillResult<Ini> {
+        let id = Rfc8183Id::generate(signer)?;
         Ok(Ini::new(
             handle,
             0,
