@@ -41,46 +41,46 @@ use krill::pubd::Repository;
 ///             .. Repository events and snapshot
 ///       other tests.
 ///     new versions
-#[tokio::test]
-async fn upgrades() {
-    since_0_4_0("ca_embedded", &["ta", "child"]).await;
-    since_0_4_0("ca_grandchildren", &["ta", "CA1", "CA2", "CA3", "CA4"]).await;
-    since_0_4_0("ca_keyroll_rfc6492", &["ta", "rfc6492"]).await;
-    since_0_4_0("ca_rfc6492", &["ta", "rfc6492"]).await;
-    since_0_4_0("ca_roas", &["ta", "child"]).await;
-    publication_since_0_4_0().await;
+#[test]
+fn upgrades() {
+    since_0_4_0("ca_embedded", &["ta", "child"]);
+    since_0_4_0("ca_grandchildren", &["ta", "CA1", "CA2", "CA3", "CA4"]);
+    since_0_4_0("ca_keyroll_rfc6492", &["ta", "rfc6492"]);
+    since_0_4_0("ca_rfc6492", &["ta", "rfc6492"]);
+    since_0_4_0("ca_roas", &["ta", "child"]);
+    publication_since_0_4_0();
 }
 
-async fn since_0_4_0(scenario: &str, cas: &[&str]) {
+fn since_0_4_0(scenario: &str, cas: &[&str]) {
     let work_dir = PathBuf::from(format!("test-resources/api/regressions/0.4.0/events/{}/", scenario));
-    test_cas(&work_dir, cas).await;
-    test_repo(&work_dir, "pubd").await;
+    test_cas(&work_dir, cas);
+    test_repo(&work_dir, "pubd");
 }
 
-async fn publication_since_0_4_0() {
+fn publication_since_0_4_0() {
     let work_dir = PathBuf::from("test-resources/api/regressions/0.4.0/events/remote_publication/");
-    test_cas(&work_dir, &["ta", "child"]).await;
-    test_repo(&work_dir, "pubd").await;
-    test_repo(&work_dir, "remote-pubd").await;
+    test_cas(&work_dir, &["ta", "child"]);
+    test_repo(&work_dir, "pubd");
+    test_repo(&work_dir, "remote-pubd");
 }
 
-async fn test_cas(work_dir: &PathBuf, cas: &[&str]) {
+fn test_cas(work_dir: &PathBuf, cas: &[&str]) {
     let ca_store = DiskAggregateStore::<CertAuth>::new(&work_dir, "cas").unwrap();
 
     for ca in cas {
         assert_no_snapshot(work_dir, &format!("cas/{}", ca));
         let ca_handle = Handle::from_str(ca).unwrap();
-        if let Err(e) = ca_store.get_latest(&ca_handle).await {
+        if let Err(e) = ca_store.get_latest(&ca_handle) {
             panic!("Could not rebuild state for ca '{}', error: {}", ca, e);
         }
     }
 }
 
-async fn test_repo(work_dir: &PathBuf, repo: &str) {
+fn test_repo(work_dir: &PathBuf, repo: &str) {
     let repo_store = DiskAggregateStore::<Repository>::new(&work_dir, repo).unwrap();
     assert_no_snapshot(work_dir, &format!("{}/{}", repo, PUBSERVER_DFLT));
     let handle = Handle::from_str(PUBSERVER_DFLT).unwrap();
-    if let Err(e) = repo_store.get_latest(&handle).await {
+    if let Err(e) = repo_store.get_latest(&handle) {
         panic!("Could not rebuild state for repository: {}", e)
     }
 }

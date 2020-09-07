@@ -268,27 +268,27 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn event_sourcing_framework() {
+    #[test]
+    fn event_sourcing_framework() {
         let d = test::tmp_dir();
 
         let counter = Arc::new(EventCounter::default());
         let mut manager = DiskAggregateStore::<Person>::new(&d, "person").unwrap();
-        manager.add_listener(counter.clone()).await;
+        manager.add_listener(counter.clone());
 
         let id_alice = Handle::from_str("alice").unwrap();
         let alice_init = InitPersonEvent::init(&id_alice, "alice smith");
 
-        manager.add(alice_init).await.unwrap();
+        manager.add(alice_init).unwrap();
 
-        let mut alice = manager.get_latest(&id_alice).await.unwrap();
+        let mut alice = manager.get_latest(&id_alice).unwrap();
         assert_eq!("alice smith", alice.name());
         assert_eq!(0, alice.age());
 
         let mut age = 0;
         loop {
             let get_older = PersonCommand::go_around_sun(&id_alice, None);
-            alice = manager.command(get_older).await.unwrap();
+            alice = manager.command(get_older).unwrap();
 
             age += 1;
             if age == 21 {
@@ -300,18 +300,18 @@ mod tests {
         assert_eq!(21, alice.age());
 
         let change_name = PersonCommand::change_name(&id_alice, Some(22), "alice smith-doe");
-        let alice = manager.command(change_name).await.unwrap();
+        let alice = manager.command(change_name).unwrap();
         assert_eq!("alice smith-doe", alice.name());
         assert_eq!(21, alice.age());
 
         // Should read state from disk
         let manager = DiskAggregateStore::<Person>::new(&d, "person").unwrap();
 
-        let alice = manager.get_latest(&id_alice).await.unwrap();
+        let alice = manager.get_latest(&id_alice).unwrap();
         assert_eq!("alice smith-doe", alice.name());
         assert_eq!(21, alice.age());
 
-        assert_eq!(22, counter.total().await);
+        assert_eq!(22, counter.total());
 
         // Get paginated history
         let mut crit = CommandHistoryCriteria::default();

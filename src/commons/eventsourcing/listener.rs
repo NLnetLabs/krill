@@ -1,4 +1,4 @@
-use tokio::sync::RwLock;
+use std::sync::RwLock;
 
 use super::Aggregate;
 
@@ -12,9 +12,8 @@ use super::Aggregate;
 /// Note that at this time the events really happened, so
 /// EventListeners do not have the luxury of failure in case
 /// they do not like what happened.
-#[async_trait]
 pub trait EventListener<A: Aggregate>: Send + Sync + 'static {
-    async fn listen(&self, agg: &A, event: &A::Event);
+    fn listen(&self, agg: &A, event: &A::Event);
 }
 
 //------------ EventCounter --------------------------------------------------
@@ -37,14 +36,13 @@ impl Default for EventCounter {
 }
 
 impl EventCounter {
-    pub async fn total(&self) -> usize {
-        self.counter.read().await.total
+    pub fn total(&self) -> usize {
+        self.counter.read().unwrap().total
     }
 }
 
-#[async_trait]
 impl<A: Aggregate> EventListener<A> for EventCounter {
-    async fn listen(&self, _agg: &A, _event: &A::Event) {
-        self.counter.write().await.total += 1
+    fn listen(&self, _agg: &A, _event: &A::Event) {
+        self.counter.write().unwrap().total += 1
     }
 }

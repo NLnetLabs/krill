@@ -534,7 +534,7 @@ impl KrillServer {
         let handle = init.unpack();
 
         // Create CA
-        self.caserver.init_ca(&handle).await?;
+        self.caserver.init_ca(&handle)?;
 
         Ok(())
     }

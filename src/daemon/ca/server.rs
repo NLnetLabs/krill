@@ -122,7 +122,7 @@ impl CaServer {
         signer: KrillSigner,
     ) -> KrillResult<Self> {
         let mut ca_store = DiskAggregateStore::<CertAuth>::new(work_dir, CASERVER_DIR)?;
-        ca_store.add_listener(events_queue).await;
+        ca_store.add_listener(events_queue);
 
         let status_store = StatusStore::new(work_dir, STATUS_DIR)?;
 
@@ -145,10 +145,7 @@ impl CaServer {
         let ta_handle = ca::ta_handle();
         let lock = self.locks.ca(&ta_handle).await;
         let _ = lock.read().await;
-        self.ca_store
-            .get_latest(&ta_handle)
-            .await
-            .map_err(Error::AggregateStoreError)
+        self.ca_store.get_latest(&ta_handle).map_err(Error::AggregateStoreError)
     }
 
     /// Initialises an embedded trust anchor with all resources.
@@ -156,21 +153,21 @@ impl CaServer {
         let ta_handle = ca::ta_handle();
         let lock = self.locks.ca(&ta_handle).await;
         let _ = lock.write().await;
-        if self.ca_store.has(&ta_handle).await {
+        if self.ca_store.has(&ta_handle) {
             Err(Error::TaAlreadyInitialised)
         } else {
             // init normal CA
-            let init = IniDet::init(&ta_handle, self.signer.deref()).await?;
-            self.ca_store.add(init).await?;
+            let init = IniDet::init(&ta_handle, self.signer.deref())?;
+            self.ca_store.add(init)?;
 
             // add embedded repo
             let embedded = RepositoryContact::embedded(info);
             let upd_repo_cmd = CmdDet::update_repo(&ta_handle, embedded, self.signer.clone());
-            self.ca_store.command(upd_repo_cmd).await?;
+            self.ca_store.command(upd_repo_cmd)?;
 
             // make trust anchor
             let make_ta_cmd = CmdDet::make_trust_anchor(&ta_handle, ta_uris, self.signer.clone());
-            let ta = self.ca_store.command(make_ta_cmd).await?;
+            let ta = self.ca_store.command(make_ta_cmd)?;
 
             // receive the self signed cert (now as child of self)
             let ta_cert = ta.parent(&ta_handle).unwrap().to_ta_cert();
@@ -178,7 +175,7 @@ impl CaServer {
 
             let rcv_cert =
                 CmdDet::upd_received_cert(&ta_handle, ResourceClassName::default(), rcvd_cert, self.signer.clone());
-            self.ca_store.command(rcv_cert).await?;
+            self.ca_store.command(rcv_cert)?;
 
             Ok(())
         }
@@ -188,7 +185,7 @@ impl CaServer {
     async fn send_command(&self, cmd: Cmd) -> KrillResult<Arc<CertAuth>> {
         let lock = self.locks.ca(cmd.handle()).await;
         let _ = lock.write().await;
-        self.ca_store.command(cmd).await
+        self.ca_store.command(cmd)
     }
 
     /// Republish the embedded TA and CAs if needed, i.e. if they are close
@@ -232,7 +229,7 @@ impl CaServer {
     pub async fn ca_repo_status(&self, ca: &Handle) -> KrillResult<RepoStatus> {
         let lock = self.locks.ca(ca).await;
         let _ = lock.read().await;
-        if self.ca_store.has(ca).await {
+        if self.ca_store.has(ca) {
             self.status_store.lock().await.get_repo_status(ca).await
         } else {
             Err(Error::CaUnknown(ca.clone()))
@@ -361,7 +358,6 @@ impl CaServer {
         let _ = lock.read().await;
         self.ca_store
             .get_latest(handle)
-            .await
             .map_err(|_| Error::CaUnknown(handle.clone()))
     }
 
@@ -406,7 +402,7 @@ impl CaServer {
 
     /// Checks whether a CA by the given handle exists.
     pub async fn has_ca(&self, handle: &Handle) -> bool {
-        self.ca_store.has(handle).await
+        self.ca_store.has(handle)
     }
 
     /// Processes an RFC6492 sent to this CA.
@@ -519,25 +515,18 @@ impl CaServer {
 
     /// Get the current CAs
     pub async fn ca_list(&self) -> CertAuthList {
-        CertAuthList::new(
-            self.ca_store
-                .list()
-                .await
-                .into_iter()
-                .map(CertAuthSummary::new)
-                .collect(),
-        )
+        CertAuthList::new(self.ca_store.list().into_iter().map(CertAuthSummary::new).collect())
     }
 
     /// Initialises a CA without a repo, no parents, no children, no nothing
-    pub async fn init_ca(&self, handle: &Handle) -> KrillResult<()> {
+    pub fn init_ca(&self, handle: &Handle) -> KrillResult<()> {
         if handle == &ta_handle() || handle.as_str() == "version" {
             Err(Error::TaNameReserved)
-        } else if self.ca_store.has(handle).await {
+        } else if self.ca_store.has(handle) {
             Err(Error::CaDuplicate(handle.clone()))
         } else {
-            let init = IniDet::init(handle, self.signer.deref()).await?;
-            self.ca_store.add(init).await?;
+            let init = IniDet::init(handle, self.signer.deref())?;
+            self.ca_store.add(init)?;
             Ok(())
         }
     }
@@ -578,7 +567,7 @@ impl CaServer {
 
     /// Returns the parent statuses for this CA
     pub async fn ca_parent_statuses(&self, ca: &Handle) -> KrillResult<ParentStatuses> {
-        if self.ca_store.has(ca).await {
+        if self.ca_store.has(ca) {
             self.status_store.lock().await.get_parent_statuses(ca).await
         } else {
             Err(Error::CaUnknown(ca.clone()))
@@ -606,7 +595,7 @@ impl CaServer {
     /// have no parents. Will try to process all and log possible errors, i.e. do
     /// not bail out because of issues with one CA.
     pub async fn get_updates_for_all_cas(&self) -> KrillResult<()> {
-        for handle in self.ca_store.list().await {
+        for handle in self.ca_store.list() {
             if let Ok(ca) = self.get_ca(&handle).await {
                 for parent in ca.parents() {
                     if let Err(e) = self.get_updates_from_parent(&handle, &parent).await {
@@ -761,7 +750,7 @@ impl CaServer {
         rcn: ResourceClassName,
         revocation: RevocationRequest,
     ) -> KrillResult<HashMap<ResourceClassName, Vec<RevocationResponse>>> {
-        let child = self.ca_store.get_latest(handle).await?;
+        let child = self.ca_store.get_latest(handle)?;
         let parent = child.parent_for_rc(&rcn)?;
         let mut requests = HashMap::new();
         requests.insert(rcn, vec![revocation]);
@@ -991,7 +980,7 @@ impl CaServer {
         handle: &Handle,
         parent: &ParentHandle,
     ) -> KrillResult<api::Entitlements> {
-        let parent = self.ca_store.get_latest(parent).await?;
+        let parent = self.ca_store.get_latest(parent)?;
         parent.list(handle)
     }
 
@@ -1000,7 +989,7 @@ impl CaServer {
         handle: &Handle,
         parent_res: &rfc8183::ParentResponse,
     ) -> KrillResult<api::Entitlements> {
-        let child = self.ca_store.get_latest(handle).await?;
+        let child = self.ca_store.get_latest(handle)?;
 
         // create a list request
         let sender = parent_res.child_handle().clone();

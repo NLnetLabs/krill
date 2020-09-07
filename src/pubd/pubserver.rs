@@ -75,11 +75,11 @@ impl PubServer {
 
         let store = Arc::new(DiskAggregateStore::<Repository>::new(work_dir, PUBSERVER_DIR)?);
 
-        if !store.has(&default).await {
+        if !store.has(&default) {
             info!("Creating default repository");
 
             let ini = pubd::IniDet::init(&default, rsync_base.clone(), rrdp_base_uri, work_dir, signer.deref())?;
-            let repo = store.add(ini).await?;
+            let repo = store.add(ini)?;
             repo.write()?;
         }
 
@@ -101,7 +101,7 @@ impl PubServer {
     async fn repository(&self) -> KrillResult<Arc<Repository>> {
         let handle = Self::repository_handle();
 
-        match self.store.get_latest(&handle).await {
+        match self.store.get_latest(&handle) {
             Ok(repo) => Ok(repo),
             Err(e) => match e {
                 AggregateStoreError::UnknownAggregate(_) => Err(Error::PublisherNoEmbeddedRepo),
@@ -157,7 +157,7 @@ impl PubServer {
     pub async fn publish(&self, publisher: PublisherHandle, delta: PublishDelta) -> KrillResult<()> {
         let repository_handle = Self::repository_handle();
         let cmd = CmdDet::publish(&repository_handle, publisher, delta);
-        self.store.command(cmd).await?;
+        self.store.command(cmd)?;
         self.write_repository().await
     }
 
@@ -209,7 +209,7 @@ impl PubServer {
     pub async fn create_publisher(&self, req: rfc8183::PublisherRequest) -> KrillResult<()> {
         let repository_handle = Self::repository_handle();
         let cmd = CmdDet::add_publisher(&repository_handle, req);
-        self.store.command(cmd).await?;
+        self.store.command(cmd)?;
         Ok(())
     }
 
@@ -220,7 +220,7 @@ impl PubServer {
     pub async fn remove_publisher(&self, publisher: PublisherHandle) -> KrillResult<()> {
         let repository_handle = Self::repository_handle();
         let cmd = CmdDet::remove_publisher(&repository_handle, publisher);
-        self.store.command(cmd).await?;
+        self.store.command(cmd)?;
         self.write_repository().await
     }
 }

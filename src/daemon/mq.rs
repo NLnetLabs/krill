@@ -4,8 +4,7 @@
 //! entitlements.
 
 use std::collections::{HashMap, VecDeque};
-
-use tokio::sync::RwLock;
+use std::sync::RwLock;
 
 use rpki::x509::Time;
 
@@ -64,17 +63,17 @@ impl Default for EventQueueListener {
 }
 
 impl EventQueueListener {
-    pub async fn pop_all(&self) -> Vec<QueueEvent> {
+    pub fn pop_all(&self) -> Vec<QueueEvent> {
         let mut res = vec![];
-        let mut q = self.q.write().await;
+        let mut q = self.q.write().unwrap();
         while let Some(evt) = q.pop_front() {
             res.push(evt);
         }
         res
     }
 
-    pub async fn push_back(&self, evt: QueueEvent) {
-        self.q.write().await.push_back(evt)
+    pub fn push_back(&self, evt: QueueEvent) {
+        self.q.write().unwrap().push_back(evt)
     }
 }
 
@@ -82,9 +81,8 @@ unsafe impl Send for EventQueueListener {}
 unsafe impl Sync for EventQueueListener {}
 
 /// Implement listening for CertAuth Published events.
-#[async_trait]
 impl eventsourcing::EventListener<CertAuth> for EventQueueListener {
-    async fn listen(&self, _ca: &CertAuth, event: &Evt) {
+    fn listen(&self, _ca: &CertAuth, event: &Evt) {
         trace!("Seen CertAuth event '{}'", event);
 
         let handle = event.handle();
@@ -97,10 +95,10 @@ impl eventsourcing::EventListener<CertAuth> for EventQueueListener {
             | EvtDet::KeyPendingToActive(_, _, _)
             | EvtDet::KeyRollFinished(_, _) => {
                 let evt = QueueEvent::Delta(handle.clone(), version);
-                self.push_back(evt).await;
+                self.push_back(evt);
             }
             EvtDet::ResourceClassRemoved(class_name, _delta, parent, revocations) => {
-                self.push_back(QueueEvent::Delta(handle.clone(), version)).await;
+                self.push_back(QueueEvent::Delta(handle.clone(), version));
 
                 let mut revocations_map = HashMap::new();
                 revocations_map.insert(class_name.clone(), revocations.clone());
@@ -111,38 +109,34 @@ impl eventsourcing::EventListener<CertAuth> for EventQueueListener {
                     parent.clone(),
                     revocations_map,
                 ))
-                .await
             }
 
-            EvtDet::UnexpectedKeyFound(rcn, revocation) => {
-                self.push_back(QueueEvent::UnexpectedKey(
-                    handle.clone(),
-                    version,
-                    rcn.clone(),
-                    revocation.clone(),
-                ))
-                .await;
-            }
+            EvtDet::UnexpectedKeyFound(rcn, revocation) => self.push_back(QueueEvent::UnexpectedKey(
+                handle.clone(),
+                version,
+                rcn.clone(),
+                revocation.clone(),
+            )),
 
             EvtDet::ParentAdded(parent, _contact) => {
                 let evt = QueueEvent::ParentAdded(handle.clone(), version, parent.clone());
-                self.push_back(evt).await;
+                self.push_back(evt);
             }
             EvtDet::RepoUpdated(_) => {
                 let evt = QueueEvent::RepositoryConfigured(handle.clone(), version);
-                self.push_back(evt).await;
+                self.push_back(evt);
             }
             EvtDet::CertificateRequested(_, _, _) => {
                 let evt = QueueEvent::RequestsPending(handle.clone(), version);
-                self.push_back(evt).await;
+                self.push_back(evt);
             }
             EvtDet::KeyRollActivated(_, _) => {
                 let evt = QueueEvent::RequestsPending(handle.clone(), version);
-                self.push_back(evt).await;
+                self.push_back(evt);
             }
             EvtDet::CertificateReceived(_, _, _) => {
                 let evt = QueueEvent::CleanOldRepo(handle.clone(), version);
-                self.push_back(evt).await;
+                self.push_back(evt);
             }
             _ => {}
         }

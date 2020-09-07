@@ -71,7 +71,7 @@ fn make_event_sh(
         let mut rt = Runtime::new().unwrap();
 
         rt.block_on( async {
-            for evt in event_queue.pop_all().await {
+            for evt in event_queue.pop_all() {
                 match evt {
                     QueueEvent::Delta(handle, _version) => {
                         try_publish(&event_queue, caserver.clone(), pubserver.clone(), handle).await
@@ -80,7 +80,7 @@ fn make_event_sh(
                         if Time::five_minutes_ago().timestamp() > last_try.timestamp() {
                             try_publish(&event_queue, caserver.clone(), pubserver.clone(), handle).await
                         } else {
-                            event_queue.push_back(QueueEvent::ReschedulePublish(handle, last_try)).await;
+                            event_queue.push_back(QueueEvent::ReschedulePublish(handle, last_try));
                         }
                     }
                     QueueEvent::ResourceClassRemoved(handle, _, parent, revocations) => {
@@ -173,9 +173,7 @@ async fn try_publish(
             error!("Failed to publish for '{}', error: {}", ca, e);
         } else {
             error!("Failed to publish for '{}' will reschedule, error: {}", ca, e);
-            event_queue
-                .push_back(QueueEvent::ReschedulePublish(ca, Time::now()))
-                .await;
+            event_queue.push_back(QueueEvent::ReschedulePublish(ca, Time::now()));
         }
     }
 }

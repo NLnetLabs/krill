@@ -45,7 +45,7 @@ impl IniDet {
 }
 
 impl IniDet {
-    pub async fn init(handle: &Handle, signer: &KrillSigner) -> KrillResult<Ini> {
+    pub fn init(handle: &Handle, signer: &KrillSigner) -> KrillResult<Ini> {
         let id = Rfc8183Id::generate(signer)?;
         Ok(Ini::new(
             handle,
