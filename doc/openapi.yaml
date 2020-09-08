@@ -890,7 +890,7 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
-  /bulk/cas/sync/parents:
+  /bulk/cas/sync/parent:
     post:
       operationId: refresh_all_cas
       tags:
@@ -1117,7 +1117,7 @@ components:
       type: object
       properties:
         asn:
-          type: string
+          type: integer
         prefix:
           type: string
         max_length:
