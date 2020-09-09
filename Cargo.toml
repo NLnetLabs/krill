@@ -114,19 +114,21 @@ systemd-units = { unit-name = "krill", enable = false }
 #      OpenSSL >= 1.1.0.
 #   b) uses a simpler systemd service unit file because Ubuntu 16.04 doesn't
 #      support newer features supported by Ubuntu 18.04 and 20.04.
-[package.metadata.deb.variants.ubuntu1604]
+[package.metadata.deb.variants.ubuntu-xenial]
 features = [ "static-openssl" ]
 depends = "$auto, adduser"
 
-[package.metadata.deb.variants.ubuntu1804]
+[package.metadata.deb.variants.ubuntu-bionic]
 
-[package.metadata.deb.variants.ubuntu2004]
+[package.metadata.deb.variants.ubuntu-focal]
 
-[package.metadata.deb.variants.debian9]
+[package.metadata.deb.variants.debian-stretch]
 features = [ "static-openssl" ]
 depends = "$auto, adduser"
 
-[package.metadata.deb.variants.debian10]
+[package.metadata.deb.variants.debian-buster]
+
+[package.metadata.deb.variants.debian-bullseye]
 
 # END DEBIAN PACKAGING
 # ------------------------------------------------------------------------------
