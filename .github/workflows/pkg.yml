@@ -56,13 +56,13 @@ jobs:
   deb-pkg:
     strategy:
       matrix:
-        image: [
-          "ubuntu:16.04",
-          "ubuntu:18.04",
-          "ubuntu:20.04",
-          "debian:9",
-          "debian:10",
-        ]
+        image: # can't use complex values here, only primitive values are allowed
+          - "ubuntu:xenial"   # ubuntu/16.04
+          - "ubuntu:bionic"   # ubuntu/18.04
+          - "ubuntu:focal"    # ubuntu/20.04
+          - "debian:stretch"  # debian/9
+          - "debian:buster"   # debian/10
+          - "debian:bullseye" # debian/11
     env:
       CARGO_DEB_VER: 94ba8f3
       # A Krill version of the form 'x.y.z-plus' denotes a dev build that is
@@ -74,16 +74,17 @@ jobs:
     # https://github.com/rust-lang/rust/issues/57497. Specifying container
     # causes all of the steps in this job to run inside a Docker container.
     container: ${{ matrix.image }}
+
     steps:
-    # Set an environment variable that will be available to later steps in
-    # run commands, and a GH Actions output variable that can be used in later
-    # step definitions.
     - name: Set vars
       id: setvars
       shell: bash
       run: |
-        echo ::set-env name=DEB_NAME::$(echo $MATRIX_IMAGE | tr -d ':.')
-        echo ::set-output name=pkgname::$(echo $MATRIX_IMAGE | tr -d ':.')
+        # Get the operating system and release name (e.g. ubuntu and xenial) from
+        # the image name (e.g. ubuntu:xenial) by extracting only the parts before
+        # and after but not including the colon:
+        echo ::set-env name=OS_NAME::${MATRIX_IMAGE%:*}
+        echo ::set-env name=OS_REL::${MATRIX_IMAGE#*:}
       env:
         MATRIX_IMAGE: ${{ matrix.image }}
 
@@ -117,7 +118,7 @@ jobs:
           ~/.cargo/registry
           ~/.cargo/git
           target
-        key: ${{ job.container.image }}-${{ matrix.image }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ matrix.image }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
     # Speed up cargo-deb installation by only re-downloading and re-building its
     # dependent crates if we change the version of cargo-deb that we are using.
@@ -126,7 +127,7 @@ jobs:
       uses: actions/cache@v2
       with:
         path: ~/.cargo/bin/cargo-deb
-        key: ${{ job.container.image }}-${{ matrix.image }}-cargo-deb-${{ env.CARGO_DEB_VER }}
+        key: ${{ matrix.image }}-cargo-deb-${{ env.CARGO_DEB_VER }}
 
     # Only install cargo-deb if not already fetched from the cache.
     - name: Install Cargo Deb
@@ -166,14 +167,6 @@ jobs:
         # is treated as higher and tilda is treated as lower.
         KRILL_VER=$(cargo read-manifest | jq -r '.version' | tr '-' '~')
         DEB_KRILL_VER=$(echo $KRILL_VER | sed -e "s/~$NEXT_VER_LABEL/-$NEXT_VER_LABEL/")
-        case ${MATRIX_IMAGE} in
-          ubuntu:16.04) OS_REL=xenial ;;
-          ubuntu:18.04) OS_REL=bionic ;;
-          ubuntu:20.04) OS_REL=focal ;;
-          debian:9)     OS_REL=stretch ;;
-          debian:10)    OS_REL=buster ;;
-          *)            echo 2>&1 "ERROR: Unexpected matrix image"; exit 1 ;;
-        esac
 
         case ${{ github.event_name }} in
           pull_request) MAINTAINER="${{ github.actor }} <unknown@email.address>" ;;
@@ -181,16 +174,18 @@ jobs:
           *)            echo 2>&1 "ERROR: Unexpected GitHub Actions event"; exit 1 ;;
         esac
 
+        # Generate the RFC 5322 format date by hand instead of using date --rfc-email
+        # because that option doesn't exist on Ubuntu 16.04 and Debian 9
+        RFC5322_TS=$(LC_TIME=en_US.UTF-8 date +'%a, %d %b %Y %H:%M:%S %z')
+
         # Generate the changelog file that Debian packages are required to have.
         # See: https://www.debian.org/doc/manuals/maint-guide/dreq.en.html#changelog
         echo "krill (${DEB_KRILL_VER}) unstable; urgency=medium" >debian/changelog
         echo "  * See: https://github.com/NLnetLabs/krill/releases/tag/v${KRILL_VER}" >>debian/changelog
-        echo " -- maintainer ${MAINTAINER}  $(date --rfc-email)" >>debian/changelog
+        echo " -- maintainer ${MAINTAINER}  ${RFC5322_TS}" >>debian/changelog
 
         DEB_VER="${DEB_KRILL_VER}-1${OS_REL}"
-        cargo deb --variant $DEB_NAME --deb-version $DEB_VER -v
-      env:
-        MATRIX_IMAGE: ${{ matrix.image }}
+        cargo deb --variant ${OS_NAME}-${OS_REL} --deb-version ${DEB_VER} -v
 
     # See what Lintian thinks of our package.
     - name: Verify the DEB package
@@ -206,7 +201,7 @@ jobs:
     - name: Upload DEB package
       uses: actions/upload-artifact@v2
       with:
-        name: ${{ steps.setvars.outputs.pkgname }}
+        name: ${{ env.OS_NAME }}_${{ env.OS_REL }}
         path: target/debian/*.deb
 
   # Download and sanity check on target operating systems the packages created
@@ -222,12 +217,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image:
-          - 'ubuntu:16.04'
-          - 'ubuntu:18.04'
-          - 'ubuntu:20.04'
-          - 'debian:9'
-          - 'debian:10'
+        image: # can't use complex values here, only primitive values are allowed
+          - "ubuntu:xenial"   # ubuntu/16.04
+          - "ubuntu:bionic"   # ubuntu/18.04
+          - "ubuntu:focal"    # ubuntu/20.04
+          - "debian:stretch"  # debian/9
+          - "debian:buster"   # debian/10
+          - "debian:bullseye" # debian/11
         mode:
           - 'fresh-install'
           - 'upgrade-from-published'
@@ -239,21 +235,22 @@ jobs:
       id: setvars
       shell: bash
       run: |
-        if [[ $MATRIX_IMAGE == *debian* ]]; then
-          SLASHED=$(echo $MATRIX_IMAGE | tr ':' '/')
-          echo ::set-env name=LXC_IMAGE::$(echo "images:${SLASHED}/cloud")
-        else
-          echo ::set-env name=LXC_IMAGE::$(echo $MATRIX_IMAGE)
-        fi
-        echo ::set-env name=DEB_NAME::$(echo $MATRIX_IMAGE | tr -d ':.')
-        echo ::set-output name=pkgname::$(echo $MATRIX_IMAGE | tr -d ':.')
+        # Get the operating system and release name (e.g. ubuntu and xenial) from
+        # the image name (e.g. ubuntu:xenial) by extracting only the parts before
+        # and after but not including the colon:
+        OS_NAME=${MATRIX_IMAGE%:*}
+        OS_REL=${MATRIX_IMAGE#*:}
+
+        echo ::set-env name=OS_NAME::${OS_NAME}
+        echo ::set-env name=OS_REL::${OS_REL}
+        echo ::set-env name=LXC_IMAGE::images:${OS_NAME}/${OS_REL}/cloud
       env:
         MATRIX_IMAGE: ${{ matrix.image }}
 
     - name: Download DEB package
       uses: actions/download-artifact@v2
       with:
-        name: ${{ steps.setvars.outputs.pkgname }}
+        name: ${{ env.OS_NAME }}_${{ env.OS_REL }}
 
     - name: Add current user to LXD group
       run: |
@@ -272,70 +269,44 @@ jobs:
 
         # security.nesting=true is needed to avoid error "Failed to set up mount
         # namespacing: Permission denied" in a Debian 10 container.
-        sg lxd -c "lxc launch $LXC_IMAGE -c security.nesting=true testcon"
+        sg lxd -c "lxc launch ${LXC_IMAGE} -c security.nesting=true testcon"
 
-    # Run apt-get update and install packages missing in some O/S images that
-    # are needed by later steps, but first wait for cloud-init to finish
-    # otherwise the network isn't yet ready.
+    # Run apt-get update and install man and sudo support (missing in some LXC/LXD
+    # O/S images) but first wait for cloud-init to finish otherwise the network
+    # isn't yet ready. Don't use cloud-init status --wait as that isn't supported
+    # on older O/S's like Ubuntu 16.04 and Debian 9. Use the sudo package provided
+    # configuration files otherwise when using sudo we get an error that the root
+    # user isn't allowed to use sudo.
     - name: Prepare container
       shell: bash
       run: |
-        while true; do
-          case ${LXC_IMAGE} in
-            # ubuntu:16.04|ubuntu:18.04|ubuntu:20.04|images:debian/10/cloud)
-            ubuntu:16.04|ubuntu:18.04|ubuntu:20.04|images)
-            OUTPUT=$(sg lxd -c "lxc exec testcon -- cloud-init status")
-              [[ "$OUTPUT" == "status: done" ]] && break
-              ;;
-            # images:debian/9/cloud)
-            #   [ -f /run/cloud-init/result.json ] && echo "Debian 9 extra pause" && sleep 2s && break
-            
-            images:debian/9/cloud|images:debian/10/cloud)
-              # Not sure why the above don't work for Debian 9 and 10. Just
-              # sleep for now instead to avoid the name resolution failures that
-              # otherwise happen during apt-get update below.
-              sleep 60s && break
-              ;;
-            *)
-              echo >&2 "ERROR: Unknown LXC image $LXC_IMAGE"
-              ;;
-          esac
-          echo "Waiting for cloud-init.."
+        echo "Waiting for cloud-init.."
+        while ! sudo lxc exec testcon -- ls -la /var/lib/cloud/data/result.json; do
           sleep 1s
         done
         sg lxd -c "lxc exec testcon -- apt-get update"
-        sg lxd -c "lxc exec testcon -- apt-get install -y apt-transport-https gnupg2 man wget"
+        sg lxd -c "lxc exec testcon -- apt-get install -y -o Dpkg::Options::=\"--force-confnew\" apt-transport-https gnupg2 man sudo wget"
 
     - name: Copy DEB into LXC container
       run: |
         DEB_FILE=$(ls -1 *.deb)
-        echo ::set-env name=DEB_FILE::$DEB_FILE
         sg lxd -c "lxc file push ${DEB_FILE} testcon/tmp/"
+        echo ::set-env name=DEB_FILE::${DEB_FILE}
 
     - name: Install published DEB package
       if: ${{ matrix.mode == 'upgrade-from-published' }}
       run: |
-        case ${MATRIX_IMAGE} in
-          ubuntu:16.04) OS=ubuntu; OS_REL=xenial ;;
-          ubuntu:18.04) OS=ubuntu; OS_REL=bionic ;;
-          ubuntu:20.04) OS=ubuntu; OS_REL=focal ;;
-          debian:9)     OS=debian; OS_REL=stretch ;;
-          debian:10)    OS=debian; OS_REL=buster ;;
-          *)            echo 2>&1 "ERROR: Unexpected matrix image"; exit 1 ;;
-        esac
-        echo "deb [arch=amd64] https://packages.nlnetlabs.nl/linux/${OS}/ ${OS_REL} main" >$HOME/nlnetlabs.list
+        echo "deb [arch=amd64] https://packages.nlnetlabs.nl/linux/${OS_NAME}/ ${OS_REL} main" >$HOME/nlnetlabs.list
         sg lxd -c "lxc file push $HOME/nlnetlabs.list testcon/etc/apt/sources.list.d/"
         sg lxd -c "lxc exec testcon -- wget -q https://packages.nlnetlabs.nl/aptkey.asc"
         sg lxd -c "lxc exec testcon -- apt-key add ./aptkey.asc"
         sg lxd -c "lxc exec testcon -- apt update"
         sg lxd -c "lxc exec testcon -- apt install -y krill"
-      env:
-        MATRIX_IMAGE: ${{ matrix.image }}
 
     - name: Install new DEB package
       if: ${{ matrix.mode == 'fresh-install' }}
       run: |
-        sg lxd -c "lxc exec testcon -- apt-get -y install /tmp/$DEB_FILE"
+        sg lxd -c "lxc exec testcon -- apt-get -y install /tmp/${DEB_FILE}"
 
     - name: Test installed packages
       run: |
@@ -373,7 +344,7 @@ jobs:
     - name: Install new DEB package
       if: ${{ matrix.mode == 'upgrade-from-published' }}
       run: |
-        sg lxd -c "lxc exec testcon -- apt-get -y install /tmp/$DEB_FILE"
+        sg lxd -c "lxc exec testcon -- apt-get -y install /tmp/${DEB_FILE}"
 
     - name: Test installed packages
       if: ${{ matrix.mode == 'upgrade-from-published' }}
