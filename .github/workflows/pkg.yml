@@ -63,7 +63,7 @@ jobs:
           - 'debian:stretch'  # debian/9
           - 'debian:buster'   # debian/10
           - 'debian:bullseye' # debian/11
-  env:
+    env:
       CARGO_DEB_VER: 1.28.0
       # A Krill version of the form 'x.y.z-plus' denotes a dev build that is
       # newer than the released x.y.z version but is not yet a new release.
