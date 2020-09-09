@@ -1,19 +1,111 @@
+use std::collections::HashMap;
 use std::fmt;
 
 use bytes::Bytes;
 
+use rpki::cert::Cert;
 use rpki::crypto::{DigestAlgorithm, KeyIdentifier};
 use rpki::rta;
 use rpki::sigobj::MessageDigest;
 use rpki::x509::Validity;
 
-use crate::commons::api::{Base64, ResourceSet};
+use crate::commons::api::{Base64, ResourceClassName, ResourceSet, Revocation, RtaList, RtaName};
 use crate::commons::error::Error;
 use crate::commons::util::ext_serde;
 use crate::commons::KrillResult;
 
-#[derive(Clone, Debug, Deserialize, Eq, Serialize, PartialEq)]
-pub struct RtaRequest {
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Rtas {
+    rtas: HashMap<RtaName, RtaState>,
+}
+
+impl Rtas {
+    pub fn list(&self) -> RtaList {
+        RtaList::new(self.rtas.keys().cloned().collect())
+    }
+
+    pub fn show(&self, name: &str) -> KrillResult<ResourceTaggedAttestation> {
+        let state = self.rtas.get(name).ok_or_else(|| Error::custom("Unknown RTA"))?;
+        match state {
+            RtaState::Signed(signed) => Ok(signed.rta.clone()),
+            RtaState::Prepared(_) => Err(Error::custom("RTA is not signed yet")),
+        }
+    }
+
+    pub fn add_prepared(&mut self, name: RtaName, prepared: PreparedRta) {
+        self.rtas.insert(name, RtaState::Prepared(prepared));
+    }
+
+    pub fn add_signed(&mut self, name: RtaName, signed: SignedRta) {
+        self.rtas.insert(name, RtaState::Signed(signed));
+    }
+}
+
+impl Default for Rtas {
+    fn default() -> Self {
+        Rtas { rtas: HashMap::new() }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+enum RtaState {
+    Prepared(PreparedRta),
+    Signed(SignedRta),
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PreparedRta {
+    resources: ResourceSet,
+    keys: HashMap<ResourceClassName, KeyIdentifier>,
+}
+
+impl PreparedRta {
+    pub fn resources(&self) -> &ResourceSet {
+        &self.resources
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct SignedRta {
+    resources: ResourceSet,
+    revocation_info: HashMap<ResourceClassName, Revocation>,
+    rta: ResourceTaggedAttestation,
+}
+
+impl SignedRta {
+    pub fn new(
+        resources: ResourceSet,
+        revocation_info: HashMap<ResourceClassName, Revocation>,
+        rta: ResourceTaggedAttestation,
+    ) -> Self {
+        SignedRta {
+            resources,
+            revocation_info,
+            rta,
+        }
+    }
+
+    pub fn resources(&self) -> &ResourceSet {
+        &self.resources
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Rta {
+    resources: ResourceSet,
+    my_keys: Vec<MyRtaKey>,
+    other_keys: Vec<KeyIdentifier>,
+    rta: Option<ResourceTaggedAttestation>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct MyRtaKey {
+    key: KeyIdentifier,
+    ee: Cert,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RtaContentRequest {
     resources: ResourceSet,
     validity: Validity,
     subject_keys: Vec<KeyIdentifier>,
@@ -21,9 +113,9 @@ pub struct RtaRequest {
     content: Bytes,
 }
 
-impl RtaRequest {
+impl RtaContentRequest {
     pub fn new(resources: ResourceSet, validity: Validity, subject_keys: Vec<KeyIdentifier>, content: Bytes) -> Self {
-        RtaRequest {
+        RtaContentRequest {
             resources,
             validity,
             subject_keys,
@@ -36,7 +128,7 @@ impl RtaRequest {
     }
 }
 
-impl fmt::Display for RtaRequest {
+impl fmt::Display for RtaContentRequest {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "resources: {}", &self.resources)?;
         writeln!(

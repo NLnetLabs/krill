@@ -4,16 +4,16 @@ use std::sync::Arc;
 
 use chrono::Duration;
 
-use rpki::uri;
+use rpki::{rta, uri};
 
 use crate::commons::api::{
     ChildHandle, Entitlements, Handle, IssuanceRequest, ParentCaContact, ParentHandle, RcvdCert, RepositoryContact,
-    ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse, StorableCaCommand,
+    ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse, RtaName, StorableCaCommand,
 };
 use crate::commons::crypto::IdCert;
 use crate::commons::crypto::KrillSigner;
 use crate::commons::eventsourcing;
-use crate::daemon::ca::{Evt, RouteAuthorizationUpdates};
+use crate::daemon::ca::{Evt, RouteAuthorizationUpdates, RtaContentRequest};
 
 //------------ Command -----------------------------------------------------
 
@@ -113,6 +113,19 @@ pub enum CmdDet {
 
     // Clean up the old pending to withdraw repo.
     RepoRemoveOld(Arc<KrillSigner>),
+
+    // ------------------------------------------------------------
+    // Resource Tagged Attestations
+    // ------------------------------------------------------------
+
+    // Prepare a multi-signed RTA
+    RtaPrepare(RtaName, ResourceSet, Arc<KrillSigner>),
+
+    // Sign a new RTA
+    RtaSign(RtaName, RtaContentRequest, Arc<KrillSigner>),
+
+    // Co-sign an existing multi-signed RTA
+    RtaCoSign(RtaName, rta::Rta, Arc<KrillSigner>),
 }
 
 impl eventsourcing::CommandDetails for CmdDet {
@@ -133,7 +146,14 @@ impl fmt::Display for CmdDet {
 impl From<CmdDet> for StorableCaCommand {
     fn from(d: CmdDet) -> Self {
         match d {
+            // ------------------------------------------------------------
+            // Being a TA
+            // ------------------------------------------------------------
             CmdDet::MakeTrustAnchor(_, _) => StorableCaCommand::MakeTrustAnchor,
+
+            // ------------------------------------------------------------
+            // Being a parent
+            // ------------------------------------------------------------
             CmdDet::ChildAdd(child, id_cert_opt, res) => {
                 StorableCaCommand::ChildAdd(child, id_cert_opt.map(|c| c.ski_hex()), res)
             }
@@ -146,6 +166,10 @@ impl From<CmdDet> for StorableCaCommand {
             }
             CmdDet::ChildRevokeKey(child, req, _) => StorableCaCommand::ChildRevokeKey(child, req),
             CmdDet::ChildRemove(child, _) => StorableCaCommand::ChildRemove(child),
+
+            // ------------------------------------------------------------
+            // Being a child
+            // ------------------------------------------------------------
             CmdDet::GenerateNewIdKey(_) => StorableCaCommand::GenerateNewIdKey,
             CmdDet::AddParent(parent, contact) => StorableCaCommand::AddParent(parent, contact.into()),
             CmdDet::UpdateParentContact(parent, contact) => {
@@ -163,10 +187,22 @@ impl From<CmdDet> for StorableCaCommand {
             CmdDet::UpdateRcvdCert(rcn, rcvd_cert, _) => {
                 StorableCaCommand::UpdateRcvdCert(rcn, rcvd_cert.resources().clone())
             }
+
+            // ------------------------------------------------------------
+            // Key rolls
+            // ------------------------------------------------------------
             CmdDet::KeyRollInitiate(duration, _) => StorableCaCommand::KeyRollInitiate(duration.num_seconds()),
             CmdDet::KeyRollActivate(duration, _) => StorableCaCommand::KeyRollActivate(duration.num_seconds()),
             CmdDet::KeyRollFinish(rcn, _) => StorableCaCommand::KeyRollFinish(rcn),
+
+            // ------------------------------------------------------------
+            // ROA Support
+            // ------------------------------------------------------------
             CmdDet::RouteAuthorizationsUpdate(updates, _) => StorableCaCommand::RoaDefinitionUpdates(updates.into()),
+
+            // ------------------------------------------------------------
+            // Publishing
+            // ------------------------------------------------------------
             CmdDet::Republish(_) => StorableCaCommand::Republish,
             CmdDet::RepoUpdate(update, _) => {
                 let service_uri_opt = match update {
@@ -176,6 +212,13 @@ impl From<CmdDet> for StorableCaCommand {
                 StorableCaCommand::RepoUpdate(service_uri_opt)
             }
             CmdDet::RepoRemoveOld(_) => StorableCaCommand::RepoRemoveOld,
+
+            // ------------------------------------------------------------
+            // Resource Tagged Attestations
+            // ------------------------------------------------------------
+            CmdDet::RtaPrepare(name, _, _) => StorableCaCommand::RtaPrepare(name),
+            CmdDet::RtaSign(name, _, _) => StorableCaCommand::RtaSign(name),
+            CmdDet::RtaCoSign(name, _, _) => StorableCaCommand::RtaCoSign(name),
         }
     }
 }
@@ -309,5 +352,12 @@ impl CmdDet {
         signer: Arc<KrillSigner>,
     ) -> Cmd {
         eventsourcing::SentCommand::new(handle, None, CmdDet::RouteAuthorizationsUpdate(updates, signer))
+    }
+
+    //-------------------------------------------------------------------------------
+    // Resource Tagged Attestations
+    //-------------------------------------------------------------------------------
+    pub fn rta_sign(handle: &Handle, name: RtaName, request: RtaContentRequest, signer: Arc<KrillSigner>) -> Cmd {
+        eventsourcing::SentCommand::new(handle, None, CmdDet::RtaSign(name, request, signer))
     }
 }

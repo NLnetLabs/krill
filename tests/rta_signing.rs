@@ -6,7 +6,7 @@ use std::fs;
 use std::str::FromStr;
 
 use bytes::Bytes;
-use krill::commons::api::{Handle, ParentCaReq, ResourceSet};
+use krill::commons::api::{Handle, ParentCaReq, ResourceSet, RtaList};
 use krill::daemon::ca::ta_handle;
 use krill::test::*;
 
@@ -35,7 +35,14 @@ async fn rta_signing() {
     let content = include_bytes!("../test-resources/test.tal");
     let content = Bytes::copy_from_slice(content);
 
-    sign_one_off_rta(child.clone(), child_resources.clone(), content, None).await;
+    let name = "rta".to_string();
+
+    rta_sign_one_off(child.clone(), name.clone(), child_resources.clone(), content).await;
+
+    let rta_list = rta_list(child.clone()).await;
+    assert_eq!(rta_list, RtaList::new(vec![name.clone()]));
+
+    let _rta = rta_show(child, name).await;
 
     let _ = fs::remove_dir_all(dir);
 }

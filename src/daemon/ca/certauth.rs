@@ -16,8 +16,8 @@ use crate::commons::api::rrdp::PublishElement;
 use crate::commons::api::{
     self, AsNumber, CertAuthInfo, ChildHandle, EntitlementClass, Entitlements, Handle, IdCertPem, IssuanceRequest,
     IssuedCert, ObjectsDelta, ParentCaContact, ParentHandle, RcvdCert, RepositoryContact, RequestResourceLimit,
-    ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse, RoaDefinition, SigningCert,
-    StorableCaCommand, TaCertDetails, TrustAnchorLocator,
+    ResourceClassName, ResourceSet, Revocation, RevocationRequest, RevocationResponse, RoaDefinition, RtaList, RtaName,
+    SigningCert, StorableCaCommand, TaCertDetails, TrustAnchorLocator,
 };
 use crate::commons::crypto::{CsrInfo, IdCert, IdCertBuilder, KrillSigner, ProtocolCms, ProtocolCmsBuilder};
 use crate::commons::error::{Error, RoaDeltaError};
@@ -30,7 +30,8 @@ use crate::daemon::ca::events::ChildCertificateUpdates;
 use crate::daemon::ca::rc::PublishMode;
 use crate::daemon::ca::{
     ta_handle, ChildDetails, Cmd, CmdDet, CurrentObjectSetDelta, Evt, EvtDet, Ini, ResourceClass,
-    ResourceTaggedAttestation, RouteAuthorization, RouteAuthorizationUpdates, Routes, RtaRequest,
+    ResourceTaggedAttestation, RouteAuthorization, RouteAuthorizationUpdates, Routes, RtaContentRequest, Rtas,
+    SignedRta,
 };
 use crate::daemon::config::CONFIG;
 
@@ -77,8 +78,8 @@ pub struct CertAuth {
     resources: HashMap<ResourceClassName, ResourceClass>,
 
     children: HashMap<ChildHandle, ChildDetails>,
-
     routes: Routes,
+    rtas: Rtas,
 }
 
 impl Aggregate for CertAuth {
@@ -98,6 +99,7 @@ impl Aggregate for CertAuth {
 
         let children = HashMap::new();
         let routes = Routes::default();
+        let rtas = Rtas::default();
 
         if let Some(ta_details) = ta_opt {
             let key_id = ta_details.cert().subject_key_identifier();
@@ -127,6 +129,7 @@ impl Aggregate for CertAuth {
             children,
 
             routes,
+            rtas,
         })
     }
 
@@ -278,6 +281,16 @@ impl Aggregate for CertAuth {
             EvtDet::RepoCleaned(_) => {
                 self.repository_pending_withdraw = None;
             }
+
+            //-----------------------------------------------------------------------
+            // Resource Tagged Attestations
+            //-----------------------------------------------------------------------
+            EvtDet::RtaPrepared(name, prepared) => {
+                self.rtas.add_prepared(name, prepared);
+            }
+            EvtDet::RtaSigned(name, signed) => {
+                self.rtas.add_signed(name, signed);
+            }
         }
     }
 
@@ -324,6 +337,11 @@ impl Aggregate for CertAuth {
             CmdDet::Republish(signer) => self.republish(signer),
             CmdDet::RepoUpdate(new_contact, signer) => self.update_repo(new_contact, signer),
             CmdDet::RepoRemoveOld(_signer) => self.clean_repo(),
+
+            // Resource Tagged Attestations
+            CmdDet::RtaPrepare(_name, _resources, _signer) => unimplemented!(),
+            CmdDet::RtaCoSign(_name, _rta, _signer) => unimplemented!(),
+            CmdDet::RtaSign(name, request, signer) => self.rta_sign(name, request, signer.deref()),
         }
     }
 }
@@ -1408,8 +1426,16 @@ impl CertAuth {
 /// # Resource Tagged Attestations
 ///
 impl CertAuth {
-    /// Sign a one-off single-signed RTA, return it, then forget it
-    pub fn rta_one_off(&self, request: RtaRequest, signer: &KrillSigner) -> KrillResult<ResourceTaggedAttestation> {
+    pub fn rta_list(&self) -> RtaList {
+        self.rtas.list()
+    }
+
+    pub fn rta_show(&self, name: &str) -> KrillResult<ResourceTaggedAttestation> {
+        self.rtas.show(name)
+    }
+
+    /// Sign an RTA
+    pub fn rta_sign(&self, name: RtaName, request: RtaContentRequest, signer: &KrillSigner) -> KrillResult<Vec<Evt>> {
         let (resources, validity, mut keys, content) = request.unpack();
 
         if !self.all_resources().contains(&resources) {
@@ -1434,6 +1460,11 @@ impl CertAuth {
 
         let mut rta_builder = ResourceTaggedAttestation::rta_builder(&resources, content, keys)?;
 
+        let revocation_info = rc_ee
+            .iter()
+            .map(|(rcn, ee)| (rcn.clone(), Revocation::from(ee)))
+            .collect();
+
         // Then sign the content with all those RCs and all keys (including submitted keys) and add the cert
         for (_rcn, ee) in rc_ee.into_iter() {
             signer.sign_rta(&mut rta_builder, ee)?;
@@ -1444,8 +1475,16 @@ impl CertAuth {
             signer.destroy_key(key)?;
         }
 
+        let rta = ResourceTaggedAttestation::finalize(rta_builder);
+
+        let signed_rta = SignedRta::new(resources, revocation_info, rta);
+
         // Return the RTA
-        Ok(ResourceTaggedAttestation::finalize(rta_builder))
+        Ok(vec![StoredEvent::new(
+            self.handle(),
+            self.version,
+            EvtDet::RtaSigned(name, signed_rta),
+        )])
     }
 }
 

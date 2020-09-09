@@ -2463,6 +2463,26 @@ impl BgpStats {
     }
 }
 
+pub type RtaName = String;
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RtaList(Vec<RtaName>);
+
+impl RtaList {
+    pub fn new(list: Vec<RtaName>) -> Self {
+        RtaList(list)
+    }
+}
+
+impl fmt::Display for RtaList {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for name in &self.0 {
+            writeln!(f, "{}", name)?;
+        }
+        Ok(())
+    }
+}
+
 //------------ ResSetErr -----------------------------------------------------
 
 #[derive(Clone, Debug, Display, Eq, PartialEq)]

@@ -21,7 +21,7 @@ use hyper::Method;
 
 use crate::commons::api::{
     BgpStats, ChildHandle, CommandHistoryCriteria, Handle, ParentCaContact, ParentCaReq, ParentHandle, PublisherList,
-    RepositoryUpdate, RoaDefinitionUpdates,
+    RepositoryUpdate, RoaDefinitionUpdates, RtaName,
 };
 use crate::commons::bgp::BgpAnalysisAdvice;
 use crate::commons::error::Error;
@@ -1240,22 +1240,42 @@ async fn rrdp(req: Request) -> RoutingResult {
 //------------ Support Resource Tagged Attestations (RTA) ----------------------
 
 async fn api_ca_rta(req: Request, path: &mut RequestPath, ca: Handle) -> RoutingResult {
-    match path.next() {
-        Some("oneoff") => api_ca_rta_oneoff(req, path, ca).await,
-        _ => render_unknown_method(),
+    match path.path_arg() {
+        Some(name) => match *req.method() {
+            Method::POST => match path.next() {
+                Some("oneoff") => api_ca_rta_oneoff(req, ca, name).await,
+                _ => render_unknown_method(),
+            },
+            Method::GET => {
+                if name.is_empty() {
+                    api_ca_rta_list(req, ca).await
+                } else {
+                    api_ca_rta_show(req, ca, name).await
+                }
+            }
+            _ => render_unknown_method(),
+        },
+        None => match *req.method() {
+            Method::GET => api_ca_rta_list(req, ca).await,
+            _ => render_unknown_method(),
+        },
     }
 }
 
-async fn api_ca_rta_oneoff(req: Request, path: &mut RequestPath, ca: Handle) -> RoutingResult {
-    if req.method() != Method::POST || path.next().is_some() {
-        render_unknown_method()
-    } else {
-        let state = req.state().clone();
-        match req.json().await {
-            Err(e) => render_error(e),
-            Ok(request) => render_json_res(state.read().await.rta_one_off(ca, request).await),
-        }
+async fn api_ca_rta_oneoff(req: Request, ca: Handle, name: RtaName) -> RoutingResult {
+    let state = req.state().clone();
+    match req.json().await {
+        Err(e) => render_error(e),
+        Ok(request) => render_empty_res(state.read().await.rta_one_off(ca, name, request).await),
     }
+}
+
+async fn api_ca_rta_list(req: Request, ca: Handle) -> RoutingResult {
+    render_json_res(req.state().read().await.rta_list(ca).await)
+}
+
+async fn api_ca_rta_show(req: Request, ca: Handle, name: RtaName) -> RoutingResult {
+    render_json_res(req.state().read().await.rta_show(ca, name).await)
 }
 
 //------------ Tests ---------------------------------------------------------

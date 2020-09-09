@@ -15,7 +15,7 @@ use crate::commons::api::{
     CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Handle, ListReply,
     ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublishDelta, PublisherDetails, PublisherHandle,
     RepoInfo, RepoStatus, RepositoryContact, RepositoryUpdate, ResourceSet, RoaDefinition, RoaDefinitionUpdates,
-    ServerInfo, TaCertDetails, UpdateChildRequest,
+    RtaList, RtaName, ServerInfo, TaCertDetails, UpdateChildRequest,
 };
 use crate::commons::bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::crypto::KrillSigner;
@@ -25,7 +25,7 @@ use crate::commons::remote::rfc8183;
 use crate::commons::{KrillEmptyResult, KrillResult};
 use crate::constants::*;
 use crate::daemon::auth::{Auth, Authorizer};
-use crate::daemon::ca::{self, ta_handle, ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaRequest};
+use crate::daemon::ca::{self, ta_handle, ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaContentRequest};
 use crate::daemon::config::CONFIG;
 use crate::daemon::mq::EventQueueListener;
 use crate::daemon::scheduler::Scheduler;
@@ -674,10 +674,22 @@ impl KrillServer {
 /// # Handle Resource Tagged Attestation requests
 ///
 impl KrillServer {
+    /// List all known RTAs
+    pub async fn rta_list(&self, ca: Handle) -> KrillResult<RtaList> {
+        let ca = self.caserver.get_ca(&ca).await?;
+        Ok(ca.rta_list())
+    }
+
+    /// Show RTA
+    pub async fn rta_show(&self, ca: Handle, name: RtaName) -> KrillResult<ResourceTaggedAttestation> {
+        let ca = self.caserver.get_ca(&ca).await?;
+        ca.rta_show(&name)
+    }
+
     /// Sign a one-off single-signed RTA and return it
     /// and forget it
-    pub async fn rta_one_off(&self, ca: Handle, request: RtaRequest) -> KrillResult<ResourceTaggedAttestation> {
-        self.caserver.rta_one_off(ca, request).await
+    pub async fn rta_one_off(&self, ca: Handle, name: RtaName, request: RtaContentRequest) -> KrillResult<()> {
+        self.caserver.rta_one_off(ca, name, request).await
     }
 }
 
