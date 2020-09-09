@@ -57,13 +57,13 @@ jobs:
     strategy:
       matrix:
         image: # can't use complex values here, only primitive values are allowed
-          - "ubuntu:xenial"   # ubuntu/16.04
-          - "ubuntu:bionic"   # ubuntu/18.04
-          - "ubuntu:focal"    # ubuntu/20.04
-          - "debian:stretch"  # debian/9
-          - "debian:buster"   # debian/10
-          - "debian:bullseye" # debian/11
-    env:
+          - 'ubuntu:xenial'   # ubuntu/16.04
+          - 'ubuntu:bionic'   # ubuntu/18.04
+          - 'ubuntu:focal'    # ubuntu/20.04
+          - 'debian:stretch'  # debian/9
+          - 'debian:buster'   # debian/10
+          - 'debian:bullseye' # debian/11
+  env:
       CARGO_DEB_VER: 1.28.0
       # A Krill version of the form 'x.y.z-plus' denotes a dev build that is
       # newer than the released x.y.z version but is not yet a new release.
@@ -218,15 +218,18 @@ jobs:
       fail-fast: false
       matrix:
         image: # can't use complex values here, only primitive values are allowed
-          - "ubuntu:xenial"   # ubuntu/16.04
-          - "ubuntu:bionic"   # ubuntu/18.04
-          - "ubuntu:focal"    # ubuntu/20.04
-          - "debian:stretch"  # debian/9
-          - "debian:buster"   # debian/10
-          - "debian:bullseye" # debian/11
+          - 'ubuntu:xenial'   # ubuntu/16.04
+          - 'ubuntu:bionic'   # ubuntu/18.04
+          - 'ubuntu:focal'    # ubuntu/20.04
+          - 'debian:stretch'  # debian/9
+          - 'debian:buster'   # debian/10
+          - 'debian:bullseye' # debian/11
         mode:
           - 'fresh-install'
           - 'upgrade-from-published'
+        exclude:
+          - image: 'debian:bullseye'
+            mode: 'upgrade-from-published'
     steps:
     # Set some environment variables that will be available to "run" steps below
     # in this job, and some output variables that will be available in GH Action
