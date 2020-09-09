@@ -122,5 +122,7 @@ depends = "$auto, adduser"
 
 [package.metadata.deb.variants.debian-buster]
 
+[package.metadata.deb.variants.debian-bullseye]
+
 # END DEBIAN PACKAGING
 # ------------------------------------------------------------------------------
