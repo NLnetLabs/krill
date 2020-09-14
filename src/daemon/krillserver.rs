@@ -182,7 +182,7 @@ impl KrillServer {
                     info!("Creating embedded Testbed CA");
 
                     // Add the new testbed CA
-                    caserver.init_ca(&testbed_ca_handle).await?;
+                    caserver.init_ca(&testbed_ca_handle)?;
                     let testbed_ca = caserver.get_ca(&testbed_ca_handle).await?;
 
                     // Add the new testbed publisher
