@@ -814,11 +814,40 @@ impl Options {
         app.subcommand(sub)
     }
 
+    fn make_cas_rta_multi_prep_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("prep").about("Prepare keys for multi-signed RTA");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        sub = Self::add_resource_args(sub);
+
+        sub = sub.arg(
+            Arg::with_name("name")
+                .long("name")
+                .short("n")
+                .value_name("string")
+                .help("Your local name for this RTA")
+                .required(true),
+        );
+
+        app.subcommand(sub)
+    }
+
+    fn make_cas_rta_multi_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("multi").about("Manage RTA signed by multiple parties");
+
+        sub = Self::make_cas_rta_multi_prep_sc(sub);
+
+        app.subcommand(sub)
+    }
+
     fn make_cas_rta_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("rta").about("Manage Resource Tagged Attestations");
         sub = Self::make_cas_rta_list(sub);
         sub = Self::make_cas_rta_show(sub);
         sub = Self::make_cas_rta_single_sc(sub);
+        sub = Self::make_cas_rta_multi: wq_sc(sub);
         app.subcommand(sub)
     }
 
@@ -1597,6 +1626,26 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
+    fn parse_matches_cas_rta_multi_prep(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let ca = Self::parse_my_ca(matches)?;
+
+        let name = matches.value_of("name").unwrap().to_string();
+        let resources = Self::parse_resource_args(matches)?
+            .ok_or_else(|| Error::general("You must specify at least one of --ipv4, --ipv6 or --asn."))?;
+
+        let command = Command::CertAuth(CaCommand::RtaMultiPrep(ca, name, resources));
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_rta_multi(matches: &ArgMatches) -> Result<Options, Error> {
+        if let Some(m) = matches.subcommand_matches("prep") {
+            Self::parse_matches_cas_rta_multi_prep(m)
+        } else {
+            Err(Error::UnrecognisedSubCommand)
+        }
+    }
+
     fn parse_matches_cas_rta(matches: &ArgMatches) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("list") {
             Self::parse_matches_cas_rta_list(m)
@@ -1604,6 +1653,8 @@ impl Options {
             Self::parse_matches_cas_rta_show(m)
         } else if let Some(m) = matches.subcommand_matches("single") {
             Self::parse_matches_cas_rta_single(m)
+        } else if let Some(m) = matches.subcommand_matches("multi") {
+            Self::parse_matches_cas_rta_multi(m)
         } else {
             Err(Error::UnrecognisedSubCommand)
         }

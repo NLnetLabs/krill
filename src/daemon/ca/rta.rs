@@ -24,6 +24,10 @@ impl Rtas {
         RtaList::new(self.rtas.keys().cloned().collect())
     }
 
+    pub fn has(&self, name: &str) -> bool {
+        self.rtas.contains_key(name)
+    }
+
     pub fn show(&self, name: &str) -> KrillResult<ResourceTaggedAttestation> {
         let state = self.rtas.get(name).ok_or_else(|| Error::custom("Unknown RTA"))?;
         match state {

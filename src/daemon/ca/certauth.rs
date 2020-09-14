@@ -1446,6 +1446,10 @@ impl CertAuth {
             return Err(Error::RtaResourcesNotHeld);
         }
 
+        if self.rtas.has(&name) {
+            return Err(Error::Custom(format!("RTA with name '{}' already exists", name)));
+        }
+
         // Create an EE for each RC that contains part of the resources
         let mut rc_ee: HashMap<ResourceClassName, Cert> = HashMap::new();
         for (rcn, rc) in self.resources.iter() {
@@ -1494,6 +1498,10 @@ impl CertAuth {
     pub fn rta_multi_prep(&self, name: RtaName, resources: ResourceSet, signer: &KrillSigner) -> KrillResult<Vec<Evt>> {
         if self.all_resources().intersection(&resources).is_empty() {
             return Err(Error::custom("None of the resources for RTA are held by this CA"));
+        }
+
+        if self.rtas.has(&name) {
+            return Err(Error::Custom(format!("RTA with name '{}' already exists", name)));
         }
 
         let mut keys = HashMap::new();
