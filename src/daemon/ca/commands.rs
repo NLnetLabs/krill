@@ -360,4 +360,8 @@ impl CmdDet {
     pub fn rta_sign(handle: &Handle, name: RtaName, request: RtaContentRequest, signer: Arc<KrillSigner>) -> Cmd {
         eventsourcing::SentCommand::new(handle, None, CmdDet::RtaSign(name, request, signer))
     }
+
+    pub fn rta_prep(handle: &Handle, name: RtaName, resources: ResourceSet, signer: Arc<KrillSigner>) -> Cmd {
+        eventsourcing::SentCommand::new(handle, None, CmdDet::RtaPrepare(name, resources, signer))
+    }
 }

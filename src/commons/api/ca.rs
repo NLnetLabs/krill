@@ -2483,6 +2483,25 @@ impl fmt::Display for RtaList {
     }
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RtaPrepResponse(Vec<KeyIdentifier>);
+
+impl RtaPrepResponse {
+    pub fn new(keys: Vec<KeyIdentifier>) -> Self {
+        RtaPrepResponse(keys)
+    }
+}
+
+impl fmt::Display for RtaPrepResponse {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "Created the following keys")?;
+        for key in &self.0 {
+            writeln!(f, "  {}", key)?;
+        }
+        Ok(())
+    }
+}
+
 //------------ ResSetErr -----------------------------------------------------
 
 #[derive(Clone, Debug, Display, Eq, PartialEq)]

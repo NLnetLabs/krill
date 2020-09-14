@@ -1242,8 +1242,15 @@ impl CaServer {
 ///
 impl CaServer {
     /// Sign a one-off single-signed RTA
-    pub async fn rta_one_off(&self, ca: Handle, name: RtaName, request: RtaContentRequest) -> KrillResult<()> {
+    pub async fn rta_single(&self, ca: Handle, name: RtaName, request: RtaContentRequest) -> KrillResult<()> {
         let cmd = CmdDet::rta_sign(&ca, name, request, self.signer.clone());
+        self.send_command(cmd).await?;
+        Ok(())
+    }
+
+    /// Prepare a muli-singed RTA
+    pub async fn rta_prep(&self, ca: &Handle, name: RtaName, resources: ResourceSet) -> KrillResult<()> {
+        let cmd = CmdDet::rta_prep(ca, name, resources, self.signer.clone());
         self.send_command(cmd).await?;
         Ok(())
     }

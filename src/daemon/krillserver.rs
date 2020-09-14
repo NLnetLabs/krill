@@ -15,7 +15,7 @@ use crate::commons::api::{
     CertAuthList, CertAuthStats, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Handle, ListReply,
     ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublishDelta, PublisherDetails, PublisherHandle,
     RepoInfo, RepoStatus, RepositoryContact, RepositoryUpdate, ResourceSet, RoaDefinition, RoaDefinitionUpdates,
-    RtaList, RtaName, ServerInfo, TaCertDetails, UpdateChildRequest,
+    RtaList, RtaName, RtaPrepResponse, ServerInfo, TaCertDetails, UpdateChildRequest,
 };
 use crate::commons::bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::crypto::KrillSigner;
@@ -686,10 +686,21 @@ impl KrillServer {
         ca.rta_show(&name)
     }
 
-    /// Sign a one-off single-signed RTA and return it
-    /// and forget it
-    pub async fn rta_one_off(&self, ca: Handle, name: RtaName, request: RtaContentRequest) -> KrillResult<()> {
-        self.caserver.rta_one_off(ca, name, request).await
+    /// Sign a single-signed RTA
+    pub async fn rta_one_single(&self, ca: Handle, name: RtaName, request: RtaContentRequest) -> KrillResult<()> {
+        self.caserver.rta_single(ca, name, request).await
+    }
+
+    /// Prepare a multi
+    pub async fn rta_multi_prep(
+        &self,
+        ca: Handle,
+        name: RtaName,
+        resources: ResourceSet,
+    ) -> KrillResult<RtaPrepResponse> {
+        self.caserver.rta_prep(&ca, name.clone(), resources).await?;
+        let ca = self.caserver.get_ca(&ca).await?;
+        ca.rta_show_prepared(&name)
     }
 }
 

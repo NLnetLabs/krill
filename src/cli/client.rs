@@ -301,10 +301,16 @@ impl KrillClient {
                 }
             }
 
-            CaCommand::RtaOneOff(ca, name, request) => {
-                let uri = format!("api/v1/cas/{}/rta/{}/oneoff", ca, name);
+            CaCommand::RtaSingle(ca, name, request) => {
+                let uri = format!("api/v1/cas/{}/rta/{}/single", ca, name);
                 self.post_json(&uri, request).await?;
                 Ok(ApiResponse::Empty)
+            }
+
+            CaCommand::RtaMultiPrep(ca, name, resources) => {
+                let uri = format!("api/v1/cas/{}/rta/{}/multi/prep", ca, name);
+                let response = self.post_json_with_response(&uri, resources).await?;
+                Ok(ApiResponse::RtaMultiPrep(response))
             }
 
             CaCommand::List => {

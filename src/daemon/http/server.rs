@@ -1243,7 +1243,13 @@ async fn api_ca_rta(req: Request, path: &mut RequestPath, ca: Handle) -> Routing
     match path.path_arg() {
         Some(name) => match *req.method() {
             Method::POST => match path.next() {
-                Some("oneoff") => api_ca_rta_oneoff(req, ca, name).await,
+                Some("single") => api_ca_rta_single(req, ca, name).await,
+                Some("multi") => match path.next() {
+                    Some("prep") => api_ca_rta_multi_prep(req, ca, name).await,
+                    Some("sign") => unimplemented!(),
+                    Some("cosign") => unimplemented!(),
+                    _ => render_unknown_method(),
+                },
                 _ => render_unknown_method(),
             },
             Method::GET => {
@@ -1262,11 +1268,11 @@ async fn api_ca_rta(req: Request, path: &mut RequestPath, ca: Handle) -> Routing
     }
 }
 
-async fn api_ca_rta_oneoff(req: Request, ca: Handle, name: RtaName) -> RoutingResult {
+async fn api_ca_rta_single(req: Request, ca: Handle, name: RtaName) -> RoutingResult {
     let state = req.state().clone();
     match req.json().await {
         Err(e) => render_error(e),
-        Ok(request) => render_empty_res(state.read().await.rta_one_off(ca, name, request).await),
+        Ok(request) => render_empty_res(state.read().await.rta_one_single(ca, name, request).await),
     }
 }
 
@@ -1276,6 +1282,15 @@ async fn api_ca_rta_list(req: Request, ca: Handle) -> RoutingResult {
 
 async fn api_ca_rta_show(req: Request, ca: Handle, name: RtaName) -> RoutingResult {
     render_json_res(req.state().read().await.rta_show(ca, name).await)
+}
+
+async fn api_ca_rta_multi_prep(req: Request, ca: Handle, name: RtaName) -> RoutingResult {
+    let state = req.state().clone();
+
+    match req.json().await {
+        Ok(resources) => render_json_res(state.read().await.rta_multi_prep(ca, name, resources).await),
+        Err(e) => render_error(e),
+    }
 }
 
 //------------ Tests ---------------------------------------------------------

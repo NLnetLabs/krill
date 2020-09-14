@@ -9,7 +9,7 @@ use rpki::rta;
 use rpki::sigobj::MessageDigest;
 use rpki::x509::Validity;
 
-use crate::commons::api::{Base64, ResourceClassName, ResourceSet, Revocation, RtaList, RtaName};
+use crate::commons::api::{Base64, ResourceClassName, ResourceSet, Revocation, RtaList, RtaName, RtaPrepResponse};
 use crate::commons::error::Error;
 use crate::commons::util::ext_serde;
 use crate::commons::KrillResult;
@@ -29,6 +29,14 @@ impl Rtas {
         match state {
             RtaState::Signed(signed) => Ok(signed.rta.clone()),
             RtaState::Prepared(_) => Err(Error::custom("RTA is not signed yet")),
+        }
+    }
+
+    pub fn show_prepared(&self, name: &str) -> KrillResult<RtaPrepResponse> {
+        let state = self.rtas.get(name).ok_or_else(|| Error::custom("Unknown RTA"))?;
+        match state {
+            RtaState::Signed(_) => Err(Error::custom("RTA was already signed")),
+            RtaState::Prepared(prepped) => Ok(RtaPrepResponse::new(prepped.keys())),
         }
     }
 
@@ -60,8 +68,16 @@ pub struct PreparedRta {
 }
 
 impl PreparedRta {
+    pub fn new(resources: ResourceSet, keys: HashMap<ResourceClassName, KeyIdentifier>) -> Self {
+        PreparedRta { resources, keys }
+    }
+
     pub fn resources(&self) -> &ResourceSet {
         &self.resources
+    }
+
+    pub fn keys(&self) -> Vec<KeyIdentifier> {
+        self.keys.values().cloned().collect()
     }
 }
 

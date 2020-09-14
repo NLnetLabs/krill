@@ -17,7 +17,7 @@ use crate::commons::api::{
     self, AsNumber, CertAuthInfo, ChildHandle, EntitlementClass, Entitlements, Handle, IdCertPem, IssuanceRequest,
     IssuedCert, ObjectsDelta, ParentCaContact, ParentHandle, RcvdCert, RepositoryContact, RequestResourceLimit,
     ResourceClassName, ResourceSet, Revocation, RevocationRequest, RevocationResponse, RoaDefinition, RtaList, RtaName,
-    SigningCert, StorableCaCommand, TaCertDetails, TrustAnchorLocator,
+    RtaPrepResponse, SigningCert, StorableCaCommand, TaCertDetails, TrustAnchorLocator,
 };
 use crate::commons::crypto::{CsrInfo, IdCert, IdCertBuilder, KrillSigner, ProtocolCms, ProtocolCmsBuilder};
 use crate::commons::error::{Error, RoaDeltaError};
@@ -29,7 +29,7 @@ use crate::constants::KRILL_ENV_TEST;
 use crate::daemon::ca::events::ChildCertificateUpdates;
 use crate::daemon::ca::rc::PublishMode;
 use crate::daemon::ca::{
-    ta_handle, ChildDetails, Cmd, CmdDet, CurrentObjectSetDelta, Evt, EvtDet, Ini, ResourceClass,
+    ta_handle, ChildDetails, Cmd, CmdDet, CurrentObjectSetDelta, Evt, EvtDet, Ini, PreparedRta, ResourceClass,
     ResourceTaggedAttestation, RouteAuthorization, RouteAuthorizationUpdates, Routes, RtaContentRequest, Rtas,
     SignedRta,
 };
@@ -339,7 +339,7 @@ impl Aggregate for CertAuth {
             CmdDet::RepoRemoveOld(_signer) => self.clean_repo(),
 
             // Resource Tagged Attestations
-            CmdDet::RtaPrepare(_name, _resources, _signer) => unimplemented!(),
+            CmdDet::RtaPrepare(name, resources, signer) => self.rta_multi_prep(name, resources, signer.deref()),
             CmdDet::RtaCoSign(_name, _rta, _signer) => unimplemented!(),
             CmdDet::RtaSign(name, request, signer) => self.rta_sign(name, request, signer.deref()),
         }
@@ -1434,6 +1434,10 @@ impl CertAuth {
         self.rtas.show(name)
     }
 
+    pub fn rta_show_prepared(&self, name: &str) -> KrillResult<RtaPrepResponse> {
+        self.rtas.show_prepared(name)
+    }
+
     /// Sign an RTA
     pub fn rta_sign(&self, name: RtaName, request: RtaContentRequest, signer: &KrillSigner) -> KrillResult<Vec<Evt>> {
         let (resources, validity, mut keys, content) = request.unpack();
@@ -1484,6 +1488,31 @@ impl CertAuth {
             self.handle(),
             self.version,
             EvtDet::RtaSigned(name, signed_rta),
+        )])
+    }
+
+    pub fn rta_multi_prep(&self, name: RtaName, resources: ResourceSet, signer: &KrillSigner) -> KrillResult<Vec<Evt>> {
+        if self.all_resources().intersection(&resources).is_empty() {
+            return Err(Error::custom("None of the resources for RTA are held by this CA"));
+        }
+
+        let mut keys = HashMap::new();
+
+        for (rcn, rc) in self.resources.iter() {
+            if let Some(rc_resources) = rc.current_resources() {
+                if !rc_resources.intersection(&resources).is_empty() {
+                    let key = signer.create_key()?;
+                    keys.insert(rcn.clone(), key);
+                }
+            }
+        }
+
+        let prepared = PreparedRta::new(resources, keys);
+
+        Ok(vec![StoredEvent::new(
+            self.handle(),
+            self.version,
+            EvtDet::RtaPrepared(name, prepared),
         )])
     }
 }

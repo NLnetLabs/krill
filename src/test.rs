@@ -23,7 +23,7 @@ use crate::commons::api::{
     AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildAuthRequest, ChildHandle, Handle,
     ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, Publish, PublisherDetails, PublisherHandle,
     RepositoryUpdate, ResourceClassKeysInfo, ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates,
-    RtaList, RtaName, TypedPrefix, UpdateChildRequest,
+    RtaList, RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
 };
 use crate::commons::bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::crypto::SignSupport;
@@ -271,9 +271,9 @@ pub async fn ca_details(handle: &Handle) -> CertAuthInfo {
     }
 }
 
-pub async fn rta_sign_one_off(ca: Handle, name: RtaName, resources: ResourceSet, content: Bytes) {
+pub async fn rta_sign_single(ca: Handle, name: RtaName, resources: ResourceSet, content: Bytes) {
     let request = RtaContentRequest::new(resources, SignSupport::sign_validity_days(14), vec![], content);
-    let command = Command::CertAuth(CaCommand::RtaOneOff(ca, name, request));
+    let command = Command::CertAuth(CaCommand::RtaSingle(ca, name, request));
     krill_admin(command).await;
 }
 
@@ -290,6 +290,14 @@ pub async fn rta_show(ca: Handle, name: RtaName) -> ResourceTaggedAttestation {
     match krill_admin(command).await {
         ApiResponse::Rta(rta) => rta,
         _ => panic!("Expected RTA"),
+    }
+}
+
+pub async fn rta_multi_prep(ca: Handle, name: RtaName, resources: ResourceSet) -> RtaPrepResponse {
+    let command = Command::CertAuth(CaCommand::RtaMultiPrep(ca, name, resources));
+    match krill_admin(command).await {
+        ApiResponse::RtaMultiPrep(res) => res,
+        _ => panic!("Expected RtaMultiPrep"),
     }
 }
 

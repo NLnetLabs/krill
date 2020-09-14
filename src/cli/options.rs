@@ -776,8 +776,8 @@ impl Options {
         app.subcommand(sub)
     }
 
-    fn make_cas_rta_oneoff_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("oneoff").about("Create one-off RTA");
+    fn make_cas_rta_single_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("single").about("Create RTA signed by this CA only");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -818,7 +818,7 @@ impl Options {
         let mut sub = SubCommand::with_name("rta").about("Manage Resource Tagged Attestations");
         sub = Self::make_cas_rta_list(sub);
         sub = Self::make_cas_rta_show(sub);
-        sub = Self::make_cas_rta_oneoff_sc(sub);
+        sub = Self::make_cas_rta_single_sc(sub);
         app.subcommand(sub)
     }
 
@@ -1565,7 +1565,7 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_rta_oneoff(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_rta_single(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let ca = Self::parse_my_ca(matches)?;
 
@@ -1593,7 +1593,7 @@ impl Options {
             .ok_or_else(|| Error::general("You must specify at least one of --ipv4, --ipv6 or --asn."))?;
 
         let request = RtaContentRequest::new(resources, validity, vec![], content);
-        let command = Command::CertAuth(CaCommand::RtaOneOff(ca, name, request));
+        let command = Command::CertAuth(CaCommand::RtaSingle(ca, name, request));
         Ok(Options::make(general_args, command))
     }
 
@@ -1602,8 +1602,8 @@ impl Options {
             Self::parse_matches_cas_rta_list(m)
         } else if let Some(m) = matches.subcommand_matches("show") {
             Self::parse_matches_cas_rta_show(m)
-        } else if let Some(m) = matches.subcommand_matches("oneoff") {
-            Self::parse_matches_cas_rta_oneoff(m)
+        } else if let Some(m) = matches.subcommand_matches("single") {
+            Self::parse_matches_cas_rta_single(m)
         } else {
             Err(Error::UnrecognisedSubCommand)
         }
@@ -1898,8 +1898,11 @@ pub enum CaCommand {
     #[display(fmt = "Show RTA '{}' for CA: '{}'", _0, _1)]
     RtaShow(Handle, RtaName, Option<PathBuf>),
 
-    #[display(fmt = "One-off RTA request for CA: '{}'", _0)]
-    RtaOneOff(Handle, RtaName, RtaContentRequest),
+    #[display(fmt = "Single-signed RTA request for CA: '{}'", _0)]
+    RtaSingle(Handle, RtaName, RtaContentRequest),
+
+    #[display(fmt = "Prepare a multi-signed RTA for CA: '{}'", _0)]
+    RtaMultiPrep(Handle, RtaName, ResourceSet),
 
     // List all CAs
     #[display(fmt = "List all cas")]
