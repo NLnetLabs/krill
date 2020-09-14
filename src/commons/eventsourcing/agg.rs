@@ -18,7 +18,6 @@ use crate::commons::eventsourcing::WithStorableDetails;
 /// this intent and decide whether it can be executed. If successful a number of
 /// 'events' are returned that contain state changes to the aggregate. These events
 /// still need to be applied to become persisted.
-#[async_trait]
 pub trait Aggregate: Storable + Send + Sync + 'static {
     type Command: Command<Event = Self::Event, StorableDetails = Self::StorableCommandDetails>;
     type StorableCommandDetails: WithStorableDetails;
@@ -59,5 +58,5 @@ pub trait Aggregate: Storable + Send + Sync + 'static {
     ///
     /// The command is moved, because we want to enable moving its data
     /// without reallocating.
-    async fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error>;
+    fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error>;
 }

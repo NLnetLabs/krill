@@ -476,6 +476,12 @@ impl From<tls_keys::Error> for Error {
     }
 }
 
+impl From<crate::commons::crypto::Error> for Error {
+    fn from(e: crate::commons::crypto::Error) -> Self {
+        Error::signer(e)
+    }
+}
+
 impl Error {
     pub fn signer(e: impl Display) -> Self {
         Error::SignerError(e.to_string())
@@ -742,7 +748,7 @@ mod tests {
     use std::str::FromStr;
 
     use crate::commons::api::RoaDefinition;
-    use crate::commons::remote::crypto::test_id_certificate;
+    use crate::commons::crypto::test_id_certificate;
 
     use super::*;
     use crate::test::definition;

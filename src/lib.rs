@@ -1,5 +1,5 @@
-#[macro_use]
-extern crate async_trait;
+#![type_length_limit = "5000000"]
+
 extern crate base64;
 #[macro_use]
 extern crate bcder;

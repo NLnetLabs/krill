@@ -1,9 +1,5 @@
 use std::collections::HashMap;
 use std::fmt;
-use std::ops::DerefMut;
-use std::sync::Arc;
-
-use tokio::sync::RwLock;
 
 use rpki::crypto::KeyIdentifier;
 
@@ -12,10 +8,9 @@ use crate::commons::api::{
     ParentHandle, RcvdCert, RepoInfo, RepositoryContact, ResourceClassName, ResourceSet, Revocation, RevocationRequest,
     RevokedObject, RoaAggregateKey, TaCertDetails, UpdatedObject, WithdrawnObject,
 };
+use crate::commons::crypto::{IdCert, KrillSigner};
 use crate::commons::eventsourcing::StoredEvent;
-use crate::commons::remote::crypto::IdCert;
 use crate::commons::KrillResult;
-use crate::daemon::ca::signing::Signer;
 use crate::daemon::ca::{
     AggregateRoaInfo, CertifiedKey, ChildDetails, CurrentObjectSetDelta, ResourceClass, Rfc8183Id, RoaInfo,
     RouteAuthorization,
@@ -50,9 +45,8 @@ impl IniDet {
 }
 
 impl IniDet {
-    pub async fn init<S: Signer>(handle: &Handle, signer: &Arc<RwLock<S>>) -> KrillResult<Ini> {
-        let mut signer = signer.write().await;
-        let id = Rfc8183Id::generate(signer.deref_mut())?;
+    pub fn init(handle: &Handle, signer: &KrillSigner) -> KrillResult<Ini> {
+        let id = Rfc8183Id::generate(signer)?;
         Ok(Ini::new(
             handle,
             0,

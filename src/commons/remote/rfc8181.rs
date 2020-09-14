@@ -9,7 +9,7 @@ use crate::commons::api::{
     Base64, HexEncodedHash, ListElement, ListReply, Publish, PublishDelta, PublishDeltaBuilder, PublishRequest, Update,
     Withdraw,
 };
-use crate::commons::remote::crypto::ProtocolCms;
+use crate::commons::crypto::ProtocolCms;
 use crate::commons::util::xml::{Attributes, AttributesError, XmlReader, XmlReaderErr, XmlWriter};
 
 pub const VERSION: &str = "4";

@@ -17,7 +17,7 @@ use rpki::uri;
 use rpki::x509;
 
 use crate::commons::api::{Handle, PublisherHandle, RepoInfo};
-use crate::commons::remote::crypto::IdCert;
+use crate::commons::crypto::IdCert;
 use crate::commons::util::file;
 use crate::commons::util::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
 
@@ -800,7 +800,7 @@ impl From<uri::Error> for Error {
 mod tests {
     use rpki::x509::Time;
 
-    use crate::commons::remote::crypto::test_id_certificate;
+    use crate::commons::crypto::test_id_certificate;
     use crate::test;
 
     use super::*;

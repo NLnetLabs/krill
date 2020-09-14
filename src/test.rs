@@ -26,11 +26,12 @@ use crate::commons::api::{
     TypedPrefix, UpdateChildRequest,
 };
 use crate::commons::bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion};
+use crate::commons::crypto::SignSupport;
 use crate::commons::remote::rfc8183;
 use crate::commons::remote::rfc8183::{ChildRequest, RepositoryResponse};
 use crate::commons::util::httpclient;
-use crate::constants::{KRILL_ENV_TEST, KRILL_ENV_TEST_ANN, KRILL_ENV_TEST_UNIT_DATA};
-use crate::daemon::ca::{ta_handle, ResourceTaggedAttestation, RtaRequest, SignSupport};
+use crate::constants::{KRILL_ENV_TEST_ANN, KRILL_ENV_TEST_UNIT_DATA};
+use crate::daemon::ca::{ta_handle, ResourceTaggedAttestation, RtaRequest};
 use crate::daemon::http::server;
 
 pub const SERVER_URI: &str = "https://localhost:3000/";
@@ -448,7 +449,7 @@ pub async fn will_publish_objects(publisher: &PublisherHandle, objects: &[&str])
 /// Note that if your test fails the directory is not cleaned up.
 pub fn test_under_tmp<F>(op: F)
 where
-    F: FnOnce(PathBuf) -> (),
+    F: FnOnce(PathBuf),
 {
     let dir = sub_dir(&PathBuf::from("work"));
     let path = PathBuf::from(&dir);

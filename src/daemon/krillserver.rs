@@ -3,8 +3,6 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use tokio::sync::RwLock;
-
 use bytes::Bytes;
 use chrono::Duration;
 
@@ -20,10 +18,10 @@ use crate::commons::api::{
     ServerInfo, TaCertDetails, UpdateChildRequest,
 };
 use crate::commons::bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion};
+use crate::commons::crypto::KrillSigner;
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::CommandKey;
 use crate::commons::remote::rfc8183;
-use crate::commons::util::softsigner::OpenSslSigner;
 use crate::commons::{KrillEmptyResult, KrillResult};
 use crate::constants::*;
 use crate::daemon::auth::{Auth, Authorizer};
@@ -52,7 +50,7 @@ pub struct KrillServer {
     pubserver: Option<Arc<PubServer>>,
 
     // Handles the internal TA and/or CAs
-    caserver: Arc<ca::CaServer<OpenSslSigner>>,
+    caserver: Arc<ca::CaServer>,
 
     // Handles the internal TA and/or CAs
     bgp_analyser: Arc<BgpAnalyser>,
@@ -108,9 +106,7 @@ impl KrillServer {
         let mut repo_dir = work_dir.clone();
         repo_dir.push("repo");
 
-        let signer = OpenSslSigner::build(work_dir)?;
-        let signer = Arc::new(RwLock::new(signer));
-
+        let signer = KrillSigner::build(work_dir)?;
         let authorizer = Authorizer::new(token);
 
         let pubserver = {
@@ -121,7 +117,7 @@ impl KrillServer {
                         rrdp_base_uri.clone(),
                         work_dir,
                         CONFIG.rfc8181_log_dir.as_ref(),
-                        signer.clone(),
+                        Arc::new(signer.clone()),
                     )
                     .await?,
                 )
@@ -131,7 +127,7 @@ impl KrillServer {
                     rrdp_base_uri.clone(),
                     work_dir,
                     CONFIG.rfc8181_log_dir.as_ref(),
-                    signer.clone(),
+                    Arc::new(signer.clone()),
                 )
                 .await?
             }
@@ -573,7 +569,7 @@ impl KrillServer {
         let handle = init.unpack();
 
         // Create CA
-        self.caserver.init_ca(&handle).await?;
+        self.caserver.init_ca(&handle)?;
 
         Ok(())
     }

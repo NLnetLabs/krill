@@ -1,17 +1,14 @@
 use std::collections::HashMap;
 use std::convert::TryFrom;
 use std::env;
-use std::marker::PhantomData;
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 use std::sync::Arc;
-
-use tokio::sync::RwLock;
 
 use bytes::Bytes;
 use chrono::Duration;
 
 use rpki::cert::{Cert, KeyUsage, Overclaim, TbsCert};
-use rpki::crypto::{KeyIdentifier, PublicKey, PublicKeyFormat};
+use rpki::crypto::{KeyIdentifier, PublicKey};
 use rpki::uri;
 use rpki::x509::{Serial, Time, Validity};
 
@@ -22,19 +19,18 @@ use crate::commons::api::{
     ResourceClassName, ResourceSet, RevocationRequest, RevocationResponse, RoaDefinition, SigningCert,
     StorableCaCommand, TaCertDetails, TrustAnchorLocator,
 };
+use crate::commons::crypto::{CsrInfo, IdCert, IdCertBuilder, KrillSigner, ProtocolCms, ProtocolCmsBuilder};
 use crate::commons::error::{Error, RoaDeltaError};
 use crate::commons::eventsourcing::{Aggregate, StoredEvent};
-use crate::commons::remote::crypto::{IdCert, IdCertBuilder, ProtocolCms, ProtocolCmsBuilder};
 use crate::commons::remote::rfc6492;
 use crate::commons::remote::rfc8183;
 use crate::commons::KrillResult;
 use crate::constants::KRILL_ENV_TEST;
 use crate::daemon::ca::events::ChildCertificateUpdates;
 use crate::daemon::ca::rc::PublishMode;
-use crate::daemon::ca::signing::CsrInfo;
 use crate::daemon::ca::{
     ta_handle, ChildDetails, Cmd, CmdDet, CurrentObjectSetDelta, Evt, EvtDet, Ini, ResourceClass,
-    ResourceTaggedAttestation, RouteAuthorization, RouteAuthorizationUpdates, Routes, RtaRequest, Signer,
+    ResourceTaggedAttestation, RouteAuthorization, RouteAuthorizationUpdates, Routes, RtaRequest,
 };
 use crate::daemon::config::CONFIG;
 
@@ -47,10 +43,8 @@ pub struct Rfc8183Id {
 }
 
 impl Rfc8183Id {
-    pub fn generate<S: Signer>(signer: &mut S) -> KrillResult<Self> {
-        let key = signer
-            .create_key(PublicKeyFormat::default())
-            .map_err(|e| Error::SignerError(e.to_string()))?;
+    pub fn generate(signer: &KrillSigner) -> KrillResult<Self> {
+        let key = signer.create_key()?;
         let cert =
             IdCertBuilder::new_ta_id_cert(&key, signer.deref()).map_err(|e| Error::SignerError(e.to_string()))?;
         Ok(Rfc8183Id { key, cert })
@@ -68,7 +62,7 @@ impl Rfc8183Id {
 /// This type defines a Certification Authority at a slightly higher level
 /// than one might expect.
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct CertAuth<S: Signer> {
+pub struct CertAuth {
     handle: Handle,
     version: u64,
 
@@ -85,13 +79,10 @@ pub struct CertAuth<S: Signer> {
     children: HashMap<ChildHandle, ChildDetails>,
 
     routes: Routes,
-
-    phantom_signer: PhantomData<S>,
 }
 
-#[async_trait]
-impl<S: Signer> Aggregate for CertAuth<S> {
-    type Command = Cmd<S>;
+impl Aggregate for CertAuth {
+    type Command = Cmd;
     type StorableCommandDetails = StorableCaCommand;
     type Event = Evt;
     type InitEvent = Ini;
@@ -136,8 +127,6 @@ impl<S: Signer> Aggregate for CertAuth<S> {
             children,
 
             routes,
-
-            phantom_signer: PhantomData,
         })
     }
 
@@ -292,7 +281,7 @@ impl<S: Signer> Aggregate for CertAuth<S> {
         }
     }
 
-    async fn process_command(&self, command: Cmd<S>) -> KrillResult<Vec<Evt>> {
+    fn process_command(&self, command: Cmd) -> KrillResult<Vec<Evt>> {
         info!(
             "Sending command to CA '{}', version: {}: {}",
             self.handle, self.version, command
@@ -300,42 +289,40 @@ impl<S: Signer> Aggregate for CertAuth<S> {
 
         match command.into_details() {
             // trust anchor
-            CmdDet::MakeTrustAnchor(uris, signer) => self.trust_anchor_make(uris, signer).await,
+            CmdDet::MakeTrustAnchor(uris, signer) => self.trust_anchor_make(uris, signer),
 
             // being a parent
             CmdDet::ChildAdd(child, id_cert_opt, resources) => self.child_add(child, id_cert_opt, resources),
             CmdDet::ChildUpdateResources(child, res) => self.child_update_resources(&child, res),
             CmdDet::ChildUpdateId(child, id) => self.child_update_id(&child, id),
-            CmdDet::ChildCertify(child, request, signer) => self.child_certify(child, request, signer).await,
-            CmdDet::ChildRevokeKey(child, request, signer) => self.child_revoke_key(child, request, signer).await,
-            CmdDet::ChildRemove(child, signer) => self.child_remove(&child, signer).await,
+            CmdDet::ChildCertify(child, request, signer) => self.child_certify(child, request, signer),
+            CmdDet::ChildRevokeKey(child, request, signer) => self.child_revoke_key(child, request, signer),
+            CmdDet::ChildRemove(child, signer) => self.child_remove(&child, signer),
 
             // being a child
-            CmdDet::GenerateNewIdKey(signer) => self.generate_new_id_key(signer).await,
+            CmdDet::GenerateNewIdKey(signer) => self.generate_new_id_key(signer),
             CmdDet::AddParent(parent, info) => self.add_parent(parent, info),
             CmdDet::UpdateParentContact(parent, info) => self.update_parent(parent, info),
             CmdDet::RemoveParent(parent) => self.remove_parent(parent),
 
             CmdDet::UpdateResourceClasses(parent, entitlements, signer) => {
-                self.update_resource_classes(parent, entitlements, signer).await
+                self.update_resource_classes(parent, entitlements, signer)
             }
             CmdDet::UpdateRcvdCert(class_name, rcvd_cert, signer) => {
-                self.update_received_cert(class_name, rcvd_cert, signer).await
+                self.update_received_cert(class_name, rcvd_cert, signer)
             }
 
             // Key rolls
-            CmdDet::KeyRollInitiate(duration, signer) => self.keyroll_initiate(duration, signer).await,
-            CmdDet::KeyRollActivate(duration, signer) => self.keyroll_activate(duration, signer).await,
+            CmdDet::KeyRollInitiate(duration, signer) => self.keyroll_initiate(duration, signer),
+            CmdDet::KeyRollActivate(duration, signer) => self.keyroll_activate(duration, signer),
             CmdDet::KeyRollFinish(rcn, response) => self.keyroll_finish(rcn, response),
 
             // Route Authorizations
-            CmdDet::RouteAuthorizationsUpdate(updates, signer) => {
-                self.route_authorizations_update(updates, signer).await
-            }
+            CmdDet::RouteAuthorizationsUpdate(updates, signer) => self.route_authorizations_update(updates, signer),
 
             // Republish
-            CmdDet::Republish(signer) => self.republish(signer).await,
-            CmdDet::RepoUpdate(new_contact, signer) => self.update_repo(new_contact, signer).await,
+            CmdDet::Republish(signer) => self.republish(signer),
+            CmdDet::RepoUpdate(new_contact, signer) => self.update_repo(new_contact, signer),
             CmdDet::RepoRemoveOld(_signer) => self.clean_repo(),
         }
     }
@@ -343,7 +330,7 @@ impl<S: Signer> Aggregate for CertAuth<S> {
 
 /// # Data presentation
 ///
-impl<S: Signer> CertAuth<S> {
+impl CertAuth {
     pub fn as_ca_info(&self) -> CertAuthInfo {
         let handle = self.handle.clone();
         let repo_info = self.repository.as_ref().map(|repo| repo.repo_info().clone());
@@ -397,7 +384,7 @@ impl<S: Signer> CertAuth<S> {
 
 /// # Publishing
 ///
-impl<S: Signer> CertAuth<S> {
+impl CertAuth {
     pub fn all_objects(&self) -> Vec<PublishElement> {
         let mut res = vec![];
         if let Some(repo_info) = self.repository.as_ref().map(|r| r.repo_info()) {
@@ -419,22 +406,20 @@ impl<S: Signer> CertAuth<S> {
 
 /// # Being a trustanchor
 ///
-impl<S: Signer> CertAuth<S> {
-    async fn trust_anchor_make(&self, uris: Vec<uri::Https>, signer: Arc<RwLock<S>>) -> KrillResult<Vec<Evt>> {
-        let mut signer = signer.write().await;
-
+impl CertAuth {
+    fn trust_anchor_make(&self, uris: Vec<uri::Https>, signer: Arc<KrillSigner>) -> KrillResult<Vec<Evt>> {
         if !self.resources.is_empty() {
             return Err(Error::custom("Cannot turn CA with resources into TA"));
         }
 
         let repo_info = self.get_repository_contact()?.repo_info();
 
-        let key = signer.create_key(PublicKeyFormat::default()).map_err(Error::signer)?;
+        let key = signer.create_key()?;
 
         let resources = ResourceSet::all_resources();
 
         let cert = {
-            let serial: Serial = Serial::random(signer.deref()).map_err(Error::signer)?;
+            let serial: Serial = signer.random_serial()?;
 
             let pub_key = signer.get_key_info(&key).map_err(Error::signer)?;
             let name = pub_key.to_subject_name();
@@ -461,7 +446,7 @@ impl<S: Signer> CertAuth<S> {
             cert.set_v4_resources(resources.to_ip_resources_v4());
             cert.set_v6_resources(resources.to_ip_resources_v6());
 
-            cert.into_cert(signer.deref(), &key).map_err(Error::signer)?
+            signer.sign_cert(cert, &key)?
         };
 
         let tal = TrustAnchorLocator::new(uris, &cert);
@@ -478,7 +463,7 @@ impl<S: Signer> CertAuth<S> {
 
 /// # Being a parent
 ///
-impl<S: Signer> CertAuth<S> {
+impl CertAuth {
     pub fn verify_rfc6492(&self, msg: ProtocolCms) -> KrillResult<rfc6492::Message> {
         let content = rfc6492::Message::from_signed_message(&msg)?;
 
@@ -494,7 +479,7 @@ impl<S: Signer> CertAuth<S> {
         Ok(content)
     }
 
-    pub fn sign_rfc6492_response(&self, msg: rfc6492::Message, signer: &S) -> KrillResult<Bytes> {
+    pub fn sign_rfc6492_response(&self, msg: rfc6492::Message, signer: &KrillSigner) -> KrillResult<Bytes> {
         let key = &self.id.key;
         Ok(ProtocolCmsBuilder::create(key, signer, msg.into_bytes())
             .map_err(Error::signer)?
@@ -630,15 +615,12 @@ impl<S: Signer> CertAuth<S> {
     /// = the csr is invalid,
     /// = the limit exceeds the child allocation,
     /// = the signer throws up..
-    async fn child_certify(
+    fn child_certify(
         &self,
         child: Handle,
         request: IssuanceRequest,
-        signer: Arc<RwLock<S>>,
+        signer: Arc<KrillSigner>,
     ) -> KrillResult<Vec<Evt>> {
-        let signer = signer.read().await;
-        let signer = signer.deref();
-
         let (rcn, limit, csr) = request.unpack();
         let csr_info = CsrInfo::try_from(&csr)?;
 
@@ -648,9 +630,9 @@ impl<S: Signer> CertAuth<S> {
             ));
         }
 
-        let issued = self.issue_child_certificate(&child, rcn.clone(), csr_info, limit, signer)?;
+        let issued = self.issue_child_certificate(&child, rcn.clone(), csr_info, limit, &signer)?;
 
-        let set_deltas = self.republish_certs(&rcn, &[&issued], &[], signer)?;
+        let set_deltas = self.republish_certs(&rcn, &[&issued], &[], &signer)?;
 
         let issued_event = EvtDet::child_certificate_issued(
             &self.handle,
@@ -677,7 +659,7 @@ impl<S: Signer> CertAuth<S> {
         rcn: ResourceClassName,
         csr_info: CsrInfo,
         limit: RequestResourceLimit,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<IssuedCert> {
         let my_rc = self
             .resources
@@ -697,7 +679,7 @@ impl<S: Signer> CertAuth<S> {
         rcn: &ResourceClassName,
         issued_certs: &[&IssuedCert],
         removed_certs: &[&Cert],
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<HashMap<KeyIdentifier, CurrentObjectSetDelta>> {
         let repo = self.get_repository_contact()?;
 
@@ -748,15 +730,12 @@ impl<S: Signer> CertAuth<S> {
 
     /// Revokes a key for a child. So, add the last cert for the key to the CRL, and withdraw
     /// the .cer file for it.
-    async fn child_revoke_key(
+    fn child_revoke_key(
         &self,
         child_handle: ChildHandle,
         request: RevocationRequest,
-        signer: Arc<RwLock<S>>,
+        signer: Arc<KrillSigner>,
     ) -> KrillResult<Vec<Evt>> {
-        let signer = signer.read().await;
-        let signer = signer.deref();
-
         let (rcn, key) = request.unpack();
 
         let child = self.get_child(&child_handle)?;
@@ -771,7 +750,7 @@ impl<S: Signer> CertAuth<S> {
         let handle = &self.handle;
         let version = self.version;
 
-        let set_deltas = self.republish_certs(&rcn, &[], &[removed], signer)?;
+        let set_deltas = self.republish_certs(&rcn, &[], &[removed], &signer)?;
 
         let mut child_certificate_updates = ChildCertificateUpdates::default();
         child_certificate_updates.remove(key);
@@ -783,9 +762,7 @@ impl<S: Signer> CertAuth<S> {
         Ok(vec![rev, wdr, upd])
     }
 
-    async fn child_remove(&self, child_handle: &ChildHandle, signer: Arc<RwLock<S>>) -> KrillResult<Vec<Evt>> {
-        let signer = signer.read().await;
-        let signer = signer.deref();
+    fn child_remove(&self, child_handle: &ChildHandle, signer: Arc<KrillSigner>) -> KrillResult<Vec<Evt>> {
         let child = self.get_child(&child_handle)?;
 
         let mut version = self.version;
@@ -809,7 +786,7 @@ impl<S: Signer> CertAuth<S> {
             }
 
             let removed: Vec<&Cert> = issued_certs.iter().map(|c| c.cert()).collect();
-            let set_deltas = self.republish_certs(&rcn, &[], &removed, signer)?;
+            let set_deltas = self.republish_certs(&rcn, &[], &removed, &signer)?;
             res.push(EvtDet::current_set_updated(handle, version, rcn.clone(), set_deltas));
             version += 1;
 
@@ -839,11 +816,10 @@ impl<S: Signer> CertAuth<S> {
 
 /// # Being a child
 ///
-impl<S: Signer> CertAuth<S> {
+impl CertAuth {
     /// Generates a new ID key for this CA.
-    async fn generate_new_id_key(&self, signer: Arc<RwLock<S>>) -> KrillResult<Vec<Evt>> {
-        let mut signer = signer.write().await;
-        let id = Rfc8183Id::generate(signer.deref_mut())?;
+    fn generate_new_id_key(&self, signer: Arc<KrillSigner>) -> KrillResult<Vec<Evt>> {
+        let id = Rfc8183Id::generate(&signer)?;
 
         Ok(vec![EvtDet::id_updated(&self.handle, self.version, id)])
     }
@@ -953,7 +929,7 @@ impl<S: Signer> CertAuth<S> {
         version: &mut u64,
         entitlement: &EntitlementClass,
         rc: &ResourceClass,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<Vec<Evt>> {
         let repo = self.get_repository_contact()?;
         let parent_class_name = entitlement.class_name().clone();
@@ -1002,11 +978,11 @@ impl<S: Signer> CertAuth<S> {
     ///
     /// Note that when we receive the updated certificate, we will republish
     /// and shrink/revoke child certificates and ROAs as needed.
-    async fn update_resource_classes(
+    fn update_resource_classes(
         &self,
         parent_handle: Handle,
         entitlements: Entitlements,
-        signer: Arc<RwLock<S>>,
+        signer: Arc<KrillSigner>,
     ) -> KrillResult<Vec<Evt>> {
         let mut res = vec![];
 
@@ -1025,8 +1001,6 @@ impl<S: Signer> CertAuth<S> {
             // in the entitlements now received.
             class.parent_handle() == &parent_handle && !entitled_classes.contains(&class.parent_rc_name())
         }) {
-            let signer = signer.read().await;
-
             let repo = self.get_repository_contact()?;
             let delta = rc.withdraw(repo.repo_info());
             let revocations = rc.revoke(signer.deref())?;
@@ -1053,18 +1027,11 @@ impl<S: Signer> CertAuth<S> {
             match self.find_parent_rc(&parent_handle, &parent_rc_name) {
                 Some(rc) => {
                     // We have a matching RC, make requests (note this may be a no-op).
-                    let signer = signer.read().await;
                     res.append(&mut self.make_request_events(&mut version, ent, rc, signer.deref())?);
                 }
                 None => {
                     // Create a resource class with a pending key
-                    let key_id = {
-                        signer
-                            .write()
-                            .await
-                            .create_key(PublicKeyFormat::default())
-                            .map_err(Error::signer)?
-                    };
+                    let key_id = signer.create_key()?;
 
                     let rcn = ResourceClassName::from(next_class_name);
                     next_class_name += 1;
@@ -1077,7 +1044,6 @@ impl<S: Signer> CertAuth<S> {
                     version += 1;
                     debug!("Updating Entitlements for CA: {}, adding RC: {}", &self.handle, &rcn);
 
-                    let signer = signer.read().await;
                     let mut request_events = self.make_request_events(&mut version, ent, &rc, signer.deref())?;
 
                     let added = EvtDet::resource_class_added(&self.handle, rc_add_version, rcn, rc);
@@ -1102,15 +1068,13 @@ impl<S: Signer> CertAuth<S> {
     /// should be updated to also generate appropriate events for changes
     /// affecting these objects if needed - e.g. because resources were lost
     /// and ROAs/Certs would be become invalid.
-    async fn update_received_cert(
+    fn update_received_cert(
         &self,
         rcn: ResourceClassName,
         rcvd_cert: RcvdCert,
-        signer: Arc<RwLock<S>>,
+        signer: Arc<KrillSigner>,
     ) -> KrillResult<Vec<Evt>> {
         debug!("CA {}: Updating received cert for class: {}", self.handle, rcn);
-
-        let signer = signer.read().await;
 
         let rc = self
             .resources
@@ -1135,23 +1099,19 @@ impl<S: Signer> CertAuth<S> {
 
 /// # Key Rolls
 ///
-impl<S: Signer> CertAuth<S> {
-    async fn keyroll_initiate(&self, duration: Duration, signer: Arc<RwLock<S>>) -> KrillResult<Vec<Evt>> {
+impl CertAuth {
+    fn keyroll_initiate(&self, duration: Duration, signer: Arc<KrillSigner>) -> KrillResult<Vec<Evt>> {
         if self.is_ta() {
             return Ok(vec![]);
         }
 
-        let mut signer = signer.write().await;
         let mut version = self.version;
         let mut res = vec![];
 
         for (rcn, rc) in self.resources.iter() {
             let mut started = false;
             let repo = self.get_repository_contact()?;
-            for details in rc
-                .keyroll_initiate(repo.repo_info(), duration, signer.deref_mut())?
-                .into_iter()
-            {
+            for details in rc.keyroll_initiate(repo.repo_info(), duration, &signer)?.into_iter() {
                 started = true;
                 res.push(StoredEvent::new(self.handle(), version, details));
                 version += 1;
@@ -1165,12 +1125,11 @@ impl<S: Signer> CertAuth<S> {
         Ok(res)
     }
 
-    async fn keyroll_activate(&self, staging: Duration, signer: Arc<RwLock<S>>) -> KrillResult<Vec<Evt>> {
+    fn keyroll_activate(&self, staging: Duration, signer: Arc<KrillSigner>) -> KrillResult<Vec<Evt>> {
         if self.is_ta() {
             return Ok(vec![]);
         }
 
-        let signer = signer.read().await;
         let mut version = self.version;
         let mut res = vec![];
 
@@ -1217,16 +1176,13 @@ impl<S: Signer> CertAuth<S> {
 
 /// # Publishing
 ///
-impl<S: Signer> CertAuth<S> {
+impl CertAuth {
     /// Republish objects for this CA
-    pub async fn republish(&self, signer: Arc<RwLock<S>>) -> KrillResult<Vec<Evt>> {
-        let signer = signer.read().await;
-        let signer = signer.deref();
-
+    pub fn republish(&self, signer: Arc<KrillSigner>) -> KrillResult<Vec<Evt>> {
         let mut version = self.version;
         let mut res = vec![];
 
-        for evt_det in self.republish_resource_classes(&PublishMode::Normal, signer)? {
+        for evt_det in self.republish_resource_classes(&PublishMode::Normal, &signer)? {
             res.push(StoredEvent::new(&self.handle, version, evt_det));
             version += 1;
         }
@@ -1234,7 +1190,7 @@ impl<S: Signer> CertAuth<S> {
         Ok(res)
     }
 
-    fn republish_resource_classes(&self, mode: &PublishMode, signer: &S) -> KrillResult<Vec<EvtDet>> {
+    fn republish_resource_classes(&self, mode: &PublishMode, signer: &KrillSigner) -> KrillResult<Vec<EvtDet>> {
         let mut res = vec![];
 
         for rc in self.resources.values() {
@@ -1260,10 +1216,7 @@ impl<S: Signer> CertAuth<S> {
     /// Note that this will then trigger (asynchronous):
     /// - updated objects synchronised with repository
     /// - CSRs submitted to parent(s)
-    pub async fn update_repo(&self, new_contact: RepositoryContact, signer: Arc<RwLock<S>>) -> KrillResult<Vec<Evt>> {
-        let signer = signer.read().await;
-        let signer = signer.deref();
-
+    pub fn update_repo(&self, new_contact: RepositoryContact, signer: Arc<KrillSigner>) -> KrillResult<Vec<Evt>> {
         // check that it is indeed different
         if let Some(contact) = &self.repository {
             if contact == &new_contact {
@@ -1279,11 +1232,11 @@ impl<S: Signer> CertAuth<S> {
         evt_dts.push(EvtDet::RepoUpdated(new_contact));
 
         // issue new things => will trigger publication at the new location
-        evt_dts.append(&mut self.republish_resource_classes(&PublishMode::NewRepo(info.clone()), signer)?);
+        evt_dts.append(&mut self.republish_resource_classes(&PublishMode::NewRepo(info.clone()), &signer)?);
 
         // request new certs => when received will trigger unpublishing at old location
         for rc in self.resources.values() {
-            evt_dts.append(&mut rc.make_request_events_new_repo(&info, signer)?);
+            evt_dts.append(&mut rc.make_request_events_new_repo(&info, &signer)?);
         }
 
         let mut version = self.version;
@@ -1313,17 +1266,15 @@ impl<S: Signer> CertAuth<S> {
 
 /// # Managing Route Authorizations
 ///
-impl<S: Signer> CertAuth<S> {
+impl CertAuth {
     /// Updates the route authorizations for this CA, and update ROAs. Will return
     /// an error in case authorizations are added for which this CA does not hold
     /// the prefix.
-    async fn route_authorizations_update(
+    fn route_authorizations_update(
         &self,
         route_auth_updates: RouteAuthorizationUpdates,
-        signer: Arc<RwLock<S>>,
+        signer: Arc<KrillSigner>,
     ) -> KrillResult<Vec<Evt>> {
-        let signer = signer.read().await;
-
         let route_auth_updates = route_auth_updates.into_explicit();
 
         let (routes, mut evts) = self.update_authorizations(&route_auth_updates)?;
@@ -1357,13 +1308,7 @@ impl<S: Signer> CertAuth<S> {
         // Create publication delta with all additions/updates/withdraws as a single delta
         for (rcn, (delta, revocations)) in deltas.into_iter() {
             let rc = self.resources.get(&rcn).unwrap();
-            evts.push(rc.publish_objects(
-                repo.repo_info(),
-                delta,
-                revocations,
-                &PublishMode::Normal,
-                signer.deref(),
-            )?);
+            evts.push(rc.publish_objects(repo.repo_info(), delta, revocations, &PublishMode::Normal, &signer)?);
         }
 
         let mut res = vec![];
@@ -1462,13 +1407,9 @@ impl<S: Signer> CertAuth<S> {
 
 /// # Resource Tagged Attestations
 ///
-impl<S: Signer> CertAuth<S> {
+impl CertAuth {
     /// Sign a one-off single-signed RTA, return it, then forget it
-    pub async fn rta_one_off(
-        &self,
-        request: RtaRequest,
-        signer: Arc<RwLock<S>>,
-    ) -> KrillResult<ResourceTaggedAttestation> {
+    pub fn rta_one_off(&self, request: RtaRequest, signer: &KrillSigner) -> KrillResult<ResourceTaggedAttestation> {
         let (resources, validity, mut keys, content) = request.unpack();
 
         if !self.all_resources().contains(&resources) {
@@ -1478,7 +1419,7 @@ impl<S: Signer> CertAuth<S> {
         // Create an EE for each RC that contains part of the resources
         let mut rc_ee: HashMap<ResourceClassName, Cert> = HashMap::new();
         for (rcn, rc) in self.resources.iter() {
-            if let Some(cert) = rc.create_rta_ee(&resources, validity, &signer).await? {
+            if let Some(cert) = rc.create_rta_ee(&resources, validity, &signer)? {
                 rc_ee.insert(rcn.clone(), cert);
             }
         }
@@ -1495,14 +1436,12 @@ impl<S: Signer> CertAuth<S> {
 
         // Then sign the content with all those RCs and all keys (including submitted keys) and add the cert
         for (_rcn, ee) in rc_ee.into_iter() {
-            let signer = signer.read().await;
-            ResourceTaggedAttestation::sign_with_ee(&mut rta_builder, ee, signer.deref())?;
+            signer.sign_rta(&mut rta_builder, ee)?;
         }
 
         // Destroy the keys
-        let mut signer = signer.write().await;
         for key in one_of_keys.iter() {
-            signer.destroy_key(key).map_err(Error::signer)?;
+            signer.destroy_key(key)?;
         }
 
         // Return the RTA
@@ -1515,14 +1454,13 @@ impl<S: Signer> CertAuth<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commons::util::softsigner::OpenSslSigner;
     use crate::test;
 
     #[test]
     fn generate_id_cert() {
         test::test_under_tmp(|d| {
-            let mut signer = OpenSslSigner::build(&d).unwrap();
-            let id = Rfc8183Id::generate(&mut signer).unwrap();
+            let signer = KrillSigner::build(&d).unwrap();
+            let id = Rfc8183Id::generate(&signer).unwrap();
             id.cert.validate_ta().unwrap();
         });
     }

@@ -1,5 +1,4 @@
 //! Defines helper methods for Serializing and Deserializing external types.
-use base64;
 use bytes::Bytes;
 use log::LevelFilter;
 use rpki::resources::{AsBlocks, IpBlocks};

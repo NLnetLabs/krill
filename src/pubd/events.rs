@@ -1,18 +1,16 @@
 use std::path::PathBuf;
 use std::{fmt, fs};
 
-use rpki::crypto::PublicKeyFormat;
 use rpki::uri;
 use rpki::x509::Time;
 
 use crate::commons::api::rrdp::{Delta, DeltaElements, Notification, RrdpSession};
 use crate::commons::api::{Handle, PublisherHandle, RepositoryHandle};
+use crate::commons::crypto::{IdCert, IdCertBuilder, KrillSigner};
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::StoredEvent;
-use crate::commons::remote::crypto::{IdCert, IdCertBuilder};
 use crate::commons::KrillResult;
 use crate::constants::REPOSITORY_DIR;
-use crate::daemon::ca::Signer;
 use crate::pubd::Publisher;
 
 //------------ Ini -----------------------------------------------------------
@@ -43,14 +41,14 @@ impl IniDet {
 }
 
 impl IniDet {
-    pub fn init<S: Signer>(
+    pub fn init(
         handle: &Handle,
         rsync_jail: uri::Rsync,
         rrdp_base_uri: uri::Https,
         work_dir: &PathBuf,
-        signer: &mut S,
+        signer: &KrillSigner,
     ) -> KrillResult<Ini> {
-        let key = signer.create_key(PublicKeyFormat::default()).map_err(Error::signer)?;
+        let key = signer.create_key()?;
 
         let id_cert = IdCertBuilder::new_ta_id_cert(&key, signer).map_err(Error::signer)?;
         let session = RrdpSession::new();

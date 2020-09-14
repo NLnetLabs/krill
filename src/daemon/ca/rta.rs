@@ -2,8 +2,6 @@ use std::fmt;
 
 use bytes::Bytes;
 
-use bcder::OctetString;
-use rpki::cert::Cert;
 use rpki::crypto::{DigestAlgorithm, KeyIdentifier};
 use rpki::rta;
 use rpki::sigobj::MessageDigest;
@@ -13,7 +11,6 @@ use crate::commons::api::{Base64, ResourceSet};
 use crate::commons::error::Error;
 use crate::commons::util::ext_serde;
 use crate::commons::KrillResult;
-use crate::daemon::ca::Signer;
 
 #[derive(Clone, Debug, Deserialize, Eq, Serialize, PartialEq)]
 pub struct RtaRequest {
@@ -81,17 +78,16 @@ impl ResourceTaggedAttestation {
         content: Bytes,
         keys: Vec<KeyIdentifier>,
     ) -> KrillResult<rta::RtaBuilder> {
-        let mut attestation_builder = rta::AttestationBuilder::new(
-            DigestAlgorithm::default(),
-            MessageDigest::from(OctetString::new(content)),
-        );
+        let algo = DigestAlgorithm::default();
+        let digest = algo.digest(content.as_ref());
+        let mut attestation_builder = rta::AttestationBuilder::new(algo, MessageDigest::from(digest));
 
         for key in keys.into_iter() {
             attestation_builder.push_key(key);
         }
 
         for asn in resources.asn().iter() {
-            attestation_builder.push_as(asn.clone());
+            attestation_builder.push_as(asn);
         }
 
         let v4_resources = resources.to_ip_resources_v4();
@@ -99,7 +95,7 @@ impl ResourceTaggedAttestation {
             .to_blocks()
             .map_err(|_| Error::custom("Cannot inherit IPv4 on RTA"))?;
         for v4 in v4_blocks.iter() {
-            attestation_builder.push_v4(v4.clone())
+            attestation_builder.push_v4(v4)
         }
 
         let v6_resources = resources.to_ip_resources_v6();
@@ -107,20 +103,12 @@ impl ResourceTaggedAttestation {
             .to_blocks()
             .map_err(|_| Error::custom("Cannot inherit IPv6 on RTA"))?;
         for v6 in v6_blocks.iter() {
-            attestation_builder.push_v6(v6.clone())
+            attestation_builder.push_v6(v6)
         }
 
         Ok(rta::RtaBuilder::from_attestation(
             attestation_builder.into_attestation(),
         ))
-    }
-
-    pub fn sign_with_ee<S: Signer>(rta_builder: &mut rta::RtaBuilder, ee: Cert, signer: &S) -> KrillResult<()> {
-        let key = ee.subject_key_identifier();
-        rta_builder.push_cert(ee);
-        rta_builder.sign(signer, &key, None, None).map_err(Error::signer)?;
-
-        Ok(())
     }
 
     pub fn finalize(rta_builder: rta::RtaBuilder) -> Self {

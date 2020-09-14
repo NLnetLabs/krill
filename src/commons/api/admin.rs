@@ -4,8 +4,8 @@ use std::convert::TryFrom;
 use std::fmt;
 use std::path::PathBuf;
 use std::str::{from_utf8_unchecked, FromStr};
+use std::sync::Arc;
 
-use bytes::Bytes;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::de;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -17,7 +17,7 @@ use rpki::x509::Time;
 use crate::commons::api::ca::{ResourceSet, TrustAnchorLocator};
 use crate::commons::api::rrdp::PublishElement;
 use crate::commons::api::{Link, RepoInfo};
-use crate::commons::remote::crypto::IdCert;
+use crate::commons::crypto::IdCert;
 use crate::commons::remote::rfc8183;
 
 //------------ Handle --------------------------------------------------------
@@ -30,7 +30,7 @@ pub type RepositoryHandle = Handle;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Handle {
-    name: Bytes,
+    name: Arc<String>,
 }
 
 impl Handle {
@@ -75,9 +75,8 @@ impl FromStr for Handle {
             && !s.is_empty()
             && s.len() < 256
         {
-            Ok(Handle {
-                name: Bytes::copy_from_slice(s.as_bytes()),
-            })
+            let s = s.to_string();
+            Ok(Handle { name: Arc::new(s) })
         } else {
             Err(InvalidHandle)
         }
@@ -86,13 +85,13 @@ impl FromStr for Handle {
 
 impl AsRef<str> for Handle {
     fn as_ref(&self) -> &str {
-        unsafe { from_utf8_unchecked(self.name.as_ref()) }
+        self.name.as_str()
     }
 }
 
 impl AsRef<[u8]> for Handle {
     fn as_ref(&self) -> &[u8] {
-        self.name.as_ref()
+        self.name.as_bytes()
     }
 }
 

@@ -13,9 +13,9 @@ use crate::commons::api::rrdp::{
     CurrentObjects, Delta, DeltaElements, DeltaRef, FileRef, Notification, RrdpSession, Snapshot, SnapshotRef,
 };
 use crate::commons::api::{Handle, HexEncodedHash, PublishDelta, PublisherHandle, RepoInfo, StorableRepositoryCommand};
+use crate::commons::crypto::IdCert;
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::Aggregate;
-use crate::commons::remote::crypto::IdCert;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
 use crate::commons::KrillResult;
@@ -407,7 +407,6 @@ impl Repository {
 
 /// # Event Sourcing support
 ///
-#[async_trait]
 impl Aggregate for Repository {
     type Command = Cmd;
     type StorableCommandDetails = StorableRepositoryCommand;
@@ -474,7 +473,7 @@ impl Aggregate for Repository {
         }
     }
 
-    async fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
+    fn process_command(&self, command: Self::Command) -> Result<Vec<Self::Event>, Self::Error> {
         info!(
             "Sending command to publisher '{}', version: {}: {}",
             self.handle, self.version, command

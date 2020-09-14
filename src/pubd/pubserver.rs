@@ -1,10 +1,8 @@
 use std::fs;
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
-
-use tokio::sync::RwLock;
 
 use bytes::Bytes;
 use rpki::uri;
@@ -12,13 +10,12 @@ use rpki::uri;
 use crate::commons::api::{
     Handle, ListReply, PublishDelta, PublisherDetails, PublisherHandle, RepoInfo, RepositoryHandle,
 };
+use crate::commons::crypto::{KrillSigner, ProtocolCms, ProtocolCmsBuilder};
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::{AggregateStore, AggregateStoreError, DiskAggregateStore};
 use crate::commons::remote::cmslogger::CmsLogger;
-use crate::commons::remote::crypto::{ProtocolCms, ProtocolCmsBuilder};
 use crate::commons::remote::rfc8181;
 use crate::commons::remote::rfc8183;
-use crate::commons::util::softsigner::OpenSslSigner;
 use crate::commons::KrillResult;
 use crate::constants::*;
 use crate::pubd::{self, CmdDet, RepoStats, Repository};
@@ -38,7 +35,7 @@ use crate::pubd::{self, CmdDet, RepoStats, Repository};
 ///
 pub struct PubServer {
     store: Arc<DiskAggregateStore<Repository>>,
-    signer: Arc<RwLock<OpenSslSigner>>,
+    signer: Arc<KrillSigner>,
     rfc8181_log_dir: Option<PathBuf>,
 }
 
@@ -50,7 +47,7 @@ impl PubServer {
         rrdp_base_uri: uri::Https,         // for the RRDP files
         work_dir: &PathBuf,                // for the aggregate stores
         rfc8181_log_dir: Option<&PathBuf>, // for optional CMS exchange logging
-        signer: Arc<RwLock<OpenSslSigner>>,
+        signer: Arc<KrillSigner>,
     ) -> Result<Option<Self>, Error> {
         let mut pub_server_dir = work_dir.clone();
         pub_server_dir.push(PUBSERVER_DIR);
@@ -72,24 +69,17 @@ impl PubServer {
         rrdp_base_uri: uri::Https,         // for the RRDP files
         work_dir: &PathBuf,                // for the aggregate stores
         rfc8181_log_dir: Option<&PathBuf>, // for optional CMS exchange logging
-        signer: Arc<RwLock<OpenSslSigner>>,
+        signer: Arc<KrillSigner>,
     ) -> Result<Self, Error> {
         let default = Self::repository_handle();
 
         let store = Arc::new(DiskAggregateStore::<Repository>::new(work_dir, PUBSERVER_DIR)?);
 
-        if !store.has(&default).await {
+        if !store.has(&default) {
             info!("Creating default repository");
 
-            let mut signer = signer.write().await;
-            let ini = pubd::IniDet::init(
-                &default,
-                rsync_base.clone(),
-                rrdp_base_uri,
-                work_dir,
-                signer.deref_mut(),
-            )?;
-            let repo = store.add(ini).await?;
+            let ini = pubd::IniDet::init(&default, rsync_base.clone(), rrdp_base_uri, work_dir, signer.deref())?;
+            let repo = store.add(ini)?;
             repo.write()?;
         }
 
@@ -111,7 +101,7 @@ impl PubServer {
     async fn repository(&self) -> KrillResult<Arc<Repository>> {
         let handle = Self::repository_handle();
 
-        match self.store.get_latest(&handle).await {
+        match self.store.get_latest(&handle) {
             Ok(repo) => Ok(repo),
             Err(e) => match e {
                 AggregateStoreError::UnknownAggregate(_) => Err(Error::PublisherNoEmbeddedRepo),
@@ -150,10 +140,9 @@ impl PubServer {
             },
         };
 
-        let signer = self.signer.read().await;
-
-        let response_builder = ProtocolCmsBuilder::create(repository.key_id(), signer.deref(), response.into_bytes())
-            .map_err(Error::signer)?;
+        let response_builder =
+            ProtocolCmsBuilder::create(repository.key_id(), self.signer.deref(), response.into_bytes())
+                .map_err(Error::signer)?;
 
         let response_bytes = response_builder.as_bytes();
         if should_log_cms {
@@ -168,7 +157,7 @@ impl PubServer {
     pub async fn publish(&self, publisher: PublisherHandle, delta: PublishDelta) -> KrillResult<()> {
         let repository_handle = Self::repository_handle();
         let cmd = CmdDet::publish(&repository_handle, publisher, delta);
-        self.store.command(cmd).await?;
+        self.store.command(cmd)?;
         self.write_repository().await
     }
 
@@ -220,7 +209,7 @@ impl PubServer {
     pub async fn create_publisher(&self, req: rfc8183::PublisherRequest) -> KrillResult<()> {
         let repository_handle = Self::repository_handle();
         let cmd = CmdDet::add_publisher(&repository_handle, req);
-        self.store.command(cmd).await?;
+        self.store.command(cmd)?;
         Ok(())
     }
 
@@ -231,7 +220,7 @@ impl PubServer {
     pub async fn remove_publisher(&self, publisher: PublisherHandle) -> KrillResult<()> {
         let repository_handle = Self::repository_handle();
         let cmd = CmdDet::remove_publisher(&repository_handle, publisher);
-        self.store.command(cmd).await?;
+        self.store.command(cmd)?;
         self.write_repository().await
     }
 }
@@ -255,12 +244,10 @@ mod tests {
 
     use bytes::Bytes;
 
-    use rpki::crypto::{PublicKeyFormat, Signer};
-
     use crate::commons::api::rrdp::CurrentObjects;
     use crate::commons::api::rrdp::PublicationDeltaError;
     use crate::commons::api::{ListElement, PublishDeltaBuilder};
-    use crate::commons::remote::crypto::{IdCert, IdCertBuilder};
+    use crate::commons::crypto::{IdCert, IdCertBuilder};
     use crate::commons::util::file::CurrentFile;
     use crate::pubd::Publisher;
     use crate::test;
@@ -276,9 +263,9 @@ mod tests {
     }
 
     fn publisher_alice(work_dir: &PathBuf) -> Publisher {
-        let mut signer = OpenSslSigner::build(work_dir).unwrap();
+        let signer = KrillSigner::build(work_dir).unwrap();
 
-        let key = signer.create_key(PublicKeyFormat::default()).unwrap();
+        let key = signer.create_key().unwrap();
         let id_cert = IdCertBuilder::new_ta_id_cert(&key, &signer).unwrap();
 
         let base_uri = uri::Rsync::from_str("rsync://localhost/repo/alice/").unwrap();
@@ -292,8 +279,8 @@ mod tests {
     }
 
     async fn make_server(work_dir: &PathBuf) -> PubServer {
-        let signer = OpenSslSigner::build(work_dir).unwrap();
-        let signer = Arc::new(RwLock::new(signer));
+        let signer = KrillSigner::build(work_dir).unwrap();
+        let signer = Arc::new(signer);
 
         PubServer::build(&server_base_uri(), server_base_http_uri(), work_dir, None, signer)
             .await

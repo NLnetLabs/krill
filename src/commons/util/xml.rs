@@ -3,10 +3,8 @@ use std::fs::File;
 use std::path::Path;
 use std::{fs, io};
 
-use base64;
 use base64::DecodeError;
 use bytes::Bytes;
-use hex;
 use hex::FromHexError;
 use xmlrs::attribute::OwnedAttribute;
 use xmlrs::reader::XmlEvent;
