@@ -36,7 +36,6 @@ jobs:
     name: build
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false
       matrix:
         os: [ubuntu-16.04]
         rust: [stable, beta]
