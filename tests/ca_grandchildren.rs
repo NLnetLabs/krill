@@ -4,9 +4,9 @@ extern crate krill;
 
 use std::fs;
 use std::str::FromStr;
-
 use krill::commons::api::{Handle, ObjectName, ParentCaReq, ResourceClassName, ResourceSet};
 use krill::daemon::ca::ta_handle;
+use krill::daemon::config::CONFIG;
 use krill::test::*;
 
 #[tokio::test]
@@ -60,7 +60,20 @@ async fn ca_grandchildren() {
     let ca1_crl_file = ca1_crl_file.as_str();
 
     // Check that the TA publishes the certificate
-    assert!(will_publish_objects(&ta_handle, &[ta_crl_file, ta_mft_file, ca1_cert_file]).await);
+    let base_cert_files = if CONFIG.testbed_enabled {
+        let testbed_ca_handle = Handle::from_str("testbed").unwrap();
+        let testbed_ca = ca_details(&testbed_ca_handle).await;
+        let testbed_ca_rc = testbed_ca.resource_classes().keys().next().unwrap();
+        let testbed_ca_key = ca_key_for_rcn(&testbed_ca_handle, &testbed_ca_rc).await;
+        vec!(ObjectName::from(testbed_ca_key.incoming_cert().cert()).to_string())
+    } else {
+        Vec::new()
+    };
+    let base_objects = base_cert_files.iter().map(|f| f.as_str()).collect::<Vec<&str>>();
+
+    let mut expected_objects = vec!(ta_crl_file, ta_mft_file, ca1_cert_file);
+    expected_objects.extend(&base_objects);
+    assert!(will_publish_objects(&ta_handle, &expected_objects).await);
 
     // -------------------- CA2 -----------------------------------------------
     let ca2 = Handle::from_str("CA2").unwrap();
@@ -84,7 +97,9 @@ async fn ca_grandchildren() {
     let ca2_crl_file = ca2_crl_file.as_str();
 
     // Check that the TA publishes the certificate
-    assert!(will_publish_objects(&ta_handle, &[ta_crl_file, ta_mft_file, ca1_cert_file, ca2_cert_file],).await);
+    let mut expected_objects = vec!(ta_crl_file, ta_mft_file, ca1_cert_file, ca2_cert_file);
+    expected_objects.extend(&base_objects);
+    assert!(will_publish_objects(&ta_handle, &expected_objects).await);
 
     // -------------------- CA3 -----------------------------------------------
     let ca3 = Handle::from_str("CA3").unwrap();

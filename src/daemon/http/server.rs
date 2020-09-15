@@ -34,6 +34,7 @@ use crate::daemon::http::statics::statics;
 use crate::daemon::http::{tls, tls_keys, HttpResponse, Request, RequestPath, RoutingResult};
 use crate::daemon::krillserver::KrillServer;
 use crate::upgrades::{post_start_upgrade, pre_start_upgrade};
+use crate::daemon::ca::{ta_handle, testbed_ca_handle};
 
 //------------ State -----------------------------------------------------
 
@@ -108,6 +109,7 @@ async fn map_requests(req: hyper::Request<hyper::Body>, state: State) -> Result<
         .or_else(statics)
         .or_else(ta)
         .or_else(rrdp)
+        .or_else(testbed)
         .or_else(render_not_found)
         .map_err(|_| Error::custom("should have received not found response"))
         .await;
@@ -447,6 +449,7 @@ async fn ta(req: Request) -> RoutingResult {
     match *req.method() {
         Method::GET => match req.path.full() {
             "/ta/ta.tal" => tal(req).await,
+            "/testbed.tal" if CONFIG.testbed_enabled => tal(req).await,
             "/ta/ta.cer" => ta_cer(req).await,
             _ => Err(req),
         },
@@ -1290,6 +1293,95 @@ async fn api_ca_rta_multi_prep(req: Request, ca: Handle, name: RtaName) -> Routi
     match req.json().await {
         Ok(resources) => render_json_res(state.read().await.rta_multi_prep(ca, name, resources).await),
         Err(e) => render_error(e),
+    }
+}
+
+//------------ Support acting as a testbed -------------------------------------
+//
+// Testbed mode enables Krill to run as an open root of a test RPKI hierarchy
+// with web-UI based self-service ability for other RPKI certificate authorities
+// to integrate themselves into the test RPKI hierarchy, both as children whose
+// resources are delegated from the testbed and as publishers into the testbed
+// repository. This feature is very similar to existing web-UI based
+// self-service RPKI test hierarchies such as the RIPE NCC RPKI Test Environment
+// and the APNIC RPKI Testbed.
+//
+// Krill can already do this via a combination of use_ta=true and the existing
+// Krill API _but_ crucially the other RPKI certificate authorities would need
+// to know the Krill API token in order to register themselves with the Krill
+// testbed, giving them far too much power over the testbed. Testbed mode
+// exposes *open* /testbed/xxx wrapper API endpoints for exchanging the RFC 8183
+// XMLs, e.g.:
+//
+//   /testbed/enabled:    should the web-UI show the testbed UI page?
+//   /testbed/children:   <client_request/> in, <parent_response/> out
+//   /testbed/publishers: <publisher_request/> in, <repository_response/> out
+//
+// This feature assumes the existence of a built-in "testbed" CA and publisher
+// when testbed mode is enabled.
+
+async fn testbed(req: Request) -> RoutingResult {
+    if !CONFIG.testbed_enabled {
+        Err(req) // Not for us
+    } else {
+        let mut path = req.path().clone();
+        match path.next() {
+            Some("enabled")    => testbed_enabled(req).await,
+            Some("children")   => testbed_children(req, &mut path).await,
+            Some("publishers") => testbed_publishers(req, &mut path).await,
+            _                  => render_unknown_method(),
+        }
+    }
+}
+
+// Is the testbed feature enabled or not? used by the web-UI to conditionally
+// enable the testbed web-UI.
+async fn testbed_enabled(req: Request) -> RoutingResult {
+    match *req.method() {
+        Method::GET => render_ok(),
+        _           => render_unknown_method(),
+    }
+}
+
+// Open (token-less) addition/removal of child CAs under the testbed CA.
+// Note: Anyone can request any resources irrespective of the resources they
+// have the rights to in the real global RPKI hierarchy and anyone can
+// unregister any child CA even if not "owned" by them.
+async fn testbed_children(req: Request, path: &mut RequestPath) -> RoutingResult {
+    match (req.method().clone(), path.path_arg()) {
+        (Method::GET,    Some(child)) => match path.next() {
+            Some("parent_response.xml") => ca_parent_res_xml(req, testbed_ca_handle(), child).await,
+            _                           => render_unknown_method(),
+        },
+        (Method::DELETE, Some(child)) => ca_child_remove(req, testbed_ca_handle(), child).await,
+        (Method::POST,   None)        => ca_add_child(req, testbed_ca_handle()).await,
+        _                             => render_unknown_method(),
+    }
+}
+
+// Open (token-less) addition/removal of publishers to the testbed repository.
+// Note: Anyone can become a publisher and anyone can unregister a publisher
+// even if not "owned" by them.
+async fn testbed_publishers(req: Request, path: &mut RequestPath) -> RoutingResult {
+    match (req.method().clone(), path.path_arg()) {
+        (Method::GET, Some(publisher))    => match path.next() {
+            Some("response.xml") => repository_response_xml(req, publisher).await,
+            _                    => render_unknown_method(),
+        },
+        (Method::DELETE, Some(publisher)) => testbed_remove_pbl(req, publisher).await,
+        (Method::POST, None)              => add_pbl(req).await,
+        _                                 => render_unknown_method(),
+    }
+}
+
+// Prevent deletion of the built-in TA and testbed repositories.
+async fn testbed_remove_pbl(req: Request, publisher: Handle) -> RoutingResult {
+    if publisher == ta_handle() {
+        Ok(HttpResponse::forbidden())
+    } else if publisher == testbed_ca_handle() {
+        Ok(HttpResponse::forbidden())
+    } else {
+        remove_pbl(req, publisher).await
     }
 }
 

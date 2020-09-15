@@ -52,6 +52,9 @@ impl ConfigDefaults {
     fn use_ta() -> bool {
         env::var(KRILL_ENV_USE_TA).is_ok()
     }
+    fn testbed_enabled() -> bool {
+        env::var(KRILL_ENV_TESTBED_ENABLED).is_ok()
+    }
     fn https_mode() -> HttpsMode {
         HttpsMode::Generate
     }
@@ -193,6 +196,9 @@ pub struct Config {
 
     #[serde(default = "ConfigDefaults::repo_enabled")]
     pub repo_enabled: bool,
+
+    #[serde(default = "ConfigDefaults::testbed_enabled")]
+    pub testbed_enabled: bool,
 
     #[serde(default = "ConfigDefaults::https_mode")]
     https_mode: HttpsMode,
@@ -350,6 +356,7 @@ impl Config {
         let test_mode = true;
         let use_ta = true;
         let repo_enabled = true;
+        let testbed_enabled = true;
         let https_mode = HttpsMode::Generate;
         let data_dir = data_dir.clone();
         let rsync_base = ConfigDefaults::rsync_base();
@@ -399,6 +406,7 @@ impl Config {
             test_mode,
             use_ta,
             repo_enabled,
+            testbed_enabled,
             https_mode,
             data_dir,
             rsync_base,
@@ -559,6 +567,10 @@ impl Config {
 
         if self.use_ta && !self.repo_enabled {
             return Err(ConfigError::other("Cannot use embedded TA without embedded repository"));
+        }
+
+        if self.testbed_enabled && !self.use_ta {
+            return Err(ConfigError::other("Cannot use testedbed without embedded TA"));
         }
 
         if self.timing_publish_next_hours < 2 {
@@ -850,5 +862,21 @@ mod tests {
         let c = Config::read_config("./defaults/krill.conf").unwrap();
         let expected_socket_addr: SocketAddr = ([127, 0, 0, 1], 3000).into();
         assert_eq!(c.socket_addr(), expected_socket_addr);
+    }
+
+    #[test]
+    fn testbed_enable_should_require_use_ta() {
+        use std::env;
+        env::set_var(KRILL_ENV_AUTH_TOKEN, "secret");
+        env::set_var(KRILL_ENV_REPO_ENABLED, "1");
+        env::set_var(KRILL_ENV_TESTBED_ENABLED, "1");
+
+        let c = Config::read_config("./defaults/krill.conf").unwrap();
+        assert!(c.verify().is_err());
+
+        env::set_var(KRILL_ENV_USE_TA, "1");
+
+        let c = Config::read_config("./defaults/krill.conf").unwrap();
+        assert!(c.verify().is_ok());
     }
 }
