@@ -15,7 +15,6 @@ use crate::commons::bgp::BgpAnalysisAdvice;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::{file, httpclient};
 use crate::constants::KRILL_CLI_API_ENV;
-use crate::daemon::ca::ResourceTaggedAttestation;
 use crate::daemon::config::Config;
 
 /// Command line tool for Krill admin tasks
@@ -283,15 +282,35 @@ impl KrillClient {
                 }
             },
 
-            CaCommand::RtaOneOff(ca, request, out_opt) => {
-                let uri = format!("api/v1/cas/{}/rta/oneoff", ca);
-                let rta: ResourceTaggedAttestation = self.post_json_with_response(&uri, request).await?;
+            CaCommand::RtaList(ca) => {
+                let uri = format!("api/v1/cas/{}/rta/", ca);
+                let list = self.get_json(&uri).await?;
+                Ok(ApiResponse::RtaList(list))
+            }
 
-                if let Some(out) = out_opt {
-                    file::save(rta.as_ref(), &out)?;
+            CaCommand::RtaShow(ca, name, out) => {
+                let uri = format!("api/v1/cas/{}/rta/{}", ca, name);
+                let rta = self.get_json(&uri).await?;
+
+                match out {
+                    None => Ok(ApiResponse::Rta(rta)),
+                    Some(out) => {
+                        file::save(rta.as_ref(), &out)?;
+                        Ok(ApiResponse::Empty)
+                    }
                 }
+            }
 
-                Ok(ApiResponse::Rta(rta))
+            CaCommand::RtaSingle(ca, name, request) => {
+                let uri = format!("api/v1/cas/{}/rta/{}/single", ca, name);
+                self.post_json(&uri, request).await?;
+                Ok(ApiResponse::Empty)
+            }
+
+            CaCommand::RtaMultiPrep(ca, name, resources) => {
+                let uri = format!("api/v1/cas/{}/rta/{}/multi/prep", ca, name);
+                let response = self.post_json_with_response(&uri, resources).await?;
+                Ok(ApiResponse::RtaMultiPrep(response))
             }
 
             CaCommand::List => {

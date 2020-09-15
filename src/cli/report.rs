@@ -5,7 +5,7 @@ use serde::Serialize;
 use crate::commons::api::{
     AllCertAuthIssues, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthIssues, CertAuthList, ChildCaInfo,
     CommandHistory, ParentCaContact, ParentStatuses, PublisherDetails, PublisherList, RepoStatus, RoaDefinitions,
-    ServerInfo,
+    RtaList, RtaPrepResponse, ServerInfo,
 };
 use crate::commons::bgp::{BgpAnalysisAdvice, BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::remote::api::ClientInfos;
@@ -51,6 +51,8 @@ pub enum ApiResponse {
     CertAuthIssues(CertAuthIssues),
     AllCertAuthIssues(AllCertAuthIssues),
 
+    RtaList(RtaList),
+    RtaMultiPrep(RtaPrepResponse),
     Rta(ResourceTaggedAttestation),
 
     Empty,               // Typically a successful post just gets an empty 200 response
@@ -88,6 +90,8 @@ impl ApiResponse {
                 ApiResponse::RepoDetails(details) => Ok(Some(details.report(fmt)?)),
                 ApiResponse::RepoStatus(status) => Ok(Some(status.report(fmt)?)),
                 ApiResponse::Rta(rta) => Ok(Some(rta.report(fmt)?)),
+                ApiResponse::RtaList(list) => Ok(Some(list.report(fmt)?)),
+                ApiResponse::RtaMultiPrep(res) => Ok(Some(res.report(fmt)?)),
                 ApiResponse::GenericBody(body) => Ok(Some(body.clone())),
                 ApiResponse::Empty => Ok(None),
             }
@@ -191,3 +195,5 @@ impl Report for AllCertAuthIssues {}
 impl Report for ServerInfo {}
 
 impl Report for ResourceTaggedAttestation {}
+impl Report for RtaList {}
+impl Report for RtaPrepResponse {}

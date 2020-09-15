@@ -16,7 +16,7 @@ use crate::commons::api::{
     ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, Handle, IssuanceRequest,
     IssuanceResponse, IssuedCert, ListReply, ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublishDelta,
     RcvdCert, RepoInfo, RepoStatus, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest,
-    RevocationResponse, StoredEffect, UpdateChildRequest,
+    RevocationResponse, RtaName, StoredEffect, UpdateChildRequest,
 };
 use crate::commons::crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder};
 use crate::commons::error::Error;
@@ -27,8 +27,7 @@ use crate::commons::util::httpclient;
 use crate::commons::KrillResult;
 use crate::constants::{CASERVER_DIR, STATUS_DIR};
 use crate::daemon::ca::{
-    self, ta_handle, CertAuth, Cmd, CmdDet, IniDet, ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaRequest,
-    StatusStore,
+    self, ta_handle, CertAuth, Cmd, CmdDet, IniDet, RouteAuthorizationUpdates, RtaContentRequest, StatusStore,
 };
 use crate::daemon::mq::EventQueueListener;
 
@@ -1242,11 +1241,18 @@ impl CaServer {
 /// # Support Resource Tagged Attestation functions
 ///
 impl CaServer {
-    /// Sign a one-off single-signed RTA and return it
-    /// and forget it
-    pub async fn rta_one_off(&self, ca: Handle, request: RtaRequest) -> KrillResult<ResourceTaggedAttestation> {
-        let ca = self.get_ca(&ca).await?;
-        ca.rta_one_off(request, self.signer.deref())
+    /// Sign a one-off single-signed RTA
+    pub async fn rta_single(&self, ca: Handle, name: RtaName, request: RtaContentRequest) -> KrillResult<()> {
+        let cmd = CmdDet::rta_sign(&ca, name, request, self.signer.clone());
+        self.send_command(cmd).await?;
+        Ok(())
+    }
+
+    /// Prepare a muli-singed RTA
+    pub async fn rta_prep(&self, ca: &Handle, name: RtaName, resources: ResourceSet) -> KrillResult<()> {
+        let cmd = CmdDet::rta_prep(ca, name, resources, self.signer.clone());
+        self.send_command(cmd).await?;
+        Ok(())
     }
 }
 

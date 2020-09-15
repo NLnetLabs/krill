@@ -23,7 +23,7 @@ use crate::commons::api::{
     AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildAuthRequest, ChildHandle, Handle,
     ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, Publish, PublisherDetails, PublisherList, PublisherHandle,
     RepositoryUpdate, ResourceClassKeysInfo, ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates,
-    TypedPrefix, UpdateChildRequest,
+    RtaList, RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
 };
 use crate::commons::bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::crypto::SignSupport;
@@ -31,7 +31,7 @@ use crate::commons::remote::rfc8183;
 use crate::commons::remote::rfc8183::{ChildRequest, RepositoryResponse};
 use crate::commons::util::httpclient;
 use crate::constants::{KRILL_ENV_TEST, KRILL_ENV_TEST_ANN, KRILL_ENV_TEST_UNIT_DATA};
-use crate::daemon::ca::{ta_handle, ResourceTaggedAttestation, RtaRequest};
+use crate::daemon::ca::{ta_handle, ResourceTaggedAttestation, RtaContentRequest};
 use crate::daemon::http::server;
 
 pub const SERVER_URI: &str = "https://localhost:3000/";
@@ -280,18 +280,33 @@ pub async fn ca_details(handle: &Handle) -> CertAuthInfo {
     }
 }
 
-pub async fn sign_one_off_rta(
-    ca: Handle,
-    resources: ResourceSet,
-    content: Bytes,
-    out: Option<PathBuf>,
-) -> ResourceTaggedAttestation {
-    let request = RtaRequest::new(resources, SignSupport::sign_validity_days(14), vec![], content);
-    let command = Command::CertAuth(CaCommand::RtaOneOff(ca, request, out));
+pub async fn rta_sign_single(ca: Handle, name: RtaName, resources: ResourceSet, content: Bytes) {
+    let request = RtaContentRequest::new(resources, SignSupport::sign_validity_days(14), vec![], content);
+    let command = Command::CertAuth(CaCommand::RtaSingle(ca, name, request));
+    krill_admin(command).await;
+}
 
+pub async fn rta_list(ca: Handle) -> RtaList {
+    let command = Command::CertAuth(CaCommand::RtaList(ca));
+    match krill_admin(command).await {
+        ApiResponse::RtaList(list) => list,
+        _ => panic!("Expected RTA list"),
+    }
+}
+
+pub async fn rta_show(ca: Handle, name: RtaName) -> ResourceTaggedAttestation {
+    let command = Command::CertAuth(CaCommand::RtaShow(ca, name, None));
     match krill_admin(command).await {
         ApiResponse::Rta(rta) => rta,
         _ => panic!("Expected RTA"),
+    }
+}
+
+pub async fn rta_multi_prep(ca: Handle, name: RtaName, resources: ResourceSet) -> RtaPrepResponse {
+    let command = Command::CertAuth(CaCommand::RtaMultiPrep(ca, name, resources));
+    match krill_admin(command).await {
+        ApiResponse::RtaMultiPrep(res) => res,
+        _ => panic!("Expected RtaMultiPrep"),
     }
 }
 

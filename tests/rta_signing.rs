@@ -6,7 +6,7 @@ use std::fs;
 use std::str::FromStr;
 
 use bytes::Bytes;
-use krill::commons::api::{Handle, ParentCaReq, ResourceSet};
+use krill::commons::api::{Handle, ParentCaReq, ResourceSet, RtaList};
 use krill::daemon::ca::ta_handle;
 use krill::test::*;
 
@@ -31,11 +31,32 @@ async fn rta_signing() {
         assert!(ca_gets_resources(&child, &child_resources).await);
     }
 
-    // Now create the signed RTA
+    //---------------------------------------------------------------------------------------
+    // Single Signed RTA
+    //---------------------------------------------------------------------------------------
+
     let content = include_bytes!("../test-resources/test.tal");
     let content = Bytes::copy_from_slice(content);
 
-    sign_one_off_rta(child.clone(), child_resources.clone(), content, None).await;
+    let rta_single = "rta_single".to_string();
+
+    rta_sign_single(child.clone(), rta_single.clone(), child_resources.clone(), content).await;
+
+    let rta_list = rta_list(child.clone()).await;
+    assert_eq!(rta_list, RtaList::new(vec![rta_single.clone()]));
+
+    let _single_rta = rta_show(child.clone(), rta_single).await;
+
+    //---------------------------------------------------------------------------------------
+    // Multi Signed RTA
+    //---------------------------------------------------------------------------------------
+
+    // prepare multi-signed RTA
+    let multi_resources = ResourceSet::from_strs("", "10.0.0.0/16", "2001:DB8::/32").unwrap();
+
+    let multi_v4 = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
+    let multi_v4_rta_name = "multi_v4".to_string();
+    let multi_v4_prep_res = rta_multi_prep(child.clone(), multi_v4_rta_name.clone(), multi_v4).await;
 
     let _ = fs::remove_dir_all(dir);
 }

@@ -10,7 +10,7 @@ use rpki::x509::Time;
 
 use crate::commons::api::{
     ArgKey, ArgVal, ChildHandle, Handle, Label, Message, ParentHandle, PublisherHandle, RequestResourceLimit,
-    ResourceClassName, ResourceSet, RevocationRequest, RoaDefinitionUpdates, StorableParentContact,
+    ResourceClassName, ResourceSet, RevocationRequest, RoaDefinitionUpdates, RtaName, StorableParentContact,
 };
 use crate::commons::eventsourcing::{CommandKey, CommandKeyError, StoredCommand, WithStorableDetails};
 use crate::commons::remote::rfc8183::ServiceUri;
@@ -257,6 +257,10 @@ impl CommandSummary {
             Some(uri) => self.with_arg("service_uri", uri),
         }
     }
+
+    pub fn with_rta_name(self, name: &str) -> Self {
+        self.with_arg("rta_name", name)
+    }
 }
 
 //------------ CommandHistoryCriteria ----------------------------------------
@@ -377,6 +381,9 @@ pub enum StorableCaCommand {
     Republish,
     RepoUpdate(Option<ServiceUri>),
     RepoRemoveOld,
+    RtaPrepare(RtaName),
+    RtaSign(RtaName),
+    RtaCoSign(RtaName),
 }
 
 impl WithStorableDetails for StorableCaCommand {
@@ -443,6 +450,11 @@ impl WithStorableDetails for StorableCaCommand {
                 CommandSummary::new("cmd-ca-repo-update", &self).with_service_uri_opt(service_uri_opt.as_ref())
             }
             StorableCaCommand::RepoRemoveOld => CommandSummary::new("cmd-ca-repo-clean", &self),
+
+            // RTA
+            StorableCaCommand::RtaPrepare(name) => CommandSummary::new("cmd-ca-rta-prepare", &self).with_rta_name(name),
+            StorableCaCommand::RtaSign(name) => CommandSummary::new("cmd-ca-rta-sign", &self).with_rta_name(name),
+            StorableCaCommand::RtaCoSign(name) => CommandSummary::new("cmd-ca-rta-cosign", &self).with_rta_name(name),
         }
     }
 }
@@ -541,6 +553,13 @@ impl fmt::Display for StorableCaCommand {
                 Some(uri) => write!(f, "Update repo to server at: {}", uri),
             },
             StorableCaCommand::RepoRemoveOld => write!(f, "Clean up old repository"),
+
+            // ------------------------------------------------------------
+            // RTA
+            // ------------------------------------------------------------
+            StorableCaCommand::RtaPrepare(name) => write!(f, "RTA Prepare {}", name),
+            StorableCaCommand::RtaSign(name) => write!(f, "RTA Sign {}", name),
+            StorableCaCommand::RtaCoSign(name) => write!(f, "RTA Co-Sign {}", name),
         }
     }
 }

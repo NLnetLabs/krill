@@ -6,14 +6,14 @@ use rpki::crypto::KeyIdentifier;
 use crate::commons::api::{
     AddedObject, ChildHandle, Handle, IssuanceRequest, IssuedCert, ObjectName, ObjectsDelta, ParentCaContact,
     ParentHandle, RcvdCert, RepoInfo, RepositoryContact, ResourceClassName, ResourceSet, Revocation, RevocationRequest,
-    RevokedObject, RoaAggregateKey, TaCertDetails, UpdatedObject, WithdrawnObject,
+    RevokedObject, RoaAggregateKey, RtaName, TaCertDetails, UpdatedObject, WithdrawnObject,
 };
 use crate::commons::crypto::{IdCert, KrillSigner};
 use crate::commons::eventsourcing::StoredEvent;
 use crate::commons::KrillResult;
 use crate::daemon::ca::{
-    AggregateRoaInfo, CertifiedKey, ChildDetails, CurrentObjectSetDelta, ResourceClass, Rfc8183Id, RoaInfo,
-    RouteAuthorization,
+    AggregateRoaInfo, CertifiedKey, ChildDetails, CurrentObjectSetDelta, PreparedRta, ResourceClass, Rfc8183Id,
+    RoaInfo, RouteAuthorization, SignedRta,
 };
 
 //------------ Ini -----------------------------------------------------------
@@ -298,6 +298,10 @@ pub enum EvtDet {
     ObjectSetUpdated(ResourceClassName, HashMap<KeyIdentifier, CurrentObjectSetDelta>),
     RepoUpdated(RepositoryContact),
     RepoCleaned(RepositoryContact),
+
+    // Rta
+    RtaPrepared(RtaName, PreparedRta),
+    RtaSigned(RtaName, SignedRta),
 }
 
 impl EvtDet {
@@ -599,6 +603,12 @@ impl fmt::Display for EvtDet {
                     write!(f, "cleaned repository at remote server: {}", res.service_uri())
                 }
             },
+
+            // Rta
+            EvtDet::RtaPrepared(name, prepared) => {
+                write!(f, "Prepared RTA '{}' for resources: {}", name, prepared.resources())
+            }
+            EvtDet::RtaSigned(name, signed) => write!(f, "Signed RTA '{}' for resources: {}", name, signed.resources()),
         }
     }
 }
