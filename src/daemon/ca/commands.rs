@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use chrono::Duration;
 
-use rpki::{rta, uri};
+use rpki::uri;
 
 use crate::commons::api::{
     ChildHandle, Entitlements, Handle, IssuanceRequest, ParentCaContact, ParentHandle, RcvdCert, RepositoryContact,
@@ -13,7 +13,9 @@ use crate::commons::api::{
 use crate::commons::crypto::IdCert;
 use crate::commons::crypto::KrillSigner;
 use crate::commons::eventsourcing;
-use crate::daemon::ca::{Evt, RouteAuthorizationUpdates, RtaContentRequest};
+use crate::daemon::ca::{
+    Evt, ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaContentRequest, RtaPrepareRequest,
+};
 
 //------------ Command -----------------------------------------------------
 
@@ -118,14 +120,14 @@ pub enum CmdDet {
     // Resource Tagged Attestations
     // ------------------------------------------------------------
 
-    // Prepare a multi-signed RTA
-    RtaPrepare(RtaName, ResourceSet, Arc<KrillSigner>),
-
     // Sign a new RTA
     RtaSign(RtaName, RtaContentRequest, Arc<KrillSigner>),
 
+    // Prepare a multi-signed RTA
+    RtaMultiPrepare(RtaName, RtaPrepareRequest, Arc<KrillSigner>),
+
     // Co-sign an existing multi-signed RTA
-    RtaCoSign(RtaName, rta::Rta, Arc<KrillSigner>),
+    RtaCoSign(RtaName, ResourceTaggedAttestation, Arc<KrillSigner>),
 }
 
 impl eventsourcing::CommandDetails for CmdDet {
@@ -216,7 +218,7 @@ impl From<CmdDet> for StorableCaCommand {
             // ------------------------------------------------------------
             // Resource Tagged Attestations
             // ------------------------------------------------------------
-            CmdDet::RtaPrepare(name, _, _) => StorableCaCommand::RtaPrepare(name),
+            CmdDet::RtaMultiPrepare(name, _, _) => StorableCaCommand::RtaPrepare(name),
             CmdDet::RtaSign(name, _, _) => StorableCaCommand::RtaSign(name),
             CmdDet::RtaCoSign(name, _, _) => StorableCaCommand::RtaCoSign(name),
         }
@@ -361,7 +363,16 @@ impl CmdDet {
         eventsourcing::SentCommand::new(handle, None, CmdDet::RtaSign(name, request, signer))
     }
 
-    pub fn rta_prep(handle: &Handle, name: RtaName, resources: ResourceSet, signer: Arc<KrillSigner>) -> Cmd {
-        eventsourcing::SentCommand::new(handle, None, CmdDet::RtaPrepare(name, resources, signer))
+    pub fn rta_multi_prep(handle: &Handle, name: RtaName, request: RtaPrepareRequest, signer: Arc<KrillSigner>) -> Cmd {
+        eventsourcing::SentCommand::new(handle, None, CmdDet::RtaMultiPrepare(name, request, signer))
+    }
+
+    pub fn rta_multi_sign(
+        handle: &Handle,
+        name: RtaName,
+        rta: ResourceTaggedAttestation,
+        signer: Arc<KrillSigner>,
+    ) -> Cmd {
+        eventsourcing::SentCommand::new(handle, None, CmdDet::RtaCoSign(name, rta, signer))
     }
 }

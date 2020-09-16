@@ -2492,6 +2492,12 @@ impl RtaPrepResponse {
     }
 }
 
+impl From<RtaPrepResponse> for Vec<KeyIdentifier> {
+    fn from(r: RtaPrepResponse) -> Self {
+        r.0
+    }
+}
+
 impl fmt::Display for RtaPrepResponse {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         writeln!(f, "Created the following keys")?;

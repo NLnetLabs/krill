@@ -954,22 +954,21 @@ impl ResourceClass {
         &self,
         resources: &ResourceSet,
         validity: Validity,
+        key: KeyIdentifier,
         signer: &KrillSigner,
-    ) -> KrillResult<Option<Cert>> {
-        if let Some(current) = self.current_key() {
-            let intersection = current.incoming_cert().resources().intersection(resources);
-            if !intersection.is_empty() {
-                let key = signer.create_key()?;
-                let pub_key = signer.get_key_info(&key).map_err(Error::signer)?;
-                let ee = SignSupport::make_rta_ee_cert(&intersection, &current, validity, pub_key, signer)?;
+    ) -> KrillResult<Cert> {
+        let current = self
+            .current_key()
+            .ok_or_else(|| Error::custom("No current key to sign RTA with"))?;
 
-                Ok(Some(ee))
-            } else {
-                Ok(None)
-            }
-        } else {
-            Ok(None)
+        if !current.incoming_cert().resources().contains(resources) {
+            return Err(Error::custom("Resources for RTA not held"));
         }
+
+        let pub_key = signer.get_key_info(&key).map_err(Error::signer)?;
+        let ee = SignSupport::make_rta_ee_cert(resources, &current, validity, pub_key, signer)?;
+
+        Ok(ee)
     }
 }
 //------------ PublishMode -------------------------------------------------

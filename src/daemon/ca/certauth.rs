@@ -9,6 +9,7 @@ use chrono::Duration;
 
 use rpki::cert::{Cert, KeyUsage, Overclaim, TbsCert};
 use rpki::crypto::{KeyIdentifier, PublicKey};
+use rpki::rta::RtaBuilder;
 use rpki::uri;
 use rpki::x509::{Serial, Time, Validity};
 
@@ -30,8 +31,8 @@ use crate::daemon::ca::events::ChildCertificateUpdates;
 use crate::daemon::ca::rc::PublishMode;
 use crate::daemon::ca::{
     ta_handle, ChildDetails, Cmd, CmdDet, CurrentObjectSetDelta, Evt, EvtDet, Ini, PreparedRta, ResourceClass,
-    ResourceTaggedAttestation, RouteAuthorization, RouteAuthorizationUpdates, Routes, RtaContentRequest, Rtas,
-    SignedRta,
+    ResourceTaggedAttestation, RouteAuthorization, RouteAuthorizationUpdates, Routes, RtaContentRequest,
+    RtaPrepareRequest, Rtas, SignedRta,
 };
 use crate::daemon::config::CONFIG;
 
@@ -339,8 +340,8 @@ impl Aggregate for CertAuth {
             CmdDet::RepoRemoveOld(_signer) => self.clean_repo(),
 
             // Resource Tagged Attestations
-            CmdDet::RtaPrepare(name, resources, signer) => self.rta_multi_prep(name, resources, signer.deref()),
-            CmdDet::RtaCoSign(_name, _rta, _signer) => unimplemented!(),
+            CmdDet::RtaMultiPrepare(name, request, signer) => self.rta_multi_prep(name, request, signer.deref()),
+            CmdDet::RtaCoSign(name, rta, signer) => self.rta_cosign(name, rta, signer.deref()),
             CmdDet::RtaSign(name, request, signer) => self.rta_sign(name, request, signer.deref()),
         }
     }
@@ -1431,43 +1432,54 @@ impl CertAuth {
     }
 
     pub fn rta_show(&self, name: &str) -> KrillResult<ResourceTaggedAttestation> {
-        self.rtas.show(name)
+        self.rtas.signed_rta(name)
     }
 
-    pub fn rta_show_prepared(&self, name: &str) -> KrillResult<RtaPrepResponse> {
-        self.rtas.show_prepared(name)
+    pub fn rta_prep_response(&self, name: &str) -> KrillResult<RtaPrepResponse> {
+        self.rtas
+            .prepared_rta(name)
+            .map(|prepped| RtaPrepResponse::new(prepped.keys()))
     }
 
-    /// Sign an RTA
-    pub fn rta_sign(&self, name: RtaName, request: RtaContentRequest, signer: &KrillSigner) -> KrillResult<Vec<Evt>> {
+    /// Sign a new RTA
+    fn rta_sign(&self, name: RtaName, request: RtaContentRequest, signer: &KrillSigner) -> KrillResult<Vec<Evt>> {
         let (resources, validity, mut keys, content) = request.unpack();
-
-        if !self.all_resources().contains(&resources) {
-            return Err(Error::RtaResourcesNotHeld);
-        }
 
         if self.rtas.has(&name) {
             return Err(Error::Custom(format!("RTA with name '{}' already exists", name)));
         }
 
-        // Create an EE for each RC that contains part of the resources
-        let mut rc_ee: HashMap<ResourceClassName, Cert> = HashMap::new();
-        for (rcn, rc) in self.resources.iter() {
-            if let Some(cert) = rc.create_rta_ee(&resources, validity, &signer)? {
-                rc_ee.insert(rcn.clone(), cert);
-            }
-        }
+        let rc2ee = self.rta_ee_map_single(&resources, validity, &mut keys, signer)?;
+        let builder = ResourceTaggedAttestation::rta_builder(&resources, content, keys)?;
 
-        let one_of_keys: Vec<KeyIdentifier> = rc_ee.values().map(|ee| ee.subject_key_identifier()).collect();
+        self.rta_sign_with_ee(name, resources, rc2ee, builder, signer)
+    }
 
-        // Add all one-off keys to the list of Key Identifiers
-        // Note that list includes possible keys by other CAs in the RtaRequest
-        for key in one_of_keys.iter() {
-            keys.push(*key);
-        }
+    /// Co-sign an existing RTA, will fail if there is no existing matching prepared RTA
+    fn rta_cosign(&self, name: RtaName, rta: ResourceTaggedAttestation, signer: &KrillSigner) -> KrillResult<Vec<Evt>> {
+        let builder = rta.to_builder()?;
 
-        let mut rta_builder = ResourceTaggedAttestation::rta_builder(&resources, content, keys)?;
+        let resources = {
+            let asns = builder.content().as_resources().clone();
+            let v4 = builder.content().v4_resources().clone();
+            let v6 = builder.content().v6_resources().clone();
+            ResourceSet::new(asns, v4, v6)
+        };
 
+        let keys = builder.content().subject_keys();
+        let rc2ee = self.rta_ee_map_prepared(&name, &resources, keys, signer)?;
+
+        self.rta_sign_with_ee(name, resources, rc2ee, builder, signer)
+    }
+
+    fn rta_sign_with_ee(
+        &self,
+        name: RtaName,
+        resources: ResourceSet,
+        rc_ee: HashMap<ResourceClassName, Cert>,
+        mut rta_builder: RtaBuilder,
+        signer: &KrillSigner,
+    ) -> KrillResult<Vec<Evt>> {
         let revocation_info = rc_ee
             .iter()
             .map(|(rcn, ee)| (rcn.clone(), Revocation::from(ee)))
@@ -1475,12 +1487,9 @@ impl CertAuth {
 
         // Then sign the content with all those RCs and all keys (including submitted keys) and add the cert
         for (_rcn, ee) in rc_ee.into_iter() {
+            let ee_key = ee.subject_key_identifier();
             signer.sign_rta(&mut rta_builder, ee)?;
-        }
-
-        // Destroy the keys
-        for key in one_of_keys.iter() {
-            signer.destroy_key(key)?;
+            signer.destroy_key(&ee_key)?;
         }
 
         let rta = ResourceTaggedAttestation::finalize(rta_builder);
@@ -1495,7 +1504,97 @@ impl CertAuth {
         )])
     }
 
-    pub fn rta_multi_prep(&self, name: RtaName, resources: ResourceSet, signer: &KrillSigner) -> KrillResult<Vec<Evt>> {
+    fn rta_ee_map_prepared(
+        &self,
+        name: &str,
+        resources: &ResourceSet,
+        keys: &[KeyIdentifier],
+        signer: &KrillSigner,
+    ) -> KrillResult<HashMap<ResourceClassName, Cert>> {
+        let prepared = self.rtas.prepared_rta(name)?;
+
+        let validity = prepared.validity();
+
+        if resources != prepared.resources() {
+            return Err(Error::custom("Request to sign prepared RTA with changed resources"));
+        }
+
+        // Sign with all prepared keys, error out if one of those keys is removed from the request
+        let mut rc_ee: HashMap<ResourceClassName, Cert> = HashMap::new();
+        for (rcn, key) in prepared.key_map() {
+            if !keys.contains(key) {
+                return Err(Error::custom("RTA Request does not include key for prepared RTA"));
+            }
+
+            let rc = self
+                .resources
+                .get(rcn)
+                .ok_or_else(|| Error::custom("RC for prepared RTA not found"))?;
+
+            let rc_resources = rc
+                .current_resources()
+                .ok_or_else(|| Error::custom("RC for RTA has no resources"))?;
+
+            let intersection = rc_resources.intersection(&resources);
+            if intersection.is_empty() {
+                return Err(Error::custom(
+                    "RC for prepared RTA no longer contains relevant resources",
+                ));
+            }
+
+            let ee = rc.create_rta_ee(&intersection, validity, *key, &signer)?;
+            rc_ee.insert(rcn.clone(), ee);
+        }
+
+        Ok(rc_ee)
+    }
+
+    fn rta_ee_map_single(
+        &self,
+        resources: &ResourceSet,
+        validity: Validity,
+        keys: &mut Vec<KeyIdentifier>,
+        signer: &KrillSigner,
+    ) -> KrillResult<HashMap<ResourceClassName, Cert>> {
+        // If there are no other keys supplied, then we MUST have all resources.
+        // Otherwise we will just assume that others sign over the resources that
+        // we do not have.
+        if keys.is_empty() && !self.all_resources().contains(&resources) {
+            return Err(Error::RtaResourcesNotHeld);
+        }
+
+        // Create an EE for each RC that contains part of the resources
+        let mut rc_ee: HashMap<ResourceClassName, Cert> = HashMap::new();
+        for (rcn, rc) in self.resources.iter() {
+            if let Some(rc_resources) = rc.current_resources() {
+                let intersection = resources.intersection(rc_resources);
+                if !intersection.is_empty() {
+                    let key = signer.create_key()?;
+                    let ee = rc.create_rta_ee(&intersection, validity, key, &signer)?;
+                    rc_ee.insert(rcn.clone(), ee);
+                }
+            }
+        }
+
+        let one_of_keys: Vec<KeyIdentifier> = rc_ee.values().map(|ee| ee.subject_key_identifier()).collect();
+
+        // Add all one-off keys to the list of Key Identifiers
+        // Note that list includes possible keys by other CAs in the RtaRequest
+        for key in one_of_keys.iter() {
+            keys.push(*key);
+        }
+
+        Ok(rc_ee)
+    }
+
+    pub fn rta_multi_prep(
+        &self,
+        name: RtaName,
+        request: RtaPrepareRequest,
+        signer: &KrillSigner,
+    ) -> KrillResult<Vec<Evt>> {
+        let (resources, validity) = request.unpack();
+
         if self.all_resources().intersection(&resources).is_empty() {
             return Err(Error::custom("None of the resources for RTA are held by this CA"));
         }
@@ -1515,7 +1614,7 @@ impl CertAuth {
             }
         }
 
-        let prepared = PreparedRta::new(resources, keys);
+        let prepared = PreparedRta::new(resources, validity, keys);
 
         Ok(vec![StoredEvent::new(
             self.handle(),

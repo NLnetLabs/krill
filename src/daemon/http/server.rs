@@ -29,12 +29,12 @@ use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
 use crate::constants::{KRILL_ENV_UPGRADE_ONLY, KRILL_VERSION_MAJOR, KRILL_VERSION_MINOR, KRILL_VERSION_PATCH};
 use crate::daemon::ca::RouteAuthorizationUpdates;
+use crate::daemon::ca::{ta_handle, testbed_ca_handle};
 use crate::daemon::config::CONFIG;
 use crate::daemon::http::statics::statics;
 use crate::daemon::http::{tls, tls_keys, HttpResponse, Request, RequestPath, RoutingResult};
 use crate::daemon::krillserver::KrillServer;
 use crate::upgrades::{post_start_upgrade, pre_start_upgrade};
-use crate::daemon::ca::{ta_handle, testbed_ca_handle};
 
 //------------ State -----------------------------------------------------
 
@@ -1246,11 +1246,10 @@ async fn api_ca_rta(req: Request, path: &mut RequestPath, ca: Handle) -> Routing
     match path.path_arg() {
         Some(name) => match *req.method() {
             Method::POST => match path.next() {
-                Some("single") => api_ca_rta_single(req, ca, name).await,
+                Some("sign") => api_ca_rta_sign(req, ca, name).await,
                 Some("multi") => match path.next() {
                     Some("prep") => api_ca_rta_multi_prep(req, ca, name).await,
-                    Some("sign") => unimplemented!(),
-                    Some("cosign") => unimplemented!(),
+                    Some("cosign") => api_ca_rta_multi_sign(req, ca, name).await,
                     _ => render_unknown_method(),
                 },
                 _ => render_unknown_method(),
@@ -1271,20 +1270,20 @@ async fn api_ca_rta(req: Request, path: &mut RequestPath, ca: Handle) -> Routing
     }
 }
 
-async fn api_ca_rta_single(req: Request, ca: Handle, name: RtaName) -> RoutingResult {
-    let state = req.state().clone();
-    match req.json().await {
-        Err(e) => render_error(e),
-        Ok(request) => render_empty_res(state.read().await.rta_one_single(ca, name, request).await),
-    }
-}
-
 async fn api_ca_rta_list(req: Request, ca: Handle) -> RoutingResult {
     render_json_res(req.state().read().await.rta_list(ca).await)
 }
 
 async fn api_ca_rta_show(req: Request, ca: Handle, name: RtaName) -> RoutingResult {
     render_json_res(req.state().read().await.rta_show(ca, name).await)
+}
+
+async fn api_ca_rta_sign(req: Request, ca: Handle, name: RtaName) -> RoutingResult {
+    let state = req.state().clone();
+    match req.json().await {
+        Err(e) => render_error(e),
+        Ok(request) => render_empty_res(state.read().await.rta_sign(ca, name, request).await),
+    }
 }
 
 async fn api_ca_rta_multi_prep(req: Request, ca: Handle, name: RtaName) -> RoutingResult {
@@ -1326,10 +1325,10 @@ async fn testbed(req: Request) -> RoutingResult {
     } else {
         let mut path = req.path().clone();
         match path.next() {
-            Some("enabled")    => testbed_enabled(req).await,
-            Some("children")   => testbed_children(req, &mut path).await,
+            Some("enabled") => testbed_enabled(req).await,
+            Some("children") => testbed_children(req, &mut path).await,
             Some("publishers") => testbed_publishers(req, &mut path).await,
-            _                  => render_unknown_method(),
+            _ => render_unknown_method(),
         }
     }
 }
@@ -1339,7 +1338,7 @@ async fn testbed(req: Request) -> RoutingResult {
 async fn testbed_enabled(req: Request) -> RoutingResult {
     match *req.method() {
         Method::GET => render_ok(),
-        _           => render_unknown_method(),
+        _ => render_unknown_method(),
     }
 }
 
@@ -1349,13 +1348,13 @@ async fn testbed_enabled(req: Request) -> RoutingResult {
 // unregister any child CA even if not "owned" by them.
 async fn testbed_children(req: Request, path: &mut RequestPath) -> RoutingResult {
     match (req.method().clone(), path.path_arg()) {
-        (Method::GET,    Some(child)) => match path.next() {
+        (Method::GET, Some(child)) => match path.next() {
             Some("parent_response.xml") => ca_parent_res_xml(req, testbed_ca_handle(), child).await,
-            _                           => render_unknown_method(),
+            _ => render_unknown_method(),
         },
         (Method::DELETE, Some(child)) => ca_child_remove(req, testbed_ca_handle(), child).await,
-        (Method::POST,   None)        => ca_add_child(req, testbed_ca_handle()).await,
-        _                             => render_unknown_method(),
+        (Method::POST, None) => ca_add_child(req, testbed_ca_handle()).await,
+        _ => render_unknown_method(),
     }
 }
 
@@ -1364,13 +1363,13 @@ async fn testbed_children(req: Request, path: &mut RequestPath) -> RoutingResult
 // even if not "owned" by them.
 async fn testbed_publishers(req: Request, path: &mut RequestPath) -> RoutingResult {
     match (req.method().clone(), path.path_arg()) {
-        (Method::GET, Some(publisher))    => match path.next() {
+        (Method::GET, Some(publisher)) => match path.next() {
             Some("response.xml") => repository_response_xml(req, publisher).await,
-            _                    => render_unknown_method(),
+            _ => render_unknown_method(),
         },
         (Method::DELETE, Some(publisher)) => testbed_remove_pbl(req, publisher).await,
-        (Method::POST, None)              => add_pbl(req).await,
-        _                                 => render_unknown_method(),
+        (Method::POST, None) => add_pbl(req).await,
+        _ => render_unknown_method(),
     }
 }
 
@@ -1382,6 +1381,14 @@ async fn testbed_remove_pbl(req: Request, publisher: Handle) -> RoutingResult {
         Ok(HttpResponse::forbidden())
     } else {
         remove_pbl(req, publisher).await
+    }
+}
+
+async fn api_ca_rta_multi_sign(req: Request, ca: Handle, name: RtaName) -> RoutingResult {
+    let state = req.state().clone();
+    match req.json().await {
+        Ok(rta) => render_empty_res(state.read().await.rta_multi_cosign(ca, name, rta).await),
+        Err(_) => render_error(Error::custom("Cannot decode RTA for co-signing")),
     }
 }
 

@@ -12,10 +12,10 @@ use rpki::x509::Time;
 
 use crate::commons::api::{
     AddChildRequest, AllCertAuthIssues, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthInit, CertAuthIssues,
-    CertAuthList, CertAuthStats, ChildAuthRequest, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Handle, ListReply,
-    ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublishDelta, PublisherDetails, PublisherHandle,
-    RepoInfo, RepoStatus, RepositoryContact, RepositoryUpdate, ResourceSet, RoaDefinition, RoaDefinitionUpdates,
-    RtaList, RtaName, RtaPrepResponse, ServerInfo, TaCertDetails, UpdateChildRequest,
+    CertAuthList, CertAuthStats, ChildAuthRequest, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria,
+    Handle, ListReply, ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublishDelta, PublisherDetails,
+    PublisherHandle, RepoInfo, RepoStatus, RepositoryContact, RepositoryUpdate, ResourceSet, RoaDefinition,
+    RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, ServerInfo, TaCertDetails, UpdateChildRequest,
 };
 use crate::commons::bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::crypto::KrillSigner;
@@ -25,7 +25,10 @@ use crate::commons::remote::rfc8183;
 use crate::commons::{KrillEmptyResult, KrillResult};
 use crate::constants::*;
 use crate::daemon::auth::{Auth, Authorizer};
-use crate::daemon::ca::{self, ta_handle, testbed_ca_handle, ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaContentRequest};
+use crate::daemon::ca::{
+    self, ta_handle, testbed_ca_handle, ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaContentRequest,
+    RtaPrepareRequest,
+};
 use crate::daemon::config::CONFIG;
 use crate::daemon::mq::EventQueueListener;
 use crate::daemon::scheduler::Scheduler;
@@ -187,9 +190,11 @@ impl KrillServer {
 
                     // Add the new testbed publisher
                     let pubserver = pubserver.as_ref().ok_or_else(|| Error::PublisherNoEmbeddedRepo)?;
-                    let pub_req = rfc8183::PublisherRequest::new(None, testbed_ca_handle.clone(), testbed_ca.id_cert().clone());
+                    let pub_req =
+                        rfc8183::PublisherRequest::new(None, testbed_ca_handle.clone(), testbed_ca.id_cert().clone());
                     pubserver.create_publisher(pub_req).await?;
-                    let rfc8181_uri = uri::Https::from_string(format!("{}rfc8181/{}", service_uri, testbed_ca_handle)).unwrap();
+                    let rfc8181_uri =
+                        uri::Https::from_string(format!("{}rfc8181/{}", service_uri, testbed_ca_handle)).unwrap();
                     let repo_response = pubserver.repository_response(rfc8181_uri, &testbed_ca_handle).await?;
                     let repo_contact = RepositoryContact::Rfc8181(repo_response);
                     caserver.update_repo(testbed_ca_handle.clone(), repo_contact).await?;
@@ -721,9 +726,9 @@ impl KrillServer {
         ca.rta_show(&name)
     }
 
-    /// Sign a single-signed RTA
-    pub async fn rta_one_single(&self, ca: Handle, name: RtaName, request: RtaContentRequest) -> KrillResult<()> {
-        self.caserver.rta_single(ca, name, request).await
+    /// Sign an RTA - either a new, or a prepared RTA
+    pub async fn rta_sign(&self, ca: Handle, name: RtaName, request: RtaContentRequest) -> KrillResult<()> {
+        self.caserver.rta_sign(ca, name, request).await
     }
 
     /// Prepare a multi
@@ -731,11 +736,16 @@ impl KrillServer {
         &self,
         ca: Handle,
         name: RtaName,
-        resources: ResourceSet,
+        request: RtaPrepareRequest,
     ) -> KrillResult<RtaPrepResponse> {
-        self.caserver.rta_prep(&ca, name.clone(), resources).await?;
+        self.caserver.rta_multi_prep(&ca, name.clone(), request).await?;
         let ca = self.caserver.get_ca(&ca).await?;
-        ca.rta_show_prepared(&name)
+        ca.rta_prep_response(&name)
+    }
+
+    /// Co-sign an existing RTA
+    pub async fn rta_multi_cosign(&self, ca: Handle, name: RtaName, rta: ResourceTaggedAttestation) -> KrillResult<()> {
+        self.caserver.rta_multi_cosign(ca, name, rta).await
     }
 }
 

@@ -27,7 +27,8 @@ use crate::commons::util::httpclient;
 use crate::commons::KrillResult;
 use crate::constants::{CASERVER_DIR, STATUS_DIR};
 use crate::daemon::ca::{
-    self, ta_handle, CertAuth, Cmd, CmdDet, IniDet, RouteAuthorizationUpdates, RtaContentRequest, StatusStore,
+    self, ta_handle, CertAuth, Cmd, CmdDet, IniDet, ResourceTaggedAttestation, RouteAuthorizationUpdates,
+    RtaContentRequest, RtaPrepareRequest, StatusStore,
 };
 use crate::daemon::mq::EventQueueListener;
 
@@ -1242,15 +1243,22 @@ impl CaServer {
 ///
 impl CaServer {
     /// Sign a one-off single-signed RTA
-    pub async fn rta_single(&self, ca: Handle, name: RtaName, request: RtaContentRequest) -> KrillResult<()> {
+    pub async fn rta_sign(&self, ca: Handle, name: RtaName, request: RtaContentRequest) -> KrillResult<()> {
         let cmd = CmdDet::rta_sign(&ca, name, request, self.signer.clone());
         self.send_command(cmd).await?;
         Ok(())
     }
 
-    /// Prepare a muli-singed RTA
-    pub async fn rta_prep(&self, ca: &Handle, name: RtaName, resources: ResourceSet) -> KrillResult<()> {
-        let cmd = CmdDet::rta_prep(ca, name, resources, self.signer.clone());
+    /// Prepare a multi-singed RTA
+    pub async fn rta_multi_prep(&self, ca: &Handle, name: RtaName, request: RtaPrepareRequest) -> KrillResult<()> {
+        let cmd = CmdDet::rta_multi_prep(ca, name, request, self.signer.clone());
+        self.send_command(cmd).await?;
+        Ok(())
+    }
+
+    /// Co-sign an existing RTA
+    pub async fn rta_multi_cosign(&self, ca: Handle, name: RtaName, rta: ResourceTaggedAttestation) -> KrillResult<()> {
+        let cmd = CmdDet::rta_multi_sign(&ca, name, rta, self.signer.clone());
         self.send_command(cmd).await?;
         Ok(())
     }

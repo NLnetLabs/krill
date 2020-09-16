@@ -13,6 +13,7 @@ use rand::{thread_rng, Rng};
 use hyper::StatusCode;
 use tokio::time::{delay_for, timeout};
 
+use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 use rpki::uri::Rsync;
 
@@ -21,9 +22,9 @@ use crate::cli::report::{ApiResponse, ReportFormat};
 use crate::cli::{Error, KrillClient};
 use crate::commons::api::{
     AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildAuthRequest, ChildHandle, Handle,
-    ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, Publish, PublisherDetails, PublisherList, PublisherHandle,
-    RepositoryUpdate, ResourceClassKeysInfo, ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates,
-    RtaList, RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
+    ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, Publish, PublisherDetails, PublisherHandle,
+    PublisherList, RepositoryUpdate, ResourceClassKeysInfo, ResourceClassName, ResourceSet, RoaDefinition,
+    RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
 };
 use crate::commons::bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::crypto::SignSupport;
@@ -31,7 +32,7 @@ use crate::commons::remote::rfc8183;
 use crate::commons::remote::rfc8183::{ChildRequest, RepositoryResponse};
 use crate::commons::util::httpclient;
 use crate::constants::{KRILL_ENV_TEST, KRILL_ENV_TEST_ANN, KRILL_ENV_TEST_UNIT_DATA};
-use crate::daemon::ca::{ta_handle, ResourceTaggedAttestation, RtaContentRequest};
+use crate::daemon::ca::{ta_handle, ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest};
 use crate::daemon::http::server;
 
 pub const SERVER_URI: &str = "https://localhost:3000/";
@@ -107,7 +108,7 @@ pub async fn init_child_with_embedded_repo(handle: &Handle) {
 pub async fn ca_repo_update_rfc8181(handle: &Handle, response: RepositoryResponse) {
     krill_admin(Command::CertAuth(CaCommand::RepoUpdate(
         handle.clone(),
-        RepositoryUpdate::Rfc8181(response)
+        RepositoryUpdate::Rfc8181(response),
     )))
     .await;
 }
@@ -280,9 +281,15 @@ pub async fn ca_details(handle: &Handle) -> CertAuthInfo {
     }
 }
 
-pub async fn rta_sign_single(ca: Handle, name: RtaName, resources: ResourceSet, content: Bytes) {
-    let request = RtaContentRequest::new(resources, SignSupport::sign_validity_days(14), vec![], content);
-    let command = Command::CertAuth(CaCommand::RtaSingle(ca, name, request));
+pub async fn rta_sign_sign(
+    ca: Handle,
+    name: RtaName,
+    resources: ResourceSet,
+    keys: Vec<KeyIdentifier>,
+    content: Bytes,
+) {
+    let request = RtaContentRequest::new(resources, SignSupport::sign_validity_days(14), keys, content);
+    let command = Command::CertAuth(CaCommand::RtaSign(ca, name, request));
     krill_admin(command).await;
 }
 
@@ -303,11 +310,17 @@ pub async fn rta_show(ca: Handle, name: RtaName) -> ResourceTaggedAttestation {
 }
 
 pub async fn rta_multi_prep(ca: Handle, name: RtaName, resources: ResourceSet) -> RtaPrepResponse {
-    let command = Command::CertAuth(CaCommand::RtaMultiPrep(ca, name, resources));
+    let request = RtaPrepareRequest::new(resources, SignSupport::sign_validity_days(14));
+    let command = Command::CertAuth(CaCommand::RtaMultiPrep(ca, name, request));
     match krill_admin(command).await {
         ApiResponse::RtaMultiPrep(res) => res,
         _ => panic!("Expected RtaMultiPrep"),
     }
+}
+
+pub async fn rta_multi_cosign(ca: Handle, name: RtaName, rta: ResourceTaggedAttestation) {
+    let command = Command::CertAuth(CaCommand::RtaMultiCoSign(ca, name, rta));
+    krill_admin(command).await;
 }
 
 pub async fn ca_key_for_rcn(handle: &Handle, rcn: &ResourceClassName) -> CertifiedKeyInfo {

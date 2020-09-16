@@ -8,6 +8,7 @@ use std::{env, fmt};
 use bytes::Bytes;
 use clap::{App, Arg, ArgMatches, SubCommand};
 
+use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 use rpki::x509::Time;
 
@@ -22,7 +23,7 @@ use crate::commons::crypto::{IdCert, SignSupport};
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
 use crate::constants::*;
-use crate::daemon::ca::RtaContentRequest;
+use crate::daemon::ca::{ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest};
 
 struct GeneralArgs {
     server: uri::Https,
@@ -765,6 +766,15 @@ impl Options {
         sub = Self::add_my_ca_arg(sub);
 
         sub = sub.arg(
+            Arg::with_name("name")
+                .long("name")
+                .short("n")
+                .value_name("string")
+                .help("Your local name for this RTA")
+                .required(true),
+        );
+
+        sub = sub.arg(
             Arg::with_name("out")
                 .long("out")
                 .short("o")
@@ -776,8 +786,8 @@ impl Options {
         app.subcommand(sub)
     }
 
-    fn make_cas_rta_single_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("single").about("Create RTA signed by this CA only");
+    fn make_cas_rta_sign_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("sign").about("Create RTA signed by this CA");
 
         sub = Self::add_general_args(sub);
         sub = Self::add_my_ca_arg(sub);
@@ -811,6 +821,16 @@ impl Options {
                 .required(true),
         );
 
+        sub = sub.arg(
+            Arg::with_name("keys")
+                .long("keys")
+                .short("k")
+                .value_name("hexencoded keyidentifiers")
+                .multiple(true)
+                .help("Optional additional keys to include in this RTA")
+                .required(false),
+        );
+
         app.subcommand(sub)
     }
 
@@ -821,6 +841,15 @@ impl Options {
         sub = Self::add_my_ca_arg(sub);
 
         sub = Self::add_resource_args(sub);
+
+        sub = sub.arg(
+            Arg::with_name("days")
+                .long("days")
+                .short("d")
+                .value_name("number of days")
+                .help("Validity time of the RTA in days")
+                .required(true),
+        );
 
         sub = sub.arg(
             Arg::with_name("name")
@@ -834,10 +863,38 @@ impl Options {
         app.subcommand(sub)
     }
 
+    fn make_cas_rta_multi_sign_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("cosign").about("Co-sign an existing (prepared) RTA");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        sub = sub.arg(
+            Arg::with_name("name")
+                .long("name")
+                .short("n")
+                .value_name("string")
+                .help("Your local name for this RTA")
+                .required(true),
+        );
+
+        sub = sub.arg(
+            Arg::with_name("in")
+                .long("in")
+                .short("i")
+                .value_name("path")
+                .help("RTA which needs to be co-signed")
+                .required(true),
+        );
+
+        app.subcommand(sub)
+    }
+
     fn make_cas_rta_multi_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("multi").about("Manage RTA signed by multiple parties");
 
         sub = Self::make_cas_rta_multi_prep_sc(sub);
+        sub = Self::make_cas_rta_multi_sign_sc(sub);
 
         app.subcommand(sub)
     }
@@ -846,8 +903,8 @@ impl Options {
         let mut sub = SubCommand::with_name("rta").about("Manage Resource Tagged Attestations");
         sub = Self::make_cas_rta_list(sub);
         sub = Self::make_cas_rta_show(sub);
-        sub = Self::make_cas_rta_single_sc(sub);
-        sub = Self::make_cas_rta_multi: wq_sc(sub);
+        sub = Self::make_cas_rta_sign_sc(sub);
+        sub = Self::make_cas_rta_multi_sc(sub);
         app.subcommand(sub)
     }
 
@@ -1594,7 +1651,7 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
-    fn parse_matches_cas_rta_single(matches: &ArgMatches) -> Result<Options, Error> {
+    fn parse_matches_cas_rta_sign(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let ca = Self::parse_my_ca(matches)?;
 
@@ -1621,8 +1678,42 @@ impl Options {
         let resources = Self::parse_resource_args(matches)?
             .ok_or_else(|| Error::general("You must specify at least one of --ipv4, --ipv6 or --asn."))?;
 
-        let request = RtaContentRequest::new(resources, validity, vec![], content);
-        let command = Command::CertAuth(CaCommand::RtaSingle(ca, name, request));
+        let keys = if let Some(keys) = matches.values_of("keys") {
+            let mut res = vec![];
+            for key_str in keys {
+                let ki = KeyIdentifier::from_str(key_str).map_err(|_| Error::general("Invalid key identifier"))?;
+                res.push(ki)
+            }
+            res
+        } else {
+            vec![]
+        };
+
+        let request = RtaContentRequest::new(resources, validity, keys, content);
+        let command = Command::CertAuth(CaCommand::RtaSign(ca, name, request));
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_rta_multi_sign(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let ca = Self::parse_my_ca(matches)?;
+        let name = matches.value_of("name").unwrap().to_string();
+
+        let in_file = matches.value_of("in").unwrap();
+        let in_file = PathBuf::from_str(in_file)
+            .map_err(|_| Error::GeneralArgumentError(format!("Invalid filename: {}", in_file)))?;
+
+        let content = file::read(&in_file).map_err(|e| {
+            Error::GeneralArgumentError(format!(
+                "Can't read file '{}', error: {}",
+                in_file.to_string_lossy().to_string(),
+                e,
+            ))
+        })?;
+
+        let rta = ResourceTaggedAttestation::new(content);
+
+        let command = Command::CertAuth(CaCommand::RtaMultiCoSign(ca, name, rta));
         Ok(Options::make(general_args, command))
     }
 
@@ -1634,13 +1725,22 @@ impl Options {
         let resources = Self::parse_resource_args(matches)?
             .ok_or_else(|| Error::general("You must specify at least one of --ipv4, --ipv6 or --asn."))?;
 
-        let command = Command::CertAuth(CaCommand::RtaMultiPrep(ca, name, resources));
+        let days = matches.value_of("days").unwrap();
+        let days =
+            i64::from_str(days).map_err(|e| Error::GeneralArgumentError(format!("Invalid number of days: {}", e)))?;
+        let validity = SignSupport::sign_validity_days(days);
+
+        let request = RtaPrepareRequest::new(resources, validity);
+
+        let command = Command::CertAuth(CaCommand::RtaMultiPrep(ca, name, request));
         Ok(Options::make(general_args, command))
     }
 
     fn parse_matches_cas_rta_multi(matches: &ArgMatches) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("prep") {
             Self::parse_matches_cas_rta_multi_prep(m)
+        } else if let Some(m) = matches.subcommand_matches("cosign") {
+            Self::parse_matches_cas_rta_multi_sign(m)
         } else {
             Err(Error::UnrecognisedSubCommand)
         }
@@ -1651,8 +1751,8 @@ impl Options {
             Self::parse_matches_cas_rta_list(m)
         } else if let Some(m) = matches.subcommand_matches("show") {
             Self::parse_matches_cas_rta_show(m)
-        } else if let Some(m) = matches.subcommand_matches("single") {
-            Self::parse_matches_cas_rta_single(m)
+        } else if let Some(m) = matches.subcommand_matches("sign") {
+            Self::parse_matches_cas_rta_sign(m)
         } else if let Some(m) = matches.subcommand_matches("multi") {
             Self::parse_matches_cas_rta_multi(m)
         } else {
@@ -1949,11 +2049,14 @@ pub enum CaCommand {
     #[display(fmt = "Show RTA '{}' for CA: '{}'", _0, _1)]
     RtaShow(Handle, RtaName, Option<PathBuf>),
 
-    #[display(fmt = "Single-signed RTA request for CA: '{}'", _0)]
-    RtaSingle(Handle, RtaName, RtaContentRequest),
+    #[display(fmt = "Sign RTA request for CA: '{}'", _0)]
+    RtaSign(Handle, RtaName, RtaContentRequest),
 
     #[display(fmt = "Prepare a multi-signed RTA for CA: '{}'", _0)]
-    RtaMultiPrep(Handle, RtaName, ResourceSet),
+    RtaMultiPrep(Handle, RtaName, RtaPrepareRequest),
+
+    #[display(fmt = "Cosign an RTA for CA: '{}'", _0)]
+    RtaMultiCoSign(Handle, RtaName, ResourceTaggedAttestation),
 
     // List all CAs
     #[display(fmt = "List all cas")]
