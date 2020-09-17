@@ -74,6 +74,7 @@ impl PubServer {
         let default = Self::repository_handle();
 
         let store = Arc::new(DiskAggregateStore::<Repository>::new(work_dir, PUBSERVER_DIR)?);
+        store.warm()?;
 
         if !store.has(&default) {
             info!("Creating default repository");

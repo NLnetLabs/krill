@@ -122,6 +122,7 @@ impl CaServer {
         signer: KrillSigner,
     ) -> KrillResult<Self> {
         let mut ca_store = DiskAggregateStore::<CertAuth>::new(work_dir, CASERVER_DIR)?;
+        ca_store.warm()?;
         ca_store.add_listener(events_queue);
 
         let status_store = StatusStore::new(work_dir, STATUS_DIR)?;

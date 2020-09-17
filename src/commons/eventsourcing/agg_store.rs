@@ -83,6 +83,13 @@ pub enum AggregateStoreError {
 
     #[display(fmt = "Offset '{}' exceeds total '{}'", _0, _1)]
     CommandOffsetTooLarge(u64, u64),
+
+    #[display(
+        fmt = "Could not rebuild state for '{}', looks like a corrupt state on disk, you may want try --recover. Error was: {}",
+        _0,
+        _1
+    )]
+    WarmupFailed(Handle, String),
 }
 
 impl From<KeyStoreError> for AggregateStoreError {
@@ -99,7 +106,10 @@ pub struct DiskAggregateStore<A: Aggregate> {
     outer_lock: RwLock<()>,
 }
 
-impl<A: Aggregate> DiskAggregateStore<A> {
+impl<A: Aggregate> DiskAggregateStore<A>
+where
+    A::Error: From<AggregateStoreError>,
+{
     pub fn new(work_dir: &PathBuf, name_space: &str) -> StoreResult<Self> {
         let store = DiskKeyStore::under_work_dir(work_dir, name_space).map_err(AggregateStoreError::IoError)?;
 
@@ -121,9 +131,22 @@ impl<A: Aggregate> DiskAggregateStore<A> {
             outer_lock: lock,
         })
     }
+
+    /// Warms up the cache, to be used after startup. Will fail if any aggregates fail to load.
+    /// In that case the user may want to use the recover option to see what can be salvaged.
+    pub fn warm(&self) -> StoreResult<()> {
+        for handle in self.list() {
+            self.get_latest(&handle)
+                .map_err(|e| AggregateStoreError::WarmupFailed(handle, e.to_string()))?;
+        }
+        Ok(())
+    }
 }
 
-impl<A: Aggregate> DiskAggregateStore<A> {
+impl<A: Aggregate> DiskAggregateStore<A>
+where
+    A::Error: From<AggregateStoreError>,
+{
     fn has_updates(&self, id: &Handle, aggregate: &A) -> StoreResult<bool> {
         Ok(self.store.get_event::<A::Event>(id, aggregate.version())?.is_some())
     }
