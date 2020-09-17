@@ -21,6 +21,7 @@ use crate::commons::api::{IssuedCert, RcvdCert, ReplacedObject, RepoInfo, Reques
 use crate::commons::crypto::{self, CryptoResult};
 use crate::commons::error::Error;
 use crate::commons::util::softsigner::OpenSslSigner;
+use crate::commons::util::AllowedUri;
 use crate::commons::KrillResult;
 use crate::daemon::ca::CertifiedKey;
 use crate::daemon::config::CONFIG;
@@ -176,21 +177,14 @@ impl CsrInfo {
         }
     }
 
-    pub fn contains_localhost(&self) -> bool {
-        let ca_uri = self.ca_repository.to_string().to_ascii_lowercase();
-        let mft_uri = self.rpki_manifest.to_string().to_ascii_lowercase();
-        let rrdp_uri = self
-            .rpki_notify
-            .as_ref()
-            .map(|uri| uri.as_str())
-            .unwrap_or("")
-            .to_ascii_lowercase();
-        ca_uri.starts_with("rsync://localhost")
-            || ca_uri.starts_with("rsync://127.")
-            || mft_uri.starts_with("rsync://localhost")
-            || mft_uri.starts_with("rsync://127.")
-            || rrdp_uri.starts_with("https://localhost")
-            || rrdp_uri.starts_with("https://127.")
+    pub fn allowed_uris(&self, testmode: bool) -> bool {
+        self.ca_repository.allowed_uri(testmode)
+            && self.rpki_manifest.allowed_uri(testmode)
+            && self
+                .rpki_notify
+                .as_ref()
+                .map(|uri| uri.allowed_uri(testmode))
+                .unwrap_or_else(|| true)
     }
 
     pub fn unpack(self) -> (CaRepository, RpkiManifest, Option<RpkiNotify>, PublicKey) {

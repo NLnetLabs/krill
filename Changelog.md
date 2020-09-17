@@ -3,6 +3,11 @@
 Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
 for planned releases.
 
+## 0.8.0 RC
+
+Breaking Changes:
+* Disallow IP addresses in certificate URIs - use DNS names instead (#319)
+
 ## 0.7.4 'Multipass!'
 
 There is no need to upgrade to this version. It was created only so that you can continue

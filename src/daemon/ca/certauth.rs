@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::convert::TryFrom;
-use std::env;
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -26,7 +25,6 @@ use crate::commons::eventsourcing::{Aggregate, StoredEvent};
 use crate::commons::remote::rfc6492;
 use crate::commons::remote::rfc8183;
 use crate::commons::KrillResult;
-use crate::constants::KRILL_ENV_TEST;
 use crate::daemon::ca::events::ChildCertificateUpdates;
 use crate::daemon::ca::rc::PublishMode;
 use crate::daemon::ca::{
@@ -643,9 +641,9 @@ impl CertAuth {
         let (rcn, limit, csr) = request.unpack();
         let csr_info = CsrInfo::try_from(&csr)?;
 
-        if csr_info.contains_localhost() && env::var(KRILL_ENV_TEST).is_err() {
+        if !csr_info.allowed_uris(CONFIG.test_mode) {
             return Err(Error::invalid_csr(
-                "Cannot use localhost in certificate requests unless server uses TEST mode.",
+                "MUST use hostnames in URIs for certificate requests unless server uses TEST mode.",
             ));
         }
 

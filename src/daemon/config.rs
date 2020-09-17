@@ -16,7 +16,7 @@ use syslog::Facility;
 use rpki::uri;
 
 use crate::commons::api::Token;
-use crate::commons::util::ext_serde;
+use crate::commons::util::{ext_serde, AllowedUri};
 use crate::constants::*;
 use crate::daemon::http::tls_keys;
 
@@ -518,27 +518,13 @@ impl Config {
             env::set_var(KRILL_ENV_TEST, "1");
         }
 
-        if !self.test_mode
-            && self.repo_enabled
-            && self
-                .rsync_base
-                .to_string()
-                .to_lowercase()
-                .starts_with("rsync://localhost")
-        {
+        if self.repo_enabled && !self.rsync_base.allowed_uri(self.test_mode) {
             return Err(ConfigError::other(
                 "Cannot use localhost in rsync base unless test mode is used (KRILL_TEST)",
             ));
         }
 
-        if !self.test_mode
-            && self.repo_enabled
-            && self
-                .rrdp_service_uri()
-                .to_string()
-                .to_lowercase()
-                .starts_with("https://localhost")
-        {
+        if self.repo_enabled && !self.rrdp_service_uri().allowed_uri(self.test_mode) {
             return Err(ConfigError::other(
                 "Cannot use localhost in RRDP service URI unless test mode is used (KRILL_TEST)",
             ));
