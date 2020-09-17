@@ -237,8 +237,7 @@ impl CaServer {
     }
 
     /// Refresh all CAs: ask for updates and shrink as needed.
-    pub async fn refresh_all(&self) {
-        info!("Refreshing all CAs");
+    pub async fn resync_all(&self) {
         if let Err(e) = self.get_updates_for_all_cas().await {
             error!("Failed to refresh CA certificates: {}", e);
         }
@@ -600,6 +599,8 @@ impl CaServer {
                 for parent in ca.parents() {
                     if let Err(e) = self.get_updates_from_parent(&handle, &parent).await {
                         error!("Failed to refresh CA certificates for {}, error: {}", &handle, e);
+                    } else {
+                        info!("Synchronised CA '{}' with parent '{}'", &handle, &parent);
                     }
                 }
             }

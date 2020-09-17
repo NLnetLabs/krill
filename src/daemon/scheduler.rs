@@ -73,6 +73,20 @@ fn make_event_sh(
         rt.block_on( async {
             for evt in event_queue.pop_all() {
                 match evt {
+                    QueueEvent::ServerStarted => {
+                        info!("Will resync all CAs with their parents and repository after startup");
+                        caserver.resync_all().await;
+                        let publisher = CaPublisher::new(caserver.clone(), pubserver.clone());
+                        for ca in caserver.ca_list().await.cas() {
+                            if let Err(_) = publisher.publish(ca.handle()).await {
+                                error!("Unable to synchronise CA '{}' with its repository after startup", ca.handle());
+                            } else {
+                                info!("CA '{}' is in sync with its repository", ca.handle());
+                            }
+                        }
+
+                    }
+
                     QueueEvent::Delta(handle, _version) => {
                         try_publish(&event_queue, caserver.clone(), pubserver.clone(), handle).await
                     }
@@ -198,7 +212,7 @@ fn make_ca_refresh_sh(caserver: Arc<CaServer>, refresh_rate: u32) -> ScheduleHan
         let mut rt = Runtime::new().unwrap();
         rt.block_on(async {
             info!("Triggering background refresh for all CAs");
-            caserver.refresh_all().await
+            caserver.resync_all().await
         })
     });
     scheduler.watch_thread(Duration::from_millis(100))

@@ -47,6 +47,9 @@ pub enum QueueEvent {
 
     #[display(fmt = "reschedule failed publication for '{}'", _0)]
     ReschedulePublish(Handle, Time),
+
+    #[display(fmt = "Server just started")]
+    ServerStarted,
 }
 
 #[derive(Debug)]
@@ -56,9 +59,9 @@ pub struct EventQueueListener {
 
 impl Default for EventQueueListener {
     fn default() -> Self {
-        EventQueueListener {
-            q: RwLock::new(VecDeque::new()),
-        }
+        let mut vec = VecDeque::new();
+        vec.push_back(QueueEvent::ServerStarted);
+        EventQueueListener { q: RwLock::new(vec) }
     }
 }
 
