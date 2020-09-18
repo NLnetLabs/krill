@@ -750,6 +750,7 @@ impl Options {
         app.subcommand(sub)
     }
 
+    #[cfg(feature = "rta")]
     fn make_cas_rta_list<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("list").about("List RTAs");
 
@@ -759,6 +760,7 @@ impl Options {
         app.subcommand(sub)
     }
 
+    #[cfg(feature = "rta")]
     fn make_cas_rta_show<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("show").about("Show RTA");
 
@@ -786,6 +788,7 @@ impl Options {
         app.subcommand(sub)
     }
 
+    #[cfg(feature = "rta")]
     fn make_cas_rta_sign_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("sign").about("Create RTA signed by this CA");
 
@@ -834,6 +837,7 @@ impl Options {
         app.subcommand(sub)
     }
 
+    #[cfg(feature = "rta")]
     fn make_cas_rta_multi_prep_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("prep").about("Prepare keys for multi-signed RTA");
 
@@ -863,6 +867,7 @@ impl Options {
         app.subcommand(sub)
     }
 
+    #[cfg(feature = "rta")]
     fn make_cas_rta_multi_sign_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("cosign").about("Co-sign an existing (prepared) RTA");
 
@@ -890,6 +895,7 @@ impl Options {
         app.subcommand(sub)
     }
 
+    #[cfg(feature = "rta")]
     fn make_cas_rta_multi_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("multi").about("Manage RTA signed by multiple parties");
 
@@ -899,6 +905,7 @@ impl Options {
         app.subcommand(sub)
     }
 
+    #[cfg(feature = "rta")]
     fn make_cas_rta_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("rta").about("Manage Resource Tagged Attestations");
         sub = Self::make_cas_rta_list(sub);
@@ -1050,7 +1057,11 @@ impl Options {
         app = Self::make_cas_routes_sc(app);
         app = Self::make_cas_repo_sc(app);
         app = Self::make_cas_issues_sc(app);
-        app = Self::make_cas_rta_sc(app);
+
+        #[cfg(feature = "rta")]
+        {
+            app = Self::make_cas_rta_sc(app);
+        }
 
         app = Self::make_publishers_sc(app);
 
