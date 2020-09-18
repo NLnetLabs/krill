@@ -78,7 +78,7 @@ fn make_event_sh(
                         caserver.resync_all().await;
                         let publisher = CaPublisher::new(caserver.clone(), pubserver.clone());
                         for ca in caserver.ca_list().await.cas() {
-                            if let Err(_) = publisher.publish(ca.handle()).await {
+                            if publisher.publish(ca.handle()).await.is_err() {
                                 error!("Unable to synchronise CA '{}' with its repository after startup", ca.handle());
                             } else {
                                 info!("CA '{}' is in sync with its repository", ca.handle());

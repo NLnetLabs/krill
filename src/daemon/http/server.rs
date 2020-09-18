@@ -1375,9 +1375,7 @@ async fn testbed_publishers(req: Request, path: &mut RequestPath) -> RoutingResu
 
 // Prevent deletion of the built-in TA and testbed repositories.
 async fn testbed_remove_pbl(req: Request, publisher: Handle) -> RoutingResult {
-    if publisher == ta_handle() {
-        Ok(HttpResponse::forbidden())
-    } else if publisher == testbed_ca_handle() {
+    if publisher == ta_handle() || publisher == testbed_ca_handle() {
         Ok(HttpResponse::forbidden())
     } else {
         remove_pbl(req, publisher).await

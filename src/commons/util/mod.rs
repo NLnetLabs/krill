@@ -19,36 +19,11 @@ pub fn sha256(object: &[u8]) -> Bytes {
 // TODO: check that an IP address is_global() when that stabilizes: https://github.com/rust-lang/rust/issues/27709
 /// Assumes that non-ip hostnames are global (they may of course resolve to something that isn't but hey we tried to help)
 fn seems_global_auth(auth: &str) -> bool {
-    if auth.to_lowercase() == "localhost" {
-        false
-    } else if auth.starts_with('[') {
-        // IPv6 address with port
-        false
-    // if let Some(i) = auth.rfind(']') {
-    //     if let Ok(ip) = IpAddr::from_str(&auth[1..i]) {
-    //         ip.is_global()
-    //     } else {
-    //         // unparsable
-    //         false
-    //     }
-    // } else {
-    //     // unparsable
-    //     false
-    // }
-    } else if IpAddr::from_str(auth).is_ok() {
-        // is an ip address
-        // ip.is_global()
+    if auth.to_lowercase() == "localhost" || auth.starts_with('[') || IpAddr::from_str(auth).is_ok() {
         false
     } else if let Some(i) = auth.rfind(':') {
         let auth = &auth[0..i];
-        if IpAddr::from_str(auth).is_ok() {
-            // is an ip address with port
-            // ip.is_global()
-            false
-        } else {
-            // is hostname with port, assume that non-ip hostnames are global
-            true
-        }
+        IpAddr::from_str(auth).is_err()
     } else {
         // appears to be a non-ip hostname, assume it's global
         true
