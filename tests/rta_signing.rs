@@ -2,17 +2,18 @@
 
 extern crate krill;
 
-use std::fs;
-use std::str::FromStr;
-
-use bytes::Bytes;
-use krill::commons::api::{Handle, ParentCaReq, ResourceSet, RtaList};
-use krill::daemon::ca::ta_handle;
-use krill::test::*;
-
 #[tokio::test]
+#[cfg(feature = "functional-tests")]
 /// Test that a Resource Tagged Attestation can be signed
 async fn rta_signing() {
+    use std::fs;
+    use std::str::FromStr;
+
+    use bytes::Bytes;
+    use krill::commons::api::{Handle, ParentCaReq, ResourceSet, RtaList};
+    use krill::daemon::ca::ta_handle;
+    use krill::test::*;
+
     let dir = start_krill().await;
 
     let ta_handle = ta_handle();

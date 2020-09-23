@@ -2,16 +2,17 @@
 
 extern crate krill;
 
-use std::fs;
-use std::str::FromStr;
-
-use krill::commons::api::{Handle, ParentCaReq, ResourceSet};
-use krill::daemon::ca::ta_handle;
-use krill::daemon::config::CONFIG;
-use krill::test::*;
-
 #[tokio::test]
+#[cfg(feature = "functional-tests")]
 async fn ca_embedded() {
+    use std::fs;
+    use std::str::FromStr;
+
+    use krill::commons::api::{Handle, ParentCaReq, ResourceSet};
+    use krill::daemon::ca::ta_handle;
+    use krill::daemon::config::CONFIG;
+    use krill::test::*;
+
     let dir = start_krill().await;
 
     let ta_handle = ta_handle();
@@ -32,13 +33,13 @@ async fn ca_embedded() {
     // When the parent is added, a child CA will immediately request a certificate.
     add_parent_to_ca(&child, parent).await;
     assert!(ca_gets_resources(&child, &child_resources).await);
-    assert!(ta_will_have_issued_n_certs(base_cert_count+1).await);
+    assert!(ta_will_have_issued_n_certs(base_cert_count + 1).await);
 
     // When the parent adds resources to a CA, it can request a new resource certificate.
     let new_child_resources = ResourceSet::from_strs("AS65000", "10.0.0.0/16", "").unwrap();
     update_child(&ta_handle, &child, &new_child_resources).await;
     assert!(ca_gets_resources(&child, &new_child_resources).await);
-    assert!(ta_will_have_issued_n_certs(base_cert_count+1).await);
+    assert!(ta_will_have_issued_n_certs(base_cert_count + 1).await);
 
     // When the removes child resources, the child will get a reduced certificate when it syncs.
     let child_resources = ResourceSet::from_strs("", "10.0.0.0/24", "").unwrap();

@@ -1,20 +1,19 @@
 #![type_length_limit = "5000000"]
-
 extern crate krill;
 
-use std::fs;
-use std::str::FromStr;
-
-use krill::commons::api::{Handle, ObjectName, ParentCaReq, ResourceSet, RoaDefinition, RoaDefinitionUpdates};
-use krill::commons::bgp::BgpAnalysisState;
-use krill::daemon::ca::ta_handle;
-use krill::test::*;
-
 #[tokio::test]
+#[cfg(feature = "functional-tests")]
 /// Test the CAs can issue and publish ROAs for their resources, and that
 /// ROAs get updated and published properly when resources change, as well
 /// as during and after key rolls.
 async fn ca_roas() {
+    use std::fs;
+    use std::str::FromStr;
+
+    use krill::commons::api::{Handle, ObjectName, ParentCaReq, ResourceSet, RoaDefinition, RoaDefinitionUpdates};
+    use krill::commons::bgp::BgpAnalysisState;
+    use krill::daemon::ca::ta_handle;
+    use krill::test::*;
     let dir = start_krill().await;
 
     let ta_handle = ta_handle();

@@ -57,6 +57,7 @@ ignore          = "^0.4"
 [features]
 default = []
 rta = []
+functional-tests = []
 extra-debug = [ "rpki/extra-debug" ]
 static-openssl = [ "openssl/vendored" ]
 

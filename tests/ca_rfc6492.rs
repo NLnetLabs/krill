@@ -2,16 +2,17 @@
 
 extern crate krill;
 
-use std::fs;
-use std::str::FromStr;
-
-use krill::commons::api::{Handle, ParentCaReq, ResourceSet};
-use krill::daemon::ca::ta_handle;
-use krill::daemon::config::CONFIG;
-use krill::test::*;
-
 #[tokio::test]
+#[cfg(feature = "functional-tests")]
 async fn ca_rfc6492() {
+    use std::fs;
+    use std::str::FromStr;
+
+    use krill::commons::api::{Handle, ParentCaReq, ResourceSet};
+    use krill::daemon::ca::ta_handle;
+    use krill::daemon::config::CONFIG;
+    use krill::test::*;
+
     let dir = start_krill().await;
     let ta_handle = ta_handle();
 

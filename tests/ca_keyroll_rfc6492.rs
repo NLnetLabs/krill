@@ -2,16 +2,17 @@
 
 extern crate krill;
 
-use std::fs;
-use std::str::FromStr;
-
-use krill::commons::api::{Handle, ParentCaReq, ResourceSet};
-use krill::daemon::ca::ta_handle;
-use krill::daemon::config::CONFIG;
-use krill::test::*;
-
 #[tokio::test]
+#[cfg(feature = "functional-tests")]
 async fn ca_keyroll_rfc6492() {
+    use std::fs;
+    use std::str::FromStr;
+
+    use krill::commons::api::{Handle, ParentCaReq, ResourceSet};
+    use krill::daemon::ca::ta_handle;
+    use krill::daemon::config::CONFIG;
+    use krill::test::*;
+
     let dir = start_krill().await;
 
     let ta_handle = ta_handle();
@@ -33,15 +34,15 @@ async fn ca_keyroll_rfc6492() {
 
     add_parent_to_ca(&child, parent).await;
     assert!(ca_gets_resources(&child, &child_resources).await);
-    assert!(ta_will_have_issued_n_certs(base_cert_count+1).await);
+    assert!(ta_will_have_issued_n_certs(base_cert_count + 1).await);
 
     ca_roll_init(&child).await;
     assert!(rc_state_becomes_new_key(&child).await);
-    assert!(ta_will_have_issued_n_certs(base_cert_count+2).await);
+    assert!(ta_will_have_issued_n_certs(base_cert_count + 2).await);
 
     ca_roll_activate(&child).await;
     assert!(rc_state_becomes_active(&child).await);
-    assert!(ta_will_have_issued_n_certs(base_cert_count+1).await);
+    assert!(ta_will_have_issued_n_certs(base_cert_count + 1).await);
 
     let _ = fs::remove_dir_all(dir);
 }
