@@ -64,6 +64,10 @@ impl KeyStore for DiskKeyStore {
         PathBuf::from("snapshot-bk.json")
     }
 
+    fn key_for_new_snapshot() -> PathBuf {
+        PathBuf::from("snapshot-new.json")
+    }
+
     fn key_for_event(version: u64) -> PathBuf {
         PathBuf::from(format!("delta-{}.json", version))
     }

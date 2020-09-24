@@ -135,6 +135,7 @@ pub trait KeyStore {
     fn key_for_info() -> Self::Key;
     fn key_for_snapshot() -> Self::Key;
     fn key_for_backup_snapshot() -> Self::Key;
+    fn key_for_new_snapshot() -> Self::Key;
     fn key_for_event(version: u64) -> Self::Key;
     fn key_for_command<S: WithStorableDetails>(command: &StoredCommand<S>) -> CommandKey;
     fn key_for_archived(key: &Self::Key) -> Self::Key;
@@ -360,6 +361,11 @@ pub trait KeyStore {
             (self.keys_ascending(id, "delta-").len() - 1) as u64
         };
 
+        if limit == aggregate.version() {
+            // already at version, done
+            return Ok(());
+        }
+
         let start = aggregate.version();
         if start > limit {
             return Err(KeyStoreError::ReplayError(id.clone(), limit, start));
@@ -379,8 +385,18 @@ pub trait KeyStore {
 
     /// Saves the latest snapshot - overwrites any previous snapshot.
     fn store_snapshot<V: Aggregate>(&self, id: &Handle, aggregate: &V) -> Result<(), KeyStoreError> {
-        let key = Self::key_for_snapshot();
-        self.store(id, &key, aggregate)
+        let snapshot_new = Self::key_for_new_snapshot();
+        let snapshot_current = Self::key_for_snapshot();
+        let snapshot_backup = Self::key_for_backup_snapshot();
+
+        self.store(id, &snapshot_new, aggregate)?;
+        if self.has_key(id, &snapshot_backup) {
+            self.drop(id, &snapshot_backup)?;
+        }
+        self.move_key(id, &snapshot_current, &snapshot_backup)?;
+        self.move_key(id, &snapshot_new, &snapshot_current)?;
+
+        Ok(())
     }
 
     /// Find all commands that fit the criteria and return history
