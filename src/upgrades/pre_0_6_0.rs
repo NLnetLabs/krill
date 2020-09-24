@@ -11,7 +11,7 @@ use crate::commons::api::{
     RoaDefinitionUpdates, StorableCaCommand, StorableParentContact, StorableRepositoryCommand, StoredEffect,
 };
 use crate::commons::eventsourcing::{
-    Aggregate, DiskKeyStore, KeyStore, KeyStoreError, KeyStoreVersion, StoredCommand, StoredValueInfo,
+    DiskKeyStore, KeyStore, KeyStoreError, KeyStoreVersion, StoredCommand, StoredValueInfo,
 };
 use crate::commons::remote::rfc8183::ServiceUri;
 use crate::daemon::ca::CertAuth;
@@ -44,6 +44,7 @@ impl UpgradeStore for UpgradeCas {
                 let mut seq = 1;
 
                 let mut last_command = 1;
+                let mut last_event = 0;
                 let mut last_update: Time = Time::now();
 
                 let keys = store.keys_ascending(&ca_handle, ".cmd");
@@ -57,6 +58,11 @@ impl UpgradeStore for UpgradeCas {
                         match previous.into_new_stored_ca_command(seq) {
                             Ok(command) => {
                                 last_update = command.time();
+                                if let Some(events) = command.effect().events() {
+                                    if let Some(last) = events.last() {
+                                        last_event = *last;
+                                    }
+                                }
                                 store.store_command(command)?;
                                 store.drop(&ca_handle, &old_key)?;
                                 last_command = seq;
@@ -81,21 +87,22 @@ impl UpgradeStore for UpgradeCas {
                 info!("Done migrating commands for CA: {}", ca_handle);
 
                 info!("Regenerating latest snapshot, this can take a moment");
+                let info = StoredValueInfo {
+                    snapshot_version: last_event,
+                    last_event,
+                    last_command,
+                    last_update,
+                };
+                store.save_info(&ca_handle, &info)?;
+
                 // Load CA, then save a new snapshot and info for the CA
                 let ca: CertAuth = store
-                    .get_aggregate(&ca_handle)
+                    .get_aggregate(&ca_handle, None)
                     .map_err(|e| UpgradeError::Custom(format!("Cannot load ca '{}' error: {}", ca_handle.clone(), e)))?
                     .ok_or_else(|| UpgradeError::CannotLoadAggregate(ca_handle.clone()))?;
 
                 store.store_snapshot(&ca_handle, &ca)?;
 
-                let info = StoredValueInfo {
-                    snapshot_version: ca.version(),
-                    last_event: ca.version(),
-                    last_command,
-                    last_update,
-                };
-                store.save_info(&ca_handle, &info)?;
                 info!("Saved updated snapshot for CA: {}", ca_handle);
             }
 
@@ -137,8 +144,10 @@ impl UpgradeStore for UpgradePubd {
                 //   Find all commands keys and migrate them
                 let mut seq = 1;
 
-                let mut last_command = 1;
                 let mut last_update: Time = Time::now();
+                let mut last_command = 1;
+                let mut last_event = 0;
+
                 let keys = store.keys_ascending(&pubd_handle, ".cmd");
 
                 info!("Migrating {} commands for Repository server", keys.len());
@@ -150,6 +159,11 @@ impl UpgradeStore for UpgradePubd {
                         let previous = previous.with_handle(pubd_handle.clone());
                         let command = previous.into_new_stored_pubd_command(seq)?;
                         last_update = command.time();
+                        if let Some(events) = command.effect().events() {
+                            if let Some(last) = events.last() {
+                                last_event = *last;
+                            }
+                        }
                         store.store_command(command)?;
                         store.drop(&pubd_handle, &old_key)?;
                         last_command = seq;
@@ -164,11 +178,20 @@ impl UpgradeStore for UpgradePubd {
                 info!("Done migrating commands for Repository server");
 
                 info!("Regenerating repository and stats, this can take a moment");
-                // Load CA, then save a new snapshot and info for the CA
+
+                let info = StoredValueInfo {
+                    snapshot_version: last_event,
+                    last_event,
+                    last_command,
+                    last_update,
+                };
+                store.save_info(&pubd_handle, &info)?;
+
+                // Load repository, then save a new snapshot and info for the CA
                 let mut repository: Repository = store
-                    .get_aggregate(&pubd_handle)
+                    .get_aggregate(&pubd_handle, None)
                     .map_err(|e| {
-                        UpgradeError::Custom(format!("Cannot load ca '{}' error: {}", pubd_handle.clone(), e))
+                        UpgradeError::Custom(format!("Cannot load PUBD '{}' error: {}", pubd_handle.clone(), e))
                     })?
                     .ok_or_else(|| UpgradeError::CannotLoadAggregate(pubd_handle.clone()))?;
 
@@ -176,14 +199,6 @@ impl UpgradeStore for UpgradePubd {
 
                 store.store_snapshot(&pubd_handle, &repository)?;
                 info!("Saved updated snapshot for Repository server");
-
-                let info = StoredValueInfo {
-                    snapshot_version: repository.version(),
-                    last_event: repository.version(),
-                    last_command,
-                    last_update,
-                };
-                store.save_info(&pubd_handle, &info)?;
             }
 
             store.set_version(&KeyStoreVersion::V0_6)?;

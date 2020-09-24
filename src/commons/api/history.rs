@@ -176,6 +176,13 @@ impl StoredEffect {
             StoredEffect::Events(_) => true,
         }
     }
+
+    pub fn events(&self) -> Option<&Vec<u64>> {
+        match self {
+            StoredEffect::Error(_) => None,
+            StoredEffect::Events(vec) => Some(vec),
+        }
+    }
 }
 
 //------------ CommandSummary ------------------------------------------------

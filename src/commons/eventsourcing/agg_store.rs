@@ -9,6 +9,7 @@ use crate::commons::api::{CommandHistory, CommandHistoryCriteria, Handle};
 use crate::commons::eventsourcing::cmd::{Command, StoredCommandBuilder};
 use crate::commons::eventsourcing::{
     Aggregate, CommandKey, DiskKeyStore, Event, EventListener, KeyStore, KeyStoreError, KeyStoreVersion, StoredCommand,
+    StoredValueInfo,
 };
 
 const SNAPSHOT_FREQ: u64 = 5;
@@ -90,6 +91,12 @@ pub enum AggregateStoreError {
         _1
     )]
     WarmupFailed(Handle, String),
+
+    #[display(
+        fmt = "Could not recover state for '{}', aborting recover. Use consistent backup.",
+        _0
+    )]
+    CouldNotRecover(Handle),
 }
 
 impl From<KeyStoreError> for AggregateStoreError {
@@ -141,6 +148,102 @@ where
         }
         Ok(())
     }
+
+    /// Recovers the aggregates by verifying all commands, and the corresponding events.
+    /// Use this in case the state on disk is found to be inconsistent. I.e. the `warm`
+    /// function failed and Krill exited.
+    pub fn recover(&self) -> StoreResult<()> {
+        let criteria = CommandHistoryCriteria::default();
+        for handle in self.list() {
+            // Check info
+            //  - if corrupt -> archive and assume nothing
+
+            // Check
+            // - All commands, archive bad commands
+            // - All events, archive bad events
+            //
+            // Snapshot:
+            // - if snapshot is bad -> archive
+            // - if backup snapshot bad -> archive
+            //
+            // rebuild state up to event:
+            //   - use snapshot - check that version < seq command
+            //   - use back-up snapshot if snapshot is no good
+            //   - process events from (back-up) snapshot
+            //
+            //   IF good:
+            //      - save snapshot
+            //      - save info
+            //      - delete surplus command and events
+            //
+            //  find and archive any surplus events
+
+            //   IF bad:
+            //      - stop, don't change the disk
+            //
+            //    NOTE: bad is unlikely, it means both the snapshot and backup snapshot
+            //          are broken, or that they are both from after the last good command
+
+            let cmd_keys = self.store.command_keys_ascending(&handle, &criteria);
+
+            let mut last_good_cmd = 0;
+            let mut last_good_evt = 0;
+            let mut last_update = Time::now();
+
+            // Check all commands and events
+            // TODO: When archiving is in place, allow archived events
+            'outer: while let Some(key) = cmd_keys.get(last_good_cmd as usize) {
+                let key = key.into();
+                if let Ok(cmd) = self.store.get_command::<A::StorableCommandDetails>(&handle, &key) {
+                    if let Some(events) = cmd.effect().events() {
+                        for version in events {
+                            if let Ok(Some(_)) = self.store.get_event::<A::Event>(&handle, *version) {
+                                last_good_evt = *version;
+                            } else {
+                                break 'outer;
+                            }
+                        }
+                    }
+                    last_good_cmd = cmd.sequence();
+                    last_update = cmd.time();
+                } else {
+                    break;
+                }
+            }
+
+            warn!("Will try to recover '{}' to version '{}", &handle, last_good_evt);
+
+            let agg = self
+                .store
+                .get_aggregate::<A>(&handle, Some(last_good_evt))?
+                .ok_or_else(|| AggregateStoreError::CouldNotRecover(handle.clone()))?;
+
+            let snapshot_version = agg.version();
+
+            let info = StoredValueInfo {
+                last_event: last_good_evt,
+                last_command: last_good_cmd,
+                last_update,
+                snapshot_version,
+            };
+
+            self.store
+                .store_snapshot(&handle, &agg)
+                .map_err(AggregateStoreError::KeyStoreError)?;
+
+            self.cache_update(&handle, Arc::new(agg));
+
+            self.store.save_info(&handle, &info)?;
+
+            last_good_evt += 1;
+            while let Ok(Some(_)) = self.store.get_event::<A::Event>(&handle, last_good_evt) {
+                self.store.archive_surplus_event(&handle, last_good_evt)?;
+                last_good_evt += 1;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 impl<A: Aggregate> DiskAggregateStore<A>
@@ -168,7 +271,7 @@ where
     fn get_latest_no_lock(&self, handle: &Handle) -> StoreResult<Arc<A>> {
         trace!("Trying to load aggregate id: {}", handle);
         match self.cache_get(handle) {
-            None => match self.store.get_aggregate(handle)? {
+            None => match self.store.get_aggregate(handle, None)? {
                 None => {
                     error!("Could not load aggregate with id: {} from disk", handle);
                     Err(AggregateStoreError::UnknownAggregate(handle.clone()))
@@ -183,7 +286,7 @@ where
             Some(mut arc) => {
                 if self.has_updates(handle, &arc)? {
                     let agg = Arc::make_mut(&mut arc);
-                    self.store.update_aggregate(handle, agg)?;
+                    self.store.update_aggregate(handle, agg, None)?;
                 }
                 trace!("Loaded aggregate id: {} from memory", handle);
                 Ok(arc)
@@ -210,6 +313,9 @@ where
 
         let aggregate = A::init(init).map_err(|_| AggregateStoreError::InitError)?;
         self.store.store_snapshot(&handle, &aggregate)?;
+
+        let info = StoredValueInfo::default();
+        self.store.save_info(&handle, &info)?;
 
         let arc = Arc::new(aggregate);
         self.cache_update(&handle, arc.clone());

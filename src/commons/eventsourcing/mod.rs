@@ -11,8 +11,11 @@ pub use self::cmd::{Command, CommandDetails, SentCommand, StoredCommand, WithSto
 
 mod store;
 pub use self::store::{
-    CommandKey, CommandKeyError, DiskKeyStore, KeyStore, KeyStoreError, KeyStoreVersion, Storable, StoredValueInfo,
+    CommandKey, CommandKeyError, KeyStore, KeyStoreError, KeyStoreVersion, Storable, StoredValueInfo,
 };
+
+mod diskstore;
+pub use self::diskstore::*;
 
 mod agg_store;
 pub use self::agg_store::{AggregateStore, AggregateStoreError, DiskAggregateStore};

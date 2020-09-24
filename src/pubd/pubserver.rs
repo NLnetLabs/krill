@@ -74,7 +74,13 @@ impl PubServer {
         let default = Self::repository_handle();
 
         let store = Arc::new(DiskAggregateStore::<Repository>::new(work_dir, PUBSERVER_DIR)?);
-        store.warm()?;
+        if let Err(e) = store.warm() {
+            error!(
+                "Could not warm up cache, storage seems corrupt, will try to recover!! Error was: {}",
+                e
+            );
+            store.recover()?;
+        }
 
         if !store.has(&default) {
             info!("Creating default repository");

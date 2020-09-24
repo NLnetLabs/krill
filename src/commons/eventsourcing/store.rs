@@ -1,20 +1,17 @@
 use std::any::Any;
 use std::convert::{TryFrom, TryInto};
-use std::fs::File;
+use std::fmt;
 use std::io;
-use std::io::Write;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::{fmt, fs};
 
 use serde::de::DeserializeOwned;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use rpki::x509::Time;
 
 use crate::commons::api::{CommandHistory, CommandHistoryCriteria, CommandHistoryRecord, Handle, Label};
 use crate::commons::eventsourcing::{Aggregate, Event, StoredCommand, WithStorableDetails};
-use crate::commons::util::file;
 
 //------------ Storable ------------------------------------------------------
 
@@ -50,9 +47,9 @@ pub enum KeyStoreVersion {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CommandKey {
-    sequence: u64,
-    timestamp_secs: i64,
-    label: Label,
+    pub sequence: u64,
+    pub timestamp_secs: i64,
+    pub label: Label,
 }
 
 impl CommandKey {
@@ -137,8 +134,12 @@ pub trait KeyStore {
 
     fn key_for_info() -> Self::Key;
     fn key_for_snapshot() -> Self::Key;
+    fn key_for_backup_snapshot() -> Self::Key;
     fn key_for_event(version: u64) -> Self::Key;
     fn key_for_command<S: WithStorableDetails>(command: &StoredCommand<S>) -> CommandKey;
+    fn key_for_archived(key: &Self::Key) -> Self::Key;
+    fn key_for_corrupt(key: &Self::Key) -> Self::Key;
+    fn key_for_surplus(key: &Self::Key) -> Self::Key;
 
     /// Returns all keys for a Handle in the store, matching a &str
     fn keys(&self, id: &Handle, matching: &str) -> Vec<Self::Key>;
@@ -157,8 +158,8 @@ pub trait KeyStore {
 
     fn get_info(&self, id: &Handle) -> Result<StoredValueInfo, KeyStoreError> {
         let key = Self::key_for_info();
-        let info = self.get(id, &key)?;
-        Ok(info.unwrap_or_else(StoredValueInfo::default))
+        let info = self.get(id, &key).map_err(|_| KeyStoreError::InfoCorrupt(id.clone()))?;
+        info.ok_or_else(|| KeyStoreError::InfoMissing(id.clone()))
     }
 
     fn save_info(&self, id: &Handle, info: &StoredValueInfo) -> Result<(), KeyStoreError> {
@@ -171,24 +172,216 @@ pub trait KeyStore {
     fn store<V: Any + Serialize>(&self, id: &Handle, key: &Self::Key, value: &V) -> Result<(), KeyStoreError>;
 
     /// Get the value for this key, if any exists.
-    fn get<V: Any + Storable>(&self, id: &Handle, key: &Self::Key) -> Result<Option<V>, KeyStoreError>;
+    fn get<V: DeserializeOwned>(&self, id: &Handle, key: &Self::Key) -> Result<Option<V>, KeyStoreError>;
 
     /// Drop the value for this key
     fn drop(&self, id: &Handle, key: &Self::Key) -> Result<(), KeyStoreError>;
 
+    /// Move a value to a new key
+    fn move_key(&self, id: &Handle, from: &Self::Key, to: &Self::Key) -> Result<(), KeyStoreError>;
+
+    /// Archive a value for this key
+    fn archive(&self, id: &Handle, key: &Self::Key) -> Result<(), KeyStoreError> {
+        self.move_key(id, key, &Self::key_for_archived(key))?;
+        Ok(())
+    }
+
+    /// Archive a corrupt value for a key
+    fn archive_corrupt(&self, id: &Handle, key: &Self::Key) -> Result<(), KeyStoreError> {
+        self.move_key(id, key, &Self::key_for_corrupt(key))?;
+        Ok(())
+    }
+
+    /// Archive a surplus value for a key
+    fn archive_surplus(&self, id: &Handle, key: &Self::Key) -> Result<(), KeyStoreError> {
+        self.move_key(id, key, &Self::key_for_surplus(key))?;
+        Ok(())
+    }
+
+    /// Get the command for this key, if it exists
+    fn get_command<D: WithStorableDetails>(
+        &self,
+        id: &Handle,
+        key: &Self::Key,
+    ) -> Result<StoredCommand<D>, KeyStoreError> {
+        if self.has_key(id, key) {
+            if let Ok(Some(cmd)) = self.get(id, key) {
+                Ok(cmd)
+            } else {
+                error!("Found corrupt command for '{}', archiving", id);
+                self.archive_corrupt(id, key)?;
+                Err(KeyStoreError::CommandCorrupt)
+            }
+        } else {
+            Err(KeyStoreError::CommandNotFound)
+        }
+    }
+
     /// Get the value for this key, if any exists.
-    fn get_event<V: Event>(&self, id: &Handle, version: u64) -> Result<Option<V>, KeyStoreError>;
+    fn get_event<V: Event>(&self, id: &Handle, version: u64) -> Result<Option<V>, KeyStoreError> {
+        let key = Self::key_for_event(version);
+        if self.has_key(id, &key) {
+            if let Ok(Some(evt)) = self.get(id, &key) {
+                trace!("Found event nr '{}' for aggregate '{}'", version, id);
+                Ok(Some(evt))
+            } else {
+                error!("Found corrupt event for {}, version {}, archiving", id, version);
+                self.archive_corrupt(id, &key)?;
+                Err(KeyStoreError::EventCorrupt)
+            }
+        } else {
+            trace!("Did not find event nr '{}' for aggregate '{}'", version, id);
+            Ok(None)
+        }
+    }
+
+    /// Archive an event
+    fn archive_event(&self, id: &Handle, version: u64) -> Result<(), KeyStoreError> {
+        let key = Self::key_for_event(version);
+        self.archive(id, &key)
+    }
+
+    /// Mark an event as corrupt (or surplus)
+    fn archive_surplus_event(&self, id: &Handle, version: u64) -> Result<(), KeyStoreError> {
+        let key = Self::key_for_event(version);
+        self.archive(id, &key)
+    }
 
     /// MUST check if the event already exists and return an error if it does.
-    fn store_event<V: Event>(&self, event: &V) -> Result<(), KeyStoreError>;
+    fn store_event<V: Event>(&self, event: &V) -> Result<(), KeyStoreError> {
+        trace!("Storing event: {}", event);
 
-    fn store_command<S: WithStorableDetails>(&self, command: StoredCommand<S>) -> Result<(), KeyStoreError>;
+        let id = event.handle();
+        let version = event.version();
+        let key = Self::key_for_event(version);
+        if self.has_key(id, &key) {
+            Err(KeyStoreError::EventExists(id.clone(), version))
+        } else {
+            self.store(id, &key, event)
+        }
+    }
+
+    fn store_command<S: WithStorableDetails>(&self, command: StoredCommand<S>) -> Result<(), KeyStoreError> {
+        let id = command.handle();
+
+        let command_key = Self::key_for_command(&command);
+        let key = command_key.clone().into();
+
+        if self.has_key(id, &key) {
+            Err(KeyStoreError::CommandExists(command_key))
+        } else {
+            self.store(id, &key, &command)
+        }
+    }
 
     /// Get the latest aggregate
-    fn get_aggregate<V: Aggregate>(&self, id: &Handle) -> Result<Option<V>, KeyStoreError>;
+    fn get_aggregate<V: Aggregate>(&self, id: &Handle, limit: Option<u64>) -> Result<Option<V>, KeyStoreError> {
+        // 1) Try to get a snapshot.
+        // 2) If that fails try the backup
+        // 3) If that fails, try to get the init event.
+        //
+        // Then replay all newer events that can be found up to the version (or latest if version is None)
+        trace!("Getting aggregate for '{}'", id);
+
+        let mut aggregate_opt: Option<V> = None;
+
+        let snapshot_key = Self::key_for_snapshot();
+        if self.has_key(id, &snapshot_key) {
+            if let Ok(Some(agg)) = self.get::<V>(id, &snapshot_key) {
+                trace!("Found snapshot for '{}'", id);
+                if let Some(limit) = limit {
+                    if limit >= agg.version() {
+                        aggregate_opt = Some(agg)
+                    } else {
+                        trace!("Discarding snapshot after limit '{}'", id);
+                        self.archive_surplus(id, &snapshot_key)?;
+                    }
+                } else {
+                    aggregate_opt = Some(agg)
+                }
+            } else {
+                error!("Could not parse snapshot for '{}', archiving as corrupt", id);
+                self.archive_corrupt(id, &snapshot_key)?;
+            }
+        }
+
+        let backup_snapshot_key = Self::key_for_backup_snapshot();
+        if self.has_key(id, &backup_snapshot_key) {
+            if let Ok(Some(agg)) = self.get::<V>(id, &backup_snapshot_key) {
+                if aggregate_opt.is_none() {
+                    trace!("Found backup snapshot for '{}'", id);
+                    if let Some(limit) = limit {
+                        if limit >= agg.version() {
+                            aggregate_opt = Some(agg)
+                        } else {
+                            trace!("Discarding backup snapshot after limit '{}'", id);
+                            self.archive_surplus(id, &backup_snapshot_key)?;
+                        }
+                    } else {
+                        aggregate_opt = Some(agg)
+                    }
+                }
+            } else {
+                error!("Could not parse backup snapshot for '{}', archiving as corrupt", id);
+                self.archive_corrupt(id, &backup_snapshot_key)?;
+            }
+        }
+
+        if aggregate_opt.is_none() {
+            aggregate_opt = match self.get_event::<V::InitEvent>(id, 0)? {
+                Some(e) => {
+                    trace!("Rebuilding aggregate {} from init event", id);
+                    Some(V::init(e).map_err(|_| KeyStoreError::InitError(id.clone()))?)
+                }
+                None => None,
+            }
+        }
+
+        match aggregate_opt {
+            None => Ok(None),
+            Some(mut aggregate) => {
+                self.update_aggregate(id, &mut aggregate, limit)?;
+                Ok(Some(aggregate))
+            }
+        }
+    }
+
+    fn update_aggregate<A: Aggregate>(
+        &self,
+        id: &Handle,
+        aggregate: &mut A,
+        limit: Option<u64>,
+    ) -> Result<(), KeyStoreError> {
+        let limit = if let Some(limit) = limit {
+            limit
+        } else if let Ok(info) = self.get_info(id) {
+            info.last_event
+        } else {
+            (self.keys_ascending(id, "delta-").len() - 1) as u64
+        };
+
+        let start = aggregate.version();
+        if start > limit {
+            return Err(KeyStoreError::ReplayError(id.clone(), limit, start));
+        }
+
+        for version in start..limit + 1 {
+            if let Some(e) = self.get_event(id, aggregate.version())? {
+                aggregate.apply(e);
+                trace!("Applied event nr {} to aggregate {}", version - 1, id);
+            } else {
+                return Err(KeyStoreError::ReplayError(id.clone(), limit, version));
+            }
+        }
+
+        Ok(())
+    }
 
     /// Saves the latest snapshot - overwrites any previous snapshot.
-    fn store_snapshot<V: Aggregate>(&self, id: &Handle, aggregate: &V) -> Result<(), KeyStoreError>;
+    fn store_snapshot<V: Aggregate>(&self, id: &Handle, aggregate: &V) -> Result<(), KeyStoreError> {
+        let key = Self::key_for_snapshot();
+        self.store(id, &key, aggregate)
+    }
 
     /// Find all commands that fit the criteria and return history
     fn command_history<A: Aggregate>(
@@ -237,8 +430,11 @@ pub enum KeyStoreError {
     #[display(fmt = "Key '{}' does not exist", _0)]
     KeyUnknown(String),
 
-    #[display(fmt = "Aggregate init event exists, but cannot be applied")]
-    InitError,
+    #[display(fmt = "Cannot apply init event to '{}'", _0)]
+    InitError(Handle),
+
+    #[display(fmt = "Cannot reconstruct '{}' to version '{}', failed at version {}", _0, _1, _2)]
+    ReplayError(Handle, u64, u64),
 
     #[display(fmt = "No history for aggregate with key '{}'", _0)]
     NoHistory(Handle),
@@ -246,11 +442,29 @@ pub enum KeyStoreError {
     #[display(fmt = "This keystore is not initialised")]
     NotInitialised,
 
+    #[display(fmt = "Missing stored value info for '{}'", _0)]
+    InfoMissing(Handle),
+
+    #[display(fmt = "Corrupt stored value info for '{}'", _0)]
+    InfoCorrupt(Handle),
+
     #[display(fmt = "StoredCommand cannot be found")]
     CommandNotFound,
 
+    #[display(fmt = "StoredCommand was corrupt")]
+    CommandCorrupt,
+
+    #[display(fmt = "Command exists for key: {}", _0)]
+    CommandExists(CommandKey),
+
     #[display(fmt = "StoredCommand offset out of bounds")]
     CommandOffSetError,
+
+    #[display(fmt = "Stored event was corrupt")]
+    EventCorrupt,
+
+    #[display(fmt = "Event version {} already recorded for {}", _1, _0)]
+    EventExists(Handle, u64),
 }
 
 impl From<io::Error> for KeyStoreError {
@@ -266,288 +480,3 @@ impl From<serde_json::Error> for KeyStoreError {
 }
 
 impl std::error::Error for KeyStoreError {}
-
-//------------ DiskKeyStore --------------------------------------------------
-
-/// This type can store and retrieve values to/from disk, using json
-/// serialization.
-pub struct DiskKeyStore {
-    dir: PathBuf,
-}
-
-impl KeyStore for DiskKeyStore {
-    type Key = PathBuf;
-
-    fn get_version(&self) -> Result<KeyStoreVersion, KeyStoreError> {
-        if !self.dir.exists() {
-            Err(KeyStoreError::NotInitialised)
-        } else {
-            let path = self.version_path();
-            if path.exists() {
-                let f = File::open(path)?;
-
-                match serde_json::from_reader(f) {
-                    Err(e) => {
-                        error!("Could not read current version of keystore");
-                        Err(KeyStoreError::JsonError(e))
-                    }
-                    Ok(v) => Ok(v),
-                }
-            } else {
-                Ok(KeyStoreVersion::Pre0_6)
-            }
-        }
-    }
-
-    fn set_version(&self, version: &KeyStoreVersion) -> Result<(), KeyStoreError> {
-        let path = self.version_path();
-        let mut f = file::create_file_with_path(&path)?;
-        let json = serde_json::to_string_pretty(version)?;
-        f.write_all(json.as_ref())?;
-        Ok(())
-    }
-
-    fn key_for_info() -> Self::Key {
-        PathBuf::from("info.json")
-    }
-
-    fn key_for_snapshot() -> Self::Key {
-        PathBuf::from("snapshot.json")
-    }
-
-    fn key_for_event(version: u64) -> Self::Key {
-        PathBuf::from(format!("delta-{}.json", version))
-    }
-
-    fn key_for_command<S: WithStorableDetails>(command: &StoredCommand<S>) -> CommandKey {
-        CommandKey::new(command.sequence(), command.time(), command.details().summary().label)
-    }
-
-    fn keys(&self, id: &Handle, matching: &str) -> Vec<Self::Key> {
-        let mut res = vec![];
-        let dir = self.dir_for_aggregate(id);
-        if let Ok(entry_results) = fs::read_dir(dir) {
-            for entry_result in entry_results {
-                if let Ok(dir_entry) = entry_result {
-                    let file_name = dir_entry.file_name();
-                    if file_name.to_string_lossy().contains(matching) {
-                        res.push(PathBuf::from(file_name));
-                    }
-                }
-            }
-        }
-
-        res
-    }
-
-    fn keys_ascending(&self, id: &Handle, matching: &str) -> Vec<Self::Key> {
-        let mut res = self.keys(id, matching);
-        #[allow(clippy::unnecessary_sort_by)]
-        res.sort_by(|a, b| a.to_string_lossy().cmp(&b.to_string_lossy()));
-        res
-    }
-
-    fn command_keys_ascending(&self, id: &Handle, crit: &CommandHistoryCriteria) -> Vec<CommandKey> {
-        let mut command_keys = vec![];
-
-        for key in self.keys(id, "command--") {
-            if let Ok(command_key) = CommandKey::try_from(key) {
-                if command_key.matches_crit(crit) {
-                    command_keys.push(command_key);
-                }
-            }
-        }
-
-        command_keys.sort_by(|a, b| a.sequence.cmp(&b.sequence));
-        command_keys
-    }
-
-    fn has_key(&self, id: &Handle, key: &Self::Key) -> bool {
-        self.file_path(id, key).exists()
-    }
-
-    fn has_aggregate(&self, id: &Handle) -> bool {
-        self.dir_for_aggregate(id).exists()
-    }
-
-    fn aggregates(&self) -> Vec<Handle> {
-        let mut res: Vec<Handle> = Vec::new();
-
-        if let Ok(dir) = fs::read_dir(&self.dir) {
-            for d in dir {
-                if let Ok(d) = d {
-                    let path = d.path();
-                    if path.is_dir() {
-                        if let Ok(id) = Handle::try_from(&path) {
-                            res.push(id);
-                        }
-                    }
-                }
-            }
-        }
-
-        res
-    }
-
-    fn store<V: Any + Serialize>(&self, id: &Handle, key: &Self::Key, value: &V) -> Result<(), KeyStoreError> {
-        let mut f = file::create_file_with_path(&self.file_path(id, key))?;
-        let json = serde_json::to_string_pretty(value)?;
-        f.write_all(json.as_ref())?;
-        Ok(())
-    }
-
-    fn get<V: Any + Storable>(&self, id: &Handle, key: &Self::Key) -> Result<Option<V>, KeyStoreError> {
-        let path = self.file_path(id, key);
-        let path_str = path.to_string_lossy().into_owned();
-
-        if path.exists() {
-            let f = File::open(path)?;
-            match serde_json::from_reader(f) {
-                Err(e) => {
-                    warn!("Ignoring file '{}', could not deserialize json: '{}'.", path_str, e);
-                    Ok(None)
-                }
-                Ok(v) => {
-                    trace!("Deserialized json at: {}", path_str);
-                    Ok(Some(v))
-                }
-            }
-        } else {
-            trace!("Could not find file at: {}", path_str);
-            Ok(None)
-        }
-    }
-
-    fn drop(&self, id: &Handle, key: &Self::Key) -> Result<(), KeyStoreError> {
-        let path = self.file_path(id, key);
-        if !path.exists() {
-            Err(KeyStoreError::KeyUnknown(key.to_string_lossy().to_string()))
-        } else {
-            fs::remove_file(path)?;
-            Ok(())
-        }
-    }
-
-    /// Get the value for this key, if any exists.
-    fn get_event<V: Event>(&self, id: &Handle, version: u64) -> Result<Option<V>, KeyStoreError> {
-        let path = self.path_for_event(id, version);
-        let path_str = path.to_string_lossy().into_owned();
-
-        if path.exists() {
-            let f = File::open(path)?;
-            match serde_json::from_reader(f) {
-                Err(e) => {
-                    error!("Could not deserialize json at: {}, error: {}", path_str, e);
-                    Err(KeyStoreError::JsonError(e))
-                }
-                Ok(v) => {
-                    trace!("Deserialized event at: {}", path_str);
-                    Ok(Some(v))
-                }
-            }
-        } else {
-            trace!("No more events at: {}", path_str);
-            Ok(None)
-        }
-    }
-
-    fn store_event<V: Event>(&self, event: &V) -> Result<(), KeyStoreError> {
-        trace!("Storing event: {}", event);
-
-        let id = event.handle();
-        let key = Self::key_for_event(event.version());
-        if self.has_key(id, &key) {
-            Err(KeyStoreError::KeyExists(key.to_string_lossy().to_string()))
-        } else {
-            self.store(id, &key, event)
-        }
-    }
-
-    fn store_command<S: WithStorableDetails>(&self, command: StoredCommand<S>) -> Result<(), KeyStoreError> {
-        let id = command.handle();
-
-        let key = Self::key_for_command(&command).into();
-
-        if self.has_key(id, &key) {
-            Err(KeyStoreError::KeyExists(key.to_string_lossy().to_string()))
-        } else {
-            self.store(id, &key, &command)
-        }
-    }
-
-    fn get_aggregate<V: Aggregate>(&self, id: &Handle) -> Result<Option<V>, KeyStoreError> {
-        // try to get a snapshot.
-        // If that fails, try to get the init event.
-        // Then replay all newer events that can be found.
-        let key = Self::key_for_snapshot();
-        let aggregate_opt = match self.get::<V>(id, &key)? {
-            Some(aggregate) => Some(aggregate),
-            None => match self.get_event::<V::InitEvent>(id, 0)? {
-                Some(e) => Some(V::init(e).map_err(|_| KeyStoreError::InitError)?),
-                None => None,
-            },
-        };
-
-        match aggregate_opt {
-            None => Ok(None),
-            Some(mut aggregate) => {
-                self.update_aggregate(id, &mut aggregate)?;
-                Ok(Some(aggregate))
-            }
-        }
-    }
-
-    fn store_snapshot<V: Aggregate>(&self, id: &Handle, aggregate: &V) -> Result<(), KeyStoreError> {
-        let key = Self::key_for_snapshot();
-        self.store(id, &key, aggregate)
-    }
-}
-
-impl DiskKeyStore {
-    pub fn new(work_dir: &PathBuf, name_space: &str) -> Self {
-        let mut dir = work_dir.clone();
-        dir.push(name_space);
-        DiskKeyStore { dir }
-    }
-
-    /// Creates a directory for the name_space under the work_dir.
-    pub fn under_work_dir(work_dir: &PathBuf, name_space: &str) -> Result<Self, io::Error> {
-        let mut path = work_dir.clone();
-        path.push(name_space);
-        if !path.is_dir() {
-            fs::create_dir_all(&path)?;
-        }
-        Ok(Self::new(work_dir, name_space))
-    }
-
-    fn version_path(&self) -> PathBuf {
-        let mut path = self.dir.clone();
-        path.push("version");
-        path
-    }
-
-    fn file_path(&self, id: &Handle, key: &<Self as KeyStore>::Key) -> PathBuf {
-        let mut file_path = self.dir_for_aggregate(id);
-        file_path.push(key);
-        file_path
-    }
-
-    fn dir_for_aggregate(&self, id: &Handle) -> PathBuf {
-        let mut dir_path = self.dir.clone();
-        dir_path.push(id.to_path_buf());
-        dir_path
-    }
-
-    fn path_for_event(&self, id: &Handle, version: u64) -> PathBuf {
-        let mut file_path = self.dir_for_aggregate(id);
-        file_path.push(format!("delta-{}.json", version));
-        file_path
-    }
-
-    pub fn update_aggregate<A: Aggregate>(&self, id: &Handle, aggregate: &mut A) -> Result<(), KeyStoreError> {
-        while let Some(e) = self.get_event(id, aggregate.version())? {
-            aggregate.apply(e);
-        }
-        Ok(())
-    }
-}
