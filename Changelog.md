@@ -5,6 +5,9 @@ for planned releases.
 
 ## 0.8.0 RC
 
+Features:
+* Will check all state on startup and try to recover in case of issues (#314)
+
 Breaking Changes:
 * Disallow IP addresses in certificate URIs - use DNS names instead (#319)
 
