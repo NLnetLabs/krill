@@ -85,17 +85,10 @@ pub enum AggregateStoreError {
     #[display(fmt = "Offset '{}' exceeds total '{}'", _0, _1)]
     CommandOffsetTooLarge(u64, u64),
 
-    #[display(
-        fmt = "Could not rebuild state for '{}', looks like a corrupt state on disk, you may want try --recover. Error was: {}",
-        _0,
-        _1
-    )]
+    #[display(fmt = "Could not rebuild state for '{}': {}", _0, _1)]
     WarmupFailed(Handle, String),
 
-    #[display(
-        fmt = "Could not recover state for '{}', aborting recover. Use consistent backup.",
-        _0
-    )]
+    #[display(fmt = "Could not recover state for '{}', aborting recover. Use backup!!", _0)]
     CouldNotRecover(Handle),
 }
 
@@ -207,6 +200,13 @@ where
             }
 
             self.store.archive_surplus_events(&handle, last_good_evt + 1)?;
+
+            if !hunkydory {
+                warn!(
+                    "State for '{}' can only be recovered to version: {}. Check corrupt and surplus dirs",
+                    &handle, last_good_evt
+                );
+            }
 
             let agg = self
                 .store
