@@ -393,7 +393,9 @@ pub trait KeyStore {
         if self.has_key(id, &snapshot_backup) {
             self.drop(id, &snapshot_backup)?;
         }
-        self.move_key(id, &snapshot_current, &snapshot_backup)?;
+        if self.has_key(id, &snapshot_current) {
+            self.move_key(id, &snapshot_current, &snapshot_backup)?;
+        }
         self.move_key(id, &snapshot_new, &snapshot_current)?;
 
         Ok(())

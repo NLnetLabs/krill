@@ -193,15 +193,22 @@ impl KeyStore for DiskKeyStore {
     }
 
     fn move_key(&self, id: &Handle, from: &PathBuf, to: &PathBuf) -> Result<(), KeyStoreError> {
-        let from = self.file_path(id, from);
-        let to = self.file_path(id, to);
+        let from_path = self.file_path(id, from);
+        let to_path = self.file_path(id, to);
 
-        if let Ok(bytes) = file::read(&from) {
-            file::save(bytes.as_ref(), &to)?;
-            fs::remove_file(&from)?;
+        if !from_path.exists() {
+            Err(KeyStoreError::KeyUnknown(from.to_string_lossy().to_string()))
+        } else {
+            if let Some(parent) = to_path.parent() {
+                if !parent.exists() {
+                    fs::create_dir(parent)?;
+                }
+            }
+
+            fs::rename(from_path, to_path)?;
+
+            Ok(())
         }
-
-        Ok(())
     }
 }
 
@@ -238,5 +245,39 @@ impl DiskKeyStore {
         let mut dir_path = self.dir.clone();
         dir_path.push(id.to_path_buf());
         dir_path
+    }
+}
+
+//------------ Tests ---------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    use crate::test;
+    use std::str::FromStr;
+
+    #[test]
+    fn diskstore_move_key() {
+        test::test_under_tmp(|d| {
+            let store = DiskKeyStore::new(&d, "store");
+
+            let content = "abc".to_string();
+            let id = Handle::from_str("id").unwrap();
+            let key = PathBuf::from("content");
+            let target = PathBuf::from("sub/copy");
+
+            store.store(&id, &key, &content).unwrap();
+
+            let fullpath = store.file_path(&id, &key);
+            assert!(fullpath.exists());
+
+            store.move_key(&id, &key, &target).unwrap();
+
+            let targetpath = store.file_path(&id, &target);
+            assert!(!fullpath.exists());
+            assert!(targetpath.exists());
+        })
     }
 }
