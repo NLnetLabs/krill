@@ -155,63 +155,56 @@ where
     pub fn recover(&self) -> StoreResult<()> {
         let criteria = CommandHistoryCriteria::default();
         for handle in self.list() {
-            // Check info
-            //  - if corrupt -> archive and assume nothing
+            info!("Will recover state for '{}'", &handle);
 
             // Check
             // - All commands, archive bad commands
             // - All events, archive bad events
+            // - Keep track of last known good command and event
+            // - Archive all commands and events after
             //
-            // Snapshot:
-            // - if snapshot is bad -> archive
-            // - if backup snapshot bad -> archive
+            // Rebuild state up to event:
+            //   - use snapshot - archive if bad
+            //   - use back-up snapshot if snapshot is no good - archive if bad
+            //   - start from init event if back-up snapshot is bad, or if the version exceeds last good event
+            //   - process events from (back-up) snapshot up to last good event
             //
-            // rebuild state up to event:
-            //   - use snapshot - check that version < seq command
-            //   - use back-up snapshot if snapshot is no good
-            //   - process events from (back-up) snapshot
-            //
-            //   IF good:
-            //      - save snapshot
-            //      - save info
-            //      - delete surplus command and events
-            //
-            //  find and archive any surplus events
-
-            //   IF bad:
-            //      - stop, don't change the disk
-            //
-            //    NOTE: bad is unlikely, it means both the snapshot and backup snapshot
-            //          are broken, or that they are both from after the last good command
-
-            let cmd_keys = self.store.command_keys_ascending(&handle, &criteria);
+            //  If still good:
+            //   - save snapshot
+            //   - save info
 
             let mut last_good_cmd = 0;
             let mut last_good_evt = 0;
             let mut last_update = Time::now();
 
-            // Check all commands and events
-            // TODO: When archiving is in place, allow archived events
-            'outer: while let Some(key) = cmd_keys.get(last_good_cmd as usize) {
+            // Check all commands and associated events
+            let mut hunkydory = true;
+            for key in self.store.command_keys_ascending(&handle, &criteria) {
                 let key = key.into();
-                if let Ok(cmd) = self.store.get_command::<A::StorableCommandDetails>(&handle, &key) {
-                    if let Some(events) = cmd.effect().events() {
-                        for version in events {
-                            if let Ok(Some(_)) = self.store.get_event::<A::Event>(&handle, *version) {
-                                last_good_evt = *version;
-                            } else {
-                                break 'outer;
+                if hunkydory {
+                    if let Ok(cmd) = self.store.get_command::<A::StorableCommandDetails>(&handle, &key) {
+                        if let Some(events) = cmd.effect().events() {
+                            for version in events {
+                                // TODO: When archiving is in place, allow missing (archived) events as long as they are from before the snapshot or backup snapshot
+                                if let Ok(Some(_)) = self.store.get_event::<A::Event>(&handle, *version) {
+                                    last_good_evt = *version;
+                                } else {
+                                    hunkydory = false;
+                                }
                             }
                         }
+                        last_good_cmd = cmd.sequence();
+                        last_update = cmd.time();
+                    } else {
+                        hunkydory = false;
                     }
-                    last_good_cmd = cmd.sequence();
-                    last_update = cmd.time();
-                } else {
-                    break;
+                }
+                if !hunkydory {
+                    // Bad command or event encountered.. archive surplus commands
+                    // note that we will clean surplus events later
+                    self.store.archive_surplus(&handle, &key)?;
                 }
             }
-
-            warn!("Will try to recover '{}' to version '{}", &handle, last_good_evt);
 
             let agg = self
                 .store
