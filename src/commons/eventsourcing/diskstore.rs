@@ -3,6 +3,7 @@ use std::convert::TryFrom;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::{fs, io};
 
 use serde::de::DeserializeOwned;
@@ -227,6 +228,25 @@ impl DiskKeyStore {
             fs::create_dir_all(&path)?;
         }
         Ok(Self::new(work_dir, name_space))
+    }
+
+    /// Clean surplus events
+    pub fn archive_surplus_events(&self, id: &Handle, from: u64) -> Result<(), KeyStoreError> {
+        for key in self.keys_ascending(id, "delta-") {
+            let key_string = key.to_string_lossy().to_string();
+            if key_string.starts_with("delta-") && key_string.ends_with(".json") {
+                let start = 6;
+                let end = key_string.len() - 5;
+                if end > start {
+                    if let Ok(v) = u64::from_str(&key_string[start..end]) {
+                        if v >= from {
+                            self.archive_surplus_event(id, v)?;
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     fn version_path(&self) -> PathBuf {

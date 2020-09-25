@@ -206,6 +206,8 @@ where
                 }
             }
 
+            self.store.archive_surplus_events(&handle, last_good_evt + 1)?;
+
             let agg = self
                 .store
                 .get_aggregate::<A>(&handle, Some(last_good_evt))?
@@ -227,12 +229,6 @@ where
             self.cache_update(&handle, Arc::new(agg));
 
             self.store.save_info(&handle, &info)?;
-
-            last_good_evt += 1;
-            while let Ok(Some(_)) = self.store.get_event::<A::Event>(&handle, last_good_evt) {
-                self.store.archive_surplus_event(&handle, last_good_evt)?;
-                last_good_evt += 1;
-            }
         }
 
         Ok(())
