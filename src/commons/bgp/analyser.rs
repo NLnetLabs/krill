@@ -1,6 +1,4 @@
-use std::collections::HashSet;
 use std::env;
-use std::iter::FromIterator;
 
 use tokio::sync::RwLock;
 
@@ -8,7 +6,7 @@ use chrono::Duration;
 
 use rpki::x509::Time;
 
-use crate::commons::api::{AsNumber, ResourceSet, RoaDefinition, TypedPrefix};
+use crate::commons::api::{AsNumber, ResourceSet, RoaDefinition};
 use crate::commons::bgp::{
     make_roa_tree, make_validated_announcement_tree, Announcement, AnnouncementValidity, Announcements,
     BgpAnalysisEntry, BgpAnalysisReport, BgpAnalysisState, BgpAnalysisSuggestion, IpRange, RisDumpError, RisDumpLoader,
@@ -137,21 +135,7 @@ impl BgpAnalyser {
                         .map(|va| va.announcement())
                         .collect();
 
-                    let authorizes_excess: Vec<Announcement> = {
-                        let mut unannounced_specifics: HashSet<TypedPrefix> =
-                            HashSet::from_iter(roa.to_specific_prefixes().into_iter());
-
-                        for authorized_pfx in authorizes.iter().map(|a| a.prefix()) {
-                            if authorized_pfx.addr_len() == roa.effective_max_length() {
-                                unannounced_specifics.remove(authorized_pfx);
-                            }
-                        }
-
-                        unannounced_specifics
-                            .into_iter()
-                            .map(|tp| Announcement::new(roa.asn(), tp))
-                            .collect()
-                    };
+                    let authorizes_excess: bool = { (authorizes.len() as u128) < roa.nr_of_allowed_prefixes() };
 
                     let disallows: Vec<Announcement> = covered
                         .iter()
@@ -165,13 +149,8 @@ impl BgpAnalyser {
 
                     if authorizes.is_empty() && disallows.is_empty() {
                         entries.push(BgpAnalysisEntry::roa_unseen(roa))
-                    } else if !authorizes_excess.is_empty() {
-                        entries.push(BgpAnalysisEntry::roa_too_permissive(
-                            roa,
-                            authorizes,
-                            disallows,
-                            authorizes_excess,
-                        ))
+                    } else if authorizes_excess {
+                        entries.push(BgpAnalysisEntry::roa_too_permissive(roa, authorizes, disallows))
                     } else {
                         entries.push(BgpAnalysisEntry::roa_seen(roa, authorizes, disallows))
                     }

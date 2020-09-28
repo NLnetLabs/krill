@@ -160,6 +160,18 @@ impl RoaDefinition {
         }
     }
 
+    pub fn nr_of_allowed_prefixes(&self) -> u128 {
+        let pfx_len = self.prefix.addr_len();
+        let max_len = self.effective_max_length();
+
+        // 10.0.0.0/8-8 -> 1                          2^1 - 1 ... 2 ^ (max - len + 1) -1
+        // 10.0.0.0/8-9 -> 1 + 2 = 3                  2^2 - 1
+        // 10.0.0.0/8-10 -> 1 + 2 + 4 = 7             2^3 - 1
+        // 10.0.0.0/8-11 -> 1 + 2 + 4 + 8 = 15        2^4 - 1
+
+        (1u128 << (max_len - pfx_len + 1)) - 1
+    }
+
     pub fn max_length_valid(&self) -> bool {
         if let Some(max_length) = self.max_length {
             match self.prefix {
@@ -181,13 +193,6 @@ impl RoaDefinition {
     /// Returns `true` if this is an AS0 definition which overlaps the other.
     pub fn overlaps(&self, other: &RoaDefinition) -> bool {
         self.prefix.matching_or_less_specific(&other.prefix) || other.prefix.matching_or_less_specific(&self.prefix)
-    }
-
-    /// Returns all prefixes covered by the max length of this definition.
-    /// Note that if the effective max length equals the prefix length, this
-    /// means that the single prefix in this definition is returned.
-    pub fn to_specific_prefixes(&self) -> Vec<TypedPrefix> {
-        self.prefix.to_specific_prefixes(self.effective_max_length())
     }
 }
 
@@ -431,31 +436,6 @@ impl TypedPrefix {
         self.matches_type(other)
             && self.prefix().min().le(&other.prefix().min())
             && self.prefix().max().ge(&other.prefix().max())
-    }
-
-    pub fn to_specific_prefixes(&self, len: u8) -> Vec<TypedPrefix> {
-        let mut res = vec![];
-
-        let nr_specifics = 1 << (len - self.addr_len());
-
-        // note that the lower 12 bytes are disregarded for IPv4
-        // by our implementation, so the increment here is the
-        // same for both address families.
-        let increment: u128 = 1 << (128 - len);
-
-        for i in 0..nr_specifics {
-            let base = self.addr().to_bits() + i * increment;
-            let pfx = Prefix::new(base, len);
-
-            let pfx = match self {
-                TypedPrefix::V4(_) => TypedPrefix::V4(Ipv4Prefix(pfx)),
-                TypedPrefix::V6(_) => TypedPrefix::V6(Ipv6Prefix(pfx)),
-            };
-
-            res.push(pfx);
-        }
-
-        res
     }
 }
 
@@ -704,7 +684,6 @@ mod tests {
     use super::*;
 
     use crate::test::definition;
-    use crate::test::typed_prefix;
 
     #[test]
     fn parse_delta() {
@@ -830,18 +809,16 @@ mod tests {
     }
 
     #[test]
-    fn split_definition_to_specifics() {
-        fn check(def: &str, pfxs: &[&str]) {
+    fn roa_nr_allowed_pfx() {
+        fn check(def: &str, expected: u128) {
             let def = definition(def);
-            let expected: Vec<TypedPrefix> = pfxs.iter().map(|s| typed_prefix(s)).collect();
-            let seen = def.to_specific_prefixes();
-            assert_eq!(seen, expected);
+            let calculated = def.nr_of_allowed_prefixes();
+            assert_eq!(calculated, expected);
         }
 
-        check("10.0.0.0/16-16 => 64496", &["10.0.0.0/16"]);
-        check("10.0.0.0/15-16 => 64496", &["10.0.0.0/16", "10.1.0.0/16"]);
-
-        check("2001:db8::/32-32 => 64496", &["2001:db8::/32"]);
-        check("2001:db8::/32-33 => 64496", &["2001:db8::/33", "2001:db8:8000::/33"]);
+        check("10.0.0.0/15-15 => 64496", 1);
+        check("10.0.0.0/15-16 => 64496", 3);
+        check("10.0.0.0/15-17 => 64496", 7);
+        check("10.0.0.0/15-18 => 64496", 15);
     }
 }

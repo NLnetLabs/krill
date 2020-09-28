@@ -375,12 +375,6 @@ impl fmt::Display for BgpAnalysisReport {
                         writeln!(f, "\t\t{}", ann)?;
                     }
 
-                    writeln!(f)?;
-                    writeln!(f, "\t\tAuthorizes additional *invisible* announcements:")?;
-                    for ann in roa.authorizes_excess.iter() {
-                        writeln!(f, "\t\t{}", ann)?;
-                    }
-
                     if !roa.disallows.is_empty() {
                         writeln!(f)?;
                         writeln!(f, "\t\tDisallows:")?;
@@ -512,8 +506,6 @@ pub struct BgpAnalysisEntry {
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
     authorizes: Vec<Announcement>,
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
-    authorizes_excess: Vec<Announcement>,
-    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
     disallows: Vec<Announcement>,
 }
 
@@ -568,7 +560,6 @@ impl BgpAnalysisEntry {
             disallowed_by: vec![],
             made_redundant_by: vec![],
             authorizes,
-            authorizes_excess: vec![],
             disallows,
         }
     }
@@ -582,7 +573,6 @@ impl BgpAnalysisEntry {
             disallowed_by: vec![],
             made_redundant_by: vec![],
             authorizes: vec![],
-            authorizes_excess: vec![],
             disallows,
         }
     }
@@ -596,7 +586,6 @@ impl BgpAnalysisEntry {
             disallowed_by: vec![],
             made_redundant_by,
             authorizes: vec![],
-            authorizes_excess: vec![],
             disallows: vec![],
         }
     }
@@ -605,11 +594,9 @@ impl BgpAnalysisEntry {
         definition: RoaDefinition,
         mut authorizes: Vec<Announcement>,
         mut disallows: Vec<Announcement>,
-        mut authorizes_excess: Vec<Announcement>,
     ) -> Self {
         authorizes.sort();
         disallows.sort();
-        authorizes_excess.sort();
         BgpAnalysisEntry {
             definition,
             state: BgpAnalysisState::RoaTooPermissive,
@@ -617,7 +604,6 @@ impl BgpAnalysisEntry {
             disallowed_by: vec![],
             made_redundant_by: vec![],
             authorizes,
-            authorizes_excess,
             disallows,
         }
     }
@@ -630,7 +616,6 @@ impl BgpAnalysisEntry {
             disallowed_by: vec![],
             made_redundant_by: vec![],
             authorizes: vec![],
-            authorizes_excess: vec![],
             disallows: vec![],
         }
     }
@@ -643,7 +628,6 @@ impl BgpAnalysisEntry {
             disallowed_by: vec![],
             made_redundant_by: vec![],
             authorizes: vec![],
-            authorizes_excess: vec![],
             disallows: vec![],
         }
     }
@@ -656,7 +640,6 @@ impl BgpAnalysisEntry {
             disallowed_by: vec![],
             made_redundant_by: vec![],
             authorizes: vec![],
-            authorizes_excess: vec![],
             disallows: vec![],
         }
     }
@@ -686,7 +669,6 @@ impl BgpAnalysisEntry {
             disallowed_by,
             made_redundant_by: vec![],
             authorizes: vec![],
-            authorizes_excess: vec![],
             disallows: vec![],
         }
     }
@@ -699,7 +681,6 @@ impl BgpAnalysisEntry {
             disallowed_by: vec![],
             made_redundant_by: vec![],
             authorizes: vec![],
-            authorizes_excess: vec![],
             disallows: vec![],
         }
     }
