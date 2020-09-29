@@ -47,6 +47,30 @@ pub async fn start() -> Result<(), Error> {
         ::std::process::exit(1);
     }
 
+    // Check data dir can be written to
+    {
+        let mut test_file = CONFIG.data_dir.clone();
+        test_file.push("test");
+
+        if let Err(e) = file::save("test".as_bytes(), &test_file) {
+            eprintln!(
+                "Cannot write to data dir: {}, Error: {}",
+                CONFIG.data_dir.to_string_lossy(),
+                e
+            );
+            ::std::process::exit(1);
+        } else {
+            if let Err(e) = file::delete(&test_file) {
+                eprintln!(
+                    "Cannot delete test file in data dir: {}, Error: {}",
+                    test_file.to_string_lossy(),
+                    e
+                );
+                ::std::process::exit(1);
+            }
+        }
+    }
+
     // Call upgrade, this will only do actual work if needed.
     pre_start_upgrade(&CONFIG.data_dir).map_err(|e| Error::Custom(format!("Could not upgrade Krill: {}", e)))?;
 

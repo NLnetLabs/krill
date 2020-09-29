@@ -443,9 +443,15 @@ where
 
                     // Time to start saving things.
                     let stored_command = stored_command_builder.finish_with_events(events.as_slice());
-                    self.store
-                        .store_command(stored_command)
-                        .map_err(AggregateStoreError::KeyStoreError)?;
+
+                    // If persistence fails, then complain loudly, and exit. Krill should not keep running, because this would
+                    // result in discrepancies between state in memory and state on disk. Let Krill crash and an operator investigate.
+                    // See issue: https://github.com/NLnetLabs/krill/issues/322
+                    if let Err(e) = self.store.store_command(stored_command) {
+                        error!("Cannot save state for '{}'. Got error: {}", handle, e);
+                        error!("Will now exit Krill - please verify that the disk can be written to and is not full");
+                        std::process::exit(1);
+                    }
 
                     for event in &events {
                         self.store
