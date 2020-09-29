@@ -329,7 +329,7 @@ mod tests {
 
         // Get history excluding 'around the sun' commands
         let mut crit = CommandHistoryCriteria::default();
-        crit.set_exclude(&["person-around-sun"]);
+        crit.set_excludes(&["person-around-sun"]);
         let history = manager.command_history(&id_alice, crit).unwrap();
         assert_eq!(history.total(), 1);
 

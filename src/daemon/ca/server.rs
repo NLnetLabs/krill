@@ -24,7 +24,7 @@ use crate::commons::eventsourcing::{Aggregate, AggregateStore, Command, CommandK
 use crate::commons::remote::cmslogger::CmsLogger;
 use crate::commons::remote::{rfc6492, rfc8181, rfc8183};
 use crate::commons::util::httpclient;
-use crate::commons::KrillResult;
+use crate::commons::{KrillEmptyResult, KrillResult};
 use crate::constants::{CASERVER_DIR, STATUS_DIR};
 use crate::daemon::ca::{
     self, ta_handle, CertAuth, Cmd, CmdDet, IniDet, ResourceTaggedAttestation, RouteAuthorizationUpdates,
@@ -374,6 +374,16 @@ impl CaServer {
         self.ca_store
             .command_history(handle, crit)
             .map_err(|_| Error::CaUnknown(handle.clone()))
+    }
+
+    /// Archive old (eligible) commands for CA
+    pub async fn archive_ca_commands(&self, days: i64) -> KrillEmptyResult {
+        for ca in self.ca_list().await.cas() {
+            let lock = self.locks.ca(ca.handle()).await;
+            let _ = lock.write().await;
+            self.ca_store.archive_old_commands(ca.handle(), days)?;
+        }
+        Ok(())
     }
 
     /// Shows the details for a CA command

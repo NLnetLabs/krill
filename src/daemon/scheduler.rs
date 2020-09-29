@@ -36,6 +36,10 @@ pub struct Scheduler {
     /// Responsible for refreshing announcement information
     #[allow(dead_code)] // just need to keep this in scope
     announcements_refresh_sh: ScheduleHandle,
+
+    /// Responsible for archiving old commands
+    #[allow(dead_code)] // just need to keep this in scope
+    archive_old_commands_sh: ScheduleHandle,
 }
 
 impl Scheduler {
@@ -46,16 +50,17 @@ impl Scheduler {
         bgp_analyser: Arc<BgpAnalyser>,
         ca_refresh_rate: u32,
     ) -> Self {
-        let event_sh = make_event_sh(event_queue, caserver.clone(), pubserver);
+        let event_sh = make_event_sh(event_queue, caserver.clone(), pubserver.clone());
         let republish_sh = make_republish_sh(caserver.clone());
-        let ca_refresh_sh = make_ca_refresh_sh(caserver, ca_refresh_rate);
+        let ca_refresh_sh = make_ca_refresh_sh(caserver.clone(), ca_refresh_rate);
         let announcements_refresh_sh = make_announcements_refresh_sh(bgp_analyser);
-
+        let archive_old_commands_sh = make_archive_old_commands_sh(caserver, pubserver);
         Scheduler {
             event_sh,
             republish_sh,
             ca_refresh_sh,
             announcements_refresh_sh,
+            archive_old_commands_sh,
         }
     }
 }
@@ -225,6 +230,27 @@ fn make_announcements_refresh_sh(bgp_analyser: Arc<BgpAnalyser>) -> ScheduleHand
         rt.block_on(async {
             if let Err(e) = bgp_analyser.update().await {
                 error!("Failed to update BGP announcements: {}", e)
+            }
+        })
+    });
+    scheduler.watch_thread(Duration::from_millis(100))
+}
+
+fn make_archive_old_commands_sh(caserver: Arc<CaServer>, pubserver: Option<Arc<PubServer>>) -> ScheduleHandle {
+    let mut scheduler = clokwerk::Scheduler::new();
+    scheduler.every(60.seconds()).run(move || {
+        let mut rt = Runtime::new().unwrap();
+        rt.block_on(async {
+            if let Some(days) = CONFIG.archive_threshold_days {
+                if let Err(e) = caserver.archive_ca_commands(days).await {
+                    error!("Failed to archive old CA commands: {}", e)
+                }
+
+                if let Some(pubserver) = pubserver.as_ref() {
+                    if let Err(e) = pubserver.history_archive_old(days) {
+                        error!("Failed to archive old Publication Server commands: {}", e)
+                    }
+                }
             }
         })
     });

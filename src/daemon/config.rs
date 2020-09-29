@@ -61,6 +61,13 @@ impl ConfigDefaults {
     fn data_dir() -> PathBuf {
         PathBuf::from("./data")
     }
+    fn archive_threshold_days() -> Option<i64> {
+        if Self::test_mode() {
+            Some(0)
+        } else {
+            None
+        }
+    }
     fn rsync_base() -> uri::Rsync {
         uri::Rsync::from_str("rsync://localhost/repo/").unwrap()
     }
@@ -205,6 +212,9 @@ pub struct Config {
 
     #[serde(default = "ConfigDefaults::data_dir")]
     pub data_dir: PathBuf,
+
+    #[serde(default = "ConfigDefaults::archive_threshold_days")]
+    pub archive_threshold_days: Option<i64>,
 
     pub pid_file: Option<PathBuf>,
 
@@ -359,6 +369,7 @@ impl Config {
         let testbed_enabled = true;
         let https_mode = HttpsMode::Generate;
         let data_dir = data_dir.clone();
+        let archive_threshold_days = Some(0);
         let rsync_base = ConfigDefaults::rsync_base();
         let service_uri = ConfigDefaults::service_uri();
         let rrdp_service_uri = Some("https://localhost:3000/test-rrdp/".to_string());
@@ -409,6 +420,7 @@ impl Config {
             testbed_enabled,
             https_mode,
             data_dir,
+            archive_threshold_days,
             rsync_base,
             service_uri,
             rrdp_service_uri,

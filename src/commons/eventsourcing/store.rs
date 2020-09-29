@@ -123,6 +123,12 @@ impl TryFrom<PathBuf> for CommandKey {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CommandKeyError;
 
+impl fmt::Display for CommandKeyError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "invalid command key")
+    }
+}
+
 //------------ KeyStore ------------------------------------------------------
 
 /// Generic KeyStore for AggregateManager

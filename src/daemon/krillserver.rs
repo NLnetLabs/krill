@@ -114,16 +114,13 @@ impl KrillServer {
 
         let pubserver = {
             if CONFIG.repo_enabled {
-                Some(
-                    PubServer::build(
-                        &base_uri,
-                        rrdp_base_uri.clone(),
-                        work_dir,
-                        CONFIG.rfc8181_log_dir.as_ref(),
-                        Arc::new(signer.clone()),
-                    )
-                    .await?,
-                )
+                Some(PubServer::build(
+                    &base_uri,
+                    rrdp_base_uri.clone(),
+                    work_dir,
+                    CONFIG.rfc8181_log_dir.as_ref(),
+                    Arc::new(signer.clone()),
+                )?)
             } else {
                 PubServer::remove_if_empty(
                     &base_uri,
@@ -131,8 +128,7 @@ impl KrillServer {
                     work_dir,
                     CONFIG.rfc8181_log_dir.as_ref(),
                     Arc::new(signer.clone()),
-                )
-                .await?
+                )?
             }
         };
         let pubserver: Option<Arc<PubServer>> = pubserver.map(Arc::new);
@@ -155,7 +151,7 @@ impl KrillServer {
                 info!("Creating embedded Trust Anchor");
 
                 let pubserver = pubserver.as_ref().ok_or_else(|| Error::PublisherNoEmbeddedRepo)?;
-                let repo_info: RepoInfo = pubserver.repo_info_for(&ta_handle).await?;
+                let repo_info: RepoInfo = pubserver.repo_info_for(&ta_handle)?;
 
                 let ta_uri = CONFIG.ta_cert_uri();
 
@@ -170,7 +166,7 @@ impl KrillServer {
                 // Add publisher
                 let req = rfc8183::PublisherRequest::new(None, ta_handle.clone(), ta.id_cert().clone());
 
-                pubserver.create_publisher(req).await?;
+                pubserver.create_publisher(req)?;
 
                 // Force initial publication
                 caserver.republish(&ta_handle).await?;
@@ -192,10 +188,10 @@ impl KrillServer {
                     let pubserver = pubserver.as_ref().ok_or_else(|| Error::PublisherNoEmbeddedRepo)?;
                     let pub_req =
                         rfc8183::PublisherRequest::new(None, testbed_ca_handle.clone(), testbed_ca.id_cert().clone());
-                    pubserver.create_publisher(pub_req).await?;
+                    pubserver.create_publisher(pub_req)?;
                     let rfc8181_uri =
                         uri::Https::from_string(format!("{}rfc8181/{}", service_uri, testbed_ca_handle)).unwrap();
-                    let repo_response = pubserver.repository_response(rfc8181_uri, &testbed_ca_handle).await?;
+                    let repo_response = pubserver.repository_response(rfc8181_uri, &testbed_ca_handle)?;
                     let repo_contact = RepositoryContact::Rfc8181(repo_response);
                     caserver.update_repo(testbed_ca_handle.clone(), repo_contact).await?;
                     caserver.republish(&testbed_ca_handle).await?;
@@ -282,32 +278,32 @@ impl KrillServer {
     }
 
     /// Returns the repository server stats
-    pub async fn repo_stats(&self) -> KrillResult<RepoStats> {
-        self.get_embedded()?.repo_stats().await
+    pub fn repo_stats(&self) -> KrillResult<RepoStats> {
+        self.get_embedded()?.repo_stats()
     }
 
     /// Returns all currently CONFIGured publishers. (excludes deactivated)
-    pub async fn publishers(&self) -> KrillResult<Vec<Handle>> {
-        self.get_embedded()?.publishers().await
+    pub fn publishers(&self) -> KrillResult<Vec<Handle>> {
+        self.get_embedded()?.publishers()
     }
 
     /// Adds the publishers, blows up if it already existed.
-    pub async fn add_publisher(&self, req: rfc8183::PublisherRequest) -> KrillResult<rfc8183::RepositoryResponse> {
+    pub fn add_publisher(&self, req: rfc8183::PublisherRequest) -> KrillResult<rfc8183::RepositoryResponse> {
         let publisher_handle = req.publisher_handle().clone();
 
-        self.get_embedded()?.create_publisher(req).await?;
+        self.get_embedded()?.create_publisher(req)?;
 
-        self.repository_response(&publisher_handle).await
+        self.repository_response(&publisher_handle)
     }
 
     /// Removes a publisher, blows up if it didn't exist.
-    pub async fn remove_publisher(&mut self, publisher: PublisherHandle) -> KrillEmptyResult {
-        self.get_embedded()?.remove_publisher(publisher).await
+    pub fn remove_publisher(&mut self, publisher: PublisherHandle) -> KrillEmptyResult {
+        self.get_embedded()?.remove_publisher(publisher)
     }
 
     /// Returns a publisher.
-    pub async fn get_publisher(&self, publisher: &PublisherHandle) -> KrillResult<PublisherDetails> {
-        self.get_embedded()?.get_publisher_details(publisher).await
+    pub fn get_publisher(&self, publisher: &PublisherHandle) -> KrillResult<PublisherDetails> {
+        self.get_embedded()?.get_publisher_details(publisher)
     }
 
     pub fn rrdp_base_path(&self) -> PathBuf {
@@ -320,14 +316,13 @@ impl KrillServer {
 /// # Manage RFC8181 clients
 ///
 impl KrillServer {
-    pub async fn repository_response(&self, publisher: &PublisherHandle) -> KrillResult<rfc8183::RepositoryResponse> {
+    pub fn repository_response(&self, publisher: &PublisherHandle) -> KrillResult<rfc8183::RepositoryResponse> {
         let rfc8181_uri = uri::Https::from_string(format!("{}rfc8181/{}", self.service_uri, publisher)).unwrap();
-
-        self.get_embedded()?.repository_response(rfc8181_uri, publisher).await
+        self.get_embedded()?.repository_response(rfc8181_uri, publisher)
     }
 
-    pub async fn rfc8181(&self, publisher: PublisherHandle, msg_bytes: Bytes) -> KrillResult<Bytes> {
-        self.get_embedded()?.rfc8181(publisher, msg_bytes).await
+    pub fn rfc8181(&self, publisher: PublisherHandle, msg_bytes: Bytes) -> KrillResult<Bytes> {
+        self.get_embedded()?.rfc8181(publisher, msg_bytes)
     }
 }
 
@@ -596,7 +591,7 @@ impl KrillServer {
         let contact = match update {
             RepositoryUpdate::Embedded => {
                 // Add to embedded publication server if not present
-                if self.get_embedded()?.get_publisher_details(&handle).await.is_err() {
+                if self.get_embedded()?.get_publisher_details(&handle).is_err() {
                     let id_cert = {
                         let ca = self.caserver.get_ca(&handle).await?;
                         ca.id_cert().clone()
@@ -604,10 +599,10 @@ impl KrillServer {
 
                     // Add publisher
                     let req = rfc8183::PublisherRequest::new(None, handle.clone(), id_cert);
-                    self.add_publisher(req).await?;
+                    self.add_publisher(req)?;
                 }
 
-                RepositoryContact::embedded(self.get_embedded()?.repo_info_for(&handle).await?)
+                RepositoryContact::embedded(self.get_embedded()?.repo_info_for(&handle)?)
             }
             RepositoryUpdate::Rfc8181(response) => {
                 // first check that the new repo can be contacted
@@ -701,13 +696,13 @@ impl KrillServer {
 impl KrillServer {
     /// Handles a publish delta request sent to the API, or.. through
     /// the CmsProxy.
-    pub async fn handle_delta(&self, publisher: PublisherHandle, delta: PublishDelta) -> KrillEmptyResult {
-        self.get_embedded()?.publish(publisher, delta).await
+    pub fn handle_delta(&self, publisher: PublisherHandle, delta: PublishDelta) -> KrillEmptyResult {
+        self.get_embedded()?.publish(publisher, delta)
     }
 
     /// Handles a list request sent to the API, or.. through the CmsProxy.
-    pub async fn handle_list(&self, publisher: &PublisherHandle) -> KrillResult<ListReply> {
-        self.get_embedded()?.list(publisher).await
+    pub fn handle_list(&self, publisher: &PublisherHandle) -> KrillResult<ListReply> {
+        self.get_embedded()?.list(publisher)
     }
 }
 

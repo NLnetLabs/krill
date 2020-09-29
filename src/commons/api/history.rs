@@ -155,6 +155,18 @@ impl CommandHistoryRecord {
         Time::from(DateTime::from_utc(time, Utc))
     }
 
+    pub fn resulting_version(&self) -> u64 {
+        if let Some(versions) = self.effect.events() {
+            if let Some(last) = versions.last() {
+                *last
+            } else {
+                self.version
+            }
+        } else {
+            self.version
+        }
+    }
+
     pub fn command_key(&self) -> Result<CommandKey, CommandKeyError> {
         CommandKey::from_str(&self.key)
     }
@@ -290,8 +302,12 @@ pub struct CommandHistoryCriteria {
 }
 
 impl CommandHistoryCriteria {
-    pub fn set_exclude(&mut self, labels: &[&str]) {
+    pub fn set_excludes(&mut self, labels: &[&str]) {
         self.label_excludes = Some(labels.iter().map(|s| (*s).to_string()).collect());
+    }
+
+    pub fn set_includes(&mut self, labels: &[&str]) {
+        self.label_includes = Some(labels.iter().map(|s| (*s).to_string()).collect());
     }
 
     pub fn set_after(&mut self, timestamp: i64) {

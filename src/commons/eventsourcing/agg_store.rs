@@ -3,6 +3,7 @@ use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
+use chrono::Duration;
 use rpki::x509::Time;
 
 use crate::commons::api::{CommandHistory, CommandHistoryCriteria, Handle};
@@ -90,6 +91,9 @@ pub enum AggregateStoreError {
 
     #[display(fmt = "Could not recover state for '{}', aborting recover. Use backup!!", _0)]
     CouldNotRecover(Handle),
+
+    #[display(fmt = "Could not archive commands and events for '{}'. Error: {}", _0, _1)]
+    CouldNotArchive(Handle, String),
 }
 
 impl From<KeyStoreError> for AggregateStoreError {
@@ -136,8 +140,15 @@ where
     /// In that case the user may want to use the recover option to see what can be salvaged.
     pub fn warm(&self) -> StoreResult<()> {
         for handle in self.list() {
-            self.get_latest(&handle)
-                .map_err(|e| AggregateStoreError::WarmupFailed(handle, e.to_string()))?;
+            if !self.store.has_key(&handle, &DiskKeyStore::key_for_snapshot()) {
+                return Err(AggregateStoreError::WarmupFailed(
+                    handle,
+                    "No snapshot found.".to_string(),
+                ));
+            } else {
+                self.get_latest(&handle)
+                    .map_err(|e| AggregateStoreError::WarmupFailed(handle, e.to_string()))?;
+            }
         }
         Ok(())
     }
@@ -231,6 +242,50 @@ where
             self.store.save_info(&handle, &info)?;
         }
 
+        Ok(())
+    }
+
+    /// Archive old commands if they are:
+    /// - older than the backup snapshot
+    /// - AND older then the threshold days
+    /// - AND they are eligible for archiving
+    pub fn archive_old_commands(&self, handle: &Handle, days: i64) -> StoreResult<()> {
+        let mut crit = CommandHistoryCriteria::default();
+        let before = (Time::now() - Duration::days(days)).timestamp();
+        crit.set_before(before);
+        crit.set_includes(&["cmd-ca-publish", "pubd-publish"]);
+
+        let info = self
+            .store
+            .get_info(handle)
+            .map_err(|e| AggregateStoreError::CouldNotArchive(handle.clone(), e.to_string()))?;
+
+        let archivable = self.command_history(handle, crit)?;
+
+        let commands = archivable.commands();
+
+        for command in commands {
+            let key = command
+                .command_key()
+                .map_err(|e| AggregateStoreError::CouldNotArchive(handle.clone(), e.to_string()))?;
+
+            if command.resulting_version() < info.snapshot_version {
+                info!("Archiving command {} for {}", command.key, handle);
+
+                self.store
+                    .archive(handle, &key.into())
+                    .map_err(|e| AggregateStoreError::CouldNotArchive(handle.clone(), e.to_string()))?;
+
+                if let Some(evt_versions) = command.effect.events() {
+                    for version in evt_versions {
+                        info!("Archiving event {} for {}", version, handle);
+                        self.store
+                            .archive_event(handle, *version)
+                            .map_err(|e| AggregateStoreError::CouldNotArchive(handle.clone(), e.to_string()))?;
+                    }
+                }
+            }
+        }
         Ok(())
     }
 }
