@@ -1,9 +1,11 @@
 //! Support for signing mft, crl, certificates, roas..
 //! Common objects for TAs and CAs
 use std::convert::TryFrom;
+use std::str::FromStr;
 
 use bytes::Bytes;
 
+use bcder::{Ia5String, Oid};
 use rpki::cert::{Cert, KeyUsage, Overclaim, TbsCert};
 use rpki::crl::Crl;
 use rpki::crypto::{self, DigestAlgorithm, KeyIdentifier, PublicKey};
@@ -172,6 +174,13 @@ impl SignSupport {
         cert.set_ca_repository(Some(ca_repository));
         cert.set_rpki_manifest(Some(rpki_manifest));
         cert.set_rpki_notify(rpki_notify);
+
+        const OTHER_SIA_OID: Oid<&[u8]> = Oid(&[43, 6, 1, 5, 5, 7, 48, 14]); // hijack adjacent RPKI OID
+
+        cert.add_additional_sia(
+            OTHER_SIA_OID,
+            Ia5String::from_str("https://example.com/no/where/").unwrap(),
+        );
 
         let asns = resources.to_as_resources();
         if asns.is_inherited() || !asns.to_blocks().unwrap().is_empty() {
