@@ -22,7 +22,7 @@ RUN cargo build --target x86_64-alpine-linux-musl --release
 #             scripts needed to run Krill, and not the things needed to build
 #             it.
 #
-FROM alpine:3.11
+FROM alpine:3.12
 COPY --from=build /tmp/krill/target/x86_64-alpine-linux-musl/release/krill /usr/local/bin/
 COPY --from=build /tmp/krill/target/x86_64-alpine-linux-musl/release/krillc /usr/local/bin/
 
