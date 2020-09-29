@@ -15,6 +15,7 @@ RUN apk add rust cargo openssl-dev
 WORKDIR /tmp/krill
 COPY . .
 
+RUN rustc --version
 RUN cargo build --target x86_64-alpine-linux-musl --release
 
 #
