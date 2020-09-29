@@ -174,18 +174,18 @@ impl SignSupport {
         cert.set_rpki_notify(rpki_notify);
 
         let asns = resources.to_as_resources();
-        if asns.is_inherited() || !asns.as_blocks().unwrap().is_empty() {
-            cert.set_as_resources(Some(asns));
+        if asns.is_inherited() || !asns.to_blocks().unwrap().is_empty() {
+            cert.set_as_resources(asns);
         }
 
         let ipv4 = resources.to_ip_resources_v4();
-        if ipv4.is_inherited() || !ipv4.as_blocks().unwrap().is_empty() {
-            cert.set_v4_resources(Some(ipv4));
+        if ipv4.is_inherited() || !ipv4.to_blocks().unwrap().is_empty() {
+            cert.set_v4_resources(ipv4);
         }
 
         let ipv6 = resources.to_ip_resources_v6();
-        if ipv6.is_inherited() || !ipv6.as_blocks().unwrap().is_empty() {
-            cert.set_v6_resources(Some(ipv6));
+        if ipv6.is_inherited() || !ipv6.to_blocks().unwrap().is_empty() {
+            cert.set_v6_resources(ipv6);
         }
 
         cert.set_authority_key_identifier(Some(signing_cert.cert().subject_key_identifier()));
