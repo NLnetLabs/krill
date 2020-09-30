@@ -194,6 +194,8 @@ pub struct Notification {
     session: RrdpSession,
     serial: u64,
     time: Time,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    replaced: Option<Time>,
     snapshot: SnapshotRef,
     deltas: Vec<DeltaRef>,
     last_delta: Option<u64>,
@@ -206,6 +208,7 @@ impl Notification {
             session,
             serial,
             time: Time::now(),
+            replaced: None,
             snapshot,
             deltas,
             last_delta,
@@ -214,6 +217,18 @@ impl Notification {
 
     pub fn time(&self) -> Time {
         self.time
+    }
+
+    pub fn replaced_after(&self, timestamp: i64) -> bool {
+        if let Some(replaced) = self.replaced {
+            replaced.timestamp() > timestamp
+        } else {
+            false
+        }
+    }
+
+    pub fn replace(&mut self, time: Time) {
+        self.replaced = Some(time);
     }
 
     pub fn serial(&self) -> u64 {
@@ -226,6 +241,18 @@ impl Notification {
 
     pub fn last_delta(&self) -> Option<u64> {
         self.last_delta
+    }
+
+    pub fn includes_delta(&self, delta: u64) -> bool {
+        if let Some(last) = self.last_delta {
+            last <= delta
+        } else {
+            false
+        }
+    }
+
+    pub fn includes_snapshot(&self, version: u64) -> bool {
+        self.serial == version
     }
 
     fn find_last_delta(deltas: &[DeltaRef]) -> Option<u64> {

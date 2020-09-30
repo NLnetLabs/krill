@@ -256,10 +256,13 @@ impl PubServer {
 
 #[cfg(test)]
 mod tests {
+    use core::time::Duration;
     use std::path::PathBuf;
     use std::str::FromStr;
 
     use bytes::Bytes;
+
+    use tokio::time::delay_for;
 
     use crate::commons::api::rrdp::CurrentObjects;
     use crate::commons::api::rrdp::PublicationDeltaError;
@@ -360,8 +363,8 @@ mod tests {
         let _ = fs::remove_dir_all(d);
     }
 
-    #[test]
-    fn should_publish_files() {
+    #[tokio::test]
+    async fn should_publish_files() {
         let d = test::tmp_dir();
         let server = make_server(&d);
 
@@ -401,6 +404,8 @@ mod tests {
         assert_eq!(2, list_reply.elements().len());
         assert!(find_in_reply(&list_reply, &test::rsync("rsync://localhost/repo/alice/file.txt")).is_some());
         assert!(find_in_reply(&list_reply, &test::rsync("rsync://localhost/repo/alice/file2.txt")).is_some());
+
+        delay_for(Duration::from_secs(2)).await;
 
         // Update
         // - update file
@@ -481,12 +486,102 @@ mod tests {
         builder.add_publish(file3.as_publish());
         let delta = builder.finish();
 
-        match server.publish(alice_handle, delta) {
+        match server.publish(alice_handle.clone(), delta) {
             Err(Error::Rfc8181Delta(PublicationDeltaError::ObjectAlreadyPresent(uri))) => {
                 assert_eq!(uri, test::rsync("rsync://localhost/repo/alice/file3.txt"))
             }
             _ => panic!("Expected error publishing file that already exists"),
         }
+
+        //------------------------------------------------------
+        // Check that old serials are cleaned
+        //------------------------------------------------------
+
+        let session = session_dir(&d);
+
+        // Should not include
+        assert!(!session_dir_contains_serial(&session, 0));
+
+        // Should include
+        assert!(session_dir_contains_serial(&session, 1));
+        assert!(session_dir_contains_delta(&session, 1));
+        assert!(session_dir_contains_snapshot(&session, 1));
+        assert!(session_dir_contains_serial(&session, 2));
+        assert!(session_dir_contains_delta(&session, 2));
+        assert!(session_dir_contains_snapshot(&session, 2));
+
+        delay_for(Duration::from_secs(2)).await;
+
+        // Add file 4,5,6
+        //
+        let file4 = CurrentFile::new(
+            test::rsync("rsync://localhost/repo/alice/file4.txt"),
+            &Bytes::from("example content4"),
+        );
+
+        let file5 = CurrentFile::new(
+            test::rsync("rsync://localhost/repo/alice/file5.txt"),
+            &Bytes::from("example content5"),
+        );
+
+        let file6 = CurrentFile::new(
+            test::rsync("rsync://localhost/repo/alice/file6.txt"),
+            &Bytes::from("example content6"),
+        );
+
+        let mut builder = PublishDeltaBuilder::new();
+        builder.add_publish(file4.as_publish());
+        builder.add_publish(file5.as_publish());
+        builder.add_publish(file6.as_publish());
+        let delta = builder.finish();
+
+        server.publish(alice_handle.clone(), delta).unwrap();
+
+        // Should not include
+        assert!(!session_dir_contains_serial(&session, 0));
+        assert!(!session_dir_contains_snapshot(&session, 1));
+
+        // Should include
+        assert!(session_dir_contains_serial(&session, 1));
+        assert!(session_dir_contains_delta(&session, 1));
+        assert!(session_dir_contains_serial(&session, 2));
+        assert!(session_dir_contains_delta(&session, 2));
+        assert!(session_dir_contains_snapshot(&session, 2));
+        assert!(session_dir_contains_serial(&session, 2));
+        assert!(session_dir_contains_delta(&session, 2));
+        assert!(session_dir_contains_snapshot(&session, 2));
+
         let _ = fs::remove_dir_all(d);
+    }
+
+    fn session_dir(work_dir: &PathBuf) -> PathBuf {
+        let mut rrdp_dir = work_dir.clone();
+        rrdp_dir.push("repo/rrdp");
+
+        for entry in fs::read_dir(&rrdp_dir).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_name().to_string_lossy() != "notification.xml" {
+                return entry.path();
+            }
+        }
+        panic!("Could not find session dir under: {}", work_dir.to_string_lossy())
+    }
+
+    fn session_dir_contains_serial(session: &PathBuf, serial: u64) -> bool {
+        let mut path = session.clone();
+        path.push(serial.to_string());
+        path.is_dir()
+    }
+
+    fn session_dir_contains_delta(session: &PathBuf, serial: u64) -> bool {
+        let mut path = session.clone();
+        path.push(format!("{}/delta.xml", serial));
+        path.exists()
+    }
+
+    fn session_dir_contains_snapshot(session: &PathBuf, serial: u64) -> bool {
+        let mut path = session.clone();
+        path.push(format!("{}/snapshot.xml", serial));
+        path.exists()
     }
 }

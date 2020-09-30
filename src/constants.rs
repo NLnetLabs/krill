@@ -25,7 +25,6 @@ pub const PUBSERVER_DIR: &str = "pubd";
 pub const REPOSITORY_DIR: &str = "repo";
 pub const REPOSITORY_RRDP_DIR: &str = "rrdp";
 pub const REPOSITORY_RSYNC_DIR: &str = "rsync";
-pub const REPOSITORY_RRDP_SNAPSHOT_RETAIN_MINS: u64 = 10;
 
 pub const STATUS_DIR: &str = "status";
 

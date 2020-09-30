@@ -49,6 +49,15 @@ impl ConfigDefaults {
     fn repo_enabled() -> bool {
         env::var(KRILL_ENV_REPO_ENABLED).is_ok()
     }
+
+    fn repo_retain_old_seconds() -> i64 {
+        if env::var(KRILL_ENV_TEST).is_ok() {
+            1
+        } else {
+            600
+        }
+    }
+
     fn use_ta() -> bool {
         env::var(KRILL_ENV_USE_TA).is_ok()
     }
@@ -203,6 +212,9 @@ pub struct Config {
 
     #[serde(default = "ConfigDefaults::repo_enabled")]
     pub repo_enabled: bool,
+
+    #[serde(default = "ConfigDefaults::repo_retain_old_seconds")]
+    pub repo_retain_old_seconds: i64,
 
     #[serde(default = "ConfigDefaults::testbed_enabled")]
     pub testbed_enabled: bool,
@@ -366,6 +378,7 @@ impl Config {
         let test_mode = true;
         let use_ta = true;
         let repo_enabled = true;
+        let repo_retain_old_seconds = 1;
         let testbed_enabled = true;
         let https_mode = HttpsMode::Generate;
         let data_dir = data_dir.clone();
@@ -417,6 +430,7 @@ impl Config {
             test_mode,
             use_ta,
             repo_enabled,
+            repo_retain_old_seconds,
             testbed_enabled,
             https_mode,
             data_dir,
