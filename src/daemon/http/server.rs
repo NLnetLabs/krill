@@ -52,22 +52,20 @@ pub async fn start() -> Result<(), Error> {
         let mut test_file = CONFIG.data_dir.clone();
         test_file.push("test");
 
-        if let Err(e) = file::save("test".as_bytes(), &test_file) {
+        if let Err(e) = file::save(b"test", &test_file) {
             eprintln!(
                 "Cannot write to data dir: {}, Error: {}",
                 CONFIG.data_dir.to_string_lossy(),
                 e
             );
             ::std::process::exit(1);
-        } else {
-            if let Err(e) = file::delete(&test_file) {
-                eprintln!(
-                    "Cannot delete test file in data dir: {}, Error: {}",
-                    test_file.to_string_lossy(),
-                    e
-                );
-                ::std::process::exit(1);
-            }
+        } else if let Err(e) = file::delete(&test_file) {
+            eprintln!(
+                "Cannot delete test file in data dir: {}, Error: {}",
+                test_file.to_string_lossy(),
+                e
+            );
+            ::std::process::exit(1);
         }
     }
 
