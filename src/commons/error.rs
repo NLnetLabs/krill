@@ -14,7 +14,7 @@ use crate::commons::api::{
     ChildHandle, ErrorResponse, Handle, ParentHandle, PublisherHandle, ResourceClassName, ResourceSetError,
     RoaDefinition,
 };
-use crate::commons::eventsourcing::AggregateStoreError;
+use crate::commons::eventsourcing::{AggregateStoreError, KeyValueError};
 use crate::commons::remote::rfc6492;
 use crate::commons::remote::rfc6492::NotPerformedResponse;
 use crate::commons::remote::rfc8181;
@@ -194,6 +194,9 @@ pub enum Error {
     //-----------------------------------------------------------------
     #[display(fmt = "I/O error: {}", _0)]
     IoError(io::Error),
+
+    #[display(fmt = "Key/Value error: {}", _0)]
+    KeyValueError(KeyValueError),
 
     #[display(fmt = "Persistence error: {}", _0)]
     AggregateStoreError(AggregateStoreError),
@@ -440,6 +443,12 @@ impl From<io::Error> for Error {
     }
 }
 
+impl From<KeyValueError> for Error {
+    fn from(e: KeyValueError) -> Self {
+        Error::KeyValueError(e)
+    }
+}
+
 impl From<AggregateStoreError> for Error {
     fn from(e: AggregateStoreError) -> Self {
         Error::AggregateStoreError(e)
@@ -528,6 +537,9 @@ impl Error {
 
             // internal server error
             Error::IoError(e) => ErrorResponse::new("sys-io", &self).with_cause(e),
+
+            // internal server error
+            Error::KeyValueError(e) => ErrorResponse::new("sys-kv", &self).with_cause(e),
 
             // internal server error
             Error::AggregateStoreError(e) => ErrorResponse::new("sys-store", &self).with_cause(e),
