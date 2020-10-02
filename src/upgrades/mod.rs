@@ -177,16 +177,17 @@ fn upgrade_pre_0_6_0_pubd_commands(work_dir: &PathBuf) -> Result<(), UpgradeErro
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+    use std::str::FromStr;
 
     use crate::daemon::config::CONFIG;
     use crate::test;
 
-    use super::*;
-    use crate::commons::eventsourcing::{AggregateStore, DiskAggregateStore};
+    use crate::commons::eventsourcing::AggregateStore;
     use crate::constants::PUBSERVER_DFLT;
     use crate::daemon::ca::CertAuth;
     use crate::pubd::Repository;
-    use std::str::FromStr;
+
+    use super::*;
 
     #[test]
     fn upgrade_commands_0_6() {
@@ -261,7 +262,7 @@ mod tests {
     }
 
     fn test_cas(work_dir: &PathBuf, cas: &[&str]) {
-        let ca_store = DiskAggregateStore::<CertAuth>::new(&work_dir, "cas").unwrap();
+        let ca_store = AggregateStore::<CertAuth>::new(&work_dir, "cas").unwrap();
 
         for ca in cas {
             assert_no_snapshot(work_dir, &format!("cas/{}", ca));
@@ -273,7 +274,7 @@ mod tests {
     }
 
     fn test_repo(work_dir: &PathBuf, repo: &str) {
-        let repo_store = DiskAggregateStore::<Repository>::new(&work_dir, repo).unwrap();
+        let repo_store = AggregateStore::<Repository>::new(&work_dir, repo).unwrap();
         assert_no_snapshot(work_dir, &format!("{}/{}", repo, PUBSERVER_DFLT));
         let handle = Handle::from_str(PUBSERVER_DFLT).unwrap();
         if let Err(e) = repo_store.get_latest(&handle) {

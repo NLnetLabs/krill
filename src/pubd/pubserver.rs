@@ -12,7 +12,7 @@ use crate::commons::api::{
 };
 use crate::commons::crypto::{KrillSigner, ProtocolCms, ProtocolCmsBuilder};
 use crate::commons::error::Error;
-use crate::commons::eventsourcing::{AggregateStore, AggregateStoreError, DiskAggregateStore};
+use crate::commons::eventsourcing::{AggregateStore, AggregateStoreError};
 use crate::commons::remote::cmslogger::CmsLogger;
 use crate::commons::remote::rfc8181;
 use crate::commons::remote::rfc8183;
@@ -34,7 +34,7 @@ use crate::pubd::{self, CmdDet, RepoStats, Repository};
 /// * wrapping responses in RFC8183 for remote publishers
 ///
 pub struct PubServer {
-    store: Arc<DiskAggregateStore<Repository>>,
+    store: Arc<AggregateStore<Repository>>,
     signer: Arc<KrillSigner>,
     rfc8181_log_dir: Option<PathBuf>,
 }
@@ -73,7 +73,7 @@ impl PubServer {
     ) -> Result<Self, Error> {
         let default = Self::repository_handle();
 
-        let store = Arc::new(DiskAggregateStore::<Repository>::new(work_dir, PUBSERVER_DIR)?);
+        let store = Arc::new(AggregateStore::<Repository>::new(work_dir, PUBSERVER_DIR)?);
         if let Err(e) = store.warm() {
             error!(
                 "Could not warm up cache, storage seems corrupt, will try to recover!! Error was: {}",

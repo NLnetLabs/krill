@@ -18,7 +18,7 @@ mod diskstore;
 pub use self::diskstore::*;
 
 mod agg_store;
-pub use self::agg_store::{AggregateStore, AggregateStoreError, DiskAggregateStore};
+pub use self::agg_store::{AggregateStore, AggregateStoreError};
 
 mod listener;
 pub use self::listener::{EventCounter, EventListener};
@@ -276,7 +276,7 @@ mod tests {
         let d = test::tmp_dir();
 
         let counter = Arc::new(EventCounter::default());
-        let mut manager = DiskAggregateStore::<Person>::new(&d, "person").unwrap();
+        let mut manager = AggregateStore::<Person>::new(&d, "person").unwrap();
         manager.add_listener(counter.clone());
 
         let id_alice = Handle::from_str("alice").unwrap();
@@ -308,7 +308,7 @@ mod tests {
         assert_eq!(21, alice.age());
 
         // Should read state from disk
-        let manager = DiskAggregateStore::<Person>::new(&d, "person").unwrap();
+        let manager = AggregateStore::<Person>::new(&d, "person").unwrap();
 
         let alice = manager.get_latest(&id_alice).unwrap();
         assert_eq!("alice smith-doe", alice.name());

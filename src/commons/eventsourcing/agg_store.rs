@@ -17,92 +17,10 @@ const SNAPSHOT_FREQ: u64 = 5;
 
 pub type StoreResult<T> = Result<T, AggregateStoreError>;
 
-pub trait AggregateStore<A: Aggregate>: Send + Sync
-where
-    A::Error: From<AggregateStoreError>,
-{
-    /// Gets the latest version for the given aggregate. Returns
-    /// an AggregateStoreError::UnknownAggregate in case the aggregate
-    /// does not exist.
-    fn get_latest(&self, id: &Handle) -> StoreResult<Arc<A>>;
+//------------ AggregateStore ------------------------------------------------
 
-    /// Adds a new aggregate instance based on the init event.
-    fn add(&self, init: A::InitEvent) -> StoreResult<Arc<A>>;
-
-    /// Sends a command to the appropriate aggregate, and on
-    /// success: save command and events, return aggregate
-    /// no-op: do not save anything, return aggregate
-    /// error: save command and error, return error
-    fn command(&self, cmd: A::Command) -> Result<Arc<A>, A::Error>;
-
-    /// Returns true if an instance exists for the id
-    fn has(&self, id: &Handle) -> bool;
-
-    /// Lists all known ids.
-    fn list(&self) -> Vec<Handle>;
-
-    /// Adds a listener that will receive a reference to all events as they
-    /// are stored.
-    fn add_listener<L: EventListener<A>>(&mut self, listener: Arc<L>);
-
-    /// Lists the history for an aggregate.
-    fn command_history(&self, id: &Handle, crit: CommandHistoryCriteria) -> StoreResult<CommandHistory>;
-
-    /// Returns a stored command if it can be found.
-    fn stored_command(
-        &self,
-        id: &Handle,
-        key: &CommandKey,
-    ) -> StoreResult<Option<StoredCommand<A::StorableCommandDetails>>>;
-
-    /// Returns a stored event if it can be found.
-    fn stored_event(&self, id: &Handle, version: u64) -> StoreResult<Option<A::Event>>;
-}
-
-/// This type defines possible Errors for the AggregateStore
-#[derive(Debug, Display)]
-pub enum AggregateStoreError {
-    #[display(fmt = "{}", _0)]
-    KeyStoreError(KeyStoreError),
-
-    #[display(fmt = "{}", _0)]
-    IoError(io::Error),
-
-    #[display(fmt = "unknown entity: {}", _0)]
-    UnknownAggregate(Handle),
-
-    #[display(fmt = "init event exists, but cannot be applied")]
-    InitError,
-
-    #[display(fmt = "event not applicable to entity, id or version is off")]
-    WrongEventForAggregate,
-
-    #[display(fmt = "concurrent modification attempt for entity: '{}'", _0)]
-    ConcurrentModification(Handle),
-
-    #[display(fmt = "Aggregate '{}' does not have command with sequence '{}'", _0, _1)]
-    UnknownCommand(Handle, u64),
-
-    #[display(fmt = "Offset '{}' exceeds total '{}'", _0, _1)]
-    CommandOffsetTooLarge(u64, u64),
-
-    #[display(fmt = "Could not rebuild state for '{}': {}", _0, _1)]
-    WarmupFailed(Handle, String),
-
-    #[display(fmt = "Could not recover state for '{}', aborting recover. Use backup!!", _0)]
-    CouldNotRecover(Handle),
-
-    #[display(fmt = "Could not archive commands and events for '{}'. Error: {}", _0, _1)]
-    CouldNotArchive(Handle, String),
-}
-
-impl From<KeyStoreError> for AggregateStoreError {
-    fn from(e: KeyStoreError) -> Self {
-        AggregateStoreError::KeyStoreError(e)
-    }
-}
-
-pub struct DiskAggregateStore<A: Aggregate> {
+/// This type is responsible for persisting Aggregates.
+pub struct AggregateStore<A: Aggregate> {
     store: DiskKeyStore,
     cache: RwLock<HashMap<Handle, Arc<A>>>,
     use_cache: bool,
@@ -110,7 +28,8 @@ pub struct DiskAggregateStore<A: Aggregate> {
     outer_lock: RwLock<()>,
 }
 
-impl<A: Aggregate> DiskAggregateStore<A>
+/// # Public Methods for managing Aggregates
+impl<A: Aggregate> AggregateStore<A>
 where
     A::Error: From<AggregateStoreError>,
 {
@@ -127,7 +46,7 @@ where
         let use_cache = true;
         let listeners = vec![];
         let lock = RwLock::new(());
-        Ok(DiskAggregateStore {
+        Ok(AggregateStore {
             store,
             cache,
             use_cache,
@@ -288,67 +207,17 @@ where
         }
         Ok(())
     }
-}
 
-impl<A: Aggregate> DiskAggregateStore<A>
-where
-    A::Error: From<AggregateStoreError>,
-{
-    fn has_updates(&self, id: &Handle, aggregate: &A) -> StoreResult<bool> {
-        Ok(self.store.get_event::<A::Event>(id, aggregate.version())?.is_some())
-    }
-
-    fn cache_get(&self, id: &Handle) -> Option<Arc<A>> {
-        if self.use_cache {
-            self.cache.read().unwrap().get(id).cloned()
-        } else {
-            None
-        }
-    }
-
-    fn cache_update(&self, id: &Handle, arc: Arc<A>) {
-        if self.use_cache {
-            self.cache.write().unwrap().insert(id.clone(), arc);
-        }
-    }
-
-    fn get_latest_no_lock(&self, handle: &Handle) -> StoreResult<Arc<A>> {
-        trace!("Trying to load aggregate id: {}", handle);
-        match self.cache_get(handle) {
-            None => match self.store.get_aggregate(handle, None)? {
-                None => {
-                    error!("Could not load aggregate with id: {} from disk", handle);
-                    Err(AggregateStoreError::UnknownAggregate(handle.clone()))
-                }
-                Some(agg) => {
-                    let arc: Arc<A> = Arc::new(agg);
-                    self.cache_update(handle, arc.clone());
-                    trace!("Loaded aggregate id: {} from disk", handle);
-                    Ok(arc)
-                }
-            },
-            Some(mut arc) => {
-                if self.has_updates(handle, &arc)? {
-                    let agg = Arc::make_mut(&mut arc);
-                    self.store.update_aggregate(handle, agg, None)?;
-                }
-                trace!("Loaded aggregate id: {} from memory", handle);
-                Ok(arc)
-            }
-        }
-    }
-}
-
-impl<A: Aggregate> AggregateStore<A> for DiskAggregateStore<A>
-where
-    A::Error: From<AggregateStoreError>,
-{
-    fn get_latest(&self, handle: &Handle) -> StoreResult<Arc<A>> {
+    /// Gets the latest version for the given aggregate. Returns
+    /// an AggregateStoreError::UnknownAggregate in case the aggregate
+    /// does not exist.
+    pub fn get_latest(&self, handle: &Handle) -> StoreResult<Arc<A>> {
         let _lock = self.outer_lock.read().unwrap();
         self.get_latest_no_lock(handle)
     }
 
-    fn add(&self, init: A::InitEvent) -> StoreResult<Arc<A>> {
+    /// Adds a new aggregate instance based on the init event.
+    pub fn add(&self, init: A::InitEvent) -> StoreResult<Arc<A>> {
         let _lock = self.outer_lock.write().unwrap();
 
         self.store.store_event(&init)?;
@@ -367,7 +236,11 @@ where
         Ok(arc)
     }
 
-    fn command(&self, cmd: A::Command) -> Result<Arc<A>, A::Error> {
+    /// Sends a command to the appropriate aggregate, and on
+    /// success: save command and events, return aggregate
+    /// no-op: do not save anything, return aggregate
+    /// error: save command and error, return error
+    pub fn command(&self, cmd: A::Command) -> Result<Arc<A>, A::Error> {
         let _lock = self.outer_lock.write().unwrap();
 
         // Get the latest arc.
@@ -489,28 +362,34 @@ where
         res
     }
 
-    fn has(&self, id: &Handle) -> bool {
+    /// Returns true if an instance exists for the id
+    pub fn has(&self, id: &Handle) -> bool {
         let _lock = self.outer_lock.read().unwrap();
         self.store.has_aggregate(id)
     }
 
-    fn list(&self) -> Vec<Handle> {
+    /// Lists all known ids.
+    pub fn list(&self) -> Vec<Handle> {
         let _lock = self.outer_lock.read().unwrap();
         self.store.aggregates()
     }
 
-    fn add_listener<L: EventListener<A>>(&mut self, listener: Arc<L>) {
+    /// Adds a listener that will receive a reference to all events as they
+    /// are stored.
+    pub fn add_listener<L: EventListener<A>>(&mut self, listener: Arc<L>) {
         let _lock = self.outer_lock.write().unwrap();
         self.listeners.push(listener)
     }
 
-    fn command_history(&self, id: &Handle, crit: CommandHistoryCriteria) -> StoreResult<CommandHistory> {
+    /// Lists the history for an aggregate.
+    pub fn command_history(&self, id: &Handle, crit: CommandHistoryCriteria) -> StoreResult<CommandHistory> {
         self.store
             .command_history::<A>(id, crit)
             .map_err(AggregateStoreError::KeyStoreError)
     }
 
-    fn stored_command(
+    /// Returns a stored command if it can be found.
+    pub fn stored_command(
         &self,
         id: &Handle,
         key: &CommandKey,
@@ -520,8 +399,103 @@ where
             .map_err(AggregateStoreError::KeyStoreError)
     }
 
-    fn stored_event(&self, id: &Handle, version: u64) -> StoreResult<Option<<A as Aggregate>::Event>> {
+    /// Returns a stored event if it can be found.
+    pub fn stored_event(&self, id: &Handle, version: u64) -> StoreResult<Option<<A as Aggregate>::Event>> {
         let key = DiskKeyStore::key_for_event(version);
         self.store.get(id, &key).map_err(AggregateStoreError::KeyStoreError)
+    }
+}
+
+impl<A: Aggregate> AggregateStore<A>
+where
+    A::Error: From<AggregateStoreError>,
+{
+    fn has_updates(&self, id: &Handle, aggregate: &A) -> StoreResult<bool> {
+        Ok(self.store.get_event::<A::Event>(id, aggregate.version())?.is_some())
+    }
+
+    fn cache_get(&self, id: &Handle) -> Option<Arc<A>> {
+        if self.use_cache {
+            self.cache.read().unwrap().get(id).cloned()
+        } else {
+            None
+        }
+    }
+
+    fn cache_update(&self, id: &Handle, arc: Arc<A>) {
+        if self.use_cache {
+            self.cache.write().unwrap().insert(id.clone(), arc);
+        }
+    }
+
+    fn get_latest_no_lock(&self, handle: &Handle) -> StoreResult<Arc<A>> {
+        trace!("Trying to load aggregate id: {}", handle);
+        match self.cache_get(handle) {
+            None => match self.store.get_aggregate(handle, None)? {
+                None => {
+                    error!("Could not load aggregate with id: {} from disk", handle);
+                    Err(AggregateStoreError::UnknownAggregate(handle.clone()))
+                }
+                Some(agg) => {
+                    let arc: Arc<A> = Arc::new(agg);
+                    self.cache_update(handle, arc.clone());
+                    trace!("Loaded aggregate id: {} from disk", handle);
+                    Ok(arc)
+                }
+            },
+            Some(mut arc) => {
+                if self.has_updates(handle, &arc)? {
+                    let agg = Arc::make_mut(&mut arc);
+                    self.store.update_aggregate(handle, agg, None)?;
+                }
+                trace!("Loaded aggregate id: {} from memory", handle);
+                Ok(arc)
+            }
+        }
+    }
+}
+
+//------------ AggregateStoreError -------------------------------------------
+
+/// This type defines possible Errors for the AggregateStore
+#[derive(Debug, Display)]
+pub enum AggregateStoreError {
+    #[display(fmt = "{}", _0)]
+    KeyStoreError(KeyStoreError),
+
+    #[display(fmt = "{}", _0)]
+    IoError(io::Error),
+
+    #[display(fmt = "unknown entity: {}", _0)]
+    UnknownAggregate(Handle),
+
+    #[display(fmt = "init event exists, but cannot be applied")]
+    InitError,
+
+    #[display(fmt = "event not applicable to entity, id or version is off")]
+    WrongEventForAggregate,
+
+    #[display(fmt = "concurrent modification attempt for entity: '{}'", _0)]
+    ConcurrentModification(Handle),
+
+    #[display(fmt = "Aggregate '{}' does not have command with sequence '{}'", _0, _1)]
+    UnknownCommand(Handle, u64),
+
+    #[display(fmt = "Offset '{}' exceeds total '{}'", _0, _1)]
+    CommandOffsetTooLarge(u64, u64),
+
+    #[display(fmt = "Could not rebuild state for '{}': {}", _0, _1)]
+    WarmupFailed(Handle, String),
+
+    #[display(fmt = "Could not recover state for '{}', aborting recover. Use backup!!", _0)]
+    CouldNotRecover(Handle),
+
+    #[display(fmt = "Could not archive commands and events for '{}'. Error: {}", _0, _1)]
+    CouldNotArchive(Handle, String),
+}
+
+impl From<KeyStoreError> for AggregateStoreError {
+    fn from(e: KeyStoreError) -> Self {
+        AggregateStoreError::KeyStoreError(e)
     }
 }

@@ -20,7 +20,7 @@ use crate::commons::api::{
 };
 use crate::commons::crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder};
 use crate::commons::error::Error;
-use crate::commons::eventsourcing::{Aggregate, AggregateStore, Command, CommandKey, DiskAggregateStore};
+use crate::commons::eventsourcing::{Aggregate, AggregateStore, Command, CommandKey};
 use crate::commons::remote::cmslogger::CmsLogger;
 use crate::commons::remote::{rfc6492, rfc8181, rfc8183};
 use crate::commons::util::httpclient;
@@ -104,7 +104,7 @@ impl CaLocks {
 #[derive(Clone)]
 pub struct CaServer {
     signer: Arc<KrillSigner>,
-    ca_store: Arc<DiskAggregateStore<CertAuth>>,
+    ca_store: Arc<AggregateStore<CertAuth>>,
     locks: Arc<CaLocks>,
     status_store: Arc<Mutex<StatusStore>>,
     rfc8181_log_dir: Option<PathBuf>,
@@ -121,7 +121,7 @@ impl CaServer {
         events_queue: Arc<EventQueueListener>,
         signer: KrillSigner,
     ) -> KrillResult<Self> {
-        let mut ca_store = DiskAggregateStore::<CertAuth>::new(work_dir, CASERVER_DIR)?;
+        let mut ca_store = AggregateStore::<CertAuth>::new(work_dir, CASERVER_DIR)?;
         if let Err(e) = ca_store.warm() {
             error!(
                 "Could not warm up cache, data seems corrupt. Will try to recover!! Error was: {}",
