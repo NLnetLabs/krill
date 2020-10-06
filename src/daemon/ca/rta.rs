@@ -220,7 +220,7 @@ impl ResourceTaggedAttestation {
     pub fn to_builder(&self) -> KrillResult<rta::RtaBuilder> {
         let rta =
             rta::Rta::decode(self.bytes.as_ref(), true).map_err(|_| Error::custom("Cannot decode existing RTA"))?;
-        Ok(rta::RtaBuilder::from_attestation(rta.content().clone()))
+        Ok(rta::RtaBuilder::from_rta(rta))
     }
 
     pub fn rta_builder(
