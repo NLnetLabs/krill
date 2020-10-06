@@ -17,20 +17,24 @@ use crate::commons::KrillResult;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Rtas {
-    rtas: HashMap<RtaName, RtaState>,
+    map: HashMap<RtaName, RtaState>,
 }
 
 impl Rtas {
+    pub fn is_empty(&self) -> bool {
+        self.map.is_empty()
+    }
+
     pub fn list(&self) -> RtaList {
-        RtaList::new(self.rtas.keys().cloned().collect())
+        RtaList::new(self.map.keys().cloned().collect())
     }
 
     pub fn has(&self, name: &str) -> bool {
-        self.rtas.contains_key(name)
+        self.map.contains_key(name)
     }
 
     pub fn signed_rta(&self, name: &str) -> KrillResult<ResourceTaggedAttestation> {
-        let state = self.rtas.get(name).ok_or_else(|| Error::custom("Unknown RTA"))?;
+        let state = self.map.get(name).ok_or_else(|| Error::custom("Unknown RTA"))?;
         match state {
             RtaState::Signed(signed) => Ok(signed.rta.clone()),
             RtaState::Prepared(_) => Err(Error::custom("RTA is not signed yet")),
@@ -38,7 +42,7 @@ impl Rtas {
     }
 
     pub fn prepared_rta(&self, name: &str) -> KrillResult<&PreparedRta> {
-        let state = self.rtas.get(name).ok_or_else(|| Error::custom("Unknown RTA"))?;
+        let state = self.map.get(name).ok_or_else(|| Error::custom("Unknown RTA"))?;
         match state {
             RtaState::Signed(_) => Err(Error::custom("RTA was already signed")),
             RtaState::Prepared(prepped) => Ok(prepped),
@@ -46,17 +50,17 @@ impl Rtas {
     }
 
     pub fn add_prepared(&mut self, name: RtaName, prepared: PreparedRta) {
-        self.rtas.insert(name, RtaState::Prepared(prepared));
+        self.map.insert(name, RtaState::Prepared(prepared));
     }
 
     pub fn add_signed(&mut self, name: RtaName, signed: SignedRta) {
-        self.rtas.insert(name, RtaState::Signed(signed));
+        self.map.insert(name, RtaState::Signed(signed));
     }
 }
 
 impl Default for Rtas {
     fn default() -> Self {
-        Rtas { rtas: HashMap::new() }
+        Rtas { map: HashMap::new() }
     }
 }
 

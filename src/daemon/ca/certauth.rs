@@ -78,6 +78,8 @@ pub struct CertAuth {
 
     children: HashMap<ChildHandle, ChildDetails>,
     routes: Routes,
+
+    #[serde(skip_serializing_if = "Rtas::is_empty", default = "Rtas::default")]
     rtas: Rtas,
 }
 
