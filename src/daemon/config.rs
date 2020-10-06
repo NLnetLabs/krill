@@ -760,6 +760,7 @@ impl Config {
             .level_for("reqwest", framework_level)
             .level_for("tokio_reactor", framework_level)
             .level_for("want", framework_level)
+            .level_for("tracing::span", framework_level)
             .level_for("krill::commons::eventsourcing", krill_framework_level)
             .level_for("krill::commons::util::file", krill_framework_level)
     }
