@@ -602,7 +602,7 @@ where
     A::Error: From<AggregateStoreError>,
 {
     fn key_version() -> KeyStoreKey {
-        KeyStoreKey::simple("version.json".to_string())
+        KeyStoreKey::simple("version".to_string())
     }
 
     fn key_for_info(agg: &Handle) -> KeyStoreKey {

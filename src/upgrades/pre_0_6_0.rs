@@ -17,7 +17,7 @@ use crate::commons::remote::rfc8183::ServiceUri;
 use crate::upgrades::{UpgradeError, UpgradeStore};
 
 fn needs_migrate(kv: &KeyValueStore, version: KeyStoreVersion) -> Result<bool, UpgradeError> {
-    let key = KeyStoreKey::simple("version.json".to_string());
+    let key = KeyStoreKey::simple("version".to_string());
     match kv.get::<KeyStoreVersion>(&key) {
         Err(e) => Err(UpgradeError::KeyStoreError(e)),
         Ok(None) => Ok(true),
@@ -109,7 +109,7 @@ impl UpgradeStore for UpgradeCas {
             }
 
             let version = KeyStoreVersion::V0_6;
-            let version_key = KeyStoreKey::simple("version.json".to_string());
+            let version_key = KeyStoreKey::simple("version".to_string());
 
             kv.store(&version_key, &version)?;
             info!("Finished migrating commands");
@@ -202,7 +202,7 @@ impl UpgradeStore for UpgradePubd {
             kv.store(&info_key, &info)?;
 
             let version = KeyStoreVersion::V0_6;
-            let version_key = KeyStoreKey::simple("version.json".to_string());
+            let version_key = KeyStoreKey::simple("version".to_string());
             kv.store(&version_key, &version)?;
 
             info!("Done migrating commands for Repository server");
