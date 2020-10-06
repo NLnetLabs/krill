@@ -845,8 +845,9 @@ where
             }
         };
 
-        if limit == aggregate.version() {
+        if limit == aggregate.version() - 1 {
             // already at version, done
+            // note that an event has the version of the aggregate it *affects*. So delta 10 results in version 11.
             return Ok(());
         }
 
@@ -856,9 +857,13 @@ where
         }
 
         for version in start..limit + 1 {
-            if let Some(e) = self.get_event(id, aggregate.version())? {
+            if let Some(e) = self.get_event(id, version)? {
+                if aggregate.version() != version {
+                    error!("Trying to apply event to wrong version of aggregate in replay");
+                    return Err(AggregateStoreError::ReplayError(id.clone(), limit, version));
+                }
                 aggregate.apply(e);
-                trace!("Applied event nr {} to aggregate {}", version - 1, id);
+                trace!("Applied event nr {} to aggregate {}", version, id);
             } else {
                 return Err(AggregateStoreError::ReplayError(id.clone(), limit, version));
             }
