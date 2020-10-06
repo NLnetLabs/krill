@@ -14,6 +14,7 @@ exclude = [
   "test-resources/*",
   "tests/*",
 ]
+build = "build.rs"
 
 [dependencies]
 base64          = "^0.10"
@@ -53,6 +54,7 @@ syslog		    = "^4.0"
 
 [build-dependencies]
 ignore          = "^0.4"
+rustc_version   = "0.2.3"
 
 [features]
 default = []

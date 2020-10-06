@@ -730,6 +730,7 @@ dependencies = [
  "rand 0.5.6",
  "reqwest",
  "rpki",
+ "rustc_version",
  "serde",
  "serde_json",
  "syslog",
