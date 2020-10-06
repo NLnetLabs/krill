@@ -529,6 +529,15 @@ impl KrillServer {
         self.caserver.resync_all().await;
         Ok(())
     }
+
+    /// Archive old commands
+    pub async fn archive_old_commands(&self, days: i64) -> KrillEmptyResult {
+        self.caserver.archive_old_commands(days).await?;
+        if let Some(pubserver) = self.pubserver.as_ref() {
+            pubserver.archive_old_commands(days)?;
+        }
+        Ok(())
+    }
 }
 
 /// # Admin CAS

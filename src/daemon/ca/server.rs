@@ -377,7 +377,7 @@ impl CaServer {
     }
 
     /// Archive old (eligible) commands for CA
-    pub async fn archive_ca_commands(&self, days: i64) -> KrillEmptyResult {
+    pub async fn archive_old_commands(&self, days: i64) -> KrillEmptyResult {
         for ca in self.ca_list()?.cas() {
             let lock = self.locks.ca(ca.handle()).await;
             let _ = lock.write().await;

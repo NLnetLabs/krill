@@ -80,6 +80,10 @@ pub async fn start() -> Result<(), Error> {
         .map_err(|e| Error::Custom(format!("Could not upgrade Krill: {}", e)))
         .await?;
 
+    if let Some(days) = CONFIG.archive_threshold_days {
+        krill.archive_old_commands(days).await?;
+    }
+
     if env::var(KRILL_ENV_UPGRADE_ONLY).is_ok() {
         println!("Krill upgrade successful");
         ::std::process::exit(0);

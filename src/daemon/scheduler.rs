@@ -203,7 +203,7 @@ async fn try_publish(
 
 fn make_republish_sh(caserver: Arc<CaServer>) -> ScheduleHandle {
     let mut scheduler = clokwerk::Scheduler::new();
-    scheduler.every(1.hours()).run(move || {
+    scheduler.every(2.minutes()).run(move || {
         let mut rt = Runtime::new().unwrap();
         rt.block_on(async {
             info!("Triggering background republication for all CAs");
@@ -242,16 +242,16 @@ fn make_announcements_refresh_sh(bgp_analyser: Arc<BgpAnalyser>) -> ScheduleHand
 
 fn make_archive_old_commands_sh(caserver: Arc<CaServer>, pubserver: Option<Arc<PubServer>>) -> ScheduleHandle {
     let mut scheduler = clokwerk::Scheduler::new();
-    scheduler.every(60.seconds()).run(move || {
+    scheduler.every(1.hours()).run(move || {
         let mut rt = Runtime::new().unwrap();
         rt.block_on(async {
             if let Some(days) = CONFIG.archive_threshold_days {
-                if let Err(e) = caserver.archive_ca_commands(days).await {
+                if let Err(e) = caserver.archive_old_commands(days).await {
                     error!("Failed to archive old CA commands: {}", e)
                 }
 
                 if let Some(pubserver) = pubserver.as_ref() {
-                    if let Err(e) = pubserver.history_archive_old(days) {
+                    if let Err(e) = pubserver.archive_old_commands(days) {
                         error!("Failed to archive old Publication Server commands: {}", e)
                     }
                 }
