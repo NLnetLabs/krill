@@ -47,9 +47,7 @@ impl KrillSigner {
 impl KrillSigner {
     pub fn create_key(&self) -> CryptoResult<KeyIdentifier> {
         let mut signer = self.signer.write().unwrap();
-        signer
-            .create_key(PublicKeyFormat::default())
-            .map_err(crypto::Error::signer)
+        signer.create_key(PublicKeyFormat::Rsa).map_err(crypto::Error::signer)
     }
 
     pub fn destroy_key(&self, key_id: &KeyIdentifier) -> CryptoResult<()> {

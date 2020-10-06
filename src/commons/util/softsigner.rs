@@ -239,7 +239,7 @@ pub mod tests {
     fn should_return_subject_public_key_info() {
         test::test_under_tmp(|d| {
             let mut s = OpenSslSigner::build(&d).unwrap();
-            let ki = s.create_key(PublicKeyFormat::default()).unwrap();
+            let ki = s.create_key(PublicKeyFormat::Rsa).unwrap();
             s.get_key_info(&ki).unwrap();
             s.destroy_key(&ki).unwrap();
         })

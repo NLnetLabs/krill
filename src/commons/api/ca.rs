@@ -2596,7 +2596,7 @@ mod test {
     fn mft_uri() {
         test::test_under_tmp(|d| {
             let mut signer = OpenSslSigner::build(&d).unwrap();
-            let key_id = signer.create_key(PublicKeyFormat::default()).unwrap();
+            let key_id = signer.create_key(PublicKeyFormat::Rsa).unwrap();
             let pub_key = signer.get_key_info(&key_id).unwrap();
 
             let mft_uri = info().rpki_manifest("", &pub_key.key_identifier());
