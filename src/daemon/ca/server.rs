@@ -160,7 +160,7 @@ impl CaServer {
         let ta_handle = ca::ta_handle();
         let lock = self.locks.ca(&ta_handle).await;
         let _ = lock.write().await;
-        if self.ca_store.has(&ta_handle) {
+        if self.ca_store.has(&ta_handle)? {
             Err(Error::TaAlreadyInitialised)
         } else {
             // init normal CA
@@ -198,7 +198,7 @@ impl CaServer {
     /// Republish the embedded TA and CAs if needed, i.e. if they are close
     /// to their next update time.
     pub async fn republish_all(&self) -> KrillResult<()> {
-        for ca in self.ca_list().await.cas() {
+        for ca in self.ca_list()?.cas() {
             if let Err(e) = self.republish(ca.handle()).await {
                 error!("ServerError publishing: {}, ServerError: {}", ca.handle(), e)
             }
@@ -236,7 +236,7 @@ impl CaServer {
     pub async fn ca_repo_status(&self, ca: &Handle) -> KrillResult<RepoStatus> {
         let lock = self.locks.ca(ca).await;
         let _ = lock.read().await;
-        if self.ca_store.has(ca) {
+        if self.ca_store.has(ca)? {
             self.status_store.lock().await.get_repo_status(ca).await
         } else {
             Err(Error::CaUnknown(ca.clone()))
@@ -378,7 +378,7 @@ impl CaServer {
 
     /// Archive old (eligible) commands for CA
     pub async fn archive_ca_commands(&self, days: i64) -> KrillEmptyResult {
-        for ca in self.ca_list().await.cas() {
+        for ca in self.ca_list()?.cas() {
             let lock = self.locks.ca(ca.handle()).await;
             let _ = lock.write().await;
             self.ca_store.archive_old_commands(ca.handle(), days)?;
@@ -387,38 +387,29 @@ impl CaServer {
     }
 
     /// Shows the details for a CA command
-    pub fn get_ca_command_details(
-        &self,
-        handle: &Handle,
-        command: CommandKey,
-    ) -> KrillResult<Option<CaCommandDetails>> {
-        if let Some(command) = self.ca_store.stored_command(handle, &command)? {
-            let effect = command.effect().clone();
-            match effect {
-                StoredEffect::Error(msg) => Ok(Some(CaCommandDetails::new(command, CaCommandResult::error(msg)))),
-                StoredEffect::Events(versions) => {
-                    let mut stored_events = vec![];
-                    for version in versions {
-                        let evt = self.ca_store.stored_event(handle, version)?.ok_or_else(|| {
-                            Error::Custom(format!("Cannot find evt: {} in history for CA: {}", version, handle))
-                        })?;
-                        stored_events.push(evt);
-                    }
+    pub fn get_ca_command_details(&self, handle: &Handle, command: CommandKey) -> KrillResult<CaCommandDetails> {
+        let command = self.ca_store.get_command(handle, &command)?;
 
-                    Ok(Some(CaCommandDetails::new(
-                        command,
-                        CaCommandResult::events(stored_events),
-                    )))
+        let effect = command.effect().clone();
+        match effect {
+            StoredEffect::Error(msg) => Ok(CaCommandDetails::new(command, CaCommandResult::error(msg))),
+            StoredEffect::Events(versions) => {
+                let mut stored_events = vec![];
+                for version in versions {
+                    let evt = self.ca_store.get_event(handle, version)?.ok_or_else(|| {
+                        Error::Custom(format!("Cannot find evt: {} in history for CA: {}", version, handle))
+                    })?;
+                    stored_events.push(evt);
                 }
+
+                Ok(CaCommandDetails::new(command, CaCommandResult::events(stored_events)))
             }
-        } else {
-            Ok(None)
         }
     }
 
     /// Checks whether a CA by the given handle exists.
-    pub async fn has_ca(&self, handle: &Handle) -> bool {
-        self.ca_store.has(handle)
+    pub fn has_ca(&self, handle: &Handle) -> KrillResult<bool> {
+        self.ca_store.has(handle).map_err(Error::AggregateStoreError)
     }
 
     /// Processes an RFC6492 sent to this CA.
@@ -530,15 +521,17 @@ impl CaServer {
     }
 
     /// Get the current CAs
-    pub async fn ca_list(&self) -> CertAuthList {
-        CertAuthList::new(self.ca_store.list().into_iter().map(CertAuthSummary::new).collect())
+    pub fn ca_list(&self) -> KrillResult<CertAuthList> {
+        Ok(CertAuthList::new(
+            self.ca_store.list()?.into_iter().map(CertAuthSummary::new).collect(),
+        ))
     }
 
     /// Initialises a CA without a repo, no parents, no children, no nothing
     pub fn init_ca(&self, handle: &Handle) -> KrillResult<()> {
         if handle == &ta_handle() || handle.as_str() == "version" {
             Err(Error::TaNameReserved)
-        } else if self.ca_store.has(handle) {
+        } else if self.ca_store.has(handle)? {
             Err(Error::CaDuplicate(handle.clone()))
         } else {
             let init = IniDet::init(handle, self.signer.deref())?;
@@ -583,7 +576,7 @@ impl CaServer {
 
     /// Returns the parent statuses for this CA
     pub async fn ca_parent_statuses(&self, ca: &Handle) -> KrillResult<ParentStatuses> {
-        if self.ca_store.has(ca) {
+        if self.ca_store.has(ca)? {
             self.status_store.lock().await.get_parent_statuses(ca).await
         } else {
             Err(Error::CaUnknown(ca.clone()))
@@ -611,7 +604,7 @@ impl CaServer {
     /// have no parents. Will try to process all and log possible errors, i.e. do
     /// not bail out because of issues with one CA.
     pub async fn get_updates_for_all_cas(&self) -> KrillResult<()> {
-        for handle in self.ca_store.list() {
+        for handle in self.ca_store.list()? {
             if let Ok(ca) = self.get_ca(&handle).await {
                 for parent in ca.parents() {
                     if let Err(e) = self.get_updates_from_parent(&handle, &parent).await {

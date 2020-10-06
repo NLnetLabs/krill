@@ -79,17 +79,21 @@ fn make_event_sh(
             for evt in event_queue.pop_all() {
                 match evt {
                     QueueEvent::ServerStarted => {
-                        info!("Will resync all CAs with their parents and repository after startup");
+                        info!("Will re-sync all CAs with their parents and repository after startup");
                         caserver.resync_all().await;
                         let publisher = CaPublisher::new(caserver.clone(), pubserver.clone());
-                        for ca in caserver.ca_list().await.cas() {
-                            if publisher.publish(ca.handle()).await.is_err() {
-                                error!("Unable to synchronise CA '{}' with its repository after startup", ca.handle());
-                            } else {
-                                info!("CA '{}' is in sync with its repository", ca.handle());
+                        match caserver.ca_list() {
+                            Err(e) => error!("Unable to obtain CA list: {}", e),
+                            Ok(list) => {
+                                for ca in list.cas() {
+                                    if publisher.publish(ca.handle()).await.is_err() {
+                                        error!("Unable to synchronise CA '{}' with its repository after startup", ca.handle());
+                                    } else {
+                                        info!("CA '{}' is in sync with its repository", ca.handle());
+                                    }
+                                }
                             }
                         }
-
                     }
 
                     QueueEvent::Delta(handle, _version) => {

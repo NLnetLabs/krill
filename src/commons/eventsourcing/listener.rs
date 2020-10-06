@@ -43,6 +43,6 @@ impl EventCounter {
 
 impl<A: Aggregate> EventListener<A> for EventCounter {
     fn listen(&self, _agg: &A, _event: &A::Event) {
-        self.counter.write().unwrap().total += 1
+        self.counter.write().unwrap().total += 1;
     }
 }

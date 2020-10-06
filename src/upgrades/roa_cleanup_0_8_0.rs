@@ -5,7 +5,7 @@ use crate::commons::bgp::make_roa_tree;
 use crate::daemon::krillserver::KrillServer;
 
 pub async fn roa_cleanup(server: &KrillServer) -> Result<(), RoaCleanupError> {
-    for ca in server.ca_list().await.cas() {
+    for ca in server.ca_list()?.cas() {
         info!("Will check ROAs for CA: {}", ca.handle());
 
         let roas = server.ca_routes_show(ca.handle()).await?;

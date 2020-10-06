@@ -6,9 +6,13 @@ use std::path::PathBuf;
 use std::{fmt, fs, io};
 
 use crate::commons::api::Handle;
-use crate::commons::eventsourcing::{DiskKeyStore, KeyStore, KeyStoreError, KeyStoreVersion};
+use crate::commons::eventsourcing::{
+    AggregateStore, AggregateStoreError, KeyStoreVersion, KeyValueError, KeyValueStore,
+};
 use crate::commons::util::file;
+use crate::daemon::ca::CertAuth;
 use crate::daemon::krillserver::KrillServer;
+use crate::pubd::Repository;
 use crate::upgrades::roa_cleanup_0_8_0::RoaCleanupError;
 
 pub mod pre_0_6_0;
@@ -19,7 +23,10 @@ pub mod roa_cleanup_0_8_0;
 #[derive(Debug, Display)]
 pub enum UpgradeError {
     #[display(fmt = "{}", _0)]
-    KeyStoreError(KeyStoreError),
+    AggregateStoreError(AggregateStoreError),
+
+    #[display(fmt = "{}", _0)]
+    KeyStoreError(KeyValueError),
 
     #[display(fmt = "{}", _0)]
     IoError(io::Error),
@@ -47,8 +54,14 @@ impl UpgradeError {
     }
 }
 
-impl From<KeyStoreError> for UpgradeError {
-    fn from(e: KeyStoreError) -> Self {
+impl From<AggregateStoreError> for UpgradeError {
+    fn from(e: AggregateStoreError) -> Self {
+        UpgradeError::AggregateStoreError(e)
+    }
+}
+
+impl From<KeyValueError> for UpgradeError {
+    fn from(e: KeyValueError) -> Self {
         UpgradeError::KeyStoreError(e)
     }
 }
@@ -75,8 +88,8 @@ impl From<RoaCleanupError> for UpgradeError {
 
 /// Implement this for automatic upgrades to key stores
 pub trait UpgradeStore {
-    fn needs_migrate(&self, store: &DiskKeyStore) -> Result<bool, UpgradeError>;
-    fn migrate(&self, store: &DiskKeyStore) -> Result<(), UpgradeError>;
+    fn needs_migrate(&self, store: &KeyValueStore) -> Result<bool, UpgradeError>;
+    fn migrate(&self, store: &KeyValueStore) -> Result<(), UpgradeError>;
 }
 
 /// Should be called when Krill starts, before the KrillServer is initiated
@@ -88,8 +101,8 @@ pub fn pre_start_upgrade(work_dir: &PathBuf) -> Result<(), UpgradeError> {
 /// Should be called right after the KrillServer is initiated
 pub async fn post_start_upgrade(work_dir: &PathBuf, server: &KrillServer) -> Result<(), UpgradeError> {
     let version_0_8 = KeyStoreVersion::V0_8;
-    let ca_store = DiskKeyStore::new(work_dir, "cas");
-    let pubd_store = DiskKeyStore::new(work_dir, "pubd");
+    let ca_store: AggregateStore<CertAuth> = AggregateStore::new(work_dir, "cas")?;
+    let pubd_store: AggregateStore<Repository> = AggregateStore::new(work_dir, "pubd")?;
     if ca_store.get_version()? != version_0_8 {
         info!("Will clean up redundant ROAs for all CAs and update version of storage dirs");
         roa_cleanup_0_8_0::roa_cleanup(server).await?;
@@ -106,10 +119,10 @@ fn upgrade_pre_0_6_0_cas_commands(work_dir: &PathBuf) -> Result<(), UpgradeError
     // Prepare to do the work on the real "cas" directory
     let mut cas_dir = work_dir.clone();
     cas_dir.push("cas");
-    let ca_store = DiskKeyStore::new(work_dir, "cas");
+    let kv = KeyValueStore::disk(work_dir, "cas")?;
 
     // bail out if there is nothing to do
-    if !pre_0_6_0_ca_commands.needs_migrate(&ca_store)? {
+    if !pre_0_6_0_ca_commands.needs_migrate(&kv)? {
         return Ok(());
     }
 
@@ -119,7 +132,7 @@ fn upgrade_pre_0_6_0_cas_commands(work_dir: &PathBuf) -> Result<(), UpgradeError
     backup_dir.push("cas_bk");
     file::backup_dir(&cas_dir, &backup_dir)?;
 
-    if let Err(e) = pre_0_6_0_ca_commands.migrate(&ca_store) {
+    if let Err(e) = pre_0_6_0_ca_commands.migrate(&kv) {
         // If the upgrade failed, then rename the now broken directory for inspection,
         // and restore the backup directory by renaming it.
         let mut failed = work_dir.clone();
@@ -142,10 +155,10 @@ fn upgrade_pre_0_6_0_pubd_commands(work_dir: &PathBuf) -> Result<(), UpgradeErro
     // Prepare to do the work on the real "cas" directory
     let mut pubd_dir = work_dir.clone();
     pubd_dir.push("pubd");
-    let pubd_store = DiskKeyStore::new(work_dir, "pubd");
+    let kv = KeyValueStore::disk(work_dir, "pubd")?;
 
     // bail out if there is nothing to do
-    if !pre_0_6_0_pubd_commands.needs_migrate(&pubd_store)? {
+    if !pre_0_6_0_pubd_commands.needs_migrate(&kv)? {
         return Ok(());
     }
 
@@ -155,7 +168,7 @@ fn upgrade_pre_0_6_0_pubd_commands(work_dir: &PathBuf) -> Result<(), UpgradeErro
     backup_dir.push("pubd_bk");
     file::backup_dir(&pubd_dir, &backup_dir)?;
 
-    if let Err(e) = pre_0_6_0_pubd_commands.migrate(&pubd_store) {
+    if let Err(e) = pre_0_6_0_pubd_commands.migrate(&kv) {
         // If the upgrade failed, then rename the now broken directory for inspection,
         // and restore the backup directory by renaming it.
         let mut failed = work_dir.clone();

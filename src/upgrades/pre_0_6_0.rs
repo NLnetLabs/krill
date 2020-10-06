@@ -11,35 +11,40 @@ use crate::commons::api::{
     RoaDefinitionUpdates, StorableCaCommand, StorableParentContact, StorableRepositoryCommand, StoredEffect,
 };
 use crate::commons::eventsourcing::{
-    DiskKeyStore, KeyStore, KeyStoreError, KeyStoreVersion, StoredCommand, StoredValueInfo,
+    AggregateStoreError, CommandKey, KeyStoreKey, KeyStoreVersion, KeyValueStore, StoredCommand, StoredValueInfo,
 };
 use crate::commons::remote::rfc8183::ServiceUri;
-use crate::daemon::ca::CertAuth;
-use crate::pubd::Repository;
 use crate::upgrades::{UpgradeError, UpgradeStore};
+
+fn needs_migrate(kv: &KeyValueStore, version: KeyStoreVersion) -> Result<bool, UpgradeError> {
+    let key = KeyStoreKey::simple("version.json".to_string());
+    match kv.get::<KeyStoreVersion>(&key) {
+        Err(e) => Err(UpgradeError::KeyStoreError(e)),
+        Ok(None) => Ok(true),
+        Ok(Some(current_version)) => Ok(current_version <= version),
+    }
+}
 
 //------------ UpgradeCas --------------------------------------------------
 
 pub struct UpgradeCas;
 
 impl UpgradeStore for UpgradeCas {
-    fn needs_migrate(&self, store: &DiskKeyStore) -> Result<bool, UpgradeError> {
-        match store.get_version() {
-            Ok(version) => match version {
-                KeyStoreVersion::Pre0_6 => Ok(true),
-                _ => Ok(false),
-            },
-            Err(e) => match e {
-                KeyStoreError::NotInitialised => Ok(false),
-                _ => Err(UpgradeError::KeyStoreError(e)),
-            },
-        }
+    fn needs_migrate(&self, kv: &KeyValueStore) -> Result<bool, UpgradeError> {
+        needs_migrate(kv, KeyStoreVersion::Pre0_6)
     }
 
-    fn migrate(&self, store: &DiskKeyStore) -> Result<(), UpgradeError> {
-        if self.needs_migrate(store)? {
+    fn migrate(&self, kv: &KeyValueStore) -> Result<(), UpgradeError> {
+        if self.needs_migrate(kv)? {
             // For each aggregate
-            for ca_handle in store.aggregates() {
+            for ca in kv.scopes()? {
+                let ca_handle = Handle::from_str(&ca).map_err(|_| {
+                    UpgradeError::Custom(format!(
+                        "Unrecognised handle dir when migrating pre 0.6 commands: {}",
+                        ca
+                    ))
+                })?;
+
                 //   Find all commands keys and migrate them
                 let mut seq = 1;
 
@@ -47,12 +52,17 @@ impl UpgradeStore for UpgradeCas {
                 let mut last_event = 0;
                 let mut last_update: Time = Time::now();
 
-                let keys = store.keys_ascending(&ca_handle, ".cmd");
-                info!("Migrating {} commands for CA: {}", keys.len(), ca_handle);
+                let keys = kv
+                    .keys(Some(ca.clone()), ".cmd")
+                    .map_err(AggregateStoreError::KeyStoreError)?;
+                info!("Migrating {} commands for CA: {}", keys.len(), ca);
 
                 for old_key in keys {
                     // Parse as PreviousCommand
-                    if let Some(previous) = store.get::<PreviousCommand>(&ca_handle, &old_key)? {
+                    if let Some(previous) = kv
+                        .get::<PreviousCommand>(&old_key)
+                        .map_err(AggregateStoreError::KeyStoreError)?
+                    {
                         // Convert to new command, save it, remove the old command and increase the sequence
                         let previous = previous.with_handle(ca_handle.clone());
                         match previous.into_new_stored_ca_command(seq) {
@@ -63,17 +73,17 @@ impl UpgradeStore for UpgradeCas {
                                         last_event = *last;
                                     }
                                 }
-                                store.store_command(command)?;
-                                store.drop(&ca_handle, &old_key)?;
+                                let command_key = CommandKey::for_stored(&command);
+                                let new_key = KeyStoreKey::scoped(ca.clone(), format!("{}.json", command_key));
+                                kv.store(&new_key, &command)?;
+                                kv.drop(&old_key).map_err(AggregateStoreError::KeyStoreError)?;
                                 last_command = seq;
                                 seq += 1;
                             }
                             Err(e) => {
                                 error!(
                                     "Could not migrate command {} for CA {}, got error: {}",
-                                    old_key.to_string_lossy().to_string(),
-                                    ca_handle,
-                                    e
+                                    old_key, ca_handle, e
                                 );
                                 return Err(e);
                             }
@@ -88,25 +98,20 @@ impl UpgradeStore for UpgradeCas {
 
                 info!("Regenerating latest snapshot, this can take a moment");
                 let info = StoredValueInfo {
-                    snapshot_version: last_event,
+                    snapshot_version: 0,
                     last_event,
                     last_command,
                     last_update,
                 };
-                store.save_info(&ca_handle, &info)?;
 
-                // Load CA, then save a new snapshot and info for the CA
-                let ca: CertAuth = store
-                    .get_aggregate(&ca_handle, None)
-                    .map_err(|e| UpgradeError::Custom(format!("Cannot load ca '{}' error: {}", ca_handle.clone(), e)))?
-                    .ok_or_else(|| UpgradeError::CannotLoadAggregate(ca_handle.clone()))?;
-
-                store.store_snapshot(&ca_handle, &ca)?;
-
-                info!("Saved updated snapshot for CA: {}", ca_handle);
+                let info_key = KeyStoreKey::scoped(ca.clone(), "info.json".to_string());
+                kv.store(&info_key, &info)?;
             }
 
-            store.set_version(&KeyStoreVersion::V0_6)?;
+            let version = KeyStoreVersion::V0_6;
+            let version_key = KeyStoreKey::simple("version.json".to_string());
+
+            kv.store(&version_key, &version)?;
             info!("Finished migrating commands");
             Ok(())
         } else {
@@ -120,88 +125,87 @@ impl UpgradeStore for UpgradeCas {
 pub struct UpgradePubd;
 
 impl UpgradeStore for UpgradePubd {
-    fn needs_migrate(&self, store: &DiskKeyStore) -> Result<bool, UpgradeError> {
-        if store.aggregates().is_empty() {
+    fn needs_migrate(&self, kv: &KeyValueStore) -> Result<bool, UpgradeError> {
+        if kv.scopes()?.is_empty() {
             Ok(false)
         } else {
-            match store.get_version() {
-                Ok(version) => match version {
-                    KeyStoreVersion::Pre0_6 => Ok(true),
-                    _ => Ok(false),
-                },
-                Err(e) => match e {
-                    KeyStoreError::NotInitialised => Ok(false),
-                    _ => Err(UpgradeError::KeyStoreError(e)),
-                },
-            }
+            needs_migrate(kv, KeyStoreVersion::Pre0_6)
         }
     }
 
-    fn migrate(&self, store: &DiskKeyStore) -> Result<(), UpgradeError> {
-        if self.needs_migrate(store)? {
-            // For each aggregate
-            for pubd_handle in store.aggregates() {
-                //   Find all commands keys and migrate them
-                let mut seq = 1;
+    fn migrate(&self, kv: &KeyValueStore) -> Result<(), UpgradeError> {
+        if self.needs_migrate(kv)? {
+            // There can only be one scope
+            let scope = "0".to_string();
+            let pubd_handle = Handle::from_str("0").unwrap();
 
-                let mut last_update: Time = Time::now();
-                let mut last_command = 1;
-                let mut last_event = 0;
-
-                let keys = store.keys_ascending(&pubd_handle, ".cmd");
-
-                info!("Migrating {} commands for Repository server", keys.len());
-
-                for old_key in keys {
-                    // Parse as PreviousCommand
-                    if let Some(previous) = store.get::<PreviousCommand>(&pubd_handle, &old_key)? {
-                        // Convert to new command, save it, remove the old command and increase the sequence
-                        let previous = previous.with_handle(pubd_handle.clone());
-                        let command = previous.into_new_stored_pubd_command(seq)?;
-                        last_update = command.time();
-                        if let Some(events) = command.effect().events() {
-                            if let Some(last) = events.last() {
-                                last_event = *last;
-                            }
-                        }
-                        store.store_command(command)?;
-                        store.drop(&pubd_handle, &old_key)?;
-                        last_command = seq;
-                        seq += 1;
-                    }
-
-                    if seq % 100 == 0 {
-                        info!(".. {} done", seq)
-                    }
-                }
-
-                info!("Done migrating commands for Repository server");
-
-                info!("Regenerating repository and stats, this can take a moment");
-
-                let info = StoredValueInfo {
-                    snapshot_version: last_event,
-                    last_event,
-                    last_command,
-                    last_update,
-                };
-                store.save_info(&pubd_handle, &info)?;
-
-                // Load repository, then save a new snapshot and info for the CA
-                let mut repository: Repository = store
-                    .get_aggregate(&pubd_handle, None)
-                    .map_err(|e| {
-                        UpgradeError::Custom(format!("Cannot load PUBD '{}' error: {}", pubd_handle.clone(), e))
-                    })?
-                    .ok_or_else(|| UpgradeError::CannotLoadAggregate(pubd_handle.clone()))?;
-
-                repository.regenerate_stats();
-
-                store.store_snapshot(&pubd_handle, &repository)?;
-                info!("Saved updated snapshot for Repository server");
+            if !kv.has_scope(scope.clone())? {
+                return Ok(());
             }
 
-            store.set_version(&KeyStoreVersion::V0_6)?;
+            if kv.scopes()?.len() != 1 {
+                return Err(UpgradeError::custom(
+                    "Cannot migrate pre-0.6 Publication Server command, extra dirs found.",
+                ));
+            }
+
+            //   Find all commands keys and migrate them
+            let mut seq = 1;
+
+            let mut last_update: Time = Time::now();
+            let mut last_command = 1;
+            let mut last_event = 0;
+
+            let keys = kv
+                .keys(Some(scope.clone()), ".cmd")
+                .map_err(AggregateStoreError::KeyStoreError)?;
+
+            info!("Migrating {} commands for Repository server", keys.len());
+
+            for old_key in keys {
+                // Parse as PreviousCommand
+                if let Some(previous) = kv
+                    .get::<PreviousCommand>(&old_key)
+                    .map_err(AggregateStoreError::KeyStoreError)?
+                {
+                    // Convert to new command, save it, remove the old command and increase the sequence
+                    let previous = previous.with_handle(pubd_handle.clone());
+                    let command = previous.into_new_stored_pubd_command(seq)?;
+                    last_update = command.time();
+                    if let Some(events) = command.effect().events() {
+                        if let Some(last) = events.last() {
+                            last_event = *last;
+                        }
+                    }
+                    let command_key = CommandKey::for_stored(&command);
+                    let new_key = KeyStoreKey::scoped(scope.clone(), format!("{}.json", command_key));
+
+                    kv.store(&new_key, &command)?;
+
+                    kv.drop(&old_key).map_err(AggregateStoreError::KeyStoreError)?;
+                    last_command = seq;
+                    seq += 1;
+                }
+
+                if seq % 100 == 0 {
+                    info!(".. {} done", seq)
+                }
+            }
+
+            let info_key = KeyStoreKey::scoped(scope, "info.json".to_string());
+            let info = StoredValueInfo {
+                snapshot_version: 0, // will get overwritten when snapshot is saved again
+                last_event,
+                last_command,
+                last_update,
+            };
+            kv.store(&info_key, &info)?;
+
+            let version = KeyStoreVersion::V0_6;
+            let version_key = KeyStoreKey::simple("version.json".to_string());
+            kv.store(&version_key, &version)?;
+
+            info!("Done migrating commands for Repository server");
             Ok(())
         } else {
             Ok(())

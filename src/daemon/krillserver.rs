@@ -147,7 +147,7 @@ impl KrillServer {
 
         if CONFIG.use_ta() {
             let ta_handle = ta_handle();
-            if !caserver.has_ca(&ta_handle).await {
+            if !caserver.has_ca(&ta_handle)? {
                 info!("Creating embedded Trust Anchor");
 
                 let pubserver = pubserver.as_ref().ok_or_else(|| Error::PublisherNoEmbeddedRepo)?;
@@ -175,9 +175,9 @@ impl KrillServer {
 
         if CONFIG.testbed_enabled {
             let ta_handle = ta_handle();
-            if caserver.has_ca(&ta_handle).await {
+            if caserver.has_ca(&ta_handle)? {
                 let testbed_ca_handle = testbed_ca_handle();
-                if !caserver.has_ca(&testbed_ca_handle).await {
+                if !caserver.has_ca(&testbed_ca_handle)? {
                     info!("Creating embedded Testbed CA");
 
                     // Add the new testbed CA
@@ -445,23 +445,25 @@ impl KrillServer {
     pub async fn cas_stats(&self) -> HashMap<Handle, CertAuthStats> {
         let mut res = HashMap::new();
 
-        for ca in self.ca_list().await.cas() {
-            // can't fail really, but to be sure
-            if let Ok(ca) = self.caserver.get_ca(ca.handle()).await {
-                let roas = ca.roa_definitions();
-                let roa_count = roas.len();
-                let child_count = ca.children().count();
+        if let Ok(list) = self.ca_list() {
+            for ca in list.cas() {
+                // can't fail really, but to be sure
+                if let Ok(ca) = self.caserver.get_ca(ca.handle()).await {
+                    let roas = ca.roa_definitions();
+                    let roa_count = roas.len();
+                    let child_count = ca.children().count();
 
-                let bgp_report = if ca.handle().as_str() == "ta" || ca.handle().as_str() == "testbed" {
-                    BgpAnalysisReport::new(vec![])
-                } else {
-                    self.bgp_analyser.analyse(roas.as_slice(), &ca.all_resources()).await
-                };
+                    let bgp_report = if ca.handle().as_str() == "ta" || ca.handle().as_str() == "testbed" {
+                        BgpAnalysisReport::new(vec![])
+                    } else {
+                        self.bgp_analyser.analyse(roas.as_slice(), &ca.all_resources()).await
+                    };
 
-                res.insert(
-                    ca.handle().clone(),
-                    CertAuthStats::new(roa_count, child_count, bgp_report.into()),
-                );
+                    res.insert(
+                        ca.handle().clone(),
+                        CertAuthStats::new(roa_count, child_count, bgp_report.into()),
+                    );
+                }
             }
         }
 
@@ -470,7 +472,7 @@ impl KrillServer {
 
     pub async fn all_ca_issues(&self) -> KrillResult<AllCertAuthIssues> {
         let mut all_issues = AllCertAuthIssues::default();
-        for ca in self.ca_list().await.cas() {
+        for ca in self.ca_list()?.cas() {
             let issues = self.ca_issues(ca.handle()).await?;
             if !issues.is_empty() {
                 all_issues.add(ca.handle().clone(), issues);
@@ -513,7 +515,7 @@ impl KrillServer {
     pub async fn resync_all(&self) -> KrillEmptyResult {
         let publisher = CaPublisher::new(self.caserver.clone(), self.pubserver.clone());
 
-        for ca in self.ca_list().await.cas() {
+        for ca in self.ca_list()?.cas() {
             if let Err(e) = publisher.publish(ca.handle()).await {
                 error!("Failed to sync ca: {}. Got error: {}", ca.handle(), e)
             }
@@ -532,8 +534,8 @@ impl KrillServer {
 /// # Admin CAS
 ///
 impl KrillServer {
-    pub async fn ca_list(&self) -> CertAuthList {
-        self.caserver.ca_list().await
+    pub fn ca_list(&self) -> KrillResult<CertAuthList> {
+        self.caserver.ca_list()
     }
 
     /// Returns the public CA info for a CA, or NONE if the CA cannot be found.
@@ -556,7 +558,7 @@ impl KrillServer {
         self.caserver.get_ca_history(handle, crit).await.ok()
     }
 
-    pub fn ca_command_details(&self, handle: &Handle, command: CommandKey) -> KrillResult<Option<CaCommandDetails>> {
+    pub fn ca_command_details(&self, handle: &Handle, command: CommandKey) -> KrillResult<CaCommandDetails> {
         self.caserver.get_ca_command_details(handle, command)
     }
 

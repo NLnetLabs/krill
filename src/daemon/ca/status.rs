@@ -5,7 +5,7 @@ use tokio::sync::RwLock;
 use crate::commons::api::rrdp::PublishElement;
 use crate::commons::api::{Entitlements, ErrorResponse, Handle, ParentHandle, ParentStatuses, RepoStatus};
 use crate::commons::error::Error;
-use crate::commons::eventsourcing::KeyValueImpl;
+use crate::commons::eventsourcing::{KeyStoreKey, KeyValueStore};
 use crate::commons::util::httpclient;
 use crate::commons::KrillResult;
 
@@ -29,19 +29,19 @@ impl Default for CaStatus {
 //------------ StatusStore ---------------------------------------------------
 
 pub struct StatusStore {
-    store: KeyValueImpl,
+    store: KeyValueStore,
     lock: RwLock<()>,
 }
 
 impl StatusStore {
     pub fn new(work_dir: &PathBuf, namespace: &str) -> KrillResult<Self> {
-        let store = KeyValueImpl::disk(work_dir, namespace)?;
+        let store = KeyValueStore::disk(work_dir, namespace)?;
         let lock = RwLock::new(());
         Ok(StatusStore { store, lock })
     }
 
-    fn status_key(ca: &Handle) -> String {
-        format!("{}/status.json", ca)
+    fn status_key(ca: &Handle) -> KeyStoreKey {
+        KeyStoreKey::scoped(ca.to_string(), "status.json".to_string())
     }
 
     /// Returns the stored CaStatus for a CA, or a default (empty) status if it can't be found

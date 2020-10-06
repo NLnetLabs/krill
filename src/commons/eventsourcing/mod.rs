@@ -10,18 +10,13 @@ mod cmd;
 pub use self::cmd::{Command, CommandDetails, SentCommand, StoredCommand, WithStorableDetails};
 
 mod store;
-pub use self::store::{
-    CommandKey, CommandKeyError, KeyStore, KeyStoreError, KeyStoreVersion, Storable, StoredValueInfo,
-};
-
-mod diskstore;
-pub use self::diskstore::*;
-
-mod agg_store;
-pub use self::agg_store::{AggregateStore, AggregateStoreError};
+pub use self::store::*;
 
 mod listener;
 pub use self::listener::{EventCounter, EventListener};
+
+mod kv;
+pub use self::kv::*;
 
 //------------ Tests ---------------------------------------------------------
 
@@ -33,6 +28,7 @@ mod tests {
     //! Goal is two-fold: document using a simple domain, and test the module.
     //!
 
+    use std::str::FromStr;
     use std::sync::Arc;
     use std::{fmt, fs};
 
@@ -42,7 +38,6 @@ mod tests {
     use crate::test;
 
     use super::*;
-    use std::str::FromStr;
 
     //------------ InitPersonEvent -----------------------------------------------
 

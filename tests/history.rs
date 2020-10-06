@@ -105,7 +105,7 @@ async fn history() {
             expected_command_file.push(ca.as_str());
             expected_command_file.push(&format!("{}.json", key));
 
-            let details = server.get_ca_command_details(&ca, key).unwrap().unwrap();
+            let details = server.get_ca_command_details(&ca, key).unwrap();
 
             if let Ok(bytes) = file::read(&expected_command_file) {
                 let expected_details: CaCommandDetails = serde_json::from_slice(bytes.as_ref()).unwrap();

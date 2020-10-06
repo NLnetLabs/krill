@@ -25,6 +25,7 @@ use crate::commons::api::{
 };
 use crate::commons::bgp::BgpAnalysisAdvice;
 use crate::commons::error::Error;
+use crate::commons::eventsourcing::AggregateStoreError;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
 use crate::constants::{KRILL_ENV_UPGRADE_ONLY, KRILL_VERSION_MAJOR, KRILL_VERSION_MINOR, KRILL_VERSION_PATCH};
@@ -810,7 +811,7 @@ async fn ca_issues(req: Request, ca: Handle) -> RoutingResult {
 }
 
 async fn cas(req: Request) -> RoutingResult {
-    render_json(req.state().read().await.ca_list().await)
+    render_json_res(req.state().read().await.ca_list())
 }
 
 pub async fn ca_init(req: Request) -> RoutingResult {
@@ -920,9 +921,11 @@ async fn ca_command_details(req: Request, path: &mut RequestPath, handle: Handle
     match path.path_arg() {
         Some(key) => match *req.method() {
             Method::GET => match req.state().read().await.ca_command_details(&handle, key) {
-                Ok(Some(details)) => render_json(details),
-                Ok(None) => render_unknown_resource(),
-                Err(e) => render_error(e),
+                Ok(details) => render_json(details),
+                Err(e) => match e {
+                    Error::AggregateStoreError(AggregateStoreError::UnknownCommand(_, _)) => render_unknown_resource(),
+                    _ => render_error(e),
+                },
             },
             _ => render_unknown_method(),
         },

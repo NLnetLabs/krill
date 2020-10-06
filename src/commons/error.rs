@@ -797,7 +797,7 @@ mod tests {
 
         verify(
             include_str!("../../test-resources/api/regressions/errors/sys-store.json"),
-            Error::AggregateStoreError(AggregateStoreError::InitError),
+            Error::AggregateStoreError(AggregateStoreError::InitError(ca.clone())),
         );
         verify(
             include_str!("../../test-resources/api/regressions/errors/sys-signer.json"),

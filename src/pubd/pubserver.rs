@@ -82,7 +82,7 @@ impl PubServer {
             store.recover()?;
         }
 
-        if !store.has(&default) {
+        if !store.has(&default)? {
             info!("Creating default repository");
 
             let ini = pubd::IniDet::init(&default, rsync_base.clone(), rrdp_base_uri, work_dir, signer.deref())?;
