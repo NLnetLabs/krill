@@ -370,7 +370,10 @@ where
                     let version_before = agg.version();
                     let nr_events = events.len() as u64;
 
-                    info.last_event += nr_events;
+                    // Event numbers apply to the current version of an aggregate, so the first event
+                    // here applies to the current version (before applying) and the 2nd to +1 and so
+                    // on.
+                    info.last_event = version_before + nr_events - 1;
 
                     for i in 0..nr_events {
                         let event = &events[i as usize];
