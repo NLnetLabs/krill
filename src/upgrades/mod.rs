@@ -7,14 +7,17 @@ use std::{fmt, fs, io};
 
 use crate::commons::api::Handle;
 use crate::commons::eventsourcing::{
-    AggregateStore, AggregateStoreError, KeyStoreVersion, KeyValueError, KeyValueStore,
+    AggregateStore, AggregateStoreError, KeyStoreKey, KeyStoreVersion, KeyValueError, KeyValueStore,
 };
 use crate::commons::util::file;
+use crate::constants::KRILL_VERSION;
 use crate::daemon::ca::CertAuth;
 use crate::daemon::krillserver::KrillServer;
 use crate::pubd::Repository;
+use crate::upgrades::fix_info_last_event_0_8_0::FixInfoFiles;
 use crate::upgrades::roa_cleanup_0_8_0::RoaCleanupError;
 
+pub mod fix_info_last_event_0_8_0;
 pub mod pre_0_6_0;
 pub mod roa_cleanup_0_8_0;
 
@@ -90,12 +93,22 @@ impl From<RoaCleanupError> for UpgradeError {
 pub trait UpgradeStore {
     fn needs_migrate(&self, store: &KeyValueStore) -> Result<bool, UpgradeError>;
     fn migrate(&self, store: &KeyValueStore) -> Result<(), UpgradeError>;
+
+    fn version_same_or_before(kv: &KeyValueStore, up_to: KeyStoreVersion) -> Result<bool, UpgradeError> {
+        let key = KeyStoreKey::simple("version".to_string());
+        match kv.get::<KeyStoreVersion>(&key) {
+            Err(e) => Err(UpgradeError::KeyStoreError(e)),
+            Ok(None) => Ok(true),
+            Ok(Some(current_version)) => Ok(current_version <= up_to),
+        }
+    }
 }
 
 /// Should be called when Krill starts, before the KrillServer is initiated
 pub fn pre_start_upgrade(work_dir: &PathBuf) -> Result<(), UpgradeError> {
     upgrade_pre_0_6_0_cas_commands(work_dir)?;
-    upgrade_pre_0_6_0_pubd_commands(work_dir)
+    upgrade_pre_0_6_0_pubd_commands(work_dir)?;
+    upgrade_pre_fix_info_0_8_0(work_dir)
 }
 
 /// Should be called right after the KrillServer is initiated
@@ -110,6 +123,7 @@ pub async fn post_start_upgrade(work_dir: &PathBuf, server: &KrillServer) -> Res
         pubd_store.set_version(&version_0_8)?;
     }
 
+    info!("Upgraded Krill to version: {}", KRILL_VERSION);
     Ok(())
 }
 
@@ -152,7 +166,7 @@ fn upgrade_pre_0_6_0_cas_commands(work_dir: &PathBuf) -> Result<(), UpgradeError
 fn upgrade_pre_0_6_0_pubd_commands(work_dir: &PathBuf) -> Result<(), UpgradeError> {
     let pre_0_6_0_pubd_commands = pre_0_6_0::UpgradePubd;
 
-    // Prepare to do the work on the real "cas" directory
+    // Prepare to do the work on the real directory
     let mut pubd_dir = work_dir.clone();
     pubd_dir.push("pubd");
     let kv = KeyValueStore::disk(work_dir, "pubd")?;
@@ -183,6 +197,16 @@ fn upgrade_pre_0_6_0_pubd_commands(work_dir: &PathBuf) -> Result<(), UpgradeErro
         let _ = fs::remove_dir_all(&backup_dir); // ignore if removing backup fails
         Ok(())
     }
+}
+
+fn upgrade_pre_fix_info_0_8_0(workdir: &PathBuf) -> Result<(), UpgradeError> {
+    let migration = FixInfoFiles;
+
+    let ca_kv = KeyValueStore::disk(workdir, "cas")?;
+    let pubd_kv = KeyValueStore::disk(workdir, "pubd")?;
+
+    migration.migrate(&ca_kv)?;
+    migration.migrate(&pubd_kv)
 }
 
 //------------ Tests ---------------------------------------------------------

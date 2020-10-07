@@ -16,22 +16,13 @@ use crate::commons::eventsourcing::{
 use crate::commons::remote::rfc8183::ServiceUri;
 use crate::upgrades::{UpgradeError, UpgradeStore};
 
-fn needs_migrate(kv: &KeyValueStore, version: KeyStoreVersion) -> Result<bool, UpgradeError> {
-    let key = KeyStoreKey::simple("version".to_string());
-    match kv.get::<KeyStoreVersion>(&key) {
-        Err(e) => Err(UpgradeError::KeyStoreError(e)),
-        Ok(None) => Ok(true),
-        Ok(Some(current_version)) => Ok(current_version <= version),
-    }
-}
-
 //------------ UpgradeCas --------------------------------------------------
 
 pub struct UpgradeCas;
 
 impl UpgradeStore for UpgradeCas {
     fn needs_migrate(&self, kv: &KeyValueStore) -> Result<bool, UpgradeError> {
-        needs_migrate(kv, KeyStoreVersion::Pre0_6)
+        Self::version_same_or_before(kv, KeyStoreVersion::Pre0_6)
     }
 
     fn migrate(&self, kv: &KeyValueStore) -> Result<(), UpgradeError> {
@@ -129,7 +120,7 @@ impl UpgradeStore for UpgradePubd {
         if kv.scopes()?.is_empty() {
             Ok(false)
         } else {
-            needs_migrate(kv, KeyStoreVersion::Pre0_6)
+            Self::version_same_or_before(kv, KeyStoreVersion::Pre0_6)
         }
     }
 

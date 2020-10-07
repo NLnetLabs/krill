@@ -99,17 +99,22 @@ impl FromStr for CommandKey {
         } else {
             let timestamp_secs = i64::from_str(&parts[1]).map_err(|_| CommandKeyError(s.to_string()))?;
             let sequence = u64::from_str(&parts[2]).map_err(|_| CommandKeyError(s.to_string()))?;
-            let end = parts[3].to_string();
-            if !end.ends_with(".json") {
-                Err(CommandKeyError(s.to_string()))
-            } else {
-                let label = (end[0..end.len() - 5]).to_string();
-                Ok(CommandKey {
-                    sequence,
-                    timestamp_secs,
-                    label,
-                })
-            }
+            // strip .json if present on the label part
+            let label = {
+                let end = parts[3].to_string();
+                let last = if end.ends_with(".json") {
+                    end.len() - 5
+                } else {
+                    end.len()
+                };
+                (end[0..last]).to_string()
+            };
+
+            Ok(CommandKey {
+                sequence,
+                timestamp_secs,
+                label,
+            })
         }
     }
 }
@@ -835,16 +840,30 @@ where
     }
 
     fn update_aggregate(&self, id: &Handle, aggregate: &mut A, limit: Option<u64>) -> Result<(), AggregateStoreError> {
+        let start = aggregate.version();
         let limit = if let Some(limit) = limit {
+            debug!(
+                "Will attempt to update '{}' from version: {} to: {} (explicit limit)",
+                id, start, limit
+            );
             limit
         } else if let Ok(info) = self.get_info(id) {
+            debug!(
+                "Will attempt to update '{}' from version: {} to: {} (found info)",
+                id, start, info.last_event
+            );
             info.last_event
         } else {
             let nr_events = self.kv.keys(Some(id.to_string()), "delta-")?.len();
             if nr_events < 1 {
                 return Err(AggregateStoreError::InfoMissing(id.clone()));
             } else {
-                (nr_events - 1) as u64
+                let limit = (nr_events - 1) as u64;
+                debug!(
+                    "Will attempt to update '{}' from version: {} to: {} (based on nr of events)",
+                    id, start, limit
+                );
+                limit
             }
         };
 
@@ -854,7 +873,6 @@ where
             return Ok(());
         }
 
-        let start = aggregate.version();
         if start > limit {
             return Err(AggregateStoreError::ReplayError(id.clone(), limit, start));
         }
@@ -866,7 +884,7 @@ where
                     return Err(AggregateStoreError::ReplayError(id.clone(), limit, version));
                 }
                 aggregate.apply(e);
-                trace!("Applied event nr {} to aggregate {}", version, id);
+                debug!("Applied event nr {} to aggregate {}", version, id);
             } else {
                 return Err(AggregateStoreError::ReplayError(id.clone(), limit, version));
             }
@@ -972,5 +990,25 @@ pub enum AggregateStoreError {
 impl From<KeyValueError> for AggregateStoreError {
     fn from(e: KeyValueError) -> Self {
         AggregateStoreError::KeyStoreError(e)
+    }
+}
+
+//------------ Tests ---------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn command_key_to_from_str() {
+        let key_str = "command--1576389600--87--cmd-ca-publish";
+        let key = CommandKey::from_str(key_str).unwrap();
+        assert_eq!(key_str, &key.to_string());
+
+        let key_with_dot_json_str = "command--1576389600--87--cmd-ca-publish.json";
+        let key_with_dot_json = CommandKey::from_str(key_with_dot_json_str).unwrap();
+
+        assert_eq!(key, key_with_dot_json);
     }
 }
