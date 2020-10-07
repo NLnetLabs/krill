@@ -121,9 +121,9 @@ pub async fn post_start_upgrade(work_dir: &PathBuf, server: &KrillServer) -> Res
         roa_cleanup_0_8_0::roa_cleanup(server).await?;
         ca_store.set_version(&version_0_8)?;
         pubd_store.set_version(&version_0_8)?;
+        info!("Upgraded Krill to version: {}", KRILL_VERSION);
     }
 
-    info!("Upgraded Krill to version: {}", KRILL_VERSION);
     Ok(())
 }
 
