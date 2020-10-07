@@ -457,13 +457,19 @@ where
         crit: CommandHistoryCriteria,
     ) -> Result<CommandHistory, AggregateStoreError> {
         let offset = crit.offset();
-        let rows = crit.rows();
+
+        let command_keys = self.command_keys_ascending(id, &crit)?;
+
+        let rows = match crit.rows_limit() {
+            Some(limit) => limit,
+            None => command_keys.len(),
+        };
 
         let mut commands: Vec<CommandHistoryRecord> = Vec::with_capacity(rows);
         let mut skipped = 0;
         let mut total = 0;
 
-        for command_key in self.command_keys_ascending(id, &crit)? {
+        for command_key in command_keys {
             total += 1;
             if skipped < offset {
                 skipped += 1;
@@ -490,6 +496,7 @@ where
         let before = (Time::now() - Duration::days(days)).timestamp();
         crit.set_before(before);
         crit.set_includes(&["cmd-ca-publish", "pubd-publish"]);
+        crit.set_unlimited_rows();
 
         let info = self
             .get_info(handle)

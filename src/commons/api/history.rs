@@ -295,10 +295,10 @@ pub struct CommandHistoryCriteria {
     label_includes: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     label_excludes: Option<Vec<String>>,
+
+    offset: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
-    offset: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    rows: Option<usize>,
+    rows_limit: Option<usize>,
 }
 
 impl CommandHistoryCriteria {
@@ -319,11 +319,15 @@ impl CommandHistoryCriteria {
     }
 
     pub fn set_rows(&mut self, rows: usize) {
-        self.rows = Some(rows);
+        self.rows_limit = Some(rows);
+    }
+
+    pub fn set_unlimited_rows(&mut self) {
+        self.rows_limit = None
     }
 
     pub fn set_offset(&mut self, offset: usize) {
-        self.offset = Some(offset);
+        self.offset = offset;
     }
 
     pub fn matches_timestamp_secs(&self, stamp: i64) -> bool {
@@ -357,11 +361,11 @@ impl CommandHistoryCriteria {
     }
 
     pub fn offset(&self) -> usize {
-        self.offset.unwrap_or_else(|| 0)
+        self.offset
     }
 
-    pub fn rows(&self) -> usize {
-        self.rows.unwrap_or_else(|| 100)
+    pub fn rows_limit(&self) -> Option<usize> {
+        self.rows_limit
     }
 }
 
@@ -372,8 +376,8 @@ impl Default for CommandHistoryCriteria {
             after: None,
             label_includes: None,
             label_excludes: None,
-            offset: None,
-            rows: None,
+            offset: 0,
+            rows_limit: Some(100),
         }
     }
 }
