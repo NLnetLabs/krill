@@ -344,10 +344,7 @@ impl RepositoryContact {
     }
 
     pub fn is_embedded(&self) -> bool {
-        match self {
-            RepositoryContact::Embedded(_) => true,
-            _ => false,
-        }
+        matches!(self, RepositoryContact::Embedded(_))
     }
 
     pub fn rfc8183(response: rfc8183::RepositoryResponse) -> Self {
@@ -474,10 +471,7 @@ impl ParentCaContact {
     }
 
     pub fn is_ta(&self) -> bool {
-        match *self {
-            ParentCaContact::Ta(_) => true,
-            _ => false,
-        }
+        matches!(*self, ParentCaContact::Ta(_))
     }
 }
 

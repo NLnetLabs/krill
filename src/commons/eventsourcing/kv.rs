@@ -360,7 +360,7 @@ mod tests {
 
             let content = "abc".to_string();
             let id = "id".to_string();
-            let key = KeyStoreKey::simple(id.clone());
+            let key = KeyStoreKey::simple(id);
             let target = key.archived();
 
             store.store(&key, &content).unwrap();
@@ -372,7 +372,7 @@ mod tests {
 
             store.move_key(&key, &target).unwrap();
 
-            let mut expected_target = d.clone();
+            let mut expected_target = d;
             expected_target.push("store");
             expected_target.push("archived");
             expected_target.push("id");

@@ -722,10 +722,10 @@ pub enum BgpAnalysisState {
 
 impl BgpAnalysisState {
     pub fn is_invalid(self) -> bool {
-        match self {
-            BgpAnalysisState::AnnouncementInvalidAsn | BgpAnalysisState::AnnouncementInvalidLength => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            BgpAnalysisState::AnnouncementInvalidAsn | BgpAnalysisState::AnnouncementInvalidLength
+        )
     }
 }
 

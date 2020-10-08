@@ -74,11 +74,7 @@ impl ChildDetails {
     }
 
     pub fn is_issued(&self, ki: &KeyIdentifier) -> bool {
-        if let Some(LastResponse::Current(_)) = self.used_keys.get(ki) {
-            true
-        } else {
-            false
-        }
+        matches!(self.used_keys.get(ki), Some(LastResponse::Current(_)))
     }
 
     pub fn add_issue_response(&mut self, rcn: ResourceClassName, ki: KeyIdentifier) {

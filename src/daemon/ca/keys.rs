@@ -532,10 +532,7 @@ impl KeyState {
 
     /// Returns true if there is a new key
     pub fn has_new_key(&self) -> bool {
-        match self {
-            KeyState::RollNew(_, _) => true,
-            _ => false,
-        }
+        matches!(self, KeyState::RollNew(_, _))
     }
 
     fn knows_key(&self, key_id: KeyIdentifier) -> bool {
