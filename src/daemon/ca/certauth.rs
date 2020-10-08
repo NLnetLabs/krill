@@ -848,8 +848,17 @@ impl CertAuth {
         self.parents.keys()
     }
 
-    fn has_parent(&self, parent: &ParentHandle) -> bool {
+    fn parent_known(&self, parent: &ParentHandle) -> bool {
         self.parents.contains_key(parent)
+    }
+
+    fn parent_for_info(&self, info: &ParentCaContact) -> Option<&ParentHandle> {
+        for (parent, parent_info) in &self.parents {
+            if parent_info == info {
+                return Some(parent);
+            }
+        }
+        None
     }
 
     /// Returns true if this CertAuth is set up as a TA.
@@ -881,10 +890,13 @@ impl CertAuth {
     }
 
     /// Adds a parent. This method will return an error in case a parent
-    /// by this name (handle) is already known.
+    /// by this name (handle) is already known. Or in case the same reponse
+    /// is used for more than one parent.
     fn add_parent(&self, parent: Handle, info: ParentCaContact) -> KrillResult<Vec<Evt>> {
-        if self.has_parent(&parent) {
-            Err(Error::CaParentDuplicate(self.handle.clone(), parent))
+        if self.parent_known(&parent) {
+            Err(Error::CaParentDuplicateName(self.handle.clone(), parent))
+        } else if let Some(other) = self.parent_for_info(&info) {
+            Err(Error::CaParentDuplicateInfo(self.handle.clone(), other.clone()))
         } else if self.is_ta() {
             Err(Error::TaNotAllowed)
         } else {
@@ -909,7 +921,7 @@ impl CertAuth {
     /// Updates an existing parent's contact. This will return an error if
     /// the parent is not known.
     fn update_parent(&self, parent: Handle, info: ParentCaContact) -> KrillResult<Vec<Evt>> {
-        if !self.has_parent(&parent) {
+        if !self.parent_known(&parent) {
             Err(Error::CaParentUnknown(self.handle.clone(), parent))
         } else if self.is_ta() {
             Err(Error::TaNotAllowed)

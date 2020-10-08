@@ -298,7 +298,10 @@ pub enum Error {
 
     // CA Parent Issues
     #[display(fmt = "CA '{}' already has a parent named '{}'", _0, _1)]
-    CaParentDuplicate(Handle, ParentHandle),
+    CaParentDuplicateName(Handle, ParentHandle),
+
+    #[display(fmt = "CA '{}' already has a parent named '{}' for this XML", _0, _1)]
+    CaParentDuplicateInfo(Handle, ParentHandle),
 
     #[display(fmt = "CA '{}' does not have a parent named '{}'", _0, _1)]
     CaParentUnknown(Handle, ParentHandle),
@@ -618,7 +621,11 @@ impl Error {
 
             Error::CaRepoResponseWrongXml(ca) => ErrorResponse::new("ca-repo-response-wrong-xml", &self).with_ca(ca),
 
-            Error::CaParentDuplicate(ca, parent) => ErrorResponse::new("ca-parent-duplicate", &self)
+            Error::CaParentDuplicateName(ca, parent) => ErrorResponse::new("ca-parent-duplicate", &self)
+                .with_ca(ca)
+                .with_parent(parent),
+
+            Error::CaParentDuplicateInfo(ca, parent) => ErrorResponse::new("ca-parent-xml-duplicate", &self)
                 .with_ca(ca)
                 .with_parent(parent),
 
@@ -918,7 +925,7 @@ mod tests {
 
         verify(
             include_str!("../../test-resources/api/regressions/errors/ca-parent-duplicate.json"),
-            Error::CaParentDuplicate(ca.clone(), parent.clone()),
+            Error::CaParentDuplicateName(ca.clone(), parent.clone()),
         );
         verify(
             include_str!("../../test-resources/api/regressions/errors/ca-parent-unknown.json"),
