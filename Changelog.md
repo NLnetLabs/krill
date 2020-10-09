@@ -53,43 +53,6 @@ believe we can do these changes without the need for an additional release candi
 want to contribute to the translations please contact us!  
 
 
-### Archiving old events
-
-You can now choose to archive old publication events which will allow you to
-delete or move them in order to save space on your system. To use this feature,
-which is disabled by default, you need to set the following directive in your
-config file:
-
-```
- archive_threshold_days = <nr> 
-```
-
-If enabled this option will make sure that the republish events, where your CA
-simply generates a new Manifest and CRL are archived after the given number of
-days.
-
-If you run Krill as a Publication Server then this option will enable the archiving
-of publication deltas received by your server from CAs.
-
-Archived commands (containing e.g. details of when the change happened), and following
-events will be moved to an "archived" subdirectory under your data directory as follows:
-```
-   $data_dir/pubd/0/archived      <-- if you run Krill as a Publication Server
-   $data_dir/cas/ca/archived      <-- for a CA named 'ca'
-```
-
-If you want to save space you can delete the files from these archived directories,
-e.g. from cron. However, you could also archive them in a different way: e.g. compress
-and move to long term storage. Krill will no longer need this data, but if you ever wanted
-to see these details in history you would need to move them back into the parent directory
-of the 'archived' directory.
-
-Features:
-* Will check all state on startup and try to recover in case of issues (#314)
-
-Breaking Changes:
-* Disallow IP addresses in certificate URIs - use DNS names instead (#319)
-
 ## 0.7.4 'Multipass!'
 
 There is no need to upgrade to this version. It was created only so that you can continue
