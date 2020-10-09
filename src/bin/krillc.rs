@@ -15,12 +15,11 @@ async fn main() {
                 Err(e) => {
                     if format != ReportFormat::None {
                         match &e {
-                            Error::HttpClientError(httpclient::Error::ErrorWithJson(
-                                _code,
-                                res,
-                            )) => {
+                            Error::HttpClientError(httpclient::Error::ErrorWithJson(_code, res)) => {
                                 if format == ReportFormat::Json {
                                     eprintln!("{}", e);
+                                } else if let Some(delta_error) = res.delta_error() {
+                                    eprintln!("Delta rejected:\n\n{}", delta_error);
                                 } else {
                                     eprintln!("Error: {}", res.msg());
                                 }

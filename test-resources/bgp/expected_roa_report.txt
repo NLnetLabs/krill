@@ -1,4 +1,8 @@
-10.0.0.0/22-23 => 64496	roa authorizes 2, disallows 2 announcements
+192.168.1.0/24 => 64497	roa authorizes 1, disallows 0 announcements
 10.0.3.0/24 => 64497	roa authorizes 0, disallows 0 announcements
 10.0.4.0/24 => 0	roa authorizes 0, disallows 0 announcements
+192.168.1.0/24 => 64498	roa authorizes 0, disallows 0 announcements
+10.0.0.0/22-23 => 64496	roa authorizes 2, authorizes in excess 1, disallows 2 announcements
 10.0.0.0/21 => 64497	announcement 'not found': not covered by your ROAs
+192.168.0.0/24 => 64496	announcement 'not found': not covered by your ROAs
+192.168.0.0/24 => 64497	announcement 'not found': not covered by your ROAs

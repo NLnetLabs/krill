@@ -1,8 +1,6 @@
 use std::fmt;
 
-use crate::commons::api::{
-    PublishDelta, PublisherHandle, RepositoryHandle, StorableRepositoryCommand,
-};
+use crate::commons::api::{PublishDelta, PublisherHandle, RepositoryHandle, StorableRepositoryCommand};
 use crate::commons::eventsourcing::CommandDetails;
 use crate::commons::eventsourcing::SentCommand;
 use crate::commons::remote::rfc8183;
@@ -39,11 +37,7 @@ impl CmdDet {
         SentCommand::new(handle, None, CmdDet::RemovePublisher(publisher))
     }
 
-    pub fn publish(
-        handle: &RepositoryHandle,
-        publisher: PublisherHandle,
-        delta: PublishDelta,
-    ) -> Cmd {
+    pub fn publish(handle: &RepositoryHandle, publisher: PublisherHandle, delta: PublishDelta) -> Cmd {
         SentCommand::new(handle, None, CmdDet::Publish(publisher, delta))
     }
 }

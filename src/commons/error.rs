@@ -3,7 +3,6 @@
 use std::fmt::Display;
 use std::{fmt, io};
 
-// use actix_web::http::StatusCode;
 use hyper::StatusCode;
 
 use rpki::crypto::KeyIdentifier;
@@ -12,11 +11,12 @@ use rpki::x509::ValidationError;
 
 use crate::commons::api::rrdp::PublicationDeltaError;
 use crate::commons::api::{
-    ChildHandle, ErrorResponse, Handle, ParentHandle, PublisherHandle, ResourceClassName,
-    ResourceSetError,
+    ChildHandle, ErrorResponse, Handle, ParentHandle, PublisherHandle, ResourceClassName, ResourceSetError,
+    RoaDefinition,
 };
-use crate::commons::eventsourcing::AggregateStoreError;
+use crate::commons::eventsourcing::{AggregateStoreError, KeyValueError};
 use crate::commons::remote::rfc6492;
+use crate::commons::remote::rfc6492::NotPerformedResponse;
 use crate::commons::remote::rfc8181;
 use crate::commons::remote::rfc8181::ReportErrorCode;
 use crate::commons::util::httpclient;
@@ -24,13 +24,179 @@ use crate::commons::util::softsigner::SignerError;
 use crate::daemon::ca::RouteAuthorization;
 use crate::daemon::http::tls_keys;
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RoaDeltaError {
+    duplicates: Vec<RoaDefinition>,
+    covered: Vec<CoveredRoa>,
+    notheld: Vec<RoaDefinition>,
+    unknowns: Vec<RoaDefinition>,
+    invalid_length: Vec<RoaDefinition>,
+    covering: Vec<CoveringRoa>,
+    as0_exists: Vec<ExistingAs0Roa>,
+    as0_overlaps: Vec<OverlappingAs0Roa>,
+}
+
+impl Default for RoaDeltaError {
+    fn default() -> Self {
+        RoaDeltaError {
+            duplicates: vec![],
+            covered: vec![],
+            notheld: vec![],
+            unknowns: vec![],
+            invalid_length: vec![],
+            covering: vec![],
+            as0_exists: vec![],
+            as0_overlaps: vec![],
+        }
+    }
+}
+
+impl RoaDeltaError {
+    pub fn add_duplicate(&mut self, addition: RoaDefinition) {
+        self.duplicates.push(addition);
+    }
+
+    pub fn add_covered(&mut self, addition: RoaDefinition, covered_by: RoaDefinition) {
+        self.covered.push(CoveredRoa { addition, covered_by });
+    }
+
+    pub fn add_notheld(&mut self, addition: RoaDefinition) {
+        self.notheld.push(addition);
+    }
+
+    pub fn add_unknown(&mut self, removal: RoaDefinition) {
+        self.unknowns.push(removal);
+    }
+
+    pub fn add_invalid_length(&mut self, invalid: RoaDefinition) {
+        self.invalid_length.push(invalid);
+    }
+
+    pub fn add_covering(&mut self, addition: RoaDefinition, covering: Vec<RoaDefinition>) {
+        self.covering.push(CoveringRoa { addition, covering })
+    }
+
+    pub fn add_as0_exists(&mut self, addition: RoaDefinition, existing_as0: RoaDefinition) {
+        self.as0_exists.push(ExistingAs0Roa { addition, existing_as0 });
+    }
+
+    pub fn add_as0_overlaps(&mut self, addition: RoaDefinition, existing: Vec<RoaDefinition>) {
+        self.as0_overlaps.push(OverlappingAs0Roa { addition, existing });
+    }
+
+    pub fn combine(&mut self, mut other: Self) {
+        self.duplicates.append(&mut other.duplicates);
+        self.covered.append(&mut other.covered);
+        self.notheld.append(&mut other.notheld);
+        self.unknowns.append(&mut other.unknowns);
+        self.invalid_length.append(&mut other.invalid_length);
+        self.covering.append(&mut other.covering);
+        self.as0_exists.append(&mut other.as0_exists);
+        self.as0_overlaps.append(&mut other.as0_overlaps);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.duplicates.is_empty()
+            && self.covered.is_empty()
+            && self.notheld.is_empty()
+            && self.unknowns.is_empty()
+            && self.invalid_length.is_empty()
+            && self.covering.is_empty()
+            && self.as0_exists.is_empty()
+            && self.as0_overlaps.is_empty()
+    }
+}
+
+impl fmt::Display for RoaDeltaError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if !self.duplicates.is_empty() {
+            writeln!(f, "Cannot add the following duplicate ROAs:")?;
+            for dup in self.duplicates.iter() {
+                writeln!(f, "  {}", dup)?;
+            }
+        }
+        if !self.covered.is_empty() {
+            writeln!(f, "Cannot add the following covered ROAs:")?;
+            for cov in self.covered.iter() {
+                writeln!(f, "  {} covered by: {}", cov.addition, cov.covered_by)?;
+            }
+        }
+        if !self.notheld.is_empty() {
+            writeln!(
+                f,
+                "Cannot add the following ROAs with prefixes not on any of your certificates:"
+            )?;
+            for not in self.notheld.iter() {
+                writeln!(f, "  {}", not)?;
+            }
+        }
+        if !self.unknowns.is_empty() {
+            writeln!(f, "Cannot remove the following unknown ROAs:")?;
+            for unk in self.unknowns.iter() {
+                writeln!(f, "  {}", unk)?;
+            }
+        }
+        if !self.invalid_length.is_empty() {
+            writeln!(
+                f,
+                "The following ROAs have a max length which is invalid for the prefix:"
+            )?;
+            for unk in self.invalid_length.iter() {
+                writeln!(f, "  {}", unk)?;
+            }
+        }
+        if !self.covering.is_empty() {
+            writeln!(
+                f,
+                "Cannot add the following ROAs which would include a currently defined ROA:"
+            )?;
+            for cov in self.covering.iter() {
+                write!(f, "  {} covering existing:", cov.addition)?;
+                for covered in &cov.covering {
+                    write!(f, " {}", covered)?;
+                }
+                writeln!(f)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CoveredRoa {
+    addition: RoaDefinition,
+    covered_by: RoaDefinition,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ExistingAs0Roa {
+    addition: RoaDefinition,
+    existing_as0: RoaDefinition,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OverlappingAs0Roa {
+    addition: RoaDefinition,
+    existing: Vec<RoaDefinition>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CoveringRoa {
+    addition: RoaDefinition,
+    covering: Vec<RoaDefinition>,
+}
+
 #[derive(Debug, Display)]
+#[allow(clippy::large_enum_variant)]
 pub enum Error {
     //-----------------------------------------------------------------
     // System Issues
     //-----------------------------------------------------------------
     #[display(fmt = "I/O error: {}", _0)]
     IoError(io::Error),
+
+    #[display(fmt = "Key/Value error: {}", _0)]
+    KeyValueError(KeyValueError),
 
     #[display(fmt = "Persistence error: {}", _0)]
     AggregateStoreError(AggregateStoreError),
@@ -132,7 +298,10 @@ pub enum Error {
 
     // CA Parent Issues
     #[display(fmt = "CA '{}' already has a parent named '{}'", _0, _1)]
-    CaParentDuplicate(Handle, ParentHandle),
+    CaParentDuplicateName(Handle, ParentHandle),
+
+    #[display(fmt = "CA '{}' already has a parent named '{}' for this XML", _0, _1)]
+    CaParentDuplicateInfo(Handle, ParentHandle),
 
     #[display(fmt = "CA '{}' does not have a parent named '{}'", _0, _1)]
     CaParentUnknown(Handle, ParentHandle),
@@ -158,6 +327,9 @@ pub enum Error {
     //-----------------------------------------------------------------
     #[display(fmt = "RFC 6492 Issue: {}", _0)]
     Rfc6492(rfc6492::Error),
+
+    #[display(fmt = "RFC 6492 Not Performed: {}", _0)]
+    Rfc6492NotPerformed(NotPerformedResponse),
 
     #[display(fmt = "Invalid CSR received: {}", _0)]
     Rfc6492InvalidCsrSent(String),
@@ -198,10 +370,7 @@ pub enum Error {
     #[display(fmt = "ROA '{}' was not added because it is redundant", _1)]
     CaAuthorizationRedundant(Handle, RouteAuthorization),
 
-    #[display(
-        fmt = "ROA '{}' was not added because it would make existing ROAs redundant",
-        _1
-    )]
+    #[display(fmt = "ROA '{}' was not added because it would make existing ROAs redundant", _1)]
     CaAuthorizationIncludes(Handle, RouteAuthorization),
 
     #[display(fmt = "Invalid max length in ROA: '{}'", _1)]
@@ -209,6 +378,9 @@ pub enum Error {
 
     #[display(fmt = "Prefix in ROA '{}' not held by you", _1)]
     CaAuthorizationNotEntitled(Handle, RouteAuthorization),
+
+    #[display(fmt = "ROA delta rejected:\n\n'{}' ", _0)]
+    RoaDeltaError(RoaDeltaError),
 
     //-----------------------------------------------------------------
     // Key Usage Issues
@@ -256,6 +428,12 @@ pub enum Error {
     TaAlreadyInitialised,
 
     //-----------------------------------------------------------------
+    // Resource Tagged Attestation issues
+    //-----------------------------------------------------------------
+    #[display(fmt = "Your CA does not hold the requested resources")]
+    RtaResourcesNotHeld,
+
+    //-----------------------------------------------------------------
     // If we really don't know any more..
     //-----------------------------------------------------------------
     #[display(fmt = "{}", _0)]
@@ -265,6 +443,12 @@ pub enum Error {
 impl From<io::Error> for Error {
     fn from(e: io::Error) -> Self {
         Error::IoError(e)
+    }
+}
+
+impl From<KeyValueError> for Error {
+    fn from(e: KeyValueError) -> Self {
+        Error::KeyValueError(e)
     }
 }
 
@@ -301,6 +485,12 @@ impl From<ResourceSetError> for Error {
 impl From<tls_keys::Error> for Error {
     fn from(e: tls_keys::Error) -> Self {
         Error::HttpsSetup(e.to_string())
+    }
+}
+
+impl From<crate::commons::crypto::Error> for Error {
+    fn from(e: crate::commons::crypto::Error) -> Self {
+        Error::signer(e)
     }
 }
 
@@ -352,6 +542,9 @@ impl Error {
             Error::IoError(e) => ErrorResponse::new("sys-io", &self).with_cause(e),
 
             // internal server error
+            Error::KeyValueError(e) => ErrorResponse::new("sys-kv", &self).with_cause(e),
+
+            // internal server error
             Error::AggregateStoreError(e) => ErrorResponse::new("sys-store", &self).with_cause(e),
 
             // internal server error
@@ -391,36 +584,24 @@ impl Error {
             //-----------------------------------------------------------------
             // Publisher Issues (label: pub-*)
             //-----------------------------------------------------------------
-            Error::PublisherUnknown(p) => {
-                ErrorResponse::new("pub-unknown", &self).with_publisher(p)
-            }
+            Error::PublisherUnknown(p) => ErrorResponse::new("pub-unknown", &self).with_publisher(p),
 
-            Error::PublisherDuplicate(p) => {
-                ErrorResponse::new("pub-duplicate", &self).with_publisher(p)
-            }
+            Error::PublisherDuplicate(p) => ErrorResponse::new("pub-duplicate", &self).with_publisher(p),
 
-            Error::PublisherUriOutsideBase(uri, base) => {
-                ErrorResponse::new("pub-outside-jail", &self)
-                    .with_uri(uri)
-                    .with_base_uri(base)
-            }
+            Error::PublisherUriOutsideBase(uri, base) => ErrorResponse::new("pub-outside-jail", &self)
+                .with_uri(uri)
+                .with_base_uri(base),
 
-            Error::PublisherBaseUriNoSlash(uri) => {
-                ErrorResponse::new("pub-uri-no-slash", &self).with_uri(uri)
-            }
+            Error::PublisherBaseUriNoSlash(uri) => ErrorResponse::new("pub-uri-no-slash", &self).with_uri(uri),
 
             Error::PublisherNoEmbeddedRepo => ErrorResponse::new("pub-no-embedded-repo", &self),
 
             //-----------------------------------------------------------------
             // RFC 8181
             //-----------------------------------------------------------------
-            Error::Rfc8181Validation(e) => {
-                ErrorResponse::new("rfc8181-validation", &self).with_cause(e)
-            }
+            Error::Rfc8181Validation(e) => ErrorResponse::new("rfc8181-validation", &self).with_cause(e),
             Error::Rfc8181Decode(e) => ErrorResponse::new("rfc8181-decode", &self).with_cause(e),
-            Error::Rfc8181MessageError(e) => {
-                ErrorResponse::new("rfc8181-protocol-message", &self).with_cause(e)
-            }
+            Error::Rfc8181MessageError(e) => ErrorResponse::new("rfc8181-protocol-message", &self).with_cause(e),
             Error::Rfc8181Delta(e) => ErrorResponse::new("rfc8181-delta", &self).with_cause(e),
 
             //-----------------------------------------------------------------
@@ -432,25 +613,21 @@ impl Error {
 
             Error::CaRepoInUse(ca) => ErrorResponse::new("ca-repo-same", &self).with_ca(ca),
 
-            Error::CaRepoIssue(ca, err) => ErrorResponse::new("ca-repo-issue", &self)
+            Error::CaRepoIssue(ca, err) => ErrorResponse::new("ca-repo-issue", &self).with_ca(ca).with_cause(err),
+
+            Error::CaRepoResponseInvalidXml(ca, err) => ErrorResponse::new("ca-repo-response-invalid-xml", &self)
                 .with_ca(ca)
                 .with_cause(err),
 
-            Error::CaRepoResponseInvalidXml(ca, err) => {
-                ErrorResponse::new("ca-repo-response-invalid-xml", &self)
-                    .with_ca(ca)
-                    .with_cause(err)
-            }
+            Error::CaRepoResponseWrongXml(ca) => ErrorResponse::new("ca-repo-response-wrong-xml", &self).with_ca(ca),
 
-            Error::CaRepoResponseWrongXml(ca) => {
-                ErrorResponse::new("ca-repo-response-wrong-xml", &self).with_ca(ca)
-            }
+            Error::CaParentDuplicateName(ca, parent) => ErrorResponse::new("ca-parent-duplicate", &self)
+                .with_ca(ca)
+                .with_parent(parent),
 
-            Error::CaParentDuplicate(ca, parent) => {
-                ErrorResponse::new("ca-parent-duplicate", &self)
-                    .with_ca(ca)
-                    .with_parent(parent)
-            }
+            Error::CaParentDuplicateInfo(ca, parent) => ErrorResponse::new("ca-parent-xml-duplicate", &self)
+                .with_ca(ca)
+                .with_parent(parent),
 
             Error::CaParentUnknown(ca, parent) => ErrorResponse::new("ca-parent-unknown", &self)
                 .with_ca(ca)
@@ -461,32 +638,25 @@ impl Error {
                 .with_parent(parent)
                 .with_cause(err),
 
-            Error::CaParentResponseInvalidXml(ca, err) => {
-                ErrorResponse::new("ca-parent-response-invalid-xml", &self)
-                    .with_ca(ca)
-                    .with_cause(err)
-            }
+            Error::CaParentResponseInvalidXml(ca, err) => ErrorResponse::new("ca-parent-response-invalid-xml", &self)
+                .with_ca(ca)
+                .with_cause(err),
 
             Error::CaParentResponseWrongXml(ca) => {
                 ErrorResponse::new("ca-parent-response-wrong-xml", &self).with_ca(ca)
             }
 
-            Error::CaParentAddNotResponsive(ca, parent) => {
-                ErrorResponse::new("ca-parent-add-unresponsive", &self)
-                    .with_ca(ca)
-                    .with_parent(parent)
-            }
+            Error::CaParentAddNotResponsive(ca, parent) => ErrorResponse::new("ca-parent-add-unresponsive", &self)
+                .with_ca(ca)
+                .with_parent(parent),
 
             //-----------------------------------------------------------------
             // RFC6492 (requesting resources, not on JSON api)
             //-----------------------------------------------------------------
             Error::Rfc6492(e) => ErrorResponse::new("rfc6492-protocol", &self).with_cause(e),
-            Error::Rfc6492InvalidCsrSent(e) => {
-                ErrorResponse::new("rfc6492-invalid-csr", &self).with_cause(e)
-            }
-            Error::Rfc6492SignatureInvalid => {
-                ErrorResponse::new("rfc6492-invalid-signature", &self)
-            }
+            Error::Rfc6492NotPerformed(e) => ErrorResponse::new("rfc6492-not-performed-response", &self).with_cause(e),
+            Error::Rfc6492InvalidCsrSent(e) => ErrorResponse::new("rfc6492-invalid-csr", &self).with_cause(e),
+            Error::Rfc6492SignatureInvalid => ErrorResponse::new("rfc6492-invalid-signature", &self),
 
             // CA Child Issues
             Error::CaChildDuplicate(ca, child) => ErrorResponse::new("ca-child-duplicate", &self)
@@ -495,61 +665,48 @@ impl Error {
             Error::CaChildUnknown(ca, child) => ErrorResponse::new("ca-child-unknown", &self)
                 .with_ca(ca)
                 .with_child(child),
-            Error::CaChildMustHaveResources(ca, child) => {
-                ErrorResponse::new("ca-child-resources-required", &self)
-                    .with_ca(ca)
-                    .with_child(child)
-            }
-            Error::CaChildExtraResources(ca, child) => {
-                ErrorResponse::new("ca-child-resources-extra", &self)
-                    .with_ca(ca)
-                    .with_child(child)
-            }
-            Error::CaChildUnauthorized(ca, child) => {
-                ErrorResponse::new("ca-child-unauthorized", &self)
-                    .with_ca(ca)
-                    .with_child(child)
-            }
+            Error::CaChildMustHaveResources(ca, child) => ErrorResponse::new("ca-child-resources-required", &self)
+                .with_ca(ca)
+                .with_child(child),
+            Error::CaChildExtraResources(ca, child) => ErrorResponse::new("ca-child-resources-extra", &self)
+                .with_ca(ca)
+                .with_child(child),
+            Error::CaChildUnauthorized(ca, child) => ErrorResponse::new("ca-child-unauthorized", &self)
+                .with_ca(ca)
+                .with_child(child),
 
-            Error::CaChildUpdateOneThing(ca, child) => {
-                ErrorResponse::new("ca-child-update-one-thing", &self)
-                    .with_ca(ca)
-                    .with_child(child)
-            }
+            Error::CaChildUpdateOneThing(ca, child) => ErrorResponse::new("ca-child-update-one-thing", &self)
+                .with_ca(ca)
+                .with_child(child),
 
             // RouteAuthorizations
-            Error::CaAuthorizationUnknown(ca, auth) => ErrorResponse::new("ca-roa-unknown", &self)
+            Error::CaAuthorizationUnknown(ca, auth) => {
+                ErrorResponse::new("ca-roa-unknown", &self).with_ca(ca).with_auth(auth)
+            }
+
+            Error::CaAuthorizationDuplicate(ca, auth) => ErrorResponse::new("ca-roa-duplicate", &self)
                 .with_ca(ca)
                 .with_auth(auth),
 
-            Error::CaAuthorizationDuplicate(ca, auth) => {
-                ErrorResponse::new("ca-roa-duplicate", &self)
-                    .with_ca(ca)
-                    .with_auth(auth)
-            }
-
-            Error::CaAuthorizationRedundant(ca, auth) => {
-                ErrorResponse::new("ca-roa-redundant", &self)
-                    .with_ca(ca)
-                    .with_auth(auth)
-            }
+            Error::CaAuthorizationRedundant(ca, auth) => ErrorResponse::new("ca-roa-redundant", &self)
+                .with_ca(ca)
+                .with_auth(auth),
 
             Error::CaAuthorizationIncludes(ca, auth) => {
-                ErrorResponse::new("ca-roa-includes", &self)
-                    .with_ca(ca)
-                    .with_auth(auth)
+                ErrorResponse::new("ca-roa-includes", &self).with_ca(ca).with_auth(auth)
             }
 
-            Error::CaAuthorizationInvalidMaxlength(ca, auth) => {
-                ErrorResponse::new("ca-roa-invalid-max-length", &self)
-                    .with_ca(ca)
-                    .with_auth(auth)
-            }
+            Error::CaAuthorizationInvalidMaxlength(ca, auth) => ErrorResponse::new("ca-roa-invalid-max-length", &self)
+                .with_ca(ca)
+                .with_auth(auth),
 
-            Error::CaAuthorizationNotEntitled(ca, auth) => {
-                ErrorResponse::new("ca-roa-not-entitled", &self)
-                    .with_ca(ca)
-                    .with_auth(auth)
+            Error::CaAuthorizationNotEntitled(ca, auth) => ErrorResponse::new("ca-roa-not-entitled", &self)
+                .with_ca(ca)
+                .with_auth(auth),
+
+            Error::RoaDeltaError(roa_delta_error) => {
+                ErrorResponse::new("ca-roa-delta-error", "Delta rejected, see included json")
+                    .with_roa_delta_error(roa_delta_error)
             }
 
             //-----------------------------------------------------------------
@@ -560,16 +717,12 @@ impl Error {
             Error::KeyUseNoCurrentKey => ErrorResponse::new("key-no-current", &self),
             Error::KeyUseNoOldKey => ErrorResponse::new("key-no-old", &self),
             Error::KeyUseNoIssuedCert => ErrorResponse::new("key-no-cert", &self),
-            Error::KeyUseNoMatch(ki) => {
-                ErrorResponse::new("key-no-match", &self).with_key_identifier(ki)
-            }
+            Error::KeyUseNoMatch(ki) => ErrorResponse::new("key-no-match", &self).with_key_identifier(ki),
 
             //-----------------------------------------------------------------
             // Resource Issues (label: rc-*)
             //-----------------------------------------------------------------
-            Error::ResourceClassUnknown(name) => {
-                ErrorResponse::new("rc-unknown", &self).with_resource_class(name)
-            }
+            Error::ResourceClassUnknown(name) => ErrorResponse::new("rc-unknown", &self).with_resource_class(name),
             Error::ResourceSetError(e) => ErrorResponse::new("rc-resources", &self).with_cause(e),
             Error::MissingResources => ErrorResponse::new("rc-missing-resources", &self),
 
@@ -581,6 +734,11 @@ impl Error {
             Error::TaAlreadyInitialised => ErrorResponse::new("ta-initialised", &self),
 
             //-----------------------------------------------------------------
+            // Resource Tagged Attestation issues
+            //-----------------------------------------------------------------
+            Error::RtaResourcesNotHeld => ErrorResponse::new("rta-resources-not-held", &self),
+
+            //-----------------------------------------------------------------
             // If we really don't know any more..
             //-----------------------------------------------------------------
             Error::Custom(_msg) => ErrorResponse::new("general-error", &self),
@@ -589,18 +747,12 @@ impl Error {
 
     pub fn to_rfc8181_error_code(&self) -> ReportErrorCode {
         match self {
-            Error::Rfc8181Validation(_) | Error::PublisherUnknown(_) => {
-                ReportErrorCode::PermissionFailure
-            }
+            Error::Rfc8181Validation(_) | Error::PublisherUnknown(_) => ReportErrorCode::PermissionFailure,
             Error::Rfc8181MessageError(_) => ReportErrorCode::XmlError,
             Error::Rfc8181Delta(e) => match e {
                 PublicationDeltaError::UriOutsideJail(_, _) => ReportErrorCode::PermissionFailure,
-                PublicationDeltaError::NoObjectForHashAndOrUri(_) => {
-                    ReportErrorCode::NoObjectPresent
-                }
-                PublicationDeltaError::ObjectAlreadyPresent(_) => {
-                    ReportErrorCode::ObjectAlreadyPresent
-                }
+                PublicationDeltaError::NoObjectForHashAndOrUri(_) => ReportErrorCode::NoObjectPresent,
+                PublicationDeltaError::ObjectAlreadyPresent(_) => ReportErrorCode::ObjectAlreadyPresent,
             },
             _ => ReportErrorCode::OtherError,
         }
@@ -615,30 +767,30 @@ mod tests {
     use std::str::FromStr;
 
     use crate::commons::api::RoaDefinition;
-    use crate::commons::remote::id::tests::test_id_certificate;
+    use crate::commons::crypto::test_id_certificate;
 
     use super::*;
+    use crate::test::definition;
+
+    fn verify(expected_json: &str, e: Error) {
+        let actual = e.to_error_response();
+        let expected: ErrorResponse = serde_json::from_str(expected_json).unwrap();
+        assert_eq!(actual, expected);
+
+        // check that serde works too
+        let serialized = serde_json::to_string(&actual).unwrap();
+        let des = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(actual, des);
+    }
 
     #[test]
     fn error_response_json_regression() {
-        let ca = unsafe { Handle::from_str_unsafe("ca") };
-        let parent = unsafe { ParentHandle::from_str_unsafe("parent") };
-        let child = unsafe { ChildHandle::from_str_unsafe("child") };
-        let publisher = unsafe { PublisherHandle::from_str_unsafe("publisher") };
+        let ca = Handle::from_str("ca").unwrap();
+        let parent = ParentHandle::from_str("parent").unwrap();
+        let child = ChildHandle::from_str("child").unwrap();
+        let publisher = PublisherHandle::from_str("publisher").unwrap();
 
-        let auth =
-            RouteAuthorization::new(RoaDefinition::from_str("192.168.0.0/16-24 => 64496").unwrap());
-
-        fn verify(expected_json: &str, e: Error) {
-            let actual = e.to_error_response();
-            let expected: ErrorResponse = serde_json::from_str(expected_json).unwrap();
-            assert_eq!(actual, expected);
-
-            // check that serde works too
-            let serialized = serde_json::to_string(&actual).unwrap();
-            let des = serde_json::from_str(&serialized).unwrap();
-            assert_eq!(actual, des);
-        }
+        let auth = RouteAuthorization::new(RoaDefinition::from_str("192.168.0.0/16-24 => 64496").unwrap());
 
         //-----------------------------------------------------------------
         // System Issues
@@ -652,7 +804,7 @@ mod tests {
 
         verify(
             include_str!("../../test-resources/api/regressions/errors/sys-store.json"),
-            Error::AggregateStoreError(AggregateStoreError::InitError),
+            Error::AggregateStoreError(AggregateStoreError::InitError(ca.clone())),
         );
         verify(
             include_str!("../../test-resources/api/regressions/errors/sys-signer.json"),
@@ -671,9 +823,7 @@ mod tests {
         // General API Client Issues
         //-----------------------------------------------------------------
         let invalid_rsync_json = "\"https://host/module/folder\"";
-        let json_err = serde_json::from_str::<uri::Rsync>(invalid_rsync_json)
-            .err()
-            .unwrap();
+        let json_err = serde_json::from_str::<uri::Rsync>(invalid_rsync_json).err().unwrap();
         verify(
             include_str!("../../test-resources/api/regressions/errors/api-json.json"),
             Error::JsonError(json_err),
@@ -734,9 +884,7 @@ mod tests {
             Error::Rfc8181Decode("could not parse CMS".to_string()),
         );
         verify(
-            include_str!(
-                "../../test-resources/api/regressions/errors/rfc8181-protocol-message.json"
-            ),
+            include_str!("../../test-resources/api/regressions/errors/rfc8181-protocol-message.json"),
             Error::Rfc8181MessageError(rfc8181::MessageError::InvalidVersion),
         );
         verify(
@@ -767,21 +915,17 @@ mod tests {
             Error::CaRepoIssue(ca.clone(), "cannot connect".to_string()),
         );
         verify(
-            include_str!(
-                "../../test-resources/api/regressions/errors/ca-repo-response-invalid-xml.json"
-            ),
+            include_str!("../../test-resources/api/regressions/errors/ca-repo-response-invalid-xml.json"),
             Error::CaRepoResponseInvalidXml(ca.clone(), "expected some tag".to_string()),
         );
         verify(
-            include_str!(
-                "../../test-resources/api/regressions/errors/ca-repo-response-wrong-xml.json"
-            ),
+            include_str!("../../test-resources/api/regressions/errors/ca-repo-response-wrong-xml.json"),
             Error::CaRepoResponseWrongXml(ca.clone()),
         );
 
         verify(
             include_str!("../../test-resources/api/regressions/errors/ca-parent-duplicate.json"),
-            Error::CaParentDuplicate(ca.clone(), parent.clone()),
+            Error::CaParentDuplicateName(ca.clone(), parent.clone()),
         );
         verify(
             include_str!("../../test-resources/api/regressions/errors/ca-parent-unknown.json"),
@@ -792,15 +936,11 @@ mod tests {
             Error::CaParentIssue(ca.clone(), parent, "connection refused".to_string()),
         );
         verify(
-            include_str!(
-                "../../test-resources/api/regressions/errors/ca-parent-response-invalid-xml.json"
-            ),
+            include_str!("../../test-resources/api/regressions/errors/ca-parent-response-invalid-xml.json"),
             Error::CaParentResponseInvalidXml(ca.clone(), "expected something".to_string()),
         );
         verify(
-            include_str!(
-                "../../test-resources/api/regressions/errors/ca-parent-response-wrong-xml.json"
-            ),
+            include_str!("../../test-resources/api/regressions/errors/ca-parent-response-wrong-xml.json"),
             Error::CaParentResponseWrongXml(ca.clone()),
         );
 
@@ -813,9 +953,7 @@ mod tests {
             Error::Rfc6492InvalidCsrSent("invalid signature".to_string()),
         );
         verify(
-            include_str!(
-                "../../test-resources/api/regressions/errors/rfc6492-invalid-signature.json"
-            ),
+            include_str!("../../test-resources/api/regressions/errors/rfc6492-invalid-signature.json"),
             Error::Rfc6492SignatureInvalid,
         );
 
@@ -828,15 +966,11 @@ mod tests {
             Error::CaChildUnknown(ca.clone(), child.clone()),
         );
         verify(
-            include_str!(
-                "../../test-resources/api/regressions/errors/ca-child-resources-required.json"
-            ),
+            include_str!("../../test-resources/api/regressions/errors/ca-child-resources-required.json"),
             Error::CaChildMustHaveResources(ca.clone(), child.clone()),
         );
         verify(
-            include_str!(
-                "../../test-resources/api/regressions/errors/ca-child-resources-extra.json"
-            ),
+            include_str!("../../test-resources/api/regressions/errors/ca-child-resources-extra.json"),
             Error::CaChildExtraResources(ca.clone(), child.clone()),
         );
         verify(
@@ -862,9 +996,7 @@ mod tests {
         );
 
         verify(
-            include_str!(
-                "../../test-resources/api/regressions/errors/ca-roa-invalid-max-length.json"
-            ),
+            include_str!("../../test-resources/api/regressions/errors/ca-roa-invalid-max-length.json"),
             Error::CaAuthorizationInvalidMaxlength(ca.clone(), auth),
         );
         verify(
@@ -892,9 +1024,7 @@ mod tests {
             include_str!("../../test-resources/api/regressions/errors/key-no-cert.json"),
             Error::KeyUseNoIssuedCert,
         );
-        let ki = test_id_certificate()
-            .subject_public_key_info()
-            .key_identifier();
+        let ki = test_id_certificate().subject_public_key_info().key_identifier();
         verify(
             include_str!("../../test-resources/api/regressions/errors/key-no-match.json"),
             Error::KeyUseNoMatch(ki),
@@ -930,15 +1060,48 @@ mod tests {
             include_str!("../../test-resources/api/regressions/errors/general-error.json"),
             Error::custom("some unlikely corner case"),
         );
+    }
 
-        //        let mut res = String::new();
-        //        for e in errs {
-        //            let error_response = e.to_error_response();
-        //
-        //            let path = format!("test-resources/api/regressions/errors/{}.json", error_response.label());
-        //            let path = PathBuf::from(&path);
-        //
-        //            file::save_json(&error_response, &path).unwrap();
-        //        }
+    #[test]
+    fn roa_delta_json() {
+        let mut error = RoaDeltaError::default();
+
+        let small = definition("10.0.0.0/24 => 1");
+        let middle = definition("10.0.0.0/20-24 => 1");
+        let neighbour = definition("10.0.128.0/24 => 1");
+        let big = definition("10.0.0.0/16-24 => 1");
+
+        let not_held = definition("10.128.0.0/9 => 1");
+        let invalid_length = definition("10.0.1.0/25 => 1");
+
+        let unknown = definition("192.168.0.0/16 => 1");
+
+        let existing_as0 = definition("10.1.0.0/24 => 0");
+        let existing_as0_addition = definition("10.1.0.0/24 => 1");
+
+        let existing_for_as0_1 = definition("10.2.0.0/24 => 1");
+        let existing_for_as0_2 = definition("10.2.1.0/24 => 1");
+        let as0_for_existing = definition("10.2.0.0/16 => 0");
+
+        error.add_covered(small, middle);
+        error.add_covering(big, vec![middle, neighbour]);
+        error.add_duplicate(middle);
+
+        error.add_notheld(not_held);
+        error.add_invalid_length(invalid_length);
+        error.add_unknown(unknown);
+
+        error.add_as0_exists(existing_as0_addition, existing_as0);
+        error.add_as0_overlaps(as0_for_existing, vec![existing_for_as0_1, existing_for_as0_2]);
+
+        // println!(
+        //     "{}",
+        //     serde_json::to_string_pretty(&Error::RoaDeltaError(error).to_error_response()).unwrap()
+        // );
+
+        verify(
+            include_str!("../../test-resources/api/regressions/errors/ca-roa-delta-error.json"),
+            Error::RoaDeltaError(error),
+        );
     }
 }

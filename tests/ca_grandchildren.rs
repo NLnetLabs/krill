@@ -1,14 +1,9 @@
-#![type_length_limit = "1500000"]
+#![type_length_limit = "5000000"]
 
 extern crate krill;
 
-use std::fs;
-
-use krill::commons::api::{Handle, ObjectName, ParentCaReq, ResourceClassName, ResourceSet};
-use krill::daemon::ca::ta_handle;
-use krill::test::*;
-
 #[tokio::test]
+#[cfg(feature = "functional-tests")]
 /// Test that we can delegate from normal CAs to child CAs, and that these child CAs
 /// can have multiple parents.
 ///
@@ -22,6 +17,13 @@ use krill::test::*;
 ///
 /// Also tests that everything is published properly.
 async fn ca_grandchildren() {
+    use krill::commons::api::{Handle, ObjectName, ParentCaReq, ResourceClassName, ResourceSet};
+    use krill::daemon::ca::ta_handle;
+    use krill::daemon::config::CONFIG;
+    use krill::test::*;
+    use std::fs;
+    use std::str::FromStr;
+
     let dir = start_krill().await;
 
     let rcn_0 = ResourceClassName::from(0);
@@ -38,7 +40,7 @@ async fn ca_grandchildren() {
     let ta_crl_file = ta_crl_file.as_str();
 
     // -------------------- CA1 -----------------------------------------------
-    let ca1 = unsafe { Handle::from_str_unsafe("CA1") };
+    let ca1 = Handle::from_str("CA1").unwrap();
     let ca1_res = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
 
     init_child_with_embedded_repo(&ca1).await;
@@ -59,10 +61,23 @@ async fn ca_grandchildren() {
     let ca1_crl_file = ca1_crl_file.as_str();
 
     // Check that the TA publishes the certificate
-    assert!(will_publish_objects(&ta_handle, &[ta_crl_file, ta_mft_file, ca1_cert_file]).await);
+    let base_cert_files = if CONFIG.testbed_enabled {
+        let testbed_ca_handle = Handle::from_str("testbed").unwrap();
+        let testbed_ca = ca_details(&testbed_ca_handle).await;
+        let testbed_ca_rc = testbed_ca.resource_classes().keys().next().unwrap();
+        let testbed_ca_key = ca_key_for_rcn(&testbed_ca_handle, &testbed_ca_rc).await;
+        vec![ObjectName::from(testbed_ca_key.incoming_cert().cert()).to_string()]
+    } else {
+        Vec::new()
+    };
+    let base_objects = base_cert_files.iter().map(|f| f.as_str()).collect::<Vec<&str>>();
+
+    let mut expected_objects = vec![ta_crl_file, ta_mft_file, ca1_cert_file];
+    expected_objects.extend(&base_objects);
+    assert!(will_publish_objects(&ta_handle, &expected_objects).await);
 
     // -------------------- CA2 -----------------------------------------------
-    let ca2 = unsafe { Handle::from_str_unsafe("CA2") };
+    let ca2 = Handle::from_str("CA2").unwrap();
     let ca2_res = ResourceSet::from_strs("", "10.1.0.0/16", "").unwrap();
 
     init_child_with_embedded_repo(&ca2).await;
@@ -83,16 +98,12 @@ async fn ca_grandchildren() {
     let ca2_crl_file = ca2_crl_file.as_str();
 
     // Check that the TA publishes the certificate
-    assert!(
-        will_publish_objects(
-            &ta_handle,
-            &[ta_crl_file, ta_mft_file, ca1_cert_file, ca2_cert_file],
-        )
-        .await
-    );
+    let mut expected_objects = vec![ta_crl_file, ta_mft_file, ca1_cert_file, ca2_cert_file];
+    expected_objects.extend(&base_objects);
+    assert!(will_publish_objects(&ta_handle, &expected_objects).await);
 
     // -------------------- CA3 -----------------------------------------------
-    let ca3 = unsafe { Handle::from_str_unsafe("CA3") };
+    let ca3 = Handle::from_str("CA3").unwrap();
     let ca_3_res_under_ca_1 = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
 
     init_child_with_embedded_repo(&ca3).await;
@@ -137,7 +148,7 @@ async fn ca_grandchildren() {
     assert!(will_publish_objects(&ca2, &[ca2_mft_file, ca2_crl_file, ca3_2_cert_file]).await);
 
     // -------------------- CA4 -----------------------------------------------
-    let ca4 = unsafe { Handle::from_str_unsafe("CA4") };
+    let ca4 = Handle::from_str("CA4").unwrap();
     let ca_4_res_under_ca_3 = ResourceSet::from_strs("", "10.0.0.0-10.1.0.255", "").unwrap();
 
     init_child_with_embedded_repo(&ca4).await;
@@ -182,18 +193,7 @@ async fn ca_grandchildren() {
     );
 
     // Check that CA4 publishes two resource classes, with only crls and mfts
-    assert!(
-        will_publish_objects(
-            &ca4,
-            &[
-                ca4_1_mft_file,
-                ca4_1_crl_file,
-                ca4_2_mft_file,
-                ca4_2_crl_file,
-            ],
-        )
-        .await
-    );
+    assert!(will_publish_objects(&ca4, &[ca4_1_mft_file, ca4_1_crl_file, ca4_2_mft_file, ca4_2_crl_file,],).await);
 
     let _ = fs::remove_dir_all(dir);
 }

@@ -194,23 +194,21 @@ pub struct Notification {
     session: RrdpSession,
     serial: u64,
     time: Time,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    replaced: Option<Time>,
     snapshot: SnapshotRef,
     deltas: Vec<DeltaRef>,
     last_delta: Option<u64>,
 }
 
 impl Notification {
-    pub fn new(
-        session: RrdpSession,
-        serial: u64,
-        snapshot: SnapshotRef,
-        deltas: Vec<DeltaRef>,
-    ) -> Self {
+    pub fn new(session: RrdpSession, serial: u64, snapshot: SnapshotRef, deltas: Vec<DeltaRef>) -> Self {
         let last_delta = Self::find_last_delta(&deltas);
         Notification {
             session,
             serial,
             time: Time::now(),
+            replaced: None,
             snapshot,
             deltas,
             last_delta,
@@ -219,6 +217,18 @@ impl Notification {
 
     pub fn time(&self) -> Time {
         self.time
+    }
+
+    pub fn replaced_after(&self, timestamp: i64) -> bool {
+        if let Some(replaced) = self.replaced {
+            replaced.timestamp() > timestamp
+        } else {
+            false
+        }
+    }
+
+    pub fn replace(&mut self, time: Time) {
+        self.replaced = Some(time);
     }
 
     pub fn serial(&self) -> u64 {
@@ -231,6 +241,18 @@ impl Notification {
 
     pub fn last_delta(&self) -> Option<u64> {
         self.last_delta
+    }
+
+    pub fn includes_delta(&self, delta: u64) -> bool {
+        if let Some(last) = self.last_delta {
+            last <= delta
+        } else {
+            false
+        }
+    }
+
+    pub fn includes_snapshot(&self, version: u64) -> bool {
+        self.serial == version
     }
 
     fn find_last_delta(deltas: &[DeltaRef]) -> Option<u64> {
@@ -284,13 +306,7 @@ pub struct NotificationCreate {
 
 impl NotificationUpdate {
     pub fn unwrap(self) -> (Time, Option<RrdpSession>, SnapshotRef, DeltaRef, u64) {
-        (
-            self.time,
-            self.session,
-            self.snapshot,
-            self.delta,
-            self.last_delta,
-        )
+        (self.time, self.session, self.snapshot, self.delta, self.last_delta)
     }
 }
 
@@ -445,11 +461,7 @@ impl CurrentObjects {
 /// Issues with relation to verifying deltas.
 #[derive(Clone, Debug, Display)]
 pub enum PublicationDeltaError {
-    #[display(
-        fmt = "Publishing ({}) outside of jail URI ({}) is not allowed.",
-        _0,
-        _1
-    )]
+    #[display(fmt = "Publishing ({}) outside of jail URI ({}) is not allowed.", _0, _1)]
     UriOutsideJail(uri::Rsync, uri::Rsync),
 
     #[display(fmt = "File already exists for uri (use update!): {}", _0)]
@@ -481,11 +493,7 @@ impl CurrentObjects {
         }
     }
 
-    pub fn verify_delta(
-        &self,
-        delta: &DeltaElements,
-        jail: &uri::Rsync,
-    ) -> Result<(), PublicationDeltaError> {
+    pub fn verify_delta(&self, delta: &DeltaElements, jail: &uri::Rsync) -> Result<(), PublicationDeltaError> {
         for p in delta.publishes() {
             if !jail.is_parent_of(p.uri()) {
                 return Err(PublicationDeltaError::outside(jail, p.uri()));
@@ -596,10 +604,7 @@ impl Snapshot {
     }
 
     pub fn size(&self) -> usize {
-        self.current_objects
-            .elements()
-            .iter()
-            .fold(0, |sum, p| sum + p.size())
+        self.current_objects.elements().iter().fold(0, |sum, p| sum + p.size())
     }
 
     pub fn write_xml(&self, path: &PathBuf) -> Result<(), io::Error> {
@@ -645,11 +650,7 @@ pub struct DeltaElements {
 }
 
 impl DeltaElements {
-    pub fn new(
-        publishes: Vec<PublishElement>,
-        updates: Vec<UpdateElement>,
-        withdraws: Vec<WithdrawElement>,
-    ) -> Self {
+    pub fn new(publishes: Vec<PublishElement>, updates: Vec<UpdateElement>, withdraws: Vec<WithdrawElement>) -> Self {
         DeltaElements {
             publishes,
             updates,
@@ -657,13 +658,7 @@ impl DeltaElements {
         }
     }
 
-    pub fn unwrap(
-        self,
-    ) -> (
-        Vec<PublishElement>,
-        Vec<UpdateElement>,
-        Vec<WithdrawElement>,
-    ) {
+    pub fn unwrap(self) -> (Vec<PublishElement>, Vec<UpdateElement>, Vec<WithdrawElement>) {
         (self.publishes, self.updates, self.withdraws)
     }
 

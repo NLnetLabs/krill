@@ -1,29 +1,14 @@
 [
   {
     "definition": {
-      "asn": 64496,
-      "prefix": "10.0.0.0/22",
-      "max_length": 23
+      "asn": 64497,
+      "prefix": "192.168.1.0/24"
     },
     "state": "covering",
     "authorizes": [
       {
-        "asn": 64496,
-        "prefix": "10.0.0.0/22"
-      },
-      {
-        "asn": 64496,
-        "prefix": "10.0.2.0/23"
-      }
-    ],
-    "disallows": [
-      {
         "asn": 64497,
-        "prefix": "10.0.0.0/22"
-      },
-      {
-        "asn": 64496,
-        "prefix": "10.0.0.0/24"
+        "prefix": "192.168.1.0/24"
       }
     ]
   },
@@ -43,8 +28,63 @@
   },
   {
     "definition": {
+      "asn": 64498,
+      "prefix": "192.168.1.0/24"
+    },
+    "state": "unseen"
+  },
+  {
+    "definition": {
+      "asn": 64496,
+      "prefix": "10.0.0.0/22",
+      "max_length": 23
+    },
+    "state": "too_permissive",
+    "authorizes": [
+      {
+        "asn": 64496,
+        "prefix": "10.0.0.0/22"
+      },
+      {
+        "asn": 64496,
+        "prefix": "10.0.2.0/23"
+      }
+    ],
+    "authorizes_excess": [
+      {
+        "asn": 64496,
+        "prefix": "10.0.0.0/23"
+      }
+    ],
+    "disallows": [
+      {
+        "asn": 64497,
+        "prefix": "10.0.0.0/22"
+      },
+      {
+        "asn": 64496,
+        "prefix": "10.0.0.0/24"
+      }
+    ]
+  },
+  {
+    "definition": {
       "asn": 64497,
       "prefix": "10.0.0.0/21"
+    },
+    "state": "not_found"
+  },
+  {
+    "definition": {
+      "asn": 64496,
+      "prefix": "192.168.0.0/24"
+    },
+    "state": "not_found"
+  },
+  {
+    "definition": {
+      "asn": 64497,
+      "prefix": "192.168.0.0/24"
     },
     "state": "not_found"
   }

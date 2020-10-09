@@ -1,11 +1,11 @@
 //! Helper functions for testing Krill.
 
-use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
+use std::{env, fs};
 
 use bytes::Bytes;
 use rand::{thread_rng, Rng};
@@ -13,6 +13,7 @@ use rand::{thread_rng, Rng};
 use hyper::StatusCode;
 use tokio::time::{delay_for, timeout};
 
+use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 use rpki::uri::Rsync;
 
@@ -20,38 +21,27 @@ use crate::cli::options::{BulkCaCommand, CaCommand, Command, Options, Publishers
 use crate::cli::report::{ApiResponse, ReportFormat};
 use crate::cli::{Error, KrillClient};
 use crate::commons::api::{
-    AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildAuthRequest, ChildHandle,
-    Handle, ParentCaContact, ParentCaReq, ParentHandle, Publish, PublisherDetails, PublisherHandle,
-    RepositoryUpdate, ResourceClassKeysInfo, ResourceClassName, ResourceSet, RoaDefinition,
-    RoaDefinitionUpdates, UpdateChildRequest,
+    AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildAuthRequest, ChildHandle, Handle,
+    ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, Publish, PublisherDetails, PublisherHandle,
+    PublisherList, RepositoryUpdate, ResourceClassKeysInfo, ResourceClassName, ResourceSet, RoaDefinition,
+    RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
 };
-use crate::commons::bgp::Announcement;
+use crate::commons::bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion};
+use crate::commons::crypto::SignSupport;
 use crate::commons::remote::rfc8183;
-use crate::commons::remote::rfc8183::ChildRequest;
+use crate::commons::remote::rfc8183::{ChildRequest, RepositoryResponse};
 use crate::commons::util::httpclient;
-use crate::daemon::ca::ta_handle;
-use crate::daemon::config::Config;
+use crate::constants::{KRILL_ENV_TEST, KRILL_ENV_TEST_ANN, KRILL_ENV_TEST_UNIT_DATA};
+use crate::daemon::ca::{ta_handle, ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest};
 use crate::daemon::http::server;
 
-#[derive(Clone, Copy)]
-pub enum PubdTestContext {
-    Main,
-    Secondary,
-}
+pub const SERVER_URI: &str = "https://localhost:3000/";
 
-pub async fn primary_server_ready() -> bool {
-    server_ready("https://localhost:3000/health").await
-}
-
-pub async fn secondary_server_ready() -> bool {
-    server_ready("https://localhost:3001/health").await
-}
-
-pub async fn server_ready(uri: &str) -> bool {
+pub async fn server_ready() -> bool {
     for _ in 0..300 {
-        match httpclient::client(uri).await {
+        match httpclient::client(SERVER_URI).await {
             Ok(client) => {
-                let res = timeout(Duration::from_millis(100), client.get(uri).send()).await;
+                let res = timeout(Duration::from_millis(100), client.get(SERVER_URI).send()).await;
                 if let Ok(Ok(res)) = res {
                     if res.status() == StatusCode::OK {
                         return true;
@@ -71,67 +61,26 @@ pub async fn server_ready(uri: &str) -> bool {
 pub async fn start_krill() -> PathBuf {
     let dir = tmp_dir();
 
-    let server_conf = {
-        // Use a data dir for the storage
-        let data_dir = sub_dir(&dir);
-        Config::test(&data_dir)
-    };
+    env::set_var(KRILL_ENV_TEST_UNIT_DATA, dir.to_string_lossy().to_string());
+    env::set_var(KRILL_ENV_TEST_ANN, "1");
+    env::set_var(KRILL_ENV_TEST, "1");
 
-    tokio::spawn(server::start(server_conf));
+    tokio::spawn(server::start());
 
-    assert!(primary_server_ready().await);
+    assert!(server_ready().await);
     dir
 }
 
-pub async fn start_secondary_krill(base_dir: &PathBuf) {
-    let data_dir = sub_dir(base_dir);
-    let server_conf = Config::pubd_test(&data_dir);
-
-    tokio::spawn(server::start(server_conf));
-
-    assert!(secondary_server_ready().await);
-}
-
 pub async fn krill_admin(command: Command) -> ApiResponse {
-    let krillc_opts = Options::new(
-        https("https://localhost:3000/"),
-        "secret",
-        ReportFormat::Json,
-        command,
-    );
+    let krillc_opts = Options::new(https(SERVER_URI), "secret", ReportFormat::Json, command);
     match KrillClient::process(krillc_opts).await {
         Ok(res) => res, // ok
         Err(e) => panic!("{}", e),
-    }
-}
-
-pub async fn krill_admin_secondary(command: Command) -> ApiResponse {
-    let krillc_opts = Options::new(
-        https("https://localhost:3001/"),
-        "secret",
-        ReportFormat::Json,
-        command,
-    );
-    match KrillClient::process(krillc_opts).await {
-        Ok(res) => res, // ok
-        Err(e) => panic!("{}", e),
-    }
-}
-
-pub async fn krill_pubd_admin(command: Command, server: PubdTestContext) -> ApiResponse {
-    match server {
-        PubdTestContext::Main => krill_admin(command).await,
-        PubdTestContext::Secondary => krill_admin_secondary(command).await,
     }
 }
 
 pub async fn krill_admin_expect_error(command: Command) -> Error {
-    let krillc_opts = Options::new(
-        https("https://localhost:3000/"),
-        "secret",
-        ReportFormat::Json,
-        command,
-    );
+    let krillc_opts = Options::new(https(SERVER_URI), "secret", ReportFormat::Json, command);
     match KrillClient::process(krillc_opts).await {
         Ok(_res) => panic!("Expected error"),
         Err(e) => e,
@@ -142,14 +91,24 @@ async fn refresh_all() {
     krill_admin(Command::Bulk(BulkCaCommand::Refresh)).await;
 }
 
+pub async fn init_child(handle: &Handle) {
+    krill_admin(Command::CertAuth(CaCommand::Init(CertAuthInit::new(handle.clone())))).await;
+}
+
+// We use embedded when not testing RFC 8181 - so that the CMS signing/verification overhead can be reduced.
 pub async fn init_child_with_embedded_repo(handle: &Handle) {
-    krill_admin(Command::CertAuth(CaCommand::Init(CertAuthInit::new(
-        handle.clone(),
-    ))))
-    .await;
+    krill_admin(Command::CertAuth(CaCommand::Init(CertAuthInit::new(handle.clone())))).await;
     krill_admin(Command::CertAuth(CaCommand::RepoUpdate(
         handle.clone(),
         RepositoryUpdate::Embedded,
+    )))
+    .await;
+}
+
+pub async fn ca_repo_update_rfc8181(handle: &Handle, response: RepositoryResponse) {
+    krill_admin(Command::CertAuth(CaCommand::RepoUpdate(
+        handle.clone(),
+        RepositoryUpdate::Rfc8181(response),
     )))
     .await;
 }
@@ -177,6 +136,7 @@ pub async fn child_request(handle: &Handle) -> rfc8183::ChildRequest {
     }
 }
 
+// We use embedded when not testing RFC 6492 - so that the CMS signing/verification overhead can be reduced.
 pub async fn add_child_to_ta_embedded(handle: &Handle, resources: ResourceSet) -> ParentCaContact {
     let auth = ChildAuthRequest::Embedded;
     let req = AddChildRequest::new(handle.clone(), resources, auth);
@@ -230,11 +190,7 @@ pub async fn update_child_id(ca: &Handle, child: &ChildHandle, req: ChildRequest
 }
 
 pub async fn delete_child(ca: &Handle, child: &ChildHandle) {
-    krill_admin(Command::CertAuth(CaCommand::ChildDelete(
-        ca.clone(),
-        child.clone(),
-    )))
-    .await;
+    krill_admin(Command::CertAuth(CaCommand::ChildDelete(ca.clone(), child.clone()))).await;
 }
 
 async fn send_child_request(ca: &Handle, child: &Handle, req: UpdateChildRequest) {
@@ -255,6 +211,13 @@ pub async fn add_parent_to_ca(ca: &Handle, parent: ParentCaReq) {
     krill_admin(Command::CertAuth(CaCommand::AddParent(ca.clone(), parent))).await;
 }
 
+pub async fn parent_statuses(ca: &Handle) -> ParentStatuses {
+    match krill_admin(Command::CertAuth(CaCommand::ParentStatuses(ca.clone()))).await {
+        ApiResponse::ParentStatuses(status) => status,
+        _ => panic!("Expected parent statuses"),
+    }
+}
+
 pub async fn update_parent_contact(ca: &Handle, parent: &ParentHandle, contact: ParentCaContact) {
     krill_admin(Command::CertAuth(CaCommand::UpdateParentContact(
         ca.clone(),
@@ -265,11 +228,7 @@ pub async fn update_parent_contact(ca: &Handle, parent: &ParentHandle, contact: 
 }
 
 pub async fn delete_parent(ca: &Handle, parent: &ParentHandle) {
-    krill_admin(Command::CertAuth(CaCommand::RemoveParent(
-        ca.clone(),
-        parent.clone(),
-    )))
-    .await;
+    krill_admin(Command::CertAuth(CaCommand::RemoveParent(ca.clone(), parent.clone()))).await;
 }
 
 pub async fn ca_roll_init(handle: &Handle) {
@@ -277,10 +236,7 @@ pub async fn ca_roll_init(handle: &Handle) {
 }
 
 pub async fn ca_roll_activate(handle: &Handle) {
-    krill_admin(Command::CertAuth(CaCommand::KeyRollActivate(
-        handle.clone(),
-    )))
-    .await;
+    krill_admin(Command::CertAuth(CaCommand::KeyRollActivate(handle.clone()))).await;
 }
 
 pub async fn ca_route_authorizations_update(handle: &Handle, updates: RoaDefinitionUpdates) {
@@ -291,10 +247,7 @@ pub async fn ca_route_authorizations_update(handle: &Handle, updates: RoaDefinit
     .await;
 }
 
-pub async fn ca_route_authorizations_update_expect_error(
-    handle: &Handle,
-    updates: RoaDefinitionUpdates,
-) {
+pub async fn ca_route_authorizations_update_expect_error(handle: &Handle, updates: RoaDefinitionUpdates) {
     krill_admin_expect_error(Command::CertAuth(CaCommand::RouteAuthorizationsUpdate(
         handle.clone(),
         updates,
@@ -302,11 +255,72 @@ pub async fn ca_route_authorizations_update_expect_error(
     .await;
 }
 
+pub async fn ca_route_authorizations_suggestions(handle: &Handle) -> BgpAnalysisSuggestion {
+    match krill_admin(Command::CertAuth(CaCommand::BgpAnalysisSuggest(handle.clone(), None))).await {
+        ApiResponse::BgpAnalysisSuggestions(suggestion) => suggestion,
+        _ => panic!("Expected ROA suggestion"),
+    }
+}
+
+pub async fn ca_route_authorization_dryrun(handle: &Handle, updates: RoaDefinitionUpdates) -> BgpAnalysisReport {
+    match krill_admin(Command::CertAuth(CaCommand::RouteAuthorizationsDryRunUpdate(
+        handle.clone(),
+        updates,
+    )))
+    .await
+    {
+        ApiResponse::BgpAnalysisFull(report) => report,
+        _ => panic!("Expected BGP analysis report"),
+    }
+}
+
 pub async fn ca_details(handle: &Handle) -> CertAuthInfo {
     match krill_admin(Command::CertAuth(CaCommand::Show(handle.clone()))).await {
         ApiResponse::CertAuthInfo(inf) => inf,
         _ => panic!("Expected cert auth info"),
     }
+}
+
+pub async fn rta_sign_sign(
+    ca: Handle,
+    name: RtaName,
+    resources: ResourceSet,
+    keys: Vec<KeyIdentifier>,
+    content: Bytes,
+) {
+    let request = RtaContentRequest::new(resources, SignSupport::sign_validity_days(14), keys, content);
+    let command = Command::CertAuth(CaCommand::RtaSign(ca, name, request));
+    krill_admin(command).await;
+}
+
+pub async fn rta_list(ca: Handle) -> RtaList {
+    let command = Command::CertAuth(CaCommand::RtaList(ca));
+    match krill_admin(command).await {
+        ApiResponse::RtaList(list) => list,
+        _ => panic!("Expected RTA list"),
+    }
+}
+
+pub async fn rta_show(ca: Handle, name: RtaName) -> ResourceTaggedAttestation {
+    let command = Command::CertAuth(CaCommand::RtaShow(ca, name, None));
+    match krill_admin(command).await {
+        ApiResponse::Rta(rta) => rta,
+        _ => panic!("Expected RTA"),
+    }
+}
+
+pub async fn rta_multi_prep(ca: Handle, name: RtaName, resources: ResourceSet) -> RtaPrepResponse {
+    let request = RtaPrepareRequest::new(resources, SignSupport::sign_validity_days(14));
+    let command = Command::CertAuth(CaCommand::RtaMultiPrep(ca, name, request));
+    match krill_admin(command).await {
+        ApiResponse::RtaMultiPrep(res) => res,
+        _ => panic!("Expected RtaMultiPrep"),
+    }
+}
+
+pub async fn rta_multi_cosign(ca: Handle, name: RtaName, rta: ResourceTaggedAttestation) {
+    let command = Command::CertAuth(CaCommand::RtaMultiCoSign(ca, name, rta));
+    krill_admin(command).await;
 }
 
 pub async fn ca_key_for_rcn(handle: &Handle, rcn: &ResourceClassName) -> CertifiedKeyInfo {
@@ -359,11 +373,7 @@ pub async fn rc_state_becomes_active(handle: &Handle) -> bool {
 pub async fn rc_is_removed(handle: &Handle) -> bool {
     for _ in 0..300 {
         let ca = ca_details(handle).await;
-        if ca
-            .resource_classes()
-            .get(&ResourceClassName::default())
-            .is_none()
-        {
+        if ca.resource_classes().get(&ResourceClassName::default()).is_none() {
             return true;
         }
         delay_for(Duration::from_millis(100)).await
@@ -401,14 +411,24 @@ pub async fn ca_current_objects(handle: &Handle) -> Vec<Publish> {
     ca.published_objects()
 }
 
+pub async fn list_publishers() -> PublisherList {
+    match krill_admin(Command::Publishers(PublishersCommand::PublisherList)).await {
+        ApiResponse::PublisherList(pub_list) => pub_list,
+        _ => panic!("Expected publisher list"),
+    }
+}
+
 pub async fn publisher_details(publisher: &PublisherHandle) -> PublisherDetails {
-    match krill_admin(Command::Publishers(PublishersCommand::ShowPublisher(
-        publisher.clone(),
-    )))
-    .await
-    {
+    match krill_admin(Command::Publishers(PublishersCommand::ShowPublisher(publisher.clone()))).await {
         ApiResponse::PublisherDetails(pub_details) => pub_details,
         _ => panic!("Expected publisher details"),
+    }
+}
+
+pub async fn publisher_request(handle: &Handle) -> rfc8183::PublisherRequest {
+    match krill_admin(Command::CertAuth(CaCommand::RepoPublisherRequest(handle.clone()))).await {
+        ApiResponse::Rfc8183PublisherRequest(req) => req,
+        _ => panic!("Expected publisher request"),
     }
 }
 
@@ -457,21 +477,9 @@ pub async fn will_publish_objects(publisher: &PublisherHandle, objects: &[&str])
 /// Note that if your test fails the directory is not cleaned up.
 pub fn test_under_tmp<F>(op: F)
 where
-    F: FnOnce(PathBuf) -> (),
+    F: FnOnce(PathBuf),
 {
     let dir = sub_dir(&PathBuf::from("work"));
-    let path = PathBuf::from(&dir);
-
-    op(dir);
-
-    let _result = fs::remove_dir_all(path);
-}
-
-pub async fn test_under_tmp_async<F>(op: F)
-where
-    F: FnOnce(PathBuf) -> (),
-{
-    let dir = tmp_dir();
     let path = PathBuf::from(&dir);
 
     op(dir);
@@ -526,4 +534,8 @@ pub fn announcement(s: &str) -> Announcement {
 
 pub fn definition(s: &str) -> RoaDefinition {
     RoaDefinition::from_str(s).unwrap()
+}
+
+pub fn typed_prefix(s: &str) -> TypedPrefix {
+    TypedPrefix::from_str(s).unwrap()
 }

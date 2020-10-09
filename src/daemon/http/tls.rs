@@ -43,21 +43,13 @@ impl Transport for AddrStream {
 pub(crate) struct LiftIo<T>(pub(crate) T);
 
 impl<T: AsyncRead + Unpin> AsyncRead for LiftIo<T> {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &mut [u8],
-    ) -> Poll<io::Result<usize>> {
+    fn poll_read(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &mut [u8]) -> Poll<io::Result<usize>> {
         Pin::new(&mut self.get_mut().0).poll_read(cx, buf)
     }
 }
 
 impl<T: AsyncWrite + Unpin> AsyncWrite for LiftIo<T> {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
         Pin::new(&mut self.get_mut().0).poll_write(cx, buf)
     }
 
@@ -154,26 +146,20 @@ impl TlsConfigBuilder {
         let key = {
             // convert it to Vec<u8> to allow reading it again if key is RSA
             let mut key_vec = Vec::new();
-            self.key
-                .read_to_end(&mut key_vec)
-                .map_err(TlsConfigError::Io)?;
+            self.key.read_to_end(&mut key_vec).map_err(TlsConfigError::Io)?;
 
             if key_vec.is_empty() {
                 return Err(TlsConfigError::EmptyKey);
             }
 
-            let mut pkcs8 = tokio_rustls::rustls::internal::pemfile::pkcs8_private_keys(
-                &mut key_vec.as_slice(),
-            )
-            .map_err(|()| TlsConfigError::Pkcs8ParseError)?;
+            let mut pkcs8 = tokio_rustls::rustls::internal::pemfile::pkcs8_private_keys(&mut key_vec.as_slice())
+                .map_err(|()| TlsConfigError::Pkcs8ParseError)?;
 
             if !pkcs8.is_empty() {
                 pkcs8.remove(0)
             } else {
-                let mut rsa = tokio_rustls::rustls::internal::pemfile::rsa_private_keys(
-                    &mut key_vec.as_slice(),
-                )
-                .map_err(|()| TlsConfigError::RsaParseError)?;
+                let mut rsa = tokio_rustls::rustls::internal::pemfile::rsa_private_keys(&mut key_vec.as_slice())
+                    .map_err(|()| TlsConfigError::RsaParseError)?;
 
                 if !rsa.is_empty() {
                     rsa.remove(0)
@@ -184,9 +170,7 @@ impl TlsConfigBuilder {
         };
 
         let mut config = ServerConfig::new(NoClientAuth::new());
-        config
-            .set_single_cert(cert, key)
-            .map_err(TlsConfigError::InvalidKey)?;
+        config.set_single_cert(cert, key).map_err(TlsConfigError::InvalidKey)?;
         config.set_protocols(&["h2".into(), "http/1.1".into()]);
         Ok(config)
     }
@@ -211,10 +195,7 @@ impl Read for LazyFile {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.lazy_read(buf).map_err(|err| {
             let kind = err.kind();
-            io::Error::new(
-                kind,
-                format!("error reading file ({:?}): {}", self.path.display(), err),
-            )
+            io::Error::new(kind, format!("error reading file ({:?}): {}", self.path.display(), err))
         })
     }
 }
@@ -250,11 +231,7 @@ impl TlsStream {
 }
 
 impl AsyncRead for TlsStream {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut Context,
-        buf: &mut [u8],
-    ) -> Poll<io::Result<usize>> {
+    fn poll_read(self: Pin<&mut Self>, cx: &mut Context, buf: &mut [u8]) -> Poll<io::Result<usize>> {
         let pin = self.get_mut();
         match pin.state {
             State::Handshaking(ref mut accept) => match ready!(Pin::new(accept).poll(cx)) {
@@ -271,11 +248,7 @@ impl AsyncRead for TlsStream {
 }
 
 impl AsyncWrite for TlsStream {
-    fn poll_write(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-        buf: &[u8],
-    ) -> Poll<io::Result<usize>> {
+    fn poll_write(self: Pin<&mut Self>, cx: &mut Context<'_>, buf: &[u8]) -> Poll<io::Result<usize>> {
         let pin = self.get_mut();
         match pin.state {
             State::Handshaking(ref mut accept) => match ready!(Pin::new(accept).poll(cx)) {
@@ -323,10 +296,7 @@ impl Accept for TlsAcceptor {
     type Conn = TlsStream;
     type Error = io::Error;
 
-    fn poll_accept(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Conn, Self::Error>>> {
+    fn poll_accept(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Result<Self::Conn, Self::Error>>> {
         let pin = self.get_mut();
         match ready!(Pin::new(&mut pin.incoming).poll_accept(cx)) {
             Some(Ok(sock)) => Poll::Ready(Some(Ok(TlsStream::new(sock, pin.config.clone())))),

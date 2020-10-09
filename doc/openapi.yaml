@@ -1,7 +1,7 @@
 openapi: "3.0.2"
 info:
   title: Krill RPKI Server API
-  version: 0.7.4-plus
+  version: 0.8.0-RC-dev
   description: |
     # Introduction
     Welcome to the documentation for the Krill server API, a JSON based
@@ -890,7 +890,7 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
-  /bulk/cas/sync/parents:
+  /bulk/cas/sync/parent:
     post:
       operationId: refresh_all_cas
       tags:
@@ -1117,7 +1117,7 @@ components:
       type: object
       properties:
         asn:
-          type: string
+          type: integer
         prefix:
           type: string
         max_length:

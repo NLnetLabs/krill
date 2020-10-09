@@ -15,7 +15,7 @@ impl IpRange {
     pub fn for_resource_set(set: &ResourceSet) -> (Vec<IpRange>, Vec<IpRange>) {
         let mut v4_ranges = vec![];
         let mut v6_ranges = vec![];
-        if let Some(v4) = set.to_ip_resources_v4().as_blocks() {
+        if let Ok(v4) = set.to_ip_resources_v4().to_blocks() {
             for block in v4.iter() {
                 let min = block.min();
                 let max = block.max();
@@ -24,7 +24,7 @@ impl IpRange {
                 v4_ranges.push(IpRange(Range { start, end }))
             }
         }
-        if let Some(v6) = set.to_ip_resources_v6().as_blocks() {
+        if let Ok(v6) = set.to_ip_resources_v6().to_blocks() {
             for block in v6.iter() {
                 let min = block.min();
                 let max = block.max();
@@ -61,6 +61,12 @@ impl From<&TypedPrefix> for IpRange {
                 IpRange(Range { start, end })
             }
         }
+    }
+}
+
+impl From<TypedPrefix> for IpRange {
+    fn from(tp: TypedPrefix) -> Self {
+        (&tp).into()
     }
 }
 
@@ -102,10 +108,7 @@ impl<V: AsRef<TypedPrefix>> TypedPrefixTree<V> {
     }
 
     pub fn all(&self) -> Vec<&V> {
-        self.tree
-            .iter()
-            .flat_map(|el| el.value.as_slice())
-            .collect()
+        self.tree.iter().flat_map(|el| el.value.as_slice()).collect()
     }
 }
 
@@ -118,7 +121,7 @@ pub struct TypedPrefixTreeBuilder<V: AsRef<TypedPrefix>> {
 impl<V: AsRef<TypedPrefix>> TypedPrefixTreeBuilder<V> {
     pub fn add(&mut self, value: V) {
         let range = IpRange::from(value.as_ref()).0;
-        let entry = self.values.entry(range).or_insert_with(|| vec![]);
+        let entry = self.values.entry(range).or_insert_with(Vec::new);
         entry.push(value);
     }
 
@@ -130,9 +133,7 @@ impl<V: AsRef<TypedPrefix>> TypedPrefixTreeBuilder<V> {
 
 impl<V: AsRef<TypedPrefix>> Default for TypedPrefixTreeBuilder<V> {
     fn default() -> Self {
-        TypedPrefixTreeBuilder {
-            values: HashMap::new(),
-        }
+        TypedPrefixTreeBuilder { values: HashMap::new() }
     }
 }
 

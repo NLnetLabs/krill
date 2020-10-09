@@ -1,22 +1,23 @@
 //! Support for admin tasks, such as managing publishers and RFC8181 clients
 
+use std::convert::TryFrom;
 use std::fmt;
 use std::path::PathBuf;
 use std::str::{from_utf8_unchecked, FromStr};
+use std::sync::Arc;
 
-use bytes::Bytes;
+use chrono::{DateTime, NaiveDateTime, Utc};
 use serde::de;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::cert::Cert;
-use rpki::crypto::Signer;
 use rpki::uri;
 use rpki::x509::Time;
 
 use crate::commons::api::ca::{ResourceSet, TrustAnchorLocator};
 use crate::commons::api::rrdp::PublishElement;
 use crate::commons::api::{Link, RepoInfo};
-use crate::commons::remote::id::IdCert;
+use crate::commons::crypto::IdCert;
 use crate::commons::remote::rfc8183;
 
 //------------ Handle --------------------------------------------------------
@@ -29,24 +30,12 @@ pub type RepositoryHandle = Handle;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Handle {
-    name: Bytes,
+    name: Arc<String>,
 }
 
 impl Handle {
     pub fn as_str(&self) -> &str {
         self.as_ref()
-    }
-
-    pub unsafe fn from_str_unsafe(s: &str) -> Self {
-        Self::from_str(s).unwrap()
-    }
-
-    pub unsafe fn from_path_unsafe(path: &PathBuf) -> Self {
-        let path = path.file_name().unwrap();
-        let s = path.to_string_lossy().to_string();
-        let s = s.replace("+", "/");
-        let s = s.replace("=", "\\");
-        Self::from_str(&s).unwrap()
     }
 
     /// We replace "/" with "+" and "\" with "=" to make file system
@@ -56,6 +45,21 @@ impl Handle {
         let s = s.replace("/", "+");
         let s = s.replace("\\", "=");
         PathBuf::from(s)
+    }
+}
+
+impl TryFrom<&PathBuf> for Handle {
+    type Error = InvalidHandle;
+
+    fn try_from(path: &PathBuf) -> Result<Self, Self::Error> {
+        if let Some(path) = path.file_name() {
+            let s = path.to_string_lossy().to_string();
+            let s = s.replace("+", "/");
+            let s = s.replace("=", "\\");
+            Self::from_str(&s)
+        } else {
+            Err(InvalidHandle)
+        }
     }
 }
 
@@ -71,9 +75,8 @@ impl FromStr for Handle {
             && !s.is_empty()
             && s.len() < 256
         {
-            Ok(Handle {
-                name: Bytes::copy_from_slice(s.as_bytes()),
-            })
+            let s = s.to_string();
+            Ok(Handle { name: Arc::new(s) })
         } else {
             Err(InvalidHandle)
         }
@@ -82,13 +85,13 @@ impl FromStr for Handle {
 
 impl AsRef<str> for Handle {
     fn as_ref(&self) -> &str {
-        unsafe { from_utf8_unchecked(self.name.as_ref()) }
+        self.name.as_str()
     }
 }
 
 impl AsRef<[u8]> for Handle {
     fn as_ref(&self) -> &[u8] {
-        self.name.as_ref()
+        self.name.as_bytes()
     }
 }
 
@@ -126,15 +129,6 @@ pub struct InvalidHandle;
 
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct Token(String);
-
-impl Token {
-    pub fn random<S: Signer>(signer: &S) -> Self {
-        let mut res = <[u8; 20]>::default();
-        signer.rand(&mut res).unwrap();
-        let string = hex::encode(res);
-        Token(string)
-    }
-}
 
 impl From<&str> for Token {
     fn from(s: &str) -> Self {
@@ -213,6 +207,22 @@ impl PublisherList {
     }
 }
 
+impl fmt::Display for PublisherList {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Publishers: ")?;
+        let mut first = true;
+        for p in self.publishers() {
+            if !first {
+                write!(f, ", ")?;
+            } else {
+                first = false;
+            }
+            write!(f, "{}", p.handle().as_str())?;
+        }
+        Ok(())
+    }
+}
+
 //------------ PublisherDetails ----------------------------------------------
 
 /// This type defines the publisher details for:
@@ -226,12 +236,7 @@ pub struct PublisherDetails {
 }
 
 impl PublisherDetails {
-    pub fn new(
-        handle: &Handle,
-        id_cert: IdCert,
-        base_uri: &uri::Rsync,
-        current_files: Vec<PublishElement>,
-    ) -> Self {
+    pub fn new(handle: &Handle, id_cert: IdCert, base_uri: &uri::Rsync, current_files: Vec<PublishElement>) -> Self {
         PublisherDetails {
             handle: handle.clone(),
             id_cert,
@@ -254,6 +259,16 @@ impl PublisherDetails {
     }
 }
 
+impl fmt::Display for PublisherDetails {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "handle: {}", self.handle())?;
+        writeln!(f, "id: {}", self.id_cert().ski_hex())?;
+        writeln!(f, "base uri: {}", self.base_uri().to_string())?;
+
+        Ok(())
+    }
+}
+
 //------------ PublisherClientRequest ----------------------------------------
 
 /// This type defines request for a new Publisher client, i.e. the proxy that
@@ -267,18 +282,12 @@ pub struct PublisherClientRequest {
 impl PublisherClientRequest {
     pub fn rfc8183(handle: Handle, response: rfc8183::RepositoryResponse) -> Self {
         let server_info = RepositoryContact::rfc8183(response);
-        PublisherClientRequest {
-            handle,
-            server_info,
-        }
+        PublisherClientRequest { handle, server_info }
     }
 
     pub fn embedded(handle: Handle, repo_info: RepoInfo) -> Self {
         let server_info = RepositoryContact::embedded(repo_info);
-        PublisherClientRequest {
-            handle,
-            server_info,
-        }
+        PublisherClientRequest { handle, server_info }
     }
 
     pub fn unwrap(self) -> (Handle, RepositoryContact) {
@@ -323,15 +332,19 @@ pub enum RepositoryContact {
 }
 
 impl RepositoryContact {
+    pub fn uri(&self) -> String {
+        match self {
+            RepositoryContact::Embedded(_) => "embedded".to_string(),
+            RepositoryContact::Rfc8181(res) => res.service_uri().to_string(),
+        }
+    }
+
     pub fn embedded(info: RepoInfo) -> Self {
         RepositoryContact::Embedded(info)
     }
 
     pub fn is_embedded(&self) -> bool {
-        match self {
-            RepositoryContact::Embedded(_) => true,
-            _ => false,
-        }
+        matches!(self, RepositoryContact::Embedded(_))
     }
 
     pub fn rfc8183(response: rfc8183::RepositoryResponse) -> Self {
@@ -361,9 +374,7 @@ impl fmt::Display for RepositoryContact {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let msg = match self {
             RepositoryContact::Embedded(_) => "embedded publication server".to_string(),
-            RepositoryContact::Rfc8181(res) => {
-                format!("remote publication server at {}", res.service_uri())
-            }
+            RepositoryContact::Rfc8181(res) => format!("remote publication server at {}", res.service_uri()),
         };
         write!(f, "{}", msg)
     }
@@ -408,11 +419,7 @@ pub struct TaCertDetails {
 
 impl TaCertDetails {
     pub fn new(cert: Cert, resources: ResourceSet, tal: TrustAnchorLocator) -> Self {
-        TaCertDetails {
-            cert,
-            resources,
-            tal,
-        }
+        TaCertDetails { cert, resources, tal }
     }
 
     pub fn cert(&self) -> &Cert {
@@ -442,17 +449,12 @@ impl Eq for TaCertDetails {}
 
 /// This type contains the information needed to contact the parent ca
 /// for resource provisioning requests (RFC6492).
-#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
 pub enum ParentCaContact {
-    #[display(fmt = "This CA is a TA")]
     Ta(TaCertDetails),
-
-    #[display(fmt = "Embedded parent")]
     Embedded,
-
-    #[display(fmt = "RFC 6492 Parent")]
     Rfc6492(rfc8183::ParentResponse),
 }
 
@@ -469,9 +471,20 @@ impl ParentCaContact {
     }
 
     pub fn is_ta(&self) -> bool {
-        match *self {
-            ParentCaContact::Ta(_) => true,
-            _ => false,
+        matches!(*self, ParentCaContact::Ta(_))
+    }
+}
+
+impl fmt::Display for ParentCaContact {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ParentCaContact::Ta(details) => write!(f, "{}", details.tal()),
+            ParentCaContact::Embedded => write!(f, "Embedded parent"),
+            ParentCaContact::Rfc6492(response) => {
+                let bytes = response.encode_vec();
+                let xml = unsafe { from_utf8_unchecked(&bytes) };
+                write!(f, "{}", xml)
+            }
         }
     }
 }
@@ -635,6 +648,14 @@ impl ServerInfo {
     }
 }
 
+impl fmt::Display for ServerInfo {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let dt = DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(self.started(), 0), Utc);
+        let started = Time::new(dt);
+        write!(f, "Version: {}\nStarted: {}", self.version(), started.to_rfc3339())
+    }
+}
+
 //------------ Tests ---------------------------------------------------------
 
 #[cfg(test)]
@@ -666,7 +687,7 @@ mod tests {
     #[test]
     fn should_make_handle_from_dir() {
         let path = PathBuf::from("a/b/abcDEF012+=-_");
-        let handle = unsafe { Handle::from_path_unsafe(&path) };
+        let handle = Handle::try_from(&path).unwrap();
         let expected_handle = Handle::from_str("abcDEF012/\\-_").unwrap();
         assert_eq!(handle, expected_handle);
     }

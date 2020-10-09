@@ -3,19 +3,19 @@ use std::ops::{Deref, DerefMut};
 use chrono::Duration;
 use serde::{Deserialize, Serialize};
 
-use rpki::crypto::{KeyIdentifier, PublicKeyFormat};
-use rpki::csr::Csr;
+use rpki::crypto::KeyIdentifier;
 use rpki::x509::Time;
 
 use crate::commons::api::{
-    ActiveInfo, CertifiedKeyInfo, EntitlementClass, IssuanceRequest, PendingInfo, PendingKeyInfo,
-    RcvdCert, RepoInfo, RequestResourceLimit, ResourceClassKeysInfo, ResourceClassName,
-    ResourceSet, RevocationRequest, RollNewInfo, RollOldInfo, RollPendingInfo,
+    ActiveInfo, CertifiedKeyInfo, EntitlementClass, IssuanceRequest, PendingInfo, PendingKeyInfo, RcvdCert, RepoInfo,
+    RequestResourceLimit, ResourceClassKeysInfo, ResourceClassName, ResourceSet, RevocationRequest, RollNewInfo,
+    RollOldInfo, RollPendingInfo,
 };
+use crate::commons::crypto::KrillSigner;
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
-use crate::constants::PUBLISH_THRESHOLD_HOURS;
-use crate::daemon::ca::{CurrentObjectSet, CurrentObjectSetDelta, EvtDet, Signer};
+use crate::daemon::ca::{CurrentObjectSet, CurrentObjectSetDelta, EvtDet};
+use crate::daemon::config::CONFIG;
 
 //------------ CertifiedKey --------------------------------------------------
 
@@ -30,11 +30,11 @@ pub struct CertifiedKey {
 }
 
 impl CertifiedKey {
-    pub fn create<S: Signer>(
+    pub fn create(
         incoming_cert: RcvdCert,
         repo_info: &RepoInfo,
         name_space: &str,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<Self> {
         let key_id = incoming_cert.cert().subject_key_identifier();
         let current_set = CurrentObjectSet::create(&incoming_cert, repo_info, name_space, signer)?;
@@ -100,10 +100,7 @@ impl CertifiedKey {
         let new_not_after = new_not_after.timestamp_millis();
 
         if not_after == new_not_after {
-            debug!(
-                "No change in not after time for certificate for key '{}'",
-                self.key_id
-            );
+            debug!("No change in not after time for certificate for key '{}'", self.key_id);
             false
         } else if not_after < new_not_after {
             warn!(
@@ -124,7 +121,7 @@ impl CertifiedKey {
     }
 
     pub fn close_to_next_update(&self) -> bool {
-        self.current_set.next_update() < Time::now() + Duration::hours(PUBLISH_THRESHOLD_HOURS)
+        self.current_set.next_update() < Time::now() + Duration::hours(CONFIG.timing_publish_hours_before_next)
     }
 
     pub fn with_new_cert(mut self, cert: RcvdCert) -> Self {
@@ -153,10 +150,7 @@ pub struct PendingKey {
 
 impl PendingKey {
     pub fn new(key_id: KeyIdentifier) -> Self {
-        PendingKey {
-            key_id,
-            request: None,
-        }
+        PendingKey { key_id, request: None }
     }
 
     pub fn as_info(&self) -> PendingKeyInfo {
@@ -265,11 +259,7 @@ impl KeyState {
     }
 
     /// Revoke all current keys
-    pub fn revoke<S: Signer>(
-        &self,
-        class_name: ResourceClassName,
-        signer: &S,
-    ) -> KrillResult<Vec<RevocationRequest>> {
+    pub fn revoke(&self, class_name: ResourceClassName, signer: &KrillSigner) -> KrillResult<Vec<RevocationRequest>> {
         match self {
             KeyState::Pending(_pending) => Ok(vec![]), // nothing to revoke
             KeyState::Active(current) | KeyState::RollPending(_, current) => {
@@ -289,15 +279,12 @@ impl KeyState {
         }
     }
 
-    fn revoke_key<S: Signer>(
+    fn revoke_key(
         class_name: ResourceClassName,
         key_id: &KeyIdentifier,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<RevocationRequest> {
-        let ki = signer
-            .get_key_info(key_id)
-            .map_err(Error::signer)?
-            .key_identifier();
+        let ki = signer.get_key_info(key_id).map_err(Error::signer)?.key_identifier();
 
         Ok(RevocationRequest::new(class_name, ki))
     }
@@ -324,13 +311,13 @@ impl KeyState {
         }
     }
 
-    pub fn make_entitlement_events<S: Signer>(
+    pub fn make_entitlement_events(
         &self,
         rcn: ResourceClassName,
         entitlement: &EntitlementClass,
         base_repo: &RepoInfo,
         name_space: &str,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<Vec<EvtDet>> {
         let mut keys_for_requests = vec![];
         match self {
@@ -369,22 +356,13 @@ impl KeyState {
         let mut res = vec![];
 
         for key_id in keys_for_requests.into_iter() {
-            let req = self.create_issuance_req(
-                base_repo,
-                name_space,
-                entitlement.class_name().clone(),
-                key_id,
-                signer,
-            )?;
+            let req =
+                self.create_issuance_req(base_repo, name_space, entitlement.class_name().clone(), key_id, signer)?;
 
             res.push(EvtDet::CertificateRequested(rcn.clone(), req, *key_id));
         }
 
-        for key in entitlement
-            .issued()
-            .iter()
-            .map(|c| c.subject_key_identifier())
-        {
+        for key in entitlement.issued().iter().map(|c| c.subject_key_identifier()) {
             if !self.knows_key(key) {
                 let revocation = RevocationRequest::new(entitlement.class_name().clone(), key);
                 res.push(EvtDet::UnexpectedKeyFound(rcn.clone(), revocation));
@@ -394,12 +372,12 @@ impl KeyState {
         Ok(res)
     }
 
-    pub fn request_certs_new_repo<S: Signer>(
+    pub fn request_certs_new_repo(
         &self,
         rcn: ResourceClassName,
         base_repo: &RepoInfo,
         name_space: &str,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<Vec<EvtDet>> {
         let mut res = vec![];
 
@@ -462,32 +440,16 @@ impl KeyState {
     }
 
     /// Creates a Csr for the given key.
-    fn create_issuance_req<S: Signer>(
+    fn create_issuance_req(
         &self,
         base_repo: &RepoInfo,
         name_space: &str,
         class_name: ResourceClassName,
         key: &KeyIdentifier,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<IssuanceRequest> {
-        let pub_key = signer.get_key_info(key).map_err(Error::signer)?;
-
-        let enc = Csr::construct(
-            signer,
-            key,
-            &base_repo.ca_repository(name_space).join(&[]), // force trailing slash
-            &base_repo.rpki_manifest(name_space, &pub_key.key_identifier()),
-            Some(&base_repo.rpki_notify()),
-        )
-        .map_err(Error::signer)?;
-
-        let csr = Csr::decode(enc.as_slice()).map_err(Error::signer)?;
-
-        Ok(IssuanceRequest::new(
-            class_name,
-            RequestResourceLimit::default(),
-            csr,
-        ))
+        let csr = signer.sign_csr(base_repo, name_space, key)?;
+        Ok(IssuanceRequest::new(class_name, RequestResourceLimit::default(), csr))
     }
 
     /// Returns the revoke request if there is an old key.
@@ -527,29 +489,20 @@ impl KeyState {
 impl KeyState {
     /// Initiates a key roll if the current state is 'Active'. This will return event details
     /// for a newly create pending key and requested certificate for it.
-    pub fn keyroll_initiate<S: Signer>(
+    pub fn keyroll_initiate(
         &self,
         class_name: ResourceClassName,
         parent_class_name: ResourceClassName,
         base_repo: &RepoInfo,
         name_space: &str,
-        signer: &mut S,
+        signer: &KrillSigner,
     ) -> KrillResult<Vec<EvtDet>> {
         match self {
             KeyState::Active(_current) => {
-                let key_id = {
-                    signer
-                        .create_key(PublicKeyFormat::default())
-                        .map_err(Error::signer)?
-                };
+                let key_id = signer.create_key()?;
 
-                let issuance_req = self.create_issuance_req(
-                    base_repo,
-                    name_space,
-                    parent_class_name,
-                    &key_id,
-                    signer,
-                )?;
+                let issuance_req =
+                    self.create_issuance_req(base_repo, name_space, parent_class_name, &key_id, signer)?;
 
                 Ok(vec![
                     EvtDet::KeyRollPendingKeyAdded(class_name.clone(), key_id),
@@ -562,11 +515,11 @@ impl KeyState {
 
     /// Marks the new key as current, and the current key as old, and requests revocation of
     /// the old key.
-    pub fn keyroll_activate<S: Signer>(
+    pub fn keyroll_activate(
         &self,
         class_name: ResourceClassName,
         parent_class_name: ResourceClassName,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<EvtDet> {
         match self {
             KeyState::RollNew(_new, current) => {
@@ -579,19 +532,14 @@ impl KeyState {
 
     /// Returns true if there is a new key
     pub fn has_new_key(&self) -> bool {
-        match self {
-            KeyState::RollNew(_, _) => true,
-            _ => false,
-        }
+        matches!(self, KeyState::RollNew(_, _))
     }
 
     fn knows_key(&self, key_id: KeyIdentifier) -> bool {
         match self {
             KeyState::Pending(pending) => pending.key_id == key_id,
             KeyState::Active(current) => current.key_id == key_id,
-            KeyState::RollPending(pending, current) => {
-                pending.key_id == key_id || current.key_id == key_id
-            }
+            KeyState::RollPending(pending, current) => pending.key_id == key_id || current.key_id == key_id,
             KeyState::RollNew(new, current) => new.key_id == key_id || current.key_id == key_id,
             KeyState::RollOld(current, old) => current.key_id == key_id || old.key_id == key_id,
         }

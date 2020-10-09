@@ -17,7 +17,7 @@ use rpki::uri;
 use rpki::x509;
 
 use crate::commons::api::{Handle, PublisherHandle, RepoInfo};
-use crate::commons::remote::id::IdCert;
+use crate::commons::crypto::IdCert;
 use crate::commons::util::file;
 use crate::commons::util::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
 
@@ -91,8 +91,7 @@ impl ChildRequest {
                 }
 
                 let tag = a.take_opt("tag");
-                let child_handle = Handle::from_str(&a.take_req("child_handle")?)
-                    .map_err(|_| Error::InvalidHandle)?;
+                let child_handle = Handle::from_str(&a.take_req("child_handle")?).map_err(|_| Error::InvalidHandle)?;
 
                 if a.take_opt("valid_until").is_some() {
                     warn!(
@@ -138,9 +137,7 @@ impl ChildRequest {
             }
 
             w.put_element("child_request", Some(a.as_ref()), |w| {
-                w.put_element("child_bpki_ta", None, |w| {
-                    w.put_base64_std(&self.id_cert.to_bytes())
-                })
+                w.put_element("child_bpki_ta", None, |w| w.put_base64_std(&self.id_cert.to_bytes()))
             })
         })
     }
@@ -155,12 +152,9 @@ impl ChildRequest {
 
 impl fmt::Display for ChildRequest {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "handle '{}' id (key) '{}'",
-            self.child_handle,
-            self.id_cert.ski_hex()
-        )
+        let bytes = self.encode_vec();
+        let xml = unsafe { from_utf8_unchecked(&bytes) };
+        write!(f, "{}", xml)
     }
 }
 
@@ -236,11 +230,9 @@ impl ParentResponse {
             }
 
             let tag = a.take_opt("tag");
-            let parent_handle = Handle::from_str(&a.take_req("parent_handle")?)
-                .map_err(|_| Error::InvalidHandle)?;
+            let parent_handle = Handle::from_str(&a.take_req("parent_handle")?).map_err(|_| Error::InvalidHandle)?;
 
-            let child_handle =
-                Handle::from_str(&a.take_req("child_handle")?).map_err(|_| Error::InvalidHandle)?;
+            let child_handle = Handle::from_str(&a.take_req("child_handle")?).map_err(|_| Error::InvalidHandle)?;
             let service_uri = ServiceUri::try_from(a.take_req("service_uri")?)?;
 
             if a.take_opt("valid_until").is_some() {
@@ -306,11 +298,9 @@ impl ParentResponse {
         R: io::Read,
     {
         r.take_named_element("parent", |mut a, r| {
-            let parent_handle = Handle::from_str(&a.take_req("parent_handle")?)
-                .map_err(|_| Error::InvalidHandle)?;
+            let parent_handle = Handle::from_str(&a.take_req("parent_handle")?).map_err(|_| Error::InvalidHandle)?;
 
-            let child_handle =
-                Handle::from_str(&a.take_req("child_handle")?).map_err(|_| Error::InvalidHandle)?;
+            let child_handle = Handle::from_str(&a.take_req("child_handle")?).map_err(|_| Error::InvalidHandle)?;
 
             let service_uri = ServiceUri::try_from(a.take_req("service_uri")?)?;
 
@@ -378,9 +368,7 @@ impl ParentResponse {
             }
 
             w.put_element("parent_response", Some(a.as_ref()), |w| {
-                w.put_element("parent_bpki_ta", None, |w| {
-                    w.put_base64_std(&self.id_cert.to_bytes())
-                })
+                w.put_element("parent_bpki_ta", None, |w| w.put_base64_std(&self.id_cert.to_bytes()))
             })
         })
     }
@@ -453,8 +441,7 @@ impl PublisherRequest {
 
                 let tag = a.take_opt("tag");
                 let publisher_handle = a.take_req("publisher_handle")?;
-                let publisher_handle =
-                    Handle::from_str(&publisher_handle).map_err(|_| Error::InvalidHandle)?;
+                let publisher_handle = Handle::from_str(&publisher_handle).map_err(|_| Error::InvalidHandle)?;
                 a.exhausted()?;
 
                 let bytes = r.take_named_element("publisher_bpki_ta", |a, r| {
@@ -475,7 +462,7 @@ impl PublisherRequest {
     }
 }
 
-/// Encoding
+/// # Encoding
 ///
 impl PublisherRequest {
     /// Encodes a <publisher_request> to a Vec
@@ -503,6 +490,16 @@ impl PublisherRequest {
     pub fn save(&self, full_path: &PathBuf) -> Result<(), io::Error> {
         let xml = self.encode_vec();
         file::save(&Bytes::from(xml), full_path)
+    }
+}
+
+/// # Display
+///
+impl fmt::Display for PublisherRequest {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let bytes = self.encode_vec();
+        let xml = unsafe { from_utf8_unchecked(&bytes) };
+        write!(f, "{}", xml)
     }
 }
 
@@ -603,13 +600,11 @@ impl RepositoryResponse {
 
                 let tag = a.take_opt("tag");
                 let publisher_handle = a.take_req("publisher_handle")?;
-                let publisher_handle =
-                    Handle::from_str(&publisher_handle).map_err(|_| Error::InvalidHandle)?;
+                let publisher_handle = Handle::from_str(&publisher_handle).map_err(|_| Error::InvalidHandle)?;
 
                 let service_uri = ServiceUri::try_from(a.take_req("service_uri")?)?;
                 let sia_base = uri::Rsync::from_string(a.take_req("sia_base")?)?;
-                let rrdp_notification_uri =
-                    uri::Https::from_string(a.take_req("rrdp_notification_uri")?)?;
+                let rrdp_notification_uri = uri::Https::from_string(a.take_req("rrdp_notification_uri")?)?;
 
                 a.exhausted()?;
 
@@ -673,6 +668,15 @@ impl RepositoryResponse {
     }
 }
 
+/// # Printing (as XML)
+///
+impl fmt::Display for RepositoryResponse {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let bytes = self.encode_vec();
+        let xml = unsafe { from_utf8_unchecked(&bytes) };
+        write!(f, "{}", xml)
+    }
+}
 //------------ ServiceUri ----------------------------------------------------
 
 /// The service URI where a child or publisher needs to send its
@@ -796,7 +800,7 @@ impl From<uri::Error> for Error {
 mod tests {
     use rpki::x509::Time;
 
-    use crate::commons::remote::id::tests::test_id_certificate;
+    use crate::commons::crypto::test_id_certificate;
     use crate::test;
 
     use super::*;
@@ -825,10 +829,7 @@ mod tests {
     fn validate_rpkid_publisher_request() {
         let xml = include_str!("../../../test-resources/oob/publisher_request.xml");
         let pr = PublisherRequest::validate_at(xml.as_bytes(), rpkid_time()).unwrap();
-        assert_eq!(
-            unsafe { Handle::from_str_unsafe("Bob") },
-            pr.publisher_handle
-        );
+        assert_eq!(Handle::from_str("Bob").unwrap(), pr.publisher_handle);
         assert_eq!(Some("A0001".to_string()), pr.tag);
     }
 
@@ -837,10 +838,7 @@ mod tests {
         let xml = include_str!("../../../test-resources/oob/repository_response.xml");
         let rr = RepositoryResponse::validate_at(xml.as_bytes(), rpkid_time()).unwrap();
         assert_eq!(Some("A0001".to_string()), rr.tag);
-        assert_eq!(
-            unsafe { Handle::from_str_unsafe("Alice/Bob-42") },
-            rr.publisher_handle
-        );
+        assert_eq!(Handle::from_str("Alice/Bob-42").unwrap(), rr.publisher_handle);
         assert_eq!(example_service_uri(), rr.service_uri);
         assert_eq!(example_rrdp_uri(), rr.repo_info().rpki_notify());
         assert_eq!(&example_sia_base(), rr.repo_info().base_uri());
@@ -852,7 +850,7 @@ mod tests {
 
         let pr = PublisherRequest {
             tag: Some("tag".to_string()),
-            publisher_handle: unsafe { Handle::from_str_unsafe("tim") },
+            publisher_handle: Handle::from_str("tim").unwrap(),
             id_cert: cert,
         };
 
@@ -869,7 +867,7 @@ mod tests {
 
         let pr = RepositoryResponse {
             tag: Some("tag".to_string()),
-            publisher_handle: unsafe { Handle::from_str_unsafe("tim") },
+            publisher_handle: Handle::from_str("tim").unwrap(),
             repo_info,
             service_uri: example_service_uri(),
             id_cert: cert,
@@ -885,10 +883,7 @@ mod tests {
         let xml = include_str!("../../../test-resources/remote/rpkid-child-id.xml");
         let req = ChildRequest::validate_at(xml.as_bytes(), rpkid_time()).unwrap();
 
-        assert_eq!(
-            &unsafe { Handle::from_str_unsafe("Carol") },
-            req.child_handle()
-        );
+        assert_eq!(&Handle::from_str("Carol").unwrap(), req.child_handle());
         assert_eq!(None, req.tag());
 
         let encoded = req.encode_vec();
@@ -916,13 +911,10 @@ mod tests {
 
     #[test]
     fn pre_rfc8183_response() {
-        let pre_rfc8183_xml =
-            include_str!("../../../test-resources/remote/arin-pre-rfc8183-parent-response.xml");
-        let pre_rfc_res =
-            ParentResponse::validate_at(pre_rfc8183_xml.as_bytes(), rpkid_time()).unwrap();
+        let pre_rfc8183_xml = include_str!("../../../test-resources/remote/arin-pre-rfc8183-parent-response.xml");
+        let pre_rfc_res = ParentResponse::validate_at(pre_rfc8183_xml.as_bytes(), rpkid_time()).unwrap();
 
-        let rfc8183_xml =
-            include_str!("../../../test-resources/remote/rpkid-parent-response-offer.xml");
+        let rfc8183_xml = include_str!("../../../test-resources/remote/rpkid-parent-response-offer.xml");
         let rfc_res = ParentResponse::validate_at(rfc8183_xml.as_bytes(), rpkid_time()).unwrap();
 
         assert_eq!(pre_rfc_res, rfc_res)

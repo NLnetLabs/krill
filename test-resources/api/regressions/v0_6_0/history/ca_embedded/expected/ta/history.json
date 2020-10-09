@@ -95,7 +95,7 @@
       "version": 5,
       "sequence": 5,
       "summary": {
-        "msg": "Issue certificate to child 'child' for key 'C4CF00E42E046EBE5275589D3462F1B1F43FBA85",
+        "msg": "Issue certificate to child 'child' for key 'C4CF00E42E046EBE5275589D3462F1B1F43FBA85'",
         "label": "cmd-ca-child-certify",
         "args": {
           "key": "C4CF00E42E046EBE5275589D3462F1B1F43FBA85",
@@ -143,7 +143,7 @@
       "version": 9,
       "sequence": 7,
       "summary": {
-        "msg": "Issue certificate to child 'child' for key 'C4CF00E42E046EBE5275589D3462F1B1F43FBA85",
+        "msg": "Issue certificate to child 'child' for key 'C4CF00E42E046EBE5275589D3462F1B1F43FBA85'",
         "label": "cmd-ca-child-certify",
         "args": {
           "key": "C4CF00E42E046EBE5275589D3462F1B1F43FBA85",
@@ -191,7 +191,7 @@
       "version": 13,
       "sequence": 9,
       "summary": {
-        "msg": "Issue certificate to child 'child' for key 'C4CF00E42E046EBE5275589D3462F1B1F43FBA85",
+        "msg": "Issue certificate to child 'child' for key 'C4CF00E42E046EBE5275589D3462F1B1F43FBA85'",
         "label": "cmd-ca-child-certify",
         "args": {
           "key": "C4CF00E42E046EBE5275589D3462F1B1F43FBA85",

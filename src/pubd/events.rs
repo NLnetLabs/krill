@@ -1,19 +1,16 @@
 use std::path::PathBuf;
 use std::{fmt, fs};
 
-use rpki::crypto::PublicKeyFormat;
 use rpki::uri;
 use rpki::x509::Time;
 
 use crate::commons::api::rrdp::{Delta, DeltaElements, Notification, RrdpSession};
 use crate::commons::api::{Handle, PublisherHandle, RepositoryHandle};
+use crate::commons::crypto::{IdCert, IdCertBuilder, KrillSigner};
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::StoredEvent;
-use crate::commons::remote::builder::IdCertBuilder;
-use crate::commons::remote::id::IdCert;
 use crate::commons::KrillResult;
 use crate::constants::REPOSITORY_DIR;
-use crate::daemon::ca::Signer;
 use crate::pubd::Publisher;
 
 //------------ Ini -----------------------------------------------------------
@@ -44,16 +41,14 @@ impl IniDet {
 }
 
 impl IniDet {
-    pub fn init<S: Signer>(
+    pub fn init(
         handle: &Handle,
         rsync_jail: uri::Rsync,
         rrdp_base_uri: uri::Https,
         work_dir: &PathBuf,
-        signer: &mut S,
+        signer: &KrillSigner,
     ) -> KrillResult<Ini> {
-        let key = signer
-            .create_key(PublicKeyFormat::default())
-            .map_err(Error::signer)?;
+        let key = signer.create_key()?;
 
         let id_cert = IdCertBuilder::new_ta_id_cert(&key, signer).map_err(Error::signer)?;
         let session = RrdpSession::new();
@@ -84,7 +79,10 @@ impl fmt::Display for IniDet {
         write!(
             f,
             "Initialised publication server with cert(hash): {}, session: {}, RRDP base uri: {}, repo dir: {}",
-            self.id_cert.ski_hex(), self.session, self.rrdp_base_uri, self.repo_base_dir.to_string_lossy().as_ref()
+            self.id_cert.ski_hex(),
+            self.session,
+            self.rrdp_base_uri,
+            self.repo_base_dir.to_string_lossy().as_ref()
         )
     }
 }
@@ -99,10 +97,7 @@ pub struct RrdpUpdate {
 
 impl RrdpUpdate {
     pub fn new(delta: Delta, notification: Notification) -> Self {
-        RrdpUpdate {
-            delta,
-            notification,
-        }
+        RrdpUpdate { delta, notification }
     }
 
     pub fn time(&self) -> Time {
@@ -145,11 +140,7 @@ impl EvtDet {
         publisher_handle: PublisherHandle,
         publisher: Publisher,
     ) -> Evt {
-        StoredEvent::new(
-            handle,
-            version,
-            EvtDet::PublisherAdded(publisher_handle, publisher),
-        )
+        StoredEvent::new(handle, version, EvtDet::PublisherAdded(publisher_handle, publisher))
     }
 
     pub(super) fn publisher_removed(
@@ -158,11 +149,7 @@ impl EvtDet {
         publisher_handle: PublisherHandle,
         update: RrdpUpdate,
     ) -> Evt {
-        StoredEvent::new(
-            handle,
-            version,
-            EvtDet::PublisherRemoved(publisher_handle, update),
-        )
+        StoredEvent::new(handle, version, EvtDet::PublisherRemoved(publisher_handle, update))
     }
 
     pub(super) fn published(

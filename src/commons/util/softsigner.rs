@@ -3,6 +3,7 @@
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::{fs, io};
 
 use bytes::Bytes;
@@ -14,18 +15,14 @@ use serde::{de, ser};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::crypto::signer::KeyError;
-use rpki::crypto::{
-    KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError,
-};
+use rpki::crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, SignatureAlgorithm, Signer, SigningError};
 
 //------------ OpenSslSigner -------------------------------------------------
 
 /// An openssl based signer.
-///
-/// Keeps the keys in memory (for now).
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug)]
 pub struct OpenSslSigner {
-    keys_dir: PathBuf,
+    keys_dir: Arc<PathBuf>,
 }
 
 impl OpenSslSigner {
@@ -38,6 +35,8 @@ impl OpenSslSigner {
                 fs::create_dir_all(&keys_dir)?;
             }
 
+            let keys_dir = Arc::new(keys_dir);
+
             Ok(OpenSslSigner { keys_dir })
         } else {
             Err(SignerError::InvalidWorkDir(work_dir.clone()))
@@ -46,17 +45,11 @@ impl OpenSslSigner {
 }
 
 impl OpenSslSigner {
-    fn sign_with_key<D: AsRef<[u8]> + ?Sized>(
-        pkey: &PKeyRef<Private>,
-        data: &D,
-    ) -> Result<Signature, SignerError> {
+    fn sign_with_key<D: AsRef<[u8]> + ?Sized>(pkey: &PKeyRef<Private>, data: &D) -> Result<Signature, SignerError> {
         let mut signer = ::openssl::sign::Signer::new(MessageDigest::sha256(), pkey)?;
         signer.update(data.as_ref())?;
 
-        let signature = Signature::new(
-            SignatureAlgorithm::default(),
-            Bytes::from(signer.sign_to_vec()?),
-        );
+        let signature = Signature::new(SignatureAlgorithm::default(), Bytes::from(signer.sign_to_vec()?));
 
         Ok(signature)
     }
@@ -73,7 +66,7 @@ impl OpenSslSigner {
     }
 
     fn key_path(&self, key_id: &KeyIdentifier) -> PathBuf {
-        let mut path = self.keys_dir.clone();
+        let mut path = self.keys_dir.to_path_buf();
         path.push(&key_id.to_string());
         path
     }
@@ -152,11 +145,7 @@ impl Serialize for OpenSslKeyPair {
     where
         S: Serializer,
     {
-        let bytes: Vec<u8> = self
-            .pkey
-            .as_ref()
-            .private_key_to_der()
-            .map_err(ser::Error::custom)?;
+        let bytes: Vec<u8> = self.pkey.as_ref().private_key_to_der().map_err(ser::Error::custom)?;
 
         base64::encode(&bytes).serialize(s)
     }
@@ -250,7 +239,7 @@ pub mod tests {
     fn should_return_subject_public_key_info() {
         test::test_under_tmp(|d| {
             let mut s = OpenSslSigner::build(&d).unwrap();
-            let ki = s.create_key(PublicKeyFormat::default()).unwrap();
+            let ki = s.create_key(PublicKeyFormat::Rsa).unwrap();
             s.get_key_info(&ki).unwrap();
             s.destroy_key(&ki).unwrap();
         })

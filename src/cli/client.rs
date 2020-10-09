@@ -5,17 +5,15 @@ use serde::Serialize;
 
 use rpki::uri;
 
-use crate::cli::options::{
-    BulkCaCommand, CaCommand, Command, KrillInitDetails, Options, PublishersCommand,
-};
+use crate::cli::options::{BulkCaCommand, CaCommand, Command, KrillInitDetails, Options, PublishersCommand};
 use crate::cli::report::{ApiResponse, ReportError};
 use crate::commons::api::{
-    AllCertAuthIssues, CaRepoDetails, CertAuthIssues, ChildCaInfo, CurrentRepoState,
-    ParentCaContact, PublisherDetails, PublisherList, Token,
+    AllCertAuthIssues, CaRepoDetails, CertAuthIssues, ChildCaInfo, ParentCaContact, ParentStatuses, PublisherDetails,
+    PublisherList, RepoStatus, Token,
 };
-use crate::commons::bgp::BgpAnalysisReport;
+use crate::commons::bgp::BgpAnalysisAdvice;
 use crate::commons::remote::rfc8183;
-use crate::commons::util::httpclient;
+use crate::commons::util::{file, httpclient};
 use crate::constants::KRILL_CLI_API_ENV;
 use crate::daemon::config::Config;
 
@@ -131,10 +129,10 @@ impl KrillClient {
                 Ok(ApiResponse::RepoDetails(details))
             }
 
-            CaCommand::RepoState(handle) => {
-                let uri = format!("api/v1/cas/{}/repo/state", handle);
-                let state: CurrentRepoState = self.get_json(&uri).await?;
-                Ok(ApiResponse::RepoState(state))
+            CaCommand::RepoStatus(ca) => {
+                let uri = format!("api/v1/cas/{}/repo/status", ca);
+                let status: RepoStatus = self.get_json(&uri).await?;
+                Ok(ApiResponse::RepoStatus(status))
             }
 
             CaCommand::RepoUpdate(handle, update) => {
@@ -159,6 +157,12 @@ impl KrillClient {
                 let uri = format!("api/v1/cas/{}/parents/{}", handle, parent);
                 self.delete(&uri).await?;
                 Ok(ApiResponse::Empty)
+            }
+
+            CaCommand::ParentStatuses(handle) => {
+                let uri = format!("api/v1/cas/{}/parents", handle);
+                let statuses: ParentStatuses = self.get_json(&uri).await?;
+                Ok(ApiResponse::ParentStatuses(statuses))
             }
 
             CaCommand::MyParentCaContact(handle, parent) => {
@@ -212,22 +216,37 @@ impl KrillClient {
                 Ok(ApiResponse::Empty)
             }
 
+            CaCommand::RouteAuthorizationsTryUpdate(handle, updates) => {
+                let uri = format!("api/v1/cas/{}/routes/try", handle);
+                let advice_opt: Option<BgpAnalysisAdvice> = self.post_json_with_opt_response(&uri, updates).await?;
+                match advice_opt {
+                    None => Ok(ApiResponse::Empty),
+                    Some(advice) => Ok(ApiResponse::BgpAnalysisAdvice(advice)),
+                }
+            }
+
+            CaCommand::RouteAuthorizationsDryRunUpdate(handle, updates) => {
+                let uri = format!("api/v1/cas/{}/routes/analysis/dryrun", handle);
+                let report = self.post_json_with_response(&uri, updates).await?;
+                Ok(ApiResponse::BgpAnalysisFull(report))
+            }
+
             CaCommand::BgpAnalysisFull(handle) => {
                 let uri = format!("api/v1/cas/{}/routes/analysis/full", handle);
                 let report = self.get_json(&uri).await?;
                 Ok(ApiResponse::BgpAnalysisFull(report))
             }
 
-            CaCommand::BgpAnalysisAnnouncements(handle) => {
-                let uri = format!("api/v1/cas/{}/routes/analysis/full", handle);
-                let report: BgpAnalysisReport = self.get_json(&uri).await?;
-                Ok(ApiResponse::BgpAnalysisAnnouncements(report.into()))
-            }
+            CaCommand::BgpAnalysisSuggest(handle, resources) => {
+                let uri = format!("api/v1/cas/{}/routes/analysis/suggest", handle);
 
-            CaCommand::BgpAnalysisRoas(handle) => {
-                let uri = format!("api/v1/cas/{}/routes/analysis/full", handle);
-                let report: BgpAnalysisReport = self.get_json(&uri).await?;
-                Ok(ApiResponse::BgpAnalysisRoas(report.into()))
+                let suggestions = if let Some(resources) = resources {
+                    self.post_json_with_response(&uri, resources).await?
+                } else {
+                    self.get_json(&uri).await?
+                };
+
+                Ok(ApiResponse::BgpAnalysisSuggestions(suggestions))
             }
 
             CaCommand::Show(handle) => {
@@ -263,6 +282,43 @@ impl KrillClient {
                 }
             },
 
+            CaCommand::RtaList(ca) => {
+                let uri = format!("api/v1/cas/{}/rta/", ca);
+                let list = self.get_json(&uri).await?;
+                Ok(ApiResponse::RtaList(list))
+            }
+
+            CaCommand::RtaShow(ca, name, out) => {
+                let uri = format!("api/v1/cas/{}/rta/{}", ca, name);
+                let rta = self.get_json(&uri).await?;
+
+                match out {
+                    None => Ok(ApiResponse::Rta(rta)),
+                    Some(out) => {
+                        file::save(rta.as_ref(), &out)?;
+                        Ok(ApiResponse::Empty)
+                    }
+                }
+            }
+
+            CaCommand::RtaSign(ca, name, request) => {
+                let uri = format!("api/v1/cas/{}/rta/{}/sign", ca, name);
+                self.post_json(&uri, request).await?;
+                Ok(ApiResponse::Empty)
+            }
+
+            CaCommand::RtaMultiPrep(ca, name, resources) => {
+                let uri = format!("api/v1/cas/{}/rta/{}/multi/prep", ca, name);
+                let response = self.post_json_with_response(&uri, resources).await?;
+                Ok(ApiResponse::RtaMultiPrep(response))
+            }
+
+            CaCommand::RtaMultiCoSign(ca, name, rta) => {
+                let uri = format!("api/v1/cas/{}/rta/{}/multi/cosign", ca, name);
+                self.post_json(&uri, rta).await?;
+                Ok(ApiResponse::Empty)
+            }
+
             CaCommand::List => {
                 let cas = self.get_json("api/v1/cas").await?;
                 Ok(ApiResponse::CertAuths(cas))
@@ -286,9 +342,7 @@ impl KrillClient {
                 Ok(ApiResponse::RepoStats(stats))
             }
             PublishersCommand::AddPublisher(req) => {
-                let res = self
-                    .post_json_with_response("api/v1/publishers", req)
-                    .await?;
+                let res = self.post_json_with_response("api/v1/publishers", req).await?;
                 Ok(ApiResponse::Rfc8183RepositoryResponse(res))
             }
             PublishersCommand::RemovePublisher(handle) => {
@@ -317,10 +371,7 @@ impl KrillClient {
         let defaults = include_str!("../../defaults/krill.conf");
 
         let mut config = defaults.to_string();
-        config = config.replace(
-            "### auth_token =",
-            &format!("auth_token = \"{}\"", self.token),
-        );
+        config = config.replace("### auth_token =", &format!("auth_token = \"{}\"", self.token));
 
         config = config.replace(
             "### service_uri = \"https://localhost:3000/\"",
@@ -344,10 +395,7 @@ impl KrillClient {
         }
 
         if let Some(data_dir) = details.data_dir() {
-            config = config.replace(
-                "### data_dir = \"./data\"",
-                &format!("data_dir = \"{}\"", data_dir),
-            )
+            config = config.replace("### data_dir = \"./data\"", &format!("data_dir = \"{}\"", data_dir))
         }
 
         if let Some(log_file) = details.log_file() {
@@ -384,13 +432,20 @@ impl KrillClient {
             .map_err(Error::HttpClientError)
     }
 
-    async fn post_json_with_response<T: DeserializeOwned>(
+    async fn post_json_with_response<T: DeserializeOwned>(&self, uri: &str, data: impl Serialize) -> Result<T, Error> {
+        let uri = self.resolve_uri(uri);
+        httpclient::post_json_with_response(&uri, data, Some(&self.token))
+            .await
+            .map_err(Error::HttpClientError)
+    }
+
+    async fn post_json_with_opt_response<T: DeserializeOwned>(
         &self,
         uri: &str,
         data: impl Serialize,
-    ) -> Result<T, Error> {
+    ) -> Result<Option<T>, Error> {
         let uri = self.resolve_uri(uri);
-        httpclient::post_json_with_response(&uri, data, Some(&self.token))
+        httpclient::post_json_with_opt_response(&uri, data, Some(&self.token))
             .await
             .map_err(Error::HttpClientError)
     }
@@ -406,6 +461,7 @@ impl KrillClient {
 //------------ Error ---------------------------------------------------------
 
 #[derive(Debug, Display)]
+#[allow(clippy::large_enum_variant)]
 pub enum Error {
     #[display(fmt = "No valid command given, see --help")]
     MissingCommand,

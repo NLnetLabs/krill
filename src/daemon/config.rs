@@ -12,14 +12,25 @@ use serde::de;
 use serde::{Deserialize, Deserializer};
 #[cfg(unix)]
 use syslog::Facility;
-use toml;
 
 use rpki::uri;
 
 use crate::commons::api::Token;
-use crate::commons::util::ext_serde;
+use crate::commons::util::{ext_serde, AllowedUri};
 use crate::constants::*;
 use crate::daemon::http::tls_keys;
+
+lazy_static! {
+    pub static ref CONFIG: Config = {
+        match Config::create() {
+            Ok(config) => config,
+            Err(e) => {
+                eprintln!("{}", e);
+                ::std::process::exit(1);
+            }
+        }
+    };
+}
 
 //------------ ConfigDefaults ------------------------------------------------
 
@@ -38,14 +49,33 @@ impl ConfigDefaults {
     fn repo_enabled() -> bool {
         env::var(KRILL_ENV_REPO_ENABLED).is_ok()
     }
+
+    fn repo_retain_old_seconds() -> i64 {
+        if env::var(KRILL_ENV_TEST).is_ok() {
+            1
+        } else {
+            600
+        }
+    }
+
     fn use_ta() -> bool {
         env::var(KRILL_ENV_USE_TA).is_ok()
+    }
+    fn testbed_enabled() -> bool {
+        env::var(KRILL_ENV_TESTBED_ENABLED).is_ok()
     }
     fn https_mode() -> HttpsMode {
         HttpsMode::Generate
     }
     fn data_dir() -> PathBuf {
         PathBuf::from("./data")
+    }
+    fn archive_threshold_days() -> Option<i64> {
+        if Self::test_mode() {
+            Some(0)
+        } else {
+            None
+        }
     }
     fn rsync_base() -> uri::Rsync {
         uri::Rsync::from_str("rsync://localhost/repo/").unwrap()
@@ -55,7 +85,13 @@ impl ConfigDefaults {
     }
     fn log_level() -> LevelFilter {
         match env::var(KRILL_ENV_LOG_LEVEL) {
-            Ok(level) => LevelFilter::from_str(&level).unwrap(),
+            Ok(level) => match LevelFilter::from_str(&level) {
+                Ok(level) => level,
+                Err(_) => {
+                    eprintln!("Unrecognised value for log level in env var {}", KRILL_ENV_LOG_LEVEL);
+                    ::std::process::exit(1);
+                }
+            },
             _ => LevelFilter::Info,
         }
     }
@@ -90,8 +126,24 @@ impl ConfigDefaults {
         32 * 1024 * 1024 // 32MB (roughly 8000 issued certificates, so a key roll for nicbr and 100% uptake should be okay)
     }
 
+    fn rfc8181_log_dir() -> Option<PathBuf> {
+        if Self::test_mode() {
+            Some(PathBuf::from("./data/rfc8181_msgs"))
+        } else {
+            None
+        }
+    }
+
     fn post_limit_rfc6492() -> u64 {
         1024 * 1024 // 1MB (for ref. the NIC br cert is about 200kB)
+    }
+
+    fn rfc6492_log_dir() -> Option<PathBuf> {
+        if Self::test_mode() {
+            Some(PathBuf::from("./data/rfc6492_msgs"))
+        } else {
+            None
+        }
     }
 
     fn bgp_risdumps_enabled() -> bool {
@@ -104,6 +156,52 @@ impl ConfigDefaults {
 
     fn bgp_risdumps_v6_uri() -> String {
         "http://www.ris.ripe.net/dumps/riswhoisdump.IPv6.gz".to_string()
+    }
+
+    fn roa_aggregate_threshold() -> usize {
+        if let Ok(from_env) = env::var("KRILL_ROA_AGGREGATE_THRESHOLD") {
+            if let Ok(nr) = usize::from_str(&from_env) {
+                return nr;
+            }
+        }
+        100
+    }
+
+    fn roa_deaggregate_threshold() -> usize {
+        if let Ok(from_env) = env::var("KRILL_ROA_DEAGGREGATE_THRESHOLD") {
+            if let Ok(nr) = usize::from_str(&from_env) {
+                return nr;
+            }
+        }
+        90
+    }
+
+    fn timing_publish_valid_days() -> i64 {
+        7
+    }
+
+    fn timing_publish_next_hours() -> i64 {
+        24
+    }
+
+    fn timing_publish_hours_before_next() -> i64 {
+        8
+    }
+
+    fn timing_child_certificate_valid_weeks() -> i64 {
+        52
+    }
+
+    fn timing_child_certificate_reissue_weeks_before() -> i64 {
+        4
+    }
+
+    fn timing_roa_valid_weeks() -> i64 {
+        52
+    }
+
+    fn timing_roa_reissue_weeks_before() -> i64 {
+        4
     }
 }
 
@@ -131,11 +229,20 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::repo_enabled")]
     pub repo_enabled: bool,
 
+    #[serde(default = "ConfigDefaults::repo_retain_old_seconds")]
+    pub repo_retain_old_seconds: i64,
+
+    #[serde(default = "ConfigDefaults::testbed_enabled")]
+    pub testbed_enabled: bool,
+
     #[serde(default = "ConfigDefaults::https_mode")]
     https_mode: HttpsMode,
 
     #[serde(default = "ConfigDefaults::data_dir")]
     pub data_dir: PathBuf,
+
+    #[serde(default = "ConfigDefaults::archive_threshold_days")]
+    pub archive_threshold_days: Option<i64>,
 
     pub pid_file: Option<PathBuf>,
 
@@ -173,10 +280,14 @@ pub struct Config {
 
     #[serde(default = "ConfigDefaults::post_limit_rfc8181")]
     pub post_limit_rfc8181: u64,
+
+    #[serde(default = "ConfigDefaults::rfc8181_log_dir")]
     pub rfc8181_log_dir: Option<PathBuf>,
 
     #[serde(default = "ConfigDefaults::post_limit_rfc6492")]
     pub post_limit_rfc6492: u64,
+
+    #[serde(default = "ConfigDefaults::rfc6492_log_dir")]
     pub rfc6492_log_dir: Option<PathBuf>,
 
     // RIS BGP
@@ -186,6 +297,29 @@ pub struct Config {
     pub bgp_risdumps_v4_uri: String,
     #[serde(default = "ConfigDefaults::bgp_risdumps_v6_uri")]
     pub bgp_risdumps_v6_uri: String,
+
+    // ROA Aggregation per ASN
+    #[serde(default = "ConfigDefaults::roa_aggregate_threshold")]
+    pub roa_aggregate_threshold: usize,
+
+    #[serde(default = "ConfigDefaults::roa_deaggregate_threshold")]
+    pub roa_deaggregate_threshold: usize,
+
+    // Timing settings for publication and certificate / ROA (re-)issuance
+    #[serde(default = "ConfigDefaults::timing_publish_valid_days")]
+    pub timing_publish_valid_days: i64,
+    #[serde(default = "ConfigDefaults::timing_publish_next_hours")]
+    pub timing_publish_next_hours: i64,
+    #[serde(default = "ConfigDefaults::timing_publish_hours_before_next")]
+    pub timing_publish_hours_before_next: i64,
+    #[serde(default = "ConfigDefaults::timing_child_certificate_valid_weeks")]
+    pub timing_child_certificate_valid_weeks: i64,
+    #[serde(default = "ConfigDefaults::timing_child_certificate_reissue_weeks_before")]
+    pub timing_child_certificate_reissue_weeks_before: i64,
+    #[serde(default = "ConfigDefaults::timing_roa_valid_weeks")]
+    pub timing_roa_valid_weeks: i64,
+    #[serde(default = "ConfigDefaults::timing_roa_reissue_weeks_before")]
+    pub timing_roa_reissue_weeks_before: i64,
 }
 
 /// # Accessors
@@ -241,6 +375,14 @@ impl Config {
             Some(file) => file.clone(),
         }
     }
+
+    pub fn republish_hours(&self) -> i64 {
+        if self.timing_publish_hours_before_next < self.timing_publish_next_hours {
+            self.timing_publish_next_hours - self.timing_publish_hours_before_next
+        } else {
+            0
+        }
+    }
 }
 
 /// # Create
@@ -252,8 +394,11 @@ impl Config {
         let test_mode = true;
         let use_ta = true;
         let repo_enabled = true;
+        let repo_retain_old_seconds = 1;
+        let testbed_enabled = true;
         let https_mode = HttpsMode::Generate;
         let data_dir = data_dir.clone();
+        let archive_threshold_days = Some(0);
         let rsync_base = ConfigDefaults::rsync_base();
         let service_uri = ConfigDefaults::service_uri();
         let rrdp_service_uri = Some("https://localhost:3000/test-rrdp/".to_string());
@@ -282,6 +427,18 @@ impl Config {
         let bgp_risdumps_v4_uri = ConfigDefaults::bgp_risdumps_v4_uri();
         let bgp_risdumps_v6_uri = ConfigDefaults::bgp_risdumps_v6_uri();
 
+        let roa_aggregate_threshold = 3;
+        let roa_deaggregate_threshold = 2;
+
+        let timing_publish_valid_days = ConfigDefaults::timing_publish_valid_days();
+        let timing_publish_next_hours = ConfigDefaults::timing_publish_next_hours();
+        let timing_publish_hours_before_next = ConfigDefaults::timing_publish_hours_before_next();
+        let timing_child_certificate_valid_weeks = ConfigDefaults::timing_child_certificate_valid_weeks();
+        let timing_child_certificate_reissue_weeks_before =
+            ConfigDefaults::timing_child_certificate_reissue_weeks_before();
+        let timing_roa_valid_weeks = ConfigDefaults::timing_roa_valid_weeks();
+        let timing_roa_reissue_weeks_before = ConfigDefaults::timing_roa_reissue_weeks_before();
+
         Config {
             ip,
             port,
@@ -289,8 +446,11 @@ impl Config {
             test_mode,
             use_ta,
             repo_enabled,
+            repo_retain_old_seconds,
+            testbed_enabled,
             https_mode,
             data_dir,
+            archive_threshold_days,
             rsync_base,
             service_uri,
             rrdp_service_uri,
@@ -308,6 +468,15 @@ impl Config {
             bgp_risdumps_enabled,
             bgp_risdumps_v4_uri,
             bgp_risdumps_v6_uri,
+            roa_aggregate_threshold,
+            roa_deaggregate_threshold,
+            timing_publish_valid_days,
+            timing_publish_next_hours,
+            timing_publish_hours_before_next,
+            timing_child_certificate_valid_weeks,
+            timing_child_certificate_reissue_weeks_before,
+            timing_roa_valid_weeks,
+            timing_roa_reissue_weeks_before,
         }
     }
 
@@ -340,46 +509,43 @@ impl Config {
             )
             .get_matches();
 
-        let config_file = matches
-            .value_of("config")
-            .unwrap_or(KRILL_DEFAULT_CONFIG_FILE);
+        let config_file = matches.value_of("config").unwrap_or(KRILL_DEFAULT_CONFIG_FILE);
 
         config_file.to_string()
     }
 
     /// Creates the config (at startup). Panics in case of issues.
     pub fn create() -> Result<Self, ConfigError> {
-        let config_file = Self::get_config_filename();
+        if let Ok(test_dir) = env::var(KRILL_ENV_TEST_UNIT_DATA) {
+            let data_dir = PathBuf::from(test_dir);
+            Ok(Config::test(&data_dir))
+        } else {
+            let config_file = Self::get_config_filename();
 
-        let config = match Self::read_config(&config_file) {
-            Err(e) => {
-                if config_file == KRILL_DEFAULT_CONFIG_FILE {
-                    Err(ConfigError::other(
-                        "Cannot find config file. Please use --config to specify its location.",
-                    ))
-                } else {
-                    Err(ConfigError::Other(format!(
-                        "Error parsing config file: {}, error: {}",
-                        config_file, e
-                    )))
+            let config = match Self::read_config(&config_file) {
+                Err(e) => {
+                    if config_file == KRILL_DEFAULT_CONFIG_FILE {
+                        Err(ConfigError::other(
+                            "Cannot find config file. Please use --config to specify its location.",
+                        ))
+                    } else {
+                        Err(ConfigError::Other(format!(
+                            "Error parsing config file: {}, error: {}",
+                            config_file, e
+                        )))
+                    }
                 }
-            }
-            Ok(config) => {
-                config.init_logging()?;
-                info!(
-                    "{} uses configuration file: {}",
-                    KRILL_SERVER_APP, config_file
-                );
-                Ok(config)
-            }
-        }?;
-        config.verify().map_err(|e| {
-            ConfigError::Other(format!(
-                "Error parsing config file: {}, error: {}",
-                config_file, e
-            ))
-        })?;
-        Ok(config)
+                Ok(config) => {
+                    config.init_logging()?;
+                    info!("{} uses configuration file: {}", KRILL_SERVER_APP, config_file);
+                    Ok(config)
+                }
+            }?;
+            config
+                .verify()
+                .map_err(|e| ConfigError::Other(format!("Error parsing config file: {}, error: {}", config_file, e)))?;
+            Ok(config)
+        }
     }
 
     pub fn verify(&self) -> Result<(), ConfigError> {
@@ -394,27 +560,13 @@ impl Config {
             env::set_var(KRILL_ENV_TEST, "1");
         }
 
-        if !self.test_mode
-            && self.repo_enabled
-            && self
-                .rsync_base
-                .to_string()
-                .to_lowercase()
-                .starts_with("rsync://localhost")
-        {
+        if self.repo_enabled && !self.rsync_base.allowed_uri(self.test_mode) {
             return Err(ConfigError::other(
                 "Cannot use localhost in rsync base unless test mode is used (KRILL_TEST)",
             ));
         }
 
-        if !self.test_mode
-            && self.repo_enabled
-            && self
-                .rrdp_service_uri()
-                .to_string()
-                .to_lowercase()
-                .starts_with("https://localhost")
-        {
+        if self.repo_enabled && !self.rrdp_service_uri().allowed_uri(self.test_mode) {
             return Err(ConfigError::other(
                 "Cannot use localhost in RRDP service URI unless test mode is used (KRILL_TEST)",
             ));
@@ -427,12 +579,13 @@ impl Config {
         if !self.service_uri.ends_with('/') {
             return Err(ConfigError::other("service URI must end with '/'"));
         } else {
-            uri::Https::from_str(&self.service_uri).map_err(|_| {
-                ConfigError::Other(format!("Invalid service uri: {}", self.service_uri))
-            })?;
+            uri::Https::from_str(&self.service_uri)
+                .map_err(|_| ConfigError::Other(format!("Invalid service uri: {}", self.service_uri)))?;
 
             if self.service_uri.as_str().matches('/').count() != 3 {
-                return Err(ConfigError::other("Service URI MUST specify a host name only, e.g. https://rpki.example.com:3000/"));
+                return Err(ConfigError::other(
+                    "Service URI MUST specify a host name only, e.g. https://rpki.example.com:3000/",
+                ));
             }
         }
 
@@ -441,8 +594,61 @@ impl Config {
         }
 
         if self.use_ta && !self.repo_enabled {
+            return Err(ConfigError::other("Cannot use embedded TA without embedded repository"));
+        }
+
+        if self.testbed_enabled && !self.use_ta {
+            return Err(ConfigError::other("Cannot use testedbed without embedded TA"));
+        }
+
+        if self.timing_publish_next_hours < 2 {
+            return Err(ConfigError::other("timing_publish_next_hours must be at least 2"));
+        }
+
+        if self.timing_publish_hours_before_next < 1 {
             return Err(ConfigError::other(
-                "Cannot use embedded TA without embedded repository",
+                "timing_publish_hours_before_next must be at least 1",
+            ));
+        }
+
+        if self.timing_publish_hours_before_next >= self.timing_publish_next_hours {
+            return Err(ConfigError::other(
+                "timing_publish_hours_before_next must be smaller than timing_publish_hours",
+            ));
+        }
+
+        if self.timing_publish_valid_days < 1 || self.timing_publish_valid_days < (self.timing_publish_next_hours / 24)
+        {
+            return Err(ConfigError::other("timing_publish_valid_days must be 1 or bigger, and must be at least as long as timing_publish_next_hours"));
+        }
+
+        if self.timing_child_certificate_valid_weeks < 2 {
+            return Err(ConfigError::other(
+                "timing_child_certificate_valid_weeks must be at least 2",
+            ));
+        }
+
+        if self.timing_child_certificate_reissue_weeks_before < 1 {
+            return Err(ConfigError::other(
+                "timing_child_certificate_reissue_weeks_before must be at least 1",
+            ));
+        }
+
+        if self.timing_child_certificate_reissue_weeks_before >= self.timing_child_certificate_valid_weeks {
+            return Err(ConfigError::other("timing_child_certificate_reissue_weeks_before must be smaller than timing_child_certificate_valid_weeks"));
+        }
+
+        if self.timing_roa_valid_weeks < 2 {
+            return Err(ConfigError::other("timing_roa_valid_weeks must be at least 2"));
+        }
+
+        if self.timing_roa_reissue_weeks_before < 1 {
+            return Err(ConfigError::other("timing_roa_reissue_weeks_before must be at least 1"));
+        }
+
+        if self.timing_roa_reissue_weeks_before >= self.timing_roa_valid_weeks {
+            return Err(ConfigError::other(
+                "timing_roa_reissue_weeks_before must be smaller than timing_roa_valid_week",
             ));
         }
 
@@ -543,8 +749,7 @@ impl Config {
             _ => LevelFilter::Debug, // more becomes too noisy
         };
 
-        let show_target =
-            self.log_level == LevelFilter::Trace || self.log_level == LevelFilter::Debug;
+        let show_target = self.log_level == LevelFilter::Trace || self.log_level == LevelFilter::Debug;
         fern::Dispatch::new()
             .format(move |out, message, record| {
                 if show_target {
@@ -571,6 +776,8 @@ impl Config {
             .level_for("reqwest", framework_level)
             .level_for("tokio_reactor", framework_level)
             .level_for("want", framework_level)
+            .level_for("tracing::span", framework_level)
+            .level_for("h2", framework_level)
             .level_for("krill::commons::eventsourcing", krill_framework_level)
             .level_for("krill::commons::util::file", krill_framework_level)
     }
@@ -685,5 +892,21 @@ mod tests {
         let c = Config::read_config("./defaults/krill.conf").unwrap();
         let expected_socket_addr: SocketAddr = ([127, 0, 0, 1], 3000).into();
         assert_eq!(c.socket_addr(), expected_socket_addr);
+    }
+
+    #[test]
+    fn testbed_enable_should_require_use_ta() {
+        use std::env;
+        env::set_var(KRILL_ENV_AUTH_TOKEN, "secret");
+        env::set_var(KRILL_ENV_REPO_ENABLED, "1");
+        env::set_var(KRILL_ENV_TESTBED_ENABLED, "1");
+
+        let c = Config::read_config("./defaults/krill.conf").unwrap();
+        assert!(c.verify().is_err());
+
+        env::set_var(KRILL_ENV_USE_TA, "1");
+
+        let c = Config::read_config("./defaults/krill.conf").unwrap();
+        assert!(c.verify().is_ok());
     }
 }

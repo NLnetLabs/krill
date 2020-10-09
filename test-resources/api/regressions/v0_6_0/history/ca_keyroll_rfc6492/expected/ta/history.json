@@ -95,7 +95,7 @@
       "version": 5,
       "sequence": 5,
       "summary": {
-        "msg": "Issue certificate to child 'rfc6492' for key '5D3CDDC79F0F00FD59E1312472F996057878CF76",
+        "msg": "Issue certificate to child 'rfc6492' for key '5D3CDDC79F0F00FD59E1312472F996057878CF76'",
         "label": "cmd-ca-child-certify",
         "args": {
           "child": "rfc6492",
@@ -119,7 +119,7 @@
       "version": 8,
       "sequence": 6,
       "summary": {
-        "msg": "Issue certificate to child 'rfc6492' for key '708ED06424A43B08DF47839D995474F864321970",
+        "msg": "Issue certificate to child 'rfc6492' for key '708ED06424A43B08DF47839D995474F864321970'",
         "label": "cmd-ca-child-certify",
         "args": {
           "key": "708ED06424A43B08DF47839D995474F864321970",

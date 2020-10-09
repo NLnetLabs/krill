@@ -12,12 +12,13 @@ use rpki::sigobj::SignedObjectBuilder;
 use rpki::x509::{Serial, Time, Validity};
 
 use crate::commons::api::{
-    AddedObject, CurrentObject, HexEncodedHash, IssuedCert, ObjectName, ObjectsDelta, RcvdCert,
-    RepoInfo, Revocation, Revocations, RevocationsDelta, UpdatedObject, WithdrawnObject,
+    AddedObject, CurrentObject, HexEncodedHash, IssuedCert, ObjectName, ObjectsDelta, RcvdCert, RepoInfo, Revocation,
+    Revocations, RevocationsDelta, UpdatedObject, WithdrawnObject,
 };
+use crate::commons::crypto::KrillSigner;
 use crate::commons::KrillResult;
-use crate::constants::{PUBLISH_NEXT_HOURS, PUBLISH_VALID_DAYS};
-use crate::daemon::ca::{self, RoaInfo, RouteAuthorization, Signer};
+use crate::daemon::ca::{RoaInfo, RouteAuthorization};
+use crate::daemon::config::CONFIG;
 
 //------------ AddedOrUpdated ----------------------------------------------
 
@@ -163,22 +164,15 @@ pub struct CurrentObjectSet {
 }
 
 impl CurrentObjectSet {
-    pub fn create<S: Signer>(
+    pub fn create(
         signing_cert: &RcvdCert,
         repo_info: &RepoInfo,
         name_space: &str,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<Self> {
         let number = 1;
         let revocations = Revocations::default();
-        let (crl_info, _) = CrlBuilder::build(
-            revocations.clone(),
-            vec![],
-            number,
-            None,
-            signing_cert,
-            signer,
-        )?;
+        let (crl_info, _) = CrlBuilder::build(revocations.clone(), vec![], number, None, signing_cert, signer)?;
 
         let manifest_info = ManifestBuilder::with_crl_only(&crl_info).build(
             signing_cert,
@@ -231,13 +225,13 @@ impl CurrentObjectSet {
 pub struct CrlBuilder {}
 
 impl CrlBuilder {
-    pub fn build<S: Signer>(
+    pub fn build(
         mut revocations: Revocations,
         new_revocations: Vec<Revocation>,
         number: u64,
         old: Option<HexEncodedHash>,
         signing_cert: &RcvdCert,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<(CrlInfo, RevocationsDelta)> {
         let signing_key = signing_cert.cert().subject_public_key_info();
 
@@ -254,7 +248,7 @@ impl CrlBuilder {
         }
 
         let this_update = Time::five_minutes_ago();
-        let next_update = Time::now() + Duration::hours(PUBLISH_NEXT_HOURS);
+        let next_update = Time::now() + Duration::hours(CONFIG.timing_publish_next_hours);
         let serial_number = Serial::from(number);
 
         let mut crl = TbsCertList::new(
@@ -268,7 +262,7 @@ impl CrlBuilder {
         );
         crl.set_issuer(signing_cert.cert().subject().clone());
 
-        let crl = crl.into_crl(signer, &aki).map_err(ca::Error::signer)?;
+        let crl = signer.sign_crl(crl, &aki)?;
 
         let crl_info = CrlInfo::new(&crl, old);
 
@@ -276,11 +270,13 @@ impl CrlBuilder {
     }
 }
 
+#[allow(clippy::mutable_key_type)]
 pub struct ManifestBuilder {
     entries: HashMap<Bytes, Bytes>,
 }
 
 impl ManifestBuilder {
+    #[allow(clippy::mutable_key_type)]
     pub fn with_crl_only(crl_info: &CrlInfo) -> Self {
         let mut entries: HashMap<Bytes, Bytes> = HashMap::new();
 
@@ -298,6 +294,7 @@ impl ManifestBuilder {
         roas: impl Iterator<Item = (&'a RouteAuthorization, &'a RoaInfo)>,
         delta: &ObjectsDelta,
     ) -> Self {
+        #[allow(clippy::mutable_key_type)]
         let mut entries: HashMap<Bytes, Bytes> = HashMap::new();
 
         // Add the *new* CRL
@@ -350,14 +347,14 @@ impl ManifestBuilder {
         ManifestBuilder { entries }
     }
 
-    pub fn build<S: Signer>(
+    pub fn build(
         self,
         signing_cert: &RcvdCert,
         repo_info: &RepoInfo,
         name_space: &str,
         number: u64,
         old: Option<HexEncodedHash>,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<ManifestInfo> {
         let signing_key = signing_cert.cert().subject_public_key_info();
 
@@ -372,8 +369,8 @@ impl ManifestBuilder {
 
         let this_update = Time::five_minutes_ago();
         let now = Time::now();
-        let next_update = Time::now() + Duration::hours(PUBLISH_NEXT_HOURS);
-        let valid_until = Time::now() + Duration::days(PUBLISH_VALID_DAYS);
+        let next_update = Time::now() + Duration::hours(CONFIG.timing_publish_next_hours);
+        let valid_until = Time::now() + Duration::days(CONFIG.timing_publish_valid_days);
 
         let entries = self.entries.iter().map(|(k, v)| FileAndHash::new(k, v));
 
@@ -386,7 +383,7 @@ impl ManifestBuilder {
                 entries,
             );
             let mut object_builder = SignedObjectBuilder::new(
-                Serial::random(signer).map_err(ca::Error::signer)?,
+                signer.random_serial()?,
                 Validity::new(this_update, valid_until),
                 crl_uri,
                 aia.clone(),
@@ -395,9 +392,7 @@ impl ManifestBuilder {
             object_builder.set_issuer(Some(signing_cert.cert().subject().clone()));
             object_builder.set_signing_time(Some(now));
 
-            mft_content
-                .into_manifest(object_builder, signer, &aki)
-                .map_err(ca::Error::signer)?
+            signer.sign_manifest(mft_content, object_builder, &aki)?
         };
 
         Ok(ManifestInfo::new(&manifest, old))

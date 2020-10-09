@@ -139,7 +139,7 @@
       "version": 8,
       "sequence": 7,
       "summary": {
-        "msg": "Issue certificate to child 'CA3' for key '96BE452BC9A7092E4156D96DB8CFC7C89094FE5A",
+        "msg": "Issue certificate to child 'CA3' for key '96BE452BC9A7092E4156D96DB8CFC7C89094FE5A'",
         "label": "cmd-ca-child-certify",
         "args": {
           "child": "CA3",

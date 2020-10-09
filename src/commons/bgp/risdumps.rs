@@ -28,19 +28,13 @@ impl RisDumpLoader {
     }
 
     pub async fn download_updates(&self) -> Result<Vec<Announcement>, RisDumpError> {
-        let v4_bytes: Bytes = reqwest::get(&self.bgp_risdumps_v4_uri)
-            .await?
-            .bytes()
-            .await?;
+        let v4_bytes: Bytes = reqwest::get(&self.bgp_risdumps_v4_uri).await?.bytes().await?;
 
         let v4_bytes = Self::gunzip(v4_bytes)?;
 
         let mut res = Self::parse_dump(v4_bytes.as_slice())?;
 
-        let v6_bytes: Bytes = reqwest::get(&self.bgp_risdumps_v6_uri)
-            .await?
-            .bytes()
-            .await?;
+        let v6_bytes: Bytes = reqwest::get(&self.bgp_risdumps_v6_uri).await?.bytes().await?;
 
         let v6_bytes = Self::gunzip(v6_bytes)?;
 

@@ -5,25 +5,22 @@ use serde::{Deserialize, Serialize};
 
 use rpki::cert::Cert;
 use rpki::crypto::KeyIdentifier;
-use rpki::x509::Time;
+use rpki::x509::{Time, Validity};
 
 use crate::commons::api::rrdp::PublishElement;
 use crate::commons::api::Base64;
 use crate::commons::api::{
-    AddedObject, CurrentObject, CurrentObjects, EntitlementClass, HexEncodedHash, IssuanceRequest,
-    IssuedCert, ObjectName, ObjectsDelta, ParentHandle, RcvdCert, ReplacedObject, RepoInfo,
-    RequestResourceLimit, ResourceClassInfo, ResourceClassName, ResourceSet, Revocation,
-    RevocationRequest, RevokedObject, UpdatedObject, WithdrawnObject,
+    AddedObject, CurrentObject, CurrentObjects, EntitlementClass, HexEncodedHash, IssuanceRequest, IssuedCert,
+    ObjectName, ObjectsDelta, ParentHandle, RcvdCert, ReplacedObject, RepoInfo, RequestResourceLimit,
+    ResourceClassInfo, ResourceClassName, ResourceSet, Revocation, RevocationRequest, UpdatedObject, WithdrawnObject,
 };
+use crate::commons::crypto::{CsrInfo, KrillSigner, SignSupport};
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
-use crate::constants::ROA_CERTIFICATE_REISSUE_WEEKS;
 use crate::daemon::ca::events::{ChildCertificateUpdates, RoaUpdates};
-use crate::daemon::ca::signing::CsrInfo;
 use crate::daemon::ca::{
-    self, ta_handle, AddedOrUpdated, CertifiedKey, ChildCertificates, CrlBuilder, CurrentKey,
-    CurrentObjectSetDelta, EvtDet, KeyState, ManifestBuilder, NewKey, OldKey, PendingKey, RoaInfo,
-    Roas, RouteAuthorization, SignSupport, Signer,
+    self, ta_handle, AddedOrUpdated, CertifiedKey, ChildCertificates, CrlBuilder, CurrentKey, CurrentObjectSetDelta,
+    EvtDet, KeyState, ManifestBuilder, NewKey, OldKey, PendingKey, Roas, Routes,
 };
 
 //------------ ResourceClass -----------------------------------------------
@@ -148,11 +145,7 @@ impl ResourceClass {
     }
 
     pub fn current_objects(&self) -> CurrentObjects {
-        let mut current_objects = CurrentObjects::default();
-
-        for roa_info in self.roas.current() {
-            current_objects.insert(roa_info.name().clone(), roa_info.object().clone());
-        }
+        let mut current_objects = self.roas.current_objects();
 
         for issued in self.certificates.current() {
             let cert = issued.cert();
@@ -204,21 +197,21 @@ impl ResourceClass {
 ///
 impl ResourceClass {
     /// Returns event details for receiving the certificate.
-    pub fn update_received_cert<S: Signer>(
+    pub fn update_received_cert(
         &self,
         rcvd_cert: RcvdCert,
         repo_info: &RepoInfo,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<Vec<EvtDet>> {
         // If this is for a pending key, then we need to promote this key
 
         let rcvd_cert_ki = rcvd_cert.cert().subject_key_identifier();
 
-        fn create_active_key_and_delta<S: Signer>(
+        fn create_active_key_and_delta(
             rcvd_cert: RcvdCert,
             repo_info: &RepoInfo,
             name_space: &str,
-            signer: &S,
+            signer: &KrillSigner,
         ) -> KrillResult<(CertifiedKey, ObjectsDelta)> {
             let mut delta = ObjectsDelta::new(rcvd_cert.ca_repository().clone());
             let active_key = CertifiedKey::create(rcvd_cert, repo_info, name_space, signer)?;
@@ -240,35 +233,17 @@ impl ResourceClass {
                 if rcvd_cert_ki != pending.key_id() {
                     Err(Error::KeyUseNoMatch(rcvd_cert_ki))
                 } else {
-                    let (active_key, delta) = create_active_key_and_delta(
-                        rcvd_cert,
-                        repo_info,
-                        self.name_space(),
-                        signer,
-                    )?;
-                    Ok(vec![EvtDet::KeyPendingToActive(
-                        self.name.clone(),
-                        active_key,
-                        delta,
-                    )])
+                    let (active_key, delta) =
+                        create_active_key_and_delta(rcvd_cert, repo_info, self.name_space(), signer)?;
+                    Ok(vec![EvtDet::KeyPendingToActive(self.name.clone(), active_key, delta)])
                 }
             }
-            KeyState::Active(current) => {
-                self.update_rcvd_cert_current(current, rcvd_cert, repo_info, signer)
-            }
+            KeyState::Active(current) => self.update_rcvd_cert_current(current, rcvd_cert, repo_info, signer),
             KeyState::RollPending(pending, current) => {
                 if rcvd_cert_ki == pending.key_id() {
-                    let (active_key, delta) = create_active_key_and_delta(
-                        rcvd_cert,
-                        repo_info,
-                        self.name_space(),
-                        signer,
-                    )?;
-                    Ok(vec![EvtDet::KeyPendingToNew(
-                        self.name.clone(),
-                        active_key,
-                        delta,
-                    )])
+                    let (active_key, delta) =
+                        create_active_key_and_delta(rcvd_cert, repo_info, self.name_space(), signer)?;
+                    Ok(vec![EvtDet::KeyPendingToNew(self.name.clone(), active_key, delta)])
                 } else {
                     self.update_rcvd_cert_current(current, rcvd_cert, repo_info, signer)
                 }
@@ -291,12 +266,12 @@ impl ResourceClass {
         }
     }
 
-    fn update_rcvd_cert_current<S: Signer>(
+    fn update_rcvd_cert_current(
         &self,
         current: &CurrentKey,
         rcvd_cert: RcvdCert,
         repo_info: &RepoInfo,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<Vec<EvtDet>> {
         let rcvd_cert_ki = rcvd_cert.cert().subject_key_identifier();
         if rcvd_cert_ki != current.key_id() {
@@ -306,22 +281,11 @@ impl ResourceClass {
         let rcvd_resources = rcvd_cert.resources().clone();
 
         let mut res = vec![];
-        res.push(EvtDet::CertificateReceived(
-            self.name.clone(),
-            rcvd_cert_ki,
-            rcvd_cert,
-        ));
+        res.push(EvtDet::CertificateReceived(self.name.clone(), rcvd_cert_ki, rcvd_cert));
 
         if &rcvd_resources != current.incoming_cert().resources() {
             let publish_mode = PublishMode::UpdatedResources(rcvd_resources);
-            let authorizations: Vec<RouteAuthorization> =
-                self.roas.authorizations().cloned().collect();
-            res.append(&mut self.republish(
-                authorizations.as_slice(),
-                repo_info,
-                &publish_mode,
-                signer,
-            )?)
+            res.append(&mut self.republish(repo_info, &publish_mode, signer)?)
         }
 
         Ok(res)
@@ -333,33 +297,20 @@ impl ResourceClass {
     /// can happen in corner cases where re-initialisation of Krill as a child
     /// is done without proper revocation at the parent, or as is the case with
     /// ARIN - Krill is sometimes told to just drop all resources.
-    pub fn make_entitlement_events<S: Signer>(
+    pub fn make_entitlement_events(
         &self,
         entitlement: &EntitlementClass,
         base_repo: &RepoInfo,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<Vec<EvtDet>> {
-        self.key_state.make_entitlement_events(
-            self.name.clone(),
-            entitlement,
-            base_repo,
-            &self.name_space,
-            signer,
-        )
+        self.key_state
+            .make_entitlement_events(self.name.clone(), entitlement, base_repo, &self.name_space, signer)
     }
 
     /// Request new certificates for all keys when the base repo changes.
-    pub fn make_request_events_new_repo<S: Signer>(
-        &self,
-        base_repo: &RepoInfo,
-        signer: &S,
-    ) -> KrillResult<Vec<EvtDet>> {
-        self.key_state.request_certs_new_repo(
-            self.name.clone(),
-            base_repo,
-            &self.name_space,
-            signer,
-        )
+    pub fn make_request_events_new_repo(&self, base_repo: &RepoInfo, signer: &KrillSigner) -> KrillResult<Vec<EvtDet>> {
+        self.key_state
+            .request_certs_new_repo(self.name.clone(), base_repo, &self.name_space, signer)
     }
 
     /// This function returns all current certificate requests.
@@ -386,13 +337,13 @@ impl ResourceClass {
     /// correct key as well, i.e. when activating a new key objects will
     /// be re-published and updated in terms of publication, but will only
     /// be revoked under the old key.
-    pub fn publish_objects<S: Signer>(
+    pub fn publish_objects(
         &self,
         repo_info: &RepoInfo,
         objects_delta: ObjectsDelta,
         new_revocations: Vec<Revocation>,
         mode: &PublishMode,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<EvtDet> {
         let mut key_pub_map = HashMap::new();
 
@@ -414,16 +365,10 @@ impl ResourceClass {
         };
 
         let publish_key_delta = self
-            .make_current_set_delta(
-                publish_key,
-                repo_info,
-                objects_delta,
-                publish_key_revocations,
-                signer,
-            )
+            .make_current_set_delta(publish_key, repo_info, objects_delta, publish_key_revocations, signer)
             .map_err(Error::signer)?;
 
-        key_pub_map.insert(publish_key.key_id().clone(), publish_key_delta);
+        key_pub_map.insert(*publish_key.key_id(), publish_key_delta);
 
         if let Some(other_key) = other_key_opt {
             let ns = self.name_space();
@@ -433,7 +378,7 @@ impl ResourceClass {
                 .make_current_set_delta(other_key, repo_info, delta, other_key_revocations, signer)
                 .map_err(ca::Error::signer)?;
 
-            key_pub_map.insert(other_key.key_id().clone(), other_delta);
+            key_pub_map.insert(*other_key.key_id(), other_delta);
         }
 
         Ok(EvtDet::ObjectSetUpdated(self.name.clone(), key_pub_map))
@@ -454,12 +399,11 @@ impl ResourceClass {
 
     /// Republish all keys in this class (that want it). Also update
     /// ROAs as needed.
-    pub fn republish<S: Signer>(
+    pub fn republish(
         &self,
-        authorizations: &[RouteAuthorization],
         repo_info: &RepoInfo,
         mode: &PublishMode,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<Vec<EvtDet>> {
         let mut res = vec![];
 
@@ -467,7 +411,13 @@ impl ResourceClass {
         let mut delta = ObjectsDelta::new(repo_info.ca_repository(ns));
         let mut revocations = vec![];
 
-        let roa_updates = self.update_roas(authorizations, mode, signer)?;
+        let roa_updates = match mode {
+            PublishMode::Normal => self.renew_roas(signer),
+            PublishMode::KeyRollActivation => self.active_key_roas(signer),
+            PublishMode::NewRepo(info) => self.migrate_roas(info, signer),
+            PublishMode::UpdatedResources(resources) => self.shrink_roas(resources, signer),
+        }?;
+
         if roa_updates.contains_changes() {
             for added in roa_updates.added().into_iter() {
                 delta.add(added);
@@ -488,9 +438,7 @@ impl ResourceClass {
             for issued in child_cert_updates.issued() {
                 match issued.replaces() {
                     None => delta.add(AddedObject::from(issued.cert())),
-                    Some(old) => {
-                        delta.update(UpdatedObject::for_cert(issued.cert(), old.hash().clone()))
-                    }
+                    Some(old) => delta.update(UpdatedObject::for_cert(issued.cert(), old.hash().clone())),
                 }
             }
             for key in child_cert_updates.removed() {
@@ -499,10 +447,7 @@ impl ResourceClass {
                     revocations.push(Revocation::from(issued.cert()));
                 }
             }
-            res.push(EvtDet::ChildCertificatesUpdated(
-                self.name.clone(),
-                child_cert_updates,
-            ));
+            res.push(EvtDet::ChildCertificatesUpdated(self.name.clone(), child_cert_updates));
         }
 
         if !delta.is_empty() || !revocations.is_empty() || self.needs_publication(mode) {
@@ -514,12 +459,12 @@ impl ResourceClass {
 
     /// Create a publish event details including the revocations, update, withdrawals needed
     /// for updating child certificates.
-    pub fn republish_certs<S: Signer>(
+    pub fn republish_certs(
         &self,
         issued_certs: &[&IssuedCert],
         removed_certs: &[&Cert],
         repo_info: &RepoInfo,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<HashMap<KeyIdentifier, CurrentObjectSetDelta>> {
         let issuing_key = self.get_current_key()?;
         let name_space = self.name_space();
@@ -543,10 +488,7 @@ impl ResourceClass {
         for issued in issued_certs {
             match issued.replaces() {
                 None => objects_delta.add(AddedObject::from(issued.cert())),
-                Some(replaced) => objects_delta.update(UpdatedObject::for_cert(
-                    issued.cert(),
-                    replaced.hash().clone(),
-                )),
+                Some(replaced) => objects_delta.update(UpdatedObject::for_cert(issued.cert(), replaced.hash().clone())),
             }
         }
 
@@ -555,17 +497,17 @@ impl ResourceClass {
             .map_err(Error::signer)?;
 
         let mut res = HashMap::new();
-        res.insert(issuing_key.key_id().clone(), set_delta);
+        res.insert(*issuing_key.key_id(), set_delta);
         Ok(res)
     }
 
-    fn make_current_set_delta<S: Signer>(
+    fn make_current_set_delta(
         &self,
         signing_key: &CertifiedKey,
         repo_info: &RepoInfo,
         mut objects_delta: ObjectsDelta,
         mut new_revocations: Vec<Revocation>,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<CurrentObjectSetDelta> {
         let signing_cert = signing_key.incoming_cert();
         let current_set = signing_key.current_set();
@@ -632,12 +574,11 @@ impl ResourceClass {
         let ns = self.name_space();
 
         // ROAs
-        for info in self.roas.current() {
-            let base64 = info.object().content().clone();
-            let object_name = info.name().clone();
-            let uri = base_repo.resolve(ns, object_name.as_str());
-            res.push(PublishElement::new(base64, uri));
+        let roas = self.roas.current_objects();
+        for p in roas.publish(base_repo, ns) {
+            res.push(p.into());
         }
+
         // Certs
         for cert in self.certificates.current() {
             let base64 = Base64::from_content(cert.to_captured().as_slice());
@@ -686,7 +627,7 @@ impl ResourceClass {
     }
 
     /// Returns revocation requests for all certified keys in this resource class.
-    pub fn revoke<S: Signer>(&self, signer: &S) -> KrillResult<Vec<RevocationRequest>> {
+    pub fn revoke(&self, signer: &KrillSigner) -> KrillResult<Vec<RevocationRequest>> {
         self.key_state.revoke(self.parent_rc_name.clone(), signer)
     }
 }
@@ -775,11 +716,11 @@ impl ResourceClass {
     }
 
     /// Initiate a key roll
-    pub fn keyroll_initiate<S: Signer>(
+    pub fn keyroll_initiate(
         &self,
         base_repo: &RepoInfo,
         duration: Duration,
-        signer: &mut S,
+        signer: &KrillSigner,
     ) -> KrillResult<Vec<EvtDet>> {
         if self.last_key_change + duration > Time::now() {
             return Ok(vec![]);
@@ -795,11 +736,11 @@ impl ResourceClass {
     }
 
     /// Activate a new key, if it's been longer than the staging period.
-    pub fn keyroll_activate<S: Signer>(
+    pub fn keyroll_activate(
         &self,
         repo_info: &RepoInfo,
         staging: Duration,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<Vec<EvtDet>> {
         if !self.key_state.has_new_key() || self.last_key_change + staging > Time::now() {
             return Ok(vec![]);
@@ -807,20 +748,12 @@ impl ResourceClass {
 
         let mut res = vec![];
 
-        let authorizations: Vec<RouteAuthorization> = self.roas.authorizations().cloned().collect();
+        res.push(
+            self.key_state
+                .keyroll_activate(self.name.clone(), self.parent_rc_name.clone(), signer)?,
+        );
 
-        res.push(self.key_state.keyroll_activate(
-            self.name.clone(),
-            self.parent_rc_name.clone(),
-            signer,
-        )?);
-
-        res.append(&mut self.republish(
-            authorizations.as_slice(),
-            repo_info,
-            &PublishMode::KeyRollActivation,
-            signer,
-        )?);
+        res.append(&mut self.republish(repo_info, &PublishMode::KeyRollActivation, signer)?);
 
         Ok(res)
     }
@@ -829,8 +762,7 @@ impl ResourceClass {
     pub fn keyroll_finish(&self, base_repo: &RepoInfo) -> KrillResult<EvtDet> {
         match &self.key_state {
             KeyState::RollOld(_current, old) => {
-                let mut objects_delta =
-                    ObjectsDelta::new(base_repo.ca_repository(self.name_space()));
+                let mut objects_delta = ObjectsDelta::new(base_repo.ca_repository(self.name_space()));
 
                 let crl_info = old.current_set().crl_info();
                 objects_delta.withdraw(crl_info.withdraw());
@@ -857,56 +789,45 @@ impl ResourceClass {
     ///
     /// Note that this certificate still needs to be added to this RC by
     /// calling the update_certs function.
-    pub fn issue_cert<S: Signer>(
+    pub fn issue_cert(
         &self,
         csr: CsrInfo,
         child_resources: &ResourceSet,
         limit: RequestResourceLimit,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<IssuedCert> {
         let signing_key = self.get_current_key()?;
         let parent_resources = signing_key.incoming_cert().resources();
         let resources = parent_resources.intersection(child_resources);
-        let replaces = self
-            .certificates
-            .get(&csr.key_id())
-            .map(ReplacedObject::from);
+        let replaces = self.certificates.get(&csr.key_id()).map(ReplacedObject::from);
 
-        let issued =
-            SignSupport::make_issued_cert(csr, &resources, limit, replaces, signing_key, signer)?;
+        let issued = SignSupport::make_issued_cert(csr, &resources, limit, replaces, signing_key, signer)?;
 
         Ok(issued)
     }
 
-    fn re_issue<S: Signer>(
+    fn re_issue(
         &self,
         previous: &IssuedCert,
         updated_resources: Option<ResourceSet>,
         signing_key: &CertifiedKey,
         csr_info_opt: Option<CsrInfo>,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<IssuedCert> {
         let (_uri, limit, resource_set, cert) = previous.clone().unpack();
         let csr = csr_info_opt.unwrap_or_else(|| CsrInfo::from(&cert));
         let resource_set = updated_resources.unwrap_or(resource_set);
         let replaced = ReplacedObject::new(Revocation::from(&cert), HexEncodedHash::from(&cert));
 
-        let re_issued = SignSupport::make_issued_cert(
-            csr,
-            &resource_set,
-            limit,
-            Some(replaced),
-            signing_key,
-            signer,
-        )?;
+        let re_issued = SignSupport::make_issued_cert(csr, &resource_set, limit, Some(replaced), signing_key, signer)?;
 
         Ok(re_issued)
     }
 
-    fn update_child_certificates<S: Signer>(
+    fn update_child_certificates(
         &self,
         mode: &PublishMode,
-        signer: &S,
+        signer: &KrillSigner,
     ) -> KrillResult<ChildCertificateUpdates> {
         let mut updates = ChildCertificateUpdates::default();
 
@@ -934,13 +855,7 @@ impl ResourceClass {
                         updates.remove(issued.subject_key_identifier());
                     } else {
                         // re-issue
-                        let re_issued = self.re_issue(
-                            issued,
-                            Some(remaining_resources),
-                            signing_key,
-                            None,
-                            signer,
-                        )?;
+                        let re_issued = self.re_issue(issued, Some(remaining_resources), signing_key, None, signer)?;
                         updates.issue(re_issued);
                     }
                 }
@@ -960,8 +875,7 @@ impl ResourceClass {
                         issued.subject_public_key_info().clone(),
                     );
 
-                    let re_issued =
-                        self.re_issue(issued, None, signing_key, Some(csr_info_update), signer)?;
+                    let re_issued = self.re_issue(issued, None, signing_key, Some(csr_info_update), signer)?;
                     updates.issue(re_issued);
                 }
             }
@@ -989,69 +903,38 @@ impl ResourceClass {
 /// # ROAs
 ///
 impl ResourceClass {
+    /// Renew all ROAs under the current for which the not-after time closer
+    /// than [`ROA_CERTIFICATE_REISSUE_WEEKS`]
+    pub fn renew_roas(&self, signer: &KrillSigner) -> KrillResult<RoaUpdates> {
+        let key = self.get_current_key()?;
+        self.roas.renew(key, signer)
+    }
+
+    /// Migrate all ROAs to a new repository
+    pub fn migrate_roas(&self, repo: &RepoInfo, signer: &KrillSigner) -> KrillResult<RoaUpdates> {
+        let key = self.get_current_key()?;
+        self.roas
+            .migrate_repo(&repo.ca_repository(self.name_space()), key, signer)
+    }
+
+    /// Publish all ROAs under the new key
+    pub fn active_key_roas(&self, signer: &KrillSigner) -> KrillResult<RoaUpdates> {
+        let key = self.get_new_key()?;
+        self.roas.activate_key(key, signer)
+    }
+
+    /// Shrink ROAs if needed
+    pub fn shrink_roas(&self, resources: &ResourceSet, signer: &KrillSigner) -> KrillResult<RoaUpdates> {
+        let key = self.get_current_key()?;
+        self.roas.shrink_roas(resources, key, signer)
+    }
+
     /// Updates the ROAs in accordance with the current authorizations, and
     /// the target resources and key determined by the PublishMode.
-    pub fn update_roas<S: Signer>(
-        &self,
-        auths: &[RouteAuthorization],
-        mode: &PublishMode,
-        signer: &S,
-    ) -> KrillResult<RoaUpdates> {
-        let mut updates = RoaUpdates::default();
-
-        let key = match mode {
-            PublishMode::KeyRollActivation => self.get_new_key()?,
-            _ => self.get_current_key()?,
-        };
-
-        let resources = match mode {
-            PublishMode::Normal | PublishMode::NewRepo(_) => key.incoming_cert().resources(),
-            PublishMode::UpdatedResources(resources) => resources,
-            PublishMode::KeyRollActivation => self.get_current_key()?.incoming_cert().resources(),
-        };
-
-        let new_repo = match &mode {
-            PublishMode::NewRepo(info) => Some(info.ca_repository(self.name_space())),
-            _ => None,
-        };
-
-        // Remove any ROAs no longer in auths, or no longer in resources.
-        for (current_auth, roa_info) in self.roas.iter() {
-            if !auths.contains(current_auth) || !resources.contains(&current_auth.prefix().into()) {
-                updates.remove(*current_auth, RevokedObject::from(roa_info.object()));
-            }
-        }
-
-        for auth in auths {
-            // if the auth is not in this resource class, just skip it.
-            if !resources.contains(&auth.prefix().into()) {
-                continue;
-            }
-
-            match self.roas.get(auth) {
-                None => {
-                    // NO ROA yet, so create one.
-                    let roa = Roas::make_roa(auth, key, new_repo.as_ref(), signer)?;
-                    let name = ObjectName::from(auth);
-                    updates.update(*auth, RoaInfo::new_roa(&roa, name));
-                }
-                Some(roa) => {
-                    // Re-issue if the ROA is getting close to its expiration time, or if we are
-                    //  activating the new key.
-                    let expiring = roa.object().expires()
-                        < Time::now() + Duration::weeks(ROA_CERTIFICATE_REISSUE_WEEKS);
-                    let activating = mode == &PublishMode::KeyRollActivation;
-
-                    if expiring || activating || new_repo.is_some() {
-                        let new_roa = Roas::make_roa(auth, key, new_repo.as_ref(), signer)?;
-                        let name = ObjectName::from(auth);
-                        updates.update(*auth, RoaInfo::updated_roa(roa, &new_roa, name));
-                    }
-                }
-            }
-        }
-
-        Ok(updates)
+    pub fn update_roas(&self, routes: &Routes, signer: &KrillSigner) -> KrillResult<RoaUpdates> {
+        let key = self.get_current_key()?;
+        let routes = routes.filter(key.incoming_cert().resources());
+        self.roas.update(&routes, key, signer)
     }
 
     /// Marks the ROAs as updated from a RoaUpdated event.
@@ -1060,6 +943,34 @@ impl ResourceClass {
     }
 }
 
+/// # Resource Tagged Attestations (RTA)
+///
+impl ResourceClass {
+    /// Create an EE certificate to be used on an RTA,
+    /// returns None if there is no overlap in resources
+    /// between the desired resources on the RTA and this
+    /// RC's current resources.
+    pub fn create_rta_ee(
+        &self,
+        resources: &ResourceSet,
+        validity: Validity,
+        key: KeyIdentifier,
+        signer: &KrillSigner,
+    ) -> KrillResult<Cert> {
+        let current = self
+            .current_key()
+            .ok_or_else(|| Error::custom("No current key to sign RTA with"))?;
+
+        if !current.incoming_cert().resources().contains(resources) {
+            return Err(Error::custom("Resources for RTA not held"));
+        }
+
+        let pub_key = signer.get_key_info(&key).map_err(Error::signer)?;
+        let ee = SignSupport::make_rta_ee_cert(resources, &current, validity, pub_key, signer)?;
+
+        Ok(ee)
+    }
+}
 //------------ PublishMode -------------------------------------------------
 
 /// Describes which kind of publication we're after:
@@ -1070,11 +981,10 @@ impl ResourceClass {
 /// UpdatedResources: Use the current key, but with the new resource set that
 ///         this key is about to be updated with.
 ///
-/// PendingKeyActivation: The pending key will be activated, to either a new
-///         (init) or the current (roll) key, and needs to be published.
-///
-/// KeyActivation: Publish ROAs and certificates under the new key, and revoke
+/// KeyRollActivation: Publish ROAs and certificates under the new key, and revoke
 ///         them under the old key - which will be revoked shortly.
+///
+/// NewRepo: Publish ROAs and certificates under a new repository.
 ///
 #[derive(Clone, Eq, PartialEq)]
 #[allow(clippy::large_enum_variant)]

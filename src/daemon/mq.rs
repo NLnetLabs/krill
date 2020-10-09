@@ -4,13 +4,13 @@
 //! entitlements.
 
 use std::collections::{HashMap, VecDeque};
-use std::fmt;
 use std::sync::RwLock;
+
+use rpki::x509::Time;
 
 use crate::commons::api::{Handle, ParentHandle, ResourceClassName, RevocationRequest};
 use crate::commons::eventsourcing::{self, Event};
-use crate::daemon::ca::{CertAuth, Evt, EvtDet, Signer};
-use rpki::x509::Time;
+use crate::daemon::ca::{CertAuth, Evt, EvtDet};
 
 //------------ QueueEvent ----------------------------------------------------
 
@@ -39,12 +39,7 @@ pub enum QueueEvent {
         HashMap<ResourceClassName, Vec<RevocationRequest>>,
     ),
 
-    #[display(
-        fmt = "unexpected key found for '{}' version '{}' resource class: '{}'",
-        _0,
-        _1,
-        _2
-    )]
+    #[display(fmt = "unexpected key found for '{}' version '{}' resource class: '{}'", _0, _1, _2)]
     UnexpectedKey(Handle, u64, ResourceClassName, RevocationRequest),
 
     #[display(fmt = "clean up old repo *if it exists* for '{}' version '{}'", _0, _1)]
@@ -52,24 +47,32 @@ pub enum QueueEvent {
 
     #[display(fmt = "reschedule failed publication for '{}'", _0)]
     ReschedulePublish(Handle, Time),
+
+    #[display(fmt = "Server just started")]
+    ServerStarted,
 }
 
 #[derive(Debug)]
 pub struct EventQueueListener {
-    q: RwLock<Box<dyn EventQueueStore>>,
+    q: RwLock<VecDeque<QueueEvent>>,
 }
 
-impl EventQueueListener {
-    pub fn in_mem() -> Self {
-        EventQueueListener {
-            q: RwLock::new(Box::new(MemoryEventQueue::new())),
-        }
+impl Default for EventQueueListener {
+    fn default() -> Self {
+        let mut vec = VecDeque::new();
+        vec.push_back(QueueEvent::ServerStarted);
+        EventQueueListener { q: RwLock::new(vec) }
     }
 }
 
 impl EventQueueListener {
-    pub fn pop(&self) -> Option<QueueEvent> {
-        self.q.write().unwrap().pop()
+    pub fn pop_all(&self) -> Vec<QueueEvent> {
+        let mut res = vec![];
+        let mut q = self.q.write().unwrap();
+        while let Some(evt) = q.pop_front() {
+            res.push(evt);
+        }
+        res
     }
 
     pub fn push_back(&self, evt: QueueEvent) {
@@ -77,17 +80,17 @@ impl EventQueueListener {
     }
 }
 
-// TODO: Is this unsafe here? I would think the RwLock is safe, but..
 unsafe impl Send for EventQueueListener {}
 unsafe impl Sync for EventQueueListener {}
 
 /// Implement listening for CertAuth Published events.
-impl<S: Signer> eventsourcing::EventListener<CertAuth<S>> for EventQueueListener {
-    fn listen(&self, _ca: &CertAuth<S>, event: &Evt) {
+impl eventsourcing::EventListener<CertAuth> for EventQueueListener {
+    fn listen(&self, _ca: &CertAuth, event: &Evt) {
         trace!("Seen CertAuth event '{}'", event);
 
         let handle = event.handle();
         let version = event.version();
+
         match event.details() {
             EvtDet::ObjectSetUpdated(_, _)
             | EvtDet::ParentRemoved(_, _)
@@ -111,14 +114,12 @@ impl<S: Signer> eventsourcing::EventListener<CertAuth<S>> for EventQueueListener
                 ))
             }
 
-            EvtDet::UnexpectedKeyFound(rcn, revocation) => {
-                self.push_back(QueueEvent::UnexpectedKey(
-                    handle.clone(),
-                    version,
-                    rcn.clone(),
-                    revocation.clone(),
-                ));
-            }
+            EvtDet::UnexpectedKeyFound(rcn, revocation) => self.push_back(QueueEvent::UnexpectedKey(
+                handle.clone(),
+                version,
+                rcn.clone(),
+                revocation.clone(),
+            )),
 
             EvtDet::ParentAdded(parent, _contact) => {
                 let evt = QueueEvent::ParentAdded(handle.clone(), version, parent.clone());
@@ -126,7 +127,7 @@ impl<S: Signer> eventsourcing::EventListener<CertAuth<S>> for EventQueueListener
             }
             EvtDet::RepoUpdated(_) => {
                 let evt = QueueEvent::RepositoryConfigured(handle.clone(), version);
-                self.push_back(evt)
+                self.push_back(evt);
             }
             EvtDet::CertificateRequested(_, _, _) => {
                 let evt = QueueEvent::RequestsPending(handle.clone(), version);
@@ -142,50 +143,5 @@ impl<S: Signer> eventsourcing::EventListener<CertAuth<S>> for EventQueueListener
             }
             _ => {}
         }
-    }
-}
-
-//------------ EventQueue ----------------------------------------------------
-
-/// This trait provides the public contract for an EventQueue used by the
-/// KrillServer. First implementation can be a simple in memory thing, but
-/// we will need someting more robust, and possibly multi-master later.
-///
-/// The EventQueue should implement Eventlistener
-trait EventQueueStore: fmt::Debug {
-    fn pop(&self) -> Option<QueueEvent>;
-    fn push_back(&self, evt: QueueEvent);
-}
-
-//------------ MemoryEventQueue ----------------------------------------------
-
-/// In memory event queue implementation.
-#[derive(Debug)]
-struct MemoryEventQueue {
-    q: RwLock<VecDeque<QueueEvent>>,
-}
-
-impl MemoryEventQueue {
-    pub fn new() -> Self {
-        MemoryEventQueue {
-            q: RwLock::new(VecDeque::new()),
-        }
-    }
-}
-
-impl EventQueueStore for MemoryEventQueue {
-    fn pop(&self) -> Option<QueueEvent> {
-        let res = self.q.write().unwrap().pop_front();
-
-        if let Some(evt) = res.as_ref() {
-            trace!("Popping evt from schedule queue: {}", evt)
-        }
-
-        res
-    }
-
-    fn push_back(&self, evt: QueueEvent) {
-        trace!("Pushing event to schedule queue: {}", evt);
-        self.q.write().unwrap().push_back(evt);
     }
 }

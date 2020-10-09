@@ -8,9 +8,105 @@ use std::str::FromStr;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 use rpki::resources::{AsBlocks, AsId, IpBlocks, IpBlocksBuilder, Prefix};
+use rpki::roa::RoaIpAddress;
 
 use crate::commons::api::ResourceSet;
 use crate::daemon::ca::RouteAuthorizationUpdates;
+
+//------------ RoaAggregateKey ---------------------------------------------
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct RoaAggregateKey {
+    asn: AsNumber,
+    group: Option<u32>,
+}
+
+impl RoaAggregateKey {
+    pub fn new(asn: AsNumber, group: Option<u32>) -> Self {
+        RoaAggregateKey { asn, group }
+    }
+
+    pub fn asn(&self) -> AsNumber {
+        self.asn
+    }
+
+    pub fn group(&self) -> Option<u32> {
+        self.group
+    }
+}
+
+impl fmt::Display for RoaAggregateKey {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self.group {
+            None => write!(f, "AS{}", self.asn),
+            Some(nr) => write!(f, "AS{}-{}", self.asn, nr),
+        }
+    }
+}
+
+impl FromStr for RoaAggregateKey {
+    type Err = RoaAggregateKeyFmtError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut parts = s.split('-');
+
+        let asn_part = parts.next().ok_or_else(|| RoaAggregateKeyFmtError::string(s))?;
+
+        if !asn_part.starts_with("AS") || asn_part.len() < 3 {
+            return Err(RoaAggregateKeyFmtError::string(s));
+        }
+
+        let asn = AsNumber::from_str(&asn_part[2..]).map_err(|_| RoaAggregateKeyFmtError::string(s))?;
+
+        let group = if let Some(group) = parts.next() {
+            let group = u32::from_str(group).map_err(|_| RoaAggregateKeyFmtError::string(s))?;
+            Some(group)
+        } else {
+            None
+        };
+
+        if parts.next().is_some() {
+            Err(RoaAggregateKeyFmtError::string(s))
+        } else {
+            Ok(RoaAggregateKey { asn, group })
+        }
+    }
+}
+
+/// We use RoaGroup as (json) map keys and therefore we need it
+/// to be serializable to a single simple string.
+impl Serialize for RoaAggregateKey {
+    fn serialize<S>(&self, s: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.to_string().serialize(s)
+    }
+}
+
+/// We use RoaGroup as (json) map keys and therefore we need it
+/// to be deserializable from a single simple string.
+impl<'de> Deserialize<'de> for RoaAggregateKey {
+    fn deserialize<D>(d: D) -> Result<RoaAggregateKey, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let string = String::deserialize(d)?;
+        RoaAggregateKey::from_str(string.as_str()).map_err(de::Error::custom)
+    }
+}
+
+//------------ AuthorizationFmtError -------------------------------------
+
+#[derive(Clone, Debug, Display, Eq, PartialEq)]
+#[display(fmt = "Invalid ROA Group format ({})", _0)]
+pub struct RoaAggregateKeyFmtError(String);
+
+impl RoaAggregateKeyFmtError {
+    fn string(s: &str) -> Self {
+        RoaAggregateKeyFmtError(s.to_string())
+    }
+}
 
 //------------ RoaDefinition -----------------------------------------------
 
@@ -41,6 +137,10 @@ impl RoaDefinition {
         }
     }
 
+    pub fn as_roa_ip_address(&self) -> RoaIpAddress {
+        RoaIpAddress::new(*self.prefix.prefix(), self.max_length)
+    }
+
     pub fn asn(&self) -> AsNumber {
         self.asn
     }
@@ -60,6 +160,18 @@ impl RoaDefinition {
         }
     }
 
+    pub fn nr_of_allowed_prefixes(&self) -> u128 {
+        let pfx_len = self.prefix.addr_len();
+        let max_len = self.effective_max_length();
+
+        // 10.0.0.0/8-8 -> 1                          2^1 - 1 ... 2 ^ (max - len + 1) -1
+        // 10.0.0.0/8-9 -> 1 + 2 = 3                  2^2 - 1
+        // 10.0.0.0/8-10 -> 1 + 2 + 4 = 7             2^3 - 1
+        // 10.0.0.0/8-11 -> 1 + 2 + 4 + 8 = 15        2^4 - 1
+
+        (1u128 << (max_len - pfx_len + 1)) - 1
+    }
+
     pub fn max_length_valid(&self) -> bool {
         if let Some(max_length) = self.max_length {
             match self.prefix {
@@ -77,6 +189,11 @@ impl RoaDefinition {
             && self.prefix.matching_or_less_specific(&other.prefix)
             && self.effective_max_length() >= other.effective_max_length()
     }
+
+    /// Returns `true` if this is an AS0 definition which overlaps the other.
+    pub fn overlaps(&self, other: &RoaDefinition) -> bool {
+        self.prefix.matching_or_less_specific(&other.prefix) || other.prefix.matching_or_less_specific(&self.prefix)
+    }
 }
 
 impl FromStr for RoaDefinition {
@@ -88,17 +205,13 @@ impl FromStr for RoaDefinition {
 
         let prefix_part = parts.next().ok_or_else(|| AuthorizationFmtError::auth(s))?;
         let mut prefix_parts = prefix_part.split('-');
-        let prefix_str = prefix_parts
-            .next()
-            .ok_or_else(|| AuthorizationFmtError::auth(s))?;
+        let prefix_str = prefix_parts.next().ok_or_else(|| AuthorizationFmtError::auth(s))?;
 
         let prefix = TypedPrefix::from_str(&prefix_str.trim())?;
 
         let max_length = match prefix_parts.next() {
             None => None,
-            Some(length_str) => {
-                Some(u8::from_str(&length_str.trim()).map_err(|_| AuthorizationFmtError::auth(s))?)
-            }
+            Some(length_str) => Some(u8::from_str(&length_str.trim()).map_err(|_| AuthorizationFmtError::auth(s))?),
         };
 
         let asn_str = parts.next().ok_or_else(|| AuthorizationFmtError::auth(s))?;
@@ -135,9 +248,7 @@ impl Ord for RoaDefinition {
         let mut ordering = self.prefix.cmp(&other.prefix);
 
         if ordering == Ordering::Equal {
-            ordering = self
-                .effective_max_length()
-                .cmp(&other.effective_max_length());
+            ordering = self.effective_max_length().cmp(&other.effective_max_length());
         }
 
         if ordering == Ordering::Equal {
@@ -160,6 +271,18 @@ impl AsRef<TypedPrefix> for RoaDefinition {
     }
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+pub struct RoaDefinitions(Vec<RoaDefinition>);
+
+impl fmt::Display for RoaDefinitions {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for def in self.0.iter() {
+            writeln!(f, "{}", def)?;
+        }
+        Ok(())
+    }
+}
+
 //------------ RouteAuthorizationUpdates -----------------------------------
 
 /// This type defines a delta of Route Authorizations, i.e. additions or removals
@@ -177,6 +300,10 @@ pub struct RoaDefinitionUpdates {
 }
 
 impl RoaDefinitionUpdates {
+    pub fn is_empty(&self) -> bool {
+        self.added.is_empty() && self.removed.is_empty()
+    }
+
     pub fn new(added: HashSet<RoaDefinition>, removed: HashSet<RoaDefinition>) -> Self {
         RoaDefinitionUpdates { added, removed }
     }
@@ -318,13 +445,11 @@ impl FromStr for TypedPrefix {
     fn from_str(prefix: &str) -> Result<Self, Self::Err> {
         if prefix.contains('.') {
             Ok(TypedPrefix::V4(Ipv4Prefix(
-                Prefix::from_v4_str(prefix.trim())
-                    .map_err(|_| AuthorizationFmtError::pfx(prefix))?,
+                Prefix::from_v4_str(prefix.trim()).map_err(|_| AuthorizationFmtError::pfx(prefix))?,
             )))
         } else {
             Ok(TypedPrefix::V6(Ipv6Prefix(
-                Prefix::from_v6_str(prefix.trim())
-                    .map_err(|_| AuthorizationFmtError::pfx(prefix))?,
+                Prefix::from_v6_str(prefix.trim()).map_err(|_| AuthorizationFmtError::pfx(prefix))?,
             )))
         }
     }
@@ -470,6 +595,10 @@ pub struct AsNumber(u32);
 impl AsNumber {
     pub fn new(number: u32) -> Self {
         AsNumber(number)
+    }
+
+    pub fn zero() -> Self {
+        AsNumber(0)
     }
 }
 
@@ -663,5 +792,33 @@ mod tests {
         assert!(!covering.includes(&more_specific));
         assert!(!covering.includes(&allowing_more_specific));
         assert!(!covering.includes(&other_asn));
+    }
+
+    #[test]
+    fn roa_group_string() {
+        let roa_group_asn_only = RoaAggregateKey {
+            asn: AsNumber::new(0),
+            group: None,
+        };
+
+        let roa_group_asn_only_expected_str = "AS0";
+        assert_eq!(roa_group_asn_only.to_string().as_str(), roa_group_asn_only_expected_str);
+
+        let roa_group_asn_only_expected = RoaAggregateKey::from_str(roa_group_asn_only_expected_str).unwrap();
+        assert_eq!(roa_group_asn_only, roa_group_asn_only_expected)
+    }
+
+    #[test]
+    fn roa_nr_allowed_pfx() {
+        fn check(def: &str, expected: u128) {
+            let def = definition(def);
+            let calculated = def.nr_of_allowed_prefixes();
+            assert_eq!(calculated, expected);
+        }
+
+        check("10.0.0.0/15-15 => 64496", 1);
+        check("10.0.0.0/15-16 => 64496", 3);
+        check("10.0.0.0/15-17 => 64496", 7);
+        check("10.0.0.0/15-18 => 64496", 15);
     }
 }

@@ -14,13 +14,11 @@ use rpki::uri;
 use rpki::x509::Time;
 
 use crate::commons::api::{
-    EntitlementClass, Entitlements, Handle, IssuanceRequest, IssuanceResponse, IssuedCert,
-    RequestResourceLimit, ResourceClassName, ResourceSet, ResourceSetError, RevocationRequest,
-    RevocationResponse, SigningCert,
+    EntitlementClass, Entitlements, Handle, IssuanceRequest, IssuanceResponse, IssuedCert, RequestResourceLimit,
+    ResourceClassName, ResourceSet, ResourceSetError, RevocationRequest, RevocationResponse, SigningCert,
 };
+use crate::commons::crypto::ProtocolCms;
 use crate::commons::util::xml::{AttributesError, XmlReader, XmlReaderErr, XmlWriter};
-
-use super::sigmsg::SignedMessage;
 
 //------------ Consts --------------------------------------------------------
 
@@ -57,7 +55,7 @@ pub struct Message {
 /// # Data Access
 ///
 impl Message {
-    pub fn unwrap(self) -> (Sender, Recipient, Content) {
+    pub fn unpack(self) -> (Sender, Recipient, Content) {
         (self.sender, self.recipient, self.content)
     }
 
@@ -115,11 +113,7 @@ impl Message {
         }
     }
 
-    pub fn issue_response(
-        sender: Sender,
-        recipient: Recipient,
-        issuance_response: IssuanceResponse,
-    ) -> Self {
+    pub fn issue_response(sender: Sender, recipient: Recipient, issuance_response: IssuanceResponse) -> Self {
         let content = Content::Res(Res::Issue(issuance_response));
         Message {
             sender,
@@ -137,11 +131,7 @@ impl Message {
         }
     }
 
-    pub fn revoke_response(
-        sender: Sender,
-        recipient: Recipient,
-        revocation: RevocationResponse,
-    ) -> Self {
+    pub fn revoke_response(sender: Sender, recipient: Recipient, revocation: RevocationResponse) -> Self {
         let content = Content::Res(Res::Revoke(revocation));
         Message {
             sender,
@@ -202,9 +192,7 @@ impl Message {
                 a.exhausted()?;
 
                 let content = match msg_type.as_ref() {
-                    TYPE_LIST_QRY | TYPE_ISSUE_QRY | TYPE_REVOKE_QRY => {
-                        Ok(Content::Qry(Qry::decode(&msg_type, r)?))
-                    }
+                    TYPE_LIST_QRY | TYPE_ISSUE_QRY | TYPE_REVOKE_QRY => Ok(Content::Qry(Qry::decode(&msg_type, r)?)),
                     TYPE_LIST_RES | TYPE_ISSUE_RES | TYPE_REVOKE_RES | TYPE_ERROR_RES => {
                         Ok(Content::Res(Res::decode(&msg_type, r)?))
                     }
@@ -221,7 +209,7 @@ impl Message {
     }
 
     /// Parses the content of a SignedMessage as a Message.
-    pub fn from_signed_message(msg: &SignedMessage) -> Result<Message, Error> {
+    pub fn from_signed_message(msg: &ProtocolCms) -> Result<Message, Error> {
         Message::decode(msg.content().to_bytes().as_ref())
     }
 
@@ -299,13 +287,11 @@ impl Qry {
         r.take_named_element("key", |mut a, _r| {
             let class_name = ResourceClassName::from(a.take_req("class_name")?);
             let ski = a.take_req("ski")?;
-            let ski_bytes = base64::decode_config(&ski, base64::URL_SAFE_NO_PAD)
-                .map_err(|_| Error::InvalidSki)?;
+            let ski_bytes = base64::decode_config(&ski, base64::URL_SAFE_NO_PAD).map_err(|_| Error::InvalidSki)?;
 
             a.exhausted()?;
 
-            let ski =
-                KeyIdentifier::try_from(ski_bytes.as_slice()).map_err(|_| Error::InvalidSki)?;
+            let ski = KeyIdentifier::try_from(ski_bytes.as_slice()).map_err(|_| Error::InvalidSki)?;
             Ok(RevocationRequest::new(class_name, ski))
         })
     }
@@ -352,10 +338,7 @@ impl Qry {
         }
     }
 
-    fn encode_issue<W: io::Write>(
-        issue: &IssuanceRequest,
-        w: &mut XmlWriter<W>,
-    ) -> Result<(), io::Error> {
+    fn encode_issue<W: io::Write>(issue: &IssuanceRequest, w: &mut XmlWriter<W>) -> Result<(), io::Error> {
         let class_name = issue.class_name();
         let limit = issue.limit();
         let csr = issue.csr().to_captured().into_bytes();
@@ -380,22 +363,14 @@ impl Qry {
             attrs_str.push((k, v.as_str()));
         }
 
-        w.put_element("request", Some(attrs_str.as_slice()), |w| {
-            w.put_base64_std(&csr)
-        })
+        w.put_element("request", Some(attrs_str.as_slice()), |w| w.put_base64_std(&csr))
     }
 
-    fn encode_revoke<W: io::Write>(
-        rev: &RevocationRequest,
-        w: &mut XmlWriter<W>,
-    ) -> Result<(), io::Error> {
+    fn encode_revoke<W: io::Write>(rev: &RevocationRequest, w: &mut XmlWriter<W>) -> Result<(), io::Error> {
         let class_name = rev.class_name().to_string();
         let bytes = rev.key().as_slice();
         let encoded = base64::encode_config(bytes, base64::URL_SAFE_NO_PAD);
-        let att = [
-            ("class_name", class_name.as_str()),
-            ("ski", encoded.as_str()),
-        ];
+        let att = [("class_name", class_name.as_str()), ("ski", encoded.as_str())];
         w.put_element("key", Some(&att), |w| w.empty())
     }
 }
@@ -481,13 +456,7 @@ impl Res {
 
             let issuer = SigningCert::new(cert_url, cert);
 
-            Ok(IssuanceResponse::new(
-                name,
-                issuer,
-                resource_set,
-                not_after,
-                issued,
-            ))
+            Ok(IssuanceResponse::new(name, issuer, resource_set, not_after, issued))
         })
     }
 
@@ -565,8 +534,7 @@ impl Res {
         R: io::Read,
     {
         r.take_named_element("certificate", |mut a, r| {
-            let cert_url =
-                uri::Rsync::from_str(&a.take_req("cert_url").map_err(Error::XmlAttributesError)?)?;
+            let cert_url = uri::Rsync::from_str(&a.take_req("cert_url").map_err(Error::XmlAttributesError)?)?;
 
             let mut limit = RequestResourceLimit::default();
 
@@ -608,10 +576,7 @@ impl Res {
         match NotPerformedResponse::from_code(&code) {
             Ok(res) => Ok(res),
             Err(e) => {
-                error!(
-                    "Strange error response with code: {}, description: {}",
-                    code, desc
-                );
+                error!("Strange error response with code: {}, description: {}", code, desc);
                 Err(e)
             }
         }
@@ -630,20 +595,14 @@ impl Res {
         }
     }
 
-    fn encode_entitlements<W: io::Write>(
-        e: &Entitlements,
-        w: &mut XmlWriter<W>,
-    ) -> Result<(), io::Error> {
+    fn encode_entitlements<W: io::Write>(e: &Entitlements, w: &mut XmlWriter<W>) -> Result<(), io::Error> {
         for class in e.classes() {
             Self::encode_entitlement_class(class, w)?;
         }
         Ok(())
     }
 
-    fn encode_issuance_response<W: io::Write>(
-        res: &IssuanceResponse,
-        w: &mut XmlWriter<W>,
-    ) -> Result<(), io::Error> {
+    fn encode_issuance_response<W: io::Write>(res: &IssuanceResponse, w: &mut XmlWriter<W>) -> Result<(), io::Error> {
         Self::encode_class(
             res.class_name(),
             res.issuer().uri(),
@@ -655,10 +614,7 @@ impl Res {
         )
     }
 
-    fn encode_entitlement_class<W: io::Write>(
-        c: &EntitlementClass,
-        w: &mut XmlWriter<W>,
-    ) -> Result<(), io::Error> {
+    fn encode_entitlement_class<W: io::Write>(c: &EntitlementClass, w: &mut XmlWriter<W>) -> Result<(), io::Error> {
         Self::encode_class(
             c.class_name(),
             c.issuer().uri(),
@@ -705,10 +661,7 @@ impl Res {
         })
     }
 
-    fn encode_issued<W: io::Write>(
-        issued: &IssuedCert,
-        w: &mut XmlWriter<W>,
-    ) -> Result<(), io::Error> {
+    fn encode_issued<W: io::Write>(issued: &IssuedCert, w: &mut XmlWriter<W>) -> Result<(), io::Error> {
         let cert_url = issued.uri().to_string();
         let limit = issued.limit();
         let cert_bytes = issued.cert().to_captured().into_bytes();
@@ -746,22 +699,14 @@ impl Res {
         w.put_element("status", None, |w| w.put_text(&format!("{}", error.status)))?;
 
         let att = [("xml:lang", "en-US")];
-        w.put_element("description", Some(&att), |w| {
-            w.put_text(&error.description)
-        })
+        w.put_element("description", Some(&att), |w| w.put_text(&error.description))
     }
 
-    fn encode_revoke_reponse<W: io::Write>(
-        res: &RevocationResponse,
-        w: &mut XmlWriter<W>,
-    ) -> Result<(), io::Error> {
+    fn encode_revoke_reponse<W: io::Write>(res: &RevocationResponse, w: &mut XmlWriter<W>) -> Result<(), io::Error> {
         let class_name = res.class_name().to_string();
         let bytes = res.key().as_slice();
         let encoded = base64::encode_config(bytes, base64::URL_SAFE_NO_PAD);
-        let att = [
-            ("class_name", class_name.as_str()),
-            ("ski", encoded.as_str()),
-        ];
+        let att = [("class_name", class_name.as_str()), ("ski", encoded.as_str())];
         w.put_element("key", Some(&att), |w| w.empty())
     }
 }
@@ -790,21 +735,12 @@ impl NotPerformedResponse {
     /// the description defined in the RFC.
     pub fn from_code(code: &str) -> Result<Self, Error> {
         match code {
-            "1101" => Ok(NotPerformedResponse::new(
-                1101,
-                "already processing request",
-            )),
+            "1101" => Ok(NotPerformedResponse::new(1101, "already processing request")),
             "1102" => Ok(NotPerformedResponse::new(1102, "version number error")),
             "1103" => Ok(NotPerformedResponse::new(1103, "unrecognized request type")),
-            "1104" => Ok(NotPerformedResponse::new(
-                1104,
-                "request scheduled for processing",
-            )),
+            "1104" => Ok(NotPerformedResponse::new(1104, "request scheduled for processing")),
 
-            "1201" => Ok(NotPerformedResponse::new(
-                1201,
-                "request - no such resource class",
-            )),
+            "1201" => Ok(NotPerformedResponse::new(1201, "request - no such resource class")),
             "1202" => Ok(NotPerformedResponse::new(
                 1202,
                 "request - no resources allocated in resource class",
@@ -813,15 +749,9 @@ impl NotPerformedResponse {
                 1203,
                 "request - badly formed certificate request",
             )),
-            "1204" => Ok(NotPerformedResponse::new(
-                1204,
-                "request - already used key in request",
-            )),
+            "1204" => Ok(NotPerformedResponse::new(1204, "request - already used key in request")),
 
-            "1301" => Ok(NotPerformedResponse::new(
-                1301,
-                "revoke - no such resource class",
-            )),
+            "1301" => Ok(NotPerformedResponse::new(1301, "revoke - no such resource class")),
             "1302" => Ok(NotPerformedResponse::new(1302, "revoke - no such key")),
 
             "2001" => Ok(NotPerformedResponse::new(
@@ -873,11 +803,7 @@ impl NotPerformedResponse {
 
 impl fmt::Display for NotPerformedResponse {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "status: {}, description: {}",
-            self.status, &self.description
-        )
+        write!(f, "status: {}, description: {}", self.status, &self.description)
     }
 }
 
@@ -975,9 +901,9 @@ mod tests {
     use std::str;
     use std::str::from_utf8_unchecked;
 
-    use crate::commons::remote::id::tests::test_id_certificate;
-    use crate::commons::remote::id::IdCert;
-    use crate::commons::remote::sigmsg::SignedMessage;
+    use crate::commons::crypto::test_id_certificate;
+    use crate::commons::crypto::IdCert;
+    use crate::commons::crypto::ProtocolCms;
 
     use super::*;
 
@@ -991,7 +917,7 @@ mod tests {
     }
 
     fn extract_xml(pdu: &[u8]) -> String {
-        let msg = SignedMessage::decode(pdu, false).unwrap();
+        let msg = ProtocolCms::decode(pdu, false).unwrap();
         let content = msg.content().to_bytes();
         let xml = unsafe { from_utf8_unchecked(content.as_ref()) };
         xml.to_string()
@@ -999,9 +925,7 @@ mod tests {
 
     #[test]
     fn parse_and_encode_list() {
-        let xml = extract_xml(include_bytes!(
-            "../../../test-resources/remote/rpkid-rfc6492-list.der"
-        ));
+        let xml = extract_xml(include_bytes!("../../../test-resources/remote/rpkid-rfc6492-list.der"));
         let list = Message::decode(xml.as_bytes()).unwrap();
         assert_re_encode_equals(list);
     }
@@ -1019,7 +943,7 @@ mod tests {
     fn parse_and_validate_apnic_response() {
         let pdu = include_bytes!("../../../test-resources/remote/apnic-list-response.der");
 
-        let msg = SignedMessage::decode(pdu.as_ref(), false).unwrap();
+        let msg = ProtocolCms::decode(pdu.as_ref(), false).unwrap();
         let content = msg.content().to_bytes();
         let xml = unsafe { from_utf8_unchecked(content.as_ref()) };
 
@@ -1028,13 +952,13 @@ mod tests {
         let cer_der = include_bytes!("../../../test-resources/remote/apnic-id.der");
         let cer = IdCert::decode(cer_der.as_ref()).unwrap();
 
-        msg.validate_at(&cer, Time::utc(2019, 07, 25, 0, 0, 0)).unwrap();
+        msg.validate_at(&cer, Time::utc(2019, 7, 25, 0, 0, 0)).unwrap();
     }
 
     #[test]
     fn parse_and_validate_ncc_response() {
         let pdu = include_bytes!("../../../test-resources/remote/ncc-response.ber");
-        let msg = SignedMessage::decode(pdu.as_ref(), false).unwrap();
+        let msg = ProtocolCms::decode(pdu.as_ref(), false).unwrap();
 
         let content = msg.content().to_bytes();
         let xml = unsafe { from_utf8_unchecked(content.as_ref()) };
@@ -1043,14 +967,13 @@ mod tests {
         let ncc_id_cer = include_bytes!("../../../test-resources/remote/ncc-id.der");
         let ncc_id_cer = IdCert::decode(ncc_id_cer.as_ref()).unwrap();
 
-        msg.validate_at(&ncc_id_cer, Time::utc(2019, 10, 4, 0, 0, 0))
-            .unwrap();
+        msg.validate_at(&ncc_id_cer, Time::utc(2019, 10, 4, 0, 0, 0)).unwrap();
     }
 
     #[test]
     fn parse_and_validate_lacnic_response() {
         let pdu = include_bytes!("../../../test-resources/remote/lacnic-valid.ber");
-        let msg = SignedMessage::decode(pdu.as_ref(), false).unwrap();
+        let msg = ProtocolCms::decode(pdu.as_ref(), false).unwrap();
 
         let content = msg.content().to_bytes();
         let xml = unsafe { from_utf8_unchecked(content.as_ref()) };
@@ -1067,7 +990,7 @@ mod tests {
     #[test]
     fn parse_invalid_lacnic_response() {
         let pdu = include_bytes!("../../../test-resources/remote/lacnic-invalid-response.ber");
-        let msg = SignedMessage::decode(pdu.as_ref(), false).unwrap();
+        let msg = ProtocolCms::decode(pdu.as_ref(), false).unwrap();
 
         let content = msg.content().to_bytes();
         let xml = unsafe { from_utf8_unchecked(content.as_ref()) };
@@ -1094,9 +1017,7 @@ mod tests {
 
     #[test]
     fn parse_and_encode_issue() {
-        let xml = extract_xml(include_bytes!(
-            "../../../test-resources/remote/rpkid-rfc6492-issue.der"
-        ));
+        let xml = extract_xml(include_bytes!("../../../test-resources/remote/rpkid-rfc6492-issue.der"));
         let issue = Message::decode(xml.as_bytes()).unwrap();
         assert_re_encode_equals(issue);
     }
@@ -1116,8 +1037,8 @@ mod tests {
         // reading the XML based on the RFC spec only.
         let cert = test_id_certificate();
 
-        let sender = unsafe { Handle::from_str_unsafe("child") };
-        let rcpt = unsafe { Handle::from_str_unsafe("parent") };
+        let sender = Handle::from_str("child").unwrap();
+        let rcpt = Handle::from_str("parent").unwrap();
         let class = ResourceClassName::default();
 
         let ski = cert.subject_public_key_info().key_identifier();
@@ -1136,8 +1057,8 @@ mod tests {
         // reading the XML based on the RFC spec only.
         let cert = test_id_certificate();
 
-        let sender = unsafe { Handle::from_str_unsafe("child") };
-        let rcpt = unsafe { Handle::from_str_unsafe("parent") };
+        let sender = Handle::from_str("child").unwrap();
+        let rcpt = Handle::from_str("parent").unwrap();
         let class = ResourceClassName::default();
 
         let ski = cert.subject_public_key_info().key_identifier();
@@ -1153,8 +1074,8 @@ mod tests {
     fn encode_and_parse_error_response() {
         // No example CMS found for this one, so just composing and
         // reading the XML based on the RFC spec only.
-        let sender = unsafe { Handle::from_str_unsafe("child") };
-        let rcpt = unsafe { Handle::from_str_unsafe("parent") };
+        let sender = Handle::from_str("child").unwrap();
+        let rcpt = Handle::from_str("parent").unwrap();
         let err = NotPerformedResponse::_1101();
 
         let err = Message::not_performed_response(sender, rcpt, err).unwrap();

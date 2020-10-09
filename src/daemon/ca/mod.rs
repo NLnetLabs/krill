@@ -31,11 +31,21 @@ pub use self::events::*;
 mod server;
 pub use self::server::CaServer;
 
-mod signing;
-pub use self::signing::*;
+mod rta;
+pub use self::rta::*;
 
-pub const TA_NAME: &str = "ta"; // reserved for TA
+mod status;
+pub use self::status::*;
+
+pub const TA_NAME: &str = "ta";              // reserved for TA
+pub const TESTBED_CA_NAME: &str = "testbed"; // reserved for testbed mode
 
 pub fn ta_handle() -> Handle {
-    unsafe { Handle::from_str_unsafe(TA_NAME) }
+    use std::str::FromStr;
+    Handle::from_str(TA_NAME).unwrap()
+}
+
+pub fn testbed_ca_handle() -> Handle {
+    use std::str::FromStr;
+    Handle::from_str(TESTBED_CA_NAME).unwrap()
 }

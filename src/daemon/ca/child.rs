@@ -6,10 +6,10 @@ use rpki::crypto::KeyIdentifier;
 use rpki::x509::Time;
 
 use crate::commons::api::{ChildCaInfo, ChildHandle, IssuedCert, ResourceClassName, ResourceSet};
+use crate::commons::crypto::IdCert;
 use crate::commons::error::Error;
-use crate::commons::remote::id::IdCert;
 use crate::commons::KrillResult;
-use crate::constants::CHILD_CERTIFICATE_REISSUE_WEEKS;
+use crate::daemon::config::CONFIG;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
@@ -74,11 +74,7 @@ impl ChildDetails {
     }
 
     pub fn is_issued(&self, ki: &KeyIdentifier) -> bool {
-        if let Some(LastResponse::Current(_)) = self.used_keys.get(ki) {
-            true
-        } else {
-            false
-        }
+        matches!(self.used_keys.get(ki), Some(LastResponse::Current(_)))
     }
 
     pub fn add_issue_response(&mut self, rcn: ResourceClassName, ki: KeyIdentifier) {
@@ -90,11 +86,7 @@ impl ChildDetails {
     }
 
     /// Returns an error in case the key is already in use in another class.
-    pub fn verify_key_allowed(
-        &self,
-        ki: &KeyIdentifier,
-        rcn: &ResourceClassName,
-    ) -> KrillResult<()> {
+    pub fn verify_key_allowed(&self, ki: &KeyIdentifier, rcn: &ResourceClassName) -> KrillResult<()> {
         if let Some(last_response) = self.used_keys.get(ki) {
             let allowed = match last_response {
                 LastResponse::Revoked => false,
@@ -132,8 +124,7 @@ pub struct ChildCertificates {
 
 impl ChildCertificates {
     pub fn certificate_issued(&mut self, issued: IssuedCert) {
-        self.inner
-            .insert(issued.cert().subject_key_identifier(), issued);
+        self.inner.insert(issued.cert().subject_key_identifier(), issued);
     }
 
     pub fn key_revoked(&mut self, key: &KeyIdentifier) {
@@ -153,7 +144,7 @@ impl ChildCertificates {
             .values()
             .filter(|issued| {
                 issued.validity().not_after()
-                    < Time::now() + Duration::weeks(CHILD_CERTIFICATE_REISSUE_WEEKS)
+                    < Time::now() + Duration::weeks(CONFIG.timing_child_certificate_reissue_weeks_before)
             })
             .collect()
     }
@@ -172,8 +163,6 @@ impl ChildCertificates {
 
 impl Default for ChildCertificates {
     fn default() -> Self {
-        ChildCertificates {
-            inner: HashMap::new(),
-        }
+        ChildCertificates { inner: HashMap::new() }
     }
 }

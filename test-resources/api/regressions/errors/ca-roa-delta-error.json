@@ -1,0 +1,95 @@
+{
+  "label": "ca-roa-delta-error",
+  "msg": "Delta rejected, see included json",
+  "args": {},
+  "delta_error": {
+    "duplicates": [
+      {
+        "asn": 1,
+        "prefix": "10.0.0.0/20",
+        "max_length": 24
+      }
+    ],
+    "covered": [
+      {
+        "addition": {
+          "asn": 1,
+          "prefix": "10.0.0.0/24"
+        },
+        "covered_by": {
+          "asn": 1,
+          "prefix": "10.0.0.0/20",
+          "max_length": 24
+        }
+      }
+    ],
+    "notheld": [
+      {
+        "asn": 1,
+        "prefix": "10.128.0.0/9"
+      }
+    ],
+    "unknowns": [
+      {
+        "asn": 1,
+        "prefix": "192.168.0.0/16"
+      }
+    ],
+    "invalid_length": [
+      {
+        "asn": 1,
+        "prefix": "10.0.1.0/25"
+      }
+    ],
+    "covering": [
+      {
+        "addition": {
+          "asn": 1,
+          "prefix": "10.0.0.0/16",
+          "max_length": 24
+        },
+        "covering": [
+          {
+            "asn": 1,
+            "prefix": "10.0.0.0/20",
+            "max_length": 24
+          },
+          {
+            "asn": 1,
+            "prefix": "10.0.128.0/24"
+          }
+        ]
+      }
+    ],
+    "as0_exists": [
+      {
+        "addition": {
+          "asn": 1,
+          "prefix": "10.1.0.0/24"
+        },
+        "existing_as0": {
+          "asn": 0,
+          "prefix": "10.1.0.0/24"
+        }
+      }
+    ],
+    "as0_overlaps": [
+      {
+        "addition": {
+          "asn": 0,
+          "prefix": "10.2.0.0/16"
+        },
+        "existing": [
+          {
+            "asn": 1,
+            "prefix": "10.2.0.0/24"
+          },
+          {
+            "asn": 1,
+            "prefix": "10.2.1.0/24"
+          }
+        ]
+      }
+    ]
+  }
+}

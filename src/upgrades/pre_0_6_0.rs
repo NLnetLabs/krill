@@ -8,17 +8,12 @@ use rpki::x509::Time;
 
 use crate::commons::api::{
     Handle, RequestResourceLimit, ResourceClassName, ResourceSet, RevocationRequest, RoaDefinition,
-    RoaDefinitionUpdates, StorableCaCommand, StorableParentContact, StorableRepositoryCommand,
-    StoredEffect,
+    RoaDefinitionUpdates, StorableCaCommand, StorableParentContact, StorableRepositoryCommand, StoredEffect,
 };
 use crate::commons::eventsourcing::{
-    Aggregate, DiskKeyStore, KeyStore, KeyStoreError, KeyStoreVersion, StoredCommand,
-    StoredValueInfo,
+    AggregateStoreError, CommandKey, KeyStoreKey, KeyStoreVersion, KeyValueStore, StoredCommand, StoredValueInfo,
 };
 use crate::commons::remote::rfc8183::ServiceUri;
-use crate::commons::util::softsigner::OpenSslSigner;
-use crate::daemon::ca::CertAuth;
-use crate::pubd::Repository;
 use crate::upgrades::{UpgradeError, UpgradeStore};
 
 //------------ UpgradeCas --------------------------------------------------
@@ -26,51 +21,60 @@ use crate::upgrades::{UpgradeError, UpgradeStore};
 pub struct UpgradeCas;
 
 impl UpgradeStore for UpgradeCas {
-    fn needs_migrate(&self, store: &DiskKeyStore) -> Result<bool, UpgradeError> {
-        match store.get_version() {
-            Ok(version) => match version {
-                KeyStoreVersion::Pre0_6 => Ok(true),
-                _ => Ok(false),
-            },
-            Err(e) => match e {
-                KeyStoreError::NotInitialised => Ok(false),
-                _ => Err(UpgradeError::KeyStoreError(e)),
-            },
-        }
+    fn needs_migrate(&self, kv: &KeyValueStore) -> Result<bool, UpgradeError> {
+        Self::version_same_or_before(kv, KeyStoreVersion::Pre0_6)
     }
 
-    fn migrate(&self, store: &DiskKeyStore) -> Result<(), UpgradeError> {
-        if self.needs_migrate(store)? {
+    fn migrate(&self, kv: &KeyValueStore) -> Result<(), UpgradeError> {
+        if self.needs_migrate(kv)? {
             // For each aggregate
-            for ca_handle in store.aggregates() {
+            for ca in kv.scopes()? {
+                let ca_handle = Handle::from_str(&ca).map_err(|_| {
+                    UpgradeError::Custom(format!(
+                        "Unrecognised handle dir when migrating pre 0.6 commands: {}",
+                        ca
+                    ))
+                })?;
+
                 //   Find all commands keys and migrate them
                 let mut seq = 1;
 
                 let mut last_command = 1;
+                let mut last_event = 0;
                 let mut last_update: Time = Time::now();
 
-                let keys = store.keys_ascending(&ca_handle, ".cmd");
-                info!("Migrating {} commands for CA: {}", keys.len(), ca_handle);
+                let keys = kv
+                    .keys(Some(ca.clone()), ".cmd")
+                    .map_err(AggregateStoreError::KeyStoreError)?;
+                info!("Migrating {} commands for CA: {}", keys.len(), ca);
 
                 for old_key in keys {
                     // Parse as PreviousCommand
-                    if let Some(previous) = store.get::<PreviousCommand>(&ca_handle, &old_key)? {
+                    if let Some(previous) = kv
+                        .get::<PreviousCommand>(&old_key)
+                        .map_err(AggregateStoreError::KeyStoreError)?
+                    {
                         // Convert to new command, save it, remove the old command and increase the sequence
                         let previous = previous.with_handle(ca_handle.clone());
                         match previous.into_new_stored_ca_command(seq) {
                             Ok(command) => {
                                 last_update = command.time();
-                                store.store_command(command)?;
-                                store.drop(&ca_handle, &old_key)?;
+                                if let Some(events) = command.effect().events() {
+                                    if let Some(last) = events.last() {
+                                        last_event = *last;
+                                    }
+                                }
+                                let command_key = CommandKey::for_stored(&command);
+                                let new_key = KeyStoreKey::scoped(ca.clone(), format!("{}.json", command_key));
+                                kv.store(&new_key, &command)?;
+                                kv.drop(&old_key).map_err(AggregateStoreError::KeyStoreError)?;
                                 last_command = seq;
                                 seq += 1;
                             }
                             Err(e) => {
                                 error!(
                                     "Could not migrate command {} for CA {}, got error: {}",
-                                    old_key.to_string_lossy().to_string(),
-                                    ca_handle,
-                                    e
+                                    old_key, ca_handle, e
                                 );
                                 return Err(e);
                             }
@@ -84,31 +88,21 @@ impl UpgradeStore for UpgradeCas {
                 info!("Done migrating commands for CA: {}", ca_handle);
 
                 info!("Regenerating latest snapshot, this can take a moment");
-                // Load CA, then save a new snapshot and info for the CA
-                let ca: CertAuth<OpenSslSigner> = store
-                    .get_aggregate(&ca_handle)
-                    .map_err(|e| {
-                        UpgradeError::Custom(format!(
-                            "Cannot load ca '{}' error: {}",
-                            ca_handle.clone(),
-                            e
-                        ))
-                    })?
-                    .ok_or_else(|| UpgradeError::CannotLoadAggregate(ca_handle.clone()))?;
-
-                store.store_snapshot(&ca_handle, &ca)?;
-
                 let info = StoredValueInfo {
-                    snapshot_version: ca.version(),
-                    last_event: ca.version(),
+                    snapshot_version: 0,
+                    last_event,
                     last_command,
                     last_update,
                 };
-                store.save_info(&ca_handle, &info)?;
-                info!("Saved updated snapshot for CA: {}", ca_handle);
+
+                let info_key = KeyStoreKey::scoped(ca.clone(), "info.json".to_string());
+                kv.store(&info_key, &info)?;
             }
 
-            store.set_version(&KeyStoreVersion::V0_6)?;
+            let version = KeyStoreVersion::V0_6;
+            let version_key = KeyStoreKey::simple("version".to_string());
+
+            kv.store(&version_key, &version)?;
             info!("Finished migrating commands");
             Ok(())
         } else {
@@ -122,84 +116,87 @@ impl UpgradeStore for UpgradeCas {
 pub struct UpgradePubd;
 
 impl UpgradeStore for UpgradePubd {
-    fn needs_migrate(&self, store: &DiskKeyStore) -> Result<bool, UpgradeError> {
-        if store.aggregates().is_empty() {
+    fn needs_migrate(&self, kv: &KeyValueStore) -> Result<bool, UpgradeError> {
+        if kv.scopes()?.is_empty() {
             Ok(false)
         } else {
-            match store.get_version() {
-                Ok(version) => match version {
-                    KeyStoreVersion::Pre0_6 => Ok(true),
-                    _ => Ok(false),
-                },
-                Err(e) => match e {
-                    KeyStoreError::NotInitialised => Ok(false),
-                    _ => Err(UpgradeError::KeyStoreError(e)),
-                },
-            }
+            Self::version_same_or_before(kv, KeyStoreVersion::Pre0_6)
         }
     }
 
-    fn migrate(&self, store: &DiskKeyStore) -> Result<(), UpgradeError> {
-        if self.needs_migrate(store)? {
-            // For each aggregate
-            for pubd_handle in store.aggregates() {
-                //   Find all commands keys and migrate them
-                let mut seq = 1;
+    fn migrate(&self, kv: &KeyValueStore) -> Result<(), UpgradeError> {
+        if self.needs_migrate(kv)? {
+            // There can only be one scope
+            let scope = "0".to_string();
+            let pubd_handle = Handle::from_str("0").unwrap();
 
-                let mut last_command = 1;
-                let mut last_update: Time = Time::now();
-                let keys = store.keys_ascending(&pubd_handle, ".cmd");
-
-                info!("Migrating {} commands for Repository server", keys.len());
-
-                for old_key in keys {
-                    // Parse as PreviousCommand
-                    if let Some(previous) = store.get::<PreviousCommand>(&pubd_handle, &old_key)? {
-                        // Convert to new command, save it, remove the old command and increase the sequence
-                        let previous = previous.with_handle(pubd_handle.clone());
-                        let command = previous.into_new_stored_pubd_command(seq)?;
-                        last_update = command.time();
-                        store.store_command(command)?;
-                        store.drop(&pubd_handle, &old_key)?;
-                        last_command = seq;
-                        seq += 1;
-                    }
-
-                    if seq % 100 == 0 {
-                        info!(".. {} done", seq)
-                    }
-                }
-
-                info!("Done migrating commands for Repository server");
-
-                info!("Regenerating repository and stats, this can take a moment");
-                // Load CA, then save a new snapshot and info for the CA
-                let mut repository: Repository = store
-                    .get_aggregate(&pubd_handle)
-                    .map_err(|e| {
-                        UpgradeError::Custom(format!(
-                            "Cannot load ca '{}' error: {}",
-                            pubd_handle.clone(),
-                            e
-                        ))
-                    })?
-                    .ok_or_else(|| UpgradeError::CannotLoadAggregate(pubd_handle.clone()))?;
-
-                repository.regenerate_stats();
-
-                store.store_snapshot(&pubd_handle, &repository)?;
-                info!("Saved updated snapshot for Repository server");
-
-                let info = StoredValueInfo {
-                    snapshot_version: repository.version(),
-                    last_event: repository.version(),
-                    last_command,
-                    last_update,
-                };
-                store.save_info(&pubd_handle, &info)?;
+            if !kv.has_scope(scope.clone())? {
+                return Ok(());
             }
 
-            store.set_version(&KeyStoreVersion::V0_6)?;
+            if kv.scopes()?.len() != 1 {
+                return Err(UpgradeError::custom(
+                    "Cannot migrate pre-0.6 Publication Server command, extra dirs found.",
+                ));
+            }
+
+            //   Find all commands keys and migrate them
+            let mut seq = 1;
+
+            let mut last_update: Time = Time::now();
+            let mut last_command = 1;
+            let mut last_event = 0;
+
+            let keys = kv
+                .keys(Some(scope.clone()), ".cmd")
+                .map_err(AggregateStoreError::KeyStoreError)?;
+
+            info!("Migrating {} commands for Repository server", keys.len());
+
+            for old_key in keys {
+                // Parse as PreviousCommand
+                if let Some(previous) = kv
+                    .get::<PreviousCommand>(&old_key)
+                    .map_err(AggregateStoreError::KeyStoreError)?
+                {
+                    // Convert to new command, save it, remove the old command and increase the sequence
+                    let previous = previous.with_handle(pubd_handle.clone());
+                    let command = previous.into_new_stored_pubd_command(seq)?;
+                    last_update = command.time();
+                    if let Some(events) = command.effect().events() {
+                        if let Some(last) = events.last() {
+                            last_event = *last;
+                        }
+                    }
+                    let command_key = CommandKey::for_stored(&command);
+                    let new_key = KeyStoreKey::scoped(scope.clone(), format!("{}.json", command_key));
+
+                    kv.store(&new_key, &command)?;
+
+                    kv.drop(&old_key).map_err(AggregateStoreError::KeyStoreError)?;
+                    last_command = seq;
+                    seq += 1;
+                }
+
+                if seq % 100 == 0 {
+                    info!(".. {} done", seq)
+                }
+            }
+
+            let info_key = KeyStoreKey::scoped(scope, "info.json".to_string());
+            let info = StoredValueInfo {
+                snapshot_version: 0, // will get overwritten when snapshot is saved again
+                last_event,
+                last_command,
+                last_update,
+            };
+            kv.store(&info_key, &info)?;
+
+            let version = KeyStoreVersion::V0_6;
+            let version_key = KeyStoreKey::simple("version".to_string());
+            kv.store(&version_key, &version)?;
+
+            info!("Done migrating commands for Repository server");
             Ok(())
         } else {
             Ok(())
@@ -225,10 +222,7 @@ impl PreviousCommand {
         self
     }
 
-    fn into_new_stored_ca_command(
-        self,
-        seq: u64,
-    ) -> Result<StoredCommand<StorableCaCommand>, UpgradeError> {
+    fn into_new_stored_ca_command(self, seq: u64) -> Result<StoredCommand<StorableCaCommand>, UpgradeError> {
         let details = Self::storable_ca_command(self.summary)?;
 
         Ok(StoredCommand::new(
@@ -242,10 +236,7 @@ impl PreviousCommand {
         ))
     }
 
-    fn into_new_stored_pubd_command(
-        self,
-        seq: u64,
-    ) -> Result<StoredCommand<StorableRepositoryCommand>, UpgradeError> {
+    fn into_new_stored_pubd_command(self, seq: u64) -> Result<StoredCommand<StorableRepositoryCommand>, UpgradeError> {
         let details = Self::storable_pubd_command(self.summary)?;
 
         Ok(StoredCommand::new(
@@ -341,9 +332,7 @@ impl PreviousCommand {
             return Err(UpgradeError::unrecognised(s));
         }
 
-        let with_new_start = s
-            .find(with_new)
-            .ok_or_else(|| UpgradeError::unrecognised(s))?;
+        let with_new_start = s.find(with_new).ok_or_else(|| UpgradeError::unrecognised(s))?;
 
         let child = Self::extract_handle(&s[lead.len()..with_new_start])?;
 
@@ -373,27 +362,17 @@ impl PreviousCommand {
             return Err(UpgradeError::unrecognised(s));
         }
 
-        if s.len()
-            < lead.len() + lead_rcn.len() + lead_limit.len() + lead_ki.len() + tail_start.len()
-        {
+        if s.len() < lead.len() + lead_rcn.len() + lead_limit.len() + lead_ki.len() + tail_start.len() {
             return Err(UpgradeError::unrecognised(s));
         }
 
-        let lead_rcn_start = s
-            .find(lead_rcn)
-            .ok_or_else(|| UpgradeError::unrecognised(s))?;
+        let lead_rcn_start = s.find(lead_rcn).ok_or_else(|| UpgradeError::unrecognised(s))?;
 
-        let lead_limit_start = s
-            .find(lead_limit)
-            .ok_or_else(|| UpgradeError::unrecognised(s))?;
+        let lead_limit_start = s.find(lead_limit).ok_or_else(|| UpgradeError::unrecognised(s))?;
 
-        let lead_ki_start = s
-            .find(lead_ki)
-            .ok_or_else(|| UpgradeError::unrecognised(s))?;
+        let lead_ki_start = s.find(lead_ki).ok_or_else(|| UpgradeError::unrecognised(s))?;
 
-        let tail_starts = s
-            .find(tail_start)
-            .ok_or_else(|| UpgradeError::unrecognised(s))?;
+        let tail_starts = s.find(tail_start).ok_or_else(|| UpgradeError::unrecognised(s))?;
 
         let child = Self::extract_handle(&s[lead.len()..lead_rcn_start])?;
         let rcn = ResourceClassName::from(&s[lead_rcn_start + lead_rcn.len()..lead_limit_start]);
@@ -403,9 +382,8 @@ impl PreviousCommand {
             .map_err(|_| UpgradeError::Custom(format!("Cannot parse limit: {}", limit_str)))?;
 
         let ki_str = &s[lead_ki_start + lead_ki.len()..tail_starts];
-        let ki = KeyIdentifier::from_str(ki_str).map_err(|_| {
-            UpgradeError::Custom(format!("Cannot parse key identifier: {}", ki_str))
-        })?;
+        let ki = KeyIdentifier::from_str(ki_str)
+            .map_err(|_| UpgradeError::Custom(format!("Cannot parse key identifier: {}", ki_str)))?;
 
         Ok(StorableCaCommand::ChildCertify(child, rcn, limit, ki))
     }
@@ -424,21 +402,16 @@ impl PreviousCommand {
             return Err(UpgradeError::unrecognised(s));
         }
 
-        let lead_rcn_start = s
-            .find(lead_rcn)
-            .ok_or_else(|| UpgradeError::unrecognised(s))?;
+        let lead_rcn_start = s.find(lead_rcn).ok_or_else(|| UpgradeError::unrecognised(s))?;
 
-        let lead_ki_start = s
-            .find(lead_ki)
-            .ok_or_else(|| UpgradeError::unrecognised(s))?;
+        let lead_ki_start = s.find(lead_ki).ok_or_else(|| UpgradeError::unrecognised(s))?;
 
         let child = Self::extract_handle(&s[lead.len()..lead_rcn_start])?;
         let rcn = ResourceClassName::from(&s[lead_rcn_start + lead_rcn.len()..lead_ki_start]);
 
         let ki_str = &s[lead_ki_start + lead_ki.len()..s.len() - 2];
-        let ki = KeyIdentifier::from_str(ki_str).map_err(|_| {
-            UpgradeError::Custom(format!("Cannot parse key identifier: {}", ki_str))
-        })?;
+        let ki = KeyIdentifier::from_str(ki_str)
+            .map_err(|_| UpgradeError::Custom(format!("Cannot parse key identifier: {}", ki_str)))?;
 
         let revocation_request = RevocationRequest::new(rcn, ki);
 
@@ -460,12 +433,7 @@ impl PreviousCommand {
             "This CA is a TA" => StorableParentContact::Ta,
             "Embedded parent" => StorableParentContact::Embedded,
             "RFC 6492 Parent" => StorableParentContact::Rfc6492,
-            _ => {
-                return Err(UpgradeError::Custom(format!(
-                    "Unrecognised parent: {}",
-                    parts[1]
-                )))
-            }
+            _ => return Err(UpgradeError::Custom(format!("Unrecognised parent: {}", parts[1]))),
         };
         Ok(StorableCaCommand::AddParent(parent, contact))
     }
@@ -478,12 +446,7 @@ impl PreviousCommand {
             "This CA is a TA" => StorableParentContact::Ta,
             "Embedded parent" => StorableParentContact::Embedded,
             "RFC 6492 Parent" => StorableParentContact::Rfc6492,
-            _ => {
-                return Err(UpgradeError::Custom(format!(
-                    "Unrecognised parent: {}",
-                    parts[1]
-                )))
-            }
+            _ => return Err(UpgradeError::Custom(format!("Unrecognised parent: {}", parts[1]))),
         };
         Ok(StorableCaCommand::UpdateParentContact(parent, contact))
     }
@@ -520,9 +483,7 @@ impl PreviousCommand {
             return Err(UpgradeError::unrecognised(s));
         }
 
-        let start_quote_to = s
-            .find("' to '")
-            .ok_or_else(|| UpgradeError::unrecognised(s))?;
+        let start_quote_to = s.find("' to '").ok_or_else(|| UpgradeError::unrecognised(s))?;
         let parent = Self::extract_handle(&s[34..start_quote_to])?;
         let update_str = &s[start_quote_to + 6..s.len()];
 
@@ -536,12 +497,8 @@ impl PreviousCommand {
         for class_update_str in class_update_strings {
             let parts = Self::split_string(class_update_str, 4)?;
             let class_name = ResourceClassName::from(parts[0].as_str());
-            let resources = ResourceSet::from_str(&parts[2]).map_err(|e| {
-                UpgradeError::Custom(format!(
-                    "Cannot parse resources in update entitlements: {}",
-                    e
-                ))
-            })?;
+            let resources = ResourceSet::from_str(&parts[2])
+                .map_err(|e| UpgradeError::Custom(format!("Cannot parse resources in update entitlements: {}", e)))?;
             classes.insert(class_name, resources);
         }
 
@@ -611,32 +568,24 @@ impl PreviousCommand {
         let mut removed = HashSet::new();
 
         if update_str.starts_with("added: ") {
-            let end = update_str
-                .find("removed: ")
-                .unwrap_or_else(|| update_str.len());
+            let end = update_str.find("removed: ").unwrap_or_else(|| update_str.len());
             let added_str = &update_str[7..end];
 
             Self::extract_roas(added_str, &mut added).map_err(|e| {
-                UpgradeError::Custom(format!(
-                    "Could not parse added ROAs in summary: {}, Error: {}",
-                    s, e
-                ))
+                UpgradeError::Custom(format!("Could not parse added ROAs in summary: {}, Error: {}", s, e))
             })?;
         }
 
         if let Some(start) = update_str.find("removed: ") {
             let removed_str = &update_str[start + 9..];
             Self::extract_roas(removed_str, &mut removed).map_err(|e| {
-                UpgradeError::Custom(format!(
-                    "Could not parse removed ROAs in summary: {}, Error: {}",
-                    s, e
-                ))
+                UpgradeError::Custom(format!("Could not parse removed ROAs in summary: {}, Error: {}", s, e))
             })?;
         }
 
-        Ok(StorableCaCommand::RoaDefinitionUpdates(
-            RoaDefinitionUpdates::new(added, removed),
-        ))
+        Ok(StorableCaCommand::RoaDefinitionUpdates(RoaDefinitionUpdates::new(
+            added, removed,
+        )))
     }
 
     fn extract_roas(s: &str, set: &mut HashSet<RoaDefinition>) -> Result<(), UpgradeError> {
@@ -644,9 +593,9 @@ impl PreviousCommand {
         let mut remaining = s.trim();
 
         while !remaining.is_empty() {
-            let sep_start = remaining.find(" => ").ok_or_else(|| {
-                UpgradeError::Custom(format!("Invalid ROA string: {}", remaining))
-            })?;
+            let sep_start = remaining
+                .find(" => ")
+                .ok_or_else(|| UpgradeError::Custom(format!("Invalid ROA string: {}", remaining)))?;
 
             let prefix = &remaining[0..sep_start];
 
@@ -671,10 +620,7 @@ impl PreviousCommand {
         let parts = Self::split_string(s, 2)?;
         let publisher = Self::extract_handle(&parts[0])?;
         let ski = &parts[1];
-        Ok(StorableRepositoryCommand::AddPublisher(
-            publisher,
-            ski.clone(),
-        ))
+        Ok(StorableRepositoryCommand::AddPublisher(publisher, ski.clone()))
     }
 
     fn extract_remove_publisher(s: &str) -> Result<StorableRepositoryCommand, UpgradeError> {
@@ -696,15 +642,9 @@ impl PreviousCommand {
             return Err(UpgradeError::unrecognised(s));
         }
 
-        let lead_published_start = s
-            .find(lead_published)
-            .ok_or_else(|| UpgradeError::unrecognised(s))?;
-        let lead_updated_start = s
-            .find(lead_updated)
-            .ok_or_else(|| UpgradeError::unrecognised(s))?;
-        let lead_withdrawn_start = s
-            .find(lead_withdrawn)
-            .ok_or_else(|| UpgradeError::unrecognised(s))?;
+        let lead_published_start = s.find(lead_published).ok_or_else(|| UpgradeError::unrecognised(s))?;
+        let lead_updated_start = s.find(lead_updated).ok_or_else(|| UpgradeError::unrecognised(s))?;
+        let lead_withdrawn_start = s.find(lead_withdrawn).ok_or_else(|| UpgradeError::unrecognised(s))?;
         let tail_start = s.find(tail).ok_or_else(|| UpgradeError::unrecognised(s))?;
 
         let publisher = Self::extract_handle(&s[lead.len()..lead_published_start])?;
@@ -727,9 +667,8 @@ impl PreviousCommand {
     }
 
     fn extract_resource_set(s: &str) -> Result<ResourceSet, UpgradeError> {
-        ResourceSet::from_str(s).map_err(|e| {
-            UpgradeError::Custom(format!("Cannot parse resources: {}, Error: {}", s, e))
-        })
+        ResourceSet::from_str(s)
+            .map_err(|e| UpgradeError::Custom(format!("Cannot parse resources: {}, Error: {}", s, e)))
     }
 
     /// Extract the quoted strings in the command string. Wants to know how many quoted

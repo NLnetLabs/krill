@@ -1,8 +1,10 @@
+use std::fmt;
+
 use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 
 use crate::commons::api::Handle;
-use crate::commons::remote::id::IdCert;
+use crate::commons::crypto::IdCert;
 
 //------------ Client ------------------------------------------------------
 
@@ -48,6 +50,24 @@ impl ClientInfo {
     }
 }
 
+#[derive(Debug, Clone, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ClientInfos(Vec<ClientInfo>);
+
+impl fmt::Display for ClientInfos {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        writeln!(f, "Clients: ")?;
+        for client in self.0.iter() {
+            let handle = client.handle();
+            let auth = client.auth();
+            let ski = auth.cert().ski_hex();
+
+            writeln!(f, "   Handle: {}, Cert (ski): {}\n", handle, ski)?;
+        }
+
+        Ok(())
+    }
+}
+
 //------------ CmsClientInfo -----------------------------------------------
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -59,12 +79,7 @@ pub struct CmsClientInfo {
 }
 
 impl CmsClientInfo {
-    pub fn new(
-        handle: Handle,
-        cert: IdCert,
-        key_id: KeyIdentifier,
-        publication_uri: uri::Https,
-    ) -> Self {
+    pub fn new(handle: Handle, cert: IdCert, key_id: KeyIdentifier, publication_uri: uri::Https) -> Self {
         CmsClientInfo {
             handle,
             server_cert: cert,

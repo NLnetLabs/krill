@@ -23,9 +23,7 @@ pub fn make_roa_tree(roas: &[RoaDefinition]) -> RoaTree {
 
 pub type ValidatedAnnouncementTree = TypedPrefixTree<ValidatedAnnouncement>;
 
-pub fn make_validated_announcement_tree(
-    validated: &[ValidatedAnnouncement],
-) -> ValidatedAnnouncementTree {
+pub fn make_validated_announcement_tree(validated: &[ValidatedAnnouncement]) -> ValidatedAnnouncementTree {
     make_tree(validated)
 }
 
@@ -73,6 +71,7 @@ impl Announcement {
         } else {
             let mut invalidating = vec![];
             let mut same_asn_found = false;
+            let mut none_as0_found = false;
             for roa in covering {
                 if roa.asn() == self.asn {
                     if roa.prefix().matching_or_less_specific(&self.prefix)
@@ -88,13 +87,20 @@ impl Announcement {
                         same_asn_found = true;
                     }
                 }
+                if roa.asn() != AsNumber::zero() {
+                    none_as0_found = true;
+                }
                 invalidating.push(*roa);
             }
 
+            // NOTE: Valid announcments already returned, we only have invalids left
+
             let validity = if same_asn_found {
                 AnnouncementValidity::InvalidLength
-            } else {
+            } else if none_as0_found {
                 AnnouncementValidity::InvalidAsn
+            } else {
+                AnnouncementValidity::Disallowed
             };
 
             ValidatedAnnouncement {
@@ -111,13 +117,9 @@ impl FromStr for Announcement {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let as_roa =
-            RoaDefinition::from_str(s).map_err(|e| format!("Can't parse: {}, Error: {}", s, e))?;
+        let as_roa = RoaDefinition::from_str(s).map_err(|e| format!("Can't parse: {}, Error: {}", s, e))?;
         if as_roa.max_length().is_some() {
-            Err(format!(
-                "Cannot parse announcement (max length not allowed): {}",
-                s
-            ))
+            Err(format!("Cannot parse announcement (max length not allowed): {}", s))
         } else {
             Ok(as_roa.into())
         }
@@ -260,12 +262,7 @@ impl ValidatedAnnouncement {
         Option<RoaDefinition>,
         Vec<RoaDefinition>,
     ) {
-        (
-            self.announcement,
-            self.validity,
-            self.authorizing,
-            self.disallowing,
-        )
+        (self.announcement, self.validity, self.authorizing, self.disallowing)
     }
 }
 
@@ -282,6 +279,7 @@ pub enum AnnouncementValidity {
     Valid,
     InvalidLength,
     InvalidAsn,
+    Disallowed,
     NotFound,
 }
 
@@ -298,7 +296,7 @@ mod tests {
         let ann_v6 = Announcement::from_str("2001:4:112::/48 => 112").unwrap();
 
         let mut announcements = Announcements::default();
-        announcements.update(vec![ann_v4.clone(), ann_v6.clone()]);
+        announcements.update(vec![ann_v4, ann_v6]);
 
         let matches = announcements.contained_by(ann_v4.prefix());
         assert_eq!(1, matches.len());

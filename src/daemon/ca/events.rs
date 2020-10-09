@@ -1,23 +1,19 @@
 use std::collections::HashMap;
 use std::fmt;
-use std::ops::DerefMut;
-use std::sync::{Arc, RwLock};
 
 use rpki::crypto::KeyIdentifier;
 
 use crate::commons::api::{
-    AddedObject, ChildHandle, Handle, IssuanceRequest, IssuedCert, ObjectName, ObjectsDelta,
-    ParentCaContact, ParentHandle, RcvdCert, RepoInfo, RepositoryContact, ResourceClassName,
-    ResourceSet, Revocation, RevocationRequest, RevokedObject, TaCertDetails, UpdatedObject,
-    WithdrawnObject,
+    AddedObject, ChildHandle, Handle, IssuanceRequest, IssuedCert, ObjectName, ObjectsDelta, ParentCaContact,
+    ParentHandle, RcvdCert, RepoInfo, RepositoryContact, ResourceClassName, ResourceSet, Revocation, RevocationRequest,
+    RevokedObject, RoaAggregateKey, RtaName, TaCertDetails, UpdatedObject, WithdrawnObject,
 };
+use crate::commons::crypto::{IdCert, KrillSigner};
 use crate::commons::eventsourcing::StoredEvent;
-use crate::commons::remote::id::IdCert;
 use crate::commons::KrillResult;
-use crate::daemon::ca::signing::Signer;
 use crate::daemon::ca::{
-    CertifiedKey, ChildDetails, CurrentObjectSetDelta, ResourceClass, Rfc8183Id, RoaInfo,
-    RouteAuthorization,
+    AggregateRoaInfo, CertifiedKey, ChildDetails, CurrentObjectSetDelta, PreparedRta, ResourceClass, Rfc8183Id,
+    RoaInfo, RouteAuthorization, SignedRta,
 };
 
 //------------ Ini -----------------------------------------------------------
@@ -49,9 +45,8 @@ impl IniDet {
 }
 
 impl IniDet {
-    pub fn init<S: Signer>(handle: &Handle, signer: Arc<RwLock<S>>) -> KrillResult<Ini> {
-        let mut signer = signer.write().unwrap();
-        let id = Rfc8183Id::generate(signer.deref_mut())?;
+    pub fn init(handle: &Handle, signer: &KrillSigner) -> KrillResult<Ini> {
+        let id = Rfc8183Id::generate(signer)?;
         Ok(Ini::new(
             handle,
             0,
@@ -76,8 +71,17 @@ impl fmt::Display for IniDet {
 /// Describes an update to the set of ROAs under a ResourceClass.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RoaUpdates {
+    #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
     updated: HashMap<RouteAuthorization, RoaInfo>,
+
+    #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
     removed: HashMap<RouteAuthorization, RevokedObject>,
+
+    #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
+    aggregate_updated: HashMap<RoaAggregateKey, AggregateRoaInfo>,
+
+    #[serde(skip_serializing_if = "HashMap::is_empty", default = "HashMap::new")]
+    aggregate_removed: HashMap<RoaAggregateKey, RevokedObject>,
 }
 
 impl Default for RoaUpdates {
@@ -85,20 +89,18 @@ impl Default for RoaUpdates {
         RoaUpdates {
             updated: HashMap::new(),
             removed: HashMap::new(),
+            aggregate_updated: HashMap::new(),
+            aggregate_removed: HashMap::new(),
         }
     }
 }
 
 impl RoaUpdates {
-    pub fn new(
-        updated: HashMap<RouteAuthorization, RoaInfo>,
-        removed: HashMap<RouteAuthorization, RevokedObject>,
-    ) -> Self {
-        RoaUpdates { updated, removed }
-    }
-
     pub fn is_empty(&self) -> bool {
-        self.updated.is_empty() && self.removed.is_empty()
+        self.updated.is_empty()
+            && self.removed.is_empty()
+            && self.aggregate_updated.is_empty()
+            && self.aggregate_removed.is_empty()
     }
 
     pub fn contains_changes(&self) -> bool {
@@ -113,6 +115,14 @@ impl RoaUpdates {
         self.removed.insert(auth, revoke);
     }
 
+    pub fn remove_aggregate(&mut self, key: RoaAggregateKey, revoke: RevokedObject) {
+        self.aggregate_removed.insert(key, revoke);
+    }
+
+    pub fn update_aggregate(&mut self, key: RoaAggregateKey, aggregate: AggregateRoaInfo) {
+        self.aggregate_updated.insert(key, aggregate);
+    }
+
     pub fn added(&self) -> Vec<AddedObject> {
         let mut res = vec![];
         for (_auth, info) in self.updated.iter() {
@@ -122,6 +132,14 @@ impl RoaUpdates {
                 res.push(AddedObject::new(name, object));
             }
         }
+        for (_, info) in self.aggregate_updated.iter() {
+            if info.roa().replaces().is_none() {
+                let object = info.roa().object().clone();
+                let name = info.roa().name().clone();
+                res.push(AddedObject::new(name, object));
+            }
+        }
+
         res
     }
 
@@ -131,6 +149,13 @@ impl RoaUpdates {
             if let Some(replaced) = info.replaces() {
                 let object = info.object().clone();
                 let name = info.name().clone();
+                res.push(UpdatedObject::new(name, object, replaced.hash().clone()));
+            }
+        }
+        for (_, info) in self.aggregate_updated.iter() {
+            if let Some(replaced) = info.roa().replaces() {
+                let object = info.roa().object().clone();
+                let name = info.roa().name().clone();
                 res.push(UpdatedObject::new(name, object, replaced.hash().clone()));
             }
         }
@@ -144,6 +169,11 @@ impl RoaUpdates {
             let hash = revoked.hash().clone();
             res.push(WithdrawnObject::new(name, hash));
         }
+        for (key, revoked) in self.aggregate_removed.iter() {
+            let name = ObjectName::from(key);
+            let hash = revoked.hash().clone();
+            res.push(WithdrawnObject::new(name, hash));
+        }
         res
     }
 
@@ -151,7 +181,13 @@ impl RoaUpdates {
         let mut res = vec![];
         for info in self.updated.values() {
             if let Some(old) = info.replaces() {
-                res.push(old.revocation())
+                res.push(old.revocation());
+            }
+        }
+
+        for agg in self.aggregate_updated.values() {
+            if let Some(old) = agg.roa().replaces() {
+                res.push(old.revocation());
             }
         }
 
@@ -159,16 +195,28 @@ impl RoaUpdates {
             res.push(revoked.revocation())
         }
 
+        for revoked in self.aggregate_removed.values() {
+            res.push(revoked.revocation());
+        }
+
         res
     }
 
+    #[allow(clippy::type_complexity)]
     pub fn unpack(
         self,
     ) -> (
         HashMap<RouteAuthorization, RoaInfo>,
         HashMap<RouteAuthorization, RevokedObject>,
+        HashMap<RoaAggregateKey, AggregateRoaInfo>,
+        HashMap<RoaAggregateKey, RevokedObject>,
     ) {
-        (self.updated, self.removed)
+        (
+            self.updated,
+            self.removed,
+            self.aggregate_updated,
+            self.aggregate_removed,
+        )
     }
 }
 
@@ -232,12 +280,7 @@ pub enum EvtDet {
     ParentRemoved(ParentHandle, Vec<ObjectsDelta>),
 
     ResourceClassAdded(ResourceClassName, ResourceClass),
-    ResourceClassRemoved(
-        ResourceClassName,
-        ObjectsDelta,
-        ParentHandle,
-        Vec<RevocationRequest>,
-    ),
+    ResourceClassRemoved(ResourceClassName, ObjectsDelta, ParentHandle, Vec<RevocationRequest>),
     CertificateRequested(ResourceClassName, IssuanceRequest, KeyIdentifier),
     CertificateReceived(ResourceClassName, KeyIdentifier, RcvdCert),
 
@@ -255,12 +298,13 @@ pub enum EvtDet {
     RoasUpdated(ResourceClassName, RoaUpdates),
 
     // Publishing
-    ObjectSetUpdated(
-        ResourceClassName,
-        HashMap<KeyIdentifier, CurrentObjectSetDelta>,
-    ),
+    ObjectSetUpdated(ResourceClassName, HashMap<KeyIdentifier, CurrentObjectSetDelta>),
     RepoUpdated(RepositoryContact),
     RepoCleaned(RepositoryContact),
+
+    // Rta
+    RtaPrepared(RtaName, PreparedRta),
+    RtaSigned(RtaName, SignedRta),
 }
 
 impl EvtDet {
@@ -296,11 +340,7 @@ impl EvtDet {
         parent_handle: ParentHandle,
         withdraws: Vec<ObjectsDelta>,
     ) -> Evt {
-        StoredEvent::new(
-            handle,
-            version,
-            EvtDet::ParentRemoved(parent_handle, withdraws),
-        )
+        StoredEvent::new(handle, version, EvtDet::ParentRemoved(parent_handle, withdraws))
     }
 
     /// This marks a resource class as added under a parent for the CA.
@@ -310,11 +350,7 @@ impl EvtDet {
         class_name: ResourceClassName,
         resource_class: ResourceClass,
     ) -> Evt {
-        StoredEvent::new(
-            handle,
-            version,
-            EvtDet::ResourceClassAdded(class_name, resource_class),
-        )
+        StoredEvent::new(handle, version, EvtDet::ResourceClassAdded(class_name, resource_class))
     }
 
     /// This marks a resource class as removed, and all its (possible) objects as withdrawn
@@ -333,21 +369,11 @@ impl EvtDet {
         )
     }
 
-    pub(super) fn child_added(
-        handle: &Handle,
-        version: u64,
-        child: ChildHandle,
-        details: ChildDetails,
-    ) -> Evt {
+    pub(super) fn child_added(handle: &Handle, version: u64, child: ChildHandle, details: ChildDetails) -> Evt {
         StoredEvent::new(handle, version, EvtDet::ChildAdded(child, details))
     }
 
-    pub(super) fn child_updated_cert(
-        handle: &Handle,
-        version: u64,
-        child: ChildHandle,
-        id_cert: IdCert,
-    ) -> Evt {
+    pub(super) fn child_updated_cert(handle: &Handle, version: u64, child: ChildHandle, id_cert: IdCert) -> Evt {
         StoredEvent::new(handle, version, EvtDet::ChildUpdatedIdCert(child, id_cert))
     }
 
@@ -357,11 +383,7 @@ impl EvtDet {
         child: ChildHandle,
         resources: ResourceSet,
     ) -> Evt {
-        StoredEvent::new(
-            handle,
-            version,
-            EvtDet::ChildUpdatedResources(child, resources),
-        )
+        StoredEvent::new(handle, version, EvtDet::ChildUpdatedResources(child, resources))
     }
 
     pub(super) fn child_certificate_issued(
@@ -371,11 +393,7 @@ impl EvtDet {
         rcn: ResourceClassName,
         ki: KeyIdentifier,
     ) -> Evt {
-        StoredEvent::new(
-            handle,
-            version,
-            EvtDet::ChildCertificateIssued(child, rcn, ki),
-        )
+        StoredEvent::new(handle, version, EvtDet::ChildCertificateIssued(child, rcn, ki))
     }
 
     pub(super) fn child_revoke_key(
@@ -394,11 +412,7 @@ impl EvtDet {
         rcn: ResourceClassName,
         updates: ChildCertificateUpdates,
     ) -> Evt {
-        StoredEvent::new(
-            handle,
-            version,
-            EvtDet::ChildCertificatesUpdated(rcn, updates),
-        )
+        StoredEvent::new(handle, version, EvtDet::ChildCertificatesUpdated(rcn, updates))
     }
 
     pub(super) fn child_removed(handle: &Handle, version: u64, child: ChildHandle) -> Evt {
@@ -419,18 +433,15 @@ impl fmt::Display for EvtDet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             // Being a Trust Anchor
-            EvtDet::TrustAnchorMade(details) => {
-                write!(f, "turn into TA with key (hash) {}", details.cert().subject_key_identifier())
-            },
+            EvtDet::TrustAnchorMade(details) => write!(
+                f,
+                "turn into TA with key (hash) {}",
+                details.cert().subject_key_identifier()
+            ),
 
             // Being a parent Events
             EvtDet::ChildAdded(child, details) => {
-                write!(
-                    f,
-                    "added child '{}' with resources '{}",
-                    child,
-                    details.resources()
-                )?;
+                write!(f, "added child '{}' with resources '{}", child, details.resources())?;
                 if let Some(cert) = details.id_cert() {
                     write!(f, ", id (hash): {}", cert.ski_hex())?;
                 }
@@ -439,19 +450,13 @@ impl fmt::Display for EvtDet {
             EvtDet::ChildCertificateIssued(child, rcn, ki) => write!(
                 f,
                 "issued certificate to child '{}' for class '{}' and pub key '{}'",
-                child,
-                rcn,
-                ki
+                child, rcn, ki
             ),
             EvtDet::ChildCertificatesUpdated(rcn, updates) => {
-                write!(
-                    f,
-                    "updated child certificates in resource class {}",
-                    rcn
-                )?;
+                write!(f, "updated child certificates in resource class {}", rcn)?;
                 let issued = updates.issued();
                 if !issued.is_empty() {
-                    write!(f," (re-)issued keys: ")?;
+                    write!(f, " (re-)issued keys: ")?;
                     for iss in issued {
                         write!(f, " {}", iss.subject_key_identifier())?;
                     }
@@ -468,27 +473,18 @@ impl fmt::Display for EvtDet {
             EvtDet::ChildKeyRevoked(child, rcn, ki) => write!(
                 f,
                 "revoked certificate for child '{}' in resource class '{}' with key(hash) '{}'",
-                child,
-                rcn,
-                ki
+                child, rcn, ki
             ),
-            EvtDet::ChildUpdatedIdCert(child, id_crt) => write!(
-                f,
-                "updated child '{}' id (hash) '{}'",
-                child,
-                id_crt.ski_hex()
-            ),
+            EvtDet::ChildUpdatedIdCert(child, id_crt) => {
+                write!(f, "updated child '{}' id (hash) '{}'", child, id_crt.ski_hex())
+            }
             EvtDet::ChildUpdatedResources(child, resources) => {
                 write!(f, "updated child '{}' resources to '{}'", child, resources)
             }
-            EvtDet::ChildRemoved(child) => {
-                write!(f, "removed child '{}'", child)
-            }
+            EvtDet::ChildRemoved(child) => write!(f, "removed child '{}'", child),
 
             // Being a child Events
-            EvtDet::IdUpdated(id) => {
-                write!(f, "updated RFC8183 id to key '{}'", id.key_hash())
-            }
+            EvtDet::IdUpdated(id) => write!(f, "updated RFC8183 id to key '{}'", id.key_hash()),
             EvtDet::ParentAdded(parent, contact) => {
                 let contact_str = match contact {
                     ParentCaContact::Embedded => "embedded",
@@ -503,15 +499,11 @@ impl fmt::Display for EvtDet {
                     ParentCaContact::Ta(_) => "TA proxy",
                     ParentCaContact::Rfc6492(_) => "RFC6492",
                 };
-                write!(f, "updated parent '{}' contact to '{}' ", parent,  contact_str)
+                write!(f, "updated parent '{}' contact to '{}' ", parent, contact_str)
             }
-            EvtDet::ParentRemoved(parent, _deltas) => {
-                write!(f, "removed parent '{}'", parent)
-            }
+            EvtDet::ParentRemoved(parent, _deltas) => write!(f, "removed parent '{}'", parent),
 
-            EvtDet::ResourceClassAdded(rcn, _) => {
-                write!(f, "added resource class with name '{}'", rcn)
-            }
+            EvtDet::ResourceClassAdded(rcn, _) => write!(f, "added resource class with name '{}'", rcn),
             EvtDet::ResourceClassRemoved(rcn, _, parent, _) => write!(
                 f,
                 "removed resource class with name '{}' under parent '{}'",
@@ -529,66 +521,54 @@ impl fmt::Display for EvtDet {
             ),
 
             // Key life cycle
-            EvtDet::KeyRollPendingKeyAdded(rcn, ki) => write!(
-                f,
-                "key roll: added pending key '{}' under resource class '{}'",
-                ki, rcn
-            ),
+            EvtDet::KeyRollPendingKeyAdded(rcn, ki) => {
+                write!(f, "key roll: added pending key '{}' under resource class '{}'", ki, rcn)
+            }
             EvtDet::KeyPendingToNew(rcn, key, _) => write!(
                 f,
                 "key roll: moving pending key '{}' to new state under resource class '{}'",
-                key.key_id(), rcn
+                key.key_id(),
+                rcn
             ),
-            EvtDet::KeyPendingToActive(rcn, key, _) => {
-                write!(
-                    f,
-                    "activating pending key '{}' under resource class '{}'",
-                    key.key_id(), rcn
-                )
-            },
+            EvtDet::KeyPendingToActive(rcn, key, _) => write!(
+                f,
+                "activating pending key '{}' under resource class '{}'",
+                key.key_id(),
+                rcn
+            ),
             EvtDet::KeyRollActivated(rcn, revoke) => write!(
                 f,
                 "key roll: activated new key, requested revocation of '{}' under resource class '{}'",
-                revoke.key(), rcn
-            ),
-            EvtDet::KeyRollFinished(rcn, _) => write!(
-                f,
-                "key roll: finished for resource class '{}'",
+                revoke.key(),
                 rcn
             ),
+            EvtDet::KeyRollFinished(rcn, _) => write!(f, "key roll: finished for resource class '{}'", rcn),
             EvtDet::UnexpectedKeyFound(rcn, revoke) => write!(
                 f,
                 "Found unexpected key in resource class '{}', will try to revoke key id: '{}'",
-                rcn, revoke.key()
+                rcn,
+                revoke.key()
             ),
 
             // Route Authorizations
-            EvtDet::RouteAuthorizationAdded(route) => write!(
-                f,
-                "added ROA: '{}'",
-                route
-            ),
-            EvtDet::RouteAuthorizationRemoved(route) => write!(
-                f,
-                "removed ROA: '{}'",
-                route
-            ),
+            EvtDet::RouteAuthorizationAdded(route) => write!(f, "added ROA: '{}'", route),
+            EvtDet::RouteAuthorizationRemoved(route) => write!(f, "removed ROA: '{}'", route),
             EvtDet::RoasUpdated(rcn, roa_updates) => {
                 write!(f, "updated ROAs under resource class '{}'", rcn)?;
-                if ! roa_updates.updated.is_empty() {
+                if !roa_updates.updated.is_empty() {
                     write!(f, " added: ")?;
                     for auth in roa_updates.updated.keys() {
                         write!(f, "{} ", auth)?;
                     }
                 }
-                if ! roa_updates.removed.is_empty() {
+                if !roa_updates.removed.is_empty() {
                     write!(f, " removed: ")?;
                     for auth in roa_updates.removed.keys() {
                         write!(f, "{} ", auth)?;
                     }
                 }
                 Ok(())
-            },
+            }
 
             // Publishing
             EvtDet::ObjectSetUpdated(rcn, key_objects_map) => {
@@ -613,19 +593,25 @@ impl fmt::Display for EvtDet {
                 }
 
                 Ok(())
+            }
+            EvtDet::RepoUpdated(updated) => match updated {
+                RepositoryContact::Embedded(_) => write!(f, "updated repository to embedded server"),
+                RepositoryContact::Rfc8181(res) => {
+                    write!(f, "updated repository to remote server: {}", res.service_uri())
+                }
             },
-            EvtDet::RepoUpdated(updated) => {
-                match updated {
-                    RepositoryContact::Embedded(_) => write!(f, "updated repository to embedded server"),
-                    RepositoryContact::Rfc8181(res) => write!(f, "updated repository to remote server: {}", res.service_uri())
+            EvtDet::RepoCleaned(old) => match old {
+                RepositoryContact::Embedded(_) => write!(f, "cleaned old embedded repository"),
+                RepositoryContact::Rfc8181(res) => {
+                    write!(f, "cleaned repository at remote server: {}", res.service_uri())
                 }
+            },
+
+            // Rta
+            EvtDet::RtaPrepared(name, prepared) => {
+                write!(f, "Prepared RTA '{}' for resources: {}", name, prepared.resources())
             }
-            EvtDet::RepoCleaned(old) => {
-                match old {
-                    RepositoryContact::Embedded(_) => write!(f, "cleaned old embedded repository"),
-                    RepositoryContact::Rfc8181(res) => write!(f, "cleaned repository at remote server: {}", res.service_uri())
-                }
-            }
+            EvtDet::RtaSigned(name, signed) => write!(f, "Signed RTA '{}' for resources: {}", name, signed.resources()),
         }
     }
 }

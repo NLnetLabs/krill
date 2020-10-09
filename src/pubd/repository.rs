@@ -1,29 +1,26 @@
-use std::collections::HashMap;
+use core::mem;
+use std::collections::{HashMap, VecDeque};
+use std::fmt;
 use std::fs;
 use std::path::PathBuf;
 use std::str::{from_utf8_unchecked, FromStr};
-use std::time::SystemTime;
 
 use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 use rpki::x509::Time;
 
 use crate::commons::api::rrdp::{
-    CurrentObjects, Delta, DeltaElements, DeltaRef, FileRef, Notification, RrdpSession, Snapshot,
-    SnapshotRef,
+    CurrentObjects, Delta, DeltaElements, DeltaRef, FileRef, Notification, RrdpSession, Snapshot, SnapshotRef,
 };
-use crate::commons::api::{
-    Handle, HexEncodedHash, PublishDelta, PublisherHandle, RepoInfo, StorableRepositoryCommand,
-};
+use crate::commons::api::{Handle, HexEncodedHash, PublishDelta, PublisherHandle, RepoInfo, StorableRepositoryCommand};
+use crate::commons::crypto::IdCert;
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::Aggregate;
-use crate::commons::remote::id::IdCert;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
 use crate::commons::KrillResult;
-use crate::constants::{
-    REPOSITORY_RRDP_DIR, REPOSITORY_RRDP_SNAPSHOT_RETAIN_MINS, REPOSITORY_RSYNC_DIR,
-};
+use crate::constants::{REPOSITORY_RRDP_DIR, REPOSITORY_RSYNC_DIR};
+use crate::daemon::config::CONFIG;
 use crate::pubd::publishers::Publisher;
 use crate::pubd::{Cmd, CmdDet, Evt, EvtDet, Ini, RrdpUpdate};
 
@@ -46,10 +43,7 @@ impl RsyncdStore {
     pub fn new(base_uri: uri::Rsync, repo_dir: &PathBuf) -> Self {
         let mut rsync_dir = PathBuf::from(repo_dir);
         rsync_dir.push(REPOSITORY_RSYNC_DIR);
-        RsyncdStore {
-            base_uri,
-            rsync_dir,
-        }
+        RsyncdStore { base_uri, rsync_dir }
     }
 }
 
@@ -113,6 +107,10 @@ struct RrdpServer {
     session: RrdpSession,
     serial: u64,
     notification: Notification,
+
+    #[serde(skip_serializing_if = "VecDeque::is_empty", default = "VecDeque::new")]
+    old_notifications: VecDeque<Notification>,
+
     snapshot: Snapshot,
     deltas: Vec<Delta>,
 }
@@ -122,16 +120,15 @@ impl RrdpServer {
         let mut rrdp_base_dir = PathBuf::from(repo_dir);
         rrdp_base_dir.push(REPOSITORY_RRDP_DIR);
 
-        let serial = 0;
         let snapshot = Snapshot::new(session);
 
+        let serial = 0;
         let snapshot_uri = Self::new_snapshot_uri(&rrdp_base_uri, &session, serial);
         let snapshot_path = Self::new_snapshot_path(&rrdp_base_dir, &session, serial);
         let snapshot_hash = HexEncodedHash::from_content(snapshot.xml().as_slice());
 
         let snapshot_ref = SnapshotRef::new(snapshot_uri, snapshot_path, snapshot_hash);
 
-        let deltas = vec![];
         let notification = Notification::create(session, snapshot_ref);
 
         RrdpServer {
@@ -141,7 +138,8 @@ impl RrdpServer {
             serial,
             notification,
             snapshot,
-            deltas,
+            old_notifications: VecDeque::new(),
+            deltas: vec![],
         }
     }
 
@@ -209,11 +207,16 @@ impl RrdpServer {
 
     /// Update the current RRDP state (as recorded in an event)
     pub fn apply_update(&mut self, update: RrdpUpdate) {
-        let (delta, notification) = update.unpack();
+        let (delta, mut notification) = update.unpack();
 
         self.serial = notification.serial();
 
-        self.notification = notification;
+        mem::swap(&mut self.notification, &mut notification);
+        notification.replace(self.notification.time());
+        self.old_notifications.push_front(notification);
+
+        let threshold_timestamp = self.notification.time().timestamp() - CONFIG.repo_retain_old_seconds;
+        self.old_notifications.retain(|n| n.replaced_after(threshold_timestamp));
 
         let mut snapshot = self.snapshot.clone();
         snapshot.apply_delta(delta.clone());
@@ -251,7 +254,7 @@ impl RrdpServer {
             return Ok(());
         }
 
-        // something changes, update notification file
+        // something changed, update notification file
         let notification_path = self.notification_path();
         self.notification.write_xml(&notification_path)?;
 
@@ -273,6 +276,11 @@ impl RrdpServer {
         let mut session_dir = self.rrdp_base_dir.clone();
         session_dir.push(self.session.to_string());
 
+        debug!(
+            "Will try to clean old RRDP files and dirs under: {}",
+            session_dir.to_string_lossy()
+        );
+
         for entry in fs::read_dir(&session_dir)? {
             let entry = entry?;
             let path = entry.path();
@@ -282,40 +290,36 @@ impl RrdpServer {
             // - a number that is higher than the current serial
             // - a number that is lower than the last delta (if set)
             if let Ok(serial) = u64::from_str(entry.file_name().to_string_lossy().as_ref()) {
+                debug!("Found serial: {}", serial);
+
+                // Skip the current serial
+                if serial == self.serial {
+                    debug!("Matches current serial, skipping");
+                    continue;
                 // Clean up old serial dirs
-                if let Some(last) = self.notification.last_delta() {
-                    if serial < last {
-                        if path.is_dir() {
-                            let _best_effort_rm = fs::remove_dir_all(path);
-                        } else {
-                            let _best_effort_rm = fs::remove_file(path);
-                        }
-
-                        continue;
+                } else if !self.notification.includes_delta(serial)
+                    && !self.old_notifications.iter().any(|n| n.includes_delta(serial))
+                {
+                    debug!("Deltas no longer contained, will delete: {}", path.to_string_lossy());
+                    if path.is_dir() {
+                        let _best_effort_rm = fs::remove_dir_all(path);
+                    } else {
+                        let _best_effort_rm = fs::remove_file(path);
                     }
-                }
-
-                // Clean up snapshots in all dirs except the current
-                // *IF* the snapshot is older than REPOSITORY_RRDP_SNAPSHOT_RETAIN_MINS
-                if serial != self.serial {
-                    let snapshot_path =
-                        Self::new_snapshot_path(&self.rrdp_base_dir, &self.session, serial);
-                    if snapshot_path.exists() {
-                        if let Ok(meta) = fs::metadata(&snapshot_path) {
-                            if let Ok(created) = meta.created() {
-                                let now = SystemTime::now();
-                                if let Ok(duration) = now.duration_since(created) {
-                                    let minutes_old = duration.as_secs() / 60;
-                                    if minutes_old >= REPOSITORY_RRDP_SNAPSHOT_RETAIN_MINS {
-                                        let _best_effort_rm = fs::remove_file(snapshot_path);
-                                    }
-                                }
-                            }
-                        }
-                    }
+                // clean snapshots no longer referenced in retained notification files
+                } else if !self.old_notifications.iter().any(|n| n.includes_snapshot(serial)) {
+                    debug!("Snapshots no longer contained, will delete: {}", path.to_string_lossy());
+                    let snapshot_path = Self::new_snapshot_path(&self.rrdp_base_dir, &self.session, serial);
+                    let _best_effort_rm = fs::remove_file(snapshot_path);
+                } else {
+                    debug!("looks like we still need this");
                 }
             } else {
                 // clean up dirs or files under the base dir which are not sessions
+                debug!(
+                    "Found some other file or dir - will try to remove: {}",
+                    path.to_string_lossy()
+                );
                 if path.is_dir() {
                     let _best_effort_rm = fs::remove_dir_all(path);
                 } else {
@@ -332,11 +336,8 @@ impl RrdpServer {
 ///
 impl RrdpServer {
     pub fn notification_uri(&self) -> uri::Https {
-        uri::Https::from_string(format!(
-            "{}notification.xml",
-            self.rrdp_base_uri.to_string()
-        ))
-        .unwrap() // Cannot fail. Config checked at startup.
+        uri::Https::from_string(format!("{}notification.xml", self.rrdp_base_uri.to_string())).unwrap()
+        // Cannot fail. Config checked at startup.
     }
 
     fn notification_path(&self) -> PathBuf {
@@ -360,12 +361,8 @@ impl RrdpServer {
     }
 
     fn new_snapshot_uri(base: &uri::Https, session: &RrdpSession, serial: u64) -> uri::Https {
-        uri::Https::from_string(format!(
-            "{}{}",
-            base.to_string(),
-            Self::snapshot_rel(session, serial)
-        ))
-        .unwrap() // Cannot fail. Config checked at startup.
+        uri::Https::from_string(format!("{}{}", base.to_string(), Self::snapshot_rel(session, serial))).unwrap()
+        // Cannot fail. Config checked at startup.
     }
 
     fn snapshot_uri(&self, serial: u64) -> uri::Https {
@@ -466,8 +463,7 @@ impl Aggregate for Repository {
             EvtDet::PublisherRemoved(publisher_handle, update) => {
                 self.publishers.remove(&publisher_handle);
                 self.rrdp.apply_update(update);
-                self.stats
-                    .remove_publisher(&publisher_handle, &self.rrdp.notification);
+                self.stats.remove_publisher(&publisher_handle, &self.rrdp.notification);
             }
             EvtDet::Published(publisher_handle, update) => {
                 // update content for publisher
@@ -484,8 +480,7 @@ impl Aggregate for Repository {
 
                 let notification = &self.rrdp.notification;
 
-                self.stats
-                    .publish(&publisher_handle, publisher_stats, notification)
+                self.stats.publish(&publisher_handle, publisher_stats, notification)
             }
         }
     }
@@ -507,17 +502,13 @@ impl Aggregate for Repository {
 /// # Manage publishers
 ///
 impl Repository {
-    fn add_publisher(
-        &self,
-        publisher_request: rfc8183::PublisherRequest,
-    ) -> Result<Vec<Evt>, Error> {
+    fn add_publisher(&self, publisher_request: rfc8183::PublisherRequest) -> Result<Vec<Evt>, Error> {
         let (_tag, handle, id_cert) = publisher_request.unpack();
 
         if self.publishers.contains_key(&handle) {
             Err(Error::PublisherDuplicate(handle))
         } else {
-            let base_uri =
-                uri::Rsync::from_string(format!("{}{}/", self.rsync.base_uri, handle)).unwrap();
+            let base_uri = uri::Rsync::from_string(format!("{}{}/", self.rsync.base_uri, handle)).unwrap();
             let publisher = Publisher::new(id_cert, base_uri, CurrentObjects::default());
 
             Ok(vec![EvtDet::publisher_added(
@@ -551,8 +542,7 @@ impl Repository {
     }
 
     pub fn repo_info_for(&self, publisher: &PublisherHandle) -> RepoInfo {
-        let publisher_rsync_base =
-            uri::Rsync::from_str(&format!("{}{}/", self.rsync.base_uri, publisher)).unwrap();
+        let publisher_rsync_base = uri::Rsync::from_str(&format!("{}{}/", self.rsync.base_uri, publisher)).unwrap();
 
         RepoInfo::new(publisher_rsync_base, self.rrdp.notification_uri())
     }
@@ -602,11 +592,7 @@ impl Repository {
 /// # Publish
 ///
 impl Repository {
-    fn publish(
-        &self,
-        publisher_handle: PublisherHandle,
-        delta: PublishDelta,
-    ) -> Result<Vec<Evt>, Error> {
+    fn publish(&self, publisher_handle: PublisherHandle, delta: PublishDelta) -> Result<Vec<Evt>, Error> {
         let publisher = self.get_publisher(&publisher_handle)?;
         let delta_elements = DeltaElements::from(delta);
         publisher.verify_delta(&delta_elements)?;
@@ -692,8 +678,7 @@ impl RepoStats {
     }
 
     pub fn new_publisher(&mut self, publisher: &PublisherHandle) {
-        self.publishers
-            .insert(publisher.clone(), PublisherStats::default());
+        self.publishers.insert(publisher.clone(), PublisherStats::default());
     }
 
     pub fn remove_publisher(&mut self, publisher: &PublisherHandle, notification: &Notification) {
@@ -730,6 +715,34 @@ impl RepoStats {
 
     pub fn session(&self) -> RrdpSession {
         self.session
+    }
+}
+
+impl fmt::Display for RepoStats {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        if let Some(update) = self.last_update() {
+            writeln!(f, "RRDP updated: {}", update.to_rfc3339())?;
+        }
+        writeln!(f, "RRDP session: {}", self.session())?;
+        writeln!(f, "RRDP serial:  {}", self.serial())?;
+        writeln!(f)?;
+        writeln!(f, "Publisher, Objects, Size, Last Updated")?;
+        for (publisher, stats) in self.get_publishers() {
+            let update_str = match stats.last_update() {
+                None => "never".to_string(),
+                Some(update) => update.to_rfc3339(),
+            };
+            writeln!(
+                f,
+                "{}, {}, {}, {}",
+                publisher,
+                stats.objects(),
+                stats.size(),
+                update_str
+            )?;
+        }
+
+        Ok(())
     }
 }
 

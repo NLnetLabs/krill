@@ -4,11 +4,11 @@ use crate::commons::api::{RoaDefinition, RoaDefinitionUpdates};
 use crate::commons::bgp::make_roa_tree;
 use crate::daemon::krillserver::KrillServer;
 
-pub fn roa_cleanup(server: &KrillServer) -> Result<(), RoaCleanupError> {
-    for ca in server.cas().cas() {
+pub async fn roa_cleanup(server: &KrillServer) -> Result<(), RoaCleanupError> {
+    for ca in server.ca_list()?.cas() {
         info!("Will check ROAs for CA: {}", ca.handle());
 
-        let roas = server.ca_routes_show(ca.handle())?;
+        let roas = server.ca_routes_show(ca.handle()).await?;
 
         if roas.is_empty() {
             info!("No ROAs found for CA: {}", ca.handle());
@@ -21,7 +21,7 @@ pub fn roa_cleanup(server: &KrillServer) -> Result<(), RoaCleanupError> {
 
         if let Some(updates) = clean(roas) {
             info!("Will clean up ROAs as follows:\n{}", updates);
-            server.ca_routes_update(ca.handle().clone(), updates)?;
+            server.ca_routes_update(ca.handle().clone(), updates).await?;
         } else {
             info!("No clean up needed");
         }
@@ -109,12 +109,12 @@ mod tests {
             definition("192.168.0.0/16-20 => 64496"),   // keep
             definition("192.168.0.0/16-18 => 64496"),   // remove there is a longer ml
             definition("192.168.0.0/18-20 => 64496"),   // remove covering has longer ml
-            definition("192.168.0.0/18-24 => 64496"), // keep, this is more permissive for specific bit
+            definition("192.168.0.0/18-24 => 64496"),   // keep, this is more permissive for specific bit
             definition("192.168.127.0/24-24 => 64496"), // keep, this is more specific
-            definition("192.168.0.0/16-20 => 64497"), // different asn -> keep
-            definition("10.0.0.0/8 => 64496"),        // replace with one with max length
-            definition("10.0.1.0/24 => 64498"),       // remove, there is one with explicit ml
-            definition("10.0.1.0/24-24 => 64498"),    // keep
+            definition("192.168.0.0/16-20 => 64497"),   // different asn -> keep
+            definition("10.0.0.0/8 => 64496"),          // replace with one with max length
+            definition("10.0.1.0/24 => 64498"),         // remove, there is one with explicit ml
+            definition("10.0.1.0/24-24 => 64498"),      // keep
         ];
 
         let update = clean(roas).unwrap();

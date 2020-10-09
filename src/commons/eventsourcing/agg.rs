@@ -23,7 +23,7 @@ pub trait Aggregate: Storable + Send + Sync + 'static {
     type StorableCommandDetails: WithStorableDetails;
     type Event: Event;
     type InitEvent: Event;
-    type Error: std::error::Error;
+    type Error: std::error::Error + Send + Sync;
 
     /// Creates a new instance. Expects an event with data needed to
     /// initialise the instance. Typically this means that a specific

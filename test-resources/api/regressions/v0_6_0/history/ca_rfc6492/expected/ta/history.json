@@ -95,7 +95,7 @@
       "version": 5,
       "sequence": 5,
       "summary": {
-        "msg": "Issue certificate to child 'rfc6492' for key '17143836B8F6D11DCB53CD49B5D40C61B8E9B813",
+        "msg": "Issue certificate to child 'rfc6492' for key '17143836B8F6D11DCB53CD49B5D40C61B8E9B813'",
         "label": "cmd-ca-child-certify",
         "args": {
           "class_name": "0",
@@ -143,7 +143,7 @@
       "version": 9,
       "sequence": 7,
       "summary": {
-        "msg": "Issue certificate to child 'rfc6492' for key '17143836B8F6D11DCB53CD49B5D40C61B8E9B813",
+        "msg": "Issue certificate to child 'rfc6492' for key '17143836B8F6D11DCB53CD49B5D40C61B8E9B813'",
         "label": "cmd-ca-child-certify",
         "args": {
           "child": "rfc6492",
@@ -191,7 +191,7 @@
       "version": 13,
       "sequence": 9,
       "summary": {
-        "msg": "Issue certificate to child 'rfc6492' for key '17143836B8F6D11DCB53CD49B5D40C61B8E9B813",
+        "msg": "Issue certificate to child 'rfc6492' for key '17143836B8F6D11DCB53CD49B5D40C61B8E9B813'",
         "label": "cmd-ca-child-certify",
         "args": {
           "key": "17143836B8F6D11DCB53CD49B5D40C61B8E9B813",
@@ -305,7 +305,7 @@
       "version": 22,
       "sequence": 14,
       "summary": {
-        "msg": "Issue certificate to child 'rfc6492' for key '9F29B373BC1B3D173E815841AE492E3E64CC6325",
+        "msg": "Issue certificate to child 'rfc6492' for key '9F29B373BC1B3D173E815841AE492E3E64CC6325'",
         "label": "cmd-ca-child-certify",
         "args": {
           "child": "rfc6492",
@@ -374,7 +374,7 @@
       "version": 27,
       "sequence": 17,
       "summary": {
-        "msg": "Issue certificate to child 'rfc6492' for key '9F29B373BC1B3D173E815841AE492E3E64CC6325",
+        "msg": "Issue certificate to child 'rfc6492' for key '9F29B373BC1B3D173E815841AE492E3E64CC6325'",
         "label": "cmd-ca-child-certify",
         "args": {
           "child": "rfc6492",
@@ -445,7 +445,7 @@
       "version": 34,
       "sequence": 20,
       "summary": {
-        "msg": "Issue certificate to child 'rfc6492' for key '43FB0F512A266C18A271E7B72FEA4E45C2A7CFFD",
+        "msg": "Issue certificate to child 'rfc6492' for key '43FB0F512A266C18A271E7B72FEA4E45C2A7CFFD'",
         "label": "cmd-ca-child-certify",
         "args": {
           "class_name": "0",
