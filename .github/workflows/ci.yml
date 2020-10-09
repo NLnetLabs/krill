@@ -47,4 +47,4 @@ jobs:
       with:
         rust-version: ${{ matrix.rust }}
     - run: cargo build --verbose
-    - run: cargo test --verbose
+    - run: cargo test --verbose 2>&1
