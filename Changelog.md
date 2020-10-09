@@ -3,7 +3,54 @@
 Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
 for planned releases.
 
-## 0.8.0 RC
+## 0.8.0-rc1 'Festina Lente'
+
+As of now we will use release candidates as part of the Krill release process. If no major issues
+are found we plan to do the real 0.8.0 release on Monday 19 October 2020.
+
+This new release brings a number of internal improvements, as well as new features.
+
+#### New or updated features:
+
+- added detailed ROA suggestions
+- warn about ROAs which are too permissive
+- support AS0 ROAs (see below!)
+- allow aggregation of ROAs to lower the number of objects
+- allow archiving old data in order to save space
+- added a best effort recovery in case data on disk is incomplete (e.g. resulting from a full disk)
+- better reporting on communication with parents and repository
+- re-sync with parents and repository on start-up
+- crash in case data cannot be written to disk (prevent inconsistent states)
+
+We want to invite users to test this new version and give us feedback, in particular with regards
+to ROA suggestions, and so-called AS0 ROAs:
+ 
+ROAs that use AS0 can be used in the RPKI to indicate that the holder of a prefix does NOT want
+the prefix to be routed on the global internet. In our understanding this precludes that ROAs for
+a real ASN for those resources should be made. Krill will therefore refuse to make AS0 ROAs for
+prefixes already covered by a real ASN ROA, and vice versa. Furthermore the presence of an AS0
+ROA implies that announcements for covered prefixes are intentionally RPKI invalid. Therefore
+Krill will not suggest to authorize such announcements.
+
+#### Public Krill Testbed Service
+
+With this release we have also started to operate a Krill testbed service. The testbed offers both
+a parent CA and Repository. As such you can just run a Krill instance, on a laptop even, without
+the need to operate real infrastructure for testing.
+ 
+It allows you to register any resources for your Child CA, allowing you to test with your real
+resources. Because this testbed uses its own TEST Trust Anchor - ROAs created here will not end
+up being used by real routers. 
+
+You can find the test service here:
+https://testbed.rpki.nlnetlabs.nl/
+
+#### Open issues before 0.8.0:
+
+The UI still needs translations for the updated pages. We will reach out to our translators and
+include these in the release. Since text changes will not affect the inner workings of Krill we
+believe we can do these changes without the need for an additional release candidate cycle. If you
+want to contribute to the translations please contact us!  
 
 
 ### Archiving old events
