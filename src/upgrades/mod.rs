@@ -146,6 +146,8 @@ fn upgrade_pre_0_6_0_cas_commands(work_dir: &PathBuf) -> Result<(), UpgradeError
         return Ok(());
     }
 
+    info!("Krill will now upgrade pre-0.6.0 CA data");
+
     // Make a back-up directory first, so that we can fall back to it in case
     // the upgrade fails
     let mut backup_dir = work_dir.clone();
@@ -181,6 +183,8 @@ fn upgrade_pre_0_6_0_pubd_commands(work_dir: &PathBuf) -> Result<(), UpgradeErro
     if !pre_0_6_0_pubd_commands.needs_migrate(&kv)? {
         return Ok(());
     }
+
+    info!("Krill will now upgrade pre-0.6.0 Publication Server data");
 
     // Make a back-up directory first, so that we can fall back to it in case
     // the upgrade fails

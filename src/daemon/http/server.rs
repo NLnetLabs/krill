@@ -86,11 +86,6 @@ pub async fn start() -> Result<(), Error> {
         .map_err(|e| Error::Custom(format!("Could not upgrade Krill: {}", e)))
         .await?;
 
-    // If archiving is enabled, now would be a good time to clean things up
-    if let Some(days) = CONFIG.archive_threshold_days {
-        krill.archive_old_commands(days).await?;
-    }
-
     // If the operator wanted to do the upgrade only, now is a good time to report success and stop
     if env::var(KRILL_ENV_UPGRADE_ONLY).is_ok() {
         println!("Krill upgrade successful");

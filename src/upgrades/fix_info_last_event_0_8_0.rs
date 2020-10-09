@@ -18,6 +18,7 @@ impl UpgradeStore for FixInfoFiles {
 
     fn migrate(&self, kv: &KeyValueStore) -> Result<(), UpgradeError> {
         if self.needs_migrate(kv)? {
+            info!("Krill will now fix pre-0.8.0-rc1 meta data");
             // Fix the info file in each scope (aggregate)
             //   -> leave the snapshot version as it was, or set it to 0 if there was no info
             //   -> set the sequence number of the highest command
