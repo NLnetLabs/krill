@@ -461,24 +461,30 @@ impl Roas {
     /// Returns the desired RoaMode based on the current situation, and
     /// the intended changes.
     fn mode(&self, total: usize) -> RoaMode {
-        if total == 0 {
-            // if everything will be removed, make sure no strategy change is triggered
-            if self.is_currently_aggregating() {
-                RoaMode::Aggregate
+        let mode = {
+            if total == 0 {
+                // if everything will be removed, make sure no strategy change is triggered
+                if self.is_currently_aggregating() {
+                    RoaMode::Aggregate
+                } else {
+                    RoaMode::Simple
+                }
+            } else if self.is_currently_aggregating() {
+                if total < CONFIG.roa_deaggregate_threshold {
+                    RoaMode::StopAggregating
+                } else {
+                    RoaMode::Aggregate
+                }
+            } else if total > CONFIG.roa_aggregate_threshold {
+                RoaMode::StartAggregating
             } else {
                 RoaMode::Simple
             }
-        } else if self.is_currently_aggregating() {
-            if total < CONFIG.roa_deaggregate_threshold {
-                RoaMode::StopAggregating
-            } else {
-                RoaMode::Aggregate
-            }
-        } else if total > CONFIG.roa_aggregate_threshold {
-            RoaMode::StartAggregating
-        } else {
-            RoaMode::Simple
-        }
+        };
+
+        debug!("Selecting ROA publication mode: {:?}", mode);
+
+        mode
     }
 
     /// Process authorization updates below the aggregation threshold
@@ -542,6 +548,7 @@ impl Roas {
 
         // Then remove all simple ROAs
         for (roa_key, roa) in self.simple.iter() {
+            debug!("Will remove simple authorization for: {}", roa_key);
             roa_updates.remove(*roa_key, roa.object().into());
         }
 
@@ -558,6 +565,8 @@ impl Roas {
         let mut roa_updates = RoaUpdates::default();
 
         let desired_aggregates = routes.as_aggregates();
+
+        debug!("Will create '{}' aggregates", desired_aggregates.len());
 
         // Add new ROAs, and update ROAs with changed authzs
         for (key, authzs) in desired_aggregates.iter() {

@@ -97,7 +97,10 @@ impl Default for RoaUpdates {
 
 impl RoaUpdates {
     pub fn is_empty(&self) -> bool {
-        self.updated.is_empty() && self.removed.is_empty()
+        self.updated.is_empty()
+            && self.removed.is_empty()
+            && self.aggregate_updated.is_empty()
+            && self.aggregate_removed.is_empty()
     }
 
     pub fn contains_changes(&self) -> bool {

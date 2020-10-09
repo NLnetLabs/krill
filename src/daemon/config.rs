@@ -85,7 +85,13 @@ impl ConfigDefaults {
     }
     fn log_level() -> LevelFilter {
         match env::var(KRILL_ENV_LOG_LEVEL) {
-            Ok(level) => LevelFilter::from_str(&level).unwrap(),
+            Ok(level) => match LevelFilter::from_str(&level) {
+                Ok(level) => level,
+                Err(_) => {
+                    eprintln!("Unrecognised value for log level in env var {}", KRILL_ENV_LOG_LEVEL);
+                    ::std::process::exit(1);
+                }
+            },
             _ => LevelFilter::Info,
         }
     }
@@ -153,10 +159,20 @@ impl ConfigDefaults {
     }
 
     fn roa_aggregate_threshold() -> usize {
+        if let Ok(from_env) = env::var("KRILL_ROA_AGGREGATE_THRESHOLD") {
+            if let Ok(nr) = usize::from_str(&from_env) {
+                return nr;
+            }
+        }
         100
     }
 
     fn roa_deaggregate_threshold() -> usize {
+        if let Ok(from_env) = env::var("KRILL_ROA_DEAGGREGATE_THRESHOLD") {
+            if let Ok(nr) = usize::from_str(&from_env) {
+                return nr;
+            }
+        }
         90
     }
 
@@ -761,6 +777,7 @@ impl Config {
             .level_for("tokio_reactor", framework_level)
             .level_for("want", framework_level)
             .level_for("tracing::span", framework_level)
+            .level_for("h2", framework_level)
             .level_for("krill::commons::eventsourcing", krill_framework_level)
             .level_for("krill::commons::util::file", krill_framework_level)
     }
