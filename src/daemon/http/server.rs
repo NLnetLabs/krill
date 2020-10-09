@@ -35,7 +35,7 @@ use crate::daemon::config::CONFIG;
 use crate::daemon::http::statics::statics;
 use crate::daemon::http::{tls, tls_keys, HttpResponse, Request, RequestPath, RoutingResult};
 use crate::daemon::krillserver::KrillServer;
-use crate::upgrades::{post_start_upgrade, pre_start_upgrade};
+use crate::upgrades::{post_start_upgrade, pre_start_upgrade, update_storage_version};
 
 //------------ State -----------------------------------------------------
 
@@ -76,14 +76,22 @@ pub async fn start() -> Result<(), Error> {
     // Create the server, this will create the necessary data sub-directories if needed
     let krill = KrillServer::build().await?;
 
+    // Perform upgrades that need a running krill server (e.g. clean up ROAs)
     post_start_upgrade(&CONFIG.data_dir, &krill)
         .map_err(|e| Error::Custom(format!("Could not upgrade Krill: {}", e)))
         .await?;
 
+    // Update the version identifiers for the storage dirs
+    update_storage_version(&CONFIG.data_dir)
+        .map_err(|e| Error::Custom(format!("Could not upgrade Krill: {}", e)))
+        .await?;
+
+    // If archiving is enabled, now would be a good time to clean things up
     if let Some(days) = CONFIG.archive_threshold_days {
         krill.archive_old_commands(days).await?;
     }
 
+    // If the operator wanted to do the upgrade only, now is a good time to report success and stop
     if env::var(KRILL_ENV_UPGRADE_ONLY).is_ok() {
         println!("Krill upgrade successful");
         ::std::process::exit(0);

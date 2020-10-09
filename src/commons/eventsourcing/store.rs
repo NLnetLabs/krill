@@ -49,11 +49,18 @@ impl Default for StoredValueInfo {
 
 #[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 // Do NOT EVER change the order.. this is used to check whether migrations are needed
+#[allow(non_camel_case_types)]
 pub enum KeyStoreVersion {
     Pre0_6,
     V0_6,
     V0_7,
-    V0_8,
+    V0_8_0_RC1,
+}
+
+impl KeyStoreVersion {
+    pub fn current() -> Self {
+        KeyStoreVersion::V0_8_0_RC1
+    }
 }
 
 //------------ CommandKey ----------------------------------------------------
@@ -164,7 +171,7 @@ where
         };
 
         if !existed {
-            store.set_version(&KeyStoreVersion::V0_8)?;
+            store.set_version(&KeyStoreVersion::current())?;
         }
 
         Ok(store)
