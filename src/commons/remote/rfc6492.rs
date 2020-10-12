@@ -901,9 +901,9 @@ mod tests {
     use std::str;
     use std::str::from_utf8_unchecked;
 
-    use crate::commons::crypto::test_id_certificate;
     use crate::commons::crypto::IdCert;
     use crate::commons::crypto::ProtocolCms;
+    use crate::test::test_id_certificate;
 
     use super::*;
 

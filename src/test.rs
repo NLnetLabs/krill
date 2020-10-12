@@ -539,3 +539,12 @@ pub fn definition(s: &str) -> RoaDefinition {
 pub fn typed_prefix(s: &str) -> TypedPrefix {
     TypedPrefix::from_str(s).unwrap()
 }
+
+#[cfg(test)]
+use crate::commons::crypto::IdCert;
+
+#[cfg(test)]
+pub fn test_id_certificate() -> IdCert {
+    let data = include_bytes!("../test-resources/oob/id_publisher_ta.cer");
+    IdCert::decode(Bytes::from_static(data)).unwrap()
+}

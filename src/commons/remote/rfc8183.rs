@@ -800,8 +800,8 @@ impl From<uri::Error> for Error {
 mod tests {
     use rpki::x509::Time;
 
-    use crate::commons::crypto::test_id_certificate;
     use crate::test;
+    use crate::test::test_id_certificate;
 
     use super::*;
 

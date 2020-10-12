@@ -767,10 +767,10 @@ mod tests {
     use std::str::FromStr;
 
     use crate::commons::api::RoaDefinition;
-    use crate::commons::crypto::test_id_certificate;
 
     use super::*;
     use crate::test::definition;
+    use crate::test::test_id_certificate;
 
     fn verify(expected_json: &str, e: Error) {
         let actual = e.to_error_response();

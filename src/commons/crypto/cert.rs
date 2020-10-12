@@ -732,7 +732,6 @@ impl From<&PublicKey> for IdExtensions {
 #[cfg(test)]
 pub mod tests {
 
-    use crate::commons::crypto::test_id_certificate;
     use crate::test::*;
 
     use super::*;
