@@ -1,7 +1,7 @@
 openapi: "3.0.2"
 info:
   title: Krill RPKI Server API
-  version: 0.8.0-RC-dev
+  version: 0.8.0-rc1
   description: |
     # Introduction
     Welcome to the documentation for the Krill server API, a JSON based
@@ -931,6 +931,14 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/ROA'
+              example:
+                - asn: 64497
+                  prefix: 192.168.1.0/24
+                  max_length: 16
+                - asn: 64497
+                  prefix: 10.0.3.0/24
+                  max_length: 24
+
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -961,26 +969,203 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/ROADelta'
+            example:
+              added:
+                - asn: 64497
+                  prefix: 192.168.1.0/24
+                  max_length: 16
+                - asn: 64497
+                  prefix: 10.0.3.0/24
+                  max_length: 24
+              removed:
+                - asn: 64497
+                  prefix: 10.0.0.0/24
+                  max_length: 24
 
       responses:
         '200':
           $ref: '#/components/responses/Success'
         '400':
-          description: Bad request parameters.
-          content:
-            application/json:
-              schema:
-                oneOf:
-                  - $ref: '#/components/schemas/CaRoaDuplicateResponse'
-                  - $ref: '#/components/schemas/CaRoaUnknownResponse'
-                  - $ref: '#/components/schemas/CaRoaNotEntitledResponse'
-                  - $ref: '#/components/schemas/CaRoaInvalidMaxLengthResponse'
+          $ref: '#/components/responses/RoaDeltaError'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/CaUnknownResponse'
         '500':
           $ref: '#/components/responses/GeneralErrorResponse'
+
+  /cas/{ca_handle}/routes/try:
+    post:
+      operationId: try_update_route_authorizations
+      tags:
+        - "Route Authorizations"
+      summary: Try to update route authorizations, returns advice in case of issues
+      description: |
+        Tries to updates the ROA configurations.
+
+        Returns an empty reponse if succesful, or an extended advice in case the
+        update would result in any invalid announcements for the prefixes in the
+        change set.
+      parameters:
+        - $ref: '#/components/parameters/ca_handle'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ROADelta'
+            example:
+              added:
+                - asn: 64497
+                  prefix: 192.168.1.0/24
+                  max_length: 16
+                - asn: 64497
+                  prefix: 10.0.3.0/24
+                  max_length: 24
+              removed:
+                - asn: 64497
+                  prefix: 10.0.0.0/24
+                  max_length: 24
+
+      responses:
+        '200':
+          description: Try update response.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/responses/Success'
+                  - $ref: '#/components/schemas/BgpAnalysisAdvice'
+              example:
+                effect:
+                  - asn: 64497
+                    prefix: 192.168.1.0/24
+                    state: roa_seen
+                    authorizes:
+                      - asn: 64497
+                        prefix: 192.168.1.0/24
+                  - asn: 64497
+                    prefix: 10.0.3.0/24
+                    state: roa_unseen
+                  - asn: 64498
+                    prefix: 192.168.1.0/24
+                    state: roa_unseen
+                  - asn: 64496
+                    prefix: 10.0.0.0/22
+                    max_length: 23
+                    state: roa_too_permissive
+                    authorizes:
+                      - asn: 64496
+                        prefix: 10.0.0.0/22
+                      - asn: 64496
+                        prefix: 10.0.2.0/23
+                    disallows:
+                      - asn: 64497
+                        prefix: 10.0.0.0/22
+                      - asn: 64496
+                        prefix: 10.0.0.0/24
+                  - asn: 0
+                    prefix: 10.0.4.0/24
+                    state: roa_as0
+                  - asn: 0
+                    prefix: 192.168.1.0/24
+                    state: roa_as0_redundant
+                    made_redundant_by:
+                      - asn: 64497
+                        prefix: 192.168.1.0/24
+                      - asn: 64498
+                        prefix: 192.168.1.0/24
+                  - asn: 64496
+                    prefix: 10.0.0.0/22
+                    state: announcement_valid
+                    allowed_by:
+                      asn: 64496
+                      prefix: 10.0.0.0/22
+                      max_length: 23
+                  - asn: 64496
+                    prefix: 10.0.2.0/23
+                    state: announcement_valid
+                    allowed_by:
+                      asn: 64496
+                      prefix: 10.0.0.0/22
+                      max_length: 23
+                  - asn: 64497
+                    prefix: 192.168.1.0/24
+                    state: announcement_valid
+                    allowed_by:
+                      asn: 64497
+                      prefix: 192.168.1.0/24
+                  - asn: 64496
+                    prefix: 10.0.0.0/24
+                    state: announcement_invalid_length
+                    disallowed_by:
+                      - asn: 64496
+                        prefix: 10.0.0.0/22
+                        max_length: 23
+                  - asn: 64497
+                    prefix: 10.0.0.0/22
+                    state: announcement_invalid_asn
+                    disallowed_by:
+                      - asn: 64496
+                        prefix: 10.0.0.0/22
+                        max_length: 23
+                  - asn: 64497
+                    prefix: 10.0.0.0/21
+                    state: announcement_not_found
+                  - asn: 64496
+                    prefix: 192.168.0.0/24
+                    state: announcement_not_found
+                  - asn: 64497
+                    prefix: 192.168.0.0/24
+                    state: announcement_not_found
+                suggestion:
+                  stale:
+                    - asn: 64497
+                      prefix: 10.0.3.0/24
+                    - asn: 64498
+                      prefix: 192.168.1.0/24
+                  not_found:
+                    - asn: 64497
+                      prefix: 10.0.0.0/21
+                    - asn: 64496
+                      prefix: 192.168.0.0/24
+                    - asn: 64497
+                      prefix: 192.168.0.0/24
+                  invalid_asn:
+                    - asn: 64497
+                      prefix: 10.0.0.0/22
+                  invalid_length:
+                    - asn: 64496
+                      prefix: 10.0.0.0/24
+                  too_permissive:
+                    - current:
+                        asn: 64496
+                        prefix: 10.0.0.0/22
+                        max_length: 23
+                      new:
+                        - asn: 64496
+                          prefix: 10.0.0.0/22
+                        - asn: 64496
+                          prefix: 10.0.2.0/23
+                  as0_redundant:
+                    - asn: 0
+                      prefix: 192.168.1.0/24
+                  keep:
+                    - asn: 64497
+                      prefix: 192.168.1.0/24
+                    - asn: 0
+                      prefix: 10.0.4.0/24
+
+
+        '400':
+          $ref: '#/components/responses/RoaDeltaError'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/CaUnknownResponse'
+        '500':
+          $ref: '#/components/responses/GeneralErrorResponse'
+
 
   /cas/{ca_handle}/routes/analysis/full:
     get:
@@ -996,7 +1181,7 @@ paths:
         - $ref: '#/components/parameters/ca_handle'
       responses:
         '200':
-          $ref: '#/components/responses/BgpFull'
+          $ref: '#/components/responses/BgpAnalysisReport'
         '403':
           $ref: '#/components/responses/Forbidden'
         '500':
@@ -1670,7 +1855,172 @@ components:
               type: string
               example: cause
 
-    BgpFullSchema:
+    BgpAnalysisAdvice:
+      type: object
+      required:
+        - effect
+        - suggestion
+      properties:
+        effect:
+          $ref: '#/components/schemas/BgpAnalysisReport'
+        suggestion:
+          $ref: '#/components/schemas/BgpAnalysisSuggestion'
+
+    BgpAnalysisSuggestion:
+      type: object
+      required:
+        - stale
+        - too_permissive
+        - as0_redundant
+        - keep
+        - not_found
+        - invalid_asn
+        - invalid_length
+        - keep_disallowing
+      properties:
+        stale:
+          type: array
+          items:
+            type: object
+            required:
+              - asn
+              - prefix
+              - max_length
+            properties:
+              asn:
+                type: integer
+              prefix:
+                type: string
+              max_length:
+                type: integer
+                nullable: true
+
+        too_permissive:
+          type: array
+          items:
+            type: object
+            required:
+              - current
+              - new
+            properties:
+              current:
+                type: object
+                required:
+                  - asn
+                  - prefix
+                  - max_length
+                properties:
+                  asn:
+                    type: integer
+                  prefix:
+                    type: string
+                  max_length:
+                    type: integer
+                    nullable: true
+              new:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - asn
+                    - prefix
+                    - max_length
+                  properties:
+                    asn:
+                      type: integer
+                    prefix:
+                      type: string
+                    max_length:
+                      type: integer
+                      nullable: true
+
+        as0_redundant:
+          type: array
+          items:
+            type: object
+            required:
+              - asn
+              - prefix
+              - max_length
+            properties:
+              asn:
+                type: integer
+              prefix:
+                type: string
+              max_length:
+                type: integer
+                nullable: true
+
+        keep:
+          type: array
+          items:
+            type: object
+            required:
+              - asn
+              - prefix
+              - max_length
+            properties:
+              asn:
+                type: integer
+              prefix:
+                type: string
+              max_length:
+                type: integer
+                nullable: true
+
+        not_found:
+          type: array
+          items:
+            type: object
+            required:
+              - asn
+              - prefix
+            properties:
+              asn:
+                type: integer
+              prefix:
+                type: string
+
+        invalid_asn:
+          type: array
+          items:
+            type: object
+            required:
+              - asn
+              - prefix
+            properties:
+              asn:
+                type: integer
+              prefix:
+                type: string
+
+        invalid_length:
+          type: array
+          items:
+            type: object
+            required:
+              - asn
+              - prefix
+            properties:
+              asn:
+                type: integer
+              prefix:
+                type: string
+
+        keep_disallowing:
+          type: array
+          items:
+            type: object
+            required:
+              - asn
+              - prefix
+            properties:
+              asn:
+                type: integer
+              prefix:
+                type: string
+
+    BgpAnalysisReport:
       type: array
       items:
         type: object
@@ -1681,6 +2031,7 @@ components:
           - state
           - allowed_by
           - disallowed_by
+          - made_redundant_by
           - authorizes
           - disallows
         properties:
@@ -1725,6 +2076,22 @@ components:
                 max_length:
                   type: integer
                   nullable: true
+          made_redundant_by:
+            type: array
+            items:
+              type: object
+              required:
+                - asn
+                - prefix
+                - max_length
+              properties:
+                asn:
+                  type: integer
+                prefix:
+                  type: string
+                max_length:
+                  type: integer
+                  nullable: true
           allows:
             type: array
             items:
@@ -1750,142 +2117,242 @@ components:
                 prefix:
                   type: string
 
-    CaRoaUnknownResponse:
+    RoaDeltaErrorResponse:
       type: object
       required:
         - label
         - msg
-        - args
+        - delta_error
       properties:
         label:
           type: string
-          enum: [ca-roa-unknown]
+          enum: [ca-roa-delta-error]
         msg:
           type: string
-          example: Cannot remove unknown ROA '10.0.0.0/20-24 => 65536' from CA 'ca'
-        args:
-          required:
-            - ca
-            - asn
-            - prefix
-            - max_length
-          properties:
-            ca:
-              type: string
-              example: ca
-            asn:
-              type: string
-              example: 65536
-            prefix:
-              type: string
-              example: 10.0.0.0/20
-            max_length:
-              type: string
-              nullable: true
-              example: 24
+          example: Delta rejected, see included json
+        delta_error:
+          $ref: '#/components/schemas/RoaDeltaErrorSchema'
 
-
-    CaRoaDuplicateResponse:
+    RoaDeltaErrorSchema:
       type: object
       required:
-        - label
-        - msg
-        - args
+        - duplicates
+        - covered
+        - notheld
+        - unknowns
+        - invalid_length
+        - covering
+        - as0_exists
+        - as0_overlaps
       properties:
-        label:
-          type: string
-          enum: [ca-roa-duplicate]
-        msg:
-          type: string
-          example: Duplicate ROA '10.0.0.0/20-24 => 65536' for CA 'ca'
-        args:
-          required:
-            - ca
-            - asn
-            - prefix
-            - max_length
-          properties:
-            ca:
-              type: string
-              example: ca
-            asn:
-              type: string
-              example: 65536
-            prefix:
-              type: string
-              example: 10.0.0.0/20
-            max_length:
-              type: string
-              nullable: true
-              example: 24
+        duplicates:
+          type: array
+          items:
+            type: object
+            required:
+              - asn
+              - prefix
+              - max_length
+            properties:
+              asn:
+                type: integer
+              prefix:
+                type: string
+              max_lenght:
+                type: integer
 
-    CaRoaInvalidMaxLengthResponse:
-      type: object
-      required:
-        - label
-        - msg
-        - args
-      properties:
-        label:
-          type: string
-          enum: [ca-roa-invalid-max-length]
-        msg:
-          type: string
-          example: Invalid max length in ROA '10.0.0.0/20-24 => 65536' for CA 'ca'
-        args:
-          required:
-            - ca
-            - asn
-            - prefix
-            - max_length
-          properties:
-            ca:
-              type: string
-              example: ca
-            asn:
-              type: string
-              example: 65536
-            prefix:
-              type: string
-              example: 10.0.0.0/20
-            max_length:
-              type: string
-              nullable: true
-              example: 24
+        covered:
+          type: array
+          items:
+            type: object
+            required:
+              - addition
+              - covered_by
+            properties:
+              addition:
+                type: object
+                required:
+                  - asn
+                  - prefix
+                  - max_length
+                properties:
+                  asn:
+                    type: integer
+                  prefix:
+                    type: string
+                  max_lenght:
+                    type: integer
+              covered_by:
+                type: object
+                required:
+                  - asn
+                  - prefix
+                  - max_length
+                properties:
+                  asn:
+                    type: integer
+                  prefix:
+                    type: string
+                  max_length:
+                    type: integer
 
-    CaRoaNotEntitledResponse:
-      type: object
-      required:
-        - label
-        - msg
-        - args
-      properties:
-        label:
-          type: string
-          enum: [ca-roa-not-entitled]
-        msg:
-          type: string
-          example: Prefix in ROA '10.0.0.0/20-24 => 65536' not held by CA 'ca'
-        args:
-          required:
-            - ca
-            - asn
-            - prefix
-            - max_length
-          properties:
-            ca:
-              type: string
-              example: ca
-            asn:
-              type: string
-              example: 65536
-            prefix:
-              type: string
-              example: 10.0.0.0/20
-            max_length:
-              type: string
-              nullable: true
-              example: 24
+        notheld:
+          type: array
+          items:
+            type: object
+            required:
+              - asn
+              - prefix
+              - max_length
+            properties:
+              asn:
+                type: integer
+              prefix:
+                type: string
+              max_lenght:
+                type: integer
+
+        unknowns:
+          type: array
+          items:
+            type: object
+            required:
+              - asn
+              - prefix
+              - max_length
+            properties:
+              asn:
+                type: integer
+              prefix:
+                type: string
+              max_lenght:
+                type: integer
+
+        invalid_length:
+          type: array
+          items:
+            type: object
+            required:
+              - asn
+              - prefix
+              - max_length
+            properties:
+              asn:
+                type: integer
+              prefix:
+                type: string
+              max_lenght:
+                type: integer
+
+        covering:
+          type: array
+          items:
+            type: object
+            required:
+              - addition
+              - covering
+            properties:
+              addition:
+                type: object
+                required:
+                  - asn
+                  - prefix
+                  - max_length
+                properties:
+                  asn:
+                    type: integer
+                  prefix:
+                    type: string
+                  max_lenght:
+                    type: integer
+              covering:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - asn
+                    - prefix
+                    - max_length
+                  properties:
+                    asn:
+                      type: integer
+                    prefix:
+                      type: string
+                    max_lenght:
+                      type: integer
+
+        as0_exists:
+          type: array
+          items:
+            type: object
+            required:
+              - addition
+              - existing_as0
+            properties:
+              addition:
+                type: object
+                required:
+                  - asn
+                  - prefix
+                  - max_length
+                properties:
+                  asn:
+                    type: integer
+                  prefix:
+                    type: string
+                  max_lenght:
+                    type: integer
+              existing_as0:
+                type: object
+                required:
+                  - asn
+                  - prefix
+                  - max_length
+                properties:
+                  asn:
+                    type: integer
+                  prefix:
+                    type: string
+                  max_lenght:
+                    type: integer
+
+        as0_overlaps:
+          type: array
+          items:
+            type: object
+            required:
+              - addition
+              - existing
+            properties:
+              addition:
+                type: object
+                required:
+                  - asn
+                  - prefix
+                  - max_length
+                properties:
+                  asn:
+                    type: integer
+                  prefix:
+                    type: string
+                  max_lenght:
+                    type: integer
+              existing:
+                type: array
+                items:
+                  type: object
+                  required:
+                    - asn
+                    - prefix
+                    - max_length
+                  properties:
+                    asn:
+                      type: integer
+                    prefix:
+                      type: string
+                    max_lenght:
+                      type: integer
+
 
     CaDuplicateResponse:
       type: object
@@ -2060,55 +2527,187 @@ components:
           schema:
             $ref: '#/components/schemas/CaParentIssueResponse'
 
-    BgpFull:
+    RoaDeltaError:
+      description: Error in submitted ROA delta
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/RoaDeltaErrorResponse'
+          example:
+            label: ca-roa-delta-error
+            msg: 'Delta rejected, see included json'
+            args: {}
+            delta_error:
+              duplicates:
+                - asn: 1
+                  prefix: 10.0.0.0/20
+                  max_length: 24
+              covered:
+                - addition:
+                    asn: 1
+                    prefix: 10.0.0.0/24
+                  covered_by:
+                    asn: 1
+                    prefix: 10.0.0.0/20
+                    max_length: 24
+              notheld:
+                - asn: 1
+                  prefix: 10.128.0.0/9
+              unknowns:
+                - asn: 1
+                  prefix: 192.168.0.0/16
+              invalid_length:
+                - asn: 1
+                  prefix: 10.0.1.0/25
+              covering:
+                - addition:
+                    asn: 1
+                    prefix: 10.0.0.0/16
+                    max_length: 24
+                  covering:
+                    - asn: 1
+                      prefix: 10.0.0.0/20
+                      max_length: 24
+                    - asn: 1
+                      prefix: 10.0.128.0/24
+              as0_exists:
+                - addition:
+                    asn: 1
+                    prefix: 10.1.0.0/24
+                  existing_as0:
+                    asn: 0
+                    prefix: 10.1.0.0/24
+              as0_overlaps:
+                - addition:
+                    asn: 0
+                    prefix: 10.2.0.0/16
+                  existing:
+                    - asn: 1
+                      prefix: 10.2.0.0/24
+                    - asn: 1
+                      prefix: 10.2.1.0/24
+
+
+    BgpAnalysisReport:
       description: |
         Full ROAs vs known BGP Announcements report for this CA.
 
         This is an array of both ROAs and Announcements, including all optional
-        information that may be applicable to either. I.e. even though the schema
-        includes max_length this value will not be present for announcements. The
-        arrays for 'allows' and 'disallows' will always be empty for announcements,
-        as will the arrays for 'allowed_by' and 'disallowed_by' for ROAs.
+        information that may be applicable to either:
 
-        Confusing as this might be, this allows for parsing all kinds of states
-        in a single table. If you want to look at announcements or ROAs only, please
-        look at the other more specific BGP analysis endpoints for those.
+        <table>
+          <tr><th>element</th><th>applies to</th><th>meaning</th></tr>
+          <tr><td>allowed_by</td><td>announcement</td><td>List of ROAs authorizing this announcement</td></tr>
+          <tr><td>disallowed_by</td><td>announcement</td><td>List of ROAs disallowing this announcement, see state for main reason</td></tr>
+          <tr><td>made_redundant_by</td><td>roa</td><td>AS0 ROA for prefix which is authorised for a real ASN</td></tr>
+          <tr><td>authorizes</td><td>roa</td><td>List of announcements authorized by this ROA</td></tr>
+          <tr><td>disallows</td><td>roa</td><td>List of announcements disallowed by this ROA</td></tr>
+        </table>
 
-        Possible state values are: roa_seen, roa_seen, announcement_valid,
-        announcement_invalid_length, announcement_invalid_asn, announcement_not_found,
-        roa_no_announcement_info
+        Furthermore the schema includes max_length. This value will not be present for announcements. Confusing as this might be, this allows for parsing all kinds of states in a single table.
+
+        Possible state values are:
+
+        <table style="border: 1px solid black;">
+          <tr><th>state</th><th>meaning</th></tr>
+          <tr><td>roa_seen</td><td>The ROA covers BGP announcements</td></tr>
+          <tr><td>roa_unseen</td><td>The ROA covers no BGP announcements</td></tr>
+          <tr><td>roa_too_permissive</td><td>The ROA authorizes additional announcements</td></tr>
+          <tr><td>roa_as0</td><td>AS0 ROA which may disallow announcements</td></tr>
+          <tr><td>announcement_valid</td><td>BGP announcement authorized by a ROA</td></tr>
+          <tr><td>announcement_invalid_length</td><td>BGP announcement too specific for the ASN</td></tr>
+          <tr><td>announcement_invalid_asn</td><td>BGP announcement prefix only allowed for othes ASNs</td></tr>
+          <tr><td>announcement_not_found</td><td>BGP announcement not covered by ROAs</td></tr>
+          <tr><td>roa_no_announcement_info</td><td>ROA exists, but no BGP info available for analysis</td></tr>
+        </table>
+
+
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/BgpFullSchema'
+            $ref: '#/components/schemas/BgpAnalysisReport'
+          example:
+            - asn: 64497
+              prefix: 192.168.1.0/24
+              state: roa_seen
+              authorizes:
+                - asn: 64497
+                  prefix: 192.168.1.0/24
+            - asn: 64497
+              prefix: 10.0.3.0/24
+              state: roa_unseen
+            - asn: 64498
+              prefix: 192.168.1.0/24
+              state: roa_unseen
+            - asn: 64496
+              prefix: 10.0.0.0/22
+              max_length: 23
+              state: roa_too_permissive
+              authorizes:
+                - asn: 64496
+                  prefix: 10.0.0.0/22
+                - asn: 64496
+                  prefix: 10.0.2.0/23
+              disallows:
+                - asn: 64497
+                  prefix: 10.0.0.0/22
+                - asn: 64496
+                  prefix: 10.0.0.0/24
+            - asn: 0
+              prefix: 10.0.4.0/24
+              state: roa_as0
+            - asn: 0
+              prefix: 192.168.1.0/24
+              state: roa_as0_redundant
+              made_redundant_by:
+                - asn: 64497
+                  prefix: 192.168.1.0/24
+                - asn: 64498
+                  prefix: 192.168.1.0/24
+            - asn: 64496
+              prefix: 10.0.0.0/22
+              state: announcement_valid
+              allowed_by:
+                asn: 64496
+                prefix: 10.0.0.0/22
+                max_length: 23
+            - asn: 64496
+              prefix: 10.0.2.0/23
+              state: announcement_valid
+              allowed_by:
+                asn: 64496
+                prefix: 10.0.0.0/22
+                max_length: 23
+            - asn: 64497
+              prefix: 192.168.1.0/24
+              state: announcement_valid
+              allowed_by:
+                asn: 64497
+                prefix: 192.168.1.0/24
+            - asn: 64496
+              prefix: 10.0.0.0/24
+              state: announcement_invalid_length
+              disallowed_by:
+                - asn: 64496
+                  prefix: 10.0.0.0/22
+                  max_length: 23
+            - asn: 64497
+              prefix: 10.0.0.0/22
+              state: announcement_invalid_asn
+              disallowed_by:
+                - asn: 64496
+                  prefix: 10.0.0.0/22
+                  max_length: 23
+            - asn: 64497
+              prefix: 10.0.0.0/21
+              state: announcement_not_found
+            - asn: 64496
+              prefix: 192.168.0.0/24
+              state: announcement_not_found
+            - asn: 64497
+              prefix: 192.168.0.0/24
+              state: announcement_not_found
 
-    CaRoaUnknownResponse:
-      description: 'Invalid ROA delta: removing a definition which is unknown'
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/CaRoaUnknownResponse'
-
-    CaRoaDuplicateResponse:
-      description: 'Invalid ROA delta: adding a definition which is already present'
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/CaRoaDuplicateResponse'
-
-    CaRoaInvalidMaxLengthResponse:
-      description: 'Invalid ROA delta: not all resources held.'
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/CaRoaInvalidMaxLengthResponse'
-
-    CaRoaNotEntitledResponse:
-      description: 'Invalid ROA delta: not all resources held.'
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/CaRoaNotEntitledResponse'
 
     CaDuplicateResponse:
       description: CA handle already in use.
