@@ -39,6 +39,21 @@ async fn ca_grandchildren() {
     let ta_crl_file = ta_key.incoming_cert().crl_name().to_string();
     let ta_crl_file = ta_crl_file.as_str();
 
+    // Wait for the "testlab" CA to get it certificate, so we know if we can expect
+    // certificates for it in this test.
+    let base_cert_files = if CONFIG.testbed_enabled {
+        let testbed_ca_handle = Handle::from_str("testbed").unwrap();
+        assert!(ca_gets_resources(&testbed_ca_handle, &ResourceSet::all_resources()).await);
+
+        let testbed_ca = ca_details(&testbed_ca_handle).await;
+        let testbed_ca_rc = testbed_ca.resource_classes().keys().next().unwrap();
+        let testbed_ca_key = ca_key_for_rcn(&testbed_ca_handle, &testbed_ca_rc).await;
+        vec![ObjectName::from(testbed_ca_key.incoming_cert().cert()).to_string()]
+    } else {
+        Vec::new()
+    };
+    let base_objects = base_cert_files.iter().map(|f| f.as_str()).collect::<Vec<&str>>();
+
     // -------------------- CA1 -----------------------------------------------
     let ca1 = Handle::from_str("CA1").unwrap();
     let ca1_res = ResourceSet::from_strs("", "10.0.0.0/16", "").unwrap();
@@ -59,18 +74,6 @@ async fn ca_grandchildren() {
     let ca1_mft_file = ca1_mft_file.as_str();
     let ca1_crl_file = ca1_key.incoming_cert().crl_name().to_string();
     let ca1_crl_file = ca1_crl_file.as_str();
-
-    // Check that the TA publishes the certificate
-    let base_cert_files = if CONFIG.testbed_enabled {
-        let testbed_ca_handle = Handle::from_str("testbed").unwrap();
-        let testbed_ca = ca_details(&testbed_ca_handle).await;
-        let testbed_ca_rc = testbed_ca.resource_classes().keys().next().unwrap();
-        let testbed_ca_key = ca_key_for_rcn(&testbed_ca_handle, &testbed_ca_rc).await;
-        vec![ObjectName::from(testbed_ca_key.incoming_cert().cert()).to_string()]
-    } else {
-        Vec::new()
-    };
-    let base_objects = base_cert_files.iter().map(|f| f.as_str()).collect::<Vec<&str>>();
 
     let mut expected_objects = vec![ta_crl_file, ta_mft_file, ca1_cert_file];
     expected_objects.extend(&base_objects);

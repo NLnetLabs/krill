@@ -197,10 +197,7 @@ impl KrillServer {
                     caserver.republish(&testbed_ca_handle).await?;
 
                     // Establish the TA (parent) <-> testbed CA (child) relationship
-                    let asns = "0-4294967295";
-                    let v4 = "0.0.0.0-255.255.255.255";
-                    let v6 = "::0/0";
-                    let testbed_ca_resources = ResourceSet::from_strs(asns, v4, v6).unwrap();
+                    let testbed_ca_resources = ResourceSet::all_resources();
                     let auth = ChildAuthRequest::Rfc8183(testbed_ca.child_request());
                     let child_req = AddChildRequest::new(testbed_ca_handle.clone(), testbed_ca_resources, auth);
                     let parent_ca_contact = caserver.ca_add_child(&ta_handle, child_req, &service_uri).await?;
