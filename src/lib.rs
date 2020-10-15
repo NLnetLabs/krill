@@ -28,7 +28,6 @@ extern crate serde;
 extern crate serde_json;
 extern crate syslog;
 extern crate tokio;
-extern crate tokio_proto;
 extern crate toml;
 extern crate uuid;
 extern crate xml as xmlrs;
