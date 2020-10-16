@@ -3,6 +3,15 @@
 Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
 for planned releases.
 
+## 0.8.0
+
+
+Breaking API changes:
+
+The 
+
+
+
 ## 0.8.0-rc1 'Festina Lente'
 
 As of now we will use release candidates as part of the Krill release process. If no major issues

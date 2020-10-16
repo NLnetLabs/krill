@@ -292,6 +292,8 @@ pub struct CommandHistoryCriteria {
     #[serde(skip_serializing_if = "Option::is_none")]
     after: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    after_sequence: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     label_includes: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     label_excludes: Option<Vec<String>>,
@@ -318,6 +320,10 @@ impl CommandHistoryCriteria {
         self.before = Some(timestamp);
     }
 
+    pub fn set_after_sequence(&mut self, sequence: u64) {
+        self.after_sequence = Some(sequence)
+    }
+
     pub fn set_rows(&mut self, rows: usize) {
         self.rows_limit = Some(rows);
     }
@@ -342,6 +348,13 @@ impl CommandHistoryCriteria {
             }
         }
         true
+    }
+
+    pub fn matches_sequence(&self, sequence: u64) -> bool {
+        match self.after_sequence {
+            None => true,
+            Some(seq_crit) => sequence > seq_crit,
+        }
     }
 
     #[allow(clippy::ptr_arg)]
@@ -374,6 +387,7 @@ impl Default for CommandHistoryCriteria {
         CommandHistoryCriteria {
             before: None,
             after: None,
+            after_sequence: None,
             label_includes: None,
             label_excludes: None,
             offset: 0,

@@ -19,13 +19,10 @@ async fn history() {
     use krill::commons::crypto::KrillSigner;
     use krill::commons::util::file;
     use krill::daemon::ca::CaServer;
-    use krill::daemon::config::CONFIG;
     use krill::daemon::mq::EventQueueListener;
     use krill::test::*;
 
     const KRILL_HISTORY_JSON_GENERATE: &str = "KRILL_HISTORY_JSON_GENERATE";
-
-    CONFIG.init_logging().unwrap();
 
     // Run this test with ENV variable KRILL_HISTORY_JSON_GENERATE = 1 in order to generate json
     // for missing files

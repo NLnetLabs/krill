@@ -86,7 +86,9 @@ impl CommandKey {
     }
 
     pub fn matches_crit(&self, crit: &CommandHistoryCriteria) -> bool {
-        crit.matches_timestamp_secs(self.timestamp_secs) && crit.matches_label(&self.label)
+        crit.matches_timestamp_secs(self.timestamp_secs)
+            && crit.matches_label(&self.label)
+            && crit.matches_sequence(self.sequence)
     }
 }
 
@@ -183,7 +185,37 @@ where
         for handle in self.list()? {
             let _ = self
                 .get_latest(&handle)
-                .map_err(|e| AggregateStoreError::WarmupFailed(handle, e.to_string()))?;
+                .map_err(|e| AggregateStoreError::WarmupFailed(handle.clone(), e.to_string()))?;
+
+            // check that last command and event are consistent with
+            // the info, if not fail warmup and force recover
+            let info = self.get_info(&handle)?;
+
+            // for events we can just check if the next event, after
+            // the last event in the info exists
+            if self.get_event::<A::Event>(&handle, info.last_event + 1)?.is_some() {
+                return Err(AggregateStoreError::WarmupFailed(
+                    handle.clone(),
+                    format!(
+                        "Additional event(s) found after version: {}. Force recover.",
+                        info.last_event
+                    ),
+                ));
+            }
+
+            // Check if there are any commands with a sequence after the last
+            // recorded sequence in the info.
+            let mut crit = CommandHistoryCriteria::default();
+            crit.set_after_sequence(info.last_command);
+            if !self.command_keys_ascending(&handle, &crit)?.is_empty() {
+                return Err(AggregateStoreError::WarmupFailed(
+                    handle,
+                    format!(
+                        "Additional commands(s) found after version: {}. Force recover.",
+                        info.last_command
+                    ),
+                ));
+            }
         }
         Ok(())
     }
