@@ -63,6 +63,11 @@ functional-tests = []
 extra-debug = [ "rpki/extra-debug" ]
 static-openssl = [ "openssl/vendored" ]
 
+# Make sure that Krill crashes on panics, rather than losing threads and
+# limping on in a bad state.
+[profile.release]
+panic = "abort"
+
 # ------------------------------------------------------------------------------
 # START DEBIAN PACKAGING
 #
