@@ -18,6 +18,7 @@ use crate::commons::remote::rfc8181;
 use crate::commons::remote::rfc8183;
 use crate::commons::KrillResult;
 use crate::constants::*;
+use crate::daemon::config::CONFIG;
 use crate::pubd::{self, CmdDet, RepoStats, Repository};
 
 //------------ PubServer -----------------------------------------------------
@@ -74,7 +75,10 @@ impl PubServer {
         let default = Self::repository_handle();
 
         let store = Arc::new(AggregateStore::<Repository>::new(work_dir, PUBSERVER_DIR)?);
-        if let Err(e) = store.warm() {
+
+        if CONFIG.always_recover_data {
+            store.recover()?;
+        } else if let Err(e) = store.warm() {
             error!(
                 "Could not warm up cache, storage seems corrupt, will try to recover!! Error was: {}",
                 e

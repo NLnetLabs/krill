@@ -30,6 +30,7 @@ use crate::daemon::ca::{
     self, ta_handle, CertAuth, Cmd, CmdDet, IniDet, ResourceTaggedAttestation, RouteAuthorizationUpdates,
     RtaContentRequest, RtaPrepareRequest, StatusStore,
 };
+use crate::daemon::config::CONFIG;
 use crate::daemon::mq::EventQueueListener;
 
 //------------ CaServer ------------------------------------------------------
@@ -122,7 +123,9 @@ impl CaServer {
         signer: KrillSigner,
     ) -> KrillResult<Self> {
         let mut ca_store = AggregateStore::<CertAuth>::new(work_dir, CASERVER_DIR)?;
-        if let Err(e) = ca_store.warm() {
+        if CONFIG.always_recover_data {
+            ca_store.recover()?;
+        } else if let Err(e) = ca_store.warm() {
             error!(
                 "Could not warm up cache, data seems corrupt. Will try to recover!! Error was: {}",
                 e
