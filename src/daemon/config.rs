@@ -77,6 +77,9 @@ impl ConfigDefaults {
             None
         }
     }
+    fn always_recover_data() -> bool {
+        env::var(KRILL_ENV_FORCE_RECOVER).is_ok()
+    }
     fn rsync_base() -> uri::Rsync {
         uri::Rsync::from_str("rsync://localhost/repo/").unwrap()
     }
@@ -244,6 +247,9 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::archive_threshold_days")]
     pub archive_threshold_days: Option<i64>,
 
+    #[serde(default = "ConfigDefaults::always_recover_data")]
+    pub always_recover_data: bool,
+
     pub pid_file: Option<PathBuf>,
 
     #[serde(default = "ConfigDefaults::rsync_base")]
@@ -395,10 +401,11 @@ impl Config {
         let use_ta = true;
         let repo_enabled = true;
         let repo_retain_old_seconds = 1;
-        let testbed_enabled = true;
+        let testbed_enabled = false;
         let https_mode = HttpsMode::Generate;
         let data_dir = data_dir.clone();
         let archive_threshold_days = Some(0);
+        let always_recover_data = true;
         let rsync_base = ConfigDefaults::rsync_base();
         let service_uri = ConfigDefaults::service_uri();
         let rrdp_service_uri = Some("https://localhost:3000/test-rrdp/".to_string());
@@ -451,6 +458,7 @@ impl Config {
             https_mode,
             data_dir,
             archive_threshold_days,
+            always_recover_data,
             rsync_base,
             service_uri,
             rrdp_service_uri,

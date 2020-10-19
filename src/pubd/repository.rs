@@ -308,9 +308,14 @@ impl RrdpServer {
                     }
                 // clean snapshots no longer referenced in retained notification files
                 } else if !self.old_notifications.iter().any(|n| n.includes_snapshot(serial)) {
-                    debug!("Snapshots no longer contained, will delete: {}", path.to_string_lossy());
                     let snapshot_path = Self::new_snapshot_path(&self.rrdp_base_dir, &self.session, serial);
-                    let _best_effort_rm = fs::remove_file(snapshot_path);
+                    if snapshot_path.exists() {
+                        debug!(
+                            "Snapshots no longer contained, will delete: {}",
+                            snapshot_path.to_string_lossy()
+                        );
+                        let _best_effort_rm = fs::remove_file(snapshot_path);
+                    }
                 } else {
                     debug!("looks like we still need this");
                 }

@@ -3,6 +3,31 @@
 Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
 for planned releases.
 
+## 0.8.0-rc2 'The Small Print'
+
+Because of some changes we decided to have another RC release before 0.8.0, which is now planned
+for Monday 26 October 2020.
+
+The reason for these changes is that while documenting the 0.8.0 release we decided that we would
+like to include two more small features:
+- Detect and remove surplus events at start-up #332
+- Add option to force recover on Krill startup #333
+
+Issue #332 will allow Krill to recover smoothly in case the Krill process stopped in the middle
+of writing changes to disk. This also allows for backup strategies where the data directory is saved
+in its entirety from cron while Krill is running - half completed transactions will be discarded on
+restore.
+
+Issue #333 should not be needed, but is added as an option in case of severe data corruption. It
+will force Krill to try to go back to its last 'recoverable' state. Of course this state may be too
+far in the past to be useful. So, please make sure you do your backups.
+
+We have now added the updated translations for: German, Dutch, Portuguese and French. That only
+leaves Spanish out of the currently supported languages. Since these changes do not change the logic
+we feel safe to include Spanish when we release 0.8.0 without the need for an additional release
+candidate.
+
+
 ## 0.8.0-rc1 'Festina Lente'
 
 As of now we will use release candidates as part of the Krill release process. If no major issues

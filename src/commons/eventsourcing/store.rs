@@ -86,7 +86,9 @@ impl CommandKey {
     }
 
     pub fn matches_crit(&self, crit: &CommandHistoryCriteria) -> bool {
-        crit.matches_timestamp_secs(self.timestamp_secs) && crit.matches_label(&self.label)
+        crit.matches_timestamp_secs(self.timestamp_secs)
+            && crit.matches_label(&self.label)
+            && crit.matches_sequence(self.sequence)
     }
 }
 
@@ -183,7 +185,37 @@ where
         for handle in self.list()? {
             let _ = self
                 .get_latest(&handle)
-                .map_err(|e| AggregateStoreError::WarmupFailed(handle, e.to_string()))?;
+                .map_err(|e| AggregateStoreError::WarmupFailed(handle.clone(), e.to_string()))?;
+
+            // check that last command and event are consistent with
+            // the info, if not fail warmup and force recover
+            let info = self.get_info(&handle)?;
+
+            // for events we can just check if the next event, after
+            // the last event in the info exists
+            if self.get_event::<A::Event>(&handle, info.last_event + 1)?.is_some() {
+                return Err(AggregateStoreError::WarmupFailed(
+                    handle.clone(),
+                    format!(
+                        "Additional event(s) found after version: {}. Force recover.",
+                        info.last_event
+                    ),
+                ));
+            }
+
+            // Check if there are any commands with a sequence after the last
+            // recorded sequence in the info.
+            let mut crit = CommandHistoryCriteria::default();
+            crit.set_after_sequence(info.last_command);
+            if !self.command_keys_ascending(&handle, &crit)?.is_empty() {
+                return Err(AggregateStoreError::WarmupFailed(
+                    handle,
+                    format!(
+                        "Additional commands(s) found after version: {}. Force recover.",
+                        info.last_command
+                    ),
+                ));
+            }
         }
         Ok(())
     }
@@ -218,12 +250,19 @@ where
 
             // Check all commands and associated events
             let mut hunkydory = true;
-            for command_key in self.command_keys_ascending(&handle, &criteria)? {
+
+            let command_keys = self.command_keys_ascending(&handle, &criteria)?;
+            info!("Processing {} commands for {}", command_keys.len(), handle);
+            let mut counter = 0;
+            for command_key in command_keys {
+                if counter % 100 == 0 {
+                    info!("Processed {} commands", counter);
+                }
+
                 if hunkydory {
                     if let Ok(cmd) = self.get_command::<A::StorableCommandDetails>(&handle, &command_key) {
                         if let Some(events) = cmd.effect().events() {
                             for version in events {
-                                // TODO: When archiving is in place, allow missing (archived) events as long as they are from before the snapshot or backup snapshot
                                 if let Ok(Some(_)) = self.get_event::<A::Event>(&handle, *version) {
                                     last_good_evt = *version;
                                 } else {
@@ -238,10 +277,16 @@ where
                     }
                 }
                 if !hunkydory {
+                    warn!(
+                        "Command {} was corrupt, or not all events could be loaded. Will archive surplus",
+                        command_key
+                    );
                     // Bad command or event encountered.. archive surplus commands
                     // note that we will clean surplus events later
                     self.archive_surplus_command(&handle, &command_key)?;
                 }
+
+                counter += 1;
             }
 
             self.archive_surplus_events(&handle, last_good_evt + 1)?;
@@ -253,6 +298,8 @@ where
                 );
             }
 
+            // Get the latest aggregate, not that this ensures that the snapshots
+            // are checked, and archived if corrupt, or if they are after the last_good_evt
             let agg = self
                 .get_aggregate(&handle, Some(last_good_evt))?
                 .ok_or_else(|| AggregateStoreError::CouldNotRecover(handle.clone()))?;
@@ -592,8 +639,16 @@ where
 
     fn get_latest_no_lock(&self, handle: &Handle) -> StoreResult<Arc<A>> {
         trace!("Trying to load aggregate id: {}", handle);
+
+        let info_key = Self::key_for_info(handle);
+        let info: StoredValueInfo = self
+            .kv
+            .get(&info_key)
+            .map_err(|_| AggregateStoreError::InfoCorrupt(handle.clone()))?
+            .ok_or_else(|| AggregateStoreError::InfoMissing(handle.clone()))?;
+
         match self.cache_get(handle) {
-            None => match self.get_aggregate(handle, None)? {
+            None => match self.get_aggregate(handle, Some(info.last_event))? {
                 None => {
                     error!("Could not load aggregate with id: {} from disk", handle);
                     Err(AggregateStoreError::UnknownAggregate(handle.clone()))
@@ -608,7 +663,7 @@ where
             Some(mut arc) => {
                 if self.has_updates(handle, &arc)? {
                     let agg = Arc::make_mut(&mut arc);
-                    self.update_aggregate(handle, agg, None)?;
+                    self.update_aggregate(handle, agg, Some(info.last_event))?;
                 }
                 trace!("Loaded aggregate id: {} from memory", handle);
                 Ok(arc)
@@ -763,6 +818,7 @@ where
     }
 
     /// Get the latest aggregate
+    /// limit to the event nr, i.e. the resulting aggregate version will be limit + 1
     fn get_aggregate(&self, id: &Handle, limit: Option<u64>) -> Result<Option<A>, AggregateStoreError> {
         // 1) Try to get a snapshot.
         // 2) If that fails try the backup
@@ -788,7 +844,7 @@ where
                 // snapshot present and okay
                 trace!("Found snapshot for '{}'", id);
                 if let Some(limit) = limit {
-                    if limit >= agg.version() {
+                    if limit >= agg.version() - 1 {
                         aggregate_opt = Some(agg)
                     } else {
                         trace!("Discarding snapshot after limit '{}'", id);
@@ -817,7 +873,7 @@ where
                 Ok(Some(agg)) => {
                     trace!("Found backup snapshot for '{}'", id);
                     if let Some(limit) = limit {
-                        if limit >= agg.version() {
+                        if limit >= agg.version() - 1 {
                             aggregate_opt = Some(agg)
                         } else {
                             trace!("Discarding backup snapshot after limit '{}'", id);
@@ -856,16 +912,10 @@ where
     fn update_aggregate(&self, id: &Handle, aggregate: &mut A, limit: Option<u64>) -> Result<(), AggregateStoreError> {
         let start = aggregate.version();
         let limit = if let Some(limit) = limit {
-            debug!(
-                "Will attempt to update '{}' from version: {} to: {} (explicit limit)",
-                id, start, limit
-            );
+            debug!("Will attempt to update '{}' using explicit limit", id);
             limit
         } else if let Ok(info) = self.get_info(id) {
-            debug!(
-                "Will attempt to update '{}' from version: {} to: {} (found info)",
-                id, start, info.last_event
-            );
+            debug!("Will attempt to update '{}' using limit from info", id);
             info.last_event
         } else {
             let nr_events = self.kv.keys(Some(id.to_string()), "delta-")?.len();
@@ -873,10 +923,7 @@ where
                 return Err(AggregateStoreError::InfoMissing(id.clone()));
             } else {
                 let limit = (nr_events - 1) as u64;
-                debug!(
-                    "Will attempt to update '{}' from version: {} to: {} (based on nr of events)",
-                    id, start, limit
-                );
+                debug!("Will attempt to update '{}' from limit based on nr of events", id,);
                 limit
             }
         };
@@ -884,8 +931,16 @@ where
         if limit == aggregate.version() - 1 {
             // already at version, done
             // note that an event has the version of the aggregate it *affects*. So delta 10 results in version 11.
+            debug!("Snapshot for '{}' is up to date", id);
             return Ok(());
         }
+
+        debug!(
+            "Will attempt to update '{}' from version: {} to: {}",
+            id,
+            start,
+            limit + 1
+        );
 
         if start > limit {
             return Err(AggregateStoreError::ReplayError(id.clone(), limit, start));
