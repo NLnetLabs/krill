@@ -234,6 +234,18 @@ pub enum Error {
     #[display(fmt = "POST body cannot be read")]
     PostCannotRead,
 
+    #[display(fmt = "Missing credentials")]
+    ApiMissingCredentials,
+
+    #[display(fmt = "Invalid credentials")]
+    ApiInvalidCredentials,
+
+    #[display(fmt = "Invalid role")]
+    ApiInvalidRole,
+
+    #[display(fmt = "Insufficient rights")]
+    ApiInsufficientRights,
+
     //-----------------------------------------------------------------
     // Repository Issues
     //-----------------------------------------------------------------
@@ -573,6 +585,14 @@ impl Error {
             Error::PostTooBig => ErrorResponse::new("api-post-body-exceeds-limit", &self),
 
             Error::PostCannotRead => ErrorResponse::new("api-post-body-cannot-read", &self),
+
+            Error::ApiMissingCredentials => ErrorResponse::new("api-missing-credentials", &self),
+
+            Error::ApiInvalidCredentials => ErrorResponse::new("api-invalid-credentials", &self),
+
+            Error::ApiInvalidRole => ErrorResponse::new("api-invalid-role", &self),
+
+            Error::ApiInsufficientRights => ErrorResponse::new("api-insufficient-rights", &self),
 
             //-----------------------------------------------------------------
             // Repository Issues (label: repo-*)

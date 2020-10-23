@@ -3,6 +3,8 @@
 extern crate base64;
 #[macro_use]
 extern crate bcder;
+#[macro_use]
+extern crate bitflags;
 extern crate bytes;
 extern crate chrono;
 extern crate clap;

@@ -20,6 +20,8 @@ use crate::commons::util::{ext_serde, AllowedUri};
 use crate::constants::*;
 use crate::daemon::http::tls_keys;
 
+use crate::daemon::auth::providers::openid_connect::ConfigAuthOpenIDConnect;
+
 lazy_static! {
     pub static ref CONFIG: Config = {
         match Config::create() {
@@ -107,7 +109,9 @@ impl ConfigDefaults {
     fn syslog_facility() -> String {
         "daemon".to_string()
     }
-
+    fn auth_type() -> AuthType {
+        AuthType::MasterToken
+    }    
     fn auth_token() -> Token {
         match env::var(KRILL_ENV_AUTH_TOKEN) {
             Ok(token) => Token::from(token),
@@ -275,8 +279,13 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::syslog_facility")]
     syslog_facility: String,
 
+    #[serde(default = "ConfigDefaults::auth_type")]
+    pub auth_type: AuthType,
+
     #[serde(default = "ConfigDefaults::auth_token")]
     pub auth_token: Token,
+
+    pub auth_openidconnect: Option<ConfigAuthOpenIDConnect>,
 
     #[serde(default = "ConfigDefaults::ca_refresh")]
     pub ca_refresh: u32,
@@ -414,7 +423,9 @@ impl Config {
         let mut log_file = data_dir.clone();
         log_file.push("krill.log");
         let syslog_facility = ConfigDefaults::syslog_facility();
+        let auth_type = AuthType::MasterToken;
         let auth_token = Token::from("secret");
+        let auth_openidconnect = None;
         let ca_refresh = 3600;
         let post_limit_api = ConfigDefaults::post_limit_api();
         let post_limit_rfc8181 = ConfigDefaults::post_limit_rfc8181();
@@ -466,7 +477,9 @@ impl Config {
             log_type,
             log_file,
             syslog_facility,
+            auth_type,
             auth_token,
+            auth_openidconnect,
             ca_refresh,
             post_limit_api,
             post_limit_rfc8181,
@@ -858,6 +871,8 @@ impl<'de> Deserialize<'de> for LogType {
     }
 }
 
+//------------ HttpsMode -----------------------------------------------------
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HttpsMode {
     Existing,
@@ -881,6 +896,34 @@ impl<'de> Deserialize<'de> for HttpsMode {
         }
     }
 }
+
+//------------ AuthType -----------------------------------------------------
+
+/// The target to log to.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AuthType {
+    MasterToken,
+    OpenIDConnect,
+}
+
+impl<'de> Deserialize<'de> for AuthType {
+    fn deserialize<D>(d: D) -> Result<AuthType, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let string = String::deserialize(d)?;
+        match string.as_str() {
+            "master-token" => Ok(AuthType::MasterToken),
+            "openid-connect" => Ok(AuthType::OpenIDConnect),
+            _ => Err(de::Error::custom(format!(
+                "expected \"master-token\", or \"openid-connect\", \
+                 found: \"{}\"",
+                string
+            ))),
+        }
+    }
+}
+
 
 //------------ Tests ---------------------------------------------------------
 

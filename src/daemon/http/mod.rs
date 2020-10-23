@@ -10,14 +10,19 @@ use hyper::body::HttpBody;
 use hyper::http::uri::PathAndQuery;
 use hyper::{Body, Method, StatusCode};
 
+use urlparse::{urlparse, GetQuery};
+
+use crate::commons::KrillResult;
 use crate::commons::api::Token;
 use crate::commons::error::Error;
 use crate::commons::remote::{rfc6492, rfc8181};
-use crate::daemon::auth::Auth;
+use crate::daemon::auth::{Auth, LoggedInUser, Permissions};
 use crate::daemon::http::server::State;
 
+pub mod auth;
 pub mod server;
 pub mod statics;
+pub mod testbed;
 pub mod tls;
 pub mod tls_keys;
 
@@ -144,6 +149,15 @@ impl HttpResponse {
         Self::ok_response(ContentType::Text, body)
     }
 
+    pub fn text_no_cache(body: Vec<u8>) -> Self {
+        HttpResponse(hyper::Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", ContentType::Text.as_ref())
+            .header("Cache-Control", "no-cache")
+            .body(body.into())
+            .unwrap())
+    }
+
     pub fn xml(body: Vec<u8>) -> Self {
         Self::ok_response(ContentType::Xml, body)
     }
@@ -216,8 +230,42 @@ impl HttpResponse {
         Response::new(StatusCode::OK).finalize()
     }
 
+    pub fn found(location: &str) -> Self {
+        HttpResponse(hyper::Response::builder()
+            .status(StatusCode::FOUND)
+            .header("Location", location)
+            .body(hyper::Body::empty())
+            .unwrap())
+    }
+
     pub fn not_found() -> Self {
         Response::new(StatusCode::NOT_FOUND).finalize()
+    }
+
+    // Quoting RFC 2616 Hypertext Transfer Protocol -- HTTP/1.1
+    //
+    // From: https://tools.ietf.org/html/rfc2616#section-10.4.2
+    //   "10.4.2 401 Unauthorized
+    //    The request requires user authentication. The response MUST include a
+    //    WWW-Authenticate header field (section 14.47) containing a challenge
+    //    applicable to the requested resource. The client MAY repeat the
+    //    request with a suitable Authorization header field."
+    //
+    // From: https://tools.ietf.org/html/rfc2616#section-10.4.4
+    //   "10.4.4 403 Forbidden
+    //    The server understood the request, but is refusing to fulfill it.
+    //    Authorization will not help and the request SHOULD NOT be repeated."
+    // 
+    // So HTTP 401 covers both authentication AND authorization and a user that
+    // expects an attempt with good credentials to succeed should receive HTTP
+    // 401 Unauthorized and NOT HTTP 403 Forbidden.
+    pub fn unauthorized() -> Self {
+        HttpResponse(hyper::Response::builder()
+            .status(StatusCode::UNAUTHORIZED)
+            .header("WWW-Authenticate", "Bearer")
+            .header("Access-Control-Allow-Credentials", "true")
+            .body(hyper::Body::empty())
+            .unwrap())
     }
 
     pub fn forbidden() -> Self {
@@ -231,12 +279,20 @@ pub struct Request {
     request: hyper::Request<hyper::Body>,
     path: RequestPath,
     state: State,
+    new_auth: Option<Auth>,
+    authorization_enabled: bool,
 }
 
 impl Request {
     pub fn new(request: hyper::Request<hyper::Body>, state: State) -> Self {
         let path = RequestPath::from_request(&request);
-        Request { request, path, state }
+        Request { 
+            request: request,
+            path: path,
+            state: state,
+            new_auth: None,
+            authorization_enabled: true
+        }
     }
 
     /// Returns the complete path.
@@ -353,8 +409,17 @@ impl Request {
         Ok(vec.into())
     }
 
-    /// Checks whether the Bearer token is set to what we expect
-    pub async fn is_authorized(&self) -> bool {
+    fn get_auth(&self) -> Option<Auth> {
+        debug!("Extracting authentication details from the request");
+        if let Some(query) = urlparse(self.request.uri().to_string()).get_parsed_query() {
+            if let Some(code) = query.get_first_from_str("code") {
+                if let Some(state) = query.get_first_from_str("state") {
+                    debug!("The request is authenticated by temporary authorization code.");
+                    return Some(Auth::authorization_code(code, state));
+                }
+            }
+        }
+    
         if let Some(header) = self.request.headers().get("Authorization") {
             if let Ok(header) = header.to_str() {
                 if header.len() > 6 {
@@ -363,12 +428,51 @@ impl Request {
                     let token = Token::from(token.trim());
 
                     if "Bearer" == bearer {
-                        return self.state.read().await.is_api_allowed(&Auth::bearer(token));
+                        debug!("The request is authenticated by bearer token.");
+                        return Some(Auth::bearer(token));
                     }
                 }
             }
         }
-        false
+    
+        debug!("The request lacks authentication details.");
+        None
+    }
+
+    pub fn new_auth(&self) -> Option<&Auth> {
+        self.new_auth.as_ref()
+    }
+
+    pub fn disable_authorization_checks(&mut self) {
+        self.authorization_enabled = false;
+    }
+
+    /// Checks whether the Bearer token is set to what we expect
+    pub async fn is_authorized(&self, wanted_permissions: Permissions) -> KrillResult<Option<Auth>> {
+        match self.get_auth() {
+            Some(auth) => {
+                self.state.read().await.is_api_allowed(&auth, wanted_permissions)
+            }
+            None => {
+                Err(Error::ApiInvalidCredentials)
+            }
+        }
+    }
+
+    pub async fn get_login_url(&self) -> String {
+        self.state.read().await.get_login_url()
+    }
+
+    pub async fn login(&self) -> KrillResult<LoggedInUser> {
+        if let Some(auth) = self.get_auth() {
+            self.state.read().await.login(&auth)
+        } else {
+            Err(Error::ApiMissingCredentials)
+        }
+    }
+
+    pub async fn logout(&self) -> String {
+        self.state.read().await.logout(self.get_auth())
     }
 }
 

@@ -24,12 +24,13 @@ use crate::commons::eventsourcing::CommandKey;
 use crate::commons::remote::rfc8183;
 use crate::commons::{KrillEmptyResult, KrillResult};
 use crate::constants::*;
-use crate::daemon::auth::{Auth, Authorizer};
+use crate::daemon::auth::{Auth, Authorizer, LoggedInUser, Permissions};
+use crate::daemon::auth::providers::{MasterTokenAuthProvider, OpenIDConnectAuthProvider};
 use crate::daemon::ca::{
     self, ta_handle, testbed_ca_handle, ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaContentRequest,
     RtaPrepareRequest,
 };
-use crate::daemon::config::CONFIG;
+use crate::daemon::config::{AuthType, CONFIG};
 use crate::daemon::mq::EventQueueListener;
 use crate::daemon::scheduler::Scheduler;
 use crate::pubd::{PubServer, RepoStats};
@@ -100,7 +101,6 @@ impl KrillServer {
         let base_uri = &CONFIG.rsync_base;
         let service_uri = CONFIG.service_uri();
         let rrdp_base_uri = &CONFIG.rrdp_service_uri();
-        let token = &CONFIG.auth_token;
         let ca_refresh_rate = CONFIG.ca_refresh;
 
         info!("Starting {} v{}", KRILL_SERVER_APP, KRILL_VERSION);
@@ -110,7 +110,21 @@ impl KrillServer {
         repo_dir.push("repo");
 
         let signer = KrillSigner::build(work_dir)?;
-        let authorizer = Authorizer::new(token);
+
+        // Construct the authorizer used to verify API access requests and to
+        // tell Lagosta where to send end-users to login and logout.
+        let authorizer = match CONFIG.auth_type {
+            AuthType::MasterToken => {
+                Authorizer::new(MasterTokenAuthProvider::new())
+            },
+            AuthType::OpenIDConnect => {
+                Authorizer::new(OpenIDConnectAuthProvider::new().map_err(|e|
+                    Error::Custom(format!(
+                        "Unable to initialize OpenID Connect provider: {}", e)
+                    )
+                )?)
+            }
+        };
 
         let pubserver = {
             if CONFIG.repo_enabled {
@@ -251,8 +265,20 @@ impl KrillServer {
 
 /// # Authentication and Access
 impl KrillServer {
-    pub fn is_api_allowed(&self, auth: &Auth) -> bool {
-        self.authorizer.is_api_allowed(auth)
+    pub fn is_api_allowed(&self, auth: &Auth, wanted_permissions: Permissions) -> KrillResult<Option<Auth>> {
+        self.authorizer.is_api_allowed(auth, wanted_permissions)
+    }
+
+    pub fn get_login_url(&self) -> String {
+        self.authorizer.get_login_url()
+    }
+
+    pub fn login(&self, auth: &Auth) -> KrillResult<LoggedInUser> {
+        self.authorizer.login(auth)
+    }
+
+    pub fn logout(&self, auth: Option<Auth>) -> String {
+        self.authorizer.logout(auth)
     }
 
     pub fn limit_api(&self) -> u64 {
