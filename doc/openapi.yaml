@@ -1,7 +1,7 @@
 openapi: "3.0.2"
 info:
   title: Krill RPKI Server API
-  version: 0.8.0-rc1
+  version: 0.8.0
   description: |
     # Introduction
     Welcome to the documentation for the Krill server API, a JSON based
