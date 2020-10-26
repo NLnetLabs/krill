@@ -401,7 +401,7 @@ impl Config {
         let use_ta = true;
         let repo_enabled = true;
         let repo_retain_old_seconds = 1;
-        let testbed_enabled = false;
+        let testbed_enabled = true;
         let https_mode = HttpsMode::Generate;
         let data_dir = data_dir.clone();
         let archive_threshold_days = Some(0);
