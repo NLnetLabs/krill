@@ -111,7 +111,14 @@ pub async fn start() -> Result<(), Error> {
         .key_path(tls_keys::key_file_path(&CONFIG.data_dir));
     let server_config = server_config_builder.build().unwrap();
 
-    let acceptor = tls::TlsAcceptor::new(server_config, AddrIncoming::bind(&CONFIG.socket_addr()).unwrap());
+    let incoming = AddrIncoming::bind(&CONFIG.socket_addr()).map_err(|e| {
+        Error::Custom(format!(
+            "Could not bing to address and port: {}, Error: {}",
+            &CONFIG.socket_addr(),
+            e
+        ))
+    })?;
+    let acceptor = tls::TlsAcceptor::new(server_config, incoming);
 
     let server = hyper::Server::builder(acceptor)
         .serve(service)

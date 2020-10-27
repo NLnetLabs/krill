@@ -6,6 +6,9 @@ for planned releases.
 ## Unreleased Changes
 
 
+Fixes:
+* Give a clear error in case Krill cannot bind to server address and port (#337)
+
 
 ## 0.8.0 'The Art of ROA Maintenance'
 
