@@ -3,6 +3,10 @@
 Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
 for planned releases.
 
+## Unreleased Changes
+
+
+
 ## 0.8.0 'The Art of ROA Maintenance'
 
 This release includes all changes from the -rc1 and -rc2 release candidates. In addition to this
