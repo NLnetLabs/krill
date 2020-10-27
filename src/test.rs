@@ -8,7 +8,6 @@ use std::time::Duration;
 use std::{env, fs};
 
 use bytes::Bytes;
-use rand::{thread_rng, Rng};
 
 use hyper::StatusCode;
 use tokio::time::{delay_for, timeout};
@@ -495,11 +494,11 @@ pub fn tmp_dir() -> PathBuf {
 /// This method sets up a random subdirectory and returns it. It is
 /// assumed that the caller will clean this directory themselves.
 pub fn sub_dir(base_dir: &PathBuf) -> PathBuf {
-    let mut rng = thread_rng();
-    let rnd: u32 = rng.gen();
+    let mut bytes = [0; 8];
+    openssl::rand::rand_bytes(&mut bytes).unwrap();
 
     let mut dir = base_dir.clone();
-    dir.push(PathBuf::from(format!("{}", rnd)));
+    dir.push(hex::encode(bytes));
 
     let full_path = PathBuf::from(&dir);
     fs::create_dir_all(&full_path).unwrap();
