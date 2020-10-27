@@ -1,7 +1,6 @@
 #![type_length_limit = "5000000"]
 
 extern crate krill;
-extern crate pretty;
 extern crate rpki;
 
 /// This tests that you can run krill with an embedded TA and CA, and
