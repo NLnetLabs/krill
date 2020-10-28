@@ -6,6 +6,7 @@ pub mod error;
 pub mod eventsourcing;
 pub mod remote;
 pub mod util;
+pub mod actor;
 
 //------------ Response Aliases ----------------------------------------------
 

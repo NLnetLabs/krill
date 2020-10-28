@@ -9,7 +9,7 @@ use tokio::runtime::Runtime;
 
 use rpki::x509::Time;
 
-use crate::commons::api::Handle;
+use crate::{constants::ACTOR_KRILL, commons::api::Handle};
 use crate::commons::bgp::BgpAnalyser;
 use crate::daemon::ca::CaServer;
 use crate::daemon::config::CONFIG;
@@ -80,13 +80,13 @@ fn make_event_sh(
                 match evt {
                     QueueEvent::ServerStarted => {
                         info!("Will re-sync all CAs with their parents and repository after startup");
-                        caserver.resync_all().await;
+                        caserver.resync_all(ACTOR_KRILL).await;
                         let publisher = CaPublisher::new(caserver.clone(), pubserver.clone());
                         match caserver.ca_list() {
                             Err(e) => error!("Unable to obtain CA list: {}", e),
                             Ok(list) => {
                                 for ca in list.cas() {
-                                    if publisher.publish(ca.handle()).await.is_err() {
+                                    if publisher.publish(ca.handle(), ACTOR_KRILL).await.is_err() {
                                         error!("Unable to synchronise CA '{}' with its repository after startup", ca.handle());
                                     } else {
                                         info!("CA '{}' is in sync with its repository", ca.handle());
@@ -109,7 +109,7 @@ fn make_event_sh(
                     QueueEvent::ResourceClassRemoved(handle, _, parent, revocations) => {
                         info!("Trigger send revoke requests for removed RC for '{}' under '{}'",handle,parent);
 
-                        if caserver.send_revoke_requests(&handle, &parent, revocations).await.is_err() {
+                        if caserver.send_revoke_requests(&handle, &parent, revocations, ACTOR_KRILL).await.is_err() {
                             warn!("Could not revoke key for removed resource class. This is not \
                             an issue, because typically the parent will revoke our keys pro-actively, \
                             just before removing the resource class entitlements.");
@@ -122,7 +122,7 @@ fn make_event_sh(
                                 rcn
                             );
                             if let Err(e) = caserver
-                                .send_revoke_unexpected_key(&handle, rcn, revocation).await {
+                                .send_revoke_unexpected_key(&handle, rcn, revocation, ACTOR_KRILL).await {
                                 error!("Could not revoke unexpected surplus key at parent: {}", e);
                             }
                     }
@@ -132,7 +132,7 @@ fn make_event_sh(
                                 handle,
                                 parent
                             );
-                            if let Err(e) = caserver.get_updates_from_parent(&handle, &parent).await {
+                            if let Err(e) = caserver.get_updates_from_parent(&handle, &parent, ACTOR_KRILL).await {
                                 error!(
                                     "Error getting updates for '{}', from parent '{}',  error: '{}'",
                                     &handle, &parent, e
@@ -141,7 +141,7 @@ fn make_event_sh(
                     }
                     QueueEvent::RepositoryConfigured(ca, _) => {
                             info!("Repository configured for '{}'", ca);
-                            if let Err(e) = caserver.get_delayed_updates(&ca).await {
+                            if let Err(e) = caserver.get_delayed_updates(&ca, ACTOR_KRILL).await {
                                 error!(
                                     "Error getting updates after configuring repository for '{}',  error: '{}'",
                                     &ca, e
@@ -151,7 +151,7 @@ fn make_event_sh(
 
                     QueueEvent::RequestsPending(handle, _) => {
                             info!("Get updates for pending requests for '{}'.", handle);
-                            if let Err(e) = caserver.send_all_requests(&handle).await {
+                            if let Err(e) = caserver.send_all_requests(&handle, ACTOR_KRILL).await {
                                 error!(
                                     "Failed to send pending requests for '{}', error '{}'",
                                     &handle, e
@@ -160,13 +160,13 @@ fn make_event_sh(
                     }
                     QueueEvent::CleanOldRepo(handle, _) => {
                             let publisher = CaPublisher::new(caserver.clone(), pubserver.clone());
-                            if let Err(e) = publisher.clean_up(&handle).await {
+                            if let Err(e) = publisher.clean_up(&handle, ACTOR_KRILL).await {
                                 info!(
                                     "Could not clean up old repo for '{}', it may be that it's no longer available. Got error '{}'",
                                     &handle, e
                                 );
                             }
-                            if let Err(e) = caserver.remove_old_repo(&handle).await {
+                            if let Err(e) = caserver.remove_old_repo(&handle, ACTOR_KRILL).await {
                                 error!(
                                     "Failed to remove old repo from ca '{}', error '{}'",
                                     &handle, e
@@ -191,7 +191,7 @@ async fn try_publish(
     info!("Try to publish for '{}'", ca);
     let publisher = CaPublisher::new(caserver.clone(), pubserver);
 
-    if let Err(e) = publisher.publish(&ca).await {
+    if let Err(e) = publisher.publish(&ca, ACTOR_KRILL).await {
         if CONFIG.test_mode {
             error!("Failed to publish for '{}', error: {}", ca, e);
         } else {
@@ -207,7 +207,7 @@ fn make_republish_sh(caserver: Arc<CaServer>) -> ScheduleHandle {
         let mut rt = Runtime::new().unwrap();
         rt.block_on(async {
             info!("Triggering background republication for all CAs");
-            if let Err(e) = caserver.republish_all().await {
+            if let Err(e) = caserver.republish_all(ACTOR_KRILL).await {
                 error!("Background republishing failed: {}", e);
             }
         })
@@ -221,7 +221,7 @@ fn make_ca_refresh_sh(caserver: Arc<CaServer>, refresh_rate: u32) -> ScheduleHan
         let mut rt = Runtime::new().unwrap();
         rt.block_on(async {
             info!("Triggering background refresh for all CAs");
-            caserver.resync_all().await
+            caserver.resync_all(ACTOR_KRILL).await
         })
     });
     scheduler.watch_thread(Duration::from_millis(100))

@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::commons::api::{RoaDefinition, RoaDefinitionUpdates};
+use crate::{constants::ACTOR_KRILL, commons::api::{RoaDefinition, RoaDefinitionUpdates}};
 use crate::commons::bgp::make_roa_tree;
 use crate::daemon::krillserver::KrillServer;
 
@@ -21,7 +21,7 @@ pub async fn roa_cleanup(server: &KrillServer) -> Result<(), RoaCleanupError> {
 
         if let Some(updates) = clean(roas) {
             info!("Will clean up ROAs as follows:\n{}", updates);
-            server.ca_routes_update(ca.handle().clone(), updates).await?;
+            server.ca_routes_update(ca.handle().clone(), updates, ACTOR_KRILL).await?;
         } else {
             info!("No clean up needed");
         }

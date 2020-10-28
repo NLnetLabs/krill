@@ -21,10 +21,10 @@ use hyper::server::conn::AddrIncoming;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::Method;
 
-use crate::{commons::api::{
+use crate::{constants::ACTOR_API, commons::api::{
     BgpStats, ChildHandle, CommandHistoryCriteria, Handle, ParentCaContact, ParentCaReq, ParentHandle, PublisherList,
     RepositoryUpdate, RoaDefinitionUpdates, RtaName,
-}, daemon::auth::Auth, commons::api::Token};
+}, commons::api::Token, daemon::auth::Auth};
 use crate::commons::bgp::BgpAnalysisAdvice;
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::AggregateStoreError;
@@ -480,7 +480,7 @@ pub async fn rfc8181(req: Request) -> RoutingResult {
         };
 
         let read = state.read().await;
-        match read.rfc8181(publisher, bytes) {
+        match read.rfc8181(publisher, bytes, ACTOR_API) {
             Ok(bytes) => Ok(HttpResponse::rfc8181(bytes.to_vec())),
             Err(e) => render_error(e),
         }
@@ -535,7 +535,7 @@ pub async fn rfc6492(req: Request) -> RoutingResult {
             Err(e) => return render_error(e),
         };
         let lock = state.read().await;
-        match lock.rfc6492(ca, bytes).await {
+        match lock.rfc6492(ca, bytes, ACTOR_API).await {
             Ok(bytes) => Ok(HttpResponse::rfc6492(bytes.to_vec())),
             Err(e) => render_error(e),
         }
@@ -812,7 +812,7 @@ pub async fn api_add_pbl(req: Request) -> RoutingResult {
     aa!(req, PUB_CREATE, {
         let server = req.state().clone();
         match req.json().await {
-            Ok(pbl) => render_json_res(server.write().await.add_publisher(pbl)),
+            Ok(pbl) => render_json_res(server.write().await.add_publisher(pbl, ACTOR_API)),
             Err(e) => render_error(e),
         }
     })
@@ -821,7 +821,7 @@ pub async fn api_add_pbl(req: Request) -> RoutingResult {
 /// Removes a publisher. Should be idempotent! If if did not exist then
 /// that's just fine.
 pub async fn api_remove_pbl(req: Request, publisher: Handle) -> RoutingResult {
-    aa!(req, PUB_DELETE, render_empty_res(req.state().write().await.remove_publisher(publisher)))
+    aa!(req, PUB_DELETE, render_empty_res(req.state().write().await.remove_publisher(publisher, ACTOR_API)))
 }
 
 /// Returns a json structure with publisher details
@@ -857,7 +857,7 @@ pub async fn api_ca_add_child(req: Request, parent: ParentHandle) -> RoutingResu
     aa!(req, CA_UPDATE, {
         let server = req.state().clone();
         match req.json().await {
-            Ok(child_req) => render_json_res(server.read().await.ca_add_child(&parent, child_req).await),
+            Ok(child_req) => render_json_res(server.read().await.ca_add_child(&parent, child_req, ACTOR_API).await),
             Err(e) => render_error(e),
         }
     })
@@ -867,7 +867,7 @@ async fn api_ca_child_update(req: Request, ca: Handle, child: ChildHandle) -> Ro
     aa!(req, CA_UPDATE, {
         let server = req.state().clone();
         match req.json().await {
-            Ok(child_req) => render_empty_res(server.read().await.ca_child_update(&ca, child, child_req).await),
+            Ok(child_req) => render_empty_res(server.read().await.ca_child_update(&ca, child, child_req, ACTOR_API).await),
             Err(e) => render_error(e),
         }
     })
@@ -875,7 +875,7 @@ async fn api_ca_child_update(req: Request, ca: Handle, child: ChildHandle) -> Ro
 
 pub async fn api_ca_child_remove(req: Request, ca: Handle, child: ChildHandle) -> RoutingResult {
     aa!(req, CA_UPDATE, {
-        render_empty_res(req.state().read().await.ca_child_remove(&ca, child).await)
+        render_empty_res(req.state().read().await.ca_child_remove(&ca, child, ACTOR_API).await)
     })
 }
 
@@ -934,7 +934,7 @@ pub async fn api_ca_init(req: Request) -> RoutingResult {
 
 async fn api_ca_regenerate_id(req: Request, handle: Handle) -> RoutingResult {
     match *req.method() {
-        Method::POST => aa!(req, CA_UPDATE, render_empty_res(req.state().read().await.ca_update_id(handle).await)),
+        Method::POST => aa!(req, CA_UPDATE, render_empty_res(req.state().read().await.ca_update_id(handle, ACTOR_API).await)),
         _ => aa!(req, LOGIN, render_unknown_method()),
     }
 }
@@ -1133,7 +1133,7 @@ pub async fn api_ca_repo_update(req: Request, handle: Handle) -> RoutingResult {
             .await
             .map(|bytes| extract_repository_update(&handle, bytes))
         {
-            Ok(Ok(update)) => render_empty_res(server.read().await.ca_update_repo(handle, update).await),
+            Ok(Ok(update)) => render_empty_res(server.read().await.ca_update_repo(handle, update, ACTOR_API).await),
             Ok(Err(e)) | Err(e) => render_error(e),
         }
     })
@@ -1198,7 +1198,7 @@ async fn api_ca_add_parent_xml(req: Request, path: &mut RequestPath, ca: Handle)
 }
 
 async fn ca_parent_add(server: State, ca: Handle, parent_req: ParentCaReq) -> Result<(), Error> {
-    server.read().await.ca_parent_add(ca, parent_req).await
+    server.read().await.ca_parent_add(ca, parent_req, ACTOR_API).await
 }
 
 fn extract_parent_ca_contact(ca: &Handle, bytes: Bytes) -> Result<ParentCaContact, Error> {
@@ -1229,7 +1229,7 @@ async fn api_ca_update_parent(req: Request, ca: Handle, parent: ParentHandle) ->
 
         match extract_parent_ca_contact(&ca, bytes) {
             Ok(contact) => {
-                let res = server.read().await.ca_parent_update(ca, parent, contact).await;
+                let res = server.read().await.ca_parent_update(ca, parent, contact, ACTOR_API).await;
                 render_empty_res(res)
             }
             Err(e) => render_error(e),
@@ -1238,17 +1238,17 @@ async fn api_ca_update_parent(req: Request, ca: Handle, parent: ParentHandle) ->
 }
 
 async fn api_ca_remove_parent(req: Request, ca: Handle, parent: Handle) -> RoutingResult {
-    aa!(req, CA_UPDATE, render_empty_res(req.state().read().await.ca_parent_remove(ca, parent).await))
+    aa!(req, CA_UPDATE, render_empty_res(req.state().read().await.ca_parent_remove(ca, parent, ACTOR_API).await))
 }
 
 /// Force a key roll for a CA, i.e. use a max key age of 0 seconds.
 async fn api_ca_kr_init(req: Request, handle: Handle) -> RoutingResult {
-    aa!(req, CA_UPDATE, render_empty_res(req.state().read().await.ca_keyroll_init(handle).await))
+    aa!(req, CA_UPDATE, render_empty_res(req.state().read().await.ca_keyroll_init(handle, ACTOR_API).await))
 }
 
 /// Force key activation for all new keys, i.e. use a staging period of 0 seconds.
 async fn api_ca_kr_activate(req: Request, handle: Handle) -> RoutingResult {
-    aa!(req, CA_UPDATE, render_empty_res(req.state().read().await.ca_keyroll_activate(handle).await))
+    aa!(req, CA_UPDATE, render_empty_res(req.state().read().await.ca_keyroll_activate(handle, ACTOR_API).await))
 }
 
 /// Update the route authorizations for this CA
@@ -1258,7 +1258,7 @@ async fn api_ca_routes_update(req: Request, handle: Handle) -> RoutingResult {
 
         match req.json().await {
             Err(e) => render_error(e),
-            Ok(updates) => render_empty_res(state.read().await.ca_routes_update(handle, updates).await),
+            Ok(updates) => render_empty_res(state.read().await.ca_routes_update(handle, updates, ACTOR_API).await),
         }
     })
 }
@@ -1282,7 +1282,7 @@ async fn api_ca_routes_try_update(req: Request, ca: Handle) -> RoutingResult {
                     Ok(effect) => {
                         if !effect.contains_invalids() {
                             // no issues found, apply
-                            render_empty_res(server.ca_routes_update(ca, updates).await)
+                            render_empty_res(server.ca_routes_update(ca, updates, ACTOR_API).await)
                         } else {
                             // remaining invalids exist, advise user
                             let updates: RouteAuthorizationUpdates = updates.into();
@@ -1352,14 +1352,14 @@ async fn api_ca_routes_analysis(req: Request, path: &mut RequestPath, handle: Ha
 
 async fn api_republish_all(req: Request) -> RoutingResult {
     match *req.method() {
-        Method::POST => aa!(req, CA_UPDATE, render_empty_res(req.state().read().await.republish_all().await)),
+        Method::POST => aa!(req, CA_UPDATE, render_empty_res(req.state().read().await.republish_all(ACTOR_API).await)),
         _ => aa!(req, LOGIN, render_unknown_method()),
     }
 }
 
 async fn api_resync_all(req: Request) -> RoutingResult {
     match *req.method() {
-        Method::POST => aa!(req, CA_UPDATE, render_empty_res(req.state().read().await.resync_all().await)),
+        Method::POST => aa!(req, CA_UPDATE, render_empty_res(req.state().read().await.resync_all(ACTOR_API).await)),
         _ => aa!(req, LOGIN, render_unknown_method()),
     }
 }
@@ -1367,7 +1367,7 @@ async fn api_resync_all(req: Request) -> RoutingResult {
 /// Refresh all CAs
 async fn api_refresh_all(req: Request) -> RoutingResult {
     match *req.method() {
-        Method::POST => aa!(req, CA_UPDATE, render_empty_res(req.state().read().await.refresh_all().await)),
+        Method::POST => aa!(req, CA_UPDATE, render_empty_res(req.state().read().await.refresh_all(ACTOR_API).await)),
         _ => aa!(req, LOGIN, render_unknown_method()),
     }
 }
@@ -1439,7 +1439,7 @@ async fn api_ca_rta_sign(req: Request, ca: Handle, name: RtaName) -> RoutingResu
         let state = req.state().clone();
         match req.json().await {
             Err(e) => render_error(e),
-            Ok(request) => render_empty_res(state.read().await.rta_sign(ca, name, request).await),
+            Ok(request) => render_empty_res(state.read().await.rta_sign(ca, name, request, ACTOR_API).await),
         }
     })
 }
@@ -1449,7 +1449,7 @@ async fn api_ca_rta_multi_prep(req: Request, ca: Handle, name: RtaName) -> Routi
         let state = req.state().clone();
 
         match req.json().await {
-            Ok(resources) => render_json_res(state.read().await.rta_multi_prep(ca, name, resources).await),
+            Ok(resources) => render_json_res(state.read().await.rta_multi_prep(ca, name, resources, ACTOR_API).await),
             Err(e) => render_error(e),
         }
     })
@@ -1459,7 +1459,7 @@ async fn api_ca_rta_multi_sign(req: Request, ca: Handle, name: RtaName) -> Routi
     aa!(req, RTA_UPDATE, { 
         let state = req.state().clone();
         match req.json().await {
-            Ok(rta) => render_empty_res(state.read().await.rta_multi_cosign(ca, name, rta).await),
+            Ok(rta) => render_empty_res(state.read().await.rta_multi_cosign(ca, name, rta, ACTOR_API).await),
             Err(_) => render_error(Error::custom("Cannot decode RTA for co-signing")),
         }
     })

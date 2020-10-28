@@ -1,3 +1,5 @@
+use crate::commons::actor::Actor;
+
 pub const KRILL_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const KRILL_VERSION_MAJOR: &str = env!("CARGO_PKG_VERSION_MAJOR");
 pub const KRILL_VERSION_MINOR: &str = env!("CARGO_PKG_VERSION_MINOR");
@@ -49,3 +51,6 @@ pub const ID_CERTIFICATE_VALIDITY_YEARS: i32 = 15;
 pub const BGP_RIS_REFRESH_MINUTES: i64 = 60;
 
 pub const HTTTP_CLIENT_TIMEOUT_SECS: u64 = 120;
+
+pub const ACTOR_KRILL: &Actor = &Actor::from_string("krill");
+pub const ACTOR_API: &Actor = &Actor::from_string("api");
