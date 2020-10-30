@@ -23,7 +23,10 @@ pub async fn auth(req: Request) -> RoutingResult {
                         &quoted_token, &quoted_id);
                     Ok(HttpResponse::found(&location))
                 },
-                Err(_) => Ok(HttpResponse::unauthorized()), // todo: don't discard the error details
+                Err(err) => {
+                    warn!("Login failed: {}", err);
+                    Ok(HttpResponse::unauthorized())
+                },
             }
         },
         AUTH_LOGIN_ENDPOINT if *req.method() == Method::GET => {
