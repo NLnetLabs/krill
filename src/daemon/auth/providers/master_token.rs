@@ -1,4 +1,4 @@
-use crate::commons::KrillResult;
+use crate::{commons::KrillResult, constants::ACTOR_MASTER_TOKEN, commons::actor::Actor};
 use crate::commons::api::Token;
 use crate::commons::error::Error as KrillError;
 use crate::daemon::auth::{Auth, AuthProvider, LoggedInUser, Permissions};
@@ -24,6 +24,13 @@ impl MasterTokenAuthProvider {
 }
 
 impl AuthProvider for MasterTokenAuthProvider {
+    fn get_actor(&self, auth: &Auth) -> KrillResult<Option<Actor>> {
+        match auth {
+            Auth::Bearer(token) if &self.token == token => Ok(Some(ACTOR_MASTER_TOKEN.clone())),
+            _ => Ok(None)
+        }
+    }
+
     fn is_api_allowed(&self, auth: &Auth, _wanted_permissions: Permissions) -> KrillResult<Option<Auth>> {
         match auth {
             Auth::Bearer(token) if &self.token == token => Ok(None),

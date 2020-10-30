@@ -12,7 +12,7 @@ use hyper::{Body, Method, StatusCode};
 
 use urlparse::{urlparse, GetQuery};
 
-use crate::commons::KrillResult;
+use crate::{constants::ACTOR_ANON, commons::{actor::Actor, KrillResult}};
 use crate::commons::api::Token;
 use crate::commons::error::Error;
 use crate::commons::remote::{rfc6492, rfc8181};
@@ -281,17 +281,36 @@ pub struct Request {
     state: State,
     new_auth: Option<Auth>,
     authorization_enabled: bool,
+    actor: Option<Actor>,
 }
 
 impl Request {
     pub fn new(request: hyper::Request<hyper::Body>, state: State) -> Self {
         let path = RequestPath::from_request(&request);
-        Request { 
+        Request {
             request: request,
             path: path,
             state: state,
             new_auth: None,
-            authorization_enabled: true
+            authorization_enabled: true,
+            actor: None,
+        }
+    }
+
+    pub async fn init_actor_from_auth(&mut self) -> KrillResult<()> {
+        if self.actor.is_none() {
+            if let Some(auth) = self.get_auth() {
+                let opt_actor = self.state().read().await.get_actor(&auth)?;
+                self.actor = opt_actor;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn actor(&self) -> Actor {
+        match &self.actor {
+            Some(actor) => actor.clone(),
+            None => ACTOR_ANON.clone(),
         }
     }
 

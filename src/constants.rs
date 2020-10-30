@@ -52,5 +52,6 @@ pub const BGP_RIS_REFRESH_MINUTES: i64 = 60;
 
 pub const HTTTP_CLIENT_TIMEOUT_SECS: u64 = 120;
 
-pub const ACTOR_KRILL: &Actor = &Actor::from_string("krill");
-pub const ACTOR_API: &Actor = &Actor::from_string("api");
+pub const ACTOR_KRILL: &Actor = &Actor::from_str("krill");
+pub const ACTOR_ANON: &Actor = &Actor::from_str("anonymous");
+pub const ACTOR_MASTER_TOKEN: &Actor = &Actor::from_str("master-token@krill.conf");

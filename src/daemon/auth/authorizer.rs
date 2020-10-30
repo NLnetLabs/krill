@@ -2,7 +2,7 @@
 
 use std::any::Any;
 
-use crate::commons::KrillResult;
+use crate::commons::{actor::Actor, KrillResult};
 use crate::commons::api::Token;
 use crate::daemon::auth::providers::MasterTokenAuthProvider;
 use crate::daemon::auth::Permissions;
@@ -24,6 +24,7 @@ use crate::daemon::auth::Permissions;
 ///                     login and logout?
 ///  * introspection  - who is the currently "logged in" user?
 pub trait AuthProvider: Send + Sync {
+    fn get_actor(&self, auth: &Auth) -> KrillResult<Option<Actor>>;
     fn is_api_allowed(&self, auth: &Auth, wanted_permissions: Permissions) -> KrillResult<Option<Auth>>;
     fn get_login_url(&self) -> String;
     fn login(&self, auth: &Auth) -> KrillResult<LoggedInUser>;
@@ -67,6 +68,21 @@ impl Authorizer {
             primary_provider: Box::new(provider),
             fallback_provider: fallback_provider
         }
+    }
+
+    pub fn get_actor(&self, auth: &Auth) -> KrillResult<Option<Actor>> {
+        self.primary_provider.get_actor(auth)
+            // permission denied, do we have a fallback provider we can try?
+            .or_else(|err| match self.fallback_provider.as_ref() {
+                Some(provider) => {
+                    // yes we do, try checking the credentials against it
+                    provider.get_actor(auth)
+                },
+                None => {
+                    // no fallback provider configured, permission denied
+                    Err(err)
+                }
+            })
     }
 
     /// Return true if the given authentication details are valid, else false.

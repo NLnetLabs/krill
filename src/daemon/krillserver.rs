@@ -265,6 +265,10 @@ impl KrillServer {
 
 /// # Authentication and Access
 impl KrillServer {
+    pub fn get_actor(&self, auth: &Auth) -> KrillResult<Option<Actor>> {
+        self.authorizer.get_actor(auth)
+    }
+
     pub fn is_api_allowed(&self, auth: &Auth, wanted_permissions: Permissions) -> KrillResult<Option<Auth>> {
         self.authorizer.is_api_allowed(auth, wanted_permissions)
     }

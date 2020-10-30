@@ -233,6 +233,19 @@ impl OpenIDConnectAuthProvider {
 }
 
 impl AuthProvider for OpenIDConnectAuthProvider {
+    fn get_actor(&self, auth: &Auth) -> KrillResult<Option<Actor>> {
+        match auth {
+            Auth::Bearer(token) => {
+                // see if we can decode, decrypt and deserialize the users token
+                // into a login session structure
+                let session = extract_session_from_token(token.clone())?;
+
+                Ok(Some(Actor::from_string(session.id)))
+            },
+            _ => Err(KrillError::ApiInvalidCredentials)
+        }
+    }
+
     fn is_api_allowed(&self, auth: &Auth, wanted_access: Permissions) -> KrillResult<Option<Auth>> {
         match auth {
             Auth::Bearer(token) => {
