@@ -15,7 +15,7 @@ use openidconnect::core::{
 };
 use openidconnect::reqwest::http_client as oidc_http_client;
 
-use crate::commons::{error::Error as KrillError, api::Token};
+use crate::commons::{actor::Actor, api::Token, error::Error as KrillError};
 use crate::commons::KrillResult;
 use crate::daemon::auth::{Auth, AuthProvider, LoggedInUser, Permissions};
 use crate::daemon::config::CONFIG;
@@ -48,7 +48,6 @@ struct ClientSession {
 pub struct OpenIDConnectAuthProvider {
     client: FlexibleClient,
     logout_url: String,
-    provider_signs_userinfo: bool,
 }
 
 impl OpenIDConnectAuthProvider {
@@ -56,14 +55,13 @@ impl OpenIDConnectAuthProvider {
         match &CONFIG.auth_openidconnect {
             Some(oidc_conf) => {
                     let meta = Self::discover(oidc_conf)?;
-                    let provider_signs_userinfo = Self::check_provider_capabilities(&meta)?;
+                    Self::check_provider_capabilities(&meta)?;
                     let logout_url = Self::build_logout_url(&meta);
                     let client = Self::build_client(oidc_conf, meta)?;
 
                     Ok(OpenIDConnectAuthProvider {
                         client,
                         logout_url,
-                        provider_signs_userinfo,
                     })
                 },
             None => Err(KrillError::Custom(
@@ -97,7 +95,7 @@ impl OpenIDConnectAuthProvider {
 
     /// Verify that the OpenID Connect: discovery metadata indicates that the
     /// provider has support for the features that we require.
-    fn check_provider_capabilities(meta: &WantedMeta) -> KrillResult<bool> {
+    fn check_provider_capabilities(meta: &WantedMeta) -> KrillResult<()> {
         // TODO: verify token_endpoint_auth_methods_supported?
         // TODO: verify response_types_supported?
         let mut ok = true;
@@ -138,15 +136,9 @@ impl OpenIDConnectAuthProvider {
             ok = false;
         }
 
-        let provider_signs_userinfo = match meta.userinfo_signing_alg_values_supported() {
-            None => false,
-            Some(alg_vec) => alg_vec.iter().any(|item| item != &CoreJwsSigningAlgorithm::None),
-        };
-
-        if ok {
-            Ok(provider_signs_userinfo)
-        } else {
-            Err(KrillError::Custom(
+        match ok {
+            true => Ok(()),
+            false => Err(KrillError::Custom(
                 "OpenID Connect: The provider lacks support for one or more required capabilities.".to_string()))
         }
     }
@@ -451,7 +443,9 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                     .map_err(|e| KrillError::Custom(format!(
                         "OpenID Connect: ID provider has no user info endpoint: {}",
                         e.to_string())))?
-                    .require_signed_response(self.provider_signs_userinfo)
+                    // don't require the response to be signed as the spec says
+                    // signing it is optional: See: https://openid.net/specs/openid-connect-core-1_0.html#UserInfoResponse
+                    .require_signed_response(false)
                     .request(logging_http_client!())
                     .map_err(|e| KrillError::Custom(format!(
                         "OpenID Connect: ID user info request failed: {}",
