@@ -82,7 +82,7 @@ fn make_event_sh(
                         info!("Will re-sync all CAs with their parents and repository after startup");
                         caserver.resync_all(ACTOR_KRILL).await;
                         let publisher = CaPublisher::new(caserver.clone(), pubserver.clone());
-                        match caserver.ca_list() {
+                        match caserver.ca_list(ACTOR_KRILL) {
                             Err(e) => error!("Unable to obtain CA list: {}", e),
                             Ok(list) => {
                                 for ca in list.cas() {

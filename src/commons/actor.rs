@@ -1,3 +1,5 @@
+use crate::commons::api::Handle;
+
 #[derive(Clone)]
 enum ActorName {
     AsStaticStr(&'static str),
@@ -7,31 +9,35 @@ enum ActorName {
 #[derive(Clone)]
 pub struct Actor {
     name: ActorName,
+    is_user: bool,
+    included_cas: Vec<String>,
+    excluded_cas: Vec<String>,
 }
 
 impl Actor {
-    pub const fn from_str(name: &'static str) -> Actor {
+    pub const fn system(name: &'static str) -> Actor {
         Actor {
-            name: ActorName::AsStaticStr(name)
+            name: ActorName::AsStaticStr(name),
+            is_user: false,
+            included_cas: vec![],
+            excluded_cas: vec![],
         }
     }
 
-    pub fn from_string(name: String) -> Actor {
+    /// Empty includes and empty excludes means grant access to all CAs.
+    /// Otherwise a CA is only accessible if it is both NOT excluded AND is
+    /// explicitly included.
+    pub fn user(name: String, inc: &[String], exc: &[String]) -> Actor {
         Actor {
-            // ensure that dynamic actor names, i.e. those of an actual external
-            // user, are distinguishable from internal hard-coded actor names
-            // so that an end user cannot for example impersonate the internal
-            // Krill user by setting their name to "krill" as with this code it
-            // will end up in the log as "api:<krill>" instead of just plain
-            // "krill".
-            name: ActorName::AsString(format!("api:<{}>", name))
+            name: ActorName::AsString(name),
+            is_user: true,
+            included_cas: inc.to_vec(),
+            excluded_cas: exc.to_vec(),
         }
     }
 
-    pub fn new() -> Actor {
-        Actor {
-            name: ActorName::AsStaticStr("unknown")
-        }
+    pub fn is_user(&self) -> bool {
+        self.is_user
     }
 
     pub fn name(&self) -> &str {
@@ -39,5 +45,10 @@ impl Actor {
             ActorName::AsStaticStr(s) => s,
             ActorName::AsString(s) => s,
         }
+    }
+
+    pub fn can_access_ca(&self, ca: &Handle) -> bool {
+        let ca = &ca.to_string();
+        !self.excluded_cas.contains(ca) || self.included_cas.is_empty() || self.included_cas.contains(ca)
     }
 }

@@ -42,6 +42,8 @@ struct ClientSession {
     pub refresh_token: Option<RefreshToken>,
     pub id: String,
     pub role_name: String,
+    pub inc_cas: Vec<String>,
+    pub exc_cas: Vec<String>,
 }
 
 // TODO: is this stuff thread safe?
@@ -212,7 +214,7 @@ impl OpenIDConnectAuthProvider {
                                 .request(logging_http_client!());
                             match token_response {
                                 Ok(token_response) => {
-                                    if let Ok(new_token) = create_session_token(token_response, session.id, session.role_name) {
+                                    if let Ok(new_token) = create_session_token(token_response, session.id, session.role_name, &session.inc_cas, &session.exc_cas) {
                                         return Some(Auth::Bearer(Token::from(new_token)));
                                     }
                                 },
@@ -240,7 +242,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 // into a login session structure
                 let session = extract_session_from_token(token.clone())?;
 
-                Ok(Some(Actor::from_string(session.id)))
+                Ok(Some(Actor::user(session.id, &session.inc_cas, &session.exc_cas)))
             },
             _ => Err(KrillError::ApiInvalidCredentials)
         }
@@ -512,6 +514,34 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                     // ConfigFile
                 };
 
+                let found = {
+                    let jmespath_string = "inc_cas";
+                    let expr = &jmespath::compile(&jmespath_string)
+                        .map_err(|e| KrillError::Custom(format!(
+                            "OpenID Connect: unable to compile inc_cas JMESPath {}: {:?}",
+                            &jmespath_string,
+                            e)))?;
+                    match expr.search(&extra_claims.unwrap()) {
+                        Ok(found) => found.as_string().cloned().unwrap_or(String::new()),
+                        _ => String::new(),
+                    }
+                };
+                let inc_cas = found.split(',').map(|s| s.to_string()).collect::<Vec<String>>();
+
+                let found = {
+                    let jmespath_string = "exc_cas";
+                    let expr = &jmespath::compile(&jmespath_string)
+                        .map_err(|e| KrillError::Custom(format!(
+                            "OpenID Connect: unable to compile exc_cas JMESPath {}: {:?}",
+                            &jmespath_string,
+                            e)))?;
+                    match expr.search(&extra_claims.unwrap()) {
+                        Ok(found) => found.as_string().cloned().unwrap_or(String::new()),
+                        _ => String::new(),
+                    }
+                };
+                let exc_cas = found.split(',').map(|s| s.to_string()).collect::<Vec<String>>();
+
 // ==========================================================================================
                 // Step 5: Respond to the user: access granted, or access denied
                 // TODO: Choose which data to store at the client, and then
@@ -538,16 +568,17 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                     Some(role_name) => {
                         let (role, entitled_perms) = lookup_role(role_name.clone())?;
 
-                        let api_token = create_session_token(token_response, email.clone(), role_name)?;
+                        let api_token = create_session_token(token_response, email.clone(), role_name, &inc_cas, &exc_cas)?;
 
-                        debug!("ID: {:?}, Role: {:?}, Permissions: {:?}", &email, &role, &entitled_perms);
+                        debug!("ID: {:?}, Role: {:?}, Permissions: {:?}, Inc CAs: {:?}, Exc CAs: {:?}", &email, &role, &entitled_perms, &inc_cas, &exc_cas);
 
                         Ok(LoggedInUser { token: api_token, id: base64::encode(&email) })
                     },
-                    _ => Err(KrillError::ApiInvalidCredentials), // TODO: change me to user has no role
+                    _ => Err(KrillError::ApiInvalidRole),
                 }
             },
-            _ => Err(KrillError::ApiInvalidCredentials),
+
+            Auth::Bearer(_) => Err(KrillError::ApiInvalidCredentials)
         }
     }
 
@@ -634,7 +665,7 @@ fn extract_session_from_token(token: Token) -> KrillResult<ClientSession> {
             format!("OpenID Connect: error while deserializing: {}", err)))
 }
 
-fn create_session_token(token_response: FlexibleTokenResponse, id: String, role_name: String) -> KrillResult<String> {
+fn create_session_token(token_response: FlexibleTokenResponse, id: String, role_name: String, inc_cas: &Vec<String>, exc_cas: &Vec<String>) -> KrillResult<String> {
     let start_time = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|err| KrillError::Custom(
@@ -648,6 +679,8 @@ fn create_session_token(token_response: FlexibleTokenResponse, id: String, role_
         expires_in: token_response.expires_in(),
         id: id.clone(),
         role_name: role_name.clone(),
+        inc_cas: inc_cas.to_vec(),
+        exc_cas: exc_cas.to_vec(),
     };
 
     let session_json_str = serde_json::to_string(&session)

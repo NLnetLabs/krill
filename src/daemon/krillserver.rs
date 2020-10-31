@@ -474,7 +474,7 @@ impl KrillServer {
     pub async fn cas_stats(&self) -> HashMap<Handle, CertAuthStats> {
         let mut res = HashMap::new();
 
-        if let Ok(list) = self.ca_list() {
+        if let Ok(list) = self.ca_list(ACTOR_KRILL) {
             for ca in list.cas() {
                 // can't fail really, but to be sure
                 if let Ok(ca) = self.caserver.get_ca(ca.handle()).await {
@@ -501,7 +501,7 @@ impl KrillServer {
 
     pub async fn all_ca_issues(&self) -> KrillResult<AllCertAuthIssues> {
         let mut all_issues = AllCertAuthIssues::default();
-        for ca in self.ca_list()?.cas() {
+        for ca in self.ca_list(ACTOR_KRILL)?.cas() {
             let issues = self.ca_issues(ca.handle()).await?;
             if !issues.is_empty() {
                 all_issues.add(ca.handle().clone(), issues);
@@ -544,7 +544,7 @@ impl KrillServer {
     pub async fn resync_all(&self, actor: &Actor) -> KrillEmptyResult {
         let publisher = CaPublisher::new(self.caserver.clone(), self.pubserver.clone());
 
-        for ca in self.ca_list()?.cas() {
+        for ca in self.ca_list(actor)?.cas() {
             if let Err(e) = publisher.publish(ca.handle(), actor).await {
                 error!("Failed to sync ca: {}. Got error: {}", ca.handle(), e)
             }
@@ -561,7 +561,7 @@ impl KrillServer {
 
     /// Archive old commands
     pub async fn archive_old_commands(&self, days: i64) -> KrillEmptyResult {
-        self.caserver.archive_old_commands(days).await?;
+        self.caserver.archive_old_commands(days,).await?;
         if let Some(pubserver) = self.pubserver.as_ref() {
             pubserver.archive_old_commands(days)?;
         }
@@ -572,8 +572,8 @@ impl KrillServer {
 /// # Admin CAS
 ///
 impl KrillServer {
-    pub fn ca_list(&self) -> KrillResult<CertAuthList> {
-        self.caserver.ca_list()
+    pub fn ca_list(&self, actor: &Actor) -> KrillResult<CertAuthList> {
+        self.caserver.ca_list(actor)
     }
 
     /// Returns the public CA info for a CA, or NONE if the CA cannot be found.

@@ -150,6 +150,7 @@ async fn map_requests(req: hyper::Request<hyper::Body>, state: State) -> Result<
         .or_else(ta)
         .or_else(rrdp)
         .or_else(|mut req| {
+            // TODO: this doesn't actually disable anything as far as I can see
             req.disable_authorization_checks();
             testbed(req)
         })
@@ -677,23 +678,26 @@ async fn api_bulk(req: Request, path: &mut RequestPath) -> RoutingResult {
 
 async fn api_cas(req: Request, path: &mut RequestPath) -> RoutingResult {
     match path.path_arg() {
-        Some(ca) => match path.next() {
-            None => api_ca_info(req, ca).await,
-            Some("child_request.xml") => api_ca_child_req_xml(req, ca).await,
-            Some("child_request.json") => api_ca_child_req_json(req, ca).await,
-            Some("children") => api_ca_children(req, path, ca).await,
-            Some("history") => api_ca_history(req, path, ca).await,
-            Some("command") => api_ca_command_details(req, path, ca).await,
-            Some("id") => api_ca_regenerate_id(req, ca).await,
-            Some("issues") => api_ca_issues(req, ca).await,
-            Some("keys") => api_ca_keys(req, path, ca).await,
-            Some("parents") => api_ca_parents(req, path, ca).await,
-            Some("parents-xml") => api_ca_add_parent_xml(req, path, ca).await,
-            Some("repo") => api_ca_repo(req, path, ca).await,
-            Some("routes") => api_ca_routes(req, path, ca).await,
-            Some("rta") => api_ca_rta(req, path, ca).await,
-            _ => aa!(req, LOGIN, render_unknown_method()),
+        Some(ca) if req.actor().can_access_ca(&ca) => {
+            match path.next() {
+                None => api_ca_info(req, ca).await,
+                Some("child_request.xml") => api_ca_child_req_xml(req, ca).await,
+                Some("child_request.json") => api_ca_child_req_json(req, ca).await,
+                Some("children") => api_ca_children(req, path, ca).await,
+                Some("history") => api_ca_history(req, path, ca).await,
+                Some("command") => api_ca_command_details(req, path, ca).await,
+                Some("id") => api_ca_regenerate_id(req, ca).await,
+                Some("issues") => api_ca_issues(req, ca).await,
+                Some("keys") => api_ca_keys(req, path, ca).await,
+                Some("parents") => api_ca_parents(req, path, ca).await,
+                Some("parents-xml") => api_ca_add_parent_xml(req, path, ca).await,
+                Some("repo") => api_ca_repo(req, path, ca).await,
+                Some("routes") => api_ca_routes(req, path, ca).await,
+                Some("rta") => api_ca_rta(req, path, ca).await,
+                _ => aa!(req, LOGIN, render_unknown_method()),
+            }
         },
+        Some(_) => Ok(HttpResponse::forbidden()),
         None => match *req.method() {
             Method::GET => api_cas_list(req).await,
             Method::POST => api_ca_init(req).await,
@@ -937,7 +941,10 @@ async fn api_ca_issues(req: Request, ca: Handle) -> RoutingResult {
 }
 
 async fn api_cas_list(req: Request) -> RoutingResult {
-    aa!(req, CA_LIST, render_json_res(req.state().read().await.ca_list()))
+    aa!(req, CA_LIST, {
+        let actor = req.actor();
+        render_json_res(req.state().read().await.ca_list(&actor))
+    })
 }
 
 pub async fn api_ca_init(req: Request) -> RoutingResult {

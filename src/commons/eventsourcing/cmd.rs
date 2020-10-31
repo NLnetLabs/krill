@@ -100,11 +100,17 @@ impl<C: CommandDetails> Command for SentCommand<C> {
 
 impl<C: CommandDetails> SentCommand<C> {
     pub fn new(id: &Handle, version: Option<u64>, details: C, actor: &Actor) -> Self {
+        let actor_name = if actor.is_user() {
+            format!("user:{}", actor.name())
+        } else {
+            actor.name().to_string()
+        };
+
         SentCommand {
             handle: id.clone(),
             version,
             details,
-            actor: actor.name().to_string(),
+            actor: actor_name
         }
     }
 

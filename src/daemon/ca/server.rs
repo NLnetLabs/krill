@@ -11,13 +11,13 @@ use chrono::Duration;
 use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 
-use crate::commons::{actor::Actor, api::{
+use crate::{constants::ACTOR_KRILL, commons::{actor::Actor, api::{
     self, AddChildRequest, Base64, CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary, ChildAuthRequest,
     ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, Handle, IssuanceRequest,
     IssuanceResponse, IssuedCert, ListReply, ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublishDelta,
     RcvdCert, RepoInfo, RepoStatus, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest,
     RevocationResponse, RtaName, StoredEffect, UpdateChildRequest,
-}};
+}}};
 use crate::commons::crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder};
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::{Aggregate, AggregateStore, Command, CommandKey};
@@ -201,7 +201,7 @@ impl CaServer {
     /// Republish the embedded TA and CAs if needed, i.e. if they are close
     /// to their next update time.
     pub async fn republish_all(&self, actor: &Actor) -> KrillResult<()> {
-        for ca in self.ca_list()?.cas() {
+        for ca in self.ca_list(actor)?.cas() {
             if let Err(e) = self.republish(ca.handle(), actor).await {
                 error!("ServerError publishing: {}, ServerError: {}", ca.handle(), e)
             }
@@ -383,7 +383,7 @@ impl CaServer {
 
     /// Archive old (eligible) commands for CA
     pub async fn archive_old_commands(&self, days: i64) -> KrillEmptyResult {
-        for ca in self.ca_list()?.cas() {
+        for ca in self.ca_list(ACTOR_KRILL)?.cas() {
             let lock = self.locks.ca(ca.handle()).await;
             let _ = lock.write().await;
             self.ca_store.archive_old_commands(ca.handle(), days)?;
@@ -528,9 +528,12 @@ impl CaServer {
     }
 
     /// Get the current CAs
-    pub fn ca_list(&self) -> KrillResult<CertAuthList> {
+    pub fn ca_list(&self, actor: &Actor) -> KrillResult<CertAuthList> {
         Ok(CertAuthList::new(
-            self.ca_store.list()?.into_iter().map(CertAuthSummary::new).collect(),
+            self.ca_store.list()?.into_iter()
+                .filter(|handle| actor.can_access_ca(&handle))
+                .map(CertAuthSummary::new)
+                .collect(),
         ))
     }
 
