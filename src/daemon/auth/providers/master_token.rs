@@ -49,7 +49,7 @@ impl AuthProvider for MasterTokenAuthProvider {
                 // Once login is complete, return the id of the logged in user to 
                 Ok(LoggedInUser {
                     token: token.clone(),
-                    id: "master-token@krill.conf".to_string()
+                    id: base64::encode("master-token@krill.conf")
                 })
             },
             _ => Err(KrillError::ApiInvalidCredentials),
