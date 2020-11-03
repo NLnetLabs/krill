@@ -506,7 +506,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                         _ => String::new(),
                     }
                 };
-                let inc_cas = found.split(',').map(|s| s.to_string()).collect::<Vec<String>>();
+                let inc_cas = found.split(',').filter(|s| !s.is_empty()).map(|s| s.to_string()).collect::<Vec<String>>();
 
                 let found = {
                     let jmespath_string = "exc_cas";
@@ -520,7 +520,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                         _ => String::new(),
                     }
                 };
-                let exc_cas = found.split(',').map(|s| s.to_string()).collect::<Vec<String>>();
+                let exc_cas = found.split(',').filter(|s| !s.is_empty()).map(|s| s.to_string()).collect::<Vec<String>>();
 
 // ==========================================================================================
                 // Step 5: Respond to the user: access granted, or access denied
