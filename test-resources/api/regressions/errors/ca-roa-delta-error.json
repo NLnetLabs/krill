@@ -60,36 +60,5 @@
           }
         ]
       }
-    ],
-    "as0_exists": [
-      {
-        "addition": {
-          "asn": 1,
-          "prefix": "10.1.0.0/24"
-        },
-        "existing_as0": {
-          "asn": 0,
-          "prefix": "10.1.0.0/24"
-        }
-      }
-    ],
-    "as0_overlaps": [
-      {
-        "addition": {
-          "asn": 0,
-          "prefix": "10.2.0.0/16"
-        },
-        "existing": [
-          {
-            "asn": 1,
-            "prefix": "10.2.0.0/24"
-          },
-          {
-            "asn": 1,
-            "prefix": "10.2.1.0/24"
-          }
-        ]
-      }
     ]
-  }
 }
