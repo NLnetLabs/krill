@@ -21,6 +21,7 @@ use crate::constants::*;
 use crate::daemon::http::tls_keys;
 
 use crate::daemon::auth::providers::openid_connect::ConfigAuthOpenIDConnect;
+use crate::daemon::auth::providers::config_file::config::ConfigAuthUsers;
 
 lazy_static! {
     pub static ref CONFIG: Config = {
@@ -285,6 +286,8 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::auth_token")]
     pub auth_token: Token,
 
+    pub auth_users: Option<ConfigAuthUsers>,
+
     pub auth_openidconnect: Option<ConfigAuthOpenIDConnect>,
 
     #[serde(default = "ConfigDefaults::ca_refresh")]
@@ -425,6 +428,7 @@ impl Config {
         let syslog_facility = ConfigDefaults::syslog_facility();
         let auth_type = AuthType::MasterToken;
         let auth_token = Token::from("secret");
+        let auth_users = None;
         let auth_openidconnect = None;
         let ca_refresh = 3600;
         let post_limit_api = ConfigDefaults::post_limit_api();
@@ -479,6 +483,7 @@ impl Config {
             syslog_facility,
             auth_type,
             auth_token,
+            auth_users,
             auth_openidconnect,
             ca_refresh,
             post_limit_api,
@@ -902,6 +907,7 @@ impl<'de> Deserialize<'de> for HttpsMode {
 /// The target to log to.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AuthType {
+    ConfigFile,
     MasterToken,
     OpenIDConnect,
 }
@@ -913,10 +919,11 @@ impl<'de> Deserialize<'de> for AuthType {
     {
         let string = String::deserialize(d)?;
         match string.as_str() {
-            "master-token" => Ok(AuthType::MasterToken),
+            "config-file"    => Ok(AuthType::ConfigFile),
+            "master-token"   => Ok(AuthType::MasterToken),
             "openid-connect" => Ok(AuthType::OpenIDConnect),
             _ => Err(de::Error::custom(format!(
-                "expected \"master-token\", or \"openid-connect\", \
+                "expected \"config-file\", \"master-token\", or \"openid-connect\", \
                  found: \"{}\"",
                 string
             ))),

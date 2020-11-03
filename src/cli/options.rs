@@ -24,6 +24,7 @@ use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
 use crate::constants::*;
 use crate::daemon::ca::{ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest};
+use crate::daemon::auth::common::config::Role;
 
 struct GeneralArgs {
     server: uri::Https,
@@ -78,6 +79,17 @@ impl GeneralArgs {
             format,
             api,
         })
+    }
+}
+
+impl Default for GeneralArgs {
+    fn default() -> Self { 
+        GeneralArgs {
+            server: uri::Https::from_str(KRILL_CLI_SERVER_DFLT).unwrap(),
+            token: Token::from(""),
+            format: ReportFormat::Text,
+            api: false,            
+        }
     }
 }
 
@@ -261,6 +273,46 @@ impl Options {
             )
         }
 
+        fn add_id_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+            app.arg(
+                Arg::with_name("id")
+                    .long("id")
+                    .value_name("id")
+                    .help("Specify the id (e.g. username, email) to generate configuration for")
+                    .required(true),
+            )
+        }
+
+        fn add_role_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+            app.arg(
+                Arg::with_name("role")
+                    .long("role")
+                    .value_name("role")
+                    .help("Specify the role the user will have in Krill")
+                    .required(false),
+            )
+        }
+
+        fn add_inccas_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+            app.arg(
+                Arg::with_name("inccas")
+                    .long("inccas")
+                    .value_name("inccas")
+                    .help("Specify the CA handles the user can access (comma separated)")
+                    .required(false),
+            )
+        }
+
+        fn add_exccas_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+            app.arg(
+                Arg::with_name("exccas")
+                    .long("exccas")
+                    .value_name("exccas")
+                    .help("Specify the CA handles the user CANNOT access (comma separated)")
+                    .required(false),
+            )
+        }
+
         let mut with_repo = SubCommand::with_name("repo").about("Use a self-hosted repository (not recommended)");
 
         with_repo = Self::add_general_args(with_repo);
@@ -275,8 +327,17 @@ impl Options {
         with_3rd = add_data_dir_arg(with_3rd);
         with_3rd = add_log_file_arg(with_3rd);
 
+        let mut with_user = SubCommand::with_name("user").about("Generate a user authentication configuration file fragment");
+
+        with_user = Self::add_general_args(with_user);
+        with_user = add_id_arg(with_user);
+        with_user = add_role_arg(with_user);
+        with_user = add_inccas_arg(with_user);
+        with_user = add_exccas_arg(with_user);
+
         config_sub = config_sub.subcommand(with_3rd);
         config_sub = config_sub.subcommand(with_repo);
+        config_sub = config_sub.subcommand(with_user);
 
         app.subcommand(config_sub)
     }
@@ -1165,11 +1226,38 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
+    fn parse_matches_user_config(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::default();
+        let mut details = KrillUserDetails::default();
+        if let Some(id) = matches.value_of("id") {
+            details.with_id(id.to_string());
+        }
+        if let Some(role) = matches.value_of("role") {
+            #[derive(Deserialize)]
+            struct Fragment {
+                role: Role
+            }
+            let fragment: Fragment = toml::from_str(&format!(r#"role = "{}""#, role))
+                .map_err(|e| Error::general(&format!("invalid role: {}", e.to_string())))?;
+            details.with_role(fragment.role);
+        }
+        if let Some(cas) = matches.value_of("inccas") {
+            details.with_inccas(cas.to_string());
+        }
+        if let Some(cas) = matches.value_of("exccas") {
+            details.with_exccas(cas.to_string());
+        }
+        let command = Command::User(details);
+        Ok(Options::make(general_args, command))
+    }
+
     fn parse_matches_config(matches: &ArgMatches) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("repo") {
             Self::parse_matches_repo_config(m)
         } else if let Some(m) = matches.subcommand_matches("simple") {
             Self::parse_matches_simple_config(m)
+        } else if let Some(m) = matches.subcommand_matches("user") {
+            Self::parse_matches_user_config(m)
         } else {
             Err(Error::UnrecognisedSubCommand)
         }
@@ -1953,6 +2041,9 @@ pub enum Command {
 
     #[display(fmt = "init")]
     Init(KrillInitDetails),
+
+    #[display(fmt = "user")]
+    User(KrillUserDetails),
 }
 
 #[derive(Clone, Debug, Display, Eq, PartialEq)]
@@ -2206,6 +2297,58 @@ impl Default for KrillInitDetails {
             rrdp_service_uri: None,
             data_dir: None,
             log_file: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct KrillUserDetails {
+    id: String,
+    role: Option<Role>,
+    inccas: Option<String>,
+    exccas: Option<String>,
+}
+
+impl KrillUserDetails {
+    pub fn with_id(&mut self, id: String) {
+        self.id = id;
+    }
+    pub fn with_role(&mut self, role: Role) {
+        self.role = Some(role);
+    }
+
+    pub fn with_inccas(&mut self, cas: String) {
+        self.inccas = Some(cas);
+    }
+
+    pub fn with_exccas(&mut self, cas: String) {
+        self.exccas = Some(cas);
+    }
+
+    pub fn id(&self) -> &String {
+        &self.id
+    }
+
+    pub fn role(&self) -> Option<&Role> {
+        self.role.as_ref()
+    }
+
+    pub fn inccas(&self) -> Option<&String> {
+        self.inccas.as_ref()
+    }
+
+    pub fn exccas(&self) -> Option<&String> {
+        self.exccas.as_ref()
+    }
+}
+
+impl Default for KrillUserDetails {
+    fn default() -> Self {
+        KrillUserDetails {
+            id: String::new(),
+            role: None,
+            inccas: None,
+            exccas: None,
         }
     }
 }

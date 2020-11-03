@@ -1,4 +1,5 @@
 pub mod authorizer;
+pub mod common;
 pub mod permissions;
 pub mod providers;
 

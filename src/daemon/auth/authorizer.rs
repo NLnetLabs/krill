@@ -5,7 +5,6 @@ use std::any::Any;
 use crate::commons::{actor::Actor, KrillResult};
 use crate::commons::api::Token;
 use crate::daemon::auth::providers::MasterTokenAuthProvider;
-use crate::daemon::auth::Permissions;
 
 //------------ Authorizer ----------------------------------------------------
 
@@ -24,8 +23,25 @@ use crate::daemon::auth::Permissions;
 ///                     login and logout?
 ///  * introspection  - who is the currently "logged in" user?
 pub trait AuthProvider: Send + Sync {
+    fn get_bearer_token(&self, request: &hyper::Request<hyper::Body>) -> Option<String> {
+        if let Some(header) = request.headers().get("Authorization") {
+            if let Ok(header) = header.to_str() {
+                if header.len() > 6 {
+                    let (bearer, token) = header.split_at(6);
+                    let bearer = bearer.trim();
+
+                    if "Bearer" == bearer {
+                        return Some(String::from(token.trim()));
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    fn get_auth(&self, request: &hyper::Request<hyper::Body>) -> Option<Auth>;
     fn get_actor(&self, auth: &Auth) -> KrillResult<Option<Actor>>;
-    fn is_api_allowed(&self, auth: &Auth, wanted_permissions: Permissions) -> KrillResult<Option<Auth>>;
     fn get_login_url(&self) -> String;
     fn login(&self, auth: &Auth) -> KrillResult<LoggedInUser>;
     fn logout(&self, auth: Option<Auth>) -> String;
@@ -52,9 +68,6 @@ impl Authorizer {
     /// `P` an instance of some other provider, an instance of
     /// [MasterTokenAuthProvider] will also be created. This will be used as a 
     /// fallback when Lagosta are configured to use some other [AuthProvider]. 
-    /// See [`is_api_allowed`] for more information.
-    /// 
-    /// [`get`]: #method.is_api_allowed
     pub fn new<P>(provider: P) -> Self
     where
         P: AuthProvider + Any
@@ -70,6 +83,14 @@ impl Authorizer {
         }
     }
 
+    pub fn get_auth(&self, request: &hyper::Request<hyper::Body>) -> Option<Auth> {
+        self.primary_provider.get_auth(request)
+            .or_else(|| match self.fallback_provider.as_ref() {
+                Some(provider) => provider.get_auth(request),
+                None => None,
+            })
+    }
+
     pub fn get_actor(&self, auth: &Auth) -> KrillResult<Option<Actor>> {
         self.primary_provider.get_actor(auth)
             // permission denied, do we have a fallback provider we can try?
@@ -77,28 +98,6 @@ impl Authorizer {
                 Some(provider) => {
                     // yes we do, try checking the credentials against it
                     provider.get_actor(auth)
-                },
-                None => {
-                    // no fallback provider configured, permission denied
-                    Err(err)
-                }
-            })
-    }
-
-    /// Return true if the given authentication details are valid, else false.
-    /// 
-    /// Verifies the given authentication details with the configured provider.
-    /// If that fails then, if configured, also attempts to verify the details
-    /// details with the fallback provider. See [`new`] for more information.
-    /// 
-    /// [`new`]: #method.new
-    pub fn is_api_allowed(&self, auth: &Auth, wanted_permissions: Permissions) -> KrillResult<Option<Auth>> {
-        self.primary_provider.is_api_allowed(auth, wanted_permissions)
-            // permission denied, do we have a fallback provider we can try?
-            .or_else(|err| match self.fallback_provider.as_ref() {
-                Some(provider) => {
-                    // yes we do, try checking the credentials against it
-                    provider.is_api_allowed(auth, wanted_permissions)
                 },
                 None => {
                     // no fallback provider configured, permission denied
@@ -126,14 +125,17 @@ impl Authorizer {
     }
 }
 
+#[derive(Serialize)]
 pub struct LoggedInUser {
-    pub token: String,
+    pub token: Token,
     pub id: String,
 }
 
+#[derive(Clone)]
 pub enum Auth {
     Bearer(Token),
-    AuthorizationCode(String, String)
+    AuthorizationCode(String, String),
+    IdAndPasswordHash(String, String),
 }
 
 impl Auth {
@@ -142,5 +144,9 @@ impl Auth {
     }
     pub fn authorization_code(code: String, state: String) -> Self {
         Auth::AuthorizationCode(code, state)
+    }
+
+    pub fn id_and_password_hash(id: String, password_hash: String) -> Self {
+        Auth::IdAndPasswordHash(id, password_hash)
     }
 }

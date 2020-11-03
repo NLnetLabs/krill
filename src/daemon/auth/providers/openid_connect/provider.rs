@@ -1,13 +1,12 @@
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use cached::{proc_macro::cached, Cached};
+use cached::proc_macro::cached;
 
 use jmespatch as jmespath;
 
 use openidconnect::{
-    AccessToken, AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret,
-    CsrfToken, IssuerUrl, Nonce, OAuth2TokenResponse, RedirectUrl, 
-    RefreshToken, Scope,
+    AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret, CsrfToken,
+    IssuerUrl, Nonce, OAuth2TokenResponse, RedirectUrl, RefreshToken, Scope,
 };
 use openidconnect::core::{
     CoreAuthPrompt, CoreClaimName, CoreIdTokenVerifier, CoreJwsSigningAlgorithm,
@@ -15,38 +14,26 @@ use openidconnect::core::{
 };
 use openidconnect::reqwest::http_client as oidc_http_client;
 
+use urlparse::{urlparse, GetQuery};
+
 use crate::commons::{actor::Actor, api::Token, error::Error as KrillError};
 use crate::commons::KrillResult;
+use crate::daemon::auth::common::config::Role;
+use crate::daemon::auth::common::session::*;
 use crate::daemon::auth::{Auth, AuthProvider, LoggedInUser, Permissions};
 use crate::daemon::config::CONFIG;
 use crate::daemon::http::auth::AUTH_CALLBACK_ENDPOINT;
 
 use super::config::{
-    ConfigAuthOpenIDConnect, ConfigAuthOpenIDConnectRole as Role,
-    ConfigAuthOpenIDConnectRoleSource as RoleSource
+    ConfigAuthOpenIDConnect, ConfigAuthOpenIDConnectRoleSource as RoleSource
 };
 use super::util::{
     self, LogOrFail, FlexibleClient, FlexibleIdTokenClaims,
     FlexibleTokenResponse, FlexibleUserInfoClaims, WantedMeta,
 };
-use super::crypt;
 
 const NONCE_TODO_MAKE_RANDOM: &str = "DUMMY_FIXED_VALUE_FOR_NOW";
-const TAG_SIZE: usize = 16;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct ClientSession {
-    pub start_time: u64,
-    pub expires_in: Option<Duration>,
-    pub access_token: AccessToken,
-    pub refresh_token: Option<RefreshToken>,
-    pub id: String,
-    pub role_name: String,
-    pub inc_cas: Vec<String>,
-    pub exc_cas: Vec<String>,
-}
-
-// TODO: is this stuff thread safe?
 pub struct OpenIDConnectAuthProvider {
     client: FlexibleClient,
     logout_url: String,
@@ -56,18 +43,17 @@ impl OpenIDConnectAuthProvider {
     pub fn new() -> KrillResult<Self> {
         match &CONFIG.auth_openidconnect {
             Some(oidc_conf) => {
-                    let meta = Self::discover(oidc_conf)?;
-                    Self::check_provider_capabilities(&meta)?;
-                    let logout_url = Self::build_logout_url(&meta);
-                    let client = Self::build_client(oidc_conf, meta)?;
+                let meta = Self::discover(oidc_conf)?;
+                Self::check_provider_capabilities(&meta)?;
+                let logout_url = Self::build_logout_url(&meta);
+                let client = Self::build_client(oidc_conf, meta)?;
 
-                    Ok(OpenIDConnectAuthProvider {
-                        client,
-                        logout_url,
-                    })
-                },
-            None => Err(KrillError::Custom(
-                "Missing [auth_openidconnect] config section!".into()))
+                Ok(OpenIDConnectAuthProvider {
+                    client,
+                    logout_url,
+                })
+            },
+            None => Err(KrillError::ConfigError("Missing [auth_openidconnect] config section!".into()))
         }
     }
 
@@ -199,9 +185,9 @@ impl OpenIDConnectAuthProvider {
             logout_url, CONFIG.service_uri().as_str())
     }
 
-    fn refresh_token(&self, session: ClientSession) -> Option<Auth> {
-        if let Some(refresh_token) = session.refresh_token {
-            if let Some(expires_in) = session.expires_in {
+    fn try_refresh_token(&self, session: &ClientSession) -> Option<Auth> {
+        if let Some(refresh_token) = &session.secrets.get(0) {
+            if let Some(expires_in) = &session.expires_in {
                 match SystemTime::now().duration_since(UNIX_EPOCH) {
                     Ok(now) => {
                         let session_age = now.as_secs() - session.start_time;
@@ -210,11 +196,17 @@ impl OpenIDConnectAuthProvider {
                         if session_age > expires_in.as_secs() {
                             debug!("OpenID Connect: refreshing token for ID \"{}\"", &session.id);
                             let token_response = self.client
-                                .exchange_refresh_token(&refresh_token)
+                                .exchange_refresh_token(&RefreshToken::new(refresh_token.to_string()))
                                 .request(logging_http_client!());
                             match token_response {
                                 Ok(token_response) => {
-                                    if let Ok(new_token) = create_session_token(token_response, session.id, session.role_name, &session.inc_cas, &session.exc_cas) {
+                                    let secrets = if let Some(new_refresh_token) = token_response.refresh_token() {
+                                        vec![new_refresh_token.secret().clone()]
+                                    } else {
+                                        vec![]
+                                    };
+
+                                    if let Ok(new_token) = session_to_token(&session.id, &session.role, &session.inc_cas, &session.exc_cas, &secrets) {
                                         return Some(Auth::Bearer(Token::from(new_token)));
                                     }
                                 },
@@ -235,43 +227,31 @@ impl OpenIDConnectAuthProvider {
 }
 
 impl AuthProvider for OpenIDConnectAuthProvider {
+    fn get_auth(&self, request: &hyper::Request<hyper::Body>) -> Option<Auth> {
+        if let Some(query) = urlparse(request.uri().to_string()).get_parsed_query() {
+            if let Some(code) = query.get_first_from_str("code") {
+                if let Some(state) = query.get_first_from_str("state") {
+                    debug!("The request is authenticated by temporary authorization code.");
+                    return Some(Auth::authorization_code(code, state));
+                }
+            }
+        }
+
+        None
+    }
+
     fn get_actor(&self, auth: &Auth) -> KrillResult<Option<Actor>> {
         match auth {
             Auth::Bearer(token) => {
                 // see if we can decode, decrypt and deserialize the users token
                 // into a login session structure
-                let session = extract_session_from_token(token.clone())?;
+                let session = token_to_session(token.clone())?;
 
-                Ok(Some(Actor::user(session.id, &session.inc_cas, &session.exc_cas)))
-            },
-            _ => Err(KrillError::ApiInvalidCredentials)
-        }
-    }
+                // let (role, _entitled_perms) = lookup_role(session.role_name.clone())?;
 
-    fn is_api_allowed(&self, auth: &Auth, wanted_access: Permissions) -> KrillResult<Option<Auth>> {
-        match auth {
-            Auth::Bearer(token) => {
-                // see if we can decode, decrypt and deserialize the users token
-                // into a login session structure
-                let session = extract_session_from_token(token.clone())?;
+                let new_auth = self.try_refresh_token(&session);
 
-                // so far so good, now find out which permissions the users
-                // role entitles them to (and don't lose the session)
-                let (role, entitled_perms) = lookup_role(session.role_name.clone())?;
-
-                // do the users entitled permissions grant the wanted access?
-                let allowed = entitled_perms.contains(wanted_access);
-
-                debug!("ID: {:?}, Role: {:?}, Access Granted? {}, Requested: {:?}, Entitled: {:?}",
-                    &session.id, &role, &allowed, &wanted_access, &entitled_perms);
-
-                // if yes, also refresh the access token if needed and pass it
-                // back as part of a new encrypted session token to the caller
-                // for eventual storage at the client
-                match allowed {
-                    true => Ok(self.refresh_token(session)),
-                    false => Err(KrillError::ApiInsufficientRights)
-                }
+                Ok(Some(Actor::user(session.id, Some(session.role), &session.inc_cas, &session.exc_cas, new_auth)))
             },
             _ => Err(KrillError::ApiInvalidCredentials)
         }
@@ -545,13 +525,13 @@ impl AuthProvider for OpenIDConnectAuthProvider {
 // ==========================================================================================
                 // Step 5: Respond to the user: access granted, or access denied
                 // TODO: Choose which data to store at the client, and then
-                // encrypt it here and decrypt it in is_api_allowed(). How can
-                // we do that? If we don't do encryption at this point, and thus
-                // don't store the access token and refresh token on the client,
-                // where does that leave us? Storing the signed id token at the
-                // client gives us a login session token which can be verified
-                // due to it being signed, and MAY contain the users role in
-                // Krill thereby preventing that from being altered. Even if not
+                // encrypt it here and decrypt it in get_actor(). How can we do
+                // that? If we don't do encryption at this point, and thus don't
+                // store the access token and refresh token on the client, where
+                // does that leave us? Storing the signed id token at the client
+                // gives us a login session token which can be verified due to
+                // it being signed, and MAY contain the users role in Krill
+                // thereby preventing that from being altered. Even if not
                 // signed this would be no worse than the existing Krill token
                 // security. If we were to refuse a signed token older than 30
                 // minutes we would have the same login session time as Lagosta
@@ -568,7 +548,13 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                     Some(role_name) => {
                         let (role, entitled_perms) = lookup_role(role_name.clone())?;
 
-                        let api_token = create_session_token(token_response, email.clone(), role_name, &inc_cas, &exc_cas)?;
+                        let secrets = if let Some(new_refresh_token) = token_response.refresh_token() {
+                            vec![new_refresh_token.secret().clone()]
+                        } else {
+                            vec![]
+                        };
+
+                        let api_token = session_to_token(&email, &role, &inc_cas, &exc_cas, &secrets)?;
 
                         debug!("ID: {:?}, Role: {:?}, Permissions: {:?}, Inc CAs: {:?}, Exc CAs: {:?}", &email, &role, &entitled_perms, &inc_cas, &exc_cas);
 
@@ -578,7 +564,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 }
             },
 
-            Auth::Bearer(_) => Err(KrillError::ApiInvalidCredentials)
+            _ => Err(KrillError::ApiInvalidCredentials)
         }
     }
 
@@ -587,10 +573,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
             Some(Auth::Bearer(token)) => {
                 forget_cached_session_token(&token);
             },
-            Some(Auth::AuthorizationCode(_, _)) => {
-                warn!("OpenID Connect: unexpectedly received a temporary authorization token at the logout endpoint.");        
-            },
-            None => {
+            _ => {
                 warn!("OpenID Connect: unexpectedly received a logout request without a session token.");        
             }
         }
@@ -638,81 +621,4 @@ fn lookup_role(role_name: String) -> KrillResult<(Role, Permissions)> {
     };
 
     Ok((role, entitled_perms))
-}
-
-#[cached(
-    name = "SESSION_CACHE",
-    result = true,
-    time = 1800
-)]
-fn extract_session_from_token(token: Token) -> KrillResult<ClientSession> {
-    info!("Decrypting...");
-    let bytes = base64::decode(token.as_ref().as_bytes())
-        .map_err(|err| KrillError::Custom(
-            format!("OpenID Connect: invalid bearer token: {}", err)))?;
-
-    if bytes.len() <= TAG_SIZE {
-        return Err(KrillError::Custom(format!("OpenID Connect: bearer token is too short")));
-    }
-
-    let encrypted_len = bytes.len() - TAG_SIZE;
-    let (encrypted_bytes, tag_bytes) = bytes.split_at(encrypted_len);
-    let mut unencrypted_bytes = Vec::with_capacity(encrypted_len);
-    crypt::decrypt(encrypted_bytes, tag_bytes, &mut unencrypted_bytes)?;
-
-    serde_json::from_slice::<ClientSession>(&unencrypted_bytes)
-        .map_err(|err| KrillError::Custom(
-            format!("OpenID Connect: error while deserializing: {}", err)))
-}
-
-fn create_session_token(token_response: FlexibleTokenResponse, id: String, role_name: String, inc_cas: &Vec<String>, exc_cas: &Vec<String>) -> KrillResult<String> {
-    let start_time = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|err| KrillError::Custom(
-            format!("OpenID Connect: unable to determine the current time: {}", err)))?
-        .as_secs();
-
-    let session = ClientSession {
-        access_token: token_response.access_token().clone(),
-        refresh_token: token_response.refresh_token().cloned(),
-        start_time: start_time,
-        expires_in: token_response.expires_in(),
-        id: id.clone(),
-        role_name: role_name.clone(),
-        inc_cas: inc_cas.to_vec(),
-        exc_cas: exc_cas.to_vec(),
-    };
-
-    let session_json_str = serde_json::to_string(&session)
-        .map_err(|err| KrillError::Custom(format!(
-            "OpenID Connect: Error while serializing session data: {}",
-            err)))?;
-    let unencrypted_bytes = session_json_str.as_bytes();
-
-    let mut encrypted_bytes = Vec::with_capacity(unencrypted_bytes.len());
-    let tag: [u8; 16] = crypt::encrypt(unencrypted_bytes, &mut encrypted_bytes)?;
-
-    encrypted_bytes.extend(tag.iter());
-    let api_token = base64::encode(&encrypted_bytes);
-
-    Ok(api_token)
-}
-
-fn forget_cached_session_token(token: &Token) {
-    match SESSION_CACHE.lock() {
-        Ok(mut cache) => { cache.cache_remove(token); },
-        Err(err) => warn!("OpenID Connect: session cache evict error: {}", err)
-    }
-}
-
-pub fn get_session_cache_size() -> usize {
-    match SESSION_CACHE.lock() {
-        Ok(cache) => {
-            cache.cache_size()
-        },
-        Err(err) => {
-            warn!("OpenID Connect: session cache size error: {}", err);
-            0
-        }
-    }
 }

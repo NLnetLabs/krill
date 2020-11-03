@@ -24,8 +24,10 @@ use crate::commons::eventsourcing::CommandKey;
 use crate::commons::remote::rfc8183;
 use crate::commons::{KrillEmptyResult, KrillResult};
 use crate::constants::*;
-use crate::daemon::auth::{Auth, Authorizer, LoggedInUser, Permissions};
-use crate::daemon::auth::providers::{MasterTokenAuthProvider, OpenIDConnectAuthProvider};
+use crate::daemon::auth::{Auth, Authorizer, LoggedInUser};
+use crate::daemon::auth::providers::{
+    ConfigFileAuthProvider, MasterTokenAuthProvider, OpenIDConnectAuthProvider
+};
 use crate::daemon::ca::{
     self, ta_handle, testbed_ca_handle, ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaContentRequest,
     RtaPrepareRequest,
@@ -114,16 +116,9 @@ impl KrillServer {
         // Construct the authorizer used to verify API access requests and to
         // tell Lagosta where to send end-users to login and logout.
         let authorizer = match CONFIG.auth_type {
-            AuthType::MasterToken => {
-                Authorizer::new(MasterTokenAuthProvider::new())
-            },
-            AuthType::OpenIDConnect => {
-                Authorizer::new(OpenIDConnectAuthProvider::new().map_err(|e|
-                    Error::Custom(format!(
-                        "Unable to initialize OpenID Connect provider: {}", e)
-                    )
-                )?)
-            }
+            AuthType::ConfigFile => Authorizer::new(ConfigFileAuthProvider::new()?),
+            AuthType::MasterToken => Authorizer::new(MasterTokenAuthProvider::new()),
+            AuthType::OpenIDConnect => Authorizer::new(OpenIDConnectAuthProvider::new()?),
         };
 
         let pubserver = {
@@ -265,12 +260,12 @@ impl KrillServer {
 
 /// # Authentication and Access
 impl KrillServer {
-    pub fn get_actor(&self, auth: &Auth) -> KrillResult<Option<Actor>> {
-        self.authorizer.get_actor(auth)
+    pub fn get_auth(&self, request: &hyper::Request<hyper::Body>) -> Option<Auth> {
+        self.authorizer.get_auth(request)
     }
 
-    pub fn is_api_allowed(&self, auth: &Auth, wanted_permissions: Permissions) -> KrillResult<Option<Auth>> {
-        self.authorizer.is_api_allowed(auth, wanted_permissions)
+    pub fn get_actor(&self, auth: &Auth) -> KrillResult<Option<Actor>> {
+        self.authorizer.get_actor(auth)
     }
 
     pub fn get_login_url(&self) -> String {

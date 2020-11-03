@@ -5,15 +5,15 @@ use serde::Serialize;
 
 use rpki::uri;
 
-use crate::cli::options::{BulkCaCommand, CaCommand, Command, KrillInitDetails, Options, PublishersCommand};
+use crate::{cli::options::{BulkCaCommand, CaCommand, Command, KrillInitDetails, KrillUserDetails, Options, PublishersCommand}};
 use crate::cli::report::{ApiResponse, ReportError};
 use crate::commons::api::{
-    AllCertAuthIssues, CaRepoDetails, CertAuthIssues, ChildCaInfo, ParentCaContact, ParentStatuses, PublisherDetails,
-    PublisherList, RepoStatus, Token,
+    AllCertAuthIssues, CaRepoDetails, CertAuthIssues, ChildCaInfo, ParentCaContact, ParentStatuses,
+    PublisherDetails, PublisherList, RepoStatus, Token,
 };
 use crate::commons::bgp::BgpAnalysisAdvice;
 use crate::commons::remote::rfc8183;
-use crate::commons::util::{file, httpclient};
+use crate::commons::util::{file, httpclient, sha256};
 use crate::constants::KRILL_CLI_API_ENV;
 use crate::daemon::config::Config;
 
@@ -60,6 +60,7 @@ impl KrillClient {
             Command::CertAuth(cmd) => client.certauth(cmd).await,
             Command::Publishers(cmd) => client.publishers(cmd).await,
             Command::Init(details) => client.init(details),
+            Command::User(cmd) => client.user(cmd),
             Command::NotSet => Err(Error::MissingCommand),
         }
     }
@@ -409,6 +410,43 @@ impl KrillClient {
         c.verify().map_err(Error::init)?;
 
         Ok(ApiResponse::GenericBody(config))
+    }
+
+    fn user(&self, details: KrillUserDetails) -> Result<ApiResponse, Error> {
+        let password_hash = {
+            eprint!("Enter the password to hash: ");
+            let mut password = String::new();
+            io::stdin().read_line(&mut password)?;
+            hex::encode(sha256(&password.trim().as_bytes()))
+        };
+
+        let mut cas: Vec<String> = Vec::new();
+        if let Some(inccas) = details.inccas() {
+            cas.extend(inccas.split(",").map(|ca| ca.to_string()));
+        }
+        if let Some(exccas) = details.exccas() {
+            cas.extend(exccas.split(",").map(|ca| format!("!{}", ca)));
+        }
+
+        // Due to https://github.com/alexcrichton/toml-rs/issues/406 we cannot
+        // produce inline table style TOML by serializing from config structs to
+        // a string using the toml crate. Instead we build it up ourselves.
+        let role_fragment = if let Some(role) = details.role() {
+            format!("role={}, ", toml::to_string(role).unwrap())
+        } else {
+            String::new()
+        };
+        let cas_fragment = if !cas.is_empty() {
+            format!("cas={}, ", toml::to_string(&cas).unwrap())
+        } else {
+            String::new()
+        };
+        let toml = format!(r#"
+[auth_users]
+"{id}" = {{ {rf}{cf}password_hash="{ph}" }}"#,
+            id=details.id(), rf=role_fragment, cf=cas_fragment, ph=password_hash);
+
+        Ok(ApiResponse::GenericBody(toml))
     }
 
     async fn get_json<T: DeserializeOwned>(&self, uri: &str) -> Result<T, Error> {

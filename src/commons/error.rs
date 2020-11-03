@@ -210,6 +210,9 @@ pub enum Error {
     #[display(fmt = "HTTP client error: {}", _0)]
     HttpClientError(httpclient::Error),
 
+    #[display(fmt = "Configuration error: {}", _0)]
+    ConfigError(String),
+
     //-----------------------------------------------------------------
     // General API Client Issues
     //-----------------------------------------------------------------
@@ -567,6 +570,9 @@ impl Error {
 
             // internal server error
             Error::HttpClientError(e) => ErrorResponse::new("sys-http-client", &self).with_cause(e),
+
+            // internal configuration error
+            Error::ConfigError(e) => ErrorResponse::new("sys-config", &self).with_cause(e),
 
             //-----------------------------------------------------------------
             // General API Client Issues (label: api-*)

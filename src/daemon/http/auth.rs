@@ -34,7 +34,7 @@ pub async fn auth(req: Request) -> RoutingResult {
         },
         AUTH_LOGIN_ENDPOINT if *req.method() == Method::POST => {
             match req.login().await {
-                Ok(LoggedInUser { id, .. }) => Ok(HttpResponse::text(id.into_bytes())),
+                Ok(logged_in_user) => Ok(HttpResponse::json(&logged_in_user)),
                 Err(_) => Ok(HttpResponse::unauthorized()), // todo: don't discard the error details
             }
         },

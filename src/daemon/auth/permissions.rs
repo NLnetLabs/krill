@@ -49,5 +49,6 @@ bitflags! {
         const GUI_ADMIN         = Self::GUI_WRITE.bits;
 
         const ALL_ADMIN         = Self::GUI_ADMIN.bits | Self::RTA_ADMIN.bits;
+        const NONE              = 0;
     }
 }

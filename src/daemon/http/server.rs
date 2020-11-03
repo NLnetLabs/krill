@@ -32,7 +32,7 @@ use crate::commons::eventsourcing::AggregateStoreError;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
 use crate::constants::{KRILL_ENV_UPGRADE_ONLY, KRILL_VERSION_MAJOR, KRILL_VERSION_MINOR, KRILL_VERSION_PATCH};
-use crate::daemon::auth::providers::openid_connect;
+use crate::daemon::auth::common::session::get_session_cache_size;
 use crate::daemon::auth::Auth;
 use crate::daemon::auth::Permissions;
 use crate::daemon::ca::RouteAuthorizationUpdates;
@@ -137,6 +137,8 @@ async fn map_requests(req: hyper::Request<hyper::Body>, state: State) -> Result<
 
     req.init_actor_from_auth().await?;
 
+    let new_auth = req.actor().new_auth();
+
     let log_req = format!("{} {}", req.method(), req.path.full());
 
     let res = api(req)
@@ -160,7 +162,7 @@ async fn map_requests(req: hyper::Request<hyper::Body>, state: State) -> Result<
 
     match res {
         Ok(routing_result) => {
-            let response = routing_result.response();
+            let response = piggyback_refreshed_token_on_response(routing_result.response(), new_auth);
             info!("{} {}", log_req, response.status(),);
             trace!("Response body: {:?}", response.body());
             Ok(response)
@@ -455,10 +457,9 @@ pub async fn metrics(req: Request) -> RoutingResult {
         }
 
         res.push_str("\n");
-        res.push_str("# HELP krill_auth_openidconnect_session_cache_size total number of cached OpenID Connect session tokens\n");
-        res.push_str("# TYPE krill_auth_openidconnect_session_cache_size gauge\n");
-        res.push_str(&format!("krill_auth_openidconnect_session_cache_size {}\n",
-            openid_connect::get_session_cache_size()));
+        res.push_str("# HELP krill_auth_session_cache_size total number of cached login session tokens\n");
+        res.push_str("# TYPE krill_auth_session_cache_size gauge\n");
+        res.push_str(&format!("krill_auth_session_cache_size {}\n", get_session_cache_size()));
 
         Ok(HttpResponse::text(res.into_bytes()))
     } else {
@@ -567,7 +568,7 @@ async fn stats(req: Request) -> RoutingResult {
 // Suppress any error in the unlikely event that we fail to inject the
 // Authorization header into the HTTP response as this is an internal error that
 // we should shield the user from, but log a warning as this is very unexpected.
-fn add_authorization_headers_to_response(org_response: HttpResponse, token: Token) -> HttpResponse
+fn add_authorization_headers_to_response(org_response: hyper::Response<hyper::Body>, token: Token) -> hyper::Response<hyper::Body>
 {
     let mut new_header_names = Vec::new();
     let mut new_header_values = Vec::new();
@@ -581,28 +582,28 @@ fn add_authorization_headers_to_response(org_response: HttpResponse, token: Toke
     let okay = !new_header_names.iter().zip(new_header_values.iter()).any(|(n, v)| n.is_err() | v.is_err());
     
     if okay {
-        let (parts, body) = org_response.response().into_parts();
+        let (parts, body) = org_response.into_parts();
         let mut augmented_response = hyper::Response::from_parts(parts, body);
         let headers = augmented_response.headers_mut();
         for (name, value) in new_header_names.into_iter().zip(new_header_values.into_iter()) {
             headers.insert(name.unwrap(), value.unwrap());
         }
-        return HttpResponse(augmented_response);
+        augmented_response
     } else {
         let mut conversion_errors = Vec::new();
         conversion_errors.extend(new_header_names.into_iter().filter(|result| result.is_err()).map(|i| i.unwrap_err().to_string()));
         conversion_errors.extend(new_header_values.into_iter().filter(|result| result.is_err()).map(|i| i.unwrap_err().to_string()));
         warn!("Internal error: unable to add refreshed auth token to the response: {:?}", conversion_errors.join(", "));
-        return org_response;
+        org_response
     }
 }
 
-fn piggyback_refreshed_token_on_response(res: RoutingResult, opt_auth: Option<Auth>) -> RoutingResult {
-    match (res, opt_auth) {
-        (Ok(res), Some(Auth::Bearer(token))) => {
-            Ok(add_authorization_headers_to_response(res, token))
+fn piggyback_refreshed_token_on_response(res: hyper::Response<hyper::Body>, opt_auth: Option<Auth>) -> hyper::Response<hyper::Body> {
+    match opt_auth {
+        Some(Auth::Bearer(token)) => {
+            add_authorization_headers_to_response(res, token)
         },
-        (res, _) => res
+        _ => res,
     }
 }
 
@@ -618,12 +619,10 @@ fn piggyback_refreshed_token_on_response(res: RoutingResult, opt_auth: Option<Au
 // similar to how this macro is used in each function.
 macro_rules! aa {
     ($req:ident, $perm:ident, $action:expr) => {{
-        match $req.is_authorized(Permissions::$perm).await {
-            Err(_)       => Ok(HttpResponse::unauthorized()),
-            Ok(opt_auth) => {
-                let res = { $action };
-                piggyback_refreshed_token_on_response(res, opt_auth)
-            }
+        match $req.actor().has_permission(Permissions::$perm) {
+            Some(true)  => $action,
+            Some(false) => Ok(HttpResponse::forbidden()),
+            None        => Ok(HttpResponse::unauthorized()),
         }
     }}
 }

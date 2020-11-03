@@ -1,7 +1,7 @@
 use crate::{commons::KrillResult, constants::ACTOR_MASTER_TOKEN, commons::actor::Actor};
 use crate::commons::api::Token;
 use crate::commons::error::Error as KrillError;
-use crate::daemon::auth::{Auth, AuthProvider, LoggedInUser, Permissions};
+use crate::daemon::auth::{Auth, AuthProvider, LoggedInUser};
 use crate::daemon::config::CONFIG;
 
 // This is NOT an actual relative path to redirect to. Instead it is the path
@@ -24,6 +24,13 @@ impl MasterTokenAuthProvider {
 }
 
 impl AuthProvider for MasterTokenAuthProvider {
+    fn get_auth(&self, request: &hyper::Request<hyper::Body>) -> Option<Auth> {
+        match self.get_bearer_token(request) {
+            Some(token) => Some(Auth::Bearer(Token::from(token))),
+            None => None
+        }
+    }
+
     fn get_actor(&self, auth: &Auth) -> KrillResult<Option<Actor>> {
         match auth {
             Auth::Bearer(token) if &self.token == token => Ok(Some(ACTOR_MASTER_TOKEN.clone())),
@@ -31,16 +38,9 @@ impl AuthProvider for MasterTokenAuthProvider {
         }
     }
 
-    fn is_api_allowed(&self, auth: &Auth, _wanted_permissions: Permissions) -> KrillResult<Option<Auth>> {
-        match auth {
-            Auth::Bearer(token) if &self.token == token => Ok(None),
-            _ => Err(KrillError::ApiInvalidCredentials)
-        }
-    }
-
     fn get_login_url(&self) -> String {
         // Direct Lagosta to show the user the Lagosta API token login form
-        return LAGOSTA_LOGIN_ROUTE_PATH.to_string();
+        LAGOSTA_LOGIN_ROUTE_PATH.to_string()
     }
 
     fn login(&self, auth: &Auth) -> KrillResult<LoggedInUser> {
@@ -48,7 +48,7 @@ impl AuthProvider for MasterTokenAuthProvider {
             Auth::Bearer(token) if &self.token == token => {
                 // Once login is complete, return the id of the logged in user to 
                 Ok(LoggedInUser {
-                    token: token.to_string(),
+                    token: token.clone(),
                     id: "master-token@krill.conf".to_string()
                 })
             },
@@ -59,6 +59,6 @@ impl AuthProvider for MasterTokenAuthProvider {
     fn logout(&self, _auth: Option<Auth>) -> String {
         // Logout is complete, direct Lagosta to show the user the Lagosta
         // index page
-        return "/".to_string();
+        "/".to_string()
     }
 }

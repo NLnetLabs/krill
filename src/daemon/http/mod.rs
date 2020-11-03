@@ -10,13 +10,10 @@ use hyper::body::HttpBody;
 use hyper::http::uri::PathAndQuery;
 use hyper::{Body, Method, StatusCode};
 
-use urlparse::{urlparse, GetQuery};
-
 use crate::{constants::ACTOR_ANON, commons::{actor::Actor, KrillResult}};
-use crate::commons::api::Token;
 use crate::commons::error::Error;
 use crate::commons::remote::{rfc6492, rfc8181};
-use crate::daemon::auth::{Auth, LoggedInUser, Permissions};
+use crate::daemon::auth::{Auth, LoggedInUser};
 use crate::daemon::http::server::State;
 
 pub mod auth;
@@ -299,7 +296,7 @@ impl Request {
 
     pub async fn init_actor_from_auth(&mut self) -> KrillResult<()> {
         if self.actor.is_none() {
-            if let Some(auth) = self.get_auth() {
+            if let Some(auth) = self.get_auth().await {
                 let opt_actor = self.state().read().await.get_actor(&auth)?;
                 self.actor = opt_actor;
             }
@@ -428,34 +425,8 @@ impl Request {
         Ok(vec.into())
     }
 
-    fn get_auth(&self) -> Option<Auth> {
-        debug!("Extracting authentication details from the request");
-        if let Some(query) = urlparse(self.request.uri().to_string()).get_parsed_query() {
-            if let Some(code) = query.get_first_from_str("code") {
-                if let Some(state) = query.get_first_from_str("state") {
-                    debug!("The request is authenticated by temporary authorization code.");
-                    return Some(Auth::authorization_code(code, state));
-                }
-            }
-        }
-    
-        if let Some(header) = self.request.headers().get("Authorization") {
-            if let Ok(header) = header.to_str() {
-                if header.len() > 6 {
-                    let (bearer, token) = header.split_at(6);
-                    let bearer = bearer.trim();
-                    let token = Token::from(token.trim());
-
-                    if "Bearer" == bearer {
-                        debug!("The request is authenticated by bearer token.");
-                        return Some(Auth::bearer(token));
-                    }
-                }
-            }
-        }
-    
-        debug!("The request lacks authentication details.");
-        None
+    async fn get_auth(&self) -> Option<Auth> {
+        return self.state.read().await.get_auth(&self.request);
     }
 
     pub fn new_auth(&self) -> Option<&Auth> {
@@ -467,23 +438,23 @@ impl Request {
     }
 
     /// Checks whether the Bearer token is set to what we expect
-    pub async fn is_authorized(&self, wanted_permissions: Permissions) -> KrillResult<Option<Auth>> {
-        match self.get_auth() {
-            Some(auth) => {
-                self.state.read().await.is_api_allowed(&auth, wanted_permissions)
-            }
-            None => {
-                Err(Error::ApiInvalidCredentials)
-            }
-        }
-    }
+    // pub async fn is_authorized(&self, wanted_permissions: Permissions) -> KrillResult<Option<Auth>> {
+    //     match self.get_auth().await {
+    //         Some(auth) => {
+    //             self.state.read().await.is_api_allowed(&auth, wanted_permissions)
+    //         }
+    //         None => {
+    //             Err(Error::ApiInvalidCredentials)
+    //         }
+    //     }
+    // }
 
     pub async fn get_login_url(&self) -> String {
         self.state.read().await.get_login_url()
     }
 
     pub async fn login(&self) -> KrillResult<LoggedInUser> {
-        if let Some(auth) = self.get_auth() {
+        if let Some(auth) = self.get_auth().await {
             self.state.read().await.login(&auth)
         } else {
             Err(Error::ApiMissingCredentials)
@@ -491,7 +462,7 @@ impl Request {
     }
 
     pub async fn logout(&self) -> String {
-        self.state.read().await.logout(self.get_auth())
+        self.state.read().await.logout(self.get_auth().await)
     }
 }
 
