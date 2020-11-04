@@ -324,7 +324,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         //   "we can persist the nonce in the client e.g. by storing "the
         //    cryptographically random value in HTML5 local storage and use a
         //    cryptographic hash of this value."
-        let request = self.client
+        let mut request = self.client
             .authorize_url(
                 AuthenticationFlow::<CoreResponseType>::AuthorizationCode,
                 CsrfToken::new_random,
@@ -340,7 +340,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         // to specify who to login as, we don't want the provider somehow
         // automatically completing the login process because it has some notion
         // of an existing loging session.
-        let request = request.add_prompt(CoreAuthPrompt::Login);
+        request = request.add_prompt(CoreAuthPrompt::Login);
 
         // The "openid" scope that OpenID Connect: providers are required to
         // check for is sent automatically by the openidconnect crate. We can
@@ -354,10 +354,21 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         //   https://openid.net/specs/openid-connect-core-1_0.html#ScopeClaims
         //   https://openid.net/specs/openid-connect-core-1_0.html#StandardClaims
         //   https://openid.net/specs/openid-connect-core-1_0.html#IDToken
-        let request = request.add_scope(Scope::new("email".to_string()));
+        request = request.add_scope(Scope::new("email".to_string()));
 
-        // TODO: let the operator specify additional scopes to send in the Krill
-        // config file.
+        // TODO: use request.set_pkce_challenge() ?
+
+        // This unwrap is safe as we check in new() that the OpenID Connect
+        // config exists.
+        let oidc_conf = &CONFIG.auth_openidconnect.as_ref().unwrap();
+
+        for scope in &oidc_conf.extra_login_scopes {
+            request = request.add_scope(Scope::new(scope.clone()));
+        }
+
+        for (k, v) in oidc_conf.extra_login_params.iter() {
+            request = request.add_extra_param(k, v);
+        }
 
         let (authorize_url, _csrf_state, _nonce) = request.url();
 

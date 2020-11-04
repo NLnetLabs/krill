@@ -34,6 +34,12 @@ pub struct ConfigAuthOpenIDConnect {
     pub claims: ConfigAuthOpenIDConnectClaims,
 
     pub role_map: Option<ConfigAuthOpenIDConnectRoleMap>,
+
+    #[serde(default)]
+    pub extra_login_scopes: Vec<String>,
+
+    #[serde(default)]
+    pub extra_login_params: HashMap<String, String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
