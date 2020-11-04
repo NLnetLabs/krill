@@ -4,6 +4,7 @@ use cached::proc_macro::cached;
 
 use jmespatch as jmespath;
 
+use jmespath::ToJmespath;
 use openidconnect::{
     AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret, CsrfToken,
     IssuerUrl, Nonce, OAuth2TokenResponse, RedirectUrl, RefreshToken, Scope,
@@ -25,7 +26,8 @@ use crate::daemon::config::CONFIG;
 use crate::daemon::http::auth::AUTH_CALLBACK_ENDPOINT;
 
 use super::config::{
-    ConfigAuthOpenIDConnect, ConfigAuthOpenIDConnectRoleSource as RoleSource
+    ConfigAuthOpenIDConnect, ConfigAuthOpenIDConnectClaim,
+    ConfigAuthOpenIDConnectClaimSource as ClaimSource
 };
 use super::util::{
     self, LogOrFail, FlexibleClient, FlexibleIdTokenClaims,
@@ -224,6 +226,51 @@ impl OpenIDConnectAuthProvider {
         }
         None
     }
+
+    fn extract_claim(
+        &self,
+        claim_conf: &ConfigAuthOpenIDConnectClaim,
+        id_token_claims: &FlexibleIdTokenClaims,
+        user_info_claims: &FlexibleUserInfoClaims,
+    ) -> KrillResult<Option<String>> {
+        let searchable_claims = match &claim_conf.source {
+            ClaimSource::IdTokenStandardClaim    => id_token_claims.to_jmespath(),
+            ClaimSource::UserInfoStandardClaim   => user_info_claims.to_jmespath(),
+            ClaimSource::IdTokenAdditionalClaim  => id_token_claims.additional_claims().to_jmespath(),
+            ClaimSource::UserInfoAdditionalClaim => user_info_claims.additional_claims().to_jmespath(),
+        };
+
+        let searchable_claims = searchable_claims
+            .map_err(|e| KrillError::Custom(format!(
+                "OpenID Connect: unable to prepare claims for parsing: {:?}",
+                e)))?;
+
+        debug!("Searching for a {:?} using JMESPath \"{}\" in {}",
+            claim_conf.source, claim_conf.jmespath, searchable_claims);
+
+        // We don't precompile the JMESPath expression because the jmespath
+        // crate requires it to have a lifetime and storing that in our state
+        // struct would infect the entire struct with lifetimes, plus logins
+        // don't happen very often and are slow anyway (as the user has to visit
+        // the OpenID Connect providers own login form then be redirected back
+        // to us) so this doesn't have to be fast. Note to self: perhaps the
+        // lifetime issue could be worked around using a Box?
+        let jmespath_string = claim_conf.jmespath.to_string();
+        let expr = &jmespath::compile(&jmespath_string)
+            .map_err(|e| KrillError::Custom(format!(
+                "OpenID Connect: unable to compile roles JMESPath {}: {:?}",
+                &jmespath_string,
+                e)))?;
+        let found = expr.search(&searchable_claims)
+            .map_err(|e| KrillError::Custom(format!(
+                "OpenID Connect: unable to find match for JMESPath {} in additional claims: {:?}",
+                &jmespath_string,
+                e)))?;
+
+        // return Some(String) if there is match, None otherwise (e.g. an array
+        // instead of a string)
+        Ok(found.as_string().cloned())
+    }
 }
 
 impl AuthProvider for OpenIDConnectAuthProvider {
@@ -246,8 +293,6 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 // see if we can decode, decrypt and deserialize the users token
                 // into a login session structure
                 let session = token_to_session(token.clone())?;
-
-                // let (role, _entitled_perms) = lookup_role(session.role_name.clone())?;
 
                 let new_auth = self.try_refresh_token(&session);
 
@@ -447,80 +492,30 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                         e.to_string())))?;
 
 // ==========================================================================================
-                // Step 4: Extract and validate the "claim" that tells us which
-                // Krill role this user should have.
+                // Step 4: Extract and validate the "claims" that tells us which
+                // Krill role this user should have and which CAs they should
+                // have access to.
 // ==========================================================================================
 
                 // This unwrap() is safe as we must have an OpenID Connect
                 // config block in order to reach this point and the roles field
                 // has a default value so always exists.
-                let roles_conf = &CONFIG.auth_openidconnect.as_ref().unwrap().roles;
+                let claims_conf = &CONFIG.auth_openidconnect.as_ref().unwrap().claims;
 
-                let extra_claims = match &roles_conf.source {
-                    RoleSource::IdTokenAdditionalClaim => {
-                        Some(id_token_claims.additional_claims())
+                let role_name = self.extract_claim(
+                    &claims_conf.role, &id_token_claims, &user_info_claims)?;
+
+                let cas = self.extract_claim(
+                    &claims_conf.cas, &id_token_claims, &user_info_claims)?;
+
+                let (inc_cas, exc_cas) = match cas {
+                    Some(cas) => {
+                        let inc_cas = cas.split(',').filter(|s| !s.is_empty()).filter(|s| !s.starts_with("!")).map(|s| s.to_string()).collect::<Vec<String>>();
+                        let exc_cas = cas.split(',').filter(|s| !s.is_empty()).filter(|s| s.starts_with("!")).map(|s| s.to_string()).collect::<Vec<String>>();
+                        (inc_cas, exc_cas)
                     },
-                    RoleSource::UserInfoAdditionalClaim => {
-                        Some(user_info_claims.additional_claims())
-                    },
+                    _ => (Vec::new(), Vec::new()),
                 };
-
-                let role_name = match &roles_conf.source {
-                    RoleSource::IdTokenAdditionalClaim|RoleSource::UserInfoAdditionalClaim => {
-                        // We don't precompile the JMESPath expression because
-                        // the jmespath crate requires it to have a lifetime and
-                        // storing that in our state struct would infect the
-                        // entire struct with lifetimes, plus logins don't
-                        // happen very often and are slow anyway (as the user
-                        // has to visit the OpenID Connect providers own login
-                        // form then be redirected back to us).
-                        let jmespath_string = roles_conf.jmespath.to_string();
-                        let expr = &jmespath::compile(&jmespath_string)
-                            .map_err(|e| KrillError::Custom(format!(
-                                "OpenID Connect: unable to compile roles JMESPath {}: {:?}",
-                                &jmespath_string,
-                                e)))?;
-                        let found = expr.search(&extra_claims.unwrap())
-                            .map_err(|e| KrillError::Custom(format!(
-                                "OpenID Connect: unable to find match for JMESPath {} in additional claims: {:?}",
-                                &jmespath_string,
-                                e)))?;
-
-                        // return Some if there is match, None otherwise (e.g.
-                        // an array instead of a string)
-                        found.as_string().cloned()
-                    },
-                    // StandardClaim
-                    // ConfigFile
-                };
-
-                let found = {
-                    let jmespath_string = "inc_cas";
-                    let expr = &jmespath::compile(&jmespath_string)
-                        .map_err(|e| KrillError::Custom(format!(
-                            "OpenID Connect: unable to compile inc_cas JMESPath {}: {:?}",
-                            &jmespath_string,
-                            e)))?;
-                    match expr.search(&extra_claims.unwrap()) {
-                        Ok(found) => found.as_string().cloned().unwrap_or(String::new()),
-                        _ => String::new(),
-                    }
-                };
-                let inc_cas = found.split(',').filter(|s| !s.is_empty()).map(|s| s.to_string()).collect::<Vec<String>>();
-
-                let found = {
-                    let jmespath_string = "exc_cas";
-                    let expr = &jmespath::compile(&jmespath_string)
-                        .map_err(|e| KrillError::Custom(format!(
-                            "OpenID Connect: unable to compile exc_cas JMESPath {}: {:?}",
-                            &jmespath_string,
-                            e)))?;
-                    match expr.search(&extra_claims.unwrap()) {
-                        Ok(found) => found.as_string().cloned().unwrap_or(String::new()),
-                        _ => String::new(),
-                    }
-                };
-                let exc_cas = found.split(',').filter(|s| !s.is_empty()).map(|s| s.to_string()).collect::<Vec<String>>();
 
 // ==========================================================================================
                 // Step 5: Respond to the user: access granted, or access denied
@@ -586,11 +581,13 @@ impl AuthProvider for OpenIDConnectAuthProvider {
     result = true
 )]
 fn lookup_role(role_name: String) -> KrillResult<(Role, Permissions)> {
-    let roles_conf = &CONFIG.auth_openidconnect.as_ref().unwrap().roles;
+    // This unwrap is safe as we check in new() that the OpenID Connect config
+    // exists.
+    let role_map = &CONFIG.auth_openidconnect.as_ref().unwrap().role_map;
 
     // use the role map, if defined, to lookup the actual role e.g. from an
     // Azure ActiveDirectory group ID GUID.
-    let role = match &roles_conf.mapping {
+    let role = match &role_map {
         None => {
             // No customer defined mapping of customer role names to Krill
             // role names, map the name to the role object directly
@@ -600,7 +597,7 @@ fn lookup_role(role_name: String) -> KrillResult<(Role, Permissions)> {
                 "gui_read_write" => Role::GuiReadWrite,
                 _ => return Err(KrillError::ApiInvalidRole),
             }
-       },
+        },
         Some(mapping) => {
             // The customer defined a mapping from their role names to Krill
             // role names, lookup the role object by the Krill role name.
