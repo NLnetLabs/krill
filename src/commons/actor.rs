@@ -30,11 +30,11 @@ impl Actor {
         }
     }
 
-    pub const fn system(name: &'static str) -> Actor {
+    pub const fn system(name: &'static str, role: Role) -> Actor {
         Actor {
             name: ActorName::AsStaticStr(name),
             is_user: false,
-            role: Some(Role::Admin),
+            role: Some(role),
             included_cas: vec![],
             excluded_cas: vec![],
             new_auth: None,
@@ -83,7 +83,8 @@ impl Actor {
             Some(Role::Admin)        => Permissions::ALL_ADMIN,
             Some(Role::GuiReadOnly)  => Permissions::GUI_READ,
             Some(Role::GuiReadWrite) => Permissions::GUI_WRITE,
-            _ => Permissions::NONE,
+            Some(Role::Testbed)      => Permissions::TESTBED,
+            None                     => Permissions::NONE,
         };
 
         Some(entitled_perms.contains(wanted_permissions))

@@ -21,10 +21,10 @@ use hyper::server::conn::AddrIncoming;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::Method;
 
-use crate::commons::api::{
+use crate::{constants::ACTOR_TESTBED, commons::api::{
     BgpStats, ChildHandle, CommandHistoryCriteria, Handle, ParentCaContact, ParentCaReq, ParentHandle, PublisherList,
     RepositoryUpdate, RoaDefinitionUpdates, RtaName, Token,
-};
+}};
 use crate::commons::actor::Actor;
 use crate::commons::bgp::BgpAnalysisAdvice;
 use crate::commons::error::Error;
@@ -140,6 +140,7 @@ async fn map_requests(req: hyper::Request<hyper::Body>, state: State) -> Result<
     let new_auth = req.actor().new_auth();
 
     let log_req = format!("{} {}", req.method(), req.path.full());
+    let mut log_res = true;
 
     let res = api(req)
         .or_else(auth)
@@ -149,13 +150,26 @@ async fn map_requests(req: hyper::Request<hyper::Body>, state: State) -> Result<
         .or_else(rfc8181)
         .or_else(rfc6492)
         .or_else(statics)
+        .and_then(|res| async {
+            // Don't log very large static responses as they are not helpful
+            // when diagnosing issues and just make the trace log unusable.
+            log_res = false;
+            Ok(res)
+        })
         .or_else(ta)
         .or_else(rrdp)
-        .or_else(|mut req| {
-            // TODO: this doesn't actually disable anything as far as I can see
-            req.disable_authorization_checks();
-            testbed(req)
+        .or_else(|mut req| async {
+            // The testbed is intended to be used without being logged in but
+            // anonymous users don't have the necessary rights to manipulate
+            // Krill CAs and publishers. Upgrade anonymous users with testbed
+            // rights ready for the next call in the chain to the testbed()
+            // API call handler functions.
+            if req.actor().is_none() {
+                req.override_actor(ACTOR_TESTBED.clone());
+            }
+            Err(req)
         })
+        .or_else(testbed)
         .or_else(render_not_found)
         .map_err(|_| Error::custom("should have received not found response"))
         .await;
@@ -164,7 +178,12 @@ async fn map_requests(req: hyper::Request<hyper::Body>, state: State) -> Result<
         Ok(routing_result) => {
             let response = piggyback_refreshed_token_on_response(routing_result.response(), new_auth);
             info!("{} {}", log_req, response.status(),);
-            trace!("Response body: {:?}", response.body());
+
+            // Log the response body if trace logging is enabled, except if
+            // deliberately disabled for this particular response
+            if log_enabled!(log::Level::Trace) && log_res {
+                trace!("Response body: {:?}", response.body());
+            }
             Ok(response)
         },
         Err(e) => {

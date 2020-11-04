@@ -1,4 +1,4 @@
-use crate::commons::actor::Actor;
+use crate::{commons::actor::Actor, daemon::auth::common::config::Role};
 
 pub const KRILL_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const KRILL_VERSION_MAJOR: &str = env!("CARGO_PKG_VERSION_MAJOR");
@@ -52,6 +52,7 @@ pub const BGP_RIS_REFRESH_MINUTES: i64 = 60;
 
 pub const HTTTP_CLIENT_TIMEOUT_SECS: u64 = 120;
 
-pub const ACTOR_KRILL: &Actor = &Actor::system("krill");
+pub const ACTOR_KRILL: &Actor = &Actor::system("krill", Role::Admin);
 pub const ACTOR_ANON: &Actor = &Actor::none();
-pub const ACTOR_MASTER_TOKEN: &Actor = &Actor::system("master-token@krill.conf");
+pub const ACTOR_MASTER_TOKEN: &Actor = &Actor::system("master-token@krill.conf", Role::Admin);
+pub const ACTOR_TESTBED: &Actor = &Actor::system("testbed", Role::Testbed);

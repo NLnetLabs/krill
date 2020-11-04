@@ -277,7 +277,6 @@ pub struct Request {
     path: RequestPath,
     state: State,
     new_auth: Option<Auth>,
-    authorization_enabled: bool,
     actor: Option<Actor>,
 }
 
@@ -289,7 +288,6 @@ impl Request {
             path: path,
             state: state,
             new_auth: None,
-            authorization_enabled: true,
             actor: None,
         }
     }
@@ -302,6 +300,10 @@ impl Request {
             }
         }
         Ok(())
+    }
+
+    pub fn override_actor(&mut self, actor: Actor) {
+        self.actor = Some(actor);
     }
 
     pub fn actor(&self) -> Actor {
@@ -432,22 +434,6 @@ impl Request {
     pub fn new_auth(&self) -> Option<&Auth> {
         self.new_auth.as_ref()
     }
-
-    pub fn disable_authorization_checks(&mut self) {
-        self.authorization_enabled = false;
-    }
-
-    /// Checks whether the Bearer token is set to what we expect
-    // pub async fn is_authorized(&self, wanted_permissions: Permissions) -> KrillResult<Option<Auth>> {
-    //     match self.get_auth().await {
-    //         Some(auth) => {
-    //             self.state.read().await.is_api_allowed(&auth, wanted_permissions)
-    //         }
-    //         None => {
-    //             Err(Error::ApiInvalidCredentials)
-    //         }
-    //     }
-    // }
 
     pub async fn get_login_url(&self) -> String {
         self.state.read().await.get_login_url()

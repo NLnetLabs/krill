@@ -10,6 +10,7 @@ pub enum Role {
     Admin,
     GuiReadOnly,
     GuiReadWrite,
+    Testbed, // for internal use only
 }
 
 impl<'de> Deserialize<'de> for Role {

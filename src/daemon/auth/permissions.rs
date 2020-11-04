@@ -5,6 +5,8 @@
 // approach we could use something like the Rust casbin or oso crates.
 bitflags! {
     pub struct Permissions: u32 {
+        const NONE              = 00000000000000000000;
+
         // LOGIN is the minimum possible permission, without this you won't be
         // able to do anything even if you otherwise authenticated correctly.
         const LOGIN             = 0b000000000000000001;
@@ -49,6 +51,7 @@ bitflags! {
         const GUI_ADMIN         = Self::GUI_WRITE.bits;
 
         const ALL_ADMIN         = Self::GUI_ADMIN.bits | Self::RTA_ADMIN.bits;
-        const NONE              = 0;
+
+        const TESTBED           = Self::CA_READ.bits | Self::CA_UPDATE.bits | Self::PUB_ADMIN.bits;
     }
 }
