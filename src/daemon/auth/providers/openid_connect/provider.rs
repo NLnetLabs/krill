@@ -30,7 +30,7 @@ use super::config::{
     ConfigAuthOpenIDConnectClaimSource as ClaimSource
 };
 use super::util::{
-    self, LogOrFail, FlexibleClient, FlexibleIdTokenClaims,
+    LogOrFail, FlexibleClient, FlexibleIdTokenClaims,
     FlexibleTokenResponse, FlexibleUserInfoClaims, WantedMeta,
 };
 
@@ -446,9 +446,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                         "OpenID Connect: ID token verification failed: {}",
                         e.to_string())))?;
 
-                if util::http_debug_log_enabled() {
-                    debug!("OpenID Connect: Identity provider returned ID token: {:?}", id_token_claims);
-                }
+                trace!("OpenID Connect: Identity provider returned ID token: {:?}", id_token_claims);
 
                 // TODO: There's also a suggestion to verify the access token
                 // received above using the at_hash claim in the ID token, if

@@ -33,9 +33,6 @@ pub struct ConfigAuthOpenIDConnect {
     #[serde(default)]
     pub claims: ConfigAuthOpenIDConnectClaims,
 
-    #[serde(default)]
-    pub http_debug_log_enabled: bool,
-
     pub role_map: Option<ConfigAuthOpenIDConnectRoleMap>,
 }
 

@@ -1,5 +1,3 @@
-use cached::proc_macro::cached;
-
 use openidconnect::{
     AdditionalClaims, AdditionalProviderMetadata, Client, ExtraTokenFields,
     IdTokenClaims, IdTokenFields, ProviderMetadata, StandardErrorResponse,
@@ -16,7 +14,6 @@ use openidconnect::core::{
 
 use crate::commons::error::Error as KrillError;
 use crate::commons::KrillResult;
-use crate::daemon::config::CONFIG;
 
 // -----------------------------------------------------------------------------
 // Swap out the openidconnect crate types EmptyAdditionalClaims and
@@ -160,16 +157,6 @@ impl<T> LogOrFail for Option<T> {
     }
 }
 
-#[cached(size=1)]
-pub fn http_debug_log_enabled() -> bool {
-    if log_enabled!(log::Level::Debug) {
-        if let Some(oidc_conf) = &CONFIG.auth_openidconnect {
-            return oidc_conf.http_debug_log_enabled;
-        }
-    }
-    false
-}
-
 // -----------------------------------------------------------------------------
 // A macro to intercept and log the openidconnect crate HTTP requests and
 // responses.
@@ -180,9 +167,7 @@ pub fn http_debug_log_enabled() -> bool {
 macro_rules! logging_http_client {
     () => {
         |req| {
-            let do_log = util::http_debug_log_enabled();
-
-            if do_log {
+            if log_enabled!(log::Level::Trace) {
                 // Don't {:?} log the openidconnect::HTTPRequest req object
                 // because that renders the body as an unreadable integer byte
                 // array, instead try and decode it as UTF-8.
@@ -199,7 +184,7 @@ macro_rules! logging_http_client {
 
             let res = oidc_http_client(req);
 
-            if do_log {
+            if log_enabled!(log::Level::Trace) {
                 match &res {
                     Ok(res) => {
                         // Don't {:?} log the openidconnect::HTTPResponse res
