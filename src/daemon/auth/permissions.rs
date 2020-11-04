@@ -46,7 +46,7 @@ bitflags! {
         // possibly even more via the REST API directly than via krillc.
         // Assigning GUI permissions is a way of ensuring that the assigned
         // permissions don't exceed what is possible via the UI.
-        const GUI_READ          = Self::LOGIN.bits | Self::CA_LIST.bits | Self::CA_READ.bits | Self::PUB_LIST.bits | Self::PUB_READ.bits | Self::ROUTES_READ.bits;
+        const GUI_READ          = Self::LOGIN.bits | Self::CA_LIST.bits | Self::CA_READ.bits | Self::PUB_LIST.bits | Self::PUB_READ.bits | Self::ROUTES_READ.bits | Self::ROUTES_ANALYSIS.bits;
         const GUI_WRITE         = Self::LOGIN.bits | Self::CA_ADMIN.bits | Self::PUB_ADMIN.bits | Self::ROUTES_ADMIN.bits;
         const GUI_ADMIN         = Self::GUI_WRITE.bits;
 
