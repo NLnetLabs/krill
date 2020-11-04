@@ -246,9 +246,6 @@ pub enum Error {
     #[display(fmt = "Invalid role")]
     ApiInvalidRole,
 
-    #[display(fmt = "Insufficient rights")]
-    ApiInsufficientRights,
-
     //-----------------------------------------------------------------
     // Repository Issues
     //-----------------------------------------------------------------
@@ -597,8 +594,6 @@ impl Error {
             Error::ApiInvalidCredentials => ErrorResponse::new("api-invalid-credentials", &self),
 
             Error::ApiInvalidRole => ErrorResponse::new("api-invalid-role", &self),
-
-            Error::ApiInsufficientRights => ErrorResponse::new("api-insufficient-rights", &self),
 
             //-----------------------------------------------------------------
             // Repository Issues (label: repo-*)
