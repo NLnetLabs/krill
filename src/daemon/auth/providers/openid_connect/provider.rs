@@ -509,7 +509,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 let (inc_cas, exc_cas) = match cas {
                     Some(cas) => {
                         let inc_cas = cas.split(',').filter(|s| !s.is_empty()).filter(|s| !s.starts_with("!")).map(|s| s.to_string()).collect::<Vec<String>>();
-                        let exc_cas = cas.split(',').filter(|s| !s.is_empty()).filter(|s| s.starts_with("!")).map(|s| s.to_string()).collect::<Vec<String>>();
+                        let exc_cas = cas.split(',').filter(|s| !s.is_empty()).filter(|s| s.starts_with("!")).map(|s| s.trim_start_matches("!").to_string()).collect::<Vec<String>>();
                         (inc_cas, exc_cas)
                     },
                     _ => (Vec::new(), Vec::new()),
