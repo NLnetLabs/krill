@@ -25,7 +25,11 @@ pub async fn auth(req: Request) -> RoutingResult {
                 },
                 Err(err) => {
                     warn!("Login failed: {}", err);
-                    Ok(HttpResponse::unauthorized())
+                    // TODO: render to_error_response() as JSON and set it as
+                    // the HTTP 302 Found response body?
+                    let location = format!("/index.html#/login?error={}",
+                        err.to_error_response().label());
+                    Ok(HttpResponse::found(&location))
                 },
             }
         },
