@@ -21,7 +21,7 @@ use crate::commons::{actor::Actor, api::Token, error::Error as KrillError};
 use crate::commons::KrillResult;
 use crate::daemon::auth::common::config::Role;
 use crate::daemon::auth::common::session::*;
-use crate::daemon::auth::{Auth, AuthProvider, LoggedInUser, Permissions};
+use crate::daemon::auth::{Auth, AuthProvider, LoggedInUser};
 use crate::daemon::config::CONFIG;
 use crate::daemon::http::auth::AUTH_CALLBACK_ENDPOINT;
 
@@ -539,7 +539,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
 // ==========================================================================================
                 match role_name {
                     Some(role_name) => {
-                        let (role, entitled_perms) = lookup_role(role_name.clone())?;
+                        let role = lookup_role(role_name.clone())?;
 
                         let secrets = if let Some(new_refresh_token) = token_response.refresh_token() {
                             vec![new_refresh_token.secret().clone()]
@@ -549,7 +549,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
 
                         let api_token = session_to_token(&email, &role, &inc_cas, &exc_cas, &secrets)?;
 
-                        debug!("ID: {:?}, Role: {:?}, Permissions: {:?}, Inc CAs: {:?}, Exc CAs: {:?}", &email, &role, &entitled_perms, &inc_cas, &exc_cas);
+                        debug!("ID: {:?}, Role: {:?}, Inc CAs: {:?}, Exc CAs: {:?}", &email, &role, &inc_cas, &exc_cas);
 
                         Ok(LoggedInUser { token: api_token, id: base64::encode(&email) })
                     },
@@ -578,7 +578,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
     name = "ROLE_CACHE",
     result = true
 )]
-fn lookup_role(role_name: String) -> KrillResult<(Role, Permissions)> {
+fn lookup_role(role_name: String) -> KrillResult<Role> {
     // This unwrap is safe as we check in new() that the OpenID Connect config
     // exists.
     let role_map = &CONFIG.auth_openidconnect.as_ref().unwrap().role_map;
@@ -587,14 +587,8 @@ fn lookup_role(role_name: String) -> KrillResult<(Role, Permissions)> {
     // Azure ActiveDirectory group ID GUID.
     let role = match &role_map {
         None => {
-            // No customer defined mapping of customer role names to Krill
-            // role names, map the name to the role object directly
-            match role_name.as_ref() {
-                "admin"          => Role::Admin,
-                "gui_read_only"  => Role::GuiReadOnly,
-                "gui_read_write" => Role::GuiReadWrite,
-                _ => return Err(KrillError::ApiInvalidRole),
-            }
+            serde_json::from_str(&format!(r#""{}""#, &role_name))
+                .map_err(|_| KrillError::ApiInvalidRole)?
         },
         Some(mapping) => {
             // The customer defined a mapping from their role names to Krill
@@ -609,11 +603,5 @@ fn lookup_role(role_name: String) -> KrillResult<(Role, Permissions)> {
         }
     };
 
-    let entitled_perms = match role {
-        Role::Admin        => Permissions::ALL_ADMIN,
-        Role::GuiReadOnly  => Permissions::GUI_READ,
-        Role::GuiReadWrite => Permissions::GUI_WRITE,
-    };
-
-    Ok((role, entitled_perms))
+    Ok(role)
 }
