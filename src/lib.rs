@@ -23,7 +23,6 @@ extern crate libflate;
 #[macro_use]
 extern crate log;
 extern crate openssl;
-extern crate rand;
 extern crate reqwest;
 extern crate rpki;
 #[macro_use]

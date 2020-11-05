@@ -3,6 +3,26 @@
 Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
 for planned releases.
 
+## Unreleased Changes
+
+
+Fixes:
+* Give a clear error in case Krill cannot bind to server address and port (#337)
+
+
+## 0.8.0 'The Art of ROA Maintenance'
+
+This release includes all changes from the -rc1 and -rc2 release candidates. In addition to this
+the main UI (everything except the testbed pages) now includes Spanish translations.
+
+In summary this upgrade is recommended to all Krill users. It offers improved ROA guidance support
+in the UI, better status reporting on interactions between your CA and its parent and repository,
+and a number of improvements aimed at improving resiliency.
+
+Furthermore, we would like to draw attention once more to our [testbed](https://blog.nlnetlabs.nl/testing----123-delegated-rpki/) 
+which allows new users to get familiar with Krill, and existing users to try out new functionality
+before upgrading.
+
 ## 0.8.0-rc2 'The Small Print'
 
 Because of some changes we decided to have another RC release before 0.8.0, which is now planned

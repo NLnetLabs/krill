@@ -8,7 +8,6 @@ use std::time::Duration;
 use std::{env, fs};
 
 use bytes::Bytes;
-use rand::{thread_rng, Rng};
 
 use hyper::StatusCode;
 use tokio::time::{delay_for, timeout};
@@ -31,7 +30,7 @@ use crate::commons::crypto::SignSupport;
 use crate::commons::remote::rfc8183;
 use crate::commons::remote::rfc8183::{ChildRequest, RepositoryResponse};
 use crate::commons::util::httpclient;
-use crate::constants::{KRILL_ENV_TEST, KRILL_ENV_TEST_ANN, KRILL_ENV_TEST_UNIT_DATA};
+use crate::constants::{KRILL_ENV_TEST, KRILL_ENV_TESTBED_ENABLED, KRILL_ENV_TEST_ANN, KRILL_ENV_TEST_UNIT_DATA};
 use crate::daemon::ca::{ta_handle, ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest};
 use crate::daemon::http::server;
 
@@ -64,6 +63,7 @@ pub async fn start_krill() -> PathBuf {
     env::set_var(KRILL_ENV_TEST_UNIT_DATA, dir.to_string_lossy().to_string());
     env::set_var(KRILL_ENV_TEST_ANN, "1");
     env::set_var(KRILL_ENV_TEST, "1");
+    env::set_var(KRILL_ENV_TESTBED_ENABLED, "1");
 
     tokio::spawn(server::start());
 
@@ -494,11 +494,11 @@ pub fn tmp_dir() -> PathBuf {
 /// This method sets up a random subdirectory and returns it. It is
 /// assumed that the caller will clean this directory themselves.
 pub fn sub_dir(base_dir: &PathBuf) -> PathBuf {
-    let mut rng = thread_rng();
-    let rnd: u32 = rng.gen();
+    let mut bytes = [0; 8];
+    openssl::rand::rand_bytes(&mut bytes).unwrap();
 
     let mut dir = base_dir.clone();
-    dir.push(PathBuf::from(format!("{}", rnd)));
+    dir.push(hex::encode(bytes));
 
     let full_path = PathBuf::from(&dir);
     fs::create_dir_all(&full_path).unwrap();
