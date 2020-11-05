@@ -599,7 +599,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 forget_cached_session_token(&token);
             },
             _ => {
-                warn!("OpenID Connect: unexpectedly received a logout request without a session token.");        
+                warn!("Unexpectedly received a logout request without a session token.");        
             }
         }
         self.logout_url.clone()

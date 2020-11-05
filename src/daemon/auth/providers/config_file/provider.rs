@@ -108,7 +108,15 @@ impl AuthProvider for ConfigFileAuthProvider {
         Err(KrillError::ApiInvalidCredentials)
     }
 
-    fn logout(&self, _auth: Option<Auth>) -> String {
+    fn logout(&self, auth: Option<Auth>) -> String {
+        match auth {
+            Some(Auth::Bearer(token)) => {
+                forget_cached_session_token(&token);
+            },
+            _ => {
+                warn!("Unexpectedly received a logout request without a session token.");        
+            }
+        }
         // Logout is complete, direct Lagosta to show the user the Lagosta
         // index page
         "/".to_string()
