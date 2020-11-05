@@ -94,18 +94,6 @@ async fn ca_roas() {
     updates.add(route_3);
     ca_route_authorizations_update_expect_error(&child, updates).await;
 
-    // Do not allow adding a ROA that is made redundant by an existing ROA
-    let route_redundant = RoaDefinition::from_str("192.168.0.0/24 => 64496").unwrap();
-    let mut updates = RoaDefinitionUpdates::empty();
-    updates.add(route_redundant);
-    ca_route_authorizations_update_expect_error(&child, updates).await;
-
-    // Do not allow adding a ROA that would make an existing ROA redundant
-    let route_including = RoaDefinition::from_str("192.168.0.0/16-24 => 64496").unwrap();
-    let mut updates = RoaDefinitionUpdates::empty();
-    updates.add(route_including);
-    ca_route_authorizations_update_expect_error(&child, updates).await;
-
     // Above the ROA aggregation threshold (3 in testing, 100 normal, see Config)
     // we should see that prefixes are aggregated per ASN
     let child_resources = ResourceSet::from_strs("", "10.0.0.0/8,192.168.0.0/16", "2001:DB8::/32").unwrap();

@@ -102,22 +102,40 @@ impl BgpAnalyser {
             for roa in roas {
                 let covered = validated_tree.matching_or_more_specific(&roa.prefix());
 
+                let other_roas_covering_this_prefix: Vec<_> = roa_tree
+                    .matching_or_less_specific(&roa.prefix())
+                    .into_iter()
+                    .filter(|other| roa != **other)
+                    .cloned()
+                    .collect();
+
+                let other_roas_including_this_definition: Vec<_> = other_roas_covering_this_prefix
+                    .iter()
+                    .filter(|other| {
+                        other.asn() == roa.asn()
+                            && other.prefix().addr_len() <= roa.prefix().addr_len()
+                            && other.effective_max_length() >= roa.effective_max_length()
+                    })
+                    .cloned()
+                    .collect();
+
                 if roa.asn() == AsNumber::zero() {
                     // see if this AS0 ROA is redundant, if it is mark it as such
-                    let made_redundant_by: Vec<RoaDefinition> = roa_tree
-                        .matching_or_less_specific(roa.prefix())
-                        .into_iter()
-                        .cloned()
-                        .filter(|other| roa != *other)
-                        .collect();
-
-                    if made_redundant_by.is_empty() {
+                    if other_roas_covering_this_prefix.is_empty() {
                         // will disallow all covered announcements by definition (because AS0 announcements cannot exist)
                         let announcements = covered.iter().map(|va| va.announcement()).collect();
                         entries.push(BgpAnalysisEntry::roa_as0(roa, announcements));
                     } else {
-                        entries.push(BgpAnalysisEntry::roa_as0_redundant(roa, made_redundant_by));
+                        entries.push(BgpAnalysisEntry::roa_as0_redundant(
+                            roa,
+                            other_roas_covering_this_prefix,
+                        ));
                     }
+                } else if !other_roas_including_this_definition.is_empty() {
+                    entries.push(BgpAnalysisEntry::roa_redundant(
+                        roa,
+                        other_roas_including_this_definition,
+                    ))
                 } else if covered.is_empty() {
                     entries.push(BgpAnalysisEntry::roa_unseen(roa))
                 } else {
@@ -135,7 +153,15 @@ impl BgpAnalyser {
                         .map(|va| va.announcement())
                         .collect();
 
-                    let authorizes_excess: bool = { (authorizes.len() as u128) < roa.nr_of_allowed_prefixes() };
+                    let authorizes_excess = {
+                        let max_length = roa.effective_max_length();
+                        let nr_of_specific_ann = authorizes
+                            .iter()
+                            .filter(|ann| ann.prefix().addr_len() == max_length)
+                            .count() as u128;
+
+                        nr_of_specific_ann > 0 && nr_of_specific_ann < roa.nr_of_specific_prefixes()
+                    };
 
                     let disallows: Vec<Announcement> = covered
                         .iter()
@@ -198,25 +224,33 @@ impl BgpAnalyser {
         let mut suggestion = BgpAnalysisSuggestion::default();
 
         // perform analysis
-        for entry in self.analyse(roas, scope).await.into_entries() {
+        let entries = self.analyse(roas, scope).await.into_entries();
+        for entry in &entries {
             match entry.state() {
-                BgpAnalysisState::RoaUnseen => suggestion.add_stale(entry.into_definition()),
+                BgpAnalysisState::RoaUnseen => suggestion.add_stale(*entry.definition()),
                 BgpAnalysisState::RoaTooPermissive => {
                     let replace_with = entry
                         .authorizes()
                         .iter()
+                        .filter(|ann| {
+                            !entries
+                                .iter()
+                                .any(|other| other != entry && other.authorizes().contains(*ann))
+                        })
                         .map(|auth| RoaDefinition::from(*auth))
                         .collect();
-                    suggestion.add_too_permissive(entry.into_definition(), replace_with);
+
+                    suggestion.add_too_permissive(*entry.definition(), replace_with);
                 }
-                BgpAnalysisState::RoaSeen | BgpAnalysisState::RoaAs0 => suggestion.add_keep(entry.into_definition()),
-                BgpAnalysisState::RoaAs0Redundant => suggestion.add_as0_redundant(entry.into_definition()),
+                BgpAnalysisState::RoaSeen | BgpAnalysisState::RoaAs0 => suggestion.add_keep(*entry.definition()),
+                BgpAnalysisState::RoaRedundant => suggestion.add_redundant(*entry.definition()),
+                BgpAnalysisState::RoaAs0Redundant => suggestion.add_as0_redundant(*entry.definition()),
                 BgpAnalysisState::AnnouncementValid => {}
-                BgpAnalysisState::AnnouncementNotFound => suggestion.add_not_found(entry.into_announcement()),
-                BgpAnalysisState::AnnouncementInvalidAsn => suggestion.add_invalid_asn(entry.into_announcement()),
-                BgpAnalysisState::AnnouncementInvalidLength => suggestion.add_invalid_length(entry.into_announcement()),
-                BgpAnalysisState::AnnouncementDisallowed => suggestion.add_keep_disallowing(entry.into_announcement()),
-                BgpAnalysisState::RoaNoAnnouncementInfo => suggestion.add_keep(entry.into_definition()),
+                BgpAnalysisState::AnnouncementNotFound => suggestion.add_not_found(entry.announcement()),
+                BgpAnalysisState::AnnouncementInvalidAsn => suggestion.add_invalid_asn(entry.announcement()),
+                BgpAnalysisState::AnnouncementInvalidLength => suggestion.add_invalid_length(entry.announcement()),
+                BgpAnalysisState::AnnouncementDisallowed => suggestion.add_keep_disallowing(entry.announcement()),
+                BgpAnalysisState::RoaNoAnnouncementInfo => suggestion.add_keep(*entry.definition()),
             }
         }
 
@@ -384,6 +418,7 @@ mod tests {
     #[tokio::test]
     async fn make_bgp_analysis_suggestion() {
         let roa_too_permissive = definition("10.0.0.0/22-23 => 64496");
+        let roa_redundant = definition("10.0.0.0/23 => 64496");
         let roa_as0 = definition("10.0.4.0/24 => 0");
         let roa_unseen_completely = definition("10.0.3.0/24 => 64497");
         let roa_authorizing_single = definition("192.168.1.0/24 => 64497");
@@ -397,6 +432,7 @@ mod tests {
             .suggest(
                 &[
                     roa_too_permissive,
+                    roa_redundant,
                     roa_as0,
                     roa_unseen_completely,
                     roa_authorizing_single,
@@ -418,6 +454,7 @@ mod tests {
             .suggest(
                 &[
                     roa_too_permissive,
+                    roa_redundant,
                     roa_as0,
                     roa_unseen_completely,
                     roa_authorizing_single,

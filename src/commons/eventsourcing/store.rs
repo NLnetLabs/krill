@@ -195,7 +195,7 @@ where
             // the last event in the info exists
             if self.get_event::<A::Event>(&handle, info.last_event + 1)?.is_some() {
                 return Err(AggregateStoreError::WarmupFailed(
-                    handle.clone(),
+                    handle,
                     format!(
                         "Additional event(s) found after version: {}. Force recover.",
                         info.last_event
@@ -253,8 +253,7 @@ where
 
             let command_keys = self.command_keys_ascending(&handle, &criteria)?;
             info!("Processing {} commands for {}", command_keys.len(), handle);
-            let mut counter = 0;
-            for command_key in command_keys {
+            for (counter, command_key) in command_keys.into_iter().enumerate() {
                 if counter % 100 == 0 {
                     info!("Processed {} commands", counter);
                 }
@@ -285,8 +284,6 @@ where
                     // note that we will clean surplus events later
                     self.archive_surplus_command(&handle, &command_key)?;
                 }
-
-                counter += 1;
             }
 
             self.archive_surplus_events(&handle, last_good_evt + 1)?;

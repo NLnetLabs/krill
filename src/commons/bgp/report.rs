@@ -79,6 +79,9 @@ pub struct BgpAnalysisSuggestion {
     too_permissive: Vec<ReplacementRoaSuggestion>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
+    redundant: Vec<RoaDefinition>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
     as0_redundant: Vec<RoaDefinition>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
@@ -96,13 +99,14 @@ pub struct ReplacementRoaSuggestion {
 
 impl From<BgpAnalysisSuggestion> for RoaDefinitionUpdates {
     fn from(suggestion: BgpAnalysisSuggestion) -> Self {
-        let (stale, not_found, invalid_asn, invalid_length, too_permissive, as0_redundant) = (
+        let (stale, not_found, invalid_asn, invalid_length, too_permissive, as0_redundant, redundant) = (
             suggestion.stale,
             suggestion.not_found,
             suggestion.invalid_asn,
             suggestion.invalid_length,
             suggestion.too_permissive,
             suggestion.as0_redundant,
+            suggestion.redundant,
         );
 
         let mut added: HashSet<RoaDefinition> = HashSet::new();
@@ -131,6 +135,10 @@ impl From<BgpAnalysisSuggestion> for RoaDefinitionUpdates {
             removed.insert(auth);
         }
 
+        for auth in redundant.into_iter() {
+            removed.insert(auth);
+        }
+
         RoaDefinitionUpdates::new(added, removed)
     }
 }
@@ -143,6 +151,7 @@ impl Default for BgpAnalysisSuggestion {
             invalid_asn: vec![],
             invalid_length: vec![],
             too_permissive: vec![],
+            redundant: vec![],
             keep: vec![],
             as0_redundant: vec![],
             keep_disallowing: vec![],
@@ -170,6 +179,10 @@ impl BgpAnalysisSuggestion {
 
     pub fn add_invalid_length(&mut self, announcement: Announcement) {
         self.invalid_length.push(announcement);
+    }
+
+    pub fn add_redundant(&mut self, authorization: RoaDefinition) {
+        self.redundant.push(authorization);
     }
 
     pub fn add_as0_redundant(&mut self, authorization: RoaDefinition) {
@@ -313,7 +326,7 @@ impl From<BgpAnalysisReport> for BgpStats {
                     stats.increment_roas_total();
                     stats.increment_roas_too_permissive();
                 }
-                BgpAnalysisState::RoaAs0Redundant => {
+                BgpAnalysisState::RoaRedundant | BgpAnalysisState::RoaAs0Redundant => {
                     stats.increment_roas_total();
                     stats.increment_roas_redundant();
                 }
@@ -514,11 +527,7 @@ impl BgpAnalysisEntry {
         &self.definition
     }
 
-    pub fn into_definition(self) -> RoaDefinition {
-        self.definition
-    }
-
-    pub fn into_announcement(self) -> Announcement {
+    pub fn announcement(&self) -> Announcement {
         self.definition.into()
     }
 
@@ -582,6 +591,19 @@ impl BgpAnalysisEntry {
         BgpAnalysisEntry {
             definition,
             state: BgpAnalysisState::RoaAs0Redundant,
+            allowed_by: None,
+            disallowed_by: vec![],
+            made_redundant_by,
+            authorizes: vec![],
+            disallows: vec![],
+        }
+    }
+
+    pub fn roa_redundant(definition: RoaDefinition, mut made_redundant_by: Vec<RoaDefinition>) -> Self {
+        made_redundant_by.sort();
+        BgpAnalysisEntry {
+            definition,
+            state: BgpAnalysisState::RoaRedundant,
             allowed_by: None,
             disallowed_by: vec![],
             made_redundant_by,
@@ -710,6 +732,7 @@ pub enum BgpAnalysisState {
     RoaSeen,
     RoaUnseen,
     RoaTooPermissive,
+    RoaRedundant,
     RoaAs0,
     RoaAs0Redundant,
     AnnouncementValid,
