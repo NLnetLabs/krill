@@ -233,7 +233,12 @@ impl OpenIDConnectAuthProvider {
         id_token_claims: &FlexibleIdTokenClaims,
         user_info_claims: &FlexibleUserInfoClaims,
     ) -> KrillResult<Option<String>> {
+        if matches!(claim_conf.source, ClaimSource::ConfigFile) {
+            return Ok(None);
+        }
+
         let searchable_claims = match &claim_conf.source {
+            ClaimSource::ConfigFile              => unreachable!(),
             ClaimSource::IdTokenStandardClaim    => id_token_claims.to_jmespath(),
             ClaimSource::UserInfoStandardClaim   => user_info_claims.to_jmespath(),
             ClaimSource::IdTokenAdditionalClaim  => id_token_claims.additional_claims().to_jmespath(),
@@ -511,20 +516,42 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 // has a default value so always exists.
                 let claims_conf = &CONFIG.auth_openidconnect.as_ref().unwrap().claims;
 
-                let role_name = self.extract_claim(
-                    &claims_conf.role, &id_token_claims, &user_info_claims)?;
+                let user = CONFIG.auth_users.as_ref().and_then(|users| users.get(&email).cloned());
 
-                let cas = self.extract_claim(
-                    &claims_conf.cas, &id_token_claims, &user_info_claims)?;
-
-                let (inc_cas, exc_cas) = match cas {
-                    Some(cas) => {
-                        let inc_cas = cas.split(',').filter(|s| !s.is_empty()).filter(|s| !s.starts_with("!")).map(|s| s.to_string()).collect::<Vec<String>>();
-                        let exc_cas = cas.split(',').filter(|s| !s.is_empty()).filter(|s| s.starts_with("!")).map(|s| s.trim_start_matches("!").to_string()).collect::<Vec<String>>();
-                        (inc_cas, exc_cas)
+                let role = match &claims_conf.role.source {
+                    ClaimSource::ConfigFile => {
+                        // Lookup the claim value in the auth_users config file section
+                        match &user {
+                            Some(user) => user.role.clone(),
+                            None => return Err(KrillError::ApiInvalidRole),
+                        }
                     },
-                    _ => (Vec::new(), Vec::new()),
+                    _ => {
+                        match self.extract_claim(&claims_conf.role, &id_token_claims, &user_info_claims)? {
+                            Some(role_name) => lookup_role(role_name)?,
+                            None => return Err(KrillError::ApiInvalidRole),
+                        }
+                    }
                 };
+
+                let cas = match &claims_conf.cas.source {
+                    ClaimSource::ConfigFile => {
+                        // Lookup the claim value in the auth_users config file section
+                        match &user {
+                            Some(user) => user.cas.join(","),
+                            None => String::new(),
+                        }
+                    },
+                    _ => {
+                        match self.extract_claim(&claims_conf.cas, &id_token_claims, &user_info_claims)? {
+                            Some(cas) => cas,
+                            None => String::new(),
+                        }
+                    }
+                };
+    
+                let inc_cas = cas.split(',').filter(|s| !s.is_empty()).filter(|s| !s.starts_with("!")).map(|s| s.to_string()).collect::<Vec<String>>();
+                let exc_cas = cas.split(',').filter(|s| !s.is_empty()).filter(|s| s.starts_with("!")).map(|s| s.trim_start_matches("!").to_string()).collect::<Vec<String>>();
 
 // ==========================================================================================
                 // Step 5: Respond to the user: access granted, or access denied
@@ -548,24 +575,17 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 // time of 1800 seconds or 30 minutes, so attempting to refresh
                 // an access token after that much time would also fail.
 // ==========================================================================================
-                match role_name {
-                    Some(role_name) => {
-                        let role = lookup_role(role_name.clone())?;
+                let secrets = if let Some(new_refresh_token) = token_response.refresh_token() {
+                    vec![new_refresh_token.secret().clone()]
+                } else {
+                    vec![]
+                };
 
-                        let secrets = if let Some(new_refresh_token) = token_response.refresh_token() {
-                            vec![new_refresh_token.secret().clone()]
-                        } else {
-                            vec![]
-                        };
+                let api_token = session_to_token(&email, &role, &inc_cas, &exc_cas, &secrets)?;
 
-                        let api_token = session_to_token(&email, &role, &inc_cas, &exc_cas, &secrets)?;
+                debug!("ID: {:?}, Role: {:?}, Inc CAs: {:?}, Exc CAs: {:?}", &email, &role, &inc_cas, &exc_cas);
 
-                        debug!("ID: {:?}, Role: {:?}, Inc CAs: {:?}, Exc CAs: {:?}", &email, &role, &inc_cas, &exc_cas);
-
-                        Ok(LoggedInUser { token: api_token, id: base64::encode(&email) })
-                    },
-                    _ => Err(KrillError::ApiInvalidRole),
-                }
+                Ok(LoggedInUser { token: api_token, id: base64::encode(&email) })
             },
 
             _ => Err(KrillError::ApiInvalidCredentials)

@@ -67,6 +67,7 @@ pub struct ConfigAuthOpenIDConnectClaim {
 
 #[derive(Clone, Debug, Display)]
 pub enum ConfigAuthOpenIDConnectClaimSource {
+    ConfigFile,
     IdTokenStandardClaim,
     IdTokenAdditionalClaim,
     UserInfoStandardClaim,
@@ -80,12 +81,13 @@ impl<'de> Deserialize<'de> for ConfigAuthOpenIDConnectClaimSource {
     {
         let string = String::deserialize(d)?;
         match string.as_str() {
-            "id_token_standard_claim" => Ok(ConfigAuthOpenIDConnectClaimSource::IdTokenAdditionalClaim),
-            "id_token_additional_claim" => Ok(ConfigAuthOpenIDConnectClaimSource::IdTokenStandardClaim),
-            "user_info_standard_claim" => Ok(ConfigAuthOpenIDConnectClaimSource::UserInfoAdditionalClaim),
-            "user_info_additional_claim" => Ok(ConfigAuthOpenIDConnectClaimSource::UserInfoStandardClaim),
+            "config-file" => Ok(ConfigAuthOpenIDConnectClaimSource::ConfigFile),
+            "id-token-standard-claim" => Ok(ConfigAuthOpenIDConnectClaimSource::IdTokenAdditionalClaim),
+            "id-token-additional-claim" => Ok(ConfigAuthOpenIDConnectClaimSource::IdTokenStandardClaim),
+            "user-info-standard-claim" => Ok(ConfigAuthOpenIDConnectClaimSource::UserInfoAdditionalClaim),
+            "user-info-additional-claim" => Ok(ConfigAuthOpenIDConnectClaimSource::UserInfoStandardClaim),
             _ => Err(de::Error::custom(format!(
-                "expected \"id_token_additional_claim\", \"id_token_standard_claim\", \"user_info_standard_claim\", or \"user_info_additional_claim\", found : \"{}\"",
+                "expected \"config-file\", \"id-token-additional-claim\", \"id-token-standard-claim\", \"user-info-standard-claim\", or \"user-info-additional-claim\", found : \"{}\"",
                 string
             ))),
         }
