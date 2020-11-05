@@ -7,6 +7,13 @@ use crate::daemon::auth::common::config::Role;
 pub struct ConfigDefaults {}
 
 impl ConfigDefaults {
+    fn id_claim() -> ConfigAuthOpenIDConnectClaim {
+        ConfigAuthOpenIDConnectClaim {
+            source: ConfigAuthOpenIDConnectClaimSource::IdTokenStandardClaim,
+            jmespath: "email".to_string(),
+        }
+    }
+
     fn role_claim() -> ConfigAuthOpenIDConnectClaim {
         ConfigAuthOpenIDConnectClaim {
             source: ConfigAuthOpenIDConnectClaimSource::IdTokenAdditionalClaim,
@@ -44,6 +51,8 @@ pub struct ConfigAuthOpenIDConnect {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ConfigAuthOpenIDConnectClaims {
+    #[serde(default = "ConfigDefaults::id_claim")]
+    pub id: ConfigAuthOpenIDConnectClaim,
     #[serde(default = "ConfigDefaults::role_claim")]
     pub role: ConfigAuthOpenIDConnectClaim,
     #[serde(default = "ConfigDefaults::cas_claim")]
@@ -53,6 +62,7 @@ pub struct ConfigAuthOpenIDConnectClaims {
 impl Default for ConfigAuthOpenIDConnectClaims {
     fn default() -> Self {
         ConfigAuthOpenIDConnectClaims {
+            id: ConfigDefaults::id_claim(),
             role: ConfigDefaults::role_claim(),
             cas: ConfigDefaults::cas_claim(),
         }

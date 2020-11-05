@@ -104,6 +104,7 @@ impl OpenIDConnectAuthProvider {
             ok = false;
         }
     
+        // TODO: relax this requirement?
         for scope_name in &["openid", "email"] {
             if is_supported_val_opt!(meta.scopes_supported(), Scope::new(scope_name.to_string()))
                 .log_or_fail("scopes_supported", Some(scope_name))
@@ -111,7 +112,8 @@ impl OpenIDConnectAuthProvider {
                 ok = false;
             }
         }
-        
+
+        // TODO: relax this requirement?
         for claim_name in &["email"] {
             if is_supported_val_opt!(meta.claims_supported(), CoreClaimName::new(claim_name.to_string()))
                 .log_or_fail("claims_supported", Some(claim_name))
@@ -272,6 +274,8 @@ impl OpenIDConnectAuthProvider {
                 &jmespath_string,
                 e)))?;
 
+        debug!("Search result: {:?}", &found);
+
         // return Some(String) if there is match, None otherwise (e.g. an array
         // instead of a string)
         Ok(found.as_string().cloned())
@@ -359,6 +363,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         //   https://openid.net/specs/openid-connect-core-1_0.html#ScopeClaims
         //   https://openid.net/specs/openid-connect-core-1_0.html#StandardClaims
         //   https://openid.net/specs/openid-connect-core-1_0.html#IDToken
+        // TODO: make this optional?
         request = request.add_scope(Scope::new("email".to_string()));
 
         // TODO: use request.set_pkce_challenge() ?
@@ -469,13 +474,6 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 // we revceived that claim.
                 // See: https://openid.net/specs/openid-connect-core-1_0.html#CodeFlowTokenValidation
 
-                // TODO: allow the customer to configure which claim is used for
-                // identity, don't just assume it is "email". This might also
-                // require allowing the customer to control the scope values 
-                // that are sent to the server (which we configured above in
-                // fn build_client()).
-                let email = id_token_claims.email().map_or("Unknown".to_string(), |v| v.to_string());
-
                 // TODO: Why am I saving this??? Left over from early testing?
                 // Was I thinking of passing it to the client and then getting
                 // it back and re-verifying it? Why not do that with the ID
@@ -516,7 +514,10 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 // has a default value so always exists.
                 let claims_conf = &CONFIG.auth_openidconnect.as_ref().unwrap().claims;
 
-                let user = CONFIG.auth_users.as_ref().and_then(|users| users.get(&email).cloned());
+                let id = self.extract_claim(&claims_conf.id, &id_token_claims, &user_info_claims)?
+                        .unwrap_or("Unknown".to_string());
+
+                let user = CONFIG.auth_users.as_ref().and_then(|users| users.get(&id).cloned());
 
                 let role = match &claims_conf.role.source {
                     ClaimSource::ConfigFile => {
@@ -581,11 +582,11 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                     vec![]
                 };
 
-                let api_token = session_to_token(&email, &role, &inc_cas, &exc_cas, &secrets)?;
+                let api_token = session_to_token(&id, &role, &inc_cas, &exc_cas, &secrets)?;
 
-                debug!("ID: {:?}, Role: {:?}, Inc CAs: {:?}, Exc CAs: {:?}", &email, &role, &inc_cas, &exc_cas);
+                debug!("ID: {:?}, Role: {:?}, Inc CAs: {:?}, Exc CAs: {:?}", &id, &role, &inc_cas, &exc_cas);
 
-                Ok(LoggedInUser { token: api_token, id: base64::encode(&email) })
+                Ok(LoggedInUser { token: api_token, id: base64::encode(&id) })
             },
 
             _ => Err(KrillError::ApiInvalidCredentials)
