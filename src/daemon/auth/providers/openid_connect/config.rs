@@ -92,10 +92,10 @@ impl<'de> Deserialize<'de> for ConfigAuthOpenIDConnectClaimSource {
         let string = String::deserialize(d)?;
         match string.as_str() {
             "config-file" => Ok(ConfigAuthOpenIDConnectClaimSource::ConfigFile),
-            "id-token-standard-claim" => Ok(ConfigAuthOpenIDConnectClaimSource::IdTokenAdditionalClaim),
-            "id-token-additional-claim" => Ok(ConfigAuthOpenIDConnectClaimSource::IdTokenStandardClaim),
-            "user-info-standard-claim" => Ok(ConfigAuthOpenIDConnectClaimSource::UserInfoAdditionalClaim),
-            "user-info-additional-claim" => Ok(ConfigAuthOpenIDConnectClaimSource::UserInfoStandardClaim),
+            "id-token-standard-claim" => Ok(ConfigAuthOpenIDConnectClaimSource::IdTokenStandardClaim),
+            "id-token-additional-claim" => Ok(ConfigAuthOpenIDConnectClaimSource::IdTokenAdditionalClaim),
+            "user-info-standard-claim" => Ok(ConfigAuthOpenIDConnectClaimSource::UserInfoStandardClaim),
+            "user-info-additional-claim" => Ok(ConfigAuthOpenIDConnectClaimSource::UserInfoAdditionalClaim),
             _ => Err(de::Error::custom(format!(
                 "expected \"config-file\", \"id-token-additional-claim\", \"id-token-standard-claim\", \"user-info-standard-claim\", or \"user-info-additional-claim\", found : \"{}\"",
                 string
