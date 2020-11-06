@@ -410,6 +410,67 @@ impl fmt::Display for BgpAnalysisReport {
                 writeln!(f)?;
             }
 
+            if let Some(redundant) = entry_map.get(&BgpAnalysisState::RoaRedundant) {
+                writeln!(
+                    f,
+                    "Authorizations which are *redundant* - they are already included in full by other authorizations:"
+                )?;
+                for roa in redundant {
+                    writeln!(f)?;
+                    writeln!(f, "\tDefinition: {}", roa.definition)?;
+                    writeln!(f)?;
+                    writeln!(f, "\t\tAuthorizes:")?;
+                    for ann in roa.authorizes.iter() {
+                        writeln!(f, "\t\t{}", ann)?;
+                    }
+
+                    if !roa.disallows.is_empty() {
+                        writeln!(f)?;
+                        writeln!(f, "\t\tDisallows:")?;
+                        for ann in roa.disallows.iter() {
+                            writeln!(f, "\t\t{}", ann)?;
+                        }
+                    }
+
+                    writeln!(f)?;
+                    writeln!(f, "\t\tMade redundant by:")?;
+                    for redundant_by in roa.made_redundant_by.iter() {
+                        writeln!(f, "\t\t{}", redundant_by)?;
+                    }
+                }
+                writeln!(f)?;
+            }
+
+            if let Some(unseens) = entry_map.get(&BgpAnalysisState::RoaUnseen) {
+                writeln!(
+                    f,
+                    "Authorizations for which no announcements are seen (you may wish to remove these):"
+                )?;
+                writeln!(f)?;
+                for roa in unseens {
+                    writeln!(f, "\tDefinition: {}", roa.definition)?;
+                }
+                writeln!(f)?;
+            }
+
+            if let Some(disallowing) = entry_map.get(&BgpAnalysisState::RoaDisallowing) {
+                writeln!(
+                    f,
+                    "Authorizations disallowing announcements seen. You may want to use AS0 ROAs instead:"
+                )?;
+                for roa in disallowing {
+                    writeln!(f)?;
+                    writeln!(f, "\tDefinition: {}", roa.definition)?;
+                    writeln!(f)?;
+                    writeln!(f)?;
+                    writeln!(f, "\t\tDisallows:")?;
+                    for ann in roa.disallows.iter() {
+                        writeln!(f, "\t\t{}", ann)?;
+                    }
+                }
+                writeln!(f)?;
+            }
+
             if let Some(too_permissive) = entry_map.get(&BgpAnalysisState::RoaTooPermissive) {
                 writeln!(f, "Authorizations which may be too permissive:")?;
 
@@ -429,18 +490,6 @@ impl fmt::Display for BgpAnalysisReport {
                             writeln!(f, "\t\t{}", ann)?;
                         }
                     }
-                }
-                writeln!(f)?;
-            }
-
-            if let Some(unseens) = entry_map.get(&BgpAnalysisState::RoaUnseen) {
-                writeln!(
-                    f,
-                    "Authorizations for which no announcements are seen (you may wish to remove these):"
-                )?;
-                writeln!(f)?;
-                for roa in unseens {
-                    writeln!(f, "\tDefinition: {}", roa.definition)?;
                 }
                 writeln!(f)?;
             }
@@ -480,20 +529,6 @@ impl fmt::Display for BgpAnalysisReport {
                 writeln!(f)?;
             }
 
-            if let Some(invalid_asn) = entry_map.get(&BgpAnalysisState::AnnouncementInvalidAsn) {
-                writeln!(f, "Announcements from an unauthorized ASN:")?;
-                for ann in invalid_asn {
-                    writeln!(f)?;
-                    writeln!(f, "\tAnnouncement: {}", ann.definition)?;
-                    writeln!(f)?;
-                    writeln!(f, "\t\tDisallowed by authorization(s):")?;
-                    for roa in ann.disallowed_by.iter() {
-                        writeln!(f, "\t\t{}", roa)?;
-                    }
-                }
-                writeln!(f)?;
-            }
-
             if let Some(invalid_length) = entry_map.get(&BgpAnalysisState::AnnouncementInvalidLength) {
                 writeln!(
                     f,
@@ -511,14 +546,16 @@ impl fmt::Display for BgpAnalysisReport {
                 writeln!(f)?;
             }
 
-            if let Some(not_found) = entry_map.get(&BgpAnalysisState::AnnouncementNotFound) {
-                writeln!(
-                    f,
-                    "Announcements which are 'not found' (not covered by any of your authorizations):"
-                )?;
-                writeln!(f)?;
-                for ann in not_found {
+            if let Some(invalid_asn) = entry_map.get(&BgpAnalysisState::AnnouncementInvalidAsn) {
+                writeln!(f, "Announcements from an unauthorized ASN:")?;
+                for ann in invalid_asn {
+                    writeln!(f)?;
                     writeln!(f, "\tAnnouncement: {}", ann.definition)?;
+                    writeln!(f)?;
+                    writeln!(f, "\t\tDisallowed by authorization(s):")?;
+                    for roa in ann.disallowed_by.iter() {
+                        writeln!(f, "\t\t{}", roa)?;
+                    }
                 }
                 writeln!(f)?;
             }
@@ -527,6 +564,18 @@ impl fmt::Display for BgpAnalysisReport {
                 writeln!(f, "Announcements disallowed by 'AS0' ROAs:")?;
                 writeln!(f)?;
                 for ann in disallowed {
+                    writeln!(f, "\tAnnouncement: {}", ann.definition)?;
+                }
+                writeln!(f)?;
+            }
+
+            if let Some(not_found) = entry_map.get(&BgpAnalysisState::AnnouncementNotFound) {
+                writeln!(
+                    f,
+                    "Announcements which are 'not found' (not covered by any of your authorizations):"
+                )?;
+                writeln!(f)?;
+                for ann in not_found {
                     writeln!(f, "\tAnnouncement: {}", ann.definition)?;
                 }
                 writeln!(f)?;
@@ -646,7 +695,14 @@ impl BgpAnalysisEntry {
         }
     }
 
-    pub fn roa_redundant(definition: RoaDefinition, mut made_redundant_by: Vec<RoaDefinition>) -> Self {
+    pub fn roa_redundant(
+        definition: RoaDefinition,
+        mut authorizes: Vec<Announcement>,
+        mut disallows: Vec<Announcement>,
+        mut made_redundant_by: Vec<RoaDefinition>,
+    ) -> Self {
+        authorizes.sort();
+        disallows.sort();
         made_redundant_by.sort();
         BgpAnalysisEntry {
             definition,
@@ -654,8 +710,8 @@ impl BgpAnalysisEntry {
             allowed_by: None,
             disallowed_by: vec![],
             made_redundant_by,
-            authorizes: vec![],
-            disallows: vec![],
+            authorizes,
+            disallows,
         }
     }
 
@@ -777,10 +833,10 @@ impl PartialOrd for BgpAnalysisEntry {
 #[serde(rename_all = "snake_case")]
 pub enum BgpAnalysisState {
     RoaSeen,
+    RoaRedundant,
     RoaUnseen,
     RoaDisallowing,
     RoaTooPermissive,
-    RoaRedundant,
     RoaAs0,
     RoaAs0Redundant,
     AnnouncementValid,
