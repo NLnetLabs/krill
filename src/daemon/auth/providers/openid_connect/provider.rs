@@ -289,13 +289,15 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         if let Some(query) = urlparse(request.uri().to_string()).get_parsed_query() {
             if let Some(code) = query.get_first_from_str("code") {
                 if let Some(state) = query.get_first_from_str("state") {
-                    debug!("The request is authenticated by temporary authorization code.");
                     return Some(Auth::authorization_code(code, state));
                 }
             }
         }
 
-        None
+        match self.get_bearer_token(request) {
+            Some(token) => Some(Auth::Bearer(Token::from(token))),
+            None => None
+        }
     }
 
     fn get_actor(&self, auth: &Auth) -> KrillResult<Option<Actor>> {
@@ -584,10 +586,12 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                     vec![]
                 };
 
+                error!("XIMON: OIDCAuthProvider::login(): pack");
                 let api_token = session_to_token(&id, &role, &inc_cas, &exc_cas, &secrets)?;
 
                 debug!("ID: {:?}, Role: {:?}, Inc CAs: {:?}, Exc CAs: {:?}", &id, &role, &inc_cas, &exc_cas);
 
+                error!("XIMON: OIDCAuthProvider::login(): ok");
                 Ok(LoggedInUser { token: api_token, id: base64::encode(&id) })
             },
 

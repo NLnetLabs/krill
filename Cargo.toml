@@ -49,7 +49,6 @@ openidconnect   = "1.0.1"
 urlparse        = "0.7.3"
 jmespatch       = { version = "0.3.0", features = ["sync"] }
 bitflags        = "1.2.1"
-chacha20-poly1305-aead = "0.1.2"
 
 [target.'cfg(unix)'.dependencies]
 libc		    = "^0.2"

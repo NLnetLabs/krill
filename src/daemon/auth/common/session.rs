@@ -83,8 +83,8 @@ pub fn session_to_token(id: &String, role: &Role, inc_cas: &[String], exc_cas: &
             format!("Error while serializing session data: {}",err)))?;
     let unencrypted_bytes = session_json_str.as_bytes();
 
-    let mut encrypted_bytes = Vec::with_capacity(unencrypted_bytes.len());
-    let tag: [u8; 16] = crypt::encrypt(unencrypted_bytes, &mut encrypted_bytes)?;
+    let mut tag: [u8; 16] = [0; 16];
+    let mut encrypted_bytes = crypt::encrypt(unencrypted_bytes, &mut tag)?;
 
     encrypted_bytes.extend(tag.iter());
     let api_token = base64::encode(&encrypted_bytes);
@@ -107,8 +107,7 @@ pub fn token_to_session(token: Token) -> KrillResult<ClientSession> {
 
     let encrypted_len = bytes.len() - TAG_SIZE;
     let (encrypted_bytes, tag_bytes) = bytes.split_at(encrypted_len);
-    let mut unencrypted_bytes = Vec::with_capacity(encrypted_len);
-    crypt::decrypt(encrypted_bytes, tag_bytes, &mut unencrypted_bytes)?;
+    let unencrypted_bytes = crypt::decrypt(encrypted_bytes, tag_bytes)?;
 
     let session = serde_json::from_slice::<ClientSession>(&unencrypted_bytes)
         .map_err(|err| KrillError::Custom(
