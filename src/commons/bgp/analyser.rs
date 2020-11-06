@@ -119,6 +119,39 @@ impl BgpAnalyser {
                     .cloned()
                     .collect();
 
+                let authorizes: Vec<Announcement> = covered
+                    .iter()
+                    .filter(|va| {
+                        // VALID announcements under THIS ROA
+                        // Already covered so it's under this ROA's prefix
+                        // ASN must match
+                        // Prefix length must be allowed under this ROA (it could be allowed by another ROA and therefore valid)
+                        va.validity() == AnnouncementValidity::Valid
+                            && va.announcement().prefix().addr_len() <= roa.effective_max_length()
+                            && va.announcement().asn() == &roa.asn()
+                    })
+                    .map(|va| va.announcement())
+                    .collect();
+
+                let disallows: Vec<Announcement> = covered
+                    .iter()
+                    .filter(|va| {
+                        let validity = va.validity();
+                        validity == AnnouncementValidity::InvalidLength || validity == AnnouncementValidity::InvalidAsn
+                    })
+                    .map(|va| va.announcement())
+                    .collect();
+
+                let authorizes_excess = {
+                    let max_length = roa.effective_max_length();
+                    let nr_of_specific_ann = authorizes
+                        .iter()
+                        .filter(|ann| ann.prefix().addr_len() == max_length)
+                        .count() as u128;
+
+                    nr_of_specific_ann > 0 && nr_of_specific_ann < roa.nr_of_specific_prefixes()
+                };
+
                 if roa.asn() == AsNumber::zero() {
                     // see if this AS0 ROA is redundant, if it is mark it as such
                     if other_roas_covering_this_prefix.is_empty() {
@@ -134,54 +167,18 @@ impl BgpAnalyser {
                 } else if !other_roas_including_this_definition.is_empty() {
                     entries.push(BgpAnalysisEntry::roa_redundant(
                         roa,
+                        authorizes,
+                        disallows,
                         other_roas_including_this_definition,
                     ))
-                } else if covered.is_empty() {
+                } else if authorizes.is_empty() && disallows.is_empty() {
                     entries.push(BgpAnalysisEntry::roa_unseen(roa))
+                } else if authorizes_excess {
+                    entries.push(BgpAnalysisEntry::roa_too_permissive(roa, authorizes, disallows))
+                } else if authorizes.is_empty() {
+                    entries.push(BgpAnalysisEntry::roa_disallowing(roa, disallows))
                 } else {
-                    let authorizes: Vec<Announcement> = covered
-                        .iter()
-                        .filter(|va| {
-                            // VALID announcements under THIS ROA
-                            // Already covered so it's under this ROA's prefix
-                            // ASN must match
-                            // Prefix length must be allowed under this ROA (it could be allowed by another ROA and therefore valid)
-                            va.validity() == AnnouncementValidity::Valid
-                                && va.announcement().prefix().addr_len() <= roa.effective_max_length()
-                                && va.announcement().asn() == &roa.asn()
-                        })
-                        .map(|va| va.announcement())
-                        .collect();
-
-                    let authorizes_excess = {
-                        let max_length = roa.effective_max_length();
-                        let nr_of_specific_ann = authorizes
-                            .iter()
-                            .filter(|ann| ann.prefix().addr_len() == max_length)
-                            .count() as u128;
-
-                        nr_of_specific_ann > 0 && nr_of_specific_ann < roa.nr_of_specific_prefixes()
-                    };
-
-                    let disallows: Vec<Announcement> = covered
-                        .iter()
-                        .filter(|va| {
-                            let validity = va.validity();
-                            validity == AnnouncementValidity::InvalidLength
-                                || validity == AnnouncementValidity::InvalidAsn
-                        })
-                        .map(|va| va.announcement())
-                        .collect();
-
-                    if authorizes.is_empty() && disallows.is_empty() {
-                        entries.push(BgpAnalysisEntry::roa_unseen(roa))
-                    } else if authorizes_excess {
-                        entries.push(BgpAnalysisEntry::roa_too_permissive(roa, authorizes, disallows))
-                    } else if authorizes.is_empty() {
-                        entries.push(BgpAnalysisEntry::roa_disallowing(roa, disallows))
-                    } else {
-                        entries.push(BgpAnalysisEntry::roa_seen(roa, authorizes, disallows))
-                    }
+                    entries.push(BgpAnalysisEntry::roa_seen(roa, authorizes, disallows))
                 }
             }
 
