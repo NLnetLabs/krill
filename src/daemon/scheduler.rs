@@ -40,6 +40,10 @@ pub struct Scheduler {
     /// Responsible for archiving old commands
     #[allow(dead_code)] // just need to keep this in scope
     archive_old_commands_sh: ScheduleHandle,
+
+    /// Responsible for purging expired cached login tokens
+    #[allow(dead_code)] // just need to keep this in scope
+    login_cache_sweeper_sh: ScheduleHandle,
 }
 
 impl Scheduler {
@@ -55,12 +59,14 @@ impl Scheduler {
         let ca_refresh_sh = make_ca_refresh_sh(caserver.clone(), ca_refresh_rate);
         let announcements_refresh_sh = make_announcements_refresh_sh(bgp_analyser);
         let archive_old_commands_sh = make_archive_old_commands_sh(caserver, pubserver);
+        let login_cache_sweeper_sh = make_login_cache_sweeper_sh();
         Scheduler {
             event_sh,
             republish_sh,
             ca_refresh_sh,
             announcements_refresh_sh,
             archive_old_commands_sh,
+            login_cache_sweeper_sh,
         }
     }
 }
@@ -255,6 +261,21 @@ fn make_archive_old_commands_sh(caserver: Arc<CaServer>, pubserver: Option<Arc<P
                         error!("Failed to archive old Publication Server commands: {}", e)
                     }
                 }
+            }
+        })
+    });
+    scheduler.watch_thread(Duration::from_millis(100))
+}
+
+fn make_login_cache_sweeper_sh() -> ScheduleHandle {
+    let mut scheduler = clokwerk::Scheduler::new();
+    scheduler.every(1.minutes()).run(move || {
+        let mut rt = Runtime::new().unwrap();
+        rt.block_on(async {
+            debug!("Triggering background sweep of session decryption cache");
+            
+            if let Err(e) = crate::daemon::auth::common::session::sweep_session_decryption_cache() {
+                error!("Background sweep of session decryption cache failed: {}", e);
             }
         })
     });

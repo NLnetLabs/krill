@@ -111,7 +111,7 @@ impl AuthProvider for ConfigFileAuthProvider {
     fn logout(&self, auth: Option<Auth>) -> String {
         match auth {
             Some(Auth::Bearer(token)) => {
-                forget_cached_session_token(&token);
+                forget_cached_session(&token);
             },
             _ => {
                 warn!("Unexpectedly received a logout request without a session token.");        

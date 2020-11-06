@@ -1,6 +1,4 @@
-use std::time::{SystemTime, UNIX_EPOCH};
-
-use cached::proc_macro::cached;
+use std::{collections::HashMap, sync::RwLock, time::{SystemTime, UNIX_EPOCH}};
 
 use jmespatch as jmespath;
 
@@ -35,6 +33,10 @@ use super::util::{
 };
 
 const NONCE_TODO_MAKE_RANDOM: &str = "DUMMY_FIXED_VALUE_FOR_NOW";
+
+lazy_static! {
+    static ref ROLE_CACHE: RwLock<HashMap<String, Role>> = RwLock::new(HashMap::new());
+}
 
 pub struct OpenIDConnectAuthProvider {
     client: FlexibleClient,
@@ -596,7 +598,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
     fn logout(&self, auth: Option<Auth>) -> String {
         match auth {
             Some(Auth::Bearer(token)) => {
-                forget_cached_session_token(&token);
+                forget_cached_session(&token);
             },
             _ => {
                 warn!("Unexpectedly received a logout request without a session token.");        
@@ -606,11 +608,25 @@ impl AuthProvider for OpenIDConnectAuthProvider {
     }
 }
 
-#[cached(
-    name = "ROLE_CACHE",
-    result = true
-)]
+fn get_cached_role(role_name: &String) -> Option<Role> {
+    match ROLE_CACHE.read() {
+        Ok(cache) => cache.get(role_name).cloned(),
+        Err(err) => { warn!("Unexpected session cache miss: {}", err); None },
+    }
+}
+
+fn cache_role(role_name: &String, role: &Role) {
+    match ROLE_CACHE.write() {
+        Ok(mut cache) => { cache.insert(role_name.clone(), role.clone()); },
+        Err(err) => warn!("Unable to cache role: {}", err),
+    }
+}
+
 fn lookup_role(role_name: String) -> KrillResult<Role> {
+    if let Some(role) = get_cached_role(&role_name) {
+        return Ok(role);
+    }
+
     // This unwrap is safe as we check in new() that the OpenID Connect config
     // exists.
     let role_map = &CONFIG.auth_openidconnect.as_ref().unwrap().role_map;
@@ -635,5 +651,6 @@ fn lookup_role(role_name: String) -> KrillResult<Role> {
         }
     };
 
+    cache_role(&role_name, &role);
     Ok(role)
 }
