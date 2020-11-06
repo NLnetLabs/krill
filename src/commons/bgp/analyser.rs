@@ -177,6 +177,8 @@ impl BgpAnalyser {
                         entries.push(BgpAnalysisEntry::roa_unseen(roa))
                     } else if authorizes_excess {
                         entries.push(BgpAnalysisEntry::roa_too_permissive(roa, authorizes, disallows))
+                    } else if authorizes.is_empty() {
+                        entries.push(BgpAnalysisEntry::roa_disallowing(roa, disallows))
                     } else {
                         entries.push(BgpAnalysisEntry::roa_seen(roa, authorizes, disallows))
                     }
@@ -243,6 +245,7 @@ impl BgpAnalyser {
                     suggestion.add_too_permissive(*entry.definition(), replace_with);
                 }
                 BgpAnalysisState::RoaSeen | BgpAnalysisState::RoaAs0 => suggestion.add_keep(*entry.definition()),
+                BgpAnalysisState::RoaDisallowing => suggestion.add_disallowing(*entry.definition()),
                 BgpAnalysisState::RoaRedundant => suggestion.add_redundant(*entry.definition()),
                 BgpAnalysisState::RoaAs0Redundant => suggestion.add_as0_redundant(*entry.definition()),
                 BgpAnalysisState::AnnouncementValid => {}

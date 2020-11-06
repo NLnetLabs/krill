@@ -79,6 +79,9 @@ pub struct BgpAnalysisSuggestion {
     too_permissive: Vec<ReplacementRoaSuggestion>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
+    disallowing: Vec<RoaDefinition>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
     redundant: Vec<RoaDefinition>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
@@ -151,6 +154,7 @@ impl Default for BgpAnalysisSuggestion {
             invalid_asn: vec![],
             invalid_length: vec![],
             too_permissive: vec![],
+            disallowing: vec![],
             redundant: vec![],
             keep: vec![],
             as0_redundant: vec![],
@@ -179,6 +183,10 @@ impl BgpAnalysisSuggestion {
 
     pub fn add_invalid_length(&mut self, announcement: Announcement) {
         self.invalid_length.push(announcement);
+    }
+
+    pub fn add_disallowing(&mut self, authorization: RoaDefinition) {
+        self.disallowing.push(authorization);
     }
 
     pub fn add_redundant(&mut self, authorization: RoaDefinition) {
@@ -226,6 +234,28 @@ impl fmt::Display for BgpAnalysisSuggestion {
                 "Remove the following AS0 ROAs made redundant by ROAs for the same prefix and a real ASN:"
             )?;
             for auth in &self.as0_redundant {
+                writeln!(f, "  {}", auth)?;
+            }
+            writeln!(f)?;
+        }
+
+        if !self.redundant.is_empty() {
+            writeln!(
+                f,
+                "Remove the following ROAs made redundant by a covering ROA using maxlength:"
+            )?;
+            for auth in &self.redundant {
+                writeln!(f, "  {}", auth)?;
+            }
+            writeln!(f)?;
+        }
+
+        if !self.disallowing.is_empty() {
+            writeln!(
+                f,
+                "Remove the following ROAs which only disallow announcements (did you use the wrong ASN?), if this is intended you may want to use AS0 instead:"
+            )?;
+            for auth in &self.disallowing {
                 writeln!(f, "  {}", auth)?;
             }
             writeln!(f)?;
@@ -329,6 +359,10 @@ impl From<BgpAnalysisReport> for BgpStats {
                 BgpAnalysisState::RoaRedundant | BgpAnalysisState::RoaAs0Redundant => {
                     stats.increment_roas_total();
                     stats.increment_roas_redundant();
+                }
+                BgpAnalysisState::RoaDisallowing => {
+                    stats.increment_roas_total();
+                    stats.increment_roas_disallowing();
                 }
                 BgpAnalysisState::RoaAs0 | BgpAnalysisState::RoaNoAnnouncementInfo | BgpAnalysisState::RoaSeen => {
                     stats.increment_roas_total()
@@ -573,6 +607,19 @@ impl BgpAnalysisEntry {
         }
     }
 
+    pub fn roa_disallowing(definition: RoaDefinition, mut disallows: Vec<Announcement>) -> Self {
+        disallows.sort();
+        BgpAnalysisEntry {
+            definition,
+            state: BgpAnalysisState::RoaDisallowing,
+            allowed_by: None,
+            disallowed_by: vec![],
+            made_redundant_by: vec![],
+            authorizes: vec![],
+            disallows,
+        }
+    }
+
     pub fn roa_as0(definition: RoaDefinition, mut disallows: Vec<Announcement>) -> Self {
         disallows.sort();
         BgpAnalysisEntry {
@@ -731,6 +778,7 @@ impl PartialOrd for BgpAnalysisEntry {
 pub enum BgpAnalysisState {
     RoaSeen,
     RoaUnseen,
+    RoaDisallowing,
     RoaTooPermissive,
     RoaRedundant,
     RoaAs0,
