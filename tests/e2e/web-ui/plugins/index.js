@@ -16,10 +16,10 @@ module.exports = (on, config) => {
   // }))
 
   return Object.assign({}, config, {
-    fixturesFolder: 'tests/e2e/web-ui/fixtures',
+    fixturesFolder: 'test-resources/e2e/web-ui/fixtures',
     integrationFolder: 'tests/e2e/web-ui/specs',
-    screenshotsFolder: 'tests/e2e/web-ui/screenshots',
-    videosFolder: 'tests/e2e/web-ui/videos',
+    screenshotsFolder: 'target/e2e/web-ui/screenshots',
+    videosFolder: 'target/e2e/web-ui/videos',
     supportFile: false
   })
 }
