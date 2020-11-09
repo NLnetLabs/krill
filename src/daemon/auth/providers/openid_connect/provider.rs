@@ -15,7 +15,7 @@ use openidconnect::reqwest::http_client as oidc_http_client;
 
 use urlparse::{urlparse, GetQuery};
 
-use crate::commons::{actor::Actor, api::Token, error::Error as KrillError};
+use crate::{commons::{actor::Actor, api::Token, error::Error as KrillError}, daemon::auth::common::crypt};
 use crate::commons::KrillResult;
 use crate::daemon::auth::common::config::Role;
 use crate::daemon::auth::common::session::*;
@@ -33,12 +33,14 @@ use super::util::{
 };
 
 const NONCE_TODO_MAKE_RANDOM: &str = "DUMMY_FIXED_VALUE_FOR_NOW";
+const LOGIN_SESSION_STATE_KEY_PATH: &str = "login_session_state.key"; // TODO: decide on proper location
 
 lazy_static! {
     static ref ROLE_CACHE: RwLock<HashMap<String, Role>> = RwLock::new(HashMap::new());
 }
 
 pub struct OpenIDConnectAuthProvider {
+    key: Vec<u8>,
     client: FlexibleClient,
     logout_url: String,
 }
@@ -51,8 +53,10 @@ impl OpenIDConnectAuthProvider {
                 Self::check_provider_capabilities(&meta)?;
                 let logout_url = Self::build_logout_url(&meta);
                 let client = Self::build_client(oidc_conf, meta)?;
+                let key = Self::init_session_key()?;
 
                 Ok(OpenIDConnectAuthProvider {
+                    key,
                     client,
                     logout_url,
                 })
@@ -212,7 +216,7 @@ impl OpenIDConnectAuthProvider {
                                         vec![]
                                     };
 
-                                    if let Ok(new_token) = session_to_token(&session.id, &session.role, &session.inc_cas, &session.exc_cas, &secrets) {
+                                    if let Ok(new_token) = session_to_token(&session.id, &session.role, &session.inc_cas, &session.exc_cas, &secrets, &self.key) {
                                         return Some(Auth::Bearer(Token::from(new_token)));
                                     }
                                 },
@@ -282,6 +286,12 @@ impl OpenIDConnectAuthProvider {
         // instead of a string)
         Ok(found.as_string().cloned())
     }
+
+    fn init_session_key() -> KrillResult<Vec<u8>> {
+        let key_path = CONFIG.data_dir.join(LOGIN_SESSION_STATE_KEY_PATH);
+        info!("Initializing session encryption key {}", &key_path.display());
+        crypt::load_or_create_key(key_path.as_path())
+    }
 }
 
 impl AuthProvider for OpenIDConnectAuthProvider {
@@ -305,7 +315,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
             Auth::Bearer(token) => {
                 // see if we can decode, decrypt and deserialize the users token
                 // into a login session structure
-                let session = token_to_session(token.clone())?;
+                let session = token_to_session(token.clone(), &self.key)?;
 
                 let new_auth = self.try_refresh_token(&session);
 
@@ -586,12 +596,10 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                     vec![]
                 };
 
-                error!("XIMON: OIDCAuthProvider::login(): pack");
-                let api_token = session_to_token(&id, &role, &inc_cas, &exc_cas, &secrets)?;
+                let api_token = session_to_token(&id, &role, &inc_cas, &exc_cas, &secrets, &self.key)?;
 
                 debug!("ID: {:?}, Role: {:?}, Inc CAs: {:?}, Exc CAs: {:?}", &id, &role, &inc_cas, &exc_cas);
 
-                error!("XIMON: OIDCAuthProvider::login(): ok");
                 Ok(LoggedInUser { token: api_token, id: base64::encode(&id) })
             },
 

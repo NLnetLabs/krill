@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use urlparse::{urlparse, GetQuery};
 
-use crate::commons::actor::Actor;
+use crate::{commons::actor::Actor, daemon::auth::common::crypt};
 use crate::commons::error::Error as KrillError;
 use crate::commons::KrillResult;
 use crate::daemon::auth::common::config::Role;
@@ -17,6 +17,7 @@ use crate::daemon::config::CONFIG;
 // Lagosta source code. Ideally we could instead return a route name and then
 // Lagosta could change this path without requiring that we update to match.
 const LAGOSTA_LOGIN_ROUTE_PATH: &str = "/login?withId=true";
+const LOGIN_SESSION_STATE_KEY_PATH: &str = "login_session_state.key"; // TODO: decide on proper location
 
 struct UserDetails {
     role: Role,
@@ -43,21 +44,32 @@ impl From<&ConfigUserDetails> for UserDetails {
 }
 
 pub struct ConfigFileAuthProvider {
-    users: HashMap<String, UserDetails>
+    key: Vec<u8>,
+    users: HashMap<String, UserDetails>,
 }
 
 impl ConfigFileAuthProvider {
     pub fn new() -> KrillResult<Self> {
         match &CONFIG.auth_users {
             Some(auth_users) => {
+                let users = auth_users.iter()
+                    .map(|(k, v)| (k.clone(), UserDetails::from(v)))
+                    .collect();
+                let key = Self::init_session_key()?;
+
                 Ok(ConfigFileAuthProvider {
-                    users: auth_users.iter()
-                        .map(|(k, v)| (k.clone(), UserDetails::from(v)))
-                        .collect()
+                    key,
+                    users,
                 })
             },
             None => Err(KrillError::ConfigError("Missing [auth_users] config section!".into()))
         }
+    }
+
+    fn init_session_key() -> KrillResult<Vec<u8>> {
+        let key_path = CONFIG.data_dir.join(LOGIN_SESSION_STATE_KEY_PATH);
+        info!("Initializing session encryption key {}", &key_path.display());
+        crypt::load_or_create_key(key_path.as_path())
     }
 }
 
@@ -78,7 +90,7 @@ impl AuthProvider for ConfigFileAuthProvider {
             Auth::Bearer(token) => {
                 // see if we can decode, decrypt and deserialize the users token
                 // into a login session structure
-                let session = token_to_session(token.clone())?;
+                let session = token_to_session(token.clone(), &self.key)?;
 
                 debug!("ID: {:?}, Role: {:?}, Inc CAs: {:?}, Exc CAs: {:?}", &session.id, &session.role, &session.inc_cas, &session.exc_cas);
 
@@ -97,7 +109,7 @@ impl AuthProvider for ConfigFileAuthProvider {
         if let Auth::IdAndPasswordHash(id, password_hash) = auth {
             if let Some(user) = self.users.get(id) {
                 if &user.password_hash == password_hash {
-                    let api_token = session_to_token(&id, &user.role, &user.inc_cas, &user.exc_cas, &[])?;
+                    let api_token = session_to_token(&id, &user.role, &user.inc_cas, &user.exc_cas, &[], &self.key)?;
 
                     debug!("ID: {:?}, Role: {:?}, Inc CAs: {:?}, Exc CAs: {:?}", &id, &user.role, &user.inc_cas, &user.exc_cas);
 

@@ -1,27 +1,44 @@
+// TODO: Fold this into OpenSslSigner?
+use std::{fs::File, path::Path, io::Write};
+
 use crate::commons::error::Error as KrillError;
 use crate::commons::KrillResult;
 
-// TODO: use proper values
-const KEY: [u8; 32] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31];
-const IV: [u8; 12]  = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-const AAD: [u8; 4]  = [1, 2, 3, 4];
+const AES_256_GCM_KEY_BIT_LENGTH: usize = 256;
+const AES_256_GCM_KEY_BYTE_LENGTH: usize = AES_256_GCM_KEY_BIT_LENGTH/8;
 
-// Encrypts plaintext into ciphertext. Ciphertext should be pre-allocated and be
-// the same byte length as plaintext. Returns the tag which will be needed to
-// verify the encrypted data during decryption.
-pub(crate) fn encrypt(plaintext: &[u8], mut tag: &mut [u8]) -> KrillResult<Vec<u8>> {
+// TODO: use proper values
+const IV: [u8; 12]  = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; // aka nonce
+const AAD: &[u8; 5]  = b"krill";
+
+// Returns the encrypted bytes and also outputs the tag that will be needed
+// during decryption to verify the encrypted data during decryption.
+pub(crate) fn encrypt(key: &[u8], plaintext: &[u8], mut tag: &mut [u8]) -> KrillResult<Vec<u8>> {
     let cipher = openssl::symm::Cipher::aes_256_gcm();
-    openssl::symm::encrypt_aead(cipher, &KEY, Some(&IV), &AAD, plaintext, &mut tag)
+    openssl::symm::encrypt_aead(cipher, &key, Some(&IV), AAD, plaintext, &mut tag)
         .map_err(|err| KrillError::Custom(format!("Encryption error: {}", &err)))
 }
 
-// Decrypts ciphertext into plaintext. Plaintext should be pre-allocated and be
-// the same byte length as ciphertext. Requires the tag that resulted from
-// encryption to verify the data.
-pub(crate) fn decrypt(ciphertext: &[u8], tag: &[u8]) -> KrillResult<Vec<u8>> {
-    // chacha20_poly1305_aead::decrypt(&KEY, &IV, &AAD, &ciphertext, &tag, plaintext)
-    //     .map_err(|err| KrillError::Custom(format!("Decryption error: {}", &err)))
+// Requires the tag that resulted from encryption to verify the data.
+pub(crate) fn decrypt(key: &[u8], ciphertext: &[u8], tag: &[u8]) -> KrillResult<Vec<u8>> {
     let cipher = openssl::symm::Cipher::aes_256_gcm();
-    openssl::symm::decrypt_aead(cipher, &KEY, Some(&IV), &AAD, ciphertext, tag)
+    openssl::symm::decrypt_aead(cipher, &key, Some(&IV), AAD, ciphertext, tag)
         .map_err(|err| KrillError::Custom(format!("Decryption error: {}", &err)))
+}
+
+pub(crate) fn load_or_create_key(key_path: &Path) -> KrillResult<Vec<u8>> {
+    if key_path.exists() {
+        std::fs::read(key_path)
+            .map_err(|err| KrillError::Custom(format!(
+                "Unable to load symmetric key: {}", err)))
+    } else {
+        let mut key_bytes = [0; AES_256_GCM_KEY_BYTE_LENGTH];
+        openssl::rand::rand_bytes(&mut key_bytes)
+            .map_err(|err| KrillError::Custom(format!(
+                "Unable to generate symmetric key: {}", err)))?;
+
+        let mut f = File::create(key_path)?;
+        f.write_all(&key_bytes)?;
+        Ok(key_bytes.to_vec())
+    }
 }

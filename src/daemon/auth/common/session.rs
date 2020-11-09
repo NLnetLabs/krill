@@ -67,7 +67,7 @@ fn cache_session(token: &Token, session: &ClientSession) {
     }
 }
 
-pub fn session_to_token(id: &String, role: &Role, inc_cas: &[String], exc_cas: &[String], secrets: &[String]) -> KrillResult<Token> {
+pub fn session_to_token(id: &String, role: &Role, inc_cas: &[String], exc_cas: &[String], secrets: &[String], key: &[u8]) -> KrillResult<Token> {
     let session = ClientSession {
         start_time: time_now_secs_since_epoch()?,
         expires_in: Some(Duration::new(3600, 0)),
@@ -84,7 +84,7 @@ pub fn session_to_token(id: &String, role: &Role, inc_cas: &[String], exc_cas: &
     let unencrypted_bytes = session_json_str.as_bytes();
 
     let mut tag: [u8; 16] = [0; 16];
-    let mut encrypted_bytes = crypt::encrypt(unencrypted_bytes, &mut tag)?;
+    let mut encrypted_bytes = crypt::encrypt(key, unencrypted_bytes, &mut tag)?;
 
     encrypted_bytes.extend(tag.iter());
     let api_token = base64::encode(&encrypted_bytes);
@@ -92,7 +92,7 @@ pub fn session_to_token(id: &String, role: &Role, inc_cas: &[String], exc_cas: &
     Ok(Token::from(api_token))
 }
 
-pub fn token_to_session(token: Token) -> KrillResult<ClientSession> {
+pub fn token_to_session(token: Token, key: &[u8]) -> KrillResult<ClientSession> {
     if let Some(session) = get_cached_session(&token) {
         return Ok(session);
     }
@@ -107,7 +107,7 @@ pub fn token_to_session(token: Token) -> KrillResult<ClientSession> {
 
     let encrypted_len = bytes.len() - TAG_SIZE;
     let (encrypted_bytes, tag_bytes) = bytes.split_at(encrypted_len);
-    let unencrypted_bytes = crypt::decrypt(encrypted_bytes, tag_bytes)?;
+    let unencrypted_bytes = crypt::decrypt(key, encrypted_bytes, tag_bytes)?;
 
     let session = serde_json::from_slice::<ClientSession>(&unencrypted_bytes)
         .map_err(|err| KrillError::Custom(
