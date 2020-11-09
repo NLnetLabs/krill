@@ -405,7 +405,7 @@ impl Config {
         let https_mode = HttpsMode::Generate;
         let data_dir = data_dir.clone();
         let archive_threshold_days = Some(0);
-        let always_recover_data = true;
+        let always_recover_data = false;
         let rsync_base = ConfigDefaults::rsync_base();
         let service_uri = ConfigDefaults::service_uri();
         let rrdp_service_uri = Some("https://localhost:3000/test-rrdp/".to_string());
