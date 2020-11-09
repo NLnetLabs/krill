@@ -319,7 +319,7 @@ mod tests {
         let alice_handle = Handle::from_str("alice").unwrap();
         let publisher_req = make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
-        server.create_publisher(publisher_req, "test").unwrap();
+        server.create_publisher(publisher_req, &ACTOR_TEST).unwrap();
 
         let alice_found = server.get_publisher_details(&alice_handle).unwrap();
 
@@ -340,9 +340,9 @@ mod tests {
         let alice_handle = Handle::from_str("alice").unwrap();
         let publisher_req = make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
-        server.create_publisher(publisher_req.clone(), "test").unwrap();
+        server.create_publisher(publisher_req.clone(), &ACTOR_TEST).unwrap();
 
-        match server.create_publisher(publisher_req, "test") {
+        match server.create_publisher(publisher_req, &ACTOR_TEST) {
             Err(Error::PublisherDuplicate(name)) => assert_eq!(name, alice_handle),
             _ => panic!("Expected error"),
         }
@@ -359,7 +359,7 @@ mod tests {
         let alice_handle = Handle::from_str("alice").unwrap();
         let publisher_req = make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
-        server.create_publisher(publisher_req, "test").unwrap();
+        server.create_publisher(publisher_req, &ACTOR_TEST).unwrap();
 
         let list_reply = server.list(&alice_handle).unwrap();
         assert_eq!(0, list_reply.elements().len());
@@ -378,7 +378,7 @@ mod tests {
         let alice_handle = Handle::from_str("alice").unwrap();
         let publisher_req = make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
-        server.create_publisher(publisher_req, "test").unwrap();
+        server.create_publisher(publisher_req, &ACTOR_TEST).unwrap();
 
         // get the file out of a list_reply
         fn find_in_reply<'a>(reply: &'a ListReply, uri: &uri::Rsync) -> Option<&'a ListElement> {
@@ -401,7 +401,7 @@ mod tests {
         builder.add_publish(file2.as_publish());
         let delta = builder.finish();
 
-        server.publish(alice_handle.clone(), delta, "test").unwrap();
+        server.publish(alice_handle.clone(), delta, &ACTOR_TEST).unwrap();
 
         // Two files should now appear in the list
         let list_reply = server.list(&alice_handle).unwrap();
@@ -432,7 +432,7 @@ mod tests {
         builder.add_publish(file3.as_publish());
         let delta = builder.finish();
 
-        server.publish(alice_handle.clone(), delta, "test").unwrap();
+        server.publish(alice_handle.clone(), delta, &ACTOR_TEST).unwrap();
 
         // Two files should now appear in the list
         let list_reply = server.list(&alice_handle).unwrap();
@@ -456,7 +456,7 @@ mod tests {
         builder.add_publish(file_outside.as_publish());
         let delta = builder.finish();
 
-        match server.publish(alice_handle.clone(), delta, "test") {
+        match server.publish(alice_handle.clone(), delta, &ACTOR_TEST) {
             Err(Error::Rfc8181Delta(PublicationDeltaError::UriOutsideJail(_, _))) => {} // ok
             _ => panic!("Expected error publishing outside of base uri jail"),
         }
@@ -470,7 +470,7 @@ mod tests {
         builder.add_update(file2_update.as_update(file2.hash()));
         let delta = builder.finish();
 
-        match server.publish(alice_handle.clone(), delta, "test") {
+        match server.publish(alice_handle.clone(), delta, &ACTOR_TEST) {
             Err(Error::Rfc8181Delta(PublicationDeltaError::NoObjectForHashAndOrUri(_))) => {}
             _ => panic!("Expected error when file for update can't be found"),
         }
@@ -480,7 +480,7 @@ mod tests {
         builder.add_withdraw(file2.as_withdraw());
         let delta = builder.finish();
 
-        match server.publish(alice_handle.clone(), delta, "test") {
+        match server.publish(alice_handle.clone(), delta, &ACTOR_TEST) {
             Err(Error::Rfc8181Delta(PublicationDeltaError::NoObjectForHashAndOrUri(_))) => {} // ok
             _ => panic!("Expected error withdrawing file that does not exist"),
         }
@@ -490,7 +490,7 @@ mod tests {
         builder.add_publish(file3.as_publish());
         let delta = builder.finish();
 
-        match server.publish(alice_handle.clone(), delta, "test") {
+        match server.publish(alice_handle.clone(), delta, &ACTOR_TEST) {
             Err(Error::Rfc8181Delta(PublicationDeltaError::ObjectAlreadyPresent(uri))) => {
                 assert_eq!(uri, test::rsync("rsync://localhost/repo/alice/file3.txt"))
             }
@@ -539,7 +539,7 @@ mod tests {
         builder.add_publish(file6.as_publish());
         let delta = builder.finish();
 
-        server.publish(alice_handle.clone(), delta, "test").unwrap();
+        server.publish(alice_handle.clone(), delta, &ACTOR_TEST).unwrap();
 
         // Should not include
         assert!(!session_dir_contains_serial(&session, 0));

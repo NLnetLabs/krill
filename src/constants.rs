@@ -56,3 +56,6 @@ pub const ACTOR_KRILL: &Actor = &Actor::system("krill", Role::Admin);
 pub const ACTOR_ANON: &Actor = &Actor::none();
 pub const ACTOR_MASTER_TOKEN: &Actor = &Actor::system("master-token@krill.conf", Role::Admin);
 pub const ACTOR_TESTBED: &Actor = &Actor::system("testbed", Role::Testbed);
+
+#[cfg(test)]
+pub const ACTOR_TEST: &Actor = &Actor::system("test", Role::Admin);

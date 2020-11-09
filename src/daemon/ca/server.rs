@@ -1299,7 +1299,7 @@ mod tests {
     use std::fs;
     use std::sync::Arc;
 
-    use crate::commons::api::RepoInfo;
+    use crate::{constants::ACTOR_TEST, commons::api::RepoInfo};
     use crate::test;
     use crate::test::tmp_dir;
 
@@ -1325,7 +1325,7 @@ mod tests {
 
         assert!(server.get_trust_anchor().await.is_err());
 
-        server.init_ta(repo_info, ta_aia, vec![ta_uri], "test").await.unwrap();
+        server.init_ta(repo_info, ta_aia, vec![ta_uri], &ACTOR_TEST).await.unwrap();
 
         assert!(server.get_trust_anchor().await.is_ok());
 
