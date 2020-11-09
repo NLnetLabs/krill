@@ -61,6 +61,7 @@ rustc_version   = "0.2.3"
 default = []
 rta = []
 functional-tests = []
+web-ui-tests = []
 extra-debug = [ "rpki/extra-debug" ]
 static-openssl = [ "openssl/vendored" ]
 
@@ -68,6 +69,9 @@ static-openssl = [ "openssl/vendored" ]
 # limping on in a bad state.
 [profile.release]
 panic = "abort"
+
+[dev-dependencies]
+assert_cmd = "1.0.1"
 
 # ------------------------------------------------------------------------------
 # START DEBIAN PACKAGING
