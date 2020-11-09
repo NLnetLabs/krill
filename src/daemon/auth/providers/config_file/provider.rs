@@ -121,21 +121,4 @@ impl AuthProvider for ConfigFileAuthProvider {
         // index page
         "/".to_string()
     }
-
-    fn get_bearer_token(&self, request: &hyper::Request<hyper::Body>) -> Option<String> {
-        if let Some(header) = request.headers().get("Authorization") {
-            if let Ok(header) = header.to_str() {
-                if header.len() > 6 {
-                    let (bearer, token) = header.split_at(6);
-                    let bearer = bearer.trim();
-
-                    if "Bearer" == bearer {
-                        return Some(String::from(token.trim()));
-                    }
-                }
-            }
-        }
-
-        None
-    }
 }
