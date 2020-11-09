@@ -113,9 +113,8 @@ pub fn pre_start_upgrade(work_dir: &PathBuf) -> Result<(), UpgradeError> {
 
 /// Should be called right after the KrillServer is initiated.
 pub async fn post_start_upgrade(work_dir: &PathBuf, server: &KrillServer) -> Result<(), UpgradeError> {
-    let version_0_8 = KeyStoreVersion::V0_8_0_RC1;
     let ca_store: AggregateStore<CertAuth> = AggregateStore::new(work_dir, "cas")?;
-    if ca_store.get_version()? < version_0_8 {
+    if ca_store.get_version()? < KeyStoreVersion::V0_8_0_RC1 {
         info!("Will clean up redundant ROAs for all CAs and update version of storage dirs");
         roa_cleanup_0_8_0::roa_cleanup(server).await?;
     }

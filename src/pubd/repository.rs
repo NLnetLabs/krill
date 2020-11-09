@@ -1,9 +1,10 @@
-use core::mem;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::fs;
+use std::mem;
 use std::path::PathBuf;
 use std::str::{from_utf8_unchecked, FromStr};
+use std::sync::{Arc, RwLock};
 
 use rpki::crypto::KeyIdentifier;
 use rpki::uri;
@@ -35,15 +36,26 @@ use crate::pubd::{Cmd, CmdDet, Evt, EvtDet, Ini, RrdpUpdate};
 pub struct RsyncdStore {
     base_uri: uri::Rsync,
     rsync_dir: PathBuf,
+    #[serde(skip_serializing, skip_deserializing, default = "RsyncdStore::new_lock")]
+    lock: Arc<RwLock<()>>,
 }
 
 /// # Construct
 ///
 impl RsyncdStore {
+    pub fn new_lock() -> Arc<RwLock<()>> {
+        Arc::new(RwLock::new(()))
+    }
+
     pub fn new(base_uri: uri::Rsync, repo_dir: &PathBuf) -> Self {
         let mut rsync_dir = PathBuf::from(repo_dir);
         rsync_dir.push(REPOSITORY_RSYNC_DIR);
-        RsyncdStore { base_uri, rsync_dir }
+        let lock = Self::new_lock();
+        RsyncdStore {
+            base_uri,
+            rsync_dir,
+            lock,
+        }
     }
 }
 
@@ -54,6 +66,11 @@ impl RsyncdStore {
     /// things over in an effort to minimise the chance of people getting
     /// inconsistent syncs..
     pub fn write(&self, snapshot: &Snapshot) -> KrillResult<()> {
+        let _lock = self
+            .lock
+            .write()
+            .map_err(|_| Error::custom("Could not get write lock for rsync repo"))?;
+
         let mut new_dir = self.rsync_dir.clone();
         new_dir.push(&format!("tmp-{}", snapshot.serial()));
         fs::create_dir_all(&new_dir)?;

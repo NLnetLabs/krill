@@ -1394,17 +1394,6 @@ impl CertAuth {
             } else if authorizations.iter().any(|existing| *existing == addition) {
                 // A duplicate ROA already exists
                 delta_errors.add_duplicate(roa_def);
-            } else if let Some(covering) = authorizations.iter().find(|existing| existing.includes(&roa_def)) {
-                // We already have a ROA that includes this prefix and asn
-                delta_errors.add_covered(roa_def, (**covering).into());
-            } else if authorizations.iter().any(|existing| roa_def.includes(existing)) {
-                // This would cover existing ROAs
-                let covered = authorizations
-                    .iter()
-                    .filter(|existing| roa_def.includes(existing))
-                    .map(|covered| (**covered).into())
-                    .collect();
-                delta_errors.add_covering(roa_def, covered)
             } else {
                 // Ok, this seems okay now
                 desired_routes.add(*addition);
