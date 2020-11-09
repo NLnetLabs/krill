@@ -20,6 +20,16 @@ describe('Master API token', () => {
     cy.contains('Password')
     cy.get(':password').type('dummy-test-token')
     cy.contains('Sign In').click()
-    cy.contains('Logged in as')
+    cy.contains('Logged in as: master-token@krill.conf')
+  })
+
+  it('Can logout', () => {
+    cy.visit('/')
+    cy.contains('Password')
+    cy.get(':password').type('dummy-test-token')
+    cy.contains('Sign In').click()
+    cy.contains('Logged in as: master-token@krill.conf')
+    cy.get('.logout').click()
+    cy.contains('Sign In')
   })
 })
