@@ -72,11 +72,31 @@ describe('Master API token', () => {
     cy.contains('Logged in as: master-token@krill.conf')
     cy.contains('Sign In').should('not.exist')
 
-    // Skip ahead 30 minutes (so including the time alreadsy skipped we should
+    // Skip ahead 30 minutes (so including the time already skipped we should
     // now have exceeded the Lagosta max idle time and be logged out)
     cy.tick(30*60*1000)
     cy.visit('/')
     cy.contains('Logged in as: master-token@krill.conf').should('not.exist')
     cy.contains('Sign In')
+  })
+
+  it('Can create CA', () => {
+    cy.visit('/')
+    cy.get(':password').type('dummy-master-token')
+    cy.contains('Sign In').click()
+    cy.contains('Logged in as: master-token@krill.conf')
+    cy.contains('Welcome to Krill')
+
+    // create a CA
+    cy.contains('CA Handle')
+    cy.get('form input[type="text"]').type('dummy-ca-name')
+    cy.contains('Create CA').click()
+    cy.contains('OK').click()
+    cy.contains('Certificate Authority')
+
+    // we're no longer on the welcome page and the CA name we created is visible
+    // on the page
+    cy.contains('Welcome to Krill').should('not.exist')
+    cy.contains('dummy-ca-name')
   })
 })
