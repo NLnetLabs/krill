@@ -3,6 +3,11 @@ use std::process::Command;
 use std::env;
 
 pub fn run_krill_ui_test(test_name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    // Remove the Krill data directory. Assumes that the .conf file passed to
+    // Krill sets data_dir to /tmp/krill... touching the host filesystem like
+    // this isn't nice...
+    Command::new("rm").arg("-R").arg("/tmp/krill").status()?;
+
     let mut krill_process = Command::cargo_bin("krill")?
         .arg("-c")
         .arg(format!("test-resources/ui/{}.conf", test_name))
