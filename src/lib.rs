@@ -7,8 +7,6 @@ extern crate bytes;
 extern crate chrono;
 extern crate clap;
 extern crate clokwerk;
-#[macro_use]
-extern crate derive_more;
 extern crate futures;
 extern crate futures_util;
 extern crate hex;

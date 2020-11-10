@@ -1930,148 +1930,161 @@ impl Options {
     }
 }
 
-#[derive(Clone, Debug, Display, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 pub enum Command {
-    #[display(fmt = "not set")]
     NotSet,
-
-    #[display(fmt = "health")]
     Health,
-
-    #[display(fmt = "info")]
     Info,
-
-    #[display(fmt = "bulk: {}", _0)]
     Bulk(BulkCaCommand),
-
-    #[display(fmt = "ca: {}", _0)]
     CertAuth(CaCommand),
-
-    #[display(fmt = "publishers: {}", _0)]
     Publishers(PublishersCommand),
-
-    #[display(fmt = "init")]
     Init(KrillInitDetails),
 }
 
-#[derive(Clone, Debug, Display, Eq, PartialEq)]
+impl fmt::Display for Command {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Command::NotSet => write!(f, "not set"),
+            Command::Health => write!(f, "health"),
+            Command::Info => write!(f, "info"),
+            Command::Bulk(cmd) => write!(f, "bulk: {}", cmd),
+            Command::CertAuth(cmd) => write!(f, "ca: {}", cmd),
+            Command::Publishers(cmd) => write!(f, "publishers: {}", cmd),
+            Command::Init(_) => write!(f, "init"),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 pub enum CaCommand {
-    // Initialise a CA
-    #[display(fmt = "init ca: '{}'", _0)]
-    Init(CertAuthInit),
+    Init(CertAuthInit), // Initialise a CA
+    UpdateId(Handle),   // Update CA id
 
-    // Update CA id
-    #[display(fmt = "update id for ca: '{}'", _0)]
-    UpdateId(Handle),
-
-    // Get an RFC8183 parent response for a child
-    #[display(fmt = "parent response from ca: '{}' for child '{}'", _0, _1)]
-    ParentResponse(Handle, ChildHandle),
-
-    // Get the RFC8183 child request
-    #[display(fmt = "get child request for ca: '{}'", _0)]
-    ChildRequest(Handle),
-
-    // Get the RFC8183 publisher request
-    #[display(fmt = "get repo request for ca: '{}'", _0)]
-    RepoPublisherRequest(Handle),
-
-    #[display(fmt = "get repo details for ca: '{}'", _0)]
+    // Publishing
+    RepoPublisherRequest(Handle), // Get the RFC8183 publisher request
     RepoDetails(Handle),
-
-    #[display(fmt = "update repo details for ca: '{}'", _0)]
     RepoUpdate(Handle, RepositoryUpdate),
-
-    #[display(fmt = "get repo status for ca: '{}'", _0)]
     RepoStatus(Handle),
 
-    #[display(fmt = "add parent '{}' to ca: '{}'", _0, _1)]
+    // Parents (to this CA)
+    ChildRequest(Handle), // Get the RFC8183 child request
     AddParent(Handle, ParentCaReq),
-
-    #[display(fmt = "add parent to ca: '{}'", _0)]
     MyParentCaContact(Handle, ParentHandle),
-
-    #[display(fmt = "show parents status overview for ca: '{}'", _0)]
     ParentStatuses(Handle),
-
-    #[display(fmt = "update contact for parent {} of ca: '{}' to: {}", _1, _0, _2)]
     UpdateParentContact(Handle, ParentHandle, ParentCaContact),
-
-    #[display(fmt = "remove parent {} of ca: '{}'", _1, _0)]
     RemoveParent(Handle, ParentHandle),
 
     // Children
-    #[display(fmt = "show child {} of ca: '{}'", _1, _0)]
+    ParentResponse(Handle, ChildHandle), // Get an RFC8183 parent response for a child
     ChildInfo(Handle, ChildHandle),
-
-    #[display(fmt = "add child {} to ca: '{}'", _1, _0)]
     ChildAdd(Handle, AddChildRequest),
-
-    #[display(fmt = "update child {} of ca: '{}'", _1, _0)]
     ChildUpdate(Handle, ChildHandle, UpdateChildRequest),
-
-    #[display(fmt = "delete child {} of ca: '{}'", _1, _0)]
     ChildDelete(Handle, ChildHandle),
 
-    #[display(fmt = "initialise key roll for ca: '{}'", _0)]
+    // Key Management
     KeyRollInit(Handle),
-
-    #[display(fmt = "activate key roll for ca: '{}'", _0)]
     KeyRollActivate(Handle),
 
     // Authorizations
-    #[display(fmt = "list ROAS for ca: '{}'", _0)]
     RouteAuthorizationsList(Handle),
-
-    #[display(fmt = "Update ROAS for ca: '{}' -> {}", _0, _1)]
     RouteAuthorizationsUpdate(Handle, RoaDefinitionUpdates),
-
-    #[display(fmt = "Try to update ROAS for ca: '{}' -> {}", _0, _1)]
     RouteAuthorizationsTryUpdate(Handle, RoaDefinitionUpdates),
-
-    #[display(fmt = "Perform a dry-run update of ROAS for ca: '{}' -> {}", _0, _1)]
     RouteAuthorizationsDryRunUpdate(Handle, RoaDefinitionUpdates),
-
-    #[display(fmt = "Show detailed ROA vs BGP analysis for ca: '{}'", _0)]
     BgpAnalysisFull(Handle),
-
-    #[display(fmt = "Show ROA suggestions based on BGP analysis for ca: '{}'", _0)]
     BgpAnalysisSuggest(Handle, Option<ResourceSet>),
 
     // Show details for this CA
-    #[display(fmt = "Show details for ca: '{}'", _0)]
     Show(Handle),
-
-    #[display(fmt = "Show history for ca: '{}', mode: {}", _0, _1)]
     ShowHistory(Handle, HistoryOptions),
-
-    #[display(fmt = "Show action details for ca: '{}', action key: {}", _0, _1)]
     ShowAction(Handle, String),
-
-    #[display(fmt = "Show issues for ca: '{:?}'", _0)]
     Issues(Option<Handle>),
 
     // RTA
-    #[display(fmt = "List RTAs for CA: '{}'", _0)]
     RtaList(Handle),
-
-    #[display(fmt = "Show RTA '{}' for CA: '{}'", _0, _1)]
     RtaShow(Handle, RtaName, Option<PathBuf>),
-
-    #[display(fmt = "Sign RTA request for CA: '{}'", _0)]
     RtaSign(Handle, RtaName, RtaContentRequest),
-
-    #[display(fmt = "Prepare a multi-signed RTA for CA: '{}'", _0)]
     RtaMultiPrep(Handle, RtaName, RtaPrepareRequest),
-
-    #[display(fmt = "Cosign an RTA for CA: '{}'", _0)]
     RtaMultiCoSign(Handle, RtaName, ResourceTaggedAttestation),
 
     // List all CAs
-    #[display(fmt = "List all cas")]
     List,
+}
+
+impl fmt::Display for CaCommand {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            CaCommand::Init(init) => write!(f, "init ca: '{}'", init),
+            CaCommand::UpdateId(ca) => write!(f, "update id for ca: '{}'", ca),
+
+            // Publishing
+            CaCommand::RepoPublisherRequest(ca) => write!(f, "get repo request for ca: '{}'", ca),
+            CaCommand::RepoDetails(ca) => write!(f, "get repo details for ca: '{}'", ca),
+            CaCommand::RepoUpdate(ca, _update) => write!(f, "update repo details for ca: '{}'", ca),
+            CaCommand::RepoStatus(ca) => write!(f, "get repo status for ca: '{}'", ca),
+
+            // Parents (to this CA)
+            CaCommand::ChildRequest(ca) => write!(f, "get child request for ca: '{}'", ca),
+            CaCommand::AddParent(ca, parent) => write!(f, "add parent '{}' to ca: '{}'", parent, ca),
+            CaCommand::MyParentCaContact(ca, parent) => write!(f, "show parent '{}' of ca: '{}'", parent, ca),
+            CaCommand::ParentStatuses(ca) => write!(f, "show parents status overview for ca: '{}'", ca),
+            CaCommand::UpdateParentContact(ca, parent, contact) => write!(
+                f,
+                "update contact for parent {} of ca: '{}' to: {}",
+                parent, ca, contact
+            ),
+            CaCommand::RemoveParent(ca, parent) => write!(f, "remove parent {} of ca: '{}'", parent, ca),
+
+            // Children
+            CaCommand::ParentResponse(ca, child) => {
+                write!(f, "parent response from ca: '{}' for child '{}'", ca, child)
+            }
+            CaCommand::ChildInfo(ca, child) => write!(f, "show child {} of ca: '{}'", child, ca),
+            CaCommand::ChildAdd(ca, request) => write!(f, "add child {} to ca: '{}'", request, ca),
+            CaCommand::ChildUpdate(ca, child, _update) => write!(f, "update child {} of ca: '{}'", child, ca),
+            CaCommand::ChildDelete(ca, child) => write!(f, "delete child {} of ca: '{}'", child, ca),
+
+            // Key Management
+            CaCommand::KeyRollInit(ca) => write!(f, "initialise key roll for ca: '{}'", ca),
+            CaCommand::KeyRollActivate(ca) => write!(f, "activate key roll for ca: '{}'", ca),
+
+            // Authorizations
+            CaCommand::RouteAuthorizationsList(ca) => write!(f, "list ROAS for ca: '{}'", ca),
+            CaCommand::RouteAuthorizationsUpdate(ca, updates) => {
+                write!(f, "Update ROAS for ca: '{}' -> {}", ca, updates)
+            }
+            CaCommand::RouteAuthorizationsTryUpdate(ca, updates) => {
+                write!(f, "Try to update ROAS for ca: '{}' -> {}", ca, updates)
+            }
+            CaCommand::RouteAuthorizationsDryRunUpdate(ca, updates) => {
+                write!(f, "Perform a dry-run update of ROAS for ca: '{}' -> {}", ca, updates)
+            }
+            CaCommand::BgpAnalysisFull(ca) => write!(f, "Show detailed ROA vs BGP analysis for ca: '{}'", ca),
+            CaCommand::BgpAnalysisSuggest(ca, _) => {
+                write!(f, "Show ROA suggestions based on BGP analysis for ca: '{}'", ca)
+            }
+
+            // Show details for this CA
+            CaCommand::Show(ca) => write!(f, "Show details for ca: '{}'", ca),
+            CaCommand::ShowHistory(ca, options) => write!(f, "Show history for ca: '{}', mode: {}", ca, options),
+            CaCommand::ShowAction(ca, key) => write!(f, "Show action details for ca: '{}', action key: {}", ca, key),
+            CaCommand::Issues(ca_opt) => match ca_opt {
+                None => write!(f, "Show issues for all CAs"),
+                Some(ca) => write!(f, "Show issues for ca: '{}'", ca),
+            },
+
+            // RTA
+            CaCommand::RtaList(ca) => write!(f, "List RTAs for CA: '{}'", ca),
+            CaCommand::RtaShow(ca, name, _) => write!(f, "Show RTA '{}' for CA: '{}'", name, ca),
+            CaCommand::RtaSign(ca, _name, _req) => write!(f, "Sign RTA request for CA: '{}'", ca),
+            CaCommand::RtaMultiPrep(ca, _name, _prep) => write!(f, "Prepare a multi-signed RTA for CA: '{}'", ca),
+            CaCommand::RtaMultiCoSign(ca, _name, _rta) => write!(f, "Cosign an RTA for CA: '{}'", ca),
+
+            // List all CAs
+            CaCommand::List => write!(f, "List all cas"),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2120,31 +2133,19 @@ impl fmt::Display for HistoryOptions {
     }
 }
 
-#[derive(Clone, Debug, Display, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum BulkCaCommand {
-    #[display(fmt = "refresh")]
     Refresh,
-
-    #[display(fmt = "publish")]
     Publish,
-
-    #[display(fmt = "sync")]
     Sync,
 }
 
-#[derive(Clone, Debug, Display, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 pub enum PublishersCommand {
-    #[display(fmt = "Add publisher")]
     AddPublisher(rfc8183::PublisherRequest),
-
-    #[display(fmt = "Show publisher '{}", _0)]
     ShowPublisher(PublisherHandle),
-
-    #[display(fmt = "Remove publisher '{}", _0)]
     RemovePublisher(PublisherHandle),
-
-    #[display(fmt = "reposisitory response for publisher '{}'", _0)]
     RepositoryResponse(PublisherHandle),
 
     #[display(fmt = "Show publishers which last published longer than '{}' seconds ago", _0)]
