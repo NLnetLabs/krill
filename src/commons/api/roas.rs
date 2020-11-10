@@ -160,16 +160,16 @@ impl RoaDefinition {
         }
     }
 
-    pub fn nr_of_allowed_prefixes(&self) -> u128 {
+    pub fn nr_of_specific_prefixes(&self) -> u128 {
         let pfx_len = self.prefix.addr_len();
         let max_len = self.effective_max_length();
 
-        // 10.0.0.0/8-8 -> 1                          2^1 - 1 ... 2 ^ (max - len + 1) -1
-        // 10.0.0.0/8-9 -> 1 + 2 = 3                  2^2 - 1
-        // 10.0.0.0/8-10 -> 1 + 2 + 4 = 7             2^3 - 1
-        // 10.0.0.0/8-11 -> 1 + 2 + 4 + 8 = 15        2^4 - 1
+        // 10.0.0.0/8-8 -> 1   2^0
+        // 10.0.0.0/8-9 -> 2   2^1
+        // 10.0.0.0/8-10 -> 4  2^2
+        // 10.0.0.0/8-11 -> 8  2^3
 
-        (1u128 << (max_len - pfx_len + 1)) - 1
+        1u128 << (max_len - pfx_len)
     }
 
     pub fn max_length_valid(&self) -> bool {
@@ -809,16 +809,16 @@ mod tests {
     }
 
     #[test]
-    fn roa_nr_allowed_pfx() {
+    fn roa_nr_specific_pfx() {
         fn check(def: &str, expected: u128) {
             let def = definition(def);
-            let calculated = def.nr_of_allowed_prefixes();
+            let calculated = def.nr_of_specific_prefixes();
             assert_eq!(calculated, expected);
         }
 
         check("10.0.0.0/15-15 => 64496", 1);
-        check("10.0.0.0/15-16 => 64496", 3);
-        check("10.0.0.0/15-17 => 64496", 7);
-        check("10.0.0.0/15-18 => 64496", 15);
+        check("10.0.0.0/15-16 => 64496", 2);
+        check("10.0.0.0/15-17 => 64496", 4);
+        check("10.0.0.0/15-18 => 64496", 8);
     }
 }

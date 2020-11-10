@@ -571,7 +571,7 @@ impl CurrentObjects {
 //------------ Snapshot ------------------------------------------------------
 
 /// A structure to contain the RRDP snapshot data.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Snapshot {
     session: RrdpSession,
     serial: u64,
@@ -585,6 +585,14 @@ impl Snapshot {
             session,
             serial: 0,
             current_objects,
+        }
+    }
+
+    pub fn session_reset(&self, session: RrdpSession) -> Self {
+        Snapshot {
+            session,
+            serial: 0,
+            current_objects: self.current_objects.clone(),
         }
     }
 

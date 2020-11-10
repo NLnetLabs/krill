@@ -14,10 +14,10 @@ use rpki::x509::{Serial, Time, Validity};
 
 use crate::commons::api::rrdp::PublishElement;
 use crate::commons::api::{
-    self, AsNumber, CertAuthInfo, ChildHandle, EntitlementClass, Entitlements, Handle, IdCertPem, IssuanceRequest,
-    IssuedCert, ObjectsDelta, ParentCaContact, ParentHandle, RcvdCert, RepositoryContact, RequestResourceLimit,
-    ResourceClassName, ResourceSet, Revocation, RevocationRequest, RevocationResponse, RoaDefinition, RtaList, RtaName,
-    RtaPrepResponse, SigningCert, StorableCaCommand, TaCertDetails, TrustAnchorLocator,
+    self, CertAuthInfo, ChildHandle, EntitlementClass, Entitlements, Handle, IdCertPem, IssuanceRequest, IssuedCert,
+    ObjectsDelta, ParentCaContact, ParentHandle, RcvdCert, RepositoryContact, RequestResourceLimit, ResourceClassName,
+    ResourceSet, Revocation, RevocationRequest, RevocationResponse, RoaDefinition, RtaList, RtaName, RtaPrepResponse,
+    SigningCert, StorableCaCommand, TaCertDetails, TrustAnchorLocator,
 };
 use crate::commons::crypto::{CsrInfo, IdCert, IdCertBuilder, KrillSigner, ProtocolCms, ProtocolCmsBuilder};
 use crate::commons::error::{Error, RoaDeltaError};
@@ -1385,8 +1385,6 @@ impl CertAuth {
             let roa_def: RoaDefinition = (*addition).into();
             let authorizations: Vec<&RouteAuthorization> = desired_routes.authorizations().collect();
 
-            let as0 = AsNumber::zero();
-
             if !addition.max_length_valid() {
                 // The (max) length is invalid for thie prefix
                 delta_errors.add_invalid_length(roa_def);
@@ -1396,31 +1394,6 @@ impl CertAuth {
             } else if authorizations.iter().any(|existing| *existing == addition) {
                 // A duplicate ROA already exists
                 delta_errors.add_duplicate(roa_def);
-            } else if let Some(covering) = authorizations.iter().find(|existing| existing.includes(&roa_def)) {
-                // We already have a ROA that includes this prefix and asn
-                delta_errors.add_covered(roa_def, (**covering).into());
-            } else if authorizations.iter().any(|existing| roa_def.includes(existing)) {
-                // This would cover existing ROAs
-                let covered = authorizations
-                    .iter()
-                    .filter(|existing| roa_def.includes(existing))
-                    .map(|covered| (**covered).into())
-                    .collect();
-                delta_errors.add_covering(roa_def, covered)
-            } else if let Some(existing_as0) = authorizations
-                .iter()
-                .find(|existing| existing.asn() == as0 && existing.overlaps(&roa_def))
-            {
-                // There is an existing AS0 ROA overlapping this prefix
-                delta_errors.add_as0_exists(roa_def, (**existing_as0).into())
-            } else if roa_def.asn() == as0 && authorizations.iter().any(|existing| existing.overlaps(&roa_def)) {
-                // There is at least one existing ROA overlapping the new AS0 ROA prefix
-                let existing = authorizations
-                    .iter()
-                    .filter(|existing| existing.overlaps(&roa_def))
-                    .map(|covered| (**covered).into())
-                    .collect();
-                delta_errors.add_as0_overlaps(roa_def, existing)
             } else {
                 // Ok, this seems okay now
                 desired_routes.add(*addition);

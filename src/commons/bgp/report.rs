@@ -79,6 +79,12 @@ pub struct BgpAnalysisSuggestion {
     too_permissive: Vec<ReplacementRoaSuggestion>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
+    disallowing: Vec<RoaDefinition>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
+    redundant: Vec<RoaDefinition>,
+
+    #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
     as0_redundant: Vec<RoaDefinition>,
 
     #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
@@ -96,13 +102,14 @@ pub struct ReplacementRoaSuggestion {
 
 impl From<BgpAnalysisSuggestion> for RoaDefinitionUpdates {
     fn from(suggestion: BgpAnalysisSuggestion) -> Self {
-        let (stale, not_found, invalid_asn, invalid_length, too_permissive, as0_redundant) = (
+        let (stale, not_found, invalid_asn, invalid_length, too_permissive, as0_redundant, redundant) = (
             suggestion.stale,
             suggestion.not_found,
             suggestion.invalid_asn,
             suggestion.invalid_length,
             suggestion.too_permissive,
             suggestion.as0_redundant,
+            suggestion.redundant,
         );
 
         let mut added: HashSet<RoaDefinition> = HashSet::new();
@@ -131,6 +138,10 @@ impl From<BgpAnalysisSuggestion> for RoaDefinitionUpdates {
             removed.insert(auth);
         }
 
+        for auth in redundant.into_iter() {
+            removed.insert(auth);
+        }
+
         RoaDefinitionUpdates::new(added, removed)
     }
 }
@@ -143,6 +154,8 @@ impl Default for BgpAnalysisSuggestion {
             invalid_asn: vec![],
             invalid_length: vec![],
             too_permissive: vec![],
+            disallowing: vec![],
+            redundant: vec![],
             keep: vec![],
             as0_redundant: vec![],
             keep_disallowing: vec![],
@@ -170,6 +183,14 @@ impl BgpAnalysisSuggestion {
 
     pub fn add_invalid_length(&mut self, announcement: Announcement) {
         self.invalid_length.push(announcement);
+    }
+
+    pub fn add_disallowing(&mut self, authorization: RoaDefinition) {
+        self.disallowing.push(authorization);
+    }
+
+    pub fn add_redundant(&mut self, authorization: RoaDefinition) {
+        self.redundant.push(authorization);
     }
 
     pub fn add_as0_redundant(&mut self, authorization: RoaDefinition) {
@@ -213,6 +234,28 @@ impl fmt::Display for BgpAnalysisSuggestion {
                 "Remove the following AS0 ROAs made redundant by ROAs for the same prefix and a real ASN:"
             )?;
             for auth in &self.as0_redundant {
+                writeln!(f, "  {}", auth)?;
+            }
+            writeln!(f)?;
+        }
+
+        if !self.redundant.is_empty() {
+            writeln!(
+                f,
+                "Remove the following ROAs made redundant by a covering ROA using maxlength:"
+            )?;
+            for auth in &self.redundant {
+                writeln!(f, "  {}", auth)?;
+            }
+            writeln!(f)?;
+        }
+
+        if !self.disallowing.is_empty() {
+            writeln!(
+                f,
+                "Remove the following ROAs which only disallow announcements (did you use the wrong ASN?), if this is intended you may want to use AS0 instead:"
+            )?;
+            for auth in &self.disallowing {
                 writeln!(f, "  {}", auth)?;
             }
             writeln!(f)?;
@@ -313,9 +356,13 @@ impl From<BgpAnalysisReport> for BgpStats {
                     stats.increment_roas_total();
                     stats.increment_roas_too_permissive();
                 }
-                BgpAnalysisState::RoaAs0Redundant => {
+                BgpAnalysisState::RoaRedundant | BgpAnalysisState::RoaAs0Redundant => {
                     stats.increment_roas_total();
                     stats.increment_roas_redundant();
+                }
+                BgpAnalysisState::RoaDisallowing => {
+                    stats.increment_roas_total();
+                    stats.increment_roas_disallowing();
                 }
                 BgpAnalysisState::RoaAs0 | BgpAnalysisState::RoaNoAnnouncementInfo | BgpAnalysisState::RoaSeen => {
                     stats.increment_roas_total()
@@ -363,6 +410,67 @@ impl fmt::Display for BgpAnalysisReport {
                 writeln!(f)?;
             }
 
+            if let Some(redundant) = entry_map.get(&BgpAnalysisState::RoaRedundant) {
+                writeln!(
+                    f,
+                    "Authorizations which are *redundant* - they are already included in full by other authorizations:"
+                )?;
+                for roa in redundant {
+                    writeln!(f)?;
+                    writeln!(f, "\tDefinition: {}", roa.definition)?;
+                    writeln!(f)?;
+                    writeln!(f, "\t\tAuthorizes:")?;
+                    for ann in roa.authorizes.iter() {
+                        writeln!(f, "\t\t{}", ann)?;
+                    }
+
+                    if !roa.disallows.is_empty() {
+                        writeln!(f)?;
+                        writeln!(f, "\t\tDisallows:")?;
+                        for ann in roa.disallows.iter() {
+                            writeln!(f, "\t\t{}", ann)?;
+                        }
+                    }
+
+                    writeln!(f)?;
+                    writeln!(f, "\t\tMade redundant by:")?;
+                    for redundant_by in roa.made_redundant_by.iter() {
+                        writeln!(f, "\t\t{}", redundant_by)?;
+                    }
+                }
+                writeln!(f)?;
+            }
+
+            if let Some(unseens) = entry_map.get(&BgpAnalysisState::RoaUnseen) {
+                writeln!(
+                    f,
+                    "Authorizations for which no announcements are seen (you may wish to remove these):"
+                )?;
+                writeln!(f)?;
+                for roa in unseens {
+                    writeln!(f, "\tDefinition: {}", roa.definition)?;
+                }
+                writeln!(f)?;
+            }
+
+            if let Some(disallowing) = entry_map.get(&BgpAnalysisState::RoaDisallowing) {
+                writeln!(
+                    f,
+                    "Authorizations disallowing announcements seen. You may want to use AS0 ROAs instead:"
+                )?;
+                for roa in disallowing {
+                    writeln!(f)?;
+                    writeln!(f, "\tDefinition: {}", roa.definition)?;
+                    writeln!(f)?;
+                    writeln!(f)?;
+                    writeln!(f, "\t\tDisallows:")?;
+                    for ann in roa.disallows.iter() {
+                        writeln!(f, "\t\t{}", ann)?;
+                    }
+                }
+                writeln!(f)?;
+            }
+
             if let Some(too_permissive) = entry_map.get(&BgpAnalysisState::RoaTooPermissive) {
                 writeln!(f, "Authorizations which may be too permissive:")?;
 
@@ -382,18 +490,6 @@ impl fmt::Display for BgpAnalysisReport {
                             writeln!(f, "\t\t{}", ann)?;
                         }
                     }
-                }
-                writeln!(f)?;
-            }
-
-            if let Some(unseens) = entry_map.get(&BgpAnalysisState::RoaUnseen) {
-                writeln!(
-                    f,
-                    "Authorizations for which no announcements are seen (you may wish to remove these):"
-                )?;
-                writeln!(f)?;
-                for roa in unseens {
-                    writeln!(f, "\tDefinition: {}", roa.definition)?;
                 }
                 writeln!(f)?;
             }
@@ -433,20 +529,6 @@ impl fmt::Display for BgpAnalysisReport {
                 writeln!(f)?;
             }
 
-            if let Some(invalid_asn) = entry_map.get(&BgpAnalysisState::AnnouncementInvalidAsn) {
-                writeln!(f, "Announcements from an unauthorized ASN:")?;
-                for ann in invalid_asn {
-                    writeln!(f)?;
-                    writeln!(f, "\tAnnouncement: {}", ann.definition)?;
-                    writeln!(f)?;
-                    writeln!(f, "\t\tDisallowed by authorization(s):")?;
-                    for roa in ann.disallowed_by.iter() {
-                        writeln!(f, "\t\t{}", roa)?;
-                    }
-                }
-                writeln!(f)?;
-            }
-
             if let Some(invalid_length) = entry_map.get(&BgpAnalysisState::AnnouncementInvalidLength) {
                 writeln!(
                     f,
@@ -464,14 +546,16 @@ impl fmt::Display for BgpAnalysisReport {
                 writeln!(f)?;
             }
 
-            if let Some(not_found) = entry_map.get(&BgpAnalysisState::AnnouncementNotFound) {
-                writeln!(
-                    f,
-                    "Announcements which are 'not found' (not covered by any of your authorizations):"
-                )?;
-                writeln!(f)?;
-                for ann in not_found {
+            if let Some(invalid_asn) = entry_map.get(&BgpAnalysisState::AnnouncementInvalidAsn) {
+                writeln!(f, "Announcements from an unauthorized ASN:")?;
+                for ann in invalid_asn {
+                    writeln!(f)?;
                     writeln!(f, "\tAnnouncement: {}", ann.definition)?;
+                    writeln!(f)?;
+                    writeln!(f, "\t\tDisallowed by authorization(s):")?;
+                    for roa in ann.disallowed_by.iter() {
+                        writeln!(f, "\t\t{}", roa)?;
+                    }
                 }
                 writeln!(f)?;
             }
@@ -480,6 +564,18 @@ impl fmt::Display for BgpAnalysisReport {
                 writeln!(f, "Announcements disallowed by 'AS0' ROAs:")?;
                 writeln!(f)?;
                 for ann in disallowed {
+                    writeln!(f, "\tAnnouncement: {}", ann.definition)?;
+                }
+                writeln!(f)?;
+            }
+
+            if let Some(not_found) = entry_map.get(&BgpAnalysisState::AnnouncementNotFound) {
+                writeln!(
+                    f,
+                    "Announcements which are 'not found' (not covered by any of your authorizations):"
+                )?;
+                writeln!(f)?;
+                for ann in not_found {
                     writeln!(f, "\tAnnouncement: {}", ann.definition)?;
                 }
                 writeln!(f)?;
@@ -514,11 +610,7 @@ impl BgpAnalysisEntry {
         &self.definition
     }
 
-    pub fn into_definition(self) -> RoaDefinition {
-        self.definition
-    }
-
-    pub fn into_announcement(self) -> Announcement {
+    pub fn announcement(&self) -> Announcement {
         self.definition.into()
     }
 
@@ -564,6 +656,19 @@ impl BgpAnalysisEntry {
         }
     }
 
+    pub fn roa_disallowing(definition: RoaDefinition, mut disallows: Vec<Announcement>) -> Self {
+        disallows.sort();
+        BgpAnalysisEntry {
+            definition,
+            state: BgpAnalysisState::RoaDisallowing,
+            allowed_by: None,
+            disallowed_by: vec![],
+            made_redundant_by: vec![],
+            authorizes: vec![],
+            disallows,
+        }
+    }
+
     pub fn roa_as0(definition: RoaDefinition, mut disallows: Vec<Announcement>) -> Self {
         disallows.sort();
         BgpAnalysisEntry {
@@ -587,6 +692,26 @@ impl BgpAnalysisEntry {
             made_redundant_by,
             authorizes: vec![],
             disallows: vec![],
+        }
+    }
+
+    pub fn roa_redundant(
+        definition: RoaDefinition,
+        mut authorizes: Vec<Announcement>,
+        mut disallows: Vec<Announcement>,
+        mut made_redundant_by: Vec<RoaDefinition>,
+    ) -> Self {
+        authorizes.sort();
+        disallows.sort();
+        made_redundant_by.sort();
+        BgpAnalysisEntry {
+            definition,
+            state: BgpAnalysisState::RoaRedundant,
+            allowed_by: None,
+            disallowed_by: vec![],
+            made_redundant_by,
+            authorizes,
+            disallows,
         }
     }
 
@@ -708,7 +833,9 @@ impl PartialOrd for BgpAnalysisEntry {
 #[serde(rename_all = "snake_case")]
 pub enum BgpAnalysisState {
     RoaSeen,
+    RoaRedundant,
     RoaUnseen,
+    RoaDisallowing,
     RoaTooPermissive,
     RoaAs0,
     RoaAs0Redundant,

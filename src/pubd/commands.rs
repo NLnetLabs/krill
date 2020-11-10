@@ -17,6 +17,7 @@ pub enum CmdDet {
     AddPublisher(rfc8183::PublisherRequest),
     RemovePublisher(PublisherHandle),
     Publish(PublisherHandle, PublishDelta),
+    SessionReset,
 }
 
 impl CommandDetails for CmdDet {
@@ -40,6 +41,10 @@ impl CmdDet {
     pub fn publish(handle: &RepositoryHandle, publisher: PublisherHandle, delta: PublishDelta) -> Cmd {
         SentCommand::new(handle, None, CmdDet::Publish(publisher, delta))
     }
+
+    pub fn session_reset(handle: &RepositoryHandle) -> Cmd {
+        SentCommand::new(handle, None, CmdDet::SessionReset)
+    }
 }
 
 impl fmt::Display for CmdDet {
@@ -62,6 +67,7 @@ impl From<CmdDet> for StorableRepositoryCommand {
                 delta.updates().len(),
                 delta.withdraws().len(),
             ),
+            CmdDet::SessionReset => StorableRepositoryCommand::SessionReset,
         }
     }
 }

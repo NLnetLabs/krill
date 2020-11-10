@@ -614,6 +614,7 @@ pub enum StorableRepositoryCommand {
     AddPublisher(PublisherHandle, String),
     RemovePublisher(PublisherHandle),
     Publish(PublisherHandle, usize, usize, usize),
+    SessionReset,
 }
 
 impl WithStorableDetails for StorableRepositoryCommand {
@@ -632,6 +633,7 @@ impl WithStorableDetails for StorableRepositoryCommand {
                     .with_arg("updated", updated)
                     .with_arg("withdrawn", withdrawn)
             }
+            StorableRepositoryCommand::SessionReset => CommandSummary::new("pubd-session-reset", &self),
         }
     }
 }
@@ -648,6 +650,7 @@ impl fmt::Display for StorableRepositoryCommand {
                 "Published for '{}': {} published, {} updated, {} withdrawn",
                 pbl, published, updated, withdrawn
             ),
+            StorableRepositoryCommand::SessionReset => write!(f, "Publication server session reset"),
         }
     }
 }

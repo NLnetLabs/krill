@@ -4,7 +4,7 @@ use std::{fmt, fs};
 use rpki::uri;
 use rpki::x509::Time;
 
-use crate::commons::api::rrdp::{Delta, DeltaElements, Notification, RrdpSession};
+use crate::commons::api::rrdp::{Delta, DeltaElements, Notification, RrdpSession, Snapshot};
 use crate::commons::api::{Handle, PublisherHandle, RepositoryHandle};
 use crate::commons::crypto::{IdCert, IdCertBuilder, KrillSigner};
 use crate::commons::error::Error;
@@ -113,6 +113,32 @@ impl RrdpUpdate {
     }
 }
 
+//------------ RrdpSessionReset ----------------------------------------------
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RrdpSessionReset {
+    snapshot: Snapshot,
+    notification: Notification,
+}
+
+impl RrdpSessionReset {
+    pub fn new(snapshot: Snapshot, notification: Notification) -> Self {
+        RrdpSessionReset { snapshot, notification }
+    }
+
+    pub fn time(&self) -> Time {
+        self.notification.time()
+    }
+
+    pub fn notification(&self) -> &Notification {
+        &self.notification
+    }
+
+    pub fn unpack(self) -> (Snapshot, Notification) {
+        (self.snapshot, self.notification)
+    }
+}
+
 //------------ EvtDet --------------------------------------------------------
 
 pub type Evt = StoredEvent<EvtDet>;
@@ -131,6 +157,9 @@ pub enum EvtDet {
     // RRDP publication events
     #[display(fmt = "Publisher with handle '{}' published", _0)]
     Published(PublisherHandle, RrdpUpdate),
+
+    #[display(fmt = "RRDP session reset")]
+    RrdpSessionReset(RrdpSessionReset),
 }
 
 impl EvtDet {
@@ -159,5 +188,9 @@ impl EvtDet {
         update: RrdpUpdate,
     ) -> Evt {
         StoredEvent::new(repository, version, EvtDet::Published(publisher, update))
+    }
+
+    pub(super) fn rrdp_session_reset(repository: &RepositoryHandle, version: u64, session: RrdpSessionReset) -> Evt {
+        StoredEvent::new(repository, version, EvtDet::RrdpSessionReset(session))
     }
 }
