@@ -59,4 +59,36 @@ describe('Config File Users', () => {
     cy.get('.logout').click()
     cy.contains('Sign In')
   })
+
+  it('Should be timed out', () => {
+    // take manual control of time in the browser
+    cy.clock()
+
+    // login
+    cy.visit('/')
+    cy.get('input[placeholder="Your username"]').type('admin@krill')
+    cy.get(':password').type('admin_pass')
+    cy.contains('Sign In').click()
+    cy.contains('Logged in as: admin@krill')
+
+    // Skip ahead a minute and check that we are still logged in
+    cy.tick(1*60*1000)
+    cy.visit('/')
+    cy.contains('Logged in as: admin@krill')
+    cy.contains('Sign In').should('not.exist')
+
+    // Skip ahead till just before the idle timeout and check that we are still
+    // logged in.
+    cy.tick(28*60*1000)
+    cy.visit('/')
+    cy.contains('Logged in as: admin@krill')
+    cy.contains('Sign In').should('not.exist')
+
+    // Skip ahead another 31 minutes to just beyond the UI 30 minute idle
+    // timeout threshold and verify that we have been logged out
+    cy.tick(31*60*1000)
+    cy.visit('/')
+    cy.contains('Logged in as').should('not.exist')
+    cy.contains('Sign In')
+  })
 })
