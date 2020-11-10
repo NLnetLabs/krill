@@ -61,7 +61,7 @@ rustc_version   = "0.2.3"
 default = []
 rta = []
 functional-tests = []
-web-ui-tests = []
+ui-tests = []
 extra-debug = [ "rpki/extra-debug" ]
 static-openssl = [ "openssl/vendored" ]
 
