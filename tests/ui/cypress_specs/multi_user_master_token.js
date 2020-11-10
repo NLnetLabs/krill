@@ -1,7 +1,23 @@
 describe('Master API token', () => {
+  it('The correct login form is shown', () => {
+    cy.visit('/')
+
+    // make sure we haven't been redirected away from Krill (as would be the
+    // case if an OpenID Connect login form were shown)
+    cy.url().should('include', Cypress.config('baseUrl'))
+
+    // make sure that no user name field exists (as would be the case if the
+    // built-in config file based local user login form were shown)
+    cy.contains('Username').should('not.exist')
+
+    // check that a password form input field and the text Password are shown on
+    // the page
+    cy.get(':password')
+    cy.contains('Password')
+  })
+
   it('Cannot login with empty password', () => {
     cy.visit('/')
-    cy.contains('Password')
     cy.get(':password').clear()
     cy.contains('Sign In').click()
     cy.contains('Please enter your password')
@@ -9,7 +25,6 @@ describe('Master API token', () => {
 
   it('Cannot login with incorrect password', () => {
     cy.visit('/')
-    cy.contains('Password')
     cy.get(':password').clear().type('abc')
     cy.contains('Sign In').click()
     cy.contains('The credentials you specified are wrong')
@@ -17,16 +32,14 @@ describe('Master API token', () => {
 
   it('Can login with correct password', () => {
     cy.visit('/')
-    cy.contains('Password')
-    cy.get(':password').type('dummy-test-token')
+    cy.get(':password').type('dummy-master-token')
     cy.contains('Sign In').click()
     cy.contains('Logged in as: master-token@krill.conf')
   })
 
   it('Can logout', () => {
     cy.visit('/')
-    cy.contains('Password')
-    cy.get(':password').type('dummy-test-token')
+    cy.get(':password').type('dummy-master-token')
     cy.contains('Sign In').click()
     cy.contains('Logged in as: master-token@krill.conf')
     cy.get('.logout').click()

@@ -16,10 +16,10 @@ module.exports = (on, config) => {
   // }))
 
   return Object.assign({}, config, {
-    fixturesFolder: 'test-resources/e2e/web-ui/fixtures',
-    integrationFolder: 'tests/e2e/web-ui/specs',
-    screenshotsFolder: 'target/e2e/web-ui/screenshots',
-    videosFolder: 'target/e2e/web-ui/videos',
+    fixturesFolder: 'test-resources/ui/',
+    integrationFolder: 'tests/ui/cypress_specs',
+    screenshotsFolder: 'target/ui/screenshots',
+    videosFolder: 'target/ui/videos',
     supportFile: false
   })
 }
