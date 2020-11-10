@@ -42,7 +42,7 @@ describe('Config File Users', () => {
     cy.contains('The credentials you specified are wrong')
   })
 
-  it('Can login with correct credentials', () => {
+  it('Can login with admin credentials', () => {
     cy.visit('/')
     cy.get('input[placeholder="Your username"]').type('admin@krill')
     cy.get(':password').type('admin_pass')
@@ -90,5 +90,60 @@ describe('Config File Users', () => {
     cy.visit('/')
     cy.contains('Logged in as').should('not.exist')
     cy.contains('Sign In')
+  })
+
+  it('Can login with readonly credentials', () => {
+    cy.visit('/')
+    cy.get('input[placeholder="Your username"]').type('readonly@krill')
+    cy.get(':password').type('readonly_pass')
+    cy.contains('Sign In').click()
+    cy.contains('Logged in as: readonly@krill')
+  })
+
+  it('Cannot create CA as readnly user', () => {
+    cy.visit('/')
+    cy.get('input[placeholder="Your username"]').type('readonly@krill')
+    cy.get(':password').type('readonly_pass')
+    cy.contains('Sign In').click()
+    cy.contains('Logged in as: readonly@krill')
+    cy.contains('Welcome to Krill')
+
+    // try to create a CA
+    cy.contains('CA Handle')
+    cy.get('form input[type="text"]').type('dummy-ca-name')
+    cy.contains('Create CA').click()
+    cy.contains('OK').click()
+
+    // still on the welcome page but now an error is showing
+    cy.contains('Welcome to Krill')
+    cy.contains('Error')
+  })
+
+  it('Can login with readwrite credentials', () => {
+    cy.visit('/')
+    cy.get('input[placeholder="Your username"]').type('readwrite@krill')
+    cy.get(':password').type('readwrite_pass')
+    cy.contains('Sign In').click()
+    cy.contains('Logged in as: readwrite@krill')
+  })
+
+  it('Can create CA as readwrite user', () => {
+    cy.visit('/')
+    cy.get('input[placeholder="Your username"]').type('readwrite@krill')
+    cy.get(':password').type('readwrite_pass')
+    cy.contains('Sign In').click()
+    cy.contains('Logged in as: readwrite@krill')
+    cy.contains('Welcome to Krill')
+
+    // try to create a CA
+    cy.contains('CA Handle')
+    cy.get('form input[type="text"]').type('dummy-ca-name')
+    cy.contains('Create CA').click()
+    cy.contains('OK').click()
+
+    // we're no longer on the welcome page and the CA name we created is visible
+    // on the page
+    cy.contains('Welcome to Krill').should('not.exist')
+    cy.contains('dummy-ca-name')
   })
 })
