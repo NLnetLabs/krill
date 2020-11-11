@@ -100,7 +100,7 @@ describe('Config File Users', () => {
     cy.contains('Logged in as: readonly@krill')
   })
 
-  it('Cannot create CA as readnly user', () => {
+  it('Cannot create CA as readonly user', () => {
     cy.visit('/')
     cy.get('input[placeholder="Your username"]').type('readonly@krill')
     cy.get(':password').type('readonly_pass')
