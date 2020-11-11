@@ -73,6 +73,9 @@ panic = "abort"
 [dev-dependencies]
 assert_cmd = "1.0.1"
 
+# for user management
+tiny_http = "0.7.0"
+
 # ------------------------------------------------------------------------------
 # START DEBIAN PACKAGING
 #
