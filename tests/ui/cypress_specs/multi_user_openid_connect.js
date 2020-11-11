@@ -27,6 +27,26 @@ describe('Config File Users', () => {
       cy.contains('Logged in as: admin@krill')
     }) 
 
+    it('Can logout', () => {
+      // login
+      cy.visit('/')
+      cy.get('input[name="username"]').type("admin@krill")
+      cy.contains('Sign In').click()
+
+      // verify that we are shown to be logged in to the Krill UI
+      cy.url().should('include', Cypress.config('baseUrl'))
+      cy.contains('Logged in as: admin@krill')
+
+      // logout
+      cy.get('.logout').click()
+
+      // verify that we are shown the OpenID Connect provider login page
+      cy.contains('Logged in as:').should('not.exist')
+      cy.url().should('not.include', Cypress.config('baseUrl'))
+      cy.contains('Mock OpenID Connect login form')
+      cy.get('input[name="username"]')
+    })
+
     it('Can login with readonly credentials', () => {
       cy.visit('/')
       cy.get('input[name="username"]').type("readonly@krill")
