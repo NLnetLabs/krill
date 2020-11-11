@@ -13,9 +13,31 @@ describe('Config File Users', () => {
       cy.get('input[name="username"]')
     })
 
-    it('Login', () => {
+    it('Cannot login with incorrect credentials', () => {
       cy.visit('/')
-      cy.get('input[name="username"]').clear().type("readonly")
+      cy.get('input[name="username"]').type("wrong_user_name")
       cy.contains('Sign In').click()
+      // TODO: I should fail. How we can we tell?
+    })
+  
+    it('Can login with admin credentials', () => {
+      cy.visit('/')
+      cy.get('input[name="username"]').type("admin@krill")
+      cy.contains('Sign In').click()
+      cy.contains('Logged in as: admin@krill')
+    }) 
+
+    it('Can login with readonly credentials', () => {
+      cy.visit('/')
+      cy.get('input[name="username"]').type("readonly@krill")
+      cy.contains('Sign In').click()
+      cy.contains('Logged in as: readonly@krill')
+    }) 
+
+    it('Can login with readonly credentials', () => {
+      cy.visit('/')
+      cy.get('input[name="username"]').type("readwrite@krill")
+      cy.contains('Sign In').click()
+      cy.contains('Logged in as: readwrite@krill')
     }) 
 })
