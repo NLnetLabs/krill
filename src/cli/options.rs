@@ -1942,20 +1942,6 @@ pub enum Command {
     Init(KrillInitDetails),
 }
 
-impl fmt::Display for Command {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Command::NotSet => write!(f, "not set"),
-            Command::Health => write!(f, "health"),
-            Command::Info => write!(f, "info"),
-            Command::Bulk(cmd) => write!(f, "bulk: {}", cmd),
-            Command::CertAuth(cmd) => write!(f, "ca: {}", cmd),
-            Command::Publishers(cmd) => write!(f, "publishers: {}", cmd),
-            Command::Init(_) => write!(f, "init"),
-        }
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 pub enum CaCommand {
@@ -2010,81 +1996,6 @@ pub enum CaCommand {
 
     // List all CAs
     List,
-}
-
-impl fmt::Display for CaCommand {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            CaCommand::Init(init) => write!(f, "init ca: '{}'", init),
-            CaCommand::UpdateId(ca) => write!(f, "update id for ca: '{}'", ca),
-
-            // Publishing
-            CaCommand::RepoPublisherRequest(ca) => write!(f, "get repo request for ca: '{}'", ca),
-            CaCommand::RepoDetails(ca) => write!(f, "get repo details for ca: '{}'", ca),
-            CaCommand::RepoUpdate(ca, _update) => write!(f, "update repo details for ca: '{}'", ca),
-            CaCommand::RepoStatus(ca) => write!(f, "get repo status for ca: '{}'", ca),
-
-            // Parents (to this CA)
-            CaCommand::ChildRequest(ca) => write!(f, "get child request for ca: '{}'", ca),
-            CaCommand::AddParent(ca, parent) => write!(f, "add parent '{}' to ca: '{}'", parent, ca),
-            CaCommand::MyParentCaContact(ca, parent) => write!(f, "show parent '{}' of ca: '{}'", parent, ca),
-            CaCommand::ParentStatuses(ca) => write!(f, "show parents status overview for ca: '{}'", ca),
-            CaCommand::UpdateParentContact(ca, parent, contact) => write!(
-                f,
-                "update contact for parent {} of ca: '{}' to: {}",
-                parent, ca, contact
-            ),
-            CaCommand::RemoveParent(ca, parent) => write!(f, "remove parent {} of ca: '{}'", parent, ca),
-
-            // Children
-            CaCommand::ParentResponse(ca, child) => {
-                write!(f, "parent response from ca: '{}' for child '{}'", ca, child)
-            }
-            CaCommand::ChildInfo(ca, child) => write!(f, "show child {} of ca: '{}'", child, ca),
-            CaCommand::ChildAdd(ca, request) => write!(f, "add child {} to ca: '{}'", request, ca),
-            CaCommand::ChildUpdate(ca, child, _update) => write!(f, "update child {} of ca: '{}'", child, ca),
-            CaCommand::ChildDelete(ca, child) => write!(f, "delete child {} of ca: '{}'", child, ca),
-
-            // Key Management
-            CaCommand::KeyRollInit(ca) => write!(f, "initialise key roll for ca: '{}'", ca),
-            CaCommand::KeyRollActivate(ca) => write!(f, "activate key roll for ca: '{}'", ca),
-
-            // Authorizations
-            CaCommand::RouteAuthorizationsList(ca) => write!(f, "list ROAS for ca: '{}'", ca),
-            CaCommand::RouteAuthorizationsUpdate(ca, updates) => {
-                write!(f, "Update ROAS for ca: '{}' -> {}", ca, updates)
-            }
-            CaCommand::RouteAuthorizationsTryUpdate(ca, updates) => {
-                write!(f, "Try to update ROAS for ca: '{}' -> {}", ca, updates)
-            }
-            CaCommand::RouteAuthorizationsDryRunUpdate(ca, updates) => {
-                write!(f, "Perform a dry-run update of ROAS for ca: '{}' -> {}", ca, updates)
-            }
-            CaCommand::BgpAnalysisFull(ca) => write!(f, "Show detailed ROA vs BGP analysis for ca: '{}'", ca),
-            CaCommand::BgpAnalysisSuggest(ca, _) => {
-                write!(f, "Show ROA suggestions based on BGP analysis for ca: '{}'", ca)
-            }
-
-            // Show details for this CA
-            CaCommand::Show(ca) => write!(f, "Show details for ca: '{}'", ca),
-            CaCommand::ShowHistory(ca, options) => write!(f, "Show history for ca: '{}', mode: {}", ca, options),
-            CaCommand::ShowAction(ca, key) => write!(f, "Show action details for ca: '{}', action key: {}", ca, key),
-            CaCommand::Issues(ca_opt) => match ca_opt {
-                None => write!(f, "Show issues for all CAs"),
-                Some(ca) => write!(f, "Show issues for ca: '{}'", ca),
-            },
-
-            // RTA
-            CaCommand::RtaList(ca) => write!(f, "List RTAs for CA: '{}'", ca),
-            CaCommand::RtaShow(ca, name, _) => write!(f, "Show RTA '{}' for CA: '{}'", name, ca),
-            CaCommand::RtaSign(ca, _name, _req) => write!(f, "Sign RTA request for CA: '{}'", ca),
-            CaCommand::RtaMultiPrep(ca, _name, _prep) => write!(f, "Prepare a multi-signed RTA for CA: '{}'", ca),
-            CaCommand::RtaMultiCoSign(ca, _name, _rta) => write!(f, "Cosign an RTA for CA: '{}'", ca),
-
-            // List all CAs
-            CaCommand::List => write!(f, "List all cas"),
-        }
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2147,14 +2058,8 @@ pub enum PublishersCommand {
     ShowPublisher(PublisherHandle),
     RemovePublisher(PublisherHandle),
     RepositoryResponse(PublisherHandle),
-
-    #[display(fmt = "Show publishers which last published longer than '{}' seconds ago", _0)]
     StalePublishers(i64),
-
-    #[display(fmt = "Show server stats")]
     Stats,
-
-    #[display(fmt = "Show publisher list")]
     PublisherList,
 }
 
@@ -2213,46 +2118,48 @@ impl Default for KrillInitDetails {
 
 //------------ Error ---------------------------------------------------------
 
-#[derive(Debug, Display)]
+#[derive(Debug)]
 pub enum Error {
-    #[display(fmt = "{}", _0)]
     UriError(uri::Error),
-
-    #[display(fmt = "{}", _0)]
     IoError(io::Error),
-
-    #[display(fmt = "{}", _0)]
     ReportError(ReportError),
-
-    #[display(fmt = "Invalid RFC8183 XML: {}", _0)]
     Rfc8183(rfc8183::Error),
-
-    #[display(fmt = "Invalid resources requested: {}", _0)]
     ResSetErr(ResourceSetError),
-
-    #[display(fmt = "{}", _0)]
     InvalidRouteDelta(AuthorizationFmtError),
-
-    #[display(fmt = "The publisher handle may only contain -_A-Za-z0-9, (\\ /) see issue #83")]
     InvalidHandle,
-
-    #[display(fmt = "Use a number of 0 or more seconds.")]
     InvalidSeconds,
-
-    #[display(fmt = "Missing argument: --{}, alternatively you may use env var: {}", _0, _1)]
     MissingArgWithEnv(String, String),
-
-    #[display(fmt = "You must specify resources when adding a CA (--asn, --ipv4, --ipv6)")]
     MissingResources,
-
-    #[display(fmt = "Invalid ID cert for child.")]
     InvalidChildIdCert,
-
-    #[display(fmt = "Unrecognised sub-command. Use 'help'.")]
     UnrecognisedSubCommand,
-
-    #[display(fmt = "{}", _0)]
     GeneralArgumentError(String),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Error::UriError(e) => e.fmt(f),
+            Error::IoError(e) => e.fmt(f),
+            Error::ReportError(e) => e.fmt(f),
+            Error::Rfc8183(e) => write!(f, "Invalid RFC8183 XML: {}", e),
+            Error::ResSetErr(e) => write!(f, "Invalid resources requested: {}", e),
+            Error::InvalidRouteDelta(e) => e.fmt(f),
+            Error::InvalidHandle => write!(
+                f,
+                "The publisher handle may only contain -_A-Za-z0-9, (\\ /) see issue #83"
+            ),
+            Error::InvalidSeconds => write!(f, "Use a number of 0 or more seconds."),
+            Error::MissingArgWithEnv(arg, var) => write!(
+                f,
+                "Missing argument: --{}, alternatively you may use env var: {}",
+                arg, var
+            ),
+            Error::MissingResources => write!(f, "You must specify resources when adding a CA (--asn, --ipv4, --ipv6)"),
+            Error::InvalidChildIdCert => write!(f, "Invalid ID cert for child."),
+            Error::UnrecognisedSubCommand => write!(f, "Unrecognised sub-command. Use 'help'."),
+            Error::GeneralArgumentError(s) => s.fmt(f),
+        }
+    }
 }
 
 impl Error {

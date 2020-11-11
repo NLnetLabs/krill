@@ -292,41 +292,40 @@ async fn opt_text_response(res: Response) -> Result<Option<String>, Error> {
 
 //------------ Error ---------------------------------------------------------
 
-#[derive(Debug, Display)]
+#[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum Error {
-    #[display(fmt = "Request Error: {}", _0)]
     RequestError(reqwest::Error),
-
-    #[display(fmt = "Access Forbidden")]
     Forbidden,
-
-    #[display(fmt = "Received bad status: {}", _0)]
     BadStatus(StatusCode),
-
-    #[display(fmt = "Status: {}, Error: {}", _0, _1)]
     ErrorWithBody(StatusCode, String),
-
-    #[display(fmt = "Status: {}, ErrorResponse: {}", _0, _1)]
     ErrorWithJson(StatusCode, ErrorResponse),
-
-    #[display(fmt = "{}", _0)]
     JsonError(serde_json::Error),
-
-    #[display(fmt = "{}", _0)]
     InvalidHeader(InvalidHeaderValue),
-
-    #[display(fmt = "Empty response received from server")]
     EmptyResponse,
-
-    #[display(fmt = "Unexpected response: {}", _0)]
     UnexpectedResponse(String),
-
-    #[display(
-        fmt = "HTTPS root cert error, check files under dir defined in KRILL_HTTPS_ROOT_CERTS: {}",
-        _0
-    )]
     HttpsRootCertError(String),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Error::RequestError(e) => write!(f, "Request Error: {}", e),
+            Error::Forbidden => write!(f, "Access Forbidden"),
+            Error::BadStatus(code) => write!(f, "Received bad status: {}", code),
+            Error::ErrorWithBody(code, e) => write!(f, "Status: {}, Error: {}", code, e),
+            Error::ErrorWithJson(code, res) => write!(f, "Status: {}, ErrorResponse: {}", code, res),
+            Error::JsonError(e) => e.fmt(f),
+            Error::InvalidHeader(e) => e.fmt(f),
+            Error::EmptyResponse => write!(f, "Empty response received from server"),
+            Error::UnexpectedResponse(s) => write!(f, "Unexpected response: {}", s),
+            Error::HttpsRootCertError(e) => write!(
+                f,
+                "HTTPS root cert error, check files under dir defined in KRILL_HTTPS_ROOT_CERTS: {}",
+                e
+            ),
+        }
+    }
 }
 
 impl Error {

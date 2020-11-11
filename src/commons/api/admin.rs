@@ -121,9 +121,14 @@ impl<'de> Deserialize<'de> for Handle {
     }
 }
 
-#[derive(Debug, Display)]
-#[display(fmt = "Handle MUST have pattern: [-_A-Za-z0-9/]{{1,255}}")]
+#[derive(Debug)]
 pub struct InvalidHandle;
+
+impl fmt::Display for InvalidHandle {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Handle MUST have pattern: [-_A-Za-z0-9/]{{1,255}}")
+    }
+}
 
 //------------ Token ------------------------------------------------------
 
@@ -383,11 +388,16 @@ impl fmt::Display for RepositoryContact {
 //------------ ParentCaReq ---------------------------------------------------
 
 /// This type defines all parent ca details needed to add a parent to a CA
-#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
-#[display(fmt = "parent '{}' contact '{}'", handle, contact)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ParentCaReq {
     handle: ParentHandle,     // the local name the child gave to the parent
     contact: ParentCaContact, // where the parent can be contacted
+}
+
+impl fmt::Display for ParentCaReq {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "parent '{}' contact '{}'", self.handle, self.contact)
+    }
 }
 
 impl ParentCaReq {
@@ -490,17 +500,22 @@ impl fmt::Display for ParentCaContact {
 }
 
 /// This type is used when saving and presenting command history
-#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StorableParentContact {
-    #[display(fmt = "This CA is a TA")]
     Ta,
-
-    #[display(fmt = "Embedded parent")]
     Embedded,
-
-    #[display(fmt = "RFC 6492 Parent")]
     Rfc6492,
+}
+
+impl fmt::Display for StorableParentContact {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            StorableParentContact::Ta => write!(f, "This CA is a TA"),
+            StorableParentContact::Embedded => write!(f, "Embedded parent"),
+            StorableParentContact::Rfc6492 => write!(f, "RFC 6492 Parent"),
+        }
+    }
 }
 
 impl From<ParentCaContact> for StorableParentContact {
@@ -546,12 +561,21 @@ pub enum CertAuthPubMode {
 
 //------------ AddChildRequest -----------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
-#[display(fmt = "handle '{}' resources '{}' kind '{}'", handle, resources, auth)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AddChildRequest {
     handle: Handle,
     resources: ResourceSet,
     auth: ChildAuthRequest,
+}
+
+impl fmt::Display for AddChildRequest {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "handle '{}' resources '{}' kind '{}'",
+            self.handle, self.resources, self.auth
+        )
+    }
 }
 
 impl AddChildRequest {
@@ -570,14 +594,21 @@ impl AddChildRequest {
 
 //------------ ChildAuthRequest ----------------------------------------------
 
-#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
 pub enum ChildAuthRequest {
-    #[display(fmt = "embedded")]
     Embedded,
-    #[display(fmt = "{}", _0)]
     Rfc8183(rfc8183::ChildRequest),
+}
+
+impl fmt::Display for ChildAuthRequest {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ChildAuthRequest::Embedded => write!(f, "embedded"),
+            ChildAuthRequest::Rfc8183(req) => req.fmt(f),
+        }
+    }
 }
 
 //------------ UpdateChildRequest --------------------------------------------

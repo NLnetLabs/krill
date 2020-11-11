@@ -1,5 +1,6 @@
 //! Some helper stuff for creating a private key and certificate for HTTPS
 //! in case they are not provided
+use std::fmt;
 use std::path::PathBuf;
 
 use bytes::Bytes;
@@ -209,28 +210,29 @@ impl TbsHttpsCertificate {
 
 //------------ Error ---------------------------------------------------------
 
-#[derive(Debug, Display)]
+#[derive(Debug)]
 pub enum Error {
-    #[display(fmt = "{}", _0)]
     IoError(std::io::Error),
-
-    #[display(fmt = "{}", _0)]
     OpenSslError(openssl::error::ErrorStack),
-
-    #[display(fmt = "{}", _0)]
     DecodeError(decode::Error),
-
-    #[display(fmt = "Could not make certificate")]
     BuildError,
-
-    #[display(fmt = "Certificate PEM file contains no certificates")]
     EmptyCertStack,
-
-    #[display(fmt = "Cannot create PKCS12 Identity: {}", _0)]
     Pkcs12(String),
-
-    #[display(fmt = "Connection error: {}", _0)]
     Connection(String),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Error::IoError(e) => e.fmt(f),
+            Error::OpenSslError(e) => e.fmt(f),
+            Error::DecodeError(e) => e.fmt(f),
+            Error::BuildError => write!(f, "Could not make certificate"),
+            Error::EmptyCertStack => write!(f, "Certificate PEM file contains no certificates"),
+            Error::Pkcs12(e) => write!(f, "Cannot create PKCS12 Identity: {}", e),
+            Error::Connection(e) => write!(f, "Connection error: {}", e),
+        }
+    }
 }
 
 impl From<openssl::error::ErrorStack> for Error {

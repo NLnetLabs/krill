@@ -98,9 +98,14 @@ impl<'de> Deserialize<'de> for RoaAggregateKey {
 
 //------------ AuthorizationFmtError -------------------------------------
 
-#[derive(Clone, Debug, Display, Eq, PartialEq)]
-#[display(fmt = "Invalid ROA Group format ({})", _0)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RoaAggregateKeyFmtError(String);
+
+impl fmt::Display for RoaAggregateKeyFmtError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Invalid ROA Group format ({})", self.0)
+    }
+}
 
 impl RoaAggregateKeyFmtError {
     fn string(s: &str) -> Self {
@@ -644,19 +649,23 @@ impl PartialOrd for AsNumber {
 
 //------------ AuthorizationFmtError -------------------------------------
 
-#[derive(Clone, Debug, Display, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AuthorizationFmtError {
-    #[display(fmt = "Invalid prefix string: {}", _0)]
     Pfx(String),
-
-    #[display(fmt = "Invalid asn in string: {}", _0)]
     Asn(String),
-
-    #[display(fmt = "Invalid authorization string: {}", _0)]
     Auth(String),
-
-    #[display(fmt = "Invalid authorization delta string: {}", _0)]
     Delta(String),
+}
+
+impl fmt::Display for AuthorizationFmtError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            AuthorizationFmtError::Pfx(s) => write!(f, "Invalid prefix string: {}", s),
+            AuthorizationFmtError::Asn(s) => write!(f, "Invalid asn in string: {}", s),
+            AuthorizationFmtError::Auth(s) => write!(f, "Invalid authorization string: {}", s),
+            AuthorizationFmtError::Delta(s) => write!(f, "Invalid authorization delta string: {}", s),
+        }
+    }
 }
 
 impl AuthorizationFmtError {

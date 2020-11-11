@@ -1,3 +1,4 @@
+use std::fmt;
 use std::str::FromStr;
 
 use serde::Serialize;
@@ -125,13 +126,19 @@ impl FromStr for ReportFormat {
 //------------ ReportError ---------------------------------------------------
 
 /// This type defines possible Errors for KeyStore
-#[derive(Debug, Display)]
+#[derive(Debug)]
 pub enum ReportError {
-    #[display(fmt = "This report format is not supported for this data")]
     UnsupportedFormat,
-
-    #[display(fmt = "This report format is not recognised: {}", _0)]
     UnrecognisedFormat(String),
+}
+
+impl fmt::Display for ReportError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ReportError::UnsupportedFormat => write!(f, "This report format is not supported for this data"),
+            ReportError::UnrecognisedFormat(s) => write!(f, "This report format is not recognised: {}", s),
+        }
+    }
 }
 
 //------------ Report --------------------------------------------------------

@@ -143,23 +143,25 @@ impl RrdpSessionReset {
 
 pub type Evt = StoredEvent<EvtDet>;
 
-#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
 pub enum EvtDet {
-    // Publisher related events
-    #[display(fmt = "Publisher with handle '{}' added", _0)]
     PublisherAdded(PublisherHandle, Publisher),
-
-    #[display(fmt = "Publisher with handle '{}', and its contents, removed", _0)]
     PublisherRemoved(PublisherHandle, RrdpUpdate),
-
-    // RRDP publication events
-    #[display(fmt = "Publisher with handle '{}' published", _0)]
     Published(PublisherHandle, RrdpUpdate),
-
-    #[display(fmt = "RRDP session reset")]
     RrdpSessionReset(RrdpSessionReset),
+}
+
+impl fmt::Display for EvtDet {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            EvtDet::PublisherAdded(pbl, _) => write!(f, "Publisher with handle '{}' added", pbl),
+            EvtDet::PublisherRemoved(pbl, _) => write!(f, "Publisher with handle '{}', and its contents, removed", pbl),
+            EvtDet::Published(pbl, _) => write!(f, "Publisher with handle '{}' published", pbl),
+            EvtDet::RrdpSessionReset(_) => write!(f, "RRDP session reset"),
+        }
+    }
 }
 
 impl EvtDet {

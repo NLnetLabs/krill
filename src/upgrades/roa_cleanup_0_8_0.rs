@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::fmt;
 
 use crate::commons::api::{RoaDefinition, RoaDefinitionUpdates};
 use crate::commons::bgp::make_roa_tree;
@@ -81,9 +82,14 @@ fn clean(roas: Vec<RoaDefinition>) -> Option<RoaDefinitionUpdates> {
     }
 }
 
-#[derive(Debug, Display)]
-#[display(fmt = "{}", _0)]
+#[derive(Debug)]
 pub struct RoaCleanupError(String);
+
+impl fmt::Display for RoaCleanupError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
 
 impl From<crate::commons::error::Error> for RoaCleanupError {
     fn from(e: crate::commons::error::Error) -> Self {

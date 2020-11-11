@@ -459,16 +459,27 @@ impl CurrentObjects {
 //------------ VerificationError ---------------------------------------------
 
 /// Issues with relation to verifying deltas.
-#[derive(Clone, Debug, Display)]
+#[derive(Clone, Debug)]
 pub enum PublicationDeltaError {
-    #[display(fmt = "Publishing ({}) outside of jail URI ({}) is not allowed.", _0, _1)]
     UriOutsideJail(uri::Rsync, uri::Rsync),
-
-    #[display(fmt = "File already exists for uri (use update!): {}", _0)]
     ObjectAlreadyPresent(uri::Rsync),
-
-    #[display(fmt = "File does not match hash at uri: {}", _0)]
     NoObjectForHashAndOrUri(uri::Rsync),
+}
+
+impl fmt::Display for PublicationDeltaError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            PublicationDeltaError::UriOutsideJail(uri, jail) => {
+                write!(f, "Publishing ({}) outside of jail URI ({}) is not allowed.", uri, jail)
+            }
+            PublicationDeltaError::ObjectAlreadyPresent(uri) => {
+                write!(f, "File already exists for uri (use update!): {}", uri)
+            }
+            PublicationDeltaError::NoObjectForHashAndOrUri(uri) => {
+                write!(f, "File does not match hash at uri: {}", uri)
+            }
+        }
+    }
 }
 
 impl PublicationDeltaError {

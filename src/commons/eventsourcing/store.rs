@@ -998,61 +998,83 @@ where
 //------------ AggregateStoreError -------------------------------------------
 
 /// This type defines possible Errors for the AggregateStore
-#[derive(Debug, Display)]
+#[derive(Debug)]
 pub enum AggregateStoreError {
-    #[display(fmt = "{}", _0)]
     IoError(io::Error),
-
-    #[display(fmt = "KeyStore Error: {}", _0)]
     KeyStoreError(KeyValueError),
-
-    #[display(fmt = "This aggregate store is not initialised")]
     NotInitialised,
-
-    #[display(fmt = "unknown entity: {}", _0)]
     UnknownAggregate(Handle),
-
-    #[display(fmt = "Init event exists for '{}', but cannot be applied", _0)]
     InitError(Handle),
-
-    #[display(fmt = "Cannot reconstruct '{}' to version '{}', failed at version {}", _0, _1, _2)]
     ReplayError(Handle, u64, u64),
-
-    #[display(fmt = "Missing stored value info for '{}'", _0)]
     InfoMissing(Handle),
-
-    #[display(fmt = "Corrupt stored value info for '{}'", _0)]
     InfoCorrupt(Handle),
-
-    #[display(fmt = "event not applicable to entity, id or version is off")]
     WrongEventForAggregate,
-
-    #[display(fmt = "concurrent modification attempt for entity: '{}'", _0)]
     ConcurrentModification(Handle),
-
-    #[display(fmt = "Aggregate '{}' does not have command with sequence '{}'", _0, _1)]
     UnknownCommand(Handle, u64),
-
-    #[display(fmt = "Offset '{}' exceeds total '{}'", _0, _1)]
     CommandOffsetTooLarge(u64, u64),
-
-    #[display(fmt = "Could not rebuild state for '{}': {}", _0, _1)]
     WarmupFailed(Handle, String),
-
-    #[display(fmt = "Could not recover state for '{}', aborting recover. Use backup!!", _0)]
     CouldNotRecover(Handle),
-
-    #[display(fmt = "Could not archive commands and events for '{}'. Error: {}", _0, _1)]
     CouldNotArchive(Handle, String),
-
-    #[display(fmt = "StoredCommand '{}' for '{}' was corrupt", _1, _0)]
     CommandCorrupt(Handle, CommandKey),
-
-    #[display(fmt = "StoredCommand '{}' for '{}' cannot be found", _1, _0)]
     CommandNotFound(Handle, CommandKey),
-
-    #[display(fmt = "Stored event '{}' for '{}' was corrupt", _1, _0)]
     EventCorrupt(Handle, u64),
+}
+
+impl fmt::Display for AggregateStoreError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            AggregateStoreError::IoError(e) => e.fmt(f),
+            AggregateStoreError::KeyStoreError(e) => write!(f, "KeyStore Error: {}", e),
+            AggregateStoreError::NotInitialised => write!(f, "This aggregate store is not initialised"),
+            AggregateStoreError::UnknownAggregate(handle) => write!(f, "unknown entity: {}", handle),
+            AggregateStoreError::InitError(handle) => {
+                write!(f, "Init event exists for '{}', but cannot be applied", handle)
+            }
+            AggregateStoreError::ReplayError(handle, target_version, fail_version) => write!(
+                f,
+                "Cannot reconstruct '{}' to version '{}', failed at version {}",
+                handle, target_version, fail_version
+            ),
+            AggregateStoreError::InfoMissing(handle) => write!(f, "Missing stored value info for '{}'", handle),
+            AggregateStoreError::InfoCorrupt(handle) => write!(f, "Corrupt stored value info for '{}'", handle),
+            AggregateStoreError::WrongEventForAggregate => {
+                write!(f, "event not applicable to entity, id or version is off")
+            }
+            AggregateStoreError::ConcurrentModification(handle) => {
+                write!(f, "concurrent modification attempt for entity: '{}'", handle)
+            }
+            AggregateStoreError::UnknownCommand(handle, seq) => write!(
+                f,
+                "Aggregate '{}' does not have command with sequence '{}'",
+                handle, seq
+            ),
+            AggregateStoreError::CommandOffsetTooLarge(offset, total) => {
+                write!(f, "Offset '{}' exceeds total '{}'", offset, total)
+            }
+            AggregateStoreError::WarmupFailed(handle, e) => {
+                write!(f, "Could not rebuild state for '{}': {}", handle, e)
+            }
+            AggregateStoreError::CouldNotRecover(handle) => write!(
+                f,
+                "Could not recover state for '{}', aborting recover. Use backup!!",
+                handle
+            ),
+            AggregateStoreError::CouldNotArchive(handle, e) => write!(
+                f,
+                "Could not archive commands and events for '{}'. Error: {}",
+                handle, e
+            ),
+            AggregateStoreError::CommandCorrupt(handle, key) => {
+                write!(f, "StoredCommand '{}' for '{}' was corrupt", handle, key)
+            }
+            AggregateStoreError::CommandNotFound(handle, key) => {
+                write!(f, "StoredCommand '{}' for '{}' cannot be found", handle, key)
+            }
+            AggregateStoreError::EventCorrupt(handle, version) => {
+                write!(f, "Stored event '{}' for '{}' was corrupt", handle, version)
+            }
+        }
+    }
 }
 
 impl From<KeyValueError> for AggregateStoreError {

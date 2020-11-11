@@ -728,34 +728,33 @@ impl<'de> Deserialize<'de> for ServiceUri {
 
 //------------ Error ---------------------------------------------------------
 
-#[derive(Debug, Display)]
+#[derive(Debug)]
 pub enum Error {
-    #[display(fmt = "Invalid XML")]
     InvalidXml,
-
-    #[display(fmt = "Invalid version")]
     InvalidVersion,
-
-    #[display(fmt = "Invalid XML file: {}", _0)]
     XmlReadError(XmlReaderErr),
-
-    #[display(fmt = "Invalid XML file: {}", _0)]
     XmlAttributesError(AttributesError),
-
-    #[display(fmt = "Invalid base64: {}", _0)]
     Base64Error(DecodeError),
-
-    #[display(fmt = "Invalid handle in XML, MUST be [-_A-Za-z0-9/]{{1,255}}")]
     InvalidHandle,
-
-    #[display(fmt = "Cannot parse identity certificate: {}", _0)]
     CannotParseIdCert(decode::Error),
-
-    #[display(fmt = "Invalid identity certificate: {}", _0)]
     InvalidIdCert(x509::ValidationError),
-
-    #[display(fmt = "{}", _0)]
     Uri(uri::Error),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Error::InvalidXml => write!(f, "Invalid XML"),
+            Error::InvalidVersion => write!(f, "Invalid version"),
+            Error::XmlReadError(e) => write!(f, "Invalid XML file: {}", e),
+            Error::XmlAttributesError(e) => write!(f, "Invalid XML file: {}", e),
+            Error::Base64Error(e) => write!(f, "Invalid base64: {}", e),
+            Error::InvalidHandle => write!(f, "Invalid handle in XML, MUST be [-_A-Za-z0-9/]{{1,255}}"),
+            Error::CannotParseIdCert(e) => write!(f, "Cannot parse identity certificate: {}", e),
+            Error::InvalidIdCert(e) => write!(f, "Invalid identity certificate: {}", e),
+            Error::Uri(e) => e.fmt(f),
+        }
+    }
 }
 
 impl From<XmlReaderErr> for Error {

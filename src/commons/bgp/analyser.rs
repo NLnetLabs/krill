@@ -1,8 +1,7 @@
-use std::env;
-
-use tokio::sync::RwLock;
+use std::{env, fmt};
 
 use chrono::Duration;
+use tokio::sync::RwLock;
 
 use rpki::x509::Time;
 
@@ -290,10 +289,17 @@ impl BgpAnalyser {
 
 //------------ Error --------------------------------------------------------
 
-#[derive(Debug, Display)]
+#[derive(Debug)]
 pub enum BgpAnalyserError {
-    #[display(fmt = "BGP RIS update error: {}", _0)]
     RisDump(RisDumpError),
+}
+
+impl fmt::Display for BgpAnalyserError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            BgpAnalyserError::RisDump(e) => write!(f, "BGP RIS update error: {}", e),
+        }
+    }
 }
 
 impl From<RisDumpError> for BgpAnalyserError {
