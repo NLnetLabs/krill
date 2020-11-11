@@ -19,7 +19,7 @@ describe('Config File Users', () => {
       cy.contains('Sign In').click()
       // TODO: I should fail. How we can we tell?
     })
-  
+
     it('Can login with admin credentials', () => {
       cy.visit('/')
       cy.get('input[name="username"]').type("admin@krill")
@@ -34,7 +34,7 @@ describe('Config File Users', () => {
       cy.contains('Logged in as: readonly@krill')
     }) 
 
-    it('Can login with readonly credentials', () => {
+    it('Can login with readwrite credentials', () => {
       cy.visit('/')
       cy.get('input[name="username"]').type("readwrite@krill")
       cy.contains('Sign In').click()
