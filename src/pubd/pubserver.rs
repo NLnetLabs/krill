@@ -76,14 +76,17 @@ impl PubServer {
 
         let store = Arc::new(AggregateStore::<Repository>::new(work_dir, PUBSERVER_DIR)?);
 
+        let mut force_session_reset = false;
         if CONFIG.always_recover_data {
             store.recover()?;
+            force_session_reset = true;
         } else if let Err(e) = store.warm() {
             error!(
                 "Could not warm up cache, storage seems corrupt, will try to recover!! Error was: {}",
                 e
             );
             store.recover()?;
+            force_session_reset = true;
         }
 
         if !store.has(&default)? {
@@ -94,11 +97,17 @@ impl PubServer {
             repo.write()?;
         }
 
-        Ok(PubServer {
+        let server = PubServer {
             store,
             signer,
             rfc8181_log_dir: rfc8181_log_dir.cloned(),
-        })
+        };
+
+        if force_session_reset {
+            server.rrdp_session_reset(ACTOR_KRILL)?;
+        }
+
+        Ok(server)
     }
 }
 
@@ -162,6 +171,14 @@ impl PubServer {
         }
 
         Ok(response_bytes)
+    }
+
+    /// Do an RRDP session reset
+    pub fn rrdp_session_reset(&self, actor: &Actor) -> KrillResult<()> {
+        let repository_handle = Self::repository_handle();
+        let cmd = CmdDet::session_reset(&repository_handle, actor);
+        self.store.command(cmd)?;
+        self.write_repository()
     }
 
     /// Let a known publisher publish in a repository.
@@ -268,8 +285,8 @@ mod tests {
 
     use tokio::time::delay_for;
 
-    use crate::commons::api::rrdp::CurrentObjects;
     use crate::commons::api::rrdp::PublicationDeltaError;
+    use crate::commons::api::rrdp::{CurrentObjects, RrdpSession};
     use crate::commons::api::{ListElement, PublishDeltaBuilder};
     use crate::commons::crypto::{IdCert, IdCertBuilder};
     use crate::commons::util::file::CurrentFile;
@@ -554,6 +571,79 @@ mod tests {
         assert!(session_dir_contains_serial(&session, 2));
         assert!(session_dir_contains_delta(&session, 2));
         assert!(session_dir_contains_snapshot(&session, 2));
+
+        let _ = fs::remove_dir_all(d);
+    }
+
+    #[test]
+    pub fn repository_session_reset() {
+        let d = test::tmp_dir();
+        let server = make_server(&d);
+
+        // set up server with default repository, and publisher alice
+        let alice = publisher_alice(&d);
+
+        let alice_handle = Handle::from_str("alice").unwrap();
+        let publisher_req = make_publisher_req(alice_handle.as_str(), alice.id_cert());
+
+        server.create_publisher(publisher_req, ACTOR_TEST).unwrap();
+
+        // get the file out of a list_reply
+        fn find_in_reply<'a>(reply: &'a ListReply, uri: &uri::Rsync) -> Option<&'a ListElement> {
+            reply.elements().iter().find(|e| e.uri() == uri)
+        }
+
+        // Publish files
+        let file1 = CurrentFile::new(
+            test::rsync("rsync://localhost/repo/alice/file.txt"),
+            &Bytes::from("example content"),
+        );
+
+        let file2 = CurrentFile::new(
+            test::rsync("rsync://localhost/repo/alice/file2.txt"),
+            &Bytes::from("example content 2"),
+        );
+
+        let mut builder = PublishDeltaBuilder::new();
+        builder.add_publish(file1.as_publish());
+        builder.add_publish(file2.as_publish());
+        let delta = builder.finish();
+
+        server.publish(alice_handle.clone(), delta, ACTOR_TEST).unwrap();
+
+        // Two files should now appear in the list
+        let list_reply = server.list(&alice_handle).unwrap();
+        assert_eq!(2, list_reply.elements().len());
+        assert!(find_in_reply(&list_reply, &test::rsync("rsync://localhost/repo/alice/file.txt")).is_some());
+        assert!(find_in_reply(&list_reply, &test::rsync("rsync://localhost/repo/alice/file2.txt")).is_some());
+
+        fn path_to_snapshot(base_dir: &PathBuf, session: &RrdpSession, serial: u64) -> PathBuf {
+            let mut path = base_dir.clone();
+            path.push("repo");
+            path.push("rrdp");
+            path.push(session.to_string());
+            path.push(serial.to_string());
+            path.push("snapshot.xml");
+            path
+        }
+
+        // Find RRDP files on disk
+        let stats_before = server.repo_stats().unwrap();
+        let session_before = stats_before.session();
+        let snapshot_before_session_reset = path_to_snapshot(&d, &session_before, 1);
+        assert!(snapshot_before_session_reset.exists());
+
+        // Now test that a session reset works...
+        server.rrdp_session_reset(ACTOR_TEST).unwrap();
+
+        // Should write new session and snapshot
+        let stats_after = server.repo_stats().unwrap();
+        let session_after = stats_after.session();
+        let snapshot_after_session_reset = path_to_snapshot(&d, &session_after, 0);
+        assert!(snapshot_after_session_reset.exists());
+
+        // and clean up old dir
+        assert!(!snapshot_before_session_reset.exists());
 
         let _ = fs::remove_dir_all(d);
     }

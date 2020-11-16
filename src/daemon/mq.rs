@@ -4,6 +4,7 @@
 //! entitlements.
 
 use std::collections::{HashMap, VecDeque};
+use std::fmt;
 use std::sync::RwLock;
 
 use rpki::x509::Time;
@@ -16,40 +17,53 @@ use crate::daemon::ca::{CertAuth, Evt, EvtDet};
 
 /// This type contains all the events of interest for a KrillServer, with
 /// the details needed for triggered processing.
-#[derive(Clone, Debug, Display, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 pub enum QueueEvent {
-    #[display(fmt = "delta for '{}' version '{}'", _0, _1)]
     Delta(Handle, u64),
-
-    #[display(fmt = "parent added to '{}' version '{}'", _0, _1)]
     ParentAdded(Handle, u64, ParentHandle),
-
-    #[display(fmt = "configured repository for '{}' version '{}'", _0, _1)]
     RepositoryConfigured(Handle, u64),
-
-    #[display(fmt = "requests pending for '{}' version '{}'", _0, _1)]
     RequestsPending(Handle, u64),
-
-    #[display(fmt = "resource class removed for '{}' version '{}'", _0, _1)]
     ResourceClassRemoved(
         Handle,
         u64,
         ParentHandle,
         HashMap<ResourceClassName, Vec<RevocationRequest>>,
     ),
-
-    #[display(fmt = "unexpected key found for '{}' version '{}' resource class: '{}'", _0, _1, _2)]
     UnexpectedKey(Handle, u64, ResourceClassName, RevocationRequest),
-
-    #[display(fmt = "clean up old repo *if it exists* for '{}' version '{}'", _0, _1)]
     CleanOldRepo(Handle, u64),
-
-    #[display(fmt = "reschedule failed publication for '{}'", _0)]
     ReschedulePublish(Handle, Time),
-
-    #[display(fmt = "Server just started")]
     ServerStarted,
+}
+
+impl fmt::Display for QueueEvent {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            QueueEvent::Delta(ca, version) => write!(f, "delta for '{}' version '{}'", ca, version),
+            QueueEvent::ParentAdded(ca, version, _parent) => {
+                write!(f, "parent added to '{}' version '{}'", ca, version)
+            }
+            QueueEvent::RepositoryConfigured(ca, version) => {
+                write!(f, "configured repository for '{}' version '{}'", ca, version)
+            }
+            QueueEvent::RequestsPending(ca, version) => {
+                write!(f, "requests pending for '{}' version '{}'", ca, version)
+            }
+            QueueEvent::ResourceClassRemoved(ca, version, _, _) => {
+                write!(f, "resource class removed for '{}' version '{}'", ca, version)
+            }
+            QueueEvent::UnexpectedKey(ca, version, rcn, _) => write!(
+                f,
+                "unexpected key found for '{}' version '{}' resource class: '{}'",
+                ca, version, rcn
+            ),
+            QueueEvent::CleanOldRepo(ca, version) => {
+                write!(f, "clean up old repo *if it exists* for '{}' version '{}'", ca, version)
+            }
+            QueueEvent::ReschedulePublish(ca, _time) => write!(f, "reschedule failed publication for '{}'", ca),
+            QueueEvent::ServerStarted => write!(f, "Server just started"),
+        }
+    }
 }
 
 #[derive(Debug)]

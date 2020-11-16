@@ -120,13 +120,19 @@ mod tests {
     /// implementation for this type alias providing some convenience methods.
     type PersonCommand = SentCommand<PersonCommandDetails>;
 
-    #[derive(Clone, Deserialize, Display, Eq, PartialEq, Serialize)]
+    #[derive(Clone, Deserialize, Eq, PartialEq, Serialize)]
     enum PersonCommandDetails {
-        #[display(fmt = "Change name to {}", _0)]
         ChangeName(String),
-
-        #[display(fmt = "Go around the sun")]
         GoAroundTheSun,
+    }
+
+    impl fmt::Display for PersonCommandDetails {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            match self {
+                PersonCommandDetails::ChangeName(name) => write!(f, "Change name to {}", name),
+                PersonCommandDetails::GoAroundTheSun => write!(f, "Go around the sun"),
+            }
+        }
     }
 
     impl WithStorableDetails for PersonCommandDetails {
@@ -164,13 +170,19 @@ mod tests {
 
     /// Errors specific to the Person aggregate, should only ever be returned when
     /// applying a command that does not validate.
-    #[derive(Clone, Debug, Display)]
+    #[derive(Clone, Debug)]
     enum PersonError {
-        #[display(fmt = "No person can live longer than 255 years")]
         TooOld,
-
-        #[display(fmt = "{}", _0)]
         Custom(String),
+    }
+
+    impl fmt::Display for PersonError {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            match self {
+                PersonError::TooOld => write!(f, "No person can live longer than 255 years"),
+                PersonError::Custom(s) => s.fmt(f),
+            }
+        }
     }
 
     impl From<AggregateStoreError> for PersonError {

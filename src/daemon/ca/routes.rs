@@ -27,8 +27,14 @@ use crate::daemon::config::CONFIG;
 
 /// This type defines a prefix and optional maximum length (other than the
 /// prefix length) which is to be authorized for the given origin ASN.
-#[derive(Clone, Copy, Debug, Display, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct RouteAuthorization(RoaDefinition);
+
+impl fmt::Display for RouteAuthorization {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        self.0.fmt(f)
+    }
+}
 
 impl RouteAuthorization {
     pub fn new(definition: RoaDefinition) -> Self {

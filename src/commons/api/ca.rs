@@ -1479,17 +1479,22 @@ impl CertAuthSummary {
 }
 
 //------------ ParentKindInfo ------------------------------------------------
-#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ParentKindInfo {
-    #[display(fmt = "This CA is a TA")]
     Ta,
-
-    #[display(fmt = "Embedded parent")]
     Embedded,
-
-    #[display(fmt = "RFC 6492 Parent")]
     Rfc6492,
+}
+
+impl fmt::Display for ParentKindInfo {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ParentKindInfo::Ta => write!(f, "This CA is a TA"),
+            ParentKindInfo::Embedded => write!(f, "Embedded parent"),
+            ParentKindInfo::Rfc6492 => write!(f, "RFC 6492 Parent"),
+        }
+    }
 }
 
 //------------ ParentInfo ----------------------------------------------------
@@ -2128,22 +2133,19 @@ pub enum ResourceClassKeysInfo {
     RollOld(RollOldInfo),
 }
 
-#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
-#[display(fmt = "pending")]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PendingInfo {
     #[serde(rename = "pending_key")]
     pub _pending_key: PendingKeyInfo,
 }
 
-#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
-#[display(fmt = "active")]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ActiveInfo {
     #[serde(rename = "active_key")]
     pub _active_key: CertifiedKeyInfo,
 }
 
-#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
-#[display(fmt = "roll phase 1: pending and active key")]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RollPendingInfo {
     #[serde(rename = "pending_key")]
     pub _pending_key: PendingKeyInfo,
@@ -2151,8 +2153,7 @@ pub struct RollPendingInfo {
     pub _active_key: CertifiedKeyInfo,
 }
 
-#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
-#[display(fmt = "roll phase 2: new and active key")]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RollNewInfo {
     #[serde(rename = "new_key")]
     pub _new_key: CertifiedKeyInfo,
@@ -2160,8 +2161,7 @@ pub struct RollNewInfo {
     pub _active_key: CertifiedKeyInfo,
 }
 
-#[derive(Clone, Debug, Deserialize, Display, Eq, PartialEq, Serialize)]
-#[display(fmt = "roll phase 3: active and old key")]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RollOldInfo {
     #[serde(rename = "active_key")]
     pub _active_key: CertifiedKeyInfo,
@@ -2188,21 +2188,11 @@ impl fmt::Display for ResourceClassKeysInfo {
         res.push_str("State: ");
 
         match &self {
-            ResourceClassKeysInfo::Pending(p) => {
-                res.push_str(&p.to_string());
-            }
-            ResourceClassKeysInfo::Active(a) => {
-                res.push_str(&a.to_string());
-            }
-            ResourceClassKeysInfo::RollPending(r) => {
-                res.push_str(&r.to_string());
-            }
-            ResourceClassKeysInfo::RollNew(r) => {
-                res.push_str(&r.to_string());
-            }
-            ResourceClassKeysInfo::RollOld(r) => {
-                res.push_str(&r.to_string());
-            }
+            ResourceClassKeysInfo::Pending(_) => res.push_str("pending"),
+            ResourceClassKeysInfo::Active(_) => res.push_str("active"),
+            ResourceClassKeysInfo::RollPending(_) => res.push_str("roll phase 1: pending and active key"),
+            ResourceClassKeysInfo::RollNew(_) => res.push_str("roll phase 2: new and active key"),
+            ResourceClassKeysInfo::RollOld(_) => res.push_str("roll phase 3: active and old key"),
         }
 
         if let Some(key) = self.current_key() {
@@ -2516,28 +2506,32 @@ impl fmt::Display for RtaPrepResponse {
 
 //------------ ResSetErr -----------------------------------------------------
 
-#[derive(Clone, Debug, Display, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ResourceSetError {
-    #[display(fmt = "Cannot parse ASN resource: {}", _0)]
     Asn(String),
-
-    #[display(fmt = "Cannot parse IPv4 resource: {}", _0)]
     V4(String),
-
-    #[display(fmt = "Cannot parse IPv6 resource: {}", _0)]
     V6(String),
-
-    #[display(fmt = "Mixed Address Families in configured resource set")]
     Mix,
-
-    #[display(fmt = "Found inherited resources on CA certificate")]
     InheritOnCaCert,
-
-    #[display(fmt = "Limit in CSR exceeds resource entitlements.")]
     Limit,
-
-    #[display(fmt = "Cannot parse resource set string, expected: 'asn: <ASNs>, ipv4: <IPv4s>, ipv6: <IPv6s>'.")]
     FromString,
+}
+
+impl fmt::Display for ResourceSetError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ResourceSetError::Asn(s) => write!(f, "Cannot parse ASN resource: {}", s),
+            ResourceSetError::V4(s) => write!(f, "Cannot parse IPv4 resource: {}", s),
+            ResourceSetError::V6(s) => write!(f, "Cannot parse IPv6 resource: {}", s),
+            ResourceSetError::Mix => write!(f, "Mixed Address Families in configured resource set"),
+            ResourceSetError::InheritOnCaCert => write!(f, "Found inherited resources on CA certificate"),
+            ResourceSetError::Limit => write!(f, "Limit in CSR exceeds resource entitlements."),
+            ResourceSetError::FromString => write!(
+                f,
+                "Cannot parse resource set string, expected: 'asn: <ASNs>, ipv4: <IPv4s>, ipv6: <IPv6s>'."
+            ),
+        }
+    }
 }
 
 impl ResourceSetError {

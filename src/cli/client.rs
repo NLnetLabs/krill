@@ -51,7 +51,7 @@ impl KrillClient {
             env::set_var(KRILL_CLI_API_ENV, "1")
         }
 
-        trace!("Sending command: {}", options.command);
+        trace!("Sending command: {:?}", options.command);
 
         match options.command {
             Command::Health => client.health().await,
@@ -498,32 +498,32 @@ impl KrillClient {
 
 //------------ Error ---------------------------------------------------------
 
-#[derive(Debug, Display)]
+#[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum Error {
-    #[display(fmt = "No valid command given, see --help")]
     MissingCommand,
-
-    #[display(fmt = "Server is not available.")]
     ServerDown,
-
-    #[display(fmt = "Http client error: {}", _0)]
     HttpClientError(httpclient::Error),
-
-    #[display(fmt = "{}", _0)]
     ReportError(ReportError),
-
-    #[display(fmt = "Can't read file: {}", _0)]
     IoError(io::Error),
-
-    #[display(fmt = "Empty response received from server")]
     EmptyResponse,
-
-    #[display(fmt = "{}", _0)]
     Rfc8183(rfc8183::Error),
-
-    #[display(fmt = "{}", _0)]
     InitError(String),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Error::MissingCommand => write!(f, "No valid command given, see --help"),
+            Error::ServerDown => write!(f, "Server is not available."),
+            Error::HttpClientError(e) => write!(f, "Http client error: {}", e),
+            Error::ReportError(e) => e.fmt(f),
+            Error::IoError(e) => write!(f, "I/O error: {}", e),
+            Error::EmptyResponse => write!(f, "Empty response received from server"),
+            Error::Rfc8183(e) => e.fmt(f),
+            Error::InitError(s) => s.fmt(f),
+        }
+    }
 }
 
 impl Error {

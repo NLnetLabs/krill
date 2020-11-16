@@ -23,30 +23,30 @@ pub mod roa_cleanup_0_8_0;
 
 //------------ UpgradeError --------------------------------------------------
 
-#[derive(Debug, Display)]
+#[derive(Debug)]
 pub enum UpgradeError {
-    #[display(fmt = "{}", _0)]
     AggregateStoreError(AggregateStoreError),
-
-    #[display(fmt = "{}", _0)]
     KeyStoreError(KeyValueError),
-
-    #[display(fmt = "{}", _0)]
     IoError(io::Error),
-
-    #[display(fmt = "Unrecognised command summary: {}", _0)]
     Unrecognised(String),
-
-    #[display(fmt = "Cannot load: {}", _0)]
     CannotLoadAggregate(Handle),
-
-    #[display(fmt = "Cannot clean up redundant roas: {}", _0)]
     RoaCleanup(RoaCleanupError),
-
-    #[display(fmt = "{}", _0)]
     Custom(String),
 }
 
+impl fmt::Display for UpgradeError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            UpgradeError::AggregateStoreError(e) => e.fmt(f),
+            UpgradeError::KeyStoreError(e) => e.fmt(f),
+            UpgradeError::IoError(e) => e.fmt(f),
+            UpgradeError::Unrecognised(s) => write!(f, "Unrecognised command summary: {}", s),
+            UpgradeError::CannotLoadAggregate(handle) => write!(f, "Cannot load: {}", handle),
+            UpgradeError::RoaCleanup(e) => write!(f, "Cannot clean up redundant roas: {}", e),
+            UpgradeError::Custom(s) => s.fmt(f),
+        }
+    }
+}
 impl UpgradeError {
     pub fn custom(msg: impl fmt::Display) -> Self {
         UpgradeError::Custom(msg.to_string())

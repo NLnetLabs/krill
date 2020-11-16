@@ -628,31 +628,31 @@ impl ReportError {
 //------------ ReportErrorCodes ----------------------------------------------
 
 /// The allowed error codes defined in RFC8181 section 2.5
-#[derive(Clone, Debug, Display, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ReportErrorCode {
-    #[display(fmt = "xml_error")]
     XmlError,
-
-    #[display(fmt = "permission_failure")]
     PermissionFailure,
-
-    #[display(fmt = "bad_cms_signature")]
     BadCmsSignature,
-
-    #[display(fmt = "object_already_present")]
     ObjectAlreadyPresent,
-
-    #[display(fmt = "no_object_present")]
     NoObjectPresent,
-
-    #[display(fmt = "no_object_matching_hash")]
     NoObjectMatchingHash,
-
-    #[display(fmt = "consistency_problem")]
     ConsistencyProblem,
-
-    #[display(fmt = "other_error")]
     OtherError,
+}
+
+impl fmt::Display for ReportErrorCode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ReportErrorCode::XmlError => write!(f, "xml_error"),
+            ReportErrorCode::PermissionFailure => write!(f, "permission_failure"),
+            ReportErrorCode::BadCmsSignature => write!(f, "bad_cms_signature"),
+            ReportErrorCode::ObjectAlreadyPresent => write!(f, "object_already_present"),
+            ReportErrorCode::NoObjectPresent => write!(f, "no_object_present"),
+            ReportErrorCode::NoObjectMatchingHash => write!(f, "no_object_matching_hash"),
+            ReportErrorCode::ConsistencyProblem => write!(f, "consistency_problem"),
+            ReportErrorCode::OtherError => write!(f, "other_error"),
+        }
+    }
 }
 
 impl ReportErrorCode {
@@ -689,37 +689,35 @@ impl ReportErrorCode {
 
 //------------ PublicationMessageError ---------------------------------------
 
-#[derive(Debug, Display)]
+#[derive(Debug)]
 pub enum MessageError {
-    #[display(fmt = "Invalid version")]
     InvalidVersion,
-
-    #[display(fmt = "Unknown message type")]
     UnknownMessageType,
-
-    #[display(fmt = "Unexpected XML Start Tag: {}", _0)]
     UnexpectedStart(String),
-
-    #[display(fmt = "Expected some XML Start Tag: {}", _0)]
     ExpectedStart(String),
-
-    #[display(fmt = "Missing content in XML: {}", _0)]
     MissingContent(String),
-
-    #[display(fmt = "Invalid XML file: {}", _0)]
     XmlReadError(XmlReaderErr),
-
-    #[display(fmt = "Invalid use of attributes in XML file: {}", _0)]
     XmlAttributesError(AttributesError),
-
-    #[display(fmt = "Invalid URI: {}", _0)]
     UriError(uri::Error),
-
-    #[display(fmt = "Invalid error code: {}", _0)]
     InvalidErrorCode(String),
-
-    #[display(fmt = "Wrong message type.")]
     WrongMessageType,
+}
+
+impl fmt::Display for MessageError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            MessageError::InvalidVersion => write!(f, "Invalid version"),
+            MessageError::UnknownMessageType => write!(f, "Unknown message type"),
+            MessageError::UnexpectedStart(tag) => write!(f, "Unexpected XML Start Tag: {}", tag),
+            MessageError::ExpectedStart(tag) => write!(f, "Expected some XML Start Tag: {}", tag),
+            MessageError::MissingContent(content) => write!(f, "Missing content in XML: {}", content),
+            MessageError::XmlReadError(e) => write!(f, "Invalid XML file: {}", e),
+            MessageError::XmlAttributesError(e) => write!(f, "Invalid use of attributes in XML file: {}", e),
+            MessageError::UriError(e) => write!(f, "Invalid URI: {}", e),
+            MessageError::InvalidErrorCode(code) => write!(f, "Invalid error code: {}", code),
+            MessageError::WrongMessageType => write!(f, "Wrong message type."),
+        }
+    }
 }
 
 impl From<XmlReaderErr> for MessageError {

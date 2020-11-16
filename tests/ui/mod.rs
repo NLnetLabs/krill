@@ -77,7 +77,7 @@ type CustomTokenResponse = StandardTokenResponse<CustomIdTokenFields, CoreTokenT
 #[derive(Default)]
 struct KnownUser {
     role: &'static str,
-    cas: Option<&'static str>,
+    _cas: Option<&'static str>,
     token_secs: Option<u32>,
 }
 
@@ -349,7 +349,7 @@ fn run_mock_openid_connect_server() {
             let username = require_query_param(&query, "username")?;
 
             match KNOWN_USERS.get(username.as_str()) {
-                Some(user) => {
+                Some(_user) => {
                     let client_id = require_query_param(&query, "client_id")?;
                     let nonce = require_query_param(&query, "nonce")?;
                     let state = require_query_param(&query, "state")?;

@@ -1,10 +1,10 @@
-use std::env;
 use std::fs::File;
 use std::io;
 use std::io::Read;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::{env, fmt};
 
 use clap::{App, Arg};
 use log::{error, LevelFilter};
@@ -417,7 +417,7 @@ impl Config {
         let https_mode = HttpsMode::Generate;
         let data_dir = data_dir.clone();
         let archive_threshold_days = Some(0);
-        let always_recover_data = true;
+        let always_recover_data = false;
         let rsync_base = ConfigDefaults::rsync_base();
         let service_uri = ConfigDefaults::service_uri();
         let rrdp_service_uri = Some("https://localhost:3000/test-rrdp/".to_string());
@@ -809,19 +809,23 @@ impl Config {
     }
 }
 
-#[derive(Debug, Display)]
+#[derive(Debug)]
 pub enum ConfigError {
-    #[display(fmt = "{}", _0)]
     IoError(io::Error),
-
-    #[display(fmt = "{}", _0)]
     TomlError(toml::de::Error),
-
-    #[display(fmt = "{}", _0)]
     RpkiUriError(uri::Error),
-
-    #[display(fmt = "{}", _0)]
     Other(String),
+}
+
+impl fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ConfigError::IoError(e) => e.fmt(f),
+            ConfigError::TomlError(e) => e.fmt(f),
+            ConfigError::RpkiUriError(e) => e.fmt(f),
+            ConfigError::Other(s) => s.fmt(f),
+        }
+    }
 }
 
 impl ConfigError {

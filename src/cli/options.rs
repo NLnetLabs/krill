@@ -2018,150 +2018,72 @@ impl Options {
     }
 }
 
-#[derive(Clone, Debug, Display, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 pub enum Command {
-    #[display(fmt = "not set")]
     NotSet,
-
-    #[display(fmt = "health")]
     Health,
-
-    #[display(fmt = "info")]
     Info,
-
-    #[display(fmt = "bulk: {}", _0)]
     Bulk(BulkCaCommand),
-
-    #[display(fmt = "ca: {}", _0)]
     CertAuth(CaCommand),
-
-    #[display(fmt = "publishers: {}", _0)]
     Publishers(PublishersCommand),
-
-    #[display(fmt = "init")]
     Init(KrillInitDetails),
-
-    #[display(fmt = "user")]
     User(KrillUserDetails),
 }
 
-#[derive(Clone, Debug, Display, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 pub enum CaCommand {
-    // Initialise a CA
-    #[display(fmt = "init ca: '{}'", _0)]
-    Init(CertAuthInit),
+    Init(CertAuthInit), // Initialise a CA
+    UpdateId(Handle),   // Update CA id
 
-    // Update CA id
-    #[display(fmt = "update id for ca: '{}'", _0)]
-    UpdateId(Handle),
-
-    // Get an RFC8183 parent response for a child
-    #[display(fmt = "parent response from ca: '{}' for child '{}'", _0, _1)]
-    ParentResponse(Handle, ChildHandle),
-
-    // Get the RFC8183 child request
-    #[display(fmt = "get child request for ca: '{}'", _0)]
-    ChildRequest(Handle),
-
-    // Get the RFC8183 publisher request
-    #[display(fmt = "get repo request for ca: '{}'", _0)]
-    RepoPublisherRequest(Handle),
-
-    #[display(fmt = "get repo details for ca: '{}'", _0)]
+    // Publishing
+    RepoPublisherRequest(Handle), // Get the RFC8183 publisher request
     RepoDetails(Handle),
-
-    #[display(fmt = "update repo details for ca: '{}'", _0)]
     RepoUpdate(Handle, RepositoryUpdate),
-
-    #[display(fmt = "get repo status for ca: '{}'", _0)]
     RepoStatus(Handle),
 
-    #[display(fmt = "add parent '{}' to ca: '{}'", _0, _1)]
+    // Parents (to this CA)
+    ChildRequest(Handle), // Get the RFC8183 child request
     AddParent(Handle, ParentCaReq),
-
-    #[display(fmt = "add parent to ca: '{}'", _0)]
     MyParentCaContact(Handle, ParentHandle),
-
-    #[display(fmt = "show parents status overview for ca: '{}'", _0)]
     ParentStatuses(Handle),
-
-    #[display(fmt = "update contact for parent {} of ca: '{}' to: {}", _1, _0, _2)]
     UpdateParentContact(Handle, ParentHandle, ParentCaContact),
-
-    #[display(fmt = "remove parent {} of ca: '{}'", _1, _0)]
     RemoveParent(Handle, ParentHandle),
 
     // Children
-    #[display(fmt = "show child {} of ca: '{}'", _1, _0)]
+    ParentResponse(Handle, ChildHandle), // Get an RFC8183 parent response for a child
     ChildInfo(Handle, ChildHandle),
-
-    #[display(fmt = "add child {} to ca: '{}'", _1, _0)]
     ChildAdd(Handle, AddChildRequest),
-
-    #[display(fmt = "update child {} of ca: '{}'", _1, _0)]
     ChildUpdate(Handle, ChildHandle, UpdateChildRequest),
-
-    #[display(fmt = "delete child {} of ca: '{}'", _1, _0)]
     ChildDelete(Handle, ChildHandle),
 
-    #[display(fmt = "initialise key roll for ca: '{}'", _0)]
+    // Key Management
     KeyRollInit(Handle),
-
-    #[display(fmt = "activate key roll for ca: '{}'", _0)]
     KeyRollActivate(Handle),
 
     // Authorizations
-    #[display(fmt = "list ROAS for ca: '{}'", _0)]
     RouteAuthorizationsList(Handle),
-
-    #[display(fmt = "Update ROAS for ca: '{}' -> {}", _0, _1)]
     RouteAuthorizationsUpdate(Handle, RoaDefinitionUpdates),
-
-    #[display(fmt = "Try to update ROAS for ca: '{}' -> {}", _0, _1)]
     RouteAuthorizationsTryUpdate(Handle, RoaDefinitionUpdates),
-
-    #[display(fmt = "Perform a dry-run update of ROAS for ca: '{}' -> {}", _0, _1)]
     RouteAuthorizationsDryRunUpdate(Handle, RoaDefinitionUpdates),
-
-    #[display(fmt = "Show detailed ROA vs BGP analysis for ca: '{}'", _0)]
     BgpAnalysisFull(Handle),
-
-    #[display(fmt = "Show ROA suggestions based on BGP analysis for ca: '{}'", _0)]
     BgpAnalysisSuggest(Handle, Option<ResourceSet>),
 
     // Show details for this CA
-    #[display(fmt = "Show details for ca: '{}'", _0)]
     Show(Handle),
-
-    #[display(fmt = "Show history for ca: '{}', mode: {}", _0, _1)]
     ShowHistory(Handle, HistoryOptions),
-
-    #[display(fmt = "Show action details for ca: '{}', action key: {}", _0, _1)]
     ShowAction(Handle, String),
-
-    #[display(fmt = "Show issues for ca: '{:?}'", _0)]
     Issues(Option<Handle>),
 
     // RTA
-    #[display(fmt = "List RTAs for CA: '{}'", _0)]
     RtaList(Handle),
-
-    #[display(fmt = "Show RTA '{}' for CA: '{}'", _0, _1)]
     RtaShow(Handle, RtaName, Option<PathBuf>),
-
-    #[display(fmt = "Sign RTA request for CA: '{}'", _0)]
     RtaSign(Handle, RtaName, RtaContentRequest),
-
-    #[display(fmt = "Prepare a multi-signed RTA for CA: '{}'", _0)]
     RtaMultiPrep(Handle, RtaName, RtaPrepareRequest),
-
-    #[display(fmt = "Cosign an RTA for CA: '{}'", _0)]
     RtaMultiCoSign(Handle, RtaName, ResourceTaggedAttestation),
 
     // List all CAs
-    #[display(fmt = "List all cas")]
     List,
 }
 
@@ -2211,40 +2133,22 @@ impl fmt::Display for HistoryOptions {
     }
 }
 
-#[derive(Clone, Debug, Display, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum BulkCaCommand {
-    #[display(fmt = "refresh")]
     Refresh,
-
-    #[display(fmt = "publish")]
     Publish,
-
-    #[display(fmt = "sync")]
     Sync,
 }
 
-#[derive(Clone, Debug, Display, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 pub enum PublishersCommand {
-    #[display(fmt = "Add publisher")]
     AddPublisher(rfc8183::PublisherRequest),
-
-    #[display(fmt = "Show publisher '{}", _0)]
     ShowPublisher(PublisherHandle),
-
-    #[display(fmt = "Remove publisher '{}", _0)]
     RemovePublisher(PublisherHandle),
-
-    #[display(fmt = "reposisitory response for publisher '{}'", _0)]
     RepositoryResponse(PublisherHandle),
-
-    #[display(fmt = "Show publishers which last published longer than '{}' seconds ago", _0)]
     StalePublishers(i64),
-
-    #[display(fmt = "Show server stats")]
     Stats,
-
-    #[display(fmt = "Show publisher list")]
     PublisherList,
 }
 
@@ -2355,46 +2259,48 @@ impl Default for KrillUserDetails {
 
 //------------ Error ---------------------------------------------------------
 
-#[derive(Debug, Display)]
+#[derive(Debug)]
 pub enum Error {
-    #[display(fmt = "{}", _0)]
     UriError(uri::Error),
-
-    #[display(fmt = "{}", _0)]
     IoError(io::Error),
-
-    #[display(fmt = "{}", _0)]
     ReportError(ReportError),
-
-    #[display(fmt = "Invalid RFC8183 XML: {}", _0)]
     Rfc8183(rfc8183::Error),
-
-    #[display(fmt = "Invalid resources requested: {}", _0)]
     ResSetErr(ResourceSetError),
-
-    #[display(fmt = "{}", _0)]
     InvalidRouteDelta(AuthorizationFmtError),
-
-    #[display(fmt = "The publisher handle may only contain -_A-Za-z0-9, (\\ /) see issue #83")]
     InvalidHandle,
-
-    #[display(fmt = "Use a number of 0 or more seconds.")]
     InvalidSeconds,
-
-    #[display(fmt = "Missing argument: --{}, alternatively you may use env var: {}", _0, _1)]
     MissingArgWithEnv(String, String),
-
-    #[display(fmt = "You must specify resources when adding a CA (--asn, --ipv4, --ipv6)")]
     MissingResources,
-
-    #[display(fmt = "Invalid ID cert for child.")]
     InvalidChildIdCert,
-
-    #[display(fmt = "Unrecognised sub-command. Use 'help'.")]
     UnrecognisedSubCommand,
-
-    #[display(fmt = "{}", _0)]
     GeneralArgumentError(String),
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Error::UriError(e) => e.fmt(f),
+            Error::IoError(e) => e.fmt(f),
+            Error::ReportError(e) => e.fmt(f),
+            Error::Rfc8183(e) => write!(f, "Invalid RFC8183 XML: {}", e),
+            Error::ResSetErr(e) => write!(f, "Invalid resources requested: {}", e),
+            Error::InvalidRouteDelta(e) => e.fmt(f),
+            Error::InvalidHandle => write!(
+                f,
+                "The publisher handle may only contain -_A-Za-z0-9, (\\ /) see issue #83"
+            ),
+            Error::InvalidSeconds => write!(f, "Use a number of 0 or more seconds."),
+            Error::MissingArgWithEnv(arg, var) => write!(
+                f,
+                "Missing argument: --{}, alternatively you may use env var: {}",
+                arg, var
+            ),
+            Error::MissingResources => write!(f, "You must specify resources when adding a CA (--asn, --ipv4, --ipv6)"),
+            Error::InvalidChildIdCert => write!(f, "Invalid ID cert for child."),
+            Error::UnrecognisedSubCommand => write!(f, "Unrecognised sub-command. Use 'help'."),
+            Error::GeneralArgumentError(s) => s.fmt(f),
+        }
+    }
 }
 
 impl Error {

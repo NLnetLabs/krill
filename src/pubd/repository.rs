@@ -22,6 +22,7 @@ use crate::commons::util::file;
 use crate::commons::KrillResult;
 use crate::constants::{REPOSITORY_RRDP_DIR, REPOSITORY_RSYNC_DIR};
 use crate::daemon::config::CONFIG;
+use crate::pubd::events::RrdpSessionReset;
 use crate::pubd::publishers::Publisher;
 use crate::pubd::{Cmd, CmdDet, Evt, EvtDet, Ini, RrdpUpdate};
 
@@ -162,6 +163,37 @@ impl RrdpServer {
 
     fn snapshot(&self) -> &Snapshot {
         &self.snapshot
+    }
+
+    /// Performs a session reset of the RRDP server. Useful if the serial needs
+    /// to be rolled, or in case the RRDP server needed to recover to a previous
+    /// state.
+    fn session_reset(&self) -> Result<RrdpSessionReset, Error> {
+        let session = RrdpSession::new();
+        let serial = 0;
+
+        let snapshot = self.snapshot.session_reset(session);
+
+        let snapshot_uri = Self::new_snapshot_uri(&self.rrdp_base_uri, &session, serial);
+        let snapshot_path = Self::new_snapshot_path(&self.rrdp_base_dir, &session, serial);
+        let snapshot_hash = HexEncodedHash::from_content(snapshot.xml().as_slice());
+
+        let snapshot_ref = SnapshotRef::new(snapshot_uri, snapshot_path, snapshot_hash);
+
+        let notification = Notification::create(session, snapshot_ref);
+
+        Ok(RrdpSessionReset::new(snapshot, notification))
+    }
+
+    fn apply_reset(&mut self, reset: RrdpSessionReset) {
+        let (snapshot, notification) = reset.unpack();
+
+        self.serial = notification.serial();
+        self.session = notification.session();
+        self.notification = notification;
+        self.old_notifications.clear();
+        self.snapshot = snapshot;
+        self.deltas = vec![];
     }
 
     /// Updates the RRDP server with the elements. Note that this assumes that
@@ -504,6 +536,10 @@ impl Aggregate for Repository {
 
                 self.stats.publish(&publisher_handle, publisher_stats, notification)
             }
+            EvtDet::RrdpSessionReset(reset) => {
+                self.stats.session_reset(&reset);
+                self.rrdp.apply_reset(reset);
+            }
         }
     }
 
@@ -517,6 +553,7 @@ impl Aggregate for Repository {
             CmdDet::AddPublisher(publisher_request) => self.add_publisher(publisher_request),
             CmdDet::RemovePublisher(publisher) => self.remove_publisher(publisher),
             CmdDet::Publish(publisher_handle, delta) => self.publish(publisher_handle, delta),
+            CmdDet::SessionReset => self.session_reset(),
         }
     }
 }
@@ -614,6 +651,15 @@ impl Repository {
 /// # Publish
 ///
 impl Repository {
+    fn session_reset(&self) -> Result<Vec<Evt>, Error> {
+        let session_reset = self.rrdp.session_reset()?;
+        Ok(vec![EvtDet::rrdp_session_reset(
+            &self.handle,
+            self.version,
+            session_reset,
+        )])
+    }
+
     fn publish(&self, publisher_handle: PublisherHandle, delta: PublishDelta) -> Result<Vec<Evt>, Error> {
         let publisher = self.get_publisher(&publisher_handle)?;
         let delta_elements = DeltaElements::from(delta);
@@ -697,6 +743,13 @@ impl RepoStats {
         self.publishers.insert(publisher.clone(), publisher_stats);
         self.serial = notification.serial();
         self.last_update = Some(notification.time());
+    }
+
+    pub fn session_reset(&mut self, reset: &RrdpSessionReset) {
+        let notification = reset.notification();
+        self.session = notification.session();
+        self.serial = notification.serial();
+        self.last_update = Some(notification.time())
     }
 
     pub fn new_publisher(&mut self, publisher: &PublisherHandle) {
