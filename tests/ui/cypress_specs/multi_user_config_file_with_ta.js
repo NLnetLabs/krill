@@ -187,7 +187,7 @@ describe('Config File Users with TA', () => {
       if (ts.o) {
         cy.contains('ROA added')
       } else {
-        cy.contains('Error')
+        cy.contains('Your user does not have sufficient rights to perform this action. Please contact your administrator.')
       }
     })
   })

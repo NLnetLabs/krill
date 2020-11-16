@@ -138,6 +138,7 @@ pub enum Error {
     ApiMissingCredentials,
     ApiInvalidCredentials,
     ApiInvalidRole,
+    ApiInsufficientRights,
 
     //-----------------------------------------------------------------
     // Repository Issues
@@ -271,7 +272,8 @@ impl fmt::Display for Error {
             Error::ApiMissingCredentials => write!(f, "Missing credentials"),
             Error::ApiInvalidCredentials => write!(f, "Invalid credentials"),
             Error::ApiInvalidRole => write!(f, "Invalid role"),
-        
+            Error::ApiInsufficientRights => write!(f, "Insufficient rights"),
+
 
             //-----------------------------------------------------------------
             // Repository Issues
@@ -472,6 +474,8 @@ impl Error {
             | Error::CaChildUnknown(_, _)
             | Error::CaParentUnknown(_, _)
             | Error::ApiUnknownResource => StatusCode::NOT_FOUND,
+            Error::ApiInvalidCredentials
+            | Error::ApiInsufficientRights => StatusCode::FORBIDDEN,
 
             _ => StatusCode::BAD_REQUEST,
         }
@@ -527,6 +531,8 @@ impl Error {
             Error::ApiInvalidCredentials => ErrorResponse::new("api-invalid-credentials", &self),
 
             Error::ApiInvalidRole => ErrorResponse::new("api-invalid-role", &self),
+
+            Error::ApiInsufficientRights => ErrorResponse::new("api-insufficient-rights", &self),
 
             //-----------------------------------------------------------------
             // Repository Issues (label: repo-*)

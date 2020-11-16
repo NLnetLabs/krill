@@ -209,8 +209,17 @@ impl HttpResponse {
         Self::ok_response(ContentType::Woff2, content.to_vec())
     }
 
+    pub fn warn(warning: Error) -> Self {
+        warn!("{}", warning);
+        Self::response_from_error(warning)
+    }
+
     pub fn error(error: Error) -> Self {
         error!("{}", error);
+        Self::response_from_error(error)
+    }
+
+    fn response_from_error(error: Error) -> Self {
         let status = error.status();
         let response = error.to_error_response();
         let body = serde_json::to_string(&response).unwrap();
@@ -266,7 +275,7 @@ impl HttpResponse {
     }
 
     pub fn forbidden() -> Self {
-        Response::new(StatusCode::FORBIDDEN).finalize()
+        HttpResponse::warn(Error::ApiInsufficientRights)
     }
 }
 
