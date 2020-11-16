@@ -74,9 +74,11 @@ type CustomIdTokenFields = IdTokenFields<
 type CustomTokenResponse = StandardTokenResponse<CustomIdTokenFields, CoreTokenType>;
 // end cascade
 
+#[derive(Default)]
 struct KnownUser {
     role: &'static str,
     cas: Option<&'static str>,
+    token_secs: Option<u32>,
 }
 
 struct TempAuthzCodeDetails {
@@ -100,13 +102,15 @@ type KnownUsers = HashMap<KnownUserId, KnownUser>;
 lazy_static! {
     static ref KNOWN_USERS: KnownUsers = {
         let mut ku = KnownUsers::new();
-        ku.insert("admin@krill", KnownUser { role: "admin", cas: None });
-        ku.insert("readonly@krill", KnownUser { role: "gui_read_only", cas: None });
-        ku.insert("readwrite@krill", KnownUser { role: "gui_read_write", cas: None });
+        ku.insert("admin@krill", KnownUser { role: "admin", ..Default::default() });
+        ku.insert("readonly@krill", KnownUser { role: "gui_read_only", ..Default::default() });
+        ku.insert("readwrite@krill", KnownUser { role: "gui_read_write", ..Default::default() });
+        ku.insert("shorttokenwithoutrefresh@krill", KnownUser { role: "gui_read_write", token_secs: Some(1), ..Default::default() });
         ku
     };
 }
 
+const DEFAULT_TOKEN_DURATION_SECS: u32 = 3600;
 static KEEP_RUNNING_FLAG: AtomicBool = AtomicBool::new(true);
 
 pub fn run_krill_ui_test(test_name: &str, with_openid_server: bool) -> Result<(), Box<dyn std::error::Error>> {
@@ -220,6 +224,12 @@ fn run_mock_openid_connect_server() {
             let user = KNOWN_USERS.get(&session.id).ok_or(
                 Error::custom(format!("Internal error, unknown user: {}", session.id)))?;
 
+            let token_duration = user.token_secs.unwrap_or(DEFAULT_TOKEN_DURATION_SECS);
+
+            if token_duration != DEFAULT_TOKEN_DURATION_SECS {
+                log_warning(&format!("Issuing token with non-default expiration time of {} seconds", &token_duration));
+            }
+
             let id_token = CustomIdToken::new(
                 CustomIdTokenClaims::new(
                     // Specify the issuer URL for the OpenID Connect Provider.
@@ -229,7 +239,7 @@ fn run_mock_openid_connect_server() {
                     vec![Audience::new(authz.client_id.clone())],
                     // The ID token expiration is usually much shorter than that of the access or refresh
                     // tokens issued to clients.
-                    chrono::Utc::now() + chrono::Duration::seconds(300),
+                    chrono::Utc::now() + chrono::Duration::seconds(token_duration.into()),
                     // The issue time is usually the current time.
                     chrono::Utc::now(),
                     // Set the standard claims defined by the OpenID Connect Core spec.
@@ -271,11 +281,18 @@ fn run_mock_openid_connect_server() {
                 None,
             ).unwrap();
 
-            Ok(CustomTokenResponse::new(
+            // TODO: issue a refresh token?
+            // TODO: look at how expiration times are issued and handled, as there are
+            // two separate times: access token expiration, and id token expiration.
+            let mut token_response = CustomTokenResponse::new(
                 access_token,
                 CoreTokenType::Bearer,
                 CustomIdTokenFields::new(Some(id_token), EmptyExtraTokenFields {}),
-            ))
+            );
+
+            // token_response.set_refresh_token()
+            token_response.set_expires_in(Some(&Duration::from_secs(token_duration.into())));
+            Ok(token_response)
         }
         fn base64_decode(encoded: String) -> Result<String, Error> {
             String::from_utf8(base64::decode(&encoded)
@@ -469,6 +486,10 @@ Mock OpenID Connect server: ERROR:
 {}
 
 "#, err);
+        }
+
+        fn log_warning(warning: &str) {
+            eprintln!("Mock OpenID Connect server: WARNING: {}", warning);
         }
 
         let server = Server::http("127.0.0.1:3001").unwrap();
