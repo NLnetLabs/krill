@@ -3,12 +3,12 @@
 Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
 for planned releases.
 
-## 0.8.1-rc1 
+## 0.8.1 'The Gentle Art' 
 
-The ROA guidance introduced in release 0.8.0 was more strict than it should be. With this
-release we make sure that users have full control over the ROAs they create, while providing
-guidance in the form of warnings and suggestions only. Full documentation on the Krill
-suggestions have been added to the [online documentation](https://rpki.readthedocs.io/en/latest/krill/manage-roas.html).
+The ROA guidance introduced in release 0.8.0 was more strict than it should be. This release
+allows users to create redundant ROAs once again, while providing guidance in the form of warnings
+and suggestions only. Full documentation on the Krill suggestions have been added to the
+[online documentation](https://rpki.readthedocs.io/en/latest/krill/manage-roas.html).
 
 In addition to this we have included some small improvements for the Krill Publication
 Server.
