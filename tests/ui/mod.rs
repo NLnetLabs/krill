@@ -136,6 +136,7 @@ pub fn run_krill_ui_test(test_name: &str, with_openid_server: bool) -> Result<()
 
     let assert = Command::new("docker")
         .arg("run")
+        .arg("--rm")
         .arg("--net=host")
         .arg("--ipc=host")
         .arg("-v")
