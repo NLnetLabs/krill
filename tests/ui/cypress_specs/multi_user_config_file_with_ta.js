@@ -161,7 +161,6 @@ describe('Config File Users with TA', () => {
     })
   })
 
-
   init_ca_test_settings.forEach(function (ts) {
     it('Add ROA for CA ' + ts.ca + ' as ' + ts.d + ' user should ' + (ts.o ? 'succeed' : 'fail'), () => {
       cy.visit('/')
@@ -188,7 +187,7 @@ describe('Config File Users with TA', () => {
       if (ts.o) {
         cy.contains('ROA added')
       } else {
-        cy.get('div[role="dialog"]') // no error is shown, the dialog just doesn't go away...
+        cy.contains('Error')
       }
     })
   })
