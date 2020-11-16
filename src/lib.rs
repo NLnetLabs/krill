@@ -1,4 +1,4 @@
-#![recursion_limit = "256"]
+#![recursion_limit = "155"]
 
 extern crate base64;
 #[macro_use]
