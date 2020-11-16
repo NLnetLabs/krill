@@ -139,15 +139,56 @@ pub async fn start() -> Result<(), Error> {
     Ok(())
 }
 
+struct ResultLogger {
+    response_logging_enabled: bool,
+    req_method: hyper::Method,
+    req_path: String,
+}
+
+impl ResultLogger {
+    fn new(req: &Request) -> Self {
+        ResultLogger {
+            response_logging_enabled: true,
+            req_method: req.method().clone(),
+            req_path: req.path.full().to_string(),
+        }
+    }
+
+    fn omit_response(&mut self) {
+        self.response_logging_enabled = false;
+    }
+
+    fn log(&self, res: &Result<hyper::Response<hyper::Body>, Error>) {
+        match res {
+            Ok(response) => {
+                info!("{} {} {}", self.req_method, self.req_path, response.status());
+
+                if self.response_logging_enabled && log_enabled!(log::Level::Trace) {
+                    trace!("Response body: {:?}", response.body());
+                }
+            },
+            Err(err) => {
+                error!("{} {} Error: {}", self.req_method, self.req_path, err);
+            }
+        }
+    }
+}
+
 async fn map_requests(req: hyper::Request<hyper::Body>, state: State) -> Result<hyper::Response<hyper::Body>, Error> {
     let mut req = Request::new(req, state);
 
+    // Use any provided auth details to work out who the requesting actor is
     req.init_actor_from_auth().await?;
 
+    // Save any updated auth details that resulted from inspecting the given
+    // auth details, e.g. if an OpenID Connect token needed refreshing.
     let new_auth = req.actor().new_auth();
 
-    let log_req = format!("{} {}", req.method(), req.path.full());
-    let mut log_res = true;
+    // Make a logger that we can use to skip logging of very large static
+    // responses as they are not helpful when diagnosing issues (you can get
+    // the same information from your browser in an easier to use form) and they
+    // just make the trace log unusable.
+    let mut logger = ResultLogger::new(&req);
 
     let res = api(req)
         .or_else(auth)
@@ -156,13 +197,7 @@ async fn map_requests(req: hyper::Request<hyper::Body>, state: State) -> Result<
         .or_else(stats)
         .or_else(rfc8181)
         .or_else(rfc6492)
-        .or_else(statics)
-        .and_then(|res| async {
-            // Don't log very large static responses as they are not helpful
-            // when diagnosing issues and just make the trace log unusable.
-            log_res = false;
-            Ok(res)
-        })
+        .or_else(statics).and_then(|res| async { logger.omit_response(); Ok(res) })
         .or_else(ta)
         .or_else(rrdp)
         .or_else(testbed)
@@ -170,23 +205,14 @@ async fn map_requests(req: hyper::Request<hyper::Body>, state: State) -> Result<
         .map_err(|_| Error::custom("should have received not found response"))
         .await;
 
-    match res {
-        Ok(routing_result) => {
-            let response = piggyback_refreshed_token_on_response(routing_result.response(), new_auth);
-            info!("{} {}", log_req, response.status(),);
+    // Augment the response with any updated auth details that were determined
+    // above.
+    let res = add_new_auth_to_response(res, new_auth);
 
-            // Log the response body if trace logging is enabled, except if
-            // deliberately disabled for this particular response
-            if log_enabled!(log::Level::Trace) && log_res {
-                trace!("Response body: {:?}", response.body());
-            }
-            Ok(response)
-        },
-        Err(e) => {
-            error!("{} Error: {}", log_req, e);
-            Err(e)
-        }
-    }
+    // Log the request and the response.
+    logger.log(&res);
+
+    res
 }
 
 //------------ Support Functions ---------------------------------------------
@@ -613,12 +639,15 @@ fn add_authorization_headers_to_response(org_response: hyper::Response<hyper::Bo
     }
 }
 
-fn piggyback_refreshed_token_on_response(res: hyper::Response<hyper::Body>, opt_auth: Option<Auth>) -> hyper::Response<hyper::Body> {
-    match opt_auth {
-        Some(Auth::Bearer(token)) => {
-            add_authorization_headers_to_response(res, token)
+fn add_new_auth_to_response(res: Result<HttpResponse, Error>, opt_auth: Option<Auth>) -> Result<hyper::Response<hyper::Body>, Error> {
+    match res {
+        Ok(res) => match opt_auth {
+            Some(Auth::Bearer(token)) => {
+                Ok(add_authorization_headers_to_response(res.response(), token))
+            },
+            _ => Ok(res.response())
         },
-        _ => res,
+        Err(res) => Err(res)
     }
 }
 
