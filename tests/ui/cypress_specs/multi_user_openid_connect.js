@@ -54,6 +54,24 @@ describe('Config File Users', () => {
       cy.contains('Logged in as: readonly@krill')
     }) 
 
+    it('Cannot create CA as readonly user', () => {
+      cy.visit('/')
+      cy.get('input[name="username"]').type("readonly@krill")
+      cy.contains('Sign In').click()
+      cy.contains('Logged in as: readonly@krill')
+      cy.contains('Welcome to Krill')
+  
+      // try to create a CA
+      cy.contains('CA Handle')
+      cy.get('form input[type="text"]').type('dummy-ca-name')
+      cy.contains('Create CA').click()
+      cy.contains('OK').click()
+  
+      // still on the welcome page but now an error is showing
+      cy.contains('Welcome to Krill')
+      cy.contains('Error')
+    })
+  
     it('Can login with readwrite credentials', () => {
       cy.visit('/')
       cy.get('input[name="username"]').type("readwrite@krill")
