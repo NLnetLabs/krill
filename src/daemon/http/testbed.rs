@@ -1,6 +1,6 @@
 use hyper::Method;
 
-use crate::commons::api::Handle;
+use crate::{constants::ACTOR_TESTBED, commons::api::Handle};
 use crate::daemon::ca::{ta_handle, testbed_ca_handle};
 use crate::daemon::config::CONFIG;
 use crate::daemon::http::{HttpResponse, Request, RequestPath, RoutingResult};
@@ -39,12 +39,19 @@ use crate::daemon::http::server::{
 // This feature assumes the existence of a built-in "testbed" CA and publisher
 // when testbed mode is enabled.
 
+pub async fn testbed(mut req: Request) -> RoutingResult {
     if !CONFIG.testbed_enabled || !req.path().full().starts_with("/testbed") {
         Err(req) // Not for us
     } else {
-        // let mut_req = &mut req;
-        // mut_req.disable_authorization_checks();
-
+        // The testbed is intended to be used without being logged in but
+        // anonymous users don't have the necessary rights to manipulate
+        // Krill CAs and publishers. Upgrade anonymous users with testbed
+        // rights ready for the next call in the chain to the testbed()
+        // API call handler functions.
+        if req.actor().is_none() {
+            req.override_actor(ACTOR_TESTBED.clone());
+        }
+        
         let mut path = req.path().clone();
         match path.next() {
             Some("enabled") => testbed_enabled(req).await,

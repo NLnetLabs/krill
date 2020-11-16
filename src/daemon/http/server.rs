@@ -21,10 +21,10 @@ use hyper::server::conn::AddrIncoming;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::Method;
 
-use crate::{constants::ACTOR_TESTBED, commons::api::{
+use crate::commons::api::{
     BgpStats, ChildHandle, CommandHistoryCriteria, Handle, ParentCaContact, ParentCaReq, ParentHandle, PublisherList,
     RepositoryUpdate, RoaDefinitionUpdates, RtaName, Token,
-}};
+};
 use crate::commons::actor::Actor;
 use crate::commons::bgp::BgpAnalysisAdvice;
 use crate::commons::error::Error;
@@ -165,17 +165,6 @@ async fn map_requests(req: hyper::Request<hyper::Body>, state: State) -> Result<
         })
         .or_else(ta)
         .or_else(rrdp)
-        .or_else(|mut req| async {
-            // The testbed is intended to be used without being logged in but
-            // anonymous users don't have the necessary rights to manipulate
-            // Krill CAs and publishers. Upgrade anonymous users with testbed
-            // rights ready for the next call in the chain to the testbed()
-            // API call handler functions.
-            if req.actor().is_none() {
-                req.override_actor(ACTOR_TESTBED.clone());
-            }
-            Err(req)
-        })
         .or_else(testbed)
         .or_else(render_not_found)
         .map_err(|_| Error::custom("should have received not found response"))
