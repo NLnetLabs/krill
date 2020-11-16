@@ -39,8 +39,7 @@ use crate::daemon::http::server::{
 // This feature assumes the existence of a built-in "testbed" CA and publisher
 // when testbed mode is enabled.
 
-pub async fn testbed(req: Request) -> RoutingResult {
-    if !CONFIG.testbed_enabled {
+    if !CONFIG.testbed_enabled || !req.path().full().starts_with("/testbed") {
         Err(req) // Not for us
     } else {
         // let mut_req = &mut req;
