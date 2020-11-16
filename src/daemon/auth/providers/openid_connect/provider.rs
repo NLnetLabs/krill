@@ -195,15 +195,15 @@ impl OpenIDConnectAuthProvider {
             logout_url, CONFIG.service_uri().as_str())
     }
 
-    fn try_refresh_token(&self, session: &ClientSession) -> Option<Auth> {
-        if let Some(refresh_token) = &session.secrets.get(0) {
-            if let Some(expires_in) = &session.expires_in {
-                match SystemTime::now().duration_since(UNIX_EPOCH) {
-                    Ok(now) => {
-                        let session_age = now.as_secs() - session.start_time;
-                        debug!("OpenID Connect: session age: {}, expires in: {} (for ID \"{}\")",
-                                &session_age, expires_in.as_secs(), &session.id);
-                        if session_age > expires_in.as_secs() {
+    fn try_refresh_token(&self, session: &ClientSession) -> KrillResult<Option<Auth>> {
+        if let Some(expires_in) = &session.expires_in {
+            match SystemTime::now().duration_since(UNIX_EPOCH) {
+                Ok(now) => {
+                    let session_age = now.as_secs() - session.start_time;
+                    trace!("OpenID Connect: session age: {}, expires in: {} (for ID \"{}\")",
+                        &session_age, expires_in.as_secs(), &session.id);
+                    if session_age > expires_in.as_secs() {
+                        if let Some(refresh_token) = &session.secrets.get(0) {
                             debug!("OpenID Connect: refreshing token for ID \"{}\"", &session.id);
                             let token_response = self.client
                                 .exchange_refresh_token(&RefreshToken::new(refresh_token.to_string()))
@@ -216,23 +216,26 @@ impl OpenIDConnectAuthProvider {
                                         vec![]
                                     };
 
-                                    if let Ok(new_token) = session_to_token(&session.id, &session.role, &session.inc_cas, &session.exc_cas, &secrets, &self.key) {
-                                        return Some(Auth::Bearer(Token::from(new_token)));
+                                    if let Ok(new_token) = session_to_token(&session.id, &session.role, &session.inc_cas, &session.exc_cas, &secrets, &self.key, token_response.expires_in()) {
+                                        return Ok(Some(Auth::Bearer(Token::from(new_token))));
                                     }
                                 },
                                 Err(err) => {
                                     warn!("OpenID Connect: unable to determine the session age: {}", err);
                                 }
                             }
+                        } else {
+                            debug!("OpenID Connect: session expired with no refresh token for ID \"{}\"", &session.id);
+                            return Err(KrillError::ApiInvalidCredentials);
                         }
-                    },
-                    Err(err) => {
-                        warn!("OpenID Connect: unable to determine the session age: {}", err);
                     }
+                },
+                Err(err) => {
+                    warn!("OpenID Connect: unable to determine the session age: {}", err);
                 }
             }
         }
-        None
+        Ok(None)
     }
 
     fn extract_claim(
@@ -317,7 +320,9 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 // into a login session structure
                 let session = token_to_session(token.clone(), &self.key)?;
 
-                let new_auth = self.try_refresh_token(&session);
+                debug!("ID: {:?}, Role: {:?}, Inc CAs: {:?}, Exc CAs: {:?}, Expires In: {:?}", &session.id, &session.role, &session.inc_cas, &session.exc_cas, &session.expires_in);
+
+                let new_auth = self.try_refresh_token(&session)?;
 
                 Ok(Some(Actor::user(session.id, Some(session.role), &session.inc_cas, &session.exc_cas, new_auth)))
             },
@@ -596,7 +601,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                     vec![]
                 };
 
-                let api_token = session_to_token(&id, &role, &inc_cas, &exc_cas, &secrets, &self.key)?;
+                let api_token = session_to_token(&id, &role, &inc_cas, &exc_cas, &secrets, &self.key, token_response.expires_in())?;
 
                 debug!("ID: {:?}, Role: {:?}, Inc CAs: {:?}, Exc CAs: {:?}", &id, &role, &inc_cas, &exc_cas);
 

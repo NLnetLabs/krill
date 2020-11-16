@@ -109,7 +109,7 @@ impl AuthProvider for ConfigFileAuthProvider {
         if let Auth::IdAndPasswordHash(id, password_hash) = auth {
             if let Some(user) = self.users.get(id) {
                 if &user.password_hash == password_hash {
-                    let api_token = session_to_token(&id, &user.role, &user.inc_cas, &user.exc_cas, &[], &self.key)?;
+                    let api_token = session_to_token(&id, &user.role, &user.inc_cas, &user.exc_cas, &[], &self.key, None)?;
 
                     debug!("ID: {:?}, Role: {:?}, Inc CAs: {:?}, Exc CAs: {:?}", &id, &user.role, &user.inc_cas, &user.exc_cas);
 

@@ -67,16 +67,18 @@ fn cache_session(token: &Token, session: &ClientSession) {
     }
 }
 
-pub fn session_to_token(id: &String, role: &Role, inc_cas: &[String], exc_cas: &[String], secrets: &[String], key: &[u8]) -> KrillResult<Token> {
+pub fn session_to_token(id: &String, role: &Role, inc_cas: &[String], exc_cas: &[String], secrets: &[String], key: &[u8], expires_in: Option<Duration>) -> KrillResult<Token> {
     let session = ClientSession {
         start_time: time_now_secs_since_epoch()?,
-        expires_in: Some(Duration::new(3600, 0)),
+        expires_in: expires_in,
         id: id.clone(),
         role: role.clone(),
         inc_cas: inc_cas.to_vec(),
         exc_cas: exc_cas.to_vec(),
         secrets: secrets.to_vec(),
     };
+
+    debug!("Creating token for session: {:?}", &session);
 
     let session_json_str = serde_json::to_string(&session)
         .map_err(|err| KrillError::Custom(
@@ -94,7 +96,10 @@ pub fn session_to_token(id: &String, role: &Role, inc_cas: &[String], exc_cas: &
 
 pub fn token_to_session(token: Token, key: &[u8]) -> KrillResult<ClientSession> {
     if let Some(session) = get_cached_session(&token) {
+        trace!("Session cache hit for session id {}", &session.id);
         return Ok(session);
+    } else {
+        trace!("Session cache miss, deserializing...");
     }
 
     let bytes = base64::decode(token.as_ref().as_bytes())
@@ -112,6 +117,8 @@ pub fn token_to_session(token: Token, key: &[u8]) -> KrillResult<ClientSession> 
     let session = serde_json::from_slice::<ClientSession>(&unencrypted_bytes)
         .map_err(|err| KrillError::Custom(
             format!("Unable to deserializing client session: {}", err)))?;
+
+    trace!("Session cache miss, deserialized session id {}", &session.id);
 
     cache_session(&token, &session);
     Ok(session)
