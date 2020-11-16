@@ -60,4 +60,37 @@ describe('Config File Users', () => {
       cy.contains('Sign In').click()
       cy.contains('Logged in as: readwrite@krill')
     }) 
+
+    it('Login receives short-lived token that cannot be refreshed', () => {
+      cy.visit('/')
+      cy.get('input[name="username"]').type("shorttokenwithoutrefresh@krill")
+      cy.contains('Sign In').click()
+      cy.contains('Logged in as: shorttokenwithoutrefresh@krill')
+      cy.contains('Welcome to Krill')
+
+      // the token has a lifetime of 1 second and no refresh token, wait 2..
+      cy.wait(2)
+
+      // verify that we are shown the OpenID Connect provider login page
+      cy.visit('/')
+      cy.contains('Logged in as:').should('not.exist')
+      cy.url().should('not.include', Cypress.config('baseUrl'))
+      cy.contains('Mock OpenID Connect login form')
+      cy.get('input[name="username"]')
+    })
+
+    it('Login receives short-lived refreshable token', () => {
+      cy.visit('/')
+      cy.get('input[name="username"]').type("shorttokenwithrefresh@krill")
+      cy.contains('Sign In').click()
+      cy.contains('Logged in as: shorttokenwithrefresh@krill')
+      cy.contains('Welcome to Krill')
+
+      // the token has a lifetime of 1 second and no refresh token, wait 2..
+      cy.wait(2)
+
+      // verify that we are shown the OpenID Connect provider login page
+      cy.visit('/')
+      cy.contains('Logged in as: shorttokenwithrefresh@krill')
+    })
 })
