@@ -4,7 +4,7 @@
 //   "Note that select! relies on proc-macro-hack, and may require to set the
 //    compiler's recursion limit very high, e.g. #![recursion_limit="1024"]."
 // From: https://docs.rs/futures/0.3.6/futures/macro.select.html
-#![recursion_limit = "256"]
+#![recursion_limit = "155"]
 
 #![type_length_limit = "5000000"]
 
