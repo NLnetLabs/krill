@@ -117,9 +117,15 @@ pub fn run_krill_ui_test(test_name: &str, with_openid_server: bool) -> Result<()
     // Remove the Krill data directory. Assumes that the .conf file passed to
     // Krill sets data_dir to /tmp/krill... touching the host filesystem like
     // this isn't nice...
-    if PathBuf::from("/tmp/krill").exists() {
+    let data_dir = PathBuf::from("/tmp/krill");
+
+    if data_dir.exists() {
         Command::new("rm").arg("-R").arg("/tmp/krill").status()?;
     }
+
+    // The directory has to exist for the log file to be written to a file
+    // inside it.
+    std::fs::create_dir(data_dir.as_path())?;
 
     if with_openid_server {
         run_mock_openid_connect_server();
@@ -477,15 +483,8 @@ fn run_mock_openid_connect_server() {
             return Err(Error::custom(format!("Unknown request: {:?}", request)));
         }
 
-        fn log_internal_error(err: Error) {
-            eprintln!(r#"
-
-==================================
-Mock OpenID Connect server: ERROR:
-==================================
-{}
-
-"#, err);
+        fn log_error(err: Error) {
+            eprintln!("Mock OpenID Connect server: ERROR: {}", err);
         }
 
         fn log_warning(warning: &str) {
@@ -498,11 +497,11 @@ Mock OpenID Connect server: ERROR:
                 Ok(None) => { /* no request received within the timeout */ },
                 Ok(Some(request)) => {
                     if let Err(err) = handle_request(request, &discovery_doc, &jwks_doc, &login_doc, &signing_key, &mut authz_codes, &mut login_sessions) {
-                        log_internal_error(err);
+                        log_error(err);
                     }
                 },
                 Err(err) => { 
-                    log_internal_error(err.into());
+                    log_error(err.into());
                 }
             };
         }
