@@ -605,7 +605,11 @@ impl AuthProvider for OpenIDConnectAuthProvider {
 
                 debug!("ID: {:?}, Role: {:?}, Inc CAs: {:?}, Exc CAs: {:?}", &id, &role, &inc_cas, &exc_cas);
 
-                Ok(LoggedInUser { token: api_token, id: base64::encode(&id) })
+                Ok(LoggedInUser {
+                    token: api_token,
+                    id: id,
+                    role: role
+                })
             },
 
             _ => Err(KrillError::ApiInvalidCredentials)

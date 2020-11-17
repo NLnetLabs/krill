@@ -2,7 +2,7 @@
 
 use std::any::Any;
 
-use crate::commons::{actor::Actor, KrillResult};
+use crate::{daemon::auth::common::config::Role, commons::{actor::Actor, KrillResult}};
 use crate::commons::api::Token;
 use crate::daemon::auth::providers::MasterTokenAuthProvider;
 
@@ -129,6 +129,7 @@ impl Authorizer {
 pub struct LoggedInUser {
     pub token: Token,
     pub id: String,
+    pub role: Role,
 }
 
 #[derive(Clone)]

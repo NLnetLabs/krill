@@ -113,7 +113,11 @@ impl AuthProvider for ConfigFileAuthProvider {
 
                     debug!("ID: {:?}, Role: {:?}, Inc CAs: {:?}, Exc CAs: {:?}", &id, &user.role, &user.inc_cas, &user.exc_cas);
 
-                    return Ok(LoggedInUser { token: api_token, id: base64::encode(&id) });
+                    return Ok(LoggedInUser {
+                        token: api_token,
+                        id: id.to_string(),
+                        role: user.role.clone(),
+                    });
                 }
             }
         }

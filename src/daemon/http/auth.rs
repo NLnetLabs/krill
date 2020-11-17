@@ -16,11 +16,12 @@ pub async fn auth(req: Request) -> RoutingResult {
         // callback case the token is an OpenID Connect temporary code.
         AUTH_CALLBACK_ENDPOINT if *req.method() == Method::GET => {
             match req.login().await {
-                Ok(LoggedInUser { token, id }) => {
+                Ok(LoggedInUser { token, id, role }) => {
                     let quoted_token = urlparse::quote(token, b"").unwrap(); // TODO: remove unwrap
                     let quoted_id = urlparse::quote(id, b"").unwrap(); // TODO: remove unwrap
-                    let location = format!("/index.html#/login?token={}&id={}",
-                        &quoted_token, &quoted_id);
+                    let quoted_role = urlparse::quote(format!("{}", role), b"").unwrap(); // TODO: remove unwrap
+                    let location = format!("/index.html#/login?token={}&id={}&role={}",
+                        &quoted_token, &quoted_id, &quoted_role);
                     Ok(HttpResponse::found(&location))
                 },
                 Err(err) => {

@@ -44,16 +44,19 @@ impl AuthProvider for MasterTokenAuthProvider {
     }
 
     fn login(&self, auth: &Auth) -> KrillResult<LoggedInUser> {
-        match auth {
-            Auth::Bearer(token) if &self.token == token => {
-                // Once login is complete, return the id of the logged in user to 
-                Ok(LoggedInUser {
-                    token: token.clone(),
-                    id: base64::encode("master-token@krill.conf")
-                })
-            },
-            _ => Err(KrillError::ApiInvalidCredentials),
+        if let Auth::Bearer(token) = auth {
+            if let Ok(Some(actor)) = self.get_actor(auth) {
+                if let Some(role) = actor.role() {
+                    return Ok(LoggedInUser {
+                        token: token.clone(),
+                        id: actor.name().to_string(),
+                        role: role
+                    });
+                }
+            }
         }
+
+        Err(KrillError::ApiInvalidCredentials)
     }
 
     fn logout(&self, _auth: Option<Auth>) -> String {

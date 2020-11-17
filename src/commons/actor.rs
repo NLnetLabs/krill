@@ -74,6 +74,10 @@ impl Actor {
         }
     }
 
+    pub fn role(&self) -> Option<Role> {
+        self.role.clone()
+    }
+
     pub fn has_permission(&self, wanted_permissions: Permissions) -> Option<bool> {
         if self.is_none() {
             return None
