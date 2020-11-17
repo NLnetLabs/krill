@@ -31,7 +31,7 @@ use crate::commons::util::file;
 use crate::constants::{KRILL_ENV_UPGRADE_ONLY, KRILL_VERSION_MAJOR, KRILL_VERSION_MINOR, KRILL_VERSION_PATCH};
 use crate::daemon::ca::RouteAuthorizationUpdates;
 use crate::daemon::ca::{ta_handle, testbed_ca_handle};
-use crate::daemon::config::CONFIG;
+use crate::daemon::config::Config;
 use crate::daemon::http::statics::statics;
 use crate::daemon::http::{tls, tls_keys, HttpResponse, Request, RequestPath, RoutingResult};
 use crate::daemon::krillserver::KrillServer;
@@ -42,7 +42,8 @@ use crate::upgrades::{post_start_upgrade, pre_start_upgrade, update_storage_vers
 pub type State = Arc<RwLock<KrillServer>>;
 
 pub async fn start() -> Result<(), Error> {
-    let pid_file = CONFIG.pid_file();
+    let config = Arc::new(Config::create().map_err(|e| Error::Custom(format!("Could not parse config: {}", e)))?);
+    let pid_file = config.pid_file();
     if let Err(e) = file::save(process::id().to_string().as_bytes(), &pid_file) {
         eprintln!("Could not write PID file: {}", e);
         ::std::process::exit(1);
@@ -50,13 +51,13 @@ pub async fn start() -> Result<(), Error> {
 
     // Check data dir can be written to
     {
-        let mut test_file = CONFIG.data_dir.clone();
+        let mut test_file = config.data_dir.clone();
         test_file.push("test");
 
         if let Err(e) = file::save(b"test", &test_file) {
             eprintln!(
                 "Cannot write to data dir: {}, Error: {}",
-                CONFIG.data_dir.to_string_lossy(),
+                config.data_dir.to_string_lossy(),
                 e
             );
             ::std::process::exit(1);
@@ -71,18 +72,18 @@ pub async fn start() -> Result<(), Error> {
     }
 
     // Call upgrade, this will only do actual work if needed.
-    pre_start_upgrade(&CONFIG.data_dir).map_err(|e| Error::Custom(format!("Could not upgrade Krill: {}", e)))?;
+    pre_start_upgrade(&config.data_dir).map_err(|e| Error::Custom(format!("Could not upgrade Krill: {}", e)))?;
 
     // Create the server, this will create the necessary data sub-directories if needed
-    let krill = KrillServer::build().await?;
+    let krill = KrillServer::build(config.clone()).await?;
 
     // Perform upgrades that need a running krill server (e.g. clean up ROAs)
-    post_start_upgrade(&CONFIG.data_dir, &krill)
+    post_start_upgrade(&config.data_dir, &krill)
         .map_err(|e| Error::Custom(format!("Could not upgrade Krill: {}", e)))
         .await?;
 
     // Update the version identifiers for the storage dirs
-    update_storage_version(&CONFIG.data_dir)
+    update_storage_version(&config.data_dir)
         .map_err(|e| Error::Custom(format!("Could not upgrade Krill: {}", e)))
         .await?;
 
@@ -104,17 +105,17 @@ pub async fn start() -> Result<(), Error> {
         }
     });
 
-    tls_keys::create_key_cert_if_needed(&CONFIG.data_dir).map_err(|e| Error::HttpsSetup(format!("{}", e)))?;
+    tls_keys::create_key_cert_if_needed(&config.data_dir).map_err(|e| Error::HttpsSetup(format!("{}", e)))?;
 
     let server_config_builder = tls::TlsConfigBuilder::new()
-        .cert_path(tls_keys::cert_file_path(&CONFIG.data_dir))
-        .key_path(tls_keys::key_file_path(&CONFIG.data_dir));
+        .cert_path(tls_keys::cert_file_path(&config.data_dir))
+        .key_path(tls_keys::key_file_path(&config.data_dir));
     let server_config = server_config_builder.build().unwrap();
 
-    let incoming = AddrIncoming::bind(&CONFIG.socket_addr()).map_err(|e| {
+    let incoming = AddrIncoming::bind(&config.socket_addr()).map_err(|e| {
         Error::Custom(format!(
             "Could not bing to address and port: {}, Error: {}",
-            &CONFIG.socket_addr(),
+            &config.socket_addr(),
             e
         ))
     })?;
@@ -486,7 +487,7 @@ async fn ta(req: Request) -> RoutingResult {
     match *req.method() {
         Method::GET => match req.path.full() {
             "/ta/ta.tal" => tal(req).await,
-            "/testbed.tal" if CONFIG.testbed_enabled => tal(req).await,
+            "/testbed.tal" => tal(req).await,
             "/ta/ta.cer" => ta_cer(req).await,
             _ => Err(req),
         },
@@ -1355,7 +1356,7 @@ async fn api_ca_rta_multi_prep(req: Request, ca: Handle, name: RtaName) -> Routi
 // when testbed mode is enabled.
 
 async fn testbed(req: Request) -> RoutingResult {
-    if !CONFIG.testbed_enabled {
+    if !req.state.read().await.testbed_enabled() {
         Err(req) // Not for us
     } else {
         let mut path = req.path().clone();

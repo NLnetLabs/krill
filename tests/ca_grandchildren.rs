@@ -19,7 +19,6 @@ extern crate krill;
 async fn ca_grandchildren() {
     use krill::commons::api::{Handle, ObjectName, ParentCaReq, ResourceClassName, ResourceSet};
     use krill::daemon::ca::ta_handle;
-    use krill::daemon::config::CONFIG;
     use krill::test::*;
     use std::fs;
     use std::str::FromStr;
@@ -41,7 +40,7 @@ async fn ca_grandchildren() {
 
     // Wait for the "testlab" CA to get it certificate, so we know if we can expect
     // certificates for it in this test.
-    let base_cert_files = if CONFIG.testbed_enabled {
+    let base_cert_files = {
         let testbed_ca_handle = Handle::from_str("testbed").unwrap();
         assert!(ca_gets_resources(&testbed_ca_handle, &ResourceSet::all_resources()).await);
 
@@ -49,8 +48,6 @@ async fn ca_grandchildren() {
         let testbed_ca_rc = testbed_ca.resource_classes().keys().next().unwrap();
         let testbed_ca_key = ca_key_for_rcn(&testbed_ca_handle, &testbed_ca_rc).await;
         vec![ObjectName::from(testbed_ca_key.incoming_cert().cert()).to_string()]
-    } else {
-        Vec::new()
     };
     let base_objects = base_cert_files.iter().map(|f| f.as_str()).collect::<Vec<&str>>();
 

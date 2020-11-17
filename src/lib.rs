@@ -12,8 +12,6 @@ extern crate futures_util;
 extern crate hex;
 extern crate hyper;
 extern crate intervaltree;
-#[macro_use]
-extern crate lazy_static;
 extern crate libflate;
 #[macro_use]
 extern crate log;

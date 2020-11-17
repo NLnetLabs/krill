@@ -21,7 +21,7 @@ use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
 use crate::commons::KrillResult;
 use crate::constants::{REPOSITORY_RRDP_DIR, REPOSITORY_RSYNC_DIR};
-use crate::daemon::config::CONFIG;
+use crate::daemon::config::Config;
 use crate::pubd::events::RrdpSessionReset;
 use crate::pubd::publishers::Publisher;
 use crate::pubd::{Cmd, CmdDet, Evt, EvtDet, Ini, RrdpUpdate};
@@ -264,7 +264,7 @@ impl RrdpServer {
         notification.replace(self.notification.time());
         self.old_notifications.push_front(notification);
 
-        let threshold_timestamp = self.notification.time().timestamp() - CONFIG.repo_retain_old_seconds;
+        let threshold_timestamp = self.notification.time().timestamp() - Config::repo_retain_old_seconds();
         self.old_notifications.retain(|n| n.replaced_after(threshold_timestamp));
 
         let mut snapshot = self.snapshot.clone();

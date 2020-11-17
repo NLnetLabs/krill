@@ -15,7 +15,7 @@ use crate::commons::crypto::KrillSigner;
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
 use crate::daemon::ca::{CurrentObjectSet, CurrentObjectSetDelta, EvtDet};
-use crate::daemon::config::CONFIG;
+use crate::daemon::config::IssuanceTimingConfig;
 
 //------------ CertifiedKey --------------------------------------------------
 
@@ -34,10 +34,11 @@ impl CertifiedKey {
         incoming_cert: RcvdCert,
         repo_info: &RepoInfo,
         name_space: &str,
+        issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<Self> {
         let key_id = incoming_cert.cert().subject_key_identifier();
-        let current_set = CurrentObjectSet::create(&incoming_cert, repo_info, name_space, signer)?;
+        let current_set = CurrentObjectSet::create(&incoming_cert, repo_info, name_space, issuance_timing, signer)?;
 
         Ok(CertifiedKey {
             key_id,
@@ -120,8 +121,8 @@ impl CertifiedKey {
         }
     }
 
-    pub fn close_to_next_update(&self) -> bool {
-        self.current_set.next_update() < Time::now() + Duration::hours(CONFIG.timing_publish_hours_before_next)
+    pub fn close_to_next_update(&self, hours: i64) -> bool {
+        self.current_set.next_update() < Time::now() + Duration::hours(hours)
     }
 
     pub fn with_new_cert(mut self, cert: RcvdCert) -> Self {

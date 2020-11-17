@@ -18,7 +18,7 @@ use crate::commons::api::{
 use crate::commons::crypto::KrillSigner;
 use crate::commons::KrillResult;
 use crate::daemon::ca::{RoaInfo, RouteAuthorization};
-use crate::daemon::config::CONFIG;
+use crate::daemon::config::IssuanceTimingConfig;
 
 //------------ AddedOrUpdated ----------------------------------------------
 
@@ -168,11 +168,20 @@ impl CurrentObjectSet {
         signing_cert: &RcvdCert,
         repo_info: &RepoInfo,
         name_space: &str,
+        issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<Self> {
         let number = 1;
         let revocations = Revocations::default();
-        let (crl_info, _) = CrlBuilder::build(revocations.clone(), vec![], number, None, signing_cert, signer)?;
+        let (crl_info, _) = CrlBuilder::build(
+            revocations.clone(),
+            vec![],
+            number,
+            None,
+            signing_cert,
+            issuance_timing.timing_publish_next_hours,
+            signer,
+        )?;
 
         let manifest_info = ManifestBuilder::with_crl_only(&crl_info).build(
             signing_cert,
@@ -180,6 +189,7 @@ impl CurrentObjectSet {
             name_space,
             number,
             None,
+            issuance_timing,
             signer,
         )?;
 
@@ -231,6 +241,7 @@ impl CrlBuilder {
         number: u64,
         old: Option<HexEncodedHash>,
         signing_cert: &RcvdCert,
+        next_hours: i64,
         signer: &KrillSigner,
     ) -> KrillResult<(CrlInfo, RevocationsDelta)> {
         let signing_key = signing_cert.cert().subject_public_key_info();
@@ -248,7 +259,7 @@ impl CrlBuilder {
         }
 
         let this_update = Time::five_minutes_ago();
-        let next_update = Time::now() + Duration::hours(CONFIG.timing_publish_next_hours);
+        let next_update = Time::now() + Duration::hours(next_hours);
         let serial_number = Serial::from(number);
 
         let mut crl = TbsCertList::new(
@@ -347,6 +358,7 @@ impl ManifestBuilder {
         ManifestBuilder { entries }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn build(
         self,
         signing_cert: &RcvdCert,
@@ -354,6 +366,7 @@ impl ManifestBuilder {
         name_space: &str,
         number: u64,
         old: Option<HexEncodedHash>,
+        issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<ManifestInfo> {
         let signing_key = signing_cert.cert().subject_public_key_info();
@@ -369,8 +382,8 @@ impl ManifestBuilder {
 
         let this_update = Time::five_minutes_ago();
         let now = Time::now();
-        let next_update = Time::now() + Duration::hours(CONFIG.timing_publish_next_hours);
-        let valid_until = Time::now() + Duration::days(CONFIG.timing_publish_valid_days);
+        let next_update = Time::now() + Duration::hours(issuance_timing.timing_publish_next_hours);
+        let valid_until = Time::now() + Duration::days(issuance_timing.timing_publish_valid_days);
 
         let entries = self.entries.iter().map(|(k, v)| FileAndHash::new(k, v));
 

@@ -31,7 +31,6 @@ use crate::commons::api::{
 use crate::commons::crypto::IdCert;
 use crate::commons::util::ext_serde;
 use crate::daemon::ca::RouteAuthorization;
-use crate::daemon::config::CONFIG;
 
 //------------ ResourceClassName -------------------------------------------
 
@@ -1774,7 +1773,7 @@ impl Default for RepoStatus {
     fn default() -> Self {
         RepoStatus {
             last_exchange: None,
-            next_exchange_before: Self::now_plus_republish_hours(),
+            next_exchange_before: Self::now_plus_hours(1),
             published: vec![],
         }
     }
@@ -1799,8 +1798,8 @@ impl RepoStatus {
 }
 
 impl RepoStatus {
-    fn now_plus_republish_hours() -> i64 {
-        (Time::now() + Duration::hours(CONFIG.republish_hours())).timestamp()
+    fn now_plus_hours(hours: i64) -> i64 {
+        (Time::now() + Duration::hours(hours)).timestamp()
     }
 
     pub fn set_failure(&mut self, uri: String, error: ErrorResponse) {
@@ -1812,23 +1811,23 @@ impl RepoStatus {
         self.next_exchange_before = (Time::now() + Duration::minutes(5)).timestamp();
     }
 
-    pub fn set_success(&mut self, uri: String, published: Vec<PublishElement>) {
+    pub fn set_success(&mut self, uri: String, published: Vec<PublishElement>, next_hours: i64) {
         self.last_exchange = Some(ParentExchange {
             timestamp: Time::now().timestamp(),
             uri,
             result: ParentExchangeResult::Success,
         });
         self.published = published;
-        self.next_exchange_before = Self::now_plus_republish_hours();
+        self.next_exchange_before = Self::now_plus_hours(next_hours);
     }
 
-    pub fn set_last_updated(&mut self, uri: String) {
+    pub fn set_last_updated(&mut self, uri: String, next_hours: i64) {
         self.last_exchange = Some(ParentExchange {
             timestamp: Time::now().timestamp(),
             uri,
             result: ParentExchangeResult::Success,
         });
-        self.next_exchange_before = Self::now_plus_republish_hours();
+        self.next_exchange_before = Self::now_plus_hours(next_hours);
     }
 }
 

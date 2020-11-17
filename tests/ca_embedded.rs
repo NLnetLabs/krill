@@ -10,7 +10,6 @@ async fn ca_embedded() {
 
     use krill::commons::api::{Handle, ParentCaReq, ResourceSet};
     use krill::daemon::ca::ta_handle;
-    use krill::daemon::config::CONFIG;
     use krill::test::*;
 
     let dir = start_krill().await;
@@ -22,7 +21,7 @@ async fn ca_embedded() {
 
     init_child_with_embedded_repo(&child).await;
 
-    let base_cert_count = if CONFIG.testbed_enabled { 1 } else { 0 };
+    let base_cert_count = 1;
 
     // Embedded parent --------------------------------------------------------------------
     let parent = {

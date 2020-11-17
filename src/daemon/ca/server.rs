@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::ops::Deref;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use tokio::sync::Mutex;
@@ -30,7 +29,7 @@ use crate::daemon::ca::{
     self, ta_handle, CertAuth, Cmd, CmdDet, IniDet, ResourceTaggedAttestation, RouteAuthorizationUpdates,
     RtaContentRequest, RtaPrepareRequest, StatusStore,
 };
-use crate::daemon::config::CONFIG;
+use crate::daemon::config::Config;
 use crate::daemon::mq::EventQueueListener;
 
 //------------ CaServer ------------------------------------------------------
@@ -104,26 +103,23 @@ impl CaLocks {
 
 #[derive(Clone)]
 pub struct CaServer {
+    config: Arc<Config>,
     signer: Arc<KrillSigner>,
     ca_store: Arc<AggregateStore<CertAuth>>,
     locks: Arc<CaLocks>,
     status_store: Arc<Mutex<StatusStore>>,
-    rfc8181_log_dir: Option<PathBuf>,
-    rfc6492_log_dir: Option<PathBuf>,
 }
 
 impl CaServer {
     /// Builds a new CaServer. Will return an error if the TA store cannot be
     /// initialised.
     pub async fn build(
-        work_dir: &PathBuf,
-        rfc8181_log_dir: Option<&PathBuf>,
-        rfc6492_log_dir: Option<&PathBuf>,
+        config: Arc<Config>,
         events_queue: Arc<EventQueueListener>,
-        signer: KrillSigner,
+        signer: Arc<KrillSigner>,
     ) -> KrillResult<Self> {
-        let mut ca_store = AggregateStore::<CertAuth>::new(work_dir, CASERVER_DIR)?;
-        if CONFIG.always_recover_data {
+        let mut ca_store = AggregateStore::<CertAuth>::new(&config.data_dir, CASERVER_DIR)?;
+        if config.always_recover_data {
             ca_store.recover()?;
         } else if let Err(e) = ca_store.warm() {
             error!(
@@ -134,19 +130,16 @@ impl CaServer {
         }
         ca_store.add_listener(events_queue);
 
-        let status_store = StatusStore::new(work_dir, STATUS_DIR)?;
+        let status_store = StatusStore::new(&config.data_dir, STATUS_DIR)?;
 
         let locks = Arc::new(CaLocks::default());
 
-        let signer = Arc::new(signer);
-
         Ok(CaServer {
+            config,
             signer,
             ca_store: Arc::new(ca_store),
             locks,
             status_store: Arc::new(Mutex::new(status_store)),
-            rfc6492_log_dir: rfc6492_log_dir.cloned(),
-            rfc8181_log_dir: rfc8181_log_dir.cloned(),
         })
     }
 
@@ -156,6 +149,10 @@ impl CaServer {
         let lock = self.locks.ca(&ta_handle).await;
         let _ = lock.read().await;
         self.ca_store.get_latest(&ta_handle).map_err(Error::AggregateStoreError)
+    }
+
+    pub fn testbed_enabled(&self) -> bool {
+        self.config.testbed_enabled
     }
 
     /// Initialises an embedded trust anchor with all resources.
@@ -172,7 +169,7 @@ impl CaServer {
 
             // add embedded repo
             let embedded = RepositoryContact::embedded(info);
-            let upd_repo_cmd = CmdDet::update_repo(&ta_handle, embedded, self.signer.clone());
+            let upd_repo_cmd = CmdDet::update_repo(&ta_handle, embedded, self.config.clone(), self.signer.clone());
             self.ca_store.command(upd_repo_cmd)?;
 
             // make trust anchor
@@ -183,8 +180,13 @@ impl CaServer {
             let ta_cert = ta.parent(&ta_handle).unwrap().to_ta_cert();
             let rcvd_cert = RcvdCert::new(ta_cert.clone(), ta_aia, ResourceSet::all_resources());
 
-            let rcv_cert =
-                CmdDet::upd_received_cert(&ta_handle, ResourceClassName::default(), rcvd_cert, self.signer.clone());
+            let rcv_cert = CmdDet::upd_received_cert(
+                &ta_handle,
+                ResourceClassName::default(),
+                rcvd_cert,
+                self.config.clone(),
+                self.signer.clone(),
+            );
             self.ca_store.command(rcv_cert)?;
 
             Ok(())
@@ -211,14 +213,14 @@ impl CaServer {
 
     /// Republish a CA, this is a no-op when there is nothing to publish.
     pub async fn republish(&self, handle: &Handle) -> KrillResult<()> {
-        let cmd = CmdDet::publish(handle, self.signer.clone());
+        let cmd = CmdDet::publish(handle, self.config.clone(), self.signer.clone());
         self.send_command(cmd).await?;
         Ok(())
     }
 
     /// Update repository where a CA publishes.
     pub async fn update_repo(&self, handle: Handle, new_contact: RepositoryContact) -> KrillResult<()> {
-        let cmd = CmdDet::update_repo(&handle, new_contact, self.signer.clone());
+        let cmd = CmdDet::update_repo(&handle, new_contact, self.config.clone(), self.signer.clone());
         self.send_command(cmd).await?;
         Ok(())
     }
@@ -351,8 +353,13 @@ impl CaServer {
 
     /// Update a child under this CA.
     pub async fn ca_child_remove(&self, handle: &Handle, child: ChildHandle) -> KrillResult<()> {
-        let signer = self.signer.clone();
-        self.send_command(CmdDet::child_remove(handle, child, signer)).await?;
+        self.send_command(CmdDet::child_remove(
+            handle,
+            child,
+            self.config.clone(),
+            self.signer.clone(),
+        ))
+        .await?;
         Ok(())
     }
 }
@@ -436,7 +443,7 @@ impl CaServer {
 
         let (child, recipient, content) = content.unpack();
 
-        let cms_logger = CmsLogger::for_rfc6492_rcvd(self.rfc6492_log_dir.as_ref(), &recipient, &child);
+        let cms_logger = CmsLogger::for_rfc6492_rcvd(self.config.rfc6492_log_dir.as_ref(), &recipient, &child);
 
         let (res, should_log_cms) = match content {
             rfc6492::Content::Qry(rfc6492::Qry::Revoke(req)) => {
@@ -483,7 +490,7 @@ impl CaServer {
     /// List the entitlements for a child: 3.3.2 of RFC6492
     pub async fn list(&self, parent: &Handle, child: &Handle) -> KrillResult<Entitlements> {
         let ca = self.get_ca(parent).await?;
-        Ok(ca.list(child)?)
+        Ok(ca.list(child, &self.config.issuance_timing)?)
     }
 
     /// Issue a Certificate in response to a Certificate Issuance request
@@ -498,12 +505,18 @@ impl CaServer {
         let class_name = issue_req.class_name();
         let pub_key = issue_req.csr().public_key();
 
-        let cmd = CmdDet::child_certify(parent, child.clone(), issue_req.clone(), self.signer.clone());
+        let cmd = CmdDet::child_certify(
+            parent,
+            child.clone(),
+            issue_req.clone(),
+            self.config.clone(),
+            self.signer.clone(),
+        );
 
         let ca = self.send_command(cmd).await?;
 
         // The updated CA will now include the newly issued certificate.
-        let response = ca.issuance_response(child, &class_name, pub_key)?;
+        let response = ca.issuance_response(child, &class_name, pub_key, &self.config.issuance_timing)?;
 
         Ok(response)
     }
@@ -517,7 +530,13 @@ impl CaServer {
     ) -> KrillResult<RevocationResponse> {
         let res = (&revoke_request).into(); // response provided that no errors are returned earlier
 
-        let cmd = CmdDet::child_revoke_key(ca_handle, child, revoke_request, self.signer.clone());
+        let cmd = CmdDet::child_revoke_key(
+            ca_handle,
+            child,
+            revoke_request,
+            self.config.clone(),
+            self.signer.clone(),
+        );
         self.send_command(cmd).await?;
 
         Ok(res)
@@ -598,7 +617,7 @@ impl CaServer {
     /// a staging period of 24 hours, but we may use a shorter period for testing and/or emergency
     /// manual key rolls.
     pub async fn ca_keyroll_activate(&self, handle: Handle, staging: Duration) -> KrillResult<()> {
-        let activate_cmd = CmdDet::key_roll_activate(&handle, staging, self.signer.clone());
+        let activate_cmd = CmdDet::key_roll_activate(&handle, staging, self.config.clone(), self.signer.clone());
         self.send_command(activate_cmd).await?;
         Ok(())
     }
@@ -785,9 +804,14 @@ impl CaServer {
             for req in revoke_requests.into_iter() {
                 revocations.push((&req).into());
 
-                let cmd = CmdDet::child_revoke_key(parent_h, handle.clone(), req, self.signer.clone());
-
-                self.send_command(cmd).await?;
+                self.send_command(CmdDet::child_revoke_key(
+                    parent_h,
+                    handle.clone(),
+                    req,
+                    self.config.clone(),
+                    self.signer.clone(),
+                ))
+                .await?;
             }
             revoke_map.insert(rcn, revocations);
         }
@@ -808,7 +832,7 @@ impl CaServer {
             for req in revoke_requests.into_iter() {
                 let sender = parent_res.child_handle().clone();
                 let recipient = parent_res.parent_handle().clone();
-                let cms_logger = CmsLogger::for_rfc6492_sent(self.rfc6492_log_dir.as_ref(), &sender, &recipient);
+                let cms_logger = CmsLogger::for_rfc6492_sent(self.config.rfc6492_log_dir.as_ref(), &sender, &recipient);
 
                 let revoke = rfc6492::Message::revoke(sender, recipient, req.clone());
 
@@ -865,9 +889,14 @@ impl CaServer {
 
         for (class_name, issued_certs) in issued_certs.into_iter() {
             for issued in issued_certs.into_iter() {
-                let received = RcvdCert::from(issued);
-                let upd_rcvd_cmd = CmdDet::upd_received_cert(handle, class_name.clone(), received, self.signer.clone());
-                self.send_command(upd_rcvd_cmd).await?;
+                self.send_command(CmdDet::upd_received_cert(
+                    handle,
+                    class_name.clone(),
+                    RcvdCert::from(issued),
+                    self.config.clone(),
+                    self.signer.clone(),
+                ))
+                .await?;
             }
         }
 
@@ -888,11 +917,18 @@ impl CaServer {
                 let pub_key = req.csr().public_key().clone();
                 let parent_class = req.class_name().clone();
 
-                let cmd = CmdDet::child_certify(parent_h, handle.clone(), req, self.signer.clone());
+                let parent = self
+                    .send_command(CmdDet::child_certify(
+                        parent_h,
+                        handle.clone(),
+                        req,
+                        self.config.clone(),
+                        self.signer.clone(),
+                    ))
+                    .await?;
 
-                let parent = self.send_command(cmd).await?;
-
-                let response = parent.issuance_response(handle, &parent_class, &pub_key)?;
+                let response =
+                    parent.issuance_response(handle, &parent_class, &pub_key, &self.config.issuance_timing)?;
 
                 let (_, _, _, issued) = response.unwrap();
 
@@ -920,7 +956,7 @@ impl CaServer {
                 let sender = parent_res.child_handle().clone();
                 let recipient = parent_res.parent_handle().clone();
 
-                let cms_logger = CmsLogger::for_rfc6492_sent(self.rfc6492_log_dir.as_ref(), &sender, &recipient);
+                let cms_logger = CmsLogger::for_rfc6492_sent(self.config.rfc6492_log_dir.as_ref(), &sender, &recipient);
 
                 let issue = rfc6492::Message::issue(sender, recipient, req);
 
@@ -995,7 +1031,7 @@ impl CaServer {
         parent: &ParentHandle,
     ) -> KrillResult<api::Entitlements> {
         let parent = self.ca_store.get_latest(parent)?;
-        parent.list(handle)
+        parent.list(handle, &self.config.issuance_timing)
     }
 
     async fn get_entitlements_rfc6492(
@@ -1099,7 +1135,7 @@ impl CaServer {
     ) -> KrillResult<rfc8181::ReplyMessage> {
         let ca = self.get_ca(ca_handle).await?;
 
-        let cms_logger = CmsLogger::for_rfc8181_sent(self.rfc8181_log_dir.as_ref(), ca_handle);
+        let cms_logger = CmsLogger::for_rfc8181_sent(self.config.rfc8181_log_dir.as_ref(), ca_handle);
 
         let response = self
             .send_procotol_msg_and_validate(
@@ -1148,7 +1184,7 @@ impl CaServer {
                 self.status_store
                     .lock()
                     .await
-                    .set_status_repo_success(ca_handle, uri)
+                    .set_status_repo_success(ca_handle, uri, self.config.republish_hours())
                     .await?;
                 Ok(list_reply)
             }
@@ -1211,7 +1247,7 @@ impl CaServer {
                     self.status_store
                         .lock()
                         .await
-                        .set_status_repo_elements(ca_handle, uri, ca.all_objects())
+                        .set_status_repo_elements(ca_handle, uri, ca.all_objects(), self.config.republish_hours())
                         .await?;
                 }
                 Ok(())
@@ -1247,8 +1283,13 @@ impl CaServer {
 impl CaServer {
     /// Update the routes authorized by a CA
     pub async fn ca_routes_update(&self, handle: Handle, updates: RouteAuthorizationUpdates) -> KrillResult<()> {
-        let cmd = CmdDet::route_authorizations_update(&handle, updates, self.signer.clone());
-        self.send_command(cmd).await?;
+        self.send_command(CmdDet::route_authorizations_update(
+            &handle,
+            updates,
+            self.config.clone(),
+            self.signer.clone(),
+        ))
+        .await?;
         Ok(())
     }
 }

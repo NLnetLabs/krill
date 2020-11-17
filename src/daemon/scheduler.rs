@@ -12,7 +12,7 @@ use rpki::x509::Time;
 use crate::commons::api::Handle;
 use crate::commons::bgp::BgpAnalyser;
 use crate::daemon::ca::CaServer;
-use crate::daemon::config::CONFIG;
+use crate::daemon::config::Config;
 use crate::daemon::mq::{EventQueueListener, QueueEvent};
 use crate::pubd::PubServer;
 use crate::publish::CaPublisher;
@@ -48,13 +48,13 @@ impl Scheduler {
         caserver: Arc<CaServer>,
         pubserver: Option<Arc<PubServer>>,
         bgp_analyser: Arc<BgpAnalyser>,
-        ca_refresh_rate: u32,
+        config: &Config,
     ) -> Self {
-        let event_sh = make_event_sh(event_queue, caserver.clone(), pubserver.clone());
+        let event_sh = make_event_sh(event_queue, caserver.clone(), pubserver.clone(), config.test_mode);
         let republish_sh = make_republish_sh(caserver.clone());
-        let ca_refresh_sh = make_ca_refresh_sh(caserver.clone(), ca_refresh_rate);
+        let ca_refresh_sh = make_ca_refresh_sh(caserver.clone(), config.ca_refresh);
         let announcements_refresh_sh = make_announcements_refresh_sh(bgp_analyser);
-        let archive_old_commands_sh = make_archive_old_commands_sh(caserver, pubserver);
+        let archive_old_commands_sh = make_archive_old_commands_sh(caserver, pubserver, config.archive_threshold_days);
         Scheduler {
             event_sh,
             republish_sh,
@@ -70,6 +70,7 @@ fn make_event_sh(
     event_queue: Arc<EventQueueListener>,
     caserver: Arc<CaServer>,
     pubserver: Option<Arc<PubServer>>,
+    test_mode: bool,
 ) -> ScheduleHandle {
     let mut scheduler = clokwerk::Scheduler::new();
     scheduler.every(1.seconds()).run(move || {
@@ -97,11 +98,11 @@ fn make_event_sh(
                     }
 
                     QueueEvent::Delta(handle, _version) => {
-                        try_publish(&event_queue, caserver.clone(), pubserver.clone(), handle).await
+                        try_publish(&event_queue, caserver.clone(), pubserver.clone(), handle, test_mode).await
                     }
                     QueueEvent::ReschedulePublish(handle, last_try) => {
                         if Time::five_minutes_ago().timestamp() > last_try.timestamp() {
-                            try_publish(&event_queue, caserver.clone(), pubserver.clone(), handle).await
+                            try_publish(&event_queue, caserver.clone(), pubserver.clone(), handle, test_mode).await
                         } else {
                             event_queue.push_back(QueueEvent::ReschedulePublish(handle, last_try));
                         }
@@ -187,12 +188,13 @@ async fn try_publish(
     caserver: Arc<CaServer>,
     pubserver: Option<Arc<PubServer>>,
     ca: Handle,
+    test_mode: bool,
 ) {
     info!("Try to publish for '{}'", ca);
     let publisher = CaPublisher::new(caserver.clone(), pubserver);
 
     if let Err(e) = publisher.publish(&ca).await {
-        if CONFIG.test_mode {
+        if test_mode {
             error!("Failed to publish for '{}', error: {}", ca, e);
         } else {
             error!("Failed to publish for '{}' will reschedule, error: {}", ca, e);
@@ -240,12 +242,16 @@ fn make_announcements_refresh_sh(bgp_analyser: Arc<BgpAnalyser>) -> ScheduleHand
     scheduler.watch_thread(Duration::from_millis(100))
 }
 
-fn make_archive_old_commands_sh(caserver: Arc<CaServer>, pubserver: Option<Arc<PubServer>>) -> ScheduleHandle {
+fn make_archive_old_commands_sh(
+    caserver: Arc<CaServer>,
+    pubserver: Option<Arc<PubServer>>,
+    archive_threshold_days: Option<i64>,
+) -> ScheduleHandle {
     let mut scheduler = clokwerk::Scheduler::new();
     scheduler.every(1.hours()).run(move || {
         let mut rt = Runtime::new().unwrap();
         rt.block_on(async {
-            if let Some(days) = CONFIG.archive_threshold_days {
+            if let Some(days) = archive_threshold_days {
                 if let Err(e) = caserver.archive_old_commands(days).await {
                     error!("Failed to archive old CA commands: {}", e)
                 }

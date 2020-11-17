@@ -29,7 +29,7 @@ use crate::daemon::ca::{
     self, ta_handle, testbed_ca_handle, ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaContentRequest,
     RtaPrepareRequest,
 };
-use crate::daemon::config::CONFIG;
+use crate::daemon::config::Config;
 use crate::daemon::mq::EventQueueListener;
 use crate::daemon::scheduler::Scheduler;
 use crate::pubd::{PubServer, RepoStats};
@@ -95,13 +95,10 @@ impl PostLimits {
 impl KrillServer {
     /// Creates a new publication server. Note that state is preserved
     /// on disk in the work_dir provided.
-    pub async fn build() -> KrillResult<Self> {
-        let work_dir = &CONFIG.data_dir;
-        let base_uri = &CONFIG.rsync_base;
-        let service_uri = CONFIG.service_uri();
-        let rrdp_base_uri = &CONFIG.rrdp_service_uri();
-        let token = &CONFIG.auth_token;
-        let ca_refresh_rate = CONFIG.ca_refresh;
+    pub async fn build(config: Arc<Config>) -> KrillResult<Self> {
+        let work_dir = &config.data_dir;
+        let service_uri = config.service_uri();
+        let token = &config.auth_token;
 
         info!("Starting {} v{}", KRILL_SERVER_APP, KRILL_VERSION);
         info!("{} uses service uri: {}", KRILL_SERVER_APP, service_uri);
@@ -109,43 +106,22 @@ impl KrillServer {
         let mut repo_dir = work_dir.clone();
         repo_dir.push("repo");
 
-        let signer = KrillSigner::build(work_dir)?;
+        let signer = Arc::new(KrillSigner::build(work_dir)?);
         let authorizer = Authorizer::new(token);
 
         let pubserver = {
-            if CONFIG.repo_enabled {
-                Some(PubServer::build(
-                    &base_uri,
-                    rrdp_base_uri.clone(),
-                    work_dir,
-                    CONFIG.rfc8181_log_dir.as_ref(),
-                    Arc::new(signer.clone()),
-                )?)
+            if config.repo_enabled {
+                Some(PubServer::build(config.clone(), signer.clone())?)
             } else {
-                PubServer::remove_if_empty(
-                    &base_uri,
-                    rrdp_base_uri.clone(),
-                    work_dir,
-                    CONFIG.rfc8181_log_dir.as_ref(),
-                    Arc::new(signer.clone()),
-                )?
+                PubServer::remove_if_empty(config.clone(), signer.clone())?
             }
         };
         let pubserver: Option<Arc<PubServer>> = pubserver.map(Arc::new);
 
         let event_queue = Arc::new(EventQueueListener::default());
-        let caserver = Arc::new(
-            ca::CaServer::build(
-                work_dir,
-                CONFIG.rfc8181_log_dir.as_ref(),
-                CONFIG.rfc6492_log_dir.as_ref(),
-                event_queue.clone(),
-                signer,
-            )
-            .await?,
-        );
+        let caserver = Arc::new(ca::CaServer::build(config.clone(), event_queue.clone(), signer).await?);
 
-        if CONFIG.use_ta() {
+        if config.use_ta() {
             let ta_handle = ta_handle();
             if !caserver.has_ca(&ta_handle)? {
                 info!("Creating embedded Trust Anchor");
@@ -153,9 +129,9 @@ impl KrillServer {
                 let pubserver = pubserver.as_ref().ok_or_else(|| Error::PublisherNoEmbeddedRepo)?;
                 let repo_info: RepoInfo = pubserver.repo_info_for(&ta_handle)?;
 
-                let ta_uri = CONFIG.ta_cert_uri();
+                let ta_uri = config.ta_cert_uri();
 
-                let ta_aia = format!("{}ta/ta.cer", CONFIG.rsync_base.to_string());
+                let ta_aia = format!("{}ta/ta.cer", config.rsync_base.to_string());
                 let ta_aia = uri::Rsync::from_string(ta_aia).unwrap();
 
                 // Add TA
@@ -173,7 +149,7 @@ impl KrillServer {
             }
         }
 
-        if CONFIG.testbed_enabled {
+        if config.testbed_enabled {
             let ta_handle = ta_handle();
             if caserver.has_ca(&ta_handle)? {
                 let testbed_ca_handle = testbed_ca_handle();
@@ -208,9 +184,9 @@ impl KrillServer {
         }
 
         let bgp_analyser = Arc::new(BgpAnalyser::new(
-            CONFIG.bgp_risdumps_enabled,
-            &CONFIG.bgp_risdumps_v4_uri,
-            &CONFIG.bgp_risdumps_v6_uri,
+            config.bgp_risdumps_enabled,
+            &config.bgp_risdumps_v4_uri,
+            &config.bgp_risdumps_v6_uri,
         ));
 
         let scheduler = Scheduler::build(
@@ -218,13 +194,13 @@ impl KrillServer {
             caserver.clone(),
             pubserver.clone(),
             bgp_analyser.clone(),
-            ca_refresh_rate,
+            &config,
         );
 
         let post_limits = PostLimits::new(
-            CONFIG.post_limit_api,
-            CONFIG.post_limit_rfc6492,
-            CONFIG.post_limit_rfc8181,
+            config.post_limit_api,
+            config.post_limit_rfc6492,
+            config.post_limit_rfc8181,
         );
 
         Ok(KrillServer {
@@ -265,6 +241,10 @@ impl KrillServer {
 
     pub fn limit_rfc6492(&self) -> u64 {
         self.post_limits.rfc6492()
+    }
+
+    pub fn testbed_enabled(&self) -> bool {
+        self.caserver.testbed_enabled()
     }
 }
 

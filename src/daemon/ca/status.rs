@@ -113,10 +113,10 @@ impl StatusStore {
         self.set_ca_status(ca, &status)
     }
 
-    pub async fn set_status_repo_success(&self, ca: &Handle, uri: String) -> KrillResult<()> {
+    pub async fn set_status_repo_success(&self, ca: &Handle, uri: String, next_hours: i64) -> KrillResult<()> {
         let _lock = self.lock.write().await;
         let mut status = self.get_ca_status(ca)?;
-        status.repo.set_last_updated(uri);
+        status.repo.set_last_updated(uri, next_hours);
         self.set_ca_status(ca, &status)
     }
 
@@ -125,10 +125,11 @@ impl StatusStore {
         ca: &Handle,
         uri: String,
         objects: Vec<PublishElement>,
+        next_hours: i64,
     ) -> KrillResult<()> {
         let _lock = self.lock.write().await;
         let mut status = self.get_ca_status(ca)?;
-        status.repo.set_success(uri, objects);
+        status.repo.set_success(uri, objects, next_hours);
         self.set_ca_status(ca, &status)
     }
 

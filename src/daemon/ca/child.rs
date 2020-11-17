@@ -9,7 +9,7 @@ use crate::commons::api::{ChildCaInfo, ChildHandle, IssuedCert, ResourceClassNam
 use crate::commons::crypto::IdCert;
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
-use crate::daemon::config::CONFIG;
+use crate::daemon::config::IssuanceTimingConfig;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
@@ -139,12 +139,12 @@ impl ChildCertificates {
         self.inner.values()
     }
 
-    pub fn expiring(&self) -> Vec<&IssuedCert> {
+    pub fn expiring(&self, issuance_timing: &IssuanceTimingConfig) -> Vec<&IssuedCert> {
         self.inner
             .values()
             .filter(|issued| {
                 issued.validity().not_after()
-                    < Time::now() + Duration::weeks(CONFIG.timing_child_certificate_reissue_weeks_before)
+                    < Time::now() + Duration::weeks(issuance_timing.timing_child_certificate_reissue_weeks_before)
             })
             .collect()
     }

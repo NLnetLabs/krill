@@ -20,18 +20,6 @@ use crate::commons::util::{ext_serde, AllowedUri};
 use crate::constants::*;
 use crate::daemon::http::tls_keys;
 
-lazy_static! {
-    pub static ref CONFIG: Config = {
-        match Config::create() {
-            Ok(config) => config,
-            Err(e) => {
-                eprintln!("{}", e);
-                ::std::process::exit(1);
-            }
-        }
-    };
-}
-
 //------------ ConfigDefaults ------------------------------------------------
 
 pub struct ConfigDefaults;
@@ -48,14 +36,6 @@ impl ConfigDefaults {
     }
     fn repo_enabled() -> bool {
         env::var(KRILL_ENV_REPO_ENABLED).is_ok()
-    }
-
-    fn repo_retain_old_seconds() -> i64 {
-        if env::var(KRILL_ENV_TEST).is_ok() {
-            1
-        } else {
-            600
-        }
     }
 
     fn use_ta() -> bool {
@@ -215,7 +195,7 @@ impl ConfigDefaults {
 /// This will parse a default config file ('./defaults/krill.conf') unless
 /// another file is explicitly specified. Command line arguments may be used
 /// to override any of the settings in the config file.
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct Config {
     #[serde(default = "ConfigDefaults::ip")]
     ip: IpAddr,
@@ -231,9 +211,6 @@ pub struct Config {
 
     #[serde(default = "ConfigDefaults::repo_enabled")]
     pub repo_enabled: bool,
-
-    #[serde(default = "ConfigDefaults::repo_retain_old_seconds")]
-    pub repo_retain_old_seconds: i64,
 
     #[serde(default = "ConfigDefaults::testbed_enabled")]
     pub testbed_enabled: bool,
@@ -311,7 +288,12 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::roa_deaggregate_threshold")]
     pub roa_deaggregate_threshold: usize,
 
-    // Timing settings for publication and certificate / ROA (re-)issuance
+    #[serde(flatten)]
+    pub issuance_timing: IssuanceTimingConfig,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct IssuanceTimingConfig {
     #[serde(default = "ConfigDefaults::timing_publish_valid_days")]
     pub timing_publish_valid_days: i64,
     #[serde(default = "ConfigDefaults::timing_publish_next_hours")]
@@ -330,6 +312,14 @@ pub struct Config {
 
 /// # Accessors
 impl Config {
+    pub fn repo_retain_old_seconds() -> i64 {
+        if env::var(KRILL_ENV_TEST).is_ok() {
+            1
+        } else {
+            600
+        }
+    }
+
     pub fn socket_addr(&self) -> SocketAddr {
         SocketAddr::new(self.ip, self.port)
     }
@@ -383,8 +373,8 @@ impl Config {
     }
 
     pub fn republish_hours(&self) -> i64 {
-        if self.timing_publish_hours_before_next < self.timing_publish_next_hours {
-            self.timing_publish_next_hours - self.timing_publish_hours_before_next
+        if self.issuance_timing.timing_publish_hours_before_next < self.issuance_timing.timing_publish_next_hours {
+            self.issuance_timing.timing_publish_next_hours - self.issuance_timing.timing_publish_hours_before_next
         } else {
             0
         }
@@ -400,7 +390,6 @@ impl Config {
         let test_mode = true;
         let use_ta = true;
         let repo_enabled = true;
-        let repo_retain_old_seconds = 1;
         let testbed_enabled = true;
         let https_mode = HttpsMode::Generate;
         let data_dir = data_dir.clone();
@@ -446,6 +435,16 @@ impl Config {
         let timing_roa_valid_weeks = ConfigDefaults::timing_roa_valid_weeks();
         let timing_roa_reissue_weeks_before = ConfigDefaults::timing_roa_reissue_weeks_before();
 
+        let issuance_timing = IssuanceTimingConfig {
+            timing_publish_valid_days,
+            timing_publish_next_hours,
+            timing_publish_hours_before_next,
+            timing_child_certificate_valid_weeks,
+            timing_child_certificate_reissue_weeks_before,
+            timing_roa_valid_weeks,
+            timing_roa_reissue_weeks_before,
+        };
+
         Config {
             ip,
             port,
@@ -453,7 +452,6 @@ impl Config {
             test_mode,
             use_ta,
             repo_enabled,
-            repo_retain_old_seconds,
             testbed_enabled,
             https_mode,
             data_dir,
@@ -478,19 +476,15 @@ impl Config {
             bgp_risdumps_v6_uri,
             roa_aggregate_threshold,
             roa_deaggregate_threshold,
-            timing_publish_valid_days,
-            timing_publish_next_hours,
-            timing_publish_hours_before_next,
-            timing_child_certificate_valid_weeks,
-            timing_child_certificate_reissue_weeks_before,
-            timing_roa_valid_weeks,
-            timing_roa_reissue_weeks_before,
+            issuance_timing,
         }
     }
 
     pub fn test(data_dir: &PathBuf) -> Self {
         let config = Self::test_config(data_dir);
-        config.init_logging().unwrap();
+        if let Err(_) = config.init_logging() {
+            trace!("Logging already initialised");
+        }
         config.verify().unwrap();
         config
     }
@@ -609,52 +603,55 @@ impl Config {
             return Err(ConfigError::other("Cannot use testedbed without embedded TA"));
         }
 
-        if self.timing_publish_next_hours < 2 {
+        if self.issuance_timing.timing_publish_next_hours < 2 {
             return Err(ConfigError::other("timing_publish_next_hours must be at least 2"));
         }
 
-        if self.timing_publish_hours_before_next < 1 {
+        if self.issuance_timing.timing_publish_hours_before_next < 1 {
             return Err(ConfigError::other(
                 "timing_publish_hours_before_next must be at least 1",
             ));
         }
 
-        if self.timing_publish_hours_before_next >= self.timing_publish_next_hours {
+        if self.issuance_timing.timing_publish_hours_before_next >= self.issuance_timing.timing_publish_next_hours {
             return Err(ConfigError::other(
                 "timing_publish_hours_before_next must be smaller than timing_publish_hours",
             ));
         }
 
-        if self.timing_publish_valid_days < 1 || self.timing_publish_valid_days < (self.timing_publish_next_hours / 24)
+        if self.issuance_timing.timing_publish_valid_days < 1
+            || self.issuance_timing.timing_publish_valid_days < (self.issuance_timing.timing_publish_next_hours / 24)
         {
             return Err(ConfigError::other("timing_publish_valid_days must be 1 or bigger, and must be at least as long as timing_publish_next_hours"));
         }
 
-        if self.timing_child_certificate_valid_weeks < 2 {
+        if self.issuance_timing.timing_child_certificate_valid_weeks < 2 {
             return Err(ConfigError::other(
                 "timing_child_certificate_valid_weeks must be at least 2",
             ));
         }
 
-        if self.timing_child_certificate_reissue_weeks_before < 1 {
+        if self.issuance_timing.timing_child_certificate_reissue_weeks_before < 1 {
             return Err(ConfigError::other(
                 "timing_child_certificate_reissue_weeks_before must be at least 1",
             ));
         }
 
-        if self.timing_child_certificate_reissue_weeks_before >= self.timing_child_certificate_valid_weeks {
+        if self.issuance_timing.timing_child_certificate_reissue_weeks_before
+            >= self.issuance_timing.timing_child_certificate_valid_weeks
+        {
             return Err(ConfigError::other("timing_child_certificate_reissue_weeks_before must be smaller than timing_child_certificate_valid_weeks"));
         }
 
-        if self.timing_roa_valid_weeks < 2 {
+        if self.issuance_timing.timing_roa_valid_weeks < 2 {
             return Err(ConfigError::other("timing_roa_valid_weeks must be at least 2"));
         }
 
-        if self.timing_roa_reissue_weeks_before < 1 {
+        if self.issuance_timing.timing_roa_reissue_weeks_before < 1 {
             return Err(ConfigError::other("timing_roa_reissue_weeks_before must be at least 1"));
         }
 
-        if self.timing_roa_reissue_weeks_before >= self.timing_roa_valid_weeks {
+        if self.issuance_timing.timing_roa_reissue_weeks_before >= self.issuance_timing.timing_roa_valid_weeks {
             return Err(ConfigError::other(
                 "timing_roa_reissue_weeks_before must be smaller than timing_roa_valid_week",
             ));

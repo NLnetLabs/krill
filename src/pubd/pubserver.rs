@@ -1,6 +1,5 @@
 use std::fs;
 use std::ops::Deref;
-use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -18,7 +17,7 @@ use crate::commons::remote::rfc8181;
 use crate::commons::remote::rfc8183;
 use crate::commons::KrillResult;
 use crate::constants::*;
-use crate::daemon::config::CONFIG;
+use crate::daemon::config::Config;
 use crate::pubd::{self, CmdDet, RepoStats, Repository};
 
 //------------ PubServer -----------------------------------------------------
@@ -35,25 +34,19 @@ use crate::pubd::{self, CmdDet, RepoStats, Repository};
 /// * wrapping responses in RFC8183 for remote publishers
 ///
 pub struct PubServer {
+    config: Arc<Config>,
     store: Arc<AggregateStore<Repository>>,
     signer: Arc<KrillSigner>,
-    rfc8181_log_dir: Option<PathBuf>,
 }
 
 /// # Constructing
 ///
 impl PubServer {
-    pub fn remove_if_empty(
-        rsync_base: &uri::Rsync,
-        rrdp_base_uri: uri::Https,         // for the RRDP files
-        work_dir: &PathBuf,                // for the aggregate stores
-        rfc8181_log_dir: Option<&PathBuf>, // for optional CMS exchange logging
-        signer: Arc<KrillSigner>,
-    ) -> Result<Option<Self>, Error> {
-        let mut pub_server_dir = work_dir.clone();
+    pub fn remove_if_empty(config: Arc<Config>, signer: Arc<KrillSigner>) -> Result<Option<Self>, Error> {
+        let mut pub_server_dir = config.data_dir.clone();
         pub_server_dir.push(PUBSERVER_DIR);
         if pub_server_dir.exists() {
-            let server = PubServer::build(rsync_base, rrdp_base_uri, work_dir, rfc8181_log_dir, signer)?;
+            let server = PubServer::build(config, signer)?;
             if server.publishers()?.is_empty() {
                 let _result = fs::remove_dir_all(pub_server_dir);
                 Ok(None)
@@ -65,19 +58,13 @@ impl PubServer {
         }
     }
 
-    pub fn build(
-        rsync_base: &uri::Rsync,
-        rrdp_base_uri: uri::Https,         // for the RRDP files
-        work_dir: &PathBuf,                // for the aggregate stores
-        rfc8181_log_dir: Option<&PathBuf>, // for optional CMS exchange logging
-        signer: Arc<KrillSigner>,
-    ) -> Result<Self, Error> {
+    pub fn build(config: Arc<Config>, signer: Arc<KrillSigner>) -> Result<Self, Error> {
         let default = Self::repository_handle();
 
-        let store = Arc::new(AggregateStore::<Repository>::new(work_dir, PUBSERVER_DIR)?);
+        let store = Arc::new(AggregateStore::<Repository>::new(&config.data_dir, PUBSERVER_DIR)?);
 
         let mut force_session_reset = false;
-        if CONFIG.always_recover_data {
+        if config.always_recover_data {
             store.recover()?;
             force_session_reset = true;
         } else if let Err(e) = store.warm() {
@@ -92,16 +79,18 @@ impl PubServer {
         if !store.has(&default)? {
             info!("Creating default repository");
 
-            let ini = pubd::IniDet::init(&default, rsync_base.clone(), rrdp_base_uri, work_dir, signer.deref())?;
+            let ini = pubd::IniDet::init(
+                &default,
+                config.rsync_base.clone(),
+                config.rrdp_service_uri(),
+                &config.data_dir,
+                signer.deref(),
+            )?;
             let repo = store.add(ini)?;
             repo.write()?;
         }
 
-        let server = PubServer {
-            store,
-            signer,
-            rfc8181_log_dir: rfc8181_log_dir.cloned(),
-        };
+        let server = PubServer { config, store, signer };
 
         if force_session_reset {
             server.rrdp_session_reset()?;
@@ -136,7 +125,7 @@ impl PubServer {
         let publisher = repository.get_publisher(&publisher_handle)?;
 
         let msg = ProtocolCms::decode(msg_bytes.clone(), false).map_err(|e| Error::Rfc8181Decode(e.to_string()))?;
-        let cms_logger = CmsLogger::for_rfc8181_rcvd(self.rfc8181_log_dir.as_ref(), &publisher_handle);
+        let cms_logger = CmsLogger::for_rfc8181_rcvd(self.config.rfc8181_log_dir.as_ref(), &publisher_handle);
 
         msg.validate(publisher.id_cert()).map_err(Error::Rfc8181Validation)?;
 
@@ -295,14 +284,6 @@ mod tests {
 
     use super::*;
 
-    fn server_base_uri() -> uri::Rsync {
-        test::rsync("rsync://localhost/repo/")
-    }
-
-    fn server_base_http_uri() -> uri::Https {
-        test::https("https://localhost/rrdp/")
-    }
-
     fn publisher_alice(work_dir: &PathBuf) -> Publisher {
         let signer = KrillSigner::build(work_dir).unwrap();
 
@@ -320,10 +301,12 @@ mod tests {
     }
 
     fn make_server(work_dir: &PathBuf) -> PubServer {
+        let config = Arc::new(Config::test(work_dir));
+
         let signer = KrillSigner::build(work_dir).unwrap();
         let signer = Arc::new(signer);
 
-        PubServer::build(&server_base_uri(), server_base_http_uri(), work_dir, None, signer).unwrap()
+        PubServer::build(config, signer).unwrap()
     }
 
     #[test]

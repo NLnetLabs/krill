@@ -13,7 +13,6 @@ async fn add_and_remove_certificate_authority() {
     use krill::commons::remote::rfc8183::{PublisherRequest, RepositoryResponse};
     use krill::commons::util::httpclient::*;
     use krill::daemon::ca::testbed_ca_handle;
-    use krill::daemon::config::CONFIG;
     use krill::test::*;
 
     let dir = start_krill().await;
@@ -21,9 +20,6 @@ async fn add_and_remove_certificate_authority() {
     // -------------------------------------------------------------------------
     // establish/verify starting conditions
     // -------------------------------------------------------------------------
-
-    // verify that start_krill() enabled testbed mode
-    assert!(CONFIG.testbed_enabled);
 
     // verify that the testbed CA has been created with the expected resources
     let asns = "0-4294967295";

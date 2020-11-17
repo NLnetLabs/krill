@@ -2,6 +2,8 @@
 
 extern crate krill;
 
+use krill::daemon::config::Config;
+
 /// This tests regressions for the Command history and details as exposed through the
 /// Krill API.
 ///
@@ -57,13 +59,11 @@ async fn history() {
         server_cas_dir.push("cas");
         file::backup_dir(&source, &server_cas_dir).unwrap();
 
-        let signer = KrillSigner::build(&server_dir).unwrap();
-
+        let config = Arc::new(Config::test(&server_dir));
         let event_queue = Arc::new(EventQueueListener::default());
+        let signer = Arc::new(KrillSigner::build(&server_dir).unwrap());
 
-        CaServer::build(&server_dir, None, None, event_queue, signer)
-            .await
-            .unwrap()
+        CaServer::build(config, event_queue, signer).await.unwrap()
     }
 
     async fn assert_history(server: &CaServer, scenario: &str, ca: &Handle) {

@@ -21,7 +21,7 @@ use crate::commons::error::Error;
 use crate::commons::KrillResult;
 use crate::daemon::ca::events::RoaUpdates;
 use crate::daemon::ca::CertifiedKey;
-use crate::daemon::config::CONFIG;
+use crate::daemon::config::{Config, IssuanceTimingConfig};
 
 //------------ RouteAuthorization ------------------------------------------
 
@@ -466,7 +466,7 @@ impl Roas {
 
     /// Returns the desired RoaMode based on the current situation, and
     /// the intended changes.
-    fn mode(&self, total: usize) -> RoaMode {
+    fn mode(&self, total: usize, deagg_threshold: usize, agg_threshold: usize) -> RoaMode {
         let mode = {
             if total == 0 {
                 // if everything will be removed, make sure no strategy change is triggered
@@ -476,12 +476,12 @@ impl Roas {
                     RoaMode::Simple
                 }
             } else if self.is_currently_aggregating() {
-                if total < CONFIG.roa_deaggregate_threshold {
+                if total < deagg_threshold {
                     RoaMode::StopAggregating
                 } else {
                     RoaMode::Aggregate
                 }
-            } else if total > CONFIG.roa_aggregate_threshold {
+            } else if total > agg_threshold {
                 RoaMode::StartAggregating
             } else {
                 RoaMode::Simple
@@ -498,6 +498,7 @@ impl Roas {
         &self,
         routes: &Routes,
         certified_key: &CertifiedKey,
+        issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<RoaUpdates> {
         let mut roa_updates = RoaUpdates::default();
@@ -506,7 +507,14 @@ impl Roas {
         for auth in routes.authorizations() {
             if !self.simple.contains_key(auth) {
                 let name = ObjectName::from(auth);
-                let roa = Self::make_roa(&[*auth], &name, None, certified_key, signer)?;
+                let roa = Self::make_roa(
+                    &[*auth],
+                    &name,
+                    None,
+                    certified_key,
+                    issuance_timing.timing_roa_valid_weeks,
+                    signer,
+                )?;
                 let info = RoaInfo::new_roa(&roa, name);
                 roa_updates.update(*auth, info);
             }
@@ -527,11 +535,12 @@ impl Roas {
         &self,
         routes: &Routes,
         certified_key: &CertifiedKey,
+        issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<RoaUpdates> {
         // First trigger the simple update, this will make sure that all current routes
         // are added as simple (one prefix) ROAs
-        let mut roa_updates = self.update_simple(routes, certified_key, signer)?;
+        let mut roa_updates = self.update_simple(routes, certified_key, issuance_timing, signer)?;
 
         // Then remove all aggregate ROAs
         for (roa_key, aggregate) in self.aggregate.iter() {
@@ -546,11 +555,12 @@ impl Roas {
         &self,
         routes: &Routes,
         certified_key: &CertifiedKey,
+        issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<RoaUpdates> {
         // First trigger the aggregate update, this will make sure that all current routes
         // are added as aggregate ROAs
-        let mut roa_updates = self.update_aggregate(routes, certified_key, signer)?;
+        let mut roa_updates = self.update_aggregate(routes, certified_key, issuance_timing, signer)?;
 
         // Then remove all simple ROAs
         for (roa_key, roa) in self.simple.iter() {
@@ -566,6 +576,7 @@ impl Roas {
         &self,
         routes: &Routes,
         certified_key: &CertifiedKey,
+        issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<RoaUpdates> {
         let mut roa_updates = RoaUpdates::default();
@@ -583,13 +594,20 @@ impl Roas {
 
                 if authzs != &existing_authzs {
                     // replace ROA
-                    let aggregate =
-                        Self::make_aggregate_roa(key, authzs.clone(), Some(existing.roa()), certified_key, signer)?;
+                    let aggregate = Self::make_aggregate_roa(
+                        key,
+                        authzs.clone(),
+                        Some(existing.roa()),
+                        certified_key,
+                        issuance_timing,
+                        signer,
+                    )?;
                     roa_updates.update_aggregate(*key, aggregate);
                 }
             } else {
                 // new ROA
-                let aggregate = Self::make_aggregate_roa(key, authzs.clone(), None, certified_key, signer)?;
+                let aggregate =
+                    Self::make_aggregate_roa(key, authzs.clone(), None, certified_key, issuance_timing, signer)?;
                 roa_updates.update_aggregate(*key, aggregate);
             }
         }
@@ -610,26 +628,47 @@ impl Roas {
         &self,
         routes: &Routes,
         certified_key: &CertifiedKey,
+        config: &Config,
         signer: &KrillSigner,
     ) -> KrillResult<RoaUpdates> {
-        match self.mode(routes.len()) {
-            RoaMode::Simple => self.update_simple(routes, certified_key, signer),
-            RoaMode::StopAggregating => self.update_stop_aggregating(routes, certified_key, signer),
-            RoaMode::StartAggregating => self.update_start_aggregating(routes, certified_key, signer),
-            RoaMode::Aggregate => self.update_aggregate(routes, certified_key, signer),
+        match self.mode(
+            routes.len(),
+            config.roa_deaggregate_threshold,
+            config.roa_aggregate_threshold,
+        ) {
+            RoaMode::Simple => self.update_simple(routes, certified_key, &config.issuance_timing, signer),
+            RoaMode::StopAggregating => {
+                self.update_stop_aggregating(routes, certified_key, &config.issuance_timing, signer)
+            }
+            RoaMode::StartAggregating => {
+                self.update_start_aggregating(routes, certified_key, &config.issuance_timing, signer)
+            }
+            RoaMode::Aggregate => self.update_aggregate(routes, certified_key, &config.issuance_timing, signer),
         }
     }
 
     /// Re-new ROAs before they would expire
-    pub fn renew(&self, certified_key: &CertifiedKey, signer: &KrillSigner) -> KrillResult<RoaUpdates> {
+    pub fn renew(
+        &self,
+        certified_key: &CertifiedKey,
+        issuance_timing: &IssuanceTimingConfig,
+        signer: &KrillSigner,
+    ) -> KrillResult<RoaUpdates> {
         let mut updates = RoaUpdates::default();
 
-        let renew_threshold = Time::now() + Duration::weeks(CONFIG.timing_roa_reissue_weeks_before);
+        let renew_threshold = Time::now() + Duration::weeks(issuance_timing.timing_roa_reissue_weeks_before);
 
         for (auth, roa) in self.simple.iter() {
             if roa.object().expires() < renew_threshold {
                 let name = roa.name();
-                let new_roa = Self::make_roa(&[*auth], name, None, certified_key, signer)?;
+                let new_roa = Self::make_roa(
+                    &[*auth],
+                    name,
+                    None,
+                    certified_key,
+                    issuance_timing.timing_roa_valid_weeks,
+                    signer,
+                )?;
                 let new_roa = RoaInfo::updated_roa(roa, &new_roa, name.clone());
                 updates.update(*auth, new_roa);
             }
@@ -641,7 +680,14 @@ impl Roas {
             if roa.object().expires() < renew_threshold {
                 let authzs = aggregate.authorizations().clone();
                 let name = roa.name();
-                let new_roa = Self::make_roa(authzs.as_slice(), name, None, certified_key, signer)?;
+                let new_roa = Self::make_roa(
+                    authzs.as_slice(),
+                    name,
+                    None,
+                    certified_key,
+                    issuance_timing.timing_roa_valid_weeks,
+                    signer,
+                )?;
                 let new_roa = RoaInfo::updated_roa(roa, &new_roa, name.clone());
                 let aggregate = AggregateRoaInfo::new(authzs, new_roa);
 
@@ -653,12 +699,24 @@ impl Roas {
     }
 
     /// Re-generate all ROAs when a new key is being activated
-    pub fn activate_key(&self, certified_key: &CertifiedKey, signer: &KrillSigner) -> KrillResult<RoaUpdates> {
+    pub fn activate_key(
+        &self,
+        certified_key: &CertifiedKey,
+        issuance_timing: &IssuanceTimingConfig,
+        signer: &KrillSigner,
+    ) -> KrillResult<RoaUpdates> {
         let mut updates = RoaUpdates::default();
 
         for (auth, roa) in self.simple.iter() {
             let name = roa.name();
-            let new_roa = Self::make_roa(&[*auth], name, None, certified_key, signer)?;
+            let new_roa = Self::make_roa(
+                &[*auth],
+                name,
+                None,
+                certified_key,
+                issuance_timing.timing_roa_valid_weeks,
+                signer,
+            )?;
             let new_roa = RoaInfo::updated_roa(roa, &new_roa, name.clone());
             updates.update(*auth, new_roa);
         }
@@ -668,7 +726,14 @@ impl Roas {
 
             let authzs = aggregate.authorizations().clone();
             let name = roa.name();
-            let new_roa = Self::make_roa(authzs.as_slice(), name, None, certified_key, signer)?;
+            let new_roa = Self::make_roa(
+                authzs.as_slice(),
+                name,
+                None,
+                certified_key,
+                issuance_timing.timing_roa_valid_weeks,
+                signer,
+            )?;
             let new_roa = RoaInfo::updated_roa(roa, &new_roa, name.clone());
             let aggregate = AggregateRoaInfo::new(authzs, new_roa);
 
@@ -683,13 +748,21 @@ impl Roas {
         &self,
         new_repo: &uri::Rsync,
         certified_key: &CertifiedKey,
+        issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<RoaUpdates> {
         let mut updates = RoaUpdates::default();
 
         for (auth, roa) in self.simple.iter() {
             let name = roa.name();
-            let new_roa = Self::make_roa(&[*auth], name, Some(new_repo), certified_key, signer)?;
+            let new_roa = Self::make_roa(
+                &[*auth],
+                name,
+                Some(new_repo),
+                certified_key,
+                issuance_timing.timing_roa_valid_weeks,
+                signer,
+            )?;
             let new_roa = RoaInfo::updated_roa(roa, &new_roa, name.clone());
             updates.update(*auth, new_roa);
         }
@@ -699,7 +772,14 @@ impl Roas {
 
             let authzs = aggregate.authorizations().clone();
             let name = roa.name();
-            let new_roa = Self::make_roa(authzs.as_slice(), name, Some(new_repo), certified_key, signer)?;
+            let new_roa = Self::make_roa(
+                authzs.as_slice(),
+                name,
+                Some(new_repo),
+                certified_key,
+                issuance_timing.timing_roa_valid_weeks,
+                signer,
+            )?;
             let new_roa = RoaInfo::updated_roa(roa, &new_roa, name.clone());
             let aggregate = AggregateRoaInfo::new(authzs, new_roa);
 
@@ -715,6 +795,7 @@ impl Roas {
         &self,
         resources: &ResourceSet,
         certified_key: &CertifiedKey,
+        issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<RoaUpdates> {
         let mut updates = RoaUpdates::default();
@@ -736,7 +817,14 @@ impl Roas {
                 updates.remove_aggregate(*roa_key, roa.object().into());
             } else if authzs.len() != current_nr {
                 let name = roa.name();
-                let new_roa = Self::make_roa(authzs.as_slice(), name, None, certified_key, signer)?;
+                let new_roa = Self::make_roa(
+                    authzs.as_slice(),
+                    name,
+                    None,
+                    certified_key,
+                    issuance_timing.timing_roa_valid_weeks,
+                    signer,
+                )?;
                 let new_roa = RoaInfo::updated_roa(roa, &new_roa, name.clone());
                 let aggregate = AggregateRoaInfo::new(authzs, new_roa);
 
@@ -772,6 +860,7 @@ impl Roas {
         name: &ObjectName,
         new_repo: Option<&uri::Rsync>,
         certified_key: &CertifiedKey,
+        weeks: i64,
         signer: &KrillSigner,
     ) -> KrillResult<Roa> {
         let incoming_cert = certified_key.incoming_cert();
@@ -810,7 +899,7 @@ impl Roas {
 
         let mut object_builder = SignedObjectBuilder::new(
             signer.random_serial()?,
-            SignSupport::sign_validity_weeks(CONFIG.timing_roa_valid_weeks),
+            SignSupport::sign_validity_weeks(weeks),
             crl_uri,
             aia.clone(),
             roa_uri,
@@ -826,10 +915,18 @@ impl Roas {
         authzs: Vec<RouteAuthorization>,
         old_roa: Option<&RoaInfo>,
         certified_key: &CertifiedKey,
+        issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<AggregateRoaInfo> {
         let name = ObjectName::from(key);
-        let roa = Self::make_roa(authzs.as_slice(), &name, None, certified_key, signer)?;
+        let roa = Self::make_roa(
+            authzs.as_slice(),
+            &name,
+            None,
+            certified_key,
+            issuance_timing.timing_roa_valid_weeks,
+            signer,
+        )?;
         let info = match old_roa {
             Some(old_roa) => RoaInfo::updated_roa(old_roa, &roa, name),
             None => RoaInfo::new_roa(&roa, name),

@@ -565,7 +565,6 @@ dependencies = [
  "hex",
  "hyper",
  "intervaltree",
- "lazy_static",
  "libc",
  "libflate",
  "log",

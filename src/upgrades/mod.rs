@@ -225,7 +225,6 @@ mod tests {
     use std::path::PathBuf;
     use std::str::FromStr;
 
-    use crate::daemon::config::CONFIG;
     use crate::test;
 
     use crate::commons::eventsourcing::AggregateStore;
@@ -237,8 +236,6 @@ mod tests {
 
     #[test]
     fn upgrade_commands_0_6() {
-        let _r = CONFIG.init_logging();
-
         test::test_under_tmp(|tmp| {
             let cas_source = PathBuf::from("test-resources/api/regressions/v0_6_0/commands/migration/cas");
             let mut cas_test = tmp.clone();
