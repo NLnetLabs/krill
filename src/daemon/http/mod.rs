@@ -269,7 +269,6 @@ impl HttpResponse {
         HttpResponse(hyper::Response::builder()
             .status(StatusCode::UNAUTHORIZED)
             .header("WWW-Authenticate", "Bearer")
-            .header("Access-Control-Allow-Credentials", "true")
             .body(hyper::Body::empty())
             .unwrap())
     }

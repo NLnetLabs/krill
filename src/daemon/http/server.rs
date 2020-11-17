@@ -617,9 +617,6 @@ fn add_authorization_headers_to_response(org_response: hyper::Response<hyper::Bo
     new_header_names.push(HeaderName::from_str("Authorization"));
     new_header_values.push(HeaderValue::from_str(&format!("Bearer {}", &token)));
 
-    new_header_names.push(HeaderName::from_str("Access-Control-Allow-Credentials"));
-    new_header_values.push(HeaderValue::from_str("true"));
-
     let okay = !new_header_names.iter().zip(new_header_values.iter()).any(|(n, v)| n.is_err() | v.is_err());
     
     if okay {
