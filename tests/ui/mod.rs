@@ -352,43 +352,59 @@ fn run_mock_openid_connect_server() {
 
         fn handle_login_request(request: Request, url: Url, authz_codes: &mut TempAuthzCodes) -> Result<(), Error> {
             let query = url.get_parsed_query().ok_or(Error::custom("Missing query parameters"))?;
-            let username = require_query_param(&query, "username")?;
+            let redirect_uri = require_query_param(&query, "redirect_uri")?;
+            let redirect_uri = base64_decode(redirect_uri)?;
 
-            match KNOWN_USERS.get(username.as_str()) {
-                Some(_user) => {
-                    let client_id = require_query_param(&query, "client_id")?;
-                    let nonce = require_query_param(&query, "nonce")?;
-                    let state = require_query_param(&query, "state")?;
-                    let redirect_uri = require_query_param(&query, "redirect_uri")?;
+            fn with_redirect_uri(redirect_uri: String, query: Query, authz_codes: &mut TempAuthzCodes) -> Result<Response<std::io::Empty>, Error> {
+                let username = require_query_param(&query, "username")?;
 
-                    let client_id = base64_decode(client_id)?;
-                    let nonce = base64_decode(nonce)?;
-                    let state = base64_decode(state)?;
-                    let redirect_uri = base64_decode(redirect_uri)?;
+                match KNOWN_USERS.get(username.as_str()) {
+                    Some(_user) => {
+                        let client_id = require_query_param(&query, "client_id")?;
+                        let nonce = require_query_param(&query, "nonce")?;
+                        let state = require_query_param(&query, "state")?;
 
-                    let mut code_bytes: [u8; 4] = [0; 4];
-                    openssl::rand::rand_bytes(&mut code_bytes)
-                        .map_err(|err: openssl::error::ErrorStack| Error::custom(format!("Rand error: {}", err)))?;
-                    let code = base64::encode(code_bytes);
+                        let client_id = base64_decode(client_id)?;
+                        let nonce = base64_decode(nonce)?;
+                        let state = base64_decode(state)?;
 
-                    authz_codes.insert(code.clone(), TempAuthzCodeDetails { client_id, nonce: nonce.clone(), username });
+                        let mut code_bytes: [u8; 4] = [0; 4];
+                        openssl::rand::rand_bytes(&mut code_bytes)
+                            .map_err(|err: openssl::error::ErrorStack| Error::custom(format!("Rand error: {}", err)))?;
+                        let code = base64::encode(code_bytes);
 
-                    let urlsafe_code = url_encode(code)?;
-                    let urlsafe_state = url_encode(state)?;
-                    let urlsafe_nonce = url_encode(nonce)?;
+                        authz_codes.insert(code.clone(), TempAuthzCodeDetails { client_id, nonce: nonce.clone(), username });
 
-                    request.respond(
-                        Response::empty(StatusCode(302))
+                        let urlsafe_code = url_encode(code)?;
+                        let urlsafe_state = url_encode(state)?;
+                        let urlsafe_nonce = url_encode(nonce)?;
+
+                        Ok(Response::empty(StatusCode(302))
                             .with_header(Header::from_str(
                                 &format!("Location: {}?code={}&state={}&nonce={}",
                                     redirect_uri, urlsafe_code, urlsafe_state, urlsafe_nonce)
-                            ).map_err(|err| Error::custom(format!("Error while constructing HTTP Location header: {:?}", err)))?)
-                    ).map_err(|err| err.into())
-                },
-                None => {
-                    Err(Error::custom(format!("Unknown user '{}'", username)))
+                            ).map_err(|err| Error::custom(format!("Error while constructing HTTP Location header: {:?}", err)))?))
+                    },
+                    None => Err(Error::custom("Invalid credentials"))
                 }
             }
+
+            // per RFC 6749 and OpenID Connect Core 1.0 section 3.1.26
+            // Authentication Error Response we should still return a
+            // redirect on error but with query params describing the error.
+            let response = match with_redirect_uri(redirect_uri.clone(), query, authz_codes) {
+                Ok(response) => response,
+                Err(err) => {
+                    Response::empty(StatusCode(302))
+                        .with_header(Header::from_str(
+                            &format!("Location: {}?error={}",
+                                redirect_uri,
+                                url_encode(format!("{}", err))?)
+                        ).map_err(|err| Error::custom(format!("Error while constructing HTTP Location header: {:?}", err)))?)
+                }
+            };
+
+            request.respond(response).map_err(|err| err.into())
         }
 
         fn handle_token_request(mut request: Request, signing_key: &CoreRsaPrivateSigningKey, authz_codes: &mut TempAuthzCodes, login_sessions: &mut LoginSessions) -> Result<(), Error> {

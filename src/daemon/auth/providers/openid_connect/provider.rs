@@ -298,6 +298,9 @@ impl OpenIDConnectAuthProvider {
 }
 
 impl AuthProvider for OpenIDConnectAuthProvider {
+    // TODO: handle error responses from the provider as per RFC 6749 and OpenID
+    // Connect Core 1.0 section 3.1.26 Authentication Error Response
+
     fn get_auth(&self, request: &hyper::Request<hyper::Body>) -> Option<Auth> {
         if let Some(query) = urlparse(request.uri().to_string()).get_parsed_query() {
             if let Some(code) = query.get_first_from_str("code") {
@@ -620,7 +623,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         match auth {
             Some(auth) => match auth.clone() {
                 Auth::Bearer(token) => {
-                forget_cached_session(&token);
+                    forget_cached_session(&token);
 
                     if let Ok(Some(actor)) = self.get_actor(&auth) {
                         info!("User '{}' logged out", actor.name());
@@ -631,7 +634,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 }
             },
             _ => {
-                warn!("Unexpectedly received a logout request without a session token.");        
+                warn!("Unexpectedly received a logout request without a session token.");
             }
         }
         self.logout_url.clone()
