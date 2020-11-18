@@ -1,3 +1,5 @@
+let master = { u: 'master-token@krill.conf', p: 'dummy-master-token' };
+
 describe('Master API token', () => {
   it('The correct login form is shown', () => {
     cy.visit('/')
@@ -32,16 +34,20 @@ describe('Master API token', () => {
 
   it('Can login with correct password', () => {
     cy.visit('/')
-    cy.get(':password').type('dummy-master-token')
+    cy.get(':password').type(master.p)
     cy.contains('Sign In').click()
-    cy.contains('Logged in as: master-token@krill.conf')
+    cy.contains('Sign In').should('not.exist')
+    cy.get('#userinfo').click()
+    cy.get('#userinfo_table').contains(master.u)
   })
 
   it('Can logout', () => {
     cy.visit('/')
-    cy.get(':password').type('dummy-master-token')
+    cy.get(':password').type(master.p)
     cy.contains('Sign In').click()
-    cy.contains('Logged in as: master-token@krill.conf')
+    cy.contains('Sign In').should('not.exist')
+    cy.get('#userinfo').click()
+    cy.get('#userinfo_table').contains(master.u)
     cy.get('.logout').click()
     cy.contains('Sign In')
   })
@@ -53,12 +59,13 @@ describe('Master API token', () => {
     cy.request('/metrics').its('body').should('include', 'krill_auth_session_cache_size 0')
 
     cy.visit('/')
-    cy.get(':password').type('dummy-master-token')
+    cy.get(':password').type(master.p)
     cy.contains('Sign In').click()
 
     // Check that we are logged in
-    cy.contains('Logged in as: master-token@krill.conf')
     cy.contains('Sign In').should('not.exist')
+    cy.get('#userinfo').click()
+    cy.get('#userinfo_table').contains(master.u)
 
     // check that the metrics still show zero logged in users, because the
     // master token auth provider has no concept of a login session, the token
@@ -69,22 +76,25 @@ describe('Master API token', () => {
     // login page but instead are still logged in
     cy.tick(1*60*1000)
     cy.visit('/')
-    cy.contains('Logged in as: master-token@krill.conf')
     cy.contains('Sign In').should('not.exist')
+    cy.get('#userinfo').click()
+    cy.get('#userinfo_table').contains(master.u)
 
     // Skip ahead 30 minutes (so including the time already skipped we should
     // now have exceeded the Lagosta max idle time and be logged out)
     cy.tick(30*60*1000)
     cy.visit('/')
-    cy.contains('Logged in as: master-token@krill.conf').should('not.exist')
     cy.contains('Sign In')
+    cy.get('#userinfo').should('not.exist')
   })
 
   it('Can create CA', () => {
     cy.visit('/')
-    cy.get(':password').type('dummy-master-token')
+    cy.get(':password').type(master.p)
     cy.contains('Sign In').click()
-    cy.contains('Logged in as: master-token@krill.conf')
+    cy.contains('Sign In').should('not.exist')
+    cy.get('#userinfo').click()
+    cy.get('#userinfo_table').contains(master.u)
     cy.contains('Welcome to Krill')
 
     // create a CA

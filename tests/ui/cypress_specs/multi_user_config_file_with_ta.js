@@ -44,7 +44,7 @@ describe('Config File Users with TA', () => {
       cy.get('#login_id').type(ts.u)
       cy.get('#login_password').type(ts.p)
       cy.contains('Sign In').click()
-      cy.contains('Logged in as: ' + ts.u)
+      cy.contains(ts.u)
       cy.contains('Sign In').should('not.exist')
       cy.contains('Welcome to Krill')
     
@@ -69,7 +69,7 @@ describe('Config File Users with TA', () => {
       cy.get('#login_id').type(ts.u)
       cy.get('#login_password').type(ts.p)
       cy.contains('Sign In').click()
-      cy.contains('Logged in as: ' + ts.u)
+      cy.contains(ts.u)
       cy.contains('Sign In').should('not.exist')
 
       // grab the repository tab publisher request XML from the Krill UI
@@ -117,7 +117,7 @@ describe('Config File Users with TA', () => {
       cy.get('input[placeholder="Your username"]').type(ts.u)
       cy.get(':password').type(ts.p)
       cy.contains('Sign In').click()
-      cy.contains('Logged in as: ' + ts.u)
+      cy.contains(ts.u)
       cy.contains('Sign In').should('not.exist')
 
       // grab the parents tab child request XML from the Krill UI
@@ -167,7 +167,7 @@ describe('Config File Users with TA', () => {
       cy.get('input[placeholder="Your username"]').type(ts.u)
       cy.get(':password').type(ts.p)
       cy.contains('Sign In').click()
-      cy.contains('Logged in as: ' + ts.u)
+      cy.contains(ts.u)
       cy.contains('Sign In').should('not.exist')
 
       // Add a ROA

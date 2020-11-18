@@ -48,7 +48,9 @@ describe('Config File Users', () => {
       if (ts.p == '') cy.contains('Please enter your password')
 
       if (ts.o) {
-        cy.contains('Logged in as: ' + ts.u)
+        cy.contains('Sign In').should('not.exist')
+        cy.get('#userinfo').click()
+        cy.get('#userinfo_table').contains(ts.u)
       } else {
         cy.contains('Sign In')
       }
@@ -60,7 +62,9 @@ describe('Config File Users', () => {
     cy.get('input[placeholder="Your username"]').type(admin.u)
     cy.get(':password').type(admin.p)
     cy.contains('Sign In').click()
-    cy.contains('Logged in as: ' + admin.u)
+    cy.contains('Sign In').should('not.exist')
+    cy.get('#userinfo').click()
+    cy.get('#userinfo_table').contains(admin.u)
     cy.get('.logout').click()
     cy.contains('Sign In')
   })
@@ -74,26 +78,30 @@ describe('Config File Users', () => {
     cy.get('input[placeholder="Your username"]').type(admin.u)
     cy.get(':password').type(admin.p)
     cy.contains('Sign In').click()
-    cy.contains('Logged in as: ' + admin.u)
+    cy.contains('Sign In').should('not.exist')
+    cy.get('#userinfo').click()
+    cy.get('#userinfo_table').contains(admin.u)
 
     // Skip ahead a minute and check that we are still logged in
     cy.tick(1*60*1000)
     cy.visit('/')
-    cy.contains('Logged in as: ' + admin.u)
     cy.contains('Sign In').should('not.exist')
+    cy.get('#userinfo').click()
+    cy.get('#userinfo_table').contains(admin.u)
 
     // Skip ahead till just before the idle timeout and check that we are still
     // logged in.
     cy.tick(28*60*1000)
     cy.visit('/')
-    cy.contains('Logged in as: ' + admin.u)
     cy.contains('Sign In').should('not.exist')
+    cy.get('#userinfo').click()
+    cy.get('#userinfo_table').contains(admin.u)
 
     // Skip ahead another 31 minutes to just beyond the UI 30 minute idle
     // timeout threshold and verify that we have been logged out
     cy.tick(31*60*1000)
     cy.visit('/')
-    cy.contains('Logged in as').should('not.exist')
+    cy.get('#userinfo').should('not.exist')
     cy.contains('Sign In')
   })
 
