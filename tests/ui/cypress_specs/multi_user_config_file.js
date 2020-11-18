@@ -12,7 +12,7 @@ let login_test_settings = [
   { d: 'readwrite',    u: readwrite.u,          p: readwrite.p,          o: true  },
 ];
 
-describe('Config File Users', () => {
+describe('Config File users', () => {
   it('The correct login form is shown', () => {
     cy.visit('/')
 
@@ -103,52 +103,5 @@ describe('Config File Users', () => {
     cy.visit('/')
     cy.get('#userinfo').should('not.exist')
     cy.contains('Sign In')
-  })
-
-  it('Can login with readonly credentials', () => {
-    cy.visit('/')
-    cy.get('input[placeholder="Your username"]').type(readonly.u)
-    cy.get(':password').type(readonly.p)
-    cy.contains('Sign In').click()
-    cy.contains('Logged in as: ' + readonly.u)
-  })
-
-  it('Cannot create CA as readonly user', () => {
-    cy.visit('/')
-    cy.get('input[placeholder="Your username"]').type(readonly.u)
-    cy.get(':password').type(readonly.p)
-    cy.contains('Sign In').click()
-    cy.contains('Logged in as: ' + readonly.u)
-    cy.contains('Welcome to Krill')
-
-    // try to create a CA
-    cy.contains('CA Handle')
-    cy.get('form input[type="text"]').type(ca_name)
-    cy.contains('Create CA').click()
-    cy.contains('OK').click()
-
-    // still on the welcome page but now an error is showing
-    cy.contains('Welcome to Krill')
-    cy.contains('Error')
-  })
-
-  it('Can create CA as readwrite user', () => {
-    cy.visit('/')
-    cy.get('input[placeholder="Your username"]').type(readwrite.u)
-    cy.get(':password').type(readwrite.p)
-    cy.contains('Sign In').click()
-    cy.contains('Logged in as: ' + readwrite.u)
-    cy.contains('Welcome to Krill')
-
-    // try to create a CA
-    cy.contains('CA Handle')
-    cy.get('form input[type="text"]').type(ca_name)
-    cy.contains('Create CA').click()
-    cy.contains('OK').click()
-
-    // we're no longer on the welcome page and the CA name we created is visible
-    // on the page
-    cy.contains('Welcome to Krill').should('not.exist')
-    cy.contains(ca_name)
   })
 })
