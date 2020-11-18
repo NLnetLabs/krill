@@ -551,7 +551,7 @@ dependencies = [
 
 [[package]]
 name = "krill"
-version = "1.0.0-dev"
+version = "0.8.1-bis"
 dependencies = [
  "base64 0.13.0",
  "bcder",
