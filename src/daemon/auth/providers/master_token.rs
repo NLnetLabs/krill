@@ -59,7 +59,13 @@ impl AuthProvider for MasterTokenAuthProvider {
         Err(KrillError::ApiInvalidCredentials)
     }
 
-    fn logout(&self, _auth: Option<Auth>) -> String {
+    fn logout(&self, auth: Option<Auth>) -> String {
+        if let Some(auth) = auth {
+            if let Ok(Some(actor)) = self.get_actor(&auth) {
+                info!("User '{}' logged out", actor.name());
+            }
+        }
+
         // Logout is complete, direct Lagosta to show the user the Lagosta
         // index page
         "/".to_string()

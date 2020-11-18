@@ -126,11 +126,20 @@ impl AuthProvider for ConfigFileAuthProvider {
 
     fn logout(&self, auth: Option<Auth>) -> String {
         match auth {
-            Some(Auth::Bearer(token)) => {
-                forget_cached_session(&token);
+            Some(auth) => match auth.clone() {
+                Auth::Bearer(token) => {
+                    forget_cached_session(&token);
+
+                    if let Ok(Some(actor)) = self.get_actor(&auth) {
+                        info!("User '{}' logged out", actor.name());
+                    }
+                },
+                _ => {
+                    warn!("Unexpectedly received a logout request with an unrecognized auth details.");
+                }
             },
             _ => {
-                warn!("Unexpectedly received a logout request without a session token.");        
+                warn!("Unexpectedly received a logout request without a session token.");
             }
         }
         // Logout is complete, direct Lagosta to show the user the Lagosta

@@ -115,7 +115,10 @@ impl Authorizer {
     /// Submit credentials directly to the configured provider to establish a
     /// login session, if supported by the configured provider.
     pub fn login(&self, auth: &Auth) -> KrillResult<LoggedInUser> {
-        self.primary_provider.login(auth)
+        match self.primary_provider.login(auth) {
+            Ok(user) => { info!("User '{}' logged in", user.id); Ok(user) },
+            Err(err) => Err(err)
+        }
     }
 
     /// Return the URL at which an end-user should be directed to logout with
