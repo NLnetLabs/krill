@@ -1209,7 +1209,7 @@ impl fmt::Display for ResourceSetSummary {
 ///
 /// This type supports conversions to and from string representations,
 /// and is (de)serializable.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ResourceSet {
     asn: AsBlocks,
 
@@ -1420,18 +1420,18 @@ impl fmt::Display for ResourceSet {
     }
 }
 
-// TODO: Implement equals better on enclosed AsBlocks and IpBlocks, and check corner cases
-impl PartialEq for ResourceSet {
-    fn eq(&self, other: &Self) -> bool {
-        if let (Ok(self_str), Ok(other_str)) = (serde_json::to_string(&self), serde_json::to_string(other)) {
-            self_str == other_str
-        } else {
-            false
-        }
-    }
-}
-
-impl Eq for ResourceSet {}
+// // TODO: Implement equals better on enclosed AsBlocks and IpBlocks, and check corner cases
+// impl PartialEq for ResourceSet {
+//     fn eq(&self, other: &Self) -> bool {
+//         if let (Ok(self_str), Ok(other_str)) = (serde_json::to_string(&self), serde_json::to_string(other)) {
+//             self_str == other_str
+//         } else {
+//             false
+//         }
+//     }
+// }
+//
+// impl Eq for ResourceSet {}
 
 //------------ CertAuthList --------------------------------------------------
 
@@ -2694,6 +2694,18 @@ mod test {
             ResourceSet::from_strs("", "10.0.0.0/16, 192.168.0.0/16", "2001:db8::/32, 2000:db8::/32").unwrap();
         assert_ne!(default_set, certified);
         assert_ne!(resource_set, certified);
+    }
+
+    #[test]
+    fn resource_set_equivalent() {
+        let set: ResourceSet =
+            serde_json::from_str(include_str!("../../../test-resources/resources/parent_resources.json")).unwrap();
+        let equivalent: ResourceSet = serde_json::from_str(include_str!(
+            "../../../test-resources/resources/parent_resources_reordered.json"
+        ))
+        .unwrap();
+
+        assert_eq!(set, equivalent);
     }
 
     #[test]
