@@ -57,6 +57,7 @@ pub enum KeyStoreVersion {
     V0_8_0_RC1,
     V0_8,
     V0_8_1_RC1,
+    V0_8_1,
 }
 
 impl KeyStoreVersion {
