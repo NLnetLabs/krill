@@ -53,7 +53,7 @@ You can then install, enable and start Krill by running
 
 ```bash
 sudo apt install krill
-systemctl enable --now krill
+sudo systemctl enable --now krill
 
 ```
 
