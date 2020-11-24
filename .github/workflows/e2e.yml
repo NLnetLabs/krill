@@ -93,9 +93,9 @@ jobs:
         sudo ldconfig
 
     - name: Install Terraform
-      uses: marocchino/setup-terraform@v1
+      uses: hashicorp/setup-terraform@v1
       with:
-        version: "0.12.19"
+        terraform_version: "0.12.19"
 
     # Strictly speaking this is not required when testing locally, but currently
     # the test fails without it.
