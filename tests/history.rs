@@ -2,8 +2,6 @@
 
 extern crate krill;
 
-use krill::daemon::config::Config;
-
 /// This tests regressions for the Command history and details as exposed through the
 /// Krill API.
 ///
@@ -12,6 +10,7 @@ use krill::daemon::config::Config;
 #[tokio::test]
 #[cfg(feature = "functional-tests")]
 async fn history() {
+    use krill::daemon::config::Config;
     use std::path::PathBuf;
     use std::str::FromStr;
     use std::sync::Arc;

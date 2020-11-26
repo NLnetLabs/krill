@@ -3,6 +3,11 @@
 Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
 for planned releases.
 
+## TBD
+
+ROAs will now be recreated if your CA lost a prefix, and gets it back later. This will help in
+the rather unlikely case that a parent CA temporarily removed one of your resources in error.
+
 ## 0.8.1 'The Gentle Art' 
 
 The ROA guidance introduced in release 0.8.0 was more strict than it should be. This release

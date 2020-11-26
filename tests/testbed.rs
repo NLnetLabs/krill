@@ -27,7 +27,7 @@ async fn add_and_remove_certificate_authority() {
     let v6 = "::0/0";
     let expected_resources = ResourceSet::from_strs(asns, v4, v6).unwrap();
     let testbed_ca_handle = testbed_ca_handle();
-    assert!(ca_gets_resources(&testbed_ca_handle, &expected_resources).await);
+    assert!(ca_contains_resources(&testbed_ca_handle, &expected_resources).await);
 
     // verify that the testbed publisher has been created
     assert_eq!(&testbed_ca_handle, publisher_details(&testbed_ca_handle).await.handle());
@@ -37,7 +37,7 @@ async fn add_and_remove_certificate_authority() {
 
     // create a dummy CA that we can register with the testbed
     let dummy_ca_handle = Handle::from_str("dummy").unwrap();
-    init_child(&dummy_ca_handle).await;
+    init_ca(&dummy_ca_handle).await;
 
     // -------------------------------------------------------------------------
     // verify registration of a child CA with the testbed

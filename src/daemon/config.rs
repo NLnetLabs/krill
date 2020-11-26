@@ -398,13 +398,13 @@ impl Config {
         let rsync_base = ConfigDefaults::rsync_base();
         let service_uri = ConfigDefaults::service_uri();
         let rrdp_service_uri = Some("https://localhost:3000/test-rrdp/".to_string());
-        let log_level = LevelFilter::Trace;
+        let log_level = LevelFilter::Debug;
         let log_type = LogType::Stderr;
         let mut log_file = data_dir.clone();
         log_file.push("krill.log");
         let syslog_facility = ConfigDefaults::syslog_facility();
         let auth_token = Token::from("secret");
-        let ca_refresh = 3600;
+        let ca_refresh = 1;
         let post_limit_api = ConfigDefaults::post_limit_api();
         let post_limit_rfc8181 = ConfigDefaults::post_limit_rfc8181();
         let rfc8181_log_dir = {
@@ -482,7 +482,7 @@ impl Config {
 
     pub fn test(data_dir: &PathBuf) -> Self {
         let config = Self::test_config(data_dir);
-        if let Err(_) = config.init_logging() {
+        if config.init_logging().is_err() {
             trace!("Logging already initialised");
         }
         config.verify().unwrap();

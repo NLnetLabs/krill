@@ -156,7 +156,6 @@ async fn map_requests(req: hyper::Request<hyper::Body>, state: State) -> Result<
         Ok(routing_result) => {
             let response = routing_result.response();
             info!("{} {}", log_req, response.status(),);
-            trace!("Response body: {:?}", response.body());
             Ok(response)
         }
         Err(e) => {

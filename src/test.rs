@@ -14,7 +14,6 @@ use tokio::time::{delay_for, timeout};
 
 use rpki::crypto::KeyIdentifier;
 use rpki::uri;
-use rpki::uri::Rsync;
 
 use crate::cli::options::{BulkCaCommand, CaCommand, Command, Options, PublishersCommand};
 use crate::cli::report::{ApiResponse, ReportFormat};
@@ -22,8 +21,8 @@ use crate::cli::{Error, KrillClient};
 use crate::commons::api::{
     AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildAuthRequest, ChildHandle, Handle,
     ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, Publish, PublisherDetails, PublisherHandle,
-    PublisherList, RepositoryUpdate, ResourceClassKeysInfo, ResourceClassName, ResourceSet, RoaDefinition,
-    RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
+    PublisherList, RepositoryUpdate, ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList,
+    RtaName, RtaPrepResponse, TypedPrefix, UpdateChildRequest,
 };
 use crate::commons::bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::crypto::SignSupport;
@@ -91,12 +90,12 @@ async fn refresh_all() {
     krill_admin(Command::Bulk(BulkCaCommand::Refresh)).await;
 }
 
-pub async fn init_child(handle: &Handle) {
+pub async fn init_ca(handle: &Handle) {
     krill_admin(Command::CertAuth(CaCommand::Init(CertAuthInit::new(handle.clone())))).await;
 }
 
 // We use embedded when not testing RFC 8181 - so that the CMS signing/verification overhead can be reduced.
-pub async fn init_child_with_embedded_repo(handle: &Handle) {
+pub async fn init_ca_with_embedded_repo(handle: &Handle) {
     krill_admin(Command::CertAuth(CaCommand::Init(CertAuthInit::new(handle.clone())))).await;
     krill_admin(Command::CertAuth(CaCommand::RepoUpdate(
         handle.clone(),
@@ -231,14 +230,6 @@ pub async fn delete_parent(ca: &Handle, parent: &ParentHandle) {
     krill_admin(Command::CertAuth(CaCommand::RemoveParent(ca.clone(), parent.clone()))).await;
 }
 
-pub async fn ca_roll_init(handle: &Handle) {
-    krill_admin(Command::CertAuth(CaCommand::KeyRollInit(handle.clone()))).await;
-}
-
-pub async fn ca_roll_activate(handle: &Handle) {
-    krill_admin(Command::CertAuth(CaCommand::KeyRollActivate(handle.clone()))).await;
-}
-
 pub async fn ca_route_authorizations_update(handle: &Handle, updates: RoaDefinitionUpdates) {
     krill_admin(Command::CertAuth(CaCommand::RouteAuthorizationsUpdate(
         handle.clone(),
@@ -334,9 +325,9 @@ pub async fn ca_key_for_rcn(handle: &Handle, rcn: &ResourceClassName) -> Certifi
         .clone()
 }
 
-pub async fn ca_gets_resources(handle: &Handle, resources: &ResourceSet) -> bool {
+pub async fn ca_contains_resources(handle: &Handle, resources: &ResourceSet) -> bool {
     for _ in 0..30_u8 {
-        if &ca_current_resources(handle).await == resources {
+        if ca_current_resources(handle).await.contains(resources) {
             return true;
         }
         delay_for(Duration::from_secs(1)).await
@@ -344,28 +335,12 @@ pub async fn ca_gets_resources(handle: &Handle, resources: &ResourceSet) -> bool
     false
 }
 
-pub async fn rc_state_becomes_new_key(handle: &Handle) -> bool {
+pub async fn ca_equals_resources(handle: &Handle, resources: &ResourceSet) -> bool {
     for _ in 0..30_u8 {
-        let ca = ca_details(handle).await;
-        if let Some(rc) = ca.resource_classes().get(&ResourceClassName::default()) {
-            if let ResourceClassKeysInfo::RollNew(_) = rc.keys() {
-                return true;
-            }
+        if &ca_current_resources(handle).await == resources {
+            return true;
         }
         delay_for(Duration::from_secs(1)).await
-    }
-    false
-}
-
-pub async fn rc_state_becomes_active(handle: &Handle) -> bool {
-    for _ in 0..300 {
-        let ca = ca_details(handle).await;
-        if let Some(rc) = ca.resource_classes().get(&ResourceClassName::default()) {
-            if let ResourceClassKeysInfo::Active(_) = rc.keys() {
-                return true;
-            }
-        }
-        delay_for(Duration::from_millis(100)).await
     }
     false
 }
@@ -430,43 +405,6 @@ pub async fn publisher_request(handle: &Handle) -> rfc8183::PublisherRequest {
         ApiResponse::Rfc8183PublisherRequest(req) => req,
         _ => panic!("Expected publisher request"),
     }
-}
-
-pub async fn will_publish_objects(publisher: &PublisherHandle, objects: &[&str]) -> bool {
-    for _ in 0..300 {
-        let details = publisher_details(publisher).await;
-
-        let current_files = details.current_files();
-
-        if current_files.len() == objects.len() {
-            let current_files: Vec<&Rsync> = current_files.iter().map(|p| p.uri()).collect();
-            let mut all_matched = true;
-            for o in objects {
-                if current_files.iter().find(|uri| uri.ends_with(o)).is_none() {
-                    all_matched = false;
-                }
-            }
-            if all_matched {
-                return true;
-            }
-        }
-
-        delay_for(Duration::from_millis(100)).await
-    }
-
-    let details = publisher_details(publisher).await;
-
-    eprintln!("Did not find match for: {}", publisher);
-    eprintln!("Found:");
-    for file in details.current_files() {
-        eprintln!("  {}", file.uri());
-    }
-    eprintln!("Expected:");
-    for file in objects {
-        eprintln!("  {}", file);
-    }
-
-    false
 }
 
 /// This method sets up a test directory with a random name (a number)

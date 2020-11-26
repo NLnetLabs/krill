@@ -101,7 +101,7 @@ impl CertifiedKey {
         let new_not_after = new_not_after.timestamp_millis();
 
         if not_after == new_not_after {
-            debug!("No change in not after time for certificate for key '{}'", self.key_id);
+            trace!("No change in not after time for certificate for key '{}'", self.key_id);
             false
         } else if not_after < new_not_after {
             warn!(

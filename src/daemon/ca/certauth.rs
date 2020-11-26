@@ -325,14 +325,12 @@ impl Aggregate for CertAuth {
                 self.update_resource_classes(parent, entitlements, signer)
             }
             CmdDet::UpdateRcvdCert(class_name, rcvd_cert, config, signer) => {
-                self.update_received_cert(class_name, rcvd_cert, &config.issuance_timing, signer)
+                self.update_received_cert(class_name, rcvd_cert, &config, signer)
             }
 
             // Key rolls
             CmdDet::KeyRollInitiate(duration, signer) => self.keyroll_initiate(duration, signer),
-            CmdDet::KeyRollActivate(duration, config, signer) => {
-                self.keyroll_activate(duration, &config.issuance_timing, signer)
-            }
+            CmdDet::KeyRollActivate(duration, config, signer) => self.keyroll_activate(duration, &config, signer),
             CmdDet::KeyRollFinish(rcn, response) => self.keyroll_finish(rcn, response),
 
             // Route Authorizations
@@ -341,8 +339,8 @@ impl Aggregate for CertAuth {
             }
 
             // Republish
-            CmdDet::Republish(config, signer) => self.republish(&config.issuance_timing, &signer),
-            CmdDet::RepoUpdate(contact, config, signer) => self.update_repo(contact, &config.issuance_timing, &signer),
+            CmdDet::Republish(config, signer) => self.republish(&config, &signer),
+            CmdDet::RepoUpdate(contact, config, signer) => self.update_repo(contact, &config, &signer),
             CmdDet::RepoRemoveOld(_signer) => self.clean_repo(),
 
             // Resource Tagged Attestations
@@ -1130,7 +1128,7 @@ impl CertAuth {
         &self,
         rcn: ResourceClassName,
         rcvd_cert: RcvdCert,
-        issuance_timing: &IssuanceTimingConfig,
+        config: &Config,
         signer: Arc<KrillSigner>,
     ) -> KrillResult<Vec<Evt>> {
         debug!("CA {}: Updating received cert for class: {}", self.handle, rcn);
@@ -1142,7 +1140,7 @@ impl CertAuth {
 
         let repo = self.get_repository_contact()?;
 
-        let evt_details = rc.update_received_cert(rcvd_cert, repo.repo_info(), issuance_timing, signer.deref())?;
+        let evt_details = rc.update_received_cert(rcvd_cert, &self.routes, repo.repo_info(), config, signer.deref())?;
 
         let mut res = vec![];
         let mut version = self.version;
@@ -1184,12 +1182,7 @@ impl CertAuth {
         Ok(res)
     }
 
-    fn keyroll_activate(
-        &self,
-        staging: Duration,
-        issuance_timing: &IssuanceTimingConfig,
-        signer: Arc<KrillSigner>,
-    ) -> KrillResult<Vec<Evt>> {
+    fn keyroll_activate(&self, staging: Duration, config: &Config, signer: Arc<KrillSigner>) -> KrillResult<Vec<Evt>> {
         if self.is_ta() {
             return Ok(vec![]);
         }
@@ -1203,7 +1196,7 @@ impl CertAuth {
             let repo = self.get_repository_contact()?;
 
             for details in rc
-                .keyroll_activate(repo.repo_info(), staging, issuance_timing, signer.deref())?
+                .keyroll_activate(repo.repo_info(), staging, config, signer.deref())?
                 .into_iter()
             {
                 activated = true;
@@ -1242,11 +1235,11 @@ impl CertAuth {
 ///
 impl CertAuth {
     /// Republish objects for this CA
-    pub fn republish(&self, issuance_timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<Vec<Evt>> {
+    pub fn republish(&self, config: &Config, signer: &KrillSigner) -> KrillResult<Vec<Evt>> {
         let mut version = self.version;
         let mut res = vec![];
 
-        for evt_det in self.republish_resource_classes(&PublishMode::Normal, issuance_timing, signer)? {
+        for evt_det in self.republish_resource_classes(&PublishMode::Normal, config, signer)? {
             res.push(StoredEvent::new(&self.handle, version, evt_det));
             version += 1;
         }
@@ -1257,7 +1250,7 @@ impl CertAuth {
     fn republish_resource_classes(
         &self,
         mode: &PublishMode,
-        issuance_timing: &IssuanceTimingConfig,
+        config: &Config,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<EvtDet>> {
         let mut res = vec![];
@@ -1270,7 +1263,7 @@ impl CertAuth {
                     self.get_repository_contact()?.repo_info()
                 };
 
-                res.append(&mut rc.republish(repo_info, mode, issuance_timing, signer)?);
+                res.append(&mut rc.republish(repo_info, mode, config, signer)?);
             }
         }
 
@@ -1288,7 +1281,7 @@ impl CertAuth {
     pub fn update_repo(
         &self,
         new_contact: RepositoryContact,
-        issuance_timing: &IssuanceTimingConfig,
+        config: &Config,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<Evt>> {
         // check that it is indeed different
@@ -1306,11 +1299,7 @@ impl CertAuth {
         evt_dts.push(EvtDet::RepoUpdated(new_contact));
 
         // issue new things => will trigger publication at the new location
-        evt_dts.append(&mut self.republish_resource_classes(
-            &PublishMode::NewRepo(info.clone()),
-            issuance_timing,
-            signer,
-        )?);
+        evt_dts.append(&mut self.republish_resource_classes(&PublishMode::NewRepo(info.clone()), config, signer)?);
 
         // request new certs => when received will trigger unpublishing at old location
         for rc in self.resources.values() {
@@ -1363,7 +1352,7 @@ impl CertAuth {
 
         // for rc in self.resources
         for (rcn, rc) in self.resources.iter() {
-            let updates = rc.update_roas(&routes, config, signer.deref())?;
+            let updates = rc.update_roas(&routes, None, config, signer.deref())?;
             if updates.contains_changes() {
                 let mut delta = ObjectsDelta::new(repo.repo_info().ca_repository(rc.name_space()));
 

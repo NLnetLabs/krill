@@ -221,7 +221,7 @@ impl fmt::Display for RouteAuthorizationUpdates {
 //------------ Routes ------------------------------------------------------
 
 /// The current authorizations and corresponding meta-information for a CA.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Routes {
     map: HashMap<RouteAuthorization, RouteInfo>,
 }
@@ -305,7 +305,7 @@ impl Routes {
 //------------ RouteInfo ---------------------------------------------------
 
 /// Meta-information about a configured RouteAuthorization.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RouteInfo {
     since: Time, // authorization first added by user
 
@@ -784,52 +784,6 @@ impl Roas {
             let aggregate = AggregateRoaInfo::new(authzs, new_roa);
 
             updates.update_aggregate(*roa_key, aggregate);
-        }
-
-        Ok(updates)
-    }
-
-    /// Withdraw or re-issue shrunk aggregate ROAs as needed when resources
-    /// are reduced.
-    pub fn shrink_roas(
-        &self,
-        resources: &ResourceSet,
-        certified_key: &CertifiedKey,
-        issuance_timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<RoaUpdates> {
-        let mut updates = RoaUpdates::default();
-
-        for (auth, roa) in self.simple.iter() {
-            if !resources.contains_roa_address(&auth.as_roa_ip_address()) {
-                updates.remove(*auth, roa.object().into());
-            }
-        }
-
-        for (roa_key, aggregate) in self.aggregate.iter() {
-            let roa = aggregate.roa();
-            let mut authzs = aggregate.authorizations().clone();
-            let current_nr = authzs.len();
-
-            authzs.retain(|a| resources.contains_roa_address(&a.as_roa_ip_address()));
-
-            if authzs.is_empty() {
-                updates.remove_aggregate(*roa_key, roa.object().into());
-            } else if authzs.len() != current_nr {
-                let name = roa.name();
-                let new_roa = Self::make_roa(
-                    authzs.as_slice(),
-                    name,
-                    None,
-                    certified_key,
-                    issuance_timing.timing_roa_valid_weeks,
-                    signer,
-                )?;
-                let new_roa = RoaInfo::updated_roa(roa, &new_roa, name.clone());
-                let aggregate = AggregateRoaInfo::new(authzs, new_roa);
-
-                updates.update_aggregate(*roa_key, aggregate);
-            }
         }
 
         Ok(updates)

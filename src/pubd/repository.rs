@@ -325,7 +325,7 @@ impl RrdpServer {
         let mut session_dir = self.rrdp_base_dir.clone();
         session_dir.push(self.session.to_string());
 
-        debug!(
+        info!(
             "Will try to clean old RRDP files and dirs under: {}",
             session_dir.to_string_lossy()
         );
@@ -339,17 +339,17 @@ impl RrdpServer {
             // - a number that is higher than the current serial
             // - a number that is lower than the last delta (if set)
             if let Ok(serial) = u64::from_str(entry.file_name().to_string_lossy().as_ref()) {
-                debug!("Found serial: {}", serial);
+                trace!("Found serial: {}", serial);
 
                 // Skip the current serial
                 if serial == self.serial {
-                    debug!("Matches current serial, skipping");
+                    trace!("Matches current serial, skipping");
                     continue;
                 // Clean up old serial dirs
                 } else if !self.notification.includes_delta(serial)
                     && !self.old_notifications.iter().any(|n| n.includes_delta(serial))
                 {
-                    debug!("Deltas no longer contained, will delete: {}", path.to_string_lossy());
+                    info!("Deltas no longer contained, will delete: {}", path.to_string_lossy());
                     if path.is_dir() {
                         let _best_effort_rm = fs::remove_dir_all(path);
                     } else {
@@ -359,18 +359,18 @@ impl RrdpServer {
                 } else if !self.old_notifications.iter().any(|n| n.includes_snapshot(serial)) {
                     let snapshot_path = Self::new_snapshot_path(&self.rrdp_base_dir, &self.session, serial);
                     if snapshot_path.exists() {
-                        debug!(
+                        info!(
                             "Snapshots no longer contained, will delete: {}",
                             snapshot_path.to_string_lossy()
                         );
                         let _best_effort_rm = fs::remove_file(snapshot_path);
                     }
                 } else {
-                    debug!("looks like we still need this");
+                    trace!("looks like we still need this");
                 }
             } else {
                 // clean up dirs or files under the base dir which are not sessions
-                debug!(
+                info!(
                     "Found some other file or dir - will try to remove: {}",
                     path.to_string_lossy()
                 );

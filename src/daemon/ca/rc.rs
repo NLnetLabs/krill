@@ -201,8 +201,9 @@ impl ResourceClass {
     pub fn update_received_cert(
         &self,
         rcvd_cert: RcvdCert,
+        routes: &Routes,
         repo_info: &RepoInfo,
-        issuance_timing: &IssuanceTimingConfig,
+        config: &Config,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<EvtDet>> {
         // If this is for a pending key, then we need to promote this key
@@ -236,21 +237,31 @@ impl ResourceClass {
                 if rcvd_cert_ki != pending.key_id() {
                     Err(Error::KeyUseNoMatch(rcvd_cert_ki))
                 } else {
-                    let (active_key, delta) =
-                        create_active_key_and_delta(rcvd_cert, repo_info, self.name_space(), issuance_timing, signer)?;
+                    let (active_key, delta) = create_active_key_and_delta(
+                        rcvd_cert,
+                        repo_info,
+                        self.name_space(),
+                        &config.issuance_timing,
+                        signer,
+                    )?;
                     Ok(vec![EvtDet::KeyPendingToActive(self.name.clone(), active_key, delta)])
                 }
             }
             KeyState::Active(current) => {
-                self.update_rcvd_cert_current(current, rcvd_cert, repo_info, issuance_timing, signer)
+                self.update_rcvd_cert_current(current, rcvd_cert, routes, repo_info, config, signer)
             }
             KeyState::RollPending(pending, current) => {
                 if rcvd_cert_ki == pending.key_id() {
-                    let (active_key, delta) =
-                        create_active_key_and_delta(rcvd_cert, repo_info, self.name_space(), issuance_timing, signer)?;
+                    let (active_key, delta) = create_active_key_and_delta(
+                        rcvd_cert,
+                        repo_info,
+                        self.name_space(),
+                        &config.issuance_timing,
+                        signer,
+                    )?;
                     Ok(vec![EvtDet::KeyPendingToNew(self.name.clone(), active_key, delta)])
                 } else {
-                    self.update_rcvd_cert_current(current, rcvd_cert, repo_info, issuance_timing, signer)
+                    self.update_rcvd_cert_current(current, rcvd_cert, routes, repo_info, config, signer)
                 }
             }
             KeyState::RollNew(new, current) => {
@@ -261,12 +272,12 @@ impl ResourceClass {
                         rcvd_cert,
                     )])
                 } else {
-                    self.update_rcvd_cert_current(current, rcvd_cert, repo_info, issuance_timing, signer)
+                    self.update_rcvd_cert_current(current, rcvd_cert, routes, repo_info, config, signer)
                 }
             }
             KeyState::RollOld(current, _old) => {
                 // We will never request a new certificate for an old key
-                self.update_rcvd_cert_current(current, rcvd_cert, repo_info, issuance_timing, signer)
+                self.update_rcvd_cert_current(current, rcvd_cert, routes, repo_info, config, signer)
             }
         }
     }
@@ -275,8 +286,9 @@ impl ResourceClass {
         &self,
         current: &CurrentKey,
         rcvd_cert: RcvdCert,
+        routes: &Routes,
         repo_info: &RepoInfo,
-        issuance_timing: &IssuanceTimingConfig,
+        config: &Config,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<EvtDet>> {
         let rcvd_cert_ki = rcvd_cert.cert().subject_key_identifier();
@@ -290,8 +302,8 @@ impl ResourceClass {
         res.push(EvtDet::CertificateReceived(self.name.clone(), rcvd_cert_ki, rcvd_cert));
 
         if &rcvd_resources != current.incoming_cert().resources() {
-            let publish_mode = PublishMode::UpdatedResources(rcvd_resources);
-            res.append(&mut self.republish(repo_info, &publish_mode, issuance_timing, signer)?)
+            let publish_mode = PublishMode::UpdatedResources(rcvd_resources, routes.clone());
+            res.append(&mut self.republish(repo_info, &publish_mode, config, signer)?)
         }
 
         Ok(res)
@@ -424,7 +436,7 @@ impl ResourceClass {
         &self,
         repo_info: &RepoInfo,
         mode: &PublishMode,
-        issuance_timing: &IssuanceTimingConfig,
+        config: &Config,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<EvtDet>> {
         let mut res = vec![];
@@ -434,10 +446,12 @@ impl ResourceClass {
         let mut revocations = vec![];
 
         let roa_updates = match mode {
-            PublishMode::Normal => self.renew_roas(issuance_timing, signer),
-            PublishMode::KeyRollActivation => self.active_key_roas(issuance_timing, signer),
-            PublishMode::NewRepo(info) => self.migrate_roas(info, issuance_timing, signer),
-            PublishMode::UpdatedResources(resources) => self.shrink_roas(resources, issuance_timing, signer),
+            PublishMode::Normal => self.renew_roas(&config.issuance_timing, signer),
+            PublishMode::KeyRollActivation => self.active_key_roas(&config.issuance_timing, signer),
+            PublishMode::NewRepo(info) => self.migrate_roas(info, &config.issuance_timing, signer),
+            PublishMode::UpdatedResources(resources, routes) => {
+                self.update_roas(routes, Some(resources), config, signer)
+            }
         }?;
 
         if roa_updates.contains_changes() {
@@ -455,7 +469,7 @@ impl ResourceClass {
             res.push(EvtDet::RoasUpdated(self.name.clone(), roa_updates));
         }
 
-        let child_cert_updates = self.update_child_certificates(mode, issuance_timing, signer)?;
+        let child_cert_updates = self.update_child_certificates(mode, &config.issuance_timing, signer)?;
         if !child_cert_updates.is_empty() {
             for issued in child_cert_updates.issued() {
                 match issued.replaces() {
@@ -474,9 +488,9 @@ impl ResourceClass {
 
         if !delta.is_empty()
             || !revocations.is_empty()
-            || self.needs_publication(mode, issuance_timing.timing_publish_hours_before_next)
+            || self.needs_publication(mode, config.issuance_timing.timing_publish_hours_before_next)
         {
-            res.push(self.publish_objects(&repo_info, delta, revocations, mode, issuance_timing, signer)?);
+            res.push(self.publish_objects(&repo_info, delta, revocations, mode, &config.issuance_timing, signer)?);
         }
 
         Ok(res)
@@ -776,7 +790,7 @@ impl ResourceClass {
         &self,
         repo_info: &RepoInfo,
         staging: Duration,
-        issuance_timing: &IssuanceTimingConfig,
+        config: &Config,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<EvtDet>> {
         if !self.key_state.has_new_key() || self.last_key_change + staging > Time::now() {
@@ -790,7 +804,7 @@ impl ResourceClass {
                 .keyroll_activate(self.name.clone(), self.parent_rc_name.clone(), signer)?,
         );
 
-        res.append(&mut self.republish(repo_info, &PublishMode::KeyRollActivation, issuance_timing, signer)?);
+        res.append(&mut self.republish(repo_info, &PublishMode::KeyRollActivation, config, signer)?);
 
         Ok(res)
     }
@@ -901,7 +915,7 @@ impl ResourceClass {
                     updates.issue(re_issued);
                 }
             }
-            PublishMode::UpdatedResources(resources) => {
+            PublishMode::UpdatedResources(resources, _) => {
                 //    re-issue: overclaiming with remaining
                 //    revoke: overclaiming without remaining
                 for issued in self.certificates.overclaiming(resources) {
@@ -1002,22 +1016,18 @@ impl ResourceClass {
         self.roas.activate_key(key, issuance_timing, signer)
     }
 
-    /// Shrink ROAs if needed
-    pub fn shrink_roas(
+    /// Updates the ROAs in accordance with the current authorizations, and
+    /// the target resources and key determined by the PublishMode.
+    pub fn update_roas(
         &self,
-        resources: &ResourceSet,
-        issuance_timing: &IssuanceTimingConfig,
+        routes: &Routes,
+        new_resources: Option<&ResourceSet>,
+        config: &Config,
         signer: &KrillSigner,
     ) -> KrillResult<RoaUpdates> {
         let key = self.get_current_key()?;
-        self.roas.shrink_roas(resources, key, issuance_timing, signer)
-    }
-
-    /// Updates the ROAs in accordance with the current authorizations, and
-    /// the target resources and key determined by the PublishMode.
-    pub fn update_roas(&self, routes: &Routes, config: &Config, signer: &KrillSigner) -> KrillResult<RoaUpdates> {
-        let key = self.get_current_key()?;
-        let routes = routes.filter(key.incoming_cert().resources());
+        let resources = new_resources.unwrap_or_else(|| key.incoming_cert().resources());
+        let routes = routes.filter(resources);
         self.roas.update(&routes, key, config, signer)
     }
 
@@ -1074,7 +1084,7 @@ impl ResourceClass {
 #[allow(clippy::large_enum_variant)]
 pub enum PublishMode {
     Normal,
-    UpdatedResources(ResourceSet),
+    UpdatedResources(ResourceSet, Routes),
     KeyRollActivation,
     NewRepo(RepoInfo),
 }
