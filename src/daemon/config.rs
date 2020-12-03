@@ -600,7 +600,7 @@ impl Config {
         }
 
         if self.testbed_enabled && !self.use_ta {
-            return Err(ConfigError::other("Cannot use testedbed without embedded TA"));
+            return Err(ConfigError::other("Cannot use testbed without embedded TA"));
         }
 
         if self.issuance_timing.timing_publish_next_hours < 2 {
