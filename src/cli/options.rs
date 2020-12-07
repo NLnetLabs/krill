@@ -1,4 +1,8 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
+
+#[cfg(feature = "multi-user")]
+use std::collections::HashMap;
+
 use std::convert::TryFrom;
 use std::io;
 use std::path::PathBuf;
@@ -272,6 +276,7 @@ impl Options {
             )
         }
 
+        #[cfg(feature = "multi-user")]
         fn add_id_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
             app.arg(
                 Arg::with_name("id")
@@ -282,6 +287,7 @@ impl Options {
             )
         }
 
+        #[cfg(feature = "multi-user")]
         fn add_attr_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
             app.arg(
                 Arg::with_name("attr")
@@ -307,16 +313,20 @@ impl Options {
         with_3rd = Self::add_general_args(with_3rd);
         with_3rd = add_data_dir_arg(with_3rd);
         with_3rd = add_log_file_arg(with_3rd);
-
-        let mut with_user = SubCommand::with_name("user").about("Generate a user authentication configuration file fragment");
-
-        with_user = Self::add_general_args(with_user);
-        with_user = add_id_arg(with_user);
-        with_user = add_attr_arg(with_user);
-
+		
         config_sub = config_sub.subcommand(with_3rd);
         config_sub = config_sub.subcommand(with_repo);
-        config_sub = config_sub.subcommand(with_user);
+
+		#[cfg(feature = "multi-user")]
+		{
+			let mut with_user = SubCommand::with_name("user").about("Generate a user authentication configuration file fragment");
+
+			with_user = Self::add_general_args(with_user);
+			with_user = add_id_arg(with_user);
+			with_user = add_attr_arg(with_user);
+
+            config_sub = config_sub.subcommand(with_user);
+        }
 
         app.subcommand(config_sub)
     }
@@ -2184,12 +2194,14 @@ impl Default for KrillInitDetails {
     }
 }
 
+#[cfg(feature = "multi-user")]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct KrillUserDetails {
     id: String,
     attrs: HashMap<String, String>
 }
 
+#[cfg(feature = "multi-user")]
 impl KrillUserDetails {
     pub fn with_id(&mut self, id: String) {
         self.id = id;
@@ -2206,6 +2218,7 @@ impl KrillUserDetails {
     }
 }
 
+#[cfg(feature = "multi-user")]
 impl Default for KrillUserDetails {
     fn default() -> Self {
         KrillUserDetails {
