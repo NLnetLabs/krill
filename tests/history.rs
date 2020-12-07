@@ -10,16 +10,16 @@ extern crate krill;
 #[tokio::test]
 #[cfg(feature = "functional-tests")]
 async fn history() {
-    use krill::daemon::config::Config;
     use std::path::PathBuf;
     use std::str::FromStr;
     use std::sync::Arc;
     use std::{env, fs};
-
+    
     use krill::commons::api::{CaCommandDetails, CommandHistoryCriteria, Handle};
     use krill::commons::crypto::KrillSigner;
     use krill::commons::util::file;
     use krill::daemon::ca::CaServer;
+    use krill::daemon::config::Config;
     use krill::daemon::mq::EventQueueListener;
     use krill::test::*;
 

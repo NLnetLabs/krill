@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::io;
 use std::path::PathBuf;
@@ -78,6 +78,17 @@ impl GeneralArgs {
             format,
             api,
         })
+    }
+}
+
+impl Default for GeneralArgs {
+    fn default() -> Self { 
+        GeneralArgs {
+            server: uri::Https::from_str(KRILL_CLI_SERVER_DFLT).unwrap(),
+            token: Token::from(""),
+            format: ReportFormat::Text,
+            api: false,            
+        }
     }
 }
 
@@ -261,6 +272,28 @@ impl Options {
             )
         }
 
+        fn add_id_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+            app.arg(
+                Arg::with_name("id")
+                    .long("id")
+                    .value_name("id")
+                    .help("Specify the id (e.g. username, email) to generate configuration for")
+                    .required(true),
+            )
+        }
+
+        fn add_attr_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+            app.arg(
+                Arg::with_name("attr")
+                    .short("a")
+                    .long("attribute")
+                    .value_name("attr")
+                    .help("Specify key=value pair attributes to give the user in Krill")
+                    .required(false)
+                    .multiple(true)
+            )
+        }
+
         let mut with_repo = SubCommand::with_name("repo").about("Use a self-hosted repository (not recommended)");
 
         with_repo = Self::add_general_args(with_repo);
@@ -275,8 +308,15 @@ impl Options {
         with_3rd = add_data_dir_arg(with_3rd);
         with_3rd = add_log_file_arg(with_3rd);
 
+        let mut with_user = SubCommand::with_name("user").about("Generate a user authentication configuration file fragment");
+
+        with_user = Self::add_general_args(with_user);
+        with_user = add_id_arg(with_user);
+        with_user = add_attr_arg(with_user);
+
         config_sub = config_sub.subcommand(with_3rd);
         config_sub = config_sub.subcommand(with_repo);
+        config_sub = config_sub.subcommand(with_user);
 
         app.subcommand(config_sub)
     }
@@ -1165,11 +1205,37 @@ impl Options {
         Ok(Options::make(general_args, command))
     }
 
+    #[cfg(feature = "multi-user")]
+    fn parse_matches_user_config(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::default();
+        let mut details = KrillUserDetails::default();
+        if let Some(id) = matches.value_of("id") {
+            details.with_id(id.to_string());
+        }
+        if let Some(attr_iter) = matches.values_of("attr") {
+            for attr in attr_iter {
+                let mut iter = attr.split('=');
+                let k = iter.next().ok_or(Error::general(&format!("attribute '{}' must be of the form key=value", attr)))?;
+                let v = iter.next().ok_or(Error::general(&format!("attribute '{}' must be of the form key=value", attr)))?;
+                details.with_attr(k.to_string(), v.to_string());
+            }
+        }
+        let command = Command::User(details);
+        Ok(Options::make(general_args, command))
+    }
+
+    #[cfg(not(feature = "multi-user"))]
+    fn parse_matches_user_config(_: &ArgMatches) -> Result<Options, Error> {
+        Err(Error::UnrecognisedSubCommand)
+    }
+
     fn parse_matches_config(matches: &ArgMatches) -> Result<Options, Error> {
         if let Some(m) = matches.subcommand_matches("repo") {
             Self::parse_matches_repo_config(m)
         } else if let Some(m) = matches.subcommand_matches("simple") {
             Self::parse_matches_simple_config(m)
+        } else if let Some(m) = matches.subcommand_matches("user") {
+            Self::parse_matches_user_config(m)
         } else {
             Err(Error::UnrecognisedSubCommand)
         }
@@ -1940,6 +2006,8 @@ pub enum Command {
     CertAuth(CaCommand),
     Publishers(PublishersCommand),
     Init(KrillInitDetails),
+    #[cfg(feature = "multi-user")]
+    User(KrillUserDetails),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2112,6 +2180,37 @@ impl Default for KrillInitDetails {
             rrdp_service_uri: None,
             data_dir: None,
             log_file: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct KrillUserDetails {
+    id: String,
+    attrs: HashMap<String, String>
+}
+
+impl KrillUserDetails {
+    pub fn with_id(&mut self, id: String) {
+        self.id = id;
+    }
+    pub fn with_attr(&mut self, attr: String, value: String) {
+        self.attrs.insert(attr, value);
+    }
+    pub fn id(&self) -> &String {
+        &self.id
+    }
+
+    pub fn attrs(&self) -> HashMap<String, String> {
+        self.attrs.clone()
+    }
+}
+
+impl Default for KrillUserDetails {
+    fn default() -> Self {
+        KrillUserDetails {
+            id: String::new(),
+            attrs: HashMap::new(),
         }
     }
 }

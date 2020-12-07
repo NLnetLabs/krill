@@ -29,23 +29,28 @@ futures-util    = "^0.3"
 hex             = "^0.4"
 hyper           = "^0.13"
 intervaltree    = "0.2.6"
+jmespatch       = { version = "^0.3", features = ["sync"], optional = true }
 libflate        = "^1.0"
 log             = "^0.4"
+openidconnect   = { version = "^1.0", optional = true }
+#openidconnect = { git = "https://github.com/ximon18/openidconnect-rs.git", branch = "krill-hack", optional = true } }
 openssl         = { version = "^0.10", features = ["v110"] }
+oso             = { version = "^0.8", optional = true }
+regex           = { version = "^1.4", optional = true }
 reqwest         = { version = "0.10.8", features = [ "json"] }
-#rpki            = { git = "https://github.com/NLnetLabs/rpki-rs.git", version = "0.9.2-bis" }
 rpki            = "^0.10.0"
 serde           = { version = "^1.0", features = ["derive"] }
 serde_json      = "^1.0"
 tokio           = { version = "^0.2", features = ["rt-core", "macros", "time"] }
 tokio-rustls    = "^0.14"
 toml            = "^0.5"
+urlparse        = { version = "^0.7", optional = true }
 uuid            = { version = "^0.8", features = [ "v4"] }
 xml-rs          = "^0.8"
 
 [target.'cfg(unix)'.dependencies]
-libc		    = "^0.2"
-syslog		    = "^4.0"
+libc            = "^0.2"
+syslog          = "^4.0"
 
 [build-dependencies]
 rustc_version   = "0.2.3"
@@ -53,7 +58,9 @@ rustc_version   = "0.2.3"
 [features]
 default = []
 rta = []
+multi-user = [ "jmespatch/sync", "regex", "oso", "openidconnect", "urlparse" ]
 functional-tests = []
+ui-tests = []
 extra-debug = [ "rpki/extra-debug" ]
 static-openssl = [ "openssl/vendored" ]
 
@@ -61,6 +68,10 @@ static-openssl = [ "openssl/vendored" ]
 # limping on in a bad state.
 [profile.release]
 panic = "abort"
+
+[dev-dependencies]
+# for user management
+tiny_http = "^0.7"
 
 # ------------------------------------------------------------------------------
 # START DEBIAN PACKAGING

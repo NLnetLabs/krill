@@ -1,5 +1,6 @@
 //! Helper functions for testing Krill.
 
+use crate::daemon::config::Config;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
@@ -58,13 +59,17 @@ pub async fn server_ready() -> bool {
 /// it. Be sure to clean it up when the test is done.
 pub async fn start_krill() -> PathBuf {
     let dir = tmp_dir();
+    let test_dir = dir.to_string_lossy().to_string();
 
-    env::set_var(KRILL_ENV_TEST_UNIT_DATA, dir.to_string_lossy().to_string());
+    env::set_var(KRILL_ENV_TEST_UNIT_DATA, &test_dir);
     env::set_var(KRILL_ENV_TEST_ANN, "1");
     env::set_var(KRILL_ENV_TEST, "1");
     env::set_var(KRILL_ENV_TESTBED_ENABLED, "1");
 
-    tokio::spawn(server::start());
+    let data_dir = PathBuf::from(test_dir);
+    let config = Config::test(&data_dir);
+
+    tokio::spawn(server::start(Some(config)));
 
     assert!(server_ready().await);
     dir

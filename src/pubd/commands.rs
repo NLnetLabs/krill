@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::commons::api::{PublishDelta, PublisherHandle, RepositoryHandle, StorableRepositoryCommand};
+use crate::commons::{actor::Actor, api::{PublishDelta, PublisherHandle, RepositoryHandle, StorableRepositoryCommand}};
 use crate::commons::eventsourcing::CommandDetails;
 use crate::commons::eventsourcing::SentCommand;
 use crate::commons::remote::rfc8183;
@@ -30,20 +30,20 @@ impl CommandDetails for CmdDet {
 }
 
 impl CmdDet {
-    pub fn add_publisher(handle: &RepositoryHandle, request: rfc8183::PublisherRequest) -> Cmd {
-        SentCommand::new(handle, None, CmdDet::AddPublisher(request))
+    pub fn add_publisher(handle: &RepositoryHandle, request: rfc8183::PublisherRequest, actor: &Actor) -> Cmd {
+        SentCommand::new(handle, None, CmdDet::AddPublisher(request), actor)
     }
 
-    pub fn remove_publisher(handle: &RepositoryHandle, publisher: PublisherHandle) -> Cmd {
-        SentCommand::new(handle, None, CmdDet::RemovePublisher(publisher))
+    pub fn remove_publisher(handle: &RepositoryHandle, publisher: PublisherHandle, actor: &Actor) -> Cmd {
+        SentCommand::new(handle, None, CmdDet::RemovePublisher(publisher), actor)
     }
 
-    pub fn publish(handle: &RepositoryHandle, publisher: PublisherHandle, delta: PublishDelta) -> Cmd {
-        SentCommand::new(handle, None, CmdDet::Publish(publisher, delta))
+    pub fn publish(handle: &RepositoryHandle, publisher: PublisherHandle, delta: PublishDelta, actor: &Actor) -> Cmd {
+        SentCommand::new(handle, None, CmdDet::Publish(publisher, delta), actor)
     }
 
-    pub fn session_reset(handle: &RepositoryHandle) -> Cmd {
-        SentCommand::new(handle, None, CmdDet::SessionReset)
+    pub fn session_reset(handle: &RepositoryHandle, actor: &Actor) -> Cmd {
+        SentCommand::new(handle, None, CmdDet::SessionReset, actor)
     }
 }
 

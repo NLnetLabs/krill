@@ -5,17 +5,22 @@ use serde::Serialize;
 
 use rpki::uri;
 
-use crate::cli::options::{BulkCaCommand, CaCommand, Command, KrillInitDetails, Options, PublishersCommand};
+use crate::{cli::options::{BulkCaCommand, CaCommand, Command, KrillInitDetails, Options, PublishersCommand}};
+#[cfg(feature = "multi-user")]
+use crate::cli::options::KrillUserDetails;
 use crate::cli::report::{ApiResponse, ReportError};
 use crate::commons::api::{
-    AllCertAuthIssues, CaRepoDetails, CertAuthIssues, ChildCaInfo, ParentCaContact, ParentStatuses, PublisherDetails,
-    PublisherList, RepoStatus, Token,
+    AllCertAuthIssues, CaRepoDetails, CertAuthIssues, ChildCaInfo, ParentCaContact, ParentStatuses,
+    PublisherDetails, PublisherList, RepoStatus, Token,
 };
 use crate::commons::bgp::BgpAnalysisAdvice;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::{file, httpclient};
+#[cfg(feature = "multi-user")]
+use crate::commons::util::sha256;
 use crate::constants::KRILL_CLI_API_ENV;
 use crate::daemon::config::Config;
+
 
 /// Command line tool for Krill admin tasks
 pub struct KrillClient {
@@ -60,6 +65,8 @@ impl KrillClient {
             Command::CertAuth(cmd) => client.certauth(cmd).await,
             Command::Publishers(cmd) => client.publishers(cmd).await,
             Command::Init(details) => client.init(details),
+            #[cfg(feature = "multi-user")]
+            Command::User(cmd) => client.user(cmd),
             Command::NotSet => Err(Error::MissingCommand),
         }
     }
@@ -368,7 +375,10 @@ impl KrillClient {
     }
 
     fn init(&self, details: KrillInitDetails) -> Result<ApiResponse, Error> {
+        #[cfg(not(feature = "multi-user"))]
         let defaults = include_str!("../../defaults/krill.conf");
+        #[cfg(feature = "multi-user")]
+        let defaults = include_str!("../../defaults/krill-multi-user.conf");
 
         let mut config = defaults.to_string();
         config = config.replace("### auth_token =", &format!("auth_token = \"{}\"", self.token));
@@ -409,6 +419,43 @@ impl KrillClient {
         c.verify().map_err(Error::init)?;
 
         Ok(ApiResponse::GenericBody(config))
+    }
+
+    #[cfg(feature = "multi-user")]
+    fn user(&self, details: KrillUserDetails) -> Result<ApiResponse, Error> {
+        let password_hash = {
+            eprint!("Enter the password to hash: ");
+            let mut password = String::new();
+            io::stdin().read_line(&mut password)?;
+            hex::encode(sha256(&password.trim().as_bytes()))
+        };
+
+        // Due to https://github.com/alexcrichton/toml-rs/issues/406 we cannot
+        // produce inline table style TOML by serializing from config structs to
+        // a string using the toml crate. Instead we build it up ourselves.
+        let attrs = details.attrs();
+        let attrs_fragment = match attrs.is_empty() {
+            false => format!("attributes={{ {} }}, ", attrs.iter()
+                // quote the key if needed
+                .map(|(k, v)| match k.contains(' ') {
+                    true  => (format!(r#""{}""#, k), v),
+                    false => (k.clone(), v)
+                })
+                // quote the value
+                .map(|(k, v)| format!(r#"{}="{}""#, k, v))
+                .collect::<Vec<String>>()
+                .join(", ")),
+            true  => String::new()
+        };
+
+        let toml = format!(r#"
+[auth_users]
+"{id}" = {{ {attrs}password_hash="{ph}" }}"#,
+            id=details.id(),
+            attrs=attrs_fragment,
+            ph=password_hash);
+
+        Ok(ApiResponse::GenericBody(toml))
     }
 
     async fn get_json<T: DeserializeOwned>(&self, uri: &str) -> Result<T, Error> {
@@ -544,7 +591,10 @@ mod tests {
 
         match res {
             ApiResponse::GenericBody(body) => {
+                #[cfg(not(feature = "multi-user"))]
                 let expected = include_str!("../../test-resources/krill-init.conf");
+                #[cfg(feature = "multi-user")]
+                let expected = include_str!("../../test-resources/krill-init-multi-user.conf");
                 assert_eq!(expected, &body)
             }
             _ => panic!("Expected body"),

@@ -20,6 +20,11 @@ use crate::commons::util::{ext_serde, AllowedUri};
 use crate::constants::*;
 use crate::daemon::http::tls_keys;
 
+#[cfg(feature = "multi-user")]
+use crate::daemon::auth::providers::openid_connect::ConfigAuthOpenIDConnect;
+#[cfg(feature = "multi-user")]
+use crate::daemon::auth::providers::config_file::config::ConfigAuthUsers;
+
 //------------ ConfigDefaults ------------------------------------------------
 
 pub struct ConfigDefaults;
@@ -87,7 +92,9 @@ impl ConfigDefaults {
     fn syslog_facility() -> String {
         "daemon".to_string()
     }
-
+    fn auth_type() -> AuthType {
+        AuthType::MasterToken
+    }
     fn auth_token() -> Token {
         match env::var(KRILL_ENV_AUTH_TOKEN) {
             Ok(token) => Token::from(token),
@@ -96,6 +103,14 @@ impl ConfigDefaults {
                 ::std::process::exit(1);
             }
         }
+    }
+    #[cfg(feature = "multi-user")]
+    fn auth_policy() -> PathBuf {
+        PathBuf::from("./policy.polar")
+    }
+    #[cfg(feature = "multi-user")]
+    fn auth_hidden_attributes() -> Vec<String> {
+        vec![]
     }
     fn ca_refresh() -> u32 {
         600
@@ -251,9 +266,26 @@ pub struct Config {
 
     #[serde(default = "ConfigDefaults::syslog_facility")]
     syslog_facility: String,
-
+    
     #[serde(default = "ConfigDefaults::auth_token")]
     pub auth_token: Token,
+
+    #[serde(default = "ConfigDefaults::auth_type")]
+    pub auth_type: AuthType,
+
+    #[cfg(feature = "multi-user")]
+    #[serde(default = "ConfigDefaults::auth_policy")]
+    pub auth_policy: PathBuf,
+
+    #[cfg(feature = "multi-user")]
+    #[serde(default = "ConfigDefaults::auth_hidden_attributes")]
+    pub auth_hidden_attributes: Vec<String>,
+
+    #[cfg(feature = "multi-user")]
+    pub auth_users: Option<ConfigAuthUsers>,
+
+    #[cfg(feature = "multi-user")]
+    pub auth_openidconnect: Option<ConfigAuthOpenIDConnect>,
 
     #[serde(default = "ConfigDefaults::ca_refresh")]
     pub ca_refresh: u32,
@@ -318,6 +350,10 @@ impl Config {
         } else {
             600
         }
+    }
+
+    pub fn set_data_dir(&mut self, data_dir: PathBuf) {
+        self.data_dir = data_dir;
     }
 
     pub fn socket_addr(&self) -> SocketAddr {
@@ -403,7 +439,18 @@ impl Config {
         let mut log_file = data_dir.clone();
         log_file.push("krill.log");
         let syslog_facility = ConfigDefaults::syslog_facility();
+        let auth_type = AuthType::MasterToken;
         let auth_token = Token::from("secret");
+        #[cfg(feature = "multi-user")]
+        let mut auth_policy = data_dir.clone();
+        #[cfg(feature = "multi-user")]
+        auth_policy.push("policy.polar");
+        #[cfg(feature = "multi-user")]
+        let auth_hidden_attributes = vec![];
+        #[cfg(feature = "multi-user")]
+        let auth_users = None;
+        #[cfg(feature = "multi-user")]
+        let auth_openidconnect = None;
         let ca_refresh = 1;
         let post_limit_api = ConfigDefaults::post_limit_api();
         let post_limit_rfc8181 = ConfigDefaults::post_limit_rfc8181();
@@ -464,7 +511,16 @@ impl Config {
             log_type,
             log_file,
             syslog_facility,
+            auth_type,
             auth_token,
+            #[cfg(feature = "multi-user")]
+            auth_policy,
+            #[cfg(feature = "multi-user")]
+            auth_hidden_attributes,
+            #[cfg(feature = "multi-user")]
+            auth_users,
+            #[cfg(feature = "multi-user")]
+            auth_openidconnect,
             ca_refresh,
             post_limit_api,
             post_limit_rfc8181,
@@ -518,36 +574,31 @@ impl Config {
 
     /// Creates the config (at startup). Panics in case of issues.
     pub fn create() -> Result<Self, ConfigError> {
-        if let Ok(test_dir) = env::var(KRILL_ENV_TEST_UNIT_DATA) {
-            let data_dir = PathBuf::from(test_dir);
-            Ok(Config::test(&data_dir))
-        } else {
-            let config_file = Self::get_config_filename();
+        let config_file = Self::get_config_filename();
 
-            let config = match Self::read_config(&config_file) {
-                Err(e) => {
-                    if config_file == KRILL_DEFAULT_CONFIG_FILE {
-                        Err(ConfigError::other(
-                            "Cannot find config file. Please use --config to specify its location.",
-                        ))
-                    } else {
-                        Err(ConfigError::Other(format!(
-                            "Error parsing config file: {}, error: {}",
-                            config_file, e
-                        )))
-                    }
+        let config = match Self::read_config(&config_file) {
+            Err(e) => {
+                if config_file == KRILL_DEFAULT_CONFIG_FILE {
+                    Err(ConfigError::other(
+                        "Cannot find config file. Please use --config to specify its location.",
+                    ))
+                } else {
+                    Err(ConfigError::Other(format!(
+                        "Error parsing config file: {}, error: {}",
+                        config_file, e
+                    )))
                 }
-                Ok(config) => {
-                    config.init_logging()?;
-                    info!("{} uses configuration file: {}", KRILL_SERVER_APP, config_file);
-                    Ok(config)
-                }
-            }?;
-            config
-                .verify()
-                .map_err(|e| ConfigError::Other(format!("Error parsing config file: {}, error: {}", config_file, e)))?;
-            Ok(config)
-        }
+            }
+            Ok(config) => {
+                config.init_logging()?;
+                info!("{} uses configuration file: {}", KRILL_SERVER_APP, config_file);
+                Ok(config)
+            }
+        }?;
+        config
+            .verify()
+            .map_err(|e| ConfigError::Other(format!("Error parsing config file: {}, error: {}", config_file, e)))?;
+        Ok(config)
     }
 
     pub fn verify(&self) -> Result<(), ConfigError> {
@@ -754,6 +805,22 @@ impl Config {
             _ => LevelFilter::Debug, // more becomes too noisy
         };
 
+        // disable Oso logging unless the Oso specific POLAR_LOG environment
+        // variable is set, it's too noisy otherwise
+        let oso_framework_level = if env::var("POLAR_LOG").is_ok() {
+            match self.log_level {
+                LevelFilter::Trace => LevelFilter::Trace,
+                _ => LevelFilter::Debug, // at least debug
+            }
+        } else {
+            match self.log_level {
+                LevelFilter::Off => LevelFilter::Off,
+                LevelFilter::Error => LevelFilter::Error,
+                LevelFilter::Warn => LevelFilter::Warn,
+                _ => LevelFilter::Info, // more becomes too noisy
+            }
+        };
+
         let show_target = self.log_level == LevelFilter::Trace || self.log_level == LevelFilter::Debug;
         fern::Dispatch::new()
             .format(move |out, message, record| {
@@ -783,6 +850,7 @@ impl Config {
             .level_for("want", framework_level)
             .level_for("tracing::span", framework_level)
             .level_for("h2", framework_level)
+            .level_for("oso", oso_framework_level)
             .level_for("krill::commons::eventsourcing", krill_framework_level)
             .level_for("krill::commons::util::file", krill_framework_level)
     }
@@ -859,6 +927,8 @@ impl<'de> Deserialize<'de> for LogType {
     }
 }
 
+//------------ HttpsMode -----------------------------------------------------
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HttpsMode {
     Existing,
@@ -882,6 +952,42 @@ impl<'de> Deserialize<'de> for HttpsMode {
         }
     }
 }
+
+//------------ AuthType -----------------------------------------------------
+
+/// The target to log to.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AuthType {
+    MasterToken,
+    #[cfg(feature = "multi-user")]
+    ConfigFile,
+    #[cfg(feature = "multi-user")]
+    OpenIDConnect,
+}
+
+impl<'de> Deserialize<'de> for AuthType {
+    fn deserialize<D>(d: D) -> Result<AuthType, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let string = String::deserialize(d)?;
+        match string.as_str() {
+            "master-token"   => Ok(AuthType::MasterToken),
+            #[cfg(feature = "multi-user")]
+            "config-file"    => Ok(AuthType::ConfigFile),
+            #[cfg(feature = "multi-user")]
+            "openid-connect" => Ok(AuthType::OpenIDConnect),
+            _ => {
+                #[cfg(not(feature = "multi-user"))]
+                let msg = format!("expected \"master-token\", found: \"{}\"", string);
+                #[cfg(feature = "multi-user")]
+                let msg = format!("expected \"config-file\", \"master-token\", or \"openid-connect\", found: \"{}\"", string);
+                Err(de::Error::custom(msg))
+            },
+        }
+    }
+}
+
 
 //------------ Tests ---------------------------------------------------------
 

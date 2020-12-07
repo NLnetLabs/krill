@@ -2,7 +2,7 @@ use std::fmt;
 
 use rpki::x509::Time;
 
-use crate::commons::api::{CommandHistoryRecord, CommandSummary, Handle, StoredEffect};
+use crate::commons::{actor::Actor, api::{CommandHistoryRecord, CommandSummary, Handle, StoredEffect}};
 use crate::commons::eventsourcing::store::CommandKey;
 use crate::commons::eventsourcing::{Event, Storable};
 
@@ -43,11 +43,10 @@ pub trait Command: fmt::Display + Send + Sync {
     /// use None here.
     fn version(&self) -> Option<u64>;
 
-    /// The actor who sent the command. Defaults to "krill" so that it is not
-    /// mandatory to implement this.
-    fn actor(&self) -> &str {
-        "krill"
-    }
+    /// The actor who sent the command. There is no default so as to avoid
+    /// accidentally attributing a command by a user instead as if it were an
+    /// internal command by Krill itself.
+    fn actor(&self) -> &str;
 
     /// In case of concurrent processing of commands, the aggregate may be
     /// outdated when a command is applied. In such cases this method expects
@@ -75,6 +74,7 @@ pub struct SentCommand<C: CommandDetails> {
     handle: Handle,
     version: Option<u64>,
     details: C,
+    actor: String,
 }
 
 impl<C: CommandDetails> Command for SentCommand<C> {
@@ -92,14 +92,25 @@ impl<C: CommandDetails> Command for SentCommand<C> {
     fn store(&self) -> Self::StorableDetails {
         self.details.store()
     }
+
+    fn actor(&self) -> &str {
+        &self.actor
+    }
 }
 
 impl<C: CommandDetails> SentCommand<C> {
-    pub fn new(id: &Handle, version: Option<u64>, details: C) -> Self {
+    pub fn new(id: &Handle, version: Option<u64>, details: C, actor: &Actor) -> Self {
+        let actor_name = if actor.is_user() {
+            format!("user:{}", actor.name())
+        } else {
+            actor.name().to_string()
+        };
+
         SentCommand {
             handle: id.clone(),
             version,
             details,
+            actor: actor_name
         }
     }
 

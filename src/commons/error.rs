@@ -123,6 +123,7 @@ pub enum Error {
     SignerError(String),
     HttpsSetup(String),
     HttpClientError(httpclient::Error),
+    ConfigError(String),
 
     //-----------------------------------------------------------------
     // General API Client Issues
@@ -134,6 +135,9 @@ pub enum Error {
     ApiInvalidSeconds,
     PostTooBig,
     PostCannotRead,
+    ApiMissingCredentials,
+    ApiInvalidCredentials,
+    ApiInsufficientRights(String),
 
     //-----------------------------------------------------------------
     // Repository Issues
@@ -252,6 +256,7 @@ impl fmt::Display for Error {
             Error::SignerError(e) => write!(f, "Signing issue: {}", e),
             Error::HttpsSetup(e) => write!(f, "Cannot set up HTTPS: {}", e),
             Error::HttpClientError(e) => write!(f, "HTTP client error: {}", e),
+            Error::ConfigError(e) => write!(f, "Configuration error: {}", e),
 
             //-----------------------------------------------------------------
             // General API Client Issues
@@ -263,6 +268,9 @@ impl fmt::Display for Error {
             Error::ApiInvalidSeconds => write!(f, "Invalid path argument for seconds"),
             Error::PostTooBig => write!(f, "POST body exceeds configured limit"),
             Error::PostCannotRead => write!(f, "POST body cannot be read"),
+            Error::ApiMissingCredentials => write!(f, "Missing credentials"),
+            Error::ApiInvalidCredentials => write!(f, "Invalid credentials"),
+            Error::ApiInsufficientRights(e) => write!(f, "Insufficient rights: {}", e),
 
 
             //-----------------------------------------------------------------
@@ -464,6 +472,8 @@ impl Error {
             | Error::CaChildUnknown(_, _)
             | Error::CaParentUnknown(_, _)
             | Error::ApiUnknownResource => StatusCode::NOT_FOUND,
+            Error::ApiInvalidCredentials
+            | Error::ApiInsufficientRights(_) => StatusCode::FORBIDDEN,
 
             _ => StatusCode::BAD_REQUEST,
         }
@@ -493,6 +503,9 @@ impl Error {
             // internal server error
             Error::HttpClientError(e) => ErrorResponse::new("sys-http-client", &self).with_cause(e),
 
+            // internal configuration error
+            Error::ConfigError(e) => ErrorResponse::new("sys-config", &self).with_cause(e),
+
             //-----------------------------------------------------------------
             // General API Client Issues (label: api-*)
             //-----------------------------------------------------------------
@@ -510,6 +523,12 @@ impl Error {
             Error::PostTooBig => ErrorResponse::new("api-post-body-exceeds-limit", &self),
 
             Error::PostCannotRead => ErrorResponse::new("api-post-body-cannot-read", &self),
+
+            Error::ApiMissingCredentials => ErrorResponse::new("api-missing-credentials", &self),
+
+            Error::ApiInvalidCredentials => ErrorResponse::new("api-invalid-credentials", &self),
+
+            Error::ApiInsufficientRights(e) => ErrorResponse::new("api-insufficient-rights", &self).with_cause(e),
 
             //-----------------------------------------------------------------
             // Repository Issues (label: repo-*)

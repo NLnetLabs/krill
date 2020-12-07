@@ -1,3 +1,5 @@
+use crate::commons::actor::Actor;
+
 pub const KRILL_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const KRILL_VERSION_MAJOR: &str = env!("CARGO_PKG_VERSION_MAJOR");
 pub const KRILL_VERSION_MINOR: &str = env!("CARGO_PKG_VERSION_MINOR");
@@ -5,7 +7,10 @@ pub const KRILL_VERSION_PATCH: &str = env!("CARGO_PKG_VERSION_PATCH");
 pub const KRILL_SERVER_APP: &str = "Krill";
 pub const KRILL_CLIENT_APP: &str = "Krill Client";
 
+#[cfg(not(feature = "multi-user"))]
 pub const KRILL_DEFAULT_CONFIG_FILE: &str = "./defaults/krill.conf";
+#[cfg(feature = "multi-user")]
+pub const KRILL_DEFAULT_CONFIG_FILE: &str = "./defaults/krill-multi-user.conf";
 
 pub const KRILL_ENV_TEST: &str = "KRILL_TEST";
 pub const KRILL_ENV_TEST_ANN: &str = "KRILL_TEST_ANN";
@@ -49,3 +54,11 @@ pub const ID_CERTIFICATE_VALIDITY_YEARS: i32 = 15;
 pub const BGP_RIS_REFRESH_MINUTES: i64 = 60;
 
 pub const HTTTP_CLIENT_TIMEOUT_SECS: u64 = 120;
+
+pub const ACTOR_KRILL: &Actor = &Actor::system("krill", "admin");
+pub const ACTOR_ANON: &Actor = &Actor::none();
+pub const ACTOR_MASTER_TOKEN: &Actor = &Actor::system("master-token", "admin");
+pub const ACTOR_TESTBED: &Actor = &Actor::system("testbed", "testbed");
+
+#[cfg(test)]
+pub const ACTOR_TEST: &Actor = &Actor::system("test", "admin");

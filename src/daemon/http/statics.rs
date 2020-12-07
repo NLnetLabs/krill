@@ -4,9 +4,9 @@ use crate::daemon::http::RoutingResult;
 use crate::daemon::http::{HttpResponse, Request};
 
 pub async fn statics(req: Request) -> RoutingResult {
-    match *req.method() {
+    let res = match *req.method() {
         Method::GET => match req.path.full() {
-            "/" => Ok(HttpResponse(
+            "/" => Ok(HttpResponse::new(
                 hyper::Response::builder()
                     .status(StatusCode::FOUND)
                     .header("location", "/index.html")
@@ -61,7 +61,9 @@ pub async fn statics(req: Request) -> RoutingResult {
             _ => Err(req),
         },
         _ => Err(req),
-    }
+    };
+
+    res.and_then(|mut res| { res.set_not_loggable(); Ok(res) })
 }
 
 static INDEX: &[u8] = include_bytes!("../../../lagosta/index.html");

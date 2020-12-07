@@ -6,9 +6,9 @@ use std::sync::Arc;
 use bytes::Bytes;
 use rpki::uri;
 
-use crate::commons::api::{
+use crate::commons::{actor::Actor, api::{
     Handle, ListReply, PublishDelta, PublisherDetails, PublisherHandle, RepoInfo, RepositoryHandle,
-};
+}};
 use crate::commons::crypto::{KrillSigner, ProtocolCms, ProtocolCmsBuilder};
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::{AggregateStore, AggregateStoreError};
@@ -93,7 +93,7 @@ impl PubServer {
         let server = PubServer { config, store, signer };
 
         if force_session_reset {
-            server.rrdp_session_reset()?;
+            server.rrdp_session_reset(ACTOR_KRILL)?;
         }
 
         Ok(server)
@@ -120,7 +120,7 @@ impl PubServer {
     }
 
     /// Handle an RFC8181 request and sign the response
-    pub fn rfc8181(&self, publisher_handle: PublisherHandle, msg_bytes: Bytes) -> KrillResult<Bytes> {
+    pub fn rfc8181(&self, publisher_handle: PublisherHandle, msg_bytes: Bytes, actor: &Actor) -> KrillResult<Bytes> {
         let repository = self.repository()?;
         let publisher = repository.get_publisher(&publisher_handle)?;
 
@@ -137,7 +137,7 @@ impl PubServer {
                 let list_reply = publisher.list_current();
                 (rfc8181::Message::list_reply(list_reply), false)
             }
-            rfc8181::QueryMessage::PublishDelta(delta) => match self.publish(publisher_handle, delta) {
+            rfc8181::QueryMessage::PublishDelta(delta) => match self.publish(publisher_handle, delta, actor) {
                 Ok(()) => (rfc8181::Message::success_reply(), true),
                 Err(e) => {
                     let error_code = e.to_rfc8181_error_code();
@@ -163,17 +163,17 @@ impl PubServer {
     }
 
     /// Do an RRDP session reset
-    pub fn rrdp_session_reset(&self) -> KrillResult<()> {
+    pub fn rrdp_session_reset(&self, actor: &Actor) -> KrillResult<()> {
         let repository_handle = Self::repository_handle();
-        let cmd = CmdDet::session_reset(&repository_handle);
+        let cmd = CmdDet::session_reset(&repository_handle, actor);
         self.store.command(cmd)?;
         self.write_repository()
     }
 
     /// Let a known publisher publish in a repository.
-    pub fn publish(&self, publisher: PublisherHandle, delta: PublishDelta) -> KrillResult<()> {
+    pub fn publish(&self, publisher: PublisherHandle, delta: PublishDelta, actor: &Actor) -> KrillResult<()> {
         let repository_handle = Self::repository_handle();
-        let cmd = CmdDet::publish(&repository_handle, publisher, delta);
+        let cmd = CmdDet::publish(&repository_handle, publisher, delta, actor);
         self.store.command(cmd)?;
         self.write_repository()
     }
@@ -223,9 +223,9 @@ impl PubServer {
 
     /// Adds a publisher. Will complain if a publisher already exists for this
     /// handle. Will also verify that the base_uri is allowed.
-    pub fn create_publisher(&self, req: rfc8183::PublisherRequest) -> KrillResult<()> {
+    pub fn create_publisher(&self, req: rfc8183::PublisherRequest, actor: &Actor) -> KrillResult<()> {
         let repository_handle = Self::repository_handle();
-        let cmd = CmdDet::add_publisher(&repository_handle, req);
+        let cmd = CmdDet::add_publisher(&repository_handle, req, actor);
         self.store.command(cmd)?;
         Ok(())
     }
@@ -234,9 +234,9 @@ impl PubServer {
     /// re-activation in future. Reason is that we never forget the history
     /// of the old publisher, and if handles are re-used by different
     /// entities that would get confusing.
-    pub fn remove_publisher(&self, publisher: PublisherHandle) -> KrillResult<()> {
+    pub fn remove_publisher(&self, publisher: PublisherHandle, actor: &Actor) -> KrillResult<()> {
         let repository_handle = Self::repository_handle();
-        let cmd = CmdDet::remove_publisher(&repository_handle, publisher);
+        let cmd = CmdDet::remove_publisher(&repository_handle, publisher, actor);
         self.store.command(cmd)?;
         self.write_repository()
     }
@@ -319,7 +319,7 @@ mod tests {
         let alice_handle = Handle::from_str("alice").unwrap();
         let publisher_req = make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
-        server.create_publisher(publisher_req).unwrap();
+        server.create_publisher(publisher_req, &ACTOR_TEST).unwrap();
 
         let alice_found = server.get_publisher_details(&alice_handle).unwrap();
 
@@ -340,9 +340,9 @@ mod tests {
         let alice_handle = Handle::from_str("alice").unwrap();
         let publisher_req = make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
-        server.create_publisher(publisher_req.clone()).unwrap();
+        server.create_publisher(publisher_req.clone(), &ACTOR_TEST).unwrap();
 
-        match server.create_publisher(publisher_req) {
+        match server.create_publisher(publisher_req, &ACTOR_TEST) {
             Err(Error::PublisherDuplicate(name)) => assert_eq!(name, alice_handle),
             _ => panic!("Expected error"),
         }
@@ -359,7 +359,7 @@ mod tests {
         let alice_handle = Handle::from_str("alice").unwrap();
         let publisher_req = make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
-        server.create_publisher(publisher_req).unwrap();
+        server.create_publisher(publisher_req, &ACTOR_TEST).unwrap();
 
         let list_reply = server.list(&alice_handle).unwrap();
         assert_eq!(0, list_reply.elements().len());
@@ -378,7 +378,7 @@ mod tests {
         let alice_handle = Handle::from_str("alice").unwrap();
         let publisher_req = make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
-        server.create_publisher(publisher_req).unwrap();
+        server.create_publisher(publisher_req, &ACTOR_TEST).unwrap();
 
         // get the file out of a list_reply
         fn find_in_reply<'a>(reply: &'a ListReply, uri: &uri::Rsync) -> Option<&'a ListElement> {
@@ -401,7 +401,7 @@ mod tests {
         builder.add_publish(file2.as_publish());
         let delta = builder.finish();
 
-        server.publish(alice_handle.clone(), delta).unwrap();
+        server.publish(alice_handle.clone(), delta, &ACTOR_TEST).unwrap();
 
         // Two files should now appear in the list
         let list_reply = server.list(&alice_handle).unwrap();
@@ -432,7 +432,7 @@ mod tests {
         builder.add_publish(file3.as_publish());
         let delta = builder.finish();
 
-        server.publish(alice_handle.clone(), delta).unwrap();
+        server.publish(alice_handle.clone(), delta, &ACTOR_TEST).unwrap();
 
         // Two files should now appear in the list
         let list_reply = server.list(&alice_handle).unwrap();
@@ -456,7 +456,7 @@ mod tests {
         builder.add_publish(file_outside.as_publish());
         let delta = builder.finish();
 
-        match server.publish(alice_handle.clone(), delta) {
+        match server.publish(alice_handle.clone(), delta, &ACTOR_TEST) {
             Err(Error::Rfc8181Delta(PublicationDeltaError::UriOutsideJail(_, _))) => {} // ok
             _ => panic!("Expected error publishing outside of base uri jail"),
         }
@@ -470,7 +470,7 @@ mod tests {
         builder.add_update(file2_update.as_update(file2.hash()));
         let delta = builder.finish();
 
-        match server.publish(alice_handle.clone(), delta) {
+        match server.publish(alice_handle.clone(), delta, &ACTOR_TEST) {
             Err(Error::Rfc8181Delta(PublicationDeltaError::NoObjectForHashAndOrUri(_))) => {}
             _ => panic!("Expected error when file for update can't be found"),
         }
@@ -480,7 +480,7 @@ mod tests {
         builder.add_withdraw(file2.as_withdraw());
         let delta = builder.finish();
 
-        match server.publish(alice_handle.clone(), delta) {
+        match server.publish(alice_handle.clone(), delta, &ACTOR_TEST) {
             Err(Error::Rfc8181Delta(PublicationDeltaError::NoObjectForHashAndOrUri(_))) => {} // ok
             _ => panic!("Expected error withdrawing file that does not exist"),
         }
@@ -490,7 +490,7 @@ mod tests {
         builder.add_publish(file3.as_publish());
         let delta = builder.finish();
 
-        match server.publish(alice_handle.clone(), delta) {
+        match server.publish(alice_handle.clone(), delta, &ACTOR_TEST) {
             Err(Error::Rfc8181Delta(PublicationDeltaError::ObjectAlreadyPresent(uri))) => {
                 assert_eq!(uri, test::rsync("rsync://localhost/repo/alice/file3.txt"))
             }
@@ -539,7 +539,7 @@ mod tests {
         builder.add_publish(file6.as_publish());
         let delta = builder.finish();
 
-        server.publish(alice_handle.clone(), delta).unwrap();
+        server.publish(alice_handle.clone(), delta, &ACTOR_TEST).unwrap();
 
         // Should not include
         assert!(!session_dir_contains_serial(&session, 0));
@@ -569,7 +569,7 @@ mod tests {
         let alice_handle = Handle::from_str("alice").unwrap();
         let publisher_req = make_publisher_req(alice_handle.as_str(), alice.id_cert());
 
-        server.create_publisher(publisher_req).unwrap();
+        server.create_publisher(publisher_req, ACTOR_TEST).unwrap();
 
         // get the file out of a list_reply
         fn find_in_reply<'a>(reply: &'a ListReply, uri: &uri::Rsync) -> Option<&'a ListElement> {
@@ -592,7 +592,7 @@ mod tests {
         builder.add_publish(file2.as_publish());
         let delta = builder.finish();
 
-        server.publish(alice_handle.clone(), delta).unwrap();
+        server.publish(alice_handle.clone(), delta, ACTOR_TEST).unwrap();
 
         // Two files should now appear in the list
         let list_reply = server.list(&alice_handle).unwrap();
@@ -617,7 +617,7 @@ mod tests {
         assert!(snapshot_before_session_reset.exists());
 
         // Now test that a session reset works...
-        server.rrdp_session_reset().unwrap();
+        server.rrdp_session_reset(ACTOR_TEST).unwrap();
 
         // Should write new session and snapshot
         let stats_after = server.repo_stats().unwrap();

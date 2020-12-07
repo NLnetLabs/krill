@@ -2,7 +2,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::commons::api::Handle;
+use crate::commons::{actor::Actor, api::Handle};
 use crate::commons::api::{Publish, PublishDelta, RepositoryContact, Update, Withdraw};
 use crate::commons::error::Error;
 use crate::daemon::ca::CaServer;
@@ -30,7 +30,7 @@ impl CaPublisher {
         self.pubserver.as_ref().ok_or_else(|| Error::PublisherNoEmbeddedRepo)
     }
 
-    pub async fn publish(&self, ca_handle: &Handle) -> Result<(), Error> {
+    pub async fn publish(&self, ca_handle: &Handle, actor: &Actor) -> Result<(), Error> {
         let ca = self.caserver.get_ca(ca_handle).await?;
 
         // Since this is called by the scheduler, this should act as a no-op for
@@ -72,14 +72,14 @@ impl CaPublisher {
         };
 
         match &repo_contact {
-            RepositoryContact::Embedded(_) => self.get_embedded()?.publish(ca_handle.clone(), delta)?,
+            RepositoryContact::Embedded(_) => self.get_embedded()?.publish(ca_handle.clone(), delta, actor)?,
             RepositoryContact::Rfc8181(repo) => self.caserver.send_rfc8181_delta(ca_handle, repo, delta, false).await?,
         };
 
         Ok(())
     }
 
-    pub async fn clean_up(&self, ca_handle: &Handle) -> Result<(), Error> {
+    pub async fn clean_up(&self, ca_handle: &Handle, actor: &Actor) -> Result<(), Error> {
         let ca = self.caserver.get_ca(ca_handle).await?;
 
         let repo = match ca.old_repository_contact() {
@@ -97,7 +97,7 @@ impl CaPublisher {
         let delta = list_reply.into_withdraw_delta();
 
         match repo {
-            RepositoryContact::Embedded(_) => self.get_embedded()?.publish(ca_handle.clone(), delta)?,
+            RepositoryContact::Embedded(_) => self.get_embedded()?.publish(ca_handle.clone(), delta, actor)?,
             RepositoryContact::Rfc8181(res) => self.caserver.send_rfc8181_delta(ca_handle, res, delta, true).await?,
         }
 

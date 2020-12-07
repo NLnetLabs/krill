@@ -1,0 +1,5 @@
+{
+  "pluginsFile": "tests/ui/cypress_plugins/index.js",
+  "baseUrl": "https://localhost:3000",
+  "chromeWebSecurity": false
+}

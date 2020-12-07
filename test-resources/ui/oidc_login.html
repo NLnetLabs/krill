@@ -1,0 +1,22 @@
+<html>
+<head>
+    <title>Mock OpenID Connect login form</title>
+    <style>
+        body { text-align: center; }
+        p { font-style: italic; }
+    </style>
+</head>
+<body>
+    <h1>Mock OpenID Connect login form</h1>
+    <p>Note: This mock service does not require a password.</p>
+    <form action="/login_form_submit">
+        <label for="username">Username</label>
+        <input type="text" name="username" />
+        <input type="submit" value="Sign In" />
+        <input type="hidden" name="client_id" value="<CLIENT_ID>"/>
+        <input type="hidden" name="nonce" value="<NONCE>"/>
+        <input type="hidden" name="state" value="<STATE>"/>
+        <input type="hidden" name="redirect_uri" value="<REDIRECT_URI>"/>
+    </form>
+</body>
+</html>
