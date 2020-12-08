@@ -10,7 +10,7 @@ use rpki::cert::Cert;
 use rpki::uri;
 use rpki::x509::Time;
 
-use crate::commons::{actor::Actor, api::{
+use crate::commons::{actor::{Actor, ActorDef}, api::{
     AddChildRequest, AllCertAuthIssues, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthInit, CertAuthIssues,
     CertAuthList, CertAuthStats, ChildAuthRequest, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria,
     Handle, ListReply, ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublishDelta, PublisherDetails,
@@ -76,6 +76,9 @@ pub struct KrillServer {
     #[cfg(feature = "multi-user")]
     // Global login session cache
     login_session_cache: Arc<LoginSessionCache>,
+
+    // System actor
+    system_actor: Actor,
 }
 
 pub struct PostLimits {
@@ -132,12 +135,13 @@ impl KrillServer {
             #[cfg(feature = "multi-user")]
             AuthType::OpenIDConnect => Authorizer::new(config.clone(), OpenIDConnectAuthProvider::new(config.clone(), login_session_cache.clone())?)?,
         };
+        let system_actor = authorizer.actor_from_def(ACTOR_KRILL);
 
         let pubserver = {
             if config.repo_enabled {
-                Some(PubServer::build(config.clone(), signer.clone())?)
+                Some(PubServer::build(config.clone(), signer.clone(), &system_actor)?)
             } else {
-                PubServer::remove_if_empty(config.clone(), signer.clone())?
+                PubServer::remove_if_empty(config.clone(), signer.clone(), &system_actor)?
             }
         };
         let pubserver: Option<Arc<PubServer>> = pubserver.map(Arc::new);
@@ -159,17 +163,17 @@ impl KrillServer {
                 let ta_aia = uri::Rsync::from_string(ta_aia).unwrap();
 
                 // Add TA
-                caserver.init_ta(repo_info, ta_aia, vec![ta_uri], ACTOR_KRILL).await?;
+                caserver.init_ta(repo_info, ta_aia, vec![ta_uri], &system_actor).await?;
 
                 let ta = caserver.get_trust_anchor().await?;
 
                 // Add publisher
                 let req = rfc8183::PublisherRequest::new(None, ta_handle.clone(), ta.id_cert().clone());
 
-                pubserver.create_publisher(req, ACTOR_KRILL)?;
+                pubserver.create_publisher(req, &system_actor)?;
 
                 // Force initial publication
-                caserver.republish(&ta_handle, ACTOR_KRILL).await?;
+                caserver.republish(&ta_handle, &system_actor).await?;
             }
         }
 
@@ -188,21 +192,21 @@ impl KrillServer {
                     let pubserver = pubserver.as_ref().ok_or_else(|| Error::PublisherNoEmbeddedRepo)?;
                     let pub_req =
                         rfc8183::PublisherRequest::new(None, testbed_ca_handle.clone(), testbed_ca.id_cert().clone());
-                    pubserver.create_publisher(pub_req, ACTOR_KRILL)?;
+                    pubserver.create_publisher(pub_req, &system_actor)?;
                     let rfc8181_uri =
                         uri::Https::from_string(format!("{}rfc8181/{}", service_uri, testbed_ca_handle)).unwrap();
                     let repo_response = pubserver.repository_response(rfc8181_uri, &testbed_ca_handle)?;
                     let repo_contact = RepositoryContact::Rfc8181(repo_response);
-                    caserver.update_repo(testbed_ca_handle.clone(), repo_contact, ACTOR_KRILL).await?;
-                    caserver.republish(&testbed_ca_handle, ACTOR_KRILL).await?;
+                    caserver.update_repo(testbed_ca_handle.clone(), repo_contact, &system_actor).await?;
+                    caserver.republish(&testbed_ca_handle, &system_actor).await?;
 
                     // Establish the TA (parent) <-> testbed CA (child) relationship
                     let testbed_ca_resources = ResourceSet::all_resources();
                     let auth = ChildAuthRequest::Rfc8183(testbed_ca.child_request());
                     let child_req = AddChildRequest::new(testbed_ca_handle.clone(), testbed_ca_resources, auth);
-                    let parent_ca_contact = caserver.ca_add_child(&ta_handle, child_req, &service_uri, ACTOR_KRILL).await?;
+                    let parent_ca_contact = caserver.ca_add_child(&ta_handle, child_req, &service_uri, &system_actor).await?;
                     let parent_req = ParentCaReq::new(ta_handle.clone(), parent_ca_contact);
-                    caserver.ca_parent_add(testbed_ca_handle, parent_req, ACTOR_KRILL).await?;
+                    caserver.ca_parent_add(testbed_ca_handle, parent_req, &system_actor).await?;
                 }
             }
         }
@@ -221,6 +225,7 @@ impl KrillServer {
             #[cfg(feature = "multi-user")]
             login_session_cache.clone(),
             &config,
+            &system_actor
         );
 
         let post_limits = PostLimits::new(
@@ -240,7 +245,8 @@ impl KrillServer {
             started: Time::now(),
             post_limits,
             #[cfg(feature = "multi-user")]
-            login_session_cache
+            login_session_cache,
+            system_actor,
         })
     }
 
@@ -255,16 +261,22 @@ impl KrillServer {
 
 /// # Authentication and Access
 impl KrillServer {
+    pub fn system_actor(&self) -> &Actor {
+        &self.system_actor
+    }
+
+    // TODO: fold get_auth() into the other methods and keep its logic inside
+    // the Authorizer.
     pub fn get_auth(&self, request: &hyper::Request<hyper::Body>) -> Option<Auth> {
         self.authorizer.get_auth(request)
     }
 
-    pub fn get_actor(&self, auth: &Auth) -> KrillResult<Option<Actor>> {
-        self.authorizer.get_actor(auth)
+    pub fn actor_from_auth(&self, auth: &Auth) -> KrillResult<Actor> {
+        self.authorizer.actor_from_auth(auth)
     }
 
-    pub fn init_actor(&self, actor: Actor) -> Actor {
-        self.authorizer.init_actor(actor)
+    pub fn actor_from_def(&self, actor_def: &ActorDef) -> Actor {
+        self.authorizer.actor_from_def(actor_def)
     }
 
     pub fn get_login_url(&self) -> String {
@@ -477,7 +489,7 @@ impl KrillServer {
     pub async fn cas_stats(&self) -> HashMap<Handle, CertAuthStats> {
         let mut res = HashMap::new();
 
-        if let Ok(list) = self.ca_list(ACTOR_KRILL) {
+        if let Ok(list) = self.ca_list(&self.system_actor) {
             for ca in list.cas() {
                 // can't fail really, but to be sure
                 if let Ok(ca) = self.caserver.get_ca(ca.handle()).await {
@@ -502,9 +514,9 @@ impl KrillServer {
         res
     }
 
-    pub async fn all_ca_issues(&self) -> KrillResult<AllCertAuthIssues> {
+    pub async fn all_ca_issues(&self, actor: &Actor) -> KrillResult<AllCertAuthIssues> {
         let mut all_issues = AllCertAuthIssues::default();
-        for ca in self.ca_list(ACTOR_KRILL)?.cas() {
+        for ca in self.ca_list(actor)?.cas() {
             let issues = self.ca_issues(ca.handle()).await?;
             if !issues.is_empty() {
                 all_issues.add(ca.handle().clone(), issues);
@@ -563,8 +575,8 @@ impl KrillServer {
     }
 
     /// Archive old commands
-    pub async fn archive_old_commands(&self, days: i64) -> KrillEmptyResult {
-        self.caserver.archive_old_commands(days,).await?;
+    pub async fn archive_old_commands(&self, days: i64, actor: &Actor) -> KrillEmptyResult {
+        self.caserver.archive_old_commands(days, actor).await?;
         if let Some(pubserver) = self.pubserver.as_ref() {
             pubserver.archive_old_commands(days)?;
         }

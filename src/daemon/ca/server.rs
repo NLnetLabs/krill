@@ -10,13 +10,13 @@ use chrono::Duration;
 use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 
-use crate::{constants::ACTOR_KRILL, commons::{actor::Actor, api::{
+use crate::commons::{actor::Actor, api::{
     self, AddChildRequest, Base64, CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary, ChildAuthRequest,
     ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, Handle, IssuanceRequest,
     IssuanceResponse, IssuedCert, ListReply, ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublishDelta,
     RcvdCert, RepoInfo, RepoStatus, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest,
     RevocationResponse, RtaName, StoredEffect, UpdateChildRequest,
-}}};
+}};
 use crate::commons::crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder};
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::{Aggregate, AggregateStore, Command, CommandKey};
@@ -391,8 +391,8 @@ impl CaServer {
     }
 
     /// Archive old (eligible) commands for CA
-    pub async fn archive_old_commands(&self, days: i64) -> KrillEmptyResult {
-        for ca in self.ca_list(ACTOR_KRILL)?.cas() {
+    pub async fn archive_old_commands(&self, days: i64, actor: &Actor) -> KrillEmptyResult {
+        for ca in self.ca_list(actor)?.cas() {
             let lock = self.locks.ca(ca.handle()).await;
             let _ = lock.write().await;
             self.ca_store.archive_old_commands(ca.handle(), days)?;

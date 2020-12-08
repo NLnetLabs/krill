@@ -2,8 +2,7 @@ use std::{collections::HashMap, io::Read, str::FromStr, sync::{Arc, Mutex}};
 
 use oso::{Oso, PolarClass, ToPolar};
 
-use crate::{commons::{KrillResult, actor::Actor, error::Error, api::Handle}, daemon::{config::Config, http::RequestPath}};
-use crate::constants::{ACTOR_ANON, ACTOR_KRILL, ACTOR_MASTER_TOKEN, ACTOR_TESTBED};
+use crate::{commons::{KrillResult, actor::Actor, error::Error, api::Handle}, constants::{ACTOR_ANON, ACTOR_KRILL, ACTOR_MASTER_TOKEN, ACTOR_TESTBED}, daemon::{config::Config, http::RequestPath}};
 
 /// Access to Oso is protected by a shareable mutex lock, as demonstrated in the
 /// Oso Rust [getting started example](https://github.com/osohq/oso-rust-quickstart/blob/d469f7594b1d07e2203f5dc6e88d0435fef35468/src/server.rs#L50).
@@ -116,15 +115,15 @@ impl AuthPolicy {
 impl PolarClass for Actor {
     fn get_polar_class() -> oso::Class {
         Self::get_polar_class_builder()
-            .set_constructor(|name: String, attrs: HashMap<String, String>| Actor::user(name, &attrs, None))
+            .set_constructor(|name: String, attrs: HashMap<String, String>| Actor::test_from_details(name, attrs))
             .set_equality_check(|left: &Actor, right: &Actor| left.name() == right.name())
             .add_attribute_getter("name", |instance| instance.name().to_string())
             .add_class_method("builtin", |name: String| -> Actor {
                 match name.as_str() {
-                    "anon"         => ACTOR_ANON.clone(),
-                    "krill"        => ACTOR_KRILL.clone(),
-                    "master-token" => ACTOR_MASTER_TOKEN.clone(),
-                    "testbed"      => ACTOR_TESTBED.clone(),
+                    "anon"         => Actor::test_from_def(ACTOR_ANON),
+                    "krill"        => Actor::test_from_def(ACTOR_KRILL),
+                    "master-token" => Actor::test_from_def(ACTOR_MASTER_TOKEN),
+                    "testbed"      => Actor::test_from_def(ACTOR_TESTBED),
                     _              => panic!("Unknown built-in actor name '{}'", name)
                 }
             })
@@ -134,7 +133,7 @@ impl PolarClass for Actor {
             .add_class_method("is_in", |name: String, names: Vec<String>| -> bool {
                 names.contains(&name)
             })
-            .add_method("attr", Actor::attr)
+            .add_method("attr", Actor::attribute)
             .build()
     }
 

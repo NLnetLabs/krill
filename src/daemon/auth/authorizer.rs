@@ -4,7 +4,7 @@ use std::any::Any;
 use std::sync::Arc;
 use std::collections::HashMap;
 
-use crate::commons::actor::Actor;
+use crate::{commons::actor::{Actor, ActorDef}, constants::ACTOR_ANON};
 use crate::commons::api::Token;
 use crate::commons::KrillResult;
 use crate::daemon::auth::policy::AuthPolicy;
@@ -47,7 +47,7 @@ pub trait AuthProvider: Send + Sync {
     }
 
     fn get_auth(&self, request: &hyper::Request<hyper::Body>) -> Option<Auth>;
-    fn get_actor(&self, auth: &Auth) -> KrillResult<Option<Actor>>;
+    fn get_actor_def(&self, auth: &Auth) -> KrillResult<Option<ActorDef>>;
     fn get_login_url(&self) -> String;
     fn login(&self, auth: &Auth) -> KrillResult<LoggedInUser>;
     fn logout(&self, auth: Option<Auth>) -> String;
@@ -107,27 +107,27 @@ impl Authorizer {
             })
     }
 
-    pub fn get_actor(&self, auth: &Auth) -> KrillResult<Option<Actor>> {
-        self.primary_provider.get_actor(auth)
+    pub fn actor_from_auth(&self, auth: &Auth) -> KrillResult<Actor> {
+        self.primary_provider.get_actor_def(auth)
             // permission denied, do we have a fallback provider we can try?
             .or_else(|err| match self.fallback_provider.as_ref() {
                 Some(provider) => {
                     // yes we do, try checking the credentials against it
-                    provider.get_actor(auth)
+                    provider.get_actor_def(auth)
                 },
                 None => {
                     // no fallback provider configured, permission denied
                     Err(err)
                 }
             })
-            .and_then(|actor| {
-                Ok(actor.and_then(|actor| Some(self.init_actor(actor))))
+            .and_then(|possible_def| match possible_def {
+                Some(def) => Ok(self.actor_from_def(&def)),
+                None => Ok(self.actor_from_def(ACTOR_ANON))
             })
     }
 
-    pub fn init_actor(&self, mut actor: Actor) -> Actor {
-        actor.set_policy(self.policy.clone());
-        actor
+    pub fn actor_from_def(&self, def: &ActorDef) -> Actor {
+        Actor::new(def, self.policy.clone())
     }
 
     /// Return the URL at which an end-user should be directed to login with the

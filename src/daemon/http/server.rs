@@ -966,7 +966,10 @@ pub async fn api_ca_parent_res_xml(req: Request, ca: Handle, child: ChildHandle)
 
 async fn api_all_ca_issues(req: Request) -> RoutingResult {
     match *req.method() {
-        Method::GET => aa!(req, CA_READ, render_json_res(req.state().read().await.all_ca_issues().await)),
+        Method::GET => aa!(req, CA_READ, {
+            let actor = req.actor();
+            render_json_res(req.state().read().await.all_ca_issues(&actor).await)
+        }),
         _ => aa!(req, LOGIN, render_unknown_method()),
     }
 }

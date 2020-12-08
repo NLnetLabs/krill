@@ -49,9 +49,7 @@ pub async fn testbed(mut req: Request) -> RoutingResult {
         // Krill CAs and publishers. Upgrade anonymous users with testbed
         // rights ready for the next call in the chain to the testbed()
         // API call handler functions.
-        if req.actor().is_none() {
-            req.become_actor(ACTOR_TESTBED.clone()).await;
-        }
+        req.upgrade_from_anonymous(ACTOR_TESTBED).await;
 
         let mut path = req.path().clone();
         match path.next() {

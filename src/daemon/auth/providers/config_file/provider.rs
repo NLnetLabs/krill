@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use urlparse::{urlparse, GetQuery};
 
-use crate::{commons::actor::Actor, daemon::auth::common::crypt};
+use crate::{commons::actor::{Actor, ActorDef}, daemon::auth::common::crypt};
 use crate::commons::error::Error as KrillError;
 use crate::commons::KrillResult;
 use crate::daemon::auth::common::session::*;
@@ -78,7 +78,7 @@ impl AuthProvider for ConfigFileAuthProvider {
         None
     }
 
-    fn get_actor(&self, auth: &Auth) -> KrillResult<Option<Actor>> {
+    fn get_actor_def(&self, auth: &Auth) -> KrillResult<Option<ActorDef>> {
         match auth {
             Auth::Bearer(token) => {
                 // see if we can decode, decrypt and deserialize the users token
@@ -121,8 +121,8 @@ impl AuthProvider for ConfigFileAuthProvider {
                 Auth::Bearer(token) => {
                     self.session_cache.remove(&token);
 
-                    if let Ok(Some(actor)) = self.get_actor(&auth) {
-                        info!("User logged out: {}", actor.name());
+                    if let Ok(Some(actor)) = self.get_actor_def(&auth) {
+                        info!("User logged out: {}", actor.name.as_str());
                     }
                 },
                 _ => {

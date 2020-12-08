@@ -7,79 +7,34 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Debug;
 
-use crate::daemon::auth::Auth;
+use crate::{constants::ACTOR_ANON, daemon::auth::Auth};
 use crate::daemon::auth::policy::AuthPolicy;
 
 #[derive(Clone, Eq, PartialEq)]
-enum ActorName {
+pub enum ActorName {
     AsStaticStr(&'static str),
     AsString(String),
 }
 
-#[derive(Clone, Debug)]
+impl ActorName {
+    pub fn as_str(&self) -> &str {
+        match &self {
+            ActorName::AsStaticStr(s) => s,
+            ActorName::AsString(s) => s,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Attributes {
     None,
     RoleOnly(&'static str),
     UserDefined(HashMap<String, String>)
 }
 
-#[derive(Clone)]
-pub struct Actor {
-    name: ActorName,
-    is_user: bool,
-    attributes: Attributes,
-    new_auth: Option<Auth>,
-    policy: Option<AuthPolicy>
-}
-
-impl Actor {
-    pub const fn none() -> Actor {
-        Actor {
-            name: ActorName::AsStaticStr("none"),
-            is_user: false,
-            attributes: Attributes::None,
-            new_auth: None,
-            policy: None
-        }
-    }
-
-    pub const fn system(name: &'static str, role: &'static str) -> Actor {
-        Actor {
-            name: ActorName::AsStaticStr(name),
-            is_user: false,
-            attributes: Attributes::RoleOnly(role),
-            new_auth: None,
-            policy: None
-        }
-    }
-
-    /// Empty includes and empty excludes means grant access to all CAs.
-    /// Otherwise a CA is only accessible if it is both NOT excluded AND is
-    /// explicitly included.
-    pub fn user(name: String, attributes: &HashMap<String, String>, new_auth: Option<Auth>) -> Actor {
-        Actor {
-            name: ActorName::AsString(name),
-            is_user: true,
-            attributes: Attributes::UserDefined(attributes.clone()),
-            new_auth,
-            policy: None
-        }
-    }
-
-    pub fn is_user(&self) -> bool {
-        self.is_user
-    }
-
-    pub fn is_none(&self) -> bool {
-        self.name == ActorName::AsStaticStr("none")
-    }
-
-    pub fn new_auth(&self) -> Option<Auth> {
-        self.new_auth.clone()
-    }
-
-    pub fn attributes(&self) -> HashMap<String, String> {
-        match &self.attributes {
+impl Attributes {
+    pub fn as_map(&self) -> HashMap<String, String> {
+        match &self {
             Attributes::UserDefined(map) => map.clone(),
             Attributes::RoleOnly(role) => {
                 let mut map = HashMap::new();
@@ -89,8 +44,120 @@ impl Actor {
             Attributes::None => HashMap::new()
         }
     }
+}
 
-    pub fn attr(&self, attr_name: String) -> Option<String> {
+#[derive(Clone)]
+pub struct ActorDef {
+    pub name: ActorName,
+    pub is_user: bool,
+    pub attributes: Attributes,
+    pub new_auth: Option<Auth>,
+}
+
+#[derive(Clone)]
+pub struct Actor {
+    name: ActorName,
+    is_user: bool,
+    attributes: Attributes,
+    new_auth: Option<Auth>,
+    policy: Option<AuthPolicy>,
+}
+
+impl PartialEq for Actor {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name &&
+        self.is_user == other.is_user &&
+        self.attributes == other.attributes
+    }
+}
+
+impl PartialEq<ActorDef> for Actor {
+    fn eq(&self, other: &ActorDef) -> bool {
+        self.name == other.name &&
+        self.is_user == other.is_user &&
+        self.attributes == other.attributes
+    }
+}
+
+impl Actor {
+    pub const fn anonymous() -> ActorDef {
+        ActorDef {
+            name: ActorName::AsStaticStr("anonymous"),
+            is_user: false,
+            attributes: Attributes::None,
+            new_auth: None,
+        }
+    }
+
+    pub const fn system(name: &'static str, role: &'static str) -> ActorDef {
+        ActorDef {
+            name: ActorName::AsStaticStr(name),
+            is_user: false,
+            attributes: Attributes::RoleOnly(role),
+            new_auth: None,
+        }
+    }
+
+    pub fn user(name: String, attributes: &HashMap<String, String>, new_auth: Option<Auth>) -> ActorDef {
+        ActorDef {
+            name: ActorName::AsString(name),
+            is_user: true,
+            attributes: Attributes::UserDefined(attributes.clone()),
+            new_auth,
+        }
+    }
+
+    #[cfg(feature = "multi-user")]
+    /// Only for use in testing Oso policies
+    pub fn test_from_def(repr: &ActorDef) -> Actor {
+        Actor {
+            name: repr.name.clone(),
+            is_user: repr.is_user,
+            attributes: repr.attributes.clone(),
+            new_auth: None,
+            policy: None,
+        }
+    }
+
+    #[cfg(feature = "multi-user")]
+    /// Only for use in testing Oso policies
+    pub fn test_from_details(name: String, attrs: HashMap<String, String>) -> Actor {
+        Actor {
+            name: ActorName::AsString(name),
+            is_user: false,
+            attributes: Attributes::UserDefined(attrs),
+            new_auth: None,
+            policy: None,
+        }
+    }
+
+    pub fn new(repr: &ActorDef, policy: AuthPolicy) -> Actor {
+        Actor {
+            name: repr.name.clone(),
+            is_user: repr.is_user,
+            attributes: repr.attributes.clone(),
+            new_auth: repr.new_auth.clone(),
+            policy: Some(policy),
+        }
+    }
+
+    pub fn is_user(&self) -> bool {
+        self.is_user
+    }
+
+    pub fn is_anonymous(&self) -> bool {
+        self == ACTOR_ANON
+    }
+
+    pub fn new_auth(&self) -> Option<Auth> {
+        self.new_auth.clone()
+    }
+
+    pub fn attributes(&self) -> HashMap<String, String> {
+        self.attributes.as_map()
+    }
+
+    pub fn attribute(&self, attr_name: String) -> Option<String> {
         match &self.attributes {
             Attributes::UserDefined(map)                       => map.get(&attr_name).cloned(),
             Attributes::RoleOnly(role) if &attr_name == "role" => Some(role.to_string()),
@@ -100,10 +167,7 @@ impl Actor {
     }
 
     pub fn name(&self) -> &str {
-        match &self.name {
-            ActorName::AsStaticStr(s) => s,
-            ActorName::AsString(s) => s,
-        }
+        self.name.as_str()
     }
 
     #[cfg(not(feature = "multi-user"))]
@@ -141,15 +205,14 @@ impl Actor {
                 }
             },
             None => {
-                warn!("Unable to check access: actor={}, action={}, resource={}: {}",
-                    self.name(), &action, &resource, "No policy defined");
+                // Auth policy is required, can only be omitted for use by test
+                // rules inside an Oso policy. We should never get here, but we
+                // don't want to crash Krill by calling unreachable!().
+                error!("Unable to check access: actor={}, action={}, resource={}: {}",
+                    self.name(), &action, &resource, "Internal error: missing policy");
                 false
             }
         }
-    }
-
-    pub fn set_policy(&mut self, policy: AuthPolicy) {
-        self.policy = Some(policy);
     }
 }
 

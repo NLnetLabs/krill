@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use jmespatch as jmespath;
 use jmespath::ToJmespath;
-use crate::daemon::auth::providers::openid_connect::jmespathext;
+use crate::{commons::actor::ActorDef, daemon::auth::providers::openid_connect::jmespathext};
 
 use openidconnect::{
     AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret, CsrfToken,
@@ -386,7 +386,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         }
     }
 
-    fn get_actor(&self, auth: &Auth) -> KrillResult<Option<Actor>> {
+    fn get_actor_def(&self, auth: &Auth) -> KrillResult<Option<ActorDef>> {
         match auth {
             Auth::Bearer(token) => {
                 // see if we can decode, decrypt and deserialize the users token
@@ -759,8 +759,8 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 Auth::Bearer(token) => {
                     self.session_cache.remove(&token);
 
-                    if let Ok(Some(actor)) = self.get_actor(&auth) {
-                        info!("User logged out: {}", actor.name());
+                    if let Ok(Some(actor)) = self.get_actor_def(&auth) {
+                        info!("User logged out: {}", actor.name.as_str());
                     }
                 },
                 _ => {

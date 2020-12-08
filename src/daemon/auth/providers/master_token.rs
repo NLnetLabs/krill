@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::{commons::KrillResult, constants::ACTOR_MASTER_TOKEN, commons::actor::Actor};
+use crate::{commons::KrillResult, commons::actor::ActorDef, constants::ACTOR_MASTER_TOKEN};
 use crate::commons::api::Token;
 use crate::commons::error::Error as KrillError;
 use crate::daemon::auth::{Auth, AuthProvider, LoggedInUser};
@@ -33,9 +33,11 @@ impl AuthProvider for MasterTokenAuthProvider {
         }
     }
 
-    fn get_actor(&self, auth: &Auth) -> KrillResult<Option<Actor>> {
+    fn get_actor_def(&self, auth: &Auth) -> KrillResult<Option<ActorDef>> {
         match auth {
-            Auth::Bearer(token) if &self.token == token => Ok(Some(ACTOR_MASTER_TOKEN.clone())),
+            Auth::Bearer(token) if &self.token == token => {
+                Ok(Some(ACTOR_MASTER_TOKEN.clone()))
+            },
             _ => Ok(None)
         }
     }
@@ -47,11 +49,11 @@ impl AuthProvider for MasterTokenAuthProvider {
 
     fn login(&self, auth: &Auth) -> KrillResult<LoggedInUser> {
         if let Auth::Bearer(token) = auth {
-            if let Ok(Some(actor)) = self.get_actor(auth) {
+            if let Ok(Some(def)) = self.get_actor_def(auth) {
                 return Ok(LoggedInUser {
                     token: token.clone(),
-                    id: actor.name().to_string(),
-                    attributes: actor.attributes()
+                    id: def.name.as_str().to_string(),
+                    attributes: def.attributes.as_map()
                 });
             }
         }
@@ -61,8 +63,8 @@ impl AuthProvider for MasterTokenAuthProvider {
 
     fn logout(&self, auth: Option<Auth>) -> String {
         if let Some(auth) = auth {
-            if let Ok(Some(actor)) = self.get_actor(&auth) {
-                info!("User logged out: {}", actor.name());
+            if let Ok(Some(actor)) = self.get_actor_def(&auth) {
+                info!("User logged out: {}", actor.name.as_str());
             }
         }
 

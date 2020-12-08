@@ -10,7 +10,7 @@ use hyper::body::HttpBody;
 use hyper::http::uri::PathAndQuery;
 use hyper::{Body, Method, StatusCode};
 
-use crate::{constants::ACTOR_ANON, commons::{actor::Actor, KrillResult}};
+use crate::{commons::{KrillResult, actor::{Actor, ActorDef}}, constants::ACTOR_ANON};
 use crate::commons::error::Error;
 use crate::commons::remote::{rfc6492, rfc8181};
 use crate::daemon::auth::{Auth, LoggedInUser};
@@ -311,7 +311,7 @@ pub struct Request {
     request: hyper::Request<hyper::Body>,
     path: RequestPath,
     state: State,
-    actor: Option<Actor>,
+    actor: Actor,
 }
 
 impl Request {
@@ -321,8 +321,8 @@ impl Request {
         let actor = {
             let locked_state = state.read().await;
             match locked_state.get_auth(&request) {
-                Some(auth) => locked_state.get_actor(&auth)?,
-                None => None
+                Some(auth) => locked_state.actor_from_auth(&auth)?,
+                None => locked_state.actor_from_def(ACTOR_ANON),
             }
         };
 
@@ -334,18 +334,15 @@ impl Request {
         })
     }
 
-    pub async fn become_actor(&mut self, new_actor: Actor) {
-        if self.actor.is_none() {
-            info!("Granted anonymous request '{}' actor rights", new_actor.name());
-            self.actor = Some(self.state.read().await.init_actor(new_actor));
+    pub async fn upgrade_from_anonymous(&mut self, actor_def: &ActorDef) {
+        if self.actor.is_anonymous() {
+            self.actor = self.state.read().await.actor_from_def(actor_def);
+            info!("Permitted anonymous actor to become actor '{}' for the duration of this request", self.actor.name());
         }
     }
 
     pub fn actor(&self) -> Actor {
-        match &self.actor {
-            Some(actor) => actor.clone(),
-            None => ACTOR_ANON.clone(),
-        }
+        self.actor.clone()
     }
 
     /// Returns the complete path.

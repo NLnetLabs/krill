@@ -42,11 +42,11 @@ pub struct PubServer {
 /// # Constructing
 ///
 impl PubServer {
-    pub fn remove_if_empty(config: Arc<Config>, signer: Arc<KrillSigner>) -> Result<Option<Self>, Error> {
+    pub fn remove_if_empty(config: Arc<Config>, signer: Arc<KrillSigner>, actor: &Actor) -> Result<Option<Self>, Error> {
         let mut pub_server_dir = config.data_dir.clone();
         pub_server_dir.push(PUBSERVER_DIR);
         if pub_server_dir.exists() {
-            let server = PubServer::build(config, signer)?;
+            let server = PubServer::build(config, signer, actor)?;
             if server.publishers()?.is_empty() {
                 let _result = fs::remove_dir_all(pub_server_dir);
                 Ok(None)
@@ -58,7 +58,7 @@ impl PubServer {
         }
     }
 
-    pub fn build(config: Arc<Config>, signer: Arc<KrillSigner>) -> Result<Self, Error> {
+    pub fn build(config: Arc<Config>, signer: Arc<KrillSigner>, actor: &Actor) -> Result<Self, Error> {
         let default = Self::repository_handle();
 
         let store = Arc::new(AggregateStore::<Repository>::new(&config.data_dir, PUBSERVER_DIR)?);
@@ -93,7 +93,7 @@ impl PubServer {
         let server = PubServer { config, store, signer };
 
         if force_session_reset {
-            server.rrdp_session_reset(ACTOR_KRILL)?;
+            server.rrdp_session_reset(actor)?;
         }
 
         Ok(server)
