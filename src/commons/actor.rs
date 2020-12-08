@@ -120,27 +120,18 @@ impl Actor {
     {
         match &self.policy {
             Some(policy) => {
-                match policy.lock() {
-                    Ok(mut policy) => {
-                        match policy.is_allowed(self.clone(), action.clone(), resource.clone()) {
-                            Ok(allowed) => {
-                                if log_enabled!(log::Level::Trace) {
-                                    if allowed {
-                                        trace!("Access granted: actor={}, action={}, resource={}",
-                                            self.name(), &action, &resource);
-                                    } else {
-                                        trace!("Access denied: actor={:?}, action={}, resource={}",
-                                            self, &action, &resource);
-                                    }
-                                }
-                                allowed
-                            },
-                            Err(err) => {
-                                error!("Unable to check access: actor={}, action={}, resource={}: {}",
-                                    self.name(), &action, &resource, err);
-                                false
+                match policy.is_allowed(self.clone(), action.clone(), resource.clone()) {
+                    Ok(allowed) => {
+                        if log_enabled!(log::Level::Trace) {
+                            if allowed {
+                                trace!("Access granted: actor={}, action={}, resource={}",
+                                    self.name(), &action, &resource);
+                            } else {
+                                trace!("Access denied: actor={:?}, action={}, resource={}",
+                                    self, &action, &resource);
                             }
                         }
+                        allowed
                     },
                     Err(err) => {
                         error!("Unable to check access: actor={}, action={}, resource={}: {}",
