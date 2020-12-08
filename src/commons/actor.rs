@@ -107,8 +107,7 @@ impl Actor {
         }
     }
 
-    #[cfg(feature = "multi-user")]
-    /// Only for use in testing Oso policies
+    /// Only for use in testing
     pub fn test_from_def(repr: &ActorDef) -> Actor {
         Actor {
             name: repr.name.clone(),
@@ -119,8 +118,7 @@ impl Actor {
         }
     }
 
-    #[cfg(feature = "multi-user")]
-    /// Only for use in testing Oso policies
+    /// Only for use in testing
     pub fn test_from_details(name: String, attrs: HashMap<String, String>) -> Actor {
         Actor {
             name: ActorName::AsString(name),

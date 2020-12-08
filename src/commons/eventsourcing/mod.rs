@@ -34,7 +34,7 @@ mod tests {
 
     use serde::Serialize;
 
-    use crate::{constants::ACTOR_TEST, commons::api::{CommandHistoryCriteria, CommandSummary, Handle}};
+    use crate::{commons::{actor::Actor, api::{CommandHistoryCriteria, CommandSummary, Handle}}, constants::ACTOR_TEST};
     use crate::test;
 
     use super::*;
@@ -157,12 +157,14 @@ mod tests {
 
     impl PersonCommand {
         pub fn go_around_sun(id: &Handle, version: Option<u64>) -> Self {
-            Self::new(id, version, PersonCommandDetails::GoAroundTheSun, &ACTOR_TEST)
+            let actor = Actor::test_from_def(ACTOR_TEST);
+            Self::new(id, version, PersonCommandDetails::GoAroundTheSun, &actor)
         }
 
         pub fn change_name(id: &Handle, version: Option<u64>, s: &str) -> Self {
             let details = PersonCommandDetails::ChangeName(s.to_string());
-            Self::new(id, version, details, &ACTOR_TEST)
+            let actor = Actor::test_from_def(ACTOR_TEST);
+            Self::new(id, version, details, &actor)
         }
     }
 
