@@ -140,7 +140,6 @@ impl HttpResponse {
     }
 
     pub fn set_not_loggable(&mut self) {
-        trace!("Disabling response logging...");
         self.loggable = false;
     }
 

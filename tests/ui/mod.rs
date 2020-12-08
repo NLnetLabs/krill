@@ -43,7 +43,7 @@ async fn do_run_krill_ui_test(test_name: &str) {
 
     tokio::spawn(server::start(Some(config)));
 
-    println!("Waiting for Krill server to start");
+    eprintln!("Waiting for Krill server to start");
     assert!(server_ready().await);
 
     let test_name = test_name.to_string();
