@@ -3,7 +3,6 @@
 #[cfg(feature = "ui-tests")]
 mod ui;
 
-#[ignore = "currently failing so will prevent tarpaulin coverage run finishing"]
 #[tokio::test]
 #[cfg(all(feature = "ui-tests", feature = "multi-user"))]
 async fn multi_user_config_file_with_ta_test() {
