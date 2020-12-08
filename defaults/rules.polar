@@ -3,6 +3,10 @@
 ################################################################################
 
 
+# note: using = or != with application types results in error:
+#   "comparison operators are unimplemented in the oso Rust library"
+# so we don't compare nil to actor.attr() results to see if an attribute is set.
+
 
 ################################################################################
 ### Check access to Krill REST APIs by requested action
@@ -76,25 +80,26 @@ actor_can_access_ca(actor: Actor, ca: Handle) if
     # if an inline rule prevents access to the CA stop processing this rule
     not actor_cannot_access_ca(actor, ca) and
 
+    (
     # else, if neither include nor exclude attributes exist for this actor,
     # allow access to the CA and stop processing this rule
-    (not inc_cas_csv in actor.attr("inc_cas") and not exc_cas_csv in actor.attr("exc_cas")) or
+        (not _ in actor.attr("inc_cas") and not _ in actor.attr("exc_cas")) or
 
     # else, if the exclude attribute exists for this actor AND the given CA
     # handle is NOT in the set of excluded CAs (which are defined as
     # comma-separated CA handle values in a single string attribute) then do not
     # exclude access yet, continue below, otherwise stop and deny access
-    (exc_cas_csv in actor.attr("exc_cas") and not Actor.is_in(ca.name, exc_cas_csv.split(","))) and
+        (_ in actor.attr("exc_cas") and not ca.name in actor.attr("exc_cas").unwrap().split(",")) or
 
     # else, if the include attribute does not exist for this actor then allow
     # access, otherwise only allow access if the given CA handle *IS* in the
     # include set.
-    (not inc_cas_csv in actor.attr("inc_cas") or
-        (inc_cas_csv in actor.attr("inc_cas") and Actor.is_in(ca.name, inc_cas_csv.split(",")))
+        (_ in actor.attr("inc_cas") and ca.name in actor.attr("inc_cas").unwrap().split(","))
     );
 
 
 ### TEST: [
+# test specific CA access restrictions defined inline using Polar rules
 actor_cannot_access_ca(_actor: Actor{name: "dummy-test-actor2"}, ca: Handle) if
     ca.name in ["dummy-test-ca2"] and cut;
 
@@ -112,4 +117,12 @@ actor_cannot_access_ca(_actor: Actor{name: "dummy-test-actor3"}, ca: Handle) if
 ?= not actor_cannot_access_ca(new Actor("dummy-test-actor3", {}), new Handle("dummy-test-ca1"));
 ?= not actor_cannot_access_ca(new Actor("dummy-test-actor3", {}), new Handle("dummy-test-ca2"));
 ?= actor_cannot_access_ca(new Actor("dummy-test-actor3", {}), new Handle("dummy-test-ca3"));
+
+# test CA access restrictions based on actor attribute values
+?= print("TEST1") and actor_can_access_ca(new Actor("a", {}), new Handle("ca1"));
+?= print("TEST2") and actor_can_access_ca(new Actor("a", {inc_cas: "ca1"}), new Handle("ca1"));
+?= print("TEST3") and not actor_can_access_ca(new Actor("a", {inc_cas: "ca1"}), new Handle("ca2"));
+?= print("TEST4") and not actor_can_access_ca(new Actor("a", {exc_cas: "ca1"}), new Handle("ca1"));
+?= print("TEST5") and actor_can_access_ca(new Actor("a", {exc_cas: "ca1"}), new Handle("ca2"));
+
 ### ]
