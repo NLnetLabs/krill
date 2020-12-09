@@ -133,7 +133,7 @@ impl ResourceClass {
     }
 
     pub fn get_current_key(&self) -> KrillResult<&CurrentKey> {
-        self.current_key().ok_or_else(|| Error::KeyUseNoCurrentKey)
+        self.current_key().ok_or(Error::KeyUseNoCurrentKey)
     }
 
     /// Gets the new key for a key roll, or returns an error if there is none.

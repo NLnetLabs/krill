@@ -39,7 +39,7 @@ use crate::daemon::ca::RouteAuthorization;
 /// in practice names can be expected to be short and plain ascii or even numbers.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialOrd, PartialEq)]
 pub struct ResourceClassName {
-    name: Arc<String>,
+    name: Arc<str>,
 }
 
 impl Default for ResourceClassName {
@@ -51,22 +51,20 @@ impl Default for ResourceClassName {
 impl From<u32> for ResourceClassName {
     fn from(nr: u32) -> ResourceClassName {
         ResourceClassName {
-            name: Arc::new(format!("{}", nr)),
+            name: format!("{}", nr).into(),
         }
     }
 }
 
 impl From<&str> for ResourceClassName {
     fn from(s: &str) -> ResourceClassName {
-        ResourceClassName {
-            name: Arc::new(s.to_string()),
-        }
+        ResourceClassName { name: s.into() }
     }
 }
 
 impl From<String> for ResourceClassName {
     fn from(s: String) -> ResourceClassName {
-        ResourceClassName { name: Arc::new(s) }
+        ResourceClassName { name: s.into() }
     }
 }
 
@@ -125,7 +123,7 @@ impl From<&IdCert> for IdCertPem {
             .map(|b| unsafe { std::str::from_utf8_unchecked(b) })
         {
             pem.push_str(line);
-            pem.push_str("\n");
+            pem.push('\n');
         }
 
         pem.push_str("-----END CERTIFICATE-----\n");
@@ -1380,8 +1378,8 @@ impl FromStr for ResourceSet {
         if s.len() < 16 || !s.starts_with("asn: ") {
             return Err(ResourceSetError::FromString);
         }
-        let v4_start = s.find(", v4: ").ok_or_else(|| ResourceSetError::FromString)?;
-        let v6_start = s.find(", v6: ").ok_or_else(|| ResourceSetError::FromString)?;
+        let v4_start = s.find(", v4: ").ok_or(ResourceSetError::FromString)?;
+        let v6_start = s.find(", v6: ").ok_or(ResourceSetError::FromString)?;
 
         let asn = &s[5..v4_start];
         let v4 = &s[v4_start + 6..v6_start];

@@ -377,15 +377,11 @@ impl FromStr for RoaDefinitionUpdates {
 
             if line.is_empty() {
                 continue;
-            } else if line.starts_with("A:") {
-                let line = &line[2..];
-                let line = line.trim();
-                let auth = RoaDefinition::from_str(line)?;
+            } else if let Some(stripped) = line.strip_prefix("A:") {
+                let auth = RoaDefinition::from_str(stripped.trim())?;
                 added.insert(auth);
-            } else if line.starts_with("R:") {
-                let line = &line[2..];
-                let line = line.trim();
-                let auth = RoaDefinition::from_str(line)?;
+            } else if let Some(stripped) = line.strip_prefix("R:") {
+                let auth = RoaDefinition::from_str(stripped.trim())?;
                 removed.insert(auth);
             } else {
                 return Err(AuthorizationFmtError::delta(line));

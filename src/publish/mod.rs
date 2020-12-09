@@ -2,9 +2,9 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::commons::{actor::Actor, api::Handle};
 use crate::commons::api::{Publish, PublishDelta, RepositoryContact, Update, Withdraw};
 use crate::commons::error::Error;
+use crate::commons::{actor::Actor, api::Handle};
 use crate::daemon::ca::CaServer;
 use crate::pubd::PubServer;
 
@@ -27,7 +27,7 @@ impl CaPublisher {
 
 impl CaPublisher {
     fn get_embedded(&self) -> Result<&Arc<PubServer>, Error> {
-        self.pubserver.as_ref().ok_or_else(|| Error::PublisherNoEmbeddedRepo)
+        self.pubserver.as_ref().ok_or(Error::PublisherNoEmbeddedRepo)
     }
 
     pub async fn publish(&self, ca_handle: &Handle, actor: &Actor) -> Result<(), Error> {

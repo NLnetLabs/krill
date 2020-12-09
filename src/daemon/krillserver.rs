@@ -208,7 +208,7 @@ impl KrillServer {
                 if !caserver.has_ca(&ta_handle)? {
                     info!("Creating embedded Trust Anchor");
 
-                    let pubserver = pubserver.as_ref().ok_or_else(|| Error::PublisherNoEmbeddedRepo)?;
+                    let pubserver = pubserver.as_ref().ok_or(Error::PublisherNoEmbeddedRepo)?;
                     let repo_info: RepoInfo = pubserver.repo_info_for(&ta_handle)?;
 
                     let ta_uri = config.ta_cert_uri();
@@ -378,7 +378,7 @@ impl KrillServer {
 /// # Configure publishers
 impl KrillServer {
     fn get_pubserver(&self) -> KrillResult<&Arc<PubServer>> {
-        self.pubserver.as_ref().ok_or_else(|| Error::PublisherNoEmbeddedRepo)
+        self.pubserver.as_ref().ok_or(Error::PublisherNoEmbeddedRepo)
     }
 
     /// Returns the repository server stats
@@ -436,7 +436,7 @@ impl KrillServer {
 ///
 impl KrillServer {
     fn get_caserver(&self) -> KrillResult<&Arc<CaServer>> {
-        self.caserver.as_ref().ok_or_else(|| Error::CaServerNotEnabled)
+        self.caserver.as_ref().ok_or(Error::CaServerNotEnabled)
     }
 }
 

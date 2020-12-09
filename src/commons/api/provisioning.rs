@@ -429,8 +429,8 @@ impl FromStr for RequestResourceLimit {
             return Err(());
         }
 
-        let v6_lead_start = s.find(v6_lead).ok_or_else(|| ())?;
-        let asn_lead_start = s.find(asn_lead).ok_or_else(|| ())?;
+        let v6_lead_start = s.find(v6_lead).ok_or(())?;
+        let asn_lead_start = s.find(asn_lead).ok_or(())?;
 
         let v4_str = &s[v4_lead.len()..v6_lead_start];
         let v6_str = &s[v6_lead_start + v6_lead.len()..asn_lead_start];

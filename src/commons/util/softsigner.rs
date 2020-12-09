@@ -2,7 +2,7 @@
 //! storing them unencrypted on disk.
 use std::fs::File;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, fs, io};
 
@@ -22,7 +22,7 @@ use rpki::crypto::{KeyIdentifier, PublicKey, PublicKeyFormat, Signature, Signatu
 /// An openssl based signer.
 #[derive(Clone, Debug)]
 pub struct OpenSslSigner {
-    keys_dir: Arc<PathBuf>,
+    keys_dir: Arc<Path>,
 }
 
 impl OpenSslSigner {
@@ -35,9 +35,9 @@ impl OpenSslSigner {
                 fs::create_dir_all(&keys_dir)?;
             }
 
-            let keys_dir = Arc::new(keys_dir);
-
-            Ok(OpenSslSigner { keys_dir })
+            Ok(OpenSslSigner {
+                keys_dir: keys_dir.into(),
+            })
         } else {
             Err(SignerError::InvalidWorkDir(work_dir.clone()))
         }
