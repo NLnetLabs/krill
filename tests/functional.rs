@@ -4,8 +4,14 @@
 
 use std::fs;
 use std::str::FromStr;
+use std::time::Duration;
+
+use tokio::time::delay_for;
 
 use bytes::Bytes;
+
+use rpki::uri::Rsync;
+
 use krill::cli::options::{BulkCaCommand, CaCommand, Command, PublishersCommand};
 use krill::cli::report::ApiResponse;
 use krill::commons::api::{
@@ -15,9 +21,6 @@ use krill::commons::api::{
 use krill::commons::remote::rfc8183;
 use krill::daemon::ca::ta_handle;
 use krill::test::*;
-use rpki::uri::Rsync;
-use std::time::Duration;
-use tokio::time::delay_for;
 
 fn handle_for(s: &str) -> Handle {
     Handle::from_str(s).unwrap()
@@ -41,16 +44,16 @@ async fn repo_update(ca: &Handle, update: RepositoryUpdate) {
 }
 
 async fn repository_response(publisher: &PublisherHandle) -> rfc8183::RepositoryResponse {
-    let command = Command::Publishers(PublishersCommand::RepositoryResponse(publisher.clone()));
-    match krill_admin(command).await {
+    let command = PublishersCommand::RepositoryResponse(publisher.clone());
+    match krill_pubd_admin(command).await {
         ApiResponse::Rfc8183RepositoryResponse(response) => response,
         _ => panic!("Expected repository response."),
     }
 }
 
 async fn add_publisher(req: rfc8183::PublisherRequest) {
-    let command = Command::Publishers(PublishersCommand::AddPublisher(req));
-    krill_admin(command).await;
+    let command = PublishersCommand::AddPublisher(req);
+    krill_pubd_admin(command).await;
 }
 
 async fn repo_ready(ca: &Handle) -> bool {

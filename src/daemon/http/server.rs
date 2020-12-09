@@ -21,75 +21,76 @@ use hyper::server::conn::AddrIncoming;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::Method;
 
+use crate::commons::actor::Actor;
 use crate::commons::api::{
     BgpStats, ChildHandle, CommandHistoryCriteria, Handle, ParentCaContact, ParentCaReq, ParentHandle, PublisherList,
     RepositoryUpdate, RoaDefinitionUpdates, RtaName, Token,
 };
-use crate::commons::actor::Actor;
 use crate::commons::bgp::BgpAnalysisAdvice;
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::AggregateStoreError;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
+use crate::commons::{KrillEmptyResult, KrillResult};
 use crate::constants::{KRILL_ENV_UPGRADE_ONLY, KRILL_VERSION_MAJOR, KRILL_VERSION_MINOR, KRILL_VERSION_PATCH};
 use crate::daemon::auth::Auth;
-// use crate::daemon::auth::Permissions;
 use crate::daemon::ca::RouteAuthorizationUpdates;
-use crate::daemon::http::auth::auth;
 use crate::daemon::config::Config;
+use crate::daemon::http::auth::auth;
 use crate::daemon::http::statics::statics;
 use crate::daemon::http::testbed::testbed;
 use crate::daemon::http::{tls, tls_keys, HttpResponse, Request, RequestPath, RoutingResult};
-use crate::daemon::krillserver::KrillServer;
-use crate::upgrades::{post_start_upgrade, pre_start_upgrade, update_storage_version};
+use crate::daemon::krillserver::{KrillMode, KrillServer};
+use crate::upgrades::{pre_start_upgrade, update_storage_version};
 
 //------------ State -----------------------------------------------------
 
 pub type State = Arc<RwLock<KrillServer>>;
 
-pub async fn start(config: Option<Config>) -> Result<(), Error> {
-    let config = Arc::new(match config {
-        Some(config) => config,
-        None => Config::create().map_err(|e| Error::Custom(format!("Could not parse config: {}", e)))?
-    });
+pub fn parse_config() -> KrillResult<Config> {
+    Ok(Config::create().map_err(|e| Error::Custom(format!("Could not parse config: {}", e)))?)
+}
+
+fn write_pid_file(config: &Config) -> KrillEmptyResult {
     let pid_file = config.pid_file();
     if let Err(e) = file::save(process::id().to_string().as_bytes(), &pid_file) {
         eprintln!("Could not write PID file: {}", e);
         ::std::process::exit(1);
     }
+    Ok(())
+}
 
-    // Check data dir can be written to
-    {
-        let mut test_file = config.data_dir.clone();
-        test_file.push("test");
+fn test_data_dir(config: &Config) -> KrillEmptyResult {
+    let mut test_file = config.data_dir.clone();
+    test_file.push("test");
 
-        if let Err(e) = file::save(b"test", &test_file) {
-            eprintln!(
-                "Cannot write to data dir: {}, Error: {}",
-                config.data_dir.to_string_lossy(),
-                e
-            );
-            ::std::process::exit(1);
-        } else if let Err(e) = file::delete(&test_file) {
-            eprintln!(
-                "Cannot delete test file in data dir: {}, Error: {}",
-                test_file.to_string_lossy(),
-                e
-            );
-            ::std::process::exit(1);
-        }
+    if let Err(e) = file::save(b"test", &test_file) {
+        eprintln!(
+            "Cannot write to data dir: {}, Error: {}",
+            config.data_dir.to_string_lossy(),
+            e
+        );
+        ::std::process::exit(1);
+    } else if let Err(e) = file::delete(&test_file) {
+        eprintln!(
+            "Cannot delete test file in data dir: {}, Error: {}",
+            test_file.to_string_lossy(),
+            e
+        );
+        ::std::process::exit(1);
     }
+    Ok(())
+}
+
+pub async fn start_krill_daemon(config: Arc<Config>, mode: KrillMode) -> Result<(), Error> {
+    write_pid_file(&config)?;
+    test_data_dir(&config)?;
 
     // Call upgrade, this will only do actual work if needed.
     pre_start_upgrade(&config.data_dir).map_err(|e| Error::Custom(format!("Could not upgrade Krill: {}", e)))?;
 
     // Create the server, this will create the necessary data sub-directories if needed
-    let krill = KrillServer::build(config.clone()).await?;
-
-    // Perform upgrades that need a running krill server (e.g. clean up ROAs)
-    post_start_upgrade(&config.data_dir, &krill)
-        .map_err(|e| Error::Custom(format!("Could not upgrade Krill: {}", e)))
-        .await?;
+    let krill = KrillServer::build(config.clone(), mode).await?;
 
     // Update the version identifiers for the storage dirs
     update_storage_version(&config.data_dir)
@@ -128,6 +129,7 @@ pub async fn start(config: Option<Config>) -> Result<(), Error> {
             e
         ))
     })?;
+
     let acceptor = tls::TlsAcceptor::new(server_config, incoming);
 
     let server = hyper::Server::builder(acceptor)
@@ -166,7 +168,7 @@ impl ResultLogger {
                         true  => trace!("Response body: {:?}", response.body()),
                     }
                 }
-            },
+            }
             Err(err) => {
                 error!("{} {} Error: {}", self.req_method, self.req_path, err);
             }
@@ -376,122 +378,122 @@ pub async fn metrics(req: Request) -> RoutingResult {
             }
         }
 
-        let cas_status = server.cas_stats().await;
+        if let Ok(cas_status) = server.cas_stats().await {
+            let number_cas = cas_status.len();
+            res.push_str("\n");
+            res.push_str("# HELP krill_cas number of cas in krill\n");
+            res.push_str("# TYPE krill_cas gauge\n");
+            res.push_str(&format!("krill_cas {}\n", number_cas));
 
-        let number_cas = cas_status.len();
-        res.push_str("\n");
-        res.push_str("# HELP krill_cas number of cas in krill\n");
-        res.push_str("# TYPE krill_cas gauge\n");
-        res.push_str(&format!("krill_cas {}\n", number_cas));
+            res.push_str("\n");
+            res.push_str("# HELP krill_cas_roas number of roas for CA\n");
+            res.push_str("# TYPE krill_cas_roas gauge\n");
+            for (ca, status) in cas_status.iter() {
+                res.push_str(&format!("krill_cas_roas{{ca=\"{}\"}} {}\n", ca, status.roa_count()));
+            }
 
-        res.push_str("\n");
-        res.push_str("# HELP krill_cas_roas number of roas for CA\n");
-        res.push_str("# TYPE krill_cas_roas gauge\n");
-        for (ca, status) in cas_status.iter() {
-            res.push_str(&format!("krill_cas_roas{{ca=\"{}\"}} {}\n", ca, status.roa_count()));
-        }
+            res.push_str("\n");
+            res.push_str("# HELP krill_cas_children number of children for CA\n");
+            res.push_str("# TYPE krill_cas_children gauge\n");
+            for (ca, status) in cas_status.iter() {
+                res.push_str(&format!(
+                    "krill_cas_children{{ca=\"{}\"}} {}\n",
+                    ca,
+                    status.child_count()
+                ));
+            }
 
-        res.push_str("\n");
-        res.push_str("# HELP krill_cas_children number of children for CA\n");
-        res.push_str("# TYPE krill_cas_children gauge\n");
-        for (ca, status) in cas_status.iter() {
-            res.push_str(&format!(
-                "krill_cas_children{{ca=\"{}\"}} {}\n",
-                ca,
-                status.child_count()
-            ));
-        }
+            // Aggregate ROA vs BGP stats per status
+            let mut all_bgp_stats = AllBgpStats {
+                announcements_valid: HashMap::new(),
+                announcements_invalid_asn: HashMap::new(),
+                announcements_invalid_length: HashMap::new(),
+                announcements_not_found: HashMap::new(),
+                roas_too_permissive: HashMap::new(),
+                roas_redundant: HashMap::new(),
+                roas_stale: HashMap::new(),
+                roas_total: HashMap::new(),
+            };
+            for (ca, status) in cas_status.iter() {
+                all_bgp_stats.add_ca(ca, status.bgp_stats());
+            }
 
-        // Aggregate ROA vs BGP stats per status
-        let mut all_bgp_stats = AllBgpStats {
-            announcements_valid: HashMap::new(),
-            announcements_invalid_asn: HashMap::new(),
-            announcements_invalid_length: HashMap::new(),
-            announcements_not_found: HashMap::new(),
-            roas_too_permissive: HashMap::new(),
-            roas_redundant: HashMap::new(),
-            roas_stale: HashMap::new(),
-            roas_total: HashMap::new(),
-        };
-        for (ca, status) in cas_status.iter() {
-            all_bgp_stats.add_ca(ca, status.bgp_stats());
-        }
+            res.push_str("\n");
+            res.push_str("# HELP krill_cas_bgp_announcements_valid number of announcements seen for CA resources with RPKI state VALID\n");
+            res.push_str("# TYPE krill_cas_bgp_announcements_valid gauge\n");
+            for (ca, nr) in all_bgp_stats.announcements_valid.iter() {
+                res.push_str(&format!("krill_cas_bgp_announcements_valid{{ca=\"{}\"}} {}\n", ca, nr));
+            }
 
-        res.push_str("\n");
-        res.push_str("# HELP krill_cas_bgp_announcements_valid number of announcements seen for CA resources with RPKI state VALID\n");
-        res.push_str("# TYPE krill_cas_bgp_announcements_valid gauge\n");
-        for (ca, nr) in all_bgp_stats.announcements_valid.iter() {
-            res.push_str(&format!("krill_cas_bgp_announcements_valid{{ca=\"{}\"}} {}\n", ca, nr));
-        }
-
-        res.push_str("\n");
-        res.push_str(
+            res.push_str("\n");
+            res.push_str(
             "# HELP krill_cas_bgp_announcements_invalid_asn number of announcements seen for CA resources with RPKI state INVALID (ASN mismatch)\n",
         );
-        res.push_str("# TYPE krill_cas_bgp_announcements_invalid_asn gauge\n");
-        for (ca, nr) in all_bgp_stats.announcements_invalid_asn.iter() {
-            res.push_str(&format!(
-                "krill_cas_bgp_announcements_invalid_asn{{ca=\"{}\"}} {}\n",
-                ca, nr
-            ));
-        }
+            res.push_str("# TYPE krill_cas_bgp_announcements_invalid_asn gauge\n");
+            for (ca, nr) in all_bgp_stats.announcements_invalid_asn.iter() {
+                res.push_str(&format!(
+                    "krill_cas_bgp_announcements_invalid_asn{{ca=\"{}\"}} {}\n",
+                    ca, nr
+                ));
+            }
 
-        res.push_str("\n");
-        res.push_str(
+            res.push_str("\n");
+            res.push_str(
             "# HELP krill_cas_bgp_announcements_invalid_length number of announcements seen for CA resources with RPKI state INVALID (prefix exceeds max length)\n",
         );
-        res.push_str("# TYPE krill_cas_bgp_announcements_invalid_length gauge\n");
-        for (ca, nr) in all_bgp_stats.announcements_invalid_length.iter() {
-            res.push_str(&format!(
-                "krill_cas_bgp_announcements_invalid_length{{ca=\"{}\"}} {}\n",
-                ca, nr
-            ));
-        }
+            res.push_str("# TYPE krill_cas_bgp_announcements_invalid_length gauge\n");
+            for (ca, nr) in all_bgp_stats.announcements_invalid_length.iter() {
+                res.push_str(&format!(
+                    "krill_cas_bgp_announcements_invalid_length{{ca=\"{}\"}} {}\n",
+                    ca, nr
+                ));
+            }
 
-        res.push_str("\n");
-        res.push_str(
+            res.push_str("\n");
+            res.push_str(
             "# HELP krill_cas_bgp_announcements_not_found number of announcements seen for CA resources with RPKI state NOT FOUND (none of the CA's ROAs cover this)\n",
         );
-        res.push_str("# TYPE krill_cas_bgp_announcements_not_found gauge\n");
-        for (ca, nr) in all_bgp_stats.announcements_not_found.iter() {
-            res.push_str(&format!(
-                "krill_cas_bgp_announcements_not_found{{ca=\"{}\"}} {}\n",
-                ca, nr
-            ));
-        }
+            res.push_str("# TYPE krill_cas_bgp_announcements_not_found gauge\n");
+            for (ca, nr) in all_bgp_stats.announcements_not_found.iter() {
+                res.push_str(&format!(
+                    "krill_cas_bgp_announcements_not_found{{ca=\"{}\"}} {}\n",
+                    ca, nr
+                ));
+            }
 
-        res.push_str("\n");
-        res.push_str(
+            res.push_str("\n");
+            res.push_str(
             "# HELP krill_cas_bgp_roas_too_permissive number of ROAs for this CA which allow excess announcements (0 may also indicate that no BGP info is available)\n",
         );
-        res.push_str("# TYPE krill_cas_bgp_roas_too_permissive gauge\n");
-        for (ca, nr) in all_bgp_stats.roas_too_permissive.iter() {
-            res.push_str(&format!("krill_cas_bgp_roas_too_permissive{{ca=\"{}\"}} {}\n", ca, nr));
-        }
+            res.push_str("# TYPE krill_cas_bgp_roas_too_permissive gauge\n");
+            for (ca, nr) in all_bgp_stats.roas_too_permissive.iter() {
+                res.push_str(&format!("krill_cas_bgp_roas_too_permissive{{ca=\"{}\"}} {}\n", ca, nr));
+            }
 
-        res.push_str("\n");
-        res.push_str(
+            res.push_str("\n");
+            res.push_str(
             "# HELP krill_cas_bgp_roas_redundant number of ROAs for this CA which are redundant (0 may also indicate that no BGP info is available)\n",
         );
-        res.push_str("# TYPE krill_cas_bgp_roas_redundant gauge\n");
-        for (ca, nr) in all_bgp_stats.roas_redundant.iter() {
-            res.push_str(&format!("krill_cas_bgp_roas_redundant{{ca=\"{}\"}} {}\n", ca, nr));
-        }
+            res.push_str("# TYPE krill_cas_bgp_roas_redundant gauge\n");
+            for (ca, nr) in all_bgp_stats.roas_redundant.iter() {
+                res.push_str(&format!("krill_cas_bgp_roas_redundant{{ca=\"{}\"}} {}\n", ca, nr));
+            }
 
-        res.push_str("\n");
-        res.push_str(
+            res.push_str("\n");
+            res.push_str(
             "# HELP krill_cas_bgp_roas_stale number of ROAs for this CA for which no announcements are seen (0 may also indicate that no BGP info is available)\n",
         );
-        res.push_str("# TYPE krill_cas_bgp_roas_stale gauge\n");
-        for (ca, nr) in all_bgp_stats.roas_stale.iter() {
-            res.push_str(&format!("krill_cas_bgp_roas_stale{{ca=\"{}\"}} {}\n", ca, nr));
-        }
+            res.push_str("# TYPE krill_cas_bgp_roas_stale gauge\n");
+            for (ca, nr) in all_bgp_stats.roas_stale.iter() {
+                res.push_str(&format!("krill_cas_bgp_roas_stale{{ca=\"{}\"}} {}\n", ca, nr));
+            }
 
-        res.push_str("\n");
-        res.push_str("# HELP krill_cas_bgp_roas_total total number of ROAs for this CA\n");
-        res.push_str("# TYPE krill_cas_bgp_roas_stale gauge\n");
-        for (ca, nr) in all_bgp_stats.roas_total.iter() {
-            res.push_str(&format!("krill_cas_bgp_roas_total{{ca=\"{}\"}} {}\n", ca, nr));
+            res.push_str("\n");
+            res.push_str("# HELP krill_cas_bgp_roas_total total number of ROAs for this CA\n");
+            res.push_str("# TYPE krill_cas_bgp_roas_stale gauge\n");
+            for (ca, nr) in all_bgp_stats.roas_total.iter() {
+                res.push_str(&format!("krill_cas_bgp_roas_total{{ca=\"{}\"}} {}\n", ca, nr));
+            }
         }
 
         #[cfg(feature = "multi-user")]
@@ -499,7 +501,10 @@ pub async fn metrics(req: Request) -> RoutingResult {
             res.push_str("\n");
             res.push_str("# HELP krill_auth_session_cache_size total number of cached login session tokens\n");
             res.push_str("# TYPE krill_auth_session_cache_size gauge\n");
-            res.push_str(&format!("krill_auth_session_cache_size {}\n", server.login_session_cache_size()));
+            res.push_str(&format!(
+                "krill_auth_session_cache_size {}\n",
+                server.login_session_cache_size()
+            ));
         }
 
         Ok(HttpResponse::text(res.into_bytes()))
@@ -599,7 +604,7 @@ async fn stats(req: Request) -> RoutingResult {
         Method::GET => match req.path().full() {
             "/stats/info" => render_json(req.state().read().await.server_info()),
             "/stats/repo" => render_json_res(req.state().read().await.repo_stats()),
-            "/stats/cas" => render_json(req.state().read().await.cas_stats().await),
+            "/stats/cas" => render_json_res(req.state().read().await.cas_stats().await),
             _ => Err(req),
         },
         _ => Err(req),
@@ -609,16 +614,18 @@ async fn stats(req: Request) -> RoutingResult {
 // Suppress any error in the unlikely event that we fail to inject the
 // Authorization header into the HTTP response as this is an internal error that
 // we should shield the user from, but log a warning as this is very unexpected.
-fn add_authorization_headers_to_response(org_response: HttpResponse, token: Token) -> HttpResponse
-{
+fn add_authorization_headers_to_response(org_response: HttpResponse, token: Token) -> HttpResponse {
     let mut new_header_names = Vec::new();
     let mut new_header_values = Vec::new();
 
     new_header_names.push(HeaderName::from_str("Authorization"));
     new_header_values.push(HeaderValue::from_str(&format!("Bearer {}", &token)));
 
-    let okay = !new_header_names.iter().zip(new_header_values.iter()).any(|(n, v)| n.is_err() | v.is_err());
-    
+    let okay = !new_header_names
+        .iter()
+        .zip(new_header_values.iter())
+        .any(|(n, v)| n.is_err() | v.is_err());
+
     if okay {
         let (parts, body) = org_response.response().into_parts();
         let mut augmented_response = hyper::Response::from_parts(parts, body);
@@ -629,9 +636,22 @@ fn add_authorization_headers_to_response(org_response: HttpResponse, token: Toke
         HttpResponse::new(augmented_response)
     } else {
         let mut conversion_errors = Vec::new();
-        conversion_errors.extend(new_header_names.into_iter().filter(|result| result.is_err()).map(|i| i.unwrap_err().to_string()));
-        conversion_errors.extend(new_header_values.into_iter().filter(|result| result.is_err()).map(|i| i.unwrap_err().to_string()));
-        warn!("Internal error: unable to add refreshed auth token to the response: {:?}", conversion_errors.join(", "));
+        conversion_errors.extend(
+            new_header_names
+                .into_iter()
+                .filter(|result| result.is_err())
+                .map(|i| i.unwrap_err().to_string()),
+        );
+        conversion_errors.extend(
+            new_header_values
+                .into_iter()
+                .filter(|result| result.is_err())
+                .map(|i| i.unwrap_err().to_string()),
+        );
+        warn!(
+            "Internal error: unable to add refreshed auth token to the response: {:?}",
+            conversion_errors.join(", ")
+        );
         org_response
     }
 }
@@ -657,13 +677,15 @@ fn add_new_auth_to_response(res: Result<HttpResponse, Error>, opt_auth: Option<A
 macro_rules! aa {
     ($req:ident, $perm:ident, $action:expr) => {{
         match $req.actor().is_allowed(stringify!($perm), $req.path().clone()) {
-            true  => $action,
-            false => Ok(HttpResponse::forbidden(
-                format!("User '{}' does not have permission '{}' on resource '{}'",
-                    $req.actor().name(), stringify!($perm), $req.path().clone())
-            )),
+            true => $action,
+            false => Ok(HttpResponse::forbidden(format!(
+                "User '{}' does not have permission '{}' on resource '{}'",
+                $req.actor().name(),
+                stringify!($perm),
+                $req.path().clone()
+            ))),
         }
-    }}
+    }};
 }
 
 /// Maps the API methods
@@ -684,7 +706,7 @@ async fn api(req: Request) -> RoutingResult {
         // mapping for the relative path exists and catch that during
         // development! OR, set a flag when the actor rights were checked and
         // prior to returning from this fn check that the flag was set? This
-        // last approach would avoid duplicating the relative path checks in a 
+        // last approach would avoid duplicating the relative path checks in a
         // separate security map and in the path walking done below.
 
         match path.next() {
@@ -698,10 +720,14 @@ async fn api(req: Request) -> RoutingResult {
 }
 
 async fn api_authorized(req: Request) -> RoutingResult {
-    aa!(req, LOGIN, match *req.method() {
-        Method::GET => render_ok(),
-        _ => render_unknown_method(),
-    })
+    aa!(
+        req,
+        LOGIN,
+        match *req.method() {
+            Method::GET => render_ok(),
+            _ => render_unknown_method(),
+        }
+    )
 }
 
 async fn api_bulk(req: Request, path: &mut RequestPath) -> RoutingResult {
@@ -716,30 +742,29 @@ async fn api_bulk(req: Request, path: &mut RequestPath) -> RoutingResult {
 
 async fn api_cas(req: Request, path: &mut RequestPath) -> RoutingResult {
     match path.path_arg::<Handle>() {
-        Some(ca) if req.actor().is_allowed("CA_READ", ca.clone()) => {
-            match path.next() {
-                None => api_ca_info(req, ca).await,
-                Some("child_request.xml") => api_ca_child_req_xml(req, ca).await,
-                Some("child_request.json") => api_ca_child_req_json(req, ca).await,
-                Some("children") => api_ca_children(req, path, ca).await,
-                Some("history") => api_ca_history(req, path, ca).await,
-                Some("command") => api_ca_command_details(req, path, ca).await,
-                Some("id") => api_ca_regenerate_id(req, ca).await,
-                Some("issues") => api_ca_issues(req, ca).await,
-                Some("keys") => api_ca_keys(req, path, ca).await,
-                Some("parents") => api_ca_parents(req, path, ca).await,
-                Some("parents-xml") => api_ca_add_parent_xml(req, path, ca).await,
-                Some("repo") => api_ca_repo(req, path, ca).await,
-                Some("routes") => api_ca_routes(req, path, ca).await,
-                Some("rta") => api_ca_rta(req, path, ca).await,
-                _ => aa!(req, LOGIN, render_unknown_method()),
-            }
+        Some(ca) if req.actor().is_allowed("CA_READ", ca.clone()) => match path.next() {
+            None => api_ca_info(req, ca).await,
+            Some("child_request.xml") => api_ca_child_req_xml(req, ca).await,
+            Some("child_request.json") => api_ca_child_req_json(req, ca).await,
+            Some("children") => api_ca_children(req, path, ca).await,
+            Some("history") => api_ca_history(req, path, ca).await,
+            Some("command") => api_ca_command_details(req, path, ca).await,
+            Some("id") => api_ca_regenerate_id(req, ca).await,
+            Some("issues") => api_ca_issues(req, ca).await,
+            Some("keys") => api_ca_keys(req, path, ca).await,
+            Some("parents") => api_ca_parents(req, path, ca).await,
+            Some("parents-xml") => api_ca_add_parent_xml(req, path, ca).await,
+            Some("repo") => api_ca_repo(req, path, ca).await,
+            Some("routes") => api_ca_routes(req, path, ca).await,
+            Some("rta") => api_ca_rta(req, path, ca).await,
+            _ => aa!(req, LOGIN, render_unknown_method()),
         },
-        Some(ca) => {
-            Ok(HttpResponse::forbidden(
-                format!("User '{}' does not have permission '{}' on resource '{}'",
-                    req.actor().name(), "CA_READ", ca)))
-        },
+        Some(ca) => Ok(HttpResponse::forbidden(format!(
+            "User '{}' does not have permission '{}' on resource '{}'",
+            req.actor().name(),
+            "CA_READ",
+            ca
+        ))),
         None => match *req.method() {
             Method::GET => api_cas_list(req).await,
             Method::POST => api_ca_init(req).await,
@@ -750,12 +775,10 @@ async fn api_cas(req: Request, path: &mut RequestPath) -> RoutingResult {
 
 async fn api_ca_keys(req: Request, path: &mut RequestPath, ca: Handle) -> RoutingResult {
     match *req.method() {
-        Method::POST => {
-            match path.next() {
-                Some("roll_init") => api_ca_kr_init(req, ca).await,
-                Some("roll_activate") => api_ca_kr_activate(req, ca).await,
-                _ => render_unknown_method(),
-            }
+        Method::POST => match path.next() {
+            Some("roll_init") => api_ca_kr_init(req, ca).await,
+            Some("roll_activate") => api_ca_kr_activate(req, ca).await,
+            _ => render_unknown_method(),
         },
         _ => aa!(req, LOGIN, render_unknown_method()),
     }
@@ -888,7 +911,11 @@ pub async fn api_remove_pbl(req: Request, publisher: Handle) -> RoutingResult {
 
 /// Returns a json structure with publisher details
 pub async fn api_show_pbl(req: Request, publisher: Handle) -> RoutingResult {
-    aa!(req, PUB_READ, render_json_res(req.state().read().await.get_publisher(&publisher)))
+    aa!(
+        req,
+        PUB_READ,
+        render_json_res(req.state().read().await.get_publisher(&publisher))
+    )
 }
 
 //------------ repository_response ---------------------------------------------
@@ -945,15 +972,27 @@ pub async fn api_ca_child_remove(req: Request, ca: Handle, child: ChildHandle) -
 }
 
 async fn api_ca_child_show(req: Request, ca: Handle, child: ChildHandle) -> RoutingResult {
-    aa!(req, CA_READ, render_json_res(req.state().read().await.ca_child_show(&ca, &child).await))
+    aa!(
+        req,
+        CA_READ,
+        render_json_res(req.state().read().await.ca_child_show(&ca, &child).await)
+    )
 }
 
 async fn api_ca_parent_contact(req: Request, ca: Handle, child: ChildHandle) -> RoutingResult {
-    aa!(req, CA_READ, render_json_res(req.state().read().await.ca_parent_contact(&ca, child.clone()).await))
+    aa!(
+        req,
+        CA_READ,
+        render_json_res(req.state().read().await.ca_parent_contact(&ca, child.clone()).await)
+    )
 }
 
 async fn api_ca_parent_res_json(req: Request, ca: Handle, child: ChildHandle) -> RoutingResult {
-    aa!(req, CA_READ, render_json_res(req.state().read().await.ca_parent_response(&ca, child.clone()).await))
+    aa!(
+        req,
+        CA_READ,
+        render_json_res(req.state().read().await.ca_parent_response(&ca, child.clone()).await)
+    )
 }
 
 pub async fn api_ca_parent_res_xml(req: Request, ca: Handle, child: ChildHandle) -> RoutingResult {
@@ -980,7 +1019,11 @@ async fn api_all_ca_issues(req: Request) -> RoutingResult {
 /// Returns the health (state) for a given CA.
 async fn api_ca_issues(req: Request, ca: Handle) -> RoutingResult {
     match *req.method() {
-        Method::GET => aa!(req, CA_READ, render_json_res(req.state().read().await.ca_issues(&ca).await)),
+        Method::GET => aa!(
+            req,
+            CA_READ,
+            render_json_res(req.state().read().await.ca_issues(&ca).await)
+        ),
         _ => aa!(req, LOGIN, render_unknown_method()),
     }
 }
@@ -1015,17 +1058,29 @@ async fn api_ca_regenerate_id(req: Request, handle: Handle) -> RoutingResult {
 
 async fn api_ca_info(req: Request, handle: Handle) -> RoutingResult {
     match *req.method() {
-        Method::GET => aa!(req, CA_READ, render_json_res(req.state().read().await.ca_info(&handle).await)),
+        Method::GET => aa!(
+            req,
+            CA_READ,
+            render_json_res(req.state().read().await.ca_info(&handle).await)
+        ),
         _ => aa!(req, LOGIN, render_unknown_method()),
     }
 }
 
 async fn api_ca_my_parent_contact(req: Request, ca: Handle, parent: ParentHandle) -> RoutingResult {
-    aa!(req, CA_READ, render_json_res(req.state().read().await.ca_my_parent_contact(&ca, &parent).await))
+    aa!(
+        req,
+        CA_READ,
+        render_json_res(req.state().read().await.ca_my_parent_contact(&ca, &parent).await)
+    )
 }
 
 async fn api_ca_my_parent_statuses(req: Request, ca: Handle) -> RoutingResult {
-    aa!(req, CA_READ, render_json_res(req.state().read().await.ca_my_parent_statuses(&ca).await))
+    aa!(
+        req,
+        CA_READ,
+        render_json_res(req.state().read().await.ca_my_parent_statuses(&ca).await)
+    )
 }
 
 async fn api_ca_children(req: Request, path: &mut RequestPath, ca: Handle) -> RoutingResult {
@@ -1058,8 +1113,8 @@ async fn api_ca_history(req: Request, path: &mut RequestPath, handle: Handle) ->
     match *req.method() {
         Method::GET => aa!(req, CA_READ, {
             match req.state().read().await.ca_history(&handle, crit).await {
-                Some(history) => render_json(history),
-                None => render_unknown_resource(),
+                Ok(history) => render_json(history),
+                Err(e) => render_error(e),
             }
         }),
         _ => aa!(req, LOGIN, render_unknown_method()),
@@ -1105,17 +1160,17 @@ async fn api_ca_command_details(req: Request, path: &mut RequestPath, handle: Ha
     // /api/v1/cas/{ca}/command/<command-key>
     match path.path_arg() {
         Some(key) => match *req.method() {
-            Method::GET => {
-                aa!(req, CA_READ, { 
-                    match req.state().read().await.ca_command_details(&handle, key) {
-                        Ok(details) => render_json(details),
-                        Err(e) => match e {
-                        Error::AggregateStoreError(AggregateStoreError::UnknownCommand(_, _)) => render_unknown_resource(),
+            Method::GET => aa!(req, CA_READ, {
+                match req.state().read().await.ca_command_details(&handle, key) {
+                    Ok(details) => render_json(details),
+                    Err(e) => match e {
+                        Error::AggregateStoreError(AggregateStoreError::UnknownCommand(_, _)) => {
+                            render_unknown_resource()
+                        }
                         _ => render_error(e),
-                        },
-                    }
-                })
-            },
+                    },
+                }
+            }),
             _ => aa!(req, LOGIN, render_unknown_method()),
         },
         None => aa!(req, LOGIN, render_unknown_resource()),
@@ -1124,24 +1179,28 @@ async fn api_ca_command_details(req: Request, path: &mut RequestPath, handle: Ha
 
 async fn api_ca_child_req_xml(req: Request, handle: Handle) -> RoutingResult {
     match *req.method() {
-        Method::GET => {
-            aa!(req, CA_READ, match ca_child_req(&req, &handle).await {
+        Method::GET => aa!(
+            req,
+            CA_READ,
+            match ca_child_req(&req, &handle).await {
                 Ok(req) => Ok(HttpResponse::xml(req.encode_vec())),
                 Err(e) => render_error(e),
-            })
-        },
+            }
+        ),
         _ => aa!(req, LOGIN, render_unknown_method()),
     }
 }
 
 async fn api_ca_child_req_json(req: Request, handle: Handle) -> RoutingResult {
     match *req.method() {
-        Method::GET => {
-            aa!(req, CA_READ, match ca_child_req(&req, &handle).await {
+        Method::GET => aa!(
+            req,
+            CA_READ,
+            match ca_child_req(&req, &handle).await {
                 Ok(req) => render_json(req),
                 Err(e) => render_error(e),
-            })
-        },
+            }
+        ),
         _ => aa!(req, LOGIN, render_unknown_method()),
     }
 }
@@ -1152,31 +1211,44 @@ async fn ca_child_req(req: &Request, handle: &Handle) -> Result<rfc8183::ChildRe
 
 async fn api_ca_publisher_req_json(req: Request, handle: Handle) -> RoutingResult {
     match *req.method() {
-        Method::GET => aa!(req, CA_READ, match req.state().read().await.ca_publisher_req(&handle).await {
-            Some(req) => render_json(req),
-            None => render_unknown_resource(),
-        }),
+        Method::GET => aa!(
+            req,
+            CA_READ,
+            render_json_res(req.state().read().await.ca_publisher_req(&handle).await)
+        ),
         _ => aa!(req, LOGIN, render_unknown_method()),
     }
 }
 
 async fn api_ca_publisher_req_xml(req: Request, handle: Handle) -> RoutingResult {
     match *req.method() {
-        Method::GET => aa!(req, CA_READ, match req.state().read().await.ca_publisher_req(&handle).await {
-            Some(req) => Ok(HttpResponse::xml(req.encode_vec())),
-            None => render_unknown_resource(),
-        }),
+        Method::GET => aa!(
+            req,
+            CA_READ,
+            match req.state().read().await.ca_publisher_req(&handle).await {
+                Ok(res) => Ok(HttpResponse::xml(res.encode_vec())),
+                Err(e) => render_error(e),
+            }
+        ),
         _ => aa!(req, LOGIN, render_unknown_method()),
     }
 }
 
 async fn api_ca_repo_details(req: Request, handle: Handle) -> RoutingResult {
-    aa!(req, CA_READ, render_json_res(req.state().read().await.ca_repo_details(&handle).await))
+    aa!(
+        req,
+        CA_READ,
+        render_json_res(req.state().read().await.ca_repo_details(&handle).await)
+    )
 }
 
 async fn api_ca_repo_status(req: Request, handle: Handle) -> RoutingResult {
     match *req.method() {
-        Method::GET => aa!(req, CA_READ, render_json_res(req.state().read().await.ca_repo_status(&handle).await)),
+        Method::GET => aa!(
+            req,
+            CA_READ,
+            render_json_res(req.state().read().await.ca_repo_status(&handle).await)
+        ),
         _ => aa!(req, LOGIN, render_unknown_method()),
     }
 }
@@ -1390,7 +1462,7 @@ async fn api_ca_routes_try_update(req: Request, ca: Handle) -> RoutingResult {
 
 /// show the route authorizations for this CA
 async fn api_ca_routes_show(req: Request, handle: Handle) -> RoutingResult {
-    aa!(req, ROUTES_READ, { 
+    aa!(req, ROUTES_READ, {
         match req.state().read().await.ca_routes_show(&handle).await {
             Ok(roas) => render_json(roas),
             Err(_) => render_unknown_resource(),
@@ -1400,7 +1472,7 @@ async fn api_ca_routes_show(req: Request, handle: Handle) -> RoutingResult {
 
 /// Show the state of ROAs vs BGP for this CA
 async fn api_ca_routes_analysis(req: Request, path: &mut RequestPath, handle: Handle) -> RoutingResult {
-    aa!(req, ROUTES_ANALYSIS, { 
+    aa!(req, ROUTES_ANALYSIS, {
         match path.next() {
             Some("full") => render_json_res(req.state().read().await.ca_routes_bgp_analysis(&handle).await),
             Some("dryrun") => match *req.method() {
@@ -1408,7 +1480,9 @@ async fn api_ca_routes_analysis(req: Request, path: &mut RequestPath, handle: Ha
                     let state = req.state.clone();
                     match req.json().await {
                         Err(e) => render_error(e),
-                        Ok(updates) => render_json_res(state.read().await.ca_routes_bgp_dry_run(&handle, updates).await),
+                        Ok(updates) => {
+                            render_json_res(state.read().await.ca_routes_bgp_dry_run(&handle, updates).await)
+                        }
                     }
                 }
                 _ => render_unknown_method(),
@@ -1523,15 +1597,23 @@ async fn api_ca_rta(req: Request, path: &mut RequestPath, ca: Handle) -> Routing
 }
 
 async fn api_ca_rta_list(req: Request, ca: Handle) -> RoutingResult {
-    aa!(req, RTA_LIST, render_json_res(req.state().read().await.rta_list(ca).await))
+    aa!(
+        req,
+        RTA_LIST,
+        render_json_res(req.state().read().await.rta_list(ca).await)
+    )
 }
 
 async fn api_ca_rta_show(req: Request, ca: Handle, name: RtaName) -> RoutingResult {
-    aa!(req, RTA_READ, render_json_res(req.state().read().await.rta_show(ca, name).await))
+    aa!(
+        req,
+        RTA_READ,
+        render_json_res(req.state().read().await.rta_show(ca, name).await)
+    )
 }
 
 async fn api_ca_rta_sign(req: Request, ca: Handle, name: RtaName) -> RoutingResult {
-    aa!(req, RTA_UPDATE, { 
+    aa!(req, RTA_UPDATE, {
         let actor = req.actor();
         let state = req.state().clone();
         match req.json().await {
@@ -1554,7 +1636,7 @@ async fn api_ca_rta_multi_prep(req: Request, ca: Handle, name: RtaName) -> Routi
 }
 
 async fn api_ca_rta_multi_sign(req: Request, ca: Handle, name: RtaName) -> RoutingResult {
-    aa!(req, RTA_UPDATE, { 
+    aa!(req, RTA_UPDATE, {
         let actor = req.actor();
         let state = req.state().clone();
         match req.json().await {
@@ -1570,22 +1652,18 @@ mod tests {
 
     // NOTE: This is extensively tested through the functional and e2e tests found under
     //       the $project/tests dir
-
-    use std::path::PathBuf;
-
     use crate::test;
-
-    use super::*;
+    use std::fs;
 
     #[tokio::test]
-    async fn start_tls_server() {
-        let dir = test::sub_dir(&PathBuf::from("work"));
+    async fn start_krill_daemon() {
+        let dir = test::start_krill().await;
+        let _ = fs::remove_dir_all(dir);
+    }
 
-        let data_dir = test::sub_dir(&dir);
-        let config = Config::test(&data_dir);
-    
-        tokio::spawn(super::start(Some(config)));
-
-        assert!(test::server_ready().await);
+    #[tokio::test]
+    async fn start_krill_pubd_daemon() {
+        let dir = test::start_krill_pubd().await;
+        let _ = fs::remove_dir_all(dir);
     }
 }

@@ -6,16 +6,33 @@
 // From: https://docs.rs/futures/0.3.6/futures/macro.select.html
 #![recursion_limit = "155"]
 
-#![type_length_limit = "5000000"]
-
 extern crate krill;
 
+use std::env;
+use std::sync::Arc;
+
+use krill::constants::KRILL_ENV_TESTBED_ENABLED;
 use krill::daemon::http::server;
+use krill::daemon::krillserver::KrillMode;
 
 #[tokio::main]
 async fn main() {
-    if let Err(e) = server::start(None).await {
-        eprintln!("Krill failed to start: {}", e);
-        ::std::process::exit(1);
+    match server::parse_config() {
+        Ok(config) => {
+            let mode = if env::var(KRILL_ENV_TESTBED_ENABLED).is_ok() {
+                KrillMode::Testbed
+            } else {
+                KrillMode::Ca
+            };
+
+            if let Err(e) = server::start_krill_daemon(Arc::new(config), mode).await {
+                eprintln!("Krill failed to start: {}", e);
+                ::std::process::exit(1);
+            }
+        }
+        Err(e) => {
+            eprintln!("Could not parse config: {}", e);
+            ::std::process::exit(1);
+        }
     }
 }

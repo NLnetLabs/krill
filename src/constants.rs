@@ -6,13 +6,13 @@ pub const KRILL_VERSION_MINOR: &str = env!("CARGO_PKG_VERSION_MINOR");
 pub const KRILL_VERSION_PATCH: &str = env!("CARGO_PKG_VERSION_PATCH");
 pub const KRILL_SERVER_APP: &str = "Krill";
 pub const KRILL_CLIENT_APP: &str = "Krill Client";
+pub const KRILL_PUBC_CLIENT_APP: &str = "Krill Publication Server Client";
 
 #[cfg(not(feature = "multi-user"))]
 pub const KRILL_DEFAULT_CONFIG_FILE: &str = "./defaults/krill.conf";
 #[cfg(feature = "multi-user")]
 pub const KRILL_DEFAULT_CONFIG_FILE: &str = "./defaults/krill-multi-user.conf";
 
-pub const KRILL_ENV_TEST: &str = "KRILL_TEST";
 pub const KRILL_ENV_TEST_ANN: &str = "KRILL_TEST_ANN";
 pub const KRILL_ENV_TEST_UNIT_DATA: &str = "KRILL_TEST_UNIT_DATA";
 pub const KRILL_ENV_UPGRADE_ONLY: &str = "KRILL_UPGRADE_ONLY";
@@ -22,6 +22,7 @@ pub const KRILL_ENV_TESTBED_ENABLED: &str = "KRILL_TESTBED_ENABLED";
 pub const KRILL_ENV_USE_TA: &str = "KRILL_USE_TA";
 pub const KRILL_ENV_LOG_LEVEL: &str = "KRILL_LOG_LEVEL";
 pub const KRILL_ENV_AUTH_TOKEN: &str = "KRILL_AUTH_TOKEN";
+pub const KRILL_ENV_SERVER_PORT: &str = "KRILL_SERVER_PORT";
 
 pub const CASERVER_DIR: &str = "cas";
 
@@ -31,6 +32,7 @@ pub const PUBSERVER_DIR: &str = "pubd";
 pub const REPOSITORY_DIR: &str = "repo";
 pub const REPOSITORY_RRDP_DIR: &str = "rrdp";
 pub const REPOSITORY_RSYNC_DIR: &str = "rsync";
+pub const REPOSITORY_NOTIFICATION_RETAIN_SECONDS: i64 = 600;
 
 pub const STATUS_DIR: &str = "status";
 

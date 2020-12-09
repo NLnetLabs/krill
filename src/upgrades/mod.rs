@@ -12,14 +12,11 @@ use crate::commons::eventsourcing::{
 use crate::commons::util::file;
 use crate::constants::KRILL_VERSION;
 use crate::daemon::ca::CertAuth;
-use crate::daemon::krillserver::KrillServer;
 use crate::pubd::Repository;
 use crate::upgrades::fix_info_last_event_0_8_0::FixInfoFiles;
-use crate::upgrades::roa_cleanup_0_8_0::RoaCleanupError;
 
 pub mod fix_info_last_event_0_8_0;
 pub mod pre_0_6_0;
-pub mod roa_cleanup_0_8_0;
 
 //------------ UpgradeError --------------------------------------------------
 
@@ -30,7 +27,6 @@ pub enum UpgradeError {
     IoError(io::Error),
     Unrecognised(String),
     CannotLoadAggregate(Handle),
-    RoaCleanup(RoaCleanupError),
     Custom(String),
 }
 
@@ -42,7 +38,6 @@ impl fmt::Display for UpgradeError {
             UpgradeError::IoError(e) => e.fmt(f),
             UpgradeError::Unrecognised(s) => write!(f, "Unrecognised command summary: {}", s),
             UpgradeError::CannotLoadAggregate(handle) => write!(f, "Cannot load: {}", handle),
-            UpgradeError::RoaCleanup(e) => write!(f, "Cannot clean up redundant roas: {}", e),
             UpgradeError::Custom(s) => s.fmt(f),
         }
     }
@@ -81,12 +76,6 @@ impl From<io::Error> for UpgradeError {
     }
 }
 
-impl From<RoaCleanupError> for UpgradeError {
-    fn from(e: RoaCleanupError) -> Self {
-        UpgradeError::RoaCleanup(e)
-    }
-}
-
 //------------ UpgradeStore --------------------------------------------------
 
 /// Implement this for automatic upgrades to key stores
@@ -111,23 +100,27 @@ pub fn pre_start_upgrade(work_dir: &PathBuf) -> Result<(), UpgradeError> {
     upgrade_pre_fix_info_0_8_0(work_dir)
 }
 
-/// Should be called right after the KrillServer is initiated.
-pub async fn post_start_upgrade(work_dir: &PathBuf, server: &KrillServer) -> Result<(), UpgradeError> {
-    let ca_store: AggregateStore<CertAuth> = AggregateStore::new(work_dir, "cas")?;
-    if ca_store.get_version()? < KeyStoreVersion::V0_8_0_RC1 {
-        info!("Will clean up redundant ROAs for all CAs and update version of storage dirs");
-        roa_cleanup_0_8_0::roa_cleanup(server).await?;
+pub async fn update_storage_version(work_dir: &PathBuf) -> Result<(), UpgradeError> {
+    let current = KeyStoreVersion::current();
+
+    let mut ca_dir = work_dir.clone();
+    ca_dir.push("cas");
+    if ca_dir.exists() {
+        let ca_store: AggregateStore<CertAuth> = AggregateStore::new(work_dir, "cas")?;
+        if ca_store.get_version()? != current {
+            ca_store.set_version(&current)?;
+        }
     }
 
-    Ok(())
-}
+    let mut pubd_dir = work_dir.clone();
+    pubd_dir.push("pubd");
+    if pubd_dir.exists() {
+        let pubd_store: AggregateStore<Repository> = AggregateStore::new(work_dir, "pubd")?;
+        if pubd_store.get_version()? != current {
+            pubd_store.set_version(&current)?;
+        }
+    }
 
-pub async fn update_storage_version(work_dir: &PathBuf) -> Result<(), UpgradeError> {
-    let ca_store: AggregateStore<CertAuth> = AggregateStore::new(work_dir, "cas")?;
-    let pubd_store: AggregateStore<Repository> = AggregateStore::new(work_dir, "pubd")?;
-    let current = KeyStoreVersion::current();
-    ca_store.set_version(&current)?;
-    pubd_store.set_version(&current)?;
     info!("Upgraded Krill to version: {}", KRILL_VERSION);
     Ok(())
 }
@@ -138,9 +131,15 @@ fn upgrade_pre_0_6_0_cas_commands(work_dir: &PathBuf) -> Result<(), UpgradeError
     // Prepare to do the work on the real "cas" directory
     let mut cas_dir = work_dir.clone();
     cas_dir.push("cas");
+
+    // bail out if there is nothing on disk yet
+    if !cas_dir.exists() {
+        return Ok(());
+    }
+
     let kv = KeyValueStore::disk(work_dir, "cas")?;
 
-    // bail out if there is nothing to do
+    // bail out if the keystore has already been upgraded
     if !pre_0_6_0_ca_commands.needs_migrate(&kv)? {
         return Ok(());
     }
@@ -176,6 +175,12 @@ fn upgrade_pre_0_6_0_pubd_commands(work_dir: &PathBuf) -> Result<(), UpgradeErro
     // Prepare to do the work on the real directory
     let mut pubd_dir = work_dir.clone();
     pubd_dir.push("pubd");
+
+    // bail out if the pubd store does not exist
+    if !pubd_dir.exists() {
+        return Ok(());
+    }
+
     let kv = KeyValueStore::disk(work_dir, "pubd")?;
 
     // bail out if there is nothing to do
@@ -211,11 +216,22 @@ fn upgrade_pre_0_6_0_pubd_commands(work_dir: &PathBuf) -> Result<(), UpgradeErro
 fn upgrade_pre_fix_info_0_8_0(workdir: &PathBuf) -> Result<(), UpgradeError> {
     let migration = FixInfoFiles;
 
-    let ca_kv = KeyValueStore::disk(workdir, "cas")?;
-    let pubd_kv = KeyValueStore::disk(workdir, "pubd")?;
+    let mut cas_dir = workdir.clone();
+    cas_dir.push("cas");
 
-    migration.migrate(&ca_kv)?;
-    migration.migrate(&pubd_kv)
+    if cas_dir.exists() {
+        let ca_kv = KeyValueStore::disk(workdir, "cas")?;
+        migration.migrate(&ca_kv)?;
+    }
+
+    let mut pubd_dir = workdir.clone();
+    pubd_dir.push("pubd");
+    if pubd_dir.exists() {
+        let pubd_kv = KeyValueStore::disk(workdir, "pubd")?;
+        migration.migrate(&pubd_kv)?;
+    }
+
+    Ok(())
 }
 
 //------------ Tests ---------------------------------------------------------

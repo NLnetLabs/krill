@@ -1,4 +1,5 @@
 #![type_length_limit = "5000000"]
+#![recursion_limit = "155"]
 
 extern crate krill;
 
@@ -14,7 +15,7 @@ async fn history() {
     use std::str::FromStr;
     use std::sync::Arc;
     use std::{env, fs};
-    
+
     use krill::commons::api::{CaCommandDetails, CommandHistoryCriteria, Handle};
     use krill::commons::crypto::KrillSigner;
     use krill::commons::util::file;

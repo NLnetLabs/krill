@@ -151,10 +151,6 @@ impl CaServer {
         self.ca_store.get_latest(&ta_handle).map_err(Error::AggregateStoreError)
     }
 
-    pub fn testbed_enabled(&self) -> bool {
-        self.config.testbed_enabled
-    }
-
     /// Initialises an embedded trust anchor with all resources.
     pub async fn init_ta(&self, info: RepoInfo, ta_aia: uri::Rsync, ta_uris: Vec<uri::Https>, actor: &Actor) -> KrillResult<()> {
         let ta_handle = ca::ta_handle();
