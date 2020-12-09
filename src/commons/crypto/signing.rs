@@ -174,13 +174,13 @@ impl CsrInfo {
         }
     }
 
-    pub fn allowed_uris(&self, testmode: bool) -> bool {
-        self.ca_repository.allowed_uri(testmode)
-            && self.rpki_manifest.allowed_uri(testmode)
+    pub fn global_uris(&self) -> bool {
+        self.ca_repository.seems_global_uri()
+            && self.rpki_manifest.seems_global_uri()
             && self
                 .rpki_notify
                 .as_ref()
-                .map(|uri| uri.allowed_uri(testmode))
+                .map(|uri| uri.seems_global_uri())
                 .unwrap_or_else(|| true)
     }
 
