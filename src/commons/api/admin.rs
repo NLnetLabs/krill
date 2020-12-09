@@ -20,7 +20,6 @@ use crate::commons::api::{Link, RepoInfo};
 use crate::commons::crypto::IdCert;
 use crate::commons::remote::rfc8183;
 
-
 //------------ Handle --------------------------------------------------------
 
 // Some type aliases that help make the use of Handles more explicit.
@@ -31,7 +30,7 @@ pub type RepositoryHandle = Handle;
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Handle {
-    name: Arc<String>,
+    name: Arc<str>,
 }
 
 impl Handle {
@@ -76,8 +75,7 @@ impl FromStr for Handle {
             && !s.is_empty()
             && s.len() < 256
         {
-            let s = s.to_string();
-            Ok(Handle { name: Arc::new(s) })
+            Ok(Handle { name: s.into() })
         } else {
             Err(InvalidHandle)
         }
@@ -86,7 +84,7 @@ impl FromStr for Handle {
 
 impl AsRef<str> for Handle {
     fn as_ref(&self) -> &str {
-        self.name.as_str()
+        &self.name
     }
 }
 

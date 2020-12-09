@@ -538,11 +538,11 @@ impl CertAuth {
     ) -> KrillResult<api::IssuanceResponse> {
         let entitlement_class = self
             .entitlement_class(child_handle, class_name, issuance_timing)
-            .ok_or_else(|| Error::KeyUseNoIssuedCert)?;
+            .ok_or(Error::KeyUseNoIssuedCert)?;
 
         entitlement_class
             .into_issuance_response(pub_key)
-            .ok_or_else(|| Error::KeyUseNoIssuedCert)
+            .ok_or(Error::KeyUseNoIssuedCert)
     }
 
     /// Returns the EntitlementClass for this child for the given class name.
@@ -698,10 +698,7 @@ impl CertAuth {
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<IssuedCert> {
-        let my_rc = self
-            .resources
-            .get(&rcn)
-            .ok_or_else(|| Error::ResourceClassUnknown(rcn))?;
+        let my_rc = self.resources.get(&rcn).ok_or(Error::ResourceClassUnknown(rcn))?;
 
         let child = self.get_child(&child)?;
         child.resources().apply_limit(&limit)?;
@@ -783,8 +780,8 @@ impl CertAuth {
             return Err(Error::KeyUseNoIssuedCert);
         }
 
-        let my_rc = self.resources.get(&rcn).ok_or_else(|| Error::KeyUseNoIssuedCert)?;
-        let removed = my_rc.issued(&key).ok_or_else(|| Error::KeyUseNoIssuedCert)?.cert();
+        let my_rc = self.resources.get(&rcn).ok_or(Error::KeyUseNoIssuedCert)?;
+        let removed = my_rc.issued(&key).ok_or(Error::KeyUseNoIssuedCert)?.cert();
 
         let handle = &self.handle;
         let version = self.version;
@@ -1133,10 +1130,7 @@ impl CertAuth {
     ) -> KrillResult<Vec<Evt>> {
         debug!("CA {}: Updating received cert for class: {}", self.handle, rcn);
 
-        let rc = self
-            .resources
-            .get(&rcn)
-            .ok_or_else(|| Error::ResourceClassUnknown(rcn))?;
+        let rc = self.resources.get(&rcn).ok_or(Error::ResourceClassUnknown(rcn))?;
 
         let repo = self.get_repository_contact()?;
 

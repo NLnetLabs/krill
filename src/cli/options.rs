@@ -70,7 +70,7 @@ impl GeneralArgs {
                 format = Some(ReportFormat::from_str(fmt_str)?);
             }
 
-            format.unwrap_or_else(|| ReportFormat::Text)
+            format.unwrap_or(ReportFormat::Text)
         };
 
         let api = env::var(KRILL_CLI_API_ENV).is_ok() || matches.is_present(KRILL_CLI_API_ARG);
@@ -1055,9 +1055,9 @@ impl Options {
         let v6 = matches.value_of("ipv6");
 
         if asn.is_some() || v4.is_some() || v6.is_some() {
-            let asn = asn.unwrap_or_else(|| "");
-            let v4 = v4.unwrap_or_else(|| "");
-            let v6 = v6.unwrap_or_else(|| "");
+            let asn = asn.unwrap_or("");
+            let v4 = v4.unwrap_or("");
+            let v6 = v6.unwrap_or("");
 
             Ok(Some(ResourceSet::from_strs(asn, v4, v6)?))
         } else {
@@ -1241,7 +1241,7 @@ impl Options {
         let child = matches.value_of("child").unwrap();
         let child = Handle::from_str(child).map_err(|_| Error::InvalidHandle)?;
 
-        let resources = Self::parse_resource_args(matches)?.ok_or_else(|| Error::MissingResources)?;
+        let resources = Self::parse_resource_args(matches)?.ok_or(Error::MissingResources)?;
 
         let child_request = AddChildRequest::new(child, resources, auth_request);
         let command = Command::CertAuth(CaCommand::ChildAdd(my_ca, child_request));

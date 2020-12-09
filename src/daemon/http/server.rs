@@ -208,7 +208,7 @@ async fn map_requests(req: hyper::Request<hyper::Body>, state: State) -> Result<
     // Log the request and the response.
     logger.log(res.as_ref());
 
-    res.and_then(|res| Ok(res.response()))
+    res.map(|res| res.response())
 }
 
 //------------ Support Functions ---------------------------------------------
@@ -303,22 +303,22 @@ pub async fn metrics(req: Request) -> RoutingResult {
         res.push_str("# HELP krill_server_start timestamp of last krill server start\n");
         res.push_str("# TYPE krill_server_start gauge\n");
         res.push_str(&format!("krill_server_start {}\n", info.started()));
-        res.push_str("\n");
+        res.push('\n');
 
         res.push_str("# HELP krill_version_major krill server major version number\n");
         res.push_str("# TYPE krill_version_major gauge\n");
         res.push_str(&format!("krill_version_major {}\n", KRILL_VERSION_MAJOR));
-        res.push_str("\n");
+        res.push('\n');
 
         res.push_str("# HELP krill_version_minor krill server minor version number\n");
         res.push_str("# TYPE krill_version_minor gauge\n");
         res.push_str(&format!("krill_version_minor {}\n", KRILL_VERSION_MINOR));
-        res.push_str("\n");
+        res.push('\n');
 
         res.push_str("# HELP krill_version_patch krill server patch version number\n");
         res.push_str("# TYPE krill_version_patch gauge\n");
         res.push_str(&format!("krill_version_patch {}\n", KRILL_VERSION_PATCH));
-        res.push_str("\n");
+        res.push('\n');
 
         if let Ok(stats) = server.repo_stats() {
             let publishers = stats.get_publishers();
@@ -328,18 +328,18 @@ pub async fn metrics(req: Request) -> RoutingResult {
             res.push_str(&format!("krill_repo_publisher {}\n", publishers.len()));
 
             if let Some(last_update) = stats.last_update() {
-                res.push_str("\n");
+                res.push('\n');
                 res.push_str("# HELP krill_repo_rrdp_last_update timestamp of last update by any publisher\n");
                 res.push_str("# TYPE krill_repo_rrdp_last_update gauge\n");
                 res.push_str(&format!("krill_repo_rrdp_last_update {}\n", last_update.timestamp()));
             }
 
-            res.push_str("\n");
+            res.push('\n');
             res.push_str("# HELP krill_repo_rrdp_serial RRDP serial\n");
             res.push_str("# TYPE krill_repo_rrdp_serial counter\n");
             res.push_str(&format!("krill_repo_rrdp_serial {}\n", stats.serial()));
 
-            res.push_str("\n");
+            res.push('\n');
             res.push_str("# HELP krill_repo_objects number of objects in repository for publisher\n");
             res.push_str("# TYPE krill_repo_objects gauge\n");
             for (publisher, stats) in publishers {
@@ -350,7 +350,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 ));
             }
 
-            res.push_str("\n");
+            res.push('\n');
             res.push_str("# HELP krill_repo_size size of objects in bytes in repository for publisher\n");
             res.push_str("# TYPE krill_repo_size gauge\n");
             for (publisher, stats) in publishers {
@@ -361,7 +361,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 ));
             }
 
-            res.push_str("\n");
+            res.push('\n');
             res.push_str("# HELP krill_repo_last_update timestamp of last update for publisher\n");
             res.push_str("# TYPE krill_repo_last_update gauge\n");
             for (publisher, stats) in publishers {
@@ -377,19 +377,20 @@ pub async fn metrics(req: Request) -> RoutingResult {
 
         if let Ok(cas_status) = server.cas_stats().await {
             let number_cas = cas_status.len();
-            res.push_str("\n");
+
+            res.push('\n');
             res.push_str("# HELP krill_cas number of cas in krill\n");
             res.push_str("# TYPE krill_cas gauge\n");
             res.push_str(&format!("krill_cas {}\n", number_cas));
 
-            res.push_str("\n");
+            res.push('\n');
             res.push_str("# HELP krill_cas_roas number of roas for CA\n");
             res.push_str("# TYPE krill_cas_roas gauge\n");
             for (ca, status) in cas_status.iter() {
                 res.push_str(&format!("krill_cas_roas{{ca=\"{}\"}} {}\n", ca, status.roa_count()));
             }
 
-            res.push_str("\n");
+            res.push('\n');
             res.push_str("# HELP krill_cas_children number of children for CA\n");
             res.push_str("# TYPE krill_cas_children gauge\n");
             for (ca, status) in cas_status.iter() {
@@ -415,14 +416,14 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 all_bgp_stats.add_ca(ca, status.bgp_stats());
             }
 
-            res.push_str("\n");
+            res.push('\n');
             res.push_str("# HELP krill_cas_bgp_announcements_valid number of announcements seen for CA resources with RPKI state VALID\n");
             res.push_str("# TYPE krill_cas_bgp_announcements_valid gauge\n");
             for (ca, nr) in all_bgp_stats.announcements_valid.iter() {
                 res.push_str(&format!("krill_cas_bgp_announcements_valid{{ca=\"{}\"}} {}\n", ca, nr));
             }
 
-            res.push_str("\n");
+            res.push('\n');
             res.push_str(
             "# HELP krill_cas_bgp_announcements_invalid_asn number of announcements seen for CA resources with RPKI state INVALID (ASN mismatch)\n",
         );
@@ -434,7 +435,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 ));
             }
 
-            res.push_str("\n");
+            res.push('\n');
             res.push_str(
             "# HELP krill_cas_bgp_announcements_invalid_length number of announcements seen for CA resources with RPKI state INVALID (prefix exceeds max length)\n",
         );
@@ -446,7 +447,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 ));
             }
 
-            res.push_str("\n");
+            res.push('\n');
             res.push_str(
             "# HELP krill_cas_bgp_announcements_not_found number of announcements seen for CA resources with RPKI state NOT FOUND (none of the CA's ROAs cover this)\n",
         );
@@ -458,7 +459,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 ));
             }
 
-            res.push_str("\n");
+            res.push('\n');
             res.push_str(
             "# HELP krill_cas_bgp_roas_too_permissive number of ROAs for this CA which allow excess announcements (0 may also indicate that no BGP info is available)\n",
         );
@@ -467,7 +468,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 res.push_str(&format!("krill_cas_bgp_roas_too_permissive{{ca=\"{}\"}} {}\n", ca, nr));
             }
 
-            res.push_str("\n");
+            res.push('\n');
             res.push_str(
             "# HELP krill_cas_bgp_roas_redundant number of ROAs for this CA which are redundant (0 may also indicate that no BGP info is available)\n",
         );
@@ -476,7 +477,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 res.push_str(&format!("krill_cas_bgp_roas_redundant{{ca=\"{}\"}} {}\n", ca, nr));
             }
 
-            res.push_str("\n");
+            res.push('\n');
             res.push_str(
             "# HELP krill_cas_bgp_roas_stale number of ROAs for this CA for which no announcements are seen (0 may also indicate that no BGP info is available)\n",
         );
@@ -485,7 +486,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
                 res.push_str(&format!("krill_cas_bgp_roas_stale{{ca=\"{}\"}} {}\n", ca, nr));
             }
 
-            res.push_str("\n");
+            res.push('\n');
             res.push_str("# HELP krill_cas_bgp_roas_total total number of ROAs for this CA\n");
             res.push_str("# TYPE krill_cas_bgp_roas_stale gauge\n");
             for (ca, nr) in all_bgp_stats.roas_total.iter() {
@@ -495,7 +496,7 @@ pub async fn metrics(req: Request) -> RoutingResult {
 
         #[cfg(feature = "multi-user")]
         {
-            res.push_str("\n");
+            res.push('\n');
             res.push_str("# HELP krill_auth_session_cache_size total number of cached login session tokens\n");
             res.push_str("# TYPE krill_auth_session_cache_size gauge\n");
             res.push_str(&format!(
