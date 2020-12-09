@@ -48,7 +48,7 @@ async fn do_run_krill_ui_test(test_name: &str) {
 
     let test_name = test_name.to_string();
 
-    task::spawn_blocking(move || {
+    let cypress_task = task::spawn_blocking(move || {
         // NOTE: the directory mentioned here must be the same as the directory
         // mentioned in the tests/ui/cypress_plugins/index.js file in the
         // "integrationFolder" property otherwise Cypress mysteriously complains
@@ -70,8 +70,10 @@ async fn do_run_krill_ui_test(test_name: &str) {
             .arg("--spec")
             .arg(cypress_spec_path)
             .status()
-            .expect("Failed to run Cypress Docker UI test suite");
-    })
-    .await
-    .unwrap();
+            .expect("Failed to run Cypress Docker UI test suite")
+    });
+
+    let cypress_exit_status = cypress_task.await.unwrap();
+
+    assert!(cypress_exit_status.success());
 }
