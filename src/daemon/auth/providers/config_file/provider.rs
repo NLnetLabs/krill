@@ -23,15 +23,16 @@ struct UserDetails {
     attributes: HashMap<String, String>,
 }
 
-fn get_checked_config_user(id: &str, user: &ConfigUserDetails) -> UserDetails {
+fn get_checked_config_user(id: &str, user: &ConfigUserDetails) -> KrillResult<UserDetails> {
     let password_hash = user.password_hash.as_ref()
-        .expect(&format!("Password hash missing for user '{}'", id))
+        .ok_or_else(|| KrillError::ConfigError(
+            format!("Password hash missing for user '{}'", id)))?
         .to_string();
 
-    UserDetails {
+    Ok(UserDetails {
         password_hash,
         attributes: user.attributes.clone(),
-    }
+    })
 }
 
 pub struct ConfigFileAuthProvider {
@@ -44,9 +45,11 @@ impl ConfigFileAuthProvider {
     pub fn new(config: Arc<Config>, session_cache: Arc<LoginSessionCache>) -> KrillResult<Self> {
         match &config.auth_users {
             Some(auth_users) => {
-                let users = auth_users.iter()
-                    .map(|(k, v)| (k.clone(), get_checked_config_user(k, v)))
-                    .collect();
+                let mut users = HashMap::new();
+                for (k, v) in auth_users.iter() {
+                    users.insert(k.clone(), get_checked_config_user(k, v)?);
+                }
+
                 let key = Self::init_session_key(config.clone())?;
 
                 Ok(ConfigFileAuthProvider {

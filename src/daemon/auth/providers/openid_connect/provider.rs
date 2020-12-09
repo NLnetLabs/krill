@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, hash_map::Entry::{Occupied, Vacant}};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -284,7 +284,7 @@ impl OpenIDConnectAuthProvider {
 
         // optional because it's not needed when looking up a value in the config file instead
         let jmespath_string = claim_conf.jmespath.as_ref()
-            .ok_or(KrillError::custom("Missing JMESPath configuration value for claim"))?
+            .ok_or_else(|| KrillError::custom("Missing JMESPath configuration value for claim"))?
             .to_string();
 
         // Create a new JMESPath Runtime. TODO: Somehow make this a single
@@ -307,7 +307,7 @@ impl OpenIDConnectAuthProvider {
                 &jmespath_string,
                 e)))?;
 
-        let claims_to_search = match searchable_claims.clone() {
+        let claims_to_search = match searchable_claims {
             Some(claim) => vec![(claim_conf.source.as_ref().unwrap(), claim)],
             None => {
                 let mut claims = vec![
@@ -639,10 +639,10 @@ impl AuthProvider for OpenIDConnectAuthProvider {
 
                 let claims_conf = with_default_claims(&self.oidc_conf().claims);
 
-                let id_claim_conf = claims_conf.get("id").ok_or(KrillError::custom("Missing 'id' claim configuration"))?;
+                let id_claim_conf = claims_conf.get("id").ok_or_else(|| KrillError::custom("Missing 'id' claim configuration"))?;
 
                 let id = self.extract_claim(&id_claim_conf, &id_token_claims, user_info_claims.as_ref())?
-                    .ok_or(KrillError::custom("No value found for 'id' claim"))?;
+                    .ok_or_else(|| KrillError::custom("No value found for 'id' claim"))?;
 
                 // Lookup the a user in the config file authentication provider
                 // configuration by the id value that we just obtained, if
@@ -689,13 +689,16 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                             Some(alt_attr_name) => alt_attr_name.to_string(),
                         };
                         // Only use the first found value
-                        if !attributes.contains_key(&final_attr_name) {
-                            debug!("Storing found value '{}' for claim '{}' as attribute '{}'",
-                                attr_name, attr_value, final_attr_name);
-                            attributes.insert(final_attr_name, attr_value);
-                        } else {
-                            info!("Skipping found value '{}' for claim '{}' as attribute '{}': attribute already has a value",
-                                attr_name, attr_value, final_attr_name);
+                        match attributes.entry(final_attr_name.clone()) {
+                            Occupied(found) => {
+                                info!("Skipping found value '{}' for claim '{}' as attribute '{}': attribute already has a value: '{}'",
+                                    attr_value, attr_name, final_attr_name, found.get());
+                            }
+                            Vacant(vacant) => {
+                                debug!("Storing found value '{}' for claim '{}' as attribute '{}'",
+                                    attr_value, attr_name, final_attr_name);
+                                vacant.insert(attr_value);
+                            }
                         }
                     } else {
                         // With Oso policy based configuration the absence of
@@ -805,23 +808,19 @@ fn with_default_claims(claims: &Option<ConfigAuthOpenIDConnectClaims>) -> Config
         None => ConfigAuthOpenIDConnectClaims::new()
     };
 
-    let id_key = "id".to_string();
-    if !claims.contains_key(&id_key) {
-        claims.insert(id_key, ConfigAuthOpenIDConnectClaim {
+    claims.entry("id".into()).or_insert(
+        ConfigAuthOpenIDConnectClaim {
             source: None,
             jmespath: Some("email".to_string()),
             dest: None,
         });
-    }
 
-    let role_key = "role".to_string();
-    if !claims.contains_key(&role_key) {
-        claims.insert(role_key, ConfigAuthOpenIDConnectClaim {
+    claims.entry("role".into()).or_insert(
+        ConfigAuthOpenIDConnectClaim {
             source: None,
             jmespath: Some("role".to_string()),
             dest: None,
         });
-    }
 
     claims
 }

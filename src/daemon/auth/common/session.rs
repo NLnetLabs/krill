@@ -27,6 +27,12 @@ pub struct LoginSessionCache {
     cache: RwLock<HashMap<Token, CachedSession>>,
 }
 
+impl Default for LoginSessionCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LoginSessionCache {
     pub fn new() -> Self {
         LoginSessionCache {

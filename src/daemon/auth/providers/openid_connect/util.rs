@@ -37,12 +37,6 @@ use crate::commons::KrillResult;
 pub struct CustomerDefinedAdditionalClaims(serde_json::Value);
 impl AdditionalClaims for CustomerDefinedAdditionalClaims {}
 
-impl CustomerDefinedAdditionalClaims {
-    pub fn as_ref(&self) -> &serde_json::Value {
-        &self.0
-    }
-}
-
 #[derive(Serialize, Deserialize, Debug)]
 pub struct CustomerDefinedExtraTokenFields(serde_json::Value);
 impl ExtraTokenFields for CustomerDefinedExtraTokenFields {}

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, io::Read, str::FromStr, sync::{Arc, Mutex}};
+use std::{io::Read, str::FromStr, sync::{Arc, Mutex}};
 
 use oso::{Oso, PolarClass, ToPolar};
 
@@ -32,7 +32,7 @@ impl AuthPolicy {
         Self::load_polar_file(&mut oso, include_bytes!("../../../defaults/rbac.polar"), "rbac")?;
         Self::load_polar_file(&mut oso, include_bytes!("../../../defaults/abac.polar"), "abac")?;
 
-        Self::load_user_policy(config.clone(), &mut oso)?;
+        Self::load_user_policy(config, &mut oso)?;
 
         // Sanity check: Verify the roles assigned to the built-in actors are as
         // expected.
@@ -115,7 +115,7 @@ impl AuthPolicy {
 impl PolarClass for Actor {
     fn get_polar_class() -> oso::Class {
         Self::get_polar_class_builder()
-            .set_constructor(|name: String, attrs: HashMap<String, String>| Actor::test_from_details(name, attrs))
+            .set_constructor(Actor::test_from_details)
             .set_equality_check(|left: &Actor, right: &Actor| left.name() == right.name())
             .add_attribute_getter("name", |instance| instance.name().to_string())
             .add_class_method("builtin", |name: String| -> Actor {

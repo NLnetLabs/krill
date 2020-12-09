@@ -1225,8 +1225,8 @@ impl Options {
         if let Some(attr_iter) = matches.values_of("attr") {
             for attr in attr_iter {
                 let mut iter = attr.split('=');
-                let k = iter.next().ok_or(Error::general(&format!("attribute '{}' must be of the form key=value", attr)))?;
-                let v = iter.next().ok_or(Error::general(&format!("attribute '{}' must be of the form key=value", attr)))?;
+                let k = iter.next().ok_or_else(|| Error::general(&format!("attribute '{}' must be of the form key=value", attr)))?;
+                let v = iter.next().ok_or_else(|| Error::general(&format!("attribute '{}' must be of the form key=value", attr)))?;
                 details.with_attr(k.to_string(), v.to_string());
             }
         }
