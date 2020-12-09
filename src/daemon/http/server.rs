@@ -209,7 +209,7 @@ async fn map_requests(req: hyper::Request<hyper::Body>, state: State) -> Result<
     // Log the request and the response.
     logger.log(res.as_ref());
 
-    res.and_then(|res| Ok(res.response()))
+    res.map(|res| res.response())
 }
 
 //------------ Support Functions ---------------------------------------------
@@ -638,7 +638,7 @@ fn add_authorization_headers_to_response(org_response: HttpResponse, token: Toke
 
 fn add_new_auth_to_response(res: Result<HttpResponse, Error>, opt_auth: Option<Auth>) -> Result<HttpResponse, Error> {
     if let Some(Auth::Bearer(token)) = opt_auth {
-        res.and_then(|ok_res| Ok(add_authorization_headers_to_response(ok_res, token)))
+        res.map(|ok_res| add_authorization_headers_to_response(ok_res, token))
     } else {
         res
     }

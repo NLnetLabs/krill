@@ -63,7 +63,7 @@ pub async fn statics(req: Request) -> RoutingResult {
         _ => Err(req),
     };
 
-    res.and_then(|mut res| { res.set_not_loggable(); Ok(res) })
+    res.map(|mut res| { res.set_not_loggable(); res })
 }
 
 static INDEX: &[u8] = include_bytes!("../../../lagosta/index.html");

@@ -120,9 +120,9 @@ impl Authorizer {
                     Err(err)
                 }
             })
-            .and_then(|possible_def| match possible_def {
-                Some(def) => Ok(self.actor_from_def(&def)),
-                None => Ok(self.actor_from_def(ACTOR_ANON))
+            .map(|possible_def| match possible_def {
+                Some(def) => self.actor_from_def(&def),
+                None => self.actor_from_def(ACTOR_ANON)
             })
     }
 

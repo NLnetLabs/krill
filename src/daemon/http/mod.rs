@@ -475,7 +475,8 @@ impl Request {
     }
 
     pub async fn logout(&self) -> String {
-        self.state.read().await.logout(self.get_auth().await)
+        let auth = self.get_auth().await;
+        self.state.read().await.logout(auth)
     }
 }
 
