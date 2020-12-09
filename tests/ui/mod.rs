@@ -3,14 +3,16 @@ mod openid_connect_mock;
 
 use tokio::task;
 
-use krill::constants::*;
-use krill::daemon::config::Config;
-use krill::daemon::http::server;
-use krill::test::*;
-
 use std::env;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::Arc;
+
+use krill::constants::*;
+use krill::daemon::config::Config;
+use krill::daemon::http::server;
+use krill::daemon::krillserver::KrillMode;
+use krill::test::*;
 
 pub async fn run_krill_ui_test(test_name: &str, _with_openid_server: bool) {
     #[cfg(feature = "multi-user")]
@@ -33,7 +35,6 @@ async fn do_run_krill_ui_test(test_name: &str) {
     let test_dir = dir.to_string_lossy().to_string();
 
     env::set_var(KRILL_ENV_TEST_ANN, "1");
-    env::set_var(KRILL_ENV_TEST, "1");
 
     let data_dir = PathBuf::from(test_dir);
     let mut config = Config::read_config(&format!("test-resources/ui/{}.conf", test_name)).unwrap();
@@ -41,10 +42,9 @@ async fn do_run_krill_ui_test(test_name: &str) {
     config.init_logging().unwrap();
     config.verify().unwrap();
 
-    tokio::spawn(server::start(Some(config)));
-
+    tokio::spawn(server::start_krill_daemon(Arc::new(config), KrillMode::Testbed));
     println!("Waiting for Krill server to start");
-    assert!(server_ready().await);
+    assert!(krill_server_ready().await);
 
     let test_name = test_name.to_string();
 
@@ -71,5 +71,7 @@ async fn do_run_krill_ui_test(test_name: &str) {
             .arg(cypress_spec_path)
             .status()
             .expect("Failed to run Cypress Docker UI test suite");
-    }).await.unwrap();
+    })
+    .await
+    .unwrap();
 }

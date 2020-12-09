@@ -10,8 +10,8 @@ use tokio::runtime::Runtime;
 use rpki::x509::Time;
 
 use crate::commons::api::Handle;
-use crate::constants::ACTOR_KRILL;
 use crate::commons::bgp::BgpAnalyser;
+use crate::constants::ACTOR_KRILL;
 #[cfg(feature = "multi-user")]
 use crate::daemon::auth::common::session::LoginSessionCache;
 use crate::daemon::ca::CaServer;
@@ -24,25 +24,25 @@ pub struct Scheduler {
     /// Responsible for listening to events and executing triggered processes, such
     /// as publication of newly generated RPKI objects.
     #[allow(dead_code)] // just need to keep this in scope
-    event_sh: ScheduleHandle,
+    cas_event_triggers: Option<ScheduleHandle>,
 
     /// Responsible for periodically republishing so that MFTs and CRLs do not go stale.
     #[allow(dead_code)] // just need to keep this in scope
-    republish_sh: ScheduleHandle,
+    cas_republish: Option<ScheduleHandle>,
 
     /// Responsible for letting CA check with their parents whether their resource
     /// entitlements have changed *and* for the shrinking of issued certificates, if
     /// they are not renewed within the configured grace period.
     #[allow(dead_code)] // just need to keep this in scope
-    ca_refresh_sh: ScheduleHandle,
+    cas_refresh: Option<ScheduleHandle>,
 
     /// Responsible for refreshing announcement information
     #[allow(dead_code)] // just need to keep this in scope
-    announcements_refresh_sh: ScheduleHandle,
+    announcements_refresh: ScheduleHandle,
 
     /// Responsible for archiving old commands
     #[allow(dead_code)] // just need to keep this in scope
-    archive_old_commands_sh: ScheduleHandle,
+    archive_old_commands: ScheduleHandle,
 
     #[cfg(feature = "multi-user")]
     /// Responsible for purging expired cached login tokens
@@ -53,26 +53,39 @@ pub struct Scheduler {
 impl Scheduler {
     pub fn build(
         event_queue: Arc<EventQueueListener>,
-        caserver: Arc<CaServer>,
+        caserver: Option<Arc<CaServer>>,
         pubserver: Option<Arc<PubServer>>,
         bgp_analyser: Arc<BgpAnalyser>,
-        #[cfg(feature = "multi-user")]
-        login_session_cache: Arc<LoginSessionCache>,
+        #[cfg(feature = "multi-user")] login_session_cache: Arc<LoginSessionCache>,
         config: &Config,
     ) -> Self {
-        let event_sh = make_event_sh(event_queue, caserver.clone(), pubserver.clone(), config.test_mode);
-        let republish_sh = make_republish_sh(caserver.clone());
-        let ca_refresh_sh = make_ca_refresh_sh(caserver.clone(), config.ca_refresh);
-        let announcements_refresh_sh = make_announcements_refresh_sh(bgp_analyser);
-        let archive_old_commands_sh = make_archive_old_commands_sh(caserver, pubserver, config.archive_threshold_days);
+        let mut cas_event_triggers = None;
+        let mut cas_republish = None;
+        let mut cas_refresh = None;
+
+        if let Some(caserver) = caserver.as_ref() {
+            cas_event_triggers = Some(make_cas_event_triggers(
+                event_queue,
+                caserver.clone(),
+                pubserver.clone(),
+                config.testbed_enabled(),
+            ));
+
+            cas_republish = Some(make_cas_republish(caserver.clone()));
+            cas_refresh = Some(make_cas_refresh(caserver.clone(), config.ca_refresh));
+        }
+
+        let announcements_refresh = make_announcements_refresh(bgp_analyser);
+        let archive_old_commands = make_archive_old_commands(caserver, pubserver, config.archive_threshold_days);
         #[cfg(feature = "multi-user")]
         let login_cache_sweeper_sh = make_login_cache_sweeper_sh(login_session_cache);
+
         Scheduler {
-            event_sh,
-            republish_sh,
-            ca_refresh_sh,
-            announcements_refresh_sh,
-            archive_old_commands_sh,
+            cas_event_triggers,
+            cas_republish,
+            cas_refresh,
+            announcements_refresh,
+            archive_old_commands,
             #[cfg(feature = "multi-user")]
             login_cache_sweeper_sh,
         }
@@ -80,7 +93,7 @@ impl Scheduler {
 }
 
 #[allow(clippy::cognitive_complexity)]
-fn make_event_sh(
+fn make_cas_event_triggers(
     event_queue: Arc<EventQueueListener>,
     caserver: Arc<CaServer>,
     pubserver: Option<Arc<PubServer>>,
@@ -217,7 +230,7 @@ async fn try_publish(
     }
 }
 
-fn make_republish_sh(caserver: Arc<CaServer>) -> ScheduleHandle {
+fn make_cas_republish(caserver: Arc<CaServer>) -> ScheduleHandle {
     let mut scheduler = clokwerk::Scheduler::new();
     scheduler.every(2.minutes()).run(move || {
         let mut rt = Runtime::new().unwrap();
@@ -231,7 +244,7 @@ fn make_republish_sh(caserver: Arc<CaServer>) -> ScheduleHandle {
     scheduler.watch_thread(Duration::from_millis(100))
 }
 
-fn make_ca_refresh_sh(caserver: Arc<CaServer>, refresh_rate: u32) -> ScheduleHandle {
+fn make_cas_refresh(caserver: Arc<CaServer>, refresh_rate: u32) -> ScheduleHandle {
     let mut scheduler = clokwerk::Scheduler::new();
     scheduler.every(refresh_rate.seconds()).run(move || {
         let mut rt = Runtime::new().unwrap();
@@ -243,7 +256,7 @@ fn make_ca_refresh_sh(caserver: Arc<CaServer>, refresh_rate: u32) -> ScheduleHan
     scheduler.watch_thread(Duration::from_millis(100))
 }
 
-fn make_announcements_refresh_sh(bgp_analyser: Arc<BgpAnalyser>) -> ScheduleHandle {
+fn make_announcements_refresh(bgp_analyser: Arc<BgpAnalyser>) -> ScheduleHandle {
     let mut scheduler = clokwerk::Scheduler::new();
     scheduler.every(1.seconds()).run(move || {
         let mut rt = Runtime::new().unwrap();
@@ -256,8 +269,8 @@ fn make_announcements_refresh_sh(bgp_analyser: Arc<BgpAnalyser>) -> ScheduleHand
     scheduler.watch_thread(Duration::from_millis(100))
 }
 
-fn make_archive_old_commands_sh(
-    caserver: Arc<CaServer>,
+fn make_archive_old_commands(
+    caserver: Option<Arc<CaServer>>,
     pubserver: Option<Arc<PubServer>>,
     archive_threshold_days: Option<i64>,
 ) -> ScheduleHandle {
@@ -266,8 +279,10 @@ fn make_archive_old_commands_sh(
         let mut rt = Runtime::new().unwrap();
         rt.block_on(async {
             if let Some(days) = archive_threshold_days {
-                if let Err(e) = caserver.archive_old_commands(days).await {
-                    error!("Failed to archive old CA commands: {}", e)
+                if let Some(caserver) = caserver.as_ref() {
+                    if let Err(e) = caserver.archive_old_commands(days).await {
+                        error!("Failed to archive old CA commands: {}", e)
+                    }
                 }
 
                 if let Some(pubserver) = pubserver.as_ref() {
@@ -288,7 +303,7 @@ fn make_login_cache_sweeper_sh(cache: Arc<LoginSessionCache>) -> ScheduleHandle 
         let mut rt = Runtime::new().unwrap();
         rt.block_on(async {
             debug!("Triggering background sweep of session decryption cache");
-            
+
             if let Err(e) = cache.sweep() {
                 error!("Background sweep of session decryption cache failed: {}", e);
             }

@@ -2,17 +2,17 @@
 
 extern crate krill;
 
-use krill::cli::options::Options;
+use krill::cli::options::KrillPubcOptions;
 use krill::cli::report::ReportFormat;
-use krill::cli::{Error, KrillClient};
+use krill::cli::{Error, KrillPubdClient};
 use krill::commons::util::httpclient;
 
 #[tokio::main]
 async fn main() {
-    match Options::from_args() {
+    match KrillPubcOptions::from_args() {
         Ok(options) => {
-            let format = options.format();
-            match KrillClient::report(options).await {
+            let format = options.format;
+            match KrillPubdClient::report(options).await {
                 Ok(()) => {} //,
                 Err(e) => {
                     if format != ReportFormat::None {

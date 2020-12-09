@@ -1,4 +1,5 @@
 #![type_length_limit = "5000000"]
+#![recursion_limit = "155"]
 
 extern crate krill;
 
@@ -33,7 +34,9 @@ async fn add_and_remove_certificate_authority() {
     assert_eq!(&testbed_ca_handle, publisher_details(&testbed_ca_handle).await.handle());
 
     // verify that the testbed REST API is enabled
-    assert!(get_ok(&format!("{}testbed/enabled", SERVER_URI), None).await.is_ok());
+    assert!(get_ok(&format!("{}testbed/enabled", KRILL_SERVER_URI), None)
+        .await
+        .is_ok());
 
     // create a dummy CA that we can register with the testbed
     let dummy_ca_handle = Handle::from_str("dummy").unwrap();
@@ -55,7 +58,7 @@ async fn add_and_remove_certificate_authority() {
     // <child_request/>   --> testbed
     // <parent_response/> <-- testbed
     let add_child_response: ParentCaContact = post_json_with_response(
-        &format!("{}testbed/children", SERVER_URI),
+        &format!("{}testbed/children", KRILL_SERVER_URI),
         &AddChildRequest::new(
             dummy_ca_handle.clone(),
             ResourceSet::from_strs("AS1", "", "").unwrap(),
@@ -82,7 +85,7 @@ async fn add_and_remove_certificate_authority() {
     let parent_response_xml = get_text(
         &format!(
             "{}testbed/children/{}/parent_response.xml",
-            SERVER_URI, &dummy_ca_handle
+            KRILL_SERVER_URI, &dummy_ca_handle
         ),
         None, // no token, the testbed API should be open
     )
@@ -128,7 +131,7 @@ async fn add_and_remove_certificate_authority() {
     // <publisher_request/>   --> testbed
     // <repository_response/> <-- testbed
     let repository_response: RepositoryResponse = post_json_with_response(
-        &format!("{}testbed/publishers", SERVER_URI),
+        &format!("{}testbed/publishers", KRILL_SERVER_URI),
         &PublisherRequest::new(
             None, // no tag
             dummy_ca_handle.clone(),
@@ -161,11 +164,12 @@ async fn add_and_remove_certificate_authority() {
     // -------------------------------------------------------------------------
 
     // unregister the child CA publisher with the testbed
-    assert!(
-        delete(&format!("{}testbed/publishers/{}", SERVER_URI, &dummy_ca_handle), None)
-            .await
-            .is_ok()
-    );
+    assert!(delete(
+        &format!("{}testbed/publishers/{}", KRILL_SERVER_URI, &dummy_ca_handle),
+        None
+    )
+    .await
+    .is_ok());
 
     // verify that the testbed shows that it no longer has the child publisher
     let publishers = list_publishers().await;
@@ -176,11 +180,12 @@ async fn add_and_remove_certificate_authority() {
     assert!(!publisher_found);
 
     // unregister the child CA with the testbed
-    assert!(
-        delete(&format!("{}testbed/children/{}", SERVER_URI, &dummy_ca_handle), None)
-            .await
-            .is_ok()
-    );
+    assert!(delete(
+        &format!("{}testbed/children/{}", KRILL_SERVER_URI, &dummy_ca_handle),
+        None
+    )
+    .await
+    .is_ok());
 
     // verify that the testbed shows that it no longer has any children
     assert_eq!(0, ca_details(&testbed_ca_handle).await.children().len());
@@ -191,8 +196,10 @@ async fn add_and_remove_certificate_authority() {
     // the RP, like Routinator, uses the TAL filename by default to identify the
     // RPKI hierarchy being queried).
     // -------------------------------------------------------------------------
-    let org_tal = get_text(&format!("{}ta/ta.tal", SERVER_URI), None).await.unwrap();
-    let renamed_tal = get_text(&format!("{}testbed.tal", SERVER_URI), None).await.unwrap();
+    let org_tal = get_text(&format!("{}ta/ta.tal", KRILL_SERVER_URI), None).await.unwrap();
+    let renamed_tal = get_text(&format!("{}testbed.tal", KRILL_SERVER_URI), None)
+        .await
+        .unwrap();
     assert_eq!(org_tal, renamed_tal);
 
     let _ = fs::remove_dir_all(dir);

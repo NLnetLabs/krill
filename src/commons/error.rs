@@ -164,6 +164,7 @@ pub enum Error {
     //-----------------------------------------------------------------
     // CA Issues
     //-----------------------------------------------------------------
+    CaServerNotEnabled,
     CaDuplicate(Handle),
     CaUnknown(Handle),
 
@@ -301,6 +302,7 @@ impl fmt::Display for Error {
             //-----------------------------------------------------------------
             // CA Issues
             //-----------------------------------------------------------------
+            Error::CaServerNotEnabled => write!(f, "CA Server not enabled on this Krill installation"),
             Error::CaDuplicate(ca) => write!(f, "CA '{}' was already initialised", ca),
             Error::CaUnknown(ca) => write!(f, "CA '{}' is unknown", ca),
 
@@ -563,6 +565,7 @@ impl Error {
             //-----------------------------------------------------------------
             // CA Issues (label: ca-*)
             //-----------------------------------------------------------------
+            Error::CaServerNotEnabled => ErrorResponse::new("ca-server-disabled", &self),
             Error::CaDuplicate(ca) => ErrorResponse::new("ca-duplicate", &self).with_ca(ca),
 
             Error::CaUnknown(ca) => ErrorResponse::new("ca-unknown", &self).with_ca(ca),

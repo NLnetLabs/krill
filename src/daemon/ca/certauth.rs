@@ -659,7 +659,7 @@ impl CertAuth {
         let (rcn, limit, csr) = request.unpack();
         let csr_info = CsrInfo::try_from(&csr)?;
 
-        if !csr_info.allowed_uris(config.test_mode) {
+        if !csr_info.allowed_uris(config.testbed_enabled()) {
             return Err(Error::invalid_csr(
                 "MUST use hostnames in URIs for certificate requests unless server uses TEST mode.",
             ));

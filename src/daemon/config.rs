@@ -16,14 +16,14 @@ use syslog::Facility;
 use rpki::uri;
 
 use crate::commons::api::Token;
-use crate::commons::util::{ext_serde, AllowedUri};
+use crate::commons::util::ext_serde;
 use crate::constants::*;
 use crate::daemon::http::tls_keys;
 
 #[cfg(feature = "multi-user")]
-use crate::daemon::auth::providers::openid_connect::ConfigAuthOpenIDConnect;
-#[cfg(feature = "multi-user")]
 use crate::daemon::auth::providers::config_file::config::ConfigAuthUsers;
+#[cfg(feature = "multi-user")]
+use crate::daemon::auth::providers::openid_connect::ConfigAuthOpenIDConnect;
 
 //------------ ConfigDefaults ------------------------------------------------
 
@@ -36,19 +36,7 @@ impl ConfigDefaults {
     fn port() -> u16 {
         3000
     }
-    fn test_mode() -> bool {
-        env::var(KRILL_ENV_TEST).is_ok()
-    }
-    fn repo_enabled() -> bool {
-        env::var(KRILL_ENV_REPO_ENABLED).is_ok()
-    }
 
-    fn use_ta() -> bool {
-        env::var(KRILL_ENV_USE_TA).is_ok()
-    }
-    fn testbed_enabled() -> bool {
-        env::var(KRILL_ENV_TESTBED_ENABLED).is_ok()
-    }
     fn https_mode() -> HttpsMode {
         HttpsMode::Generate
     }
@@ -56,11 +44,7 @@ impl ConfigDefaults {
         PathBuf::from("./data")
     }
     fn archive_threshold_days() -> Option<i64> {
-        if Self::test_mode() {
-            Some(0)
-        } else {
-            None
-        }
+        None
     }
     fn always_recover_data() -> bool {
         env::var(KRILL_ENV_FORCE_RECOVER).is_ok()
@@ -125,11 +109,7 @@ impl ConfigDefaults {
     }
 
     fn rfc8181_log_dir() -> Option<PathBuf> {
-        if Self::test_mode() {
-            Some(PathBuf::from("./data/rfc8181_msgs"))
-        } else {
-            None
-        }
+        None
     }
 
     fn post_limit_rfc6492() -> u64 {
@@ -137,11 +117,7 @@ impl ConfigDefaults {
     }
 
     fn rfc6492_log_dir() -> Option<PathBuf> {
-        if Self::test_mode() {
-            Some(PathBuf::from("./data/rfc6492_msgs"))
-        } else {
-            None
-        }
+        None
     }
 
     fn bgp_risdumps_enabled() -> bool {
@@ -216,19 +192,7 @@ pub struct Config {
     ip: IpAddr,
 
     #[serde(default = "ConfigDefaults::port")]
-    port: u16,
-
-    #[serde(default = "ConfigDefaults::test_mode")]
-    pub test_mode: bool,
-
-    #[serde(default = "ConfigDefaults::use_ta")]
-    use_ta: bool,
-
-    #[serde(default = "ConfigDefaults::repo_enabled")]
-    pub repo_enabled: bool,
-
-    #[serde(default = "ConfigDefaults::testbed_enabled")]
-    pub testbed_enabled: bool,
+    pub port: u16,
 
     #[serde(default = "ConfigDefaults::https_mode")]
     https_mode: HttpsMode,
@@ -248,7 +212,7 @@ pub struct Config {
     pub rsync_base: uri::Rsync,
 
     #[serde(default = "ConfigDefaults::service_uri")]
-    service_uri: String,
+    pub service_uri: String,
 
     rrdp_service_uri: Option<String>,
 
@@ -266,7 +230,7 @@ pub struct Config {
 
     #[serde(default = "ConfigDefaults::syslog_facility")]
     syslog_facility: String,
-    
+
     #[serde(default = "ConfigDefaults::auth_token")]
     pub auth_token: Token,
 
@@ -344,14 +308,6 @@ pub struct IssuanceTimingConfig {
 
 /// # Accessors
 impl Config {
-    pub fn repo_retain_old_seconds() -> i64 {
-        if env::var(KRILL_ENV_TEST).is_ok() {
-            1
-        } else {
-            600
-        }
-    }
-
     pub fn set_data_dir(&mut self, data_dir: PathBuf) {
         self.data_dir = data_dir;
     }
@@ -393,10 +349,6 @@ impl Config {
         uri::Https::from_string(format!("{}ta/ta.cer", &self.service_uri)).unwrap()
     }
 
-    pub fn use_ta(&self) -> bool {
-        self.use_ta
-    }
-
     pub fn pid_file(&self) -> PathBuf {
         match &self.pid_file {
             None => {
@@ -415,6 +367,10 @@ impl Config {
             0
         }
     }
+
+    pub fn testbed_enabled(&self) -> bool {
+        env::var(KRILL_ENV_TESTBED_ENABLED).is_ok()
+    }
 }
 
 /// # Create
@@ -423,10 +379,6 @@ impl Config {
         let ip = ConfigDefaults::ip();
         let port = ConfigDefaults::port();
         let pid_file = None;
-        let test_mode = true;
-        let use_ta = true;
-        let repo_enabled = true;
-        let testbed_enabled = true;
         let https_mode = HttpsMode::Generate;
         let data_dir = data_dir.clone();
         let archive_threshold_days = Some(0);
@@ -496,10 +448,6 @@ impl Config {
             ip,
             port,
             pid_file,
-            test_mode,
-            use_ta,
-            repo_enabled,
-            testbed_enabled,
             https_mode,
             data_dir,
             archive_threshold_days,
@@ -548,7 +496,6 @@ impl Config {
     pub fn pubd_test(data_dir: &PathBuf) -> Self {
         let mut config = Self::test_config(data_dir);
         config.port = 3001;
-        config.use_ta = false;
         config.service_uri = "https://localhost:3001/".to_string();
         config.rsync_base = uri::Rsync::from_str("rsync://remotehost/repo/").unwrap();
         config
@@ -606,27 +553,11 @@ impl Config {
             return Err(ConfigError::other("Port number must be >1024"));
         }
 
-        if self.test_mode {
-            // Set KRILL_TEST env var so that it can easily be accessed without the need to pass
-            // this setting down all over the application. Used by CertAuth in particular to allow
-            // the use of 'localhost' in Certificate Sign Requests in test mode only.
-            env::set_var(KRILL_ENV_TEST, "1");
-        }
-
-        if self.repo_enabled && !self.rsync_base.allowed_uri(self.test_mode) {
-            return Err(ConfigError::other(
-                "Cannot use localhost in rsync base unless test mode is used (KRILL_TEST)",
-            ));
-        }
-
-        if self.repo_enabled && !self.rrdp_service_uri().allowed_uri(self.test_mode) {
-            return Err(ConfigError::other(
-                "Cannot use localhost in RRDP service URI unless test mode is used (KRILL_TEST)",
-            ));
-        }
-
         if !self.rsync_base.to_string().ends_with('/') {
             return Err(ConfigError::other("rsync base URI must end with '/'"));
+        }
+        if !self.rrdp_service_uri().to_string().ends_with('/') {
+            return Err(ConfigError::other("service URI must end with '/'"));
         }
 
         if !self.service_uri.ends_with('/') {
@@ -640,18 +571,6 @@ impl Config {
                     "Service URI MUST specify a host name only, e.g. https://rpki.example.com:3000/",
                 ));
             }
-        }
-
-        if !self.rrdp_service_uri().to_string().ends_with('/') {
-            return Err(ConfigError::other("service URI must end with '/'"));
-        }
-
-        if self.use_ta && !self.repo_enabled {
-            return Err(ConfigError::other("Cannot use embedded TA without embedded repository"));
-        }
-
-        if self.testbed_enabled && !self.use_ta {
-            return Err(ConfigError::other("Cannot use testbed without embedded TA"));
         }
 
         if self.issuance_timing.timing_publish_next_hours < 2 {
@@ -972,22 +891,24 @@ impl<'de> Deserialize<'de> for AuthType {
     {
         let string = String::deserialize(d)?;
         match string.as_str() {
-            "master-token"   => Ok(AuthType::MasterToken),
+            "master-token" => Ok(AuthType::MasterToken),
             #[cfg(feature = "multi-user")]
-            "config-file"    => Ok(AuthType::ConfigFile),
+            "config-file" => Ok(AuthType::ConfigFile),
             #[cfg(feature = "multi-user")]
             "openid-connect" => Ok(AuthType::OpenIDConnect),
             _ => {
                 #[cfg(not(feature = "multi-user"))]
                 let msg = format!("expected \"master-token\", found: \"{}\"", string);
                 #[cfg(feature = "multi-user")]
-                let msg = format!("expected \"config-file\", \"master-token\", or \"openid-connect\", found: \"{}\"", string);
+                let msg = format!(
+                    "expected \"config-file\", \"master-token\", or \"openid-connect\", found: \"{}\"",
+                    string
+                );
                 Err(de::Error::custom(msg))
-            },
+            }
         }
     }
 }
-
 
 //------------ Tests ---------------------------------------------------------
 
@@ -1002,26 +923,9 @@ mod tests {
         // file, then an environment variable must be set.
         use std::env;
         env::set_var(KRILL_ENV_AUTH_TOKEN, "secret");
-        env::set_var(KRILL_ENV_TEST, "1");
 
         let c = Config::read_config("./defaults/krill.conf").unwrap();
         let expected_socket_addr: SocketAddr = ([127, 0, 0, 1], 3000).into();
         assert_eq!(c.socket_addr(), expected_socket_addr);
-    }
-
-    #[test]
-    fn testbed_enable_should_require_use_ta() {
-        use std::env;
-        env::set_var(KRILL_ENV_AUTH_TOKEN, "secret");
-        env::set_var(KRILL_ENV_REPO_ENABLED, "1");
-        env::set_var(KRILL_ENV_TESTBED_ENABLED, "1");
-
-        let c = Config::read_config("./defaults/krill.conf").unwrap();
-        assert!(c.verify().is_err());
-
-        env::set_var(KRILL_ENV_USE_TA, "1");
-
-        let c = Config::read_config("./defaults/krill.conf").unwrap();
-        assert!(c.verify().is_ok());
     }
 }
