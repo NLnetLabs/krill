@@ -1,4 +1,4 @@
-let master = { u: 'master-token', p: 'dummy-master-token' };
+let master = { u: 'master-token', p: 'secret' };
 
 describe('Master API token', () => {
   it('The correct login form is shown', () => {

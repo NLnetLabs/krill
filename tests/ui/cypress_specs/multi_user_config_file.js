@@ -4,12 +4,12 @@ let readwrite = { u: 'readwrite@krill', p: 'readwrite_pass' };
 let ca_name   = 'dummy-ca-name';
 
 let login_test_settings = [
-  { d: 'empty',        u: '',                   p: '',                   o: false },
-  { d: 'master token', u: 'dummy-master-token', p: 'dummy-master-token', o: false },
-  { d: 'incorrect',    u: 'wrong_user_name',    p: 'wrong_password',     o: false },
-  { d: 'admin',        u: admin.u,              p: admin.p,              o: true  },
-  { d: 'readonly',     u: readonly.u,           p: readonly.p,           o: true  },
-  { d: 'readwrite',    u: readwrite.u,          p: readwrite.p,          o: true  },
+  { d: 'empty',        u: '',                   p: '',               o: false },
+  { d: 'master token', u: 'secret',             p: 'secret',         o: false },
+  { d: 'incorrect',    u: 'wrong_user_name',    p: 'wrong_password', o: false },
+  { d: 'admin',        u: admin.u,              p: admin.p,          o: true  },
+  { d: 'readonly',     u: readonly.u,           p: readonly.p,       o: true  },
+  { d: 'readwrite',    u: readwrite.u,          p: readwrite.p,      o: true  },
 ];
 
 describe('Config File users', () => {
