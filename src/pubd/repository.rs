@@ -311,8 +311,10 @@ impl RrdpServer {
         }
 
         // something changed, update notification file
+        let notification_path_new = self.notification_path_new();
         let notification_path = self.notification_path();
-        self.notification.write_xml(&notification_path)?;
+        self.notification.write_xml(&notification_path_new)?;
+        fs::rename(notification_path_new, notification_path)?;
 
         // clean up under the base dir:
         // - old session dirs
@@ -399,6 +401,12 @@ impl RrdpServer {
     pub fn notification_uri(&self) -> uri::Https {
         uri::Https::from_string(format!("{}notification.xml", self.rrdp_base_uri.to_string())).unwrap()
         // Cannot fail. Config checked at startup.
+    }
+
+    fn notification_path_new(&self) -> PathBuf {
+        let mut path = self.rrdp_base_dir.clone();
+        path.push("new-notification.xml");
+        path
     }
 
     fn notification_path(&self) -> PathBuf {
