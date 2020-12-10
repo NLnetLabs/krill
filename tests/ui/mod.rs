@@ -8,7 +8,6 @@ use std::path::PathBuf;
 use std::process::Command;
 use std::sync::Arc;
 
-use krill::constants::*;
 use krill::daemon::config::Config;
 use krill::daemon::http::server;
 use krill::daemon::krillserver::KrillMode;
@@ -34,7 +33,8 @@ async fn do_run_krill_ui_test(test_name: &str) {
     let dir = sub_dir(&PathBuf::from("work"));
     let test_dir = dir.to_string_lossy().to_string();
 
-    env::set_var(KRILL_ENV_TEST_ANN, "1");
+    krill::constants::enable_test_mode();
+    krill::constants::enable_test_announcements();
 
     let data_dir = PathBuf::from(test_dir);
     let mut config = Config::read_config(&format!("test-resources/ui/{}.conf", test_name)).unwrap();
