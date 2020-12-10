@@ -63,12 +63,13 @@ If any of your Krill CAs do serve as a parent CA, then the following approach is
 - remove the `pubd` directory under your data directory (back it up to be sure)
 - start your main `krill` again - it will now run in "CA" mode
 
-
-
-### Other changes
+### Other fixes
 
 ROAs will now be recreated if your CA lost a prefix, and gets it back later. This will help in
-the rather unlikely case that a parent CA temporarily removed one of your resources in error.
+the rather unlikely case that a parent CA temporarily removed one of your resources in error. (#96)
+
+Let the Publication Server write the notification.xml file to a new file, and then rename it.
+This prevents that Relying Parties can retrieve a half-written file. (#352)
 
 ## 0.8.1 'The Gentle Art' 
 
