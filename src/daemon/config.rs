@@ -367,10 +367,6 @@ impl Config {
             0
         }
     }
-
-    pub fn testbed_enabled(&self) -> bool {
-        env::var(KRILL_ENV_TESTBED_ENABLED).is_ok()
-    }
 }
 
 /// # Create

@@ -1,4 +1,4 @@
-use std::{env, fmt};
+use std::fmt;
 
 use chrono::Duration;
 use tokio::sync::RwLock;
@@ -11,7 +11,7 @@ use crate::commons::bgp::{
     BgpAnalysisEntry, BgpAnalysisReport, BgpAnalysisState, BgpAnalysisSuggestion, IpRange, RisDumpError, RisDumpLoader,
     ValidatedAnnouncement,
 };
-use crate::constants::{BGP_RIS_REFRESH_MINUTES, KRILL_ENV_TEST_ANN};
+use crate::constants::{test_announcements_enabled, BGP_RIS_REFRESH_MINUTES};
 
 //------------ BgpAnalyser -------------------------------------------------
 
@@ -23,7 +23,7 @@ pub struct BgpAnalyser {
 
 impl BgpAnalyser {
     pub fn new(ris_enabled: bool, ris_v4_uri: &str, ris_v6_uri: &str) -> Self {
-        if env::var(KRILL_ENV_TEST_ANN).is_ok() {
+        if test_announcements_enabled() {
             Self::with_test_announcements()
         } else {
             let dumploader = if ris_enabled {

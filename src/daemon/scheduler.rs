@@ -9,8 +9,9 @@ use tokio::runtime::Runtime;
 
 use rpki::x509::Time;
 
-use crate::commons::{actor::Actor, api::Handle};
 use crate::commons::bgp::BgpAnalyser;
+use crate::commons::{actor::Actor, api::Handle};
+use crate::constants::test_mode_enabled;
 #[cfg(feature = "multi-user")]
 use crate::daemon::auth::common::session::LoginSessionCache;
 use crate::daemon::ca::CaServer;
@@ -68,7 +69,6 @@ impl Scheduler {
                 event_queue,
                 caserver.clone(),
                 pubserver.clone(),
-                config.testbed_enabled(),
                 actor.clone(),
             ));
 
@@ -77,7 +77,8 @@ impl Scheduler {
         }
 
         let announcements_refresh = make_announcements_refresh(bgp_analyser);
-        let archive_old_commands = make_archive_old_commands(caserver, pubserver, config.archive_threshold_days, actor.clone());
+        let archive_old_commands =
+            make_archive_old_commands(caserver, pubserver, config.archive_threshold_days, actor.clone());
         #[cfg(feature = "multi-user")]
         let login_cache_sweeper_sh = make_login_cache_sweeper_sh(login_session_cache);
 
@@ -98,7 +99,6 @@ fn make_cas_event_triggers(
     event_queue: Arc<EventQueueListener>,
     caserver: Arc<CaServer>,
     pubserver: Option<Arc<PubServer>>,
-    test_mode: bool,
     actor: Actor,
 ) -> ScheduleHandle {
     let mut scheduler = clokwerk::Scheduler::new();
@@ -127,11 +127,11 @@ fn make_cas_event_triggers(
                     }
 
                     QueueEvent::Delta(handle, _version) => {
-                        try_publish(&event_queue, caserver.clone(), pubserver.clone(), handle, test_mode, &actor).await
+                        try_publish(&event_queue, caserver.clone(), pubserver.clone(), handle, &actor).await
                     }
                     QueueEvent::ReschedulePublish(handle, last_try) => {
                         if Time::five_minutes_ago().timestamp() > last_try.timestamp() {
-                            try_publish(&event_queue, caserver.clone(), pubserver.clone(), handle, test_mode, &actor).await
+                            try_publish(&event_queue, caserver.clone(), pubserver.clone(), handle, &actor).await
                         } else {
                             event_queue.push_back(QueueEvent::ReschedulePublish(handle, last_try));
                         }
@@ -217,14 +217,13 @@ async fn try_publish(
     caserver: Arc<CaServer>,
     pubserver: Option<Arc<PubServer>>,
     ca: Handle,
-    test_mode: bool,
     actor: &Actor,
 ) {
     info!("Try to publish for '{}'", ca);
     let publisher = CaPublisher::new(caserver.clone(), pubserver);
 
     if let Err(e) = publisher.publish(&ca, actor).await {
-        if test_mode {
+        if test_mode_enabled() {
             error!("Failed to publish for '{}', error: {}", ca, e);
         } else {
             error!("Failed to publish for '{}' will reschedule, error: {}", ca, e);

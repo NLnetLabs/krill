@@ -8,10 +8,9 @@
 
 extern crate krill;
 
-use std::env;
 use std::sync::Arc;
 
-use krill::constants::KRILL_ENV_TESTBED_ENABLED;
+use krill::constants::testbed_enabled;
 use krill::daemon::http::server;
 use krill::daemon::krillserver::KrillMode;
 
@@ -19,7 +18,7 @@ use krill::daemon::krillserver::KrillMode;
 async fn main() {
     match server::parse_config() {
         Ok(config) => {
-            let mode = if env::var(KRILL_ENV_TESTBED_ENABLED).is_ok() {
+            let mode = if testbed_enabled() {
                 KrillMode::Testbed
             } else {
                 KrillMode::Ca

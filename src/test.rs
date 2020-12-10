@@ -1,12 +1,12 @@
 //! Helper functions for testing Krill.
 
+use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
-use std::{env, fs};
 
 use bytes::Bytes;
 
@@ -30,7 +30,6 @@ use crate::commons::crypto::SignSupport;
 use crate::commons::remote::rfc8183;
 use crate::commons::remote::rfc8183::{ChildRequest, RepositoryResponse};
 use crate::commons::util::httpclient;
-use crate::constants::{KRILL_ENV_TESTBED_ENABLED, KRILL_ENV_TEST_ANN, KRILL_ENV_TEST_UNIT_DATA};
 use crate::daemon::ca::{ta_handle, ResourceTaggedAttestation, RtaContentRequest, RtaPrepareRequest};
 use crate::daemon::http::server;
 
@@ -75,10 +74,9 @@ pub async fn server_ready(uri: &str) -> bool {
 }
 
 fn test_config(dir: &PathBuf) -> Config {
-    env::set_var(KRILL_ENV_TEST_UNIT_DATA, dir.to_string_lossy().to_string());
-    env::set_var(KRILL_ENV_TEST_ANN, "1");
-    env::set_var(KRILL_ENV_TESTBED_ENABLED, "1");
-
+    crate::constants::enable_test_mode();
+    crate::constants::enable_testbed();
+    crate::constants::enable_test_announcements();
     Config::test(dir)
 }
 

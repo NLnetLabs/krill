@@ -25,6 +25,7 @@ use crate::commons::eventsourcing::{Aggregate, StoredEvent};
 use crate::commons::remote::rfc6492;
 use crate::commons::remote::rfc8183;
 use crate::commons::KrillResult;
+use crate::constants::test_mode_enabled;
 use crate::daemon::ca::events::ChildCertificateUpdates;
 use crate::daemon::ca::rc::PublishMode;
 use crate::daemon::ca::{
@@ -659,7 +660,7 @@ impl CertAuth {
         let (rcn, limit, csr) = request.unpack();
         let csr_info = CsrInfo::try_from(&csr)?;
 
-        if !csr_info.global_uris() && cfg!(not(debug_assertions)) {
+        if !csr_info.global_uris() && !test_mode_enabled() {
             return Err(Error::invalid_csr(
                 "MUST use hostnames in URIs for certificate requests.",
             ));

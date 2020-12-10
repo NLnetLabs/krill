@@ -20,7 +20,9 @@ use crate::commons::eventsourcing::Aggregate;
 use crate::commons::remote::rfc8183;
 use crate::commons::util::file;
 use crate::commons::KrillResult;
-use crate::constants::{REPOSITORY_NOTIFICATION_RETAIN_SECONDS, REPOSITORY_RRDP_DIR, REPOSITORY_RSYNC_DIR};
+use crate::constants::{
+    test_mode_enabled, REPOSITORY_NOTIFICATION_RETAIN_SECONDS, REPOSITORY_RRDP_DIR, REPOSITORY_RSYNC_DIR,
+};
 use crate::pubd::events::RrdpSessionReset;
 use crate::pubd::publishers::Publisher;
 use crate::pubd::{Cmd, CmdDet, Evt, EvtDet, Ini, RrdpUpdate};
@@ -265,7 +267,7 @@ impl RrdpServer {
 
         let mut retain_secs = REPOSITORY_NOTIFICATION_RETAIN_SECONDS;
 
-        if cfg!(test) {
+        if test_mode_enabled() {
             retain_secs = 1;
         }
 
