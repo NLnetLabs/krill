@@ -130,19 +130,19 @@ fn run_mock_openid_connect_server() {
         known_users.insert("readonly@krill", KnownUser { role: "gui_read_only", ..Default::default() });
         known_users.insert("readwrite@krill", KnownUser { role: "gui_read_write", ..Default::default() });
         known_users.insert("shorttokenwithoutrefresh@krill", KnownUser { role: "gui_read_write", token_secs: Some(1), ..Default::default() });
-    
+
         let provider_metadata: CustomProviderMetadata = ProviderMetadata::new(
-            IssuerUrl::new("http://localhost:3001".to_string()).unwrap(),
-            AuthUrl::new("http://localhost:3001/authorize".to_string()).unwrap(),
-            JsonWebKeySetUrl::new("http://localhost:3001/jwk".to_string()).unwrap(),
+            IssuerUrl::new("http://localhost:1818".to_string()).unwrap(),
+            AuthUrl::new("http://localhost:1818/authorize".to_string()).unwrap(),
+            JsonWebKeySetUrl::new("http://localhost:1818/jwk".to_string()).unwrap(),
             vec![ResponseTypes::new(vec![CoreResponseType::Code])],
             vec![CoreSubjectIdentifierType::Pairwise],
             vec![CoreJwsSigningAlgorithm::RsaSsaPssSha256],
             CustomAdditionalMetadata { end_session_endpoint: String::new() },
         )
-        .set_token_endpoint(Some(TokenUrl::new("http://localhost:3001/token".to_string()).unwrap()))
+        .set_token_endpoint(Some(TokenUrl::new("http://localhost:1818/token".to_string()).unwrap()))
         .set_userinfo_endpoint(
-            Some(UserInfoUrl::new("http://localhost:3001/userinfo".to_string()).unwrap())
+            Some(UserInfoUrl::new("http://localhost:1818/userinfo".to_string()).unwrap())
         )
         .set_scopes_supported(Some(vec![
             Scope::new("openid".to_string()),
@@ -194,7 +194,7 @@ fn run_mock_openid_connect_server() {
             let id_token = CustomIdToken::new(
                 CustomIdTokenClaims::new(
                     // Specify the issuer URL for the OpenID Connect Provider.
-                    IssuerUrl::new("http://localhost:3001".to_string()).unwrap(),
+                    IssuerUrl::new("http://localhost:1818".to_string()).unwrap(),
                     // The audience is usually a single entry with the client ID of the client for whom
                     // the ID token is intended. This is a required claim.
                     vec![Audience::new(authz.client_id.clone())],
@@ -464,7 +464,7 @@ fn run_mock_openid_connect_server() {
             eprintln!("Mock OpenID Connect server: WARNING: {}", warning);
         }
 
-        let address = "127.0.0.1:3001";
+        let address = "127.0.0.1:1818";
         println!("Mock OpenID Connect server: starting on {}", address);
 
         let server = Server::http(address).unwrap();
