@@ -78,7 +78,7 @@ describe('OpenID Connect users', () => {
     cy.get('input[name="username"]')
   })
 
-  it.skip('Login receives short-lived token that cannot be refreshed', () => {
+  it('Login receives short-lived token that cannot be refreshed', () => {
     cy.visit('/')
     cy.url().should('not.include', Cypress.config('baseUrl'))
     cy.contains('Mock OpenID Connect login form')
