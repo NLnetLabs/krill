@@ -99,7 +99,7 @@ async fn expected_issued_cer(ca: &Handle, rcn: &ResourceClassName) -> String {
     ObjectName::from(rc_key.incoming_cert().cert()).to_string()
 }
 
-async fn will_publish(publisher: &PublisherHandle, files: &Vec<String>) -> bool {
+async fn will_publish(publisher: &PublisherHandle, files: &[String]) -> bool {
     let objects: Vec<_> = files.iter().map(|s| s.as_str()).collect();
     for _ in 0..300 {
         let details = publisher_details(publisher).await;
