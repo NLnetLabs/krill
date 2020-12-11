@@ -1,17 +1,17 @@
 #![recursion_limit = "155"]
 
-use std::{collections::HashMap, str::FromStr};
-
-use krill::{cli::report::ApiResponse, test::*};
-use krill::cli::options::{Command, CaCommand, HistoryOptions};
-use krill::commons::api::Handle;
-
 #[cfg(feature = "ui-tests")]
 mod ui;
 
 #[tokio::test]
 #[cfg(all(feature = "ui-tests", feature = "multi-user"))]
 async fn multi_user_config_file_with_ta_test() {
+    use std::{collections::HashMap, str::FromStr};
+
+    use krill::cli::options::{CaCommand, Command, HistoryOptions};
+    use krill::commons::api::Handle;
+    use krill::{cli::report::ApiResponse, test::*};
+
     krill::constants::enable_testbed();
 
     ui::run_krill_ui_test("multi_user_config_file_with_ta", false).await;
@@ -24,18 +24,21 @@ async fn multi_user_config_file_with_ta_test() {
     // TODO: improve this to match the exact sequence of expected actions and
     // attributed actors.
     let mut cas_and_users = HashMap::new();
-    cas_and_users.insert("ca_admin",     "admin@krill");
+    cas_and_users.insert("ca_admin", "admin@krill");
     cas_and_users.insert("ca_readwrite", "readwrite@krill");
-    cas_and_users.insert("ca_readonly",  "rohelper@krill");
+    cas_and_users.insert("ca_readonly", "rohelper@krill");
 
     for (ca, user) in cas_and_users {
-        let r = krill_admin(
-            Command::CertAuth(
-                CaCommand::ShowHistory(
-                    Handle::from_str(ca).unwrap(),
-                    HistoryOptions::default()))).await;
+        let r = krill_admin(Command::CertAuth(CaCommand::ShowHistory(
+            Handle::from_str(ca).unwrap(),
+            HistoryOptions::default(),
+        )))
+        .await;
 
-        assert!(matches!(r, ApiResponse::CertAuthHistory(_)), "Expected a history API response");
+        assert!(
+            matches!(r, ApiResponse::CertAuthHistory(_)),
+            "Expected a history API response"
+        );
 
         if let ApiResponse::CertAuthHistory(history) = r {
             let mut krill_count = 0;
@@ -43,13 +46,22 @@ async fn multi_user_config_file_with_ta_test() {
             for cmd in history.commands() {
                 let expected_user = format!("user:{}", user);
                 match &cmd.actor {
-                    s if s == "krill"        => krill_count += 1,
+                    s if s == "krill" => krill_count += 1,
                     s if s == &expected_user => user_count += 1,
-                    _ => assert!(false, format!("Unexpected actor {} in history for CA '{}'", &cmd.actor, ca)),
+                    _ => assert!(
+                        false,
+                        format!("Unexpected actor {} in history for CA '{}'", &cmd.actor, ca)
+                    ),
                 }
             }
-            assert!(krill_count > 0, format!("Missing history actions by user krill for CA '{}'", ca));
-            assert!(user_count > 0, format!("Missing history actions by user '{}' for CA '{}'", user, ca));
+            assert!(
+                krill_count > 0,
+                format!("Missing history actions by user krill for CA '{}'", ca)
+            );
+            assert!(
+                user_count > 0,
+                format!("Missing history actions by user '{}' for CA '{}'", user, ca)
+            );
         }
     }
 }
