@@ -49,9 +49,7 @@ impl ConfigDefaults {
     fn always_recover_data() -> bool {
         env::var(KRILL_ENV_FORCE_RECOVER).is_ok()
     }
-    fn rsync_base() -> uri::Rsync {
-        uri::Rsync::from_str("rsync://localhost/repo/").unwrap()
-    }
+
     fn service_uri() -> String {
         "https://localhost:3000/".to_string()
     }
@@ -208,13 +206,8 @@ pub struct Config {
 
     pub pid_file: Option<PathBuf>,
 
-    #[serde(default = "ConfigDefaults::rsync_base")]
-    pub rsync_base: uri::Rsync,
-
     #[serde(default = "ConfigDefaults::service_uri")]
     pub service_uri: String,
-
-    rrdp_service_uri: Option<String>,
 
     #[serde(
         default = "ConfigDefaults::log_level",
@@ -338,17 +331,6 @@ impl Config {
         uri::Https::from_str(&self.service_uri).unwrap()
     }
 
-    pub fn rrdp_service_uri(&self) -> uri::Https {
-        match &self.rrdp_service_uri {
-            None => uri::Https::from_string(format!("{}rrdp/", &self.service_uri)).unwrap(),
-            Some(uri) => uri::Https::from_str(uri).unwrap(),
-        }
-    }
-
-    pub fn ta_cert_uri(&self) -> uri::Https {
-        uri::Https::from_string(format!("{}ta/ta.cer", &self.service_uri)).unwrap()
-    }
-
     pub fn pid_file(&self) -> PathBuf {
         match &self.pid_file {
             None => {
@@ -379,9 +361,8 @@ impl Config {
         let data_dir = data_dir.clone();
         let archive_threshold_days = Some(0);
         let always_recover_data = false;
-        let rsync_base = ConfigDefaults::rsync_base();
         let service_uri = ConfigDefaults::service_uri();
-        let rrdp_service_uri = Some("https://localhost:3000/test-rrdp/".to_string());
+
         let log_level = LevelFilter::Debug;
         let log_type = LogType::Stderr;
         let mut log_file = data_dir.clone();
@@ -448,9 +429,7 @@ impl Config {
             data_dir,
             archive_threshold_days,
             always_recover_data,
-            rsync_base,
             service_uri,
-            rrdp_service_uri,
             log_level,
             log_type,
             log_file,
@@ -493,7 +472,6 @@ impl Config {
         let mut config = Self::test_config(data_dir);
         config.port = 3001;
         config.service_uri = "https://localhost:3001/".to_string();
-        config.rsync_base = uri::Rsync::from_str("rsync://remotehost/repo/").unwrap();
         config
     }
 
@@ -547,13 +525,6 @@ impl Config {
     pub fn verify(&self) -> Result<(), ConfigError> {
         if self.port < 1024 {
             return Err(ConfigError::other("Port number must be >1024"));
-        }
-
-        if !self.rsync_base.to_string().ends_with('/') {
-            return Err(ConfigError::other("rsync base URI must end with '/'"));
-        }
-        if !self.rrdp_service_uri().to_string().ends_with('/') {
-            return Err(ConfigError::other("service URI must end with '/'"));
         }
 
         if !self.service_uri.ends_with('/') {

@@ -6,9 +6,7 @@ use std::sync::Arc;
 use bytes::Bytes;
 use rpki::uri;
 
-use crate::commons::{actor::Actor, api::{
-    Handle, ListReply, PublishDelta, PublisherDetails, PublisherHandle, RepoInfo, RepositoryHandle,
-}};
+use crate::commons::api::PublicationServerUris;
 use crate::commons::crypto::{KrillSigner, ProtocolCms, ProtocolCmsBuilder};
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::{AggregateStore, AggregateStoreError};
@@ -16,6 +14,10 @@ use crate::commons::remote::cmslogger::CmsLogger;
 use crate::commons::remote::rfc8181;
 use crate::commons::remote::rfc8183;
 use crate::commons::KrillResult;
+use crate::commons::{
+    actor::Actor,
+    api::{Handle, ListReply, PublishDelta, PublisherDetails, PublisherHandle, RepoInfo, RepositoryHandle},
+};
 use crate::constants::*;
 use crate::daemon::config::Config;
 use crate::pubd::{self, CmdDet, RepoStats, Repository};
@@ -42,7 +44,11 @@ pub struct PubServer {
 /// # Constructing
 ///
 impl PubServer {
-    pub fn remove_if_empty(config: Arc<Config>, signer: Arc<KrillSigner>, actor: &Actor) -> Result<Option<Self>, Error> {
+    pub fn remove_if_empty(
+        config: Arc<Config>,
+        signer: Arc<KrillSigner>,
+        actor: &Actor,
+    ) -> Result<Option<Self>, Error> {
         let mut pub_server_dir = config.data_dir.clone();
         pub_server_dir.push(PUBSERVER_DIR);
         if pub_server_dir.exists() {
@@ -59,35 +65,23 @@ impl PubServer {
     }
 
     pub fn build(config: Arc<Config>, signer: Arc<KrillSigner>, actor: &Actor) -> Result<Self, Error> {
-        let default = Self::repository_handle();
-
         let store = Arc::new(AggregateStore::<Repository>::new(&config.data_dir, PUBSERVER_DIR)?);
 
         let mut force_session_reset = false;
-        if config.always_recover_data {
-            store.recover()?;
-            force_session_reset = true;
-        } else if let Err(e) = store.warm() {
-            error!(
-                "Could not warm up cache, storage seems corrupt, will try to recover!! Error was: {}",
-                e
-            );
-            store.recover()?;
-            force_session_reset = true;
-        }
 
-        if !store.has(&default)? {
-            info!("Creating default repository");
-
-            let ini = pubd::IniDet::init(
-                &default,
-                config.rsync_base.clone(),
-                config.rrdp_service_uri(),
-                &config.data_dir,
-                signer.deref(),
-            )?;
-            let repo = store.add(ini)?;
-            repo.write()?;
+        let default = Self::repository_handle();
+        if store.has(&default)? {
+            if config.always_recover_data {
+                store.recover()?;
+                force_session_reset = true;
+            } else if let Err(e) = store.warm() {
+                error!(
+                    "Could not warm up cache, storage seems corrupt, will try to recover!! Error was: {}",
+                    e
+                );
+                store.recover()?;
+                force_session_reset = true;
+            }
         }
 
         let server = PubServer { config, store, signer };
@@ -99,8 +93,7 @@ impl PubServer {
         Ok(server)
     }
 }
-
-/// # Publication Protocol support
+/// # Repository Server Management
 ///
 impl PubServer {
     fn repository_handle() -> RepositoryHandle {
@@ -113,12 +106,59 @@ impl PubServer {
         match self.store.get_latest(&handle) {
             Ok(repo) => Ok(repo),
             Err(e) => match e {
-                AggregateStoreError::UnknownAggregate(_) => Err(Error::PublisherNoEmbeddedRepo),
+                AggregateStoreError::UnknownAggregate(_) => Err(Error::RepositoryServerNotEnabled),
                 _ => Err(Error::AggregateStoreError(e)),
             },
         }
     }
 
+    pub fn repository_initialised(&self) -> KrillResult<bool> {
+        self.store
+            .has(&Self::repository_handle())
+            .map_err(Error::AggregateStoreError)
+    }
+
+    /// Create the publication server, will fail if it was already created.
+    pub fn repository_init(&self, uris: PublicationServerUris) -> KrillResult<()> {
+        if self.repository().is_ok() {
+            Err(Error::RepositoryServerAlreadyInitialised)
+        } else {
+            info!("Creating default repository");
+
+            let (rrdp_base_uri, rsync_jail) = uris.unpack();
+
+            let ini = pubd::IniDet::init(
+                &Self::repository_handle(),
+                rsync_jail,
+                rrdp_base_uri,
+                &self.config.data_dir,
+                self.signer.deref(),
+            )?;
+            let repo = self.store.add(ini)?;
+            repo.write()?;
+
+            Ok(())
+        }
+    }
+
+    /// Remove the publication server. Will fail if it still
+    /// has publishers. Or if it does not exist
+    pub fn repository_delete(&self) -> KrillResult<()> {
+        let handle = Self::repository_handle();
+        if !self.store.has(&handle)? {
+            Err(Error::RepositoryServerNotInitialised)
+        } else if !self.publishers()?.is_empty() {
+            Err(Error::RepositoryServerHasPublishers)
+        } else {
+            self.store.drop_aggregate(&handle)?;
+            Ok(())
+        }
+    }
+}
+
+/// # Publication Protocol support
+///
+impl PubServer {
     /// Handle an RFC8181 request and sign the response
     pub fn rfc8181(&self, publisher_handle: PublisherHandle, msg_bytes: Bytes, actor: &Actor) -> KrillResult<Bytes> {
         let repository = self.repository()?;
@@ -283,6 +323,7 @@ mod tests {
     use crate::test;
 
     use super::*;
+    use crate::test::{https, rsync};
 
     fn publisher_alice(work_dir: &PathBuf) -> Publisher {
         let signer = KrillSigner::build(work_dir).unwrap();
@@ -307,7 +348,16 @@ mod tests {
         let signer = Arc::new(signer);
 
         let actor = Actor::test_from_def(ACTOR_TEST);
-        PubServer::build(config, signer, &actor).unwrap()
+        let pubserver = PubServer::build(config, signer, &actor).unwrap();
+
+        let rsync_base = rsync("rsync://localhost/repo/");
+        let rrdp_base = https("https://localhost/repo/rrdp/");
+
+        let uris = PublicationServerUris::new(rrdp_base, rsync_base);
+
+        pubserver.repository_init(uris).unwrap();
+
+        pubserver
     }
 
     #[test]

@@ -158,6 +158,36 @@ impl fmt::Display for Token {
     }
 }
 
+//------------ PublicationServerUris -----------------------------------------
+
+/// Contains the information needed to initialise a new Publication Server
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct PublicationServerUris {
+    rrdp_base_uri: uri::Https,
+    rsync_jail: uri::Rsync,
+}
+
+impl PublicationServerUris {
+    pub fn new(rrdp_base_uri: uri::Https, rsync_jail: uri::Rsync) -> Self {
+        PublicationServerUris {
+            rrdp_base_uri,
+            rsync_jail,
+        }
+    }
+
+    pub fn rrdp_base_uri(&self) -> &uri::Https {
+        &self.rrdp_base_uri
+    }
+
+    pub fn rsync_jail(&self) -> &uri::Rsync {
+        &self.rsync_jail
+    }
+
+    pub fn unpack(self) -> (uri::Https, uri::Rsync) {
+        (self.rrdp_base_uri, self.rsync_jail)
+    }
+}
+
 //------------ PublisherSummaryInfo ------------------------------------------
 
 /// Defines a summary of publisher information to be used in the publisher

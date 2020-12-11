@@ -21,9 +21,9 @@ use crate::cli::report::{ApiResponse, ReportFormat};
 use crate::cli::{Error, KrillClient, KrillPubdClient};
 use crate::commons::api::{
     AddChildRequest, CertAuthInfo, CertAuthInit, CertifiedKeyInfo, ChildAuthRequest, ChildHandle, Handle,
-    ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, Publish, PublisherDetails, PublisherHandle,
-    PublisherList, RepositoryUpdate, ResourceClassName, ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList,
-    RtaName, RtaPrepResponse, Token, TypedPrefix, UpdateChildRequest,
+    ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublicationServerUris, Publish, PublisherDetails,
+    PublisherHandle, PublisherList, RepositoryUpdate, ResourceClassName, ResourceSet, RoaDefinition,
+    RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, Token, TypedPrefix, UpdateChildRequest,
 };
 use crate::commons::bgp::{Announcement, BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::crypto::SignSupport;
@@ -75,7 +75,6 @@ pub async fn server_ready(uri: &str) -> bool {
 
 fn test_config(dir: &PathBuf) -> Config {
     crate::constants::enable_test_mode();
-    crate::constants::enable_testbed();
     crate::constants::enable_test_announcements();
     Config::test(dir)
 }
@@ -86,7 +85,14 @@ fn test_config(dir: &PathBuf) -> Config {
 pub async fn start_krill() -> PathBuf {
     let dir = tmp_dir();
     let config = test_config(&dir);
-    tokio::spawn(server::start_krill_daemon(Arc::new(config), KrillMode::Testbed));
+
+    let uris = {
+        let rsync_base = uri::Rsync::from_str("rsync://localhost/repo/").unwrap();
+        let rrdp_base_uri = uri::Https::from_str("https://localhost:3000/test-rrdp/").unwrap();
+        PublicationServerUris::new(rrdp_base_uri, rsync_base)
+    };
+
+    tokio::spawn(server::start_krill_daemon(Arc::new(config), KrillMode::Testbed(uris)));
     assert!(krill_server_ready().await);
     dir
 }

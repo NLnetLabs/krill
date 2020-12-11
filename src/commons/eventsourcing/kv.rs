@@ -128,6 +128,13 @@ impl KeyValueStore {
         }
     }
 
+    /// Delete a scope
+    pub fn drop_scope(&self, scope: &str) -> Result<(), KeyValueError> {
+        match self {
+            KeyValueStore::Disk(disk_store) => disk_store.drop_scope(scope),
+        }
+    }
+
     /// Move a value from one key to another
     pub fn move_key(&self, from: &KeyStoreKey, to: &KeyStoreKey) -> Result<(), KeyValueError> {
         match self {
@@ -241,6 +248,14 @@ impl KeyValueStoreDiskImpl {
         let path = self.file_path(key);
         if path.exists() {
             fs::remove_file(path)?;
+        }
+        Ok(())
+    }
+
+    pub fn drop_scope(&self, scope: &str) -> Result<(), KeyValueError> {
+        let path = self.scope_path(Some(&scope.to_string()));
+        if path.exists() {
+            fs::remove_dir_all(path)?;
         }
         Ok(())
     }

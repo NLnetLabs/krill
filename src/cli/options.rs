@@ -18,8 +18,8 @@ use rpki::x509::Time;
 use crate::cli::report::{ReportError, ReportFormat};
 use crate::commons::api::{
     AddChildRequest, AuthorizationFmtError, CertAuthInit, ChildAuthRequest, ChildHandle, Handle, ParentCaContact,
-    ParentCaReq, ParentHandle, PublisherHandle, ResourceSet, ResourceSetError, RoaDefinitionUpdates, RtaName, Token,
-    UpdateChildRequest,
+    ParentCaReq, ParentHandle, PublicationServerUris, PublisherHandle, ResourceSet, ResourceSetError,
+    RoaDefinitionUpdates, RtaName, Token, UpdateChildRequest,
 };
 use crate::commons::api::{RepositoryUpdate, RoaDefinition};
 use crate::commons::crypto::{IdCert, SignSupport};
@@ -249,30 +249,6 @@ impl Options {
             )
         }
 
-        fn add_rsync_base_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-            app.arg(
-                Arg::with_name("rsync")
-                    .long("rsync")
-                    .value_name("uri")
-                    .help("Specify the base rsync URI for your repository, must end with '/'.")
-                    .required(true),
-            )
-        }
-
-        fn add_rrdp_service_uri_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-            app.arg(
-                Arg::with_name("rrdp")
-                    .long("rrdp")
-                    .value_name("uri")
-                    .help(
-                        "Specify the base https URI for your RRDP (excluding notification.xml), \
-                    must \
-                    end with '/'",
-                    )
-                    .required(true),
-            )
-        }
-
         #[cfg(feature = "multi-user")]
         fn add_id_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
             app.arg(
@@ -297,22 +273,13 @@ impl Options {
             )
         }
 
-        let mut with_repo = SubCommand::with_name("repo").about("Use a self-hosted repository (not recommended)");
+        let mut simple = SubCommand::with_name("simple").about("Use a 3rd party repository for publishing");
 
-        with_repo = Self::add_general_args(with_repo);
-        with_repo = add_data_dir_arg(with_repo);
-        with_repo = add_log_file_arg(with_repo);
-        with_repo = add_rsync_base_arg(with_repo);
-        with_repo = add_rrdp_service_uri_arg(with_repo);
+        simple = Self::add_general_args(simple);
+        simple = add_data_dir_arg(simple);
+        simple = add_log_file_arg(simple);
 
-        let mut with_3rd = SubCommand::with_name("simple").about("Use a 3rd party repository for publishing");
-
-        with_3rd = Self::add_general_args(with_3rd);
-        with_3rd = add_data_dir_arg(with_3rd);
-        with_3rd = add_log_file_arg(with_3rd);
-
-        config_sub = config_sub.subcommand(with_3rd);
-        config_sub = config_sub.subcommand(with_repo);
+        config_sub = config_sub.subcommand(simple);
 
         #[cfg(feature = "multi-user")]
         {
@@ -771,8 +738,8 @@ impl Options {
                 .value_name("file")
                 .long("response")
                 .short("r")
-                .help("The location of the RFC8183 Publisher Response XML file. Defaults to reading from STDIN")
-                .required(false),
+                .help("The location of the RFC8183 Publisher Response XML file.")
+                .required(true),
         );
 
         app.subcommand(sub)
@@ -1065,39 +1032,6 @@ impl Options {
         }
     }
 
-    fn parse_matches_repo_config(matches: &ArgMatches) -> Result<Options, Error> {
-        let general_args = GeneralArgs::from_matches(matches)?;
-        let rrdp_base: uri::Https = matches.value_of("rrdp").map(uri::Https::from_str).unwrap()?;
-
-        if !rrdp_base.as_str().ends_with('/') {
-            return Err(Error::general("URI for --rrdp MUST end with a '/'"));
-        }
-
-        let rsync_base = matches.value_of("rsync").map(uri::Rsync::from_str).unwrap()?;
-
-        if !rsync_base.to_string().ends_with('/') {
-            return Err(Error::general("URI for --rsync MUST end with a '/'"));
-        }
-
-        let mut details = KrillInitDetails::default();
-        details.with_rsync_base(rsync_base);
-        details.with_rrdp_service_uri(rrdp_base);
-
-        if let Some(data) = matches.value_of("data") {
-            if !data.ends_with('/') {
-                return Err(Error::general("Path for --data MUST end with a '/'"));
-            }
-            details.with_data_dir(data);
-        }
-
-        if let Some(log_file) = matches.value_of("logfile") {
-            details.with_log_file(log_file);
-        }
-
-        let command = Command::Init(details);
-        Ok(Options::make(general_args, command))
-    }
-
     fn parse_matches_simple_config(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
         let mut details = KrillInitDetails::default();
@@ -1144,9 +1078,7 @@ impl Options {
     }
 
     fn parse_matches_config(matches: &ArgMatches) -> Result<Options, Error> {
-        if let Some(m) = matches.subcommand_matches("repo") {
-            Self::parse_matches_repo_config(m)
-        } else if let Some(m) = matches.subcommand_matches("simple") {
+        if let Some(m) = matches.subcommand_matches("simple") {
             Self::parse_matches_simple_config(m)
         } else if let Some(m) = matches.subcommand_matches("user") {
             Self::parse_matches_user_config(m)
@@ -1884,12 +1816,6 @@ impl KrillPubcOptions {
         app.subcommand(sub)
     }
 
-    fn make_publishers_stats_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("stats").about("Show publication server stats.");
-        sub = Options::add_general_args(sub);
-        app.subcommand(sub)
-    }
-
     fn add_publisher_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         app.arg(
             Arg::with_name("publisher")
@@ -1897,6 +1823,30 @@ impl KrillPubcOptions {
                 .short("p")
                 .long("publisher")
                 .help("The handle (name) of the publisher.")
+                .required(true),
+        )
+    }
+
+    fn add_rsync_base_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        app.arg(
+            Arg::with_name("rsync")
+                .long("rsync")
+                .value_name("uri")
+                .help("Specify the base rsync URI for your repository, must end with '/'.")
+                .required(true),
+        )
+    }
+
+    fn add_rrdp_base_uri_arg<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        app.arg(
+            Arg::with_name("rrdp")
+                .long("rrdp")
+                .value_name("uri")
+                .help(
+                    "Specify the base https URI for your RRDP (excluding notification.xml), \
+                    must \
+                    end with '/'",
+                )
                 .required(true),
         )
     }
@@ -1947,16 +1897,47 @@ impl KrillPubcOptions {
         app.subcommand(sub)
     }
 
+    fn make_publication_server_stats_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("stats").about("Show publication server stats.");
+        sub = Options::add_general_args(sub);
+        app.subcommand(sub)
+    }
+
+    fn make_publication_server_init_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("init").about("Initialise publication server.");
+        sub = Options::add_general_args(sub);
+
+        sub = Self::add_rsync_base_arg(sub);
+        sub = Self::add_rrdp_base_uri_arg(sub);
+
+        app.subcommand(sub)
+    }
+
+    fn make_publication_server_delete_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("delete")
+            .about("Delete the publication server so it can re-initialised. (you must first remove all publishers)");
+        sub = Options::add_general_args(sub);
+        app.subcommand(sub)
+    }
+
+    fn make_publication_server_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("server").about("Show RFC8183 Repository Response XML.");
+        sub = Self::make_publication_server_stats_sc(sub);
+        sub = Self::make_publication_server_init_sc(sub);
+        sub = Self::make_publication_server_delete_sc(sub);
+        app.subcommand(sub)
+    }
+
     fn make_matches<'a>() -> ArgMatches<'a> {
         let mut app = App::new(KRILL_PUBC_CLIENT_APP).version(KRILL_VERSION);
 
         app = Self::make_publishers_list_sc(app);
         app = Self::make_publishers_stale_sc(app);
-        app = Self::make_publishers_stats_sc(app);
         app = Self::make_publishers_add_sc(app);
         app = Self::make_publishers_remove_sc(app);
         app = Self::make_publishers_show_sc(app);
         app = Self::make_publishers_response_sc(app);
+        app = Self::make_publication_server_sc(app);
 
         app.get_matches()
     }
@@ -1976,12 +1957,6 @@ impl KrillPubcOptions {
         let general_args = GeneralArgs::from_matches(matches)?;
         let seconds = i64::from_str(matches.value_of("seconds").unwrap()).map_err(|_| Error::InvalidSeconds)?;
         let command = PublishersCommand::StalePublishers(seconds);
-        Ok(KrillPubcOptions::make(general_args, command))
-    }
-
-    fn parse_matches_publishers_stats(matches: &ArgMatches) -> Result<KrillPubcOptions, Error> {
-        let general_args = GeneralArgs::from_matches(matches)?;
-        let command = PublishersCommand::Stats;
         Ok(KrillPubcOptions::make(general_args, command))
     }
 
@@ -2024,13 +1999,61 @@ impl KrillPubcOptions {
         Ok(KrillPubcOptions::make(general_args, command))
     }
 
+    fn parse_matches_publication_server_stats(matches: &ArgMatches) -> Result<KrillPubcOptions, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let command = PublishersCommand::RepositoryStats;
+        Ok(KrillPubcOptions::make(general_args, command))
+    }
+
+    fn parse_matches_publication_server_init(matches: &ArgMatches) -> Result<KrillPubcOptions, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+
+        let rsync_str = matches.value_of("rsync").unwrap();
+        let rrdp_str = matches.value_of("rrdp").unwrap();
+
+        if !rsync_str.ends_with('/') {
+            return Err(Error::general("rsync base URI must end with '/'"));
+        }
+
+        if !rrdp_str.ends_with('/') {
+            return Err(Error::general("RRDP base URI must end with '/'"));
+        }
+
+        let rsync = uri::Rsync::from_str(rsync_str)
+            .map_err(|e| Error::GeneralArgumentError(format!("Invalid rsync URI: {}", e)))?;
+
+        let rrdp = uri::Https::from_str(rrdp_str)
+            .map_err(|e| Error::GeneralArgumentError(format!("Invalid RRDP URI: {}", e)))?;
+
+        let uris = PublicationServerUris::new(rrdp, rsync);
+
+        let command = PublishersCommand::RepositoryInit(uris);
+        Ok(KrillPubcOptions::make(general_args, command))
+    }
+
+    fn parse_matches_publication_server_delete(matches: &ArgMatches) -> Result<KrillPubcOptions, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let command = PublishersCommand::RepositoryDelete;
+        Ok(KrillPubcOptions::make(general_args, command))
+    }
+
+    fn parse_matches_publication_server(matches: &ArgMatches) -> Result<KrillPubcOptions, Error> {
+        if let Some(m) = matches.subcommand_matches("stats") {
+            Self::parse_matches_publication_server_stats(m)
+        } else if let Some(m) = matches.subcommand_matches("init") {
+            Self::parse_matches_publication_server_init(m)
+        } else if let Some(m) = matches.subcommand_matches("delete") {
+            Self::parse_matches_publication_server_delete(m)
+        } else {
+            Err(Error::UnrecognisedSubCommand)
+        }
+    }
+
     fn parse_matches(matches: ArgMatches) -> Result<KrillPubcOptions, Error> {
         if let Some(m) = matches.subcommand_matches("list") {
             Self::parse_matches_publishers_list(m)
         } else if let Some(m) = matches.subcommand_matches("stale") {
             Self::parse_matches_publishers_stale(m)
-        } else if let Some(m) = matches.subcommand_matches("stats") {
-            Self::parse_matches_publishers_stats(m)
         } else if let Some(m) = matches.subcommand_matches("add") {
             Self::parse_matches_publishers_add(m)
         } else if let Some(m) = matches.subcommand_matches("remove") {
@@ -2039,6 +2062,8 @@ impl KrillPubcOptions {
             Self::parse_matches_publishers_show(m)
         } else if let Some(m) = matches.subcommand_matches("response") {
             Self::parse_matches_publishers_repo_response(m)
+        } else if let Some(m) = matches.subcommand_matches("server") {
+            Self::parse_matches_publication_server(m)
         } else {
             Err(Error::UnrecognisedSubCommand)
         }
@@ -2169,35 +2194,17 @@ pub enum BulkCaCommand {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct KrillInitDetails {
-    rsync_base: Option<uri::Rsync>,
-    rrdp_service_uri: Option<uri::Https>,
     data_dir: Option<String>,
     log_file: Option<String>,
 }
 
 impl KrillInitDetails {
-    pub fn with_rsync_base(&mut self, rsync_base: uri::Rsync) {
-        self.rsync_base = Some(rsync_base);
-    }
-
-    pub fn with_rrdp_service_uri(&mut self, rrdp_service_uri: uri::Https) {
-        self.rrdp_service_uri = Some(rrdp_service_uri);
-    }
-
     pub fn with_data_dir(&mut self, data_dir: &str) {
         self.data_dir = Some(data_dir.to_string())
     }
 
     pub fn with_log_file(&mut self, log_file: &str) {
         self.log_file = Some(log_file.to_string())
-    }
-
-    pub fn rsync_base(&self) -> Option<&uri::Rsync> {
-        self.rsync_base.as_ref()
-    }
-
-    pub fn rrdp_service_uri(&self) -> Option<&uri::Https> {
-        self.rrdp_service_uri.as_ref()
     }
 
     pub fn data_dir(&self) -> Option<&String> {
@@ -2212,8 +2219,6 @@ impl KrillInitDetails {
 impl Default for KrillInitDetails {
     fn default() -> Self {
         KrillInitDetails {
-            rsync_base: None,
-            rrdp_service_uri: None,
             data_dir: None,
             log_file: None,
         }
@@ -2262,8 +2267,10 @@ pub enum PublishersCommand {
     RemovePublisher(PublisherHandle),
     RepositoryResponse(PublisherHandle),
     StalePublishers(i64),
-    Stats,
     PublisherList,
+    RepositoryStats,
+    RepositoryInit(PublicationServerUris),
+    RepositoryDelete,
 }
 
 //------------ Error ---------------------------------------------------------

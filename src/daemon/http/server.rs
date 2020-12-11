@@ -711,7 +711,7 @@ async fn api(req: Request) -> RoutingResult {
             Some("authorized") => api_authorized(req).await,
             Some("bulk") => api_bulk(req, &mut path).await,
             Some("cas") => api_cas(req, &mut path).await,
-            Some("publishers") => api_publishers(req, &mut path).await,
+            Some("publication") => api_publication(req, &mut path).await,
             _ => aa!(req, LOGIN, render_unknown_method()),
         }
     }
@@ -829,6 +829,31 @@ async fn api_ca_routes(req: Request, path: &mut RequestPath, ca: Handle) -> Rout
     }
 }
 
+async fn api_publication(req: Request, path: &mut RequestPath) -> RoutingResult {
+    match path.next() {
+        Some("publishers") => api_publishers(req, path).await,
+        Some("server") => aa!(req, PUB_ADMIN, { api_publication_server(req, path).await }),
+        _ => render_unknown_method(),
+    }
+}
+
+async fn api_publication_server(req: Request, path: &mut RequestPath) -> RoutingResult {
+    match path.next() {
+        None => match *req.method() {
+            Method::POST => {
+                let state = req.state.clone();
+                match req.json().await {
+                    Ok(uris) => render_empty_res(state.write().await.repository_init(uris)),
+                    Err(e) => render_error(e),
+                }
+            }
+            Method::DELETE => render_empty_res(req.state.write().await.repository_delete()),
+            _ => render_unknown_method(),
+        },
+        _ => render_unknown_method(),
+    }
+}
+
 async fn api_publishers(req: Request, path: &mut RequestPath) -> RoutingResult {
     match *req.method() {
         Method::GET => match path.path_arg() {
@@ -919,7 +944,7 @@ pub async fn api_show_pbl(req: Request, publisher: Handle) -> RoutingResult {
 //------------ repository_response ---------------------------------------------
 
 pub async fn api_repository_response_xml(req: Request, publisher: Handle) -> RoutingResult {
-    aa!(req, PUB_ADMIN, {
+    aa!(req, PUB_READ, {
         match repository_response(&req, &publisher).await {
             Ok(res) => Ok(HttpResponse::xml(res.encode_vec())),
             Err(e) => render_error(e),
@@ -928,7 +953,7 @@ pub async fn api_repository_response_xml(req: Request, publisher: Handle) -> Rou
 }
 
 pub async fn api_repository_response_json(req: Request, publisher: Handle) -> RoutingResult {
-    aa!(req, PUB_ADMIN, {
+    aa!(req, PUB_READ, {
         match repository_response(&req, &publisher).await {
             Ok(res) => render_json(res),
             Err(e) => render_error(e),

@@ -10,23 +10,20 @@ use rpki::cert::Cert;
 use rpki::uri;
 use rpki::x509::Time;
 
-use crate::commons::actor::ActorDef;
+use crate::commons::actor::{Actor, ActorDef};
+use crate::commons::api::{
+    AddChildRequest, AllCertAuthIssues, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthInit, CertAuthIssues,
+    CertAuthList, CertAuthStats, ChildAuthRequest, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria,
+    Handle, ListReply, ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublicationServerUris, PublishDelta,
+    PublisherDetails, PublisherHandle, RepoInfo, RepoStatus, RepositoryContact, RepositoryUpdate, ResourceSet,
+    RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, ServerInfo, TaCertDetails,
+    UpdateChildRequest,
+};
 use crate::commons::bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::crypto::KrillSigner;
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::CommandKey;
 use crate::commons::remote::rfc8183;
-use crate::commons::{
-    actor::Actor,
-    api::{
-        AddChildRequest, AllCertAuthIssues, CaCommandDetails, CaRepoDetails, CertAuthInfo, CertAuthInit,
-        CertAuthIssues, CertAuthList, CertAuthStats, ChildAuthRequest, ChildCaInfo, ChildHandle, CommandHistory,
-        CommandHistoryCriteria, Handle, ListReply, ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses,
-        PublishDelta, PublisherDetails, PublisherHandle, RepoInfo, RepoStatus, RepositoryContact, RepositoryUpdate,
-        ResourceSet, RoaDefinition, RoaDefinitionUpdates, RtaList, RtaName, RtaPrepResponse, ServerInfo, TaCertDetails,
-        UpdateChildRequest,
-    },
-};
 use crate::commons::{KrillEmptyResult, KrillResult};
 use crate::constants::*;
 #[cfg(feature = "multi-user")]
@@ -47,9 +44,9 @@ use crate::pubd::{PubServer, RepoStats};
 use crate::publish::CaPublisher;
 
 //------------ KrillMode ----------------------------------------------------
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub enum KrillMode {
-    Testbed,
+    Testbed(PublicationServerUris),
     Pubd,
     Ca,
     Mixed, // will be removed in 1.1 - used to support existing deployments
@@ -58,20 +55,20 @@ pub enum KrillMode {
 impl KrillMode {
     pub fn cas_enabled(&self) -> bool {
         match self {
-            KrillMode::Testbed | KrillMode::Ca | KrillMode::Mixed => true,
+            KrillMode::Testbed(_) | KrillMode::Ca | KrillMode::Mixed => true,
             KrillMode::Pubd => false,
         }
     }
 
     pub fn pubd_enabled(&self) -> bool {
         match self {
-            KrillMode::Testbed | KrillMode::Pubd | KrillMode::Mixed => true,
+            KrillMode::Testbed(_) | KrillMode::Pubd | KrillMode::Mixed => true,
             KrillMode::Ca => false,
         }
     }
 
     pub fn testbed_enabled(&self) -> bool {
-        *self == KrillMode::Testbed
+        matches!(self, KrillMode::Testbed(_))
     }
 }
 
@@ -167,11 +164,17 @@ impl KrillServer {
         // dyn AuthProvider, or concrete type needs to be known in async fn,
         // etc.
         let authorizer = match config.auth_type {
-            AuthType::MasterToken   => Authorizer::new(config.clone(), MasterTokenAuthProvider::new(config.clone()))?,
+            AuthType::MasterToken => Authorizer::new(config.clone(), MasterTokenAuthProvider::new(config.clone()))?,
             #[cfg(feature = "multi-user")]
-            AuthType::ConfigFile    => Authorizer::new(config.clone(), ConfigFileAuthProvider::new(config.clone(), login_session_cache.clone())?)?,
+            AuthType::ConfigFile => Authorizer::new(
+                config.clone(),
+                ConfigFileAuthProvider::new(config.clone(), login_session_cache.clone())?,
+            )?,
             #[cfg(feature = "multi-user")]
-            AuthType::OpenIDConnect => Authorizer::new(config.clone(), OpenIDConnectAuthProvider::new(config.clone(), login_session_cache.clone())?)?,
+            AuthType::OpenIDConnect => Authorizer::new(
+                config.clone(),
+                OpenIDConnectAuthProvider::new(config.clone(), login_session_cache.clone())?,
+            )?,
         };
         let system_actor = authorizer.actor_from_def(ACTOR_KRILL);
 
@@ -193,7 +196,7 @@ impl KrillServer {
             KrillMode::Mixed => {
                 warn!("Enabling embedded publication server. This will be deprecated in future. See Changelog!")
             }
-            KrillMode::Testbed => info!("Krill uses testbed mode"),
+            KrillMode::Testbed(_) => info!("Krill uses testbed mode"),
             _ => {}
         }
 
@@ -205,17 +208,23 @@ impl KrillServer {
         let caserver = if mode.cas_enabled() {
             let caserver = Arc::new(ca::CaServer::build(config.clone(), event_queue.clone(), signer).await?);
 
-            if mode.testbed_enabled() {
+            if let KrillMode::Testbed(uris) = &mode {
+                let pubserver = pubserver.as_ref().ok_or(Error::RepositoryServerNotEnabled)?;
+
+                if !pubserver.repository_initialised()? {
+                    pubserver.repository_init(uris.clone())?;
+                }
+
                 let ta_handle = ta_handle();
                 if !caserver.has_ca(&ta_handle)? {
                     info!("Creating embedded Trust Anchor");
 
-                    let pubserver = pubserver.as_ref().ok_or(Error::PublisherNoEmbeddedRepo)?;
                     let repo_info: RepoInfo = pubserver.repo_info_for(&ta_handle)?;
 
-                    let ta_uri = config.ta_cert_uri();
+                    let ta_uri = format!("{}ta/ta.cer", uris.rrdp_base_uri());
+                    let ta_uri = uri::Https::from_string(ta_uri).unwrap();
 
-                    let ta_aia = format!("{}ta/ta.cer", config.rsync_base.to_string());
+                    let ta_aia = format!("{}ta/ta.cer", uris.rsync_jail().to_string());
                     let ta_aia = uri::Rsync::from_string(ta_aia).unwrap();
 
                     // Add TA
@@ -288,7 +297,7 @@ impl KrillServer {
             #[cfg(feature = "multi-user")]
             login_session_cache.clone(),
             &config,
-            &system_actor
+            &system_actor,
         );
 
         let post_limits = PostLimits::new(
@@ -380,7 +389,7 @@ impl KrillServer {
 /// # Configure publishers
 impl KrillServer {
     fn get_pubserver(&self) -> KrillResult<&Arc<PubServer>> {
-        self.pubserver.as_ref().ok_or(Error::PublisherNoEmbeddedRepo)
+        self.pubserver.as_ref().ok_or(Error::RepositoryServerNotEnabled)
     }
 
     /// Returns the repository server stats
@@ -863,6 +872,20 @@ impl KrillServer {
     /// Handles a list request sent to the API, or.. through the CmsProxy.
     pub fn handle_list(&self, publisher: &PublisherHandle) -> KrillResult<ListReply> {
         self.get_pubserver()?.list(publisher)
+    }
+}
+
+/// # Handle Repository Server requests
+///
+impl KrillServer {
+    /// Create the publication server, will fail if it was already created.
+    pub fn repository_init(&self, uris: PublicationServerUris) -> KrillResult<()> {
+        self.get_pubserver()?.repository_init(uris)
+    }
+
+    /// Remove the publication server. Will fail if it still has publishers. Or if it does not exist
+    pub fn repository_delete(&self) -> KrillResult<()> {
+        self.get_pubserver()?.repository_delete()
     }
 }
 

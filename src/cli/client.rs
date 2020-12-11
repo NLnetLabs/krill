@@ -405,22 +405,6 @@ impl KrillClient {
             &format!("service_uri = \"{}\"", self.server),
         );
 
-        if let Some(rsync_base) = details.rsync_base() {
-            config = config.replace("### repo_enabled = false", "repo_enabled = true");
-
-            config = config.replace(
-                "### rsync_base = \"rsync://localhost/repo/\"",
-                &format!("rsync_base = \"{}\"", rsync_base),
-            )
-        }
-
-        if let Some(rrdp_service_uri) = details.rrdp_service_uri() {
-            config = config.replace(
-                "### rrdp_service_uri = \"$service_uri/rrdp/\"",
-                &format!("rrdp_service_uri = \"{}\"", rrdp_service_uri),
-            )
-        }
-
         if let Some(data_dir) = details.data_dir() {
             config = config.replace("### data_dir = \"./data\"", &format!("data_dir = \"{}\"", data_dir))
         }
@@ -513,34 +497,44 @@ impl KrillPubdClient {
 
         match command {
             PublishersCommand::PublisherList => {
-                let list: PublisherList = get_json(&server, &token, "api/v1/publishers").await?;
+                let list: PublisherList = get_json(&server, &token, "api/v1/publication/publishers").await?;
                 Ok(ApiResponse::PublisherList(list))
             }
             PublishersCommand::StalePublishers(seconds) => {
-                let uri = format!("api/v1/publishers/stale/{}", seconds);
+                let uri = format!("api/v1/publication/publishers/stale/{}", seconds);
                 let stales = get_json(&server, &token, &uri).await?;
                 Ok(ApiResponse::PublisherList(stales))
             }
-            PublishersCommand::Stats => {
+            PublishersCommand::RepositoryStats => {
                 let stats = get_json(&server, &token, "stats/repo").await?;
                 Ok(ApiResponse::RepoStats(stats))
             }
+            PublishersCommand::RepositoryInit(uris) => {
+                let uri = "api/v1/publication/server";
+                post_json(&server, &token, uri, uris).await?;
+                Ok(ApiResponse::Empty)
+            }
+            PublishersCommand::RepositoryDelete => {
+                let uri = "api/v1/publication/server";
+                delete(&server, &token, uri).await?;
+                Ok(ApiResponse::Empty)
+            }
             PublishersCommand::AddPublisher(req) => {
-                let res = post_json_with_response(&server, &token, "api/v1/publishers", req).await?;
+                let res = post_json_with_response(&server, &token, "api/v1/publication/publishers", req).await?;
                 Ok(ApiResponse::Rfc8183RepositoryResponse(res))
             }
             PublishersCommand::RemovePublisher(handle) => {
-                let uri = format!("api/v1/publishers/{}", handle);
+                let uri = format!("api/v1/publication/publishers/{}", handle);
                 delete(&server, &token, &uri).await?;
                 Ok(ApiResponse::Empty)
             }
             PublishersCommand::ShowPublisher(handle) => {
-                let uri = format!("api/v1/publishers/{}", handle);
+                let uri = format!("api/v1/publication/publishers/{}", handle);
                 let details: PublisherDetails = get_json(&server, &token, &uri).await?;
                 Ok(ApiResponse::PublisherDetails(details))
             }
             PublishersCommand::RepositoryResponse(handle) => {
-                let uri = format!("api/v1/publishers/{}/response.json", handle);
+                let uri = format!("api/v1/publication/publishers/{}/response.json", handle);
                 let res = get_json(&server, &token, &uri).await?;
                 Ok(ApiResponse::Rfc8183RepositoryResponse(res))
             }
@@ -620,8 +614,6 @@ mod tests {
     #[test]
     fn init_config_file() {
         let mut details = KrillInitDetails::default();
-        details.with_rsync_base(test::rsync("rsync://myhost/repo/"));
-        details.with_rrdp_service_uri(test::https("https://myhost/rrdp/"));
         details.with_data_dir("/var/lib/krill/data/");
         details.with_log_file("/var/log/krill/krill.log");
 

@@ -27,7 +27,7 @@ impl CaPublisher {
 
 impl CaPublisher {
     fn get_embedded(&self) -> Result<&Arc<PubServer>, Error> {
-        self.pubserver.as_ref().ok_or(Error::PublisherNoEmbeddedRepo)
+        self.pubserver.as_ref().ok_or(Error::RepositoryServerNotEnabled)
     }
 
     pub async fn publish(&self, ca_handle: &Handle, actor: &Actor) -> Result<(), Error> {

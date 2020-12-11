@@ -151,7 +151,14 @@ pub enum Error {
     PublisherUriOutsideBase(String, String),
     PublisherBaseUriNoSlash(String),
     PublisherDuplicate(PublisherHandle),
-    PublisherNoEmbeddedRepo,
+
+    //-----------------------------------------------------------------
+    // Repository Server Issues
+    //-----------------------------------------------------------------
+    RepositoryServerNotEnabled,
+    RepositoryServerNotInitialised,
+    RepositoryServerHasPublishers,
+    RepositoryServerAlreadyInitialised,
 
     //-----------------------------------------------------------------
     // RFC 8181 (publishing)
@@ -277,7 +284,7 @@ impl fmt::Display for Error {
             //-----------------------------------------------------------------
             // Repository Issues
             //-----------------------------------------------------------------
-            Error::RepoNotSet=> write!(f, "No repository configured for CA"),
+            Error::RepoNotSet => write!(f, "No repository configured for CA"),
 
 
             //-----------------------------------------------------------------
@@ -287,8 +294,14 @@ impl fmt::Display for Error {
             Error::PublisherUriOutsideBase(uri, jail) => write!(f, "Publishing uri '{}' outside repository uri '{}'", uri, jail),
             Error::PublisherBaseUriNoSlash(uri) => write!(f, "Publisher uri '{}' must have a trailing slash", uri),
             Error::PublisherDuplicate(pbl) => write!(f, "Duplicate publisher '{}'", pbl),
-            Error::PublisherNoEmbeddedRepo => write!(f, "No embedded repository configured"),
 
+            //-----------------------------------------------------------------
+            // Repository Server Issues
+            //-----------------------------------------------------------------
+            Error::RepositoryServerNotEnabled=> write!(f, "Publication Server not enabled"),
+            Error::RepositoryServerNotInitialised => write!(f, "Publication Server not initialised"),
+            Error::RepositoryServerHasPublishers => write!(f, "Publication Server cannot be removed, still has publishers"),
+            Error::RepositoryServerAlreadyInitialised => write!(f, "Publication Server already initialised"),
 
             //-----------------------------------------------------------------
             // RFC 8181 (publishing)
@@ -474,8 +487,7 @@ impl Error {
             | Error::CaChildUnknown(_, _)
             | Error::CaParentUnknown(_, _)
             | Error::ApiUnknownResource => StatusCode::NOT_FOUND,
-            Error::ApiInvalidCredentials
-            | Error::ApiInsufficientRights(_) => StatusCode::FORBIDDEN,
+            Error::ApiInvalidCredentials | Error::ApiInsufficientRights(_) => StatusCode::FORBIDDEN,
 
             _ => StatusCode::BAD_REQUEST,
         }
@@ -552,7 +564,13 @@ impl Error {
 
             Error::PublisherBaseUriNoSlash(uri) => ErrorResponse::new("pub-uri-no-slash", &self).with_uri(uri),
 
-            Error::PublisherNoEmbeddedRepo => ErrorResponse::new("pub-no-embedded-repo", &self),
+            //-----------------------------------------------------------------
+            // Repository Server Issues
+            //-----------------------------------------------------------------
+            Error::RepositoryServerNotEnabled => ErrorResponse::new("pub-no-server", &self),
+            Error::RepositoryServerNotInitialised => ErrorResponse::new("pub-repo-not-initialised", &self),
+            Error::RepositoryServerHasPublishers => ErrorResponse::new("pub-repo-has-publishers", &self),
+            Error::RepositoryServerAlreadyInitialised => ErrorResponse::new("pub-repo-initialised", &self),
 
             //-----------------------------------------------------------------
             // RFC 8181
@@ -820,7 +838,7 @@ mod tests {
         );
         verify(
             include_str!("../../test-resources/api/regressions/errors/pub-no-embedded-repo.json"),
-            Error::PublisherNoEmbeddedRepo,
+            Error::RepositoryServerNotEnabled,
         );
 
         //-----------------------------------------------------------------

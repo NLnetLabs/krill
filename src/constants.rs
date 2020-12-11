@@ -15,7 +15,8 @@ pub const KRILL_DEFAULT_CONFIG_FILE: &str = "./defaults/krill-multi-user.conf";
 
 const KRILL_ENV_TEST: &str = "KRILL_TEST";
 const KRILL_ENV_TEST_ANN: &str = "KRILL_TEST_ANN";
-const KRILL_ENV_TESTBED_ENABLED: &str = "KRILL_TESTBED_ENABLED";
+pub const KRILL_ENV_TESTBED_RSYNC: &str = "KRILL_TESTBED_RSYNC";
+pub const KRILL_ENV_TESTBED_RRDP: &str = "KRILL_TESTBED_RRDP";
 pub const KRILL_ENV_UPGRADE_ONLY: &str = "KRILL_UPGRADE_ONLY";
 pub const KRILL_ENV_FORCE_RECOVER: &str = "KRILL_FORCE_RECOVER";
 pub const KRILL_ENV_LOG_LEVEL: &str = "KRILL_LOG_LEVEL";
@@ -28,14 +29,6 @@ pub fn enable_test_mode() {
 
 pub fn test_mode_enabled() -> bool {
     std::env::var(KRILL_ENV_TEST).is_ok()
-}
-
-pub fn enable_testbed() {
-    std::env::set_var(KRILL_ENV_TESTBED_ENABLED, "1");
-}
-
-pub fn testbed_enabled() -> bool {
-    std::env::var(KRILL_ENV_TESTBED_ENABLED).is_ok()
 }
 
 pub fn enable_test_announcements() {

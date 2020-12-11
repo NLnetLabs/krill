@@ -633,6 +633,10 @@ where
         self.cache.read().unwrap().get(id).cloned()
     }
 
+    fn cache_remove(&self, id: &Handle) {
+        self.cache.write().unwrap().remove(id);
+    }
+
     fn cache_update(&self, id: &Handle, arc: Arc<A>) {
         self.cache.write().unwrap().insert(id.clone(), arc);
     }
@@ -978,6 +982,13 @@ where
         }
         self.kv.move_key(&snapshot_new, &snapshot_current)?;
 
+        Ok(())
+    }
+
+    /// Drop an aggregate, completely. Handle with care!
+    pub fn drop_aggregate(&self, id: &Handle) -> Result<(), AggregateStoreError> {
+        self.cache_remove(id);
+        self.kv.drop_scope(id.as_str())?;
         Ok(())
     }
 
