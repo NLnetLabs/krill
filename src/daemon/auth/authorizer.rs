@@ -59,7 +59,7 @@ pub struct Authorizer {
     primary_provider: Box<dyn AuthProvider>,
     fallback_provider: Option<MasterTokenAuthProvider>,
     policy: AuthPolicy,
-    hidden_attributes: Vec<String>,
+    private_attributes: Vec<String>,
 }
 
 impl Authorizer {
@@ -87,15 +87,15 @@ impl Authorizer {
         };
 
         #[cfg(feature = "multi-user")]
-        let hidden_attributes = config.auth_hidden_attributes.clone();
+        let private_attributes = config.auth_private_attributes.clone();
         #[cfg(not(feature = "multi-user"))]
-        let hidden_attributes = vec!["role".to_string()];
+        let private_attributes = vec!["role".to_string()];
 
         Ok(Authorizer {
             primary_provider: Box::new(provider),
             fallback_provider,
             policy: AuthPolicy::new(config)?,
-            hidden_attributes,
+            private_attributes,
         })
     }
 
@@ -142,7 +142,7 @@ impl Authorizer {
         match self.primary_provider.login(auth) {
             Ok(user) => { 
                 let visible_attributes = user.attributes.clone().into_iter()
-                    .filter(|(k, _)| !self.hidden_attributes.contains(k))
+                    .filter(|(k, _)| !self.private_attributes.contains(k))
                     .collect::<HashMap<_, _>>();
 
                 let user = LoggedInUser {

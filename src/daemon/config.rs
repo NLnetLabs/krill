@@ -93,7 +93,7 @@ impl ConfigDefaults {
         PathBuf::from("./policy.polar")
     }
     #[cfg(feature = "multi-user")]
-    fn auth_hidden_attributes() -> Vec<String> {
+    fn auth_private_attributes() -> Vec<String> {
         vec![]
     }
     fn ca_refresh() -> u32 {
@@ -242,8 +242,8 @@ pub struct Config {
     pub auth_policy: PathBuf,
 
     #[cfg(feature = "multi-user")]
-    #[serde(default = "ConfigDefaults::auth_hidden_attributes")]
-    pub auth_hidden_attributes: Vec<String>,
+    #[serde(default = "ConfigDefaults::auth_private_attributes")]
+    pub auth_private_attributes: Vec<String>,
 
     #[cfg(feature = "multi-user")]
     pub auth_users: Option<ConfigAuthUsers>,
@@ -394,7 +394,7 @@ impl Config {
         #[cfg(feature = "multi-user")]
         auth_policy.push("policy.polar");
         #[cfg(feature = "multi-user")]
-        let auth_hidden_attributes = vec![];
+        let auth_private_attributes = vec![];
         #[cfg(feature = "multi-user")]
         let auth_users = None;
         #[cfg(feature = "multi-user")]
@@ -460,7 +460,7 @@ impl Config {
             #[cfg(feature = "multi-user")]
             auth_policy,
             #[cfg(feature = "multi-user")]
-            auth_hidden_attributes,
+            auth_private_attributes,
             #[cfg(feature = "multi-user")]
             auth_users,
             #[cfg(feature = "multi-user")]
