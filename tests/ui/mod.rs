@@ -26,6 +26,7 @@ pub async fn run_krill_ui_test(test_name: &str, _with_openid_server: bool) {
 }
 
 async fn do_run_krill_ui_test(test_name: &str) {
+    krill::constants::enable_test_mode();
     let config_path = &format!("test-resources/ui/{}.conf", test_name);
     let config = Config::read_config(&config_path).unwrap();
     start_krill(Some(config)).await;
