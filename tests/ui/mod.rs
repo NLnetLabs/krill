@@ -4,13 +4,9 @@ mod openid_connect_mock;
 use tokio::task;
 
 use std::env;
-use std::path::PathBuf;
 use std::process::Command;
-use std::sync::Arc;
 
 use krill::daemon::config::Config;
-use krill::daemon::http::server;
-use krill::daemon::krillserver::KrillMode;
 use krill::test::*;
 
 pub async fn run_krill_ui_test(test_name: &str, _with_openid_server: bool) {
@@ -30,21 +26,9 @@ pub async fn run_krill_ui_test(test_name: &str, _with_openid_server: bool) {
 }
 
 async fn do_run_krill_ui_test(test_name: &str) {
-    let dir = sub_dir(&PathBuf::from("work"));
-    let test_dir = dir.to_string_lossy().to_string();
-
-    krill::constants::enable_test_mode();
-    krill::constants::enable_test_announcements();
-
-    let data_dir = PathBuf::from(test_dir);
-    let mut config = Config::read_config(&format!("test-resources/ui/{}.conf", test_name)).unwrap();
-    config.set_data_dir(data_dir);
-    config.init_logging().unwrap();
-    config.verify().unwrap();
-
-    tokio::spawn(server::start_krill_daemon(Arc::new(config), KrillMode::Testbed));
-    println!("Waiting for Krill server to start");
-    assert!(krill_server_ready().await);
+    let config_path = &format!("test-resources/ui/{}.conf", test_name);
+    let config = Config::read_config(&config_path).unwrap();
+    start_krill(Some(config)).await;
 
     let test_name = test_name.to_string();
 

@@ -460,12 +460,7 @@ impl Config {
     }
 
     pub fn test(data_dir: &PathBuf) -> Self {
-        let config = Self::test_config(data_dir);
-        if config.init_logging().is_err() {
-            trace!("Logging already initialised");
-        }
-        config.verify().unwrap();
-        config
+        Self::test_config(data_dir)
     }
 
     pub fn pubd_test(data_dir: &PathBuf) -> Self {

@@ -79,12 +79,25 @@ fn test_config(dir: &PathBuf) -> Config {
     Config::test(dir)
 }
 
+pub fn init_config(config: &Config) {
+    if config.init_logging().is_err() {
+        trace!("Logging already initialised");
+    }
+    config.verify().unwrap();
+}
+
 /// Starts krill server for testing, with embedded TA and repo.
 /// Creates a random base directory in the 'work' folder, and returns
 /// it. Be sure to clean it up when the test is done.
-pub async fn start_krill() -> PathBuf {
+pub async fn start_krill(config: Option<Config>) -> PathBuf {
     let dir = tmp_dir();
-    let config = test_config(&dir);
+    let config = if let Some(mut config) = config {
+        config.set_data_dir(dir.clone());
+        config
+    } else {
+        test_config(&dir)
+    };
+    init_config(&config);
 
     let uris = {
         let rsync_base = uri::Rsync::from_str("rsync://localhost/repo/").unwrap();
@@ -102,6 +115,7 @@ pub async fn start_krill() -> PathBuf {
 pub async fn start_krill_pubd() -> PathBuf {
     let dir = tmp_dir();
     let mut config = test_config(&dir);
+    init_config(&config);
 
     config.port = 3001;
     config.service_uri = "https://localhost:3001/".to_string();

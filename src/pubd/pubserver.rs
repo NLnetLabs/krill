@@ -314,13 +314,13 @@ mod tests {
 
     use tokio::time::delay_for;
 
-    use crate::commons::api::rrdp::PublicationDeltaError;
     use crate::commons::api::rrdp::{CurrentObjects, RrdpSession};
     use crate::commons::api::{ListElement, PublishDeltaBuilder};
     use crate::commons::crypto::{IdCert, IdCertBuilder};
     use crate::commons::util::file::CurrentFile;
     use crate::pubd::Publisher;
     use crate::test;
+    use crate::{commons::api::rrdp::PublicationDeltaError, test::init_config};
 
     use super::*;
     use crate::test::{https, rsync};
@@ -343,6 +343,7 @@ mod tests {
 
     fn make_server(work_dir: &PathBuf) -> PubServer {
         let config = Arc::new(Config::test(work_dir));
+        init_config(&config);
 
         let signer = KrillSigner::build(work_dir).unwrap();
         let signer = Arc::new(signer);

@@ -12,8 +12,6 @@ async fn multi_user_config_file_with_ta_test() {
     use krill::commons::api::Handle;
     use krill::{cli::report::ApiResponse, test::*};
 
-    krill::constants::enable_testbed();
-
     ui::run_krill_ui_test("multi_user_config_file_with_ta", false).await;
 
     // Check the Krill event history after the actions performed against Krill

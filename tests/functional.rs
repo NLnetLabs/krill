@@ -214,7 +214,7 @@ async fn functional() {
     //
     //  * RTAs can be created and co-signed under multiple CAs
 
-    let d = start_krill().await;
+    let d = start_krill(None).await;
 
     let ta = ta_handle();
     let testbed = handle_for("testbed");
