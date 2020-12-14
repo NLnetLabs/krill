@@ -15,11 +15,9 @@ use crate::daemon::ca::CertAuth;
 use crate::daemon::krillserver::KrillServer;
 use crate::pubd::Repository;
 use crate::upgrades::fix_info_last_event_0_8_0::FixInfoFiles;
-use crate::upgrades::roa_cleanup_0_8_0::RoaCleanupError;
 
 pub mod fix_info_last_event_0_8_0;
 pub mod pre_0_6_0;
-pub mod roa_cleanup_0_8_0;
 
 //------------ UpgradeError --------------------------------------------------
 
@@ -39,9 +37,6 @@ pub enum UpgradeError {
 
     #[display(fmt = "Cannot load: {}", _0)]
     CannotLoadAggregate(Handle),
-
-    #[display(fmt = "Cannot clean up redundant roas: {}", _0)]
-    RoaCleanup(RoaCleanupError),
 
     #[display(fmt = "{}", _0)]
     Custom(String),
@@ -81,12 +76,6 @@ impl From<io::Error> for UpgradeError {
     }
 }
 
-impl From<RoaCleanupError> for UpgradeError {
-    fn from(e: RoaCleanupError) -> Self {
-        UpgradeError::RoaCleanup(e)
-    }
-}
-
 //------------ UpgradeStore --------------------------------------------------
 
 /// Implement this for automatic upgrades to key stores
@@ -112,13 +101,8 @@ pub fn pre_start_upgrade(work_dir: &PathBuf) -> Result<(), UpgradeError> {
 }
 
 /// Should be called right after the KrillServer is initiated.
-pub async fn post_start_upgrade(work_dir: &PathBuf, server: &KrillServer) -> Result<(), UpgradeError> {
-    let ca_store: AggregateStore<CertAuth> = AggregateStore::new(work_dir, "cas")?;
-    if ca_store.get_version()? < KeyStoreVersion::V0_8_0_RC1 {
-        info!("Will clean up redundant ROAs for all CAs and update version of storage dirs");
-        roa_cleanup_0_8_0::roa_cleanup(server).await?;
-    }
-
+pub async fn post_start_upgrade(_work_dir: &PathBuf, _server: &KrillServer) -> Result<(), UpgradeError> {
+    // Put future post start upgrade actions here
     Ok(())
 }
 

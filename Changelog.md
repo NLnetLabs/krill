@@ -3,6 +3,18 @@
 Please see [here](https://github.com/NLnetLabs/krill/projects?query=is%3Aopen+sort%3Aname-asc)
 for planned releases.
 
+## 0.8.2 'Can't touch this'
+
+As it turned out the previous release (0.8.1) still insisted on cleaning up 'redundant ROAs'
+when migrating to that version. This clean-up would not cause any issues with regards to the
+validity of your announcements. However, we realised in 0.8.1 that users should be the once
+to decide whether they want to have extra ROAs or not. Therefore this clean-up should have
+been removed then.
+
+This release removes this clean-up and introduces no other changes. We recommend that users
+who did not upgrade already upgrade to this release. However, if you already successfully 
+upgraded to 0.8.1, then upgrading to this release is not needed.
+
 ## 0.8.1 'The Gentle Art' 
 
 The ROA guidance introduced in release 0.8.0 was more strict than it should be. This release
