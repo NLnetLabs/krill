@@ -3,9 +3,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use basic_cookies::Cookie;
+use hyper::header::{HeaderValue, SET_COOKIE};
 use jmespatch as jmespath;
 use jmespath::ToJmespath;
-use crate::{commons::actor::ActorDef, daemon::auth::providers::openid_connect::jmespathext};
 
 use openidconnect::{
     AuthenticationFlow, AuthorizationCode, ClientId, ClientSecret, CsrfToken,
@@ -22,15 +23,19 @@ use rpki::uri;
 use urlparse::{urlparse, GetQuery};
 
 use crate::commons::actor::Actor;
+use crate::commons::actor::ActorDef;
 use crate::commons::api::Token;
 use crate::commons::error::Error as KrillError;
+use crate::commons::util::sha256;
 use crate::commons::KrillResult;
-use crate::daemon::auth::common::session::*;
-use crate::daemon::auth::{Auth, AuthProvider, LoggedInUser};
-use crate::daemon::auth::providers::openid_connect::config::ConfigAuthOpenIDConnectClaims;
 use crate::daemon::auth::common::crypt;
+use crate::daemon::auth::common::session::*;
+use crate::daemon::auth::providers::openid_connect::jmespathext;
+use crate::daemon::auth::providers::openid_connect::config::ConfigAuthOpenIDConnectClaims;
+use crate::daemon::auth::{Auth, AuthProvider, LoggedInUser};
 use crate::daemon::config::Config;
 use crate::daemon::http::auth::AUTH_CALLBACK_ENDPOINT;
+use crate::daemon::http::HttpResponse;
 
 use super::config::{
     ConfigAuthOpenIDConnect, ConfigAuthOpenIDConnectClaim,
@@ -41,7 +46,7 @@ use super::util::{
     FlexibleTokenResponse, FlexibleUserInfoClaims, WantedMeta,
 };
 
-const NONCE_TODO_MAKE_RANDOM: &str = "DUMMY_FIXED_VALUE_FOR_NOW";
+const NONCE_COOKIE_NAME: &str = "nonce_hash";
 const LOGIN_SESSION_STATE_KEY_PATH: &str = "login_session_state.key"; // TODO: decide on proper location
 
 pub struct OpenIDConnectAuthProvider {
@@ -365,6 +370,38 @@ impl OpenIDConnectAuthProvider {
         // config exists.
         &self.config.auth_openidconnect.as_ref().unwrap()
     }
+
+    fn extract_nonce(&self, request: &hyper::Request<hyper::Body>) -> Option<String> {
+        if let Some(cookie_hdr_val) = request.headers().get(hyper::http::header::COOKIE) {
+            if let Ok(cookie_hdr_val_str) = cookie_hdr_val.to_str() {
+                // Use a helper crate to parse the cookie string as it's 
+                // actually a bit of a pain as the string is semi-colon-with-
+                // optional-trailing-space separated, cookie names must be
+                // parsed according to token rules defined in RFC-2616 and
+                // cookie values must be parsed according to grammar defined in
+                // RFC-6265 (e.g. cookie values may be double quoted and can
+                // only contain a specified subset of US-ASCII characters).
+                // See:
+                //   https://tools.ietf.org/html/rfc6265#section-4.2.1
+                //   https://tools.ietf.org/html/rfc6265#section-4.1.1
+                //   https://tools.ietf.org/html/rfc2616#section-2.2 (for the
+                //   definition of 'token' used for cookie names)
+                match Cookie::parse(cookie_hdr_val_str) {
+                    Ok(parsed_cookies) => {
+                        // Even with the helper crate we have to do some work...
+                        // Why doesn't it return a map???
+                        if let Some(nonce_cookie) = parsed_cookies.iter().find(|cookie| cookie.get_name() == NONCE_COOKIE_NAME) {
+                            return Some(nonce_cookie.get_value().to_string());
+                        }
+                    },
+                    Err(err) => {
+                        error!("Unable to parse HTTP cookie header value '{}': {}", cookie_hdr_val_str, err);
+                    }
+                }
+            }
+        }
+        None
+    }
 }
 
 impl AuthProvider for OpenIDConnectAuthProvider {
@@ -375,7 +412,13 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         if let Some(query) = urlparse(request.uri().to_string()).get_parsed_query() {
             if let Some(code) = query.get_first_from_str("code") {
                 if let Some(state) = query.get_first_from_str("state") {
-                    return Some(Auth::authorization_code(code, state));
+                    if let Some(nonce) = self.extract_nonce(request) {
+                        return Some(Auth::authorization_code(code, state, nonce));
+                    } else {
+                        debug!("Ignoring potential Authorization Code request due to missing nonce hash cookie.");
+                    }
+                } else {
+                    debug!("Ignoring potential Authorization Code request due to missing 'state' query parameter.");
                 }
             }
         }
@@ -406,12 +449,10 @@ impl AuthProvider for OpenIDConnectAuthProvider {
     /// URL should be requested by the client on every login as the intention is
     /// that it contains randomly generated CSFF token and nonce values which
     /// can be used to protect against certain cross-site and replay attacks.
-    fn get_login_url(&self) -> String {
+    fn get_login_url(&self) -> KrillResult<HttpResponse> {
         // TODO: we probably should do some more work here to ensure we get the
-        // proper security benefits of the CSRF token and nonce features.
-        // Currently we are discarding the CSRF token instead of checking it
-        // later, and for the Nonce we're using a simple hard-coded value that
-        // we can easily check on processing of the redirect.
+        // proper security benefits of the CSRF token, currently we are
+        // discarding the CSRF token instead of checking it.
         //
         // Per https://openid.net/specs/openid-connect-core-1_0.html#AuthRequest:
         //   "Opaque value used to maintain state between the request and the
@@ -420,14 +461,25 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         //    parameter with a browser cookie."
         //
         // Per https://openid.net/specs/openid-connect-core-1_0.html#NonceNotes:
-        //   "we can persist the nonce in the client e.g. by storing "the
-        //    cryptographically random value in HTML5 local storage and use a
-        //    cryptographic hash of this value."
+        //   "One method to achieve this for Web Server Clients is to store a
+        //    cryptographically random value as an HttpOnly session cookie and
+        //    use a cryptographic hash of the value as the nonce parameter. In
+        //    that case, the nonce in the returned ID Token is compared to the
+        //    hash of the session cookie to detect ID Token replay by third
+        //    parties"
+
+        // Generate a random nonce and hash it, and use the hash as the actual
+        // nonce value and store the unhashed nonce in a client-side HTTP only
+        // secure cookie, as per the OpenID spec advice quoted above.
+        let random_value = Nonce::new_random();
+        let nonce_b64_str = random_value.secret();
+        let nonce_hash = sha256(nonce_b64_str.as_bytes());
+
         let mut request = self.client
             .authorize_url(
                 AuthenticationFlow::<CoreResponseType>::AuthorizationCode,
                 CsrfToken::new_random,
-                || Nonce::new(NONCE_TODO_MAKE_RANDOM.to_string()) // Nonce::new_random
+                || Nonce::new(base64::encode(nonce_hash))
             );
 
         // From https://openid.net/specs/openid-connect-core-1_0.html#AuthRequest:
@@ -474,8 +526,21 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         let (authorize_url, _csrf_state, _nonce) = request.url();
 
         debug!("OpenID Connect: login URL will be {:?}", &authorize_url);
-
-        authorize_url.to_string()
+       
+        // Note: Cookies without an Expires attribute expire when the user agent
+        // "session" ends, i.e. when the browser is closed. Note that the nonce
+        // value is already base64 encoded.
+        let cookie_str = format!("{}={}; Secure; HttpOnly", NONCE_COOKIE_NAME, nonce_b64_str);
+        let cookie_hdr_val = HeaderValue::from_str(&cookie_str).map_err(|err| {
+            KrillError::custom(format!(
+                "Unable to construct HTTP cookie from nonce value '{}': {}",
+                nonce_b64_str, err))
+            })?;
+            
+        let res_body = authorize_url.as_str().as_bytes().to_vec();
+        let mut res = HttpResponse::text_no_cache(res_body).response();
+        res.headers_mut().insert(SET_COOKIE, cookie_hdr_val);
+        Ok(HttpResponse::new(res))
     }
 
     fn login(&self, auth: &Auth) -> KrillResult<LoggedInUser> {
@@ -483,7 +548,8 @@ impl AuthProvider for OpenIDConnectAuthProvider {
             // OpenID Connect Authorization Code Flow
             // See: https://tools.ietf.org/html/rfc6749#section-4.1
             //      https://openid.net/specs/openid-connect-core-1_0.html#CodeFlowSteps
-            Auth::AuthorizationCode(code, _state) => {
+            // TODO: use _state.
+            Auth::AuthorizationCode(code, _state, nonce) => {
 // ==========================================================================================
                 // Step 1: exchange the temporary (e.g. valid for 10 minutes or
                 // something like that) OAuth2 authorization code for an OAuth2
@@ -565,7 +631,12 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 // that by contacting the OpenID Connect provider userinfo
                 // endpoint.
 
-                let nonce = Nonce::new(NONCE_TODO_MAKE_RANDOM.to_string());
+                // Hash the nonce we obtained from the request as the nonce
+                // claim is actually the hash of the original nonce, as per
+                // the advice in the OpenID Core 1.0 spec. See:
+                // https://openid.net/specs/openid-connect-core-1_0.html#NonceNotes
+                let nonce_hash = Nonce::new(base64::encode(sha256(nonce.as_bytes())));
+
                 let mut id_token_verifier: CoreIdTokenVerifier = self.client
                     .id_token_verifier();
 
@@ -580,7 +651,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                     .extra_fields()
                     .id_token()
                     .ok_or_else(|| KrillError::Custom("OpenID Connect: ID token is missing, does the provider support OpenID Connect?".to_string()))? // happens if the server only supports OAuth2
-                    .claims(&id_token_verifier, &nonce)
+                    .claims(&id_token_verifier, &nonce_hash)
                     .map_err(|e| KrillError::Custom(format!(
                         "OpenID Connect: ID token verification failed: {}",
                         e.to_string())))?;
@@ -756,7 +827,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         }
     }
 
-    fn logout(&self, auth: Option<Auth>) -> String {
+    fn logout(&self, auth: Option<Auth>) -> KrillResult<HttpResponse> {
         match auth {
             Some(auth) => match auth.clone() {
                 Auth::Bearer(token) => {
@@ -781,7 +852,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         // needs the access token to be provided and doesn't redirect a client
         // to a post logout page. For the moment we just direct the browser in
         // this case to the Krill start page as if logout were completed.
-        self.logout_url.clone()
+        Ok(HttpResponse::text_no_cache(self.logout_url.clone().into()))
     }
 
     fn get_bearer_token(&self, request: &hyper::Request<hyper::Body>) -> Option<String> {

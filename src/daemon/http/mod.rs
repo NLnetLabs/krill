@@ -124,7 +124,7 @@ pub struct HttpResponse {
 }
 
 impl HttpResponse {
-    fn new(response: hyper::Response<Body>) -> Self {
+    pub fn new(response: hyper::Response<Body>) -> Self {
         HttpResponse {
             response,
             loggable: true
@@ -462,7 +462,7 @@ impl Request {
         self.state.read().await.get_auth(&self.request)
     }
 
-    pub async fn get_login_url(&self) -> String {
+    pub async fn get_login_url(&self) -> KrillResult<HttpResponse> {
         self.state.read().await.get_login_url()
     }
 
@@ -474,7 +474,7 @@ impl Request {
         }
     }
 
-    pub async fn logout(&self) -> String {
+    pub async fn logout(&self) -> KrillResult<HttpResponse> {
         let auth = self.get_auth().await;
         self.state.read().await.logout(auth)
     }

@@ -4,12 +4,14 @@ use std::any::Any;
 use std::sync::Arc;
 use std::collections::HashMap;
 
-use crate::{commons::actor::{Actor, ActorDef}, constants::ACTOR_ANON};
+use crate::commons::actor::{Actor, ActorDef};
 use crate::commons::api::Token;
 use crate::commons::KrillResult;
+use crate::constants::ACTOR_ANON;
 use crate::daemon::auth::policy::AuthPolicy;
 use crate::daemon::auth::providers::MasterTokenAuthProvider;
 use crate::daemon::config::Config;
+use crate::daemon::http::HttpResponse;
 
 
 //------------ Authorizer ----------------------------------------------------
@@ -48,9 +50,9 @@ pub trait AuthProvider: Send + Sync {
 
     fn get_auth(&self, request: &hyper::Request<hyper::Body>) -> Option<Auth>;
     fn get_actor_def(&self, auth: &Auth) -> KrillResult<Option<ActorDef>>;
-    fn get_login_url(&self) -> String;
+    fn get_login_url(&self) -> KrillResult<HttpResponse>;
     fn login(&self, auth: &Auth) -> KrillResult<LoggedInUser>;
-    fn logout(&self, auth: Option<Auth>) -> String;
+    fn logout(&self, auth: Option<Auth>) -> KrillResult<HttpResponse>;
 }
 
 /// This type is responsible for checking authorizations when the API is
@@ -132,7 +134,7 @@ impl Authorizer {
 
     /// Return the URL at which an end-user should be directed to login with the
     /// configured provider.
-    pub fn get_login_url(&self) -> String {
+    pub fn get_login_url(&self) -> KrillResult<HttpResponse> {
         self.primary_provider.get_login_url()
     }
 
@@ -163,7 +165,7 @@ impl Authorizer {
 
     /// Return the URL at which an end-user should be directed to logout with
     /// the configured provider.
-    pub fn logout(&self, auth: Option<Auth>) -> String {
+    pub fn logout(&self, auth: Option<Auth>) -> KrillResult<HttpResponse> {
         self.primary_provider.logout(auth)
     }
 }
@@ -178,7 +180,7 @@ pub struct LoggedInUser {
 #[derive(Clone)]
 pub enum Auth {
     Bearer(Token),
-    AuthorizationCode(String, String),
+    AuthorizationCode(String, String, String),
     IdAndPasswordHash(String, String),
 }
 
@@ -186,8 +188,8 @@ impl Auth {
     pub fn bearer(token: Token) -> Self {
         Auth::Bearer(token)
     }
-    pub fn authorization_code(code: String, state: String) -> Self {
-        Auth::AuthorizationCode(code, state)
+    pub fn authorization_code(code: String, state: String, nonce: String) -> Self {
+        Auth::AuthorizationCode(code, state, nonce)
     }
 
     pub fn id_and_password_hash(id: String, password_hash: String) -> Self {

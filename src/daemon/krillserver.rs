@@ -10,7 +10,8 @@ use rpki::cert::Cert;
 use rpki::uri;
 use rpki::x509::Time;
 
-use crate::commons::{actor::ActorDef, bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion}};
+use crate::commons::actor::ActorDef;
+use crate::commons::bgp::{BgpAnalyser, BgpAnalysisReport, BgpAnalysisSuggestion};
 use crate::commons::crypto::KrillSigner;
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::CommandKey;
@@ -39,6 +40,7 @@ use crate::daemon::ca::{
     RtaContentRequest, RtaPrepareRequest,
 };
 use crate::daemon::config::{AuthType, Config};
+use crate::daemon::http::HttpResponse;
 use crate::daemon::mq::EventQueueListener;
 use crate::daemon::scheduler::Scheduler;
 use crate::pubd::{PubServer, RepoStats};
@@ -341,7 +343,7 @@ impl KrillServer {
         self.authorizer.actor_from_def(actor_def)
     }
 
-    pub fn get_login_url(&self) -> String {
+    pub fn get_login_url(&self) -> KrillResult<HttpResponse> {
         self.authorizer.get_login_url()
     }
 
@@ -349,7 +351,7 @@ impl KrillServer {
         self.authorizer.login(auth)
     }
 
-    pub fn logout(&self, auth: Option<Auth>) -> String {
+    pub fn logout(&self, auth: Option<Auth>) -> KrillResult<HttpResponse> {
         self.authorizer.logout(auth)
     }
 

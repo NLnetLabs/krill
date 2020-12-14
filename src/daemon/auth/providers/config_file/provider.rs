@@ -2,13 +2,15 @@ use std::{collections::HashMap, sync::Arc};
 
 use urlparse::{urlparse, GetQuery};
 
-use crate::{commons::actor::{Actor, ActorDef}, daemon::auth::common::crypt};
+use crate::commons::actor::{Actor, ActorDef};
 use crate::commons::error::Error as KrillError;
 use crate::commons::KrillResult;
+use crate::daemon::auth::common::crypt;
 use crate::daemon::auth::common::session::*;
 use crate::daemon::auth::{Auth, AuthProvider, LoggedInUser};
 use crate::daemon::auth::providers::config_file::config::ConfigUserDetails;
 use crate::daemon::config::Config;
+use crate::daemon::http::HttpResponse;
 
 // This is NOT an actual relative path to redirect to. Instead it is the path
 // string of an entry in the Vue router routes table to "route" to (in the
@@ -96,9 +98,9 @@ impl AuthProvider for ConfigFileAuthProvider {
         }
     }
 
-    fn get_login_url(&self) -> String {
+    fn get_login_url(&self) -> KrillResult<HttpResponse> {
         // Direct Lagosta to show the user the Lagosta API token login form
-        LAGOSTA_LOGIN_ROUTE_PATH.to_string()
+        Ok(HttpResponse::text_no_cache(LAGOSTA_LOGIN_ROUTE_PATH.into()))
     }
 
     fn login(&self, auth: &Auth) -> KrillResult<LoggedInUser> {
@@ -118,7 +120,7 @@ impl AuthProvider for ConfigFileAuthProvider {
         Err(KrillError::ApiInvalidCredentials)
     }
 
-    fn logout(&self, auth: Option<Auth>) -> String {
+    fn logout(&self, auth: Option<Auth>) -> KrillResult<HttpResponse> {
         match auth {
             Some(auth) => match auth.clone() {
                 Auth::Bearer(token) => {
@@ -138,6 +140,6 @@ impl AuthProvider for ConfigFileAuthProvider {
         }
         // Logout is complete, direct Lagosta to show the user the Lagosta
         // index page
-        "/".to_string()
+        Ok(HttpResponse::text_no_cache("/".into()))
     }
 }

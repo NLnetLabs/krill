@@ -27,6 +27,12 @@ fn build_auth_redirect_location(user: LoggedInUser) -> Result<String, FromUtf8Er
     Ok(location)
 }
 
+fn to_ok_with_err_desc(err: KrillError) -> RoutingResult {
+    let location = format!("/index.html#/login?error={}",
+        err.to_error_response().label());
+    Ok(HttpResponse::found(&location))
+}
+
 pub async fn auth(req: Request) -> RoutingResult {
     match req.path.full() {
         #[cfg(feature = "multi-user")]
@@ -34,27 +40,19 @@ pub async fn auth(req: Request) -> RoutingResult {
             if log_enabled!(log::Level::Trace) {
                 trace!("Authentication callback invoked: {:?}", &req.request);
             }
-            let result = req.login().await.and_then(|user| {
-                Ok(build_auth_redirect_location(user)
-                    .map_err(|err: FromUtf8Error| {
-                        KrillError::custom(format!(
-                            "Unable to build redirect with logged in user details: {:?}", err))})?)
-            });
 
-            match result {
-                Ok(location) => {
-                    Ok(HttpResponse::found(&location))
-                },
-                Err(err) => {
-                    warn!("Login failed: {}", err);
-                    let location = format!("/index.html#/login?error={}",
-                        err.to_error_response().label());
-                    Ok(HttpResponse::found(&location))
-                },
-            }
+            req.login().await
+                .and_then(|user| {
+                    Ok(build_auth_redirect_location(user)
+                        .map_err(|err: FromUtf8Error| {
+                            KrillError::custom(format!(
+                                "Unable to build redirect with logged in user details: {:?}", err))})?)
+                })
+                .and_then(|location| Ok(HttpResponse::found(&location)))
+                .or_else(to_ok_with_err_desc)
         },
         AUTH_LOGIN_ENDPOINT if *req.method() == Method::GET => {
-            Ok(HttpResponse::text_no_cache(req.get_login_url().await.into_bytes()))
+            req.get_login_url().await.or_else(to_ok_with_err_desc)
         },
         AUTH_LOGIN_ENDPOINT if *req.method() == Method::POST => {
             match req.login().await {
@@ -63,7 +61,7 @@ pub async fn auth(req: Request) -> RoutingResult {
             }
         },
         AUTH_LOGOUT_ENDPOINT if *req.method() == Method::POST => {
-            Ok(HttpResponse::text_no_cache(req.logout().await.into_bytes()))
+            req.logout().await.or_else(to_ok_with_err_desc)
         },
         _ => Err(req),
     }
