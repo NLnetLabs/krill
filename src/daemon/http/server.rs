@@ -162,11 +162,8 @@ impl ResultLogger {
             Ok(response) => {
                 info!("{} {} {}", self.req_method, self.req_path, response.status());
 
-                if log_enabled!(log::Level::Trace) {
-                    match response.loggable() {
-                        false => trace!("Response body: <filtered>"),
-                        true  => trace!("Response body: {:?}", response.body()),
-                    }
+                if response.loggable() && log_enabled!(log::Level::Trace) {
+                    trace!("Response body: {:?}", response.body());
                 }
             }
             Err(err) => {
