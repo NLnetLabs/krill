@@ -12,7 +12,7 @@ use openidconnect::core::{
     CoreSubjectIdentifierType, CoreTokenType,
 };
 
-use crate::commons::error::Error as KrillError;
+use crate::commons::error::Error;
 use crate::commons::KrillResult;
 
 // -----------------------------------------------------------------------------
@@ -78,9 +78,9 @@ pub type WantedMeta = ProviderMetadata<
     CoreSubjectIdentifierType,
 >;
 
-impl From<openidconnect::url::ParseError> for KrillError {
+impl From<openidconnect::url::ParseError> for Error {
     fn from(e: openidconnect::url::ParseError) -> Self {
-        KrillError::Custom(e.to_string())
+      Error::Custom(e.to_string())
     }
 }
 
@@ -146,7 +146,7 @@ impl<T> LogOrFail for Option<T> {
             None => {
                 let err = format!("OpenID Connect provider lacks capability {}", prop_val_text);
                 error!("{}", err);
-                Err(KrillError::Custom(err))
+                Err(Error::Custom(err))
             }
         }
     }

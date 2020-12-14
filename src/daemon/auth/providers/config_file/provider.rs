@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use urlparse::{urlparse, GetQuery};
 
 use crate::commons::actor::{Actor, ActorDef};
-use crate::commons::error::Error as KrillError;
+use crate::commons::error::Error;
 use crate::commons::KrillResult;
 use crate::daemon::auth::common::crypt;
 use crate::daemon::auth::common::session::*;
@@ -27,7 +27,7 @@ struct UserDetails {
 
 fn get_checked_config_user(id: &str, user: &ConfigUserDetails) -> KrillResult<UserDetails> {
     let password_hash = user.password_hash.as_ref()
-        .ok_or_else(|| KrillError::ConfigError(
+        .ok_or_else(|| Error::ConfigError(
             format!("Password hash missing for user '{}'", id)))?
         .to_string();
 
@@ -60,7 +60,7 @@ impl ConfigFileAuthProvider {
                     session_cache
                 })
             },
-            None => Err(KrillError::ConfigError("Missing [auth_users] config section!".into()))
+            None => Err(Error::ConfigError("Missing [auth_users] config section!".into()))
         }
     }
 
@@ -94,7 +94,7 @@ impl AuthProvider for ConfigFileAuthProvider {
 
                 Ok(Some(Actor::user(session.id, &session.attributes, None)))
             },
-            _ => Err(KrillError::ApiInvalidCredentials)
+            _ => Err(Error::ApiInvalidCredentials)
         }
     }
 
@@ -117,7 +117,7 @@ impl AuthProvider for ConfigFileAuthProvider {
                 }
             }
         }
-        Err(KrillError::ApiInvalidCredentials)
+        Err(Error::ApiInvalidCredentials)
     }
 
     fn logout(&self, auth: Option<Auth>) -> KrillResult<HttpResponse> {

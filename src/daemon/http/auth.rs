@@ -1,11 +1,11 @@
+use crate::commons::error::Error;
+
 #[cfg(feature = "multi-user")]
-use std::string::FromUtf8Error;
-#[cfg(feature = "multi-user")]
-use crate::commons::error::Error as KrillError;
-#[cfg(feature = "multi-user")]
-use urlparse::quote;
-#[cfg(feature = "multi-user")]
-use crate::daemon::auth::LoggedInUser;
+use {
+    urlparse::quote,
+    std::string::FromUtf8Error,
+    crate::daemon::auth::LoggedInUser,
+};
 
 use hyper::Method;
 use crate::daemon::http::{HttpResponse, Request, RoutingResult};
@@ -27,7 +27,7 @@ fn build_auth_redirect_location(user: LoggedInUser) -> Result<String, FromUtf8Er
     Ok(location)
 }
 
-fn to_ok_with_err_desc(err: KrillError) -> RoutingResult {
+fn to_ok_with_err_desc(err: Error) -> RoutingResult {
     let location = format!("/index.html#/login?error={}",
         err.to_error_response().label());
     Ok(HttpResponse::found(&location))
@@ -44,8 +44,8 @@ pub async fn auth(req: Request) -> RoutingResult {
             req.login().await
                 .and_then(|user| {
                     Ok(build_auth_redirect_location(user)
-                        .map_err(|err: FromUtf8Error| {
-                            KrillError::custom(format!(
+                        .map_err(|err| {
+                          Error::custom(format!(
                                 "Unable to build redirect with logged in user details: {:?}", err))})?)
                 })
                 .map(|location| HttpResponse::found(&location))

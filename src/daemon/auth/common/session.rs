@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::RwLock, time::{Duration, SystemTime, UNIX_EPOCH}};
 
 use crate::commons::api::Token;
-use crate::commons::error::Error as KrillError;
+use crate::commons::error::Error;
 use crate::commons::KrillResult;
 
 use super::crypt;
@@ -43,7 +43,7 @@ impl LoginSessionCache {
     fn time_now_secs_since_epoch() -> KrillResult<u64> {
         Ok(SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_err(|err| KrillError::Custom(
+            .map_err(|err| Error::Custom(
                 format!("Unable to determine the current time: {}", err)))?
             .as_secs())
     }
@@ -90,7 +90,7 @@ impl LoginSessionCache {
         debug!("Creating token for session: {:?}", &session);
 
         let session_json_str = serde_json::to_string(&session)
-            .map_err(|err| KrillError::Custom(
+            .map_err(|err| Error::Custom(
                 format!("Error while serializing session data: {}",err)))?;
         let unencrypted_bytes = session_json_str.as_bytes();
 
@@ -113,11 +113,11 @@ impl LoginSessionCache {
         }
 
         let bytes = base64::decode(token.as_ref().as_bytes())
-        .map_err(|err| KrillError::Custom(
+        .map_err(|err| Error::Custom(
             format!("Invalid bearer token: {}", err)))?;
 
         if bytes.len() <= TAG_SIZE {
-            return Err(KrillError::Custom("Invalid bearer token: token is too short".to_string()));
+            return Err(Error::Custom("Invalid bearer token: token is too short".to_string()));
         }
 
         let encrypted_len = bytes.len() - TAG_SIZE;
@@ -125,7 +125,7 @@ impl LoginSessionCache {
         let unencrypted_bytes = crypt::decrypt(key, encrypted_bytes, tag_bytes)?;
 
         let session = serde_json::from_slice::<ClientSession>(&unencrypted_bytes)
-            .map_err(|err| KrillError::Custom(
+            .map_err(|err| Error::Custom(
                 format!("Unable to deserializing client session: {}", err)))?;
 
         trace!("Session cache miss, deserialized session id {}", &session.id);
@@ -153,7 +153,7 @@ impl LoginSessionCache {
         let expired_keys: Vec<_> = {
             let now = Self::time_now_secs_since_epoch()?;
             self.cache.read()
-                .map_err(|err| KrillError::Custom(
+                .map_err(|err| Error::Custom(
                     format!("Unable to purge expired sessions: {}", err)))?    
                 .iter()
                 .filter(|(_, v)| v.evict_after > now)
@@ -162,7 +162,7 @@ impl LoginSessionCache {
         };
 
         let mut writeable_cache = self.cache.write()
-            .map_err(|err| KrillError::Custom(
+            .map_err(|err| Error::Custom(
                 format!("Unable to purge expired sessions: {}", err)))?;
 
         for k in expired_keys {

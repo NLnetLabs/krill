@@ -22,10 +22,9 @@ use openidconnect::RequestTokenError;
 use rpki::uri;
 use urlparse::{urlparse, GetQuery};
 
-use crate::commons::actor::Actor;
-use crate::commons::actor::ActorDef;
+use crate::commons::actor::{Actor, ActorDef};
 use crate::commons::api::Token;
-use crate::commons::error::Error as KrillError;
+use crate::commons::error::Error;
 use crate::commons::util::sha256;
 use crate::commons::KrillResult;
 use crate::daemon::auth::common::crypt;
@@ -80,7 +79,7 @@ impl OpenIDConnectAuthProvider {
                     session_key,
                 })
             },
-            None => Err(KrillError::ConfigError("Missing [auth_openidconnect] config section!".into()))
+            None => Err(Error::ConfigError("Missing [auth_openidconnect] config section!".into()))
         }
     }
 
@@ -105,7 +104,7 @@ impl OpenIDConnectAuthProvider {
 
         // Contact the OpenID Connect: identity provider discovery endpoint to
         // learn about and configure ourselves to talk to it.
-        let meta = WantedMeta::discover(&issuer, logging_http_client!()).map_err(|e| KrillError::Custom(format!(
+        let meta = WantedMeta::discover(&issuer, logging_http_client!()).map_err(|e| Error::Custom(format!(
             "OpenID Connect: discovery failed with issuer {}: {}",
             issuer.to_string(),
             e.to_string())))?;
@@ -156,7 +155,7 @@ impl OpenIDConnectAuthProvider {
 
         match ok {
             true => Ok((email_scope_supported, userinfo_endpoint_supported)),
-            false => Err(KrillError::Custom(
+            false => Err(Error::Custom(
                 "OpenID Connect: The provider lacks support for one or more required capabilities.".to_string()))
         }
     }
@@ -260,7 +259,7 @@ impl OpenIDConnectAuthProvider {
                             }
                         } else {
                             debug!("OpenID Connect: session expired with no refresh token for ID \"{}\"", &session.id);
-                            return Err(KrillError::ApiInvalidCredentials);
+                            return Err(Error::ApiInvalidCredentials);
                         }
                     }
                 },
@@ -289,7 +288,7 @@ impl OpenIDConnectAuthProvider {
 
         // optional because it's not needed when looking up a value in the config file instead
         let jmespath_string = claim_conf.jmespath.as_ref()
-            .ok_or_else(|| KrillError::custom("Missing JMESPath configuration value for claim"))?
+            .ok_or_else(|| Error::custom("Missing JMESPath configuration value for claim"))?
             .to_string();
 
         // Create a new JMESPath Runtime. TODO: Somehow make this a single
@@ -307,7 +306,7 @@ impl OpenIDConnectAuthProvider {
         // to us) so this doesn't have to be fast. Note to self: perhaps the
         // lifetime issue could be worked around using a Box?
         let expr = &runtime.compile(&jmespath_string)
-            .map_err(|e| KrillError::Custom(format!(
+            .map_err(|e| Error::Custom(format!(
                 "OpenID Connect: unable to compile JMESPath expression '{}': {:?}",
                 &jmespath_string,
                 e)))?;
@@ -332,7 +331,7 @@ impl OpenIDConnectAuthProvider {
         };
     
         for (source, claims) in claims_to_search.clone() {
-            let claims = claims.map_err(|e| KrillError::Custom(format!(
+            let claims = claims.map_err(|e| Error::Custom(format!(
                 "OpenID Connect: unable to prepare claims for parsing: {:?}",
                 e)))?;
 
@@ -440,7 +439,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
 
                 Ok(Some(Actor::user(session.id, &session.attributes, new_auth)))
             },
-            _ => Err(KrillError::ApiInvalidCredentials)
+            _ => Err(Error::ApiInvalidCredentials)
         }
     }
 
@@ -532,7 +531,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         // value is already base64 encoded.
         let cookie_str = format!("{}={}; Secure; HttpOnly", NONCE_COOKIE_NAME, nonce_b64_str);
         let cookie_hdr_val = HeaderValue::from_str(&cookie_str).map_err(|err| {
-            KrillError::custom(format!(
+          Error::custom(format!(
                 "Unable to construct HTTP cookie from nonce value '{}': {}",
                 nonce_b64_str, err))
             })?;
@@ -581,7 +580,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                                 msg
                             },
                         };
-                        KrillError::Custom(format!(
+                      Error::Custom(format!(
                             "OpenID Connect: code exchange failed: {}", msg))
                     })?;
 
@@ -650,9 +649,9 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 let id_token_claims: &FlexibleIdTokenClaims = token_response
                     .extra_fields()
                     .id_token()
-                    .ok_or_else(|| KrillError::Custom("OpenID Connect: ID token is missing, does the provider support OpenID Connect?".to_string()))? // happens if the server only supports OAuth2
+                    .ok_or_else(|| Error::Custom("OpenID Connect: ID token is missing, does the provider support OpenID Connect?".to_string()))? // happens if the server only supports OAuth2
                     .claims(&id_token_verifier, &nonce_hash)
-                    .map_err(|e| KrillError::Custom(format!(
+                    .map_err(|e| Error::Custom(format!(
                         "OpenID Connect: ID token verification failed: {}",
                         e.to_string())))?;
 
@@ -675,14 +674,14 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                     // not available without contacting the userinfo endpoint?
                     Some(self.client
                         .user_info(token_response.access_token().clone(), None)
-                        .map_err(|e| KrillError::Custom(format!(
+                        .map_err(|e| Error::Custom(format!(
                             "OpenID Connect: ID provider has no user info endpoint: {}",
                             e.to_string())))?
                         // don't require the response to be signed as the spec says
                         // signing it is optional: See: https://openid.net/specs/openid-connect-core-1_0.html#UserInfoResponse
                         .require_signed_response(false)
                         .request(logging_http_client!())
-                        .map_err(|e| KrillError::Custom(format!(
+                        .map_err(|e| Error::Custom(format!(
                             "OpenID Connect: ID user info request failed: {}",
                             e.to_string())))?)
                 } else {
@@ -710,10 +709,10 @@ impl AuthProvider for OpenIDConnectAuthProvider {
 
                 let claims_conf = with_default_claims(&self.oidc_conf().claims);
 
-                let id_claim_conf = claims_conf.get("id").ok_or_else(|| KrillError::custom("Missing 'id' claim configuration"))?;
+                let id_claim_conf = claims_conf.get("id").ok_or_else(|| Error::custom("Missing 'id' claim configuration"))?;
 
                 let id = self.extract_claim(&id_claim_conf, &id_token_claims, user_info_claims.as_ref())?
-                    .ok_or_else(|| KrillError::custom("No value found for 'id' claim"))?;
+                    .ok_or_else(|| Error::custom("No value found for 'id' claim"))?;
 
                 // Lookup the a user in the config file authentication provider
                 // configuration by the id value that we just obtained, if
@@ -823,7 +822,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 })
             },
 
-            _ => Err(KrillError::ApiInvalidCredentials)
+            _ => Err(Error::ApiInvalidCredentials)
         }
     }
 

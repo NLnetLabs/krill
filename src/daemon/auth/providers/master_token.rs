@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use crate::commons::actor::ActorDef;
+use crate::commons::error::Error;
 use crate::commons::api::Token;
-use crate::commons::error::Error as KrillError;
 use crate::commons::KrillResult;
 use crate::constants::ACTOR_MASTER_TOKEN;
 use crate::daemon::auth::{Auth, AuthProvider, LoggedInUser};
@@ -61,7 +61,7 @@ impl AuthProvider for MasterTokenAuthProvider {
             }
         }
 
-        Err(KrillError::ApiInvalidCredentials)
+        Err(Error::ApiInvalidCredentials)
     }
 
     fn logout(&self, auth: Option<Auth>) -> KrillResult<HttpResponse> {
