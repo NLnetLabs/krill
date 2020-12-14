@@ -711,7 +711,8 @@ async fn api(req: Request) -> RoutingResult {
             Some("authorized") => api_authorized(req).await,
             Some("bulk") => api_bulk(req, &mut path).await,
             Some("cas") => api_cas(req, &mut path).await,
-            Some("publication") => api_publication(req, &mut path).await,
+            Some("publishers") => api_publishers(req, &mut path).await,
+            Some("pubd") => aa!(req, PUB_ADMIN, { api_publication_server(req, &mut path).await }),
             _ => aa!(req, LOGIN, render_unknown_method()),
         }
     }
@@ -826,14 +827,6 @@ async fn api_ca_routes(req: Request, path: &mut RequestPath, ca: Handle) -> Rout
         },
         Some("analysis") => api_ca_routes_analysis(req, path, ca).await,
         _ => aa!(req, LOGIN, render_unknown_method()),
-    }
-}
-
-async fn api_publication(req: Request, path: &mut RequestPath) -> RoutingResult {
-    match path.next() {
-        Some("publishers") => api_publishers(req, path).await,
-        Some("server") => aa!(req, PUB_ADMIN, { api_publication_server(req, path).await }),
-        _ => render_unknown_method(),
     }
 }
 
