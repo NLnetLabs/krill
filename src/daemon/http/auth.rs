@@ -48,7 +48,7 @@ pub async fn auth(req: Request) -> RoutingResult {
                             KrillError::custom(format!(
                                 "Unable to build redirect with logged in user details: {:?}", err))})?)
                 })
-                .and_then(|location| Ok(HttpResponse::found(&location)))
+                .map(|location| HttpResponse::found(&location))
                 .or_else(to_ok_with_err_desc)
         },
         AUTH_LOGIN_ENDPOINT if *req.method() == Method::GET => {

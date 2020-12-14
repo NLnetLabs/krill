@@ -73,6 +73,6 @@ impl AuthProvider for MasterTokenAuthProvider {
 
         // Logout is complete, direct Lagosta to show the user the Lagosta
         // index page
-        Ok(HttpResponse::text_no_cache("/".as_bytes().to_vec()))
+        Ok(HttpResponse::text_no_cache(b"/".to_vec()))
     }
 }
