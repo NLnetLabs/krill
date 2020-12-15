@@ -8,6 +8,7 @@ const AES_256_GCM_KEY_BIT_LENGTH: usize = 256;
 const AES_256_GCM_KEY_BYTE_LENGTH: usize = AES_256_GCM_KEY_BIT_LENGTH/8;
 
 // TODO: use proper values
+// See: https://www.imperialviolet.org/2015/05/16/aeads.html
 const IV: [u8; 12]  = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]; // aka nonce
 const AAD: &[u8; 5]  = b"krill";
 
