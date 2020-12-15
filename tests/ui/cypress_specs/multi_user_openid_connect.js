@@ -16,7 +16,11 @@ let login_test_settings = [
 
 describe('OpenID Connect users', () => {
   it('The correct login form is shown', () => {
+    cy.intercept('GET', '/api/v1/authorized').as('isAuthorized')
+    cy.intercept('GET', '/auth/login').as('getLoginURL')
+    cy.intercept('GET', /^http:\/\/localhost:1818\/authorize.+/).as('oidcLoginForm')
     cy.visit('/')
+    cy.wait(['@isAuthorized', '@getLoginURL', '@oidcLoginForm'])
 
     // make sure we haven't been redirected away from Krill (as would be the
     // case if an OpenID Connect login form were shown)
@@ -70,7 +74,9 @@ describe('OpenID Connect users', () => {
     cy.get('#userinfo_table').contains(admin.u)
 
     // logout
+    cy.intercept('GET', /^http:\/\/localhost:1818\/logout.+/).as('oidcLogout')
     cy.get('.logout').click()
+    cy.wait('@oidcLogout').its('response.statusCode').should('eq', 302)
 
     // verify that we are shown the OpenID Connect provider login page
     cy.url().should('not.include', Cypress.config('baseUrl'))
@@ -78,7 +84,7 @@ describe('OpenID Connect users', () => {
     cy.get('input[name="username"]')
   })
 
-  it.skip('Login receives short-lived token that cannot be refreshed', () => {
+  it('Login receives short-lived token that cannot be refreshed', () => {
     cy.visit('/')
     cy.url().should('not.include', Cypress.config('baseUrl'))
     cy.contains('Mock OpenID Connect login form')
