@@ -74,12 +74,13 @@ type CustomIdTokenFields = IdTokenFields<
 type CustomTokenResponse = StandardTokenResponse<CustomIdTokenFields, CoreTokenType>;
 // end cascade
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 struct KnownUser {
     role: &'static str,
     inc_cas: Option<&'static str>,
     exc_cas: Option<&'static str>,
     token_secs: Option<u32>,
+    refresh: bool
 }
 
 struct TempAuthzCodeDetails {
@@ -87,6 +88,8 @@ struct TempAuthzCodeDetails {
     nonce: String,
     username: String,
 }
+
+#[derive(Clone, Debug)]
 struct LoginSession {
     id: KnownUserId
 }
@@ -133,6 +136,7 @@ fn run_mock_openid_connect_server() {
         known_users.insert("readonly@krill", KnownUser { role: "readonly", exc_cas: Some("ta,testbed"), ..Default::default() });
         known_users.insert("readwrite@krill", KnownUser { role: "readwrite", exc_cas: Some("ta,testbed"), ..Default::default() });
         known_users.insert("shorttokenwithoutrefresh@krill", KnownUser { role: "readwrite", exc_cas: Some("ta,testbed"), token_secs: Some(1), ..Default::default() });
+        known_users.insert("shorttokenwithrefresh@krill", KnownUser { role: "readwrite", exc_cas: Some("ta,testbed"), token_secs: Some(1), refresh: true, ..Default::default() });
 
         let provider_metadata: CustomProviderMetadata = ProviderMetadata::new(
             IssuerUrl::new("http://localhost:1818".to_string()).unwrap(),
@@ -178,21 +182,40 @@ fn run_mock_openid_connect_server() {
             .map_err(|err| Error::custom(format!("Error while building jwks JSON response: {}", err))).unwrap();
         let login_doc = std::fs::read_to_string("test-resources/ui/oidc_login.html").unwrap();
 
-        fn make_id_token_response(signing_key: &CoreRsaPrivateSigningKey, authz: &TempAuthzCodeDetails, session: &LoginSession, known_users: &KnownUsers) -> Result<CustomTokenResponse, Error> {
+        fn make_random_value() -> Result<String, Error> {
             let mut access_token_bytes: [u8; 4] = [0; 4];
             openssl::rand::rand_bytes(&mut access_token_bytes)
                 .map_err(|err: openssl::error::ErrorStack| Error::custom(format!("Rand error: {}", err)))?;
-            let access_token = base64::encode(access_token_bytes);
-            let access_token = AccessToken::new(access_token);
+            Ok(base64::encode(access_token_bytes))
+        }
 
-            let user = known_users.get(&session.id).ok_or(
-                Error::custom(format!("Internal error, unknown user: {}", session.id)))?;
+        fn make_access_token() -> Result<AccessToken, Error> {
+            Ok(AccessToken::new(make_random_value()?))
+        }
 
+        fn make_refresh_token() -> Result<RefreshToken, Error> {
+            Ok(RefreshToken::new(make_random_value()?))
+        }
+
+        fn get_user_for_session(session: &LoginSession, known_users: &KnownUsers) -> Result<KnownUser, Error> {
+            known_users.get(&session.id).cloned().ok_or(
+                Error::custom(format!("Internal error, unknown user: {}", session.id)))
+        }
+
+        fn get_token_duration_for_user(user: &KnownUser) -> Result<u32, Error> {
             let token_duration = user.token_secs.unwrap_or(DEFAULT_TOKEN_DURATION_SECS);
 
             if token_duration != DEFAULT_TOKEN_DURATION_SECS {
                 log_warning(&format!("Issuing token with non-default expiration time of {} seconds", &token_duration));
             }
+
+            Ok(token_duration)
+        }
+
+        fn make_id_token_response(signing_key: &CoreRsaPrivateSigningKey, authz: &TempAuthzCodeDetails, session: &LoginSession, known_users: &KnownUsers) -> Result<CustomTokenResponse, Error> {
+            let user = get_user_for_session(session, known_users)?;
+            let token_duration = get_token_duration_for_user(&user)?;
+            let access_token = make_access_token()?;
 
             let id_token = CustomIdToken::new(
                 CustomIdTokenClaims::new(
@@ -202,7 +225,8 @@ fn run_mock_openid_connect_server() {
                     // the ID token is intended. This is a required claim.
                     vec![Audience::new(authz.client_id.clone())],
                     // The ID token expiration is usually much shorter than that of the access or refresh
-                    // tokens issued to clients.
+                    // tokens issued to clients. Our client only keeps the access/refresh token and the
+                    // access token expiration time, so this isn't used.
                     chrono::Utc::now() + chrono::Duration::seconds(token_duration.into()),
                     // The issue time is usually the current time.
                     chrono::Utc::now(),
@@ -247,17 +271,19 @@ fn run_mock_openid_connect_server() {
                 None,
             ).unwrap();
 
-            // TODO: issue a refresh token?
-            // TODO: look at how expiration times are issued and handled, as there are
-            // two separate times: access token expiration, and id token expiration.
             let mut token_response = CustomTokenResponse::new(
-                access_token,
+                access_token.clone(),
                 CoreTokenType::Bearer,
                 CustomIdTokenFields::new(Some(id_token), EmptyExtraTokenFields {}),
             );
 
-            // token_response.set_refresh_token()
             token_response.set_expires_in(Some(&Duration::from_secs(token_duration.into())));
+
+            if user.refresh {
+                let refresh_token = make_refresh_token()?;
+                token_response.set_refresh_token(Some(refresh_token));
+            }
+
             Ok(token_response)
         }
 
@@ -379,38 +405,115 @@ fn run_mock_openid_connect_server() {
             request.respond(response).map_err(|err| err.into())
         }
 
-        fn handle_token_request(mut request: Request, signing_key: &CoreRsaPrivateSigningKey, authz_codes: &mut TempAuthzCodes, login_sessions: &mut LoginSessions, known_users: &KnownUsers) -> Result<(), Error> {
+        fn handle_token_request(
+            mut request: Request,
+            signing_key: &CoreRsaPrivateSigningKey,
+            authz_codes: &mut TempAuthzCodes,
+            login_sessions: &mut LoginSessions,
+            known_users: &KnownUsers) -> Result<(), Error>
+        {
             let mut body = String::new();
             request.as_reader().read_to_string(&mut body)?;
 
             let query_params = parse_qs(body);
+            let mut new_key: Option<String> = None;
+            let mut new_session: Option<LoginSession> = None;
 
-            if let Some(code) = query_params.get("code") {
-                let code = &code[0];
-                if let Some(authz_code) = authz_codes.remove(code) {
-                    // find static user id
-                    let session = LoginSession {
-                        id: known_users.keys().find(|k| k.to_string() == authz_code.username)
-                            .ok_or(Error::custom(format!("Internal error, unknown user '{}'", authz_code.username)))?
-                    };
+            // we skip over verifying the Authorization HTTP header but perhaps
+            // we should make sure the client is sending that correctly?
+            let r = match query_params.get("grant_type") {
+                Some(grant_type) if &grant_type[0] == "authorization_code" => {
+                    if let Some(code) = query_params.get("code") {
+                        let code = &code[0];
+                        if let Some(authz_code) = authz_codes.remove(code) {
+                            // find static user id
+                            let session = LoginSession {
+                                id: known_users.keys().find(|k| k.to_string() == authz_code.username)
+                                    .ok_or(Error::custom(format!("Internal error, unknown user '{}'", authz_code.username)))?
+                            };
 
-                    let token_response = make_id_token_response(signing_key, &authz_code, &session, known_users)?;
-                    let token_doc = serde_json::to_string(&token_response)
-                    .map_err(|err| Error::custom(format!("Error while building ID Token JSON response: {}", err)))?;
+                            let token_response = make_id_token_response(signing_key, &authz_code, &session, known_users)?;
+                            let token_doc = serde_json::to_string(&token_response)
+                                .map_err(|err| Error::custom(format!("Error while building ID Token JSON response: {}", err)))?;
 
-                    login_sessions.insert(token_response.access_token().secret().clone(), session);
+                            if let Some(refresh_token) = token_response.refresh_token() {
+                                new_key = Some(refresh_token.secret().clone());
+                                new_session = Some(session.clone());
+                            }
 
-                    request.respond(
-                        Response::empty(StatusCode(200))
-                        .with_header(Header::from_str("Content-Type: application/json").unwrap())
-                        .with_data(token_doc.clone().as_bytes(), None)
-                    ).map_err(|err| err.into())
-                } else {
-                    Err(Error::custom(format!("Unknown temporary authorization code '{}'", &code)))
+                            request.respond(
+                                Response::empty(StatusCode(200))
+                                .with_header(Header::from_str("Content-Type: application/json").unwrap())
+                                .with_data(token_doc.clone().as_bytes(), None)
+                            ).map_err(|err| err.into())
+                        } else {
+                            Err(Error::custom(format!("Unknown temporary authorization code '{}'", &code)))
+                        }
+                    } else {
+                        Err(Error::custom("Missing query parameter 'code'"))
+                    }
+                },
+                Some(grant_type) if &grant_type[0] == "refresh_token" => {
+                    // we skip over verifying the Authorization HTTP header but perhaps
+                    // we should make sure the client is sending that correctly?
+                    if let Some(refresh_token) = query_params.get("refresh_token") {
+                        let refresh_token = &refresh_token[0];
+                        if let Some(session) = login_sessions.get(refresh_token) {
+                            let user = get_user_for_session(&session, known_users)?;
+                            if user.refresh {
+                                let token_duration = get_token_duration_for_user(&user)?;                        
+                                let access_token = make_access_token()?;
+
+                                let mut token_response = StandardTokenResponse::new(
+                                    access_token.clone(),
+                                    CoreTokenType::Bearer,
+                                    EmptyExtraTokenFields {}
+                                );
+
+                                token_response.set_expires_in(Some(&Duration::from_secs(token_duration.into())));
+
+                                let refresh_token = make_refresh_token()?;
+                                token_response.set_refresh_token(Some(refresh_token.clone()));
+
+                                let token_doc = serde_json::to_string(&token_response)
+                                    .map_err(|err| Error::custom(format!("Error while building Access Token JSON response: {}", err)))?;
+
+                                new_key = Some(refresh_token.secret().to_string());
+                                new_session = Some(session.clone());
+
+                                request.respond(
+                                    Response::empty(StatusCode(200))
+                                    .with_header(Header::from_str("Content-Type: application/json").unwrap())
+                                    .with_data(token_doc.clone().as_bytes(), None)
+                                ).map_err(|err| err.into())
+                            } else {
+                                Err(Error::custom(format!("Internal error: cowardly refusing to generate a new token for user '{}' that should not get refresh tokens", session.id)))
+                            }
+                        } else {
+                            Err(Error::custom(format!("Invalid refresh token '{}'", refresh_token)))
+                        }
+                    } else {
+                        Err(Error::custom("Missing query parameter 'refresh_token'"))
+                    }
+                },
+                Some(grant_type) => {
+                    Err(Error::custom(format!("Unknown grant_type '{}'", &grant_type[0])))
+                },
+                None => {
+                    Err(Error::custom("Missing query parameter 'grant_type'"))
                 }
-            } else {
-                Err(Error::custom("Missing query parameter 'code'"))
+            };
+
+            // do this out here to avoid having both a mutable and immutable
+            // reference to login_sessions at the same time, which isn't
+            // permitted by the Rust borrow checker.
+            if let Some(key) = new_key {
+                if let Some(session) = new_session {
+                    login_sessions.insert(key, session);
+                }
             }
+
+            r
         }
 
         fn handle_user_info_request(request: Request) -> Result<(), Error> {

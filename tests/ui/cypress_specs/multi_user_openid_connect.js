@@ -3,7 +3,7 @@ let admin        = { u: 'admin@krill' };
 let readonly     = { u: 'readonly@krill' };
 let readwrite    = { u: 'readwrite@krill' };
 let shorttoken   = { u: 'shorttokenwithoutrefresh@krill' };
-// let shortrefresh = { u: 'shorttokenwithrefresh@krill' };
+let shortrefresh = { u: 'shorttokenwithrefresh@krill' };
 let ca_name      = 'dummy-ca-name';
 
 let login_test_settings = [
@@ -108,7 +108,7 @@ describe('OpenID Connect users', () => {
     cy.get('input[name="username"]')
   })
 
-  it.skip('Login receives short-lived refreshable token', () => {
+  it('Login receives short-lived refreshable token', () => {
     cy.visit('/')
     cy.url().should('not.include', Cypress.config('baseUrl'))
     cy.contains('Mock OpenID Connect login form')
@@ -119,7 +119,7 @@ describe('OpenID Connect users', () => {
     cy.contains('Sign In').should('not.exist')
     cy.get('#userinfo').click()
     cy.get('#userinfo_table').contains(shortrefresh.u)
-    cy.contains(shorttoken.u)
+    cy.contains(shortrefresh.u)
     cy.contains('Welcome to Krill')
 
     // the token has a lifetime of 1 second and has a refresh token, wait 2..
@@ -131,7 +131,7 @@ describe('OpenID Connect users', () => {
     cy.contains('Sign In').should('not.exist')
     cy.get('#userinfo').click()
     cy.get('#userinfo_table').contains(shortrefresh.u)
-    cy.contains(shorttoken.u)
+    cy.contains(shortrefresh.u)
     cy.contains('Welcome to Krill')
   })
 })
