@@ -26,6 +26,8 @@ impl AdditionalProviderMetadata for CustomAdditionalMetadata {}
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct CustomAdditionalClaims {
     role: String,
+    inc_cas: Option<String>,
+    exc_cas: Option<String>,
 }
 impl AdditionalClaims for CustomAdditionalClaims {}
 
@@ -75,7 +77,8 @@ type CustomTokenResponse = StandardTokenResponse<CustomIdTokenFields, CoreTokenT
 #[derive(Default)]
 struct KnownUser {
     role: &'static str,
-    _cas: Option<&'static str>,
+    inc_cas: Option<&'static str>,
+    exc_cas: Option<&'static str>,
     token_secs: Option<u32>,
 }
 
@@ -126,10 +129,10 @@ fn run_mock_openid_connect_server() {
         let mut login_sessions = LoginSessions::new();
         let mut known_users = KnownUsers::new();
 
-        known_users.insert("admin@krill", KnownUser { role: "admin", ..Default::default() });
-        known_users.insert("readonly@krill", KnownUser { role: "gui_read_only", ..Default::default() });
-        known_users.insert("readwrite@krill", KnownUser { role: "gui_read_write", ..Default::default() });
-        known_users.insert("shorttokenwithoutrefresh@krill", KnownUser { role: "gui_read_write", token_secs: Some(1), ..Default::default() });
+        known_users.insert("admin@krill", KnownUser { role: "admin", exc_cas: Some("ta,testbed"), ..Default::default() });
+        known_users.insert("readonly@krill", KnownUser { role: "readonly", exc_cas: Some("ta,testbed"), ..Default::default() });
+        known_users.insert("readwrite@krill", KnownUser { role: "readwrite", exc_cas: Some("ta,testbed"), ..Default::default() });
+        known_users.insert("shorttokenwithoutrefresh@krill", KnownUser { role: "readwrite", exc_cas: Some("ta,testbed"), token_secs: Some(1), ..Default::default() });
 
         let provider_metadata: CustomProviderMetadata = ProviderMetadata::new(
             IssuerUrl::new("http://localhost:1818".to_string()).unwrap(),
@@ -210,7 +213,9 @@ fn run_mock_openid_connect_server() {
                         SubjectIdentifier::new(session.id.to_string())
                     ),
                     CustomAdditionalClaims {
-                        role: user.role.to_string()
+                        role: user.role.to_string(),
+                        inc_cas: user.inc_cas.map_or(None, |v| Some(v.to_string())),
+                        exc_cas: user.exc_cas.map_or(None, |v| Some(v.to_string())),
                     }
                 )
                 // Optional: specify the user's e-mail address. This should only be provided if the
