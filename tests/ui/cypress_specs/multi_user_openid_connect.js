@@ -99,7 +99,7 @@ describe('OpenID Connect users', () => {
     cy.contains('Welcome to Krill')
 
     // the token has a lifetime of 1 second and no refresh token, wait 2..
-    cy.wait(2)
+    cy.wait(2000)
 
     // verify that we are shown the OpenID Connect provider login page
     cy.visit('/')
@@ -123,7 +123,7 @@ describe('OpenID Connect users', () => {
     cy.contains('Welcome to Krill')
 
     // the token has a lifetime of 1 second and has a refresh token, wait 2..
-    cy.wait(2)
+    cy.wait(2000)
 
     // verify that we are still logged in to Krill
     cy.visit('/')
