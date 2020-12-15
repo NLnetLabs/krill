@@ -141,7 +141,7 @@ fn run_mock_openid_connect_server() {
             vec![ResponseTypes::new(vec![CoreResponseType::Code])],
             vec![CoreSubjectIdentifierType::Pairwise],
             vec![CoreJwsSigningAlgorithm::RsaSsaPssSha256],
-            CustomAdditionalMetadata { end_session_endpoint: String::new() },
+            CustomAdditionalMetadata { end_session_endpoint: String::from("http://localhost:1818/logout") },
         )
         .set_token_endpoint(Some(TokenUrl::new("http://localhost:1818/token".to_string()).unwrap()))
         .set_userinfo_endpoint(
@@ -368,6 +368,17 @@ fn run_mock_openid_connect_server() {
             request.respond(response).map_err(|err| err.into())
         }
 
+        fn handle_logout_request(request: Request, url: Url) -> Result<(), Error> {
+            let query = url.get_parsed_query().ok_or(Error::custom("Missing query parameters"))?;
+            let redirect_uri = require_query_param(&query, "post_logout_redirect_uri")?;
+
+            let response = Response::empty(StatusCode(302))
+                .with_header(Header::from_str(&format!("Location: {}", redirect_uri)
+            ).map_err(|err| Error::custom(format!("Error while constructing HTTP Location header: {:?}", err)))?);
+
+            request.respond(response).map_err(|err| err.into())
+        }
+
         fn handle_token_request(mut request: Request, signing_key: &CoreRsaPrivateSigningKey, authz_codes: &mut TempAuthzCodes, login_sessions: &mut LoginSessions, known_users: &KnownUsers) -> Result<(), Error> {
             let mut body = String::new();
             request.as_reader().read_to_string(&mut body)?;
@@ -443,7 +454,10 @@ fn run_mock_openid_connect_server() {
                         },
                         "/userinfo" => {
                             return handle_user_info_request(request);
-                        }
+                        },
+                        "/logout" => {
+                            return handle_logout_request(request, url);
+                        },
                         _ => {}
                     }
                 },
