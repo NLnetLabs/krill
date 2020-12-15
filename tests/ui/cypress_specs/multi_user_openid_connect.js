@@ -102,7 +102,13 @@ describe('OpenID Connect users', () => {
     cy.wait(2000)
 
     // verify that we are shown the OpenID Connect provider login page
+    cy.intercept('GET', '/api/v1/authorized').as('isAuthorized')
+    cy.intercept('GET', '/auth/login').as('getLoginURL')
+    cy.intercept('GET', /^http:\/\/localhost:1818\/authorize.+/).as('oidcLoginForm')
+
     cy.visit('/')
+    cy.wait(['@isAuthorized', '@getLoginURL', '@oidcLoginForm'])
+
     cy.url().should('not.include', Cypress.config('baseUrl'))
     cy.contains('Mock OpenID Connect login form')
     cy.get('input[name="username"]')
