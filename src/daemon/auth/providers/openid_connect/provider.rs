@@ -212,14 +212,18 @@ impl OpenIDConnectAuthProvider {
         service_uri: uri::Https,
         meta: &WantedMeta
     ) -> String {
-        if let Some(url) = &meta.additional_metadata().end_session_endpoint {
-            return format!("{}?post_logout_redirect_uri={}", url, service_uri.as_str())
+        let logout_url = if let Some(url) = &meta.additional_metadata().end_session_endpoint {
+            format!("{}?post_logout_redirect_uri={}", url, service_uri.as_str())
         } else if meta.additional_metadata().revocation_endpoint.is_some() {
             service_uri.to_string()
         } else {
             // should be unreachable due to checks done in discover().
             unreachable!()
-        }
+        };
+
+        debug!("OpenID Connect: logout URL will be {:?}", &logout_url);
+
+        logout_url
     }
 
     fn try_refresh_token(&self, session: &ClientSession) -> KrillResult<Option<Auth>> {
