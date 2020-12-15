@@ -1034,7 +1034,13 @@ impl Options {
 
     fn parse_matches_simple_config(matches: &ArgMatches) -> Result<Options, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
+
+        #[cfg(not(feature = "multi-user"))]
         let mut details = KrillInitDetails::default();
+
+        #[cfg(feature = "multi-user")]
+        let mut details = KrillInitDetails::multi_user_dflt();
+
         if let Some(data) = matches.value_of("data") {
             if !data.ends_with('/') {
                 return Err(Error::general("Path for --data MUST end with a '/'"));
@@ -2196,9 +2202,18 @@ pub enum BulkCaCommand {
 pub struct KrillInitDetails {
     data_dir: Option<String>,
     log_file: Option<String>,
+    multi_user: bool,
 }
 
 impl KrillInitDetails {
+    pub fn multi_user_dflt() -> Self {
+        KrillInitDetails {
+            data_dir: None,
+            log_file: None,
+            multi_user: true,
+        }
+    }
+
     pub fn with_data_dir(&mut self, data_dir: &str) {
         self.data_dir = Some(data_dir.to_string())
     }
@@ -2214,6 +2229,10 @@ impl KrillInitDetails {
     pub fn log_file(&self) -> Option<&String> {
         self.log_file.as_ref()
     }
+
+    pub fn multi_user(&self) -> bool {
+        self.multi_user
+    }
 }
 
 impl Default for KrillInitDetails {
@@ -2221,6 +2240,7 @@ impl Default for KrillInitDetails {
         KrillInitDetails {
             data_dir: None,
             log_file: None,
+            multi_user: false,
         }
     }
 }

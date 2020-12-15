@@ -120,7 +120,7 @@ impl KrillClient {
             Command::Info => client.info().await,
             Command::Bulk(cmd) => client.bulk(cmd).await,
             Command::CertAuth(cmd) => client.certauth(cmd).await,
-            Command::Init(details) => client.init(details),
+            Command::Init(details) => client.init_config(details),
             #[cfg(feature = "multi-user")]
             Command::User(cmd) => client.user(cmd),
             Command::NotSet => Err(Error::MissingCommand),
@@ -391,11 +391,9 @@ impl KrillClient {
         }
     }
 
-    fn init(&self, details: KrillInitDetails) -> Result<ApiResponse, Error> {
-        #[cfg(not(feature = "multi-user"))]
+    fn init_config(&self, details: KrillInitDetails) -> Result<ApiResponse, Error> {
         let defaults = include_str!("../../defaults/krill.conf");
-        #[cfg(feature = "multi-user")]
-        let defaults = include_str!("../../defaults/krill-multi-user.conf");
+        let multi_add_on = include_str!("../../defaults/krill-multi-user.conf");
 
         let mut config = defaults.to_string();
         config = config.replace("### auth_token =", &format!("auth_token = \"{}\"", self.token));
@@ -414,6 +412,11 @@ impl KrillClient {
                 "### log_file = \"./krill.log\"",
                 &format!("log_file = \"{}\"", log_file),
             )
+        }
+
+        if details.multi_user() {
+            config.push_str("\n\n\n");
+            config.push_str(multi_add_on);
         }
 
         let c: Config = toml::from_slice(config.as_ref()).map_err(Error::init)?;
@@ -622,13 +625,32 @@ mod tests {
             token: Token::from("secret"),
         };
 
-        let res = client.init(details).unwrap();
+        let res = client.init_config(details).unwrap();
 
         match res {
             ApiResponse::GenericBody(body) => {
-                #[cfg(not(feature = "multi-user"))]
                 let expected = include_str!("../../test-resources/krill-init.conf");
-                #[cfg(feature = "multi-user")]
+                assert_eq!(expected, &body)
+            }
+            _ => panic!("Expected body"),
+        }
+    }
+
+    #[test]
+    fn init_multi_user_config_file() {
+        let mut details = KrillInitDetails::multi_user_dflt();
+        details.with_data_dir("/var/lib/krill/data/");
+        details.with_log_file("/var/log/krill/krill.log");
+
+        let client = KrillClient {
+            server: test::https("https://localhost:3001/"),
+            token: Token::from("secret"),
+        };
+
+        let res = client.init_config(details).unwrap();
+
+        match res {
+            ApiResponse::GenericBody(body) => {
                 let expected = include_str!("../../test-resources/krill-init-multi-user.conf");
                 assert_eq!(expected, &body)
             }
