@@ -144,16 +144,21 @@ pub async fn start_krill_daemon(config: Arc<Config>, mode: KrillMode) -> Result<
     Ok(())
 }
 
-struct ResultLogger {
+struct ApiCallLogger {
     req_method: hyper::Method,
     req_path: String,
 }
 
-impl ResultLogger {
+impl ApiCallLogger {
     fn new(req: &Request) -> Self {
-        ResultLogger {
+        if log_enabled!(log::Level::Trace) {
+            trace!("Request: method={} path={} headers={:?}",
+                &req.method(), &req.path(), &req.headers());
+        }
+        
+        ApiCallLogger {
             req_method: req.method().clone(),
-            req_path: req.path.full().to_string(),
+            req_path: req.path.full().to_string()
         }
     }
 
@@ -163,7 +168,7 @@ impl ResultLogger {
                 info!("{} {} {}", self.req_method, self.req_path, response.status());
 
                 if response.loggable() && log_enabled!(log::Level::Trace) {
-                    trace!("Response body: {:?}", response.body());
+                    trace!("Response: headers={:?} body={:?}", response.headers(), response.body());
                 }
             }
             Err(err) => {
@@ -184,7 +189,7 @@ async fn map_requests(req: hyper::Request<hyper::Body>, state: State) -> Result<
     // responses as they are not helpful when diagnosing issues (you can get
     // the same information from your browser in an easier to use form) and they
     // just make the trace log unusable.
-    let logger = ResultLogger::new(&req);
+    let logger = ApiCallLogger::new(&req);
 
     let res = api(req)
         .or_else(auth)

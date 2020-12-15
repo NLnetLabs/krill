@@ -6,7 +6,7 @@ use std::str::FromStr;
 use bytes::{Buf, BufMut, Bytes};
 use serde::Serialize;
 
-use hyper::body::HttpBody;
+use hyper::{HeaderMap, body::HttpBody};
 use hyper::http::uri::PathAndQuery;
 use hyper::{Body, Method, StatusCode};
 
@@ -149,6 +149,10 @@ impl HttpResponse {
 
     pub fn body(&self) -> &Body {
         self.response.body()
+    }
+
+    pub fn headers(&self) -> &HeaderMap {
+        self.response.headers()
     }
 
     fn ok_response(content_type: ContentType, body: Vec<u8>) -> Self {
@@ -331,6 +335,10 @@ impl Request {
             state,
             actor,
         })
+    }
+
+    pub fn headers(&self) -> &HeaderMap {
+        self.request.headers()
     }
 
     pub async fn upgrade_from_anonymous(&mut self, actor_def: &ActorDef) {
