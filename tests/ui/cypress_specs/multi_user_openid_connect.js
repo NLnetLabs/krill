@@ -89,7 +89,10 @@ describe('OpenID Connect users', () => {
     cy.url().should('not.include', Cypress.config('baseUrl'))
     cy.contains('Mock OpenID Connect login form')
     cy.get('input[name="username"]').clear().type(shorttoken.u)
+
+    cy.intercept('GET', '/').as('loginComplete')
     cy.contains('Sign In').click()
+    cy.wait('@loginComplete')
 
     cy.url().should('include', Cypress.config('baseUrl'))
     cy.contains('Sign In').should('not.exist')
