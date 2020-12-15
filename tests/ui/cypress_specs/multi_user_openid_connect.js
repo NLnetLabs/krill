@@ -122,16 +122,18 @@ describe('OpenID Connect users', () => {
     cy.contains(shortrefresh.u)
     cy.contains('Welcome to Krill')
 
-    // the token has a lifetime of 1 second and has a refresh token, wait 2..
-    cy.wait(2000)
+    for (let i = 0; i < 5; i++) {
+      // the token has a lifetime of 1 second and has a refresh token, wait 2..
+      cy.wait(2000)
 
-    // verify that we are still logged in to Krill
-    cy.visit('/')
-    cy.url().should('include', Cypress.config('baseUrl'))
-    cy.contains('Sign In').should('not.exist')
-    cy.get('#userinfo').click()
-    cy.get('#userinfo_table').contains(shortrefresh.u)
-    cy.contains(shortrefresh.u)
-    cy.contains('Welcome to Krill')
+      // verify that we are still logged in to Krill
+      cy.visit('/')
+      cy.url().should('include', Cypress.config('baseUrl'))
+      cy.contains('Sign In').should('not.exist')
+      cy.get('#userinfo').click()
+      cy.get('#userinfo_table').contains(shortrefresh.u)
+      cy.contains(shortrefresh.u)
+      cy.contains('Welcome to Krill')
+    }
   })
 })
