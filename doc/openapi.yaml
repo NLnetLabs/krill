@@ -10,7 +10,7 @@ info:
 
     ## Clients
     To interact with a Krill server using this API, either:
-    - Use the [Krill CLI](https://rpki.readthedocs.io/en/latest/krill/using-cli.html).
+    - Use the [Krill CLI](https://rpki.readthedocs.io/en/latest/krill/cli.html).
     - Load this API specification into the Swagger [editor](https://editor.swagger.io/)
       or [viewer](https://petstore.swagger.io/) and use it to submit requests to
       a Krill server via your browser.
@@ -76,7 +76,6 @@ info:
     Possible keys in the error response json are:
     ```
        "cause":      "The underlying error, usually a system error"
-       "publisher":  "The handle of the publisher"
        "ca":         "The handle of the CA that encountered an error"
        "parent":     "The handle by which the CA knows a parent involved in an error"
        "child":      "The handle by which the CA knows its child involved in an error"
@@ -106,7 +105,6 @@ servers:
         default: '3000'
 
 tags:
-  - name: "Publishers"
   - name: "Certificate Authorities"
   - name: "Key Rolls"
     description: |
@@ -154,129 +152,6 @@ paths:
           $ref: '#/components/responses/Success'
         '403':
           $ref: '#/components/responses/Forbidden'
-
-  /publishers:
-    get:
-      operationId: list_publishers
-      tags:
-        - "Publishers"
-      summary: List publishers.
-      responses:
-        '200':
-          $ref: '#/components/responses/ListPublishers'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/GeneralErrorResponse'
-
-    post:
-      operationId: add_publisher
-      tags:
-        - "Publishers"
-      summary: Add publisher.
-      description: |
-        Adds an RFC 8181 publisher. Expects a JSON representation of the
-        [RFC 8183 XML](https://tools.ietf.org/html/rfc8183#section-5.2.3).
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AddPublisherRequest'
-      responses:
-        '200':
-          $ref: '#/components/responses/AddPublisher'
-        '400':
-          $ref: '#/components/responses/PubDuplicateResponse'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/GeneralErrorResponse'
-
-  /publishers/{publisher_handle}:
-    get:
-      operationId: get_publisher
-      tags:
-        - "Publishers"
-      summary: Get details for publisher.
-      description: Gets the information for a publisher by a given handle.
-      parameters:
-        - $ref: '#/components/parameters/publisher_handle'
-      responses:
-        '200':
-          $ref: '#/components/responses/GetPublisher'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/PubUnknownResponse'
-        '500':
-          $ref: '#/components/responses/GeneralErrorResponse'
-
-    delete:
-      operationId: delete_publisher
-      tags:
-        - "Publishers"
-      summary: Delete a publisher.
-      description: This action also removes all the published content for a publisher.
-      parameters:
-        - $ref: '#/components/parameters/publisher_handle'
-      responses:
-        '200':
-          $ref: '#/components/responses/Success'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/PubUnknownResponse'
-        '500':
-          $ref: '#/components/responses/GeneralErrorResponse'
-
-  /publishers/{publisher_handle}/response.{format}:
-    get:
-      operationId: get_publisher_repository_response
-      tags:
-        - "Publishers"
-      summary: Get Repository Response for publisher.
-      description: |
-        Gets the [RFC 8183 Repository Response](https://tools.ietf.org/html/rfc8183#section-5.2.4)
-        for a publisher.
-      parameters:
-        - $ref: '#/components/parameters/publisher_handle'
-        - $ref: '#/components/parameters/format'
-      responses:
-        '200':
-          description: Success.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Rfc8181'
-            application/xml:
-              schema:
-                $ref: '#/components/schemas/RFC8183RepositoryResponseXML'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/PubUnknownResponse'
-        '500':
-          $ref: '#/components/responses/GeneralErrorResponse'
-
-  /publishers/stale/{seconds}:
-    get:
-      operationId: list_publishers_stale_seconds
-      tags:
-        - "Publishers"
-      summary: List all publishers which have not published for X seconds.
-      description: |
-        Lists all publishers which have not published for the given time (seconds). Typically one
-        might expect updates from Krill publishers every 16 hours.
-      parameters:
-        - $ref: '#/components/parameters/seconds'
-      responses:
-        '200':
-          $ref: '#/components/responses/StalePublishers'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '500':
-          $ref: '#/components/responses/GeneralErrorResponse'
 
   /cas:
     get:
@@ -1415,52 +1290,6 @@ components:
         version: 1
         child_handle: 'child'
         child_bpki_ta: 'MIID..6g=='
-    RFC8183RepositoryResponseXML:
-      type: object
-      properties:
-        xmlns:
-          type: string
-          format: url
-          xml:
-            attribute: true
-        version:
-          type: integer
-          xml:
-            attribute: true
-        publisher_handle:
-          type: string
-          xml:
-            attribute: true
-        service_uri:
-          type: string
-          format: uri
-          xml:
-            attribute: true
-        sia_base:
-          type: string
-          format: uri
-          xml:
-            attribute: true
-        rrdp_notification_uri:
-          type: string
-          format: uri
-          xml:
-            attribute: true
-        repository_bpki_ta:
-          type: string
-          format: base64
-      xml:
-        name: 'repository_response'
-      # The example below is not shown by ReDoc, presumably due to:
-      # https://github.com/Redocly/redoc/issues/492
-      example:
-        xmlns: http://www.hactrn.net/uris/rpki/rpki-setup/
-        version: 1
-        publisher_handle: 'ta'
-        service_uri: 'https://localhost:3000/rfc8181/ta'
-        sia_base: 'rsync://localhost/repo/ta/'
-        rrdp_notification_uri: 'https://localhost:3000/rrdp/notification.xml'
-        repository_bpki_ta: 'MIID..aQ=='
     RFC8183ParentResponseXML:
       type: object
       properties:
@@ -1574,63 +1403,9 @@ components:
             - description: The local handle by which your ca refers to this parent.
         contact:
           $ref: '#/components/schemas/Rfc6492'
-    AddPublisherRequest:
-      type: object
-      required:
-        - publisher_handle
-        - id_cert
-      properties:
-        publisher_handle:
-          $ref: '#/components/schemas/Handle'
-        tag:
-          type: string
-        id_cert:
-          $ref: '#/components/schemas/IdCert'
-      externalDocs:
-        url: https://tools.ietf.org/html/rfc8183#section-5.2.3
+
 
     # Error codes ordered ascending by error code
-    PubDuplicateResponse:
-      type: object
-      required:
-        - label
-        - msg
-        - args
-      properties:
-        label:
-          type: string
-          enum: [pub-duplicate]
-        msg:
-          type: string
-          example: Duplicate publisher 'ca'
-        args:
-          type: object
-          required:
-            - publisher
-          properties:
-            publisher:
-              type: string
-              example: ca
-    PubUnknownResponse:
-      type: object
-      required:
-        - label
-        - msg
-        - args
-      properties:
-        label:
-          type: string
-          enum: [pub-unknown]
-        msg:
-          type: string
-          example: Unknown publisher 'ca'
-        args:
-          required:
-            - publisher
-          properties:
-            publisher:
-              type: string
-              example: ca
     CaRepoSameResponse:
       type: object
       required:
@@ -2448,22 +2223,6 @@ components:
                 "rir": "denied!"
                 "nir": "cannot connect"
 
-
-    PubDuplicateResponse:
-      description: Publisher handle already in use
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/PubDuplicateResponse'
-
-    PubUnknownResponse:
-      description: Unknown publisher
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/PubUnknownResponse'
-
-
     CaRepoSameResponse:
       description: Same Repository
       content:
@@ -2899,113 +2658,7 @@ components:
               entitled_resources:
                 $ref: '#/components/schemas/Resources'
 
-    ListPublishers:
-      description: Success.
-      content:
-        application/json:
-          schema:
-            type: object
-            properties:
-              publishers:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    handle:
-                      $ref: '#/components/schemas/Handle'
-                    links:
-                      type: array
-                      items:
-                        type: object
-                        properties:
-                          rel:
-                            type: string
-                            enum: [self]
-                          link:
-                            type: string
-                            format: uri
-          example:
-            publishers:
-              - handle: 'ca'
-                links:
-                  rel: 'self'
-                  link: '/api/v1/publishers/ca'
 
-    GetPublisher:
-      description: Success.
-      content:
-        application/json:
-          schema:
-            type: object
-            properties:
-              handle:
-                $ref: '#/components/schemas/Handle'
-              id_cert:
-                $ref: '#/components/schemas/IdCert'
-              base_uri:
-                type: string
-                format: uri
-              current_files:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    base64:
-                      type: string
-                      format: base64
-                    uri:
-                      type: string
-                      format: uri
-          example:
-            handle: 'child'
-            id_cert: 'MIID..zw=='
-            base_uri: 'rsync://<KRILL_SERVER_FQDN>/repo/child/'
-            current_files:
-              - base64: 'MIIK..TZPZ'
-                uri: 'rsync://<KRILL_SERVER_FQDN>/repo/child/0/A815..A01C.mft'
-              - base64: 'MIIB..6Lg8'
-                uri: 'rsync://<KRILL_SERVER_FQDN>/repo/child/0/A815..A01C.crl'
-              - base64: 'MIIJ..Cg4='
-                uri: 'rsync://<KRILL_SERVER_FQDN>/repo/child/0/3130..3936.roa'
-
-    AddPublisher:
-      description: Success.
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Rfc8181'
-
-    StalePublishers:
-      description: Success.
-      content:
-        application/json:
-          schema:
-            type: object
-            properties:
-              publishers:
-                type: array
-                items:
-                  type: object
-                  properties:
-                    handle:
-                      $ref: '#/components/schemas/Handle'
-                    links:
-                      type: array
-                      items:
-                        type: object
-                        properties:
-                          rel:
-                            type: string
-                            enum: [self]
-                          link:
-                            type: string
-                            format: uri
-          example:
-            publishers:
-              - handle: 'ca'
-                links:
-                  rel: 'self'
-                  link: '/api/v1/publishers/ca'
 
     GetRepositoryForCA:
       description: Success.
