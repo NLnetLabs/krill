@@ -1,0 +1,791 @@
+openapi: "3.0.2"
+info:
+  title: Krill RPKI Publication Server API
+  version: 0.8.1
+  description: |
+    # Introduction
+
+    Many operators can use an RPKI Publication Server provided by
+    a third party (notably nic.br and APNIC), but others will need to
+    run their own. If you do, then please first read more about it
+    [here](https://rpki.readthedocs.io/en/latest/krill/publication-server.html).
+
+    Note that you can manage a Krill Publication Server through the [Krill CLI](https://rpki.readthedocs.io/en/latest/krill/cli.html). However, if you need
+    to automate things, then using the API as described in this document may be more appropriate.
+
+      ## Versioning
+    The API path includes a version. The idea is that we may add functionality,
+    but will not introduce breaking changes to existing functionality. You may
+    expect additional resources, and you may see additional data (JSON members)
+    within resources. So, please make sure that you ignore any JSON members that
+    you don’t support or need when using this API.
+
+    ## References
+    Information about many of the concepts and data types that the Krill Publication
+    Server works with can be found in the following Internet standards documents:
+    - [RFC 8181: A Publication Protocol for the Resource Public Key Infrastructure (RPKI)](https://tools.ietf.org/html/rfc8181)
+    - [RFC 8183: An Out-of-Band Setup Protocol for Resource Public Key Infrastructure (RPKI) Production Services](https://tools.ietf.org/html/rfc8183)
+
+    ## Feedback
+    Please give feedback and report issues concerning this API specification by
+    creating a [Krill GitHub issue](https://github.com/NLnetLabs/krill/issues/new).
+
+    # Authentication
+    All Krill API endpoints are protected by [HTTP Bearer Authentication](https://swagger.io/docs/specification/authentication/bearer-authentication/).
+    To use the endpoints the client must supply an HTTP Authorization header of the form:
+    ```
+    Authorization: Bearer <KRILL AUTH TOKEN>
+    ```
+    The token to use is defined in the Krill server configuration. Do not include
+    the '<>' brackets in the request. For more information consult the [Krill documentation](https://rpki.readthedocs.io/en/latest/krill/running.html#admin-token).
+
+    # Errors
+    The format of and level of detail included in error reports from a Krill
+    server depend on the type of failure that occured:
+    - **5XX/Server Errors:** This type of failure occurs within or is caused
+      by the environment in which Krill operates, or by bugs within Krill
+      itself. Examples include network issues, resource starvation, access
+      denied to resources, etc. Such errors are outside the control of Krill
+      and may result in HTTP 5XX errors from a proxy in front of Krill or from
+      Krill itself, or could manifest themselves as TCP timeouts and/or
+      connection failures.
+    - **4XX/Client Errors:** This type of failure occurs when the input
+      provided to Krill is incorrect, either due to user error, adherence by
+      the client to incorrect Krill API specifications, or malicious activity.
+      Krill responds with HTTP 4XX errors, where possible with a HTTP response
+      body in JSON format consisting of an error code and error message.
+      **Note:** Clients should decide which action to take based on the error
+      code, not on the error message. Such errors have the following form:
+      ```
+      {
+          "label": "string",
+          "msg": "string",
+          "args": {
+              "key1": "string",
+              "key2": "string"
+          }
+      }
+      ```
+
+    Possible keys in the error response json are:
+    ```
+       "cause":      "The underlying error, usually a system error"
+       "publisher":  "The handle of the publisher"
+    ```
+  license:
+    name: Mozilla Public License 2.0
+    url: https://www.mozilla.org/en-US/MPL/2.0/
+  x-logo:
+    url: https://nlnetlabs.nl/static/logos/Krill/Krill_Logo_FC.svg
+    backgroundColor: #FFFFFF
+
+servers:
+  - url: https://{domain}:{port}/api/v1
+    description: Krill server API URL.
+    variables:
+      domain:
+        default: localhost
+      port:
+        enum:
+          - '443'
+          - '3000'
+        default: '3000'
+
+tags:
+  - name: "Publishers"
+    description: |
+      Manage Certificate Authorities which are authorized to publish at your
+      Publication Server over the RFC8181 protocol. Such CAs are called
+      'publishers' by the Krill Publication Server.
+  - name: "Pubd"
+    description: |
+      Initialise your Publication Server instance with your public repository URIs,
+      or delete your current instance so that it can be re-initialised.
+  - name: "Other"
+
+security:
+  - KRILL_AUTH_TOKEN: []
+
+paths:
+  /authorized:
+    get:
+      operationId: is_authorized
+      tags:
+        - "Other"
+      summary: Check if the client is authorized.
+      responses:
+        '200':
+          $ref: '#/components/responses/SuccessResponse'
+        '403':
+          $ref: '#/components/responses/ForbiddenResponse'
+
+  /publishers:
+    get:
+      operationId: list_publishers
+      tags:
+        - "Publishers"
+      summary: List publishers.
+      responses:
+        '200':
+          $ref: '#/components/responses/ListPublishersResponse'
+        '400':
+          description: Bad request parameters.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorPubdNotInitialisedSchema'
+                  - $ref: '#/components/schemas/ErrorPubdNotEnabledSchema'
+        '403':
+          $ref: '#/components/responses/ForbiddenResponse'
+        '500':
+          $ref: '#/components/responses/GeneralErrorResponse'
+
+    post:
+      operationId: add_publisher
+      tags:
+        - "Publishers"
+      summary: Add publisher.
+      description: |
+        Adds an RFC 8181 publisher. Expects a JSON representation of the
+        [RFC 8183 XML](https://tools.ietf.org/html/rfc8183#section-5.2.3).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddPublisherRequestSchema'
+      responses:
+        '200':
+          $ref: '#/components/responses/AddPublisherResponse'
+        '400':
+          description: Bad request parameters.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorPubDuplicateSchema'
+                  - $ref: '#/components/schemas/ErrorPubdNotInitialisedSchema'
+                  - $ref: '#/components/schemas/ErrorPubdNotEnabledSchema'
+        '403':
+          $ref: '#/components/responses/ForbiddenResponse'
+        '500':
+          $ref: '#/components/responses/GeneralErrorResponse'
+
+  /publishers/{publisher_handle}:
+    get:
+      operationId: get_publisher
+      tags:
+        - "Publishers"
+      summary: Get details for publisher.
+      description: Gets the information for a publisher by a given handle.
+      parameters:
+        - $ref: '#/components/parameters/publisher_handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/GetPublisherResponse'
+        '400':
+          description: Bad request parameters.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorPubdNotInitialisedSchema'
+                  - $ref: '#/components/schemas/ErrorPubdNotEnabledSchema'
+        '403':
+          $ref: '#/components/responses/ForbiddenResponse'
+        '404':
+          $ref: '#/components/responses/ErrorPubUnknownResponse'
+        '500':
+          $ref: '#/components/responses/GeneralErrorResponse'
+
+    delete:
+      operationId: delete_publisher
+      tags:
+        - "Publishers"
+      summary: Delete a publisher.
+      description: This action also removes all the published content for a publisher.
+      parameters:
+        - $ref: '#/components/parameters/publisher_handle'
+      responses:
+        '200':
+          $ref: '#/components/responses/SuccessResponse'
+        '400':
+          description: Bad request parameters.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorPubdNotInitialisedSchema'
+                  - $ref: '#/components/schemas/ErrorPubdNotEnabledSchema'
+        '403':
+          $ref: '#/components/responses/ForbiddenResponse'
+        '404':
+          $ref: '#/components/responses/ErrorPubUnknownResponse'
+        '500':
+          $ref: '#/components/responses/GeneralErrorResponse'
+
+  /publishers/{publisher_handle}/response.{format}:
+    get:
+      operationId: get_publisher_repository_response
+      tags:
+        - "Publishers"
+      summary: Get Repository Response for publisher.
+      description: |
+        Gets the [RFC 8183 Repository Response](https://tools.ietf.org/html/rfc8183#section-5.2.4)
+        for a publisher.
+      parameters:
+        - $ref: '#/components/parameters/publisher_handle'
+        - $ref: '#/components/parameters/format'
+      responses:
+        '200':
+          description: Success.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Rfc8181Schema'
+            application/xml:
+              schema:
+                $ref: '#/components/schemas/RFC8183RepositoryResponseXMLSchema'
+        '400':
+          description: Bad request parameters.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorPubdNotInitialisedSchema'
+                  - $ref: '#/components/schemas/ErrorPubdNotEnabledSchema'
+        '403':
+          $ref: '#/components/responses/ForbiddenResponse'
+        '404':
+          $ref: '#/components/responses/ErrorPubUnknownResponse'
+        '500':
+          $ref: '#/components/responses/GeneralErrorResponse'
+
+  /publishers/stale/{seconds}:
+    get:
+      operationId: list_publishers_stale_seconds
+      tags:
+        - "Publishers"
+      summary: List all publishers which have not published for X seconds.
+      description: |
+        Lists all publishers which have not published for the given time (seconds). Typically one
+        might expect updates from Krill publishers every 16 hours.
+      parameters:
+        - $ref: '#/components/parameters/seconds'
+      responses:
+        '200':
+          $ref: '#/components/responses/StalePublishersResponse'
+        '400':
+          description: Bad request parameters.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorPubdNotInitialisedSchema'
+                  - $ref: '#/components/schemas/ErrorPubdNotEnabledSchema'
+        '403':
+          $ref: '#/components/responses/ForbiddenResponse'
+        '500':
+          $ref: '#/components/responses/GeneralErrorResponse'
+
+  /pubd:
+    post:
+      operationId: initialise_pubd
+      tags:
+        - "Pubd"
+      summary: Initialise your Publication Server instance.
+      description: |
+        Initialises your Publication Server with the public RRDP and
+        rsync base URIs which reflect the setup of your public HTTPs
+        and rsync servers.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PubdInitSchema'
+      responses:
+        '200':
+          $ref: '#/components/responses/SuccessResponse'
+        '400':
+          description: Bad request parameters.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorPubdNotEnabledSchema'
+                  - $ref: '#/components/schemas/ErrorPubdAlreadyInitialisedSchema'
+        '403':
+          $ref: '#/components/responses/ForbiddenResponse'
+        '500':
+          $ref: '#/components/responses/GeneralErrorResponse'
+    delete:
+      operationId: delete_pubd
+      tags:
+        - "Pubd"
+      summary: Delete your Publication Server instance
+      description: |
+        Deletes the active instance of your Publication Server,
+        so that it can be initialised again with new URIs. Note
+        that this will fail if you have any publishers defined.
+        You should remove those first, and inform your users.
+      responses:
+        '200':
+          $ref: '#/components/responses/SuccessResponse'
+        '400':
+          description: Bad request parameters.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorPubdNotEnabledSchema'
+                  - $ref: '#/components/schemas/ErrorPubdNotInitialisedSchema'
+                  - $ref: '#/components/schemas/ErrorPubdHasPublishersSchema'
+        '403':
+          $ref: '#/components/responses/ForbiddenResponse'
+        '500':
+          $ref: '#/components/responses/GeneralErrorResponse'
+
+components:
+  securitySchemes:
+    KRILL_AUTH_TOKEN:
+      type: http
+      scheme: bearer
+      bearerFormat: KRILL_AUTH_TOKEN
+
+  responses:
+    SuccessResponse:
+      description: Success.
+
+    ForbiddenResponse:
+      description: Forbidden (incorrect authentication token).
+
+    NotFoundResponse:
+      description: Not Found.
+
+    GeneralErrorResponse:
+      description: General CA Server issue.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/GeneralErrorSchema'
+
+    ErrorPubDuplicateResponse:
+      description: Publisher handle already in use
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorPubDuplicateSchema'
+
+    ErrorPubUnknownResponse:
+      description: Unknown publisher
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorPubUnknownSchema'
+
+    ErrorPubdNotEnabledResponse:
+      description: Publication Server not enabled
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorPubdNotEnabledSchema'
+
+    ErrorPubdNotInitialisedResponse:
+      description: Publication Server not initialised
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorPubdNotInitialisedSchema'
+
+    ErrorPubdAlreadyInitialisedResponse:
+      description: Publication Server already initialised
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorPubdAlreadyInitialisedSchema'
+
+    ErrorPubdHasPublishersResponse:
+      description: Publication Server cannot be removed, still has publishers
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorPubdHasPublishersSchema'
+
+    ListPublishersResponse:
+      description: Success.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              publishers:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    handle:
+                      $ref: '#/components/schemas/HandleSchema'
+                    links:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          rel:
+                            type: string
+                            enum: [self]
+                          link:
+                            type: string
+                            format: uri
+          example:
+            publishers:
+              - handle: 'ca'
+                links:
+                  rel: 'self'
+                  link: '/api/v1/publishers/ca'
+
+    GetPublisherResponse:
+      description: Success.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              handle:
+                $ref: '#/components/schemas/HandleSchema'
+              id_cert:
+                $ref: '#/components/schemas/IdCertSchema'
+              base_uri:
+                type: string
+                format: uri
+              current_files:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    base64:
+                      type: string
+                      format: base64
+                    uri:
+                      type: string
+                      format: uri
+          example:
+            handle: 'child'
+            id_cert: 'MIID..zw=='
+            base_uri: 'rsync://<KRILL_SERVER_FQDN>/repo/child/'
+            current_files:
+              - base64: 'MIIK..TZPZ'
+                uri: 'rsync://<KRILL_SERVER_FQDN>/repo/child/0/A815..A01C.mft'
+              - base64: 'MIIB..6Lg8'
+                uri: 'rsync://<KRILL_SERVER_FQDN>/repo/child/0/A815..A01C.crl'
+              - base64: 'MIIJ..Cg4='
+                uri: 'rsync://<KRILL_SERVER_FQDN>/repo/child/0/3130..3936.roa'
+
+    AddPublisherResponse:
+      description: Success.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Rfc8181Schema'
+
+    StalePublishersResponse:
+      description: Success.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              publishers:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    handle:
+                      $ref: '#/components/schemas/HandleSchema'
+                    links:
+                      type: array
+                      items:
+                        type: object
+                        properties:
+                          rel:
+                            type: string
+                            enum: [self]
+                          link:
+                            type: string
+                            format: uri
+          example:
+            publishers:
+              - handle: 'ca'
+                links:
+                  rel: 'self'
+                  link: '/api/v1/publishers/ca'
+
+
+
+  schemas:
+    GeneralErrorSchema:
+      type: object
+      required:
+        - label
+        - msg
+        - args
+      properties:
+        label:
+          type: string
+          enum: [general-error]
+        msg:
+          type: string
+          example: cause
+        args:
+          required:
+            - cause
+          properties:
+            cause:
+              type: string
+              example: cause
+
+    ErrorPubDuplicateSchema:
+      type: object
+      required:
+        - label
+        - msg
+        - args
+      properties:
+        label:
+          type: string
+          enum: [pub-duplicate]
+        msg:
+          type: string
+          example: Duplicate publisher 'ca'
+        args:
+          type: object
+          required:
+            - publisher
+          properties:
+            publisher:
+              type: string
+              example: ca
+
+    ErrorPubUnknownSchema:
+      type: object
+      required:
+        - label
+        - msg
+        - args
+      properties:
+        label:
+          type: string
+          enum: [pub-unknown]
+        msg:
+          type: string
+          example: Unknown publisher 'ca'
+        args:
+          required:
+            - publisher
+          properties:
+            publisher:
+              type: string
+              example: ca
+
+    ErrorPubdNotEnabledSchema:
+      type: object
+      required:
+        - label
+        - msg
+      properties:
+        label:
+          type: string
+          enum: [pub-no-server]
+        msg:
+          type: string
+          example: Publication Server not enabled
+
+    ErrorPubdNotInitialisedSchema:
+      type: object
+      required:
+        - label
+        - msg
+      properties:
+        label:
+          type: string
+          enum: [pub-repo-not-initialised]
+        msg:
+          type: string
+          example: Publication Server not initialised
+
+    ErrorPubdAlreadyInitialisedSchema:
+      type: object
+      required:
+        - label
+        - msg
+      properties:
+        label:
+          type: string
+          enum: [pub-repo-initialised]
+        msg:
+          type: string
+          example: Publication Server already initialised
+
+    ErrorPubdHasPublishersSchema:
+      type: object
+      required:
+        - label
+        - msg
+      properties:
+        label:
+          type: string
+          enum: [pub-repo-has-publishers]
+        msg:
+          type: string
+          example: Publication Server cannot be removed, still has publishers
+
+    HandleSchema:
+      type: string
+      maxLength: 255
+      pattern: '[\-_A-Za-z0-9/]*'
+
+    IdCertSchema:
+      type: string
+      format: base64
+
+    RepoInfoSchema:
+      type: object
+      properties:
+        base_uri:
+          type: string
+          format: uri
+        rpki_notify:
+          type: string
+          format: uri
+
+    ServiceUriSchema:
+      type: string
+      format: uri
+
+    RfcCommonSchema:
+      type: object
+      properties:
+        tag:
+          type: string
+          nullable: true
+        id_cert:
+          $ref: '#/components/schemas/IdCertSchema'
+
+    Rfc8181BaseSchema:
+      allOf:
+        - $ref: '#/components/schemas/RfcCommonSchema'
+        - type: object
+          properties:
+            publisher_handle:
+              $ref: '#/components/schemas/HandleSchema'
+    Rfc8181Schema:
+      allOf:
+        - $ref: '#/components/schemas/Rfc8181BaseSchema'
+        - type: object
+          properties:
+            service_uri:
+              $ref: '#/components/schemas/ServiceUriSchema'
+            repo_info:
+              $ref: '#/components/schemas/RepoInfoSchema'
+
+    AddPublisherRequestSchema:
+      type: object
+      required:
+        - publisher_handle
+        - id_cert
+      properties:
+        publisher_handle:
+          $ref: '#/components/schemas/HandleSchema'
+        tag:
+          type: string
+        id_cert:
+          $ref: '#/components/schemas/IdCertSchema'
+      externalDocs:
+        url: https://tools.ietf.org/html/rfc8183#section-5.2.3
+
+
+
+    RFC8183RepositoryResponseXMLSchema:
+      type: object
+      properties:
+        xmlns:
+          type: string
+          format: url
+          xml:
+            attribute: true
+        version:
+          type: integer
+          xml:
+            attribute: true
+        publisher_handle:
+          type: string
+          xml:
+            attribute: true
+        service_uri:
+          type: string
+          format: uri
+          xml:
+            attribute: true
+        sia_base:
+          type: string
+          format: uri
+          xml:
+            attribute: true
+        rrdp_notification_uri:
+          type: string
+          format: uri
+          xml:
+            attribute: true
+        repository_bpki_ta:
+          type: string
+          format: base64
+      xml:
+        name: 'repository_response'
+      # The example below is not shown by ReDoc, presumably due to:
+      # https://github.com/Redocly/redoc/issues/492
+      example:
+        xmlns: http://www.hactrn.net/uris/rpki/rpki-setup/
+        version: 1
+        publisher_handle: 'ta'
+        service_uri: 'https://localhost:3000/rfc8181/ta'
+        sia_base: 'rsync://localhost/repo/ta/'
+        rrdp_notification_uri: 'https://localhost:3000/rrdp/notification.xml'
+        repository_bpki_ta: 'MIID..aQ=='
+
+    PubdInitSchema:
+      type: object
+      required:
+        - rrdp_base_uri
+        - rsync_jail
+      properties:
+        rrdp_base_uri:
+          type: string
+          format: uri
+          example: https://example.com/rrdp/
+        rsync_jail:
+          type: string
+          format: uri
+          example: rsync://example.com/repo/
+
+
+  parameters:
+    format:
+      in: path
+      name: format
+      schema:
+        type: string
+        enum: ['json','xml']
+      required: true
+    publisher_handle:
+      in: path
+      name: publisher_handle
+      schema:
+        $ref: '#/components/schemas/HandleSchema'
+      required: true
+    seconds:
+      in: path
+      name: seconds
+      schema:
+        type: integer
+      required: true
