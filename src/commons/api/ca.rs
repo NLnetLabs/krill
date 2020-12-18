@@ -1418,19 +1418,6 @@ impl fmt::Display for ResourceSet {
     }
 }
 
-// // TODO: Implement equals better on enclosed AsBlocks and IpBlocks, and check corner cases
-// impl PartialEq for ResourceSet {
-//     fn eq(&self, other: &Self) -> bool {
-//         if let (Ok(self_str), Ok(other_str)) = (serde_json::to_string(&self), serde_json::to_string(other)) {
-//             self_str == other_str
-//         } else {
-//             false
-//         }
-//     }
-// }
-//
-// impl Eq for ResourceSet {}
-
 //------------ CertAuthList --------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
