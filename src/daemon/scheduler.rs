@@ -1,7 +1,7 @@
 //! Deal with asynchronous scheduled processes, either triggered by an
 //! event that occurred, or planned (e.g. re-publishing).
 
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 use clokwerk::{self, ScheduleHandle, TimeUnits};
@@ -101,8 +101,7 @@ fn make_cas_event_triggers(
     pubserver: Option<Arc<PubServer>>,
     actor: Actor,
 ) -> ScheduleHandle {
-    let mut scheduler = clokwerk::Scheduler::new();
-    scheduler.every(1.seconds()).run(move || {
+    SkippingScheduler::run(1, "scan for queued triggers", move || {
         let mut rt = Runtime::new().unwrap();
 
         rt.block_on( async {
@@ -206,10 +205,7 @@ fn make_cas_event_triggers(
                 }
             }
         });
-
-
-    });
-    scheduler.watch_thread(Duration::from_millis(100))
+    })
 }
 
 async fn try_publish(
@@ -233,42 +229,36 @@ async fn try_publish(
 }
 
 fn make_cas_republish(caserver: Arc<CaServer>, actor: Actor) -> ScheduleHandle {
-    let mut scheduler = clokwerk::Scheduler::new();
-    scheduler.every(2.minutes()).run(move || {
+    SkippingScheduler::run(120, "CA certificate republish", move || {
         let mut rt = Runtime::new().unwrap();
         rt.block_on(async {
             info!("Triggering background republication for all CAs");
             if let Err(e) = caserver.republish_all(&actor).await {
                 error!("Background republishing failed: {}", e);
-            }
+            };
         })
-    });
-    scheduler.watch_thread(Duration::from_millis(100))
+    })
 }
 
 fn make_cas_refresh(caserver: Arc<CaServer>, refresh_rate: u32, actor: Actor) -> ScheduleHandle {
-    let mut scheduler = clokwerk::Scheduler::new();
-    scheduler.every(refresh_rate.seconds()).run(move || {
+    SkippingScheduler::run(refresh_rate, "CA certificate refresh", move || {
         let mut rt = Runtime::new().unwrap();
         rt.block_on(async {
             info!("Triggering background refresh for all CAs");
-            caserver.resync_all(&actor).await
-        })
-    });
-    scheduler.watch_thread(Duration::from_millis(100))
+            caserver.resync_all(&actor).await;
+        });
+    })
 }
 
 fn make_announcements_refresh(bgp_analyser: Arc<BgpAnalyser>) -> ScheduleHandle {
-    let mut scheduler = clokwerk::Scheduler::new();
-    scheduler.every(1.seconds()).run(move || {
+    SkippingScheduler::run(5, "update RIS BGP info", move || {
         let mut rt = Runtime::new().unwrap();
         rt.block_on(async {
             if let Err(e) = bgp_analyser.update().await {
                 error!("Failed to update BGP announcements: {}", e)
             }
         })
-    });
-    scheduler.watch_thread(Duration::from_millis(100))
+    })
 }
 
 fn make_archive_old_commands(
@@ -277,8 +267,7 @@ fn make_archive_old_commands(
     archive_threshold_days: Option<i64>,
     actor: Actor,
 ) -> ScheduleHandle {
-    let mut scheduler = clokwerk::Scheduler::new();
-    scheduler.every(1.hours()).run(move || {
+    SkippingScheduler::run(3600, "archive old commands", move || {
         let mut rt = Runtime::new().unwrap();
         rt.block_on(async {
             if let Some(days) = archive_threshold_days {
@@ -295,14 +284,12 @@ fn make_archive_old_commands(
                 }
             }
         })
-    });
-    scheduler.watch_thread(Duration::from_millis(100))
+    })
 }
 
 #[cfg(feature = "multi-user")]
 fn make_login_cache_sweeper_sh(cache: Arc<LoginSessionCache>) -> ScheduleHandle {
-    let mut scheduler = clokwerk::Scheduler::new();
-    scheduler.every(1.minutes()).run(move || {
+    SkippingScheduler::run(3600, "sweep logins", move || {
         let mut rt = Runtime::new().unwrap();
         rt.block_on(async {
             debug!("Triggering background sweep of session decryption cache");
@@ -311,6 +298,112 @@ fn make_login_cache_sweeper_sh(cache: Arc<LoginSessionCache>) -> ScheduleHandle 
                 error!("Background sweep of session decryption cache failed: {}", e);
             }
         })
-    });
-    scheduler.watch_thread(Duration::from_millis(100))
+    })
+}
+
+struct SkippingScheduler;
+
+impl SkippingScheduler {
+    fn run<F>(seconds: u32, name: &'static str, f: F) -> ScheduleHandle
+    where
+        F: FnMut() + Clone + Send + 'static,
+    {
+        let lock = RunLock::new();
+
+        let mut scheduler = clokwerk::Scheduler::new();
+        scheduler.every(seconds.seconds()).run(move || {
+            if lock.is_running() {
+                warn!(
+                    "Previous background job '{}' is still runing, will skip and try again in {} seconds",
+                    name, seconds
+                )
+            } else {
+                lock.run();
+                let mut f = f.clone();
+                f();
+                lock.done();
+            }
+        });
+
+        scheduler.watch_thread(Duration::from_millis(100))
+    }
+}
+
+struct RunLock {
+    state: RwLock<RunState>,
+}
+
+impl RunLock {
+    fn new() -> Self {
+        RunLock {
+            state: RwLock::new(RunState(false)),
+        }
+    }
+
+    fn run(&self) {
+        self.state.write().unwrap().run();
+    }
+
+    fn done(&self) {
+        self.state.write().unwrap().done();
+    }
+
+    fn is_running(&self) -> bool {
+        self.state.read().unwrap().is_running()
+    }
+}
+
+struct RunState(bool);
+
+impl RunState {
+    fn run(&mut self) {
+        self.0 = true;
+    }
+
+    fn done(&mut self) {
+        self.0 = false;
+    }
+
+    fn is_running(&self) -> bool {
+        self.0
+    }
+}
+
+mod tests {
+
+    #[test]
+    #[ignore = "takes too long, use for testing during development"]
+    fn test_skip_scheduler() {
+        use super::*;
+
+        struct Counter(u32);
+
+        impl Counter {
+            fn inc(&mut self) {
+                self.0 += 1;
+            }
+
+            fn total(&self) -> u32 {
+                self.0
+            }
+        }
+
+        let counter: Arc<RwLock<Counter>> = Arc::new(RwLock::new(Counter(0)));
+
+        let counter_sh = counter.clone();
+
+        let _schedule_handle = SkippingScheduler::run(1, "CA certificate refresh", move || {
+            let mut rt = Runtime::new().unwrap();
+            rt.block_on(async {
+                counter_sh.write().unwrap().inc();
+                tokio::time::delay_for(std::time::Duration::from_secs(2)).await;
+            });
+        });
+
+        std::thread::sleep(std::time::Duration::from_secs(11));
+
+        let total = counter.read().unwrap().total();
+
+        assert_eq!(total, 5);
+    }
 }
