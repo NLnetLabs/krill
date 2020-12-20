@@ -64,6 +64,8 @@ pub const KRILL_CLI_API_ENV: &str = "KRILL_CLI_API";
 pub const KRILL_CLI_MY_CA_ARG: &str = "ca";
 pub const KRILL_CLI_MY_CA_ENV: &str = "KRILL_CLI_MY_CA";
 
+pub const REQUEUE_DELAY_SECONDS: i64 = 300;
+
 pub const KRILL_HTTPS_ROOT_CERTS_ENV: &str = "KRILL_HTTPS_ROOT_CERTS";
 
 pub const ID_CERTIFICATE_VALIDITY_YEARS: i32 = 15;

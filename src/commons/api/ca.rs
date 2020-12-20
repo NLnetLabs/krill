@@ -1524,16 +1524,23 @@ impl ParentStatuses {
         self.0.get(parent)
     }
 
-    pub fn set_failure(&mut self, parent: &ParentHandle, uri: String, error: ErrorResponse) {
-        self.get_mut_status(parent).set_failure(uri, error);
+    pub fn set_failure(&mut self, parent: &ParentHandle, uri: String, error: ErrorResponse, next_seconds: i64) {
+        self.get_mut_status(parent).set_failure(uri, error, next_seconds);
     }
 
-    pub fn set_entitlements(&mut self, parent: &ParentHandle, uri: String, entitlements: &Entitlements) {
-        self.get_mut_status(parent).set_entitlements(uri, entitlements);
+    pub fn set_entitlements(
+        &mut self,
+        parent: &ParentHandle,
+        uri: String,
+        entitlements: &Entitlements,
+        next_seconds: i64,
+    ) {
+        self.get_mut_status(parent)
+            .set_entitlements(uri, entitlements, next_seconds);
     }
 
-    pub fn set_last_updated(&mut self, parent: &ParentHandle, uri: String) {
-        self.get_mut_status(parent).set_last_updated(uri);
+    pub fn set_last_updated(&mut self, parent: &ParentHandle, uri: String, next_seconds: i64) {
+        self.get_mut_status(parent).set_last_updated(uri, next_seconds);
     }
 
     fn get_mut_status(&mut self, parent: &ParentHandle) -> &mut ParentStatus {
@@ -1691,21 +1698,21 @@ impl ParentStatus {
         self.last_exchange.map(|e| e.into_failure_opt()).flatten()
     }
 
-    fn set_next_exchange_plus_one_hour(&mut self) {
-        self.next_exchange_before = (Time::now() + Duration::hours(1)).timestamp();
+    fn set_next_exchange_plus_seconds(&mut self, next_seconds: i64) {
+        self.next_exchange_before = (Time::now() + Duration::seconds(next_seconds)).timestamp();
     }
 
-    fn set_failure(&mut self, uri: String, error: ErrorResponse) {
+    fn set_failure(&mut self, uri: String, error: ErrorResponse, next_seconds: i64) {
         self.last_exchange = Some(ParentExchange {
             timestamp: Time::now().timestamp(),
             uri,
             result: ParentExchangeResult::Failure(error),
         });
-        self.set_next_exchange_plus_one_hour();
+        self.set_next_exchange_plus_seconds(next_seconds);
     }
 
-    fn set_entitlements(&mut self, uri: String, entitlements: &Entitlements) {
-        self.set_last_updated(uri);
+    fn set_entitlements(&mut self, uri: String, entitlements: &Entitlements, next_run_seconds: i64) {
+        self.set_last_updated(uri, next_run_seconds);
 
         self.entitlements = entitlements
             .classes()
@@ -1723,16 +1730,16 @@ impl ParentStatus {
         }
 
         self.all_resources = all_resources;
-        self.set_next_exchange_plus_one_hour();
+        self.set_next_exchange_plus_seconds(next_run_seconds);
     }
 
-    fn set_last_updated(&mut self, uri: String) {
+    fn set_last_updated(&mut self, uri: String, next_run_seconds: i64) {
         self.last_exchange = Some(ParentExchange {
             timestamp: Time::now().timestamp(),
             uri,
             result: ParentExchangeResult::Success,
         });
-        self.set_next_exchange_plus_one_hour();
+        self.set_next_exchange_plus_seconds(next_run_seconds);
     }
 }
 

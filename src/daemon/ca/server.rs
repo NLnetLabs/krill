@@ -10,21 +10,24 @@ use chrono::Duration;
 use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 
-use crate::commons::{actor::Actor, api::{
-    self, AddChildRequest, Base64, CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary, ChildAuthRequest,
-    ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, Handle, IssuanceRequest,
-    IssuanceResponse, IssuedCert, ListReply, ParentCaContact, ParentCaReq, ParentHandle, ParentStatuses, PublishDelta,
-    RcvdCert, RepoInfo, RepoStatus, RepositoryContact, ResourceClassName, ResourceSet, RevocationRequest,
-    RevocationResponse, RtaName, StoredEffect, UpdateChildRequest,
-}};
 use crate::commons::crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder};
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::{Aggregate, AggregateStore, Command, CommandKey};
 use crate::commons::remote::cmslogger::CmsLogger;
 use crate::commons::remote::{rfc6492, rfc8181, rfc8183};
 use crate::commons::util::httpclient;
+use crate::commons::{
+    actor::Actor,
+    api::{
+        self, AddChildRequest, Base64, CaCommandDetails, CaCommandResult, CertAuthList, CertAuthSummary,
+        ChildAuthRequest, ChildCaInfo, ChildHandle, CommandHistory, CommandHistoryCriteria, Entitlements, Handle,
+        IssuanceRequest, IssuanceResponse, IssuedCert, ListReply, ParentCaContact, ParentCaReq, ParentHandle,
+        ParentStatuses, PublishDelta, RcvdCert, RepoInfo, RepoStatus, RepositoryContact, ResourceClassName,
+        ResourceSet, RevocationRequest, RevocationResponse, RtaName, StoredEffect, UpdateChildRequest,
+    },
+};
 use crate::commons::{KrillEmptyResult, KrillResult};
-use crate::constants::{CASERVER_DIR, STATUS_DIR};
+use crate::constants::{CASERVER_DIR, REQUEUE_DELAY_SECONDS, STATUS_DIR};
 use crate::daemon::ca::{
     self, ta_handle, CertAuth, Cmd, CmdDet, IniDet, ResourceTaggedAttestation, RouteAuthorizationUpdates,
     RtaContentRequest, RtaPrepareRequest, StatusStore,
@@ -152,7 +155,13 @@ impl CaServer {
     }
 
     /// Initialises an embedded trust anchor with all resources.
-    pub async fn init_ta(&self, info: RepoInfo, ta_aia: uri::Rsync, ta_uris: Vec<uri::Https>, actor: &Actor) -> KrillResult<()> {
+    pub async fn init_ta(
+        &self,
+        info: RepoInfo,
+        ta_aia: uri::Rsync,
+        ta_uris: Vec<uri::Https>,
+        actor: &Actor,
+    ) -> KrillResult<()> {
         let ta_handle = ca::ta_handle();
         let lock = self.locks.ca(&ta_handle).await;
         let _ = lock.write().await;
@@ -165,7 +174,8 @@ impl CaServer {
 
             // add embedded repo
             let embedded = RepositoryContact::embedded(info);
-            let upd_repo_cmd = CmdDet::update_repo(&ta_handle, embedded, self.config.clone(), self.signer.clone(), actor);
+            let upd_repo_cmd =
+                CmdDet::update_repo(&ta_handle, embedded, self.config.clone(), self.signer.clone(), actor);
             self.ca_store.command(upd_repo_cmd)?;
 
             // make trust anchor
@@ -182,7 +192,7 @@ impl CaServer {
                 rcvd_cert,
                 self.config.clone(),
                 self.signer.clone(),
-                actor
+                actor,
             );
             self.ca_store.command(rcv_cert)?;
 
@@ -340,7 +350,8 @@ impl CaServer {
         if (id_opt.is_some() && resources_opt.is_some()) || (id_opt.is_none() && resources_opt.is_none()) {
             Err(Error::CaChildUpdateOneThing(handle.clone(), child))
         } else if let Some(id) = id_opt {
-            self.send_command(CmdDet::child_update_id(handle, child, id, actor)).await?;
+            self.send_command(CmdDet::child_update_id(handle, child, id, actor))
+                .await?;
             Ok(())
         } else {
             let resources = resources_opt.unwrap();
@@ -357,7 +368,7 @@ impl CaServer {
             child,
             self.config.clone(),
             self.signer.clone(),
-            actor
+            actor,
         ))
         .await?;
         Ok(())
@@ -512,7 +523,7 @@ impl CaServer {
             issue_req.clone(),
             self.config.clone(),
             self.signer.clone(),
-            actor
+            actor,
         );
 
         let ca = self.send_command(cmd).await?;
@@ -539,7 +550,7 @@ impl CaServer {
             revoke_request,
             self.config.clone(),
             self.signer.clone(),
-            actor
+            actor,
         );
         self.send_command(cmd).await?;
 
@@ -549,10 +560,12 @@ impl CaServer {
     /// Get the current CAs
     pub fn ca_list(&self, actor: &Actor) -> KrillResult<CertAuthList> {
         Ok(CertAuthList::new(
-            self.ca_store.list()?.into_iter()
+            self.ca_store
+                .list()?
+                .into_iter()
                 .filter(|handle| actor.is_allowed("CA_READ", handle.clone()))
                 .map(CertAuthSummary::new)
-                .collect()
+                .collect(),
         ))
     }
 
@@ -671,11 +684,18 @@ impl CaServer {
     }
 
     /// Try to update a specific CA
-    pub async fn get_updates_from_parent(&self, handle: &Handle, parent: &ParentHandle, actor: &Actor) -> KrillResult<()> {
+    pub async fn get_updates_from_parent(
+        &self,
+        handle: &Handle,
+        parent: &ParentHandle,
+        actor: &Actor,
+    ) -> KrillResult<()> {
         if handle == &ta_handle() {
             Ok(()) // The (test) TA never needs updates.
         } else {
             let ca = self.get_ca(&handle).await?;
+
+            let next_run_seconds = self.config.ca_refresh as i64;
 
             match ca.get_repository_contact() {
                 Ok(contact) => {
@@ -685,7 +705,7 @@ impl CaServer {
                             self.status_store
                                 .lock()
                                 .await
-                                .set_parent_failure(handle, parent, uri, &e)
+                                .set_parent_failure(handle, parent, uri, &e, next_run_seconds)
                                 .await?;
                             Err(e)
                         }
@@ -693,7 +713,7 @@ impl CaServer {
                             self.status_store
                                 .lock()
                                 .await
-                                .set_parent_entitlements(handle, parent, uri, &entitlements)
+                                .set_parent_entitlements(handle, parent, uri, &entitlements, next_run_seconds)
                                 .await?;
                             if !self
                                 .update_resource_classes(handle, parent.clone(), entitlements, actor)
@@ -713,7 +733,8 @@ impl CaServer {
 
     /// Sends requests to a specific parent for the CA matching handle.
     pub async fn send_requests(&self, handle: &Handle, parent: &ParentHandle, actor: &Actor) -> KrillResult<()> {
-        self.send_revoke_requests_handle_responses(handle, parent, actor).await?;
+        self.send_revoke_requests_handle_responses(handle, parent, actor)
+            .await?;
         self.send_cert_requests_handle_responses(handle, parent, actor).await
     }
 
@@ -728,7 +749,12 @@ impl CaServer {
         Ok(())
     }
 
-    async fn send_revoke_requests_handle_responses(&self, handle: &Handle, parent: &ParentHandle, actor: &Actor) -> KrillResult<()> {
+    async fn send_revoke_requests_handle_responses(
+        &self,
+        handle: &Handle,
+        parent: &ParentHandle,
+        actor: &Actor,
+    ) -> KrillResult<()> {
         let child = self.get_ca(handle).await?;
         let requests = child.revoke_requests(parent);
 
@@ -761,6 +787,8 @@ impl CaServer {
             ParentCaContact::Rfc6492(parent_res) => {
                 let uri = parent_res.service_uri().to_string();
 
+                let next_run_seconds = self.config.ca_refresh as i64;
+
                 match self
                     .send_revoke_requests_rfc6492(revoke_requests, child.id_key(), parent_res)
                     .await
@@ -769,7 +797,7 @@ impl CaServer {
                         self.status_store
                             .lock()
                             .await
-                            .set_parent_failure(handle, parent, uri, &e)
+                            .set_parent_failure(handle, parent, uri, &e, next_run_seconds)
                             .await?;
                         Err(e)
                     }
@@ -777,7 +805,7 @@ impl CaServer {
                         self.status_store
                             .lock()
                             .await
-                            .set_parent_last_updated(handle, parent, uri)
+                            .set_parent_last_updated(handle, parent, uri, next_run_seconds)
                             .await?;
                         Ok(res)
                     }
@@ -821,7 +849,7 @@ impl CaServer {
                     req,
                     self.config.clone(),
                     self.signer.clone(),
-                    actor
+                    actor,
                 ))
                 .await?;
             }
@@ -866,13 +894,21 @@ impl CaServer {
         Ok(revoke_map)
     }
 
-    async fn send_cert_requests_handle_responses(&self, handle: &Handle, parent: &ParentHandle, actor: &Actor) -> KrillResult<()> {
+    async fn send_cert_requests_handle_responses(
+        &self,
+        handle: &Handle,
+        parent: &ParentHandle,
+        actor: &Actor,
+    ) -> KrillResult<()> {
         let child = self.get_ca(handle).await?;
         let cert_requests = child.cert_requests(parent);
 
         let issued_certs = match child.parent(parent)? {
             ParentCaContact::Ta(_) => Err(Error::TaNotAllowed),
-            ParentCaContact::Embedded => self.send_cert_requests_embedded(cert_requests, handle, parent, actor).await,
+            ParentCaContact::Embedded => {
+                self.send_cert_requests_embedded(cert_requests, handle, parent, actor)
+                    .await
+            }
             ParentCaContact::Rfc6492(parent_res) => {
                 let uri = parent_res.service_uri().to_string();
                 match self
@@ -883,7 +919,7 @@ impl CaServer {
                         self.status_store
                             .lock()
                             .await
-                            .set_parent_failure(handle, parent, uri, &e)
+                            .set_parent_failure(handle, parent, uri, &e, REQUEUE_DELAY_SECONDS)
                             .await?;
                         Err(e)
                     }
@@ -891,7 +927,7 @@ impl CaServer {
                         self.status_store
                             .lock()
                             .await
-                            .set_parent_last_updated(handle, parent, uri)
+                            .set_parent_last_updated(handle, parent, uri, self.config.ca_refresh as i64)
                             .await?;
                         Ok(res)
                     }
@@ -907,7 +943,7 @@ impl CaServer {
                     RcvdCert::from(issued),
                     self.config.clone(),
                     self.signer.clone(),
-                    actor
+                    actor,
                 ))
                 .await?;
             }
@@ -938,7 +974,7 @@ impl CaServer {
                         req,
                         self.config.clone(),
                         self.signer.clone(),
-                        actor
+                        actor,
                     ))
                     .await?;
 
@@ -1298,13 +1334,18 @@ impl CaServer {
 ///
 impl CaServer {
     /// Update the routes authorized by a CA
-    pub async fn ca_routes_update(&self, handle: Handle, updates: RouteAuthorizationUpdates, actor: &Actor) -> KrillResult<()> {
+    pub async fn ca_routes_update(
+        &self,
+        handle: Handle,
+        updates: RouteAuthorizationUpdates,
+        actor: &Actor,
+    ) -> KrillResult<()> {
         self.send_command(CmdDet::route_authorizations_update(
             &handle,
             updates,
             self.config.clone(),
             self.signer.clone(),
-            actor
+            actor,
         ))
         .await?;
         Ok(())
@@ -1315,21 +1356,39 @@ impl CaServer {
 ///
 impl CaServer {
     /// Sign a one-off single-signed RTA
-    pub async fn rta_sign(&self, ca: Handle, name: RtaName, request: RtaContentRequest, actor: &Actor) -> KrillResult<()> {
+    pub async fn rta_sign(
+        &self,
+        ca: Handle,
+        name: RtaName,
+        request: RtaContentRequest,
+        actor: &Actor,
+    ) -> KrillResult<()> {
         let cmd = CmdDet::rta_sign(&ca, name, request, self.signer.clone(), actor);
         self.send_command(cmd).await?;
         Ok(())
     }
 
     /// Prepare a multi-singed RTA
-    pub async fn rta_multi_prep(&self, ca: &Handle, name: RtaName, request: RtaPrepareRequest, actor: &Actor) -> KrillResult<()> {
+    pub async fn rta_multi_prep(
+        &self,
+        ca: &Handle,
+        name: RtaName,
+        request: RtaPrepareRequest,
+        actor: &Actor,
+    ) -> KrillResult<()> {
         let cmd = CmdDet::rta_multi_prep(ca, name, request, self.signer.clone(), actor);
         self.send_command(cmd).await?;
         Ok(())
     }
 
     /// Co-sign an existing RTA
-    pub async fn rta_multi_cosign(&self, ca: Handle, name: RtaName, rta: ResourceTaggedAttestation, actor: &Actor) -> KrillResult<()> {
+    pub async fn rta_multi_cosign(
+        &self,
+        ca: Handle,
+        name: RtaName,
+        rta: ResourceTaggedAttestation,
+        actor: &Actor,
+    ) -> KrillResult<()> {
         let cmd = CmdDet::rta_multi_sign(&ca, name, rta, self.signer.clone(), actor);
         self.send_command(cmd).await?;
         Ok(())

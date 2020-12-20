@@ -73,20 +73,29 @@ impl StatusStore {
         parent: &ParentHandle,
         uri: String,
         error: &Error,
+        next_run_seconds: i64,
     ) -> KrillResult<()> {
         let _lock = self.lock.write().await;
         let mut status = self.get_ca_status(ca)?;
 
         let error_response = Self::error_to_error_res(&error);
 
-        status.parents.set_failure(parent, uri, error_response);
+        status
+            .parents
+            .set_failure(parent, uri, error_response, next_run_seconds);
         self.set_ca_status(ca, &status)
     }
 
-    pub async fn set_parent_last_updated(&self, ca: &Handle, parent: &ParentHandle, uri: String) -> KrillResult<()> {
+    pub async fn set_parent_last_updated(
+        &self,
+        ca: &Handle,
+        parent: &ParentHandle,
+        uri: String,
+        next_run_seconds: i64,
+    ) -> KrillResult<()> {
         let _lock = self.lock.write().await;
         let mut status = self.get_ca_status(ca)?;
-        status.parents.set_last_updated(parent, uri);
+        status.parents.set_last_updated(parent, uri, next_run_seconds);
         self.set_ca_status(ca, &status)
     }
 
@@ -96,10 +105,13 @@ impl StatusStore {
         parent: &ParentHandle,
         uri: String,
         entitlements: &Entitlements,
+        next_run_seconds: i64,
     ) -> KrillResult<()> {
         let _lock = self.lock.write().await;
         let mut status = self.get_ca_status(ca)?;
-        status.parents.set_entitlements(parent, uri, entitlements);
+        status
+            .parents
+            .set_entitlements(parent, uri, entitlements, next_run_seconds);
         self.set_ca_status(ca, &status)
     }
 
