@@ -256,12 +256,14 @@ impl CaServer {
     /// Refresh all CAs:
     /// - send pending requests if present, or
     /// - ask parent for updates and process if present
-    pub async fn cas_refresh_all(&self) {
+    pub async fn cas_refresh_all(&self, actor: &Actor) {
         if let Ok(cas) = self.ca_store.list() {
             for ca_handle in cas {
                 if let Ok(ca) = self.get_ca(&ca_handle).await {
                     for parent in ca.parents() {
-                        self.mq.push_sync_parent(ca_handle.clone(), parent.clone())
+                        if let Err(e) = self.ca_sync_parent(&ca_handle, parent, actor).await {
+                            error!("Failed to synchronise CA '{}' with parent '{}'. Will retry in {} seconds. Error was: {}", ca_handle, parent, REQUEUE_DELAY_SECONDS, e);
+                        }
                     }
                 }
             }
@@ -657,27 +659,6 @@ impl CaServer {
         let activate_cmd = CmdDet::key_roll_activate(&handle, staging, self.config.clone(), self.signer.clone(), actor);
         self.send_command(activate_cmd).await?;
         Ok(())
-    }
-
-    /// Try to get update for parents, if they were delayed because there was no repository configured
-    /// when they were added
-    pub async fn get_delayed_updates(&self, ca_handle: &Handle, actor: &Actor) -> KrillResult<()> {
-        if ca_handle == &ta_handle() {
-            Ok(()) // The (test) TA never needs updates.
-        } else {
-            let ca = self.get_ca(ca_handle).await?;
-            // If this is the first time the repo was configured, then the current resources will be
-            // empty and certs should now be requested from parents. If there *are* current resources,
-            // then there was a repository, and new certificates have already been requested for the
-            // new repository as part of the update repository process. So, in that case we do *not*
-            // need to request anything now.
-            if ca.all_resources().is_empty() {
-                for parent in ca.parents() {
-                    self.get_updates_from_parent(ca_handle, parent, actor).await?;
-                }
-            }
-            Ok(())
-        }
     }
 
     /// Try to update a specific CA

@@ -74,7 +74,7 @@ impl Scheduler {
             ));
 
             cas_republish = Some(make_cas_republish(caserver.clone(), actor.clone()));
-            cas_refresh = Some(make_cas_refresh(caserver.clone(), config.ca_refresh));
+            cas_refresh = Some(make_cas_refresh(caserver.clone(), config.ca_refresh, actor.clone()));
         }
 
         let announcements_refresh = make_announcements_refresh(bgp_analyser);
@@ -110,7 +110,7 @@ fn make_cas_event_triggers(
                 match evt {
                     QueueEvent::ServerStarted => {
                         info!("Will re-sync all CAs with their parents and repository after startup");
-                        caserver.cas_refresh_all().await;
+                        caserver.cas_refresh_all(&actor).await;
                         let publisher = CaPublisher::new(caserver.clone(), pubserver.clone());
                         match caserver.ca_list(&actor) {
                             Err(e) => error!("Unable to obtain CA list: {}", e),
@@ -243,12 +243,12 @@ fn make_cas_republish(caserver: Arc<CaServer>, actor: Actor) -> ScheduleHandle {
     })
 }
 
-fn make_cas_refresh(caserver: Arc<CaServer>, refresh_rate: u32) -> ScheduleHandle {
+fn make_cas_refresh(caserver: Arc<CaServer>, refresh_rate: u32, actor: Actor) -> ScheduleHandle {
     SkippingScheduler::run(refresh_rate, "CA certificate refresh", move || {
         let mut rt = Runtime::new().unwrap();
         rt.block_on(async {
             info!("Triggering background refresh for all CAs");
-            caserver.cas_refresh_all().await;
+            caserver.cas_refresh_all(&actor).await;
         });
     })
 }

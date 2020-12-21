@@ -1560,7 +1560,8 @@ async fn api_resync_all(req: Request) -> RoutingResult {
 async fn api_refresh_all(req: Request) -> RoutingResult {
     match *req.method() {
         Method::POST => aa!(req, CA_UPDATE, {
-            render_empty_res(req.state().read().await.cas_refresh_all().await)
+            let actor = req.actor();
+            render_empty_res(req.state().read().await.cas_refresh_all(&actor).await)
         }),
         _ => aa!(req, LOGIN, render_unknown_method()),
     }
