@@ -109,7 +109,7 @@ fn make_cas_event_triggers(
                 match evt {
                     QueueEvent::ServerStarted => {
                         info!("Will re-sync all CAs with their parents and repository after startup");
-                        caserver.resync_all(&actor).await;
+                        caserver.cas_resync_all(&actor).await;
                         let publisher = CaPublisher::new(caserver.clone(), pubserver.clone());
                         match caserver.ca_list(&actor) {
                             Err(e) => error!("Unable to obtain CA list: {}", e),
@@ -245,7 +245,7 @@ fn make_cas_refresh(caserver: Arc<CaServer>, refresh_rate: u32, actor: Actor) ->
         let mut rt = Runtime::new().unwrap();
         rt.block_on(async {
             info!("Triggering background refresh for all CAs");
-            caserver.resync_all(&actor).await;
+            caserver.cas_resync_all(&actor).await;
         });
     })
 }

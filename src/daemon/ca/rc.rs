@@ -340,6 +340,10 @@ impl ResourceClass {
     pub fn revoke_request(&self) -> Option<&RevocationRequest> {
         self.key_state.revoke_request()
     }
+
+    pub fn has_pending_requests(&self) -> bool {
+        !self.cert_requests().is_empty() || self.revoke_request().is_some()
+    }
 }
 
 /// # Publishing

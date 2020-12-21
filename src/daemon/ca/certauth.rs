@@ -1016,6 +1016,16 @@ impl CertAuth {
         res
     }
 
+    /// Returns whether the CA has any pending requests for a parent
+    pub fn has_pending_requests(&self, parent: &ParentHandle) -> bool {
+        for rc in self.resources.values() {
+            if rc.parent_handle() == parent && rc.has_pending_requests() {
+                return true;
+            }
+        }
+        false
+    }
+
     /// This processes entitlements from a parent, and updates the resource
     /// classes for this CA as needed. I.e.
     ///

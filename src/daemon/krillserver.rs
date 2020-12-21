@@ -662,7 +662,7 @@ impl KrillServer {
 
     /// Refresh all CAs: ask for updates and shrink as needed.
     pub async fn refresh_all(&self, actor: &Actor) -> KrillEmptyResult {
-        self.get_caserver()?.resync_all(actor).await;
+        self.get_caserver()?.cas_resync_all(actor).await;
         Ok(())
     }
 

@@ -255,11 +255,43 @@ impl CaServer {
         }
     }
 
-    /// Refresh all CAs: ask for updates and shrink as needed.
-    pub async fn resync_all(&self, actor: &Actor) {
-        if let Err(e) = self.get_updates_for_all_cas(actor).await {
+    /// Refresh all CAs:
+    /// - send pending requests if present, or
+    /// - ask parent for updates and process if present
+    pub async fn cas_resync_all(&self, actor: &Actor) {
+        if let Err(e) = self.cas_resync_all_fallible(actor).await {
             error!("Failed to refresh CA certificates: {}", e);
         }
+    }
+
+    /// Try to get updates for all embedded CAs, will skip the TA and/or CAs that
+    /// have no parents. Will try to process all and log possible errors, i.e. do
+    /// not bail out because of issues with one CA.
+    ///
+    /// This method may return with an Error in case there are issues with the KeyStore.
+    async fn cas_resync_all_fallible(&self, actor: &Actor) -> KrillResult<()> {
+        for handle in self.ca_store.list()? {
+            if let Ok(ca) = self.get_ca(&handle).await {
+                for parent in ca.parents() {
+                    if ca.has_pending_requests(parent) {
+                        if let Err(e) = self.send_requests(&handle, parent, actor).await {
+                            error!(
+                                "Failed to send pending requests for CA '{}' to parent: '{}', error: {}",
+                                &handle, parent, e
+                            );
+                        } else {
+                            info!("Sent pending requests for CA '{}' to parent '{}'", &handle, parent);
+                        }
+                    } else if let Err(e) = self.get_updates_from_parent(&handle, &parent, actor).await {
+                        error!("Failed to refresh CA certificates for {}, error: {}", &handle, e);
+                    } else {
+                        info!("Synchronised CA '{}' with parent '{}'", &handle, &parent);
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Adds a child under an embedded CA
@@ -640,25 +672,6 @@ impl CaServer {
     pub async fn ca_keyroll_activate(&self, handle: Handle, staging: Duration, actor: &Actor) -> KrillResult<()> {
         let activate_cmd = CmdDet::key_roll_activate(&handle, staging, self.config.clone(), self.signer.clone(), actor);
         self.send_command(activate_cmd).await?;
-        Ok(())
-    }
-
-    /// Try to get updates for all embedded CAs, will skip the TA and/or CAs that
-    /// have no parents. Will try to process all and log possible errors, i.e. do
-    /// not bail out because of issues with one CA.
-    pub async fn get_updates_for_all_cas(&self, actor: &Actor) -> KrillResult<()> {
-        for handle in self.ca_store.list()? {
-            if let Ok(ca) = self.get_ca(&handle).await {
-                for parent in ca.parents() {
-                    if let Err(e) = self.get_updates_from_parent(&handle, &parent, actor).await {
-                        error!("Failed to refresh CA certificates for {}, error: {}", &handle, e);
-                    } else {
-                        info!("Synchronised CA '{}' with parent '{}'", &handle, &parent);
-                    }
-                }
-            }
-        }
-
         Ok(())
     }
 
