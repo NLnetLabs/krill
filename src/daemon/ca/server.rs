@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
 
+use futures::future::join_all;
 use tokio::sync::Mutex;
 
 use bytes::Bytes;
@@ -258,15 +259,33 @@ impl CaServer {
     /// - ask parent for updates and process if present
     pub async fn cas_refresh_all(&self, actor: &Actor) {
         if let Ok(cas) = self.ca_store.list() {
+            let mut ca_map: HashMap<Handle, Arc<CertAuth>> = HashMap::new();
             for ca_handle in cas {
                 if let Ok(ca) = self.get_ca(&ca_handle).await {
-                    for parent in ca.parents() {
-                        if let Err(e) = self.ca_sync_parent(&ca_handle, parent, actor).await {
-                            error!("Failed to synchronise CA '{}' with parent '{}'. Will retry in {} seconds. Error was: {}", ca_handle, parent, REQUEUE_DELAY_SECONDS, e);
-                        }
-                    }
+                    ca_map.insert(ca_handle, ca);
                 }
             }
+            self.ca_refresh_all_map(&ca_map, actor).await;
+        }
+    }
+
+    async fn ca_refresh_all_map(&self, map: &HashMap<Handle, Arc<CertAuth>>, actor: &Actor) {
+        let mut updates = vec![];
+        for (ca_handle, ca) in map.iter() {
+            for parent in ca.parents() {
+                updates.push(self.ca_sync_parent_infallible(&ca_handle, parent, actor));
+            }
+        }
+
+        join_all(updates).await;
+    }
+
+    async fn ca_sync_parent_infallible(&self, handle: &Handle, parent: &ParentHandle, actor: &Actor) {
+        if let Err(e) = self.ca_sync_parent(handle, parent, actor).await {
+            error!(
+                "Failed to synchronise CA '{}' with parent '{}'. Will retry in {} seconds. Error was: {}",
+                handle, parent, REQUEUE_DELAY_SECONDS, e
+            );
         }
     }
 
