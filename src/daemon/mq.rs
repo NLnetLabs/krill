@@ -20,66 +20,65 @@ use crate::daemon::ca::{CertAuth, Evt, EvtDet};
 #[derive(Clone, Debug, Eq, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 pub enum QueueEvent {
-    Delta(Handle, u64),
-    ParentAdded(Handle, u64, ParentHandle),
-    RepositoryConfigured(Handle, u64),
-    RequestsPending(Handle, u64),
-    ResourceClassRemoved(
-        Handle,
-        u64,
-        ParentHandle,
-        HashMap<ResourceClassName, Vec<RevocationRequest>>,
-    ),
-    UnexpectedKey(Handle, u64, ResourceClassName, RevocationRequest),
-    CleanOldRepo(Handle, u64),
-    ReschedulePublish(Handle, Time),
     ServerStarted,
+
+    SyncRepo(Handle),
+    RescheduleSyncRepo(Handle, Time),
+
+    SyncParent(Handle, ParentHandle),
+    RescheduleSyncParent(Handle, ParentHandle, Time),
+
+    ResourceClassRemoved(Handle, ParentHandle, HashMap<ResourceClassName, Vec<RevocationRequest>>),
+    UnexpectedKey(Handle, ResourceClassName, RevocationRequest),
+    CleanOldRepo(Handle),
 }
 
 impl fmt::Display for QueueEvent {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            QueueEvent::Delta(ca, version) => write!(f, "delta for '{}' version '{}'", ca, version),
-            QueueEvent::ParentAdded(ca, version, _parent) => {
-                write!(f, "parent added to '{}' version '{}'", ca, version)
-            }
-            QueueEvent::RepositoryConfigured(ca, version) => {
-                write!(f, "configured repository for '{}' version '{}'", ca, version)
-            }
-            QueueEvent::RequestsPending(ca, version) => {
-                write!(f, "requests pending for '{}' version '{}'", ca, version)
-            }
-            QueueEvent::ResourceClassRemoved(ca, version, _, _) => {
-                write!(f, "resource class removed for '{}' version '{}'", ca, version)
-            }
-            QueueEvent::UnexpectedKey(ca, version, rcn, _) => write!(
-                f,
-                "unexpected key found for '{}' version '{}' resource class: '{}'",
-                ca, version, rcn
-            ),
-            QueueEvent::CleanOldRepo(ca, version) => {
-                write!(f, "clean up old repo *if it exists* for '{}' version '{}'", ca, version)
-            }
-            QueueEvent::ReschedulePublish(ca, _time) => write!(f, "reschedule failed publication for '{}'", ca),
             QueueEvent::ServerStarted => write!(f, "Server just started"),
+            QueueEvent::SyncRepo(ca) => write!(f, "synchronize repo for '{}'", ca),
+            QueueEvent::RescheduleSyncRepo(ca, time) => write!(
+                f,
+                "reschedule failed synchronize repo for '{}' at: {}",
+                ca,
+                time.to_rfc3339()
+            ),
+            QueueEvent::SyncParent(ca, parent) => write!(f, "synchronize CA '{}' with parent '{}'", ca, parent),
+            QueueEvent::RescheduleSyncParent(ca, parent, time) => write!(
+                f,
+                "reschedule failed synchronize CA '{}' with parent '{}' for {}",
+                ca,
+                parent,
+                time.to_rfc3339()
+            ),
+            QueueEvent::ResourceClassRemoved(ca, _, _) => {
+                write!(f, "resource class removed for '{}' ", ca)
+            }
+            QueueEvent::UnexpectedKey(ca, rcn, _) => {
+                write!(f, "unexpected key found for '{}' resource class: '{}'", ca, rcn)
+            }
+            QueueEvent::CleanOldRepo(ca) => {
+                write!(f, "clean up old repo *if it exists* for '{}'", ca)
+            }
         }
     }
 }
 
 #[derive(Debug)]
-pub struct EventQueueListener {
+pub struct MessageQueue {
     q: RwLock<VecDeque<QueueEvent>>,
 }
 
-impl Default for EventQueueListener {
+impl Default for MessageQueue {
     fn default() -> Self {
         let mut vec = VecDeque::new();
         vec.push_back(QueueEvent::ServerStarted);
-        EventQueueListener { q: RwLock::new(vec) }
+        MessageQueue { q: RwLock::new(vec) }
     }
 }
 
-impl EventQueueListener {
+impl MessageQueue {
     pub fn pop_all(&self) -> Vec<QueueEvent> {
         let mut res = vec![];
         let mut q = self.q.write().unwrap();
@@ -89,40 +88,102 @@ impl EventQueueListener {
         res
     }
 
+    /// Add a queue event to the back of the queue UNLESS there is
+    /// already an equivalent event scheduled.
     pub fn push_back(&self, evt: QueueEvent) {
-        self.q.write().unwrap().push_back(evt)
+        let mut q = self.q.write().unwrap();
+
+        match &evt {
+            QueueEvent::SyncRepo(ca) | QueueEvent::RescheduleSyncRepo(ca, _) => {
+                for existing in q.iter() {
+                    match existing {
+                        QueueEvent::SyncRepo(existing_ca) | QueueEvent::RescheduleSyncRepo(existing_ca, _) => {
+                            if existing_ca == ca {
+                                debug!(
+                                    "Not (re-)scheduling publication for '{}', because event exists on queue",
+                                    ca
+                                );
+                                return;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            QueueEvent::SyncParent(ca, parent) | QueueEvent::RescheduleSyncParent(ca, parent, _) => {
+                for existing in q.iter() {
+                    match existing {
+                        QueueEvent::SyncParent(existing_ca, existing_parent)
+                        | QueueEvent::RescheduleSyncParent(existing_ca, existing_parent, _) => {
+                            if existing_ca == ca && existing_parent == parent {
+                                debug!(
+                                    "Not (re-)scheduling sync for '{}' with parent '{}', because event exists on queue",
+                                    ca, parent
+                                );
+                                return;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+
+        q.push_back(evt);
+    }
+
+    pub fn push_sync_repo(&self, ca: Handle) {
+        self.push_back(QueueEvent::SyncRepo(ca))
+    }
+
+    pub fn push_sync_parent(&self, ca: Handle, parent: ParentHandle) {
+        self.push_back(QueueEvent::SyncParent(ca, parent))
+    }
+
+    pub fn drop_sync_parent(&self, ca: &Handle, parent: &ParentHandle) {
+        let mut q = self.q.write().unwrap();
+
+        q.retain(|existing| match existing {
+            QueueEvent::SyncParent(ex_ca, ex_parent) | QueueEvent::RescheduleSyncParent(ex_ca, ex_parent, _) => {
+                ca != ex_ca || parent != ex_parent
+            }
+            _ => true,
+        });
     }
 }
 
-unsafe impl Send for EventQueueListener {}
-unsafe impl Sync for EventQueueListener {}
+unsafe impl Send for MessageQueue {}
+unsafe impl Sync for MessageQueue {}
 
 /// Implement listening for CertAuth Published events.
-impl eventsourcing::EventListener<CertAuth> for EventQueueListener {
-    fn listen(&self, _ca: &CertAuth, event: &Evt) {
+impl eventsourcing::EventListener<CertAuth> for MessageQueue {
+    fn listen(&self, ca: &CertAuth, event: &Evt) {
         trace!("Seen CertAuth event '{}'", event);
 
         let handle = event.handle();
-        let version = event.version();
 
         match event.details() {
             EvtDet::ObjectSetUpdated(_, _)
-            | EvtDet::ParentRemoved(_, _)
             | EvtDet::KeyPendingToNew(_, _, _)
             | EvtDet::KeyPendingToActive(_, _, _)
             | EvtDet::KeyRollFinished(_, _) => {
-                let evt = QueueEvent::Delta(handle.clone(), version);
-                self.push_back(evt);
+                self.push_sync_repo(handle.clone());
             }
+
+            EvtDet::ParentRemoved(parent, _) => {
+                self.drop_sync_parent(&handle, parent);
+                self.push_sync_repo(handle.clone());
+            }
+
             EvtDet::ResourceClassRemoved(class_name, _delta, parent, revocations) => {
-                self.push_back(QueueEvent::Delta(handle.clone(), version));
+                self.push_sync_repo(handle.clone());
 
                 let mut revocations_map = HashMap::new();
                 revocations_map.insert(class_name.clone(), revocations.clone());
 
                 self.push_back(QueueEvent::ResourceClassRemoved(
                     handle.clone(),
-                    version,
                     parent.clone(),
                     revocations_map,
                 ))
@@ -130,30 +191,29 @@ impl eventsourcing::EventListener<CertAuth> for EventQueueListener {
 
             EvtDet::UnexpectedKeyFound(rcn, revocation) => self.push_back(QueueEvent::UnexpectedKey(
                 handle.clone(),
-                version,
                 rcn.clone(),
                 revocation.clone(),
             )),
 
             EvtDet::ParentAdded(parent, _contact) => {
-                let evt = QueueEvent::ParentAdded(handle.clone(), version, parent.clone());
-                self.push_back(evt);
+                self.push_sync_parent(handle.clone(), parent.clone());
             }
             EvtDet::RepoUpdated(_) => {
-                let evt = QueueEvent::RepositoryConfigured(handle.clone(), version);
-                self.push_back(evt);
+                for parent in ca.parents() {
+                    self.push_sync_parent(handle.clone(), parent.clone());
+                }
             }
-            EvtDet::CertificateRequested(_, _, _) => {
-                let evt = QueueEvent::RequestsPending(handle.clone(), version);
-                self.push_back(evt);
+            EvtDet::CertificateRequested(rcn, _, _) | EvtDet::KeyRollActivated(rcn, _) => {
+                if let Ok(parent) = ca.parent_for_rc(rcn) {
+                    self.push_sync_parent(handle.clone(), parent.clone());
+                }
             }
-            EvtDet::KeyRollActivated(_, _) => {
-                let evt = QueueEvent::RequestsPending(handle.clone(), version);
-                self.push_back(evt);
-            }
+
             EvtDet::CertificateReceived(_, _, _) => {
-                let evt = QueueEvent::CleanOldRepo(handle.clone(), version);
-                self.push_back(evt);
+                if ca.old_repository_contact().is_some() {
+                    let evt = QueueEvent::CleanOldRepo(handle.clone());
+                    self.push_back(evt);
+                }
             }
             _ => {}
         }

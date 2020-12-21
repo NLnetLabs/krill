@@ -33,7 +33,7 @@ use crate::daemon::ca::{
     RtaContentRequest, RtaPrepareRequest, StatusStore,
 };
 use crate::daemon::config::Config;
-use crate::daemon::mq::EventQueueListener;
+use crate::daemon::mq::MessageQueue;
 
 //------------ CaServer ------------------------------------------------------
 
@@ -111,16 +111,13 @@ pub struct CaServer {
     ca_store: Arc<AggregateStore<CertAuth>>,
     locks: Arc<CaLocks>,
     status_store: Arc<Mutex<StatusStore>>,
+    mq: Arc<MessageQueue>,
 }
 
 impl CaServer {
     /// Builds a new CaServer. Will return an error if the TA store cannot be
     /// initialised.
-    pub async fn build(
-        config: Arc<Config>,
-        events_queue: Arc<EventQueueListener>,
-        signer: Arc<KrillSigner>,
-    ) -> KrillResult<Self> {
+    pub async fn build(config: Arc<Config>, mq: Arc<MessageQueue>, signer: Arc<KrillSigner>) -> KrillResult<Self> {
         let mut ca_store = AggregateStore::<CertAuth>::new(&config.data_dir, CASERVER_DIR)?;
         if config.always_recover_data {
             ca_store.recover()?;
@@ -131,7 +128,7 @@ impl CaServer {
             );
             ca_store.recover()?;
         }
-        ca_store.add_listener(events_queue);
+        ca_store.add_listener(mq.clone());
 
         let status_store = StatusStore::new(&config.data_dir, STATUS_DIR)?;
 
@@ -143,6 +140,7 @@ impl CaServer {
             ca_store: Arc::new(ca_store),
             locks,
             status_store: Arc::new(Mutex::new(status_store)),
+            mq,
         })
     }
 
@@ -258,40 +256,26 @@ impl CaServer {
     /// Refresh all CAs:
     /// - send pending requests if present, or
     /// - ask parent for updates and process if present
-    pub async fn cas_resync_all(&self, actor: &Actor) {
-        if let Err(e) = self.cas_resync_all_fallible(actor).await {
-            error!("Failed to refresh CA certificates: {}", e);
-        }
-    }
-
-    /// Try to get updates for all embedded CAs, will skip the TA and/or CAs that
-    /// have no parents. Will try to process all and log possible errors, i.e. do
-    /// not bail out because of issues with one CA.
-    ///
-    /// This method may return with an Error in case there are issues with the KeyStore.
-    async fn cas_resync_all_fallible(&self, actor: &Actor) -> KrillResult<()> {
-        for handle in self.ca_store.list()? {
-            if let Ok(ca) = self.get_ca(&handle).await {
-                for parent in ca.parents() {
-                    if ca.has_pending_requests(parent) {
-                        if let Err(e) = self.send_requests(&handle, parent, actor).await {
-                            error!(
-                                "Failed to send pending requests for CA '{}' to parent: '{}', error: {}",
-                                &handle, parent, e
-                            );
-                        } else {
-                            info!("Sent pending requests for CA '{}' to parent '{}'", &handle, parent);
-                        }
-                    } else if let Err(e) = self.get_updates_from_parent(&handle, &parent, actor).await {
-                        error!("Failed to refresh CA certificates for {}, error: {}", &handle, e);
-                    } else {
-                        info!("Synchronised CA '{}' with parent '{}'", &handle, &parent);
+    pub async fn cas_refresh_all(&self) {
+        if let Ok(cas) = self.ca_store.list() {
+            for ca_handle in cas {
+                if let Ok(ca) = self.get_ca(&ca_handle).await {
+                    for parent in ca.parents() {
+                        self.mq.push_sync_parent(ca_handle.clone(), parent.clone())
                     }
                 }
             }
         }
+    }
 
-        Ok(())
+    pub async fn ca_sync_parent(&self, handle: &Handle, parent: &ParentHandle, actor: &Actor) -> KrillResult<()> {
+        let ca = self.get_ca(handle).await?;
+
+        if ca.has_pending_requests(parent) {
+            self.send_requests(&handle, parent, actor).await
+        } else {
+            self.get_updates_from_parent(&handle, &parent, actor).await
+        }
     }
 
     /// Adds a child under an embedded CA

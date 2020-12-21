@@ -152,13 +152,17 @@ struct ApiCallLogger {
 impl ApiCallLogger {
     fn new(req: &Request) -> Self {
         if log_enabled!(log::Level::Trace) {
-            trace!("Request: method={} path={} headers={:?}",
-                &req.method(), &req.path(), &req.headers());
+            trace!(
+                "Request: method={} path={} headers={:?}",
+                &req.method(),
+                &req.path(),
+                &req.headers()
+            );
         }
-        
+
         ApiCallLogger {
             req_method: req.method().clone(),
-            req_path: req.path.full().to_string()
+            req_path: req.path.full().to_string(),
         }
     }
 
@@ -1556,8 +1560,7 @@ async fn api_resync_all(req: Request) -> RoutingResult {
 async fn api_refresh_all(req: Request) -> RoutingResult {
     match *req.method() {
         Method::POST => aa!(req, CA_UPDATE, {
-            let actor = req.actor();
-            render_empty_res(req.state().read().await.refresh_all(&actor).await)
+            render_empty_res(req.state().read().await.cas_refresh_all().await)
         }),
         _ => aa!(req, LOGIN, render_unknown_method()),
     }

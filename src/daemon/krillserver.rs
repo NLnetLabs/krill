@@ -38,7 +38,7 @@ use crate::daemon::ca::{
 };
 use crate::daemon::config::{AuthType, Config};
 use crate::daemon::http::HttpResponse;
-use crate::daemon::mq::EventQueueListener;
+use crate::daemon::mq::MessageQueue;
 use crate::daemon::scheduler::Scheduler;
 use crate::pubd::{PubServer, RepoStats};
 use crate::publish::CaPublisher;
@@ -203,7 +203,7 @@ impl KrillServer {
         let pubserver: Option<Arc<PubServer>> = pubserver.map(Arc::new);
 
         // Used to have a shared queue for the caserver and the background job scheduler.
-        let event_queue = Arc::new(EventQueueListener::default());
+        let event_queue = Arc::new(MessageQueue::default());
 
         let caserver = if mode.cas_enabled() {
             let caserver = Arc::new(ca::CaServer::build(config.clone(), event_queue.clone(), signer).await?);
@@ -661,8 +661,8 @@ impl KrillServer {
     }
 
     /// Refresh all CAs: ask for updates and shrink as needed.
-    pub async fn refresh_all(&self, actor: &Actor) -> KrillEmptyResult {
-        self.get_caserver()?.cas_resync_all(actor).await;
+    pub async fn cas_refresh_all(&self) -> KrillEmptyResult {
+        self.get_caserver()?.cas_refresh_all().await;
         Ok(())
     }
 
