@@ -517,7 +517,7 @@ impl KrillPubdClient {
                 post_json(&server, &token, uri, uris).await?;
                 Ok(ApiResponse::Empty)
             }
-            PublishersCommand::RepositoryDelete => {
+            PublishersCommand::RepositoryClear => {
                 let uri = "api/v1/pubd";
                 delete(&server, &token, uri).await?;
                 Ok(ApiResponse::Empty)

@@ -141,9 +141,9 @@ impl PubServer {
         }
     }
 
-    /// Remove the publication server. Will fail if it still
+    /// Clear the publication server. Will fail if it still
     /// has publishers. Or if it does not exist
-    pub fn repository_delete(&self) -> KrillResult<()> {
+    pub fn repository_clear(&self) -> KrillResult<()> {
         let handle = Self::repository_handle();
         if !self.store.has(&handle)? {
             Err(Error::RepositoryServerNotInitialised)

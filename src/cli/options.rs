@@ -1919,18 +1919,18 @@ impl KrillPubcOptions {
         app.subcommand(sub)
     }
 
-    fn make_publication_server_delete_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("delete")
-            .about("Delete the publication server so it can re-initialised. (you must first remove all publishers)");
+    fn make_publication_server_clear_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("clear")
+            .about("Clear the publication server so it can re-initialised. (you must first remove all publishers)");
         sub = Options::add_general_args(sub);
         app.subcommand(sub)
     }
 
     fn make_publication_server_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
-        let mut sub = SubCommand::with_name("server").about("Show RFC8183 Repository Response XML.");
+        let mut sub = SubCommand::with_name("server").about("Manage your Publication Server (init/stats)");
         sub = Self::make_publication_server_stats_sc(sub);
         sub = Self::make_publication_server_init_sc(sub);
-        sub = Self::make_publication_server_delete_sc(sub);
+        sub = Self::make_publication_server_clear_sc(sub);
         app.subcommand(sub)
     }
 
@@ -2037,9 +2037,9 @@ impl KrillPubcOptions {
         Ok(KrillPubcOptions::make(general_args, command))
     }
 
-    fn parse_matches_publication_server_delete(matches: &ArgMatches) -> Result<KrillPubcOptions, Error> {
+    fn parse_matches_publication_server_clear(matches: &ArgMatches) -> Result<KrillPubcOptions, Error> {
         let general_args = GeneralArgs::from_matches(matches)?;
-        let command = PublishersCommand::RepositoryDelete;
+        let command = PublishersCommand::RepositoryClear;
         Ok(KrillPubcOptions::make(general_args, command))
     }
 
@@ -2048,8 +2048,8 @@ impl KrillPubcOptions {
             Self::parse_matches_publication_server_stats(m)
         } else if let Some(m) = matches.subcommand_matches("init") {
             Self::parse_matches_publication_server_init(m)
-        } else if let Some(m) = matches.subcommand_matches("delete") {
-            Self::parse_matches_publication_server_delete(m)
+        } else if let Some(m) = matches.subcommand_matches("clear") {
+            Self::parse_matches_publication_server_clear(m)
         } else {
             Err(Error::UnrecognisedSubCommand)
         }
@@ -2290,7 +2290,7 @@ pub enum PublishersCommand {
     PublisherList,
     RepositoryStats,
     RepositoryInit(PublicationServerUris),
-    RepositoryDelete,
+    RepositoryClear,
 }
 
 //------------ Error ---------------------------------------------------------
