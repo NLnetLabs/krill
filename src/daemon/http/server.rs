@@ -849,7 +849,7 @@ async fn api_publication_server(req: Request, path: &mut RequestPath) -> Routing
                     Err(e) => render_error(e),
                 }
             }
-            Method::DELETE => render_empty_res(req.state.write().await.repository_delete()),
+            Method::DELETE => render_empty_res(req.state.write().await.repository_clear()),
             _ => render_unknown_method(),
         },
         _ => render_unknown_method(),

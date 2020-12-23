@@ -883,9 +883,9 @@ impl KrillServer {
         self.get_pubserver()?.repository_init(uris)
     }
 
-    /// Remove the publication server. Will fail if it still has publishers. Or if it does not exist
-    pub fn repository_delete(&self) -> KrillResult<()> {
-        self.get_pubserver()?.repository_delete()
+    /// Clear the publication server. Will fail if it still has publishers. Or if it does not exist
+    pub fn repository_clear(&self) -> KrillResult<()> {
+        self.get_pubserver()?.repository_clear()
     }
 }
 
