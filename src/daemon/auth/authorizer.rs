@@ -102,11 +102,32 @@ impl Authorizer {
     }
 
     pub fn get_auth(&self, request: &hyper::Request<hyper::Body>) -> Option<Auth> {
-        self.primary_provider.get_auth(request)
-            .or_else(|| match self.fallback_provider.as_ref() {
-                Some(provider) => provider.get_auth(request),
-                None => None,
-            })
+        let actor_def_result = self.primary_provider.get_actor_def(request)
+            .and_then(|res| match (res, self.fallback_provider.as_ref()) {
+                (Some(actor_def), _) => {
+                    // successful login, use the found actor definition
+                    Ok(Some(actor_def))
+                },
+                (None, Some(provider)) => {
+                    // the given credentials were of the wrong type for the
+                    // primary provider, try the fallback provider instead
+                    provider.get_actor_def(request)
+                },
+                (None, None) => {
+                    // the given credentials were of the wrong type for the
+                    // primary provider and there is no fallback provider:
+                    // permission denied
+                    Err(Error::ApiInvalidCredentials("Invalid or missing credentials".to_string()))
+                }
+            });
+
+        let res = match actor_def_result {
+            Ok(Some(actor_def)) => self.actor_from_def(&actor_def),
+            Ok(None) => self.actor_from_def(ACTOR_ANON),
+            Err(err) => self.actor_from_def(&Actor::anonymous().with_auth_error(err.to_string()))
+        };
+
+        res
     }
 
     pub fn actor_from_auth(&self, auth: &Auth) -> KrillResult<Actor> {

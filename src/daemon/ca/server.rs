@@ -600,7 +600,7 @@ impl CaServer {
             self.ca_store
                 .list()?
                 .into_iter()
-                .filter(|handle| actor.is_allowed("CA_READ", handle.clone()))
+                .filter(|handle| matches!(actor.is_allowed("CA_READ", handle.clone()), Ok(true)))
                 .map(CertAuthSummary::new)
                 .collect(),
         ))

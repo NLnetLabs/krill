@@ -52,6 +52,15 @@ pub struct ActorDef {
     pub is_user: bool,
     pub attributes: Attributes,
     pub new_auth: Option<Auth>,
+    pub auth_error: Option<String>,
+}
+
+impl ActorDef {
+    // store an error string instead of an Error because Error cannot be cloned.
+    pub fn with_auth_error(mut self, error_msg: String) -> Self {
+        self.auth_error = Some(error_msg);
+        self
+    }
 }
 
 #[derive(Clone)]
@@ -61,6 +70,7 @@ pub struct Actor {
     attributes: Attributes,
     new_auth: Option<Auth>,
     policy: Option<AuthPolicy>,
+    auth_error: Option<String>,
 }
 
 impl PartialEq for Actor {
@@ -86,15 +96,17 @@ impl Actor {
             is_user: false,
             attributes: Attributes::None,
             new_auth: None,
+            auth_error: None,
         }
     }
 
     pub const fn system(name: &'static str, role: &'static str) -> ActorDef {
         ActorDef {
             name: ActorName::AsStaticStr(name),
-            is_user: false,
             attributes: Attributes::RoleOnly(role),
+            is_user: false,
             new_auth: None,
+            auth_error: None,
         }
     }
 
@@ -104,6 +116,7 @@ impl Actor {
             is_user: true,
             attributes: Attributes::UserDefined(attributes.clone()),
             new_auth,
+            auth_error: None,
         }
     }
 
@@ -114,6 +127,7 @@ impl Actor {
             is_user: repr.is_user,
             attributes: repr.attributes.clone(),
             new_auth: None,
+            auth_error: None,
             policy: None,
         }
     }
@@ -122,9 +136,10 @@ impl Actor {
     pub fn test_from_details(name: String, attrs: HashMap<String, String>) -> Actor {
         Actor {
             name: ActorName::AsString(name),
-            is_user: false,
             attributes: Attributes::UserDefined(attrs),
+            is_user: false,
             new_auth: None,
+            auth_error: None,
             policy: None,
         }
     }
@@ -135,6 +150,7 @@ impl Actor {
             is_user: repr.is_user,
             attributes: repr.attributes.clone(),
             new_auth: repr.new_auth.clone(),
+            auth_error: repr.auth_error.clone(),
             policy: Some(policy),
         }
     }
@@ -169,17 +185,23 @@ impl Actor {
     }
 
     #[cfg(not(feature = "multi-user"))]
-    pub fn is_allowed<A, R>(&self, _: A, _: R) -> bool {
-        true
+    pub fn is_allowed<A, R>(&self, _: A, _: R) -> KrillResult<bool> {
+        Ok(true)
     }
 
     #[cfg(feature = "multi-user")]
     pub fn is_allowed<A, R>(&self, action: A, resource: R)
-         -> bool
+         -> KrillResult<bool>
     where
         A: ToPolar + Display + Clone,
         R: ToPolar + Display + Clone,
     {
+        if let Some(error_msg) = &self.auth_error {
+            trace!("Unable to check access: actor={}, action={}, resource={}: {}",
+                self.name(), &action, &resource, &error_msg);
+            return Err(Error::ApiInvalidCredentials(error_msg.clone()));
+        }
+
         match &self.policy {
             Some(policy) => {
                 match policy.is_allowed(self.clone(), action.clone(), resource.clone()) {
@@ -193,12 +215,12 @@ impl Actor {
                                     self, &action, &resource);
                             }
                         }
-                        allowed
+                        Ok(allowed)
                     },
                     Err(err) => {
                         error!("Unable to check access: actor={}, action={}, resource={}: {}",
                             self.name(), &action, &resource, err);
-                        false
+                        Ok(false)
                     }
                 }
             },
@@ -208,7 +230,7 @@ impl Actor {
                 // don't want to crash Krill by calling unreachable!().
                 error!("Unable to check access: actor={}, action={}, resource={}: {}",
                     self.name(), &action, &resource, "Internal error: missing policy");
-                false
+                Ok(false)
             }
         }
     }

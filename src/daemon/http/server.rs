@@ -684,13 +684,14 @@ fn add_new_auth_to_response(res: Result<HttpResponse, Error>, opt_auth: Option<A
 macro_rules! aa {
     ($req:ident, $perm:ident, $action:expr) => {{
         match $req.actor().is_allowed(stringify!($perm), $req.path().clone()) {
-            true => $action,
-            false => Ok(HttpResponse::forbidden(format!(
+            Ok(true) => $action,
+            Ok(false) => Ok(HttpResponse::forbidden(format!(
                 "User '{}' does not have permission '{}' on resource '{}'",
                 $req.actor().name(),
                 stringify!($perm),
                 $req.path().clone()
             ))),
+            Err(err)=> Ok(HttpResponse::forbidden(format!("{}", err)))
         }
     }};
 }
