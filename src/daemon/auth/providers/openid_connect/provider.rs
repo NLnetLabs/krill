@@ -226,53 +226,48 @@ impl OpenIDConnectAuthProvider {
         logout_url
     }
 
-    fn try_refresh_token(&self, session: &ClientSession) -> KrillResult<Option<Auth>> {
-        if let Some(expires_in) = &session.expires_in {
-            match SystemTime::now().duration_since(UNIX_EPOCH) {
-                Ok(now) => {
-                    let session_age = now.as_secs() - session.start_time;
-                    trace!("OpenID Connect: session age: {}, expires in: {} (for ID \"{}\")",
-                        &session_age, expires_in.as_secs(), &session.id);
-                    if session_age > expires_in.as_secs() {
-                        if let Some(refresh_token) = &session.secrets.get(0) {
-                            debug!("OpenID Connect: refreshing token for ID \"{}\"", &session.id);
-                            let token_response = self.client
-                                .exchange_refresh_token(&RefreshToken::new(refresh_token.to_string()))
-                                .request(logging_http_client!());
-                            match token_response {
-                                Ok(token_response) => {
-                                    let secrets = if let Some(new_refresh_token) = token_response.refresh_token() {
-                                        vec![new_refresh_token.secret().clone()]
-                                    } else {
-                                        vec![]
-                                    };
-
-                                    if let Ok(new_token) = self.session_cache.encode(
-                                        &session.id,
-                                        &session.attributes,
-                                        &secrets,
-                                        &self.session_key,
-                                        token_response.expires_in())
-                                    {
-                                        return Ok(Some(Auth::Bearer(new_token)));
-                                    }
-                                },
-                                Err(err) => {
-                                    warn!("OpenID Connect: unable to determine the session age: {}", err);
-                                }
-                            }
+    fn try_refresh_token(&self, session: &ClientSession) -> Option<Auth> {
+        match &session.secrets.get(0) {
+            Some(refresh_token) =>  {
+                debug!("OpenID Connect: refreshing token for user: \"{}\"", &session.id);
+                trace!("OpenID Connect: submitting RFC-6749 section 6 Access Token Refresh request");
+                let token_response = self.client
+                    .exchange_refresh_token(&RefreshToken::new(refresh_token.to_string()))
+                    .request(logging_http_client!());
+                match token_response {
+                    Ok(token_response) => {
+                        let secrets = if let Some(new_refresh_token) = token_response.refresh_token() {
+                            vec![new_refresh_token.secret().clone()]
                         } else {
-                            debug!("OpenID Connect: session expired with no refresh token for ID \"{}\"", &session.id);
-                            return Err(Error::ApiInvalidCredentials);
+                            vec![]
+                        };
+
+                        let new_token_res = self.session_cache.encode(
+                            &session.id,
+                            &session.attributes,
+                            &secrets,
+                            &self.session_key,
+                            token_response.expires_in());
+
+                        match new_token_res {
+                            Ok(new_token) => {
+                                return Some(Auth::Bearer(new_token));
+                            },
+                            Err(err) => {
+                                warn!("(OpenID Connect: could not extend login session for user '{}': {}", &session.id, err);
+                            }
                         }
+                    },
+                    Err(err) => {
+                        warn!("(OpenID Connect: could not extend login session for user '{}': {}", &session.id, err);
                     }
-                },
-                Err(err) => {
-                    warn!("OpenID Connect: unable to determine the session age: {}", err);
                 }
+            },
+            None => {
+                debug!("OpenID Connect: could not extend login session for user '{}': no refresh token available", &session.id);
             }
         }
-        Ok(None)
+        None
     }
 
     fn extract_claim(
@@ -439,7 +434,15 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 // into a login session structure
                 let session = self.session_cache.decode(token.clone(), &self.session_key)?;
 
-                let new_auth = self.try_refresh_token(&session)?;
+                let status = session.status();
+
+                let mut new_auth = None;
+                if status != SessionStatus::Active {
+                    new_auth = self.try_refresh_token(&session);
+                    if new_auth.is_none() && status == SessionStatus::Expired {
+                        return Err(Error::custom(format!("Session expired, please login again".to_string())));
+                    }
+                }
 
                 Ok(Some(Actor::user(session.id, &session.attributes, new_auth)))
             },

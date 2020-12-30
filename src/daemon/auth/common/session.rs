@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::RwLock, time::{Duration, SystemTime, UNIX_EPOCH}};
+use std::{collections::HashMap, io, sync::RwLock, time::{Duration, SystemTime, UNIX_EPOCH}};
 
 use crate::commons::api::Token;
 use crate::commons::error::Error;
@@ -18,11 +18,56 @@ pub struct ClientSession {
     pub secrets: Vec<String>,
 }
 
+#[derive(Debug, PartialEq)]
+pub enum SessionStatus {
+    Active,
+    NeedsRefresh,
+    Expired,
+}
+
+impl ClientSession {
+    pub fn status(&self) -> SessionStatus {
+        if let Some(expires_in) = &self.expires_in {
+            match SystemTime::now().duration_since(UNIX_EPOCH) {
+                Ok(now) => {
+                    let cur_age_secs = now.as_secs() - self.start_time;
+                    let max_age_secs = expires_in.as_secs();
+
+                    let status = if cur_age_secs > max_age_secs {
+                        SessionStatus::Expired
+                    } else if cur_age_secs > (max_age_secs.checked_div(2).unwrap()) {
+                        SessionStatus::NeedsRefresh
+                    } else {
+                        SessionStatus::Active
+                    };
+
+                    trace!("Login session status check: id={}, status={:?}, max age={} secs, cur age={} secs",
+                        &self.id, &status, max_age_secs, cur_age_secs);
+
+                    return status;
+                },
+                Err(err) => {
+                    warn!("Login session status check: unable to determine the current time: {}", err);
+                }
+            }
+        }
+
+        SessionStatus::Active
+    }
+}
+
+
 struct CachedSession {
     pub evict_after: u64,
     pub session: ClientSession,
 }
 
+
+/// A short term cache to reduce the impact of session token decryption and
+/// deserialization (e.g. for multiple requests in a short space of time by the
+/// Lagosta UI client) while keeping potentially sensitive data in-memory for as
+/// short as possible. This cache is NOT responsible for enforcing token
+/// expiration, that is handled separately by the AuthProvider.
 pub struct LoginSessionCache {
     cache: RwLock<HashMap<Token, CachedSession>>,
 }
@@ -150,24 +195,18 @@ impl LoginSessionCache {
     }
 
     pub fn sweep(&self) -> KrillResult<()> {
-        let expired_keys: Vec<_> = {
+        let mut cache = self.cache.write().map_err(|err| Error::Custom(
+            format!("Unable to purge session cache: {}", err)))?;
+
+        let size_before = cache.len();
             let now = Self::time_now_secs_since_epoch()?;
-            self.cache.read()
-                .map_err(|err| Error::Custom(
-                    format!("Unable to purge expired sessions: {}", err)))?    
-                .iter()
-                .filter(|(_, v)| v.evict_after > now)
-                .map(|(k, _)| k.clone())
-                .collect()
-        };
 
-        let mut writeable_cache = self.cache.write()
-            .map_err(|err| Error::Custom(
-                format!("Unable to purge expired sessions: {}", err)))?;
+        cache.retain(|_, v| v.evict_after <= now);
 
-        for k in expired_keys {
-            writeable_cache.remove(&k);
-        }
+        let size_after = size_before - cache.len();
+
+        debug!("Login session cache purge: size before={}, size after={}",
+            size_before, size_after);
 
         Ok(())
     }
