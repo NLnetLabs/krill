@@ -124,7 +124,7 @@ pub async fn start_krill_daemon(config: Arc<Config>, mode: KrillMode) -> Result<
 
     let incoming = AddrIncoming::bind(&config.socket_addr()).map_err(|e| {
         Error::Custom(format!(
-            "Could not bing to address and port: {}, Error: {}",
+            "Could not bind to address and port: {}, Error: {}",
             &config.socket_addr(),
             e
         ))
