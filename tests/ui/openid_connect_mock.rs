@@ -372,7 +372,7 @@ fn run_mock_openid_connect_server() {
                                     redirect_uri, urlsafe_code, urlsafe_state, urlsafe_nonce)
                             ).map_err(|err| Error::custom(format!("Error while constructing HTTP Location header: {:?}", err)))?))
                     },
-                    None => Err(Error::custom("Invalid credentials"))
+                    None => Err(Error::custom("Unknown user name"))
                 }
             }
 

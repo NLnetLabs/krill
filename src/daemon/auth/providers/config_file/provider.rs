@@ -94,7 +94,7 @@ impl AuthProvider for ConfigFileAuthProvider {
 
                 Ok(Some(Actor::user(session.id, &session.attributes, None)))
             },
-            _ => Err(Error::ApiInvalidCredentials)
+            _ => Ok(None)
         }
     }
 
@@ -114,10 +114,15 @@ impl AuthProvider for ConfigFileAuthProvider {
                         id: id.to_string(),
                         attributes: user.attributes.clone()
                     });
+                } else {
+                    Err(Error::ApiInvalidCredentials("Incorrect password".to_string()))
                 }
+            } else {
+                Err(Error::ApiInvalidCredentials("Unknown user".to_string()))
             }
+        } else {
+            Err(Error::ApiInvalidCredentials("Missing credentials".to_string()))
         }
-        Err(Error::ApiInvalidCredentials)
     }
 
     fn logout(&self, auth: Option<Auth>) -> KrillResult<HttpResponse> {

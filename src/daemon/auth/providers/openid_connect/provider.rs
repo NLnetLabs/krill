@@ -400,11 +400,15 @@ impl OpenIDConnectAuthProvider {
         }
         None
     }
-}
 
-impl AuthProvider for OpenIDConnectAuthProvider {
-    // TODO: handle error responses from the provider as per RFC 6749 and OpenID
-    // Connect Core 1.0 section 3.1.26 Authentication Error Response
+    fn internal_error<S>(&self, msg: S, additional_info: Option<S>) -> Error where S: Into<String> {
+        let msg: String = msg.into();
+        match additional_info {
+            Some(additional_info) => warn!("{} [additional info: {}]", msg, additional_info.into()),
+            None => warn!("{}", msg),
+        };
+        Error::custom(msg)
+    }
 
     fn get_auth(&self, request: &hyper::Request<hyper::Body>) -> Option<Auth> {
         if let Some(query) = urlparse(request.uri().to_string()).get_parsed_query() {
@@ -440,7 +444,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 if status != SessionStatus::Active {
                     new_auth = self.try_refresh_token(&session);
                     if new_auth.is_none() && status == SessionStatus::Expired {
-                        return Err(Error::custom(format!("Session expired, please login again".to_string())));
+                        return Err(Error::ApiInvalidCredentials("Session expired, please login again".to_string()));
                     }
                 }
 
@@ -568,27 +572,25 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                     .exchange_code(AuthorizationCode::new(code.to_string()))
                     .request(logging_http_client!())
                     .map_err(|e| {
-                        let msg = match e {
+                        let (msg, additional_info) = match e {
                             RequestTokenError::ServerResponse(provider_err) => {
-                                format!("Server returned error response: {:?}", provider_err)
+                                (format!("Server returned error response: {:?}", provider_err), None)
                             },
                             RequestTokenError::Request(req) => {
-                                format!("Request failed: {:?}", req)
+                                (format!("Request failed: {:?}", req), None)
                             },
                             RequestTokenError::Parse(parse_err, res) => {
                                 let body = match std::str::from_utf8(&res) {
                                     Ok(text) => text.to_string(),
                                     Err(_) => format!("{:?}", &res),
                                 };
-                                format!("Failed to parse server response: {} [response={:?}]",
-                                    parse_err, body)
+                                (format!("Failed to parse server response: {}", parse_err), Some(body))
                             },
                             RequestTokenError::Other(msg) => {
-                                msg
+                                (msg, None)
                             },
                         };
-                      Error::Custom(format!(
-                            "OpenID Connect: code exchange failed: {}", msg))
+                        self.internal_error(format!("OpenID Connect: code exchange failed: {}", msg), additional_info)
                     })?;
 
                 // TODO: extract and keep the access token and refresh token so
@@ -656,11 +658,9 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 let id_token_claims: &FlexibleIdTokenClaims = token_response
                     .extra_fields()
                     .id_token()
-                    .ok_or_else(|| Error::Custom("OpenID Connect: ID token is missing, does the provider support OpenID Connect?".to_string()))? // happens if the server only supports OAuth2
+                    .ok_or_else(|| Error::Custom("OpenID Connect: id token is missing, does the provider support OpenID Connect?".to_string()))? // happens if the server only supports OAuth2
                     .claims(&id_token_verifier, &nonce_hash)
-                    .map_err(|e| Error::Custom(format!(
-                        "OpenID Connect: ID token verification failed: {}",
-                        e.to_string())))?;
+                    .map_err(|e| self.internal_error(format!("OpenID Connect: id token verification failed: {}", e.to_string()), None))?;
 
                 trace!("OpenID Connect: Identity provider returned ID token: {:?}", id_token_claims);
 
@@ -682,15 +682,13 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                     Some(self.client
                         .user_info(token_response.access_token().clone(), None)
                         .map_err(|e| Error::Custom(format!(
-                            "OpenID Connect: ID provider has no user info endpoint: {}",
+                            "OpenID Connect: id provider has no user info endpoint: {}",
                             e.to_string())))?
                         // don't require the response to be signed as the spec says
                         // signing it is optional: See: https://openid.net/specs/openid-connect-core-1_0.html#UserInfoResponse
                         .require_signed_response(false)
                         .request(logging_http_client!())
-                        .map_err(|e| Error::Custom(format!(
-                            "OpenID Connect: ID user info request failed: {}",
-                            e.to_string())))?)
+                        .map_err(|e| self.internal_error(format!("OpenID Connect: user info request failed: {}", e.to_string()), None))?)
                 } else {
                     None
                 };
@@ -719,7 +717,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 let id_claim_conf = claims_conf.get("id").ok_or_else(|| Error::custom("Missing 'id' claim configuration"))?;
 
                 let id = self.extract_claim(&id_claim_conf, &id_token_claims, user_info_claims.as_ref())?
-                    .ok_or_else(|| Error::custom("No value found for 'id' claim"))?;
+                    .ok_or_else(|| self.internal_error("No value found for 'id' claim", None))?;
 
                 // Lookup the a user in the config file authentication provider
                 // configuration by the id value that we just obtained, if
@@ -829,14 +827,11 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 })
             },
 
-            _ => Err(Error::ApiInvalidCredentials)
+            _ => Err(Error::ApiInvalidCredentials("Missing credentials".to_string()))
         }
     }
 
-    fn logout(&self, auth: Option<Auth>) -> KrillResult<HttpResponse> {
-        match auth {
-            Some(auth) => match auth.clone() {
-                Auth::Bearer(token) => {
+    fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
                     self.session_cache.remove(&token);
 
                     if let Ok(Some(actor)) = self.get_actor_def(&auth) {

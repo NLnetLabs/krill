@@ -228,7 +228,20 @@ async fn map_requests(req: hyper::Request<hyper::Body>, state: State) -> Result<
 
 //------------ Support Functions ---------------------------------------------
 
-fn render_empty_res(res: Result<(), Error>) -> RoutingResult {
+/// HTTP redirects cannot have a response body and so we cannot render the error
+/// to be displayed in Lagosta as a JSON body, instead we must package the JSON
+/// as a query parameter.
+pub fn render_error_redirect(err: Error) -> RoutingResult {
+    let response = err.to_error_response();
+       let json = serde_json::to_string(&response)
+        .or_else(|err| Ok(format!(
+            "JSON serialization error while processing internal error: {}", err)))?;
+    let b64 = base64::encode(json);
+    let location = format!("/index.html#/login?error={}", b64);
+    Ok(HttpResponse::found(&location))
+}
+
+pub fn render_empty_res(res: Result<(), Error>) -> RoutingResult {
     match res {
         Ok(()) => render_ok(),
         Err(e) => render_error(e),
@@ -236,8 +249,7 @@ fn render_empty_res(res: Result<(), Error>) -> RoutingResult {
 }
 
 fn render_error(e: Error) -> RoutingResult {
-    error!("Respond with error: {}", e);
-    Ok(HttpResponse::error(e))
+    Ok(HttpResponse::response_from_error(e))
 }
 
 fn render_json<O: Serialize>(obj: O) -> RoutingResult {
@@ -715,8 +727,17 @@ macro_rules! aa {
                 Ok(HttpResponse::forbidden(msg).with_benign($benign))
             },
             Err(err) => {
-                let msg = format!("{}", err);
-                Ok(HttpResponse::forbidden(msg).with_benign($benign))
+                // Avoid an extra round of error -> string -> error conversion
+                // which causes the error message to nest, e.g. 
+                //   "Invalid credentials: Invalid credentials: Session expired"
+                match err {
+                    Error::ApiInvalidCredentials(_)|Error::ApiInsufficientRights(_) => {
+                        Ok(HttpResponse::response_from_error(err).with_benign($benign))
+                    },
+                    _ => {
+                        Ok(HttpResponse::forbidden(format!("{}", err)).with_benign($benign))
+                    }
+                }
             }
         }
     }};

@@ -1,4 +1,4 @@
-use crate::commons::error::Error;
+use crate::{commons::error::Error, daemon::http::server::render_error_redirect};
 
 #[cfg(feature = "multi-user")]
 use {
@@ -27,10 +27,8 @@ fn build_auth_redirect_location(user: LoggedInUser) -> Result<String, FromUtf8Er
     Ok(location)
 }
 
-fn to_ok_with_err_desc(err: Error) -> RoutingResult {
-    let location = format!("/index.html#/login?error={}",
-        err.to_error_response().label());
-    Ok(HttpResponse::found(&location))
+fn render_error(err: Error) -> RoutingResult {
+    Ok(HttpResponse::response_from_error(err))
 }
 
 pub async fn auth(req: Request) -> RoutingResult {
@@ -49,19 +47,19 @@ pub async fn auth(req: Request) -> RoutingResult {
                                 "Unable to build redirect with logged in user details: {:?}", err))})?)
                 })
                 .map(|location| HttpResponse::found(&location))
-                .or_else(to_ok_with_err_desc)
+                .or_else(render_error_redirect)
         },
         AUTH_LOGIN_ENDPOINT if *req.method() == Method::GET => {
-            req.get_login_url().await.or_else(to_ok_with_err_desc)
+            req.get_login_url().await.or_else(render_error)
         },
         AUTH_LOGIN_ENDPOINT if *req.method() == Method::POST => {
             match req.login().await {
                 Ok(logged_in_user) => Ok(HttpResponse::json(&logged_in_user)),
-                Err(_) => Ok(HttpResponse::unauthorized()), // todo: don't discard the error details
+                Err(err) => render_error(err)
             }
         },
         AUTH_LOGOUT_ENDPOINT if *req.method() == Method::POST => {
-            req.logout().await.or_else(to_ok_with_err_desc)
+            req.logout().await.or_else(render_error)
         },
         _ => Err(req),
     }

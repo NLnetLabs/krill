@@ -90,8 +90,13 @@ impl Response {
         let mut builder = hyper::Response::builder()
             .status(self.status)
             .header("Content-Type", self.content_type.as_ref());
+
         if let Some(max_age) = self.max_age {
             builder = builder.header("Cache-Control", &format!("max-age={}", max_age));
+        }
+
+        if self.status == StatusCode::UNAUTHORIZED {
+            builder = builder.header("WWW-Authenticate", "Bearer");
         }
 
         let response = builder.body(self.body.into()).unwrap();
@@ -279,29 +284,8 @@ impl HttpResponse {
         Response::new(StatusCode::NOT_FOUND).finalize()
     }
 
-    // Quoting RFC 2616 Hypertext Transfer Protocol -- HTTP/1.1
-    //
-    // From: https://tools.ietf.org/html/rfc2616#section-10.4.2
-    //   "10.4.2 401 Unauthorized
-    //    The request requires user authentication. The response MUST include a
-    //    WWW-Authenticate header field (section 14.47) containing a challenge
-    //    applicable to the requested resource. The client MAY repeat the
-    //    request with a suitable Authorization header field."
-    //
-    // From: https://tools.ietf.org/html/rfc2616#section-10.4.4
-    //   "10.4.4 403 Forbidden
-    //    The server understood the request, but is refusing to fulfill it.
-    //    Authorization will not help and the request SHOULD NOT be repeated."
-    // 
-    // So HTTP 401 covers both authentication AND authorization and a user that
-    // expects an attempt with good credentials to succeed should receive HTTP
-    // 401 Unauthorized and NOT HTTP 403 Forbidden.
-    pub fn unauthorized() -> Self {
-        HttpResponse::new(hyper::Response::builder()
-            .status(StatusCode::UNAUTHORIZED)
-            .header("WWW-Authenticate", "Bearer")
-            .body(hyper::Body::empty())
-            .unwrap())
+    pub fn unauthorized(reason: String) -> Self {
+        Self::response_from_error(Error::ApiInvalidCredentials(reason))
     }
 
     pub fn forbidden(reason: String) -> Self {

@@ -135,8 +135,7 @@ pub enum Error {
     ApiInvalidSeconds,
     PostTooBig,
     PostCannotRead,
-    ApiMissingCredentials,
-    ApiInvalidCredentials,
+    ApiInvalidCredentials(String),
     ApiInsufficientRights(String),
 
     //-----------------------------------------------------------------
@@ -276,8 +275,7 @@ impl fmt::Display for Error {
             Error::ApiInvalidSeconds => write!(f, "Invalid path argument for seconds"),
             Error::PostTooBig => write!(f, "POST body exceeds configured limit"),
             Error::PostCannotRead => write!(f, "POST body cannot be read"),
-            Error::ApiMissingCredentials => write!(f, "Missing credentials"),
-            Error::ApiInvalidCredentials => write!(f, "Invalid credentials"),
+            Error::ApiInvalidCredentials(e) => write!(f, "Invalid credentials: {}", e),
             Error::ApiInsufficientRights(e) => write!(f, "Insufficient rights: {}", e),
 
 
@@ -487,7 +485,10 @@ impl Error {
             | Error::CaChildUnknown(_, _)
             | Error::CaParentUnknown(_, _)
             | Error::ApiUnknownResource => StatusCode::NOT_FOUND,
-            Error::ApiInvalidCredentials | Error::ApiInsufficientRights(_) => StatusCode::FORBIDDEN,
+
+            Error::ApiInvalidCredentials(_) => StatusCode::UNAUTHORIZED,
+
+            Error::ApiInsufficientRights(_) => StatusCode::FORBIDDEN,
 
             _ => StatusCode::BAD_REQUEST,
         }
@@ -538,9 +539,7 @@ impl Error {
 
             Error::PostCannotRead => ErrorResponse::new("api-post-body-cannot-read", &self),
 
-            Error::ApiMissingCredentials => ErrorResponse::new("api-missing-credentials", &self),
-
-            Error::ApiInvalidCredentials => ErrorResponse::new("api-invalid-credentials", &self),
+            Error::ApiInvalidCredentials(e) => ErrorResponse::new("api-invalid-credentials", &self).with_cause(e),
 
             Error::ApiInsufficientRights(e) => ErrorResponse::new("api-insufficient-rights", &self).with_cause(e),
 

@@ -158,11 +158,11 @@ impl LoginSessionCache {
         }
 
         let bytes = base64::decode(token.as_ref().as_bytes())
-        .map_err(|err| Error::Custom(
-            format!("Invalid bearer token: {}", err)))?;
+            .map_err(|err| Error::ApiInvalidCredentials(
+                format!("Invalid bearer token: {}", err)))?;
 
         if bytes.len() <= TAG_SIZE {
-            return Err(Error::Custom("Invalid bearer token: token is too short".to_string()));
+            return Err(Error::ApiInvalidCredentials("Invalid bearer token: token is too short".to_string()));
         }
 
         let encrypted_len = bytes.len() - TAG_SIZE;
