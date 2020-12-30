@@ -169,6 +169,12 @@ impl ApiCallLogger {
     fn log(&self, res: Result<&HttpResponse, &Error>) {
         match res {
             Ok(response) => {
+                match (response.status(), response.benign(), response.cause()) {
+                    (s, false, Some(cause)) if s.is_client_error() => warn!("HTTP {}: {}", s.as_u16(), cause),
+                    (s, false, Some(cause)) if s.is_server_error() => error!("HTTP {}: {}",s.as_u16(), cause),
+                    _ => {},
+                }
+
                 info!("{} {} {}", self.req_method, self.req_path, response.status());
 
                 if response.loggable() && log_enabled!(log::Level::Trace) {
@@ -247,7 +253,7 @@ fn render_json_res<O: Serialize>(res: Result<O, Error>) -> RoutingResult {
 
 /// A clean 404 result for the API (no content, not for humans)
 fn render_unknown_resource() -> RoutingResult {
-    Ok(HttpResponse::error(Error::ApiUnknownResource))
+    Ok(HttpResponse::response_from_error(Error::ApiUnknownResource))
 }
 
 /// A clean 200 result for the API (no content, not for humans)
@@ -256,7 +262,7 @@ pub fn render_ok() -> RoutingResult {
 }
 
 pub fn render_unknown_method() -> RoutingResult {
-    Ok(HttpResponse::error(Error::ApiUnknownMethod))
+    Ok(HttpResponse::response_from_error(Error::ApiUnknownMethod))
 }
 
 /// A clean 404 response
@@ -674,24 +680,44 @@ fn add_new_auth_to_response(res: Result<HttpResponse, Error>, opt_auth: Option<A
 // This macro handles returning from API handler functions if the request is not
 // Authenticated or lacks sufficient Authorization. We don't use a normal fn for
 // this as then each API handler function would have to also test for success or
-// failure and also return the forbidden response to the caller. That would be
-// both verbose and repetetive. If we had a child crate we could use a proc
-// macro instead so that we could "annotate" each API handler function with
-// something like:
+// failure and also return the forbidden response to the caller, That would be
+// both verbose and repetetive. We also can't use the ? operator to return Err
+// as Err is used to propagate the request to the next handler in the chain. If
+// we had a child crate we could use a proc macro instead so that we could
+// "annotate" each API handler function with something like:
 //   #[require_permission(CA_CREATE)]
 // Which would insert the generated code at the start of the function body,
 // similar to how this macro is used in each function.
 macro_rules! aa {
+    (no_warn $req:ident, $perm:ident, $action:expr) => {{
+        aa!($req, $perm, $req.path().clone(), $action, true)
+    }};
     ($req:ident, $perm:ident, $action:expr) => {{
-        match $req.actor().is_allowed(stringify!($perm), $req.path().clone()) {
-            Ok(true) => $action,
-            Ok(false) => Ok(HttpResponse::forbidden(format!(
+        aa!($req, $perm, $req.path().clone(), $action, false)
+    }};
+    (no_warn $req:ident, $perm:ident, $resource:expr, $action:expr) => {{
+        aa!($req, $perm, $req.path().clone(), $action, true)
+    }};
+    ($req:ident, $perm:ident, $resource:expr, $action:expr) => {{
+        aa!($req, $perm, $req.path().clone(), $action, false)
+    }};
+    ($req:ident, $perm:ident, $resource:expr, $action:expr, $benign:expr) => {{
+        match $req.actor().is_allowed(stringify!($perm), $resource) {
+            Ok(true) => {
+                $action
+            },
+            Ok(false) => {
+                let msg = format!(
                 "User '{}' does not have permission '{}' on resource '{}'",
                 $req.actor().name(),
                 stringify!($perm),
-                $req.path().clone()
-            ))),
-            Err(err)=> Ok(HttpResponse::forbidden(format!("{}", err)))
+                        $resource);
+                Ok(HttpResponse::forbidden(msg).with_benign($benign))
+            },
+            Err(err) => {
+                let msg = format!("{}", err);
+                Ok(HttpResponse::forbidden(msg).with_benign($benign))
+            }
         }
     }};
 }
@@ -729,7 +755,11 @@ async fn api(req: Request) -> RoutingResult {
 }
 
 async fn api_authorized(req: Request) -> RoutingResult {
-    aa!(
+    // Use 'no_warn' to prevent the log being filled with warnings about
+    // insufficient user rights as this API endpoint is invoked by Lagosta on
+    // every view transition, and not being authorized is a valid state that
+    // triggers Lagosta to show a login form, not something to warn about!
+    aa!(no_warn 
         req,
         LOGIN,
         match *req.method() {

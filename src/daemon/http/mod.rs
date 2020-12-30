@@ -121,13 +121,15 @@ impl io::Write for Response {
 pub struct HttpResponse {
     response: hyper::Response<Body>,
     loggable: bool,
+    benign: bool,
 }
 
 impl HttpResponse {
     pub fn new(response: hyper::Response<Body>) -> Self {
         HttpResponse {
             response,
-            loggable: true
+            loggable: true,
+            benign: false,
         }
     }
 
@@ -139,10 +141,19 @@ impl HttpResponse {
         self.loggable
     }
 
-    pub fn set_not_loggable(&mut self) {
+    pub fn benign(&self) -> bool {
+        self.benign
+    }
         self.loggable = false;
     }
 
+    /// Hint to the response handling code that, if warning about certain
+    /// responses or classes of response, that this response should be considered
+    /// benign, i.e. not worth warning about.
+    pub fn with_benign(mut self, benign: bool) -> Self {
+        self.benign = benign;
+        self
+    }
     pub fn status(&self) -> StatusCode {
         self.response.status()
     }
@@ -168,7 +179,7 @@ impl HttpResponse {
     pub fn json<O: Serialize>(object: &O) -> Self {
         match serde_json::to_string(object) {
             Ok(json) => Self::ok_response(ContentType::Json, json.into_bytes()),
-            Err(e) => Self::error(Error::JsonError(e)),
+            Err(e) => Self::response_from_error(Error::JsonError(e)),
         }
     }
 
@@ -239,16 +250,6 @@ impl HttpResponse {
         Self::ok_response(ContentType::Woff2, content.to_vec())
     }
 
-    pub fn warn(warning: Error) -> Self {
-        warn!("{}", warning);
-        Self::response_from_error(warning)
-    }
-
-    pub fn error(error: Error) -> Self {
-        error!("{}", error);
-        Self::response_from_error(error)
-    }
-
     fn response_from_error(error: Error) -> Self {
         let status = error.status();
         let response = error.to_error_response();
@@ -304,7 +305,7 @@ impl HttpResponse {
     }
 
     pub fn forbidden(reason: String) -> Self {
-        HttpResponse::warn(Error::ApiInsufficientRights(reason))
+        Self::response_from_error(Error::ApiInsufficientRights(reason))
     }
 }
 
