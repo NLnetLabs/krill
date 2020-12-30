@@ -2,7 +2,7 @@ use std::{io::Read, str::FromStr, sync::{Arc, Mutex}};
 
 use oso::{Oso, PolarClass, ToPolar};
 
-use crate::{commons::{KrillResult, actor::Actor, error::Error, api::Handle}, constants::{ACTOR_ANON, ACTOR_KRILL, ACTOR_MASTER_TOKEN, ACTOR_TESTBED}, daemon::{config::Config, http::RequestPath}};
+use crate::{commons::{KrillResult, actor::Actor, error::Error, api::Handle}, constants::{ACTOR_DEF_ANON, ACTOR_DEF_KRILL, ACTOR_DEF_MASTER_TOKEN, ACTOR_DEF_TESTBED}, daemon::{config::Config, http::RequestPath}};
 
 /// Access to Oso is protected by a shareable mutex lock, as demonstrated in the
 /// Oso Rust [getting started example](https://github.com/osohq/oso-rust-quickstart/blob/d469f7594b1d07e2203f5dc6e88d0435fef35468/src/server.rs#L50).
@@ -120,10 +120,10 @@ impl PolarClass for Actor {
             .add_attribute_getter("name", |instance| instance.name().to_string())
             .add_class_method("builtin", |name: String| -> Actor {
                 match name.as_str() {
-                    "anon"         => Actor::test_from_def(ACTOR_ANON),
-                    "krill"        => Actor::test_from_def(ACTOR_KRILL),
-                    "master-token" => Actor::test_from_def(ACTOR_MASTER_TOKEN),
-                    "testbed"      => Actor::test_from_def(ACTOR_TESTBED),
+                    "anon"         => Actor::test_from_def(ACTOR_DEF_ANON),
+                    "krill"        => Actor::test_from_def(ACTOR_DEF_KRILL),
+                    "master-token" => Actor::test_from_def(ACTOR_DEF_MASTER_TOKEN),
+                    "testbed"      => Actor::test_from_def(ACTOR_DEF_TESTBED),
                     _              => panic!("Unknown built-in actor name '{}'", name)
                 }
             })

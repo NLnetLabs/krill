@@ -1,6 +1,6 @@
 use hyper::Method;
 
-use crate::{constants::ACTOR_TESTBED, commons::api::Handle};
+use crate::{constants::ACTOR_DEF_TESTBED, commons::api::Handle};
 use crate::daemon::ca::{ta_handle, testbed_ca_handle};
 use crate::daemon::http::{HttpResponse, Request, RequestPath, RoutingResult};
 use crate::daemon::http::server::{
@@ -49,7 +49,7 @@ pub async fn testbed(mut req: Request) -> RoutingResult {
         // Krill CAs and publishers. Upgrade anonymous users with testbed
         // rights ready for the next call in the chain to the testbed()
         // API call handler functions.
-        req.upgrade_from_anonymous(ACTOR_TESTBED).await;
+        req.upgrade_from_anonymous(ACTOR_DEF_TESTBED).await;
 
         let mut path = req.path().clone();
         match path.next() {

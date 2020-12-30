@@ -31,7 +31,7 @@ use crate::daemon::auth::common::session::LoginSessionCache;
 use crate::daemon::auth::providers::MasterTokenAuthProvider;
 #[cfg(feature = "multi-user")]
 use crate::daemon::auth::providers::{ConfigFileAuthProvider, OpenIDConnectAuthProvider};
-use crate::daemon::auth::{Auth, Authorizer, LoggedInUser};
+use crate::daemon::auth::{Authorizer, LoggedInUser};
 use crate::daemon::ca::{
     self, ta_handle, testbed_ca_handle, CaServer, ResourceTaggedAttestation, RouteAuthorizationUpdates,
     RtaContentRequest, RtaPrepareRequest,
@@ -176,7 +176,7 @@ impl KrillServer {
                 OpenIDConnectAuthProvider::new(config.clone(), login_session_cache.clone())?,
             )?,
         };
-        let system_actor = authorizer.actor_from_def(ACTOR_KRILL);
+        let system_actor = authorizer.actor_from_def(ACTOR_DEF_KRILL);
 
         let pubserver = {
             if mode.pubd_enabled() {
@@ -338,14 +338,8 @@ impl KrillServer {
         &self.system_actor
     }
 
-    // TODO: fold get_auth() into the other methods and keep its logic inside
-    // the Authorizer.
-    pub fn get_auth(&self, request: &hyper::Request<hyper::Body>) -> Option<Auth> {
-        self.authorizer.get_auth(request)
-    }
-
-    pub fn actor_from_auth(&self, auth: &Auth) -> KrillResult<Actor> {
-        self.authorizer.actor_from_auth(auth)
+    pub fn actor_from_request(&self, request: &hyper::Request<hyper::Body>) -> Actor {
+        self.authorizer.actor_from_request(request)
     }
 
     pub fn actor_from_def(&self, actor_def: &ActorDef) -> Actor {
@@ -356,12 +350,12 @@ impl KrillServer {
         self.authorizer.get_login_url()
     }
 
-    pub fn login(&self, auth: &Auth) -> KrillResult<LoggedInUser> {
-        self.authorizer.login(auth)
+    pub fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
+        self.authorizer.login(request)
     }
 
-    pub fn logout(&self, auth: Option<Auth>) -> KrillResult<HttpResponse> {
-        self.authorizer.logout(auth)
+    pub fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
+        self.authorizer.logout(request)
     }
 
     pub fn limit_api(&self) -> u64 {

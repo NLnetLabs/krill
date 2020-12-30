@@ -7,7 +7,8 @@ use std::collections::HashMap;
 use crate::commons::actor::{Actor, ActorDef};
 use crate::commons::api::Token;
 use crate::commons::KrillResult;
-use crate::constants::ACTOR_ANON;
+use crate::commons::error::Error;
+use crate::constants::ACTOR_DEF_ANON;
 use crate::daemon::auth::policy::AuthPolicy;
 use crate::daemon::auth::providers::MasterTokenAuthProvider;
 use crate::daemon::config::Config;
@@ -31,7 +32,7 @@ use crate::daemon::http::HttpResponse;
 ///                     login and logout?
 ///  * introspection  - who is the currently "logged in" user?
 pub trait AuthProvider: Send + Sync {
-    fn get_bearer_token(&self, request: &hyper::Request<hyper::Body>) -> Option<String> {
+    fn get_bearer_token(&self, request: &hyper::Request<hyper::Body>) -> Option<Token> {
         if let Some(header) = request.headers().get("Authorization") {
             if let Ok(header) = header.to_str() {
                 if header.len() > 6 {
@@ -39,7 +40,7 @@ pub trait AuthProvider: Send + Sync {
                     let bearer = bearer.trim();
 
                     if "Bearer" == bearer {
-                        return Some(String::from(token.trim()));
+                        return Some(Token::from(token.trim()));
                     }
                 }
             }
@@ -48,11 +49,10 @@ pub trait AuthProvider: Send + Sync {
         None
     }
 
-    fn get_auth(&self, request: &hyper::Request<hyper::Body>) -> Option<Auth>;
-    fn get_actor_def(&self, auth: &Auth) -> KrillResult<Option<ActorDef>>;
+    fn get_actor_def(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>>;
     fn get_login_url(&self) -> KrillResult<HttpResponse>;
-    fn login(&self, auth: &Auth) -> KrillResult<LoggedInUser>;
-    fn logout(&self, auth: Option<Auth>) -> KrillResult<HttpResponse>;
+    fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser>;
+    fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse>;
 }
 
 /// This type is responsible for checking authorizations when the API is
@@ -130,7 +130,7 @@ impl Authorizer {
 
         let res = match actor_def_result {
             Ok(Some(actor_def)) => self.actor_from_def(&actor_def),
-            Ok(None) => self.actor_from_def(ACTOR_ANON),
+            Ok(None) => self.actor_from_def(ACTOR_DEF_ANON),
             Err(err) => self.actor_from_def(&Actor::anonymous().with_auth_error(err.to_string()))
         };
     
@@ -138,26 +138,7 @@ impl Authorizer {
     
         res
     }
-
-    pub fn actor_from_auth(&self, auth: &Auth) -> KrillResult<Actor> {
-        self.primary_provider.get_actor_def(auth)
-            // permission denied, do we have a fallback provider we can try?
-            .or_else(|err| match self.fallback_provider.as_ref() {
-                Some(provider) => {
-                    // yes we do, try checking the credentials against it
-                    provider.get_actor_def(auth)
-                },
-                None => {
-                    // no fallback provider configured, permission denied
-                    Err(err)
-                }
-            })
-            .map(|possible_def| match possible_def {
-                Some(def) => self.actor_from_def(&def),
-                None => self.actor_from_def(ACTOR_ANON)
-            })
-    }
-
+    
     pub fn actor_from_def(&self, def: &ActorDef) -> Actor {
         Actor::new(def, self.policy.clone())
     }
@@ -170,33 +151,32 @@ impl Authorizer {
 
     /// Submit credentials directly to the configured provider to establish a
     /// login session, if supported by the configured provider.
-    pub fn login(&self, auth: &Auth) -> KrillResult<LoggedInUser> {
-        match self.primary_provider.login(auth) {
-            Ok(user) => { 
-                let visible_attributes = user.attributes.clone().into_iter()
-                    .filter(|(k, _)| !self.private_attributes.contains(k))
-                    .collect::<HashMap<_, _>>();
+    pub fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
+        self.primary_provider.login(request).and_then(|user| {
+            let visible_attributes = user.attributes.clone().into_iter()
+                .filter(|(k, _)| !self.private_attributes.contains(k))
+                .collect::<HashMap<_, _>>();
 
-                let user = LoggedInUser {
-                    token: user.token,
-                    id: user.id,
-                    attributes: visible_attributes
-                };
+            let user = LoggedInUser {
+                token: user.token,
+                id: user.id,
+                attributes: visible_attributes
+            };
 
-                if log_enabled!(log::Level::Trace) {
-                    trace!("User logged in: {:?}", &user); Ok(user)
-                } else {
-                    info!("User logged in: {}", &user.id); Ok(user)
-                }
-            },
-            Err(err) => Err(err)
-        }
+            if log_enabled!(log::Level::Trace) {
+                trace!("User logged in: {:?}", &user);
+            } else {
+                info!("User logged in: {}", &user.id);
+            }
+
+            Ok(user)
+        })
     }
 
     /// Return the URL at which an end-user should be directed to logout with
     /// the configured provider.
-    pub fn logout(&self, auth: Option<Auth>) -> KrillResult<HttpResponse> {
-        self.primary_provider.logout(auth)
+    pub fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
+        self.primary_provider.logout(request)
     }
 }
 
@@ -210,19 +190,19 @@ pub struct LoggedInUser {
 #[derive(Clone)]
 pub enum Auth {
     Bearer(Token),
-    AuthorizationCode(String, String, String),
-    IdAndPasswordHash(String, String),
+    AuthorizationCode(Token, String, String),
+    IdAndPasswordHash(String, Token),
 }
 
 impl Auth {
     pub fn bearer(token: Token) -> Self {
         Auth::Bearer(token)
     }
-    pub fn authorization_code(code: String, state: String, nonce: String) -> Self {
+    pub fn authorization_code(code: Token, state: String, nonce: String) -> Self {
         Auth::AuthorizationCode(code, state, nonce)
     }
 
-    pub fn id_and_password_hash(id: String, password_hash: String) -> Self {
+    pub fn id_and_password_hash(id: String, password_hash: Token) -> Self {
         Auth::IdAndPasswordHash(id, password_hash)
     }
 }

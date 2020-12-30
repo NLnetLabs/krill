@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Debug;
 
-use crate::{constants::ACTOR_ANON, daemon::auth::Auth};
+use crate::{commons::{KrillResult, error::Error}, constants::ACTOR_DEF_ANON, daemon::auth::Auth};
 use crate::daemon::auth::policy::AuthPolicy;
 
 #[derive(Clone, Eq, PartialEq)]
@@ -160,7 +160,7 @@ impl Actor {
     }
 
     pub fn is_anonymous(&self) -> bool {
-        self == ACTOR_ANON
+        self == ACTOR_DEF_ANON
     }
 
     pub fn new_auth(&self) -> Option<Auth> {

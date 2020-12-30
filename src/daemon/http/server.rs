@@ -189,7 +189,7 @@ impl ApiCallLogger {
 }
 
 async fn map_requests(req: hyper::Request<hyper::Body>, state: State) -> Result<hyper::Response<hyper::Body>, Error> {
-    let req = Request::new(req, state).await?;
+    let req = Request::new(req, state).await;
 
     // Save any updated auth details, e.g. if an OpenID Connect token needed
     // refreshing.

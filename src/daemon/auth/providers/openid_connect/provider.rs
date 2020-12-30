@@ -1,7 +1,6 @@
-use std::collections::{HashMap, hash_map::Entry::{Occupied, Vacant}};
+use std::{collections::{HashMap, hash_map::Entry::{Occupied, Vacant}}};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use basic_cookies::Cookie;
 use hyper::header::{HeaderValue, SET_COOKIE};
@@ -22,8 +21,7 @@ use openidconnect::RequestTokenError;
 use rpki::uri;
 use urlparse::{urlparse, GetQuery};
 
-use crate::commons::actor::{Actor, ActorDef};
-use crate::commons::api::Token;
+use crate::commons::{actor::{Actor, ActorDef}, api::Token};
 use crate::commons::error::Error;
 use crate::commons::util::sha256;
 use crate::commons::KrillResult;
@@ -427,15 +425,17 @@ impl OpenIDConnectAuthProvider {
             }
         }
 
-        match self.get_bearer_token(request) {
-            Some(token) => Some(Auth::Bearer(Token::from(token))),
-            None => None
-        }
+        None
     }
+}
 
-    fn get_actor_def(&self, auth: &Auth) -> KrillResult<Option<ActorDef>> {
-        match auth {
-            Auth::Bearer(token) => {
+impl AuthProvider for OpenIDConnectAuthProvider {
+    // TODO: handle error responses from the provider as per RFC 6749 and OpenID
+    // Connect Core 1.0 section 3.1.26 Authentication Error Response
+
+    fn get_actor_def(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
+        match self.get_bearer_token(request) {
+            Some(token) => {
                 // see if we can decode, decrypt and deserialize the users token
                 // into a login session structure
                 let session = self.session_cache.decode(token.clone(), &self.session_key)?;
@@ -452,7 +452,7 @@ impl OpenIDConnectAuthProvider {
 
                 Ok(Some(Actor::user(session.id, &session.attributes, new_auth)))
             },
-            _ => Err(Error::ApiInvalidCredentials)
+            _ => Ok(None)
         }
     }
 
@@ -555,13 +555,13 @@ impl OpenIDConnectAuthProvider {
         Ok(HttpResponse::new(res))
     }
 
-    fn login(&self, auth: &Auth) -> KrillResult<LoggedInUser> {
-        match auth {
+    fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
+        match self.get_auth(request) {
             // OpenID Connect Authorization Code Flow
             // See: https://tools.ietf.org/html/rfc6749#section-4.1
             //      https://openid.net/specs/openid-connect-core-1_0.html#CodeFlowSteps
             // TODO: use _state.
-            Auth::AuthorizationCode(code, _state, nonce) => {
+            Some(Auth::AuthorizationCode(code, _state, nonce)) => {
 // ==========================================================================================
                 // Step 1: exchange the temporary (e.g. valid for 10 minutes or
                 // something like that) OAuth2 authorization code for an OAuth2
@@ -836,14 +836,12 @@ impl OpenIDConnectAuthProvider {
     }
 
     fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
-                    self.session_cache.remove(&token);
+        match self.get_bearer_token(request) {
+            Some(token) => {
+                self.session_cache.remove(&token);
 
-                    if let Ok(Some(actor)) = self.get_actor_def(&auth) {
-                        info!("User logged out: {}", actor.name.as_str());
-                    }
-                },
-                _ => {
-                    warn!("Unexpectedly received a logout request with an unrecognized auth details.");
+                if let Ok(Some(actor)) = self.get_actor_def(request) {
+                    info!("User logged out: {}", actor.name.as_str());
                 }
             },
             _ => {

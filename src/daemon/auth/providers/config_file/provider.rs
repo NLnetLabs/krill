@@ -2,7 +2,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use urlparse::{urlparse, GetQuery};
 
-use crate::commons::actor::{Actor, ActorDef};
+use crate::commons::{actor::{Actor, ActorDef}, api::Token};
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
 use crate::daemon::auth::common::crypt;
@@ -21,7 +21,7 @@ const LAGOSTA_LOGIN_ROUTE_PATH: &str = "/login?withId=true";
 const LOGIN_SESSION_STATE_KEY_PATH: &str = "login_session_state.key"; // TODO: decide on proper location
 
 struct UserDetails {
-    password_hash: String,
+    password_hash: Token,
     attributes: HashMap<String, String>,
 }
 
@@ -32,7 +32,7 @@ fn get_checked_config_user(id: &str, user: &ConfigUserDetails) -> KrillResult<Us
         .to_string();
 
     Ok(UserDetails {
-        password_hash,
+        password_hash: Token::from(password_hash),
         attributes: user.attributes.clone(),
     })
 }
@@ -69,9 +69,7 @@ impl ConfigFileAuthProvider {
         info!("Initializing session encryption key {}", &key_path.display());
         crypt::load_or_create_key(key_path.as_path())
     }
-}
 
-impl AuthProvider for ConfigFileAuthProvider {
     fn get_auth(&self, request: &hyper::Request<hyper::Body>) -> Option<Auth> {
         if let Some(password_hash) = self.get_bearer_token(request) {
             if let Some(query) = urlparse(request.uri().to_string()).get_parsed_query() {
@@ -82,10 +80,12 @@ impl AuthProvider for ConfigFileAuthProvider {
         }
         None
     }
+}
 
-    fn get_actor_def(&self, auth: &Auth) -> KrillResult<Option<ActorDef>> {
-        match auth {
-            Auth::Bearer(token) => {
+impl AuthProvider for ConfigFileAuthProvider {
+    fn get_actor_def(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
+        match self.get_bearer_token(request) {
+            Some(token) => {
                 // see if we can decode, decrypt and deserialize the users token
                 // into a login session structure
                 let session = self.session_cache.decode(token.clone(), &self.key)?;
@@ -103,10 +103,10 @@ impl AuthProvider for ConfigFileAuthProvider {
         Ok(HttpResponse::text_no_cache(LAGOSTA_LOGIN_ROUTE_PATH.into()))
     }
 
-    fn login(&self, auth: &Auth) -> KrillResult<LoggedInUser> {
-        if let Auth::IdAndPasswordHash(id, password_hash) = auth {
-            if let Some(user) = self.users.get(id) {
-                if &user.password_hash == password_hash {
+    fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
+        if let Some(Auth::IdAndPasswordHash(id, password_hash)) = self.get_auth(request) {
+            if let Some(user) = self.users.get(&id) {
+                if user.password_hash == password_hash {
                     let api_token = self.session_cache.encode(&id, &user.attributes, &[], &self.key, None)?;
 
                     return Ok(LoggedInUser {
@@ -125,24 +125,20 @@ impl AuthProvider for ConfigFileAuthProvider {
         }
     }
 
-    fn logout(&self, auth: Option<Auth>) -> KrillResult<HttpResponse> {
-        match auth {
-            Some(auth) => match auth.clone() {
-                Auth::Bearer(token) => {
-                    self.session_cache.remove(&token);
+    fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
+        match self.get_bearer_token(request) {
+            Some(token) => {
+                self.session_cache.remove(&token);
 
-                    if let Ok(Some(actor)) = self.get_actor_def(&auth) {
-                        info!("User logged out: {}", actor.name.as_str());
-                    }
-                },
-                _ => {
-                    warn!("Unexpectedly received a logout request with an unrecognized auth details.");
+                if let Ok(Some(actor)) = self.get_actor_def(request) {
+                    info!("User logged out: {}", actor.name.as_str());
                 }
             },
             _ => {
                 warn!("Unexpectedly received a logout request without a session token.");
             }
         }
+
         // Logout is complete, direct Lagosta to show the user the Lagosta
         // index page
         Ok(HttpResponse::text_no_cache("/".into()))

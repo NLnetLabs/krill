@@ -1,11 +1,10 @@
 use std::sync::Arc;
 
-use crate::commons::actor::ActorDef;
 use crate::commons::error::Error;
-use crate::commons::api::Token;
 use crate::commons::KrillResult;
-use crate::constants::ACTOR_MASTER_TOKEN;
-use crate::daemon::auth::{Auth, AuthProvider, LoggedInUser};
+use crate::commons::{actor::ActorDef, api::Token};
+use crate::constants::ACTOR_DEF_MASTER_TOKEN;
+use crate::daemon::auth::{AuthProvider, LoggedInUser};
 use crate::daemon::config::Config;
 use crate::daemon::http::HttpResponse;
 
@@ -17,31 +16,23 @@ use crate::daemon::http::HttpResponse;
 const LAGOSTA_LOGIN_ROUTE_PATH: &str = "/login";
 
 pub struct MasterTokenAuthProvider {
-    token: Token,
+    required_token: Token,
 }
 
 impl MasterTokenAuthProvider {
     pub fn new(config: Arc<Config>) -> Self {
         MasterTokenAuthProvider {
-            token: config.auth_token.clone(),
+            required_token: config.auth_token.clone(),
         }
     }
 }
 
 impl AuthProvider for MasterTokenAuthProvider {
-    fn get_auth(&self, request: &hyper::Request<hyper::Body>) -> Option<Auth> {
+    fn get_actor_def(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
         match self.get_bearer_token(request) {
-            Some(token) => Some(Auth::Bearer(Token::from(token))),
-            None => None
-        }
-    }
-
-    fn get_actor_def(&self, auth: &Auth) -> KrillResult<Option<ActorDef>> {
-        match auth {
-            Auth::Bearer(token) if &self.token == token => {
-                Ok(Some(ACTOR_MASTER_TOKEN.clone()))
-            },
-            _ => Ok(None)
+            Some(token) if token == self.required_token => Ok(Some(ACTOR_DEF_MASTER_TOKEN.clone())),
+            Some(_) => Err(Error::ApiInvalidCredentials("Invalid bearer token".to_string())),
+            None => Ok(None),
         }
     }
 
@@ -50,25 +41,20 @@ impl AuthProvider for MasterTokenAuthProvider {
         Ok(HttpResponse::text_no_cache(LAGOSTA_LOGIN_ROUTE_PATH.into()))
     }
 
-    fn login(&self, auth: &Auth) -> KrillResult<LoggedInUser> {
-        if let Auth::Bearer(token) = auth {
-            if let Ok(Some(def)) = self.get_actor_def(auth) {
-                return Ok(LoggedInUser {
-                    token: token.clone(),
-                    id: def.name.as_str().to_string(),
-                    attributes: def.attributes.as_map()
-                });
-            }
+    fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
+        match self.get_actor_def(request)? {
+            Some(actor_def) => Ok(LoggedInUser {
+                token: self.required_token.clone(),
+                id: actor_def.name.as_str().to_string(),
+                attributes: actor_def.attributes.as_map(),
+            }),
+            None => Err(Error::ApiInvalidCredentials("Missing bearer token".to_string())),
         }
-
-        Err(Error::ApiInvalidCredentials)
     }
 
-    fn logout(&self, auth: Option<Auth>) -> KrillResult<HttpResponse> {
-        if let Some(auth) = auth {
-            if let Ok(Some(actor)) = self.get_actor_def(&auth) {
-                info!("User logged out: {}", actor.name.as_str());
-            }
+    fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
+        if let Ok(Some(actor)) = self.get_actor_def(request) {
+            info!("User logged out: {}", actor.name.as_str());
         }
 
         // Logout is complete, direct Lagosta to show the user the Lagosta

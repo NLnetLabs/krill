@@ -74,10 +74,10 @@ pub const BGP_RIS_REFRESH_MINUTES: i64 = 60;
 
 pub const HTTTP_CLIENT_TIMEOUT_SECS: u64 = 120;
 
-pub const ACTOR_KRILL: &ActorDef = &Actor::system("krill", "admin");
-pub const ACTOR_ANON: &ActorDef = &Actor::anonymous();
-pub const ACTOR_MASTER_TOKEN: &ActorDef = &Actor::system("master-token", "admin");
-pub const ACTOR_TESTBED: &ActorDef = &Actor::system("testbed", "testbed");
+pub const ACTOR_DEF_KRILL: &ActorDef = &Actor::system("krill", "admin");
+pub const ACTOR_DEF_ANON: &ActorDef = &Actor::anonymous();
+pub const ACTOR_DEF_MASTER_TOKEN: &ActorDef = &Actor::system("master-token", "admin");
+pub const ACTOR_DEF_TESTBED: &ActorDef = &Actor::system("testbed", "testbed");
 
 #[cfg(test)]
-pub const ACTOR_TEST: &ActorDef = &Actor::system("test", "admin");
+pub const ACTOR_DEF_TEST: &ActorDef = &Actor::system("test", "admin");

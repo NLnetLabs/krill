@@ -10,10 +10,10 @@ use hyper::{HeaderMap, body::HttpBody};
 use hyper::http::uri::PathAndQuery;
 use hyper::{Body, Method, StatusCode};
 
-use crate::{commons::{KrillResult, actor::{Actor, ActorDef}}, constants::ACTOR_ANON};
+use crate::commons::{KrillResult, actor::{Actor, ActorDef}};
 use crate::commons::error::Error;
 use crate::commons::remote::{rfc6492, rfc8181};
-use crate::daemon::auth::{Auth, LoggedInUser};
+use crate::daemon::auth::LoggedInUser;
 use crate::daemon::http::server::State;
 
 pub mod auth;
@@ -330,23 +330,16 @@ pub struct Request {
 }
 
 impl Request {
-    pub async fn new(request: hyper::Request<hyper::Body>, state: State) -> KrillResult<Self> {
+    pub async fn new(request: hyper::Request<hyper::Body>, state: State) -> Self {
         let path = RequestPath::from_request(&request);
+        let actor = state.read().await.actor_from_request(&request);
 
-        let actor = {
-            let locked_state = state.read().await;
-            match locked_state.get_auth(&request) {
-                Some(auth) => locked_state.actor_from_auth(&auth)?,
-                None => locked_state.actor_from_def(ACTOR_ANON),
-            }
-        };
-
-        Ok(Request {
+        Request {
             request,
             path,
             state,
             actor,
-        })
+        }
     }
 
     pub fn headers(&self) -> &HeaderMap {
@@ -478,25 +471,16 @@ impl Request {
         Ok(vec.into())
     }
 
-    async fn get_auth(&self) -> Option<Auth> {
-        self.state.read().await.get_auth(&self.request)
-    }
-
     pub async fn get_login_url(&self) -> KrillResult<HttpResponse> {
         self.state.read().await.get_login_url()
     }
 
     pub async fn login(&self) -> KrillResult<LoggedInUser> {
-        if let Some(auth) = self.get_auth().await {
-            self.state.read().await.login(&auth)
-        } else {
-            Err(Error::ApiMissingCredentials)
-        }
+        self.state.read().await.login(&self.request)
     }
 
     pub async fn logout(&self) -> KrillResult<HttpResponse> {
-        let auth = self.get_auth().await;
-        self.state.read().await.logout(auth)
+        self.state.read().await.logout(&self.request)
     }
 }
 
