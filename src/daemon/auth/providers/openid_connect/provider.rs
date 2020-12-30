@@ -413,14 +413,16 @@ impl OpenIDConnectAuthProvider {
     fn get_auth(&self, request: &hyper::Request<hyper::Body>) -> Option<Auth> {
         if let Some(query) = urlparse(request.uri().to_string()).get_parsed_query() {
             if let Some(code) = query.get_first_from_str("code") {
+                trace!("OpenID Connect: processing potential RFC-6749 section 4.1.2 redirected Authorization Response");
                 if let Some(state) = query.get_first_from_str("state") {
                     if let Some(nonce) = self.extract_nonce(request) {
-                        return Some(Auth::authorization_code(code, state, nonce));
+                        trace!("OpenID Connect: detected RFC-6749 section 4.1.2 redirected Authorization Response");
+                        return Some(Auth::authorization_code(Token::from(code), state, nonce));
                     } else {
-                        debug!("Ignoring potential Authorization Code request due to missing nonce hash cookie.");
+                        debug!("OpenID Connect: ignoring potential RFC-6749 section 4.1.2 redirected Authorization Response due to missing nonce hash cookie.");
                     }
                 } else {
-                    debug!("Ignoring potential Authorization Code request due to missing 'state' query parameter.");
+                    debug!("OpenID Connect: ignoring potential RFC-6749 section 4.1.2 redirected Authorization Response due to missing 'state' query parameter.");
                 }
             }
         }
@@ -568,6 +570,7 @@ impl OpenIDConnectAuthProvider {
                 // See: https://tools.ietf.org/html/rfc6749#section-4.1.2
                 //      https://openid.net/specs/openid-connect-core-1_0.html#AuthResponse
 // ==========================================================================================
+                trace!("OpenID Connect: submitting RFC-6749 section 4.1.3 Access Token Request");
                 let token_response: FlexibleTokenResponse = self.client
                     .exchange_code(AuthorizationCode::new(code.to_string()))
                     .request(logging_http_client!())
@@ -655,6 +658,7 @@ impl OpenIDConnectAuthProvider {
                     id_token_verifier = id_token_verifier.insecure_disable_signature_check();
                 }
 
+                trace!("OpenID Connect: processing OpenID Connect Core 1.0 section 3.1.3.3 Token Response");
                 let id_token_claims: &FlexibleIdTokenClaims = token_response
                     .extra_fields()
                     .id_token()
@@ -662,7 +666,7 @@ impl OpenIDConnectAuthProvider {
                     .claims(&id_token_verifier, &nonce_hash)
                     .map_err(|e| self.internal_error(format!("OpenID Connect: id token verification failed: {}", e.to_string()), None))?;
 
-                trace!("OpenID Connect: Identity provider returned ID token: {:?}", id_token_claims);
+                trace!("OpenID Connect: identity provider returned ID token: {:?}", id_token_claims);
 
                 // TODO: There's also a suggestion to verify the access token
                 // received above using the at_hash claim in the ID token, if
@@ -781,7 +785,7 @@ impl OpenIDConnectAuthProvider {
                         // client configuration dependent, but let's mention
                         // that we didn't find anything just to make it easier
                         // to spot configuration mistakes via the logs.
-                        info!("No '{}' claim found for user '{}'", &attr_name, &id);
+                        info!("No '{}' claim found for user: {}", &attr_name, &id);
                     }
                 }
 

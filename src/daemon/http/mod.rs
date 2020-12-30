@@ -74,6 +74,7 @@ struct Response {
     content_type: ContentType,
     max_age: Option<usize>,
     body: Vec<u8>,
+    cause: Option<Error>,
 }
 
 impl Response {
@@ -83,6 +84,7 @@ impl Response {
             content_type: ContentType::Text,
             max_age: None,
             body: Vec::new(),
+            cause: None,
         }
     }
 
@@ -101,7 +103,11 @@ impl Response {
 
         let response = builder.body(self.body.into()).unwrap();
 
-        HttpResponse::new(response)
+        let mut r = HttpResponse::new(response);
+        if let Some(cause) = self.cause {
+            r.set_cause(cause);
+        }
+        r
     }
 }
 
@@ -125,6 +131,7 @@ impl io::Write for Response {
 
 pub struct HttpResponse {
     response: hyper::Response<Body>,
+    cause: Option<Error>,
     loggable: bool,
     benign: bool,
 }
@@ -133,6 +140,7 @@ impl HttpResponse {
     pub fn new(response: hyper::Response<Body>) -> Self {
         HttpResponse {
             response,
+            cause: None,
             loggable: true,
             benign: false,
         }
@@ -149,6 +157,15 @@ impl HttpResponse {
     pub fn benign(&self) -> bool {
         self.benign
     }
+
+    pub fn cause(&self) -> Option<&Error> {
+        self.cause.as_ref()
+    }
+
+    /// Hint to the response handling code that, if logging responses, that this
+    /// response should not be logged (perhaps it is sensitive, distracting or 
+    /// simply not considered helpful).
+    pub fn do_not_log(&mut self) {
         self.loggable = false;
     }
 
@@ -159,6 +176,13 @@ impl HttpResponse {
         self.benign = benign;
         self
     }
+
+    /// When logging it can be useful to have the original cause to log rather
+    /// than the HTTP response body (as that might for example be JSON or XML).
+    pub fn set_cause(&mut self, error: Error) {
+        self.cause = Some(error);
+    }
+
     pub fn status(&self) -> StatusCode {
         self.response.status()
     }
@@ -177,6 +201,7 @@ impl HttpResponse {
             content_type,
             max_age: None,
             body,
+            cause: None,
         }
         .finalize()
     }
@@ -211,6 +236,7 @@ impl HttpResponse {
             content_type: ContentType::Xml,
             max_age: Some(seconds),
             body,
+            cause: None,
         }
         .finalize()
     }
@@ -264,6 +290,7 @@ impl HttpResponse {
             content_type: ContentType::Json,
             max_age: None,
             body: body.into_bytes(),
+            cause: Some(error),
         }
         .finalize()
     }

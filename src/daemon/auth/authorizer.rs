@@ -101,8 +101,12 @@ impl Authorizer {
         })
     }
 
-    pub fn get_auth(&self, request: &hyper::Request<hyper::Body>) -> Option<Auth> {
+    pub fn actor_from_request(&self, request: &hyper::Request<hyper::Body>) -> Actor {
+        trace!("Determining actor for request {:?}", &request);
+        trace!("Trying primary provider");
         let actor_def_result = self.primary_provider.get_actor_def(request)
+            .map(|res| { trace!("Primary provider returned an actor? {}", res.is_some()); res })
+            .map_err(|err| { trace!("Primary provider returned an error: {}", &err); err })
             .and_then(|res| match (res, self.fallback_provider.as_ref()) {
                 (Some(actor_def), _) => {
                     // successful login, use the found actor definition
@@ -111,8 +115,11 @@ impl Authorizer {
                 (None, Some(provider)) => {
                     // the given credentials were of the wrong type for the
                     // primary provider, try the fallback provider instead
+                    trace!("Trying secondary provider");
                     provider.get_actor_def(request)
-                },
+                        .map(|res| { trace!("Fallback provider returned an actor? {}", res.is_some()); res })
+                        .map_err(|err| { trace!("Fallback provider returned an error: {}", &err); err })
+                    },
                 (None, None) => {
                     // the given credentials were of the wrong type for the
                     // primary provider and there is no fallback provider:
@@ -126,7 +133,9 @@ impl Authorizer {
             Ok(None) => self.actor_from_def(ACTOR_ANON),
             Err(err) => self.actor_from_def(&Actor::anonymous().with_auth_error(err.to_string()))
         };
-
+    
+        trace!("Actor determination result: {:?}", &res);
+    
         res
     }
 
