@@ -1,4 +1,6 @@
-use crate::{commons::error::Error, daemon::http::server::render_error_redirect};
+use crate::commons::error::Error;
+#[cfg(feature = "multi-user")]
+use crate::daemon::http::server::render_error_redirect;
 
 #[cfg(feature = "multi-user")]
 use {crate::daemon::auth::LoggedInUser, std::string::FromUtf8Error, urlparse::quote};
