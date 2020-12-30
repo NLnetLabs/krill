@@ -92,7 +92,7 @@ impl AuthProvider for ConfigFileAuthProvider {
             Some(token) => {
                 // see if we can decode, decrypt and deserialize the users token
                 // into a login session structure
-                let session = self.session_cache.decode(token.clone(), &self.key)?;
+                let session = self.session_cache.decode(token, &self.key)?;
 
                 trace!("id={}, attributes={:?}", &session.id, &session.attributes);
 
@@ -113,11 +113,11 @@ impl AuthProvider for ConfigFileAuthProvider {
                 if user.password_hash == password_hash {
                     let api_token = self.session_cache.encode(&id, &user.attributes, &[], &self.key, None)?;
 
-                    return Ok(LoggedInUser {
+                    Ok(LoggedInUser {
                         token: api_token,
                         id: id.to_string(),
                         attributes: user.attributes.clone(),
-                    });
+                    })
                 } else {
                     Err(Error::ApiInvalidCredentials("Incorrect password".to_string()))
                 }

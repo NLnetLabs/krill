@@ -168,7 +168,7 @@ impl Authorizer {
     /// Submit credentials directly to the configured provider to establish a
     /// login session, if supported by the configured provider.
     pub fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
-        self.primary_provider.login(request).and_then(|user| {
+        self.primary_provider.login(request).map(|user| {
             let visible_attributes = user
                 .attributes
                 .clone()
@@ -188,7 +188,7 @@ impl Authorizer {
                 info!("User logged in: {}", &user.id);
             }
 
-            Ok(user)
+            user
         })
     }
 

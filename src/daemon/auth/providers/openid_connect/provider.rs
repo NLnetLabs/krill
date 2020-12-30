@@ -483,7 +483,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
             Some(token) => {
                 // see if we can decode, decrypt and deserialize the users token
                 // into a login session structure
-                let session = self.session_cache.decode(token.clone(), &self.session_key)?;
+                let session = self.session_cache.decode(token, &self.session_key)?;
 
                 let status = session.status();
 

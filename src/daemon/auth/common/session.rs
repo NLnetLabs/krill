@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    io,
     sync::RwLock,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
