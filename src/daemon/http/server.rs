@@ -689,6 +689,8 @@ fn add_new_auth_to_response(res: Result<HttpResponse, Error>, opt_auth: Option<A
     }
 }
 
+// aa! macro aka if-authorized-then-run-the-given-code-else-return-http-403
+// ------------------------------------------------------------------------
 // This macro handles returning from API handler functions if the request is not
 // Authenticated or lacks sufficient Authorization. We don't use a normal fn for
 // this as then each API handler function would have to also test for success or
@@ -720,9 +722,9 @@ macro_rules! aa {
             },
             Ok(false) => {
                 let msg = format!(
-                "User '{}' does not have permission '{}' on resource '{}'",
-                $req.actor().name(),
-                stringify!($perm),
+                    "User '{}' does not have permission '{}' on resource '{}'",
+                        $req.actor().name(),
+                        stringify!($perm),
                         $resource);
                 Ok(HttpResponse::forbidden(msg).with_benign($benign))
             },
@@ -769,7 +771,7 @@ async fn api(req: Request) -> RoutingResult {
             Some("bulk") => api_bulk(req, &mut path).await,
             Some("cas") => api_cas(req, &mut path).await,
             Some("publishers") => api_publishers(req, &mut path).await,
-            Some("pubd") => aa!(req, PUB_ADMIN, { api_publication_server(req, &mut path).await }),
+            Some("pubd") => aa!(req, PUB_ADMIN, api_publication_server(req, &mut path).await),
             _ => aa!(req, LOGIN, render_unknown_method()),
         }
     }
@@ -802,29 +804,25 @@ async fn api_bulk(req: Request, path: &mut RequestPath) -> RoutingResult {
 
 async fn api_cas(req: Request, path: &mut RequestPath) -> RoutingResult {
     match path.path_arg::<Handle>() {
-        Some(ca) if req.actor().is_allowed("CA_READ", ca.clone()) => match path.next() {
-            None => api_ca_info(req, ca).await,
-            Some("child_request.xml") => api_ca_child_req_xml(req, ca).await,
-            Some("child_request.json") => api_ca_child_req_json(req, ca).await,
-            Some("children") => api_ca_children(req, path, ca).await,
-            Some("history") => api_ca_history(req, path, ca).await,
-            Some("command") => api_ca_command_details(req, path, ca).await,
-            Some("id") => api_ca_regenerate_id(req, ca).await,
-            Some("issues") => api_ca_issues(req, ca).await,
-            Some("keys") => api_ca_keys(req, path, ca).await,
-            Some("parents") => api_ca_parents(req, path, ca).await,
-            Some("parents-xml") => api_ca_add_parent_xml(req, path, ca).await,
-            Some("repo") => api_ca_repo(req, path, ca).await,
-            Some("routes") => api_ca_routes(req, path, ca).await,
-            Some("rta") => api_ca_rta(req, path, ca).await,
-            _ => aa!(req, LOGIN, render_unknown_method()),
-        },
-        Some(ca) => Ok(HttpResponse::forbidden(format!(
-            "User '{}' does not have permission '{}' on resource '{}'",
-            req.actor().name(),
-            "CA_READ",
-            ca
-        ))),
+        Some(ca) => aa!(req, CA_READ, ca.clone(), {
+            match path.next() {
+                None => api_ca_info(req, ca).await,
+                Some("child_request.xml") => api_ca_child_req_xml(req, ca).await,
+                Some("child_request.json") => api_ca_child_req_json(req, ca).await,
+                Some("children") => api_ca_children(req, path, ca).await,
+                Some("history") => api_ca_history(req, path, ca).await,
+                Some("command") => api_ca_command_details(req, path, ca).await,
+                Some("id") => api_ca_regenerate_id(req, ca).await,
+                Some("issues") => api_ca_issues(req, ca).await,
+                Some("keys") => api_ca_keys(req, path, ca).await,
+                Some("parents") => api_ca_parents(req, path, ca).await,
+                Some("parents-xml") => api_ca_add_parent_xml(req, path, ca).await,
+                Some("repo") => api_ca_repo(req, path, ca).await,
+                Some("routes") => api_ca_routes(req, path, ca).await,
+                Some("rta") => api_ca_rta(req, path, ca).await,
+                _ => aa!(req, LOGIN, render_unknown_method()),
+            }
+        }),
         None => match *req.method() {
             Method::GET => api_cas_list(req).await,
             Method::POST => api_ca_init(req).await,
