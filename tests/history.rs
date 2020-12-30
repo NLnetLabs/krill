@@ -21,7 +21,7 @@ async fn history() {
     use krill::commons::util::file;
     use krill::daemon::ca::CaServer;
     use krill::daemon::config::Config;
-    use krill::daemon::mq::EventQueueListener;
+    use krill::daemon::mq::MessageQueue;
     use krill::test::*;
 
     const KRILL_HISTORY_JSON_GENERATE: &str = "KRILL_HISTORY_JSON_GENERATE";
@@ -60,7 +60,7 @@ async fn history() {
         file::backup_dir(&source, &server_cas_dir).unwrap();
 
         let config = Arc::new(Config::test(&server_dir));
-        let event_queue = Arc::new(EventQueueListener::default());
+        let event_queue = Arc::new(MessageQueue::default());
         let signer = Arc::new(KrillSigner::build(&server_dir).unwrap());
 
         CaServer::build(config, event_queue, signer).await.unwrap()
