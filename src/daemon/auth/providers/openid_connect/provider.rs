@@ -860,23 +860,6 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         // this case to the Krill start page as if logout were completed.
         Ok(HttpResponse::text_no_cache(self.logout_url.clone().into()))
     }
-
-    fn get_bearer_token(&self, request: &hyper::Request<hyper::Body>) -> Option<String> {
-        if let Some(header) = request.headers().get("Authorization") {
-            if let Ok(header) = header.to_str() {
-                if header.len() > 6 {
-                    let (bearer, token) = header.split_at(6);
-                    let bearer = bearer.trim();
-
-                    if "Bearer" == bearer {
-                        return Some(String::from(token.trim()));
-                    }
-                }
-            }
-        }
-
-        None
-    }
 }
 
 fn with_default_claims(claims: &Option<ConfigAuthOpenIDConnectClaims>) -> ConfigAuthOpenIDConnectClaims {
