@@ -34,8 +34,14 @@ mod tests {
 
     use serde::Serialize;
 
-    use crate::{commons::{actor::Actor, api::{CommandHistoryCriteria, CommandSummary, Handle}}, constants::ACTOR_DEF_TEST};
     use crate::test;
+    use crate::{
+        commons::{
+            actor::Actor,
+            api::{CommandHistoryCriteria, CommandSummary, Handle},
+        },
+        constants::ACTOR_DEF_TEST,
+    };
 
     use super::*;
 

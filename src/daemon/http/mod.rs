@@ -6,13 +6,16 @@ use std::str::FromStr;
 use bytes::{Buf, BufMut, Bytes};
 use serde::Serialize;
 
-use hyper::{HeaderMap, body::HttpBody};
 use hyper::http::uri::PathAndQuery;
+use hyper::{body::HttpBody, HeaderMap};
 use hyper::{Body, Method, StatusCode};
 
-use crate::commons::{KrillResult, actor::{Actor, ActorDef}};
 use crate::commons::error::Error;
 use crate::commons::remote::{rfc6492, rfc8181};
+use crate::commons::{
+    actor::{Actor, ActorDef},
+    KrillResult,
+};
 use crate::daemon::auth::LoggedInUser;
 use crate::daemon::http::server::State;
 
@@ -163,7 +166,7 @@ impl HttpResponse {
     }
 
     /// Hint to the response handling code that, if logging responses, that this
-    /// response should not be logged (perhaps it is sensitive, distracting or 
+    /// response should not be logged (perhaps it is sensitive, distracting or
     /// simply not considered helpful).
     pub fn do_not_log(&mut self) {
         self.loggable = false;
@@ -218,12 +221,14 @@ impl HttpResponse {
     }
 
     pub fn text_no_cache(body: Vec<u8>) -> Self {
-        HttpResponse::new(hyper::Response::builder()
-            .status(StatusCode::OK)
-            .header("Content-Type", ContentType::Text.as_ref())
-            .header("Cache-Control", "no-cache")
-            .body(body.into())
-            .unwrap())
+        HttpResponse::new(
+            hyper::Response::builder()
+                .status(StatusCode::OK)
+                .header("Content-Type", ContentType::Text.as_ref())
+                .header("Cache-Control", "no-cache")
+                .body(body.into())
+                .unwrap(),
+        )
     }
 
     pub fn xml(body: Vec<u8>) -> Self {
@@ -300,11 +305,13 @@ impl HttpResponse {
     }
 
     pub fn found(location: &str) -> Self {
-        HttpResponse::new(hyper::Response::builder()
-            .status(StatusCode::FOUND)
-            .header("Location", location)
-            .body(hyper::Body::empty())
-            .unwrap())
+        Self::new(
+            hyper::Response::builder()
+                .status(StatusCode::FOUND)
+                .header("Location", location)
+                .body(hyper::Body::empty())
+                .unwrap(),
+        )
     }
 
     pub fn not_found() -> Self {
@@ -349,7 +356,10 @@ impl Request {
     pub async fn upgrade_from_anonymous(&mut self, actor_def: &ActorDef) {
         if self.actor.is_anonymous() {
             self.actor = self.state.read().await.actor_from_def(actor_def);
-            info!("Permitted anonymous actor to become actor '{}' for the duration of this request", self.actor.name());
+            info!(
+                "Permitted anonymous actor to become actor '{}' for the duration of this request",
+                self.actor.name()
+            );
         }
     }
 

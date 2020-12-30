@@ -7,8 +7,12 @@ use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Debug;
 
-use crate::{commons::{KrillResult, error::Error}, constants::ACTOR_DEF_ANON, daemon::auth::Auth};
 use crate::daemon::auth::policy::AuthPolicy;
+use crate::{
+    commons::{error::Error, KrillResult},
+    constants::ACTOR_DEF_ANON,
+    daemon::auth::Auth,
+};
 
 #[derive(Clone, Eq, PartialEq)]
 pub enum ActorName {
@@ -29,7 +33,7 @@ impl ActorName {
 pub enum Attributes {
     None,
     RoleOnly(&'static str),
-    UserDefined(HashMap<String, String>)
+    UserDefined(HashMap<String, String>),
 }
 
 impl Attributes {
@@ -40,8 +44,8 @@ impl Attributes {
                 let mut map = HashMap::new();
                 map.insert("role".to_string(), role.to_string());
                 map
-            },
-            Attributes::None => HashMap::new()
+            }
+            Attributes::None => HashMap::new(),
         }
     }
 }
@@ -75,17 +79,13 @@ pub struct Actor {
 
 impl PartialEq for Actor {
     fn eq(&self, other: &Self) -> bool {
-        self.name == other.name &&
-        self.is_user == other.is_user &&
-        self.attributes == other.attributes
+        self.name == other.name && self.is_user == other.is_user && self.attributes == other.attributes
     }
 }
 
 impl PartialEq<ActorDef> for Actor {
     fn eq(&self, other: &ActorDef) -> bool {
-        self.name == other.name &&
-        self.is_user == other.is_user &&
-        self.attributes == other.attributes
+        self.name == other.name && self.is_user == other.is_user && self.attributes == other.attributes
     }
 }
 
@@ -173,10 +173,10 @@ impl Actor {
 
     pub fn attribute(&self, attr_name: String) -> Option<String> {
         match &self.attributes {
-            Attributes::UserDefined(map)                       => map.get(&attr_name).cloned(),
+            Attributes::UserDefined(map) => map.get(&attr_name).cloned(),
             Attributes::RoleOnly(role) if &attr_name == "role" => Some(role.to_string()),
-            Attributes::RoleOnly(_)                            => None,
-            Attributes::None                                   => None,
+            Attributes::RoleOnly(_) => None,
+            Attributes::None => None,
         }
     }
 
@@ -190,46 +190,66 @@ impl Actor {
     }
 
     #[cfg(feature = "multi-user")]
-    pub fn is_allowed<A, R>(&self, action: A, resource: R)
-         -> KrillResult<bool>
+    pub fn is_allowed<A, R>(&self, action: A, resource: R) -> KrillResult<bool>
     where
         A: ToPolar + Display + Clone,
         R: ToPolar + Display + Clone,
     {
         if let Some(error_msg) = &self.auth_error {
-            trace!("Unable to check access: actor={}, action={}, resource={}: {}",
-                self.name(), &action, &resource, &error_msg);
+            trace!(
+                "Unable to check access: actor={}, action={}, resource={}: {}",
+                self.name(),
+                &action,
+                &resource,
+                &error_msg
+            );
             return Err(Error::ApiInvalidCredentials(error_msg.clone()));
         }
 
         match &self.policy {
-            Some(policy) => {
-                match policy.is_allowed(self.clone(), action.clone(), resource.clone()) {
-                    Ok(allowed) => {
-                        if log_enabled!(log::Level::Trace) {
-                            if allowed {
-                                trace!("Access granted: actor={}, action={}, resource={}",
-                                    self.name(), &action, &resource);
-                            } else {
-                                trace!("Access denied: actor={:?}, action={}, resource={}",
-                                    self, &action, &resource);
-                            }
+            Some(policy) => match policy.is_allowed(self.clone(), action.clone(), resource.clone()) {
+                Ok(allowed) => {
+                    if log_enabled!(log::Level::Trace) {
+                        if allowed {
+                            trace!(
+                                "Access granted: actor={}, action={}, resource={}",
+                                self.name(),
+                                &action,
+                                &resource
+                            );
+                        } else {
+                            trace!(
+                                "Access denied: actor={:?}, action={}, resource={}",
+                                self,
+                                &action,
+                                &resource
+                            );
                         }
-                        Ok(allowed)
-                    },
-                    Err(err) => {
-                        error!("Unable to check access: actor={}, action={}, resource={}: {}",
-                            self.name(), &action, &resource, err);
-                        Ok(false)
                     }
+                    Ok(allowed)
+                }
+                Err(err) => {
+                    error!(
+                        "Unable to check access: actor={}, action={}, resource={}: {}",
+                        self.name(),
+                        &action,
+                        &resource,
+                        err
+                    );
+                    Ok(false)
                 }
             },
             None => {
                 // Auth policy is required, can only be omitted for use by test
                 // rules inside an Oso policy. We should never get here, but we
                 // don't want to crash Krill by calling unreachable!().
-                error!("Unable to check access: actor={}, action={}, resource={}: {}",
-                    self.name(), &action, &resource, "Internal error: missing policy");
+                error!(
+                    "Unable to check access: actor={}, action={}, resource={}: {}",
+                    self.name(),
+                    &action,
+                    &resource,
+                    "Internal error: missing policy"
+                );
                 Ok(false)
             }
         }
@@ -244,7 +264,12 @@ impl fmt::Display for Actor {
 
 impl fmt::Debug for Actor {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Actor(name={:?}, is_user={}, attr={:?})",
-            self.name(), self.is_user, self.attributes)
+        write!(
+            f,
+            "Actor(name={:?}, is_user={}, attr={:?})",
+            self.name(),
+            self.is_user,
+            self.attributes
+        )
     }
 }

@@ -1,14 +1,22 @@
-use std::{io::Read, str::FromStr, sync::{Arc, Mutex}};
+use std::{
+    io::Read,
+    str::FromStr,
+    sync::{Arc, Mutex},
+};
 
 use oso::{Oso, PolarClass, ToPolar};
 
-use crate::{commons::{KrillResult, actor::Actor, error::Error, api::Handle}, constants::{ACTOR_DEF_ANON, ACTOR_DEF_KRILL, ACTOR_DEF_MASTER_TOKEN, ACTOR_DEF_TESTBED}, daemon::{config::Config, http::RequestPath}};
+use crate::{
+    commons::{actor::Actor, api::Handle, error::Error, KrillResult},
+    constants::{ACTOR_DEF_ANON, ACTOR_DEF_KRILL, ACTOR_DEF_MASTER_TOKEN, ACTOR_DEF_TESTBED},
+    daemon::{config::Config, http::RequestPath},
+};
 
 /// Access to Oso is protected by a shareable mutex lock, as demonstrated in the
 /// Oso Rust [getting started example](https://github.com/osohq/oso-rust-quickstart/blob/d469f7594b1d07e2203f5dc6e88d0435fef35468/src/server.rs#L50).
 #[derive(Clone)]
 pub struct AuthPolicy {
-    oso: Arc<Mutex<Oso>>
+    oso: Arc<Mutex<Oso>>,
 }
 
 impl std::ops::Deref for AuthPolicy {
@@ -62,46 +70,47 @@ impl AuthPolicy {
         Self::exec_query(&mut oso, r#"actor_has_role(Actor.builtin("testbed"), "testbed")"#)?;
 
         Ok(AuthPolicy {
-            oso: Arc::new(Mutex::new(oso))
+            oso: Arc::new(Mutex::new(oso)),
         })
     }
 
-    pub fn is_allowed<U, A, R>(&self, actor: U, action: A, resource: R)
-        -> Result<bool, Error>
+    pub fn is_allowed<U, A, R>(&self, actor: U, action: A, resource: R) -> Result<bool, Error>
     where
         U: ToPolar,
         A: ToPolar,
         R: ToPolar,
     {
         match self.oso.lock() {
-            Ok(mut oso) => {
-                oso.is_allowed(actor, action, resource)
-                    .map_err(|err| Error::custom(
-                        format!("Internal error while checking access against policy: {}", err)))
-            },
-            Err(err) => {
-                Err(Error::custom(
-                    format!("Internal error obtaining access policy lock: {}", err)))
-            }
+            Ok(mut oso) => oso
+                .is_allowed(actor, action, resource)
+                .map_err(|err| Error::custom(format!("Internal error while checking access against policy: {}", err))),
+            Err(err) => Err(Error::custom(format!(
+                "Internal error obtaining access policy lock: {}",
+                err
+            ))),
         }
     }
 
     fn load_polar_file(oso: &mut Oso, bytes: &[u8], fname: &str) -> KrillResult<()> {
-        oso.load_str(std::str::from_utf8(bytes)
-            .map_err(|err| Error::custom(format!("The {} file is not valid UTF-8: {}", fname, err)))?)
-            .map_err(|err| Error::custom(format!("The {} file is not valid Polar syntax: {}", fname, err)))
+        oso.load_str(
+            std::str::from_utf8(bytes)
+                .map_err(|err| Error::custom(format!("The {} file is not valid UTF-8: {}", fname, err)))?,
+        )
+        .map_err(|err| Error::custom(format!("The {} file is not valid Polar syntax: {}", fname, err)))
     }
 
     fn exec_query(oso: &mut Oso, query: &str) -> KrillResult<()> {
         oso.query(query)
-            .map_err(|err| Error::custom(
-                format!("The Polar self check query '{}' failed: {}", query, err)))?;
+            .map_err(|err| Error::custom(format!("The Polar self check query '{}' failed: {}", query, err)))?;
         Ok(())
     }
 
     fn load_user_policy(config: Arc<Config>, oso: &mut Oso) -> KrillResult<()> {
         if config.auth_policy.is_file() {
-            info!("Loading user-defined authorization policy from file {:?}", &config.auth_policy);
+            info!(
+                "Loading user-defined authorization policy from file {:?}",
+                &config.auth_policy
+            );
             let fname = config.auth_policy.file_name().unwrap().to_str().unwrap();
             let mut buffer = Vec::new();
             std::fs::File::open(config.auth_policy.as_path())?.read_to_end(&mut buffer)?;
@@ -120,11 +129,11 @@ impl PolarClass for Actor {
             .add_attribute_getter("name", |instance| instance.name().to_string())
             .add_class_method("builtin", |name: String| -> Actor {
                 match name.as_str() {
-                    "anon"         => Actor::test_from_def(ACTOR_DEF_ANON),
-                    "krill"        => Actor::test_from_def(ACTOR_DEF_KRILL),
+                    "anon" => Actor::test_from_def(ACTOR_DEF_ANON),
+                    "krill" => Actor::test_from_def(ACTOR_DEF_KRILL),
                     "master-token" => Actor::test_from_def(ACTOR_DEF_MASTER_TOKEN),
-                    "testbed"      => Actor::test_from_def(ACTOR_DEF_TESTBED),
-                    _              => panic!("Unknown built-in actor name '{}'", name)
+                    "testbed" => Actor::test_from_def(ACTOR_DEF_TESTBED),
+                    _ => panic!("Unknown built-in actor name '{}'", name),
                 }
             })
             // method to do a "contains" test, either get rid of this if the Oso
@@ -161,11 +170,7 @@ impl PolarClass for RequestPath {
         Self::get_polar_class_builder()
             .add_attribute_getter("path", |instance| instance.full().to_string())
             .set_constructor(|path: String| -> RequestPath {
-                RequestPath::from_request(&hyper::Request::builder()
-                    .method("GET")
-                    .uri(path)
-                    .body(())
-                    .unwrap())
+                RequestPath::from_request(&hyper::Request::builder().method("GET").uri(path).body(()).unwrap())
             })
             .build()
     }

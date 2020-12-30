@@ -1,19 +1,18 @@
 //! Authorization for the API
 
 use std::any::Any;
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::commons::actor::{Actor, ActorDef};
 use crate::commons::api::Token;
-use crate::commons::KrillResult;
 use crate::commons::error::Error;
+use crate::commons::KrillResult;
 use crate::constants::ACTOR_DEF_ANON;
 use crate::daemon::auth::policy::AuthPolicy;
 use crate::daemon::auth::providers::MasterTokenAuthProvider;
 use crate::daemon::config::Config;
 use crate::daemon::http::HttpResponse;
-
 
 //------------ Authorizer ----------------------------------------------------
 
@@ -23,9 +22,9 @@ use crate::daemon::http::HttpResponse;
 /// [`CONFIG`] object. This avoids propagatation of potentially many provider
 /// specific configuration values from the calling code to the provider
 /// implementation.
-/// 
+///
 /// Each AuthProvider is responsible for answering questions related to:
-/// 
+///
 ///  * authentication - who are you and is it really you?
 ///  * authorization  - do you have the right to do the thing you want to do?
 ///  * discovery      - as an interactive client where should I send my users to
@@ -71,21 +70,21 @@ impl Authorizer {
     /// handle direct login attempts (if supported) and to determine the URLs to
     /// pass on to clients (e.g. Lagosta) that want to know where to direct
     /// end-users to login and logout.
-    /// 
+    ///
     /// # Legacy support for krillc
-    /// 
+    ///
     /// As krillc only supports [MasterTokenAuthProvider] based authentication, if
     /// `P` an instance of some other provider, an instance of
-    /// [MasterTokenAuthProvider] will also be created. This will be used as a 
-    /// fallback when Lagosta is configured to use some other [AuthProvider]. 
+    /// [MasterTokenAuthProvider] will also be created. This will be used as a
+    /// fallback when Lagosta is configured to use some other [AuthProvider].
     pub fn new<P>(config: Arc<Config>, provider: P) -> KrillResult<Self>
     where
-        P: AuthProvider + Any
+        P: AuthProvider + Any,
     {
         let value_any = &provider as &dyn Any;
         let fallback_provider = match value_any.downcast_ref::<MasterTokenAuthProvider>() {
             Some(_) => None,
-            None    => Some(MasterTokenAuthProvider::new(config.clone()))
+            None => Some(MasterTokenAuthProvider::new(config.clone())),
         };
 
         #[cfg(feature = "multi-user")]
@@ -104,41 +103,58 @@ impl Authorizer {
     pub fn actor_from_request(&self, request: &hyper::Request<hyper::Body>) -> Actor {
         trace!("Determining actor for request {:?}", &request);
         trace!("Trying primary provider");
-        let actor_def_result = self.primary_provider.get_actor_def(request)
-            .map(|res| { trace!("Primary provider returned an actor? {}", res.is_some()); res })
-            .map_err(|err| { trace!("Primary provider returned an error: {}", &err); err })
+        let actor_def_result = self
+            .primary_provider
+            .get_actor_def(request)
+            .map(|res| {
+                trace!("Primary provider returned an actor? {}", res.is_some());
+                res
+            })
+            .map_err(|err| {
+                trace!("Primary provider returned an error: {}", &err);
+                err
+            })
             .and_then(|res| match (res, self.fallback_provider.as_ref()) {
                 (Some(actor_def), _) => {
                     // successful login, use the found actor definition
                     Ok(Some(actor_def))
-                },
+                }
                 (None, Some(provider)) => {
                     // the given credentials were of the wrong type for the
                     // primary provider, try the fallback provider instead
                     trace!("Trying secondary provider");
-                    provider.get_actor_def(request)
-                        .map(|res| { trace!("Fallback provider returned an actor? {}", res.is_some()); res })
-                        .map_err(|err| { trace!("Fallback provider returned an error: {}", &err); err })
-                    },
+                    provider
+                        .get_actor_def(request)
+                        .map(|res| {
+                            trace!("Fallback provider returned an actor? {}", res.is_some());
+                            res
+                        })
+                        .map_err(|err| {
+                            trace!("Fallback provider returned an error: {}", &err);
+                            err
+                        })
+                }
                 (None, None) => {
                     // the given credentials were of the wrong type for the
                     // primary provider and there is no fallback provider:
                     // permission denied
-                    Err(Error::ApiInvalidCredentials("Invalid or missing credentials".to_string()))
+                    Err(Error::ApiInvalidCredentials(
+                        "Invalid or missing credentials".to_string(),
+                    ))
                 }
             });
 
         let res = match actor_def_result {
             Ok(Some(actor_def)) => self.actor_from_def(&actor_def),
             Ok(None) => self.actor_from_def(ACTOR_DEF_ANON),
-            Err(err) => self.actor_from_def(&Actor::anonymous().with_auth_error(err.to_string()))
+            Err(err) => self.actor_from_def(&Actor::anonymous().with_auth_error(err.to_string())),
         };
-    
+
         trace!("Actor determination result: {:?}", &res);
-    
+
         res
     }
-    
+
     pub fn actor_from_def(&self, def: &ActorDef) -> Actor {
         Actor::new(def, self.policy.clone())
     }
@@ -153,14 +169,17 @@ impl Authorizer {
     /// login session, if supported by the configured provider.
     pub fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
         self.primary_provider.login(request).and_then(|user| {
-            let visible_attributes = user.attributes.clone().into_iter()
+            let visible_attributes = user
+                .attributes
+                .clone()
+                .into_iter()
                 .filter(|(k, _)| !self.private_attributes.contains(k))
                 .collect::<HashMap<_, _>>();
 
             let user = LoggedInUser {
                 token: user.token,
                 id: user.id,
-                attributes: visible_attributes
+                attributes: visible_attributes,
             };
 
             if log_enabled!(log::Level::Trace) {
@@ -184,7 +203,7 @@ impl Authorizer {
 pub struct LoggedInUser {
     pub token: Token,
     pub id: String,
-    pub attributes: HashMap<String, String>
+    pub attributes: HashMap<String, String>,
 }
 
 #[derive(Clone)]

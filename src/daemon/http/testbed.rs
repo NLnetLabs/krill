@@ -1,18 +1,12 @@
 use hyper::Method;
 
-use crate::{constants::ACTOR_DEF_TESTBED, commons::api::Handle};
 use crate::daemon::ca::{ta_handle, testbed_ca_handle};
-use crate::daemon::http::{HttpResponse, Request, RequestPath, RoutingResult};
 use crate::daemon::http::server::{
-    api_add_pbl,
-    api_ca_add_child,
-    api_ca_child_remove,
-    api_ca_parent_res_xml,
-    api_remove_pbl,
-    api_repository_response_xml,
-    render_ok,
-    render_unknown_method,
+    api_add_pbl, api_ca_add_child, api_ca_child_remove, api_ca_parent_res_xml, api_remove_pbl,
+    api_repository_response_xml, render_ok, render_unknown_method,
 };
+use crate::daemon::http::{HttpResponse, Request, RequestPath, RoutingResult};
+use crate::{commons::api::Handle, constants::ACTOR_DEF_TESTBED};
 
 //------------ Support acting as a testbed -------------------------------------
 //
@@ -42,7 +36,7 @@ pub async fn testbed(mut req: Request) -> RoutingResult {
     if !req.path().full().starts_with("/testbed") {
         Err(req) // Not for us
     } else if !req.state().read().await.testbed_enabled() {
-         render_unknown_method()
+        render_unknown_method()
     } else {
         // The testbed is intended to be used without being logged in but
         // anonymous users don't have the necessary rights to manipulate
@@ -104,7 +98,10 @@ async fn testbed_publishers(req: Request, path: &mut RequestPath) -> RoutingResu
 // Prevent deletion of the built-in TA and testbed repositories.
 async fn testbed_remove_pbl(req: Request, publisher: Handle) -> RoutingResult {
     if publisher == ta_handle() || publisher == testbed_ca_handle() {
-        Ok(HttpResponse::forbidden(format!("Publisher '{}' cannot be removed", publisher)))
+        Ok(HttpResponse::forbidden(format!(
+            "Publisher '{}' cannot be removed",
+            publisher
+        )))
     } else {
         api_remove_pbl(req, publisher).await
     }

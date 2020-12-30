@@ -2,13 +2,16 @@ use std::{collections::HashMap, sync::Arc};
 
 use urlparse::{urlparse, GetQuery};
 
-use crate::commons::{actor::{Actor, ActorDef}, api::Token};
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
+use crate::commons::{
+    actor::{Actor, ActorDef},
+    api::Token,
+};
 use crate::daemon::auth::common::crypt;
 use crate::daemon::auth::common::session::*;
-use crate::daemon::auth::{Auth, AuthProvider, LoggedInUser};
 use crate::daemon::auth::providers::config_file::config::ConfigUserDetails;
+use crate::daemon::auth::{Auth, AuthProvider, LoggedInUser};
 use crate::daemon::config::Config;
 use crate::daemon::http::HttpResponse;
 
@@ -26,9 +29,10 @@ struct UserDetails {
 }
 
 fn get_checked_config_user(id: &str, user: &ConfigUserDetails) -> KrillResult<UserDetails> {
-    let password_hash = user.password_hash.as_ref()
-        .ok_or_else(|| Error::ConfigError(
-            format!("Password hash missing for user '{}'", id)))?
+    let password_hash = user
+        .password_hash
+        .as_ref()
+        .ok_or_else(|| Error::ConfigError(format!("Password hash missing for user '{}'", id)))?
         .to_string();
 
     Ok(UserDetails {
@@ -40,7 +44,7 @@ fn get_checked_config_user(id: &str, user: &ConfigUserDetails) -> KrillResult<Us
 pub struct ConfigFileAuthProvider {
     key: Vec<u8>,
     users: HashMap<String, UserDetails>,
-    session_cache: Arc<LoginSessionCache>
+    session_cache: Arc<LoginSessionCache>,
 }
 
 impl ConfigFileAuthProvider {
@@ -57,10 +61,10 @@ impl ConfigFileAuthProvider {
                 Ok(ConfigFileAuthProvider {
                     key,
                     users,
-                    session_cache
+                    session_cache,
                 })
-            },
-            None => Err(Error::ConfigError("Missing [auth_users] config section!".into()))
+            }
+            None => Err(Error::ConfigError("Missing [auth_users] config section!".into())),
         }
     }
 
@@ -74,7 +78,7 @@ impl ConfigFileAuthProvider {
         if let Some(password_hash) = self.get_bearer_token(request) {
             if let Some(query) = urlparse(request.uri().to_string()).get_parsed_query() {
                 if let Some(id) = query.get_first_from_str("id") {
-                    return Some(Auth::IdAndPasswordHash(id, password_hash))
+                    return Some(Auth::IdAndPasswordHash(id, password_hash));
                 }
             }
         }
@@ -93,8 +97,8 @@ impl AuthProvider for ConfigFileAuthProvider {
                 trace!("id={}, attributes={:?}", &session.id, &session.attributes);
 
                 Ok(Some(Actor::user(session.id, &session.attributes, None)))
-            },
-            _ => Ok(None)
+            }
+            _ => Ok(None),
         }
     }
 
@@ -112,7 +116,7 @@ impl AuthProvider for ConfigFileAuthProvider {
                     return Ok(LoggedInUser {
                         token: api_token,
                         id: id.to_string(),
-                        attributes: user.attributes.clone()
+                        attributes: user.attributes.clone(),
                     });
                 } else {
                     Err(Error::ApiInvalidCredentials("Incorrect password".to_string()))
@@ -133,7 +137,7 @@ impl AuthProvider for ConfigFileAuthProvider {
                 if let Ok(Some(actor)) = self.get_actor_def(request) {
                     info!("User logged out: {}", actor.name.as_str());
                 }
-            },
+            }
             _ => {
                 warn!("Unexpectedly received a logout request without a session token.");
             }

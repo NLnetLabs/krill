@@ -1,10 +1,10 @@
-use openidconnect::*;
 use openidconnect::core::*;
 use openidconnect::PrivateSigningKey;
+use openidconnect::*;
 use openssl::rsa::Rsa;
 use serde::{Deserialize, Serialize};
 use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
-use urlparse::{GetQuery, Query, Url, parse_qs, urlparse};
+use urlparse::{parse_qs, urlparse, GetQuery, Query, Url};
 
 use tokio::task;
 use tokio::time::delay_for;
@@ -31,7 +31,7 @@ pub struct CustomAdditionalClaims {
 }
 impl AdditionalClaims for CustomAdditionalClaims {}
 
-// use the CustomAdditionalMetadata type 
+// use the CustomAdditionalMetadata type
 type CustomProviderMetadata = ProviderMetadata<
     CustomAdditionalMetadata,
     CoreAuthDisplay,
@@ -80,7 +80,7 @@ struct KnownUser {
     inc_cas: Option<&'static str>,
     exc_cas: Option<&'static str>,
     token_secs: Option<u32>,
-    refresh: bool
+    refresh: bool,
 }
 
 struct TempAuthzCodeDetails {
@@ -91,7 +91,7 @@ struct TempAuthzCodeDetails {
 
 #[derive(Clone, Debug)]
 struct LoginSession {
-    id: KnownUserId
+    id: KnownUserId,
 }
 
 type TempAuthzCode = String;
@@ -132,11 +132,49 @@ fn run_mock_openid_connect_server() {
         let mut login_sessions = LoginSessions::new();
         let mut known_users = KnownUsers::new();
 
-        known_users.insert("admin@krill", KnownUser { role: "admin", exc_cas: Some("ta,testbed"), ..Default::default() });
-        known_users.insert("readonly@krill", KnownUser { role: "readonly", exc_cas: Some("ta,testbed"), ..Default::default() });
-        known_users.insert("readwrite@krill", KnownUser { role: "readwrite", exc_cas: Some("ta,testbed"), ..Default::default() });
-        known_users.insert("shorttokenwithoutrefresh@krill", KnownUser { role: "readwrite", exc_cas: Some("ta,testbed"), token_secs: Some(1), ..Default::default() });
-        known_users.insert("shorttokenwithrefresh@krill", KnownUser { role: "readwrite", exc_cas: Some("ta,testbed"), token_secs: Some(1), refresh: true, ..Default::default() });
+        known_users.insert(
+            "admin@krill",
+            KnownUser {
+                role: "admin",
+                exc_cas: Some("ta,testbed"),
+                ..Default::default()
+            },
+        );
+        known_users.insert(
+            "readonly@krill",
+            KnownUser {
+                role: "readonly",
+                exc_cas: Some("ta,testbed"),
+                ..Default::default()
+            },
+        );
+        known_users.insert(
+            "readwrite@krill",
+            KnownUser {
+                role: "readwrite",
+                exc_cas: Some("ta,testbed"),
+                ..Default::default()
+            },
+        );
+        known_users.insert(
+            "shorttokenwithoutrefresh@krill",
+            KnownUser {
+                role: "readwrite",
+                exc_cas: Some("ta,testbed"),
+                token_secs: Some(1),
+                ..Default::default()
+            },
+        );
+        known_users.insert(
+            "shorttokenwithrefresh@krill",
+            KnownUser {
+                role: "readwrite",
+                exc_cas: Some("ta,testbed"),
+                token_secs: Some(1),
+                refresh: true,
+                ..Default::default()
+            },
+        );
 
         let provider_metadata: CustomProviderMetadata = ProviderMetadata::new(
             IssuerUrl::new("http://localhost:1818".to_string()).unwrap(),
@@ -145,12 +183,14 @@ fn run_mock_openid_connect_server() {
             vec![ResponseTypes::new(vec![CoreResponseType::Code])],
             vec![CoreSubjectIdentifierType::Pairwise],
             vec![CoreJwsSigningAlgorithm::RsaSsaPssSha256],
-            CustomAdditionalMetadata { end_session_endpoint: String::from("http://localhost:1818/logout") },
+            CustomAdditionalMetadata {
+                end_session_endpoint: String::from("http://localhost:1818/logout"),
+            },
         )
         .set_token_endpoint(Some(TokenUrl::new("http://localhost:1818/token".to_string()).unwrap()))
-        .set_userinfo_endpoint(
-            Some(UserInfoUrl::new("http://localhost:1818/userinfo".to_string()).unwrap())
-        )
+        .set_userinfo_endpoint(Some(
+            UserInfoUrl::new("http://localhost:1818/userinfo".to_string()).unwrap(),
+        ))
         .set_scopes_supported(Some(vec![
             Scope::new("openid".to_string()),
             Scope::new("email".to_string()),
@@ -159,27 +199,25 @@ fn run_mock_openid_connect_server() {
         .set_response_modes_supported(Some(vec![CoreResponseMode::Query]))
         .set_id_token_signing_alg_values_supported(vec![CoreJwsSigningAlgorithm::RsaSsaPkcs1V15Sha256])
         .set_claims_supported(Some(vec![CoreClaimName::new("email".to_string())]));
-        
+
         let rsa_key = Rsa::generate(2048).unwrap().private_key_to_pem().unwrap();
         let rsa_pem = std::str::from_utf8(&rsa_key).unwrap();
-        let signing_key = CoreRsaPrivateSigningKey::from_pem(
-                rsa_pem,
-                Some(JsonWebKeyId::new("key1".to_string()))
-            ).expect("Invalid RSA private key");
+        let signing_key = CoreRsaPrivateSigningKey::from_pem(rsa_pem, Some(JsonWebKeyId::new("key1".to_string())))
+            .expect("Invalid RSA private key");
 
-        let jwks = CoreJsonWebKeySet::new(
-            vec![
-                // RSA keys may also be constructed directly using CoreJsonWebKey::new_rsa(). Providers
-                // aiming to support other key types may provide their own implementation of the
-                // JsonWebKey trait or submit a PR to add the desired support to this crate.
-                signing_key.as_verification_key()
-            ]
-        );
+        let jwks = CoreJsonWebKeySet::new(vec![
+            // RSA keys may also be constructed directly using CoreJsonWebKey::new_rsa(). Providers
+            // aiming to support other key types may provide their own implementation of the
+            // JsonWebKey trait or submit a PR to add the desired support to this crate.
+            signing_key.as_verification_key(),
+        ]);
 
         let discovery_doc = serde_json::to_string(&provider_metadata)
-            .map_err(|err| Error::custom(format!("Error while building discovery JSON response: {}", err))).unwrap();
+            .map_err(|err| Error::custom(format!("Error while building discovery JSON response: {}", err)))
+            .unwrap();
         let jwks_doc = serde_json::to_string(&jwks)
-            .map_err(|err| Error::custom(format!("Error while building jwks JSON response: {}", err))).unwrap();
+            .map_err(|err| Error::custom(format!("Error while building jwks JSON response: {}", err)))
+            .unwrap();
         let login_doc = std::fs::read_to_string("test-resources/ui/oidc_login.html").unwrap();
 
         fn make_random_value() -> Result<String, Error> {
@@ -198,21 +236,31 @@ fn run_mock_openid_connect_server() {
         }
 
         fn get_user_for_session(session: &LoginSession, known_users: &KnownUsers) -> Result<KnownUser, Error> {
-            known_users.get(&session.id).cloned().ok_or(
-                Error::custom(format!("Internal error, unknown user: {}", session.id)))
+            known_users
+                .get(&session.id)
+                .cloned()
+                .ok_or(Error::custom(format!("Internal error, unknown user: {}", session.id)))
         }
 
         fn get_token_duration_for_user(user: &KnownUser) -> Result<u32, Error> {
             let token_duration = user.token_secs.unwrap_or(DEFAULT_TOKEN_DURATION_SECS);
 
             if token_duration != DEFAULT_TOKEN_DURATION_SECS {
-                log_warning(&format!("Issuing token with non-default expiration time of {} seconds", &token_duration));
+                log_warning(&format!(
+                    "Issuing token with non-default expiration time of {} seconds",
+                    &token_duration
+                ));
             }
 
             Ok(token_duration)
         }
 
-        fn make_id_token_response(signing_key: &CoreRsaPrivateSigningKey, authz: &TempAuthzCodeDetails, session: &LoginSession, known_users: &KnownUsers) -> Result<CustomTokenResponse, Error> {
+        fn make_id_token_response(
+            signing_key: &CoreRsaPrivateSigningKey,
+            authz: &TempAuthzCodeDetails,
+            session: &LoginSession,
+            known_users: &KnownUsers,
+        ) -> Result<CustomTokenResponse, Error> {
             let user = get_user_for_session(session, known_users)?;
             let token_duration = get_token_duration_for_user(&user)?;
             let access_token = make_access_token()?;
@@ -234,13 +282,13 @@ fn run_mock_openid_connect_server() {
                     StandardClaims::new(
                         // Stable subject identifiers are recommended in place of e-mail addresses or other
                         // potentially unstable identifiers. This is the only required claim.
-                        SubjectIdentifier::new(session.id.to_string())
+                        SubjectIdentifier::new(session.id.to_string()),
                     ),
                     CustomAdditionalClaims {
                         role: user.role.to_string(),
                         inc_cas: user.inc_cas.map_or(None, |v| Some(v.to_string())),
                         exc_cas: user.exc_cas.map_or(None, |v| Some(v.to_string())),
-                    }
+                    },
                 )
                 // Optional: specify the user's e-mail address. This should only be provided if the
                 // client has been granted the 'profile' or 'email' scopes.
@@ -269,7 +317,8 @@ fn run_mock_openid_connect_server() {
                 // flow), it is recommended to pass the authorization code here to set the `c_hash` claim
                 // automatically.
                 None,
-            ).unwrap();
+            )
+            .unwrap();
 
             let mut token_response = CustomTokenResponse::new(
                 access_token.clone(),
@@ -288,9 +337,11 @@ fn run_mock_openid_connect_server() {
         }
 
         fn base64_decode(encoded: String) -> Result<String, Error> {
-            String::from_utf8(base64::decode(&encoded)
-                .map_err(|err: base64::DecodeError| Error::custom(format!("Base64 decode error: {}", err)))?)
-                .map_err(|err: std::string::FromUtf8Error| Error::custom(format!("UTF8 decode error: {}", err)))
+            String::from_utf8(
+                base64::decode(&encoded)
+                    .map_err(|err: base64::DecodeError| Error::custom(format!("Base64 decode error: {}", err)))?,
+            )
+            .map_err(|err: std::string::FromUtf8Error| Error::custom(format!("UTF8 decode error: {}", err)))
         }
 
         fn url_encode(decoded: String) -> Result<String, Error> {
@@ -299,50 +350,75 @@ fn run_mock_openid_connect_server() {
         }
 
         fn require_query_param(query: &Query, param: &str) -> Result<String, Error> {
-            query.get_first_from_str(param).ok_or(Error::custom(format!("Missing query parameter '{}'", param)))
+            query
+                .get_first_from_str(param)
+                .ok_or(Error::custom(format!("Missing query parameter '{}'", param)))
         }
 
         fn handle_discovery_request(request: Request, discovery_doc: &str) -> Result<(), Error> {
-            request.respond(
-                Response::empty(StatusCode(200))
-                    .with_header(Header::from_str("Content-Type: application/json").unwrap())
-                    .with_data(discovery_doc.clone().as_bytes(), None)
-            ).map_err(|err| err.into())
+            request
+                .respond(
+                    Response::empty(StatusCode(200))
+                        .with_header(Header::from_str("Content-Type: application/json").unwrap())
+                        .with_data(discovery_doc.clone().as_bytes(), None),
+                )
+                .map_err(|err| err.into())
         }
 
         fn handle_jwks_request(request: Request, jwks_doc: &str) -> Result<(), Error> {
-            request.respond(
-                Response::empty(StatusCode(200))
-                    .with_header(Header::from_str("Content-Type: application/json").unwrap())
-                    .with_data(jwks_doc.clone().as_bytes(), None)
-            ).map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)))
+            request
+                .respond(
+                    Response::empty(StatusCode(200))
+                        .with_header(Header::from_str("Content-Type: application/json").unwrap())
+                        .with_data(jwks_doc.clone().as_bytes(), None),
+                )
+                .map_err(|err: std::io::Error| Error::custom(format!("IO error: {}", err)))
         }
 
         fn handle_authorize_request(request: Request, url: Url, login_doc: &str) -> Result<(), Error> {
-            let query = url.get_parsed_query().ok_or(Error::custom("Missing query parameters"))?;
+            let query = url
+                .get_parsed_query()
+                .ok_or(Error::custom("Missing query parameters"))?;
             let client_id = require_query_param(&query, "client_id")?;
             let nonce = require_query_param(&query, "nonce")?;
             let state = require_query_param(&query, "state")?;
             let redirect_uri = require_query_param(&query, "redirect_uri")?;
 
-            request.respond(
-                Response::empty(StatusCode(200))
-                    .with_header(Header::from_str("Content-Type: text/html").unwrap())
-                    .with_data(login_doc
-                        .replace("<NONCE>", &base64::encode(&nonce))
-                        .replace("<STATE>", &base64::encode(&state))
-                        .replace("<REDIRECT_URI>", &base64::encode(&redirect_uri))
-                        .replace("<CLIENT_ID>", &base64::encode(&client_id))
-                        .as_bytes(), None)
-            ).map_err(|err| err.into())
+            request
+                .respond(
+                    Response::empty(StatusCode(200))
+                        .with_header(Header::from_str("Content-Type: text/html").unwrap())
+                        .with_data(
+                            login_doc
+                                .replace("<NONCE>", &base64::encode(&nonce))
+                                .replace("<STATE>", &base64::encode(&state))
+                                .replace("<REDIRECT_URI>", &base64::encode(&redirect_uri))
+                                .replace("<CLIENT_ID>", &base64::encode(&client_id))
+                                .as_bytes(),
+                            None,
+                        ),
+                )
+                .map_err(|err| err.into())
         }
 
-        fn handle_login_request(request: Request, url: Url, authz_codes: &mut TempAuthzCodes, known_users: &KnownUsers) -> Result<(), Error> {
-            let query = url.get_parsed_query().ok_or(Error::custom("Missing query parameters"))?;
+        fn handle_login_request(
+            request: Request,
+            url: Url,
+            authz_codes: &mut TempAuthzCodes,
+            known_users: &KnownUsers,
+        ) -> Result<(), Error> {
+            let query = url
+                .get_parsed_query()
+                .ok_or(Error::custom("Missing query parameters"))?;
             let redirect_uri = require_query_param(&query, "redirect_uri")?;
             let redirect_uri = base64_decode(redirect_uri)?;
 
-            fn with_redirect_uri(redirect_uri: String, query: Query, authz_codes: &mut TempAuthzCodes, known_users: &KnownUsers) -> Result<Response<std::io::Empty>, Error> {
+            fn with_redirect_uri(
+                redirect_uri: String,
+                query: Query,
+                authz_codes: &mut TempAuthzCodes,
+                known_users: &KnownUsers,
+            ) -> Result<Response<std::io::Empty>, Error> {
                 let username = require_query_param(&query, "username")?;
 
                 match known_users.get(username.as_str()) {
@@ -360,19 +436,30 @@ fn run_mock_openid_connect_server() {
                             .map_err(|err: openssl::error::ErrorStack| Error::custom(format!("Rand error: {}", err)))?;
                         let code = base64::encode(code_bytes);
 
-                        authz_codes.insert(code.clone(), TempAuthzCodeDetails { client_id, nonce: nonce.clone(), username });
+                        authz_codes.insert(
+                            code.clone(),
+                            TempAuthzCodeDetails {
+                                client_id,
+                                nonce: nonce.clone(),
+                                username,
+                            },
+                        );
 
                         let urlsafe_code = url_encode(code)?;
                         let urlsafe_state = url_encode(state)?;
                         let urlsafe_nonce = url_encode(nonce)?;
 
-                        Ok(Response::empty(StatusCode(302))
-                            .with_header(Header::from_str(
-                                &format!("Location: {}?code={}&state={}&nonce={}",
-                                    redirect_uri, urlsafe_code, urlsafe_state, urlsafe_nonce)
-                            ).map_err(|err| Error::custom(format!("Error while constructing HTTP Location header: {:?}", err)))?))
-                    },
-                    None => Err(Error::custom("Unknown user name"))
+                        Ok(Response::empty(StatusCode(302)).with_header(
+                            Header::from_str(&format!(
+                                "Location: {}?code={}&state={}&nonce={}",
+                                redirect_uri, urlsafe_code, urlsafe_state, urlsafe_nonce
+                            ))
+                            .map_err(|err| {
+                                Error::custom(format!("Error while constructing HTTP Location header: {:?}", err))
+                            })?,
+                        ))
+                    }
+                    None => Err(Error::custom("Unknown user name")),
                 }
             }
 
@@ -381,26 +468,32 @@ fn run_mock_openid_connect_server() {
             // redirect on error but with query params describing the error.
             let response = match with_redirect_uri(redirect_uri.clone(), query, authz_codes, known_users) {
                 Ok(response) => response,
-                Err(err) => {
-                    Response::empty(StatusCode(302))
-                        .with_header(Header::from_str(
-                            &format!("Location: {}?error={}",
-                                redirect_uri,
-                                url_encode(format!("{}", err))?)
-                        ).map_err(|err| Error::custom(format!("Error while constructing HTTP Location header: {:?}", err)))?)
-                }
+                Err(err) => Response::empty(StatusCode(302)).with_header(
+                    Header::from_str(&format!(
+                        "Location: {}?error={}",
+                        redirect_uri,
+                        url_encode(format!("{}", err))?
+                    ))
+                    .map_err(|err| {
+                        Error::custom(format!("Error while constructing HTTP Location header: {:?}", err))
+                    })?,
+                ),
             };
 
             request.respond(response).map_err(|err| err.into())
         }
 
         fn handle_logout_request(request: Request, url: Url) -> Result<(), Error> {
-            let query = url.get_parsed_query().ok_or(Error::custom("Missing query parameters"))?;
+            let query = url
+                .get_parsed_query()
+                .ok_or(Error::custom("Missing query parameters"))?;
             let redirect_uri = require_query_param(&query, "post_logout_redirect_uri")?;
 
-            let response = Response::empty(StatusCode(302))
-                .with_header(Header::from_str(&format!("Location: {}", redirect_uri)
-            ).map_err(|err| Error::custom(format!("Error while constructing HTTP Location header: {:?}", err)))?);
+            let response = Response::empty(StatusCode(302)).with_header(
+                Header::from_str(&format!("Location: {}", redirect_uri)).map_err(|err| {
+                    Error::custom(format!("Error while constructing HTTP Location header: {:?}", err))
+                })?,
+            );
 
             request.respond(response).map_err(|err| err.into())
         }
@@ -410,8 +503,8 @@ fn run_mock_openid_connect_server() {
             signing_key: &CoreRsaPrivateSigningKey,
             authz_codes: &mut TempAuthzCodes,
             login_sessions: &mut LoginSessions,
-            known_users: &KnownUsers) -> Result<(), Error>
-        {
+            known_users: &KnownUsers,
+        ) -> Result<(), Error> {
             let mut body = String::new();
             request.as_reader().read_to_string(&mut body)?;
 
@@ -428,31 +521,43 @@ fn run_mock_openid_connect_server() {
                         if let Some(authz_code) = authz_codes.remove(code) {
                             // find static user id
                             let session = LoginSession {
-                                id: known_users.keys().find(|k| k.to_string() == authz_code.username)
-                                    .ok_or(Error::custom(format!("Internal error, unknown user '{}'", authz_code.username)))?
+                                id: known_users
+                                    .keys()
+                                    .find(|k| k.to_string() == authz_code.username)
+                                    .ok_or(Error::custom(format!(
+                                        "Internal error, unknown user '{}'",
+                                        authz_code.username
+                                    )))?,
                             };
 
-                            let token_response = make_id_token_response(signing_key, &authz_code, &session, known_users)?;
-                            let token_doc = serde_json::to_string(&token_response)
-                                .map_err(|err| Error::custom(format!("Error while building ID Token JSON response: {}", err)))?;
+                            let token_response =
+                                make_id_token_response(signing_key, &authz_code, &session, known_users)?;
+                            let token_doc = serde_json::to_string(&token_response).map_err(|err| {
+                                Error::custom(format!("Error while building ID Token JSON response: {}", err))
+                            })?;
 
                             if let Some(refresh_token) = token_response.refresh_token() {
                                 new_key = Some(refresh_token.secret().clone());
                                 new_session = Some(session.clone());
                             }
 
-                            request.respond(
-                                Response::empty(StatusCode(200))
-                                .with_header(Header::from_str("Content-Type: application/json").unwrap())
-                                .with_data(token_doc.clone().as_bytes(), None)
-                            ).map_err(|err| err.into())
+                            request
+                                .respond(
+                                    Response::empty(StatusCode(200))
+                                        .with_header(Header::from_str("Content-Type: application/json").unwrap())
+                                        .with_data(token_doc.clone().as_bytes(), None),
+                                )
+                                .map_err(|err| err.into())
                         } else {
-                            Err(Error::custom(format!("Unknown temporary authorization code '{}'", &code)))
+                            Err(Error::custom(format!(
+                                "Unknown temporary authorization code '{}'",
+                                &code
+                            )))
                         }
                     } else {
                         Err(Error::custom("Missing query parameter 'code'"))
                     }
-                },
+                }
                 Some(grant_type) if &grant_type[0] == "refresh_token" => {
                     // we skip over verifying the Authorization HTTP header but perhaps
                     // we should make sure the client is sending that correctly?
@@ -461,13 +566,13 @@ fn run_mock_openid_connect_server() {
                         if let Some(session) = login_sessions.get(refresh_token) {
                             let user = get_user_for_session(&session, known_users)?;
                             if user.refresh {
-                                let token_duration = get_token_duration_for_user(&user)?;                        
+                                let token_duration = get_token_duration_for_user(&user)?;
                                 let access_token = make_access_token()?;
 
                                 let mut token_response = StandardTokenResponse::new(
                                     access_token.clone(),
                                     CoreTokenType::Bearer,
-                                    EmptyExtraTokenFields {}
+                                    EmptyExtraTokenFields {},
                                 );
 
                                 token_response.set_expires_in(Some(&Duration::from_secs(token_duration.into())));
@@ -475,17 +580,20 @@ fn run_mock_openid_connect_server() {
                                 let refresh_token = make_refresh_token()?;
                                 token_response.set_refresh_token(Some(refresh_token.clone()));
 
-                                let token_doc = serde_json::to_string(&token_response)
-                                    .map_err(|err| Error::custom(format!("Error while building Access Token JSON response: {}", err)))?;
+                                let token_doc = serde_json::to_string(&token_response).map_err(|err| {
+                                    Error::custom(format!("Error while building Access Token JSON response: {}", err))
+                                })?;
 
                                 new_key = Some(refresh_token.secret().to_string());
                                 new_session = Some(session.clone());
 
-                                request.respond(
-                                    Response::empty(StatusCode(200))
-                                    .with_header(Header::from_str("Content-Type: application/json").unwrap())
-                                    .with_data(token_doc.clone().as_bytes(), None)
-                                ).map_err(|err| err.into())
+                                request
+                                    .respond(
+                                        Response::empty(StatusCode(200))
+                                            .with_header(Header::from_str("Content-Type: application/json").unwrap())
+                                            .with_data(token_doc.clone().as_bytes(), None),
+                                    )
+                                    .map_err(|err| err.into())
                             } else {
                                 Err(Error::custom(format!("Internal error: cowardly refusing to generate a new token for user '{}' that should not get refresh tokens", session.id)))
                             }
@@ -495,13 +603,9 @@ fn run_mock_openid_connect_server() {
                     } else {
                         Err(Error::custom("Missing query parameter 'refresh_token'"))
                     }
-                },
-                Some(grant_type) => {
-                    Err(Error::custom(format!("Unknown grant_type '{}'", &grant_type[0])))
-                },
-                None => {
-                    Err(Error::custom("Missing query parameter 'grant_type'"))
                 }
+                Some(grant_type) => Err(Error::custom(format!("Unknown grant_type '{}'", &grant_type[0]))),
+                None => Err(Error::custom("Missing query parameter 'grant_type'")),
             };
 
             // do this out here to avoid having both a mutable and immutable
@@ -517,16 +621,19 @@ fn run_mock_openid_connect_server() {
         }
 
         fn handle_user_info_request(request: Request) -> Result<(), Error> {
-            let standard_claims: StandardClaims<CoreGenderClaim> = StandardClaims::new(SubjectIdentifier::new("sub-123".to_string()));
+            let standard_claims: StandardClaims<CoreGenderClaim> =
+                StandardClaims::new(SubjectIdentifier::new("sub-123".to_string()));
             let additional_claims = EmptyAdditionalClaims {};
             let claims = UserInfoClaims::new(standard_claims, additional_claims);
             let claims_doc = serde_json::to_string(&claims)
                 .map_err(|err| Error::custom(format!("Error while building UserInfo JSON response: {}", err)))?;
-            request.respond(
-                Response::empty(StatusCode(200))
-                .with_header(Header::from_str("Content-Type: application/json").unwrap())
-                .with_data(claims_doc.clone().as_bytes(), None)
-            ).map_err(|err| err.into())
+            request
+                .respond(
+                    Response::empty(StatusCode(200))
+                        .with_header(Header::from_str("Content-Type: application/json").unwrap())
+                        .with_data(claims_doc.clone().as_bytes(), None),
+                )
+                .map_err(|err| err.into())
         }
 
         fn handle_request(
@@ -537,40 +644,36 @@ fn run_mock_openid_connect_server() {
             signing_key: &CoreRsaPrivateSigningKey,
             authz_codes: &mut TempAuthzCodes,
             login_sessions: &mut LoginSessions,
-            known_users: &KnownUsers)
-         -> Result<(), Error> {
+            known_users: &KnownUsers,
+        ) -> Result<(), Error> {
             let url = urlparse(request.url());
             match request.method() {
-                Method::Get => {
-                    match url.path.as_str() {
-                        "/.well-known/openid-configuration" => {
-                            return handle_discovery_request(request, discovery_doc);
-                        },
-                        "/jwk" => {
-                            return handle_jwks_request(request, jwks_doc);
-                        },
-                        "/authorize" => {
-                            return handle_authorize_request(request, url, login_doc);
-                        },
-                        "/login_form_submit" => {
-                            return handle_login_request(request, url, authz_codes, known_users);
-                        },
-                        "/userinfo" => {
-                            return handle_user_info_request(request);
-                        },
-                        "/logout" => {
-                            return handle_logout_request(request, url);
-                        },
-                        _ => {}
+                Method::Get => match url.path.as_str() {
+                    "/.well-known/openid-configuration" => {
+                        return handle_discovery_request(request, discovery_doc);
                     }
+                    "/jwk" => {
+                        return handle_jwks_request(request, jwks_doc);
+                    }
+                    "/authorize" => {
+                        return handle_authorize_request(request, url, login_doc);
+                    }
+                    "/login_form_submit" => {
+                        return handle_login_request(request, url, authz_codes, known_users);
+                    }
+                    "/userinfo" => {
+                        return handle_user_info_request(request);
+                    }
+                    "/logout" => {
+                        return handle_logout_request(request, url);
+                    }
+                    _ => {}
                 },
-                Method::Post => {
-                    match url.path.as_str() {
-                        "/token" => {
-                            return handle_token_request(request, signing_key, authz_codes, login_sessions, known_users);
-                        },
-                        _ => {}
+                Method::Post => match url.path.as_str() {
+                    "/token" => {
+                        return handle_token_request(request, signing_key, authz_codes, login_sessions, known_users);
                     }
+                    _ => {}
                 },
                 _ => {}
             };
@@ -593,13 +696,22 @@ fn run_mock_openid_connect_server() {
         MOCK_OPENID_CONNECT_SERVER_RUNNING_FLAG.store(true, Ordering::Relaxed);
         while MOCK_OPENID_CONNECT_SERVER_RUNNING_FLAG.load(Ordering::Relaxed) {
             match server.recv_timeout(Duration::new(1, 0)) {
-                Ok(None) => { /* no request received within the timeout */ },
+                Ok(None) => { /* no request received within the timeout */ }
                 Ok(Some(request)) => {
-                    if let Err(err) = handle_request(request, &discovery_doc, &jwks_doc, &login_doc, &signing_key, &mut authz_codes, &mut login_sessions, &known_users) {
+                    if let Err(err) = handle_request(
+                        request,
+                        &discovery_doc,
+                        &jwks_doc,
+                        &login_doc,
+                        &signing_key,
+                        &mut authz_codes,
+                        &mut login_sessions,
+                        &known_users,
+                    ) {
                         log_error(err);
                     }
-                },
-                Err(err) => { 
+                }
+                Err(err) => {
                     log_error(err.into());
                 }
             };

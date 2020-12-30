@@ -171,8 +171,8 @@ impl ApiCallLogger {
             Ok(response) => {
                 match (response.status(), response.benign(), response.cause()) {
                     (s, false, Some(cause)) if s.is_client_error() => warn!("HTTP {}: {}", s.as_u16(), cause),
-                    (s, false, Some(cause)) if s.is_server_error() => error!("HTTP {}: {}",s.as_u16(), cause),
-                    _ => {},
+                    (s, false, Some(cause)) if s.is_server_error() => error!("HTTP {}: {}", s.as_u16(), cause),
+                    _ => {}
                 }
 
                 info!("{} {} {}", self.req_method, self.req_path, response.status());
@@ -233,9 +233,12 @@ async fn map_requests(req: hyper::Request<hyper::Body>, state: State) -> Result<
 /// as a query parameter.
 pub fn render_error_redirect(err: Error) -> RoutingResult {
     let response = err.to_error_response();
-       let json = serde_json::to_string(&response)
-        .or_else(|err| Ok(format!(
-            "JSON serialization error while processing internal error: {}", err)))?;
+    let json = serde_json::to_string(&response).or_else(|err| {
+        Ok(format!(
+            "JSON serialization error while processing internal error: {}",
+            err
+        ))
+    })?;
     let b64 = base64::encode(json);
     let location = format!("/index.html#/login?error={}", b64);
     Ok(HttpResponse::found(&location))
@@ -717,28 +720,25 @@ macro_rules! aa {
     }};
     ($req:ident, $perm:ident, $resource:expr, $action:expr, $benign:expr) => {{
         match $req.actor().is_allowed(stringify!($perm), $resource) {
-            Ok(true) => {
-                $action
-            },
+            Ok(true) => $action,
             Ok(false) => {
                 let msg = format!(
                     "User '{}' does not have permission '{}' on resource '{}'",
-                        $req.actor().name(),
-                        stringify!($perm),
-                        $resource);
+                    $req.actor().name(),
+                    stringify!($perm),
+                    $resource
+                );
                 Ok(HttpResponse::forbidden(msg).with_benign($benign))
-            },
+            }
             Err(err) => {
                 // Avoid an extra round of error -> string -> error conversion
-                // which causes the error message to nest, e.g. 
+                // which causes the error message to nest, e.g.
                 //   "Invalid credentials: Invalid credentials: Session expired"
                 match err {
-                    Error::ApiInvalidCredentials(_)|Error::ApiInsufficientRights(_) => {
+                    Error::ApiInvalidCredentials(_) | Error::ApiInsufficientRights(_) => {
                         Ok(HttpResponse::response_from_error(err).with_benign($benign))
-                    },
-                    _ => {
-                        Ok(HttpResponse::forbidden(format!("{}", err)).with_benign($benign))
                     }
+                    _ => Ok(HttpResponse::forbidden(format!("{}", err)).with_benign($benign)),
                 }
             }
         }
@@ -782,7 +782,7 @@ async fn api_authorized(req: Request) -> RoutingResult {
     // insufficient user rights as this API endpoint is invoked by Lagosta on
     // every view transition, and not being authorized is a valid state that
     // triggers Lagosta to show a login form, not something to warn about!
-    aa!(no_warn 
+    aa!(no_warn
         req,
         LOGIN,
         match *req.method() {
