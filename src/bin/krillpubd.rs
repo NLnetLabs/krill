@@ -1,5 +1,3 @@
-#![recursion_limit = "155"]
-
 extern crate krill;
 
 use std::sync::Arc;

@@ -1,6 +1,3 @@
-#![type_length_limit = "5000000"]
-#![recursion_limit = "155"]
-
 extern crate krill;
 
 /// This tests regressions for the Command history and details as exposed through the

@@ -201,20 +201,29 @@ async fn map_requests(req: hyper::Request<hyper::Body>, state: State) -> Result<
     // just make the trace log unusable.
     let logger = ApiCallLogger::new(&req);
 
-    let res = api(req)
-        .or_else(auth)
-        .or_else(health)
-        .or_else(metrics)
-        .or_else(stats)
-        .or_else(rfc8181)
-        .or_else(rfc6492)
-        .or_else(statics)
-        .or_else(ta)
-        .or_else(rrdp)
-        .or_else(testbed)
-        .or_else(render_not_found)
-        .map_err(|_| Error::custom("should have received not found response"))
-        .await;
+    // We used to use .or_else() here but that causes a large recursive call
+    // tree due to these calls being to async functions, large enough with the
+    // given Request object passed each time that it eventually resulted in
+    // stack overflow. By doing it by hand like this we avoid the use of the
+    // macros that cause the recursion. We could also look at putting less data
+    // on the stack.
+    let mut res = api(req).await;
+    if let Err(req) = res { res = auth(req).await; }
+    if let Err(req) = res { res = health(req).await; }
+    if let Err(req) = res { res = metrics(req).await; }
+    if let Err(req) = res { res = stats(req).await; }
+    if let Err(req) = res { res = rfc8181(req).await; }
+    if let Err(req) = res { res = rfc6492(req).await; }
+    if let Err(req) = res { res = statics(req).await; }
+    if let Err(req) = res { res = ta(req).await; }
+    if let Err(req) = res { res = rrdp(req).await; }
+    if let Err(req) = res { res = testbed(req).await; }
+    if let Err(req) = res { res = render_not_found(req).await; }
+
+    let res = match res {
+        Ok(res) => Ok(res),
+        Err(_) => Err(Error::custom("should have received not found response")),
+    };
 
     // Augment the response with any updated auth details that were determined
     // above.

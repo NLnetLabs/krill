@@ -1,5 +1,3 @@
-#![recursion_limit = "155"]
-
 #[cfg(feature = "ui-tests")]
 mod ui;
 

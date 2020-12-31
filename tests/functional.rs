@@ -1,7 +1,5 @@
 //! Perform functional tests on a Krill instance, using the API
 //!
-#![recursion_limit = "155"]
-
 use std::fs;
 use std::str::FromStr;
 use std::time::Duration;

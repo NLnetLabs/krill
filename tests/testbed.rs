@@ -1,5 +1,4 @@
 #![type_length_limit = "5000000"]
-#![recursion_limit = "155"]
 
 extern crate krill;
 
