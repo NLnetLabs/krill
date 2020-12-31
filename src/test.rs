@@ -89,7 +89,7 @@ pub fn init_config(config: &Config) {
 /// Starts krill server for testing, with embedded TA and repo.
 /// Creates a random base directory in the 'work' folder, and returns
 /// it. Be sure to clean it up when the test is done.
-pub async fn start_krill(config: Option<Config>) -> PathBuf {
+pub async fn start_krill(config: Option<Config>, enable_testbed: bool) -> PathBuf {
     let dir = tmp_dir();
     let config = if let Some(mut config) = config {
         config.set_data_dir(dir.clone());
@@ -99,13 +99,19 @@ pub async fn start_krill(config: Option<Config>) -> PathBuf {
     };
     init_config(&config);
 
-    let uris = {
-        let rsync_base = uri::Rsync::from_str("rsync://localhost/repo/").unwrap();
-        let rrdp_base_uri = uri::Https::from_str("https://localhost:3000/test-rrdp/").unwrap();
-        PublicationServerUris::new(rrdp_base_uri, rsync_base)
+    let mode = match enable_testbed {
+        false => KrillMode::Ca,
+        true => {
+            let uris = {
+                let rsync_base = uri::Rsync::from_str("rsync://localhost/repo/").unwrap();
+                let rrdp_base_uri = uri::Https::from_str("https://localhost:3000/test-rrdp/").unwrap();
+                PublicationServerUris::new(rrdp_base_uri, rsync_base)
+            };
+            KrillMode::Testbed(uris)
+        }
     };
 
-    tokio::spawn(server::start_krill_daemon(Arc::new(config), KrillMode::Testbed(uris)));
+    tokio::spawn(server::start_krill_daemon(Arc::new(config), mode));
     assert!(krill_server_ready().await);
     dir
 }

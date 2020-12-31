@@ -9,7 +9,7 @@ use std::process::Command;
 use krill::daemon::config::Config;
 use krill::test::*;
 
-pub async fn run_krill_ui_test(test_name: &str, _with_openid_server: bool) {
+pub async fn run_krill_ui_test(test_name: &str, _with_openid_server: bool, testbed_enabled: bool) {
     #[cfg(feature = "multi-user")]
     let mock_server_join_handle = if _with_openid_server {
         openid_connect_mock::start().await
@@ -17,7 +17,7 @@ pub async fn run_krill_ui_test(test_name: &str, _with_openid_server: bool) {
         None
     };
 
-    do_run_krill_ui_test(test_name).await;
+    do_run_krill_ui_test(test_name, testbed_enabled).await;
 
     #[cfg(feature = "multi-user")]
     if _with_openid_server {
@@ -25,11 +25,11 @@ pub async fn run_krill_ui_test(test_name: &str, _with_openid_server: bool) {
     }
 }
 
-async fn do_run_krill_ui_test(test_name: &str) {
+async fn do_run_krill_ui_test(test_name: &str, testbed_enabled: bool) {
     krill::constants::enable_test_mode();
     let config_path = &format!("test-resources/ui/{}.conf", test_name);
     let config = Config::read_config(&config_path).unwrap();
-    start_krill(Some(config)).await;
+    start_krill(Some(config), testbed_enabled).await;
 
     let test_name = test_name.to_string();
 
@@ -53,7 +53,7 @@ async fn do_run_krill_ui_test(test_name: &str) {
             .arg("/e2e")
             // .arg("-e")
             // .arg("DEBUG=cypress:proxy:http:*")
-            .arg("cypress/included:6.1.0")
+            .arg("cypress/included:6.2.0")
             .arg("--browser")
             .arg("chrome")
             .arg("--spec")

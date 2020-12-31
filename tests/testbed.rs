@@ -15,7 +15,7 @@ async fn add_and_remove_certificate_authority() {
     use krill::daemon::ca::testbed_ca_handle;
     use krill::test::*;
 
-    let dir = start_krill(None).await;
+    let dir = start_krill(None, true).await;
 
     // -------------------------------------------------------------------------
     // establish/verify starting conditions
