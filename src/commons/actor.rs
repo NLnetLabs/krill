@@ -1,3 +1,17 @@
+//! All actions performed by Krill are authorized by and attributed to an Actor.
+//!
+//! An Actor either represents Krill itself or an external client of Krill.
+//! Actors can only be created by the [Authorizer](crate::daemon::auth::Authorizer).
+//!
+//! An [ActorDef] defines an Actor that can be created later.
+//!
+//! ActorDefs allows special internal actors to be described once as Rust
+//! constants and turned into actual Actors at the point where they are needed.
+//!
+//! ActorDefs also allow [AuthProvider](crate::daemon::auth::authorizer::AuthProvider)s
+//! to define the Actor that should be created without needing any knowledge of
+//! the Authorizer.
+
 #[cfg(feature = "multi-user")]
 use oso::ToPolar;
 #[cfg(feature = "multi-user")]
