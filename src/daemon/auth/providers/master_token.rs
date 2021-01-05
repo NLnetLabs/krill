@@ -29,11 +29,21 @@ impl MasterTokenAuthProvider {
 
 impl AuthProvider for MasterTokenAuthProvider {
     fn get_actor_def(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
-        match self.get_bearer_token(request) {
+        if log_enabled!(log::Level::Trace) {
+            trace!("Attempting to authenticate the request..");
+        }
+
+        let res = match self.get_bearer_token(request) {
             Some(token) if token == self.required_token => Ok(Some(ACTOR_DEF_MASTER_TOKEN.clone())),
             Some(_) => Err(Error::ApiInvalidCredentials("Invalid bearer token".to_string())),
             None => Ok(None),
+        };
+
+        if log_enabled!(log::Level::Trace) {
+            trace!("Authentication result: {:?}", res);
         }
+
+        res
     }
 
     fn get_login_url(&self) -> KrillResult<HttpResponse> {

@@ -479,7 +479,11 @@ impl AuthProvider for OpenIDConnectAuthProvider {
     // Connect Core 1.0 section 3.1.26 Authentication Error Response
 
     fn get_actor_def(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
-        match self.get_bearer_token(request) {
+        if log_enabled!(log::Level::Trace) {
+            trace!("Attempting to authenticate the request..");
+        }
+
+        let res = match self.get_bearer_token(request) {
             Some(token) => {
                 // see if we can decode, decrypt and deserialize the users token
                 // into a login session structure
@@ -500,7 +504,13 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 Ok(Some(Actor::user(session.id, &session.attributes, new_auth)))
             }
             _ => Ok(None),
+        };
+
+        if log_enabled!(log::Level::Trace) {
+            trace!("Authentication result: {:?}", res);
         }
+
+        res
     }
 
     /// Generate the login URL that the client should direct the end-user to so

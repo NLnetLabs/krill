@@ -12,7 +12,7 @@ use crate::commons::error::Error;
 use crate::daemon::auth::policy::AuthPolicy;
 use crate::{commons::KrillResult, constants::ACTOR_DEF_ANON, daemon::auth::Auth};
 
-#[derive(Clone, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq, Debug)]
 pub enum ActorName {
     AsStaticStr(&'static str),
     AsString(String),
@@ -48,7 +48,7 @@ impl Attributes {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ActorDef {
     pub name: ActorName,
     pub is_user: bool,

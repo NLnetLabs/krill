@@ -6,7 +6,6 @@ use std::sync::Arc;
 
 use crate::commons::actor::{Actor, ActorDef};
 use crate::commons::api::Token;
-use crate::commons::error::Error;
 use crate::commons::KrillResult;
 use crate::constants::ACTOR_DEF_ANON;
 use crate::daemon::auth::policy::AuthPolicy;
@@ -58,7 +57,7 @@ pub trait AuthProvider: Send + Sync {
 /// accessed.
 pub struct Authorizer {
     primary_provider: Box<dyn AuthProvider>,
-    fallback_provider: Option<MasterTokenAuthProvider>,
+    legacy_provider: Option<MasterTokenAuthProvider>,
     policy: AuthPolicy,
     private_attributes: Vec<String>,
 }
@@ -82,9 +81,19 @@ impl Authorizer {
         P: AuthProvider + Any,
     {
         let value_any = &provider as &dyn Any;
-        let fallback_provider = match value_any.downcast_ref::<MasterTokenAuthProvider>() {
-            Some(_) => None,
-            None => Some(MasterTokenAuthProvider::new(config.clone())),
+        let is_master_token_provider = value_any.downcast_ref::<MasterTokenAuthProvider>().is_some();
+
+        let legacy_provider = if is_master_token_provider {
+            // the configured provider is the master token provider so no
+            // master token provider is needed for backward compatibility
+            None
+        } else {
+            // the configured provider is not the master token provider so we
+            // also need an instance of the master token provider in order to
+            // provider backward compatibility for krillc and other API clients
+            // that only understand the original, legacy, master token based
+            // authentication.
+            Some(MasterTokenAuthProvider::new(config.clone()))
         };
 
         #[cfg(feature = "multi-user")]
@@ -94,7 +103,7 @@ impl Authorizer {
 
         Ok(Authorizer {
             primary_provider: Box::new(provider),
-            fallback_provider,
+            legacy_provider,
             policy: AuthPolicy::new(config)?,
             private_attributes,
         })
@@ -102,57 +111,34 @@ impl Authorizer {
 
     pub fn actor_from_request(&self, request: &hyper::Request<hyper::Body>) -> Actor {
         trace!("Determining actor for request {:?}", &request);
-        trace!("Trying primary provider");
-        let actor_def_result = self
-            .primary_provider
-            .get_actor_def(request)
-            .map(|res| {
-                trace!("Primary provider returned an actor? {}", res.is_some());
-                res
-            })
-            .map_err(|err| {
-                trace!("Primary provider returned an error: {}", &err);
-                err
-            })
-            .and_then(|res| match (res, self.fallback_provider.as_ref()) {
-                (Some(actor_def), _) => {
-                    // successful login, use the found actor definition
-                    Ok(Some(actor_def))
-                }
-                (None, Some(provider)) => {
-                    // the given credentials were of the wrong type for the
-                    // primary provider, try the fallback provider instead
-                    trace!("Trying secondary provider");
-                    provider
-                        .get_actor_def(request)
-                        .map(|res| {
-                            trace!("Fallback provider returned an actor? {}", res.is_some());
-                            res
-                        })
-                        .map_err(|err| {
-                            trace!("Fallback provider returned an error: {}", &err);
-                            err
-                        })
-                }
-                (None, None) => {
-                    // the given credentials were of the wrong type for the
-                    // primary provider and there is no fallback provider:
-                    // permission denied
-                    Err(Error::ApiInvalidCredentials(
-                        "Invalid or missing credentials".to_string(),
-                    ))
-                }
-            });
 
-        let res = match actor_def_result {
-            Ok(Some(actor_def)) => self.actor_from_def(&actor_def),
-            Ok(None) => self.actor_from_def(ACTOR_DEF_ANON),
-            Err(err) => self.actor_from_def(&Actor::anonymous().with_auth_error(err.to_string())),
+        // Try the legacy provider first, if any
+        let mut authenticate_res = match &self.legacy_provider {
+            Some(provider) => provider.get_actor_def(request),
+            None => Ok(None),
         };
 
-        trace!("Actor determination result: {:?}", &res);
+        // Try the real provider if we did not already successfully authenticate
+        authenticate_res = match authenticate_res {
+            Ok(Some(res)) => Ok(Some(res)),
+            _ => self.primary_provider.get_actor_def(request),
+        };
 
-        res
+        // Create an actor based on the authentication result
+        let actor = match authenticate_res {
+            // authentication success
+            Ok(Some(actor_def)) => self.actor_from_def(&actor_def),
+
+            // authentication failure
+            Ok(None) => self.actor_from_def(ACTOR_DEF_ANON),
+
+            // error during authentication
+            Err(err) => self.actor_from_def(&ACTOR_DEF_ANON.clone().with_auth_error(err.to_string())),
+        };
+
+        trace!("Actor determination result: {:?}", &actor);
+
+        actor
     }
 
     pub fn actor_from_def(&self, def: &ActorDef) -> Actor {
@@ -206,7 +192,7 @@ pub struct LoggedInUser {
     pub attributes: HashMap<String, String>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Auth {
     Bearer(Token),
     AuthorizationCode(Token, String, String),

@@ -88,7 +88,11 @@ impl ConfigFileAuthProvider {
 
 impl AuthProvider for ConfigFileAuthProvider {
     fn get_actor_def(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
-        match self.get_bearer_token(request) {
+        if log_enabled!(log::Level::Trace) {
+            trace!("Attempting to authenticate the request..");
+        }
+
+        let res = match self.get_bearer_token(request) {
             Some(token) => {
                 // see if we can decode, decrypt and deserialize the users token
                 // into a login session structure
@@ -99,7 +103,13 @@ impl AuthProvider for ConfigFileAuthProvider {
                 Ok(Some(Actor::user(session.id, &session.attributes, None)))
             }
             _ => Ok(None),
+        };
+
+        if log_enabled!(log::Level::Trace) {
+            trace!("Authentication result: {:?}", res);
         }
+
+        res
     }
 
     fn get_login_url(&self) -> KrillResult<HttpResponse> {
