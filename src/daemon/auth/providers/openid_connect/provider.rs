@@ -313,7 +313,7 @@ impl OpenIDConnectAuthProvider {
         let jmespath_string = claim_conf
             .jmespath
             .as_ref()
-            .ok_or_else(|| Error::custom("Missing JMESPath configuration value for claim"))?
+            .ok_or_else(|| self.internal_error("Missing JMESPath configuration value for claim", None))?
             .to_string();
 
         // Create a new JMESPath Runtime. TODO: Somehow make this a single
@@ -331,10 +331,10 @@ impl OpenIDConnectAuthProvider {
         // to us) so this doesn't have to be fast. Note to self: perhaps the
         // lifetime issue could be worked around using a Box?
         let expr = &runtime.compile(&jmespath_string).map_err(|e| {
-            Error::Custom(format!(
-                "OpenID Connect: unable to compile JMESPath expression '{}': {:?}",
-                &jmespath_string, e
-            ))
+            self.internal_error(format!(
+                "OpenID Connect: unable to compile JMESPath expression '{}'",
+                &jmespath_string),
+                Some(e.to_string()))
         })?;
 
         let claims_to_search = match searchable_claims {
@@ -364,7 +364,9 @@ impl OpenIDConnectAuthProvider {
 
         for (source, claims) in claims_to_search.clone() {
             let claims = claims
-                .map_err(|e| Error::Custom(format!("OpenID Connect: unable to prepare claims for parsing: {:?}", e)))?;
+                .map_err(|e| self.internal_error(
+                    "OpenID Connect: unable to prepare claims for parsing",
+                    Some(&e.to_string())))?;
 
             debug!("Searching {:?} for \"{}\"..", source, &jmespath_string);
 
@@ -450,7 +452,7 @@ impl OpenIDConnectAuthProvider {
             Some(additional_info) => warn!("{} [additional info: {}]", msg, additional_info.into()),
             None => warn!("{}", msg),
         };
-        Error::custom(msg)
+        Error::ApiAuthError(msg)
     }
 
     fn get_auth(&self, request: &hyper::Request<hyper::Body>) -> Option<Auth> {
@@ -600,10 +602,9 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         // value is already base64 encoded.
         let cookie_str = format!("{}={}; Secure; HttpOnly", NONCE_COOKIE_NAME, nonce_b64_str);
         let cookie_hdr_val = HeaderValue::from_str(&cookie_str).map_err(|err| {
-            Error::custom(format!(
-                "Unable to construct HTTP cookie from nonce value '{}': {}",
-                nonce_b64_str, err
-            ))
+            self.internal_error(
+                format!("Unable to construct HTTP cookie from nonce value '{}'", nonce_b64_str),
+                Some(err.to_string()))
         })?;
 
         let res_body = authorize_url.as_str().as_bytes().to_vec();
@@ -719,17 +720,15 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                     .extra_fields()
                     .id_token()
                     .ok_or_else(|| {
-                        Error::Custom(
-                            "OpenID Connect: id token is missing, does the provider support OpenID Connect?"
-                                .to_string(),
-                        )
+                        self.internal_error(
+                            "OpenID Connect: id token is missing, does the provider support OpenID Connect?",
+                            None)
                     })? // happens if the server only supports OAuth2
                     .claims(&id_token_verifier, &nonce_hash)
                     .map_err(|e| {
                         self.internal_error(
                             format!("OpenID Connect: id token verification failed: {}", e.to_string()),
-                            None,
-                        )
+                            None)
                     })?;
 
                 trace!(
@@ -756,10 +755,9 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                         self.client
                             .user_info(token_response.access_token().clone(), None)
                             .map_err(|e| {
-                                Error::Custom(format!(
-                                    "OpenID Connect: id provider has no user info endpoint: {}",
-                                    e.to_string()
-                                ))
+                                self.internal_error(
+                                    "OpenID Connect: id provider has no user info endpoint",
+                                    Some(&e.to_string()))
                             })?
                             // don't require the response to be signed as the spec says
                             // signing it is optional: See: https://openid.net/specs/openid-connect-core-1_0.html#UserInfoResponse
@@ -767,9 +765,8 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                             .request(logging_http_client!())
                             .map_err(|e| {
                                 self.internal_error(
-                                    format!("OpenID Connect: user info request failed: {}", e.to_string()),
-                                    None,
-                                )
+                                    "OpenID Connect: user info request failed",
+                                    Some(&e.to_string()))
                             })?,
                     )
                 } else {
@@ -799,7 +796,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
 
                 let id_claim_conf = claims_conf
                     .get("id")
-                    .ok_or_else(|| Error::custom("Missing 'id' claim configuration"))?;
+                    .ok_or_else(|| self.internal_error("Missing 'id' claim configuration", None))?;
 
                 let id = self
                     .extract_claim(&id_claim_conf, &id_token_claims, user_info_claims.as_ref())?
