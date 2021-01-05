@@ -227,7 +227,7 @@ describe('Config File Users with TA', () => {
   })
 
   add_roa_test_settings.forEach(function (ts) {
-    it.skip('Add ROA for CA ' + ts.ca + ' as ' + ts.d + ' user should ' + (ts.o ? 'succeed' : 'fail'), () => {
+    it('Add ROA for CA ' + ts.ca + ' as ' + ts.d + ' user should ' + (ts.o ? 'succeed' : 'fail'), () => {
       cy.visit('/')
       cy.get('input[placeholder="Your username"]').type(ts.u)
       cy.get(':password').type(ts.p)
