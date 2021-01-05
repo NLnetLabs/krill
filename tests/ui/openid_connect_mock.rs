@@ -175,6 +175,14 @@ fn run_mock_openid_connect_server() {
                 ..Default::default()
             },
         );
+        known_users.insert(
+            "non-spec-compliant-idtoken-payload",
+            KnownUser {
+                role: "readonly",
+                exc_cas: Some("ta,testbed"),
+                ..Default::default()
+            }
+        );
 
         let provider_metadata: CustomProviderMetadata = ProviderMetadata::new(
             IssuerUrl::new("http://localhost:1818".to_string()).unwrap(),
@@ -530,14 +538,31 @@ fn run_mock_openid_connect_server() {
                                     )))?,
                             };
 
-                            let token_response =
-                                make_id_token_response(signing_key, &authz_code, &session, known_users)?;
-                            let token_doc = serde_json::to_string(&token_response).map_err(|err| {
-                                Error::custom(format!("Error while building ID Token JSON response: {}", err))
-                            })?;
+                            let (token_doc, refresh_token) = if authz_code.username == "non-spec-compliant-idtoken-payload" {
+                                // This represents an ID Token with an illegal "acr" value that is not a string but rather a nested
+                                // structure. This will be rejected by the Rust OpenID Connect crate. We've seen this problem with
+                                // at least one real OpenID Connect provider deployment.
+                                let token_doc = r#"{
+                                    "access_token":"*****",
+                                    "token_type":"bearer",
+                                    "expires_in":299,
+                                    "id_token":"eyJraWQiOiIyOTM5ODY3ODU5NDEyMzYxNTU4MzQ0MjM1NzUzNzM5OTE2NDQ1IiwidHlwIjoiSldUIiwiYWxnIjoiUlMyNTYifQ.eyJpc3MiOiJodHRwczovL2xvZ2luLmVzc28tdWF0LmNoYXJ0ZXIuY29tOjg0NDMvbmlkcC9vYXV0aC9uYW0iLCJzdWIiOiIyMTJjYzI1ZmVkYjE0YjQ1ODlhNmNmNmI2MTFiZTdhNiIsImF1ZCI6Ijk3YTUwYjFiLWIwNmYtNGIyOC04ZDdmLTk1MjA0MjdkZWFlYSIsImV4cCI6MTYwNjE2NjM1MywiaWF0IjoxNjA2MTY2MDUzLCJub25jZSI6IkRVTU1ZX0ZJWEVEX1ZBTFVFX0ZPUl9OT1ciLCJhY3IiOnsidmFsdWVzIjpbImh0dHBzOi8vbG9naW4uZXNzby11YXQuY2hhcnRlci5jb206ODQ0My9uaWRwL2tlcmJlcm9zL3Zkcy91cmkiXX19.K8TjWJQ3xb11iRxoyxwOVqSJT3nj2tNrk8gsljeLTGgZIcdtrLKiNppU09DQFtYIG-I9sKCzb98ZszIBVw5V1uUr4ztGTBL6quEgtT_14wYA5og_z_piNyhmy7WYpRkCQDZiW-RavfrbbRDwl2LgillxHdIG76O_0YutxnV_LIjfFR9N5pRC511JAI-3GgO7IOd6sMTs2EbeBJLNs2w6gzqwOQiTjyDaRxz6QgisR2JhzW3WgpVX6MaAYz-TpT_6ylodXYUkBW5hwzVdj2Ja-4YNdvIPx1_gclvxlVW2Y_pBXFQgkOaV7k1NH0r_SmqCWARPp7oA56b2ppCkJNphhQ"
+                                }"#.to_string();
 
-                            if let Some(refresh_token) = token_response.refresh_token() {
-                                new_key = Some(refresh_token.secret().clone());
+                                (token_doc, None)
+                            } else {
+                                let token_response =
+                                    make_id_token_response(signing_key, &authz_code, &session, known_users)?;
+                                let token_doc = serde_json::to_string(&token_response).map_err(|err| {
+                                    Error::custom(format!("Error while building ID Token JSON response: {}", err))
+                                })?;
+                                let refresh_token = token_response.refresh_token().cloned();
+
+                                (token_doc, refresh_token)
+                            };
+
+                            if let Some(token) = refresh_token {
+                                new_key = Some(token.secret().clone());
                                 new_session = Some(session.clone());
                             }
 
