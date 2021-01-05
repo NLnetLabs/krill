@@ -353,7 +353,7 @@ impl Request {
         self.request.headers()
     }
 
-    pub async fn upgrade_from_anonymous(&mut self, actor_def: &ActorDef) {
+    pub async fn upgrade_from_anonymous(&mut self, actor_def: ActorDef) {
         if self.actor.is_anonymous() {
             self.actor = self.state.read().await.actor_from_def(actor_def);
             info!(

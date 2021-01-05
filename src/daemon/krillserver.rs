@@ -342,7 +342,7 @@ impl KrillServer {
         self.authorizer.actor_from_request(request)
     }
 
-    pub fn actor_from_def(&self, actor_def: &ActorDef) -> Actor {
+    pub fn actor_from_def(&self, actor_def: ActorDef) -> Actor {
         self.authorizer.actor_from_def(actor_def)
     }
 

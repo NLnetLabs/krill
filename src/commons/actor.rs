@@ -133,7 +133,7 @@ impl Actor {
     }
 
     /// Only for use in testing
-    pub fn test_from_def(repr: &ActorDef) -> Actor {
+    pub fn test_from_def(repr: ActorDef) -> Actor {
         Actor {
             name: repr.name.clone(),
             is_user: repr.is_user,
@@ -156,7 +156,7 @@ impl Actor {
         }
     }
 
-    pub fn new(repr: &ActorDef, policy: AuthPolicy) -> Actor {
+    pub fn new(repr: ActorDef, policy: AuthPolicy) -> Actor {
         Actor {
             name: repr.name.clone(),
             is_user: repr.is_user,
@@ -172,7 +172,7 @@ impl Actor {
     }
 
     pub fn is_anonymous(&self) -> bool {
-        self == ACTOR_DEF_ANON
+        self == &ACTOR_DEF_ANON
     }
 
     pub fn new_auth(&self) -> Option<Auth> {

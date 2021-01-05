@@ -127,13 +127,13 @@ impl Authorizer {
         // Create an actor based on the authentication result
         let actor = match authenticate_res {
             // authentication success
-            Ok(Some(actor_def)) => self.actor_from_def(&actor_def),
+            Ok(Some(actor_def)) => self.actor_from_def(actor_def),
 
             // authentication failure
             Ok(None) => self.actor_from_def(ACTOR_DEF_ANON),
 
             // error during authentication
-            Err(err) => self.actor_from_def(&ACTOR_DEF_ANON.clone().with_auth_error(err.to_string())),
+            Err(err) => self.actor_from_def(ACTOR_DEF_ANON.clone().with_auth_error(err.to_string())),
         };
 
         trace!("Actor determination result: {:?}", &actor);
@@ -141,7 +141,7 @@ impl Authorizer {
         actor
     }
 
-    pub fn actor_from_def(&self, def: &ActorDef) -> Actor {
+    pub fn actor_from_def(&self, def: ActorDef) -> Actor {
         Actor::new(def, self.policy.clone())
     }
 
