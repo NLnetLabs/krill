@@ -48,6 +48,10 @@ impl CaLockMap {
     fn has_ca(&self, ca: &Handle) -> bool {
         self.0.contains_key(ca)
     }
+
+    fn drop_ca_lock(&mut self, ca: &Handle) {
+        self.0.remove(ca);
+    }
 }
 
 impl Default for CaLockMap {
@@ -100,6 +104,11 @@ impl CaLocks {
 
         let map = self.locks.read().await;
         CaLock { map, ca: ca.clone() }
+    }
+
+    async fn drop_ca(&self, ca: &Handle) {
+        let mut map = self.locks.write().await;
+        map.drop_ca_lock(ca);
     }
 }
 
@@ -425,6 +434,14 @@ impl CaServer {
             .map_err(|_| Error::CaUnknown(handle.clone()))
     }
 
+    // Delete a CA after revocations and withdrawals
+    pub async fn delete_ca(&self, handle: &Handle, actor: &Actor) -> KrillResult<()> {
+        warn!("Deleting CA '{}' as requested by: {}", handle, actor);
+        self.ca_store.drop_aggregate(handle)?;
+        self.locks.drop_ca(handle).await;
+        Ok(())
+    }
+
     /// Gets the history for a CA.
     pub async fn get_ca_history(&self, handle: &Handle, crit: CommandHistoryCriteria) -> KrillResult<CommandHistory> {
         let ca_lock = self.locks.ca(handle).await;
@@ -649,8 +666,25 @@ impl CaServer {
 
     /// Removes a parent from a CA
     pub async fn ca_parent_remove(&self, handle: Handle, parent: ParentHandle, actor: &Actor) -> KrillResult<()> {
+        // best effort, request revocations for any remaining keys under this parent.
+        if let Err(e) = self.ca_parent_revoke(&handle, &parent, actor).await {
+            warn!(
+                "Removing parent '{}' from CA '{}', but could not send revoke requests: {}",
+                parent, handle, e
+            );
+        }
+
         let upd = CmdDet::remove_parent(&handle, parent, actor);
         self.send_command(upd).await?;
+        Ok(())
+    }
+
+    /// Send revocation requests for a parent of a CA
+    pub async fn ca_parent_revoke(&self, handle: &Handle, parent: &ParentHandle, actor: &Actor) -> KrillResult<()> {
+        let ca = self.get_ca(&handle).await?;
+        let revoke_requests = ca.revoke_under_parent(&parent, &self.signer)?;
+        self.send_revoke_requests(&handle, &parent, revoke_requests, actor)
+            .await?;
         Ok(())
     }
 
@@ -694,7 +728,7 @@ impl CaServer {
 
             let next_run_seconds = self.config.ca_refresh as i64;
 
-            match ca.get_repository_contact() {
+            match ca.repository_contact() {
                 Ok(contact) => {
                     let uri = contact.uri();
                     match self.get_entitlements_from_parent(handle, parent).await {

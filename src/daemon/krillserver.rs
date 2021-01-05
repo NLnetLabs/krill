@@ -569,6 +569,10 @@ impl KrillServer {
     pub async fn ca_parent_remove(&self, handle: Handle, parent: ParentHandle, actor: &Actor) -> KrillEmptyResult {
         Ok(self.get_caserver()?.ca_parent_remove(handle, parent, actor).await?)
     }
+
+    pub async fn ca_parent_revoke(&self, handle: &Handle, parent: &ParentHandle, actor: &Actor) -> KrillEmptyResult {
+        Ok(self.get_caserver()?.ca_parent_revoke(handle, parent, actor).await?)
+    }
 }
 
 /// # Stats and status of CAS
@@ -682,6 +686,34 @@ impl KrillServer {
         self.get_caserver()?.get_ca(handle).await.map(|ca| ca.as_ca_info())
     }
 
+    // Deactivate the CA, the event will be picked up and trigger that
+    // all keys are revoked and all objects withdrawn, and the CA is removed.
+    pub async fn ca_deactivate(&self, ca_handle: &Handle, actor: &Actor) -> KrillResult<()> {
+        let ca = self.get_caserver()?.get_ca(ca_handle).await?;
+        for parent in ca.parents() {
+            if let Err(e) = self.ca_parent_revoke(ca_handle, parent, actor).await {
+                warn!(
+                    "Removing CA '{}', but could not send revoke requests to parent '{}': {}",
+                    ca_handle, parent, e
+                );
+            }
+
+            if let ParentCaContact::Embedded = ca.parent(parent)? {
+                self.ca_child_remove(parent, ca_handle.clone(), actor).await?;
+            }
+        }
+
+        let publisher = CaPublisher::new(self.get_caserver()?.clone(), self.pubserver.clone());
+        if let Err(e) = publisher.clean_current_repo(&ca_handle, &actor).await {
+            warn!(
+                "Could not withdraw objects for deactivated CA '{}'. Error was: {}",
+                ca_handle, e
+            );
+        }
+
+        self.get_caserver()?.delete_ca(ca_handle, actor).await
+    }
+
     /// Returns the parent contact for a CA and parent, or NONE if either the CA or the parent cannot be found.
     pub async fn ca_my_parent_contact(&self, handle: &Handle, parent: &ParentHandle) -> KrillResult<ParentCaContact> {
         let ca = self.get_caserver()?.get_ca(handle).await?;
@@ -727,7 +759,7 @@ impl KrillServer {
     /// and the actual objects published there, as reported by a list reply.
     pub async fn ca_repo_details(&self, handle: &Handle) -> KrillResult<CaRepoDetails> {
         let ca = self.get_caserver()?.get_ca(handle).await?;
-        let contact = ca.get_repository_contact()?;
+        let contact = ca.repository_contact()?;
         Ok(CaRepoDetails::new(contact.clone()))
     }
 

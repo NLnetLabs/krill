@@ -208,17 +208,39 @@ async fn map_requests(req: hyper::Request<hyper::Body>, state: State) -> Result<
     // macros that cause the recursion. We could also look at putting less data
     // on the stack.
     let mut res = api(req).await;
-    if let Err(req) = res { res = auth(req).await; }
-    if let Err(req) = res { res = health(req).await; }
-    if let Err(req) = res { res = metrics(req).await; }
-    if let Err(req) = res { res = stats(req).await; }
-    if let Err(req) = res { res = rfc8181(req).await; }
-    if let Err(req) = res { res = rfc6492(req).await; }
-    if let Err(req) = res { res = statics(req).await; }
-    if let Err(req) = res { res = ta(req).await; }
-    if let Err(req) = res { res = rrdp(req).await; }
-    if let Err(req) = res { res = testbed(req).await; }
-    if let Err(req) = res { res = render_not_found(req).await; }
+    if let Err(req) = res {
+        res = auth(req).await;
+    }
+    if let Err(req) = res {
+        res = health(req).await;
+    }
+    if let Err(req) = res {
+        res = metrics(req).await;
+    }
+    if let Err(req) = res {
+        res = stats(req).await;
+    }
+    if let Err(req) = res {
+        res = rfc8181(req).await;
+    }
+    if let Err(req) = res {
+        res = rfc6492(req).await;
+    }
+    if let Err(req) = res {
+        res = statics(req).await;
+    }
+    if let Err(req) = res {
+        res = ta(req).await;
+    }
+    if let Err(req) = res {
+        res = rrdp(req).await;
+    }
+    if let Err(req) = res {
+        res = testbed(req).await;
+    }
+    if let Err(req) = res {
+        res = render_not_found(req).await;
+    }
 
     let res = match res {
         Ok(res) => Ok(res),
@@ -815,7 +837,11 @@ async fn api_cas(req: Request, path: &mut RequestPath) -> RoutingResult {
     match path.path_arg::<Handle>() {
         Some(ca) => aa!(req, CA_READ, ca.clone(), {
             match path.next() {
-                None => api_ca_info(req, ca).await,
+                None => match *req.method() {
+                    Method::GET => api_ca_info(req, ca).await,
+                    Method::DELETE => api_ca_deactivate(req, ca).await,
+                    _ => aa!(req, LOGIN, render_unknown_method()),
+                },
                 Some("child_request.xml") => api_ca_child_req_xml(req, ca).await,
                 Some("child_request.json") => api_ca_child_req_json(req, ca).await,
                 Some("children") => api_ca_children(req, path, ca).await,
@@ -1141,14 +1167,20 @@ async fn api_ca_regenerate_id(req: Request, handle: Handle) -> RoutingResult {
 }
 
 async fn api_ca_info(req: Request, handle: Handle) -> RoutingResult {
-    match *req.method() {
-        Method::GET => aa!(
-            req,
-            CA_READ,
-            render_json_res(req.state().read().await.ca_info(&handle).await)
-        ),
-        _ => aa!(req, LOGIN, render_unknown_method()),
-    }
+    aa!(
+        req,
+        CA_READ,
+        render_json_res(req.state().read().await.ca_info(&handle).await)
+    )
+}
+
+async fn api_ca_deactivate(req: Request, handle: Handle) -> RoutingResult {
+    let actor = req.actor();
+    aa!(
+        req,
+        CA_READ,
+        render_json_res(req.state().read().await.ca_deactivate(&handle, &actor).await)
+    )
 }
 
 async fn api_ca_my_parent_contact(req: Request, ca: Handle, parent: ParentHandle) -> RoutingResult {

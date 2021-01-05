@@ -169,6 +169,10 @@ pub async fn init_ca(handle: &Handle) {
     krill_admin(Command::CertAuth(CaCommand::Init(CertAuthInit::new(handle.clone())))).await;
 }
 
+pub async fn delete_ca(ca: &Handle) {
+    krill_admin(Command::CertAuth(CaCommand::Delete(ca.clone()))).await;
+}
+
 // We use embedded when not testing RFC 8181 - so that the CMS signing/verification overhead can be reduced.
 pub async fn init_ca_with_embedded_repo(handle: &Handle) {
     krill_admin(Command::CertAuth(CaCommand::Init(CertAuthInit::new(handle.clone())))).await;

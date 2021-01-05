@@ -170,7 +170,7 @@ fn make_cas_event_triggers(
                     }
                     QueueEvent::CleanOldRepo(handle) => {
                             let publisher = CaPublisher::new(caserver.clone(), pubserver.clone());
-                            if let Err(e) = publisher.clean_up(&handle, &actor).await {
+                            if let Err(e) = publisher.clean_old_repo(&handle, &actor).await {
                                 info!(
                                     "Could not clean up old repo for '{}', it may be that it's no longer available. Got error '{}'",
                                     &handle, e

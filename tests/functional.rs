@@ -478,5 +478,24 @@ async fn functional() {
         let _multi_signed = rta_show(ca1, multi_rta_name).await;
     }
 
+    //---------------------------------------------------------------------------------------
+    // Remove a CA
+    //---------------------------------------------------------------------------------------
+    {
+        delete_ca(&ca4).await;
+
+        // Expect that CA3 no longer publishes certificates for CA4
+        {
+            let mut expected_files = expected_mft_and_crl(&ca3, &rcn_0).await;
+            expected_files.append(&mut expected_mft_and_crl(&ca3, &rcn_1).await);
+            assert!(will_publish(&ca3, &expected_files).await);
+        }
+
+        // Expect that CA4 withdraws all
+        {
+            assert!(will_publish(&ca4, &[]).await);
+        }
+    }
+
     let _ = fs::remove_dir_all(d);
 }

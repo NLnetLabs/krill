@@ -162,6 +162,12 @@ impl KrillClient {
                 Ok(ApiResponse::Empty)
             }
 
+            CaCommand::Delete(ca) => {
+                let uri = format!("api/v1/cas/{}", ca);
+                delete(&self.server, &self.token, &uri).await?;
+                Ok(ApiResponse::Empty)
+            }
+
             CaCommand::UpdateId(handle) => {
                 let uri = format!("api/v1/cas/{}/id", handle);
                 post_empty(&self.server, &self.token, &uri).await?;

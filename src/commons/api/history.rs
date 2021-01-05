@@ -425,6 +425,7 @@ pub enum StorableCaCommand {
     RtaPrepare(RtaName),
     RtaSign(RtaName),
     RtaCoSign(RtaName),
+    Deactivate,
 }
 
 impl WithStorableDetails for StorableCaCommand {
@@ -496,6 +497,9 @@ impl WithStorableDetails for StorableCaCommand {
             StorableCaCommand::RtaPrepare(name) => CommandSummary::new("cmd-ca-rta-prepare", &self).with_rta_name(name),
             StorableCaCommand::RtaSign(name) => CommandSummary::new("cmd-ca-rta-sign", &self).with_rta_name(name),
             StorableCaCommand::RtaCoSign(name) => CommandSummary::new("cmd-ca-rta-cosign", &self).with_rta_name(name),
+
+            // Deactivation
+            StorableCaCommand::Deactivate => CommandSummary::new("cmd-ca-deactivate", &self),
         }
     }
 }
@@ -601,6 +605,11 @@ impl fmt::Display for StorableCaCommand {
             StorableCaCommand::RtaPrepare(name) => write!(f, "RTA Prepare {}", name),
             StorableCaCommand::RtaSign(name) => write!(f, "RTA Sign {}", name),
             StorableCaCommand::RtaCoSign(name) => write!(f, "RTA Co-Sign {}", name),
+
+            // ------------------------------------------------------------
+            // Deactivate
+            // ------------------------------------------------------------
+            StorableCaCommand::Deactivate => write!(f, "Deactivate CA"),
         }
     }
 }

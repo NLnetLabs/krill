@@ -387,6 +387,16 @@ impl Options {
         app.subcommand(sub)
     }
 
+    fn make_cas_delete_ca_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
+        let mut sub = SubCommand::with_name("delete")
+            .about("Delete a CA and let it withdraw its objects and request revocation. WARNING: Irreversible!");
+
+        sub = Self::add_general_args(sub);
+        sub = Self::add_my_ca_arg(sub);
+
+        app.subcommand(sub)
+    }
+
     fn make_cas_children_add_sc<'a, 'b>(app: App<'a, 'b>) -> App<'a, 'b> {
         let mut sub = SubCommand::with_name("add").about("Add a child to a CA.");
 
@@ -970,6 +980,7 @@ impl Options {
         app = Self::make_cas_show_history_sc(app);
         app = Self::make_cas_show_action_sc(app);
         app = Self::make_cas_add_ca_sc(app);
+        app = Self::make_cas_delete_ca_sc(app);
         app = Self::make_cas_children_sc(app);
         app = Self::make_cas_parents_sc(app);
         app = Self::make_cas_keyroll_sc(app);
@@ -1106,6 +1117,15 @@ impl Options {
         let init = CertAuthInit::new(my_ca);
 
         let command = Command::CertAuth(CaCommand::Init(init));
+
+        Ok(Options::make(general_args, command))
+    }
+
+    fn parse_matches_cas_delete(matches: &ArgMatches) -> Result<Options, Error> {
+        let general_args = GeneralArgs::from_matches(matches)?;
+        let my_ca = Self::parse_my_ca(matches)?;
+
+        let command = Command::CertAuth(CaCommand::Delete(my_ca));
 
         Ok(Options::make(general_args, command))
     }
@@ -1726,6 +1746,8 @@ impl Options {
             Self::parse_matches_cas_list(m)
         } else if let Some(m) = matches.subcommand_matches("add") {
             Self::parse_matches_cas_add(m)
+        } else if let Some(m) = matches.subcommand_matches("delete") {
+            Self::parse_matches_cas_delete(m)
         } else if let Some(m) = matches.subcommand_matches("show") {
             Self::parse_matches_cas_show(m)
         } else if let Some(m) = matches.subcommand_matches("history") {
@@ -2094,6 +2116,7 @@ pub enum Command {
 pub enum CaCommand {
     Init(CertAuthInit), // Initialise a CA
     UpdateId(Handle),   // Update CA id
+    Delete(Handle),     // Delete the CA -> let it withdraw and request revocation as well
 
     // Publishing
     RepoPublisherRequest(Handle), // Get the RFC8183 publisher request

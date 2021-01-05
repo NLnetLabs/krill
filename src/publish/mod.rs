@@ -35,7 +35,7 @@ impl CaPublisher {
 
         // Since this is called by the scheduler, this should act as a no-op for
         // new CAs which do not yet have any repository configured.
-        let repo_contact = match ca.get_repository_contact() {
+        let repo_contact = match ca.repository_contact() {
             Ok(repo) => repo,
             Err(_) => return Ok(()),
         };
@@ -79,7 +79,7 @@ impl CaPublisher {
         Ok(())
     }
 
-    pub async fn clean_up(&self, ca_handle: &Handle, actor: &Actor) -> Result<(), Error> {
+    pub async fn clean_old_repo(&self, ca_handle: &Handle, actor: &Actor) -> Result<(), Error> {
         let ca = self.caserver.get_ca(ca_handle).await?;
 
         let repo = match ca.old_repository_contact() {
@@ -87,7 +87,22 @@ impl CaPublisher {
             Some(contact) => contact,
         };
 
-        info!("Will perform best effort clean up of old repository: {}", repo);
+        self.clean_repo(ca_handle, repo, actor).await
+    }
+
+    pub async fn clean_current_repo(&self, ca_handle: &Handle, actor: &Actor) -> Result<(), Error> {
+        let ca = self.caserver.get_ca(ca_handle).await?;
+
+        let repo = match ca.repository_contact() {
+            Ok(contact) => contact,
+            Err(_) => return Ok(()),
+        };
+
+        self.clean_repo(ca_handle, repo, actor).await
+    }
+
+    async fn clean_repo(&self, ca_handle: &Handle, repo: &RepositoryContact, actor: &Actor) -> Result<(), Error> {
+        info!("Will perform best effort clean up of repository: {}", repo);
 
         let list_reply = match repo {
             RepositoryContact::Embedded(_) => self.get_embedded()?.list(ca_handle)?,

@@ -58,6 +58,19 @@ impl Rfc8183Id {
     }
 }
 
+//------------ CertAuthStatus ----------------------------------------------
+#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
+enum CertAuthStatus {
+    Active,
+    Deactivated,
+}
+
+impl Default for CertAuthStatus {
+    fn default() -> Self {
+        CertAuthStatus::Active
+    }
+}
+
 //------------ CertAuth ----------------------------------------------------
 
 /// This type defines a Certification Authority at a slightly higher level
@@ -82,6 +95,9 @@ pub struct CertAuth {
 
     #[serde(skip_serializing_if = "Rtas::is_empty", default = "Rtas::default")]
     rtas: Rtas,
+
+    #[serde(skip_serializing, default = "CertAuthStatus::default")]
+    status: CertAuthStatus,
 }
 
 impl Aggregate for CertAuth {
@@ -132,6 +148,7 @@ impl Aggregate for CertAuth {
 
             routes,
             rtas,
+            status: CertAuthStatus::Active,
         })
     }
 
@@ -419,7 +436,7 @@ impl CertAuth {
         res
     }
 
-    pub fn get_repository_contact(&self) -> KrillResult<&RepositoryContact> {
+    pub fn repository_contact(&self) -> KrillResult<&RepositoryContact> {
         self.repository.as_ref().ok_or(Error::RepoNotSet)
     }
 
@@ -436,7 +453,7 @@ impl CertAuth {
             return Err(Error::custom("Cannot turn CA with resources into TA"));
         }
 
-        let repo_info = self.get_repository_contact()?.repo_info();
+        let repo_info = self.repository_contact()?.repo_info();
 
         let key = signer.create_key()?;
 
@@ -717,7 +734,7 @@ impl CertAuth {
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<HashMap<KeyIdentifier, CurrentObjectSetDelta>> {
-        let repo = self.get_repository_contact()?;
+        let repo = self.repository_contact()?;
 
         self.resources
             .get(&rcn)
@@ -930,7 +947,7 @@ impl CertAuth {
     /// Removes a parent. Returns an error if it doesn't exist.
     fn remove_parent(&self, parent: Handle) -> KrillResult<Vec<Evt>> {
         let _parent = self.parent(&parent)?;
-        let repo = self.get_repository_contact()?;
+        let repo = self.repository_contact()?;
 
         // remove the parent, the RCs and un-publish everything.
         let mut deltas = vec![];
@@ -985,7 +1002,7 @@ impl CertAuth {
         rc: &ResourceClass,
         signer: &KrillSigner,
     ) -> KrillResult<Vec<Evt>> {
-        let repo = self.get_repository_contact()?;
+        let repo = self.repository_contact()?;
         let parent_class_name = entitlement.class_name().clone();
         let req_details_list = rc.make_entitlement_events(entitlement, repo.repo_info(), signer)?;
 
@@ -1065,7 +1082,7 @@ impl CertAuth {
             // in the entitlements now received.
             class.parent_handle() == &parent_handle && !entitled_classes.contains(&class.parent_rc_name())
         }) {
-            let repo = self.get_repository_contact()?;
+            let repo = self.repository_contact()?;
             let delta = rc.withdraw(repo.repo_info());
             let revocations = rc.revoke(signer.deref())?;
 
@@ -1143,7 +1160,7 @@ impl CertAuth {
 
         let rc = self.resources.get(&rcn).ok_or(Error::ResourceClassUnknown(rcn))?;
 
-        let repo = self.get_repository_contact()?;
+        let repo = self.repository_contact()?;
 
         let evt_details = rc.update_received_cert(rcvd_cert, &self.routes, repo.repo_info(), config, signer.deref())?;
 
@@ -1172,7 +1189,7 @@ impl CertAuth {
 
         for (rcn, rc) in self.resources.iter() {
             let mut started = false;
-            let repo = self.get_repository_contact()?;
+            let repo = self.repository_contact()?;
             for details in rc.keyroll_initiate(repo.repo_info(), duration, &signer)?.into_iter() {
                 started = true;
                 res.push(StoredEvent::new(self.handle(), version, details));
@@ -1198,7 +1215,7 @@ impl CertAuth {
         for (rcn, rc) in self.resources.iter() {
             let mut activated = false;
 
-            let repo = self.get_repository_contact()?;
+            let repo = self.repository_contact()?;
 
             for details in rc
                 .keyroll_activate(repo.repo_info(), staging, config, signer.deref())?
@@ -1226,7 +1243,7 @@ impl CertAuth {
             .get(&rcn)
             .ok_or_else(|| Error::ResourceClassUnknown(rcn.clone()))?;
 
-        let repo = self.get_repository_contact()?;
+        let repo = self.repository_contact()?;
 
         let finish_details = my_rc.keyroll_finish(repo.repo_info())?;
 
@@ -1265,7 +1282,7 @@ impl CertAuth {
                 let repo_info = if let PublishMode::NewRepo(info) = mode {
                     info
                 } else {
-                    self.get_repository_contact()?.repo_info()
+                    self.repository_contact()?.repo_info()
                 };
 
                 res.append(&mut rc.republish(repo_info, mode, config, signer)?);
@@ -1352,7 +1369,7 @@ impl CertAuth {
 
         let (routes, mut evts) = self.update_authorizations(&route_auth_updates)?;
 
-        let repo = self.get_repository_contact()?;
+        let repo = self.repository_contact()?;
         let mut deltas = HashMap::new();
 
         // for rc in self.resources
@@ -1655,6 +1672,24 @@ impl CertAuth {
             self.version,
             EvtDet::RtaPrepared(name, prepared),
         )])
+    }
+}
+
+/// # Deactivate
+///
+impl CertAuth {
+    pub fn revoke_under_parent(
+        &self,
+        parent: &ParentHandle,
+        signer: &KrillSigner,
+    ) -> KrillResult<HashMap<ResourceClassName, Vec<RevocationRequest>>> {
+        let mut res = HashMap::new();
+        for (rcn, rc) in &self.resources {
+            if rc.parent_handle() == parent {
+                res.insert(rcn.clone(), rc.revoke(signer)?);
+            }
+        }
+        Ok(res)
     }
 }
 
