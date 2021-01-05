@@ -133,7 +133,7 @@ impl Authorizer {
             Ok(None) => self.actor_from_def(ACTOR_DEF_ANON),
 
             // error during authentication
-            Err(err) => self.actor_from_def(ACTOR_DEF_ANON.clone().with_auth_error(err.to_string())),
+            Err(err) => self.actor_from_def(ACTOR_DEF_ANON.with_auth_error(err.to_string())),
         };
 
         trace!("Actor determination result: {:?}", &actor);

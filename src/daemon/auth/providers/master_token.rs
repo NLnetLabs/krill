@@ -34,7 +34,7 @@ impl AuthProvider for MasterTokenAuthProvider {
         }
 
         let res = match self.get_bearer_token(request) {
-            Some(token) if token == self.required_token => Ok(Some(ACTOR_DEF_MASTER_TOKEN.clone())),
+            Some(token) if token == self.required_token => Ok(Some(ACTOR_DEF_MASTER_TOKEN)),
             Some(_) => Err(Error::ApiInvalidCredentials("Invalid bearer token".to_string())),
             None => Ok(None),
         };

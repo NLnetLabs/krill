@@ -137,7 +137,7 @@ impl Actor {
         Actor {
             name: repr.name.clone(),
             is_user: repr.is_user,
-            attributes: repr.attributes.clone(),
+            attributes: repr.attributes,
             new_auth: None,
             auth_error: None,
             policy: None,
@@ -162,7 +162,7 @@ impl Actor {
             is_user: repr.is_user,
             attributes: repr.attributes.clone(),
             new_auth: repr.new_auth.clone(),
-            auth_error: repr.auth_error.clone(),
+            auth_error: repr.auth_error,
             policy: Some(policy),
         }
     }
