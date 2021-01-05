@@ -28,7 +28,7 @@ impl MasterTokenAuthProvider {
 }
 
 impl AuthProvider for MasterTokenAuthProvider {
-    fn get_actor_def(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
+    fn authenticate(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
         if log_enabled!(log::Level::Trace) {
             trace!("Attempting to authenticate the request..");
         }
@@ -52,7 +52,7 @@ impl AuthProvider for MasterTokenAuthProvider {
     }
 
     fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
-        match self.get_actor_def(request)? {
+        match self.authenticate(request)? {
             Some(actor_def) => Ok(LoggedInUser {
                 token: self.required_token.clone(),
                 id: actor_def.name.as_str().to_string(),
@@ -63,7 +63,7 @@ impl AuthProvider for MasterTokenAuthProvider {
     }
 
     fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse> {
-        if let Ok(Some(actor)) = self.get_actor_def(request) {
+        if let Ok(Some(actor)) = self.authenticate(request) {
             info!("User logged out: {}", actor.name.as_str());
         }
 

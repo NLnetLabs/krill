@@ -478,7 +478,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
     // TODO: handle error responses from the provider as per RFC 6749 and OpenID
     // Connect Core 1.0 section 3.1.26 Authentication Error Response
 
-    fn get_actor_def(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
+    fn authenticate(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
         if log_enabled!(log::Level::Trace) {
             trace!("Attempting to authenticate the request..");
         }
@@ -925,7 +925,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
             Some(token) => {
                 self.session_cache.remove(&token);
 
-                if let Ok(Some(actor)) = self.get_actor_def(request) {
+                if let Ok(Some(actor)) = self.authenticate(request) {
                     info!("User logged out: {}", actor.name.as_str());
                 }
             }

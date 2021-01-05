@@ -47,7 +47,7 @@ pub trait AuthProvider: Send + Sync {
         None
     }
 
-    fn get_actor_def(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>>;
+    fn authenticate(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>>;
     fn get_login_url(&self) -> KrillResult<HttpResponse>;
     fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser>;
     fn logout(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<HttpResponse>;
@@ -114,14 +114,14 @@ impl Authorizer {
 
         // Try the legacy provider first, if any
         let mut authenticate_res = match &self.legacy_provider {
-            Some(provider) => provider.get_actor_def(request),
+            Some(provider) => provider.authenticate(request),
             None => Ok(None),
         };
 
         // Try the real provider if we did not already successfully authenticate
         authenticate_res = match authenticate_res {
             Ok(Some(res)) => Ok(Some(res)),
-            _ => self.primary_provider.get_actor_def(request),
+            _ => self.primary_provider.authenticate(request),
         };
 
         // Create an actor based on the authentication result
