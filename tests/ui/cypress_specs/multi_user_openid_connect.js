@@ -4,7 +4,7 @@ let readonly     = { u: 'readonly@krill' };
 let readwrite    = { u: 'readwrite@krill' };
 let shorttoken   = { u: 'shorttokenwithoutrefresh@krill' };
 let shortrefresh = { u: 'shorttokenwithrefresh@krill' };
-let badidtoken = { u: 'non-spec-compliant-idtoken-payload' };
+let badidtoken   = { u: 'non-spec-compliant-idtoken-payload' };
 let ca_name      = 'dummy-ca-name';
 
 let login_test_settings = [
@@ -12,8 +12,8 @@ let login_test_settings = [
   { d: 'incorrect',    u: 'wrong_user_name', o: false },
   { d: 'admin',        u: admin.u,           o: true  },
   { d: 'readonly',     u: readonly.u,        o: true  },
-  { d: 'readwrite', u: readwrite.u, o: true },
-  { d: 'badidtoken', u: badidtoken.u, o: false },
+  { d: 'readwrite',    u: readwrite.u,       o: true },
+  { d: 'badidtoken',   u: badidtoken.u,      o: false },
 ];
 
 describe('OpenID Connect users', () => {
@@ -56,7 +56,7 @@ describe('OpenID Connect users', () => {
         cy.contains('The supplied login credentials were incorrect')
         cy.contains('return to the login page')
       } else if (ts.d == 'badidtoken') {
-        cy.contains('OpenID Connect: code exchange failed: Failed to parse server response')
+        cy.contains('OpenID Connect: Code exchange failed: Failed to parse server response')
         cy.contains('return to the login page')
       }
     })

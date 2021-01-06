@@ -1,9 +1,12 @@
-use std::collections::{
-    hash_map::Entry::{Occupied, Vacant},
-    HashMap,
-};
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::{
+    collections::{
+        hash_map::Entry::{Occupied, Vacant},
+        HashMap,
+    },
+    sync::RwLock,
+};
 
 use basic_cookies::Cookie;
 use hyper::header::{HeaderValue, SET_COOKIE};
@@ -49,40 +52,61 @@ use super::util::{
 const NONCE_COOKIE_NAME: &str = "nonce_hash";
 const LOGIN_SESSION_STATE_KEY_PATH: &str = "login_session_state.key"; // TODO: decide on proper location
 
-pub struct OpenIDConnectAuthProvider {
+pub struct ProviderConnectionProperties {
     client: FlexibleClient,
-    config: Arc<Config>,
     email_scope_supported: bool,
     userinfo_endpoint_supported: bool,
     logout_url: String,
+}
+
+pub struct OpenIDConnectAuthProvider {
+    config: Arc<Config>,
     session_cache: Arc<LoginSessionCache>,
     session_key: Vec<u8>,
+    conn: Arc<RwLock<Option<ProviderConnectionProperties>>>,
 }
 
 impl OpenIDConnectAuthProvider {
     pub fn new(config: Arc<Config>, session_cache: Arc<LoginSessionCache>) -> KrillResult<Self> {
-        match &config.auth_openidconnect {
-            Some(oidc_conf) => {
-                let meta = Self::discover(oidc_conf)?;
-                let (email_scope_supported, userinfo_endpoint_supported) = Self::check_provider_capabilities(&meta)?;
-                let logout_url = Self::build_logout_url(config.service_uri(), &meta);
-                let client = Self::build_client(oidc_conf, config.service_uri(), meta)?;
-                let session_key = Self::init_session_key(&config.data_dir)?;
+        let session_key = Self::init_session_key(&config.data_dir)?;
 
-                Ok(OpenIDConnectAuthProvider {
-                    client,
-                    config,
-                    email_scope_supported,
-                    userinfo_endpoint_supported,
-                    logout_url,
-                    session_cache,
-                    session_key,
-                })
+        Ok(OpenIDConnectAuthProvider {
+            config,
+            session_cache,
+            session_key,
+            conn: Arc::new(RwLock::new(None)),
+        })
+    }
+
+    fn initialize_connection_if_needed(&self) -> KrillResult<()> {
+        // TODO: hang on, why are we taking a write lock just to check if the
+        // Option is set??
+        match self.conn.write() {
+            Ok(mut conn_guard) => {
+                if conn_guard.is_none() {
+                    trace!("OpenID Connect: Initializing provider connection...");
+                    let oidc_conf = self.oidc_conf()?;
+                    let meta = Self::discover(oidc_conf)?;
+                    let (email_scope_supported, userinfo_endpoint_supported) =
+                        Self::check_provider_capabilities(&meta)?;
+                    let logout_url = Self::build_logout_url(self.config.service_uri(), &meta);
+                    let client = Self::build_client(oidc_conf, self.config.service_uri(), meta)?;
+
+                    *conn_guard = Some(ProviderConnectionProperties {
+                        client,
+                        email_scope_supported,
+                        userinfo_endpoint_supported,
+                        logout_url,
+                    });
+                }
             }
-            None => Err(Error::ConfigError(
-                "Missing [auth_openidconnect] config section!".into(),
-            )),
+            Err(err) => {
+                return Err(self.internal_error(
+                    "Unable to initialize provider connection: Unable to acquire internal lock", Some(&err.to_string())));
+            }
         }
+
+        Ok(())
     }
 
     /// Discover the OpenID Connect: identity provider details via the
@@ -100,7 +124,7 @@ impl OpenIDConnectAuthProvider {
         let issuer = IssuerUrl::new(issuer.to_string())?;
 
         info!(
-            "Discovering OpenID Connect: provider details using issuer {}",
+            "OpenID Connect: Discovering provider details using issuer {}",
             &issuer.as_str()
         );
 
@@ -108,7 +132,7 @@ impl OpenIDConnectAuthProvider {
         // learn about and configure ourselves to talk to it.
         let meta = WantedMeta::discover(&issuer, logging_http_client!()).map_err(|e| {
             Error::Custom(format!(
-                "OpenID Connect: discovery failed with issuer {}: {}",
+                "OpenID Connect: Discovery failed with issuer {}: {}",
                 issuer.to_string(),
                 e.to_string()
             ))
@@ -125,7 +149,7 @@ impl OpenIDConnectAuthProvider {
         let mut ok = true;
         let mut email_scope_supported = false;
 
-        info!("Verifying OpenID Connect: provider capabilities..");
+        info!("Verifying OpenID Connect: Provider capabilities..");
 
         if is_supported_opt!(meta.response_modes_supported(), CoreResponseMode::Query)
             .log_or_fail("response_modes_supported", Some("query"))
@@ -207,7 +231,7 @@ impl OpenIDConnectAuthProvider {
         // Log the redirect URI to help the operator in the event that the
         // OpenID Connect: provider complains that the redirect URI doesn't match
         // that configured at the provider.
-        debug!("OpenID Connect: redirect URI set to {}", redirect_uri.to_string());
+        debug!("OpenID Connect: Redirect URI set to {}", redirect_uri.to_string());
 
         let client = client.set_redirect_uri(redirect_uri);
 
@@ -230,7 +254,7 @@ impl OpenIDConnectAuthProvider {
             unreachable!()
         };
 
-        debug!("OpenID Connect: logout URL will be {:?}", &logout_url);
+        debug!("OpenID Connect: Logout URL will be {:?}", &logout_url);
 
         logout_url
     }
@@ -238,43 +262,64 @@ impl OpenIDConnectAuthProvider {
     fn try_refresh_token(&self, session: &ClientSession) -> Option<Auth> {
         match &session.secrets.get(0) {
             Some(refresh_token) => {
-                debug!("OpenID Connect: refreshing token for user: \"{}\"", &session.id);
-                trace!("OpenID Connect: submitting RFC-6749 section 6 Access Token Refresh request");
-                let token_response = self
-                    .client
-                    .exchange_refresh_token(&RefreshToken::new(refresh_token.to_string()))
-                    .request(logging_http_client!());
-                match token_response {
-                    Ok(token_response) => {
-                        let secrets = if let Some(new_refresh_token) = token_response.refresh_token() {
-                            vec![new_refresh_token.secret().clone()]
-                        } else {
-                            vec![]
-                        };
+                debug!("OpenID Connect: Refreshing token for user: \"{}\"", &session.id);
+                trace!("OpenID Connect: Submitting RFC-6749 section 6 Access Token Refresh request");
+                match self.conn.read() {
+                    Ok(conn_guard) => {
+                        match &*conn_guard {
+                            Some(conn) => {
+                                let token_response = conn
+                                    .client
+                                    .exchange_refresh_token(&RefreshToken::new(refresh_token.to_string()))
+                                    .request(logging_http_client!());
+                                match token_response {
+                                    Ok(token_response) => {
+                                        let secrets = if let Some(new_refresh_token) = token_response.refresh_token() {
+                                            vec![new_refresh_token.secret().clone()]
+                                        } else {
+                                            vec![]
+                                        };
 
-                        let new_token_res = self.session_cache.encode(
-                            &session.id,
-                            &session.attributes,
-                            &secrets,
-                            &self.session_key,
-                            token_response.expires_in(),
-                        );
+                                        let new_token_res = self.session_cache.encode(
+                                            &session.id,
+                                            &session.attributes,
+                                            &secrets,
+                                            &self.session_key,
+                                            token_response.expires_in(),
+                                        );
 
-                        match new_token_res {
-                            Ok(new_token) => {
-                                return Some(Auth::Bearer(new_token));
+                                        match new_token_res {
+                                            Ok(new_token) => {
+                                                return Some(Auth::Bearer(new_token));
+                                            }
+                                            Err(err) => {
+                                                warn!(
+                                                    "OpenID Connect: Could not extend login session for user '{}': {}",
+                                                    &session.id, err
+                                                );
+                                            }
+                                        }
+                                    }
+                                    Err(err) => {
+                                        warn!(
+                                            "OpenID Connect: Could not extend login session for user '{}': {}",
+                                            &session.id, err
+                                        );
+                                    }
+                                }
                             }
-                            Err(err) => {
+                            None => {
+                                // should be unreachable
                                 warn!(
-                                    "(OpenID Connect: could not extend login session for user '{}': {}",
-                                    &session.id, err
+                                    "OpenID Connect: Could not extend login session for user '{}': {}",
+                                    &session.id, "Connection to OpenID Connect provider not yet established"
                                 );
                             }
                         }
                     }
                     Err(err) => {
                         warn!(
-                            "(OpenID Connect: could not extend login session for user '{}': {}",
+                            "OpenID Connect: Could not extend login session for user '{}': {}",
                             &session.id, err
                         );
                     }
@@ -282,7 +327,7 @@ impl OpenIDConnectAuthProvider {
             }
             None => {
                 debug!(
-                    "OpenID Connect: could not extend login session for user '{}': no refresh token available",
+                    "OpenID Connect: Could not extend login session for user '{}': no refresh token available",
                     &session.id
                 );
             }
@@ -331,10 +376,13 @@ impl OpenIDConnectAuthProvider {
         // to us) so this doesn't have to be fast. Note to self: perhaps the
         // lifetime issue could be worked around using a Box?
         let expr = &runtime.compile(&jmespath_string).map_err(|e| {
-            self.internal_error(format!(
-                "OpenID Connect: unable to compile JMESPath expression '{}'",
-                &jmespath_string),
-                Some(e.to_string()))
+            self.internal_error(
+                format!(
+                    "OpenID Connect: Unable to compile JMESPath expression '{}'",
+                    &jmespath_string
+                ),
+                Some(e.to_string()),
+            )
         })?;
 
         let claims_to_search = match searchable_claims {
@@ -363,10 +411,12 @@ impl OpenIDConnectAuthProvider {
         };
 
         for (source, claims) in claims_to_search.clone() {
-            let claims = claims
-                .map_err(|e| self.internal_error(
-                    "OpenID Connect: unable to prepare claims for parsing",
-                    Some(&e.to_string())))?;
+            let claims = claims.map_err(|e| {
+                self.internal_error(
+                    "OpenID Connect: Unable to prepare claims for parsing",
+                    Some(&e.to_string()),
+                )
+            })?;
 
             debug!("Searching {:?} for \"{}\"..", source, &jmespath_string);
 
@@ -399,10 +449,15 @@ impl OpenIDConnectAuthProvider {
         crypt::load_or_create_key(key_path.as_path())
     }
 
-    fn oidc_conf(&self) -> &ConfigAuthOpenIDConnect {
-        // This unwrap is safe as we check in new() that the OpenID Connect
-        // config exists.
-        &self.config.auth_openidconnect.as_ref().unwrap()
+    fn oidc_conf(&self) -> KrillResult<&ConfigAuthOpenIDConnect> {
+        match &self.config.auth_openidconnect {
+            Some(oidc_conf) => {
+                Ok(oidc_conf)
+            }
+            None => Err(Error::ConfigError(
+                "Missing [auth_openidconnect] config section!".into(),
+            )),
+        }
     }
 
     fn extract_nonce(&self, request: &hyper::Request<hyper::Body>) -> Option<String> {
@@ -458,16 +513,16 @@ impl OpenIDConnectAuthProvider {
     fn get_auth(&self, request: &hyper::Request<hyper::Body>) -> Option<Auth> {
         if let Some(query) = urlparse(request.uri().to_string()).get_parsed_query() {
             if let Some(code) = query.get_first_from_str("code") {
-                trace!("OpenID Connect: processing potential RFC-6749 section 4.1.2 redirected Authorization Response");
+                trace!("OpenID Connect: Processing potential RFC-6749 section 4.1.2 redirected Authorization Response");
                 if let Some(state) = query.get_first_from_str("state") {
                     if let Some(nonce) = self.extract_nonce(request) {
-                        trace!("OpenID Connect: detected RFC-6749 section 4.1.2 redirected Authorization Response");
+                        trace!("OpenID Connect: Detected RFC-6749 section 4.1.2 redirected Authorization Response");
                         return Some(Auth::authorization_code(Token::from(code), state, nonce));
                     } else {
-                        debug!("OpenID Connect: ignoring potential RFC-6749 section 4.1.2 redirected Authorization Response due to missing nonce hash cookie.");
+                        debug!("OpenID Connect: Ignoring potential RFC-6749 section 4.1.2 redirected Authorization Response due to missing nonce hash cookie.");
                     }
                 } else {
-                    debug!("OpenID Connect: ignoring potential RFC-6749 section 4.1.2 redirected Authorization Response due to missing 'state' query parameter.");
+                    debug!("OpenID Connect: Ignoring potential RFC-6749 section 4.1.2 redirected Authorization Response due to missing 'state' query parameter.");
                 }
             }
         }
@@ -484,6 +539,11 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         if log_enabled!(log::Level::Trace) {
             trace!("Attempting to authenticate the request..");
         }
+
+        self.initialize_connection_if_needed()
+            .map_err(|err| self.internal_error(
+                "OpenID Connect: Cannot authenticate request: Failed to connect to provider",
+                Some(&err.to_string())))?;
 
         let res = match self.get_bearer_token(request) {
             Some(token) => {
@@ -539,6 +599,11 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         //    hash of the session cookie to detect ID Token replay by third
         //    parties"
 
+        self.initialize_connection_if_needed()
+            .map_err(|err| self.internal_error(
+                "OpenID Connect: Cannot get login URL: Failed to connect to provider",
+                Some(&err.to_string())))?;
+
         // Generate a random nonce and hash it, and use the hash as the actual
         // nonce value and store the unhashed nonce in a client-side HTTP only
         // secure cookie, as per the OpenID spec advice quoted above.
@@ -546,74 +611,90 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         let nonce_b64_str = random_value.secret();
         let nonce_hash = sha256(nonce_b64_str.as_bytes());
 
-        let mut request = self.client.authorize_url(
-            AuthenticationFlow::<CoreResponseType>::AuthorizationCode,
-            CsrfToken::new_random,
-            || Nonce::new(base64::encode(nonce_hash)),
-        );
+        match &*self.conn.read().map_err(|err| self.internal_error(
+            "Unable to login: Unable to acquire internal lock", Some(&err.to_string())))? {
+            Some(conn) => {
+                let mut request = conn.client.authorize_url(
+                    AuthenticationFlow::<CoreResponseType>::AuthorizationCode,
+                    CsrfToken::new_random,
+                    || Nonce::new(base64::encode(nonce_hash)),
+                );
 
-        // From https://openid.net/specs/openid-connect-core-1_0.html#AuthRequest:
-        //   "prompt: login - The Authorization Server SHOULD prompt the
-        //    End-User for reauthentication. If it cannot reauthenticate the
-        //    End-User, it MUST return an error, typically login_required."
-        // We set this because the only time a user of Lagosta should be sent
-        // to the OpenID Connect: provider login form is when they actually want
-        // to specify who to login as, we don't want the provider somehow
-        // automatically completing the login process because it has some notion
-        // of an existing loging session.
-        request = request.add_prompt(CoreAuthPrompt::Login);
+                // From https://openid.net/specs/openid-connect-core-1_0.html#AuthRequest:
+                //   "prompt: login - The Authorization Server SHOULD prompt the
+                //    End-User for reauthentication. If it cannot reauthenticate the
+                //    End-User, it MUST return an error, typically login_required."
+                // We set this because the only time a user of Lagosta should be sent
+                // to the OpenID Connect: provider login form is when they actually want
+                // to specify who to login as, we don't want the provider somehow
+                // automatically completing the login process because it has some notion
+                // of an existing loging session.
+                request = request.add_prompt(CoreAuthPrompt::Login);
 
-        // The "openid" scope that OpenID Connect: providers are required to
-        // check for is sent automatically by the openidconnect crate. We can
-        // add more scopes here if needed by the customers provider setup. For
-        // now the only additional scope that we add is "email" so that we can
-        // identify in Lagosta and in logs the user using the API. This isn't
-        // guaranteed to be unique, the "sub" identifier returned in the OpenID
-        // Connect ID Token is intended for that but doesn't exhibit the same
-        // obvious relationship to a real end-user as an email address does.
-        // See:
-        //   https://openid.net/specs/openid-connect-core-1_0.html#ScopeClaims
-        //   https://openid.net/specs/openid-connect-core-1_0.html#StandardClaims
-        //   https://openid.net/specs/openid-connect-core-1_0.html#IDToken
-        if self.email_scope_supported {
-            request = request.add_scope(Scope::new("email".to_string()));
+                // The "openid" scope that OpenID Connect: providers are required to
+                // check for is sent automatically by the openidconnect crate. We can
+                // add more scopes here if needed by the customers provider setup. For
+                // now the only additional scope that we add is "email" so that we can
+                // identify in Lagosta and in logs the user using the API. This isn't
+                // guaranteed to be unique, the "sub" identifier returned in the OpenID
+                // Connect ID Token is intended for that but doesn't exhibit the same
+                // obvious relationship to a real end-user as an email address does.
+                // See:
+                //   https://openid.net/specs/openid-connect-core-1_0.html#ScopeClaims
+                //   https://openid.net/specs/openid-connect-core-1_0.html#StandardClaims
+                //   https://openid.net/specs/openid-connect-core-1_0.html#IDToken
+                if conn.email_scope_supported {
+                    request = request.add_scope(Scope::new("email".to_string()));
+                }
+
+                // TODO: use request.set_pkce_challenge() ?
+
+                // This unwrap is safe as we check in new() that the OpenID Connect
+                // config exists.
+                let oidc_conf = self.oidc_conf()?;
+
+                for scope in &oidc_conf.extra_login_scopes {
+                    request = request.add_scope(Scope::new(scope.clone()));
+                }
+
+                for (k, v) in oidc_conf.extra_login_params.iter() {
+                    request = request.add_extra_param(k, v);
+                }
+
+                let (authorize_url, _csrf_state, _nonce) = request.url();
+
+                debug!("OpenID Connect: Login URL will be {:?}", &authorize_url);
+
+                // Note: Cookies without an Expires attribute expire when the user agent
+                // "session" ends, i.e. when the browser is closed. Note that the nonce
+                // value is already base64 encoded.
+                let cookie_str = format!("{}={}; Secure; HttpOnly", NONCE_COOKIE_NAME, nonce_b64_str);
+                let cookie_hdr_val = HeaderValue::from_str(&cookie_str).map_err(|err| {
+                    self.internal_error(
+                        format!("Unable to construct HTTP cookie from nonce value '{}'", nonce_b64_str),
+                        Some(err.to_string()),
+                    )
+                })?;
+
+                let res_body = authorize_url.as_str().as_bytes().to_vec();
+                let mut res = HttpResponse::text_no_cache(res_body).response();
+                res.headers_mut().insert(SET_COOKIE, cookie_hdr_val);
+                Ok(HttpResponse::new(res))
+            }
+            None => {
+                // should be unreachable
+                Err(self
+                    .internal_error("Cannot get login URL: Connection to provider not yet established", None))
+            }
         }
-
-        // TODO: use request.set_pkce_challenge() ?
-
-        // This unwrap is safe as we check in new() that the OpenID Connect
-        // config exists.
-        let oidc_conf = self.oidc_conf();
-
-        for scope in &oidc_conf.extra_login_scopes {
-            request = request.add_scope(Scope::new(scope.clone()));
-        }
-
-        for (k, v) in oidc_conf.extra_login_params.iter() {
-            request = request.add_extra_param(k, v);
-        }
-
-        let (authorize_url, _csrf_state, _nonce) = request.url();
-
-        debug!("OpenID Connect: login URL will be {:?}", &authorize_url);
-
-        // Note: Cookies without an Expires attribute expire when the user agent
-        // "session" ends, i.e. when the browser is closed. Note that the nonce
-        // value is already base64 encoded.
-        let cookie_str = format!("{}={}; Secure; HttpOnly", NONCE_COOKIE_NAME, nonce_b64_str);
-        let cookie_hdr_val = HeaderValue::from_str(&cookie_str).map_err(|err| {
-            self.internal_error(
-                format!("Unable to construct HTTP cookie from nonce value '{}'", nonce_b64_str),
-                Some(err.to_string()))
-        })?;
-
-        let res_body = authorize_url.as_str().as_bytes().to_vec();
-        let mut res = HttpResponse::text_no_cache(res_body).response();
-        res.headers_mut().insert(SET_COOKIE, cookie_hdr_val);
-        Ok(HttpResponse::new(res))
     }
 
     fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
+        self.initialize_connection_if_needed()
+            .map_err(|err| self.internal_error(
+                "OpenID Connect: Cannot login user: Failed to connect to provider",
+                Some(&err.to_string())))?;
+
         match self.get_auth(request) {
             // OpenID Connect Authorization Code Flow
             // See: https://tools.ietf.org/html/rfc6749#section-4.1
@@ -628,289 +709,314 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 // See: https://tools.ietf.org/html/rfc6749#section-4.1.2
                 //      https://openid.net/specs/openid-connect-core-1_0.html#AuthResponse
                 // ==========================================================================================
-                trace!("OpenID Connect: submitting RFC-6749 section 4.1.3 Access Token Request");
-                let token_response: FlexibleTokenResponse = self
-                    .client
-                    .exchange_code(AuthorizationCode::new(code.to_string()))
-                    .request(logging_http_client!())
-                    .map_err(|e| {
-                        let (msg, additional_info) = match e {
-                            RequestTokenError::ServerResponse(provider_err) => {
-                                (format!("Server returned error response: {:?}", provider_err), None)
-                            }
-                            RequestTokenError::Request(req) => (format!("Request failed: {:?}", req), None),
-                            RequestTokenError::Parse(parse_err, res) => {
-                                let body = match std::str::from_utf8(&res) {
-                                    Ok(text) => text.to_string(),
-                                    Err(_) => format!("{:?}", &res),
-                                };
-                                (format!("Failed to parse server response: {}", parse_err), Some(body))
-                            }
-                            RequestTokenError::Other(msg) => (msg, None),
-                        };
-                        self.internal_error(
-                            format!("OpenID Connect: code exchange failed: {}", msg),
-                            additional_info,
-                        )
-                    })?;
-
-                // TODO: extract and keep the access token and refresh token so
-                // that we can extend the login session later. These are
-                // sensitive tokens which are passed to us and MUST not be
-                // shared with the client. If we want to be stateless we need to
-                // give it to the client without enabling the client (or an
-                // attacker that steals it from the clients browser session or
-                // browser storage for example) to use it with the identity
-                // provider themselves. Thus we will need to encrypt it. Note
-                // that the access token has an expires_in time in seconds and
-                // that the refresh token is optional, the provider may not give
-                // us a refresh token. We may also receive a scope value but
-                // only if different to the scope that we requested. Ensure,
-                // where not already done by the openidconnect crate, that the
-                // OAuth2 security consideratons are taken into account.
-                // See: https://tools.ietf.org/html/rfc6749#section-5.1
-                //      https://tools.ietf.org/html/rfc6749#section-10
-
-                // ==========================================================================================
-                // Step 2: Verify the ID token (including checking if it is
-                // signed correctly, if the ID provider supports ID token
-                // signing).
-                // ==========================================================================================
-                // The openidconnect crate does a lot of the required
-                // steps for us, though does NOT support steps 1 (decrypting
-                // encrypted ID token responses), steps 4-5 (azp claim
-                // validation, as it claims these are "specific to the ID token"
-                // which I think means it depends on our logic) and steps 9-13
-                // are also not checked as they are "specific to the ID token".
-                // See: https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation
-                //      https://github.com/ramosbugs/openidconnect-rs/blob/1.0.1/src/verification.rs#L204
-
-                // TODO: implement missing security steps 4-5 and 9-13 if
-                // appropriate. This mainly seems to be about checking that the
-                // exp and lat claim values make sense compared to our current
-                // time, and checking the nonce value. Other checks appear to
-                // concern the optional "acr" and "auth_time" claims which we
-                // are not using. TODO: Should we use them?
-
-                // In this next step the openidconnect crate will verify the
-                // signature of the ID token. Depending on the customer provider
-                // configuration we might get user identity and possibly also
-                // the users Krill access role from this next step, or
-                // alternatively we might have to get them in the step after
-                // that by contacting the OpenID Connect provider userinfo
-                // endpoint.
-
-                // Hash the nonce we obtained from the request as the nonce
-                // claim is actually the hash of the original nonce, as per
-                // the advice in the OpenID Core 1.0 spec. See:
-                // https://openid.net/specs/openid-connect-core-1_0.html#NonceNotes
-                let nonce_hash = Nonce::new(base64::encode(sha256(nonce.as_bytes())));
-
-                let mut id_token_verifier: CoreIdTokenVerifier = self.client.id_token_verifier();
-
-                if self.oidc_conf().insecure {
-                    // This is NOT a good idea. It was needed when testing with
-                    // one provider and so may be of use to others in future
-                    // too.
-                    id_token_verifier = id_token_verifier.insecure_disable_signature_check();
-                }
-
-                trace!("OpenID Connect: processing OpenID Connect Core 1.0 section 3.1.3.3 Token Response");
-                let id_token_claims: &FlexibleIdTokenClaims = token_response
-                    .extra_fields()
-                    .id_token()
-                    .ok_or_else(|| {
-                        self.internal_error(
-                            "OpenID Connect: id token is missing, does the provider support OpenID Connect?",
-                            None)
-                    })? // happens if the server only supports OAuth2
-                    .claims(&id_token_verifier, &nonce_hash)
-                    .map_err(|e| {
-                        self.internal_error(
-                            format!("OpenID Connect: id token verification failed: {}", e.to_string()),
-                            None)
-                    })?;
-
-                trace!(
-                    "OpenID Connect: identity provider returned ID token: {:?}",
-                    id_token_claims
-                );
-
-                // TODO: There's also a suggestion to verify the access token
-                // received above using the at_hash claim in the ID token, if
-                // we revceived that claim.
-                // See: https://openid.net/specs/openid-connect-core-1_0.html#CodeFlowTokenValidation
-
-                // ==========================================================================================
-                // Step 3: Contact the userinfo endpoint.
-                // See: https://openid.net/specs/openid-connect-core-1_0.html#UserInfo
-                // ==========================================================================================
-
-                let user_info_claims: Option<FlexibleUserInfoClaims> = if self.userinfo_endpoint_supported {
-                    // Fetch claims from the userinfo endpoint. Why? Do we need to
-                    // do this if we already got the users identity and role from
-                    // the previous step, and thus only in the case where they are
-                    // not available without contacting the userinfo endpoint?
-                    Some(
-                        self.client
-                            .user_info(token_response.access_token().clone(), None)
-                            .map_err(|e| {
-                                self.internal_error(
-                                    "OpenID Connect: id provider has no user info endpoint",
-                                    Some(&e.to_string()))
-                            })?
-                            // don't require the response to be signed as the spec says
-                            // signing it is optional: See: https://openid.net/specs/openid-connect-core-1_0.html#UserInfoResponse
-                            .require_signed_response(false)
+                trace!("OpenID Connect: Submitting RFC-6749 section 4.1.3 Access Token Request");
+                match &*self.conn.read().map_err(|err| self.internal_error(
+                    "Unable to login: Unable to acquire internal lock", Some(&err.to_string())))? {
+                    Some(conn) => {
+                        let token_response: FlexibleTokenResponse = conn
+                            .client
+                            .exchange_code(AuthorizationCode::new(code.to_string()))
                             .request(logging_http_client!())
                             .map_err(|e| {
+                                let (msg, additional_info) = match e {
+                                    RequestTokenError::ServerResponse(provider_err) => {
+                                        (format!("Server returned error response: {:?}", provider_err), None)
+                                    }
+                                    RequestTokenError::Request(req) => {
+                                        (format!("Request failed: {:?}", req), None)
+                                    }
+                                    RequestTokenError::Parse(parse_err, res) => {
+                                        let body = match std::str::from_utf8(&res) {
+                                            Ok(text) => text.to_string(),
+                                            Err(_) => format!("{:?}", &res),
+                                        };
+                                        (format!("Failed to parse server response: {}", parse_err), Some(body))
+                                    }
+                                    RequestTokenError::Other(msg) => (msg, None),
+                                };
                                 self.internal_error(
-                                    "OpenID Connect: user info request failed",
-                                    Some(&e.to_string()))
-                            })?,
-                    )
-                } else {
-                    None
-                };
+                                    format!("OpenID Connect: Code exchange failed: {}", msg),
+                                    additional_info,
+                                )
+                            })?;
 
-                // ==========================================================================================
-                // Step 4: Extract and validate the "claims" that tells us which
-                // attributes this user should have. The Oso Polar policy will
-                // use these to determine whether or not users are authorized to
-                // perform a given action on a given resource.
-                //
-                // For each claim configuration, either it tells us how to grab
-                // a value from a claim included in either the ID Token or User
-                // Info response from the provider, or it tells us which
-                // attribute value to use from the config file authentication
-                // provider configuration (for operators who want to use OpenID
-                // connect for authentication but not for authorization).
-                //
-                // We can only get the "id" of the user from the OpenID Connect
-                // response claims, as we cannot lookup a value for an "id"
-                // attribute in the config file authentication provider
-                // configuration without the "id" key :-)
-                // ==========================================================================================
+                        // TODO: extract and keep the access token and refresh token so
+                        // that we can extend the login session later. These are
+                        // sensitive tokens which are passed to us and MUST not be
+                        // shared with the client. If we want to be stateless we need to
+                        // give it to the client without enabling the client (or an
+                        // attacker that steals it from the clients browser session or
+                        // browser storage for example) to use it with the identity
+                        // provider themselves. Thus we will need to encrypt it. Note
+                        // that the access token has an expires_in time in seconds and
+                        // that the refresh token is optional, the provider may not give
+                        // us a refresh token. We may also receive a scope value but
+                        // only if different to the scope that we requested. Ensure,
+                        // where not already done by the openidconnect crate, that the
+                        // OAuth2 security consideratons are taken into account.
+                        // See: https://tools.ietf.org/html/rfc6749#section-5.1
+                        //      https://tools.ietf.org/html/rfc6749#section-10
 
-                let claims_conf = with_default_claims(&self.oidc_conf().claims);
+                        // ==========================================================================================
+                        // Step 2: Verify the ID token (including checking if it is
+                        // signed correctly, if the ID provider supports ID token
+                        // signing).
+                        // ==========================================================================================
+                        // The openidconnect crate does a lot of the required
+                        // steps for us, though does NOT support steps 1 (decrypting
+                        // encrypted ID token responses), steps 4-5 (azp claim
+                        // validation, as it claims these are "specific to the ID token"
+                        // which I think means it depends on our logic) and steps 9-13
+                        // are also not checked as they are "specific to the ID token".
+                        // See: https://openid.net/specs/openid-connect-core-1_0.html#IDTokenValidation
+                        //      https://github.com/ramosbugs/openidconnect-rs/blob/1.0.1/src/verification.rs#L204
 
-                let id_claim_conf = claims_conf
-                    .get("id")
-                    .ok_or_else(|| self.internal_error("Missing 'id' claim configuration", None))?;
+                        // TODO: implement missing security steps 4-5 and 9-13 if
+                        // appropriate. This mainly seems to be about checking that the
+                        // exp and lat claim values make sense compared to our current
+                        // time, and checking the nonce value. Other checks appear to
+                        // concern the optional "acr" and "auth_time" claims which we
+                        // are not using. TODO: Should we use them?
 
-                let id = self
-                    .extract_claim(&id_claim_conf, &id_token_claims, user_info_claims.as_ref())?
-                    .ok_or_else(|| self.internal_error("No value found for 'id' claim", None))?;
+                        // In this next step the openidconnect crate will verify the
+                        // signature of the ID token. Depending on the customer provider
+                        // configuration we might get user identity and possibly also
+                        // the users Krill access role from this next step, or
+                        // alternatively we might have to get them in the step after
+                        // that by contacting the OpenID Connect provider userinfo
+                        // endpoint.
 
-                // Lookup the a user in the config file authentication provider
-                // configuration by the id value that we just obtained, if
-                // present. Any claim configurations that refer to attributes of
-                // users configured in the config file will be looked up on this
-                // user.
-                let user = self.config.auth_users.as_ref().and_then(|users| users.get(&id));
+                        // Hash the nonce we obtained from the request as the nonce
+                        // claim is actually the hash of the original nonce, as per
+                        // the advice in the OpenID Core 1.0 spec. See:
+                        // https://openid.net/specs/openid-connect-core-1_0.html#NonceNotes
+                        let nonce_hash = Nonce::new(base64::encode(sha256(nonce.as_bytes())));
 
-                // Iterate over the configured claims and try to lookup their
-                // values so that we can store these as attributes on the user
-                // session object.
-                let mut attributes: HashMap<String, String> = HashMap::new();
-                for (attr_name, claim_conf) in claims_conf {
-                    if attr_name == "id" {
-                        continue;
-                    }
-                    let attr_value = match &claim_conf.source {
-                        Some(ClaimSource::ConfigFile) if user.is_some() => {
-                            // Lookup the claim value in the auth_users config file section
-                            user.unwrap().attributes.get(&attr_name.to_string()).cloned()
+                        let mut id_token_verifier: CoreIdTokenVerifier = conn.client.id_token_verifier();
+
+                        if self.oidc_conf()?.insecure {
+                            // This is NOT a good idea. It was needed when testing with
+                            // one provider and so may be of use to others in future
+                            // too.
+                            id_token_verifier = id_token_verifier.insecure_disable_signature_check();
                         }
-                        _ => self.extract_claim(&claim_conf, &id_token_claims, user_info_claims.as_ref())?,
-                    };
 
-                    if let Some(attr_value) = attr_value {
-                        // Apply any defined destination mapping for this claim.
-                        // A destination causes the created attribute to have a
-                        // different name than the claim key in the
-                        // configuration. With this we can handle situations
-                        // such as the extracted role value not matching a valid
-                        // role according to policy (by specifying the same
-                        // source claim field multiple times but each time
-                        // using a different JMESPath expression to extract (and
-                        // optionally transform) a different value each time,
-                        // but mapping all of them to the same final attribute,
-                        // e.g. 'role'. A similar case this addresses is where
-                        // different values for an attribute (e.g. 'role') are
-                        // not present in a single claim field but instead may
-                        // be present in one of several claims (e.g. use (part
-                        // of) claim A to check for admins but use (part of)
-                        // claim B to check for readonly users).
-                        let final_attr_name = match claim_conf.dest {
-                            None => attr_name.to_string(),
-                            Some(alt_attr_name) => alt_attr_name.to_string(),
+                        trace!(
+                            "OpenID Connect: Processing OpenID Connect Core 1.0 section 3.1.3.3 Token Response"
+                        );
+                        let id_token_claims: &FlexibleIdTokenClaims = token_response
+                            .extra_fields()
+                            .id_token()
+                            .ok_or_else(|| {
+                                self.internal_error(
+                                    "OpenID Connect: ID token is missing, does the provider support OpenID Connect?",
+                                    None,
+                                )
+                            })? // happens if the server only supports OAuth2
+                            .claims(&id_token_verifier, &nonce_hash)
+                            .map_err(|e| {
+                                self.internal_error(
+                                    format!("OpenID Connect: ID token verification failed: {}", e.to_string()),
+                                    None,
+                                )
+                            })?;
+
+                        trace!(
+                            "OpenID Connect: Identity provider returned ID token: {:?}",
+                            id_token_claims
+                        );
+
+                        // TODO: There's also a suggestion to verify the access token
+                        // received above using the at_hash claim in the ID token, if
+                        // we revceived that claim.
+                        // See: https://openid.net/specs/openid-connect-core-1_0.html#CodeFlowTokenValidation
+
+                        // ==========================================================================================
+                        // Step 3: Contact the userinfo endpoint.
+                        // See: https://openid.net/specs/openid-connect-core-1_0.html#UserInfo
+                        // ==========================================================================================
+
+                        let user_info_claims: Option<FlexibleUserInfoClaims> =
+                            if conn.userinfo_endpoint_supported {
+                                // Fetch claims from the userinfo endpoint. Why? Do we need to
+                                // do this if we already got the users identity and role from
+                                // the previous step, and thus only in the case where they are
+                                // not available without contacting the userinfo endpoint?
+                                Some(
+                                    conn.client
+                                        .user_info(token_response.access_token().clone(), None)
+                                        .map_err(|e| {
+                                            self.internal_error(
+                                                "OpenID Connect: Provider has no user info endpoint",
+                                                Some(&e.to_string()),
+                                            )
+                                        })?
+                                        // don't require the response to be signed as the spec says
+                                        // signing it is optional: See: https://openid.net/specs/openid-connect-core-1_0.html#UserInfoResponse
+                                        .require_signed_response(false)
+                                        .request(logging_http_client!())
+                                        .map_err(|e| {
+                                            self.internal_error(
+                                                "OpenID Connect: User info request failed",
+                                                Some(&e.to_string()),
+                                            )
+                                        })?,
+                                )
+                            } else {
+                                None
+                            };
+
+                        // ==========================================================================================
+                        // Step 4: Extract and validate the "claims" that tells us which
+                        // attributes this user should have. The Oso Polar policy will
+                        // use these to determine whether or not users are authorized to
+                        // perform a given action on a given resource.
+                        //
+                        // For each claim configuration, either it tells us how to grab
+                        // a value from a claim included in either the ID Token or User
+                        // Info response from the provider, or it tells us which
+                        // attribute value to use from the config file authentication
+                        // provider configuration (for operators who want to use OpenID
+                        // connect for authentication but not for authorization).
+                        //
+                        // We can only get the "id" of the user from the OpenID Connect
+                        // response claims, as we cannot lookup a value for an "id"
+                        // attribute in the config file authentication provider
+                        // configuration without the "id" key :-)
+                        // ==========================================================================================
+
+                        let claims_conf = with_default_claims(&self.oidc_conf()?.claims);
+
+                        let id_claim_conf = claims_conf
+                            .get("id")
+                            .ok_or_else(|| self.internal_error("Missing 'id' claim configuration", None))?;
+
+                        let id = self
+                            .extract_claim(&id_claim_conf, &id_token_claims, user_info_claims.as_ref())?
+                            .ok_or_else(|| self.internal_error("No value found for 'id' claim", None))?;
+
+                        // Lookup the a user in the config file authentication provider
+                        // configuration by the id value that we just obtained, if
+                        // present. Any claim configurations that refer to attributes of
+                        // users configured in the config file will be looked up on this
+                        // user.
+                        let user = self.config.auth_users.as_ref().and_then(|users| users.get(&id));
+
+                        // Iterate over the configured claims and try to lookup their
+                        // values so that we can store these as attributes on the user
+                        // session object.
+                        let mut attributes: HashMap<String, String> = HashMap::new();
+                        for (attr_name, claim_conf) in claims_conf {
+                            if attr_name == "id" {
+                                continue;
+                            }
+                            let attr_value = match &claim_conf.source {
+                                Some(ClaimSource::ConfigFile) if user.is_some() => {
+                                    // Lookup the claim value in the auth_users config file section
+                                    user.unwrap().attributes.get(&attr_name.to_string()).cloned()
+                                }
+                                _ => self.extract_claim(
+                                    &claim_conf,
+                                    &id_token_claims,
+                                    user_info_claims.as_ref(),
+                                )?,
+                            };
+
+                            if let Some(attr_value) = attr_value {
+                                // Apply any defined destination mapping for this claim.
+                                // A destination causes the created attribute to have a
+                                // different name than the claim key in the
+                                // configuration. With this we can handle situations
+                                // such as the extracted role value not matching a valid
+                                // role according to policy (by specifying the same
+                                // source claim field multiple times but each time
+                                // using a different JMESPath expression to extract (and
+                                // optionally transform) a different value each time,
+                                // but mapping all of them to the same final attribute,
+                                // e.g. 'role'. A similar case this addresses is where
+                                // different values for an attribute (e.g. 'role') are
+                                // not present in a single claim field but instead may
+                                // be present in one of several claims (e.g. use (part
+                                // of) claim A to check for admins but use (part of)
+                                // claim B to check for readonly users).
+                                let final_attr_name = match claim_conf.dest {
+                                    None => attr_name.to_string(),
+                                    Some(alt_attr_name) => alt_attr_name.to_string(),
+                                };
+                                // Only use the first found value
+                                match attributes.entry(final_attr_name.clone()) {
+                                    Occupied(found) => {
+                                        info!("Skipping found value '{}' for claim '{}' as attribute '{}': attribute already has a value: '{}'",
+                                            attr_value, attr_name, final_attr_name, found.get());
+                                    }
+                                    Vacant(vacant) => {
+                                        debug!(
+                                            "Storing found value '{}' for claim '{}' as attribute '{}'",
+                                            attr_value, attr_name, final_attr_name
+                                        );
+                                        vacant.insert(attr_value);
+                                    }
+                                }
+                            } else {
+                                // With Oso policy based configuration the absence of
+                                // claim values isn't necessarily a problem, it's very
+                                // client configuration dependent, but let's mention
+                                // that we didn't find anything just to make it easier
+                                // to spot configuration mistakes via the logs.
+                                info!("No '{}' claim found for user: {}", &attr_name, &id);
+                            }
+                        }
+
+                        // ==========================================================================================
+                        // Step 5: Respond to the user: access granted, or access denied
+                        // TODO: Choose which data to store at the client, and then
+                        // encrypt it here and decrypt it in get_actor(). How can we do
+                        // that? If we don't do encryption at this point, and thus don't
+                        // store the access token and refresh token on the client, where
+                        // does that leave us? Storing the signed id token at the client
+                        // gives us a login session token which can be verified due to
+                        // it being signed, and MAY contain the users role in Krill
+                        // thereby preventing that from being altered. Even if not
+                        // signed this would be no worse than the existing Krill token
+                        // security. If we were to refuse a signed token older than 30
+                        // minutes we would have the same login session time as Lagosta
+                        // has now and can prevent re-use of old tokens thereby
+                        // requiring users to prove themselves again to the identity
+                        // provider, except that Lagosta has a 30 minute *idle* time,
+                        // not a 30 minute session time. So ideally we would re-issue
+                        // the token and increase the expiration time and re-sign it.
+                        // The Lagosta idle timeout matches the RedHat KeyCloud expires
+                        // time of 1800 seconds or 30 minutes, so attempting to refresh
+                        // an access token after that much time would also fail.
+                        // ==========================================================================================
+                        let secrets = if let Some(new_refresh_token) = token_response.refresh_token() {
+                            vec![new_refresh_token.secret().clone()]
+                        } else {
+                            vec![]
                         };
-                        // Only use the first found value
-                        match attributes.entry(final_attr_name.clone()) {
-                            Occupied(found) => {
-                                info!("Skipping found value '{}' for claim '{}' as attribute '{}': attribute already has a value: '{}'",
-                                    attr_value, attr_name, final_attr_name, found.get());
-                            }
-                            Vacant(vacant) => {
-                                debug!(
-                                    "Storing found value '{}' for claim '{}' as attribute '{}'",
-                                    attr_value, attr_name, final_attr_name
-                                );
-                                vacant.insert(attr_value);
-                            }
-                        }
-                    } else {
-                        // With Oso policy based configuration the absence of
-                        // claim values isn't necessarily a problem, it's very
-                        // client configuration dependent, but let's mention
-                        // that we didn't find anything just to make it easier
-                        // to spot configuration mistakes via the logs.
-                        info!("No '{}' claim found for user: {}", &attr_name, &id);
+
+                        let api_token = self.session_cache.encode(
+                            &id,
+                            &attributes,
+                            &secrets,
+                            &self.session_key,
+                            token_response.expires_in(),
+                        )?;
+
+                        Ok(LoggedInUser {
+                            token: api_token,
+                            id,
+                            attributes,
+                        })
+                    }
+                    None => {
+                        // should be unreachable
+                        Err(self.internal_error(
+                            "Cannot login user: Connection to provider not yet established",
+                            None,
+                        ))
                     }
                 }
-
-                // ==========================================================================================
-                // Step 5: Respond to the user: access granted, or access denied
-                // TODO: Choose which data to store at the client, and then
-                // encrypt it here and decrypt it in get_actor(). How can we do
-                // that? If we don't do encryption at this point, and thus don't
-                // store the access token and refresh token on the client, where
-                // does that leave us? Storing the signed id token at the client
-                // gives us a login session token which can be verified due to
-                // it being signed, and MAY contain the users role in Krill
-                // thereby preventing that from being altered. Even if not
-                // signed this would be no worse than the existing Krill token
-                // security. If we were to refuse a signed token older than 30
-                // minutes we would have the same login session time as Lagosta
-                // has now and can prevent re-use of old tokens thereby
-                // requiring users to prove themselves again to the identity
-                // provider, except that Lagosta has a 30 minute *idle* time,
-                // not a 30 minute session time. So ideally we would re-issue
-                // the token and increase the expiration time and re-sign it.
-                // The Lagosta idle timeout matches the RedHat KeyCloud expires
-                // time of 1800 seconds or 30 minutes, so attempting to refresh
-                // an access token after that much time would also fail.
-                // ==========================================================================================
-                let secrets = if let Some(new_refresh_token) = token_response.refresh_token() {
-                    vec![new_refresh_token.secret().clone()]
-                } else {
-                    vec![]
-                };
-
-                let api_token = self.session_cache.encode(
-                    &id,
-                    &attributes,
-                    &secrets,
-                    &self.session_key,
-                    token_response.expires_in(),
-                )?;
-
-                Ok(LoggedInUser {
-                    token: api_token,
-                    id,
-                    attributes,
-                })
             }
 
             _ => Err(Error::ApiInvalidCredentials("Missing credentials".to_string())),
@@ -931,13 +1037,28 @@ impl AuthProvider for OpenIDConnectAuthProvider {
             }
         }
 
+        self.initialize_connection_if_needed()
+            .map_err(|err| self.internal_error(
+                "OpenID Connect: Cannot logout with provider: Failed to connect to provider",
+                Some(&err.to_string())))?;
+
         // TODO: if the OpenID Connect provider only supports the
         // revocation_endpoint and not the end_session_endpoint, we should
         // actually invoke the revocation endpoint here from within Krill, as it
         // needs the access token to be provided and doesn't redirect a client
         // to a post logout page. For the moment we just direct the browser in
         // this case to the Krill start page as if logout were completed.
-        Ok(HttpResponse::text_no_cache(self.logout_url.clone().into()))
+        match &*self.conn.read().map_err(|err| self.internal_error(
+            "Unable to login: Unable to acquire internal lock", Some(&err.to_string())))? {
+            Some(conn) => {
+                Ok(HttpResponse::text_no_cache(conn.logout_url.clone().into()))
+            }
+            None => {
+                // should be unreachable
+                Err(self
+                    .internal_error("Cannot get login URL: Connection to provider not yet established", None))
+            }
+        }            
     }
 }
 
