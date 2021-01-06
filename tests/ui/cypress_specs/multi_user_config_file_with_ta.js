@@ -91,12 +91,17 @@ describe('Config File Users with TA', () => {
   register_publisher_test_settings.forEach(function (ts) {
     it(ts.a + ' CA ' + ts.ca + ' with repository as ' + ts.d + ' user should ' + (ts.o ? 'succeed' : 'fail'), () => {
       if (ts.a == 'Register') {
+        cy.intercept('GET', '/api/v1/cas/' + ts.ca + '/repo/request.xml').as('getRepoRequestXML')
+
         cy.visit('/')
         cy.get('#login_id').type(ts.u)
         cy.get('#login_password').type(ts.p)
         cy.contains('Sign In').click()
         cy.contains(ts.u)
         cy.contains('Sign In').should('not.exist')
+
+        // wait for Lagosta to finish fetching the repository request XML
+        cy.wait('@getRepoRequestXML').its('response.statusCode').should('eq', 200)
 
         // grab the repository tab publisher request XML from the Krill UI
         cy.get('div#tab-repo').click()
@@ -162,12 +167,17 @@ describe('Config File Users with TA', () => {
   register_parent_test_settings.forEach(function (ts) {
     it(ts.a + ' CA ' + ts.ca + ' with parent as ' + ts.d + ' user should ' + (ts.o ? 'succeed' : 'fail'), () => {
       if (ts.a == 'Register') {
+        cy.intercept('GET', '/api/v1/cas/' + ts.ca + '/child_request.xml').as('getChildRequestXML')
+
         cy.visit('/')
         cy.get('input[placeholder="Your username"]').type(ts.u)
         cy.get(':password').type(ts.p)
         cy.contains('Sign In').click()
         cy.contains(ts.u)
         cy.contains('Sign In').should('not.exist')
+
+        // wait for Lagosta to finish fetching the repository request XML
+        cy.wait('@getChildRequestXML').its('response.statusCode').should('eq', 200)
 
         // grab the parents tab child request XML from the Krill UI
         cy.get('div#tab-parents').click()
