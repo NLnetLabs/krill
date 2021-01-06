@@ -1,5 +1,5 @@
 extern crate rustc_version;
-use rustc_version::{Version, version};
+use rustc_version::{version, Version};
 
 fn main() {
     let version = version().expect("Failed to get rustc version.");
@@ -8,7 +8,8 @@ fn main() {
             "\n\nAt least Rust version 1.43 is required.\n\
              Version {} is used for building.\n\
              Build aborted.\n\n",
-             version);
+            version
+        );
         panic!();
     }
 }

@@ -4,7 +4,7 @@ use serde::{de, Deserialize, Deserializer};
 
 pub type ConfigAuthOpenIDConnectClaims = HashMap<String, ConfigAuthOpenIDConnectClaim>;
 
-pub struct ConfigDefaults { }
+pub struct ConfigDefaults {}
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct ConfigAuthOpenIDConnect {
@@ -45,10 +45,10 @@ pub enum ConfigAuthOpenIDConnectClaimSource {
 impl std::fmt::Display for ConfigAuthOpenIDConnectClaimSource {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            ConfigAuthOpenIDConnectClaimSource::ConfigFile              => write!(f, "config-file"),
-            ConfigAuthOpenIDConnectClaimSource::IdTokenStandardClaim    => write!(f, "id-token-standard-claim"),
-            ConfigAuthOpenIDConnectClaimSource::IdTokenAdditionalClaim  => write!(f, "id-token-additional-claim"),
-            ConfigAuthOpenIDConnectClaimSource::UserInfoStandardClaim   => write!(f, "user-info-standard-claim"),
+            ConfigAuthOpenIDConnectClaimSource::ConfigFile => write!(f, "config-file"),
+            ConfigAuthOpenIDConnectClaimSource::IdTokenStandardClaim => write!(f, "id-token-standard-claim"),
+            ConfigAuthOpenIDConnectClaimSource::IdTokenAdditionalClaim => write!(f, "id-token-additional-claim"),
+            ConfigAuthOpenIDConnectClaimSource::UserInfoStandardClaim => write!(f, "user-info-standard-claim"),
             ConfigAuthOpenIDConnectClaimSource::UserInfoAdditionalClaim => write!(f, "user-info-additional-claim"),
         }
     }

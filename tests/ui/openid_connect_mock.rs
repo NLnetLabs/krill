@@ -181,7 +181,7 @@ fn run_mock_openid_connect_server() {
                 role: "readonly",
                 exc_cas: Some("ta,testbed"),
                 ..Default::default()
-            }
+            },
         );
 
         let provider_metadata: CustomProviderMetadata = ProviderMetadata::new(
@@ -538,7 +538,9 @@ fn run_mock_openid_connect_server() {
                                     )))?,
                             };
 
-                            let (token_doc, refresh_token) = if authz_code.username == "non-spec-compliant-idtoken-payload" {
+                            let (token_doc, refresh_token) = if authz_code.username
+                                == "non-spec-compliant-idtoken-payload"
+                            {
                                 // This represents an ID Token with an illegal "acr" value that is not a string but rather a nested
                                 // structure. This will be rejected by the Rust OpenID Connect crate. We've seen this problem with
                                 // at least one real OpenID Connect provider deployment.

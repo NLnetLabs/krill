@@ -488,8 +488,7 @@ impl Error {
             | Error::CaParentUnknown(_, _)
             | Error::ApiUnknownResource => StatusCode::NOT_FOUND,
 
-            Error::ApiInvalidCredentials(_)
-            | Error::ApiAuthError(_) => StatusCode::UNAUTHORIZED,
+            Error::ApiInvalidCredentials(_) | Error::ApiAuthError(_) => StatusCode::UNAUTHORIZED,
 
             Error::ApiInsufficientRights(_) => StatusCode::FORBIDDEN,
 

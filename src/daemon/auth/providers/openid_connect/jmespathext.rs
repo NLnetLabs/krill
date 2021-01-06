@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use jmespatch as jmespath;
 use jmespath::functions::{ArgumentType, CustomFunction, Signature};
-use jmespath::{Runtime, Context, Rcvar};
+use jmespath::{Context, Rcvar, Runtime};
 
 use regex::Regex;
 
-/// Create a customized instance of the JMESPath runtime with support for the 
+/// Create a customized instance of the JMESPath runtime with support for the
 /// standard functions and two additional custom functions: recap and resub.
 pub fn init_runtime() -> Runtime {
     let mut runtime = Runtime::new();
@@ -21,14 +21,11 @@ pub fn init_runtime() -> Runtime {
 /// Custom JMESPath recap(haystack, regex) function that returns the value of
 /// the first capture group of the first match in the haystack by the specified
 /// regex.
-/// 
+///
 /// Returns an empty string if no match is found.
 fn make_recap_fn() -> Box<CustomFunction> {
-    let fn_signature = Signature::new(
-        vec![ArgumentType::String,
-             ArgumentType::String],
-        None);
-        
+    let fn_signature = Signature::new(vec![ArgumentType::String, ArgumentType::String], None);
+
     let fn_impl = Box::new(|args: &[Rcvar], _: &mut Context| {
         trace!("jmespath recap() arguments: {:?}", args);
 
@@ -52,14 +49,13 @@ fn make_recap_fn() -> Box<CustomFunction> {
 /// Custom JMESPath resub(haystack, needle regex, replacement value) function
 /// that returns the result of replacing the first text in the haystack that
 /// matches the needle regex with the given replacement value.
-/// 
+///
 /// Returns an empty string if no match is found.
 fn make_resub_fn() -> Box<CustomFunction> {
     let fn_signature = Signature::new(
-        vec![ArgumentType::String,
-             ArgumentType::String,
-             ArgumentType::String],
-        None);
+        vec![ArgumentType::String, ArgumentType::String, ArgumentType::String],
+        None,
+    );
 
     let fn_impl = Box::new(|args: &[Rcvar], _: &mut Context| {
         trace!("jmespath fn resub() arguments: {:?}", args);

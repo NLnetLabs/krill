@@ -102,7 +102,9 @@ impl OpenIDConnectAuthProvider {
             }
             Err(err) => {
                 return Err(self.internal_error(
-                    "Unable to initialize provider connection: Unable to acquire internal lock", Some(&err.to_string())));
+                    "Unable to initialize provider connection: Unable to acquire internal lock",
+                    Some(&err.to_string()),
+                ));
             }
         }
 
@@ -451,9 +453,7 @@ impl OpenIDConnectAuthProvider {
 
     fn oidc_conf(&self) -> KrillResult<&ConfigAuthOpenIDConnect> {
         match &self.config.auth_openidconnect {
-            Some(oidc_conf) => {
-                Ok(oidc_conf)
-            }
+            Some(oidc_conf) => Ok(oidc_conf),
             None => Err(Error::ConfigError(
                 "Missing [auth_openidconnect] config section!".into(),
             )),
@@ -540,10 +540,12 @@ impl AuthProvider for OpenIDConnectAuthProvider {
             trace!("Attempting to authenticate the request..");
         }
 
-        self.initialize_connection_if_needed()
-            .map_err(|err| self.internal_error(
+        self.initialize_connection_if_needed().map_err(|err| {
+            self.internal_error(
                 "OpenID Connect: Cannot authenticate request: Failed to connect to provider",
-                Some(&err.to_string())))?;
+                Some(&err.to_string()),
+            )
+        })?;
 
         let res = match self.get_bearer_token(request) {
             Some(token) => {
@@ -599,10 +601,12 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         //    hash of the session cookie to detect ID Token replay by third
         //    parties"
 
-        self.initialize_connection_if_needed()
-            .map_err(|err| self.internal_error(
+        self.initialize_connection_if_needed().map_err(|err| {
+            self.internal_error(
                 "OpenID Connect: Cannot get login URL: Failed to connect to provider",
-                Some(&err.to_string())))?;
+                Some(&err.to_string()),
+            )
+        })?;
 
         // Generate a random nonce and hash it, and use the hash as the actual
         // nonce value and store the unhashed nonce in a client-side HTTP only
@@ -611,8 +615,12 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         let nonce_b64_str = random_value.secret();
         let nonce_hash = sha256(nonce_b64_str.as_bytes());
 
-        match &*self.conn.read().map_err(|err| self.internal_error(
-            "Unable to login: Unable to acquire internal lock", Some(&err.to_string())))? {
+        match &*self.conn.read().map_err(|err| {
+            self.internal_error(
+                "Unable to login: Unable to acquire internal lock",
+                Some(&err.to_string()),
+            )
+        })? {
             Some(conn) => {
                 let mut request = conn.client.authorize_url(
                     AuthenticationFlow::<CoreResponseType>::AuthorizationCode,
@@ -683,17 +691,18 @@ impl AuthProvider for OpenIDConnectAuthProvider {
             }
             None => {
                 // should be unreachable
-                Err(self
-                    .internal_error("Cannot get login URL: Connection to provider not yet established", None))
+                Err(self.internal_error("Cannot get login URL: Connection to provider not yet established", None))
             }
         }
     }
 
     fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
-        self.initialize_connection_if_needed()
-            .map_err(|err| self.internal_error(
+        self.initialize_connection_if_needed().map_err(|err| {
+            self.internal_error(
                 "OpenID Connect: Cannot login user: Failed to connect to provider",
-                Some(&err.to_string())))?;
+                Some(&err.to_string()),
+            )
+        })?;
 
         match self.get_auth(request) {
             // OpenID Connect Authorization Code Flow
@@ -710,8 +719,12 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 //      https://openid.net/specs/openid-connect-core-1_0.html#AuthResponse
                 // ==========================================================================================
                 trace!("OpenID Connect: Submitting RFC-6749 section 4.1.3 Access Token Request");
-                match &*self.conn.read().map_err(|err| self.internal_error(
-                    "Unable to login: Unable to acquire internal lock", Some(&err.to_string())))? {
+                match &*self.conn.read().map_err(|err| {
+                    self.internal_error(
+                        "Unable to login: Unable to acquire internal lock",
+                        Some(&err.to_string()),
+                    )
+                })? {
                     Some(conn) => {
                         let token_response: FlexibleTokenResponse = conn
                             .client
@@ -722,9 +735,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                                     RequestTokenError::ServerResponse(provider_err) => {
                                         (format!("Server returned error response: {:?}", provider_err), None)
                                     }
-                                    RequestTokenError::Request(req) => {
-                                        (format!("Request failed: {:?}", req), None)
-                                    }
+                                    RequestTokenError::Request(req) => (format!("Request failed: {:?}", req), None),
                                     RequestTokenError::Parse(parse_err, res) => {
                                         let body = match std::str::from_utf8(&res) {
                                             Ok(text) => text.to_string(),
@@ -801,9 +812,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                             id_token_verifier = id_token_verifier.insecure_disable_signature_check();
                         }
 
-                        trace!(
-                            "OpenID Connect: Processing OpenID Connect Core 1.0 section 3.1.3.3 Token Response"
-                        );
+                        trace!("OpenID Connect: Processing OpenID Connect Core 1.0 section 3.1.3.3 Token Response");
                         let id_token_claims: &FlexibleIdTokenClaims = token_response
                             .extra_fields()
                             .id_token()
@@ -836,35 +845,34 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                         // See: https://openid.net/specs/openid-connect-core-1_0.html#UserInfo
                         // ==========================================================================================
 
-                        let user_info_claims: Option<FlexibleUserInfoClaims> =
-                            if conn.userinfo_endpoint_supported {
-                                // Fetch claims from the userinfo endpoint. Why? Do we need to
-                                // do this if we already got the users identity and role from
-                                // the previous step, and thus only in the case where they are
-                                // not available without contacting the userinfo endpoint?
-                                Some(
-                                    conn.client
-                                        .user_info(token_response.access_token().clone(), None)
-                                        .map_err(|e| {
-                                            self.internal_error(
-                                                "OpenID Connect: Provider has no user info endpoint",
-                                                Some(&e.to_string()),
-                                            )
-                                        })?
-                                        // don't require the response to be signed as the spec says
-                                        // signing it is optional: See: https://openid.net/specs/openid-connect-core-1_0.html#UserInfoResponse
-                                        .require_signed_response(false)
-                                        .request(logging_http_client!())
-                                        .map_err(|e| {
-                                            self.internal_error(
-                                                "OpenID Connect: User info request failed",
-                                                Some(&e.to_string()),
-                                            )
-                                        })?,
-                                )
-                            } else {
-                                None
-                            };
+                        let user_info_claims: Option<FlexibleUserInfoClaims> = if conn.userinfo_endpoint_supported {
+                            // Fetch claims from the userinfo endpoint. Why? Do we need to
+                            // do this if we already got the users identity and role from
+                            // the previous step, and thus only in the case where they are
+                            // not available without contacting the userinfo endpoint?
+                            Some(
+                                conn.client
+                                    .user_info(token_response.access_token().clone(), None)
+                                    .map_err(|e| {
+                                        self.internal_error(
+                                            "OpenID Connect: Provider has no user info endpoint",
+                                            Some(&e.to_string()),
+                                        )
+                                    })?
+                                    // don't require the response to be signed as the spec says
+                                    // signing it is optional: See: https://openid.net/specs/openid-connect-core-1_0.html#UserInfoResponse
+                                    .require_signed_response(false)
+                                    .request(logging_http_client!())
+                                    .map_err(|e| {
+                                        self.internal_error(
+                                            "OpenID Connect: User info request failed",
+                                            Some(&e.to_string()),
+                                        )
+                                    })?,
+                            )
+                        } else {
+                            None
+                        };
 
                         // ==========================================================================================
                         // Step 4: Extract and validate the "claims" that tells us which
@@ -915,11 +923,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                                     // Lookup the claim value in the auth_users config file section
                                     user.unwrap().attributes.get(&attr_name.to_string()).cloned()
                                 }
-                                _ => self.extract_claim(
-                                    &claim_conf,
-                                    &id_token_claims,
-                                    user_info_claims.as_ref(),
-                                )?,
+                                _ => self.extract_claim(&claim_conf, &id_token_claims, user_info_claims.as_ref())?,
                             };
 
                             if let Some(attr_value) = attr_value {
@@ -1011,10 +1015,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                     }
                     None => {
                         // should be unreachable
-                        Err(self.internal_error(
-                            "Cannot login user: Connection to provider not yet established",
-                            None,
-                        ))
+                        Err(self.internal_error("Cannot login user: Connection to provider not yet established", None))
                     }
                 }
             }
@@ -1037,10 +1038,12 @@ impl AuthProvider for OpenIDConnectAuthProvider {
             }
         }
 
-        self.initialize_connection_if_needed()
-            .map_err(|err| self.internal_error(
+        self.initialize_connection_if_needed().map_err(|err| {
+            self.internal_error(
                 "OpenID Connect: Cannot logout with provider: Failed to connect to provider",
-                Some(&err.to_string())))?;
+                Some(&err.to_string()),
+            )
+        })?;
 
         // TODO: if the OpenID Connect provider only supports the
         // revocation_endpoint and not the end_session_endpoint, we should
@@ -1048,17 +1051,18 @@ impl AuthProvider for OpenIDConnectAuthProvider {
         // needs the access token to be provided and doesn't redirect a client
         // to a post logout page. For the moment we just direct the browser in
         // this case to the Krill start page as if logout were completed.
-        match &*self.conn.read().map_err(|err| self.internal_error(
-            "Unable to login: Unable to acquire internal lock", Some(&err.to_string())))? {
-            Some(conn) => {
-                Ok(HttpResponse::text_no_cache(conn.logout_url.clone().into()))
-            }
+        match &*self.conn.read().map_err(|err| {
+            self.internal_error(
+                "Unable to login: Unable to acquire internal lock",
+                Some(&err.to_string()),
+            )
+        })? {
+            Some(conn) => Ok(HttpResponse::text_no_cache(conn.logout_url.clone().into())),
             None => {
                 // should be unreachable
-                Err(self
-                    .internal_error("Cannot get login URL: Connection to provider not yet established", None))
+                Err(self.internal_error("Cannot get login URL: Connection to provider not yet established", None))
             }
-        }            
+        }
     }
 }
 

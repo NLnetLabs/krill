@@ -2,9 +2,12 @@ use std::fmt;
 
 use rpki::x509::Time;
 
-use crate::commons::{actor::Actor, api::{CommandHistoryRecord, CommandSummary, Handle, StoredEffect}};
 use crate::commons::eventsourcing::store::CommandKey;
 use crate::commons::eventsourcing::{Event, Storable};
+use crate::commons::{
+    actor::Actor,
+    api::{CommandHistoryRecord, CommandSummary, Handle, StoredEffect},
+};
 
 //------------ WithStorableDetails -------------------------------------------
 
@@ -110,7 +113,7 @@ impl<C: CommandDetails> SentCommand<C> {
             handle: id.clone(),
             version,
             details,
-            actor: actor_name
+            actor: actor_name,
         }
     }
 

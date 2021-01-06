@@ -1,15 +1,12 @@
-use openidconnect::{
-    AdditionalClaims, AdditionalProviderMetadata, Client, ExtraTokenFields,
-    IdTokenClaims, IdTokenFields, ProviderMetadata, StandardErrorResponse,
-    StandardTokenResponse, UserInfoClaims,
-};
 use openidconnect::core::{
-    CoreAuthDisplay, CoreAuthPrompt, CoreClientAuthMethod, CoreClaimName,
-    CoreClaimType, CoreErrorResponseType, CoreGenderClaim, CoreGrantType,
-    CoreJsonWebKey, CoreJsonWebKeyType, CoreJsonWebKeyUse,
-    CoreJweContentEncryptionAlgorithm, CoreJweKeyManagementAlgorithm,
-    CoreJwsSigningAlgorithm, CoreResponseMode, CoreResponseType,
-    CoreSubjectIdentifierType, CoreTokenType,
+    CoreAuthDisplay, CoreAuthPrompt, CoreClaimName, CoreClaimType, CoreClientAuthMethod, CoreErrorResponseType,
+    CoreGenderClaim, CoreGrantType, CoreJsonWebKey, CoreJsonWebKeyType, CoreJsonWebKeyUse,
+    CoreJweContentEncryptionAlgorithm, CoreJweKeyManagementAlgorithm, CoreJwsSigningAlgorithm, CoreResponseMode,
+    CoreResponseType, CoreSubjectIdentifierType, CoreTokenType,
+};
+use openidconnect::{
+    AdditionalClaims, AdditionalProviderMetadata, Client, ExtraTokenFields, IdTokenClaims, IdTokenFields,
+    ProviderMetadata, StandardErrorResponse, StandardTokenResponse, UserInfoClaims,
 };
 
 use crate::commons::error::Error;
@@ -41,8 +38,31 @@ impl AdditionalClaims for CustomerDefinedAdditionalClaims {}
 pub struct CustomerDefinedExtraTokenFields(serde_json::Value);
 impl ExtraTokenFields for CustomerDefinedExtraTokenFields {}
 
-pub type FlexibleTokenResponse = StandardTokenResponse<IdTokenFields<CustomerDefinedAdditionalClaims, CustomerDefinedExtraTokenFields, CoreGenderClaim, CoreJweContentEncryptionAlgorithm, CoreJwsSigningAlgorithm, CoreJsonWebKeyType>, CoreTokenType>;
-pub type FlexibleClient = Client<CustomerDefinedAdditionalClaims, CoreAuthDisplay, CoreGenderClaim, CoreJweContentEncryptionAlgorithm, CoreJwsSigningAlgorithm, CoreJsonWebKeyType, CoreJsonWebKeyUse, CoreJsonWebKey, CoreAuthPrompt, StandardErrorResponse<CoreErrorResponseType>, FlexibleTokenResponse, CoreTokenType>;
+pub type FlexibleTokenResponse = StandardTokenResponse<
+    IdTokenFields<
+        CustomerDefinedAdditionalClaims,
+        CustomerDefinedExtraTokenFields,
+        CoreGenderClaim,
+        CoreJweContentEncryptionAlgorithm,
+        CoreJwsSigningAlgorithm,
+        CoreJsonWebKeyType,
+    >,
+    CoreTokenType,
+>;
+pub type FlexibleClient = Client<
+    CustomerDefinedAdditionalClaims,
+    CoreAuthDisplay,
+    CoreGenderClaim,
+    CoreJweContentEncryptionAlgorithm,
+    CoreJwsSigningAlgorithm,
+    CoreJsonWebKeyType,
+    CoreJsonWebKeyUse,
+    CoreJsonWebKey,
+    CoreAuthPrompt,
+    StandardErrorResponse<CoreErrorResponseType>,
+    FlexibleTokenResponse,
+    CoreTokenType,
+>;
 pub type FlexibleIdTokenClaims = IdTokenClaims<CustomerDefinedAdditionalClaims, CoreGenderClaim>;
 pub type FlexibleUserInfoClaims = UserInfoClaims<CustomerDefinedAdditionalClaims, CoreGenderClaim>;
 
@@ -80,7 +100,7 @@ pub type WantedMeta = ProviderMetadata<
 
 impl From<openidconnect::url::ParseError> for Error {
     fn from(e: openidconnect::url::ParseError) -> Self {
-      Error::Custom(e.to_string())
+        Error::Custom(e.to_string())
     }
 }
 
@@ -98,14 +118,14 @@ macro_rules! is_supported {
             true => Some(()),
             false => None,
         }
-    }}
+    }};
 }
 
 macro_rules! is_supported_opt {
     ($x:expr, $p:pat) => {{
         let empty_vec = Vec::new();
         is_supported!($x.unwrap_or_else(|| &empty_vec), $p)
-    }}
+    }};
 }
 
 macro_rules! is_supported_val {
@@ -114,14 +134,14 @@ macro_rules! is_supported_val {
             true => Some(()),
             false => None,
         }
-    }}
+    }};
 }
 
 macro_rules! is_supported_val_opt {
     ($x:expr, $v:expr) => {{
         let empty_vec = Vec::new();
         is_supported_val!($x.unwrap_or_else(|| &empty_vec), $v)
-    }}
+    }};
 }
 
 // -----------------------------------------------------------------------------
@@ -135,14 +155,14 @@ impl<T> LogOrFail for Option<T> {
     fn log_or_fail(self, prop: &str, val: Option<&str>) -> KrillResult<()> {
         let prop_val_text = match val {
             Some(val) => format!("{}={}", prop, val),
-            None      => prop.to_string(),
+            None => prop.to_string(),
         };
 
         match self {
             Some(_) => {
                 debug!("OpenID Connect provider has capability {}", prop_val_text);
                 Ok(())
-            },
+            }
             None => {
                 let err = format!("OpenID Connect provider lacks capability {}", prop_val_text);
                 error!("{}", err);
@@ -170,11 +190,10 @@ macro_rules! logging_http_client {
                     Ok(text) => text.to_string(),
                     Err(_) => format!("{:?}", &req.body),
                 };
-                debug!("OpenID Connect request: url: {:?}, method: {:?}, headers: {:?}, body: {}",
-                    req.url,
-                    req.method,
-                    req.headers,
-                    body);
+                debug!(
+                    "OpenID Connect request: url: {:?}, method: {:?}, headers: {:?}, body: {}",
+                    req.url, req.method, req.headers, body
+                );
             }
 
             let res = oidc_http_client(req);
@@ -190,11 +209,11 @@ macro_rules! logging_http_client {
                             Ok(text) => text.to_string(),
                             Err(_) => format!("{:?}", &res.body),
                         };
-                        debug!("OpenID Connect response: status_code: {:?}, headers: {:?}, body: {}",
-                            res.status_code,
-                            res.headers,
-                            body);
-                    },
+                        debug!(
+                            "OpenID Connect response: status_code: {:?}, headers: {:?}, body: {}",
+                            res.status_code, res.headers, body
+                        );
+                    }
                     Err(err) => {
                         debug!("OpenID Connect response: {:?}", err)
                     }
@@ -203,5 +222,5 @@ macro_rules! logging_http_client {
 
             res
         }
-    }
+    };
 }

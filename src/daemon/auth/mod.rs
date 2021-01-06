@@ -10,7 +10,7 @@ pub mod policy;
 pub mod policy {
     use std::sync::Arc;
 
-    use crate::{daemon::config::Config, commons::KrillResult};
+    use crate::{commons::KrillResult, daemon::config::Config};
 
     #[derive(Clone)]
     pub struct AuthPolicy {}
@@ -21,4 +21,4 @@ pub mod policy {
     }
 }
 
-pub use authorizer::{Auth, Authorizer, AuthProvider, LoggedInUser};
+pub use authorizer::{Auth, AuthProvider, Authorizer, LoggedInUser};

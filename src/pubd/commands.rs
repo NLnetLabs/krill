@@ -1,9 +1,12 @@
 use std::fmt;
 
-use crate::commons::{actor::Actor, api::{PublishDelta, PublisherHandle, RepositoryHandle, StorableRepositoryCommand}};
 use crate::commons::eventsourcing::CommandDetails;
 use crate::commons::eventsourcing::SentCommand;
 use crate::commons::remote::rfc8183;
+use crate::commons::{
+    actor::Actor,
+    api::{PublishDelta, PublisherHandle, RepositoryHandle, StorableRepositoryCommand},
+};
 use crate::pubd::Evt;
 
 //------------ Cmd ---------------------------------------------------------
