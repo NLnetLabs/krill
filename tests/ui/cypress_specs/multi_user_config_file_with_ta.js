@@ -160,7 +160,7 @@ describe('Config File Users with TA', () => {
   })
 
   register_parent_test_settings.forEach(function (ts) {
-    it('Register CA ' + ts.ca + ' with parent as ' + ts.d + ' user should ' + (ts.o ? 'succeed' : 'fail'), () => {
+    it(ts.a + ' CA ' + ts.ca + ' with parent as ' + ts.d + ' user should ' + (ts.o ? 'succeed' : 'fail'), () => {
       if (ts.a == 'Register') {
         cy.visit('/')
         cy.get('input[placeholder="Your username"]').type(ts.u)
