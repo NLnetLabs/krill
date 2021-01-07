@@ -216,16 +216,6 @@ impl fmt::Display for HexEncodedHash {
     }
 }
 
-//------------ Link ----------------------------------------------------------
-
-/// Defines a link element to include as part of a links array in a Json
-/// response.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-pub struct Link {
-    rel: String,
-    link: String,
-}
-
 //------------ ErrorResponse --------------------------------------------------
 
 /// Defines an error response. Codes are unique and documented here:
