@@ -16,7 +16,7 @@ use rpki::x509::Time;
 
 use crate::commons::api::ca::{ResourceSet, TrustAnchorLocator};
 use crate::commons::api::rrdp::PublishElement;
-use crate::commons::api::{Link, RepoInfo};
+use crate::commons::api::RepoInfo;
 use crate::commons::crypto::IdCert;
 use crate::commons::remote::rfc8183;
 
@@ -195,26 +195,17 @@ impl PublicationServerUris {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct PublisherSummary {
     handle: PublisherHandle,
-    links: Vec<Link>,
 }
 
 impl PublisherSummary {
-    pub fn from(handle: &Handle, path_publishers: &str) -> PublisherSummary {
-        let mut links = Vec::new();
-        let self_link = Link {
-            rel: "self".to_string(),
-            link: format!("{}/{}", path_publishers, handle),
-        };
-        links.push(self_link);
-
-        PublisherSummary {
-            handle: handle.clone(),
-            links,
-        }
-    }
-
     pub fn handle(&self) -> &PublisherHandle {
         &self.handle
+    }
+}
+
+impl From<&Handle> for PublisherSummary {
+    fn from(h: &Handle) -> Self {
+        PublisherSummary { handle: h.clone() }
     }
 }
 
@@ -227,11 +218,8 @@ pub struct PublisherList {
 }
 
 impl PublisherList {
-    pub fn build(publishers: &[Handle], path_publishers: &str) -> PublisherList {
-        let publishers: Vec<PublisherSummary> = publishers
-            .iter()
-            .map(|p| PublisherSummary::from(&p, path_publishers))
-            .collect();
+    pub fn build(publishers: &[Handle]) -> PublisherList {
+        let publishers: Vec<PublisherSummary> = publishers.iter().map(|p| p.into()).collect();
 
         PublisherList { publishers }
     }

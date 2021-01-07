@@ -975,7 +975,7 @@ pub async fn api_stale_publishers(req: Request, seconds: Option<&str>) -> Routin
                     .read()
                     .await
                     .repo_stats()
-                    .map(|stats| PublisherList::build(&stats.stale_publishers(seconds), "/api/v1/publishers")),
+                    .map(|stats| PublisherList::build(&stats.stale_publishers(seconds))),
             ),
             Err(_) => render_error(Error::ApiInvalidSeconds),
         }
@@ -990,7 +990,7 @@ pub async fn api_list_pbl(req: Request) -> RoutingResult {
                 .read()
                 .await
                 .publishers()
-                .map(|publishers| PublisherList::build(&publishers, "/api/v1/publishers")),
+                .map(|publishers| PublisherList::build(&publishers)),
         )
     })
 }

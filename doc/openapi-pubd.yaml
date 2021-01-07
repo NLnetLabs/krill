@@ -427,23 +427,10 @@ components:
                   properties:
                     handle:
                       $ref: '#/components/schemas/HandleSchema'
-                    links:
-                      type: array
-                      items:
-                        type: object
-                        properties:
-                          rel:
-                            type: string
-                            enum: [self]
-                          link:
-                            type: string
-                            format: uri
+
           example:
             publishers:
               - handle: 'ca'
-                links:
-                  rel: 'self'
-                  link: '/api/v1/publishers/ca'
 
     GetPublisherResponse:
       description: Success.
@@ -503,24 +490,10 @@ components:
                   properties:
                     handle:
                       $ref: '#/components/schemas/HandleSchema'
-                    links:
-                      type: array
-                      items:
-                        type: object
-                        properties:
-                          rel:
-                            type: string
-                            enum: [self]
-                          link:
-                            type: string
-                            format: uri
+
           example:
             publishers:
               - handle: 'ca'
-                links:
-                  rel: 'self'
-                  link: '/api/v1/publishers/ca'
-
 
 
   schemas:
