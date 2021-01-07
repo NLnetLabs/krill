@@ -785,25 +785,22 @@ async fn api(req: Request) -> RoutingResult {
         let mut path = req.path().clone();
         path.next(); // gets 'v1' and drops it.
 
-        // TODO: require the caller to be permitted to use the API to enable
-        // early abort here. In fact, why not lookup the relative API call path
-        // in a matrix of path to required rights at this point and verify that
-        // the caller has that right, rather than leave it to the API fns below,
-        // as the latter approach leaves the door open to forgetting to add a
-        // security check while with the former approach we can panic if no
-        // mapping for the relative path exists and catch that during
-        // development! OR, set a flag when the actor rights were checked and
-        // prior to returning from this fn check that the flag was set? This
-        // last approach would avoid duplicating the relative path checks in a
-        // separate security map and in the path walking done below.
-
         match path.next() {
-            Some("authorized") => api_authorized(req).await,
-            Some("bulk") => api_bulk(req, &mut path).await,
-            Some("cas") => api_cas(req, &mut path).await,
-            Some("publishers") => api_publishers(req, &mut path).await,
-            Some("pubd") => aa!(req, PUB_ADMIN, api_publication_server(req, &mut path).await),
-            _ => aa!(req, LOGIN, render_unknown_method()),
+            Some("authorized") => {
+                api_authorized(req).await
+            }
+            restricted_endpoint => {
+                // Make sure access is allowed
+                aa!(req, LOGIN, {
+                    match restricted_endpoint {
+                        Some("bulk") => api_bulk(req, &mut path).await,
+                        Some("cas") => api_cas(req, &mut path).await,
+                        Some("publishers") => api_publishers(req, &mut path).await,
+                        Some("pubd") => aa!(req, PUB_ADMIN, api_publication_server(req, &mut path).await),
+                        _ => render_unknown_method(),
+                    }
+                })
+            }
         }
     }
 }
@@ -829,7 +826,7 @@ async fn api_bulk(req: Request, path: &mut RequestPath) -> RoutingResult {
         "/api/v1/bulk/cas/sync/parent" => api_refresh_all(req).await,
         "/api/v1/bulk/cas/sync/repo" => api_resync_all(req).await,
         "/api/v1/bulk/cas/publish" => api_republish_all(req).await,
-        _ => aa!(req, LOGIN, render_unknown_method()),
+        _ => render_unknown_method(),
     }
 }
 
@@ -840,7 +837,7 @@ async fn api_cas(req: Request, path: &mut RequestPath) -> RoutingResult {
                 None => match *req.method() {
                     Method::GET => api_ca_info(req, ca).await,
                     Method::DELETE => api_ca_deactivate(req, ca).await,
-                    _ => aa!(req, LOGIN, render_unknown_method()),
+                    _ => render_unknown_method(),
                 },
                 Some("child_request.xml") => api_ca_child_req_xml(req, ca).await,
                 Some("child_request.json") => api_ca_child_req_json(req, ca).await,
@@ -855,13 +852,13 @@ async fn api_cas(req: Request, path: &mut RequestPath) -> RoutingResult {
                 Some("repo") => api_ca_repo(req, path, ca).await,
                 Some("routes") => api_ca_routes(req, path, ca).await,
                 Some("rta") => api_ca_rta(req, path, ca).await,
-                _ => aa!(req, LOGIN, render_unknown_method()),
+                _ => render_unknown_method(),
             }
         }),
         None => match *req.method() {
             Method::GET => api_cas_list(req).await,
             Method::POST => api_ca_init(req).await,
-            _ => aa!(req, LOGIN, render_unknown_method()),
+            _ => render_unknown_method(),
         },
     }
 }
@@ -873,7 +870,7 @@ async fn api_ca_keys(req: Request, path: &mut RequestPath, ca: Handle) -> Routin
             Some("roll_activate") => api_ca_kr_activate(req, ca).await,
             _ => render_unknown_method(),
         },
-        _ => aa!(req, LOGIN, render_unknown_method()),
+        _ => render_unknown_method(),
     }
 }
 
@@ -883,13 +880,13 @@ async fn api_ca_parents(req: Request, path: &mut RequestPath, ca: Handle) -> Rou
             Method::GET => api_ca_my_parent_contact(req, ca, parent).await,
             Method::POST => api_ca_update_parent(req, ca, parent).await,
             Method::DELETE => api_ca_remove_parent(req, ca, parent).await,
-            _ => aa!(req, LOGIN, render_unknown_method()),
+            _ => render_unknown_method(),
         }
     } else {
         match *req.method() {
             Method::GET => api_ca_my_parent_statuses(req, ca).await,
             Method::POST => api_ca_add_parent(req, ca).await,
-            _ => aa!(req, LOGIN, render_unknown_method()),
+            _ => render_unknown_method(),
         }
     }
 }
@@ -899,12 +896,12 @@ async fn api_ca_repo(req: Request, path: &mut RequestPath, ca: Handle) -> Routin
         None => match *req.method() {
             Method::GET => api_ca_repo_details(req, ca).await,
             Method::POST => api_ca_repo_update(req, ca).await,
-            _ => aa!(req, LOGIN, render_unknown_method()),
+            _ => render_unknown_method(),
         },
         Some("request.json") => api_ca_publisher_req_json(req, ca).await,
         Some("request.xml") => api_ca_publisher_req_xml(req, ca).await,
         Some("status") => api_ca_repo_status(req, ca).await,
-        _ => aa!(req, LOGIN, render_unknown_method()),
+        _ => render_unknown_method(),
     }
 }
 
@@ -913,14 +910,14 @@ async fn api_ca_routes(req: Request, path: &mut RequestPath, ca: Handle) -> Rout
         None => match *req.method() {
             Method::GET => api_ca_routes_show(req, ca).await,
             Method::POST => api_ca_routes_update(req, ca).await,
-            _ => aa!(req, LOGIN, render_unknown_method()),
+            _ => render_unknown_method(),
         },
         Some("try") => match *req.method() {
             Method::POST => api_ca_routes_try_update(req, ca).await,
-            _ => aa!(req, LOGIN, render_unknown_method()),
+            _ => render_unknown_method(),
         },
         Some("analysis") => api_ca_routes_analysis(req, path, ca).await,
-        _ => aa!(req, LOGIN, render_unknown_method()),
+        _ => render_unknown_method(),
     }
 }
 
@@ -949,19 +946,19 @@ async fn api_publishers(req: Request, path: &mut RequestPath) -> RoutingResult {
                 Some("response.xml") => api_repository_response_xml(req, publisher).await,
                 Some("response.json") => api_repository_response_json(req, publisher).await,
                 Some("stale") => api_stale_publishers(req, path.next()).await,
-                _ => aa!(req, LOGIN, render_unknown_method()),
+                _ => render_unknown_method(),
             },
             None => api_list_pbl(req).await,
         },
         Method::POST => match path.next() {
             None => api_add_pbl(req).await,
-            _ => aa!(req, LOGIN, render_unknown_method()),
+            _ => render_unknown_method(),
         },
         Method::DELETE => match path.path_arg() {
             Some(publisher) => api_remove_pbl(req, publisher).await,
             None => render_error(Error::ApiInvalidHandle),
         },
-        _ => aa!(req, LOGIN, render_unknown_method()),
+        _ => render_unknown_method(),
     }
 }
 
@@ -1122,7 +1119,7 @@ async fn api_all_ca_issues(req: Request) -> RoutingResult {
             let actor = req.actor();
             render_json_res(req.state().read().await.all_ca_issues(&actor).await)
         }),
-        _ => aa!(req, LOGIN, render_unknown_method()),
+        _ => render_unknown_method(),
     }
 }
 
@@ -1134,7 +1131,7 @@ async fn api_ca_issues(req: Request, ca: Handle) -> RoutingResult {
             CA_READ,
             render_json_res(req.state().read().await.ca_issues(&ca).await)
         ),
-        _ => aa!(req, LOGIN, render_unknown_method()),
+        _ => render_unknown_method(),
     }
 }
 
@@ -1162,7 +1159,7 @@ async fn api_ca_regenerate_id(req: Request, handle: Handle) -> RoutingResult {
             let actor = req.actor();
             render_empty_res(req.state().read().await.ca_update_id(handle, &actor).await)
         }),
-        _ => aa!(req, LOGIN, render_unknown_method()),
+        _ => render_unknown_method(),
     }
 }
 
@@ -1206,16 +1203,16 @@ async fn api_ca_children(req: Request, path: &mut RequestPath, ca: Handle) -> Ro
                 Method::GET => api_ca_child_show(req, ca, child).await,
                 Method::POST => api_ca_child_update(req, ca, child).await,
                 Method::DELETE => api_ca_child_remove(req, ca, child).await,
-                _ => aa!(req, LOGIN, render_unknown_method()),
+                _ => render_unknown_method(),
             },
             Some("contact") => api_ca_parent_contact(req, ca, child).await,
             Some("parent_response.json") => api_ca_parent_res_json(req, ca, child).await,
             Some("parent_response.xml") => api_ca_parent_res_xml(req, ca, child).await,
-            _ => aa!(req, LOGIN, render_unknown_method()),
+            _ => render_unknown_method(),
         },
         None => match *req.method() {
             Method::POST => api_ca_add_child(req, ca).await,
-            _ => aa!(req, LOGIN, render_unknown_method()),
+            _ => render_unknown_method(),
         },
     }
 }
@@ -1223,7 +1220,7 @@ async fn api_ca_children(req: Request, path: &mut RequestPath, ca: Handle) -> Ro
 async fn api_ca_history(req: Request, path: &mut RequestPath, handle: Handle) -> RoutingResult {
     let crit = match parse_history_path(path) {
         Some(crit) => crit,
-        None => return aa!(req, LOGIN, render_unknown_method()),
+        None => return render_unknown_method(),
     };
 
     match *req.method() {
@@ -1233,7 +1230,7 @@ async fn api_ca_history(req: Request, path: &mut RequestPath, handle: Handle) ->
                 Err(e) => render_error(e),
             }
         }),
-        _ => aa!(req, LOGIN, render_unknown_method()),
+        _ => render_unknown_method(),
     }
 }
 
@@ -1287,9 +1284,9 @@ async fn api_ca_command_details(req: Request, path: &mut RequestPath, handle: Ha
                     },
                 }
             }),
-            _ => aa!(req, LOGIN, render_unknown_method()),
+            _ => render_unknown_method(),
         },
-        None => aa!(req, LOGIN, render_unknown_resource()),
+        None => render_unknown_resource(),
     }
 }
 
@@ -1303,7 +1300,7 @@ async fn api_ca_child_req_xml(req: Request, handle: Handle) -> RoutingResult {
                 Err(e) => render_error(e),
             }
         ),
-        _ => aa!(req, LOGIN, render_unknown_method()),
+        _ => render_unknown_method(),
     }
 }
 
@@ -1317,7 +1314,7 @@ async fn api_ca_child_req_json(req: Request, handle: Handle) -> RoutingResult {
                 Err(e) => render_error(e),
             }
         ),
-        _ => aa!(req, LOGIN, render_unknown_method()),
+        _ => render_unknown_method(),
     }
 }
 
@@ -1332,7 +1329,7 @@ async fn api_ca_publisher_req_json(req: Request, handle: Handle) -> RoutingResul
             CA_READ,
             render_json_res(req.state().read().await.ca_publisher_req(&handle).await)
         ),
-        _ => aa!(req, LOGIN, render_unknown_method()),
+        _ => render_unknown_method(),
     }
 }
 
@@ -1346,7 +1343,7 @@ async fn api_ca_publisher_req_xml(req: Request, handle: Handle) -> RoutingResult
                 Err(e) => render_error(e),
             }
         ),
-        _ => aa!(req, LOGIN, render_unknown_method()),
+        _ => render_unknown_method(),
     }
 }
 
@@ -1365,7 +1362,7 @@ async fn api_ca_repo_status(req: Request, handle: Handle) -> RoutingResult {
             CA_READ,
             render_json_res(req.state().read().await.ca_repo_status(&handle).await)
         ),
-        _ => aa!(req, LOGIN, render_unknown_method()),
+        _ => render_unknown_method(),
     }
 }
 
@@ -1633,7 +1630,7 @@ async fn api_republish_all(req: Request) -> RoutingResult {
             let actor = req.actor();
             render_empty_res(req.state().read().await.republish_all(&actor).await)
         }),
-        _ => aa!(req, LOGIN, render_unknown_method()),
+        _ => render_unknown_method(),
     }
 }
 
@@ -1643,7 +1640,7 @@ async fn api_resync_all(req: Request) -> RoutingResult {
             let actor = req.actor();
             render_empty_res(req.state().read().await.resync_all(&actor).await)
         }),
-        _ => aa!(req, LOGIN, render_unknown_method()),
+        _ => render_unknown_method(),
     }
 }
 
@@ -1654,7 +1651,7 @@ async fn api_refresh_all(req: Request) -> RoutingResult {
             let actor = req.actor();
             render_empty_res(req.state().read().await.cas_refresh_all(&actor).await)
         }),
-        _ => aa!(req, LOGIN, render_unknown_method()),
+        _ => render_unknown_method(),
     }
 }
 
@@ -1692,9 +1689,9 @@ async fn api_ca_rta(req: Request, path: &mut RequestPath, ca: Handle) -> Routing
                 Some("multi") => match path.next() {
                     Some("prep") => api_ca_rta_multi_prep(req, ca, name).await,
                     Some("cosign") => api_ca_rta_multi_sign(req, ca, name).await,
-                    _ => aa!(req, LOGIN, render_unknown_method()),
+                    _ => render_unknown_method(),
                 },
-                _ => aa!(req, LOGIN, render_unknown_method()),
+                _ => render_unknown_method(),
             },
             Method::GET => {
                 if name.is_empty() {
@@ -1703,11 +1700,11 @@ async fn api_ca_rta(req: Request, path: &mut RequestPath, ca: Handle) -> Routing
                     api_ca_rta_show(req, ca, name).await
                 }
             }
-            _ => aa!(req, LOGIN, render_unknown_method()),
+            _ => render_unknown_method(),
         },
         None => match *req.method() {
             Method::GET => api_ca_rta_list(req, ca).await,
-            _ => aa!(req, LOGIN, render_unknown_method()),
+            _ => render_unknown_method(),
         },
     }
 }
