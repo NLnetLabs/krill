@@ -892,6 +892,12 @@ mod tests {
     }
 
     #[test]
+    fn child_request_non_ascii_base64() {
+        let xml = include_str!("../../../test-resources/remote/child-breaks.xml");
+        ChildRequest::validate_at(xml.as_bytes(), Time::utc(2021, 1, 7, 15, 31, 0)).unwrap();
+    }
+
+    #[test]
     fn validate_rpkid_parent_response_referral() {
         let xml = include_str!("../../../test-resources/remote/rpkid-parent-response-referral.xml");
         let _res = ParentResponse::validate_at(xml.as_bytes(), rpkid_time()).unwrap();

@@ -218,6 +218,7 @@ impl<R: io::Read> XmlReader<R> {
         let chars: Vec<u8> = chars
             .into_bytes()
             .into_iter()
+            .filter(|c| *c < 128_u8) // strip anything above 7bit ascii.. like unicode whitespace
             .filter(|c| !b" \n\t\r\x0b\x0c=".contains(c))
             .collect();
 

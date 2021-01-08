@@ -1,7 +1,7 @@
 use serde::de::DeserializeOwned;
-use std::convert::TryInto;
 use std::io;
 use std::str::FromStr;
+use std::{convert::TryInto, str::from_utf8};
 
 use bytes::{Buf, BufMut, Bytes};
 use serde::Serialize;
@@ -400,7 +400,13 @@ impl Request {
     /// Get a json object from a post body
     pub async fn json<O: DeserializeOwned>(self) -> Result<O, Error> {
         let bytes = self.api_bytes().await?;
-        serde_json::from_slice(&bytes).map_err(Error::JsonError)
+
+        if bytes.iter().any(|c| !c.is_ascii()) {
+            Err(Error::NonAsciiCharsInput)
+        } else {
+            let string = from_utf8(&bytes).map_err(|_| Error::InvalidUtf8Input)?;
+            serde_json::from_str(string).map_err(Error::JsonError)
+        }
     }
 
     pub async fn api_bytes(self) -> Result<Bytes, Error> {
