@@ -48,3 +48,19 @@ jobs:
         rust-version: ${{ matrix.rust }}
     - run: cargo build --verbose
     - run: cargo test --verbose 2>&1
+  allfeatures:
+    name: allfeatures
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        rust: [stable, 1.43.0, beta]
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v1
+    - name: Install Rust
+      uses: hecrj/setup-rust-action@v1
+      with:
+        rust-version: ${{ matrix.rust }}
+    - run: cargo build --verbose --all-features
+    - run: cargo test --verbose --all-features 2>&1
