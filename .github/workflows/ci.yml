@@ -1,5 +1,9 @@
 name: CI
+
 on:
+  # permit manual invocation of the workflow via the GitHub Actions web UI
+  workflow_dispatch: 
+
   push:
     branches: 
       - master
@@ -15,6 +19,7 @@ on:
       - 'LICENSE'
       - 'README.md'
       - 'tests/e2e/**'
+
   # Hmm, annoying, do we really have to duplicate this?
   pull_request:
     branches: 
@@ -31,6 +36,7 @@ on:
       - 'LICENSE'
       - 'README.md'
       - 'tests/e2e/**'
+
 jobs:
   build:
     name: build
