@@ -3,7 +3,9 @@
 # with a prepopulated Cargo build cache to accelerate the build process.
 # Use Ubuntu 16.04 because this is what the Travis CI Krill build uses.
 #
-ARG BASE_IMG=alpine:3.12
+# Use Alpine edge (speific dated build 20201218) to get Rust >= 1.45.0 as needed
+# to build Krill, as latest Alpine release contains Rust 1.44.0.
+ARG BASE_IMG=alpine:20201218
 
 #
 # -- stage 1: build krill and krillc
