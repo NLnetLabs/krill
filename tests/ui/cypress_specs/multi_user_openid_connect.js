@@ -52,6 +52,7 @@ describe('OpenID Connect users', () => {
         cy.contains('Sign In').should('not.exist')
         cy.get('#userinfo').click()
         cy.get('#userinfo_table').contains(ts.u)
+        cy.get('#userinfo_table').contains("role")
       } else if (ts.d == 'empty') {
         cy.contains('The supplied login credentials were incorrect')
         cy.contains('return to the login page')

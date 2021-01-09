@@ -1,9 +1,11 @@
+use std::collections::HashMap;
+
 use crate::commons::error::Error;
 #[cfg(feature = "multi-user")]
 use crate::daemon::http::server::render_error_redirect;
 
 #[cfg(feature = "multi-user")]
-use {crate::daemon::auth::LoggedInUser, std::string::FromUtf8Error, urlparse::quote};
+use {crate::daemon::auth::LoggedInUser, urlparse::quote};
 
 use crate::daemon::http::{HttpResponse, Request, RoutingResult};
 use hyper::Method;
@@ -13,18 +15,27 @@ pub const AUTH_LOGIN_ENDPOINT: &str = "/auth/login";
 pub const AUTH_LOGOUT_ENDPOINT: &str = "/auth/logout";
 
 #[cfg(feature = "multi-user")]
-fn build_auth_redirect_location(user: LoggedInUser) -> Result<String, FromUtf8Error> {
-    let mut location = format!(
-        "/index.html#/login?token={}&id={}",
-        &quote(user.token, b"")?,
-        &quote(user.id, b"")?
-    );
-
-    for (k, v) in &user.attributes {
-        location.push_str(&format!("&{}={}", k, quote(v, b"")?));
+fn build_auth_redirect_location(user: LoggedInUser) -> Result<String, Error> {
+    fn quote_with_mapped_error<S: AsRef<str>>(s: S) -> Result<String, Error> {
+        quote(s, b"").map_err(|err| Error::custom(err.to_string()))
     }
 
-    Ok(location)
+    fn b64_encode_attributes_with_mapped_error(a: &HashMap<String, String>)
+        -> Result<String, Error>
+    {
+        Ok(base64::encode(
+            serde_json::to_string(a)
+                .map_err(|err| Error::custom(err.to_string()))?))
+    }
+
+    let attributes = b64_encode_attributes_with_mapped_error(&user.attributes)?;
+
+    Ok(format!(
+        "/index.html#/login?token={}&id={}&attributes={}",
+        &quote_with_mapped_error(user.token)?,
+        &quote_with_mapped_error(user.id)?,
+        &quote_with_mapped_error(attributes)?
+    ))
 }
 
 fn render_error(err: Error) -> RoutingResult {
