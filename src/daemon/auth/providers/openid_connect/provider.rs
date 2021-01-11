@@ -152,6 +152,13 @@ impl OpenIDConnectAuthProvider {
 
         info!("Verifying OpenID Connect: Provider capabilities..");
 
+        // From: https://openid.net/specs/openid-connect-discovery-1_0.html
+        // response_modes_supported
+        //     OPTIONAL. JSON array containing a list of the OAuth 2.0
+        //     response_mode values that this OP supports, as specified in OAuth
+        //     2.0 Multiple Response Type Encoding Practices [OAuth.Responses].
+        //     If omitted, the default for Dynamic OpenID Providers is
+        //     ["query", "fragment"].
         match meta.response_modes_supported() {
             Some(_) => {
                 // Some modes are specified, do they include "query"?
@@ -167,6 +174,15 @@ impl OpenIDConnectAuthProvider {
             }
         }
 
+        // From: https://openid.net/specs/openid-connect-discovery-1_0.html
+        // id_token_signing_alg_values_supported
+        //     REQUIRED. JSON array containing a list of the JWS signing
+        //     algorithms (alg values) supported by the OP for the ID Token to
+        //     encode the Claims in a JWT [JWT]. The algorithm RS256 MUST be
+        //     included. The value none MAY be supported, but MUST NOT be used
+        //     unless the Response Type used returns no ID Token from the
+        //     Authorization Endpoint (such as when using the Authorization
+        //     Code Flow).
         if is_supported!(
             meta.id_token_signing_alg_values_supported(),
             CoreJwsSigningAlgorithm::RsaSsaPkcs1V15Sha256
@@ -174,9 +190,19 @@ impl OpenIDConnectAuthProvider {
         .log_or_fail("id_token_signing_alg_values_supported", Some("RS256"))
         .is_err()
         {
+            // According to the spec quoted above RS256 MUST be supported so
+            // this OpenID Connect provider is not spec compliant.
             ok = false;
         }
 
+        // From: https://openid.net/specs/openid-connect-discovery-1_0.html
+        // scopes_supported
+        //     RECOMMENDED. JSON array containing a list of the OAuth 2.0
+        //     [RFC6749] scope values that this server supports. The server MUST
+        //     support the openid scope value. Servers MAY choose not to
+        //     advertise some supported scope values even when this parameter is
+        //     used, although those defined in [OpenID.Core] SHOULD be listed,
+        //     if supported.
         if is_supported_val_opt!(meta.scopes_supported(), Scope::new("openid".to_string()))
             .log_or_fail("scopes_supported", Some("openid"))
             .is_err()
@@ -188,8 +214,17 @@ impl OpenIDConnectAuthProvider {
             email_scope_supported = true;
         }
 
+        // From: https://openid.net/specs/openid-connect-discovery-1_0.html
+        // userinfo_endpoint
+        //     RECOMMENDED. URL of the OP's UserInfo Endpoint [OpenID.Core].
+        //     This URL MUST use the https scheme and MAY contain port, path,
+        //     and query parameter components.
         let userinfo_endpoint_supported = meta.userinfo_endpoint().is_some();
 
+        // Neither end_session_endpoint nor revocation_endpoint are required to
+        // exist by the OpenID Connect discovery spec, but we want some way to
+        // log the user out so if one of these is not set, fallback to a user
+        // specified endpoint.
         if meta.additional_metadata().end_session_endpoint.as_ref().is_none()
             && meta.additional_metadata().revocation_endpoint.as_ref().is_none()
         {
