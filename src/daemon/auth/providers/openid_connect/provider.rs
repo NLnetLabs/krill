@@ -85,12 +85,11 @@ impl OpenIDConnectAuthProvider {
             Ok(mut conn_guard) => {
                 if conn_guard.is_none() {
                     trace!("OpenID Connect: Initializing provider connection...");
-                    let oidc_conf = self.oidc_conf()?;
-                    let meta = Self::discover(oidc_conf)?;
+                    let meta = self.discover()?;
                     let (email_scope_supported, userinfo_endpoint_supported) =
-                        Self::check_provider_capabilities(&meta)?;
-                    let logout_url = Self::build_logout_url(self.config.service_uri(), &meta);
-                    let client = Self::build_client(oidc_conf, self.config.service_uri(), meta)?;
+                        self.check_provider_capabilities(&meta)?;
+                    let logout_url = self.build_logout_url(&meta)?;
+                    let client = self.build_client(meta)?;
 
                     *conn_guard = Some(ProviderConnectionProperties {
                         client,
@@ -116,12 +115,12 @@ impl OpenIDConnectAuthProvider {
     /// discovery endpoint of the provider, e.g.
     ///   https://<provider.domain>/<something/.well-known/openid-configuration
     /// Via which we can discover both endpoint URIs and capability flags.
-    fn discover(oidc_conf: &ConfigAuthOpenIDConnect) -> KrillResult<WantedMeta> {
+    fn discover(&self) -> KrillResult<WantedMeta> {
         // Read from config the OpenID Connect identity provider discovery URL.
         // Strip off /.well-known/openid_configuration because the openid-connect
         // crate wants to add this itself and will fail if it is already present
         // in the URL.
-        let issuer = oidc_conf.issuer_url.clone();
+        let issuer = self.oidc_conf()?.issuer_url.clone();
         let issuer = issuer.trim_end_matches("/.well-known/openid_configuration");
         let issuer = IssuerUrl::new(issuer.to_string())?;
 
@@ -145,7 +144,7 @@ impl OpenIDConnectAuthProvider {
 
     /// Verify that the OpenID Connect: discovery metadata indicates that the
     /// provider has support for the features that we require.
-    fn check_provider_capabilities(meta: &WantedMeta) -> KrillResult<(bool, bool)> {
+    fn check_provider_capabilities(&self, meta: &WantedMeta) -> KrillResult<(bool, bool)> {
         // TODO: verify token_endpoint_auth_methods_supported?
         // TODO: verify response_types_supported?
         let mut ok = true;
@@ -194,8 +193,10 @@ impl OpenIDConnectAuthProvider {
         if meta.additional_metadata().end_session_endpoint.as_ref().is_none()
             && meta.additional_metadata().revocation_endpoint.as_ref().is_none()
         {
-            None::<String>.log_or_fail("end_session_endpoint or revocation_endpoint", None)?;
-            ok = false;
+            if self.oidc_conf()?.logout_url.is_none() {
+                None::<String>.log_or_fail("end_session_endpoint or revocation_endpoint", None)?;
+                ok = false;
+            }
         }
 
         match ok {
@@ -206,15 +207,12 @@ impl OpenIDConnectAuthProvider {
         }
     }
 
-    fn build_client(
-        oidc_conf: &ConfigAuthOpenIDConnect,
-        service_uri: uri::Https,
-        meta: WantedMeta,
-    ) -> KrillResult<FlexibleClient> {
+    fn build_client(&self, meta: WantedMeta) -> KrillResult<FlexibleClient> {
         // Read from config the credentials we should use to authenticate
         // ourselves with the identity provider. These details should have been
         // obtained by the Krill operator when they created a registration for
         // their Krill instance with their identity provider.
+        let oidc_conf = self.oidc_conf()?;
         let client_id = ClientId::new(oidc_conf.client_id.clone());
         let client_secret = ClientSecret::new(oidc_conf.client_secret.clone());
 
@@ -233,7 +231,7 @@ impl OpenIDConnectAuthProvider {
         // it will come through to us so that we can exchange the temporary code
         // for access and id tokens.
         let redirect_uri = RedirectUrl::new(
-            service_uri
+            self.config.service_uri()
                 .join(AUTH_CALLBACK_ENDPOINT.trim_start_matches('/').as_bytes())
                 .to_string(),
         )?;
@@ -254,11 +252,14 @@ impl OpenIDConnectAuthProvider {
     /// telling the provider to redirect back to Krill once logout is complete.
     ///
     /// See: https://openid.net/specs/openid-connect-rpinitiated-1_0.html
-    fn build_logout_url(service_uri: uri::Https, meta: &WantedMeta) -> String {
+    fn build_logout_url(&self, meta: &WantedMeta) -> KrillResult<String> {
+        let service_uri = self.config.service_uri();
         let logout_url = if let Some(url) = &meta.additional_metadata().end_session_endpoint {
             format!("{}?post_logout_redirect_uri={}", url, service_uri.as_str())
         } else if meta.additional_metadata().revocation_endpoint.is_some() {
             service_uri.to_string()
+        } else if let Some(url) = &self.oidc_conf()?.logout_url {
+            url.to_string()
         } else {
             // should be unreachable due to checks done in discover().
             unreachable!()
@@ -266,7 +267,7 @@ impl OpenIDConnectAuthProvider {
 
         debug!("OpenID Connect: Logout URL will be {:?}", &logout_url);
 
-        logout_url
+        Ok(logout_url)
     }
 
     fn try_refresh_token(&self, session: &ClientSession) -> Option<Auth> {
