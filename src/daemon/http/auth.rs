@@ -1,3 +1,4 @@
+#[cfg(feature = "multi-user")]
 use std::collections::HashMap;
 
 use crate::commons::error::Error;

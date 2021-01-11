@@ -23,7 +23,6 @@ use openidconnect::{
     RedirectUrl, RefreshToken, Scope,
 };
 
-use rpki::uri;
 use urlparse::{urlparse, GetQuery};
 
 use crate::commons::error::Error;
@@ -159,18 +158,13 @@ impl OpenIDConnectAuthProvider {
         //     2.0 Multiple Response Type Encoding Practices [OAuth.Responses].
         //     If omitted, the default for Dynamic OpenID Providers is
         //     ["query", "fragment"].
-        match meta.response_modes_supported() {
-            Some(_) => {
-                // Some modes are specified, do they include "query"?
-                if is_supported_opt!(meta.response_modes_supported(), CoreResponseMode::Query)
-                    .log_or_fail("response_modes_supported", Some("query"))
-                    .is_err()
-                {
-                    ok = false;
-                }
-            }
-            None => {
-                // No modes are specified, so query is supported by default.
+        if meta.response_modes_supported().is_some() {
+            // Some modes are specified, do they include "query"?
+            if is_supported_opt!(meta.response_modes_supported(), CoreResponseMode::Query)
+                .log_or_fail("response_modes_supported", Some("query"))
+                .is_err()
+            {
+                ok = false;
             }
         }
 
@@ -227,11 +221,9 @@ impl OpenIDConnectAuthProvider {
         // specified endpoint.
         if meta.additional_metadata().end_session_endpoint.as_ref().is_none()
             && meta.additional_metadata().revocation_endpoint.as_ref().is_none()
-        {
-            if self.oidc_conf()?.logout_url.is_none() {
-                None::<String>.log_or_fail("end_session_endpoint or revocation_endpoint", None)?;
-                ok = false;
-            }
+            && self.oidc_conf()?.logout_url.is_none() {
+            None::<String>.log_or_fail("end_session_endpoint or revocation_endpoint", None)?;
+            ok = false;
         }
 
         match ok {
