@@ -153,11 +153,19 @@ impl OpenIDConnectAuthProvider {
 
         info!("Verifying OpenID Connect: Provider capabilities..");
 
-        if is_supported_opt!(meta.response_modes_supported(), CoreResponseMode::Query)
-            .log_or_fail("response_modes_supported", Some("query"))
-            .is_err()
-        {
-            ok = false;
+        match meta.response_modes_supported() {
+            Some(_) => {
+                // Some modes are specified, do they include "query"?
+                if is_supported_opt!(meta.response_modes_supported(), CoreResponseMode::Query)
+                    .log_or_fail("response_modes_supported", Some("query"))
+                    .is_err()
+                {
+                    ok = false;
+                }
+            }
+            None => {
+                // No modes are specified, so query is supported by default.
+            }
         }
 
         if is_supported!(
