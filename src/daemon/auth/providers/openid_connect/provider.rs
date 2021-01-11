@@ -221,7 +221,8 @@ impl OpenIDConnectAuthProvider {
         // specified endpoint.
         if meta.additional_metadata().end_session_endpoint.as_ref().is_none()
             && meta.additional_metadata().revocation_endpoint.as_ref().is_none()
-            && self.oidc_conf()?.logout_url.is_none() {
+            && self.oidc_conf()?.logout_url.is_none()
+        {
             None::<String>.log_or_fail("end_session_endpoint or revocation_endpoint", None)?;
             ok = false;
         }
@@ -258,7 +259,8 @@ impl OpenIDConnectAuthProvider {
         // it will come through to us so that we can exchange the temporary code
         // for access and id tokens.
         let redirect_uri = RedirectUrl::new(
-            self.config.service_uri()
+            self.config
+                .service_uri()
                 .join(AUTH_CALLBACK_ENDPOINT.trim_start_matches('/').as_bytes())
                 .to_string(),
         )?;

@@ -786,9 +786,7 @@ async fn api(req: Request) -> RoutingResult {
         path.next(); // gets 'v1' and drops it.
 
         match path.next() {
-            Some("authorized") => {
-                api_authorized(req).await
-            }
+            Some("authorized") => api_authorized(req).await,
             restricted_endpoint => {
                 // Make sure access is allowed
                 aa!(req, LOGIN, {

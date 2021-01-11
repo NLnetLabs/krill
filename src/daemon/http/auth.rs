@@ -21,12 +21,10 @@ fn build_auth_redirect_location(user: LoggedInUser) -> Result<String, Error> {
         quote(s, b"").map_err(|err| Error::custom(err.to_string()))
     }
 
-    fn b64_encode_attributes_with_mapped_error(a: &HashMap<String, String>)
-        -> Result<String, Error>
-    {
+    fn b64_encode_attributes_with_mapped_error(a: &HashMap<String, String>) -> Result<String, Error> {
         Ok(base64::encode(
-            serde_json::to_string(a)
-                .map_err(|err| Error::custom(err.to_string()))?))
+            serde_json::to_string(a).map_err(|err| Error::custom(err.to_string()))?,
+        ))
     }
 
     let attributes = b64_encode_attributes_with_mapped_error(&user.attributes)?;
