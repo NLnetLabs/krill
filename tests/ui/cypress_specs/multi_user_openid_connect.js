@@ -5,6 +5,7 @@ let readwrite    = { u: 'readwrite@krill' };
 let shorttoken   = { u: 'shorttokenwithoutrefresh@krill' };
 let shortrefresh = { u: 'shorttokenwithrefresh@krill' };
 let badidtoken   = { u: 'non-spec-compliant-idtoken-payload' };
+let badrole      = { u: 'user-with-unknown-role' };
 let ca_name      = 'dummy-ca-name';
 
 let login_test_settings = [
@@ -14,6 +15,7 @@ let login_test_settings = [
   { d: 'readonly',     u: readonly.u,        o: true  },
   { d: 'readwrite',    u: readwrite.u,       o: true },
   { d: 'badidtoken',   u: badidtoken.u,      o: false },
+  { d: 'badrole',      u: badrole.u,         o: false }
 ];
 
 describe('OpenID Connect users', () => {
@@ -58,6 +60,9 @@ describe('OpenID Connect users', () => {
         cy.contains('return to the login page')
       } else if (ts.d == 'badidtoken') {
         cy.contains('OpenID Connect: Code exchange failed: Failed to parse server response')
+        cy.contains('return to the login page')
+      } else if (ts.d == 'badrole') {
+        cy.contains('Your user does not have sufficient rights to perform this action. Please contact your administrator.')
         cy.contains('return to the login page')
       }
     })

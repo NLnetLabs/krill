@@ -25,7 +25,7 @@ impl AdditionalProviderMetadata for CustomAdditionalMetadata {}
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct CustomAdditionalClaims {
-    role: String,
+    role: Option<String>,
     inc_cas: Option<String>,
     exc_cas: Option<String>,
 }
@@ -76,7 +76,7 @@ type CustomTokenResponse = StandardTokenResponse<CustomIdTokenFields, CoreTokenT
 
 #[derive(Clone, Default)]
 struct KnownUser {
-    role: &'static str,
+    role: Option<&'static str>,
     inc_cas: Option<&'static str>,
     exc_cas: Option<&'static str>,
     token_secs: Option<u32>,
@@ -135,7 +135,7 @@ fn run_mock_openid_connect_server() {
         known_users.insert(
             "admin@krill",
             KnownUser {
-                role: "admin",
+                role: Some("admin"),
                 exc_cas: Some("ta,testbed"),
                 ..Default::default()
             },
@@ -143,7 +143,7 @@ fn run_mock_openid_connect_server() {
         known_users.insert(
             "readonly@krill",
             KnownUser {
-                role: "readonly",
+                role: Some("readonly"),
                 exc_cas: Some("ta,testbed"),
                 ..Default::default()
             },
@@ -151,7 +151,7 @@ fn run_mock_openid_connect_server() {
         known_users.insert(
             "readwrite@krill",
             KnownUser {
-                role: "readwrite",
+                role: Some("readwrite"),
                 exc_cas: Some("ta,testbed"),
                 ..Default::default()
             },
@@ -159,7 +159,7 @@ fn run_mock_openid_connect_server() {
         known_users.insert(
             "shorttokenwithoutrefresh@krill",
             KnownUser {
-                role: "readwrite",
+                role: Some("readwrite"),
                 exc_cas: Some("ta,testbed"),
                 token_secs: Some(1),
                 ..Default::default()
@@ -168,7 +168,7 @@ fn run_mock_openid_connect_server() {
         known_users.insert(
             "shorttokenwithrefresh@krill",
             KnownUser {
-                role: "readwrite",
+                role: Some("readwrite"),
                 exc_cas: Some("ta,testbed"),
                 token_secs: Some(1),
                 refresh: true,
@@ -178,7 +178,15 @@ fn run_mock_openid_connect_server() {
         known_users.insert(
             "non-spec-compliant-idtoken-payload",
             KnownUser {
-                role: "readonly",
+                role: Some("readonly"),
+                exc_cas: Some("ta,testbed"),
+                ..Default::default()
+            },
+        );
+        known_users.insert(
+            "user-with-unknown-role",
+            KnownUser {
+                role: None,
                 exc_cas: Some("ta,testbed"),
                 ..Default::default()
             },
@@ -293,7 +301,7 @@ fn run_mock_openid_connect_server() {
                         SubjectIdentifier::new(session.id.to_string()),
                     ),
                     CustomAdditionalClaims {
-                        role: user.role.to_string(),
+                        role: user.role.map(|role| role.to_string()),
                         inc_cas: user.inc_cas.map_or(None, |v| Some(v.to_string())),
                         exc_cas: user.exc_cas.map_or(None, |v| Some(v.to_string())),
                     },
