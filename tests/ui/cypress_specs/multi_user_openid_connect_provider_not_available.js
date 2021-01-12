@@ -11,6 +11,6 @@ describe('OpenID Connect users', () => {
     cy.url().should('include', Cypress.config('baseUrl'))
 
     // make sure that we are shown the correct error
-    cy.contains('An error occurred while logging you in: Cannot get login URL: Failed to connect to provider')
+    cy.contains('An error occurred while logging you in: OpenID Connect: Cannot get login URL: Failed to connect to provider')
   })
 })
