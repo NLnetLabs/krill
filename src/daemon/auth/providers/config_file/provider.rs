@@ -4,10 +4,7 @@ use urlparse::{urlparse, GetQuery};
 
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
-use crate::commons::{
-    actor::{Actor, ActorDef},
-    api::Token,
-};
+use crate::commons::{actor::ActorDef, api::Token};
 use crate::daemon::auth::common::crypt;
 use crate::daemon::auth::common::session::*;
 use crate::daemon::auth::providers::config_file::config::ConfigUserDetails;
@@ -100,7 +97,7 @@ impl AuthProvider for ConfigFileAuthProvider {
 
                 trace!("id={}, attributes={:?}", &session.id, &session.attributes);
 
-                Ok(Some(Actor::user(session.id, &session.attributes, None)))
+                Ok(Some(ActorDef::user(session.id, session.attributes, None)))
             }
             _ => Ok(None),
         };

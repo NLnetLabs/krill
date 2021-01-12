@@ -72,6 +72,36 @@ pub struct ActorDef {
 }
 
 impl ActorDef {
+    pub const fn anonymous() -> ActorDef {
+        ActorDef {
+            name: ActorName::AsStaticStr("anonymous"),
+            is_user: false,
+            attributes: Attributes::None,
+            new_auth: None,
+            auth_error: None,
+        }
+    }
+
+    pub const fn system(name: &'static str, role: &'static str) -> ActorDef {
+        ActorDef {
+            name: ActorName::AsStaticStr(name),
+            attributes: Attributes::RoleOnly(role),
+            is_user: false,
+            new_auth: None,
+            auth_error: None,
+        }
+    }
+
+    pub fn user(name: String, attributes: HashMap<String, String>, new_auth: Option<Auth>) -> ActorDef {
+        ActorDef {
+            name: ActorName::AsString(name),
+            is_user: true,
+            attributes: Attributes::UserDefined(attributes),
+            new_auth,
+            auth_error: None,
+        }
+    }
+
     // store an error string instead of an Error because Error cannot be cloned.
     pub fn with_auth_error(mut self, error_msg: String) -> Self {
         self.auth_error = Some(error_msg);
@@ -102,36 +132,6 @@ impl PartialEq<ActorDef> for Actor {
 }
 
 impl Actor {
-    pub const fn anonymous() -> ActorDef {
-        ActorDef {
-            name: ActorName::AsStaticStr("anonymous"),
-            is_user: false,
-            attributes: Attributes::None,
-            new_auth: None,
-            auth_error: None,
-        }
-    }
-
-    pub const fn system(name: &'static str, role: &'static str) -> ActorDef {
-        ActorDef {
-            name: ActorName::AsStaticStr(name),
-            attributes: Attributes::RoleOnly(role),
-            is_user: false,
-            new_auth: None,
-            auth_error: None,
-        }
-    }
-
-    pub fn user(name: String, attributes: &HashMap<String, String>, new_auth: Option<Auth>) -> ActorDef {
-        ActorDef {
-            name: ActorName::AsString(name),
-            is_user: true,
-            attributes: Attributes::UserDefined(attributes.clone()),
-            new_auth,
-            auth_error: None,
-        }
-    }
-
     /// Only for use in testing
     pub fn test_from_def(repr: ActorDef) -> Actor {
         Actor {

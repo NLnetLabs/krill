@@ -1,4 +1,4 @@
-use crate::commons::actor::{Actor, ActorDef};
+use crate::commons::actor::ActorDef;
 
 pub const KRILL_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const KRILL_VERSION_MAJOR: &str = env!("CARGO_PKG_VERSION_MAJOR");
@@ -74,10 +74,10 @@ pub const BGP_RIS_REFRESH_MINUTES: i64 = 60;
 
 pub const HTTTP_CLIENT_TIMEOUT_SECS: u64 = 120;
 
-pub const ACTOR_DEF_KRILL: ActorDef = Actor::system("krill", "admin");
-pub const ACTOR_DEF_ANON: ActorDef = Actor::anonymous();
-pub const ACTOR_DEF_MASTER_TOKEN: ActorDef = Actor::system("master-token", "admin");
-pub const ACTOR_DEF_TESTBED: ActorDef = Actor::system("testbed", "testbed");
+pub const ACTOR_DEF_KRILL: ActorDef = ActorDef::system("krill", "admin");
+pub const ACTOR_DEF_ANON: ActorDef = ActorDef::anonymous();
+pub const ACTOR_DEF_MASTER_TOKEN: ActorDef = ActorDef::system("master-token", "admin");
+pub const ACTOR_DEF_TESTBED: ActorDef = ActorDef::system("testbed", "testbed");
 
 #[cfg(test)]
-pub const ACTOR_DEF_TEST: ActorDef = Actor::system("test", "admin");
+pub const ACTOR_DEF_TEST: ActorDef = ActorDef::system("test", "admin");

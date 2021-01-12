@@ -28,10 +28,7 @@ use urlparse::{urlparse, GetQuery};
 use crate::commons::error::Error;
 use crate::commons::util::sha256;
 use crate::commons::KrillResult;
-use crate::commons::{
-    actor::{Actor, ActorDef},
-    api::Token,
-};
+use crate::commons::{actor::ActorDef, api::Token};
 use crate::daemon::auth::common::crypt;
 use crate::daemon::auth::common::session::*;
 use crate::daemon::auth::providers::openid_connect::config::ConfigAuthOpenIDConnectClaims;
@@ -603,7 +600,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                     }
                 }
 
-                Ok(Some(Actor::user(session.id, &session.attributes, new_auth)))
+                Ok(Some(ActorDef::user(session.id, session.attributes, new_auth)))
             }
             _ => Ok(None),
         };
