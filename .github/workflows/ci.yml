@@ -38,6 +38,7 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         rust: [stable, 1.45.0, beta]
+        args: ["", "--all-features"] 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v1
@@ -45,8 +46,8 @@ jobs:
       uses: hecrj/setup-rust-action@v1
       with:
         rust-version: ${{ matrix.rust }}
-    - run: cargo build --verbose
-    - run: cargo test --verbose 2>&1
+    - run: cargo build --verbose ${{ matrix.args }}
+    - run: cargo test --verbose ${{ matrix.args }} 2>&1
 
   coverage:
     name: coverage
@@ -56,6 +57,7 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         rust: [stable]
+        args: ["", "--all-features"] 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v1
@@ -64,26 +66,9 @@ jobs:
       with:
         rust-version: ${{ matrix.rust }}
     - run: cargo install cargo-tarpaulin
-    - run: cargo tarpaulin -v -o Html
+    - run: cargo tarpaulin -v -o Html ${{ matrix.args }}
     - name: Archive code coverage results
-      uses: actions/upload-artifact@v1
+      uses: actions/upload-artifact@v2
       with:
-        name: code-coverage-report
+        name: code-coverage-report ${{ matrix.os }} ${{ matrix.rust }} ${{ matrix.args }}
         path: tarpaulin-report.html
-
-  allfeatures:
-    name: allfeatures
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
-        rust: [stable, 1.45.0, beta]
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v1
-    - name: Install Rust
-      uses: hecrj/setup-rust-action@v1
-      with:
-        rust-version: ${{ matrix.rust }}
-    - run: cargo build --verbose --all-features
-    - run: cargo test --verbose --all-features 2>&1
