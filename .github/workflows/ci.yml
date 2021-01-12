@@ -66,10 +66,10 @@ jobs:
     - run: cargo install cargo-tarpaulin
     - run: cargo tarpaulin -v -o Html
     - name: Archive code coverage results
-        uses: actions/upload-artifact@v1
-        with:
-          name: code-coverage-report
-          path: tarpaulin-report.html
+      uses: actions/upload-artifact@v1
+      with:
+        name: code-coverage-report
+        path: tarpaulin-report.html
 
   allfeatures:
     name: allfeatures
