@@ -292,11 +292,9 @@ fn make_archive_old_commands(
 
 #[cfg(feature = "multi-user")]
 fn make_login_cache_sweeper_sh(cache: Arc<LoginSessionCache>) -> ScheduleHandle {
-    SkippingScheduler::run(3600, "sweep logins", move || {
+    SkippingScheduler::run(60, "sweep session decryption cache", move || {
         let mut rt = Runtime::new().unwrap();
         rt.block_on(async {
-            debug!("Triggering background sweep of session decryption cache");
-
             if let Err(e) = cache.sweep() {
                 error!("Background sweep of session decryption cache failed: {}", e);
             }
