@@ -1,4 +1,5 @@
 name: CI
+
 on:
   push:
     paths-ignore:
@@ -13,6 +14,7 @@ on:
       - 'LICENSE'
       - 'README.md'
       - 'tests/e2e/**'
+
   # Hmm, annoying, do we really have to duplicate this?
   pull_request:
     paths-ignore:
@@ -27,6 +29,7 @@ on:
       - 'LICENSE'
       - 'README.md'
       - 'tests/e2e/**'
+
 jobs:
   build:
     name: build
@@ -44,6 +47,30 @@ jobs:
         rust-version: ${{ matrix.rust }}
     - run: cargo build --verbose
     - run: cargo test --verbose 2>&1
+
+  coverage:
+    name: coverage
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        rust: [stable]
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v1
+    - name: Install Rust
+      uses: hecrj/setup-rust-action@v1
+      with:
+        rust-version: ${{ matrix.rust }}
+    - run: cargo install cargo-tarpaulin
+    - run: cargo tarpaulin -v -o Html
+    - name: Archive code coverage results
+        uses: actions/upload-artifact@v1
+        with:
+          name: code-coverage-report
+          path: tarpaulin-report.html
+
   allfeatures:
     name: allfeatures
     runs-on: ${{ matrix.os }}
