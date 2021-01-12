@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use crate::commons::actor::{Actor, ActorDef};
 use crate::commons::api::Token;
+use crate::commons::error::Error;
 use crate::commons::KrillResult;
 use crate::constants::ACTOR_DEF_ANON;
 use crate::daemon::auth::policy::AuthPolicy;
@@ -154,28 +155,41 @@ impl Authorizer {
     /// Submit credentials directly to the configured provider to establish a
     /// login session, if supported by the configured provider.
     pub fn login(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<LoggedInUser> {
-        self.primary_provider.login(request).map(|user| {
-            let visible_attributes = user
-                .attributes
-                .clone()
-                .into_iter()
-                .filter(|(k, _)| !self.private_attributes.contains(k))
-                .collect::<HashMap<_, _>>();
+        let user = self.primary_provider.login(request)?;
 
-            let user = LoggedInUser {
-                token: user.token,
-                id: user.id,
-                attributes: visible_attributes,
-            };
+        // The user has passed authentication, but may still not be
+        // authorized to login as that requires a check against the policy
+        // which cannot be done by the AuthProvider. Check that now.
+        let actor_def = ActorDef::user(user.id.clone(), user.attributes.clone(), None);
+        let actor = self.actor_from_def(actor_def);
+        if !actor.is_allowed("LOGIN", request.uri().path())? {
+            let reason = format!("Login denied for user '{}': User is not permitted to 'LOGIN'", user.id);
+            warn!("{}", reason);
+            return Err(Error::ApiInsufficientRights(reason));
+        }
 
-            if log_enabled!(log::Level::Trace) {
-                trace!("User logged in: {:?}", &user);
-            } else {
-                info!("User logged in: {}", &user.id);
-            }
+        // Exclude private attributes before passing them to Lagosta to be
+        // shown in the web UI.
+        let visible_attributes = user
+            .attributes
+            .clone()
+            .into_iter()
+            .filter(|(k, _)| !self.private_attributes.contains(k))
+            .collect::<HashMap<_, _>>();
 
-            user
-        })
+        let filtered_user = LoggedInUser {
+            token: user.token,
+            id: user.id,
+            attributes: visible_attributes,
+        };
+
+        if log_enabled!(log::Level::Trace) {
+            trace!("User logged in: {:?}", &filtered_user);
+        } else {
+            info!("User logged in: {}", &filtered_user.id);
+        }
+
+        Ok(filtered_user)
     }
 
     /// Return the URL at which an end-user should be directed to logout with
