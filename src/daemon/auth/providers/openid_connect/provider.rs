@@ -591,9 +591,12 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 let status = session.status();
 
                 let mut new_auth = None;
+                if log_enabled!(log::Level::Trace) {
+                    trace!("Status: {:?}", status);
+                }
                 if status != SessionStatus::Active {
                     new_auth = self.try_refresh_token(&session);
-                    if new_auth.is_none() && status == SessionStatus::Expired {
+                    if new_auth.is_none() && (status == SessionStatus::Expired || status == SessionStatus::NeedsRefresh) {
                         return Err(Error::ApiInvalidCredentials(
                             "Session expired, please login again".to_string(),
                         ));
