@@ -211,6 +211,9 @@ describe('Config File Users with TA', () => {
             if (ts.o) {
               cy.contains('Success')
               cy.contains('Error').should('not.exist')
+              // wait for the parent registration to complete inside Krill and
+              // for the details to appear in the Lagosta UI
+              cy.get('div#tab-parents').click().get('body').contains('Add an additional parent')
             } else {
               cy.contains('Success').should('not.exist')
               cy.contains('Error')
