@@ -9,7 +9,7 @@ on:
 jobs:
   coverage:
     name: coverage
-    needs: build
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
