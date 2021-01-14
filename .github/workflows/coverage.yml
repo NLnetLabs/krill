@@ -18,7 +18,7 @@ jobs:
         args: ["", "--all-features"] 
     steps:
     - name: Debug
-      uses: hmarr/debug-action
+      uses: hmarr/debug-action@v1
     - name: Checkout repository
       uses: actions/checkout@v1
     - name: Install Rust
