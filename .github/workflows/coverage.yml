@@ -28,7 +28,7 @@ jobs:
       if: ${{ github.event.workflow_run.event == 'push' }}
       uses: actions/checkout@v1
       with:
-        ref: $GITHUB_SHA
+        ref: ${{ github.sha }}
     - name: Install Rust
       uses: hecrj/setup-rust-action@v1
       with:
