@@ -241,12 +241,17 @@ describe('Config File Users with TA', () => {
 
   add_roa_test_settings.forEach(function (ts) {
     it('Add ROA for CA ' + ts.ca + ' as ' + ts.d + ' user should ' + (ts.o ? 'succeed' : 'fail'), () => {
+      cy.intercept('GET', '/api/v1/cas/' + ts.ca + '/routes/analysis/full').as('analyzeRoutes')
+
       cy.visit('/')
       cy.get('input[placeholder="Your username"]').type(ts.u)
       cy.get(':password').type(ts.p)
       cy.contains('Sign In').click()
       cy.contains(ts.u)
       cy.contains('Sign In').should('not.exist')
+
+      // wait for Lagosta to finish fetching the route analysis details
+      cy.wait('@analyzeRoutes').its('response.statusCode').should('eq', 200)
 
       // Add a ROA
       cy.get('div#tab-roas').click()
