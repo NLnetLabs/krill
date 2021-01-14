@@ -9,9 +9,7 @@ on:
 jobs:
   coverage:
     name: coverage
-    if: >
-      ${{ (github.event.workflow_run.event == 'pull_request' || github.event.workflow_run.event == 'push') &&
-      github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -19,16 +17,12 @@ jobs:
         rust: [stable]
         args: ["", "--all-features"] 
     steps:
-    - name: Checkout PR commit
-      if: ${{ github.event.workflow_run.event == 'pull_request' }}
+    - name: Checkout repository
       uses: actions/checkout@v1
       with:
-        ref: ${{ github.event.pull_request.head.sha }}
-    - name: Checkout push commit
-      if: ${{ github.event.workflow_run.event == 'push' }}
-      uses: actions/checkout@v1
-      with:
-        ref: ${{ github.sha }}
+        # at the time of writing workflow_run.head_commit.id appears to be
+        # the commit that triggered the CI workflow which then triggered us.
+        ref: ${{ github.event.workflow_run.head_commit.id }}
     - name: Install Rust
       uses: hecrj/setup-rust-action@v1
       with:
