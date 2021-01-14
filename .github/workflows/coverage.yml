@@ -9,7 +9,9 @@ on:
 jobs:
   coverage:
     name: coverage
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: >
+      (${{ github.event.workflow_run.event == 'pull_request' || github.event.workflow_run.event == 'push') &&
+      github.event.workflow_run.conclusion == 'success' }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -17,10 +19,16 @@ jobs:
         rust: [stable]
         args: ["", "--all-features"] 
     steps:
-    - name: Debug
-      uses: hmarr/debug-action@v1.0.0
-    - name: Checkout repository
+    - name: Checkout PR commit
+      if: ${{ github.event.workflow_run.event == 'pull_request' }}
       uses: actions/checkout@v1
+      with:
+        ref: ${{ github.event.pull_request.head.sha }}
+    - name: Checkout push commit
+      if: ${{ github.event.workflow_run.event == 'push' }}
+      uses: actions/checkout@v1
+      with:
+        ref: $GITHUB_SHA
     - name: Install Rust
       uses: hecrj/setup-rust-action@v1
       with:
