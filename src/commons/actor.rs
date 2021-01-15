@@ -215,7 +215,7 @@ impl Actor {
                 &resource,
                 &error_msg
             );
-            return Err(Error::ApiInvalidCredentials(error_msg.clone()));
+            return Err(Error::ApiAuthError(error_msg.clone()));
         }
 
         match &self.policy {
