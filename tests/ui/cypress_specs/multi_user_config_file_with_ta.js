@@ -240,7 +240,7 @@ describe('Config File Users with TA', () => {
   })
 
   add_roa_test_settings.forEach(function (ts) {
-    it('Add ROA for CA ' + ts.ca + ' as ' + ts.d + ' user should ' + (ts.o ? 'succeed' : 'fail'), () => {
+    it.skip('Add ROA for CA ' + ts.ca + ' as ' + ts.d + ' user should ' + (ts.o ? 'succeed' : 'fail'), () => {
       cy.intercept('GET', '/api/v1/cas/' + ts.ca + '/routes/analysis/full').as('analyzeRoutes')
 
       cy.visit('/')
