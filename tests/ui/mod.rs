@@ -35,10 +35,10 @@ async fn do_run_krill_ui_test(test_name: &str, testbed_enabled: bool) {
 
     let cypress_task = task::spawn_blocking(move || {
         // NOTE: the directory mentioned here must be the same as the directory
-        // mentioned in the tests/ui/cypress_plugins/index.js file in the
+        // mentioned in the tests/ui/cypress/plugins/index.js file in the
         // "integrationFolder" property otherwise Cypress mysteriously complains
         // that it cannot find the spec file.
-        let cypress_spec_path = format!("tests/ui/cypress_specs/{}.js", test_name);
+        let cypress_spec_path = format!("tests/ui/cypress/specs/{}.js", test_name);
 
         Command::new("docker")
             .arg("run")
@@ -51,9 +51,16 @@ async fn do_run_krill_ui_test(test_name: &str, testbed_enabled: bool) {
             .arg(format!("{}:/e2e", env::current_dir().unwrap().display()))
             .arg("-w")
             .arg("/e2e")
-            // .arg("-e")
-            // .arg("DEBUG=cypress:proxy:http:*")
+
+            // Uncomment the next line to enable LOTS of Cypress logging.
+            .arg("-e").arg("DEBUG=cypress:*")
+
+            // Uncomment the next line to enable a subset of Cypress logging
+            // that is useful for investigating .get() and .intercept()
+            // behaviour.
+            // .arg("-e").arg("DEBUG=cypress:proxy:http:*")
             .arg("cypress/included:6.2.0")
+
             .arg("--browser")
             .arg("chrome")
             .arg("--spec")

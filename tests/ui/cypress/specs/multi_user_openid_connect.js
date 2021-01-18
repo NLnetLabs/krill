@@ -1,21 +1,21 @@
 // The mock OpenID Connect provider only checks usernames, not passwords.
-let admin        = { u: 'admin@krill' };
-let readonly     = { u: 'readonly@krill' };
-let readwrite    = { u: 'readwrite@krill' };
-let shorttoken   = { u: 'shorttokenwithoutrefresh@krill' };
+let admin = { u: 'admin@krill' };
+let readonly = { u: 'readonly@krill' };
+let readwrite = { u: 'readwrite@krill' };
+let shorttoken = { u: 'shorttokenwithoutrefresh@krill' };
 let shortrefresh = { u: 'shorttokenwithrefresh@krill' };
-let badidtoken   = { u: 'non-spec-compliant-idtoken-payload' };
-let badrole      = { u: 'user-with-unknown-role' };
-let ca_name      = 'dummy-ca-name';
+let badidtoken = { u: 'non-spec-compliant-idtoken-payload' };
+let badrole = { u: 'user-with-unknown-role' };
+let ca_name = 'dummy-ca-name';
 
 let login_test_settings = [
-  { d: 'empty',        u: '',                o: false },
-  { d: 'incorrect',    u: 'wrong_user_name', o: false },
-  { d: 'admin',        u: admin.u,           o: true  },
-  { d: 'readonly',     u: readonly.u,        o: true  },
-  { d: 'readwrite',    u: readwrite.u,       o: true },
-  { d: 'badidtoken',   u: badidtoken.u,      o: false },
-  { d: 'badrole',      u: badrole.u,         o: false }
+  { d: 'empty', u: '', o: false },
+  { d: 'incorrect', u: 'wrong_user_name', o: false },
+  { d: 'admin', u: admin.u, o: true },
+  { d: 'readonly', u: readonly.u, o: true },
+  { d: 'readwrite', u: readwrite.u, o: true },
+  { d: 'badidtoken', u: badidtoken.u, o: false },
+  { d: 'badrole', u: badrole.u, o: false }
 ];
 
 describe('OpenID Connect users', () => {
