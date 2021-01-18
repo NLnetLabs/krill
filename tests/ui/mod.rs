@@ -53,7 +53,7 @@ async fn do_run_krill_ui_test(test_name: &str, testbed_enabled: bool) {
             .arg("/e2e")
 
             // Uncomment the next line to enable LOTS of Cypress logging.
-            .arg("-e").arg("DEBUG=cypress:*")
+            // .arg("-e").arg("DEBUG=cypress:*")
 
             // Uncomment the next line to enable a subset of Cypress logging
             // that is useful for investigating .get() and .intercept()
