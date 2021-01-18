@@ -59,8 +59,8 @@ async fn do_run_krill_ui_test(test_name: &str, testbed_enabled: bool) {
             // that is useful for investigating .get() and .intercept()
             // behaviour.
             // .arg("-e").arg("DEBUG=cypress:proxy:http:*")
-            .arg("cypress/included:6.2.0")
 
+            .arg("cypress/included:6.2.0")
             .arg("--browser")
             .arg("chrome")
             .arg("--spec")
