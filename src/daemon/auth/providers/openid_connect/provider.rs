@@ -396,9 +396,9 @@ impl OpenIDConnectAuthProvider {
                 ));
             }
         }
-        return Err(CoreErrorResponseType::Extension(
+        Err(CoreErrorResponseType::Extension(
             "OpenID Connect: Current token does not exist or is malformed".to_string(),
-        ));
+        ))
     }
 
     fn extract_claim(
