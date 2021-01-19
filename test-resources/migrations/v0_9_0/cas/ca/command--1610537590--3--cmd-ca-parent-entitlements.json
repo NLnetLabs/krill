@@ -1,0 +1,25 @@
+{
+  "actor": "krill",
+  "time": "2021-01-13T11:33:10.058142Z",
+  "handle": "ca",
+  "version": 3,
+  "sequence": 3,
+  "details": {
+    "update_resource_classes": [
+      "testbed",
+      {
+        "0": {
+          "asn": "",
+          "v4": "192.168.0.0/16",
+          "v6": "2001:db8::/32"
+        }
+      }
+    ]
+  },
+  "effect": {
+    "events": [
+      3,
+      4
+    ]
+  }
+}

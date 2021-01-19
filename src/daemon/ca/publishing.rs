@@ -1,6 +1,8 @@
 //! Support for signing mft, crl, certificates, roas..
 //! Common objects for TAs and CAs
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
+
+use std::sync::RwLock;
 
 use bytes::Bytes;
 use chrono::Duration;
@@ -11,14 +13,204 @@ use rpki::manifest::{FileAndHash, Manifest, ManifestContent};
 use rpki::sigobj::SignedObjectBuilder;
 use rpki::x509::{Serial, Time, Validity};
 
-use crate::commons::api::{
-    AddedObject, CurrentObject, HexEncodedHash, IssuedCert, ObjectName, ObjectsDelta, RcvdCert, RepoInfo, Revocation,
-    Revocations, RevocationsDelta, UpdatedObject, WithdrawnObject,
-};
-use crate::commons::crypto::KrillSigner;
+use crate::commons::error::Error;
+use crate::commons::eventsourcing::KeyValueStore;
 use crate::commons::KrillResult;
+use crate::commons::{crypto::KrillSigner, eventsourcing::KeyStoreKey};
 use crate::daemon::ca::{RoaInfo, RouteAuthorization};
 use crate::daemon::config::IssuanceTimingConfig;
+use crate::{
+    commons::api::{
+        AddedObject, CurrentObject, Handle, HexEncodedHash, IssuedCert, ObjectName, ObjectsDelta, RcvdCert, RepoInfo,
+        ResourceClassName, Revocation, Revocations, RevocationsDelta, UpdatedObject, WithdrawnObject,
+    },
+    constants::CA_OBJECTS_DIR,
+};
+
+//------------ CaObjectsStore ----------------------------------------------
+
+/// This component is responsible for storing the latest objects for each CA.
+///
+/// By using a stateful store for this purpose we can generate Manifests and
+/// CRLs outside of the normal event-sourcing framework used to track the
+/// history and state of CAs. I.e. we treat the frequent republish cycle as
+/// something that does not intrinsically modify the CA itself.
+///
+/// In earlier generations of Krill the simple republish operation to generate
+/// new Manifests and CRLs was done through the event sourcing framework. However,
+/// this led to excessive use of disk space, makes the history more difficult to
+/// inspect, and causes issues with regards to replaying CA state from scratch.
+pub struct CaObjectsStore {
+    store: RwLock<KeyValueStore>,
+}
+
+/// # Construct
+impl CaObjectsStore {
+    pub fn disk(work_dir: &PathBuf) -> KrillResult<Self> {
+        let store = KeyValueStore::disk(work_dir, CA_OBJECTS_DIR)?;
+        let store = RwLock::new(store);
+        Ok(CaObjectsStore { store })
+    }
+}
+
+impl CaObjectsStore {
+    fn key(ca: &Handle) -> KeyStoreKey {
+        KeyStoreKey::simple(format!("{}.json", ca))
+    }
+
+    pub fn ca_objects(&self, ca: &Handle) -> KrillResult<Option<CaObjects>> {
+        self.store
+            .read()
+            .unwrap()
+            .get(&Self::key(ca))
+            .map_err(Error::KeyValueError)
+    }
+
+    pub fn put_ca_objects(&self, ca: &Handle, objects: &CaObjects) -> KrillResult<()> {
+        self.store
+            .write()
+            .unwrap()
+            .store(&Self::key(ca), objects)
+            .map_err(Error::KeyValueError)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CaObjects(#[serde(with = "ca_objects_items")] HashMap<ResourceClassName, ResourceClassObjects>);
+
+mod ca_objects_items {
+    use super::*;
+
+    use serde::de::{Deserialize, Deserializer};
+    use serde::ser::Serializer;
+
+    #[derive(Debug, Deserialize)]
+    struct CaObjectsItem {
+        class_name: ResourceClassName,
+        keys: ResourceClassObjects,
+    }
+
+    #[derive(Debug, Serialize)]
+    struct CaObjectsItemRef<'a> {
+        class_name: &'a ResourceClassName,
+        keys: &'a ResourceClassObjects,
+    }
+
+    pub fn serialize<S>(
+        map: &HashMap<ResourceClassName, ResourceClassObjects>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.collect_seq(map.iter().map(|(k, v)| CaObjectsItemRef { class_name: k, keys: v }))
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<ResourceClassName, ResourceClassObjects>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let mut map = HashMap::new();
+        for item in Vec::<CaObjectsItem>::deserialize(deserializer)? {
+            map.insert(item.class_name, item.keys);
+        }
+        Ok(map)
+    }
+}
+
+impl Default for CaObjects {
+    fn default() -> Self {
+        CaObjects(HashMap::new())
+    }
+}
+
+impl CaObjects {
+    pub fn new(objects: HashMap<ResourceClassName, ResourceClassObjects>) -> Self {
+        CaObjects(objects)
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ResourceClassObjects(#[serde(with = "key_objects_items")] HashMap<KeyIdentifier, ObjectSet>);
+
+mod key_objects_items {
+    use super::*;
+
+    use serde::de::{Deserialize, Deserializer};
+    use serde::ser::Serializer;
+
+    #[derive(Debug, Deserialize)]
+    struct KeyObjectsItem {
+        key: KeyIdentifier,
+        object_set: ObjectSet,
+    }
+
+    #[derive(Debug, Serialize)]
+    struct KeyObjectsItemRef<'a> {
+        key: &'a KeyIdentifier,
+        object_set: &'a ObjectSet,
+    }
+
+    pub fn serialize<S>(map: &HashMap<KeyIdentifier, ObjectSet>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.collect_seq(map.iter().map(|(k, v)| KeyObjectsItemRef { key: k, object_set: v }))
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<KeyIdentifier, ObjectSet>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let mut map = HashMap::new();
+        for item in Vec::<KeyObjectsItem>::deserialize(deserializer)? {
+            map.insert(item.key, item.object_set);
+        }
+        Ok(map)
+    }
+}
+
+impl Default for ResourceClassObjects {
+    fn default() -> Self {
+        ResourceClassObjects(HashMap::new())
+    }
+}
+
+impl ResourceClassObjects {
+    pub fn add_key(&mut self, ki: KeyIdentifier, objects: ObjectSet) {
+        self.0.insert(ki, objects);
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ObjectSet {
+    number: u64,
+    revocations: Revocations,
+    manifest: ManifestInfo,
+    crl: CrlInfo,
+    roas: Vec<RoaObject>,
+    certs: Vec<IssuedCertObject>,
+}
+
+impl ObjectSet {
+    pub fn new(
+        number: u64,
+        revocations: Revocations,
+        manifest: ManifestInfo,
+        crl: CrlInfo,
+        roas: Vec<RoaObject>,
+        certs: Vec<IssuedCertObject>,
+    ) -> Self {
+        ObjectSet {
+            number,
+            revocations,
+            manifest,
+            crl,
+            roas,
+            certs,
+        }
+    }
+}
 
 //------------ AddedOrUpdated ----------------------------------------------
 
@@ -27,8 +219,35 @@ pub enum AddedOrUpdated {
     Updated(UpdatedObject),
 }
 
-//------------ ManifestInfo ------------------------------------------------
+//------------ IssuedCertInfo ----------------------------------------------
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct IssuedCertObject {
+    name: ObjectName,
+    current: CurrentObject,
+}
 
+impl From<&IssuedCert> for IssuedCertObject {
+    fn from(issued: &IssuedCert) -> Self {
+        let name = ObjectName::from(issued.cert());
+        let current = CurrentObject::from(issued.cert());
+        IssuedCertObject { name, current }
+    }
+}
+
+//------------ RoaObjectInfo -----------------------------------------------
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RoaObject {
+    name: ObjectName,
+    current: CurrentObject,
+}
+
+impl RoaObject {
+    pub fn new(name: ObjectName, current: CurrentObject) -> Self {
+        RoaObject { name, current }
+    }
+}
+
+//------------ ManifestInfo ------------------------------------------------
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ManifestInfo {
     name: ObjectName,
@@ -38,7 +257,16 @@ pub struct ManifestInfo {
 }
 
 impl ManifestInfo {
-    pub fn new(mft: &Manifest, old: Option<HexEncodedHash>) -> Self {
+    pub fn new(name: ObjectName, current: CurrentObject, next_update: Time, old: Option<HexEncodedHash>) -> Self {
+        ManifestInfo {
+            name,
+            current,
+            next_update,
+            old,
+        }
+    }
+
+    pub fn for_manifest(mft: &Manifest, old: Option<HexEncodedHash>) -> Self {
         let name = ObjectName::from(mft);
         let current = CurrentObject::from(mft);
         let next_update = mft.next_update();
@@ -88,7 +316,10 @@ pub struct CrlInfo {
 }
 
 impl CrlInfo {
-    pub fn new(crl: &Crl, old: Option<HexEncodedHash>) -> Self {
+    pub fn new(name: ObjectName, current: CurrentObject, old: Option<HexEncodedHash>) -> Self {
+        CrlInfo { name, current, old }
+    }
+    pub fn for_crl(crl: &Crl, old: Option<HexEncodedHash>) -> Self {
         let name = ObjectName::from(crl);
         let current = CurrentObject::from(crl);
         CrlInfo { name, current, old }
@@ -275,7 +506,7 @@ impl CrlBuilder {
 
         let crl = signer.sign_crl(crl, &aki)?;
 
-        let crl_info = CrlInfo::new(&crl, old);
+        let crl_info = CrlInfo::for_crl(&crl, old);
 
         Ok((crl_info, revocations_delta))
     }
@@ -408,11 +639,27 @@ impl ManifestBuilder {
             signer.sign_manifest(mft_content, object_builder, &aki)?
         };
 
-        Ok(ManifestInfo::new(&manifest, old))
+        Ok(ManifestInfo::for_manifest(&manifest, old))
     }
 
     fn mft_hash(bytes: &[u8]) -> Bytes {
         let digest = DigestAlgorithm::default().digest(bytes);
         Bytes::copy_from_slice(digest.as_ref())
+    }
+}
+
+mod test {
+
+    use super::*;
+
+    #[test]
+    pub fn ca_objects_ser_de() {
+        let json = include_str!("../../../test-resources/ca_objects_store/ca_objects.json");
+        let ca_objects: CaObjects = serde_json::from_str(json).unwrap();
+
+        let serialized = serde_json::to_string(&ca_objects).unwrap();
+        let ca_objects_again: CaObjects = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(ca_objects, ca_objects_again);
     }
 }

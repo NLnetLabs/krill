@@ -40,6 +40,7 @@ pub fn test_announcements_enabled() -> bool {
 }
 
 pub const CASERVER_DIR: &str = "cas";
+pub const CA_OBJECTS_DIR: &str = "objects";
 
 pub const PUBSERVER_DFLT: &str = "0";
 pub const PUBSERVER_DIR: &str = "pubd";

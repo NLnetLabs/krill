@@ -17,6 +17,7 @@ use crate::upgrades::fix_info_last_event_0_8_0::FixInfoFiles;
 
 pub mod fix_info_last_event_0_8_0;
 pub mod pre_0_6_0;
+pub mod v0_9_0;
 
 //------------ UpgradeError --------------------------------------------------
 

@@ -674,6 +674,12 @@ impl From<&RoaAggregateKey> for ObjectName {
     }
 }
 
+impl From<&str> for ObjectName {
+    fn from(s: &str) -> Self {
+        ObjectName(s.to_string())
+    }
+}
+
 impl Into<Bytes> for ObjectName {
     fn into(self) -> Bytes {
         Bytes::from(self.0)
