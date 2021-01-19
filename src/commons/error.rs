@@ -138,7 +138,8 @@ pub enum Error {
     PostTooBig,
     PostCannotRead,
     ApiInvalidCredentials(String),
-    ApiAuthError(String),
+    ApiAuthPermanentError(String),
+    ApiAuthTransientError(String),
     ApiInsufficientRights(String),
 
     //-----------------------------------------------------------------
@@ -281,7 +282,8 @@ impl fmt::Display for Error {
             Error::PostTooBig => write!(f, "POST body exceeds configured limit"),
             Error::PostCannotRead => write!(f, "POST body cannot be read"),
             Error::ApiInvalidCredentials(e) => write!(f, "Invalid credentials: {}", e),
-            Error::ApiAuthError(e) => write!(f, "Authentication error: {}", e),
+            Error::ApiAuthPermanentError(e) => write!(f, "Authentication error: {}", e),
+            Error::ApiAuthTransientError(e) => write!(f, "Transient Authentication error: {}", e),
             Error::ApiInsufficientRights(e) => write!(f, "Insufficient rights: {}", e),
 
 
@@ -492,8 +494,7 @@ impl Error {
             | Error::CaParentUnknown(_, _)
             | Error::ApiUnknownResource => StatusCode::NOT_FOUND,
 
-            Error::ApiInvalidCredentials(_) | Error::ApiAuthError(_) => StatusCode::UNAUTHORIZED,
-
+            Error::ApiInvalidCredentials(_) | Error::ApiAuthPermanentError(_) | Error::ApiAuthTransientError(_) => StatusCode::UNAUTHORIZED,
             Error::ApiInsufficientRights(_) => StatusCode::FORBIDDEN,
 
             _ => StatusCode::BAD_REQUEST,
@@ -551,7 +552,9 @@ impl Error {
 
             Error::ApiInvalidCredentials(e) => ErrorResponse::new("api-invalid-credentials", &self).with_cause(e),
 
-            Error::ApiAuthError(e) => ErrorResponse::new("api-auth-error", &self).with_cause(e),
+            Error::ApiAuthPermanentError(e) => ErrorResponse::new("api-auth-error", &self).with_cause(e),
+
+            Error::ApiAuthTransientError(e) => ErrorResponse::new("api-auth-transient-error", &self).with_cause(e),
 
             Error::ApiInsufficientRights(e) => ErrorResponse::new("api-insufficient-rights", &self).with_cause(e),
 
