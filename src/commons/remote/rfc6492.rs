@@ -1,10 +1,9 @@
-use std::convert::TryFrom;
 use std::str::FromStr;
+use std::{convert::TryFrom, fmt::Display};
 use std::{fmt, io};
 
 use bytes::Bytes;
 use chrono::{DateTime, SecondsFormat, Utc};
-use serde::export::fmt::Display;
 
 use rpki::cert::Cert;
 use rpki::crypto::KeyIdentifier;
