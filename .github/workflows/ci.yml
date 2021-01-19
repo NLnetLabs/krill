@@ -33,7 +33,7 @@ on:
 jobs:
   build:
     name: build
-    runs-on: ${{ matrix.os }}
+    runs-on: self-hosted
     strategy:
       matrix:
         os: [ubuntu-latest]
