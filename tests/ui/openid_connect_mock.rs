@@ -161,7 +161,7 @@ fn run_mock_openid_connect_server() {
             KnownUser {
                 role: Some("readwrite"),
                 exc_cas: Some("ta,testbed"),
-                token_secs: Some(1),
+                token_secs: Some(5),
                 ..Default::default()
             },
         );
@@ -170,7 +170,7 @@ fn run_mock_openid_connect_server() {
             KnownUser {
                 role: Some("readwrite"),
                 exc_cas: Some("ta,testbed"),
-                token_secs: Some(1),
+                token_secs: Some(5),
                 refresh: true,
                 ..Default::default()
             },

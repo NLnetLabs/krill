@@ -1,5 +1,6 @@
 {
-  "pluginsFile": "tests/ui/cypress_plugins/index.js",
+  "pluginsFile": "tests/ui/cypress/plugins/index.js",
+  "supportFile": "tests/ui/cypress/support/index.js",
   "baseUrl": "https://localhost:3000",
   "chromeWebSecurity": false,
   "responseTimeout": 5000

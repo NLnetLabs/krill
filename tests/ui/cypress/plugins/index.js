@@ -17,9 +17,9 @@ module.exports = (on, config) => {
 
   return Object.assign({}, config, {
     fixturesFolder: 'test-resources/ui/',
-    integrationFolder: 'tests/ui/cypress_specs',
+    integrationFolder: 'tests/ui/cypress/specs',
     screenshotsFolder: 'target/ui/screenshots',
     videosFolder: 'target/ui/videos',
-    supportFile: false
+    supportFile: 'tests/ui/cypress/support/index.js'
   })
 }

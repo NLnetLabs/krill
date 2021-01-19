@@ -729,7 +729,7 @@ fn add_new_auth_to_response(res: Result<HttpResponse, Error>, opt_auth: Option<A
 // Authenticated or lacks sufficient Authorization. We don't use a normal fn for
 // this as then each API handler function would have to also test for success or
 // failure and also return the forbidden response to the caller, That would be
-// both verbose and repetetive. We also can't use the ? operator to return Err
+// both verbose and repetitive. We also can't use the ? operator to return Err
 // as Err is used to propagate the request to the next handler in the chain. If
 // we had a child crate we could use a proc macro instead so that we could
 // "annotate" each API handler function with something like:

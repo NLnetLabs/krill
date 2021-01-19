@@ -1,6 +1,3 @@
-#[cfg(feature = "multi-user")]
-use std::collections::HashMap;
-
 use crate::commons::error::Error;
 #[cfg(feature = "multi-user")]
 use crate::daemon::http::server::render_error_redirect;
@@ -17,6 +14,8 @@ pub const AUTH_LOGOUT_ENDPOINT: &str = "/auth/logout";
 
 #[cfg(feature = "multi-user")]
 fn build_auth_redirect_location(user: LoggedInUser) -> Result<String, Error> {
+    use std::collections::HashMap;
+
     fn quote_with_mapped_error<S: AsRef<str>>(s: S) -> Result<String, Error> {
         quote(s, b"").map_err(|err| Error::custom(err.to_string()))
     }

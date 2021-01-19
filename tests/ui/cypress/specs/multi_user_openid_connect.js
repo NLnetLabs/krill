@@ -115,8 +115,12 @@ describe('OpenID Connect users', () => {
     cy.contains(shorttoken.u)
     cy.contains('Welcome to Krill')
 
-    // the token has a lifetime of 1 second and no refresh token, wait 2..
-    cy.wait(2000)
+    // the token has a lifetime of 5 second and no refresh token
+    // wait 6 seconds...
+    // note: a shorter token with a 1 second lifetime doesn't work in the GitHub
+    // Action runner environment because the token has sometimes already expired
+    // by the time Krill verifies it!
+    cy.wait(6000)
 
     // verify that we are shown the OpenID Connect provider login page
     // cy.intercept('GET', '/api/v1/authorized').as('isAuthorized')
@@ -149,8 +153,12 @@ describe('OpenID Connect users', () => {
     cy.contains('Welcome to Krill')
 
     for (let i = 0; i < 5; i++) {
-      // the token has a lifetime of 1 second and has a refresh token, wait 2..
-      cy.wait(2000)
+      // the token has a lifetime of 5 seconds and has a refresh token
+      // wait 6 seconds..
+      // note: a shorter token with a 1 second lifetime doesn't work in the
+      // GitHub Action runner environment because the token has sometimes
+      // already expired by the time Krill verifies it!
+      cy.wait(6000)
 
       // verify that we are still logged in to Krill
       cy.visit('/')
