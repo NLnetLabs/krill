@@ -60,7 +60,7 @@ async fn do_run_krill_ui_test(test_name: &str, testbed_enabled: bool) {
             // behaviour.
             // .arg("-e").arg("DEBUG=cypress:proxy:http:*")
 
-            .arg("ximoneighteen/cypress-included-with-plugins:6.2.0")
+            .arg("cypress/included:6.2.0")
             .arg("--browser")
             .arg("chrome")
             .arg("--spec")

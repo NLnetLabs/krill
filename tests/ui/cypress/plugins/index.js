@@ -10,7 +10,10 @@
 // const webpack = require('@cypress/webpack-preprocessor')
 
 module.exports = (on, config) => {
-  require('cypress-log-to-output').install(on)
+  // on('file:preprocessor', webpack({
+  //  webpackOptions: require('@vue/cli-service/webpack.config'),
+  //  watchOptions: {}
+  // }))
 
   return Object.assign({}, config, {
     fixturesFolder: 'test-resources/ui/',
