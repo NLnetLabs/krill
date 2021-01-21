@@ -33,16 +33,24 @@ on:
 jobs:
   build:
     name: build
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-latest, ubuntu-latest, ubuntu-latest, ubuntu-latest]
+        os: [ubuntu-latest]
+        rust: [stable, 1.45.0, beta]
+        args: ["", "--all-features"] 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v1
     - name: Install Rust
       uses: hecrj/setup-rust-action@v1
       with:
-        rust-version: stable
-    - run: cargo test --all-features --test multi_user_config_file_with_ta 2>&1
+        rust-version: ${{ matrix.rust }}
+    - run: cargo build --verbose ${{ matrix.args }}
+    - run: cargo test --verbose ${{ matrix.args }} 2>&1
+    - name: Archive Cypress UI test image & video captures
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v2
+      with:
+        name: cypress-ui-test-captures ${{ matrix.os }} ${{ matrix.rust }}
+        path: target/ui/
