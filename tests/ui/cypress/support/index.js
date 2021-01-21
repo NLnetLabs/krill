@@ -27,15 +27,13 @@
 //   - https://stackoverflow.com/questions/49384120/resizeobserver-loop-limit-exceeded/63519375#63519375
 //   - https://github.com/WICG/resize-observer/issues/38
 
-const resizeObserverLoopErrRe = /^ResizeObserver loop limit exceeded/;
-
 // Define a custom uncaught exception handling policy for Cypress.
 Cypress.on('uncaught:exception', (err, runnable) => {
     console.log("Krill UI Test: Examining uncaught exception..")
     console.log("Krill UI Test: err: ", err)
     console.log("Krill UI Test: runnable: ", runnable)
 
-    if (resizeObserverLoopErrRe.test(err.message)) {
+    if (err.description.includes('ResizeObserver loop limit exceeded')) {
         // returning false here prevents Cypress from
         // failing the test
         console.log("Krill UI Test: Ignoring 'ResizeObserver loop limit exceeded' error")
