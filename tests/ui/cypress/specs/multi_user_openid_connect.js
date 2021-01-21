@@ -1,21 +1,21 @@
 // The mock OpenID Connect provider only checks usernames, not passwords.
-let admin        = { u: 'admin@krill' };
-let readonly     = { u: 'readonly@krill' };
-let readwrite    = { u: 'readwrite@krill' };
-let shorttoken   = { u: 'shorttokenwithoutrefresh@krill' };
+let admin = { u: 'admin@krill' };
+let readonly = { u: 'readonly@krill' };
+let readwrite = { u: 'readwrite@krill' };
+let shorttoken = { u: 'shorttokenwithoutrefresh@krill' };
 let shortrefresh = { u: 'shorttokenwithrefresh@krill' };
-let badidtoken   = { u: 'non-spec-compliant-idtoken-payload' };
-let badrole      = { u: 'user-with-unknown-role' };
-let ca_name      = 'dummy-ca-name';
+let badidtoken = { u: 'non-spec-compliant-idtoken-payload' };
+let badrole = { u: 'user-with-unknown-role' };
+let ca_name = 'dummy-ca-name';
 
 let login_test_settings = [
-  { d: 'empty',        u: '',                o: false },
-  { d: 'incorrect',    u: 'wrong_user_name', o: false },
-  { d: 'admin',        u: admin.u,           o: true  },
-  { d: 'readonly',     u: readonly.u,        o: true  },
-  { d: 'readwrite',    u: readwrite.u,       o: true },
-  { d: 'badidtoken',   u: badidtoken.u,      o: false },
-  { d: 'badrole',      u: badrole.u,         o: false }
+  { d: 'empty', u: '', o: false },
+  { d: 'incorrect', u: 'wrong_user_name', o: false },
+  { d: 'admin', u: admin.u, o: true },
+  { d: 'readonly', u: readonly.u, o: true },
+  { d: 'readwrite', u: readwrite.u, o: true },
+  { d: 'badidtoken', u: badidtoken.u, o: false },
+  { d: 'badrole', u: badrole.u, o: false }
 ];
 
 describe('OpenID Connect users', () => {
@@ -93,7 +93,7 @@ describe('OpenID Connect users', () => {
     cy.get('input[name="username"]')
   })
 
-  it('Login receives short-lived token that cannot be refreshed', () => {
+  it('Login with short-lived non-refreshable token and try to refresh page', () => {
     cy.intercept('GET', '/api/v1/authorized').as('isAuthorized')
     cy.visit('/')
 
@@ -122,6 +122,14 @@ describe('OpenID Connect users', () => {
     // by the time Krill verifies it!
     cy.wait(6000)
 
+    // Try to create a CA, by typing in the input, clicking the 'Create CA' button
+    // and then clicking 'Ok'. This should fail, since the token can't be refereshed.
+    cy.intercept("POST", "/api/v1/cas").as("createCA");
+    cy.get('main input').type("some-handle-name");
+    cy.get('main button').click();
+    cy.get('.el-message-box__btns button:nth-child(2)').click();
+    cy.wait("@createCA").its("response.statusCode").should("eq", 401);
+
     // verify that we are shown the OpenID Connect provider login page
     // cy.intercept('GET', '/api/v1/authorized').as('isAuthorized')
     cy.intercept('GET', '/auth/login').as('getLoginURL')
@@ -138,7 +146,45 @@ describe('OpenID Connect users', () => {
     cy.get('input[name="username"]')
   })
 
-  it('Login receives short-lived refreshable token', () => {
+  it('Login with short-live non-refreshable token and try to create a CA', () => {
+    cy.intercept('GET', '/api/v1/authorized').as('isAuthorized')
+    cy.visit('/')
+
+    cy.wait('@isAuthorized').its('response.statusCode').should('eq', 403)
+    cy.url().should('not.include', Cypress.config('baseUrl'))
+    cy.contains('Mock OpenID Connect login form')
+    cy.get('input[name="username"]').clear().type(shorttoken.u)
+
+    cy.intercept('GET', '/index.html').as('postLoginIndexFetch')
+    cy.intercept('GET', '/api/v1/authorized').as('isAuthorized')
+    cy.contains('Sign In').click()
+
+    cy.wait('@postLoginIndexFetch').its('response.statusCode').should('eq', 200)
+    cy.wait('@isAuthorized').its('response.statusCode').should('eq', 200)
+    cy.url().should('include', Cypress.config('baseUrl'))
+    cy.contains('Sign In').should('not.exist')
+    cy.get('#userinfo').click()
+    cy.get('#userinfo_table').contains(shorttoken.u)
+    cy.contains(shorttoken.u)
+    cy.contains('Welcome to Krill')
+
+    // the token has a lifetime of 5 second and no refresh token
+    // wait 6 seconds...
+    // note: a shorter token with a 1 second lifetime doesn't work in the GitHub
+    // Action runner environment because the token has sometimes already expired
+    // by the time Krill verifies it!
+    cy.wait(6000)
+
+    // Try to create a CA, by typing in the input, clicking the 'Create CA' button
+    // and then clicking 'Ok'. This should fail, since the token can't be refereshed.
+    cy.intercept("POST", "/api/v1/cas").as("createCA");
+    cy.get('main input').type("some-handle-name");
+    cy.get('main button').click();
+    cy.get('.el-message-box__btns button:nth-child(2)').click();
+    cy.wait("@createCA").its("response.statusCode").should("eq", 401);
+  })
+
+  it('Login with short-lived refreshable token and try refresh page', () => {
     cy.visit('/')
     cy.url().should('not.include', Cypress.config('baseUrl'))
     cy.contains('Mock OpenID Connect login form')
