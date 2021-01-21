@@ -34,6 +34,10 @@ jobs:
   build:
     name: build
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-latest, ubuntu-latest, ubuntu-latest, ubuntu-latest]
     steps:
     - name: Checkout repository
       uses: actions/checkout@v1
@@ -41,4 +45,4 @@ jobs:
       uses: hecrj/setup-rust-action@v1
       with:
         rust-version: stable
-    - run: cargo test --verbose --all-features --test multi_user_config_file_with_ta 2>&1
+    - run: cargo test --all-features --test multi_user_config_file_with_ta 2>&1
