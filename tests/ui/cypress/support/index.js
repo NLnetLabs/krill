@@ -32,6 +32,9 @@ const resizeObserverLoopErrRe = /^ResizeObserver loop limit exceeded/;
 // Define a custom uncaught exception handling policy for Cypress.
 Cypress.on('uncaught:exception', (err, runnable) => {
     console.log("Krill UI Test: Examining uncaught exception..")
+    console.log("Krill UI Test: err: ", err)
+    console.log("Krill UI Test: runnable: ", runnable)
+
     if (resizeObserverLoopErrRe.test(err.message)) {
         // returning false here prevents Cypress from
         // failing the test
