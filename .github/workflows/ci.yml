@@ -41,4 +41,4 @@ jobs:
       uses: hecrj/setup-rust-action@v1
       with:
         rust-version: stable
-    - run: cargo test --verbose --all-features --test multi_user_config_with_ta 2>&1
+    - run: cargo test --verbose --all-features --test multi_user_config_file_with_ta 2>&1
