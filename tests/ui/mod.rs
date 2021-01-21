@@ -40,31 +40,48 @@ async fn do_run_krill_ui_test(test_name: &str, testbed_enabled: bool) {
         // that it cannot find the spec file.
         let cypress_spec_path = format!("tests/ui/cypress/specs/{}.js", test_name);
 
-        Command::new("docker")
+        let mut cmd = Command::new("docker");
+
+        cmd
             .arg("run")
-            .arg("--name")
-            .arg("cypress")
+            .arg("--name").arg("cypress")
             .arg("--rm")
             .arg("--net=host")
             .arg("--ipc=host")
-            .arg("-v")
-            .arg(format!("{}:/e2e", env::current_dir().unwrap().display()))
-            .arg("-w")
-            .arg("/e2e")
+            .arg("-v").arg(format!("{}:/e2e", env::current_dir().unwrap().display()))
+            .arg("-w").arg("/e2e");
 
-            // Uncomment the next line to enable LOTS of Cypress logging.
-            // .arg("-e").arg("DEBUG=cypress:*")
+        if let Ok(debug_level) = std::env::var("CYPRESS_DEBUG") {
+            // Example values:
+            //   - To get LOTS of Cypress logging:           CYPRESS_DEBUG=cypress:*
+            //   - To get logging relating to HTTP requests: CYPRESS_DEBUG=cypress:proxy:http:*
+            cmd
+                .arg("-e").arg(format!("DEBUG={}", debug_level));
+        }
 
-            // Uncomment the next line to enable a subset of Cypress logging
-            // that is useful for investigating .get() and .intercept()
-            // behaviour.
-            // .arg("-e").arg("DEBUG=cypress:proxy:http:*")
+        if std::env::var("CYPRESS_INTERACTIVE").is_ok() {
+            // After running `cargo test` a Chrome browser should open from the Cypress Docker container on your local
+            // X server. For this to work you might need to run this command in your shell prior to `cargo test`:
+            //   xhost +
+            cmd
+                .arg("-v").arg(format!("/tmp/.X11-unix:/tmp/.X11-unix"))
+                .arg("-e").arg("DISPLAY")
+                .arg("--entrypoint").arg("cypress");
+        }
 
-            .arg("cypress/included:6.2.0")
-            .arg("--browser")
-            .arg("chrome")
-            .arg("--spec")
-            .arg(cypress_spec_path)
+        cmd.arg("cypress/included:6.2.0");
+
+        if std::env::var("CYPRESS_INTERACTIVE").is_ok() {
+            cmd
+                .arg("open")
+                .arg("--project").arg(".");
+        } else {
+            cmd
+                .arg("--spec").arg(cypress_spec_path);
+        }
+
+        cmd
+            .arg("--browser").arg("chrome")
             .status()
             .expect("Failed to run Cypress Docker UI test suite")
     });
