@@ -43,6 +43,9 @@ describe('Testbed UI test', () => {
         // use the local testbed UI to submit the request to register the publisher
         cy.visit("/index.html#/testbed")
 
+        // verify that the register child tab is active by default
+        cy.get('#addChild').contains('Child Request XML').should('be.visible')
+
         // enter the request XML into the testbed UI edit field
         cy.get('div#tab-addPublisher').contains('Register Publisher').click()
         cy.get('div#pane-addPublisher pre[contenteditable="true"]').invoke('text', xml)
