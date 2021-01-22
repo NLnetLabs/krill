@@ -48,11 +48,11 @@ describe('Testbed UI test', () => {
 
         // enter the request XML into the testbed UI edit field
         cy.get('div#tab-addPublisher').contains('Register Publisher').click()
-        cy.get('div#pane-addPublisher pre[contenteditable="true"]').invoke('text', xml)
-        cy.get('div#pane-addPublisher pre[contenteditable="true"]').type('{end}')
+        cy.get('#addPublisher pre[contenteditable="true"]').invoke('text', xml)
+        cy.get('#addPublisher pre[contenteditable="true"]').type('{end}')
 
         cy.intercept('POST', '/testbed/publishers').as('addPublisher')
-        cy.get('div#pane-addPublisher button').contains('Register publisher').click()
+        cy.get('#addPublisher button').contains('Register publisher').click()
 
         if (ts.httpCode != 'n/a') {
           cy.get('div[role="dialog"] button').contains('OK').click()
@@ -76,13 +76,13 @@ describe('Testbed UI test', () => {
 
         // enter the request XML into the testbed UI edit field
         cy.get('div#tab-addChild').contains('Register CA').click()
-        cy.get('div#pane-addChild pre[contenteditable="true"]').invoke('text', xml)
-        cy.get('div#pane-addChild pre[contenteditable="true"]').type('{end}')
-        cy.get('div#pane-addChild input[placeholder^="The AS resources"]').type('AS18')
-        cy.get('div#pane-addChild input[placeholder^="The IPv4 resources"]').type('10.0.0.0/24')
+        cy.get('#addChild pre[contenteditable="true"]').invoke('text', xml)
+        cy.get('#addChild pre[contenteditable="true"]').type('{end}')
+        cy.get('#addChild input[placeholder^="The AS resources"]').type('AS18')
+        cy.get('#addChild input[placeholder^="The IPv4 resources"]').type('10.0.0.0/24')
 
         cy.intercept('POST', '/testbed/children').as('addChild')
-        cy.get('div#pane-addChild button').contains('Register child CA').click()
+        cy.get('#addChild button').contains('Register child CA').click()
 
         if (ts.httpCode != 'n/a') {
           cy.get('div[role="dialog"] button').contains('OK').click()
