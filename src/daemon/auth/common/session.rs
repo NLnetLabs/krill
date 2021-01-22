@@ -80,6 +80,9 @@ struct CachedSession {
 /// expiration, that is handled separately by the AuthProvider.
 pub struct LoginSessionCache {
     cache: RwLock<HashMap<Token, CachedSession>>,
+    encrypt_fn: fn(&[u8], &[u8], &mut [u8]) -> KrillResult<Vec<u8>>,
+    decrypt_fn: fn(&[u8], &[u8], &[u8]) -> KrillResult<Vec<u8>>,
+    ttl_secs: u64,
 }
 
 impl Default for LoginSessionCache {
@@ -92,6 +95,36 @@ impl LoginSessionCache {
     pub fn new() -> Self {
         LoginSessionCache {
             cache: RwLock::new(HashMap::new()),
+            encrypt_fn: crypt::encrypt,
+            decrypt_fn: crypt::decrypt,
+            ttl_secs: MAX_CACHE_SECS,
+        }
+    }
+
+    pub fn with_ttl(self, ttl_secs: u64) -> Self {
+        LoginSessionCache {
+            cache: self.cache,
+            encrypt_fn: self.encrypt_fn,
+            decrypt_fn: self.decrypt_fn,
+            ttl_secs,
+        }
+    }
+
+    pub fn with_encrypter(self, encrypt_fn: fn(&[u8], &[u8], &mut [u8]) -> KrillResult<Vec<u8>>) -> Self {
+        LoginSessionCache {
+            cache: self.cache,
+            encrypt_fn: encrypt_fn,
+            decrypt_fn: self.decrypt_fn,
+            ttl_secs: self.ttl_secs,
+        }
+    }
+
+    pub fn with_decrypter(self, decrypt_fn: fn(&[u8], &[u8], &[u8]) -> KrillResult<Vec<u8>>) -> Self {
+        LoginSessionCache {
+            cache: self.cache,
+            encrypt_fn: self.encrypt_fn,
+            decrypt_fn: decrypt_fn,
+            ttl_secs: self.ttl_secs,
         }
     }
 
@@ -122,7 +155,7 @@ impl LoginSessionCache {
                     writeable_cache.insert(
                         token.clone(),
                         CachedSession {
-                            evict_after: now + MAX_CACHE_SECS,
+                            evict_after: now + self.ttl_secs,
                             session: session.clone(),
                         },
                     );
@@ -156,7 +189,7 @@ impl LoginSessionCache {
         let unencrypted_bytes = session_json_str.as_bytes();
 
         let mut tag: [u8; 16] = [0; 16];
-        let mut encrypted_bytes = crypt::encrypt(key, unencrypted_bytes, &mut tag)?;
+        let mut encrypted_bytes = (self.encrypt_fn)(key, unencrypted_bytes, &mut tag)?;
         encrypted_bytes.extend(tag.iter());
 
         let token = Token::from(base64::encode(&encrypted_bytes));
@@ -184,7 +217,7 @@ impl LoginSessionCache {
 
         let encrypted_len = bytes.len() - TAG_SIZE;
         let (encrypted_bytes, tag_bytes) = bytes.split_at(encrypted_len);
-        let unencrypted_bytes = crypt::decrypt(key, encrypted_bytes, tag_bytes)?;
+        let unencrypted_bytes = (self.decrypt_fn)(key, encrypted_bytes, tag_bytes)?;
 
         let session = serde_json::from_slice::<ClientSession>(&unencrypted_bytes)
             .map_err(|err| Error::Custom(format!("Unable to deserializing client session: {}", err)))?;
@@ -224,7 +257,9 @@ impl LoginSessionCache {
         let size_before = cache.len();
         let now = Self::time_now_secs_since_epoch()?;
 
-        cache.retain(|_, v| v.evict_after <= now);
+        // Only retain cache items that have been cached for less than the
+        // maximum time allowed.
+        cache.retain(|_, v| v.evict_after > now);
 
         let size_after = size_before - cache.len();
 
@@ -234,5 +269,72 @@ impl LoginSessionCache {
         );
 
         Ok(())
+    }
+}
+
+mod tests {
+    #[test]
+    fn basic_login_session_cache_test() {
+        use super::*;
+
+        const KEY: &[u8] = "unused".as_bytes();
+
+        // Create a new cache whose items are elligible for eviction after one
+        // second and which does no actual encryption or decryption.
+        let cache = LoginSessionCache::new()
+            .with_ttl(1)
+            .with_encrypter(|_, v, _| Ok(v.to_vec()))
+            .with_decrypter(|_, v, _| Ok(v.to_vec()));
+
+        // Add an item to the cache and verify that the cache now has 1 item
+        let item1_token = cache.encode("some id", &HashMap::new(), &[], KEY, None).unwrap();
+        assert_eq!(cache.size(), 1);
+
+        let item1 = cache.decode(item1_token, KEY).unwrap();
+        assert_eq!(item1.id, "some id");
+        assert_eq!(item1.attributes, HashMap::new());
+        assert_eq!(item1.expires_in, None);
+        assert_eq!(item1.secrets, Vec::<String>::new());
+
+        // Wait until after the cached item should have expired but as the cache
+        // has not yet been swept the item should still be in the cache
+        std::thread::sleep(Duration::from_secs(2));
+        assert_eq!(cache.size(), 1);
+
+        // Add another item to the cache
+        let mut some_attrs = HashMap::new();
+        some_attrs.insert(String::from("some attr key"), String::from("some attr val"));
+        let item2_token = cache
+            .encode(
+                "other id",
+                &some_attrs,
+                &[String::from("some secret")],
+                KEY,
+                Some(Duration::from_secs(10)),
+            )
+            .unwrap();
+        assert_eq!(cache.size(), 2);
+
+        // Sweep the cache and confirm that the expired cache item has been
+        // removed but the newest cache item remains.
+        cache.sweep().unwrap();
+        assert_eq!(cache.size(), 1);
+
+        // Wait until after the remaining cached item should have expired but as
+        // the cache has not yet been swept the item should still be present.
+        std::thread::sleep(Duration::from_secs(2));
+        assert_eq!(cache.size(), 1);
+
+        let item2 = cache.decode(item2_token, KEY).unwrap();
+        let mut again_some_attrs = HashMap::new();
+        again_some_attrs.insert(String::from("some attr key"), String::from("some attr val"));
+        assert_eq!(item2.id, "other id");
+        assert_eq!(item2.attributes, again_some_attrs);
+        assert_eq!(item2.expires_in, Some(Duration::from_secs(10)));
+        assert_eq!(item2.secrets, [String::from("some secret")]);
+
+        // Sweep the cache and confirm that cache is now empty.
+        cache.sweep().unwrap();
+        assert_eq!(cache.size(), 0);
     }
 }
