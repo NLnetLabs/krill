@@ -11,6 +11,7 @@ use tokio::time::delay_for;
 
 use krill::commons::error::Error;
 
+use std::fmt;
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -74,6 +75,46 @@ type CustomIdTokenFields = IdTokenFields<
 type CustomTokenResponse = StandardTokenResponse<CustomIdTokenFields, CoreTokenType>;
 // end cascade
 
+// This failure mode can be invoked for a user at user creation time.
+// The failure mode will be activated on a 'refresh_token' request
+// from krill to the OIDC Provider
+#[derive(Clone, Debug)]
+enum RefreshTokenFailureMode {
+    // These are the rfc-6749 5.2 Errors
+    InvalidRequestErrorResponse,
+    InvalidClientErrorResponse,
+    InvalidGrantErrorResponse,
+    InvalidScopeErrorResponse,
+    UnauthorizedClientErrorResponse,
+    UnsupportedGrantTypeErrorResponse,
+    // These various generic failure modes,
+    // without OAUTH/OpenID Connect specific errors
+    NoResponse,
+    SlowResponse(Duration),
+    Error500Response,
+    Error503Response
+}
+
+impl fmt::Display for RefreshTokenFailureMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RefreshTokenFailureMode::InvalidRequestErrorResponse => write!(f, "invalid_request"),
+            RefreshTokenFailureMode::InvalidClientErrorResponse => write!(f, "invalid_client"),
+            RefreshTokenFailureMode::InvalidGrantErrorResponse => write!(f, "invalid_grant"),
+            RefreshTokenFailureMode::UnauthorizedClientErrorResponse => write!(f, "unauthorized_client"),
+            RefreshTokenFailureMode::InvalidScopeErrorResponse => write!(f, "invalid_scope"),
+            RefreshTokenFailureMode::UnsupportedGrantTypeErrorResponse => write!(f, "unsupported_grant_type"),
+            _ => write!(f, "")
+        }
+    }
+}
+
+impl Default for RefreshTokenFailureMode {
+    fn default() -> Self {
+        RefreshTokenFailureMode::InvalidRequestErrorResponse
+    }
+}
+
 #[derive(Clone, Default)]
 struct KnownUser {
     role: Option<&'static str>,
@@ -81,6 +122,7 @@ struct KnownUser {
     exc_cas: Option<&'static str>,
     token_secs: Option<u32>,
     refresh: bool,
+    on_refresh_token_failure: Option<RefreshTokenFailureMode>,
 }
 
 struct TempAuthzCodeDetails {
@@ -191,6 +233,117 @@ fn run_mock_openid_connect_server() {
                 ..Default::default()
             },
         );
+        known_users.insert(
+            "user-with-invalid-request-on-refresh",
+            KnownUser {
+                role: Some("readonly"),
+                exc_cas: Some("ta,testbed"),
+                token_secs: Some(5),
+                refresh: true,
+                on_refresh_token_failure: Some(RefreshTokenFailureMode::InvalidRequestErrorResponse),
+                ..Default::default()
+            },
+        );
+        known_users.insert(
+            "user-with-invalid-client-on-refresh",
+            KnownUser {
+                role: Some("readonly"),
+                exc_cas: Some("ta,testbed"),
+                token_secs: Some(5),
+                refresh: true,
+                on_refresh_token_failure: Some(RefreshTokenFailureMode::InvalidClientErrorResponse),
+                ..Default::default()
+            },
+        );   
+        known_users.insert(
+            "user-with-invalid-grant-on-refresh",
+            KnownUser {
+                role: Some("readonly"),
+                exc_cas: Some("ta,testbed"),
+                token_secs: Some(5),
+                refresh: true,
+                on_refresh_token_failure: Some(RefreshTokenFailureMode::InvalidGrantErrorResponse),
+                ..Default::default()
+            },
+        );  
+        known_users.insert(
+            "user-with-invalid-scope-on-refresh",
+            KnownUser {
+                role: Some("readonly"),
+                exc_cas: Some("ta,testbed"),
+                token_secs: Some(5),
+                refresh: true,
+                on_refresh_token_failure: Some(RefreshTokenFailureMode::InvalidScopeErrorResponse),
+                ..Default::default()
+            },
+        ); 
+        known_users.insert(
+            "user-with-unauthorized-client-on-refresh",
+            KnownUser {
+                role: Some("readonly"),
+                exc_cas: Some("ta,testbed"),
+                token_secs: Some(5),
+                refresh: true,
+                on_refresh_token_failure: Some(RefreshTokenFailureMode::UnauthorizedClientErrorResponse),
+                ..Default::default()
+            },
+        );
+        known_users.insert(
+            "user-with-unsupported-grant-type-on-refresh",
+            KnownUser {
+                role: Some("readonly"),
+                exc_cas: Some("ta,testbed"),
+                token_secs: Some(5),
+                refresh: true,
+                on_refresh_token_failure: Some(RefreshTokenFailureMode::UnsupportedGrantTypeErrorResponse),
+                ..Default::default()
+            },
+        );
+        known_users.insert(
+            "user-with-no-response-on-refresh",
+            KnownUser {
+                role: Some("readonly"),
+                exc_cas: Some("ta,testbed"),
+                token_secs: Some(5),
+                refresh: true,
+                on_refresh_token_failure: Some(RefreshTokenFailureMode::NoResponse),
+                ..Default::default()
+            },
+        ); 
+        known_users.insert(
+            "user-with-slow-response-on-refresh",
+            KnownUser {
+                role: Some("readonly"),
+                exc_cas: Some("ta,testbed"),
+                token_secs: Some(5),
+                refresh: true,
+                on_refresh_token_failure: Some(RefreshTokenFailureMode::SlowResponse(Duration::from_secs(25))),
+                ..Default::default()
+            },
+        ); 
+        known_users.insert(
+            "user-with-500-on-refresh",
+            KnownUser {
+                role: Some("readonly"),
+                exc_cas: Some("ta,testbed"),
+                token_secs: Some(5),
+                refresh: true,
+                on_refresh_token_failure: Some(RefreshTokenFailureMode::Error500Response),
+                ..Default::default()
+            },
+        );
+        known_users.insert(
+            "user-with-503-on-refresh",
+            KnownUser {
+                role: Some("readonly"),
+                exc_cas: Some("ta,testbed"),
+                token_secs: Some(5),
+                refresh: true,
+                on_refresh_token_failure: Some(RefreshTokenFailureMode::Error503Response),
+                ..Default::default()
+            },
+        );
+
 
         let provider_metadata: CustomProviderMetadata = ProviderMetadata::new(
             IssuerUrl::new("http://localhost:1818".to_string()).unwrap(),
@@ -530,11 +683,15 @@ fn run_mock_openid_connect_server() {
 
             // we skip over verifying the Authorization HTTP header but perhaps
             // we should make sure the client is sending that correctly?
+            log_warning(&format!("grant: {:?}", &query_params.get("grant_type")));
+
             let r = match query_params.get("grant_type") {
                 Some(grant_type) if &grant_type[0] == "authorization_code" => {
                     if let Some(code) = query_params.get("code") {
                         let code = &code[0];
                         if let Some(authz_code) = authz_codes.remove(code) {
+                            log_warning(&format!("client_id: {:?}", &authz_code.client_id));
+                            log_warning(&format!("username: {:?}", &authz_code.username));
                             // find static user id
                             let session = LoginSession {
                                 id: known_users
@@ -596,10 +753,53 @@ fn run_mock_openid_connect_server() {
                 Some(grant_type) if &grant_type[0] == "refresh_token" => {
                     // we skip over verifying the Authorization HTTP header but perhaps
                     // we should make sure the client is sending that correctly?
+                    log_warning(&format!("client_id refreshing: {:?}", query_params));
                     if let Some(refresh_token) = query_params.get("refresh_token") {
                         let refresh_token = &refresh_token[0];
                         if let Some(session) = login_sessions.get(refresh_token) {
                             let user = get_user_for_session(&session, known_users)?;
+                            log_warning(&format!("session: {:?}", &session.id));
+                            // Check the intentional failure responses we might want to
+                            // impose on users and return the apprioriate HTTP response.
+                            match user.on_refresh_token_failure {
+                                None => {},
+                                Some(RefreshTokenFailureMode::NoResponse) => {
+                                    log_warning(&format!("Not responding to request"));
+                                    thread::park();
+                                },
+                                Some(RefreshTokenFailureMode::SlowResponse(dur)) => {
+                                    log_warning(&format!("Responding slowly after {} seconds", &dur.as_secs()));
+                                    thread::sleep(dur);
+                                }
+                                Some(RefreshTokenFailureMode::Error500Response) => {
+                                    log_warning("Responding with a 500");
+                                    return request
+                                        .respond(
+                                            Response::empty(StatusCode(500))
+                                        )
+                                        .map_err(|err| err.into());
+                                }
+                                Some(RefreshTokenFailureMode::Error503Response) => {
+                                    log_warning("Responding with a 503");
+                                    return request
+                                        .respond(
+                                            Response::empty(StatusCode(503))
+                                        )
+                                        .map_err(|err| err.into());
+                                }
+                                Some(err_mode) => {
+                                    log_warning(&format!("(Intentionally) returning error '{}' for user '{}'", err_mode, &session.id));
+                                    return request
+                                        .respond(
+                                            Response::empty(StatusCode(400))
+                                                .with_header(
+                                                    Header::from_str("Content-Type: application/json").unwrap(),
+                                                )
+                                                .with_data(format!("{{\"error\":\"{}\"}}", err_mode).as_bytes(), None),
+                                        )
+                                        .map_err(|err| err.into());
+                                }
+                            }
                             if user.refresh {
                                 let token_duration = get_token_duration_for_user(&user)?;
                                 let access_token = make_access_token()?;
@@ -630,17 +830,51 @@ fn run_mock_openid_connect_server() {
                                     )
                                     .map_err(|err| err.into())
                             } else {
+                                log_warning(&format!("coward for user: {:?}", &user.role));
                                 Err(Error::custom(format!("Internal error: cowardly refusing to generate a new token for user '{}' that should not get refresh tokens", session.id)))
                             }
                         } else {
-                            Err(Error::custom(format!("Invalid refresh token '{}'", refresh_token)))
+                            log_warning(&format!("invalid refresh token, responding with 'invalid_grant'"));
+                            request
+                                .respond(
+                                    Response::empty(StatusCode(400))
+                                        .with_header(Header::from_str("Content-Type: application/json").unwrap())
+                                        .with_data("{\"error\":\"invalid_grant\"}".as_bytes(), None),
+                                )
+                                .map_err(|err| err.into())
+                            // Err(Error::custom(format!("Invalid refresh token '{}'", refresh_token)))
                         }
                     } else {
-                        Err(Error::custom("Missing query parameter 'refresh_token'"))
+                        log_warning(&format!("missing query parm 'refresh_token', responding with 'invalid_request'"));
+                        request
+                            .respond(
+                                Response::empty(StatusCode(400))
+                                    .with_header(Header::from_str("Content-Type: application/json").unwrap())
+                                    .with_data("{\"error\":\"invalid_request\"}".as_bytes(), None),
+                            )
+                            .map_err(|err| err.into())
                     }
                 }
-                Some(grant_type) => Err(Error::custom(format!("Unknown grant_type '{}'", &grant_type[0]))),
-                None => Err(Error::custom("Missing query parameter 'grant_type'")),
+                Some(grant_type) => {
+                    log_warning(&format!("Unsupport grant type"));
+                    request
+                        .respond(
+                            Response::empty(StatusCode(400))
+                                .with_header(Header::from_str("Content-Type: application/json").unwrap())
+                                .with_data("{\"error\":\"unsupported_grant_type\"}".as_bytes(), None),
+                        )
+                        .map_err(|err| err.into())
+                }
+                None => {
+                    log_warning(&format!("Invalid request. Missing parameter grant type"));
+                    request
+                        .respond(
+                            Response::empty(StatusCode(400))
+                                .with_header(Header::from_str("Content-Type: application/json").unwrap())
+                                .with_data("{\"error\":\"invalid_request\"}".as_bytes(), None),
+                        )
+                        .map_err(|err| err.into())
+                }
             };
 
             // do this out here to avoid having both a mutable and immutable
@@ -682,6 +916,12 @@ fn run_mock_openid_connect_server() {
             known_users: &KnownUsers,
         ) -> Result<(), Error> {
             let url = urlparse(request.url());
+            log_warning(&format!(
+                "request received: {:?} {:?} {:?}",
+                &request.method(),
+                &url.path,
+                &url.query
+            ));
             match request.method() {
                 Method::Get => match url.path.as_str() {
                     "/.well-known/openid-configuration" => {
