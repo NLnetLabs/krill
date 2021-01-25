@@ -10,7 +10,11 @@ async fn multi_user_config_file_with_ta_test() {
     use krill::commons::api::Handle;
     use krill::{cli::report::ApiResponse, test::*};
 
-    ui::run_krill_ui_test("multi_user_config_file_with_ta", false, true).await;
+    ui::run_krill_ui_test(
+        "multi_user_config_file_with_ta",
+        ui::TestAuthProviderConfig::None,
+        true)
+    .await;
 
     // Check the Krill event history after the actions performed against Krill
     // by the Cypress browser driving test script we just executed. Expect at

@@ -18,7 +18,7 @@ let login_test_settings = [
   { d: 'badrole',      u: badrole.u,         o: false }
 ];
 
-describe('OpenID Connect users', () => {
+describe('OpenID Connect provider with RP-Initiated logout', () => {
   it('The correct login form is shown', () => {
     cy.intercept('GET', '/api/v1/authorized').as('isAuthorized')
     cy.intercept('GET', '/auth/login').as('getLoginURL')

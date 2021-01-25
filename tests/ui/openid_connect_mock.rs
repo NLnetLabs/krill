@@ -1,3 +1,17 @@
+//! A mock implementation of an OpenID Connect 1.0 provider (OP) with support for the following specifications:
+//! 
+//!   - [The OAuth 2.0 Authorization Framework RFC 6749][rfc6749]
+//!   - [OAuth 2.0 Token Revocation][rfc7009]
+//!   - [OpenID Connect Core 1.0 incorporating errata set 1][openid-connect-core-1_0]
+//!   - [OpenID Connect Discovery 1.0 incorporating errata set 1][openid-connect-discovery-1_0]
+//!   - [OpenID Connect RP-Initiated Logout 1.0 - draft 01][openid-connect-rpinitiated-1_0]
+//!
+//! [rfc6749]: https://tools.ietf.org/html/rfc6749
+//! [rfc7009]: https://tools.ietf.org/html/rfc7009
+//! [openid-connect-core-1_0]: https://openid.net/specs/openid-connect-core-1_0.html
+//! [openid-connect-discovery-1_0]: https://openid.net/specs/openid-connect-discovery-1_0.html
+//! [openid-connect-rpinitiated-1_0]: https://openid.net/specs/openid-connect-rpinitiated-1_0.html
+
 use openidconnect::core::*;
 use openidconnect::PrivateSigningKey;
 use openidconnect::*;
@@ -17,9 +31,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
+use crate::ui::TestAuthProviderConfig;
+
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct CustomAdditionalMetadata {
-    end_session_endpoint: String,
+    end_session_endpoint: Option<String>,
+    revocation_endpoint: Option<String>,
 }
 impl AdditionalProviderMetadata for CustomAdditionalMetadata {}
 
@@ -106,8 +123,10 @@ type KnownUsers = HashMap<KnownUserId, KnownUser>;
 const DEFAULT_TOKEN_DURATION_SECS: u32 = 3600;
 static MOCK_OPENID_CONNECT_SERVER_RUNNING_FLAG: AtomicBool = AtomicBool::new(false);
 
-pub async fn start() -> Option<task::JoinHandle<()>> {
-    let join_handle = task::spawn_blocking(run_mock_openid_connect_server);
+pub async fn start(config: TestAuthProviderConfig) -> task::JoinHandle<()> {
+    let join_handle = task::spawn_blocking(move || {
+        run_mock_openid_connect_server(config);
+    });
 
     // wait for the mock OpenID Connect server to be up before continuing
     // otherwise Krill might fail to query its discovery endpoint
@@ -116,18 +135,16 @@ pub async fn start() -> Option<task::JoinHandle<()>> {
         delay_for(Duration::from_secs(1)).await;
     }
 
-    Some(join_handle)
+    join_handle
 }
 
-pub async fn stop(join_handle: Option<task::JoinHandle<()>>) {
+pub async fn stop(join_handle: task::JoinHandle<()>) {
     MOCK_OPENID_CONNECT_SERVER_RUNNING_FLAG.store(false, Ordering::Relaxed);
-    if let Some(join_handle) = join_handle {
-        join_handle.await.unwrap();
-    }
+    join_handle.await.unwrap();
 }
 
-fn run_mock_openid_connect_server() {
-    thread::spawn(|| {
+fn run_mock_openid_connect_server(config: TestAuthProviderConfig) {
+    thread::spawn(move || {
         let mut authz_codes = TempAuthzCodes::new();
         let mut login_sessions = LoginSessions::new();
         let mut known_users = KnownUsers::new();
@@ -192,6 +209,24 @@ fn run_mock_openid_connect_server() {
             },
         );
 
+        let logout_metadata = match config {
+            TestAuthProviderConfig::OIDCProviderWithRPInitiatedLogout => {
+                CustomAdditionalMetadata {
+                    end_session_endpoint: Some(String::from("http://localhost:1818/logout")),
+                    revocation_endpoint: None,
+                }
+            }
+            TestAuthProviderConfig::OIDCProviderWithOAuth2Revocation => {
+                CustomAdditionalMetadata {
+                    end_session_endpoint: None,
+                    revocation_endpoint: Some(String::from("http://localhost:1818/revoke")),
+                }
+            }
+            TestAuthProviderConfig::None => {
+                unreachable!()
+            }
+        };
+
         let provider_metadata: CustomProviderMetadata = ProviderMetadata::new(
             IssuerUrl::new("http://localhost:1818".to_string()).unwrap(),
             AuthUrl::new("http://localhost:1818/authorize".to_string()).unwrap(),
@@ -199,9 +234,7 @@ fn run_mock_openid_connect_server() {
             vec![ResponseTypes::new(vec![CoreResponseType::Code])],
             vec![CoreSubjectIdentifierType::Pairwise],
             vec![CoreJwsSigningAlgorithm::RsaSsaPssSha256],
-            CustomAdditionalMetadata {
-                end_session_endpoint: String::from("http://localhost:1818/logout"),
-            },
+            logout_metadata,
         )
         .set_token_endpoint(Some(TokenUrl::new("http://localhost:1818/token".to_string()).unwrap()))
         .set_userinfo_endpoint(Some(
@@ -499,7 +532,13 @@ fn run_mock_openid_connect_server() {
             request.respond(response).map_err(|err| err.into())
         }
 
+        /// Implement [OpenID Connect RP-Initiated Logout 1.0 - draft 01][openid-connect-rpinitiated-1_0]
+        ///
+        /// [openid-connect-rpinitiated-1_0]: https://openid.net/specs/openid-connect-rpinitiated-1_0.html
         fn handle_logout_request(request: Request, url: Url) -> Result<(), Error> {
+            // TODO: require the id_token_hint query parameter as per the spec
+            // TODO: validate that the token is currently logged in
+            // TODO: forget the current login session for the token
             let query = url
                 .get_parsed_query()
                 .ok_or(Error::custom("Missing query parameters"))?;
@@ -512,6 +551,16 @@ fn run_mock_openid_connect_server() {
             );
 
             request.respond(response).map_err(|err| err.into())
+        }
+
+        /// Implement [OAuth 2.0 Token Revocation][rfc7009]
+        ///
+        /// [rfc7009]: https://tools.ietf.org/html/rfc7009
+        fn handle_oauth2_revocation_request(_request: Request, _url: Url) -> Result<(), Error> {
+            // TODO: extract the token from the application/x-www-form-urlendoed request body
+            // TODO: validate that the token is currently logged in
+            // TODO: forget the current login session for the token
+            Err(Error::custom("Not implemented yet"))
         }
 
         fn handle_token_request(
@@ -672,6 +721,7 @@ fn run_mock_openid_connect_server() {
         }
 
         fn handle_request(
+            config: &TestAuthProviderConfig,
             request: Request,
             discovery_doc: &str,
             jwks_doc: &str,
@@ -683,25 +733,43 @@ fn run_mock_openid_connect_server() {
         ) -> Result<(), Error> {
             let url = urlparse(request.url());
             match request.method() {
+                // TODO: add an endpoint for forcibly logging a session out by login id, so that the test client (which
+                // doesn't know the actual login token in use, only the users login id) can cause Krill to encounter
+                // unknown token errors from the mock, e.g. when attempting to logout.
                 Method::Get => match url.path.as_str() {
+                    // OpenID Connect 1.0. Discovery support
                     "/.well-known/openid-configuration" => {
                         return handle_discovery_request(request, discovery_doc);
                     }
+                    // OpenID Connect 1.0. Discovery support
                     "/jwk" => {
                         return handle_jwks_request(request, jwks_doc);
                     }
+                    // OAuth 2.0 Authorization Request support
                     "/authorize" => {
                         return handle_authorize_request(request, url, login_doc);
                     }
                     "/login_form_submit" => {
                         return handle_login_request(request, url, authz_codes, known_users);
                     }
+                    // OpenID Connect 1.0. Discovery support
                     "/userinfo" => {
                         return handle_user_info_request(request);
                     }
+                    // OpenID Connect RP-Initiated Logout 1.0 support
                     "/logout" => {
-                        return handle_logout_request(request, url);
+                        if matches!(config, TestAuthProviderConfig::OIDCProviderWithRPInitiatedLogout) {
+                            return handle_logout_request(request, url);
+                        }
                     }
+                    // OAuth 2.0 Token Revocation support
+                    "/revoke" => {
+                        if matches!(config, TestAuthProviderConfig::OIDCProviderWithOAuth2Revocation) {
+                            return handle_oauth2_revocation_request(request, url);
+                        }
+                    }
+                    // TODO: add some sort of mock server control interface for use by test scripts to control the
+                    // test conditions
                     _ => {}
                 },
                 Method::Post => match url.path.as_str() {
@@ -734,6 +802,7 @@ fn run_mock_openid_connect_server() {
                 Ok(None) => { /* no request received within the timeout */ }
                 Ok(Some(request)) => {
                     if let Err(err) = handle_request(
+                        &config,
                         request,
                         &discovery_doc,
                         &jwks_doc,
