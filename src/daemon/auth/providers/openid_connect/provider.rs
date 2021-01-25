@@ -1,3 +1,25 @@
+//! Stateless implementation of an OAuth 2.0 "confidential" client and OpenID Connect 1.0 "relying party".
+//!
+//! Acts as an OAuth 2.0 "confidential" client on behalf of the Krill Lagosta web UI (as opposed to the UI itself acting
+//! as an OAuth 2.0 "public" client). Intended to be compliant with the following OAuth 2.0 and OpenID Connect 1.0
+//! specifications:
+//!
+//!   - [The OAuth 2.0 Authorization Framework RFC 6749][rfc6749]
+//!   - [OAuth 2.0 Token Revocation][rfc7009]
+//!   - [OpenID Connect Core 1.0 incorporating errata set 1][openid-connect-core-1_0]
+//!   - [OpenID Connect Discovery 1.0 incorporating errata set 1][openid-connect-discovery-1_0]
+//!   - [OpenID Connect RP-Initiated Logout 1.0 - draft 01][openid-connect-rpinitiated-1_0]
+//!
+//! Compliant OpenID Connect 1.0 providers (OPs) MUST support:
+//!   - [OpenID Connect Discovery 1.0][openid-connect-discovery-1_0]
+//!   - Either [OpenID Connect RP-Initiated Logout 1.0][openid-connect-rpinitiated-1_0] or [OAuth 2.0 Token Revocation][rfc7009]
+//!
+//! [rfc6749]: https://tools.ietf.org/html/rfc6749
+//! [rfc7009]: https://tools.ietf.org/html/rfc7009
+//! [openid-connect-core-1_0]: https://openid.net/specs/openid-connect-core-1_0.html
+//! [openid-connect-discovery-1_0]: https://openid.net/specs/openid-connect-discovery-1_0.html
+//! [openid-connect-rpinitiated-1_0]: https://openid.net/specs/openid-connect-rpinitiated-1_0.html
+
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::{
@@ -281,6 +303,14 @@ impl OpenIDConnectAuthProvider {
     fn build_logout_url(&self, meta: &WantedMeta) -> KrillResult<String> {
         let service_uri = self.config.service_uri();
         let logout_url = if let Some(url) = &meta.additional_metadata().end_session_endpoint {
+            // TODO: Should we also use any of other parameters defined in the RP Initiated Logout 1.0 spec?
+            //   See: https://openid.net/specs/openid-connect-rpinitiated-1_0.html#RPLogout
+            //        https://openid.net/specs/openid-connect-rpinitiated-1_0.html#RedirectionAfterLogout
+            // E.g. id_token_hint, state or ui_locales? Apparently we MSUT use id_token_hint because the spec states:
+            //   "An id_token_hint carring an ID Token for the RP is also REQUIRED when requesting post-logout
+            //    redirection"
+            // TODO: Require HTTPS as per the spec: "This URL MUST use the https scheme"
+            //   See: https://openid.net/specs/openid-connect-rpinitiated-1_0.html#OPMetadata
             format!("{}?post_logout_redirect_uri={}", url, service_uri.as_str())
         } else if meta.additional_metadata().revocation_endpoint.is_some() {
             service_uri.to_string()
