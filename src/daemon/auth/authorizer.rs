@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::commons::api::Token;
+use crate::commons::error::ApiAuthError;
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
 use crate::constants::ACTOR_DEF_ANON;
@@ -137,7 +138,10 @@ impl Authorizer {
             Ok(None) => self.actor_from_def(ACTOR_DEF_ANON),
 
             // error during authentication
-            Err(err) => self.actor_from_def(ACTOR_DEF_ANON.with_auth_error(err.to_string())),
+            Err(err) => {
+                // reveives a commons::error::Error, but we need an ApiAuthError
+                self.actor_from_def(ACTOR_DEF_ANON.with_auth_error(ApiAuthError::from(err)))
+            }
         };
 
         trace!("Actor determination result: {:?}", &actor);

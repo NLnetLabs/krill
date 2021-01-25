@@ -111,6 +111,44 @@ impl fmt::Display for RoaDeltaError {
     }
 }
 
+// ApiAuthError is *also* implemented as a separate enum,
+// so that we don't have to implement the Clone trait for
+// all of the Error enum.
+// Also it makes kind of sense to keep these errors as a separate container,
+// since they all originate in interactions with the OIDC provider (or lack thereof)
+#[derive(Debug, Clone)]
+pub enum ApiAuthError {
+    ApiInvalidCredentials(String),
+    ApiAuthPermanentError(String),
+    ApiAuthTransientError(String),
+    ApiInsufficientRights(String),
+}
+
+impl Display for ApiAuthError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            ApiAuthError::ApiInvalidCredentials(err)
+            | ApiAuthError::ApiAuthPermanentError(err)
+            | ApiAuthError::ApiAuthTransientError(err)
+            | ApiAuthError::ApiInsufficientRights(err) => write!(f, "{}", &err),
+        }
+    }
+}
+
+impl From<Error> for ApiAuthError {
+    fn from(e: Error) -> Self {
+        println!("waf2");
+        println!("{:?}", e);
+        match e {
+            Error::ApiAuthPermanentError(e) => ApiAuthError::ApiAuthPermanentError(e),
+            Error::ApiInsufficientRights(e) => ApiAuthError::ApiInsufficientRights(e),
+            Error::ApiAuthTransientError(e) => ApiAuthError::ApiAuthTransientError(e),
+            Error::ApiInvalidCredentials(e) => ApiAuthError::ApiInvalidCredentials(e),
+            _ => panic!("Illegal ApiAuthError, can't continue")
+        }
+    }
+}
+
 #[derive(Debug)]
 #[allow(clippy::large_enum_variant)]
 pub enum Error {
@@ -460,6 +498,17 @@ impl From<crate::commons::crypto::Error> for Error {
     }
 }
 
+impl From<ApiAuthError> for Error {
+    fn from(e: ApiAuthError) -> Self {
+        match e {
+            ApiAuthError::ApiAuthPermanentError(e) => Error::ApiAuthPermanentError(e),
+            ApiAuthError::ApiInsufficientRights(e) => Error::ApiInsufficientRights(e),
+            ApiAuthError::ApiAuthTransientError(e) => Error::ApiAuthTransientError(e),
+            ApiAuthError::ApiInvalidCredentials(e) => Error::ApiInvalidCredentials(e),
+        }
+    }
+}
+
 impl Error {
     pub fn signer(e: impl Display) -> Self {
         Error::SignerError(e.to_string())
@@ -494,7 +543,9 @@ impl Error {
             | Error::CaParentUnknown(_, _)
             | Error::ApiUnknownResource => StatusCode::NOT_FOUND,
 
-            Error::ApiInvalidCredentials(_) | Error::ApiAuthPermanentError(_) | Error::ApiAuthTransientError(_) => StatusCode::UNAUTHORIZED,
+            Error::ApiInvalidCredentials(_) | Error::ApiAuthPermanentError(_) | Error::ApiAuthTransientError(_) => {
+                StatusCode::UNAUTHORIZED
+            }
             Error::ApiInsufficientRights(_) => StatusCode::FORBIDDEN,
 
             _ => StatusCode::BAD_REQUEST,
