@@ -856,7 +856,7 @@ fn run_mock_openid_connect_server() {
                     }
                 }
                 Some(grant_type) => {
-                    log_warning(&format!("Unsupport grant type"));
+                    log_warning(&format!("Unsupport grant type: {:?}", grant_type));
                     request
                         .respond(
                             Response::empty(StatusCode(400))
