@@ -217,7 +217,7 @@ describe('OpenID Connect users', () => {
   });
 
   [...create_ca_settings_401, ...create_ca_settings_403].forEach((ts) =>
-    it(`[${ts.u}] Login with short-lived non-refreshable token and try to create a CA`, () => {
+    it(`Login as ${ts.u} and try to create a CA`, () => {
       cy.intercept('GET', '/api/v1/authorized').as('isAuthorized')
       cy.visit('/')
 
