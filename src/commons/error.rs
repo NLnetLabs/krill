@@ -137,14 +137,12 @@ impl Display for ApiAuthError {
 
 impl From<Error> for ApiAuthError {
     fn from(e: Error) -> Self {
-        println!("waf2");
-        println!("{:?}", e);
         match e {
             Error::ApiAuthPermanentError(e) => ApiAuthError::ApiAuthPermanentError(e),
             Error::ApiInsufficientRights(e) => ApiAuthError::ApiInsufficientRights(e),
             Error::ApiAuthTransientError(e) => ApiAuthError::ApiAuthTransientError(e),
             Error::ApiInvalidCredentials(e) => ApiAuthError::ApiInvalidCredentials(e),
-            _ => panic!("Illegal ApiAuthError, can't continue")
+            _ => ApiAuthError::ApiAuthPermanentError(e.to_string())
         }
     }
 }
@@ -162,7 +160,6 @@ pub enum Error {
     HttpsSetup(String),
     HttpClientError(httpclient::Error),
     ConfigError(String),
-
     //-----------------------------------------------------------------
     // General API Client Issues
     //-----------------------------------------------------------------
