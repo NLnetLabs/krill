@@ -176,7 +176,7 @@ describe('OpenID Connect users', () => {
     cy.get('input[name="username"]')
   })
 
-  it('[valid refresh] Login with short-lived non-refreshable token and try to create a CA', () => {
+  it('Login with short-lived non-refreshable token and try to create a CA', () => {
     cy.intercept('GET', '/api/v1/authorized').as('isAuthorized')
     cy.visit('/')
 
@@ -214,6 +214,7 @@ describe('OpenID Connect users', () => {
     cy.wait('@createCA').its('response.statusCode').should('eq', 401)
   })
 
+  ([...create_ca_settings_401, ...create_ca_settings_403]).forEach((ts) =>
     it(`[${ts.u}] Login with short-lived non-refreshable token and try to create a CA`, () => {
       cy.intercept('GET', '/api/v1/authorized').as('isAuthorized')
       cy.visit('/')
@@ -250,7 +251,7 @@ describe('OpenID Connect users', () => {
       cy.get('main input').type('some-handle-name')
       cy.get('main button').click()
       cy.get('.el-message-box__btns button:nth-child(2)').click()
-      cy.wait('@createCA').its('response.statusCode').should('eq', t.responseCode)
+      cy.wait('@createCA').its('response.statusCode').should('eq', ts.responseCode)
     })
   )
 
