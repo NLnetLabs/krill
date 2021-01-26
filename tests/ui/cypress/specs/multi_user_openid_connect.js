@@ -255,7 +255,7 @@ describe('OpenID Connect users', () => {
     })
   )
 
-  it('Login with short-lived refreshable token and try refresh page', () => {
+  it('Login with short-lived refreshable token and try to refresh page', () => {
     cy.visit('/')
     cy.url().should('not.include', Cypress.config('baseUrl'))
     cy.contains('Mock OpenID Connect login form')
