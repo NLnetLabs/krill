@@ -214,15 +214,14 @@ describe('OpenID Connect users', () => {
     cy.wait('@createCA').its('response.statusCode').should('eq', 401)
   })
 
-  ;[...create_ca_settings_401, ...create_ca_settings_403].forEach((t) =>
-    it(`[${t.u}] Login with short-lived non-refreshable token and try to create a CA`, () => {
+    it(`[${ts.u}] Login with short-lived non-refreshable token and try to create a CA`, () => {
       cy.intercept('GET', '/api/v1/authorized').as('isAuthorized')
       cy.visit('/')
 
       cy.wait('@isAuthorized').its('response.statusCode').should('eq', 403)
       cy.url().should('not.include', Cypress.config('baseUrl'))
       cy.contains('Mock OpenID Connect login form')
-      cy.get('input[name="username"]').clear().type(t.u)
+      cy.get('input[name="username"]').clear().type(ts.u)
 
       cy.intercept('GET', '/index.html').as('postLoginIndexFetch')
       cy.intercept('GET', '/api/v1/authorized').as('isAuthorized')
@@ -233,8 +232,8 @@ describe('OpenID Connect users', () => {
       cy.url().should('include', Cypress.config('baseUrl'))
       cy.contains('Sign In').should('not.exist')
       cy.get('#userinfo').click()
-      cy.get('#userinfo_table').contains(t.u)
-      cy.contains(t.u)
+      cy.get('#userinfo_table').contains(ts.u)
+      cy.contains(ts.u)
       cy.contains('Welcome to Krill')
 
       // the token has a lifetime of 5 second and no refresh token
