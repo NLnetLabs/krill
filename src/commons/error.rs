@@ -318,7 +318,7 @@ impl fmt::Display for Error {
             Error::PostCannotRead => write!(f, "POST body cannot be read"),
             Error::ApiInvalidCredentials(e) => write!(f, "Invalid credentials: {}", e),
             Error::ApiAuthPermanentError(e) => write!(f, "Authentication error: {}", e),
-            Error::ApiAuthTransientError(e) => write!(f, "Transient Authentication error: {}", e),
+            Error::ApiAuthTransientError(e) => write!(f, "Transient authentication error: {}", e),
             Error::ApiInsufficientRights(e) => write!(f, "Insufficient rights: {}", e),
 
 

@@ -677,7 +677,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                         auth
                     }
                     Err(err) => {
-                        trace!("OpenID Connect: rfc-6749 5.2 Error Response returned...");
+                        trace!("OpenID Connect: RFC 6749 5.2 Error response returned...");
                         debug!(
                             "OpenID Connect: Refreshing the token for user '{}' failed: {}",
                             &session.id, &err
@@ -687,12 +687,12 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                             // by them. The user should be able to create a new session by logging in again.
                             CoreErrorResponseType::InvalidGrant => {
                                 warn!("OpenID Connect: invalid_grant {:?}", err);
-                                return Err(Error::ApiInvalidCredentials("The Session has ended.".to_string()));
+                                return Err(Error::ApiInvalidCredentials("The session has ended.".to_string()));
                             }
                             CoreErrorResponseType::InvalidRequest | CoreErrorResponseType::InvalidClient => {
-                                warn!("OpenID Connect:  rfc-6749 5.2 {:?}", err);
+                                warn!("OpenID Connect:  RFC 6749 5.2 {:?}", err);
                                 return Err(Error::ApiAuthPermanentError(
-                                    "There is a unknown Authentication Problem.".to_string(),
+                                    "There is a unknown authentication problem.".to_string(),
                                 ));
                             }
                             // If changes are made to the roles of the user, the client or
@@ -701,9 +701,9 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                             CoreErrorResponseType::UnauthorizedClient
                             | CoreErrorResponseType::UnsupportedGrantType
                             | CoreErrorResponseType::InvalidScope => {
-                                warn!("OpenID Connect:  rfc-6749 5.2 {:?}", err);
+                                warn!("OpenID Connect:  RFC 6749 5.2 {:?}", err);
                                 return Err(Error::ApiInsufficientRights(
-                                    "The Authorization was revoked for this user, client or action.".to_string(),
+                                    "The authorization was revoked for this user, client or action.".to_string(),
                                 ));
                             }
                             // The Extension Type Errors are used by the try_refresh_token
@@ -714,15 +714,15 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                             // "temporarily_unavailable" and "server_error", end up here.
                             CoreErrorResponseType::Extension(err) => match err.as_str() {
                                 "temporarily_unavailable" | "server_error" => {
-                                    warn!("OpenID Connect: rfc-6749 5.2 {:?}", err);
+                                    warn!("OpenID Connect: RFC 6749 5.2 {:?}", err);
                                     return Err(Error::ApiAuthTransientError(
                                         "Authentication is unavailable".to_string(),
                                     ));
                                 }
                                 _ => {
-                                    warn!("OpenID Connect: rfc-6749 5.2 unknown error {:?}", err);
+                                    warn!("OpenID Connect: RFC 6749 5.2 unknown error {:?}", err);
                                     return Err(Error::ApiAuthTransientError(
-                                        "Unknown Authentication Error".to_string(),
+                                        "Unknown authentication error".to_string(),
                                     ));
                                 }
                             },
