@@ -207,7 +207,7 @@ impl Actor {
     {
         if let Some(api_error) = &self.auth_error {
             trace!(
-                "Unable to check access(#1): actor={}, action={}, resource={}: {}",
+                "Authentication denied: actor={}, action={}, resource={}: {}",
                 self.name(),
                 &action,
                 &resource,
@@ -240,7 +240,7 @@ impl Actor {
                 }
                 Err(err) => {
                     error!(
-                        "Unable to check access(#2): actor={}, action={}, resource={}: {}",
+                        "Access denied: actor={}, action={}, resource={}: {}",
                         self.name(),
                         &action,
                         &resource,
@@ -254,7 +254,7 @@ impl Actor {
                 // rules inside an Oso policy. We should never get here, but we
                 // don't want to crash Krill by calling unreachable!().
                 error!(
-                    "Unable to check access(#3): actor={}, action={}, resource={}: {}",
+                    "Unable to check access: actor={}, action={}, resource={}: {}",
                     self.name(),
                     &action,
                     &resource,
