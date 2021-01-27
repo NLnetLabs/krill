@@ -695,7 +695,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                                     "There is a unknown Authentication Problem.".to_string(),
                                 ));
                             }
-                            // If changes are made to the roles of the user, the client or 
+                            // If changes are made to the roles of the user, the client or
                             // the scope on the side of the OpenID Connect Provider,
                             // the token refresh may get one of these errors.
                             CoreErrorResponseType::UnauthorizedClient
@@ -707,17 +707,25 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                                 ));
                             }
                             // The Extension Type Errors are used by the try_refresh_token
-                            // method to signal generic problems with either the current 
-                            // token, or the freshly received one. Additionally the two 
+                            // method to signal generic problems with either the current
+                            // token, or the freshly received one. Additionally the two
                             // error responses from [Errata for RFC 6749]
-                            // (https://www.rfc-editor.org/errata/eid4745) end up here.
-                            // These server responses "temporarily_unavailable" and "server_error"
-                            // should translate both to ApiAuthTransientError, so we're not
-                            // creating different responses on the API here.
-                            CoreErrorResponseType::Extension(err) => {
-                                warn!("OpenID Connect: rfc-6749 5.2 unknown error {:?}", err);
-                                return Err(Error::ApiAuthTransientError("Unknown Authentication Error".to_string()));
-                            }
+                            // (https://www.rfc-editor.org/errata/eid4745),
+                            // "temporarily_unavailable" and "server_error", end up here.
+                            CoreErrorResponseType::Extension(err) => match err.as_str() {
+                                "temporarily_unavailable" | "server_error" => {
+                                    warn!("OpenID Connect: rfc-6749 5.2 {:?}", err);
+                                    return Err(Error::ApiAuthTransientError(
+                                        "Authentication is unavailable".to_string(),
+                                    ));
+                                }
+                                _ => {
+                                    warn!("OpenID Connect: rfc-6749 5.2 unknown error {:?}", err);
+                                    return Err(Error::ApiAuthTransientError(
+                                        "Unknown Authentication Error".to_string(),
+                                    ));
+                                }
+                            },
                         }
                     }
                 };
