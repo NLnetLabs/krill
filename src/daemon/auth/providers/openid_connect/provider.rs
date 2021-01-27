@@ -380,6 +380,12 @@ impl OpenIDConnectAuthProvider {
                                             // this is where the RFC-6749 5.2 Error Response is received and
                                             // return to the caller. It's the responsibility of the caller
                                             // to decide whether to retry or report back to the user.
+                                            //
+                                            // Note that [Errata for RFC 6749](https://www.rfc-editor.org/errata/eid4745)
+                                            // defines two additional error responses, `server_error` and
+                                            // `temporarily_unavailable`, that don't have variant counterparts
+                                            // in the openid-connect crate. These two error messages will
+                                            // therefore **not** end up in the `ServerReponse` variant.
                                             openidconnect::RequestTokenError::ServerResponse(r) => {
                                                 return Err(r.error().clone());
                                             }
@@ -396,10 +402,19 @@ impl OpenIDConnectAuthProvider {
                                                 )));
                                             }
                                             openidconnect::RequestTokenError::Other(err_string) => {
-                                                return Err(CoreErrorResponseType::Extension(format!(
-                                                    "Unknown Error(#1) while receiving new token: {}",
-                                                    err_string
-                                                )));
+                                                match err_string.as_str() {
+                                                    "temporarily_unavailable" | "server_error" => {
+                                                        return Err(CoreErrorResponseType::Extension(
+                                                            err_string.to_string(),
+                                                        ))
+                                                    }
+                                                    _ => {
+                                                        return Err(CoreErrorResponseType::Extension(format!(
+                                                            "Unknown Error(#1) while receiving new token: {}",
+                                                            err_string
+                                                        )))
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -680,7 +695,8 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                                     "There is a unknown Authentication Problem.".to_string(),
                                 ));
                             }
-                            // If changes are made to the roles of the user, the client or the scope on the side of the OpenID Connect Provider,
+                            // If changes are made to the roles of the user, the client or 
+                            // the scope on the side of the OpenID Connect Provider,
                             // the token refresh may get one of these errors.
                             CoreErrorResponseType::UnauthorizedClient
                             | CoreErrorResponseType::UnsupportedGrantType
@@ -690,8 +706,14 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                                     "The Authorization was revoked for this user, client or action.".to_string(),
                                 ));
                             }
-                            // The Extension Type Errors are used by the try_refresh_token method to signal generic problems with either the
-                            // current token, or the freshly received one.
+                            // The Extension Type Errors are used by the try_refresh_token
+                            // method to signal generic problems with either the current 
+                            // token, or the freshly received one. Additionally the two 
+                            // error responses from [Errata for RFC 6749]
+                            // (https://www.rfc-editor.org/errata/eid4745) end up here.
+                            // These server responses "temporarily_unavailable" and "server_error"
+                            // should translate both to ApiAuthTransientError, so we're not
+                            // creating different responses on the API here.
                             CoreErrorResponseType::Extension(err) => {
                                 warn!("OpenID Connect: rfc-6749 5.2 unknown error {:?}", err);
                                 return Err(Error::ApiAuthTransientError("Unknown Authentication Error".to_string()));
