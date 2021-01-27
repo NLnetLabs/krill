@@ -165,7 +165,7 @@ impl LoginSessionCache {
         Ok(token)
     }
 
-    pub fn decode(&self, token: Token, key: &[u8]) -> KrillResult<ClientSession> {
+    pub fn decode(&self, token: Token, key: &[u8], add_to_cache: bool) -> KrillResult<ClientSession> {
         if let Some(session) = self.lookup_session(&token) {
             trace!("Session cache hit for session id {}", &session.id);
             return Ok(session);
@@ -191,7 +191,9 @@ impl LoginSessionCache {
 
         trace!("Session cache miss, deserialized session id {}", &session.id);
 
-        self.cache_session(&token, &session);
+        if add_to_cache {
+            self.cache_session(&token, &session);
+        }
 
         Ok(session)
     }

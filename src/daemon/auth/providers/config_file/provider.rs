@@ -93,7 +93,7 @@ impl AuthProvider for ConfigFileAuthProvider {
             Some(token) => {
                 // see if we can decode, decrypt and deserialize the users token
                 // into a login session structure
-                let session = self.session_cache.decode(token, &self.key)?;
+                let session = self.session_cache.decode(token, &self.key, true)?;
 
                 trace!("id={}, attributes={:?}", &session.id, &session.attributes);
 
