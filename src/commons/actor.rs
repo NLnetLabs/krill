@@ -104,8 +104,8 @@ impl ActorDef {
     }
 
     // store an error string instead of an Error because Error cannot be cloned.
-    pub fn with_auth_error(mut self, api_error: ApiAuthError) -> Self {
-        self.auth_error = Some(api_error);
+    pub fn with_auth_error(mut self, api_error: Error) -> Self {
+        self.auth_error = Some(api_error.into());
         self
     }
 }
