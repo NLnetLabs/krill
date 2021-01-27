@@ -1155,7 +1155,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
 
                             TokenRevocationRequest {
                                 url: Url::parse(&url)?,
-                                refresh_token: refresh_token,
+                                refresh_token
                             }
                             .request(logging_http_client!())
                             .map_err(|err| {
