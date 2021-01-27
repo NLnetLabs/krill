@@ -80,7 +80,7 @@ type CustomTokenResponse = StandardTokenResponse<CustomIdTokenFields, CoreTokenT
 // from krill to the OIDC Provider
 #[derive(Clone, Debug)]
 enum RefreshTokenFailureMode {
-    // These are the rfc-6749 5.2 Errors
+    // These are the RFC 6749 5.2 Errors
     InvalidRequestErrorResponse,
     InvalidClientErrorResponse,
     InvalidGrantErrorResponse,
