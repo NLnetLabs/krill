@@ -20,12 +20,9 @@ use std::fmt::Display;
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Debug;
-
-#[cfg(feature = "multi-user")]
-use crate::commons::error::Error;
-use crate::commons::error::ApiAuthError;
-use crate::daemon::auth::policy::AuthPolicy;
 use crate::{commons::KrillResult, constants::ACTOR_DEF_ANON, daemon::auth::Auth};
+use crate::daemon::auth::policy::AuthPolicy;
+use crate::commons::error::{Error, ApiAuthError};
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum ActorName {
