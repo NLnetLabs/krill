@@ -1,4 +1,5 @@
-use log::{error, warn, info, trace};
+use env_logger::{Builder, Target};
+use log::{error, info, trace, warn, LevelFilter};
 use openidconnect::core::*;
 use openidconnect::PrivateSigningKey;
 use openidconnect::*;
@@ -11,7 +12,7 @@ use tokio::task;
 use tokio::time::delay_for;
 
 use krill::commons::error::Error;
-use std::fmt;
+
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -753,7 +754,7 @@ fn run_mock_openid_connect_server() {
                 Some(grant_type) if &grant_type[0] == "refresh_token" => {
                     // we skip over verifying the Authorization HTTP header but perhaps
                     // we should make sure the client is sending that correctly?
-                    warn!("client_id refreshing: {:?}", query_params);
+                    info!("client_id refreshing: {:?}", query_params);
                     if let Some(refresh_token) = query_params.get("refresh_token") {
                         let refresh_token = &refresh_token[0];
                         if let Some(session) = login_sessions.get(refresh_token) {
@@ -830,7 +831,7 @@ fn run_mock_openid_connect_server() {
                                     )
                                     .map_err(|err| err.into())
                             } else {
-                                trace!("coward for user: {:?}", &user.role);
+                                trace!("Internal error for user '{:?}'", &user.role);
                                 Err(Error::custom(format!("Internal error: cowardly refusing to generate a new token for user '{}' that should not get refresh tokens", session.id)))
                             }
                         } else {
