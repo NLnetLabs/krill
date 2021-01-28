@@ -33,7 +33,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
-use crate::ui::TestAuthProviderConfig;
+use crate::ui::OpenIDConnectMockMode;
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct CustomAdditionalMetadata {
@@ -125,7 +125,7 @@ type KnownUsers = HashMap<KnownUserId, KnownUser>;
 const DEFAULT_TOKEN_DURATION_SECS: u32 = 3600;
 static MOCK_OPENID_CONNECT_SERVER_RUNNING_FLAG: AtomicBool = AtomicBool::new(false);
 
-pub async fn start(config: TestAuthProviderConfig) -> task::JoinHandle<()> {
+pub async fn start(config: OpenIDConnectMockMode) -> task::JoinHandle<()> {
     let join_handle = task::spawn_blocking(move || {
         run_mock_openid_connect_server(config);
     });
@@ -145,7 +145,7 @@ pub async fn stop(join_handle: task::JoinHandle<()>) {
     join_handle.await.unwrap();
 }
 
-fn run_mock_openid_connect_server(config: TestAuthProviderConfig) {
+fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
     thread::spawn(move || {
         let mut authz_codes = TempAuthzCodes::new();
         let mut login_sessions = LoginSessions::new();
@@ -212,15 +212,15 @@ fn run_mock_openid_connect_server(config: TestAuthProviderConfig) {
         );
 
         let logout_metadata = match config {
-            TestAuthProviderConfig::OIDCProviderWithRPInitiatedLogout => CustomAdditionalMetadata {
+            OpenIDConnectMockMode::OIDCProviderWithRPInitiatedLogout => CustomAdditionalMetadata {
                 end_session_endpoint: Some(String::from("http://localhost:1818/logout")),
                 revocation_endpoint: None,
             },
-            TestAuthProviderConfig::OIDCProviderWithOAuth2Revocation => CustomAdditionalMetadata {
+            OpenIDConnectMockMode::OIDCProviderWithOAuth2Revocation => CustomAdditionalMetadata {
                 end_session_endpoint: None,
                 revocation_endpoint: Some(String::from("http://localhost:1818/revoke")),
             },
-            TestAuthProviderConfig::None => {
+            OpenIDConnectMockMode::OIDCProviderWillNotBeStarted => {
                 unreachable!()
             }
         };
@@ -788,7 +788,7 @@ fn run_mock_openid_connect_server(config: TestAuthProviderConfig) {
         }
 
         fn handle_request(
-            config: &TestAuthProviderConfig,
+            config: &OpenIDConnectMockMode,
             request: Request,
             discovery_doc: &str,
             jwks_doc: &str,
@@ -826,7 +826,7 @@ fn run_mock_openid_connect_server(config: TestAuthProviderConfig) {
                 }
                 // OpenID Connect RP-Initiated Logout 1.0 support
                 (Method::Get, "/logout") => {
-                    if matches!(config, TestAuthProviderConfig::OIDCProviderWithRPInitiatedLogout) {
+                    if matches!(config, OpenIDConnectMockMode::OIDCProviderWithRPInitiatedLogout) {
                         return handle_logout_request(request, url);
                     }
                 }
@@ -835,7 +835,7 @@ fn run_mock_openid_connect_server(config: TestAuthProviderConfig) {
                 }
                 // OAuth 2.0 Token Revocation support
                 (Method::Post, "/revoke") => {
-                    if matches!(config, TestAuthProviderConfig::OIDCProviderWithOAuth2Revocation) {
+                    if matches!(config, OpenIDConnectMockMode::OIDCProviderWithOAuth2Revocation) {
                         return handle_oauth2_revocation_request(request, login_sessions, known_users);
                     }
                 }

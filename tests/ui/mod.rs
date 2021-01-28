@@ -10,24 +10,27 @@ use krill::daemon::config::Config;
 use krill::test::*;
 
 #[allow(dead_code)]
-pub enum TestAuthProviderConfig {
-    None,
+pub enum OpenIDConnectMockMode {
+    OIDCProviderWillNotBeStarted,
     OIDCProviderWithRPInitiatedLogout,
     OIDCProviderWithOAuth2Revocation,
 }
 
 pub async fn run_krill_ui_test(
     test_name: &str,
-    openid_connect_mock_config: TestAuthProviderConfig,
+    openid_connect_mock_mode: OpenIDConnectMockMode,
     testbed_enabled: bool,
 ) {
+    use OpenIDConnectMockMode::*;
+
     #[cfg(feature = "multi-user")]
-    let op_handle = match openid_connect_mock_config {
-        TestAuthProviderConfig::OIDCProviderWithRPInitiatedLogout
-        | TestAuthProviderConfig::OIDCProviderWithOAuth2Revocation => {
-            Some(openid_connect_mock::start(openid_connect_mock_config).await)
+    let op_handle = match openid_connect_mock_mode {
+        OIDCProviderWithRPInitiatedLogout | OIDCProviderWithOAuth2Revocation => {
+            Some(openid_connect_mock::start(openid_connect_mock_mode).await)
         }
-        _ => None,
+        OIDCProviderWillNotBeStarted => {
+            None
+        },
     };
 
     do_run_krill_ui_test(test_name, testbed_enabled).await;
