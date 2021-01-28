@@ -1,1 +1,0 @@
-../tests/ui/openid_connect_mock.rs
