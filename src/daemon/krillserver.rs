@@ -155,11 +155,8 @@ impl KrillServer {
 
                 let ta_uri = CONFIG.ta_cert_uri();
 
-                let ta_aia = format!("{}ta/ta.cer", CONFIG.rsync_base.to_string());
-                let ta_aia = uri::Rsync::from_string(ta_aia).unwrap();
-
                 // Add TA
-                caserver.init_ta(repo_info, ta_aia, vec![ta_uri]).await?;
+                caserver.init_ta(repo_info, CONFIG.ta_aia(), vec![ta_uri]).await?;
 
                 let ta = caserver.get_trust_anchor().await?;
 

@@ -61,6 +61,11 @@ impl ConfigDefaults {
     fn use_ta() -> bool {
         env::var(KRILL_ENV_USE_TA).is_ok()
     }
+
+    fn ta_aia() -> uri::Rsync {
+        uri::Rsync::from_str("rsync://localhost/ta/ta.cer").unwrap()
+    }
+
     fn testbed_enabled() -> bool {
         env::var(KRILL_ENV_TESTBED_ENABLED).is_ok()
     }
@@ -229,6 +234,9 @@ pub struct Config {
     #[serde(default = "ConfigDefaults::use_ta")]
     use_ta: bool,
 
+    #[serde(default = "ConfigDefaults::ta_aia")]
+    ta_aia: uri::Rsync,
+
     #[serde(default = "ConfigDefaults::repo_enabled")]
     pub repo_enabled: bool,
 
@@ -367,6 +375,10 @@ impl Config {
         uri::Https::from_string(format!("{}ta/ta.cer", &self.service_uri)).unwrap()
     }
 
+    pub fn ta_aia(&self) -> uri::Rsync {
+        self.ta_aia.clone()
+    }
+
     pub fn use_ta(&self) -> bool {
         self.use_ta
     }
@@ -399,6 +411,7 @@ impl Config {
         let pid_file = None;
         let test_mode = true;
         let use_ta = true;
+        let ta_aia = ConfigDefaults::ta_aia();
         let repo_enabled = true;
         let repo_retain_old_seconds = 1;
         let testbed_enabled = true;
@@ -452,6 +465,7 @@ impl Config {
             pid_file,
             test_mode,
             use_ta,
+            ta_aia,
             repo_enabled,
             repo_retain_old_seconds,
             testbed_enabled,
