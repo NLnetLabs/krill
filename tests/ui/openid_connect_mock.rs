@@ -148,14 +148,14 @@ type KnownUsers = HashMap<KnownUserId, KnownUser>;
 const DEFAULT_TOKEN_DURATION_SECS: u32 = 3600;
 static MOCK_OPENID_CONNECT_SERVER_RUNNING_FLAG: AtomicBool = AtomicBool::new(false);
 
-pub async fn start() -> Option<task::JoinHandle<()>> {
+pub async fn start(delay_secs: u64) -> Option<task::JoinHandle<()>> {
     let join_handle = task::spawn_blocking(run_mock_openid_connect_server);
 
     // wait for the mock OpenID Connect server to be up before continuing
     // otherwise Krill might fail to query its discovery endpoint
     while !MOCK_OPENID_CONNECT_SERVER_RUNNING_FLAG.load(Ordering::Relaxed) {
         info!("Waiting for mock OpenID Connect server to start");
-        delay_for(Duration::from_secs(1)).await;
+        delay_for(Duration::from_secs(delay_secs)).await;
     }
 
     Some(join_handle)
