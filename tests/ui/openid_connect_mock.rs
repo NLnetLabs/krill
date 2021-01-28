@@ -107,7 +107,7 @@ impl SerdeSerialize for RefreshTokenFailureMode {
         match self {
             RefreshTokenFailureMode::InvalidRequestErrorResponse => {
                 state.serialize_field("error", "invalid_request")?
-        }
+            }
             RefreshTokenFailureMode::InvalidClientErrorResponse => state.serialize_field("error", "invalid_client")?,
             RefreshTokenFailureMode::InvalidGrantErrorResponse => state.serialize_field("error", "invalid_grant")?,
             RefreshTokenFailureMode::UnauthorizedClientErrorResponse => {
@@ -161,6 +161,17 @@ type KnownUsers = HashMap<KnownUserId, KnownUser>;
 
 const DEFAULT_TOKEN_DURATION_SECS: u32 = 3600;
 static MOCK_OPENID_CONNECT_SERVER_RUNNING_FLAG: AtomicBool = AtomicBool::new(false);
+
+#[tokio::main]
+pub async fn main() {
+    // Log to stdout.
+    #[cfg(feature = "multi-user")]
+    Builder::new()
+        .filter(None, LevelFilter::Trace)
+        .target(Target::Stdout)
+        .init();
+    start(2500).await;
+}
 
 pub async fn start(delay_secs: u64) -> Option<task::JoinHandle<()>> {
     let join_handle = task::spawn_blocking(run_mock_openid_connect_server);
@@ -358,7 +369,7 @@ fn run_mock_openid_connect_server() {
             },
         );
 
-
+        
         let provider_metadata: CustomProviderMetadata = ProviderMetadata::new(
             IssuerUrl::new("http://localhost:1818".to_string()).unwrap(),
             AuthUrl::new("http://localhost:1818/authorize".to_string()).unwrap(),
