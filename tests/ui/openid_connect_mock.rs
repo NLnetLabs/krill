@@ -4,7 +4,9 @@ use openidconnect::core::*;
 use openidconnect::PrivateSigningKey;
 use openidconnect::*;
 use openssl::rsa::Rsa;
+use serde::ser::{Serialize as SerdeSerialize, SerializeStruct, Serializer as SerdeSerializer};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 use urlparse::{parse_qs, urlparse, GetQuery, Query, Url};
 
@@ -96,17 +98,28 @@ enum RefreshTokenFailureMode {
     Error503Response,
 }
 
-impl fmt::Display for RefreshTokenFailureMode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl SerdeSerialize for RefreshTokenFailureMode {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: SerdeSerializer,
+    {
+        let mut state = serializer.serialize_struct("Error", 0)?;
         match self {
-            RefreshTokenFailureMode::InvalidRequestErrorResponse => write!(f, "invalid_request"),
-            RefreshTokenFailureMode::InvalidClientErrorResponse => write!(f, "invalid_client"),
-            RefreshTokenFailureMode::InvalidGrantErrorResponse => write!(f, "invalid_grant"),
-            RefreshTokenFailureMode::UnauthorizedClientErrorResponse => write!(f, "unauthorized_client"),
-            RefreshTokenFailureMode::InvalidScopeErrorResponse => write!(f, "invalid_scope"),
-            RefreshTokenFailureMode::UnsupportedGrantTypeErrorResponse => write!(f, "unsupported_grant_type"),
-            _ => write!(f, ""),
+            RefreshTokenFailureMode::InvalidRequestErrorResponse => {
+                state.serialize_field("error", "invalid_request")?
         }
+            RefreshTokenFailureMode::InvalidClientErrorResponse => state.serialize_field("error", "invalid_client")?,
+            RefreshTokenFailureMode::InvalidGrantErrorResponse => state.serialize_field("error", "invalid_grant")?,
+            RefreshTokenFailureMode::UnauthorizedClientErrorResponse => {
+                state.serialize_field("error", "unauthorized_client")?
+            }
+            RefreshTokenFailureMode::InvalidScopeErrorResponse => state.serialize_field("error", "invalid_scope")?,
+            RefreshTokenFailureMode::UnsupportedGrantTypeErrorResponse => {
+                state.serialize_field("error", "unsupported_grant_type")?
+            }
+            _ => state.serialize_field("error", "unknown_error")?,
+        }
+        state.end()
     }
 }
 
@@ -787,7 +800,7 @@ fn run_mock_openid_connect_server() {
                                 Some(err_mode) => {
                                     trace!(
                                         "(Intentionally) returning error '{}' for user '{}'",
-                                        err_mode,
+                                        json!(err_mode),
                                         &session.id
                                     );
                                     return request
@@ -796,7 +809,7 @@ fn run_mock_openid_connect_server() {
                                                 .with_header(
                                                     Header::from_str("Content-Type: application/json").unwrap(),
                                                 )
-                                                .with_data(format!("{{\"error\":\"{}\"}}", err_mode).as_bytes(), None),
+                                                .with_data(json!(err_mode).to_string().as_bytes(), None),
                                         )
                                         .map_err(|err| err.into());
                                 }
@@ -840,7 +853,7 @@ fn run_mock_openid_connect_server() {
                                 .respond(
                                     Response::empty(StatusCode(400))
                                         .with_header(Header::from_str("Content-Type: application/json").unwrap())
-                                        .with_data("{\"error\":\"invalid_grant\"}".as_bytes(), None),
+                                        .with_data(json!({"error":"invalid_grant"}).to_string().as_bytes(), None),
                                 )
                                 .map_err(|err| err.into())
                             // Err(Error::custom(format!("Invalid refresh token '{}'", refresh_token)))
@@ -851,7 +864,7 @@ fn run_mock_openid_connect_server() {
                             .respond(
                                 Response::empty(StatusCode(400))
                                     .with_header(Header::from_str("Content-Type: application/json").unwrap())
-                                    .with_data("{\"error\":\"invalid_request\"}".as_bytes(), None),
+                                    .with_data(json!({"error":"invalid_request"}).to_string().as_bytes(), None),
                             )
                             .map_err(|err| err.into())
                     }
@@ -862,7 +875,7 @@ fn run_mock_openid_connect_server() {
                         .respond(
                             Response::empty(StatusCode(400))
                                 .with_header(Header::from_str("Content-Type: application/json").unwrap())
-                                .with_data("{\"error\":\"unsupported_grant_type\"}".as_bytes(), None),
+                                .with_data(json!({"error":"unsupported_grant_type"}).to_string().as_bytes(), None),
                         )
                         .map_err(|err| err.into())
                 }
@@ -872,7 +885,7 @@ fn run_mock_openid_connect_server() {
                         .respond(
                             Response::empty(StatusCode(400))
                                 .with_header(Header::from_str("Content-Type: application/json").unwrap())
-                                .with_data("{\"error\":\"invalid_request\"}".as_bytes(), None),
+                                .with_data(json!({"error":"invalid_request"}).to_string().as_bytes(), None),
                         )
                         .map_err(|err| err.into())
                 }
