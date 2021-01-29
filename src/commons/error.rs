@@ -272,7 +272,7 @@ impl fmt::Display for Error {
             // General API Client Issues
             //-----------------------------------------------------------------
             Error::JsonError(e) => write!(f,"Invalid JSON: {}", e),
-            Error::NonAsciiCharsInput => write!(f, "Submitted json contains non-ascii chars (maybe whitespace?)"),
+            Error::NonAsciiCharsInput => write!(f, "Input contains non-ASCII chars (maybe whitespace?)"),
             Error::InvalidUtf8Input => write!(f, "Submitted bytes are invalid UTF8"),
             Error::ApiUnknownMethod => write!(f,"Unknown API method"),
             Error::ApiUnknownResource => write!(f, "Unknown resource"),

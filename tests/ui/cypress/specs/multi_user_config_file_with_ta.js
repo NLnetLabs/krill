@@ -112,9 +112,9 @@ describe('Config File Users with TA', () => {
 
           // enter the request XML into the testbed UI edit field
           cy.get('div#tab-addPublisher').contains('Register Publisher').click()
-          cy.get('div#pane-addPublisher pre[contenteditable="true"]').invoke('text', pub_req_xml)
-          cy.get('div#pane-addPublisher pre[contenteditable="true"]').type('{end}')
-          cy.get('div#pane-addPublisher button').contains('Register publisher').click()
+          cy.get('#addPublisher pre[contenteditable="true"]').invoke('text', pub_req_xml)
+          cy.get('#addPublisher pre[contenteditable="true"]').type('{end}')
+          cy.get('#addPublisher button').contains('Register publisher').click()
           cy.get('div[role="dialog"] button').contains('OK').click()
           cy.contains('has been added to the testbed')
 
@@ -125,8 +125,8 @@ describe('Config File Users with TA', () => {
           // requiring user accounts.
 
           // grab the repository response XML from the testbed UI
-          cy.get('div#pane-addPublisher pre[contenteditable="false"]').contains('<repository_response')
-          cy.get('div#pane-addPublisher pre[contenteditable="false"]').invoke('text').then(repo_resp_xml => {
+          cy.get('#addPublisher pre[contenteditable="false"]').contains('<repository_response')
+          cy.get('#addPublisher pre[contenteditable="false"]').invoke('text').then(repo_resp_xml => {
             // navigate back to Krill
             cy.visit("/")
 
@@ -151,8 +151,8 @@ describe('Config File Users with TA', () => {
 
         // enter the registered publisher name into the testbed UI edit field
         cy.get('div#tab-removePublisher').contains('Unregister Publisher').click()
-        cy.get('div#pane-removePublisher input[placeholder="Enter the Publisher name to remove"]').type(ts.ca)
-        cy.get('div#pane-removePublisher button').contains('Remove publisher').click()
+        cy.get('#removePublisher input[placeholder="Enter the Publisher name to remove"]').type(ts.ca)
+        cy.get('#removePublisher button').contains('Remove publisher').click()
         cy.get('div[role="dialog"] button').contains('OK').click()
 
         if (ts.o) {
@@ -188,17 +188,17 @@ describe('Config File Users with TA', () => {
 
           // enter the request XML into the testbed UI edit field
           cy.get('div#tab-addChild').contains('Register CA').click()
-          cy.get('div#pane-addChild pre[contenteditable="true"]').invoke('text', child_req_xml)
-          cy.get('div#pane-addChild pre[contenteditable="true"]').type('{end}')
-          cy.get('div#pane-addChild input[placeholder^="The AS resources"]').type('AS18')
-          cy.get('div#pane-addChild input[placeholder^="The IPv4 resources"]').type('10.0.0.0/24')
-          cy.get('div#pane-addChild button').contains('Register child CA').click()
+          cy.get('#addChild pre[contenteditable="true"]').invoke('text', child_req_xml)
+          cy.get('#addChild pre[contenteditable="true"]').type('{end}')
+          cy.get('#addChild input[placeholder^="The AS resources"]').type('AS18')
+          cy.get('#addChild input[placeholder^="The IPv4 resources"]').type('10.0.0.0/24')
+          cy.get('#addChild button').contains('Register child CA').click()
           cy.get('div[role="dialog"] button').contains('OK').click()
           cy.contains('has been added to the testbed')
 
           // grab the parent response XML from the testbed UI
-          cy.get('div#pane-addChild pre[contenteditable="false"]').contains("<parent_response")
-          cy.get('div#pane-addChild pre[contenteditable="false"]').invoke('text').then(parent_resp_xml => {
+          cy.get('#addChild pre[contenteditable="false"]').contains("<parent_response")
+          cy.get('#addChild pre[contenteditable="false"]').invoke('text').then(parent_resp_xml => {
             // navigate back to Krill
             cy.visit("/")
 
@@ -226,8 +226,8 @@ describe('Config File Users with TA', () => {
 
         // enter the registered parent name into the testbed UI edit field
         cy.get('div#tab-removeChild').contains('Unregister CA').click()
-        cy.get('div#pane-removeChild input[placeholder="Enter the CA name to remove"]').type(ts.ca)
-        cy.get('div#pane-removeChild button').contains('Remove child CA').click()
+        cy.get('#removeChild input[placeholder="Enter the CA name to remove"]').type(ts.ca)
+        cy.get('#removeChild button').contains('Remove child CA').click()
         cy.get('div[role="dialog"] button').contains('OK').click()
 
         if (ts.o) {
