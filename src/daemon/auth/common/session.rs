@@ -19,7 +19,7 @@ pub struct ClientSession {
     pub expires_in: Option<Duration>,
     pub id: String,
     pub attributes: HashMap<String, String>,
-    pub secrets: Vec<String>,
+    pub secrets: HashMap<String, String>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -65,6 +65,10 @@ impl ClientSession {
         }
 
         SessionStatus::Active
+    }
+
+    pub fn get_secret(&self, key: &str) -> Option<&String> {
+        self.secrets.get(&key.to_string())
     }
 }
 
@@ -137,7 +141,7 @@ impl LoginSessionCache {
         &self,
         id: &str,
         attributes: &HashMap<String, String>,
-        secrets: &[String],
+        secrets: HashMap<String, String>,
         key: &[u8],
         expires_in: Option<Duration>,
     ) -> KrillResult<Token> {
@@ -146,7 +150,7 @@ impl LoginSessionCache {
             expires_in,
             id: id.to_string(),
             attributes: attributes.clone(),
-            secrets: secrets.to_vec(),
+            secrets: secrets,
         };
 
         debug!("Creating token for session: {:?}", &session);

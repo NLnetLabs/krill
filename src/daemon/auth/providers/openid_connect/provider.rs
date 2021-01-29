@@ -70,6 +70,8 @@ use super::util::{
 
 const NONCE_COOKIE_NAME: &str = "nonce_hash";
 const LOGIN_SESSION_STATE_KEY_PATH: &str = "login_session_state.key"; // TODO: decide on proper location
+pub(super) const ACCESS_TOKEN_KIND: &str = "access_token";
+pub(super) const REFRESH_TOKEN_KIND: &str = "refresh_token";
 
 enum ProviderLogoutURL {
     RPInitiatedLogoutURL(String),
@@ -306,7 +308,7 @@ impl OpenIDConnectAuthProvider {
     }
 
     fn try_refresh_token(&self, session: &ClientSession) -> Option<Auth> {
-        match &session.secrets.get(0) {
+        match &session.secrets.get(REFRESH_TOKEN_KIND) {
             Some(refresh_token) => {
                 debug!("OpenID Connect: Refreshing token for user: \"{}\"", &session.id);
                 trace!("OpenID Connect: Submitting RFC-6749 section 6 Access Token Refresh request");
@@ -320,16 +322,10 @@ impl OpenIDConnectAuthProvider {
                                     .request(logging_http_client!());
                                 match token_response {
                                     Ok(token_response) => {
-                                        let secrets = if let Some(new_refresh_token) = token_response.refresh_token() {
-                                            vec![new_refresh_token.secret().clone()]
-                                        } else {
-                                            vec![]
-                                        };
-
                                         let new_token_res = self.session_cache.encode(
                                             &session.id,
                                             &session.attributes,
-                                            &secrets,
+                                            secrets_from_token_response(&token_response),
                                             &self.session_key,
                                             token_response.expires_in(),
                                         );
@@ -572,6 +568,41 @@ impl OpenIDConnectAuthProvider {
         }
 
         None
+    }
+
+    fn revoke_token(&self, token_kind: &str, token: String, url: &String) -> bool {
+        fn do_revoke(
+            client_id: &str,
+            client_secret: &str,
+            token_kind: &str,
+            token: String,
+            url: &String,
+        ) -> Result<bool, Error> {
+            TokenRevocationRequest {
+                url: Url::parse(&url)?,
+                client_id: client_id.to_string(),
+                client_secret: client_secret.to_string(),
+                token,
+                token_type_hint: token_kind.to_string(),
+            }
+            .request(logging_http_client!())
+            .map_err(|err| Error::custom(err))?;
+
+            Ok(true)
+        }
+
+        trace!(
+            "Attempting RFC 7009 OAuth 2.0 Token Revocation with token kind '{}'",
+            &token_kind
+        );
+
+        let oidc_conf = self.oidc_conf().unwrap();
+        do_revoke(&oidc_conf.client_id, &oidc_conf.client_secret, token_kind, token, url)
+            .or_else(|err: Error| -> Result<bool, Error> {
+                warn!("Unable to revoke OAuth 2.0 refresh token: {}", err);
+                Ok(false)
+            })
+            .unwrap()
     }
 }
 
@@ -1037,16 +1068,10 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                         // time of 1800 seconds or 30 minutes, so attempting to refresh
                         // an access token after that much time would also fail.
                         // ==========================================================================================
-                        let secrets = if let Some(new_refresh_token) = token_response.refresh_token() {
-                            vec![new_refresh_token.secret().clone()]
-                        } else {
-                            vec![]
-                        };
-
                         let api_token = self.session_cache.encode(
                             &id,
                             &attributes,
-                            &secrets,
+                            secrets_from_token_response(&token_response),
                             &self.session_key,
                             token_response.expires_in(),
                         )?;
@@ -1150,17 +1175,15 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                         // From: https://tools.ietf.org/html/rfc7009#section-2
                         //   "Implementations MUST support the revocation of refresh tokens and SHOULD support the
                         //    revocation of access tokens (see Implementation Note)."
-                        if !session.secrets.is_empty() {
-                            let refresh_token = RefreshToken::new(session.secrets[0].clone());
-
-                            TokenRevocationRequest {
-                                url: Url::parse(&url)?,
-                                refresh_token
+                        // TODO: support trying with an access token if we don't have a refresh token
+                        let mut revoked = false;
+                        if let Some(token) = session.get_secret(REFRESH_TOKEN_KIND) {
+                            revoked = self.revoke_token(REFRESH_TOKEN_KIND, token.clone(), url);
+                        }
+                        if !revoked {
+                            if let Some(token) = session.get_secret(ACCESS_TOKEN_KIND) {
+                                self.revoke_token(ACCESS_TOKEN_KIND, token.clone(), url);
                             }
-                            .request(logging_http_client!())
-                            .map_err(|err| {
-                                Error::custom(format!("Unable to revoke OAuth 2.0 refresh token: {}", err))
-                            })?;
                         }
 
                         // Then ask Lagosta to direct the user to the Krill UI landing page.
@@ -1180,6 +1203,18 @@ impl AuthProvider for OpenIDConnectAuthProvider {
             }
         }
     }
+}
+
+fn secrets_from_token_response(token_response: &FlexibleTokenResponse) -> HashMap<String, String> {
+    let mut secrets = HashMap::new();
+    secrets.insert(
+        ACCESS_TOKEN_KIND.to_string(),
+        token_response.access_token().secret().clone(),
+    );
+    if let Some(refresh_token) = token_response.refresh_token() {
+        secrets.insert(REFRESH_TOKEN_KIND.to_string(), refresh_token.secret().clone());
+    };
+    secrets
 }
 
 fn with_default_claims(claims: &Option<ConfigAuthOpenIDConnectClaims>) -> ConfigAuthOpenIDConnectClaims {

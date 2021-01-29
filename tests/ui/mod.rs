@@ -28,9 +28,7 @@ pub async fn run_krill_ui_test(
         OIDCProviderWithRPInitiatedLogout | OIDCProviderWithOAuth2Revocation => {
             Some(openid_connect_mock::start(openid_connect_mock_mode).await)
         }
-        OIDCProviderWillNotBeStarted => {
-            None
-        },
+        OIDCProviderWillNotBeStarted => None,
     };
 
     do_run_krill_ui_test(test_name, testbed_enabled).await;
@@ -67,15 +65,12 @@ async fn do_run_krill_ui_test(test_name: &str, testbed_enabled: bool) {
             .arg(format!("{}:/e2e", env::current_dir().unwrap().display()))
             .arg("-w")
             .arg("/e2e")
-
             // Uncomment the next line to enable LOTS of Cypress logging.
             // .arg("-e").arg("DEBUG=cypress:*")
-
             // Uncomment the next line to enable a subset of Cypress logging
             // that is useful for investigating .get() and .intercept()
             // behaviour.
             // .arg("-e").arg("DEBUG=cypress:proxy:http:*")
-
             .arg("cypress/included:6.2.0")
             .arg("--browser")
             .arg("chrome")
