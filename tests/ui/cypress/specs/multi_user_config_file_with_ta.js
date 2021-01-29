@@ -240,7 +240,7 @@ describe('Config File Users with TA', () => {
   })
 
   add_roa_test_settings.forEach(function (ts) {
-    it.skip('Add ROA for CA ' + ts.ca + ' as ' + ts.d + ' user should ' + (ts.o ? 'succeed' : 'fail'), () => {
+    it('Add ROA for CA ' + ts.ca + ' as ' + ts.d + ' user should ' + (ts.o ? 'succeed' : 'fail'), () => {
       cy.intercept('GET', '/api/v1/cas/' + ts.ca + '/routes/analysis/full').as('analyzeRoutes')
 
       cy.visit('/')
@@ -250,16 +250,28 @@ describe('Config File Users with TA', () => {
       cy.contains(ts.u)
       cy.contains('Sign In').should('not.exist')
 
-      // wait for Lagosta to finish fetching the route analysis details
-      cy.wait('@analyzeRoutes').its('response.statusCode').should('eq', 200)
-
       // Add a ROA
       cy.get('div#tab-roas').click()
       cy.get('body').then(($body) => {
+        // Check if Krill has issued the resources to the CA yet by seeing if the UI was able to fetch them, if it
+        // wasn't then it shows a "Click here to refresh" link. If the link exists, don't click it immediately as that
+        // will just result in the same lack of resources, instead give Krill some time (5 seconds) in this case then
+        // click the refresh link and then make sure that the link no longer exists (because resources were found).
+        // Ideally we would not wait 5 seconds but instead keep retrying until the link disappears, but according to
+        // Cypress docs it explicitly will NOT retry a .click() command. See:
+        //   https://docs.cypress.io/guides/core-concepts/retry-ability.html#Why-are-some-commands-NOT-retried
+        //   https://www.cypress.io/blog/2019/01/22/when-can-the-test-click/
+        // The latter suggests to use a 3rd party cypress-pipe plugin and not to use waits. That would be nice, but to
+        // use a plugin we then need a custom Docker image which is something I'd rather not build, publish and maintain
+        // the moment. TODO: don't publish an image, instead build it on the test runner just before running the tests?
         if ($body.find('#no_resources_click_to_refresh').length > 0) {
-          cy.get('Click here to refresh').click()
+          cy.get('#no_resources_click_to_refresh').wait(5000).click().get('body').get('#no_resources_click_to_refresh').should('not.exist')
         }
       })
+
+      // wait for Lagosta to finish fetching the route analysis details
+      cy.wait('@analyzeRoutes').its('response.statusCode').should('eq', 200)
+
       cy.get('div#pane-roas button').contains('Add ROA').click()
       cy.get('div[role="dialog"]')
       cy.contains('Add ROA')
