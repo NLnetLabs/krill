@@ -321,7 +321,7 @@ impl CertAuth {
             .iter()
             .flat_map(|(rcn, rc)| {
                 rc.resource_class_state()
-                    .map(|state| ResourceClassObjects::new(rcn.clone(), state))
+                    .map(|state| (rcn.clone(), ResourceClassObjects::new(state)))
             })
             .collect();
 

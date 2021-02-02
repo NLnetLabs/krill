@@ -128,7 +128,7 @@ impl CaObjectsStore {
 
         match self.store.read().unwrap().get(&key).map_err(Error::KeyValueError)? {
             None => {
-                let objects = CaObjects::new(ca.handle().clone(), vec![]);
+                let objects = CaObjects::new(ca.handle().clone(), HashMap::new());
                 Ok(objects)
             }
             Some(objects) => Ok(objects),
@@ -161,11 +161,55 @@ impl CaObjectsStore {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CaObjects {
     ca: Handle,
-    classes: Vec<ResourceClassObjects>,
+    #[serde(with = "ca_objects_classes_serde")]
+    classes: HashMap<ResourceClassName, ResourceClassObjects>,
+}
+
+mod ca_objects_classes_serde {
+
+    use super::*;
+
+    use serde::de::{Deserialize, Deserializer};
+    use serde::ser::Serializer;
+    #[derive(Debug, Deserialize)]
+    struct ClassesItem {
+        class_name: ResourceClassName,
+        objects: ResourceClassObjects,
+    }
+
+    #[derive(Debug, Serialize)]
+    struct ClassesItemRef<'a> {
+        class_name: &'a ResourceClassName,
+        objects: &'a ResourceClassObjects,
+    }
+
+    pub fn serialize<S>(
+        map: &HashMap<ResourceClassName, ResourceClassObjects>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.collect_seq(
+            map.iter()
+                .map(|(class_name, objects)| ClassesItemRef { class_name, objects }),
+        )
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<ResourceClassName, ResourceClassObjects>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let mut map = HashMap::new();
+        for item in Vec::<ClassesItem>::deserialize(deserializer)? {
+            map.insert(item.class_name, item.objects);
+        }
+        Ok(map)
+    }
 }
 
 impl CaObjects {
-    pub fn new(ca: Handle, classes: Vec<ResourceClassObjects>) -> Self {
+    pub fn new(ca: Handle, classes: HashMap<ResourceClassName, ResourceClassObjects>) -> Self {
         CaObjects { ca, classes }
     }
 
@@ -177,23 +221,22 @@ impl CaObjects {
         timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<()> {
-        if self.classes.iter().any(|rco| rco.class_name == *class_name) {
+        if self.classes.contains_key(class_name) {
             Err(Error::publishing("Duplicate resource class"))
         } else {
             self.classes
-                .push(ResourceClassObjects::create(class_name.clone(), key, timing, signer)?);
+                .insert(class_name.clone(), ResourceClassObjects::create(key, timing, signer)?);
             Ok(())
         }
     }
 
     fn remove_class(&mut self, class_name: &ResourceClassName) {
-        self.classes.retain(|c| c.class_name != *class_name);
+        self.classes.remove(class_name);
     }
 
     fn get_class_mut(&mut self, rcn: &ResourceClassName) -> KrillResult<&mut ResourceClassObjects> {
         self.classes
-            .iter_mut()
-            .find(|rco| rco.class_name == *rcn)
+            .get_mut(rcn)
             .ok_or_else(|| Error::publishing("Missing resource class"))
     }
 
@@ -264,12 +307,12 @@ impl CaObjects {
     fn re_issue_if_required(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<()> {
         let hours = timing.timing_publish_hours_before_next;
 
-        let required = self.classes.iter().any(|rco| rco.requires_reissuance(hours));
+        let required = self.classes.values().any(|rco| rco.requires_reissuance(hours));
 
         if !required {
             Ok(())
         } else {
-            for rco in self.classes.iter_mut() {
+            for (_, rco) in self.classes.iter_mut() {
                 if rco.requires_reissuance(hours) {
                     rco.reissue(timing, signer)?;
                 }
@@ -281,25 +324,18 @@ impl CaObjects {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ResourceClassObjects {
-    class_name: ResourceClassName,
     keys: ResourceClassKeyState,
 }
 
 impl ResourceClassObjects {
-    pub fn new(class_name: ResourceClassName, keys: ResourceClassKeyState) -> Self {
-        ResourceClassObjects { class_name, keys }
+    pub fn new(keys: ResourceClassKeyState) -> Self {
+        ResourceClassObjects { keys }
     }
 
-    fn create(
-        class_name: ResourceClassName,
-        key: &CertifiedKey,
-        timing: &IssuanceTimingConfig,
-        signer: &KrillSigner,
-    ) -> KrillResult<Self> {
+    fn create(key: &CertifiedKey, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<Self> {
         let current_set = BasicKeyObjectSet::create(key, timing, signer)?.into();
 
         Ok(ResourceClassObjects {
-            class_name,
             keys: ResourceClassKeyState::Current(CurrentKeyState { current_set }),
         })
     }
