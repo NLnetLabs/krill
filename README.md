@@ -80,7 +80,7 @@ file.
 apt install build-essential libssl-dev openssl pkg-config curl
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source ~/.cargo/env
-cargo install krill
+cargo install --locked krill
 mkdir ~/data
 krillc config simple --token correct-horse-battery-staple --data ~/data/ > ~/data/krill.conf
 krill --config ~/data/krill.conf
@@ -95,7 +95,7 @@ If you have an older version of Rust and Krill, you can update via:
 
 ```bash
 rustup update
-cargo install -f krill
+cargo install --locked --focrce krill
 ```
 
 ## Introduction
@@ -188,7 +188,7 @@ apt install libssl-dev openssl pkg-config
 The easiest way to get Krill is to leave it to cargo by saying
 
 ```bash
-cargo install krill
+cargo install --locked krill
 ```
 
 If you want to try the master branch from the repository instead of a
