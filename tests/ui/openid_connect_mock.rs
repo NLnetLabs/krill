@@ -220,6 +220,10 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                 end_session_endpoint: None,
                 revocation_endpoint: Some(String::from("http://localhost:1818/revoke")),
             },
+            OpenIDConnectMockMode::OIDCProviderWithNoLogoutEndpoints => CustomAdditionalMetadata {
+                end_session_endpoint: None,
+                revocation_endpoint: None,
+            },
             OpenIDConnectMockMode::OIDCProviderWillNotBeStarted => {
                 unreachable!()
             }
