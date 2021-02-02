@@ -20,10 +20,11 @@ describe('OpenID Connect provider with custom logout URL', () => {
     cy.request('http://127.0.0.1:1818/control/is_user_logged_in?username=' + username).its('status').should('eq', 200)
 
     // logout
-    cy.intercept('https://example.net/', 'custom logout page requested')
+    cy.intercept('https://example.net/', 'custom logout page requested').as('getCustomLogoutURL')
     cy.get('.logout').click()
 
     // verify that we are directed to the custom logout URL stub
+    cy.wait('@getCustomLogoutURL').its('response.statusCode').should('eq', 200)
     cy.url().should('eq', 'https://example.net/')
 
     // verify that the mock provider thinks the user is STILL logged in because due to the use of a custom logout URL
