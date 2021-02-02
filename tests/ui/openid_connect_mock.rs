@@ -1,4 +1,3 @@
-use env_logger::{Builder, Target};
 use log::{error, info, trace, warn, LevelFilter};
 use openidconnect::core::*;
 use openidconnect::PrivateSigningKey;
@@ -166,10 +165,18 @@ static MOCK_OPENID_CONNECT_SERVER_RUNNING_FLAG: AtomicBool = AtomicBool::new(fal
 pub async fn main() {
     // Log to stdout.
     #[cfg(feature = "multi-user")]
-    Builder::new()
-        .filter(None, LevelFilter::Trace)
-        .target(Target::Stdout)
-        .init();
+    fern::Dispatch::new().format(move |out, message, record| {
+            out.finish(format_args!(
+                "{} [{}] {}",
+                chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
+                record.level(),
+                message
+            ))
+    })
+    .level(log::LevelFilter::Trace)
+    .chain(std::io::stdout())
+    .apply()
+    .map_err(|e| format!("Failed to init stderr logging: {}", e));
     start(2500).await;
 }
 
