@@ -184,6 +184,7 @@ async fn refresh_all() {
 }
 
 #[tokio::test]
+#[ignore = "takes too long, use for testing during development"]
 async fn functional() {
     // We will use a fairly complicated CA structure so that we can
     // also test corner cases where a CA has multiple children (here: TA),
