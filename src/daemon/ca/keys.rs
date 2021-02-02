@@ -14,7 +14,7 @@ use crate::commons::api::{
 use crate::commons::crypto::KrillSigner;
 use crate::commons::error::Error;
 use crate::commons::KrillResult;
-use crate::daemon::ca::{CurrentObjectSet, CurrentObjectSetDelta, EvtDet};
+use crate::daemon::ca::{CaEvtDet, CurrentObjectSet, CurrentObjectSetDelta};
 use crate::daemon::config::IssuanceTimingConfig;
 
 //------------ CertifiedKey --------------------------------------------------
@@ -32,13 +32,11 @@ pub struct CertifiedKey {
 impl CertifiedKey {
     pub fn create(
         incoming_cert: RcvdCert,
-        repo_info: &RepoInfo,
-        name_space: &str,
         issuance_timing: &IssuanceTimingConfig,
         signer: &KrillSigner,
     ) -> KrillResult<Self> {
         let key_id = incoming_cert.cert().subject_key_identifier();
-        let current_set = CurrentObjectSet::create(&incoming_cert, repo_info, name_space, issuance_timing, signer)?;
+        let current_set = CurrentObjectSet::create(&incoming_cert, issuance_timing, signer)?;
 
         Ok(CertifiedKey {
             key_id,
@@ -319,7 +317,7 @@ impl KeyState {
         base_repo: &RepoInfo,
         name_space: &str,
         signer: &KrillSigner,
-    ) -> KrillResult<Vec<EvtDet>> {
+    ) -> KrillResult<Vec<CaEvtDet>> {
         let mut keys_for_requests = vec![];
         match self {
             KeyState::Pending(pending) => {
@@ -360,13 +358,13 @@ impl KeyState {
             let req =
                 self.create_issuance_req(base_repo, name_space, entitlement.class_name().clone(), key_id, signer)?;
 
-            res.push(EvtDet::CertificateRequested(rcn.clone(), req, *key_id));
+            res.push(CaEvtDet::CertificateRequested(rcn.clone(), req, *key_id));
         }
 
         for key in entitlement.issued().iter().map(|c| c.subject_key_identifier()) {
             if !self.knows_key(key) {
                 let revocation = RevocationRequest::new(entitlement.class_name().clone(), key);
-                res.push(EvtDet::UnexpectedKeyFound(rcn.clone(), revocation));
+                res.push(CaEvtDet::UnexpectedKeyFound(rcn.clone(), revocation));
             }
         }
 
@@ -379,7 +377,7 @@ impl KeyState {
         base_repo: &RepoInfo,
         name_space: &str,
         signer: &KrillSigner,
-    ) -> KrillResult<Vec<EvtDet>> {
+    ) -> KrillResult<Vec<CaEvtDet>> {
         let mut res = vec![];
 
         let keys = match self {
@@ -392,7 +390,7 @@ impl KeyState {
 
         for ki in keys {
             let req = self.create_issuance_req(base_repo, name_space, rcn.clone(), ki, signer)?;
-            res.push(EvtDet::CertificateRequested(rcn.clone(), req, *ki));
+            res.push(CaEvtDet::CertificateRequested(rcn.clone(), req, *ki));
         }
 
         Ok(res)
@@ -497,7 +495,7 @@ impl KeyState {
         base_repo: &RepoInfo,
         name_space: &str,
         signer: &KrillSigner,
-    ) -> KrillResult<Vec<EvtDet>> {
+    ) -> KrillResult<Vec<CaEvtDet>> {
         match self {
             KeyState::Active(_current) => {
                 let key_id = signer.create_key()?;
@@ -506,8 +504,8 @@ impl KeyState {
                     self.create_issuance_req(base_repo, name_space, parent_class_name, &key_id, signer)?;
 
                 Ok(vec![
-                    EvtDet::KeyRollPendingKeyAdded(class_name.clone(), key_id),
-                    EvtDet::CertificateRequested(class_name, issuance_req, key_id),
+                    CaEvtDet::KeyRollPendingKeyAdded(class_name.clone(), key_id),
+                    CaEvtDet::CertificateRequested(class_name, issuance_req, key_id),
                 ])
             }
             _ => Ok(vec![]),
@@ -521,11 +519,11 @@ impl KeyState {
         class_name: ResourceClassName,
         parent_class_name: ResourceClassName,
         signer: &KrillSigner,
-    ) -> KrillResult<EvtDet> {
+    ) -> KrillResult<CaEvtDet> {
         match self {
             KeyState::RollNew(_new, current) => {
                 let revoke_req = Self::revoke_key(parent_class_name, current.key_id(), signer)?;
-                Ok(EvtDet::KeyRollActivated(class_name, revoke_req))
+                Ok(CaEvtDet::KeyRollActivated(class_name, revoke_req))
             }
             _ => Err(Error::KeyUseNoNewKey),
         }

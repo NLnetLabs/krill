@@ -1,20 +1,25 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use rpki::crypto::KeyIdentifier;
+use rpki::{crypto::KeyIdentifier, roa::Roa};
 
-use crate::commons::api::{
-    AddedObject, ChildHandle, Handle, IssuanceRequest, IssuedCert, ObjectName, ObjectsDelta, ParentCaContact,
-    ParentHandle, RcvdCert, RepoInfo, RepositoryContact, ResourceClassName, ResourceSet, Revocation, RevocationRequest,
-    RevokedObject, RoaAggregateKey, RtaName, TaCertDetails, UpdatedObject, WithdrawnObject,
-};
 use crate::commons::crypto::{IdCert, KrillSigner};
 use crate::commons::eventsourcing::StoredEvent;
 use crate::commons::KrillResult;
+use crate::commons::{
+    api::{
+        AddedObject, ChildHandle, Handle, IssuanceRequest, IssuedCert, ObjectName, ObjectsDelta, ParentCaContact,
+        ParentHandle, RcvdCert, RepoInfo, RepositoryContact, ResourceClassName, ResourceSet, Revocation,
+        RevocationRequest, RevokedObject, RoaAggregateKey, RtaName, TaCertDetails, UpdatedObject, WithdrawnObject,
+    },
+    error::Error,
+};
 use crate::daemon::ca::{
     AggregateRoaInfo, CertifiedKey, ChildDetails, CurrentObjectSetDelta, PreparedRta, ResourceClass, Rfc8183Id,
     RoaInfo, RouteAuthorization, SignedRta,
 };
+
+use super::PublishedRoa;
 
 //------------ Ini -----------------------------------------------------------
 
@@ -121,6 +126,44 @@ impl RoaUpdates {
 
     pub fn update_aggregate(&mut self, key: RoaAggregateKey, aggregate: AggregateRoaInfo) {
         self.aggregate_updated.insert(key, aggregate);
+    }
+
+    pub fn added_roas(&self) -> KrillResult<HashMap<ObjectName, PublishedRoa>> {
+        let mut res = HashMap::new();
+
+        for simple in self.updated.values() {
+            let roa = Roa::decode(simple.object().content().to_bytes(), true)
+                .map_err(|e| Error::Custom(format!("Could not decode ROA in event, error: {}", e)))?;
+
+            let name = simple.name().clone();
+
+            res.insert(name, PublishedRoa::new(roa));
+        }
+
+        for agg in self.aggregate_updated.values() {
+            let roa = Roa::decode(agg.roa().object().content().to_bytes(), true)
+                .map_err(|e| Error::Custom(format!("Could not decode ROA in event, error: {}", e)))?;
+
+            let name = agg.roa().name().clone();
+
+            res.insert(name, PublishedRoa::new(roa));
+        }
+
+        Ok(res)
+    }
+
+    pub fn removed_roas(&self) -> Vec<ObjectName> {
+        let mut res = vec![];
+
+        for simple in self.removed.keys() {
+            res.push(ObjectName::from(simple))
+        }
+
+        for agg in self.aggregate_removed.keys() {
+            res.push(ObjectName::from(agg))
+        }
+
+        res
     }
 
     pub fn added(&self) -> Vec<AddedObject> {
@@ -253,14 +296,14 @@ impl ChildCertificateUpdates {
 
 //------------ Evt ---------------------------------------------------------
 
-pub type Evt = StoredEvent<EvtDet>;
+pub type CaEvt = StoredEvent<CaEvtDet>;
 
 //------------ EvtDet -------------------------------------------------------
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[allow(clippy::large_enum_variant)]
 #[serde(rename_all = "snake_case")]
-pub enum EvtDet {
+pub enum CaEvtDet {
     // Being a Trust Anchor
     TrustAnchorMade(TaCertDetails),
 
@@ -307,10 +350,10 @@ pub enum EvtDet {
     RtaSigned(RtaName, SignedRta),
 }
 
-impl EvtDet {
+impl CaEvtDet {
     /// This marks the RFC8183Id as updated
-    pub(super) fn id_updated(handle: &Handle, version: u64, id: Rfc8183Id) -> Evt {
-        StoredEvent::new(handle, version, EvtDet::IdUpdated(id))
+    pub(super) fn id_updated(handle: &Handle, version: u64, id: Rfc8183Id) -> CaEvt {
+        StoredEvent::new(handle, version, CaEvtDet::IdUpdated(id))
     }
 
     /// This marks a parent as added to the CA.
@@ -319,8 +362,8 @@ impl EvtDet {
         version: u64,
         parent_handle: ParentHandle,
         info: ParentCaContact,
-    ) -> Evt {
-        StoredEvent::new(handle, version, EvtDet::ParentAdded(parent_handle, info))
+    ) -> CaEvt {
+        StoredEvent::new(handle, version, CaEvtDet::ParentAdded(parent_handle, info))
     }
 
     /// This marks a parent contact as updated
@@ -329,8 +372,8 @@ impl EvtDet {
         version: u64,
         parent_handle: ParentHandle,
         info: ParentCaContact,
-    ) -> Evt {
-        StoredEvent::new(handle, version, EvtDet::ParentUpdated(parent_handle, info))
+    ) -> CaEvt {
+        StoredEvent::new(handle, version, CaEvtDet::ParentUpdated(parent_handle, info))
     }
 
     /// This marks a parent as removed
@@ -339,8 +382,8 @@ impl EvtDet {
         version: u64,
         parent_handle: ParentHandle,
         withdraws: Vec<ObjectsDelta>,
-    ) -> Evt {
-        StoredEvent::new(handle, version, EvtDet::ParentRemoved(parent_handle, withdraws))
+    ) -> CaEvt {
+        StoredEvent::new(handle, version, CaEvtDet::ParentRemoved(parent_handle, withdraws))
     }
 
     /// This marks a resource class as added under a parent for the CA.
@@ -349,8 +392,12 @@ impl EvtDet {
         version: u64,
         class_name: ResourceClassName,
         resource_class: ResourceClass,
-    ) -> Evt {
-        StoredEvent::new(handle, version, EvtDet::ResourceClassAdded(class_name, resource_class))
+    ) -> CaEvt {
+        StoredEvent::new(
+            handle,
+            version,
+            CaEvtDet::ResourceClassAdded(class_name, resource_class),
+        )
     }
 
     /// This marks a resource class as removed, and all its (possible) objects as withdrawn
@@ -361,20 +408,20 @@ impl EvtDet {
         delta: ObjectsDelta,
         parent: ParentHandle,
         revocations: Vec<RevocationRequest>,
-    ) -> Evt {
+    ) -> CaEvt {
         StoredEvent::new(
             handle,
             version,
-            EvtDet::ResourceClassRemoved(class_name, delta, parent, revocations),
+            CaEvtDet::ResourceClassRemoved(class_name, delta, parent, revocations),
         )
     }
 
-    pub(super) fn child_added(handle: &Handle, version: u64, child: ChildHandle, details: ChildDetails) -> Evt {
-        StoredEvent::new(handle, version, EvtDet::ChildAdded(child, details))
+    pub(super) fn child_added(handle: &Handle, version: u64, child: ChildHandle, details: ChildDetails) -> CaEvt {
+        StoredEvent::new(handle, version, CaEvtDet::ChildAdded(child, details))
     }
 
-    pub(super) fn child_updated_cert(handle: &Handle, version: u64, child: ChildHandle, id_cert: IdCert) -> Evt {
-        StoredEvent::new(handle, version, EvtDet::ChildUpdatedIdCert(child, id_cert))
+    pub(super) fn child_updated_cert(handle: &Handle, version: u64, child: ChildHandle, id_cert: IdCert) -> CaEvt {
+        StoredEvent::new(handle, version, CaEvtDet::ChildUpdatedIdCert(child, id_cert))
     }
 
     pub(super) fn child_updated_resources(
@@ -382,8 +429,8 @@ impl EvtDet {
         version: u64,
         child: ChildHandle,
         resources: ResourceSet,
-    ) -> Evt {
-        StoredEvent::new(handle, version, EvtDet::ChildUpdatedResources(child, resources))
+    ) -> CaEvt {
+        StoredEvent::new(handle, version, CaEvtDet::ChildUpdatedResources(child, resources))
     }
 
     pub(super) fn child_certificate_issued(
@@ -392,8 +439,8 @@ impl EvtDet {
         child: ChildHandle,
         rcn: ResourceClassName,
         ki: KeyIdentifier,
-    ) -> Evt {
-        StoredEvent::new(handle, version, EvtDet::ChildCertificateIssued(child, rcn, ki))
+    ) -> CaEvt {
+        StoredEvent::new(handle, version, CaEvtDet::ChildCertificateIssued(child, rcn, ki))
     }
 
     pub(super) fn child_revoke_key(
@@ -402,8 +449,8 @@ impl EvtDet {
         child: ChildHandle,
         rcn: ResourceClassName,
         ki: KeyIdentifier,
-    ) -> Evt {
-        StoredEvent::new(handle, version, EvtDet::ChildKeyRevoked(child, rcn, ki))
+    ) -> CaEvt {
+        StoredEvent::new(handle, version, CaEvtDet::ChildKeyRevoked(child, rcn, ki))
     }
 
     pub(super) fn child_certificates_updated(
@@ -411,12 +458,12 @@ impl EvtDet {
         version: u64,
         rcn: ResourceClassName,
         updates: ChildCertificateUpdates,
-    ) -> Evt {
-        StoredEvent::new(handle, version, EvtDet::ChildCertificatesUpdated(rcn, updates))
+    ) -> CaEvt {
+        StoredEvent::new(handle, version, CaEvtDet::ChildCertificatesUpdated(rcn, updates))
     }
 
-    pub(super) fn child_removed(handle: &Handle, version: u64, child: ChildHandle) -> Evt {
-        StoredEvent::new(handle, version, EvtDet::ChildRemoved(child))
+    pub(super) fn child_removed(handle: &Handle, version: u64, child: ChildHandle) -> CaEvt {
+        StoredEvent::new(handle, version, CaEvtDet::ChildRemoved(child))
     }
 
     pub(super) fn current_set_updated(
@@ -424,35 +471,35 @@ impl EvtDet {
         version: u64,
         rcn: ResourceClassName,
         deltas: HashMap<KeyIdentifier, CurrentObjectSetDelta>,
-    ) -> Evt {
-        StoredEvent::new(handle, version, EvtDet::ObjectSetUpdated(rcn, deltas))
+    ) -> CaEvt {
+        StoredEvent::new(handle, version, CaEvtDet::ObjectSetUpdated(rcn, deltas))
     }
 }
 
-impl fmt::Display for EvtDet {
+impl fmt::Display for CaEvtDet {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             // Being a Trust Anchor
-            EvtDet::TrustAnchorMade(details) => write!(
+            CaEvtDet::TrustAnchorMade(details) => write!(
                 f,
                 "turn into TA with key (hash) {}",
                 details.cert().subject_key_identifier()
             ),
 
             // Being a parent Events
-            EvtDet::ChildAdded(child, details) => {
+            CaEvtDet::ChildAdded(child, details) => {
                 write!(f, "added child '{}' with resources '{}", child, details.resources())?;
                 if let Some(cert) = details.id_cert() {
                     write!(f, ", id (hash): {}", cert.ski_hex())?;
                 }
                 Ok(())
             }
-            EvtDet::ChildCertificateIssued(child, rcn, ki) => write!(
+            CaEvtDet::ChildCertificateIssued(child, rcn, ki) => write!(
                 f,
                 "issued certificate to child '{}' for class '{}' and pub key '{}'",
                 child, rcn, ki
             ),
-            EvtDet::ChildCertificatesUpdated(rcn, updates) => {
+            CaEvtDet::ChildCertificatesUpdated(rcn, updates) => {
                 write!(f, "updated child certificates in resource class {}", rcn)?;
                 let issued = updates.issued();
                 if !issued.is_empty() {
@@ -470,22 +517,22 @@ impl fmt::Display for EvtDet {
                 }
                 Ok(())
             }
-            EvtDet::ChildKeyRevoked(child, rcn, ki) => write!(
+            CaEvtDet::ChildKeyRevoked(child, rcn, ki) => write!(
                 f,
                 "revoked certificate for child '{}' in resource class '{}' with key(hash) '{}'",
                 child, rcn, ki
             ),
-            EvtDet::ChildUpdatedIdCert(child, id_crt) => {
+            CaEvtDet::ChildUpdatedIdCert(child, id_crt) => {
                 write!(f, "updated child '{}' id (hash) '{}'", child, id_crt.ski_hex())
             }
-            EvtDet::ChildUpdatedResources(child, resources) => {
+            CaEvtDet::ChildUpdatedResources(child, resources) => {
                 write!(f, "updated child '{}' resources to '{}'", child, resources)
             }
-            EvtDet::ChildRemoved(child) => write!(f, "removed child '{}'", child),
+            CaEvtDet::ChildRemoved(child) => write!(f, "removed child '{}'", child),
 
             // Being a child Events
-            EvtDet::IdUpdated(id) => write!(f, "updated RFC8183 id to key '{}'", id.key_hash()),
-            EvtDet::ParentAdded(parent, contact) => {
+            CaEvtDet::IdUpdated(id) => write!(f, "updated RFC8183 id to key '{}'", id.key_hash()),
+            CaEvtDet::ParentAdded(parent, contact) => {
                 let contact_str = match contact {
                     ParentCaContact::Embedded => "embedded",
                     ParentCaContact::Ta(_) => "TA proxy",
@@ -493,7 +540,7 @@ impl fmt::Display for EvtDet {
                 };
                 write!(f, "added {} parent '{}' ", contact_str, parent)
             }
-            EvtDet::ParentUpdated(parent, contact) => {
+            CaEvtDet::ParentUpdated(parent, contact) => {
                 let contact_str = match contact {
                     ParentCaContact::Embedded => "embedded",
                     ParentCaContact::Ta(_) => "TA proxy",
@@ -501,49 +548,49 @@ impl fmt::Display for EvtDet {
                 };
                 write!(f, "updated parent '{}' contact to '{}' ", parent, contact_str)
             }
-            EvtDet::ParentRemoved(parent, _deltas) => write!(f, "removed parent '{}'", parent),
+            CaEvtDet::ParentRemoved(parent, _deltas) => write!(f, "removed parent '{}'", parent),
 
-            EvtDet::ResourceClassAdded(rcn, _) => write!(f, "added resource class with name '{}'", rcn),
-            EvtDet::ResourceClassRemoved(rcn, _, parent, _) => write!(
+            CaEvtDet::ResourceClassAdded(rcn, _) => write!(f, "added resource class with name '{}'", rcn),
+            CaEvtDet::ResourceClassRemoved(rcn, _, parent, _) => write!(
                 f,
                 "removed resource class with name '{}' under parent '{}'",
                 rcn, parent
             ),
-            EvtDet::CertificateRequested(rcn, _, ki) => write!(
+            CaEvtDet::CertificateRequested(rcn, _, ki) => write!(
                 f,
                 "requested certificate for key (hash) '{}' under resource class '{}'",
                 ki, rcn
             ),
-            EvtDet::CertificateReceived(rcn, ki, _) => write!(
+            CaEvtDet::CertificateReceived(rcn, ki, _) => write!(
                 f,
                 "received certificate for key (hash) '{}' under resource class '{}'",
                 ki, rcn
             ),
 
             // Key life cycle
-            EvtDet::KeyRollPendingKeyAdded(rcn, ki) => {
+            CaEvtDet::KeyRollPendingKeyAdded(rcn, ki) => {
                 write!(f, "key roll: added pending key '{}' under resource class '{}'", ki, rcn)
             }
-            EvtDet::KeyPendingToNew(rcn, key, _) => write!(
+            CaEvtDet::KeyPendingToNew(rcn, key, _) => write!(
                 f,
                 "key roll: moving pending key '{}' to new state under resource class '{}'",
                 key.key_id(),
                 rcn
             ),
-            EvtDet::KeyPendingToActive(rcn, key, _) => write!(
+            CaEvtDet::KeyPendingToActive(rcn, key, _) => write!(
                 f,
                 "activating pending key '{}' under resource class '{}'",
                 key.key_id(),
                 rcn
             ),
-            EvtDet::KeyRollActivated(rcn, revoke) => write!(
+            CaEvtDet::KeyRollActivated(rcn, revoke) => write!(
                 f,
                 "key roll: activated new key, requested revocation of '{}' under resource class '{}'",
                 revoke.key(),
                 rcn
             ),
-            EvtDet::KeyRollFinished(rcn, _) => write!(f, "key roll: finished for resource class '{}'", rcn),
-            EvtDet::UnexpectedKeyFound(rcn, revoke) => write!(
+            CaEvtDet::KeyRollFinished(rcn, _) => write!(f, "key roll: finished for resource class '{}'", rcn),
+            CaEvtDet::UnexpectedKeyFound(rcn, revoke) => write!(
                 f,
                 "Found unexpected key in resource class '{}', will try to revoke key id: '{}'",
                 rcn,
@@ -551,9 +598,9 @@ impl fmt::Display for EvtDet {
             ),
 
             // Route Authorizations
-            EvtDet::RouteAuthorizationAdded(route) => write!(f, "added ROA: '{}'", route),
-            EvtDet::RouteAuthorizationRemoved(route) => write!(f, "removed ROA: '{}'", route),
-            EvtDet::RoasUpdated(rcn, roa_updates) => {
+            CaEvtDet::RouteAuthorizationAdded(route) => write!(f, "added ROA: '{}'", route),
+            CaEvtDet::RouteAuthorizationRemoved(route) => write!(f, "removed ROA: '{}'", route),
+            CaEvtDet::RoasUpdated(rcn, roa_updates) => {
                 write!(f, "updated ROAs under resource class '{}'", rcn)?;
                 if !roa_updates.updated.is_empty() {
                     write!(f, " added: ")?;
@@ -571,7 +618,7 @@ impl fmt::Display for EvtDet {
             }
 
             // Publishing
-            EvtDet::ObjectSetUpdated(rcn, key_objects_map) => {
+            CaEvtDet::ObjectSetUpdated(rcn, key_objects_map) => {
                 write!(f, "updated objects under resource class '{}'", rcn)?;
 
                 for (key, delta) in key_objects_map.iter() {
@@ -594,13 +641,13 @@ impl fmt::Display for EvtDet {
 
                 Ok(())
             }
-            EvtDet::RepoUpdated(updated) => match updated {
+            CaEvtDet::RepoUpdated(updated) => match updated {
                 RepositoryContact::Embedded(_) => write!(f, "updated repository to embedded server"),
                 RepositoryContact::Rfc8181(res) => {
                     write!(f, "updated repository to remote server: {}", res.service_uri())
                 }
             },
-            EvtDet::RepoCleaned(old) => match old {
+            CaEvtDet::RepoCleaned(old) => match old {
                 RepositoryContact::Embedded(_) => write!(f, "cleaned old embedded repository"),
                 RepositoryContact::Rfc8181(res) => {
                     write!(f, "cleaned repository at remote server: {}", res.service_uri())
@@ -608,10 +655,12 @@ impl fmt::Display for EvtDet {
             },
 
             // Rta
-            EvtDet::RtaPrepared(name, prepared) => {
+            CaEvtDet::RtaPrepared(name, prepared) => {
                 write!(f, "Prepared RTA '{}' for resources: {}", name, prepared.resources())
             }
-            EvtDet::RtaSigned(name, signed) => write!(f, "Signed RTA '{}' for resources: {}", name, signed.resources()),
+            CaEvtDet::RtaSigned(name, signed) => {
+                write!(f, "Signed RTA '{}' for resources: {}", name, signed.resources())
+            }
         }
     }
 }

@@ -65,14 +65,14 @@ impl fmt::Display for CaCommandDetails {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum CaCommandResult {
     Error(String),
-    Events(Vec<ca::Evt>),
+    Events(Vec<ca::CaEvt>),
 }
 
 impl CaCommandResult {
     pub fn error(msg: String) -> Self {
         CaCommandResult::Error(msg)
     }
-    pub fn events(events: Vec<ca::Evt>) -> Self {
+    pub fn events(events: Vec<ca::CaEvt>) -> Self {
         CaCommandResult::Events(events)
     }
 }

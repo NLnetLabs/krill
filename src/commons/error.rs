@@ -163,12 +163,13 @@ pub enum Error {
     RepositoryServerAlreadyInitialised,
 
     //-----------------------------------------------------------------
-    // RFC 8181 (publishing)
+    // Publishing
     //-----------------------------------------------------------------
     Rfc8181Validation(ValidationError),
     Rfc8181Decode(String),
     Rfc8181MessageError(rfc8181::MessageError),
     Rfc8181Delta(PublicationDeltaError),
+    PublishingObjects(String),
 
     //-----------------------------------------------------------------
     // CA Issues
@@ -314,6 +315,7 @@ impl fmt::Display for Error {
             Error::Rfc8181Decode(req) => write!(f, "Issue with decoding RFC8181 request: {}", req),
             Error::Rfc8181MessageError(e) => e.fmt(f),
             Error::Rfc8181Delta(e) => e.fmt(f),
+            Error::PublishingObjects(msg) => write!(f, "Issue generating repository objects: '{}'", msg),
 
 
             //-----------------------------------------------------------------
@@ -471,6 +473,10 @@ impl Error {
         Error::PublisherUriOutsideBase(uri.to_string(), jail.to_string())
     }
 
+    pub fn publishing(msg: impl fmt::Display) -> Self {
+        Error::PublishingObjects(msg.to_string())
+    }
+
     pub fn custom(msg: impl fmt::Display) -> Self {
         Error::Custom(msg.to_string())
     }
@@ -584,12 +590,15 @@ impl Error {
             Error::RepositoryServerAlreadyInitialised => ErrorResponse::new("pub-repo-initialised", &self),
 
             //-----------------------------------------------------------------
-            // RFC 8181
+            // Publishing
             //-----------------------------------------------------------------
             Error::Rfc8181Validation(e) => ErrorResponse::new("rfc8181-validation", &self).with_cause(e),
             Error::Rfc8181Decode(e) => ErrorResponse::new("rfc8181-decode", &self).with_cause(e),
             Error::Rfc8181MessageError(e) => ErrorResponse::new("rfc8181-protocol-message", &self).with_cause(e),
             Error::Rfc8181Delta(e) => ErrorResponse::new("rfc8181-delta", &self).with_cause(e),
+            Error::PublishingObjects(msg) => {
+                ErrorResponse::new("publishing-generate-repository-objects", &self).with_cause(msg)
+            }
 
             //-----------------------------------------------------------------
             // CA Issues (label: ca-*)

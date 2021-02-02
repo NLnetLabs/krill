@@ -13,7 +13,7 @@ mod store;
 pub use self::store::*;
 
 mod listener;
-pub use self::listener::{EventCounter, EventListener};
+pub use self::listener::{EventCounter, EventListener, SyncEventListener};
 
 mod kv;
 pub use self::kv::*;

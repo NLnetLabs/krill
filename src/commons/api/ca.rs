@@ -48,6 +48,12 @@ impl Default for ResourceClassName {
     }
 }
 
+impl AsRef<str> for ResourceClassName {
+    fn as_ref(&self) -> &str {
+        &self.name
+    }
+}
+
 impl From<u32> for ResourceClassName {
     fn from(nr: u32) -> ResourceClassName {
         ResourceClassName {
@@ -236,6 +242,7 @@ pub struct IssuedCert {
     limit: RequestResourceLimit, // the limit on the request
     resource_set: ResourceSet,
     cert: Cert,
+    #[serde(skip_serializing_if = "Option::is_none")]
     replaces: Option<ReplacedObject>,
 }
 
@@ -375,6 +382,14 @@ impl From<IssuedCert> for RcvdCert {
 
 impl AsRef<Cert> for RcvdCert {
     fn as_ref(&self) -> &Cert {
+        &self.cert
+    }
+}
+
+impl Deref for RcvdCert {
+    type Target = Cert;
+
+    fn deref(&self) -> &Self::Target {
         &self.cert
     }
 }

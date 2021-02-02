@@ -6,7 +6,7 @@ use crate::{
     commons::{
         api::{
             ChildHandle, CurrentObject, HexEncodedHash, IssuanceRequest, IssuedCert, ObjectName, ParentCaContact,
-            ParentHandle, ResourceClassName, ResourceSet, RevocationRequest, RevocationsDelta, RevokedObject,
+            ParentHandle, RcvdCert, ResourceClassName, ResourceSet, RevocationRequest, RevocationsDelta, RevokedObject,
             RoaAggregateKey, RtaName, TaCertDetails,
         },
         crypto::IdCert,

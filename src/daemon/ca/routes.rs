@@ -793,6 +793,7 @@ impl Roas {
         self.simple.iter()
     }
 
+    #[deprecated]
     pub fn current_objects(&self) -> CurrentObjects {
         let mut objects = CurrentObjects::default();
         for info in self.simple.values() {

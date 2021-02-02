@@ -1,23 +1,26 @@
-use std::{collections::HashMap, fmt, path::PathBuf};
+use std::{collections::HashMap, fmt, path::PathBuf, sync::Arc};
 
-use rpki::{cert::Cert, crypto::KeyIdentifier, uri, x509::Time};
+use rpki::{crl::Crl, crypto::KeyIdentifier, manifest::Manifest, roa::Roa, uri, x509::Time};
 
 use crate::{
     commons::{
         api::{
             ChildHandle, CurrentObject, Handle, HexEncodedHash, IssuanceRequest, IssuedCert, ObjectName,
-            ParentCaContact, ParentHandle, ResourceClassName, ResourceSet, Revocation, RevocationRequest, Revocations,
-            RoaAggregateKey, StorableCaCommand,
+            ParentCaContact, ParentHandle, RcvdCert, ResourceClassName, ResourceSet, Revocation, RevocationRequest,
+            Revocations, RoaAggregateKey, StorableCaCommand,
         },
-        crypto::IdCert,
+        crypto::{IdCert, KrillSigner},
         error::Error,
         eventsourcing::{Aggregate, AggregateStore, AggregateStoreError, KeyValueError},
         remote::rfc8183,
     },
     constants::CASERVER_DIR,
-    daemon::ca::{
-        ta_handle, CaObjects, CaObjectsStore, IssuedCertObject, ObjectSet, ResourceClassObjects, RoaObject,
-        RouteAuthorization,
+    daemon::{
+        ca::{
+            ta_handle, BasicKeyObjectSet, CaObjects, CaObjectsStore, CurrentKeyObjectSet, PublishedCert, PublishedRoa,
+            ResourceClassKeyState, ResourceClassObjects, RouteAuthorization,
+        },
+        config::Config,
     },
 };
 
@@ -27,7 +30,7 @@ use super::{old_commands::*, old_events::*};
 pub struct CaObjectsMigration;
 
 impl CaObjectsMigration {
-    pub fn migrate(work_dir: &PathBuf) -> Result<(), MigrationError> {
+    pub fn migrate(work_dir: &PathBuf, config: Arc<Config>, signer: Arc<KrillSigner>) -> Result<(), MigrationError> {
         // Check the current CAS dir, if it is pre-0.9.0 we need to migrate
 
         // Read all CAS based on snapshots and events, using the pre-0_9_0 data structs
@@ -35,7 +38,7 @@ impl CaObjectsMigration {
         let store = AggregateStore::<CertAuth>::new(work_dir, CASERVER_DIR)?;
         store.warm()?;
 
-        let ca_objects_store = CaObjectsStore::disk(work_dir)?;
+        let ca_objects_store = CaObjectsStore::disk(config, signer)?;
 
         for ca_handle in store.list()? {
             let ca = store.get_latest(&ca_handle)?;
@@ -316,10 +319,13 @@ impl CertAuth {
         let objects = self
             .resources
             .iter()
-            .map(|(rcn, rc)| (rcn.clone(), rc.resource_class_objects()))
+            .flat_map(|(rcn, rc)| {
+                rc.resource_class_state()
+                    .map(|state| ResourceClassObjects::new(rcn.clone(), state))
+            })
             .collect();
 
-        CaObjects::new(objects)
+        CaObjects::new(self.handle.clone(), objects)
     }
 }
 
@@ -378,54 +384,66 @@ impl ResourceClass {
         }
     }
 
-    pub fn resource_class_objects(&self) -> ResourceClassObjects {
-        let roas = self.roas.roa_object_infos();
-        let certs: Vec<IssuedCertObject> = self.certificates.inner.values().map(|i| i.into()).collect();
-
-        let mut objects = ResourceClassObjects::default();
+    pub fn resource_class_state(&self) -> Option<ResourceClassKeyState> {
+        let roas = self.roas.roa_objects();
+        let certs: HashMap<ObjectName, PublishedCert> = self
+            .certificates
+            .inner
+            .values()
+            .map(|i| (ObjectName::from(i.cert()), i.clone().into()))
+            .collect();
 
         match &self.key_state {
-            KeyState::Active(current)
-            | KeyState::RollPending(_, current)
-            | KeyState::RollNew(_, current)
-            | KeyState::RollOld(current, _) => {
-                objects.add_key(current.key_id, Self::object_set_for_current(current, roas, certs));
-            }
-            _ => {}
-        }
+            KeyState::Pending(_) => None,
 
-        if let KeyState::RollNew(new, _) = &self.key_state {
-            objects.add_key(new.key_id, Self::object_set_for_certified_key(new));
-        }
+            KeyState::Active(current) | KeyState::RollPending(_, current) => Some(ResourceClassKeyState::current(
+                Self::object_set_for_current(current, roas, certs),
+            )),
+            KeyState::RollNew(new, current) => Some(ResourceClassKeyState::staging(
+                Self::object_set_for_certified_key(new),
+                Self::object_set_for_current(current, roas, certs),
+            )),
 
-        if let KeyState::RollOld(_, old) = &self.key_state {
-            objects.add_key(old.key.key_id, Self::object_set_for_certified_key(&old.key));
+            KeyState::RollOld(current, old) => Some(ResourceClassKeyState::old(
+                Self::object_set_for_current(current, roas, certs),
+                Self::object_set_for_certified_key(&old.key),
+            )),
         }
-
-        objects
     }
 
-    fn object_set_for_current(key: &CertifiedKey, roas: Vec<RoaObject>, certs: Vec<IssuedCertObject>) -> ObjectSet {
+    fn object_set_for_current(
+        key: &CertifiedKey,
+        roas: HashMap<ObjectName, PublishedRoa>,
+        certs: HashMap<ObjectName, PublishedCert>,
+    ) -> CurrentKeyObjectSet {
         let current_set = key.current_set.clone();
-        ObjectSet::new(
+
+        let mft = Manifest::decode(current_set.manifest_info.current.content().to_bytes(), true).unwrap();
+        let crl = Crl::decode(current_set.crl_info.current.content().to_bytes()).unwrap();
+
+        CurrentKeyObjectSet::new(
+            key.incoming_cert.clone(),
             current_set.number,
             current_set.revocations,
-            current_set.manifest_info.into(),
-            current_set.crl_info.into(),
+            mft.into(),
+            crl.into(),
             roas,
             certs,
         )
     }
 
-    fn object_set_for_certified_key(key: &CertifiedKey) -> ObjectSet {
+    fn object_set_for_certified_key(key: &CertifiedKey) -> BasicKeyObjectSet {
         let current_set = key.current_set.clone();
-        ObjectSet::new(
+
+        let mft = Manifest::decode(current_set.manifest_info.current.content().to_bytes(), true).unwrap();
+        let crl = Crl::decode(current_set.crl_info.current.content().to_bytes()).unwrap();
+
+        BasicKeyObjectSet::new(
+            key.incoming_cert.clone(),
             current_set.number,
             current_set.revocations,
-            current_set.manifest_info.into(),
-            current_set.crl_info.into(),
-            vec![],
-            vec![],
+            mft.into(),
+            crl.into(),
         )
     }
 
@@ -574,18 +592,22 @@ impl Roas {
         }
     }
 
-    pub fn roa_object_infos(&self) -> Vec<RoaObject> {
-        let mut res = vec![];
+    pub fn roa_objects(&self) -> HashMap<ObjectName, PublishedRoa> {
+        let mut res = HashMap::new();
 
         for (key, roa) in &self.simple {
             let name = ObjectName::from(key);
-            res.push(RoaObject::new(name, roa.object.clone()))
+            let roa = Roa::decode(roa.object.content().to_bytes().as_ref(), true).unwrap();
+
+            res.insert(name, PublishedRoa::new(roa));
         }
 
         for (key, agg) in &self.aggregate {
             let name = ObjectName::from(key);
             let roa = &agg.roa;
-            res.push(RoaObject::new(name, roa.object.clone()))
+            let roa = Roa::decode(roa.object.content().to_bytes().as_ref(), true).unwrap();
+
+            res.insert(name, PublishedRoa::new(roa));
         }
 
         res
@@ -804,21 +826,6 @@ impl CertifiedKey {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct RcvdCert {
-    cert: Cert,
-    uri: uri::Rsync,
-    resources: ResourceSet,
-}
-
-impl PartialEq for RcvdCert {
-    fn eq(&self, other: &RcvdCert) -> bool {
-        self.cert.to_captured().into_bytes() == other.cert.to_captured().into_bytes() && self.uri == other.uri
-    }
-}
-
-impl Eq for RcvdCert {}
-
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CurrentObjectSet {
     number: u64,
@@ -883,9 +890,14 @@ mod tests {
         let mut work_dir_cas = d.clone();
         work_dir_cas.push("cas");
 
+        let config = Arc::new(Config::test(&d));
+
+        let signer = KrillSigner::build(&d).unwrap();
+        let signer = Arc::new(signer);
+
         file::backup_dir(&source, &work_dir_cas).unwrap();
 
-        CaObjectsMigration::migrate(&d).unwrap();
+        CaObjectsMigration::migrate(&d, config, signer).unwrap();
 
         let _ = fs::remove_dir_all(d);
     }

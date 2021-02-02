@@ -17,7 +17,7 @@ use crate::commons::{
     },
 };
 use crate::daemon::ca::{
-    Evt, ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaContentRequest, RtaPrepareRequest,
+    CaEvt, ResourceTaggedAttestation, RouteAuthorizationUpdates, RtaContentRequest, RtaPrepareRequest,
 };
 use crate::daemon::config::Config;
 
@@ -135,7 +135,7 @@ pub enum CmdDet {
 }
 
 impl eventsourcing::CommandDetails for CmdDet {
-    type Event = Evt;
+    type Event = CaEvt;
     type StorableDetails = StorableCaCommand;
 
     fn store(&self) -> Self::StorableDetails {

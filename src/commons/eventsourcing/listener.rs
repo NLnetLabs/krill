@@ -2,6 +2,16 @@ use std::sync::RwLock;
 
 use super::Aggregate;
 
+//------------ SyncEventListener ---------------------------------------------
+
+/// This trait defines a listener for events which is designed to receive
+/// the events *before* the aggregate is saved. Thus, they are allowed
+/// to return an error in case of issues, which will then roll back the
+/// intended change to an aggregate.
+pub trait SyncEventListener<A: Aggregate>: Send + Sync + 'static {
+    fn listen(&self, agg: &A, event: &[A::Event]) -> Result<(), A::Error>;
+}
+
 //------------ EventListener -------------------------------------------------
 
 /// This trait defines a listener for type of events.

@@ -11,7 +11,7 @@ use rpki::x509::Time;
 
 use crate::commons::api::{Handle, ParentHandle, ResourceClassName, RevocationRequest};
 use crate::commons::eventsourcing::{self, Event};
-use crate::daemon::ca::{CertAuth, Evt, EvtDet};
+use crate::daemon::ca::{CaEvt, CaEvtDet, CertAuth};
 
 //------------ QueueEvent ----------------------------------------------------
 
@@ -158,25 +158,25 @@ unsafe impl Sync for MessageQueue {}
 
 /// Implement listening for CertAuth Published events.
 impl eventsourcing::EventListener<CertAuth> for MessageQueue {
-    fn listen(&self, ca: &CertAuth, event: &Evt) {
+    fn listen(&self, ca: &CertAuth, event: &CaEvt) {
         trace!("Seen CertAuth event '{}'", event);
 
         let handle = event.handle();
 
         match event.details() {
-            EvtDet::ObjectSetUpdated(_, _)
-            | EvtDet::KeyPendingToNew(_, _, _)
-            | EvtDet::KeyPendingToActive(_, _, _)
-            | EvtDet::KeyRollFinished(_, _) => {
+            CaEvtDet::ObjectSetUpdated(_, _)
+            | CaEvtDet::KeyPendingToNew(_, _, _)
+            | CaEvtDet::KeyPendingToActive(_, _, _)
+            | CaEvtDet::KeyRollFinished(_, _) => {
                 self.push_sync_repo(handle.clone());
             }
 
-            EvtDet::ParentRemoved(parent, _) => {
+            CaEvtDet::ParentRemoved(parent, _) => {
                 self.drop_sync_parent(&handle, parent);
                 self.push_sync_repo(handle.clone());
             }
 
-            EvtDet::ResourceClassRemoved(class_name, _delta, parent, revocations) => {
+            CaEvtDet::ResourceClassRemoved(class_name, _delta, parent, revocations) => {
                 self.push_sync_repo(handle.clone());
 
                 let mut revocations_map = HashMap::new();
@@ -189,27 +189,27 @@ impl eventsourcing::EventListener<CertAuth> for MessageQueue {
                 ))
             }
 
-            EvtDet::UnexpectedKeyFound(rcn, revocation) => self.push_back(QueueEvent::UnexpectedKey(
+            CaEvtDet::UnexpectedKeyFound(rcn, revocation) => self.push_back(QueueEvent::UnexpectedKey(
                 handle.clone(),
                 rcn.clone(),
                 revocation.clone(),
             )),
 
-            EvtDet::ParentAdded(parent, _contact) => {
+            CaEvtDet::ParentAdded(parent, _contact) => {
                 self.push_sync_parent(handle.clone(), parent.clone());
             }
-            EvtDet::RepoUpdated(_) => {
+            CaEvtDet::RepoUpdated(_) => {
                 for parent in ca.parents() {
                     self.push_sync_parent(handle.clone(), parent.clone());
                 }
             }
-            EvtDet::CertificateRequested(rcn, _, _) | EvtDet::KeyRollActivated(rcn, _) => {
+            CaEvtDet::CertificateRequested(rcn, _, _) | CaEvtDet::KeyRollActivated(rcn, _) => {
                 if let Ok(parent) = ca.parent_for_rc(rcn) {
                     self.push_sync_parent(handle.clone(), parent.clone());
                 }
             }
 
-            EvtDet::CertificateReceived(_, _, _) => {
+            CaEvtDet::CertificateReceived(_, _, _) => {
                 if ca.old_repository_contact().is_some() {
                     let evt = QueueEvent::CleanOldRepo(handle.clone());
                     self.push_back(evt);

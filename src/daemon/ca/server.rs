@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::Arc;
 
+use ca::CaObjectsStore;
 use futures::future::join_all;
 use tokio::sync::Mutex;
 
@@ -129,6 +130,9 @@ impl CaServer {
     /// initialised.
     pub async fn build(config: Arc<Config>, mq: Arc<MessageQueue>, signer: Arc<KrillSigner>) -> KrillResult<Self> {
         let mut ca_store = AggregateStore::<CertAuth>::new(&config.data_dir, CASERVER_DIR)?;
+
+        let ca_objects_store = Arc::new(CaObjectsStore::disk(config.clone(), signer.clone())?);
+
         if config.always_recover_data {
             ca_store.recover()?;
         } else if let Err(e) = ca_store.warm() {
@@ -139,6 +143,7 @@ impl CaServer {
             ca_store.recover()?;
         }
         ca_store.add_listener(mq.clone());
+        ca_store.add_sync_listener(ca_objects_store);
 
         let status_store = StatusStore::new(&config.data_dir, STATUS_DIR)?;
 

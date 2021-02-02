@@ -19,7 +19,7 @@ use crate::commons::eventsourcing::{
     Aggregate, Event, EventListener, KeyStoreKey, KeyValueError, KeyValueStore, StoredCommand, WithStorableDetails,
 };
 
-const SNAPSHOT_FREQ: u64 = 5;
+use super::SyncEventListener;
 
 pub type StoreResult<T> = Result<T, AggregateStoreError>;
 
@@ -149,6 +149,7 @@ pub struct AggregateStore<A: Aggregate> {
     kv: KeyValueStore,
     cache: RwLock<HashMap<Handle, Arc<A>>>,
     listeners: Vec<Arc<dyn EventListener<A>>>,
+    sync_listeners: Vec<Arc<dyn SyncEventListener<A>>>,
     outer_lock: RwLock<()>,
 }
 
@@ -166,12 +167,14 @@ where
         let kv = KeyValueStore::disk(work_dir, name_space)?;
         let cache = RwLock::new(HashMap::new());
         let listeners = vec![];
+        let sync_listeners = vec![];
         let outer_lock = RwLock::new(());
 
         let store = AggregateStore {
             kv,
             cache,
             listeners,
+            sync_listeners,
             outer_lock,
         };
 
@@ -323,11 +326,15 @@ where
         Ok(())
     }
 
-    /// Adds a listener that will receive a reference to all events as they
+    /// Adds a listener that will receive a reference to all events after they
     /// are stored.
     pub fn add_listener<L: EventListener<A>>(&mut self, listener: Arc<L>) {
-        let _lock = self.outer_lock.write().unwrap();
-        self.listeners.push(listener)
+        self.listeners.push(listener);
+    }
+
+    /// Adds a listener that will receive all events before they are stored.
+    pub fn add_sync_listener<L: SyncEventListener<A>>(&mut self, sync_listener: Arc<L>) {
+        self.sync_listeners.push(sync_listener);
     }
 }
 
@@ -453,20 +460,27 @@ where
                         std::process::exit(1);
                     }
 
+                    // Apply events, check that the aggregate can be updated, and make sure
+                    // we have an updated version so we can store it.
+                    for event in &events {
+                        agg.apply(event.clone());
+                    }
+
+                    // Apply events to sync listeners which may still return errors
+                    for sync_listener in &self.sync_listeners {
+                        sync_listener.as_ref().listen(agg, events.as_slice())?;
+                    }
+
+                    // Nothing broke, so it's safe to store the command, events and aggregate
                     for event in &events {
                         self.store_event(event)?;
-
-                        agg.apply(event.clone());
-                        if agg.version() % SNAPSHOT_FREQ == 0 {
-                            info.snapshot_version = agg.version();
-
-                            self.store_snapshot(&handle, agg)?;
-                        }
                     }
+                    info.snapshot_version = agg.version();
+                    self.store_snapshot(&handle, agg)?;
 
                     cache.insert(handle.clone(), Arc::new(agg.clone()));
 
-                    // Only send this to listeners after everything has been saved.
+                    // Now send the events to the 'post-save' listeners.
                     for event in events {
                         for listener in &self.listeners {
                             listener.as_ref().listen(agg, &event);

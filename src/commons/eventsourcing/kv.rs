@@ -76,6 +76,7 @@ impl fmt::Display for KeyStoreKey {
 
 /// Using an enum here, because we expect to have more implementations in future.
 /// Not using generics because it's harder on the compiler.
+#[derive(Debug)]
 pub enum KeyValueStore {
     Disk(KeyValueStoreDiskImpl),
 }
@@ -187,6 +188,7 @@ impl KeyValueStore {}
 
 /// This type can store and retrieve values to/from disk, using json
 /// serialization
+#[derive(Debug)]
 pub struct KeyValueStoreDiskImpl {
     base: PathBuf,
 }
