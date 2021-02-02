@@ -95,7 +95,7 @@ If you have an older version of Rust and Krill, you can update via:
 
 ```bash
 rustup update
-cargo install --locked --focrce krill
+cargo install --locked --force krill
 ```
 
 ## Introduction
