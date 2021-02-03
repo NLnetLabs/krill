@@ -12,7 +12,6 @@ use chrono::Duration;
 use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 
-use crate::commons::crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder};
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::{Aggregate, AggregateStore, Command, CommandKey};
 use crate::commons::remote::cmslogger::CmsLogger;
@@ -27,6 +26,10 @@ use crate::commons::{
         ParentStatuses, PublishDelta, RcvdCert, RepoInfo, RepoStatus, RepositoryContact, ResourceClassName,
         ResourceSet, RevocationRequest, RevocationResponse, RtaName, StoredEffect, UpdateChildRequest,
     },
+};
+use crate::commons::{
+    api::rrdp::PublishElement,
+    crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder},
 };
 use crate::commons::{KrillEmptyResult, KrillResult};
 use crate::constants::{CASERVER_DIR, REQUEUE_DELAY_SECONDS, STATUS_DIR};
@@ -227,6 +230,9 @@ impl CaServer {
     pub async fn republish_all(&self, actor: &Actor) -> KrillResult<()> {
         self.ca_objects_store.reissue_all()?;
 
+        // TODO: Return the list of CA handles which had updates, so that
+        //       we can schedule re-syncing with the repositories.
+
         // TODO: Remove the following.
         for ca in self.ca_list(actor)?.cas() {
             if let Err(e) = self.republish(ca.handle(), actor).await {
@@ -234,6 +240,24 @@ impl CaServer {
             }
         }
         Ok(())
+    }
+
+    /// Get the current objects for a CA for each repository that it's using.
+    /// Note: typically a CA will use only one repository, but during migrations there may be multiple.
+    pub async fn ca_repo_elements(
+        &self,
+        handle: &Handle,
+    ) -> KrillResult<Vec<(RepositoryContact, Vec<PublishElement>)>> {
+        let mut res = vec![];
+
+        let ca = self.get_ca(handle).await?;
+        // TODO: Support repo migrations and multiple repository contacts.
+        if let Ok(repo) = ca.repository_contact() {
+            let ca_objects = self.ca_objects_store.ca_objects(ca.handle())?;
+            res.push((repo.clone(), ca_objects.elements()));
+        }
+
+        Ok(res)
     }
 
     /// Republish a CA, this is a no-op when there is nothing to publish.

@@ -345,7 +345,7 @@ impl RcvdCert {
 
     /// Return the CA repository URI where this certificate publishes.
     pub fn ca_repository(&self) -> &uri::Rsync {
-        self.cert().ca_repository().unwrap()
+        self.cert.ca_repository().unwrap()
     }
 
     /// The URI of the MFT published by THIS certificate.

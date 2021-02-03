@@ -24,8 +24,9 @@ use rpki::{
 use crate::{
     commons::{
         api::{
-            AddedObject, CurrentObject, Handle, HexEncodedHash, IssuedCert, ObjectName, ObjectsDelta, RcvdCert,
-            ResourceClassName, Revocation, Revocations, RevocationsDelta, UpdatedObject, WithdrawnObject,
+            rrdp::PublishElement, AddedObject, Base64, CurrentObject, Handle, HexEncodedHash, IssuedCert, ObjectName,
+            ObjectsDelta, RcvdCert, ResourceClassName, Revocation, Revocations, RevocationsDelta, UpdatedObject,
+            WithdrawnObject,
         },
         crypto::KrillSigner,
         error::Error,
@@ -240,6 +241,15 @@ impl CaObjects {
         CaObjects { ca, classes }
     }
 
+    pub fn elements(&self) -> Vec<PublishElement> {
+        let mut res = vec![];
+        for rco in self.classes.values() {
+            res.append(&mut rco.elements())
+        }
+
+        res
+    }
+
     /// Add a new resource class, this returns an error in case the class already exists.
     fn add_class(
         &mut self,
@@ -357,6 +367,22 @@ pub struct ResourceClassObjects {
 impl ResourceClassObjects {
     pub fn new(keys: ResourceClassKeyState) -> Self {
         ResourceClassObjects { keys }
+    }
+
+    fn elements(&self) -> Vec<PublishElement> {
+        match &self.keys {
+            ResourceClassKeyState::Current(state) => state.current_set.elements(),
+            ResourceClassKeyState::Staging(state) => {
+                let mut elements = state.current_set.elements();
+                elements.append(&mut state.staging_set.elements());
+                elements
+            }
+            ResourceClassKeyState::Old(state) => {
+                let mut elements = state.current_set.elements();
+                elements.append(&mut state.old_set.elements());
+                elements
+            }
+        }
     }
 
     fn create(key: &CertifiedKey, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<Self> {
@@ -560,6 +586,28 @@ impl CurrentKeyObjectSet {
             crl,
         };
         CurrentKeyObjectSet { basic, roas, certs }
+    }
+
+    fn elements(&self) -> Vec<PublishElement> {
+        let mut res = self.basic.elements();
+
+        let base_uri = self.signing_cert.ca_repository();
+
+        for (name, roa) in &self.roas {
+            res.push(PublishElement::new(
+                Base64::from(&roa.0),
+                base_uri.join(name.as_bytes()),
+            ));
+        }
+
+        for (name, cert) in &self.certs {
+            res.push(PublishElement::new(
+                Base64::from(cert.as_ref()),
+                base_uri.join(name.as_bytes()),
+            ));
+        }
+
+        res
     }
 
     fn update_roas(
@@ -773,6 +821,20 @@ impl BasicKeyObjectSet {
         }
     }
 
+    fn elements(&self) -> Vec<PublishElement> {
+        let mut res = vec![];
+
+        let base_uri = self.signing_cert.ca_repository();
+
+        let mft_uri = base_uri.join(self.manifest.name().as_bytes());
+        let crl_uri = base_uri.join(self.crl.name().as_bytes());
+
+        res.push(PublishElement::new(Base64::from(&self.manifest.0), mft_uri));
+        res.push(PublishElement::new(Base64::from(&self.crl.0), crl_uri));
+
+        res
+    }
+
     fn create(key: &CertifiedKey, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<Self> {
         let signing_cert = key.incoming_cert().clone();
 
@@ -855,6 +917,7 @@ impl BasicKeyObjectSet {
 
 //------------ AddedOrUpdated ----------------------------------------------
 
+#[deprecated]
 pub enum AddedOrUpdated {
     Added(AddedObject),
     Updated(UpdatedObject),
