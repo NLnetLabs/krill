@@ -20,9 +20,11 @@ describe('OpenID Connect provider with OAuth 2 revocation', () => {
     cy.request('http://127.0.0.1:1818/test/is_user_logged_in?username=' + username).its('status').should('eq', 200)
 
     // logout
+    cy.intercept('/auth/logout').as('getLogoutURL')
     cy.get('.logout').click()
 
     // verify that we are shown the OpenID Connect provider login page
+    cy.wait('@getLogoutURL').its('response.statusCode').should('eq', 200)
     cy.url().should('not.include', Cypress.config('baseUrl'))
     cy.contains('Mock OpenID Connect login form')
     cy.get('input[name="username"]')
