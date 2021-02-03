@@ -580,7 +580,7 @@ impl OpenIDConnectAuthProvider {
             url: &str,
         ) -> Result<bool, Error> {
             // TODO: don't lose the https://tools.ietf.org/html/rfc6749 error details available via the JSON body fields
-            // error, and optionally error_description and error_uri. 
+            // error, and optionally error_description and error_uri.
             TokenRevocationRequest {
                 url: Url::parse(&url)?,
                 client_id: client_id.to_string(),

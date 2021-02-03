@@ -150,7 +150,7 @@ impl LoginSessionCache {
             expires_in,
             id: id.to_string(),
             attributes: attributes.clone(),
-            secrets: secrets,
+            secrets,
         };
 
         debug!("Creating token for session: {:?}", &session);
