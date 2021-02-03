@@ -51,28 +51,6 @@ impl TokenRevocationRequest {
             self.token_type_hint.clone(),
             self.url.clone(),
         )
-        // let (auth_header, auth_value) = auth_bearer(&self.access_token);
-        // HttpRequest {
-        //     url: self.url.clone(),
-        //     method: Method::POST,
-        //     headers: vec![
-        //         (
-        //             CONTENT_TYPE,
-        //             HeaderValue::from_static("application/x-www-form-urlencoded"),
-        //         ),
-        //         // (auth_header, auth_value),
-        //     ]
-        //     .into_iter()
-        //     .collect(),
-        //     body: format!(
-        //         "client_id={}&client_secret={}&token={}&token_type_hint={}",
-        //         urlparse::quote_plus(self.client_id.clone(), b"").unwrap(),
-        //         urlparse::quote_plus(self.client_secret.clone(), b"").unwrap(),
-        //         urlparse::quote_plus(self.token.clone(), b"").unwrap(),
-        //         urlparse::quote_plus(self.token_type_hint.clone(), b"").unwrap()
-        //     )
-        //     .into_bytes(),
-        // }
     }
 }
 
@@ -132,58 +110,3 @@ fn token_response(http_response: HttpResponse) -> Result<(), StandardErrorRespon
         )),
     }
 }
-
-// // Copied from oauth2 v3.0.0
-// fn token_response(
-//     http_response: HttpResponse,
-// ) -> Result<(), StandardErrorResponse<CoreErrorResponseType>> {
-//     if http_response.status_code != StatusCode::OK {
-//         let reason = http_response.body.as_slice();
-//         if reason.is_empty() {
-//             return Err(StandardErrorResponse::new(
-//                 CoreErrorResponseType::Extension("Server returned empty error response".to_string()),
-//                 None,
-//                 None
-//             ));
-//         } else {
-//             let error = match serde_json::from_slice::<StandardErrorResponse<CoreErrorResponseType>>(reason) {
-//                 Ok(error) => RequestTokenError::ServerResponse(error),
-//                 Err(error) => RequestTokenError::Parse(error, reason.to_vec()),
-//             };
-//             return Err(error);
-//         }
-//     }
-
-//     // Validate that the response Content-Type is JSON.
-//     http_response
-//         .headers
-//         .get(CONTENT_TYPE)
-//         .map_or(Ok(()), |content_type|
-//             // Section 3.1.1.1 of RFC 7231 indicates that media types are case insensitive and
-//             // may be followed by optional whitespace and/or a parameter (e.g., charset).
-//             // See https://tools.ietf.org/html/rfc7231#section-3.1.1.1.
-//             if content_type.to_str().ok().filter(|ct| ct.to_lowercase().starts_with("application/json")).is_none() {
-//                 Err(
-//                     RequestTokenError::Other(
-//                         format!(
-//                             "Unexpected response Content-Type: {:?}, should be `{}`",
-//                             content_type,
-//                             "application/json"
-//                         )
-//                     )
-//                 )
-//             } else {
-//                 Ok(())
-//             }
-//         )?;
-
-//     if http_response.body.is_empty() {
-//         Err(RequestTokenError::Other(
-//             "Server returned empty response body".to_string(),
-//         ))
-//     } else {
-//         let response_body = http_response.body.as_slice();
-//         serde_json::from_slice(response_body)
-//             .map_err(|e| RequestTokenError::Parse(e, response_body.to_vec()))
-//     }
-// }
