@@ -1625,8 +1625,7 @@ async fn api_ca_routes_analysis(req: Request, path: &mut RequestPath, handle: Ha
 async fn api_republish_all(req: Request) -> RoutingResult {
     match *req.method() {
         Method::POST => aa!(req, CA_UPDATE, {
-            let actor = req.actor();
-            render_empty_res(req.state().read().await.republish_all(&actor).await)
+            render_empty_res(req.state().read().await.republish_all().await)
         }),
         _ => render_unknown_method(),
     }

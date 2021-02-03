@@ -166,23 +166,19 @@ impl CaObjectsStore {
             .map_err(Error::KeyValueError)
     }
 
-    // Re-issue MFT and CRL for all CAs (if needed)
-    pub fn reissue_all(&self) -> KrillResult<()> {
-        let mut failures = false;
-        let mut failure_msg = "".to_string();
+    // Re-issue MFT and CRL for all CAs *if needed*, returns all CAs which were
+    // updated.
+    pub fn reissue_all(&self) -> KrillResult<Vec<Handle>> {
+        let mut res = vec![];
         for ca in self.cas()? {
-            if let Err(e) = self.with_ca_objects(&ca, |objects| {
-                objects.re_issue_if_required(&self.config.issuance_timing, &self.signer)
-            }) {
-                failures = true;
-                failure_msg.push_str(&format!(" CA '{}', Error: '{}'", ca, e));
-            }
+            self.with_ca_objects(&ca, |objects| {
+                if objects.re_issue_if_required(&self.config.issuance_timing, &self.signer)? {
+                    res.push(ca.clone())
+                }
+                Ok(())
+            })?;
         }
-        if failures {
-            Err(Error::Custom(format!("Reissuance failure(s) found: {}", failure_msg)))
-        } else {
-            Ok(())
-        }
+        Ok(res)
     }
 }
 
@@ -341,21 +337,18 @@ impl CaObjects {
     /// Reissue the MFT and CRL in this set if needed, i.e. if it's close to the next
     /// update time, or in case the AIA has changed.. the latter really should not happen,
     /// but ultimately we have no control over this, so better safe.
-    fn re_issue_if_required(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<()> {
+    fn re_issue_if_required(&mut self, timing: &IssuanceTimingConfig, signer: &KrillSigner) -> KrillResult<bool> {
         let hours = timing.timing_publish_hours_before_next;
+        let mut required = false;
 
-        let required = self.classes.values().any(|rco| rco.requires_reissuance(hours));
-
-        if !required {
-            Ok(())
-        } else {
-            for (_, rco) in self.classes.iter_mut() {
-                if rco.requires_reissuance(hours) {
-                    rco.reissue(timing, signer)?;
-                }
+        for (_, rco) in self.classes.iter_mut() {
+            if rco.requires_reissuance(hours) {
+                required = true;
+                rco.reissue(timing, signer)?;
             }
-            Ok(())
         }
+
+        Ok(required)
     }
 }
 

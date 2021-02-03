@@ -640,8 +640,8 @@ impl KrillServer {
 ///
 impl KrillServer {
     /// Republish all CAs that need it.
-    pub async fn republish_all(&self, actor: &Actor) -> KrillEmptyResult {
-        self.get_caserver()?.republish_all(actor).await?;
+    pub async fn republish_all(&self) -> KrillEmptyResult {
+        self.get_caserver()?.republish_all().await?;
         Ok(())
     }
 

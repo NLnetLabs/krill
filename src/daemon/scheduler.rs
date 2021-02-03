@@ -67,13 +67,13 @@ impl Scheduler {
 
         if let Some(caserver) = caserver.as_ref() {
             cas_event_triggers = Some(make_cas_event_triggers(
-                event_queue,
+                event_queue.clone(),
                 caserver.clone(),
                 pubserver.clone(),
                 actor.clone(),
             ));
 
-            cas_republish = Some(make_cas_republish(caserver.clone(), actor.clone()));
+            cas_republish = Some(make_cas_republish(caserver.clone(), event_queue));
             cas_refresh = Some(make_cas_refresh(caserver.clone(), config.ca_refresh, actor.clone()));
         }
 
@@ -231,14 +231,19 @@ async fn try_sync_parent(
     }
 }
 
-fn make_cas_republish(caserver: Arc<CaServer>, actor: Actor) -> ScheduleHandle {
+fn make_cas_republish(caserver: Arc<CaServer>, event_queue: Arc<MessageQueue>) -> ScheduleHandle {
     SkippingScheduler::run(120, "CA certificate republish", move || {
         let mut rt = Runtime::new().unwrap();
         rt.block_on(async {
             info!("Triggering background republication for all CAs");
-            if let Err(e) = caserver.republish_all(&actor).await {
-                error!("Background republishing failed: {}", e);
-            };
+            match caserver.republish_all().await {
+                Err(e) => error!("Background republishing failed: {}", e),
+                Ok(cas) => {
+                    for ca in cas {
+                        event_queue.push_sync_repo(ca);
+                    }
+                }
+            }
         })
     })
 }

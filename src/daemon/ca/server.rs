@@ -227,19 +227,8 @@ impl CaServer {
 
     /// Republish the embedded TA and CAs if needed, i.e. if they are close
     /// to their next update time.
-    pub async fn republish_all(&self, actor: &Actor) -> KrillResult<()> {
-        self.ca_objects_store.reissue_all()?;
-
-        // TODO: Return the list of CA handles which had updates, so that
-        //       we can schedule re-syncing with the repositories.
-
-        // TODO: Remove the following.
-        for ca in self.ca_list(actor)?.cas() {
-            if let Err(e) = self.republish(ca.handle(), actor).await {
-                error!("ServerError publishing: {}, ServerError: {}", ca.handle(), e)
-            }
-        }
-        Ok(())
+    pub async fn republish_all(&self) -> KrillResult<Vec<Handle>> {
+        self.ca_objects_store.reissue_all()
     }
 
     /// Get the current objects for a CA for each repository that it's using.
