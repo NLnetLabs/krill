@@ -1,4 +1,4 @@
-let username = 'shorttokenwithrefresh@krill';
+let username = 'admin@krill';
 
 // TODO: test revocation of both access and refresh tokens?
 describe('OpenID Connect provider with custom logout URL', () => {
