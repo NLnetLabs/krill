@@ -579,6 +579,8 @@ impl OpenIDConnectAuthProvider {
             token: String,
             url: &str,
         ) -> Result<bool, Error> {
+            // TODO: don't lose the https://tools.ietf.org/html/rfc6749 error details available via the JSON body fields
+            // error, and optionally error_description and error_uri. 
             TokenRevocationRequest {
                 url: Url::parse(&url)?,
                 client_id: client_id.to_string(),
@@ -1168,35 +1170,42 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                         format!("{}?post_logout_redirect_uri={}", url, service_uri.as_str())
                     }
                     Some(ProviderLogoutURL::OAuth2TokenRevocationURL(ref url)) => {
-                        trace!(
-                            "OpenID Connect: contacting OAuth 2.0 Token Revocation compliant logout endpoint"
-                        );
+                        trace!("OpenID Connect: contacting OAuth 2.0 Token Revocation compliant logout endpoint");
                         // Connect to the OpenID Connect provider OAuth 2.0 token revocation endpoint to terminate the
                         // provider session
                         // From: https://tools.ietf.org/html/rfc7009#section-2
                         //   "Implementations MUST support the revocation of refresh tokens and SHOULD support the
                         //    revocation of access tokens (see Implementation Note)."
-                        // TODO: support trying with an access token if we don't have a refresh token
-                        let mut revoked = false;
                         if let Some(token) = session.get_secret(REFRESH_TOKEN_KIND) {
-                            revoked = self.revoke_token(REFRESH_TOKEN_KIND, token.clone(), url);
-                        }
-                        if !revoked {
-                            if let Some(token) = session.get_secret(ACCESS_TOKEN_KIND) {
-                                self.revoke_token(ACCESS_TOKEN_KIND, token.clone(), url);
-                            }
+                            self.revoke_token(REFRESH_TOKEN_KIND, token.clone(), url);
+                        } else if let Some(token) = session.get_secret(ACCESS_TOKEN_KIND) {
+                            self.revoke_token(ACCESS_TOKEN_KIND, token.clone(), url);
+                        } else {
+                            // this should be unreachable as we can't have a valid bearer token if we weren't issued an
+                            // access token and we can't get here without a bearer token! however we don't want to crash
+                            // out of Krill at this point, just log it and move on
+                            self.internal_error(
+                                format!("Attempted to revoke a non-existent token for user '{}'", session.id),
+                                None,
+                            );
                         }
 
                         // Then ask Lagosta to direct the user to the Krill UI landing page.
                         service_uri.as_str().to_string()
                     }
                     Some(ProviderLogoutURL::OperatorProvidedLogoutURL(ref url)) => {
-                        trace!("OpenID Connect: directing user to Krill config file defined logout URL '{}'", url);
+                        trace!(
+                            "OpenID Connect: directing user to Krill config file defined logout URL '{}'",
+                            url
+                        );
                         url.to_string()
                     }
                     None => {
                         let ui_url = self.config.service_uri().as_str().to_string();
-                        trace!("OpenID Connect: no logout URL defined, directing user to Krill UI index URL '{}'", &ui_url);
+                        trace!(
+                            "OpenID Connect: no logout URL defined, directing user to Krill UI index URL '{}'",
+                            &ui_url
+                        );
                         ui_url
                     }
                 };

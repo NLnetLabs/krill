@@ -17,7 +17,7 @@ describe('OpenID Connect provider with OAuth 2 revocation', () => {
     cy.get('#userinfo_table').contains("role")
 
     // verify that the mock provider thinks the user is logged in
-    cy.request('http://127.0.0.1:1818/control/is_user_logged_in?username=' + username).its('status').should('eq', 200)
+    cy.request('http://127.0.0.1:1818/test/is_user_logged_in?username=' + username).its('status').should('eq', 200)
 
     // logout
     cy.get('.logout').click()
@@ -30,6 +30,6 @@ describe('OpenID Connect provider with OAuth 2 revocation', () => {
     // verify that the mock provider thinks the user is STILL logged in because due to the OpenID Connect mock being
     // configured to NOT support end_session_endpoint or revocation_endpoint there is no way to tell the mock that we
     // are logging the user out
-    cy.request('http://127.0.0.1:1818/control/is_user_logged_in?username=' + username).its('status').should('eq', 200)
+    cy.request('http://127.0.0.1:1818/test/is_user_logged_in?username=' + username).its('status').should('eq', 200)
   })
 })

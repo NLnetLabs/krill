@@ -1,33 +1,47 @@
-let username = 'shorttokenwithrefresh@krill';
+let login_test_settings = [
+  { u: 'shorttokenwithrefresh@krill', o: true },
+  { u: 'shorttokenwithoutrefresh@krill', o: false }
+];
 
-// TODO: test revocation of both access and refresh tokens?
 describe('OpenID Connect provider with OAuth 2 revocation', () => {
-  it('Logout when logged in behaves as expected', () => {
-    cy.visit('/')
-    cy.url().should('not.include', Cypress.config('baseUrl'))
-    cy.contains('Mock OpenID Connect login form')
-    cy.get('input[name="username"]').clear().type(username)
-    cy.contains('Sign In').click()
+  login_test_settings.forEach(function (ts) {
+    it('Logout when logged in as user ' + ts.u + ' behaves as expected', () => {
+      cy.visit('/')
+      cy.url().should('not.include', Cypress.config('baseUrl'))
+      cy.contains('Mock OpenID Connect login form')
+      cy.get('input[name="username"]').clear().type(ts.u)
+      cy.contains('Sign In').click()
 
-    // We should end up back in the Krill UI
-    cy.url().should('include', Cypress.config('baseUrl'))
-    cy.contains('Sign In').should('not.exist')
-    cy.get('#userinfo').click()
-    cy.get('#userinfo_table').contains(username)
-    cy.get('#userinfo_table').contains("role")
+      // We should end up back in the Krill UI
+      cy.url().should('include', Cypress.config('baseUrl'))
+      cy.contains('Sign In').should('not.exist')
+      cy.get('#userinfo').click()
+      cy.get('#userinfo_table').contains(ts.u)
+      cy.get('#userinfo_table').contains("role")
 
-    // verify that the mock provider thinks the user is logged in
-    cy.request('http://127.0.0.1:1818/control/is_user_logged_in?username=' + username).its('status').should('eq', 200)
+      // verify that the mock provider thinks the user is logged in
+      cy.request({ url: 'http://127.0.0.1:1818/test/is_user_logged_in?username=' + ts.u, failOnStatusCode: false }).its('status').should('eq', 200)
 
-    // logout
-    cy.get('.logout').click()
+      // logout, and thus trigger the invocation of the OAuth 2.0 token revocation endpoint
+      // for users with both a refresh token and an access token first Krill will try to revoke the refresh token
+      // then will retry if that fails with the access token
+      cy.intercept('/auth/logout').as('getLogoutURL')
+      cy.get('.logout').click()
 
-    // verify that we are shown the OpenID Connect provider login page
-    cy.url().should('not.include', Cypress.config('baseUrl'))
-    cy.contains('Mock OpenID Connect login form')
-    cy.get('input[name="username"]')
+      // verify that we are shown the OpenID Connect provider login page
+      cy.wait('@getLogoutURL').its('response.statusCode').should('eq', 200)
+      cy.url().should('not.include', Cypress.config('baseUrl'))
+      cy.contains('Mock OpenID Connect login form')
+      cy.get('input[name="username"]')
 
-    // verify that the mock provider thinks the user is now logged out
-    cy.request({ url: 'http://127.0.0.1:1818/control/is_user_logged_in?username=' + username, failOnStatusCode: false }).its('status').should('eq', 400)
+      if (ts.o) {
+        // verify that the mock provider thinks the user is now logged out
+        cy.request({ url: 'http://127.0.0.1:1818/test/is_user_logged_in?username=' + ts.u, failOnStatusCode: false }).its('status').should('eq', 400)
+      } else {
+        // verify that the mock provider thinks the user is still logged in (because it only supports revocation by
+        // refresh token, not by access token)
+        cy.request({ url: 'http://127.0.0.1:1818/test/is_user_logged_in?username=' + ts.u, failOnStatusCode: false }).its('status').should('eq', 200)
+      }
+    })
   })
 })

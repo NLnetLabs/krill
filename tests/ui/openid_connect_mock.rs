@@ -571,30 +571,56 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
 
             let query_params = parse_qs(body);
             let token = require_query_param(&query_params, "token")?;
+            let token_type_hint = query_params.get_first_from_str("token_type_hint");
 
-            match login_sessions.remove(&token) {
-                Some(removed_session) => {
-                    log_info(&format!("Token '{}' has been revoked", &token));
-                    match known_users.remove(&removed_session.id) {
-                        Some(_removed_user) => {
-                            log_info(&format!("User '{}' has been forgotten", &removed_session.id));
-                            request
-                                .respond(Response::empty(StatusCode(200)))
-                                .map_err(|err| err.into())
-                        }
-                        None => {
-                            log_warning(&format!("User '{}' could NOT be forgotten", &token));
-                            request
-                                .respond(Response::empty(StatusCode(400)))
-                                .map_err(|err| err.into())
+            // https://tools.ietf.org/html/rfc7009#section-2.2.1:
+            //   unsupported_token_type:  The authorization server does not support
+            //   the revocation of the presented token type.  That is, the
+            //   client tried to revoke an access token on a server not
+            //   supporting this feature.
+            if matches!(token_type_hint, Some(hint_str) if hint_str == "access_token") {
+                let err_body = json!({
+                    "error": "unsupported_token_type",
+                    "error_description": "This mock OpenID Connect server only supports revocation of refresh tokens, not access tokens"
+                })
+                .to_string();
+                request
+                    .respond(
+                        Response::empty(StatusCode(400))
+                            .with_header(Header::from_str("Content-Type: application/json").unwrap())
+                            .with_data(err_body.as_bytes(), None),
+                    )
+                    .map_err(|err| err.into())
+            } else {
+                match login_sessions.remove(&token) {
+                    Some(removed_session) => {
+                        log_info(&format!("Token '{}' has been revoked", &token));
+                        match known_users.remove(&removed_session.id) {
+                            Some(_) => {
+                                log_info(&format!("User '{}' has been forgotten", &removed_session.id));
+                                request
+                                    .respond(Response::empty(StatusCode(200)))
+                                    .map_err(|err| err.into())
+                            }
+                            None => {
+                                log_warning(&format!("User '{}' could NOT be forgotten", &token));
+                                request
+                                    .respond(Response::empty(StatusCode(400)))
+                                    .map_err(|err| err.into())
+                            }
                         }
                     }
-                }
-                None => {
-                    log_warning(&format!("Token '{}' could NOT be revoked", &token));
-                    request
-                        .respond(Response::empty(StatusCode(400)))
-                        .map_err(|err| err.into())
+                    None => {
+                        log_warning(&format!("Token '{}' could NOT be revoked: token is NOT known", &token));
+                        // From https://tools.ietf.org/html/rfc7009#section-2.2:
+                        //   Note: invalid tokens do not cause an error response since the client
+                        //   cannot handle such an error in a reasonable way.  Moreover, the
+                        //   purpose of the revocation request, invalidating the particular token,
+                        //   is already achieved.
+                        request
+                            .respond(Response::empty(StatusCode(200)))
+                            .map_err(|err| err.into())
+                    }
                 }
             }
         }
@@ -763,9 +789,9 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                 None => Err(Error::custom("Missing query parameter 'grant_type'")),
             };
 
-            // do this out here to avoid having both a mutable and immutable
-            // reference to login_sessions at the same time, which isn't
-            // permitted by the Rust borrow checker.
+            // do this out here to avoid having both a mutable and immutable reference to login_sessions at the same
+            // time, which isn't permitted by the Rust borrow checker. The key could be either an access token or a
+            // refresh token, we don't distinguish between the two.
             if let Some(key) = new_key {
                 if let Some(session) = new_session {
                     login_sessions.insert(key, session);
@@ -844,7 +870,7 @@ fn run_mock_openid_connect_server(config: OpenIDConnectMockMode) {
                     }
                 }
                 // Test control APIs
-                (Method::Get, "/control/is_user_logged_in") => {
+                (Method::Get, "/test/is_user_logged_in") => {
                     return handle_control_is_user_logged_in_request(request, url, known_users);
                 }
                 _ => {}
