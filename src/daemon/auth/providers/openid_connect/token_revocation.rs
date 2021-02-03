@@ -42,7 +42,7 @@ impl TokenRevocationRequest {
                     None,
                 )
             })
-            .and_then(|http_response| token_response(http_response))
+            .and_then(token_response)
     }
 
     fn prepare_request(&self) -> HttpRequest {
@@ -114,7 +114,7 @@ fn token_request(
         .into_bytes();
 
     HttpRequest {
-        url: url.to_owned(),
+        url,
         method: http::method::Method::POST,
         headers,
         body,

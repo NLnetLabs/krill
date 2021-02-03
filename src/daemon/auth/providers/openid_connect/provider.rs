@@ -571,13 +571,13 @@ impl OpenIDConnectAuthProvider {
         None
     }
 
-    fn revoke_token(&self, token_kind: &str, token: String, url: &String) -> bool {
+    fn revoke_token(&self, token_kind: &str, token: String, url: &str) -> bool {
         fn do_revoke(
             client_id: &str,
             client_secret: &str,
             token_kind: &str,
             token: String,
-            url: &String,
+            url: &str,
         ) -> Result<bool, Error> {
             TokenRevocationRequest {
                 url: Url::parse(&url)?,
@@ -587,7 +587,7 @@ impl OpenIDConnectAuthProvider {
                 token_type_hint: token_kind.to_string(),
             }
             .request(logging_http_client!())
-            .map_err(|err| Error::custom(err))?;
+            .map_err(Error::custom)?;
 
             Ok(true)
         }
