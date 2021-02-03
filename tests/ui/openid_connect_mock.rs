@@ -1,4 +1,4 @@
-use log::{error, info, trace, warn, LevelFilter};
+use log::{error, info, trace, warn};
 use openidconnect::core::*;
 use openidconnect::PrivateSigningKey;
 use openidconnect::*;
@@ -165,7 +165,7 @@ static MOCK_OPENID_CONNECT_SERVER_RUNNING_FLAG: AtomicBool = AtomicBool::new(fal
 pub async fn main() {
     // Log to stdout.
     #[cfg(feature = "multi-user")]
-    fern::Dispatch::new().format(move |out, message, record| {
+    let _logger = fern::Dispatch::new().format(move |out, message, record| {
             out.finish(format_args!(
                 "{} [{}] {}",
                 chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
@@ -177,6 +177,7 @@ pub async fn main() {
     .chain(std::io::stdout())
     .apply()
     .map_err(|e| format!("Failed to init stderr logging: {}", e));
+    
     start(2500).await;
 }
 
