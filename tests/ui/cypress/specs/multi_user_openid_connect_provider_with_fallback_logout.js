@@ -1,4 +1,4 @@
-let username = 'shorttokenwithrefresh@krill';
+let username = 'admin@krill';
 
 describe('OpenID Connect provider with fallback logout URL', () => {
   it('Logout when logged in behaves as expected', () => {
