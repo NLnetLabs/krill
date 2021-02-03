@@ -1,5 +1,3 @@
-// https://www.netiq.com/documentation/access-manager-45-developer-documentation/administration-rest-api-guide/data/revoking-token.html
-
 use std::fmt::Display;
 
 use openidconnect::{
