@@ -212,8 +212,8 @@ pub struct LoggedInUser {
 #[derive(Clone, Debug)]
 pub enum Auth {
     Bearer(Token),
-    AuthorizationCode(Token, String, String),
-    IdAndPasswordHash(String, Token),
+    AuthorizationCode { code: Token, state: String, nonce: String },
+    IdAndPasswordHash { id: String, password_hash: Token },
 }
 
 impl Auth {
@@ -221,10 +221,10 @@ impl Auth {
         Auth::Bearer(token)
     }
     pub fn authorization_code(code: Token, state: String, nonce: String) -> Self {
-        Auth::AuthorizationCode(code, state, nonce)
+        Auth::AuthorizationCode { code, state, nonce }
     }
 
     pub fn id_and_password_hash(id: String, password_hash: Token) -> Self {
-        Auth::IdAndPasswordHash(id, password_hash)
+        Auth::IdAndPasswordHash { id, password_hash }
     }
 }
