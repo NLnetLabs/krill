@@ -1,6 +1,5 @@
 let username = 'admin@krill';
 
-// TODO: test revocation of both access and refresh tokens?
 describe('OpenID Connect provider with custom logout URL', () => {
   it('Logout when logged in behaves as expected', () => {
     cy.visit('/')

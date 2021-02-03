@@ -1,7 +1,6 @@
 let username = 'shorttokenwithrefresh@krill';
 
-// TODO: test revocation of both access and refresh tokens?
-describe('OpenID Connect provider with OAuth 2 revocation', () => {
+describe('OpenID Connect provider with fallback logout URL', () => {
   it('Logout when logged in behaves as expected', () => {
     cy.visit('/')
     cy.url().should('not.include', Cypress.config('baseUrl'))
