@@ -120,6 +120,7 @@ pub struct CaServer {
     config: Arc<Config>,
     signer: Arc<KrillSigner>,
     ca_store: Arc<AggregateStore<CertAuth>>,
+    ca_objects_store: Arc<CaObjectsStore>,
     locks: Arc<CaLocks>,
     status_store: Arc<Mutex<StatusStore>>,
     mq: Arc<MessageQueue>,
@@ -143,7 +144,7 @@ impl CaServer {
             ca_store.recover()?;
         }
         ca_store.add_listener(mq.clone());
-        ca_store.add_sync_listener(ca_objects_store);
+        ca_store.add_sync_listener(ca_objects_store.clone());
 
         let status_store = StatusStore::new(&config.data_dir, STATUS_DIR)?;
 
@@ -153,6 +154,7 @@ impl CaServer {
             config,
             signer,
             ca_store: Arc::new(ca_store),
+            ca_objects_store,
             locks,
             status_store: Arc::new(Mutex::new(status_store)),
             mq,
@@ -223,6 +225,9 @@ impl CaServer {
     /// Republish the embedded TA and CAs if needed, i.e. if they are close
     /// to their next update time.
     pub async fn republish_all(&self, actor: &Actor) -> KrillResult<()> {
+        self.ca_objects_store.reissue_all()?;
+
+        // TODO: Remove the following.
         for ca in self.ca_list(actor)?.cas() {
             if let Err(e) = self.republish(ca.handle(), actor).await {
                 error!("ServerError publishing: {}, ServerError: {}", ca.handle(), e)
@@ -232,6 +237,7 @@ impl CaServer {
     }
 
     /// Republish a CA, this is a no-op when there is nothing to publish.
+    #[deprecated]
     pub async fn republish(&self, handle: &Handle, actor: &Actor) -> KrillResult<()> {
         let cmd = CmdDet::publish(handle, self.config.clone(), self.signer.clone(), actor);
         self.send_command(cmd).await?;

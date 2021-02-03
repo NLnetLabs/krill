@@ -4,6 +4,7 @@ use std::{
     borrow::BorrowMut,
     collections::HashMap,
     ops::{Deref, DerefMut},
+    str::FromStr,
     sync::{Arc, RwLock},
 };
 
@@ -79,8 +80,7 @@ impl SyncEventListener<CertAuth> for CaObjectsStore {
         let timing = &self.config.issuance_timing;
         let signer = &self.signer;
 
-        debug!("Will process events for {}", ca.handle());
-        self.with_ca_objects(ca, |objects| {
+        self.with_ca_objects(ca.handle(), |objects| {
             for event in events {
                 match event.details() {
                     super::CaEvtDet::RoasUpdated(rcn, roa_updates) => {
@@ -122,30 +122,38 @@ impl CaObjectsStore {
         KeyStoreKey::simple(format!("{}.json", ca))
     }
 
+    fn cas(&self) -> KrillResult<Vec<Handle>> {
+        let cas = self
+            .store
+            .read()
+            .unwrap()
+            .keys(None, ".json")?
+            .iter()
+            .map(|k| Handle::from_str(k.name()).unwrap()) // These are always supposed to be safe
+            .collect();
+        Ok(cas)
+    }
+
     /// Get objects for this CA, create a new empty CaObjects if there is none.
-    pub fn ca_objects(&self, ca: &CertAuth) -> KrillResult<CaObjects> {
-        let key = Self::key(ca.handle());
+    pub fn ca_objects(&self, ca: &Handle) -> KrillResult<CaObjects> {
+        let key = Self::key(ca);
 
         match self.store.read().unwrap().get(&key).map_err(Error::KeyValueError)? {
             None => {
-                let objects = CaObjects::new(ca.handle().clone(), HashMap::new());
+                let objects = CaObjects::new(ca.clone(), HashMap::new());
                 Ok(objects)
             }
             Some(objects) => Ok(objects),
         }
     }
 
-    fn with_ca_objects<F>(&self, ca: &CertAuth, op: F) -> KrillResult<()>
+    fn with_ca_objects<F>(&self, ca: &Handle, op: F) -> KrillResult<()>
     where
         F: FnOnce(&mut CaObjects) -> KrillResult<()>,
     {
-        debug!("Try to get current objects for CA");
         let mut objects = self.ca_objects(ca)?;
-        debug!("Found current objects for CA");
         op(&mut objects)?;
-        debug!("Try to save current objects for CA");
-        self.put_ca_objects(ca.handle(), &objects)?;
-        debug!("Saved current objects for CA");
+        self.put_ca_objects(ca, &objects)?;
         Ok(())
     }
 
@@ -155,6 +163,25 @@ impl CaObjectsStore {
             .unwrap()
             .store(&Self::key(ca), objects)
             .map_err(Error::KeyValueError)
+    }
+
+    // Re-issue MFT and CRL for all CAs (if needed)
+    pub fn reissue_all(&self) -> KrillResult<()> {
+        let mut failures = false;
+        let mut failure_msg = "".to_string();
+        for ca in self.cas()? {
+            if let Err(e) = self.with_ca_objects(&ca, |objects| {
+                objects.re_issue_if_required(&self.config.issuance_timing, &self.signer)
+            }) {
+                failures = true;
+                failure_msg.push_str(&format!(" CA '{}', Error: '{}'", ca, e));
+            }
+        }
+        if failures {
+            Err(Error::Custom(format!("Reissuance failure(s) found: {}", failure_msg)))
+        } else {
+            Ok(())
+        }
     }
 }
 
