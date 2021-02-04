@@ -112,9 +112,9 @@ describe('Config File Users with TA', () => {
 
           // enter the request XML into the testbed UI edit field
           cy.get('div#tab-addPublisher').contains('Register Publisher').click()
-          cy.get('div#pane-addPublisher pre[contenteditable="true"]').invoke('text', pub_req_xml)
-          cy.get('div#pane-addPublisher pre[contenteditable="true"]').type('{end}')
-          cy.get('div#pane-addPublisher button').contains('Register publisher').click()
+          cy.get('#addPublisher pre[contenteditable="true"]').invoke('text', pub_req_xml)
+          cy.get('#addPublisher pre[contenteditable="true"]').type('{end}')
+          cy.get('#addPublisher button').contains('Register publisher').click()
           cy.get('div[role="dialog"] button').contains('OK').click()
           cy.contains('has been added to the testbed')
 
@@ -125,8 +125,8 @@ describe('Config File Users with TA', () => {
           // requiring user accounts.
 
           // grab the repository response XML from the testbed UI
-          cy.get('div#pane-addPublisher pre[contenteditable="false"]').contains('<repository_response')
-          cy.get('div#pane-addPublisher pre[contenteditable="false"]').invoke('text').then(repo_resp_xml => {
+          cy.get('#addPublisher pre[contenteditable="false"]').contains('<repository_response')
+          cy.get('#addPublisher pre[contenteditable="false"]').invoke('text').then(repo_resp_xml => {
             // navigate back to Krill
             cy.visit("/")
 
@@ -151,8 +151,8 @@ describe('Config File Users with TA', () => {
 
         // enter the registered publisher name into the testbed UI edit field
         cy.get('div#tab-removePublisher').contains('Unregister Publisher').click()
-        cy.get('div#pane-removePublisher input[placeholder="Enter the Publisher name to remove"]').type(ts.ca)
-        cy.get('div#pane-removePublisher button').contains('Remove publisher').click()
+        cy.get('#removePublisher input[placeholder="Enter the Publisher name to remove"]').type(ts.ca)
+        cy.get('#removePublisher button').contains('Remove publisher').click()
         cy.get('div[role="dialog"] button').contains('OK').click()
 
         if (ts.o) {
@@ -188,17 +188,17 @@ describe('Config File Users with TA', () => {
 
           // enter the request XML into the testbed UI edit field
           cy.get('div#tab-addChild').contains('Register CA').click()
-          cy.get('div#pane-addChild pre[contenteditable="true"]').invoke('text', child_req_xml)
-          cy.get('div#pane-addChild pre[contenteditable="true"]').type('{end}')
-          cy.get('div#pane-addChild input[placeholder^="The AS resources"]').type('AS18')
-          cy.get('div#pane-addChild input[placeholder^="The IPv4 resources"]').type('10.0.0.0/24')
-          cy.get('div#pane-addChild button').contains('Register child CA').click()
+          cy.get('#addChild pre[contenteditable="true"]').invoke('text', child_req_xml)
+          cy.get('#addChild pre[contenteditable="true"]').type('{end}')
+          cy.get('#addChild input[placeholder^="The AS resources"]').type('AS18')
+          cy.get('#addChild input[placeholder^="The IPv4 resources"]').type('10.0.0.0/24')
+          cy.get('#addChild button').contains('Register child CA').click()
           cy.get('div[role="dialog"] button').contains('OK').click()
           cy.contains('has been added to the testbed')
 
           // grab the parent response XML from the testbed UI
-          cy.get('div#pane-addChild pre[contenteditable="false"]').contains("<parent_response")
-          cy.get('div#pane-addChild pre[contenteditable="false"]').invoke('text').then(parent_resp_xml => {
+          cy.get('#addChild pre[contenteditable="false"]').contains("<parent_response")
+          cy.get('#addChild pre[contenteditable="false"]').invoke('text').then(parent_resp_xml => {
             // navigate back to Krill
             cy.visit("/")
 
@@ -226,8 +226,8 @@ describe('Config File Users with TA', () => {
 
         // enter the registered parent name into the testbed UI edit field
         cy.get('div#tab-removeChild').contains('Unregister CA').click()
-        cy.get('div#pane-removeChild input[placeholder="Enter the CA name to remove"]').type(ts.ca)
-        cy.get('div#pane-removeChild button').contains('Remove child CA').click()
+        cy.get('#removeChild input[placeholder="Enter the CA name to remove"]').type(ts.ca)
+        cy.get('#removeChild button').contains('Remove child CA').click()
         cy.get('div[role="dialog"] button').contains('OK').click()
 
         if (ts.o) {
@@ -240,7 +240,7 @@ describe('Config File Users with TA', () => {
   })
 
   add_roa_test_settings.forEach(function (ts) {
-    it.skip('Add ROA for CA ' + ts.ca + ' as ' + ts.d + ' user should ' + (ts.o ? 'succeed' : 'fail'), () => {
+    it('Add ROA for CA ' + ts.ca + ' as ' + ts.d + ' user should ' + (ts.o ? 'succeed' : 'fail'), () => {
       cy.intercept('GET', '/api/v1/cas/' + ts.ca + '/routes/analysis/full').as('analyzeRoutes')
 
       cy.visit('/')
@@ -250,16 +250,28 @@ describe('Config File Users with TA', () => {
       cy.contains(ts.u)
       cy.contains('Sign In').should('not.exist')
 
-      // wait for Lagosta to finish fetching the route analysis details
-      cy.wait('@analyzeRoutes').its('response.statusCode').should('eq', 200)
-
       // Add a ROA
       cy.get('div#tab-roas').click()
       cy.get('body').then(($body) => {
+        // Check if Krill has issued the resources to the CA yet by seeing if the UI was able to fetch them, if it
+        // wasn't then it shows a "Click here to refresh" link. If the link exists, don't click it immediately as that
+        // will just result in the same lack of resources, instead give Krill some time (5 seconds) in this case then
+        // click the refresh link and then make sure that the link no longer exists (because resources were found).
+        // Ideally we would not wait 5 seconds but instead keep retrying until the link disappears, but according to
+        // Cypress docs it explicitly will NOT retry a .click() command. See:
+        //   https://docs.cypress.io/guides/core-concepts/retry-ability.html#Why-are-some-commands-NOT-retried
+        //   https://www.cypress.io/blog/2019/01/22/when-can-the-test-click/
+        // The latter suggests to use a 3rd party cypress-pipe plugin and not to use waits. That would be nice, but to
+        // use a plugin we then need a custom Docker image which is something I'd rather not build, publish and maintain
+        // the moment. TODO: don't publish an image, instead build it on the test runner just before running the tests?
         if ($body.find('#no_resources_click_to_refresh').length > 0) {
-          cy.get('Click here to refresh').click()
+          cy.get('#no_resources_click_to_refresh').wait(5000).click().get('body').get('#no_resources_click_to_refresh').should('not.exist')
         }
       })
+
+      // wait for Lagosta to finish fetching the route analysis details
+      cy.wait('@analyzeRoutes').its('response.statusCode').should('eq', 200)
+
       cy.get('div#pane-roas button').contains('Add ROA').click()
       cy.get('div[role="dialog"]')
       cy.contains('Add ROA')
