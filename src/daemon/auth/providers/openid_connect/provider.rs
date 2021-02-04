@@ -613,7 +613,7 @@ impl OpenIDConnectAuthProvider {
             Some(additional_info) => warn!("{} [additional info: {}]", msg, additional_info.into()),
             None => warn!("{}", msg),
         };
-        Error::ApiAuthPermanentError(msg)
+        Error::ApiLoginError(msg)
     }
 
     fn get_auth(&self, request: &hyper::Request<hyper::Body>) -> Option<Auth> {
