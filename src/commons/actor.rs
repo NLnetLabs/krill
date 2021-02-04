@@ -198,7 +198,10 @@ impl Actor {
 
     #[cfg(not(feature = "multi-user"))]
     pub fn is_allowed<A, R>(&self, _: A, _: R) -> KrillResult<bool> {
-        Ok(true)
+        // When not in multi-user mode we only have two states: authenticated or not authenticated (aka anonymous).
+        // Only authenticated (i.e. not anonymous) actors are permitted to perform restricted actions, i.e. those for
+        // which this fn is invoked.
+        Ok(!self.is_anonymous())
     }
 
     #[cfg(feature = "multi-user")]
