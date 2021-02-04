@@ -1,6 +1,9 @@
 use std::str::FromStr;
 
-use krill::{commons::api::{Handle, Token}, test::{init_ca, start_krill, test_config, tmp_dir}};
+use krill::{
+    commons::api::{Handle, Token},
+    test::{init_ca, start_krill, test_config, tmp_dir},
+};
 
 extern crate krill;
 
