@@ -38,7 +38,7 @@ jobs:
       matrix:
         os: [ubuntu-latest]
         rust: [stable, 1.45.0, beta]
-        args: ["", "--all-features"] 
+        args: ["--features functional-tests,ui-tests", "--all-features"] 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v1
