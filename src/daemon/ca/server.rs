@@ -11,7 +11,7 @@ use chrono::Duration;
 use rpki::crypto::KeyIdentifier;
 use rpki::uri;
 
-use crate::commons::crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder};
+use crate::{commons::crypto::{IdCert, KrillSigner, ProtocolCms, ProtocolCmsBuilder}, daemon::auth::common::permissions::Permission};
 use crate::commons::error::Error;
 use crate::commons::eventsourcing::{Aggregate, AggregateStore, Command, CommandKey};
 use crate::commons::remote::cmslogger::CmsLogger;
@@ -617,7 +617,7 @@ impl CaServer {
             self.ca_store
                 .list()?
                 .into_iter()
-                .filter(|handle| matches!(actor.is_allowed("CA_READ", handle.clone()), Ok(true)))
+                .filter(|handle| matches!(actor.is_allowed(Permission::CA_READ, handle.clone()), Ok(true)))
                 .map(CertAuthSummary::new)
                 .collect(),
         ))
