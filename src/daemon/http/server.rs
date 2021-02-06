@@ -757,7 +757,7 @@ macro_rules! aa {
                 let msg = format!(
                     "User '{}' does not have permission '{}' on resource '{}'",
                     $req.actor().name(),
-                    stringify!($perm),
+                    $perm,
                     $resource
                 );
                 Ok(HttpResponse::forbidden(msg).with_benign($benign))
