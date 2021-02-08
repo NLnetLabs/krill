@@ -79,7 +79,7 @@ type CustomTokenResponse = StandardTokenResponse<CustomIdTokenFields, CoreTokenT
 
 // This failure mode can be invoked for a user at user creation time.
 // The failure mode will be activated on a 'refresh_token' request
-// from krill to the OIDC Provider
+// from Krill to the OIDC Provider
 #[derive(Clone, Debug)]
 enum RefreshTokenFailureMode {
     // These are the RFC 6749 5.2 Errors
@@ -89,7 +89,7 @@ enum RefreshTokenFailureMode {
     InvalidScopeErrorResponse,
     UnauthorizedClientErrorResponse,
     UnsupportedGrantTypeErrorResponse,
-    // These various generic failure modes,
+    // These are various generic failure modes,
     // without OAUTH/OpenID Connect specific errors
     NoResponse,
     SlowResponse(Duration),
