@@ -153,11 +153,12 @@ describe('OpenID Connect users', () => {
     cy.wait(6000)
 
     // Try to create a CA, by typing in the input, clicking the 'Create CA' button
-    // and then clicking 'Ok'. This should fail, since the token can't be refereshed.
+    // and then clicking 'Ok'. This should fail, since the token can't be refreshed.
     cy.intercept('POST', '/api/v1/cas').as('createCA')
-    cy.get('main input').type('some-handle-name')
-    cy.get('main button').click()
-    cy.get('.el-message-box__btns button:nth-child(2)').click()
+    cy.contains('CA Handle')
+    cy.get('form input[type="text"]').type('some-handle-name')
+    cy.contains('Create CA').click()
+    cy.contains('OK').click()
     cy.wait('@createCA').its('response.statusCode').should('eq', 401)
 
     // verify that we are shown the OpenID Connect provider login page
