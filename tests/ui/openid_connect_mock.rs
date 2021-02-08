@@ -164,7 +164,6 @@ static MOCK_OPENID_CONNECT_SERVER_RUNNING_FLAG: AtomicBool = AtomicBool::new(fal
 #[tokio::main]
 pub async fn main() {
     // Log to stdout.
-    #[cfg(feature = "multi-user")]
     let _logger = fern::Dispatch::new().format(move |out, message, record| {
             out.finish(format_args!(
                 "{} [{}] {}",
