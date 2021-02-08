@@ -114,8 +114,9 @@ impl fmt::Display for RoaDeltaError {
 // ApiAuthError is *also* implemented as a separate enum,
 // so that we don't have to implement the Clone trait for
 // all of the Error enum.
-// Also it makes kind of sense to keep these errors as a separate container,
-// since they all originate in interactions with the OIDC provider (or lack thereof)
+// Also it makes kind of sense to keep these errors separate
+// container, since they all originate in interactions 
+// with the Auth provider (or lack thereof).
 #[derive(Debug, Clone)]
 pub enum ApiAuthError {
     ApiInvalidCredentials(String),
