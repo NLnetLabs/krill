@@ -769,9 +769,8 @@ macro_rules! aa {
                     Error::ApiInvalidCredentials(_)
                     | Error::ApiInsufficientRights(_)
                     | Error::ApiAuthPermanentError(_)
-                    | Error::ApiAuthTransientError(_) => {
-                        Ok(HttpResponse::response_from_error(err).with_benign($benign))
-                    }
+                    | Error::ApiAuthTransientError(_)
+                    | Error::ApiLoginError(_) => Ok(HttpResponse::response_from_error(err).with_benign($benign)),
                     _ => Ok(HttpResponse::forbidden(format!("{}", err)).with_benign($benign)),
                 }
             }
