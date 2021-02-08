@@ -866,7 +866,7 @@ fn run_mock_openid_connect_server() {
                                 Err(Error::custom(format!("Internal error: cowardly refusing to generate a new token for user '{}' that should not get refresh tokens", session.id)))
                             }
                         } else {
-                            warn!("invalid refresh token, responding with 'invalid_grant'");
+                            warn!("Invalid refresh token: Responding with 'invalid_grant'");
                             request
                                 .respond(
                                     Response::empty(StatusCode(400))
@@ -874,10 +874,9 @@ fn run_mock_openid_connect_server() {
                                         .with_data(json!({"error":"invalid_grant"}).to_string().as_bytes(), None),
                                 )
                                 .map_err(|err| err.into())
-                            // Err(Error::custom(format!("Invalid refresh token '{}'", refresh_token)))
                         }
                     } else {
-                        warn!("missing query parm 'refresh_token', responding with 'invalid_request'");
+                        warn!("Missing query parameter 'refresh_token': Responding with 'invalid_request'");
                         request
                             .respond(
                                 Response::empty(StatusCode(400))
@@ -888,7 +887,7 @@ fn run_mock_openid_connect_server() {
                     }
                 }
                 Some(grant_type) => {
-                    warn!("Unsupport grant type: {:?}", grant_type);
+                    warn!("Unsupported grant type: {:?}", grant_type);
                     request
                         .respond(
                             Response::empty(StatusCode(400))
@@ -898,7 +897,7 @@ fn run_mock_openid_connect_server() {
                         .map_err(|err| err.into())
                 }
                 None => {
-                    warn!("Invalid request. Missing parameter grant type");
+                    warn!("Invalid request: Responding with 'unsupperted_grant_type`");
                     request
                         .respond(
                             Response::empty(StatusCode(400))
