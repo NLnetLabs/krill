@@ -690,7 +690,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                                 return Err(Error::ApiInvalidCredentials("The session has ended.".to_string()));
                             }
                             CoreErrorResponseType::InvalidRequest | CoreErrorResponseType::InvalidClient => {
-                                warn!("OpenID Connect:  RFC 6749 5.2 {:?}", err);
+                                warn!("OpenID Connect: RFC 6749 5.2 {:?}", err);
                                 return Err(Error::ApiAuthPermanentError(
                                     "There is a unknown authentication problem.".to_string(),
                                 ));
@@ -701,7 +701,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                             CoreErrorResponseType::UnauthorizedClient
                             | CoreErrorResponseType::UnsupportedGrantType
                             | CoreErrorResponseType::InvalidScope => {
-                                warn!("OpenID Connect:  RFC 6749 5.2 {:?}", err);
+                                warn!("OpenID Connect: RFC 6749 5.2 {:?}", err);
                                 return Err(Error::ApiInsufficientRights(
                                     "The authorization was revoked for this user, client or action.".to_string(),
                                 ));
