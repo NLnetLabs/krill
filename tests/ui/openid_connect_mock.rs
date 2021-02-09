@@ -897,7 +897,7 @@ fn run_mock_openid_connect_server() {
                         .map_err(|err| err.into())
                 }
                 None => {
-                    warn!("Invalid request: Responding with 'unsupperted_grant_type`");
+                    warn!("Missing query parameter 'grant_type': Responding with 'invalid_request'");
                     request
                         .respond(
                             Response::empty(StatusCode(400))
