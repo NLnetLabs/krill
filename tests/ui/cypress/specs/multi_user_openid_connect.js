@@ -83,7 +83,7 @@ describe('OpenID Connect users', () => {
           cy.get('#userinfo_table').contains(ts.u)
           cy.get('#userinfo_table').contains('role')
         } else if (ts.d == 'empty') {
-          cy.contains('The supplied credentials were incorrect')
+          cy.contains('The supplied login credentials were incorrect')
           cy.contains('return to the login page')
         } else if (ts.d == 'badidtoken') {
           cy.contains('OpenID Connect: Code exchange failed: Failed to parse server response')
@@ -206,7 +206,7 @@ describe('OpenID Connect users', () => {
     cy.contains('OK').click()
 
     cy.wait('@createCA').its('response.statusCode').should('eq', 401)
-    cy.contains('Session expired: No token to be refreshed')
+    cy.contains('Your login session has expired. Please login again.')
   });
 
   [...create_ca_settings_401, ...create_ca_settings_403].forEach((ts) =>
