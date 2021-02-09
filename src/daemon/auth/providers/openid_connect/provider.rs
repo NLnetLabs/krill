@@ -623,9 +623,9 @@ impl AuthProvider for OpenIDConnectAuthProvider {
     // Connect Core 1.0 section 3.1.26 Authentication Error Response
     // OAuth 2.0 RFC-674 4.1.2.1 (Authorization Request Errors) & 5.2 (Access Token Request Errors)
 
-    /// Tries to extend the session with the OIDC Provider once or multiple times (retries and/or back-off).
-    /// Returns either the session attributes and the refreshed token or
-    /// a end-user error (one of the ApiAuth* Error types).
+    /// Validate the current login session, extending it with the OIDC provider if needed.
+    /// Returns either the session attributes and (if available) the refreshed token, or
+    /// an error to report back to the user (one of the ApiAuth* Error types).
     /// Make sure to not leak any OIDC implementation details into the Error result!
     /// This function is also responsible for all logging around refreshing the token / extending the session.
     fn authenticate(&self, request: &hyper::Request<hyper::Body>) -> KrillResult<Option<ActorDef>> {
