@@ -770,6 +770,7 @@ macro_rules! aa {
                     | Error::ApiInsufficientRights(_)
                     | Error::ApiAuthPermanentError(_)
                     | Error::ApiAuthTransientError(_)
+                    | Error::ApiAuthRefreshUnavailable(_)
                     | Error::ApiLoginError(_) => Ok(HttpResponse::response_from_error(err).with_benign($benign)),
                     _ => Ok(HttpResponse::forbidden(format!("{}", err)).with_benign($benign)),
                 }

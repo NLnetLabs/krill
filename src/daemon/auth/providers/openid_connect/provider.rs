@@ -333,111 +333,100 @@ impl OpenIDConnectAuthProvider {
     /// The caller of this function is responsible for creating end-user error messages, logging and
     /// (optionally) retrying.
     fn try_refresh_token(&self, session: &ClientSession) -> Result<Auth, CoreErrorResponseType> {
-        match &session.secrets.get(0) {
-            Some(refresh_token) => {
-                debug!("OpenID Connect: Refreshing token for user: \"{}\"", &session.id);
-                trace!("OpenID Connect: Submitting RFC-6749 section 6 Access Token Refresh request");
-                match self.conn.read() {
-                    Ok(conn_guard) => {
-                        match &*conn_guard {
-                            Some(conn) => {
-                                let token_response = conn
-                                    .client
-                                    .exchange_refresh_token(&RefreshToken::new(refresh_token.to_string()))
-                                    .request(logging_http_client!());
-                                match token_response {
-                                    Ok(token_response) => {
-                                        let secrets = if let Some(new_refresh_token) = token_response.refresh_token() {
-                                            vec![new_refresh_token.secret().clone()]
-                                        } else {
-                                            vec![]
-                                        };
+        let refresh_token = &session.secrets.get(0).unwrap();
 
-                                        let new_token_res = self.session_cache.encode(
-                                            &session.id,
-                                            &session.attributes,
-                                            &secrets,
-                                            &self.session_key,
-                                            token_response.expires_in(),
-                                        );
+        debug!("OpenID Connect: Refreshing token for user: \"{}\"", &session.id);
+        trace!("OpenID Connect: Submitting RFC-6749 section 6 Access Token Refresh request");
+        match self.conn.read() {
+            Ok(conn_guard) => {
+                match &*conn_guard {
+                    Some(conn) => {
+                        let token_response = conn
+                            .client
+                            .exchange_refresh_token(&RefreshToken::new(refresh_token.to_string()))
+                            .request(logging_http_client!());
+                        match token_response {
+                            Ok(token_response) => {
+                                let secrets = if let Some(new_refresh_token) = token_response.refresh_token() {
+                                    vec![new_refresh_token.secret().clone()]
+                                } else {
+                                    vec![]
+                                };
 
-                                        match new_token_res {
-                                            Ok(new_token) => {
-                                                // The new token was successfully acquired from the OpenID Connect Provider,
-                                                // and early returned.
-                                                return Ok(Auth::Bearer(new_token));
-                                            }
-                                            Err(err) => {
-                                                return Err(CoreErrorResponseType::Extension(format!(
-                                                    "Error while encoding the refreshed token {}",
-                                                    err
-                                                )));
-                                            }
-                                        }
+                                let new_token_res = self.session_cache.encode(
+                                    &session.id,
+                                    &session.attributes,
+                                    &secrets,
+                                    &self.session_key,
+                                    token_response.expires_in(),
+                                );
+
+                                match new_token_res {
+                                    Ok(new_token) => {
+                                        // The new token was successfully acquired from the OpenID Connect Provider,
+                                        // and early returned.
+                                        return Ok(Auth::Bearer(new_token));
                                     }
                                     Err(err) => {
-                                        match &err {
-                                            // this is where the RFC-6749 5.2 Error Response is received and
-                                            // return to the caller. It's the responsibility of the caller
-                                            // to decide whether to retry or report back to the user.
-                                            //
-                                            // Note that [Errata for RFC 6749](https://www.rfc-editor.org/errata/eid4745)
-                                            // defines two additional error responses, `server_error` and
-                                            // `temporarily_unavailable`, that don't have variant counterparts
-                                            // in the openid-connect crate. These two error messages will
-                                            // therefore **not** end up in the `ServerReponse` variant.
-                                            openidconnect::RequestTokenError::ServerResponse(r) => {
-                                                return Err(r.error().clone());
-                                            }
-                                            openidconnect::RequestTokenError::Request(r) => {
-                                                return Err(CoreErrorResponseType::Extension(format!(
-                                                    "Network Failure while receiving new token: {}",
-                                                    r.to_string()
-                                                )));
-                                            }
-                                            openidconnect::RequestTokenError::Parse(r, _) => {
-                                                return Err(CoreErrorResponseType::Extension(format!(
-                                                    "Error while parsing new token: {}",
-                                                    r.to_string()
-                                                )));
-                                            }
-                                            openidconnect::RequestTokenError::Other(err_string) => {
-                                                match err_string.as_str() {
-                                                    "temporarily_unavailable" | "server_error" => {
-                                                        return Err(CoreErrorResponseType::Extension(
-                                                            err_string.to_string(),
-                                                        ))
-                                                    }
-                                                    _ => {
-                                                        return Err(CoreErrorResponseType::Extension(format!(
-                                                            "Unknown Error(#1) while receiving new token: {}",
-                                                            err_string
-                                                        )))
-                                                    }
-                                                }
-                                            }
-                                        }
+                                        return Err(CoreErrorResponseType::Extension(format!(
+                                            "Error while encoding the refreshed token {}",
+                                            err
+                                        )));
                                     }
                                 }
                             }
-                            None => {
-                                // should be unreachable
-                                return Err(CoreErrorResponseType::Extension(
-                                    "Connection to OpenID Connect provider not yet established".to_string(),
-                                ));
+                            Err(err) => {
+                                match &err {
+                                    // this is where the RFC-6749 5.2 Error Response is received and
+                                    // return to the caller. It's the responsibility of the caller
+                                    // to decide whether to retry or report back to the user.
+                                    //
+                                    // Note that [Errata for RFC 6749](https://www.rfc-editor.org/errata/eid4745)
+                                    // defines two additional error responses, `server_error` and
+                                    // `temporarily_unavailable`, that don't have variant counterparts
+                                    // in the openid-connect crate. These two error messages will
+                                    // therefore **not** end up in the `ServerReponse` variant.
+                                    openidconnect::RequestTokenError::ServerResponse(r) => {
+                                        return Err(r.error().clone());
+                                    }
+                                    openidconnect::RequestTokenError::Request(r) => {
+                                        return Err(CoreErrorResponseType::Extension(format!(
+                                            "Network Failure while receiving new token: {}",
+                                            r.to_string()
+                                        )));
+                                    }
+                                    openidconnect::RequestTokenError::Parse(r, _) => {
+                                        return Err(CoreErrorResponseType::Extension(format!(
+                                            "Error while parsing new token: {}",
+                                            r.to_string()
+                                        )));
+                                    }
+                                    openidconnect::RequestTokenError::Other(err_string) => match err_string.as_str() {
+                                        "temporarily_unavailable" | "server_error" => {
+                                            return Err(CoreErrorResponseType::Extension(err_string.to_string()))
+                                        }
+                                        _ => {
+                                            return Err(CoreErrorResponseType::Extension(format!(
+                                                "Unknown Error(#1) while receiving new token: {}",
+                                                err_string
+                                            )))
+                                        }
+                                    },
+                                }
                             }
                         }
                     }
-                    Err(err) => {
+                    None => {
+                        // should be unreachable
                         return Err(CoreErrorResponseType::Extension(
-                            format!("Unknown Error(#2) while receiving new token: {}", err).to_string(),
+                            "Connection to OpenID Connect provider not yet established".to_string(),
                         ));
                     }
                 }
             }
-            None => {
+            Err(err) => {
                 return Err(CoreErrorResponseType::Extension(
-                    "Unknown Error with existing token".to_string(),
+                    format!("Unknown Error(#2) while receiving new token: {}", err).to_string(),
                 ));
             }
         }
@@ -666,6 +655,12 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 // Token found in cache and active; all good, do an early return
                 if status == SessionStatus::Active {
                     return Ok(Some(ActorDef::user(session.id, session.attributes, None)));
+                }
+
+                // There are no current secrets, nothing to try to refresh. Return
+                // early with an error that indicates the user needs to login again.
+                if session.secrets.len() == 0 {
+                    return Err(Error::ApiAuthRefreshUnavailable("No current token stored".to_string()));
                 }
 
                 let new_auth = match self.try_refresh_token(&session) {

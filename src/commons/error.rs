@@ -115,7 +115,7 @@ impl fmt::Display for RoaDeltaError {
 // so that we don't have to implement the Clone trait for
 // all of the Error enum.
 // Also it makes kind of sense to keep these errors separate
-// container, since they all originate in interactions 
+// container, since they all originate in interactions
 // with the Auth provider (or lack thereof).
 #[derive(Debug, Clone)]
 pub enum ApiAuthError {
@@ -123,6 +123,7 @@ pub enum ApiAuthError {
     ApiLoginError(String),
     ApiAuthPermanentError(String),
     ApiAuthTransientError(String),
+    ApiAuthRefreshUnavailable(String),
     ApiInsufficientRights(String),
 }
 
@@ -133,6 +134,7 @@ impl Display for ApiAuthError {
             | ApiAuthError::ApiLoginError(err)
             | ApiAuthError::ApiAuthPermanentError(err)
             | ApiAuthError::ApiAuthTransientError(err)
+            | ApiAuthError::ApiAuthRefreshUnavailable(err)
             | ApiAuthError::ApiInsufficientRights(err) => write!(f, "{}", &err),
         }
     }
@@ -145,6 +147,7 @@ impl From<Error> for ApiAuthError {
             Error::ApiLoginError(e) => ApiAuthError::ApiLoginError(e),
             Error::ApiInsufficientRights(e) => ApiAuthError::ApiInsufficientRights(e),
             Error::ApiAuthTransientError(e) => ApiAuthError::ApiAuthTransientError(e),
+            Error::ApiAuthRefreshUnavailable(e) => ApiAuthError::ApiAuthRefreshUnavailable(e),
             Error::ApiInvalidCredentials(e) => ApiAuthError::ApiInvalidCredentials(e),
             _ => ApiAuthError::ApiAuthPermanentError(e.to_string()),
         }
@@ -180,6 +183,7 @@ pub enum Error {
     ApiLoginError(String),
     ApiAuthPermanentError(String),
     ApiAuthTransientError(String),
+    ApiAuthRefreshUnavailable(String),
     ApiInsufficientRights(String),
 
     //-----------------------------------------------------------------
@@ -325,6 +329,7 @@ impl fmt::Display for Error {
             Error::ApiLoginError(e) => write!(f, "Login error: {}", e),
             Error::ApiAuthPermanentError(e) => write!(f, "Authentication error: {}", e),
             Error::ApiAuthTransientError(e) => write!(f, "Transient authentication error: {}", e),
+            Error::ApiAuthRefreshUnavailable(e) => write!(f, "Authentication refresh unavailable: {}", e),
             Error::ApiInsufficientRights(e) => write!(f, "Insufficient rights: {}", e),
 
             //-----------------------------------------------------------------
@@ -507,6 +512,7 @@ impl From<ApiAuthError> for Error {
             ApiAuthError::ApiLoginError(e) => Error::ApiLoginError(e),
             ApiAuthError::ApiInsufficientRights(e) => Error::ApiInsufficientRights(e),
             ApiAuthError::ApiAuthTransientError(e) => Error::ApiAuthTransientError(e),
+            ApiAuthError::ApiAuthRefreshUnavailable(e) => Error::ApiAuthRefreshUnavailable(e),
             ApiAuthError::ApiInvalidCredentials(e) => Error::ApiInvalidCredentials(e),
         }
     }
@@ -550,7 +556,7 @@ impl Error {
             | Error::ApiAuthPermanentError(_)
             | Error::ApiAuthTransientError(_)
             | Error::ApiLoginError(_) => StatusCode::UNAUTHORIZED,
-            Error::ApiInsufficientRights(_) => StatusCode::FORBIDDEN,
+            Error::ApiInsufficientRights(_) | Error::ApiAuthRefreshUnavailable(_) => StatusCode::FORBIDDEN,
 
             _ => StatusCode::BAD_REQUEST,
         }
@@ -612,6 +618,8 @@ impl Error {
             Error::ApiAuthPermanentError(e) => ErrorResponse::new("api-auth-permanent-error", &self).with_cause(e),
 
             Error::ApiAuthTransientError(e) => ErrorResponse::new("api-auth-transient-error", &self).with_cause(e),
+
+            Error::ApiAuthRefreshUnavailable(e) => ErrorResponse::new("api-auth-refresh-error", &self).with_cause(e),
 
             Error::ApiInsufficientRights(e) => ErrorResponse::new("api-insufficient-rights", &self).with_cause(e),
 
