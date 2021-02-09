@@ -368,7 +368,7 @@ impl OpenIDConnectAuthProvider {
                                         Ok(Auth::Bearer(new_token))
                                     }
                                     Err(err) => Err(CoreErrorResponseType::Extension(format!(
-                                        "Error while encoding the refreshed token {}",
+                                        "Internal error: Error while encoding the refreshed token {}",
                                         err
                                     ))),
                                 }
@@ -387,13 +387,13 @@ impl OpenIDConnectAuthProvider {
                                     openidconnect::RequestTokenError::ServerResponse(r) => Err(r.error().clone()),
                                     openidconnect::RequestTokenError::Request(r) => {
                                         Err(CoreErrorResponseType::Extension(format!(
-                                            "Network Failure while receiving new token: {}",
+                                            "Network failure while refreshing token: {}",
                                             r.to_string()
                                         )))
                                     }
                                     openidconnect::RequestTokenError::Parse(r, _) => {
                                         Err(CoreErrorResponseType::Extension(format!(
-                                            "Error while parsing new token: {}",
+                                            "Error while parsing refreshed token: {}",
                                             r.to_string()
                                         )))
                                     }
@@ -402,7 +402,7 @@ impl OpenIDConnectAuthProvider {
                                             Err(CoreErrorResponseType::Extension(err_string.to_string()))
                                         }
                                         _ => Err(CoreErrorResponseType::Extension(format!(
-                                            "Unknown Error(#1) while receiving new token: {}",
+                                            "Unknown error while refreshing token: {}",
                                             err_string
                                         ))),
                                     },
@@ -413,13 +413,13 @@ impl OpenIDConnectAuthProvider {
                     None => {
                         // should be unreachable
                         Err(CoreErrorResponseType::Extension(
-                            "Connection to OpenID Connect provider not yet established".to_string(),
+                            "Internal error: Connection to OpenID Connect provider not yet established".to_string(),
                         ))
                     }
                 }
             }
             Err(err) => Err(CoreErrorResponseType::Extension(format!(
-                "Unknown Error(#2) while receiving new token: {}",
+                "Internal error: Unable to acquire internal lock: {}",
                 err
             ))),
         }
@@ -675,12 +675,12 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                             // by them. The user should be able to create a new session by logging in again.
                             CoreErrorResponseType::InvalidGrant => {
                                 warn!("OpenID Connect: invalid_grant {:?}", err);
-                                return Err(Error::ApiInvalidCredentials("The session has ended.".to_string()));
+                                return Err(Error::ApiInvalidCredentials("Unable to extend login session: your session has been terminated.".to_string()));
                             }
                             CoreErrorResponseType::InvalidRequest | CoreErrorResponseType::InvalidClient => {
                                 warn!("OpenID Connect: RFC 6749 5.2 {:?}", err);
                                 return Err(Error::ApiAuthPermanentError(
-                                    "There is a unknown authentication problem.".to_string(),
+                                    "Unable to extend login session: the provider rejected the request.".to_string(),
                                 ));
                             }
                             // If changes are made to the roles of the user, the client or
@@ -691,7 +691,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                             | CoreErrorResponseType::InvalidScope => {
                                 warn!("OpenID Connect: RFC 6749 5.2 {:?}", err);
                                 return Err(Error::ApiInsufficientRights(
-                                    "The authorization was revoked for this user, client or action.".to_string(),
+                                    "Unable to extend login session: the authorization was revoked for this user, client or action.".to_string(),
                                 ));
                             }
                             // The Extension Type Errors are used by the try_refresh_token
@@ -704,13 +704,13 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                                 "temporarily_unavailable" | "server_error" => {
                                     warn!("OpenID Connect: RFC 6749 5.2 {:?}", err);
                                     return Err(Error::ApiAuthTransientError(
-                                        "Authentication is unavailable".to_string(),
+                                        "Unable to extend login session: could not contact the provider".to_string(),
                                     ));
                                 }
                                 _ => {
                                     warn!("OpenID Connect: RFC 6749 5.2 unknown error {:?}", err);
                                     return Err(Error::ApiAuthTransientError(
-                                        "Unknown authentication error".to_string(),
+                                        "Unable to extend login session: unknown error".to_string(),
                                     ));
                                 }
                             },
