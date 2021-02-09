@@ -329,7 +329,7 @@ impl fmt::Display for Error {
             Error::ApiLoginError(e) => write!(f, "Login error: {}", e),
             Error::ApiAuthPermanentError(e) => write!(f, "Authentication error: {}", e),
             Error::ApiAuthTransientError(e) => write!(f, "Transient authentication error: {}", e),
-            Error::ApiAuthSessionExpired(e) => write!(f, "Session Expired: {}", e),
+            Error::ApiAuthSessionExpired(e) => write!(f, "Session expired: {}", e),
             Error::ApiInsufficientRights(e) => write!(f, "Insufficient rights: {}", e),
 
             //-----------------------------------------------------------------
