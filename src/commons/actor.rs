@@ -17,12 +17,12 @@ use oso::ToPolar;
 #[cfg(feature = "multi-user")]
 use std::fmt::Display;
 
+use crate::commons::error::{ApiAuthError, Error};
+use crate::daemon::auth::policy::AuthPolicy;
+use crate::{commons::KrillResult, constants::ACTOR_DEF_ANON, daemon::auth::Auth};
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Debug;
-use crate::{commons::KrillResult, constants::ACTOR_DEF_ANON, daemon::auth::Auth};
-use crate::daemon::auth::policy::AuthPolicy;
-use crate::commons::error::{Error, ApiAuthError};
 
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub enum ActorName {

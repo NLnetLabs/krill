@@ -367,12 +367,10 @@ impl OpenIDConnectAuthProvider {
                                         // and early returned.
                                         Ok(Auth::Bearer(new_token))
                                     }
-                                    Err(err) => {
-                                        Err(CoreErrorResponseType::Extension(format!(
-                                            "Error while encoding the refreshed token {}",
-                                            err
-                                        )))
-                                    }
+                                    Err(err) => Err(CoreErrorResponseType::Extension(format!(
+                                        "Error while encoding the refreshed token {}",
+                                        err
+                                    ))),
                                 }
                             }
                             Err(err) => {
@@ -386,9 +384,7 @@ impl OpenIDConnectAuthProvider {
                                     // `temporarily_unavailable`, that don't have variant counterparts
                                     // in the openid-connect crate. These two error messages will
                                     // therefore **not** end up in the `ServerReponse` variant.
-                                    openidconnect::RequestTokenError::ServerResponse(r) => {
-                                        Err(r.error().clone())
-                                    }
+                                    openidconnect::RequestTokenError::ServerResponse(r) => Err(r.error().clone()),
                                     openidconnect::RequestTokenError::Request(r) => {
                                         Err(CoreErrorResponseType::Extension(format!(
                                             "Network Failure while receiving new token: {}",
@@ -405,12 +401,10 @@ impl OpenIDConnectAuthProvider {
                                         "temporarily_unavailable" | "server_error" => {
                                             Err(CoreErrorResponseType::Extension(err_string.to_string()))
                                         }
-                                        _ => {
-                                            Err(CoreErrorResponseType::Extension(format!(
-                                                "Unknown Error(#1) while receiving new token: {}",
-                                                err_string
-                                            )))
-                                        }
+                                        _ => Err(CoreErrorResponseType::Extension(format!(
+                                            "Unknown Error(#1) while receiving new token: {}",
+                                            err_string
+                                        ))),
                                     },
                                 }
                             }
@@ -424,11 +418,10 @@ impl OpenIDConnectAuthProvider {
                     }
                 }
             }
-            Err(err) => {
-                Err(CoreErrorResponseType::Extension(
-                    format!("Unknown Error(#2) while receiving new token: {}", err),
-                ))
-            }
+            Err(err) => Err(CoreErrorResponseType::Extension(format!(
+                "Unknown Error(#2) while receiving new token: {}",
+                err
+            ))),
         }
     }
 

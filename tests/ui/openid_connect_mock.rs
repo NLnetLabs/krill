@@ -164,19 +164,20 @@ static MOCK_OPENID_CONNECT_SERVER_RUNNING_FLAG: AtomicBool = AtomicBool::new(fal
 #[tokio::main]
 pub async fn main() {
     // Log to stdout.
-    let _logger = fern::Dispatch::new().format(move |out, message, record| {
+    let _logger = fern::Dispatch::new()
+        .format(move |out, message, record| {
             out.finish(format_args!(
                 "{} [{}] {}",
                 chrono::Local::now().format("%Y-%m-%d %H:%M:%S"),
                 record.level(),
                 message
             ))
-    })
-    .level(log::LevelFilter::Trace)
-    .chain(std::io::stdout())
-    .apply()
-    .map_err(|e| format!("Failed to init stderr logging: {}", e));
-    
+        })
+        .level(log::LevelFilter::Trace)
+        .chain(std::io::stdout())
+        .apply()
+        .map_err(|e| format!("Failed to init stderr logging: {}", e));
+
     start(2500).await;
 }
 
@@ -376,7 +377,6 @@ fn run_mock_openid_connect_server() {
             },
         );
 
-        
         let provider_metadata: CustomProviderMetadata = ProviderMetadata::new(
             IssuerUrl::new("http://localhost:1818".to_string()).unwrap(),
             AuthUrl::new("http://localhost:1818/authorize".to_string()).unwrap(),
