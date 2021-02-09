@@ -660,7 +660,7 @@ impl AuthProvider for OpenIDConnectAuthProvider {
                 // There are no current secrets, nothing to try to refresh. Return
                 // early with an error that indicates the user needs to login again.
                 if session.secrets.len() == 0 {
-                    return Err(Error::ApiAuthRefreshUnavailable("No current token stored".to_string()));
+                    return Err(Error::ApiAuthSessionExpired("No token to be refreshed".to_string()));
                 }
 
                 let new_auth = match self.try_refresh_token(&session) {
