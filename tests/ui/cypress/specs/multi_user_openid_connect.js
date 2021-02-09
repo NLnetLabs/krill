@@ -206,6 +206,7 @@ describe('OpenID Connect users', () => {
     cy.contains('OK').click()
 
     cy.wait('@createCA').its('response.statusCode').should('eq', 401)
+    cy.contains('Session expired: No token to be refreshed')
   });
 
   [...create_ca_settings_401, ...create_ca_settings_403].forEach((ts) =>
