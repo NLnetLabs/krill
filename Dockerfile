@@ -2,10 +2,7 @@
 # Make the base image configurable so that the E2E test can use a base image
 # with a prepopulated Cargo build cache to accelerate the build process.
 # Use Ubuntu 16.04 because this is what the Travis CI Krill build uses.
-#
-# Use Alpine edge (speific dated build 20201218) to get Rust >= 1.45.0 as needed
-# to build Krill, as latest Alpine release contains Rust 1.44.0.
-ARG BASE_IMG=alpine:20201218
+ARG BASE_IMG=alpine:3.13
 
 #
 # -- stage 1: build krill and krillc
@@ -18,7 +15,6 @@ WORKDIR /tmp/krill
 COPY . .
 
 RUN cargo build --target x86_64-alpine-linux-musl --release
-
 #
 # -- stage 2: create an image containing just the binaries, configs &
 #             scripts needed to run Krill, and not the things needed to build
